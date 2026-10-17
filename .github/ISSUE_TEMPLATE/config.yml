@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Engineering work, ADRs and experiments (Redmine)
+    url: https://redmine.piglor.com/projects/areneon
+    about: Internal work is tracked in Redmine. Use GitHub Issues only for community bug reports and questions.
+  - name: Report a security vulnerability privately
+    url: https://github.com/piglor/areneon/security/advisories/new
+    about: Never post vulnerabilities, private teams or credentials publicly.

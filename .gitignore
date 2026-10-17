@@ -6,3 +6,9 @@ node_modules/
 __pycache__/
 .claude/settings.local.json
 skills-lock.json
+coverage/
+.coverage
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+dist/
