@@ -45,6 +45,7 @@ Default five-label vocabulary (`needs-triage`, `needs-info`, `ready-for-agent`, 
 
 - Python: `ruff check`, `ruff format --check`, `mypy --strict`, `pytest` with ≥90% line coverage.
 - TypeScript: `eslint`, `tsc --noEmit` (strict), `vitest` with ≥90% line coverage.
+- Rust (when the first crate lands): `cargo fmt --check`, `cargo clippy -D warnings`, `cargo test`, `cargo llvm-cov` with ≥90% line coverage, `cargo deny`. Rust never reimplements mechanics or legality.
 - `spikes/<ticket>-<name>/` uses lighter gates until it is promoted into `packages/` or `services/`, or deleted.
 - A change to the Showdown pin, request decoder or legal-choice enumeration must re-run the golden fixtures.
 

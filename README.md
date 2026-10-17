@@ -11,14 +11,17 @@ Open-source competitive VGC Doubles AI sparring partner for Pokémon Showdown (C
 
 ## Layout
 
-Target layout (ADR-002). Entries marked *planned* do not exist yet.
+Polyglot monorepo (ADR-002): TypeScript, Python and Rust. Entries marked *planned* do not exist yet.
 
 ```
-packages/showdown-bridge/    TS: request identity today; headless runner, decoder, legal choices next
+packages/showdown-bridge/    TS: pinned engine loader, format registry, headless runner, request decoder
 packages/schema/             planned (#671): JSON Schema contracts (source of truth)
 packages/showdown-extension/ planned (#672): Chromium MV3 read-only advisor
-vendor/pokemon-showdown/     planned (#670): pinned upstream simulator (git submodule)
+crates/                      planned: Rust Cargo workspace (calculators, rules catalog, orchestration)
+services/, ml/               planned: Python services and PyTorch training
+vendor/pokemon-showdown/     pinned upstream simulator (MIT, git submodule)
 fixtures/                    sanitized/synthetic fixtures only (CC0)
+docs/                        contributor-facing contracts (e.g. Showdown Champions gap list)
 spikes/                      planned: experiment code, promoted or deleted
 private-data/                gitignored: your private teams
 ```

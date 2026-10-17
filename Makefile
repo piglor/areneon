@@ -1,12 +1,18 @@
 SHELL := /bin/bash
 .SHELLFLAGS := -euo pipefail -c
-.PHONY: setup check python ts guards team-guard licences
+.PHONY: setup showdown check python ts guards team-guard licences
 
 # One-time setup for a clean clone.
-setup:
+setup: showdown
 	uv sync
 	pnpm install
 	uv run pre-commit install
+
+# Build the pinned reference engine (ADR-003). Install scripts stay off:
+# the sim needs no native add-ons, and vendored packages run no code here.
+showdown:
+	git submodule update --init vendor/pokemon-showdown
+	cd vendor/pokemon-showdown && npm ci --ignore-scripts --no-audit --no-fund && node build
 
 # Every CI gate that works offline (gitleaks and osv-scanner run in CI).
 # CI calls the same targets, so the two cannot drift.
@@ -18,7 +24,7 @@ python:
 	uv run mypy
 	uv run pytest
 
-ts:
+ts: showdown
 	pnpm lint
 	pnpm typecheck
 	pnpm test
