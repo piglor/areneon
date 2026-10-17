@@ -1,0 +1,95 @@
+{
+  "provenance": "synthetic: Areneon golden battle, engine default choices",
+  "manifest": {
+    "showdown_commit": "7244fe8e28fa8bc4d0809ae30d183c608b62bb2b",
+    "format_id": "gen9championsvgc2026regmc",
+    "regulation": "M-C",
+    "ruleset_hash": "4dd1f039bbcc6156e08c434972beae2370dc5fe8c9c6a263da7383c3247b68f3"
+  },
+  "seed": "sodium,000102030405060708090a0b0c0d0e0f",
+  "winner": "p2",
+  "turns": 5,
+  "omniscient_log_sha256": "0e8aa271171206abe671328b97e0fb0f17142210fd71345739d9f88d06b2e53d",
+  "choices": [
+    {
+      "player": "p1",
+      "request_seq": 1,
+      "choice": "default"
+    },
+    {
+      "player": "p2",
+      "request_seq": 1,
+      "choice": "default"
+    },
+    {
+      "player": "p1",
+      "request_seq": 2,
+      "choice": "default"
+    },
+    {
+      "player": "p2",
+      "request_seq": 2,
+      "choice": "default"
+    },
+    {
+      "player": "p1",
+      "request_seq": 3,
+      "choice": "default"
+    },
+    {
+      "player": "p1",
+      "request_seq": 4,
+      "choice": "default"
+    },
+    {
+      "player": "p2",
+      "request_seq": 4,
+      "choice": "default"
+    },
+    {
+      "player": "p2",
+      "request_seq": 5,
+      "choice": "default"
+    },
+    {
+      "player": "p1",
+      "request_seq": 6,
+      "choice": "default"
+    },
+    {
+      "player": "p2",
+      "request_seq": 6,
+      "choice": "default"
+    },
+    {
+      "player": "p1",
+      "request_seq": 7,
+      "choice": "default"
+    },
+    {
+      "player": "p1",
+      "request_seq": 8,
+      "choice": "default"
+    },
+    {
+      "player": "p2",
+      "request_seq": 8,
+      "choice": "default"
+    },
+    {
+      "player": "p2",
+      "request_seq": 9,
+      "choice": "default"
+    },
+    {
+      "player": "p1",
+      "request_seq": 10,
+      "choice": "default"
+    },
+    {
+      "player": "p2",
+      "request_seq": 10,
+      "choice": "default"
+    }
+  ]
+}

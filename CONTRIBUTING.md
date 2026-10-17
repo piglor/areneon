@@ -18,12 +18,20 @@ Thanks for your interest. Areneon is pre-alpha (Wave 1).
 Requirements: Node 24 LTS, pnpm 10, [uv](https://docs.astral.sh/uv/) (installs Python 3.12).
 
 ```bash
-git clone https://github.com/piglor/areneon.git
+git clone --recurse-submodules https://github.com/piglor/areneon.git
 cd areneon
-make setup check   # install everything, then run every offline CI gate
+make setup check   # build pinned Showdown, install everything, run every offline CI gate
 ```
 
-`gitleaks` and `osv-scanner` run in CI. The pinned Showdown submodule arrives with Redmine #670, after which you will clone with `--recurse-submodules`.
+`gitleaks` and `osv-scanner` run in CI. `make showdown` rebuilds the pinned engine in `vendor/pokemon-showdown` after a submodule update.
+
+### Bumping the Showdown pin
+
+The engine is the legality authority, so a pin bump is its own PR:
+
+1. Move the submodule (`git -C vendor/pokemon-showdown checkout <sha>`) and set `PINNED_SHOWDOWN_COMMIT` in `packages/showdown-bridge/src/engine.ts` to the same SHA.
+2. `make showdown`, then `node packages/showdown-bridge/scripts/capture-golden.ts`.
+3. Review every changed fixture under `fixtures/showdown/` and update [docs/showdown-champions-gaps.md](docs/showdown-champions-gaps.md).
 
 ## Commits and pull requests
 
