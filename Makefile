@@ -1,6 +1,15 @@
 SHELL := /bin/bash
-.PHONY: check python ts guards
-# Runs every CI gate that works offline (gitleaks and osv-scanner run in CI).
+.SHELLFLAGS := -euo pipefail -c
+.PHONY: setup check python ts guards team-guard licences
+
+# One-time setup for a clean clone.
+setup:
+	uv sync
+	pnpm install
+	uv run pre-commit install
+
+# Every CI gate that works offline (gitleaks and osv-scanner run in CI).
+# CI calls the same targets, so the two cannot drift.
 check: python ts guards
 
 python:
@@ -14,6 +23,10 @@ ts:
 	pnpm typecheck
 	pnpm test
 
-guards:
+guards: team-guard licences
+
+team-guard:
 	git ls-files -z | xargs -0 uv run --no-project python scripts/check_no_pokepaste.py
-	set -o pipefail; pnpm -r licenses list --prod --json | uv run --no-project python scripts/check_licenses.py
+
+licences:
+	pnpm -r licenses list --prod --json | uv run --no-project python scripts/check_licenses.py

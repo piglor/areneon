@@ -33,6 +33,11 @@ PNPM_AGPL = {
         ("MIT GPL-3.0", False),
         ("OR MIT", False),
         ("MIT AND )", False),
+        ("Apache-2.0 WITH LLVM-exception", True),
+        ("GPL-2.0 WITH Classpath-exception-2.0", False),
+        ("MIT WITH", False),
+        ("MIT WITH OR ISC", False),
+        ("MIT or ISC", False),
     ],
 )
 def test_is_allowed(expression: str, allowed: bool) -> None:

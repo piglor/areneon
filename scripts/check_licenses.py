@@ -6,7 +6,9 @@ it. The check is an allowlist and fails closed: an unknown licence, a
 missing licence or unparseable output is an error.
 
 SPDX expressions are honoured: ``A OR B`` passes if either side is allowed,
-``A AND B`` only if both are.
+``A AND B`` only if both are, and ``A WITH exception`` is judged on ``A``
+(an exception only grants extra permissions). Operators are matched in
+upper case as SPDX specifies; anything else fails closed.
 """
 
 from __future__ import annotations
@@ -39,7 +41,8 @@ EXIT_BAD_OUTPUT = 2
 # Exact text pnpm prints instead of JSON when there are no production packages.
 NO_PACKAGES = "No licenses in packages found"
 
-_TOKEN = re.compile(r"\(|\)|\bAND\b|\bOR\b|[^\s()]+")
+_OPERATORS = frozenset({"AND", "OR", "WITH", ")"})
+_TOKEN = re.compile(r"\(|\)|\bAND\b|\bOR\b|\bWITH\b|[^\s()]+")
 
 
 class LicenceOutputError(ValueError):
@@ -76,7 +79,7 @@ def _parse_and(tokens: list[str]) -> tuple[bool, list[str]]:
 
 
 def _parse_atom(tokens: list[str]) -> tuple[bool, list[str]]:
-    if not tokens or tokens[0] in {"AND", "OR", ")"}:
+    if not tokens or tokens[0] in _OPERATORS:
         raise _MalformedExpressionError
     head, rest = tokens[0], tokens[1:]
     if head == "(":
@@ -84,6 +87,10 @@ def _parse_atom(tokens: list[str]) -> tuple[bool, list[str]]:
         if not rest or rest[0] != ")":
             raise _MalformedExpressionError
         return value, rest[1:]
+    if rest and rest[0] == "WITH":
+        if len(rest) < 2 or rest[1] in _OPERATORS:  # noqa: PLR2004
+            raise _MalformedExpressionError
+        rest = rest[2:]
     return head in ALLOWED, rest
 
 

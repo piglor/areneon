@@ -1,4 +1,4 @@
-# pokepaste-guard: allow  (synthetic sets used only to exercise the guard)
+# Synthetic sets used only to exercise the guard; listed in .pokepaste-guard-allow.
 from __future__ import annotations
 
 from pathlib import Path
@@ -44,6 +44,9 @@ def test_ignores_non_sets(text: str) -> None:
     assert not guard.looks_like_pokepaste(text)
 
 
+ALLOWLIST = frozenset({"docs/fake-team.md"})
+
+
 @pytest.mark.parametrize(
     ("path", "allowed"),
     [
@@ -51,16 +54,24 @@ def test_ignores_non_sets(text: str) -> None:
         ("./fixtures/sample.txt", True),
         ("docs/fixtures/team.txt", False),
         ("docs/team.txt", False),
+        ("./docs/fake-team.md", True),
         (".", False),
     ],
 )
 def test_allowed_paths(path: str, allowed: bool) -> None:
-    assert guard.is_allowed_path(path) is allowed
+    assert guard.is_allowed_path(path, ALLOWLIST) is allowed
 
 
-def test_allow_marker_only_counts_in_header() -> None:
-    assert guard.has_allow_marker("# pokepaste-guard: allow\n" + SET)
-    assert not guard.has_allow_marker(SET + "\n# pokepaste-guard: allow\n")
+def test_load_allowlist(tmp_path: Path) -> None:
+    listing = tmp_path / "allow"
+    listing.write_text("# comment\n./docs/a.md  # why\n\ntests/b.py\n", encoding="utf-8")
+    assert guard.load_allowlist(str(listing)) == {"docs/a.md", "tests/b.py"}
+    assert guard.load_allowlist(str(tmp_path / "missing")) == frozenset()
+
+
+def test_repo_allowlist_only_lists_existing_files() -> None:
+    for entry in guard.load_allowlist():
+        assert Path(entry).is_file(), entry
 
 
 def write(tmp: Path, name: str, text: str) -> str:
@@ -73,12 +84,14 @@ def write(tmp: Path, name: str, text: str) -> str:
 def test_violations_and_main(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.chdir(tmp_path)
     bad = write(tmp_path, "team.txt", SET)
-    buried = write(tmp_path, "buried.txt", SET + "\npokepaste-guard: allow\n")
-    marked = write(tmp_path, "doc.md", "pokepaste-guard: allow\n" + SET)
+    marked = write(tmp_path, "doc.md", "pokepaste-guard: allow\n" + SET)  # markers no longer exempt
+    listed = write(tmp_path, "docs/fake-team.md", SET)
     write(tmp_path, "fixtures/sample.txt", SET)
+    write(tmp_path, guard.ALLOWLIST_FILE, "docs/fake-team.md\n")
     binary = tmp_path / "blob.bin"
     binary.write_bytes(b"\xff\xfe\x00")
-    paths = [bad, buried, marked, "fixtures/sample.txt", str(binary), "missing.txt", str(tmp_path)]
-    assert guard.violations(paths) == [bad, buried]
+    paths = [bad, marked, "fixtures/sample.txt", str(binary), "missing.txt", str(tmp_path)]
+    assert guard.violations(paths) == [bad, marked]
     assert guard.main(paths) == 1
-    assert guard.main([marked]) == 0
+    assert guard.main(["docs/fake-team.md"]) == 0
+    assert Path(listed).is_file()

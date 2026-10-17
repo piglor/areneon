@@ -1,0 +1,3 @@
+# Exact repo-relative paths exempt from scripts/check_no_pokepaste.py.
+# Every entry must hold only synthetic, deliberately fake sets. Reviewed in PRs.
+tests/scripts/test_check_no_pokepaste.py

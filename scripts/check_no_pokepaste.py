@@ -2,10 +2,9 @@
 
 Real competitive teams are private and must never be committed. Public
 fixtures live under the top-level ``fixtures/`` directory and must be
-synthetic or sanitized. A file elsewhere may opt out only by putting the
-marker ``pokepaste-guard: allow`` in its first ``HEADER_LINES`` lines (for
-example a test that holds a deliberately fake set), so a marker buried in a
-pasted team does not disable the check.
+synthetic or sanitized. Any other exemption must be listed by exact path in
+``ALLOWLIST_FILE``, so every exception is visible in review; nothing inside a
+file can switch the check off.
 """
 
 from __future__ import annotations
@@ -16,8 +15,7 @@ from collections.abc import Sequence
 from pathlib import Path, PurePosixPath
 
 ALLOWED_TOP_DIRS = frozenset({"fixtures"})
-ALLOW_MARKER = "pokepaste-guard: allow"
-HEADER_LINES = 5
+ALLOWLIST_FILE = ".pokepaste-guard-allow"
 MIN_MOVES = 2
 MIN_SET_MARKERS = 2
 
@@ -45,26 +43,34 @@ def looks_like_pokepaste(text: str) -> bool:
     return markers >= MIN_SET_MARKERS
 
 
-def is_allowed_path(path: str) -> bool:
+def normalise(path: str) -> str:
     parts = PurePosixPath(Path(path).as_posix()).parts
-    parts = tuple(part for part in parts if part != ".")
-    return bool(parts) and parts[0] in ALLOWED_TOP_DIRS
+    return "/".join(part for part in parts if part != ".")
 
 
-def has_allow_marker(text: str) -> bool:
-    return any(ALLOW_MARKER in line for line in text.splitlines()[:HEADER_LINES])
+def load_allowlist(path: str = ALLOWLIST_FILE) -> frozenset[str]:
+    """Exact repo-relative paths exempt from the guard (``#`` starts a comment)."""
+    try:
+        lines = Path(path).read_text(encoding="utf-8").splitlines()
+    except FileNotFoundError:
+        return frozenset()
+    entries = (line.split("#", 1)[0].strip() for line in lines)
+    return frozenset(normalise(entry) for entry in entries if entry)
 
 
-def violations(paths: Sequence[str]) -> list[str]:
+def is_allowed_path(path: str, allowlist: frozenset[str] = frozenset()) -> bool:
+    normal = normalise(path)
+    return normal.split("/", 1)[0] in ALLOWED_TOP_DIRS or normal in allowlist
+
+
+def violations(paths: Sequence[str], allowlist: frozenset[str] = frozenset()) -> list[str]:
     found: list[str] = []
     for path in paths:
-        if is_allowed_path(path):
+        if is_allowed_path(path, allowlist):
             continue
         try:
             text = Path(path).read_text(encoding="utf-8")
         except (UnicodeDecodeError, FileNotFoundError, IsADirectoryError):
-            continue
-        if has_allow_marker(text):
             continue
         if looks_like_pokepaste(text):
             found.append(path)
@@ -73,7 +79,7 @@ def violations(paths: Sequence[str]) -> list[str]:
 
 def main(argv: Sequence[str] | None = None) -> int:
     paths = list(sys.argv[1:] if argv is None else argv)
-    bad = violations(paths)
+    bad = violations(paths, load_allowlist())
     for path in bad:
         print(
             f"{path}: looks like a PokePaste team. Private teams belong in "

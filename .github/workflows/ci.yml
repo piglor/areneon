@@ -45,7 +45,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: astral-sh/setup-uv@v10.3.0
-      - run: git ls-files -z | xargs -0 uv run --no-project python scripts/check_no_pokepaste.py
+      - run: make team-guard
 
   licences:
     runs-on: ubuntu-latest
@@ -59,10 +59,7 @@ jobs:
       - uses: astral-sh/setup-uv@v10.3.0
       - run: pnpm install --frozen-lockfile
       - name: production licences on allowlist (fails closed)
-        shell: bash
-        run: |
-          set -euo pipefail
-          pnpm -r licenses list --prod --json | uv run --no-project python scripts/check_licenses.py
+        run: make licences
 
   gitleaks:
     runs-on: ubuntu-latest
@@ -94,7 +91,9 @@ jobs:
             ./
 
   dco:
-    if: github.event_name == 'pull_request'
+    # Dependabot cannot sign off; skip only when GitHub says the PR author is
+    # Dependabot (commit author emails can be set by anyone).
+    if: github.event_name == 'pull_request' && github.event.pull_request.user.login != 'dependabot[bot]'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7.0.1
@@ -107,10 +106,6 @@ jobs:
         run: |
           missing=0
           for c in $(git rev-list --no-merges "$BASE..$HEAD"); do
-            # Dependabot cannot sign off; its commits are machine-generated version bumps.
-            if [ "$(git show -s --format=%ae "$c")" = "49699333+dependabot[bot]@users.noreply.github.com" ]; then
-              continue
-            fi
             if ! git show -s --format=%B "$c" | grep -q '^Signed-off-by: '; then
               echo "::error::commit $c is missing Signed-off-by (use git commit -s)"
               missing=1
@@ -128,4 +123,4 @@ jobs:
           RESULTS: ${{ toJSON(needs.*.result) }}
         run: |
           echo "$RESULTS"
-          echo "$RESULTS" | grep -Eq '"(failure|cancelled)"' && exit 1 || exit 0
+          ! echo "$RESULTS" | grep -Eq '"(failure|cancelled)"'
