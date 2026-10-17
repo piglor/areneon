@@ -1,0 +1,7 @@
+private-data/
+*.private.txt
+.env
+.venv/
+node_modules/
+__pycache__/
+.claude/
