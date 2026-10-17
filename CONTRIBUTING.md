@@ -9,7 +9,7 @@ Thanks for your interest. Areneon is pre-alpha (Wave 1).
 
 ## Ground rules
 
-- **Never commit a real competitive team.** Private teams go in the gitignored `private-data/`. Public fixtures under `fixtures/` must be synthetic or sanitized and are CC0. A pre-commit hook rejects PokePaste-shaped files elsewhere.
+- **Never commit a real competitive team.** Private teams go in the gitignored `private-data/`. Public fixtures under `fixtures/` must be synthetic or sanitized and are CC0. A pre-commit hook and CI reject PokePaste-shaped files elsewhere; the only exemptions are exact paths listed in `.pokepaste-guard-allow`.
 - **Do not copy AGPL code** (the Pokémon Showdown client, Champions Calc). Write independently.
 - The pinned Showdown engine is the only authority on legality. Areneon code never declares a choice legal by itself.
 
@@ -18,13 +18,12 @@ Thanks for your interest. Areneon is pre-alpha (Wave 1).
 Requirements: Node 24 LTS, pnpm 10, [uv](https://docs.astral.sh/uv/) (installs Python 3.12).
 
 ```bash
-git clone --recurse-submodules https://github.com/piglor/areneon.git
+git clone https://github.com/piglor/areneon.git
 cd areneon
-uv sync
-pnpm install
-uv run pre-commit install
-make check   # lint, types, tests for Python and TypeScript
+make setup check   # install everything, then run every offline CI gate
 ```
+
+`gitleaks` and `osv-scanner` run in CI. The pinned Showdown submodule arrives with Redmine #670, after which you will clone with `--recurse-submodules`.
 
 ## Commits and pull requests
 

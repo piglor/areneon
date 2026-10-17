@@ -114,9 +114,9 @@ This is an internal Areneon skill (general lessons inherited from PiglorOS, Rust
 
 ## CI / GitHub Actions
 
-- **Every test type must run in CI — no local-only tests.** (PiglorOS wording below refers to cargo-nextest; for Areneon read: pytest and vitest jobs must collect every test, including skipped/marked ones, and you must name the CI job that runs a new test.) GitHub Actions (`.github/workflows/ci.yml`) is the single source of truth for what passes. When adding any test — unit test, integration test (`tests/` directory), doctest, or `#[ignore]`d test — verify that the `test` job's `cargo nextest run --workspace --all-features --locked --run-ignored all` (or, for doctests, its `cargo test --doc -- --include-ignored` step) actually executes it. `--run-ignored all` / `--include-ignored` is mandatory so `#[ignore]` cannot silently skip. If you write an integration test that lives in `tests/`, it MUST be picked up by the workspace test job; if it isn't, the test is dead and the CI green light is a lie. Before claiming a ticket is done, name the CI job/steps that run your new test.
+- **Every test type must run in CI — no local-only tests.** GitHub Actions (`.github/workflows/ci.yml`) is the single source of truth for what passes. pytest collects `tests/` and vitest runs every `packages/*` project from the root `vitest.config.ts`; a test outside those roots, or skipped by a marker CI never enables, is dead and the green light is a lie. Before claiming a ticket is done, name the CI job and step that runs your new test.
 
-- **GitHub Actions workflow `name:` must be lowercase-with-hyphens.** All workflow YAML files under `.github/workflows/` must use the same naming convention: lowercase words separated by hyphens (e.g. `name: ci`, `name: cargo-deny`, `name: deploy`, `name: trunk-check`). No PascalCase (`Deploy`, `Trunk Check`), no ALLCAPS. This keeps the Actions sidebar predictable and sortable.
+- **GitHub Actions workflow `name:` must be lowercase-with-hyphens.** All workflow YAML files under `.github/workflows/` must use the same naming convention: lowercase words separated by hyphens (e.g. `name: ci`, `name: deploy`). No PascalCase (`Deploy`, `Trunk Check`), no ALLCAPS. This keeps the Actions sidebar predictable and sortable.
 
 - **Treat hosted CI as an independent environment probe.** Permission, non-root process identity, ordering, cache, target, and runner behavior can differ from a root local checkout. Overlap independent review with hosted latency, but do not substitute either evidence stream for the other.
 
@@ -144,7 +144,7 @@ This is an internal Areneon skill (general lessons inherited from PiglorOS, Rust
 
 - **Synchronize on semantic prerequisites, not progress proxies.** Poll for the exact file, directory, child state, or other observable condition an operation needs, with child-exit detection and a bounded deadline. Arbitrary file counts and sleeps become flaky under sanitizer overhead and concurrent subprocess contention.
 
-- **Treat repository policy as stronger than tool suggestions.** Compiler help text, formatter output, and a single lint message are local hints. Check the configured Trunk/Clippy policy and existing conventions before applying a suggestion; intentional must-use drops, combinator changes, and suppressions must satisfy the repository contract.
+- **Treat repository policy as stronger than tool suggestions.** Compiler help text, formatter output, and a single lint message are local hints. Check the configured ruff/eslint/mypy policy and existing conventions before applying a suggestion; intentional must-use drops, combinator changes, and suppressions must satisfy the repository contract.
 
 - **Keep workflow changes minimal and executable.** Remove whitespace-only churn, use the repository’s naming conventions, and verify folded shell commands, quoting, environment transport, path filters, timeouts, cancellation behavior, and aggregators on the actual runner. Performance improvements should be measured; do not hide architectural debt with larger timeouts.
 

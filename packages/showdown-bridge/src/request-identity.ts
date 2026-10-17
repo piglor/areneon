@@ -9,6 +9,10 @@ export type Json = null | boolean | number | string | Json[] | { [key: string]: 
  * whichever path (headless sim or browser client) observed them.
  */
 export function canonicalJson(value: Json): string {
+  if (typeof value === "number" && !Number.isFinite(value)) {
+    // JSON.stringify would turn NaN/Infinity into null and collide with it.
+    throw new RangeError(`canonicalJson: non-finite number ${value}`);
+  }
   if (value === null || typeof value !== "object") {
     return JSON.stringify(value);
   }
