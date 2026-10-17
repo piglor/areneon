@@ -4,4 +4,11 @@ private-data/
 .venv/
 node_modules/
 __pycache__/
-.claude/
+.claude/settings.local.json
+skills-lock.json
+coverage/
+.coverage
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+dist/
