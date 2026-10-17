@@ -20,4 +20,4 @@ repos:
         entry: pnpm exec eslint
         language: system
         files: \.(ts|js)$
-        exclude: ^\.agents/
+        exclude: ^(\.agents|vendor)/

@@ -18,13 +18,13 @@ Thanks for your interest. Areneon is pre-alpha (Wave 1).
 Requirements: Node 24 LTS, pnpm 10, [uv](https://docs.astral.sh/uv/) (installs Python 3.12).
 
 ```bash
-git clone --recurse-submodules https://github.com/piglor/areneon.git
+git clone https://github.com/piglor/areneon.git
 cd areneon
-uv sync
-pnpm install
-uv run pre-commit install
-make check   # lint, types, tests for Python and TypeScript
+uv sync && pnpm install && uv run pre-commit install
+make check   # every offline CI gate: lint, types, tests, team guard, licences
 ```
+
+`gitleaks` and `osv-scanner` run in CI. The pinned Showdown submodule arrives with Redmine #670, after which you will clone with `--recurse-submodules`.
 
 ## Commits and pull requests
 

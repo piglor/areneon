@@ -1,4 +1,4 @@
-blank_issues_enabled: true
+blank_issues_enabled: false
 contact_links:
   - name: Engineering work, ADRs and experiments (Redmine)
     url: https://redmine.piglor.com/projects/areneon

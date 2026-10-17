@@ -1,9 +1,11 @@
 """Reject PokePaste-shaped team files outside ``fixtures/``.
 
 Real competitive teams are private and must never be committed. Public
-fixtures live under ``fixtures/`` and must be synthetic or sanitized. A file
-elsewhere may opt out with the marker ``pokepaste-guard: allow`` (for example
-documentation that shows a deliberately fake set).
+fixtures live under the top-level ``fixtures/`` directory and must be
+synthetic or sanitized. A file elsewhere may opt out only by putting the
+marker ``pokepaste-guard: allow`` in its first ``HEADER_LINES`` lines (for
+example a test that holds a deliberately fake set), so a marker buried in a
+pasted team does not disable the check.
 """
 
 from __future__ import annotations
@@ -13,32 +15,44 @@ import sys
 from collections.abc import Sequence
 from pathlib import Path, PurePosixPath
 
-ALLOWED_PREFIXES = ("fixtures/",)
+ALLOWED_TOP_DIRS = frozenset({"fixtures"})
 ALLOW_MARKER = "pokepaste-guard: allow"
+HEADER_LINES = 5
 MIN_MOVES = 2
+MIN_SET_MARKERS = 2
 
-_ABILITY = re.compile(r"^\s*Ability:\s*\S", re.MULTILINE)
 _MOVE = re.compile(r"^\s*-\s+\S", re.MULTILINE)
-_STATS = re.compile(r"^\s*(EVs|IVs|SPs|Stat Points):\s*\d", re.MULTILINE)
-_NATURE = re.compile(r"^\s*\w+ Nature\s*$", re.MULTILINE)
+_SET_MARKERS = (
+    re.compile(r"^\s*Ability:\s*\S", re.MULTILINE),
+    re.compile(r"^\s*(EVs|IVs|SPs|Stat Points):\s*\d", re.MULTILINE),
+    re.compile(r"^\s*\w+ Nature\s*$", re.MULTILINE),
+    re.compile(r"^[^\n@-][^\n@]* @ \S[^\n]*$", re.MULTILINE),  # "Species @ Item"
+    re.compile(r"^\s*Tera Type:\s*\S", re.MULTILINE),
+    re.compile(r"^\s*Level:\s*\d", re.MULTILINE),
+)
 
 
 def looks_like_pokepaste(text: str) -> bool:
     """True when ``text`` contains at least one PokePaste set.
 
-    A set is recognised by an ``Ability:`` line plus at least two move lines
-    and either a stat-spread line or a nature line.
+    A set is recognised by at least ``MIN_MOVES`` move lines plus at least
+    ``MIN_SET_MARKERS`` distinct set markers (ability, stat spread, nature,
+    ``Species @ Item`` header, Tera type, level).
     """
-    if not _ABILITY.search(text):
-        return False
     if len(_MOVE.findall(text)) < MIN_MOVES:
         return False
-    return bool(_STATS.search(text) or _NATURE.search(text))
+    markers = sum(1 for pattern in _SET_MARKERS if pattern.search(text))
+    return markers >= MIN_SET_MARKERS
 
 
 def is_allowed_path(path: str) -> bool:
-    posix = PurePosixPath(path).as_posix()
-    return posix.startswith(ALLOWED_PREFIXES)
+    parts = PurePosixPath(Path(path).as_posix()).parts
+    parts = tuple(part for part in parts if part != ".")
+    return bool(parts) and parts[0] in ALLOWED_TOP_DIRS
+
+
+def has_allow_marker(text: str) -> bool:
+    return any(ALLOW_MARKER in line for line in text.splitlines()[:HEADER_LINES])
 
 
 def violations(paths: Sequence[str]) -> list[str]:
@@ -50,7 +64,7 @@ def violations(paths: Sequence[str]) -> list[str]:
             text = Path(path).read_text(encoding="utf-8")
         except (UnicodeDecodeError, FileNotFoundError, IsADirectoryError):
             continue
-        if ALLOW_MARKER in text:
+        if has_allow_marker(text):
             continue
         if looks_like_pokepaste(text):
             found.append(path)

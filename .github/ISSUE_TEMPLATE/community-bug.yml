@@ -1,0 +1,18 @@
+name: Community bug report or question
+description: For people outside the core team. Internal work goes to Redmine.
+labels: [needs-triage]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not paste a real competitive team, credentials or other players' battle logs.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce (versions, commands)

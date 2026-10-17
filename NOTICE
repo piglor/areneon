@@ -5,11 +5,6 @@ This product is licensed under the Apache License, Version 2.0 (see LICENSE).
 Files under fixtures/ are dedicated to the public domain under CC0 1.0
 (see fixtures/LICENSE).
 
-This product uses, as a pinned git submodule, Pokémon Showdown
-(https://github.com/smogon/pokemon-showdown), licensed under the MIT
-License. Its copyright notice and licence text are retained unmodified in
-vendor/pokemon-showdown/LICENSE.
-
 Trademarks: Pokémon and all related names are trademarks of Nintendo,
 Creatures Inc., GAME FREAK inc. and The Pokémon Company. Areneon is an
 independent open-source project and is not affiliated with, endorsed by, or

@@ -1,6 +1,6 @@
 # Areneon
 
-Open-source competitive VGC Doubles AI sparring partner for Pokémon Showdown (Champions Regulation M-C, Closed Team Sheet).
+Open-source competitive VGC Doubles AI sparring partner for Pokémon Showdown (Champions Regulation M-C, Closed Team Sheet: Bo1 with Open Team Sheets declined).
 
 **Status: Wave 1 (foundation), pre-alpha. No trained model exists yet.**
 
@@ -11,13 +11,15 @@ Open-source competitive VGC Doubles AI sparring partner for Pokémon Showdown (C
 
 ## Layout
 
+Target layout (ADR-002). Entries marked *planned* do not exist yet.
+
 ```
-packages/schema/             JSON Schema contracts (source of truth)
-packages/showdown-bridge/    TS: headless runner, request decoder, legal choices
-packages/showdown-extension/ TS: Chromium MV3 read-only advisor
-vendor/pokemon-showdown/     pinned upstream simulator (git submodule)
+packages/showdown-bridge/    TS: request identity today; headless runner, decoder, legal choices next
+packages/schema/             planned (#671): JSON Schema contracts (source of truth)
+packages/showdown-extension/ planned (#672): Chromium MV3 read-only advisor
+vendor/pokemon-showdown/     planned (#670): pinned upstream simulator (git submodule)
 fixtures/                    sanitized/synthetic fixtures only (CC0)
-spikes/                      experiment code, promoted or deleted
+spikes/                      planned: experiment code, promoted or deleted
 private-data/                gitignored: your private teams
 ```
 
