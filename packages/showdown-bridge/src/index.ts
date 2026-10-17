@@ -5,6 +5,7 @@ export {
   loadEngine,
   PINNED_SHOWDOWN_COMMIT,
   type PokemonSet,
+  type StatTable,
 } from "./engine.ts";
 export {
   type FormatSpec,
@@ -29,6 +30,7 @@ export {
   type BattleRecord,
   InvalidTeamError,
   type Player,
+  replayActor,
   type RequestRecord,
   runBattle,
 } from "./runner.ts";

@@ -15,6 +15,10 @@ describe("decodeRequest on the golden fixtures", () => {
     expect(decoded.phase).toBe("preview");
     expect(decoded.player).toBe("p1");
     expect(decoded.preview).toEqual({ teamSize: 6, maxChosenTeamSize: 4 });
+    // Two leads: the engine's own first turn request has two active slots,
+    // matching what the registry declares.
+    const turn = decodeRequest(JSON.stringify(fixture("turn.request.json").request));
+    expect(turn.request.active).toHaveLength(2);
     expect(SUPPORTED_FORMATS.gen9championsvgc2026regmc?.activeSlots).toBe(2);
     expect(decoded.request_hash).toBe(request_hash);
     expect(decoded.rqid).toBeUndefined();

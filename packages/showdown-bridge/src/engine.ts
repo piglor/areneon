@@ -15,6 +15,8 @@ export const DEFAULT_SHOWDOWN_DIR = fileURLToPath(
   new URL("../../../vendor/pokemon-showdown", import.meta.url),
 );
 
+export type StatTable = Record<"hp" | "atk" | "def" | "spa" | "spd" | "spe", number>;
+
 /** One set as Showdown's team validator and `Teams.pack` accept it. */
 export interface PokemonSet {
   name: string;
@@ -25,8 +27,8 @@ export interface PokemonSet {
   nature: string;
   gender: string;
   /** In the `champions` mod these hold Stat Points, not EVs. */
-  evs: Record<"hp" | "atk" | "def" | "spa" | "spd" | "spe", number>;
-  ivs: Record<"hp" | "atk" | "def" | "spa" | "spd" | "spe", number>;
+  evs: StatTable;
+  ivs: StatTable;
   level: number;
 }
 

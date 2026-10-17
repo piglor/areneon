@@ -1,11 +1,11 @@
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Engine, PokemonSet } from "./engine.ts";
 import type { VersionManifest } from "./formats.ts";
-import type { RequestPhase } from "./request.ts";
-import type { JsonObject } from "./request.ts";
-import { type Actor, type BattleRecord, runBattle } from "./runner.ts";
+import type { JsonObject, RequestPhase } from "./request.ts";
+import { type Actor, type BattleRecord, type Player, runBattle } from "./runner.ts";
 
 /** Sanitized request fixtures for the pinned engine (CC0, see fixtures/LICENSE). */
 export const GOLDEN_DIR = fileURLToPath(
@@ -49,6 +49,37 @@ export function goldenBattle(engine: Engine): Promise<BattleRecord> {
     teams: { p1: team, p2: team },
     actors: { p1: engineDefault, p2: engineDefault },
   });
+}
+
+export const GOLDEN_SUMMARY = "battle.summary.json";
+
+/**
+ * Committed identity of the whole golden battle. A fresh process must
+ * reproduce `omniscient_log_sha256` exactly; the log itself is not
+ * committed because it carries both sides' hidden information.
+ */
+export interface BattleSummary {
+  provenance: string;
+  manifest: VersionManifest;
+  seed: string;
+  winner: Player | null;
+  turns: number;
+  omniscient_log_sha256: string;
+  choices: BattleRecord["choices"];
+}
+
+export function battleSummary(record: BattleRecord): BattleSummary {
+  return {
+    provenance: "synthetic: Areneon golden battle, engine default choices",
+    manifest: record.manifest,
+    seed: record.seed,
+    winner: record.winner,
+    turns: record.turns,
+    omniscient_log_sha256: createHash("sha256")
+      .update(record.omniscient_log.join("\n"))
+      .digest("hex"),
+    choices: record.choices,
+  };
 }
 
 /** The first p1 request of each golden phase, keyed by fixture file name. */

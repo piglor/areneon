@@ -5,6 +5,7 @@ import {
   BattleAbortedError,
   InvalidTeamError,
   loadEngine,
+  replayActor,
   runBattle,
   UnsupportedFormatError,
 } from "../src/index.ts";
@@ -32,12 +33,12 @@ describe("runBattle", () => {
       expect(requests.every((r) => r.player === player && r.rqid === undefined)).toBe(true);
       expect(requests[0]?.phase).toBe("preview");
     }
-    expect(record.log.some((line) => line.startsWith("|t:|"))).toBe(false);
+    expect(record.omniscient_log.some((line) => line.startsWith("|t:|"))).toBe(false);
   });
 
   it("reproduces the same sim log from the same commit, seed and choices", async () => {
     const [a, b] = await Promise.all([goldenBattle(engine), goldenBattle(engine)]);
-    expect(a.log).toEqual(b.log);
+    expect(a.omniscient_log).toEqual(b.omniscient_log);
     expect(a.choices).toEqual(b.choices);
   });
 
@@ -46,7 +47,7 @@ describe("runBattle", () => {
     const b = await runBattle(
       options({ p1: engineDefault, p2: engineDefault }, { seed: "sodium,ffeeddccbbaa99887766554433221100" }),
     );
-    expect(b.log).not.toEqual(a.log);
+    expect(b.omniscient_log).not.toEqual(a.omniscient_log);
   });
 
   it("passes each actor only its own requests", async () => {
@@ -59,10 +60,26 @@ describe("runBattle", () => {
     expect(new Set(seen)).toEqual(new Set(["p1"]));
   });
 
+  it("replays explicit recorded choices to the same log", async () => {
+    const reversed: Actor = (request) => (request.phase === "preview" ? "team 6543" : "default");
+    const original = await runBattle(options({ p1: reversed, p2: engineDefault }));
+    expect(original.choices[0]).toMatchObject({ player: "p1", request_seq: 1, choice: "team 6543" });
+    const replayed = await runBattle(
+      options({ p1: replayActor(original.choices, "p1"), p2: replayActor(original.choices, "p2") }),
+    );
+    expect(replayed.omniscient_log).toEqual(original.omniscient_log);
+  });
+
+  it("aborts a replay that runs out of recorded choices", async () => {
+    await expect(
+      runBattle(options({ p1: replayActor([], "p1"), p2: engineDefault })),
+    ).rejects.toThrow(/no recorded choice/);
+  });
+
   it("forces a tie at the turn limit", async () => {
     const record = await runBattle(options({ p1: engineDefault, p2: engineDefault }, { maxTurns: 1 }));
     expect(record.winner).toBeNull();
-    expect(record.log).toContain("|tie");
+    expect(record.omniscient_log).toContain("|tie");
   });
 
   it("aborts on a choice the engine rejects", async () => {

@@ -10,7 +10,7 @@ const PLAYERS: readonly Player[] = ["p1", "p2"];
  * omniscient stream. The engine judges the choice: any `|error|` aborts the
  * battle rather than being retried.
  */
-export type Actor = (request: DecodedRequest) => string | Promise<string>;
+export type Actor = (request: RequestRecord) => string | Promise<string>;
 
 export interface BattleOptions {
   engine: Engine;
@@ -38,7 +38,7 @@ export interface BattleRecord {
    * Omniscient sim log with wall-clock `|t:|` lines removed. It holds both
    * sides' hidden information: an evaluation artifact, never an actor input.
    */
-  log: string[];
+  omniscient_log: string[];
   requests: Record<Player, RequestRecord[]>;
   choices: { player: Player; request_seq: number; choice: string }[];
 }
@@ -59,8 +59,25 @@ export class BattleAbortedError extends Error {
 }
 
 /**
+ * Replay one player's recorded choices, matched by `request_seq`. Together
+ * with the same engine, format, seed and teams this reproduces a battle.
+ */
+export function replayActor(choices: BattleRecord["choices"], player: Player): Actor {
+  const bySeq = new Map(
+    choices.filter((c) => c.player === player).map((c) => [c.request_seq, c.choice]),
+  );
+  return (request) => {
+    const choice = bySeq.get(request.request_seq);
+    if (choice === undefined) {
+      throw new BattleAbortedError(`${player}: no recorded choice for this request`);
+    }
+    return choice;
+  };
+}
+
+/**
  * Run one headless battle on the in-process sim (runtime A1). Same engine,
- * format, seed, teams and choices always produce the same `log`.
+ * format, seed, teams and choices always produce the same `omniscient_log`.
  */
 export async function runBattle(options: BattleOptions): Promise<BattleRecord> {
   const { engine, formatId, seed, teams, actors, maxTurns = 300 } = options;
@@ -77,7 +94,7 @@ export async function runBattle(options: BattleOptions): Promise<BattleRecord> {
     seed,
     winner: null,
     turns: 0,
-    log: [],
+    omniscient_log: [],
     requests: { p1: [], p2: [] },
     choices: [],
   };
@@ -98,7 +115,7 @@ export async function runBattle(options: BattleOptions): Promise<BattleRecord> {
     for await (const chunk of streams.omniscient) {
       for (const line of chunk.split("\n")) {
         if (line.startsWith("|t:|")) continue;
-        record.log.push(line);
+        record.omniscient_log.push(line);
         if (line.startsWith("|turn|")) {
           record.turns = Number(line.slice("|turn|".length));
           if (record.turns > maxTurns) streams.omniscient.write(">forcetie");
