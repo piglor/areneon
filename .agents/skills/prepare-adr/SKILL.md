@@ -122,13 +122,27 @@ readers infer which source supports a claim from an undifferentiated link list.
 
 ## 4. Publish a Proposed ADR, then pause
 
+Every ADR is tracked by three linked records:
+
+```text
+Roadmap version (Wave N)
+  └─ Epic  "[Epic][ADR-NNN] <title>"   tracker Epic, fixed_version = Wave N
+       ├─ ADR issue "[ADR-NNN] <title>" tracker ADR, status Proposed → Accepted
+       └─ implementation tickets       Feature/Task, no fixed version (inherit)
+```
+
+Create or reuse the Epic first and assign it to the Wave's roadmap version;
+then create the ADR-tracker issue as its child. The ADR issue's status is the
+status of record. Implementation tickets are children of the Epic, not of the
+ADR issue, and carry no fixed version of their own.
+
 Create a Markdown Redmine wiki page with `ADR` as its parent. Use the next
 unique ADR number after checking existing wiki titles. Include:
 
 ```markdown
 **Status:** Proposed | **Wave:** <wave> | **Deciders:** core team | **Date:** <date>
 
-Related: #ticket · [[related ADR]]
+ADR issue: #<adr-issue> · Epic: #<epic> · Related: [[related ADR]]
 
 ---
 
@@ -143,8 +157,10 @@ Related: #ticket · [[related ADR]]
 ```
 
 The Sources section must map links to claims, not be a link dump. Add a
-Redmine journal note with the ADR link, selected option, main trade-off, and
-the decision needed from the user. Do not implement a significant new contract
+journal note on the ADR issue with the ADR link, selected option, main
+trade-off, and the decision needed from the user. Reviews (independent,
+plan-stage or owner) are journal notes on the ADR issue, never separate wiki
+pages. Do not implement a significant new contract
 until the ADR is accepted, unless the user explicitly authorizes proceeding
 while it is Proposed.
 
@@ -171,4 +187,6 @@ Before presenting the ADR, re-read it and verify:
 - [ ] Deterministic configurable policy is identity-bound, not only range-checked.
 - [ ] Risks include a mitigation or an explicit acceptance decision.
 - [ ] Redmine page is Markdown, parented under `ADR`, marked Proposed, and
-      journaled on the ticket.
+      journaled on the ADR issue.
+- [ ] The ADR issue (tracker ADR) is a child of an Epic whose fixed version
+      is the Wave's roadmap version, and the page header links both.

@@ -22,6 +22,10 @@ Rules for managing ADR pages on the Redmine wiki at `redmine.piglor.com/projects
 
 3. **When fixing an orphaned ADR**, fetch the page's current text first (`GET /projects/areneon/wiki/<title>.json`), then PUT with `parent_title=ADR` and the original text.
 
+3a. **Only ADR pages live under `ADR`.** Reviews, CTO or plan-stage assessments, meeting notes and status reports are journal notes on the ADR issue (or the Wave gate ticket), never wiki pages in the ADR hierarchy.
+
+3b. **Every ADR has an ADR issue and an Epic on the roadmap.** The ADR-tracker issue `[ADR-NNN] <title>` is a child of the Epic `[Epic][ADR-NNN] <title>`, whose fixed version is the Wave's roadmap version. The ADR catalog page lists both issue numbers for each ADR. See `prepare-adr` §4.
+
 ## Markdown formatting
 
 4. **ADR wiki pages use Markdown, not Textile.** Formatting rules:
@@ -40,7 +44,7 @@ Rules for managing ADR pages on the Redmine wiki at `redmine.piglor.com/projects
    ```
    **Status:** ... | **Wave:** ... | **Deciders:** ...
    
-   Related: [[ADR-NNN_...]] · #ticket
+   ADR issue: #<adr-issue> · Epic: #<epic> · Related: [[ADR-NNN_...]]
    
    ---
    
@@ -91,6 +95,8 @@ Rules for managing ADR pages on the Redmine wiki at `redmine.piglor.com/projects
 ## Pre-flight
 
 - [ ] The page is parented under `ADR` and uses Markdown.
+- [ ] The page is an ADR, not a review or report.
+- [ ] The ADR issue exists under an Epic assigned to the Wave roadmap version.
 - [ ] Status reflects the least-approved active decision on the page.
 - [ ] The exact reviewed revision and approval scope are explicit.
 - [ ] Tables have contiguous structural rows.

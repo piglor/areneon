@@ -25,8 +25,18 @@ Run `GET /issues/<number>.json?include=journals` via the Redmine MCP.
 
 ## ADRs
 
-ADRs are wiki pages on Redmine, not issues. Redmine wiki pages accept **Markdown** (not Textile). Create them at:
-`PUT /projects/areneon/wiki/ADR-XXX_<Title>.json` with `{ "wiki_page": { "text": "<markdown content>", "comments": "..." } }`
+The ADR text is a wiki page on Redmine, parented under `ADR`. Redmine wiki pages accept **Markdown** (not Textile). Create them at:
+`PUT /projects/areneon/wiki/ADR-XXX_<Title>.json` with `{ "wiki_page": { "text": "<markdown content>", "parent_title": "ADR", "comments": "..." } }`
+
+Each ADR is also tracked on the roadmap:
+
+| Record | Tracker | Parent | Fixed version |
+|---|---|---|---|
+| `[Epic][ADR-NNN] <title>` | Epic (9) | — | Wave roadmap version |
+| `[ADR-NNN] <title>` | ADR (5), Proposed (7) → Under Review (8) → Accepted (9) / Rejected (6) / Superseded (10) | the Epic | none (inherits) |
+| Implementation tickets | Feature (2) / Task (4) / Bug (1) | the Epic | none (inherits) |
+
+Reviews are journal notes on the ADR issue. Only ADR pages go under the `ADR` wiki parent.
 
 ## Wayfinding operations
 
