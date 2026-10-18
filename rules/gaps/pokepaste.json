@@ -3,7 +3,7 @@
   "gap_id": "pokepaste",
   "area": "PokePaste",
   "status": "unverified",
-  "description": "`Teams.import` reads Stat Points from the `EVs:` line and silently skips lines it does not know (an `SPs:` line leaves every Stat Point at 0). A repeated line overwrites the earlier one. Areneon's `importPaste` rejects a paste unless each Pokémon's lines all reappear in that Pokémon's re-export, so it accepts only the engine's canonical form (reordered stats, `Level: 100` or a teambuilder header are rejected). Team legality messages are logged in `fixtures/teams/<format>/verdicts.json`.",
+  "description": "`Teams.import` reads Stat Points from the `EVs:` line and silently skips lines it does not know (an `SPs:` line leaves every Stat Point at 0). A repeated line overwrites the earlier one. Areneon's `importPaste` rejects a paste unless each Pokémon's lines all reappear in that Pokémon's re-export, so it accepts only the engine's canonical form (reordered stats, `Level: 100`, `IVs: 31`, a lowercase or misspelt species or a teambuilder header are rejected; revisit if hand-written or third-party pastes become an input path). Team legality messages are logged in `fixtures/teams/<format>/verdicts.json`.",
   "evidence": [
     {
       "kind": "engine",
