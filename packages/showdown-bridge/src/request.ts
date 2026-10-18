@@ -26,12 +26,20 @@ export class RequestDecodeError extends Error {
 // does not send, or one no supported format uses, fails here, before hashing.
 const validEngineRequest = ajvFor("engine-mirror").compile(engineRequestSchema);
 
+// One marker per engine request variant (`sim/side.ts` ChoiceRequest). The
+// schema is one closed object, so it cannot refuse two markers at once.
+const PHASE_MARKERS: readonly [RequestPhase, (request: JsonObject) => boolean][] = [
+  ["preview", (r) => r.teamPreview === true],
+  ["wait", (r) => r.wait === true],
+  ["forceSwitch", (r) => Array.isArray(r.forceSwitch)],
+  ["move", (r) => Array.isArray(r.active)],
+];
+
 function phaseOf(request: JsonObject): RequestPhase {
-  if (request.teamPreview === true) return "preview";
-  if (request.wait === true) return "wait";
-  if (Array.isArray(request.forceSwitch)) return "forceSwitch";
-  if (Array.isArray(request.active)) return "move";
-  throw new RequestDecodeError("request has no recognisable phase");
+  const phases = PHASE_MARKERS.filter(([, marks]) => marks(request)).map(([phase]) => phase);
+  if (phases.length === 0) throw new RequestDecodeError("request has no recognisable phase");
+  if (phases.length > 1) throw new RequestDecodeError(`request marks more than one phase: ${phases.join(", ")}`);
+  return phases[0] as RequestPhase;
 }
 
 /**
@@ -42,7 +50,12 @@ function phaseOf(request: JsonObject): RequestPhase {
 export function decodeRequest(body: string): DecodedRequest {
   const parsed = JSON.parse(body) as Json;
   if (!validEngineRequest(parsed)) {
-    const why = (validEngineRequest.errors ?? []).map((e) => `${e.instancePath || "/"} ${e.message}`).join("; ");
+    const why = (validEngineRequest.errors ?? [])
+      .map((e) => {
+        const key = (e.params as { additionalProperty?: string }).additionalProperty;
+        return `${e.instancePath || "/"} ${e.message}${key === undefined ? "" : ` (${key})`}`;
+      })
+      .join("; ");
     throw new RequestDecodeError(`request does not match the engine's request shape: ${why}`);
   }
   const request = parsed as JsonObject;

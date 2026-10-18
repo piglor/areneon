@@ -64,6 +64,10 @@ describe("decodeRequest rejects malformed input", () => {
     ["a fractional rqid", JSON.stringify({ wait: true, side, rqid: 1.5 })],
     ["a numeric disabled flag", JSON.stringify({ active: [{ moves: [{ ...move, disabled: 1 }] }], side })],
     ["a side id outside p1-p4", JSON.stringify({ wait: true, side: { ...side, id: "p5" } })],
+    // Combinations the engine never sends; the schema alone cannot refuse them.
+    ["wait and move at once", JSON.stringify({ wait: true, active: [], side })],
+    ["preview and force switch at once", JSON.stringify({ teamPreview: true, maxChosenTeamSize: 4, forceSwitch: [true], side })],
+    ["force switch and move at once", JSON.stringify({ forceSwitch: [true], active: [], side })],
   ])("%s", (_label, body) => {
     expect(() => decodeRequest(body)).toThrow(RequestDecodeError);
   });
@@ -72,9 +76,15 @@ describe("decodeRequest rejects malformed input", () => {
     expect(decodeRequest(JSON.stringify({ wait: true, side })).phase).toBe("wait");
   });
 
+  it("names every phase a request marks when it marks more than one", () => {
+    expect(() => decodeRequest(JSON.stringify({ wait: true, active: [], side }))).toThrow(
+      "request marks more than one phase: wait, move",
+    );
+  });
+
   it("names what did not match the engine's shape", () => {
     expect(() => decodeRequest(JSON.stringify({ wait: true, side, turn: 3 }))).toThrow(
-      /request does not match the engine's request shape: \/ must NOT have additional properties/,
+      /request does not match the engine's request shape: \/ must NOT have additional properties \(turn\)/,
     );
   });
 

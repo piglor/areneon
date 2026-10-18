@@ -1,3 +1,4 @@
+import engineRequestSchema from "@areneon/schema/contracts/v1/engine-request.schema.json" with { type: "json" };
 import type { DecodedRequest, JsonObject, RequestPhase } from "./request.ts";
 import type { Json } from "./request-identity.ts";
 
@@ -30,50 +31,17 @@ export class EnumerationError extends Error {
 /** Doubles: request slots 1 and 2 are the active Pokémon, the rest the bench. */
 export const ACTIVE_SLOTS = 2;
 
-// Request fields the enumerator understands, per pinned Showdown's request
-// types (`sim/side.ts`). Anything else could change legality, so it fails
-// closed (ADR-006 rule 3). Z-Moves, Dynamax, Ultra Burst and multi battles
-// (`ally`) are not part of any supported format and fail closed too.
-const REQUEST_KEYS = new Set([
-  "active",
-  "forceSwitch",
-  "maxChosenTeamSize",
-  "noCancel",
-  "rqid",
-  "side",
-  "teamPreview",
-  "update",
-  "wait",
-]);
-const SIDE_KEYS = new Set(["id", "name", "noCancel", "pokemon"]);
-const POKEMON_KEYS = new Set([
-  "ability",
-  "active",
-  "baseAbility",
-  "commanding",
-  "condition",
-  "details",
-  "ident",
-  "item",
-  "moves",
-  "pokeball",
-  "reviving",
-  "stats",
-  "teraType",
-  "terastallized",
-]);
-const ACTIVE_KEYS = new Set([
-  "canMegaEvo",
-  "canMegaEvoX",
-  "canMegaEvoY",
-  "canTerastallize",
-  "maybeDisabled",
-  "maybeLocked",
-  "maybeTrapped",
-  "moves",
-  "trapped",
-]);
-const MOVE_KEYS = new Set(["disabled", "disabledSource", "id", "maxpp", "move", "pp", "target"]);
+// Request fields the enumerator understands: exactly the closed engine-mirror
+// EngineRequest schema's properties (ADR-008 §1b), which follow the pinned
+// `sim/side.ts` request types. Anything else could change legality, so it
+// fails closed (ADR-006 rule 3). Z-Moves, Dynamax, Ultra Burst and multi
+// battles (`ally`) are left out of that schema: no supported format has them.
+const keysOf = (schema: { properties: object }): Set<string> => new Set(Object.keys(schema.properties));
+const REQUEST_KEYS = keysOf(engineRequestSchema);
+const SIDE_KEYS = keysOf(engineRequestSchema.$defs.SideRequestData);
+const POKEMON_KEYS = keysOf(engineRequestSchema.$defs.PokemonSwitchRequestData);
+const ACTIVE_KEYS = keysOf(engineRequestSchema.$defs.PokemonMoveRequestData);
+const MOVE_KEYS = keysOf(engineRequestSchema.$defs.MoveRequestData);
 
 /** Move targets that take no target location in the choice string. */
 const UNTARGETED = new Set([
