@@ -105,7 +105,7 @@ export function checkProfile(root: unknown, profile: Profile): ProfileViolation[
       // the closed objects (a closed union node would accept nothing). So it
       // may carry nothing else.
       const extra = Object.keys(schema).filter((k) => !UNION_KEYS.has(k) && !(isRoot && ROOT_ONLY.has(k)));
-      if (extra.length > 0) fail(at, `a union node takes only type, oneOf and discriminator (found ${extra.join(", ")})`);
+      if (extra.length > 0) fail(at, `a union node takes only type, oneOf, discriminator, title and description (found ${extra.join(", ")})`);
       checkUnion(schema, at, fail, resolve);
       return;
     }
@@ -195,6 +195,9 @@ function checkBounds(schema: Schema, at: string, fail: (at: string, message: str
       fail(pointer(at, key), `${key} must be an integer within ±(2^53−1)`);
     }
   }
+  if (typeof schema.minimum === "number" && typeof schema.maximum === "number" && schema.minimum > schema.maximum) {
+    fail(at, "minimum must not exceed maximum");
+  }
 }
 
 function checkUnion(
@@ -225,8 +228,9 @@ function checkUnion(
     const properties = isSchema(target.properties) ? target.properties : {};
     const tag = properties[TAG];
     const required = Array.isArray(target.required) ? target.required : [];
-    if (!isSchema(tag) || typeof tag.const !== "string" || !required.includes(TAG)) {
-      fail(where, `the branch must require a "${TAG}" property with a string const`);
+    const tagKeys = isSchema(tag) ? Object.keys(tag).filter((k) => k !== "description") : [];
+    if (!isSchema(tag) || typeof tag.const !== "string" || tagKeys.length !== 1 || !required.includes(TAG)) {
+      fail(where, `the branch must require a "${TAG}" property that is a lone string const`);
       return;
     }
     if (tags.has(tag.const)) fail(where, `duplicate ${TAG} tag ${JSON.stringify(tag.const)}`);

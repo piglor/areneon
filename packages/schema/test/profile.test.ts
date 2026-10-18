@@ -117,6 +117,9 @@ describe("checkProfile: contract profile", () => {
     expect(messages(mutate(["properties", "seq"], { type: "integer", minimum: 1, maximum: 2 ** 53 }))).toEqual([
       "/properties/seq/maximum maximum must be an integer within ±(2^53−1)",
     ]);
+    expect(messages(mutate(["properties", "seq"], { type: "integer", minimum: 5, maximum: 4 }))).toEqual([
+      "/properties/seq minimum must not exceed maximum",
+    ]);
     expect(messages(mutate(["properties", "bank"], { type: ["integer", "null"], maximum: 1 }))).toEqual([
       "/properties/bank an integer must declare minimum",
     ]);
@@ -191,8 +194,12 @@ describe("checkProfile: contract profile", () => {
       expect(messages(inline)).toContain("/$defs/Observation/oneOf/0 every oneOf branch must be a lone $ref");
       const untagged = mutate(["$defs", "Preview", "properties", "kind"], { type: "string" });
       expect(messages(untagged)).toContain(
-        '/$defs/Observation/oneOf/0 the branch must require a "kind" property with a string const',
+        '/$defs/Observation/oneOf/0 the branch must require a "kind" property that is a lone string const',
       );
+      const doubled = mutate(["$defs", "Preview", "properties", "kind"], { const: "preview", enum: ["preview"] });
+      expect(messages(doubled)).toEqual([
+        '/$defs/Observation/oneOf/0 the branch must require a "kind" property that is a lone string const',
+      ]);
       const unresolved = mutate(["$defs", "Observation", "oneOf"], [{ $ref: "#/$defs/Nope" }]);
       expect(messages(unresolved)).toEqual([
         '/$defs/Observation/oneOf/0/$ref $ref must point to a local #/$defs entry, got "#/$defs/Nope"',
@@ -210,7 +217,7 @@ describe("checkProfile: contract profile", () => {
       });
       ((doc.$defs as Record<string, unknown>).Observation as Record<string, unknown>).additionalProperties = true;
       expect(messages(doc)).toEqual([
-        "/$defs/Observation a union node takes only type, oneOf and discriminator (found properties, additionalProperties)",
+        "/$defs/Observation a union node takes only type, oneOf, discriminator, title and description (found properties, additionalProperties)",
       ]);
     });
 
