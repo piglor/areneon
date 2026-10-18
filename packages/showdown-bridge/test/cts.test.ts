@@ -70,8 +70,8 @@ const ALLOWED: readonly RegExp[] = [
 
 describe("Team Preview with Open Team Sheets declined", () => {
   it("uses an opponent team that shares no sheet entry or species with p1's", () => {
-    const mine = new Set(sheet(own).flatMap(spellings));
-    expect(sheet(opponent).flatMap(spellings).filter((spelling) => mine.has(spelling))).toEqual([]);
+    const ours = new Set(sheet(own).flatMap(spellings));
+    expect(sheet(opponent).flatMap(spellings).filter((spelling) => ours.has(spelling))).toEqual([]);
     expect(opponent.filter((set) => own.some((mine) => mine.species === set.species))).toEqual([]);
     expect(opponent.some((set) => set.name !== set.species)).toBe(true);
   });

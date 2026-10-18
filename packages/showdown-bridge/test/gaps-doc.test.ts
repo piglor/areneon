@@ -65,7 +65,7 @@ describe("gap ledger doc", () => {
       expect(existsSync(path), item.path).toBe(true);
       if (item.kind === "engine") {
         const source = readFileSync(path, "utf8");
-        for (const symbol of item.symbols) expect(source, `${item.path} ${symbol}`).toMatch(new RegExp(`(?<![\\w$])${symbol.replace(/[.$]/g, "\\$&")}(?![\\w$])`));
+        for (const symbol of item.symbols) expect(source, `${item.path} ${symbol}`).toMatch(new RegExp(`(?<![\\w$])${symbol.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\\w$])`));
       }
     }
   });
