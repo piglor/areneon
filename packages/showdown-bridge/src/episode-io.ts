@@ -28,7 +28,11 @@ function resultOf(lines: readonly string[]): Episode["result"] {
     const [, kind, a, b] = line.split("|");
     if (kind === "player" && (a === "p1" || a === "p2") && b) names.set(b, a);
     else if (kind === "turn") turns = Number(a);
-    else if (kind === "win") winner = names.get(a as string) ?? (a as "p1" | "p2");
+    else if (kind === "win") {
+      const seat = names.get(a as string) ?? (a === "p1" || a === "p2" ? a : undefined);
+      if (seat === undefined) throw new EpisodeError(`the channel's winner ${a} is not one of its players`);
+      winner = seat;
+    }
     else if (kind === "tie") winner = null;
   }
   if (winner === undefined) throw new EpisodeError("the channel does not end the battle");

@@ -36,7 +36,7 @@ export interface Episode {
  */
 export interface Provenance {
   /**
-   * A1: in-process sim; A2: local pinned server (ADR-005).
+   * A1: in-process sim; A2: local pinned server (ADR-005). On A2 every decision carries its deadline record and decision_context, the never-auto-choose evidence; a reader must enforce it (readEpisode does), since the contract profile has no if/then.
    */
   runtime: "A1" | "A2";
   /**

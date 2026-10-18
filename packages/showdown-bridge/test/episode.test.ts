@@ -203,6 +203,11 @@ describe("readEpisode", () => {
     ],
     ["a result the channel does not show", (e) => ({ ...e, result: { winner: "p1", turns: 9999 } }), /is not the channel's/],
     [
+      "a winner who is not one of the channel's players",
+      (e) => ({ ...e, channel: (e.channel as string[]).map((l) => (l.startsWith("|win|") ? "|win|Mallory" : l)) }),
+      /the channel's winner Mallory is not one of its players/,
+    ],
+    [
       "a channel cut before the battle ends",
       (e) => ({ ...e, channel: (e.channel as string[]).slice(0, 40), decisions: [] }),
       /the channel does not end the battle/,
