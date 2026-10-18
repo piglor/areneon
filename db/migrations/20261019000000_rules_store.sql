@@ -9,12 +9,18 @@ CREATE TABLE rules.rules_snapshot (
   -- sha256 of the exact published bytes: checked against body, never payload.
   hash text PRIMARY KEY CONSTRAINT snapshot_hash_is_sha256_of_body CHECK (hash = encode(sha256(body), 'hex')),
   body bytea NOT NULL,
-  -- A query copy parsed from body.
-  payload jsonb NOT NULL,
+  -- A query copy parsed from body: exactly body's JSON. A body that is not
+  -- UTF-8 JSON fails here. convert_from is STABLE, not IMMUTABLE, only
+  -- because it can depend on the server encoding; from fixed UTF-8 bytes its
+  -- result never changes, which is what a CHECK needs.
+  payload jsonb NOT NULL CONSTRAINT snapshot_payload_is_body CHECK (payload = convert_from(body, 'UTF8')::jsonb),
+  -- Extracted from body (through payload); NULL-safe, so a missing key fails.
   schema_version integer NOT NULL
-    CONSTRAINT snapshot_schema_version_from_payload CHECK (schema_version = (payload ->> 'schema_version')::integer),
+    CONSTRAINT snapshot_schema_version_from_payload
+    CHECK (schema_version IS NOT DISTINCT FROM (payload ->> 'schema_version')::integer),
   showdown_commit text NOT NULL
-    CONSTRAINT snapshot_showdown_commit_from_payload CHECK (showdown_commit = payload ->> 'showdown_commit'),
+    CONSTRAINT snapshot_showdown_commit_from_payload
+    CHECK (showdown_commit IS NOT DISTINCT FROM payload ->> 'showdown_commit'),
   source_commit text NOT NULL CONSTRAINT snapshot_source_commit_is_sha1 CHECK (source_commit ~ '^[0-9a-f]{40}$'),
   published_at timestamptz NOT NULL
 );

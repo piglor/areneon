@@ -116,6 +116,21 @@ describe("the constraints", () => {
     });
   });
 
+  it("refuse a payload that is not body's JSON, or a body that is not UTF-8 JSON", async () => {
+    await rolledBack("importer", async (client) => {
+      // Each row's hash is consistent with its body, so only the payload ties fail.
+      const forged = Buffer.from('{"a":1}');
+      const forgedHash = (await client.query("SELECT encode(sha256($1::bytea), 'hex') AS h", [forged])).rows[0].h;
+      const row = (bytes: Buffer, h: string, payload: unknown) => [h, bytes, payload, 7, "whatever", SOURCE];
+      await refused(client, INSERT_SNAPSHOT, row(forged, forgedHash, { x: 1 }), /snapshot_payload_is_body/);
+      // payload equals body here, but the extracted columns name keys body lacks.
+      await refused(client, INSERT_SNAPSHOT, row(forged, forgedHash, { a: 1 }), /snapshot_schema_version_from_payload/);
+      const notUtf8 = Buffer.from([0xff]);
+      const notUtf8Hash = (await client.query("SELECT encode(sha256($1::bytea), 'hex') AS h", [notUtf8])).rows[0].h;
+      await refused(client, INSERT_SNAPSHOT, row(notUtf8, notUtf8Hash, {}), /invalid byte sequence for encoding "UTF8"/);
+    });
+  });
+
   it("refuse a release that breaks its channel's history", async () => {
     await rolledBack("importer", async (client) => {
       await client.query(INSERT_SNAPSHOT, snapshotRow());
@@ -147,6 +162,24 @@ describe("the reader role", () => {
       expect(rows[0].n).toBeGreaterThanOrEqual(0);
       await refused(client, INSERT_SNAPSHOT, snapshotRow(), /permission denied/);
     });
+  });
+});
+
+describe("the roles", () => {
+  it("give the migrator the owner's rights only after SET ROLE", async () => {
+    await rolledBack("migrator", async (client) => {
+      await refused(client, "SELECT count(*) FROM rules.rules_snapshot", [], /permission denied/);
+      await client.query("SET LOCAL ROLE rules_owner");
+      await client.query("SELECT count(*) FROM rules.rules_snapshot");
+    });
+  });
+
+  it("leave no TEMP privilege on the database to the login roles", async () => {
+    for (const role of ["importer", "reader"] as const) {
+      await rolledBack(role, async (client) => {
+        await refused(client, "CREATE TEMP TABLE probe (x int)", [], /permission denied/);
+      });
+    }
   });
 });
 
