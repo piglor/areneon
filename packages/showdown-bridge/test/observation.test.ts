@@ -388,7 +388,9 @@ describe("buildObservation and its adapter", () => {
     (team.team[0] as { item: string }).item = "SECRET-ITEM";
     expect(JSON.stringify(observation)).not.toContain("SECRET-ITEM");
     const withToJson = { ...synthetic(), toJSON: () => ({}) } as unknown as PrivateTeamSpec;
-    await expect(buildObservation({ ...rest, team: withToJson, manifest: golden.manifest })).rejects.toThrow();
+    await expect(buildObservation({ ...rest, team: withToJson, manifest: golden.manifest })).rejects.toThrow(
+      /an input is not plain data/,
+    );
   });
 
   it("observe validates the whole observation against its schema", async () => {
@@ -443,6 +445,12 @@ describe("buildObservation and its adapter", () => {
       await expect(build([preview(mon("p1: Rotom", "Rotom-Wash, L50"))], [set("", "Leftovers")])).rejects.toThrow(
         /no set matches Rotom/,
       );
+    });
+
+    it("accepts the player's own set with its moves in another order", async () => {
+      const two = { ...mon("p1: Rotom", "Rotom-Wash, L50"), moves: ["hydropump", "voltswitch"] };
+      const reordered = { ...set(""), moves: ["Volt Switch", "Hydro Pump"] };
+      expect((await build([preview(two)], [reordered])).kind).toBe("preview");
     });
 
     it("refuses a set whose nickname differs", async () => {

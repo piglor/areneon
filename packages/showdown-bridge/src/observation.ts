@@ -104,9 +104,11 @@ interface RequestMon {
  * The team must be this player's own, set for set. It is checked against the
  * player's Team Preview request, the first in the channel: no Mega, Transform,
  * Trick or Knock Off has changed a forme, move or item yet. Each Pokémon there
- * must match one set by species, item, ability and moves (and by nickname
- * when the set has one). A mirror team with other items or moves fails, as
- * does a channel that does not start at Team Preview.
+ * must match one set by species, item, ability and its moves in any order
+ * (and by nickname when the set has one). A mirror team with other items or
+ * moves fails, as does a channel that does not start at Team Preview.
+ * Residual risk (#743): a mirror differing only in EVs, IVs, nature or level
+ * passes, since telling them apart needs the engine's stat calculation.
  */
 function assertOwnTeam(team: PrivateTeamSpec, lines: readonly string[]): void {
   const first = lines.find((line) => line.startsWith(REQUEST));
@@ -115,7 +117,7 @@ function assertOwnTeam(team: PrivateTeamSpec, lines: readonly string[]): void {
     throw new ObservationError("the channel does not start at Team Preview, so the team cannot be checked");
   }
   const key = (species: string, item: string, ability: string, moves: readonly string[]): string =>
-    [toID(species), toID(item), toID(ability), ...moves.map(toID)].join("|");
+    [toID(species), toID(item), toID(ability), ...moves.map(toID).sort()].join("|");
   const sets = team.team.map((set) => ({ name: set.name, key: key(set.species, set.item, set.ability, set.moves) }));
   for (const mon of preview.side.pokemon) {
     const name = mon.ident.slice(mon.ident.indexOf(": ") + 2);
@@ -142,7 +144,11 @@ export async function buildObservation({
 }: ObservationInput): Promise<Observation> {
   // Copies, checked as copied: no getter, toJSON or later mutation of an
   // input can change what was checked.
-  [team, manifest, decision_context] = structuredClone([team, manifest, decision_context]);
+  try {
+    [team, manifest, decision_context] = structuredClone([team, manifest, decision_context]);
+  } catch (error) {
+    throw new ObservationError(`an input is not plain data: ${(error as Error).message}`);
+  }
   const at = channel.lines.findLastIndex((line) => line.startsWith(REQUEST));
   if (at < 0) throw new ObservationError("the channel holds no request to observe");
   const request = JSON.parse((channel.lines[at] as string).slice(REQUEST.length)) as { [key: string]: Json };
