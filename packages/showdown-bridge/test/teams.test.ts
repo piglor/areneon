@@ -101,7 +101,7 @@ describe("team fixtures", () => {
       if (fixture.expect === "legal") {
         expect(verdict.problems, file).toEqual([]);
       } else {
-        expect(fixture.reason, `${file}: an illegal fixture must name its reason`).toMatch(/\S/);
+        expect(fixture.reason, `${file}: an illegal fixture must name its reason`).toEqual(expect.stringMatching(/\S/));
         expect(verdict.problems[0], file).toContain(fixture.reason);
       }
     }
