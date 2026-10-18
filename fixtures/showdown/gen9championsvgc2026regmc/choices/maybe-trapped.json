@@ -1,0 +1,761 @@
+{
+  "id": "maybe-trapped",
+  "kind": "maybe-trapped",
+  "purpose": "foe Mega Gengar may have Shadow Tag: the last active's switches are pending",
+  "seed": "sodium,00000000000000000000000000000000",
+  "teams": {
+    "p1": [
+      {
+        "name": "Venusaur",
+        "species": "Venusaur",
+        "item": "Leftovers",
+        "ability": "Overgrow",
+        "moves": [
+          "Giga Drain",
+          "Sludge Bomb",
+          "Protect",
+          "Sleep Powder"
+        ],
+        "nature": "Serious",
+        "gender": "",
+        "evs": {
+          "hp": 4,
+          "atk": 0,
+          "def": 0,
+          "spa": 0,
+          "spd": 0,
+          "spe": 4
+        },
+        "ivs": {
+          "hp": 31,
+          "atk": 31,
+          "def": 31,
+          "spa": 31,
+          "spd": 31,
+          "spe": 31
+        },
+        "level": 50
+      },
+      {
+        "name": "Charizard",
+        "species": "Charizard",
+        "item": "Charcoal",
+        "ability": "Blaze",
+        "moves": [
+          "Flamethrower",
+          "Air Slash",
+          "Protect",
+          "Heat Wave"
+        ],
+        "nature": "Serious",
+        "gender": "",
+        "evs": {
+          "hp": 4,
+          "atk": 0,
+          "def": 0,
+          "spa": 0,
+          "spd": 0,
+          "spe": 4
+        },
+        "ivs": {
+          "hp": 31,
+          "atk": 31,
+          "def": 31,
+          "spa": 31,
+          "spd": 31,
+          "spe": 31
+        },
+        "level": 50
+      },
+      {
+        "name": "Blastoise",
+        "species": "Blastoise",
+        "item": "Mystic Water",
+        "ability": "Torrent",
+        "moves": [
+          "Surf",
+          "Ice Beam",
+          "Protect",
+          "Fake Out"
+        ],
+        "nature": "Serious",
+        "gender": "",
+        "evs": {
+          "hp": 4,
+          "atk": 0,
+          "def": 0,
+          "spa": 0,
+          "spd": 0,
+          "spe": 4
+        },
+        "ivs": {
+          "hp": 31,
+          "atk": 31,
+          "def": 31,
+          "spa": 31,
+          "spd": 31,
+          "spe": 31
+        },
+        "level": 50
+      },
+      {
+        "name": "Pikachu",
+        "species": "Pikachu",
+        "item": "Light Ball",
+        "ability": "Static",
+        "moves": [
+          "Thunderbolt",
+          "Fake Out",
+          "Protect",
+          "Volt Switch"
+        ],
+        "nature": "Serious",
+        "gender": "",
+        "evs": {
+          "hp": 4,
+          "atk": 0,
+          "def": 0,
+          "spa": 0,
+          "spd": 0,
+          "spe": 4
+        },
+        "ivs": {
+          "hp": 31,
+          "atk": 31,
+          "def": 31,
+          "spa": 31,
+          "spd": 31,
+          "spe": 31
+        },
+        "level": 50
+      },
+      {
+        "name": "Snorlax",
+        "species": "Snorlax",
+        "item": "Sitrus Berry",
+        "ability": "Thick Fat",
+        "moves": [
+          "Body Slam",
+          "Protect",
+          "Curse",
+          "Rest"
+        ],
+        "nature": "Serious",
+        "gender": "",
+        "evs": {
+          "hp": 4,
+          "atk": 0,
+          "def": 0,
+          "spa": 0,
+          "spd": 0,
+          "spe": 4
+        },
+        "ivs": {
+          "hp": 31,
+          "atk": 31,
+          "def": 31,
+          "spa": 31,
+          "spd": 31,
+          "spe": 31
+        },
+        "level": 50
+      },
+      {
+        "name": "Gengar",
+        "species": "Gengar",
+        "item": "Focus Sash",
+        "ability": "Cursed Body",
+        "moves": [
+          "Shadow Ball",
+          "Sludge Bomb",
+          "Protect",
+          "Icy Wind"
+        ],
+        "nature": "Serious",
+        "gender": "",
+        "evs": {
+          "hp": 4,
+          "atk": 0,
+          "def": 0,
+          "spa": 0,
+          "spd": 0,
+          "spe": 4
+        },
+        "ivs": {
+          "hp": 31,
+          "atk": 31,
+          "def": 31,
+          "spa": 31,
+          "spd": 31,
+          "spe": 31
+        },
+        "level": 50
+      }
+    ],
+    "p2": [
+      {
+        "name": "Venusaur",
+        "species": "Venusaur",
+        "item": "Leftovers",
+        "ability": "Overgrow",
+        "moves": [
+          "Giga Drain",
+          "Sludge Bomb",
+          "Protect",
+          "Sleep Powder"
+        ],
+        "nature": "Serious",
+        "gender": "",
+        "evs": {
+          "hp": 4,
+          "atk": 0,
+          "def": 0,
+          "spa": 0,
+          "spd": 0,
+          "spe": 4
+        },
+        "ivs": {
+          "hp": 31,
+          "atk": 31,
+          "def": 31,
+          "spa": 31,
+          "spd": 31,
+          "spe": 31
+        },
+        "level": 50
+      },
+      {
+        "name": "Charizard",
+        "species": "Charizard",
+        "item": "Charcoal",
+        "ability": "Blaze",
+        "moves": [
+          "Flamethrower",
+          "Air Slash",
+          "Protect",
+          "Heat Wave"
+        ],
+        "nature": "Serious",
+        "gender": "",
+        "evs": {
+          "hp": 4,
+          "atk": 0,
+          "def": 0,
+          "spa": 0,
+          "spd": 0,
+          "spe": 4
+        },
+        "ivs": {
+          "hp": 31,
+          "atk": 31,
+          "def": 31,
+          "spa": 31,
+          "spd": 31,
+          "spe": 31
+        },
+        "level": 50
+      },
+      {
+        "name": "Blastoise",
+        "species": "Blastoise",
+        "item": "Mystic Water",
+        "ability": "Torrent",
+        "moves": [
+          "Surf",
+          "Ice Beam",
+          "Protect",
+          "Fake Out"
+        ],
+        "nature": "Serious",
+        "gender": "",
+        "evs": {
+          "hp": 4,
+          "atk": 0,
+          "def": 0,
+          "spa": 0,
+          "spd": 0,
+          "spe": 4
+        },
+        "ivs": {
+          "hp": 31,
+          "atk": 31,
+          "def": 31,
+          "spa": 31,
+          "spd": 31,
+          "spe": 31
+        },
+        "level": 50
+      },
+      {
+        "name": "Pikachu",
+        "species": "Pikachu",
+        "item": "Light Ball",
+        "ability": "Static",
+        "moves": [
+          "Thunderbolt",
+          "Fake Out",
+          "Protect",
+          "Volt Switch"
+        ],
+        "nature": "Serious",
+        "gender": "",
+        "evs": {
+          "hp": 4,
+          "atk": 0,
+          "def": 0,
+          "spa": 0,
+          "spd": 0,
+          "spe": 4
+        },
+        "ivs": {
+          "hp": 31,
+          "atk": 31,
+          "def": 31,
+          "spa": 31,
+          "spd": 31,
+          "spe": 31
+        },
+        "level": 50
+      },
+      {
+        "name": "Snorlax",
+        "species": "Snorlax",
+        "item": "Sitrus Berry",
+        "ability": "Thick Fat",
+        "moves": [
+          "Body Slam",
+          "Protect",
+          "Curse",
+          "Rest"
+        ],
+        "nature": "Serious",
+        "gender": "",
+        "evs": {
+          "hp": 4,
+          "atk": 0,
+          "def": 0,
+          "spa": 0,
+          "spd": 0,
+          "spe": 4
+        },
+        "ivs": {
+          "hp": 31,
+          "atk": 31,
+          "def": 31,
+          "spa": 31,
+          "spd": 31,
+          "spe": 31
+        },
+        "level": 50
+      },
+      {
+        "name": "Gengar",
+        "species": "Gengar",
+        "item": "Gengarite",
+        "ability": "Cursed Body",
+        "moves": [
+          "Imprison",
+          "Mean Look",
+          "Shadow Ball",
+          "Protect"
+        ],
+        "nature": "Serious",
+        "gender": "",
+        "evs": {
+          "hp": 4,
+          "atk": 0,
+          "def": 0,
+          "spa": 0,
+          "spd": 0,
+          "spe": 4
+        },
+        "ivs": {
+          "hp": 31,
+          "atk": 31,
+          "def": 31,
+          "spa": 31,
+          "spd": 31,
+          "spe": 31
+        },
+        "level": 50
+      }
+    ]
+  },
+  "player": "p1",
+  "log": [
+    {
+      "player": "p1",
+      "choice": "team 4561"
+    },
+    {
+      "player": "p2",
+      "choice": "team 6123"
+    },
+    {
+      "player": "p1",
+      "choice": "move 1 1, move 1 1"
+    },
+    {
+      "player": "p2",
+      "choice": "move 3 2 mega, move 1 1"
+    }
+  ],
+  "provenance": "synthetic: Areneon choice corpus, seeded search over synthetic CC0 teams",
+  "hidden_state": "`legal` and `error` of a pending candidate are hidden information: evaluation only, never a policy input",
+  "manifest": {
+    "showdown_commit": "7244fe8e28fa8bc4d0809ae30d183c608b62bb2b",
+    "format_id": "gen9championsvgc2026regmc",
+    "regulation": "M-C",
+    "ruleset_hash": "4dd1f039bbcc6156e08c434972beae2370dc5fe8c9c6a263da7383c3247b68f3",
+    "format_rules_hash": "549cd2aa97324be093c567324676d46a5eff19d6b0c9d8491c483dab746d5dcc"
+  },
+  "format_rules": {
+    "schema_version": 1,
+    "format_id": "gen9championsvgc2026regmc",
+    "regulation": "M-C",
+    "game_type": "doubles",
+    "forbidden_rules": [
+      "forceopenteamsheets"
+    ]
+  },
+  "phase": "move",
+  "request_hash": "b9a02e13b98b75dae557a40f1e19675a033ec9a0fdfa01640a83b586a6aa16f0",
+  "candidates": [
+    {
+      "choice": "move 1 1, move 1 1",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 1 1, move 1 2",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 1 1, move 1 -1",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 1 1, move 2",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 1 1, move 3",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 1 1, move 4",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 1 1, switch 3",
+      "pending": true,
+      "legal": false,
+      "error": "Can't switch: The active Pokémon is trapped"
+    },
+    {
+      "choice": "move 1 1, switch 4",
+      "pending": true,
+      "legal": false,
+      "error": "Can't switch: The active Pokémon is trapped"
+    },
+    {
+      "choice": "move 1 2, move 1 1",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 1 2, move 1 2",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 1 2, move 1 -1",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 1 2, move 2",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 1 2, move 3",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 1 2, move 4",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 1 2, switch 3",
+      "pending": true,
+      "legal": false,
+      "error": "Can't switch: The active Pokémon is trapped"
+    },
+    {
+      "choice": "move 1 2, switch 4",
+      "pending": true,
+      "legal": false,
+      "error": "Can't switch: The active Pokémon is trapped"
+    },
+    {
+      "choice": "move 1 -2, move 1 1",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 1 -2, move 1 2",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 1 -2, move 1 -1",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 1 -2, move 2",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 1 -2, move 3",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 1 -2, move 4",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 1 -2, switch 3",
+      "pending": true,
+      "legal": false,
+      "error": "Can't switch: The active Pokémon is trapped"
+    },
+    {
+      "choice": "move 1 -2, switch 4",
+      "pending": true,
+      "legal": false,
+      "error": "Can't switch: The active Pokémon is trapped"
+    },
+    {
+      "choice": "move 3, move 1 1",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 3, move 1 2",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 3, move 1 -1",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 3, move 2",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 3, move 3",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 3, move 4",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 3, switch 3",
+      "pending": true,
+      "legal": false,
+      "error": "Can't switch: The active Pokémon is trapped"
+    },
+    {
+      "choice": "move 3, switch 4",
+      "pending": true,
+      "legal": false,
+      "error": "Can't switch: The active Pokémon is trapped"
+    },
+    {
+      "choice": "move 4 1, move 1 1",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 4 1, move 1 2",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 4 1, move 1 -1",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 4 1, move 2",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 4 1, move 3",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 4 1, move 4",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 4 1, switch 3",
+      "pending": true,
+      "legal": false,
+      "error": "Can't switch: The active Pokémon is trapped"
+    },
+    {
+      "choice": "move 4 1, switch 4",
+      "pending": true,
+      "legal": false,
+      "error": "Can't switch: The active Pokémon is trapped"
+    },
+    {
+      "choice": "move 4 2, move 1 1",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 4 2, move 1 2",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 4 2, move 1 -1",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 4 2, move 2",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 4 2, move 3",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 4 2, move 4",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 4 2, switch 3",
+      "pending": true,
+      "legal": false,
+      "error": "Can't switch: The active Pokémon is trapped"
+    },
+    {
+      "choice": "move 4 2, switch 4",
+      "pending": true,
+      "legal": false,
+      "error": "Can't switch: The active Pokémon is trapped"
+    },
+    {
+      "choice": "move 4 -2, move 1 1",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 4 -2, move 1 2",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 4 -2, move 1 -1",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 4 -2, move 2",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 4 -2, move 3",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 4 -2, move 4",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 4 -2, switch 3",
+      "pending": true,
+      "legal": false,
+      "error": "Can't switch: The active Pokémon is trapped"
+    },
+    {
+      "choice": "move 4 -2, switch 4",
+      "pending": true,
+      "legal": false,
+      "error": "Can't switch: The active Pokémon is trapped"
+    }
+  ]
+}

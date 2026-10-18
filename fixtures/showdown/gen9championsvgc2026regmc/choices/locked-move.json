@@ -1,0 +1,473 @@
+{
+  "id": "locked-move",
+  "kind": "locked-move",
+  "purpose": "locked into Outrage: one move, no target, no switch",
+  "seed": "sodium,00000000000000000000000000000000",
+  "teams": {
+    "p1": [
+      {
+        "name": "Clefable",
+        "species": "Clefable",
+        "item": "Leftovers",
+        "ability": "Magic Guard",
+        "moves": [
+          "Moonblast",
+          "Helping Hand",
+          "Life Dew",
+          "Protect"
+        ],
+        "nature": "Serious",
+        "gender": "",
+        "evs": {
+          "hp": 4,
+          "atk": 0,
+          "def": 0,
+          "spa": 0,
+          "spd": 0,
+          "spe": 4
+        },
+        "ivs": {
+          "hp": 31,
+          "atk": 31,
+          "def": 31,
+          "spa": 31,
+          "spd": 31,
+          "spe": 31
+        },
+        "level": 50
+      },
+      {
+        "name": "Garchomp",
+        "species": "Garchomp",
+        "item": "Life Orb",
+        "ability": "Rough Skin",
+        "moves": [
+          "Earthquake",
+          "Outrage",
+          "Stealth Rock",
+          "Rock Slide"
+        ],
+        "nature": "Serious",
+        "gender": "",
+        "evs": {
+          "hp": 4,
+          "atk": 0,
+          "def": 0,
+          "spa": 0,
+          "spd": 0,
+          "spe": 4
+        },
+        "ivs": {
+          "hp": 31,
+          "atk": 31,
+          "def": 31,
+          "spa": 31,
+          "spd": 31,
+          "spe": 31
+        },
+        "level": 50
+      },
+      {
+        "name": "Medicham",
+        "species": "Medicham",
+        "item": "Focus Sash",
+        "ability": "Pure Power",
+        "moves": [
+          "Acupressure",
+          "Counter",
+          "Coaching",
+          "Zen Headbutt"
+        ],
+        "nature": "Serious",
+        "gender": "",
+        "evs": {
+          "hp": 4,
+          "atk": 0,
+          "def": 0,
+          "spa": 0,
+          "spd": 0,
+          "spe": 4
+        },
+        "ivs": {
+          "hp": 31,
+          "atk": 31,
+          "def": 31,
+          "spa": 31,
+          "spd": 31,
+          "spe": 31
+        },
+        "level": 50
+      },
+      {
+        "name": "Chimecho",
+        "species": "Chimecho",
+        "item": "Sitrus Berry",
+        "ability": "Levitate",
+        "moves": [
+          "Heal Bell",
+          "Trick Room",
+          "Psychic",
+          "Protect"
+        ],
+        "nature": "Serious",
+        "gender": "",
+        "evs": {
+          "hp": 4,
+          "atk": 0,
+          "def": 0,
+          "spa": 0,
+          "spd": 0,
+          "spe": 4
+        },
+        "ivs": {
+          "hp": 31,
+          "atk": 31,
+          "def": 31,
+          "spa": 31,
+          "spd": 31,
+          "spe": 31
+        },
+        "level": 50
+      },
+      {
+        "name": "Talonflame",
+        "species": "Talonflame",
+        "item": "Sharp Beak",
+        "ability": "Gale Wings",
+        "moves": [
+          "Brave Bird",
+          "Tailwind",
+          "Flare Blitz",
+          "Protect"
+        ],
+        "nature": "Serious",
+        "gender": "",
+        "evs": {
+          "hp": 4,
+          "atk": 0,
+          "def": 0,
+          "spa": 0,
+          "spd": 0,
+          "spe": 4
+        },
+        "ivs": {
+          "hp": 31,
+          "atk": 31,
+          "def": 31,
+          "spa": 31,
+          "spd": 31,
+          "spe": 31
+        },
+        "level": 50
+      },
+      {
+        "name": "Arcanine",
+        "species": "Arcanine",
+        "item": "Charcoal",
+        "ability": "Intimidate",
+        "moves": [
+          "Howl",
+          "Flamethrower",
+          "Extreme Speed",
+          "Protect"
+        ],
+        "nature": "Serious",
+        "gender": "",
+        "evs": {
+          "hp": 4,
+          "atk": 0,
+          "def": 0,
+          "spa": 0,
+          "spd": 0,
+          "spe": 4
+        },
+        "ivs": {
+          "hp": 31,
+          "atk": 31,
+          "def": 31,
+          "spa": 31,
+          "spd": 31,
+          "spe": 31
+        },
+        "level": 50
+      }
+    ],
+    "p2": [
+      {
+        "name": "Venusaur",
+        "species": "Venusaur",
+        "item": "Leftovers",
+        "ability": "Overgrow",
+        "moves": [
+          "Giga Drain",
+          "Sludge Bomb",
+          "Protect",
+          "Sleep Powder"
+        ],
+        "nature": "Serious",
+        "gender": "",
+        "evs": {
+          "hp": 4,
+          "atk": 0,
+          "def": 0,
+          "spa": 0,
+          "spd": 0,
+          "spe": 4
+        },
+        "ivs": {
+          "hp": 31,
+          "atk": 31,
+          "def": 31,
+          "spa": 31,
+          "spd": 31,
+          "spe": 31
+        },
+        "level": 50
+      },
+      {
+        "name": "Charizard",
+        "species": "Charizard",
+        "item": "Charcoal",
+        "ability": "Blaze",
+        "moves": [
+          "Flamethrower",
+          "Air Slash",
+          "Protect",
+          "Heat Wave"
+        ],
+        "nature": "Serious",
+        "gender": "",
+        "evs": {
+          "hp": 4,
+          "atk": 0,
+          "def": 0,
+          "spa": 0,
+          "spd": 0,
+          "spe": 4
+        },
+        "ivs": {
+          "hp": 31,
+          "atk": 31,
+          "def": 31,
+          "spa": 31,
+          "spd": 31,
+          "spe": 31
+        },
+        "level": 50
+      },
+      {
+        "name": "Blastoise",
+        "species": "Blastoise",
+        "item": "Mystic Water",
+        "ability": "Torrent",
+        "moves": [
+          "Surf",
+          "Ice Beam",
+          "Protect",
+          "Fake Out"
+        ],
+        "nature": "Serious",
+        "gender": "",
+        "evs": {
+          "hp": 4,
+          "atk": 0,
+          "def": 0,
+          "spa": 0,
+          "spd": 0,
+          "spe": 4
+        },
+        "ivs": {
+          "hp": 31,
+          "atk": 31,
+          "def": 31,
+          "spa": 31,
+          "spd": 31,
+          "spe": 31
+        },
+        "level": 50
+      },
+      {
+        "name": "Pikachu",
+        "species": "Pikachu",
+        "item": "Light Ball",
+        "ability": "Static",
+        "moves": [
+          "Thunderbolt",
+          "Fake Out",
+          "Protect",
+          "Volt Switch"
+        ],
+        "nature": "Serious",
+        "gender": "",
+        "evs": {
+          "hp": 4,
+          "atk": 0,
+          "def": 0,
+          "spa": 0,
+          "spd": 0,
+          "spe": 4
+        },
+        "ivs": {
+          "hp": 31,
+          "atk": 31,
+          "def": 31,
+          "spa": 31,
+          "spd": 31,
+          "spe": 31
+        },
+        "level": 50
+      },
+      {
+        "name": "Snorlax",
+        "species": "Snorlax",
+        "item": "Sitrus Berry",
+        "ability": "Thick Fat",
+        "moves": [
+          "Body Slam",
+          "Protect",
+          "Curse",
+          "Rest"
+        ],
+        "nature": "Serious",
+        "gender": "",
+        "evs": {
+          "hp": 4,
+          "atk": 0,
+          "def": 0,
+          "spa": 0,
+          "spd": 0,
+          "spe": 4
+        },
+        "ivs": {
+          "hp": 31,
+          "atk": 31,
+          "def": 31,
+          "spa": 31,
+          "spd": 31,
+          "spe": 31
+        },
+        "level": 50
+      },
+      {
+        "name": "Gengar",
+        "species": "Gengar",
+        "item": "Focus Sash",
+        "ability": "Cursed Body",
+        "moves": [
+          "Shadow Ball",
+          "Sludge Bomb",
+          "Protect",
+          "Icy Wind"
+        ],
+        "nature": "Serious",
+        "gender": "",
+        "evs": {
+          "hp": 4,
+          "atk": 0,
+          "def": 0,
+          "spa": 0,
+          "spd": 0,
+          "spe": 4
+        },
+        "ivs": {
+          "hp": 31,
+          "atk": 31,
+          "def": 31,
+          "spa": 31,
+          "spd": 31,
+          "spe": 31
+        },
+        "level": 50
+      }
+    ]
+  },
+  "player": "p1",
+  "log": [
+    {
+      "player": "p1",
+      "choice": "team 1234"
+    },
+    {
+      "player": "p2",
+      "choice": "team 4561"
+    },
+    {
+      "player": "p1",
+      "choice": "move 1 1, move 2"
+    },
+    {
+      "player": "p2",
+      "choice": "move 3, move 1 2"
+    }
+  ],
+  "provenance": "synthetic: Areneon choice corpus, seeded search over synthetic CC0 teams",
+  "hidden_state": "`legal` and `error` of a pending candidate are hidden information: evaluation only, never a policy input",
+  "manifest": {
+    "showdown_commit": "7244fe8e28fa8bc4d0809ae30d183c608b62bb2b",
+    "format_id": "gen9championsvgc2026regmc",
+    "regulation": "M-C",
+    "ruleset_hash": "4dd1f039bbcc6156e08c434972beae2370dc5fe8c9c6a263da7383c3247b68f3",
+    "format_rules_hash": "549cd2aa97324be093c567324676d46a5eff19d6b0c9d8491c483dab746d5dcc"
+  },
+  "format_rules": {
+    "schema_version": 1,
+    "format_id": "gen9championsvgc2026regmc",
+    "regulation": "M-C",
+    "game_type": "doubles",
+    "forbidden_rules": [
+      "forceopenteamsheets"
+    ]
+  },
+  "phase": "move",
+  "request_hash": "41ef23b5138396abfe1cf427dc9653ab415f031ddd5f3c63c86c8e88b0d085ba",
+  "candidates": [
+    {
+      "choice": "move 1 1, move 1",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 1 2, move 1",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 1 -2, move 1",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 2 -2, move 1",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 3, move 1",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 4, move 1",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "switch 3, move 1",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "switch 4, move 1",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    }
+  ]
+}

@@ -27,7 +27,8 @@ export class EnumerationError extends Error {
   override name = "EnumerationError";
 }
 
-const ACTIVE_SLOTS = 2;
+/** Doubles: request slots 1 and 2 are the active Pokémon, the rest the bench. */
+export const ACTIVE_SLOTS = 2;
 
 // Request fields the enumerator understands, per pinned Showdown's request
 // types (`sim/side.ts`). Anything else could change legality, so it fails
