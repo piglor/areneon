@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 .SHELLFLAGS := -euo pipefail -c
-.PHONY: setup showdown check python ts contracts contracts-update guards team-guard licences licences-selftest
+.PHONY: setup showdown check python ts contracts contracts-update guards team-guard licences licences-selftest db-up db-down db-test
 
 # One-time setup for a clean clone.
 setup: showdown
@@ -58,3 +58,26 @@ licences:
 # copy. CI-only: it needs network, so `make check` does not run it.
 licences-selftest:
 	scripts/licences-selftest.sh
+
+# The rules store (ADR-007) on a local Postgres 18 container bound to
+# 127.0.0.1, never the Coolify database. db-up starts it fresh, bootstraps the
+# roles and runs the migrations with the pinned dbmate; db-test needs it up.
+DB_COMPOSE := docker compose -f db/compose.yaml
+DBMATE := docker run --rm --network host -v "$(CURDIR)/db:/db:ro" \
+	ghcr.io/amacneil/dbmate:2.36.0@sha256:520c740c6e0ad73fde2cd1ea7e2b779aaf789d22aca8858f87a478e7094535fb \
+	--no-dump-schema --migrations-dir /db/migrations
+# Throwaway passwords for the local container only (on Coolify: secrets).
+LOCAL_ROLE_ENV := -e RULES_MIGRATOR_PASSWORD=local-migrator -e RULES_IMPORTER_PASSWORD=local-importer \
+	-e RULES_READER_PASSWORD=local-reader
+
+db-up:
+	$(DB_COMPOSE) down -v --remove-orphans
+	$(DB_COMPOSE) up -d --wait
+	$(DB_COMPOSE) exec -T $(LOCAL_ROLE_ENV) postgres psql -U postgres -d areneon -v ON_ERROR_STOP=1 -f - < db/bootstrap.sql
+	$(DBMATE) --url "postgres://rules_migrator:local-migrator@127.0.0.1:55432/areneon?sslmode=disable&search_path=rules" migrate
+
+db-down:
+	$(DB_COMPOSE) down -v --remove-orphans
+
+db-test:
+	pnpm --filter @areneon/rules-store test

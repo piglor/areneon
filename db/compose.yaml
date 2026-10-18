@@ -1,0 +1,17 @@
+# A local Postgres 18 for development and CI only, bound to 127.0.0.1; never
+# the Coolify database (ADR-007, #704). `make db-up` / `make db-down`.
+name: areneon-rules-db
+services:
+  postgres:
+    image: postgres:18.6@sha256:74935e72241653ca55e0414067e6d8763aceb8a810eb51b452253ec3dcfc4336
+    environment:
+      POSTGRES_DB: areneon
+      # A throwaway superuser for the local container only.
+      POSTGRES_PASSWORD: local-superuser
+    ports:
+      - "127.0.0.1:55432:5432"
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres", "-d", "areneon"]
+      interval: 1s
+      timeout: 3s
+      retries: 30

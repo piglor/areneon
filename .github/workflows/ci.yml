@@ -79,6 +79,21 @@ jobs:
       - name: licence gate rejects an injected AGPL dependency
         run: make licences-selftest
 
+  database:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: pnpm/action-setup@v6.1.0
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: rules store schema, roles and triggers on Postgres 18 (ADR-007)
+        run: make db-up db-test
+      - if: always()
+        run: make db-down
+
   gitleaks:
     runs-on: ubuntu-latest
     env:
@@ -133,7 +148,7 @@ jobs:
 
   ci:
     if: always()
-    needs: [python, typescript, team-guard, licences, gitleaks, osv, dco]
+    needs: [python, typescript, database, team-guard, licences, gitleaks, osv, dco]
     runs-on: ubuntu-latest
     steps:
       - name: all required jobs passed

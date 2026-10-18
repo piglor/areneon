@@ -6,7 +6,8 @@ import { defineConfig } from "vitest/config";
 // hide an uncovered one.
 export default defineConfig({
   test: {
-    projects: ["packages/*"],
+    // rules-store needs Postgres: it runs in `make db-test` and the CI database job.
+    projects: ["packages/*", "!packages/rules-store"],
     coverage: {
       provider: "v8",
       include: ["packages/*/src/**"],
