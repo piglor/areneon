@@ -64,7 +64,7 @@ describe("PokePaste import and export", () => {
 
   it("refuse text outside a Pokémon block, like a teambuilder header", () => {
     expect(rejected(`=== [gen9] Team ===\n\n${paste("legal-synthetic.txt")}`).message).toMatch(
-      /7 blocks but the pinned engine read 6 Pokémon/,
+      /7 block\(s\) but the pinned engine read 6 Pokémon/,
     );
   });
 
@@ -88,11 +88,15 @@ describe("team fixtures", () => {
 
   it("get the verdict and reason the manifest expects from the pinned validator", () => {
     const format = resolveFormat(engine, manifest.format_id);
-    for (const [file, { expect: expected, reason }] of Object.entries(manifest.fixtures)) {
+    for (const [file, fixture] of Object.entries(manifest.fixtures)) {
       const verdict = validateTeam(engine, format, importPaste(engine, paste(file)));
-      expect(verdict.valid, file).toBe(expected === "legal");
-      if (expected === "legal") expect(verdict.problems, file).toEqual([]);
-      else expect(verdict.problems[0], file).toContain(reason);
+      expect(verdict.valid, file).toBe(fixture.expect === "legal");
+      if (fixture.expect === "legal") {
+        expect(verdict.problems, file).toEqual([]);
+      } else {
+        expect(fixture.reason, `${file}: an illegal fixture must name its reason`).toEqual(expect.any(String));
+        expect(verdict.problems[0], file).toContain(fixture.reason);
+      }
     }
   });
 

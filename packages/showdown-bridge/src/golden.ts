@@ -131,12 +131,16 @@ export const TEAMS_DIR = fileURLToPath(
 );
 export const TEAM_VERDICTS = "verdicts.json";
 
+/** An illegal fixture names `reason`: text the validator's first problem must contain. */
+export type TeamFixture =
+  | { expect: "legal"; purpose: string }
+  | { expect: "illegal"; purpose: string; reason: string };
+
 export interface TeamFixtureManifest {
   provenance: string;
   license: string;
   format_id: string;
-  /** `reason`: text the validator's first problem must contain (illegal only). */
-  fixtures: Record<string, { expect: "legal" | "illegal"; purpose: string; reason?: string }>;
+  fixtures: Record<string, TeamFixture>;
 }
 
 export function teamFixtureManifest(): TeamFixtureManifest {
