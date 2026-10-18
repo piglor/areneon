@@ -1,0 +1,80 @@
+{
+  "manifest": {
+    "showdown_commit": "7244fe8e28fa8bc4d0809ae30d183c608b62bb2b",
+    "format_id": "gen9championsvgc2026regmc",
+    "regulation": "M-C",
+    "ruleset_hash": "4dd1f039bbcc6156e08c434972beae2370dc5fe8c9c6a263da7383c3247b68f3",
+    "format_rules_hash": "549cd2aa97324be093c567324676d46a5eff19d6b0c9d8491c483dab746d5dcc"
+  },
+  "format_rules": {
+    "schema_version": 1,
+    "format_id": "gen9championsvgc2026regmc",
+    "regulation": "M-C",
+    "game_type": "doubles",
+    "forbidden_rules": [
+      "forceopenteamsheets"
+    ]
+  },
+  "verdicts": {
+    "illegal-five-pokemon.txt": {
+      "valid": false,
+      "problems": [
+        "You must bring at least 6 Pokémon (your team has 5)."
+      ]
+    },
+    "illegal-item-clause.txt": {
+      "valid": false,
+      "problems": [
+        "You are limited to 1 of each item by Item Clause.",
+        "(You have more than 1 Leftovers)"
+      ]
+    },
+    "illegal-not-in-roster.txt": {
+      "valid": false,
+      "problems": [
+        "Bulbasaur does not exist in Gen 9."
+      ]
+    },
+    "illegal-restricted-legendary.txt": {
+      "valid": false,
+      "problems": [
+        "Mewtwo is tagged Restricted Legendary, which is banned by Flat Rules."
+      ]
+    },
+    "illegal-species-clause.txt": {
+      "valid": false,
+      "problems": [
+        "You are limited to one of each Pokémon by Species Clause.",
+        "(You have more than one Venusaur)"
+      ]
+    },
+    "illegal-stat-points-over-32.txt": {
+      "valid": false,
+      "problems": [
+        "Venusaur has more than 32 Stat Points in HP."
+      ]
+    },
+    "illegal-stat-points-over-total.txt": {
+      "valid": false,
+      "problems": [
+        "Venusaur has 96 total Stat Points, which is more than this format's limit of 66."
+      ]
+    },
+    "illegal-unlearnable-move.txt": {
+      "valid": false,
+      "problems": [
+        "Snorlax can't learn Spore."
+      ]
+    },
+    "illegal-zero-stat-points.txt": {
+      "valid": false,
+      "problems": [
+        "Blastoise has exactly 0 Stat Points - did you forget to invest it? (If this was intentional, change your Nature to a different neutral Nature, which won't change its stats but will tell us that it wasn't a mistake)."
+      ]
+    },
+    "legal-synthetic.txt": {
+      "valid": true,
+      "problems": []
+    }
+  }
+}

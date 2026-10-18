@@ -1,0 +1,5 @@
+root = true
+
+# Showdown exports PokePaste with two trailing spaces per line; round-trip tests compare bytes.
+[fixtures/teams/**.txt]
+trim_trailing_whitespace = false

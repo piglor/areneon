@@ -2,6 +2,7 @@ import type { Engine, PokemonSet, SimStream } from "./engine.ts";
 import { resolveFormat, type VersionManifest } from "./formats.ts";
 import type { FormatRulesRecord } from "./rules.ts";
 import { type DecodedRequest, decodeRequest } from "./request.ts";
+import { validateTeam } from "./teams.ts";
 
 export type Player = "p1" | "p2";
 const PLAYERS: readonly Player[] = ["p1", "p2"];
@@ -87,10 +88,9 @@ export function replayActor(choices: BattleRecord["choices"], player: Player): A
 export async function runBattle(options: BattleOptions): Promise<BattleRecord> {
   const { engine, formatId, seed, teams, actors, maxTurns = 300 } = options;
   const resolved = resolveFormat(engine, formatId);
-  const validator = engine.sim.TeamValidator.get(formatId);
   for (const player of PLAYERS) {
-    const problems = validator.validateTeam(teams[player]);
-    if (problems) throw new InvalidTeamError(player, problems);
+    const verdict = validateTeam(engine, resolved, teams[player]);
+    if (!verdict.valid) throw new InvalidTeamError(player, verdict.problems);
   }
 
   const streams = engine.sim.getPlayerStreams(new engine.sim.BattleStream());

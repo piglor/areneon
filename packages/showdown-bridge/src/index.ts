@@ -48,6 +48,13 @@ export {
 } from "./request.ts";
 export { canonicalJson, type Json, requestHash } from "./request-identity.ts";
 export {
+  exportPaste,
+  importPaste,
+  TeamImportError,
+  type TeamVerdict,
+  validateTeam,
+} from "./teams.ts";
+export {
   type Actor,
   BattleAbortedError,
   type BattleOptions,
