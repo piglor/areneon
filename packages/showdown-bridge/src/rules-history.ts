@@ -1,8 +1,21 @@
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { parseChannel } from "./rules-load.ts";
+import { type ChannelFile, RulesError } from "./rules.ts";
+
+// CI-only internals of scripts/check-rules.ts, deliberately not exported
+// from the package index: nothing at runtime depends on git history.
+
 /** The bits of git the channel check needs; injected so the policy is testable. */
 export interface GitReader {
   /** Run `git <args>` and return trimmed stdout, or `undefined` if it fails. */
   (...args: string[]): string | undefined;
 }
+
+/** Run a program without a shell and return its stdout. */
+export type Exec = (file: string, args: string[], options: { encoding: "utf8"; timeout: number }) => string;
 
 /** What one historical builder printed. */
 export interface BuiltSnapshot {
@@ -19,15 +32,56 @@ export const RULES_BUILDER = "packages/showdown-bridge/scripts/rules-hash.ts";
  */
 export const RULES_HISTORY_PATHS: readonly string[] = ["rules", "packages/showdown-bridge"];
 
+/** A historical builder that hangs is killed, so it cannot stall CI. */
+export const RULES_BUILDER_TIMEOUT_MS = 60_000;
+
+/** Whether `path` exists at `commit`. Throws when git itself fails. */
+function existsAt(git: GitReader, commit: string, path: string): boolean {
+  const listed = git("ls-tree", "--name-only", commit, "--", path);
+  if (listed === undefined) throw new RulesError(`git could not list ${path} at ${commit}`);
+  return listed !== "";
+}
+
 /**
  * The commit the channel file is compared against. CI passes `HEAD^1`
  * through `RULES_BASE_REF`: the first parent of a PR merge commit is the
  * main tip it merges into, and of a squash commit on main the previous tip.
- * Locally it is the merge-base with origin/main.
+ * Locally it is the merge-base with origin/main; without one the history
+ * checks are skipped with a warning (CI always runs them).
  */
-export function chooseBase(env: { RULES_BASE_REF?: string | undefined }, git: GitReader): string | undefined {
-  if (env.RULES_BASE_REF) return git("rev-parse", "--verify", `${env.RULES_BASE_REF}^{commit}`);
-  return git("merge-base", "HEAD", "origin/main");
+export function resolveBase(
+  env: { RULES_BASE_REF?: string | undefined },
+  git: GitReader,
+  warn: (message: string) => void,
+): string | undefined {
+  if (env.RULES_BASE_REF) {
+    const base = git("rev-parse", "--verify", `${env.RULES_BASE_REF}^{commit}`);
+    if (base === undefined) {
+      throw new RulesError(`RULES_BASE_REF=${env.RULES_BASE_REF} does not resolve to a commit`);
+    }
+    return base;
+  }
+  const base = git("merge-base", "HEAD", "origin/main");
+  if (base === undefined) {
+    warn("no merge-base with origin/main: channel seq and history are not checked (CI checks them)");
+  }
+  return base;
+}
+
+/** `rules/channels/<channel>.json` at `base`, or `undefined` if the channel is new there. */
+export function baseChannel(base: string, channel: string, git: GitReader): ChannelFile | undefined {
+  const path = `rules/channels/${channel}.json`;
+  if (!existsAt(git, base, path)) return undefined;
+  const where = `${base}:${path}`;
+  const text = git("show", where);
+  if (text === undefined) throw new RulesError(`git could not read ${where}`);
+  let value: unknown;
+  try {
+    value = JSON.parse(text);
+  } catch (error) {
+    throw new RulesError(`${where}: not valid JSON (${(error as Error).message})`);
+  }
+  return parseChannel(channel, value, where);
 }
 
 /**
@@ -43,10 +97,11 @@ export function historicalSnapshots(
   build: (commit: string) => BuiltSnapshot,
   warn: (message: string) => void,
 ): BuiltSnapshot[] {
-  const listed = git("rev-list", "--first-parent", base, "--", ...RULES_HISTORY_PATHS) ?? "";
+  const listed = git("rev-list", "--first-parent", base, "--", ...RULES_HISTORY_PATHS);
+  if (listed === undefined) throw new RulesError(`git could not list the history of ${base}`);
   const built: BuiltSnapshot[] = [];
   for (const commit of listed.split("\n").filter(Boolean)) {
-    if (git("cat-file", "-e", `${commit}:${RULES_BUILDER}`) === undefined) continue;
+    if (!existsAt(git, commit, RULES_BUILDER)) continue;
     try {
       built.push(build(commit));
     } catch (error) {
@@ -54,4 +109,20 @@ export function historicalSnapshots(
     }
   }
   return built;
+}
+
+const run: Exec = (file, args, options) => execFileSync(file, args, options);
+
+/** Run `commit`'s own builder from a bare archive: no node_modules, no shell. */
+export function buildAt(commit: string, exec: Exec = run): BuiltSnapshot {
+  const dir = mkdtempSync(join(tmpdir(), "areneon-rules-"));
+  const options = { encoding: "utf8", timeout: RULES_BUILDER_TIMEOUT_MS } as const;
+  try {
+    const archive = join(dir, "tree.tar");
+    exec("git", ["archive", "-o", archive, commit, ...RULES_HISTORY_PATHS], options);
+    exec("tar", ["-xf", archive, "-C", dir], options);
+    return JSON.parse(exec("node", [join(dir, RULES_BUILDER)], options)) as BuiltSnapshot;
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 }

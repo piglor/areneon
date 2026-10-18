@@ -15,14 +15,13 @@ export {
 } from "./formats.ts";
 export { type ChannelCheck, checkChannel } from "./rules-channel.ts";
 export {
-  type BuiltSnapshot,
-  chooseBase,
-  type GitReader,
-  historicalSnapshots,
-  RULES_BUILDER,
-  RULES_HISTORY_PATHS,
-} from "./rules-history.ts";
-export { loadChannel, loadRulesSnapshot, parseChannel, RULES_SCHEMA_DIR } from "./rules-load.ts";
+  knownChannels,
+  loadChannel,
+  loadChannels,
+  loadRulesSnapshot,
+  parseChannel,
+  RULES_SCHEMA_DIR,
+} from "./rules-load.ts";
 export {
   buildSnapshot,
   type ChannelFile,

@@ -2,7 +2,15 @@ import { cpSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { DEFAULT_RULES_DIR, loadChannel, loadRulesSnapshot, RulesError } from "../src/index.ts";
+import {
+  DEFAULT_RULES_DIR,
+  knownChannels,
+  loadChannel,
+  loadChannels,
+  loadRulesSnapshot,
+  RULES_SCHEMA_DIR,
+  RulesError,
+} from "../src/index.ts";
 
 const COMMIT = "0".repeat(40);
 const FORMAT = "formats/gen9championsvgc2026regmc.json";
@@ -106,5 +114,30 @@ describe("loadChannel", () => {
   it("rejects an invalid channel file", () => {
     const dir = rulesCopy((d) => patch(d, "channels/stable.json", (v) => (v.seq = 0)));
     expect(() => loadChannel("stable", dir)).toThrow(/must be >= 1/);
+  });
+});
+
+describe("loadChannels", () => {
+  it("takes the known channels from the channel schema's closed enum", () => {
+    const schema = JSON.parse(readFileSync(join(RULES_SCHEMA_DIR, "v1/channel.schema.json"), "utf8")) as {
+      properties: { channel: { enum: string[] } };
+    };
+    expect(knownChannels()).toEqual([...schema.properties.channel.enum].sort());
+  });
+
+  it("loads one file per known channel", () => {
+    expect(loadChannels().map((file) => file.channel)).toEqual(knownChannels());
+  });
+
+  it("rejects a stray or misspelt file in rules/channels", () => {
+    for (const stray of ["beta.json", "stable.json.bak", "Stable.json"]) {
+      const dir = rulesCopy((d) => cpSync(join(d, "channels/stable.json"), join(d, "channels", stray)));
+      expect(() => loadChannels(dir), stray).toThrow(`channels/${stray} is not a known channel`);
+    }
+  });
+
+  it("rejects a missing channel file", () => {
+    const dir = rulesCopy((d) => rmSync(join(d, "channels/stable.json")));
+    expect(() => loadChannels(dir)).toThrow(/channels\/stable\.json is missing/);
   });
 });

@@ -1,6 +1,6 @@
 import type { Engine, PokemonSet, SimStream } from "./engine.ts";
 import { resolveFormat, type VersionManifest } from "./formats.ts";
-import type { FormatRulesRecord } from "./rules.ts";
+import type { FormatRulesRecord, RulesSnapshot } from "./rules.ts";
 import { type DecodedRequest, decodeRequest } from "./request.ts";
 import { validateTeam } from "./teams.ts";
 
@@ -23,6 +23,12 @@ export interface BattleOptions {
   actors: Record<Player, Actor>;
   /** Force a tie once this turn starts. Defaults to 300. */
   maxTurns?: number;
+  /**
+   * The rules snapshot to resolve the format against. Defaults to reading
+   * and validating `rules/` again; a caller running many battles loads it
+   * once and passes it here.
+   */
+  snapshot?: RulesSnapshot;
 }
 
 export interface RequestRecord extends DecodedRequest {
@@ -86,8 +92,8 @@ export function replayActor(choices: BattleRecord["choices"], player: Player): A
  * format, seed, teams and choices always produce the same `omniscient_log`.
  */
 export async function runBattle(options: BattleOptions): Promise<BattleRecord> {
-  const { engine, formatId, seed, teams, actors, maxTurns = 300 } = options;
-  const resolved = resolveFormat(engine, formatId);
+  const { engine, formatId, seed, teams, actors, maxTurns = 300, snapshot } = options;
+  const resolved = resolveFormat(engine, formatId, snapshot);
   for (const player of PLAYERS) {
     const verdict = validateTeam(engine, resolved, teams[player]);
     if (!verdict.valid) throw new InvalidTeamError(player, verdict.problems);
