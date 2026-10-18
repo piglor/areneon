@@ -15,6 +15,11 @@ repos:
         entry: python3 scripts/check_no_pokepaste.py
         language: system
         types: [text]
+      - id: data-class
+        name: reject private or unlabelled team JSON (ADR-008 data_class)
+        entry: python3 scripts/check_data_class.py
+        language: system
+        files: \.jsonl?$
       - id: eslint
         name: eslint
         entry: pnpm exec eslint

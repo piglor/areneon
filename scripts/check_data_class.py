@@ -7,13 +7,17 @@ PokePaste guard does not see JSON teams, so this guard rejects a committed
 ``.json`` or ``.jsonl`` file that
 
 - has ``"data_class": "private"`` anywhere; or
-- outside ``fixtures/``, holds a team-shaped object (one with ``species``,
-  ``moves`` and ``evs`` keys) without ``"data_class": "synthetic"`` at its
-  root (for JSONL, at the root of that line).
+- outside ``fixtures/``, holds a team-shaped object without
+  ``"data_class": "synthetic"`` at its root (for JSONL, at the root of that
+  line). Team-shaped means a set (``species``, ``moves`` and ``evs`` keys) or
+  a Pokémon as a ``|request|`` carries it (``details``, ``stats`` and
+  ``moves``), whose stats reveal the spread; in both, ``moves`` is a list.
 
-A file that is not valid JSON is rejected too: the guard cannot vouch for
-what it cannot read. An unlabelled team inside ``fixtures/`` is left to
-review and fixture provenance, an accepted residual risk.
+A file that is not valid JSON is rejected too, so JSON with comments or
+trailing commas (JSONC) cannot be committed: the guard cannot vouch for
+what it cannot read. Accepted residual risks: an unlabelled team inside
+``fixtures/`` is left to review and fixture provenance, and teams in
+non-JSON text (YAML, source code, raw logs) are outside this guard.
 """
 
 from __future__ import annotations
@@ -24,7 +28,10 @@ from collections.abc import Iterator, Sequence
 from pathlib import Path, PurePosixPath
 
 SUFFIXES = (".json", ".jsonl")
-TEAM_KEYS = frozenset({"species", "moves", "evs"})
+TEAM_SHAPES = (
+    frozenset({"species", "moves", "evs"}),  # a set (PokemonSet, PokePaste import)
+    frozenset({"details", "stats", "moves"}),  # a Pokémon in a |request| side
+)
 PRIVATE = 'has "data_class": "private"'
 UNLABELLED_TEAM = 'holds a team without "data_class": "synthetic" at its root'
 
@@ -39,6 +46,12 @@ def _walk(value: object) -> Iterator[dict[str, object]]:
             yield from _walk(item)
 
 
+def _is_team(obj: dict[str, object]) -> bool:
+    # Real team data lists its moves; a JSON Schema's `properties` with the
+    # same keys holds a subschema there instead.
+    return isinstance(obj.get("moves"), list) and any(obj.keys() >= shape for shape in TEAM_SHAPES)
+
+
 def problems_in(document: object, in_fixtures: bool) -> list[str]:
     """Why one parsed JSON document must not be committed (empty if it may)."""
     found: list[str] = []
@@ -46,7 +59,8 @@ def problems_in(document: object, in_fixtures: bool) -> list[str]:
     if any(obj.get("data_class") == "private" for obj in objects):
         found.append(PRIVATE)
     synthetic_root = isinstance(document, dict) and document.get("data_class") == "synthetic"
-    if not in_fixtures and not synthetic_root and any(obj.keys() >= TEAM_KEYS for obj in objects):
+    has_team = any(_is_team(obj) for obj in objects)
+    if not in_fixtures and not synthetic_root and has_team:
         found.append(UNLABELLED_TEAM)
     return found
 

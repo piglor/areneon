@@ -218,6 +218,20 @@ describe("a pending switch refused at submission ([Unavailable choice])", () => 
     return { record, received };
   };
 
+  it("puts the refusal in the refused player's own channel only", async () => {
+    const { record } = await run();
+    const refusal = `|error|${record.choices.find((e) => e.refused !== undefined)?.refused}`;
+    expect(record.channels.p1).toContain(refusal);
+    expect(record.channels.p2.some((line) => line.startsWith("|error|"))).toBe(false);
+    // Each channel carries only its own player's requests.
+    for (const player of ["p1", "p2"] as const) {
+      const sides = record.channels[player]
+        .filter((line) => line.startsWith("|request|"))
+        .map((line) => (JSON.parse(line.slice("|request|".length)) as { side: { id: string } }).side.id);
+      expect(new Set(sides)).toEqual(new Set([player]));
+    }
+  });
+
   it("is answered as a new request, judged and recorded, and the battle completes", async () => {
     const { record } = await run();
     expect(record.winner === null || ["p1", "p2"].includes(record.winner)).toBe(true);

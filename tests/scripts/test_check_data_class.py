@@ -8,6 +8,7 @@ import pytest
 from scripts import check_data_class as guard
 
 TEAM = {"species": "Garchomp", "moves": ["Earthquake"], "evs": {"atk": 32}}
+REQUEST_MON = {"details": "Garchomp, L50", "stats": {"atk": 182}, "moves": ["earthquake"]}
 
 
 PRIVATE = guard.PRIVATE
@@ -37,6 +38,11 @@ def repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
         # The label must sit at the document root, not on the team itself.
         ([{"data_class": "synthetic", **TEAM}], False, [UNLABELLED]),
         ({"species": "Garchomp", "moves": []}, False, []),
+        # A raw |request| side reveals the spread through stats.
+        ({"request": {"side": {"pokemon": [REQUEST_MON]}}}, False, [UNLABELLED]),
+        ({"details": "Garchomp, L50", "moves": []}, False, []),
+        # A JSON Schema describing a team is not a team.
+        ({"properties": {"species": {}, "moves": {"type": "array"}, "evs": {}}}, False, []),
         ("plain", False, []),
     ],
 )
