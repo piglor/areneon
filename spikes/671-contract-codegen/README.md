@@ -133,6 +133,10 @@ the input; invalid: rejected). `ACCEPTS` = an invalid instance got through.
 | invalid/request_fixture.unknown-key.json | ok | ok | ok | ok | ok | ok | ok | ACCEPTS | ok | ok | ACCEPTS |
 | **wrong verdicts** | 0 | 6 | 0 | 0 | 1 | 2 | 0 | 12 | 0 | 5 | 23 |
 
+Notes on the matrix:
+- `dmcg(none)` (dumping with `exclude_none=True`) gets 2 wrong verdicts: `rqid: null` is accepted, and the required-nullable `bank_seconds_after: null` is dropped on dump. Neither affects the selection, which uses the `MISSING` sentinel.
+- In this spike `server_auto_choose_detected` is `const false`, so `invalid/decision_record.auto-choose.json` tests how each tool handles `const`. ADR-008 r2 later made the field a plain boolean, so that a violating Episode can still be written while the ADR-005 gate asserts `false`. The sample remains valid evidence about `const` handling, not about that field.
+
 json-schema-to-typescript emits types only, so it has no runtime column; its
 compile-time checks (`harness/types-json2ts.ts`) all hold: narrowing on `kind`
 works, an unknown key, a wrong tag, `rqid: null` (under
