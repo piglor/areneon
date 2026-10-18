@@ -88,7 +88,8 @@ def _parse_atom(tokens: list[str]) -> tuple[bool, list[str]]:
             raise _MalformedExpressionError
         return value, rest[1:]
     if rest and rest[0] == "WITH":
-        if len(rest) < 2 or rest[1] in _OPERATORS:  # noqa: PLR2004
+        exception = rest[1:2]
+        if not exception or exception[0] in _OPERATORS:
             raise _MalformedExpressionError
         rest = rest[2:]
     return head in ALLOWED, rest

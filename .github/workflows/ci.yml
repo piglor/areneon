@@ -72,6 +72,8 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: production licences on allowlist (fails closed)
         run: make licences
+      - name: licence gate rejects an injected AGPL dependency
+        run: make licences-selftest
 
   gitleaks:
     runs-on: ubuntu-latest
