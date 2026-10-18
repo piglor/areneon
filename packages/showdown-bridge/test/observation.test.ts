@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { ajvFor } from "@areneon/schema/ajv";
 import battleSchema from "@areneon/schema/contracts/v1/battle-observation.schema.json" with { type: "json" };
@@ -26,6 +26,7 @@ import {
   type Observation,
   ObservationError,
   nodeSha256,
+  observe,
   playerChannel,
   type Player,
   recordedChannel,
@@ -70,14 +71,28 @@ beforeAll(async () => {
 });
 
 describe("the ObservationBuilder module", () => {
-  it.each(["observation.ts", "web-sha256.ts"])("%s imports no engine, runner or Node built-in", (file) => {
+  // Every module specifier, however the import is written: static, multi-line,
+  // side-effect, re-export, dynamic or require.
+  const specifiers = (source: string): string[] =>
+    [...source.matchAll(/(?:\bfrom|\bimport|\brequire)\s*\(?\s*["']([^"']+)["']/g)].map((m) => m[1] as string);
+
+  it.each(["observation.ts", "web-sha256.ts"])("%s imports only contracts and canonical JSON", (file) => {
     const source = readFileSync(new URL(`../src/${file}`, import.meta.url), "utf8");
-    const imports = source.split("\n").filter((line) => /^\s*(import|export)\b.*\bfrom\s/.test(line));
-    for (const line of imports) {
-      // Contracts (types only) and the import-free canonical JSON module.
-      expect(line, line).toMatch(/^import type .* from "(@areneon\/schema\/types\/|\.\/observation\.ts)|from "\.\/canonical-json\.ts";$/);
+    const found = specifiers(source);
+    expect(found.length).toBeGreaterThan(0);
+    for (const specifier of found) {
+      expect(specifier).toMatch(
+        /^(@areneon\/schema\/types\/v1\/[a-z-]+\.ts|@areneon\/schema\/contracts\/v1\/[a-z-]+\.schema\.json|\.\/canonical-json\.ts|\.\/observation\.ts)$/,
+      );
     }
-    expect(source).not.toMatch(/node:|engine\.ts|runner\.ts|\brequire\(/);
+  });
+
+  it("is the only module, with its adapter, that brands a PlayerChannel", () => {
+    for (const file of readdirSync(new URL("../src/", import.meta.url))) {
+      if (file === "player-channel.ts") continue;
+      const source = readFileSync(new URL(`../src/${file}`, import.meta.url), "utf8");
+      expect(source, file).not.toMatch(/as PlayerChannel\b/);
+    }
   });
 });
 
@@ -144,90 +159,103 @@ describe("the Sha256 ports", () => {
 });
 
 describe("the canary test (ADR-008 §5 adversarial 2)", () => {
-  /** p1 brings the synthetic team; p2 a team sharing no species, item or move with it. */
-  async function battle(): Promise<BattleRecord> {
+  /** The canary battle: p1 the synthetic team, p2 one sharing no species, item or move with it. */
+  let record: BattleRecord;
+  let teams: Record<Player, PrivateTeamSpec>;
+  beforeAll(async () => {
     const opponent = importPaste(
       engine,
       readFileSync(join(GOLDEN_DIR, "../../teams", GOLDEN_FORMAT, "legal-opponent.txt"), "utf8"),
     );
-    return runBattle({
+    teams = { p1: synthetic(), p2: synthetic(opponent) };
+    record = await runBattle({
       engine,
       formatId: GOLDEN_FORMAT,
       seed: "sodium,0f0e0d0c0b0a09080706050403020100",
       teams: { p1: syntheticTeam(), p2: opponent },
       actors: { p1: firstLegal, p2: firstLegal },
     });
-  }
+  });
+  const other = (player: Player): Player => (player === "p1" ? "p2" : "p1");
 
   /**
-   * What `of` must never leak to the other player, as whole lines and JSON
-   * objects (never bare numbers):
-   * - its SECRET lines: omniscient lines `of`'s own channel carries but the
-   *   other player's does not (the engine resolved the `|split|` there);
-   * - the stats of every Pokémon in `of`'s own requests, which no public
-   *   line ever reveals.
+   * What `of` must never leak to the other player: anything the other
+   * player's channel never shows. Whole lines and strings, never bare numbers.
+   * - `lines`: `of`'s SECRET lines, omniscient lines its own channel carries
+   *   and the other's does not (the engine resolved each `|split|` there);
+   * - `stats`: the stats of every Pokémon in `of`'s own requests;
+   * - `sets`: each of `of`'s sets whole, and every item and move of them that
+   *   the other player's channel never names (never revealed in battle).
    */
-  function canaries(record: BattleRecord, of: Player): { lines: string[]; stats: string[] } {
-    const other: Player = of === "p1" ? "p2" : "p1";
-    const seenByOther = new Set(record.channels[other]);
+  function canaries(of: Player): { lines: string[]; stats: string[]; sets: string[] } {
+    const seen = record.channels[other(of)];
+    const seenBytes = seen.join("\n");
     const own = new Set(record.channels[of]);
-    const lines = new Set(record.omniscient_log.filter((l) => own.has(l) && !seenByOther.has(l)));
+    const lines = new Set(record.omniscient_log.filter((l) => own.has(l) && !seen.includes(l)));
     const stats = new Set<string>();
     for (const request of record.requests[of]) {
       const side = (request.request as { side: { pokemon: { stats: { [k: string]: Json } }[] } }).side;
       for (const mon of side.pokemon) stats.add(jcs(mon.stats));
     }
-    return { lines: [...lines], stats: [...stats] };
+    const sets = new Set<string>();
+    for (const set of teams[of].team) {
+      sets.add(jcs(set as unknown as Json));
+      for (const name of [set.item, ...set.moves]) if (name !== "" && !seenBytes.includes(name)) sets.add(name);
+    }
+    return { lines: [...lines], stats: [...stats], sets: [...sets] };
   }
 
-  /** A canary in an observation's JCS bytes, as itself or escaped inside a JSON string. */
+  /** A canary in JCS bytes, as itself or escaped inside a JSON string. */
   const leaks = (bytes: string, secret: string): boolean =>
     bytes.includes(secret) || bytes.includes(JSON.stringify(secret).slice(1, -1));
 
-  async function observationsOf(record: BattleRecord, player: Player): Promise<Observation[]> {
-    return Promise.all(
+  /** Each player's observations, each built with that player's own team. */
+  const observationsOf = (player: Player): Promise<Observation[]> =>
+    Promise.all(
       record.requests[player]
         .filter((r) => r.phase !== "wait")
         .map((r) =>
-          buildObservation({
+          observe({
             channel: recordedChannel(record, player, r.request_seq, "synthetic"),
-            team: synthetic(),
+            team: teams[player],
             manifest: record.manifest,
-            sha256: nodeSha256,
           }),
         ),
     );
-  }
 
-  it("finds no opponent secret in any observation of either player", async () => {
-    const record = await battle();
-    for (const [player, opponent] of [["p1", "p2"], ["p2", "p1"]] as const) {
-      const { lines, stats } = canaries(record, opponent);
-      expect(lines.length, `${opponent} secret lines`).toBeGreaterThan(0);
-      expect(stats, `${opponent} stats`).toHaveLength(6);
-      const secrets = [...lines, ...stats];
-      const observations = await observationsOf(record, player);
+  it("finds no opponent secret anywhere in any observation of either player", async () => {
+    for (const player of ["p1", "p2"] as const) {
+      const { lines, stats, sets } = canaries(other(player));
+      expect(lines.length, "secret lines").toBeGreaterThan(0);
+      expect(stats, "stats").toHaveLength(6);
+      // Six whole sets, and items and moves never revealed in this battle.
+      expect(sets.length, "sets").toBeGreaterThan(6 + 4);
+      const observations = await observationsOf(player);
       expect(observations.length).toBeGreaterThan(3);
       for (const observation of observations) {
-        expectContract(observation);
         const bytes = jcs(observation as unknown as Json);
-        for (const secret of secrets) expect(leaks(bytes, secret), secret).toBe(false);
+        for (const secret of [...lines, ...stats, ...sets]) expect(leaks(bytes, secret), secret).toBe(false);
       }
     }
   });
 
-  it.each(["lines", "stats"] as const)("would catch a leak: a smuggled opponent canary (%s) is found", async (kind) => {
-    const record = await battle();
-    const secret = canaries(record, "p2")[kind][0] as string;
+  it.each(["lines", "stats", "sets"] as const)("would catch a leak: a smuggled opponent canary (%s) is found", async (kind) => {
+    const secret = canaries("p2")[kind][0] as string;
     const honest = recordedChannel(record, "p1", 1, "synthetic");
     const leaky = playerChannel({ ...honest, lines: [secret, ...honest.lines] });
-    const observation = await buildObservation({
-      channel: leaky,
-      team: synthetic(),
-      manifest: record.manifest,
-      sha256: nodeSha256,
-    });
+    const observation = await observe({ channel: leaky, team: teams.p1, manifest: record.manifest });
     expect(leaks(jcs(observation as unknown as Json), secret)).toBe(true);
+  });
+
+  it("would catch the opponent's team in an observation, which the builder refuses", async () => {
+    const [honest] = await observationsOf("p1");
+    const smuggled = { ...(honest as Observation), team: teams.p2 };
+    const bytes = jcs(smuggled as unknown as Json);
+    expect(canaries("p2").sets.some((secret) => leaks(bytes, secret))).toBe(true);
+    const channel = recordedChannel(record, "p1", 1, "synthetic");
+    await expect(observe({ channel, team: teams.p2, manifest: record.manifest })).rejects.toThrow(
+      /the team is not this player's: it has no Venusaur/,
+    );
   });
 });
 
@@ -278,7 +306,8 @@ describe("buildObservation and its adapter", () => {
   it("carries the server's rqid, the decision context, and a private class", async () => {
     const [prefix] = decisionPrefixes(p1()) as [PlayerChannelLog];
     const last = prefix.lines.at(-1) as string;
-    const withRqid = { ...prefix, lines: [...prefix.lines.slice(0, -1), last.replace("{", '{"rqid":9,')] };
+    const request = { ...(JSON.parse(last.slice("|request|".length)) as object), rqid: 9 };
+    const withRqid = { ...prefix, lines: [...prefix.lines.slice(0, -1), `|request|${JSON.stringify(request)}`] };
     const decision_context = {
       timer_source: "server" as const,
       timer_rules: { starting: 420, grace: 90, add_per_turn: 0, max_per_turn: 55, max_first_turn: 90, tick: 5 },
@@ -318,6 +347,39 @@ describe("buildObservation and its adapter", () => {
     const side = { name: "p1", id: "p1", pokemon: [] };
     const waiting = playerChannel({ ...p1(), lines: [`|request|${JSON.stringify({ wait: true, side })}`] });
     await expect(buildObservation({ ...rest, channel: waiting })).rejects.toThrow(/wait request/);
+  });
+
+  it("refuses a field the closed observation schema does not name, smuggled through an input", async () => {
+    const [prefix] = decisionPrefixes(p1()) as [PlayerChannelLog];
+    const rest = { channel: playerChannel(prefix), manifest: golden.manifest, sha256: nodeSha256 };
+    const team = { ...synthetic(), opponent_team: synthetic() };
+    await expect(buildObservation({ ...rest, team })).rejects.toThrow(/observation\/team holds opponent_team/);
+    const sets = synthetic().team.map((set, i) => (i === 0 ? { ...set, secret: "x" } : set));
+    await expect(buildObservation({ ...rest, team: { ...synthetic(), team: sets as PrivateTeamSpec["team"] } })).rejects.toThrow(
+      /observation\/team\/team\/0 holds secret/,
+    );
+    const manifest = { ...golden.manifest, omniscient_log: [] };
+    await expect(buildObservation({ ...rest, team: synthetic(), manifest })).rejects.toThrow(/observation\/manifest holds omniscient_log/);
+    const { format_id, ...partial } = golden.manifest;
+    await expect(buildObservation({ ...rest, team: synthetic(), manifest: partial as typeof golden.manifest })).rejects.toThrow(
+      /observation\/manifest lacks format_id/,
+    );
+    const notObject = "7244fe8" as unknown as typeof golden.manifest;
+    await expect(buildObservation({ ...rest, team: synthetic(), manifest: notObject })).rejects.toThrow(
+      /observation\/manifest must be an object/,
+    );
+    const movesNotList = synthetic().team.map((set, i) => (i === 0 ? { ...set, moves: "Protect" } : set));
+    await expect(
+      buildObservation({ ...rest, team: { ...synthetic(), team: movesNotList as unknown as PrivateTeamSpec["team"] } }),
+    ).rejects.toThrow(/observation\/team\/team\/0\/moves must be an array/);
+  });
+
+  it("observe validates the whole observation against its schema", async () => {
+    const [prefix] = decisionPrefixes(p1()) as [PlayerChannelLog];
+    const bad = { ...golden.manifest, regulation: "" };
+    await expect(observe({ channel: playerChannel(prefix), team: synthetic(), manifest: bad })).rejects.toThrow(
+      /invalid observation/,
+    );
   });
 
   it("brands only a valid channel of that player's own requests", () => {

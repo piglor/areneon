@@ -37,7 +37,7 @@ export {
   type PreviewObservation,
   type Sha256,
 } from "./observation.ts";
-export { nodeSha256, playerChannel, recordedChannel } from "./player-channel.ts";
+export { nodeSha256, observe, playerChannel, recordedChannel } from "./player-channel.ts";
 export { webSha256 } from "./web-sha256.ts";
 export {
   type ResolvedFormat,

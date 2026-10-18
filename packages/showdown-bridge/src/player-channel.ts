@@ -4,16 +4,40 @@
 
 import { createHash } from "node:crypto";
 import { ajvFor } from "@areneon/schema/ajv";
+import battleSchema from "@areneon/schema/contracts/v1/battle-observation.schema.json" with { type: "json" };
 import channelSchema from "@areneon/schema/contracts/v1/player-channel-log.schema.json" with { type: "json" };
+import previewSchema from "@areneon/schema/contracts/v1/preview-observation.schema.json" with { type: "json" };
 import type { PlayerChannelLog } from "@areneon/schema/types/v1/player-channel-log.ts";
-import { ObservationError, type PlayerChannel, type Sha256 } from "./observation.ts";
+import {
+  buildObservation,
+  type Observation,
+  ObservationError,
+  type ObservationInput,
+  type PlayerChannel,
+  type Sha256,
+} from "./observation.ts";
 import { decodeRequest } from "./request.ts";
 import type { BattleRecord, Player } from "./runner.ts";
 
 /** The Sha256 port on Node's `createHash` (A1, A2). */
 export const nodeSha256: Sha256 = (bytes) => Promise.resolve(createHash("sha256").update(bytes).digest("hex"));
 
-const validChannel = ajvFor("contract").compile(channelSchema);
+const contract = ajvFor("contract");
+const validChannel = contract.compile(channelSchema);
+const validPreview = contract.compile(previewSchema);
+const validBattle = contract.compile(battleSchema);
+
+/**
+ * `buildObservation`, then full validation against the closed observation
+ * schema (ADR-008 §5's "validate"), on Node. The bundled advisor path needs
+ * precompiled validators instead, since MV3 forbids Ajv's runtime compile.
+ */
+export async function observe(input: Omit<ObservationInput, "sha256">): Promise<Observation> {
+  const observation = await buildObservation({ ...input, sha256: nodeSha256 });
+  const valid = observation.kind === "preview" ? validPreview : validBattle;
+  if (!valid(observation)) throw new ObservationError(`invalid observation: ${JSON.stringify(valid.errors)}`);
+  return observation;
+}
 
 /**
  * Brand a channel log as a PlayerChannel once it matches PlayerChannelLog
