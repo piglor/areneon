@@ -40,6 +40,10 @@ export class UnsupportedFormatError extends Error {
  * answer. Anything absent from the snapshot (singles, Bo3, other mods) is
  * rejected, as is a format the engine defines differently or with a
  * forbidden rule.
+ *
+ * Without `snapshot` it reads and validates `rules/` on every call. That is
+ * fine for scripts and tests; anything resolving repeatedly loads the
+ * snapshot once and passes it (live runtimes get theirs from #704).
  */
 export function resolveFormat(
   engine: Engine,

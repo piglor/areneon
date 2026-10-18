@@ -1,4 +1,5 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Ajv2020, type ValidateFunction } from "ajv/dist/2020.js";
 import {
@@ -9,6 +10,7 @@ import {
   readChannel,
   readRuleRecords,
   type RegulationRecord,
+  RULES_SCHEMA_VERSION,
   RulesError,
   type RulesSnapshot,
 } from "./rules.ts";
@@ -23,17 +25,19 @@ type Kind = "format" | "regulation" | "channel";
 const ajv = new Ajv2020({ allErrors: true, strict: true });
 const validators = new Map<string, ValidateFunction>();
 
+function schemaFor(version: number, kind: Kind): object {
+  try {
+    return JSON.parse(readFileSync(`${RULES_SCHEMA_DIR}/v${version}/${kind}.schema.json`, "utf8")) as object;
+  } catch {
+    throw new RulesError(`no ${kind} schema for schema_version ${version}`);
+  }
+}
+
 function validator(version: number, kind: Kind): ValidateFunction {
   const key = `v${version}/${kind}`;
   let validate = validators.get(key);
   if (!validate) {
-    let schema: unknown;
-    try {
-      schema = JSON.parse(readFileSync(`${RULES_SCHEMA_DIR}/${key}.schema.json`, "utf8"));
-    } catch {
-      throw new RulesError(`no ${kind} schema for schema_version ${version}`);
-    }
-    validate = ajv.compile(schema as object);
+    validate = ajv.compile(schemaFor(version, kind));
     validators.set(key, validate);
   }
   return validate;
@@ -92,7 +96,7 @@ export function loadRulesSnapshot(
 
 /** Validate a parsed `rules/channels/<channel>.json`, e.g. one read from another commit. */
 export function parseChannel(channel: string, value: unknown, where: string): ChannelFile {
-  const file = check<ChannelFile>(value, 1, "channel", where);
+  const file = check<ChannelFile>(value, RULES_SCHEMA_VERSION, "channel", where);
   if (file.channel !== channel) throw new RulesError(`${where} names channel ${file.channel}`);
   return file;
 }
@@ -100,4 +104,37 @@ export function parseChannel(channel: string, value: unknown, where: string): Ch
 /** Read and validate `rules/channels/<channel>.json`. */
 export function loadChannel(channel: string, dir: string = DEFAULT_RULES_DIR): ChannelFile {
   return parseChannel(channel, readChannel(channel, dir), `channels/${channel}.json`);
+}
+
+/** The channels Areneon serves: the channel schema's closed `channel` enum. */
+export function knownChannels(schema: object = schemaFor(RULES_SCHEMA_VERSION, "channel")): string[] {
+  const channels = (schema as { properties?: { channel?: { enum?: unknown } } }).properties?.channel?.enum;
+  if (!Array.isArray(channels) || channels.length === 0 || !channels.every((c) => typeof c === "string")) {
+    throw new RulesError("the channel schema must list its channels as a non-empty string enum");
+  }
+  return [...(channels as string[])].sort();
+}
+
+/**
+ * Read and validate every channel file. `rules/channels/` must hold exactly
+ * one `<channel>.json` per known channel, so a stray or misspelt file fails
+ * instead of being silently ignored.
+ */
+export function loadChannels(dir: string = DEFAULT_RULES_DIR): ChannelFile[] {
+  const known = knownChannels();
+  let files: string[];
+  try {
+    files = readdirSync(join(dir, "channels")).sort();
+  } catch {
+    throw new RulesError("rules/channels/ is missing");
+  }
+  for (const file of files) {
+    if (!known.some((channel) => file === `${channel}.json`)) {
+      throw new RulesError(`channels/${file} is not a known channel (${known.join(", ")})`);
+    }
+  }
+  return known.map((channel) => {
+    if (!files.includes(`${channel}.json`)) throw new RulesError(`channels/${channel}.json is missing`);
+    return loadChannel(channel, dir);
+  });
 }

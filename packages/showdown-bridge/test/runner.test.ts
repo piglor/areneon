@@ -5,6 +5,7 @@ import {
   BattleAbortedError,
   InvalidTeamError,
   loadEngine,
+  loadRulesSnapshot,
   replayActor,
   runBattle,
   UnsupportedFormatError,
@@ -108,6 +109,16 @@ describe("runBattle", () => {
     const run = runBattle(options({ p1: engineDefault, p2: engineDefault }, { teams: { p1: team, p2: zeroed } }));
     await expect(run).rejects.toThrow(InvalidTeamError);
     await expect(run).rejects.toMatchObject({ player: "p2", problems: expect.arrayContaining([expect.stringMatching(/0 Stat Points/)]) });
+  });
+
+  it("resolves the format against a snapshot the caller loaded once", async () => {
+    const snapshot = loadRulesSnapshot(engine.commit);
+    const record = await runBattle(options({ p1: engineDefault, p2: engineDefault }, { snapshot }));
+    expect(record.manifest).toEqual((await goldenBattle(engine)).manifest);
+    const stale = loadRulesSnapshot("0".repeat(40));
+    await expect(runBattle(options({ p1: engineDefault, p2: engineDefault }, { snapshot: stale }))).rejects.toThrow(
+      UnsupportedFormatError,
+    );
   });
 
   it("rejects an unsupported format before starting", async () => {

@@ -36,7 +36,7 @@ The engine is the legality authority, so a pin bump is its own PR:
 
 ### Changing the rules
 
-Areneon's own rules (supported formats, forbidden engine rules, regulation sources) are JSON records in `rules/`, validated by the schemas in `packages/schema/rules/` (ADR-007). Never put them in code. Edit a record in a normal PR; `make ts` checks it against the pinned engine. To make the change live, also point `rules/channels/stable.json` at the new snapshot hash (from `scripts/rules-hash.ts`) and raise `seq` by 1, in the same PR or a later one.
+Areneon's own rules (supported formats, forbidden engine rules, regulation sources) are JSON records in `rules/`, validated by the schemas in `packages/schema/rules/` (ADR-007). Never put them in code. Edit a record in a normal PR; `make ts` checks it against the pinned engine. To make the change live, also point `rules/channels/stable.json` at the new snapshot hash (from `scripts/rules-hash.ts`) and raise `seq` by 1, in the same PR or a later one. `rules/channels/` holds exactly one file per channel in the `channel` enum of `packages/schema/rules/v1/channel.schema.json`; adding a channel means adding it to that enum, and any other file fails the check.
 
 ## Commits and pull requests
 
