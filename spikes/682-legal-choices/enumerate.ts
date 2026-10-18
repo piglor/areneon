@@ -1,6 +1,9 @@
 // Spike #682 (throwaway): enumerate candidate joint choices from one
 // player's own `|request|` JSON. It proposes candidates only; the pinned
 // engine decides which are legal (see oracle.ts). Doubles only.
+// Not implemented in the spike: rejecting unknown request fields that can
+// change legality (e.g. `reviving`); ADR-006 rule 3 requires it in the real
+// enumerator.
 
 type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
 type Obj = { [key: string]: Json };

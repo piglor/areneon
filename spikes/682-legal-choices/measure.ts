@@ -71,7 +71,7 @@ const rows: Row[] = [];
 const rejectReasons = new Map<string, number>();
 const missingSamples: string[] = [];
 
-const battles = Number(process.argv[2] ?? 20);
+const battles = Number(process.argv[2] ?? 30);
 for (let b = 0; b < battles; b++) {
   const pick = rng(b + 1);
   const battle = new sim.Battle({ formatid: FORMAT, seed: `sodium,${b.toString(16).padStart(32, "0")}` });
@@ -127,6 +127,9 @@ for (let b = 0; b < battles; b++) {
         mega: e.candidates.some((c) => c.includes(" mega")),
       });
 
+      // Spike only: the random player picks among clone-accepted candidates, so
+      // engine verdicts on maybeTrapped switches steer play. ADR-006 rule 5
+      // forbids this for policies; do not copy it into the runner.
       const legal = accepted.map((v) => v.choice);
       if (legal.length === 0) throw new Error(`no legal candidate for ${side.id} (${e.phase})`);
       const choice = legal[Math.floor(pick() * legal.length)] as string;
