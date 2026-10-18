@@ -2,7 +2,9 @@ import { createHash } from "node:crypto";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { canonicalJson, type Json } from "./request-identity.ts";
+import { jcs, type Json } from "./canonical-json.ts";
+
+export { jcs } from "./canonical-json.ts";
 
 // Pure snapshot building and hashing (ADR-007). This module imports only
 // Node built-ins so the historical channel check can run an old commit's
@@ -88,32 +90,6 @@ export interface ChannelFile {
 
 export class RulesError extends Error {
   override name = "RulesError";
-}
-
-const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
-
-function assertIJson(value: Json): void {
-  if (typeof value === "string") {
-    if (LONE_SURROGATE.test(value)) throw new RangeError("jcs: lone surrogate in string");
-  } else if (Array.isArray(value)) {
-    value.forEach(assertIJson);
-  } else if (value !== null && typeof value === "object") {
-    for (const [key, item] of Object.entries(value)) {
-      assertIJson(key);
-      assertIJson(item);
-    }
-  }
-}
-
-/**
- * RFC 8785 (JCS) canonical form. `canonicalJson` already sorts keys by UTF-16
- * code units and prints numbers the ECMAScript way; this adds the I-JSON
- * checks it lacks. `canonicalJson` is left unchanged so `request_hash` and
- * `ruleset_hash` keep their bytes.
- */
-export function jcs(value: Json): string {
-  assertIJson(value);
-  return canonicalJson(value);
 }
 
 export const sha256Hex = (bytes: Uint8Array | string): string =>
