@@ -66,7 +66,7 @@ export class CloneJudge implements ChoiceJudge {
    */
   judge(request_hash: string, choices: readonly string[]): Verdict[] {
     // Checked on the live side: a battle that has not started cannot be cloned.
-    if (this.#battle.sides[this.#side]?.activeRequest == null) {
+    if ((this.#battle.sides[this.#side] as SimSide).activeRequest === null) {
       throw new JudgeStateError("side has no active request");
     }
     const at = this.#clone();
