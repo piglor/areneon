@@ -11,6 +11,8 @@
 const params = new URLSearchParams(location.search);
 const port = params.get("server");
 window.ps = {
+  // Every message event this page script can see on its window bus.
+  bus: [],
   ws: null,
   transport: null,
   messages: [],
@@ -35,6 +37,12 @@ window.ps = {
     return new Promise((resolve) => { ws.addEventListener("close", resolve, { once: true }); ws.close(); });
   },
 };
+window.addEventListener("message", (e) => {
+  let text;
+  try { text = JSON.stringify(e.data); } catch { text = String(e.data); }
+  const type = e.data && typeof e.data === "object" ? e.data.type : undefined;
+  window.ps.bus.push({ type, text: String(text).slice(0, 300), ports: e.ports.length });
+}, true);
 </script>
 </body>
 </html>

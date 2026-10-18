@@ -31,6 +31,7 @@ const EXTENSION = join(root, "extension");
 const PS_PORT = 18672;
 const CONTROL_PORT = 18673;
 const PAGE_PORT = 18674;
+const WHITELIST = new Set(["updateuser", "init", "player", "poke", "showteam", "request", "teampreview", "turn", "win", "tie"]);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 async function until(what, fn, timeout = 15000) {
@@ -226,6 +227,17 @@ async function goldenRun(context, transport, headless) {
           error_lines: (await p1.messages()).flatMap((m) => m.split("\n")).filter((l) => l.startsWith("|error|")),
         };
         assert.deepEqual(after, before, "undo must not change the reconstructed request");
+        // Re-choose with the same rqid; the turn only advances if the server accepted it.
+        p1.answered.set(roomid, mine.rqid);
+        await p1.send(`${roomid}|/choose default|${mine.rqid}`);
+        await sleep(300);
+        p2.answer(roomid);
+        await until("turn advances after the re-sent choice", async () => (await p1.request(roomid)).rqid > mine.rqid);
+        const errorsAfter = (await p1.messages()).flatMap((m) => m.split("\n")).filter((l) => l.startsWith("|error|"));
+        evidence.undo.rechoice_accepted = errorsAfter.length === evidence.undo.error_lines.length;
+        evidence.undo.next_rqid = (await p1.request(roomid)).rqid;
+        assert.ok(evidence.undo.rechoice_accepted, "re-sent choice after undo must be accepted");
+        continue;
       } else if (moveRequests === 2 && !evidence.reconnect) {
         // Reconnect before choosing: a new socket, same user, same battle.
         const before = (await p1.room(roomid)).current;
@@ -300,6 +312,25 @@ async function goldenRun(context, transport, headless) {
     panel_cts: room.cts,
     panel_opponent_preview: room.opponent_preview,
   };
+  // Nothing the extension carries may appear on the page's window.postMessage
+  // bus: the client page records every message event it can see.
+  const bus = await page.evaluate(() => window.ps.bus);
+  evidence.received_line_kinds = (await p1.panel()).received_line_kinds;
+  evidence.page_bus = {
+    events: bus.length,
+    extension_types_seen: [...new Set(bus.filter((b) => b.text.includes("areneon-672")).map((b) => b.type))],
+    with_ports: bus.filter((b) => b.ports > 0).length,
+    challstr_seen: bus.some((b) => b.text.includes("challstr")),
+    request_seen: bus.some((b) => b.text.includes("|request|")),
+  };
+  assert.ok(!("challstr" in evidence.received_line_kinds), "challstr must never be forwarded");
+  for (const kind of Object.keys(evidence.received_line_kinds)) {
+    assert.ok(WHITELIST.has(kind), `forwarded a non-whitelisted line kind: ${kind}`);
+  }
+  assert.ok(evidence.page_bus.extension_types_seen.every((t) => t === "ready"));
+  assert.equal(evidence.page_bus.with_ports, 0);
+  assert.equal(evidence.page_bus.challstr_seen, false);
+  assert.equal(evidence.page_bus.request_seen, false);
   p2.close();
   await page.close();
   return evidence;
@@ -329,48 +360,52 @@ async function spectatorRun(context, transport) {
 }
 
 async function failClosedRun(context) {
+  // Page script is hostile here. It forges envelopes on the window bus, tries
+  // to inject its own port, asks for a new port, and patches
+  // MessagePort.prototype.postMessage before opening a socket. Tracker-level
+  // fail-closed cases (shape, rqid, handshake, seat, wrapper version) are
+  // covered by test/protocol.test.mjs.
   const page = await context.newPage();
   await page.goto(`http://localhost:${PAGE_PORT}/client.html?server=${PS_PORT}`);
   const p1 = new PagePlayer(page);
   await until("panel", () => p1.panel());
-  const post = (msg) => page.evaluate((m) => window.postMessage(m, location.origin), msg);
-  const env = (extra) => ({ ns: "areneon-672", v: 1, ...extra });
-  const out = {};
-  // 1. Malformed or foreign envelopes are dropped and counted.
-  await post(env({ type: "frame", socket: 9, url: "ws://127.0.0.1/x", data: 5 }));
-  await post(env({ type: "frame", socket: 9, url: "wss://evil.example/x", data: "|x" }));
-  await post(env({ type: "frame", socket: 9, url: "ws://127.0.0.1/x", data: "|x", extra: 1 }));
-  await sleep(200);
-  out.rejected = (await p1.panel()).rejected;
-  // 2. A frame that is not Showdown protocol fails its socket closed.
-  await post(env({ type: "frame", socket: 10, url: "ws://127.0.0.1/y", data: "{\"not\":\"showdown\"}" }));
-  // 3. A recognised handshake, then an unrecognised request shape: fail closed.
-  await post(env({ type: "frame", socket: 11, url: "ws://127.0.0.1/z", data: "|updateuser| p1|1|1|{}" }));
-  await post(env({ type: "frame", socket: 11, url: "ws://127.0.0.1/z", data: ">battle-fake-1\n|request|{\"rqid\":1,\"side\":{\"id\":\"p1\",\"name\":\"p1\",\"pokemon\":[]},\"newShape\":true}" }));
-  // 4. A request for another user is not taken as the player's own.
-  await post(env({ type: "frame", socket: 11, url: "ws://127.0.0.1/z", data: ">battle-fake-2\n|request|{\"rqid\":1,\"side\":{\"id\":\"p2\",\"name\":\"someoneelse\",\"pokemon\":[]},\"wait\":true}" }));
+  await page.evaluate(() => {
+    window.spied = [];
+    const original = MessagePort.prototype.postMessage;
+    MessagePort.prototype.postMessage = function (message, ...rest) {
+      window.spied.push(JSON.stringify(message).slice(0, 120));
+      return original.call(this, message, ...rest);
+    };
+  });
+  const request = '|request|{"rqid":1,"side":{"id":"p1","name":"p9","pokemon":[]},"wait":true}';
+  await page.evaluate((req) => {
+    const env = (extra) => ({ ns: "areneon-672", v: 1, ...extra });
+    window.postMessage(env({ type: "lines", socket: 1, url: "ws://127.0.0.1/x", transport: "raw", roomid: "", lines: ["|updateuser| p9"] }), location.origin);
+    window.postMessage(env({ type: "lines", socket: 1, url: "ws://127.0.0.1/x", transport: "raw", roomid: "battle-forged-1", lines: [req] }), location.origin);
+    window.postMessage(env({ type: "hello", v: 2, wrapper: "b2-websocket" }), location.origin);
+    const channel = new MessageChannel();
+    window.postMessage(env({ type: "port" }), location.origin, [channel.port2]);
+    channel.port1.postMessage(env({ type: "lines", socket: 1, url: "ws://127.0.0.1/x", transport: "raw", roomid: "battle-forged-2", lines: [req] }));
+    window.postMessage(env({ type: "ready" }), location.origin);
+  }, request);
   await sleep(300);
-  let panel = await p1.panel();
-  out.unframed_socket = panel.sockets.find((s) => s.url === "ws://127.0.0.1/y");
-  out.unrecognised_request_room = panel.rooms.find((r) => r.roomid === "battle-fake-1");
-  out.other_user_request_room = panel.rooms.find((r) => r.roomid === "battle-fake-2") ?? null;
-  out.rejected_after = panel.rejected;
-  // 5. A valid request is shown; then an unknown wrapper version withholds everything.
-  await post(env({ type: "frame", socket: 11, url: "ws://127.0.0.1/z", data: ">battle-fake-3\n|request|{\"rqid\":1,\"side\":{\"id\":\"p1\",\"name\":\"p1\",\"pokemon\":[]},\"wait\":true}" }));
-  await sleep(200);
-  out.valid_before_bad_wrapper = (await p1.room("battle-fake-3")).current;
-  await post({ ns: "areneon-672", v: 2, type: "hello", wrapper: "b2-websocket" });
-  await sleep(200);
-  panel = await p1.panel();
-  out.client_after_bad_wrapper = panel.client;
-  out.valid_after_bad_wrapper = panel.rooms.find((r) => r.roomid === "battle-fake-3").current;
+  await p1.connect("raw");
+  await sleep(300);
+  const panel = await p1.panel();
+  const bus = await page.evaluate(() => window.ps.bus);
+  const out = {
+    forged_rooms: panel.rooms.map((r) => r.roomid),
+    client: panel.client,
+    real_socket_status: panel.sockets.map((s) => s.status),
+    port_offers_seen_by_page: bus.filter((b) => b.type === "port" && b.ports > 0).length,
+    spied_extension_messages: (await page.evaluate(() => window.spied)).filter((m) => m.includes("areneon-672") && !m.includes("forged")),
+  };
   await page.close();
-  assert.equal(out.unframed_socket.status, "unrecognised");
-  assert.equal(out.unrecognised_request_room.status, "fail-closed");
-  assert.equal(out.unrecognised_request_room.current, null);
-  assert.ok(out.valid_before_bad_wrapper);
-  assert.equal(out.client_after_bad_wrapper, "unrecognised");
-  assert.equal(out.valid_after_bad_wrapper, null);
+  assert.deepEqual(out.forged_rooms, []);
+  assert.equal(out.client, "ok");
+  assert.deepEqual(out.real_socket_status, ["showdown"]);
+  assert.equal(out.port_offers_seen_by_page, 0);
+  assert.deepEqual(out.spied_extension_messages, []);
   return out;
 }
 

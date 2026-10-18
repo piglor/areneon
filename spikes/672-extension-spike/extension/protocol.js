@@ -2,19 +2,21 @@
 // Showdown protocol documentation (vendor/pokemon-showdown/PROTOCOL.md); no
 // Showdown client code is copied.
 //
-// Pure, DOM-free logic for the ISOLATED world: envelope validation, SockJS
-// framing, Showdown message parsing and own-request tracking. Loaded as a
-// classic content script (it shares the isolated world with isolated.js) and
-// also imported by the Node tests, so it only assigns one global.
+// Pure, DOM-free logic for the ISOLATED world: envelope validation (schema,
+// socket host, line whitelist) and own-request tracking. Loaded as a classic
+// content script (it shares the isolated world with isolated.js) and also
+// imported by the Node tests, so it only assigns one global.
 "use strict";
 
 (() => {
   const NS = "areneon-672";
   const ENVELOPE_VERSION = 1;
   const WRAPPER = "b2-websocket";
-  const MAX_FRAME = 1 << 20;
+  const MAX_CHARS = 1 << 20;
   /** WebSocket hosts the extension trusts: the main Showdown server and localhost. */
   const SOCKET_HOSTS = new Set(["sim3.psim.us", "localhost", "127.0.0.1"]);
+  /** Line kinds the wrapper may forward (mirrors main-world.js). */
+  const BATTLE_KINDS = new Set(["init", "player", "poke", "showteam", "request", "teampreview", "turn", "win", "tie"]);
 
   /** Same algorithm as packages/showdown-bridge/src/request-identity.ts. */
   function canonicalJson(value) {
@@ -43,10 +45,21 @@
     return typeof value === "object" && value !== null && !Array.isArray(value);
   }
 
+  /** Is this a line the wrapper is allowed to forward for this room? */
+  function allowedLine(roomid, line) {
+    if (typeof line !== "string" || !line.startsWith("|")) return false;
+    const parts = line.split("|");
+    if (roomid.startsWith("battle-")) {
+      if (!BATTLE_KINDS.has(parts[1])) return false;
+      return parts[1] === "request" || !(parts[1] === "showteam" && parts.length > 3);
+    }
+    return roomid === "" && parts[1] === "updateuser" && parts.length === 3;
+  }
+
   /**
-   * Validate a MAIN-world message. Anything in the page can post one, so the
-   * shape is checked exactly and the socket URL must be an allowed host.
-   * Returns the envelope or a string reason for rejection.
+   * Validate a MAIN-world envelope. Page script shares the MAIN world, so the
+   * shape is checked exactly, the socket URL must be an allowed host and
+   * every line must be on the whitelist. Returns the envelope or a reason.
    */
   function validateEnvelope(data) {
     if (!isPlainObject(data) || data.ns !== NS) return "not-ours";
@@ -58,12 +71,22 @@
         return data.wrapper === WRAPPER ? data : "unknown-wrapper";
       case "open":
       case "close":
+      case "unrecognised":
         if (keys !== "ns,socket,type,url,v") return "bad-shape";
         break;
-      case "frame":
-        if (keys !== "data,ns,socket,type,url,v") return "bad-shape";
-        if (typeof data.data !== "string" || data.data.length > MAX_FRAME) return "bad-frame";
+      case "lines": {
+        if (keys !== "lines,ns,roomid,socket,transport,type,url,v") return "bad-shape";
+        if (data.transport !== "raw" && data.transport !== "sockjs") return "bad-transport";
+        if (typeof data.roomid !== "string" || data.roomid.length > 200) return "bad-room";
+        if (!Array.isArray(data.lines) || data.lines.length === 0) return "bad-lines";
+        let chars = 0;
+        for (const line of data.lines) {
+          if (!allowedLine(data.roomid, line)) return "line-not-allowed";
+          chars += line.length;
+        }
+        if (chars > MAX_CHARS) return "too-large";
         break;
+      }
       default:
         return "bad-type";
     }
@@ -80,39 +103,6 @@
     return data;
   }
 
-  /**
-   * Split one WebSocket frame into Showdown messages. Showdown speaks either
-   * raw WebSocket (one message per frame) or SockJS framing over WebSocket
-   * (`o` open, `h` heartbeat, `a[...]` messages, `c[...]` close). Returns
-   * null for a frame that is neither: the caller fails closed.
-   */
-  function unframe(frame) {
-    if (frame === "o" || frame === "h") return { transport: "sockjs", messages: [] };
-    if (frame.startsWith("c[")) return { transport: "sockjs", messages: [] };
-    if (frame.startsWith("a[")) {
-      let parsed;
-      try {
-        parsed = JSON.parse(frame.slice(1));
-      } catch {
-        return null;
-      }
-      if (!Array.isArray(parsed) || !parsed.every((m) => typeof m === "string")) return null;
-      return { transport: "sockjs", messages: parsed };
-    }
-    if (frame.startsWith("|") || frame.startsWith(">")) {
-      return { transport: "raw", messages: [frame] };
-    }
-    return null;
-  }
-
-  /** Split a Showdown message into its room id and protocol lines. */
-  function splitMessage(message) {
-    const lines = message.split("\n");
-    let roomid = "";
-    if (lines[0].startsWith(">")) roomid = lines.shift().slice(1).trim();
-    return { roomid, lines };
-  }
-
   /** Same phase rules as packages/showdown-bridge/src/request.ts. */
   function phaseOf(request) {
     if (request.teamPreview === true) return "preview";
@@ -125,13 +115,13 @@
   /**
    * Tracks sockets and battle rooms and reconstructs the player's own
    * request per room. It emits only identity and phase, never the raw
-   * request, and never anything about the opponent beyond public preview
-   * species details.
+   * request, and nothing about the opponent beyond public preview details.
    */
   class Tracker {
     constructor() {
       this.client = "waiting-for-wrapper";
       this.rejected = {};
+      this.received = {};
       this.sockets = new Map();
       this.rooms = new Map();
     }
@@ -140,14 +130,14 @@
       this.rejected[reason] = (this.rejected[reason] ?? 0) + 1;
     }
 
-    /** Feed one untrusted MAIN-world message. */
+    /** Feed one untrusted MAIN-world envelope. */
     async accept(raw) {
       const envelope = validateEnvelope(raw);
       if (typeof envelope === "string") {
         if (envelope === "unknown-wrapper" || envelope === "bad-version") {
           this.client = "unrecognised";
         }
-        if (envelope !== "not-ours") this.reject(envelope);
+        this.reject(envelope);
         return;
       }
       if (envelope.type === "hello") {
@@ -167,15 +157,23 @@
         socket.status = "closed";
         return;
       }
-      if (envelope.type !== "frame") return;
-      if (socket.status === "unrecognised") return;
-      const unframed = unframe(envelope.data);
-      if (!unframed || (socket.transport && socket.transport !== unframed.transport)) {
-        this.failSocket(socket, "unrecognised frame");
-        return;
+      if (envelope.type === "unrecognised") return this.failSocket(socket, "unrecognised frame");
+      if (envelope.type !== "lines" || socket.status === "unrecognised") return;
+      if (socket.transport && socket.transport !== envelope.transport) {
+        return this.failSocket(socket, "transport changed");
       }
-      socket.transport = unframed.transport;
-      for (const message of unframed.messages) await this.message(socket, message);
+      socket.transport = envelope.transport;
+      for (const line of envelope.lines) {
+        const kind = line.split("|")[1];
+        this.received[kind] = (this.received[kind] ?? 0) + 1;
+        if (envelope.roomid === "") {
+          // |updateuser|NAME: the Showdown handshake and the current user.
+          if (socket.status === "unverified") socket.status = "showdown";
+          socket.userid = toId(line.split("|")[2]);
+        } else {
+          await this.battleLine(socket, this.room(envelope.roomid, socket), line);
+        }
+      }
     }
 
     failSocket(socket, why) {
@@ -211,21 +209,6 @@
       }
       room.socketUrl = socket.url;
       return room;
-    }
-
-    async message(socket, message) {
-      const { roomid, lines } = splitMessage(message);
-      for (const line of lines) {
-        if (line.startsWith("|challstr|")) {
-          // A login nonce: proves the Showdown handshake, then dropped.
-          if (socket.status === "unverified") socket.status = "showdown";
-        } else if (line.startsWith("|updateuser|")) {
-          if (socket.status === "unverified") socket.status = "showdown";
-          socket.userid = toId(line.split("|")[2] ?? "");
-        } else if (roomid.startsWith("battle-")) {
-          await this.battleLine(socket, this.room(roomid, socket), line);
-        }
-      }
     }
 
     async battleLine(socket, room, line) {
@@ -292,14 +275,7 @@
         event = "new";
         seq = (last?.request_seq ?? 0) + 1;
       }
-      const observation = {
-        side_id: side.id,
-        request_seq: seq,
-        rqid: request.rqid,
-        phase,
-        request_hash: hash,
-        event,
-      };
+      const observation = { side_id: side.id, request_seq: seq, rqid: request.rqid, phase, request_hash: hash, event };
       room.current = observation;
       room.history.push(observation);
     }
@@ -310,6 +286,7 @@
       return {
         client: this.client,
         rejected: { ...this.rejected },
+        received_line_kinds: { ...this.received },
         sockets: [...this.sockets.values()].map((s) => ({ ...s })),
         rooms: [...this.rooms.values()].map((r) => ({
           roomid: r.roomid,
@@ -331,9 +308,8 @@
     WRAPPER,
     canonicalJson,
     requestHash,
+    allowedLine,
     validateEnvelope,
-    unframe,
-    splitMessage,
     phaseOf,
     Tracker,
   };

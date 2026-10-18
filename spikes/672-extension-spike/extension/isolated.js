@@ -1,15 +1,19 @@
 // SPIKE (#672): throwaway. Runs in the extension's ISOLATED world.
 //
-// Treats every MAIN-world message as untrusted: AreneonProtocol validates
-// the envelope schema, framing and request shape before anything is shown.
-// It renders a read-only diagnostic panel. There is no submit path: nothing
-// here writes to the page's socket or posts back into the MAIN world.
+// Receives the MAIN-world wrapper's filtered lines over a private
+// MessageChannel port. The port arrives once over window.postMessage; this
+// capture listener is registered at document_start, before any page script,
+// and stops that message from reaching page listeners. Every envelope is
+// still untrusted: AreneonProtocol validates its schema, line whitelist and
+// request shape before anything is shown. There is no submit path: nothing
+// here writes to the page's socket or posts data back into the MAIN world.
 (() => {
   "use strict";
-  const { Tracker } = globalThis.AreneonProtocol;
+  const { NS, Tracker } = globalThis.AreneonProtocol;
   const tracker = new Tracker();
   let queue = Promise.resolve();
   let pre = null;
+  let port = null;
 
   function render() {
     if (!pre) {
@@ -31,11 +35,23 @@
     pre.textContent = JSON.stringify(tracker.snapshot(), null, 1);
   }
 
-  window.addEventListener("message", (event) => {
-    // Only same-window, same-origin posts; content is validated by the tracker.
-    if (event.source !== window || event.origin !== window.location.origin) return;
-    const data = event.data;
-    queue = queue.then(() => tracker.accept(data)).then(render, render);
-  });
+  window.addEventListener(
+    "message",
+    (event) => {
+      if (event.source !== window || event.origin !== window.location.origin) return;
+      const data = event.data;
+      if (typeof data !== "object" || data === null || data.ns !== NS || data.type !== "port") return;
+      event.stopImmediatePropagation();
+      if (port || event.ports.length !== 1) return;
+      port = event.ports[0];
+      port.onmessage = (message) => {
+        queue = queue.then(() => tracker.accept(message.data)).then(render, render);
+      };
+      port.postMessage("ack");
+    },
+    true,
+  );
+  // In case the wrapper's first offer was dispatched before this listener.
+  window.postMessage({ ns: NS, v: 1, type: "ready" }, window.location.origin);
   document.addEventListener("DOMContentLoaded", render);
 })();

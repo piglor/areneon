@@ -18,6 +18,7 @@ export default tseslint.config(
         [
           "window", "document", "location", "crypto", "TextEncoder", "URL", "URLSearchParams",
           "WebSocket", "fetch", "setTimeout", "console", "process", "require", "__dirname", "global",
+          "MessagePort", "MessageChannel", "EventTarget",
         ].map((name) => [name, "readonly"]),
       ),
     },

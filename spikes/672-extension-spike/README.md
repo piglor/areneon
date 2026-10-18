@@ -22,13 +22,13 @@ owner's browser ([MANUAL-TEST.md](MANUAL-TEST.md)).
 | Path | Role |
 |---|---|
 | `extension/manifest.json` | MV3, no permissions, content scripts on `https://play.pokemonshowdown.com/*`, `https://*.pokemonshowdown.com/*` and `http://localhost/*`, `http://127.0.0.1/*` only |
-| `extension/main-world.js` | MAIN world. Subclasses `WebSocket` to add one `message` listener and `postMessage` each text frame. Never wraps `send`, receives nothing back |
-| `extension/protocol.js` | ISOLATED world, pure logic: envelope schema, socket-host allowlist, SockJS/raw unframing, Showdown line parsing, own-request tracking, `request_hash` (same canonical JSON and SHA-256 as `packages/showdown-bridge/src/request-identity.ts`) |
-| `extension/isolated.js` | ISOLATED world: listens for same-window, same-origin messages, feeds the tracker, renders the read-only panel. No submit path |
+| `extension/main-world.js` | MAIN world. Subclasses `WebSocket` to add one `message` listener, unframes raw or SockJS frames, keeps only whitelisted lines (never `|challstr|`) and sends them over a private `MessageChannel` port. Never wraps `send`; nothing flows back |
+| `extension/protocol.js` | ISOLATED world, pure logic: envelope schema, socket-host allowlist, line whitelist re-check, own-request tracking, `request_hash` (same canonical JSON and SHA-256 as `packages/showdown-bridge/src/request-identity.ts`) |
+| `extension/isolated.js` | ISOLATED world: takes the port with a capture listener registered before page script, feeds the tracker, renders the read-only panel. No submit path |
 | `harness/server.cjs` | Boots the unmodified pinned server (`vendor/pokemon-showdown`, MIT) in-process on 127.0.0.1 with in-memory config, plus a localhost control endpoint that starts a battle with a fixed seed |
 | `harness/client.html` | Our own minimal stand-in client page (not the AGPL client): opens a raw or SockJS-framed WebSocket |
 | `test/e2e.mjs` | Playwright/Chromium with the unpacked extension; p1 is the page, p2 a Node WebSocket client |
-| `test/protocol.test.mjs` | Unit checks for `protocol.js`, including hash parity with the committed golden fixtures |
+| `test/protocol.test.mjs` | Unit checks for the wrapper's frame filter (including that `|challstr|` is never forwarded) and `protocol.js` (hash parity with the golden fixtures, every fail-closed case) |
 | `evidence/e2e-result.json` | Output of the last e2e run (identities only, synthetic team) |
 
 Run (after `make showdown`):
@@ -65,8 +65,9 @@ Details (from `evidence/e2e-result.json`, identical for raw and SockJS):
   committed fixtures with the extension's hash (with an injected `rqid`) and
   gets the committed `request_hash`.
 - **Undo.** The server sends **no** new `|request|` on undo. `rqid` stays 4,
-  `request_seq` stays 2, the reconstructed request is unchanged, and the
-  re-sent choice tagged with the same `rqid` is accepted.
+  `request_seq` stays 2, and the reconstructed request is unchanged. The
+  re-sent choice tagged with the same `rqid` is accepted: no `|error|`, and
+  the turn advances to `rqid` 6 (asserted).
 - **Reconnect** (close the socket, open a new one, `/trn`, `/join`). The
   server re-sends the **same** request with the **same** `rqid` (8 → 8). The
   tracker records it as `resent`, keeps `request_seq` 4 and the same hash,
@@ -81,13 +82,22 @@ Details (from `evidence/e2e-result.json`, identical for raw and SockJS):
   receives 10 battle frames and no `|request|`; the room shows
   `rejected: spectator` with no observation. A request whose `side.name` is
   not the logged-in user is dropped (`request-not-for-current-user`).
-- **Fail closed** (forged MAIN-world messages from a page script):
-  malformed envelopes, extra keys and non-allowlisted socket hosts are
-  dropped and counted; a non-Showdown frame marks its socket `unrecognised`;
-  an unknown request shape, a request without `rqid`, a request before the
-  Showdown handshake and a seat mismatch each mark the room `fail-closed`
-  with no observation; an unknown wrapper version sets `client:
-  unrecognised` and withholds every observation.
+- **Fail closed.** In the e2e a hostile page script forges envelopes on the
+  window bus, injects its own port, posts `ready` to ask for a new port and
+  patches `MessagePort.prototype.postMessage`: no forged room appears, no
+  port is offered to the page, the spy sees none of the wrapper's
+  envelopes, and the real socket still reaches `showdown`. Unit tests cover
+  the tracker: malformed envelopes, extra keys, non-allowlisted socket hosts
+  and non-whitelisted lines are dropped and counted; a non-Showdown frame
+  marks its socket `unrecognised`; an unknown request shape, a request
+  without `rqid`, a request before the Showdown handshake and a seat
+  mismatch each mark the room `fail-closed` with no observation; an unknown
+  wrapper version sets `client: unrecognised` and withholds every
+  observation.
+- **No new exposure** (asserted). The extension forwarded only
+  `updateuser init player poke teampreview request turn win`; never
+  `challstr`. The client page's own `message` listener saw one extension
+  message (`ready`, no data) and no port, `challstr` or `|request|`.
 - **OTS-declined preview.** Before turn 1, p1's non-request lines are only
   `init title j t: gametype player gen tier rule clearpoke poke teampreview
   uhtml uhtmlchange teamsize start switch`. There is no `|showteam|`.
@@ -125,28 +135,71 @@ Details (from `evidence/e2e-result.json`, identical for raw and SockJS):
 
 ## Security notes
 
-- The MAIN world gets nothing from the extension: no token, no team, no
-  reply channel. It never wraps `send`, so outgoing `/trn` assertions and
-  `/utm` team uploads never pass through it.
-- Every MAIN-world message is untrusted. The isolated world checks
-  `event.source === window`, the page origin, the exact key set, types,
-  a 1 MiB frame cap, `ws:`/`wss:` and the socket host allowlist
-  (`sim3.psim.us`, `localhost`, `127.0.0.1`).
-- **Limit:** a hostile script on the Showdown page can forge a well-formed
-  frame stream (including `|updateuser|`) that B2 cannot tell from real
-  traffic. The impact is a wrong display only, because there is no submit
-  path. An unforgeable alternative is reading frames through
-  `chrome.debugger` (CDP `Network.webSocketFrameReceived`), at the cost of
-  the debugger permission and its warning banner.
-- The wrapper forwards every text frame, including `|challstr|`, over the
-  page's `postMessage` bus. Page scripts can already read that from the
-  socket, so nothing new is exposed, but a hardened wrapper should drop
-  `|challstr|` before posting. The tracker uses it only as a handshake
-  signal and stores nothing from it.
-- The spike panel lives in the page DOM (open shadow root), so the page can
-  read it. It shows only the player's own request identity and public
-  preview species. The real advisor should render in `chrome.sidePanel`.
-- No auto-submit: nothing in the extension writes to the socket or the page.
+**What the requirement can mean.** The page created the socket, so page
+script already receives every frame, including `|challstr|` and the full own
+`|request|`, which carries the player's own team. No MAIN-world design can
+hide that from page script. The criterion "no auth tokens or team data
+exposed to page script" can therefore only mean **the extension adds no new
+exposure**: it puts nothing into the MAIN world that the page did not already
+have, and it does not rebroadcast socket data on a channel other scripts can
+read more easily. (An earlier revision of this spike broke the second part by
+posting every raw frame, `|challstr|` included, on `window.postMessage`.)
+
+How the spike meets it:
+
+- **One direction.** Data flows MAIN to ISOLATED only. The isolated world
+  sends the MAIN world just `ready` and `ack`, with no data. No token, team or
+  reply ever enters the MAIN world. The wrapper never wraps `send`, so
+  outgoing `/trn` assertions and `/utm` team uploads never pass through it.
+- **Whitelist before anything leaves the wrapper.** It forwards
+  `|updateuser|NAME` (settings JSON dropped) and, in battle rooms only,
+  `init`, `player` (side and name only), `poke`, `showteam` (side id only, the
+  packed team dropped), `request`, `teampreview`, `turn`, `win` and `tie`.
+  `|challstr|`, `|nametaken|`, query responses, chat, PMs and every other
+  line are dropped. The isolated world re-checks each line against the same
+  whitelist and rejects the whole envelope otherwise.
+- **What still crosses worlds, and why.** The full own `|request|` JSON,
+  including the player's own moves, items, abilities and stats. It is needed
+  to compute `request_hash`, and it is the input the advisor needs. It is the
+  player's own data, which the page already holds. It holds no opponent
+  hidden information: the server sends each player only their own side.
+  The player's display name also crosses, for the own-player check.
+- **Channel.** A `MessageChannel` port, not `window.postMessage`. The wrapper
+  offers a port at `document_start`. The isolated world takes it in a
+  capture-phase listener registered at `document_start`, before any page
+  script, and stops the event from reaching page listeners. The wrapper uses
+  only the first acknowledged port and never offers another. It captures
+  `Reflect.apply`, `MessagePort.prototype.postMessage`, `addEventListener`
+  and `window.postMessage` at `document_start`, so prototype patching later
+  does not intercept the port traffic.
+- **Not truly private. No MAIN-to-ISOLATED channel is.** The MAIN world shares
+  one JavaScript realm with the page. The port's protection depends on our
+  scripts running at `document_start` before page script. Chrome documents
+  that for `document_start`, but not the order between our MAIN and ISOLATED
+  scripts; the `ready`/offer handshake covers both orders. At runtime the
+  wrapper still uses ordinary built-ins (`String.prototype.split`,
+  `JSON.parse`, `Array` methods). A page that patches them can observe what
+  the wrapper handles, which is a subset of what the page already reads
+  from its own socket. The port stops passive listeners on the window bus;
+  it cannot stop a page that actively tampers with its own realm. A channel
+  that is private from page script needs no MAIN-world code at all, for
+  example `chrome.debugger` (CDP `Network.webSocketFrameReceived`) from the
+  service worker. That costs the `debugger` permission and a visible
+  warning bar.
+- **Forgery.** For the same reason, a hostile page script can construct a
+  socket through our wrapper and dispatch synthetic frames (including
+  `|updateuser|`) that B2 cannot tell from real traffic. The impact is a
+  wrong display only, because there is no submit path. Forged envelopes on
+  the window bus, and forged ports, are ignored.
+- **Untrusted input.** The isolated world checks the exact key set, types,
+  the line whitelist, a 1 MiB cap per envelope, `ws:`/`wss:` and the socket
+  host allowlist (`sim3.psim.us`, `localhost`, `127.0.0.1`).
+- **Panel.** The spike panel lives in the page DOM (open shadow root), so the
+  page can read it. It shows only own request identity (hashes, phase,
+  `rqid`) and public preview species, all of which the page already has. The
+  real advisor should render in `chrome.sidePanel`.
+- **No auto-submit.** Nothing in the extension writes to the socket or the
+  page.
 
 ## Recommendation
 
