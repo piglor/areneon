@@ -46,7 +46,17 @@ export interface ObservationInput {
 const REQUEST = "|request|";
 
 // Every object schema in an observation names its required keys.
-type Schema = { $ref?: string; properties?: Record<string, Schema>; required: string[]; items?: Schema };
+type Schema = {
+  $ref?: string;
+  type?: string;
+  properties?: Record<string, Schema>;
+  required: string[];
+  items?: Schema;
+};
+const LEAF: Readonly<Record<string, (value: unknown) => boolean>> = {
+  string: (v) => typeof v === "string",
+  integer: (v) => Number.isSafeInteger(v),
+};
 // Both observation schemas share one shape and differ only in `kind`'s const.
 const SHAPE = previewSchema as unknown as Schema & { $defs: Record<string, Schema> };
 
@@ -57,7 +67,9 @@ const SHAPE = previewSchema as unknown as Schema & { $defs: Record<string, Schem
  */
 function assertClosed(value: unknown, schema: Schema, at: string): void {
   const resolved = schema.$ref ? (SHAPE.$defs[schema.$ref.slice("#/$defs/".length)] as Schema) : schema;
-  const { properties, items } = resolved;
+  const { properties, items, type } = resolved;
+  const leaf = type === undefined ? undefined : LEAF[type];
+  if (leaf && !leaf(value)) throw new ObservationError(`${at} must be a ${type}`);
   if (properties) {
     if (typeof value !== "object" || value === null || Array.isArray(value)) {
       throw new ObservationError(`${at} must be an object`);
@@ -77,19 +89,40 @@ function assertClosed(value: unknown, schema: Schema, at: string): void {
   }
 }
 
+/** Showdown's `toID`: lowercase letters and digits only. */
+const toID = (text: string): string => text.toLowerCase().replace(/[^a-z0-9]/g, "");
+
+interface RequestMon {
+  ident: string;
+  details: string;
+  item: string;
+  baseAbility: string;
+  moves: string[];
+}
+
 /**
- * The team must be this player's: every Pokémon in their own request is one
- * of its sets, by the name the engine shows (nickname, else species). An
- * opponent's team, or another of the player's teams, fails.
+ * The team must be this player's own, set for set. It is checked against the
+ * player's Team Preview request, the first in the channel: no Mega, Transform,
+ * Trick or Knock Off has changed a forme, move or item yet. Each Pokémon there
+ * must match one set by species, item, ability and moves (and by nickname
+ * when the set has one). A mirror team with other items or moves fails, as
+ * does a channel that does not start at Team Preview.
  */
-function assertOwnTeam(team: PrivateTeamSpec, request: { [key: string]: Json }): void {
-  const names = team.team.map((set) => set.name || set.species);
-  const side = request.side as { pokemon: { ident: string }[] };
-  for (const { ident } of side.pokemon) {
-    const name = ident.slice(ident.indexOf(": ") + 2);
-    const at = names.indexOf(name);
-    if (at < 0) throw new ObservationError(`the team is not this player's: it has no ${name}`);
-    names.splice(at, 1);
+function assertOwnTeam(team: PrivateTeamSpec, lines: readonly string[]): void {
+  const first = lines.find((line) => line.startsWith(REQUEST));
+  const preview = JSON.parse((first as string).slice(REQUEST.length)) as { teamPreview?: true; side: { pokemon: RequestMon[] } };
+  if (preview.teamPreview !== true) {
+    throw new ObservationError("the channel does not start at Team Preview, so the team cannot be checked");
+  }
+  const key = (species: string, item: string, ability: string, moves: readonly string[]): string =>
+    [toID(species), toID(item), toID(ability), ...moves.map(toID)].join("|");
+  const sets = team.team.map((set) => ({ name: set.name, key: key(set.species, set.item, set.ability, set.moves) }));
+  for (const mon of preview.side.pokemon) {
+    const name = mon.ident.slice(mon.ident.indexOf(": ") + 2);
+    const wanted = key(mon.details.split(",")[0] as string, mon.item, mon.baseAbility, mon.moves);
+    const at = sets.findIndex((set) => set.key === wanted && (set.name === "" || set.name === name));
+    if (at < 0) throw new ObservationError(`the team is not this player's: no set matches ${name}`);
+    sets.splice(at, 1);
   }
 }
 
@@ -107,11 +140,13 @@ export async function buildObservation({
   sha256,
   decision_context,
 }: ObservationInput): Promise<Observation> {
+  // Copies, checked as copied: no getter, toJSON or later mutation of an
+  // input can change what was checked.
+  [team, manifest, decision_context] = structuredClone([team, manifest, decision_context]);
   const at = channel.lines.findLastIndex((line) => line.startsWith(REQUEST));
   if (at < 0) throw new ObservationError("the channel holds no request to observe");
   const request = JSON.parse((channel.lines[at] as string).slice(REQUEST.length)) as { [key: string]: Json };
   if (request.wait === true) throw new ObservationError("the last request is a wait request: there is no decision");
-  assertOwnTeam(team, request);
   const { rqid, ...hashed } = request;
   const identity = {
     request_seq: channel.lines.slice(0, at + 1).filter((line) => line.startsWith(REQUEST)).length,
@@ -132,6 +167,8 @@ export async function buildObservation({
   if (decision_context !== undefined) common.decision_context = decision_context;
   const observation: Observation =
     request.teamPreview === true ? { ...common, kind: "preview" } : { ...common, kind: "battle" };
+  // Closure first: the team check reads the sets' fields.
   assertClosed(observation, SHAPE, "observation");
+  assertOwnTeam(observation.team, channel.lines);
   return observation;
 }

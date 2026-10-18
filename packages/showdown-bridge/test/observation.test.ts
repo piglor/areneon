@@ -182,7 +182,9 @@ describe("the canary test (ADR-008 §5 adversarial 2)", () => {
    * What `of` must never leak to the other player: anything the other
    * player's channel never shows. Whole lines and strings, never bare numbers.
    * - `lines`: `of`'s SECRET lines, omniscient lines its own channel carries
-   *   and the other's does not (the engine resolved each `|split|` there);
+   *   and the other's does not (the engine resolved each `|split|` there).
+   *   `log` is the observer's channel, so these guard regressions in the
+   *   other fields rather than prove the split;
    * - `stats`: the stats of every Pokémon in `of`'s own requests;
    * - `sets`: each of `of`'s sets whole, and every item and move of them that
    *   the other player's channel never names (never revealed in battle).
@@ -254,7 +256,7 @@ describe("the canary test (ADR-008 §5 adversarial 2)", () => {
     expect(canaries("p2").sets.some((secret) => leaks(bytes, secret))).toBe(true);
     const channel = recordedChannel(record, "p1", 1, "synthetic");
     await expect(observe({ channel, team: teams.p2, manifest: record.manifest })).rejects.toThrow(
-      /the team is not this player's: it has no Venusaur/,
+      /the team is not this player's: no set matches Venusaur/,
     );
   });
 });
@@ -374,12 +376,86 @@ describe("buildObservation and its adapter", () => {
     ).rejects.toThrow(/observation\/team\/team\/0\/moves must be an array/);
   });
 
+  it("checks leaf types and copies its inputs, so no later change reaches the observation", async () => {
+    const [prefix] = decisionPrefixes(p1()) as [PlayerChannelLog];
+    const rest = { channel: playerChannel(prefix), sha256: nodeSha256 };
+    const regulation = { ...golden.manifest, regulation: 7 as unknown as string };
+    await expect(buildObservation({ ...rest, team: synthetic(), manifest: regulation })).rejects.toThrow(
+      /observation\/manifest\/regulation must be a string/,
+    );
+    const team = synthetic();
+    const observation = await buildObservation({ ...rest, team, manifest: golden.manifest });
+    (team.team[0] as { item: string }).item = "SECRET-ITEM";
+    expect(JSON.stringify(observation)).not.toContain("SECRET-ITEM");
+    const withToJson = { ...synthetic(), toJSON: () => ({}) } as unknown as PrivateTeamSpec;
+    await expect(buildObservation({ ...rest, team: withToJson, manifest: golden.manifest })).rejects.toThrow();
+  });
+
   it("observe validates the whole observation against its schema", async () => {
     const [prefix] = decisionPrefixes(p1()) as [PlayerChannelLog];
     const bad = { ...golden.manifest, regulation: "" };
     await expect(observe({ channel: playerChannel(prefix), team: synthetic(), manifest: bad })).rejects.toThrow(
       /invalid observation/,
     );
+  });
+
+  describe("the own-team check, against the player's Team Preview request", () => {
+    const stats = { atk: 1, def: 1, spa: 1, spd: 1, spe: 1 };
+    const mon = (ident: string, details: string) => ({
+      ident,
+      details,
+      condition: "100/100",
+      active: false,
+      stats,
+      moves: ["hydropump"],
+      baseAbility: "levitate",
+      item: "sitrusberry",
+      pokeball: "pokeball",
+    });
+    const preview = (...pokemon: object[]) =>
+      `|request|${JSON.stringify({ teamPreview: true, maxChosenTeamSize: 1, side: { name: "p1", id: "p1", pokemon } })}`;
+    const set = (name: string, item = "Sitrus Berry") => ({
+      name,
+      species: "Rotom-Wash",
+      item,
+      ability: "Levitate",
+      moves: ["Hydro Pump"],
+      nature: "Serious",
+      gender: "N",
+      evs: { hp: 0, atk: 0, def: 0, spa: 0, spd: 0, spe: 0 },
+      ivs: { hp: 31, atk: 31, def: 31, spa: 31, spd: 31, spe: 31 },
+      level: 50,
+    });
+    const build = (lines: string[], sets: object[]) =>
+      buildObservation({
+        channel: playerChannel({ schema_version: 1, data_class: "synthetic", player: "p1", lines }),
+        team: { schema_version: 1, data_class: "synthetic", team: sets as PrivateTeamSpec["team"] },
+        manifest: golden.manifest,
+        sha256: nodeSha256,
+      });
+
+    it("accepts an alternate forme without a nickname, which the engine names by base species", async () => {
+      const observation = await build([preview(mon("p1: Rotom", "Rotom-Wash, L50"))], [set("")]);
+      expect(observation.kind).toBe("preview");
+    });
+
+    it("refuses a mirror team: same species, another item", async () => {
+      await expect(build([preview(mon("p1: Rotom", "Rotom-Wash, L50"))], [set("", "Leftovers")])).rejects.toThrow(
+        /no set matches Rotom/,
+      );
+    });
+
+    it("refuses a set whose nickname differs", async () => {
+      await expect(build([preview(mon("p1: Rotom", "Rotom-Wash, L50"))], [set("Washer")])).rejects.toThrow(
+        /no set matches Rotom/,
+      );
+    });
+
+    it("refuses a channel that does not start at Team Preview", async () => {
+      const side = { name: "p1", id: "p1", pokemon: [mon("p1: Rotom", "Rotom-Wash, L50")] };
+      const move = `|request|${JSON.stringify({ active: [{ moves: [{ move: "Hydro Pump", id: "hydropump" }] }], side })}`;
+      await expect(build([move], [set("")])).rejects.toThrow(/does not start at Team Preview/);
+    });
   });
 
   it("brands only a valid channel of that player's own requests", () => {
