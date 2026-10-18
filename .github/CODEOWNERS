@@ -9,6 +9,7 @@
 /pyproject.toml                 @arceushui
 /vitest.config.ts               @arceushui
 /scripts/check_licenses.py      @arceushui
+/scripts/check_data_class.py    @arceushui
 /scripts/check_no_pokepaste.py  @arceushui
 /scripts/licences-selftest.sh   @arceushui
 /tests/scripts/                 @arceushui

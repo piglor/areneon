@@ -1,17 +1,22 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { ajvFor } from "@areneon/schema/ajv";
+import channelSchema from "@areneon/schema/contracts/v1/player-channel-log.schema.json" with { type: "json" };
 import { describe, expect, it } from "vitest";
 import {
   battleSummary,
   type BattleSummary,
   type CaptureProvenance,
   captureProvenance,
+  type ChannelFixture,
+  GOLDEN_CHANNELS,
   GOLDEN_PROVENANCE,
   GOLDEN_DIR,
   GOLDEN_FORMAT,
   GOLDEN_PHASES,
   GOLDEN_SUMMARY,
   goldenBattle,
+  goldenChannels,
   goldenFixtures,
   syntheticTeam,
 } from "../src/golden.ts";
@@ -19,6 +24,33 @@ import { type BattleRecord, loadEngine, replayActor, runBattle } from "../src/in
 
 const committed = <T>(file: string): T =>
   JSON.parse(readFileSync(join(GOLDEN_DIR, file), "utf8")) as T;
+
+describe("golden per-player channel fixtures (ADR-008 §5)", () => {
+  const validChannel = ajvFor("contract").compile(channelSchema);
+
+  it("match a fresh capture and are synthetic PlayerChannelLogs", async () => {
+    const fresh = goldenChannels(await goldenBattle(loadEngine()));
+    expect(Object.keys(fresh).sort()).toEqual(Object.keys(GOLDEN_CHANNELS).sort());
+    for (const [file, fixture] of Object.entries(fresh)) {
+      const stored = committed<ChannelFixture>(file);
+      expect(stored, file).toEqual(fixture);
+      expect(validChannel(stored.channel), JSON.stringify(validChannel.errors)).toBe(true);
+      expect(stored.channel.data_class).toBe("synthetic");
+    }
+  });
+
+  it("carry each player's own requests only, and no wall-clock lines", () => {
+    for (const [file, player] of Object.entries(GOLDEN_CHANNELS)) {
+      const { lines } = committed<ChannelFixture>(file).channel;
+      const requests = lines.filter((l) => l.startsWith("|request|"));
+      expect(requests.length).toBeGreaterThan(0);
+      for (const request of requests) {
+        expect((JSON.parse(request.slice("|request|".length)) as { side: { id: string } }).side.id).toBe(player);
+      }
+      expect(lines.some((l) => l.startsWith("|t:|"))).toBe(false);
+    }
+  });
+});
 
 describe("golden request fixtures", () => {
   // A Showdown pin bump that changes behaviour fails here; re-capture with

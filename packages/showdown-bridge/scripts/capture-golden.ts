@@ -2,8 +2,8 @@
 //   node packages/showdown-bridge/scripts/capture-golden.ts
 // It also re-logs the validator verdict for every team fixture.
 // Review the diff: a changed fixture is a behaviour change of the engine.
-import { writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { loadEngine } from "../src/engine.ts";
 import {
   battleSummary,
@@ -12,6 +12,7 @@ import {
   GOLDEN_PROVENANCE,
   GOLDEN_SUMMARY,
   goldenBattle,
+  goldenChannels,
   goldenFixtures,
   TEAM_VERDICTS,
   TEAMS_DIR,
@@ -22,10 +23,12 @@ const engine = loadEngine();
 const record = await goldenBattle(engine);
 const files: Record<string, unknown> = {
   ...goldenFixtures(record),
+  ...goldenChannels(record),
   [GOLDEN_SUMMARY]: battleSummary(record),
   [GOLDEN_PROVENANCE]: captureProvenance(record),
 };
 for (const [file, content] of Object.entries(files)) {
+  mkdirSync(dirname(join(GOLDEN_DIR, file)), { recursive: true });
   writeFileSync(join(GOLDEN_DIR, file), `${JSON.stringify(content, null, 2)}\n`);
   console.log(`wrote ${file}`);
 }
