@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 .SHELLFLAGS := -euo pipefail -c
-.PHONY: setup showdown check python ts guards team-guard licences licences-selftest
+.PHONY: setup showdown check python ts contracts contracts-update guards team-guard licences licences-selftest
 
 # One-time setup for a clean clone.
 setup: showdown
@@ -29,6 +29,16 @@ ts: showdown
 	pnpm typecheck
 	pnpm test
 	node packages/showdown-bridge/scripts/check-rules.ts
+	$(MAKE) contracts
+
+# Contract schemas (ADR-008): every schema in packages/schema/contracts/ must
+# fit its profile, and the checked-in generated types must match a fresh run
+# of the pinned generator. contracts-update rewrites those types.
+contracts:
+	node packages/schema/scripts/contracts.ts
+
+contracts-update:
+	node packages/schema/scripts/contracts.ts --write
 
 guards: team-guard licences
 

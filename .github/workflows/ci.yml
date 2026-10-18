@@ -51,6 +51,8 @@ jobs:
         env:
           RULES_BASE_REF: HEAD^1
         run: node packages/showdown-bridge/scripts/check-rules.ts
+      - name: contract schemas and generated types (ADR-008)
+        run: make contracts
 
   team-guard:
     runs-on: ubuntu-latest
