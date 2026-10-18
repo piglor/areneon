@@ -154,7 +154,8 @@ export const TEAM_VERDICTS = "verdicts.json";
 
 /** An illegal fixture names `reason`: text the validator's first problem must contain. */
 export type TeamFixture =
-  { expect: "legal"; purpose: string } | { expect: "illegal"; purpose: string; reason: string };
+  | { expect: "legal"; purpose: string }
+  | { expect: "illegal"; purpose: string; reason: string };
 
 export interface TeamFixtureManifest {
   provenance: string;

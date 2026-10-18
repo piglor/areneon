@@ -149,7 +149,10 @@ describe("the engine accepts every non-pending candidate", () => {
   it("on every request of the golden battle", () => {
     const team = syntheticTeam();
     // The golden battle: each side plays its first legal choice.
-    const seen = play(start(GOLDEN_SEED, { p1: team, p2: team }), (set) => set.choices[0] as string);
+    const seen = play(
+      start(GOLDEN_SEED, { p1: team, p2: team }),
+      (set) => set.choices[0] as string,
+    );
     expect([...seen.phases].sort()).toEqual(["forceSwitch", "move", "preview"]);
     // The same battle the golden request fixtures were captured from.
     for (const file of Object.keys(GOLDEN_PHASES)) {
@@ -262,6 +265,17 @@ describe("CloneJudge", () => {
     battle.setPlayer("p1", { name: "p1", team: engine.sim.Teams.pack(team) });
     const judge = new CloneJudge(engine, battle, "p1");
     expect(() => judge.judge("0".repeat(64), [])).toThrow(/has no active request/);
+  });
+
+  it("refuses a clone that does not reproduce the live request", () => {
+    const battle = start(GOLDEN_SEED, { p1: team, p2: team });
+    const hash = decodeSide(battle).request_hash;
+    // A live request the engine did not mark `update: true`, yet the clone
+    // rebuilds differently: the clone would not be the player's battle.
+    Object.assign(battle.sides[0]?.activeRequest ?? {}, { maxChosenTeamSize: 3 });
+    expect(() => new CloneJudge(engine, battle, "p1").judge(hash, ["team 123"])).toThrow(
+      /does not reproduce the live battle's request/,
+    );
   });
 });
 

@@ -88,11 +88,18 @@ export class CloneJudge implements ChoiceJudge {
   #clone(): SimSide {
     const clone = this.#engine.sim.Battle.fromJSON(this.#battle.toJSON());
     const side = clone.sides[this.#side] as SimSide;
-    // fromJSON rebuilds `activeRequest` from the Pokémon (sim/state.ts),
-    // but after an `[Unavailable choice]` the live request was edited in
-    // place (`trapped` set, `maybe*` deleted, `update: true`). Carry the
-    // live request over so the clone is the battle the player sees.
-    side.activeRequest = JSON.parse(JSON.stringify(this.#live().activeRequest)) as object;
+    // fromJSON rebuilds `activeRequest` from the Pokémon (sim/state.ts).
+    // Unless the engine edited the live request in place, which it marks
+    // `update: true` (an `[Unavailable choice]`: `trapped` set, `maybe*`
+    // deleted), the rebuilt one must equal it: that is the check that the
+    // clone is the battle the player sees.
+    const live = JSON.parse(JSON.stringify(this.#live().activeRequest)) as JsonObject;
+    const rebuilt = JSON.parse(JSON.stringify(side.activeRequest)) as JsonObject;
+    if (live.update !== true && requestHash(rebuilt) !== requestHash(live)) {
+      throw new JudgeStateError("the clone does not reproduce the live battle's request");
+    }
+    // Judge against the request a submission will be checked against.
+    side.activeRequest = live;
     return side;
   }
 

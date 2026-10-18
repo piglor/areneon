@@ -197,11 +197,12 @@ export async function runBattle(options: BattleOptions): Promise<BattleRecord> {
             request_seq: 0,
           };
           request.request_seq = record.requests[player].push(request);
-          const battle = battleStream.battle as SimBattle;
-          // A request still in the stream when the battle ends (e.g. a
-          // forced tie) asks for nothing.
-          if (request.phase === "wait" || battle.ended) continue;
+          if (request.phase === "wait") continue;
           try {
+            const battle = battleStream.battle as SimBattle;
+            // A request still in the stream when the battle ends (e.g. a
+            // forced tie) asks for nothing.
+            if (battle.ended) continue;
             const judge = new CloneJudge(engine, battle, player);
             const legal = legalChoiceSet({ request, showdown_commit: engine.commit, judge });
             request.legal = legal;

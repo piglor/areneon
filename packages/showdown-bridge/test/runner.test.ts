@@ -233,6 +233,11 @@ describe("a pending switch refused at submission ([Unavailable choice])", () => 
     expect(next?.request.update).toBe(true);
     expect(next?.request_seq).toBe(entry.request_seq + 1);
     expect(next?.legal?.request_hash).toBe(next?.request_hash);
+    // The SubmissionJudge on that real engine reply.
+    expect(judgeSubmission(entry.choice, entry.refused as string)).toMatchObject({
+      legal: false,
+      revealed: true,
+    });
     // The hidden verdicts are recorded for evaluation, refusal included.
     const hidden = record.hidden_verdicts.find((h) => h.request_seq === entry.request_seq);
     expect(hidden?.verdicts.find((v) => v.choice === entry.choice)?.legal).toBe(false);
@@ -293,19 +298,8 @@ describe("judgeSubmission (the SubmissionJudge)", () => {
       error: text,
       revealed: false,
     });
-    const record = await runBattle(
-      options(
-        { p1: firstLegal, p2: firstLegal },
-        { seed: "sodium,00000000000000000000000000000000" },
-      ),
-    );
-    expect(record.choices.every((e) => e.refused === undefined)).toBe(true);
-    expect(
-      judgeSubmission(
-        "switch 3, pass",
-        "[Unavailable choice] Can't switch: The active Pokémon is trapped",
-      ).revealed,
-    ).toBe(true);
+    // The revealing side is classified on the engine's real refusal in the
+    // maybe-trapped battle above.
   });
 });
 
