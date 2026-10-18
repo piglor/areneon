@@ -117,6 +117,12 @@ describe("publish and checkBuilt", () => {
     expect(() => publish(artifacts, file, () => undefined)).toThrow(/could not create Release rules-snapshot-/);
   });
 
+  it("treats a Release another run created meanwhile as done", () => {
+    const gh: GitHubCli = (args) =>
+      args[1] === "create" ? undefined : JSON.stringify({ isDraft: false, assets: [{ name: `${args[2]}.json` }] });
+    expect(publish(artifacts, file, gh)).toEqual([]);
+  });
+
   it("accepts exactly the planned files and nothing else", () => {
     const built = new Map(artifacts.map((a) => [`${a.tag}.json`, a.bytes]));
     expect(checkBuilt(artifacts, built)).toEqual([]);

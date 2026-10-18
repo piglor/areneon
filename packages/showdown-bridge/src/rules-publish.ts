@@ -53,7 +53,9 @@ export interface PlanInput {
  * - for each channel, the artifact of its current file, keyed by the commit
  *   that last changed it, unless released. A channel change from an earlier
  *   run that never published (a first run, a cancelled one) is published
- *   now, so the importer always reaches the current channel.
+ *   now, so the importer always reaches the current channel. Channel steps
+ *   superseded before any run released them are not in the history; the
+ *   importer orders by seq, so the active channel is still right.
  * A channel must name this commit's snapshot or a released one; otherwise
  * the importer would wait forever, so planning fails instead. Rebuilding an
  * older, never-released snapshot is out of scope: re-run that commit's

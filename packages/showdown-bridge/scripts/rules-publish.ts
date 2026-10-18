@@ -32,7 +32,7 @@ try {
     snapshot: loadRulesSnapshot(PINNED_SHOWDOWN_COMMIT),
     commit,
     channels: loadChannels().map((file) => {
-      const changedIn = git("log", "-1", "--format=%H", "--", `:(top)rules/channels/${file.channel}.json`);
+      const changedIn = git("log", "-1", "--first-parent", "--format=%H", "--", `:(top)rules/channels/${file.channel}.json`);
       if (!changedIn) throw new RulesError(`git could not find the commit that last changed rules/channels/${file.channel}.json`);
       return { file, changedIn };
     }),
