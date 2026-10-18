@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:areneon:schema:contracts:v1:version-manifest",
+  "title": "VersionManifest",
+  "description": "Replay identity of a battle (ADR-003, ADR-007): the pinned engine commit, the format, and the hashes of the engine ruleset and of Areneon's own format rules.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "showdown_commit",
+    "format_id",
+    "regulation",
+    "ruleset_hash",
+    "format_rules_hash"
+  ],
+  "properties": {
+    "showdown_commit": {
+      "description": "The pinned engine commit.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "format_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+$"
+    },
+    "regulation": {
+      "type": "string",
+      "minLength": 1
+    },
+    "ruleset_hash": {
+      "description": "SHA-256 of the canonical engine ruleset.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "format_rules_hash": {
+      "description": "SHA-256 of Areneon's format rules record (ADR-007).",
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  }
+}

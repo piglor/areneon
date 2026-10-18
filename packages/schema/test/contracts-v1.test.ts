@@ -62,6 +62,21 @@ describe("LegalChoiceSet", () => {
   });
 });
 
+describe("PreviewObservation and BattleObservation", () => {
+  it("differ only in identity and kind, so one closure walk serves both", () => {
+    const strip = (name: string) => {
+      const { $id, title, description, properties, ...rest } = schema(name);
+      const { kind, ...others } = properties as Record<string, unknown>;
+      return { rest, others, kind };
+    };
+    const preview = strip("preview-observation");
+    const battle = strip("battle-observation");
+    expect(battle.rest).toEqual(preview.rest);
+    expect(battle.others).toEqual(preview.others);
+    expect([preview.kind, battle.kind]).toEqual([{ const: "preview" }, { const: "battle" }]);
+  });
+});
+
 describe("DecisionContext", () => {
   const valid = validator("decision-context");
   const preview = {

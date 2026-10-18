@@ -28,6 +28,18 @@ export {
   type StatTable,
 } from "./engine.ts";
 export {
+  type BattleObservation,
+  buildObservation,
+  type Observation,
+  ObservationError,
+  type ObservationInput,
+  type PlayerChannel,
+  type PreviewObservation,
+  type Sha256,
+} from "./observation.ts";
+export { nodeSha256, observe, playerChannel, recordedChannel } from "./player-channel.ts";
+export { webSha256 } from "./web-sha256.ts";
+export {
   type ResolvedFormat,
   resolveFormat,
   UnsupportedFormatError,
@@ -82,6 +94,7 @@ export {
   type BattleRecord,
   type HiddenVerdicts,
   InvalidTeamError,
+  type OmniscientLog,
   type Player,
   replayActor,
   type RequestRecord,
