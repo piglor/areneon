@@ -19,6 +19,8 @@ make python         # ruff check, ruff format --check, mypy, pytest (coverage)
 make contracts      # contract schemas fit their ADR-008 profile; generated TS types and pydantic models have no drift
 make contracts-update  # regenerate the TS types and pydantic models after a schema change (commit the result)
 make guards         # team guards (PokePaste text, JSON data_class) + production licence allowlist
+make db-up db-test  # rules store on a fresh local Postgres 18 (127.0.0.1:55432): roles, migrations, tests
+make db-down        # remove that container
 ```
 
 Single tests. The coverage thresholds apply per file and fail on a subset, so run without coverage:
@@ -63,6 +65,8 @@ TypeScript runs directly under Node's type stripping (`.ts` imports, `erasableSy
 
 **Repo guards** (`scripts/`, Python): `check_no_pokepaste.py` rejects PokePaste-shaped files outside `fixtures/` (exact-path exemptions in `.pokepaste-guard-allow`). `check_data_class.py` (ADR-008) rejects committed JSON/JSONL with `"data_class": "private"` anywhere, and, outside `fixtures/`, any team-shaped object (`species` + `moves` + `evs`) without `"data_class": "synthetic"` at the document root; both run in `make team-guard`. `check_licenses.py` fails closed on any production dependency licence outside the allowlist, for pnpm and, through `python_licences.py`, for the shipped Python packages' whole lockfile closure (an SPDX `License-Expression`, else an explicitly mapped trove classifier, else refused). `licences-selftest.sh` (`make licences-selftest`, CI only: it needs network) injects an AGPL dependency into a scratch copy, once for pnpm and once for Python, and requires `make licences` there to fail each time. `.github/CODEOWNERS` puts the gates under code-owner review.
 
-**CI** (`.github/workflows/ci.yml`) runs `python`, `typescript` (submodule checkout + `make showdown`), `team-guard`, `licences`, `gitleaks`, `osv` and `dco`. The aggregate `ci` job is the required check on `main`, together with CodeQL.
+**Rules store** (ADR-007, #704): published rules snapshots and channel history live in PostgreSQL 18, append-only. `db/bootstrap.sql` (a superuser, once; role passwords from the environment) creates `rules_owner` (NOLOGIN, owns the tables), `rules_migrator` (runs dbmate), `importer` (INSERT/SELECT) and `areneon_reader` (SELECT) and the `rules` schema. `db/migrations/` (dbmate, pinned image) defines `rules_snapshot` and `rules_release` with named CHECKs (hash = sha256(body), columns agree with the payload, the channel enum equals `channel.schema.json`'s) and triggers that refuse UPDATE, DELETE and TRUNCATE. `packages/rules-store` tests it against a real Postgres, so the root `pnpm test` skips it: `make db-up db-test` locally, the `database` job in CI. Never point these at the Coolify database.
+
+**CI** (`.github/workflows/ci.yml`) runs `python`, `typescript` (submodule checkout + `make showdown`), `database` (rules store on Postgres 18), `team-guard`, `licences`, `gitleaks`, `osv` and `dco`. The aggregate `ci` job is the required check on `main`, together with CodeQL.
 
 Planned runtimes (ADR-004/005, not built yet): A2 is a bot client on a local Showdown server for sparring; the Chromium MV3 advisor extension is read-only and sees only the player's own request.
