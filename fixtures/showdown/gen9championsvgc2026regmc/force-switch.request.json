@@ -1,5 +1,5 @@
 {
-  "provenance": "synthetic: Areneon golden battle, engine default choices",
+  "provenance": "synthetic: Areneon golden battle, each side plays its first legal choice (ADR-006)",
   "manifest": {
     "showdown_commit": "7244fe8e28fa8bc4d0809ae30d183c608b62bb2b",
     "format_id": "gen9championsvgc2026regmc",
@@ -18,8 +18,8 @@
   },
   "seed": "sodium,000102030405060708090a0b0c0d0e0f",
   "player": "p1",
-  "request_seq": 3,
-  "request_hash": "75e462b60ddf6762d10e421caba5723b04499f97f85c5e73601ce96368240d59",
+  "request_seq": 5,
+  "request_hash": "9a9b315af7ab7f11691f2794687c65c6c7474381197f6d1a07ba2b847a609c37",
   "phase": "forceSwitch",
   "request": {
     "forceSwitch": [
@@ -58,7 +58,7 @@
         {
           "ident": "p1: Charizard",
           "details": "Charizard, L50, F",
-          "condition": "157/157",
+          "condition": "53/157",
           "active": true,
           "stats": {
             "atk": 104,

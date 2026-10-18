@@ -6,7 +6,13 @@ import type { Engine, PokemonSet } from "./engine.ts";
 import { resolveFormat, type VersionManifest } from "./formats.ts";
 import type { FormatRulesRecord } from "./rules.ts";
 import type { JsonObject, RequestPhase } from "./request.ts";
-import { type Actor, type BattleRecord, type Player, runBattle } from "./runner.ts";
+import {
+  type Actor,
+  BattleAbortedError,
+  type BattleRecord,
+  type Player,
+  runBattle,
+} from "./runner.ts";
 import { importPaste, type TeamVerdict, validateTeam } from "./teams.ts";
 
 /** Sanitized request fixtures for the pinned engine (CC0, see fixtures/LICENSE). */
@@ -43,6 +49,18 @@ export function syntheticTeam(): PokemonSet[] {
 /** Let the engine pick: Showdown's own `default` choice is always legal. */
 export const engineDefault: Actor = () => "default";
 
+/**
+ * Play the first candidate of the request's legal choice set (ADR-006),
+ * which the engine has judged legal; never a pending one.
+ */
+export const firstLegal: Actor = (request) => {
+  const choice = request.legal?.choices[0];
+  if (choice === undefined) {
+    throw new BattleAbortedError(`${request.player}: no judged legal choice to play`);
+  }
+  return choice;
+};
+
 /** Replay the golden battle on `engine`. */
 export function goldenBattle(engine: Engine): Promise<BattleRecord> {
   const team = syntheticTeam();
@@ -51,11 +69,14 @@ export function goldenBattle(engine: Engine): Promise<BattleRecord> {
     formatId: GOLDEN_FORMAT,
     seed: GOLDEN_SEED,
     teams: { p1: team, p2: team },
-    actors: { p1: engineDefault, p2: engineDefault },
+    actors: { p1: firstLegal, p2: firstLegal },
   });
 }
 
 export const GOLDEN_SUMMARY = "battle.summary.json";
+
+const GOLDEN_BATTLE_PROVENANCE =
+  "synthetic: Areneon golden battle, each side plays its first legal choice (ADR-006)";
 
 /**
  * Capture-time provenance (ADR-007: fixtures record `rules_snapshot_hash`).
@@ -91,7 +112,7 @@ export interface BattleSummary {
 
 export function battleSummary(record: BattleRecord): BattleSummary {
   return {
-    provenance: "synthetic: Areneon golden battle, engine default choices",
+    provenance: GOLDEN_BATTLE_PROVENANCE,
     manifest: record.manifest,
     format_rules: record.format_rules,
     seed: record.seed,
@@ -111,7 +132,7 @@ export function goldenFixtures(record: BattleRecord): Record<string, RequestFixt
     const found = record.requests.p1.find((request) => request.phase === phase);
     if (!found) throw new Error(`golden battle produced no p1 ${phase} request`);
     fixtures[file] = {
-      provenance: "synthetic: Areneon golden battle, engine default choices",
+      provenance: GOLDEN_BATTLE_PROVENANCE,
       manifest: record.manifest,
       format_rules: record.format_rules,
       seed: record.seed,
@@ -133,8 +154,7 @@ export const TEAM_VERDICTS = "verdicts.json";
 
 /** An illegal fixture names `reason`: text the validator's first problem must contain. */
 export type TeamFixture =
-  | { expect: "legal"; purpose: string }
-  | { expect: "illegal"; purpose: string; reason: string };
+  { expect: "legal"; purpose: string } | { expect: "illegal"; purpose: string; reason: string };
 
 export interface TeamFixtureManifest {
   provenance: string;

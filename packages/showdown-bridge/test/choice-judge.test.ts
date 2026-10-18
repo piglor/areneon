@@ -148,7 +148,8 @@ function random(seed: number): () => number {
 describe("the engine accepts every non-pending candidate", () => {
   it("on every request of the golden battle", () => {
     const team = syntheticTeam();
-    const seen = play(start(GOLDEN_SEED, { p1: team, p2: team }), () => "default");
+    // The golden battle: each side plays its first legal choice.
+    const seen = play(start(GOLDEN_SEED, { p1: team, p2: team }), (set) => set.choices[0] as string);
     expect([...seen.phases].sort()).toEqual(["forceSwitch", "move", "preview"]);
     // The same battle the golden request fixtures were captured from.
     for (const file of Object.keys(GOLDEN_PHASES)) {

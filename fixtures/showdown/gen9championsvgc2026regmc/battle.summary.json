@@ -1,5 +1,5 @@
 {
-  "provenance": "synthetic: Areneon golden battle, engine default choices",
+  "provenance": "synthetic: Areneon golden battle, each side plays its first legal choice (ADR-006)",
   "manifest": {
     "showdown_commit": "7244fe8e28fa8bc4d0809ae30d183c608b62bb2b",
     "format_id": "gen9championsvgc2026regmc",
@@ -18,88 +18,108 @@
   },
   "seed": "sodium,000102030405060708090a0b0c0d0e0f",
   "winner": "p2",
-  "turns": 5,
-  "omniscient_log_sha256": "0e8aa271171206abe671328b97e0fb0f17142210fd71345739d9f88d06b2e53d",
+  "turns": 7,
+  "omniscient_log_sha256": "bd0aa3006cbd338a68630ea19059bf0824cea72ad98f468da35213b4e4e9f63e",
   "choices": [
     {
       "player": "p1",
       "request_seq": 1,
-      "choice": "default"
+      "choice": "team 1234"
     },
     {
       "player": "p2",
       "request_seq": 1,
-      "choice": "default"
+      "choice": "team 1234"
     },
     {
       "player": "p1",
       "request_seq": 2,
-      "choice": "default"
+      "choice": "move 1 1, move 1 1"
     },
     {
       "player": "p2",
       "request_seq": 2,
-      "choice": "default"
+      "choice": "move 1 1, move 1 1"
     },
     {
-      "player": "p1",
+      "player": "p2",
       "request_seq": 3,
-      "choice": "default"
+      "choice": "switch 3, pass"
     },
     {
       "player": "p1",
       "request_seq": 4,
-      "choice": "default"
+      "choice": "move 1 1, move 1 1"
     },
     {
       "player": "p2",
       "request_seq": 4,
-      "choice": "default"
+      "choice": "move 1, move 1 1"
     },
     {
-      "player": "p2",
+      "player": "p1",
       "request_seq": 5,
-      "choice": "default"
+      "choice": "switch 3, pass"
     },
     {
       "player": "p1",
       "request_seq": 6,
-      "choice": "default"
+      "choice": "move 1, move 1 1"
     },
     {
       "player": "p2",
       "request_seq": 6,
-      "choice": "default"
+      "choice": "move 1, move 1 1"
     },
     {
       "player": "p1",
       "request_seq": 7,
-      "choice": "default"
+      "choice": "pass, switch 4"
+    },
+    {
+      "player": "p2",
+      "request_seq": 7,
+      "choice": "pass, switch 4"
     },
     {
       "player": "p1",
       "request_seq": 8,
-      "choice": "default"
+      "choice": "move 1, move 1 1"
     },
     {
       "player": "p2",
       "request_seq": 8,
-      "choice": "default"
+      "choice": "move 1, move 1 1"
+    },
+    {
+      "player": "p1",
+      "request_seq": 9,
+      "choice": "pass, move 1 1"
     },
     {
       "player": "p2",
       "request_seq": 9,
-      "choice": "default"
+      "choice": "pass, move 1 1"
     },
     {
       "player": "p1",
       "request_seq": 10,
-      "choice": "default"
+      "choice": "pass, move 1 1"
     },
     {
       "player": "p2",
       "request_seq": 10,
-      "choice": "default"
+      "choice": "pass, move 1 1"
+    },
+    {
+      "player": "p1",
+      "request_seq": 11,
+      "choice": "pass, move 1 1"
+    },
+    {
+      "player": "p2",
+      "request_seq": 11,
+      "choice": "pass, move 1 1"
     }
   ]
 }

@@ -113,7 +113,8 @@ export interface ShowdownSim {
     /** Rebuild a battle from `toJSON()`; without `send` it emits nothing. */
     fromJSON(state: object): SimBattle;
   };
-  BattleStream: new () => object;
+  /** `battle` is the in-process battle once `>start` has been written. */
+  BattleStream: new () => { battle: SimBattle | null };
   getPlayerStreams(stream: object): Record<"omniscient" | "p1" | "p2", SimStream>;
   Dex: {
     formats: {
