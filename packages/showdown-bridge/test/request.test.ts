@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { GOLDEN_DIR, type RequestFixture } from "../src/golden.ts";
-import { decodeRequest, RequestDecodeError, requestHash, SUPPORTED_FORMATS } from "../src/index.ts";
+import { decodeRequest, RequestDecodeError, requestHash } from "../src/index.ts";
 
 function fixture(file: string): RequestFixture {
   return JSON.parse(readFileSync(join(GOLDEN_DIR, file), "utf8")) as RequestFixture;
@@ -15,11 +15,10 @@ describe("decodeRequest on the golden fixtures", () => {
     expect(decoded.phase).toBe("preview");
     expect(decoded.player).toBe("p1");
     expect(decoded.preview).toEqual({ teamSize: 6, maxChosenTeamSize: 4 });
-    // Two leads: the engine's own first turn request has two active slots,
-    // matching what the registry declares.
+    // Two leads: an engine fact, read from its first turn request's active
+    // slots, never declared in code or rules records (ADR-007).
     const turn = decodeRequest(JSON.stringify(fixture("turn.request.json").request));
     expect(turn.request.active).toHaveLength(2);
-    expect(SUPPORTED_FORMATS.gen9championsvgc2026regmc?.activeSlots).toBe(2);
     expect(decoded.request_hash).toBe(request_hash);
     expect(decoded.rqid).toBeUndefined();
   });

@@ -8,13 +8,27 @@ export {
   type StatTable,
 } from "./engine.ts";
 export {
-  type FormatSpec,
   type ResolvedFormat,
   resolveFormat,
-  SUPPORTED_FORMATS,
   UnsupportedFormatError,
   type VersionManifest,
 } from "./formats.ts";
+export { loadChannel, loadRulesSnapshot, RULES_SCHEMA_DIR } from "./rules-load.ts";
+export {
+  buildSnapshot,
+  type ChannelFile,
+  DEFAULT_RULES_DIR,
+  type FormatRecord,
+  formatRulesHash,
+  formatRulesRecord,
+  type FormatRulesRecord,
+  jcs,
+  type RegulationRecord,
+  RulesError,
+  rulesSnapshotHash,
+  type RulesSnapshot,
+  snapshotBytes,
+} from "./rules.ts";
 export {
   type DecodedRequest,
   decodeRequest,

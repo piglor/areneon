@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "format_id": "gen9championsvgc2026regmc",
+  "regulation": "M-C",
+  "game_type": "doubles",
+  "season": { "start": "2026-09-09T02:00Z", "end": "2026-12-02T01:59Z" },
+  "forbidden_rules": [
+    {
+      "rule": "forceopenteamsheets",
+      "reason": "Forced Open Team Sheets reveal moves, items and abilities; CTS needs Bo1 with sheets declined (ADR-003)"
+    }
+  ]
+}

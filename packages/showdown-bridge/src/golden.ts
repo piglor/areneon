@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Engine, PokemonSet } from "./engine.ts";
 import type { VersionManifest } from "./formats.ts";
+import type { FormatRulesRecord } from "./rules.ts";
 import type { JsonObject, RequestPhase } from "./request.ts";
 import { type Actor, type BattleRecord, type Player, runBattle } from "./runner.ts";
 
@@ -61,6 +62,12 @@ export const GOLDEN_SUMMARY = "battle.summary.json";
 export interface BattleSummary {
   provenance: string;
   manifest: VersionManifest;
+  /**
+   * The embedded format rules record (ADR-007). `rules_snapshot_hash` is
+   * left out on purpose: it changes with documentation-only edits, and this
+   * file is compared byte for byte.
+   */
+  format_rules: FormatRulesRecord;
   seed: string;
   winner: Player | null;
   turns: number;
@@ -72,6 +79,7 @@ export function battleSummary(record: BattleRecord): BattleSummary {
   return {
     provenance: "synthetic: Areneon golden battle, engine default choices",
     manifest: record.manifest,
+    format_rules: record.format_rules,
     seed: record.seed,
     winner: record.winner,
     turns: record.turns,
