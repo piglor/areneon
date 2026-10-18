@@ -1,6 +1,7 @@
 import { enumerateCandidates } from "./choices.ts";
 import type { Engine, SimBattle, SimSide } from "./engine.ts";
-import type { DecodedRequest } from "./request.ts";
+import type { DecodedRequest, JsonObject } from "./request.ts";
+import { requestHash } from "./request-identity.ts";
 
 /** The pinned engine's answer for one choice string. */
 export interface Verdict {
@@ -11,12 +12,19 @@ export interface Verdict {
 }
 
 /**
- * Asks the pinned engine about choices before any is submitted (ADR-006
- * rule 4). Only `CloneJudge` implements it: it needs the engine's `Battle`,
- * which exists on runtime A1 and in CI, never on A2 or in the advisor.
+ * Asks the pinned engine about choices for one request (ADR-006 rule 4),
+ * returning one verdict per choice in order. `CloneJudge` judges before
+ * submission where the engine's `Battle` exists (A1 and CI); the
+ * SubmissionJudge, the engine's verdict on a submitted choice, comes with
+ * the runner (#714).
  */
 export interface ChoiceJudge {
-  judge(choices: readonly string[]): Verdict[];
+  judge(request_hash: string, choices: readonly string[]): Verdict[];
+}
+
+/** The judge's battle is not at the request it was asked about. */
+export class JudgeStateError extends Error {
+  override name = "JudgeStateError";
 }
 
 /**
@@ -33,7 +41,11 @@ export class CloneJudge implements ChoiceJudge {
 
   constructor(engine: Engine, battle: SimBattle, player: string) {
     const side = battle.sides.findIndex((s) => s.id === player);
-    if (side < 0) throw new Error(`battle has no side ${player}`);
+    if (side < 0) throw new JudgeStateError(`battle has no side ${player}`);
+    // Under strictChoices a refusal throws instead of returning false.
+    if (battle.strictChoices === true) {
+      throw new JudgeStateError("CloneJudge cannot judge a strictChoices battle");
+    }
     this.#engine = engine;
     this.#battle = battle;
     this.#side = side;
@@ -44,8 +56,18 @@ export class CloneJudge implements ChoiceJudge {
     return clone.sides[this.#side] as SimSide;
   }
 
-  judge(choices: readonly string[]): Verdict[] {
-    let side: SimSide | undefined;
+  /**
+   * One clone per request; after a refusal the rest are judged on a fresh
+   * clone, because `emitChoiceError` can rewrite the clone's request.
+   * Throws `JudgeStateError` unless the battle is at `request_hash`.
+   */
+  judge(request_hash: string, choices: readonly string[]): Verdict[] {
+    const at = this.#clone();
+    const actual = requestHash(JSON.parse(JSON.stringify(at.activeRequest)) as JsonObject);
+    if (actual !== request_hash) {
+      throw new JudgeStateError(`battle is at request ${actual}, not ${request_hash}`);
+    }
+    let side: SimSide | undefined = at;
     return choices.map((choice) => {
       side ??= this.#clone();
       side.clearChoice();
@@ -111,7 +133,14 @@ export function legalChoiceSet({
   const { candidates } = enumerateCandidates(request);
   const choices = candidates.filter((c) => !c.pending).map((c) => c.choice);
   const pending = candidates.filter((c) => c.pending).map((c) => c.choice);
-  const refused = (judge?.judge(choices) ?? []).filter((v) => !v.legal);
+  const verdicts = judge?.judge(request.request_hash, choices) ?? [];
+  if (
+    judge &&
+    (verdicts.length !== choices.length || verdicts.some((v, i) => v.choice !== choices[i]))
+  ) {
+    throw new JudgeStateError("judge did not return one verdict per choice, in order");
+  }
+  const refused = verdicts.filter((v) => !v.legal);
   if (refused.length > 0) throw new EnumeratorDefectError(refused);
   return {
     request_seq: request.request_seq,

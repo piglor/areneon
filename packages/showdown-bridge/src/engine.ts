@@ -60,8 +60,6 @@ export interface SimRuleTable extends Map<string, string> {
 /** One side of an in-process battle, narrowed to checking a choice. */
 export interface SimSide {
   id: string;
-  /** `teampreview`, `move`, `switch`, or `` when nothing is asked. */
-  requestState: string;
   /** The request last sent to this side, as JSON-safe data. */
   activeRequest: object | null;
   choice: { error: string };
@@ -71,21 +69,17 @@ export interface SimSide {
   clearChoice(): void;
 }
 
-/** An in-process battle. Only `showdown-bridge` touches it (ADR-006). */
+/** An in-process battle, narrowed to what `CloneJudge` reads (ADR-006). */
 export interface SimBattle {
   sides: SimSide[];
-  ended: boolean;
-  turn: number;
-  setPlayer(slot: string, options: { name: string; team: string }): void;
-  /** Commits once both sides are done; the runner's path, never a judge's. */
-  choose(slot: string, input: string): boolean;
+  /** When set, a refused choice throws instead of returning false. */
+  strictChoices?: boolean;
   toJSON(): object;
 }
 
 /** The slice of Showdown's `sim` module Areneon depends on. */
 export interface ShowdownSim {
   Battle: {
-    new (options: { formatid: string; seed: string }): SimBattle;
     /** Rebuild a battle from `toJSON()`; without `send` it emits nothing. */
     fromJSON(state: object): SimBattle;
   };

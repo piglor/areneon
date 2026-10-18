@@ -1,13 +1,14 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { GOLDEN_DIR, type RequestFixture } from "../src/golden.ts";
+import { GOLDEN_DIR, GOLDEN_FORMAT, type RequestFixture } from "../src/golden.ts";
 import {
   type Candidate,
   decodeRequest,
   enumerateCandidates,
   EnumerationError,
   type JsonObject,
+  loadEngine,
 } from "../src/index.ts";
 
 /** A golden request, deep-copied so a test can edit it. */
@@ -38,10 +39,22 @@ describe("Team Preview", () => {
   it("offers every ordered pick of 4 from 6, lexicographically", () => {
     const candidates = enumerate("preview.request.json");
     expect(candidates).toHaveLength(360);
-    expect(candidates.slice(0, 3).map((c) => c.choice)).toEqual(["team 1234", "team 1235", "team 1236"]);
+    expect(candidates.slice(0, 3).map((c) => c.choice)).toEqual([
+      "team 1234",
+      "team 1235",
+      "team 1236",
+    ]);
     expect(candidates.at(-1)?.choice).toBe("team 6543");
     expect(candidates.every((c) => !c.pending)).toBe(true);
     expect(new Set(choices(candidates)).size).toBe(360);
+  });
+
+  it("fails closed on teams of 10 or more, which the engine reads comma-separated", () => {
+    expect(() =>
+      enumerate("preview.request.json", (r) => {
+        r.side.pokemon = [...r.side.pokemon, ...r.side.pokemon.slice(0, 4)];
+      }),
+    ).toThrow(EnumerationError);
   });
 
   it.each([0, 7, 2.5, "4", null])("fails closed on maxChosenTeamSize %j", (size) => {
@@ -57,18 +70,30 @@ describe("move requests", () => {
   it("orders moves, then targets 1, 2, ally, self, then switches", () => {
     const candidates = enumerate("turn.request.json");
     expect(part(candidates, 0)).toEqual([
-      "move 1 1", "move 1 2", "move 1 -2",
-      "move 2 1", "move 2 2", "move 2 -2",
+      "move 1 1",
+      "move 1 2",
+      "move 1 -2",
+      "move 2 1",
+      "move 2 2",
+      "move 2 -2",
       "move 3",
-      "move 4 1", "move 4 2", "move 4 -2",
-      "switch 3", "switch 4",
+      "move 4 1",
+      "move 4 2",
+      "move 4 -2",
+      "switch 3",
+      "switch 4",
     ]);
     expect(part(candidates, 1)).toEqual([
-      "move 1 1", "move 1 2", "move 1 -1",
-      "move 2 1", "move 2 2", "move 2 -1",
+      "move 1 1",
+      "move 1 2",
+      "move 1 -1",
+      "move 2 1",
+      "move 2 2",
+      "move 2 -1",
       "move 3",
       "move 4",
-      "switch 3", "switch 4",
+      "switch 3",
+      "switch 4",
     ]);
     // 12 x 10 pairs, minus the two that switch the same bench Pokémon in twice.
     expect(candidates).toHaveLength(118);
@@ -78,18 +103,55 @@ describe("move requests", () => {
     expect(candidates.every((c) => !c.pending)).toBe(true);
   });
 
-  it.each([
-    ["adjacentFoe", ["move 1 1", "move 1 2"]],
-    ["adjacentAlly", ["move 1 -2"]],
-    ["adjacentAllyOrSelf", ["move 1 -2", "move 1 -1"]],
-    ["any", ["move 1 1", "move 1 2", "move 1 -2"]],
-    ["allAdjacent", ["move 1"]],
-    ["randomNormal", ["move 1"]],
-  ])("target type %s", (target, expected) => {
+  // Every move target type of the engine (`MoveTarget`, sim/dex-moves.ts):
+  // what the slot-1 Pokémon may name. Self is -1, its ally -2.
+  const TARGETS: Record<string, string[]> = {
+    normal: ["move 1 1", "move 1 2", "move 1 -2"],
+    any: ["move 1 1", "move 1 2", "move 1 -2"],
+    adjacentFoe: ["move 1 1", "move 1 2"],
+    adjacentAlly: ["move 1 -2"],
+    adjacentAllyOrSelf: ["move 1 -2", "move 1 -1"],
+    ...Object.fromEntries(
+      [
+        "all",
+        "allAdjacent",
+        "allAdjacentFoes",
+        "allies",
+        "allySide",
+        "allyTeam",
+        "foeSide",
+        "randomNormal",
+        "scripted",
+        "self",
+      ].map((t) => [t, ["move 1"]]),
+    ),
+  };
+
+  it.each(Object.entries(TARGETS))("target type %s", (target, expected) => {
     const candidates = enumerate("turn.request.json", (r) => {
       r.active[0].moves = [{ ...r.active[0].moves[0], target }];
     });
     expect(part(candidates, 0).filter((c) => c.startsWith("move"))).toEqual(expected);
+  });
+
+  it("covers every target type in the format's move pool", () => {
+    interface ModDex {
+      mod(id: string): {
+        moves: { all(): { target: string; isNonstandard: string | null }[] };
+      };
+    }
+    const engine = loadEngine();
+    const dex = engine.sim.Dex as unknown as ModDex;
+    const { mod } = engine.sim.Dex.formats.get(GOLDEN_FORMAT);
+    const pool = new Set(
+      dex
+        .mod(mod)
+        .moves.all()
+        .filter((m) => m.isNonstandard === null)
+        .map((m) => m.target),
+    );
+    expect(pool.size).toBeGreaterThan(5);
+    expect([...pool].filter((t) => !(t in TARGETS))).toEqual([]);
   });
 
   it("sends a locked move without a target", () => {
@@ -105,7 +167,10 @@ describe("move requests", () => {
       r.active[0].moves[1].disabled = "Taunt";
     });
     expect(part(candidates, 0).filter((c) => c.startsWith("move"))).toEqual([
-      "move 3", "move 4 1", "move 4 2", "move 4 -2",
+      "move 3",
+      "move 4 1",
+      "move 4 2",
+      "move 4 -2",
     ]);
   });
 
@@ -124,13 +189,22 @@ describe("move requests", () => {
   it("orders events none, mega, megax, megay, terastallize; one Tera per side", () => {
     const candidates = enumerate("turn.request.json", (r) => {
       r.active[0].moves = [r.active[0].moves[2]];
-      Object.assign(r.active[0], { canMegaEvo: true, canMegaEvoX: true, canMegaEvoY: true });
+      Object.assign(r.active[0], {
+        canMegaEvo: true,
+        canMegaEvoX: true,
+        canMegaEvoY: true,
+      });
       r.active[0].canTerastallize = "Grass";
       r.active[1].canTerastallize = "Fire";
     });
     expect(part(candidates, 0)).toEqual([
-      "move 1", "move 1 mega", "move 1 megax", "move 1 megay", "move 1 terastallize",
-      "switch 3", "switch 4",
+      "move 1",
+      "move 1 mega",
+      "move 1 megax",
+      "move 1 megay",
+      "move 1 terastallize",
+      "switch 3",
+      "switch 4",
     ]);
     expect(choices(candidates).filter((c) => /terastallize.*, .*terastallize/.test(c))).toEqual([]);
     expect(choices(candidates)).toContain("move 1 mega, move 1 1 terastallize");
@@ -150,9 +224,14 @@ describe("move requests", () => {
     });
     expect(part(candidates, 0)).toEqual(["pass"]);
     expect(part(candidates, 1)).toEqual([
-      "move 1 1", "move 1 2", "move 1 -1",
-      "move 2 1", "move 2 2", "move 2 -1",
-      "move 3", "move 4",
+      "move 1 1",
+      "move 1 2",
+      "move 1 -1",
+      "move 2 1",
+      "move 2 2",
+      "move 2 -1",
+      "move 3",
+      "move 4",
     ]);
   });
 

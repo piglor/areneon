@@ -143,12 +143,26 @@ interface SlotOption {
 
 const PASS: SlotOption = { text: "pass", pending: false };
 
-function joint(first: SlotOption[], second: SlotOption[]): Candidate[] {
+/**
+ * Pair the two slots' options. Pairs the pinned engine always refuses are
+ * left out: one bench Pokémon switched in twice (`switchIns`, sim/side.ts
+ * `chooseSwitch`), and Mega Evolution or Terastallization on both slots in
+ * one choice (`chooseMove`: one Mega unless the format has `mixandmega`, one
+ * Tera). A test judges every pair left out and expects a refusal, so a
+ * format or pin where the engine allows one would fail instead of losing
+ * legal choices silently.
+ */
+function joint(
+  first: SlotOption[],
+  second: SlotOption[],
+  keep: (a: SlotOption, b: SlotOption) => boolean = () => true,
+): Candidate[] {
   const out: Candidate[] = [];
   for (const a of first) {
     for (const b of second) {
       if (a.switchTo !== undefined && a.switchTo === b.switchTo) continue;
       if (a.event !== undefined && a.event === b.event) continue;
+      if (!keep(a, b)) continue;
       out.push({ choice: `${a.text}, ${b.text}`, pending: a.pending || b.pending });
     }
   }
@@ -227,7 +241,8 @@ function moveSlot(raw: Json, mon: Mon | undefined, slot: number, bench: number[]
   });
   if (active.trapped !== true) {
     const switchPending = active.maybeTrapped === true;
-    for (const b of bench) options.push({ text: `switch ${b}`, pending: switchPending, switchTo: b });
+    for (const b of bench)
+      options.push({ text: `switch ${b}`, pending: switchPending, switchTo: b });
   }
   return options;
 }
@@ -237,6 +252,8 @@ function previewCandidates(request: JsonObject, team: Mon[]): Candidate[] {
   if (typeof k !== "number" || !Number.isInteger(k) || k < 1 || k > team.length) {
     throw new EnumerationError(`unsupported maxChosenTeamSize ${JSON.stringify(k)}`);
   }
+  // From 10 Pokémon the engine reads `team` input as comma-separated.
+  if (team.length > 9) throw new EnumerationError(`unsupported team size ${team.length}`);
   return permutations(team.length, k).map((p) => ({ choice: `team ${p}`, pending: false }));
 }
 
@@ -248,12 +265,15 @@ function forceSwitchCandidates(request: JsonObject, team: Mon[]): Candidate[] {
   const bench = benchSlots(team);
   const forced = Math.min(flags.filter(Boolean).length, bench.length);
   const perSlot = flags.map((flag): SlotOption[] =>
-    flag ? [...bench.map((b) => ({ text: `switch ${b}`, pending: false, switchTo: b })), PASS] : [PASS],
+    flag
+      ? [...bench.map((b) => ({ text: `switch ${b}`, pending: false, switchTo: b })), PASS]
+      : [PASS],
   );
-  const switches = (c: Candidate): number =>
-    c.choice.split(", ").filter((part) => part.startsWith("switch")).length;
-  return joint(perSlot[0] as SlotOption[], perSlot[1] as SlotOption[]).filter(
-    (c) => switches(c) === forced,
+  const switches = (o: SlotOption): number => (o.switchTo === undefined ? 0 : 1);
+  return joint(
+    perSlot[0] as SlotOption[],
+    perSlot[1] as SlotOption[],
+    (a, b) => switches(a) + switches(b) === forced,
   );
 }
 

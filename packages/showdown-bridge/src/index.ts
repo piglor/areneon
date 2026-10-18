@@ -8,6 +8,7 @@ export {
   type ChoiceJudge,
   CloneJudge,
   EnumeratorDefectError,
+  JudgeStateError,
   type LegalChoiceOptions,
   type LegalChoiceSet,
   legalChoiceSet,
