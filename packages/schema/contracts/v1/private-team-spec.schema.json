@@ -1,0 +1,142 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:areneon:schema:contracts:v1:private-team-spec",
+  "title": "PrivateTeamSpec",
+  "description": "A player's or the bot's own full team. Never part of another player's observation; a private one is never committed.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "data_class",
+    "team"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "data_class": {
+      "description": "synthetic: CC0, may be committed; private: a real team or a human's games, kept only in private-data/ (ADR-008 §5).",
+      "enum": [
+        "synthetic",
+        "private"
+      ]
+    },
+    "team": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/PokemonSet"
+      },
+      "minItems": 1
+    }
+  },
+  "$defs": {
+    "PokemonSet": {
+      "description": "One set, as the pinned engine's PokemonSet (sim/teams.ts) holds it. Legality is the engine validator's, not this schema's.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "species",
+        "item",
+        "ability",
+        "moves",
+        "nature",
+        "gender",
+        "evs",
+        "ivs",
+        "level"
+      ],
+      "properties": {
+        "name": {
+          "description": "Nickname; empty when none.",
+          "type": "string"
+        },
+        "species": {
+          "type": "string",
+          "minLength": 1
+        },
+        "item": {
+          "type": "string"
+        },
+        "ability": {
+          "type": "string"
+        },
+        "moves": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "nature": {
+          "type": "string"
+        },
+        "gender": {
+          "enum": [
+            "",
+            "M",
+            "F",
+            "N"
+          ]
+        },
+        "evs": {
+          "description": "Stat Points in the champions mod (ADR-003).",
+          "$ref": "#/$defs/StatTable"
+        },
+        "ivs": {
+          "$ref": "#/$defs/StatTable"
+        },
+        "level": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    "StatTable": {
+      "description": "One integer per stat.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "hp",
+        "atk",
+        "def",
+        "spa",
+        "spd",
+        "spe"
+      ],
+      "properties": {
+        "hp": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "atk": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "def": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "spa": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "spd": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "spe": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      }
+    }
+  }
+}

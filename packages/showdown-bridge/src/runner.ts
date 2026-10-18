@@ -61,6 +61,12 @@ export interface HiddenVerdicts {
   verdicts: Verdict[];
 }
 
+/**
+ * The omniscient sim log: both sides' hidden information. A distinct type,
+ * so it can never be passed where a PlayerChannel is expected (ADR-008 §5).
+ */
+export type OmniscientLog = string[] & { readonly __brand: "OmniscientLog" };
+
 export interface BattleRecord {
   manifest: VersionManifest;
   /** The rules the battle ran under, embedded so replay is self-contained. */
@@ -75,7 +81,7 @@ export interface BattleRecord {
    * Omniscient sim log with wall-clock `|t:|` lines removed. It holds both
    * sides' hidden information: an evaluation artifact, never an actor input.
    */
-  omniscient_log: string[];
+  omniscient_log: OmniscientLog;
   requests: Record<Player, RequestRecord[]>;
   /**
    * Each player's own stream from `getPlayerStreams`, line by line and in
@@ -143,7 +149,7 @@ export async function runBattle(options: BattleOptions): Promise<BattleRecord> {
     seed,
     winner: null,
     turns: 0,
-    omniscient_log: [],
+    omniscient_log: [] as string[] as OmniscientLog,
     requests: { p1: [], p2: [] },
     channels: { p1: [], p2: [] },
     choices: [],

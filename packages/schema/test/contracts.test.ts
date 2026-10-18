@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { ajvFor } from "../src/ajv.ts";
 import {
   checkSchemas,
+  checkSharedDefinitions,
   ContractsReadError,
   CONTRACTS_DIR,
   declaredProfile,
@@ -159,6 +160,59 @@ describe("checkSchemas", () => {
     expect(checkSchemas(readSchemas(contracts)).map((f) => f.message)).toEqual([
       expect.stringMatching(/^Ajv: strict mode: .*minimum/),
     ]);
+  });
+});
+
+describe("checkSharedDefinitions", () => {
+  const holder = (copy: unknown, extra: Record<string, unknown> = {}): Record<string, unknown> => ({
+    $schema: DRAFT,
+    $id: "urn:areneon:schema:contracts:v1:holder",
+    title: "Holder",
+    type: "object",
+    additionalProperties: false,
+    required: ["identity"],
+    properties: { identity: { $ref: "#/$defs/RequestIdentity" } },
+    $defs: { RequestIdentity: copy, ...extra },
+  });
+  const body = (): Record<string, unknown> => {
+    const { $schema, $id, title, ...rest } = identity();
+    return rest;
+  };
+
+  it("accepts a copy equal to the contract it is named after", () => {
+    put("v1/request-identity.schema.json", identity());
+    put("v1/holder.schema.json", holder(body()));
+    expect(checkSharedDefinitions(readSchemas(contracts))).toEqual([]);
+    expect(checkSchemas(readSchemas(contracts))).toEqual([]);
+  });
+
+  it("reports a copy that drifted from its contract", () => {
+    put("v1/request-identity.schema.json", identity());
+    put("v1/holder.schema.json", holder({ ...body(), required: ["request_seq"] }));
+    expect(checkSharedDefinitions(readSchemas(contracts))).toEqual([
+      { path: "v1/holder.schema.json", message: "$defs/RequestIdentity differs from v1/request-identity.schema.json" },
+    ]);
+  });
+
+  it("requires the embedded contract's own definitions to be copied too", () => {
+    const withDefs: Record<string, unknown> = {
+      ...identity(),
+      properties: { ...(identity().properties as object), at: { $ref: "#/$defs/Turn" } },
+      $defs: { Turn: { type: "integer", minimum: 0, maximum: 9 } },
+    };
+    put("v1/request-identity.schema.json", withDefs);
+    const { $schema, $id, title, $defs, ...copy } = withDefs;
+    put("v1/holder.schema.json", holder(copy));
+    expect(checkSharedDefinitions(readSchemas(contracts))).toEqual([
+      { path: "v1/holder.schema.json", message: "$defs/Turn differs from v1/request-identity.schema.json#/$defs/Turn" },
+    ]);
+  });
+
+  it("is part of make contracts", async () => {
+    put("v1/request-identity.schema.json", identity());
+    put("v1/holder.schema.json", holder({ ...body(), title: "x" }));
+    const findings = await runContracts({ write: true, contractsDir: contracts, generatedDir: generated });
+    expect(findings.map((f) => f.message)).toContain("$defs/RequestIdentity differs from v1/request-identity.schema.json");
   });
 });
 

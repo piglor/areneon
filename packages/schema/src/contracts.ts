@@ -6,6 +6,7 @@
 import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { isDeepStrictEqual } from "node:util";
 import { compile } from "json-schema-to-typescript";
 import { ajvFor } from "./ajv.ts";
 import { checkProfile, type Profile } from "./profile.ts";
@@ -111,6 +112,43 @@ export function checkSchemas(files: readonly SchemaFile[]): Finding[] {
   return findings;
 }
 
+type Doc = Record<string, unknown>;
+const ROOT_KEYS = new Set(["$schema", "$id", "title", "$defs"]);
+const bodyOf = (schema: Doc): Doc => Object.fromEntries(Object.entries(schema).filter(([k]) => !ROOT_KEYS.has(k)));
+const defsOf = (schema: Doc): Doc => (schema.$defs as Doc | undefined) ?? {};
+
+/**
+ * Contract schemas allow only local `$ref`s (ADR-008 §1a), so a contract
+ * embedded in another one is a copy in its `$defs`, under the embedded
+ * contract's title. Every copy must equal the original, its own `$defs`
+ * included, so the copies stay one definition.
+ */
+export function checkSharedDefinitions(files: readonly SchemaFile[]): Finding[] {
+  const byTitle = new Map<string, SchemaFile>();
+  for (const file of files) {
+    const title = (file.schema as Doc).title;
+    if (typeof title === "string") byTitle.set(title, file);
+  }
+  const findings: Finding[] = [];
+  for (const file of files) {
+    const defs = defsOf(file.schema as Doc);
+    for (const [name, copy] of Object.entries(defs)) {
+      const source = byTitle.get(name);
+      if (!source || source === file) continue;
+      const original = source.schema as Doc;
+      if (!isDeepStrictEqual(copy, bodyOf(original))) {
+        findings.push({ path: file.path, message: `$defs/${name} differs from ${source.path}` });
+      }
+      for (const [inner, definition] of Object.entries(defsOf(original))) {
+        if (!isDeepStrictEqual(defs[inner], definition)) {
+          findings.push({ path: file.path, message: `$defs/${inner} differs from ${source.path}#/$defs/${inner}` });
+        }
+      }
+    }
+  }
+  return findings;
+}
+
 /** The generated TS for one schema: pinned json-schema-to-typescript, fixed options. */
 export async function generateTs(file: SchemaFile): Promise<string> {
   return compile(structuredClone(file.schema) as Parameters<typeof compile>[0], file.name, {
@@ -180,7 +218,7 @@ export async function runContracts(options: {
   readonly generatedDir?: string;
 }): Promise<Finding[]> {
   const files = readSchemas(options.contractsDir);
-  const findings = checkSchemas(files);
+  const findings = [...checkSchemas(files), ...checkSharedDefinitions(files)];
   if (findings.length > 0) return findings;
   const expected = await generateAll(files);
   const generatedDir = options.generatedDir ?? GENERATED_TS_DIR;
