@@ -1,5 +1,5 @@
 import type { Engine } from "./engine.ts";
-import { canonicalJson } from "./request-identity.ts";
+import { canonicalJson } from "./canonical-json.ts";
 import { loadRulesSnapshot } from "./rules-load.ts";
 import {
   formatRulesHash,
