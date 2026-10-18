@@ -45,14 +45,16 @@ preview entry, an unknown key inside the engine-owned request).
 ## Run
 
 ```bash
-spikes/671-contract-codegen/run.sh     # ~40 s warm; first run also cargo-installs two CLIs into dist/tools
+spikes/671-contract-codegen/run.sh     # well under a minute warm here; a cold run takes a few minutes (it cargo-installs two CLIs into dist/tools)
 ```
 
 Needs Node 24 + pnpm (repo installed), uv, cargo (tested with rustc 1.94.1).
 Generators run through `pnpm dlx`, `uvx` and `cargo install --root dist/tools`;
 nothing is added to the repo's `package.json`, `pyproject.toml` or a root `Cargo.toml`.
 
-## Tools (exact versions, 2026-10-18)
+## Tools (top-level versions pinned, 2026-10-18)
+
+`pnpm dlx` and `uvx` resolve transitive dependencies without a lockfile, so a later run may pick up newer transitive versions; `cargo install --locked` uses each CLI's own lockfile.
 
 | Language | Tool | Version | Licence | Role |
 |---|---|---|---|---|
@@ -194,3 +196,7 @@ json-schema-to-typescript/Ajv, dmcg and typify.
   under strict mode) makes Ajv reject an unknown tag with a `discriminator`
   error and makes dmcg emit `Field(discriminator="kind")`; typify still emits an
   untagged enum. Checked by hand, not in `run.sh`.
+
+## If the Rust harness is promoted
+
+Build it only through `run.sh` (it copies the harness into `dist/`). A promoted crate's `cargo deny` allowlist must cover licences that `scripts/check_licenses.py` does not list today: `Zlib` (`foldhash`), `Unicode-3.0` (`unicode-ident`) and `MIT-0`. ADR-008 leaves that decision to the first crate.
