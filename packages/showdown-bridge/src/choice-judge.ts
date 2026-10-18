@@ -22,7 +22,10 @@ export interface ChoiceJudge {
   judge(request_hash: string, choices: readonly string[]): Verdict[];
 }
 
-/** The judge's battle is not at the request it was asked about. */
+/**
+ * A judge does not match the request it was asked about: its battle is at
+ * another request (or none), or its verdicts do not answer the choices.
+ */
 export class JudgeStateError extends Error {
   override name = "JudgeStateError";
 }
@@ -62,6 +65,10 @@ export class CloneJudge implements ChoiceJudge {
    * Throws `JudgeStateError` unless the battle is at `request_hash`.
    */
   judge(request_hash: string, choices: readonly string[]): Verdict[] {
+    // Checked on the live side: a battle that has not started cannot be cloned.
+    if (this.#battle.sides[this.#side]?.activeRequest == null) {
+      throw new JudgeStateError("side has no active request");
+    }
     const at = this.#clone();
     const actual = requestHash(JSON.parse(JSON.stringify(at.activeRequest)) as JsonObject);
     if (actual !== request_hash) {

@@ -176,6 +176,8 @@ describe("the engine accepts every non-pending candidate", () => {
     }
   });
 
+  // Six full battles, each request judged on the engine: about 1 s locally,
+  // over vitest's 5 s default on a slow CI runner.
   it("across seeded random battles with Mega Evolution and double switches", () => {
     const teams = {
       p1: withStones({ Charizard: "Charizardite Y", Venusaur: "Venusaurite" }),
@@ -199,7 +201,7 @@ describe("the engine accepts every non-pending candidate", () => {
     expect(offered.some((c) => /^switch \d, switch \d$/.test(c))).toBe(true);
     expect(all.flatMap((s) => s.pruned).some((c) => /^switch (\d), switch \1$/.test(c))).toBe(true);
     expect(all.some((s) => s.sets.some((set) => set.request_seq > 10))).toBe(true);
-  });
+  }, 60_000);
 
   it("with two Mega-capable actives: Mega on either slot, never both", () => {
     // Venusaur (slot 1) and Charizard (slot 2) lead, both holding a stone.
@@ -266,6 +268,15 @@ describe("CloneJudge", () => {
     expect(() => new CloneJudge(engine, battle, "p3")).toThrow(/no side p3/);
     battle.strictChoices = true;
     expect(() => new CloneJudge(engine, battle, "p1")).toThrow(JudgeStateError);
+  });
+
+  it("refuses a side the engine has asked nothing of", () => {
+    // Only p1 has joined, so the battle has not started and sent no request.
+    const Battle = engine.sim.Battle as unknown as TestBattleClass;
+    const battle = new Battle({ formatid: GOLDEN_FORMAT, seed: GOLDEN_SEED });
+    battle.setPlayer("p1", { name: "p1", team: engine.sim.Teams.pack(team) });
+    const judge = new CloneJudge(engine, battle, "p1");
+    expect(() => judge.judge("0".repeat(64), [])).toThrow(/has no active request/);
   });
 });
 
