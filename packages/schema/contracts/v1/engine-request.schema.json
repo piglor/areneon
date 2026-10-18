@@ -1,0 +1,275 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:areneon:schema:engine:v1:engine-request",
+  "title": "EngineRequest",
+  "description": "One |request| body from the pinned engine (sim/side.ts ChoiceRequest: SwitchRequest | TeamPreviewRequest | MoveRequest | WaitRequest), as one closed object because the engine's variants carry no tag; decodeRequest tells the phases apart. Without ally (multi battles), which no supported format has. Validated before request_hash is computed (ADR-008 §4). A pin bump that changes these shapes edits this schema and re-runs the golden fixtures.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "side"
+  ],
+  "properties": {
+    "wait": {
+      "const": true
+    },
+    "teamPreview": {
+      "const": true
+    },
+    "forceSwitch": {
+      "description": "Per active slot: must it switch.",
+      "type": "array",
+      "items": {
+        "type": "boolean"
+      }
+    },
+    "maxChosenTeamSize": {
+      "description": "Team Preview: how many Pokémon to bring.",
+      "type": "integer",
+      "minimum": -9007199254740991,
+      "maximum": 9007199254740991
+    },
+    "active": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/PokemonMoveRequestData"
+      }
+    },
+    "side": {
+      "$ref": "#/$defs/SideRequestData"
+    },
+    "noCancel": {
+      "type": "boolean"
+    },
+    "update": {
+      "description": "Set on the request the engine re-sends after an [Unavailable choice].",
+      "type": "boolean"
+    },
+    "rqid": {
+      "description": "Added by the Showdown server only (server/room-battle.ts); never hashed.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    }
+  },
+  "$defs": {
+    "SideRequestData": {
+      "description": "sim/side.ts SideRequestData.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "id",
+        "pokemon"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "id": {
+          "description": "Side ID, not the ID of the side's name.",
+          "enum": [
+            "p1",
+            "p2",
+            "p3",
+            "p4"
+          ]
+        },
+        "pokemon": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PokemonSwitchRequestData"
+          }
+        },
+        "noCancel": {
+          "type": "boolean"
+        }
+      }
+    },
+    "PokemonSwitchRequestData": {
+      "description": "sim/side.ts PokemonSwitchRequestData.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ident",
+        "details",
+        "condition",
+        "active",
+        "stats",
+        "moves",
+        "baseAbility",
+        "item",
+        "pokeball"
+      ],
+      "properties": {
+        "ident": {
+          "description": "`${sideid}: ${name}`.",
+          "type": "string"
+        },
+        "details": {
+          "type": "string"
+        },
+        "condition": {
+          "type": "string"
+        },
+        "active": {
+          "type": "boolean"
+        },
+        "stats": {
+          "$ref": "#/$defs/StatsExceptHp"
+        },
+        "moves": {
+          "description": "Move IDs for choosable moves.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "baseAbility": {
+          "description": "Permanent ability.",
+          "type": "string"
+        },
+        "item": {
+          "type": "string"
+        },
+        "pokeball": {
+          "type": "string"
+        },
+        "ability": {
+          "description": "Current ability (Gen 7+).",
+          "type": "string"
+        },
+        "commanding": {
+          "type": "boolean"
+        },
+        "reviving": {
+          "type": "boolean"
+        },
+        "teraType": {
+          "type": "string"
+        },
+        "terastallized": {
+          "type": "string"
+        }
+      }
+    },
+    "StatsExceptHp": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "atk",
+        "def",
+        "spa",
+        "spd",
+        "spe"
+      ],
+      "properties": {
+        "atk": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "def": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "spa": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "spd": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "spe": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    "PokemonMoveRequestData": {
+      "description": "sim/side.ts PokemonMoveRequestData, without canZMove, canDynamax, maxMoves and canUltraBurst: no supported format has them, so they fail closed here as in the enumerator.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "moves"
+      ],
+      "properties": {
+        "moves": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/MoveRequestData"
+          }
+        },
+        "maybeDisabled": {
+          "type": "boolean"
+        },
+        "maybeLocked": {
+          "type": "boolean"
+        },
+        "trapped": {
+          "type": "boolean"
+        },
+        "maybeTrapped": {
+          "type": "boolean"
+        },
+        "canMegaEvo": {
+          "type": "boolean"
+        },
+        "canMegaEvoX": {
+          "type": "boolean"
+        },
+        "canMegaEvoY": {
+          "type": "boolean"
+        },
+        "canTerastallize": {
+          "description": "The Tera type it can take.",
+          "type": "string"
+        }
+      }
+    },
+    "MoveRequestData": {
+      "description": "sim/side.ts MoveRequestData.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "move",
+        "id"
+      ],
+      "properties": {
+        "move": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "pp": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "maxpp": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "target": {
+          "type": "string"
+        },
+        "disabled": {
+          "description": "The engine sends a reason string or a boolean.",
+          "type": [
+            "string",
+            "boolean"
+          ]
+        },
+        "disabledSource": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

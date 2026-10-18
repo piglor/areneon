@@ -47,7 +47,8 @@ describe("decodeRequest on the golden fixtures", () => {
 });
 
 describe("decodeRequest rejects malformed input", () => {
-  const side = { id: "p1", pokemon: [] };
+  const side = { name: "Areneon", id: "p1", pokemon: [] };
+  const move = { move: "Protect", id: "protect", pp: 16, maxpp: 16, target: "self", disabled: false };
   it.each([
     ["a non-object", "[]"],
     ["null", "null"],
@@ -55,11 +56,32 @@ describe("decodeRequest rejects malformed input", () => {
     ["a side without pokemon", JSON.stringify({ wait: true, side: { id: "p1" } })],
     ["no phase", JSON.stringify({ side })],
     ["a preview without a size", JSON.stringify({ teamPreview: true, side })],
+    // The closed engine-mirror schema (ADR-008 §1b), checked before hashing.
+    ["an unknown request key", JSON.stringify({ wait: true, side, turn: 3 })],
+    ["a multi-battle ally", JSON.stringify({ active: [], side, ally: side })],
+    ["a Z-Move offer", JSON.stringify({ active: [{ moves: [move], canZMove: [] }], side })],
+    ["an rqid of 0", JSON.stringify({ wait: true, side, rqid: 0 })],
+    ["a fractional rqid", JSON.stringify({ wait: true, side, rqid: 1.5 })],
+    ["a numeric disabled flag", JSON.stringify({ active: [{ moves: [{ ...move, disabled: 1 }] }], side })],
+    ["a side id outside p1-p4", JSON.stringify({ wait: true, side: { ...side, id: "p5" } })],
   ])("%s", (_label, body) => {
     expect(() => decodeRequest(body)).toThrow(RequestDecodeError);
   });
 
   it("recognises wait requests", () => {
     expect(decodeRequest(JSON.stringify({ wait: true, side })).phase).toBe("wait");
+  });
+
+  it("names what did not match the engine's shape", () => {
+    expect(() => decodeRequest(JSON.stringify({ wait: true, side, turn: 3 }))).toThrow(
+      /request does not match the engine's request shape: \/ must NOT have additional properties/,
+    );
+  });
+
+  it("accepts the server's rqid and a disabled reason string", () => {
+    const decoded = decodeRequest(
+      JSON.stringify({ active: [{ moves: [{ ...move, disabled: "Taunt" }] }], side, rqid: 2 }),
+    );
+    expect(decoded).toMatchObject({ phase: "move", rqid: 2 });
   });
 });
