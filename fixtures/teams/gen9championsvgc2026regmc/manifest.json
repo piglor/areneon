@@ -1,10 +1,10 @@
 {
-  "provenance": "synthetic: hand-made Areneon test teams built from the golden battle species; not real competitive teams",
+  "provenance": "synthetic: hand-made Areneon test teams built from the golden battle species, plus a disjoint opponent; not real competitive teams",
   "license": "CC0-1.0",
   "format_id": "gen9championsvgc2026regmc",
   "fixtures": {
     "legal-synthetic.txt": { "expect": "legal", "purpose": "every set uses Stat Points; nickname and gender round-trip" },
-    "legal-opponent.txt": { "expect": "legal", "purpose": "shares no species, item, ability or move with legal-synthetic, so the CTS preview test can tell the opponent's details apart" },
+    "legal-opponent.txt": { "expect": "legal", "purpose": "shares no species, item, ability or move with the golden synthetic team (fixtures/showdown/<format>/synthetic-team.json) and carries a nickname, so the CTS preview test can tell what of the opponent leaks" },
     "illegal-stat-points-over-32.txt": { "expect": "illegal", "purpose": "33 Stat Points in one stat (cap 32)", "reason": "has more than 32 Stat Points in HP" },
     "illegal-stat-points-over-total.txt": { "expect": "illegal", "purpose": "96 total Stat Points (cap 66)", "reason": "96 total Stat Points" },
     "illegal-zero-stat-points.txt": { "expect": "illegal", "purpose": "0 Stat Points with Serious nature", "reason": "has exactly 0 Stat Points" },

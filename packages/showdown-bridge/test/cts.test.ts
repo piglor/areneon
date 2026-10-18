@@ -5,24 +5,29 @@ import { GOLDEN_FORMAT, GOLDEN_SEED, syntheticTeam, TEAMS_DIR } from "../src/gol
 import { importPaste, loadEngine, type PokemonSet } from "../src/index.ts";
 
 // CTS invariant (ADR-003, #676): with Open Team Sheets declined, Team
-// Preview shows the opponent's species and details only. In-process, the
-// sheets stay closed unless someone writes `>show-openteamsheets`; runBattle
-// never does, and an actor's choice cannot (each of its lines is prefixed
-// with its own `>p1`/`>p2`).
+// Preview shows the opponent's species, level and gender only. In-process,
+// the sheets stay closed unless someone writes `>show-openteamsheets`;
+// runBattle never does, and an actor's choice cannot (each of its lines is
+// prefixed with its own `>p1`/`>p2`).
 
 const engine = loadEngine();
 const own = syntheticTeam();
 const opponent = importPaste(engine, readFileSync(join(TEAMS_DIR, "legal-opponent.txt"), "utf8"));
 
-const id = (text: string): string => text.toLowerCase().replace(/[^a-z0-9]/g, "");
+/** Every spelling the engine uses for a name: as written, as an ID, and packed. */
+const spellings = (name: string): string[] => [
+  name,
+  name.toLowerCase().replace(/[^a-z0-9]/g, ""),
+  name.replace(/[^A-Za-z0-9]/g, ""),
+];
 
-/** Item, ability, move and nature names of `team`, as written and as IDs. */
-function sheet(team: PokemonSet[]): Set<string> {
-  const names = team.flatMap((set) => [set.item, set.ability, set.nature ?? "", ...set.moves]).filter(Boolean);
-  return new Set(names.flatMap((name) => [name, id(name)]));
-}
+/** The sheet entries of `team` a preview must not show: nicknames, items, abilities, moves, natures. */
+const sheet = (team: PokemonSet[]): string[] =>
+  team.flatMap((set) =>
+    [set.name === set.species ? "" : set.name, set.item, set.ability, set.nature ?? "", ...set.moves].filter(Boolean),
+  );
 
-/** Everything p1's stream receives up to and including its Team Preview request. */
+/** What p1's stream receives up to and including its Team Preview request. */
 async function p1Preview(showSheets = false): Promise<string[]> {
   const streams = engine.sim.getPlayerStreams(new engine.sim.BattleStream());
   streams.omniscient.write(
@@ -42,33 +47,60 @@ async function p1Preview(showSheets = false): Promise<string[]> {
   return lines;
 }
 
-// Names only the opponent's sheet would reveal: shared ones prove nothing.
-const ownSheet = sheet(own);
-const secret = [...sheet(opponent)].filter((name) => !ownSheet.has(name));
+const leaked = (view: string, entries: string[]): string[] =>
+  entries.filter((entry) => spellings(entry).some((spelling) => view.includes(spelling)));
+
+// Everything p1 may see before choosing leads. Anything else (a sheet, the
+// opponent's request, stats or Stat Points) fails the allowlist.
+const ALLOWED: readonly RegExp[] = [
+  /^$/,
+  /^\|t:\|\d+$/,
+  /^\|gametype\|doubles$/,
+  /^\|player\|p[12]\|p[12]\|\|$/,
+  /^\|gen\|9$/,
+  /^\|tier\|[^|]+$/,
+  /^\|rule\|[^|]+$/,
+  /^\|clearpoke$/,
+  /^\|poke\|p1\|[^|]+\|$/,
+  /^\|poke\|p2\|[^,|]+, L50(, [MF])?\|$/,
+  /^\|teampreview\|4$/,
+  /^\|uhtml\|otsrequest\|/,
+  /^\|request\|/,
+];
 
 describe("Team Preview with Open Team Sheets declined", () => {
-  it("uses an opponent team that shares no sheet entry with p1's", () => {
-    expect(secret.length).toBeGreaterThan(20);
-    expect(opponent.some((set) => own.some((mine) => mine.species === set.species))).toBe(false);
+  it("uses an opponent team that shares no sheet entry or species with p1's", () => {
+    const mine = new Set(sheet(own).flatMap(spellings));
+    expect(sheet(opponent).flatMap(spellings).filter((spelling) => mine.has(spelling))).toEqual([]);
+    expect(opponent.filter((set) => own.some((mine) => mine.species === set.species))).toEqual([]);
+    expect(opponent.some((set) => set.name !== set.species)).toBe(true);
   });
 
-  it("shows the opponent's species and details only", async () => {
+  it("shows p1 only the allowed preview lines", async () => {
     const lines = await p1Preview();
+    expect(lines.filter((line) => !ALLOWED.some((allowed) => allowed.test(line)))).toEqual([]);
     const pokes = lines.filter((line) => line.startsWith("|poke|p2|"));
     expect(pokes.map((line) => line.split("|")[3]?.split(",")[0])).toEqual(opponent.map((set) => set.species));
-    for (const line of pokes) expect(line).toMatch(/^\|poke\|p2\|[^,|]+, L50(, [MF])?\|(item)?$/);
-    expect(lines.some((line) => line.startsWith("|showteam|"))).toBe(false);
   });
 
-  it("leaks no item, ability, move or nature of the opponent", async () => {
-    const view = (await p1Preview()).join("\n");
-    expect(secret.filter((name) => view.includes(name))).toEqual([]);
+  it("gives p1 a request about its own side only", async () => {
+    const request = (await p1Preview()).find((line) => line.startsWith("|request|")) ?? "";
+    const { side } = JSON.parse(request.slice("|request|".length)) as { side: { id: string } };
+    expect(side.id).toBe("p1");
+    expect(request).not.toMatch(/p2[a-z]?:/);
   });
 
-  // Negative control: the check above does see a sheet once one is shown.
-  it("would see the opponent's sheet if Open Team Sheets were accepted", async () => {
+  it("leaks no nickname, item, ability, move or nature of the opponent", async () => {
+    expect(leaked((await p1Preview()).join("\n"), sheet(opponent))).toEqual([]);
+  });
+
+  // Negative control: once a sheet is shown, the same check finds every
+  // item, ability, move and nature on it. (Showdown never sends nicknames or
+  // stats in a sheet, so the allowlist above is what excludes those.)
+  it("would see the whole sheet if Open Team Sheets were accepted", async () => {
     const view = (await p1Preview(true)).join("\n");
     expect(view).toContain("|showteam|p2|");
-    expect(secret.filter((name) => view.includes(name)).length).toBeGreaterThan(0);
+    const shown = sheet(opponent.map((set) => ({ ...set, name: set.species })));
+    expect(leaked(view, shown)).toEqual(shown);
   });
 });
