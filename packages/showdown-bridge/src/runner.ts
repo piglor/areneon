@@ -1,4 +1,11 @@
-import type { Engine, PokemonSet, SimStream } from "./engine.ts";
+import {
+  CloneJudge,
+  judgeSubmission,
+  type LegalChoiceSet,
+  legalChoiceSet,
+  type Verdict,
+} from "./choice-judge.ts";
+import type { Engine, PokemonSet, SimBattle, SimStream } from "./engine.ts";
 import { resolveFormat, type VersionManifest } from "./formats.ts";
 import type { FormatRulesRecord, RulesSnapshot } from "./rules.ts";
 import { type DecodedRequest, decodeRequest } from "./request.ts";
@@ -8,9 +15,11 @@ export type Player = "p1" | "p2";
 const PLAYERS: readonly Player[] = ["p1", "p2"];
 
 /**
- * Chooses for one player. It sees only that player's own request, never the
- * omniscient stream. The engine judges the choice: any `|error|` aborts the
- * battle rather than being retried.
+ * Chooses for one player. It sees only that player's own request and the
+ * legal choice set built from it, never the omniscient stream or a verdict
+ * on a pending candidate. The engine judges the choice. A pending candidate
+ * refused as `[Unavailable choice]` brings a new request; any other
+ * `|error|` aborts the battle rather than being retried.
  */
 export type Actor = (request: RequestRecord) => string | Promise<string>;
 
@@ -34,6 +43,22 @@ export interface BattleOptions {
 export interface RequestRecord extends DecodedRequest {
   /** 1-based per-player position among that player's requests. */
   request_seq: number;
+  /**
+   * What the player may choose (ADR-006), engine-judged on a clone of the
+   * battle. Absent on `wait` requests.
+   */
+  legal?: LegalChoiceSet;
+}
+
+/**
+ * The CloneJudge's verdicts on one request's pending candidates. They hold
+ * hidden information (e.g. whether a foe's Shadow Tag traps), so they are
+ * an evaluation artifact, never an actor input.
+ */
+export interface HiddenVerdicts {
+  player: Player;
+  request_seq: number;
+  verdicts: Verdict[];
 }
 
 export interface BattleRecord {
@@ -52,7 +77,10 @@ export interface BattleRecord {
    */
   omniscient_log: string[];
   requests: Record<Player, RequestRecord[]>;
-  choices: { player: Player; request_seq: number; choice: string }[];
+  /** Every submitted choice, including those refused as `[Unavailable choice]`. */
+  choices: { player: Player; request_seq: number; choice: string; refused?: string }[];
+  /** Hidden state, like `omniscient_log`: never an actor input. */
+  hidden_verdicts: HiddenVerdicts[];
 }
 
 export class InvalidTeamError extends Error {
@@ -99,7 +127,8 @@ export async function runBattle(options: BattleOptions): Promise<BattleRecord> {
     if (!verdict.valid) throw new InvalidTeamError(player, verdict.problems);
   }
 
-  const streams = engine.sim.getPlayerStreams(new engine.sim.BattleStream());
+  const battleStream = new engine.sim.BattleStream();
+  const streams = engine.sim.getPlayerStreams(battleStream);
   const record: BattleRecord = {
     manifest: resolved.manifest,
     format_rules: resolved.rules,
@@ -110,6 +139,7 @@ export async function runBattle(options: BattleOptions): Promise<BattleRecord> {
     omniscient_log: [],
     requests: { p1: [], p2: [] },
     choices: [],
+    hidden_verdicts: [],
   };
   let failure: Error | undefined;
   let ended = false;
@@ -143,18 +173,48 @@ export async function runBattle(options: BattleOptions): Promise<BattleRecord> {
   };
 
   const play = async (player: Player, stream: SimStream): Promise<void> => {
+    // The last submission if it was a pending candidate, until the engine
+    // answers it with a new request.
+    let pendingSubmission: BattleRecord["choices"][number] | null = null;
     for await (const chunk of stream) {
       for (const line of chunk.split("\n")) {
         if (line.startsWith("|error|")) {
-          abort(new BattleAbortedError(`${player}: ${line.slice("|error|".length)}`));
+          const error = line.slice("|error|".length);
+          // A pending candidate may be refused for a hidden reason (ADR-006
+          // rule 5); the updated request that follows is answered afresh.
+          if (
+            pendingSubmission !== null &&
+            judgeSubmission(pendingSubmission.choice, error).revealed
+          ) {
+            pendingSubmission.refused = error;
+            continue;
+          }
+          abort(new BattleAbortedError(`${player}: ${error}`));
         } else if (line.startsWith("|request|")) {
-          const request = { ...decodeRequest(line.slice("|request|".length)), request_seq: 0 };
+          pendingSubmission = null;
+          const request: RequestRecord = {
+            ...decodeRequest(line.slice("|request|".length)),
+            request_seq: 0,
+          };
           request.request_seq = record.requests[player].push(request);
           if (request.phase === "wait") continue;
           try {
+            const battle = battleStream.battle as SimBattle;
+            // A request still in the stream when the battle ends (e.g. a
+            // forced tie) asks for nothing.
+            if (battle.ended) continue;
+            const judge = new CloneJudge(engine, battle, player);
+            const legal = legalChoiceSet({ request, showdown_commit: engine.commit, judge });
+            request.legal = legal;
+            if (legal.pending.length > 0) {
+              const verdicts = judge.judge(request.request_hash, legal.pending);
+              record.hidden_verdicts.push({ player, request_seq: request.request_seq, verdicts });
+            }
             const choice = await actors[player](request);
             if (ended) return;
-            record.choices.push({ player, request_seq: request.request_seq, choice });
+            const entry = { player, request_seq: request.request_seq, choice };
+            record.choices.push(entry);
+            if (legal.pending.includes(choice)) pendingSubmission = entry;
             stream.write(choice);
           } catch (error) {
             abort(error instanceof Error ? error : new Error(String(error)));

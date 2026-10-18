@@ -8,10 +8,12 @@ export {
   type ChoiceJudge,
   CloneJudge,
   EnumeratorDefectError,
+  judgeSubmission,
   JudgeStateError,
   type LegalChoiceOptions,
   type LegalChoiceSet,
   legalChoiceSet,
+  type SubmissionVerdict,
   type Verdict,
 } from "./choice-judge.ts";
 export {
@@ -78,6 +80,7 @@ export {
   BattleAbortedError,
   type BattleOptions,
   type BattleRecord,
+  type HiddenVerdicts,
   InvalidTeamError,
   type Player,
   replayActor,

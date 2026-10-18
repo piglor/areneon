@@ -81,9 +81,26 @@ export class CloneJudge implements ChoiceJudge {
     this.#side = side;
   }
 
+  #live(): SimSide {
+    return this.#battle.sides[this.#side] as SimSide;
+  }
+
   #clone(): SimSide {
     const clone = this.#engine.sim.Battle.fromJSON(this.#battle.toJSON());
-    return clone.sides[this.#side] as SimSide;
+    const side = clone.sides[this.#side] as SimSide;
+    // fromJSON rebuilds `activeRequest` from the Pokémon (sim/state.ts).
+    // Unless the engine edited the live request in place, which it marks
+    // `update: true` (an `[Unavailable choice]`: `trapped` set, `maybe*`
+    // deleted), the rebuilt one must equal it: that is the check that the
+    // clone is the battle the player sees.
+    const live = JSON.parse(JSON.stringify(this.#live().activeRequest)) as JsonObject;
+    const rebuilt = JSON.parse(JSON.stringify(side.activeRequest)) as JsonObject;
+    if (live.update !== true && requestHash(rebuilt) !== requestHash(live)) {
+      throw new JudgeStateError("the clone does not reproduce the live battle's request");
+    }
+    // Judge against the request a submission will be checked against.
+    side.activeRequest = live;
+    return side;
   }
 
   /**
@@ -100,7 +117,7 @@ export class CloneJudge implements ChoiceJudge {
    */
   judge(request_hash: string, choices: readonly string[]): Verdict[] {
     // Checked on the live side: a battle that has not started cannot be cloned.
-    if ((this.#battle.sides[this.#side] as SimSide).activeRequest === null) {
+    if (this.#live().activeRequest === null) {
       throw new JudgeStateError("side has no active request");
     }
     const at = this.#clone();
@@ -125,6 +142,27 @@ export class CloneJudge implements ChoiceJudge {
       return verdict;
     });
   }
+}
+
+/**
+ * The SubmissionJudge (ADR-006 rule 4): the engine's own verdict on a
+ * submitted choice, on any runtime. It answers only on refusal, with an
+ * `|error|` line; silence means the engine took the choice.
+ */
+export interface SubmissionVerdict extends Verdict {
+  legal: false;
+  /**
+   * `[Unavailable choice]`: refused because the attempt revealed hidden
+   * information. The engine follows it with an updated `|request|`, a new
+   * request to answer. `[Invalid choice]` is not revealing: an enumerated
+   * non-pending candidate refused that way is an enumerator defect.
+   */
+  revealed: boolean;
+}
+
+/** Classify the text of an `|error|` line the engine sent after `choice`. */
+export function judgeSubmission(choice: string, error: string): SubmissionVerdict {
+  return { choice, legal: false, error, revealed: error.startsWith("[Unavailable choice]") };
 }
 
 /** The set a policy chooses from (ADR-006). */
