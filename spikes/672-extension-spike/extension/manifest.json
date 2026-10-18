@@ -1,0 +1,32 @@
+{
+  "manifest_version": 3,
+  "name": "Areneon EXP-01 request probe (spike)",
+  "version": "0.0.1",
+  "description": "SPIKE #672: read-only diagnostic panel for the player's own Showdown request. Never submits.",
+  "permissions": [],
+  "content_scripts": [
+    {
+      "matches": [
+        "https://play.pokemonshowdown.com/*",
+        "https://*.pokemonshowdown.com/*",
+        "http://localhost/*",
+        "http://127.0.0.1/*"
+      ],
+      "js": ["main-world.js"],
+      "world": "MAIN",
+      "run_at": "document_start",
+      "all_frames": false
+    },
+    {
+      "matches": [
+        "https://play.pokemonshowdown.com/*",
+        "https://*.pokemonshowdown.com/*",
+        "http://localhost/*",
+        "http://127.0.0.1/*"
+      ],
+      "js": ["protocol.js", "isolated.js"],
+      "run_at": "document_start",
+      "all_frames": false
+    }
+  ]
+}
