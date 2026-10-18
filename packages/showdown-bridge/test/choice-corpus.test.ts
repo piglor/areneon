@@ -12,7 +12,7 @@ import {
   replayCase,
 } from "../src/choice-corpus.ts";
 import { GOLDEN_FORMAT } from "../src/golden.ts";
-import { type Engine, loadEngine } from "../src/index.ts";
+import { CloneJudge, type Engine, loadEngine } from "../src/index.ts";
 
 let engine: Engine;
 beforeAll(() => {
@@ -76,16 +76,47 @@ describe("the golden choice corpus (ADR-006 rule 7)", () => {
       const refused = committed.candidates.filter((c) => !c.pending && !c.legal);
       expect(refused).toEqual([]);
       expect(missedActions(engine, replayCase(engine, spec), spec.player)).toEqual([]);
+      // Engine-distinct: no two accepted candidates are one engine action.
+      const { battle, request } = replayCase(engine, spec);
+      const verdicts = new CloneJudge(engine, battle, spec.player).judge(
+        request.request_hash,
+        committed.candidates.map((c) => c.choice),
+      );
+      const accepted = verdicts.filter((v) => v.legal);
+      expect(new Set(accepted.map((v) => v.action)).size).toBe(accepted.length);
       const pending = committed.candidates.some((c) => c.pending);
-      expect(pending).toBe(committed.kind === "maybe-trapped" || committed.kind === "maybe-disabled");
+      expect(pending).toBe(
+        committed.kind === "maybe-trapped" || committed.kind === "maybe-disabled",
+      );
     },
     60_000,
   );
 
+  it("double-switch: never offers the same bench Pokémon on both slots", () => {
+    const c = corpus["double-switch.json"] as ChoiceCase;
+    const choices = c.candidates.map((x) => x.choice);
+    expect(choices).toContain("switch 3, switch 4");
+    expect(choices.filter((x) => /^switch (\d), switch \1$/.test(x))).toEqual([]);
+  });
+
+  it("judges in one batch exactly as with a fresh clone per choice", () => {
+    for (const file of ["maybe-trapped.json", "maybe-disabled.json"]) {
+      const c = corpus[file] as ChoiceCase;
+      const { battle, request } = replayCase(engine, caseSpec(c));
+      const judge = new CloneJudge(engine, battle, c.player);
+      const choices = c.candidates.map((x) => x.choice);
+      const one = choices.map((choice) => judge.judge(request.request_hash, [choice])[0]);
+      expect(judge.judge(request.request_hash, choices), file).toEqual(one);
+    }
+  });
+
   it("shows why pending candidates get no verdict: some are refused for hidden reasons", () => {
     for (const kind of ["maybe-trapped", "maybe-disabled"] satisfies CaseKind[]) {
       const [, c] = cases.find(([, x]) => x.kind === kind) as [string, ChoiceCase];
-      expect(c.candidates.some((x) => x.pending && !x.legal), kind).toBe(true);
+      expect(
+        c.candidates.some((x) => x.pending && !x.legal),
+        kind,
+      ).toBe(true);
     }
   });
 });

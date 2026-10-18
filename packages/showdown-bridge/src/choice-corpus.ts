@@ -1,9 +1,9 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { CloneJudge, type Verdict } from "./choice-judge.ts";
-import { enumerateCandidates } from "./choices.ts";
+import { ACTIVE_SLOTS, enumerateCandidates } from "./choices.ts";
 import type { Engine, PokemonSet, SimBattle, SimSide } from "./engine.ts";
-import { resolveFormat, type VersionManifest } from "./formats.ts";
+import { type ResolvedFormat, resolveFormat, type VersionManifest } from "./formats.ts";
 import { GOLDEN_DIR, GOLDEN_FORMAT } from "./golden.ts";
 import { type DecodedRequest, decodeRequest, type RequestPhase } from "./request.ts";
 import type { FormatRulesRecord } from "./rules.ts";
@@ -19,7 +19,8 @@ const actives = (r: DecodedRequest): Active[] =>
 const team = (r: DecodedRequest): { condition: string }[] =>
   (r.request.side as { pokemon: { condition: string }[] }).pokemon;
 const fainted = (mon: { condition: string }): boolean => mon.condition.endsWith(" fnt");
-const bench = (r: DecodedRequest): number => team(r).filter((m, i) => i >= 2 && !fainted(m)).length;
+const bench = (r: DecodedRequest): number =>
+  team(r).filter((m, i) => i >= ACTIVE_SLOTS && !fainted(m)).length;
 const forced = (r: DecodedRequest): number =>
   r.phase === "forceSwitch" ? (r.request.forceSwitch as boolean[]).filter(Boolean).length : 0;
 
@@ -44,9 +45,11 @@ export const CASE_KINDS = {
   "maybe-trapped": (r) => actives(r).some((a) => a.maybeTrapped === true),
   "maybe-disabled": (r) =>
     actives(r).some((a) => a.maybeDisabled === true && a.maybeLocked === true),
-  "fainted-no-replacement": (r) => r.phase === "move" && bench(r) === 0 && team(r).slice(0, 2).some(fainted),
+  "fainted-no-replacement": (r) =>
+    r.phase === "move" && bench(r) === 0 && team(r).slice(0, ACTIVE_SLOTS).some(fainted),
   /** Locked into a move the request sends without a target (e.g. Outrage). */
-  "locked-move": (r) => actives(r).some((a) => a.moves.length === 1 && a.moves[0]?.target === undefined),
+  "locked-move": (r) =>
+    actives(r).some((a) => a.moves.length === 1 && a.moves[0]?.target === undefined),
 } satisfies Record<string, (request: DecodedRequest) => boolean>;
 
 export type CaseKind = keyof typeof CASE_KINDS;
@@ -77,6 +80,8 @@ export interface CorpusCandidate {
 /** One committed corpus file. */
 export interface ChoiceCase extends ChoiceCaseSpec {
   provenance: string;
+  /** Says, in the file itself, what pending candidates' verdicts are. */
+  hidden_state: string;
   manifest: VersionManifest;
   format_rules: FormatRulesRecord;
   phase: RequestPhase;
@@ -92,6 +97,7 @@ export class ChoiceCaseError extends Error {
 export interface ReplayedCase {
   battle: SimBattle;
   request: DecodedRequest;
+  format: ResolvedFormat;
 }
 
 /** Replay a case's log on the pinned engine and decode the player's request. */
@@ -100,7 +106,9 @@ export function replayCase(engine: Engine, spec: ChoiceCaseSpec): ReplayedCase {
   const battle = new engine.sim.Battle({ formatid: format.manifest.format_id, seed: spec.seed });
   for (const player of ["p1", "p2"] as const) {
     const verdict = validateTeam(engine, format, spec.teams[player]);
-    if (!verdict.valid) throw new ChoiceCaseError(`${spec.id}: ${player} team: ${verdict.problems.join("; ")}`);
+    if (!verdict.valid) {
+      throw new ChoiceCaseError(`${spec.id}: ${player} team: ${verdict.problems.join("; ")}`);
+    }
     battle.setPlayer(player, { name: player, team: engine.sim.Teams.pack(spec.teams[player]) });
   }
   for (const { player, choice } of spec.log) {
@@ -112,12 +120,12 @@ export function replayCase(engine: Engine, spec: ChoiceCaseSpec): ReplayedCase {
   if (battle.ended || side.activeRequest === null || side.isChoiceDone()) {
     throw new ChoiceCaseError(`${spec.id}: ${spec.player} has no choice to make`);
   }
-  return { battle, request: decodeRequest(JSON.stringify(side.activeRequest)) };
+  return { battle, request: decodeRequest(JSON.stringify(side.activeRequest)), format };
 }
 
 /** Replay a case and record its candidates with the engine's verdicts. */
 export function captureCase(engine: Engine, spec: ChoiceCaseSpec): ChoiceCase {
-  const { battle, request } = replayCase(engine, spec);
+  const { battle, request, format } = replayCase(engine, spec);
   if (!CASE_KINDS[spec.kind](request)) {
     throw new ChoiceCaseError(`${spec.id}: the request is not a ${spec.kind} case`);
   }
@@ -126,10 +134,11 @@ export function captureCase(engine: Engine, spec: ChoiceCaseSpec): ChoiceCase {
     request.request_hash,
     candidates.map((c) => c.choice),
   );
-  const format = resolveFormat(engine, GOLDEN_FORMAT);
   return {
     ...spec,
     provenance: "synthetic: Areneon choice corpus, seeded search over synthetic CC0 teams",
+    hidden_state:
+      "`legal` and `error` of a pending candidate are hidden information: evaluation only, never a policy input",
     manifest: format.manifest,
     format_rules: format.rules,
     phase: request.phase,
@@ -141,10 +150,21 @@ export function captureCase(engine: Engine, spec: ChoiceCaseSpec): ChoiceCase {
   };
 }
 
+/** A request lists at most four moves per active Pokémon. */
+const MAX_MOVES = 4;
+
 /**
  * Every syntactically plausible choice string for one side, knowing only
  * the phase and team size (ADR-006 option C). No request knowledge, so it
- * is an independent oracle for the enumerator.
+ * is an independent oracle for the enumerator. Deliberately left out:
+ * - `default` and `testfight`: the engine chooses (auto-choose, target
+ *   picked at execution); ADR-006 rule 1 offers only explicit choices.
+ * - `shift` (triples only) and `dynamax` / `zmove` / `ultra`: their request
+ *   fields make the enumerator fail closed instead.
+ * - Move indices above 4: a request lists at most four moves.
+ * - One-part strings (`move 1 1`): the engine fills the other slot with an
+ *   auto-pass, the same action as an explicit `pass`.
+ * Probing those forms on every corpus case found no new accepted action.
  */
 export function choiceUniverse(phase: RequestPhase, teamSize: number): string[] {
   if (phase === "preview") {
@@ -158,7 +178,7 @@ export function choiceUniverse(phase: RequestPhase, teamSize: number): string[] 
     return out;
   }
   const slot = ["pass"];
-  for (let m = 1; m <= 4; m++) {
+  for (let m = 1; m <= MAX_MOVES; m++) {
     for (const target of ["", " 1", " 2", " -1", " -2"]) {
       for (const event of ["", " mega", " megax", " megay", " terastallize"]) {
         slot.push(`move ${m}${target}${event}`);
@@ -198,7 +218,9 @@ export function missedActions(
 /** The committed corpus, by file name. */
 export function loadCorpus(dir: string = CHOICES_DIR): Record<string, ChoiceCase> {
   const out: Record<string, ChoiceCase> = {};
-  for (const file of readdirSync(dir).filter((f) => f.endsWith(".json")).sort()) {
+  for (const file of readdirSync(dir)
+    .filter((f) => f.endsWith(".json"))
+    .sort()) {
     out[file] = JSON.parse(readFileSync(join(dir, file), "utf8")) as ChoiceCase;
   }
   return out;
@@ -209,4 +231,3 @@ export function caseSpec(c: ChoiceCase): ChoiceCaseSpec {
   const { id, kind, purpose, seed, teams, player, log } = c;
   return { id, kind, purpose, seed, teams, player, log };
 }
-

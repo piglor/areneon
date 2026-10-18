@@ -41,10 +41,25 @@ const set = (species: string, item: string, ability: string, moves: string[]): P
 /** Its six Pokémon's moves cover every target type in the Reg M-C move pool. */
 const TARGETS: PokemonSet[] = [
   set("Clefable", "Leftovers", "Magic Guard", ["Moonblast", "Helping Hand", "Life Dew", "Protect"]),
-  set("Garchomp", "Life Orb", "Rough Skin", ["Earthquake", "Outrage", "Stealth Rock", "Rock Slide"]),
-  set("Medicham", "Focus Sash", "Pure Power", ["Acupressure", "Counter", "Coaching", "Zen Headbutt"]),
+  set("Garchomp", "Life Orb", "Rough Skin", [
+    "Earthquake",
+    "Outrage",
+    "Stealth Rock",
+    "Rock Slide",
+  ]),
+  set("Medicham", "Focus Sash", "Pure Power", [
+    "Acupressure",
+    "Counter",
+    "Coaching",
+    "Zen Headbutt",
+  ]),
   set("Chimecho", "Sitrus Berry", "Levitate", ["Heal Bell", "Trick Room", "Psychic", "Protect"]),
-  set("Talonflame", "Sharp Beak", "Gale Wings", ["Brave Bird", "Tailwind", "Flare Blitz", "Protect"]),
+  set("Talonflame", "Sharp Beak", "Gale Wings", [
+    "Brave Bird",
+    "Tailwind",
+    "Flare Blitz",
+    "Protect",
+  ]),
   set("Arcanine", "Charcoal", "Intimidate", ["Howl", "Flamethrower", "Extreme Speed", "Protect"]),
 ];
 
@@ -72,21 +87,127 @@ interface Search {
 }
 
 const SEARCHES: Search[] = [
-  { id: "preview", kind: "preview", purpose: "Team Preview: every ordered pick of 4 from 6", teams: { p1: GOLDEN, p2: GOLDEN }, player: "p1" },
-  { id: "targets-clefable-garchomp", kind: "targets", purpose: "target types normal, adjacentAlly, allies, self, allAdjacent, randomNormal, foeSide, allAdjacentFoes", teams: { p1: TARGETS, p2: GOLDEN }, player: "p1", preview: { p1: "team 1234" } },
-  { id: "targets-medicham-chimecho", kind: "targets", purpose: "target types adjacentAllyOrSelf, scripted, adjacentAlly, allyTeam, all", teams: { p1: TARGETS, p2: GOLDEN }, player: "p1", preview: { p1: "team 3456" } },
-  { id: "targets-talonflame-arcanine", kind: "targets", purpose: "target types any, allySide, allies", teams: { p1: TARGETS, p2: GOLDEN }, player: "p1", preview: { p1: "team 5612" } },
-  { id: "mega", kind: "mega", purpose: "one Mega-capable active", teams: { p1: withItems({ Charizard: "Charizardite Y" }), p2: GOLDEN }, player: "p1", preview: { p1: "team 1234" } },
-  { id: "mega-both", kind: "mega-both", purpose: "two Mega-capable actives: Mega on either slot, never both", teams: { p1: withItems({ Venusaur: "Venusaurite", Charizard: "Charizardite Y" }), p2: GOLDEN }, player: "p1", preview: { p1: "team 1234" } },
-  { id: "double-switch", kind: "double-switch", purpose: "both slots may switch to the same two bench Pokémon", teams: { p1: GOLDEN, p2: GOLDEN }, player: "p1" },
-  { id: "force-switch-one", kind: "force-switch-one", purpose: "one fainted slot replaced, the other passes", teams: { p1: GOLDEN, p2: GOLDEN }, player: "p1" },
-  { id: "force-switch-two", kind: "force-switch-two", purpose: "both slots fainted, two bench Pokémon: each switches in a different one", teams: { p1: GOLDEN, p2: GOLDEN }, player: "p1", prefer: { p2: /^move 4, move 4$|move 4$/ } },
-  { id: "force-switch-short-bench", kind: "force-switch-short-bench", purpose: "both slots fainted, one bench Pokémon: one switches, one passes", teams: { p1: GOLDEN, p2: GOLDEN }, player: "p1", prefer: { p2: /move 4$/ } },
-  { id: "trapped", kind: "trapped", purpose: "a visibly trapped active (Mean Look): no switch offered for it", teams: { p1: GOLDEN, p2: TRAPPER }, player: "p1", preview: { p2: "team 6123" }, prefer: { p2: /^move 2 [12],/ } },
-  { id: "maybe-trapped", kind: "maybe-trapped", purpose: "foe Mega Gengar may have Shadow Tag: the last active's switches are pending", teams: { p1: GOLDEN, p2: TRAPPER }, player: "p1", preview: { p2: "team 6123" }, prefer: { p2: /^move 3 [12] mega,/ } },
-  { id: "maybe-disabled", kind: "maybe-disabled", purpose: "foe used Imprison: the last active's moves are pending (maybeDisabled, maybeLocked)", teams: { p1: GOLDEN, p2: TRAPPER }, player: "p1", preview: { p2: "team 6123" }, prefer: { p2: /^move 1,/ } },
-  { id: "fainted-no-replacement", kind: "fainted-no-replacement", purpose: "one active fainted with no bench left: that slot passes", teams: { p1: GOLDEN, p2: GOLDEN }, player: "p1" },
-  { id: "locked-move", kind: "locked-move", purpose: "locked into Outrage: one move, no target, no switch", teams: { p1: TARGETS, p2: GOLDEN }, player: "p1", preview: { p1: "team 1234" }, prefer: { p1: /, move 2$/ } },
+  {
+    id: "preview",
+    kind: "preview",
+    purpose: "Team Preview: every ordered pick of 4 from 6",
+    teams: { p1: GOLDEN, p2: GOLDEN },
+    player: "p1",
+  },
+  {
+    id: "targets-clefable-garchomp",
+    kind: "targets",
+    purpose:
+      "target types normal, adjacentAlly, allies, self, allAdjacent, randomNormal, foeSide, allAdjacentFoes",
+    teams: { p1: TARGETS, p2: GOLDEN },
+    player: "p1",
+    preview: { p1: "team 1234" },
+  },
+  {
+    id: "targets-medicham-chimecho",
+    kind: "targets",
+    purpose: "target types adjacentAllyOrSelf, scripted, adjacentAlly, allyTeam, all",
+    teams: { p1: TARGETS, p2: GOLDEN },
+    player: "p1",
+    preview: { p1: "team 3456" },
+  },
+  {
+    id: "targets-talonflame-arcanine",
+    kind: "targets",
+    purpose: "target types any, allySide, allies",
+    teams: { p1: TARGETS, p2: GOLDEN },
+    player: "p1",
+    preview: { p1: "team 5612" },
+  },
+  {
+    id: "mega",
+    kind: "mega",
+    purpose: "one Mega-capable active",
+    teams: { p1: withItems({ Charizard: "Charizardite Y" }), p2: GOLDEN },
+    player: "p1",
+    preview: { p1: "team 1234" },
+  },
+  {
+    id: "mega-both",
+    kind: "mega-both",
+    purpose: "two Mega-capable actives: Mega on either slot, never both",
+    teams: { p1: withItems({ Venusaur: "Venusaurite", Charizard: "Charizardite Y" }), p2: GOLDEN },
+    player: "p1",
+    preview: { p1: "team 1234" },
+  },
+  {
+    id: "double-switch",
+    kind: "double-switch",
+    purpose: "both slots may switch to the same two bench Pokémon",
+    teams: { p1: GOLDEN, p2: GOLDEN },
+    player: "p1",
+  },
+  {
+    id: "force-switch-one",
+    kind: "force-switch-one",
+    purpose: "one fainted slot replaced, the other passes",
+    teams: { p1: GOLDEN, p2: GOLDEN },
+    player: "p1",
+  },
+  {
+    id: "force-switch-two",
+    kind: "force-switch-two",
+    purpose: "both slots fainted, two bench Pokémon: each switches in a different one",
+    teams: { p1: GOLDEN, p2: GOLDEN },
+    player: "p1",
+    prefer: { p2: /^move 4, move 4$|move 4$/ },
+  },
+  {
+    id: "force-switch-short-bench",
+    kind: "force-switch-short-bench",
+    purpose: "both slots fainted, one bench Pokémon: one switches, one passes",
+    teams: { p1: GOLDEN, p2: GOLDEN },
+    player: "p1",
+    prefer: { p2: /move 4$/ },
+  },
+  {
+    id: "trapped",
+    kind: "trapped",
+    purpose: "a visibly trapped active (Mean Look): no switch offered for it",
+    teams: { p1: GOLDEN, p2: TRAPPER },
+    player: "p1",
+    preview: { p2: "team 6123" },
+    prefer: { p2: /^move 2 [12],/ },
+  },
+  {
+    id: "maybe-trapped",
+    kind: "maybe-trapped",
+    purpose: "foe Mega Gengar may have Shadow Tag: the last active's switches are pending",
+    teams: { p1: GOLDEN, p2: TRAPPER },
+    player: "p1",
+    preview: { p2: "team 6123" },
+    prefer: { p2: /^move 3 [12] mega,/ },
+  },
+  {
+    id: "maybe-disabled",
+    kind: "maybe-disabled",
+    purpose: "foe used Imprison: the last active's moves are pending (maybeDisabled, maybeLocked)",
+    teams: { p1: GOLDEN, p2: TRAPPER },
+    player: "p1",
+    preview: { p2: "team 6123" },
+    prefer: { p2: /^move 1,/ },
+  },
+  {
+    id: "fainted-no-replacement",
+    kind: "fainted-no-replacement",
+    purpose: "one active fainted with no bench left: that slot passes",
+    teams: { p1: GOLDEN, p2: GOLDEN },
+    player: "p1",
+  },
+  {
+    id: "locked-move",
+    kind: "locked-move",
+    purpose: "locked into Outrage: one move, no target, no switch",
+    teams: { p1: TARGETS, p2: GOLDEN },
+    player: "p1",
+    preview: { p1: "team 1234" },
+    prefer: { p1: /, move 2$/ },
+  },
 ];
 
 function random(seed: number): () => number {
@@ -102,7 +223,15 @@ function random(seed: number): () => number {
 function search(s: Search, battles = 200, maxTurns = 60): ChoiceCaseSpec {
   for (let b = 0; b < battles; b++) {
     const seed = `sodium,${b.toString(16).padStart(32, "0")}`;
-    const spec: ChoiceCaseSpec = { id: s.id, kind: s.kind, purpose: s.purpose, seed, teams: s.teams, player: s.player, log: [] };
+    const spec: ChoiceCaseSpec = {
+      id: s.id,
+      kind: s.kind,
+      purpose: s.purpose,
+      seed,
+      teams: s.teams,
+      player: s.player,
+      log: [],
+    };
     // An empty log starts the battle; replayCase also validates both teams.
     const { battle } = replayCase(engine, spec);
     const next = random(b + 1);

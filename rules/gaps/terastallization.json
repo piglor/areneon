@@ -3,8 +3,15 @@
   "gap_id": "terastallization",
   "area": "Terastallization",
   "status": "unverified",
-  "description": "Not offered in Reg M-C: no request in the golden fixtures or the golden choice corpus carries `canTerastallize`. The enumerator still emits `terastallize` (one per side) when a request offers it; that path has unit tests only. Revisit when a supported format allows Terastallization.",
+  "description": "Not offered in Reg M-C: the champions mod's `canTerastallize` returns null, so no request carries `canTerastallize` (golden fixtures and choice corpus). The enumerator still emits `terastallize` (one per side) when a request offers it; that path has unit tests only. Revisit when a supported format allows Terastallization.",
   "evidence": [
+    {
+      "kind": "engine",
+      "path": "data/mods/champions/scripts.ts",
+      "symbols": [
+        "canTerastallize"
+      ]
+    },
     {
       "kind": "fixture",
       "path": "fixtures/showdown/gen9championsvgc2026regmc/turn.request.json"

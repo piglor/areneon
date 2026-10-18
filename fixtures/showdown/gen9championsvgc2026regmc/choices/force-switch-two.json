@@ -437,6 +437,7 @@
     }
   ],
   "provenance": "synthetic: Areneon choice corpus, seeded search over synthetic CC0 teams",
+  "hidden_state": "`legal` and `error` of a pending candidate are hidden information: evaluation only, never a policy input",
   "manifest": {
     "showdown_commit": "7244fe8e28fa8bc4d0809ae30d183c608b62bb2b",
     "format_id": "gen9championsvgc2026regmc",

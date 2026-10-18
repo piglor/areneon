@@ -89,7 +89,13 @@ export class CloneJudge implements ChoiceJudge {
   /**
    * One clone per request. A refusal that reveals hidden information
    * (`[Unavailable choice]`) rewrites the clone's request and flags, so the
-   * rest are then judged on a fresh clone.
+   * rest are then judged on a fresh clone. Comparing the request JSON is
+   * enough to see that: in the pinned engine a refusal changes state only
+   * through `emitChoiceError` -> `updateRequestForPokemon`, which edits the
+   * request in place (deleting `maybe*`, marking a move disabled, setting
+   * `trapped`) and re-emits it with `update: true`; the Pokémon flags it
+   * clears mirror those request keys (sim/side.ts, sim/pokemon.ts). A test
+   * checks the batched verdicts against one fresh clone per choice.
    * Throws `JudgeStateError` unless the battle is at `request_hash`.
    */
   judge(request_hash: string, choices: readonly string[]): Verdict[] {
