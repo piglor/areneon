@@ -9,21 +9,14 @@
 // CI sets RULES_BASE_REF=HEAD^1; locally the base is the merge-base with
 // origin/main. The policy lives in src/rules-channel.ts and
 // src/rules-history.ts; this file only wires git and node to it.
-import { execFileSync } from "node:child_process";
 import { loadEngine } from "../src/engine.ts";
 import { resolveFormat } from "../src/formats.ts";
 import { checkChannel } from "../src/rules-channel.ts";
-import { baseChannel, buildAt, type GitReader, historicalSnapshots, resolveBase } from "../src/rules-history.ts";
+import { baseChannel, buildAt, gitAt, historicalSnapshots, REPO_ROOT, resolveBase } from "../src/rules-history.ts";
 import { loadChannels, loadRulesSnapshot } from "../src/rules-load.ts";
 import { RulesError, rulesSnapshotHash } from "../src/rules.ts";
 
-const git: GitReader = (...args) => {
-  try {
-    return execFileSync("git", args, { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
-  } catch {
-    return undefined;
-  }
-};
+const git = gitAt(REPO_ROOT);
 
 try {
   const engine = loadEngine();

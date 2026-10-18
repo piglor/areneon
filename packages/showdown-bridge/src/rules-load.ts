@@ -107,11 +107,12 @@ export function loadChannel(channel: string, dir: string = DEFAULT_RULES_DIR): C
 }
 
 /** The channels Areneon serves: the channel schema's closed `channel` enum. */
-export function knownChannels(): string[] {
-  const schema = schemaFor(RULES_SCHEMA_VERSION, "channel") as {
-    properties: { channel: { enum: string[] } };
-  };
-  return [...schema.properties.channel.enum].sort();
+export function knownChannels(schema: object = schemaFor(RULES_SCHEMA_VERSION, "channel")): string[] {
+  const channels = (schema as { properties?: { channel?: { enum?: unknown } } }).properties?.channel?.enum;
+  if (!Array.isArray(channels) || channels.length === 0 || !channels.every((c) => typeof c === "string")) {
+    throw new RulesError("the channel schema must list its channels as a non-empty string enum");
+  }
+  return [...(channels as string[])].sort();
 }
 
 /**
@@ -121,7 +122,12 @@ export function knownChannels(): string[] {
  */
 export function loadChannels(dir: string = DEFAULT_RULES_DIR): ChannelFile[] {
   const known = knownChannels();
-  const files = readdirSync(join(dir, "channels")).sort();
+  let files: string[];
+  try {
+    files = readdirSync(join(dir, "channels")).sort();
+  } catch {
+    throw new RulesError("rules/channels/ is missing");
+  }
   for (const file of files) {
     if (!known.some((channel) => file === `${channel}.json`)) {
       throw new RulesError(`channels/${file} is not a known channel (${known.join(", ")})`);

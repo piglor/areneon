@@ -136,6 +136,18 @@ describe("loadChannels", () => {
     }
   });
 
+  it("fails closed on a schema without a channel enum", () => {
+    for (const schema of [{}, { properties: { channel: { const: "stable" } } }, { properties: { channel: { enum: [] } } }]) {
+      expect(() => knownChannels(schema)).toThrow(/non-empty string enum/);
+    }
+  });
+
+  it("fails closed when rules/channels is missing", () => {
+    const dir = rulesCopy((d) => rmSync(join(d, "channels"), { recursive: true }));
+    expect(() => loadChannels(dir)).toThrow(RulesError);
+    expect(() => loadChannels(dir)).toThrow(/rules\/channels\/ is missing/);
+  });
+
   it("rejects a missing channel file", () => {
     const dir = rulesCopy((d) => rmSync(join(d, "channels/stable.json")));
     expect(() => loadChannels(dir)).toThrow(/channels\/stable\.json is missing/);

@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { parseChannel } from "./rules-load.ts";
 import { type ChannelFile, RulesError } from "./rules.ts";
 
@@ -15,7 +16,28 @@ export interface GitReader {
 }
 
 /** Run a program without a shell and return its stdout. */
-export type Exec = (file: string, args: string[], options: { encoding: "utf8"; timeout: number }) => string;
+export type Exec = (
+  file: string,
+  args: string[],
+  options: { encoding: "utf8"; timeout: number; cwd: string },
+) => string;
+
+/** The repository root. Git runs here so paths mean the same from any directory. */
+export const REPO_ROOT = fileURLToPath(new URL("../../../", import.meta.url));
+
+/** A `GitReader` that runs git in `cwd`. */
+export function gitAt(cwd: string): GitReader {
+  return (...args) => {
+    try {
+      return execFileSync("git", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+    } catch {
+      return undefined;
+    }
+  };
+}
+
+/** Pathspecs anchored at the repository root, whatever git's working directory. */
+const fromTop = (path: string): string => `:(top)${path}`;
 
 /** What one historical builder printed. */
 export interface BuiltSnapshot {
@@ -37,7 +59,7 @@ export const RULES_BUILDER_TIMEOUT_MS = 60_000;
 
 /** Whether `path` exists at `commit`. Throws when git itself fails. */
 function existsAt(git: GitReader, commit: string, path: string): boolean {
-  const listed = git("ls-tree", "--name-only", commit, "--", path);
+  const listed = git("ls-tree", "--full-tree", "--name-only", commit, "--", path);
   if (listed === undefined) throw new RulesError(`git could not list ${path} at ${commit}`);
   return listed !== "";
 }
@@ -97,7 +119,7 @@ export function historicalSnapshots(
   build: (commit: string) => BuiltSnapshot,
   warn: (message: string) => void,
 ): BuiltSnapshot[] {
-  const listed = git("rev-list", "--first-parent", base, "--", ...RULES_HISTORY_PATHS);
+  const listed = git("rev-list", "--first-parent", base, "--", ...RULES_HISTORY_PATHS.map(fromTop));
   if (listed === undefined) throw new RulesError(`git could not list the history of ${base}`);
   const built: BuiltSnapshot[] = [];
   for (const commit of listed.split("\n").filter(Boolean)) {
@@ -105,7 +127,8 @@ export function historicalSnapshots(
     try {
       built.push(build(commit));
     } catch (error) {
-      warn(`skipping ${commit}: its rules builder failed (${(error as Error).message})`);
+      const reason = error instanceof RulesError ? error.message : `its rules builder failed (${(error as Error).message})`;
+      warn(`skipping ${commit}: ${reason}`);
     }
   }
   return built;
@@ -116,10 +139,14 @@ const run: Exec = (file, args, options) => execFileSync(file, args, options);
 /** Run `commit`'s own builder from a bare archive: no node_modules, no shell. */
 export function buildAt(commit: string, exec: Exec = run): BuiltSnapshot {
   const dir = mkdtempSync(join(tmpdir(), "areneon-rules-"));
-  const options = { encoding: "utf8", timeout: RULES_BUILDER_TIMEOUT_MS } as const;
+  const options = { encoding: "utf8", timeout: RULES_BUILDER_TIMEOUT_MS, cwd: REPO_ROOT } as const;
   try {
     const archive = join(dir, "tree.tar");
-    exec("git", ["archive", "-o", archive, commit, ...RULES_HISTORY_PATHS], options);
+    try {
+      exec("git", ["archive", "-o", archive, commit, ...RULES_HISTORY_PATHS], options);
+    } catch (error) {
+      throw new RulesError(`git could not archive ${commit} (${(error as Error).message})`);
+    }
     exec("tar", ["-xf", archive, "-C", dir], options);
     return JSON.parse(exec("node", [join(dir, RULES_BUILDER)], options)) as BuiltSnapshot;
   } finally {
