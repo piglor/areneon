@@ -76,7 +76,7 @@ describe("the ObservationBuilder module", () => {
   const specifiers = (source: string): string[] =>
     [...source.matchAll(/(?:\bfrom|\bimport|\brequire)\s*\(?\s*["']([^"']+)["']/g)].map((m) => m[1] as string);
 
-  it.each(["observation.ts", "web-sha256.ts"])("%s imports only contracts and canonical JSON", (file) => {
+  it.each(["observation.ts", "web-sha256.ts", "episode.ts"])("%s imports only contracts and canonical JSON", (file) => {
     const source = readFileSync(new URL(`../src/${file}`, import.meta.url), "utf8");
     const found = specifiers(source);
     expect(found.length).toBeGreaterThan(0);
@@ -241,7 +241,14 @@ describe("the canary test (ADR-008 §5 adversarial 2)", () => {
     }
   });
 
-  it.each(["lines", "stats", "sets"] as const)("would catch a leak: a smuggled opponent canary (%s) is found", async (kind) => {
+  it("would catch a leak: a smuggled opponent SECRET line is refused by the adapter itself", () => {
+    const secret = canaries("p2").lines.find((line) => /\|\d+\/(?!100\b)\d+/.test(line)) as string;
+    expect(secret).toBeDefined();
+    const honest = recordedChannel(record, "p1", 1, "synthetic");
+    expect(() => playerChannel({ ...honest, lines: [secret, ...honest.lines] })).toThrow(/only the opponent may see/);
+  });
+
+  it.each(["stats", "sets"] as const)("would catch a leak: a smuggled opponent canary (%s) is found", async (kind) => {
     const secret = canaries("p2")[kind][0] as string;
     const honest = recordedChannel(record, "p1", 1, "synthetic");
     const leaky = playerChannel({ ...honest, lines: [secret, ...honest.lines] });
@@ -470,6 +477,11 @@ describe("buildObservation and its adapter", () => {
     expect(() => playerChannel({ ...p1(), extra: 1 })).toThrow(/not a PlayerChannelLog/);
     expect(() => playerChannel({ ...p1(), player: "p2" })).toThrow(/p2's channel holds a request for p1/);
     expect(() => playerChannel({ ...p1(), lines: ['|request|{"side":{}}'] })).toThrow(/engine's request shape/);
+    // The opponent's SECRET half: an unresolved split, or their exact HP.
+    expect(() => playerChannel({ ...p1(), lines: ["|split|p2"] })).toThrow(/only the opponent may see/);
+    expect(() => playerChannel({ ...p1(), lines: ["|-damage|p2b: Gengar|102/165"] })).toThrow(/only the opponent may see/);
+    // Their public half, and the player's own exact HP, are fine.
+    expect(() => playerChannel({ ...p1(), lines: ["|-damage|p2b: Gengar|62/100", "|-damage|p1a: Venusaur|120/165"] })).not.toThrow();
     expect(() => recordedChannel(golden, "p1", 999, "synthetic")).toThrow(/no request 999/);
   });
 });

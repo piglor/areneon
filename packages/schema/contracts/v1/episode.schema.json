@@ -1,0 +1,530 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:areneon:schema:contracts:v1:episode",
+  "title": "Episode",
+  "description": "One player's recorded battle (CONTEXT.md): immutable, hashed over its JCS bytes, stored in the version it was written with (ADR-008 §3). It holds only that player's own channel, team and decisions; each observation is rebuilt from a prefix of `channel` by the ObservationBuilder. Never the omniscient log.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "data_class",
+    "rights",
+    "provenance",
+    "player",
+    "team",
+    "channel",
+    "decisions",
+    "result"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "data_class": {
+      "description": "synthetic: CC0, may be committed; private: a real team or a human's games, kept only in private-data/ (ADR-008 §5).",
+      "enum": [
+        "synthetic",
+        "private"
+      ]
+    },
+    "rights": {
+      "description": "cc0-synthetic for synthetic data, owner-private for private data (ADR-008 §5).",
+      "enum": [
+        "cc0-synthetic",
+        "owner-private"
+      ]
+    },
+    "provenance": {
+      "$ref": "#/$defs/Provenance"
+    },
+    "player": {
+      "description": "Whose episode this is.",
+      "enum": [
+        "p1",
+        "p2"
+      ]
+    },
+    "team": {
+      "description": "The player's own team.",
+      "$ref": "#/$defs/PrivateTeamSpec"
+    },
+    "channel": {
+      "description": "The player's whole channel, in order, |t:| dropped (a PlayerChannelLog's lines).",
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1
+    },
+    "decisions": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/DecisionRecord"
+      }
+    },
+    "result": {
+      "$ref": "#/$defs/Result"
+    }
+  },
+  "$defs": {
+    "Provenance": {
+      "description": "Where the episode came from.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "runtime",
+        "behaviour_policy_id",
+        "manifest"
+      ],
+      "properties": {
+        "runtime": {
+          "description": "A1: in-process sim; A2: local pinned server (ADR-005). On A2 every decision carries its deadline record and decision_context, the never-auto-choose evidence; a reader must enforce it (readEpisode does), since the contract profile has no if/then.",
+          "enum": [
+            "A1",
+            "A2"
+          ]
+        },
+        "behaviour_policy_id": {
+          "description": "The policy that chose this player's actions.",
+          "type": "string",
+          "minLength": 1
+        },
+        "manifest": {
+          "$ref": "#/$defs/VersionManifest"
+        }
+      }
+    },
+    "Result": {
+      "description": "How the battle ended.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "winner",
+        "turns"
+      ],
+      "properties": {
+        "winner": {
+          "description": "p1, p2, or null for a tie.",
+          "enum": [
+            "p1",
+            "p2",
+            null
+          ]
+        },
+        "turns": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    "DecisionRecord": {
+      "description": "One decision the player made, for one of its own requests.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "identity",
+        "choice",
+        "source_policy_id"
+      ],
+      "properties": {
+        "identity": {
+          "$ref": "#/$defs/RequestIdentity"
+        },
+        "choice": {
+          "description": "The submitted choice, in canonical engine syntax.",
+          "type": "string",
+          "minLength": 1
+        },
+        "refused": {
+          "description": "The engine's [Unavailable choice] refusal, when the choice was a pending candidate it refused (ADR-006).",
+          "type": "string",
+          "minLength": 1
+        },
+        "source_policy_id": {
+          "description": "The policy that produced the choice.",
+          "type": "string",
+          "minLength": 1
+        },
+        "decision_context": {
+          "$ref": "#/$defs/DecisionContext"
+        },
+        "deadline": {
+          "$ref": "#/$defs/Deadline"
+        }
+      }
+    },
+    "Deadline": {
+      "description": "Deadline record of one decision on a timed runtime (#678 §4.4); absent on A1, which has no timer.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "deadline_outcome",
+        "elapsed_ms",
+        "submitted_after_ms",
+        "bank_seconds_after",
+        "server_auto_choose_detected"
+      ],
+      "properties": {
+        "deadline_outcome": {
+          "description": "How the submitted choice came about (#678 §3).",
+          "enum": [
+            "in_budget",
+            "fallback_timeout",
+            "fallback_error",
+            "fallback_invalid",
+            "skipped_low_budget",
+            "last_resort_default"
+          ]
+        },
+        "elapsed_ms": {
+          "description": "Receipt to choice ready.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "submitted_after_ms": {
+          "description": "Receipt to send.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "bank_seconds_after": {
+          "description": "B from the next timer snapshot; null if the battle ended or none was sent.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "server_auto_choose_detected": {
+          "description": "Evidence for the never-auto-choose gate (ADR-005), which asserts it is false.",
+          "type": "boolean"
+        }
+      }
+    },
+    "VersionManifest": {
+      "description": "Replay identity of a battle (ADR-003, ADR-007): the pinned engine commit, the format, and the hashes of the engine ruleset and of Areneon's own format rules.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "showdown_commit",
+        "format_id",
+        "regulation",
+        "ruleset_hash",
+        "format_rules_hash"
+      ],
+      "properties": {
+        "showdown_commit": {
+          "description": "The pinned engine commit.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "format_id": {
+          "type": "string",
+          "pattern": "^[a-z0-9]+$"
+        },
+        "regulation": {
+          "type": "string",
+          "minLength": 1
+        },
+        "ruleset_hash": {
+          "description": "SHA-256 of the canonical engine ruleset.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "format_rules_hash": {
+          "description": "SHA-256 of Areneon's format rules record (ADR-007).",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "RequestIdentity": {
+      "description": "Which request a decision answers (ADR-004 r2, ADR-008 §4). A consumer drops a recommendation unless request_seq and request_hash both match, and rqid too when both carry one.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "request_seq",
+        "request_hash"
+      ],
+      "properties": {
+        "request_seq": {
+          "description": "Areneon's 1-based count of the requests one player has received in this battle, including wait requests.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "request_hash": {
+          "description": "SHA-256 of the canonical request JSON without rqid (ADR-004 r2): lowercase hex.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "rqid": {
+          "description": "The Showdown server's request id; present only on the server path (A2, the advisor), never hashed.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    "PrivateTeamSpec": {
+      "description": "A player's or the bot's own full team. Never part of another player's observation; a private one is never committed.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "data_class",
+        "team"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": 1
+        },
+        "data_class": {
+          "description": "synthetic: CC0, may be committed; private: a real team or a human's games, kept only in private-data/ (ADR-008 §5).",
+          "enum": [
+            "synthetic",
+            "private"
+          ]
+        },
+        "team": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PokemonSet"
+          },
+          "minItems": 1
+        }
+      }
+    },
+    "PokemonSet": {
+      "description": "One set, as the pinned engine's PokemonSet (sim/teams.ts) holds it. Legality is the engine validator's, not this schema's.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "species",
+        "item",
+        "ability",
+        "moves",
+        "nature",
+        "gender",
+        "evs",
+        "ivs",
+        "level"
+      ],
+      "properties": {
+        "name": {
+          "description": "Nickname; empty when none.",
+          "type": "string"
+        },
+        "species": {
+          "type": "string",
+          "minLength": 1
+        },
+        "item": {
+          "type": "string"
+        },
+        "ability": {
+          "type": "string"
+        },
+        "moves": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "nature": {
+          "type": "string"
+        },
+        "gender": {
+          "enum": [
+            "",
+            "M",
+            "F",
+            "N"
+          ]
+        },
+        "evs": {
+          "description": "Stat Points in the champions mod (ADR-003).",
+          "$ref": "#/$defs/StatTable"
+        },
+        "ivs": {
+          "$ref": "#/$defs/StatTable"
+        },
+        "level": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    "StatTable": {
+      "description": "One integer per stat.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "hp",
+        "atk",
+        "def",
+        "spa",
+        "spd",
+        "spe"
+      ],
+      "properties": {
+        "hp": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "atk": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "def": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "spa": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "spd": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "spe": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    "DecisionContext": {
+      "description": "Timer state and deadline budget for one decision (#678 §4.2). Relative durations only, never wall-clock time. Excluded by name from A1/A2 observation equality (ADR-008 §4).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "timer_source",
+        "timer_rules",
+        "turn_seconds_left",
+        "bank_seconds_left",
+        "grace_seconds_left",
+        "safety_margin_ms",
+        "submit_within_ms",
+        "policy_budget_ms"
+      ],
+      "properties": {
+        "timer_source": {
+          "description": "server: the server's own timer snapshot; shadow: Areneon's model of it (#678 §2.1).",
+          "enum": [
+            "server",
+            "shadow"
+          ]
+        },
+        "timer_rules": {
+          "$ref": "#/$defs/TimerRules"
+        },
+        "turn_seconds_left": {
+          "description": "T: seconds left this turn at receipt.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "bank_seconds_left": {
+          "description": "B: bank seconds left at receipt, grace excluded.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "grace_seconds_left": {
+          "description": "G: grace seconds left at receipt; non-zero only at Team Preview.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "remaining_decisions_estimate": {
+          "description": "R̂: estimated decisions left; battle only, omitted at Team Preview.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "safety_margin_ms": {
+          "description": "m: the configured safety margin.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "submit_within_ms": {
+          "description": "The choice must be sent within this, from receipt.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "policy_budget_ms": {
+          "description": "The policy must answer within this; 0 means skip the policy and send the fallback.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    "TimerRules": {
+      "description": "The format's VGC Timer settings in whole seconds; they must equal the version manifest's.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "starting",
+        "grace",
+        "add_per_turn",
+        "max_per_turn",
+        "max_first_turn",
+        "tick"
+      ],
+      "properties": {
+        "starting": {
+          "description": "Starting bank.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "grace": {
+          "description": "Grace time, spent only at Team Preview.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "add_per_turn": {
+          "description": "Seconds added to the bank per turn.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "max_per_turn": {
+          "description": "Cap on one turn's time.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "max_first_turn": {
+          "description": "Cap on the first turn's time.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "tick": {
+          "description": "Server tick between timer updates.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      }
+    }
+  }
+}
