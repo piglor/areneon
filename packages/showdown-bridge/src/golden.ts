@@ -14,6 +14,7 @@ import {
   runBattle,
 } from "./runner.ts";
 import { importPaste, type TeamVerdict, validateTeam } from "./teams.ts";
+import type { PlayerChannelLog } from "@areneon/schema/types/v1/player-channel-log.ts";
 
 /** Sanitized request fixtures for the pinned engine (CC0, see fixtures/LICENSE). */
 export const GOLDEN_DIR = fileURLToPath(
@@ -141,6 +142,36 @@ export function goldenFixtures(record: BattleRecord): Record<string, RequestFixt
       request_hash: found.request_hash,
       phase: found.phase,
       request: found.request,
+    };
+  }
+  return fixtures;
+}
+
+/** The golden battle's per-player channels (ADR-008 §5 golden parsing), by file. */
+export const GOLDEN_CHANNELS: Readonly<Record<string, Player>> = {
+  "channels/p1.json": "p1",
+  "channels/p2.json": "p2",
+};
+
+export interface ChannelFixture {
+  provenance: string;
+  manifest: VersionManifest;
+  /** The embedded format rules record (ADR-007), so each fixture replays alone. */
+  format_rules: FormatRulesRecord;
+  seed: string;
+  channel: PlayerChannelLog;
+}
+
+/** Each player's channel of the golden battle: player-perspective input only. */
+export function goldenChannels(record: BattleRecord): Record<string, ChannelFixture> {
+  const fixtures: Record<string, ChannelFixture> = {};
+  for (const [file, player] of Object.entries(GOLDEN_CHANNELS)) {
+    fixtures[file] = {
+      provenance: GOLDEN_BATTLE_PROVENANCE,
+      manifest: record.manifest,
+      format_rules: record.format_rules,
+      seed: record.seed,
+      channel: { schema_version: 1, data_class: "synthetic", player, lines: record.channels[player] },
     };
   }
   return fixtures;

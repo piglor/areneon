@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:areneon:schema:contracts:v1:player-channel-log",
+  "title": "PlayerChannelLog",
+  "description": "One player's channel of one battle (ADR-008 §5-§6): every line that player's stream carried, in order, with |t:| wall-clock lines dropped. On A1 the stream is getPlayerStreams' pN stream; the engine has already split the secrets, so it holds only what that player may see, its own requests included. Never the omniscient log.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "data_class",
+    "player",
+    "lines"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "data_class": {
+      "description": "synthetic: CC0, may be committed; private: a human's game, kept only in private-data/ (ADR-008 §5).",
+      "enum": [
+        "synthetic",
+        "private"
+      ]
+    },
+    "player": {
+      "description": "Whose channel this is.",
+      "enum": [
+        "p1",
+        "p2"
+      ]
+    },
+    "lines": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}

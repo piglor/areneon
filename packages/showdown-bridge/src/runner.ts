@@ -77,6 +77,13 @@ export interface BattleRecord {
    */
   omniscient_log: string[];
   requests: Record<Player, RequestRecord[]>;
+  /**
+   * Each player's own stream from `getPlayerStreams`, line by line and in
+   * order, with `|t:|` dropped as in `omniscient_log`: what that player may
+   * see (the engine already split the secrets), its own requests included.
+   * The ObservationBuilder's only battle input (ADR-008 §5).
+   */
+  channels: Record<Player, string[]>;
   /** Every submitted choice, including those refused as `[Unavailable choice]`. */
   choices: { player: Player; request_seq: number; choice: string; refused?: string }[];
   /** Hidden state, like `omniscient_log`: never an actor input. */
@@ -138,6 +145,7 @@ export async function runBattle(options: BattleOptions): Promise<BattleRecord> {
     turns: 0,
     omniscient_log: [],
     requests: { p1: [], p2: [] },
+    channels: { p1: [], p2: [] },
     choices: [],
     hidden_verdicts: [],
   };
@@ -178,6 +186,7 @@ export async function runBattle(options: BattleOptions): Promise<BattleRecord> {
     let pendingSubmission: BattleRecord["choices"][number] | null = null;
     for await (const chunk of stream) {
       for (const line of chunk.split("\n")) {
+        if (!line.startsWith("|t:|")) record.channels[player].push(line);
         if (line.startsWith("|error|")) {
           const error = line.slice("|error|".length);
           // A pending candidate may be refused for a hidden reason (ADR-006
