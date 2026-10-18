@@ -1,0 +1,40 @@
+<!doctype html>
+<!-- SPIKE (#672): throwaway stand-in for a Showdown client page. Our own
+     minimal code, not the AGPL Showdown client. It opens a WebSocket to the
+     local server (raw or SockJS-framed) and lets the test drive it. -->
+<html>
+<head><meta charset="utf-8"><title>EXP-01 test client</title></head>
+<body>
+<p>EXP-01 local test client (spike)</p>
+<script>
+"use strict";
+const params = new URLSearchParams(location.search);
+const port = params.get("server");
+window.ps = {
+  ws: null,
+  transport: null,
+  messages: [],
+  connect(transport) {
+    this.transport = transport;
+    const url = transport === "sockjs"
+      ? `ws://127.0.0.1:${port}/showdown/672/${Math.random().toString(36).slice(2, 10)}/websocket`
+      : `ws://127.0.0.1:${port}/showdown/websocket`;
+    this.ws = new WebSocket(url);
+    this.ws.addEventListener("message", (e) => {
+      const data = e.data;
+      if (transport !== "sockjs") return this.messages.push(data);
+      if (data.startsWith("a[")) for (const m of JSON.parse(data.slice(1))) this.messages.push(m);
+    });
+    return new Promise((resolve) => this.ws.addEventListener("open", resolve, { once: true }));
+  },
+  send(text) {
+    this.ws.send(this.transport === "sockjs" ? JSON.stringify([text]) : text);
+  },
+  close() {
+    const ws = this.ws;
+    return new Promise((resolve) => { ws.addEventListener("close", resolve, { once: true }); ws.close(); });
+  },
+};
+</script>
+</body>
+</html>

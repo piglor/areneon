@@ -1,0 +1,512 @@
+{
+  "generated_by": "spikes/672-extension-spike/test/e2e.mjs",
+  "golden": [
+    {
+      "transport": "raw",
+      "roomid": "battle-gen9championsvgc2026regmc-34",
+      "undo": {
+        "rqid_before": 4,
+        "rqid_after": 4,
+        "request_seq_before": 2,
+        "request_seq_after": 2,
+        "new_request_after_undo": false,
+        "error_lines": []
+      },
+      "reconnect": {
+        "rqid_before": 8,
+        "rqid_after": 8,
+        "request_seq_before": 4,
+        "request_seq_after": 4,
+        "event_after": "resent",
+        "hash_equal": true
+      },
+      "stale": {
+        "sent_rqid": 4,
+        "current_rqid": 12,
+        "server_reply": "|error|[Invalid choice] Sorry, too late to make a different move; the next turn has already started"
+      },
+      "panel_p1": [
+        {
+          "side_id": "p1",
+          "request_seq": 1,
+          "rqid": 2,
+          "phase": "preview",
+          "request_hash": "1569598e8714d9ebaed78a97fc43697f45f68130f955a4d8d1a59ffd18cad5ec",
+          "event": "new"
+        },
+        {
+          "side_id": "p1",
+          "request_seq": 2,
+          "rqid": 4,
+          "phase": "move",
+          "request_hash": "e5b62f4038f7aa3cbdaa920efe8e0ac8da7feed1ec57ff96739364b16396e1bf",
+          "event": "new"
+        },
+        {
+          "side_id": "p1",
+          "request_seq": 3,
+          "rqid": 6,
+          "phase": "forceSwitch",
+          "request_hash": "75e462b60ddf6762d10e421caba5723b04499f97f85c5e73601ce96368240d59",
+          "event": "new"
+        },
+        {
+          "side_id": "p1",
+          "request_seq": 4,
+          "rqid": 8,
+          "phase": "move",
+          "request_hash": "779de350f740c83a13b0f939ded2ffdcfca0253c1b366f978c2734807c801ac6",
+          "event": "new"
+        },
+        {
+          "side_id": "p1",
+          "request_seq": 4,
+          "rqid": 8,
+          "phase": "move",
+          "request_hash": "779de350f740c83a13b0f939ded2ffdcfca0253c1b366f978c2734807c801ac6",
+          "event": "resent"
+        },
+        {
+          "side_id": "p1",
+          "request_seq": 5,
+          "rqid": 10,
+          "phase": "wait",
+          "request_hash": "caa724633f7e7d9df10c58314b64f23bf94412f63e2111dc79aa1b18f6e32943",
+          "event": "new"
+        },
+        {
+          "side_id": "p1",
+          "request_seq": 6,
+          "rqid": 12,
+          "phase": "move",
+          "request_hash": "d4aac807188eced1541b9c7b4cbbcabe9c826ac9494bfbab35d2f6a234a110cd",
+          "event": "new"
+        },
+        {
+          "side_id": "p1",
+          "request_seq": 7,
+          "rqid": 14,
+          "phase": "forceSwitch",
+          "request_hash": "d7ab892c63b0530c15377e42bb36a34a05a76d70b6f58150299ffd11ea096179",
+          "event": "new"
+        },
+        {
+          "side_id": "p1",
+          "request_seq": 8,
+          "rqid": 16,
+          "phase": "move",
+          "request_hash": "ba9f09bdd611c015cef7337409a8e5044572933bf9db3f0a5fbdb8fd8d56a48b",
+          "event": "new"
+        },
+        {
+          "side_id": "p1",
+          "request_seq": 9,
+          "rqid": 18,
+          "phase": "wait",
+          "request_hash": "132c92e94f9ab5944eede5b9aaf284afe72104a9345a991df68c158fc3eff343",
+          "event": "new"
+        },
+        {
+          "side_id": "p1",
+          "request_seq": 10,
+          "rqid": 20,
+          "phase": "move",
+          "request_hash": "02d970ccba4e9a9e244248ef7d29ff462de41ffece83752abf5dd7e71dc22960",
+          "event": "new"
+        }
+      ],
+      "headless_p1": [
+        {
+          "request_seq": 1,
+          "phase": "preview",
+          "request_hash": "1569598e8714d9ebaed78a97fc43697f45f68130f955a4d8d1a59ffd18cad5ec"
+        },
+        {
+          "request_seq": 2,
+          "phase": "move",
+          "request_hash": "e5b62f4038f7aa3cbdaa920efe8e0ac8da7feed1ec57ff96739364b16396e1bf"
+        },
+        {
+          "request_seq": 3,
+          "phase": "forceSwitch",
+          "request_hash": "75e462b60ddf6762d10e421caba5723b04499f97f85c5e73601ce96368240d59"
+        },
+        {
+          "request_seq": 4,
+          "phase": "move",
+          "request_hash": "779de350f740c83a13b0f939ded2ffdcfca0253c1b366f978c2734807c801ac6"
+        },
+        {
+          "request_seq": 5,
+          "phase": "wait",
+          "request_hash": "caa724633f7e7d9df10c58314b64f23bf94412f63e2111dc79aa1b18f6e32943"
+        },
+        {
+          "request_seq": 6,
+          "phase": "move",
+          "request_hash": "d4aac807188eced1541b9c7b4cbbcabe9c826ac9494bfbab35d2f6a234a110cd"
+        },
+        {
+          "request_seq": 7,
+          "phase": "forceSwitch",
+          "request_hash": "d7ab892c63b0530c15377e42bb36a34a05a76d70b6f58150299ffd11ea096179"
+        },
+        {
+          "request_seq": 8,
+          "phase": "move",
+          "request_hash": "ba9f09bdd611c015cef7337409a8e5044572933bf9db3f0a5fbdb8fd8d56a48b"
+        },
+        {
+          "request_seq": 9,
+          "phase": "wait",
+          "request_hash": "132c92e94f9ab5944eede5b9aaf284afe72104a9345a991df68c158fc3eff343"
+        },
+        {
+          "request_seq": 10,
+          "phase": "move",
+          "request_hash": "02d970ccba4e9a9e244248ef7d29ff462de41ffece83752abf5dd7e71dc22960"
+        }
+      ],
+      "exp08_equal": true,
+      "side_id": "p1",
+      "status": "observing",
+      "ots": {
+        "showteam_lines": 0,
+        "opponent_preview_lines": [
+          "|poke|p2|Venusaur, L50, M|",
+          "|poke|p2|Charizard, L50, F|",
+          "|poke|p2|Blastoise, L50, M|",
+          "|poke|p2|Pikachu, L50, M|",
+          "|poke|p2|Snorlax, L50, M|",
+          "|poke|p2|Gengar, L50, M|"
+        ],
+        "hidden_terms_in_public_lines": [],
+        "public_line_kinds": [
+          "init",
+          "title",
+          "j",
+          null,
+          "t:",
+          "gametype",
+          "player",
+          "gen",
+          "tier",
+          "rule",
+          "clearpoke",
+          "poke",
+          "teampreview",
+          "uhtml",
+          "uhtmlchange",
+          "",
+          "teamsize",
+          "start",
+          "switch"
+        ],
+        "panel_cts": "no showteam seen",
+        "panel_opponent_preview": [
+          "Venusaur, L50, M",
+          "Charizard, L50, F",
+          "Blastoise, L50, M",
+          "Pikachu, L50, M",
+          "Snorlax, L50, M",
+          "Gengar, L50, M"
+        ]
+      }
+    },
+    {
+      "transport": "sockjs",
+      "roomid": "battle-gen9championsvgc2026regmc-36",
+      "undo": {
+        "rqid_before": 4,
+        "rqid_after": 4,
+        "request_seq_before": 2,
+        "request_seq_after": 2,
+        "new_request_after_undo": false,
+        "error_lines": []
+      },
+      "reconnect": {
+        "rqid_before": 8,
+        "rqid_after": 8,
+        "request_seq_before": 4,
+        "request_seq_after": 4,
+        "event_after": "resent",
+        "hash_equal": true
+      },
+      "stale": {
+        "sent_rqid": 4,
+        "current_rqid": 12,
+        "server_reply": "|error|[Invalid choice] Sorry, too late to make a different move; the next turn has already started"
+      },
+      "panel_p1": [
+        {
+          "side_id": "p1",
+          "request_seq": 1,
+          "rqid": 2,
+          "phase": "preview",
+          "request_hash": "1569598e8714d9ebaed78a97fc43697f45f68130f955a4d8d1a59ffd18cad5ec",
+          "event": "new"
+        },
+        {
+          "side_id": "p1",
+          "request_seq": 2,
+          "rqid": 4,
+          "phase": "move",
+          "request_hash": "e5b62f4038f7aa3cbdaa920efe8e0ac8da7feed1ec57ff96739364b16396e1bf",
+          "event": "new"
+        },
+        {
+          "side_id": "p1",
+          "request_seq": 3,
+          "rqid": 6,
+          "phase": "forceSwitch",
+          "request_hash": "75e462b60ddf6762d10e421caba5723b04499f97f85c5e73601ce96368240d59",
+          "event": "new"
+        },
+        {
+          "side_id": "p1",
+          "request_seq": 4,
+          "rqid": 8,
+          "phase": "move",
+          "request_hash": "779de350f740c83a13b0f939ded2ffdcfca0253c1b366f978c2734807c801ac6",
+          "event": "new"
+        },
+        {
+          "side_id": "p1",
+          "request_seq": 4,
+          "rqid": 8,
+          "phase": "move",
+          "request_hash": "779de350f740c83a13b0f939ded2ffdcfca0253c1b366f978c2734807c801ac6",
+          "event": "resent"
+        },
+        {
+          "side_id": "p1",
+          "request_seq": 5,
+          "rqid": 10,
+          "phase": "wait",
+          "request_hash": "caa724633f7e7d9df10c58314b64f23bf94412f63e2111dc79aa1b18f6e32943",
+          "event": "new"
+        },
+        {
+          "side_id": "p1",
+          "request_seq": 6,
+          "rqid": 12,
+          "phase": "move",
+          "request_hash": "d4aac807188eced1541b9c7b4cbbcabe9c826ac9494bfbab35d2f6a234a110cd",
+          "event": "new"
+        },
+        {
+          "side_id": "p1",
+          "request_seq": 7,
+          "rqid": 14,
+          "phase": "forceSwitch",
+          "request_hash": "d7ab892c63b0530c15377e42bb36a34a05a76d70b6f58150299ffd11ea096179",
+          "event": "new"
+        },
+        {
+          "side_id": "p1",
+          "request_seq": 8,
+          "rqid": 16,
+          "phase": "move",
+          "request_hash": "ba9f09bdd611c015cef7337409a8e5044572933bf9db3f0a5fbdb8fd8d56a48b",
+          "event": "new"
+        },
+        {
+          "side_id": "p1",
+          "request_seq": 9,
+          "rqid": 18,
+          "phase": "wait",
+          "request_hash": "132c92e94f9ab5944eede5b9aaf284afe72104a9345a991df68c158fc3eff343",
+          "event": "new"
+        },
+        {
+          "side_id": "p1",
+          "request_seq": 10,
+          "rqid": 20,
+          "phase": "move",
+          "request_hash": "02d970ccba4e9a9e244248ef7d29ff462de41ffece83752abf5dd7e71dc22960",
+          "event": "new"
+        }
+      ],
+      "headless_p1": [
+        {
+          "request_seq": 1,
+          "phase": "preview",
+          "request_hash": "1569598e8714d9ebaed78a97fc43697f45f68130f955a4d8d1a59ffd18cad5ec"
+        },
+        {
+          "request_seq": 2,
+          "phase": "move",
+          "request_hash": "e5b62f4038f7aa3cbdaa920efe8e0ac8da7feed1ec57ff96739364b16396e1bf"
+        },
+        {
+          "request_seq": 3,
+          "phase": "forceSwitch",
+          "request_hash": "75e462b60ddf6762d10e421caba5723b04499f97f85c5e73601ce96368240d59"
+        },
+        {
+          "request_seq": 4,
+          "phase": "move",
+          "request_hash": "779de350f740c83a13b0f939ded2ffdcfca0253c1b366f978c2734807c801ac6"
+        },
+        {
+          "request_seq": 5,
+          "phase": "wait",
+          "request_hash": "caa724633f7e7d9df10c58314b64f23bf94412f63e2111dc79aa1b18f6e32943"
+        },
+        {
+          "request_seq": 6,
+          "phase": "move",
+          "request_hash": "d4aac807188eced1541b9c7b4cbbcabe9c826ac9494bfbab35d2f6a234a110cd"
+        },
+        {
+          "request_seq": 7,
+          "phase": "forceSwitch",
+          "request_hash": "d7ab892c63b0530c15377e42bb36a34a05a76d70b6f58150299ffd11ea096179"
+        },
+        {
+          "request_seq": 8,
+          "phase": "move",
+          "request_hash": "ba9f09bdd611c015cef7337409a8e5044572933bf9db3f0a5fbdb8fd8d56a48b"
+        },
+        {
+          "request_seq": 9,
+          "phase": "wait",
+          "request_hash": "132c92e94f9ab5944eede5b9aaf284afe72104a9345a991df68c158fc3eff343"
+        },
+        {
+          "request_seq": 10,
+          "phase": "move",
+          "request_hash": "02d970ccba4e9a9e244248ef7d29ff462de41ffece83752abf5dd7e71dc22960"
+        }
+      ],
+      "exp08_equal": true,
+      "side_id": "p1",
+      "status": "observing",
+      "ots": {
+        "showteam_lines": 0,
+        "opponent_preview_lines": [
+          "|poke|p2|Venusaur, L50, M|",
+          "|poke|p2|Charizard, L50, F|",
+          "|poke|p2|Blastoise, L50, M|",
+          "|poke|p2|Pikachu, L50, M|",
+          "|poke|p2|Snorlax, L50, M|",
+          "|poke|p2|Gengar, L50, M|"
+        ],
+        "hidden_terms_in_public_lines": [],
+        "public_line_kinds": [
+          "init",
+          "title",
+          "j",
+          null,
+          "t:",
+          "gametype",
+          "player",
+          "gen",
+          "tier",
+          "rule",
+          "clearpoke",
+          "poke",
+          "teampreview",
+          "uhtml",
+          "uhtmlchange",
+          "",
+          "teamsize",
+          "start",
+          "switch"
+        ],
+        "panel_cts": "no showteam seen",
+        "panel_opponent_preview": [
+          "Venusaur, L50, M",
+          "Charizard, L50, F",
+          "Blastoise, L50, M",
+          "Pikachu, L50, M",
+          "Snorlax, L50, M",
+          "Gengar, L50, M"
+        ]
+      }
+    }
+  ],
+  "spectator": [
+    {
+      "transport": "raw",
+      "roomid": "battle-gen9championsvgc2026regmc-35",
+      "frames_seen": 10,
+      "panel": {
+        "roomid": "battle-gen9championsvgc2026regmc-35",
+        "role": "spectator",
+        "status": "rejected: spectator",
+        "side_id": null,
+        "current": null,
+        "history": [],
+        "cts": "no showteam seen",
+        "opponent_preview": []
+      }
+    },
+    {
+      "transport": "sockjs",
+      "roomid": "battle-gen9championsvgc2026regmc-37",
+      "frames_seen": 10,
+      "panel": {
+        "roomid": "battle-gen9championsvgc2026regmc-37",
+        "role": "spectator",
+        "status": "rejected: spectator",
+        "side_id": null,
+        "current": null,
+        "history": [],
+        "cts": "no showteam seen",
+        "opponent_preview": []
+      }
+    }
+  ],
+  "fail_closed": {
+    "rejected": {
+      "bad-frame": 1,
+      "foreign-host": 1,
+      "bad-shape": 1
+    },
+    "unframed_socket": {
+      "url": "ws://127.0.0.1/y",
+      "status": "unrecognised",
+      "transport": null,
+      "userid": null,
+      "why": "unrecognised frame"
+    },
+    "unrecognised_request_room": {
+      "roomid": "battle-fake-1",
+      "role": "unknown",
+      "status": "fail-closed",
+      "why": "unrecognised request phase",
+      "side_id": null,
+      "current": null,
+      "history": [],
+      "cts": "no showteam seen",
+      "opponent_preview": []
+    },
+    "other_user_request_room": {
+      "roomid": "battle-fake-2",
+      "role": "unknown",
+      "status": "observing",
+      "side_id": null,
+      "current": null,
+      "history": [],
+      "cts": "no showteam seen",
+      "opponent_preview": []
+    },
+    "rejected_after": {
+      "bad-frame": 1,
+      "foreign-host": 1,
+      "bad-shape": 1,
+      "request-not-for-current-user": 1
+    },
+    "valid_before_bad_wrapper": {
+      "side_id": "p1",
+      "request_seq": 1,
+      "rqid": 1,
+      "phase": "wait",
+      "request_hash": "7bd5a2eb3c9acae7a3940ac4dc5ac40617a64138c3e8b84c8476a0905c0044d1",
+      "event": "new"
+    },
+    "client_after_bad_wrapper": "unrecognised",
+    "valid_after_bad_wrapper": null
+  }
+}
