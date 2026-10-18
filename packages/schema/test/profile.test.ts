@@ -122,6 +122,16 @@ describe("checkProfile: contract profile", () => {
     ]);
   });
 
+  it("bans non-integer and out-of-range numbers in const and enum", () => {
+    expect(messages(mutate(["properties", "side"], { const: 0.5 }))).toEqual([
+      "/properties/side/const a numeric value must be an integer within ±(2^53−1) (number is banned)",
+    ]);
+    expect(messages(mutate(["properties", "side"], { enum: [1, 2 ** 60] }))).toEqual([
+      "/properties/side/enum a numeric value must be an integer within ±(2^53−1) (number is banned)",
+    ]);
+    expect(messages(mutate(["properties", "side"], { enum: [1, 2] }))).toEqual([]);
+  });
+
   it("bans number and unknown type names", () => {
     expect(messages(mutate(["properties", "seq"], { type: "number" }))).toEqual([
       "/properties/seq/type type must name only string, integer, boolean, null, object, array (number is banned)",
@@ -190,6 +200,29 @@ describe("checkProfile: contract profile", () => {
       expect(messages(mutate(["$defs", "Observation", "oneOf"], []))).toEqual([
         "/$defs/Observation/oneOf oneOf must be a non-empty array",
       ]);
+    });
+
+    it("refuses anything on a union node beyond type, oneOf and discriminator", () => {
+      // Without this, the node's own keywords would escape every other check.
+      const doc = mutate(["$defs", "Observation", "properties"], {
+        kind: { anyOf: [{ type: "string" }] },
+        extra: { type: "number", default: 1 },
+      });
+      (doc.$defs as Record<string, Record<string, unknown>>).Observation!.additionalProperties = true;
+      expect(messages(doc)).toEqual([
+        "/$defs/Observation a union node takes only type, oneOf and discriminator (found properties, additionalProperties)",
+      ]);
+    });
+
+    it("allows a union at the root, next to the root-only keywords", () => {
+      const doc: Record<string, unknown> = {
+        ...(valid().$defs as Record<string, Record<string, unknown>>).Observation,
+        $schema: DRAFT,
+        $id: "urn:areneon:schema:contracts:v1:observation",
+        title: "Observation",
+        $defs: valid().$defs,
+      };
+      expect(messages(doc)).toEqual([]);
     });
 
     it("refuses duplicate tags", () => {

@@ -40,8 +40,15 @@ const KEYWORDS = new Set([
 const SCALARS = new Set(["string", "integer", "boolean", "null"]);
 const TYPES = new Set([...SCALARS, "object", "array"]);
 const TAG = "kind";
+const UNION_KEYS = new Set(["type", "oneOf", "discriminator", "title", "description"]);
+const NUMBER_VALUE = "a numeric value must be an integer within ±(2^53−1) (number is banned)";
 
 type Schema = Record<string, unknown>;
+
+/** A `const` or `enum` value the number ban and the integer bound both forbid. */
+function isUnsafeNumber(value: unknown): boolean {
+  return typeof value === "number" && !Number.isSafeInteger(value);
+}
 
 function isSchema(value: unknown): value is Schema {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -93,11 +100,17 @@ export function checkProfile(root: unknown, profile: Profile): ProfileViolation[
       if (siblings.length > 0) fail(at, `$ref takes no sibling keywords (found ${siblings.join(", ")})`);
       return;
     }
+    if ("oneOf" in schema) {
+      // A union node only declares "type": "object" for Ajv; its branches are
+      // the closed objects (a closed union node would accept nothing). So it
+      // may carry nothing else.
+      const extra = Object.keys(schema).filter((k) => !UNION_KEYS.has(k) && !(isRoot && ROOT_ONLY.has(k)));
+      if (extra.length > 0) fail(at, `a union node takes only type, oneOf and discriminator (found ${extra.join(", ")})`);
+      checkUnion(schema, at, fail, resolve);
+      return;
+    }
     const types = checkType(schema, at, profile, fail);
-    // A union node only declares "type": "object" for Ajv; its branches are
-    // the closed objects (a closed union node would accept nothing).
-    const isObject = !("oneOf" in schema) && (types.includes("object") || "properties" in schema);
-    if (isObject) checkObject(schema, at, fail, walk);
+    if (types.includes("object") || "properties" in schema) checkObject(schema, at, fail, walk);
     if (types.includes("array") || "items" in schema) {
       if (schema.items === undefined) fail(at, "an array must declare items");
       else walk(schema.items, pointer(at, "items"), false);
@@ -106,11 +119,14 @@ export function checkProfile(root: unknown, profile: Profile): ProfileViolation[
     if ("enum" in schema) {
       const values = schema.enum;
       if (!Array.isArray(values) || values.length === 0) fail(pointer(at, "enum"), "enum must be a non-empty array");
-      else if (new Set(values.map((v) => JSON.stringify(v))).size !== values.length) {
-        fail(pointer(at, "enum"), "enum values must be unique");
+      else {
+        if (new Set(values.map((v) => JSON.stringify(v))).size !== values.length) {
+          fail(pointer(at, "enum"), "enum values must be unique");
+        }
+        if (values.some(isUnsafeNumber)) fail(pointer(at, "enum"), NUMBER_VALUE);
       }
     }
-    if ("oneOf" in schema) checkUnion(schema, at, fail, resolve);
+    if (isUnsafeNumber(schema.const)) fail(pointer(at, "const"), NUMBER_VALUE);
   };
 
   for (const [name, def] of Object.entries(defs)) walk(def, pointer("/$defs", name), false);

@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { ajvFor } from "../src/ajv.ts";
 import {
   checkSchemas,
+  ContractsReadError,
   CONTRACTS_DIR,
   declaredProfile,
   driftAgainst,
@@ -81,6 +82,17 @@ describe("readSchemas", () => {
   it("treats a missing directory as holding no schemas", () => {
     expect(readSchemas(join(root, "absent"))).toEqual([]);
   });
+
+  it("fails closed on any other read error instead of checking nothing", () => {
+    writeFileSync(join(root, "a-file"), "");
+    expect(() => readSchemas(join(root, "a-file"))).toThrow(ContractsReadError);
+  });
+
+  it("names the file that is not JSON", () => {
+    mkdirSync(join(contracts, "v1"), { recursive: true });
+    writeFileSync(join(contracts, "v1", "broken.schema.json"), "{");
+    expect(() => readSchemas(contracts)).toThrow(/^v1\/broken\.schema\.json: /);
+  });
 });
 
 describe("declaredProfile", () => {
@@ -92,15 +104,17 @@ describe("declaredProfile", () => {
   });
 
   it("reads the profile from the $id namespace", () => {
-    expect(declaredProfile(file(identity()))).toBe("contract");
-    expect(declaredProfile(file(engineMove(), "v1/engine-move.schema.json"))).toBe("engine-mirror");
+    expect(declaredProfile(file(identity()))).toEqual({ profile: "contract" });
+    expect(declaredProfile(file(engineMove(), "v1/engine-move.schema.json"))).toEqual({ profile: "engine-mirror" });
   });
 
   it("refuses an $id outside the scheme or one that does not match its path", () => {
-    expect(declaredProfile(file({ $id: "urn:areneon:schema:rules:v1:format" }))).toMatch(/must be urn:areneon/);
-    expect(declaredProfile(file(null))).toMatch(/got undefined/);
-    expect(declaredProfile(file(identity(), "v2/request-identity.schema.json"))).toMatch(/does not match its path/);
-    expect(declaredProfile(file(identity(), "v1/other.schema.json"))).toMatch(/does not match its path/);
+    const error = (schema: unknown, path?: string): string =>
+      (declaredProfile(file(schema, path)) as { error: string }).error;
+    expect(error({ $id: "urn:areneon:schema:rules:v1:format" })).toMatch(/must be urn:areneon/);
+    expect(error(null)).toMatch(/got undefined/);
+    expect(error(identity(), "v2/request-identity.schema.json")).toMatch(/does not match its path/);
+    expect(error(identity(), "v1/other.schema.json")).toMatch(/does not match its path/);
   });
 });
 
@@ -125,6 +139,15 @@ describe("checkSchemas", () => {
     const findings = checkSchemas(readSchemas(contracts));
     expect(findings.map((f) => f.path)).toEqual(["v1/bad-id.schema.json", "v1/request-identity.schema.json"]);
     expect(findings[1]?.message).toBe("/: an object must set additionalProperties: false");
+  });
+
+  it("requires a PascalCase root title, which names the generated type", () => {
+    put("v1/request-identity.schema.json", { ...identity(), title: undefined });
+    put("v1/engine-move.schema.json", { ...engineMove(), title: "engine move" });
+    expect(checkSchemas(readSchemas(contracts))).toEqual([
+      { path: "v1/engine-move.schema.json", message: "the root needs a PascalCase title naming its generated type" },
+      { path: "v1/request-identity.schema.json", message: "the root needs a PascalCase title naming its generated type" },
+    ]);
   });
 
   it("surfaces Ajv strict-mode errors the profile walk cannot see", () => {
@@ -182,6 +205,8 @@ describe("generation and drift", () => {
       { path: "v1/c.ts", message: "generated file has no schema" },
     ]);
     expect(driftAgainst(new Map(), join(root, "absent"))).toEqual([]);
+    writeFileSync(join(root, "a-file"), "");
+    expect(() => driftAgainst(new Map(), join(root, "a-file"))).toThrow(ContractsReadError);
   });
 
   it("writes exactly the expected files, then reports no drift", async () => {

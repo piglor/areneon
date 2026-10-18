@@ -1,6 +1,7 @@
 // Build-time module behind `make contracts` (ADR-008 §1-§2): checks every
 // contract schema against its profile and Ajv, and keeps the checked-in
 // generated TS types byte-identical to what the pinned generator produces.
+// Never import it at runtime: json-schema-to-typescript is a dev dependency.
 
 import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -30,51 +31,73 @@ export interface Finding {
   readonly message: string;
 }
 
-/** Reads every `v<N>/*.schema.json`, in a fixed order. A missing directory holds none. */
+/** Thrown when the contracts directory cannot be read or a file is not JSON. */
+export class ContractsReadError extends Error {
+  override name = "ContractsReadError";
+}
+
+function isMissing(error: unknown): boolean {
+  return (error as NodeJS.ErrnoException).code === "ENOENT";
+}
+
+/**
+ * Reads every `v<N>/*.schema.json`, in a fixed order. A missing directory
+ * holds none; any other read error, or a file that is not JSON, throws.
+ */
 export function readSchemas(dir: string = CONTRACTS_DIR): SchemaFile[] {
   let versions: string[];
   try {
     versions = readdirSync(dir).filter((d) => /^v[1-9][0-9]*$/.test(d));
-  } catch {
-    return [];
+  } catch (error) {
+    if (isMissing(error)) return [];
+    throw new ContractsReadError(`cannot read ${dir}: ${(error as Error).message}`);
   }
   const files: SchemaFile[] = [];
   for (const v of versions.sort((a, b) => Number(a.slice(1)) - Number(b.slice(1)))) {
     for (const file of readdirSync(join(dir, v)).filter((f) => f.endsWith(SUFFIX)).sort()) {
       const path = `${v}/${file}`;
-      files.push({
-        path,
-        version: Number(v.slice(1)),
-        name: file.slice(0, -SUFFIX.length),
-        schema: JSON.parse(readFileSync(join(dir, path), "utf8")) as unknown,
-      });
+      let schema: unknown;
+      try {
+        schema = JSON.parse(readFileSync(join(dir, path), "utf8"));
+      } catch (error) {
+        throw new ContractsReadError(`${path}: ${(error as Error).message}`);
+      }
+      files.push({ path, version: Number(v.slice(1)), name: file.slice(0, -SUFFIX.length), schema });
     }
   }
   return files;
 }
 
+export type DeclaredProfile = { readonly profile: Profile } | { readonly error: string };
+
 /**
  * The profile a schema declares through its `$id` (`contracts` or `engine`),
  * which must also match its directory and file name.
  */
-export function declaredProfile(file: SchemaFile): Profile | string {
+export function declaredProfile(file: SchemaFile): DeclaredProfile {
   const id = (file.schema as { $id?: unknown } | null)?.$id;
   const match = typeof id === "string" ? ID.exec(id) : null;
-  if (!match) return `$id must be urn:areneon:schema:<contracts|engine>:v<N>:<name>, got ${JSON.stringify(id)}`;
+  if (!match) return { error: `$id must be urn:areneon:schema:<contracts|engine>:v<N>:<name>, got ${JSON.stringify(id)}` };
   if (Number(match[2]) !== file.version || match[3] !== file.name) {
-    return `$id ${id} does not match its path ${file.path}`;
+    return { error: `$id ${id} does not match its path ${file.path}` };
   }
-  return match[1] === "engine" ? "engine-mirror" : "contract";
+  return { profile: match[1] === "engine" ? "engine-mirror" : "contract" };
 }
 
 /** Profile and Ajv findings for every schema. Empty means all conform. */
 export function checkSchemas(files: readonly SchemaFile[]): Finding[] {
   const findings: Finding[] = [];
   for (const file of files) {
-    const profile = declaredProfile(file);
-    if (profile !== "contract" && profile !== "engine-mirror") {
-      findings.push({ path: file.path, message: profile });
+    const declared = declaredProfile(file);
+    if ("error" in declared) {
+      findings.push({ path: file.path, message: declared.error });
       continue;
+    }
+    const { profile } = declared;
+    // The generator names the root type after its title (else after $id).
+    const title = (file.schema as { title?: unknown }).title;
+    if (typeof title !== "string" || !/^[A-Z][A-Za-z0-9]*$/.test(title)) {
+      findings.push({ path: file.path, message: "the root needs a PascalCase title naming its generated type" });
     }
     for (const v of checkProfile(file.schema, profile)) {
       findings.push({ path: file.path, message: `${v.at || "/"}: ${v.message}` });
@@ -110,8 +133,9 @@ function listTree(dir: string, prefix = ""): string[] {
   let entries;
   try {
     entries = readdirSync(dir, { withFileTypes: true });
-  } catch {
-    return [];
+  } catch (error) {
+    if (isMissing(error)) return [];
+    throw new ContractsReadError(`cannot read ${dir}: ${(error as Error).message}`);
   }
   return entries.flatMap((e) =>
     e.isDirectory() ? listTree(join(dir, e.name), `${prefix}${e.name}/`) : [`${prefix}${e.name}`],
