@@ -67,7 +67,11 @@ export interface ShowdownSim {
     };
   };
   TeamValidator: { get(formatId: string): { validateTeam(team: PokemonSet[]): string[] | null } };
-  Teams: { pack(team: PokemonSet[]): string };
+  Teams: {
+    pack(team: PokemonSet[]): string;
+    export(team: PokemonSet[]): string;
+    import(buffer: string): PokemonSet[] | null;
+  };
 }
 
 export interface Engine {

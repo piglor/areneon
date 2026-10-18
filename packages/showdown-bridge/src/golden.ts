@@ -1,12 +1,13 @@
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Engine, PokemonSet } from "./engine.ts";
-import type { VersionManifest } from "./formats.ts";
+import { resolveFormat, type VersionManifest } from "./formats.ts";
 import type { FormatRulesRecord } from "./rules.ts";
 import type { JsonObject, RequestPhase } from "./request.ts";
 import { type Actor, type BattleRecord, type Player, runBattle } from "./runner.ts";
+import { importPaste, type TeamVerdict, validateTeam } from "./teams.ts";
 
 /** Sanitized request fixtures for the pinned engine (CC0, see fixtures/LICENSE). */
 export const GOLDEN_DIR = fileURLToPath(
@@ -122,4 +123,46 @@ export function goldenFixtures(record: BattleRecord): Record<string, RequestFixt
     };
   }
   return fixtures;
+}
+
+/** Sanitized PokePaste team fixtures and their committed validator log. */
+export const TEAMS_DIR = fileURLToPath(
+  new URL("../../../fixtures/teams/gen9championsvgc2026regmc", import.meta.url),
+);
+export const TEAM_VERDICTS = "verdicts.json";
+
+export interface TeamFixtureManifest {
+  provenance: string;
+  license: string;
+  format_id: string;
+  fixtures: Record<string, { expect: "legal" | "illegal"; purpose: string }>;
+}
+
+export function teamFixtureManifest(): TeamFixtureManifest {
+  return JSON.parse(readFileSync(join(TEAMS_DIR, "manifest.json"), "utf8")) as TeamFixtureManifest;
+}
+
+/** Paste files present on disk, whether or not the manifest lists them. */
+export function teamFixtureFiles(): string[] {
+  return readdirSync(TEAMS_DIR)
+    .filter((file) => file.endsWith(".txt"))
+    .sort();
+}
+
+/** The committed validator log: every team fixture's verdict under one manifest. */
+export interface TeamVerdictLog {
+  manifest: VersionManifest;
+  format_rules: FormatRulesRecord;
+  verdicts: Record<string, TeamVerdict>;
+}
+
+/** The pinned validator's verdict on every team fixture, keyed by file. */
+export function teamVerdicts(engine: Engine): TeamVerdictLog {
+  const format = resolveFormat(engine, teamFixtureManifest().format_id);
+  const verdicts: Record<string, TeamVerdict> = {};
+  for (const file of teamFixtureFiles()) {
+    const team = importPaste(engine, readFileSync(join(TEAMS_DIR, file), "utf8"));
+    verdicts[file] = validateTeam(engine, format, team);
+  }
+  return { manifest: format.manifest, format_rules: format.rules, verdicts };
 }

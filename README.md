@@ -22,6 +22,8 @@ crates/                      planned: Rust Cargo workspace (calculators, rules c
 services/, ml/               planned: Python services and PyTorch training
 vendor/pokemon-showdown/     pinned upstream simulator (MIT, git submodule)
 fixtures/                    sanitized/synthetic fixtures only (CC0)
+  showdown/<format>/         golden request fixtures from the pinned engine
+  teams/<format>/            PokePaste team fixtures + validator verdict log
 docs/                        contributor-facing contracts and research notes (docs/research/)
 spikes/                      experiment code (lighter gates), promoted or deleted
 private-data/                gitignored: your private teams

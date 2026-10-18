@@ -1,0 +1,17 @@
+{
+  "provenance": "synthetic: hand-made Areneon test teams built from the golden battle species; not real competitive teams",
+  "license": "CC0-1.0",
+  "format_id": "gen9championsvgc2026regmc",
+  "fixtures": {
+    "legal-synthetic.txt": { "expect": "legal", "purpose": "every set uses Stat Points; nickname and gender round-trip" },
+    "illegal-stat-points-over-32.txt": { "expect": "illegal", "purpose": "33 Stat Points in one stat (cap 32)" },
+    "illegal-stat-points-over-total.txt": { "expect": "illegal", "purpose": "96 total Stat Points (cap 66)" },
+    "illegal-zero-stat-points.txt": { "expect": "illegal", "purpose": "0 Stat Points with Serious nature" },
+    "illegal-species-clause.txt": { "expect": "illegal", "purpose": "two Venusaur" },
+    "illegal-item-clause.txt": { "expect": "illegal", "purpose": "two Leftovers" },
+    "illegal-not-in-roster.txt": { "expect": "illegal", "purpose": "species outside the Champions roster" },
+    "illegal-restricted-legendary.txt": { "expect": "illegal", "purpose": "Restricted Legendary banned by Flat Rules" },
+    "illegal-unlearnable-move.txt": { "expect": "illegal", "purpose": "move outside the learnset" },
+    "illegal-five-pokemon.txt": { "expect": "illegal", "purpose": "fewer than 6 Pokémon brought" }
+  }
+}
