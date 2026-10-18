@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:areneon:schema:contracts:v1:request-identity",
+  "title": "RequestIdentity",
+  "description": "Which request a decision answers (ADR-004 r2, ADR-008 §4). A consumer drops a recommendation unless request_seq and request_hash both match, and rqid too when both carry one.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "request_seq",
+    "request_hash"
+  ],
+  "properties": {
+    "request_seq": {
+      "description": "Areneon's 1-based count of the requests one player has received in this battle, including wait requests.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "request_hash": {
+      "description": "SHA-256 of the canonical request JSON without rqid (ADR-004 r2): lowercase hex.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "rqid": {
+      "description": "The Showdown server's request id; present only on the server path (A2, the advisor), never hashed.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    }
+  }
+}

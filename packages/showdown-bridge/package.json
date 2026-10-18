@@ -11,6 +11,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@areneon/schema": "workspace:*",
     "ajv": "8.20.0"
   }
 }

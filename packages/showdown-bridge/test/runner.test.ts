@@ -256,6 +256,7 @@ describe("a pending switch refused at submission ([Unavailable choice])", () => 
         "pending",
         "request_hash",
         "request_seq",
+        "schema_version",
         "showdown_commit",
       ]);
     }
@@ -308,6 +309,7 @@ function record0(): RequestRecord {
 }
 function legal0(): LegalChoiceSet {
   return {
+    schema_version: 1,
     request_seq: 1,
     request_hash: "0".repeat(64),
     showdown_commit: "x",

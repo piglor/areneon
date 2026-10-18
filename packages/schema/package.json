@@ -4,6 +4,11 @@
   "private": true,
   "license": "Apache-2.0",
   "type": "module",
+  "exports": {
+    "./ajv": "./src/ajv.ts",
+    "./contracts/v1/*": "./contracts/v1/*",
+    "./types/v1/*": "./generated/ts/v1/*"
+  },
   "scripts": {
     "typecheck": "tsc --noEmit"
   },
