@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:areneon:schema:rules:v1:channel-artifact",
+  "title": "Areneon rules channel artifact (ADR-007)",
+  "description": "What rules-publish releases for each main commit that changes a channel file: that file plus the commit, as JCS bytes. The importer orders a channel's history by seq, never by arrival.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "channel", "seq", "hash", "source_commit"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "channel": { "enum": ["stable"] },
+    "seq": { "type": "integer", "minimum": 1 },
+    "hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "source_commit": { "type": "string", "pattern": "^[0-9a-f]{40}$" }
+  }
+}
