@@ -36,7 +36,7 @@ The engine is the legality authority, so a pin bump is its own PR:
 
 ### Changing the rules
 
-Cross-language contracts (ADR-008) are JSON Schemas in `packages/schema/contracts/v<N>/`. Edit the schema, never the generated types: run `make contracts-update` and commit both. `make contracts` (in `make ts` and CI) refuses a schema outside its profile and any drift in `packages/schema/generated/`.
+Cross-language contracts (ADR-008) are JSON Schemas in `packages/schema/contracts/v<N>/`. Edit the schema, never the generated code: run `make contracts-update` and commit the schema with the regenerated TS types (`packages/schema/generated/`) and pydantic models (`packages/schema/python/areneon_contracts/models/`). `make contracts` (in `make ts`; CI runs the TS half in the typescript job and the Python half in the python job) refuses a schema outside its profile and any drift. After a contract change, also re-capture the shared sample corpus with `node packages/showdown-bridge/scripts/capture-samples.ts`.
 
 Areneon's own rules (supported formats, forbidden engine rules, regulation sources, the gap ledger) are JSON records in `rules/`, validated by the schemas in `packages/schema/rules/` (ADR-007). Never put them in code. Edit a record in a normal PR; `make ts` checks it against the pinned engine. To make the change live, also point `rules/channels/stable.json` at the new snapshot hash (from `scripts/rules-hash.ts`) and raise `seq` by 1, in the same PR or a later one. `rules/channels/` holds exactly one file per channel in the `channel` enum of `packages/schema/rules/v1/channel.schema.json`; adding a channel means adding it to that enum, and any other file fails the check.
 

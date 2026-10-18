@@ -1,6 +1,7 @@
 """Fail unless every shipped (production) dependency has an allowed licence.
 
-Reads the JSON printed by ``pnpm -r licenses list --prod --json`` on stdin.
+Reads the JSON printed by ``pnpm -r licenses list --prod --json`` on stdin,
+or the same shape from ``scripts/python_licences.py`` for Python.
 ADR-001: Areneon is Apache-2.0, so only permissive licences may ship with
 it. The check is an allowlist and fails closed: an unknown licence, a
 missing licence or unparseable output is an error.
@@ -30,6 +31,8 @@ ALLOWED = frozenset(
         "CC-BY-4.0",
         "ISC",
         "MIT",
+        # typing-extensions (via pydantic): OSI-approved, permissive (ADR-008 §7).
+        "PSF-2.0",
         "Python-2.0",
         "Unlicense",
     }

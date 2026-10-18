@@ -5,6 +5,9 @@ import * as requestIdentity from "../src/request-identity.ts";
 import * as rules from "../src/rules.ts";
 
 const SOURCE = new URL("../src/canonical-json.ts", import.meta.url);
+const VECTORS = JSON.parse(
+  readFileSync(new URL("../../../fixtures/contracts/jcs-vectors.json", import.meta.url), "utf8"),
+) as { vectors: { name: string; json: string; jcs: string | null }[] };
 
 describe("canonical-json", () => {
   it("imports nothing, so the bundled builder and archived rules-hash can depend on it", () => {
@@ -21,11 +24,19 @@ describe("canonical-json", () => {
     expect(rules.jcs).toBe(jcs);
   });
 
+  it.each(VECTORS.vectors)("reproduces the shared JCS vector $name", ({ json, jcs: expected }) => {
+    const value = JSON.parse(json) as Parameters<typeof jcs>[0];
+    if (expected === null) expect(() => jcs(value)).toThrow(RangeError);
+    else expect(jcs(value)).toBe(expected);
+  });
+
   it("keeps its bytes: sorted keys, no whitespace, I-JSON checks only in jcs", () => {
     expect(canonicalJson({ b: [1, "x"], a: null })).toBe('{"a":null,"b":[1,"x"]}');
     expect(canonicalJson("\uD800")).toBe('"\\ud800"');
     expect(() => jcs("\uD800")).toThrow(/lone surrogate/);
     expect(() => jcs({ ["\uDC00"]: 1 })).toThrow(/lone surrogate/);
     expect(() => canonicalJson(Number.NaN)).toThrow(/non-finite/);
+    // Large doubles keep the ECMAScript form RFC 8785 specifies.
+    expect(jcs(2 ** 60)).toBe("1152921504606847000");
   });
 });
