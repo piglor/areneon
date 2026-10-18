@@ -1,0 +1,70 @@
+{
+  "description": "RFC 8785 (JCS) vectors that every language with contracts must reproduce (ADR-008 §2, §4). `json` is the input as JSON text, parsed by each language itself; `jcs` is the canonical form, or null where every language must refuse the value (a lone surrogate, in a value or a key). Integer literals beyond ±(2^53−1) are left out on purpose: a JS number cannot hold one exactly, while Python's rfc8785 refuses it; contract schemas bound every integer inside that range and only validated data is hashed.",
+  "vectors": [
+    {
+      "name": "safe-integer-bounds",
+      "json": "[9007199254740991,-9007199254740991,0]",
+      "jcs": "[9007199254740991,-9007199254740991,0]"
+    },
+    {
+      "name": "negative-zero",
+      "json": "-0.0",
+      "jcs": "0"
+    },
+    {
+      "name": "integral-float",
+      "json": "4.0",
+      "jcs": "4"
+    },
+    {
+      "name": "exponent-small",
+      "json": "1e-7",
+      "jcs": "1e-7"
+    },
+    {
+      "name": "decimal-fraction",
+      "json": "[0.5,-1.5e-10,0.30000000000000004]",
+      "jcs": "[0.5,-1.5e-10,0.30000000000000004]"
+    },
+    {
+      "name": "keys-by-utf16-code-units",
+      "json": "{\"\\u20ac\":1,\"\\r\":2,\"1\":3,\"\\ud83d\\ude00\":4,\"\\u00f6\":5}",
+      "jcs": "{\"\\r\":2,\"1\":3,\"ö\":5,\"€\":1,\"😀\":4}"
+    },
+    {
+      "name": "string-escapes",
+      "json": "\"\\u0000\\u001f\\u007f\\u2028\\\"\\\\/\"",
+      "jcs": "\"\\u0000\\u001f \\\"\\\\/\""
+    },
+    {
+      "name": "surrogate-pair",
+      "json": "\"\\ud83d\\ude00\"",
+      "jcs": "\"😀\""
+    },
+    {
+      "name": "nested-order",
+      "json": "{\"b\":[true,null,{\"z\":1,\"a\":\"x\"}],\"a\":{}}",
+      "jcs": "{\"a\":{},\"b\":[true,null,{\"a\":\"x\",\"z\":1}]}"
+    },
+    {
+      "name": "large-exponent",
+      "json": "1e21",
+      "jcs": "1e+21"
+    },
+    {
+      "name": "largest-double",
+      "json": "1.7976931348623157e308",
+      "jcs": "1.7976931348623157e+308"
+    },
+    {
+      "name": "lone-high-surrogate",
+      "json": "\"\\ud800\"",
+      "jcs": null
+    },
+    {
+      "name": "lone-low-surrogate-as-key",
+      "json": "{\"\\udc00\":1}",
+      "jcs": null
+    }
+  ]
+}

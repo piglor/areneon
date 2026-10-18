@@ -40,6 +40,10 @@ strict = true
 python_version = "3.12"
 files = ["scripts", "tests", "packages/schema/python/areneon_contracts"]
 
+[tool.coverage.run]
+# Generated declarations would pad the gate; it measures hand-written code.
+omit = ["packages/schema/python/areneon_contracts/models/*"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests", "spikes"]
 addopts = "--strict-markers --cov=scripts --cov=areneon_contracts --cov-report=term-missing --cov-fail-under=90"

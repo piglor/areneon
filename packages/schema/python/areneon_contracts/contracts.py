@@ -4,7 +4,8 @@ The schemas in ``packages/schema/contracts/v<N>/`` are the source of truth.
 ``validate`` checks an instance against one with python-jsonschema (Draft
 2020-12) and fails closed; ``parse`` validates first and only then builds the
 generated pydantic model, so the model is a typed view of data that already
-passed the schema. ``jcs`` and ``sha256_hex`` give the RFC 8785 bytes and the
+passed the schema; the model classes are not exported, so nothing builds one
+without validating first. ``jcs`` and ``sha256_hex`` give the RFC 8785 bytes and the
 digest every language computes identically (ADR-008 §4).
 """
 
@@ -51,7 +52,7 @@ def validate(name: str, instance: object, version: int = 1) -> None:
         raise ContractError(f"{name} v{version}: {found}")
 
 
-def model(name: str, version: int = 1) -> type[BaseModel]:
+def _model(name: str, version: int = 1) -> type[BaseModel]:
     """The generated pydantic model of a contract: its schema's title."""
     module = importlib.import_module(
         f"areneon_contracts.models.v{version}.{name.replace('-', '_')}"
@@ -63,12 +64,49 @@ def model(name: str, version: int = 1) -> type[BaseModel]:
 def parse(name: str, instance: object, version: int = 1) -> BaseModel:
     """Validate against the schema, then build the typed model."""
     validate(name, instance, version)
-    return model(name, version).model_validate(instance, strict=True)
+    return _model(name, version).model_validate(instance, strict=True)
+
+
+class CanonicalError(ValueError):
+    """A value has no JCS form shared by every language."""
+
+
+# A decoded Python str holds a surrogate code point only when it was unpaired.
+SURROGATES = range(0xD800, 0xE000)
+
+
+def _has_lone_surrogate(text: str) -> bool:
+    return any(ord(char) in SURROGATES for char in text)
+
+
+def _assert_ijson(value: Any) -> None:
+    """The I-JSON checks every language applies alike, keys included."""
+    if isinstance(value, str) and _has_lone_surrogate(value):
+        raise CanonicalError("jcs: lone surrogate in string")
+    if isinstance(value, dict):
+        for key, item in value.items():
+            _assert_ijson(key)
+            _assert_ijson(item)
+    elif isinstance(value, list):
+        for item in value:
+            _assert_ijson(item)
 
 
 def jcs(value: Any) -> bytes:
-    """The RFC 8785 (JCS) bytes of a JSON value."""
-    out: bytes = rfc8785.dumps(value)
+    """The RFC 8785 (JCS) bytes of a JSON value.
+
+    Like the TS ``jcs``, it refuses a lone surrogate in any string, object
+    keys included (rfc8785 itself checks only values); both reproduce
+    ``fixtures/contracts/jcs-vectors.json``. rfc8785 also refuses an integer
+    beyond +-(2^53-1), which a JS number cannot hold exactly; contract
+    schemas bound every integer inside that range, and only validated data
+    is hashed, so no contract value reaches either side with one.
+    """
+    _assert_ijson(value)
+    try:
+        out: bytes = rfc8785.dumps(value)
+    except rfc8785.CanonicalizationError as exc:
+        raise CanonicalError(f"jcs: {exc}") from exc
     return out
 
 
@@ -77,5 +115,10 @@ def sha256_hex(data: bytes) -> str:
 
 
 def request_hash(request: dict[str, Any]) -> str:
-    """ADR-004 r2 request identity: SHA-256 of the canonical request without ``rqid``."""
+    """ADR-004 r2 request identity: SHA-256 of the canonical request without ``rqid``.
+
+    The request is validated against the engine-mirror schema first: only a
+    validated request is hashed (ADR-008 §4).
+    """
+    validate("engine-request", request)
     return sha256_hex(jcs({k: v for k, v in request.items() if k != "rqid"}))

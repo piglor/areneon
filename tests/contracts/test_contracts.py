@@ -15,9 +15,10 @@ from typing import Any
 
 import pytest
 from areneon_contracts.contracts import (
+    CanonicalError,
     ContractError,
+    _model,
     jcs,
-    model,
     parse,
     request_hash,
     schema,
@@ -29,6 +30,9 @@ REPO = Path(__file__).resolve().parents[2]
 SAMPLES = REPO / "fixtures/contracts"
 GOLDEN = REPO / "fixtures/showdown/gen9championsvgc2026regmc"
 HASHES: dict[str, str] = json.loads((SAMPLES / "hashes.json").read_text(encoding="utf-8"))
+VECTORS: list[dict[str, Any]] = json.loads(
+    (SAMPLES / "jcs-vectors.json").read_text(encoding="utf-8")
+)["vectors"]
 
 
 def load(path: str) -> Any:
@@ -81,10 +85,31 @@ def test_request_hash_equals_the_ts_side(fixture: str) -> None:
 
 
 def test_model_and_schema_resolve_by_name() -> None:
-    assert model("episode").__name__ == schema("episode")["title"] == "Episode"
+    assert _model("episode").__name__ == schema("episode")["title"] == "Episode"
 
 
 def test_the_model_refuses_coercion_after_validation() -> None:
     sample = load("v1/request-identity/valid/a1.json")
     with pytest.raises(ValueError, match="request_seq"):
-        model("request-identity").model_validate({**sample, "request_seq": "1"}, strict=True)
+        _model("request-identity").model_validate({**sample, "request_seq": "1"}, strict=True)
+
+
+@pytest.mark.parametrize("vector", VECTORS, ids=lambda v: v["name"])
+def test_jcs_reproduces_the_shared_vectors(vector: dict[str, Any]) -> None:
+    value = json.loads(vector["json"])
+    if vector["jcs"] is None:
+        with pytest.raises(CanonicalError):
+            jcs(value)
+    else:
+        assert jcs(value).decode("utf-8") == vector["jcs"]
+
+
+def test_jcs_refuses_an_integer_a_js_number_cannot_hold() -> None:
+    assert jcs({"a": [True, {"b": 2**53 - 1}]}) == b'{"a":[true,{"b":9007199254740991}]}'
+    with pytest.raises(CanonicalError):
+        jcs({"a": [{"b": 2**53 + 1}]})
+
+
+def test_request_hash_validates_the_request_first() -> None:
+    with pytest.raises(ContractError, match="engine-request"):
+        request_hash({"side": {}, "turn": 3})
