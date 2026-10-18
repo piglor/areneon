@@ -100,6 +100,8 @@ export function publish(artifacts: readonly Artifact[], fileOf: (a: Artifact) =>
     const notes = `ADR-007 ${artifact.kind} artifact, attested by rules-publish (build provenance).`;
     const args = ["release", "create", artifact.tag, fileOf(artifact), "--target", artifact.commit];
     if (gh([...args, "--title", artifact.tag, "--notes", notes]) === undefined) {
+      // Another run (for another commit) may have released it meanwhile.
+      if (isReleased(artifact.tag, gh)) continue;
       throw new RulesError(`could not create Release ${artifact.tag}`);
     }
     created.push(artifact.tag);
