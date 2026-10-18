@@ -90,11 +90,14 @@ export function loadRulesSnapshot(
   return buildSnapshot({ formats, regulations }, showdownCommit);
 }
 
+/** Validate a parsed `rules/channels/<channel>.json`, e.g. one read from another commit. */
+export function parseChannel(channel: string, value: unknown, where: string): ChannelFile {
+  const file = check<ChannelFile>(value, 1, "channel", where);
+  if (file.channel !== channel) throw new RulesError(`${where} names channel ${file.channel}`);
+  return file;
+}
+
 /** Read and validate `rules/channels/<channel>.json`. */
 export function loadChannel(channel: string, dir: string = DEFAULT_RULES_DIR): ChannelFile {
-  const file = check<ChannelFile>(readChannel(channel, dir), 1, "channel", `channels/${channel}.json`);
-  if (file.channel !== channel) {
-    throw new RulesError(`channels/${channel}.json names channel ${file.channel}`);
-  }
-  return file;
+  return parseChannel(channel, readChannel(channel, dir), `channels/${channel}.json`);
 }

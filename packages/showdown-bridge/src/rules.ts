@@ -59,7 +59,7 @@ export interface FormatRulesRecord {
   schema_version: number;
   format_id: string;
   regulation: string;
-  game_type: string;
+  game_type: FormatRecord["game_type"];
   forbidden_rules: string[];
 }
 
@@ -103,11 +103,25 @@ export function jcs(value: Json): string {
 export const sha256Hex = (bytes: Uint8Array | string): string =>
   createHash("sha256").update(bytes).digest("hex");
 
-function readJsonDir(dir: string): { file: string; value: unknown }[] {
+/** UTF-8 of the JCS form: the exact bytes Areneon hashes and publishes. */
+export const jcsBytes = (value: object): Buffer => Buffer.from(jcs(value as Json), "utf8");
+
+function readJson(path: string, where: string): unknown {
+  try {
+    return JSON.parse(readFileSync(path, "utf8")) as unknown;
+  } catch (error) {
+    throw new RulesError(`${where}: not valid JSON (${(error as Error).message})`);
+  }
+}
+
+/** Every entry must be a `.json` record, so nothing is silently skipped. */
+function readJsonDir(dir: string, kind: string): { file: string; value: unknown }[] {
   return readdirSync(dir)
-    .filter((file) => file.endsWith(".json"))
     .sort()
-    .map((file) => ({ file, value: JSON.parse(readFileSync(join(dir, file), "utf8")) as unknown }));
+    .map((file) => {
+      if (!file.endsWith(".json")) throw new RulesError(`${kind}/${file} is not a .json record`);
+      return { file, value: readJson(join(dir, file), `${kind}/${file}`) };
+    });
 }
 
 /** Read the raw records. Nothing is validated here; see `loadRulesSnapshot`. */
@@ -116,8 +130,8 @@ export function readRuleRecords(dir: string = DEFAULT_RULES_DIR): {
   regulations: { file: string; value: unknown }[];
 } {
   return {
-    formats: readJsonDir(join(dir, "formats")),
-    regulations: readJsonDir(join(dir, "regulations")),
+    formats: readJsonDir(join(dir, "formats"), "formats"),
+    regulations: readJsonDir(join(dir, "regulations"), "regulations"),
   };
 }
 
@@ -141,8 +155,7 @@ export function buildSnapshot(records: RuleRecords, showdownCommit: string): Rul
 }
 
 /** The exact published bytes: UTF-8 of the JCS form. */
-export const snapshotBytes = (snapshot: RulesSnapshot): Buffer =>
-  Buffer.from(jcs(snapshot as unknown as Json), "utf8");
+export const snapshotBytes = (snapshot: RulesSnapshot): Buffer => jcsBytes(snapshot);
 
 export const rulesSnapshotHash = (snapshot: RulesSnapshot): string =>
   sha256Hex(snapshotBytes(snapshot));
@@ -160,9 +173,8 @@ export function formatRulesRecord(snapshot: RulesSnapshot, formatId: string): Fo
   };
 }
 
-export const formatRulesHash = (record: FormatRulesRecord): string =>
-  sha256Hex(Buffer.from(jcs(record as unknown as Json), "utf8"));
+export const formatRulesHash = (record: FormatRulesRecord): string => sha256Hex(jcsBytes(record));
 
 export function readChannel(channel: string, dir: string = DEFAULT_RULES_DIR): unknown {
-  return JSON.parse(readFileSync(join(dir, "channels", `${channel}.json`), "utf8")) as unknown;
+  return readJson(join(dir, "channels", `${channel}.json`), `channels/${channel}.json`);
 }

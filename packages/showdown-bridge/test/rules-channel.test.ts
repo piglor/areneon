@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { checkChannel } from "../src/rules-channel.ts";
+import { checkChannel } from "../src/index.ts";
 
 const PIN = "a".repeat(40);
 const OLD_PIN = "b".repeat(40);
@@ -60,6 +60,8 @@ describe("checkChannel", () => {
   // After a pin bump an unchanged channel names an old-pin snapshot, so the
   // pin-bump PR must also move the channel to its own build.
   it("rejects an unchanged channel left on the old pin", () => {
-    expect(checkChannel({ head: channel(4, H3), base: channel(4, H3), allowed, pin: PIN })).toHaveLength(1);
+    expect(checkChannel({ head: channel(4, H3), base: channel(4, H3), allowed, pin: PIN })).toEqual([
+      `${H3} was built for Showdown ${OLD_PIN}, not the pinned ${PIN}`,
+    ]);
   });
 });

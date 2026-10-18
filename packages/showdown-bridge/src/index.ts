@@ -13,7 +13,16 @@ export {
   UnsupportedFormatError,
   type VersionManifest,
 } from "./formats.ts";
-export { loadChannel, loadRulesSnapshot, RULES_SCHEMA_DIR } from "./rules-load.ts";
+export { type ChannelCheck, checkChannel } from "./rules-channel.ts";
+export {
+  type BuiltSnapshot,
+  chooseBase,
+  type GitReader,
+  historicalSnapshots,
+  RULES_BUILDER,
+  RULES_HISTORY_PATHS,
+} from "./rules-history.ts";
+export { loadChannel, loadRulesSnapshot, parseChannel, RULES_SCHEMA_DIR } from "./rules-load.ts";
 export {
   buildSnapshot,
   type ChannelFile,
@@ -23,6 +32,7 @@ export {
   formatRulesRecord,
   type FormatRulesRecord,
   jcs,
+  jcsBytes,
   type RegulationRecord,
   RulesError,
   rulesSnapshotHash,

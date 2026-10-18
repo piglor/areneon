@@ -1,4 +1,7 @@
 import { execFileSync } from "node:child_process";
+import { cpSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
@@ -91,6 +94,28 @@ describe("rules snapshot identity", () => {
       showdown_commit: string;
     };
     expect(printed).toEqual({ hash: rulesSnapshotHash(snapshot), showdown_commit: PINNED_SHOWDOWN_COMMIT });
+  });
+
+  // check-rules.ts reruns this commit's builder from a bare archive on every
+  // later PR. Copy only what an archive holds (no node_modules anywhere up
+  // the tree) so a non-built-in import fails here, before it reaches main.
+  it("builds from a bare copy with no node_modules", () => {
+    const root = mkdtempSync(join(tmpdir(), "areneon-builder-"));
+    try {
+      const repo = fileURLToPath(new URL("../../../", import.meta.url));
+      cpSync(join(repo, "rules"), join(root, "rules"), { recursive: true });
+      for (const part of ["src", "scripts"]) {
+        cpSync(join(repo, "packages/showdown-bridge", part), join(root, "packages/showdown-bridge", part), {
+          recursive: true,
+        });
+      }
+      const printed = JSON.parse(
+        execFileSync("node", [join(root, "packages/showdown-bridge/scripts/rules-hash.ts")], { encoding: "utf8" }),
+      ) as { hash: string };
+      expect(printed.hash).toBe(rulesSnapshotHash(snapshot));
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it("refuses a format record that is not in the snapshot", () => {

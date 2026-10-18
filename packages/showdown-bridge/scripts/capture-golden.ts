@@ -6,7 +6,9 @@ import { join } from "node:path";
 import { loadEngine } from "../src/engine.ts";
 import {
   battleSummary,
+  captureProvenance,
   GOLDEN_DIR,
+  GOLDEN_PROVENANCE,
   GOLDEN_SUMMARY,
   goldenBattle,
   goldenFixtures,
@@ -16,6 +18,7 @@ const record = await goldenBattle(loadEngine());
 const files: Record<string, unknown> = {
   ...goldenFixtures(record),
   [GOLDEN_SUMMARY]: battleSummary(record),
+  [GOLDEN_PROVENANCE]: captureProvenance(record),
 };
 for (const [file, content] of Object.entries(files)) {
   writeFileSync(join(GOLDEN_DIR, file), `${JSON.stringify(content, null, 2)}\n`);

@@ -4,6 +4,9 @@ import { describe, expect, it } from "vitest";
 import {
   battleSummary,
   type BattleSummary,
+  type CaptureProvenance,
+  captureProvenance,
+  GOLDEN_PROVENANCE,
   GOLDEN_DIR,
   GOLDEN_FORMAT,
   GOLDEN_PHASES,
@@ -46,6 +49,20 @@ describe("golden request fixtures", () => {
       actors: { p1: replayActor(summary.choices, "p1"), p2: replayActor(summary.choices, "p2") },
     });
     expect(battleSummary(replayed).omniscient_log_sha256).toBe(summary.omniscient_log_sha256);
+  });
+
+  // Not compared with a fresh capture on purpose (see GOLDEN_PROVENANCE).
+  it("record which rules snapshot they were captured under", async () => {
+    const fresh = captureProvenance(await goldenBattle(loadEngine()));
+    expect(committed<CaptureProvenance>(GOLDEN_PROVENANCE).rules_snapshot_hash).toMatch(/^[0-9a-f]{64}$/);
+    expect(fresh.rules_snapshot_hash).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it("embed the format rules record in every request fixture", async () => {
+    const record = await goldenBattle(loadEngine());
+    for (const file of Object.keys(GOLDEN_PHASES)) {
+      expect(committed<{ format_rules: unknown }>(file).format_rules, file).toEqual(record.format_rules);
+    }
   });
 
   it("refuse a battle missing a golden phase", () => {

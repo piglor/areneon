@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import type { Engine } from "./engine.ts";
 import { canonicalJson } from "./request-identity.ts";
 import { loadRulesSnapshot } from "./rules-load.ts";
@@ -8,6 +7,7 @@ import {
   type FormatRulesRecord,
   rulesSnapshotHash,
   type RulesSnapshot,
+  sha256Hex,
 } from "./rules.ts";
 
 /** Reproducibility key carried by every fixture, episode and benchmark. */
@@ -85,7 +85,7 @@ export function resolveFormat(
       showdown_commit: engine.commit,
       format_id: formatId,
       regulation: record.regulation,
-      ruleset_hash: createHash("sha256").update(canonicalJson(ruleset)).digest("hex"),
+      ruleset_hash: sha256Hex(canonicalJson(ruleset)),
       format_rules_hash: formatRulesHash(record),
     },
   };

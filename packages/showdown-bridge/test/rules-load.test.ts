@@ -74,9 +74,15 @@ describe("loadRulesSnapshot", () => {
     expect(() => loadRulesSnapshot(COMMIT, dir)).toThrow(message);
   });
 
-  it("fails on a malformed JSON file", () => {
+  it("fails closed on a malformed JSON file, naming it", () => {
     const dir = rulesCopy((d) => writeFileSync(join(d, FORMAT), "{"));
-    expect(() => loadRulesSnapshot(COMMIT, dir)).toThrow(SyntaxError);
+    expect(() => loadRulesSnapshot(COMMIT, dir)).toThrow(RulesError);
+    expect(() => loadRulesSnapshot(COMMIT, dir)).toThrow(/formats\/gen9championsvgc2026regmc\.json: not valid JSON/);
+  });
+
+  it("fails closed on a record file that is not .json", () => {
+    const dir = rulesCopy((d) => writeFileSync(join(d, "regulations/M-D.yml"), "regulation: M-D"));
+    expect(() => loadRulesSnapshot(COMMIT, dir)).toThrow(/regulations\/M-D\.yml is not a \.json record/);
   });
 });
 
@@ -90,6 +96,11 @@ describe("loadChannel", () => {
       cpSync(join(d, "channels/stable.json"), join(d, "channels/other.json"));
     });
     expect(() => loadChannel("other", dir)).toThrow(/names channel stable/);
+  });
+
+  it("fails closed on a malformed channel file", () => {
+    const dir = rulesCopy((d) => writeFileSync(join(d, "channels/stable.json"), "["));
+    expect(() => loadChannel("stable", dir)).toThrow(/channels\/stable\.json: not valid JSON/);
   });
 
   it("rejects an invalid channel file", () => {

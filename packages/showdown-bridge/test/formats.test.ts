@@ -10,9 +10,12 @@ import {
 
 const engine = loadEngine();
 const snapshot = loadRulesSnapshot(engine.commit);
-const committedMc = snapshot.formats.gen9championsvgc2026regmc;
-if (!committedMc) throw new Error("rules/formats/gen9championsvgc2026regmc.json is missing");
-const mc = committedMc;
+function committedFormat(formatId: string): RulesSnapshot["formats"][string] {
+  const format = snapshot.formats[formatId];
+  if (!format) throw new Error(`rules/formats/${formatId}.json is missing`);
+  return format;
+}
+const mc = committedFormat("gen9championsvgc2026regmc");
 
 /** The committed snapshot plus `formats`, e.g. a candidate record under test. */
 const withFormats = (formats: RulesSnapshot["formats"]): RulesSnapshot => ({

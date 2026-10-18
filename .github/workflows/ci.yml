@@ -46,6 +46,10 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm test
       - name: rules records and channel (ADR-007)
+        # First parent: the main tip a PR merge commit merges into, or the
+        # previous main tip for a squash commit pushed to main.
+        env:
+          RULES_BASE_REF: HEAD^1
         run: node packages/showdown-bridge/scripts/check-rules.ts
 
   team-guard:

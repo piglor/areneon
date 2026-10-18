@@ -7,6 +7,15 @@
     "ruleset_hash": "4dd1f039bbcc6156e08c434972beae2370dc5fe8c9c6a263da7383c3247b68f3",
     "format_rules_hash": "549cd2aa97324be093c567324676d46a5eff19d6b0c9d8491c483dab746d5dcc"
   },
+  "format_rules": {
+    "schema_version": 1,
+    "format_id": "gen9championsvgc2026regmc",
+    "regulation": "M-C",
+    "game_type": "doubles",
+    "forbidden_rules": [
+      "forceopenteamsheets"
+    ]
+  },
   "seed": "sodium,000102030405060708090a0b0c0d0e0f",
   "player": "p1",
   "request_seq": 2,
