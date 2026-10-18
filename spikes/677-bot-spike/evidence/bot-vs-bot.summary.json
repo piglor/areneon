@@ -1,0 +1,34 @@
+{
+  "spike": "#677",
+  "manifest": {
+    "showdown_commit": "7244fe8e28fa8bc4d0809ae30d183c608b62bb2b",
+    "format_id": "gen9championsvgc2026regmc",
+    "regulation": "M-C",
+    "ruleset_hash": "4dd1f039bbcc6156e08c434972beae2370dc5fe8c9c6a263da7383c3247b68f3"
+  },
+  "server": "pinned Showdown server, 127.0.0.1:8000, --no-security, forcetimer",
+  "battle": "battle-gen9championsvgc2026regmc-56",
+  "winner": "AreneonBotB",
+  "turns": 6,
+  "wall_seconds": 1.16,
+  "timer_on": true,
+  "ots_rejected_by": [
+    "AreneonBotA",
+    "AreneonBotB"
+  ],
+  "bot_decisions": 18,
+  "decisions_with_timer_state": 18,
+  "fallbacks": 0,
+  "decision_ms": {
+    "min": 0.075,
+    "p50": 0.144,
+    "max": 0.473
+  },
+  "vgc_timer": {
+    "preview_s": 90,
+    "bank_s": 420,
+    "max_per_turn_s": 55
+  },
+  "min_timer_turn_left_s": 55,
+  "min_timer_bank_left_s": 420
+}
