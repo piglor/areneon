@@ -208,7 +208,7 @@ describe("checkProfile: contract profile", () => {
         kind: { anyOf: [{ type: "string" }] },
         extra: { type: "number", default: 1 },
       });
-      (doc.$defs as Record<string, Record<string, unknown>>).Observation!.additionalProperties = true;
+      ((doc.$defs as Record<string, unknown>).Observation as Record<string, unknown>).additionalProperties = true;
       expect(messages(doc)).toEqual([
         "/$defs/Observation a union node takes only type, oneOf and discriminator (found properties, additionalProperties)",
       ]);
