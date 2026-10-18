@@ -3,6 +3,21 @@
   "gap_id": "cts-invariant",
   "area": "CTS invariant",
   "status": "unverified",
-  "description": "The CTS invariant (an OTS-declined preview shows species and details only) is owned by #676.",
-  "evidence": []
+  "description": "With Open Team Sheets declined, Team Preview shows the opponent's species, level and gender only; the sheet is sent only after `>show-openteamsheets`. Tested in-process by `cts.test.ts` (#676); the server-path decline is #709.",
+  "evidence": [
+    {
+      "kind": "engine",
+      "path": "data/rulesets.ts",
+      "symbols": ["openteamsheets"]
+    },
+    {
+      "kind": "engine",
+      "path": "sim/battle.ts",
+      "symbols": ["showOpenTeamSheets"]
+    },
+    {
+      "kind": "fixture",
+      "path": "fixtures/teams/gen9championsvgc2026regmc/legal-opponent.txt"
+    }
+  ]
 }
