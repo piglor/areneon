@@ -4,29 +4,41 @@ import { Ajv2020 } from "ajv/dist/2020.js";
 import { describe, expect, it } from "vitest";
 import { PINNED_SHOWDOWN_COMMIT } from "../src/engine.ts";
 import { loadRulesSnapshot } from "../src/rules-load.ts";
-import { type Artifact, channelArtifact, type GitHubCli, plan, publish, snapshotArtifact } from "../src/rules-publish.ts";
+import {
+  type Artifact,
+  channelArtifact,
+  channelTag,
+  checkBuilt,
+  type GitHubCli,
+  isReleased,
+  plan,
+  publish,
+  snapshotArtifact,
+  snapshotTag,
+} from "../src/rules-publish.ts";
 import { RulesError, rulesSnapshotHash } from "../src/rules.ts";
 
 const SCHEMAS = new URL("../../schema/rules/v1/", import.meta.url);
 const schema = (name: string) => JSON.parse(readFileSync(new URL(`${name}.schema.json`, SCHEMAS), "utf8")) as Record<string, unknown>;
 const snapshot = loadRulesSnapshot(PINNED_SHOWDOWN_COMMIT);
 const own = rulesSnapshotHash(snapshot);
-const COMMIT = "c".repeat(40);
+const HEAD = "c".repeat(40);
+const EARLIER = "b".repeat(40);
 const OLD = "0".repeat(64);
 const stable = (seq: number, hash: string) => ({ channel: "stable", seq, hash });
 
 describe("the artifacts", () => {
   it("name a snapshot after the sha256 of its exact bytes", () => {
-    const artifact = snapshotArtifact(snapshot);
-    expect(artifact.tag).toBe(`rules-snapshot-${own}`);
+    const artifact = snapshotArtifact(snapshot, HEAD);
+    expect([artifact.tag, artifact.commit]).toEqual([snapshotTag(own), HEAD]);
     expect(createHash("sha256").update(artifact.bytes).digest("hex")).toBe(own);
   });
 
   it("make a channel artifact the JCS bytes of the channel file plus its commit", () => {
-    const artifact = channelArtifact(stable(6, own), COMMIT);
-    expect(artifact.tag).toBe(`rules-channel-stable-${COMMIT}`);
+    const artifact = channelArtifact(stable(6, own), EARLIER);
+    expect([artifact.tag, artifact.commit]).toEqual([channelTag("stable", EARLIER), EARLIER]);
     expect(artifact.bytes.toString("utf8")).toBe(
-      `{"channel":"stable","hash":"${own}","schema_version":1,"seq":6,"source_commit":"${COMMIT}"}`,
+      `{"channel":"stable","hash":"${own}","schema_version":1,"seq":6,"source_commit":"${EARLIER}"}`,
     );
     const valid = new Ajv2020({ strict: true }).compile(schema("channel-artifact"));
     expect(valid(JSON.parse(artifact.bytes.toString("utf8")))).toBe(true);
@@ -40,50 +52,78 @@ describe("the artifacts", () => {
 });
 
 describe("plan", () => {
-  const input = (channelHash: string, base: ReturnType<typeof stable> | undefined, published = false) => ({
+  const input = (channelHash: string, released: (tag: string) => boolean) => ({
     snapshot,
-    channels: [stable(6, channelHash)],
-    base: () => base,
-    sourceCommit: COMMIT,
-    published: () => published,
+    commit: HEAD,
+    channels: [{ file: stable(6, channelHash), changedIn: EARLIER }],
+    released,
   });
 
-  it("always publishes the commit's own snapshot, and no channel artifact if no channel changed", () => {
-    expect(plan(input(own, stable(6, own))).map((a) => a.tag)).toEqual([`rules-snapshot-${own}`]);
+  it("releases the snapshot first, then the current channel, keyed by the commit that last changed it", () => {
+    const artifacts = plan(input(own, () => false));
+    expect(artifacts.map((a) => a.tag)).toEqual([snapshotTag(own), channelTag("stable", EARLIER)]);
   });
 
-  it("adds a channel artifact for a changed or new channel", () => {
-    expect(plan(input(own, stable(5, own))).map((a) => a.kind)).toEqual(["snapshot", "channel"]);
-    expect(plan(input(own, undefined)).map((a) => a.kind)).toEqual(["snapshot", "channel"]);
+  it("skips whatever is already released, so a re-run releases nothing", () => {
+    expect(plan(input(own, () => true))).toEqual([]);
+    expect(plan(input(own, (tag) => tag === snapshotTag(own))).map((a) => a.kind)).toEqual(["channel"]);
   });
 
-  it("allows a rollback to an already published snapshot", () => {
-    expect(plan(input(OLD, stable(5, own), true)).at(-1)?.tag).toBe(`rules-channel-stable-${COMMIT}`);
+  it("allows a channel naming an older, released snapshot, and asks about that snapshot", () => {
+    const asked: string[] = [];
+    const artifacts = plan(
+      input(OLD, (tag) => {
+        asked.push(tag);
+        return tag === snapshotTag(OLD);
+      }),
+    );
+    expect(asked).toContain(snapshotTag(OLD));
+    expect(artifacts.map((a) => a.kind)).toEqual(["snapshot", "channel"]);
   });
 
   it("refuses a channel naming a snapshot the importer could never find", () => {
-    expect(() => plan(input(OLD, stable(5, own)))).toThrow(RulesError);
-    expect(() => plan(input(OLD, stable(5, own)))).toThrow(/neither this commit's .* nor published/);
+    expect(() => plan(input(OLD, () => false))).toThrow(RulesError);
+    expect(() => plan(input(OLD, () => false))).toThrow(/neither this commit's .* nor released/);
   });
 });
 
-describe("publish", () => {
-  const artifacts: Artifact[] = [snapshotArtifact(snapshot), channelArtifact(stable(6, own), COMMIT)];
+describe("isReleased", () => {
+  const tag = snapshotTag(own);
+  const view = (isDraft: boolean, assets: string[]): GitHubCli => () =>
+    JSON.stringify({ isDraft, assets: assets.map((name) => ({ name })) });
+
+  it("counts only a published Release that carries its file", () => {
+    expect(isReleased(tag, view(false, [`${tag}.json`]))).toBe(true);
+    expect(isReleased(tag, view(true, [`${tag}.json`]))).toBe(false);
+    expect(isReleased(tag, view(false, []))).toBe(false);
+    expect(isReleased(tag, () => undefined)).toBe(false);
+  });
+});
+
+describe("publish and checkBuilt", () => {
+  const artifacts: Artifact[] = [snapshotArtifact(snapshot, HEAD), channelArtifact(stable(6, own), EARLIER)];
   const file = (a: Artifact) => `dist/${a.tag}.json`;
 
-  it("creates each missing Release at the commit and skips those that exist", () => {
+  it("creates each Release in plan order, at its own commit", () => {
     const calls: string[][] = [];
-    const gh: GitHubCli = (args) => {
-      calls.push(args);
-      return !(args[1] === "view" && args[2] === artifacts[1]?.tag);
-    };
-    expect(publish(artifacts, COMMIT, file, gh)).toEqual([artifacts[1]?.tag]);
-    const create = calls.find((c) => c[1] === "create");
-    expect(create?.slice(0, 6)).toEqual(["release", "create", artifacts[1]?.tag, file(artifacts[1] as Artifact), "--target", COMMIT]);
+    expect(publish(artifacts, file, (args) => (calls.push(args), ""))).toEqual(artifacts.map((a) => a.tag));
+    expect(calls.map((c) => [c[2], c[5]])).toEqual([
+      [snapshotTag(own), HEAD],
+      [channelTag("stable", EARLIER), EARLIER],
+    ]);
   });
 
   it("fails when a Release cannot be created", () => {
-    const gh: GitHubCli = () => false;
-    expect(() => publish(artifacts, COMMIT, file, gh)).toThrow(/could not create Release rules-snapshot-/);
+    expect(() => publish(artifacts, file, () => undefined)).toThrow(/could not create Release rules-snapshot-/);
+  });
+
+  it("accepts exactly the planned files and nothing else", () => {
+    const built = new Map(artifacts.map((a) => [`${a.tag}.json`, a.bytes]));
+    expect(checkBuilt(artifacts, built)).toEqual([]);
+    const stray = new Map([...built, ["evil.json", Buffer.from("{}")]]);
+    expect(checkBuilt(artifacts, stray)).toEqual(["evil.json was not planned"]);
+    const changed = new Map(built).set(`${snapshotTag(own)}.json`, Buffer.from("{}"));
+    expect(checkBuilt(artifacts, changed)).toEqual([`${snapshotTag(own)}.json differs from the planned bytes`]);
+    expect(checkBuilt(artifacts, new Map())).toHaveLength(2);
   });
 });

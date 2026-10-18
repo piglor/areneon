@@ -3,21 +3,24 @@
 // index: the workflow runs scripts/rules-publish.ts, which wires git and the
 // GitHub CLI to these functions.
 
-import { jcsBytes, RULES_SCHEMA_VERSION, type ChannelFile, RulesError, type RulesSnapshot, rulesSnapshotHash, snapshotBytes } from "./rules.ts";
+import { type ChannelFile, jcsBytes, RULES_SCHEMA_VERSION, RulesError, type RulesSnapshot, rulesSnapshotHash, snapshotBytes } from "./rules.ts";
 
-/** One file to release, under its own tag. */
+/** One file to release, under its own tag, at its own commit. */
 export interface Artifact {
   kind: "snapshot" | "channel";
   /** The Release tag, and the file name without `.json`. */
   tag: string;
+  /** The commit the Release's tag points at. */
+  commit: string;
   bytes: Buffer;
 }
 
 export const snapshotTag = (hash: string): string => `rules-snapshot-${hash}`;
+export const channelTag = (channel: string, commit: string): string => `rules-channel-${channel}-${commit}`;
 
 /** The exact snapshot bytes, named after their hash: published once per hash. */
-export function snapshotArtifact(snapshot: RulesSnapshot): Artifact {
-  return { kind: "snapshot", tag: snapshotTag(rulesSnapshotHash(snapshot)), bytes: snapshotBytes(snapshot) };
+export function snapshotArtifact(snapshot: RulesSnapshot, commit: string): Artifact {
+  return { kind: "snapshot", tag: snapshotTag(rulesSnapshotHash(snapshot)), commit, bytes: snapshotBytes(snapshot) };
 }
 
 /** A channel change: `jcs({schema_version, channel, seq, hash, source_commit})`. */
@@ -29,64 +32,93 @@ export function channelArtifact(channel: ChannelFile, sourceCommit: string): Art
     hash: channel.hash,
     source_commit: sourceCommit,
   };
-  return { kind: "channel", tag: `rules-channel-${channel.channel}-${sourceCommit}`, bytes: jcsBytes(body) };
+  return { kind: "channel", tag: channelTag(channel.channel, sourceCommit), commit: sourceCommit, bytes: jcsBytes(body) };
 }
-
-const sameChannel = (a: ChannelFile, b: ChannelFile | undefined): boolean =>
-  b !== undefined && a.channel === b.channel && a.seq === b.seq && a.hash === b.hash;
 
 export interface PlanInput {
   /** The snapshot built from this commit's records. */
   snapshot: RulesSnapshot;
-  /** Every channel file at this commit. */
-  channels: readonly ChannelFile[];
-  /** The same channel's file at the first parent, if it existed there. */
-  base: (channel: string) => ChannelFile | undefined;
   /** This commit. */
-  sourceCommit: string;
-  /** Whether a snapshot Release for this hash was already published. */
-  published: (hash: string) => boolean;
+  commit: string;
+  /** Every channel file at this commit, with the commit that last changed it. */
+  channels: readonly { file: ChannelFile; changedIn: string }[];
+  /** Whether a usable Release exists for this tag. */
+  released: (tag: string) => boolean;
 }
 
 /**
- * The artifacts this commit publishes: its snapshot, and one channel
- * artifact per channel file it changes. A changed channel must name a
- * snapshot the importer can find, this commit's own or an already
- * published one; otherwise the importer would wait forever, so publishing
- * fails instead.
+ * The artifacts this commit must release, snapshots first so a channel never
+ * names a snapshot that is not out yet:
+ * - its own snapshot, unless released;
+ * - for each channel, the artifact of its current file, keyed by the commit
+ *   that last changed it, unless released. A channel change from an earlier
+ *   run that never published (a first run, a cancelled one) is published
+ *   now, so the importer always reaches the current channel.
+ * A channel must name this commit's snapshot or a released one; otherwise
+ * the importer would wait forever, so planning fails instead. Rebuilding an
+ * older, never-released snapshot is out of scope: re-run that commit's
+ * rules-publish, or revert the records in a PR.
  */
-export function plan({ snapshot, channels, base, sourceCommit, published }: PlanInput): Artifact[] {
-  const own = snapshotArtifact(snapshot);
+export function plan({ snapshot, commit, channels, released }: PlanInput): Artifact[] {
+  const own = snapshotArtifact(snapshot, commit);
   const ownHash = rulesSnapshotHash(snapshot);
-  const artifacts = [own];
-  for (const channel of channels) {
-    if (sameChannel(channel, base(channel.channel))) continue;
-    if (channel.hash !== ownHash && !published(channel.hash)) {
+  const artifacts = released(own.tag) ? [] : [own];
+  for (const { file, changedIn } of channels) {
+    if (file.hash !== ownHash && !released(snapshotTag(file.hash))) {
       throw new RulesError(
-        `rules/channels/${channel.channel}.json names snapshot ${channel.hash}, which is neither this commit's (${ownHash}) nor published`,
+        `rules/channels/${file.channel}.json names snapshot ${file.hash}, which is neither this commit's (${ownHash}) nor released`,
       );
     }
-    artifacts.push(channelArtifact(channel, sourceCommit));
+    const artifact = channelArtifact(file, changedIn);
+    if (!released(artifact.tag)) artifacts.push(artifact);
   }
   return artifacts;
 }
 
-/** `gh <args>`: true if it succeeded. Injected so publishing is testable. */
-export type GitHubCli = (args: string[]) => boolean;
+/** `gh <args>`: its stdout, or `undefined` if it failed. Injected so publishing is testable. */
+export type GitHubCli = (args: string[]) => string | undefined;
 
 /**
- * Create each artifact's Release, at `sourceCommit`, unless its tag already
- * exists: publishing the same commit again changes nothing. `fileOf` names
- * the artifact's file on disk. Returns the tags it created.
+ * Whether `tag` has a usable Release: published (not a draft) and carrying
+ * its artifact file. A bare git tag, a draft or an upload that failed half
+ * way does not count.
  */
-export function publish(artifacts: readonly Artifact[], sourceCommit: string, fileOf: (a: Artifact) => string, gh: GitHubCli): string[] {
+export function isReleased(tag: string, gh: GitHubCli): boolean {
+  const out = gh(["release", "view", tag, "--json", "isDraft,assets"]);
+  if (out === undefined) return false;
+  const view = JSON.parse(out) as { isDraft: boolean; assets: { name: string }[] };
+  return !view.isDraft && view.assets.some((asset) => asset.name === `${tag}.json`);
+}
+
+/**
+ * Create each planned artifact's Release, in plan order, at its commit.
+ * `fileOf` names the artifact's file on disk. Returns the tags it created.
+ */
+export function publish(artifacts: readonly Artifact[], fileOf: (a: Artifact) => string, gh: GitHubCli): string[] {
   const created: string[] = [];
   for (const artifact of artifacts) {
-    if (gh(["release", "view", artifact.tag])) continue;
     const notes = `ADR-007 ${artifact.kind} artifact, attested by rules-publish (build provenance).`;
-    const ok = gh(["release", "create", artifact.tag, fileOf(artifact), "--target", sourceCommit, "--title", artifact.tag, "--notes", notes]);
-    if (!ok) throw new RulesError(`could not create Release ${artifact.tag}`);
+    const args = ["release", "create", artifact.tag, fileOf(artifact), "--target", artifact.commit];
+    if (gh([...args, "--title", artifact.tag, "--notes", notes]) === undefined) {
+      throw new RulesError(`could not create Release ${artifact.tag}`);
+    }
     created.push(artifact.tag);
   }
   return created;
+}
+
+/**
+ * The directory `build` wrote must hold exactly the planned files, byte for
+ * byte, so `release` publishes nothing else.
+ */
+export function checkBuilt(artifacts: readonly Artifact[], files: ReadonlyMap<string, Buffer>): string[] {
+  const problems: string[] = [];
+  const planned = new Map(artifacts.map((a) => [`${a.tag}.json`, a.bytes]));
+  for (const [name, bytes] of planned) {
+    const found = files.get(name);
+    if (found === undefined) problems.push(`${name} was planned but not built`);
+    else if (!found.equals(bytes)) problems.push(`${name} differs from the planned bytes`);
+  }
+  for (const name of files.keys()) if (!planned.has(name)) problems.push(`${name} was not planned`);
+  return problems;
 }

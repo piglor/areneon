@@ -16,8 +16,11 @@ on:
 
 permissions: {}
 
+# One group per commit: GitHub keeps only one pending run per group, so a
+# shared group would silently drop a commit's run while another waits for
+# its environment approval.
 concurrency:
-  group: rules-publish
+  group: rules-publish-${{ github.sha }}
   cancel-in-progress: false
 
 jobs:
@@ -32,6 +35,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7.0.1
         with:
+          persist-credentials: false
           submodules: true
           # The channel check rebuilds earlier main snapshots.
           fetch-depth: 0
@@ -47,11 +51,12 @@ jobs:
         env:
           RULES_BASE_REF: HEAD^1
         run: node packages/showdown-bridge/scripts/check-rules.ts
-      - name: build the artifacts
+      - name: build the artifacts still to release
         env:
           GH_TOKEN: ${{ github.token }}
         run: node packages/showdown-bridge/scripts/rules-publish.ts build dist/rules-publish
       - name: attest the artifacts
+        if: hashFiles('dist/rules-publish/*.json') != ''
         uses: actions/attest-build-provenance@v4.2.2
         with:
           subject-path: dist/rules-publish/*.json
