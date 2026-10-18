@@ -16,6 +16,8 @@ make check          # every offline CI gate: python + ts + guards
 make showdown       # rebuild vendor/pokemon-showdown (needed before any TS test)
 make ts             # pnpm lint && pnpm typecheck && pnpm test (vitest, coverage) + check-rules.ts
 make python         # ruff check, ruff format --check, mypy, pytest (coverage)
+make contracts      # contract schemas fit their ADR-008 profile; generated TS types have no drift
+make contracts-update  # regenerate packages/schema/generated/ after a schema change (commit the result)
 make guards         # PokePaste team guard + production licence allowlist
 ```
 
@@ -38,7 +40,7 @@ TypeScript runs directly under Node's type stripping (`.ts` imports, `erasableSy
 
 ## Architecture
 
-**Polyglot monorepo** (ADR-002): TypeScript in `packages/*` (pnpm workspace), Python in `scripts/` and `tests/` today (`services/`, `ml/` later), Rust in `crates/` once the first crate lands. `packages/schema` holds the JSON Schema contracts: the rules records today (ADR-007). Redmine #671 makes it the source of truth for every contract, with the TS, pydantic and serde types generated from it.
+**Polyglot monorepo** (ADR-002): TypeScript in `packages/*` (pnpm workspace), Python in `scripts/` and `tests/` today (`services/`, `ml/` later), Rust in `crates/` once the first crate lands. `packages/schema` holds the JSON Schema contracts: the rules records (`rules/`, ADR-007) and the cross-language contracts (`contracts/v<N>/`, ADR-008), from which the TS types in `generated/ts/` are generated and checked in (pydantic and serde follow in #671's later slices). A contract's `$id` (`urn:areneon:schema:<contracts|engine>:v<N>:<name>`) declares its profile, and `src/profile.ts` enforces it as a keyword whitelist: closed objects, bounded integers, local `$ref`s, `kind`-tagged `oneOf`; `engine` schemas, which copy the pinned engine's wire shapes, also allow scalar type unions and get their own Ajv instance (`src/ajv.ts`). `make contracts` fails on a profile violation or on generated types that differ from a fresh run.
 
 **The reference engine is upstream Showdown, unmodified** (ADR-003). `vendor/pokemon-showdown` is a git submodule pinned to an exact SHA and built with `make showdown`. Areneon never decides legality itself: it asks the engine (`TeamValidator`, `side.choose`) and stops on unknowns. `docs/showdown-champions-gaps.md` lists what the engine does for Champions and what is unverified. It is generated from the gap ledger records in `rules/gaps/` by `scripts/gaps-doc.ts`; edit the records, never the doc (a test compares them). Gap edits move `rules_snapshot_hash` but never `format_rules_hash`.
 

@@ -1,0 +1,192 @@
+// Build-time module behind `make contracts` (ADR-008 §1-§2): checks every
+// contract schema against its profile and Ajv, and keeps the checked-in
+// generated TS types byte-identical to what the pinned generator produces.
+// Never import it at runtime: json-schema-to-typescript is a dev dependency.
+
+import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { compile } from "json-schema-to-typescript";
+import { ajvFor } from "./ajv.ts";
+import { checkProfile, type Profile } from "./profile.ts";
+
+/** Schema sources: `contracts/v<N>/<name>.schema.json`. */
+export const CONTRACTS_DIR = fileURLToPath(new URL("../contracts", import.meta.url));
+/** Checked-in generated types: `generated/ts/v<N>/<name>.ts`. */
+export const GENERATED_TS_DIR = fileURLToPath(new URL("../generated/ts", import.meta.url));
+
+const ID = /^urn:areneon:schema:(contracts|engine):v([1-9][0-9]*):([a-z][a-z0-9-]*)$/;
+const SUFFIX = ".schema.json";
+
+export interface SchemaFile {
+  /** Path relative to the contracts directory, e.g. `v1/request-identity.schema.json`. */
+  readonly path: string;
+  readonly version: number;
+  readonly name: string;
+  readonly schema: unknown;
+}
+
+export interface Finding {
+  readonly path: string;
+  readonly message: string;
+}
+
+/** Thrown when the contracts directory cannot be read or a file is not JSON. */
+export class ContractsReadError extends Error {
+  override name = "ContractsReadError";
+}
+
+function isMissing(error: unknown): boolean {
+  return (error as NodeJS.ErrnoException).code === "ENOENT";
+}
+
+/**
+ * Reads every `v<N>/*.schema.json`, in a fixed order. A missing directory
+ * holds none; any other read error, or a file that is not JSON, throws.
+ */
+export function readSchemas(dir: string = CONTRACTS_DIR): SchemaFile[] {
+  let versions: string[];
+  try {
+    versions = readdirSync(dir).filter((d) => /^v[1-9][0-9]*$/.test(d));
+  } catch (error) {
+    if (isMissing(error)) return [];
+    throw new ContractsReadError(`cannot read ${dir}: ${(error as Error).message}`);
+  }
+  const files: SchemaFile[] = [];
+  for (const v of versions.sort((a, b) => Number(a.slice(1)) - Number(b.slice(1)))) {
+    for (const file of readdirSync(join(dir, v)).filter((f) => f.endsWith(SUFFIX)).sort()) {
+      const path = `${v}/${file}`;
+      let schema: unknown;
+      try {
+        schema = JSON.parse(readFileSync(join(dir, path), "utf8"));
+      } catch (error) {
+        throw new ContractsReadError(`${path}: ${(error as Error).message}`);
+      }
+      files.push({ path, version: Number(v.slice(1)), name: file.slice(0, -SUFFIX.length), schema });
+    }
+  }
+  return files;
+}
+
+export type DeclaredProfile = { readonly profile: Profile } | { readonly error: string };
+
+/**
+ * The profile a schema declares through its `$id` (`contracts` or `engine`),
+ * which must also match its directory and file name.
+ */
+export function declaredProfile(file: SchemaFile): DeclaredProfile {
+  const id = (file.schema as { $id?: unknown } | null)?.$id;
+  const match = typeof id === "string" ? ID.exec(id) : null;
+  if (!match) return { error: `$id must be urn:areneon:schema:<contracts|engine>:v<N>:<name>, got ${JSON.stringify(id)}` };
+  if (Number(match[2]) !== file.version || match[3] !== file.name) {
+    return { error: `$id ${id} does not match its path ${file.path}` };
+  }
+  return { profile: match[1] === "engine" ? "engine-mirror" : "contract" };
+}
+
+/** Profile and Ajv findings for every schema. Empty means all conform. */
+export function checkSchemas(files: readonly SchemaFile[]): Finding[] {
+  const findings: Finding[] = [];
+  for (const file of files) {
+    const declared = declaredProfile(file);
+    if ("error" in declared) {
+      findings.push({ path: file.path, message: declared.error });
+      continue;
+    }
+    const { profile } = declared;
+    // The generator names the root type after its title (else after $id).
+    const title = (file.schema as { title?: unknown }).title;
+    if (typeof title !== "string" || !/^[A-Z][A-Za-z0-9]*$/.test(title)) {
+      findings.push({ path: file.path, message: "the root needs a PascalCase title naming its generated type" });
+    }
+    for (const v of checkProfile(file.schema, profile)) {
+      findings.push({ path: file.path, message: `${v.at || "/"}: ${v.message}` });
+    }
+    try {
+      ajvFor(profile).compile(file.schema as object);
+    } catch (error) {
+      findings.push({ path: file.path, message: `Ajv: ${(error as Error).message}` });
+    }
+  }
+  return findings;
+}
+
+/** The generated TS for one schema: pinned json-schema-to-typescript, fixed options. */
+export async function generateTs(file: SchemaFile): Promise<string> {
+  return compile(structuredClone(file.schema) as Parameters<typeof compile>[0], file.name, {
+    bannerComment: `/* Generated by \`make contracts-update\` from packages/schema/contracts/${file.path}. Do not edit. */`,
+    additionalProperties: false,
+    unreachableDefinitions: true,
+    maxItems: -1,
+    format: true,
+  });
+}
+
+/** Every generated file, keyed by its path under the generated directory. */
+export async function generateAll(files: readonly SchemaFile[]): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  for (const file of files) out.set(`v${file.version}/${file.name}.ts`, await generateTs(file));
+  return out;
+}
+
+function listTree(dir: string, prefix = ""): string[] {
+  let entries;
+  try {
+    entries = readdirSync(dir, { withFileTypes: true });
+  } catch (error) {
+    if (isMissing(error)) return [];
+    throw new ContractsReadError(`cannot read ${dir}: ${(error as Error).message}`);
+  }
+  return entries.flatMap((e) =>
+    e.isDirectory() ? listTree(join(dir, e.name), `${prefix}${e.name}/`) : [`${prefix}${e.name}`],
+  );
+}
+
+/** Differences between the expected generated files and a directory. Empty means no drift. */
+export function driftAgainst(expected: ReadonlyMap<string, string>, dir: string): Finding[] {
+  const findings: Finding[] = [];
+  for (const [path, content] of expected) {
+    let actual: string | undefined;
+    try {
+      actual = readFileSync(join(dir, path), "utf8");
+    } catch {
+      actual = undefined;
+    }
+    if (actual === undefined) findings.push({ path, message: "generated file is missing" });
+    else if (actual !== content) findings.push({ path, message: "generated file differs from its schema" });
+  }
+  for (const path of listTree(dir)) {
+    if (!expected.has(path)) findings.push({ path, message: "generated file has no schema" });
+  }
+  return findings;
+}
+
+/** Replaces the directory's contents with exactly the expected files. */
+export function writeGenerated(expected: ReadonlyMap<string, string>, dir: string): void {
+  rmSync(dir, { recursive: true, force: true });
+  for (const [path, content] of expected) {
+    mkdirSync(dirname(join(dir, path)), { recursive: true });
+    writeFileSync(join(dir, path), content);
+  }
+}
+
+/**
+ * `make contracts` (check) and `make contracts-update` (write). Schema
+ * findings always fail; in check mode drift fails too.
+ */
+export async function runContracts(options: {
+  readonly write: boolean;
+  readonly contractsDir?: string;
+  readonly generatedDir?: string;
+}): Promise<Finding[]> {
+  const files = readSchemas(options.contractsDir);
+  const findings = checkSchemas(files);
+  if (findings.length > 0) return findings;
+  const expected = await generateAll(files);
+  const generatedDir = options.generatedDir ?? GENERATED_TS_DIR;
+  if (options.write) {
+    writeGenerated(expected, generatedDir);
+    return [];
+  }
+  return driftAgainst(expected, generatedDir);
+}
