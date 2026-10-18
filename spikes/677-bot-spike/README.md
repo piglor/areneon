@@ -14,15 +14,16 @@ TS client of about 240 lines that reuses `@areneon/showdown-bridge`. The upstrea
 public client can be pointed at the local server without copying any client
 code. D has no published written policy that permits or forbids it and
 cannot run the pinned engine, so it is not recommended. E is viable but
-duplicates the bridge in Python and has no Champions-specific data. The final
-human match is still to be played by the owner (steps below).
+duplicates the bridge in Python and has no Champions-specific data. The owner
+then played a full human match against the bot in the official client
+(evidence below).
 
 ## What was built
 
 | File | Role |
 |---|---|
 | `src/server.ts` | Starts the pinned, **unmodified** server on `127.0.0.1:8000` with `--no-security`. Writes only upstream's gitignored `config/config.js`: localhost bind, `backdoor=false`, no dev console, no REPL, `forcetimer=true`. |
-| `src/bot.ts` | Bot client over Node's built-in `WebSocket`. Refuses any non-local host. Logs in with `/trn`, sets the team with `/utm`, accepts only an **exact** `gen9championsvgc2026regmc` challenge (custom rules such as Bo3 or a removed timer are rejected), turns the timer on, sends `/rejectopenteamsheets` before its preview choice, answers every `|request|` with `/choose …|rqid`, and on `[Invalid choice]` falls back to `/choose default` and logs it. Requests are decoded by the bridge's `decodeRequest` (same `request_hash` as runtime A1). |
+| `src/bot.ts` | Bot client over Node's built-in `WebSocket`. Refuses any non-local host. Logs in with `/trn`, sets the team with `/utm`, accepts only an **exact** `gen9championsvgc2026regmc` challenge (custom rules such as Bo3 or a removed timer are rejected), turns the timer on, sends `/rejectopenteamsheets` before its preview choice, answers every `\|request\|` with `/choose …\|rqid`, and on `[Invalid choice]` falls back to `/choose default` and logs it. Requests are decoded by the bridge's `decodeRequest` (same `request_hash` as runtime A1). |
 | `src/heuristic.ts` | First plausible choice from the bot's own request: bring the first four, first non-disabled non-ally move with foe slot 1 as target, first healthy bench Pokémon on a forced switch. The engine validates; Areneon decides nothing about legality. |
 | `src/run-match.ts` | Bot vs bot: server + two bot clients, private challenge, writes `evidence/bot-vs-bot.*`, stops the server. |
 | `src/team.ts`, `src/evidence.ts` | Loads the synthetic team; writes the summary, decisions JSONL and player-view log. |
@@ -43,7 +44,7 @@ team is used or committed.
 | Private challenge → battle | `/challenge AreneonBotA, gen9championsvgc2026regmc` → `/accept` → Bo1 room `battle-gen9championsvgc2026regmc-N` |
 | OTS declined by every actor | `AreneonBotA rejected open team sheets.` and `AreneonBotB rejected open team sheets.` in the room log |
 | VGC Timer on | `Battle timer is ON`; every decision has a `Time left` line |
-| Battle completes | 6 turns, `|win|`, 1.16 s wall clock |
+| Battle completes | 6 turns, `\|win\|`, 1.16 s wall clock |
 | Engine rejections | 0 fallbacks across 18 decisions (preview, move, forced switch, fainted-slot `pass`) |
 
 Per-decision timing (`evidence/bot-vs-bot.decisions.jsonl`, request receipt to
@@ -63,7 +64,7 @@ only with a learned policy (#678 owns the timer-derived deadline).
 The committed player-view log is bot A's own view (own request, public log).
 The omniscient stream is never recorded.
 
-## Human path (A2): verified as far as possible without a human
+## Human path (A2): checks before the human match
 
 - `http://127.0.0.1:8000/` serves upstream's `server/static/index.html`, which
   redirects the browser to `https://localhost.psim.us`.
@@ -79,31 +80,52 @@ The omniscient stream is never recorded.
 - Upstream also documents a fully self-hosted path: build the official client
   (AGPL-3.0) **outside this repo**, unmodified, and open
   `testclient-new.html?~~localhost:8000` (client README, "Other servers").
-- **Not verified:** a browser actually rendering the battle and a human
-  clicking through it. That is the owner's step below.
+
+## Evidence: a human vs the bot (A2)
+
+The owner played one private Bo1 on 2026-10-18 with the steps below
+(`evidence/human-vs-bot.{summary.json,decisions.jsonl}`, Showdown `7244fe8`,
+format rules hash `549cd2aa…`). The browser ran on Windows and the server in
+WSL2 in NAT mode; WSL's localhost forwarding was enough, with no mirrored
+networking and no bind beyond `127.0.0.1`.
+
+| Check | Result |
+|---|---|
+| Human reaches the bot | Official client via `http://localhost:8000` → `localhost.psim.us`, unregistered throwaway name, `/challenge` accepted |
+| Battle completes | 5 turns, the human won, 1291 s wall clock |
+| OTS declined | `AreneonBot rejected open team sheets.`; no `showteam` in the bot's player-view log (kept in gitignored `private-data/`) |
+| VGC Timer on | `timer_on: true`; all 8 bot decisions carry the timer state |
+| Bot decisions | 8 (preview, move, forced switch, fainted-slot `pass`), 0 fallbacks, max 0.62 ms against a 55 s turn cap |
+
+Only the bot appears in `ots_rejected_by`, and that is the server's rule, not
+a gap. `/rejectopenteamsheets` clears the OTS prompt for **every** player
+(`server/chat-commands/core.ts`, `rejectopenteamsheets`). Sheets are shown only
+when every player accepts. Once the bot has denied, the human has no button to
+press and the sheets stay closed.
 
 ### Owner: step by step for the human match
 
-1. Check out the branch and build the engine:
-   `git switch 677-bot-spike && git submodule update --init && make showdown`.
+1. On `main`, run `make setup` (it builds the engine and installs the
+   workspace packages; `make showdown` alone does not install them).
 2. Start server and bot: `node spikes/677-bot-spike/src/human-match.ts`.
    Wait for `Ready.`
 3. In a desktop browser **on the same machine**, open `http://localhost:8000`.
    It redirects to `https://localhost.psim.us`, the official client.
-   (WSL2: if the Windows browser cannot reach it, enable
+   (WSL2: NAT mode's localhost forwarding worked. If it does not, enable
    `networkingMode=mirrored` in `.wslconfig` or use a browser inside WSL.
    Do not bind the server to `0.0.0.0`.)
-4. Click **Choose name** and pick a throwaway name. It appears in the evidence
+4. Click **Choose name** and pick a throwaway name that nobody has
+   registered; no account or password is needed. It appears in the evidence
    summary.
 5. Teambuilder → new team in **[Gen 9 Champions] VGC 2026 Reg M-C**. Your
    own team stays in your browser; it is never written to the repo.
 6. In the lobby type `/challenge AreneonBot, gen9championsvgc2026regmc`. Leave
    Best-of-3 and custom rules off: the bot rejects them. It accepts at once.
-7. At Team Preview click **Deny Open Team Sheets**, then bring 4. The bot
-   has already denied.
+7. At Team Preview, bring 4. The bot has already denied Open Team Sheets,
+   which removes the prompt for you as well.
 8. Play to the end. The timer is on (55 s per turn, 420 s bank).
 9. The script prints the summary and stops the server. Check
-   `spikes/677-bot-spike/evidence/human-vs-bot.summary.json`: both names in
+   `spikes/677-bot-spike/evidence/human-vs-bot.summary.json`: `AreneonBot` in
    `ots_rejected_by`, `timer_on: true`, `fallbacks` = 0. Post it on #677.
    Commit only the two `evidence/human-vs-bot.*` files.
    `private-data/677-human-match/` holds your revealed sets and stays local.
@@ -167,7 +189,7 @@ step with the pin.
 
 1. **A2** for human sparring: pinned server on localhost, human uses the
    official client via `http://localhost:8000` (or a self-built unmodified
-   client). Pending the owner's human match.
+   client). A human completed a match this way.
 2. **Own TS bot client** on the bridge, not poke-env. Keep E as a reference
    for protocol edge cases only.
 3. **D** rejected for Wave 1: it is outside the pinned engine, and the bot
@@ -182,7 +204,7 @@ wrapper checkout).
 ## Run
 
 ```bash
-make showdown
+make setup
 node spikes/677-bot-spike/src/run-match.ts      # bot vs bot, rewrites evidence/
 node spikes/677-bot-spike/src/human-match.ts    # waits for a human challenge
 node spikes/677-bot-spike/src/server.ts         # server only (Ctrl-C stops it)
