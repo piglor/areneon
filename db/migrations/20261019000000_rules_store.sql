@@ -1,6 +1,11 @@
 -- The rules store (ADR-007 "Database contract"): published rules snapshots and
 -- the channel history, append-only. Run by `rules_migrator` with
 -- `search_path=rules`; the DDL runs as the NOLOGIN owner.
+--
+-- Every migration starts with `SET LOCAL ROLE rules_owner` and ends with
+-- `RESET ROLE`. rules_migrator may create objects in schema rules only so that
+-- dbmate can keep its own version table there; every real object belongs to
+-- rules_owner.
 
 -- migrate:up
 SET LOCAL ROLE rules_owner;
