@@ -42,7 +42,9 @@ export function exportPaste(engine: Engine, team: PokemonSet[]): string {
  * reappear, as many times, in that Pokémon's re-export, or the import fails.
  * This accepts only the canonical form the pinned engine exports: a line it
  * would write differently (reordered stats, `Level: 100`, `IVs: 31 HP`, a
- * `=== [format] ===` header) is rejected even though it parsed.
+ * lowercase or misspelt species, a `=== [format] ===` header) is rejected
+ * even though it parsed. Revisit this if hand-written or third-party pastes
+ * become an input path.
  */
 export function importPaste(engine: Engine, paste: string): PokemonSet[] {
   const team = engine.sim.Teams.import(paste);
@@ -52,7 +54,7 @@ export function importPaste(engine: Engine, paste: string): PokemonSet[] {
   const input = blocks(paste);
   if (input.length !== team.length) {
     throw new TeamImportError(
-      `the paste has ${input.length} blocks but the pinned engine read ${team.length} Pokémon`,
+      `the paste has ${input.length} block(s) but the pinned engine read ${team.length} Pokémon`,
     );
   }
   const unreproduced = input.flatMap((lines, i) => {
