@@ -32,6 +32,8 @@ jobs:
       - uses: actions/checkout@v7.0.1
         with:
           submodules: true
+          # The rules channel check rebuilds earlier main snapshots (ADR-007).
+          fetch-depth: 0
       - uses: pnpm/action-setup@v6.1.0
       - uses: actions/setup-node@v7.1.0
         with:
@@ -43,6 +45,12 @@ jobs:
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm test
+      - name: rules records and channel (ADR-007)
+        # First parent: the main tip a PR merge commit merges into, or the
+        # previous main tip for a squash commit pushed to main.
+        env:
+          RULES_BASE_REF: HEAD^1
+        run: node packages/showdown-bridge/scripts/check-rules.ts
 
   team-guard:
     runs-on: ubuntu-latest

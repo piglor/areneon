@@ -28,6 +28,7 @@ ts: showdown
 	pnpm lint
 	pnpm typecheck
 	pnpm test
+	node packages/showdown-bridge/scripts/check-rules.ts
 
 guards: team-guard licences
 

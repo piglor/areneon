@@ -1,5 +1,6 @@
 import type { Engine, PokemonSet, SimStream } from "./engine.ts";
 import { resolveFormat, type VersionManifest } from "./formats.ts";
+import type { FormatRulesRecord } from "./rules.ts";
 import { type DecodedRequest, decodeRequest } from "./request.ts";
 
 export type Player = "p1" | "p2";
@@ -30,6 +31,10 @@ export interface RequestRecord extends DecodedRequest {
 
 export interface BattleRecord {
   manifest: VersionManifest;
+  /** The rules the battle ran under, embedded so replay is self-contained. */
+  format_rules: FormatRulesRecord;
+  /** Provenance only: the rules snapshot the format rules came from. */
+  rules_snapshot_hash: string;
   seed: string;
   /** `p1`, `p2`, or `null` for a tie. */
   winner: Player | null;
@@ -81,7 +86,7 @@ export function replayActor(choices: BattleRecord["choices"], player: Player): A
  */
 export async function runBattle(options: BattleOptions): Promise<BattleRecord> {
   const { engine, formatId, seed, teams, actors, maxTurns = 300 } = options;
-  const { manifest } = resolveFormat(engine, formatId);
+  const resolved = resolveFormat(engine, formatId);
   const validator = engine.sim.TeamValidator.get(formatId);
   for (const player of PLAYERS) {
     const problems = validator.validateTeam(teams[player]);
@@ -90,7 +95,9 @@ export async function runBattle(options: BattleOptions): Promise<BattleRecord> {
 
   const streams = engine.sim.getPlayerStreams(new engine.sim.BattleStream());
   const record: BattleRecord = {
-    manifest,
+    manifest: resolved.manifest,
+    format_rules: resolved.rules,
+    rules_snapshot_hash: resolved.rules_snapshot_hash,
     seed,
     winner: null,
     turns: 0,

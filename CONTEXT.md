@@ -27,7 +27,11 @@ A shared language for humans and agents working on Areneon. Use these terms exac
 | Term | Meaning |
 |---|---|
 | **Reference engine** | The upstream `smogon/pokemon-showdown` simulator pinned to an exact commit. The only authority on mechanics and legality. |
-| **Version manifest** | `{showdown_commit, format_id, regulation, ruleset_hash}` attached to every fixture, episode and benchmark. |
+| **Version manifest** | `{showdown_commit, format_id, regulation, ruleset_hash, format_rules_hash}` attached to every fixture, episode and benchmark. `ruleset_hash` is derived from the engine; `format_rules_hash` from the format rules record. |
+| **Rules records** | Areneon's own rules (which formats it runs, forbidden engine rules with reasons, regulation sources, gap ledger) as JSON files in `rules/`, validated by `packages/schema/rules/` and the pinned engine (ADR-007). Never constants in code. Legality and mechanics are not rules records; they stay in the engine. |
+| **Rules snapshot** | The published, content-hashed set of all rules records for one engine commit. `rules_snapshot_hash` = SHA-256 of its RFC 8785 (JCS) bytes. Provenance, not replay identity. |
+| **Format rules record** | `{schema_version, format_id, regulation, game_type, forbidden_rules}` for one format: the rules that change how it plays. Embedded in every artifact; its hash is `format_rules_hash`. |
+| **Rules channel** | `rules/channels/<channel>.json` (`{channel, seq, hash}`) naming the snapshot live runtimes serve. Changed only by PR, `seq` +1 per change. Only `stable` exists. |
 | **Request** | The per-side `|request|` JSON the engine sends a player: what that player may choose now. |
 | **`rqid`** | Request ID assigned by the Showdown **server** only. Absent on the in-process sim path; optional in contracts. |
 | **`request_seq` / `request_hash`** | Areneon's request identity on both paths: a per-side monotonic counter plus a hash of the canonical request JSON. Used for stale rejection. |

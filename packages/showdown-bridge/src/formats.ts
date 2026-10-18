@@ -1,24 +1,14 @@
-import { createHash } from "node:crypto";
 import type { Engine } from "./engine.ts";
 import { canonicalJson } from "./request-identity.ts";
-
-/** What Areneon requires of a format before it will run it. */
-export interface FormatSpec {
-  regulation: string;
-  gameType: "doubles";
-  /** Active Pokémon per side, i.e. leads chosen at Team Preview. */
-  activeSlots: number;
-}
-
-/**
- * Formats Areneon supports, keyed by Showdown format ID. CTS needs Bo1 with
- * Open Team Sheets declined (ADR-003), so the Bo3 variant, which forces open
- * sheets, is deliberately absent. A new regulation is a new entry here plus
- * a pin bump.
- */
-export const SUPPORTED_FORMATS: Readonly<Record<string, FormatSpec>> = {
-  gen9championsvgc2026regmc: { regulation: "M-C", gameType: "doubles", activeSlots: 2 },
-};
+import { loadRulesSnapshot } from "./rules-load.ts";
+import {
+  formatRulesHash,
+  formatRulesRecord,
+  type FormatRulesRecord,
+  rulesSnapshotHash,
+  type RulesSnapshot,
+  sha256Hex,
+} from "./rules.ts";
 
 /** Reproducibility key carried by every fixture, episode and benchmark. */
 export interface VersionManifest {
@@ -26,12 +16,17 @@ export interface VersionManifest {
   format_id: string;
   regulation: string;
   ruleset_hash: string;
+  /** Replay identity of Areneon's own rules for this format (ADR-007). */
+  format_rules_hash: string;
 }
 
 export interface ResolvedFormat {
   formatId: string;
-  spec: FormatSpec;
+  /** Embedded in every artifact so replay needs neither a database nor GitHub. */
+  rules: FormatRulesRecord;
   manifest: VersionManifest;
+  /** Provenance only: which published snapshot the rules came from. */
+  rules_snapshot_hash: string;
 }
 
 export class UnsupportedFormatError extends Error {
@@ -39,28 +34,36 @@ export class UnsupportedFormatError extends Error {
 }
 
 /**
- * Resolve `formatId` against the pinned engine. Anything not in the registry
- * (singles, Bo3, other mods) is rejected, as is a registry entry the engine
- * no longer defines the way Areneon expects.
+ * Resolve `formatId` against the rules snapshot and the pinned engine.
+ * Which formats Areneon runs, and which engine rules disqualify one, are
+ * data (ADR-007); whether the format exists and how it plays is the engine's
+ * answer. Anything absent from the snapshot (singles, Bo3, other mods) is
+ * rejected, as is a format the engine defines differently or with a
+ * forbidden rule.
  */
 export function resolveFormat(
   engine: Engine,
   formatId: string,
-  registry: Readonly<Record<string, FormatSpec>> = SUPPORTED_FORMATS,
+  snapshot: RulesSnapshot = loadRulesSnapshot(engine.commit),
 ): ResolvedFormat {
-  const spec = registry[formatId];
+  if (snapshot.showdown_commit !== engine.commit) {
+    throw new UnsupportedFormatError(
+      `rules snapshot was built for Showdown ${snapshot.showdown_commit}, not ${engine.commit}`,
+    );
+  }
+  const spec = snapshot.formats[formatId];
   if (!spec) {
     throw new UnsupportedFormatError(`${formatId} is not a supported Areneon format`);
   }
   const format = engine.sim.Dex.formats.get(formatId);
-  if (!format.exists || format.gameType !== spec.gameType) {
+  if (!format.exists || format.gameType !== spec.game_type) {
     throw new UnsupportedFormatError(
-      `${formatId} is not a ${spec.gameType} format at Showdown ${engine.commit}`,
+      `${formatId} is not a ${spec.game_type} format at Showdown ${engine.commit}`,
     );
   }
   const rules = engine.sim.Dex.formats.getRuleTable(format);
-  if (rules.has("forceopenteamsheets")) {
-    throw new UnsupportedFormatError(`${formatId} forces Open Team Sheets; CTS needs Bo1`);
+  for (const { rule, reason } of spec.forbidden_rules) {
+    if (rules.has(rule)) throw new UnsupportedFormatError(`${formatId} has ${rule}: ${reason}`);
   }
   // Everything that changes how the format plays. Mod data (learnsets,
   // mechanics) is covered by showdown_commit; `mod` says which data applies.
@@ -73,14 +76,17 @@ export function resolveFormat(
     adjustLevel: rules.adjustLevel,
     evLimit: rules.evLimit,
   };
+  const record = formatRulesRecord(snapshot, formatId);
   return {
     formatId,
-    spec,
+    rules: record,
+    rules_snapshot_hash: rulesSnapshotHash(snapshot),
     manifest: {
       showdown_commit: engine.commit,
       format_id: formatId,
-      regulation: spec.regulation,
-      ruleset_hash: createHash("sha256").update(canonicalJson(ruleset)).digest("hex"),
+      regulation: record.regulation,
+      ruleset_hash: sha256Hex(canonicalJson(ruleset)),
+      format_rules_hash: formatRulesHash(record),
     },
   };
 }

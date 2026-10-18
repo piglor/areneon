@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:areneon:schema:rules:v1:format",
+  "title": "Areneon format rules record (ADR-007)",
+  "description": "One Showdown format Areneon runs. Legality and mechanics stay in the pinned engine; this record holds only Areneon's own decisions about the format.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "format_id", "regulation", "game_type", "season", "forbidden_rules"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "format_id": { "type": "string", "pattern": "^[a-z0-9]+$" },
+    "regulation": { "type": "string", "pattern": "^[A-Z0-9]+(-[A-Z0-9]+)*$" },
+    "game_type": { "enum": ["doubles"] },
+    "season": {
+      "description": "Metadata only: never checked at battle start or replay.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["start", "end"],
+      "properties": {
+        "start": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}Z$" },
+        "end": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}Z$" }
+      }
+    },
+    "forbidden_rules": {
+      "description": "Engine rules that make the format unacceptable. Sorted by rule and unique (checked by the loader).",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["rule", "reason"],
+        "properties": {
+          "rule": { "type": "string", "pattern": "^[a-z0-9]+$" },
+          "reason": { "type": "string", "minLength": 1 }
+        }
+      }
+    }
+  }
+}

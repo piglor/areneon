@@ -14,8 +14,9 @@ Open-source competitive VGC Doubles AI sparring partner for Pokémon Showdown (C
 Polyglot monorepo (ADR-002): TypeScript, Python and Rust. Entries marked *planned* do not exist yet.
 
 ```
-packages/showdown-bridge/    TS: pinned engine loader, format registry, headless runner, request decoder
-packages/schema/             planned (#671): JSON Schema contracts (source of truth)
+packages/showdown-bridge/    TS: pinned engine loader, rules loader and hashing, headless runner, request decoder
+packages/schema/             JSON Schema contracts (source of truth): rules records today, more planned (#671)
+rules/                       Areneon's own rules as reviewed JSON records (ADR-007), never code constants
 packages/showdown-extension/ planned (#672): Chromium MV3 read-only advisor
 crates/                      planned: Rust Cargo workspace (calculators, rules catalog, orchestration)
 services/, ml/               planned: Python services and PyTorch training

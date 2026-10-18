@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:areneon:schema:rules:v1:channel",
+  "title": "Areneon rules channel file (ADR-007)",
+  "description": "Names the rules snapshot a channel serves. Every change raises seq by exactly 1.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["channel", "seq", "hash"],
+  "properties": {
+    "channel": { "enum": ["stable"] },
+    "seq": { "type": "integer", "minimum": 1 },
+    "hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+  }
+}

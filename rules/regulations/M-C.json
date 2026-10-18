@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "regulation": "M-C",
+  "sources": [
+    {
+      "url": "https://champions-news.pokemon-home.com/en/page/816.html",
+      "verified_on": "2026-10-18"
+    }
+  ]
+}
