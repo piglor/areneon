@@ -47,7 +47,7 @@ A shared language for humans and agents working on Areneon. Use these terms exac
 | **PrivateTeamSpec** | A player's or bot's full team (PokePaste-compatible). Private; never committed. |
 | **PreviewObservation / BattleObservation** | Versioned player-perspective inputs for the two decision phases. |
 | **Legal joint choice** | A complete Doubles choice for both active slots (moves, targets, switches) validated by the reference engine. |
-| **Recommendation** | A policy's output: a legal choice plus confidence, elapsed time and traceability. |
+| **Recommendation** | A policy's output for one request: a legal choice, the policy that produced it, elapsed time and the deadline outcome (ADR-008). No confidence field yet. |
 | **Episode** | An immutable recorded battle from one actor's perspective with provenance, rights and behaviour-policy ID. |
 
 ## Policies and evaluation

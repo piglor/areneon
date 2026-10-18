@@ -168,15 +168,104 @@ describe("readEpisode", () => {
         const seq = waits.findIndex((l) => l.includes('"wait":true')) + 1;
         return { ...e, decisions: [{ identity: { request_seq: seq, request_hash: "c".repeat(64) }, choice: "x", source_policy_id: "p" }] };
       },
-      /decision \d+: the last request is a wait request/,
+      /the last request is a wait request/,
+    ],
+    ["a broken request line", (e) => ({ ...e, channel: [...(e.channel as string[]), "|request|{bad"] }), /invalid Episode/],
+    ["another player's channel", (e) => ({ ...e, channel: episodes.p2.channel }), /p1's channel holds a request for p2/],
+    [
+      "an unresolved split line",
+      (e) => ({ ...e, channel: [...(e.channel as string[]).slice(0, 30), "|split|p2", ...(e.channel as string[]).slice(30)] }),
+      /a line only the opponent may see: \|split\|p2/,
+    ],
+    [
+      "the opponent's exact HP",
+      (e) => {
+        const channel = [...(e.channel as string[])];
+        channel.splice(30, 0, "|switch|p2a: Snorlax|Snorlax, L50, M|236/236");
+        return { ...e, channel };
+      },
+      /a line only the opponent may see/,
+    ],
+    [
+      "the opponent's team, with no decisions",
+      (e) => ({ ...e, decisions: [], team: { ...(e.team as object), team: (e.team as { team: { name: string }[] }).team.map((s) => ({ ...s, name: "Imposter" })) } }),
+      /the team is not this player's/,
+    ],
+    [
+      "decisions out of order",
+      (e) => ({ ...e, decisions: [...(e.decisions as unknown[])].reverse() }),
+      /out of request order/,
+    ],
+    [
+      "a decision twice",
+      (e) => ({ ...e, decisions: [(e.decisions as unknown[])[0], ...(e.decisions as unknown[])] }),
+      /out of request order/,
+    ],
+    ["a result the channel does not show", (e) => ({ ...e, result: { winner: "p1", turns: 9999 } }), /is not the channel's/],
+    [
+      "a channel cut before the battle ends",
+      (e) => ({ ...e, channel: (e.channel as string[]).slice(0, 40), decisions: [] }),
+      /the channel does not end the battle/,
+    ],
+    [
+      "an A2 decision without its deadline record",
+      (e) => ({ ...e, provenance: { ...(e.provenance as object), runtime: "A2" } }),
+      /A2 decision \d+ lacks its deadline record or timer context/,
     ],
   ])("refuses %s", async (_label, tamper, error) => {
     await expect(readEpisode(tamper(stored()))).rejects.toThrow(error);
     await expect(readEpisode(tamper(stored()))).rejects.toBeInstanceOf(EpisodeError);
   });
 
-  it("refuses a non-object", async () => {
+  it("refuses a channel with no request", async () => {
+    const e = stored();
+    const lines = (e.channel as string[]).filter((l) => !l.startsWith("|request|"));
+    await expect(readEpisode({ ...e, channel: lines, decisions: [] })).rejects.toThrow(/holds no request/);
+  });
+
+  it("refuses a non-object, or one that is not plain data", async () => {
     await expect(readEpisode(null)).rejects.toThrow(EpisodeError);
+    await expect(readEpisode({ ...stored(), toJSON: () => ({}) })).rejects.toThrow(EpisodeError);
+  });
+
+  it("accepts an A2 Episode whose decisions carry their deadline evidence", async () => {
+    const context = {
+      timer_source: "server",
+      timer_rules: { starting: 420, grace: 90, add_per_turn: 0, max_per_turn: 55, max_first_turn: 90, tick: 5 },
+      turn_seconds_left: 55,
+      bank_seconds_left: 420,
+      grace_seconds_left: 0,
+      safety_margin_ms: 3000,
+      submit_within_ms: 20000,
+      policy_budget_ms: 19000,
+    };
+    const deadline = {
+      deadline_outcome: "in_budget",
+      elapsed_ms: 1,
+      submitted_after_ms: 2,
+      bank_seconds_after: 420,
+      server_auto_choose_detected: false,
+    };
+    const e = stored();
+    const a2 = {
+      ...e,
+      provenance: { ...(e.provenance as object), runtime: "A2" },
+      decisions: (e.decisions as object[]).map((d) => ({ ...d, decision_context: context, deadline })),
+    };
+    expect((await readEpisode(a2)).provenance.runtime).toBe("A2");
+  });
+
+  it("returns a copy: changing the record or the input later changes no Episode", async () => {
+    const record = structuredClone(golden);
+    const episode = await episodeFromRecord(record, "p1", { team: synthetic(), behaviour_policy_id: POLICY });
+    const before = await episodeHash(episode, nodeSha256);
+    record.channels.p1.push("|tampered");
+    record.manifest.format_id = "tampered";
+    expect(await episodeHash(episode, nodeSha256)).toBe(before);
+    const input = stored();
+    const read = await readEpisode(input);
+    (input.channel as string[]).push("|tampered");
+    expect(read.channel).not.toContain("|tampered");
   });
 });
 

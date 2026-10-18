@@ -116,6 +116,14 @@ describe("Episode decision deadline", () => {
     expect(valid(missing)).toBe(false);
     expect(valid({ ...record, server_auto_choose_detected: "no" })).toBe(false);
   });
+
+  it("is carried by a decision record, and only in its own shape", () => {
+    const decision = ajvFor("contract").compile({ $defs, $ref: "#/$defs/DecisionRecord" });
+    const base = { identity: { request_seq: 2, request_hash: HASH }, choice: "move 1 1, move 1 1", source_policy_id: "p" };
+    expect(decision(base)).toBe(true);
+    expect(decision({ ...base, deadline: record })).toBe(true);
+    expect(decision({ ...base, deadline: { ...record, late: true } })).toBe(false);
+  });
 });
 
 describe("DecisionContext", () => {

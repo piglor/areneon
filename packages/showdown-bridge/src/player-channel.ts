@@ -40,8 +40,24 @@ export async function observe(input: Omit<ObservationInput, "sha256">): Promise<
 }
 
 /**
- * Brand a channel log as a PlayerChannel once it matches PlayerChannelLog
- * and every `|request|` in it is of the engine's shape and for this player.
+ * A line only the opponent, or the omniscient log, could hold: an unresolved
+ * `|split|` marker, or the opponent's exact HP. A player sees the opponent's
+ * HP only as a share of 100; the exact value is the opponent's SECRET half.
+ */
+function secretOfOpponent(line: string, player: string): boolean {
+  if (line.startsWith("|split|")) return true;
+  const opponent = player === "p1" ? "p2" : "p1";
+  const fields = line.split("|");
+  return (
+    fields.some((f) => f.startsWith(`${opponent}a: `) || f.startsWith(`${opponent}b: `)) &&
+    fields.some((f) => /^\d+\/(?!100(?:\s|$))\d+(?:\s|$)/.test(f))
+  );
+}
+
+/**
+ * Brand a channel log as a PlayerChannel once it matches PlayerChannelLog,
+ * every `|request|` in it is of the engine's shape and for this player, and
+ * no line is the opponent's SECRET half.
  */
 export function playerChannel(log: unknown): PlayerChannel {
   if (!validChannel(log)) {
@@ -49,6 +65,9 @@ export function playerChannel(log: unknown): PlayerChannel {
   }
   const channel = log as unknown as PlayerChannelLog;
   for (const line of channel.lines) {
+    if (secretOfOpponent(line, channel.player)) {
+      throw new ObservationError(`${channel.player}'s channel holds a line only the opponent may see: ${line}`);
+    }
     if (!line.startsWith("|request|")) continue;
     const { player } = decodeRequest(line.slice("|request|".length));
     if (player !== channel.player) {
