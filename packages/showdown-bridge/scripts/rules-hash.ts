@@ -11,6 +11,7 @@ const raw = readRuleRecords();
 const records = {
   formats: raw.formats.map(({ value }) => value),
   regulations: raw.regulations.map(({ value }) => value),
+  gaps: raw.gaps.map(({ value }) => value),
 } as RuleRecords;
 const snapshot = buildSnapshot(records, PINNED_SHOWDOWN_COMMIT);
 console.log(JSON.stringify({ hash: rulesSnapshotHash(snapshot), showdown_commit: PINNED_SHOWDOWN_COMMIT }));

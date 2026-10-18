@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "gap_id": "in-game-timer",
+  "area": "In-game timer",
+  "status": "unverified",
+  "description": "Champions in-game timer values compared with Showdown's VGC Timer.",
+  "evidence": []
+}

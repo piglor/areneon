@@ -31,12 +31,12 @@ The engine is the legality authority, so a pin bump is its own PR:
 
 1. Move the submodule (`git -C vendor/pokemon-showdown checkout <sha>`) and set `PINNED_SHOWDOWN_COMMIT` in `packages/showdown-bridge/src/engine.ts` to the same SHA.
 2. `make showdown`, then `node packages/showdown-bridge/scripts/capture-golden.ts`.
-3. Review every changed fixture under `fixtures/showdown/` and update [docs/showdown-champions-gaps.md](docs/showdown-champions-gaps.md).
+3. Review every changed fixture under `fixtures/showdown/` and update the gap ledger records in `rules/gaps/`, then regenerate [docs/showdown-champions-gaps.md](docs/showdown-champions-gaps.md) with `node packages/showdown-bridge/scripts/gaps-doc.ts` (a test fails while the doc and the records differ).
 4. Move the rules channel to the new build (ADR-007): set `hash` in `rules/channels/stable.json` to the output of `node packages/showdown-bridge/scripts/rules-hash.ts` and raise `seq` by 1. The rules snapshot includes the engine commit, so `node packages/showdown-bridge/scripts/check-rules.ts` (part of `make ts`) fails until you do.
 
 ### Changing the rules
 
-Areneon's own rules (supported formats, forbidden engine rules, regulation sources) are JSON records in `rules/`, validated by the schemas in `packages/schema/rules/` (ADR-007). Never put them in code. Edit a record in a normal PR; `make ts` checks it against the pinned engine. To make the change live, also point `rules/channels/stable.json` at the new snapshot hash (from `scripts/rules-hash.ts`) and raise `seq` by 1, in the same PR or a later one. `rules/channels/` holds exactly one file per channel in the `channel` enum of `packages/schema/rules/v1/channel.schema.json`; adding a channel means adding it to that enum, and any other file fails the check.
+Areneon's own rules (supported formats, forbidden engine rules, regulation sources, the gap ledger) are JSON records in `rules/`, validated by the schemas in `packages/schema/rules/` (ADR-007). Never put them in code. Edit a record in a normal PR; `make ts` checks it against the pinned engine. To make the change live, also point `rules/channels/stable.json` at the new snapshot hash (from `scripts/rules-hash.ts`) and raise `seq` by 1, in the same PR or a later one. `rules/channels/` holds exactly one file per channel in the `channel` enum of `packages/schema/rules/v1/channel.schema.json`; adding a channel means adding it to that enum, and any other file fails the check.
 
 ## Commits and pull requests
 

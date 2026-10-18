@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "gap_id": "override-parity",
+  "area": "Champions overrides",
+  "status": "unverified",
+  "description": "Whether every Champions move, item and ability override matches the game. No in-game fixtures exist yet.",
+  "evidence": []
+}

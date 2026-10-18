@@ -30,6 +30,8 @@ export {
   formatRulesHash,
   formatRulesRecord,
   type FormatRulesRecord,
+  type GapEvidence,
+  type GapRecord,
   jcs,
   jcsBytes,
   type RegulationRecord,

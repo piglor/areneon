@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "gap_id": "pokepaste",
+  "area": "PokePaste",
+  "status": "unverified",
+  "description": "`Teams.import` reads Stat Points from the `EVs:` line and silently skips lines it does not know (an `SPs:` line leaves every Stat Point at 0). A repeated line overwrites the earlier one. Areneon's `importPaste` rejects a paste unless each Pokémon's lines all reappear in that Pokémon's re-export, so it accepts only the engine's canonical form (reordered stats, `Level: 100` or a teambuilder header are rejected). Team legality messages are logged in `fixtures/teams/<format>/verdicts.json`.",
+  "evidence": [
+    {
+      "kind": "engine",
+      "path": "sim/teams.ts",
+      "symbols": [
+        "import",
+        "export"
+      ]
+    }
+  ]
+}

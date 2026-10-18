@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "gap_id": "timer",
+  "area": "Timer",
+  "status": "unverified",
+  "description": "Showdown `VGC Timer`: 90 s preview, 420 s bank, 55 s per turn, auto-choose on timeout. This is a server rule; the in-process sim does not run it.",
+  "evidence": [
+    {
+      "kind": "engine",
+      "path": "data/rulesets.ts",
+      "symbols": [
+        "vgctimer"
+      ]
+    }
+  ]
+}

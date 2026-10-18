@@ -44,7 +44,8 @@ describe("loadRulesSnapshot", () => {
       "forceopenteamsheets",
     ]);
     expect(Object.keys(snapshot.regulations)).toEqual(["M-C"]);
-    expect(snapshot.gaps).toEqual({});
+    expect(Object.keys(snapshot.gaps).length).toBeGreaterThan(0);
+    expect(Object.values(snapshot.gaps).every((gap) => gap.status === "unverified")).toBe(true);
   });
 
   it.each<[string, (dir: string) => void, RegExp]>([

@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "gap_id": "freeze",
+  "area": "Freeze",
+  "status": "unverified",
+  "description": "Thaws after at most 3 turns, or 25% per turn",
+  "evidence": [
+    {
+      "kind": "engine",
+      "path": "data/mods/champions/conditions.ts",
+      "symbols": [
+        "frz"
+      ]
+    }
+  ]
+}

@@ -36,9 +36,25 @@ export interface RegulationRecord {
   sources: { url: string; verified_on: string }[];
 }
 
+/** Where a gap's behaviour lives: engine source (relative to the submodule) or a fixture. */
+export type GapEvidence =
+  | { kind: "engine"; path: string; symbols: string[] }
+  | { kind: "fixture"; path: string };
+
+/** `rules/gaps/<gap_id>.json`: one row of the gap ledger. */
+export interface GapRecord {
+  schema_version: number;
+  gap_id: string;
+  area: string;
+  status: "verified" | "unverified" | "unsupported";
+  description: string;
+  evidence: GapEvidence[];
+}
+
 export interface RuleRecords {
   formats: FormatRecord[];
   regulations: RegulationRecord[];
+  gaps: GapRecord[];
 }
 
 /** One published, content-hashed set of rules. Its five keys are the whole hash preimage. */
@@ -47,7 +63,7 @@ export interface RulesSnapshot {
   showdown_commit: string;
   formats: Record<string, Omit<FormatRecord, "schema_version" | "format_id">>;
   regulations: Record<string, Omit<RegulationRecord, "schema_version" | "regulation">>;
-  gaps: Record<string, never>;
+  gaps: Record<string, Omit<GapRecord, "schema_version" | "gap_id">>;
 }
 
 /**
@@ -128,10 +144,12 @@ function readJsonDir(dir: string, kind: string): { file: string; value: unknown 
 export function readRuleRecords(dir: string = DEFAULT_RULES_DIR): {
   formats: { file: string; value: unknown }[];
   regulations: { file: string; value: unknown }[];
+  gaps: { file: string; value: unknown }[];
 } {
   return {
     formats: readJsonDir(join(dir, "formats"), "formats"),
     regulations: readJsonDir(join(dir, "regulations"), "regulations"),
+    gaps: readJsonDir(join(dir, "gaps"), "gaps"),
   };
 }
 
@@ -145,12 +163,16 @@ export function buildSnapshot(records: RuleRecords, showdownCommit: string): Rul
   for (const { schema_version: _v, regulation, ...rest } of records.regulations) {
     regulations[regulation] = rest;
   }
+  const gaps: RulesSnapshot["gaps"] = {};
+  for (const { schema_version: _v, gap_id, ...rest } of records.gaps) {
+    gaps[gap_id] = rest;
+  }
   return {
     schema_version: RULES_SCHEMA_VERSION,
     showdown_commit: showdownCommit,
     formats,
     regulations,
-    gaps: {},
+    gaps,
   };
 }
 

@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "gap_id": "trick-room",
+  "area": "Trick Room",
+  "status": "unverified",
+  "description": "No speed underflow",
+  "evidence": [
+    {
+      "kind": "engine",
+      "path": "data/mods/champions/scripts.ts",
+      "symbols": [
+        "getActionSpeed"
+      ]
+    }
+  ]
+}

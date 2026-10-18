@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "gap_id": "damage-formula",
+  "area": "Damage formula",
+  "status": "unverified",
+  "description": "Damage formula and rounding. These are covered by the calculator work, not by this pin.",
+  "evidence": []
+}
