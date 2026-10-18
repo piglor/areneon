@@ -1,7 +1,14 @@
-# Changes to the repo gates need the maintainer's review (#684). The main
-# ruleset requires code-owner review; admins merge through the bypass.
+# Changes to the repo gates need the maintainer's review (#684): the CI
+# config, the guard scripts and allowlists, and the files that set gate
+# commands or thresholds. The main ruleset requires code-owner review;
+# admins merge through the bypass.
 /.github/                       @arceushui
 /.pokepaste-guard-allow         @arceushui
+/.pre-commit-config.yaml        @arceushui
+/Makefile                       @arceushui
+/pyproject.toml                 @arceushui
+/vitest.config.ts               @arceushui
 /scripts/check_licenses.py      @arceushui
 /scripts/check_no_pokepaste.py  @arceushui
 /scripts/licences-selftest.sh   @arceushui
+/tests/scripts/                 @arceushui

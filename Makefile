@@ -38,6 +38,7 @@ team-guard:
 licences:
 	pnpm -r licenses list --prod --json | uv run --no-project python scripts/check_licenses.py
 
-# Proves the gate above fails on an injected AGPL dependency (scratch copy only).
+# Proves `make licences` fails on an injected AGPL dependency, on a scratch
+# copy. CI-only: it needs network, so `make check` does not run it.
 licences-selftest:
 	scripts/licences-selftest.sh
