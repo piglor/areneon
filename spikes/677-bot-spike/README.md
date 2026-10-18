@@ -23,7 +23,7 @@ then played a full human match against the bot in the official client
 | File | Role |
 |---|---|
 | `src/server.ts` | Starts the pinned, **unmodified** server on `127.0.0.1:8000` with `--no-security`. Writes only upstream's gitignored `config/config.js`: localhost bind, `backdoor=false`, no dev console, no REPL, `forcetimer=true`. |
-| `src/bot.ts` | Bot client over Node's built-in `WebSocket`. Refuses any non-local host. Logs in with `/trn`, sets the team with `/utm`, accepts only an **exact** `gen9championsvgc2026regmc` challenge (custom rules such as Bo3 or a removed timer are rejected), turns the timer on, sends `/rejectopenteamsheets` before its preview choice, answers every `|request|` with `/choose …|rqid`, and on `[Invalid choice]` falls back to `/choose default` and logs it. Requests are decoded by the bridge's `decodeRequest` (same `request_hash` as runtime A1). |
+| `src/bot.ts` | Bot client over Node's built-in `WebSocket`. Refuses any non-local host. Logs in with `/trn`, sets the team with `/utm`, accepts only an **exact** `gen9championsvgc2026regmc` challenge (custom rules such as Bo3 or a removed timer are rejected), turns the timer on, sends `/rejectopenteamsheets` before its preview choice, answers every `\|request\|` with `/choose …\|rqid`, and on `[Invalid choice]` falls back to `/choose default` and logs it. Requests are decoded by the bridge's `decodeRequest` (same `request_hash` as runtime A1). |
 | `src/heuristic.ts` | First plausible choice from the bot's own request: bring the first four, first non-disabled non-ally move with foe slot 1 as target, first healthy bench Pokémon on a forced switch. The engine validates; Areneon decides nothing about legality. |
 | `src/run-match.ts` | Bot vs bot: server + two bot clients, private challenge, writes `evidence/bot-vs-bot.*`, stops the server. |
 | `src/team.ts`, `src/evidence.ts` | Loads the synthetic team; writes the summary, decisions JSONL and player-view log. |
@@ -44,7 +44,7 @@ team is used or committed.
 | Private challenge → battle | `/challenge AreneonBotA, gen9championsvgc2026regmc` → `/accept` → Bo1 room `battle-gen9championsvgc2026regmc-N` |
 | OTS declined by every actor | `AreneonBotA rejected open team sheets.` and `AreneonBotB rejected open team sheets.` in the room log |
 | VGC Timer on | `Battle timer is ON`; every decision has a `Time left` line |
-| Battle completes | 6 turns, `|win|`, 1.16 s wall clock |
+| Battle completes | 6 turns, `\|win\|`, 1.16 s wall clock |
 | Engine rejections | 0 fallbacks across 18 decisions (preview, move, forced switch, fainted-slot `pass`) |
 
 Per-decision timing (`evidence/bot-vs-bot.decisions.jsonl`, request receipt to
@@ -64,7 +64,7 @@ only with a learned policy (#678 owns the timer-derived deadline).
 The committed player-view log is bot A's own view (own request, public log).
 The omniscient stream is never recorded.
 
-## Human path (A2): verified as far as possible without a human
+## Human path (A2): checks before the human match
 
 - `http://127.0.0.1:8000/` serves upstream's `server/static/index.html`, which
   redirects the browser to `https://localhost.psim.us`.
@@ -93,7 +93,7 @@ networking and no bind beyond `127.0.0.1`.
 |---|---|
 | Human reaches the bot | Official client via `http://localhost:8000` → `localhost.psim.us`, unregistered throwaway name, `/challenge` accepted |
 | Battle completes | 5 turns, the human won, 1291 s wall clock |
-| OTS declined | `AreneonBot rejected open team sheets.`; no `showteam` in the bot's view |
+| OTS declined | `AreneonBot rejected open team sheets.`; no `showteam` in the bot's player-view log (kept in gitignored `private-data/`) |
 | VGC Timer on | `timer_on: true`; all 8 bot decisions carry the timer state |
 | Bot decisions | 8 (preview, move, forced switch, fainted-slot `pass`), 0 fallbacks, max 0.62 ms against a 55 s turn cap |
 
@@ -204,7 +204,7 @@ wrapper checkout).
 ## Run
 
 ```bash
-make showdown
+make setup
 node spikes/677-bot-spike/src/run-match.ts      # bot vs bot, rewrites evidence/
 node spikes/677-bot-spike/src/human-match.ts    # waits for a human challenge
 node spikes/677-bot-spike/src/server.ts         # server only (Ctrl-C stops it)
