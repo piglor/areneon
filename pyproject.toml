@@ -32,5 +32,5 @@ python_version = "3.12"
 files = ["scripts", "tests"]
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+testpaths = ["tests", "spikes"]
 addopts = "--strict-markers --cov=scripts --cov-report=term-missing --cov-fail-under=90"
