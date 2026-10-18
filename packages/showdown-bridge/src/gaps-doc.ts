@@ -14,21 +14,17 @@ export interface FormatLabel {
 
 type Gap = Omit<GapRecord, "schema_version">;
 
-const cell = (text: string): string => text.replace(/\|/g, "\\|");
-
 function evidence(item: GapEvidence): string {
   if (item.kind === "fixture") return `fixture \`${item.path}\``;
   const symbols = item.symbols.map((symbol) => `\`${symbol}\``).join(", ");
   return symbols ? `\`${item.path}\` ${symbols}` : `\`${item.path}\``;
 }
 
-function table(gaps: Gap[]): string[] {
-  return [
-    "| Area | What Showdown does at the pin | Where |",
-    "|---|---|---|",
-    ...gaps.map((gap) => `| ${cell(gap.area)} | ${cell(gap.description)} | ${gap.evidence.map(evidence).join(", ")} |`),
-  ];
-}
+// The gap schema keeps area and description to one line without `|`, and
+// paths and symbols to plain characters, so nothing here needs escaping.
+const row = (gap: Gap): string => `| ${gap.area} | ${gap.description} | ${gap.evidence.map(evidence).join(", ")} |`;
+
+const TABLE_HEADER = ["| Area | What Showdown does at the pin | Where |", "|---|---|---|"];
 
 /**
  * Render the gap ledger. Rows are ordered by `gap_id`. A gap with no
@@ -38,16 +34,21 @@ export function renderGapsDoc(snapshot: RulesSnapshot, formats: FormatLabel[]): 
   const gaps: Gap[] = Object.entries(snapshot.gaps)
     .map(([gap_id, gap]) => ({ gap_id, ...gap }))
     .sort((a, b) => (a.gap_id < b.gap_id ? -1 : 1));
-  const tabulated = (status: GapRecord["status"]): Gap[] =>
+  const exercised = (status: GapRecord["status"]): Gap[] =>
     gaps.filter((gap) => gap.status === status && (status !== "unverified" || gap.evidence.length > 0));
-  const sections: [string, string[]][] = [
-    ["Verified in-game", table(tabulated("verified"))],
-    ["Implemented by the pinned engine, unverified in-game", table(tabulated("unverified"))],
-    ["Not supported by Areneon", table(tabulated("unsupported"))],
-    [
-      "Unknown or not yet exercised",
-      gaps.filter((gap) => gap.status === "unverified" && gap.evidence.length === 0).map((gap) => `- ${gap.description}`),
-    ],
+  const sections: { heading: string; header: string[]; body: string[] }[] = [
+    { heading: "Verified in-game", header: TABLE_HEADER, body: exercised("verified").map(row) },
+    {
+      heading: "Implemented by the pinned engine, unverified in-game",
+      header: TABLE_HEADER,
+      body: exercised("unverified").map(row),
+    },
+    { heading: "Not supported by Areneon", header: TABLE_HEADER, body: exercised("unsupported").map(row) },
+    {
+      heading: "Unknown or not yet exercised",
+      header: [],
+      body: gaps.filter((gap) => gap.status === "unverified" && gap.evidence.length === 0).map((gap) => `- ${gap.description}`),
+    },
   ];
   const formatList = formats
     .map(({ format_id, name, mod }) => `\`${format_id}\` (\`${name}\`, mod \`${mod}\`)`)
@@ -59,12 +60,12 @@ export function renderGapsDoc(snapshot: RulesSnapshot, formats: FormatLabel[]): 
     "",
     `Pin: smogon/pokemon-showdown \`${snapshot.showdown_commit}\`. Format: ${formatList}. Tracking: Redmine #670, ADR-003, ADR-007.`,
     "",
-    "Areneon makes **no claim of parity with the Pokémon Champions game**. This list records what the pinned engine does for Champions so that nothing is assumed silently. Every row stays *unverified* until an in-game golden fixture confirms it. Results that depend on an unverified row are labelled with it.",
+    "Areneon makes **no claim of parity with the Pokémon Champions game**. This list records what the pinned engine does for Champions so that nothing is assumed silently. A row is *unverified* until an in-game golden fixture confirms it. Results that depend on an unverified row are labelled with it.",
     "",
     "Engine paths are relative to `vendor/pokemon-showdown`. Review the records in `rules/gaps/` in every pin-bump PR.",
     ...sections
-      .filter(([heading, lines]) => lines.length > (heading.startsWith("Unknown") ? 0 : 2))
-      .flatMap(([heading, lines]) => ["", `## ${heading}`, "", ...lines]),
+      .filter(({ body }) => body.length > 0)
+      .flatMap(({ heading, header, body }) => ["", `## ${heading}`, "", ...header, ...body]),
     "",
   ].join("\n");
 }

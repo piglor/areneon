@@ -4,7 +4,7 @@
 
 Pin: smogon/pokemon-showdown `7244fe8e28fa8bc4d0809ae30d183c608b62bb2b`. Format: `gen9championsvgc2026regmc` (`[Gen 9 Champions] VGC 2026 Reg M-C`, mod `champions`). Tracking: Redmine #670, ADR-003, ADR-007.
 
-Areneon makes **no claim of parity with the Pokémon Champions game**. This list records what the pinned engine does for Champions so that nothing is assumed silently. Every row stays *unverified* until an in-game golden fixture confirms it. Results that depend on an unverified row are labelled with it.
+Areneon makes **no claim of parity with the Pokémon Champions game**. This list records what the pinned engine does for Champions so that nothing is assumed silently. A row is *unverified* until an in-game golden fixture confirms it. Results that depend on an unverified row are labelled with it.
 
 Engine paths are relative to `vendor/pokemon-showdown`. Review the records in `rules/gaps/` in every pin-bump PR.
 

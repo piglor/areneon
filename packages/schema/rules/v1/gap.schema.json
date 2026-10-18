@@ -9,15 +9,24 @@
   "properties": {
     "schema_version": { "const": 1 },
     "gap_id": { "type": "string", "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$" },
-    "area": { "type": "string", "minLength": 1 },
+    "area": {
+      "description": "One line without `|`: it is rendered into a Markdown table cell.",
+      "type": "string",
+      "pattern": "^[^|\\r\\n]*[^|\\s][^|\\r\\n]*$"
+    },
     "status": {
-      "description": "verified: an in-game golden fixture confirms it. unverified: not yet confirmed. unsupported: Areneon does not support it.",
+      "description": "verified: an in-game golden fixture confirms it (so it needs fixture evidence). unverified: not yet confirmed. unsupported: Areneon does not support it.",
       "enum": ["verified", "unverified", "unsupported"]
     },
-    "description": { "type": "string", "minLength": 1, "description": "Markdown, one paragraph." },
+    "description": {
+      "description": "Markdown, one line without `|`: it is rendered into a table cell or a list item.",
+      "type": "string",
+      "pattern": "^[^|\\r\\n]*[^|\\s][^|\\r\\n]*$"
+    },
     "evidence": {
       "description": "Where the behaviour lives. Empty means the engine has not been exercised on it yet.",
       "type": "array",
+      "uniqueItems": true,
       "items": {
         "oneOf": [
           {
@@ -26,8 +35,16 @@
             "required": ["kind", "path", "symbols"],
             "properties": {
               "kind": { "const": "engine" },
-              "path": { "type": "string", "pattern": "^[a-z0-9][a-z0-9_./-]*$", "description": "Relative to vendor/pokemon-showdown." },
-              "symbols": { "type": "array", "items": { "type": "string", "minLength": 1 } }
+              "path": {
+                "description": "Relative to vendor/pokemon-showdown, with no `.` or `..` segment.",
+                "type": "string",
+                "pattern": "^(?!.*(^|/)\\.\\.?(/|$))[a-z0-9][a-z0-9_./-]*$"
+              },
+              "symbols": {
+                "type": "array",
+                "uniqueItems": true,
+                "items": { "type": "string", "pattern": "^[A-Za-z_$][A-Za-z0-9_$.]*$" }
+              }
             }
           },
           {
@@ -36,10 +53,23 @@
             "required": ["kind", "path"],
             "properties": {
               "kind": { "const": "fixture" },
-              "path": { "type": "string", "pattern": "^fixtures/[a-z0-9_./-]+$" }
+              "path": {
+                "description": "Relative to the repository root, with no `.` or `..` segment.",
+                "type": "string",
+                "pattern": "^(?!.*(^|/)\\.\\.?(/|$))fixtures/[a-z0-9_./-]+$"
+              }
             }
           }
         ]
+      }
+    }
+  },
+  "if": { "properties": { "status": { "const": "verified" } } },
+  "then": {
+    "properties": {
+      "evidence": {
+        "type": "array",
+        "contains": { "type": "object", "required": ["kind"], "properties": { "kind": { "const": "fixture" } } }
       }
     }
   }
