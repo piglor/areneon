@@ -39,6 +39,10 @@ describe("LegalChoiceSet", () => {
     for (const field of ["request_seq", "request_hash", "rqid"]) {
       expect(properties("legal-choice-set")[field], field).toEqual(properties("request-identity")[field]);
     }
+    // And with the same optionality: required here exactly where RequestIdentity requires it.
+    const required = (name: string) => schema(name).required as string[];
+    const identityFields = Object.keys(properties("request-identity"));
+    expect(required("legal-choice-set").filter((f) => identityFields.includes(f))).toEqual(required("request-identity"));
   });
 
   it("is a persisted root: schema_version 1, closed", () => {
