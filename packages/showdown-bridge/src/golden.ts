@@ -135,7 +135,8 @@ export interface TeamFixtureManifest {
   provenance: string;
   license: string;
   format_id: string;
-  fixtures: Record<string, { expect: "legal" | "illegal"; purpose: string }>;
+  /** `reason`: text the validator's first problem must contain (illegal only). */
+  fixtures: Record<string, { expect: "legal" | "illegal"; purpose: string; reason?: string }>;
 }
 
 export function teamFixtureManifest(): TeamFixtureManifest {

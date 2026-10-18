@@ -4,14 +4,14 @@
   "format_id": "gen9championsvgc2026regmc",
   "fixtures": {
     "legal-synthetic.txt": { "expect": "legal", "purpose": "every set uses Stat Points; nickname and gender round-trip" },
-    "illegal-stat-points-over-32.txt": { "expect": "illegal", "purpose": "33 Stat Points in one stat (cap 32)" },
-    "illegal-stat-points-over-total.txt": { "expect": "illegal", "purpose": "96 total Stat Points (cap 66)" },
-    "illegal-zero-stat-points.txt": { "expect": "illegal", "purpose": "0 Stat Points with Serious nature" },
-    "illegal-species-clause.txt": { "expect": "illegal", "purpose": "two Venusaur" },
-    "illegal-item-clause.txt": { "expect": "illegal", "purpose": "two Leftovers" },
-    "illegal-not-in-roster.txt": { "expect": "illegal", "purpose": "species outside the Champions roster" },
-    "illegal-restricted-legendary.txt": { "expect": "illegal", "purpose": "Restricted Legendary banned by Flat Rules" },
-    "illegal-unlearnable-move.txt": { "expect": "illegal", "purpose": "move outside the learnset" },
-    "illegal-five-pokemon.txt": { "expect": "illegal", "purpose": "fewer than 6 Pokémon brought" }
+    "illegal-stat-points-over-32.txt": { "expect": "illegal", "purpose": "33 Stat Points in one stat (cap 32)", "reason": "has more than 32 Stat Points in HP" },
+    "illegal-stat-points-over-total.txt": { "expect": "illegal", "purpose": "96 total Stat Points (cap 66)", "reason": "96 total Stat Points" },
+    "illegal-zero-stat-points.txt": { "expect": "illegal", "purpose": "0 Stat Points with Serious nature", "reason": "has exactly 0 Stat Points" },
+    "illegal-species-clause.txt": { "expect": "illegal", "purpose": "two Venusaur", "reason": "Species Clause" },
+    "illegal-item-clause.txt": { "expect": "illegal", "purpose": "two Leftovers", "reason": "Item Clause" },
+    "illegal-not-in-roster.txt": { "expect": "illegal", "purpose": "species outside the Champions roster (the champions mod reports it as not existing)", "reason": "Bulbasaur does not exist" },
+    "illegal-restricted-legendary.txt": { "expect": "illegal", "purpose": "Restricted Legendary banned by Flat Rules", "reason": "Restricted Legendary" },
+    "illegal-unlearnable-move.txt": { "expect": "illegal", "purpose": "move outside the learnset", "reason": "can't learn Spore" },
+    "illegal-five-pokemon.txt": { "expect": "illegal", "purpose": "fewer than 6 Pokémon brought", "reason": "at least 6 Pokémon" }
   }
 }

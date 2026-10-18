@@ -24,7 +24,7 @@ Paths are relative to `vendor/pokemon-showdown`. Update this file in every pin-b
 | Terastallization | Not offered in the golden turn request (no `canTerastallize`) | golden `turn.request.json` |
 | Timer | Showdown `VGC Timer`: 90 s preview, 420 s bank, 55 s per turn, auto-choose on timeout. This is a server rule; the in-process sim does not run it. | `data/rulesets.ts` `vgctimer` |
 | Open Team Sheets | Opt-in in Bo1 (`Open Team Sheets`), forced in Bo3. Areneon supports Bo1 only and declines. | `data/rulesets.ts` |
-| PokePaste | `Teams.import` reads Stat Points from the `EVs:` line and silently skips lines it does not know (an `SPs:` line leaves every Stat Point at 0). Areneon's `importPaste` rejects any line that does not survive a re-export. Team legality messages are logged in `fixtures/teams/<format>/verdicts.json`. | `sim/teams.ts` `import`, `export` |
+| PokePaste | `Teams.import` reads Stat Points from the `EVs:` line and silently skips lines it does not know (an `SPs:` line leaves every Stat Point at 0). A repeated line overwrites the earlier one. Areneon's `importPaste` rejects a paste unless each Pokémon's lines all reappear in that Pokémon's re-export, so it accepts only the engine's canonical form (reordered stats, `Level: 100` or a teambuilder header are rejected). Team legality messages are logged in `fixtures/teams/<format>/verdicts.json`. | `sim/teams.ts` `import`, `export` |
 
 ## Unknown or not yet exercised
 
