@@ -125,7 +125,7 @@ policy_budget = max(0, submit_within − f)           # 0 ⇒ skip policy, send 
 **Battle.** The guarantees follow from the formulas:
 
 1. `submit_within ≤ T − m`, so the choice reaches the server before `turnSecondsLeft` hits 0, provided one-way latency plus scheduling jitter stays under `m`. **Auto-choose cannot fire.**
-2. Planned spending per decision is at most `(B − B_res)/R̂ ≤ (B − B_res)/4`. Spendable bank therefore shrinks at most geometrically: after `n` decisions `B − B_res ≥ (3/4)^n (B₀ − B_res)`. **It never reaches the reserve by planned spending, whatever the battle length or the estimator error.**
+2. Planned spending per decision is at most `(B − B_res)/R̂ ≤ (B − B_res)/4`. Spendable bank therefore shrinks at most geometrically: after `n` decisions `B − B_res ≥ (3/4)^n (B₀ − B_res)`. **It never reaches the reserve by planned spending, whatever the battle length or the estimator error.** This bound covers planned spending only; latency beyond the margin `m` is covered by point 1 and the property test, not by this inequality.
 3. Once the allocation drops below about 5 s, tick quantization makes decisions free (§1.2). The bank settles at a fixed point, about 35 s in the worked example, and the bot still has about 4 s per decision indefinitely.
 4. `T = min(B, 55) ≥ 5` whenever `B > 0`, because `B` is a multiple of 5. With `m = 3` there are always ≥ 2 s to send the fallback.
 
@@ -204,7 +204,7 @@ All durations are relative. No wall-clock timestamps go into a policy input, whi
 
 | Field | Type | Meaning |
 |---|---|---|
-| `elapsed_ms` | int | Already in the glossary: receipt to choice ready |
+| `elapsed_ms` | int | Receipt to choice ready (the glossary's "elapsed time" of a Recommendation) |
 | `deadline_outcome` | enum `in_budget` \| `fallback_timeout` \| `fallback_error` \| `fallback_invalid` \| `skipped_low_budget` \| `last_resort_default` | §3 |
 | `source_policy_id` | string | The policy that produced the submitted choice (the fallback's ID when it fell back) |
 
@@ -245,7 +245,7 @@ Output of `uv run python spikes/678-timer-budget/timer_budget.py`, using the syn
 Reading the table:
 
 - The 20 s ADR cap binds for the first 9 battle decisions. After that the budget tapers with the bank.
-- From decision 34 the bank holds at **35 s**. Each 4 s decision lands under one tick, so it costs nothing.
+- From about decision 31 the bank holds at **35 s**. Each 4 s decision lands under one tick, so it costs nothing.
 - The battle can continue indefinitely with no auto-choose and no forfeit.
 - `R̂` underestimates this stall battle badly (5 at turn 40), and the bank still survives (§2.2, guarantee 2).
 - A flat 20 s policy fails at battle decision 21 (§1.7).
@@ -257,7 +257,7 @@ Reading the table:
    - that a 4 s answer costs 0 s;
    - the measured RTT, to set `m`.
 2. **Who turns the timer on.** ADR-005 has to decide whether the A2 bot sends `/timer on` at battle start, for VGC realism and a server-authoritative snapshot, or leaves the choice to the human. The budget is safe either way because of the shadow timer. But a human enabling the timer mid-battle hands the current request a fresh 90 s cap, and that A2 state cannot be reproduced in A1.
-3. **Disconnects.** In a `/challenge` battle, `dcTimerBank` is on (`server/room-battle.ts:197`). A disconnected player then loses `dcSecondsLeft` (300 s, `:211`) instead of bank (`:353-366`).
+3. **Disconnects.** In a `/challenge` battle, `dcTimerBank` is on (`server/room-battle.ts:197`). A disconnected player then loses `dcSecondsLeft` (300 s, `:213`) instead of bank (`:353-366`).
    - The format's `DC Timer Bank` rule itself only sets `dcTimer` (`sim/dex-formats.ts:290-295`). This looks like an upstream quirk, worth confirming live.
    - Reconnect handling for the bot client is out of scope here.
 4. **Estimator calibration.** `turns_per_pokemon = 1.5` and `min_remaining_decisions = 4` are reasoned defaults, not measured. Refit them from episode statistics. Safety does not depend on them.
