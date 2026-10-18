@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "gap_id": "paralysis",
+  "area": "Paralysis",
+  "status": "unverified",
+  "description": "Full paralysis chance 1/8",
+  "evidence": [
+    {
+      "kind": "engine",
+      "path": "data/mods/champions/conditions.ts",
+      "symbols": [
+        "par"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "gap_id": "roster-and-learnsets",
+  "area": "Roster and learnsets",
+  "status": "unverified",
+  "description": "Champions-specific legality data",
+  "evidence": [
+    {
+      "kind": "engine",
+      "path": "data/mods/champions/formats-data.ts",
+      "symbols": []
+    },
+    {
+      "kind": "engine",
+      "path": "data/mods/champions/learnsets.ts",
+      "symbols": []
+    }
+  ]
+}

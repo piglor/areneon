@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:areneon:schema:rules:v1:gap",
+  "title": "Areneon gap ledger record (ADR-007)",
+  "description": "What the pinned engine does for one Champions mechanic and how far that is verified. Areneon claims no parity with the game; this records what is assumed. Never part of format_rules_hash.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "gap_id", "area", "status", "description", "evidence"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "gap_id": { "type": "string", "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$" },
+    "area": { "type": "string", "minLength": 1 },
+    "status": {
+      "description": "verified: an in-game golden fixture confirms it. unverified: not yet confirmed. unsupported: Areneon does not support it.",
+      "enum": ["verified", "unverified", "unsupported"]
+    },
+    "description": { "type": "string", "minLength": 1, "description": "Markdown, one paragraph." },
+    "evidence": {
+      "description": "Where the behaviour lives. Empty means the engine has not been exercised on it yet.",
+      "type": "array",
+      "items": {
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["kind", "path", "symbols"],
+            "properties": {
+              "kind": { "const": "engine" },
+              "path": { "type": "string", "pattern": "^[a-z0-9][a-z0-9_./-]*$", "description": "Relative to vendor/pokemon-showdown." },
+              "symbols": { "type": "array", "items": { "type": "string", "minLength": 1 } }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["kind", "path"],
+            "properties": {
+              "kind": { "const": "fixture" },
+              "path": { "type": "string", "pattern": "^fixtures/[a-z0-9_./-]+$" }
+            }
+          }
+        ]
+      }
+    }
+  }
+}

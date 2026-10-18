@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "gap_id": "move-item-ability-overrides",
+  "area": "Moves, items, abilities",
+  "status": "unverified",
+  "description": "257 move, 253 item and 15 ability overrides of the Gen 9 data (count: `grep -c $'^\\t[a-z0-9]*: {' <file>`)",
+  "evidence": [
+    {
+      "kind": "engine",
+      "path": "data/mods/champions/moves.ts",
+      "symbols": []
+    },
+    {
+      "kind": "engine",
+      "path": "data/mods/champions/items.ts",
+      "symbols": []
+    },
+    {
+      "kind": "engine",
+      "path": "data/mods/champions/abilities.ts",
+      "symbols": []
+    }
+  ]
+}

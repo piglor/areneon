@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "gap_id": "terastallization",
+  "area": "Terastallization",
+  "status": "unverified",
+  "description": "Not offered in the golden turn request (no `canTerastallize`)",
+  "evidence": [
+    {
+      "kind": "fixture",
+      "path": "fixtures/showdown/gen9championsvgc2026regmc/turn.request.json"
+    }
+  ]
+}

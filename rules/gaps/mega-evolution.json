@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "gap_id": "mega-evolution",
+  "area": "Mega Evolution",
+  "status": "unverified",
+  "description": "Mega forms persist after fainting",
+  "evidence": [
+    {
+      "kind": "engine",
+      "path": "data/mods/champions/scripts.ts",
+      "symbols": [
+        "formeChange"
+      ]
+    }
+  ]
+}

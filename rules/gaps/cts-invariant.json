@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "gap_id": "cts-invariant",
+  "area": "CTS invariant",
+  "status": "unverified",
+  "description": "The CTS invariant (an OTS-declined preview shows species and details only) is owned by #676.",
+  "evidence": []
+}

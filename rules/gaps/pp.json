@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "gap_id": "pp",
+  "area": "PP",
+  "status": "unverified",
+  "description": "Max PP is `(pp / 5 + 1) * 4`; base PP above 20 is capped to 20",
+  "evidence": [
+    {
+      "kind": "engine",
+      "path": "data/mods/champions/scripts.ts",
+      "symbols": [
+        "calculatePP",
+        "init"
+      ]
+    }
+  ]
+}

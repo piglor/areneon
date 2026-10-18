@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "gap_id": "open-team-sheets",
+  "area": "Open Team Sheets",
+  "status": "unverified",
+  "description": "Opt-in in Bo1 (`Open Team Sheets`), forced in Bo3. Areneon supports Bo1 only and declines.",
+  "evidence": [
+    {
+      "kind": "engine",
+      "path": "data/rulesets.ts",
+      "symbols": []
+    }
+  ]
+}

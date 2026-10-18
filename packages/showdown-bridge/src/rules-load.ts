@@ -7,6 +7,7 @@ import {
   type ChannelFile,
   DEFAULT_RULES_DIR,
   type FormatRecord,
+  type GapRecord,
   readChannel,
   readRuleRecords,
   type RegulationRecord,
@@ -20,7 +21,7 @@ export const RULES_SCHEMA_DIR = fileURLToPath(
   new URL("../../schema/rules", import.meta.url),
 );
 
-type Kind = "format" | "regulation" | "channel";
+type Kind = "format" | "regulation" | "gap" | "channel";
 
 const ajv = new Ajv2020({ allErrors: true, strict: true });
 const validators = new Map<string, ValidateFunction>();
@@ -60,8 +61,9 @@ const versionOf = (value: unknown): unknown =>
 /**
  * Read, validate and assemble the rules records into the snapshot for
  * `showdownCommit`. Fails closed on any malformed, unknown-version or
- * unknown-key record, a file named differently from its ID, an unsorted
- * or duplicated forbidden rule, or a format naming an unknown regulation.
+ * unknown-key record (formats, regulations, gaps), a file named differently
+ * from its ID, an unsorted or duplicated forbidden rule, or a format naming
+ * an unknown regulation.
  */
 export function loadRulesSnapshot(
   showdownCommit: string,
@@ -91,7 +93,14 @@ export function loadRulesSnapshot(
     return record;
   });
   if (formats.length === 0) throw new RulesError(`no format records in ${dir}/formats`);
-  return buildSnapshot({ formats, regulations }, showdownCommit);
+  const gaps = raw.gaps.map(({ file, value }) => {
+    const record = check<GapRecord>(value, versionOf(value), "gap", `gaps/${file}`);
+    if (file !== `${record.gap_id}.json`) {
+      throw new RulesError(`gaps/${file} must be named ${record.gap_id}.json`);
+    }
+    return record;
+  });
+  return buildSnapshot({ formats, regulations, gaps }, showdownCommit);
 }
 
 /** Validate a parsed `rules/channels/<channel>.json`, e.g. one read from another commit. */

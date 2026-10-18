@@ -41,6 +41,7 @@ export interface SimStream extends AsyncIterable<string> {
 export interface SimFormat {
   exists: boolean;
   id: string;
+  name: string;
   mod: string;
   gameType: string;
 }

@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "gap_id": "sleep",
+  "area": "Sleep",
+  "status": "unverified",
+  "description": "Lasts 2 or 3 turns (1/3 chance to wake on turn 2)",
+  "evidence": [
+    {
+      "kind": "engine",
+      "path": "data/mods/champions/conditions.ts",
+      "symbols": [
+        "slp"
+      ]
+    }
+  ]
+}

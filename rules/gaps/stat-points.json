@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "gap_id": "stat-points",
+  "area": "Stat Points",
+  "status": "unverified",
+  "description": "The set's `evs` field holds Stat Points. Stats at level 50 are `base + SP + 20` (HP `base + SP + 75`), then the nature applies. The validator rejects a set with 0 Stat Points under Serious (it suggests another neutral nature if that was intended).",
+  "evidence": [
+    {
+      "kind": "engine",
+      "path": "data/mods/champions/scripts.ts",
+      "symbols": [
+        "statModify"
+      ]
+    }
+  ]
+}

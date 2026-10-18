@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "gap_id": "team-preview",
+  "area": "Team Preview",
+  "status": "unverified",
+  "description": "Bring 6, choose 4, two leads (`maxChosenTeamSize: 4`, doubles)",
+  "evidence": [
+    {
+      "kind": "fixture",
+      "path": "fixtures/showdown/gen9championsvgc2026regmc/preview.request.json"
+    }
+  ]
+}
