@@ -1,0 +1,60 @@
+Tyranitar @ Smooth Rock  
+Ability: Sand Stream  
+Level: 50  
+EVs: 32 HP / 32 Atk / 2 SpD  
+Adamant Nature  
+- Rock Slide  
+- Crunch  
+- Low Kick  
+- Stone Edge  
+
+Garchomp @ Life Orb  
+Ability: Rough Skin  
+Level: 50  
+EVs: 2 HP / 32 Atk / 32 Spe  
+Jolly Nature  
+- Earthquake  
+- Dragon Claw  
+- Fire Fang  
+- Swords Dance  
+
+Gardevoir @ Choice Scarf  
+Ability: Trace  
+Level: 50  
+EVs: 2 HP / 32 SpA / 32 Spe  
+Timid Nature  
+- Moonblast  
+- Psychic  
+- Dazzling Gleam  
+- Trick  
+
+Arcanine @ Expert Belt  
+Ability: Intimidate  
+Level: 50  
+EVs: 32 HP / 32 Atk / 2 Spe  
+Adamant Nature  
+- Flare Blitz  
+- Extreme Speed  
+- Snarl  
+- Wild Charge  
+
+Metagross @ Lum Berry  
+Ability: Clear Body  
+Level: 50  
+EVs: 32 HP / 32 Atk / 2 Def  
+Adamant Nature  
+- Meteor Mash  
+- Zen Headbutt  
+- Bullet Punch  
+- Iron Defense  
+
+Gyarados @ Rocky Helmet  
+Ability: Moxie  
+Level: 50  
+EVs: 32 HP / 32 Atk / 2 Spe  
+Adamant Nature  
+- Waterfall  
+- Bounce  
+- Dragon Dance  
+- Taunt  
+
