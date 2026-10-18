@@ -51,8 +51,10 @@ http
       });
       res.end(JSON.stringify({ roomid: room.roomid }));
     } catch (error) {
+      // Log details locally; never echo exception text back to the client.
+      console.error(error);
       res.statusCode = 400;
-      res.end(JSON.stringify({ error: String(error) }));
+      res.end(JSON.stringify({ error: "could not create the battle" }));
     }
   })
   .listen(controlPort, "127.0.0.1", () => console.log(`READY ${port} ${controlPort}`));
