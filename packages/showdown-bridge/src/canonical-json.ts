@@ -44,11 +44,12 @@ function assertIJson(value: Json): void {
 /**
  * RFC 8785 (JCS) canonical form. `canonicalJson` already sorts keys by UTF-16
  * code units and prints numbers the ECMAScript way; this adds the I-JSON
- * checks it lacks: no lone surrogate, in keys or values. Every language
+ * check it lacks: no lone surrogate, in keys or values. Every language
  * reproduces fixtures/contracts/jcs-vectors.json. An integer literal beyond
  * ±(2^53−1) cannot be held exactly by a JS number at all; contract schemas
- * bound every integer inside that range and only validated data is hashed. `canonicalJson` is left unchanged so `request_hash` and
- * `ruleset_hash` keep their bytes.
+ * bound every integer inside that range and only validated data is hashed.
+ * `canonicalJson` is left unchanged so `request_hash` and `ruleset_hash`
+ * keep their bytes.
  */
 export function jcs(value: Json): string {
   assertIJson(value);
