@@ -1,10 +1,28 @@
 export {
+  type Candidate,
+  type CandidateSet,
+  enumerateCandidates,
+  EnumerationError,
+} from "./choices.ts";
+export {
+  type ChoiceJudge,
+  CloneJudge,
+  EnumeratorDefectError,
+  JudgeStateError,
+  type LegalChoiceOptions,
+  type LegalChoiceSet,
+  legalChoiceSet,
+  type Verdict,
+} from "./choice-judge.ts";
+export {
   DEFAULT_SHOWDOWN_DIR,
   type Engine,
   EngineError,
   loadEngine,
   PINNED_SHOWDOWN_COMMIT,
   type PokemonSet,
+  type SimBattle,
+  type SimSide,
   type StatTable,
 } from "./engine.ts";
 export {

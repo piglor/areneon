@@ -57,8 +57,32 @@ export interface SimRuleTable extends Map<string, string> {
   evLimit: number | null;
 }
 
+/** One side of an in-process battle, narrowed to checking a choice. */
+export interface SimSide {
+  id: string;
+  /** The request last sent to this side, as JSON-safe data. */
+  activeRequest: object | null;
+  choice: { error: string };
+  /** Parse and check a whole choice string without committing the turn. */
+  choose(input: string): boolean;
+  isChoiceDone(): boolean;
+  clearChoice(): void;
+}
+
+/** An in-process battle, narrowed to what `CloneJudge` reads (ADR-006). */
+export interface SimBattle {
+  sides: SimSide[];
+  /** When set, a refused choice throws instead of returning false. */
+  strictChoices?: boolean;
+  toJSON(): object;
+}
+
 /** The slice of Showdown's `sim` module Areneon depends on. */
 export interface ShowdownSim {
+  Battle: {
+    /** Rebuild a battle from `toJSON()`; without `send` it emits nothing. */
+    fromJSON(state: object): SimBattle;
+  };
   BattleStream: new () => object;
   getPlayerStreams(stream: object): Record<"omniscient" | "p1" | "p2", SimStream>;
   Dex: {
