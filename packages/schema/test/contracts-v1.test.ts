@@ -77,6 +77,47 @@ describe("PreviewObservation and BattleObservation", () => {
   });
 });
 
+describe("Recommendation", () => {
+  const valid = validator("recommendation");
+  const rec = {
+    schema_version: 1,
+    identity: { request_seq: 2, request_hash: HASH },
+    choice: "move 1 1, move 2 2",
+    source_policy_id: "first-legal",
+    elapsed_ms: 40,
+    deadline_outcome: "in_budget",
+  };
+
+  it("needs a known deadline outcome and a policy", () => {
+    expect(valid(rec)).toBe(true);
+    expect(valid({ ...rec, deadline_outcome: "late" })).toBe(false);
+    expect(valid({ ...rec, source_policy_id: "" })).toBe(false);
+    expect(valid({ ...rec, confidence: 0.9 })).toBe(false);
+  });
+});
+
+describe("Episode decision deadline", () => {
+  // The Deadline definition on its own, with the Episode's $defs for its refs.
+  const { $defs } = schema("episode");
+  const valid = ajvFor("contract").compile({ $defs, $ref: "#/$defs/Deadline" });
+  const record = {
+    deadline_outcome: "fallback_timeout",
+    elapsed_ms: 20100,
+    submitted_after_ms: 20150,
+    bank_seconds_after: null,
+    server_auto_choose_detected: false,
+  };
+
+  it("keeps bank_seconds_after required but nullable, and auto-choose a plain boolean", () => {
+    expect(valid(record)).toBe(true);
+    expect(valid({ ...record, bank_seconds_after: 400 })).toBe(true);
+    expect(valid({ ...record, server_auto_choose_detected: true })).toBe(true);
+    const { bank_seconds_after, ...missing } = record;
+    expect(valid(missing)).toBe(false);
+    expect(valid({ ...record, server_auto_choose_detected: "no" })).toBe(false);
+  });
+});
+
 describe("DecisionContext", () => {
   const valid = validator("decision-context");
   const preview = {
