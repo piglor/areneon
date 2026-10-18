@@ -2,6 +2,10 @@ import { enumerateCandidates } from "./choices.ts";
 import type { Engine, SimAction, SimBattle, SimSide } from "./engine.ts";
 import type { DecodedRequest, JsonObject } from "./request.ts";
 import { requestHash } from "./request-identity.ts";
+import type { LegalChoiceSet } from "@areneon/schema/types/v1/legal-choice-set.ts";
+
+/** The set a policy chooses from (ADR-006): generated from its contract schema (ADR-008). */
+export type { LegalChoiceSet };
 
 /** The pinned engine's answer for one choice string. */
 export interface Verdict {
@@ -165,20 +169,6 @@ export function judgeSubmission(choice: string, error: string): SubmissionVerdic
   return { choice, legal: false, error, revealed: error.startsWith("[Unavailable choice]") };
 }
 
-/** The set a policy chooses from (ADR-006). */
-export interface LegalChoiceSet {
-  request_seq: number;
-  request_hash: string;
-  showdown_commit: string;
-  /** Not pending; engine-accepted wherever a `ChoiceJudge` exists. */
-  choices: string[];
-  /**
-   * Offered without a verdict: their legality depends on hidden
-   * information. The engine decides when one is submitted.
-   */
-  pending: string[];
-}
-
 /** The enumerator proposed a choice the engine refuses: a defect, never retried. */
 export class EnumeratorDefectError extends Error {
   override name = "EnumeratorDefectError";
@@ -227,8 +217,10 @@ export function legalChoiceSet({
   const refused = verdicts.filter((v) => !v.legal);
   if (refused.length > 0) throw new EnumeratorDefectError(refused);
   return {
+    schema_version: 1,
     request_seq: request.request_seq,
     request_hash: request.request_hash,
+    ...(request.rqid === undefined ? {} : { rqid: request.rqid }),
     showdown_commit,
     choices,
     pending,

@@ -1,5 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { ajvFor } from "@areneon/schema/ajv";
+import legalChoiceSetSchema from "@areneon/schema/contracts/v1/legal-choice-set.schema.json" with { type: "json" };
 import { beforeAll, describe, expect, it } from "vitest";
 import {
   GOLDEN_DIR,
@@ -27,6 +29,12 @@ let engine: Engine;
 beforeAll(() => {
   engine = loadEngine();
 });
+
+/** The contract validator for LegalChoiceSet (ADR-008 §2). */
+const validLegalChoiceSet = ajvFor("contract").compile(legalChoiceSetSchema);
+function expectContract(set: LegalChoiceSet): void {
+  expect(validLegalChoiceSet(set), JSON.stringify(validLegalChoiceSet.errors)).toBe(true);
+}
 
 function start(seed: string, teams: Record<"p1" | "p2", PokemonSet[]>): SimBattle {
   const battle = new engine.sim.Battle({ formatid: GOLDEN_FORMAT, seed });
@@ -162,6 +170,8 @@ describe("the engine accepts every non-pending candidate", () => {
     for (const set of seen.sets) {
       expect(set.showdown_commit).toBe(engine.commit);
       expect(set.choices.length).toBeGreaterThan(0);
+      expectContract(set);
+      expect(set).not.toHaveProperty("rqid");
     }
   });
 
@@ -190,6 +200,8 @@ describe("the engine accepts every non-pending candidate", () => {
     expect(offered.some((c) => /^switch \d, switch \d$/.test(c))).toBe(true);
     expect(all.flatMap((s) => s.pruned).some((c) => /^switch (\d), switch \1$/.test(c))).toBe(true);
     expect(all.some((s) => s.sets.some((set) => set.request_seq > 10))).toBe(true);
+    all.forEach((s) => s.sets.forEach(expectContract));
+    expect(all.some((s) => s.sets.some((set) => set.pending.length > 0))).toBe(true);
   }, 60_000);
 
   it("with two Mega-capable actives: Mega on either slot, never both", () => {
@@ -292,6 +304,14 @@ describe("legalChoiceSet", () => {
       showdown_commit: engine.commit,
       judge,
     });
+
+  it("carries the server's rqid when the request has one, never otherwise", () => {
+    const withRqid = legalChoiceSet({ request: { ...preview(), rqid: 7 }, showdown_commit: engine.commit, judge: null });
+    expect(withRqid.rqid).toBe(7);
+    expectContract(withRqid);
+    expect(run(null)).not.toHaveProperty("rqid");
+    expect(run(null).schema_version).toBe(1);
+  });
 
   it("fails on any enumerated choice the engine refuses", () => {
     const refuseAll: ChoiceJudge = {
