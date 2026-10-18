@@ -13,15 +13,24 @@ dev = [
     "pytest-cov==7.1.0",
     "hypothesis==6.170.1",
     "pre-commit>=4",
+    "datamodel-code-generator==0.85.0",
+    "types-jsonschema==4.26.0.20261006",
+    "areneon-contracts",
 ]
 
 [tool.uv]
 package = false
 
+[tool.uv.workspace]
+members = ["packages/schema/python"]
+
+[tool.uv.sources]
+areneon-contracts = { workspace = true }
+
 [tool.ruff]
 line-length = 100
 target-version = "py312"
-extend-exclude = [".agents", "vendor"]
+extend-exclude = [".agents", "vendor", "packages/schema/python/areneon_contracts/models"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF", "PL", "PT"]
@@ -29,8 +38,8 @@ select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF", "PL", "PT"]
 [tool.mypy]
 strict = true
 python_version = "3.12"
-files = ["scripts", "tests"]
+files = ["scripts", "tests", "packages/schema/python/areneon_contracts"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests", "spikes"]
-addopts = "--strict-markers --cov=scripts --cov-report=term-missing --cov-fail-under=90"
+addopts = "--strict-markers --cov=scripts --cov=areneon_contracts --cov-report=term-missing --cov-fail-under=90"

@@ -32,13 +32,15 @@ ts: showdown
 	$(MAKE) contracts
 
 # Contract schemas (ADR-008): every schema in packages/schema/contracts/ must
-# fit its profile, and the checked-in generated types must match a fresh run
-# of the pinned generator. contracts-update rewrites those types.
+# fit its profile, and the checked-in generated TS types and pydantic models
+# must match a fresh run of the pinned generators. contracts-update rewrites them.
 contracts:
 	node packages/schema/scripts/contracts.ts
+	uv run python scripts/contract_models.py
 
 contracts-update:
 	node packages/schema/scripts/contracts.ts --write
+	uv run python scripts/contract_models.py --write
 
 guards: team-guard licences
 
@@ -50,6 +52,7 @@ team-guard:
 
 licences:
 	pnpm -r licenses list --prod --json | uv run --no-project python scripts/check_licenses.py
+	uv run python scripts/python_licences.py | uv run --no-project python scripts/check_licenses.py
 
 # Proves `make licences` fails on an injected AGPL dependency, on a scratch
 # copy. CI-only: it needs network, so `make check` does not run it.

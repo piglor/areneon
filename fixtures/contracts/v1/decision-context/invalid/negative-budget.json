@@ -1,0 +1,18 @@
+{
+  "timer_source": "server",
+  "timer_rules": {
+    "starting": 420,
+    "grace": 90,
+    "add_per_turn": 0,
+    "max_per_turn": 55,
+    "max_first_turn": 90,
+    "tick": 5
+  },
+  "turn_seconds_left": 55,
+  "bank_seconds_left": 400,
+  "grace_seconds_left": 0,
+  "remaining_decisions_estimate": 8,
+  "safety_margin_ms": 3000,
+  "submit_within_ms": 20000,
+  "policy_budget_ms": -1
+}
