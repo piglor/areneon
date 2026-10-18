@@ -57,29 +57,59 @@ export interface SimRuleTable extends Map<string, string> {
   evLimit: number | null;
 }
 
+/** One parsed action of a side's choice (`side.choice.actions`). */
+export interface SimAction {
+  choice: string;
+  /** The Pokémon acting (move, team) or switching out. */
+  pokemon?: object;
+  /** The Pokémon switched in. */
+  target?: object;
+  moveid?: string;
+  targetLoc?: number;
+  mega?: boolean;
+  megax?: boolean;
+  megay?: boolean;
+  terastallize?: string;
+  /** Team Preview: the position this Pokémon was picked for. */
+  index?: number;
+}
+
 /** One side of an in-process battle, narrowed to checking a choice. */
 export interface SimSide {
   id: string;
+  /** The side's Pokémon, in the order its requests list them. */
+  pokemon: object[];
+  /** `teampreview`, `move`, `switch`, or `` when nothing is asked. */
+  requestState: string;
   /** The request last sent to this side, as JSON-safe data. */
   activeRequest: object | null;
-  choice: { error: string };
+  choice: { error: string; actions: SimAction[] };
   /** Parse and check a whole choice string without committing the turn. */
   choose(input: string): boolean;
   isChoiceDone(): boolean;
   clearChoice(): void;
 }
 
-/** An in-process battle, narrowed to what `CloneJudge` reads (ADR-006). */
+/**
+ * An in-process battle (ADR-006). `CloneJudge` reads it; the choice corpus
+ * drives one directly to reach each case's request.
+ */
 export interface SimBattle {
   sides: SimSide[];
+  ended: boolean;
+  turn: number;
   /** When set, a refused choice throws instead of returning false. */
   strictChoices?: boolean;
+  setPlayer(slot: string, options: { name: string; team: string }): void;
+  /** Commits the turn once both sides are done. Never called by a judge. */
+  choose(slot: string, input: string): boolean;
   toJSON(): object;
 }
 
 /** The slice of Showdown's `sim` module Areneon depends on. */
 export interface ShowdownSim {
   Battle: {
+    new (options: { formatid: string; seed: string }): SimBattle;
     /** Rebuild a battle from `toJSON()`; without `send` it emits nothing. */
     fromJSON(state: object): SimBattle;
   };

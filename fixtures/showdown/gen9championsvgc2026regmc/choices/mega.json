@@ -1,0 +1,1700 @@
+{
+  "id": "mega",
+  "kind": "mega",
+  "purpose": "one Mega-capable active",
+  "seed": "sodium,00000000000000000000000000000000",
+  "teams": {
+    "p1": [
+      {
+        "name": "Venusaur",
+        "species": "Venusaur",
+        "item": "Leftovers",
+        "ability": "Overgrow",
+        "moves": [
+          "Giga Drain",
+          "Sludge Bomb",
+          "Protect",
+          "Sleep Powder"
+        ],
+        "nature": "Serious",
+        "gender": "",
+        "evs": {
+          "hp": 4,
+          "atk": 0,
+          "def": 0,
+          "spa": 0,
+          "spd": 0,
+          "spe": 4
+        },
+        "ivs": {
+          "hp": 31,
+          "atk": 31,
+          "def": 31,
+          "spa": 31,
+          "spd": 31,
+          "spe": 31
+        },
+        "level": 50
+      },
+      {
+        "name": "Charizard",
+        "species": "Charizard",
+        "item": "Charizardite Y",
+        "ability": "Blaze",
+        "moves": [
+          "Flamethrower",
+          "Air Slash",
+          "Protect",
+          "Heat Wave"
+        ],
+        "nature": "Serious",
+        "gender": "",
+        "evs": {
+          "hp": 4,
+          "atk": 0,
+          "def": 0,
+          "spa": 0,
+          "spd": 0,
+          "spe": 4
+        },
+        "ivs": {
+          "hp": 31,
+          "atk": 31,
+          "def": 31,
+          "spa": 31,
+          "spd": 31,
+          "spe": 31
+        },
+        "level": 50
+      },
+      {
+        "name": "Blastoise",
+        "species": "Blastoise",
+        "item": "Mystic Water",
+        "ability": "Torrent",
+        "moves": [
+          "Surf",
+          "Ice Beam",
+          "Protect",
+          "Fake Out"
+        ],
+        "nature": "Serious",
+        "gender": "",
+        "evs": {
+          "hp": 4,
+          "atk": 0,
+          "def": 0,
+          "spa": 0,
+          "spd": 0,
+          "spe": 4
+        },
+        "ivs": {
+          "hp": 31,
+          "atk": 31,
+          "def": 31,
+          "spa": 31,
+          "spd": 31,
+          "spe": 31
+        },
+        "level": 50
+      },
+      {
+        "name": "Pikachu",
+        "species": "Pikachu",
+        "item": "Light Ball",
+        "ability": "Static",
+        "moves": [
+          "Thunderbolt",
+          "Fake Out",
+          "Protect",
+          "Volt Switch"
+        ],
+        "nature": "Serious",
+        "gender": "",
+        "evs": {
+          "hp": 4,
+          "atk": 0,
+          "def": 0,
+          "spa": 0,
+          "spd": 0,
+          "spe": 4
+        },
+        "ivs": {
+          "hp": 31,
+          "atk": 31,
+          "def": 31,
+          "spa": 31,
+          "spd": 31,
+          "spe": 31
+        },
+        "level": 50
+      },
+      {
+        "name": "Snorlax",
+        "species": "Snorlax",
+        "item": "Sitrus Berry",
+        "ability": "Thick Fat",
+        "moves": [
+          "Body Slam",
+          "Protect",
+          "Curse",
+          "Rest"
+        ],
+        "nature": "Serious",
+        "gender": "",
+        "evs": {
+          "hp": 4,
+          "atk": 0,
+          "def": 0,
+          "spa": 0,
+          "spd": 0,
+          "spe": 4
+        },
+        "ivs": {
+          "hp": 31,
+          "atk": 31,
+          "def": 31,
+          "spa": 31,
+          "spd": 31,
+          "spe": 31
+        },
+        "level": 50
+      },
+      {
+        "name": "Gengar",
+        "species": "Gengar",
+        "item": "Focus Sash",
+        "ability": "Cursed Body",
+        "moves": [
+          "Shadow Ball",
+          "Sludge Bomb",
+          "Protect",
+          "Icy Wind"
+        ],
+        "nature": "Serious",
+        "gender": "",
+        "evs": {
+          "hp": 4,
+          "atk": 0,
+          "def": 0,
+          "spa": 0,
+          "spd": 0,
+          "spe": 4
+        },
+        "ivs": {
+          "hp": 31,
+          "atk": 31,
+          "def": 31,
+          "spa": 31,
+          "spd": 31,
+          "spe": 31
+        },
+        "level": 50
+      }
+    ],
+    "p2": [
+      {
+        "name": "Venusaur",
+        "species": "Venusaur",
+        "item": "Leftovers",
+        "ability": "Overgrow",
+        "moves": [
+          "Giga Drain",
+          "Sludge Bomb",
+          "Protect",
+          "Sleep Powder"
+        ],
+        "nature": "Serious",
+        "gender": "",
+        "evs": {
+          "hp": 4,
+          "atk": 0,
+          "def": 0,
+          "spa": 0,
+          "spd": 0,
+          "spe": 4
+        },
+        "ivs": {
+          "hp": 31,
+          "atk": 31,
+          "def": 31,
+          "spa": 31,
+          "spd": 31,
+          "spe": 31
+        },
+        "level": 50
+      },
+      {
+        "name": "Charizard",
+        "species": "Charizard",
+        "item": "Charcoal",
+        "ability": "Blaze",
+        "moves": [
+          "Flamethrower",
+          "Air Slash",
+          "Protect",
+          "Heat Wave"
+        ],
+        "nature": "Serious",
+        "gender": "",
+        "evs": {
+          "hp": 4,
+          "atk": 0,
+          "def": 0,
+          "spa": 0,
+          "spd": 0,
+          "spe": 4
+        },
+        "ivs": {
+          "hp": 31,
+          "atk": 31,
+          "def": 31,
+          "spa": 31,
+          "spd": 31,
+          "spe": 31
+        },
+        "level": 50
+      },
+      {
+        "name": "Blastoise",
+        "species": "Blastoise",
+        "item": "Mystic Water",
+        "ability": "Torrent",
+        "moves": [
+          "Surf",
+          "Ice Beam",
+          "Protect",
+          "Fake Out"
+        ],
+        "nature": "Serious",
+        "gender": "",
+        "evs": {
+          "hp": 4,
+          "atk": 0,
+          "def": 0,
+          "spa": 0,
+          "spd": 0,
+          "spe": 4
+        },
+        "ivs": {
+          "hp": 31,
+          "atk": 31,
+          "def": 31,
+          "spa": 31,
+          "spd": 31,
+          "spe": 31
+        },
+        "level": 50
+      },
+      {
+        "name": "Pikachu",
+        "species": "Pikachu",
+        "item": "Light Ball",
+        "ability": "Static",
+        "moves": [
+          "Thunderbolt",
+          "Fake Out",
+          "Protect",
+          "Volt Switch"
+        ],
+        "nature": "Serious",
+        "gender": "",
+        "evs": {
+          "hp": 4,
+          "atk": 0,
+          "def": 0,
+          "spa": 0,
+          "spd": 0,
+          "spe": 4
+        },
+        "ivs": {
+          "hp": 31,
+          "atk": 31,
+          "def": 31,
+          "spa": 31,
+          "spd": 31,
+          "spe": 31
+        },
+        "level": 50
+      },
+      {
+        "name": "Snorlax",
+        "species": "Snorlax",
+        "item": "Sitrus Berry",
+        "ability": "Thick Fat",
+        "moves": [
+          "Body Slam",
+          "Protect",
+          "Curse",
+          "Rest"
+        ],
+        "nature": "Serious",
+        "gender": "",
+        "evs": {
+          "hp": 4,
+          "atk": 0,
+          "def": 0,
+          "spa": 0,
+          "spd": 0,
+          "spe": 4
+        },
+        "ivs": {
+          "hp": 31,
+          "atk": 31,
+          "def": 31,
+          "spa": 31,
+          "spd": 31,
+          "spe": 31
+        },
+        "level": 50
+      },
+      {
+        "name": "Gengar",
+        "species": "Gengar",
+        "item": "Focus Sash",
+        "ability": "Cursed Body",
+        "moves": [
+          "Shadow Ball",
+          "Sludge Bomb",
+          "Protect",
+          "Icy Wind"
+        ],
+        "nature": "Serious",
+        "gender": "",
+        "evs": {
+          "hp": 4,
+          "atk": 0,
+          "def": 0,
+          "spa": 0,
+          "spd": 0,
+          "spe": 4
+        },
+        "ivs": {
+          "hp": 31,
+          "atk": 31,
+          "def": 31,
+          "spa": 31,
+          "spd": 31,
+          "spe": 31
+        },
+        "level": 50
+      }
+    ]
+  },
+  "player": "p1",
+  "log": [
+    {
+      "player": "p1",
+      "choice": "team 1234"
+    },
+    {
+      "player": "p2",
+      "choice": "team 4561"
+    }
+  ],
+  "provenance": "synthetic: Areneon choice corpus, seeded search over synthetic CC0 teams",
+  "manifest": {
+    "showdown_commit": "7244fe8e28fa8bc4d0809ae30d183c608b62bb2b",
+    "format_id": "gen9championsvgc2026regmc",
+    "regulation": "M-C",
+    "ruleset_hash": "4dd1f039bbcc6156e08c434972beae2370dc5fe8c9c6a263da7383c3247b68f3",
+    "format_rules_hash": "549cd2aa97324be093c567324676d46a5eff19d6b0c9d8491c483dab746d5dcc"
+  },
+  "format_rules": {
+    "schema_version": 1,
+    "format_id": "gen9championsvgc2026regmc",
+    "regulation": "M-C",
+    "game_type": "doubles",
+    "forbidden_rules": [
+      "forceopenteamsheets"
+    ]
+  },
+  "phase": "move",
+  "request_hash": "da2e93269c77a31f9d29ab9d677e6193fa39db4805b23602367e50d8195ddf6f",
+  "candidates": [
+    {
+      "choice": "move 1 1, move 1 1",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 1 1, move 1 1 mega",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 1 1, move 1 2",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 1 1, move 1 2 mega",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 1 1, move 1 -1",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 1 1, move 1 -1 mega",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 1 1, move 2 1",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 1 1, move 2 1 mega",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 1 1, move 2 2",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 1 1, move 2 2 mega",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 1 1, move 2 -1",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 1 1, move 2 -1 mega",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 1 1, move 3",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 1 1, move 3 mega",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 1 1, move 4",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 1 1, move 4 mega",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 1 1, switch 3",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 1 1, switch 4",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 1 2, move 1 1",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 1 2, move 1 1 mega",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 1 2, move 1 2",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 1 2, move 1 2 mega",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 1 2, move 1 -1",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 1 2, move 1 -1 mega",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 1 2, move 2 1",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 1 2, move 2 1 mega",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 1 2, move 2 2",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 1 2, move 2 2 mega",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 1 2, move 2 -1",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 1 2, move 2 -1 mega",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 1 2, move 3",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 1 2, move 3 mega",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 1 2, move 4",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 1 2, move 4 mega",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 1 2, switch 3",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 1 2, switch 4",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 1 -2, move 1 1",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 1 -2, move 1 1 mega",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 1 -2, move 1 2",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 1 -2, move 1 2 mega",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 1 -2, move 1 -1",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 1 -2, move 1 -1 mega",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 1 -2, move 2 1",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 1 -2, move 2 1 mega",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 1 -2, move 2 2",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 1 -2, move 2 2 mega",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 1 -2, move 2 -1",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 1 -2, move 2 -1 mega",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 1 -2, move 3",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 1 -2, move 3 mega",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 1 -2, move 4",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 1 -2, move 4 mega",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 1 -2, switch 3",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 1 -2, switch 4",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 2 1, move 1 1",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 2 1, move 1 1 mega",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 2 1, move 1 2",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 2 1, move 1 2 mega",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 2 1, move 1 -1",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 2 1, move 1 -1 mega",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 2 1, move 2 1",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 2 1, move 2 1 mega",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 2 1, move 2 2",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 2 1, move 2 2 mega",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 2 1, move 2 -1",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 2 1, move 2 -1 mega",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 2 1, move 3",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 2 1, move 3 mega",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 2 1, move 4",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 2 1, move 4 mega",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 2 1, switch 3",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 2 1, switch 4",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 2 2, move 1 1",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 2 2, move 1 1 mega",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 2 2, move 1 2",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 2 2, move 1 2 mega",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 2 2, move 1 -1",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 2 2, move 1 -1 mega",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 2 2, move 2 1",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 2 2, move 2 1 mega",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 2 2, move 2 2",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 2 2, move 2 2 mega",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 2 2, move 2 -1",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 2 2, move 2 -1 mega",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 2 2, move 3",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 2 2, move 3 mega",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 2 2, move 4",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 2 2, move 4 mega",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 2 2, switch 3",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 2 2, switch 4",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 2 -2, move 1 1",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 2 -2, move 1 1 mega",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 2 -2, move 1 2",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 2 -2, move 1 2 mega",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 2 -2, move 1 -1",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 2 -2, move 1 -1 mega",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 2 -2, move 2 1",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 2 -2, move 2 1 mega",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 2 -2, move 2 2",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 2 -2, move 2 2 mega",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 2 -2, move 2 -1",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 2 -2, move 2 -1 mega",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 2 -2, move 3",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 2 -2, move 3 mega",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 2 -2, move 4",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 2 -2, move 4 mega",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 2 -2, switch 3",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 2 -2, switch 4",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 3, move 1 1",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 3, move 1 1 mega",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 3, move 1 2",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 3, move 1 2 mega",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 3, move 1 -1",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 3, move 1 -1 mega",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 3, move 2 1",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 3, move 2 1 mega",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 3, move 2 2",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 3, move 2 2 mega",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 3, move 2 -1",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 3, move 2 -1 mega",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 3, move 3",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 3, move 3 mega",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 3, move 4",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 3, move 4 mega",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 3, switch 3",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 3, switch 4",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 4 1, move 1 1",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 4 1, move 1 1 mega",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 4 1, move 1 2",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 4 1, move 1 2 mega",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 4 1, move 1 -1",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 4 1, move 1 -1 mega",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 4 1, move 2 1",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 4 1, move 2 1 mega",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 4 1, move 2 2",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 4 1, move 2 2 mega",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 4 1, move 2 -1",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 4 1, move 2 -1 mega",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 4 1, move 3",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 4 1, move 3 mega",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 4 1, move 4",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 4 1, move 4 mega",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 4 1, switch 3",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 4 1, switch 4",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 4 2, move 1 1",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 4 2, move 1 1 mega",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 4 2, move 1 2",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 4 2, move 1 2 mega",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 4 2, move 1 -1",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 4 2, move 1 -1 mega",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 4 2, move 2 1",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 4 2, move 2 1 mega",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 4 2, move 2 2",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 4 2, move 2 2 mega",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 4 2, move 2 -1",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 4 2, move 2 -1 mega",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 4 2, move 3",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 4 2, move 3 mega",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 4 2, move 4",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 4 2, move 4 mega",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 4 2, switch 3",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 4 2, switch 4",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 4 -2, move 1 1",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 4 -2, move 1 1 mega",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 4 -2, move 1 2",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 4 -2, move 1 2 mega",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 4 -2, move 1 -1",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 4 -2, move 1 -1 mega",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 4 -2, move 2 1",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 4 -2, move 2 1 mega",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 4 -2, move 2 2",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 4 -2, move 2 2 mega",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 4 -2, move 2 -1",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 4 -2, move 2 -1 mega",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 4 -2, move 3",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 4 -2, move 3 mega",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 4 -2, move 4",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 4 -2, move 4 mega",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 4 -2, switch 3",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "move 4 -2, switch 4",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "switch 3, move 1 1",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "switch 3, move 1 1 mega",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "switch 3, move 1 2",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "switch 3, move 1 2 mega",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "switch 3, move 1 -1",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "switch 3, move 1 -1 mega",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "switch 3, move 2 1",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "switch 3, move 2 1 mega",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "switch 3, move 2 2",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "switch 3, move 2 2 mega",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "switch 3, move 2 -1",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "switch 3, move 2 -1 mega",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "switch 3, move 3",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "switch 3, move 3 mega",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "switch 3, move 4",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "switch 3, move 4 mega",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "switch 3, switch 4",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "switch 4, move 1 1",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "switch 4, move 1 1 mega",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "switch 4, move 1 2",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "switch 4, move 1 2 mega",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "switch 4, move 1 -1",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "switch 4, move 1 -1 mega",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "switch 4, move 2 1",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "switch 4, move 2 1 mega",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "switch 4, move 2 2",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "switch 4, move 2 2 mega",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "switch 4, move 2 -1",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "switch 4, move 2 -1 mega",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "switch 4, move 3",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "switch 4, move 3 mega",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "switch 4, move 4",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "switch 4, move 4 mega",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    },
+    {
+      "choice": "switch 4, switch 3",
+      "pending": false,
+      "legal": true,
+      "error": ""
+    }
+  ]
+}

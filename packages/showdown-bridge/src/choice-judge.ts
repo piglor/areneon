@@ -1,5 +1,5 @@
 import { enumerateCandidates } from "./choices.ts";
-import type { Engine, SimBattle, SimSide } from "./engine.ts";
+import type { Engine, SimAction, SimBattle, SimSide } from "./engine.ts";
 import type { DecodedRequest, JsonObject } from "./request.ts";
 import { requestHash } from "./request-identity.ts";
 
@@ -9,6 +9,33 @@ export interface Verdict {
   legal: boolean;
   /** The engine's error message; empty when legal. */
   error: string;
+  /**
+   * `CloneJudge` only, when legal: the engine's parsed action, normalised,
+   * so two spellings of one action compare equal (the corpus oracle).
+   */
+  action?: string;
+}
+
+/**
+ * A canonical key for the engine's parsed actions of one choice: the
+ * fields that make two actions differ, with Pokémon as 1-based slots.
+ */
+function actionKey(side: SimSide, actions: SimAction[]): string {
+  const slot = (mon: object | undefined): number => side.pokemon.indexOf(mon as object) + 1;
+  return JSON.stringify(
+    actions.map((a) => [
+      a.choice,
+      slot(a.pokemon),
+      slot(a.target),
+      a.index,
+      a.moveid,
+      a.targetLoc,
+      a.mega,
+      a.megax,
+      a.megay,
+      a.terastallize,
+    ]),
+  );
 }
 
 /**
@@ -60,8 +87,9 @@ export class CloneJudge implements ChoiceJudge {
   }
 
   /**
-   * One clone per request; after a refusal the rest are judged on a fresh
-   * clone, because `emitChoiceError` can rewrite the clone's request.
+   * One clone per request. A refusal that reveals hidden information
+   * (`[Unavailable choice]`) rewrites the clone's request and flags, so the
+   * rest are then judged on a fresh clone.
    * Throws `JudgeStateError` unless the battle is at `request_hash`.
    */
   judge(request_hash: string, choices: readonly string[]): Verdict[] {
@@ -75,15 +103,20 @@ export class CloneJudge implements ChoiceJudge {
       throw new JudgeStateError(`battle is at request ${actual}, not ${request_hash}`);
     }
     let side: SimSide | undefined = at;
+    let request = JSON.stringify(at.activeRequest);
     return choices.map((choice) => {
-      side ??= this.#clone();
+      if (side === undefined) {
+        side = this.#clone();
+        request = JSON.stringify(side.activeRequest);
+      }
       side.clearChoice();
       const legal = side.choose(choice) && side.isChoiceDone();
       const error = legal ? "" : side.choice.error || "incomplete choice";
+      const verdict: Verdict = { choice, legal, error };
+      if (legal) verdict.action = actionKey(side, side.choice.actions);
       side.clearChoice();
-      // A refusal may have updated the clone's request; judge the rest fresh.
-      if (!legal) side = undefined;
-      return { choice, legal, error };
+      if (!legal && JSON.stringify(side.activeRequest) !== request) side = undefined;
+      return verdict;
     });
   }
 }

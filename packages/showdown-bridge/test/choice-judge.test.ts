@@ -21,30 +21,15 @@ import {
   loadEngine,
   type PokemonSet,
   type SimBattle,
-  type SimSide,
 } from "../src/index.ts";
-
-/** What the tests drive beyond the judge's narrow view of a battle. */
-interface TestSide extends SimSide {
-  requestState: string;
-}
-interface TestBattle extends SimBattle {
-  sides: TestSide[];
-  ended: boolean;
-  turn: number;
-  setPlayer(slot: string, options: { name: string; team: string }): void;
-  choose(slot: string, input: string): boolean;
-}
-type TestBattleClass = new (options: { formatid: string; seed: string }) => TestBattle;
 
 let engine: Engine;
 beforeAll(() => {
   engine = loadEngine();
 });
 
-function start(seed: string, teams: Record<"p1" | "p2", PokemonSet[]>): TestBattle {
-  const Battle = engine.sim.Battle as unknown as TestBattleClass;
-  const battle = new Battle({ formatid: GOLDEN_FORMAT, seed });
+function start(seed: string, teams: Record<"p1" | "p2", PokemonSet[]>): SimBattle {
+  const battle = new engine.sim.Battle({ formatid: GOLDEN_FORMAT, seed });
   for (const player of ["p1", "p2"] as const) {
     battle.setPlayer(player, {
       name: player,
@@ -55,14 +40,14 @@ function start(seed: string, teams: Record<"p1" | "p2", PokemonSet[]>): TestBatt
 }
 
 /** After both sides pick `team 1234`: p1's first move request. */
-function turnOne(p1: PokemonSet[] = syntheticTeam()): TestBattle {
+function turnOne(p1: PokemonSet[] = syntheticTeam()): SimBattle {
   const battle = start(GOLDEN_SEED, { p1, p2: syntheticTeam() });
   battle.choose("p1", "team 1234");
   battle.choose("p2", "team 1234");
   return battle;
 }
 
-const decodeSide = (battle: TestBattle, i = 0): ReturnType<typeof decodeRequest> =>
+const decodeSide = (battle: SimBattle, i = 0): ReturnType<typeof decodeRequest> =>
   decodeRequest(JSON.stringify(battle.sides[i]?.activeRequest));
 
 /** Synthetic golden team with Mega Stones swapped in (CC0, not a real team). */
@@ -112,7 +97,7 @@ interface Seen {
  * non-pending candidate. Every pair the enumerator left out is judged too
  * and must be refused. `pick` then chooses among the accepted candidates.
  */
-function play(battle: TestBattle, pick: (set: LegalChoiceSet) => string, maxTurns = 40): Seen {
+function play(battle: SimBattle, pick: (set: LegalChoiceSet) => string, maxTurns = 40): Seen {
   const seen: Seen = {
     sets: [],
     phases: new Set(),
@@ -272,8 +257,7 @@ describe("CloneJudge", () => {
 
   it("refuses a side the engine has asked nothing of", () => {
     // Only p1 has joined, so the battle has not started and sent no request.
-    const Battle = engine.sim.Battle as unknown as TestBattleClass;
-    const battle = new Battle({ formatid: GOLDEN_FORMAT, seed: GOLDEN_SEED });
+    const battle = new engine.sim.Battle({ formatid: GOLDEN_FORMAT, seed: GOLDEN_SEED });
     battle.setPlayer("p1", { name: "p1", team: engine.sim.Teams.pack(team) });
     const judge = new CloneJudge(engine, battle, "p1");
     expect(() => judge.judge("0".repeat(64), [])).toThrow(/has no active request/);

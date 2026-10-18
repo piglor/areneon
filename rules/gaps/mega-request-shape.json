@@ -3,6 +3,30 @@
   "gap_id": "mega-request-shape",
   "area": "Mega Evolution requests",
   "status": "unverified",
-  "description": "Mega Evolution request shape (`canMegaEvo`) and its legality in Reg M-C. The golden team holds no Mega Stone.",
-  "evidence": []
+  "description": "The engine offers `canMegaEvo` on a Mega Stone holder and accepts Mega on one slot per choice, never both (golden choice corpus `mega`, `mega-both`). `canMegaEvoX`/`canMegaEvoY` exist only in other mods (`gen7letsgo`, `monkeyspaw`), never in Reg M-C: Charizard X and Y are separate stones. Revisit if a supported format's mod defines them.",
+  "evidence": [
+    {
+      "kind": "engine",
+      "path": "sim/pokemon.ts",
+      "symbols": [
+        "getMoveRequestData"
+      ]
+    },
+    {
+      "kind": "engine",
+      "path": "data/mods/gen7letsgo/scripts.ts",
+      "symbols": [
+        "canMegaEvoX",
+        "canMegaEvoY"
+      ]
+    },
+    {
+      "kind": "fixture",
+      "path": "fixtures/showdown/gen9championsvgc2026regmc/choices/mega.json"
+    },
+    {
+      "kind": "fixture",
+      "path": "fixtures/showdown/gen9championsvgc2026regmc/choices/mega-both.json"
+    }
+  ]
 }
