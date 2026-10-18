@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 .SHELLFLAGS := -euo pipefail -c
-.PHONY: setup showdown check python ts guards team-guard licences
+.PHONY: setup showdown check python ts guards team-guard licences licences-selftest
 
 # One-time setup for a clean clone.
 setup: showdown
@@ -37,3 +37,7 @@ team-guard:
 
 licences:
 	pnpm -r licenses list --prod --json | uv run --no-project python scripts/check_licenses.py
+
+# Proves the gate above fails on an injected AGPL dependency (scratch copy only).
+licences-selftest:
+	scripts/licences-selftest.sh
