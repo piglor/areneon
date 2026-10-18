@@ -1,0 +1,340 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:areneon:schema:contracts:v1:spike",
+  "title": "AreneonContracts",
+  "description": "Spike (#671): a small but realistic slice of the planned contracts, used only to compare code generators. The root object is a catalog so that every generator emits every contract.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "observation": { "$ref": "#/$defs/Observation" },
+    "legal_choice_set": { "$ref": "#/$defs/LegalChoiceSet" },
+    "recommendation": { "$ref": "#/$defs/Recommendation" },
+    "decision_record": { "$ref": "#/$defs/DecisionRecord" },
+    "private_team_spec": { "$ref": "#/$defs/PrivateTeamSpec" },
+    "request_fixture": { "$ref": "#/$defs/RequestFixture" }
+  },
+  "$defs": {
+    "Sha256Hex": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "ShowdownCommit": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+    "PlayerId": { "description": "A Doubles side.", "enum": ["p1", "p2"] },
+    "VersionManifest": {
+      "description": "Version manifest carried by every fixture and episode.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["showdown_commit", "format_id", "regulation", "ruleset_hash", "format_rules_hash"],
+      "properties": {
+        "showdown_commit": { "$ref": "#/$defs/ShowdownCommit" },
+        "format_id": { "type": "string", "pattern": "^[a-z0-9]+$" },
+        "regulation": { "type": "string", "pattern": "^[A-Z0-9]+(-[A-Z0-9]+)*$" },
+        "ruleset_hash": { "$ref": "#/$defs/Sha256Hex" },
+        "format_rules_hash": { "$ref": "#/$defs/Sha256Hex" }
+      }
+    },
+    "FormatRules": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "format_id", "regulation", "game_type", "forbidden_rules"],
+      "properties": {
+        "schema_version": { "const": 1 },
+        "format_id": { "type": "string" },
+        "regulation": { "type": "string" },
+        "game_type": { "enum": ["doubles"] },
+        "forbidden_rules": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "RequestIdentity": {
+      "description": "request_seq + request_hash always; rqid only on the Showdown server path.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["request_seq", "request_hash"],
+      "properties": {
+        "request_seq": { "type": "integer", "minimum": 1 },
+        "request_hash": { "$ref": "#/$defs/Sha256Hex" },
+        "rqid": { "description": "Optional: absent on the in-process sim path.", "type": "integer", "minimum": 0 }
+      }
+    },
+    "StatsExceptHp": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["atk", "def", "spa", "spd", "spe"],
+      "properties": {
+        "atk": { "type": "integer", "minimum": 1 },
+        "def": { "type": "integer", "minimum": 1 },
+        "spa": { "type": "integer", "minimum": 1 },
+        "spd": { "type": "integer", "minimum": 1 },
+        "spe": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "StatTable": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["hp", "atk", "def", "spa", "spd", "spe"],
+      "properties": {
+        "hp": { "type": "integer", "minimum": 0, "maximum": 255 },
+        "atk": { "type": "integer", "minimum": 0, "maximum": 255 },
+        "def": { "type": "integer", "minimum": 0, "maximum": 255 },
+        "spa": { "type": "integer", "minimum": 0, "maximum": 255 },
+        "spd": { "type": "integer", "minimum": 0, "maximum": 255 },
+        "spe": { "type": "integer", "minimum": 0, "maximum": 255 }
+      }
+    },
+    "RequestPokemon": {
+      "description": "One entry of side.pokemon in a Showdown |request| (engine-owned shape, closed so a pin bump that adds a key fails loudly).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ident", "details", "condition", "active", "stats", "moves", "baseAbility", "item", "pokeball"],
+      "properties": {
+        "ident": { "type": "string" },
+        "details": { "type": "string" },
+        "condition": { "type": "string" },
+        "active": { "type": "boolean" },
+        "stats": { "$ref": "#/$defs/StatsExceptHp" },
+        "moves": { "type": "array", "items": { "type": "string" }, "maxItems": 4 },
+        "baseAbility": { "type": "string" },
+        "item": { "type": "string" },
+        "pokeball": { "type": "string" },
+        "ability": { "type": "string" },
+        "commanding": { "type": "boolean" },
+        "reviving": { "type": "boolean" },
+        "teraType": { "type": "string" },
+        "terastallized": { "type": "string" }
+      }
+    },
+    "RequestSide": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "id", "pokemon"],
+      "properties": {
+        "name": { "type": "string" },
+        "id": { "$ref": "#/$defs/PlayerId" },
+        "pokemon": { "type": "array", "items": { "$ref": "#/$defs/RequestPokemon" }, "minItems": 1, "maxItems": 6 }
+      }
+    },
+    "RequestMove": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["move", "id"],
+      "properties": {
+        "move": { "type": "string" },
+        "id": { "type": "string" },
+        "pp": { "type": "integer", "minimum": 0 },
+        "maxpp": { "type": "integer", "minimum": 0 },
+        "target": { "type": "string" },
+        "disabled": { "description": "The engine sends a boolean or a source string.", "type": ["boolean", "string"] },
+        "disabledSource": { "type": "string" }
+      }
+    },
+    "RequestActive": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["moves"],
+      "properties": {
+        "moves": { "type": "array", "items": { "$ref": "#/$defs/RequestMove" }, "minItems": 1, "maxItems": 4 },
+        "maybeDisabled": { "type": "boolean" },
+        "maybeLocked": { "type": "boolean" },
+        "trapped": { "type": "boolean" },
+        "maybeTrapped": { "type": "boolean" },
+        "canMegaEvo": { "type": "boolean" },
+        "canMegaEvoX": { "type": "boolean" },
+        "canMegaEvoY": { "type": "boolean" },
+        "canTerastallize": { "type": "string" }
+      }
+    },
+    "PreviewRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["teamPreview", "side"],
+      "properties": {
+        "teamPreview": { "const": true },
+        "maxChosenTeamSize": { "type": "integer", "minimum": 1, "maximum": 6 },
+        "side": { "$ref": "#/$defs/RequestSide" },
+        "noCancel": { "type": "boolean" }
+      }
+    },
+    "MoveRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["active", "side"],
+      "properties": {
+        "active": { "type": "array", "items": { "$ref": "#/$defs/RequestActive" }, "minItems": 1, "maxItems": 2 },
+        "side": { "$ref": "#/$defs/RequestSide" },
+        "noCancel": { "type": "boolean" },
+        "update": { "type": "boolean" }
+      }
+    },
+    "ForceSwitchRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["forceSwitch", "side"],
+      "properties": {
+        "forceSwitch": { "type": "array", "items": { "type": "boolean" }, "minItems": 1, "maxItems": 2 },
+        "side": { "$ref": "#/$defs/RequestSide" },
+        "noCancel": { "type": "boolean" },
+        "update": { "type": "boolean" }
+      }
+    },
+    "BattleRequest": {
+      "description": "Untagged union: the engine's request shapes carry no common tag.",
+      "oneOf": [{ "$ref": "#/$defs/MoveRequest" }, { "$ref": "#/$defs/ForceSwitchRequest" }]
+    },
+    "RequestFixture": {
+      "description": "A golden request fixture file (fixtures/showdown/<format>/*.request.json).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provenance", "manifest", "format_rules", "seed", "player", "request_seq", "request_hash", "phase", "request"],
+      "properties": {
+        "provenance": { "type": "string" },
+        "manifest": { "$ref": "#/$defs/VersionManifest" },
+        "format_rules": { "$ref": "#/$defs/FormatRules" },
+        "seed": { "type": "string" },
+        "player": { "$ref": "#/$defs/PlayerId" },
+        "request_seq": { "type": "integer", "minimum": 1 },
+        "request_hash": { "$ref": "#/$defs/Sha256Hex" },
+        "phase": { "enum": ["preview", "move", "forceSwitch"] },
+        "request": { "oneOf": [{ "$ref": "#/$defs/PreviewRequest" }, { "$ref": "#/$defs/MoveRequest" }, { "$ref": "#/$defs/ForceSwitchRequest" }] }
+      }
+    },
+    "TimerRules": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["starting", "grace", "add_per_turn", "max_per_turn", "max_first_turn", "tick"],
+      "properties": {
+        "starting": { "type": "integer", "minimum": 0 },
+        "grace": { "type": "integer", "minimum": 0 },
+        "add_per_turn": { "type": "integer", "minimum": 0 },
+        "max_per_turn": { "type": "integer", "minimum": 0 },
+        "max_first_turn": { "type": "integer", "minimum": 0 },
+        "tick": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "DecisionContext": {
+      "description": "Timer snapshot (docs/research/678-timer-deadline-budget.md section 4.2). Kept apart from game state; excluded by name from A1/A2 equality.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["timer_source", "timer_rules", "turn_seconds_left", "bank_seconds_left", "grace_seconds_left", "safety_margin_ms", "submit_within_ms", "policy_budget_ms"],
+      "properties": {
+        "timer_source": { "enum": ["server", "shadow"] },
+        "timer_rules": { "$ref": "#/$defs/TimerRules" },
+        "turn_seconds_left": { "type": "integer", "minimum": 0 },
+        "bank_seconds_left": { "type": "integer", "minimum": 0 },
+        "grace_seconds_left": { "type": "integer", "minimum": 0 },
+        "remaining_decisions_estimate": { "description": "Battle only; omitted at preview.", "type": "integer", "minimum": 1 },
+        "safety_margin_ms": { "type": "integer", "minimum": 0 },
+        "submit_within_ms": { "type": "integer", "minimum": 0 },
+        "policy_budget_ms": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "OpponentPreviewEntry": {
+      "description": "What Team Preview shows of an opponent Pokemon under CTS: species/details only.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["details"],
+      "properties": { "details": { "type": "string" } }
+    },
+    "PreviewObservation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "schema_version", "manifest", "player", "identity", "request", "opponent_preview"],
+      "properties": {
+        "kind": { "const": "preview" },
+        "schema_version": { "const": 1 },
+        "manifest": { "$ref": "#/$defs/VersionManifest" },
+        "player": { "$ref": "#/$defs/PlayerId" },
+        "identity": { "$ref": "#/$defs/RequestIdentity" },
+        "request": { "$ref": "#/$defs/PreviewRequest" },
+        "opponent_preview": { "type": "array", "items": { "$ref": "#/$defs/OpponentPreviewEntry" }, "minItems": 1, "maxItems": 6 },
+        "decision_context": { "$ref": "#/$defs/DecisionContext" }
+      }
+    },
+    "BattleObservation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "schema_version", "manifest", "player", "identity", "request", "public_log"],
+      "properties": {
+        "kind": { "const": "battle" },
+        "schema_version": { "const": 1 },
+        "manifest": { "$ref": "#/$defs/VersionManifest" },
+        "player": { "$ref": "#/$defs/PlayerId" },
+        "identity": { "$ref": "#/$defs/RequestIdentity" },
+        "request": { "$ref": "#/$defs/BattleRequest" },
+        "public_log": { "description": "This player's channel of the battle log, as the engine split it.", "type": "array", "items": { "type": "string" } },
+        "decision_context": { "$ref": "#/$defs/DecisionContext" }
+      }
+    },
+    "Observation": {
+      "description": "Tagged union on kind.",
+      "oneOf": [{ "$ref": "#/$defs/PreviewObservation" }, { "$ref": "#/$defs/BattleObservation" }]
+    },
+    "LegalChoiceSet": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["request_seq", "request_hash", "showdown_commit", "choices", "pending"],
+      "properties": {
+        "request_seq": { "type": "integer", "minimum": 1 },
+        "request_hash": { "$ref": "#/$defs/Sha256Hex" },
+        "showdown_commit": { "$ref": "#/$defs/ShowdownCommit" },
+        "choices": { "type": "array", "items": { "type": "string" } },
+        "pending": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "DeadlineOutcome": {
+      "enum": ["in_budget", "fallback_timeout", "fallback_error", "fallback_invalid", "skipped_low_budget", "last_resort_default"]
+    },
+    "Recommendation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "identity", "choice", "source_policy_id", "elapsed_ms", "deadline_outcome", "confidence_bp"],
+      "properties": {
+        "schema_version": { "const": 1 },
+        "identity": { "$ref": "#/$defs/RequestIdentity" },
+        "choice": { "type": "string", "minLength": 1 },
+        "source_policy_id": { "type": "string", "minLength": 1 },
+        "elapsed_ms": { "type": "integer", "minimum": 0 },
+        "deadline_outcome": { "$ref": "#/$defs/DeadlineOutcome" },
+        "confidence_bp": { "description": "Confidence in basis points (integer, so hashes never depend on float printing).", "type": "integer", "minimum": 0, "maximum": 10000 }
+      }
+    },
+    "DecisionRecord": {
+      "description": "One per-decision entry of an Episode (678 section 4.4).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["identity", "choice", "deadline_outcome", "submitted_after_ms", "bank_seconds_after", "server_auto_choose_detected"],
+      "properties": {
+        "identity": { "$ref": "#/$defs/RequestIdentity" },
+        "choice": { "type": "string", "minLength": 1 },
+        "decision_context": { "$ref": "#/$defs/DecisionContext" },
+        "deadline_outcome": { "$ref": "#/$defs/DeadlineOutcome" },
+        "submitted_after_ms": { "type": "integer", "minimum": 0 },
+        "bank_seconds_after": { "description": "Required and nullable: null if the battle ended or no snapshot was sent.", "type": ["integer", "null"], "minimum": 0 },
+        "server_auto_choose_detected": { "const": false }
+      }
+    },
+    "PokemonSet": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "species", "item", "ability", "moves", "nature", "gender", "evs", "ivs", "level"],
+      "properties": {
+        "name": { "type": "string" },
+        "species": { "type": "string", "minLength": 1 },
+        "item": { "type": "string" },
+        "ability": { "type": "string" },
+        "moves": { "type": "array", "items": { "type": "string" }, "minItems": 1, "maxItems": 4 },
+        "nature": { "type": "string" },
+        "gender": { "enum": ["", "M", "F", "N"] },
+        "evs": { "description": "Stat Points in the champions mod.", "$ref": "#/$defs/StatTable" },
+        "ivs": { "$ref": "#/$defs/StatTable" },
+        "level": { "type": "integer", "minimum": 1, "maximum": 100 }
+      }
+    },
+    "PrivateTeamSpec": {
+      "description": "A full private team. Never committed; never part of an opponent's observation.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "team"],
+      "properties": {
+        "schema_version": { "const": 1 },
+        "team": { "type": "array", "items": { "$ref": "#/$defs/PokemonSet" }, "minItems": 1, "maxItems": 6 }
+      }
+    }
+  }
+}
