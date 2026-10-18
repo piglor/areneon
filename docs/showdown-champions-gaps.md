@@ -12,6 +12,7 @@ Engine paths are relative to `vendor/pokemon-showdown`. Review the records in `r
 
 | Area | What Showdown does at the pin | Where |
 |---|---|---|
+| CTS invariant | With Open Team Sheets declined, Team Preview shows the opponent's species, level and gender only; the sheet is sent only after `>show-openteamsheets`. Tested in-process by `cts.test.ts` (#676); the server-path decline is #709. | `data/rulesets.ts` `openteamsheets`, `sim/battle.ts` `showOpenTeamSheets`, fixture `fixtures/teams/gen9championsvgc2026regmc/legal-opponent.txt` |
 | Freeze | Thaws after at most 3 turns, or 25% per turn | `data/mods/champions/conditions.ts` `frz` |
 | Level | `Adjust Level = 50` (Flat Rules) | `data/mods/champions/rulesets.ts` |
 | Mega Evolution | Mega forms persist after fainting | `data/mods/champions/scripts.ts` `formeChange` |
@@ -30,7 +31,6 @@ Engine paths are relative to `vendor/pokemon-showdown`. Review the records in `r
 
 ## Unknown or not yet exercised
 
-- The CTS invariant (an OTS-declined preview shows species and details only) is owned by #676.
 - Damage formula and rounding. These are covered by the calculator work, not by this pin.
 - Champions in-game timer values compared with Showdown's VGC Timer.
 - Joint legal-choice enumeration is owned by #682.

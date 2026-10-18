@@ -72,6 +72,10 @@
         "Blastoise has exactly 0 Stat Points - did you forget to invest it? (If this was intentional, change your Nature to a different neutral Nature, which won't change its stats but will tell us that it wasn't a mistake)."
       ]
     },
+    "legal-opponent.txt": {
+      "valid": true,
+      "problems": []
+    },
     "legal-synthetic.txt": {
       "valid": true,
       "problems": []
