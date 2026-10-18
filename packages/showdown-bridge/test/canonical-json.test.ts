@@ -9,8 +9,11 @@ const SOURCE = new URL("../src/canonical-json.ts", import.meta.url);
 describe("canonical-json", () => {
   it("imports nothing, so the bundled builder and archived rules-hash can depend on it", () => {
     const source = readFileSync(SOURCE, "utf8");
+    // `export … from` loads a module as surely as `import` does. The file has
+    // no string literals, so any `from "…"` is a module specifier.
     expect(source).not.toMatch(/^\s*import\b/m);
-    expect(source).not.toMatch(/\brequire\s*\(|\bimport\s*\(/);
+    expect(source).not.toMatch(/\bfrom\s*["']/);
+    expect(source).not.toMatch(/\brequire\s*\(|\bimport\s*\(|\bimport\.meta\b/);
   });
 
   it("is the one implementation that request-identity.ts and rules.ts re-export", () => {
