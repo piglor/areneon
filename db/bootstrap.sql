@@ -32,7 +32,9 @@
 -- named only, from `printf` (a shell builtin) into `tr`, which drops
 -- whitespace, and `test` (a builtin) checks something is left. No password
 -- goes to the server, or into a process's arguments, except inside its own
--- CREATE ROLE below.
+-- CREATE ROLE below. psql would expand `:space` in the backticks if a psql
+-- variable of that name existed; nothing defines one, and if it did, only the
+-- whitespace-only refusal would weaken.
 \set migrator_present `test -n "$(printf %s "$RULES_MIGRATOR_PASSWORD" | tr -d '[:space:]')" && echo true || echo false`
 \set importer_present `test -n "$(printf %s "$RULES_IMPORTER_PASSWORD" | tr -d '[:space:]')" && echo true || echo false`
 \set reader_present `test -n "$(printf %s "$RULES_READER_PASSWORD" | tr -d '[:space:]')" && echo true || echo false`
