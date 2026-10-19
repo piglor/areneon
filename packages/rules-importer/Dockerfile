@@ -1,4 +1,3 @@
-# syntax=docker/dockerfile:1
 # The rules importer (ADR-007 §6, #768). Build from the repository root:
 #
 #   docker build -f packages/rules-importer/Dockerfile -t areneon-rules-importer .

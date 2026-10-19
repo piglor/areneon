@@ -42,8 +42,9 @@ run_import() { # run_import <expected status of both steps>
 gh_version=$(docker run --rm --entrypoint gh "$image:local" --version | head -n 1)
 [[ "$gh_version" == "gh version "* ]] || fail "production gh: $gh_version"
 expect "production gh is on PATH" "$(docker run --rm --entrypoint sh "$image:local" -c 'command -v gh')" /usr/local/bin/gh
-expect "production image has no test files" \
-  "$(docker run --rm --entrypoint sh "$image:local" -c 'ls /app/fixtures /app/packages/rules-importer/test 2>&1 >/dev/null | wc -l')" 2
+docker run --rm --entrypoint sh "$image:local" -c 'test ! -e /app/fixtures && test ! -e /app/packages/rules-importer/test' ||
+  fail "the production image holds test files"
+echo "ok: production image has no test files"
 expect "production user" "$(docker run --rm --entrypoint id "$image:local" -u)" 1000
 code=0
 out=$(docker run --rm "$image:local") || code=$?
