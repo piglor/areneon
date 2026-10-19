@@ -99,6 +99,21 @@ describe("memoryTransport", () => {
     expect(codes).toEqual([4000, 4000]);
   });
 
+  it("starts a listener added during delivery with the next frame", () => {
+    const t = memoryTransport();
+    const late: string[] = [];
+    let added = false;
+    t.onFrame(() => {
+      if (!added) {
+        added = true;
+        t.onFrame((f) => late.push(f));
+      }
+    });
+    t.push("a");
+    t.push("b");
+    expect(late).toEqual(["b"]);
+  });
+
   it("reports a client close as normal closure and refuses later sends and pushes", () => {
     const t = memoryTransport();
     const codes: number[] = [];

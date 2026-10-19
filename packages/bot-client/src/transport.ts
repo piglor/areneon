@@ -64,7 +64,8 @@ export class Listeners {
     this.#draining = true;
     const errors: unknown[] = [];
     for (let frame = this.#pending.shift(); frame !== undefined; frame = this.#pending.shift()) {
-      for (const cb of this.#frameListeners) {
+      // A listener added during delivery starts with the next frame.
+      for (const cb of [...this.#frameListeners]) {
         try {
           cb(frame);
         } catch (error) {
