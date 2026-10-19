@@ -27,15 +27,18 @@ export const NORMAL_CLOSURE = 1000;
  * first frame listener, and the close code is delivered exactly once to every
  * close listener, including one registered after the close.
  *
- * A listener that throws consumes the frame it threw on, and the throw
- * propagates to the caller. Frames still queued stay queued, in order, and
- * are delivered on the next `onFrame` or `frame` call.
+ * Every frame reaches every listener, in arrival order. A frame that arrives
+ * during delivery (a listener's send made the peer answer at once) is only
+ * queued, and goes out after the current one. A listener that throws does not
+ * stop delivery: once the queue is empty, the first error is rethrown, or an
+ * AggregateError if there were several.
  */
 export class Listeners {
   readonly #frameListeners: ((frame: string) => void)[] = [];
   readonly #closeListeners: ((code: number) => void)[] = [];
   readonly #pending: string[] = [];
   #closeCode: number | undefined;
+  #draining = false;
 
   get closed(): boolean {
     return this.#closeCode !== undefined;
@@ -57,10 +60,21 @@ export class Listeners {
   }
 
   #drain(): void {
-    if (this.#frameListeners.length === 0) return;
+    if (this.#draining || this.#frameListeners.length === 0) return;
+    this.#draining = true;
+    const errors: unknown[] = [];
     for (let frame = this.#pending.shift(); frame !== undefined; frame = this.#pending.shift()) {
-      for (const cb of this.#frameListeners) cb(frame);
+      for (const cb of this.#frameListeners) {
+        try {
+          cb(frame);
+        } catch (error) {
+          errors.push(error);
+        }
+      }
     }
+    this.#draining = false;
+    if (errors.length === 1) throw errors[0];
+    if (errors.length > 1) throw new AggregateError(errors, `${errors.length} frame listeners threw`);
   }
 
   close(code: number): void {

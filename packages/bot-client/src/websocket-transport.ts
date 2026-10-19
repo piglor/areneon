@@ -19,7 +19,9 @@ export interface WebSocketOptions {
   /**
    * How long to wait, once the client starts closing, for the peer to finish
    * the close handshake. Default 5 000 ms. On expiry the close listeners get
-   * the code the client sent, and the transport stops waiting.
+   * the code the client sent, and the transport stops waiting. The socket
+   * itself may then stay CLOSING: Node's WebSocket has no way to terminate
+   * it, so it lingers until the peer or the operating system drops it.
    */
   readonly closeTimeoutMs?: number;
 }
@@ -46,7 +48,7 @@ export async function connectWebSocket(url: string, options: WebSocketOptions = 
   const closeWith = (code: number, reason?: string): void => {
     if (closeTimer !== undefined || listeners.closed) return;
     socket.close(code, reason);
-    closeTimer = setTimeout(() => listeners.close(code), closeTimeoutMs);
+    closeTimer = setTimeout(() => listeners.close(code), closeTimeoutMs).unref();
   };
   socket.addEventListener("message", (event) => {
     if (typeof event.data === "string") listeners.frame(event.data);
@@ -61,7 +63,7 @@ export async function connectWebSocket(url: string, options: WebSocketOptions = 
     const connectTimer = setTimeout(() => {
       reject(new ConnectError(`could not connect to ${local.href} within ${connectTimeoutMs} ms`));
       socket.close();
-    }, connectTimeoutMs);
+    }, connectTimeoutMs).unref();
     socket.addEventListener("open", () => {
       clearTimeout(connectTimer);
       resolve();

@@ -16,10 +16,15 @@ export interface MemoryTransport extends Transport {
   end(code: number): void;
 }
 
-export function memoryTransport(): MemoryTransport {
+export interface MemoryTransportOptions {
+  /** Called after each line the client sends: a scripted peer, which may `push` a reply at once. */
+  readonly onSend?: (line: string, transport: MemoryTransport) => void;
+}
+
+export function memoryTransport(options: MemoryTransportOptions = {}): MemoryTransport {
   const listeners = new Listeners();
   const sent: string[] = [];
-  return {
+  const transport: MemoryTransport = {
     sent,
     get closed() {
       return listeners.closed;
@@ -27,6 +32,7 @@ export function memoryTransport(): MemoryTransport {
     send(line) {
       if (listeners.closed) throw new TransportClosedError("send on a closed transport");
       sent.push(line);
+      options.onSend?.(line, transport);
     },
     onFrame: (cb) => listeners.onFrame(cb),
     onClose: (cb) => listeners.onClose(cb),
@@ -37,4 +43,5 @@ export function memoryTransport(): MemoryTransport {
     },
     end: (code) => listeners.close(code),
   };
+  return transport;
 }

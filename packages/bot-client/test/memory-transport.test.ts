@@ -27,7 +27,7 @@ describe("memoryTransport", () => {
     expect(second).toEqual(["c"]);
   });
 
-  it("keeps undelivered frames queued when a listener throws during the backlog replay", () => {
+  it("replays the whole backlog when a listener throws, then rethrows", () => {
     const t = memoryTransport();
     t.push("a");
     t.push("b");
@@ -39,10 +39,51 @@ describe("memoryTransport", () => {
         if (f === "b") throw new Error("listener failed on b");
       }),
     ).toThrow("listener failed on b");
-    // "b" was consumed by the throw; "c" is still queued and goes out, in order, before "d".
-    expect(seen).toEqual(["a", "b"]);
+    expect(seen).toEqual(["a", "b", "c"]);
     t.push("d");
     expect(seen).toEqual(["a", "b", "c", "d"]);
+  });
+
+  it("delivers a frame to every listener even when the first throws", () => {
+    const t = memoryTransport();
+    const second: string[] = [];
+    t.onFrame(() => {
+      throw new Error("first failed");
+    });
+    t.onFrame((f) => second.push(f));
+    expect(() => t.push("a")).toThrow("first failed");
+    expect(second).toEqual(["a"]);
+  });
+
+  it("throws an AggregateError when several listeners throw", () => {
+    const t = memoryTransport();
+    t.onFrame(() => {
+      throw new Error("one");
+    });
+    t.onFrame(() => {
+      throw new Error("two");
+    });
+    let thrown: unknown;
+    try {
+      t.push("a");
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(AggregateError);
+    expect((thrown as AggregateError).errors.map((e: Error) => e.message)).toEqual(["one", "two"]);
+  });
+
+  it("keeps order for every listener when a send makes the peer reply synchronously", () => {
+    const t = memoryTransport({ onSend: (line, peer) => peer.push(`ack ${line}`) });
+    const log: string[] = [];
+    t.onFrame((f) => {
+      log.push(`first: ${f}`);
+      if (f === "request") t.send("choice");
+    });
+    t.onFrame((f) => log.push(`second: ${f}`));
+    t.push("request");
+    expect(t.sent).toEqual(["choice"]);
+    expect(log).toEqual(["first: request", "second: request", "first: ack choice", "second: ack choice"]);
   });
 
   it("reports a server close once, to listeners registered before and after it", () => {
