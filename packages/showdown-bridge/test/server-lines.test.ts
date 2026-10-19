@@ -70,6 +70,9 @@ const SERVER: readonly string[] = [
   "|tournament|create|gen9championsvgc2026regmc|elimination",
   "|battle|battle-1|Bob|Areneon Bot",
   "|sentchoice|move 1 1, move 1 2",
+  "|-hint|If you want to tie earlier, consider using `/offertie`.",
+  "|-message|All players are inactive.",
+  "|uhtmlchange|otsrequest|<div>changed</div>",
 ];
 
 // Sim lines that are kept although some look like server lines.
@@ -79,9 +82,10 @@ const SIM: readonly string[] = [
   "|error|[Unavailable choice] Can't move: Snorlax's Fire Punch is disabled",
   "|error|[Invalid choice] There's nothing to choose",
   "|message|Time's up! Going to tiebreaker...",
-  "|-message|All players are inactive.",
+  "|-message|Sleep Clause Mod activated.",
   "|bigerror|You will auto-tie if the battle doesn't end in 10 turns (on turn 1000).",
   "|-hint|Some effects can force a Pokemon to use Outrage again in a row.",
+  "|-hint|If you want to tie earlier, consider using /offertie.",
   "|tier|[Gen 9 Champions] VGC 2026 Reg M-C",
   "|clearpoke",
   "|turn|2",
@@ -170,5 +174,16 @@ describe("server-lines", () => {
     ];
     expect(gametype).toBe(0);
     expect(stripServerLines(stream)).toEqual({ lines: p1, dropped: [] });
+  });
+
+  it("drops the server's forfeit message for a player the sim named, and keeps other messages", () => {
+    const end = p1.length - 1;
+    expect(p1[end]).toMatch(/^\|win\|/);
+    const forfeits = ["|-message|p2 forfeited.", "|-message|p1 was made to forfeit.", "|-message|p2 lost due to inactivity."];
+    expect(stripServerLines([...p1.slice(0, end), ...forfeits, p1[end] as string])).toEqual({ lines: p1, dropped: [] });
+    // Another name, or a message before the sim named anyone, is not matched.
+    const other = "|-message|Bob forfeited.";
+    expect(stripServerLines([...p1, other]).lines).toEqual([...p1, other]);
+    expect(stripServerLines(["|-message|p2 forfeited."]).lines).toEqual(["|-message|p2 forfeited."]);
   });
 });

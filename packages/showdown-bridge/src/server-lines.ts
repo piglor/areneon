@@ -12,6 +12,16 @@
 // confirmed by the A1/A2 equality test (#764), not here: no A2 capture
 // exists yet, and the rule below is read from the pinned server's source.
 //
+// Some server lines reuse sim kinds; they are dropped by their exact text at
+// the pin (server/room-battle.ts): the auto-tie `|-hint|` that follows the
+// sim's turn-limit `|bigerror|`, `|-message|All players are inactive.`, and
+// the forfeit `|-message|` lines (`stripServerLines`). A forfeit line whose
+// name or text does not match is a remaining difference, like the server's
+// `|error|` refusals.
+//
+// Several rules depend on a line's place in the stream, so the adapter must
+// filter the stream from its first line every time, never a suffix of it.
+//
 // It is an allowlist. A line is kept only if its kind is one the sim writes
 // (SIM_KINDS). Known server kinds are dropped silently; any other kind is
 // dropped and reported, so the session loop can log it and a sim kind this
@@ -23,10 +33,13 @@
 //   Team Preview (data/rulesets.ts `openteamsheets`). Kept before `|start`.
 // - `|uhtmlchange|otsrequest|`: the sim writes it once at `|start`; the
 //   server also sends it during Team Preview to a player who accepts or
-//   declines the sheets (server/chat-commands/core.ts). Kept after `|start`
-//   only, so a bot that declines still holds the sim's single copy.
+//   declines the sheets (server/chat-commands/core.ts). Matched exactly, as
+//   data/rulesets.ts writes it, and kept after `|start` only, so a bot that
+//   declines still holds the sim's single copy.
 // - `|player|`: see `stripServerLines`.
-// Every other `|uhtml|` / `|uhtmlchange|` box comes from the server.
+// Every other `|uhtml|` / `|uhtmlchange|` box comes from the server. The
+// prompt is matched by prefix, so a `/uhtml otsrequest,…` sent before
+// `|start` by someone with room auth would still pass.
 
 /**
  * Line kinds the sim writes into a player's stream: SIM-PROTOCOL.md at the
@@ -197,13 +210,37 @@ const SERVER_KINDS: ReadonlySet<string> = new Set([
 const OTS_PROMPT = "|uhtml|otsrequest|";
 const OTS_CLEAR = "|uhtmlchange|otsrequest|";
 
+/** Server lines of sim kinds, by their exact text at the pin. */
+const SERVER_TEXT: ReadonlySet<string> = new Set([
+  "|-hint|If you want to tie earlier, consider using `/offertie`.",
+  "|-message|All players are inactive.",
+]);
+
+/**
+ * The server's forfeit messages: `|-message|<player name><suffix>`
+ * (server/room-battle.ts `forfeitPlayer` and its callers).
+ */
+const FORFEIT_SUFFIXES: readonly string[] = [
+  " was made to forfeit.",
+  " forfeited.",
+  " forfeited the series.",
+  " forfeited by changing their name.",
+  " lost by having an inappropriate name.",
+  " lost due to inactivity.",
+  " lost the series due to inactivity.",
+  " lost by being unavailable at the start of a game.",
+];
+
 function kindOf(line: string): string {
   const end = line.indexOf("|", 1);
   return end < 0 ? line.slice(1) : line.slice(1, end);
 }
 
 /**
- * True if `line` is a server-only line wherever it appears in the stream:
+ * True if `line` is a server-only line wherever it appears in the stream.
+ * It is not the keep decision: a line of unknown kind returns false here,
+ * and `stripServerLines` drops and reports it.
+ *
  * - a `>room` header;
  * - a plain-text notice (a non-empty line not starting with `|`), or `||`
  *   followed by text (the bare `|` spacer is the sim's);
@@ -211,15 +248,16 @@ function kindOf(line: string): string {
  *   a request and never reaches `decodeRequest` (ADR-005 §1);
  * - `|player|<slot>|` with no name, which the server sends when a player
  *   leaves (the sim always names a side);
+ * - the auto-tie hint and the all-inactive message (SERVER_TEXT);
  * - a line of a known server kind, except the sim's Open Team Sheets lines,
  *   whose place in the stream decides (`stripServerLines`).
  */
 export function serverOnlyLine(line: string): boolean {
   if (line === "") return false;
   if (!line.startsWith("|") || (line.startsWith("||") && line.length > 2)) return true;
-  if (line === "|request|null") return true;
+  if (line === "|request|null" || SERVER_TEXT.has(line)) return true;
   if (/^\|player\|[^|]*\|$/.test(line)) return true;
-  if (line.startsWith(OTS_PROMPT) || line.startsWith(OTS_CLEAR)) return false;
+  if (line.startsWith(OTS_PROMPT) || line === OTS_CLEAR) return false;
   return SERVER_KINDS.has(kindOf(line));
 }
 
@@ -247,11 +285,16 @@ export interface StrippedLines {
  * line for a slot is the first `|player|` line for that slot after
  * `|gametype|`: lines before `|gametype|` are the server's, later lines for
  * the same slot are rejoins, and lines after `|start` are dropped as well.
+ *
+ * Forfeits: a `|-message|` that is a kept `|player|` line's name followed by
+ * one of the server's forfeit suffixes is dropped. The sim writes no such
+ * message.
  */
 export function stripServerLines(stream: readonly string[]): StrippedLines {
   const lines: string[] = [];
   const dropped: string[] = [];
   const named = new Set<string>();
+  const forfeits = new Set<string>();
   let gametype = false;
   let started = false;
   for (const line of stream) {
@@ -259,12 +302,16 @@ export function stripServerLines(stream: readonly string[]): StrippedLines {
     const kind = kindOf(line);
     let keep: boolean;
     if (line.startsWith(OTS_PROMPT)) keep = !started;
-    else if (line.startsWith(OTS_CLEAR)) keep = started;
+    else if (line === OTS_CLEAR) keep = started;
     else if (kind === "player") {
-      const slot = line.split("|")[2] as string;
+      const [, , slot, name] = line.split("|") as [string, string, string, string];
       keep = gametype && !started && !named.has(slot);
-      if (keep) named.add(slot);
-    } else if (SIM_KINDS.has(kind)) {
+      if (keep) {
+        named.add(slot);
+        for (const suffix of FORFEIT_SUFFIXES) forfeits.add(`|-message|${name}${suffix}`);
+      }
+    } else if (forfeits.has(line)) keep = false;
+    else if (SIM_KINDS.has(kind)) {
       keep = true;
       if (kind === "gametype") gametype = true;
       if (kind === "start") started = true;
