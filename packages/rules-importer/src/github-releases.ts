@@ -40,6 +40,8 @@ const RULES_TAG = /^rules-(?:snapshot|channel)-/;
 const SAFE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const COMMIT = /^[0-9a-f]{40}$/;
 const DIGEST = /^sha256:([0-9a-f]{64})$/;
+/** gh's jq projection of each Release: only the fields read here. */
+export const RELEASES_JQ = ".[] | {tag_name, draft, prerelease, assets: [.assets[] | {name, state, digest}]}";
 /** An annotated tag may point at another tag; follow at most this many. */
 const MAX_TAG_DEPTH = 4;
 
@@ -123,15 +125,17 @@ export class GitHubReleaseSource implements ReleaseSource {
     }
   }
 
-  /** Every non-draft rules Release, across all pages of the Releases API. */
+  /**
+   * Every non-draft rules Release, across all pages of the Releases API, as
+   * one compact JSON line each (RELEASES_JQ), so gh's output stays small.
+   */
   async #releases(): Promise<Release[]> {
-    const pages = await this.#json(["api", "--paginate", "--slurp", `repos/${this.#repo}/releases?per_page=100`]);
-    if (!Array.isArray(pages) || !pages.every(Array.isArray)) {
-      throw new ReleaseSourceError("the Releases API did not return a list of pages");
-    }
+    const args = ["api", "--paginate", "--jq", RELEASES_JQ, `repos/${this.#repo}/releases?per_page=100`];
+    const lines = (await this.#call(args)).split("\n").filter((line) => line !== "");
     const releases: Release[] = [];
     const tags = new Set<string>();
-    for (const value of pages.flat() as unknown[]) {
+    for (const line of lines) {
+      const value = parseLine(line);
       if (!isObject(value) || typeof value.tag_name !== "string" || typeof value.draft !== "boolean") {
         throw new ReleaseSourceError("the Releases API returned a Release without a tag_name and draft flag");
       }
@@ -177,6 +181,14 @@ export class GitHubReleaseSource implements ReleaseSource {
       }
     }
     return bytes;
+  }
+}
+
+function parseLine(line: string): unknown {
+  try {
+    return JSON.parse(line) as unknown;
+  } catch (cause) {
+    throw new ReleaseSourceError("the Releases API listing has a line that is not JSON", { cause });
   }
 }
 

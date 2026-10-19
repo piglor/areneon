@@ -1,5 +1,6 @@
 export {
   AttestationError,
+  CHILD_ENV,
   type AttestationPolicy,
   type AttestationVerifier,
   type CommandResult,
@@ -11,7 +12,12 @@ export {
   spawnRunner,
   type SpawnRunnerOptions,
 } from "./attestation.ts";
-export { GitHubReleaseSource, type GitHubReleaseSourceOptions, ReleaseSourceError } from "./github-releases.ts";
+export {
+  GitHubReleaseSource,
+  type GitHubReleaseSourceOptions,
+  ReleaseSourceError,
+  RELEASES_JQ,
+} from "./github-releases.ts";
 export {
   type DbSession,
   EXIT_CONFIG,

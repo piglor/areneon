@@ -2,9 +2,10 @@ import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   AttestationError,
+  CHILD_ENV,
   type CommandResult,
   type CommandRunner,
   GhAttestationVerifier,
@@ -238,6 +239,45 @@ describe("GhAttestationVerifier", () => {
 });
 
 describe("spawnRunner", () => {
+  const printEnv = "process.stdout.write(JSON.stringify(process.env))";
+
+  it("passes only the allowlisted environment to the command", async () => {
+    const env = {
+      PATH: "/bin",
+      HOME: "/home/importer",
+      GH_TOKEN: "gh-token",
+      GH_HOST: "github.com",
+      SSL_CERT_FILE: "/certs.crt",
+      SSL_CERT_DIR: "/certs",
+      HTTP_PROXY: "http://proxy",
+      https_proxy: "http://proxy",
+      no_proxy: "localhost",
+      DATABASE_URL: "postgres://importer:secret@db/areneon",
+      PGPASSWORD: "secret",
+      gh_token: "lowercase is another variable",
+    };
+    const { stdout } = await createSpawnRunner({ env })(process.execPath, ["-e", printEnv]);
+    const { DATABASE_URL, PGPASSWORD, gh_token, ...kept } = env;
+    expect(JSON.parse(stdout)).toEqual(kept);
+    expect(CHILD_ENV).toEqual([
+      "PATH", "path", "HOME", "home", "GH_TOKEN", "GH_HOST", "SSL_CERT_FILE", "ssl_cert_file", "SSL_CERT_DIR",
+      "ssl_cert_dir", "HTTP_PROXY", "http_proxy", "HTTPS_PROXY", "https_proxy", "NO_PROXY", "no_proxy",
+    ]);
+  });
+
+  it("filters the process environment by default", async () => {
+    vi.stubEnv("DATABASE_URL", "postgres://importer:secret@db/areneon");
+    vi.stubEnv("GH_TOKEN", "gh-token");
+    try {
+      const child = JSON.parse((await spawnRunner(process.execPath, ["-e", printEnv])).stdout) as Record<string, string>;
+      expect(child.DATABASE_URL).toBeUndefined();
+      expect(child.GH_TOKEN).toBe("gh-token");
+      expect(Object.keys(child).every((name) => CHILD_ENV.includes(name))).toBe(true);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   it("returns the exit code, stdout and stderr", async () => {
     const script = "process.stdout.write('out'); process.stderr.write('err'); process.exitCode = 3";
     await expect(spawnRunner(process.execPath, ["-e", script])).resolves.toEqual({

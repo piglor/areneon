@@ -52,7 +52,8 @@ export interface CommandResult {
 
 /**
  * Runs one command without a shell. Rejects when it cannot be started, runs
- * too long or prints too much.
+ * too long or prints too much. The command sees only the allowlisted
+ * environment (CHILD_ENV), never DATABASE_URL or any other variable.
  */
 export type CommandRunner = (command: string, args: readonly string[]) => Promise<CommandResult>;
 
@@ -61,15 +62,49 @@ export interface SpawnRunnerOptions {
   readonly timeoutMs?: number;
   /** Kill the command once stdout or stderr exceeds this many bytes; default 4 MiB. */
   readonly maxOutputBytes?: number;
+  /** The environment to pass on, filtered by CHILD_ENV; default process.env. */
+  readonly env?: Readonly<Record<string, string | undefined>>;
+}
+
+/**
+ * The variables a command (gh) may see: its search path, home (gh's cache),
+ * GitHub token and host, TLS trust and proxies. Everything else, notably
+ * DATABASE_URL, stays in the importer.
+ */
+export const CHILD_ENV: readonly string[] = [
+  "PATH",
+  "HOME",
+  "GH_TOKEN",
+  "GH_HOST",
+  "SSL_CERT_FILE",
+  "SSL_CERT_DIR",
+  "HTTP_PROXY",
+  "HTTPS_PROXY",
+  "NO_PROXY",
+].flatMap((name) => (name.startsWith("GH_") ? [name] : [name, name.toLowerCase()]));
+
+function childEnv(env: Readonly<Record<string, string | undefined>>): Record<string, string> {
+  const kept: Record<string, string> = {};
+  for (const name of CHILD_ENV) {
+    const value = env[name];
+    if (value !== undefined) kept[name] = value;
+  }
+  return kept;
 }
 
 export function createSpawnRunner(options: SpawnRunnerOptions = {}): CommandRunner {
   const timeoutMs = options.timeoutMs ?? 60_000;
   const maxOutputBytes = options.maxOutputBytes ?? 4 * 1024 * 1024;
+  const sourceEnv = options.env ?? process.env;
   return (command, args) =>
     new Promise((resolve, reject) => {
       const signal = AbortSignal.timeout(timeoutMs);
-      const child = spawn(command, args, { stdio: ["ignore", "pipe", "pipe"], signal, killSignal: "SIGKILL" });
+      const child = spawn(command, args, {
+        stdio: ["ignore", "pipe", "pipe"],
+        env: childEnv(sourceEnv),
+        signal,
+        killSignal: "SIGKILL",
+      });
       // A promise settles once, so a later reject or resolve is a no-op. The
       // kill reaches only the direct child; gh starts no child of its own here.
       const fail = (error: Error): void => {

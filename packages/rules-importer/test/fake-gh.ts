@@ -9,7 +9,7 @@ import { createHash } from "node:crypto";
 import { copyFileSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { CommandResult } from "../src/index.ts";
+import { type CommandResult, RELEASES_JQ } from "../src/index.ts";
 
 export const FIXTURES = fileURLToPath(new URL("../../../fixtures/rules-releases/", import.meta.url));
 const fixture = (name: string): string => readFileSync(join(FIXTURES, name), "utf8");
@@ -24,7 +24,7 @@ interface RecordedRef {
 }
 
 export interface FakeGhOptions {
-  /** stdout of `gh api --paginate --slurp repos/…/releases…`; default the recording. */
+  /** stdout of `gh api --paginate --jq RELEASES_JQ repos/…/releases…`; default the recording. */
   readonly releases?: string;
   /** `gh api …/git/ref/tags/<tag>` answers by tag; default the recording. */
   readonly refs?: Readonly<Record<string, unknown>>;
@@ -59,8 +59,8 @@ export function fakeGh(args: readonly string[], options: FakeGhOptions = {}): Co
 
 function api(args: readonly string[], options: FakeGhOptions): CommandResult {
   const releases = `repos/${REPO}/releases?per_page=100`;
-  if (args.length === 3 && args[0] === "--paginate" && args[1] === "--slurp" && args[2] === releases) {
-    return ok(options.releases ?? fixture("gh-api-releases.json"));
+  if (args.length === 4 && args[0] === "--paginate" && args[1] === "--jq" && args[2] === RELEASES_JQ && args[3] === releases) {
+    return ok(options.releases ?? fixture("gh-api-releases.jsonl"));
   }
   const [path] = args;
   if (args.length !== 1 || path === undefined) return fail(`fake gh: unsupported api call: ${args.join(" ")}`);

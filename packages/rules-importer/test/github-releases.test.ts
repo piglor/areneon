@@ -11,6 +11,7 @@ import {
   GhAttestationVerifier,
   GitHubReleaseSource,
   ReleaseSourceError,
+  RELEASES_JQ,
 } from "../src/index.ts";
 import { fakeGh, type FakeGhOptions, FIXTURES, RECORDED_REFS } from "./fake-gh.ts";
 
@@ -18,7 +19,12 @@ const SNAPSHOT_TAG = "rules-snapshot-7c618d78d6f569e875d7e5be4863152599dc8f4207f
 const CHANNEL_TAG = "rules-channel-stable-b226c3bfe889f8cf775933b0a964a44ef6d69913";
 const SNAPSHOT_COMMIT = "35f9c5f04aecbe1dfc38e55d2599b1013f1b43b7";
 const CHANNEL_COMMIT = "b226c3bfe889f8cf775933b0a964a44ef6d69913";
-const RELEASES = JSON.parse(await readFile(join(FIXTURES, "gh-api-releases.json"), "utf8")) as Record<string, unknown>[][];
+const RELEASES = (await readFile(join(FIXTURES, "gh-api-releases.jsonl"), "utf8"))
+  .split("\n")
+  .filter((line) => line !== "")
+  .map((line) => JSON.parse(line) as Record<string, unknown>);
+/** gh's --jq output: one compact JSON line per Release. */
+const lines = (values: unknown[]): string => values.map((value) => `${JSON.stringify(value)}\n`).join("");
 const bytesOf = async (tag: string): Promise<Uint8Array> => new Uint8Array(await readFile(join(FIXTURES, `${tag}.json`)));
 
 interface Setup {
@@ -41,8 +47,7 @@ async function setup({ gh = {}, verifier }: Setup = {}) {
 
 /** The recorded Releases list with release `index` replaced by `edit` of it. */
 function releases(index: number, edit: (release: Record<string, unknown>) => unknown): string {
-  const page = RELEASES[0] as Record<string, unknown>[];
-  return JSON.stringify([page.map((release, i) => (i === index ? edit(structuredClone(release)) : release))]);
+  return lines(RELEASES.map((release, i) => (i === index ? edit(structuredClone(release)) : release)));
 }
 const firstAsset = (release: Record<string, unknown>) => (release.assets as Record<string, unknown>[])[0] as Record<string, unknown>;
 
@@ -96,7 +101,7 @@ describe("GitHubReleaseSource", () => {
     const attested = new TextEncoder().encode("attested");
     const verifier: AttestationVerifier = { verify: async () => attested };
     // Without GitHub's digest only the attestation binds the bytes.
-    const gh = { releases: JSON.stringify([RELEASES[0]?.map((r) => ({ ...r, assets: [{ ...firstAsset(r), digest: null }] }))]) };
+    const gh = { releases: lines(RELEASES.map((r) => ({ ...r, assets: [{ ...firstAsset(r), digest: null }] }))) };
     const { source } = await setup({ gh, verifier });
     expect((await source.list()).map((asset) => asset.bytes)).toEqual([attested, attested]);
   });
@@ -115,7 +120,7 @@ describe("GitHubReleaseSource", () => {
 
   it("ignores drafts and Releases that are not rules Releases", async () => {
     const extra = [{ tag_name: "v1.0.0", draft: false, prerelease: true, assets: [] }];
-    const gh = { releases: releases(0, (r) => ({ ...r, draft: true })).replace(/^\[/, `[${JSON.stringify(extra)},`) };
+    const gh = { releases: lines(extra) + releases(0, (r) => ({ ...r, draft: true })) };
     const { source } = await setup({ gh });
     expect((await source.list()).map((asset) => asset.tag)).toEqual([CHANNEL_TAG]);
   });
@@ -155,16 +160,14 @@ describe("GitHubReleaseSource", () => {
     ["an annotated tag that is gone", ref({ sha: "a".repeat(40), type: "tag" }), "Not Found (HTTP 404)"],
     ["an annotated tag without an object", { ...ref({ sha: "a".repeat(40), type: "tag" }), tags: { ["a".repeat(40)]: [] } }, "points at no 40-hex object"],
     ["a missing tag", { refs: {} }, "exited 1: gh: Not Found (HTTP 404)"],
-    ["malformed JSON", { releases: "[[" }, "printed malformed JSON"],
-    ["a list that is not of pages", { releases: "[{}]" }, "did not return a list of pages"],
-    ["a non-list", { releases: "{}" }, "did not return a list of pages"],
+    ["a line that is not JSON", { releases: `${lines(RELEASES)}{"tag_name"\n` }, "has a line that is not JSON"],
     ["a Release without a tag", { releases: releases(0, ({ tag_name, ...r }) => r) }, "without a tag_name and draft flag"],
     ["a Release without a draft flag", { releases: releases(0, ({ draft, ...r }) => r) }, "without a tag_name and draft flag"],
     ["a Release that is not an object", { releases: releases(0, () => "x") }, "without a tag_name and draft flag"],
     ["a tag with unsafe characters", { releases: releases(0, (r) => ({ ...r, tag_name: "rules-snapshot-../x" })) }, "unexpected characters"],
     ["a pre-release", { releases: releases(1, (r) => ({ ...r, prerelease: true })) }, `Release ${CHANNEL_TAG} is a pre-release`],
     ["a Release without a pre-release flag", { releases: releases(1, ({ prerelease, ...r }) => r) }, "is a pre-release"],
-    ["a Release listed twice", { releases: releases(1, () => RELEASES[0]?.[0]) }, "is listed twice"],
+    ["a Release listed twice", { releases: releases(1, () => RELEASES[0]) }, "is listed twice"],
     ["a Release without assets", { releases: releases(0, (r) => ({ ...r, assets: [] })) }, "has no assets"],
     ["a Release whose assets are not a list", { releases: releases(0, (r) => ({ ...r, assets: {} })) }, "has no assets"],
     ["an asset name with a path", { releases: releases(0, (r) => ({ ...r, assets: [{ ...firstAsset(r), name: "../x.json" }] })) }, "without a plain name"],
@@ -176,6 +179,19 @@ describe("GitHubReleaseSource", () => {
     ["an asset gh cannot download", { releases: releases(0, (r) => ({ ...r, assets: [{ ...firstAsset(r), name: "other.json" }] })) }, "gh release download exited 1: no assets match"],
   ])("refuses %s", async (_, gh, message) => {
     expect(await refusal({ gh: gh as FakeGhOptions })).toContain(message);
+  });
+
+  it("lists nothing when the repository has no Releases", async () => {
+    const { source } = await setup({ gh: { releases: "" } });
+    expect(await source.list()).toEqual([]);
+  });
+
+  it("refuses a tag ref gh prints as malformed JSON", async () => {
+    const run: CommandRunner = async (_, args) =>
+      args[1]?.includes("/git/ref/tags/") ? { code: 0, stdout: "{", stderr: "" } : fakeGh(args);
+    const source = new GitHubReleaseSource({ verifier: new GhAttestationVerifier({ run }), run });
+    await expect(source.list()).rejects.toThrow("gh api repos/piglor/areneon/git/ref/tags/");
+    await expect(source.list()).rejects.toThrow("printed malformed JSON");
   });
 
   it("refuses when gh cannot be run", async () => {
@@ -194,6 +210,6 @@ describe("GitHubReleaseSource", () => {
     };
     const source = new GitHubReleaseSource({ verifier: new GhAttestationVerifier({ run }), run });
     await expect(source.list()).rejects.toThrow("gh api --paginate exited 1: offline");
-    expect(seen).toEqual(["gh", "api", "--paginate", "--slurp", "repos/piglor/areneon/releases?per_page=100"]);
+    expect(seen).toEqual(["gh", "api", "--paginate", "--jq", RELEASES_JQ, "repos/piglor/areneon/releases?per_page=100"]);
   });
 });
