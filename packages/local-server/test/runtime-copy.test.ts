@@ -1,6 +1,7 @@
-import { execFileSync } from "node:child_process";
+import { execFile, execFileSync } from "node:child_process";
 import {
   appendFileSync,
+  chmodSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -11,6 +12,7 @@ import {
   rmSync,
   statSync,
   symlinkSync,
+  utimesSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -23,6 +25,7 @@ import {
   RUNTIME_ENTRIES,
   RUNTIME_MANIFEST,
   RuntimeCopyError,
+  STALE_STAGING_MS,
   treeDigest,
   verifyRuntimeCopy,
 } from "../src/index.ts";
@@ -55,6 +58,7 @@ function fakeVendor(edit: (dir: string) => void = () => {}): { dir: string; comm
   symlinkSync("../dep/bin/dep.js", join(dir, "node_modules/.bin/dep"));
   write(dir, "package.json", "{}\n");
   write(dir, "pokemon-showdown", "#!/usr/bin/env node\n");
+  chmodSync(join(dir, "pokemon-showdown"), 0o755);
   edit(dir);
   const git = (...args: string[]): string =>
     execFileSync("git", ["-C", dir, ...args], { encoding: "utf8" }).trim();
@@ -126,14 +130,33 @@ describe("createRuntimeCopy refuses", () => {
   });
 
   it.each([
-    ["an absolute symlink", (dir: string) => symlinkSync(join(dir, "package.json"), join(dir, "node_modules/abs"))],
-    ["a symlink out of the copy", (dir: string) => symlinkSync("../../package.json", join(dir, "node_modules/out"))],
-  ])("%s, leaving no partial copy", (_label, edit) => {
+    [
+      "an absolute symlink",
+      (dir: string) => symlinkSync(join(dir, "package.json"), join(dir, "node_modules/abs")),
+      /is absolute/,
+    ],
+    [
+      "a dangling symlink",
+      (dir: string) => symlinkSync("../../package.json", join(dir, "node_modules/out")),
+      /is dangling/,
+    ],
+    [
+      // Lexically `x -> l/..` stays inside, but `l` is the copy's root, so
+      // `x` really is the directory holding the copy.
+      "a chained symlink out of the copy",
+      (dir: string) => {
+        mkdirSync(join(dir, "node_modules/p/q"), { recursive: true });
+        symlinkSync("../../..", join(dir, "node_modules/p/q/l"));
+        symlinkSync("l/..", join(dir, "node_modules/p/q/x"));
+      },
+      /node_modules\/p\/q\/x -> l\/\.\. leaves the runtime copy/,
+    ],
+  ])("%s, leaving no partial copy", (_label, edit, message) => {
     const vendor = fakeVendor(edit);
     const root = tempDir("root");
     expect(() =>
       createRuntimeCopy({ vendorDir: vendor.dir, runtimeRoot: root, expectedCommit: vendor.commit }),
-    ).toThrow(/leaves the runtime copy/);
+    ).toThrow(message);
     expect(readdirSync(root)).toEqual([]);
   });
 
@@ -166,6 +189,7 @@ describe("a runtime copy of a fake checkout", () => {
       [RUNTIME_MANIFEST, "config", "dist", "node_modules", "package.json", "pokemon-showdown", "server"].sort(),
     );
     for (const entry of RUNTIME_ENTRIES) expect(existsSync(join(copy.dir, entry))).toBe(true);
+    expect(statSync(join(copy.dir, "pokemon-showdown")).mode & 0o111).toBe(0o111);
     expect(readlinkSync(join(copy.dir, "node_modules/.bin/dep"))).toBe("../dep/bin/dep.js");
     expect(readFileSync(join(copy.dir, "node_modules/.bin/dep"), "utf8")).toBe("#!/usr/bin/env node\n");
     expect(copy.distSha256).toBe(treeDigest(join(vendor.dir, "dist")));
@@ -183,6 +207,44 @@ describe("a runtime copy of a fake checkout", () => {
     expect(existsSync(join(dir, "logs"))).toBe(false);
     expect(readdirSync(root)).toEqual([vendor.commit]);
   });
+
+  it("sweeps this commit's stale staging directories but leaves young and foreign ones", () => {
+    const stale = join(root, `.${vendor.commit}-stale`);
+    const young = join(root, `.${vendor.commit}-young`);
+    const foreign = join(root, `.${"f".repeat(40)}-stale`);
+    for (const dir of [stale, young, foreign]) mkdirSync(dir);
+    const old = (Date.now() - STALE_STAGING_MS - 60_000) / 1000;
+    utimesSync(stale, old, old);
+    utimesSync(foreign, old, old);
+    freshCopy();
+    expect(readdirSync(root).sort()).toEqual(
+      [`.${"f".repeat(40)}-stale`, `.${vendor.commit}-young`, vendor.commit].sort(),
+    );
+    for (const dir of [young, foreign]) rmSync(dir, { recursive: true });
+  });
+
+  it("lets concurrent creators of one commit each succeed or fail with RuntimeCopyError", async () => {
+    const module = new URL("../src/index.ts", import.meta.url).href;
+    const script = `
+      import { createRuntimeCopy } from ${JSON.stringify(module)};
+      try {
+        createRuntimeCopy(${JSON.stringify(options)});
+        console.log("ok");
+      } catch (error) {
+        console.log(error.name);
+      }`;
+    const run = (): Promise<string> =>
+      new Promise((done, fail) => {
+        execFile(process.execPath, ["--input-type=module", "-e", script], (error, stdout) =>
+          error ? fail(error) : done(stdout.trim()),
+        );
+      });
+    const outcomes = await Promise.all(Array.from({ length: 6 }, run));
+    for (const outcome of outcomes) expect(["ok", "RuntimeCopyError"]).toContain(outcome);
+    expect(outcomes).toContain("ok");
+    expect(readdirSync(root)).toEqual([vendor.commit]);
+    expect(verifyRuntimeCopy(join(root, vendor.commit), vendor.commit).commit).toBe(vendor.commit);
+  }, 60_000);
 
   it.each([
     ["a changed byte", (dir: string) => appendFileSync(join(dir, "dist/sim/index.js"), " ")],
@@ -277,6 +339,7 @@ describe("a runtime copy of the real pinned checkout", () => {
       expect(copy.distSha256).toBe(treeDigest(join(DEFAULT_SHOWDOWN_DIR, "dist")));
       expect(verifyRuntimeCopy(copy.dir)).toEqual(copy);
       expect(existsSync(join(copy.dir, "server/static/index.html"))).toBe(true);
+      expect(statSync(join(copy.dir, "pokemon-showdown")).mode & 0o111).not.toBe(0);
       expect(existsSync(join(copy.dir, "config/config.js"))).toBe(false);
     },
     300_000,

@@ -6,6 +6,7 @@ export {
   type RuntimeCopy,
   RuntimeCopyError,
   type RuntimeCopyOptions,
+  STALE_STAGING_MS,
   treeDigest,
   verifyRuntimeCopy,
 } from "./runtime-copy.ts";

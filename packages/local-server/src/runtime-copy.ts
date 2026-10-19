@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import {
   cpSync,
   existsSync,
+  lstatSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
@@ -38,6 +39,13 @@ export const RUNTIME_ENTRIES = [
   "package.json",
   "pokemon-showdown",
 ] as const;
+
+/**
+ * A staging or set-aside directory (`.<commit>-*`) older than this is left
+ * over from a crashed run and is removed; a younger one may belong to a
+ * concurrent run and is left alone.
+ */
+export const STALE_STAGING_MS = 10 * 60 * 1000;
 
 /** The record of a runtime copy's commit and `dist/` digest, inside the copy. */
 export const RUNTIME_MANIFEST = "areneon-runtime.json";
@@ -93,13 +101,21 @@ export function treeDigest(dir: string): string {
  * `<runtimeRoot>/<commit>/` and record the copied `dist/` digest there
  * (ADR-005 §4). The checkout is verified exactly as `loadEngine()` does
  * (HEAD = pin, build present). Nothing is written under `vendorDir`: the
- * copy is staged next to its target and renamed into place, replacing any
- * earlier copy for the same commit.
+ * copy is staged next to its target and renamed into place.
+ *
+ * An earlier copy for the same commit is renamed aside, replaced, then
+ * removed. A server already running from it keeps its open files, but the
+ * launcher must not recreate the copy while one of its servers runs from it.
+ * Concurrent creators of the same commit each either put a complete copy in
+ * place or fail with a `RuntimeCopyError`; none leaves a staging directory.
  */
 export function createRuntimeCopy(options: RuntimeCopyOptions = {}): RuntimeCopy {
   const vendorDir = resolve(options.vendorDir ?? DEFAULT_SHOWDOWN_DIR);
   const runtimeRoot = resolve(options.runtimeRoot ?? DEFAULT_RUNTIME_ROOT);
-  const commit = verifyShowdownCheckout(vendorDir, options.expectedCommit ?? PINNED_SHOWDOWN_COMMIT);
+  const { commit } = verifyShowdownCheckout(
+    vendorDir,
+    options.expectedCommit ?? PINNED_SHOWDOWN_COMMIT,
+  );
   if (isWithin(realTarget(runtimeRoot), realpathSync(vendorDir))) {
     throw new RuntimeCopyError(`runtime root ${runtimeRoot} is inside the vendor checkout`);
   }
@@ -109,6 +125,7 @@ export function createRuntimeCopy(options: RuntimeCopyOptions = {}): RuntimeCopy
     }
   }
   mkdirSync(runtimeRoot, { recursive: true });
+  sweepStale(runtimeRoot, commit);
   const staging = mkdtempSync(join(runtimeRoot, `.${commit}-`));
   try {
     for (const entry of RUNTIME_ENTRIES) {
@@ -128,8 +145,19 @@ export function createRuntimeCopy(options: RuntimeCopyOptions = {}): RuntimeCopy
       `${JSON.stringify({ commit, dist_sha256: distSha256 }, null, 2)}\n`,
     );
     const dir = join(runtimeRoot, commit);
-    rmSync(dir, { recursive: true, force: true });
-    renameSync(staging, dir);
+    const aside = `${staging}.old`;
+    try {
+      try {
+        renameSync(dir, aside);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      }
+      renameSync(staging, dir);
+    } catch (error) {
+      rmSync(aside, { recursive: true, force: true });
+      throw new RuntimeCopyError(`cannot put the runtime copy in place at ${dir}: ${String(error)}`);
+    }
+    rmSync(aside, { recursive: true, force: true });
     return { dir, commit, distSha256 };
   } catch (error) {
     rmSync(staging, { recursive: true, force: true });
@@ -185,15 +213,40 @@ function readManifest(path: string): { commit: string; dist_sha256: string } {
   return value as { commit: string; dist_sha256: string };
 }
 
-/** Refuse a symlink in the copy that is absolute or resolves outside it. */
+/** Remove this commit's staging and set-aside directories left by a crashed run. */
+function sweepStale(runtimeRoot: string, commit: string): void {
+  const now = Date.now();
+  for (const name of readdirSync(runtimeRoot)) {
+    const path = join(runtimeRoot, name);
+    if (name.startsWith(`.${commit}-`) && now - lstatSync(path).mtimeMs > STALE_STAGING_MS) {
+      rmSync(path, { recursive: true, force: true });
+    }
+  }
+}
+
+/**
+ * Refuse a symlink in the copy that is absolute, dangling, or whose real path
+ * (following every link in the chain) is outside the copy's real path. Fails
+ * closed: the pinned checkout's only links are relative `node_modules/.bin`
+ * entries whose targets exist in the copy.
+ */
 function checkContained(root: string): void {
+  // `realpathSync.native` asks the OS, which follows each link before the
+  // next `..`; the JS `realpathSync` collapses `l/..` lexically first.
+  const realRoot = realpathSync.native(root);
   const walk = (dir: string): void => {
     for (const entry of readdirSync(dir, { withFileTypes: true })) {
       const path = join(dir, entry.name);
       if (entry.isDirectory()) walk(path);
       else if (entry.isSymbolicLink()) {
         const link = readlinkSync(path);
-        if (isAbsolute(link) || !isWithin(resolve(dirname(path), link), root)) {
+        if (isAbsolute(link)) {
+          throw new RuntimeCopyError(`symlink ${path} -> ${link} is absolute`);
+        }
+        if (!existsSync(path)) {
+          throw new RuntimeCopyError(`symlink ${path} -> ${link} is dangling`);
+        }
+        if (!isWithin(realpathSync.native(path), realRoot)) {
           throw new RuntimeCopyError(`symlink ${path} -> ${link} leaves the runtime copy`);
         }
       }
