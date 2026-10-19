@@ -63,14 +63,15 @@ COPY packages/schema/contracts packages/schema/contracts
 # curl, npm, corepack or pnpm. The node binary needs only glibc and libstdc++,
 # which Debian's slim image has.
 FROM ${DEBIAN_IMAGE} AS base
-COPY --from=gh /etc/ssl/certs /etc/ssl/certs
+COPY --from=gh /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 COPY --from=gh /usr/local/bin/gh /usr/local/bin/gh
 COPY --from=build /usr/local/bin/node /usr/local/bin/node
 COPY --from=build /app /app
 # An unprivileged user whose home holds gh's cache.
 RUN useradd --uid 1000 --user-group --create-home --shell /usr/sbin/nologin importer
 WORKDIR /app
-ENV NODE_ENV=production
+ENV NODE_ENV=production \
+  SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
 USER 1000:1000
 ENTRYPOINT ["node", "packages/rules-importer/src/cli.ts"]
 

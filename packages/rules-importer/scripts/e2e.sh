@@ -11,7 +11,10 @@
 set -euo pipefail
 
 image=${1:?usage: e2e.sh <image name>}
-url="postgres://importer:local-importer@127.0.0.1:55432/areneon"
+# The database `make db-up` starts; override both to run beside it.
+db_host=${RULES_DB_HOST:-127.0.0.1:55432}
+compose_project=${RULES_DB_COMPOSE_PROJECT:-areneon-rules-db}
+url="postgres://importer:local-importer@$db_host/areneon"
 snapshot=7c618d78d6f569e875d7e5be4863152599dc8f4207f6e10cfd5f12301a853fe8
 snapshot_commit=35f9c5f04aecbe1dfc38e55d2599b1013f1b43b7
 channel_commit=b226c3bfe889f8cf775933b0a964a44ef6d69913
@@ -27,7 +30,7 @@ expect() { # expect <what> <actual> <expected>
 }
 # Read the stored rows from a separate session as the read-only role.
 rows() {
-  docker compose -f db/compose.yaml exec -T postgres psql -U areneon_reader -d areneon -At -v ON_ERROR_STOP=1 -c \
+  docker compose -p "$compose_project" -f db/compose.yaml exec -T postgres psql -U areneon_reader -d areneon -At -v ON_ERROR_STOP=1 -c \
     "SELECT hash, source_commit FROM rules.rules_snapshot ORDER BY hash;
      SELECT channel, seq, hash, source_commit FROM rules.rules_release ORDER BY channel, seq;"
 }
@@ -49,9 +52,9 @@ docker run --rm --entrypoint sh "$image:local" -c \
    ! grep -rq FakeAttestationVerifier /app/packages' ||
   fail "the production image holds test files or the fake verifier"
 echo "ok: production image has no test files and no fake verifier"
-for tool in curl npm npx corepack pnpm yarn; do
-  ! docker run --rm --entrypoint sh "$image:local" -c "command -v $tool" >/dev/null || fail "the production image has $tool"
-done
+found=$(docker run --rm --entrypoint sh "$image:local" -c \
+  'for tool in curl npm npx corepack pnpm yarn; do command -v "$tool" && exit 1; done; exit 0') ||
+  fail "the production image has ${found:-a tool it should not, or the check did not run}"
 echo "ok: production image has no curl, npm, npx, corepack, pnpm or yarn"
 expect "production user" "$(docker run --rm --entrypoint id "$image:local" -u)" 1000
 code=0
