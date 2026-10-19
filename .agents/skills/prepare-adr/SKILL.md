@@ -122,19 +122,24 @@ readers infer which source supports a claim from an undifferentiated link list.
 
 ## 4. Publish a Proposed ADR, then pause
 
-Every ADR is tracked by three linked records:
+Every ADR is tracked by an ADR issue and, once Accepted, an implementation
+Epic:
 
 ```text
+ADR issue "[ADR-NNN] <title>"   tracker ADR, standalone, Proposed → Accepted
+
 Roadmap version (Wave N)
-  └─ Epic  "[Epic][ADR-NNN] <title>"   tracker Epic, fixed_version = Wave N
-       ├─ ADR issue "[ADR-NNN] <title>" tracker ADR, status Proposed → Accepted
-       └─ implementation tickets       Feature/Task, no fixed version (inherit)
+  └─ Epic "[Epic][ADR-NNN] <title>"   tracker Epic, fixed_version = Wave N,
+       │                              created only after Accepted and
+       │                              related to the ADR issue
+       └─ implementation tickets      Feature/Task, no fixed version (inherit)
 ```
 
-Create or reuse the Epic first and assign it to the Wave's roadmap version;
-then create the ADR-tracker issue as its child. The ADR issue's status is the
-status of record. Implementation tickets are children of the Epic, not of the
-ADR issue, and carry no fixed version of their own.
+Create the ADR-tracker issue on its own: it is never a subtask of an Epic, and
+its status is the status of record. Do not create the Epic while the ADR is
+Proposed. After the owner accepts it, create the Epic on the Wave's roadmap
+version and relate it to the ADR issue. Implementation tickets are children of
+the Epic, not of the ADR issue, and carry no fixed version of their own.
 
 Create a Markdown Redmine wiki page with `ADR` as its parent. Use the next
 unique ADR number after checking existing wiki titles. Include:
@@ -142,7 +147,7 @@ unique ADR number after checking existing wiki titles. Include:
 ```markdown
 **Status:** Proposed | **Wave:** <wave> | **Deciders:** core team | **Date:** <date>
 
-ADR issue: #<adr-issue> · Epic: #<epic> · Related: [[related ADR]]
+ADR issue: #<adr-issue> · Epic: created once Accepted · Related: [[related ADR]]
 
 ---
 
@@ -188,5 +193,5 @@ Before presenting the ADR, re-read it and verify:
 - [ ] Risks include a mitigation or an explicit acceptance decision.
 - [ ] Redmine page is Markdown, parented under `ADR`, marked Proposed, and
       journaled on the ADR issue.
-- [ ] The ADR issue (tracker ADR) is a child of an Epic whose fixed version
-      is the Wave's roadmap version, and the page header links both.
+- [ ] The ADR issue (tracker ADR) is standalone, not a subtask of an Epic,
+      and the page header links it. No Epic exists until the ADR is Accepted.
