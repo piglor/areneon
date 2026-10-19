@@ -94,7 +94,14 @@ describe("a2Episode on a battle of the local server", () => {
     // A stored copy reads back as it was written (the team under the names the server gave it),
     // and the other bot's Episode is its own.
     const played = new Set([...KNOWN, teamHash(episode.team.team)]);
-    expect(episode.team.team.map((set) => set.name)).toContain("Charizard");
+    // Whether or not the server removed the nicknames, the team carries the names its channel shows.
+    const request = JSON.parse((episode.channel.find((line) => line.startsWith("|request|")) as string).slice("|request|".length)) as {
+      side: { pokemon: { ident: string }[] };
+    };
+    episode.team.team.forEach((set, i) => {
+      const ident = request.side.pokemon[i]?.ident as string;
+      expect([ "", ident.slice(ident.indexOf(": ") + 2)]).toContain(set.name);
+    });
     expect(await readEpisode(JSON.parse(JSON.stringify(episode)), { known_synthetic: played })).toEqual(episode);
     await expect(readEpisode(JSON.parse(JSON.stringify(episode)), { known_synthetic: KNOWN })).rejects.toThrow(/known synthetic/);
     const other = await a2Episode(theirs, options({ team: stamp(rival) }));
