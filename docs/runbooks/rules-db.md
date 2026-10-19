@@ -424,7 +424,8 @@ A timeout that is exceeded fails the statement and rolls the whole import back (
         c. plans: each artifact must be canonical JSON, match its schema and its own name, and a
            channel artifact must name a snapshot that is released or already stored;
         d. applies the plan in ONE transaction: snapshots, then channel steps with a seq above the
-           channel's current maximum. Anything refused rolls the whole plan back.
+           channel's current maximum. Anything refused rolls the whole plan back (a
+           `stale` channel step is not a refusal; see 4.6).
    4. Readers (areneon_reader) see the new rows; a runtime pins the snapshot hash at battle start.
 ```
 
@@ -451,7 +452,7 @@ The importer needs read access to the releases and attestations of one public re
    *Expected result:* a tag such as `rules-snapshot-<64 hex>` or `rules-channel-stable-<40 hex>`, exit 0. Then prove attestations too, with the same token: download one asset and verify it, as in 4.8 step 3:
 
    ```bash
-   mkdir -p asset && docker run --rm -e GH_TOKEN -v "$PWD/asset:/out" --user "$(id -u):$(id -g)" --entrypoint gh areneon-rules-importer:local \
+   mkdir -p asset && docker run --rm -e GH_TOKEN -e HOME=/tmp -v "$PWD/asset:/out" --user "$(id -u):$(id -g)" --entrypoint gh areneon-rules-importer:local \
      release download <the tag printed above> --repo piglor/areneon --dir /out
    docker run --rm -e GH_TOKEN -v "$PWD/asset:/out:ro" --entrypoint gh areneon-rules-importer:local \
      attestation verify /out/<the downloaded file> --repo piglor/areneon \
