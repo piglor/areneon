@@ -1,0 +1,38 @@
+{
+  "provenance": "synthetic: written by Areneon from the pinned server source cited per frame; requests copied from battle.json; see README.md",
+  "room": "battle-gen9championsvgc2026regmc-1",
+  "frames": {
+    "global_updateuser": {
+      "source": "PROTOCOL.md (`>ROOMID` omitted for the global room); server/users.ts:965-975 (`getUpdateuserText`; settings abbreviated)",
+      "frame": "|updateuser| Areneon-bot-0000|0|1|{\"blockChallenges\":false}"
+    },
+    "other_room": {
+      "source": "PROTOCOL.md (`>ROOMID` header, `|j|` join line)",
+      "frame": ">lobby\n|j| human"
+    },
+    "request_null": {
+      "source": "server/room-battle.ts:1021 (`onLeave`: `|request|null`)",
+      "frame": ">battle-gen9championsvgc2026regmc-1\n|request|null"
+    },
+    "request_empty": {
+      "source": "the empty-body form of `|request|`, treated like `|request|null`",
+      "frame": ">battle-gen9championsvgc2026regmc-1\n|request|"
+    },
+    "resend_with_sentchoice": {
+      "source": "server/room-battle.ts:954-961 (`onConnect`: current request, then `|sentchoice|`)",
+      "frame": ">battle-gen9championsvgc2026regmc-1\n|request|{\"active\":[{\"moves\":[{\"move\":\"Thunderbolt\",\"id\":\"thunderbolt\",\"pp\":16,\"maxpp\":16,\"target\":\"normal\",\"disabled\":false},{\"move\":\"Fake Out\",\"id\":\"fakeout\",\"pp\":12,\"maxpp\":12,\"target\":\"normal\",\"disabled\":false},{\"move\":\"Protect\",\"id\":\"protect\",\"pp\":8,\"maxpp\":8,\"target\":\"self\",\"disabled\":false},{\"move\":\"Volt Switch\",\"id\":\"voltswitch\",\"pp\":20,\"maxpp\":20,\"target\":\"normal\",\"disabled\":false}]},{\"moves\":[{\"move\":\"Body Slam\",\"id\":\"bodyslam\",\"pp\":16,\"maxpp\":16,\"target\":\"normal\",\"disabled\":false},{\"move\":\"Protect\",\"id\":\"protect\",\"pp\":8,\"maxpp\":8,\"target\":\"self\",\"disabled\":false},{\"move\":\"Curse\",\"id\":\"curse\",\"pp\":12,\"maxpp\":12,\"target\":\"self\",\"disabled\":false},{\"move\":\"Rest\",\"id\":\"rest\",\"pp\":8,\"maxpp\":8,\"target\":\"self\",\"disabled\":false}]}],\"side\":{\"name\":\"p1\",\"id\":\"p1\",\"pokemon\":[{\"ident\":\"p1: Pikachu\",\"details\":\"Pikachu, L50, M\",\"condition\":\"114/114\",\"active\":true,\"stats\":{\"atk\":75,\"def\":60,\"spa\":70,\"spd\":70,\"spe\":114},\"moves\":[\"thunderbolt\",\"fakeout\",\"protect\",\"voltswitch\"],\"baseAbility\":\"static\",\"item\":\"lightball\",\"pokeball\":\"pokeball\",\"ability\":\"static\",\"commanding\":false,\"reviving\":false},{\"ident\":\"p1: Snorlax\",\"details\":\"Snorlax, L50, M\",\"condition\":\"239/239\",\"active\":true,\"stats\":{\"atk\":130,\"def\":85,\"spa\":85,\"spd\":130,\"spe\":54},\"moves\":[\"bodyslam\",\"protect\",\"curse\",\"rest\"],\"baseAbility\":\"thickfat\",\"item\":\"sitrusberry\",\"pokeball\":\"pokeball\",\"ability\":\"thickfat\",\"commanding\":false,\"reviving\":false},{\"ident\":\"p1: Gengar\",\"details\":\"Gengar, L50, M\",\"condition\":\"139/139\",\"active\":false,\"stats\":{\"atk\":85,\"def\":80,\"spa\":150,\"spd\":95,\"spe\":134},\"moves\":[\"shadowball\",\"sludgebomb\",\"protect\",\"icywind\"],\"baseAbility\":\"cursedbody\",\"item\":\"focussash\",\"pokeball\":\"pokeball\",\"ability\":\"cursedbody\",\"commanding\":false,\"reviving\":false},{\"ident\":\"p1: Venusaur\",\"details\":\"Venusaur, L50, F\",\"condition\":\"159/159\",\"active\":false,\"stats\":{\"atk\":102,\"def\":103,\"spa\":120,\"spd\":120,\"spe\":104},\"moves\":[\"gigadrain\",\"sludgebomb\",\"protect\",\"sleeppowder\"],\"baseAbility\":\"overgrow\",\"item\":\"leftovers\",\"pokeball\":\"pokeball\",\"ability\":\"overgrow\",\"commanding\":false,\"reviving\":false}]},\"rqid\":3}\n|sentchoice|move 1 1, move 1 1"
+    },
+    "resend_without_sentchoice": {
+      "source": "server/room-battle.ts:954-961 (`onConnect` before any choice: the request alone)",
+      "frame": ">battle-gen9championsvgc2026regmc-1\n|request|{\"active\":[{\"moves\":[{\"move\":\"Thunderbolt\",\"id\":\"thunderbolt\",\"pp\":16,\"maxpp\":16,\"target\":\"normal\",\"disabled\":false},{\"move\":\"Fake Out\",\"id\":\"fakeout\",\"pp\":12,\"maxpp\":12,\"target\":\"normal\",\"disabled\":false},{\"move\":\"Protect\",\"id\":\"protect\",\"pp\":8,\"maxpp\":8,\"target\":\"self\",\"disabled\":false},{\"move\":\"Volt Switch\",\"id\":\"voltswitch\",\"pp\":20,\"maxpp\":20,\"target\":\"normal\",\"disabled\":false}]},{\"moves\":[{\"move\":\"Body Slam\",\"id\":\"bodyslam\",\"pp\":16,\"maxpp\":16,\"target\":\"normal\",\"disabled\":false},{\"move\":\"Protect\",\"id\":\"protect\",\"pp\":8,\"maxpp\":8,\"target\":\"self\",\"disabled\":false},{\"move\":\"Curse\",\"id\":\"curse\",\"pp\":12,\"maxpp\":12,\"target\":\"self\",\"disabled\":false},{\"move\":\"Rest\",\"id\":\"rest\",\"pp\":8,\"maxpp\":8,\"target\":\"self\",\"disabled\":false}]}],\"side\":{\"name\":\"p1\",\"id\":\"p1\",\"pokemon\":[{\"ident\":\"p1: Pikachu\",\"details\":\"Pikachu, L50, M\",\"condition\":\"114/114\",\"active\":true,\"stats\":{\"atk\":75,\"def\":60,\"spa\":70,\"spd\":70,\"spe\":114},\"moves\":[\"thunderbolt\",\"fakeout\",\"protect\",\"voltswitch\"],\"baseAbility\":\"static\",\"item\":\"lightball\",\"pokeball\":\"pokeball\",\"ability\":\"static\",\"commanding\":false,\"reviving\":false},{\"ident\":\"p1: Snorlax\",\"details\":\"Snorlax, L50, M\",\"condition\":\"239/239\",\"active\":true,\"stats\":{\"atk\":130,\"def\":85,\"spa\":85,\"spd\":130,\"spe\":54},\"moves\":[\"bodyslam\",\"protect\",\"curse\",\"rest\"],\"baseAbility\":\"thickfat\",\"item\":\"sitrusberry\",\"pokeball\":\"pokeball\",\"ability\":\"thickfat\",\"commanding\":false,\"reviving\":false},{\"ident\":\"p1: Gengar\",\"details\":\"Gengar, L50, M\",\"condition\":\"139/139\",\"active\":false,\"stats\":{\"atk\":85,\"def\":80,\"spa\":150,\"spd\":95,\"spe\":134},\"moves\":[\"shadowball\",\"sludgebomb\",\"protect\",\"icywind\"],\"baseAbility\":\"cursedbody\",\"item\":\"focussash\",\"pokeball\":\"pokeball\",\"ability\":\"cursedbody\",\"commanding\":false,\"reviving\":false},{\"ident\":\"p1: Venusaur\",\"details\":\"Venusaur, L50, F\",\"condition\":\"159/159\",\"active\":false,\"stats\":{\"atk\":102,\"def\":103,\"spa\":120,\"spd\":120,\"spe\":104},\"moves\":[\"gigadrain\",\"sludgebomb\",\"protect\",\"sleeppowder\"],\"baseAbility\":\"overgrow\",\"item\":\"leftovers\",\"pokeball\":\"pokeball\",\"ability\":\"overgrow\",\"commanding\":false,\"reviving\":false}]},\"rqid\":3}"
+    },
+    "nothing_to_choose": {
+      "source": "server/room-battle.ts:628 (`choose` with no open request)",
+      "frame": ">battle-gen9championsvgc2026regmc-1\n|error|[Invalid choice] There's nothing to choose"
+    },
+    "too_late": {
+      "source": "server/room-battle.ts:634 (`choose` with a stale rqid, or every player waiting)",
+      "frame": ">battle-gen9championsvgc2026regmc-1\n|error|[Invalid choice] Sorry, too late to make a different move; the next turn has already started"
+    }
+  }
+}
