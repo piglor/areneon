@@ -24,7 +24,7 @@ export type RoomEvent =
        */
       resend: boolean;
     }
-  /** `|request|null` or an empty `|request|`: the open request is withdrawn, not a request. */
+  /** `|request|null`: the open request is withdrawn; it is not a request. */
   | { kind: "request_closed"; room: string }
   /** The choice the server holds for the re-sent request. */
   | { kind: "sentchoice"; room: string; choice: string }
@@ -63,31 +63,41 @@ const prefixed = (line: string, type: string): string | undefined =>
  *
  * - Every `|request|` counts, `wait` included, and goes through the
  *   pinned bridge's `decodeRequest`, which validates it before hashing.
- * - `|request|null` (sent when a player leaves) and an empty `|request|` are
- *   not requests: they do not count and never reach `decodeRequest`.
+ * - `|request|null` (sent when a player leaves, server/room-battle.ts:1021)
+ *   is not a request: it does not count and never reaches `decodeRequest`.
+ *   The server never sends an empty `|request|`, so one fails to decode.
  * - A request whose `rqid` and `request_hash` both equal the previous
  *   request's is a re-send and keeps its `request_seq`. A request without
  *   an `rqid` is never a re-send: only the server assigns one.
  *
- * The counter is per room: the bot is one player in each battle room.
+ * The counter is per room: the bot is one player in each battle room. A
+ * frame is read all or nothing: its requests are decoded before any room
+ * state changes, so a request that fails to decode leaves the state as it was.
  */
 export class ProtocolReader {
   readonly #rooms = new Map<string, { last: SequencedRequest | undefined; open: boolean }>();
 
-  /** The request identity of `room`, as read so far. */
+  /** A copy of the request identity of `room`, as read so far. */
   state(room: string): RoomRequestState {
-    return this.#rooms.get(room) ?? { last: undefined, open: false };
+    const state = this.#rooms.get(room);
+    return state === undefined ? { last: undefined, open: false } : { ...state };
   }
 
-  /** Reads one frame. Throws `RequestDecodeError` for a request the pinned engine would not send. */
+  /**
+   * Reads one frame. Throws `RequestDecodeError` (or a JSON `SyntaxError`)
+   * for a request the pinned engine would not send, before changing any state.
+   */
   read(frame: string): RoomEvent[] {
     const { room, lines } = splitFrame(frame);
-    return lines.map((line) => this.#event(room, line));
+    const decoded = lines.map((line) => {
+      const body = prefixed(line, "request");
+      return body === undefined || body === "null" ? undefined : decodeRequest(body);
+    });
+    return lines.map((line, i) => this.#event(room, line, decoded[i]));
   }
 
-  #event(room: string, line: string): RoomEvent {
-    const body = prefixed(line, "request");
-    if (body !== undefined) return this.#request(room, body);
+  #event(room: string, line: string, decoded: DecodedRequest | undefined): RoomEvent {
+    if (line.startsWith("|request|")) return this.#request(room, decoded);
     const choice = prefixed(line, "sentchoice");
     if (choice !== undefined) return { kind: "sentchoice", room, choice };
     const error = prefixed(line, "error");
@@ -95,14 +105,14 @@ export class ProtocolReader {
     return { kind: "line", room, line };
   }
 
-  #request(room: string, body: string): RoomEvent {
+  /** `decoded` is `undefined` for `|request|null`. */
+  #request(room: string, decoded: DecodedRequest | undefined): RoomEvent {
     const state = this.#rooms.get(room) ?? { last: undefined, open: false };
     this.#rooms.set(room, state);
-    if (body === "" || body === "null") {
+    if (decoded === undefined) {
       state.open = false;
       return { kind: "request_closed", room };
     }
-    const decoded = decodeRequest(body);
     const last = state.last;
     const resend =
       last !== undefined &&

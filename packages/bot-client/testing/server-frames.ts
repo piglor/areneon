@@ -8,7 +8,6 @@ import {
   type PokemonSet,
   resolveFormat,
   type VersionManifest,
-  validateTeam,
 } from "@areneon/showdown-bridge";
 
 /**
@@ -33,7 +32,11 @@ export const BATTLE_ROOM = "battle-gen9championsvgc2026regmc-1";
  */
 export const INVALID_CHOICE = "move 9, move 1 1";
 
-/** Sent while p1 has a `wait` request: the sim answers that it is not p1's turn. */
+/**
+ * Sent while p1 has a `wait` request: the sim answers that it is not p1's
+ * turn. A probe of the engine's text only: on the pinned server the server
+ * layer answers it with "There's nothing to choose" and never asks the sim.
+ */
 export const OUT_OF_TURN_CHOICE = "default";
 
 /** The engine-derived battle, as one player's connection receives it. */
@@ -68,6 +71,9 @@ interface CorpusCase {
 
 type Player = "p1" | "p2";
 
+/** Each player's own stream: one entry per message, as its lines. */
+export type PlayerChunks = Record<Player, string[][]>;
+
 /**
  * Plays the choice corpus's maybe-trapped battle (foe Mega Gengar may have
  * Shadow Tag) on the pinned in-process sim and frames p1's own stream as the
@@ -81,11 +87,8 @@ type Player = "p1" | "p2";
  */
 export async function captureFrames(engine: Engine): Promise<FrameFixtures> {
   const spec = JSON.parse(readFileSync(CORPUS_CASE, "utf8")) as CorpusCase;
+  // The corpus case's teams are validated where the corpus is (showdown-bridge's choice corpus tests).
   const format = resolveFormat(engine, "gen9championsvgc2026regmc");
-  for (const player of ["p1", "p2"] as const) {
-    const verdict = validateTeam(engine, format, spec.teams[player]);
-    if (!verdict.valid) throw new Error(`${player} team refused: ${verdict.problems.join("; ")}`);
-  }
   const battleStream = new engine.sim.BattleStream();
   const streams = engine.sim.getPlayerStreams(battleStream);
   const queues: Record<Player, string[]> = {
@@ -93,7 +96,7 @@ export async function captureFrames(engine: Engine): Promise<FrameFixtures> {
     p2: spec.log.filter((e) => e.player === "p2").map((e) => e.choice),
   };
   /** Each player's stream: one chunk per message, `|t:|` lines dropped. */
-  const chunks: Record<Player, string[][]> = { p1: [], p2: [] };
+  const chunks: PlayerChunks = { p1: [], p2: [] };
   const sent: BattleFrames["sent"] = [];
   let stage: "log" | "pending" | "invalid" | "rule" = "log";
   let afterInvalid = "";
@@ -194,9 +197,10 @@ const requestOf = (lines: string[]): string | undefined =>
  * The counter is shared by both players. The sim emits one request per side
  * per round, p1 then p2 (`Battle.sendUpdates`), and an `update` request after
  * an `[Unavailable choice]` to one side only, so p1's rqids follow from both
- * players' request lists as long as p2 never gets an `update` request.
+ * players' request lists as long as p2 never gets an `update` request and
+ * gets exactly one request per p1 round; otherwise it throws.
  */
-function serverFrames(chunks: Record<Player, string[][]>): string[] {
+export function serverFrames(chunks: PlayerChunks): string[] {
   const updates = (player: Player): boolean[] =>
     chunks[player].flatMap((lines) => {
       const raw = requestOf(lines);
@@ -236,11 +240,11 @@ function serverLayerFrames(battle: BattleFrames): ServerLayerFrames {
   const requests = battle.frames
     .map((frame, index) => ({ index, raw: requestOf(frame.split("\n")) }))
     .filter((r): r is { index: number; raw: string } => r.raw !== undefined);
-  const answered = requests.find((r) => {
+  // The recorded battle has one (a test checks the re-send against it).
+  const answered = requests.filter((r) => {
     const parsed = JSON.parse(r.raw) as { active?: unknown; update?: boolean };
     return parsed.active !== undefined && parsed.update !== true && battle.sent.some((s) => s.after_frame === r.index + 1);
-  });
-  if (answered === undefined) throw new Error("no answered move request to re-send");
+  })[0] as { index: number; raw: string };
   const choice = (battle.sent.find((s) => s.after_frame === answered.index + 1) as { choice: string }).choice;
   return {
     provenance:
@@ -259,10 +263,6 @@ function serverLayerFrames(battle: BattleFrames): ServerLayerFrames {
         source: "server/room-battle.ts:1021 (`onLeave`: `|request|null`)",
         frame: `${room}|request|null`,
       },
-      request_empty: {
-        source: "the empty-body form of `|request|`, treated like `|request|null`",
-        frame: `${room}|request|`,
-      },
       resend_with_sentchoice: {
         source: "server/room-battle.ts:954-961 (`onConnect`: current request, then `|sentchoice|`)",
         frame: `${room}|request|${answered.raw}\n|sentchoice|${choice}`,
@@ -272,7 +272,7 @@ function serverLayerFrames(battle: BattleFrames): ServerLayerFrames {
         frame: `${room}|request|${answered.raw}`,
       },
       nothing_to_choose: {
-        source: "server/room-battle.ts:628 (`choose` with no open request)",
+        source: "server/room-battle.ts:628 (`choose` with no open request, a `wait` request included: `isWait: 'cantUndo'`, :810)",
         frame: `${room}|error|[Invalid choice] There's nothing to choose`,
       },
       too_late: {

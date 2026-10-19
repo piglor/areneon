@@ -66,6 +66,28 @@ describe("[Unavailable choice] (ADR-005 §1, ADR-006 rule 5)", () => {
       }),
     ).toThrow(EnumeratorDefectError);
   });
+
+  it("in a live match, marks a non-pending candidate's defect and sends nothing: the updated request is new", () => {
+    const legal = legalFor(request);
+    const asCandidate = { ...legal, choices: [choice, ...legal.choices], pending: [] };
+    const refusal = classifyRefusal({
+      error: errorOf(battle.frames[index] as string),
+      submission: { request_seq: request.request_seq, choice },
+      current: current(request, asCandidate),
+      mode: "live_match",
+    });
+    expect(refusal).toMatchObject({ kind: "defect", defect: true });
+    expect(refusal.kind === "defect" && refusal.error).toBeInstanceOf(EnumeratorDefectError);
+    expect("next" in refusal).toBe(false);
+    // The engine's updated request follows, with a new rqid and request_seq.
+    const updated = new ProtocolReader();
+    battle.frames.slice(0, index + 2).forEach((frame) => updated.read(frame));
+    expect(updated.state(battle.room).last).toMatchObject({
+      request_seq: request.request_seq + 1,
+      request: { update: true },
+    });
+    expect(updated.state(battle.room).last?.rqid).not.toBe(request.rqid);
+  });
 });
 
 describe("a sim [Invalid choice] of a current, non-pending candidate", () => {
@@ -111,7 +133,7 @@ describe("a sim [Invalid choice] of a current, non-pending candidate", () => {
   it("skips candidates already refused, then finally sends default", () => {
     const [first, second] = legal.choices as [string, string];
     const skipped = classifyRefusal(input({ mode: "live_match", refused: [first] }));
-    expect(skipped.kind === "defect" && skipped.next.choice).toBe(second);
+    expect(skipped.kind === "defect" && skipped.next?.choice).toBe(second);
     const last = legal.choices.at(-1) as string;
     const final = classifyRefusal(
       input({ mode: "live_match", submission: { request_seq: request.request_seq, choice: last } }),
@@ -168,7 +190,22 @@ describe("stale_choice: refusals that are never defects (ADR-005 §1)", () => {
     expect(refusal).toMatchObject({ kind: "stale_choice", reason: "not_current" });
   });
 
-  it("the sim's not-your-turn while p1 holds a wait request", () => {
+  it("the server's answer to a choice sent while p1 holds a wait request", () => {
+    const index = frameIndex("|error|[Invalid choice] Can't do anything");
+    const { request: wait } = readTo(index);
+    expect(wait.phase).toBe("wait");
+    const waiting = { request_seq: wait.request_seq, choice: OUT_OF_TURN_CHOICE };
+    const refusal = classifyRefusal({
+      error: errorOf(serverFrame("nothing_to_choose")),
+      submission: waiting,
+      current: current(wait, null),
+      mode: "live_match",
+    });
+    expect(refusal).toEqual({ kind: "stale_choice", choice: OUT_OF_TURN_CHOICE, reason: "no_request" });
+  });
+
+  // Sim-only (the server answers a wait itself, above): a probe of the engine's text.
+  it("the sim's not-your-turn text, probed on the in-process engine", () => {
     const index = frameIndex("|error|[Invalid choice] Can't do anything");
     const { request: wait } = readTo(index);
     expect(wait.phase).toBe("wait");

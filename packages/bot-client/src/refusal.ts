@@ -1,4 +1,4 @@
-import { EnumeratorDefectError, type LegalChoiceSet } from "@areneon/showdown-bridge";
+import { EnumeratorDefectError, judgeSubmission, type LegalChoiceSet } from "@areneon/showdown-bridge";
 
 /**
  * Where the bot plays. `harness` is every test and harness run: an
@@ -48,10 +48,19 @@ export type Refusal =
   | { kind: "stale_choice"; choice: string; reason: "not_current" | "no_request" | "refused_as_stale" }
   /**
    * Live match only: the engine refused a current, non-pending candidate.
-   * The incident is `error`; the match is marked `defect: true` and the bot
-   * sends `next` (ADR-005 §1).
+   * The incident is `error` and the match is marked `defect: true`
+   * (ADR-005 §1). After an `[Invalid choice]` the request stays open and the
+   * bot sends `next`. After an `[Unavailable choice]` there is no `next`:
+   * the engine always follows it with an updated request, which the server
+   * gives a new `rqid`, so a choice sent against the old one would only come
+   * back "too late". The updated request is a new request the policy answers.
    */
-  | { kind: "defect"; error: EnumeratorDefectError; defect: true; next: { choice: string; rqid?: number } };
+  | {
+      kind: "defect";
+      error: EnumeratorDefectError;
+      defect: true;
+      next?: { choice: string; rqid?: number };
+    };
 
 /** A refusal no rule classifies. It is never retried. */
 export class RefusalError extends Error {
@@ -61,8 +70,10 @@ export class RefusalError extends Error {
 /**
  * The refusals that say the choice met no open request, so it was never
  * judged as a choice. The server layer sends the first two without asking
- * the sim (server/room-battle.ts `choose`); the sim sends the third when the
- * side has no request (sim/side.ts `choose`), and the server forwards it.
+ * the sim (server/room-battle.ts `choose`, :628 and :634). The sim sends the
+ * third when the side has no request (sim/side.ts `choose`); the server
+ * leaves its own state alone for it ("should not happen", room-battle.ts
+ * :796-797) and forwards it (:819).
  */
 const STALE_REFUSALS: readonly string[] = [
   "[Invalid choice] There's nothing to choose",
@@ -78,9 +89,14 @@ const STALE_REFUSALS: readonly string[] = [
  *   open, is a `stale_choice`; so is a server-layer refusal;
  * - `[Unavailable choice]` of a pending candidate is `unavailable`;
  * - a refusal of a current, non-pending candidate is an enumerator defect:
- *   it throws `EnumeratorDefectError` in a harness. In a live match it
- *   returns the next non-pending candidate in canonical order not yet
- *   refused, and finally `default`, each with the current `rqid`.
+ *   it throws `EnumeratorDefectError` in a harness. In a live match, after
+ *   an `[Invalid choice]`, it returns the next non-pending candidate in
+ *   canonical order not yet refused, and finally `default`, each with the
+ *   current `rqid`; after an `[Unavailable choice]` it returns no `next`.
+ *
+ * Call it on the `error` event, before reading the next frame: `current`
+ * must be the request the refusal answered, not the updated request that
+ * follows an `[Unavailable choice]`.
  *
  * Anything else throws `RefusalError`: a text that is not a choice refusal,
  * a refused pending candidate that revealed nothing, or a refused choice
@@ -101,13 +117,13 @@ export function classifyRefusal(input: RefusalInput): Refusal {
   if (legal.request_seq !== current.request_seq) {
     throw new RefusalError(`legal set is for request ${legal.request_seq}, not ${current.request_seq}`);
   }
-  if (error.startsWith("[Unavailable choice]") && legal.pending.includes(choice)) {
-    return { kind: "unavailable", choice };
-  }
+  const { revealed } = judgeSubmission(choice, error);
+  if (revealed && legal.pending.includes(choice)) return { kind: "unavailable", choice };
   const index = legal.choices.indexOf(choice);
   if (index < 0) throw new RefusalError(`refused ${choice}, which is not a non-pending candidate: ${error}`);
   const defect = new EnumeratorDefectError([{ choice, legal: false, error }]);
   if (mode === "harness") throw defect;
+  if (revealed) return { kind: "defect", error: defect, defect: true };
   const tried = new Set([...refused, choice]);
   const nextChoice = legal.choices.slice(index + 1).find((c) => !tried.has(c)) ?? "default";
   const next = current.rqid === undefined ? { choice: nextChoice } : { choice: nextChoice, rqid: current.rqid };

@@ -16,7 +16,7 @@ The choice corpus's `maybe-trapped` case (`fixtures/showdown/gen9championsvgc202
 
 1. a pending switch (foe Mega Gengar may have Shadow Tag): the engine answers `[Unavailable choice]` and an updated request (`update: true`);
 2. `move 9, move 1 1`: the engine answers `[Invalid choice]`. The tests use this real refusal to stand in for an enumerator defect, by offering the string as a non-pending candidate; the real enumerator never offers it;
-3. the shared actor rule (`actorRule`) from then on, and `default` once while it holds a `wait` request: the sim answers `[Invalid choice] Can't do anything: It's not your turn`.
+3. the shared actor rule (`actorRule`) from then on, and `default` once while it holds a `wait` request: the sim answers `[Invalid choice] Can't do anything: It's not your turn`. That frame is sim-only (see below); the tests use it only as a probe of the engine's text.
 
 p2 replays the log, then plays the actor rule. The battle runs to its end. `sent` lists every choice p1 sent and how many frames it had read before.
 
@@ -26,7 +26,11 @@ Each chunk of p1's stream becomes one frame, as `server/room-battle.ts` at the p
 - a `sideupdate` line (`|request|`, `|error|`) becomes its own frame (`sendRoom`);
 - before a `|request|` is sent, the server's battle-wide `rqid` counter is incremented and appended to the request JSON (:803-815). The counter is shared by both players. The sim emits one request per side per round, p1 then p2 (`sim/battle.ts` `sendUpdates`), and an `update` request to one side only (`sim/side.ts` `emitChoiceError`); the capture derives p1's rqids from both players' request lists and refuses to run if p2 ever gets an `update` request, which would make them ambiguous.
 
-Differences from a real server connection: the wall-clock `|t:|` lines are dropped (as the runner drops them, so the file is deterministic), and the server's own room lines (`|init|`, `|title|`, `|j|`, `|inactive|` timer lines) are absent.
+Differences from a real server connection:
+
+- the wall-clock `|t:|` lines are dropped (as the runner drops them, so the file is deterministic);
+- the server's own room lines (`|init|`, `|title|`, `|j|`, `|inactive|` timer lines) are absent;
+- the `[Invalid choice] Can't do anything: It's not your turn` frame is sim-only. On a `wait` request the pinned server sets `isWait: 'cantUndo'` (`server/room-battle.ts`:810) and answers a choice itself with `[Invalid choice] There's nothing to choose` (:628), never forwarding it to the sim. That server answer is `nothing_to_choose` in `server-layer.json`.
 
 ## `server-layer.json`: frames only the server sends, written by hand
 
@@ -34,6 +38,6 @@ These do not come from the engine. Each is written by Areneon from the pinned se
 
 - `global_updateuser`: a frame with no `>ROOMID` header, which PROTOCOL.md allows for the global room;
 - `other_room`: a frame for another room;
-- `request_null`, `request_empty`: the withdrawn request a leaving player gets (`onLeave`), and its empty-body form;
+- `request_null`: the withdrawn request a leaving player gets (`onLeave`);
 - `resend_with_sentchoice`, `resend_without_sentchoice`: the current request re-sent on rejoin (`onConnect`), with and without the choice the server holds;
-- `nothing_to_choose`, `too_late`: the server layer's own `[Invalid choice]` refusals (`choose`), sent without asking the sim.
+- `nothing_to_choose`, `too_late`: the server layer's own `[Invalid choice]` refusals (`choose`), sent without asking the sim; `nothing_to_choose` is also the answer to a choice sent on a `wait` request.

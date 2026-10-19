@@ -69,15 +69,21 @@ describe("request identity across a rejoin", () => {
   // The re-send repeats the first move request p1 answered.
   const answered = frameIndex('|request|{"active"');
 
-  it("does not count |request|null or an empty |request|, nor decode them", () => {
+  it("does not count |request|null, nor decode it", () => {
     const reader = new ProtocolReader();
     readAll(reader, battle.frames.slice(0, answered + 1));
     expect(reader.read(serverFrame("request_null"))).toEqual([{ kind: "request_closed", room: ROOM }]);
     expect(reader.state(ROOM).open).toBe(false);
-    expect(reader.read(serverFrame("request_empty"))).toEqual([{ kind: "request_closed", room: ROOM }]);
-    // Either body would fail decodeRequest.
+    // The body would fail decodeRequest.
     expect(() => decodeRequest("null")).toThrow();
     expect(reader.state(ROOM).last?.request_seq).toBe(2);
+  });
+
+  it("fails closed on an empty |request|, which the server never sends", () => {
+    const reader = new ProtocolReader();
+    readAll(reader, battle.frames.slice(0, answered + 1));
+    expect(() => reader.read(`>${ROOM}\n|request|`)).toThrow(SyntaxError);
+    expect(reader.state(ROOM)).toMatchObject({ open: true, last: { request_seq: 2 } });
   });
 
   it("keeps the request_seq of a re-sent request (same rqid and request_hash) and reports |sentchoice|", () => {
@@ -113,6 +119,30 @@ describe("request identity across a rejoin", () => {
     const odd = serverFrame("resend_without_sentchoice").replace('"rqid":3}', '"rqid":3,"extra":1}');
     expect(() => reader.read(odd)).toThrow(RequestDecodeError);
     expect(reader.state(ROOM).last?.request_seq).toBe(2);
+  });
+
+  it("reads a frame all or nothing: a bad request leaves no partial state change", () => {
+    const reader = new ProtocolReader();
+    readAll(reader, battle.frames.slice(0, answered + 1));
+    reader.read(serverFrame("request_null"));
+    const before = reader.state(ROOM);
+    const good = serverFrame("resend_without_sentchoice");
+    const bad = good.replace('"rqid":3}', '"rqid":3,"extra":1}').replace(`>${ROOM}\n`, "");
+    // A request that would count, then one that fails to decode.
+    const next = (battle.frames[answered + 2] as string).split("\n")[1] as string;
+    expect(() => reader.read(`>${ROOM}\n${next}\n${bad}`)).toThrow(
+      RequestDecodeError,
+    );
+    expect(reader.state(ROOM)).toEqual(before);
+    expect(before.open).toBe(false);
+  });
+
+  it("hands out a copy of a room's state", () => {
+    const reader = new ProtocolReader();
+    readAll(reader, battle.frames.slice(0, answered + 1));
+    const copy = reader.state(ROOM) as { open: boolean };
+    copy.open = false;
+    expect(reader.state(ROOM).open).toBe(true);
   });
 });
 
