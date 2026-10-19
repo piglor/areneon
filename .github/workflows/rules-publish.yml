@@ -65,13 +65,15 @@ jobs:
           name: rules-publish-plan
           path: dist/rules-publish/
           if-no-files-found: error
+          # Longer than the 30-day environment approval timeout.
+          retention-days: 90
 
   # Only when the plan is non-empty: waits for the rules-dev approval, checks
   # the plan job's files against their manifest and against the plan made
-  # again now, then attests and releases exactly those bytes (no rebuild).
+  # again now, then attests and releases exactly the verified bytes (no rebuild).
   publish:
     needs: plan
-    if: needs.plan.outputs.publish == 'true'
+    if: github.ref == 'refs/heads/main' && needs.plan.outputs.publish == 'true'
     runs-on: ubuntu-latest
     environment: rules-dev
     permissions:
@@ -94,15 +96,18 @@ jobs:
         with:
           name: rules-publish-plan
           path: dist/rules-publish
-      - name: verify the plan job's files before attesting them
+      - name: verify the plan job's files and keep only the release set
+        id: verify
         env:
           GH_TOKEN: ${{ github.token }}
         run: node packages/showdown-bridge/scripts/rules-publish.ts verify dist/rules-publish
-      - name: attest the artifacts
+      - name: attest the verified artifacts
+        if: steps.verify.outputs.attest == 'true'
         uses: actions/attest-build-provenance@v4.2.2
         with:
-          subject-path: dist/rules-publish/artifacts/*.json
-      - name: release the artifacts (idempotent per tag)
+          subject-path: dist/rules-publish/verified/*.json
+      - name: release the verified artifacts (idempotent per tag)
+        if: steps.verify.outputs.attest == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: node packages/showdown-bridge/scripts/rules-publish.ts release dist/rules-publish

@@ -4,7 +4,7 @@
 // GitHub CLI to these functions.
 
 import { createHash } from "node:crypto";
-import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { type ChannelFile, jcsBytes, RULES_SCHEMA_VERSION, RulesError, type RulesSnapshot, rulesSnapshotHash, snapshotBytes } from "./rules.ts";
 
@@ -119,6 +119,10 @@ export const PLAN_FILE = "plan.json";
 export const ARTIFACTS_DIR = "artifacts";
 export const artifactPath = (dir: string, artifact: Pick<Artifact, "tag">): string =>
   join(dir, ARTIFACTS_DIR, `${artifact.tag}.json`);
+/** Where `verify` puts the release set: only these files are attested and released. */
+export const VERIFIED_DIR = "verified";
+export const verifiedPath = (dir: string, artifact: Pick<Artifact, "tag">): string =>
+  join(dir, VERIFIED_DIR, `${artifact.tag}.json`);
 
 /** One planned artifact as the manifest records it: its file is `<tag>.json`. */
 export interface PlannedEntry {
@@ -256,4 +260,48 @@ export function verifyPlan(
     release: replanned.map((a) => ({ ...a, bytes: files.get(`${a.tag}.json`) as Buffer })),
     skipped: manifest.artifacts.filter((e) => !planned.has(e.tag)).map((e) => e.tag),
   };
+}
+
+/**
+ * Append a step output line (`name=value`) to `$GITHUB_OUTPUT` when the
+ * runner set it; outside Actions it is only printed by the caller.
+ */
+export function emitOutput(line: string, githubOutput: string | undefined): void {
+  if (githubOutput) appendFileSync(githubOutput, `${line}\n`);
+}
+
+/**
+ * Write exactly the release set `verifyPlan` returned into `<dir>/verified/`
+ * (which must not exist yet), so the attest step signs only verified bytes and
+ * never an entry that was skipped. Returns the step output `attest=true|false`.
+ */
+export function writeVerified(dir: string, release: readonly Artifact[]): string {
+  try {
+    mkdirSync(join(dir, VERIFIED_DIR));
+  } catch {
+    throw new RulesError(`${join(dir, VERIFIED_DIR)} already exists`);
+  }
+  for (const a of release) writeFileSync(verifiedPath(dir, a), a.bytes);
+  return `attest=${release.length > 0}`;
+}
+
+/**
+ * `release` publishes from `<dir>/verified/`: it must hold exactly the
+ * release set verified again now, byte for byte.
+ */
+export function checkVerified(dir: string, release: readonly Artifact[]): void {
+  let names: string[];
+  try {
+    names = readdirSync(join(dir, VERIFIED_DIR));
+  } catch {
+    throw new RulesError(`${join(dir, VERIFIED_DIR)} is missing: run verify first`);
+  }
+  const problems: string[] = [];
+  const expected = new Map(release.map((a) => [`${a.tag}.json`, a.bytes]));
+  for (const name of names) if (!expected.has(name)) problems.push(`${name} is not in the release set`);
+  for (const [name, bytes] of expected) {
+    if (!names.includes(name)) problems.push(`${name} is in the release set but was not verified`);
+    else if (!readFileSync(join(dir, VERIFIED_DIR, name)).equals(bytes)) problems.push(`${name} changed since verify`);
+  }
+  if (problems.length > 0) throw new RulesError(`${join(dir, VERIFIED_DIR)} is not the release set:\n- ${problems.join("\n- ")}`);
 }

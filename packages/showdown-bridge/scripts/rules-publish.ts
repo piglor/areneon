@@ -5,25 +5,29 @@
 //   node packages/showdown-bridge/scripts/rules-publish.ts release <dir>
 // `plan` (the plan job, no environment) writes the artifacts still to release
 // and their sha256 manifest into <dir>, and sets the step output
-// `publish=true|false`. `verify` (the publish job, before attesting) and
-// `release` (after) check <dir> against its manifest and against the plan
-// made again now, then `release` creates the Releases, snapshots first.
+// `publish=true|false`. `verify` (the publish job, before attesting) checks
+// <dir> against its manifest and against the plan made again now, writes the
+// release set to <dir>/verified/ and sets `attest=true|false`. `release`
+// (after attesting) checks again, requires <dir>/verified/ to be exactly
+// that set, and creates its Releases, snapshots first.
 import { execFileSync } from "node:child_process";
-import { appendFileSync } from "node:fs";
 import { PINNED_SHOWDOWN_COMMIT } from "../src/engine.ts";
 import { gitAt, REPO_ROOT } from "../src/rules-history.ts";
 import { loadChannels, loadRulesSnapshot } from "../src/rules-load.ts";
 import {
   type Artifact,
-  artifactPath,
+  checkVerified,
+  emitOutput,
   type GitHubCli,
   isReleased,
   plan,
   publish,
   publishOutput,
   readPlan,
+  verifiedPath,
   verifyPlan,
   writePlan,
+  writeVerified,
 } from "../src/rules-publish.ts";
 import { RulesError } from "../src/rules.ts";
 
@@ -57,15 +61,19 @@ try {
     const output = publishOutput(writePlan(dir, commit, artifacts));
     console.log(artifacts.length > 0 ? artifacts.map((a) => `planned ${a.tag}`).join("\n") : "nothing to release");
     console.log(output);
-    if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, `${output}\n`);
+    emitOutput(output, process.env.GITHUB_OUTPUT);
   } else {
     const { manifest, files } = readPlan(dir);
     const { release, skipped } = verifyPlan(manifest, commit, files, artifacts);
     for (const tag of skipped) console.log(`skipped ${tag}: released meanwhile`);
     if (mode === "verify") {
+      const output = writeVerified(dir, release);
       console.log(release.length > 0 ? release.map((a) => `verified ${a.tag}`).join("\n") : "nothing left to release");
+      console.log(output);
+      emitOutput(output, process.env.GITHUB_OUTPUT);
     } else {
-      const created = publish(release, (a) => artifactPath(dir, a), gh);
+      checkVerified(dir, release);
+      const created = publish(release, (a) => verifiedPath(dir, a), gh);
       console.log(created.length > 0 ? created.map((t) => `released ${t}`).join("\n") : "nothing new to release");
     }
   }

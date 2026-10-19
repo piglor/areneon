@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Ajv2020 } from "ajv/dist/2020.js";
@@ -11,6 +11,8 @@ import {
   channelArtifact,
   artifactPath,
   channelTag,
+  checkVerified,
+  emitOutput,
   type GitHubCli,
   isReleased,
   PLAN_FILE,
@@ -21,8 +23,11 @@ import {
   publish,
   publishOutput,
   readPlan,
+  VERIFIED_DIR,
+  verifiedPath,
   verifyPlan,
   writePlan,
+  writeVerified,
   snapshotArtifact,
   snapshotTag,
 } from "../src/rules-publish.ts";
@@ -245,5 +250,67 @@ describe("verifyPlan (the publish job's check before attesting)", () => {
     const { manifest: read, files } = readPlan(dir);
     expect(read).toEqual(JSON.parse(readFileSync(join(dir, PLAN_FILE), "utf8")));
     expect(() => verifyPlan(read, HEAD, files, [snap, chan])).toThrow(/does not match its sha256/);
+  });
+});
+
+describe("the verified release set (what the publish job attests and releases)", () => {
+  const snap = snapshotArtifact(snapshot, HEAD);
+  const chan = channelArtifact(stable(6, own), EARLIER);
+  const planned = () => {
+    const dir = mkdtempSync(join(tmpdir(), "rules-publish-"));
+    writePlan(dir, HEAD, [snap, chan]);
+    return dir;
+  };
+  const verify = (dir: string, replanned: Artifact[]) => {
+    const { manifest, files } = readPlan(dir);
+    return verifyPlan(manifest, HEAD, files, replanned).release;
+  };
+
+  it("holds only the entries the plan made again still has, never a skipped one", () => {
+    const dir = planned();
+    const release = verify(dir, [chan]);
+    expect(writeVerified(dir, release)).toBe("attest=true");
+    expect(readdirSync(join(dir, VERIFIED_DIR))).toEqual([`${chan.tag}.json`]);
+    expect(readFileSync(verifiedPath(dir, chan))).toEqual(chan.bytes);
+    expect(existsSync(verifiedPath(dir, snap))).toBe(false);
+    expect(() => checkVerified(dir, release)).not.toThrow();
+  });
+
+  it("gives attest=false and an empty set when every entry was released meanwhile", () => {
+    const dir = planned();
+    const release = verify(dir, []);
+    expect(writeVerified(dir, release)).toBe("attest=false");
+    expect(readdirSync(join(dir, VERIFIED_DIR))).toEqual([]);
+    expect(() => checkVerified(dir, release)).not.toThrow();
+    const calls: string[][] = [];
+    expect(publish(release, (a) => verifiedPath(dir, a), (args) => (calls.push(args), ""))).toEqual([]);
+    expect(calls).toEqual([]);
+  });
+
+  it("refuses to overwrite an existing verified set", () => {
+    const dir = planned();
+    writeVerified(dir, [chan]);
+    expect(() => writeVerified(dir, [chan])).toThrow(/already exists/);
+  });
+
+  it("makes release refuse a verified set that is missing, short, padded or changed", () => {
+    const dir = planned();
+    expect(() => checkVerified(dir, [snap, chan])).toThrow(/run verify first/);
+    writeVerified(dir, [chan]);
+    expect(() => checkVerified(dir, [snap, chan])).toThrow(`${snap.tag}.json is in the release set but was not verified`);
+    expect(() => checkVerified(dir, [])).toThrow(`${chan.tag}.json is not in the release set`);
+    writeFileSync(verifiedPath(dir, chan), "{}");
+    expect(() => checkVerified(dir, [chan])).toThrow(`${chan.tag}.json changed since verify`);
+  });
+});
+
+describe("emitOutput", () => {
+  it("appends the step output line to $GITHUB_OUTPUT, and does nothing without it", () => {
+    const file = join(mkdtempSync(join(tmpdir(), "rules-publish-")), "out");
+    emitOutput("publish=true", file);
+    emitOutput("attest=false", file);
+    emitOutput("publish=false", undefined);
+    emitOutput("publish=false", "");
+    expect(readFileSync(file, "utf8")).toBe("publish=true\nattest=false\n");
   });
 });
