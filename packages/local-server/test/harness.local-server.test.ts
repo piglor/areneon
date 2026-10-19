@@ -74,8 +74,10 @@ describe("the harness server", () => {
       expect(JSON.stringify(fixture)).not.toMatch(/\|t:\|(?!0\b)|"timestamp"/);
       // Each seat's raw frames are the room's, headed and in order, and rebuild its channel.
       for (const seat of ["p1", "p2"] as const) {
-        expect(fixture.frames[seat].every((frame) => frame.startsWith(`>${fixture.room}\n`))).toBe(true);
-        expect(fixture.frames[seat][0]).toContain("|init|battle");
+        // No reconnect without a drop plan: one connection per seat.
+        expect(fixture.frames[seat]).toHaveLength(1);
+        expect(fixture.frames[seat][0]?.every((frame) => frame.startsWith(`>${fixture.room}\n`))).toBe(true);
+        expect(fixture.frames[seat][0]?.[0]).toContain("|init|battle");
       }
     },
     60_000,

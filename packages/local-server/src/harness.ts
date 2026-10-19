@@ -6,6 +6,7 @@ import {
   connectWebSocket,
   ProtocolReader,
   runA2Bot,
+  type SequencedRequest,
   splitFrame,
   type Transport,
 } from "@areneon/bot-client";
@@ -118,9 +119,14 @@ export async function readServerInputLog(
   return { lines: inputLog as string[], winner: typeof winner === "string" ? winner : "", turns };
 }
 
-/** One recorded battle: the input log, both players' own channels, the teams, the seed and the pin. */
+/**
+ * One recorded battle: the input log, both players' own channels, the teams,
+ * the seed and the pin. `schema_version` 3 stores a seat's raw frames and
+ * channels per connection (see `frames`); version 2, one connection per seat,
+ * is `HarnessFixtureV2` and is read through `upgradeFixture`.
+ */
 export interface HarnessFixture {
-  schema_version: 2;
+  schema_version: 3;
   data_class: "synthetic";
   rights: "cc0-synthetic";
   license: "CC0-1.0";
@@ -148,17 +154,53 @@ export interface HarnessFixture {
    * Each player's raw server frames for the battle room, exactly as its bot
    * received them from the WebSocket (header, lines, order and frame
    * boundaries), before any parsing. Only that player's own stream: the
-   * server sends each client only what it may see.
+   * server sends each client only what it may see. One list per connection
+   * that received the room, in the order the bot opened them: a bot that
+   * lost its connection and logged in again has a second list, which starts
+   * at its own `|init|battle` (the server replays the room log to a joining
+   * connection) and holds the re-sent request. Stored as received: nothing
+   * joins or reorders the lists.
    */
-  frames: Record<Seat, string[]>;
+  frames: Record<Seat, string[][]>;
   /**
-   * Each player's own channel as its bot client built it from its `frames`.
-   * Derived: `verifyHarnessFixture` replays the frames through
-   * `ProtocolReader` and `A2Channel` and requires this exact result.
+   * Each player's own channels as its bot client built them from its
+   * `frames`: one per connection, each from its own `|init|battle`
+   * (`A2BattleRecord.channels`). Derived: `verifyHarnessFixture` replays
+   * each connection's frames through a fresh `ProtocolReader` and
+   * `A2Channel`, as the session does, and requires this exact result.
    */
-  channels: Record<Seat, PlayerChannel>;
+  channels: Record<Seat, PlayerChannel[]>;
   /** The server's input log: both teams and every choice. Omniscient, never an actor's input. */
   input_log: { omniscient: true; lines: string[] };
+}
+
+/**
+ * The fixtures recorded before reconnects were stored: one connection per
+ * seat, so `frames` and `channels` hold that connection directly.
+ */
+export interface HarnessFixtureV2 extends Omit<HarnessFixture, "schema_version" | "frames" | "channels"> {
+  schema_version: 2;
+  frames: Record<Seat, string[]>;
+  channels: Record<Seat, PlayerChannel>;
+}
+
+/**
+ * A fixture as the current schema stores it. A version 2 fixture becomes the
+ * version 3 one with a single connection per seat (its content is not
+ * touched); any other version is refused.
+ */
+export function upgradeFixture(fixture: HarnessFixture | HarnessFixtureV2): HarnessFixture {
+  if (fixture.schema_version === 3) return fixture;
+  if (fixture.schema_version !== 2) {
+    throw new HarnessError(`harness fixture refused: schema_version ${String((fixture as { schema_version: unknown }).schema_version)} is not 2 or 3`);
+  }
+  const { frames, channels, ...rest } = fixture;
+  return {
+    ...rest,
+    schema_version: 3,
+    frames: { p1: [frames.p1], p2: [frames.p2] },
+    channels: { p1: [channels.p1], p2: [channels.p2] },
+  };
 }
 
 interface PlayerLine {
@@ -225,17 +267,17 @@ export function redactClock(frame: string): string {
 /**
  * The frames of `room` out of one bot's connections (each a list of every
  * frame that connection received, in order): the room's own frames only, the
- * lobby and global frames dropped. A battle played on one connection is
- * expected, as for `channels`.
+ * lobby and global frames dropped, one list per connection that received the
+ * room (a connection that never joined it, or only logged in, has none).
+ * The lists keep the order the connections were opened in. A bot that
+ * reconnected has several; none is an error: the bot never joined the room.
  */
-export function roomFrames(connections: readonly (readonly string[])[], room: string): string[] {
+export function roomFrames(connections: readonly (readonly string[])[], room: string): string[][] {
   const kept = connections
     .map((frames) => frames.filter((frame) => splitFrame(frame).room === room).map(redactClock))
     .filter((frames) => frames.length > 0);
-  if (kept.length !== 1) {
-    throw new HarnessError(`${kept.length} connections received ${room}: one connection per player is expected`);
-  }
-  return kept[0] as string[];
+  if (kept.length === 0) throw new HarnessError(`no connection received ${room}`);
+  return kept;
 }
 
 /**
@@ -283,18 +325,16 @@ export interface FixtureInput {
 export async function buildHarnessFixture(input: FixtureInput): Promise<HarnessFixture> {
   const { engine, snapshot, format, log, records, connections, teams, teamLabels } = input;
   const { start, players } = parseInputLog(log.lines);
-  const channels = {} as Record<Seat, PlayerChannel>;
-  const frames = {} as Record<Seat, string[]>;
+  const channels = {} as Record<Seat, PlayerChannel[]>;
+  const frames = {} as Record<Seat, string[][]>;
   let room = "";
   for (const seat of SEATS) {
     const record = records[seat];
     if (record.player !== seat || record.room.length === 0) {
       throw new HarnessError(`the ${seat} record is for ${String(record.player)}`);
     }
-    if (record.channels.length !== 1) {
-      throw new HarnessError(`${seat} has ${record.channels.length} channels: one connection per player is expected`);
-    }
-    channels[seat] = record.channels[0] as PlayerChannel;
+    // One channel per connection that joined the room; `verifyHarnessFixture` requires them to match the frames.
+    channels[seat] = [...record.channels];
     frames[seat] = roomFrames(connections[seat], record.room);
     if (room !== "" && room !== record.room) throw new HarnessError("the bots did not play the same battle");
     room = record.room;
@@ -306,7 +346,7 @@ export async function buildHarnessFixture(input: FixtureInput): Promise<HarnessF
   };
   const winner = SEATS.find((seat) => players[seat].name === log.winner) ?? null;
   const fixture: HarnessFixture = {
-    schema_version: 2,
+    schema_version: 3,
     data_class: "synthetic",
     rights: rightsFor("synthetic") as "cc0-synthetic",
     license: "CC0-1.0",
@@ -359,42 +399,80 @@ export async function replayInputLog(engine: Engine, lines: readonly string[]): 
   return replay;
 }
 
+/** The requests a connection's frames carry, as its `ProtocolReader` reads them (re-sends of the same request left out). */
+function requestsIn(frames: readonly string[]): { rqid: number; hash: string }[] {
+  const reader = new ProtocolReader();
+  const requests: { rqid: number; hash: string }[] = [];
+  for (const frame of frames) {
+    for (const event of reader.read(frame)) {
+      if (event.kind === "request" && !event.resend) {
+        requests.push({ rqid: event.request.rqid as number, hash: event.request.request_hash });
+      }
+    }
+  }
+  return requests;
+}
+
 /**
- * What is wrong with `seat`'s raw frames: their shape (non-empty strings of
- * the fixture's room, headed, the first frame starting with `|init|battle`),
- * their privacy (no `|showteam|` or `|split|` line, no request but the
- * seat's own, no `p<other>` secret line: `A2Channel` refuses those too) and
- * that `channelFromFrames` rebuilds exactly the stored `channels[seat]`.
+ * What is wrong with `seat`'s raw frames, connection by connection: their
+ * shape (non-empty strings of the fixture's room, headed, each connection's
+ * first frame starting with `|init|battle`), their privacy (no `|showteam|`
+ * or `|split|` line, no request but the seat's own, no `p<other>` secret
+ * line: `A2Channel` refuses those too), that `channelFromFrames` rebuilds
+ * exactly the stored channel of that connection (one channel per
+ * connection), and that the requests go on across connections: a later
+ * connection's first request is the previous one's last re-sent (same
+ * `rqid`, same `request_hash`) or a newer one (higher `rqid`), never an
+ * older one. A seat with one connection is reported as `p1`, one with
+ * several as `p1 connection 2`.
  */
 function frameProblems(fixture: HarnessFixture, seat: Seat): string[] {
-  const frames = fixture.frames[seat];
-  if (!Array.isArray(frames) || frames.length === 0 || !frames.every((frame) => typeof frame === "string")) {
-    return [`${seat} frames are not a non-empty list of strings`];
-  }
+  const connections = fixture.frames[seat];
+  const channels = fixture.channels[seat];
+  if (!Array.isArray(connections) || connections.length === 0) return [`${seat} frames are not a non-empty list of connections`];
   const problems: string[] = [];
-  const split = frames.map((frame) => splitFrame(frame));
-  if (!frames.every((frame) => frame.startsWith(`>${fixture.room}\n`)) || split.some(({ room }) => room !== fixture.room)) {
-    problems.push(`${seat} frames are not all headed >${fixture.room}`);
+  if (channels.length !== connections.length) {
+    problems.push(`${seat} has ${channels.length} channels for ${connections.length} connections`);
   }
-  if (split[0]?.lines[0] !== "|init|battle") problems.push(`${seat} frames do not start with |init|battle`);
-  const lines = split.flatMap(({ lines: l }) => l);
-  if (lines.some((line) => line.startsWith("|showteam|") || line.startsWith("|split|"))) {
-    problems.push(`${seat} frames have a team sheet or a |split| marker`);
-  }
-  if (lines.some((line) => line.startsWith("|t:|") && line !== REDACTED_CLOCK)) {
-    problems.push(`${seat} frames have a wall-clock |t:| line`);
-  }
-  for (const line of lines.filter((l) => l.startsWith("|request|"))) {
-    if (!line.includes(`"id":"${seat}"`)) problems.push(`${seat} frames hold a request that is not its own`);
-  }
-  try {
-    const replayed = channelFromFrames(frames, fixture.room, seat).channel;
-    if (JSON.stringify(replayed) !== JSON.stringify(fixture.channels[seat])) {
-      problems.push(`${seat} channel is not what its frames give through ProtocolReader and A2Channel`);
+  let previous: { rqid: number; hash: string } | undefined;
+  connections.forEach((frames, c) => {
+    const who = connections.length === 1 ? seat : `${seat} connection ${c + 1}`;
+    if (!Array.isArray(frames) || frames.length === 0 || !frames.every((frame) => typeof frame === "string")) {
+      problems.push(`${who} frames are not a non-empty list of strings`);
+      return;
     }
-  } catch (error) {
-    problems.push(`${seat} frames cannot be replayed: ${(error as Error).message}`);
-  }
+    const split = frames.map((frame) => splitFrame(frame));
+    if (!frames.every((frame) => frame.startsWith(`>${fixture.room}\n`)) || split.some(({ room }) => room !== fixture.room)) {
+      problems.push(`${who} frames are not all headed >${fixture.room}`);
+    }
+    if (split[0]?.lines[0] !== "|init|battle") problems.push(`${who} frames do not start with |init|battle`);
+    const lines = split.flatMap(({ lines: l }) => l);
+    if (lines.some((line) => line.startsWith("|showteam|") || line.startsWith("|split|"))) {
+      problems.push(`${who} frames have a team sheet or a |split| marker`);
+    }
+    if (lines.some((line) => line.startsWith("|t:|") && line !== REDACTED_CLOCK)) {
+      problems.push(`${who} frames have a wall-clock |t:| line`);
+    }
+    for (const line of lines.filter((l) => l.startsWith("|request|"))) {
+      if (!line.includes(`"id":"${seat}"`)) problems.push(`${who} frames hold a request that is not its own`);
+    }
+    try {
+      const replayed = channelFromFrames(frames, fixture.room, seat).channel;
+      if (JSON.stringify(replayed) !== JSON.stringify(channels[c])) {
+        problems.push(`${who} channel is not what its frames give through ProtocolReader and A2Channel`);
+      }
+      const requests = requestsIn(frames);
+      const first = requests[0];
+      if (first !== undefined && previous !== undefined) {
+        if (first.rqid < previous.rqid || (first.rqid === previous.rqid && first.hash !== previous.hash)) {
+          problems.push(`${who} starts with a request older than, or different from, the one before it`);
+        }
+      }
+      previous = requests.at(-1) ?? previous;
+    } catch (error) {
+      problems.push(`${who} frames cannot be replayed: ${(error as Error).message}`);
+    }
+  });
   return problems;
 }
 
@@ -402,19 +480,22 @@ function frameProblems(fixture: HarnessFixture, seat: Seat): string[] {
  * Check a fixture without a server. Refuses (listing every problem) unless:
  * it is synthetic with matching rights; it names this engine's commit; its
  * input log's seed, format, names, avatars and packed teams are the ones the
- * fixture states; each channel is that player's own (`playerChannel`: no
- * opponent SECRET line, no other player's request) and has no
- * `|showteam|`; `served_teams` is what the input log packs and differs from
- * `teams` at most in nicknames; each seat's raw `frames` are well formed, its
- * own and rebuild the stored `channels` (`frameProblems`); and the pinned sim run on the input log gives
+ * fixture states; each channel (one per connection) is that player's own
+ * (`playerChannel`: no opponent SECRET line, no other player's request) and
+ * has no `|showteam|`; `served_teams` is what the input log packs and
+ * differs from `teams` at most in nicknames; each seat's raw `frames`, per
+ * connection, are well formed, its own, go on across connections and
+ * rebuild the stored `channels` (`frameProblems`); a version 2 fixture is
+ * checked as its version 3 upgrade (`upgradeFixture`), any other version is
+ * refused; and the pinned sim run on the input log gives
  * the fixture's `winner` and `turns` and the channels' `|player|` lines
  * (names and avatars) and `|win|` line. The other channel lines are NOT
  * compared with the replay: it is one batch, so it holds only the last
  * `|request|`; the step-by-step comparison is #764.
  */
-export async function verifyHarnessFixture(engine: Engine, fixture: HarnessFixture): Promise<void> {
+export async function verifyHarnessFixture(engine: Engine, stored: HarnessFixture | HarnessFixtureV2): Promise<void> {
+  const fixture = upgradeFixture(stored);
   const problems: string[] = [];
-  if (fixture.schema_version !== 2) problems.push(`schema_version ${String(fixture.schema_version)}`);
   if (fixture.data_class !== "synthetic" || fixture.rights !== rightsFor(fixture.data_class)) {
     problems.push("not synthetic with cc0-synthetic rights");
   }
@@ -436,9 +517,11 @@ export async function verifyHarnessFixture(engine: Engine, fixture: HarnessFixtu
     if (core(fixture.teams[seat]) !== core(fixture.served_teams[seat])) {
       problems.push(`${seat} sent and served teams differ in more than nicknames`);
     }
-    const channel = playerChannel(fixture.channels[seat]);
-    if (channel.player !== seat || channel.data_class !== "synthetic") problems.push(`${seat} channel is not its own`);
-    if (channel.lines.some((line) => line.startsWith("|showteam|"))) problems.push(`${seat} channel has a team sheet`);
+    for (const own of fixture.channels[seat]) {
+      const channel = playerChannel(own);
+      if (channel.player !== seat || channel.data_class !== "synthetic") problems.push(`${seat} channel is not its own`);
+      if (channel.lines.some((line) => line.startsWith("|showteam|"))) problems.push(`${seat} channel has a team sheet`);
+    }
     problems.push(...frameProblems(fixture, seat));
   }
   const replay = await replayInputLog(engine, fixture.input_log.lines);
@@ -449,13 +532,153 @@ export async function verifyHarnessFixture(engine: Engine, fixture: HarnessFixtu
   if (replayWinner !== fixture.winner) problems.push(`winner ${String(fixture.winner)} differs from the replay's ${String(replayWinner)}`);
   const header = (lines: readonly string[]): string[] => lines.filter((line) => line.startsWith("|player|"));
   for (const seat of SEATS) {
-    const mine = fixture.channels[seat].lines;
+    // The last connection holds the end of the battle; every connection's replayed log holds the `|player|` lines.
+    const mine = fixture.channels[seat].at(-1)?.lines ?? [];
     if (win(mine) !== win(replay.channels[seat])) problems.push(`${seat} channel and replay disagree on the winner`);
-    if (header(mine).join("\n") !== header(replay.channels[seat]).join("\n")) {
-      problems.push(`${seat} channel and replay disagree on the |player| lines`);
+    for (const own of fixture.channels[seat]) {
+      if (header(own.lines).join("\n") !== header(replay.channels[seat]).join("\n")) {
+        problems.push(`${seat} channel and replay disagree on the |player| lines`);
+      }
     }
   }
   if (problems.length > 0) throw new HarnessError(`harness fixture refused: ${problems.join("; ")}`);
+}
+
+/** A bot of the pair: the one that waits for the challenge, or the one that sends it. */
+export type Role = "sparring" | "challenger";
+
+/**
+ * Where the recorder cuts one bot's connection, so the server re-sends the
+ * request to the connection the bot opens next (ADR-005 §1). The cut is made
+ * at the transport, like the tap, so `runA2Bot` and the session are the
+ * ones of a sparring run: it sees a close and reconnects through its normal
+ * path.
+ */
+export interface DropPlan {
+  /** The bot whose first connection is cut. */
+  who: Role;
+  /**
+   * The bot's own request that decides the cut: its `request`-th `|request|`
+   * line (1-based, `wait` included, `|request|null` not counted) on that
+   * connection. Team Preview is request 1.
+   */
+  request: number;
+  /**
+   * `before_choice`: cut when that request arrives, before the bot can
+   * answer it, so the server holds no choice and re-sends the request alone.
+   * `after_choice`: cut right after the bot sent its choice for it, so the
+   * server holds the choice and re-sends the request with `|sentchoice|`.
+   * Then the other bot's choice for the same request is held back until the
+   * cut bot's next connection has received the request, so the server is
+   * still waiting for it (otherwise the turn could resolve before the cut).
+   */
+  when: "before_choice" | "after_choice";
+}
+
+const CHOOSE = /^[^|]*\|\/choose /;
+const isRequest = (line: string): boolean => line.startsWith("|request|") && line !== "|request|null";
+
+/** Calls what it is given once it is opened, at once if it is open already. */
+class Gate {
+  #open = false;
+  readonly #waiting: (() => void)[] = [];
+
+  open(): void {
+    this.#open = true;
+    for (const run of this.#waiting.splice(0)) run();
+  }
+
+  then(run: () => void): void {
+    if (this.#open) run();
+    else this.#waiting.push(run);
+  }
+}
+
+/**
+ * The transports of a `DropPlan`: `wrap` gives each connection of each bot
+ * its role in the plan. The wrappers only withhold (frames after the cut, the
+ * other bot's one choice) and close; they never change a line, so the tap
+ * outside them stores what the bot was given.
+ *
+ * - The cut bot's first connection counts its requests and, at the plan's
+ *   point, closes the inner transport. From then on it delivers no frame and
+ *   sends nothing: the bot has "lost" the connection, so what it was never
+ *   shown is not in its frames and the server's replay on the next connection
+ *   shows it.
+ * - Its later connections open the gate when they have received a request.
+ * - With `after_choice` the other bot's first connection holds back its
+ *   choice for the plan's request until that gate opens.
+ */
+export class ConnectionDrop {
+  readonly #plan: DropPlan;
+  readonly #rejoined = new Gate();
+
+  constructor(plan: DropPlan) {
+    this.#plan = plan;
+  }
+
+  /** `inner` as the plan wants the `index`-th (0-based) connection `who` opens to behave. */
+  wrap(who: Role, index: number, inner: Transport): Transport {
+    if (who === this.#plan.who) return index === 0 ? this.#cut(inner) : this.#watch(inner);
+    return this.#plan.when === "after_choice" && index === 0 ? this.#hold(inner) : inner;
+  }
+
+  #cut(inner: Transport): Transport {
+    let requests = 0;
+    let reached = false;
+    let cut = false;
+    const drop = (): void => {
+      cut = true;
+      inner.close();
+    };
+    return {
+      send(line) {
+        if (cut) return;
+        inner.send(line);
+        if (reached && CHOOSE.test(line)) drop();
+      },
+      onFrame: (cb) =>
+        inner.onFrame((frame) => {
+          if (cut) return;
+          const before = requests;
+          requests += splitFrame(frame).lines.filter(isRequest).length;
+          const arrives = before < this.#plan.request && requests >= this.#plan.request;
+          // Set first: a bot that answers at once sends its choice inside `cb`.
+          if (arrives) reached = true;
+          cb(frame);
+          if (arrives && this.#plan.when === "before_choice") drop();
+        }),
+      onClose: (cb) => inner.onClose(cb),
+      close: () => inner.close(),
+    };
+  }
+
+  #watch(inner: Transport): Transport {
+    return {
+      ...inner,
+      onFrame: (cb) =>
+        inner.onFrame((frame) => {
+          cb(frame);
+          if (splitFrame(frame).lines.some(isRequest)) this.#rejoined.open();
+        }),
+    };
+  }
+
+  #hold(inner: Transport): Transport {
+    let requests = 0;
+    return {
+      ...inner,
+      send: (line) => {
+        if (CHOOSE.test(line) && requests === this.#plan.request) this.#rejoined.then(() => inner.send(line));
+        else inner.send(line);
+      },
+      onFrame: (cb) =>
+        inner.onFrame((frame) => {
+          requests += splitFrame(frame).lines.filter(isRequest).length;
+          cb(frame);
+        }),
+    };
+  }
 }
 
 export interface BotPair {
@@ -476,6 +699,8 @@ export interface BotVsBotOptions {
   teams: { sparring: PokemonSet[]; challenger: PokemonSet[] };
   /** Opens a transport to `url`; default `connectWebSocket`. For tests. */
   connect?: (url: string) => Promise<Transport>;
+  /** Cut one bot's first connection mid-battle so it reconnects (see `DropPlan`); none by default. */
+  drop?: DropPlan;
 }
 
 /**
@@ -488,10 +713,12 @@ export async function playBotVsBot(options: BotVsBotOptions): Promise<BotPair> {
   const open = options.connect ?? ((to: string) => connectWebSocket(to));
   // Each bot's connections, tapped at the transport: its frames as received.
   const connections = { sparring: [] as string[][], challenger: [] as string[][] };
+  const drop = options.drop === undefined ? undefined : new ConnectionDrop(options.drop);
   const tapped = (who: keyof typeof connections) => async (to: string) => {
     const frames: string[] = [];
-    connections[who].push(frames);
-    return tapTransport(await open(to), frames);
+    const index = connections[who].push(frames) - 1;
+    const transport = await open(to);
+    return tapTransport(drop === undefined ? transport : drop.wrap(who, index, transport), frames);
   };
   const common = { engine, snapshot, url, format, data_class: "synthetic" as const, battles: 1 };
   let loggedIn: () => void = () => {};
@@ -523,6 +750,39 @@ export async function playBotVsBot(options: BotVsBotOptions): Promise<BotPair> {
   return { sparring: mine, challenger: theirs, connections };
 }
 
+/** What a seat's second connection shows of a reconnect (see `reconnectEvidence`). */
+export interface ReconnectEvidence {
+  /** The re-sent request's phase and its place (`request_seq`) on the first connection. */
+  phase: string;
+  request_seq: number;
+  /** The second connection's frames hold `|sentchoice|`: the server already held the bot's choice. */
+  sentchoice: boolean;
+}
+
+/**
+ * Whether a seat's frames (per connection, as stored) show a real reconnect:
+ * the second connection's first request is the first connection's last one,
+ * sent again (same `rqid` and `request_hash`), after its own `|init|battle`.
+ * `undefined` if not.
+ */
+export function reconnectEvidence(connections: readonly (readonly string[])[]): ReconnectEvidence | undefined {
+  const read = (frames: readonly string[]): { requests: SequencedRequest[]; sentchoice: boolean } => {
+    const reader = new ProtocolReader();
+    const events = frames.flatMap((frame) => reader.read(frame));
+    return {
+      requests: events.flatMap((event) => (event.kind === "request" && !event.resend ? [event.request] : [])),
+      sentchoice: events.some((event) => event.kind === "sentchoice"),
+    };
+  };
+  const [first, second] = connections.map(read);
+  const last = first?.requests.at(-1);
+  const again = second?.requests[0];
+  if (last === undefined || again === undefined || last.rqid !== again.rqid || last.request_hash !== again.request_hash) {
+    return undefined;
+  }
+  return { phase: last.phase, request_seq: last.request_seq, sentchoice: (second as { sentchoice: boolean }).sentchoice };
+}
+
 export interface RecordOptions extends Omit<BotVsBotOptions, "url"> {
   /** A server launched with `launchHarness`, from the runtime copy at `dir`. */
   server: LocalServer;
@@ -541,7 +801,7 @@ export async function recordHarnessBattle(options: RecordOptions): Promise<Harne
   const log = await readServerInputLog(dir, format, pair.sparring.room, options.readLog);
   const sparringSeat = pair.sparring.player as Seat;
   const challengerSeat: Seat = sparringSeat === "p1" ? "p2" : "p1";
-  return await buildHarnessFixture({
+  const fixture = await buildHarnessFixture({
     engine: options.engine,
     snapshot: options.snapshot,
     format,
@@ -555,4 +815,16 @@ export async function recordHarnessBattle(options: RecordOptions): Promise<Harne
     teams: { [sparringSeat]: teams.sparring, [challengerSeat]: teams.challenger } as Record<Seat, PokemonSet[]>,
     teamLabels: { [sparringSeat]: teamLabels.sparring, [challengerSeat]: teamLabels.challenger } as Record<Seat, string>,
   });
+  if (options.drop !== undefined) {
+    // The recording is only worth keeping if the cut happened as planned.
+    const seat = options.drop.who === "sparring" ? sparringSeat : challengerSeat;
+    const evidence = reconnectEvidence(fixture.frames[seat]);
+    const sentchoice = options.drop.when === "after_choice";
+    if (evidence === undefined || evidence.phase === "wait" || evidence.sentchoice !== sentchoice) {
+      throw new HarnessError(
+        `the ${options.drop.who} bot's reconnect is not the planned one (${JSON.stringify(evidence)}): record again`,
+      );
+    }
+  }
+  return fixture;
 }

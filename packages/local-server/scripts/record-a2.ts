@@ -1,5 +1,5 @@
 // Record the synthetic bot-vs-bot fixtures of fixtures/a2/ (ADR-005 §5):
-//   node packages/local-server/scripts/record-a2.ts [--out DIR] [--runtime-root DIR]
+//   node packages/local-server/scripts/record-a2.ts [--out DIR] [--runtime-root DIR] [--port N] [--only FILE]
 // Pure wiring: the real engine, launcher and files; see fixtures/a2/README.md.
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -15,6 +15,7 @@ const flag = (name: string): string | undefined => {
   const at = args.indexOf(name);
   return at < 0 ? undefined : args[at + 1];
 };
+const only = flag("--only");
 const out = flag("--out") ?? join(REPO, "fixtures", "a2", FIXTURE_FORMAT);
 const engine = loadEngine();
 const snapshot = loadRulesSnapshot(engine.commit);
@@ -25,7 +26,7 @@ const copy = createRuntimeCopy(root === undefined ? {} : { runtimeRoot: root });
 const server = await launchHarness({ dir: copy.dir, port: Number(flag("--port") ?? 8000) });
 try {
   mkdirSync(out, { recursive: true });
-  for (const recording of RECORDINGS) {
+  for (const recording of RECORDINGS.filter((r) => only === undefined || r.file === only)) {
     const fixture = await recordHarnessBattle({
       engine,
       snapshot,
@@ -35,7 +36,8 @@ try {
       names: recording.names,
       teams: { sparring: team(recording.teams.sparring), challenger: team(recording.teams.challenger) },
       teamLabels: recording.teams,
-      provenance: recordingProvenance(engine.commit),
+      provenance: recordingProvenance(engine.commit, recording.drop),
+      ...(recording.drop === undefined ? {} : { drop: recording.drop }),
     });
     const path = join(out, recording.file);
     writeFileSync(path, `${JSON.stringify(fixture, null, 2)}\n`);
