@@ -1,26 +1,52 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import {
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  rmSync,
+  utimesSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { afterAll, describe, expect, it, vi } from "vitest";
 
-// Fail chosen renames in the module under test, so the paths a concurrent
-// creator or an unwritable root would take are exercised deterministically.
+// Inject faults into the module under test's fs calls, so the paths a
+// concurrent creator or an unwritable root would take run deterministically.
 type RenameFault = (from: string, to: string) => string | null;
+type PathFault = (path: string) => "missing" | string | null;
 const failRename = vi.hoisted(() => ({ when: (() => null) as RenameFault }));
+const failLstat = vi.hoisted(() => ({ when: (() => null) as PathFault }));
+const failReaddir = vi.hoisted(() => ({ when: (() => null) as PathFault }));
+const fault = (code: string, path: string): Error =>
+  Object.assign(new Error(`${code}: ${path}`), { code });
 vi.mock("node:fs", async (original) => {
   const fs = await original<typeof import("node:fs")>();
   return {
     ...fs,
     renameSync: (from: string, to: string): void => {
       const code = failRename.when(from, to);
-      if (code !== null) throw Object.assign(new Error(`${code}: rename ${from}`), { code });
+      if (code !== null) throw fault(code, from);
       fs.renameSync(from, to);
     },
+    lstatSync: ((path: string, options?: object) => {
+      const code = failLstat.when(path);
+      if (code === "missing") return undefined;
+      if (code !== null) throw fault(code, path);
+      return fs.lstatSync(path, options);
+    }) as typeof fs.lstatSync,
+    readdirSync: ((path: string, options?: object) => {
+      const code = failReaddir.when(path);
+      if (code !== null) throw fault(code, path);
+      return fs.readdirSync(path, options as undefined);
+    }) as typeof fs.readdirSync,
   };
 });
 
-const { createRuntimeCopy, RuntimeCopyError, verifyRuntimeCopy } = await import("../src/index.ts");
+const { createRuntimeCopy, RuntimeCopyError, STALE_STAGING_MS, verifyRuntimeCopy } = await import(
+  "../src/index.ts"
+);
 
 const temps: string[] = [];
 afterAll(() => {
@@ -71,5 +97,39 @@ describe("putting a runtime copy in place", () => {
     failRename.when = () => null;
     expect(readdirSync(root)).toEqual([]);
     expect(createRuntimeCopy(options).commit).toBe(vendor.commit);
+  });
+
+  it("touches the old copy before setting it aside, so a concurrent sweep leaves it alone", () => {
+    const first = createRuntimeCopy(options);
+    const old = (Date.now() - STALE_STAGING_MS - 60_000) / 1000;
+    utimesSync(first.dir, old, old);
+    let asideAge: number | null = null;
+    failRename.when = (from, to) => {
+      if (basename(to) === vendor.commit) asideAge = Date.now() - lstatSync(`${from}.old`).mtimeMs;
+      return null;
+    };
+    createRuntimeCopy(options);
+    failRename.when = () => null;
+    expect(asideAge).not.toBeNull();
+    expect(asideAge).toBeLessThan(STALE_STAGING_MS);
+  });
+
+  it("sweeps on a best-effort basis: a vanished, unreadable or unlistable entry never fails the copy", () => {
+    const stale = (Date.now() - STALE_STAGING_MS - 60_000) / 1000;
+    const names = ["vanished", "unreadable", "removable"].map((name) => `.${vendor.commit}-${name}`);
+    for (const name of names) {
+      mkdirSync(join(root, name));
+      utimesSync(join(root, name), stale, stale);
+    }
+    failLstat.when = (path) =>
+      path.endsWith("-vanished") ? "missing" : path.endsWith("-unreadable") ? "EACCES" : null;
+    expect(createRuntimeCopy(options).commit).toBe(vendor.commit);
+    failLstat.when = () => null;
+    expect(readdirSync(root).sort()).toEqual([names[0], names[1], vendor.commit].sort());
+
+    failReaddir.when = (path) => (path === root ? "EACCES" : null);
+    expect(createRuntimeCopy(options).commit).toBe(vendor.commit);
+    failReaddir.when = () => null;
+    expect(readdirSync(root).sort()).toEqual([names[0], names[1], vendor.commit].sort());
   });
 });

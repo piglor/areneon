@@ -11,6 +11,7 @@ import {
   realpathSync,
   renameSync,
   rmSync,
+  utimesSync,
   writeFileSync,
 } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
@@ -41,9 +42,11 @@ export const RUNTIME_ENTRIES = [
 ] as const;
 
 /**
- * A staging or set-aside directory (`.<commit>-*`) older than this is left
- * over from a crashed run and is removed; a younger one may belong to a
- * concurrent run and is left alone.
+ * A staging or set-aside directory (`.<commit>-*`, `.<commit>-*.old`) whose
+ * mtime is older than this is left over from a crashed run and is removed; a
+ * younger one may belong to a concurrent run and is left alone. A staging
+ * directory is new when created, and an old copy is touched just before it
+ * is set aside, so both start young.
  */
 export const STALE_STAGING_MS = 10 * 60 * 1000;
 
@@ -148,6 +151,8 @@ export function createRuntimeCopy(options: RuntimeCopyOptions = {}): RuntimeCopy
     const aside = `${staging}.old`;
     try {
       try {
+        const now = new Date();
+        utimesSync(dir, now, now);
         renameSync(dir, aside);
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
@@ -214,12 +219,27 @@ function readManifest(path: string): { commit: string; dist_sha256: string } {
 }
 
 /** Remove this commit's staging and set-aside directories left by a crashed run. */
+/**
+ * Best effort: a concurrent run may remove its own directories while this
+ * runs, and a failed sweep never fails the copy.
+ */
 function sweepStale(runtimeRoot: string, commit: string): void {
   const now = Date.now();
-  for (const name of readdirSync(runtimeRoot)) {
+  let names: string[];
+  try {
+    names = readdirSync(runtimeRoot);
+  } catch {
+    return;
+  }
+  for (const name of names.filter((entry) => entry.startsWith(`.${commit}-`))) {
     const path = join(runtimeRoot, name);
-    if (name.startsWith(`.${commit}-`) && now - lstatSync(path).mtimeMs > STALE_STAGING_MS) {
-      rmSync(path, { recursive: true, force: true });
+    try {
+      const stat = lstatSync(path, { throwIfNoEntry: false });
+      if (stat !== undefined && now - stat.mtimeMs > STALE_STAGING_MS) {
+        rmSync(path, { recursive: true, force: true });
+      }
+    } catch {
+      // Gone or not ours to remove: leave it to its owner or a later sweep.
     }
   }
 }
