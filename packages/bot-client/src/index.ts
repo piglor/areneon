@@ -36,3 +36,22 @@ export {
   type RefusalMode,
   type Submission,
 } from "./refusal.ts";
+export {
+  type Challenge,
+  type ChallengeDecision,
+  ChallengeError,
+  type ChallengeFilterOptions,
+  type ChallengeRefusal,
+  decideChallenge,
+  parseChallenge,
+  timerOn,
+  toId,
+  userName,
+} from "./challenge.ts";
+export {
+  OtsDecline,
+  OtsDeclineError,
+  type OtsDeclineOptions,
+  type OtsFailure,
+  type OtsStatus,
+} from "./ots.ts";
