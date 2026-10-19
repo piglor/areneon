@@ -19,6 +19,7 @@ Polyglot monorepo (ADR-002): TypeScript, Python and Rust. Entries marked *planne
 packages/showdown-bridge/    TS: pinned engine loader, rules loader and hashing, headless runner, request decoder
 packages/schema/             JSON Schema contracts (source of truth): rules records and cross-language data contracts
 packages/rules-store/        TS: the rules store on PostgreSQL 18 (ADR-007): idempotent import as `importer`, and its tests
+packages/rules-importer/     TS: rules importer; verifies rules-publish attestations before import (ADR-007)
 rules/                       Areneon's own rules as reviewed JSON records (ADR-007), never code constants
 crates/                      planned: Rust Cargo workspace (calculators, rules catalog, orchestration)
 services/, ml/               planned: Python services, PyTorch training, self-play league and evaluation
