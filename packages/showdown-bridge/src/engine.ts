@@ -140,14 +140,14 @@ export class EngineError extends Error {
 }
 
 /**
- * Load the pinned, built Showdown checkout. Refuses a missing build or a
- * checkout at any other commit, so no result is ever attributed to the
- * wrong engine.
+ * Check that `dir` is a built Showdown checkout at `expectedCommit`, without
+ * loading it. Refuses a missing build or a checkout at any other commit.
+ * `loadEngine` and the local-server runtime copy (ADR-005 §4) share it.
  */
-export function loadEngine(
+export function verifyShowdownCheckout(
   dir: string = DEFAULT_SHOWDOWN_DIR,
   expectedCommit: string = PINNED_SHOWDOWN_COMMIT,
-): Engine {
+): string {
   const entry = join(dir, "dist", "sim", "index.js");
   if (!existsSync(entry)) {
     throw new EngineError(`Showdown build not found at ${entry}; run \`make showdown\``);
@@ -158,6 +158,20 @@ export function loadEngine(
   if (commit !== expectedCommit) {
     throw new EngineError(`Showdown checkout is at ${commit}, expected pinned ${expectedCommit}`);
   }
+  return commit;
+}
+
+/**
+ * Load the pinned, built Showdown checkout. Refuses a missing build or a
+ * checkout at any other commit, so no result is ever attributed to the
+ * wrong engine.
+ */
+export function loadEngine(
+  dir: string = DEFAULT_SHOWDOWN_DIR,
+  expectedCommit: string = PINNED_SHOWDOWN_COMMIT,
+): Engine {
+  const commit = verifyShowdownCheckout(dir, expectedCommit);
+  const entry = join(dir, "dist", "sim", "index.js");
   const sim = createRequire(import.meta.url)(entry) as ShowdownSim;
   return { commit, sim };
 }

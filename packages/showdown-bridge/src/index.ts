@@ -27,6 +27,7 @@ export {
   type SimBattle,
   type SimSide,
   type StatTable,
+  verifyShowdownCheckout,
 } from "./engine.ts";
 export {
   type BattleObservation,

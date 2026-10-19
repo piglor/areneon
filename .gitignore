@@ -12,3 +12,4 @@ coverage/
 .ruff_cache/
 .pytest_cache/
 dist/
+.local-server/
