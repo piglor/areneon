@@ -1,0 +1,110 @@
+# Human sparring guide
+
+This guide is for one person who wants to play a Doubles battle against the Areneon bot on their own machine (runtime A2, ADR-005). Everything runs on `127.0.0.1`. **The bot never connects to any public Showdown server**: `runA2Bot` refuses every URL that is not a loopback address (`assertLocal`), and the launcher binds the server to `127.0.0.1` only.
+
+The format is `[Gen 9 Champions] VGC 2026 Reg M-C` (id `gen9championsvgc2026regmc`), Bo1, Closed Team Sheet.
+
+## 1. Start the server and the bot
+
+One command starts the pinned Showdown server and the bot together. From the repository root, after `make setup` (it builds the pinned Showdown):
+
+```bash
+node packages/bot-client/scripts/a2-bot.ts --challenger <YourName> --team <bot-team.txt>
+```
+
+| Option | Meaning | Default |
+|---|---|---|
+| `--challenger NAME` | Required. The only user whose challenge the bot accepts. | none |
+| `--team PASTE` | Required. The bot's team, a PokePaste file in the engine's canonical form. It must be valid for the format, or the run stops before play. | none |
+| `--data-class private\|synthetic` | What the team is. A `private` team's records stay under `private-data/`. | `private` |
+| `--format ID` | The format id. Optional while the rules snapshot holds one format, as it does now. | the only format |
+| `--port N` | The server's port, 1 to 65535. | `8000` |
+| `--runtime-root DIR` | Where the verified runtime copy of the server is made. | `<repo>/.local-server/runtime` |
+| `--out DIR` | Where battle records go (see section 7). | `private-data/a2` |
+
+The program has no `--help`: an unknown option, or a missing required one, prints the usage text and exits with code 2. Other exit codes: 0 stopped, 1 failed (a failed start, a fatal session error, or a record that could not be stored).
+
+To try the setup without a real team, use the synthetic fixture:
+
+```bash
+node packages/bot-client/scripts/a2-bot.ts --challenger <YourName> \
+  --team fixtures/teams/gen9championsvgc2026regmc/legal-synthetic.txt --data-class synthetic
+```
+
+When the server is up, the program prints one JSON line:
+
+```json
+{"event":"ready","client":"http://127.0.0.1:8000","url":"ws://127.0.0.1:8000/showdown/websocket","bot":"Areneon-bot-78be5a","challenger":"<YourName>","format":"gen9championsvgc2026regmc","server_pid":12345}
+```
+
+Take the client address and the bot's name from it. The bot's name is `Areneon-bot-` plus six random hex characters, new for each start. The lines after it (`connected`, `logged_in`, one per battle event) are the operator log. They show what the bot did, not what the server sent: a line the bot's channel did not keep appears as its kind only.
+
+## 2. Connect
+
+Point a Showdown client at the local server: `http://127.0.0.1:<port>` (the `client` field above). The server runs without login security, so any unregistered name works: pick a throwaway name, which you also give as `--challenger`. Do not use a name or password you use elsewhere. Nothing you type is sent anywhere else; the server makes no outbound requests (its `noNetRequests` setting is on).
+
+The server sets `forcetimer`, `autosavereplays` off and `logchallenges` off, so there is no replay upload and no challenge log.
+
+### The proxy-lock popup
+
+The local server marks every `127.0.0.1` connection as a proxy and locks it. You will probably see a popup saying your IP is locked due to being a proxy, and a lock symbol next to your name; the bot gets the same popup, and its operator log shows it as a `server_message` line. This is the pinned server's behaviour for loopback connections. Challenges, accepting, the Open Team Sheets decline and choices still work (checked with the bot against itself on the launched server; not with a human client, see "Not verified" below). Close the popup and carry on.
+
+## 3. Challenge the bot
+
+1. Challenge the bot by its name (from the `ready` line).
+2. Choose exactly `[Gen 9 Champions] VGC 2026 Reg M-C`, with your own team.
+3. **Untick Best-of-3 before you send the challenge.** The client defaults this format to Best-of-3. The bot does not play Bo3: the server holds a Bo3 challenge under a different format id, which is not in the rules snapshot, so the bot rejects it. The `(Bo3)` format is refused the same way.
+4. The name you challenge from must be the one in `--challenger` (compared by Showdown user id: case, spaces and punctuation do not matter). A challenge from any other user is rejected.
+
+The bot rejects, and says why in the operator log (`challenge_rejected`), any challenge that is not a plain battle challenge, comes from another user, or names another format or custom rules. It plays one battle at a time: a challenge made during a battle is rejected as `busy`.
+
+## 4. Open team sheets
+
+Closed Team Sheet is the point of this format: Areneon plays it with the sheets declined (ADR-003, ADR-005 §2). The bot sends `/rejectopenteamsheets` on its first Team Preview request and never `/acceptopenteamsheets`. It sends its preview choice only after the server has confirmed its rejection. **You should decline too** (do not click Accept on the sheet prompt).
+
+- If you decline, or do not answer: neither side's sheet is shown.
+- If you accept: the bot's rejection still stands and the server does not show the sheets, because it shows them only when every player accepted. The battle plays on without sheets. This follows the server code; it has not been tried with a human client.
+- If the bot cannot confirm its own rejection, or a team sheet is shown anyway, the bot forfeits the battle and records why (`ots_failure`: `not_confirmed`, `refused` or `showteam`).
+
+## 5. The timer
+
+The server runs with `forcetimer` on and the format's VGC Timer, and the bot also sends `/timer on` when it joins a battle room. You cannot switch it off for the bot: the timer stays on while the bot asks for it, even if you stop yours.
+
+The bot reads its own timer state after every request and gives each decision a time budget (60 s at most for Team Preview, 20 s at most for a battle decision, with a 3 s safety margin; `A2_BUDGET_CONFIG` in `src/deadline.ts`). Its policy today is the shared first-legal-choice rule, so it answers at once. A request with no timer state (for example one re-sent after a reconnect) gets a zero budget and is answered at once.
+
+Not yet: a watchdog that sends a fallback choice if the policy overruns its deadline (#761). The bot does not wait on a clock today because it never computes anything slow.
+
+## 6. Windows client with the server in WSL2
+
+The server listens on `127.0.0.1` inside WSL2 and the launcher cannot bind another address. WSL2 normally forwards `localhost` from Windows into the distribution, so `http://127.0.0.1:<port>` in a Windows client may just work. This has not been tried with a Windows client. What was checked: from inside WSL2, `curl http://127.0.0.1:<port>/` answers 200 and the port is listening on `127.0.0.1` only. If a Windows client cannot reach it, run the client inside WSL2 too. Do not work around it by exposing the server on another interface: that is outside this setup and unsupported.
+
+## 7. What the bot records
+
+Each battle, finished or not, is stored as one JSON record: the bot's own player channel (what it was allowed to see) and its decisions with their deadlines. Records go to `private-data/a2` (directory mode 0700, files 0600, named `<battle-room>-<epoch ms>.json`). `private-data/` is gitignored.
+
+**A sparring record is private.** It holds your play and your challenger name, and, after an `ots_failure`, possibly your accepted team sheet. Never commit one or paste it into an issue. The program refuses an `--out` inside the checkout unless `--data-class synthetic`, and an `ots_failure` record is only ever written under `private-data/`, whatever `--out` says.
+
+## 8. Stopping, and leftovers
+
+Press Ctrl-C (or send SIGTERM) in the terminal running `a2-bot`. It stops the bot, then the server's whole process group, stores any open battle's record and prints `{"event":"stopped","battles":N}`. Stopping mid-battle closes the bot's connection without a forfeit: the battle is left to the server's timer, and its unfinished record is stored.
+
+The server also stops itself two hours after it started.
+
+If a run was killed hard (for example with SIGKILL) and left a server behind:
+
+1. A later start refuses with `runtime copy ... is in use by pid N`, naming the lock file `<runtime-root>/<pinned commit>.lock`. Check pid N.
+2. The server's pid is `server_pid` in the `ready` line and in `<runtime-root>/<pinned commit>/areneon-session.json`. Stop its group with `kill -- -<server_pid>`.
+3. A lock whose processes no longer exist is stale and is replaced by the next start. If a start reports another process taking over the stale lock, wait; if it names a `.break` file and nothing is running, remove that file. Remove the lock file by hand only if no launcher, supervisor or server of yours is running.
+4. A port already held on `127.0.0.1` makes the start fail; pick another with `--port`.
+
+## 9. Known limits
+
+- One battle at a time; one challenger per run.
+- Reconnect: if the bot's connection to the server closes, it reconnects at once, then every 200 ms, up to 5 times in a row without a login in between, and the server puts it back in its battle. If it never gets back, the run fails with `no connection after 5 attempts`. The server is expected to outlive the bot's connection; it is not restarted.
+- Not yet: a rejoin during Team Preview does not yet get its own Open Team Sheets budget (#807). The same ticket covers records of battles that were running when a fatal error ended the run: they are not stored yet.
+- Not yet: the deadline watchdog (#761).
+- The bot's only play policy is the shared first-legal-choice rule. It is a sparring partner for the pipeline, not a strong player.
+
+### Not verified
+
+Everything above the client was run: the launch, the `ready` line, the proxy-lock popup on the bot's own connection, Ctrl-C stopping the server, and (in the tests) a full Bo1 Reg M-C battle with the OTS decline. No human client was used. The client-side details (what the challenge dialog and the sheet prompt look like, the popup on a human connection, Windows reaching WSL2) are from the server code and ticket notes, not from a real client.
