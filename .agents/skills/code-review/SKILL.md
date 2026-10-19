@@ -13,7 +13,7 @@ Both axes run as **parallel sub-agents** so they don't pollute each other's cont
 Run this workflow only when the user explicitly requests review. Implementation
 completion, a CI result, or idle hosted time does not authorize a review.
 
-The issue tracker should have been provided to you — run `/setup-matt-pocock-skills` if `docs/agents/issue-tracker.md` is missing.
+The issue tracker is Redmine, configured in `.agents/issue-tracker.md`. Redmine is canonical; GitHub Issues are for community contributions only.
 
 ## Process
 
@@ -39,7 +39,7 @@ fast mode as final approval.
 
 Look for the originating spec, in this order:
 
-1. Issue references in the commit messages (`#123`, `Closes #45`, GitLab `!67`, etc.) — fetch via the workflow in `docs/agents/issue-tracker.md`.
+1. Redmine issue references in the commit messages and PR description (`Refs #<id>`) — fetch them as `.agents/issue-tracker.md` describes.
 2. A path the user passed as an argument.
 3. A PRD/spec file under `docs/`, `specs/`, or `.scratch/` matching the branch name or feature.
 4. If nothing is found, ask the user where the spec is. If they say there isn't one, the **Spec** sub-agent will skip and report "no spec available".

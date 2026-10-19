@@ -81,10 +81,9 @@ Rules for managing ADR pages on the Redmine wiki at `redmine.piglor.com/projects
    - `PUT /projects/areneon/wiki/<title>.json` — update
    - Auth: header `X-Redmine-API-Key`
 
-11. **Auth:** Include API key in all requests:
-   ```
-   X-Redmine-API-Key: <key>
-   ```
+11. **Auth:** Prefer the Redmine MCP server configured in the agent
+   environment. When it is unavailable, send the key from the environment
+   (`curl -H "X-Redmine-API-Key: $KEY"`); never paste or commit the key.
 
 12. **Synchronize and verify external writes.** Fetch the current canonical
     page and any source design before editing. After every write, fetch the page
