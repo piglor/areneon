@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 .SHELLFLAGS := -euo pipefail -c
-.PHONY: setup showdown check python ts contracts contracts-update guards team-guard licences licences-selftest db-up db-down db-test db-bootstrap-test
+.PHONY: setup showdown check python ts contracts contracts-update guards team-guard licences licences-selftest db-up db-down db-test db-bootstrap-test importer-image importer-e2e
 
 # One-time setup for a clean clone.
 setup: showdown
@@ -87,3 +87,16 @@ db-test:
 # network, with no published port, so it does not need or touch db-up's.
 db-bootstrap-test:
 	scripts/bootstrap-secrets-test.sh
+
+# The rules importer image (#768): `local` is the production image, `e2e` adds
+# a stand-in gh replaying recorded GitHub answers. importer-e2e imports the
+# recorded releases into a fresh db-up database twice (commit, then no-op);
+# it leaves rows behind, so run db-up again before db-test.
+IMPORTER_IMAGE := areneon-rules-importer
+
+importer-image:
+	docker build -f packages/rules-importer/Dockerfile -t $(IMPORTER_IMAGE):local .
+	docker build -f packages/rules-importer/Dockerfile --target e2e -t $(IMPORTER_IMAGE):e2e .
+
+importer-e2e: importer-image db-up
+	packages/rules-importer/scripts/e2e.sh $(IMPORTER_IMAGE)

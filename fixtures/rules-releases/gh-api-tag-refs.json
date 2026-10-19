@@ -1,0 +1,16 @@
+[
+  {
+    "ref": "refs/tags/rules-snapshot-7c618d78d6f569e875d7e5be4863152599dc8f4207f6e10cfd5f12301a853fe8",
+    "object": {
+      "sha": "35f9c5f04aecbe1dfc38e55d2599b1013f1b43b7",
+      "type": "commit"
+    }
+  },
+  {
+    "ref": "refs/tags/rules-channel-stable-b226c3bfe889f8cf775933b0a964a44ef6d69913",
+    "object": {
+      "sha": "b226c3bfe889f8cf775933b0a964a44ef6d69913",
+      "type": "commit"
+    }
+  }
+]
