@@ -1,5 +1,11 @@
 export { actorRule, NoCandidateError } from "./actor-rule.ts";
 export {
+  randomLegal,
+  randomLegalActor,
+  type RandomLegalState,
+  RandomStateError,
+} from "./random-legal.ts";
+export {
   type Candidate,
   type CandidateSet,
   enumerateCandidates,
