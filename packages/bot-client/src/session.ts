@@ -25,6 +25,13 @@ import { OtsDecline, OtsDeclineError, type OtsFailure, type OtsStatus } from "./
 import { GLOBAL_ROOM, ProtocolReader, type RoomEvent, type SequencedRequest } from "./protocol.ts";
 import { classifyRefusal, type CurrentRequest, type Refusal, type RefusalMode, type Submission } from "./refusal.ts";
 import type { Transport } from "./transport.ts";
+import {
+  type AutoChooseDetection,
+  DEFAULT_SNAPSHOT_WAIT_MS,
+  DeadlineWatchdog,
+  type WatchdogFire,
+  type WatchdogReason,
+} from "./watchdog.ts";
 import { connectWebSocket } from "./websocket-transport.ts";
 
 /** A session that cannot go on: it forfeits its open battle and stops. */
@@ -65,6 +72,12 @@ export interface A2BotOptions {
   /** Default `A2_BUDGET_CONFIG`. */
   budget?: BudgetConfig;
   /**
+   * How long a request waits for the server's timer snapshot before it is
+   * answered without one (the server skips it when the bank is 0 or only one
+   * player has time left; see `watchdog.ts`). Default 1 s.
+   */
+  snapshotWaitMs?: number;
+  /**
    * After a close the session reconnects at once, then every `delayMs`, up
    * to `attempts` times in a row without a login in between. Default 5 x 200 ms.
    */
@@ -99,6 +112,8 @@ export interface DecisionRecord {
   budget: Budget;
   /** The update after an `[Unavailable choice]` keeps the original request's receipt and budget (ADR-005 §3). */
   inherited: boolean;
+  /** Set when the watchdog, not a timer snapshot, made this decision: the fallback went out unbudgeted. */
+  watchdog?: WatchdogReason;
   remaining_decisions_estimate?: number;
   /** Local ms from the (original) request's receipt to the send. */
   elapsed_ms: number;
@@ -116,6 +131,8 @@ export interface A2BattleRecord {
   ots_failure: { reason: OtsFailure; detail: string } | null;
   /** A live human match on the local server (ADR-005 §1) in which the engine refused a non-pending candidate: excluded from evaluation. */
   defect: boolean;
+  /** Requests the server answered for the bot (`server_auto_choose_detected`): it must never fire (ADR-005 §3). */
+  server_auto_chooses: AutoChooseDetection[];
   decisions: DecisionRecord[];
   /** This player's channel, one per connection that joined the room (each starts at its `|init|`). */
   channels: PlayerChannel[];
@@ -153,6 +170,10 @@ export type SessionLog =
    */
   | { event: "dropped"; room: string; line: string }
   | { event: "ots_failure"; room: string; reason: OtsFailure; detail: string }
+  /** The watchdog sent the fallback: the snapshot never came, or the policy overran. */
+  | { event: "watchdog"; room: string; rqid: number; request_seq: number; reason: WatchdogReason }
+  /** The server chose for the bot: a newer request arrived while this one was unanswered. */
+  | { event: "server_auto_choose_detected"; room: string; detection: AutoChooseDetection }
   | { event: "battle_ended"; room: string; result: BattleResult; winner: string | null }
   /** A `|popup|` or a global `|error|`: server text for the operator. */
   | { event: "server_message"; line: string };
@@ -177,6 +198,7 @@ interface Deadline {
   timer: TimerSnapshot | null;
   budget: Budget;
   inherited: boolean;
+  watchdog?: WatchdogReason;
   remaining_decisions_estimate?: number;
 }
 
@@ -190,6 +212,8 @@ interface Battle {
   /** The open request, numbered as the current connection numbers it. */
   current: (CurrentRequest & { phase: SequencedRequest["phase"] }) | null;
   pending: Pending | undefined;
+  /** The deadline of `pending` and the server auto-choose detector. */
+  watchdog: DeadlineWatchdog;
   submission: (Submission & { rqid: number }) | undefined;
   /** Every request seen, by rqid: its hash. */
   seen: Map<number, string>;
@@ -209,6 +233,7 @@ interface Battle {
   result: BattleResult;
   winner: string | null;
   defect: boolean;
+  autoChooses: AutoChooseDetection[];
   decisions: DecisionRecord[];
   channels: PlayerChannel[];
 }
@@ -248,7 +273,9 @@ interface Connection {
  * - Each new request's budget comes from the server's timer snapshot that
  *   follows it (`previewBudget` / `battleBudget`); the update request after
  *   an `[Unavailable choice]` inherits the original's. A request with no
- *   snapshot to come gets a zero budget. The watchdog is not here (#761).
+ *   snapshot to come gets a zero budget, and one whose snapshot does not
+ *   come within `snapshotWaitMs` is answered by the watchdog (`watchdog.ts`),
+ *   which also detects the server choosing for the bot.
  * - On a close it reconnects and logs in again; the server rejoins the bot
  *   to its battle and re-sends its request, with `|sentchoice|` if it holds
  *   a choice (ADR-005 §1). Each connection's channel starts at its `|init|`.
@@ -367,7 +394,11 @@ class Session {
     this.#acceptEnded("disconnected");
     for (const [room, state] of connection.rooms) {
       const battle = this.#battles.get(room);
-      if (battle !== undefined && battle.result === "unfinished") this.#keepChannel(battle, state);
+      if (battle !== undefined && battle.result === "unfinished") {
+        // The rejoin re-sends the request, and a held one is answered then.
+        battle.watchdog.cancel();
+        this.#keepChannel(battle, state);
+      }
     }
     if (this.#stopping) return this.#finish();
     this.#log({ event: "disconnected", code });
@@ -406,7 +437,10 @@ class Session {
     clearTimeout(this.#retryTimer);
     clearTimeout(this.#acceptTimer);
     if (this.#onAbort !== undefined) this.#options.signal?.removeEventListener("abort", this.#onAbort);
-    for (const battle of this.#battles.values()) clearTimeout(battle.otsTimer);
+    for (const battle of this.#battles.values()) {
+      clearTimeout(battle.otsTimer);
+      battle.watchdog.dispose();
+    }
     fn();
   }
 
@@ -419,6 +453,7 @@ class Session {
       ots: battle.ots.status,
       ots_failure: battle.otsFailure,
       defect: battle.defect,
+      server_auto_chooses: battle.autoChooses,
       decisions: battle.decisions,
       channels: battle.channels,
     };
@@ -518,7 +553,7 @@ class Session {
       known.rejoin = true;
       return;
     }
-    this.#battles.set(room, {
+    const battle: Battle = {
       room,
       ots: new OtsDecline({ room, botName: this.#options.name, send: (line) => this.#send(line) }),
       otsTimer: undefined,
@@ -526,6 +561,10 @@ class Session {
       player: null,
       current: null,
       pending: undefined,
+      watchdog: new DeadlineWatchdog({
+        clock: this.#clock,
+        onFire: (fire) => this.#guard(() => this.#watchdogFired(battle, fire)),
+      }),
       submission: undefined,
       seen: new Map(),
       answered: new Map(),
@@ -536,9 +575,11 @@ class Session {
       result: "unfinished",
       winner: null,
       defect: false,
+      autoChooses: [],
       decisions: [],
       channels: [],
-    });
+    };
+    this.#battles.set(room, battle);
     this.#log({ event: "battle_started", room });
   }
 
@@ -589,6 +630,7 @@ class Session {
       case "request_closed":
         battle.current = null;
         battle.pending = undefined;
+        battle.watchdog.cancel();
         return;
       case "error":
         return this.#refusal(battle, event.error);
@@ -672,7 +714,9 @@ class Session {
         ? null
         : legalChoiceSet({ request, showdown_commit: this.#options.engine.commit, judge: null });
     battle.current = { request_seq: request.request_seq, rqid, legal, phase: request.phase };
-    if (resend || (rejoin && seen)) return this.#resent(battle, sequenced, legal, rest, channel_request_seq);
+    const resent = resend || (rejoin && seen);
+    if (!resent) this.#autoChoose(battle, request);
+    if (resent) return this.#resent(battle, sequenced, legal, rest, channel_request_seq);
     battle.refused = [];
     battle.pending = undefined;
     if (legal === null) return;
@@ -684,6 +728,7 @@ class Session {
     }
     if (battle.timer && !rejoin) {
       battle.pending = pending;
+      battle.watchdog.armSnapshotWait(rqid, now, this.#options.snapshotWaitMs ?? DEFAULT_SNAPSHOT_WAIT_MS);
       return;
     }
     this.#decide(battle, pending, { timer: null, budget: ZERO_BUDGET, inherited: false });
@@ -718,8 +763,31 @@ class Session {
     }
   }
 
+  /** A newer request while the previous one is unanswered: the server chose for the bot (ADR-005 §3). */
+  #autoChoose(battle: Battle, request: SequencedRequest): void {
+    const detection = battle.watchdog.onRequest(request.rqid as number, request.request_seq, request.phase);
+    if (detection === null) return;
+    battle.autoChooses.push(detection);
+    this.#log({ event: "server_auto_choose_detected", room: battle.room, detection });
+  }
+
+  /** A deadline ran out for the request held for its snapshot (or the policy): the fallback goes out at once. */
+  #watchdogFired(battle: Battle, fire: WatchdogFire): void {
+    const pending = battle.pending as Pending;
+    battle.pending = undefined;
+    this.#log({
+      event: "watchdog",
+      room: battle.room,
+      rqid: fire.rqid,
+      request_seq: pending.request.request_seq,
+      reason: fire.reason,
+    });
+    this.#decide(battle, pending, { timer: null, budget: ZERO_BUDGET, inherited: false, watchdog: fire.reason });
+  }
+
   #decide(battle: Battle, pending: Pending, deadline: Deadline): void {
     const { request, legal, channel_request_seq, received_at } = pending;
+    battle.watchdog.settle(request.rqid);
     const choice = actorRule(legal);
     if (request.phase === "preview" && battle.ots.status === "idle") {
       const event: RoomEvent = { kind: "request", room: battle.room, request, resend: false };
@@ -737,12 +805,14 @@ class Session {
       timer: deadline.timer,
       budget: deadline.budget,
       inherited: deadline.inherited,
+      ...(deadline.watchdog === undefined ? {} : { watchdog: deadline.watchdog }),
       ...(deadline.remaining_decisions_estimate === undefined
         ? {}
         : { remaining_decisions_estimate: deadline.remaining_decisions_estimate }),
       elapsed_ms: this.#clock() - received_at,
     };
     battle.answered.set(request.rqid, choice);
+    battle.watchdog.onAnswered(request.rqid);
     battle.last = { received_at, deadline };
     battle.decisions.push(decision);
     this.#submit(battle, request, choice);
@@ -802,6 +872,7 @@ class Session {
     battle.result =
       battle.winner === null ? "tie" : toId(battle.winner) === toId(this.#options.name) ? "win" : "loss";
     clearTimeout(battle.otsTimer);
+    battle.watchdog.dispose();
     this.#keepChannel(battle, state);
     this.#send(`${battle.room}|/leave`);
     this.#log({ event: "battle_ended", room: battle.room, result: battle.result, winner: battle.winner });

@@ -65,3 +65,12 @@ export {
   SessionError,
   type SessionLog,
 } from "./session.ts";
+export {
+  type AutoChooseDetection,
+  DEFAULT_SNAPSHOT_WAIT_MS,
+  DeadlineWatchdog,
+  type RequestPhase,
+  type WatchdogFire,
+  type WatchdogOptions,
+  type WatchdogReason,
+} from "./watchdog.ts";
