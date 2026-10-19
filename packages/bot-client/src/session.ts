@@ -491,6 +491,8 @@ class Session {
       return this.#log({ event: "challenge_rejected", from, format, reason, detail });
     }
     this.#send(decision.command);
+    // A battle that starts after the timeout is still counted by `open`, so at
+    // worst one more concurrent accept is possible, never a third.
     this.#accepting = true;
     this.#acceptTimer = setTimeout(
       () => this.#guard(() => this.#acceptEnded("timeout")),

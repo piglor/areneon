@@ -62,10 +62,11 @@ const json = (value: unknown): string =>
 
 /**
  * What the operator's log shows of an entry. A dropped line is raw server
- * text, so only its kind (the text up to the second `|`) is shown.
+ * text, so only its kind (a leading `|` and the text up to the next `|`) is
+ * shown; a line without a leading `|` shows nothing of itself.
  */
 const operatorLog = (entry: SessionLog): unknown =>
-  entry.event === "dropped" ? { event: "dropped", room: entry.room, kind: entry.line.split("|", 2).join("|") } : entry;
+  entry.event === "dropped" ? { event: "dropped", room: entry.room, kind: /^\|[^|]*/.exec(entry.line)?.[0] ?? "|?" } : entry;
 
 /**
  * The A2 sparring session (ADR-005 §4): launch the pinned server from a

@@ -119,6 +119,7 @@ describe("runCli (the A2 sparring entry point)", () => {
       runBot: async (options) => {
         options.onLog?.({ event: "dropped", room: "battle-x-1", line: "|unknownkind|secret text" });
         options.onLog?.({ event: "dropped", room: "battle-x-1", line: "|bare" });
+        options.onLog?.({ event: "dropped", room: "battle-x-1", line: "secret|no leading pipe" });
         return { battles: [] };
       },
     });
@@ -127,6 +128,7 @@ describe("runCli (the A2 sparring entry point)", () => {
     expect(dropped.map((line) => JSON.parse(line))).toEqual([
       { event: "dropped", room: "battle-x-1", kind: "|unknownkind" },
       { event: "dropped", room: "battle-x-1", kind: "|bare" },
+      { event: "dropped", room: "battle-x-1", kind: "|?" },
     ]);
     expect(f.out.join("\n")).not.toContain("secret");
   });
