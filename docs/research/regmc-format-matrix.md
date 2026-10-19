@@ -126,8 +126,8 @@ Fact rows above; the comparison and its consequences are listed here. Gap record
 | D5 | Team sheets: VGC tournaments use open team lists; Showdown Bo1 offers OTS opt-in, Bo3 forces it. Areneon's CTS target (Bo1, OTS declined) is therefore **neither the VGC tournament rule nor a verified copy of in-game Ranked Battles**. It is a project choice (ADR-003) that defines the hidden-information observation contract. | V8-V10, R6-R7 | `open-team-sheets`, `cts-invariant` |
 | D6 | Eligible species: official list is a published whitelist; Showdown derives legality from the champions mod data plus tag bans. Not yet compared entry by entry. | T8 | `roster-and-learnsets` |
 | D7 | Stat Points 32/66 and all-31 IVs come from the engine only. | T12-T13 | `stat-points`, `pokepaste` |
-| D8 | Simultaneous last faint: Showdown gives the win to the side of the last entry processed in the faint queue; VGC says the game decides "based on a set of coded rules (such as whose Pokémon fainted first …)". | P5, P8 | none (candidate for #773) |
-| D9 | Shiny flag visible at Showdown Team Preview in the champions mod (cosmetic). This contradicts the `cts-invariant` description (species, level and gender only). | V11 | `cts-invariant` (flag for #773) |
+| D8 | Simultaneous last faint: Showdown gives the win to the side of the last entry processed in the faint queue; VGC says the game decides "based on a set of coded rules (such as whose Pokémon fainted first …)". | P5, P8 | `simultaneous-faint` |
+| D9 | Shiny flag visible at Showdown Team Preview in the champions mod (cosmetic). This contradicts the `cts-invariant` description (species, level and gender only). | V11 | `cts-invariant` |
 | D10 | Balance changes rolled out with M-C ([S3]) are not checked against the engine's champions overrides. | AV3 | `move-item-ability-overrides`, `override-parity`, `pp` |
 
 ### Inference

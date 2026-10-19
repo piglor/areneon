@@ -3,7 +3,7 @@
   "gap_id": "open-team-sheets",
   "area": "Open Team Sheets",
   "status": "unverified",
-  "description": "Opt-in in Bo1 (`Open Team Sheets`), forced in Bo3. Areneon supports Bo1 only and declines.",
+  "description": "Opt-in in Bo1 (`Open Team Sheets`), forced in Bo3. Areneon supports Bo1 only and declines. This Closed Team Sheet target is a project choice (ADR-003): VGC tournaments use open team lists (Handbook §2.4), and it is not a verified copy of in-game Ranked Battles either (format matrix U7).",
   "evidence": [
     {
       "kind": "engine",

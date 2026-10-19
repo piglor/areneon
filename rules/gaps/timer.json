@@ -3,7 +3,7 @@
   "gap_id": "timer",
   "area": "Timer",
   "status": "unverified",
-  "description": "Showdown `VGC Timer`: 90 s preview, 420 s bank, 55 s per turn, auto-choose on timeout. This is a server rule; the in-process sim does not run it.",
+  "description": "Showdown `VGC Timer`: 90 s preview, 420 s bank, 55 s per turn, no game clock, auto-choose on timeout. This is a server rule, off unless `Config.forcetimer` is set or a player turns it on; the in-process sim (A1) does not run it. The official M-C limits differ: see `in-game-timer`.",
   "evidence": [
     {
       "kind": "engine",

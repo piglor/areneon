@@ -3,6 +3,14 @@
   "gap_id": "in-game-timer",
   "area": "In-game timer",
   "status": "unverified",
-  "description": "Champions in-game timer values compared with Showdown's VGC Timer.",
-  "evidence": []
+  "description": "Official M-C limits (Ranked Battles and the VGC Tournament Handbook §4.3.1): 90 s Team Preview, 45 s per turn, 7 min player time, 20 min game time, enforced automatically at Championship Series events. Showdown's `VGC Timer` allows 55 s per turn and has no game clock, so it is more lenient per turn and never ends a game on time. The game's behaviour on turn timeout and on game-time expiry is unknown (format matrix U6). Headless A1 self-play runs no timer, so neither difference changes its results.",
+  "evidence": [
+    {
+      "kind": "engine",
+      "path": "data/rulesets.ts",
+      "symbols": [
+        "vgctimer"
+      ]
+    }
+  ]
 }

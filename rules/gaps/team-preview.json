@@ -3,8 +3,15 @@
   "gap_id": "team-preview",
   "area": "Team Preview",
   "status": "unverified",
-  "description": "Bring 6, choose 4, two leads (`maxChosenTeamSize: 4`, doubles)",
+  "description": "Bring 6, choose 4, two leads (`maxChosenTeamSize: 4`, doubles). The engine requires exactly 6 registered Pokémon (`Min Team Size = 6` in the champions `Flat Rules`); the VGC Tournament Handbook §2.1 allows 4 to 6 by event format, and the in-game Ranked team size is unverified (format matrix U3). Areneon runs 6-Pokémon teams only.",
   "evidence": [
+    {
+      "kind": "engine",
+      "path": "data/mods/champions/rulesets.ts",
+      "symbols": [
+        "flatrules"
+      ]
+    },
     {
       "kind": "fixture",
       "path": "fixtures/showdown/gen9championsvgc2026regmc/preview.request.json"

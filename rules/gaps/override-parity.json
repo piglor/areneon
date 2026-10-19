@@ -3,6 +3,6 @@
   "gap_id": "override-parity",
   "area": "Champions overrides",
   "status": "unverified",
-  "description": "Whether every Champions move, item and ability override matches the game. No in-game fixtures exist yet.",
+  "description": "Whether every Champions move, item and ability override matches the game, including the M-C balance changes of 2026-09-09. Only the two examples the maintenance notice names were checked: Wish and Strength Sap have base PP 5, so 8 PP after the `pp` formula. No in-game fixtures exist yet.",
   "evidence": []
 }
