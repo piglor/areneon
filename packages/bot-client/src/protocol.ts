@@ -73,7 +73,7 @@ const prefixed = (line: string, type: string): string | undefined =>
  * - A request whose `rqid` and `request_hash` both equal the previous
  *   request's is a re-send and keeps its `request_seq`. A request without
  *   an `rqid` is never a re-send: only the server assigns one.
- * - `|init|battle` starts a new channel for its room (ADR-004 r4.2, ADR-008
+ * - `|init|battle` starts a new channel for its room (ADR-008
  *   §4): the server sends it on every join, then replays the room log, which
  *   holds no `|request|` (those go to the player only, server/room-battle.ts
  *   `receive`). So the room's request state is reset there: `request_seq`
