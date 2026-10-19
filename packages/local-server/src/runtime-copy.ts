@@ -75,6 +75,10 @@ export const RUNTIME_ENTRIES = [
  *   no store without it), and the Postgres stores (room logs behind
  *   `replaysdb`, teams behind `usepostgres`), both off in Areneon's
  *   `config.js`. So nothing reads them under Areneon's config.
+ * - `.git`: never copied, and `verifyRuntimeCopy` refuses a copy that holds
+ *   one. `Monitor.version()` reads `.git/index` at every start; were one
+ *   present, it would run git from `dist/server/` against the repository
+ *   enclosing the copy.
  */
 export const DIGESTED_ENTRIES = [
   "dist",
@@ -266,7 +270,8 @@ function removeBestEffort(path: string): void {
 /**
  * Re-verify a runtime copy before it is used: its manifest is of version
  * `RUNTIME_MANIFEST_VERSION` and names `expectedCommit`, every runtime entry
- * is present, and every digested entry still has its recorded digest. Any
+ * is present, it holds no `.git` (of any kind, symlinks included), and every
+ * digested entry still has its recorded digest. Any
  * difference, including a manifest of an older version, is refused as a
  * `RuntimeCopyError`; the caller recreates the copy with `createRuntimeCopy`.
  */
@@ -284,6 +289,12 @@ export function verifyRuntimeCopy(
     if (!existsSync(join(dir, entry))) {
       throw new RuntimeCopyError(`runtime copy ${dir} has no ${entry}`);
     }
+  }
+  if (lstatSync(join(dir, ".git"), { throwIfNoEntry: false }) !== undefined) {
+    throw new RuntimeCopyError(
+      `runtime copy ${dir} has a .git entry; the runtime copy must not contain .git: ` +
+        "Monitor.version would run git against the enclosing repository; recreate the copy",
+    );
   }
   const sha256 = digestEntries(dir);
   for (const entry of DIGESTED_ENTRIES) {

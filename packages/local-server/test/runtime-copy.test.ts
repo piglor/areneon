@@ -317,6 +317,21 @@ describe("a runtime copy of a fake checkout", () => {
     expect(verifyRuntimeCopy(dir, vendor.commit).commit).toBe(vendor.commit);
   });
 
+  it.each([
+    ["directory", (dir: string) => write(dir, ".git/index", "")],
+    ["file", (dir: string) => write(dir, ".git", "gitdir: /elsewhere\n")],
+    ["dangling symlink", (dir: string) => symlinkSync("missing", join(dir, ".git"))],
+  ])("refuses a copy holding a .git %s", (_label, plant) => {
+    const dir = freshCopy();
+    plant(dir);
+    expect(() => verifyRuntimeCopy(dir, vendor.commit)).toThrow(
+      new RuntimeCopyError(
+        `runtime copy ${dir} has a .git entry; the runtime copy must not contain .git: ` +
+          "Monitor.version would run git against the enclosing repository; recreate the copy",
+      ),
+    );
+  });
+
   it("refuses a symlink planted in dist/", () => {
     const dir = freshCopy();
     symlinkSync(join(vendor.dir, "dist/sim/index.js"), join(dir, "dist/sim/planted.js"));

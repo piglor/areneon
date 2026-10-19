@@ -387,6 +387,18 @@ setInterval(() => {}, 1000);
     expect(existsSync(lockPath(copy.dir))).toBe(false);
   });
 
+  it("refuses a copy holding .git before writing or loading the config", async () => {
+    const copy = fakeCopy(fakeServer());
+    mkdirSync(join(copy.dir, ".git"));
+    writeFileSync(join(copy.dir, ".git/index"), "");
+    const launched = launch({ dir: copy.dir, port: await freePort(), expectedCommit: copy.commit });
+    await expect(launched).rejects.toThrow(RuntimeCopyError);
+    await expect(launched).rejects.toThrow("the runtime copy must not contain .git");
+    expect(existsSync(join(copy.dir, SERVER_CONFIG_PATH))).toBe(false);
+    expect(existsSync(join(copy.dir, "started.json"))).toBe(false);
+    expect(existsSync(lockPath(copy.dir))).toBe(false);
+  });
+
   it("verifies the copy again immediately before the spawn", async () => {
     // Loading these defaults changes the entry script after the first check,
     // as a change between the config check and the spawn would.
