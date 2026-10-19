@@ -278,8 +278,10 @@ export function emitOutput(line: string, githubOutput: string | undefined): void
 export function writeVerified(dir: string, release: readonly Artifact[]): string {
   try {
     mkdirSync(join(dir, VERIFIED_DIR));
-  } catch {
-    throw new RulesError(`${join(dir, VERIFIED_DIR)} already exists`);
+  } catch (error) {
+    const { code, message } = error as NodeJS.ErrnoException;
+    if (code === "EEXIST") throw new RulesError(`${join(dir, VERIFIED_DIR)} already exists`, { cause: error });
+    throw new RulesError(`could not create ${join(dir, VERIFIED_DIR)}: ${message}`, { cause: error });
   }
   for (const a of release) writeFileSync(verifiedPath(dir, a), a.bytes);
   return `attest=${release.length > 0}`;

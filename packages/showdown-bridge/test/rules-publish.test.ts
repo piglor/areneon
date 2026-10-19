@@ -293,6 +293,19 @@ describe("the verified release set (what the publish job attests and releases)",
     expect(() => writeVerified(dir, [chan])).toThrow(/already exists/);
   });
 
+  it("keeps the cause when the verified set cannot be created for another reason", () => {
+    const missing = join(planned(), "no-such-dir");
+    let caught: unknown;
+    try {
+      writeVerified(missing, [chan]);
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeInstanceOf(RulesError);
+    expect((caught as Error).message).toMatch(/^could not create .*no-such-dir.*verified: ENOENT/);
+    expect(((caught as Error).cause as NodeJS.ErrnoException).code).toBe("ENOENT");
+  });
+
   it("makes release refuse a verified set that is missing, short, padded or changed", () => {
     const dir = planned();
     expect(() => checkVerified(dir, [snap, chan])).toThrow(/run verify first/);
