@@ -41,7 +41,8 @@ RUN set -eu; \
 # The application: production dependencies of the importer and the workspace
 # packages it uses, then their sources. Workspace packages stay symlinks to
 # packages/*, outside node_modules, so Node strips their TypeScript as it does
-# in the repository. pnpm and corepack stay in this stage.
+# in the repository. pnpm comes from corepack, which checks it against the
+# packageManager hash in package.json. pnpm and corepack stay in this stage.
 FROM ${NODE_IMAGE} AS build
 ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0
 WORKDIR /app

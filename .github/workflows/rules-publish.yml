@@ -41,11 +41,11 @@ jobs:
           submodules: true
           # The channel check rebuilds earlier main snapshots.
           fetch-depth: 0
-      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .nvmrc
-          cache: pnpm
+      # pnpm comes only from corepack, which checks the packageManager hash.
+      - run: corepack enable && COREPACK_ENABLE_DOWNLOAD_PROMPT=0 pnpm --version
       - run: pnpm install --frozen-lockfile
       - name: build pinned Showdown
         run: make showdown
@@ -86,11 +86,11 @@ jobs:
           persist-credentials: false
           # Planning again names the commit that last changed each channel.
           fetch-depth: 0
-      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .nvmrc
-          cache: pnpm
+      # pnpm comes only from corepack, which checks the packageManager hash.
+      - run: corepack enable && COREPACK_ENABLE_DOWNLOAD_PROMPT=0 pnpm --version
       - run: pnpm install --frozen-lockfile
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:

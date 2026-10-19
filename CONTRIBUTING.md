@@ -15,7 +15,7 @@ Thanks for your interest. Areneon is pre-alpha (Wave 1).
 
 ## Setup
 
-Requirements: Node 24 LTS, pnpm 10, [uv](https://docs.astral.sh/uv/) (installs Python 3.12), GNU Make ≥ 3.82 (macOS ships 3.81: `brew install make` and run `gmake`).
+Requirements: Node 24 LTS, pnpm 10 through corepack (`corepack enable`: it installs exactly the `packageManager` version in `package.json` and refuses it unless its sha512 matches), [uv](https://docs.astral.sh/uv/) (installs Python 3.12), GNU Make ≥ 3.82 (macOS ships 3.81: `brew install make` and run `gmake`).
 
 ```bash
 git clone --recurse-submodules https://github.com/piglor/areneon.git
