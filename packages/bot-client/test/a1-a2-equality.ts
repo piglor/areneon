@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { A2Channel, type A2ChannelOptions, ProtocolReader, splitFrame } from "@areneon/bot-client";
-import { type HarnessFixture, type HarnessFixtureV2, type Seat, upgradeFixture } from "@areneon/local-server/harness";
+import { type HarnessFixture, type HarnessFixtureV2, reconnectEvidence, type Seat, upgradeFixture } from "@areneon/local-server/harness";
 import {
   type BattleRecord,
   type Engine,
@@ -248,6 +248,25 @@ export async function compareA1A2(
     const match = /^>(p[12]) (.*)$/.exec(line);
     if (match !== null && !match[2]?.startsWith("{")) queued[match[1] as Seat].push(match[2] as string);
   }
+  // A reconnect the fixture says it holds is the one it holds: the re-sent request is there, with
+  // `|sentchoice|` exactly when its provenance says the cut came after the choice, and that choice is
+  // the one the input log has for the decision.
+  const claimed = /(right after it sent its choice for|when it received) its request/.exec(fixture.provenance)?.[1];
+  for (const seat of SEATS.filter((s) => fixture.frames[s].length > 1)) {
+    const evidence = reconnectEvidence(fixture.frames[seat]);
+    if (evidence === undefined) {
+      if (claimed !== undefined) diff(`${seat}: no request is re-sent on its second connection`);
+    } else {
+      if (claimed !== undefined && evidence.sentchoice !== claimed.startsWith("right after")) {
+        diff(`${seat}: |sentchoice| ${evidence.sentchoice ? "is" : "is not"} there, the provenance says the cut came ${claimed}`);
+      }
+    }
+  }
+  const held: Partial<Record<Seat, { decision: number; choice: string }>> = {};
+  for (const seat of SEATS.filter((s) => fixture.frames[s].length > 1)) {
+    const evidence = reconnectEvidence(fixture.frames[seat]);
+    if (evidence?.choice !== undefined) held[seat] = { decision: evidence.decision, choice: evidence.choice };
+  }
   const choices: BattleRecord["choices"] = [];
   for (const seat of SEATS) {
     const answered = a2[seat].logical.flatMap((read, i) => (read.wait ? [] : [i + 1]));
@@ -255,7 +274,7 @@ export async function compareA1A2(
       diff(`${seat}: ${queued[seat].length} choices in the input log for ${answered.length} decisions in the channel`);
     }
     answered.forEach((request_seq, i) => {
-      const choice = queued[seat][i];
+      const choice = held[seat]?.decision === i + 1 ? held[seat]?.choice : queued[seat][i];
       if (choice !== undefined) choices.push({ player: seat, request_seq, choice });
     });
   }

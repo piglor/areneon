@@ -1,9 +1,9 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { loadEngine, loadRulesSnapshot, resolveFormat } from "@areneon/showdown-bridge";
+import { enumerateCandidates, loadEngine, loadRulesSnapshot, resolveFormat } from "@areneon/showdown-bridge";
 import type { PokemonSet } from "@areneon/showdown-bridge";
 import type { A2BattleRecord } from "@areneon/bot-client";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   buildHarnessFixture,
   channelFromFrames,
@@ -206,6 +206,8 @@ describe.each(COMMITTED)("the committed fixture $recording.file", ({ recording, 
   });
 
   it("refuses each way it can be wrong", async () => {
+    // The untouched copy is accepted, so each refusal below is the change's doing and nothing else's.
+    await expect(verifyHarnessFixture(engine, clone(fixture))).resolves.toBeUndefined();
     const refused = async (change: (f: HarnessFixture) => void, reason: string | RegExp): Promise<void> => {
       const copy = clone(fixture);
       change(copy);
@@ -265,6 +267,8 @@ describe.each(COMMITTED)("the committed fixture $recording.file", ({ recording, 
   });
 
   it("refuses frames that are malformed, not its own, clocked or not what the channel is", async () => {
+    // The untouched copy is accepted, so each refusal below is the change's doing and nothing else's.
+    await expect(verifyHarnessFixture(engine, clone(fixture))).resolves.toBeUndefined();
     const refused = async (change: (f: HarnessFixture) => void, reason: string | RegExp): Promise<void> => {
       const copy = clone(fixture);
       change(copy);
@@ -304,6 +308,8 @@ describe.each(COMMITTED)("the committed fixture $recording.file", ({ recording, 
   });
 
   it("refuses a seat whose connections and channels do not pair up, or whose later connection is wrong", async () => {
+    // The untouched copy is accepted, so each refusal below is the change's doing and nothing else's.
+    await expect(verifyHarnessFixture(engine, clone(fixture))).resolves.toBeUndefined();
     const refused = async (change: (f: HarnessFixture) => void, reason: string | RegExp): Promise<void> => {
       const copy = clone(fixture);
       change(copy);
@@ -370,6 +376,35 @@ describe("schema versions", () => {
     const bad = structuredClone(raw) as { frames: { p1: string[] } };
     bad.frames.p1.splice(bad.frames.p1.findIndex((frame) => frame.includes("\n|move|")), 1);
     await expect(verifyHarnessFixture(engine, bad as never)).rejects.toThrow("p1 channel is not what its frames give");
+  });
+
+  type Loose = { channels: Record<string, unknown>; frames: Record<string, unknown> };
+  it("refuses a fixture whose frames and channels are not the shape of its version, with a HarnessError", async () => {
+    const v3 = structuredClone(upgradeFixture(raw)) as unknown as Loose;
+    const flat = (change: (f: Loose) => void) => {
+      const copy = structuredClone(v3);
+      change(copy);
+      return copy as never;
+    };
+    const cases: [never, RegExp][] = [
+      [flat((f) => (f.channels.p1 = (f.channels.p1 as unknown[])[0])), /p1 channels of a version 3 fixture are a list/],
+      [flat((f) => (f.frames.p2 = (f.frames.p2 as unknown[][])[0] as never)), /p2 frames of a version 3 fixture are a list of connections/],
+      [flat((f) => (f.frames.p1 = "x" as never)), /p1 frames of a version 3 fixture/],
+    ];
+    for (const [fixture, reason] of cases) {
+      expect(() => upgradeFixture(fixture)).toThrow(HarnessError);
+      expect(() => upgradeFixture(fixture)).toThrow(reason);
+      await expect(verifyHarnessFixture(engine, fixture)).rejects.toThrow(HarnessError);
+    }
+    const old = (change: (f: Loose) => void) => {
+      const copy = structuredClone(raw) as unknown as Loose;
+      change(copy);
+      return copy as never;
+    };
+    for (const bad of [old((f) => (f.channels.p1 = [f.channels.p1] as never)), old((f) => (f.frames.p2 = "x" as never))]) {
+      expect(() => upgradeFixture(bad)).toThrow(/frames of a version 2 fixture are one list of frames/);
+      await expect(verifyHarnessFixture(engine, bad)).rejects.toThrow(HarnessError);
+    }
   });
 
   it("refuses any other version, naming it", () => {
@@ -562,6 +597,18 @@ describe("ConnectionDrop (the recorder's cut of one connection)", () => {
     expect([codes, closed()]).toEqual([[1000], 2]);
   });
 
+  it("cuts a before_choice plan once, whether or not the bot answers inside the handler of the request's frame", () => {
+    const { inner, sent, push, closed } = fake();
+    const wrapped = new ConnectionDrop(plan("before_choice", 1)).wrap("sparring", 0, inner);
+    wrapped.onFrame(() => wrapped.send(choose(1)));
+    push(request(1));
+    // The bot was quicker than the cut: its choice went out (the recording will be refused), and the close is one.
+    expect(sent).toEqual([choose(1)]);
+    expect(closed()).toBe(1);
+    wrapped.send(choose(2));
+    expect(sent).toHaveLength(1);
+  });
+
   it("cuts right after the bot sends its choice for the request, even one sent while the request is handled", () => {
     const { inner, sent, push, closed } = fake();
     const wrapped = new ConnectionDrop(plan("after_choice")).wrap("sparring", 0, inner);
@@ -651,6 +698,55 @@ describe("ConnectionDrop (the recorder's cut of one connection)", () => {
     expect([codes, other.closed()]).toEqual([[1006], 1]);
   });
 
+  it("lets a held choice go after the wait if the cut bot never reconnects", () => {
+    vi.useFakeTimers();
+    try {
+      const drop = new ConnectionDrop(plan("after_choice"), 5_000);
+      const other = fake();
+      const held = drop.wrap("challenger", 0, other.inner);
+      held.onFrame(() => {});
+      other.push(request(1));
+      other.push(request(2));
+      held.send(choose(2));
+      held.send(choose(2));
+      vi.advanceTimersByTime(4_999);
+      expect(other.sent).toEqual([]);
+      vi.advanceTimersByTime(1);
+      expect(other.sent).toEqual([choose(2), choose(2)]);
+      // Opened: nothing is held any more, and a later rejoin finds nothing to flush twice.
+      held.send(choose(2));
+      expect(other.sent).toHaveLength(3);
+      const rejoin = fake();
+      drop.wrap("sparring", 1, rejoin.inner).onFrame(() => {});
+      rejoin.push(request(2));
+      expect(other.sent).toHaveLength(3);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("stops the wait when the cut bot is back", () => {
+    vi.useFakeTimers();
+    try {
+      const drop = new ConnectionDrop(plan("after_choice"));
+      const other = fake();
+      const held = drop.wrap("challenger", 0, other.inner);
+      held.onFrame(() => {});
+      other.push(request(1));
+      other.push(request(2));
+      held.send(choose(2));
+      expect(vi.getTimerCount()).toBe(1);
+      const rejoin = fake();
+      drop.wrap("sparring", 1, rejoin.inner).onFrame(() => {});
+      rejoin.push(request(2));
+      expect(other.sent).toEqual([choose(2)]);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("holds nothing for a bot that is cut before its choice", () => {
     const drop = new ConnectionDrop(plan("before_choice"));
     const other = fake();
@@ -669,6 +765,12 @@ describe("reconnectEvidence", () => {
       expect(evidence?.sentchoice).toBe(recording.drop?.when === "after_choice");
       expect(evidence?.phase).not.toBe("wait");
       expect(evidence?.request_seq).toBeGreaterThan(1);
+      expect(evidence?.decision).toBeGreaterThan(1);
+      // The held choice is in the bot's own notation, and is one of the request's candidates.
+      expect(evidence?.choice === undefined).toBe(recording.drop?.when !== "after_choice");
+      if (evidence?.choice !== undefined) {
+        expect(enumerateCandidates(evidence.resent).candidates.map((c) => c.choice)).toContain(evidence.choice);
+      }
     }
   });
 

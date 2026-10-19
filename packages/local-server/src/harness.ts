@@ -12,6 +12,7 @@ import {
 } from "@areneon/bot-client";
 import {
   type Engine,
+  enumerateCandidates,
   type PlayerChannel,
   playerChannel,
   type PokemonSet,
@@ -52,6 +53,11 @@ export function launchHarness(options: Omit<LaunchOptions, "logChallenges">): Pr
 
 export class HarnessError extends Error {
   override name = "HarnessError";
+}
+
+/** A recording whose reconnect is not the planned one: the battle is random, so the recorder may try again. */
+export class ReconnectNotPlannedError extends HarnessError {
+  override name = "ReconnectNotPlannedError";
 }
 
 /** What the server wrote for one battle: only the fields a fixture keeps. */
@@ -190,9 +196,25 @@ export interface HarnessFixtureV2 extends Omit<HarnessFixture, "schema_version" 
  * touched); any other version is refused.
  */
 export function upgradeFixture(fixture: HarnessFixture | HarnessFixtureV2): HarnessFixture {
-  if (fixture.schema_version === 3) return fixture;
+  const refuse = (why: string): never => {
+    throw new HarnessError(`harness fixture refused: ${why}`);
+  };
+  if (fixture.schema_version === 3) {
+    for (const seat of SEATS) {
+      if (!Array.isArray(fixture.frames[seat]) || !fixture.frames[seat].every((connection) => Array.isArray(connection))) {
+        refuse(`${seat} frames of a version 3 fixture are a list of connections, each a list of frames`);
+      }
+      if (!Array.isArray(fixture.channels[seat])) refuse(`${seat} channels of a version 3 fixture are a list, one per connection`);
+    }
+    return fixture;
+  }
   if (fixture.schema_version !== 2) {
-    throw new HarnessError(`harness fixture refused: schema_version ${String((fixture as { schema_version: unknown }).schema_version)} is not 2 or 3`);
+    return refuse(`schema_version ${String((fixture as { schema_version: unknown }).schema_version)} is not 2 or 3`);
+  }
+  for (const seat of SEATS) {
+    if (!Array.isArray(fixture.frames[seat]) || Array.isArray(fixture.channels[seat])) {
+      refuse(`${seat} frames of a version 2 fixture are one list of frames and its channel is one channel`);
+    }
   }
   const { frames, channels, ...rest } = fixture;
   return {
@@ -611,10 +633,23 @@ class Gate {
  */
 export class ConnectionDrop {
   readonly #plan: DropPlan;
+  readonly #holdMs: number;
   readonly #rejoined = new Gate();
+  #holdTimer: ReturnType<typeof setTimeout> | undefined;
 
-  constructor(plan: DropPlan) {
+  /**
+   * `holdMs` bounds how long the other bot's choice is held (default 10 s): if the cut bot never
+   * reconnects, the choice goes out when it is up, so the battle is not stuck (the recording is
+   * then refused by `reconnectEvidence`'s check, not hung).
+   */
+  constructor(plan: DropPlan, holdMs = 10_000) {
     this.#plan = plan;
+    this.#holdMs = holdMs;
+  }
+
+  #open(): void {
+    clearTimeout(this.#holdTimer);
+    this.#rejoined.open();
   }
 
   /** `inner` as the plan wants the `index`-th (0-based) connection `who` opens to behave. */
@@ -643,8 +678,9 @@ export class ConnectionDrop {
           const before = requests;
           requests += splitFrame(frame).lines.filter(isRequest).length;
           const arrives = before < this.#plan.request && requests >= this.#plan.request;
-          // Set first: a bot that answers at once sends its choice inside `cb`.
-          if (arrives) reached = true;
+          // Set first: a bot that answers at once sends its choice inside `cb`. Only `after_choice`
+          // cuts in `send`; `before_choice` cuts below, once, however `cb` went.
+          if (arrives && this.#plan.when === "after_choice") reached = true;
           cb(frame);
           if (arrives && this.#plan.when === "before_choice") drop();
         }),
@@ -659,7 +695,7 @@ export class ConnectionDrop {
       onFrame: (cb) =>
         inner.onFrame((frame) => {
           cb(frame);
-          if (splitFrame(frame).lines.some(isRequest)) this.#rejoined.open();
+          if (splitFrame(frame).lines.some(isRequest)) this.#open();
         }),
     };
   }
@@ -669,8 +705,12 @@ export class ConnectionDrop {
     return {
       ...inner,
       send: (line) => {
-        if (CHOOSE.test(line) && requests === this.#plan.request) this.#rejoined.then(() => inner.send(line));
-        else inner.send(line);
+        if (CHOOSE.test(line) && requests === this.#plan.request) {
+          this.#holdTimer ??= setTimeout(() => this.#open(), this.#holdMs).unref();
+          this.#rejoined.then(() => inner.send(line));
+        } else {
+          inner.send(line);
+        }
       },
       onFrame: (cb) =>
         inner.onFrame((frame) => {
@@ -755,8 +795,17 @@ export interface ReconnectEvidence {
   /** The re-sent request's phase and its place (`request_seq`) on the first connection. */
   phase: string;
   request_seq: number;
+  /** Which decision of the seat it is: the non-wait requests of the first connection, the re-sent one included. */
+  decision: number;
   /** The second connection's frames hold `|sentchoice|`: the server already held the bot's choice. */
   sentchoice: boolean;
+  /**
+   * The choice the `|sentchoice|` line holds, if any, in the bot's own notation (`move 1 1, move 1`;
+   * the server's input log writes the same choice another way, `move moonblast +1, move earthquake`).
+   */
+  choice: string | undefined;
+  /** The request as the second connection received it. */
+  resent: SequencedRequest;
 }
 
 /**
@@ -766,12 +815,12 @@ export interface ReconnectEvidence {
  * `undefined` if not.
  */
 export function reconnectEvidence(connections: readonly (readonly string[])[]): ReconnectEvidence | undefined {
-  const read = (frames: readonly string[]): { requests: SequencedRequest[]; sentchoice: boolean } => {
+  const read = (frames: readonly string[]): { requests: SequencedRequest[]; choice: string | undefined } => {
     const reader = new ProtocolReader();
     const events = frames.flatMap((frame) => reader.read(frame));
     return {
       requests: events.flatMap((event) => (event.kind === "request" && !event.resend ? [event.request] : [])),
-      sentchoice: events.some((event) => event.kind === "sentchoice"),
+      choice: events.flatMap((event) => (event.kind === "sentchoice" ? [event.choice] : []))[0],
     };
   };
   const [first, second] = connections.map(read);
@@ -780,7 +829,15 @@ export function reconnectEvidence(connections: readonly (readonly string[])[]): 
   if (last === undefined || again === undefined || last.rqid !== again.rqid || last.request_hash !== again.request_hash) {
     return undefined;
   }
-  return { phase: last.phase, request_seq: last.request_seq, sentchoice: (second as { sentchoice: boolean }).sentchoice };
+  const { choice } = second as { choice: string | undefined };
+  return {
+    phase: last.phase,
+    request_seq: last.request_seq,
+    decision: (first as { requests: SequencedRequest[] }).requests.filter((request) => request.phase !== "wait").length,
+    sentchoice: choice !== undefined,
+    choice,
+    resent: again,
+  };
 }
 
 export interface RecordOptions extends Omit<BotVsBotOptions, "url"> {
@@ -820,9 +877,16 @@ export async function recordHarnessBattle(options: RecordOptions): Promise<Harne
     const seat = options.drop.who === "sparring" ? sparringSeat : challengerSeat;
     const evidence = reconnectEvidence(fixture.frames[seat]);
     const sentchoice = options.drop.when === "after_choice";
-    if (evidence === undefined || evidence.phase === "wait" || evidence.sentchoice !== sentchoice) {
-      throw new HarnessError(
-        `the ${options.drop.who} bot's reconnect is not the planned one (${JSON.stringify(evidence)}): record again`,
+    // The held choice must be one the request offers (the bot's own: the first candidate of the actor rule).
+    const offered = evidence !== undefined && enumerateCandidates(evidence.resent).candidates.some((c) => c.choice === evidence.choice);
+    if (
+      evidence === undefined ||
+      evidence.phase === "wait" ||
+      evidence.sentchoice !== sentchoice ||
+      (sentchoice && !offered)
+    ) {
+      throw new ReconnectNotPlannedError(
+        `the ${options.drop.who} bot's reconnect is not the planned one (${JSON.stringify(evidence && { ...evidence, resent: undefined })}): record again`,
       );
     }
   }

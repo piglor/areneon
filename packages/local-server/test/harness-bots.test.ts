@@ -8,7 +8,7 @@ vi.mock("@areneon/bot-client", async (original) => ({ ...(await original<typeof 
 
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { HarnessError, playBotVsBot, recordHarnessBattle } from "../src/harness.ts";
+import { HarnessError, playBotVsBot, ReconnectNotPlannedError, recordHarnessBattle } from "../src/harness.ts";
 import { FIXTURE_FORMAT } from "../src/recordings.ts";
 import { COMMITTED } from "./harness-fixtures.ts";
 import { tempDir } from "./helpers.ts";
@@ -223,5 +223,16 @@ describe("recordHarnessBattle's check of the planned reconnect", () => {
   it("refuses one whose |sentchoice| is not the planned one, and one with no re-sent request at all", async () => {
     await expect(record(withDrop, never(withDrop, "before_choice"))).rejects.toThrow(/reconnect is not the planned one.*record again/);
     await expect(record(plain, never(withDrop, "after_choice"))).rejects.toThrow(/reconnect is not the planned one \(undefined\)/);
+    // A recorder that retries tells this refusal from any other failure by its class.
+    await expect(record(withDrop, never(withDrop, "before_choice"))).rejects.toBeInstanceOf(ReconnectNotPlannedError);
+  });
+
+  it("refuses a held choice that the request does not offer", async () => {
+    const wrong = structuredClone(withDrop);
+    const seat = wrong.fixture.frames.p1.length > 1 ? "p1" : "p2";
+    wrong.fixture.frames[seat][1] = (wrong.fixture.frames[seat][1] as string[]).map((frame) =>
+      frame.replace(/\|sentchoice\|[^\n]*/, "|sentchoice|move 9 9, move 9"),
+    );
+    await expect(record(wrong, never(withDrop, "after_choice"))).rejects.toThrow(/not the planned one/);
   });
 });

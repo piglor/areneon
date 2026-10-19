@@ -391,9 +391,41 @@ describe.each(reconnecting)("a real reconnect: %s", (path) => {
   it("rejects a rejoin that goes back to an older request, or reuses an rqid", async () => {
     const fixture = clone(path);
     const seat = seatOf(fixture);
+    // The untouched copy is accepted, so the refusal below is the change's doing.
+    await expect(verifyHarnessFixture(engine, clone(path))).resolves.toBeUndefined();
     editLine(fixture, seat, (l) => l.startsWith("|request|"), (l) => l.replace(/"rqid":\d+/, '"rqid":1'), false, 1);
     const { differences } = await compareA1A2(engine, snapshot, fixture);
     expect(differences.some((d) => d.includes("does not follow"))).toBe(true);
     await expect(verifyHarnessFixture(engine, fixture)).rejects.toThrow(/connection 2 starts with a request older than/);
+  });
+
+  it("rejects a |sentchoice| that was removed, one that was added, and one whose choice is not the one played", async () => {
+    const pristine = readFixture(path);
+    const seat = seatOf(pristine);
+    const evidence = reconnectEvidence(pristine.frames[seat]);
+    expect(evidence).toBeDefined();
+    const edit = (change: (line: string) => string | undefined) => {
+      const fixture = clone(path);
+      const frames = fixture.frames[seat][1] as string[];
+      const i = frames.findIndex((frame) => frame.includes("|request|"));
+      const lines = (frames[i] as string).split("\n").flatMap((line) => (line.startsWith("|sentchoice|") ? [change(line)] : [line]));
+      frames[i] = lines.filter((line) => line !== undefined).join("\n");
+      return fixture;
+    };
+    if (evidence?.sentchoice === true) {
+      const removed = await compareA1A2(engine, snapshot, edit(() => undefined));
+      expect(removed.differences).toEqual([`${seat}: |sentchoice| is not there, the provenance says the cut came right after it sent its choice for`]);
+      // Another legal choice: A1 plays it in place of the logged one and the battle goes another way.
+      const changed = await compareA1A2(engine, snapshot, edit(() => "|sentchoice|move 2 2, move 2 1"));
+      expect(changed.differences.length).toBeGreaterThan(0);
+      expect(changed.differences.some((d) => d.includes("channel line") || d.includes("A1 could not replay"))).toBe(true);
+    } else {
+      const added = clone(path);
+      const frames = added.frames[seat][1] as string[];
+      const i = frames.findIndex((frame) => frame.includes("|request|"));
+      frames[i] = `${frames[i]}\n|sentchoice|default`;
+      const { differences } = await compareA1A2(engine, snapshot, added);
+      expect(differences).toEqual([`${seat}: |sentchoice| is there, the provenance says the cut came when it received`]);
+    }
   });
 });
