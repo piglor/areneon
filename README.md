@@ -25,7 +25,6 @@ fixtures/                    sanitized/synthetic fixtures only (CC0)
   showdown/<format>/         golden request fixtures from the pinned engine
   teams/<format>/            PokePaste team fixtures + validator verdict log
 docs/                        contributor-facing contracts and research notes (docs/research/)
-spikes/                      experiment code (lighter gates), promoted or deleted (e.g. #672 extension spike)
 private-data/                gitignored: your private teams
 ```
 

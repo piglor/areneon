@@ -10,22 +10,4 @@ export default tseslint.config(
       "@typescript-eslint/no-unused-vars": ["error", { ignoreRestSiblings: true }],
     },
   },
-  // Spikes run plain JS in browsers, extension worlds and Node (lighter gates).
-  {
-    files: ["spikes/**/*.{js,cjs,mjs}"],
-    languageOptions: {
-      globals: Object.fromEntries(
-        [
-          "window", "document", "location", "crypto", "TextEncoder", "URL", "URLSearchParams",
-          "WebSocket", "fetch", "setTimeout", "console", "process", "require", "__dirname", "global",
-          "MessagePort", "MessageChannel", "EventTarget",
-        ].map((name) => [name, "readonly"]),
-      ),
-    },
-  },
-  {
-    files: ["spikes/**/*.cjs"],
-    languageOptions: { sourceType: "commonjs" },
-    rules: { "@typescript-eslint/no-require-imports": "off" },
-  },
 );

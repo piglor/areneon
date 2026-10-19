@@ -6,7 +6,7 @@ Research for Redmine #678. Decision evidence for ADR-005 (bot opponent runtime, 
 
 **Primary source.** Pinned Showdown submodule `vendor/pokemon-showdown` at `7244fe8e28fa8bc4d0809ae30d183c608b62bb2b`. All paths below are relative to that checkout. Facts come from reading the code. No live server was run for this note (see [Open unknowns](#open-unknowns)).
 
-**Executable model.** `spikes/678-timer-budget/timer_budget.py`. It contains a shadow timer that mirrors the server semantics below, plus the budget functions. It is tested by `test_timer_budget.py`, which includes a Hypothesis property: the bank is never exhausted and auto-choose never fires.
+**Executable model.** [`timer_budget.py`](https://github.com/piglor/areneon/blob/a01116c080127cf7eb376cf5e7b3f50b007d552a/spikes/678-timer-budget/timer_budget.py) (spike, kept in history at commit `a01116c`, not on `main`). It contains a shadow timer that mirrors the server semantics below, plus the budget functions. It is tested by `test_timer_budget.py`, which includes a Hypothesis property: the bank is never exhausted and auto-choose never fires.
 
 ## 1. Verified facts
 
@@ -220,7 +220,7 @@ All durations are relative. No wall-clock timestamps go into a policy input, whi
 
 ## 5. Worked example: a 40-turn battle
 
-Output of `uv run python spikes/678-timer-budget/timer_budget.py`, using the synthetic `long_battle_schedule(40)`:
+Output of `uv run python spikes/678-timer-budget/timer_budget.py` at commit `a01116c`, using the synthetic `long_battle_schedule(40)`:
 
 - the battle runs 40 turns plus 2 forced switches (one own faint every 10 turns from turn 5, one opponent faint every 10 turns);
 - **every decision uses its full `submit_within` (worst case)**;
