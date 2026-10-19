@@ -68,7 +68,7 @@ docker inspect <db-uuid> --format '{{json .NetworkSettings.Ports}} {{range $k, $
 | `importer` | yes | inserts published artifacts; never updates or deletes |
 | `areneon_reader` | yes | reads the active snapshot |
 
-It also creates the schema `rules`, and revokes `CONNECT` on the database from `PUBLIC`. It reads the three login passwords from environment variables with psql's `\getenv`: `RULES_MIGRATOR_PASSWORD`, `RULES_IMPORTER_PASSWORD`, `RULES_READER_PASSWORD`. A missing or blank one raises an error and stops the script before anything is created. psql checks for a blank one on the client, so no password is sent to the server except inside its own `CREATE ROLE`. Its role and schema work runs in one transaction, so a failure there leaves nothing half-made.
+It also creates the schema `rules`, and revokes `CONNECT` on the database from `PUBLIC`. It reads the three login passwords from environment variables with psql's `\getenv`: `RULES_MIGRATOR_PASSWORD`, `RULES_IMPORTER_PASSWORD`, `RULES_READER_PASSWORD`. A missing or blank one (empty or whitespace only) raises an error and stops the script before anything is created. psql checks for a blank one on the client, so no password is sent to the server except inside its own `CREATE ROLE`. Its role and schema work runs in one transaction, so a failure there leaves nothing half-made.
 
 ### 2.1 Create the secrets
 

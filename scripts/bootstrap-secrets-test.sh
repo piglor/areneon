@@ -3,7 +3,7 @@
 # inside its own CREATE ROLE statement. Runs the bootstrap against a throwaway
 # Postgres 18 that logs every statement and every failing one, on a scratch
 # Docker network with no published port, then:
-#   1. a missing or blank password is refused, with its message and a nonzero
+#   1. a missing, empty or whitespace-only password is refused, with its message and a nonzero
 #      exit, and nothing reaches the server log;
 #   2. with all three set, the bootstrap succeeds;
 #   3. each password appears in the server log exactly once, on its own
@@ -70,20 +70,25 @@ trap 'cleanup; rm -f "$out"' EXIT
 
 # 1. Each variable missing, then blank, with the other two set.
 for v in "${vars[@]}"; do
-  for mode in missing blank; do
+  for mode in missing empty spaces tab newline; do
     env_args=()
     for o in "${vars[@]}"; do
       if [[ "$o" != "$v" ]]; then env_args+=(-e "$o"); fi
     done
-    if [[ "$mode" == blank ]]; then
-      env_args+=(-e "$v=")
-      want="$v is empty"
-    else
-      want="$v is not set"
-    fi
+    case "$mode" in
+      missing) want="$v is not set" ;;
+      empty) env_args+=(-e "$v=") ;;
+      spaces) env_args+=(-e "$v=   ") ;;
+      tab) env_args+=(-e "$v=$(printf '\t')") ;;
+      newline) env_args+=(-e "$v=$(printf ' \n ')") ;;
+    esac
+    [[ "$mode" == missing ]] || want="$v is empty"
     status="$(bootstrap "$out" "${env_args[@]}")"
     [[ "$status" != 0 ]] || fail "$v $mode: bootstrap exited 0"
     grep -qF "$want" "$out" || fail "$v $mode: no '$want' message"
+    ! grep -qx BEGIN "$out" || fail "$v $mode: psql got as far as BEGIN"
+    leaked="$(grep -cFf <(printf '%s\n' "${pw[@]}") "$out" || true)"
+    [[ "$leaked" == 0 ]] || fail "$v $mode: $leaked psql output lines hold a password"
     printf 'ok: %s %s refused (exit %s)\n' "$v" "$mode" "$status"
   done
 done

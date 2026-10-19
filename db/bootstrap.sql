@@ -5,8 +5,8 @@
 --     psql "$SUPERUSER_URL" -v ON_ERROR_STOP=1 -f db/bootstrap.sql
 --
 -- Each password comes from the environment (on Coolify: a secret per role),
--- never from the repository. A missing or blank one stops the script
--- (ON_ERROR_STOP) before any password is sent to the server.
+-- never from the repository. A missing or blank (empty or whitespace-only)
+-- one stops the script (ON_ERROR_STOP) before any password is sent to the server.
 -- `make db-up` runs it against the local container.
 
 \set ON_ERROR_STOP on
@@ -27,13 +27,15 @@
   DO $$ BEGIN RAISE EXCEPTION 'RULES_READER_PASSWORD is not set'; END $$;
 \endif
 
--- A blank secret is as bad as a missing one. psql checks it on the client:
--- each backtick runs `test` (a shell builtin) on the environment variable by
--- name, so no password goes to the server, or into a process's arguments,
--- except inside its own CREATE ROLE below.
-\set migrator_present `test -n "$RULES_MIGRATOR_PASSWORD" && echo true || echo false`
-\set importer_present `test -n "$RULES_IMPORTER_PASSWORD" && echo true || echo false`
-\set reader_present `test -n "$RULES_READER_PASSWORD" && echo true || echo false`
+-- A blank secret (empty or whitespace only) is as bad as a missing one. psql
+-- checks it on the client: each backtick pipes the environment variable,
+-- named only, from `printf` (a shell builtin) into `tr`, which drops
+-- whitespace, and `test` (a builtin) checks something is left. No password
+-- goes to the server, or into a process's arguments, except inside its own
+-- CREATE ROLE below.
+\set migrator_present `test -n "$(printf %s "$RULES_MIGRATOR_PASSWORD" | tr -d '[:space:]')" && echo true || echo false`
+\set importer_present `test -n "$(printf %s "$RULES_IMPORTER_PASSWORD" | tr -d '[:space:]')" && echo true || echo false`
+\set reader_present `test -n "$(printf %s "$RULES_READER_PASSWORD" | tr -d '[:space:]')" && echo true || echo false`
 \if :migrator_present
 \else
   DO $$ BEGIN RAISE EXCEPTION 'RULES_MIGRATOR_PASSWORD is empty'; END $$;
