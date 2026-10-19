@@ -19,6 +19,7 @@ import {
   loadEngine,
   loadRulesSnapshot,
   NoCandidateError,
+  PlayersOptionError,
   replayActor,
   runBattle,
   UnsupportedFormatError,
@@ -95,6 +96,120 @@ describe("runBattle", () => {
     await expect(
       runBattle(options({ p1: replayActor([], "p1"), p2: engineDefault })),
     ).rejects.toThrow(/no recorded choice/);
+  });
+
+  describe("players option", () => {
+    const players = {
+      p1: { name: "Areneon-ch", avatar: "102" },
+      p2: { name: "Sparring Bot", avatar: "1" },
+    };
+    const play = (overrides: object) =>
+      runBattle(options({ p1: engineDefault, p2: engineDefault }, overrides));
+
+    it("puts names and avatars in the player lines of the log and of each channel", async () => {
+      const record = await play({ players });
+      const lines = (log: readonly string[]) => log.filter((l) => l.startsWith("|player|"));
+      const expected = ["|player|p1|Areneon-ch|102|", "|player|p2|Sparring Bot|1|"];
+      expect(lines(record.omniscient_log)).toEqual(expected);
+      expect(lines(record.channels.p1)).toEqual(expected);
+      expect(lines(record.channels.p2)).toEqual(expected);
+      expect(["p1", "p2", null]).toContain(record.winner);
+    });
+
+    it("maps the winner's name back to its seat", async () => {
+      const record = await play({ players });
+      const win = record.omniscient_log.find((l) => l.startsWith("|win|")) as string;
+      const name = win.slice("|win|".length);
+      expect(players[record.winner as "p1" | "p2"].name).toBe(name);
+    });
+
+    it("writes no avatar when it is omitted or empty", async () => {
+      const record = await play({ players: { p1: { name: "Ann" }, p2: { name: "Bob", avatar: "" } } });
+      expect(record.omniscient_log).toContain("|player|p1|Ann||");
+      expect(record.omniscient_log).toContain("|player|p2|Bob||");
+    });
+
+    it("defaults to p1 and p2 with no avatar", async () => {
+      const record = await play({});
+      expect(record.omniscient_log).toContain("|player|p1|p1||");
+      expect(record.omniscient_log).toContain("|player|p2|p2||");
+    });
+
+    it.each([
+      ["an empty name", { name: "" }],
+      ["a blank name", { name: "   " }],
+      ["a name with a pipe", { name: "a|b" }],
+      ["a name with a comma", { name: "a,b" }],
+      ["a name with a bracket", { name: "a[b" }],
+      ["a name with a closing bracket", { name: "a]b" }],
+      ["a name with a double space", { name: "a  b" }],
+      ["a name over 18 UTF-16 units", { name: "😀".repeat(10) }],
+      ["a name with a newline", { name: "a\nb" }],
+      ["a name with a control character", { name: "a\u0000b" }],
+      ["a name with edge spaces", { name: " a" }],
+      ["a name over 18 characters", { name: "x".repeat(19) }],
+      ["a name with no letters or digits", { name: "!!!" }],
+      ["an avatar with a pipe", { name: "ok", avatar: "1|2" }],
+      ["an avatar with a newline", { name: "ok", avatar: "1\n2" }],
+      ["an avatar over 32 characters", { name: "ok", avatar: "1".repeat(33) }],
+    ])("refuses %s", async (_label, bad) => {
+      await expect(play({ players: { p1: bad, p2: { name: "fine" } } })).rejects.toThrow(
+        PlayersOptionError,
+      );
+      await expect(play({ players: { p1: { name: "fine" }, p2: bad } })).rejects.toThrow(
+        PlayersOptionError,
+      );
+    });
+
+    it("keeps swapped names on their seats", async () => {
+      const swapped = { p1: { name: "p2" }, p2: { name: "p1" } };
+      const record = await play({ players: swapped });
+      expect(record.omniscient_log).toContain("|player|p1|p2||");
+      const win = record.omniscient_log.find((l) => l.startsWith("|win|")) as string;
+      expect(swapped[record.winner as "p1" | "p2"].name).toBe(win.slice(5));
+    });
+
+    it("tells a name from one that contains it", async () => {
+      const names = { p1: { name: "Ann" }, p2: { name: "Anna" } };
+      const record = await play({ players: names });
+      const win = record.omniscient_log.find((l) => l.startsWith("|win|")) as string;
+      expect(names[record.winner as "p1" | "p2"].name).toBe(win.slice(5));
+    });
+
+    it("leaves the winner null on a tie", async () => {
+      const record = await play({ players, maxTurns: 1 });
+      expect(record.omniscient_log).toContain("|tie");
+      expect(record.winner).toBeNull();
+    });
+
+    it("aborts when |win| names no seat", async () => {
+      const sim = new Proxy(engine.sim, {
+        get(target, key, receiver) {
+          if (key !== "getPlayerStreams") return Reflect.get(target, key, receiver) as unknown;
+          return (stream: object) => {
+            const streams = target.getPlayerStreams(stream);
+            const omniscient = streams.omniscient;
+            const wrapped = {
+              write: omniscient.write.bind(omniscient),
+              writeEnd: omniscient.writeEnd.bind(omniscient),
+              async *[Symbol.asyncIterator]() {
+                for await (const chunk of omniscient) yield chunk.replace(/\|win\|.*/, "|win|nobody");
+              },
+            };
+            return { ...streams, omniscient: wrapped };
+          };
+        },
+      });
+      await expect(
+        runBattle(options({ p1: engineDefault, p2: engineDefault }, { engine: { ...engine, sim } })),
+      ).rejects.toThrow("|win| names no seat: nobody");
+    });
+
+    it("refuses two names that are the same player", async () => {
+      await expect(
+        play({ players: { p1: { name: "Ann" }, p2: { name: "ann!" } } }),
+      ).rejects.toThrow("the two names must differ");
+    });
   });
 
   it("forces a tie at the turn limit", async () => {
