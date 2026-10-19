@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:areneon:schema:contracts:v1:training-set",
+  "title": "TrainingSet",
+  "description": "The manifest of one TrainingExample stream (ADR-009 \u00a74): which Episodes it was built from, which EvaluationRunManifests were checked against them, and the stream's class and digest. The sorted and unique arrays are enforced by the reader (the contract profile has no uniqueItems).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "data_class",
+    "episode_hashes",
+    "evaluation_manifest_hashes",
+    "examples",
+    "stream_sha256"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "data_class": {
+      "description": "The highest class of the Episodes in the stream; a stream with any private Episode is private and is never committed (ADR-008 \u00a75).",
+      "enum": [
+        "synthetic",
+        "private"
+      ]
+    },
+    "episode_hashes": {
+      "description": "The accepted Episodes' hashes (episodeHash), sorted and unique.",
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "pattern": "^[0-9a-f]{64}$"
+      }
+    },
+    "evaluation_manifest_hashes": {
+      "description": "SHA-256 of the JCS bytes of each EvaluationRunManifest checked against those Episodes, sorted and unique; may be empty.",
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[0-9a-f]{64}$"
+      }
+    },
+    "examples": {
+      "description": "The number of lines in the stream.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "stream_sha256": {
+      "description": "SHA-256 of the stream's bytes: its JCS lines, each ended by a newline.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  }
+}

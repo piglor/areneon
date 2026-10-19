@@ -1,0 +1,488 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:areneon:schema:contracts:v1:training-example",
+  "title": "TrainingExample",
+  "description": "One decision of a training Episode (ADR-009 \u00a74): the observation a player had and the choice they made. It has no provenance field, so seeds and opponent ids never reach a model. Built only by the training loader; one JCS line of a stream.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "episode_hash",
+    "observation",
+    "choice"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "episode_hash": {
+      "description": "The Episode this decision came from: SHA-256 of its JCS bytes (episodeHash).",
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "observation": {
+      "description": "Built by the ObservationBuilder from the Episode's own channel prefix.",
+      "type": "object",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/PreviewObservation"
+        },
+        {
+          "$ref": "#/$defs/BattleObservation"
+        }
+      ],
+      "discriminator": {
+        "propertyName": "kind"
+      }
+    },
+    "choice": {
+      "description": "The decision label: the choice the player made, in canonical engine syntax.",
+      "type": "string",
+      "minLength": 1
+    }
+  },
+  "$defs": {
+    "PreviewObservation": {
+      "description": "What one player may know at a Team Preview decision (ADR-008 \u00a75): their own channel, request and team. Built only by the ObservationBuilder.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "kind",
+        "data_class",
+        "player",
+        "manifest",
+        "identity",
+        "log",
+        "team"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": 1
+        },
+        "kind": {
+          "const": "preview"
+        },
+        "data_class": {
+          "description": "private when the team or the channel it was built from is private.",
+          "enum": [
+            "synthetic",
+            "private"
+          ]
+        },
+        "player": {
+          "description": "Whose observation this is.",
+          "enum": [
+            "p1",
+            "p2"
+          ]
+        },
+        "manifest": {
+          "$ref": "#/$defs/VersionManifest"
+        },
+        "identity": {
+          "description": "The request this observation asks to answer.",
+          "$ref": "#/$defs/RequestIdentity"
+        },
+        "log": {
+          "description": "This player's channel up to and including that |request| line, as the engine split it (ADR-008 \u00a75): never the omniscient log.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1
+        },
+        "team": {
+          "description": "The player's own team.",
+          "$ref": "#/$defs/PrivateTeamSpec"
+        },
+        "decision_context": {
+          "description": "Timer and budget; excluded by name from A1/A2 equality (ADR-008 \u00a74).",
+          "$ref": "#/$defs/DecisionContext"
+        }
+      }
+    },
+    "BattleObservation": {
+      "description": "What one player may know at a move or forced-switch decision (ADR-008 \u00a75): their own channel, request and team. Built only by the ObservationBuilder.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "kind",
+        "data_class",
+        "player",
+        "manifest",
+        "identity",
+        "log",
+        "team"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": 1
+        },
+        "kind": {
+          "const": "battle"
+        },
+        "data_class": {
+          "description": "private when the team or the channel it was built from is private.",
+          "enum": [
+            "synthetic",
+            "private"
+          ]
+        },
+        "player": {
+          "description": "Whose observation this is.",
+          "enum": [
+            "p1",
+            "p2"
+          ]
+        },
+        "manifest": {
+          "$ref": "#/$defs/VersionManifest"
+        },
+        "identity": {
+          "description": "The request this observation asks to answer.",
+          "$ref": "#/$defs/RequestIdentity"
+        },
+        "log": {
+          "description": "This player's channel up to and including that |request| line, as the engine split it (ADR-008 \u00a75): never the omniscient log.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1
+        },
+        "team": {
+          "description": "The player's own team.",
+          "$ref": "#/$defs/PrivateTeamSpec"
+        },
+        "decision_context": {
+          "description": "Timer and budget; excluded by name from A1/A2 equality (ADR-008 \u00a74).",
+          "$ref": "#/$defs/DecisionContext"
+        }
+      }
+    },
+    "VersionManifest": {
+      "description": "Replay identity of a battle (ADR-003, ADR-007): the pinned engine commit, the format, and the hashes of the engine ruleset and of Areneon's own format rules.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "showdown_commit",
+        "format_id",
+        "regulation",
+        "ruleset_hash",
+        "format_rules_hash"
+      ],
+      "properties": {
+        "showdown_commit": {
+          "description": "The pinned engine commit.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "format_id": {
+          "type": "string",
+          "pattern": "^[a-z0-9]+$"
+        },
+        "regulation": {
+          "type": "string",
+          "minLength": 1
+        },
+        "ruleset_hash": {
+          "description": "SHA-256 of the canonical engine ruleset.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "format_rules_hash": {
+          "description": "SHA-256 of Areneon's format rules record (ADR-007).",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "RequestIdentity": {
+      "description": "Which request a decision answers (ADR-008 \u00a74). A consumer drops a recommendation unless request_seq and request_hash both match, and rqid too when both carry one.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "request_seq",
+        "request_hash"
+      ],
+      "properties": {
+        "request_seq": {
+          "description": "Areneon's 1-based count of the requests one player has received in this battle, including wait requests.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "request_hash": {
+          "description": "SHA-256 of the canonical request JSON without rqid (ADR-008 \u00a74): lowercase hex.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "rqid": {
+          "description": "The Showdown server's request id; present only on the server path (A2), never hashed.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    "PrivateTeamSpec": {
+      "description": "A player's or the bot's own full team. Never part of another player's observation; a private one is never committed.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "data_class",
+        "team"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": 1
+        },
+        "data_class": {
+          "description": "synthetic: CC0, may be committed; private: a real team or a human's games, kept only in private-data/ (ADR-008 \u00a75).",
+          "enum": [
+            "synthetic",
+            "private"
+          ]
+        },
+        "team": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PokemonSet"
+          },
+          "minItems": 1
+        }
+      }
+    },
+    "PokemonSet": {
+      "description": "One set, as the pinned engine's PokemonSet (sim/teams.ts) holds it. Legality is the engine validator's, not this schema's.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "species",
+        "item",
+        "ability",
+        "moves",
+        "nature",
+        "gender",
+        "evs",
+        "ivs",
+        "level"
+      ],
+      "properties": {
+        "name": {
+          "description": "Nickname; empty when none.",
+          "type": "string"
+        },
+        "species": {
+          "type": "string",
+          "minLength": 1
+        },
+        "item": {
+          "type": "string"
+        },
+        "ability": {
+          "type": "string"
+        },
+        "moves": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "nature": {
+          "type": "string"
+        },
+        "gender": {
+          "enum": [
+            "",
+            "M",
+            "F",
+            "N"
+          ]
+        },
+        "evs": {
+          "description": "Stat Points in the champions mod (ADR-003).",
+          "$ref": "#/$defs/StatTable"
+        },
+        "ivs": {
+          "$ref": "#/$defs/StatTable"
+        },
+        "level": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    "StatTable": {
+      "description": "One integer per stat.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "hp",
+        "atk",
+        "def",
+        "spa",
+        "spd",
+        "spe"
+      ],
+      "properties": {
+        "hp": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "atk": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "def": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "spa": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "spd": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "spe": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    "DecisionContext": {
+      "description": "Timer state and deadline budget for one decision (#678 \u00a74.2). Relative durations only, never wall-clock time. Excluded by name from A1/A2 observation equality (ADR-008 \u00a74).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "timer_source",
+        "timer_rules",
+        "turn_seconds_left",
+        "bank_seconds_left",
+        "grace_seconds_left",
+        "safety_margin_ms",
+        "submit_within_ms",
+        "policy_budget_ms"
+      ],
+      "properties": {
+        "timer_source": {
+          "description": "server: the server's own timer snapshot; shadow: Areneon's model of it (#678 \u00a72.1).",
+          "enum": [
+            "server",
+            "shadow"
+          ]
+        },
+        "timer_rules": {
+          "$ref": "#/$defs/TimerRules"
+        },
+        "turn_seconds_left": {
+          "description": "T: seconds left this turn at receipt.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "bank_seconds_left": {
+          "description": "B: bank seconds left at receipt, grace excluded.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "grace_seconds_left": {
+          "description": "G: grace seconds left at receipt; non-zero only at Team Preview.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "remaining_decisions_estimate": {
+          "description": "R\u0302: estimated decisions left; battle only, omitted at Team Preview.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "safety_margin_ms": {
+          "description": "m: the configured safety margin.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "submit_within_ms": {
+          "description": "The choice must be sent within this, from receipt.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "policy_budget_ms": {
+          "description": "The policy must answer within this; 0 means skip the policy and send the fallback.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    "TimerRules": {
+      "description": "The format's VGC Timer settings in whole seconds; they must equal the version manifest's.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "starting",
+        "grace",
+        "add_per_turn",
+        "max_per_turn",
+        "max_first_turn",
+        "tick"
+      ],
+      "properties": {
+        "starting": {
+          "description": "Starting bank.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "grace": {
+          "description": "Grace time, spent only at Team Preview.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "add_per_turn": {
+          "description": "Seconds added to the bank per turn.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "max_per_turn": {
+          "description": "Cap on one turn's time.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "max_first_turn": {
+          "description": "Cap on the first turn's time.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "tick": {
+          "description": "Server tick between timer updates.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      }
+    }
+  }
+}

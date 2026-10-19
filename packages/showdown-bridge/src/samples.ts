@@ -15,6 +15,7 @@ import { episodeFromRecord } from "./episode-io.ts";
 import { goldenBattle, syntheticFixtureHashes, syntheticTeam } from "./golden.ts";
 import { observe, recordedChannel } from "./player-channel.ts";
 import { battleClass, stampTeam } from "./team-class.ts";
+import { evaluationRunManifest, loadTrainingSet } from "./training-loader.ts";
 import type { RequestRecord } from "./runner.ts";
 
 export const SAMPLES_DIR = fileURLToPath(new URL("../../../fixtures/contracts", import.meta.url));
@@ -77,7 +78,32 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     mutated(episode, (e) => ((e.provenance as Record<string, unknown>).collection = collection));
   const identity = { request_seq: turn.request_seq, request_hash: turn.request_hash };
 
+  const leagueEpisode = await episodeFromRecord(record, "p1", {
+    team,
+    opponent_team: team,
+    known_synthetic: known,
+    behaviour_policy_id: "first-legal@golden",
+    collection: league,
+  });
+  const sealedEpisode = await episodeFromRecord(record, "p1", {
+    team,
+    opponent_team: team,
+    known_synthetic: known,
+    behaviour_policy_id: "first-legal@golden",
+    collection: evaluation,
+  });
+  // Hash-only: all of a sealed run that may leave the isolated store (ADR-009 §4).
+  const sealedManifest = await evaluationRunManifest({ run_id: "eval-run-1", sealed: true, episodes: [sealedEpisode] });
+  const training = await loadTrainingSet({ episodes: [leagueEpisode], evaluation_manifests: [sealedManifest], known_synthetic: known });
+  const exampleOf = (kind: "preview" | "battle") => training.examples.find((e) => e.observation.kind === kind) as (typeof training.examples)[number];
+  const [hashA, hashB] = ["a", "b"].map((c) => c.repeat(64)) as [string, string];
+
   const valid: Record<string, unknown> = {
+    "training-example/preview": exampleOf("preview"),
+    "training-example/battle": exampleOf("battle"),
+    "training-set/league": training.set,
+    "evaluation-run-manifest/sealed": sealedManifest,
+    "evaluation-run-manifest/open-empty": { schema_version: 1, run_id: "eval-run-2", sealed: false, episode_hashes: [] },
     "request-identity/a1": identity,
     "request-identity/server": { ...identity, rqid: 5 },
     "legal-choice-set/preview": legal,
@@ -99,29 +125,34 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
       deadline_outcome: "in_budget",
     },
     "episode/p1": episode,
-    "episode/league": await episodeFromRecord(record, "p1", {
-      team,
-      opponent_team: team,
-      known_synthetic: known,
-      behaviour_policy_id: "first-legal@golden",
-      collection: league,
-    }),
-    "episode/evaluation-sealed": await episodeFromRecord(record, "p1", {
-      team,
-      opponent_team: team,
-      known_synthetic: known,
-      behaviour_policy_id: "first-legal@golden",
-      collection: evaluation,
-    }),
+    "episode/league": leagueEpisode,
+    "episode/evaluation-sealed": sealedEpisode,
   };
   // Schema-valid, refused by readEpisode (the sparring rule and the class rule).
   // No valid sparring sample exists: it must be private, and the data-class
   // guard refuses a committed "data_class": "private".
   const readerInvalid: Record<string, unknown> = {
+    // Schema-valid, refused by the readers: the hashes must be sorted and unique.
+    "evaluation-run-manifest/unsorted": { schema_version: 1, run_id: "eval-run-3", sealed: false, episode_hashes: [hashB, hashA] },
+    "evaluation-run-manifest/duplicate": { schema_version: 1, run_id: "eval-run-3", sealed: false, episode_hashes: [hashA, hashA] },
+    "training-set/unsorted-episodes": { ...training.set, episode_hashes: [hashB, hashA] },
+    "training-set/duplicate-manifests": { ...training.set, evaluation_manifest_hashes: [hashA, hashA] },
     "episode/sparring-synthetic": collected({ kind: "sparring", session_id: "sparring-session-1" }),
     "episode/class-below-opponent": collected({ ...league, opponent_team_data_class: "private" }),
   };
   const invalid: Record<string, unknown> = {
+    "training-example/provenance": { ...exampleOf("battle"), provenance: { seed: record.seed } },
+    "training-example/no-episode-hash": mutated(exampleOf("battle"), (e) => delete e.episode_hash),
+    "training-example/omniscient-observation": mutated(exampleOf("battle"), (e) => {
+      (e.observation as Record<string, unknown>).omniscient_log = ["|split|p2"];
+    }),
+    "training-example/short-episode-hash": { ...exampleOf("battle"), episode_hash: "abc" },
+    "training-set/no-stream-hash": mutated(training.set, (t) => delete t.stream_sha256),
+    "training-set/no-examples": { ...training.set, examples: 0 },
+    "training-set/public-class": { ...training.set, data_class: "public" },
+    "evaluation-run-manifest/no-run-id": { schema_version: 1, sealed: true, episode_hashes: [] },
+    "evaluation-run-manifest/uppercase-hash": { ...sealedManifest, episode_hashes: [hashA.toUpperCase()] },
+    "evaluation-run-manifest/sealed-flag-string": { ...sealedManifest, sealed: "yes" },
     "request-identity/rqid-zero": { ...identity, rqid: 0 },
     "legal-choice-set/next-version": mutated(legal, (s) => (s.schema_version = 2)),
     "decision-context/negative-budget": { ...context, policy_budget_ms: -1 },

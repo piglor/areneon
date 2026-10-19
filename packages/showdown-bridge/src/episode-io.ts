@@ -6,7 +6,7 @@ import { ajvFor } from "@areneon/schema/ajv";
 import episodeSchema from "@areneon/schema/contracts/v1/episode.schema.json" with { type: "json" };
 import type { PrivateTeamSpec } from "@areneon/schema/types/v1/private-team-spec.ts";
 import { type CollectionInput, type Episode, rightsFor } from "./episode.ts";
-import { buildObservation, type PlayerChannel } from "./observation.ts";
+import { buildObservation, type Observation, type PlayerChannel } from "./observation.ts";
 import { nodeSha256, playerChannel } from "./player-channel.ts";
 import type { BattleRecord, Player } from "./runner.ts";
 import { higherClass, type StampedTeam, type SyntheticTeamHashes, teamHash } from "./team-class.ts";
@@ -45,6 +45,24 @@ function cut(channel: PlayerChannel, seq: number): PlayerChannel | undefined {
   let seen = 0;
   const end = channel.lines.findIndex((line) => line.startsWith("|request|") && ++seen === seq);
   return end < 0 ? undefined : { ...channel, lines: channel.lines.slice(0, end + 1) };
+}
+
+/** The player's observation at their `seq`-th request, built from that prefix of their own channel. */
+async function observeAt(episode: Episode, channel: PlayerChannel, seq: number): Promise<Observation | undefined> {
+  const prefix = cut(channel, seq);
+  return prefix && buildObservation({ channel: prefix, team: episode.team, manifest: episode.provenance.manifest, sha256: nodeSha256 });
+}
+
+/**
+ * The observation of each decision of a stored Episode, in decision order,
+ * rebuilt from the Episode's own channel. Call it on an Episode `readEpisode`
+ * has checked: that is what guarantees every decision has its request.
+ */
+export async function decisionObservations(episode: Episode): Promise<Observation[]> {
+  const channel = playerChannel({ schema_version: 1, data_class: episode.data_class, player: episode.player, lines: episode.channel });
+  const out: Observation[] = [];
+  for (const { identity } of episode.decisions) out.push((await observeAt(episode, channel, identity.request_seq)) as Observation);
+  return out;
 }
 
 /**
@@ -110,18 +128,15 @@ async function read(value: unknown): Promise<Episode> {
   if (ended.winner !== episode.result.winner || ended.turns !== episode.result.turns) {
     throw new EpisodeError(`the result ${JSON.stringify(episode.result)} is not the channel's ${JSON.stringify(ended)}`);
   }
-  const observe = (prefix: PlayerChannel) =>
-    buildObservation({ channel: prefix, team: episode.team, manifest: episode.provenance.manifest, sha256: nodeSha256 });
   const preview = cut(channel, 1);
   if (!preview) throw new EpisodeError("the channel holds no request");
-  await observe(preview);
+  await observeAt(episode, channel, 1);
   let last = 0;
   for (const decision of episode.decisions) {
     const { identity } = decision;
     if (identity.request_seq <= last) throw new EpisodeError(`decision ${identity.request_seq} is out of request order`);
     last = identity.request_seq;
-    const prefix = cut(channel, identity.request_seq);
-    const observation = prefix && (await observe(prefix));
+    const observation = await observeAt(episode, channel, identity.request_seq);
     if (observation?.identity.request_hash !== identity.request_hash) {
       throw new EpisodeError(`decision ${identity.request_seq} does not answer that request of the channel`);
     }

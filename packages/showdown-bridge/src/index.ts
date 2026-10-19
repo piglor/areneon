@@ -47,6 +47,19 @@ export {
 } from "./observation.ts";
 export { nodeSha256, observe, playerChannel, recordedChannel } from "./player-channel.ts";
 export { answersRequest, type Collection, type CollectionInput, type Episode, episodeHash, type Recommendation, rightsFor } from "./episode.ts";
+export {
+  type EvaluationRunInput,
+  type EvaluationRunManifest,
+  evaluationRunManifest,
+  loadTrainingSet,
+  readEvaluationRunManifest,
+  readTrainingSet,
+  type TrainingExample,
+  type TrainingInput,
+  TrainingLoaderError,
+  type TrainingSet,
+  type TrainingStream,
+} from "./training-loader.ts";
 export { EpisodeError, episodeFromRecord, type EpisodeOptions, readEpisode } from "./episode-io.ts";
 export {
   battleClass,

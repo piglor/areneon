@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "data_class": "synthetic",
+  "episode_hashes": [
+    "8e3622c59ad468cc8532d2bcf07a072fbf449a070486e4a9058b8cfdf5ac9d53"
+  ],
+  "evaluation_manifest_hashes": [
+    "ea92634eef6c5fab8f76cb565eb50cf8c70983b7354830415c44a60f85ac5f90"
+  ],
+  "examples": 10,
+  "stream_sha256": "54f3b970567c95272d2da3e6c060e3597157ca43fe341a2b34c225a7c3062e31"
+}

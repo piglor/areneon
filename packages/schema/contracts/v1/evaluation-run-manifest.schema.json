@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:areneon:schema:contracts:v1:evaluation-run-manifest",
+  "title": "EvaluationRunManifest",
+  "description": "The Episode hashes of one evaluation run (ADR-009 \u00a74), written by the evaluation job after the run's last Episode. A sealed run's manifest holds hashes only and is all of it that leaves the isolated store. The training loader refuses any Episode listed in one. Sorted and unique hashes are enforced by the reader (the contract profile has no uniqueItems).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "run_id",
+    "sealed",
+    "episode_hashes"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "run_id": {
+      "description": "The run, as its Episodes' collection records name it.",
+      "type": "string",
+      "minLength": 1
+    },
+    "sealed": {
+      "description": "Whether the run is sealed (evaluation protocol I1).",
+      "type": "boolean"
+    },
+    "episode_hashes": {
+      "description": "The run's Episode hashes (episodeHash), sorted and unique.",
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[0-9a-f]{64}$"
+      }
+    }
+  }
+}
