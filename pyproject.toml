@@ -45,5 +45,5 @@ files = ["scripts", "tests", "packages/schema/python/areneon_contracts"]
 omit = ["packages/schema/python/areneon_contracts/models/*"]
 
 [tool.pytest.ini_options]
-testpaths = ["tests", "spikes"]
+testpaths = ["tests"]
 addopts = "--strict-markers --cov=scripts --cov=areneon_contracts --cov-report=term-missing --cov-fail-under=90"

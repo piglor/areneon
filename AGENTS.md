@@ -46,7 +46,6 @@ Default five-label vocabulary (`needs-triage`, `needs-info`, `ready-for-agent`, 
 - Python: `ruff check`, `ruff format --check`, `mypy --strict`, `pytest` with ≥90% line coverage.
 - TypeScript: `eslint`, `tsc --noEmit` (strict), `vitest` with ≥90% line coverage.
 - Rust (when the first crate lands): `cargo fmt --check`, `cargo clippy -D warnings`, `cargo test`, `cargo llvm-cov` with ≥90% line coverage, `cargo deny`. Rust never reimplements mechanics or legality.
-- `spikes/<ticket>-<name>/` uses lighter gates until it is promoted into `packages/` or `services/`, or deleted.
 - A change to the Showdown pin, request decoder or legal-choice enumeration must re-run the golden fixtures.
 
 If new code cannot be covered by a test, remove it rather than exempting it.
@@ -56,6 +55,12 @@ If new code cannot be covered by a test, remove it rather than exempting it.
 - Conventional Commits, `Refs #<redmine-id>` in every commit and PR, DCO `Signed-off-by` (`git commit -s`).
 - `main` is protected: PRs with required CI only, merged by the maintainer. Never push to `main` directly.
 - A Redmine issue closes on evidence (tests, CI run, artifacts), not just because a PR merged.
+
+### Repository layout and spikes
+
+- `main` holds only real code and docs, laid out by purpose (`packages/`, `services/`, `crates/`, `docs/<topic>.md`). Redmine ticket numbers go in branch names, commit trailers (`Refs #N`) and PRs, never in file or directory names.
+- A spike (throwaway experiment for an ADR) lives only on its own branch and PR and is never merged to `main`. Its evidence goes on the Redmine ticket (journal note with the results and a link to the branch commit), and the ADR cites that commit.
+- Anything a spike proves worth keeping is rebuilt in a properly named package or service with the full quality gates.
 
 ### Features and sizing
 
