@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 import { A2Channel, type A2ChannelOptions, ProtocolReader, splitFrame } from "@areneon/bot-client";
 import { type HarnessFixture, type HarnessFixtureV2, reconnectEvidence, type Seat, upgradeFixture } from "@areneon/local-server/harness";
 import {
+  battleClass,
   type BattleRecord,
   type Engine,
   jcs,
@@ -13,8 +14,10 @@ import {
   playerChannel,
   recordedChannel,
   replayActor,
+  resolveFormat,
   type RulesSnapshot,
   runBattle,
+  validateTeam,
 } from "@areneon/showdown-bridge";
 
 /**
@@ -204,6 +207,7 @@ export async function compareA1A2(
       const logical: Read[] = [];
       for (const frames of fixture.frames[seat]) {
         const reader = new ProtocolReader();
+        // synthetic by construction (recorded fixtures); derive it from team hashes (team-class.ts) when real teams can reach this path.
         const channel = adapter({ room: fixture.room, player: seat, data_class: "synthetic" });
         const reads: Read[] = [];
         for (const frame of frames) {
@@ -350,7 +354,12 @@ export async function compareA1A2(
       }
     });
 
-    const team = { schema_version: 1 as const, data_class: "synthetic" as const, team: fixture.served_teams[seat] as never };
+    // synthetic by construction (recorded fixtures); derive it from team hashes (team-class.ts) when real teams can reach this path.
+    // The runner plays copies, so the served sets stay as recorded; the builder wants them with the
+    // validator's defaults (gender, ...) filled in, as the engine hands them to the player.
+    const filled = structuredClone(fixture.served_teams[seat]);
+    validateTeam(engine, resolveFormat(engine, fixture.format_id, snapshot), filled);
+    const team = { schema_version: 1 as const, data_class: "synthetic" as const, team: filled as never };
     const decided = new Set<number>();
     for (const [c, connection] of connections.entries()) {
       const who = connections.length === 1 ? seat : `${seat} connection ${c + 1}`;
@@ -379,7 +388,13 @@ export async function compareA1A2(
           diff(`${who} request ${seq}: not in the A2 channel`);
           continue;
         }
-        const cut = recordedChannel(record, seat, request.request_seq, "synthetic");
+        const cut = recordedChannel(
+          record,
+          seat,
+          request.request_seq,
+          // The recorded fixtures' served teams are synthetic test data: their own hashes are the known set.
+          battleClass(record.team_hashes, new Set(Object.values(record.team_hashes))),
+        );
         const common = { team, manifest: fixture.manifest as never };
         const one = await attempt({ ...common, channel: playerChannel({ ...cut, lines: rebased(cut.lines, connection.base + 1) }) });
         const two = await attempt({

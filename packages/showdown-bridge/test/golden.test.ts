@@ -17,6 +17,7 @@ import {
   GOLDEN_SUMMARY,
   goldenBattle,
   goldenChannels,
+  syntheticFixtureHashes,
   goldenFixtures,
   syntheticTeam,
 } from "../src/golden.ts";
@@ -29,7 +30,7 @@ describe("golden per-player channel fixtures (ADR-008 §5)", () => {
   const validChannel = ajvFor("contract").compile(channelSchema);
 
   it("match a fresh capture and are synthetic PlayerChannelLogs", async () => {
-    const fresh = goldenChannels(await goldenBattle(loadEngine()));
+    const fresh = goldenChannels(await goldenBattle(loadEngine()), syntheticFixtureHashes(loadEngine()));
     expect(Object.keys(fresh).sort()).toEqual(Object.keys(GOLDEN_CHANNELS).sort());
     for (const [file, fixture] of Object.entries(fresh)) {
       const stored = committed<ChannelFixture>(file);

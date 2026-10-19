@@ -11,8 +11,9 @@ import { jcs, type Json } from "./canonical-json.ts";
 import { legalChoiceSet } from "./choice-judge.ts";
 import type { Engine } from "./engine.ts";
 import { episodeFromRecord } from "./episode-io.ts";
-import { goldenBattle, syntheticTeam } from "./golden.ts";
+import { goldenBattle, syntheticFixtureHashes, syntheticTeam } from "./golden.ts";
 import { observe, recordedChannel } from "./player-channel.ts";
+import { battleClass } from "./team-class.ts";
 import type { RequestRecord } from "./runner.ts";
 
 export const SAMPLES_DIR = fileURLToPath(new URL("../../../fixtures/contracts", import.meta.url));
@@ -34,6 +35,7 @@ function mutated<T>(value: T, change: (copy: Record<string, unknown>) => void): 
  */
 export async function contractSamples(engine: Engine): Promise<Record<string, unknown>> {
   const record = await goldenBattle(engine);
+  const known = syntheticFixtureHashes(engine);
   const team: PrivateTeamSpec = {
     schema_version: 1,
     data_class: "synthetic",
@@ -44,7 +46,7 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
   const preview = first("preview");
   const turn = first("move");
   const force = first("forceSwitch");
-  const at = (seq: number) => recordedChannel(record, "p1", seq, "synthetic");
+  const at = (seq: number) => recordedChannel(record, "p1", seq, battleClass(record.team_hashes, known));
   const context = {
     timer_source: "server" as const,
     timer_rules: TIMER,
@@ -64,7 +66,12 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     manifest: record.manifest,
     decision_context: context,
   });
-  const episode = await episodeFromRecord(record, "p1", { team, behaviour_policy_id: "first-legal@golden" });
+  const episode = await episodeFromRecord(record, "p1", {
+    team,
+    opponent_team: team,
+    known_synthetic: known,
+    behaviour_policy_id: "first-legal@golden",
+  });
   const identity = { request_seq: turn.request_seq, request_hash: turn.request_hash };
 
   const valid: Record<string, unknown> = {
