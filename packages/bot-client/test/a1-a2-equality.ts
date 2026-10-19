@@ -44,7 +44,9 @@ export function readFixture(path: string): HarnessFixture {
 /**
  * `engine` whose battle streams get the recorded names and avatars on their
  * `>player` lines (`runBattle` writes `name: p1` and no avatar). Every line
- * it writes to the sim is kept in `written`.
+ * it writes to the sim is kept in `written`. The rewritten line keeps only
+ * name, avatar and team of the `>player` JSON. A real `players` option on
+ * `runBattle` would replace this wrapper.
  */
 export function withPlayers(engine: Engine, players: HarnessFixture["players"], written: string[]): Engine {
   const sim = new Proxy(engine.sim, {
@@ -128,6 +130,10 @@ export async function compareA1A2(engine: Engine, snapshot: RulesSnapshot, fixtu
     a2[seat] = { channel, waits: channel.lines.filter((l) => l.startsWith(REQUEST)).map(isWait), reads };
   }
 
+  // Not handled: refused (`[Unavailable choice]`), `default` and auto-chosen
+  // turns. The mapping assumes one logged choice per non-wait request. A
+  // fixture with such a turn shows up as a "choices in the input log for"
+  // count difference, or as "A1 could not replay" when a choice is illegal.
   // The choices of the input log, each assigned to the request it answers:
   // the n-th choice of a seat answers that seat's n-th non-wait request.
   const queued: Record<Seat, string[]> = { p1: [], p2: [] };
@@ -164,6 +170,9 @@ export async function compareA1A2(engine: Engine, snapshot: RulesSnapshot, fixtu
 
   // A1 was started exactly as the server was (seed, names, avatars, packed teams).
   const logged = fixture.input_log.lines.slice(0, 3);
+  if (!(logged[0] ?? "").startsWith(">start ") || !(logged[1] ?? "").startsWith(">player p1 ") || !(logged[2] ?? "").startsWith(">player p2 ")) {
+    diff("the input log does not start with >start, >player p1, >player p2");
+  }
   // The server adds only `rating` to a `>player` line; name, avatar and team must be the same.
   const normal = (line: string): string => {
     const match = /^(>player p[12] )(\{.*\})$/.exec(line);

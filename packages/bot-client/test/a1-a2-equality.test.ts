@@ -72,6 +72,7 @@ describe("A1/A2 equality (ADR-005 gate 3)", () => {
         lines[at] = ">p1 team 2, 1, 3, 4";
         const { differences } = await compareA1A2(engine, snapshot, mutated);
         expect(differences.length).toBeGreaterThan(0);
+        expect(differences.some((d) => d.includes("channel line") || d.includes("A1 could not replay"))).toBe(true);
       });
 
       it("rejects a dropped decision", async () => {
@@ -80,6 +81,7 @@ describe("A1/A2 equality (ADR-005 gate 3)", () => {
         lines.splice(lines.lastIndexOf(lines.filter((l) => l.startsWith(">p1 "))[1] as string), 1);
         const { differences } = await compareA1A2(engine, snapshot, mutated);
         expect(differences.length).toBeGreaterThan(0);
+        expect(differences.some((d) => d.includes("choices in the input log for") || d.includes("A1 could not replay"))).toBe(true);
       });
     });
   });
