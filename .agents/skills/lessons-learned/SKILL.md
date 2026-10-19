@@ -66,7 +66,7 @@ This is an internal Areneon skill and the canonical source of durable project le
 
 - **Keep authority states separate.** ADR status, implementation authorization, ticket status, evidence readiness, and product acceptance are different facts. An Accepted ADR records a decision; it does not start implementation.
 
-- **Preserve the project hierarchy.** Keep Wave, milestone design, ADR, implementation ticket, and subtask distinct. Use Redmine parent/child for decomposition and blocker relations for execution order between otherwise independent tickets; do not encode the same relation twice. Every ADR has an ADR-tracker issue under an Epic whose fixed version is the Wave roadmap version; implementation tickets are Epic children with no fixed version of their own. Reviews are journal notes on the ADR issue, never pages under the `ADR` wiki parent.
+- **Preserve the project hierarchy.** Keep Wave, milestone design, ADR, implementation ticket, and subtask distinct. Use Redmine parent/child for decomposition and blocker relations for execution order between otherwise independent tickets; do not encode the same relation twice. Every ADR has a standalone ADR-tracker issue; only after it is Accepted is an Epic created on the Wave roadmap version and related to it. Implementation tickets are Epic children with no fixed version of their own. Reviews are journal notes on the ADR issue, never pages under the `ADR` wiki parent.
 
 ## Design and contracts
 

@@ -24,7 +24,7 @@ Rules for managing ADR pages on the Redmine wiki at `redmine.piglor.com/projects
 
 3a. **Only ADR pages live under `ADR`.** Reviews, CTO or plan-stage assessments, meeting notes and status reports are journal notes on the ADR issue (or the Wave gate ticket), never wiki pages in the ADR hierarchy.
 
-3b. **Every ADR has an ADR issue and an Epic on the roadmap.** The ADR-tracker issue `[ADR-NNN] <title>` is a child of the Epic `[Epic][ADR-NNN] <title>`, whose fixed version is the Wave's roadmap version. The ADR catalog page lists both issue numbers for each ADR. See `prepare-adr` §4.
+3b. **Every ADR has a standalone ADR issue; its Epic comes after acceptance.** The ADR-tracker issue `[ADR-NNN] <title>` is never a subtask of an Epic. Once the ADR is Accepted, the Epic `[Epic][ADR-NNN] <title>` is created on the Wave's roadmap version and related to the ADR issue. The ADR catalog page lists the ADR issue and, once it exists, the Epic. See `prepare-adr` §4.
 
 ## Markdown formatting
 
@@ -44,7 +44,7 @@ Rules for managing ADR pages on the Redmine wiki at `redmine.piglor.com/projects
    ```
    **Status:** ... | **Wave:** ... | **Deciders:** ...
    
-   ADR issue: #<adr-issue> · Epic: #<epic> · Related: [[ADR-NNN_...]]
+   ADR issue: #<adr-issue> · Epic: created once Accepted · Related: [[ADR-NNN_...]]
    
    ---
    
@@ -96,7 +96,7 @@ Rules for managing ADR pages on the Redmine wiki at `redmine.piglor.com/projects
 
 - [ ] The page is parented under `ADR` and uses Markdown.
 - [ ] The page is an ADR, not a review or report.
-- [ ] The ADR issue exists under an Epic assigned to the Wave roadmap version.
+- [ ] The ADR issue exists and is standalone; an Epic on the Wave roadmap version is created only after acceptance.
 - [ ] Status reflects the least-approved active decision on the page.
 - [ ] The exact reviewed revision and approval scope are explicit.
 - [ ] Tables have contiguous structural rows.
