@@ -7,8 +7,9 @@
  * This is the TypeScript port of the #678 model (`timer_budget.py` at
  * a01116c) with the same semantics. Durations are whole milliseconds, as in
  * the `DecisionContext` contract. The bank allocation `(B − B_res) / R̂` is
- * floored to a whole millisecond, so a budget is never above the Python
- * model's and at most 1 ms below it.
+ * floored to a whole millisecond, so a budget is within 1 ms of the Python
+ * model's, floored to whole ms; integer arithmetic avoids the model's float
+ * noise.
  *
  * The timer settings are an input: they come from the format's rule table in
  * the pinned engine (`timerstarting`, `timergrace`, ...) plus the server's
@@ -215,8 +216,11 @@ export function shadowRequest(
 
 /**
  * Charge `serverElapsedMs` in whole ticks, as the server's `nextTick` does:
- * an answer within `5k + 4.99` s costs `5k` s. The total stops at 0, where
- * the server forfeits the player.
+ * an answer within `5k + 4.99` s costs `5k` s. The total stops at 0.
+ *
+ * A total of 0 means the server would forfeit the player: the bank is gone,
+ * and a turn timeout with no bank is a loss, not an auto-choose. The caller
+ * must treat `total === 0` as a forfeit, not as a request to budget.
  */
 export function shadowCharge(timer: ShadowTimer, serverElapsedMs: number): ShadowTimer {
   if (!Number.isFinite(serverElapsedMs) || serverElapsedMs < 0) {

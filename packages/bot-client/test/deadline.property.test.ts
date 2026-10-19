@@ -69,6 +69,7 @@ describe("deadline properties", () => {
           expect(Math.min(timer.total, VGC.starting) * 1000).toBeGreaterThanOrEqual(A2_BUDGET_CONFIG.bank_reserve_ms);
         },
       ),
+      { numRuns: 1000 },
     );
   });
 
@@ -89,6 +90,32 @@ describe("deadline properties", () => {
             expect(elapsed).toBeLessThan(s.turn_seconds_left * 1000);
             timer = shadowCharge(requested.timer, elapsed);
           }
+        },
+      ),
+      { numRuns: 1000 },
+    );
+  });
+
+  it("keeps the safety margin when the bank would allow more than the turn", () => {
+    // Low T, a large bank and no bank reserve: the allocation exceeds T − m,
+    // so only the margin keeps the choice ahead of the server's turn timeout.
+    const noReserve: BudgetConfig = { ...A2_BUDGET_CONFIG, bank_reserve_ms: 0, battle_cap_ms: 120_000 };
+    fc.assert(
+      fc.property(
+        fc.integer({ min: 1, max: 11 }).map((k) => k * VGC.tick),
+        fc.integer({ min: 220, max: 420 }),
+        fc.integer({ min: 1, max: 4 }),
+        fc.double({ min: 0, max: A2_BUDGET_CONFIG.safety_margin_ms - 1, noNaN: true }),
+        (turn, bank, r, latency) => {
+          const s: TimerSnapshot = {
+            timer_source: "server",
+            turn_seconds_left: turn,
+            bank_seconds_left: bank,
+            grace_seconds_left: 0,
+          };
+          const { submit_within_ms } = battleBudget(s, r, noReserve);
+          expect(submit_within_ms).toBe(Math.max(0, turn * 1000 - noReserve.safety_margin_ms));
+          expect(submit_within_ms + latency).toBeLessThan(turn * 1000);
         },
       ),
     );

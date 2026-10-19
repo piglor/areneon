@@ -32,13 +32,13 @@ importers:
 
   packages/bot-client:
     dependencies:
-      '@areneon/schema':
-        specifier: workspace:*
-        version: link:../schema
       '@areneon/showdown-bridge':
         specifier: workspace:*
         version: link:../showdown-bridge
     devDependencies:
+      '@areneon/schema':
+        specifier: workspace:*
+        version: link:../schema
       fast-check:
         specifier: 4.10.2
         version: 4.10.2

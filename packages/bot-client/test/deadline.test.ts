@@ -11,7 +11,7 @@ import {
   startShadowTimer,
   type TimerSnapshot,
 } from "../src/index.ts";
-import { vgcTimer } from "./deadline-timer.ts";
+import { pinnedServerTick, vgcTimer } from "./deadline-timer.ts";
 
 const VGC = vgcTimer();
 
@@ -179,6 +179,10 @@ describe("worked example: the 40-turn battle of the research note", () => {
 describe("shadow timer", () => {
   it("reads the VGC Timer from the pinned engine", () => {
     expect(VGC).toEqual({ starting: 420, grace: 90, add_per_turn: 0, max_per_turn: 55, max_first_turn: 90, tick: 5 });
+  });
+
+  it("uses the pinned server's tick", () => {
+    expect(VGC.tick).toBe(pinnedServerTick());
   });
 
   it("matches the server at preview and clips grace on turn 1", () => {
