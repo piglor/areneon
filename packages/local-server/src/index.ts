@@ -34,4 +34,5 @@ export {
   SESSION_MANIFEST,
   type SessionManifest,
 } from "./launch.ts";
-export { SERVER_LOCK } from "./server-lock.ts";
+export { lockPath } from "./copy-lock.ts";
+export { supervise, type SupervisorConfig, type SupervisorIO } from "./supervisor.ts";

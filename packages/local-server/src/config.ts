@@ -56,7 +56,10 @@ export function serverSettings(port: number): ServerSetting[] {
       why:
         "No outbound HTTP(S): every request through Showdown's Net helper throws before connecting. " +
         "That covers the login server (replay upload `addreplay`, user-stats reports, CSS invalidation, " +
-        "remote ladder), the Tor exit-list and season ladder fetches at startup, and chat-command lookups.",
+        "remote ladder), the Tor exit-list and season ladder fetches at startup, and chat-command lookups. " +
+        "Known residuals, both on this machine: the server reverse-resolves a connecting address " +
+        "(dns.reverse of 127.0.0.1, through the system resolver) and probes port 80 of it (127.0.0.1:80) " +
+        "to classify its host.",
     },
     { key: "autosavereplays", value: false, why: "No replay upload when a battle ends." },
     { key: "replaysdb", value: null, why: "No direct write to a replay database." },

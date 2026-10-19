@@ -1,4 +1,4 @@
-import { execFileSync } from "node:child_process";
+import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { get } from "node:http";
@@ -14,11 +14,14 @@ import {
   type LaunchOptions,
   type LocalServer,
   RuntimeCopyError,
+  lockPath,
   SERVER_CONFIG_PATH,
-  SERVER_LOCK,
   SESSION_MANIFEST,
 } from "../src/index.ts";
 import { fakeCopy, freePort, tempDir } from "./helpers.ts";
+
+/** A pid no process has (above the default Linux pid_max). */
+const DEAD = 2 ** 22 + 7;
 
 const servers: LocalServer[] = [];
 afterEach(async () => {
@@ -57,7 +60,7 @@ function fetch(url: string): Promise<{ status: number; body: string }> {
  * it listens before it does, answers 503 once and then 200, and (with
  * `stubborn`) ignores SIGTERM.
  */
-function fakeServer({ stubborn = false } = {}): string {
+function fakeServer({ stubborn = false, exitAfterMs = 0 } = {}): string {
   return `#!/usr/bin/env node
 const fs = require('fs');
 const http = require('http');
@@ -73,6 +76,7 @@ setTimeout(() => {
     res.end('fake');
   }).listen(port, '127.0.0.1');
 }, 150);
+${exitAfterMs > 0 ? `setTimeout(() => process.exit(0), ${exitAfterMs});` : ""}
 `;
 }
 
@@ -121,15 +125,20 @@ describe("launch with a stand-in server", () => {
     });
     expect(Date.parse(session.expires_at) - Date.parse(session.started_at)).toBe(60_000);
     expect(JSON.parse(readFileSync(join(copy.dir, SESSION_MANIFEST), "utf8"))).toEqual(session);
-    expect(JSON.parse(readFileSync(join(copy.dir, SERVER_LOCK), "utf8"))).toEqual({
-      launcher_pid: process.pid,
+    expect(JSON.parse(readFileSync(lockPath(copy.dir), "utf8"))).toEqual({
+      token: expect.stringMatching(/^[0-9a-f]{32}$/) as string,
+      pid: process.pid,
+      supervisor_pid: expect.any(Number) as number,
       server_pid: started.pid,
     });
 
     await server.stop();
     expect(groupAlive(started.pid)).toBe(false);
-    expect(existsSync(join(copy.dir, SERVER_LOCK))).toBe(false);
+    expect(existsSync(lockPath(copy.dir))).toBe(false);
+    const ended = JSON.parse(readFileSync(join(copy.dir, SESSION_MANIFEST), "utf8")) as Record<string, unknown>;
+    expect(ended).toEqual({ ...session, ended_at: expect.any(String) as string, end_reason: "stop" });
     await server.stop();
+    await server.ended;
   });
 
   it("refuses a second server on the copy, and a recreated copy, until the first stops", async () => {
@@ -137,55 +146,70 @@ describe("launch with a stand-in server", () => {
     const server = await start({ dir: copy.dir, port: await freePort(), expectedCommit: copy.commit });
     await expect(
       launch({ dir: copy.dir, port: await freePort(), expectedCommit: copy.commit }),
-    ).rejects.toThrow(/already running/);
-    expect(existsSync(join(copy.dir, SERVER_LOCK))).toBe(true);
+    ).rejects.toThrow(/is in use by pid/);
+    expect(existsSync(lockPath(copy.dir))).toBe(true);
     const recreate = (): unknown =>
       createRuntimeCopy({ vendorDir: copy.vendorDir, runtimeRoot: copy.runtimeRoot, expectedCommit: copy.commit });
     expect(recreate).toThrow(RuntimeCopyError);
-    expect(recreate).toThrow(/is running from/);
+    expect(recreate).toThrow(/is in use by pid/);
     await server.stop();
     expect(recreate).not.toThrow();
   });
 
   it("replaces a stale lock and refuses an unreadable one", async () => {
     const copy = fakeCopy(fakeServer());
-    const lock = join(copy.dir, SERVER_LOCK);
-    writeFileSync(lock, JSON.stringify({ launcher_pid: 2 ** 22 + 7, server_pid: 2 ** 22 + 9 }));
+    const lock = lockPath(copy.dir);
+    writeFileSync(lock, JSON.stringify({ token: "old", pid: DEAD, supervisor_pid: DEAD + 1, server_pid: DEAD + 2 }));
     const server = await start({ dir: copy.dir, port: await freePort(), expectedCommit: copy.commit });
     await server.stop();
-    for (const text of ["not json", "null", '{"launcher_pid":1,"server_pid":null}', '{"launcher_pid":5,"server_pid":"x"}']) {
+    for (const text of [
+      "not json",
+      "null",
+      '{"pid":5,"supervisor_pid":null,"server_pid":null}',
+      '{"token":"t","pid":1,"supervisor_pid":null,"server_pid":null}',
+      '{"token":"t","pid":5,"supervisor_pid":null,"server_pid":"x"}',
+      '{"token":"t","pid":5,"supervisor_pid":"x","server_pid":null}',
+    ]) {
       writeFileSync(lock, text);
       await expect(
         launch({ dir: copy.dir, port: await freePort(), expectedCommit: copy.commit }),
-      ).rejects.toThrow(/cannot read the server lock/);
+      ).rejects.toThrow(/cannot read the lock/);
       expect(readFileSync(lock, "utf8")).toBe(text);
     }
   });
 
   it("refuses a lock path it cannot read, here a directory, for a launch and a recreated copy", async () => {
     const copy = fakeCopy(fakeServer());
-    mkdirSync(join(copy.dir, SERVER_LOCK));
+    mkdirSync(lockPath(copy.dir));
     await expect(launch({ dir: copy.dir, port: await freePort(), expectedCommit: copy.commit })).rejects.toThrow(
-      /cannot read the server lock/,
+      /cannot read the lock/,
     );
     expect(() =>
       createRuntimeCopy({ vendorDir: copy.vendorDir, runtimeRoot: copy.runtimeRoot, expectedCommit: copy.commit }),
-    ).toThrow(/cannot read the server lock/);
+    ).toThrow(/cannot read the lock/);
   });
 
-  it("counts a lock live while its server group runs, even after its launcher is gone", async () => {
+  it("counts a lock live while its supervisor or any of its server group runs", async () => {
     const copy = fakeCopy(fakeServer());
     const server = await start({ dir: copy.dir, port: await freePort(), expectedCommit: copy.commit });
-    const lock = join(copy.dir, SERVER_LOCK);
+    const lock = lockPath(copy.dir);
     const held = readFileSync(lock, "utf8");
-    writeFileSync(lock, JSON.stringify({ launcher_pid: 2 ** 22 + 7, server_pid: server.session.pid }));
-    await expect(
-      launch({ dir: copy.dir, port: await freePort(), expectedCommit: copy.commit }),
-    ).rejects.toThrow(`a server (pid ${server.session.pid}) is already running`);
+    const record = JSON.parse(held) as { supervisor_pid: number };
+    const attempt = (): Promise<unknown> =>
+      launch({ dir: copy.dir, port: 1, expectedCommit: copy.commit });
+    writeFileSync(lock, JSON.stringify({ token: "t", pid: DEAD, supervisor_pid: record.supervisor_pid, server_pid: null }));
+    await expect(attempt()).rejects.toThrow(`in use by pid ${record.supervisor_pid}`);
+    writeFileSync(lock, JSON.stringify({ token: "t", pid: DEAD, supervisor_pid: DEAD, server_pid: server.session.pid }));
+    await expect(attempt()).rejects.toThrow(`in use by pid ${server.session.pid}`);
     writeFileSync(lock, held);
   });
 
-  it("takes its servers down when the launching process exits without stop()", async () => {
+  it.each([
+    ["SIGTERM to the launcher", "SIGTERM", false],
+    ["SIGINT to the launcher", "SIGINT", false],
+    ["SIGKILL to the launcher", "SIGKILL", false],
+    ["Ctrl-C: SIGINT to the launcher's process group", "SIGINT", true],
+  ] as const)("leaves no server and releases the lock after %s", async (_, signal, group) => {
     const copy = fakeCopy(fakeServer());
     const script = join(tempDir("launcher"), "launcher.ts");
     writeFileSync(
@@ -193,12 +217,26 @@ describe("launch with a stand-in server", () => {
       `import { launch } from ${JSON.stringify(join(import.meta.dirname, "../src/index.ts"))};
 const server = await launch(${JSON.stringify({ dir: copy.dir, port: await freePort(), expectedCommit: copy.commit })});
 console.log(server.session.pid);
-process.exit(0);
+setInterval(() => {}, 1000);
 `,
     );
-    const pid = Number(execFileSync(process.execPath, [script], { encoding: "utf8" }).trim());
-    expect(pid).toBeGreaterThan(1);
-    await expect.poll(() => groupAlive(pid), { timeout: 10_000 }).toBe(false);
+    const launcher = spawn(process.execPath, [script], { detached: true, stdio: ["ignore", "pipe", "inherit"] });
+    try {
+      const pid = await new Promise<number>((done, fail) => {
+        launcher.stdout.once("data", (chunk: Buffer) => done(Number(chunk.toString().trim())));
+        launcher.once("exit", (code) => fail(new Error(`launcher exited ${code}`)));
+      });
+      expect(groupAlive(pid)).toBe(true);
+      process.kill(group ? -(launcher.pid as number) : (launcher.pid as number), signal);
+      await expect.poll(() => groupAlive(pid), { timeout: 10_000 }).toBe(false);
+      await expect.poll(() => existsSync(lockPath(copy.dir)), { timeout: 10_000 }).toBe(false);
+    } finally {
+      try {
+        process.kill(-(launcher.pid as number), "SIGKILL");
+      } catch {
+        // Gone.
+      }
+    }
   });
 
   it("kills a server that ignores SIGTERM", async () => {
@@ -210,22 +248,36 @@ process.exit(0);
 
   it("stops the server by itself when its lifetime ends", async () => {
     const copy = fakeCopy(fakeServer());
-    const server = await start({ dir: copy.dir, port: await freePort(), expectedCommit: copy.commit, lifetimeMs: 300 });
-    await expect.poll(() => groupAlive(server.session.pid), { timeout: 10_000 }).toBe(false);
-    await expect.poll(() => existsSync(join(copy.dir, SERVER_LOCK)), { timeout: 10_000 }).toBe(false);
+    const server = await start({ dir: copy.dir, port: await freePort(), expectedCommit: copy.commit, lifetimeMs: 1500 });
+    await server.ended;
+    expect(groupAlive(server.session.pid)).toBe(false);
+    expect(existsSync(lockPath(copy.dir))).toBe(false);
+    expect(JSON.parse(readFileSync(join(copy.dir, SESSION_MANIFEST), "utf8"))).toMatchObject({ end_reason: "lifetime" });
+    await server.stop();
   });
 
-  it.each([
-    ["process.exit(3)", "3"],
-    ["process.kill(process.pid, 'SIGKILL')", "SIGKILL"],
-  ])("fails and cleans up when the server exits before it serves: %s", async (exit, how) => {
+  it("ends the session when the server exits by itself", async () => {
+    const copy = fakeCopy(fakeServer({ exitAfterMs: 1000 }));
+    const server = await start({ dir: copy.dir, port: await freePort(), expectedCommit: copy.commit });
+    await server.ended;
+    expect(existsSync(lockPath(copy.dir))).toBe(false);
+    expect(JSON.parse(readFileSync(join(copy.dir, SESSION_MANIFEST), "utf8"))).toMatchObject({
+      end_reason: "server-exited",
+    });
+    await server.stop();
+  });
+
+  it.each(["process.exit(3)", "process.kill(process.pid, 'SIGKILL')"])(
+    "fails and cleans up when the server exits before it serves: %s",
+    async (exit) => {
     const copy = fakeCopy(`#!/usr/bin/env node\nconsole.error('boom');\nsetTimeout(() => ${exit}, 100);\n`);
     await expect(launch({ dir: copy.dir, port: await freePort(), expectedCommit: copy.commit })).rejects.toThrow(
-      new RegExp(`server exited \\(${how}\\) before it served .*\\n.*boom`, "s"),
+      /supervisor exited \(0\) before the server served .*boom/s,
     );
-    expect(existsSync(join(copy.dir, SERVER_LOCK))).toBe(false);
+    expect(existsSync(lockPath(copy.dir))).toBe(false);
     expect(existsSync(join(copy.dir, SESSION_MANIFEST))).toBe(false);
-  });
+    },
+  );
 
   it("fails and kills the server when it does not serve in time", async () => {
     const copy = fakeCopy(
@@ -235,7 +287,7 @@ process.exit(0);
       launch({ dir: copy.dir, port: await freePort(), expectedCommit: copy.commit, readyTimeoutMs: 500 }),
     ).rejects.toThrow(/did not serve .* within 500 ms/);
     expect(groupAlive(Number(readFileSync(join(copy.dir, "started.json"), "utf8")))).toBe(false);
-    expect(existsSync(join(copy.dir, SERVER_LOCK))).toBe(false);
+    expect(existsSync(lockPath(copy.dir))).toBe(false);
   });
 
   it("refuses a port another process holds, before starting anything", async () => {
@@ -244,23 +296,59 @@ process.exit(0);
     const port = await freePort();
     await new Promise<void>((done) => holder.listen(port, "127.0.0.1", done));
     try {
-      await expect(launch({ dir: copy.dir, port, expectedCommit: copy.commit })).rejects.toThrow(/is not free/);
+      await expect(launch({ dir: copy.dir, port, expectedCommit: copy.commit })).rejects.toThrow(
+        `port ${port} on 127.0.0.1 is not free`,
+      );
     } finally {
       holder.close();
     }
     expect(existsSync(join(copy.dir, "started.json"))).toBe(false);
-    expect(existsSync(join(copy.dir, SERVER_LOCK))).toBe(false);
+    expect(existsSync(lockPath(copy.dir))).toBe(false);
   });
 
-  it.each([0, 65536, 80.5])("refuses port %s", async (port) => {
+  it("refuses a port another process holds on ::1, where IPv6 exists", async () => {
     const copy = fakeCopy(fakeServer());
-    await expect(launch({ dir: copy.dir, port, expectedCommit: copy.commit })).rejects.toThrow(LaunchError);
+    const holder: Server = createServer();
+    const port = await freePort();
+    const listening = await new Promise<boolean>((done) => {
+      holder.once("error", () => done(false));
+      holder.listen({ port, host: "::1" }, () => done(true));
+    });
+    if (!listening) return;
+    try {
+      await expect(launch({ dir: copy.dir, port, expectedCommit: copy.commit })).rejects.toThrow(
+        `port ${port} on ::1 is not free`,
+      );
+    } finally {
+      holder.close();
+    }
+  });
+
+  it.each([
+    ["port", 0],
+    ["port", 65536],
+    ["port", 80.5],
+    ["readyTimeoutMs", 0],
+    ["lifetimeMs", 0],
+    ["lifetimeMs", -1],
+    ["lifetimeMs", 1.5],
+    ["lifetimeMs", 2 ** 31],
+    ["stopTimeoutMs", 0],
+    ["stopTimeoutMs", 2 ** 31],
+    ["stopTimeoutMs", Number.NaN],
+  ])("refuses %s = %s before taking the lock", async (name, value) => {
+    const copy = fakeCopy(fakeServer());
+    await expect(launch({ dir: copy.dir, expectedCommit: copy.commit, [name]: value })).rejects.toThrow(
+      new RegExp(`^${name} must be an integer from 1 to`),
+    );
+    await expect(launch({ dir: copy.dir, expectedCommit: copy.commit, [name]: value })).rejects.toThrow(LaunchError);
+    expect(existsSync(lockPath(copy.dir))).toBe(false);
   });
 
   it("defaults to port 8000 and verifies the copy before anything else", async () => {
     const dir = tempDir("not-a-copy");
     await expect(launch({ dir })).rejects.toThrow(RuntimeCopyError);
-    expect(existsSync(join(dir, SERVER_LOCK))).toBe(false);
+    expect(existsSync(lockPath(dir))).toBe(false);
   });
 
   it("refuses a copy that fails verification, by default against the pin", async () => {
@@ -330,7 +418,7 @@ describe("launch with the pinned server", () => {
       await server.stop();
       expect(groupAlive(server.session.pid)).toBe(false);
       expect(await connects("127.0.0.1", port)).toBe(false);
-      expect(existsSync(join(copy.dir, SERVER_LOCK))).toBe(false);
+      expect(existsSync(lockPath(copy.dir))).toBe(false);
     },
     120_000,
   );

@@ -159,7 +159,8 @@ describe("putting a runtime copy in place", () => {
     expect(() => createRuntimeCopy(options)).toThrow(/cannot put the runtime copy in place.*ENOTEMPTY/);
     failRename.when = () => null;
     failRm.when = () => null;
-    for (const name of readdirSync(root).filter((entry) => entry.startsWith("."))) {
+    // The failed clean-up also left this process's lock behind.
+    for (const name of readdirSync(root).filter((entry) => entry.startsWith(".") || entry.endsWith(".lock"))) {
       rmSync(join(root, name), { recursive: true });
     }
     expect(createRuntimeCopy(options).commit).toBe(vendor.commit);
