@@ -41,38 +41,6 @@ export function readFixture(path: string): HarnessFixture {
   return JSON.parse(readFileSync(`${A2_FIXTURES_DIR}${path}`, "utf8")) as HarnessFixture;
 }
 
-/**
- * `engine` whose battle streams get the recorded names and avatars on their
- * `>player` lines (`runBattle` writes `name: p1` and no avatar). Every line
- * it writes to the sim is kept in `written`. The rewritten line keeps only
- * name, avatar and team of the `>player` JSON. A real `players` option on
- * `runBattle` would replace this wrapper.
- */
-export function withPlayers(engine: Engine, players: HarnessFixture["players"], written: string[]): Engine {
-  const sim = new Proxy(engine.sim, {
-    get(target, key, receiver) {
-      if (key !== "getPlayerStreams") return Reflect.get(target, key, receiver) as unknown;
-      return (stream: object) => {
-        const streams = target.getPlayerStreams(stream);
-        const write = streams.omniscient.write.bind(streams.omniscient);
-        streams.omniscient.write = (chunk: string) => {
-          const lines = chunk.split("\n").map((line) => {
-            const match = /^>player (p[12]) (\{.*\})$/.exec(line);
-            if (match === null) return line;
-            const seat = match[1] as Seat;
-            const { team } = JSON.parse(match[2] as string) as { team: string };
-            return `>player ${seat} ${JSON.stringify({ name: players[seat].name, avatar: players[seat].avatar, team })}`;
-          });
-          written.push(...lines);
-          write(lines.join("\n"));
-        };
-        return streams;
-      };
-    },
-  });
-  return { ...engine, sim };
-}
-
 const REQUEST = "|request|";
 
 /** A request line without its `rqid` (ADR-008 §4), reserialised the same way on both sides. */
@@ -108,7 +76,6 @@ export interface EqualityResult {
 export async function compareA1A2(engine: Engine, snapshot: RulesSnapshot, fixture: HarnessFixture): Promise<EqualityResult> {
   const differences: string[] = [];
   const diff = (message: string): void => void differences.push(message);
-  const written: string[] = [];
 
   // The A2 side: each seat's own stored channel, its requests through the
   // protocol reader (request_seq, request_hash) as the session loop reads them.
@@ -156,11 +123,15 @@ export async function compareA1A2(engine: Engine, snapshot: RulesSnapshot, fixtu
   let record: BattleRecord;
   try {
     record = await runBattle({
-      engine: withPlayers(engine, fixture.players, written),
+      engine,
       snapshot,
       formatId: fixture.format_id,
       seed: fixture.seed,
       teams: fixture.served_teams,
+      players: {
+        p1: { name: fixture.players.p1.name, avatar: fixture.players.p1.avatar },
+        p2: { name: fixture.players.p2.name, avatar: fixture.players.p2.avatar },
+      },
       actors: { p1: replayActor(choices, "p1"), p2: replayActor(choices, "p2") },
     });
   } catch (error) {
@@ -168,19 +139,31 @@ export async function compareA1A2(engine: Engine, snapshot: RulesSnapshot, fixtu
     return { differences, requests: { p1: 0, p2: 0 }, decisions: { p1: 0, p2: 0 } };
   }
 
-  // A1 was started exactly as the server was (seed, names, avatars, packed teams).
+  // A1 was started as the server was: the input log's own seed, names,
+  // avatars and packed teams against A1's first lines. The server adds only
+  // `rating` to a `>player` line.
   const logged = fixture.input_log.lines.slice(0, 3);
   if (!(logged[0] ?? "").startsWith(">start ") || !(logged[1] ?? "").startsWith(">player p1 ") || !(logged[2] ?? "").startsWith(">player p2 ")) {
     diff("the input log does not start with >start, >player p1, >player p2");
   }
-  // The server adds only `rating` to a `>player` line; name, avatar and team must be the same.
-  const normal = (line: string): string => {
-    const match = /^(>player p[12] )(\{.*\})$/.exec(line);
-    if (match === null) return line;
-    const { name, avatar, team } = JSON.parse(match[2] as string) as Record<string, unknown>;
-    return (match[1] as string) + JSON.stringify({ name, avatar, team });
-  };
-  if (written.slice(0, 3).map(normal).join("\n") !== logged.map(normal).join("\n")) {
+  const started = logged.flatMap((line) => {
+    const match = /^>(start|player p[12]) (\{.*\})$/.exec(line);
+    return match === null ? [] : [{ kind: match[1] as string, body: JSON.parse(match[2] as string) as Record<string, string> }];
+  });
+  const expectedStart = started.flatMap(({ kind, body }) =>
+    kind === "start"
+      ? [`seed ${body.seed}`]
+      : [`${kind.slice(-2)} ${body.name} ${body.avatar ?? ""} ${body.team}`],
+  );
+  const a1Start = [
+    `seed ${record.seed}`,
+    ...SEATS.map((seat) => {
+      const line = record.omniscient_log.find((l) => l.startsWith(`|player|${seat}|`)) ?? "";
+      const [, , , name, avatar] = line.split("|");
+      return `${seat} ${name} ${avatar} ${engine.sim.Teams.pack(fixture.served_teams[seat] as never)}`;
+    }),
+  ];
+  if (a1Start.join("\n") !== expectedStart.join("\n")) {
     diff("A1 was not started with the input log's >start and >player lines");
   }
 

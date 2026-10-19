@@ -75,6 +75,13 @@ describe("A1/A2 equality (ADR-005 gate 3)", () => {
         expect(differences.some((d) => d.includes("channel line") || d.includes("A1 could not replay"))).toBe(true);
       });
 
+      it("rejects an input log whose >player line differs from the players A1 played", async () => {
+        const mutated = structuredClone(fixture);
+        mutated.input_log.lines[1] = (mutated.input_log.lines[1] as string).replace('"name":"', '"name":"x');
+        const { differences } = await compareA1A2(engine, snapshot, mutated);
+        expect(differences).toContain("A1 was not started with the input log's >start and >player lines");
+      });
+
       it("rejects a dropped decision", async () => {
         const mutated = structuredClone(fixture);
         const lines = mutated.input_log.lines;

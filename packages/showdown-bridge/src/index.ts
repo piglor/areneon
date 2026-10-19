@@ -113,7 +113,10 @@ export {
   InvalidTeamError,
   type OmniscientLog,
   type Player,
+  type PlayerIdentity,
+  PlayersOptionError,
   replayActor,
   type RequestRecord,
   runBattle,
+  validatePlayers,
 } from "./runner.ts";
