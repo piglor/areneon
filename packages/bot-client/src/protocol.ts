@@ -8,7 +8,10 @@ export const GLOBAL_ROOM = "";
 
 /** A decoded request with Areneon's per-side counter (ADR-005 §1, ADR-008 §4). */
 export interface SequencedRequest extends DecodedRequest {
-  /** 1-based count of the requests this player has received in this room, `wait` included. */
+  /**
+   * 1-based count of the requests this player has received in this room
+   * since the room's last `|init|battle`, `wait` included.
+   */
   request_seq: number;
 }
 
@@ -20,7 +23,8 @@ export type RoomEvent =
       request: SequencedRequest;
       /**
        * The server re-sent the current request (same `rqid` and same
-       * `request_hash`, e.g. on rejoin): it keeps its `request_seq`.
+       * `request_hash`) on the same connection: it keeps its `request_seq`.
+       * After an `|init|battle` the re-sent request is a new channel's first.
        */
       resend: boolean;
     }
@@ -69,6 +73,15 @@ const prefixed = (line: string, type: string): string | undefined =>
  * - A request whose `rqid` and `request_hash` both equal the previous
  *   request's is a re-send and keeps its `request_seq`. A request without
  *   an `rqid` is never a re-send: only the server assigns one.
+ * - `|init|battle` starts a new channel for its room (ADR-004 r4.2, ADR-008
+ *   §4): the server sends it on every join, then replays the room log, which
+ *   holds no `|request|` (those go to the player only, server/room-battle.ts
+ *   `receive`). So the room's request state is reset there: `request_seq`
+ *   restarts at 1, the room has no open request, and re-send detection
+ *   forgets the last identity. The request the server re-sends after a
+ *   rejoin (`onConnect`, with `|sentchoice|` if a choice is held) is then
+ *   request 1 of the new channel, as `buildObservation` numbers it; across
+ *   channels a request is identified by `request_hash` + `rqid`.
  *
  * The counter is per room: the bot is one player in each battle room. A
  * frame is read all or nothing: its requests are decoded before any room
@@ -97,6 +110,7 @@ export class ProtocolReader {
   }
 
   #event(room: string, line: string, decoded: DecodedRequest | undefined): RoomEvent {
+    if (line === "|init|battle") this.#rooms.delete(room);
     if (line.startsWith("|request|")) return this.#request(room, decoded);
     const choice = prefixed(line, "sentchoice");
     if (choice !== undefined) return { kind: "sentchoice", room, choice };
