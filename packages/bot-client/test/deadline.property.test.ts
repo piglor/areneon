@@ -42,6 +42,10 @@ const config: fc.Arbitrary<BudgetConfig> = fc.record({
   turns_per_pokemon: fc.double({ min: 0, max: 4, noNaN: true }),
 });
 
+// 1000 whole battles of up to 300 turns take a few seconds locally and more
+// on a shared CI runner: past vitest's 5 s default (seen in CI on PR #52).
+const WHOLE_BATTLE_TIMEOUT_MS = 60_000;
+
 describe("deadline properties", () => {
   it("never exhausts the bank before the last decision, and auto-choose never fires", () => {
     // A whole battle of up to 300 turns under the VGC Timer, every decision
@@ -71,7 +75,7 @@ describe("deadline properties", () => {
       ),
       { numRuns: 1000 },
     );
-  });
+  }, WHOLE_BATTLE_TIMEOUT_MS);
 
   it("forced switches in the same turn never exhaust the bank either", () => {
     fc.assert(
@@ -94,7 +98,7 @@ describe("deadline properties", () => {
       ),
       { numRuns: 1000 },
     );
-  });
+  }, WHOLE_BATTLE_TIMEOUT_MS);
 
   it("keeps the safety margin when the bank would allow more than the turn", () => {
     // Low T, a large bank and no bank reserve: the allocation exceeds T − m,
