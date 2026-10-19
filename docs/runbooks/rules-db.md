@@ -2,13 +2,15 @@
 
 This runbook is for the project owner. It sets up the **dev** rules store: a private PostgreSQL 18 database on Coolify that holds the published rules snapshots and the channel history, append-only (ADR-007, #704). The owner performs every step; no agent and no CI job connects to this database.
 
+Labels used in sections 4 and 5: **Owner: verify on Coolify** marks a statement that could not be checked without the Coolify instance (a setting name, a behaviour); do not rely on it before you have seen it. **Owner: verify on GitHub** marks the same for a GitHub setting (a token scope, an Actions run). **Owner: verify** alone marks a behaviour of a tool that needs a real token or the live service to see. **Owner: decide** marks a choice that is the owner's, to be recorded on the ticket. **Spike** marks a step the owner runs to settle an open question; its evidence goes on #771.
+
 | Section | Covers | Status |
 |---|---|---|
 | 1 | Create the private database resource on Coolify | this runbook (#769) |
 | 2 | Bootstrap the roles from Coolify secrets (`db/bootstrap.sql`) | this runbook (#769) |
 | 3 | Run the migrations with the pinned dbmate and verify the schema | this runbook (#769) |
-| 4 | Deploy the rules importer | later (#770) |
-| 5 | Schedule the importer | later (#770) |
+| 4 | Deploy the rules importer: image, secrets, first run, summary line and exit codes, verification, failure modes | this runbook (#770) |
+| 5 | Schedule the importer: the scheduled-execution spike | this runbook (#770); the owner runs the spike (#771) |
 
 Ground rules for every step:
 
@@ -382,8 +384,355 @@ The repository already has the GitHub environment **`rules-dev`**, used by `.git
 
 ## 4. Deploy the rules importer
 
-To be written in #770.
+The importer is a one-shot command, not a service: it lists the published, attested rules Releases of `piglor/areneon`, verifies each with `gh attestation verify`, and writes what is new into the rules store in one transaction (ADR-007 §6, `packages/rules-importer`). It then prints one JSON line and exits. It listens on no port, keeps no state outside the database and needs only outbound HTTPS to GitHub plus the database over the internal network.
+
+| Fact | Value |
+|---|---|
+| Image | built from the repository root: `docker build -f packages/rules-importer/Dockerfile -t areneon-rules-importer .` (`make importer-image` also builds the test image; the default, last stage `runtime`, is the production image). No registry image is published; Coolify or you build it from the repository. |
+| Entrypoint | `node packages/rules-importer/src/cli.ts` (working directory `/app`, user `1000:1000`). Arguments are not read; configuration is environment only. |
+| Contents | `node`, the pinned `gh` (checked against a SHA-256 at build time), the CA bundle and `/app`. No shell tooling beyond Debian slim's base, no `curl`, `npm`, `pnpm`, no test files, no fixtures. |
+| Reaches | `api.github.com` and `github.com` (HTTPS, through `gh`), and the database by its internal hostname. **Owner: verify:** `gh release download` is also redirected to GitHub's asset storage (`*.githubusercontent.com`), and `gh attestation verify` fetches the Sigstore trusted root over TUF (Sigstore's public TUF repository host). If the server filters outbound traffic, these hosts must be allowed too. |
+
+Environment variables (nothing secret is baked into the image; the Dockerfile has no build arguments for them):
+
+| Variable | Required | Secret | Meaning |
+|---|---|---|---|
+| `DATABASE_URL` | yes | **yes** (it contains the `importer` password) | `postgres://importer:<from Coolify secret RULES_IMPORTER_PASSWORD>@<db-uuid>:5432/areneon?sslmode=<mode>`. Must log in as `importer`; any other role exits 2. A URL that sets `statement_timeout`, `lock_timeout`, `idle_in_transaction_session_timeout` or `options` is refused (exit 2). |
+| `GH_TOKEN` | yes | **yes** | A read-only fine-grained GitHub token (4.2). `gh` reads it to list Releases, download assets and verify attestations. |
+| `RULES_IMPORT_STATEMENT_TIMEOUT_MS` | no | no | Statement timeout of the session, 1 to 999999999 ms. Default 300000. |
+| `RULES_IMPORT_LOCK_TIMEOUT_MS` | no | no | Lock wait timeout, same range. Default 300000. |
+| `RULES_IMPORT_IDLE_IN_TRANSACTION_TIMEOUT_MS` | no | no | Idle-in-transaction timeout, same range. Default 60000. |
+
+A timeout that is exceeded fails the statement and rolls the whole import back (exit 1). A value that is not a whole number in range exits 2. Leave all three unset unless a run times out. Only `PATH`, `HOME`, `GH_TOKEN`, `GH_HOST`, `SSL_CERT_FILE`, `SSL_CERT_DIR` and the proxy variables reach `gh`; `DATABASE_URL` never does.
+
+### 4.1 The ADR-007 §6 flow, end to end
+
+```text
+ PR with rules/ changes merged to main
+   1. rules-publish.yml, job "plan" (read-only, no environment): re-checks rules and channels on the
+      merged commit, builds the artifacts not yet released with a sha256 manifest.
+      Nothing new -> the workflow ends here and asks for nothing.
+   2. job "publish" waits for the owner's approval of the GitHub environment rules-dev.     <- OWNER
+      Approved -> verifies the plan's files against the manifest, attests them (build provenance),
+      and creates the Releases: rules-snapshot-<hash> first, then rules-channel-<channel>-<commit>.
+   3. The importer runs (scheduled, section 5, or by hand). It:
+        a. connects as `importer`; reads which snapshot hashes the store has;
+        b. lists the non-draft rules-* Releases; a snapshot already stored is not downloaded (it is
+           checked by reference); every other asset is downloaded and checked with
+           `gh attestation verify` (repo piglor/areneon, workflow rules-publish.yml, ref
+           refs/heads/main, GitHub-hosted runner, and the file's own sha256);
+        c. plans: each artifact must be canonical JSON, match its schema and its own name, and a
+           channel artifact must name a snapshot that is released or already stored;
+        d. applies the plan in ONE transaction: snapshots, then channel steps with a seq above the
+           channel's current maximum. Anything refused rolls the whole plan back (a
+           `stale` channel step is not a refusal; see 4.6).
+   4. Readers (areneon_reader) see the new rows; a runtime pins the snapshot hash at battle start.
+```
+
+The dev environment is `rules-dev` (3.2); ADR-007's text says `rules-prod`, which is the later production environment (#715). The approval in step 2 can wait up to the environment's timeout (30 days); the importer simply finds nothing new until the Releases exist, and imports them on the first run after.
+
+`source_commit` is read from the Release's Git tag, which is mutable. It is deliberately not compared with the commit the attestation names (the #765 design): what the importer trusts is the attested bytes, whose channel artifact carries its own `source_commit`, and it refuses an artifact whose own commit disagrees with its tag's.
+
+### 4.2 Create the GitHub token
+
+The importer needs read access to the releases and attestations of one public repository, and nothing else.
+
+1. In GitHub, as the account that will own the token, create a **fine-grained personal access token** (Settings, Developer settings, Personal access tokens). Never a classic token.
+2. Resource owner `piglor`; repository access **only `piglor/areneon`**; repository permissions: **Contents: read-only** (Metadata read-only is added automatically); everything else **No access**; no account permissions; the shortest expiry you will reliably renew (for example 90 days).
+   *Expected result:* the token's summary lists one repository and read-only permissions.
+   **Owner: verify on GitHub** that this scope is enough (step 4 of this subsection proves it). If `gh` reports that it cannot read the repository's releases or attestations, the fix is the narrowest additional read-only permission it names, never write access. A fine-grained token restricted to "Public repositories (read-only)" is an acceptable alternative if you prefer no repository selection.
+3. Copy it once, straight into the Coolify secret (4.3). It is not shown again. It never goes into a file, a ticket, a chat, the shell history or a screenshot.
+4. After the secret exists and the image is built (4.4), prove the token works without the importer (it prints only a tag name; run it in the shell session of 4.5 step 1 so the token is read without echo):
+
+   ```bash
+   docker run --rm -e GH_TOKEN --entrypoint gh areneon-rules-importer:local \
+     api 'repos/piglor/areneon/releases?per_page=1' --jq '.[0].tag_name'
+   ```
+
+   *Expected result:* a tag such as `rules-snapshot-<64 hex>` or `rules-channel-stable-<40 hex>`, exit 0. Then prove attestations too, with the same token: download one asset and verify it, as in 4.8 step 3:
+
+   ```bash
+   mkdir -p asset && docker run --rm -e GH_TOKEN -e HOME=/tmp -v "$PWD/asset:/out" --user "$(id -u):$(id -g)" --entrypoint gh areneon-rules-importer:local \
+     release download <the tag printed above> --repo piglor/areneon --dir /out
+   docker run --rm -e GH_TOKEN -v "$PWD/asset:/out:ro" --entrypoint gh areneon-rules-importer:local \
+     attestation verify /out/<the downloaded file> --repo piglor/areneon \
+     --signer-workflow piglor/areneon/.github/workflows/rules-publish.yml --source-ref refs/heads/main
+   rm -r asset
+   ```
+
+   *Expected result:* `Loaded digest sha256:… ` and a verification success message, exit 0. An authentication or permission error here means the token scope is not enough for attestations. `HTTP 401` means a wrong or expired token; `HTTP 403` or `404` means the scope or repository selection is wrong. (`gh` as the image entrypoint override, and the `gh` binary on `PATH`, are what `make importer-e2e` checks locally; the call itself needs a real token and the network, so it is not run in CI.)
+
+### 4.3 Put the secrets in Coolify
+
+Set these on the importer's Coolify application (4.4) in its **environment variables** section, in the dev environment, as secrets (the locked, hidden kind used in 2.1):
+
+- `GH_TOKEN`: paste `<from the GitHub token page, once>`.
+- `DATABASE_URL`: the full URL below. The role password is the value of the Coolify secret `RULES_IMPORTER_PASSWORD` from 2.1; it is letters and digits only, so it needs no URL escaping.
+
+  ```text
+  postgres://importer:<from Coolify secret RULES_IMPORTER_PASSWORD>@<db-uuid>:5432/areneon?sslmode=disable
+  ```
+
+  **Owner: verify on Coolify** whether the environment variables section can reference another variable instead of a second copy of the password; if it cannot, the pasted URL is the second place the importer password lives, and a rotation of `RULES_IMPORTER_PASSWORD` must update both. Do not put the URL anywhere else.
+- Optional: the three `RULES_IMPORT_*_TIMEOUT_MS` variables (plain values, only if needed).
+
+`sslmode`: `sslmode=disable` is a **dev-only exception**: the connection stays on `<coolify-network>`, one Docker network on one server, as in section 3. The importer's documented production setting (`packages/rules-importer/src/cli.ts`) is `sslmode=verify-full`, with `sslrootcert=<CA file>` when the server's CA is not a public one, and the production database (#715) must use it. **Owner: verify on Coolify** whether the PostgreSQL resource offers SSL and what certificate it presents; `verify-full` needs a certificate valid for the host name `<db-uuid>` and the CA file inside the container (a mounted file), neither of which this runbook could check. Keep `disable` for dev unless you enable SSL on the resource. Do not use `require`: in the importer's driver (`pg-connection-string` 2.14.1, checked in `node_modules`), `require`, `prefer` and `verify-ca` are aliases of `verify-full` (with a security warning) unless `uselibpqcompat=true` is set, so `require` needs the same CA and host name; write `verify-full` explicitly.
+
+If the settings offer a build-time versus run-time choice for a variable, choose **run-time only**: the image build needs neither secret, and a build-time variable can appear in the build log.
+
+Confirm the secrets are in no log:
+
+1. Check the output of a run. A `docker run --rm` (4.5) keeps no log, so 4.5 step 2 captures its output into a file and counts in that; the scheduled container of section 5 keeps its log, which is what the commands below read. The importer prints one JSON line and redacts the URL and the password from any error text it prints, but check, with counts only, on the Coolify server (read each value without echo, as in 2.4):
+
+   ```bash
+   read -rsp 'RULES_IMPORTER_PASSWORD: ' RULES_IMPORTER_PASSWORD; echo; export RULES_IMPORTER_PASSWORD
+   read -rsp 'GH_TOKEN: ' GH_TOKEN; echo; export GH_TOKEN
+   docker logs <importer-container> 2>&1 | grep -cF -- "$RULES_IMPORTER_PASSWORD"
+   docker logs <importer-container> 2>&1 | grep -cF -- "$GH_TOKEN"
+   docker logs <db-uuid> 2>&1 | grep -cF -- "$RULES_IMPORTER_PASSWORD"
+   unset RULES_IMPORTER_PASSWORD GH_TOKEN
+   ```
+
+   *Expected result:* each prints `0`. The same rule as 2.4 applies: a non-zero count means the secret is exposed; purge that log as in 2.4 step 2.3 and replace the secret (a new password also needs `ALTER ROLE importer PASSWORD …` by the superuser, from a session that does not log it, as in 2.3). The Postgres statement logging checks of 2.3 must still hold: `SELECT`s and `INSERT`s of the import carry no password anyway.
+2. Check the places Coolify keeps output that is not the container's Docker log: the application's deployment (build) log, and, once section 5 is in place, the scheduled task's execution log. **Owner: verify on Coolify** that neither shows a value; the deployment log of a run-time-only variable should not.
+3. Do the check again after every change to the secrets and after the first scheduled run.
+
+### 4.4 Build and deploy the image
+
+The image must be built from the repository root as its context (it copies `package.json`, `pnpm-lock.yaml` and several `packages/`). Two ways; the first is the one to try, the second is a fallback and is also how you check a build before wiring Coolify.
+
+**A. A Coolify application built from the repository** (**Owner: verify on Coolify** for every setting name here):
+
+1. Add a new application in the dev environment from the public repository `https://github.com/piglor/areneon` (no deploy key needed), on the **same server and destination (network)** as the database resource.
+2. Build pack: **Dockerfile**. Base directory: the repository root. Dockerfile location: `packages/rules-importer/Dockerfile`. Leave any build **target** empty so the default, the production `runtime` stage, is built. Never select `e2e`: it contains a stand-in `gh` and test fixtures.
+3. Branch or commit: `main`, or better a commit you reviewed. Turn automatic deploy on push **off** unless you want every `main` merge to rebuild the importer.
+4. No domain, no exposed port, no published port, no health check (the image listens on nothing). Set the environment variables of 4.3.
+5. Do not start it as a service yet. If Coolify starts it, the container runs one import and exits; that is harmless, but it is not how it is meant to run. Section 5 chooses how it runs.
+
+**B. Build on the server, run by hand** (works without any Coolify feature; this is what 4.5 uses):
+
+```bash
+git clone https://github.com/piglor/areneon.git areneon-importer
+cd areneon-importer && git checkout <main commit SHA you reviewed>
+docker build -f packages/rules-importer/Dockerfile -t areneon-rules-importer:local .
+```
+
+*Expected result:* the build ends with the image `areneon-rules-importer:local`; `docker run --rm --entrypoint id areneon-rules-importer:local -u` prints `1000`. Remove the clone when you are done with it.
+
+### 4.5 First run, by hand
+
+Run the first import yourself, on the Coolify server, so you see the output and the exit code. The command is the one the schedule will run (same image, same environment).
+
+1. Read the two secrets without echo (an admin account only you use, `unset HISTFILE` first, as in 2.2):
+
+   ```bash
+   unset HISTFILE
+   read -rsp 'DATABASE_URL: ' DATABASE_URL; echo; export DATABASE_URL
+   read -rsp 'GH_TOKEN: ' GH_TOKEN; echo; export GH_TOKEN
+   ```
+
+   Paste `<the DATABASE_URL secret>` and `<the GH_TOKEN secret>` at the prompts.
+   *Expected result:* only the prompts are printed.
+2. Run the image on the database's network, passing the variables by name:
+
+   ```bash
+   docker run --rm --network <coolify-network> -e DATABASE_URL -e GH_TOKEN areneon-rules-importer:local >importer.out 2>&1
+   echo "exit=$?"; cat importer.out
+   ```
+
+   *Expected result:* one JSON line and `exit=0`. If Releases exist, every released snapshot and channel artifact shows `inserted` (4.6). If no rules Release exists yet, the line has an empty `steps` list; merge a rules change and approve its `rules-dev` publish (4.1), then run again.
+3. Check the captured output for the secrets, then delete it (the password is read without echo, as in 2.4; counts only):
+
+   ```bash
+   read -rsp 'RULES_IMPORTER_PASSWORD: ' RULES_IMPORTER_PASSWORD; echo
+   grep -cF -- "$RULES_IMPORTER_PASSWORD" importer.out; grep -cF -- "$GH_TOKEN" importer.out
+   unset RULES_IMPORTER_PASSWORD; rm importer.out
+   ```
+
+   *Expected result:* `0` twice.
+4. Run the step 2 command again, without the `>importer.out 2>&1` redirect.
+   *Expected result:* `exit=0` and no `inserted`: the stored snapshots are `referenced`, the channel steps `already-present`. The second run downloads only the channel artifacts.
+5. Clear the secrets: `unset DATABASE_URL GH_TOKEN`.
+
+Checked locally (not on Coolify): the same image against a throwaway Postgres with a stand-in `gh` replaying recorded releases, via `make importer-e2e`: a tampered asset is refused and nothing is written; then the import commits (`inserted`, `inserted`); then the re-run is `referenced`, `already-present` with exit 0 and downloads no snapshot.
+
+### 4.6 The summary line and exit codes
+
+The importer prints exactly one line to stdout and exits.
+
+Success or stale channel: `{"ok":<bool>,"steps":[ … ]}`, steps in plan order (snapshots by hash, then channel steps by channel and seq). Failure: `{"ok":false,"error":"<ErrorName>: <message>"}` (the database URL and password are removed from the message).
+
+| Step | Status | Meaning |
+|---|---|---|
+| snapshot | `inserted` | New snapshot row written. |
+| snapshot | `already-present` | The snapshot was downloaded and found stored already (another import stored it first). Rare. No change. |
+| snapshot | `referenced` | The snapshot was already stored, so it was **not downloaded or attested again**; a channel step names it, and the stored row was checked to hash to its own body. No change. This is the normal status of every stored snapshot on a re-run. |
+| channel | `inserted` | New `rules_release` row (its `seq` is above the channel's maximum). |
+| channel | `already-present` | The same channel, `seq`, hash and `source_commit` are stored. No change; the normal status of every old channel artifact on a re-run. |
+| channel | `stale` | The artifact's `seq` is at or below the channel's maximum, but the stored row at that `seq` differs or does not exist. Nothing is written for it, `ok` is `false` and the exit is 1. The other steps of the same run are **not** rolled back: they commit (a partial commit). Since the stale artifact is a permanent Release listed on every run, every later run exits 1 too, until that Release is removed. |
+
+| Exit | Meaning | Examples (all checked locally) |
+|---|---|---|
+| 0 | Every step was `inserted`, `already-present` or `referenced`. | `{"ok":true,"steps":[ … ]}` |
+| 1 | Refused or stale: the plan, the Release listing, the attestation, the database, a timeout, or a `stale` step. A refused run that is not `stale` writes nothing; a `stale` run commits its other steps (see the `stale` row). | `ImportPlanError: could not list the released rules artifacts: … gh attestation verify exited 1 …`; `ImportPlanError: channel … names snapshot …, which is neither released nor imported`; a wrong database password (`error: password authentication failed for user "importer"`) or an unreachable database (`Error: connect ECONNREFUSED …`) are exit **1**, not 2. |
+| 2 | Configuration: the importer cannot start the import. | `ConfigError: DATABASE_URL is not set`; `ConfigError: RULES_IMPORT_LOCK_TIMEOUT_MS must be a whole number of milliseconds …`; `SessionConfigError: the database URL must not set statement_timeout …`; `SessionConfigError: the database URL is not a connection string`; `SessionConfigError: <setting> is … ms, not the requested … ms` (checked in the code, not run); `ConfigError: the rules import runs as importer, not session areneon_reader …` |
+
+What to do for each non-zero exit:
+
+| Exit and message | Action |
+|---|---|
+| 2, `DATABASE_URL is not set` | The variable is missing from the application or the `docker run`. Set it (4.3). |
+| 2, a timeout variable | Fix or remove the `RULES_IMPORT_*_TIMEOUT_MS` value (whole milliseconds, 1 to 999999999). |
+| 2, URL sets a timeout or `options` | Remove that query parameter from `DATABASE_URL`. |
+| 2, `SessionConfigError: the database URL is not a connection string` | `DATABASE_URL` is malformed (a password with a reserved character, a missing scheme). Fix the secret. |
+| 2, `SessionConfigError: <setting> is … ms, not the requested … ms` | The server session did not take the requested timeouts (a connection pooler that drops startup parameters). Connect to the database directly, not through a pooler. |
+| 2, runs as importer, not … | The URL logs in as another role. Use the `importer` user. |
+| 1, `password authentication failed` or a connection error | Wrong or rotated `importer` password in `DATABASE_URL`, wrong `<db-uuid>`, wrong network, or the database is down. Check with `psql` as in 4.7 and the resource's status. Nothing was written. |
+| 1, `ImportPlanError: could not list …` | Read the rest of the message; see 4.8 (attestation, token, GitHub). |
+| 1, `names snapshot …, which is neither released nor imported` | See 4.8 (unreleased snapshot). |
+| 1, a timeout (`canceling statement due to …`) | Raise the matching `RULES_IMPORT_*_TIMEOUT_MS`; look for another long session on the database. The import rolled back. |
+| 1, `"status":"stale"` | See 4.8 (stale channel): the other steps committed, and the exit repeats on every run until the Release is removed (an owner decision; ticket #811 will change this). |
+
+### 4.7 Verify an import
+
+Use a one-off `psql` container on the internal network, as in 2.2. Read the reader password without echo (`<from Coolify secret RULES_READER_PASSWORD>`):
+
+```bash
+unset HISTFILE
+PSQL_IMAGE='postgres:18.6@sha256:74935e72241653ca55e0414067e6d8763aceb8a810eb51b452253ec3dcfc4336'
+read -rsp 'RULES_READER_PASSWORD: ' PGPASSWORD; echo; export PGPASSWORD
+psql_reader() { docker run --rm -i --network <coolify-network> -e PGPASSWORD "$PSQL_IMAGE" \
+  psql -h <db-uuid> -p 5432 -U areneon_reader -d areneon -v ON_ERROR_STOP=1 "$@"; }
+```
+
+1. The stored snapshots:
+
+   ```bash
+   psql_reader -c 'SELECT hash, source_commit, schema_version, showdown_commit, published_at FROM rules.rules_snapshot ORDER BY published_at DESC;'
+   ```
+
+   *Expected result:* one row per released snapshot: a 64-hex `hash`, the 40-hex `source_commit` of the commit that built it, `schema_version` `1`, and `showdown_commit` equal to the current pin.
+2. The active release of each channel (the highest `seq`):
+
+   ```bash
+   psql_reader -c 'SELECT DISTINCT ON (channel) channel, seq, hash, source_commit, activated_at FROM rules.rules_release ORDER BY channel, seq DESC;'
+   ```
+
+   *Expected result:* a `stable` row whose `seq` and `hash` equal `rules/channels/stable.json` on `main`, and whose `source_commit` is the commit that last changed that file.
+3. Every stored body hashes to its key, and every release names a stored snapshot:
+
+   ```bash
+   psql_reader -c "SELECT s.hash = encode(sha256(s.body), 'hex') AS body_matches_hash, r.channel, r.seq
+     FROM rules.rules_release r JOIN rules.rules_snapshot s USING (hash) ORDER BY r.channel, r.seq;"
+   psql_reader -c 'SELECT (SELECT count(*) FROM rules.rules_snapshot) AS snapshots, (SELECT count(*) FROM rules.rules_release) AS releases;'
+   ```
+
+   *Expected result:* `body_matches_hash` is `t` on every row; the counts equal the number of `rules-snapshot-*` and `rules-channel-*` Releases on GitHub (Releases page, or `gh release list --repo piglor/areneon` from your own machine).
+4. As the `importer` (what the importer's own role sees), with its own password in a fresh `read -rsp` (`<from Coolify secret RULES_IMPORTER_PASSWORD>`):
+
+   ```bash
+   read -rsp 'RULES_IMPORTER_PASSWORD: ' PGPASSWORD; echo; export PGPASSWORD
+   psql_importer() { docker run --rm -i --network <coolify-network> -e PGPASSWORD "$PSQL_IMAGE" \
+     psql -h <db-uuid> -p 5432 -U importer -d areneon -v ON_ERROR_STOP=1 "$@"; }
+   psql_importer -c 'SELECT count(*) FROM rules.rules_snapshot;' -c 'SELECT channel, max(seq) FROM rules.rules_release GROUP BY channel;'
+   ```
+
+   *Expected result:* the same snapshot count as step 3 and the same `stable` maximum `seq` as step 2.
+5. Run the importer again (4.5 step 2).
+   *Expected result:* `exit=0`, only `referenced` and `already-present` steps.
+6. End the session: `unset PGPASSWORD`.
+
+(The queries were run locally as `areneon_reader` and `importer` against the database that `make importer-e2e` filled.)
+
+### 4.8 Failure modes and fixes
+
+Every failure below leaves the database unchanged, except a `stale` step: the run commits its other steps and exits 1 (partial commit), and every later run exits 1 again until the stale Release is removed. The importer never retries inside a run; the next run is the retry.
+
+**A snapshot that was never released** (`channel <channel> seq <n> names snapshot <hash>, which is neither released nor imported`; exit 1).
+A channel artifact was released, or its Release exists, but the snapshot it names has no Release and is not stored. Causes: a cancelled or never approved `publish` run, a channel change that predates the publish workflow, or a Release that is still a draft.
+1. In GitHub, open the Actions run of `rules-publish` for the commit that last changed the snapshot's records (`source_commit` of the artifact, or the commit the channel names). If `publish` is waiting, approve `rules-dev` (3.2). If it was cancelled or failed, re-run it: re-run only the `publish` job while the plan artifact is still kept (90 days); after that, re-run the whole workflow.
+2. A snapshot older than the workflow was never released. Re-run that commit's workflow, or revert the records in a PR so a new snapshot is published (CLAUDE.md, rules store).
+3. Run the importer again.
+   *Expected result:* `inserted` for the snapshot, then the channel.
+
+**An attestation or listing failure** (`ImportPlanError: could not list the released rules artifacts: <file>: gh attestation verify exited 1: …`, or `ReleaseSourceError` text inside it; exit 1).
+`gh` could not verify an asset against repo `piglor/areneon`, workflow `rules-publish.yml`, ref `refs/heads/main`, a GitHub-hosted runner, and the asset's own sha256; or a Release is a pre-release, has no asset, or an asset is incomplete; or `gh` itself failed.
+1. Read the stderr text after `exited 1:`. `HTTP 401`, `HTTP 403`, `rate limit`, `bad credentials` or `authentication`: the token expired, lost its repository selection or hit a rate limit. Create a new token (4.2), replace the Coolify secret, run again.
+2. `no attestations found` for an asset: its Release was made without the `attest` step, or the attestation was deleted. The `publish` job attests before it releases, so look at that run in Actions.
+3. `no statement subject has sha256 …`, a signer or ref mismatch, `is not in canonical form`, or `sha256 of its bytes is not …`: the asset differs from what `publish` attested, or came from another workflow or ref. Treat it as a possible tampering: **do not import around it**. Verify the asset yourself from your own machine (`gh attestation verify <downloaded file> --repo piglor/areneon --signer-workflow piglor/areneon/.github/workflows/rules-publish.yml --source-ref refs/heads/main`), and record the finding on the ticket. **Owner: decide** whether to delete that Release and re-run `publish` so it is created again; the database is not edited either way.
+4. A network failure, `timed out after …`, or `exceeded … bytes`: run again; if it persists, check the server's outbound HTTPS.
+The same message, exit 1, appears in the local check where one asset is tampered (`make importer-e2e`): nothing is written, not even the snapshot that verified before it.
+
+**A stale channel** (`"status":"stale"` in the summary, `ok` false, exit 1).
+A channel artifact has a `seq` at or below the stored maximum and is not identical to the stored row at that `seq`. Normal changes cannot do this (CI makes `seq` rise by one per change). The usual cause is a `publish` approved late for an older commit after a newer one was already imported, or a Release edited by hand.
+1. List what the database holds: the query of 4.7 step 2, and `SELECT channel, seq, hash, source_commit FROM rules.rules_release ORDER BY channel, seq;`.
+2. List the channel Releases on GitHub and find the one whose `seq`, hash or commit differs from the row at that `seq`.
+3. The database is authoritative and append-only; do not edit it. **Owner: decide**: a superseded older Release (a late approval) can be deleted on GitHub so the importer stops listing it; a Release that disagrees with `rules/channels/<channel>.json` on `main` is a bug to record on the ticket first.
+   Until the offending Release is removed, **every** run exits 1 with the same `stale` step (partial commit, perpetual exit 1 until the Release is removed), while its other steps still commit. Deleting the Release is an **Owner: decide** choice, recorded on the ticket. This is the current behaviour: ticket #811 will change the importer so that a stale artifact is skipped and logged with exit 0 (as ADR-007 §6 says); this section will then be updated.
+
+**Other** (see 4.6): a changed `importer` password (exit 1), a missing variable (exit 2), a timeout (exit 1).
 
 ## 5. Schedule the importer
 
-To be written in #770.
+The importer must run on a schedule, because nothing pushes to it (ADR-007 §6: a pull model; the database is never exposed). ADR-007 lists Coolify's scheduled execution as unverified and names the fallback: a long-running container that polls. This section is the **spike** that settles it (#770 documents it, #771 is where the owner records the result). Everything about Coolify's scheduling below is **Owner: verify on Coolify**; this runbook could not check it.
+
+Frequency: rules changes are rare, and a publish waits for a human approval first, so hourly is plenty. The import is idempotent and each channel is locked with a PostgreSQL advisory lock for the transaction, so an accidental overlap of two runs is safe, but it is still wasteful. Each run lists the Releases and downloads and attests every channel artifact (the history grows with each channel change), and each `gh` call is limited to 60 seconds (the database connection to 10 seconds); if a run ever takes minutes in total, that is a finding to record.
+
+### 5.1 The options
+
+| | **A. Scheduled task on the application** | **B. A cron container (polling loop)** |
+|---|---|---|
+| What runs | Coolify runs a command at a cron time inside the application's container. | A container that stays up and runs the importer every N seconds, restarting on failure. |
+| Fit with the image | The image's entrypoint runs one import and exits, so there is no running container to run a command in. The container must be kept alive (for example a different entrypoint such as `sleep infinity`; a start-command override alone only adds arguments to `node …/cli.ts`, because the Dockerfile sets an `ENTRYPOINT`), and the task's command is `node packages/rules-importer/src/cli.ts`. | The same image with an entrypoint override that loops: `sh -c 'while true; do node packages/rules-importer/src/cli.ts; sleep 3600; done'` (the image has `sh` and `sleep` from the Debian base, and no cron). |
+| Secrets | Application environment variables (4.3). | Same, through a compose file that references them. |
+| Run history, exit code | Coolify's execution log per run, with a status. **Owner: verify** that a non-zero exit is shown as failed. | Only the container's log; the loop must record the exit code in the log line it prints, and one run's failure must not stop the loop. |
+| Failure alerting | Coolify notification settings, if they cover scheduled tasks. **Owner: verify.** | Container restart policy only; no per-run status. |
+| Moving parts | Coolify's scheduler, the kept-alive container. | A compose resource, a long-lived container, no dependency on the scheduler. |
+| Cost | One idle container. | One container, mostly sleeping. |
+
+How to choose: take **A** if all of its acceptance checks in 5.2 pass, because it gives a per-run history and exit status in Coolify. Take **B** if the entrypoint override or the command execution does not work, if a failed run is not visible, or if the scheduler drifts or skips runs. B is the ADR's fallback and needs nothing from Coolify's scheduler. A third option, a cron entry on the server's host running `docker run`, would put the secrets on the host and in a crontab, which this runbook forbids; do not use it.
+
+### 5.2 The spike (the owner runs this)
+
+**Spike.** Do 4.1 to 4.7 first; the manual import must work and be verified before any schedule is added. Use the dev environment only.
+
+1. **Try A.**
+   1. In the application of 4.4 A, set a custom entrypoint that keeps the container alive (look in the application's advanced or custom Docker options for an entrypoint or container option; **Owner: verify on Coolify** that one exists and that the Dockerfile's `ENTRYPOINT` is replaced, not extended). Deploy; the container should stay running.
+   2. Add a scheduled task: the command `node packages/rules-importer/src/cli.ts`, the container being the application's, the schedule a cron expression (for example `17 * * * *`, hourly at minute 17), with a timeout of a few minutes if the form has one.
+   3. Use the task's option to run it now, or wait for the time.
+   *Acceptance checks:* the run happens at the scheduled time (note the clock time, and how Coolify shows it); the log of the run is exactly the importer's JSON line; a run with nothing new shows `referenced` and `already-present`; the container's environment, and so `DATABASE_URL` and `GH_TOKEN`, is the one of 4.3 (the import connects as `importer`).
+2. **Failure drill (A).** Temporarily set `RULES_IMPORT_LOCK_TIMEOUT_MS` to `abc`, run the task, then remove the variable. *Acceptance check:* the run is shown as failed and the log shows `ConfigError: … must be a whole number of milliseconds …` (exit 2). Note what Coolify does on a failure (a notification, a retry, nothing). Do not use a wrong `DATABASE_URL` for the drill: that risks writing a bad secret.
+3. **Two consecutive scheduled runs.** Let at least two scheduled executions pass unattended, and look at the history: both ran at their time, both `exit 0`.
+4. **Leak check.** Do the log checks of 4.3 against the container, and look at the scheduled task's execution log in Coolify. *Acceptance check:* every count is `0` and no value is visible.
+5. **Redeploy.** Redeploy the application (or restart the server's Docker). *Acceptance check:* the container comes back, the schedule is still there, and the next run happens.
+6. **If any acceptance check above fails, try B** (**Owner: verify on Coolify** every compose detail): add a Docker Compose resource from the same repository, in the same environment and network, with a service like this one (no `ports`, no `volumes`; the variable names are the secrets of 4.3, set in the resource's environment variables):
+
+   ```yaml
+   services:
+     importer:
+       build:
+         context: .
+         dockerfile: packages/rules-importer/Dockerfile
+       restart: unless-stopped
+       entrypoint: ["sh", "-c", "while true; do node packages/rules-importer/src/cli.ts; echo \"importer exit=$$?\"; sleep 3600; done"]
+       environment:
+         DATABASE_URL: ${DATABASE_URL}
+         GH_TOKEN: ${GH_TOKEN}
+   ```
+
+   This is a compose file: `$$` is the escaped `$`, so the container sees `$?`, and `${DATABASE_URL}` is replaced by the resource's variable. **Owner: verify on Coolify** that Coolify does not rewrite the `$$`. The service must join the database's network (`<coolify-network>`); how a compose resource is attached to an existing destination network is **Owner: verify on Coolify**. Repeat checks 3 to 5 (the failure drill needs a temporary `RULES_IMPORT_LOCK_TIMEOUT_MS=abc` and a redeploy) and note that run history exists only in the container log.
+7. **Outside check** (also #771's "done when"): from a machine outside the server, the database port must not answer, for example `nc -vz -w 5 <server public address> 5432` must fail or time out; and the importer's application has no published port.
+8. Record the decision (A or B) and clean up: remove the temporary variable, and any test schedule that you will not keep.
+
+### 5.3 Evidence to record on #771
+
+Post, without any secret value or URL with a password:
+
+- Coolify's version, and the Coolify setting names you used (so this runbook can be corrected from the real ones).
+- Option tried (A, then B if needed), and for each acceptance check pass or fail with the reason.
+- The schedule expression, and the timestamps and exit status of at least two consecutive unattended runs, with the importer's summary line (hashes and statuses only).
+- The failure drill: what Coolify showed and whether a notification arrived.
+- The leak check: the counts (all `0`) and which logs were covered (container, database, deployment log, execution log).
+- The redeploy check, and the outside port check output.
+- The verification queries of 4.7 (output of steps 1 and 2).
+- The final decision, and any correction to this runbook that you made (a PR).
