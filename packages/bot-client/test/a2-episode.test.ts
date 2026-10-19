@@ -103,7 +103,10 @@ describe("a2Episode on a battle of the local server", () => {
       expect([ "", ident.slice(ident.indexOf(": ") + 2)]).toContain(set.name);
     });
     expect(await readEpisode(JSON.parse(JSON.stringify(episode)), { known_synthetic: played })).toEqual(episode);
-    await expect(readEpisode(JSON.parse(JSON.stringify(episode)), { known_synthetic: KNOWN })).rejects.toThrow(/known synthetic/);
+    // Under the server's names the team is a different set of sets: only its own hash proves it.
+    const asPlayed = readEpisode(JSON.parse(JSON.stringify(episode)), { known_synthetic: KNOWN });
+    if (played.size > KNOWN.size) await expect(asPlayed).rejects.toThrow(/known synthetic/);
+    else await expect(asPlayed).resolves.toEqual(episode);
     const other = await a2Episode(theirs, options({ team: stamp(rival) }));
     expect(other.player).not.toBe(episode.player);
     expect(other.team.team.map((set) => set.species)).toEqual(rival.map((set) => set.species));
