@@ -18,6 +18,7 @@ import {
 } from "./observation.ts";
 import { decodeRequest } from "./request.ts";
 import type { BattleRecord, Player } from "./runner.ts";
+import type { BattleClass } from "./team-class.ts";
 
 /** The Sha256 port on Node's `createHash` (A1, A2). */
 export const nodeSha256: Sha256 = (bytes) => Promise.resolve(createHash("sha256").update(bytes).digest("hex"));
@@ -83,13 +84,14 @@ export function playerChannel(log: unknown): PlayerChannel {
 
 /**
  * A1: one player's channel of a recorded battle, up to and including its
- * `request_seq`-th request.
+ * `request_seq`-th request. Its class is the battle's, from both teams
+ * (`battleClass`), never a label of the caller's.
  */
 export function recordedChannel(
   record: BattleRecord,
   player: Player,
   request_seq: number,
-  data_class: PlayerChannelLog["data_class"],
+  data_class: BattleClass,
 ): PlayerChannel {
   const lines = record.channels[player];
   let seen = 0;

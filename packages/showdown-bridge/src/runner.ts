@@ -9,6 +9,7 @@ import type { Engine, PokemonSet, SimBattle, SimStream } from "./engine.ts";
 import { resolveFormat, type VersionManifest } from "./formats.ts";
 import type { FormatRulesRecord, RulesSnapshot } from "./rules.ts";
 import { type DecodedRequest, decodeRequest } from "./request.ts";
+import { teamHash } from "./team-class.ts";
 import { validateTeam } from "./teams.ts";
 
 export type Player = "p1" | "p2";
@@ -131,6 +132,12 @@ export interface BattleRecord {
    * The ObservationBuilder's only battle input (ADR-008 §5).
    */
   channels: Record<Player, string[]>;
+  /**
+   * `teamHash` of each seat's set array as the battle ran with it. The class
+   * of an artifact is proven against these (ADR-008 §5): a team that does not
+   * hash to its seat's entry did not play this battle.
+   */
+  team_hashes: Record<Player, string>;
   /** Every submitted choice, including those refused as `[Unavailable choice]`. */
   choices: { player: Player; request_seq: number; choice: string; refused?: string }[];
   /** Hidden state, like `omniscient_log`: never an actor input. */
@@ -177,9 +184,14 @@ export async function runBattle(options: BattleOptions): Promise<BattleRecord> {
   const { engine, formatId, seed, teams, actors, maxTurns = 300, snapshot } = options;
   const identities = options.players ?? { p1: { name: "p1" }, p2: { name: "p2" } };
   validatePlayers(identities);
+  // The hash is of the team as the caller brought it, and the validator
+  // fills defaults in place: it and the stream work on copies, so the
+  // caller's sets stay as brought and hash the same after the run.
+  const team_hashes = { p1: teamHash(teams.p1), p2: teamHash(teams.p2) };
+  const played = { p1: structuredClone(teams.p1), p2: structuredClone(teams.p2) };
   const resolved = resolveFormat(engine, formatId, snapshot);
   for (const player of PLAYERS) {
-    const verdict = validateTeam(engine, resolved, teams[player]);
+    const verdict = validateTeam(engine, resolved, played[player]);
     if (!verdict.valid) throw new InvalidTeamError(player, verdict.problems);
   }
 
@@ -195,6 +207,7 @@ export async function runBattle(options: BattleOptions): Promise<BattleRecord> {
     omniscient_log: [] as string[] as OmniscientLog,
     requests: { p1: [], p2: [] },
     channels: { p1: [], p2: [] },
+    team_hashes,
     choices: [],
     hidden_verdicts: [],
   };
@@ -295,7 +308,7 @@ export async function runBattle(options: BattleOptions): Promise<BattleRecord> {
           `>player ${player} ${JSON.stringify({
             name: identities[player].name,
             ...(identities[player].avatar ? { avatar: identities[player].avatar } : {}),
-            team: engine.sim.Teams.pack(teams[player]),
+            team: engine.sim.Teams.pack(played[player]),
           })}`,
       ),
     ].join("\n"),

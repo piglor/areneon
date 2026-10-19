@@ -133,6 +133,7 @@ export async function readServerInputLog(
  */
 export interface HarnessFixture {
   schema_version: 3;
+  // synthetic by construction (recorded fixtures); derive it from team hashes (team-class.ts) when real teams can reach this path.
   data_class: "synthetic";
   rights: "cc0-synthetic";
   license: "CC0-1.0";
@@ -314,6 +315,7 @@ export function channelFromFrames(
   seat: Seat,
 ): { channel: PlayerChannel; dropped: string[]; resent: number; requests: number } {
   const reader = new ProtocolReader();
+  // synthetic by construction (recorded fixtures); derive it from team hashes (team-class.ts) when real teams can reach this path.
   const adapter = new A2Channel({ room, player: seat, data_class: "synthetic" });
   let requests = 0;
   for (const frame of frames) {
@@ -369,6 +371,7 @@ export async function buildHarnessFixture(input: FixtureInput): Promise<HarnessF
   const winner = SEATS.find((seat) => players[seat].name === log.winner) ?? null;
   const fixture: HarnessFixture = {
     schema_version: 3,
+    // synthetic by construction (recorded fixtures); derive it from team hashes (team-class.ts) when real teams can reach this path.
     data_class: "synthetic",
     rights: rightsFor("synthetic") as "cc0-synthetic",
     license: "CC0-1.0",
@@ -518,6 +521,7 @@ function frameProblems(fixture: HarnessFixture, seat: Seat): string[] {
 export async function verifyHarnessFixture(engine: Engine, stored: HarnessFixture | HarnessFixtureV2): Promise<void> {
   const fixture = upgradeFixture(stored);
   const problems: string[] = [];
+  // synthetic by construction (recorded fixtures); derive it from team hashes (team-class.ts) when real teams can reach this path.
   if (fixture.data_class !== "synthetic" || fixture.rights !== rightsFor(fixture.data_class)) {
     problems.push("not synthetic with cc0-synthetic rights");
   }
@@ -541,6 +545,7 @@ export async function verifyHarnessFixture(engine: Engine, stored: HarnessFixtur
     }
     for (const own of fixture.channels[seat]) {
       const channel = playerChannel(own);
+      // synthetic by construction (recorded fixtures); derive it from team hashes (team-class.ts) when real teams can reach this path.
       if (channel.player !== seat || channel.data_class !== "synthetic") problems.push(`${seat} channel is not its own`);
       if (channel.lines.some((line) => line.startsWith("|showteam|"))) problems.push(`${seat} channel has a team sheet`);
     }
@@ -760,6 +765,7 @@ export async function playBotVsBot(options: BotVsBotOptions): Promise<BotPair> {
     const transport = await open(to);
     return tapTransport(drop === undefined ? transport : drop.wrap(who, index, transport), frames);
   };
+  // synthetic by construction (recorded fixtures); derive it from team hashes (team-class.ts) when real teams can reach this path.
   const common = { engine, snapshot, url, format, data_class: "synthetic" as const, battles: 1 };
   let loggedIn: () => void = () => {};
   const ready = new Promise<void>((done) => (loggedIn = done));

@@ -14,9 +14,11 @@ import {
   GOLDEN_DIR,
   GOLDEN_FORMAT,
   goldenBattle,
+  syntheticFixtureHashes,
   syntheticTeam,
 } from "../src/golden.ts";
 import {
+  battleClass,
   type BattleRecord,
   buildObservation,
   decodeRequest,
@@ -64,6 +66,7 @@ function decisionPrefixes(log: PlayerChannelLog): PlayerChannelLog[] {
 }
 
 let engine: Engine;
+const synthClass = (record: BattleRecord) => battleClass(record.team_hashes, syntheticFixtureHashes(engine));
 let golden: BattleRecord;
 beforeAll(async () => {
   engine = loadEngine();
@@ -124,7 +127,7 @@ describe("golden parsing (ADR-008 §5 adversarial 4)", () => {
     for (const player of ["p1", "p2"] as const) {
       for (const request of golden.requests[player].filter((r) => r.phase !== "wait")) {
         const observation = await buildObservation({
-          channel: recordedChannel(golden, player, request.request_seq, "synthetic"),
+          channel: recordedChannel(golden, player, request.request_seq, synthClass(golden)),
           team: synthetic(),
           manifest: golden.manifest,
           sha256: nodeSha256,
@@ -218,7 +221,7 @@ describe("the canary test (ADR-008 §5 adversarial 2)", () => {
         .filter((r) => r.phase !== "wait")
         .map((r) =>
           observe({
-            channel: recordedChannel(record, player, r.request_seq, "synthetic"),
+            channel: recordedChannel(record, player, r.request_seq, synthClass(record)),
             team: teams[player],
             manifest: record.manifest,
           }),
@@ -244,13 +247,13 @@ describe("the canary test (ADR-008 §5 adversarial 2)", () => {
   it("would catch a leak: a smuggled opponent SECRET line is refused by the adapter itself", () => {
     const secret = canaries("p2").lines.find((line) => /\|\d+\/(?!100\b)\d+/.test(line)) as string;
     expect(secret).toBeDefined();
-    const honest = recordedChannel(record, "p1", 1, "synthetic");
+    const honest = recordedChannel(record, "p1", 1, synthClass(record));
     expect(() => playerChannel({ ...honest, lines: [secret, ...honest.lines] })).toThrow(/only the opponent may see/);
   });
 
   it.each(["stats", "sets"] as const)("would catch a leak: a smuggled opponent canary (%s) is found", async (kind) => {
     const secret = canaries("p2")[kind][0] as string;
-    const honest = recordedChannel(record, "p1", 1, "synthetic");
+    const honest = recordedChannel(record, "p1", 1, synthClass(record));
     const leaky = playerChannel({ ...honest, lines: [secret, ...honest.lines] });
     const observation = await observe({ channel: leaky, team: teams.p1, manifest: record.manifest });
     expect(leaks(jcs(observation as unknown as Json), secret)).toBe(true);
@@ -261,7 +264,7 @@ describe("the canary test (ADR-008 §5 adversarial 2)", () => {
     const smuggled = { ...(honest as Observation), team: teams.p2 };
     const bytes = jcs(smuggled as unknown as Json);
     expect(canaries("p2").sets.some((secret) => leaks(bytes, secret))).toBe(true);
-    const channel = recordedChannel(record, "p1", 1, "synthetic");
+    const channel = recordedChannel(record, "p1", 1, synthClass(record));
     await expect(observe({ channel, team: teams.p2, manifest: record.manifest })).rejects.toThrow(
       /the team is not this player's: no set matches Venusaur/,
     );
@@ -482,6 +485,6 @@ describe("buildObservation and its adapter", () => {
     expect(() => playerChannel({ ...p1(), lines: ["|-damage|p2b: Gengar|102/165"] })).toThrow(/only the opponent may see/);
     // Their public half, and the player's own exact HP, are fine.
     expect(() => playerChannel({ ...p1(), lines: ["|-damage|p2b: Gengar|62/100", "|-damage|p1a: Venusaur|120/165"] })).not.toThrow();
-    expect(() => recordedChannel(golden, "p1", 999, "synthetic")).toThrow(/no request 999/);
+    expect(() => recordedChannel(golden, "p1", 999, synthClass(golden))).toThrow(/no request 999/);
   });
 });

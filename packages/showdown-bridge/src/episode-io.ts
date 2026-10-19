@@ -9,6 +9,7 @@ import { type Episode, rightsFor } from "./episode.ts";
 import { buildObservation, type PlayerChannel } from "./observation.ts";
 import { nodeSha256, playerChannel } from "./player-channel.ts";
 import type { BattleRecord, Player } from "./runner.ts";
+import { higherClass, type SyntheticTeamHashes, teamHash } from "./team-class.ts";
 
 export class EpisodeError extends Error {
   override name = "EpisodeError";
@@ -61,11 +62,21 @@ function cut(channel: PlayerChannel, seq: number): PlayerChannel | undefined {
  * - On A2, every decision carries its deadline record and timer context, the
  *   never-auto-choose evidence ADR-005 needs.
  *
+ * - A team labelled `synthetic` must hash to a member of `known_synthetic`
+ *   (required: omitting it would leave the class unchecked). The stored Episode does not name the opponent's team or class, so
+ *   the opponent half of the both-teams rule is checked when it is written
+ *   (`episodeFromRecord`), not here.
+ *
  * Every refusal is an EpisodeError.
  */
-export async function readEpisode(value: unknown): Promise<Episode> {
+export async function readEpisode(
+  value: unknown,
+  { known_synthetic }: { known_synthetic: SyntheticTeamHashes },
+): Promise<Episode> {
   try {
-    return await read(structuredClone(value));
+    const episode = await read(structuredClone(value));
+    assertProven(episode.team, known_synthetic);
+    return episode;
   } catch (error) {
     if (error instanceof EpisodeError) throw error;
     throw new EpisodeError(`invalid Episode: ${(error as Error).message}`);
@@ -111,9 +122,20 @@ async function read(value: unknown): Promise<Episode> {
   return episode;
 }
 
+/** A team labelled `synthetic` must be one the source knows is synthetic. */
+function assertProven(team: PrivateTeamSpec, known: SyntheticTeamHashes): void {
+  if (team.data_class === "synthetic" && !known.has(teamHash(team.team))) {
+    throw new EpisodeError("a team labelled synthetic is not a known synthetic team");
+  }
+}
+
 export interface EpisodeOptions {
   /** The player's own team, as they brought it. */
   team: PrivateTeamSpec;
+  /** The opponent's team as the battle ran with it, for its class only: it is never stored. */
+  opponent_team: PrivateTeamSpec;
+  /** The synthetic teams there are (hashes); a `synthetic` label outside it is refused. */
+  known_synthetic: SyntheticTeamHashes;
   behaviour_policy_id: string;
 }
 
@@ -121,12 +143,25 @@ export interface EpisodeOptions {
  * A1: one player's Episode of a recorded battle. Only that player's channel,
  * requests and choices go in; A1 has no timer, so no decision carries a
  * deadline record.
+ *
+ * The class is the higher of BOTH teams' (ADR-008 §5): the stored channel
+ * shows what the opponent revealed. Each team must hash to the entry the
+ * battle ran with (`record.team_hashes`), and a `synthetic` label must be
+ * proven by `known_synthetic`; anything else is refused.
  */
-export function episodeFromRecord(
+export async function episodeFromRecord(
   record: BattleRecord,
   player: Player,
-  { team, behaviour_policy_id }: EpisodeOptions,
+  { team, opponent_team, known_synthetic, behaviour_policy_id }: EpisodeOptions,
 ): Promise<Episode> {
+  const rival = player === "p1" ? "p2" : "p1";
+  for (const [who, spec] of [[player, team], [rival, opponent_team]] as const) {
+    if (teamHash(spec.team) !== record.team_hashes[who]) {
+      throw new EpisodeError(`the team given for ${who} is not the one ${who} played the battle with`);
+    }
+    assertProven(spec, known_synthetic);
+  }
+  const data_class = higherClass(team.data_class, opponent_team.data_class);
   const decisions = record.choices
     .filter((choice) => choice.player === player)
     .map(({ request_seq, choice, refused }) => {
@@ -139,15 +174,15 @@ export function episodeFromRecord(
       };
     });
   // Read back through the reader, on a copy: the record stays the caller's.
-  return readEpisode({
+  return await readEpisode({
     schema_version: 1,
-    data_class: team.data_class,
-    rights: rightsFor(team.data_class),
+    data_class,
+    rights: rightsFor(data_class),
     provenance: { runtime: "A1", behaviour_policy_id, manifest: record.manifest },
     player,
     team,
     channel: record.channels[player],
     decisions,
     result: { winner: record.winner, turns: record.turns },
-  });
+  }, { known_synthetic });
 }

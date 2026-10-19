@@ -16,6 +16,7 @@ import {
   goldenFixtures,
   TEAM_VERDICTS,
   TEAMS_DIR,
+  syntheticFixtureHashes,
   teamVerdicts,
 } from "../src/golden.ts";
 
@@ -23,7 +24,7 @@ const engine = loadEngine();
 const record = await goldenBattle(engine);
 const files: Record<string, unknown> = {
   ...goldenFixtures(record),
-  ...goldenChannels(record),
+  ...goldenChannels(record, syntheticFixtureHashes(engine)),
   [GOLDEN_SUMMARY]: battleSummary(record),
   [GOLDEN_PROVENANCE]: captureProvenance(record),
 };

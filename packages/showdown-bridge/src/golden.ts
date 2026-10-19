@@ -13,6 +13,7 @@ import {
   type Player,
   runBattle,
 } from "./runner.ts";
+import { battleClass, type SyntheticTeamHashes, teamHash } from "./team-class.ts";
 import { importPaste, type TeamVerdict, validateTeam } from "./teams.ts";
 import type { PlayerChannelLog } from "@areneon/schema/types/v1/player-channel-log.ts";
 
@@ -163,7 +164,8 @@ export interface ChannelFixture {
 }
 
 /** Each player's channel of the golden battle: player-perspective input only. */
-export function goldenChannels(record: BattleRecord): Record<string, ChannelFixture> {
+export function goldenChannels(record: BattleRecord, known: SyntheticTeamHashes): Record<string, ChannelFixture> {
+  const data_class = battleClass(record.team_hashes, known);
   const fixtures: Record<string, ChannelFixture> = {};
   for (const [file, player] of Object.entries(GOLDEN_CHANNELS)) {
     fixtures[file] = {
@@ -171,10 +173,19 @@ export function goldenChannels(record: BattleRecord): Record<string, ChannelFixt
       manifest: record.manifest,
       format_rules: record.format_rules,
       seed: record.seed,
-      channel: { schema_version: 1, data_class: "synthetic", player, lines: record.channels[player] },
+      channel: { schema_version: 1, data_class, player, lines: record.channels[player] },
     };
   }
   return fixtures;
+}
+
+/**
+ * The synthetic teams there are: the golden team and every committed paste
+ * fixture (CC0, synthetic). Anything else is `private` (see `team-class.ts`).
+ */
+export function syntheticFixtureHashes(engine: Engine): SyntheticTeamHashes {
+  const sets = teamFixtureFiles().map((file) => importPaste(engine, readFileSync(join(TEAMS_DIR, file), "utf8")));
+  return new Set([syntheticTeam(), ...sets].map(teamHash));
 }
 
 /** Sanitized PokePaste team fixtures and their committed validator log. */
