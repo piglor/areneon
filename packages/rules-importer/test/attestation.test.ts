@@ -7,12 +7,12 @@ import {
   AttestationError,
   type CommandResult,
   type CommandRunner,
-  FakeAttestationVerifier,
   GhAttestationVerifier,
   createSpawnRunner,
   RULES_PUBLISH_POLICY,
   spawnRunner,
 } from "../src/index.ts";
+import { FakeAttestationVerifier } from "../testing/fake-attestation.ts";
 
 const fixture = (name: string): string =>
   fileURLToPath(new URL(`../../../fixtures/rules-releases/${name}`, import.meta.url));

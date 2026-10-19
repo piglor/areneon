@@ -4,7 +4,8 @@
 #
 # Runtime configuration comes only from the environment: DATABASE_URL (the
 # `importer` role; `sslmode=verify-full` in production) and GH_TOKEN (read-only,
-# for gh). Nothing secret is baked in.
+# for gh), plus the optional RULES_IMPORT_*_TIMEOUT_MS session timeouts
+# (see src/cli.ts). Nothing secret is baked in.
 #
 # Targets: `runtime` (the default, last stage) is the production image. `e2e`
 # is that image plus a stand-in gh that replays recorded GitHub answers and the
@@ -12,6 +13,8 @@
 # and the production image contains neither the stand-in nor the fixtures.
 
 ARG NODE_IMAGE=node:24.22.0-bookworm-slim@sha256:a5f4366e834695d5f363b920c104953a535d3a9864d1bdf74566a0ebe01daee5
+# The runtime base: the Debian release the Node image is built on.
+ARG DEBIAN_IMAGE=debian:bookworm-20261005-slim@sha256:7c7b2c966bc9ee8cedfeef67e0e279108992c77681fa595db4a9d65c06ccc587
 
 # gh from its official release tarball, checked against a pinned SHA-256.
 FROM ${NODE_IMAGE} AS gh
@@ -35,10 +38,11 @@ RUN set -eu; \
   install -m 0755 "/tmp/${name}/bin/gh" /usr/local/bin/gh; \
   gh --version
 
-# Production dependencies of the importer and the workspace packages it uses.
-# Workspace packages stay symlinks to packages/*, outside node_modules, so
-# Node strips their TypeScript as it does in the repository.
-FROM ${NODE_IMAGE} AS deps
+# The application: production dependencies of the importer and the workspace
+# packages it uses, then their sources. Workspace packages stay symlinks to
+# packages/*, outside node_modules, so Node strips their TypeScript as it does
+# in the repository. pnpm and corepack stay in this stage.
+FROM ${NODE_IMAGE} AS build
 ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0
 WORKDIR /app
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
@@ -48,20 +52,25 @@ COPY packages/showdown-bridge/package.json packages/showdown-bridge/
 COPY packages/schema/package.json packages/schema/
 RUN corepack enable \
   && pnpm install --frozen-lockfile --prod --ignore-scripts --filter "@areneon/rules-importer..."
-
-FROM ${NODE_IMAGE} AS base
-COPY --from=gh /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
-COPY --from=gh /usr/local/bin/gh /usr/local/bin/gh
-WORKDIR /app
-COPY --from=deps /app ./
 COPY packages/rules-importer/src packages/rules-importer/src
 COPY packages/rules-store/src packages/rules-store/src
 COPY packages/showdown-bridge/src packages/showdown-bridge/src
 COPY packages/schema/src packages/schema/src
 COPY packages/schema/rules packages/schema/rules
 COPY packages/schema/contracts packages/schema/contracts
+
+# The runtime holds only node, gh, the CA bundle and /app: no apt step, no
+# curl, npm, corepack or pnpm. The node binary needs only glibc and libstdc++,
+# which Debian's slim image has.
+FROM ${DEBIAN_IMAGE} AS base
+COPY --from=gh /etc/ssl/certs /etc/ssl/certs
+COPY --from=gh /usr/local/bin/gh /usr/local/bin/gh
+COPY --from=build /usr/local/bin/node /usr/local/bin/node
+COPY --from=build /app /app
+# An unprivileged user whose home holds gh's cache.
+RUN useradd --uid 1000 --user-group --create-home --shell /usr/sbin/nologin importer
+WORKDIR /app
 ENV NODE_ENV=production
-# The image's unprivileged `node` user; its home holds gh's cache.
 USER 1000:1000
 ENTRYPOINT ["node", "packages/rules-importer/src/cli.ts"]
 

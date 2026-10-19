@@ -11,7 +11,6 @@ export {
   spawnRunner,
   type SpawnRunnerOptions,
 } from "./attestation.ts";
-export { FakeAttestationVerifier } from "./fake-attestation.ts";
 export { GitHubReleaseSource, type GitHubReleaseSourceOptions, ReleaseSourceError } from "./github-releases.ts";
 export {
   type DbSession,
