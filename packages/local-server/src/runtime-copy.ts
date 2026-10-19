@@ -73,8 +73,8 @@ export const RUNTIME_ENTRIES = [
  *   plugins), behind `usesqlite`, which neither the upstream defaults nor
  *   Areneon's `config.js` set (the friends child processes start, but open
  *   no store without it), and the Postgres stores (room logs behind
- *   `replaysdb`, teams behind `usepostgres`), both off in Areneon's
- *   `config.js`. So nothing reads them under Areneon's config.
+ *   `replaysdb`, teams behind `usepostgres` and `usepostgresteams`), off in
+ *   Areneon's `config.js`. So nothing reads them under Areneon's config.
  * - `.git`: never copied, and `verifyRuntimeCopy` refuses a copy that holds
  *   one. `Monitor.version()` reads `.git/index` at every start; were one
  *   present, it would run git from `dist/server/` against the repository
