@@ -69,6 +69,12 @@ export interface A2BotOptions {
    * to `attempts` times in a row without a login in between. Default 5 x 200 ms.
    */
   reconnect?: { attempts: number; delayMs: number };
+  /**
+   * After the bot accepts a challenge, how long it waits for the battle to
+   * start before it takes the accept for failed and may accept again.
+   * Default 10 s.
+   */
+  acceptTimeoutMs?: number;
   onLog?: (entry: SessionLog) => void;
   /** Called once per battle, when it ends. */
   onBattle?: (record: A2BattleRecord) => void;
@@ -108,7 +114,7 @@ export interface A2BattleRecord {
   winner: string | null;
   ots: OtsStatus;
   ots_failure: { reason: OtsFailure; detail: string } | null;
-  /** A live match the engine refused a non-pending candidate in (ADR-005 §1): excluded from evaluation. */
+  /** A live human match on the local server (ADR-005 §1) in which the engine refused a non-pending candidate: excluded from evaluation. */
   defect: boolean;
   decisions: DecisionRecord[];
   /** This player's channel, one per connection that joined the room (each starts at its `|init|`). */
@@ -124,11 +130,13 @@ export type SessionLog =
   | { event: "disconnected"; code: number }
   | { event: "logged_in"; name: string }
   | { event: "challenge_accepted"; from: string; format: string }
+  /** An accepted challenge whose battle did not start: the bot may accept again. */
+  | { event: "accept_abandoned"; reason: "timeout" | "disconnected" }
   | {
       event: "challenge_rejected";
       from: string;
       format: string;
-      reason: ChallengeRefusal | "busy";
+      reason: ChallengeRefusal | "busy" | "stopping";
       detail: string;
     }
   | { event: "battle_started"; room: string }
@@ -138,6 +146,11 @@ export type SessionLog =
   /** A rejoin re-sent a request the bot had answered, without `|sentchoice|`: the choice is sent again. */
   | { event: "resent_choice"; room: string; request_seq: number; choice: string }
   | { event: "refusal"; room: string; refusal: Refusal }
+  /**
+   * `line` is the raw text of a line the channel did not keep. Operator-only
+   * data: it can hold anything the server sent, so a CLI log shows its kind
+   * only (`|kind`), and nothing but this event carries it.
+   */
   | { event: "dropped"; room: string; line: string }
   | { event: "ots_failure"; room: string; reason: OtsFailure; detail: string }
   | { event: "battle_ended"; room: string; result: BattleResult; winner: string | null }
@@ -184,10 +197,15 @@ interface Battle {
   answered: Map<number, string>;
   /** The last decision's receipt and deadline, inherited by an update request. */
   last: { received_at: number; deadline: Deadline } | undefined;
-  /** Live match: choices for the current request the engine refused as defects. */
+  /** Live human match: choices for the current request the engine refused as defects. */
   refused: string[];
   /** The next request is the server's re-send on a rejoin. */
   rejoin: boolean;
+  /**
+   * Whether the battle timer is on, as last seen on any connection. A rejoin
+   * starts from it, and the room log replayed on the rejoin then corrects it.
+   */
+  timer: boolean;
   result: BattleResult;
   winner: string | null;
   defect: boolean;
@@ -202,7 +220,6 @@ interface RoomOnConnection {
   channel: A2Channel | undefined;
   /** How many of the channel's dropped lines are logged already: each build repeats them. */
   logged: number;
-  timer: boolean;
 }
 
 interface Connection {
@@ -265,6 +282,9 @@ class Session {
   #failures = 0;
   #retryTimer: ReturnType<typeof setTimeout> | undefined;
   #challenged = false;
+  #accepting = false;
+  #acceptTimer: ReturnType<typeof setTimeout> | undefined;
+  #onAbort: (() => void) | undefined;
   #ended = 0;
   #stopping = false;
   #settled = false;
@@ -286,7 +306,8 @@ class Session {
       this.#stop();
       return done;
     }
-    signal?.addEventListener("abort", () => this.#stop(), { once: true });
+    this.#onAbort = () => this.#stop();
+    signal?.addEventListener("abort", this.#onAbort, { once: true });
     void this.#open(1);
     return done;
   }
@@ -309,7 +330,7 @@ class Session {
     }
     const connection: Connection = { transport, reader: new ProtocolReader(), rooms: new Map(), loggedIn: false };
     this.#connection = connection;
-    this.#log({ event: "connected", attempt });
+    this.#guard(() => this.#log({ event: "connected", attempt }));
     transport.onClose((code) => this.#guard(() => this.#closed(connection, code)));
     transport.onFrame((frame) => this.#guard(() => this.#frame(connection, frame)));
   }
@@ -342,6 +363,8 @@ class Session {
 
   #closed(connection: Connection, code: number): void {
     this.#connection = undefined;
+    // An accept that was waiting for its battle on this connection can no longer be told.
+    this.#acceptEnded("disconnected");
     for (const [room, state] of connection.rooms) {
       const battle = this.#battles.get(room);
       if (battle !== undefined && battle.result === "unfinished") this.#keepChannel(battle, state);
@@ -380,6 +403,9 @@ class Session {
   #settle(fn: () => void): void {
     if (this.#settled) return;
     this.#settled = true;
+    clearTimeout(this.#retryTimer);
+    clearTimeout(this.#acceptTimer);
+    if (this.#onAbort !== undefined) this.#options.signal?.removeEventListener("abort", this.#onAbort);
     for (const battle of this.#battles.values()) clearTimeout(battle.otsTimer);
     fn();
   }
@@ -455,18 +481,36 @@ class Session {
       return this.#log({ event: "challenge_rejected", from, format, reason: decision.reason, detail: decision.detail });
     }
     const open = [...this.#battles.values()].filter((b) => b.result === "unfinished").length;
-    if (open > 0 || this.#ended >= this.#battlesWanted) {
+    // One accept at a time: the battle it makes shows only at `|init|battle`.
+    const busy = open > 0 || this.#accepting || this.#ended >= this.#battlesWanted;
+    if (this.#stopping || busy) {
       this.#send(`|/reject ${toId(from)}`);
-      const detail = "the bot plays one battle at a time";
-      return this.#log({ event: "challenge_rejected", from, format, reason: "busy", detail });
+      const [reason, detail] = this.#stopping
+        ? (["stopping", "the bot is stopping"] as const)
+        : (["busy", "the bot plays one battle at a time"] as const);
+      return this.#log({ event: "challenge_rejected", from, format, reason, detail });
     }
     this.#send(decision.command);
+    this.#accepting = true;
+    this.#acceptTimer = setTimeout(
+      () => this.#guard(() => this.#acceptEnded("timeout")),
+      this.#options.acceptTimeoutMs ?? 10_000,
+    );
     this.#log({ event: "challenge_accepted", from, format });
+  }
+
+  /** The accepted battle started, or will not: the next challenge may be accepted. */
+  #acceptEnded(reason?: "timeout" | "disconnected"): void {
+    clearTimeout(this.#acceptTimer);
+    const was = this.#accepting;
+    this.#accepting = false;
+    if (was && reason !== undefined) this.#log({ event: "accept_abandoned", reason });
   }
 
   /** `|init|battle`: a new channel for the room on this connection; a new battle, or a rejoin. */
   #joined(connection: Connection, room: string): void {
-    connection.rooms.set(room, { frames: [], channel: undefined, logged: 0, timer: false });
+    connection.rooms.set(room, { frames: [], channel: undefined, logged: 0 });
+    this.#acceptEnded();
     const known = this.#battles.get(room);
     if (known !== undefined) {
       known.rejoin = true;
@@ -486,6 +530,7 @@ class Session {
       last: undefined,
       refused: [],
       rejoin: false,
+      timer: false,
       result: "unfinished",
       winner: null,
       defect: false,
@@ -555,8 +600,8 @@ class Session {
     const { line } = event;
     const timer = timerOn(event);
     if (timer !== null) this.#send(timer);
-    if (line.startsWith(TIMER_ON)) state.timer = true;
-    if (line.startsWith(TIMER_OFF)) state.timer = false;
+    if (line.startsWith(TIMER_ON)) battle.timer = true;
+    if (line.startsWith(TIMER_OFF)) battle.timer = false;
     const time = TIME_LEFT.exec(line);
     if (time !== null && battle.pending !== undefined) {
       const snapshot: TimerSnapshot = {
@@ -593,10 +638,13 @@ class Session {
     const foe = request.player === "p1" ? "p2" : "p1";
     const teamsize = channel.lines.find((line) => line.startsWith(`|teamsize|${foe}|`));
     const faints = channel.lines.filter((line) => line.startsWith(`|faint|${foe}`)).length;
+    // Without a usable `|teamsize|` the foe is taken to have brought as many as the bot did.
+    const told = Number.parseInt(teamsize?.split("|")[3] ?? "", 10);
+    const size = Number.isFinite(told) ? told : side.pokemon.length;
     return {
       own_alive: alive.length,
       own_bench: alive.filter((mon) => mon.active !== true).length,
-      opp_alive: Math.max(0, Number(teamsize?.split("|")[3]) - faints),
+      opp_alive: Math.max(0, size - faints),
     };
   }
 
@@ -632,7 +680,7 @@ class Session {
       const inherited = { ...pending, received_at: last.received_at };
       return this.#decide(battle, inherited, { ...last.deadline, inherited: true });
     }
-    if (state.timer && !rejoin) {
+    if (battle.timer && !rejoin) {
       battle.pending = pending;
       return;
     }

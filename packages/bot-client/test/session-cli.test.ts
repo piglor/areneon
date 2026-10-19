@@ -12,7 +12,9 @@ import { FORMAT, freePort, groupAlive, TEAMS_DIR, tempDir } from "./local-battle
 const engine = loadEngine();
 const snapshot = loadRulesSnapshot(engine.commit);
 const TEAM = join(TEAMS_DIR, "legal-synthetic.txt");
-const RECORD = { room: "battle-x-1" } as A2BattleRecord;
+const RECORD = { room: "battle-x-1", ots_failure: null } as A2BattleRecord;
+const REPO = "/repo";
+const PRIVATE = "/repo/private-data";
 
 interface Fake {
   deps: CliDeps;
@@ -20,7 +22,9 @@ interface Fake {
   err: string[];
   calls: string[];
   bot: A2BotOptions[];
-  records: [string, A2BattleRecord][];
+  /** Files written: [path, parsed record, mode], and the directories made. */
+  files: [string, A2BattleRecord, number][];
+  dirs: [string, number][];
   signal: (name: string) => void;
 }
 
@@ -30,7 +34,8 @@ function fake(overrides: Partial<CliDeps> = {}): Fake {
   const err: string[] = [];
   const calls: string[] = [];
   const bot: A2BotOptions[] = [];
-  const records: [string, A2BattleRecord][] = [];
+  const files: [string, A2BattleRecord, number][] = [];
+  const dirs: [string, number][] = [];
   let handler: (name: string) => void = () => {};
   const server = {
     url: "http://127.0.0.1:8123",
@@ -62,13 +67,17 @@ function fake(overrides: Partial<CliDeps> = {}): Fake {
       calls.push("trap");
       return () => calls.push("untrap");
     },
-    writeRecord: (dir, record) => records.push([dir, record]),
-    defaultOutDir: "/private-data/a2",
+    makeDir: (dir, mode) => dirs.push([dir, mode]),
+    writeFile: (path, data, mode) => files.push([path, JSON.parse(data) as A2BattleRecord, mode]),
+    repoRoot: REPO,
+    privateDataDir: PRIVATE,
+    defaultOutDir: `${PRIVATE}/a2`,
+    now: () => 1234,
     stdout: (line) => out.push(line),
     stderr: (line) => err.push(line),
     ...overrides,
   };
-  return { deps, out, err, calls, bot, records, signal: (name) => handler(name) };
+  return { deps, out, err, calls, bot, files, dirs, signal: (name) => handler(name) };
 }
 
 describe("runCli (the A2 sparring entry point)", () => {
@@ -90,7 +99,9 @@ describe("runCli (the A2 sparring entry point)", () => {
     expect(JSON.parse(f.out[0] as string)).toMatchObject({ event: "ready", bot: "Areneon-bot-abc123", server_pid: 4242 });
     expect(JSON.parse(f.out[1] as string)).toEqual({ event: "logged_in", name: "Areneon-bot-abc123" });
     expect(JSON.parse(f.out.at(-1) as string)).toEqual({ event: "stopped", battles: 1 });
-    expect(f.records).toEqual([["/private-data/a2", RECORD]]);
+    // Stored once, though both onBattle and the result carry it.
+    expect(f.files).toEqual([["/repo/private-data/a2/battle-x-1-1234.json", RECORD, 0o600]]);
+    expect(f.dirs).toEqual([["/repo/private-data/a2", 0o700]]);
   });
 
   it("passes the runtime root, record directory, data class and format through", async () => {
@@ -100,7 +111,94 @@ describe("runCli (the A2 sparring entry point)", () => {
     expect(f.calls).toContain("copy /rt");
     expect(f.calls).toContain("launch /copy 8000");
     expect(f.bot[0]?.data_class).toBe("synthetic");
-    expect(f.records[0]?.[0]).toBe("/out");
+    expect(f.files[0]?.[0]).toBe("/out/battle-x-1-1234.json");
+  });
+
+  it("logs a dropped line by its kind only", async () => {
+    const f = fake({
+      runBot: async (options) => {
+        options.onLog?.({ event: "dropped", room: "battle-x-1", line: "|unknownkind|secret text" });
+        options.onLog?.({ event: "dropped", room: "battle-x-1", line: "|bare" });
+        return { battles: [] };
+      },
+    });
+    expect(await runCli(["--challenger", "h", "--team", TEAM], f.deps)).toBe(0);
+    const dropped = f.out.filter((line) => line.includes('"dropped"'));
+    expect(dropped.map((line) => JSON.parse(line))).toEqual([
+      { event: "dropped", room: "battle-x-1", kind: "|unknownkind" },
+      { event: "dropped", room: "battle-x-1", kind: "|bare" },
+    ]);
+    expect(f.out.join("\n")).not.toContain("secret");
+  });
+
+  it("also stores the battles the session ends without onBattle (unfinished), once each", async () => {
+    const unfinished = { room: "battle-x-2", result: "unfinished", ots_failure: null } as A2BattleRecord;
+    const f = fake({
+      runBot: async (options) => {
+        options.onBattle?.(RECORD);
+        return { battles: [RECORD, unfinished] };
+      },
+    });
+    expect(await runCli(["--challenger", "h", "--team", TEAM], f.deps)).toBe(0);
+    expect(f.files.map(([path]) => path)).toEqual([
+      "/repo/private-data/a2/battle-x-1-1234.json",
+      "/repo/private-data/a2/battle-x-2-1234.json",
+    ]);
+  });
+
+  it("refuses a record whose room is not a battle room id, and fails the run", async () => {
+    const bad = (room: string) => ({ room, ots_failure: null }) as A2BattleRecord;
+    const f = fake({
+      runBot: async () => ({ battles: [bad("../../etc/x"), bad("battle-Up"), bad("lobby"), bad("battle-ok-9")] }),
+    });
+    expect(await runCli(["--challenger", "h", "--team", TEAM], f.deps)).toBe(1);
+    expect(f.files.map(([path]) => path)).toEqual(["/repo/private-data/a2/battle-ok-9-1234.json"]);
+    expect(f.err).toHaveLength(3);
+    expect(f.err[0]).toContain("not a battle room id");
+  });
+
+  it("reports a record that cannot be written, and still stops the server", async () => {
+    const f = fake({
+      writeFile: () => {
+        throw "disk full";
+      },
+    });
+    expect(await runCli(["--challenger", "h", "--team", TEAM], f.deps)).toBe(1);
+    expect(f.err).toEqual(['record battle-x-1 not stored: "disk full"']);
+    expect(f.calls.at(-1)).toBe("stop");
+  });
+
+  it("writes an ots_failure record only under private-data, whatever --out says", async () => {
+    const failed = { room: "battle-x-3", ots_failure: { reason: "showteam", detail: "|showteam|p2" } } as A2BattleRecord;
+    const run = (extra: string[]) => {
+      const f = fake({ runBot: async () => ({ battles: [failed] }) });
+      return runCli(["--challenger", "h", "--team", TEAM, "--data-class", "synthetic", ...extra], f.deps).then(
+        () => f,
+      );
+    };
+    const outside = await run(["--out", "/elsewhere"]);
+    expect(outside.files.map(([path]) => path)).toEqual(["/repo/private-data/a2/battle-x-3-1234.json"]);
+    expect(outside.err[0]).toContain("may hold the opponent's team sheet");
+    const inside = await run(["--out", "/repo/private-data/other"]);
+    expect(inside.files.map(([path]) => path)).toEqual(["/repo/private-data/other/battle-x-3-1234.json"]);
+    expect(inside.err).toEqual([]);
+  });
+
+  it("refuses an --out inside the checkout unless the data class is synthetic or it is under private-data", async () => {
+    const argv = ["--challenger", "h", "--team", TEAM];
+    for (const out of ["/repo/records", "/repo", "/repo/private-data/../records"]) {
+      const f = fake();
+      expect(await runCli([...argv, "--out", out], f.deps)).toBe(2);
+      expect(f.err[0]).toContain("is inside the checkout");
+      expect(f.calls).toEqual([]);
+    }
+    const ok = fake();
+    expect(await runCli([...argv, "--out", "/repo/records", "--data-class", "synthetic"], ok.deps)).toBe(0);
+    expect(ok.files[0]?.[0]).toBe("/repo/records/battle-x-1-1234.json");
+    const priv = fake();
+    expect(await runCli([...argv, "--out", "/repo/private-data/x"], priv.deps)).toBe(0);
+    const outside = fake();
+    expect(await runCli([...argv, "--out", "/srv/records"], outside.deps)).toBe(0);
   });
 
   it("aborts the bot on a signal and still stops the server", async () => {

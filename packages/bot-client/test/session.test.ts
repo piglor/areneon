@@ -222,6 +222,61 @@ describe("runA2Bot: challenges (ADR-005 §2, §4)", () => {
     expect(t.sent.at(-1)).toBe("|/accept sparringhuman");
   });
 
+  it("accepts one challenge until its battle starts, and takes an accept that never starts as failed", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const run = await start({ battles: 3, acceptTimeoutMs: 1_000 });
+    const t = run.t();
+    login(t);
+    t.push(challengeFrom(HUMAN));
+    t.push(challengeFrom(HUMAN));
+    expect(t.sent.slice(2)).toEqual(["|/accept sparringhuman", "|/reject sparringhuman"]);
+    expect(run.events("challenge_rejected").at(-1)).toMatchObject({ reason: "busy" });
+    vi.advanceTimersByTime(1_001);
+    expect(run.events("accept_abandoned")).toEqual([{ event: "accept_abandoned", reason: "timeout" }]);
+    t.push(challengeFrom(HUMAN));
+    expect(t.sent.at(-1)).toBe("|/accept sparringhuman");
+    // The battle starting ends the wait: no abandoned accept, and the next challenge is busy for the open battle.
+    t.push(INIT);
+    vi.advanceTimersByTime(5_000);
+    expect(run.events("accept_abandoned")).toHaveLength(1);
+    t.push(challengeFrom(HUMAN));
+    expect(t.sent.at(-1)).toBe("|/reject sparringhuman");
+  });
+
+  it("forgets an accept when the connection closes before the battle starts", async () => {
+    const run = await start({ battles: 3 });
+    login(run.t());
+    run.t().push(challengeFrom(HUMAN));
+    run.t().end(1006);
+    await vi.waitFor(() => expect(run.transports).toHaveLength(2));
+    expect(run.events("accept_abandoned")).toEqual([{ event: "accept_abandoned", reason: "disconnected" }]);
+    login(run.t());
+    run.t().push(challengeFrom(HUMAN));
+    expect(run.t().sent.at(-1)).toBe("|/accept sparringhuman");
+  });
+
+  it("rejects a valid challenge that arrives after the stop began", async () => {
+    const controller = new AbortController();
+    const inner = memoryTransport();
+    // A server that has not closed the socket yet: frames still come after the stop.
+    const slow = Object.create(inner, { close: { value: vi.fn() } }) as MemoryTransport;
+    const run = await start({ signal: controller.signal, connect: async () => slow });
+    await vi.waitFor(() => expect(slow.onFrame).toBeDefined());
+    login(inner);
+    inner.push(INIT);
+    controller.abort();
+    inner.push(challengeFrom(HUMAN));
+    expect(inner.sent.at(-1)).toBe("|/reject sparringhuman");
+    expect(run.events("challenge_rejected")).toEqual([
+      expect.objectContaining({ reason: "stopping", from: HUMAN }),
+    ]);
+    expect(run.events("challenge_accepted")).toEqual([]);
+    // The battle ending while the stop is under way stops nothing twice.
+    inner.push(room("|tie"));
+    inner.end(1000);
+    await expect(run.result).resolves.toMatchObject({ battles: [{ result: "tie" }] });
+  });
+
   it("refuses a challenge once its battles are played", async () => {
     const run = await start({ battles: 1, signal: new AbortController().signal });
     const t = run.t();
@@ -458,6 +513,30 @@ describe("runA2Bot: a battle", () => {
     expect(run.events("dropped")).toEqual([{ event: "dropped", room: ROOM, line: "|unknownkind|x" }]);
   });
 
+  it("reads the foe's |teamsize| and |faint| lines, and falls back to the bot's own team size without a usable one", async () => {
+    const estimate = async (edit: (frame: string) => string): Promise<number | undefined> => {
+      const run = await start();
+      login(run.t());
+      run.t().push(INIT);
+      run.t().push(at(0));
+      run.t().push(at(1));
+      run.t().push(time(90, 420, 90));
+      run.t().push(CONFIRM);
+      run.t().push(edit(at(2)));
+      run.t().push(at(3));
+      run.t().push(time(55, 400));
+      return run.decisions()[1]?.remaining_decisions_estimate;
+    };
+    // ⌈1.5 × (own alive 4 + foe alive)⌉ + 2 bench
+    expect(await estimate((f) => f)).toBe(14);
+    expect(await estimate((f) => f.replace("|teamsize|p2|4", "|teamsize|p2|3"))).toBe(13);
+    expect(await estimate((f) => f.replace("|teamsize|p2|4\n", ""))).toBe(14);
+    expect(await estimate((f) => f.replace("|teamsize|p2|4", "|teamsize|p2|many"))).toBe(14);
+    expect(await estimate((f) => f.replace("|teamsize|p2|4", "|teamsize|p2|"))).toBe(14);
+    // One foe fainted before the request.
+    expect(await estimate((f) => `${f}\n|faint|p2a: Gengar`)).toBe(13); // foe 4 - 1 = 3
+  });
+
   it("ends on |win| or |tie|: leaves the room, records only its own channel and ignores the rest", async () => {
     const records: unknown[] = [];
     const run = await start({ onBattle: (record) => records.push(record) });
@@ -659,6 +738,53 @@ describe("runA2Bot: reconnects (ADR-005 §1, §3)", () => {
     expect(chooseLines(run.t())).toHaveLength(1);
   });
 
+  it("starts a rejoin from the timer state it knew, and lets the replayed log correct it", async () => {
+    const run = await start();
+    login(run.t());
+    preview(run.t());
+    run.t().push(at(2));
+    run.t().end(1006);
+    await vi.waitFor(() => expect(run.transports).toHaveLength(2));
+    login(run.t());
+    // The rejoin's log carries no timer line: the timer is still taken as on.
+    run.t().push(room("|init|battle", "|title|p1 vs. p2"));
+    run.t().push(at(0));
+    run.t().push(at(2));
+    run.t().push(at(3));
+    expect(run.decisions()).toHaveLength(2);
+    run.t().push(at(4));
+    run.t().push(at(5));
+    // A new request waits for its snapshot: no choice yet.
+    expect(run.decisions()).toHaveLength(2);
+    run.t().push(time(50, 400));
+    expect(run.decisions()[2]).toMatchObject({ timer: { turn_seconds_left: 50 } });
+    // The server says it is off now: the next request is answered at once.
+    run.t().push(room("|inactiveoff|Battle timer is now OFF."));
+    run.t().push(at(9));
+    run.t().push(at(10));
+    expect(run.decisions()[3]).toMatchObject({ timer: null });
+  });
+
+  it("fails the session when the log callback throws", async () => {
+    const run = await start({
+      onLog: (entry) => {
+        if (entry.event === "connected") throw new Error("log sink closed");
+      },
+    });
+    await expect(run.result).rejects.toThrow("log sink closed");
+  });
+
+  it("removes its abort listener when the session ends", async () => {
+    const controller = new AbortController();
+    const remove = vi.spyOn(controller.signal, "removeEventListener");
+    const run = await start({ signal: controller.signal });
+    login(run.t());
+    run.t().push(INIT);
+    run.t().push(room("|tie"));
+    await run.result;
+    expect(remove).toHaveBeenCalledWith("abort", expect.any(Function));
+  });
+
   it("retries a held name and gives up after its attempts", async () => {
     const run = await start();
     run.t().push("|nametaken|Areneon-bot-0000|Someone is already using the name");
@@ -709,6 +835,27 @@ describe("runA2Bot: reconnects (ADR-005 §1, §3)", () => {
     await expect(runA2Bot(options)).rejects.toThrow(/no connection after 5 attempts/);
   }, 20_000);
 
+  it("takes a fatal error while a reconnect is pending as the end: no socket opens afterwards", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const run = await start({ reconnect: { attempts: 2, delayMs: 120_000 } });
+    const t = run.t();
+    login(t);
+    t.push(INIT);
+    t.push(at(0));
+    t.push(at(1));
+    t.push(time(90, 420, 90));
+    t.end(1006);
+    // The first retry is at once; the second would wait the 120 s.
+    await vi.waitFor(() => expect(run.transports).toHaveLength(2));
+    run.t().end(1006);
+    expect(run.transports).toHaveLength(2);
+    now = 59_000;
+    vi.advanceTimersByTime(59_001);
+    await expect(run.result).rejects.toMatchObject({ name: "OtsDeclineError" });
+    vi.advanceTimersByTime(300_000);
+    expect(run.transports).toHaveLength(2);
+  });
+
   it("stops while it waits to reconnect", async () => {
     const controller = new AbortController();
     const transports: MemoryTransport[] = [];
@@ -725,5 +872,75 @@ describe("runA2Bot: reconnects (ADR-005 §1, §3)", () => {
     controller.abort();
     await expect(run.result).resolves.toEqual({ battles: [] });
     expect(connect).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("runA2Bot: reconnect during Team Preview (ADR-005 §1, §2)", () => {
+  const rejects = (run: Run): number =>
+    run.transports.flatMap((t) => t.sent).filter((line) => line.endsWith("/rejectopenteamsheets")).length;
+  const forfeits = (run: Run): number =>
+    run.transports.flatMap((t) => t.sent).filter((line) => line.endsWith("/forfeit")).length;
+
+  /** The server drops the bot; it logs in again and is rejoined with the room log up to the preview request. */
+  async function rejoin(run: Run): Promise<void> {
+    run.t().end(1006);
+    await vi.waitFor(() => expect(run.transports).toHaveLength(2));
+    login(run.t());
+    run.t().push(INIT);
+    run.t().push(at(0));
+  }
+
+  it("keeps the one rejection and the choice when the confirmation is replayed on the rejoin", async () => {
+    const run = await start();
+    login(run.t());
+    run.t().push(INIT);
+    run.t().push(at(0));
+    run.t().push(at(1));
+    run.t().push(time(90, 420, 90));
+    expect(rejects(run)).toBe(1);
+    await rejoin(run);
+    // The rejection reached the server: its confirmation is in the replayed log.
+    run.t().push(CONFIRM);
+    run.t().push(at(1));
+    expect(rejects(run)).toBe(1);
+    expect(forfeits(run)).toBe(0);
+    expect(run.events("ots_failure")).toEqual([]);
+    // The held choice goes out on the confirmation, and again with the re-sent request
+    // (the server answers the second as stale; refusal.ts classifies it).
+    expect(chooseLines(run.t())).toHaveLength(2);
+    run.t().push(room("|tie"));
+    await expect(run.result).resolves.toMatchObject({ battles: [{ ots: "confirmed", ots_failure: null }] });
+  });
+
+  it("sends nothing again when the server holds the preview choice", async () => {
+    const run = await start();
+    login(run.t());
+    preview(run.t());
+    const choice = (run.decisions()[0] as DecisionRecord).choice;
+    await rejoin(run);
+    run.t().push(CONFIRM);
+    run.t().push(`${at(1)}\n|sentchoice|${choice}`);
+    expect(rejects(run)).toBe(1);
+    expect(forfeits(run)).toBe(0);
+    expect(chooseLines(run.t())).toEqual([]);
+    expect(run.events("sentchoice")).toHaveLength(1);
+  });
+
+  it("forfeits when the drop came before the preview snapshot: the re-sent request has a zero budget", async () => {
+    // Documented behaviour, not a goal: with no snapshot the preview budget is 0, so the
+    // decline is sent on the rejoin with a deadline that has passed and the confirmation is late.
+    const run = await start();
+    login(run.t());
+    run.t().push(INIT);
+    run.t().push(at(0));
+    run.t().push(at(1));
+    expect(rejects(run)).toBe(0);
+    await rejoin(run);
+    run.t().push(at(1));
+    expect(rejects(run)).toBe(1);
+    run.t().push(CONFIRM);
+    expect(forfeits(run)).toBe(1);
+    expect(run.events("ots_failure")).toEqual([expect.objectContaining({ reason: "not_confirmed" })]);
+    expect(chooseLines(run.t())).toEqual([]);
   });
 });

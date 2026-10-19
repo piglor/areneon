@@ -9,6 +9,7 @@ import { loadEngine, loadRulesSnapshot } from "@areneon/showdown-bridge";
 import { runCli } from "../src/cli.ts";
 import { runA2Bot } from "../src/session.ts";
 
+const REPO = fileURLToPath(new URL("../../../", import.meta.url));
 const engine = loadEngine();
 const code = await runCli(process.argv.slice(2), {
   engine,
@@ -24,11 +25,12 @@ const code = await runCli(process.argv.slice(2), {
       for (const name of signals) process.off(name, handler);
     };
   },
-  writeRecord(dir, record) {
-    mkdirSync(dir, { recursive: true });
-    writeFileSync(join(dir, `${record.room}-${Date.now()}.json`), `${JSON.stringify(record, null, 2)}\n`);
-  },
-  defaultOutDir: fileURLToPath(new URL("../../../private-data/a2", import.meta.url)),
+  makeDir: (dir, mode) => void mkdirSync(dir, { recursive: true, mode }),
+  writeFile: (path, data, mode) => writeFileSync(path, data, { mode, flag: "wx" }),
+  repoRoot: REPO,
+  privateDataDir: join(REPO, "private-data"),
+  defaultOutDir: join(REPO, "private-data", "a2"),
+  now: () => Date.now(),
   stdout: (line) => process.stdout.write(`${line}\n`),
   stderr: (line) => process.stderr.write(`${line}\n`),
 });
