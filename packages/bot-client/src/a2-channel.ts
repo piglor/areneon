@@ -1,4 +1,10 @@
-import { type PlayerChannel, playerChannel, stripServerLines } from "@areneon/showdown-bridge";
+import {
+  canonicalJson,
+  type Json,
+  type PlayerChannel,
+  playerChannel,
+  stripServerLines,
+} from "@areneon/showdown-bridge";
 import { splitFrame } from "./protocol.ts";
 
 /** A battle room stream that cannot become a PlayerChannel. */
@@ -47,7 +53,10 @@ interface ChannelState {
   resent: number;
 }
 
-/** A request line's rqid and its body without the rqid, or `undefined` if it has no rqid. */
+/**
+ * A request line's rqid and its canonical body without the rqid (as
+ * `request_hash` hashes it), or `undefined` if it has no rqid.
+ */
 function requestIdentity(line: string): ChannelState["last"] {
   let request: unknown;
   try {
@@ -57,7 +66,7 @@ function requestIdentity(line: string): ChannelState["last"] {
   }
   if (typeof request !== "object" || request === null || !("rqid" in request)) return undefined;
   const { rqid, ...rest } = request as { rqid: unknown };
-  return typeof rqid === "number" ? { rqid, body: JSON.stringify(rest) } : undefined;
+  return typeof rqid === "number" ? { rqid, body: canonicalJson(rest as Json) } : undefined;
 }
 
 /**
@@ -155,6 +164,7 @@ export class A2Channel {
     if (this.#state === undefined) throw new A2ChannelError(`${this.#options.room} has not sent |init|`);
     const { lines, dropped } = stripServerLines(this.#state.history);
     const { player, data_class } = this.#options;
-    return { channel: playerChannel({ schema_version: 1, data_class, player, lines }), dropped, resent: this.#state.resent };
+    const channel = playerChannel({ schema_version: 1, data_class, player, lines });
+    return { channel, dropped, resent: this.#state.resent };
   }
 }
