@@ -46,7 +46,7 @@ export {
   type Sha256,
 } from "./observation.ts";
 export { nodeSha256, observe, playerChannel, recordedChannel } from "./player-channel.ts";
-export { answersRequest, type Collection, type Episode, episodeHash, type Recommendation, rightsFor } from "./episode.ts";
+export { answersRequest, type Collection, type CollectionInput, type Episode, episodeHash, type Recommendation, rightsFor } from "./episode.ts";
 export { EpisodeError, episodeFromRecord, type EpisodeOptions, readEpisode } from "./episode-io.ts";
 export {
   battleClass,
@@ -55,6 +55,7 @@ export {
   type DataClass,
   higherClass,
   stampTeam,
+  type StampedTeam,
   type SyntheticTeamHashes,
   teamHash,
 } from "./team-class.ts";

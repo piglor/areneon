@@ -13,6 +13,7 @@
       "format_rules_hash": "549cd2aa97324be093c567324676d46a5eff19d6b0c9d8491c483dab746d5dcc"
     },
     "collection": {
+      "opponent_team_data_class": "synthetic",
       "kind": "league",
       "seed": "sodium,000102030405060708090a0b0c0d0e0f",
       "opponent_policy_id": "first-legal@golden"

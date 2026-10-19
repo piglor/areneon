@@ -16,7 +16,8 @@
       "kind": "league",
       "run_id": "league-run-1",
       "seed": "sodium,000102030405060708090a0b0c0d0e0f",
-      "opponent_policy_id": "first-legal@golden"
+      "opponent_policy_id": "first-legal@golden",
+      "opponent_team_data_class": "synthetic"
     }
   },
   "player": "p1",

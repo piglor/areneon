@@ -7,7 +7,7 @@ import { firstLegal, GOLDEN_DIR, GOLDEN_FORMAT, goldenBattle, syntheticFixtureHa
 import {
   answersRequest,
   battleClass,
-  type Collection,
+  type CollectionInput,
   type BattleRecord,
   buildObservation,
   type Episode,
@@ -24,20 +24,24 @@ import {
   rightsFor,
   runBattle,
   stampTeam,
+  type StampedTeam,
   teamHash,
   webSha256,
 } from "../src/index.ts";
 
-const spec = (team: PrivateTeamSpec["team"], data_class: PrivateTeamSpec["data_class"] = "synthetic"): PrivateTeamSpec => ({
-  schema_version: 1,
-  data_class,
-  team,
-});
-const synthetic = (): PrivateTeamSpec => spec(syntheticTeam() as PrivateTeamSpec["team"]);
+// Hand-built, so cast: a test of the run-time checks needs a label stampTeam
+// would not give (a lie, or a class chosen by the test).
+const spec = (team: PrivateTeamSpec["team"], data_class: PrivateTeamSpec["data_class"] = "synthetic"): StampedTeam =>
+  ({
+    schema_version: 1,
+    data_class,
+    team,
+  }) as StampedTeam;
+const synthetic = (): StampedTeam => spec(syntheticTeam() as PrivateTeamSpec["team"]);
 const POLICY = "first-legal@test";
 
 const KNOWN = syntheticFixtureHashes(loadEngine());
-const both = (team: PrivateTeamSpec, opponent_team: PrivateTeamSpec = team) => ({
+const both = (team: StampedTeam, opponent_team: StampedTeam = team) => ({
   team,
   opponent_team,
   known_synthetic: KNOWN,
@@ -358,6 +362,13 @@ describe("an Episode takes the higher data class of both teams (#817)", () => {
     await expect(episodeFromRecord(record, "p2", both(lie, synthetic()))).rejects.toThrow(/not a known synthetic team/);
   });
 
+  it("takes only a stamped team: a hand-built spec does not compile", () => {
+    const handBuilt: PrivateTeamSpec = { schema_version: 1, data_class: "synthetic", team: syntheticTeam() as PrivateTeamSpec["team"] };
+    // @ts-expect-error a PrivateTeamSpec is not a StampedTeam: only stampTeam returns one
+    const unstamped: StampedTeam = handBuilt;
+    expect(unstamped).toBe(handBuilt);
+  });
+
   it("refuses a team that is not the one the battle ran with", async () => {
     const record = await play(realOpponent());
     await expect(episodeFromRecord(record, "p1", both(synthetic(), synthetic()))).rejects.toThrow(
@@ -422,10 +433,19 @@ describe("the caller's team after a battle (#817)", () => {
 });
 
 describe("provenance.collection (ADR-009 §4)", () => {
-  const LEAGUE = (): Collection => ({ kind: "league", run_id: "run-1", seed: golden.seed, opponent_policy_id: "first-legal@test" });
-  const EVALUATION = (): Collection => ({ kind: "evaluation", run_id: "eval-1", sealed: true, seed: golden.seed });
-  const withCollection = (collection: unknown, runtime: "A1" | "A2" = "A1"): Record<string, unknown> => {
-    const e = JSON.parse(JSON.stringify(episodes.p1)) as Record<string, unknown>;
+  const LEAGUE = (): CollectionInput => ({ kind: "league", run_id: "run-1", seed: golden.seed, opponent_policy_id: "first-legal@test" });
+  const EVALUATION = (): CollectionInput => ({ kind: "evaluation", run_id: "eval-1", sealed: true, seed: golden.seed });
+  // The stored form: the writer adds the opponent's class.
+  const STORED = (input: CollectionInput, opponent_team_data_class: "synthetic" | "private" = "synthetic") => ({
+    ...input,
+    opponent_team_data_class,
+  });
+  const withCollection = (
+    collection: unknown,
+    runtime: "A1" | "A2" = "A1",
+    base: Episode = episodes.p1,
+  ): Record<string, unknown> => {
+    const e = JSON.parse(JSON.stringify(base)) as Record<string, unknown>;
     e.provenance = { ...(e.provenance as object), runtime, collection };
     if (runtime === "A2") e.decisions = [];
     return e;
@@ -437,50 +457,147 @@ describe("provenance.collection (ADR-009 §4)", () => {
 
   it.each([["league", LEAGUE], ["evaluation", EVALUATION]])("is written on a %s Episode and read back", async (_kind, make) => {
     const episode = await episodeFromRecord(golden, "p1", { ...both(synthetic()), collection: make() });
-    expect(episode.provenance.collection).toEqual(make());
+    expect(episode.provenance.collection).toEqual(STORED(make()));
     expect(await readEpisode(JSON.parse(JSON.stringify(episode)), { known_synthetic: KNOWN })).toEqual(episode);
   });
 
   it("is refused when its seed is not the battle's own", async () => {
     await expect(
-      episodeFromRecord(golden, "p1", { ...both(synthetic()), collection: { ...LEAGUE(), seed: "sodium,00" + "0".repeat(30) } as Collection }),
+      episodeFromRecord(golden, "p1", { ...both(synthetic()), collection: { ...LEAGUE(), seed: "sodium,00" + "0".repeat(30) } as CollectionInput }),
     ).rejects.toThrow("the collection record's seed is not the seed the battle ran with");
   });
 
-  it("takes a sparring record without a seed", async () => {
-    const sparring = withCollection({ kind: "sparring", session_id: "s-1" });
-    expect((await readEpisode(sparring, { known_synthetic: KNOWN })).provenance.collection).toEqual({ kind: "sparring", session_id: "s-1" });
-    const episode = await episodeFromRecord(golden, "p1", { ...both(synthetic()), collection: { kind: "sparring", session_id: "s-1" } });
-    expect(episode.provenance.collection?.kind).toBe("sparring");
+  it("takes a private sparring record without a seed, and refuses a synthetic one", async () => {
+    const sparring = { kind: "sparring", session_id: "s-1" } as const;
+    const episode = await episodeFromRecord(golden, "p1", {
+      ...both(spec(syntheticTeam() as PrivateTeamSpec["team"], "private"), synthetic()),
+      collection: sparring,
+    });
+    expect(episode.provenance.collection).toEqual(sparring);
+    expect(episode.data_class).toBe("private");
+    expect((await readEpisode(withCollection(sparring, "A1", episode), { known_synthetic: KNOWN })).provenance.collection).toEqual(sparring);
+    await expect(readEpisode(withCollection(sparring), { known_synthetic: KNOWN })).rejects.toThrow(
+      "a sparring Episode is private: it records a battle against a human",
+    );
   });
 
+  const C = { opponent_team_data_class: "synthetic" };
   it.each<[string, unknown, RegExp]>([
-    ["a league record without its run id", { kind: "league", seed: "sodium,ab", opponent_policy_id: "p" }, /invalid Episode.*run_id/s],
-    ["an evaluation record without its run id", { kind: "evaluation", sealed: false, seed: "sodium,ab" }, /invalid Episode.*run_id/s],
-    ["an evaluation record without its sealed flag", { kind: "evaluation", run_id: "r", seed: "sodium,ab" }, /invalid Episode.*sealed/s],
-    ["sealed on a league record", { kind: "league", run_id: "r", seed: "sodium,ab", opponent_policy_id: "p", sealed: true }, /invalid Episode.*sealed/s],
+    ["a league record without its run id", { ...C, kind: "league", seed: "sodium,ab", opponent_policy_id: "p" }, /invalid Episode.*run_id/s],
+    ["an evaluation record without its run id", { ...C, kind: "evaluation", sealed: false, seed: "sodium,ab" }, /invalid Episode.*run_id/s],
+    ["an evaluation record without its sealed flag", { ...C, kind: "evaluation", run_id: "r", seed: "sodium,ab" }, /invalid Episode.*sealed/s],
+    ["sealed on a league record", { ...C, kind: "league", run_id: "r", seed: "sodium,ab", opponent_policy_id: "p", sealed: true }, /invalid Episode.*sealed/s],
+    ["a league record without the opponent's class", { kind: "league", run_id: "r", seed: "sodium,ab", opponent_policy_id: "p" }, /invalid Episode.*opponent_team_data_class/s],
+    ["an evaluation record without the opponent's class", { kind: "evaluation", run_id: "r", sealed: true, seed: "sodium,ab" }, /invalid Episode.*opponent_team_data_class/s],
+    ["an opponent class that is not a class", { ...C, kind: "league", run_id: "r", seed: "sodium,ab", opponent_policy_id: "p", opponent_team_data_class: "public" }, /invalid Episode.*opponent_team_data_class/s],
     ["a sparring record without its session id", { kind: "sparring" }, /invalid Episode.*session_id/s],
     ["an unknown kind", { kind: "training", run_id: "r" }, /invalid Episode/],
-    ["a seed that is not an engine seed", { kind: "league", run_id: "r", seed: "1,2", opponent_policy_id: "p" }, /invalid Episode.*pattern/s],
+    ["a seed that is not an engine seed", { ...C, kind: "league", run_id: "r", seed: "1,2", opponent_policy_id: "p" }, /invalid Episode.*pattern/s],
   ])("refuses %s", async (_name, collection, message) => {
     await expect(readEpisode(withCollection(collection), { known_synthetic: KNOWN })).rejects.toThrow(message);
   });
 
   it.each(["league", "evaluation"] as const)("refuses an A1 %s record with a null seed", async (kind) => {
     const base = kind === "league" ? LEAGUE() : EVALUATION();
-    await expect(readEpisode(withCollection({ ...base, seed: null }), { known_synthetic: KNOWN })).rejects.toThrow(
+    await expect(readEpisode(withCollection({ ...STORED(base), seed: null }), { known_synthetic: KNOWN })).rejects.toThrow(
       `an A1 ${kind} collection record needs the seed the battle ran with`,
     );
   });
 
   it.each(["league", "evaluation"] as const)("refuses an A2 %s record with a seed, and accepts none", async (kind) => {
     const base = kind === "league" ? LEAGUE() : EVALUATION();
-    await expect(readEpisode(withCollection(base, "A2"), { known_synthetic: KNOWN })).rejects.toThrow(
+    await expect(readEpisode(withCollection(STORED(base), "A2"), { known_synthetic: KNOWN })).rejects.toThrow(
       `an A2 ${kind} collection record has no seed: a challenge cannot be seeded`,
     );
-    expect((await readEpisode(withCollection({ ...base, seed: null }, "A2"), { known_synthetic: KNOWN })).provenance.collection).toEqual({
-      ...base,
+    expect((await readEpisode(withCollection({ ...STORED(base), seed: null }, "A2"), { known_synthetic: KNOWN })).provenance.collection).toEqual({
+      ...STORED(base),
       seed: null,
     });
+  });
+});
+
+describe("the opponent's class on the collection record (ADR-009 §3, §4, #826)", () => {
+  const engine = loadEngine();
+  const realOpponent = () =>
+    importPaste(engine, readFileSync(join(GOLDEN_DIR, "../../teams", GOLDEN_FORMAT, "legal-opponent.txt"), "utf8"));
+  const privateOpponent = () => realOpponent().map((set, i) => (i === 0 ? { ...set, nature: "Quirky" } : set));
+  const play = (p2: ReturnType<typeof realOpponent>) =>
+    runBattle({
+      engine,
+      formatId: GOLDEN_FORMAT,
+      seed: "sodium,0f0e0d0c0b0a09080706050403020100",
+      teams: { p1: syntheticTeam(), p2 },
+      actors: { p1: firstLegal, p2: firstLegal },
+    });
+  const league = (record: BattleRecord): CollectionInput => ({
+    kind: "league",
+    run_id: "run-1",
+    seed: record.seed,
+    opponent_policy_id: "first-legal@test",
+  });
+  const stampedOpponent = () => stampTeam(privateOpponent() as PrivateTeamSpec["team"], KNOWN);
+  const stored = (episode: Episode) => JSON.parse(JSON.stringify(episode)) as Record<string, unknown>;
+
+  it.each(["league", "evaluation"] as const)(
+    "is set by the writer from the opponent's stamped team on a %s record",
+    async (kind) => {
+      const record = await play(privateOpponent());
+      const collection: CollectionInput =
+        kind === "league" ? league(record) : { kind, run_id: "e", sealed: false, seed: record.seed };
+      const priv = await episodeFromRecord(record, "p1", { ...both(synthetic(), stampedOpponent()), collection });
+      expect(priv.provenance.collection).toMatchObject({ opponent_team_data_class: "private" });
+      expect(priv.data_class).toBe("private");
+      const plain = await play(realOpponent());
+      const syn = await episodeFromRecord(plain, "p1", {
+        ...both(synthetic(), stampTeam(realOpponent() as PrivateTeamSpec["team"], KNOWN)),
+        collection: { ...collection, seed: plain.seed } as CollectionInput,
+      });
+      expect(syn.provenance.collection).toMatchObject({ opponent_team_data_class: "synthetic" });
+      expect(syn.data_class).toBe("synthetic");
+    },
+  );
+
+  it("refuses a stored private-opponent Episode relabelled synthetic (the case the reader could not catch before)", async () => {
+    const record = await play(privateOpponent());
+    const episode = await episodeFromRecord(record, "p1", {
+      ...both(synthetic(), stampedOpponent()),
+      collection: league(record),
+    });
+    expect(episode.data_class).toBe("private");
+    await expect(readEpisode(stored(episode), { known_synthetic: KNOWN })).resolves.toBeDefined();
+    const relabelled = { ...stored(episode), data_class: "synthetic", rights: "cc0-synthetic" };
+    await expect(readEpisode(relabelled, { known_synthetic: KNOWN })).rejects.toThrow(
+      "the Episode is labelled synthetic, but its own team is synthetic and its opponent's team is private: the class must be private",
+    );
+  });
+
+  it("refuses an Episode whose class is not the higher of the two, above it too", async () => {
+    const record = await play(realOpponent());
+    const episode = await episodeFromRecord(record, "p1", {
+      ...both(synthetic(), stampTeam(realOpponent() as PrivateTeamSpec["team"], KNOWN)),
+      collection: league(record),
+    });
+    const above = { ...stored(episode), data_class: "private", rights: "owner-private" };
+    await expect(readEpisode(above, { known_synthetic: KNOWN })).rejects.toThrow(
+      "the Episode is labelled private, but its own team is synthetic and its opponent's team is synthetic: the class must be synthetic",
+    );
+  });
+
+  it("an observation of a mixed battle is private for either seat, at a preview and at a move request", async () => {
+    const record = await play(privateOpponent());
+    const class_ = battleClass(record.team_hashes, KNOWN);
+    for (const player of ["p1", "p2"] as const) {
+      const own = player === "p1" ? synthetic() : stampedOpponent();
+      expect(record.requests[player][0]?.phase).toBe("preview");
+      for (const request of [record.requests[player][0], record.requests[player].find((r) => r.phase === "move")]) {
+        const observation = await buildObservation({
+          channel: recordedChannel(record, player, (request as { request_seq: number }).request_seq, class_),
+          team: own,
+          manifest: record.manifest,
+          sha256: nodeSha256,
+        });
+        expect(observation.data_class).toBe("private");
+      }
+    }
   });
 });

@@ -2,7 +2,8 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { ajvFor } from "@areneon/schema/ajv";
 import { beforeAll, describe, expect, it } from "vitest";
-import { loadEngine } from "../src/index.ts";
+import { syntheticFixtureHashes } from "../src/golden.ts";
+import { EpisodeError, loadEngine, readEpisode } from "../src/index.ts";
 import { contractSamples, SAMPLE_HASHES, SAMPLES_DIR } from "../src/samples.ts";
 
 const SCHEMAS = new URL("../../schema/contracts/v1/", import.meta.url);
@@ -31,13 +32,35 @@ describe("the shared contract sample corpus (ADR-008 §2)", () => {
     }
   });
 
-  it("is classified by Ajv exactly as its directory says", () => {
+  it("is classified by Ajv as its directory says: only invalid fails; reader-invalid is schema-valid", () => {
     for (const [file, content] of Object.entries(fresh)) {
       if (file === SAMPLE_HASHES) continue;
       const [, contract, kind] = file.split("/") as [string, string, string];
       const schema = JSON.parse(readFileSync(new URL(`${contract}.schema.json`, SCHEMAS), "utf8")) as { $id: string };
       const profile = schema.$id.includes(":engine:") ? "engine-mirror" : "contract";
-      expect(ajvFor(profile).validate(schema, content), file).toBe(kind === "valid");
+      expect(ajvFor(profile).validate(schema, content), file).toBe(kind !== "invalid");
     }
+  });
+
+  // ADR-009 section 4, test 2: schema-valid, yet readEpisode refuses each, for the named rule.
+  it.each([
+    ["v1/episode/reader-invalid/sparring-synthetic.json", "a sparring Episode is private: it records a battle against a human"],
+    [
+      "v1/episode/reader-invalid/class-below-opponent.json",
+      "the Episode is labelled synthetic, but its own team is synthetic and its opponent's team is private: the class must be private",
+    ],
+  ])("readEpisode refuses %s: %s", async (file, message) => {
+    expect(Object.keys(fresh)).toContain(file);
+    const known_synthetic = syntheticFixtureHashes(loadEngine());
+    await expect(readEpisode(committed(file), { known_synthetic })).rejects.toThrow(EpisodeError);
+    await expect(readEpisode(committed(file), { known_synthetic })).rejects.toThrow(message);
+  });
+
+  it("holds every reader-invalid sample under its contract's directory, and each is refused above", () => {
+    const readerInvalid = Object.keys(fresh).filter((f) => f.includes("/reader-invalid/"));
+    expect(readerInvalid.sort()).toEqual([
+      "v1/episode/reader-invalid/class-below-opponent.json",
+      "v1/episode/reader-invalid/sparring-synthetic.json",
+    ]);
   });
 });
