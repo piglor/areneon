@@ -60,9 +60,10 @@ export class PlayersOptionError extends Error {
 }
 
 // Names: what the pinned server's name filter leaves of a name (at most 18
-// characters, no control or format characters), minus `|`, which would split a
+// UTF-16 units, no control or format characters, no `,` `[` `]`, one space at
+// most between words, which it collapses), minus `|`, which would split a
 // protocol line. Avatars: the server's ids and numbers (`102`, `cynthia`).
-const NAME = /^[^|\p{Cc}\p{Cf}\p{Z}]([^|\p{Cc}\p{Cf}\p{Zl}\p{Zp}]{0,16}[^|\p{Cc}\p{Cf}\p{Z}])?$/u;
+const NAME = /^[^|,[\]\p{Cc}\p{Cf}\p{Z}]([^|,[\]\p{Cc}\p{Cf}\p{Zl}\p{Zp}]*[^|,[\]\p{Cc}\p{Cf}\p{Z}])?$/u;
 const AVATAR = /^[A-Za-z0-9-]{1,32}$/;
 const idOf = (name: string): string => name.toLowerCase().replace(/[^a-z0-9]+/g, "");
 
@@ -70,7 +71,7 @@ const idOf = (name: string): string => name.toLowerCase().replace(/[^a-z0-9]+/g,
 export function validatePlayers(players: Record<Player, PlayerIdentity>): void {
   for (const player of PLAYERS) {
     const { name, avatar } = players[player];
-    if (!NAME.test(name) || idOf(name) === "") {
+    if (name.length > 18 || !NAME.test(name) || name.includes("  ") || idOf(name) === "") {
       throw new PlayersOptionError(`${player} name must be 1-18 characters, no \`|\`, no control characters, not blank`);
     }
     if (avatar !== undefined && avatar !== "" && !AVATAR.test(avatar)) {
@@ -220,7 +221,9 @@ export async function runBattle(options: BattleOptions): Promise<BattleRecord> {
           if (record.turns > maxTurns) streams.omniscient.write(">forcetie");
         } else if (line.startsWith("|win|")) {
           const winner = line.slice("|win|".length);
-          record.winner = PLAYERS.find((player) => identities[player].name === winner) as Player;
+          const seat = PLAYERS.find((player) => identities[player].name === winner);
+          if (seat === undefined) abort(new Error(`|win| names no seat: ${winner}`));
+          else record.winner = seat;
           end();
         } else if (line === "|tie") {
           end();

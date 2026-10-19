@@ -139,6 +139,11 @@ describe("runBattle", () => {
       ["an empty name", { name: "" }],
       ["a blank name", { name: "   " }],
       ["a name with a pipe", { name: "a|b" }],
+      ["a name with a comma", { name: "a,b" }],
+      ["a name with a bracket", { name: "a[b" }],
+      ["a name with a closing bracket", { name: "a]b" }],
+      ["a name with a double space", { name: "a  b" }],
+      ["a name over 18 UTF-16 units", { name: "😀".repeat(10) }],
       ["a name with a newline", { name: "a\nb" }],
       ["a name with a control character", { name: "a\u0000b" }],
       ["a name with edge spaces", { name: " a" }],
@@ -154,6 +159,50 @@ describe("runBattle", () => {
       await expect(play({ players: { p1: { name: "fine" }, p2: bad } })).rejects.toThrow(
         PlayersOptionError,
       );
+    });
+
+    it("keeps swapped names on their seats", async () => {
+      const swapped = { p1: { name: "p2" }, p2: { name: "p1" } };
+      const record = await play({ players: swapped });
+      expect(record.omniscient_log).toContain("|player|p1|p2||");
+      const win = record.omniscient_log.find((l) => l.startsWith("|win|")) as string;
+      expect(swapped[record.winner as "p1" | "p2"].name).toBe(win.slice(5));
+    });
+
+    it("tells a name from one that contains it", async () => {
+      const names = { p1: { name: "Ann" }, p2: { name: "Anna" } };
+      const record = await play({ players: names });
+      const win = record.omniscient_log.find((l) => l.startsWith("|win|")) as string;
+      expect(names[record.winner as "p1" | "p2"].name).toBe(win.slice(5));
+    });
+
+    it("leaves the winner null on a tie", async () => {
+      const record = await play({ players, maxTurns: 1 });
+      expect(record.omniscient_log).toContain("|tie");
+      expect(record.winner).toBeNull();
+    });
+
+    it("aborts when |win| names no seat", async () => {
+      const sim = new Proxy(engine.sim, {
+        get(target, key, receiver) {
+          if (key !== "getPlayerStreams") return Reflect.get(target, key, receiver) as unknown;
+          return (stream: object) => {
+            const streams = target.getPlayerStreams(stream);
+            const omniscient = streams.omniscient;
+            const wrapped = {
+              write: omniscient.write.bind(omniscient),
+              writeEnd: omniscient.writeEnd.bind(omniscient),
+              async *[Symbol.asyncIterator]() {
+                for await (const chunk of omniscient) yield chunk.replace(/\|win\|.*/, "|win|nobody");
+              },
+            };
+            return { ...streams, omniscient: wrapped };
+          };
+        },
+      });
+      await expect(
+        runBattle(options({ p1: engineDefault, p2: engineDefault }, { engine: { ...engine, sim } })),
+      ).rejects.toThrow("|win| names no seat: nobody");
     });
 
     it("refuses two names that are the same player", async () => {

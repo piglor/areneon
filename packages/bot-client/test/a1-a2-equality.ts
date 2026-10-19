@@ -150,16 +150,21 @@ export async function compareA1A2(engine: Engine, snapshot: RulesSnapshot, fixtu
     const match = /^>(start|player p[12]) (\{.*\})$/.exec(line);
     return match === null ? [] : [{ kind: match[1] as string, body: JSON.parse(match[2] as string) as Record<string, string> }];
   });
+  // A1's own `>player` JSON (rating and any extra key) is not visible here:
+  // name and avatar are read back from its `|player|` lines, and the team
+  // side is recomputed from `served_teams` with the same pack.
   const expectedStart = started.flatMap(({ kind, body }) =>
     kind === "start"
-      ? [`seed ${body.seed}`]
+      ? [`format ${body.formatid} seed ${body.seed}`]
       : [`${kind.slice(-2)} ${body.name} ${body.avatar ?? ""} ${body.team}`],
   );
   const a1Start = [
-    `seed ${record.seed}`,
+    `format ${fixture.format_id} seed ${record.seed}`,
     ...SEATS.map((seat) => {
-      const line = record.omniscient_log.find((l) => l.startsWith(`|player|${seat}|`)) ?? "";
-      const [, , , name, avatar] = line.split("|");
+      const line = record.omniscient_log.find((l) => l.startsWith(`|player|${seat}|`));
+      const parts = line?.split("|");
+      if (parts?.length !== 6) throw new Error(`A1 wrote no |player|${seat}| line`);
+      const [, , , name, avatar] = parts;
       return `${seat} ${name} ${avatar} ${engine.sim.Teams.pack(fixture.served_teams[seat] as never)}`;
     }),
   ];
