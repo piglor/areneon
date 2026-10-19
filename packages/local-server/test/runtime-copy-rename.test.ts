@@ -19,6 +19,7 @@ type PathFault = (path: string) => "missing" | string | null;
 const failRename = vi.hoisted(() => ({ when: (() => null) as RenameFault }));
 const failLstat = vi.hoisted(() => ({ when: (() => null) as PathFault }));
 const failReaddir = vi.hoisted(() => ({ when: (() => null) as PathFault }));
+const failRm = vi.hoisted(() => ({ when: (() => null) as PathFault }));
 const fault = (code: string, path: string): Error =>
   Object.assign(new Error(`${code}: ${path}`), { code });
 vi.mock("node:fs", async (original) => {
@@ -36,6 +37,11 @@ vi.mock("node:fs", async (original) => {
       if (code !== null) throw fault(code, path);
       return fs.lstatSync(path, options);
     }) as typeof fs.lstatSync,
+    rmSync: ((path: string, options?: object) => {
+      const code = failRm.when(path);
+      if (code !== null) throw fault(code, path);
+      fs.rmSync(path, options);
+    }) as typeof fs.rmSync,
     readdirSync: ((path: string, options?: object) => {
       const code = failReaddir.when(path);
       if (code !== null) throw fault(code, path);
@@ -121,15 +127,41 @@ describe("putting a runtime copy in place", () => {
       mkdirSync(join(root, name));
       utimesSync(join(root, name), stale, stale);
     }
+    // Vanished and unreadable in one sweep: the copy still succeeds.
     failLstat.when = (path) =>
       path.endsWith("-vanished") ? "missing" : path.endsWith("-unreadable") ? "EACCES" : null;
     expect(createRuntimeCopy(options).commit).toBe(vendor.commit);
     failLstat.when = () => null;
     expect(readdirSync(root).sort()).toEqual([names[0], names[1], vendor.commit].sort());
 
+    // Unlistable root: the copy still succeeds.
     failReaddir.when = (path) => (path === root ? "EACCES" : null);
     expect(createRuntimeCopy(options).commit).toBe(vendor.commit);
     failReaddir.when = () => null;
     expect(readdirSync(root).sort()).toEqual([names[0], names[1], vendor.commit].sort());
+  });
+
+  it("keeps a copy that is in place when the old copy cannot be removed", () => {
+    createRuntimeCopy(options);
+    failRm.when = (path) => (path.endsWith(".old") ? "EBUSY" : null);
+    const copy = createRuntimeCopy(options);
+    failRm.when = () => null;
+    expect(verifyRuntimeCopy(copy.dir, vendor.commit)).toEqual(copy);
+    const leftovers = readdirSync(root).filter((name) => name.endsWith(".old"));
+    expect(leftovers).toHaveLength(1);
+    for (const name of leftovers) rmSync(join(root, name), { recursive: true });
+  });
+
+  it("reports the failed rename, not a failed clean-up", () => {
+    createRuntimeCopy(options);
+    failRename.when = (_from, to) => (basename(to) === vendor.commit ? "ENOTEMPTY" : null);
+    failRm.when = () => "EBUSY";
+    expect(() => createRuntimeCopy(options)).toThrow(/cannot put the runtime copy in place.*ENOTEMPTY/);
+    failRename.when = () => null;
+    failRm.when = () => null;
+    for (const name of readdirSync(root).filter((entry) => entry.startsWith("."))) {
+      rmSync(join(root, name), { recursive: true });
+    }
+    expect(createRuntimeCopy(options).commit).toBe(vendor.commit);
   });
 });

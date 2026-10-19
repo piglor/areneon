@@ -110,7 +110,10 @@ export function treeDigest(dir: string): string {
  * removed. A server already running from it keeps its open files, but the
  * launcher must not recreate the copy while one of its servers runs from it.
  * Concurrent creators of the same commit each either put a complete copy in
- * place or fail with a `RuntimeCopyError`; none leaves a staging directory.
+ * place or fail with a `RuntimeCopyError`. Other I/O errors (a full disk,
+ * EACCES while creating or copying) propagate as they are. Either way the
+ * staging directory is removed; anything a failed removal leaves behind is
+ * swept by a later run once stale.
  */
 export function createRuntimeCopy(options: RuntimeCopyOptions = {}): RuntimeCopy {
   const vendorDir = resolve(options.vendorDir ?? DEFAULT_SHOWDOWN_DIR);
@@ -159,14 +162,24 @@ export function createRuntimeCopy(options: RuntimeCopyOptions = {}): RuntimeCopy
       }
       renameSync(staging, dir);
     } catch (error) {
-      rmSync(aside, { recursive: true, force: true });
+      removeBestEffort(aside);
       throw new RuntimeCopyError(`cannot put the runtime copy in place at ${dir}: ${String(error)}`);
     }
-    rmSync(aside, { recursive: true, force: true });
+    // The new copy is in place; a leftover old copy is swept later.
+    removeBestEffort(aside);
     return { dir, commit, distSha256 };
   } catch (error) {
-    rmSync(staging, { recursive: true, force: true });
+    removeBestEffort(staging);
     throw error;
+  }
+}
+
+/** Remove a directory without letting a failure mask the caller's outcome. */
+function removeBestEffort(path: string): void {
+  try {
+    rmSync(path, { recursive: true, force: true });
+  } catch {
+    // Left for a later sweep of stale `.<commit>-*` directories.
   }
 }
 
@@ -218,10 +231,10 @@ function readManifest(path: string): { commit: string; dist_sha256: string } {
   return value as { commit: string; dist_sha256: string };
 }
 
-/** Remove this commit's staging and set-aside directories left by a crashed run. */
 /**
- * Best effort: a concurrent run may remove its own directories while this
- * runs, and a failed sweep never fails the copy.
+ * Remove this commit's stale staging and set-aside directories left by a
+ * crashed run. Best effort: a concurrent run may remove its own directories
+ * while this runs, and a failed sweep never fails the copy.
  */
 function sweepStale(runtimeRoot: string, commit: string): void {
   const now = Date.now();
