@@ -9,8 +9,8 @@ import {
   type CommandRunner,
   FakeAttestationVerifier,
   GhAttestationVerifier,
-  RULES_PUBLISH_POLICY,
   createSpawnRunner,
+  RULES_PUBLISH_POLICY,
   spawnRunner,
 } from "../src/index.ts";
 
@@ -119,6 +119,7 @@ describe("GhAttestationVerifier", () => {
       return { code: 0, stdout: GH_JSON, stderr: "" };
     };
     const bytes = await new GhAttestationVerifier({ run }).verify(file);
+    expect(await readFile(file, "utf8")).toBe("{\"swapped\":true}");
     expect(Buffer.from(bytes).equals(original)).toBe(true);
   });
 

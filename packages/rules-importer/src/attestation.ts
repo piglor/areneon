@@ -70,7 +70,8 @@ export function createSpawnRunner(options: SpawnRunnerOptions = {}): CommandRunn
     new Promise((resolve, reject) => {
       const signal = AbortSignal.timeout(timeoutMs);
       const child = spawn(command, args, { stdio: ["ignore", "pipe", "pipe"], signal, killSignal: "SIGKILL" });
-      // A promise settles once, so a later reject or resolve is a no-op.
+      // A promise settles once, so a later reject or resolve is a no-op. The
+      // kill reaches only the direct child; gh starts no child of its own here.
       const fail = (error: Error): void => {
         child.kill("SIGKILL");
         reject(error);
