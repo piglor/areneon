@@ -38,10 +38,12 @@ rows() {
 # run_import <snapshot step status> <channel step status> <expected downloads>:
 # the stand-in gh logs its calls into a fresh directory, and the assets it was
 # asked to download (one name per line, sorted) must be <expected downloads>.
+# It leaves the log directory in gh_log.
 run_import() {
   local out code=0 log
   log=$(mktemp -d -p "$scratch")
   chmod 0777 "$log"
+  gh_log=$log
   out=$(docker run --rm --network host -e DATABASE_URL="$url" -v "$log:/fake-gh-log" "$image:e2e") || code=$?
   expect "import exit code ($1, $2)" "$code" 0
   expect "import summary ($1, $2)" "$out" \
@@ -98,5 +100,7 @@ expect "rows after the import (committed)" "$(rows)" "$stored"
 # The re-run downloads only the channel asset: the stored snapshot is planned
 # by reference and checked against its stored row.
 run_import referenced already-present "$channel_asset"
+# No gh call names the snapshot at all: no tag lookup, download or attestation.
+expect "re-run gh calls naming the snapshot" "$(grep -c "rules-snapshot-$snapshot" "$gh_log/calls" || true)" 0
 expect "rows after the re-run (unchanged)" "$(rows)" "$stored"
 echo "e2e: tampered import refused, rules import committed, re-run was a no-op that downloaded no snapshot"

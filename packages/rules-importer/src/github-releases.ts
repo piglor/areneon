@@ -74,7 +74,9 @@ const isObject = (value: unknown): value is Record<string, unknown> =>
  * A snapshot Release's asset `<tag>.json` whose hash is in `known.snapshots`
  * is left out without being downloaded (nor its tag resolved, when that was
  * the Release's only asset), unless GitHub reports another digest for it,
- * which is refused.
+ * which is refused. A skipped asset is never used, so tampering with the
+ * Release of a stored snapshot is caught only by that reported digest; the
+ * stored row stays authoritative.
  */
 export class GitHubReleaseSource implements ReleaseSource {
   readonly #verifier: AttestationVerifier;
@@ -92,7 +94,7 @@ export class GitHubReleaseSource implements ReleaseSource {
   }
 
   async list(known: KnownSnapshots): Promise<ReleaseAsset[]> {
-    const releases = (await this.#releases()).map((release) => ({ ...release, assets: unknown(release, known) }));
+    const releases = (await this.#releases()).map((release) => ({ ...release, assets: unstoredAssets(release, known) }));
     const dir = await mkdtemp(join(this.#tmpRoot, "areneon-rules-"));
     try {
       const assets: ReleaseAsset[] = [];
@@ -195,7 +197,7 @@ export class GitHubReleaseSource implements ReleaseSource {
 }
 
 /** The Release's assets, less a snapshot asset the store already holds. */
-function unknown(release: Release, known: KnownSnapshots): Asset[] {
+function unstoredAssets(release: Release, known: KnownSnapshots): Asset[] {
   const hash = SNAPSHOT_TAG.exec(release.tag)?.[1];
   if (hash === undefined || !known.snapshots.has(hash)) return release.assets;
   return release.assets.filter((asset) => {
