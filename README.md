@@ -9,6 +9,7 @@ This repository covers offline training, evaluation and local bot sparring; it s
 - Engineering work, ADRs and experiments: [Redmine](https://redmine.piglor.com/projects/areneon) ([ADR index](https://redmine.piglor.com/projects/areneon/wiki/ADR))
 - GitHub Issues are for community contributions only; internal work lives in Redmine.
 - Setup and rules: [CONTRIBUTING.md](CONTRIBUTING.md). Domain glossary: [CONTEXT.md](CONTEXT.md).
+- Owner runbook for the dev rules store (ADR-007): [docs/runbooks/rules-db.md](docs/runbooks/rules-db.md).
 - Private competitive teams must never be committed. Use sanitized fixtures only.
 
 ## Layout
