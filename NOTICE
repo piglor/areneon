@@ -11,6 +11,12 @@ Copyright (c) 2011-2026 Guangcong Luo and other contributors,
 licensed under the MIT License (see vendor/pokemon-showdown/LICENSE).
 Areneon runs the simulator unmodified; the Showdown client is not used.
 
+This product includes agent skills under .agents/skills adapted from
+mattpocock/skills (https://github.com/mattpocock/skills),
+Copyright (c) 2026 Matt Pocock,
+licensed under the MIT License (see .agents/skills/LICENSE-mattpocock-skills).
+Areneon has modified these skills and added skills of its own.
+
 Trademarks: Pokémon and all related names are trademarks of Nintendo,
 Creatures Inc., GAME FREAK inc. and The Pokémon Company. Areneon is an
 independent open-source project and is not affiliated with, endorsed by, or
