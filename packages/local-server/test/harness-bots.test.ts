@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // playBotVsBot's refusals, with runA2Bot replaced: no server runs here.
 const run = vi.hoisted(() => vi.fn<(options: A2BotOptions) => Promise<A2SessionResult>>());
-vi.mock("@areneon/bot-client", () => ({ runA2Bot: run }));
+vi.mock("@areneon/bot-client", async (original) => ({ ...(await original<typeof import("@areneon/bot-client")>()), runA2Bot: run }));
 
 import { HarnessError, playBotVsBot } from "../src/harness.ts";
 
@@ -39,7 +39,40 @@ describe("playBotVsBot", () => {
     });
     const pair = await playBotVsBot(options);
     expect(order).toEqual(["sparring", "challenger->s"]);
+    expect(pair.connections).toEqual({ sparring: [], challenger: [] });
     expect(pair.sparring.room).toBe(pair.challenger.room);
+  });
+
+  it("taps each bot's own connections at the transport, one list of frames per connection", async () => {
+    const urls: string[] = [];
+    const frameListeners: ((frame: string) => void)[] = [];
+    const connect = (url: string) => {
+      urls.push(url);
+      return Promise.resolve({
+        send: () => {},
+        onFrame: (cb: (frame: string) => void) => void frameListeners.push(cb),
+        onClose: () => {},
+        close: () => {},
+      });
+    };
+    run.mockImplementation(async (o) => {
+      const mine = o.challenge === undefined ? "sparring" : "challenger";
+      o.onLog?.({ event: "logged_in", name: "s" });
+      // Two connections of the same bot (a reconnect), and one of the other.
+      for (const frame of [`>r\n|${mine}|1`, `|${mine}|2`]) {
+        const transport = await (o.connect as NonNullable<typeof o.connect>)(o.url);
+        transport.onFrame(() => {});
+        frameListeners.at(-1)?.(frame);
+      }
+      return battle("battle-f-1");
+    });
+    const pair = await playBotVsBot({ ...options, connect });
+    expect(pair.connections).toEqual({
+      sparring: [[">r\n|sparring|1"], ["|sparring|2"]],
+      challenger: [[">r\n|challenger|1"], ["|challenger|2"]],
+    });
+    expect(urls).toHaveLength(4);
+    expect(new Set(urls)).toEqual(new Set([options.url]));
   });
 
   it("fails if the sparring bot ends before it logs in", async () => {

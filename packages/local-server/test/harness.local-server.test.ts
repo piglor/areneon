@@ -71,7 +71,12 @@ describe("the harness server", () => {
       expect(fixture.players[challengerSeat].team).toBe(recording.teams.challenger);
       expect(fixture.winner === null || ["p1", "p2"].includes(fixture.winner)).toBe(true);
       expect(fixture.input_log.lines.length).toBeGreaterThan(8);
-      expect(JSON.stringify(fixture)).not.toMatch(/\|t:\||"timestamp"/);
+      expect(JSON.stringify(fixture)).not.toMatch(/\|t:\|(?!0\b)|"timestamp"/);
+      // Each seat's raw frames are the room's, headed and in order, and rebuild its channel.
+      for (const seat of ["p1", "p2"] as const) {
+        expect(fixture.frames[seat].every((frame) => frame.startsWith(`>${fixture.room}\n`))).toBe(true);
+        expect(fixture.frames[seat][0]).toContain("|init|battle");
+      }
     },
     60_000,
   );

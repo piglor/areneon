@@ -1,6 +1,14 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { type A2BattleRecord, runA2Bot } from "@areneon/bot-client";
+import {
+  A2Channel,
+  type A2BattleRecord,
+  connectWebSocket,
+  ProtocolReader,
+  runA2Bot,
+  splitFrame,
+  type Transport,
+} from "@areneon/bot-client";
 import {
   type Engine,
   type PlayerChannel,
@@ -112,13 +120,15 @@ export async function readServerInputLog(
 
 /** One recorded battle: the input log, both players' own channels, the teams, the seed and the pin. */
 export interface HarnessFixture {
-  schema_version: 1;
+  schema_version: 2;
   data_class: "synthetic";
   rights: "cc0-synthetic";
   license: "CC0-1.0";
   provenance: string;
   manifest: VersionManifest;
   format_id: string;
+  /** The battle room both bots joined (the `>ROOMID` header of `frames`). */
+  room: string;
   /** The seed the server drew for the battle (`>start`); the server takes no seed from a challenge. */
   seed: string;
   /** The names and avatars the server put on the `>player` lines: A1 must use the same to equal the channels. */
@@ -134,7 +144,18 @@ export interface HarnessFixture {
   /** `null` for a tie. */
   winner: Seat | null;
   turns: number;
-  /** Each player's own channel as its bot client received it (the server's lines already dropped). */
+  /**
+   * Each player's raw server frames for the battle room, exactly as its bot
+   * received them from the WebSocket (header, lines, order and frame
+   * boundaries), before any parsing. Only that player's own stream: the
+   * server sends each client only what it may see.
+   */
+  frames: Record<Seat, string[]>;
+  /**
+   * Each player's own channel as its bot client built it from its `frames`.
+   * Derived: `verifyHarnessFixture` replays the frames through
+   * `ProtocolReader` and `A2Channel` and requires this exact result.
+   */
   channels: Record<Seat, PlayerChannel>;
   /** The server's input log: both teams and every choice. Omniscient, never an actor's input. */
   input_log: { omniscient: true; lines: string[] };
@@ -166,6 +187,83 @@ export function parseInputLog(lines: readonly string[]): {
   return { start, players: players as Record<Seat, PlayerLine> };
 }
 
+/**
+ * A pure observer on a transport (the transport boundary of ADR-005 §1):
+ * every frame is copied into `into`, as received and before any listener
+ * parses it, then delivered unchanged. Sending, closing and close listeners
+ * pass straight through.
+ */
+export function tapTransport(inner: Transport, into: string[]): Transport {
+  return {
+    send: (line) => inner.send(line),
+    onFrame: (cb) =>
+      inner.onFrame((frame) => {
+        into.push(frame);
+        cb(frame);
+      }),
+    onClose: (cb) => inner.onClose(cb),
+    close: () => inner.close(),
+  };
+}
+
+/** What a `|t:|<epoch seconds>` line's number becomes in a fixture: the server's wall clock is not kept. */
+export const REDACTED_CLOCK = "|t:|0";
+
+/**
+ * `frame` with the number of every `|t:|` line replaced (the only edit a
+ * stored frame gets): the server writes its wall clock there, and neither
+ * `ProtocolReader` nor `A2Channel` reads it (`stripServerLines` drops the
+ * line whatever its number). Lines, order and frame boundaries stay.
+ */
+export function redactClock(frame: string): string {
+  return frame
+    .split("\n")
+    .map((line) => (line.startsWith("|t:|") ? REDACTED_CLOCK : line))
+    .join("\n");
+}
+
+/**
+ * The frames of `room` out of one bot's connections (each a list of every
+ * frame that connection received, in order): the room's own frames only, the
+ * lobby and global frames dropped. A battle played on one connection is
+ * expected, as for `channels`.
+ */
+export function roomFrames(connections: readonly (readonly string[])[], room: string): string[] {
+  const kept = connections
+    .map((frames) => frames.filter((frame) => splitFrame(frame).room === room).map(redactClock))
+    .filter((frames) => frames.length > 0);
+  if (kept.length !== 1) {
+    throw new HarnessError(`${kept.length} connections received ${room}: one connection per player is expected`);
+  }
+  return kept[0] as string[];
+}
+
+/**
+ * A bot's channel as its session builds it: the room's raw frames in order
+ * through `ProtocolReader` (it must decode every request, all of them the
+ * seat's own) and `A2Channel` (server lines dropped, re-sent requests left
+ * out). `dropped` and `resent` are the adapter's own counts.
+ */
+export function channelFromFrames(
+  frames: readonly string[],
+  room: string,
+  seat: Seat,
+): { channel: PlayerChannel; dropped: string[]; resent: number; requests: number } {
+  const reader = new ProtocolReader();
+  const adapter = new A2Channel({ room, player: seat, data_class: "synthetic" });
+  let requests = 0;
+  for (const frame of frames) {
+    for (const event of reader.read(frame)) {
+      if (event.kind !== "request") continue;
+      requests += 1;
+      if (event.request.player !== seat) throw new HarnessError(`${seat}'s frames hold a request for ${event.request.player}`);
+    }
+    adapter.receive(frame);
+  }
+  const built = adapter.build();
+  return { ...built, requests };
+}
+
 export interface FixtureInput {
   engine: Engine;
   snapshot: RulesSnapshot;
@@ -174,6 +272,8 @@ export interface FixtureInput {
   log: ServerInputLog;
   /** The two bots' records of the battle, keyed by their seat. */
   records: Record<Seat, A2BattleRecord>;
+  /** Every frame each bot's connections received, per seat (see `roomFrames`). */
+  connections: Record<Seat, string[][]>;
   teams: Record<Seat, PokemonSet[]>;
   /** A label for each seat's team, e.g. its file under fixtures/teams. */
   teamLabels: Record<Seat, string>;
@@ -181,9 +281,11 @@ export interface FixtureInput {
 
 /** Build the fixture of a finished battle; it must pass `verifyHarnessFixture`. */
 export async function buildHarnessFixture(input: FixtureInput): Promise<HarnessFixture> {
-  const { engine, snapshot, format, log, records, teams, teamLabels } = input;
+  const { engine, snapshot, format, log, records, connections, teams, teamLabels } = input;
   const { start, players } = parseInputLog(log.lines);
   const channels = {} as Record<Seat, PlayerChannel>;
+  const frames = {} as Record<Seat, string[]>;
+  let room = "";
   for (const seat of SEATS) {
     const record = records[seat];
     if (record.player !== seat || record.room.length === 0) {
@@ -193,6 +295,9 @@ export async function buildHarnessFixture(input: FixtureInput): Promise<HarnessF
       throw new HarnessError(`${seat} has ${record.channels.length} channels: one connection per player is expected`);
     }
     channels[seat] = record.channels[0] as PlayerChannel;
+    frames[seat] = roomFrames(connections[seat], record.room);
+    if (room !== "" && room !== record.room) throw new HarnessError("the bots did not play the same battle");
+    room = record.room;
   }
   const served = (seat: Seat): PokemonSet[] => {
     const team = engine.sim.Teams.unpack(players[seat].team);
@@ -201,13 +306,14 @@ export async function buildHarnessFixture(input: FixtureInput): Promise<HarnessF
   };
   const winner = SEATS.find((seat) => players[seat].name === log.winner) ?? null;
   const fixture: HarnessFixture = {
-    schema_version: 1,
+    schema_version: 2,
     data_class: "synthetic",
     rights: rightsFor("synthetic") as "cc0-synthetic",
     license: "CC0-1.0",
     provenance: input.provenance,
     manifest: resolveFormat(engine, format, snapshot).manifest,
     format_id: format,
+    room,
     seed: start.seed,
     players: {
       p1: { name: players.p1.name, avatar: players.p1.avatar, team: teamLabels.p1 },
@@ -217,6 +323,7 @@ export async function buildHarnessFixture(input: FixtureInput): Promise<HarnessF
     served_teams: { p1: served("p1"), p2: served("p2") },
     winner,
     turns: log.turns,
+    frames,
     channels,
     input_log: { omniscient: true, lines: log.lines },
   };
@@ -253,13 +360,53 @@ export async function replayInputLog(engine: Engine, lines: readonly string[]): 
 }
 
 /**
+ * What is wrong with `seat`'s raw frames: their shape (non-empty strings of
+ * the fixture's room, headed, the first frame starting with `|init|battle`),
+ * their privacy (no `|showteam|` or `|split|` line, no request but the
+ * seat's own, no `p<other>` secret line: `A2Channel` refuses those too) and
+ * that `channelFromFrames` rebuilds exactly the stored `channels[seat]`.
+ */
+function frameProblems(fixture: HarnessFixture, seat: Seat): string[] {
+  const frames = fixture.frames[seat];
+  if (!Array.isArray(frames) || frames.length === 0 || !frames.every((frame) => typeof frame === "string")) {
+    return [`${seat} frames are not a non-empty list of strings`];
+  }
+  const problems: string[] = [];
+  const split = frames.map((frame) => splitFrame(frame));
+  if (!frames.every((frame) => frame.startsWith(`>${fixture.room}\n`)) || split.some(({ room }) => room !== fixture.room)) {
+    problems.push(`${seat} frames are not all headed >${fixture.room}`);
+  }
+  if (split[0]?.lines[0] !== "|init|battle") problems.push(`${seat} frames do not start with |init|battle`);
+  const lines = split.flatMap(({ lines: l }) => l);
+  if (lines.some((line) => line.startsWith("|showteam|") || line.startsWith("|split|"))) {
+    problems.push(`${seat} frames have a team sheet or a |split| marker`);
+  }
+  if (lines.some((line) => line.startsWith("|t:|") && line !== REDACTED_CLOCK)) {
+    problems.push(`${seat} frames have a wall-clock |t:| line`);
+  }
+  for (const line of lines.filter((l) => l.startsWith("|request|"))) {
+    if (!line.includes(`"id":"${seat}"`)) problems.push(`${seat} frames hold a request that is not its own`);
+  }
+  try {
+    const replayed = channelFromFrames(frames, fixture.room, seat).channel;
+    if (JSON.stringify(replayed) !== JSON.stringify(fixture.channels[seat])) {
+      problems.push(`${seat} channel is not what its frames give through ProtocolReader and A2Channel`);
+    }
+  } catch (error) {
+    problems.push(`${seat} frames cannot be replayed: ${(error as Error).message}`);
+  }
+  return problems;
+}
+
+/**
  * Check a fixture without a server. Refuses (listing every problem) unless:
  * it is synthetic with matching rights; it names this engine's commit; its
  * input log's seed, format, names, avatars and packed teams are the ones the
  * fixture states; each channel is that player's own (`playerChannel`: no
  * opponent SECRET line, no other player's request) and has no
  * `|showteam|`; `served_teams` is what the input log packs and differs from
- * `teams` at most in nicknames; and the pinned sim run on the input log gives
+ * `teams` at most in nicknames; each seat's raw `frames` are well formed, its
+ * own and rebuild the stored `channels` (`frameProblems`); and the pinned sim run on the input log gives
  * the fixture's `winner` and `turns` and the channels' `|player|` lines
  * (names and avatars) and `|win|` line. The other channel lines are NOT
  * compared with the replay: it is one batch, so it holds only the last
@@ -267,7 +414,7 @@ export async function replayInputLog(engine: Engine, lines: readonly string[]): 
  */
 export async function verifyHarnessFixture(engine: Engine, fixture: HarnessFixture): Promise<void> {
   const problems: string[] = [];
-  if (fixture.schema_version !== 1) problems.push(`schema_version ${String(fixture.schema_version)}`);
+  if (fixture.schema_version !== 2) problems.push(`schema_version ${String(fixture.schema_version)}`);
   if (fixture.data_class !== "synthetic" || fixture.rights !== rightsFor(fixture.data_class)) {
     problems.push("not synthetic with cc0-synthetic rights");
   }
@@ -292,6 +439,7 @@ export async function verifyHarnessFixture(engine: Engine, fixture: HarnessFixtu
     const channel = playerChannel(fixture.channels[seat]);
     if (channel.player !== seat || channel.data_class !== "synthetic") problems.push(`${seat} channel is not its own`);
     if (channel.lines.some((line) => line.startsWith("|showteam|"))) problems.push(`${seat} channel has a team sheet`);
+    problems.push(...frameProblems(fixture, seat));
   }
   const replay = await replayInputLog(engine, fixture.input_log.lines);
   const win = (lines: readonly string[]): string | undefined => lines.find((line) => line.startsWith("|win|"));
@@ -313,6 +461,8 @@ export async function verifyHarnessFixture(engine: Engine, fixture: HarnessFixtu
 export interface BotPair {
   sparring: A2BattleRecord;
   challenger: A2BattleRecord;
+  /** Every frame each bot's connections received, in order (`tapTransport`). */
+  connections: { sparring: string[][]; challenger: string[][] };
 }
 
 export interface BotVsBotOptions {
@@ -324,6 +474,8 @@ export interface BotVsBotOptions {
   /** The sparring bot's and the challenger's user names. */
   names: { sparring: string; challenger: string };
   teams: { sparring: PokemonSet[]; challenger: PokemonSet[] };
+  /** Opens a transport to `url`; default `connectWebSocket`. For tests. */
+  connect?: (url: string) => Promise<Transport>;
 }
 
 /**
@@ -333,6 +485,14 @@ export interface BotVsBotOptions {
  */
 export async function playBotVsBot(options: BotVsBotOptions): Promise<BotPair> {
   const { engine, snapshot, url, format, names, teams } = options;
+  const open = options.connect ?? ((to: string) => connectWebSocket(to));
+  // Each bot's connections, tapped at the transport: its frames as received.
+  const connections = { sparring: [] as string[][], challenger: [] as string[][] };
+  const tapped = (who: keyof typeof connections) => async (to: string) => {
+    const frames: string[] = [];
+    connections[who].push(frames);
+    return tapTransport(await open(to), frames);
+  };
   const common = { engine, snapshot, url, format, data_class: "synthetic" as const, battles: 1 };
   let loggedIn: () => void = () => {};
   const ready = new Promise<void>((done) => (loggedIn = done));
@@ -341,6 +501,7 @@ export async function playBotVsBot(options: BotVsBotOptions): Promise<BotPair> {
     name: names.sparring,
     challenger: names.challenger,
     team: teams.sparring,
+    connect: tapped("sparring"),
     onLog(entry) {
       if (entry.event === "logged_in") loggedIn();
     },
@@ -352,13 +513,14 @@ export async function playBotVsBot(options: BotVsBotOptions): Promise<BotPair> {
     challenger: names.sparring,
     challenge: names.sparring,
     team: teams.challenger,
+    connect: tapped("challenger"),
   });
   const [a, b] = await Promise.all([sparring, challenger]);
   const [mine, theirs] = [a.battles[0], b.battles[0]];
   if (mine === undefined || theirs === undefined || mine.room !== theirs.room) {
     throw new HarnessError("the bots did not play the same battle");
   }
-  return { sparring: mine, challenger: theirs };
+  return { sparring: mine, challenger: theirs, connections };
 }
 
 export interface RecordOptions extends Omit<BotVsBotOptions, "url"> {
@@ -386,6 +548,10 @@ export async function recordHarnessBattle(options: RecordOptions): Promise<Harne
     provenance: options.provenance,
     log,
     records: { [sparringSeat]: pair.sparring, [challengerSeat]: pair.challenger } as Record<Seat, A2BattleRecord>,
+    connections: {
+      [sparringSeat]: pair.connections.sparring,
+      [challengerSeat]: pair.connections.challenger,
+    } as Record<Seat, string[][]>,
     teams: { [sparringSeat]: teams.sparring, [challengerSeat]: teams.challenger } as Record<Seat, PokemonSet[]>,
     teamLabels: { [sparringSeat]: teamLabels.sparring, [challengerSeat]: teamLabels.challenger } as Record<Seat, string>,
   });

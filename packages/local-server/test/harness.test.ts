@@ -6,12 +6,17 @@ import type { A2BattleRecord } from "@areneon/bot-client";
 import { describe, expect, it } from "vitest";
 import {
   buildHarnessFixture,
+  channelFromFrames,
   findServerLog,
   type HarnessFixture,
   harnessSettings,
   parseInputLog,
   readServerInputLog,
+  REDACTED_CLOCK,
+  redactClock,
   replayInputLog,
+  roomFrames,
+  tapTransport,
   verifyHarnessFixture,
 } from "../src/harness.ts";
 import { renderServerConfig, serverSettings } from "../src/index.ts";
@@ -177,7 +182,7 @@ describe.each(COMMITTED)("the committed fixture $recording.file", ({ recording, 
       change(copy);
       await expect(verifyHarnessFixture(engine, copy)).rejects.toThrow(reason);
     };
-    await refused((f) => ((f as { schema_version: number }).schema_version = 2), "schema_version 2");
+    await refused((f) => ((f as { schema_version: number }).schema_version = 1), "schema_version 1");
     await refused((f) => ((f as { data_class: string }).data_class = "private"), "not synthetic");
     await refused((f) => ((f as { rights: string }).rights = "owner-private"), "not synthetic");
     await refused((f) => (f.manifest.showdown_commit = "0".repeat(40)), "another Showdown commit");
@@ -204,6 +209,60 @@ describe.each(COMMITTED)("the committed fixture $recording.file", ({ recording, 
     );
   });
 
+  it("holds raw server frames of its own room that rebuild its channels", () => {
+    for (const seat of ["p1", "p2"] as const) {
+      const frames = fixture.frames[seat];
+      expect(frames.length).toBeGreaterThan(10);
+      expect(frames.every((frame) => frame.startsWith(`>${fixture.room}\n`))).toBe(true);
+      expect(frames[0]).toContain("|init|battle");
+      const raw = frames.join("\n");
+      // Server-only lines are there, as received; the adapter drops them from the channel.
+      for (const kind of ["|j|", "|inactive|", "|title|", REDACTED_CLOCK]) expect(raw).toContain(kind);
+      expect(fixture.channels[seat].lines.some((line) => line.startsWith("|j|"))).toBe(false);
+      // Only the seat's own stream: its requests, no team sheet, no split marker, no clock.
+      expect(raw).not.toMatch(/\|showteam\||\|split\||\|t:\|(?!0\b)/);
+      const built = channelFromFrames(frames, fixture.room, seat);
+      expect(built.channel).toEqual(fixture.channels[seat]);
+      expect(built.dropped).toEqual([]);
+      expect(built.requests).toBe(fixture.channels[seat].lines.filter((line) => line.startsWith("|request|")).length);
+    }
+  });
+
+  it("refuses frames that are malformed, not its own, clocked or not what the channel is", async () => {
+    const refused = async (change: (f: HarnessFixture) => void, reason: string | RegExp): Promise<void> => {
+      const copy = clone(fixture);
+      change(copy);
+      await expect(verifyHarnessFixture(engine, copy)).rejects.toThrow(reason);
+    };
+    const at = (f: HarnessFixture, seat: "p1" | "p2", prefix: string): number =>
+      f.frames[seat].findIndex((frame) => frame.includes(`\n${prefix}`));
+    await refused((f) => (f.frames.p1 = []), "p1 frames are not a non-empty list of strings");
+    await refused((f) => (f.frames.p2 = [1 as never]), "p2 frames are not a non-empty list of strings");
+    await refused((f) => (f.room = "battle-other"), /frames are not all headed >battle-other/);
+    await refused((f) => (f.frames.p1[2] = "|inactive|no header"), "p1 frames are not all headed");
+    await refused(
+      (f) => (f.frames.p1[0] = (f.frames.p1[0] as string).replace("|init|battle", "|title|x")),
+      /p1 frames do not start with \|init\|battle/,
+    );
+    await refused((f) => f.frames.p2.push(`>${f.room}\n|showteam|p1|x`), "p2 frames have a team sheet or a |split| marker");
+    await refused((f) => f.frames.p1.push(`>${f.room}\n|split|p1`), "p1 frames have a team sheet or a |split| marker");
+    await refused(
+      (f) => (f.frames.p1[at(f, "p1", "|t:|")] = `>${f.room}\n|t:|1760000000`),
+      "p1 frames have a wall-clock |t:| line",
+    );
+    // A foe's request in the stream: not its own (and the adapter refuses it too).
+    await refused((f) => {
+      const foe = (f.frames.p2[at(f, "p2", "|request|")] as string).split("\n")[1] as string;
+      f.frames.p1.splice(at(f, "p1", "|request|"), 0, `>${f.room}\n${foe}`);
+    }, /p1 frames hold a request that is not its own/);
+    // The stored channel is derived: it must be what the frames give.
+    await refused((f) => f.channels.p1.lines.splice(5, 1), "p1 channel is not what its frames give");
+    await refused((f) => f.frames.p2.splice(at(f, "p2", "|move|"), 1), "p2 channel is not what its frames give");
+    await refused((f) => (f.frames.p1[4] = `>${f.room}\n|t:|0\n|gametype|singles`), "p1 channel is not what its frames give");
+    await refused((f) => (f.frames.p1[7] = `>${f.room}\n|request|{`), /p1 frames cannot be replayed/);
+    await refused((f) => f.frames.p1.push(`>${f.room}\n|init|`), /p1 frames cannot be replayed: .* is not a battle room/);
+  });
+
   it("replays on the pinned sim to the recorded result, the same every time", async () => {
     const a = await replayInputLog(engine, fixture.input_log.lines);
     const b = await replayInputLog(engine, fixture.input_log.lines);
@@ -219,19 +278,22 @@ describe("buildHarnessFixture", () => {
   const { recording, fixture } = COMMITTED[0] as (typeof COMMITTED)[0];
   const record = (seat: "p1" | "p2", over: Partial<A2BattleRecord> = {}): A2BattleRecord =>
     ({
-      room: `battle-${FIXTURE_FORMAT}-1`,
+      room: fixture.room,
       player: seat,
       result: "win",
       channels: [fixture.channels[seat]],
       ...over,
     }) as A2BattleRecord;
-  const input = (over: { log?: { winner: string }; records?: Record<"p1" | "p2", A2BattleRecord> } = {}) => ({
+  const input = (
+    over: { log?: { winner: string }; records?: Record<"p1" | "p2", A2BattleRecord>; connections?: Record<"p1" | "p2", string[][]> } = {},
+  ) => ({
     engine,
     snapshot,
     format: FIXTURE_FORMAT,
     provenance: fixture.provenance,
     log: { lines: fixture.input_log.lines, winner: "", turns: fixture.turns, ...over.log },
     records: over.records ?? { p1: record("p1"), p2: record("p2") },
+    connections: over.connections ?? { p1: [fixture.frames.p1], p2: [fixture.frames.p2] },
     teams: fixture.teams,
     teamLabels: { p1: recording.teams.challenger, p2: recording.teams.sparring },
   });
@@ -240,6 +302,28 @@ describe("buildHarnessFixture", () => {
     const winner = fixture.winner === null ? "" : fixture.players[fixture.winner].name;
     const built = await buildHarnessFixture(input({ log: { winner } }));
     expect(built).toEqual({ ...fixture, players: { p1: { ...fixture.players.p1, team: built.players.p1.team }, p2: { ...fixture.players.p2, team: built.players.p2.team } } });
+  });
+
+  it("builds from every frame the bots received: other rooms dropped, the clock redacted, the rest as received", async () => {
+    const winner = fixture.winner === null ? "" : fixture.players[fixture.winner].name;
+    const noisy = (frames: string[]): string[][] => [
+      [
+        "|updateuser| guest|0|1",
+        ">lobby\n|queryresponse|rooms|{}",
+        ...frames.map((frame) => frame.replace(REDACTED_CLOCK, "|t:|1760000000")),
+        ">battle-other-9\n|init|battle",
+      ],
+    ];
+    const built = await buildHarnessFixture(input({ log: { winner }, connections: { p1: noisy(fixture.frames.p1), p2: noisy(fixture.frames.p2) } }));
+    expect(built.frames).toEqual(fixture.frames);
+  });
+
+  it("refuses a battle whose bots are in different rooms", async () => {
+    const records = { p1: record("p1"), p2: record("p2", { room: "battle-x" }) };
+    const p2 = fixture.frames.p2.map((frame) => frame.replace(fixture.room, "battle-x"));
+    await expect(buildHarnessFixture(input({ records, connections: { p1: [fixture.frames.p1], p2: [p2] } }))).rejects.toThrow(
+      "the bots did not play the same battle",
+    );
   });
 
   it("refuses a record for the wrong seat or room, and a player with several channels", async () => {
@@ -253,6 +337,63 @@ describe("buildHarnessFixture", () => {
     await expect(buildHarnessFixture(input({ records: { p1: record("p1"), p2: two } }))).rejects.toThrow(
       "p2 has 2 channels",
     );
+  });
+});
+
+describe("the transport tap", () => {
+  const fake = () => {
+    const sent: string[] = [];
+    const listeners = { frame: [] as ((frame: string) => void)[], close: [] as ((code: number) => void)[] };
+    let closed = 0;
+    const inner = {
+      send: (line: string) => void sent.push(line),
+      onFrame: (cb: (frame: string) => void) => void listeners.frame.push(cb),
+      onClose: (cb: (code: number) => void) => void listeners.close.push(cb),
+      close: () => void (closed += 1),
+    };
+    return { inner, sent, listeners, closed: () => closed };
+  };
+
+  it("copies each frame as received, in order, and changes nothing else", () => {
+    const { inner, sent, listeners, closed } = fake();
+    const seen: string[] = [];
+    const copy: string[] = [];
+    const tap = tapTransport(inner, copy);
+    tap.onFrame((frame) => seen.push(frame));
+    const codes: number[] = [];
+    tap.onClose((code) => codes.push(code));
+    for (const frame of [">r\n|a|1\n|b|2", "|c|3", ">r\n|t:|1760000000"]) for (const cb of listeners.frame) cb(frame);
+    for (const cb of listeners.close) cb(1000);
+    tap.send("/join r");
+    tap.close();
+    expect(copy).toEqual([">r\n|a|1\n|b|2", "|c|3", ">r\n|t:|1760000000"]);
+    expect(seen).toEqual(copy);
+    expect([sent, codes, closed()]).toEqual([["/join r"], [1000], 1]);
+  });
+
+  it("copies a frame before the listener sees it, so a throwing listener loses nothing", () => {
+    const { inner, listeners } = fake();
+    const copy: string[] = [];
+    tapTransport(inner, copy).onFrame(() => {
+      throw new Error("boom");
+    });
+    expect(() => listeners.frame[0]?.("|x")).toThrow("boom");
+    expect(copy).toEqual(["|x"]);
+  });
+});
+
+describe("redactClock and roomFrames", () => {
+  it("replaces only the number of a |t:| line, keeping lines and frame boundaries", () => {
+    expect(redactClock(">r\n|t:|1760000000\n|move|x|t:|5\n|t:|")).toBe(`>r\n${REDACTED_CLOCK}\n|move|x|t:|5\n${REDACTED_CLOCK}`);
+    expect(redactClock("|j|x")).toBe("|j|x");
+  });
+
+  it("keeps one connection's frames of the room, and refuses none or several", () => {
+    const frames = [">r\n|init|battle", ">lobby\n|x", "|y", ">r\n|t:|1"];
+    expect(roomFrames([frames], "r")).toEqual([">r\n|init|battle", `>r\n${REDACTED_CLOCK}`]);
+    expect(roomFrames([["|z"], frames], "r")).toHaveLength(2);
+    expect(() => roomFrames([["|z"]], "r")).toThrow("0 connections received r");
+    expect(() => roomFrames([frames, frames], "r")).toThrow("2 connections received r");
   });
 });
 
