@@ -162,6 +162,73 @@ class TimerRules(BaseModel):
     """
 
 
+class LeagueCollection(BaseModel):
+    """
+    A training-league battle.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    kind: Literal["league"]
+    run_id: Annotated[StrictStr, Field(min_length=1)]
+    """
+    The league run that played the battle.
+    """
+    seed: Annotated[
+        StrictStr | None,
+        Field(max_length=128, min_length=8, pattern="^sodium,[0-9a-f]+$"),
+    ]
+    """
+    The engine's seed form, sodium,<hex>. null on A2, where a challenge cannot be seeded (ADR-005); reproduction there uses the server-side input log.
+    """
+    opponent_policy_id: Annotated[StrictStr, Field(min_length=1)]
+    """
+    The policy that chose the opponent's actions.
+    """
+
+
+class EvaluationCollection(BaseModel):
+    """
+    A battle of an evaluation run (evaluation protocol C4, O3): never training data.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    kind: Literal["evaluation"]
+    run_id: Annotated[StrictStr, Field(min_length=1)]
+    """
+    The evaluation run that played the battle.
+    """
+    sealed: StrictBool
+    """
+    true when the run's teams and Episodes are sealed (protocol I1, I8).
+    """
+    seed: Annotated[
+        StrictStr | None,
+        Field(max_length=128, min_length=8, pattern="^sodium,[0-9a-f]+$"),
+    ]
+    """
+    The engine's seed form, sodium,<hex>. null on A2, where a challenge cannot be seeded (ADR-005); reproduction there uses the server-side input log.
+    """
+
+
+class SparringCollection(BaseModel):
+    """
+    A local A2 battle against a human.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    kind: Literal["sparring"]
+    session_id: Annotated[StrictStr, Field(min_length=1)]
+    """
+    The local sparring session.
+    """
+
+
 class Provenance(BaseModel):
     """
     Where the episode came from.
@@ -179,6 +246,13 @@ class Provenance(BaseModel):
     The policy that chose this player's actions.
     """
     manifest: VersionManifest
+    collection: Annotated[
+        LeagueCollection | EvaluationCollection | SparringCollection | MISSING,
+        Field(discriminator="kind"),
+    ] = MISSING
+    """
+    How the battle was collected (ADR-009 §4). Optional: an Episode without it is a plain fixture or a pre-collection record; the training loader (slice c) will refuse it. A reader older than this property rejects an Episode that carries it, so every consumer ships with the change. The reader checks what the profile cannot (readEpisode): a seed only on A1, none on A2.
+    """
 
 
 class PokemonSet(BaseModel):

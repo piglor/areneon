@@ -11,6 +11,9 @@ import type { Sha256 } from "./observation.ts";
 
 export type { Episode, Recommendation };
 
+/** How a battle was collected (ADR-009 §4): the Episode's optional `provenance.collection`. */
+export type Collection = NonNullable<Episode["provenance"]["collection"]>;
+
 /**
  * An Episode's content hash: SHA-256 of its JCS bytes, as stored, in the
  * version it was written with (ADR-008 §3). An upcasted view never takes it.

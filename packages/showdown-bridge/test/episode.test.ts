@@ -7,6 +7,7 @@ import { firstLegal, GOLDEN_DIR, GOLDEN_FORMAT, goldenBattle, syntheticFixtureHa
 import {
   answersRequest,
   battleClass,
+  type Collection,
   type BattleRecord,
   buildObservation,
   type Episode,
@@ -417,5 +418,69 @@ describe("the caller's team after a battle (#817)", () => {
       both(spec(own as PrivateTeamSpec["team"]), spec(rival as PrivateTeamSpec["team"])),
     );
     expect(episode.data_class).toBe("synthetic");
+  });
+});
+
+describe("provenance.collection (ADR-009 §4)", () => {
+  const LEAGUE = (): Collection => ({ kind: "league", run_id: "run-1", seed: golden.seed, opponent_policy_id: "first-legal@test" });
+  const EVALUATION = (): Collection => ({ kind: "evaluation", run_id: "eval-1", sealed: true, seed: golden.seed });
+  const withCollection = (collection: unknown, runtime: "A1" | "A2" = "A1"): Record<string, unknown> => {
+    const e = JSON.parse(JSON.stringify(episodes.p1)) as Record<string, unknown>;
+    e.provenance = { ...(e.provenance as object), runtime, collection };
+    if (runtime === "A2") e.decisions = [];
+    return e;
+  };
+
+  it("is optional: an Episode without it stays valid and carries none", () => {
+    expect(episodes.p1.provenance).not.toHaveProperty("collection");
+  });
+
+  it.each([["league", LEAGUE], ["evaluation", EVALUATION]])("is written on a %s Episode and read back", async (_kind, make) => {
+    const episode = await episodeFromRecord(golden, "p1", { ...both(synthetic()), collection: make() });
+    expect(episode.provenance.collection).toEqual(make());
+    expect(await readEpisode(JSON.parse(JSON.stringify(episode)), { known_synthetic: KNOWN })).toEqual(episode);
+  });
+
+  it("is refused when its seed is not the battle's own", async () => {
+    await expect(
+      episodeFromRecord(golden, "p1", { ...both(synthetic()), collection: { ...LEAGUE(), seed: "sodium,00" + "0".repeat(30) } as Collection }),
+    ).rejects.toThrow("the collection record's seed is not the seed the battle ran with");
+  });
+
+  it("takes a sparring record without a seed", async () => {
+    const sparring = withCollection({ kind: "sparring", session_id: "s-1" });
+    expect((await readEpisode(sparring, { known_synthetic: KNOWN })).provenance.collection).toEqual({ kind: "sparring", session_id: "s-1" });
+    const episode = await episodeFromRecord(golden, "p1", { ...both(synthetic()), collection: { kind: "sparring", session_id: "s-1" } });
+    expect(episode.provenance.collection?.kind).toBe("sparring");
+  });
+
+  it.each<[string, unknown, RegExp]>([
+    ["a league record without its run id", { kind: "league", seed: "sodium,ab", opponent_policy_id: "p" }, /invalid Episode.*run_id/s],
+    ["an evaluation record without its run id", { kind: "evaluation", sealed: false, seed: "sodium,ab" }, /invalid Episode.*run_id/s],
+    ["an evaluation record without its sealed flag", { kind: "evaluation", run_id: "r", seed: "sodium,ab" }, /invalid Episode.*sealed/s],
+    ["sealed on a league record", { kind: "league", run_id: "r", seed: "sodium,ab", opponent_policy_id: "p", sealed: true }, /invalid Episode.*sealed/s],
+    ["a sparring record without its session id", { kind: "sparring" }, /invalid Episode.*session_id/s],
+    ["an unknown kind", { kind: "training", run_id: "r" }, /invalid Episode/],
+    ["a seed that is not an engine seed", { kind: "league", run_id: "r", seed: "1,2", opponent_policy_id: "p" }, /invalid Episode.*pattern/s],
+  ])("refuses %s", async (_name, collection, message) => {
+    await expect(readEpisode(withCollection(collection), { known_synthetic: KNOWN })).rejects.toThrow(message);
+  });
+
+  it.each(["league", "evaluation"] as const)("refuses an A1 %s record with a null seed", async (kind) => {
+    const base = kind === "league" ? LEAGUE() : EVALUATION();
+    await expect(readEpisode(withCollection({ ...base, seed: null }), { known_synthetic: KNOWN })).rejects.toThrow(
+      `an A1 ${kind} collection record needs the seed the battle ran with`,
+    );
+  });
+
+  it.each(["league", "evaluation"] as const)("refuses an A2 %s record with a seed, and accepts none", async (kind) => {
+    const base = kind === "league" ? LEAGUE() : EVALUATION();
+    await expect(readEpisode(withCollection(base, "A2"), { known_synthetic: KNOWN })).rejects.toThrow(
+      `an A2 ${kind} collection record has no seed: a challenge cannot be seeded`,
+    );
+    expect((await readEpisode(withCollection({ ...base, seed: null }, "A2"), { known_synthetic: KNOWN })).provenance.collection).toEqual({
+      ...base,
+      seed: null,
+    });
   });
 });

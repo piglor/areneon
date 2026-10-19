@@ -72,6 +72,10 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     known_synthetic: known,
     behaviour_policy_id: "first-legal@golden",
   });
+  const league = { kind: "league", run_id: "league-run-1", seed: record.seed, opponent_policy_id: "first-legal@golden" } as const;
+  const evaluation = { kind: "evaluation", run_id: "eval-run-1", sealed: true, seed: record.seed } as const;
+  const collected = (collection: unknown) =>
+    mutated(episode, (e) => ((e.provenance as Record<string, unknown>).collection = collection));
   const identity = { request_seq: turn.request_seq, request_hash: turn.request_hash };
 
   const valid: Record<string, unknown> = {
@@ -96,6 +100,23 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
       deadline_outcome: "in_budget",
     },
     "episode/p1": episode,
+    "episode/league": await episodeFromRecord(record, "p1", {
+      team,
+      opponent_team: team,
+      known_synthetic: known,
+      behaviour_policy_id: "first-legal@golden",
+      collection: league,
+    }),
+    "episode/evaluation-sealed": await episodeFromRecord(record, "p1", {
+      team,
+      opponent_team: team,
+      known_synthetic: known,
+      behaviour_policy_id: "first-legal@golden",
+      collection: evaluation,
+    }),
+    // Kept schema- and reader-valid until slice (b) (#826) adds the rule that a
+    // sparring Episode must be private; it then moves to reader-invalid/sparring-synthetic.
+    "episode/sparring": collected({ kind: "sparring", session_id: "sparring-session-1" }),
   };
   const invalid: Record<string, unknown> = {
     "request-identity/rqid-zero": { ...identity, rqid: 0 },
@@ -125,6 +146,12 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
       deadline_outcome: "late",
     },
     "episode/omniscient-log": { ...episode, omniscient_log: [] },
+    "episode/collection-no-run-id": collected({ kind: "league", seed: record.seed, opponent_policy_id: "first-legal@golden" }),
+    "episode/collection-league-sealed": collected({ ...league, sealed: false }),
+    "episode/collection-evaluation-no-seed": collected({ kind: "evaluation", run_id: "eval-run-1", sealed: true }),
+    "episode/collection-bad-seed": collected({ ...league, seed: "1,2,3,4" }),
+    "episode/collection-unknown-kind": collected({ kind: "training", run_id: "league-run-1" }),
+    "episode/collection-sparring-run-id": collected({ kind: "sparring", session_id: "s", run_id: "r" }),
   };
 
   const samples: Record<string, unknown> = {};
