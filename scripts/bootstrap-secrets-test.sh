@@ -3,8 +3,8 @@
 # inside its own CREATE ROLE statement. Runs the bootstrap against a throwaway
 # Postgres 18 that logs every statement and every failing one, on a scratch
 # Docker network with no published port, then:
-#   1. a missing, empty or whitespace-only password is refused, with its message and a nonzero
-#      exit, and nothing reaches the server log;
+#   1. a missing, empty or whitespace-only password is refused, with its
+#      message and a nonzero exit, and nothing reaches the server log;
 #   2. with all three set, the bootstrap succeeds;
 #   3. each password appears in the server log exactly once, on its own
 #      CREATE ROLE line (the positive control that statements are logged).
