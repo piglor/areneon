@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { Ajv2020 } from "ajv/dist/2020.js";
 import { describe, expect, it } from "vitest";
 import { PINNED_SHOWDOWN_COMMIT } from "../src/engine.ts";
@@ -7,12 +9,20 @@ import { loadRulesSnapshot } from "../src/rules-load.ts";
 import {
   type Artifact,
   channelArtifact,
+  artifactPath,
   channelTag,
-  checkBuilt,
   type GitHubCli,
   isReleased,
+  PLAN_FILE,
+  type PlanManifest,
+  parseManifest,
   plan,
+  planManifest,
   publish,
+  publishOutput,
+  readPlan,
+  verifyPlan,
+  writePlan,
   snapshotArtifact,
   snapshotTag,
 } from "../src/rules-publish.ts";
@@ -100,7 +110,7 @@ describe("isReleased", () => {
   });
 });
 
-describe("publish and checkBuilt", () => {
+describe("publish", () => {
   const artifacts: Artifact[] = [snapshotArtifact(snapshot, HEAD), channelArtifact(stable(6, own), EARLIER)];
   const file = (a: Artifact) => `dist/${a.tag}.json`;
 
@@ -122,14 +132,118 @@ describe("publish and checkBuilt", () => {
       args[1] === "create" ? undefined : JSON.stringify({ isDraft: false, assets: [{ name: `${args[2]}.json` }] });
     expect(publish(artifacts, file, gh)).toEqual([]);
   });
+});
 
-  it("accepts exactly the planned files and nothing else", () => {
-    const built = new Map(artifacts.map((a) => [`${a.tag}.json`, a.bytes]));
-    expect(checkBuilt(artifacts, built)).toEqual([]);
-    const stray = new Map([...built, ["evil.json", Buffer.from("{}")]]);
-    expect(checkBuilt(artifacts, stray)).toEqual(["evil.json was not planned"]);
-    const changed = new Map(built).set(`${snapshotTag(own)}.json`, Buffer.from("{}"));
-    expect(checkBuilt(artifacts, changed)).toEqual([`${snapshotTag(own)}.json differs from the planned bytes`]);
-    expect(checkBuilt(artifacts, new Map())).toHaveLength(2);
+describe("the plan job's manifest", () => {
+  const snap = snapshotArtifact(snapshot, HEAD);
+  const chan = channelArtifact(stable(6, own), EARLIER);
+  const sha = (bytes: Buffer) => createHash("sha256").update(bytes).digest("hex");
+  const tmp = () => mkdtempSync(join(tmpdir(), "rules-publish-"));
+
+  it("says publish=false for an empty plan, so no approval is asked", () => {
+    expect(publishOutput(planManifest(HEAD, plan({ snapshot, commit: HEAD, channels: [], released: () => true })))).toBe(
+      "publish=false",
+    );
+  });
+
+  it("says publish=true for a new snapshot, recording each file's sha256 in release order", () => {
+    const manifest = planManifest(HEAD, plan({ snapshot, commit: HEAD, channels: [], released: () => false }));
+    expect(publishOutput(manifest)).toBe("publish=true");
+    expect(manifest).toEqual({ commit: HEAD, artifacts: [{ kind: "snapshot", tag: snap.tag, commit: HEAD, sha256: own }] });
+  });
+
+  it("round-trips through the workflow artifact directory", () => {
+    const dir = tmp();
+    const manifest = writePlan(dir, HEAD, [snap, chan]);
+    expect(readFileSync(artifactPath(dir, chan))).toEqual(chan.bytes);
+    const read = readPlan(dir);
+    expect(read.manifest).toEqual(manifest);
+    expect([...read.files.keys()].sort()).toEqual([`${chan.tag}.json`, `${snap.tag}.json`]);
+    expect(manifest.artifacts.map((e) => e.sha256)).toEqual([sha(snap.bytes), sha(chan.bytes)]);
+    const empty = tmp();
+    expect(publishOutput(writePlan(empty, HEAD, []))).toBe("publish=false");
+    expect(readPlan(empty).files.size).toBe(0);
+  });
+
+  it("refuses a directory without a plan", () => {
+    expect(() => readPlan(tmp())).toThrow(/does not hold a plan/);
+  });
+
+  it("refuses any manifest shape it did not write", () => {
+    const good = planManifest(HEAD, [snap]);
+    const entry = good.artifacts[0];
+    expect(parseManifest(JSON.stringify(good))).toEqual(good);
+    const bad: unknown[] = [
+      null,
+      { commit: HEAD },
+      { commit: HEAD, artifacts: {} },
+      { commit: "HEAD", artifacts: [] },
+      { ...good, extra: 1 },
+      { commit: HEAD, artifacts: [{ ...entry, extra: 1 }] },
+      { commit: HEAD, artifacts: [{ ...entry, kind: "other" }] },
+      { commit: HEAD, artifacts: [{ ...entry, tag: "../../evil" }] },
+      { commit: HEAD, artifacts: [{ ...entry, tag: 1 }] },
+      { commit: HEAD, artifacts: [{ ...entry, commit: "x" }] },
+      { commit: HEAD, artifacts: [{ ...entry, sha256: "x" }] },
+      { commit: HEAD, artifacts: [entry, entry] },
+    ];
+    for (const value of bad) expect(() => parseManifest(JSON.stringify(value))).toThrow(RulesError);
+    expect(() => parseManifest("{")).toThrow(/not JSON/);
+  });
+});
+
+describe("verifyPlan (the publish job's check before attesting)", () => {
+  const snap = snapshotArtifact(snapshot, HEAD);
+  const chan = channelArtifact(stable(6, own), EARLIER);
+  const manifest: PlanManifest = planManifest(HEAD, [snap, chan]);
+  const built = new Map([snap, chan].map((a) => [`${a.tag}.json`, a.bytes]));
+
+  it("passes the plan job's files and returns them, in plan order", () => {
+    const { release, skipped } = verifyPlan(manifest, HEAD, built, [snap, chan]);
+    expect(release.map((a) => a.tag)).toEqual([snap.tag, chan.tag]);
+    expect(release[0]?.bytes).toBe(built.get(`${snap.tag}.json`));
+    expect(skipped).toEqual([]);
+  });
+
+  it("skips what another run released meanwhile", () => {
+    const { release, skipped } = verifyPlan(manifest, HEAD, built, [chan]);
+    expect([release.map((a) => a.tag), skipped]).toEqual([[chan.tag], [snap.tag]]);
+  });
+
+  it("refuses a file whose bytes do not match the manifest's sha256", () => {
+    const changed = new Map(built).set(`${snap.tag}.json`, Buffer.from("{}"));
+    expect(() => verifyPlan(manifest, HEAD, changed, [snap, chan])).toThrow(
+      `${snap.tag}.json does not match its sha256 in the manifest`,
+    );
+  });
+
+  it("refuses a manifest that disagrees with the plan made again now", () => {
+    const forged = { ...manifest, artifacts: manifest.artifacts.map((e) => ({ ...e, sha256: "0".repeat(64) })) };
+    expect(() => verifyPlan(forged, HEAD, built, [snap, chan])).toThrow(
+      `${snap.tag} in the manifest differs from what this commit plans`,
+    );
+    const moved = { ...manifest, artifacts: manifest.artifacts.map((e) => ({ ...e, commit: OLD.slice(0, 40) })) };
+    expect(() => verifyPlan(moved, HEAD, built, [snap, chan])).toThrow(/differs from what this commit plans/);
+    const relabelled = { ...manifest, artifacts: manifest.artifacts.map((e) => ({ ...e, kind: "channel" as const })) };
+    expect(() => verifyPlan(relabelled, HEAD, built, [snap, chan])).toThrow(/differs from what this commit plans/);
+  });
+
+  it("refuses missing, stray and unplanned files, and another commit's plan", () => {
+    const only = planManifest(HEAD, [chan]);
+    const onlyFiles = new Map([[`${chan.tag}.json`, chan.bytes]]);
+    expect(() => verifyPlan(only, HEAD, onlyFiles, [snap, chan])).toThrow(`${snap.tag} is planned now but not in the manifest`);
+    expect(() => verifyPlan(manifest, HEAD, onlyFiles, [snap, chan])).toThrow(`${snap.tag}.json is in the manifest but missing`);
+    const stray = new Map(built).set("evil.json", Buffer.from("{}"));
+    expect(() => verifyPlan(manifest, HEAD, stray, [snap, chan])).toThrow("evil.json is not in the manifest");
+    expect(() => verifyPlan(manifest, EARLIER, built, [snap, chan])).toThrow(`the plan is for ${HEAD}, not this commit ${EARLIER}`);
+  });
+
+  it("refuses a file swapped into the downloaded directory on disk", () => {
+    const dir = mkdtempSync(join(tmpdir(), "rules-publish-"));
+    writePlan(dir, HEAD, [snap, chan]);
+    writeFileSync(artifactPath(dir, snap), "{}");
+    const { manifest: read, files } = readPlan(dir);
+    expect(read).toEqual(JSON.parse(readFileSync(join(dir, PLAN_FILE), "utf8")));
+    expect(() => verifyPlan(read, HEAD, files, [snap, chan])).toThrow(/does not match its sha256/);
   });
 });
