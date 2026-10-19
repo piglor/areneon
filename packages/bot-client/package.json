@@ -12,5 +12,9 @@
   },
   "dependencies": {
     "@areneon/showdown-bridge": "workspace:*"
+  },
+  "devDependencies": {
+    "@areneon/schema": "workspace:*",
+    "fast-check": "4.10.2"
   }
 }
