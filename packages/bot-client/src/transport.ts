@@ -1,0 +1,62 @@
+/**
+ * The bot client's port to a Showdown server connection (ADR-005 §1): one
+ * text frame in, one protocol line out. A frame is the server's raw message,
+ * which may hold several protocol lines; splitting it is the caller's job.
+ */
+export interface Transport {
+  /** Sends one protocol line. Throws once the transport is closed. */
+  send(line: string): void;
+  /** Registers a frame listener. Frames that arrived before the first listener are delivered to it. */
+  onFrame(cb: (frame: string) => void): void;
+  /** Registers a close listener; it gets the close code once. A listener registered after the close gets it at once. */
+  onClose(cb: (code: number) => void): void;
+  /** Closes the connection; a no-op once closed. */
+  close(): void;
+}
+
+/** A send on a transport that is closed or not yet open. */
+export class TransportClosedError extends Error {
+  override name = "TransportClosedError";
+}
+
+/** Normal closure (RFC 6455 §7.4.1): the code a client-side close() reports. */
+export const NORMAL_CLOSURE = 1000;
+
+/**
+ * The listener bookkeeping both transports share: frames are queued until the
+ * first frame listener, and the close code is delivered exactly once to every
+ * close listener, including one registered after the close.
+ */
+export class Listeners {
+  readonly #frameListeners: ((frame: string) => void)[] = [];
+  readonly #closeListeners: ((code: number) => void)[] = [];
+  readonly #pending: string[] = [];
+  #closeCode: number | undefined;
+
+  get closed(): boolean {
+    return this.#closeCode !== undefined;
+  }
+
+  onFrame(cb: (frame: string) => void): void {
+    this.#frameListeners.push(cb);
+    if (this.#frameListeners.length === 1) {
+      for (const frame of this.#pending.splice(0)) cb(frame);
+    }
+  }
+
+  onClose(cb: (code: number) => void): void {
+    if (this.#closeCode === undefined) this.#closeListeners.push(cb);
+    else cb(this.#closeCode);
+  }
+
+  frame(frame: string): void {
+    if (this.#frameListeners.length === 0) this.#pending.push(frame);
+    for (const cb of this.#frameListeners) cb(frame);
+  }
+
+  close(code: number): void {
+    if (this.#closeCode !== undefined) return;
+    this.#closeCode = code;
+    for (const cb of this.#closeListeners.splice(0)) cb(code);
+  }
+}
