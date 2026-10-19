@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 import { PINNED_SHOWDOWN_COMMIT } from "@areneon/showdown-bridge";
 import { checkServerConfig, loadServerConfig, LOOPBACK_ADDRESS, writeServerConfig } from "./config.ts";
 import { acquireCopyLock, blockedMessage } from "./copy-lock.ts";
-import { verifyRuntimeCopy } from "./runtime-copy.ts";
+import { type DigestedEntry, verifyRuntimeCopy } from "./runtime-copy.ts";
 import type { SupervisorConfig } from "./supervisor.ts";
 
 /** The session manifest, inside the runtime copy (ADR-005 §4). */
@@ -41,8 +41,8 @@ export interface LaunchOptions {
 
 export interface SessionManifest {
   commit: string;
-  /** `treeDigest` of the copy's `dist/`, verified before the start. */
-  dist_sha256: string;
+  /** The copy's entry digests (`RuntimeCopy.sha256`), verified before the start. */
+  runtime_sha256: Record<DigestedEntry, string>;
   /** SHA-256 of the `config/config.js` the server loaded. */
   config_sha256: string;
   bind_address: string;
@@ -84,9 +84,11 @@ export class LaunchError extends Error {
  * only (ADR-005 §4).
  *
  * It takes the copy's lock (`lockPath`), then verifies the copy's commit and
- * `dist/` digest: a copy that fails is refused with a `RuntimeCopyError`,
- * and the caller recreates it with `createRuntimeCopy`. It writes and checks
- * `config/config.js`, refuses a port already held on 127.0.0.1 or ::1, and
+ * entry digests (`verifyRuntimeCopy`) before it writes or loads anything in
+ * it: a copy that fails is refused with a `RuntimeCopyError`, and the caller
+ * recreates it with `createRuntimeCopy`. It writes and checks
+ * `config/config.js` (loading the copy's config defaults), refuses a port
+ * already held on 127.0.0.1 or ::1, verifies the copy again, and only then
  * starts a supervisor (`scripts/supervisor.ts`, see `supervise`) that runs
  * `pokemon-showdown start --skip-build --no-security <port>` from the copy in
  * its own process group. Once the server listens on the loopback address and
@@ -98,6 +100,11 @@ export class LaunchError extends Error {
  * live while that group exists, unless the supervisor died before this
  * function recorded the server's pid in it, in which case the lock goes
  * stale once this process exits.
+ *
+ * The digests are a drift check (a partial, stale or edited copy), made last
+ * immediately before the spawn and recorded in the session manifest. They
+ * are not a defence against a concurrent attacker running as the same user,
+ * who can change the copy between that check and the server's reads.
  */
 export async function launch(options: LaunchOptions): Promise<LocalServer> {
   const dir = resolve(options.dir);
@@ -114,10 +121,14 @@ export async function launch(options: LaunchOptions): Promise<LocalServer> {
   if (!("release" in lock)) throw new LaunchError(blockedMessage(dir, lock));
   let supervisor: Supervisor | undefined;
   try {
-    const copy = verifyRuntimeCopy(dir, options.expectedCommit ?? PINNED_SHOWDOWN_COMMIT);
+    const expectedCommit = options.expectedCommit ?? PINNED_SHOWDOWN_COMMIT;
+    // Before config.js is written and the copy's config defaults are loaded.
+    verifyRuntimeCopy(dir, expectedCommit);
     const config = writeServerConfig(dir, port);
     checkServerConfig(loadServerConfig(dir), port);
     await assertPortFree(port);
+    // Again immediately before the spawn: this is the check the session records.
+    const copy = verifyRuntimeCopy(dir, expectedCommit);
     const manifestPath = join(dir, SESSION_MANIFEST);
     rmSync(manifestPath, { force: true });
     const argv = ["pokemon-showdown", "start", "--skip-build", "--no-security", String(port)];
@@ -140,7 +151,7 @@ export async function launch(options: LaunchOptions): Promise<LocalServer> {
     await whenServing(supervisor, url, readyTimeoutMs);
     const session: SessionManifest = {
       commit: copy.commit,
-      dist_sha256: copy.distSha256,
+      runtime_sha256: copy.sha256,
       config_sha256: config.sha256,
       bind_address: LOOPBACK_ADDRESS,
       port,

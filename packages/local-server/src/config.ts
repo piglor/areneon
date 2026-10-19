@@ -34,7 +34,7 @@ export interface ServerSetting {
 
 /**
  * Every setting Areneon's `config.js` overrides in the pinned
- * `config/config-example.js` (the server merges the two, `config.js` on
+ * `config-example.js` defaults (the server merges the two, `config.js` on
  * top). Anything not listed keeps the upstream default.
  */
 export function serverSettings(port: number): ServerSetting[] {
@@ -119,8 +119,16 @@ export function writeServerConfig(dir: string, port: number): WrittenConfig {
 }
 
 /**
- * The config the server at `dir` will run with: its `config-example.js`
- * defaults with `config.js` on top, merged as the pinned config loader does.
+ * Where the pinned config loader (`dist/server/config-loader.js`) requires
+ * its defaults from, relative to the install root: the build's copy of
+ * `config/config-example.js`, not the source file.
+ */
+export const SERVER_CONFIG_DEFAULTS_PATH = "dist/config/config-example.js";
+
+/**
+ * The config the server at `dir` will run with: the defaults it loads
+ * (`SERVER_CONFIG_DEFAULTS_PATH`) with `config.js` on top, merged as the
+ * pinned config loader does.
  */
 export function loadServerConfig(dir: string): Record<string, unknown> {
   const require = createRequire(join(dir, "package.json"));
@@ -133,7 +141,7 @@ export function loadServerConfig(dir: string): Record<string, unknown> {
       Reflect.deleteProperty(require.cache, path);
     }
   };
-  return { ...load("config/config-example.js"), ...load(SERVER_CONFIG_PATH) };
+  return { ...load(SERVER_CONFIG_DEFAULTS_PATH), ...load(SERVER_CONFIG_PATH) };
 }
 
 /**

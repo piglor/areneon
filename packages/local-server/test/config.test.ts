@@ -10,6 +10,7 @@ import {
   loadServerConfig,
   renderServerConfig,
   RUNTIME_STATE_DIRS,
+  SERVER_CONFIG_DEFAULTS_PATH,
   SERVER_CONFIG_PATH,
   ServerConfigError,
   serverSettings,
@@ -63,6 +64,14 @@ describe("the server config", () => {
     const merged = loadServerConfig(copy.dir);
     expect(merged).toEqual(SAFE);
     expect(() => checkServerConfig(merged, 8123)).not.toThrow();
+  });
+
+  it("is merged over the defaults the server loads, from dist/, not the source config-example.js", () => {
+    const copy = fakeCopy("// unused\n");
+    writeServerConfig(copy.dir, 8123);
+    writeFileSync(join(copy.dir, SERVER_CONFIG_DEFAULTS_PATH), "exports.loaded = 'dist';\n");
+    writeFileSync(join(copy.dir, "config/config-example.js"), "exports.loaded = 'source';\n");
+    expect(loadServerConfig(copy.dir)).toEqual({ ...SAFE, loaded: "dist" });
   });
 
   it("is checked again from disk, so a later edit is caught", () => {
@@ -124,7 +133,9 @@ describe("the pinned config-example.js", () => {
       const merged = loadServerConfig(copy.dir);
       expect(() => checkServerConfig(merged, 8123)).not.toThrow();
       // The upstream defaults Areneon overrides really differ at the pin.
-      const upstream = readFileSync(join(copy.dir, "config/config-example.js"), "utf8");
+      const upstream = readFileSync(join(copy.dir, SERVER_CONFIG_DEFAULTS_PATH), "utf8");
+      // At the pin the build's copy is the source file, byte for byte.
+      expect(readFileSync(join(copy.dir, "config/config-example.js"), "utf8")).toBe(upstream);
       expect(upstream).toContain("exports.bindaddress = '0.0.0.0';");
       expect(upstream).toContain("exports.backdoor = true;");
       expect(upstream).toContain("exports.repl = true;");

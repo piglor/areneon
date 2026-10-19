@@ -112,7 +112,7 @@ describe("launch with a stand-in server", () => {
     const session = server.session;
     expect(session).toEqual({
       commit: copy.commit,
-      dist_sha256: copy.distSha256,
+      runtime_sha256: copy.sha256,
       config_sha256: createHash("sha256").update(config).digest("hex"),
       bind_address: "127.0.0.1",
       port,
@@ -359,6 +359,61 @@ setInterval(() => {}, 1000);
       /digest/,
     );
     expect(existsSync(join(copy.dir, SERVER_CONFIG_PATH))).toBe(false);
+  });
+
+  it.each([
+    [
+      "entry script",
+      "pokemon-showdown",
+      "#!/usr/bin/env node\nrequire('fs').writeFileSync('ran', '');\n",
+      "pokemon-showdown",
+    ],
+    ["config-example.js", "config/config-example.js", "exports.bindaddress = '0.0.0.0';\n", "config/config-example.js"],
+    [
+      "dist/config/config-example.js",
+      "dist/config/config-example.js",
+      "require('fs').writeFileSync('ran', '');\nexports.bindaddress = '0.0.0.0';\n",
+      "dist",
+    ],
+  ])("refuses a tampered %s before writing or loading the config", async (_label, path, text, entry) => {
+    const copy = fakeCopy(fakeServer());
+    writeFileSync(join(copy.dir, path), text);
+    const launched = launch({ dir: copy.dir, port: await freePort(), expectedCommit: copy.commit });
+    await expect(launched).rejects.toThrow(RuntimeCopyError);
+    await expect(launched).rejects.toThrow(`${entry} digest`);
+    expect(existsSync(join(copy.dir, SERVER_CONFIG_PATH))).toBe(false);
+    expect(existsSync(join(copy.dir, "ran"))).toBe(false);
+    expect(existsSync(join(copy.dir, "started.json"))).toBe(false);
+    expect(existsSync(lockPath(copy.dir))).toBe(false);
+  });
+
+  it("refuses a copy holding .git before writing or loading the config", async () => {
+    const copy = fakeCopy(fakeServer());
+    mkdirSync(join(copy.dir, ".git"));
+    writeFileSync(join(copy.dir, ".git/index"), "");
+    const launched = launch({ dir: copy.dir, port: await freePort(), expectedCommit: copy.commit });
+    await expect(launched).rejects.toThrow(RuntimeCopyError);
+    await expect(launched).rejects.toThrow("the runtime copy must not contain .git");
+    expect(existsSync(join(copy.dir, SERVER_CONFIG_PATH))).toBe(false);
+    expect(existsSync(join(copy.dir, "started.json"))).toBe(false);
+    expect(existsSync(lockPath(copy.dir))).toBe(false);
+  });
+
+  it("verifies the copy again immediately before the spawn", async () => {
+    // Loading these defaults changes the entry script after the first check,
+    // as a change between the config check and the spawn would.
+    const copy = fakeCopy(
+      fakeServer(),
+      "require('fs').appendFileSync(require('path').join(__dirname, '../../pokemon-showdown'), ' ');\n" +
+        "exports.port = 8000;\n",
+    );
+    const launched = launch({ dir: copy.dir, port: await freePort(), expectedCommit: copy.commit });
+    await expect(launched).rejects.toThrow(RuntimeCopyError);
+    await expect(launched).rejects.toThrow("pokemon-showdown digest");
+    expect(existsSync(join(copy.dir, SERVER_CONFIG_PATH))).toBe(true);
+    expect(existsSync(join(copy.dir, "started.json"))).toBe(false);
+    expect(existsSync(join(copy.dir, SESSION_MANIFEST))).toBe(false);
+    expect(existsSync(lockPath(copy.dir))).toBe(false);
   });
 });
 

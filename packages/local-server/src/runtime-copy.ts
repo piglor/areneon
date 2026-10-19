@@ -43,6 +43,61 @@ export const RUNTIME_ENTRIES = [
 ] as const;
 
 /**
+ * The runtime entries the manifest digests: every file the server executes
+ * or loads from the copy outside `node_modules/`. At the pin, `launch` runs
+ * the `pokemon-showdown` entry script, which loads `dist/server/index.js`;
+ * the server then requires only from `dist/` (its code, `dist/data`,
+ * `dist/translations`, and the config defaults `dist/config/config-example.js`
+ * that its config loader merges under `config/config.js`), serves
+ * `server/static/`, and reads `package.json` (Node reads it to load the entry
+ * script as CommonJS; the server parses it as its package data). The copy's
+ * `config/config-example.js` is digested too: the server never loads it
+ * under `--skip-build`, but it is the source the build copies to
+ * `dist/config/config-example.js`, and the build also copies it to
+ * `config/config.js` when that file is missing.
+ *
+ * Not digested, by design:
+ * - `node_modules/`: third-party packages that npm installs from the
+ *   checkout's lockfile, not files of the pinned commit, and not the whole of
+ *   what the server can require: Node resolves a package missing there from
+ *   every ancestor `node_modules/`, outside the copy, so a digest of the
+ *   copy's tree would claim more than it proves. `createRuntimeCopy` checks
+ *   its symlinks stay inside the copy.
+ * - `config/config.js`: written by `launch` before every start, checked from
+ *   disk, and recorded in the session manifest (`config_sha256`).
+ * - Everything else the server reads under `config/` or writes under `logs/`
+ *   (`RUNTIME_STATE_DIRS`, `config/usergroups.csv`, ...): server state, not
+ *   part of the copy.
+ * - `databases/` (the SQL schemas and migrations): not copied. At the pin
+ *   only the SQLite stores read them (friends, offline PMs, modlog, chat
+ *   plugins), behind `usesqlite`, which neither the upstream defaults nor
+ *   Areneon's `config.js` set (the friends child processes start, but open
+ *   no store without it), and the Postgres stores (room logs behind
+ *   `replaysdb`, teams behind `usepostgres` and `usepostgresteams`), off in
+ *   Areneon's `config.js`. So nothing reads them under Areneon's config.
+ * - `.git`: never copied, and `verifyRuntimeCopy` refuses a copy that holds
+ *   one. `Monitor.version()` reads `.git/index` at every start; were one
+ *   present, it would run git from `dist/server/` against the repository
+ *   enclosing the copy.
+ */
+export const DIGESTED_ENTRIES = [
+  "dist",
+  "server/static",
+  "config/config-example.js",
+  "package.json",
+  "pokemon-showdown",
+] as const;
+
+export type DigestedEntry = (typeof DIGESTED_ENTRIES)[number];
+
+/**
+ * The runtime manifest's format. A copy whose manifest has another version
+ * (version 1 had no `version` field and digested only `dist/`) is refused,
+ * never migrated: the caller recreates it with `createRuntimeCopy`.
+ */
+export const RUNTIME_MANIFEST_VERSION = 2;
+
+/**
  * A staging or set-aside directory (`.<commit>-*`, `.<commit>-*.old`) whose
  * mtime is older than this is left over from a crashed run and is removed; a
  * younger one may belong to a concurrent run and is left alone. A staging
@@ -51,15 +106,15 @@ export const RUNTIME_ENTRIES = [
  */
 export const STALE_STAGING_MS = 10 * 60 * 1000;
 
-/** The record of a runtime copy's commit and `dist/` digest, inside the copy. */
+/** The record of a runtime copy's commit and entry digests, inside the copy. */
 export const RUNTIME_MANIFEST = "areneon-runtime.json";
 
 export interface RuntimeCopy {
   /** The copy's root: the server's install root and working directory. */
   dir: string;
   commit: string;
-  /** `treeDigest` of the copy's `dist/`. */
-  distSha256: string;
+  /** `entryDigest` of each digested runtime entry, by entry. */
+  sha256: Record<DigestedEntry, string>;
 }
 
 export interface RuntimeCopyOptions {
@@ -101,8 +156,26 @@ export function treeDigest(dir: string): string {
 }
 
 /**
+ * SHA-256 of one runtime entry: `treeDigest` of a directory, the plain
+ * SHA-256 of a regular file's bytes. Anything else (a symlink, even to a
+ * file inside the copy) is refused.
+ */
+export function entryDigest(path: string): string {
+  const stat = lstatSync(path);
+  if (stat.isDirectory()) return treeDigest(path);
+  if (!stat.isFile()) throw new RuntimeCopyError(`${path} is not a regular file`);
+  return createHash("sha256").update(readFileSync(path)).digest("hex");
+}
+
+function digestEntries(dir: string): Record<DigestedEntry, string> {
+  return Object.fromEntries(
+    DIGESTED_ENTRIES.map((entry) => [entry, entryDigest(join(dir, entry))]),
+  ) as Record<DigestedEntry, string>;
+}
+
+/**
  * Copy the pinned, built Showdown checkout's runtime files into
- * `<runtimeRoot>/<commit>/` and record the copied `dist/` digest there
+ * `<runtimeRoot>/<commit>/` and record the digests of its `DIGESTED_ENTRIES` there
  * (ADR-005 §4). The checkout is verified exactly as `loadEngine()` does
  * (HEAD = pin, build present). Nothing is written under `vendorDir`: the
  * copy is staged next to its target and renamed into place.
@@ -148,10 +221,10 @@ export function createRuntimeCopy(options: RuntimeCopyOptions = {}): RuntimeCopy
       });
     }
     checkContained(staging);
-    const distSha256 = treeDigest(join(staging, "dist"));
+    const sha256 = digestEntries(staging);
     writeFileSync(
       join(staging, RUNTIME_MANIFEST),
-      `${JSON.stringify({ commit, dist_sha256: distSha256 }, null, 2)}\n`,
+      `${JSON.stringify({ version: RUNTIME_MANIFEST_VERSION, commit, sha256 }, null, 2)}\n`,
     );
     const dir = join(runtimeRoot, commit);
     const lock = acquireCopyLock(dir);
@@ -178,7 +251,7 @@ export function createRuntimeCopy(options: RuntimeCopyOptions = {}): RuntimeCopy
     }
     // The new copy is in place; a leftover old copy is swept later.
     removeBestEffort(aside);
-    return { dir, commit, distSha256 };
+    return { dir, commit, sha256 };
   } catch (error) {
     removeBestEffort(staging);
     throw error;
@@ -195,10 +268,12 @@ function removeBestEffort(path: string): void {
 }
 
 /**
- * Re-verify a runtime copy before it is used: its manifest names
- * `expectedCommit`, every runtime entry is present, and its `dist/` still has
- * the recorded digest. Any difference is refused as a `RuntimeCopyError`; the
- * caller rebuilds the copy with `createRuntimeCopy`.
+ * Re-verify a runtime copy before it is used: its manifest is of version
+ * `RUNTIME_MANIFEST_VERSION` and names `expectedCommit`, every runtime entry
+ * is present, it holds no `.git` (of any kind, symlinks included), and every
+ * digested entry still has its recorded digest. Any
+ * difference, including a manifest of an older version, is refused as a
+ * `RuntimeCopyError`; the caller recreates the copy with `createRuntimeCopy`.
  */
 export function verifyRuntimeCopy(
   dir: string,
@@ -215,31 +290,61 @@ export function verifyRuntimeCopy(
       throw new RuntimeCopyError(`runtime copy ${dir} has no ${entry}`);
     }
   }
-  const distSha256 = treeDigest(join(dir, "dist"));
-  if (distSha256 !== manifest.dist_sha256) {
+  if (lstatSync(join(dir, ".git"), { throwIfNoEntry: false }) !== undefined) {
     throw new RuntimeCopyError(
-      `runtime copy ${dir} dist/ digest ${distSha256} does not match the recorded ${manifest.dist_sha256}`,
+      `runtime copy ${dir} has a .git entry; the runtime copy must not contain .git: ` +
+        "Monitor.version would run git against the enclosing repository; recreate the copy",
     );
   }
-  return { dir, commit: manifest.commit, distSha256 };
+  const sha256 = digestEntries(dir);
+  for (const entry of DIGESTED_ENTRIES) {
+    if (sha256[entry] !== manifest.sha256[entry]) {
+      throw new RuntimeCopyError(
+        `runtime copy ${dir} ${entry} digest ${sha256[entry]} does not match the recorded ` +
+          `${manifest.sha256[entry]}; recreate the copy with createRuntimeCopy`,
+      );
+    }
+  }
+  return { dir, commit: manifest.commit, sha256 };
 }
 
-function readManifest(path: string): { commit: string; dist_sha256: string } {
+interface RuntimeManifest {
+  version: number;
+  commit: string;
+  sha256: Record<DigestedEntry, string>;
+}
+
+function readManifest(path: string): RuntimeManifest {
   let value: unknown;
   try {
     value = JSON.parse(readFileSync(path, "utf8"));
   } catch (error) {
     throw new RuntimeCopyError(`cannot read runtime manifest ${path}: ${String(error)}`);
   }
-  if (
-    typeof value !== "object" ||
-    value === null ||
-    Object.keys(value).sort().join() !== "commit,dist_sha256" ||
-    !Object.values(value).every((field) => typeof field === "string")
-  ) {
-    throw new RuntimeCopyError(`runtime manifest ${path} is not {commit, dist_sha256}`);
+  if (typeof value !== "object" || value === null) {
+    throw new RuntimeCopyError(`runtime manifest ${path} is not an object`);
   }
-  return value as { commit: string; dist_sha256: string };
+  const version = (value as Record<string, unknown>)["version"];
+  if (version !== RUNTIME_MANIFEST_VERSION) {
+    throw new RuntimeCopyError(
+      `runtime manifest ${path} is version ${JSON.stringify(version ?? 1)}, not ` +
+        `${RUNTIME_MANIFEST_VERSION}; recreate the copy with createRuntimeCopy`,
+    );
+  }
+  const { commit, sha256 } = value as Partial<RuntimeManifest>;
+  if (
+    Object.keys(value).sort().join() !== "commit,sha256,version" ||
+    typeof commit !== "string" ||
+    typeof sha256 !== "object" ||
+    sha256 === null ||
+    Object.keys(sha256).sort().join() !== [...DIGESTED_ENTRIES].sort().join() ||
+    !Object.values(sha256).every((digest) => typeof digest === "string")
+  ) {
+    throw new RuntimeCopyError(
+      `runtime manifest ${path} is not {version, commit, sha256: {${DIGESTED_ENTRIES.join(", ")}}}`,
+    );
+  }
+  return value as RuntimeManifest;
 }
 
 /**
