@@ -4,10 +4,18 @@
 // BEGIN / COMMIT / ROLLBACK become a savepoint, its release and its rollback.
 
 import { createHash } from "node:crypto";
-import { loadRulesSnapshot, PINNED_SHOWDOWN_COMMIT, rulesSnapshotHash, snapshotBytes } from "@areneon/showdown-bridge";
+import {
+  type ImportChannel,
+  type ImportPlan,
+  type ImportStep,
+  loadRulesSnapshot,
+  PINNED_SHOWDOWN_COMMIT,
+  rulesSnapshotHash,
+  snapshotBytes,
+} from "@areneon/showdown-bridge";
 import pg from "pg";
 import { afterAll, describe, expect, it } from "vitest";
-import { applyImport, type ImportChannel, type ImportClient, ImportError, type ImportPlan, type ImportResult, type ImportStep } from "../src/import.ts";
+import { applyImport, type ImportClient, ImportError, type ImportResult } from "../src/import.ts";
 
 const HOST = process.env.RULES_DB_HOST ?? "127.0.0.1:55432";
 // The throwaway local passwords `make db-up` sets (never the Coolify ones).

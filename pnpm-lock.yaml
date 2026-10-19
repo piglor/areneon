@@ -30,7 +30,14 @@ importers:
         specifier: 5.0.5
         version: 5.0.5(@types/node@24.19.2)(@vitest/coverage-v8@5.0.5)(vite@8.3.4(@types/node@24.19.2))
 
-  packages/rules-importer: {}
+  packages/rules-importer:
+    dependencies:
+      '@areneon/rules-store':
+        specifier: workspace:*
+        version: link:../rules-store
+      '@areneon/showdown-bridge':
+        specifier: workspace:*
+        version: link:../showdown-bridge
 
   packages/rules-store:
     dependencies:
@@ -40,6 +47,9 @@ importers:
       pg:
         specifier: 8.23.1
         version: 8.23.1
+      pg-connection-string:
+        specifier: 2.14.1
+        version: 2.14.1
     devDependencies:
       '@types/pg':
         specifier: 8.23.1

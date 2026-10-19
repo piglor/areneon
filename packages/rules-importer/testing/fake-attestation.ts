@@ -1,4 +1,7 @@
-import { AttestationError, type AttestationVerifier } from "./attestation.ts";
+// Test-only (the package's "./testing" entry): never imported by src/, and
+// not copied into the importer image.
+
+import { AttestationError, type AttestationVerifier } from "../src/attestation.ts";
 
 /**
  * An AttestationVerifier for tests of the modules that use one: it accepts

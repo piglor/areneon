@@ -1,0 +1,20 @@
+# The rules importer image's build context is the repository root; send only
+# what the Dockerfile copies.
+*
+!package.json
+!pnpm-lock.yaml
+!pnpm-workspace.yaml
+!packages/rules-importer/package.json
+!packages/rules-importer/src
+!packages/rules-importer/test/fake-gh.ts
+!packages/rules-importer/test/fake-gh-cli.ts
+!packages/rules-importer/test/e2e-bin
+!packages/rules-store/package.json
+!packages/rules-store/src
+!packages/showdown-bridge/package.json
+!packages/showdown-bridge/src
+!packages/schema/package.json
+!packages/schema/src
+!packages/schema/rules
+!packages/schema/contracts
+!fixtures/rules-releases

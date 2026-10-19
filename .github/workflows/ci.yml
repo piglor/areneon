@@ -96,6 +96,20 @@ jobs:
       - if: always()
         run: make db-down
 
+  importer-image:
+    # Builds the rules importer image and imports the recorded releases into a
+    # fresh Postgres 18 twice: a real commit, then a no-op (ADR-007, #768).
+    # The e2e target's stand-in gh replays recorded GitHub answers; no token.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - name: importer image and end-to-end import on Postgres 18 (ADR-007)
+        run: make importer-e2e
+      - if: always()
+        run: make db-down
+
   gitleaks:
     runs-on: ubuntu-latest
     env:
@@ -150,7 +164,7 @@ jobs:
 
   ci:
     if: always()
-    needs: [python, typescript, database, team-guard, licences, gitleaks, osv, dco]
+    needs: [python, typescript, database, importer-image, team-guard, licences, gitleaks, osv, dco]
     runs-on: ubuntu-latest
     steps:
       - name: all required jobs passed
