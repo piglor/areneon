@@ -36,7 +36,7 @@ A shared language for humans and agents working on Areneon. Use these terms exac
 | **`rqid`** | Request ID assigned by the Showdown **server** only. Absent on the in-process sim path; optional in contracts. |
 | **`request_seq` / `request_hash`** | Areneon's request identity on both paths: a per-side monotonic counter plus a hash of the canonical request JSON. Used for stale rejection. |
 | **Headless runtime (A1)** | In-process sim BattleStream for training, evaluation and fixtures. |
-| **Bot client runtime (A2)** | The bot as a player on a local Showdown server, for bot-vs-bot league play and local human sparring. |
+| **Bot client runtime (A2)** | The bot as a player on a local Showdown server, for local human sparring. |
 
 ## Observations and decisions
 

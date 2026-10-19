@@ -1,6 +1,6 @@
 // The ObservationBuilder (ADR-008 §5): the only constructor of a player's
-// observation. It is engine-free and imports no Node built-in, so it can also be
-// bundled for the browser: its inputs are contracts and a branded
+// observation. It is engine-free and imports no Node built-in, so it runs
+// wherever WebCrypto does: its inputs are contracts and a branded
 // PlayerChannel, it hashes through an injected Sha256 port, and it never
 // receives the Battle, the omniscient log or hidden verdicts. It refuses a
 // team that is not the player's own (checked against their own request) and

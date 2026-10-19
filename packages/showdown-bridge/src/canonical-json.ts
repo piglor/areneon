@@ -1,5 +1,5 @@
 // Canonical JSON and RFC 8785 (JCS), with no imports at all (ADR-008 §5):
-// the browser-bundled ObservationBuilder and `scripts/rules-hash.ts` (rerun
+// the engine-free ObservationBuilder and `scripts/rules-hash.ts` (rerun
 // from bare archives of old commits) can both depend on it. A test keeps it
 // import-free.
 

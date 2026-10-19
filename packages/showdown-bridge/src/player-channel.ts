@@ -1,6 +1,6 @@
 // The A1 adapter for a PlayerChannel (ADR-008 §5), on Node: it checks a
-// channel log before the ObservationBuilder may read it. The A2 adapter
-// (server frames) comes with ADR-005's slices.
+// channel log before the ObservationBuilder may read it. The A2 adapter (server
+// frames) comes with ADR-005's slices.
 
 import { createHash } from "node:crypto";
 import { ajvFor } from "@areneon/schema/ajv";
