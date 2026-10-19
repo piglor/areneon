@@ -91,6 +91,24 @@
         },
         "manifest": {
           "$ref": "#/$defs/VersionManifest"
+        },
+        "collection": {
+          "description": "How the battle was collected (ADR-009 §4). Optional: an Episode without it is a plain fixture or a pre-collection record; the training loader (slice c) will refuse it. A reader older than this property rejects an Episode that carries it, so every consumer ships with the change. The reader checks what the profile cannot (readEpisode): a seed only on A1, none on A2.",
+          "type": "object",
+          "oneOf": [
+            {
+              "$ref": "#/$defs/LeagueCollection"
+            },
+            {
+              "$ref": "#/$defs/EvaluationCollection"
+            },
+            {
+              "$ref": "#/$defs/SparringCollection"
+            }
+          ],
+          "discriminator": {
+            "propertyName": "kind"
+          }
         }
       }
     },
@@ -523,6 +541,96 @@
           "type": "integer",
           "minimum": 0,
           "maximum": 9007199254740991
+        }
+      }
+    },
+    "LeagueCollection": {
+      "description": "A training-league battle.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "run_id",
+        "seed",
+        "opponent_policy_id"
+      ],
+      "properties": {
+        "kind": {
+          "const": "league"
+        },
+        "run_id": {
+          "description": "The league run that played the battle.",
+          "type": "string",
+          "minLength": 1
+        },
+        "seed": {
+          "description": "The engine's seed form, sodium,<hex>. null on A2, where a challenge cannot be seeded (ADR-005); reproduction there uses the server-side input log.",
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^sodium,[0-9a-f]+$",
+          "minLength": 8,
+          "maxLength": 128
+        },
+        "opponent_policy_id": {
+          "description": "The policy that chose the opponent's actions.",
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "EvaluationCollection": {
+      "description": "A battle of an evaluation run (evaluation protocol C4, O3): never training data.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "run_id",
+        "sealed",
+        "seed"
+      ],
+      "properties": {
+        "kind": {
+          "const": "evaluation"
+        },
+        "run_id": {
+          "description": "The evaluation run that played the battle.",
+          "type": "string",
+          "minLength": 1
+        },
+        "sealed": {
+          "description": "true when the run's teams and Episodes are sealed (protocol I1, I8).",
+          "type": "boolean"
+        },
+        "seed": {
+          "description": "The engine's seed form, sodium,<hex>. null on A2, where a challenge cannot be seeded (ADR-005); reproduction there uses the server-side input log.",
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^sodium,[0-9a-f]+$",
+          "minLength": 8,
+          "maxLength": 128
+        }
+      }
+    },
+    "SparringCollection": {
+      "description": "A local A2 battle against a human.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "session_id"
+      ],
+      "properties": {
+        "kind": {
+          "const": "sparring"
+        },
+        "session_id": {
+          "description": "The local sparring session.",
+          "type": "string",
+          "minLength": 1
         }
       }
     }

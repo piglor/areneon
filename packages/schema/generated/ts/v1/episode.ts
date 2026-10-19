@@ -44,6 +44,10 @@ export interface Provenance {
    */
   behaviour_policy_id: string;
   manifest: VersionManifest;
+  /**
+   * How the battle was collected (ADR-009 §4). Optional: an Episode without it is a plain fixture or a pre-collection record; the training loader (slice c) will refuse it. A reader older than this property rejects an Episode that carries it, so every consumer ships with the change. The reader checks what the profile cannot (readEpisode): a seed only on A1, none on A2.
+   */
+  collection?: LeagueCollection | EvaluationCollection | SparringCollection;
 }
 /**
  * Replay identity of a battle (ADR-003, ADR-007): the pinned engine commit, the format, and the hashes of the engine ruleset and of Areneon's own format rules.
@@ -66,6 +70,61 @@ export interface VersionManifest {
    * SHA-256 of Areneon's format rules record (ADR-007).
    */
   format_rules_hash: string;
+}
+/**
+ * A training-league battle.
+ *
+ * This interface was referenced by `Episode`'s JSON-Schema
+ * via the `definition` "LeagueCollection".
+ */
+export interface LeagueCollection {
+  kind: "league";
+  /**
+   * The league run that played the battle.
+   */
+  run_id: string;
+  /**
+   * The engine's seed form, sodium,<hex>. null on A2, where a challenge cannot be seeded (ADR-005); reproduction there uses the server-side input log.
+   */
+  seed: string | null;
+  /**
+   * The policy that chose the opponent's actions.
+   */
+  opponent_policy_id: string;
+}
+/**
+ * A battle of an evaluation run (evaluation protocol C4, O3): never training data.
+ *
+ * This interface was referenced by `Episode`'s JSON-Schema
+ * via the `definition` "EvaluationCollection".
+ */
+export interface EvaluationCollection {
+  kind: "evaluation";
+  /**
+   * The evaluation run that played the battle.
+   */
+  run_id: string;
+  /**
+   * true when the run's teams and Episodes are sealed (protocol I1, I8).
+   */
+  sealed: boolean;
+  /**
+   * The engine's seed form, sodium,<hex>. null on A2, where a challenge cannot be seeded (ADR-005); reproduction there uses the server-side input log.
+   */
+  seed: string | null;
+}
+/**
+ * A local A2 battle against a human.
+ *
+ * This interface was referenced by `Episode`'s JSON-Schema
+ * via the `definition` "SparringCollection".
+ */
+export interface SparringCollection {
+  kind: "sparring";
+  /**
+   * The local sparring session.
+   */
+  session_id: string;
 }
 /**
  * The player's own team.

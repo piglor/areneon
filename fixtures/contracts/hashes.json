@@ -13,6 +13,9 @@
   "v1/battle-observation/valid/p1.json": "ac2a4460ee6226ffb43669290ec80faf13ace239a5b605287fca74f1854030b3",
   "v1/recommendation/valid/in-budget.json": "5d012dc7f305f193e07d7dd75a2755d7108efd7cb7c750ed380b820ee64685f4",
   "v1/episode/valid/p1.json": "458328861ac203e1ffee2cdf3da596b5d8381533f371c569757fca7e8f55b27e",
+  "v1/episode/valid/league.json": "1832320ce5232f589e1f51ca7bc0c04823b3a6fb82ebdc02c855096473f5b367",
+  "v1/episode/valid/evaluation-sealed.json": "a48c2678e1d6e8253b5cd2670b879559dead6ead52937fceb8b1a66da5029718",
+  "v1/episode/valid/sparring.json": "70bb527a34ee80f876201132bba6b4b73b017381cc0bb97976590e9fccb43991",
   "v1/request-identity/invalid/rqid-zero.json": "935836089d31d52d75780d7e00bcbc5e22b7cec6117f342f894508cfe00ddf86",
   "v1/legal-choice-set/invalid/next-version.json": "3425cfef5bbe72d199c4b18489faef43c2644e65beeb98e027ebc227ed9c5c8c",
   "v1/decision-context/invalid/negative-budget.json": "e6e81fd8ceafbba180468b8ea99881d52b45523ab99cbbb815641b68712d96c2",
@@ -23,5 +26,11 @@
   "v1/preview-observation/invalid/omniscient-log.json": "deb076939f474df63e81573811f7c9441a96d6e3ec4f51ed27a8d08bba394369",
   "v1/battle-observation/invalid/opponent-team.json": "15cda5c6c0460eb1b32d674a48cda5411b9b7dee8d46eaa4273175ef4cb19172",
   "v1/recommendation/invalid/unknown-outcome.json": "07d6a70fd1078cd302b91778e376cf69b1af4e9a708a0ceb3e14aba56a5ebc56",
-  "v1/episode/invalid/omniscient-log.json": "3dd8fdec04d71b78f3f48dd829a756fd64ee7987532355f17c39ec630840b052"
+  "v1/episode/invalid/omniscient-log.json": "3dd8fdec04d71b78f3f48dd829a756fd64ee7987532355f17c39ec630840b052",
+  "v1/episode/invalid/collection-no-run-id.json": "5f5f96fd64cd1caa455ea5ea4308f8406825c2d1e9eff5555b926edb17934569",
+  "v1/episode/invalid/collection-league-sealed.json": "2f255b058c2085673aeaedafc323524ba5013184da189b09beb5959623c741cb",
+  "v1/episode/invalid/collection-evaluation-no-seed.json": "17e26d02b555c0862da3029e48d4b4f82b0713cee9522cce741817b95db22d79",
+  "v1/episode/invalid/collection-bad-seed.json": "53a902eefbb8dabcd03f654a43bb398d2babe44e6b703f1cbf7d8b01a3232b31",
+  "v1/episode/invalid/collection-unknown-kind.json": "a6250e4b26d5f60e72e501dc4332818370847606bebf799e41b72c9676459b04",
+  "v1/episode/invalid/collection-sparring-run-id.json": "93b629899257b9b18b261ef23d0126c5a0d762876672e4350c101b0e386a4e0d"
 }
