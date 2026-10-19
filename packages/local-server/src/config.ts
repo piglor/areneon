@@ -76,7 +76,7 @@ export function serverSettings(port: number): ServerSetting[] {
 }
 
 /** The `config/config.js` text for a session on `port`. */
-export function renderServerConfig(port: number): string {
+export function renderServerConfig(port: number, settings: ServerSetting[] = serverSettings(port)): string {
   const lines = [
     "'use strict';",
     "",
@@ -84,7 +84,7 @@ export function renderServerConfig(port: number): string {
     "// the launcher rewrites it and checks the merged config before every start.",
     "",
   ];
-  for (const { key, value, why } of serverSettings(port)) {
+  for (const { key, value, why } of settings) {
     lines.push(`// ${why}`, `exports.${key} = ${JSON.stringify(value)};`, "");
   }
   return lines.join("\n");
@@ -106,12 +106,16 @@ export interface WrittenConfig {
  * is not a runtime copy (it has no runtime manifest), so it never writes into
  * the `vendor/` checkout.
  */
-export function writeServerConfig(dir: string, port: number): WrittenConfig {
+export function writeServerConfig(
+  dir: string,
+  port: number,
+  settings: ServerSetting[] = serverSettings(port),
+): WrittenConfig {
   if (!existsSync(join(dir, RUNTIME_MANIFEST))) {
     throw new ServerConfigError(`${dir} is not a runtime copy (no ${RUNTIME_MANIFEST})`);
   }
   for (const state of RUNTIME_STATE_DIRS) mkdirSync(join(dir, state), { recursive: true });
-  const text = renderServerConfig(port);
+  const text = renderServerConfig(port, settings);
   const path = join(dir, SERVER_CONFIG_PATH);
   writeFileSync(`${path}.tmp`, text);
   renameSync(`${path}.tmp`, path);
@@ -165,9 +169,13 @@ export function checkNoReplayUpload(config: Record<string, unknown>): void {
  * Refuse a merged config that would upload replays or that differs from any
  * setting Areneon fixes for `port`.
  */
-export function checkServerConfig(config: Record<string, unknown>, port: number): void {
+export function checkServerConfig(
+  config: Record<string, unknown>,
+  port: number,
+  settings: ServerSetting[] = serverSettings(port),
+): void {
   checkNoReplayUpload(config);
-  const wrong = serverSettings(port)
+  const wrong = settings
     .filter(({ key, value }) => !isDeepStrictEqual(config[key], value))
     .map(({ key, value }) => `${key} is ${JSON.stringify(config[key])}, expected ${JSON.stringify(value)}`);
   if (wrong.length > 0) throw new ServerConfigError(`unsafe server config: ${wrong.join("; ")}`);

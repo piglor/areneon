@@ -7,7 +7,7 @@ import { join, resolve } from "node:path";
 import type { Readable, Writable } from "node:stream";
 import { fileURLToPath } from "node:url";
 import { PINNED_SHOWDOWN_COMMIT } from "@areneon/showdown-bridge";
-import { checkServerConfig, loadServerConfig, LOOPBACK_ADDRESS, writeServerConfig } from "./config.ts";
+import { checkServerConfig, type ServerSetting, serverSettings, loadServerConfig, LOOPBACK_ADDRESS, writeServerConfig } from "./config.ts";
 import { acquireCopyLock, blockedMessage } from "./copy-lock.ts";
 import { type DigestedEntry, verifyRuntimeCopy } from "./runtime-copy.ts";
 import type { SupervisorConfig } from "./supervisor.ts";
@@ -37,6 +37,12 @@ export interface LaunchOptions {
   lifetimeMs?: number;
   /** How long the supervisor waits after SIGTERM, and again after SIGKILL (default 5 s). */
   stopTimeoutMs?: number;
+  /**
+   * The settings `config.js` carries, for `port`. Only `launchHarness`
+   * (harness.ts) passes it; the default is `serverSettings`, which never
+   * turns `logchallenges` on.
+   */
+  settings?: (port: number) => ServerSetting[];
 }
 
 export interface SessionManifest {
@@ -124,8 +130,9 @@ export async function launch(options: LaunchOptions): Promise<LocalServer> {
     const expectedCommit = options.expectedCommit ?? PINNED_SHOWDOWN_COMMIT;
     // Before config.js is written and the copy's config defaults are loaded.
     verifyRuntimeCopy(dir, expectedCommit);
-    const config = writeServerConfig(dir, port);
-    checkServerConfig(loadServerConfig(dir), port);
+    const settings = (options.settings ?? serverSettings)(port);
+    const config = writeServerConfig(dir, port, settings);
+    checkServerConfig(loadServerConfig(dir), port, settings);
     await assertPortFree(port);
     // Again immediately before the spawn: this is the check the session records.
     const copy = verifyRuntimeCopy(dir, expectedCommit);

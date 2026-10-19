@@ -51,6 +51,10 @@ importers:
       '@areneon/showdown-bridge':
         specifier: workspace:*
         version: link:../showdown-bridge
+    devDependencies:
+      '@areneon/bot-client':
+        specifier: workspace:*
+        version: link:../bot-client
 
   packages/rules-importer:
     dependencies:
