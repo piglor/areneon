@@ -2,13 +2,13 @@ import { createHash } from "node:crypto";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { actorRule, NoCandidateError } from "./actor-rule.ts";
 import type { Engine, PokemonSet } from "./engine.ts";
 import { resolveFormat, type VersionManifest } from "./formats.ts";
 import type { FormatRulesRecord } from "./rules.ts";
 import type { JsonObject, RequestPhase } from "./request.ts";
 import {
   type Actor,
-  BattleAbortedError,
   type BattleRecord,
   type Player,
   runBattle,
@@ -51,15 +51,15 @@ export function syntheticTeam(): PokemonSet[] {
 export const engineDefault: Actor = () => "default";
 
 /**
- * Play the first candidate of the request's legal choice set (ADR-006),
- * which the engine has judged legal; never a pending one.
+ * Play the request's legal choice set by the shared actor rule (ADR-005 §1):
+ * the first engine-judged candidate, else the first pending one. Throws
+ * `NoCandidateError` only when the set is empty or missing.
  */
 export const firstLegal: Actor = (request) => {
-  const choice = request.legal?.choices[0];
-  if (choice === undefined) {
-    throw new BattleAbortedError(`${request.player}: no judged legal choice to play`);
+  if (request.legal === undefined) {
+    throw new NoCandidateError(`${request.player}: request ${request.request_seq} has no legal choice set`);
   }
-  return choice;
+  return actorRule(request.legal);
 };
 
 /** Replay the golden battle on `engine`. */
