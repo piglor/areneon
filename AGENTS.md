@@ -37,7 +37,7 @@ Default five-label vocabulary (`needs-triage`, `needs-info`, `ready-for-agent`, 
 ### Privacy rules (hard)
 
 - Never commit a real competitive team. Private teams live only in gitignored `private-data/`; public fixtures are sanitized or synthetic and CC0.
-- Policy inputs are player-perspective only. Opponent hidden information must never enter an observation, log, checkpoint or extension message.
+- Policy inputs are player-perspective only. Opponent hidden information must never enter an observation, log, checkpoint or model input.
 - The pinned Showdown engine is the only legality authority.
 - Do not copy AGPL code (Showdown client, Champions Calc).
 
@@ -64,6 +64,6 @@ If new code cannot be covered by a test, remove it rather than exempting it.
 
 ### Features and sizing
 
-- **0 → 1** (new package, service, extension or model pipeline): architecture first, ADR required (`prepare-adr`, `adr-wiki` skills).
+- **0 → 1** (new package, service or model pipeline): architecture first, ADR required (`prepare-adr`, `adr-wiki` skills).
 - **0 → many** (test expansion): keep tests on public interfaces (seams), not internals.
 - **MVP ≠ simplest**: cut the thinnest slice *of the final architecture*, on the seams the full vision needs (schema versions, ports, documented extension points).

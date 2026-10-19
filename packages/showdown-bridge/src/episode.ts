@@ -24,7 +24,7 @@ export const rightsFor = (dataClass: Episode["data_class"]): Episode["rights"] =
   dataClass === "synthetic" ? "cc0-synthetic" : "owner-private";
 
 /**
- * Stale invalidation (ADR-004 r2, ADR-008 §4): a recommendation answers the
+ * Stale invalidation (ADR-008 §4): a recommendation answers the
  * current request only if `request_seq` and `request_hash` both match, and
  * `rqid` too when both carry one. Anything else is dropped.
  */

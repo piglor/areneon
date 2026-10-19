@@ -115,7 +115,7 @@ def sha256_hex(data: bytes) -> str:
 
 
 def request_hash(request: dict[str, Any]) -> str:
-    """ADR-004 r2 request identity: SHA-256 of the canonical request without ``rqid``.
+    """ADR-008 §4 request identity: SHA-256 of the canonical request without ``rqid``.
 
     The request is validated against the engine-mirror schema first: only a
     validated request is hashed (ADR-008 §4).

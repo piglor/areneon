@@ -1,5 +1,5 @@
 // Canonical JSON and RFC 8785 (JCS), with no imports at all (ADR-008 §5):
-// the browser-bundled ObservationBuilder and `scripts/rules-hash.ts` (rerun
+// the engine-free ObservationBuilder and `scripts/rules-hash.ts` (rerun
 // from bare archives of old commits) can both depend on it. A test keeps it
 // import-free.
 
@@ -9,7 +9,7 @@ export type Json = null | boolean | number | string | Json[] | { [key: string]: 
 /**
  * Serialise `value` deterministically: object keys sorted, no whitespace.
  * Two requests with the same content always produce the same string,
- * whichever path (headless sim or browser client) observed them.
+ * whichever path (in-process sim or server connection) observed them.
  */
 export function canonicalJson(value: Json): string {
   if (typeof value === "number" && !Number.isFinite(value)) {

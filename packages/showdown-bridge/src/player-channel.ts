@@ -1,6 +1,6 @@
 // The A1 adapter for a PlayerChannel (ADR-008 §5), on Node: it checks a
-// channel log before the ObservationBuilder may read it. The A2 and advisor
-// adapters (server frames) come with ADR-005's and ADR-004's slices.
+// channel log before the ObservationBuilder may read it. The A2 adapter (server
+// frames) comes with ADR-005's slices.
 
 import { createHash } from "node:crypto";
 import { ajvFor } from "@areneon/schema/ajv";
@@ -29,8 +29,7 @@ const validBattle = contract.compile(battleSchema);
 
 /**
  * `buildObservation`, then full validation against the closed observation
- * schema (ADR-008 §5's "validate"), on Node. The bundled advisor path needs
- * precompiled validators instead, since MV3 forbids Ajv's runtime compile.
+ * schema (ADR-008 §5's "validate"), on Node.
  */
 export async function observe(input: Omit<ObservationInput, "sha256">): Promise<Observation> {
   const observation = await buildObservation({ ...input, sha256: nodeSha256 });

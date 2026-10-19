@@ -1,6 +1,8 @@
 # Areneon
 
-Open-source competitive VGC Doubles AI sparring partner for Pokémon Showdown (Champions Regulation M-C, Closed Team Sheet: Bo1 with Open Team Sheets declined).
+Open-source research project: an AI training pipeline for competitive VGC Doubles on the pinned Pokémon Showdown engine (Champions Regulation M-C, Closed Team Sheet: Bo1 with Open Team Sheets declined). Bots learn by automatic self-play and are judged by independent, held-out evaluation.
+
+This repository covers offline training, evaluation and local bot sparring; it ships no tool that assists a player in live battles on public servers and no bot for public servers. It is not monetized.
 
 **Status: Wave 1 (foundation), pre-alpha. No trained model exists yet.**
 
@@ -15,11 +17,11 @@ Polyglot monorepo (ADR-002): TypeScript, Python and Rust. Entries marked *planne
 
 ```
 packages/showdown-bridge/    TS: pinned engine loader, rules loader and hashing, headless runner, request decoder
-packages/schema/             JSON Schema contracts (source of truth): rules records today, more planned (#671)
+packages/schema/             JSON Schema contracts (source of truth): rules records and cross-language data contracts
+packages/rules-store/        tests for the rules store on PostgreSQL 18 (ADR-007)
 rules/                       Areneon's own rules as reviewed JSON records (ADR-007), never code constants
-packages/showdown-extension/ planned (#672): Chromium MV3 read-only advisor
 crates/                      planned: Rust Cargo workspace (calculators, rules catalog, orchestration)
-services/, ml/               planned: Python services and PyTorch training
+services/, ml/               planned: Python services, PyTorch training, self-play league and evaluation
 vendor/pokemon-showdown/     pinned upstream simulator (MIT, git submodule)
 fixtures/                    sanitized/synthetic fixtures only (CC0)
   showdown/<format>/         golden request fixtures from the pinned engine

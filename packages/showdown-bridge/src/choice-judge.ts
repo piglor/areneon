@@ -187,8 +187,8 @@ export interface LegalChoiceOptions {
   request: DecodedRequest & { request_seq: number };
   showdown_commit: string;
   /**
-   * `null` only where no engine state exists (A2, the advisor); there the
-   * engine judges on submission (ADR-006 rule 6).
+   * `null` only where no engine state exists (A2); there the engine judges
+   * on submission (ADR-006 rule 6).
    */
   judge: ChoiceJudge | null;
 }

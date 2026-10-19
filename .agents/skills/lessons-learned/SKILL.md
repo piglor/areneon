@@ -184,7 +184,7 @@ This is an internal Areneon skill and the canonical source of durable project le
 
 - **Never commit private teams.** Real competitive teams live only in gitignored `private-data/`. Public fixtures are sanitized or synthetic, carry a provenance label, and are CC0.
 
-- **Actor inputs are player-perspective only.** The omniscient sim stream, opponent hidden sets or future state must never reach a policy input, log, checkpoint or extension message. Hidden state may be used only as an evaluation upper bound, labelled as such.
+- **Actor inputs are player-perspective only.** The omniscient sim stream, opponent hidden sets or future state must never reach a policy input, log, checkpoint or model input. Hidden state may be used only as an evaluation upper bound, labelled as such.
 
 - **Heuristics are integration fixtures, not AI.** Never describe a heuristic or untrained policy as competent; label it and keep `safe_to_submit=false` outside tests.
 

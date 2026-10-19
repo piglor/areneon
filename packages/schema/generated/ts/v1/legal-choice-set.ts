@@ -10,11 +10,11 @@ export interface LegalChoiceSet {
    */
   request_seq: number;
   /**
-   * SHA-256 of the canonical request JSON without rqid (ADR-004 r2): lowercase hex.
+   * SHA-256 of the canonical request JSON without rqid (ADR-008 §4): lowercase hex.
    */
   request_hash: string;
   /**
-   * The Showdown server's request id; present only on the server path (A2, the advisor), never hashed.
+   * The Showdown server's request id; present only on the server path (A2), never hashed.
    */
   rqid?: number;
   /**

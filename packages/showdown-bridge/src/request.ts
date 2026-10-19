@@ -10,7 +10,7 @@ export type RequestPhase = "preview" | "move" | "forceSwitch" | "wait";
 export interface DecodedRequest {
   phase: RequestPhase;
   player: string;
-  /** Present only on the Showdown server path (ADR-004 r2). */
+  /** Present only on the Showdown server path (ADR-008 §4). */
   rqid?: number;
   request_hash: string;
   /** Preview only: Pokémon brought and how many must be chosen. */

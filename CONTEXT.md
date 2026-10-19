@@ -6,7 +6,7 @@ A shared language for humans and agents working on Areneon. Use these terms exac
 
 ## What Areneon Is
 
-**Areneon** is an open-source competitive VGC **Doubles** AI sparring partner for Pokémon Showdown. A human can challenge a private bot opponent, and an optional read-only browser advisor shows recommendations for the player's own decisions. Target format: Pokémon Champions Regulation M-C, bring 6 choose 4, Closed Team Sheet.
+**Areneon** is an open-source research project: an AI training pipeline for competitive VGC **Doubles** on the pinned Pokémon Showdown engine. Bots learn by automatic self-play and are judged by independent, held-out evaluation; a human can also spar against the bot on a local server. Target format: Pokémon Champions Regulation M-C, bring 6 choose 4, Closed Team Sheet.
 
 ---
 
@@ -36,8 +36,7 @@ A shared language for humans and agents working on Areneon. Use these terms exac
 | **`rqid`** | Request ID assigned by the Showdown **server** only. Absent on the in-process sim path; optional in contracts. |
 | **`request_seq` / `request_hash`** | Areneon's request identity on both paths: a per-side monotonic counter plus a hash of the canonical request JSON. Used for stale rejection. |
 | **Headless runtime (A1)** | In-process sim BattleStream for training, evaluation and fixtures. |
-| **Bot client runtime (A2)** | The bot as a player on a local/private Showdown server, for human sparring. |
-| **Advisor extension** | Read-only Chromium MV3 extension that reads the player's **own** request and shows recommendations. Never submits by default. |
+| **Bot client runtime (A2)** | The bot as a player on a local Showdown server, for local human sparring. |
 
 ## Observations and decisions
 
