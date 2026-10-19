@@ -20,6 +20,13 @@ import { exists, releaseCopyLock } from "./copy-lock.ts";
  * On stdout it writes one JSON line per event: `spawned` (with the server's
  * pid and the session's start and expiry times) and `ended` (with the
  * reason). The server's own output goes to stderr.
+ *
+ * Nothing cleans up after a supervisor killed with SIGKILL: the server keeps
+ * running until its process group is killed by hand, and the copy's lock
+ * stays live while any of that group exists. If the supervisor dies after
+ * spawning the server but before the launcher records the server's pid in
+ * the lock, the lock does not name the server and goes stale once the
+ * launcher exits.
  */
 export interface SupervisorConfig {
   /** The server's command line after `node`. */

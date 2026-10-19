@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { basename } from "node:path";
 
 /**
  * The lock of a runtime copy: `<runtimeRoot>/<commit>.lock`, next to the copy
@@ -48,8 +49,9 @@ export interface LockHooks {
  * stale lock (no process it names exists) is replaced under a second `wx`
  * file, `<lock>.break`: the one taker holding it re-reads the lock, and only
  * if it is still stale writes a unique temporary file and renames it over
- * the lock. It then re-reads the lock and owns it only if it holds its own
- * token. A breaker file left by a crash blocks every taker (`busy`) until it
+ * the lock; if the lock has vanished meanwhile, it creates it with `wx`
+ * instead, as a fresh taker would. It then re-reads the lock and owns it
+ * only if it holds its own token. A breaker file left by a crash blocks every taker (`busy`) until it
  * is removed by hand; this fails closed rather than guessing.
  */
 export function acquireCopyLock(copyDir: string, hooks: LockHooks = {}): HeldLock | LockBlocked {
@@ -66,7 +68,10 @@ export function acquireCopyLock(copyDir: string, hooks: LockHooks = {}): HeldLoc
     token: record.token,
     update(fields) {
       Object.assign(record, fields);
-      writeFileSync(path, text());
+      // Write aside and rename, so a concurrent reader never sees a truncated record.
+      const temp = tempPath(path, record.token);
+      writeFileSync(temp, text());
+      renameSync(temp, path);
     },
     release() {
       releaseCopyLock(path, record.token);
@@ -80,16 +85,29 @@ export function acquireCopyLock(copyDir: string, hooks: LockHooks = {}): HeldLoc
   if (!createExclusive(breaker, `${process.pid}\n`)) return { state: "busy", breaker };
   try {
     hooks.whileBreaking?.();
-    const still = blocking(lockState(path));
-    if (still !== null) return still;
-    const temp = `${path}.${record.token}.tmp`;
-    writeFileSync(temp, text(), { flag: "wx" });
-    renameSync(temp, path);
+    const still = lockState(path);
+    const blocked = blocking(still);
+    if (blocked !== null) return blocked;
+    if (still.state === "none") {
+      // The stale lock vanished: a fresh taker may create it with `wx` at any
+      // moment, so take it the same way rather than renaming over it.
+      createExclusive(path, text());
+    } else {
+      const temp = tempPath(path, record.token);
+      writeFileSync(temp, text(), { flag: "wx" });
+      renameSync(temp, path);
+    }
   } finally {
     rmSync(breaker, { force: true });
   }
   const after = lockState(path);
-  return after.state === "held" && after.record.token === record.token ? held : { state: "busy", breaker };
+  if (after.state === "held" && after.record.token === record.token) return held;
+  return blocking(after) ?? { state: "busy", breaker };
+}
+
+/** The holder's temporary file, renamed over the lock. */
+function tempPath(path: string, token: string): string {
+  return `${path}.${token}.tmp`;
 }
 
 /** Create `path` with `text` unless it exists; other errors propagate. */
@@ -176,10 +194,17 @@ export function exists(pid: number): boolean {
 export function blockedMessage(copyDir: string, blocked: LockBlocked): string {
   switch (blocked.state) {
     case "live":
-      return `runtime copy ${copyDir} is in use by pid ${blocked.pid} (lock ${lockPath(copyDir)})`;
+      return (
+        `runtime copy ${copyDir} is in use by pid ${blocked.pid} (lock ${lockPath(copyDir)}); ` +
+        `check that pid, and if it is not a launcher, supervisor or server, remove ${lockPath(copyDir)}`
+      );
     case "unreadable":
       return `cannot read the lock ${lockPath(copyDir)} (${blocked.reason}); remove it if nothing uses the copy`;
     case "busy":
-      return `another process is taking over the stale lock ${lockPath(copyDir)}; retry, or remove ${blocked.breaker} if none is`;
+      return (
+        `another process is taking over the stale lock ${lockPath(copyDir)}; retry, or remove ${blocked.breaker} ` +
+        `once no launcher or createRuntimeCopy is running for commit ${basename(copyDir)}; ` +
+        `leftover ${lockPath(copyDir)}.<token>.tmp files are harmless and may be deleted too`
+      );
   }
 }

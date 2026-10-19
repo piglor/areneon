@@ -93,7 +93,11 @@ export class LaunchError extends Error {
  * serves `GET /`, it writes the session manifest. The supervisor owns the
  * server from then on: it stops it on `stop()`, at the end of its lifetime,
  * on SIGINT/SIGTERM/SIGHUP, and when this process dies (its stdin closes),
- * and then releases the lock.
+ * and then releases the lock. A supervisor killed with SIGKILL leaves the
+ * server running until its process group is killed by hand; the lock stays
+ * live while that group exists, unless the supervisor died before this
+ * function recorded the server's pid in it, in which case the lock goes
+ * stale once this process exits.
  */
 export async function launch(options: LaunchOptions): Promise<LocalServer> {
   const dir = resolve(options.dir);
