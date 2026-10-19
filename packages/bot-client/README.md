@@ -41,22 +41,29 @@ Take the client address and the bot's name from it. The bot's name is `Areneon-b
 
 ## 2. Connect
 
-Point a Showdown client at the local server: `http://127.0.0.1:<port>` (the `client` field above). The server runs without login security, so any unregistered name works: pick a throwaway name, which you also give as `--challenger`. Do not use a name or password you use elsewhere. Nothing you type is sent anywhere else; the server makes no outbound requests (its `noNetRequests` setting is on).
+Point a Showdown client at the local server. There are two ways to get one (ADR-005 §4):
+
+- **The official web client through `localhost`.** Open `http://localhost:<port>` (the port from the `ready` line). The server's page redirects to `localhost.psim.us`, and the client served there connects to your local server.
+- **A self-built, unmodified client.** Build the upstream Showdown client yourself, outside this repo (it is AGPL: Areneon does not copy or ship it, and CI does not run it), then open it with `testclient-new.html?~~localhost:<port>`. This removes the dependency on Smogon's hosting.
+
+The battle traffic stays on `127.0.0.1`. With the official client the page itself is fetched from Smogon's static hosting, so Smogon sees your IP address; the self-built client avoids that. The local server itself makes no outbound requests (its `noNetRequests` setting is on).
+
+The server runs without login security, so any unregistered name works: pick a throwaway name, which you also give as `--challenger`. Do not use a name or password you use elsewhere.
 
 The server sets `forcetimer`, `autosavereplays` off and `logchallenges` off, so there is no replay upload and no challenge log.
 
 ### The proxy-lock popup
 
-The local server marks every `127.0.0.1` connection as a proxy and locks it. You will probably see a popup saying your IP is locked due to being a proxy, and a lock symbol next to your name; the bot gets the same popup, and its operator log shows it as a `server_message` line. This is the pinned server's behaviour for loopback connections. Challenges, accepting, the Open Team Sheets decline and choices still work (checked with the bot against itself on the launched server; not with a human client, see "Not verified" below). Close the popup and carry on.
+The local server marks every `127.0.0.1` connection as a proxy and locks it. You will probably see a popup saying your IP is locked due to being a proxy, and a lock symbol next to your name; the bot gets the same popup, and its operator log shows it as a `server_message` line. This is the pinned server's behaviour for loopback connections. Challenges, accepting, the Open Team Sheets decline and choices still work. This is checked with the bot against itself on the launched server (`packages/bot-client/test/session.local-server.test.ts`) and noted in the session-loop ticket (#757); it is not checked with a human client (see "Not verified" below). The earlier human-versus-bot match (section 6) predates this runtime and did not record the popup. Close the popup and carry on.
 
 ## 3. Challenge the bot
 
 1. Challenge the bot by its name (from the `ready` line).
 2. Choose exactly `[Gen 9 Champions] VGC 2026 Reg M-C`, with your own team.
-3. **Untick Best-of-3 before you send the challenge.** The client defaults this format to Best-of-3. The bot does not play Bo3: the server holds a Bo3 challenge under a different format id, which is not in the rules snapshot, so the bot rejects it. The `(Bo3)` format is refused the same way.
+3. **Untick Best-of-3 before you send the challenge.** The client defaults this format to Best-of-3. The bot does not play Bo3. From the server code (not tested with a Bo3 challenge or a human client), a Bo3 challenge reaches the bot under a format id with a custom rule appended, which is not an id in the rules snapshot, so the bot rejects it. The `(Bo3)` format is refused the same way.
 4. The name you challenge from must be the one in `--challenger` (compared by Showdown user id: case, spaces and punctuation do not matter). A challenge from any other user is rejected.
 
-The bot rejects, and says why in the operator log (`challenge_rejected`), any challenge that is not a plain battle challenge, comes from another user, or names another format or custom rules. It plays one battle at a time: a challenge made during a battle is rejected as `busy`.
+The bot rejects, and says why in the operator log (`challenge_rejected`), any challenge that is not a plain battle challenge, comes from another user, or whose format id is not the plain `gen9championsvgc2026regmc` id. It plays one battle at a time: a challenge made during a battle is rejected as `busy`.
 
 ## 4. Open team sheets
 
@@ -72,11 +79,11 @@ The server runs with `forcetimer` on and the format's VGC Timer, and the bot als
 
 The bot reads its own timer state after every request and gives each decision a time budget (60 s at most for Team Preview, 20 s at most for a battle decision, with a 3 s safety margin; `A2_BUDGET_CONFIG` in `src/deadline.ts`). Its policy today is the shared first-legal-choice rule, so it answers at once. A request with no timer state (for example one re-sent after a reconnect) gets a zero budget and is answered at once.
 
-Not yet: a watchdog that sends a fallback choice if the policy overruns its deadline (#761). The bot does not wait on a clock today because it never computes anything slow.
+Not yet: a watchdog that sends a fallback choice if the policy overruns its deadline (#761, open). The bot does not wait on a clock today because it never computes anything slow.
 
 ## 6. Windows client with the server in WSL2
 
-The server listens on `127.0.0.1` inside WSL2 and the launcher cannot bind another address. WSL2 normally forwards `localhost` from Windows into the distribution, so `http://127.0.0.1:<port>` in a Windows client may just work. This has not been tried with a Windows client. What was checked: from inside WSL2, `curl http://127.0.0.1:<port>/` answers 200 and the port is listening on `127.0.0.1` only. If a Windows client cannot reach it, run the client inside WSL2 too. Do not work around it by exposing the server on another interface: that is outside this setup and unsupported.
+The server listens on `127.0.0.1` inside WSL2 and the launcher cannot bind another address. WSL2 normally forwards `localhost` from Windows into the distribution, so `http://127.0.0.1:<port>` in a Windows client may just work. ADR-005 records that WSL2 in NAT mode works through localhost forwarding; that is spike evidence from the owner's human-versus-bot match (spike #677, with the spike bot, the official client, the timer on and Open Team Sheets declined, gate 1 Met 2026-10-18). It predates this runtime and its launcher, and has not been repeated with the current CLI and a Windows client. What was checked here: from inside WSL2, `curl http://127.0.0.1:<port>/` answers 200 and the port is listening on `127.0.0.1` only. If a Windows client cannot reach it, run the client inside WSL2 too. Do not work around it by exposing the server on another interface: that is outside this setup and unsupported.
 
 ## 7. What the bot records
 
@@ -93,7 +100,7 @@ The server also stops itself two hours after it started.
 If a run was killed hard (for example with SIGKILL) and left a server behind:
 
 1. A later start refuses with `runtime copy ... is in use by pid N`, naming the lock file `<runtime-root>/<pinned commit>.lock`. Check pid N.
-2. The server's pid is `server_pid` in the `ready` line and in `<runtime-root>/<pinned commit>/areneon-session.json`. Stop its group with `kill -- -<server_pid>`.
+2. The `in use by pid N` message names the first live process of the lock, which may be the launcher or the supervisor, not the server. The server's pid is `server_pid` in the `ready` line, or `pid` in `<runtime-root>/<pinned commit>/areneon-session.json`. Stop its group with `kill -- -<that pid>`, not N.
 3. A lock whose processes no longer exist is stale and is replaced by the next start. If a start reports another process taking over the stale lock, wait; if it names a `.break` file and nothing is running, remove that file. Remove the lock file by hand only if no launcher, supervisor or server of yours is running.
 4. A port already held on `127.0.0.1` makes the start fail; pick another with `--port`.
 
@@ -101,10 +108,14 @@ If a run was killed hard (for example with SIGKILL) and left a server behind:
 
 - One battle at a time; one challenger per run.
 - Reconnect: if the bot's connection to the server closes, it reconnects at once, then every 200 ms, up to 5 times in a row without a login in between, and the server puts it back in its battle. If it never gets back, the run fails with `no connection after 5 attempts`. The server is expected to outlive the bot's connection; it is not restarted.
-- Not yet: a rejoin during Team Preview does not yet get its own Open Team Sheets budget (#807). The same ticket covers records of battles that were running when a fatal error ended the run: they are not stored yet.
-- Not yet: the deadline watchdog (#761).
+- Not yet: a rejoin during Team Preview does not yet get its own Open Team Sheets budget (#807, open). The same ticket covers records of battles that were running when a fatal error ended the run: they are not stored yet.
+- Not yet: the deadline watchdog (#761, open).
 - The bot's only play policy is the shared first-legal-choice rule. It is a sparring partner for the pipeline, not a strong player.
+
+### Earlier evidence (spike, predates this runtime)
+
+ADR-005 gate 1 (Met, 2026-10-18) and its evidence S11 record the owner's human-versus-bot match in the official client against the spike bot (#677): a Bo1 Reg M-C battle with the timer on and Open Team Sheets declined, 5 turns, the human won, 8 bot decisions with no fallback. That bot was not this runtime, and the proxy-lock popup was not recorded then.
 
 ### Not verified
 
-Everything above the client was run: the launch, the `ready` line, the proxy-lock popup on the bot's own connection, Ctrl-C stopping the server, and (in the tests) a full Bo1 Reg M-C battle with the OTS decline. No human client was used. The client-side details (what the challenge dialog and the sheet prompt look like, the popup on a human connection, Windows reaching WSL2) are from the server code and ticket notes, not from a real client.
+Everything above the client was run: the launch, the `ready` line, the proxy-lock popup on the bot's own connection, Ctrl-C stopping the server, and (in the tests) a full Bo1 Reg M-C battle with the OTS decline. No human client was used. The client-side details (what the challenge dialog and the sheet prompt look like, the popup on a human connection, Windows reaching WSL2 with the current CLI, a Bo3 challenge being refused) are from the server code, the ADR and ticket notes, not from a real client of this runtime.
