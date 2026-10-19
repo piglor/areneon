@@ -21,6 +21,7 @@ import {
   PINNED_SHOWDOWN_COMMIT,
   verifyShowdownCheckout,
 } from "@areneon/showdown-bridge";
+import { serverLockState } from "./server-lock.ts";
 
 /**
  * Where runtime copies live by default: `<repo>/.local-server/runtime/<pin>/`
@@ -107,8 +108,10 @@ export function treeDigest(dir: string): string {
  * copy is staged next to its target and renamed into place.
  *
  * An earlier copy for the same commit is renamed aside, replaced, then
- * removed. A server already running from it keeps its open files, but the
- * launcher must not recreate the copy while one of its servers runs from it.
+ * removed, unless its server lock (`SERVER_LOCK`, held by `launch`) names a
+ * live process or cannot be read: then this refuses with a
+ * `RuntimeCopyError`, because a server running from the copy would lose
+ * its install root.
  * Concurrent creators of the same commit each either put a complete copy in
  * place or fail with a `RuntimeCopyError`. Other I/O errors (a full disk,
  * EACCES while creating or copying) propagate as they are. Either way the
@@ -151,6 +154,14 @@ export function createRuntimeCopy(options: RuntimeCopyOptions = {}): RuntimeCopy
       `${JSON.stringify({ commit, dist_sha256: distSha256 }, null, 2)}\n`,
     );
     const dir = join(runtimeRoot, commit);
+    const lock = serverLockState(dir);
+    if (lock.state === "live" || lock.state === "unreadable") {
+      throw new RuntimeCopyError(
+        lock.state === "live"
+          ? `a server (pid ${lock.pid}) is running from ${dir}; stop it before recreating the copy`
+          : `cannot read the server lock in ${dir} (${lock.reason}); remove it if no server runs there`,
+      );
+    }
     const aside = `${staging}.old`;
     try {
       try {

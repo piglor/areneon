@@ -10,3 +10,28 @@ export {
   treeDigest,
   verifyRuntimeCopy,
 } from "./runtime-copy.ts";
+export {
+  checkNoReplayUpload,
+  checkServerConfig,
+  loadServerConfig,
+  LOOPBACK_ADDRESS,
+  renderServerConfig,
+  RUNTIME_STATE_DIRS,
+  SERVER_CONFIG_PATH,
+  ServerConfigError,
+  type ServerSetting,
+  serverSettings,
+  type WrittenConfig,
+  writeServerConfig,
+} from "./config.ts";
+export {
+  DEFAULT_LIFETIME_MS,
+  DEFAULT_PORT,
+  launch,
+  LaunchError,
+  type LaunchOptions,
+  type LocalServer,
+  SESSION_MANIFEST,
+  type SessionManifest,
+} from "./launch.ts";
+export { SERVER_LOCK } from "./server-lock.ts";
