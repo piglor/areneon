@@ -23,6 +23,7 @@ export interface ImportChannel {
   seq: number;
   hash: string;
   source_commit: string;
+  /** Carried for parity with the planner's plan; unused here (rules_release has no body column). */
   bytes: Uint8Array;
 }
 export type ImportStep = ImportSnapshot | ImportChannel;
@@ -70,10 +71,17 @@ const INSERT_RELEASE = "INSERT INTO rules.rules_release (channel, seq, hash, sou
  * Apply `plan` in one transaction on `client`, which must be connected as
  * `importer`. Returns each step's outcome in plan order; on any failure it
  * rolls back, so nothing of the plan is written, and rethrows.
+ *
+ * Snapshots are inserted in plan order, which the planner fixes by hash, so
+ * two importers insert overlapping snapshots in the same order. A channel step
+ * above the channel's maximum whose source_commit another seq of that channel
+ * already uses fails release_source_commit_unique_per_channel and rolls the
+ * plan back (fail closed).
  */
 export async function applyImport(client: ImportClient, plan: ImportPlan): Promise<ImportResult> {
   await client.query("BEGIN");
   try {
+    // A fail-closed guard matching the spec; the GRANTs are the real enforcement.
     const { rows } = await client.query("SELECT current_user AS u");
     if (rows[0]?.u !== IMPORTER) {
       throw new ImportError(`the rules import runs as ${IMPORTER}, not ${String(rows[0]?.u)}`);
@@ -89,7 +97,8 @@ export async function applyImport(client: ImportClient, plan: ImportPlan): Promi
     await client.query("COMMIT");
     return { steps };
   } catch (error) {
-    await client.query("ROLLBACK");
+    // A dead connection must not mask the original error.
+    await client.query("ROLLBACK").catch(() => {});
     throw error;
   }
 }

@@ -7,7 +7,7 @@ import { createHash } from "node:crypto";
 import { loadRulesSnapshot, PINNED_SHOWDOWN_COMMIT, rulesSnapshotHash, snapshotBytes } from "@areneon/showdown-bridge";
 import pg from "pg";
 import { afterAll, describe, expect, it } from "vitest";
-import { applyImport, type ImportChannel, type ImportClient, ImportError, type ImportPlan, type ImportStep } from "../src/import.ts";
+import { applyImport, type ImportChannel, type ImportClient, ImportError, type ImportPlan, type ImportResult, type ImportStep } from "../src/import.ts";
 
 const HOST = process.env.RULES_DB_HOST ?? "127.0.0.1:55432";
 // The throwaway local passwords `make db-up` sets (never the Coolify ones).
@@ -23,15 +23,17 @@ const NESTED: Record<string, string> = {
   ROLLBACK: "ROLLBACK TO SAVEPOINT apply_import",
 };
 
+/** A client whose BEGIN / COMMIT / ROLLBACK act on a savepoint of the open transaction. */
+const nest = (client: pg.PoolClient): ImportClient => ({
+  query: (text, values) => client.query(NESTED[text] ?? text, values),
+});
+
 /** Run `body` with a client whose transactions nest in one that is always rolled back. */
 async function rolledBack(pool: pg.Pool, body: (client: ImportClient) => Promise<void>): Promise<void> {
   const client = await pool.connect();
-  const nested: ImportClient = {
-    query: (text, values) => client.query(NESTED[text] ?? text, values),
-  };
   try {
     await client.query("BEGIN");
-    await body(nested);
+    await body(nest(client));
   } finally {
     await client.query("ROLLBACK");
     client.release();
@@ -62,6 +64,49 @@ const channel = (seq: number, hash: string, source_commit: string): ImportChanne
   bytes: CHANNEL_BYTES,
 });
 const plan = (...steps: ImportStep[]): ImportPlan => ({ steps });
+
+const RACED = plan(snapshot(realHash, realBytes), channel(1, realHash, SOURCE));
+
+/**
+ * Open a transaction on a second importer connection and run `hold` in it,
+ * then start applyImport(RACED) on another connection, check it waits on the
+ * channel lock, roll the holder back and return the waiter's result. The
+ * holder is always rolled back and the waiter always awaited.
+ */
+async function waitsBehind(hold: (holder: pg.PoolClient) => Promise<void>): Promise<ImportResult> {
+  const holder = await importer.connect();
+  let waiting: Promise<ImportResult> | undefined;
+  try {
+    await holder.query("BEGIN");
+    await hold(holder);
+    let pid: number | undefined;
+    let settled = false;
+    waiting = (async () => {
+      let result: ImportResult | undefined;
+      await rolledBack(importer, async (client) => {
+        pid = (await client.query("SELECT pg_backend_pid() AS pid")).rows[0]?.pid as number;
+        result = await applyImport(client, RACED);
+      });
+      return result as ImportResult;
+    })().finally(() => {
+      settled = true;
+    });
+    waiting.catch(() => {});
+    const blocked = "SELECT count(*)::int AS n FROM pg_locks WHERE locktype = 'advisory' AND NOT granted AND pid = $1";
+    const deadline = Date.now() + 3000;
+    while (pid === undefined || (await holder.query(blocked, [pid])).rows[0].n !== 1) {
+      if (Date.now() > deadline) throw new Error("the second import never waited on the channel lock");
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    expect(settled).toBe(false);
+    await holder.query("ROLLBACK");
+    return await waiting;
+  } finally {
+    await holder.query("ROLLBACK").catch(() => {});
+    holder.release();
+    await waiting?.catch(() => {});
+  }
+}
 
 async function stored(client: ImportClient): Promise<{ snapshots: unknown[]; releases: unknown[] }> {
   const snapshots = await client.query(
@@ -147,31 +192,32 @@ describe("applyImport", () => {
     });
   });
 
-  it("waits for a concurrent import of the same channel to end before reading its seqs", async () => {
-    // The other import holds the channel's lock in an open transaction.
-    const other = await importer.connect();
-    try {
-      await other.query("BEGIN");
-      await other.query("SELECT pg_advisory_xact_lock(hashtext('areneon.rules_release:' || $1))", ["stable"]);
-      let settled = false;
-      const waiting = rolledBack(importer, async (client) => {
-        const result = await applyImport(client, plan(snapshot(realHash, realBytes), channel(1, realHash, SOURCE)));
-        expect(result.steps.map((s) => s.status)).toEqual(["inserted", "inserted"]);
-      }).finally(() => {
-        settled = true;
-      });
-      const blocked = "SELECT count(*)::int AS n FROM pg_locks WHERE locktype = 'advisory' AND NOT granted";
-      const deadline = Date.now() + 5000;
-      while ((await other.query(blocked)).rows[0].n !== 1) {
-        expect(Date.now()).toBeLessThan(deadline);
-        await new Promise((resolve) => setTimeout(resolve, 10));
-      }
-      expect(settled).toBe(false);
-      await other.query("ROLLBACK");
-      await waiting;
-    } finally {
-      other.release();
-    }
+  it("waits behind another import holding the channel's lock", async () => {
+    const result = await waitsBehind(async (holder) => {
+      await holder.query("SELECT pg_advisory_xact_lock(hashtext('areneon.rules_release:' || $1))", ["stable"]);
+    });
+    expect(result.steps.map((s) => s.status)).toEqual(["inserted", "inserted"]);
+  });
+
+  it("waits behind another import of the same step, then writes it once that one rolls back", async () => {
+    // The holder cannot commit here (the tables must stay empty), so it
+    // writes the same step in its open transaction and then rolls back.
+    const result = await waitsBehind(async (holder) => {
+      const held = await applyImport(nest(holder), RACED);
+      expect(held.steps.map((s) => s.status)).toEqual(["inserted", "inserted"]);
+    });
+    expect(result.steps.map((s) => s.status)).toEqual(["inserted", "inserted"]);
+  });
+
+  it("rethrows the original error when the rollback fails too", async () => {
+    const dying: ImportClient = {
+      query: async (text) => {
+        if (text === "BEGIN") return { rows: [], rowCount: null };
+        if (text.startsWith("SELECT current_user")) return { rows: [{ u: "importer" }], rowCount: 1 };
+        throw new Error(text === "ROLLBACK" ? "connection lost" : "insert refused");
+      },
+    };
+    await expect(applyImport(dying, plan(snapshot(realHash, realBytes)))).rejects.toThrow("insert refused");
   });
 
   it("refuses to run as any role but importer, and writes nothing", async () => {
