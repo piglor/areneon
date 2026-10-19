@@ -155,6 +155,8 @@ On Coolify the server log is the database container's output: the resource's **L
    Use the same three `RESET` lines for `log_min_duration_statement` if `\drds` lists it.
    *Expected result:* the `RESET`s print `ALTER ROLE` / `ALTER DATABASE`, `pg_reload_conf` returns `t`, and the re-check shows `none`, `-1` and `Did not find any settings.` Do not continue until it does.
 
+   `pg_reload_conf()` only signals the server; the reload is asynchronous. If a check shows the old value, wait a second and repeat the check before looking for another source.
+
    If the re-check still shows the old value, Coolify passes it as a `-c` flag or in a mounted configuration file, which `ALTER SYSTEM` cannot override. Find the source:
 
    ```bash
@@ -170,7 +172,7 @@ On Coolify the server log is the database container's output: the resource's **L
    psql_su -c 'SHOW log_min_error_statement;'
    ```
 
-   *Expected result:* `pg_reload_conf` returns `t` and the check shows `panic`. If it does not, find the source as in step 2. Section 2.4 step 4 resets it.
+   *Expected result:* `pg_reload_conf` returns `t` and the check shows `panic` (if it shows `error`, wait a second and repeat the check: the reload is asynchronous). If it still does not, find the source as in step 2. Section 2.4 step 4 resets it. Note what this check showed: section 2.4 needs it if the bootstrap fails.
 
 ### 2.4 Run the bootstrap
 
@@ -193,6 +195,37 @@ On Coolify the server log is the database container's output: the resource's **L
    ```
 
    *Expected result:* psql prints `BEGIN`, `CREATE ROLE`, `CREATE ROLE`, `GRANT ROLE`, `CREATE ROLE`, `CREATE ROLE`, `CREATE SCHEMA`, `GRANT`, `GRANT`, `REVOKE`, `GRANT`, `COMMIT`, and exits 0. A message such as `RULES_IMPORTER_PASSWORD is not set` or `… is empty` means a variable was missing or blank; nothing was created. `role "rules_owner" already exists` means the bootstrap already ran: do not run it again.
+
+   **If this step failed in any way, or you abandoned it**, handle it now, while the three variables are still exported, before step 3 clears them:
+
+   1. Check whether a password reached the server log. `grep -cF` prints only a count, never the matched line or the password:
+
+      ```bash
+      docker logs <db-uuid> 2>&1 | grep -cF -- "$RULES_MIGRATOR_PASSWORD"
+      docker logs <db-uuid> 2>&1 | grep -cF -- "$RULES_IMPORTER_PASSWORD"
+      docker logs <db-uuid> 2>&1 | grep -cF -- "$RULES_READER_PASSWORD"
+      ```
+
+      *Expected result:* each prints `0`. Optional coarse view: `docker logs <db-uuid> 2>&1 | grep -c -i -E 'password|rules_migrator|importer|areneon_reader'` also counts ordinary lines such as `password authentication failed`, so a count above 0 there is not proof of a leak.
+   2. Decide whether to keep the passwords:
+      - If the 2.3 step 3 check showed `panic` for this run, or the run stopped at a missing- or blank-variable message, **and** every count in step 1 is `0`, nothing was logged: you may keep the passwords.
+      - Otherwise treat **all three** as exposed (the blank-password check holds all of them in one statement): purge the log (step 3 below) and generate three new passwords to replace the Coolify secrets (2.1).
+   3. Purge the log, only if step 2 says so. First check the container's log driver:
+
+      ```bash
+      docker inspect --format '{{.HostConfig.LogConfig.Type}}' <db-uuid>
+      ```
+
+      If it prints `json-file`, truncate the current log file and any rotated ones, as root (`-c` creates no file when there is nothing rotated):
+
+      ```bash
+      LOG="$(docker inspect --format '{{.LogPath}}' <db-uuid>)"
+      sudo truncate -c -s 0 "$LOG" "$LOG".*
+      docker logs <db-uuid> 2>&1 | grep -cF -- "$RULES_MIGRATOR_PASSWORD"
+      ```
+
+      *Expected result:* the count is `0` (repeat it for the other two variables). For any other driver (`local`, `journald`, …) do not guess: `local` keeps compressed files that must not be edited, and `journald` can only drop whole journal files, which deletes every log on the host. Stop and decide with whoever runs the server. Remove any log drain copy too.
+   4. Do steps 3 and 4 below, fix the cause, then run 2.3 step 3 and this section again.
 3. Clear the role passwords from the shell:
 
    ```bash
@@ -200,20 +233,14 @@ On Coolify the server log is the database container's output: the resource's **L
    ```
 
    *Expected result:* no output. Keep `PGPASSWORD` until the end of section 3.
-4. Restore the default for failing statements (set in 2.3 step 3):
+4. Restore the default for failing statements (set in 2.3 step 3). Do this after every run of step 2: after a success, a failure, an abandoned run, and the missing- or blank-variable case alike.
 
    ```bash
    psql_su -c 'ALTER SYSTEM RESET log_min_error_statement;' -c 'SELECT pg_reload_conf();'
    psql_su -c 'SHOW log_min_error_statement;'
    ```
 
-   *Expected result:* `pg_reload_conf` returns `t` and the check shows `error`.
-
-**If the bootstrap failed after `BEGIN`** (any error other than the missing or blank variable messages), treat **all three** role passwords as exposed: the blank-password check holds all of them in one statement. Run 2.4 step 4, then:
-
-1. Check the server log for a leak without printing it: `docker logs <db-uuid> 2>&1 | grep -c -i -E 'password|rules_migrator|importer|areneon_reader'`. A count above 0 for the bootstrap's time means a leak is likely. If you suspect one, purge the container's Docker log (as root, `truncate -s 0 "$(docker inspect --format '{{.LogPath}}' <db-uuid>)"`) and any log drain copy.
-2. Generate three new passwords and replace the Coolify secrets (2.1).
-3. Fix the cause, then run 2.3 step 3 and 2.4 again.
+   *Expected result:* `pg_reload_conf` returns `t` and the check shows `error` (if it still shows `panic`, wait a second and repeat the check: the reload is asynchronous).
 
 ### 2.5 Verify the roles
 
