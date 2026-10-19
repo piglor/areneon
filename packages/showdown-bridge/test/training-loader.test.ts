@@ -7,6 +7,7 @@ import {
   type Episode,
   episodeFromRecord,
   episodeHash,
+  evaluationRunManifest,
   loadEngine,
   loadTrainingSet,
   nodeSha256,
@@ -170,6 +171,36 @@ describe("loadTrainingSet", () => {
     const error = await load([{ schema_version: 2 }]).catch((e: unknown) => e);
     expect(error).toBeInstanceOf(TrainingLoaderError);
     expect((error as Error).cause).toBeInstanceOf(Error);
+  });
+});
+
+describe("evaluationRunManifest", () => {
+  const evaluation = (player: "p1" | "p2", run_id = "eval-1", sealed = true) =>
+    write(player, { kind: "evaluation", run_id, sealed, seed: record.seed });
+
+  it("lists the run's Episode hashes sorted and unique, and nothing else, even for a sealed run", async () => {
+    const [a, b] = [await evaluation("p1"), await evaluation("p2")];
+    const forward = await evaluationRunManifest({ run_id: "eval-1", sealed: true, episodes: [a, b] });
+    const backward = await evaluationRunManifest({ run_id: "eval-1", sealed: true, episodes: [b, a] });
+    expect(backward).toEqual(forward);
+    expect(forward.episode_hashes).toEqual([await episodeHash(a, nodeSha256), await episodeHash(b, nodeSha256)].sort());
+    expect(Object.keys(forward).sort()).toEqual(["episode_hashes", "run_id", "schema_version", "sealed"]);
+    expect((await evaluationRunManifest({ run_id: "eval-2", sealed: false, episodes: [] })).episode_hashes).toEqual([]);
+  });
+
+  it("makes the loader refuse the run's Episodes", async () => {
+    const a = await evaluation("p1");
+    const m = await evaluationRunManifest({ run_id: "eval-1", sealed: true, episodes: [a] });
+    const asLeague = await write("p1", league(record));
+    await refusal(load([asLeague], [{ ...m, episode_hashes: [await episodeHash(asLeague, nodeSha256)] }]), "evaluation games never train");
+  });
+
+  it("refuses a repeated Episode, a league one, and one of another run or sealed flag", async () => {
+    const a = await evaluation("p1");
+    await refusal(evaluationRunManifest({ run_id: "eval-1", sealed: true, episodes: [a, a] }), "is given twice");
+    await refusal(evaluationRunManifest({ run_id: "eval-1", sealed: true, episodes: [p1] }), "Episode 0 is not an evaluation Episode of run eval-1");
+    await refusal(evaluationRunManifest({ run_id: "eval-9", sealed: true, episodes: [a] }), "run eval-9");
+    await refusal(evaluationRunManifest({ run_id: "eval-1", sealed: false, episodes: [a] }), "sealed false");
   });
 });
 

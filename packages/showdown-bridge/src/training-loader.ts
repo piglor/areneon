@@ -55,6 +55,33 @@ export function readTrainingSet(value: unknown): TrainingSet {
   return set;
 }
 
+export interface EvaluationRunInput {
+  run_id: string;
+  sealed: boolean;
+  /** The run's Episodes. Each must be an `evaluation` Episode of this run and sealed flag. */
+  episodes: readonly Episode[];
+}
+
+/**
+ * The evaluation job's writer (ADR-009 §4, once per run after its last
+ * Episode): the run's Episode hashes, sorted and unique, and nothing else,
+ * so a sealed run's manifest is hash-only. An Episode that is not an
+ * evaluation Episode of this run, or a repeated one, is refused.
+ */
+export async function evaluationRunManifest({ run_id, sealed, episodes }: EvaluationRunInput): Promise<EvaluationRunManifest> {
+  const hashes = new Set<string>();
+  for (const [index, episode] of episodes.entries()) {
+    const collection = episode.provenance.collection;
+    if (collection?.kind !== "evaluation" || collection.run_id !== run_id || collection.sealed !== sealed) {
+      throw new TrainingLoaderError(`Episode ${index} is not an evaluation Episode of run ${run_id} with sealed ${sealed}`);
+    }
+    const hash = await episodeHash(episode, nodeSha256);
+    if (hashes.has(hash)) throw new TrainingLoaderError(`Episode ${index} (${hash}) is given twice`);
+    hashes.add(hash);
+  }
+  return readEvaluationRunManifest({ schema_version: 1, run_id, sealed, episode_hashes: [...hashes].sort() });
+}
+
 export interface TrainingInput {
   /** Stored Episodes, as read from JSON: each is checked, none is trusted. */
   episodes: readonly unknown[];
@@ -126,6 +153,7 @@ export async function loadTrainingSet({ episodes, evaluation_manifests, known_sy
   const stream = examples.map((example) => `${jcs(example as unknown as Json)}\n`).join("");
   const set: TrainingSet = {
     schema_version: 1,
+    // The highest class of the Episodes: readTraining refuses every private Episode, so it is synthetic.
     data_class: "synthetic",
     episode_hashes: hashes as TrainingSet["episode_hashes"],
     evaluation_manifest_hashes: [...manifestHashes].sort(),

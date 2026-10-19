@@ -13,10 +13,9 @@ import { legalChoiceSet } from "./choice-judge.ts";
 import type { Engine } from "./engine.ts";
 import { episodeFromRecord } from "./episode-io.ts";
 import { goldenBattle, syntheticFixtureHashes, syntheticTeam } from "./golden.ts";
-import { episodeHash } from "./episode.ts";
-import { nodeSha256, observe, recordedChannel } from "./player-channel.ts";
+import { observe, recordedChannel } from "./player-channel.ts";
 import { battleClass, stampTeam } from "./team-class.ts";
-import { loadTrainingSet } from "./training-loader.ts";
+import { evaluationRunManifest, loadTrainingSet } from "./training-loader.ts";
 import type { RequestRecord } from "./runner.ts";
 
 export const SAMPLES_DIR = fileURLToPath(new URL("../../../fixtures/contracts", import.meta.url));
@@ -94,7 +93,7 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     collection: evaluation,
   });
   // Hash-only: all of a sealed run that may leave the isolated store (ADR-009 §4).
-  const sealedManifest = { schema_version: 1, run_id: "eval-run-1", sealed: true, episode_hashes: [await episodeHash(sealedEpisode, nodeSha256)] };
+  const sealedManifest = await evaluationRunManifest({ run_id: "eval-run-1", sealed: true, episodes: [sealedEpisode] });
   const training = await loadTrainingSet({ episodes: [leagueEpisode], evaluation_manifests: [sealedManifest], known_synthetic: known });
   const exampleOf = (kind: "preview" | "battle") => training.examples.find((e) => e.observation.kind === kind) as (typeof training.examples)[number];
   const [hashA, hashB] = ["a", "b"].map((c) => c.repeat(64)) as [string, string];

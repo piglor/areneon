@@ -28,7 +28,8 @@ def _strictly_ascending(hashes: list[str]) -> bool:
 def read_stream(stream: str, manifest: object) -> list[BaseModel]:
     """The stream's examples, once the manifest and every line check out."""
     parse("training-set", manifest)
-    assert isinstance(manifest, dict)  # parse() validated an object
+    if not isinstance(manifest, dict):  # parse() has validated an object; this narrows it
+        raise TrainingStreamError("training-set: not an object")
     for field in ("episode_hashes", "evaluation_manifest_hashes"):
         if not _strictly_ascending(manifest[field]):
             raise TrainingStreamError(f"training-set: {field} must be sorted and unique")
@@ -43,6 +44,8 @@ def read_stream(stream: str, manifest: object) -> list[BaseModel]:
         )
     known = set(manifest["episode_hashes"])
     examples: list[BaseModel] = []
+    seen: set[str] = set()
+    classes: set[str] = set()
     for number, line in enumerate(lines, start=1):
         try:
             raw = json.loads(line)
@@ -51,5 +54,15 @@ def read_stream(stream: str, manifest: object) -> list[BaseModel]:
             raise TrainingStreamError(f"line {number}: {error}") from error
         if raw["episode_hash"] not in known:
             raise TrainingStreamError(f"line {number}: its Episode is not in the TrainingSet")
+        seen.add(raw["episode_hash"])
+        classes.add(raw["observation"]["data_class"])
         examples.append(example)
+    if seen != known:
+        missing = sorted(known - seen)
+        raise TrainingStreamError(f"the stream holds no example of Episode {missing[0]}")
+    highest = "private" if "private" in classes else "synthetic"
+    if manifest["data_class"] != highest:
+        raise TrainingStreamError(
+            f"the TrainingSet says {manifest['data_class']}, its examples are {highest}"
+        )
     return examples

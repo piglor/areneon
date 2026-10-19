@@ -89,3 +89,25 @@ def test_refuses_a_manifest_off_the_schema_or_unsorted() -> None:
     for field in ("episode_hashes", "evaluation_manifest_hashes"):
         with pytest.raises(TrainingStreamError, match=f"{field} must be sorted and unique"):
             read_stream(STREAM, manifest_for(STREAM, **{field: ["b" * 64, "a" * 64]}))
+
+
+def test_refuses_a_manifest_episode_the_stream_never_mentions() -> None:
+    hashes = sorted([EXAMPLES[0]["episode_hash"], "f" * 64])
+    with pytest.raises(TrainingStreamError, match=f"no example of Episode {'f' * 64}"):
+        read_stream(STREAM, manifest_for(STREAM, episode_hashes=hashes))
+
+
+def test_refuses_a_manifest_class_below_its_examples() -> None:
+    private = {
+        **EXAMPLES[0],
+        "observation": {**EXAMPLES[0]["observation"], "data_class": "private"},
+    }
+    stream = stream_of(jcs(private).decode("utf-8"))
+    with pytest.raises(TrainingStreamError, match="says synthetic, its examples are private"):
+        read_stream(stream, manifest_for(stream))
+    assert read_stream(stream, manifest_for(stream, data_class="private"))
+
+
+def test_refuses_a_manifest_that_is_not_an_object() -> None:
+    with pytest.raises(ContractError):
+        read_stream(STREAM, [])

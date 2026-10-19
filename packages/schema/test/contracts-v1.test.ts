@@ -77,6 +77,21 @@ describe("PreviewObservation and BattleObservation", () => {
   });
 });
 
+describe("TrainingExample", () => {
+  it("inlines the observation schemas' definitions unchanged", () => {
+    const { $defs, ...example } = schema("training-example") as { $defs: Record<string, unknown> } & Record<string, unknown>;
+    const preview = schema("preview-observation") as { $defs: Record<string, unknown> };
+    const battle = schema("battle-observation") as { $defs: Record<string, unknown> };
+    const body = ({ $schema, $id, $defs, title, ...rest }: Record<string, unknown>) => rest;
+    expect(example.title).toBe("TrainingExample");
+    expect($defs.PreviewObservation).toEqual(body(preview as never));
+    expect($defs.BattleObservation).toEqual(body(battle as never));
+    for (const source of [preview, battle]) {
+      for (const [name, def] of Object.entries(source.$defs)) expect($defs[name], name).toEqual(def);
+    }
+  });
+});
+
 describe("Recommendation", () => {
   const valid = validator("recommendation");
   const rec = {

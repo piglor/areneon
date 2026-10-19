@@ -48,7 +48,9 @@ export {
 export { nodeSha256, observe, playerChannel, recordedChannel } from "./player-channel.ts";
 export { answersRequest, type Collection, type CollectionInput, type Episode, episodeHash, type Recommendation, rightsFor } from "./episode.ts";
 export {
+  type EvaluationRunInput,
   type EvaluationRunManifest,
+  evaluationRunManifest,
   loadTrainingSet,
   readEvaluationRunManifest,
   readTrainingSet,
