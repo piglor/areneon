@@ -86,6 +86,8 @@ It also creates the schema `rules`, and revokes `CONNECT` on the database from `
 
 All commands from here on run in a shell **on the Coolify server** (SSH, or Coolify's terminal on the server host). They use a one-off container on `<coolify-network>`, so the connection never leaves the server. Do not use Coolify's public-port feature for this.
 
+Do not run them on a shared server account. While a one-off container runs, anyone with Docker access can see its environment (and so the passwords) with `docker inspect`, and the same user or root can read the exported variables of your shell. Use an admin account only you use, at a time when nobody else is working on the server.
+
 1. Get `db/` from a reviewed commit on `main` (the files hold no secrets):
 
    ```bash
@@ -95,22 +97,22 @@ All commands from here on run in a shell **on the Coolify server** (SSH, or Cool
    ls db/bootstrap.sql db/migrations/
    ```
 
-   *Expected result:* `db/bootstrap.sql` and `db/migrations/20261019000000_rules_store.sql` are listed.
-2. Keep secrets out of the shell history for this session:
+   *Expected result:* `db/bootstrap.sql` and `db/migrations/20261019000000_rules_store.sql` are listed. If the repository cannot be read without credentials, use a read-only deploy key, or copy only the `db/` directory to the server; never paste a token into a command.
+2. The commands below need bash. If the terminal is `sh` (Coolify's terminal often is), run `bash` first. Then keep the session out of the shell history:
 
    ```bash
    unset HISTFILE
    ```
 
-   *Expected result:* no output. The commands below read secrets with `read -rs`, so the values never appear on screen or in a command line.
+   *Expected result:* no output. The commands below read secrets with `read -rsp`, so the values never appear on screen or in a command line.
 3. Read the superuser password (from the database resource's settings in Coolify) without echoing it:
 
    ```bash
-   read -rs PGPASSWORD && export PGPASSWORD
+   read -rsp 'PGPASSWORD: ' PGPASSWORD; echo; export PGPASSWORD
    ```
 
    Paste `<from Coolify: the database resource's superuser password>` and press Enter.
-   *Expected result:* nothing is printed.
+   *Expected result:* only the prompt and a line break are printed, never the value.
 4. Define the psql shortcut for this session. `-e PGPASSWORD` passes the variable by name, so the value is not on the `docker` command line:
 
    ```bash
@@ -120,44 +122,68 @@ All commands from here on run in a shell **on the Coolify server** (SSH, or Cool
    psql_su -c 'SELECT version();'
    ```
 
-   *Expected result:* one row starting with `PostgreSQL 18.`. If the connection is refused, check `<db-uuid>`, `<coolify-network>` and that the resource is running. (The image is the one `db/compose.yaml` pins; any psql 18 client works.)
+   *Expected result:* one row starting with `PostgreSQL 18.`. If the connection is refused, check `<db-uuid>`, `<coolify-network>` and that the resource is running. (The image is the one `db/compose.yaml` pins; any psql 18 client works. The server's image flavour on Coolify, for example Alpine, may differ from this Debian-based client image; that is fine.)
 
 ### 2.3 Make sure passwords will not be logged
 
-`CREATE ROLE … PASSWORD '…'` would be written to the server log in plain text if statement logging is on.
+`CREATE ROLE … PASSWORD '…'` would be written to the server log in plain text if statement logging is on, or kept by a preloaded library that records statements. The bootstrap's blank-password check is one `SELECT` that holds all three passwords, so a leak there exposes all of them.
 
-1. Check the logging settings:
+On Coolify the server log is the database container's output: the resource's **Logs** view in Coolify, which is the container's Docker log (`docker logs <db-uuid>`). If a log drain is configured for the server, the log is copied there too.
+
+1. Check the logging settings and the preloaded libraries:
 
    ```bash
-   psql_su -c 'SHOW log_statement;' -c 'SHOW log_min_duration_statement;'
+   psql_su -c 'SHOW log_statement;' -c 'SHOW log_min_duration_statement;' -c 'SHOW log_min_error_statement;' \
+     -c 'SHOW shared_preload_libraries;' -c 'SHOW session_preload_libraries;' -c '\drds'
    ```
 
-   *Expected result:* `log_statement` is `none` and `log_min_duration_statement` is `-1`.
-2. Only if either differs: set it, reload, and check again.
+   *Expected result:* `log_statement` is `none`, `log_min_duration_statement` is `-1`, both preload lists are empty or at least name none of `pgaudit`, `auto_explain` or `pg_stat_statements`, and `\drds` prints `Did not find any settings.` **If one of those libraries is loaded, stop here**: remove it in the resource's custom PostgreSQL configuration and restart the resource first, then start 2.3 again.
+
+   The `SHOW` runs as `postgres` on `areneon`, the same user and database as the bootstrap, so it already includes any per-role or per-database override (`ALTER ROLE … SET` / `ALTER DATABASE … SET`); `\drds` shows where such an override comes from.
+2. Only if a value in step 1 differs: fix it, reload, and check again. Remove per-role and per-database overrides first, then set the server value:
 
    ```bash
+   psql_su -c 'ALTER ROLE postgres IN DATABASE areneon RESET log_statement;' \
+     -c 'ALTER ROLE postgres RESET log_statement;' \
+     -c 'ALTER DATABASE areneon RESET log_statement;'
    psql_su -c "ALTER SYSTEM SET log_statement = 'none';" \
      -c 'ALTER SYSTEM SET log_min_duration_statement = -1;' \
      -c 'SELECT pg_reload_conf();'
-   psql_su -c 'SHOW log_statement;' -c 'SHOW log_min_duration_statement;'
+   psql_su -c 'SHOW log_statement;' -c 'SHOW log_min_duration_statement;' -c '\drds'
    ```
 
-   *Expected result:* `pg_reload_conf` returns `t`, and the re-check shows `none` and `-1`. If a custom PostgreSQL configuration in the Coolify resource sets these values, change it there too, or the next restart brings them back. Do not continue until the re-check passes.
+   Use the same three `RESET` lines for `log_min_duration_statement` if `\drds` lists it.
+   *Expected result:* the `RESET`s print `ALTER ROLE` / `ALTER DATABASE`, `pg_reload_conf` returns `t`, and the re-check shows `none`, `-1` and `Did not find any settings.` Do not continue until it does.
 
-Note: a statement that **fails** is still logged under the default `log_min_error_statement = error`. If the bootstrap fails on a `CREATE ROLE` line, treat those passwords as exposed: generate new ones (2.1) before you retry.
+   If the re-check still shows the old value, Coolify passes it as a `-c` flag or in a mounted configuration file, which `ALTER SYSTEM` cannot override. Find the source:
+
+   ```bash
+   psql_su -c "SELECT name, setting, source, sourcefile FROM pg_settings
+     WHERE name IN ('log_statement', 'log_min_duration_statement', 'log_min_error_statement');"
+   ```
+
+   Then set the value in the resource's custom PostgreSQL configuration in Coolify, restart the resource, and start 2.3 again.
+3. Keep **failing** statements out of the log during the bootstrap. By default (`log_min_error_statement = error`) PostgreSQL logs the text of any statement that fails:
+
+   ```bash
+   psql_su -c "ALTER SYSTEM SET log_min_error_statement = 'panic';" -c 'SELECT pg_reload_conf();'
+   psql_su -c 'SHOW log_min_error_statement;'
+   ```
+
+   *Expected result:* `pg_reload_conf` returns `t` and the check shows `panic`. If it does not, find the source as in step 2. Section 2.4 step 4 resets it.
 
 ### 2.4 Run the bootstrap
 
 1. Read the three role passwords from the Coolify secrets, without echoing them:
 
    ```bash
-   read -rs RULES_MIGRATOR_PASSWORD && export RULES_MIGRATOR_PASSWORD
-   read -rs RULES_IMPORTER_PASSWORD && export RULES_IMPORTER_PASSWORD
-   read -rs RULES_READER_PASSWORD && export RULES_READER_PASSWORD
+   read -rsp 'RULES_MIGRATOR_PASSWORD: ' RULES_MIGRATOR_PASSWORD; echo; export RULES_MIGRATOR_PASSWORD
+   read -rsp 'RULES_IMPORTER_PASSWORD: ' RULES_IMPORTER_PASSWORD; echo; export RULES_IMPORTER_PASSWORD
+   read -rsp 'RULES_READER_PASSWORD: ' RULES_READER_PASSWORD; echo; export RULES_READER_PASSWORD
    ```
 
-   Paste, in order, `<from Coolify secret RULES_MIGRATOR_PASSWORD>`, `<from Coolify secret RULES_IMPORTER_PASSWORD>`, `<from Coolify secret RULES_READER_PASSWORD>`.
-   *Expected result:* nothing is printed.
+   At each prompt paste, in order, `<from Coolify secret RULES_MIGRATOR_PASSWORD>`, `<from Coolify secret RULES_IMPORTER_PASSWORD>`, `<from Coolify secret RULES_READER_PASSWORD>`.
+   *Expected result:* only the three prompts are printed, never a value.
 2. Run `db/bootstrap.sql` (the same file and flags `make db-up` uses locally), passing the variables by name:
 
    ```bash
@@ -174,6 +200,20 @@ Note: a statement that **fails** is still logged under the default `log_min_erro
    ```
 
    *Expected result:* no output. Keep `PGPASSWORD` until the end of section 3.
+4. Restore the default for failing statements (set in 2.3 step 3):
+
+   ```bash
+   psql_su -c 'ALTER SYSTEM RESET log_min_error_statement;' -c 'SELECT pg_reload_conf();'
+   psql_su -c 'SHOW log_min_error_statement;'
+   ```
+
+   *Expected result:* `pg_reload_conf` returns `t` and the check shows `error`.
+
+**If the bootstrap failed after `BEGIN`** (any error other than the missing or blank variable messages), treat **all three** role passwords as exposed: the blank-password check holds all of them in one statement. Run 2.4 step 4, then:
+
+1. Check the server log for a leak without printing it: `docker logs <db-uuid> 2>&1 | grep -c -i -E 'password|rules_migrator|importer|areneon_reader'`. A count above 0 for the bootstrap's time means a leak is likely. If you suspect one, purge the container's Docker log (as root, `truncate -s 0 "$(docker inspect --format '{{.LogPath}}' <db-uuid>)"`) and any log drain copy.
+2. Generate three new passwords and replace the Coolify secrets (2.1).
+3. Fix the cause, then run 2.3 step 3 and 2.4 again.
 
 ### 2.5 Verify the roles
 
@@ -213,7 +253,7 @@ Each migration switches to `rules_owner` with `SET LOCAL ROLE`, so every table b
 1. Build the dbmate URL from the migrator secret, without echoing it. dbmate reads it from `DATABASE_URL`, which `docker run -e DATABASE_URL` passes by name:
 
    ```bash
-   read -rs RULES_MIGRATOR_PASSWORD
+   read -rsp 'RULES_MIGRATOR_PASSWORD: ' RULES_MIGRATOR_PASSWORD; echo
    export DATABASE_URL="postgres://rules_migrator:${RULES_MIGRATOR_PASSWORD}@<db-uuid>:5432/areneon?sslmode=disable&search_path=rules"
    unset RULES_MIGRATOR_PASSWORD
    DBMATE_IMAGE='ghcr.io/amacneil/dbmate:2.36.0@sha256:520c740c6e0ad73fde2cd1ea7e2b779aaf789d22aca8858f87a478e7094535fb'
@@ -222,7 +262,7 @@ Each migration switches to `rules_owner` with `SET LOCAL ROLE`, so every table b
    ```
 
    Paste `<from Coolify secret RULES_MIGRATOR_PASSWORD>` at the prompt.
-   *Expected result:* nothing is printed. Run these from the `areneon-db` checkout, so `$PWD/db` is the repository's `db/`.
+   *Expected result:* only the prompt is printed, never the value. Run these from the `areneon-db` checkout, so `$PWD/db` is the repository's `db/`.
 2. Show what will run:
 
    ```bash
@@ -268,7 +308,7 @@ Each migration switches to `rules_owner` with `SET LOCAL ROLE`, so every table b
      WHERE NOT tgisinternal AND tgrelid::regclass::text LIKE 'rules.%' ORDER BY 1, 2;"
    ```
 
-   *Expected result:* four rows: `rules_release_append_only`, `rules_release_no_truncate` on `rules.rules_release`; `rules_snapshot_append_only`, `rules_snapshot_no_truncate` on `rules.rules_snapshot`.
+   *Expected result:* four rows, in any order: `rules_release_append_only`, `rules_release_no_truncate` on `rules.rules_release`; `rules_snapshot_append_only`, `rules_snapshot_no_truncate` on `rules.rules_snapshot`.
 3. Constraints:
 
    ```bash
@@ -308,7 +348,10 @@ Each migration switches to `rules_owner` with `SET LOCAL ROLE`, so every table b
 
 ### 3.2 The GitHub environment `rules-dev`
 
-The repository already has the GitHub environment **`rules-dev`**, used by `.github/workflows/rules-publish.yml`: it publishes each merged rules change as a Release with a build-provenance attestation. The environment has a required reviewer (the owner) and its deployment branches are limited to `main`, so a publish runs only from `main` and only after the owner approves it. It holds no database credentials: GitHub never connects to this database. The importer that pulls those Releases into the store is section 4.
+The repository already has the GitHub environment **`rules-dev`**, used by `.github/workflows/rules-publish.yml`: it publishes each merged rules change as a Release with a build-provenance attestation. The environment has a required reviewer (the owner) and its deployment branches are limited to `main`, so a publish runs only from `main` and only after the owner approves it (verified via the GitHub API on 2026-10-19: required reviewer `arceushui`, deployment branch policy `main`). It holds no database credentials: GitHub never connects to this database. The importer that pulls those Releases into the store is section 4.
+
+1. Check it in GitHub under the repository's **Settings → Environments → rules-dev**.
+   *Expected result:* **Required reviewers** lists the owner, **Deployment branches and tags** allows only `main`, and there are no environment secrets for this database.
 
 ## 4. Deploy the rules importer
 
