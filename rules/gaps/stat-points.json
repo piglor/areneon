@@ -11,6 +11,15 @@
       "symbols": [
         "statModify"
       ]
+    },
+    {
+      "kind": "engine",
+      "path": "sim/team-validator.ts",
+      "symbols": [
+        "validateStats",
+        "useStatPoints",
+        "evLimit"
+      ]
     }
   ]
 }

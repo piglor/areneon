@@ -127,7 +127,7 @@ Fact rows above; the comparison and its consequences are listed here. Gap record
 | D6 | Eligible species: official list is a published whitelist; Showdown derives legality from the champions mod data plus tag bans. Not yet compared entry by entry. | T8 | `roster-and-learnsets` |
 | D7 | Stat Points 32/66 and all-31 IVs come from the engine only. | T12-T13 | `stat-points`, `pokepaste` |
 | D8 | Simultaneous last faint: Showdown gives the win to the side of the last entry processed in the faint queue; VGC says the game decides "based on a set of coded rules (such as whose Pokémon fainted first …)". | P5, P8 | `simultaneous-faint` |
-| D9 | Shiny flag visible at Showdown Team Preview in the champions mod (cosmetic). This contradicts the `cts-invariant` description (species, level and gender only). | V11 | `cts-invariant` |
+| D9 | Shiny flag visible at Showdown Team Preview in the champions mod (cosmetic). This contradicts the `cts-invariant` description (species, level and gender only) (reconciled in #773). | V11 | `cts-invariant` |
 | D10 | Balance changes rolled out with M-C ([S3]) are not checked against the engine's champions overrides. | AV3 | `move-item-ability-overrides`, `override-parity`, `pp` |
 
 ### Inference
