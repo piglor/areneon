@@ -108,6 +108,7 @@ describe("runImportCommand", () => {
     expect(plans[0]?.steps.map((step) => step.kind)).toEqual(["snapshot", "channel"]);
     expect(summary).toEqual({
       ok: true,
+      stale: 0,
       steps: [
         { kind: "snapshot", hash: SNAPSHOT_HASH, status: "inserted" },
         { kind: "channel", channel: "stable", seq: 5, hash: SNAPSHOT_HASH, status: "inserted" },
@@ -181,11 +182,26 @@ describe("runImportCommand", () => {
     ]);
   });
 
-  it("fails a stale channel step, after the transaction", async () => {
+  it("reports a stale channel step and counts it, but the run succeeds", async () => {
     const { code, summary } = await run({ apply: async (_, plan) => inserted(plan, "stale") });
+    expect(code).toBe(EXIT_OK);
+    expect(summary.ok).toBe(true);
+    expect(summary.stale).toBe(1);
+    expect(summary.steps).toEqual([
+      { kind: "snapshot", hash: SNAPSHOT_HASH, status: "already-present" },
+      { kind: "channel", channel: "stable", seq: 5, hash: SNAPSHOT_HASH, status: "stale" },
+    ]);
+  });
+
+  it("still exits 1 when the apply refuses, stale step or not", async () => {
+    const { code, summary } = await run({
+      apply: async () => {
+        throw new Error("channel stable seq 5 is already stored with a different hash or source commit; the history forked");
+      },
+    });
     expect(code).toBe(EXIT_REFUSED);
     expect(summary.ok).toBe(false);
-    expect(summary.steps).toHaveLength(2);
+    expect(summary.stale).toBeUndefined();
   });
 
   it.each([

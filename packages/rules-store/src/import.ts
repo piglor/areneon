@@ -2,6 +2,14 @@
 // transaction, as the `importer` role (INSERT and SELECT only). Re-running a
 // plan is a no-op: a snapshot already stored is left alone, and a channel step
 // is written only when its `seq` is above the channel's current maximum.
+// A step at or below that maximum is never written and never overwrites
+// anything: it is `already-present` when the stored row at its seq is the same
+// release, `stale` (skipped, reported, not an error) when no row has its seq
+// (a superseded artifact the channel's history moved past), and a refusal when
+// a row at its seq differs. That last case is one the ADR text does not cover;
+// it is treated as a fork of the history, an integrity failure. A step above
+// the maximum is inserted even across a gap (seq > max + 1): the ADR requires
+// only seq > max.
 // A snapshot the plan names by reference (`stored-snapshot`, one the release
 // source did not download again) must be stored with its hash the sha256 of
 // its stored body. Anything refused (a body that is not its hash, a channel
@@ -14,9 +22,10 @@
 import type { ImportChannel, ImportPlan, ImportSnapshot, ImportStoredSnapshot } from "@areneon/showdown-bridge";
 
 /**
- * What happened to one step: written, already stored, or below the channel's
- * history; for a snapshot planned by reference, `referenced`: not downloaded,
- * and found stored with a body that hashes to it.
+ * What happened to one step: written, already stored, or skipped as below the
+ * channel's history (no stored row has its seq). For a snapshot planned by
+ * reference, `referenced`: not downloaded, and found stored with a body that
+ * hashes to it.
  */
 export type StepStatus = "inserted" | "already-present" | "stale" | "referenced";
 export type StepOutcome =
@@ -52,8 +61,7 @@ const STORED_SNAPSHOT = `SELECT 1 FROM rules.rules_snapshot
 // Held to the end of the transaction; the key names the table and channel.
 const LOCK_CHANNEL = "SELECT pg_advisory_xact_lock(hashtext('areneon.rules_release:' || $1))";
 const MAX_SEQ = "SELECT max(seq) AS seq FROM rules.rules_release WHERE channel = $1";
-const SAME_RELEASE = `SELECT 1 FROM rules.rules_release
-  WHERE channel = $1 AND seq = $2 AND hash = $3 AND source_commit = $4`;
+const RELEASE_AT_SEQ = "SELECT hash, source_commit FROM rules.rules_release WHERE channel = $1 AND seq = $2";
 const INSERT_RELEASE = "INSERT INTO rules.rules_release (channel, seq, hash, source_commit) VALUES ($1, $2, $3, $4)";
 
 /**
@@ -63,9 +71,12 @@ const INSERT_RELEASE = "INSERT INTO rules.rules_release (channel, seq, hash, sou
  *
  * Snapshots are inserted in plan order, which the planner fixes by hash, so
  * two importers insert overlapping snapshots in the same order. A channel step
- * above the channel's maximum whose source_commit another seq of that channel
- * already uses fails release_source_commit_unique_per_channel and rolls the
- * plan back (fail closed).
+ * at or below the channel's maximum whose seq a stored row holds with another
+ * hash or source_commit is a fork of the history and rolls the plan back
+ * (ImportError). A channel step above the channel's maximum whose
+ * source_commit another seq of that channel already uses fails
+ * release_source_commit_unique_per_channel and rolls the plan back (fail
+ * closed).
  */
 export async function applyImport(client: ImportClient, plan: ImportPlan): Promise<ImportResult> {
   await client.query("BEGIN");
@@ -118,8 +129,12 @@ async function importChannel(client: ImportClient, step: ImportChannel): Promise
   const { rows } = await client.query(MAX_SEQ, [step.channel]);
   const max = rows[0]?.seq;
   if (typeof max === "number" && step.seq <= max) {
-    const same = await client.query(SAME_RELEASE, [step.channel, step.seq, step.hash, step.source_commit]);
-    return outcome(same.rows.length === 1 ? "already-present" : "stale");
+    const at = (await client.query(RELEASE_AT_SEQ, [step.channel, step.seq])).rows[0];
+    if (at === undefined) return outcome("stale");
+    if (at.hash === step.hash && at.source_commit === step.source_commit) return outcome("already-present");
+    throw new ImportError(
+      `channel ${step.channel} seq ${step.seq} is already stored with a different hash or source commit; the history forked`,
+    );
   }
   await client.query(INSERT_RELEASE, [step.channel, step.seq, step.hash, step.source_commit]);
   return outcome("inserted");

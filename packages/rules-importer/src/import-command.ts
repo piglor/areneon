@@ -18,7 +18,7 @@ import { planImport, type ImportPlan, type ReleaseSource } from "@areneon/showdo
 /** The login role the import must run as (INSERT and SELECT on the rules tables only). */
 export const IMPORTER_ROLE = "importer";
 
-/** Exit codes: success, a refusal during the import, a configuration error. */
+/** Exit codes: success (stale steps included), a refusal during the import, a configuration error. */
 export const EXIT_OK = 0;
 export const EXIT_REFUSED = 1;
 export const EXIT_CONFIG = 2;
@@ -73,9 +73,11 @@ function timeoutsFrom(env: ImportCommandOptions["env"]): SessionTimeouts {
 }
 
 /**
- * Run one import. Returns the exit code: EXIT_OK when every step was inserted,
- * already present or referenced, EXIT_REFUSED when anything refused (the plan, the
- * attestation, the database) or a channel step was stale, EXIT_CONFIG when
+ * Run one import. Returns the exit code: EXIT_OK when the plan committed (a
+ * step may be inserted, already present, referenced or stale; a stale channel
+ * step was skipped and is counted in the summary's `stale`), EXIT_REFUSED when
+ * anything refused (the plan, the attestation, the database, a channel history
+ * fork), which writes nothing, EXIT_CONFIG when
  * DATABASE_URL is missing or sets a session timeout, a timeout setting is
  * invalid, or the session is not the importer role.
  */
@@ -94,9 +96,10 @@ export async function runImportCommand(options: ImportCommandOptions): Promise<n
     const known = await storedSnapshots(session);
     const plan = await planImport(options.source, { snapshots: known });
     const { steps } = await (options.apply ?? applyImport)(session, plan);
-    const ok = steps.every((step) => step.status !== "stale");
-    out(JSON.stringify({ ok, steps }));
-    return ok ? EXIT_OK : EXIT_REFUSED;
+    // A stale step was skipped (nothing written for it): reported, not a failure.
+    const stale = steps.filter((step) => step.status === "stale").length;
+    out(JSON.stringify({ ok: true, stale, steps }));
+    return EXIT_OK;
   } catch (error) {
     const { name, message } = error instanceof Error ? error : new Error(String(error));
     out(JSON.stringify({ ok: false, error: `${name}: ${redact(message, url)}` }));

@@ -39,14 +39,31 @@ export const RECORDED_REFS: Readonly<Record<string, RecordedRef>> = Object.fromE
   (JSON.parse(fixture("gh-api-tag-refs.json")) as RecordedRef[]).map((ref) => [ref.ref.slice("refs/tags/".length), ref]),
 );
 
-const VERIFIED = fixture("gh-verify-rules-publish.json");
+/**
+ * The Releases list and tag refs of the recorded run plus one synthetic
+ * superseded channel artifact (stable seq 4, below the recorded seq 5), for
+ * the stale-skip case (`gh-verify-stale.json` attests it).
+ */
+export const WITH_STALE: Pick<FakeGhOptions, "releases" | "refs"> = {
+  releases: fixture("gh-api-releases-stale.jsonl"),
+  refs: Object.fromEntries(
+    (JSON.parse(fixture("gh-api-tag-refs-stale.json")) as RecordedRef[]).map((ref) => [
+      ref.ref.slice("refs/tags/".length),
+      ref,
+    ]),
+  ),
+};
+
 const UNSIGNED = fixture("gh-verify-unsigned.stderr");
-/** The sha256 subjects the recorded attestation names. */
-const ATTESTED = new Set(
-  (JSON.parse(VERIFIED) as { verificationResult: { statement: { subject: { digest: { sha256: string } }[] } } }[])
-    .flatMap((result) => result.verificationResult.statement.subject)
-    .map((subject) => subject.digest.sha256),
-);
+type Verified = { verificationResult: { statement: { subject: { digest: { sha256: string } }[] } } }[];
+/** gh's recorded answer for each sha256 an attestation names (the recording, then the synthetic stale one). */
+const ATTESTED = new Map<string, string>();
+for (const name of ["gh-verify-rules-publish.json", "gh-verify-stale.json"]) {
+  const answer = fixture(name);
+  for (const result of JSON.parse(answer) as Verified) {
+    for (const subject of result.verificationResult.statement.subject) ATTESTED.set(subject.digest.sha256, answer);
+  }
+}
 
 /** Answer one gh invocation (its argv without `gh`) from the recordings. */
 export function fakeGh(args: readonly string[], options: FakeGhOptions = {}): CommandResult {
@@ -87,5 +104,6 @@ function download(args: readonly string[], options: FakeGhOptions): CommandResul
 function verify(args: readonly string[]): CommandResult {
   const file = args.at(-1) as string;
   const digest = createHash("sha256").update(readFileSync(file)).digest("hex");
-  return ATTESTED.has(digest) ? ok(VERIFIED) : fail(UNSIGNED);
+  const answer = ATTESTED.get(digest);
+  return answer === undefined ? fail(UNSIGNED) : ok(answer);
 }

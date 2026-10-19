@@ -7,7 +7,9 @@
 # for fixtures/rules-releases/) runs the unchanged CLI three times: with one
 # asset tampered it must refuse and write nothing; then it must commit both
 # artifacts, which a separate session must see; then it must be a no-op that
-# downloads only the channel asset, checking the stored snapshot by reference.
+# downloads only the channel asset, checking the stored snapshot by reference;
+# last, with an extra superseded channel Release (seq 4, below the stored 5) it
+# must skip that artifact, report it as stale, exit 0 and write nothing.
 # Only the local throwaway importer password is used.
 set -euo pipefail
 
@@ -47,7 +49,7 @@ run_import() {
   out=$(docker run --rm --network host -e DATABASE_URL="$url" -v "$log:/fake-gh-log" "$image:e2e") || code=$?
   expect "import exit code ($1, $2)" "$code" 0
   expect "import summary ($1, $2)" "$out" \
-    "{\"ok\":true,\"steps\":[{\"kind\":\"snapshot\",\"hash\":\"$snapshot\",\"status\":\"$1\"},{\"kind\":\"channel\",\"channel\":\"stable\",\"seq\":5,\"hash\":\"$snapshot\",\"status\":\"$2\"}]}"
+    "{\"ok\":true,\"stale\":0,\"steps\":[{\"kind\":\"snapshot\",\"hash\":\"$snapshot\",\"status\":\"$1\"},{\"kind\":\"channel\",\"channel\":\"stable\",\"seq\":5,\"hash\":\"$snapshot\",\"status\":\"$2\"}]}"
   expect "assets downloaded ($1, $2)" "$(awk '$1 == "release" && $2 == "download" { print $7 }' "$log/calls" | sort)" "$3"
 }
 
@@ -103,4 +105,20 @@ run_import referenced already-present "$channel_asset"
 # No gh call names the snapshot at all: no tag lookup, download or attestation.
 expect "re-run gh calls naming the snapshot" "$(grep -c "rules-snapshot-$snapshot" "$gh_log/calls" || true)" 0
 expect "rows after the re-run (unchanged)" "$(rows)" "$stored"
-echo "e2e: tampered import refused, rules import committed, re-run was a no-op that downloaded no snapshot"
+
+# A superseded channel Release (a synthetic stable seq 4) is listed beside the
+# stored seq 5: it is skipped and reported, the run succeeds, nothing is written.
+stale_commit=0123456789abcdef0123456789abcdef01234567
+stale_asset=rules-channel-stable-$stale_commit.json
+log=$(mktemp -d -p "$scratch")
+chmod 0777 "$log"
+touch "$log/with-stale"
+code=0
+out=$(docker run --rm --network host -e DATABASE_URL="$url" -v "$log:/fake-gh-log" "$image:e2e") || code=$?
+expect "stale import exit code" "$code" 0
+expect "stale import summary" "$out" \
+  "{\"ok\":true,\"stale\":1,\"steps\":[{\"kind\":\"snapshot\",\"hash\":\"$snapshot\",\"status\":\"referenced\"},{\"kind\":\"channel\",\"channel\":\"stable\",\"seq\":4,\"hash\":\"$snapshot\",\"status\":\"stale\"},{\"kind\":\"channel\",\"channel\":\"stable\",\"seq\":5,\"hash\":\"$snapshot\",\"status\":\"already-present\"}]}"
+expect "stale import downloads" "$(awk '$1 == "release" && $2 == "download" { print $7 }' "$log/calls" | sort)" "$stale_asset
+$channel_asset"
+expect "rows after the stale import (unchanged)" "$(rows)" "$stored"
+echo "e2e: tampered import refused, rules import committed, re-run was a no-op that downloaded no snapshot, a stale artifact was skipped"
