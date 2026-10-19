@@ -1,3 +1,4 @@
+export { A2Channel, type A2ChannelBuild, A2ChannelError, type A2ChannelOptions } from "./a2-channel.ts";
 export {
   A2_BUDGET_CONFIG,
   battleBudget,
