@@ -42,7 +42,12 @@ function closePayload(code: number): Buffer {
   return Buffer.from([code >> 8, code & 0xff]);
 }
 
-export async function startLocalWsServer(): Promise<LocalWsServer> {
+export interface LocalWsServerOptions {
+  /** Never answer the client's close frame nor end the connection: a peer that hangs. */
+  readonly ignoreClose?: boolean;
+}
+
+export async function startLocalWsServer(options: LocalWsServerOptions = {}): Promise<LocalWsServer> {
   const received: string[] = [];
   let socket: Duplex | undefined;
   let closing = false;
@@ -82,6 +87,7 @@ export async function startLocalWsServer(): Promise<LocalWsServer> {
         if (opcode === TEXT) received.push(payload.toString("utf8"));
         if (opcode === CLOSE) {
           onClientClose(payload.length >= 2 ? payload.readUInt16BE(0) : 1005);
+          if (options.ignoreClose === true) return;
           if (!closing) sock.write(frame(CLOSE, payload));
           sock.end();
           return;

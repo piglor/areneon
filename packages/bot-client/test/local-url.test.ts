@@ -3,14 +3,14 @@ import { assertLocal, LocalUrlError } from "../src/index.ts";
 
 describe("assertLocal", () => {
   it.each([
-    "ws://127.0.0.1:8000/showdown/websocket",
-    "ws://localhost:8000/showdown/websocket",
-    "ws://[::1]:8000/showdown/websocket",
-    "wss://127.0.0.1:8443/showdown/websocket",
-    "ws://localhost",
-    "ws://127.0.0.1/?q=1",
-  ])("accepts %s and returns the parsed URL", (url) => {
-    expect(assertLocal(url).href.startsWith(url.replace(/\?.*$/, ""))).toBe(true);
+    ["ws://127.0.0.1:8000/showdown/websocket", "ws://127.0.0.1:8000/showdown/websocket"],
+    ["ws://localhost:8000/showdown/websocket", "ws://localhost:8000/showdown/websocket"],
+    ["ws://[::1]:8000/showdown/websocket", "ws://[::1]:8000/showdown/websocket"],
+    ["wss://127.0.0.1:8443/showdown/websocket", "wss://127.0.0.1:8443/showdown/websocket"],
+    ["ws://localhost", "ws://localhost/"],
+    ["ws://127.0.0.1/?q=1", "ws://127.0.0.1/?q=1"],
+  ])("accepts %s as %s", (url, href) => {
+    expect(assertLocal(url).href).toBe(href);
   });
 
   it.each([
@@ -51,6 +51,10 @@ describe("assertLocal", () => {
     ["ws:127.0.0.1", /exactly as/],
     [" ws://127.0.0.1", /exactly as/],
     ["ws://127.0.0.1\n:8000", /exactly as/],
+    // fragments, even an empty one
+    ["ws://127.0.0.1:8000/showdown/websocket#x", /fragment refused/],
+    ["ws://127.0.0.1:8000/showdown/websocket#", /fragment refused/],
+    ["ws://localhost#", /fragment refused/],
     // not a URL
     ["", /not a valid URL/],
     ["127.0.0.1:8000", /not a valid URL/],

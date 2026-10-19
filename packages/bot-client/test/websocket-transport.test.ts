@@ -1,4 +1,5 @@
 import { createServer } from "node:http";
+import { createServer as createTcpServer, type Socket } from "node:net";
 import type { AddressInfo } from "node:net";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
@@ -80,11 +81,79 @@ describe("connectWebSocket against a real local WebSocket server", () => {
     await expect(connectWebSocket(`ws://127.0.0.1:${port}/showdown/websocket`)).rejects.toThrow(ConnectError);
   });
 
+  it("ignores a second close and a close after the server closed", async () => {
+    server = await startLocalWsServer();
+    const t = await connectWebSocket(server.url);
+    await server.connected;
+    const codes: number[] = [];
+    t.onClose((c) => codes.push(c));
+    server.closeWith(4000);
+    await vi.waitFor(() => expect(codes).toEqual([4000]));
+    t.close();
+    t.close();
+    expect(codes).toEqual([4000]);
+  });
+
+  it("reports the client's close code once when the peer never answers the close", async () => {
+    server = await startLocalWsServer({ ignoreClose: true });
+    const t = await connectWebSocket(server.url, { closeTimeoutMs: 50 });
+    await server.connected;
+    const codes: number[] = [];
+    t.onClose((c) => codes.push(c));
+    t.close();
+    t.close();
+    expect(await server.clientClose).toBe(NORMAL_CLOSURE);
+    await vi.waitFor(() => expect(codes).toEqual([NORMAL_CLOSURE]));
+    await server.stop();
+    server = undefined;
+    // The socket's own close event, when it finally comes, is not reported again.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(codes).toEqual([NORMAL_CLOSURE]);
+  });
+
+  it("reports 4003 when the peer never answers the binary-frame close", async () => {
+    server = await startLocalWsServer({ ignoreClose: true });
+    const t = await connectWebSocket(server.url, { closeTimeoutMs: 50 });
+    await server.connected;
+    const closed = closeCode(t);
+    server.sendBinary(new Uint8Array([1]));
+    expect(await closed).toBe(BINARY_FRAME_CLOSE);
+  });
+
+  it("rejects with ConnectError when the handshake does not finish in time", async () => {
+    const sockets: Socket[] = [];
+    const silent = createTcpServer((socket) => sockets.push(socket));
+    await new Promise<void>((resolve) => silent.listen(0, "127.0.0.1", resolve));
+    const { port } = silent.address() as AddressInfo;
+    try {
+      await expect(
+        connectWebSocket(`ws://127.0.0.1:${port}/showdown/websocket`, { connectTimeoutMs: 50 }),
+      ).rejects.toThrow(/within 50 ms/);
+    } finally {
+      for (const socket of sockets) socket.destroy();
+      await new Promise<void>((resolve) => silent.close(() => resolve()));
+    }
+  });
+
+  it("turns a throw from the WebSocket constructor into ConnectError", async () => {
+    vi.stubGlobal(
+      "WebSocket",
+      // A function expression, not an arrow, so `new` can call it.
+      vi.fn(function () {
+        throw new SyntaxError("refused by the constructor");
+      }),
+    );
+    const failure = connectWebSocket("ws://127.0.0.1:8000/showdown/websocket");
+    await expect(failure).rejects.toThrow(ConnectError);
+    await expect(failure).rejects.toMatchObject({ cause: new SyntaxError("refused by the constructor") });
+  });
+
   it("checks the URL with assertLocal before constructing a WebSocket", async () => {
     const ctor = vi.fn();
     vi.stubGlobal("WebSocket", ctor);
     await expect(connectWebSocket("ws://example.com/showdown/websocket")).rejects.toThrow(LocalUrlError);
     await expect(connectWebSocket("ws://2130706433:8000/showdown/websocket")).rejects.toThrow(LocalUrlError);
+    await expect(connectWebSocket("ws://127.0.0.1:8000/showdown/websocket#")).rejects.toThrow(LocalUrlError);
     expect(ctor).not.toHaveBeenCalled();
   });
 });

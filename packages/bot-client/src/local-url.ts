@@ -26,9 +26,13 @@ export class LocalUrlError extends Error {
  * so the text as written must equal what `URL` serializes. That also refuses
  * userinfo, upper case, a default port spelled out, a trailing dot and every
  * other loopback address (127.0.0.2, [::ffff:127.0.0.1], 0.0.0.0). IPv6 zone
- * ids do not parse at all.
+ * ids do not parse at all. A fragment, even an empty one, is refused.
  */
 export function assertLocal(url: string): URL {
+  // `URL` reports an empty fragment as "", so look for the "#" itself.
+  if (url.includes("#")) {
+    throw new LocalUrlError("fragment refused: a WebSocket URL has none");
+  }
   let parsed: URL;
   try {
     parsed = new URL(url);

@@ -26,6 +26,10 @@ export const NORMAL_CLOSURE = 1000;
  * The listener bookkeeping both transports share: frames are queued until the
  * first frame listener, and the close code is delivered exactly once to every
  * close listener, including one registered after the close.
+ *
+ * A listener that throws consumes the frame it threw on, and the throw
+ * propagates to the caller. Frames still queued stay queued, in order, and
+ * are delivered on the next `onFrame` or `frame` call.
  */
 export class Listeners {
   readonly #frameListeners: ((frame: string) => void)[] = [];
@@ -39,9 +43,7 @@ export class Listeners {
 
   onFrame(cb: (frame: string) => void): void {
     this.#frameListeners.push(cb);
-    if (this.#frameListeners.length === 1) {
-      for (const frame of this.#pending.splice(0)) cb(frame);
-    }
+    this.#drain();
   }
 
   onClose(cb: (code: number) => void): void {
@@ -50,8 +52,15 @@ export class Listeners {
   }
 
   frame(frame: string): void {
-    if (this.#frameListeners.length === 0) this.#pending.push(frame);
-    for (const cb of this.#frameListeners) cb(frame);
+    this.#pending.push(frame);
+    this.#drain();
+  }
+
+  #drain(): void {
+    if (this.#frameListeners.length === 0) return;
+    for (let frame = this.#pending.shift(); frame !== undefined; frame = this.#pending.shift()) {
+      for (const cb of this.#frameListeners) cb(frame);
+    }
   }
 
   close(code: number): void {

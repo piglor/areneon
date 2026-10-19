@@ -27,6 +27,24 @@ describe("memoryTransport", () => {
     expect(second).toEqual(["c"]);
   });
 
+  it("keeps undelivered frames queued when a listener throws during the backlog replay", () => {
+    const t = memoryTransport();
+    t.push("a");
+    t.push("b");
+    t.push("c");
+    const seen: string[] = [];
+    expect(() =>
+      t.onFrame((f) => {
+        seen.push(f);
+        if (f === "b") throw new Error("listener failed on b");
+      }),
+    ).toThrow("listener failed on b");
+    // "b" was consumed by the throw; "c" is still queued and goes out, in order, before "d".
+    expect(seen).toEqual(["a", "b"]);
+    t.push("d");
+    expect(seen).toEqual(["a", "b", "c", "d"]);
+  });
+
   it("reports a server close once, to listeners registered before and after it", () => {
     const t = memoryTransport();
     const codes: number[] = [];
