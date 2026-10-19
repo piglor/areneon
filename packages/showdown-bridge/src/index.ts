@@ -49,6 +49,16 @@ export {
 } from "./formats.ts";
 export { type ChannelCheck, checkChannel } from "./rules-channel.ts";
 export {
+  type ImportChannel,
+  type ImportPlan,
+  ImportPlanError,
+  type ImportSnapshot,
+  type ImportStep,
+  planImport,
+  type ReleaseAsset,
+  type ReleaseSource,
+} from "./rules-import-plan.ts";
+export {
   knownChannels,
   loadChannel,
   loadChannels,
