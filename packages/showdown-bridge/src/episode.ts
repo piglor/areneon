@@ -15,6 +15,16 @@ export type { Episode, Recommendation };
 export type Collection = NonNullable<Episode["provenance"]["collection"]>;
 
 /**
+ * A collection record as a writer gives it: without `opponent_team_data_class`,
+ * which `episodeFromRecord` sets from the opponent's stamped team.
+ */
+export type CollectionInput = Collection extends infer C
+  ? C extends { opponent_team_data_class: unknown }
+    ? Omit<C, "opponent_team_data_class">
+    : C
+  : never;
+
+/**
  * An Episode's content hash: SHA-256 of its JCS bytes, as stored, in the
  * version it was written with (ADR-008 §3). An upcasted view never takes it.
  */

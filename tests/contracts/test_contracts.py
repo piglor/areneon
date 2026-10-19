@@ -45,6 +45,8 @@ def contract_of(path: str) -> str:
 
 VALID = sorted(p for p in HASHES if "/valid/" in p)
 INVALID = sorted(p for p in HASHES if "/invalid/" in p)
+# Schema-valid, refused by a reader (ADR-009 §4): readEpisode on the TS side.
+READER_INVALID = sorted(p for p in HASHES if "/reader-invalid/" in p)
 
 
 def test_the_corpus_has_both_kinds_for_every_contract() -> None:
@@ -70,6 +72,19 @@ def test_invalid_samples_are_refused(path: str) -> None:
         validate(contract_of(path), load(path))
     with pytest.raises(ContractError):
         parse(contract_of(path), load(path))
+
+
+def test_the_corpus_has_reader_invalid_samples() -> None:
+    assert READER_INVALID
+    assert not set(READER_INVALID) & (set(VALID) | set(INVALID))
+
+
+@pytest.mark.parametrize("path", READER_INVALID)
+def test_reader_invalid_samples_are_schema_valid(path: str) -> None:
+    sample = load(path)
+    validate(contract_of(path), sample)
+    parsed = parse(contract_of(path), sample)
+    assert jcs(parsed.model_dump(mode="json", by_alias=True)) == jcs(sample)
 
 
 @pytest.mark.parametrize("path", sorted(HASHES))

@@ -91,6 +91,10 @@ export interface LeagueCollection {
    * The policy that chose the opponent's actions.
    */
   opponent_policy_id: string;
+  /**
+   * The class of the opponent's team (ADR-009 §3), as the writer proved it from that team. Not the source of truth.
+   */
+  opponent_team_data_class: "synthetic" | "private";
 }
 /**
  * A battle of an evaluation run (evaluation protocol C4, O3): never training data.
@@ -112,6 +116,10 @@ export interface EvaluationCollection {
    * The engine's seed form, sodium,<hex>. null on A2, where a challenge cannot be seeded (ADR-005); reproduction there uses the server-side input log.
    */
   seed: string | null;
+  /**
+   * The class of the opponent's team (ADR-009 §3), as the writer proved it from that team. Not the source of truth.
+   */
+  opponent_team_data_class: "synthetic" | "private";
 }
 /**
  * A local A2 battle against a human.

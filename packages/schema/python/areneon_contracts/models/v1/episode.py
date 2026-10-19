@@ -186,6 +186,10 @@ class LeagueCollection(BaseModel):
     """
     The policy that chose the opponent's actions.
     """
+    opponent_team_data_class: Literal["synthetic", "private"]
+    """
+    The class of the opponent's team (ADR-009 §3), as the writer proved it from that team. Not the source of truth.
+    """
 
 
 class EvaluationCollection(BaseModel):
@@ -211,6 +215,10 @@ class EvaluationCollection(BaseModel):
     ]
     """
     The engine's seed form, sodium,<hex>. null on A2, where a challenge cannot be seeded (ADR-005); reproduction there uses the server-side input log.
+    """
+    opponent_team_data_class: Literal["synthetic", "private"]
+    """
+    The class of the opponent's team (ADR-009 §3), as the writer proved it from that team. Not the source of truth.
     """
 
 

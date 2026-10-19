@@ -5,11 +5,11 @@
 import { ajvFor } from "@areneon/schema/ajv";
 import episodeSchema from "@areneon/schema/contracts/v1/episode.schema.json" with { type: "json" };
 import type { PrivateTeamSpec } from "@areneon/schema/types/v1/private-team-spec.ts";
-import { type Collection, type Episode, rightsFor } from "./episode.ts";
+import { type CollectionInput, type Episode, rightsFor } from "./episode.ts";
 import { buildObservation, type PlayerChannel } from "./observation.ts";
 import { nodeSha256, playerChannel } from "./player-channel.ts";
 import type { BattleRecord, Player } from "./runner.ts";
-import { higherClass, type SyntheticTeamHashes, teamHash } from "./team-class.ts";
+import { higherClass, type StampedTeam, type SyntheticTeamHashes, teamHash } from "./team-class.ts";
 
 export class EpisodeError extends Error {
   override name = "EpisodeError";
@@ -61,14 +61,20 @@ function cut(channel: PlayerChannel, seq: number): PlayerChannel | undefined {
  *   decision's identity, in request order.
  * - On A2, every decision carries its deadline record and timer context, the
  *   never-auto-choose evidence ADR-005 needs.
- * - A `collection` record (ADR-009 §4) is checked against the runtime, which
- *   the schema cannot: a `league` or `evaluation` battle on A1 has the seed it
- *   ran with, and one on A2 has none (a challenge cannot be seeded).
+ * - A `collection` record (ADR-009 §4) is checked against the class: the
+ *   Episode's data_class is the higher of its team's and the record's
+ *   `opponent_team_data_class` (this refuses a stored Episode relabelled
+ *   synthetic), and a sparring Episode is private.
+ * - It is also checked against the runtime, which the schema cannot: a
+ *   `league` or `evaluation` battle on A1 has the seed it ran with, and one
+ *   on A2 has none (a challenge cannot be seeded).
  *
  * - A team labelled `synthetic` must hash to a member of `known_synthetic`
- *   (required: omitting it would leave the class unchecked). The stored Episode does not name the opponent's team or class, so
- *   the opponent half of the both-teams rule is checked when it is written
- *   (`episodeFromRecord`), not here.
+ *   (required: omitting it would leave the class unchecked). The stored Episode
+ *   does not name the opponent's team, so the opponent's half of the rule
+ *   is checked here only through `opponent_team_data_class`, which
+ *   `episodeFromRecord` sets from the opponent's stamped team. An Episode with
+ *   no collection record has no opponent class to check.
  *
  * Every refusal is an EpisodeError.
  */
@@ -98,7 +104,7 @@ async function read(value: unknown): Promise<Episode> {
   if (episode.team.data_class === "private" && episode.data_class !== "private") {
     throw new EpisodeError("an Episode with a private team is private");
   }
-  assertCollection(episode.provenance);
+  assertCollection(episode);
   const channel = playerChannel({ schema_version: 1, data_class: episode.data_class, player: episode.player, lines: episode.channel });
   const ended = resultOf(channel.lines);
   if (ended.winner !== episode.result.winner || ended.turns !== episode.result.turns) {
@@ -126,9 +132,23 @@ async function read(value: unknown): Promise<Episode> {
   return episode;
 }
 
-/** The collection record's seed must agree with the runtime that played the battle. */
-function assertCollection({ runtime, collection }: Episode["provenance"]): void {
-  if (collection === undefined || collection.kind === "sparring") return;
+/**
+ * What a collection record must agree with: the Episode's class (the higher of
+ * the own team's and the opponent's recorded class; a sparring battle against
+ * a human is private) and the runtime that played the battle (its seed).
+ */
+function assertCollection({ data_class, team, provenance: { runtime, collection } }: Episode): void {
+  if (collection === undefined) return;
+  if (collection.kind === "sparring") {
+    if (data_class !== "private") throw new EpisodeError("a sparring Episode is private: it records a battle against a human");
+    return;
+  }
+  const expected = higherClass(team.data_class, collection.opponent_team_data_class);
+  if (data_class !== expected) {
+    throw new EpisodeError(
+      `the Episode is labelled ${data_class}, but its own team is ${team.data_class} and its opponent's team is ${collection.opponent_team_data_class}: the class must be ${expected}`,
+    );
+  }
   if (runtime === "A1" && collection.seed === null) {
     throw new EpisodeError(`an A1 ${collection.kind} collection record needs the seed the battle ran with`);
   }
@@ -146,17 +166,19 @@ function assertProven(team: PrivateTeamSpec, known: SyntheticTeamHashes): void {
 
 export interface EpisodeOptions {
   /** The player's own team, as they brought it. */
-  team: PrivateTeamSpec;
+  team: StampedTeam;
   /** The opponent's team as the battle ran with it, for its class only: it is never stored. */
-  opponent_team: PrivateTeamSpec;
+  opponent_team: StampedTeam;
   /** The synthetic teams there are (hashes); a `synthetic` label outside it is refused. */
   known_synthetic: SyntheticTeamHashes;
   behaviour_policy_id: string;
   /**
    * How the battle was collected, when it is known (ADR-009 §4). A `league` or
-   * `evaluation` record carries the battle's own seed (`record.seed`).
+   * `evaluation` record carries the battle's own seed (`record.seed`); its
+   * `opponent_team_data_class` is not the caller's to give: it is set from
+   * `opponent_team`.
    */
-  collection?: Collection;
+  collection?: CollectionInput;
 }
 
 /**
@@ -184,6 +206,10 @@ export async function episodeFromRecord(
   if (collection && collection.kind !== "sparring" && collection.seed !== record.seed) {
     throw new EpisodeError("the collection record's seed is not the seed the battle ran with");
   }
+  const stored =
+    collection && collection.kind !== "sparring"
+      ? { ...collection, opponent_team_data_class: opponent_team.data_class }
+      : collection;
   const data_class = higherClass(team.data_class, opponent_team.data_class);
   const decisions = record.choices
     .filter((choice) => choice.player === player)
@@ -201,7 +227,7 @@ export async function episodeFromRecord(
     schema_version: 1,
     data_class,
     rights: rightsFor(data_class),
-    provenance: { runtime: "A1", behaviour_policy_id, manifest: record.manifest, ...(collection && { collection }) },
+    provenance: { runtime: "A1", behaviour_policy_id, manifest: record.manifest, ...(stored && { collection: stored }) },
     player,
     team,
     channel: record.channels[player],

@@ -552,7 +552,8 @@
         "kind",
         "run_id",
         "seed",
-        "opponent_policy_id"
+        "opponent_policy_id",
+        "opponent_team_data_class"
       ],
       "properties": {
         "kind": {
@@ -577,6 +578,13 @@
           "description": "The policy that chose the opponent's actions.",
           "type": "string",
           "minLength": 1
+        },
+        "opponent_team_data_class": {
+          "description": "The class of the opponent's team (ADR-009 §3), as the writer proved it from that team. Not the source of truth.",
+          "enum": [
+            "synthetic",
+            "private"
+          ]
         }
       }
     },
@@ -588,7 +596,8 @@
         "kind",
         "run_id",
         "sealed",
-        "seed"
+        "seed",
+        "opponent_team_data_class"
       ],
       "properties": {
         "kind": {
@@ -612,6 +621,13 @@
           "pattern": "^sodium,[0-9a-f]+$",
           "minLength": 8,
           "maxLength": 128
+        },
+        "opponent_team_data_class": {
+          "description": "The class of the opponent's team (ADR-009 §3), as the writer proved it from that team. Not the source of truth.",
+          "enum": [
+            "synthetic",
+            "private"
+          ]
         }
       }
     },

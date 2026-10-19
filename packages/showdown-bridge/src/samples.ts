@@ -1,5 +1,6 @@
 // The shared contract sample corpus (ADR-008 §2): valid and invalid instances
-// of every contract, most built from the golden battle, which every language
+// of every contract, plus reader-invalid ones (ADR-009 §4: schema-valid, but a
+// reader must refuse them), most built from the golden battle, which every language
 // with contracts must classify the same way, plus their JCS digests. Captured
 // by scripts/capture-samples.ts into fixtures/contracts/; CI compares a fresh
 // capture with the committed files.
@@ -13,7 +14,7 @@ import type { Engine } from "./engine.ts";
 import { episodeFromRecord } from "./episode-io.ts";
 import { goldenBattle, syntheticFixtureHashes, syntheticTeam } from "./golden.ts";
 import { observe, recordedChannel } from "./player-channel.ts";
-import { battleClass } from "./team-class.ts";
+import { battleClass, stampTeam } from "./team-class.ts";
 import type { RequestRecord } from "./runner.ts";
 
 export const SAMPLES_DIR = fileURLToPath(new URL("../../../fixtures/contracts", import.meta.url));
@@ -30,17 +31,14 @@ function mutated<T>(value: T, change: (copy: Record<string, unknown>) => void): 
 
 /**
  * Every sample, keyed by its path under `fixtures/contracts/`:
- * `v1/<contract>/{valid,invalid}/<case>.json`, plus `hashes.json` mapping
- * each sample's path to the SHA-256 of its JCS bytes.
+ * `v1/<contract>/{valid,invalid,reader-invalid}/<case>.json`, plus
+ * `hashes.json` mapping each sample's path to the SHA-256 of its JCS bytes.
+ * A `reader-invalid` sample passes the schema; the contract's reader refuses it.
  */
 export async function contractSamples(engine: Engine): Promise<Record<string, unknown>> {
   const record = await goldenBattle(engine);
   const known = syntheticFixtureHashes(engine);
-  const team: PrivateTeamSpec = {
-    schema_version: 1,
-    data_class: "synthetic",
-    team: syntheticTeam() as PrivateTeamSpec["team"],
-  };
+  const team = stampTeam(syntheticTeam() as PrivateTeamSpec["team"], known);
   // The golden battle has all three phases (golden.test.ts pins GOLDEN_PHASES).
   const first = (phase: RequestRecord["phase"]) => record.requests.p1.find((r) => r.phase === phase) as RequestRecord;
   const preview = first("preview");
@@ -74,6 +72,7 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
   });
   const league = { kind: "league", run_id: "league-run-1", seed: record.seed, opponent_policy_id: "first-legal@golden" } as const;
   const evaluation = { kind: "evaluation", run_id: "eval-run-1", sealed: true, seed: record.seed } as const;
+  const classed = { opponent_team_data_class: "synthetic" } as const;
   const collected = (collection: unknown) =>
     mutated(episode, (e) => ((e.provenance as Record<string, unknown>).collection = collection));
   const identity = { request_seq: turn.request_seq, request_hash: turn.request_hash };
@@ -114,9 +113,13 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
       behaviour_policy_id: "first-legal@golden",
       collection: evaluation,
     }),
-    // Kept schema- and reader-valid until slice (b) (#826) adds the rule that a
-    // sparring Episode must be private; it then moves to reader-invalid/sparring-synthetic.
-    "episode/sparring": collected({ kind: "sparring", session_id: "sparring-session-1" }),
+  };
+  // Schema-valid, refused by readEpisode (the sparring rule and the class rule).
+  // No valid sparring sample exists: it must be private, and the data-class
+  // guard refuses a committed "data_class": "private".
+  const readerInvalid: Record<string, unknown> = {
+    "episode/sparring-synthetic": collected({ kind: "sparring", session_id: "sparring-session-1" }),
+    "episode/class-below-opponent": collected({ ...league, opponent_team_data_class: "private" }),
   };
   const invalid: Record<string, unknown> = {
     "request-identity/rqid-zero": { ...identity, rqid: 0 },
@@ -146,16 +149,18 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
       deadline_outcome: "late",
     },
     "episode/omniscient-log": { ...episode, omniscient_log: [] },
-    "episode/collection-no-run-id": collected({ kind: "league", seed: record.seed, opponent_policy_id: "first-legal@golden" }),
-    "episode/collection-league-sealed": collected({ ...league, sealed: false }),
-    "episode/collection-evaluation-no-seed": collected({ kind: "evaluation", run_id: "eval-run-1", sealed: true }),
-    "episode/collection-bad-seed": collected({ ...league, seed: "1,2,3,4" }),
-    "episode/collection-unknown-kind": collected({ kind: "training", run_id: "league-run-1" }),
+    "episode/collection-no-run-id": collected({ ...classed, kind: "league", seed: record.seed, opponent_policy_id: "first-legal@golden" }),
+    "episode/collection-league-sealed": collected({ ...league, ...classed, sealed: false }),
+    "episode/collection-evaluation-no-seed": collected({ ...classed, kind: "evaluation", run_id: "eval-run-1", sealed: true }),
+    "episode/collection-bad-seed": collected({ ...league, ...classed, seed: "1,2,3,4" }),
+    "episode/collection-no-opponent-class": collected(league),
+    "episode/collection-bad-opponent-class": collected({ ...league, opponent_team_data_class: "public" }),
+    "episode/collection-unknown-kind": collected({ ...classed, kind: "training", run_id: "league-run-1" }),
     "episode/collection-sparring-run-id": collected({ kind: "sparring", session_id: "s", run_id: "r" }),
   };
 
   const samples: Record<string, unknown> = {};
-  for (const [kind, cases] of [["valid", valid], ["invalid", invalid]] as const) {
+  for (const [kind, cases] of [["valid", valid], ["invalid", invalid], ["reader-invalid", readerInvalid]] as const) {
     for (const [key, value] of Object.entries(cases)) {
       const [contract, name] = key.split("/") as [string, string];
       samples[`v1/${contract}/${kind}/${name}.json`] = value;

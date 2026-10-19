@@ -35,12 +35,22 @@ export const higherClass = (a: DataClass, b: DataClass): DataClass =>
 export const classOfSets = (sets: readonly unknown[], known: SyntheticTeamHashes): DataClass =>
   known.has(teamHash(sets)) ? "synthetic" : "private";
 
+/**
+ * A team spec whose class was proven by source. The brand is a type only
+ * (like `BattleClass`): only `stampTeam` returns one, so a hand-built
+ * `PrivateTeamSpec` does not compile where a team enters an Episode
+ * (`episodeFromRecord`). A cast defeats it; `episodeFromRecord` and
+ * `readEpisode` still check the label at run time.
+ */
+export type StampedTeam = PrivateTeamSpec & { readonly __stampedTeam: true };
+
 /** The one way to build a PrivateTeamSpec whose label is not the caller's say-so. */
-export const stampTeam = (team: PrivateTeamSpec["team"], known: SyntheticTeamHashes): PrivateTeamSpec => ({
-  schema_version: 1,
-  data_class: classOfSets(team, known),
-  team,
-});
+export const stampTeam = (team: PrivateTeamSpec["team"], known: SyntheticTeamHashes): StampedTeam =>
+  ({
+    schema_version: 1,
+    data_class: classOfSets(team, known),
+    team,
+  }) as StampedTeam;
 
 /**
  * A battle's class, from the hashes of the teams it ran with: `synthetic`
