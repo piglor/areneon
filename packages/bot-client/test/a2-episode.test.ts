@@ -94,23 +94,53 @@ describe("a2Episode on a battle of the local server", () => {
     // A stored copy reads back as it was written (the team under the names the server gave it),
     // and the other bot's Episode is its own.
     const played = new Set([...KNOWN, teamHash(episode.team.team)]);
-    // Whether or not the server removed the nicknames, the team carries the names its channel shows.
-    const request = JSON.parse((episode.channel.find((line) => line.startsWith("|request|")) as string).slice("|request|".length)) as {
-      side: { pokemon: { ident: string }[] };
-    };
-    episode.team.team.forEach((set, i) => {
-      const ident = request.side.pokemon[i]?.ident as string;
-      expect([ "", ident.slice(ident.indexOf(": ") + 2)]).toContain(set.name);
-    });
     expect(await readEpisode(JSON.parse(JSON.stringify(episode)), { known_synthetic: played })).toEqual(episode);
-    // Under the server's names the team is a different set of sets: only its own hash proves it.
-    const asPlayed = readEpisode(JSON.parse(JSON.stringify(episode)), { known_synthetic: KNOWN });
-    if (played.size > KNOWN.size) await expect(asPlayed).rejects.toThrow(/known synthetic/);
-    else await expect(asPlayed).resolves.toEqual(episode);
     const other = await a2Episode(theirs, options({ team: stamp(rival) }));
     expect(other.player).not.toBe(episode.player);
     expect(other.team.team.map((set) => set.species)).toEqual(rival.map((set) => set.species));
     expect(JSON.stringify(episode)).not.toContain(rival.flatMap((set) => set.moves).find((m) => !episode.channel.join().includes(m)) ?? "\u0000");
+  });
+
+  describe("nicknames (pinned independent of the server's behaviour)", () => {
+    const NICKS = ["Alpha", "Bravo", "Cinder", "Delta", "Echo", "Foxtrot"];
+    const nicknamed = own.map((set, i) => ({ ...set, name: NICKS[i] as string }));
+    /** The bot's record with its Team Preview request listing the team under `names`; no decisions (their hashes name the original request). */
+    const named = (names: readonly string[]): A2BattleRecord =>
+      edited((r) => {
+        r.decisions = [];
+        const lines = (r.channels[0] as { lines: string[] }).lines;
+        const at = lines.findIndex((line) => line.startsWith("|request|"));
+        const request = JSON.parse((lines[at] as string).slice("|request|".length)) as { side: { pokemon: { ident: string }[] } };
+        request.side.pokemon.forEach((mon, i) => (mon.ident = `${mine.player}: ${names[i]}`));
+        lines[at] = `|request|${JSON.stringify(request)}`;
+      });
+    const species = own.map((set) => set.species);
+    const known = new Set([teamHash(nicknamed)]);
+    const write = (record: A2BattleRecord) =>
+      a2Episode(record, options({ team: stamp(nicknamed, known), known_synthetic: known, collection: LEAGUE, opponent_team: stamp(rival) }));
+
+    it("takes the species names the channel shows when the server removed the nicknames, and keeps the proof", async () => {
+      const episode = await write(named(species));
+      expect(episode.team.team.map((set) => set.name)).toEqual(species);
+      expect(episode.data_class).toBe("synthetic");
+      const stored = JSON.parse(JSON.stringify(episode));
+      // The played form is a different set of sets: a reader needs its hash too.
+      await expect(readEpisode(stored, { known_synthetic: known })).rejects.toThrow(/not a known synthetic team/);
+      expect(await readEpisode(stored, { known_synthetic: new Set([...known, teamHash(episode.team.team)]) })).toEqual(episode);
+    });
+
+    it("keeps the nicknames the channel shows when the server kept them", async () => {
+      const episode = await write(named(NICKS));
+      expect(episode.team.team.map((set) => set.name)).toEqual(NICKS);
+      expect(episode.data_class).toBe("synthetic");
+      expect(await readEpisode(JSON.parse(JSON.stringify(episode)), { known_synthetic: known })).toEqual(episode);
+    });
+
+    it("does not carry a class over for a paste that is not known synthetic", async () => {
+      await expect(
+        a2Episode(named(species), options({ team: stamp(nicknamed, known), known_synthetic: new Set(), collection: LEAGUE })),
+      ).rejects.toThrow(/not a known synthetic team/);
+    });
   });
 
   it("a league Episode of two known synthetic teams is synthetic, and records the opponent's class", async () => {
@@ -138,6 +168,8 @@ describe("a2Episode on a battle of the local server", () => {
     await expect(a2Episode(mine, options({ known_synthetic: new Set() }))).rejects.toThrow(EpisodeError);
     await expect(a2Episode(mine, options({ collection: { ...LEAGUE, seed: "sodium,00ff" } }))).rejects.toThrow(/no seed/);
     await expect(a2Episode(mine, options({ team: stamp(rival) }))).rejects.toThrow(EpisodeError);
+    await expect(a2Episode(edited((r) => (r.result = "tie")), options())).rejects.toThrow(/not the channel's/);
+    await expect(a2Episode(edited((r) => ((r.channels[0] as { lines: string[] }).lines = ["|gametype|doubles"])), options())).rejects.toThrow(/holds no request/);
     await expect(a2Episode(edited((r) => (r.result = r.result === "win" ? "loss" : "win")), options())).rejects.toThrow(/not the channel's/);
   });
 

@@ -138,9 +138,10 @@ function decisionOf(
  */
 function playedTeam(team: StampedTeam, lines: readonly string[]): StampedTeam {
   const first = lines.find((line) => line.startsWith("|request|"));
+  if (first === undefined) throw new A2EpisodeError("the channel holds no request");
   let idents: unknown;
   try {
-    idents = (JSON.parse((first ?? "").slice("|request|".length)) as { side?: { pokemon?: { ident?: unknown }[] } }).side?.pokemon?.map(
+    idents = (JSON.parse((first as string).slice("|request|".length)) as { side?: { pokemon?: { ident?: unknown }[] } }).side?.pokemon?.map(
       (mon) => mon.ident,
     );
   } catch {
@@ -187,6 +188,12 @@ function turnsOf(lines: readonly string[]): number {
  * restarts, so no one channel holds the battle), or has a decision without a
  * timer snapshot. The result is read back through `readEpisode`, so it is
  * valid by the same checks a stored copy gets (`EpisodeError`).
+ *
+ * Reading a stored synthetic Episode back: the team is stored under the names
+ * the server gave it, so `readEpisode` proves it synthetic only if its
+ * `known_synthetic` holds the hash of that played form (when it differs from
+ * the paste's). The writer adds that hash itself for its own read-back; a
+ * loader must do the same.
  *
  * `refused` is not set: the session's record keeps the refused choice's
  * request, not the engine's message. The update request that follows an

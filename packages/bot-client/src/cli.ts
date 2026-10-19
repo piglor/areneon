@@ -9,6 +9,7 @@ import {
   type RulesSnapshot,
   stampTeam,
 } from "@areneon/showdown-bridge";
+import { SERVER_TIMER_TICK } from "./deadline.ts";
 import { a2Episode, A2EpisodeError, type A2EpisodeOptions, timerRulesOf } from "./a2-episode.ts";
 import type { A2BattleRecord, A2BotOptions, A2SessionResult, SessionLog } from "./session.ts";
 
@@ -60,11 +61,6 @@ const BATTLE_ROOM = /^battle-[a-z0-9-]+$/;
 
 /** The policy that plays the sparring bot's side: the shared actor rule (ADR-005 §1). */
 export const SPARRING_POLICY_ID = "actor-rule@a2";
-/**
- * The pinned server's timer tick in seconds (`TICK_TIME` in server/room-battle.ts):
- * a server constant, not a format rule, so the rule table does not hold it.
- */
-export const SERVER_TIMER_TICK = 5;
 
 const DIR_MODE = 0o700;
 const FILE_MODE = 0o600;
@@ -164,8 +160,13 @@ export async function runCli(argv: string[], deps: CliDeps): Promise<number> {
         FILE_MODE,
       );
     } catch (error) {
-      if (error instanceof A2EpisodeError || error instanceof EpisodeError) {
+      // A2EpisodeError messages are fixed text. The reader's quote the channel (a player's name), so only its kind is shown.
+      if (error instanceof A2EpisodeError) {
         deps.stderr(`${record.room}: no Episode: ${error.message}`);
+        return;
+      }
+      if (error instanceof EpisodeError) {
+        deps.stderr(`${record.room}: no Episode: the battle did not pass the Episode reader`);
         return;
       }
       stored.failed = true;

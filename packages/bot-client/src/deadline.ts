@@ -54,6 +54,12 @@ export interface BudgetConfig {
   turns_per_pokemon: number;
 }
 
+/**
+ * The pinned server's timer tick in seconds (`TICK_TIME` in server/room-battle.ts):
+ * a server constant, not a format rule, so the rule table does not hold it.
+ */
+export const SERVER_TIMER_TICK = 5;
+
 /** The A2 (local server) configuration: a 3 s safety margin. */
 export const A2_BUDGET_CONFIG: Readonly<BudgetConfig> = Object.freeze({
   preview_cap_ms: 60_000,

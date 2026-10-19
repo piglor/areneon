@@ -390,6 +390,12 @@ describe("runCli: the bot's own Episode (ADR-009 slice f)", () => {
     expect(f.err).toEqual([`${real.room}: no Episode: the battle had a defect: the engine refused a non-pending candidate`]);
   });
 
+  it("shows only the kind of a reader refusal, never what it quotes", async () => {
+    const { f, code } = await run({ ...real, result: real.result === "win" ? "loss" : "win" });
+    expect(code).toBe(0);
+    expect(f.err).toEqual([`${real.room}: no Episode: the battle did not pass the Episode reader`]);
+  });
+
   it("fails the run when the Episode cannot be written", async () => {
     const { f, code } = await run(real, {
       writeFile: (path) => {
