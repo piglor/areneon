@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { PINNED_SHOWDOWN_COMMIT } from "../src/engine.ts";
 import { ImportPlanError, planImport, type ReleaseAsset, type ReleaseSource } from "../src/rules-import-plan.ts";
-import { loadRulesSnapshot } from "../src/rules-load.ts";
+import { loadRulesSnapshot, parseSnapshot } from "../src/rules-load.ts";
+// rules-publish.ts is CI-only; importing it here is deliberate, so the test
+// assets are byte for byte what a rules-publish run releases.
 import { channelArtifact, snapshotArtifact } from "../src/rules-publish.ts";
-import { jcsBytes, rulesSnapshotHash, type RulesSnapshot, sha256Hex } from "../src/rules.ts";
+import { jcsBytes, rulesSnapshotHash, type RulesSnapshot, sha256Hex, snapshotBytes } from "../src/rules.ts";
 
 // Assets are built by rules-publish's own artifact builders, so they are
 // byte for byte what a rules-publish run releases for these records.
@@ -15,17 +17,22 @@ const [[gapId, gap]] = Object.entries(snapshot.gaps) as [[string, RulesSnapshot[
 const older: RulesSnapshot = { ...snapshot, gaps: { ...snapshot.gaps, [gapId]: { ...gap, description: "an earlier wording" } } };
 const old = rulesSnapshotHash(older);
 
-const asAsset = ({ tag, bytes }: { tag: string; bytes: Uint8Array }): ReleaseAsset => ({ tag, name: `${tag}.json`, bytes });
-const snapshotAsset = (value: RulesSnapshot) => asAsset(snapshotArtifact(value, COMMIT));
+const asAsset = ({ tag, commit, bytes }: { tag: string; commit: string; bytes: Uint8Array }): ReleaseAsset => ({
+  tag,
+  name: `${tag}.json`,
+  commit,
+  bytes,
+});
+const snapshotAsset = (value: RulesSnapshot, commit = COMMIT) => asAsset(snapshotArtifact(value, commit));
 const channelAsset = (seq: number, hash: string, commit: string) =>
   asAsset(channelArtifact({ channel: "stable", seq, hash }, commit));
 /** A snapshot asset for any document, named after the sha256 of its JCS bytes. */
 const rawSnapshot = (value: object): ReleaseAsset => {
   const bytes = jcsBytes(value);
-  return asAsset({ tag: `rules-snapshot-${sha256Hex(bytes)}`, bytes });
+  return asAsset({ tag: `rules-snapshot-${sha256Hex(bytes)}`, commit: COMMIT, bytes });
 };
 const rawChannel = (value: object, commit = COMMIT): ReleaseAsset =>
-  asAsset({ tag: `rules-channel-stable-${commit}`, bytes: jcsBytes(value) });
+  asAsset({ tag: `rules-channel-stable-${commit}`, commit, bytes: jcsBytes(value) });
 const channelBody = { schema_version: 1, channel: "stable", seq: 5, hash: own, source_commit: COMMIT };
 
 const source = (assets: ReleaseAsset[]): ReleaseSource => ({ list: () => Promise.resolve(assets) });
@@ -37,7 +44,7 @@ const refuses = (assets: ReleaseAsset[], message: RegExp, known = none) =>
 describe("planImport", () => {
   const step6 = channelAsset(6, own, LATER);
   const step5 = channelAsset(5, old, COMMIT);
-  const current = snapshotAsset(snapshot);
+  const current = snapshotAsset(snapshot, LATER);
   const earlier = snapshotAsset(older);
   const release = [step6, current, step5, earlier];
 
@@ -52,8 +59,18 @@ describe("planImport", () => {
       { kind: "channel", channel: "stable", seq: 5, hash: old, source_commit: COMMIT, bytes: step5.bytes },
       { kind: "channel", channel: "stable", seq: 6, hash: own, source_commit: LATER, bytes: step6.bytes },
     ]);
-    const first = steps.find((step) => step.hash === own && step.kind === "snapshot");
-    expect(first?.bytes).toBe(current.bytes);
+    expect(steps.find((step) => step.hash === own)).toEqual({
+      kind: "snapshot",
+      hash: own,
+      source_commit: LATER,
+      bytes: current.bytes,
+    });
+    expect(steps.find((step) => step.hash === old)).toEqual({
+      kind: "snapshot",
+      hash: old,
+      source_commit: COMMIT,
+      bytes: earlier.bytes,
+    });
   });
 
   it("gives the same plan for any listing order", async () => {
@@ -84,7 +101,7 @@ describe("planImport", () => {
     const real = snapshotAsset(snapshot);
     await refuses([{ ...real, bytes: snapshotAsset(older).bytes }], /sha256 of its bytes is not/);
     const tag = `rules-snapshot-${old}`;
-    await refuses([{ tag, name: `${tag}.json`, bytes: real.bytes }], /sha256 of its bytes is not/);
+    await refuses([{ ...real, tag, name: `${tag}.json` }], /sha256 of its bytes is not/);
   });
 
   it("refuses an unknown schema_version", async () => {
@@ -112,6 +129,23 @@ describe("planImport", () => {
     await refuses([snapshotAsset(snapshot), wrongChannel], /not beta at/);
   });
 
+  it("refuses a channel artifact whose Release points at another commit than its name and body", async () => {
+    await refuses([snapshotAsset(snapshot), { ...rawChannel(channelBody), commit: LATER }], /\(Release at c+\) holds channel stable at b+, not stable at b+/);
+  });
+
+  it("refuses an asset whose Release commit is missing or not a 40-hex commit", async () => {
+    for (const commit of ["", "main", "B".repeat(40), "b".repeat(39), "b".repeat(41)]) {
+      await refuses([{ ...snapshotAsset(snapshot), commit }], /Release commit .* is not a 40-hex commit/);
+    }
+    const { commit: _, ...withoutCommit } = channelAsset(5, own, COMMIT);
+    await refuses([withoutCommit as ReleaseAsset], /Release commit undefined is not a 40-hex commit/);
+  });
+
+  it("parses the exact published snapshot form", () => {
+    const published = JSON.parse(snapshotBytes(snapshot).toString("utf8")) as unknown;
+    expect(parseSnapshot(published, "published")).toEqual(snapshot);
+  });
+
   it("refuses a channel artifact its schema rejects", async () => {
     await refuses([rawChannel({ ...channelBody, seq: 0 })], /must be >= 1/);
     await refuses([rawChannel({ ...channelBody, extra: true })], /additional properties/);
@@ -130,7 +164,7 @@ describe("planImport", () => {
     await refuses([{ ...rawChannel(channelBody), bytes: Buffer.from("{") }], /not UTF-8 JSON/);
     await refuses([{ ...rawChannel(channelBody), bytes: Uint8Array.from([0x22, 0xff, 0x22]) }], /not UTF-8 JSON/);
     const bytes = Buffer.from(JSON.stringify(JSON.parse(snapshotArtifact(snapshot, COMMIT).bytes.toString("utf8")), null, 1));
-    await refuses([asAsset({ tag: `rules-snapshot-${sha256Hex(bytes)}`, bytes })], /not in canonical/);
+    await refuses([asAsset({ tag: `rules-snapshot-${sha256Hex(bytes)}`, commit: COMMIT, bytes })], /not in canonical/);
   });
 
   it("refuses a snapshot that is not what its own records build", async () => {

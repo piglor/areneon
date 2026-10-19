@@ -11,6 +11,8 @@ import { jcsBytes, sha256Hex } from "./rules.ts";
 export interface ReleaseAsset {
   tag: string;
   name: string;
+  /** The commit the Release's tag points at (rules-publish's `Artifact.commit`). */
+  commit: string;
   bytes: Uint8Array;
 }
 
@@ -22,6 +24,8 @@ export interface ReleaseSource {
 export interface ImportSnapshot {
   kind: "snapshot";
   hash: string;
+  /** The commit the snapshot's Release tag points at. */
+  source_commit: string;
   bytes: Uint8Array;
 }
 
@@ -50,6 +54,8 @@ export class ImportPlanError extends Error {
 const SNAPSHOT_NAME = /^rules-snapshot-([0-9a-f]{64})\.json$/;
 const CHANNEL_NAME = /^rules-channel-([a-z0-9]+(?:-[a-z0-9]+)*)-([0-9a-f]{40})\.json$/;
 
+const COMMIT = /^[0-9a-f]{40}$/;
+
 const compare = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
 
 const decoder = new TextDecoder("utf-8", { fatal: true });
@@ -59,8 +65,8 @@ function parseCanonical(asset: ReleaseAsset): unknown {
   let value: unknown;
   try {
     value = JSON.parse(decoder.decode(asset.bytes)) as unknown;
-  } catch {
-    throw new ImportPlanError(`${asset.name} is not UTF-8 JSON`);
+  } catch (error) {
+    throw new ImportPlanError(`${asset.name} is not UTF-8 JSON`, { cause: error });
   }
   if (value === null || typeof value !== "object" || !jcsBytes(value).equals(asset.bytes)) {
     throw new ImportPlanError(`${asset.name} is not in canonical (JCS) form`);
@@ -83,15 +89,15 @@ function snapshotStep(asset: ReleaseAsset, hash: string): ImportSnapshot {
   }
   const value = parseCanonical(asset);
   validated(() => parseSnapshot(value, asset.name));
-  return { kind: "snapshot", hash, bytes: asset.bytes };
+  return { kind: "snapshot", hash, source_commit: asset.commit, bytes: asset.bytes };
 }
 
 function channelStep(asset: ReleaseAsset, channel: string, commit: string): ImportChannel {
   const value = parseCanonical(asset);
   const body = validated(() => parseChannelArtifact(value, asset.name));
-  if (body.channel !== channel || body.source_commit !== commit) {
+  if (body.channel !== channel || body.source_commit !== commit || asset.commit !== commit) {
     throw new ImportPlanError(
-      `${asset.name} holds channel ${body.channel} at ${body.source_commit}, not ${channel} at ${commit}`,
+      `${asset.name} (Release at ${asset.commit}) holds channel ${body.channel} at ${body.source_commit}, not ${channel} at ${commit}`,
     );
   }
   const { seq, hash, source_commit } = body;
@@ -100,7 +106,9 @@ function channelStep(asset: ReleaseAsset, channel: string, commit: string): Impo
 
 /**
  * Plan the import of every released rules artifact. Each asset must be named
- * `<tag>.json` after its own Release tag. A snapshot's bytes must hash to
+ * `<tag>.json` after its own Release tag, and carry the 40-hex commit that
+ * tag points at; a channel's must be the commit in its name and body.
+ * A snapshot's bytes must hash to
  * the hash in its name; each artifact must be canonical JCS and valid
  * against the schemas of its own `schema_version`. A channel step must name
  * a snapshot that is in this release set or in `known.snapshots` (already
@@ -132,6 +140,9 @@ export async function planImport(
     }
     if (names.has(asset.name)) throw new ImportPlanError(`asset ${asset.name} is listed twice`);
     names.add(asset.name);
+    if (typeof asset.commit !== "string" || !COMMIT.test(asset.commit)) {
+      throw new ImportPlanError(`asset ${asset.name}: its Release commit ${String(asset.commit)} is not a 40-hex commit`);
+    }
     const snapshot = SNAPSHOT_NAME.exec(asset.name);
     const channel = CHANNEL_NAME.exec(asset.name);
     if (snapshot) snapshots.push(snapshotStep(asset, snapshot[1] as string));
