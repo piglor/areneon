@@ -218,7 +218,8 @@ const SERVER_TEXT: ReadonlySet<string> = new Set([
 
 /**
  * The server's forfeit messages: `|-message|<player name><suffix>`
- * (server/room-battle.ts `forfeitPlayer` and its callers).
+ * (server/room-battle.ts `forfeitPlayer` and its callers, including
+ * server/room-game.ts, server/users.ts and server/tournaments/index.ts).
  */
 const FORFEIT_SUFFIXES: readonly string[] = [
   " was made to forfeit.",
@@ -229,6 +230,9 @@ const FORFEIT_SUFFIXES: readonly string[] = [
   " lost due to inactivity.",
   " lost the series due to inactivity.",
   " lost by being unavailable at the start of a game.",
+  " lost by being banned.",
+  " lost by being offline too long.",
+  " was disqualified from the tournament.",
 ];
 
 function kindOf(line: string): string {

@@ -179,7 +179,14 @@ describe("server-lines", () => {
   it("drops the server's forfeit message for a player the sim named, and keeps other messages", () => {
     const end = p1.length - 1;
     expect(p1[end]).toMatch(/^\|win\|/);
-    const forfeits = ["|-message|p2 forfeited.", "|-message|p1 was made to forfeit.", "|-message|p2 lost due to inactivity."];
+    const forfeits = [
+      "|-message|p2 forfeited.",
+      "|-message|p1 was made to forfeit.",
+      "|-message|p2 lost due to inactivity.",
+      "|-message|p1 lost by being banned.",
+      "|-message|p2 lost by being offline too long.",
+      "|-message|p1 was disqualified from the tournament.",
+    ];
     expect(stripServerLines([...p1.slice(0, end), ...forfeits, p1[end] as string])).toEqual({ lines: p1, dropped: [] });
     // Another name, or a message before the sim named anyone, is not matched.
     const other = "|-message|Bob forfeited.";
