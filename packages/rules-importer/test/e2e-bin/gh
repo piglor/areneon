@@ -1,3 +1,6 @@
 #!/bin/sh
 # The end-to-end image's gh: replays the recorded GitHub answers (../fake-gh.ts).
+# When the e2e mounts a directory at /fake-gh-log, each call's arguments are
+# appended to /fake-gh-log/calls, one line per call.
+if [ -d /fake-gh-log ]; then printf '%s\n' "$*" >>/fake-gh-log/calls; fi
 exec node "$(dirname "$0")/../fake-gh-cli.ts" "$@"

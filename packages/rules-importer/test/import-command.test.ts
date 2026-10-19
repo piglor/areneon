@@ -50,12 +50,12 @@ function fakeSession({ login = "importer", effective = "importer", hashes = [], 
   return { session, queries, ended: () => ended };
 }
 
-const inserted = (plan: ImportPlan, status: StepOutcome["status"] = "inserted"): ImportResult => ({
-  steps: plan.steps.map((step): StepOutcome =>
-    step.kind === "snapshot"
-      ? { kind: "snapshot", hash: step.hash, status: status === "stale" ? "already-present" : status }
-      : { kind: "channel", channel: step.channel, seq: step.seq, hash: step.hash, status },
-  ),
+const inserted = (plan: ImportPlan, status: "inserted" | "stale" = "inserted"): ImportResult => ({
+  steps: plan.steps.map((step): StepOutcome => {
+    if (step.kind === "stored-snapshot") return { kind: "snapshot", hash: step.hash, status: "referenced" };
+    if (step.kind === "snapshot") return { kind: "snapshot", hash: step.hash, status: status === "stale" ? "already-present" : status };
+    return { kind: "channel", channel: step.channel, seq: step.seq, hash: step.hash, status };
+  }),
 });
 
 async function run(options: {
@@ -163,10 +163,22 @@ describe("runImportCommand", () => {
     expect(db.ended()).toBe(1);
   });
 
-  it("lets a channel name a snapshot that is already stored", async () => {
-    const { code, plans } = await run({ source: sourceOf(CHANNEL), db: { hashes: [SNAPSHOT_HASH] } });
+  it("hands the source the stored snapshots and plans one it left out by reference", async () => {
+    const seen: unknown[] = [];
+    const source: ReleaseSource = {
+      list: async (known) => {
+        seen.push(known);
+        return [CHANNEL];
+      },
+    };
+    const { code, summary, plans } = await run({ source, db: { hashes: [SNAPSHOT_HASH] } });
     expect(code).toBe(EXIT_OK);
-    expect(plans[0]?.steps.map((step) => step.kind)).toEqual(["channel"]);
+    expect(seen).toEqual([{ snapshots: new Set([SNAPSHOT_HASH]) }]);
+    expect(plans[0]?.steps.map((step) => step.kind)).toEqual(["stored-snapshot", "channel"]);
+    expect(summary.steps).toEqual([
+      { kind: "snapshot", hash: SNAPSHOT_HASH, status: "referenced" },
+      { kind: "channel", channel: "stable", seq: 5, hash: SNAPSHOT_HASH, status: "inserted" },
+    ]);
   });
 
   it("fails a stale channel step, after the transaction", async () => {

@@ -56,6 +56,8 @@ export {
   ImportPlanError,
   type ImportSnapshot,
   type ImportStep,
+  type ImportStoredSnapshot,
+  type KnownSnapshots,
   planImport,
   type ReleaseAsset,
   type ReleaseSource,

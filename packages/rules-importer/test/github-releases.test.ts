@@ -25,6 +25,9 @@ const RELEASES = (await readFile(join(FIXTURES, "gh-api-releases.jsonl"), "utf8"
   .map((line) => JSON.parse(line) as Record<string, unknown>);
 /** gh's --jq output: one compact JSON line per Release. */
 const lines = (values: unknown[]): string => values.map((value) => `${JSON.stringify(value)}\n`).join("");
+const NONE = { snapshots: new Set<string>() };
+const SNAPSHOT_HASH = SNAPSHOT_TAG.slice("rules-snapshot-".length);
+const STORED = { snapshots: new Set([SNAPSHOT_HASH]) };
 const bytesOf = async (tag: string): Promise<Uint8Array> => new Uint8Array(await readFile(join(FIXTURES, `${tag}.json`)));
 
 interface Setup {
@@ -53,7 +56,7 @@ const firstAsset = (release: Record<string, unknown>) => (release.assets as Reco
 
 async function refusal(options: Setup): Promise<string> {
   const { source, tmpRoot } = await setup(options);
-  const error = await source.list().then(
+  const error = await source.list(NONE).then(
     () => new Error("list resolved"),
     (e: unknown) => e as Error,
   );
@@ -66,7 +69,7 @@ async function refusal(options: Setup): Promise<string> {
 describe("GitHubReleaseSource", () => {
   it("lists every rules Release with its tag's commit and the attested bytes", async () => {
     const { source, calls, tmpRoot } = await setup();
-    const assets = await source.list();
+    const assets = await source.list(NONE);
     expect(assets).toEqual([
       { tag: SNAPSHOT_TAG, name: `${SNAPSHOT_TAG}.json`, commit: SNAPSHOT_COMMIT, bytes: await bytesOf(SNAPSHOT_TAG) },
       { tag: CHANNEL_TAG, name: `${CHANNEL_TAG}.json`, commit: CHANNEL_COMMIT, bytes: await bytesOf(CHANNEL_TAG) },
@@ -90,11 +93,70 @@ describe("GitHubReleaseSource", () => {
 
   it("feeds the planner a valid release set", async () => {
     const { source } = await setup();
-    const plan = await planImport(source, { snapshots: new Set() });
-    expect(plan.steps.map((step) => [step.kind, step.source_commit])).toEqual([
+    const plan = await planImport(source, NONE);
+    expect(plan.steps.map((step) => [step.kind, "source_commit" in step ? step.source_commit : undefined])).toEqual([
       ["snapshot", SNAPSHOT_COMMIT],
       ["channel", CHANNEL_COMMIT],
     ]);
+  });
+
+  it("neither downloads nor attests a snapshot the store holds, nor resolves its tag", async () => {
+    const { source, calls } = await setup();
+    expect(await source.list(STORED)).toEqual([
+      { tag: CHANNEL_TAG, name: `${CHANNEL_TAG}.json`, commit: CHANNEL_COMMIT, bytes: await bytesOf(CHANNEL_TAG) },
+    ]);
+    expect(calls.map((args) => args.slice(0, 2).join(" "))).toEqual([
+      "api --paginate",
+      `api repos/piglor/areneon/git/ref/tags/${CHANNEL_TAG}`,
+      "release download",
+      "attestation verify",
+    ]);
+    expect(calls.flat().join(" ")).not.toContain(SNAPSHOT_TAG);
+  });
+
+  it("plans a stored snapshot by reference when the source left it out", async () => {
+    const { source } = await setup();
+    const plan = await planImport(source, STORED);
+    expect(plan.steps.map((step) => [step.kind, step.hash])).toEqual([
+      ["stored-snapshot", SNAPSHOT_HASH],
+      ["channel", SNAPSHOT_HASH],
+    ]);
+  });
+
+  it("downloads a snapshot the store does not hold", async () => {
+    const { source } = await setup();
+    const other = { snapshots: new Set(["0".repeat(64)]) };
+    expect((await source.list(other)).map((asset) => asset.tag)).toEqual([SNAPSHOT_TAG, CHANNEL_TAG]);
+  });
+
+  it("skips a stored snapshot GitHub reports no digest for", async () => {
+    const { source, calls } = await setup({ gh: { releases: releases(0, (r) => ({ ...r, assets: [{ ...firstAsset(r), digest: null }] })) } });
+    expect((await source.list(STORED)).map((asset) => asset.tag)).toEqual([CHANNEL_TAG]);
+    expect(calls.flat().join(" ")).not.toContain(SNAPSHOT_TAG);
+  });
+
+  it("still downloads another asset of a stored snapshot's Release", async () => {
+    const extra = { name: "notes.json", state: "uploaded", digest: null };
+    const { source, calls } = await setup({ gh: { releases: releases(0, (r) => ({ ...r, assets: [firstAsset(r), extra] })) } });
+    // The stand-in gh serves no such file, so the download of it is what fails.
+    await expect(source.list(STORED)).rejects.toThrow("gh release download exited 1: no assets match");
+    expect(calls.map((args) => args.slice(0, 2).join(" "))).toEqual([
+      "api --paginate",
+      `api repos/piglor/areneon/git/ref/tags/${SNAPSHOT_TAG}`,
+      "release download",
+    ]);
+    expect(calls[2]?.[6]).toBe("notes.json");
+  });
+
+  it("refuses a stored snapshot whose Release asset GitHub reports with another digest, without downloading", async () => {
+    const digest = `sha256:${"0".repeat(64)}`;
+    const gh = { releases: releases(0, (r) => ({ ...r, assets: [{ ...firstAsset(r), digest }] })) };
+    const { source, calls, tmpRoot } = await setup({ gh });
+    await expect(source.list(STORED)).rejects.toThrow(
+      `${SNAPSHOT_TAG}/${SNAPSHOT_TAG}.json: GitHub reports sha256 ${"0".repeat(64)}, not the stored ${SNAPSHOT_HASH}`,
+    );
+    expect(calls.map((args) => args[0])).toEqual(["api"]);
+    expect(await readdir(tmpRoot)).toEqual([]);
   });
 
   it("imports only the bytes the verifier returns, never the downloaded file", async () => {
@@ -103,7 +165,7 @@ describe("GitHubReleaseSource", () => {
     // Without GitHub's digest only the attestation binds the bytes.
     const gh = { releases: lines(RELEASES.map((r) => ({ ...r, assets: [{ ...firstAsset(r), digest: null }] }))) };
     const { source } = await setup({ gh, verifier });
-    expect((await source.list()).map((asset) => asset.bytes)).toEqual([attested, attested]);
+    expect((await source.list(NONE)).map((asset) => asset.bytes)).toEqual([attested, attested]);
   });
 
   it("refuses attested bytes whose sha256 is not the digest GitHub reports", async () => {
@@ -114,7 +176,7 @@ describe("GitHubReleaseSource", () => {
 
   it("propagates the verifier's refusal and removes the download", async () => {
     const { source, tmpRoot } = await setup({ gh: { served: () => join(FIXTURES, "gh-verify-unsigned.stderr") } });
-    await expect(source.list()).rejects.toBeInstanceOf(AttestationError);
+    await expect(source.list(NONE)).rejects.toBeInstanceOf(AttestationError);
     expect(await readdir(tmpRoot)).toEqual([]);
   });
 
@@ -122,7 +184,7 @@ describe("GitHubReleaseSource", () => {
     const extra = [{ tag_name: "v1.0.0", draft: false, prerelease: true, assets: [] }];
     const gh = { releases: lines(extra) + releases(0, (r) => ({ ...r, draft: true })) };
     const { source } = await setup({ gh });
-    expect((await source.list()).map((asset) => asset.tag)).toEqual([CHANNEL_TAG]);
+    expect((await source.list(NONE)).map((asset) => asset.tag)).toEqual([CHANNEL_TAG]);
   });
 
   it("dereferences an annotated tag to its commit", async () => {
@@ -136,7 +198,7 @@ describe("GitHubReleaseSource", () => {
       },
     };
     const { source } = await setup({ gh });
-    expect((await source.list()).map((asset) => asset.commit)).toEqual([SNAPSHOT_COMMIT, CHANNEL_COMMIT]);
+    expect((await source.list(NONE)).map((asset) => asset.commit)).toEqual([SNAPSHOT_COMMIT, CHANNEL_COMMIT]);
   });
 
   it("refuses a tag chain longer than it follows", async () => {
@@ -183,15 +245,15 @@ describe("GitHubReleaseSource", () => {
 
   it("lists nothing when the repository has no Releases", async () => {
     const { source } = await setup({ gh: { releases: "" } });
-    expect(await source.list()).toEqual([]);
+    expect(await source.list(NONE)).toEqual([]);
   });
 
   it("refuses a tag ref gh prints as malformed JSON", async () => {
     const run: CommandRunner = async (_, args) =>
       args[1]?.includes("/git/ref/tags/") ? { code: 0, stdout: "{", stderr: "" } : fakeGh(args);
     const source = new GitHubReleaseSource({ verifier: new GhAttestationVerifier({ run }), run });
-    await expect(source.list()).rejects.toThrow("gh api repos/piglor/areneon/git/ref/tags/");
-    await expect(source.list()).rejects.toThrow("printed malformed JSON");
+    await expect(source.list(NONE)).rejects.toThrow("gh api repos/piglor/areneon/git/ref/tags/");
+    await expect(source.list(NONE)).rejects.toThrow("printed malformed JSON");
   });
 
   it("refuses when gh cannot be run", async () => {
@@ -199,7 +261,7 @@ describe("GitHubReleaseSource", () => {
       throw new Error("spawn gh ENOENT");
     };
     const source = new GitHubReleaseSource({ verifier: new GhAttestationVerifier({ run }), run, gh: "gh" });
-    await expect(source.list()).rejects.toThrow("could not run gh api: Error: spawn gh ENOENT");
+    await expect(source.list(NONE)).rejects.toThrow("could not run gh api: Error: spawn gh ENOENT");
   });
 
   it("defaults to gh on PATH and the rules-publish repository", async () => {
@@ -209,7 +271,7 @@ describe("GitHubReleaseSource", () => {
       return { code: 1, stdout: "", stderr: "offline" };
     };
     const source = new GitHubReleaseSource({ verifier: new GhAttestationVerifier({ run }), run });
-    await expect(source.list()).rejects.toThrow("gh api --paginate exited 1: offline");
+    await expect(source.list(NONE)).rejects.toThrow("gh api --paginate exited 1: offline");
     expect(seen).toEqual(["gh", "api", "--paginate", "--jq", RELEASES_JQ, "repos/piglor/areneon/releases?per_page=100"]);
   });
 });

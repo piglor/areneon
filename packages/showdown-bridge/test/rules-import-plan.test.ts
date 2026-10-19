@@ -83,9 +83,51 @@ describe("planImport", () => {
     expect(await plan([])).toEqual({ steps: [] });
   });
 
-  it("allows a channel naming a snapshot that is already imported, not released", async () => {
-    const { steps } = await plan([channelAsset(5, old, COMMIT)], { snapshots: new Set([old]) });
-    expect(steps.map((step) => step.kind)).toEqual(["channel"]);
+  it("plans a stored snapshot a channel names but the source left out by reference, once", async () => {
+    const known = { snapshots: new Set([old, own]) };
+    const { steps } = await plan([channelAsset(5, old, COMMIT), channelAsset(6, old, LATER)], known);
+    expect(steps.map((step) => [step.kind, step.hash])).toEqual([
+      ["stored-snapshot", old],
+      ["channel", old],
+      ["channel", old],
+    ]);
+    expect(steps[0]).toEqual({ kind: "stored-snapshot", hash: old });
+  });
+
+  it("orders stored-snapshot and snapshot steps together by hash", async () => {
+    const [low, high] = [own, old].sort() as [string, string];
+    const lowAsset = low === own ? snapshotAsset(snapshot) : snapshotAsset(older);
+    const { steps } = await plan([channelAsset(5, high, COMMIT), lowAsset], { snapshots: new Set([high]) });
+    expect(steps.map((step) => [step.kind, step.hash])).toEqual([
+      ["snapshot", low],
+      ["stored-snapshot", high],
+      ["channel", high],
+    ]);
+    const reversed = await plan([lowAsset, channelAsset(5, low, COMMIT), channelAsset(6, high, LATER)], {
+      snapshots: new Set([high]),
+    });
+    expect(reversed.steps.map((step) => step.kind)).toEqual(["snapshot", "stored-snapshot", "channel", "channel"]);
+  });
+
+  it("still plans and checks a stored snapshot the source lists, not by reference", async () => {
+    const known = { snapshots: new Set([own]) };
+    const { steps } = await plan([snapshotAsset(snapshot), channelAsset(5, own, COMMIT)], known);
+    expect(steps.map((step) => step.kind)).toEqual(["snapshot", "channel"]);
+    const real = snapshotAsset(snapshot);
+    await refuses([{ ...real, bytes: snapshotAsset(older).bytes }], /sha256 of its bytes is not/, known);
+  });
+
+  it("passes the stored snapshots to the source", async () => {
+    const known = { snapshots: new Set([own]) };
+    const seen: unknown[] = [];
+    const recording: ReleaseSource = {
+      list: async (given) => {
+        seen.push(given);
+        return [];
+      },
+    };
+    await planImport(recording, known);
+    expect(seen).toEqual([known]);
   });
 
   it("refuses a channel naming a snapshot neither released nor imported", async () => {

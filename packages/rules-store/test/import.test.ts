@@ -71,6 +71,7 @@ const channel = (seq: number, hash: string, source_commit: string): ImportChanne
   source_commit,
   bytes: CHANNEL_BYTES,
 });
+const byReference = (hash: string): ImportStep => ({ kind: "stored-snapshot", hash });
 const plan = (...steps: ImportStep[]): ImportPlan => ({ steps });
 
 const RACED = plan(snapshot(realHash, realBytes), channel(1, realHash, SOURCE));
@@ -147,6 +148,32 @@ describe("applyImport", () => {
         ],
       });
       expect(await stored(client)).toEqual(after);
+    });
+  });
+
+  it("checks a snapshot planned by reference against its stored row, without writing it", async () => {
+    await rolledBack(importer, async (client) => {
+      await applyImport(client, plan(snapshot(realHash, realBytes), channel(1, realHash, SOURCE)));
+      const before = await stored(client);
+      expect(
+        await applyImport(client, plan(byReference(realHash), channel(1, realHash, SOURCE), channel(2, realHash, "b".repeat(40)))),
+      ).toEqual({
+        steps: [
+          { kind: "snapshot", hash: realHash, status: "referenced" },
+          { kind: "channel", channel: "stable", seq: 1, hash: realHash, status: "already-present" },
+          { kind: "channel", channel: "stable", seq: 2, hash: realHash, status: "inserted" },
+        ],
+      });
+      expect((await stored(client)).snapshots).toEqual(before.snapshots);
+    });
+  });
+
+  it("refuses a snapshot planned by reference that is not stored, and rolls the whole plan back", async () => {
+    await rolledBack(importer, async (client) => {
+      await expect(applyImport(client, plan(snapshot(realHash, realBytes), byReference(otherHash)))).rejects.toThrow(
+        new ImportError(`snapshot ${otherHash} is planned as stored, but no stored row has that hash`),
+      );
+      expect(await stored(client)).toEqual({ snapshots: [], releases: [] });
     });
   });
 
