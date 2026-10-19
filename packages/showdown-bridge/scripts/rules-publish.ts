@@ -1,17 +1,34 @@
 // rules-publish (ADR-007 §6), run by .github/workflows/rules-publish.yml on
 // the merged main commit, after check-rules.ts:
-//   node packages/showdown-bridge/scripts/rules-publish.ts build <dir>
+//   node packages/showdown-bridge/scripts/rules-publish.ts plan <dir>
+//   node packages/showdown-bridge/scripts/rules-publish.ts verify <dir>
 //   node packages/showdown-bridge/scripts/rules-publish.ts release <dir>
-// `build` writes the artifacts still to release into <dir> (the workflow
-// attests them next); `release` plans again, refuses unless <dir> holds
-// exactly those files, and creates their Releases, snapshots first.
+// `plan` (the plan job, no environment) writes the artifacts still to release
+// and their sha256 manifest into <dir>, and sets the step output
+// `publish=true|false`. `verify` (the publish job, before attesting) checks
+// <dir> against its manifest and against the plan made again now, writes the
+// release set to <dir>/verified/ and sets `attest=true|false`. `release`
+// (after attesting) checks again, requires <dir>/verified/ to be exactly
+// that set, and creates its Releases, snapshots first.
 import { execFileSync } from "node:child_process";
-import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
 import { PINNED_SHOWDOWN_COMMIT } from "../src/engine.ts";
 import { gitAt, REPO_ROOT } from "../src/rules-history.ts";
 import { loadChannels, loadRulesSnapshot } from "../src/rules-load.ts";
-import { type Artifact, checkBuilt, type GitHubCli, isReleased, plan, publish } from "../src/rules-publish.ts";
+import {
+  type Artifact,
+  checkVerified,
+  emitOutput,
+  type GitHubCli,
+  isReleased,
+  plan,
+  publish,
+  publishOutput,
+  readPlan,
+  verifiedPath,
+  verifyPlan,
+  writePlan,
+  writeVerified,
+} from "../src/rules-publish.ts";
 import { RulesError } from "../src/rules.ts";
 
 const [mode, dir] = process.argv.slice(2);
@@ -25,7 +42,9 @@ const gh: GitHubCli = (args) => {
 };
 
 try {
-  if (!dir || (mode !== "build" && mode !== "release")) throw new RulesError("usage: rules-publish.ts build|release <dir>");
+  if (!dir || (mode !== "plan" && mode !== "verify" && mode !== "release")) {
+    throw new RulesError("usage: rules-publish.ts plan|verify|release <dir>");
+  }
   const commit = git("rev-parse", "HEAD");
   if (!commit) throw new RulesError("git could not name HEAD");
   const artifacts: Artifact[] = plan({
@@ -38,23 +57,25 @@ try {
     }),
     released: (tag) => isReleased(tag, gh),
   });
-  if (mode === "build") {
-    mkdirSync(dir, { recursive: true });
-    for (const a of artifacts) writeFileSync(join(dir, `${a.tag}.json`), a.bytes);
-    console.log(artifacts.length > 0 ? artifacts.map((a) => `built ${a.tag}`).join("\n") : "nothing to release");
+  if (mode === "plan") {
+    const output = publishOutput(writePlan(dir, commit, artifacts));
+    console.log(artifacts.length > 0 ? artifacts.map((a) => `planned ${a.tag}`).join("\n") : "nothing to release");
+    console.log(output);
+    emitOutput(output, process.env.GITHUB_OUTPUT);
   } else {
-    const names = (() => {
-      try {
-        return readdirSync(dir);
-      } catch {
-        return [];
-      }
-    })();
-    const files = new Map(names.map((name) => [name, readFileSync(join(dir, name))]));
-    const problems = checkBuilt(artifacts, files);
-    if (problems.length > 0) throw new RulesError(`${dir} is not what this commit plans:\n- ${problems.join("\n- ")}`);
-    const created = publish(artifacts, (a) => join(dir, `${a.tag}.json`), gh);
-    console.log(created.length > 0 ? created.map((t) => `released ${t}`).join("\n") : "nothing new to release");
+    const { manifest, files } = readPlan(dir);
+    const { release, skipped } = verifyPlan(manifest, commit, files, artifacts);
+    for (const tag of skipped) console.log(`skipped ${tag}: released meanwhile`);
+    if (mode === "verify") {
+      const output = writeVerified(dir, release);
+      console.log(release.length > 0 ? release.map((a) => `verified ${a.tag}`).join("\n") : "nothing left to release");
+      console.log(output);
+      emitOutput(output, process.env.GITHUB_OUTPUT);
+    } else {
+      checkVerified(dir, release);
+      const created = publish(release, (a) => verifiedPath(dir, a), gh);
+      console.log(created.length > 0 ? created.map((t) => `released ${t}`).join("\n") : "nothing new to release");
+    }
   }
 } catch (error) {
   if (!(error instanceof RulesError)) throw error;

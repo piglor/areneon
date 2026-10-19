@@ -24,14 +24,16 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  publish:
+  # Read-only, no environment: re-checks the merged commit and plans what is
+  # still to release. A push that changes no rules plans nothing and ends
+  # here, without asking for the rules-dev approval.
+  plan:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    environment: rules-dev
     permissions:
-      contents: write
-      id-token: write
-      attestations: write
+      contents: read
+    outputs:
+      publish: ${{ steps.plan.outputs.publish }}
     steps:
       - uses: actions/checkout@v7.0.1
         with:
@@ -51,16 +53,61 @@ jobs:
         env:
           RULES_BASE_REF: HEAD^1
         run: node packages/showdown-bridge/scripts/check-rules.ts
-      - name: build the artifacts still to release
+      - name: build the artifacts still to release, with their sha256 manifest
+        id: plan
         env:
           GH_TOKEN: ${{ github.token }}
-        run: node packages/showdown-bridge/scripts/rules-publish.ts build dist/rules-publish
-      - name: attest the artifacts
-        if: hashFiles('dist/rules-publish/*.json') != ''
+        run: node packages/showdown-bridge/scripts/rules-publish.ts plan dist/rules-publish
+      - name: hand the plan to the publish job
+        if: steps.plan.outputs.publish == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: rules-publish-plan
+          path: dist/rules-publish/
+          if-no-files-found: error
+          # Longer than the 30-day environment approval timeout.
+          retention-days: 90
+
+  # Only when the plan is non-empty: waits for the rules-dev approval, checks
+  # the plan job's files against their manifest and against the plan made
+  # again now, then attests and releases exactly the verified bytes (no rebuild).
+  publish:
+    needs: plan
+    if: github.ref == 'refs/heads/main' && needs.plan.outputs.publish == 'true'
+    runs-on: ubuntu-latest
+    environment: rules-dev
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+          # Planning again names the commit that last changed each channel.
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v6.1.0
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: rules-publish-plan
+          path: dist/rules-publish
+      - name: verify the plan job's files and keep only the release set
+        id: verify
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node packages/showdown-bridge/scripts/rules-publish.ts verify dist/rules-publish
+      - name: attest the verified artifacts
+        if: steps.verify.outputs.attest == 'true'
         uses: actions/attest-build-provenance@v4.2.2
         with:
-          subject-path: dist/rules-publish/*.json
-      - name: release the artifacts (idempotent per tag)
+          subject-path: dist/rules-publish/verified/*.json
+      - name: release the verified artifacts (idempotent per tag)
+        if: steps.verify.outputs.attest == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: node packages/showdown-bridge/scripts/rules-publish.ts release dist/rules-publish
