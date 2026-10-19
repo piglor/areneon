@@ -68,7 +68,7 @@ docker inspect <db-uuid> --format '{{json .NetworkSettings.Ports}} {{range $k, $
 | `importer` | yes | inserts published artifacts; never updates or deletes |
 | `areneon_reader` | yes | reads the active snapshot |
 
-It also creates the schema `rules`, and revokes `CONNECT` on the database from `PUBLIC`. It reads the three login passwords from environment variables with psql's `\getenv`: `RULES_MIGRATOR_PASSWORD`, `RULES_IMPORTER_PASSWORD`, `RULES_READER_PASSWORD`. A missing or blank one raises an error and stops the script before anything is created. Its role and schema work runs in one transaction, so a failure there leaves nothing half-made.
+It also creates the schema `rules`, and revokes `CONNECT` on the database from `PUBLIC`. It reads the three login passwords from environment variables with psql's `\getenv`: `RULES_MIGRATOR_PASSWORD`, `RULES_IMPORTER_PASSWORD`, `RULES_READER_PASSWORD`. A missing or blank one (empty or ASCII whitespace only) raises an error and stops the script before anything is created. psql checks for a blank one on the client, through a POSIX `sh` (dash, bash or busybox, where `printf` is a builtin), so no password is sent to the server, or into a process's arguments, except inside its own `CREATE ROLE`. Its role and schema work runs in one transaction, so a failure there leaves nothing half-made.
 
 ### 2.1 Create the secrets
 
@@ -126,7 +126,7 @@ Do not run them on a shared server account. While a one-off container runs, anyo
 
 ### 2.3 Make sure passwords will not be logged
 
-`CREATE ROLE … PASSWORD '…'` would be written to the server log in plain text if statement logging is on, or kept by a preloaded library that records statements. The bootstrap's blank-password check is one `SELECT` that holds all three passwords, so a leak there exposes all of them.
+`CREATE ROLE … PASSWORD '…'` would be written to the server log in plain text if statement logging is on, or kept by a preloaded library that records statements. Each password reaches the server only inside its own `CREATE ROLE` (psql checks for missing and blank ones on the client), so a logged statement exposes one password, not all three.
 
 On Coolify the server log is the database container's output: the resource's **Logs** view in Coolify, which is the container's Docker log (`docker logs <db-uuid>`). If a log drain is configured for the server, the log is copied there too.
 
@@ -209,7 +209,7 @@ On Coolify the server log is the database container's output: the resource's **L
       *Expected result:* each prints `0`. Optional coarse view: `docker logs <db-uuid> 2>&1 | grep -c -i -E 'password|rules_migrator|importer|areneon_reader'` also counts ordinary lines such as `password authentication failed`, so a count above 0 there is not proof of a leak.
    2. Decide whether to keep the passwords:
       - If the 2.3 step 3 check showed `panic` for this run, or the run stopped at a missing- or blank-variable message, **and** every count in step 1 is `0`, nothing was logged: you may keep the passwords.
-      - Otherwise treat **all three** as exposed (the blank-password check holds all of them in one statement): purge the log (step 3 below) and generate three new passwords to replace the Coolify secrets (2.1).
+      - Otherwise purge the log (step 3 below) and decide which passwords are exposed. If psql printed `BEGIN`, the run got past the checks and may have sent any `CREATE ROLE`: treat **all three** as exposed. If it stopped before `BEGIN`, no password left the client (no statement but its own `CREATE ROLE` carries one): treat as exposed only those whose count in step 1 is above `0`. Generate a new password for each exposed one to replace its Coolify secret (2.1).
    3. Purge the log, only if step 2 says so. First check the container's log driver:
 
       ```bash

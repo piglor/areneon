@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 .SHELLFLAGS := -euo pipefail -c
-.PHONY: setup showdown check python ts contracts contracts-update guards team-guard licences licences-selftest db-up db-down db-test
+.PHONY: setup showdown check python ts contracts contracts-update guards team-guard licences licences-selftest db-up db-down db-test db-bootstrap-test
 
 # One-time setup for a clean clone.
 setup: showdown
@@ -81,3 +81,9 @@ db-down:
 
 db-test:
 	pnpm --filter @areneon/rules-store test
+
+# db/bootstrap.sql sends no role password to the server except in its own
+# CREATE ROLE (#799). Uses its own throwaway container on a scratch Docker
+# network, with no published port, so it does not need or touch db-up's.
+db-bootstrap-test:
+	scripts/bootstrap-secrets-test.sh

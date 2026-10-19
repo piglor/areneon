@@ -5,7 +5,8 @@
 --     psql "$SUPERUSER_URL" -v ON_ERROR_STOP=1 -f db/bootstrap.sql
 --
 -- Each password comes from the environment (on Coolify: a secret per role),
--- never from the repository. A missing one stops the script (ON_ERROR_STOP).
+-- never from the repository. A missing or blank (empty or whitespace-only)
+-- one stops the script (ON_ERROR_STOP) before any password is sent to the server.
 -- `make db-up` runs it against the local container.
 
 \set ON_ERROR_STOP on
@@ -26,16 +27,27 @@
   DO $$ BEGIN RAISE EXCEPTION 'RULES_READER_PASSWORD is not set'; END $$;
 \endif
 
--- A blank secret is as bad as a missing one.
-SELECT :'migrator_password' = '' AS migrator_blank, :'importer_password' = '' AS importer_blank,
-  :'reader_password' = '' AS reader_blank \gset
-\if :migrator_blank
+-- A blank secret (empty or whitespace only) is as bad as a missing one. psql
+-- checks it on the client: each backtick pipes the environment variable,
+-- named only, from `printf` (a shell builtin) into `tr`, which drops
+-- whitespace, and `test` (a builtin) checks something is left. No password
+-- goes to the server, or into a process's arguments, except inside its own
+-- CREATE ROLE below. psql would expand `:space` in the backticks if a psql
+-- variable of that name existed; nothing defines one, and if it did, only the
+-- whitespace-only refusal would weaken.
+\set migrator_present `test -n "$(printf %s "$RULES_MIGRATOR_PASSWORD" | tr -d '[:space:]')" && echo true || echo false`
+\set importer_present `test -n "$(printf %s "$RULES_IMPORTER_PASSWORD" | tr -d '[:space:]')" && echo true || echo false`
+\set reader_present `test -n "$(printf %s "$RULES_READER_PASSWORD" | tr -d '[:space:]')" && echo true || echo false`
+\if :migrator_present
+\else
   DO $$ BEGIN RAISE EXCEPTION 'RULES_MIGRATOR_PASSWORD is empty'; END $$;
 \endif
-\if :importer_blank
+\if :importer_present
+\else
   DO $$ BEGIN RAISE EXCEPTION 'RULES_IMPORTER_PASSWORD is empty'; END $$;
 \endif
-\if :reader_blank
+\if :reader_present
+\else
   DO $$ BEGIN RAISE EXCEPTION 'RULES_READER_PASSWORD is empty'; END $$;
 \endif
 
