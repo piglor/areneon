@@ -4,10 +4,10 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { LaunchOptions, LocalServer, RuntimeCopyOptions } from "@areneon/local-server";
 import { loadEngine, loadRulesSnapshot } from "@areneon/showdown-bridge";
-import { describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { type CliDeps, runCli, USAGE } from "../src/cli.ts";
 import type { A2BattleRecord, A2BotOptions, A2SessionResult } from "../src/index.ts";
-import { FORMAT, freePort, groupAlive, TEAMS_DIR, tempDir } from "./local-battle.ts";
+import { FORMAT, freePort, groupAlive, playRecordedBattle, startLocalServer, TEAMS_DIR, tempDir } from "./local-battle.ts";
 
 const engine = loadEngine();
 const snapshot = loadRulesSnapshot(engine.commit);
@@ -155,8 +155,9 @@ describe("runCli (the A2 sparring entry point)", () => {
     });
     expect(await runCli(["--challenger", "h", "--team", TEAM], f.deps)).toBe(1);
     expect(f.files.map(([path]) => path)).toEqual(["/repo/private-data/a2/battle-ok-9-1234.json"]);
-    expect(f.err).toHaveLength(3);
-    expect(f.err[0]).toContain("not a battle room id");
+    const refusals = f.err.filter((line) => !line.includes("no Episode"));
+    expect(refusals).toHaveLength(3);
+    expect(refusals[0]).toContain("not a battle room id");
   });
 
   it("reports a record that cannot be written, and still stops the server", async () => {
@@ -183,7 +184,7 @@ describe("runCli (the A2 sparring entry point)", () => {
     expect(outside.err[0]).toContain("may hold the opponent's team sheet");
     const inside = await run(["--out", "/repo/private-data/other"]);
     expect(inside.files.map(([path]) => path)).toEqual(["/repo/private-data/other/battle-x-3-1234.json"]);
-    expect(inside.err).toEqual([]);
+    expect(inside.err.filter((line) => !line.includes("no Episode"))).toEqual([]);
   });
 
   it.each([
@@ -340,4 +341,68 @@ describe("the a2-bot process", () => {
     },
     60_000,
   );
+});
+
+describe("runCli: the bot's own Episode (ADR-009 slice f)", () => {
+  let local: Awaited<ReturnType<typeof startLocalServer>>;
+  let real: A2BattleRecord;
+  beforeAll(async () => {
+    local = await startLocalServer();
+    ({ mine: real } = await playRecordedBattle(local));
+  }, 90_000);
+  afterAll(async () => {
+    await local?.stop();
+  });
+
+  const run = (record: A2BattleRecord, overrides: Partial<CliDeps> = {}, extra: string[] = []) => {
+    const f = fake({ runBot: async (options) => (options.onBattle?.(record), { battles: [record] }), ...overrides });
+    return runCli(["--challenger", "h", "--team", TEAM, ...extra], f.deps).then((code) => ({ f, code }));
+  };
+
+  it("stores a finished battle as a private sparring Episode beside its record, under private-data only", async () => {
+    const { f, code } = await run(real, {}, ["--data-class", "synthetic", "--out", "/elsewhere"]);
+    expect(code).toBe(0);
+    expect(f.err).toEqual([]);
+    const [record, episode] = f.files;
+    expect(record?.[0]).toBe(`/elsewhere/${real.room}-1234.json`);
+    expect(episode?.[0]).toBe(`/repo/private-data/a2/${real.room}-1234.episode.json`);
+    expect(episode?.[2]).toBe(0o600);
+    expect(f.dirs).toContainEqual(["/repo/private-data/a2", 0o700]);
+    expect(episode?.[1]).toMatchObject({
+      data_class: "private",
+      rights: "owner-private",
+      player: real.player,
+      provenance: {
+        runtime: "A2",
+        behaviour_policy_id: "actor-rule@a2",
+        collection: { kind: "sparring", session_id: "a2-abc123" },
+      },
+    });
+    expect(Object.keys(episode?.[1] ?? {}).sort()).toEqual(
+      ["channel", "data_class", "decisions", "player", "provenance", "result", "rights", "schema_version", "team"],
+    );
+  });
+
+  it("reports a battle that cannot be an Episode and goes on: its record is stored all the same", async () => {
+    const { f, code } = await run({ ...real, defect: true });
+    expect(code).toBe(0);
+    expect(f.files.map(([path]) => path)).toEqual([`/repo/private-data/a2/${real.room}-1234.json`]);
+    expect(f.err).toEqual([`${real.room}: no Episode: the battle had a defect: the engine refused a non-pending candidate`]);
+  });
+
+  it("fails the run when the Episode cannot be written", async () => {
+    const { f, code } = await run(real, {
+      writeFile: (path) => {
+        if (path.endsWith(".episode.json")) throw new Error("disk full");
+      },
+    });
+    expect(code).toBe(1);
+    expect(f.err).toEqual([`episode ${real.room} not stored: "Error: disk full"`]);
+    const text = await run(real, {
+      writeFile: (path) => {
+        if (path.endsWith(".episode.json")) throw "no space";
+      },
+    });
+    expect(text.f.err).toEqual([`episode ${real.room} not stored: "no space"`]);
+  });
 });

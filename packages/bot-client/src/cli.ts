@@ -1,7 +1,15 @@
 import { isAbsolute, join, relative, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import type { LocalServer, LaunchOptions, RuntimeCopy, RuntimeCopyOptions } from "@areneon/local-server";
-import { type Engine, importPaste, type RulesSnapshot } from "@areneon/showdown-bridge";
+import {
+  type Engine,
+  EpisodeError,
+  importPaste,
+  resolveFormat,
+  type RulesSnapshot,
+  stampTeam,
+} from "@areneon/showdown-bridge";
+import { a2Episode, A2EpisodeError, type A2EpisodeOptions, timerRulesOf } from "./a2-episode.ts";
 import type { A2BattleRecord, A2BotOptions, A2SessionResult, SessionLog } from "./session.ts";
 
 /** What the CLI runs on; `scripts/a2-bot.ts` wires the real ones. */
@@ -38,7 +46,9 @@ The bot accepts a Bo1 challenge from NAME only. Ctrl-C stops the bot and the ser
 
 Each battle, finished or not, is stored as one JSON record (the bot's own
 channel and decisions) in --out, default private-data/a2 (mode 0700, files
-0600). An --out inside the checkout is refused unless --data-class is
+0600). A battle that finished cleanly is also stored as the bot's own Episode
+(<room>-<time>.episode.json). A sparring Episode is always private, so it goes
+to private-data/a2, whatever --out says. An --out inside the checkout is refused unless --data-class is
 synthetic. A record of a battle that ended in an Open Team Sheets failure
 (ots_failure), a forfeited decline, or a fatal error may hold the human's
 accepted team sheet, so it is only ever written under private-data/, whatever
@@ -47,6 +57,14 @@ accepted team sheet, so it is only ever written under private-data/, whatever
 const DATA_CLASSES: readonly string[] = ["private", "synthetic"];
 /** A Showdown battle room id; the only shape of `record.room` that may go into a file name. */
 const BATTLE_ROOM = /^battle-[a-z0-9-]+$/;
+
+/** The policy that plays the sparring bot's side: the shared actor rule (ADR-005 §1). */
+export const SPARRING_POLICY_ID = "actor-rule@a2";
+/**
+ * The pinned server's timer tick in seconds (`TICK_TIME` in server/room-battle.ts):
+ * a server constant, not a format rule, so the rule table does not hold it.
+ */
+export const SERVER_TIMER_TICK = 5;
 
 const DIR_MODE = 0o700;
 const FILE_MODE = 0o600;
@@ -124,6 +142,36 @@ export async function runCli(argv: string[], deps: CliDeps): Promise<number> {
     controller.abort();
   });
   const stored = { rooms: new Set<string>(), failed: false };
+  /** What the Episode writer needs, known once the team is read and the server is up. */
+  let episodeBase: Omit<A2EpisodeOptions, "collection"> | undefined;
+  let sessionId = "";
+  const episodes: Promise<void>[] = [];
+  /**
+   * The bot's own Episode of a battle that finished cleanly (ADR-009 slice f):
+   * a sparring battle against a human, so private whatever the bot's team is,
+   * and stored under private-data/ only. A battle that cannot be an Episode
+   * (unfinished, a fatal end, a rejoin...) is reported and skipped: its record
+   * is stored all the same. A write failure fails the run.
+   */
+  const storeEpisode = async (record: A2BattleRecord): Promise<void> => {
+    try {
+      const base = episodeBase as NonNullable<typeof episodeBase>;
+      const episode = await a2Episode(record, { ...base, collection: { kind: "sparring", session_id: sessionId } });
+      deps.makeDir(deps.defaultOutDir, DIR_MODE);
+      deps.writeFile(
+        join(deps.defaultOutDir, `${record.room}-${deps.now()}.episode.json`),
+        `${JSON.stringify(episode, null, 2)}\n`,
+        FILE_MODE,
+      );
+    } catch (error) {
+      if (error instanceof A2EpisodeError || error instanceof EpisodeError) {
+        deps.stderr(`${record.room}: no Episode: ${error.message}`);
+        return;
+      }
+      stored.failed = true;
+      deps.stderr(`episode ${record.room} not stored: ${json(error instanceof Error ? error : String(error))}`);
+    }
+  };
   /**
    * Stores one record, once per room. The room id is checked before it goes
    * into a path. A record with an `ots_failure`, an `ots` of `forfeited` or a `fatal` may hold the human's accepted
@@ -151,15 +199,27 @@ export async function runCli(argv: string[], deps: CliDeps): Promise<number> {
     } catch (error) {
       stored.failed = true;
       deps.stderr(`record ${record.room} not stored: ${json(error instanceof Error ? error : String(error))}`);
+      return;
     }
+    episodes.push(storeEpisode(record));
   };
   let server: LocalServer | undefined;
   try {
     const team = importPaste(deps.engine, deps.readFile(teamPath as string));
+    // No synthetic proof is needed: a sparring Episode is private, and an unproven team is `private`.
+    episodeBase = {
+      // A copy: the session's validator edits its team in place.
+      team: stampTeam(structuredClone(team) as Parameters<typeof stampTeam>[0], new Set()),
+      known_synthetic: new Set(),
+      manifest: resolveFormat(deps.engine, format as string, deps.snapshot).manifest,
+      timer_rules: timerRulesOf(deps.engine, format as string, SERVER_TIMER_TICK),
+      behaviour_policy_id: SPARRING_POLICY_ID,
+    };
     const root = values["runtime-root"];
     const copy = deps.createRuntimeCopy(root === undefined ? {} : { runtimeRoot: root });
     server = await deps.launch({ dir: copy.dir, port });
     const name = `Areneon-bot-${server.session.bot_name_suffix}`;
+    sessionId = `a2-${server.session.bot_name_suffix}`;
     const url = `ws://127.0.0.1:${port}/showdown/websocket`;
     deps.stdout(
       json({ event: "ready", client: server.url, url, bot: name, challenger, format, server_pid: server.session.pid }),
@@ -180,6 +240,7 @@ export async function runCli(argv: string[], deps: CliDeps): Promise<number> {
     });
     // Battles that did not end (a stop) or whose `onBattle` did not run are stored now.
     for (const record of result.battles) store(record);
+    await Promise.all(episodes);
     deps.stdout(json({ event: "stopped", battles: result.battles.length }));
     return stored.failed ? 1 : 0;
   } catch (error) {
@@ -187,6 +248,7 @@ export async function runCli(argv: string[], deps: CliDeps): Promise<number> {
     return 1;
   } finally {
     off();
+    await Promise.allSettled(episodes);
     await server?.stop();
   }
 }

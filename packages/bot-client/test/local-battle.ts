@@ -4,7 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createRuntimeCopy, launch, type LocalServer } from "@areneon/local-server";
 import { fileURLToPath } from "node:url";
-import { importPaste, loadEngine, type PokemonSet } from "@areneon/showdown-bridge";
+import { importPaste, loadEngine, loadRulesSnapshot, type PokemonSet } from "@areneon/showdown-bridge";
+import { type A2BattleRecord, connectWebSocket, runA2Bot } from "../src/index.ts";
 
 /** Helpers for the tests that run the pinned server on 127.0.0.1 (ADR-005 §4). */
 
@@ -64,4 +65,44 @@ export function groupAlive(pgid: number): boolean {
   } catch (error) {
     return (error as NodeJS.ErrnoException).code === "EPERM";
   }
+}
+
+/**
+ * One Bo1 of the two fixture teams, bot against bot on a launched server
+ * (the first plays `legal-synthetic`, the second challenges with
+ * `legal-opponent`): each bot's own record.
+ */
+export async function playRecordedBattle(local: {
+  server: LocalServer;
+  ws: string;
+}): Promise<{ mine: A2BattleRecord; theirs: A2BattleRecord }> {
+  const engine = loadEngine();
+  const snapshot = loadRulesSnapshot(engine.commit);
+  const suffix = local.server.session.bot_name_suffix;
+  // The validator edits a team in place (nicknames go): each bot gets its own copy.
+  const play = (name: string, challenger: string, team: PokemonSet[], challenge?: string) =>
+    runA2Bot({
+      engine,
+      snapshot,
+      url: local.ws,
+      name,
+      challenger,
+      format: FORMAT,
+      team: structuredClone(team),
+      data_class: "synthetic",
+      battles: 1,
+      reconnect: { attempts: 5, delayMs: 100 },
+      connect: connectWebSocket,
+      ...(challenge === undefined ? {} : { challenge }),
+    });
+  const sparring = play(`Areneon-bot-${suffix}`, `Areneon-ch-${suffix}`, fixtureTeam("legal-synthetic.txt"));
+  await new Promise((done) => setTimeout(done, 500));
+  const challenger = play(
+    `Areneon-ch-${suffix}`,
+    `Areneon-bot-${suffix}`,
+    fixtureTeam("legal-opponent.txt"),
+    `Areneon-bot-${suffix}`,
+  );
+  const [a, b] = await Promise.all([sparring, challenger]);
+  return { mine: a.battles[0] as A2BattleRecord, theirs: b.battles[0] as A2BattleRecord };
 }
