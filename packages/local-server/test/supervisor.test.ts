@@ -105,6 +105,8 @@ describe("supervise", () => {
     const pid = await h.spawned();
     writeFileSync(config.manifestPath, JSON.stringify({ pid, port: 1 }));
     expect(groupAlive(pid)).toBe(true);
+    // The server's output is forwarded to the log.
+    await expect.poll(h.log).toContain("up");
     trigger(h);
     expect(await result).toBe(0);
     expect(groupAlive(pid)).toBe(false);
@@ -124,7 +126,6 @@ describe("supervise", () => {
     });
     expect(Date.parse(spawned?.["expires_at"] as string) - Date.parse(spawned?.["started_at"] as string)).toBe(60_000);
     expect(ended).toEqual({ event: "ended", reason, pid, gone: true });
-    await expect.poll(h.log).toContain("up");
   });
 
   it("stops when the lifetime ends, and leaves another server's manifest alone", async () => {
