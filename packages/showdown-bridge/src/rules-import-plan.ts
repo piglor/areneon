@@ -107,17 +107,17 @@ function channelStep(asset: ReleaseAsset, channel: string, commit: string): Impo
 /**
  * Plan the import of every released rules artifact. Each asset must be named
  * `<tag>.json` after its own Release tag, and carry the 40-hex commit that
- * tag points at; a channel's must be the commit in its name and body.
- * A snapshot's bytes must hash to
- * the hash in its name; each artifact must be canonical JCS and valid
- * against the schemas of its own `schema_version`. A channel step must name
- * a snapshot that is in this release set or in `known.snapshots` (already
- * imported), and no channel may have two steps with one seq. Every released
- * snapshot is planned, imported or not, so the importer can check stored
- * bytes against released ones. The order is fixed by content (snapshots by
- * hash, then channel steps by channel and seq), never by listing order, so
- * the same release set always gives the same plan. Fails closed: any
- * refusal, including the source's own failure, is an `ImportPlanError`.
+ * tag points at; a channel's must be the commit in its name and body. A
+ * snapshot's bytes must hash to the hash in its name; each artifact must be
+ * canonical JCS and valid against the schemas of its own `schema_version`.
+ * A channel step must name a snapshot that is in this release set or in
+ * `known.snapshots` (already imported), and no channel may have two steps
+ * with one seq. Every released snapshot is planned, imported or not, so the
+ * importer can check stored bytes against released ones. The order is fixed
+ * by content (snapshots by hash, then channel steps by channel and seq),
+ * never by listing order, so the same release set always gives the same
+ * plan. Fails closed: any refusal, including the source's own failure, is an
+ * `ImportPlanError`.
  */
 export async function planImport(
   source: ReleaseSource,
