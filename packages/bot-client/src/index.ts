@@ -55,3 +55,13 @@ export {
   type OtsFailure,
   type OtsStatus,
 } from "./ots.ts";
+export {
+  type A2BattleRecord,
+  type A2BotOptions,
+  type A2SessionResult,
+  type BattleResult,
+  type DecisionRecord,
+  runA2Bot,
+  SessionError,
+  type SessionLog,
+} from "./session.ts";

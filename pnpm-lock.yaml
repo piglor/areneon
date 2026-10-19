@@ -32,6 +32,9 @@ importers:
 
   packages/bot-client:
     dependencies:
+      '@areneon/local-server':
+        specifier: workspace:*
+        version: link:../local-server
       '@areneon/showdown-bridge':
         specifier: workspace:*
         version: link:../showdown-bridge
