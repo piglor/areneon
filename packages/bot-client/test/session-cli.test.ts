@@ -12,7 +12,7 @@ import { FORMAT, freePort, groupAlive, TEAMS_DIR, tempDir } from "./local-battle
 const engine = loadEngine();
 const snapshot = loadRulesSnapshot(engine.commit);
 const TEAM = join(TEAMS_DIR, "legal-synthetic.txt");
-const RECORD = { room: "battle-x-1", ots_failure: null } as A2BattleRecord;
+const RECORD = { room: "battle-x-1", ots: "idle", ots_failure: null, fatal: null } as A2BattleRecord;
 const REPO = "/repo";
 const PRIVATE = "/repo/private-data";
 
@@ -134,7 +134,7 @@ describe("runCli (the A2 sparring entry point)", () => {
   });
 
   it("also stores the battles the session ends without onBattle (unfinished), once each", async () => {
-    const unfinished = { room: "battle-x-2", result: "unfinished", ots_failure: null } as A2BattleRecord;
+    const unfinished = { room: "battle-x-2", result: "unfinished", ots: "idle", ots_failure: null, fatal: null } as A2BattleRecord;
     const f = fake({
       runBot: async (options) => {
         options.onBattle?.(RECORD);
@@ -149,7 +149,7 @@ describe("runCli (the A2 sparring entry point)", () => {
   });
 
   it("refuses a record whose room is not a battle room id, and fails the run", async () => {
-    const bad = (room: string) => ({ room, ots_failure: null }) as A2BattleRecord;
+    const bad = (room: string) => ({ room, ots: "idle", ots_failure: null, fatal: null }) as A2BattleRecord;
     const f = fake({
       runBot: async () => ({ battles: [bad("../../etc/x"), bad("battle-Up"), bad("lobby"), bad("battle-ok-9")] }),
     });
@@ -171,7 +171,7 @@ describe("runCli (the A2 sparring entry point)", () => {
   });
 
   it("writes an ots_failure record only under private-data, whatever --out says", async () => {
-    const failed = { room: "battle-x-3", ots_failure: { reason: "showteam", detail: "|showteam|p2" } } as A2BattleRecord;
+    const failed = { room: "battle-x-3", ots: "forfeited", fatal: null, ots_failure: { reason: "showteam", detail: "|showteam|p2" } } as A2BattleRecord;
     const run = (extra: string[]) => {
       const f = fake({ runBot: async () => ({ battles: [failed] }) });
       return runCli(["--challenger", "h", "--team", TEAM, "--data-class", "synthetic", ...extra], f.deps).then(
@@ -184,6 +184,18 @@ describe("runCli (the A2 sparring entry point)", () => {
     const inside = await run(["--out", "/repo/private-data/other"]);
     expect(inside.files.map(([path]) => path)).toEqual(["/repo/private-data/other/battle-x-3-1234.json"]);
     expect(inside.err).toEqual([]);
+  });
+
+  it.each([
+    ["an ots_failure", { ots: "forfeited", ots_failure: { reason: "refused", detail: "x" }, fatal: null }],
+    ["a forfeited decline whose failure was not recorded", { ots: "forfeited", ots_failure: null, fatal: null }],
+    ["a fatal error", { ots: "idle", ots_failure: null, fatal: { error: "SessionError", channel_complete: true } }],
+  ])("writes the record of %s under private-data only", async (_name, fields) => {
+    const record = { room: "battle-x-7", ...fields } as A2BattleRecord;
+    const f = fake({ runBot: async () => ({ battles: [record] }) });
+    await runCli(["--challenger", "h", "--team", TEAM, "--data-class", "synthetic", "--out", "/elsewhere"], f.deps);
+    expect(f.files.map(([path]) => path)).toEqual(["/repo/private-data/a2/battle-x-7-1234.json"]);
+    expect(f.err[0]).toContain("may hold the opponent's team sheet");
   });
 
   it("refuses an --out inside the checkout unless the data class is synthetic or it is under private-data", async () => {
@@ -225,6 +237,26 @@ describe("runCli (the A2 sparring entry point)", () => {
     const f = fake({ runBot: () => Promise.reject(new RangeError("boom")) });
     expect(await runCli(["--challenger", "h", "--team", TEAM], f.deps)).toBe(1);
     expect(f.err).toEqual(['a2-bot failed: "RangeError: boom"']);
+    expect(f.calls.slice(-2)).toEqual(["untrap", "stop"]);
+  });
+
+  it("stores the records of the battles a fatal error ended, then exits 1 and stops the server", async () => {
+    const unfinished = { room: "battle-x-5", result: "unfinished", ots: "idle", ots_failure: null, fatal: { error: "RefusalError" } };
+    const failed = { room: "battle-x-6", ots: "forfeited", fatal: null, ots_failure: { reason: "showteam", detail: "|showteam|p2" } } as A2BattleRecord;
+    const f = fake({
+      runBot: (options) => {
+        options.onBattle?.(unfinished as unknown as A2BattleRecord);
+        options.onBattle?.(failed);
+        return Promise.reject(new RangeError("boom"));
+      },
+    });
+    expect(await runCli(["--challenger", "h", "--team", TEAM, "--out", "/srv/records"], f.deps)).toBe(1);
+    expect(f.files.map(([path]) => path)).toEqual([
+      "/repo/private-data/a2/battle-x-5-1234.json",
+      "/repo/private-data/a2/battle-x-6-1234.json",
+    ]);
+    expect(f.files[0]?.[2]).toBe(0o600);
+    expect(f.err.at(-1)).toBe('a2-bot failed: "RangeError: boom"');
     expect(f.calls.slice(-2)).toEqual(["untrap", "stop"]);
   });
 

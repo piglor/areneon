@@ -77,9 +77,7 @@ Closed Team Sheet is the point of this format: Areneon plays it with the sheets 
 
 The server runs with `forcetimer` on and the format's VGC Timer, and the bot also sends `/timer on` when it joins a battle room. You cannot switch it off for the bot: the timer stays on while the bot asks for it, even if you stop yours.
 
-The bot reads its own timer state after every request and gives each decision a time budget (60 s at most for Team Preview, 20 s at most for a battle decision, with a 3 s safety margin; `A2_BUDGET_CONFIG` in `src/deadline.ts`). Its policy today is the shared first-legal-choice rule, so it answers at once. A request with no timer state (for example one re-sent after a reconnect) gets a zero budget and is answered at once.
-
-Not yet: a watchdog that sends a fallback choice if the policy overruns its deadline (#761, open). The bot does not wait on a clock today because it never computes anything slow.
+The bot reads its own timer state after every request and gives each decision a time budget (60 s at most for Team Preview, 20 s at most for a battle decision, with a 3 s safety margin; `A2_BUDGET_CONFIG` in `src/deadline.ts`). Its policy today is the shared first-legal-choice rule, so it answers at once. A request with no timer state (for example one re-sent after a reconnect) gets a zero budget and is answered at once; a request whose snapshot does not come within a second is answered by the deadline watchdog (see section 9 for the Open Team Sheets decline).
 
 ## 6. Windows client with the server in WSL2
 
@@ -89,7 +87,7 @@ The server listens on `127.0.0.1` inside WSL2 and the launcher cannot bind anoth
 
 Each battle, finished or not, is stored as one JSON record: the bot's own player channel (what it was allowed to see) and its decisions with their deadlines. Records go to `private-data/a2` (directory mode 0700, files 0600, named `<battle-room>-<epoch ms>.json`). `private-data/` is gitignored.
 
-**A sparring record is private.** It holds your play and your challenger name, and, after an `ots_failure`, possibly your accepted team sheet. Never commit one or paste it into an issue. The program refuses an `--out` inside the checkout unless `--data-class synthetic`, and an `ots_failure` record is only ever written under `private-data/`, whatever `--out` says.
+**A sparring record is private.** It holds your play and your challenger name, and, after an `ots_failure`, possibly your accepted team sheet. Never commit one or paste it into an issue. The program refuses an `--out` inside the checkout unless `--data-class synthetic`, and a record with an `ots_failure`, a forfeited decline (`ots: forfeited`) or a fatal end (`fatal` set) is only ever written under `private-data/`, whatever `--out` says. The record itself is not stripped of a `|showteam|` line: the channel is kept as received, and this routing is the guard.
 
 ## 8. Stopping, and leftovers
 
@@ -108,8 +106,8 @@ If a run was killed hard (for example with SIGKILL) and left a server behind:
 
 - One battle at a time; one challenger per run.
 - Reconnect: if the bot's connection to the server closes, it reconnects at once, then every 200 ms, up to 5 times in a row without a login in between, and the server puts it back in its battle. If it never gets back, the run fails with `no connection after 5 attempts`. The server is expected to outlive the bot's connection; it is not restarted.
-- Not yet: a rejoin during Team Preview does not yet get its own Open Team Sheets budget (#807, open). The same ticket covers records of battles that were running when a fatal error ended the run: they are not stored yet.
-- Not yet: the deadline watchdog (#761, open).
+- Rejoin during Team Preview. If the connection drops after the Team Preview request but before its timer snapshot, the server does not send the snapshot again, so the re-sent request has no timer state and a decision budget of 0. The Open Team Sheets decline does not take that budget: it waits for the bot's own confirmation line for `declineWaitMs` (default 5 s) from the moment it is sent, here the receipt of the re-sent request, and the battle goes on once the line arrives. The same window applies when the watchdog answers a preview whose snapshot never came. The preview choice is still held until the confirmation line, and if the line does not come within the window the bot forfeits (`ots_failure: not_confirmed`). With a snapshot nothing changes: the window is the preview `policy_budget_ms` from the request's receipt. The 5 s is not read from the timer, which is unknown without a snapshot: it is one server tick, and the turn timer keeps running during it.
+- A fatal error (a refused choice it cannot classify, an enumerator defect, no connection after 5 attempts) forfeits the open battles, hands each unfinished battle to `onBattle` and then ends the run with exit code 1. Every such battle is stored by the usual rules (private-data only for an `ots_failure`, modes 0700/0600, room-name check). Its record has `fatal` set to the error's class name (never its message). A record can be incomplete: before the bot's first request it has no `player` and no channel, and if the channel of the connection that was open cannot be built, `fatal.channel_complete` is false and `channels` lacks that last connection.
 - The bot's only play policy is the shared first-legal-choice rule. It is a sparring partner for the pipeline, not a strong player.
 
 ### Earlier evidence (spike, predates this runtime)
