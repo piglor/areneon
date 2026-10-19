@@ -5,7 +5,10 @@ import { GOLDEN_FORMAT, GOLDEN_SEED, syntheticTeam, TEAMS_DIR } from "../src/gol
 import { importPaste, loadEngine, type PokemonSet } from "../src/index.ts";
 
 // CTS invariant (ADR-003, #676): with Open Team Sheets declined, Team
-// Preview shows the opponent's species, level and gender only. In-process,
+// Preview shows the opponent's species, level, gender and, under the
+// champions mod, the shiny flag (whether the training observation strips it
+// is open under the ADR-008 observation contract; see the `cts-invariant`
+// gap record). In-process,
 // the sheets stay closed unless someone writes `>show-openteamsheets`;
 // runBattle never does, and an actor's choice cannot (each of its lines is
 // prefixed with its own `>p1`/`>p2`).
