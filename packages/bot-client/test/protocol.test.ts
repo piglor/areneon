@@ -1,4 +1,4 @@
-import { decodeRequest, RequestDecodeError } from "@areneon/showdown-bridge";
+import { decodeRequest, playerChannel, RequestDecodeError, stripServerLines } from "@areneon/showdown-bridge";
 import { describe, expect, it } from "vitest";
 import { GLOBAL_ROOM, ProtocolReader, type RoomEvent, splitFrame } from "../src/index.ts";
 import { battle, frameIndex, sentAfter, serverFrame } from "./frames.ts";
@@ -143,6 +143,108 @@ describe("request identity across a rejoin", () => {
     const copy = reader.state(ROOM) as { open: boolean };
     copy.open = false;
     expect(reader.state(ROOM).open).toBe(true);
+  });
+});
+
+describe("request identity across a new connection (|init|battle)", () => {
+  const answered = frameIndex('|request|{"active"');
+  const before = battle.frames.slice(0, answered + 1);
+  /**
+   * The join frame the pinned server sends a rejoining player
+   * (server/rooms.ts `onConnect`: `|init|battle`, `|title|`, then the room
+   * log). The room log holds no `|request|` or `|error|`: those go to the
+   * player only (server/room-battle.ts `receive`).
+   */
+  const init = [
+    `>${ROOM}`,
+    "|init|battle",
+    "|title|p1 vs. p2",
+    ...before.flatMap((frame) =>
+      splitFrame(frame).lines.filter((line) => !line.startsWith("|request|") && !line.startsWith("|error|")),
+    ),
+  ].join("\n");
+  /**
+   * The request_seq `buildObservation` gives the last request of the
+   * channel made from `frames`, the new connection's frames: the count of
+   * `|request|` lines in it, up to and including the last.
+   */
+  const channelSeq = (frames: readonly string[]): number => {
+    const { lines } = stripServerLines(frames.flatMap((frame) => splitFrame(frame).lines));
+    const channel = playerChannel({ schema_version: 1, data_class: "synthetic", player: "p1", lines });
+    const at = channel.lines.findLastIndex((line) => line.startsWith("|request|"));
+    return channel.lines.slice(0, at + 1).filter((line) => line.startsWith("|request|")).length;
+  };
+
+  it.each(["resend_with_sentchoice", "resend_without_sentchoice"])(
+    "restarts request_seq at 1 for the request re-sent after a rejoin (%s)",
+    (name) => {
+      const reader = new ProtocolReader();
+      readAll(reader, before);
+      expect(reader.state(ROOM)).toMatchObject({ open: true, last: { request_seq: 2, rqid: 3 } });
+      expect(reader.read(init)).toContainEqual({ kind: "line", room: ROOM, line: "|init|battle" });
+      expect(reader.state(ROOM)).toEqual({ last: undefined, open: false });
+      const events = reader.read(serverFrame(name));
+      // Same rqid and request_hash as before the rejoin, but a new channel.
+      expect(events[0]).toMatchObject({ kind: "request", resend: false, request: { request_seq: 1, rqid: 3 } });
+      const seq = events[0]?.kind === "request" ? events[0].request.request_seq : undefined;
+      expect(seq).toBe(channelSeq([init, serverFrame(name)]));
+      if (name === "resend_with_sentchoice") {
+        expect(events[1]).toEqual({ kind: "sentchoice", room: ROOM, choice: sentAfter(answered) });
+      } else {
+        expect(events).toHaveLength(1);
+      }
+      expect(reader.state(ROOM).open).toBe(true);
+    },
+  );
+
+  it("keeps re-send detection within the new connection", () => {
+    const reader = new ProtocolReader();
+    readAll(reader, before);
+    reader.read(serverFrame("request_null"));
+    reader.read(init);
+    const after = [serverFrame("resend_with_sentchoice"), serverFrame("resend_without_sentchoice")];
+    const [first, again] = requests(readAll(reader, after));
+    expect(first).toMatchObject({ resend: false, request: { request_seq: 1 } });
+    expect(again).toMatchObject({ resend: true, request: { request_seq: 1 } });
+  });
+
+  it("counts on from the re-sent request as the new channel does", () => {
+    const reader = new ProtocolReader();
+    readAll(reader, before);
+    reader.read(init);
+    const resent = serverFrame("resend_with_sentchoice");
+    reader.read(resent);
+    // The battle goes on: the next request is the new channel's second.
+    const rest = battle.frames.slice(answered + 1);
+    const upTo = rest.slice(0, rest.findIndex((frame) => frame.includes("\n|request|")) + 1);
+    const [next] = requests(readAll(reader, upTo));
+    expect(next).toMatchObject({ resend: false, request: { request_seq: 2 } });
+    expect(next?.request.request_seq).toBe(channelSeq([init, resent, ...upTo]));
+  });
+
+  it("resets only the room of the |init|battle", () => {
+    const other = "battle-gen9championsvgc2026regmc-2";
+    const reader = new ProtocolReader();
+    readAll(reader, before);
+    readAll(reader, before.map((frame) => frame.replace(`>${ROOM}\n`, `>${other}\n`)));
+    reader.read(init);
+    expect(reader.state(ROOM)).toEqual({ last: undefined, open: false });
+    expect(reader.state(other)).toMatchObject({ open: true, last: { request_seq: 2 } });
+    // A chat room's |init| is not a battle's.
+    reader.read(`>${other}\n|init|chat`);
+    expect(reader.state(other).last?.request_seq).toBe(2);
+  });
+
+  it("resets nothing when the frame holding |init|battle fails to decode", () => {
+    const reader = new ProtocolReader();
+    readAll(reader, before);
+    const stateBefore = reader.state(ROOM);
+    const bad = splitFrame(serverFrame("resend_without_sentchoice")).lines[0]?.replace(
+      '"rqid":3}',
+      '"rqid":3,"extra":1}',
+    );
+    expect(() => reader.read(`>${ROOM}\n|init|battle\n${bad}`)).toThrow(RequestDecodeError);
+    expect(reader.state(ROOM)).toEqual(stateBefore);
   });
 });
 
