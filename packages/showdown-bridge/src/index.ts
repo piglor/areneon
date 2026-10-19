@@ -94,6 +94,7 @@ export {
   type RequestPhase,
 } from "./request.ts";
 export { canonicalJson, type Json, requestHash } from "./request-identity.ts";
+export { serverOnlyLine, stripServerLines } from "./server-lines.ts";
 export {
   exportPaste,
   importPaste,
