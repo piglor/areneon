@@ -177,18 +177,46 @@ describe("applyImport", () => {
     });
   });
 
-  it("refuses a stale seq and writes it nowhere, while the rest of the plan lands", async () => {
+  it("skips a stale artifact, writes it nowhere, and the new one beside it commits", async () => {
     await rolledBack(importer, async (client) => {
-      await applyImport(client, plan(snapshot(realHash, realBytes), channel(1, realHash, SOURCE)));
+      await applyImport(
+        client,
+        plan(snapshot(realHash, realBytes), channel(1, realHash, SOURCE), channel(3, realHash, "e".repeat(40))),
+      );
       const result = await applyImport(
         client,
-        plan(snapshot(otherHash, otherBytes), channel(1, otherHash, "c".repeat(40)), channel(2, otherHash, "d".repeat(40))),
+        plan(snapshot(otherHash, otherBytes), channel(2, otherHash, "c".repeat(40)), channel(4, otherHash, "d".repeat(40))),
       );
       expect(result.steps.map((s) => s.status)).toEqual(["inserted", "stale", "inserted"]);
       expect((await stored(client)).releases).toEqual([
         { channel: "stable", seq: 1, hash: realHash, source_commit: SOURCE },
-        { channel: "stable", seq: 2, hash: otherHash, source_commit: "d".repeat(40) },
+        { channel: "stable", seq: 3, hash: realHash, source_commit: "e".repeat(40) },
+        { channel: "stable", seq: 4, hash: otherHash, source_commit: "d".repeat(40) },
       ]);
+    });
+  });
+
+  it.each([
+    ["another hash", otherHash, SOURCE],
+    ["another source commit", realHash, "c".repeat(40)],
+  ])("refuses a seq a stored row holds with %s as a fork, and rolls the whole plan back", async (_, hash, commit) => {
+    await rolledBack(importer, async (client) => {
+      await applyImport(
+        client,
+        plan(snapshot(realHash, realBytes), channel(1, realHash, SOURCE), channel(2, realHash, "e".repeat(40))),
+      );
+      const before = await stored(client);
+      // A new snapshot and a new channel step land before the fork; both must roll back.
+      await expect(
+        applyImport(
+          client,
+          plan(snapshot(otherHash, otherBytes), channel(3, realHash, "d".repeat(40)), channel(1, hash, commit)),
+        ),
+      ).rejects.toThrow(
+        new ImportError("channel stable seq 1 is already stored with a different hash or source commit; the history forked"),
+      );
+      expect(await stored(client)).toEqual(before);
+      expect(before.snapshots).toHaveLength(1);
     });
   });
 

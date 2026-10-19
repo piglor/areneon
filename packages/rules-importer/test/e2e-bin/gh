@@ -3,4 +3,6 @@
 # When the e2e mounts a directory at /fake-gh-log, each call's arguments are
 # appended to /fake-gh-log/calls, one line per call.
 if [ -d /fake-gh-log ]; then printf '%s\n' "$*" >>/fake-gh-log/calls; fi
+# A file /fake-gh-log/with-stale adds the synthetic superseded channel Release.
+if [ -f /fake-gh-log/with-stale ]; then export FAKE_GH_STALE=1; fi
 exec node "$(dirname "$0")/../fake-gh-cli.ts" "$@"

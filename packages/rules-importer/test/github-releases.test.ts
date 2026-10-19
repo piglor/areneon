@@ -13,7 +13,7 @@ import {
   ReleaseSourceError,
   RELEASES_JQ,
 } from "../src/index.ts";
-import { fakeGh, type FakeGhOptions, FIXTURES, RECORDED_REFS } from "./fake-gh.ts";
+import { fakeGh, type FakeGhOptions, FIXTURES, RECORDED_REFS, WITH_STALE } from "./fake-gh.ts";
 
 const SNAPSHOT_TAG = "rules-snapshot-7c618d78d6f569e875d7e5be4863152599dc8f4207f6e10cfd5f12301a853fe8";
 const CHANNEL_TAG = "rules-channel-stable-b226c3bfe889f8cf775933b0a964a44ef6d69913";
@@ -67,6 +67,16 @@ async function refusal(options: Setup): Promise<string> {
 }
 
 describe("GitHubReleaseSource", () => {
+  it("lists the synthetic superseded channel Release too, attested by its own recording", async () => {
+    const { source } = await setup({ gh: WITH_STALE });
+    const assets = await source.list(NONE);
+    expect(assets.map((asset) => asset.name)).toEqual([
+      `${SNAPSHOT_TAG}.json`,
+      `${CHANNEL_TAG}.json`,
+      "rules-channel-stable-0123456789abcdef0123456789abcdef01234567.json",
+    ]);
+  });
+
   it("lists every rules Release with its tag's commit and the attested bytes", async () => {
     const { source, calls, tmpRoot } = await setup();
     const assets = await source.list(NONE);

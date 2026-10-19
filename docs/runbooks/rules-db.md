@@ -424,8 +424,8 @@ A timeout that is exceeded fails the statement and rolls the whole import back (
         c. plans: each artifact must be canonical JSON, match its schema and its own name, and a
            channel artifact must name a snapshot that is released or already stored;
         d. applies the plan in ONE transaction: snapshots, then channel steps with a seq above the
-           channel's current maximum. Anything refused rolls the whole plan back (a
-           `stale` channel step is not a refusal; see 4.6).
+           channel's current maximum. Anything refused rolls the whole plan back. A
+           `stale` channel step (a superseded artifact) is skipped and counted, not a refusal (4.6).
    4. Readers (areneon_reader) see the new rows; a runtime pins the snapshot hash at battle start.
 ```
 
@@ -554,13 +554,13 @@ Run the first import yourself, on the Coolify server, so you see the output and 
    *Expected result:* `exit=0` and no `inserted`: the stored snapshots are `referenced`, the channel steps `already-present`. The second run downloads only the channel artifacts.
 5. Clear the secrets: `unset DATABASE_URL GH_TOKEN`.
 
-Checked locally (not on Coolify): the same image against a throwaway Postgres with a stand-in `gh` replaying recorded releases, via `make importer-e2e`: a tampered asset is refused and nothing is written; then the import commits (`inserted`, `inserted`); then the re-run is `referenced`, `already-present` with exit 0 and downloads no snapshot.
+Checked locally (not on Coolify): the same image against a throwaway Postgres with a stand-in `gh` replaying recorded releases, via `make importer-e2e`: a tampered asset is refused and nothing is written; then the import commits (`inserted`, `inserted`); then the re-run is `referenced`, `already-present` with exit 0 and downloads no snapshot; last, with an extra superseded channel Release listed, the run reports it as `stale`, exits 0 and writes nothing.
 
 ### 4.6 The summary line and exit codes
 
 The importer prints exactly one line to stdout and exits.
 
-Success or stale channel: `{"ok":<bool>,"steps":[ … ]}`, steps in plan order (snapshots by hash, then channel steps by channel and seq). Failure: `{"ok":false,"error":"<ErrorName>: <message>"}` (the database URL and password are removed from the message).
+Success: `{"ok":true,"stale":<count of stale steps>,"steps":[ … ]}`, steps in plan order (snapshots by hash, then channel steps by channel and seq). A `stale` step stays in `steps`; it does not change `ok` or the exit code. Failure: `{"ok":false,"error":"<ErrorName>: <message>"}` (the database URL and password are removed from the message).
 
 | Step | Status | Meaning |
 |---|---|---|
@@ -569,12 +569,13 @@ Success or stale channel: `{"ok":<bool>,"steps":[ … ]}`, steps in plan order (
 | snapshot | `referenced` | The snapshot was already stored, so it was **not downloaded or attested again**; a channel step names it, and the stored row was checked to hash to its own body. No change. This is the normal status of every stored snapshot on a re-run. |
 | channel | `inserted` | New `rules_release` row (its `seq` is above the channel's maximum). |
 | channel | `already-present` | The same channel, `seq`, hash and `source_commit` are stored. No change; the normal status of every old channel artifact on a re-run. |
-| channel | `stale` | The artifact's `seq` is at or below the channel's maximum, but the stored row at that `seq` differs or does not exist. Nothing is written for it, `ok` is `false` and the exit is 1. The other steps of the same run are **not** rolled back: they commit (a partial commit). Since the stale artifact is a permanent Release listed on every run, every later run exits 1 too, until that Release is removed. |
+| channel | `stale` | The artifact's `seq` is at or below the channel's maximum and no stored row has that `seq`: a superseded artifact the channel's history moved past (for example a late `publish` approval). It is skipped as ADR-007 §6 says: never written, never overwriting anything. It is reported (the step stays in the summary and counts in `stale`), the run still commits its other steps, `ok` is `true` and the exit is 0. The Release stays listed, so every later run reports it again, still with exit 0. |
+| channel | (refused) | The artifact's `seq` is at or below the maximum and a stored row has that `seq` with another hash or `source_commit`: the channel's history forked. That is an integrity failure, not `stale`: nothing is written and the exit is 1 (`channel <channel> seq <n> is already stored with a different hash or source commit; the history forked`). |
 
 | Exit | Meaning | Examples (all checked locally) |
 |---|---|---|
-| 0 | Every step was `inserted`, `already-present` or `referenced`. | `{"ok":true,"steps":[ … ]}` |
-| 1 | Refused or stale: the plan, the Release listing, the attestation, the database, a timeout, or a `stale` step. A refused run that is not `stale` writes nothing; a `stale` run commits its other steps (see the `stale` row). | `ImportPlanError: could not list the released rules artifacts: … gh attestation verify exited 1 …`; `ImportPlanError: channel … names snapshot …, which is neither released nor imported`; a wrong database password (`error: password authentication failed for user "importer"`) or an unreachable database (`Error: connect ECONNREFUSED …`) are exit **1**, not 2. |
+| 0 | The plan committed: every step was `inserted`, `already-present`, `referenced` or `stale` (skipped). | `{"ok":true,"stale":0,"steps":[ … ]}` |
+| 1 | Refused: the plan, the Release listing, the attestation, a forked channel history, the database or a timeout. Nothing is written; the whole plan rolls back. | `ImportPlanError: could not list the released rules artifacts: … gh attestation verify exited 1 …`; `ImportPlanError: channel … names snapshot …, which is neither released nor imported`; `ImportError: channel … seq … is already stored with a different hash or source commit; the history forked`; a wrong database password (`error: password authentication failed for user "importer"`) or an unreachable database (`Error: connect ECONNREFUSED …`) are exit **1**, not 2. |
 | 2 | Configuration: the importer cannot start the import. | `ConfigError: DATABASE_URL is not set`; `ConfigError: RULES_IMPORT_LOCK_TIMEOUT_MS must be a whole number of milliseconds …`; `SessionConfigError: the database URL must not set statement_timeout …`; `SessionConfigError: the database URL is not a connection string`; `SessionConfigError: <setting> is … ms, not the requested … ms` (checked in the code, not run); `ConfigError: the rules import runs as importer, not session areneon_reader …` |
 
 What to do for each non-zero exit:
@@ -591,7 +592,7 @@ What to do for each non-zero exit:
 | 1, `ImportPlanError: could not list …` | Read the rest of the message; see 4.8 (attestation, token, GitHub). |
 | 1, `names snapshot …, which is neither released nor imported` | See 4.8 (unreleased snapshot). |
 | 1, a timeout (`canceling statement due to …`) | Raise the matching `RULES_IMPORT_*_TIMEOUT_MS`; look for another long session on the database. The import rolled back. |
-| 1, `"status":"stale"` | See 4.8 (stale channel): the other steps committed, and the exit repeats on every run until the Release is removed (an owner decision; ticket #811 will change this). |
+| 1, `the history forked` | See 4.8 (forked channel history). |
 
 ### 4.7 Verify an import
 
@@ -646,9 +647,10 @@ psql_reader() { docker run --rm -i --network <coolify-network> -e PGPASSWORD "$P
 
 ### 4.8 Failure modes and fixes
 
-Every failure below leaves the database unchanged, except a `stale` step: the run commits its other steps and exits 1 (partial commit), and every later run exits 1 again until the stale Release is removed. The importer never retries inside a run; the next run is the retry.
+Every failure below leaves the database unchanged. A `stale` step is not a failure (see "A stale channel artifact" below). The importer never retries inside a run; the next run is the retry.
 
 **A snapshot that was never released** (`channel <channel> seq <n> names snapshot <hash>, which is neither released nor imported`; exit 1).
+(The planner is deliberately coarse here: a channel naming a snapshot that is neither released nor stored fails the whole run, so a channel can never point at a snapshot the database cannot serve. This fail-closed behaviour is intended.)
 A channel artifact was released, or its Release exists, but the snapshot it names has no Release and is not stored. Causes: a cancelled or never approved `publish` run, a channel change that predates the publish workflow, or a Release that is still a draft.
 1. In GitHub, open the Actions run of `rules-publish` for the commit that last changed the snapshot's records (`source_commit` of the artifact, or the commit the channel names). If `publish` is waiting, approve `rules-dev` (3.2). If it was cancelled or failed, re-run it: re-run only the `publish` job while the plan artifact is still kept (90 days); after that, re-run the whole workflow.
 2. A snapshot older than the workflow was never released. Re-run that commit's workflow, or revert the records in a PR so a new snapshot is published (CLAUDE.md, rules store).
@@ -663,12 +665,17 @@ A channel artifact was released, or its Release exists, but the snapshot it name
 4. A network failure, `timed out after …`, or `exceeded … bytes`: run again; if it persists, check the server's outbound HTTPS.
 The same message, exit 1, appears in the local check where one asset is tampered (`make importer-e2e`): nothing is written, not even the snapshot that verified before it.
 
-**A stale channel** (`"status":"stale"` in the summary, `ok` false, exit 1).
-A channel artifact has a `seq` at or below the stored maximum and is not identical to the stored row at that `seq`. Normal changes cannot do this (CI makes `seq` rise by one per change). The usual cause is a `publish` approved late for an older commit after a newer one was already imported, or a Release edited by hand.
-1. List what the database holds: the query of 4.7 step 2, and `SELECT channel, seq, hash, source_commit FROM rules.rules_release ORDER BY channel, seq;`.
-2. List the channel Releases on GitHub and find the one whose `seq`, hash or commit differs from the row at that `seq`.
-3. The database is authoritative and append-only; do not edit it. **Owner: decide**: a superseded older Release (a late approval) can be deleted on GitHub so the importer stops listing it; a Release that disagrees with `rules/channels/<channel>.json` on `main` is a bug to record on the ticket first.
-   Until the offending Release is removed, **every** run exits 1 with the same `stale` step (partial commit, perpetual exit 1 until the Release is removed), while its other steps still commit. Deleting the Release is an **Owner: decide** choice, recorded on the ticket. This is the current behaviour: ticket #811 will change the importer so that a stale artifact is skipped and logged with exit 0 (as ADR-007 §6 says); this section will then be updated.
+**A stale channel artifact** (`"status":"stale"` in the summary, `"stale":<n>`, `ok` true, exit 0). Not a failure.
+A channel artifact has a `seq` at or below the stored maximum and no stored row has that `seq`: the channel's history already moved past it. Normal changes do not do this (CI makes `seq` rise by one per change). The usual cause is a `publish` approved late for an older commit after a newer one was already imported. The importer skips it (nothing is written for it, nothing is overwritten) and commits the rest of the plan; the Release stays listed, so every later run reports it again with exit 0. A monitor that watches the exit code therefore sees only real failures; one that wants to know about stale artifacts reads `stale` in the summary.
+1. Optional: list what the database holds (the query of 4.7 step 2, and `SELECT channel, seq, hash, source_commit FROM rules.rules_release ORDER BY channel, seq;`) and find the superseded Release on GitHub.
+2. Nothing has to be done. Deleting the superseded Release on GitHub, so the importer stops listing it, is optional housekeeping and an **Owner: decide** choice. The database is authoritative and append-only; do not edit it.
+
+**A forked channel history** (`channel <channel> seq <n> is already stored with a different hash or source commit; the history forked`; exit 1, nothing written).
+An artifact has the `seq` of a stored row but another hash or `source_commit`. That is not a superseded artifact but a conflict: a Release edited by hand, or two publishes that disagree. ADR-007 §6 does not cover this case; the importer treats it as an integrity failure, like a hash or attestation failure.
+**Blast radius:** the whole plan rolls back, including valid new artifacts in the same run (a new snapshot or a higher-`seq` channel artifact is not imported while the conflict is listed). The refusal repeats on every run until the offending Release is removed or the stored history is judged to be the wrong one. The **owner decides** which; nobody else resolves it.
+1. Compare the stored row (the query above) with the Release's artifact.
+2. A Release that disagrees with `rules/channels/<channel>.json` on `main` is a bug to record on the ticket first. **Owner: decide** whether to delete that Release; the database is not edited.
+3. If the stored row is the wrong one, the recovery is still never a database edit: `rules_snapshot` and `rules_release` are append-only (the `*_append_only` triggers in `db/migrations/` refuse UPDATE and DELETE, and no role is granted them, so the stored row cannot be changed or removed). The owner records the finding on the ticket, and the correction goes through a new publish of the corrected channel record with a higher `seq`. That new artifact lands above the stored maximum; the conflicting older Release must still be deleted (step 2) or every run keeps refusing.
 
 **Other** (see 4.6): a changed `importer` password (exit 1), a missing variable (exit 2), a timeout (exit 1).
 
