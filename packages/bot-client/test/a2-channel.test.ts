@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { ObservationError, playerChannel, stripServerLines } from "@areneon/showdown-bridge";
 import { describe, expect, it } from "vitest";
-import { A2Channel, A2ChannelError } from "../src/index.ts";
+import { A2Channel, A2ChannelError, ProtocolReader } from "../src/index.ts";
 import { battle } from "./frames.ts";
 
 type Player = "p1" | "p2";
@@ -22,8 +22,21 @@ const GOLDEN = (player: Player): string[] =>
 
 const frame = (lines: readonly string[], room = ROOM): string => `>${room}\n${lines.join("\n")}`;
 
-/** The frame the server sends when a connection joins the room (server/rooms.ts `onJoin`). */
-const INIT = frame(["|init|battle", "|title|p1 vs. p2", "|j|☆p1", "|j|☆p2", "|t:|1760000000"]);
+/**
+ * The frame the server sends when p1's connection joins the room: `|init|battle`,
+ * the title and the room log so far (server/rooms.ts `GameRoom.onConnect`).
+ * `Rooms.createBattle` builds the RoomBattle and joins the players one by one,
+ * before the sim's first update (`|gametype|` on) reaches the room. Its
+ * players are connected, so `RoomBattle.onJoin` adds no `|player|` line, and
+ * a battle room logs no `|t:|` (`noLogTimes`). So p1's log holds its own
+ * join; p2's follows in the next frame.
+ */
+const INIT = frame(["|init|battle", "|title|p1 vs. p2", "|j|☆p1"]);
+const P2_JOIN = frame(["|j|☆p2"]);
+
+/** `RoomBattle.checkPrivacySettings` logs this before the players join when one asks for an invite-only battle. */
+const INVITE_ONLY =
+  "|raw|<div class=\"broadcast-red\"><strong>This battle is invite-only!</strong><br />Users must be invited with <code>/invite</code> (or be staff) to join</div>";
 
 const isRequest = (line: string): boolean => line.startsWith("|request|");
 
@@ -44,7 +57,7 @@ const withoutRqid = (line: string): string => {
  * lines among them, and each request in a frame of its own with an `rqid`.
  */
 function serverFramesOf(lines: readonly string[]): string[] {
-  const frames = [INIT];
+  const frames = [INIT, P2_JOIN];
   let update: string[] = [];
   let rqid = 0;
   const flush = (): void => {
@@ -86,6 +99,27 @@ describe("A2Channel", () => {
     expect(dropped).toEqual([]);
   });
 
+  it("keeps the server's |raw| and |player| lines around the sim's own out of the channel", () => {
+    const golden = GOLDEN("p1");
+    const start = golden.indexOf("|start");
+    const frames = serverFramesOf(golden);
+    // An invite-only battle logs its notice before the players join; p2's
+    // connection leaves and comes back during Team Preview, after the sim
+    // named p2 (server/room-battle.ts `onLeave`, `onJoin`).
+    frames[0] = frame(["|init|battle", "|title|p1 vs. p2", INVITE_ONLY, "|j|☆p1"]);
+    const preview = frames.findIndex((f) => f.includes("|teampreview|"));
+    frames.splice(preview + 1, 0, frame(["|l|☆p2", "|player|p2|"]), frame(["|j|☆p2", "|player|p2|p2|2|"]));
+    const raw = frames.flatMap((f) => f.split("\n"));
+    expect(raw.filter((line) => line.startsWith("|player|"))).toHaveLength(4);
+    expect(raw.indexOf("|player|p2|")).toBeLessThan(raw.indexOf("|start"));
+    const { channel, dropped } = channelFrom(frames).build();
+    expect(channel.lines.map(withoutRqid)).toEqual(golden);
+    expect(channel.lines.filter((line) => line.startsWith("|player|"))).toEqual(
+      golden.slice(0, start).filter((line) => line.startsWith("|player|")),
+    );
+    expect(dropped).toEqual([]);
+  });
+
   it("routes by the >ROOMID header", () => {
     const channel = new A2Channel({ room: ROOM, player: "p1", data_class: "synthetic" });
     expect(channel.receive(INIT)).toBe(true);
@@ -121,7 +155,7 @@ describe("A2Channel", () => {
       INIT,
       frame(golden.slice(0, prompt + 1)),
       decline,
-      ...serverFramesOf(golden.slice(prompt + 1)).slice(1),
+      ...serverFramesOf(golden.slice(prompt + 1)).slice(2),
     ];
     const raw = frames.flatMap((f) => f.split("\n"));
     expect(raw.filter((line) => line === "|uhtmlchange|otsrequest|")).toHaveLength(2);
@@ -161,7 +195,7 @@ describe("A2Channel", () => {
     // choice it holds (server/rooms.ts `onJoin`, server/room-battle.ts `onConnect`).
     const log = golden.slice(0, resent).filter((line) => !isRequest(line) && !line.startsWith("|error|"));
     const request = withRqid(golden[resent] as string, 7);
-    channel.receive(INIT);
+    channel.receive(frame(["|init|battle", "|title|p1 vs. p2", "|j|☆p1", "|j|☆p2"]));
     channel.receive(frame(log));
     channel.receive(frame([request, "|sentchoice|move 1 1, move 1 2"]));
     const { channel: rejoined } = channel.build();
@@ -170,7 +204,7 @@ describe("A2Channel", () => {
   });
 
   it("builds a PlayerChannel from the recorded server frames of a battle", () => {
-    const { channel, dropped } = channelFrom([INIT, ...battle.frames]).build();
+    const { channel, dropped } = channelFrom([INIT, P2_JOIN, ...battle.frames]).build();
     const lines = battle.frames.flatMap((f) => f.split("\n").slice(1));
     expect(channel.lines).toEqual(stripServerLines(lines).lines);
     expect(channel.lines.some((line) => line.startsWith("|error|[Unavailable choice]"))).toBe(true);
@@ -188,5 +222,110 @@ describe("A2Channel", () => {
     expect(() => channel.receive(frame(["|init|chat"]))).toThrow(/not a battle room/);
     channel.receive(INIT);
     expect(channel.build().channel).toMatchObject({ data_class: "private", lines: [] });
+  });
+
+  it("refuses a |noinit| for its room: the server refused the join", () => {
+    const channel = new A2Channel({ room: ROOM, player: "p1", data_class: "synthetic" });
+    // server/users.ts `tryJoinRoom`: the room is gone or closed to this user.
+    const refused = `|noinit|nonexistent|The room "${ROOM}" does not exist.`;
+    expect(() => channel.receive(frame([refused]))).toThrow(new A2ChannelError(`${ROOM}: room refused: ${refused}`));
+    expect(() => channel.receive(frame(["|noinit|joinfailed|You are banned from the room."]))).toThrow(
+      /room refused: \|noinit\|joinfailed\|/,
+    );
+    // A rename (server/rooms.ts `rename`) moves the room away from this id.
+    channel.receive(INIT);
+    expect(() => channel.receive(frame([`|noinit|rename|${ROOM}-x|p1 vs. p2`]))).toThrow(
+      /room refused: \|noinit\|rename\|/,
+    );
+    expect(channel.build().channel.lines).toEqual([]);
+  });
+
+  describe("takes a frame all or nothing", () => {
+    const golden = GOLDEN("p1");
+    const end = golden.findIndex(isRequest);
+    const request = withRqid(golden[end] as string, 2);
+    const before = (): A2Channel => channelFrom([INIT, P2_JOIN, frame([...golden.slice(0, end), request])]);
+
+    it.each([
+      ["a chat room's |init|", ["|turn|9", "|init|chat"], /not a battle room/],
+      ["a refused room", ["|turn|9", "|noinit|joinfailed|x"], /room refused/],
+      ["a chat room's |init| after an |init|battle", ["|init|battle", "|title|t", "|init|chat"], /not a battle room/],
+      ["a refused room after an |init|battle", ["|init|battle", "|noinit|joinfailed|x"], /room refused/],
+    ])("leaves the channel unchanged after %s", (_, lines, error) => {
+      const channel = before();
+      const built = channel.build();
+      expect(built.channel.lines.filter(isRequest)).toEqual([request]);
+      expect(() => channel.receive(frame(lines))).toThrow(error);
+      expect(channel.build()).toEqual(built);
+      // The last kept request is unchanged too: its re-send is still left out.
+      channel.receive(frame([request]));
+      expect(channel.build()).toEqual({ ...built, resent: 1 });
+    });
+
+    it("stays without a channel after a throwing frame before the first |init|", () => {
+      const channel = new A2Channel({ room: ROOM, player: "p1", data_class: "synthetic" });
+      expect(() => channel.receive(frame(["|init|battle", "|title|t", "|init|chat"]))).toThrow(/not a battle room/);
+      expect(() => channel.build()).toThrow(/has not sent \|init\|/);
+    });
+  });
+
+  describe("leaves a re-sent request out of the channel", () => {
+    const golden = GOLDEN("p1");
+    const requests = golden.flatMap((line, i) => (isRequest(line) ? [i] : []));
+    const at = requests[2] as number;
+    /** The server frames up to and including the third request, whose rqid is 6. */
+    const upTo = serverFramesOf(golden.slice(0, at + 1));
+    const third = withRqid(golden[at] as string, 6);
+
+    it("keeps the channel's request count equal to the protocol reader's request_seq", () => {
+      // A login runs onConnect again: the stored request and its choice (server/room-battle.ts `onConnect`).
+      const frames = [...upTo, frame([third, "|sentchoice|move 1 1, move 1 2"])];
+      const reader = new ProtocolReader();
+      const seqs = frames.flatMap((f) =>
+        reader.read(f).flatMap((event) => (event.kind === "request" ? [[event.request.request_seq, event.resend]] : [])),
+      );
+      expect(seqs.slice(-2)).toEqual([
+        [3, false],
+        [3, true],
+      ]);
+      const { channel, resent } = channelFrom(frames).build();
+      expect(resent).toBe(1);
+      expect(channel.lines).toEqual(channelFrom(upTo).build().channel.lines);
+      expect(channel.lines.filter(isRequest)).toHaveLength(3);
+      expect(channel.lines.at(-1)).toBe(third);
+    });
+
+    it("keeps a new request: a new rqid, or no rqid, is never a re-send", () => {
+      const next = withRqid(golden[at] as string, 7);
+      const bare = golden[at] as string;
+      const { channel, resent } = channelFrom([...upTo, frame([next]), frame([bare]), frame([bare])]).build();
+      expect(resent).toBe(0);
+      expect(channel.lines.slice(-3)).toEqual([next, bare, bare]);
+    });
+
+    it("keeps a request with the same rqid but another body", () => {
+      const other = withRqid(golden[requests[1] as number] as string, 6);
+      const { channel, resent } = channelFrom([...upTo, frame([other])]).build();
+      expect(resent).toBe(0);
+      expect(channel.lines.at(-1)).toBe(other);
+    });
+
+    it("keeps the re-sent request after |init|battle, as the new channel's first", () => {
+      const channel = channelFrom([...upTo, frame([third])]);
+      expect(channel.build().resent).toBe(1);
+      channel.receive(frame(["|init|battle", "|title|p1 vs. p2", "|j|☆p1", "|j|☆p2", third]));
+      expect(channel.build()).toMatchObject({ channel: { lines: [third] }, resent: 0 });
+    });
+
+    it("keeps |request|null and a request that is not JSON, for playerChannel to judge", () => {
+      // |request|null withdraws the request (server/room-battle.ts `onLeave`); the re-send after it is still one.
+      const withdrawn = channelFrom([...upTo, frame(["|request|null", third])]);
+      expect(withdrawn.build().resent).toBe(1);
+      for (const bad of ['|request|{"rqid":"6"}', "|request|{"]) {
+        const channel = channelFrom([...upTo, frame([bad])]);
+        // Kept, so the bridge refuses the stream rather than this adapter hiding the line.
+        expect(() => channel.build()).toThrow(/request|JSON/);
+      }
+    });
   });
 });
