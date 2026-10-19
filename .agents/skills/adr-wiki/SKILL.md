@@ -79,7 +79,7 @@ Rules for managing ADR pages on the Redmine wiki at `redmine.piglor.com/projects
 10. **Wiki page URLs** use the title with underscores, URL-encoded:
    - `GET /projects/areneon/wiki/<title>.json` — read
    - `PUT /projects/areneon/wiki/<title>.json` — update
-   - Auth: header `X-Redmine-API-Key`
+   - Auth: see rule 11 (Redmine MCP first)
 
 11. **Auth:** Prefer the Redmine MCP server configured in the agent
    environment. When it is unavailable, send the key from the environment

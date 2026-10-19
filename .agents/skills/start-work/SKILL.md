@@ -18,7 +18,7 @@ If no ticket number is given, ask: *"Which Redmine ticket is this for?"*
 
 Access Redmine through the Redmine MCP server configured in the agent
 environment, as `.agents/issue-tracker.md` says. The requests below are written
-as Redmine REST calls; send them through that MCP tool.
+as Redmine REST calls; send them through that MCP tool (`redmine_request`).
 
 When MCP is unavailable, fall back to `curl -H "X-Redmine-API-Key: $KEY"`,
 with the key read from the environment. Never paste the key into a command,
