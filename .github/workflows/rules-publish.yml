@@ -1,0 +1,66 @@
+name: rules-publish
+
+# ADR-007 §6: after a rules change merges, publish the merged commit's rules
+# snapshot and any channel change as Releases, each with a build-provenance
+# attestation that the importer verifies (repo piglor/areneon, this workflow,
+# ref refs/heads/main). Dev first (#704): the protected environment is
+# rules-dev; production (rules-prod) is #715.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "rules/**"
+      - "packages/schema/rules/**"
+      - "packages/showdown-bridge/**"
+  workflow_dispatch:
+
+permissions: {}
+
+# One group per commit: GitHub keeps only one pending run per group, so a
+# shared group would silently drop a commit's run while another waits for
+# its environment approval.
+concurrency:
+  group: rules-publish-${{ github.sha }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: rules-dev
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+          submodules: true
+          # The channel check rebuilds earlier main snapshots.
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v6.1.0
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: build pinned Showdown
+        run: make showdown
+      - name: re-check the rules and channels on the merged commit
+        env:
+          RULES_BASE_REF: HEAD^1
+        run: node packages/showdown-bridge/scripts/check-rules.ts
+      - name: build the artifacts still to release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node packages/showdown-bridge/scripts/rules-publish.ts build dist/rules-publish
+      - name: attest the artifacts
+        if: hashFiles('dist/rules-publish/*.json') != ''
+        uses: actions/attest-build-provenance@v4.2.2
+        with:
+          subject-path: dist/rules-publish/*.json
+      - name: release the artifacts (idempotent per tag)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node packages/showdown-bridge/scripts/rules-publish.ts release dist/rules-publish
