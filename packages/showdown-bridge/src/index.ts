@@ -1,3 +1,4 @@
+export { actorRule, NoCandidateError } from "./actor-rule.ts";
 export {
   type Candidate,
   type CandidateSet,

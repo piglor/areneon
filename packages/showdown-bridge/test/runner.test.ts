@@ -18,6 +18,7 @@ import {
   InvalidTeamError,
   loadEngine,
   loadRulesSnapshot,
+  NoCandidateError,
   replayActor,
   runBattle,
   UnsupportedFormatError,
@@ -183,12 +184,17 @@ describe("runBattle and legal choices (ADR-006)", () => {
     expect(record.hidden_verdicts).toEqual([]);
   });
 
-  it("firstLegal refuses a request with nothing judged legal", () => {
+  it("firstLegal plays the first pending candidate when nothing is judged legal", () => {
     const request = {
       ...record0(),
-      legal: { ...legal0(), choices: [], pending: ["switch 3, pass"] },
+      legal: { ...legal0(), choices: [], pending: ["switch 3, pass", "switch 4, pass"] },
     };
-    expect(() => firstLegal(request)).toThrow(/no judged legal choice/);
+    expect(firstLegal(request)).toBe("switch 3, pass");
+  });
+
+  it("firstLegal refuses only an empty or missing legal choice set", () => {
+    expect(() => firstLegal({ ...record0(), legal: legal0() })).toThrow(NoCandidateError);
+    expect(() => firstLegal(record0())).toThrow(/p1: request 1 has no legal choice set/);
   });
 });
 
