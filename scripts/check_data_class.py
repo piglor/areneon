@@ -11,7 +11,22 @@ PokePaste guard does not see JSON teams, so this guard rejects a committed
   ``"data_class": "synthetic"`` at its root (for JSONL, at the root of that
   line). Team-shaped means a set (``species``, ``moves`` and ``evs`` keys) or
   a Pokémon as a ``|request|`` carries it (``details``, ``stats`` and
-  ``moves``), whose stats reveal the spread; in both, ``moves`` is a list.
+  ``moves``), whose stats reveal the spread; in both, ``moves`` is a list; or
+- holds a sealed evaluation Episode (ADR-009 rule T2; evaluation protocol I7
+  and O13): any object with ``"kind": "evaluation"`` and ``"sealed": true``,
+  which is ``provenance.collection`` of an Episode. Sealed material lives only
+  in the isolated evaluation store, so this is rejected everywhere, including
+  ``fixtures/``, with one exception: a path in ``SEALED_MARKERS`` (an exact
+  list; a new marker is a visible, code-owner-reviewed edit) whose root says
+  ``"data_class": "synthetic"``. Sealed JSON anywhere else, in JSONL, or with
+  any other root label is rejected. The two markers are the corpus samples
+  ``valid/evaluation-sealed.json`` and ``invalid/collection-evaluation-no-seed.json``
+  (a negative sample that is kind evaluation with sealed true). The guard
+  checks structure and path, not content: a real Episode relabelled synthetic
+  and placed at an allowlisted path is caught only by review and the O13 hash
+  scan (evaluation-protocol §7). Stringified JSON inside a string is not
+  inspected. A marker added by another PR means rebasing onto this constant
+  (the pinning test fails until it is edited).
 
 A file that is not valid JSON is rejected too, so JSON with comments or
 trailing commas (JSONC) cannot be committed: the guard cannot vouch for
@@ -27,12 +42,19 @@ import sys
 from collections.abc import Iterator, Sequence
 from pathlib import Path, PurePosixPath
 
+SEALED_MARKERS = frozenset(
+    {
+        "fixtures/contracts/v1/episode/valid/evaluation-sealed.json",
+        "fixtures/contracts/v1/episode/invalid/collection-evaluation-no-seed.json",
+    }
+)
 SUFFIXES = (".json", ".jsonl")
 TEAM_SHAPES = (
     frozenset({"species", "moves", "evs"}),  # a set (PokemonSet, PokePaste import)
     frozenset({"details", "stats", "moves"}),  # a Pokémon in a |request| side
 )
 PRIVATE = 'has "data_class": "private"'
+SEALED = 'holds a sealed evaluation Episode ("kind": "evaluation", "sealed": true)'
 UNLABELLED_TEAM = 'holds a team without "data_class": "synthetic" at its root'
 
 
@@ -52,12 +74,32 @@ def _is_team(obj: dict[str, object]) -> bool:
     return isinstance(obj.get("moves"), list) and any(obj.keys() >= shape for shape in TEAM_SHAPES)
 
 
-def problems_in(document: object, in_fixtures: bool) -> list[str]:
-    """Why one parsed JSON document must not be committed (empty if it may)."""
+def _is_sealed(obj: dict[str, object]) -> bool:
+    return obj.get("kind") == "evaluation" and obj.get("sealed") is True
+
+
+def is_sealed_marker_path(path: str) -> bool:
+    """True for the exact paths where a synthetic sealed marker may live (rule T2)."""
+    return PurePosixPath(Path(path).as_posix()).as_posix() in SEALED_MARKERS
+
+
+def problems_in(document: object, in_fixtures: bool, sealed_marker_ok: bool = False) -> list[str]:
+    """Why one parsed JSON document must not be committed (empty if it may).
+
+    ``sealed_marker_ok`` is true only for a file at ``is_sealed_marker_path``.
+    """
     found: list[str] = []
     objects = list(_walk(document))
     if any(obj.get("data_class") == "private" for obj in objects):
         found.append(PRIVATE)
+    if any(_is_sealed(obj) for obj in objects):
+        synthetic_marker = (
+            sealed_marker_ok
+            and isinstance(document, dict)
+            and document.get("data_class") == "synthetic"
+        )
+        if not synthetic_marker:
+            found.append(SEALED)
     synthetic_root = isinstance(document, dict) and document.get("data_class") == "synthetic"
     has_team = any(_is_team(obj) for obj in objects)
     if not in_fixtures and not synthetic_root and has_team:
@@ -84,7 +126,10 @@ def violations(paths: Sequence[str]) -> list[str]:
             found.append(f"{path}: is not valid JSON, so it cannot be checked")
             continue
         in_fixtures = PurePosixPath(Path(path).as_posix()).parts[:1] == ("fixtures",)
-        reasons = {reason for doc in documents for reason in problems_in(doc, in_fixtures)}
+        marker_ok = is_sealed_marker_path(path)
+        reasons = {
+            reason for doc in documents for reason in problems_in(doc, in_fixtures, marker_ok)
+        }
         found.extend(f"{path}: {reason}" for reason in sorted(reasons))
     return found
 
