@@ -8,8 +8,9 @@ import {
   ProtocolReader,
   type RoomEvent,
   TransportClosedError,
+  userName,
 } from "../src/index.ts";
-import { battle, frameIndex } from "./frames.ts";
+import { battle, frameIndex, serverFrame } from "./frames.ts";
 
 // Frames the pinned server sends around a rejection, written from its source:
 // - `/rejectopenteamsheets` (server/chat-commands/core.ts:980-1002) first
@@ -102,6 +103,29 @@ describe("OTS decline (ADR-005 §2)", () => {
     expect(transport.sent.some((line) => line.includes(ACCEPT))).toBe(false);
   });
 
+  it("confirms the decline when the preview request and the bot's line come in one frame", () => {
+    const { transport, ots, errors } = session({ serverConfirms: false });
+    for (const frame of battle.frames.slice(0, previewIndex)) transport.push(frame);
+    const preview = battle.frames[previewIndex] as string;
+    transport.push(`${preview}\n${BOT} rejected open team sheets.`);
+    expect(errors).toEqual([]);
+    expect(ots.status).toBe("confirmed");
+    ots.submitPreview(PREVIEW_CHOICE);
+    expect(transport.sent).toEqual([REJECT, PREVIEW_CHOICE]);
+  });
+
+  it("takes the bare name of the recorded |updateuser| identity, and refuses an identity", () => {
+    const identity = (serverFrame("global_updateuser").split("|")[2]) as string;
+    expect(identity).toBe(` ${BOT}`);
+    expect(userName(identity)).toBe(BOT);
+    expect(userName(`${identity}@!`)).toBe(BOT);
+    expect(userName(`+${BOT}`)).toBe(BOT);
+    const send = (): void => undefined;
+    expect(() => new OtsDecline({ room: ROOM, botName: identity, send })).toThrow(TypeError);
+    expect(() => new OtsDecline({ room: ROOM, botName: `${BOT}@!`, send })).toThrow(TypeError);
+    expect(new OtsDecline({ room: ROOM, botName: userName(identity), send }).status).toBe("idle");
+  });
+
   it("ignores other rooms and everything before the preview request", () => {
     const { transport, ots, errors } = session();
     transport.push(`>battle-gen9championsvgc2026regmc-2\n|showteam|p2|x`);
@@ -179,7 +203,13 @@ describe("fail-closed forfeit (ADR-005 §2)", () => {
     transport.push(battle.frames[previewIndex + 1] as string);
     transport.push(showteam);
     expect(errors).toHaveLength(1);
-    expect(errors[0]).toMatchObject({ reason: "showteam", forfeitSent: true });
+    expect(errors[0]).toMatchObject({ reason: "showteam", forfeitSent: true, detail: "|showteam|p2" });
+    // The forfeit record keeps the side only, never the opponent's packed team.
+    const { detail, message } = errors[0] as OtsDeclineError;
+    for (const secret of ["Gengar", "focussash", "cursedbody", "shadowball", "sludgebomb", "trick"]) {
+      expect(detail).not.toContain(secret);
+      expect(message).not.toContain(secret);
+    }
     expect(transport.sent).toEqual([REJECT, PREVIEW_CHOICE, FORFEIT]);
     // Forfeited once: later lines change nothing, and a choice gets the same failure.
     transport.push(showteam);
@@ -191,7 +221,7 @@ describe("fail-closed forfeit (ADR-005 §2)", () => {
   it("forfeits on |showteam| before the preview request too", () => {
     const { transport, errors } = session();
     transport.push(showteam);
-    expect(errors[0]).toMatchObject({ reason: "showteam" });
+    expect(errors[0]).toMatchObject({ reason: "showteam", detail: "|showteam|p2" });
     expect(transport.sent).toEqual([FORFEIT]);
   });
 

@@ -9,7 +9,8 @@ import type { RoomEvent } from "./protocol.ts";
  *   preview `policy_budget`;
  * - `refused`: the server answered the rejection with an `|error|`, so the
  *   line can no longer arrive;
- * - `showteam`: a `|showteam|` line arrived, so a team sheet is open.
+ * - `showteam`: a `|showteam|` line arrived, so a team sheet is open. The
+ *   record keeps only its side (`|showteam|p2`), never the packed team.
  */
 export type OtsFailure = "not_confirmed" | "refused" | "showteam";
 
@@ -39,7 +40,11 @@ export type OtsStatus = "idle" | "awaiting" | "confirmed" | "forfeited";
 export interface OtsDeclineOptions {
   /** The battle room the bot plays in. */
   room: string;
-  /** The bot's own name as the server shows it (`|updateuser|`): the confirmation names it. */
+  /**
+   * The bot's own bare name, `user.name`, which the confirmation line names:
+   * `userName` of the `|updateuser|` identity, without its group symbol or
+   * `@!` status suffix (server/users.ts:563-567, :975).
+   */
   botName: string;
   /** Sends one protocol line, e.g. `Transport.send`. */
   send: (line: string) => void;
@@ -69,6 +74,14 @@ export interface OtsDeclineOptions {
  *   player accepted (sim/battle.ts:3220, `showOpenTeamSheets`, run on
  *   `>show-openteamsheets`, core.ts:973-975). A human's `!showteam` is HTML,
  *   never a `|showteam|` line.
+ *
+ * The session must keep one `OtsDecline` per battle room across reconnects
+ * (#757 wires it). A fresh one after a reconnect during Team Preview always
+ * forfeits: it ignores the replayed confirmation line while idle, and its
+ * second rejection gets an `|error|` (core.ts:984-997).
+ *
+ * The constructor throws a `TypeError` on a `botName` that is still an
+ * identity: one with a leading space or a trailing `@!`.
  */
 export class OtsDecline {
   readonly #options: OtsDeclineOptions;
@@ -79,6 +92,9 @@ export class OtsDecline {
   #failure: OtsDeclineError | undefined;
 
   constructor(options: OtsDeclineOptions) {
+    if (options.botName.startsWith(" ") || options.botName.endsWith("@!")) {
+      throw new TypeError(`botName must be the bare user name, not an identity: "${options.botName}"`);
+    }
     this.#options = options;
     this.#confirmation = `${options.botName} rejected open team sheets.`;
   }
@@ -98,7 +114,9 @@ export class OtsDecline {
    */
   onEvent(event: RoomEvent, now: number, previewBudget?: Budget): void {
     if (event.room !== this.#options.room || this.#status === "forfeited") return;
-    if (event.kind === "line" && event.line.startsWith("|showteam|")) this.#forfeit("showteam", event.line);
+    if (event.kind === "line" && event.line.startsWith("|showteam|")) {
+      this.#forfeit("showteam", event.line.split("|", 3).join("|"));
+    }
     if (event.kind === "request" && event.request.phase === "preview" && this.#status === "idle") {
       if (previewBudget === undefined) throw new TypeError("the Team Preview request needs its preview budget");
       this.#status = "awaiting";
@@ -121,8 +139,8 @@ export class OtsDecline {
    * Sends the bot's preview choice (a whole protocol line, e.g.
    * `room|/choose team 1234|rqid`) once the decline is confirmed, at once if
    * it already is. After a forfeit it throws that forfeit's `OtsDeclineError`
-   * again, and before the preview request an `Error`
-   * before the preview request: the choice never goes out unconfirmed.
+   * again, and before the preview request it throws an `Error`: the choice
+   * never goes out unconfirmed.
    */
   submitPreview(line: string): void {
     if (this.#failure !== undefined) throw this.#failure;

@@ -4,9 +4,23 @@ import { GLOBAL_ROOM, type RoomEvent } from "./protocol.ts";
 /** Showdown's `toID` (sim/dex-data.ts): lower case, letters and digits only. */
 export const toId = (text: string): string => text.toLowerCase().replace(/[^a-z0-9]+/g, "");
 
+/**
+ * The bare user name in an identity the pinned server sends: a group symbol
+ * (a space for a regular user), then the name (server/users.ts:544-562,
+ * `getIdentity`), then `@!` when the user is not online, in `|updateuser|`
+ * (:563-567, `getIdentityWithStatus`; :975, `getUpdateuserText`). Drops the
+ * first character, then a trailing `@!`. The basic name filter keeps `@` out
+ * of every name (server/chat.ts:1620-1637, `namefilter`), so the suffix is
+ * never part of the name.
+ */
+export const userName = (identity: string): string => {
+  const name = identity.slice(1);
+  return name.endsWith("@!") ? name.slice(0, -2) : name;
+};
+
 /** A battle challenge to the bot, as the pinned server sends it. */
 export interface Challenge {
-  /** The challenger's name, without the group symbol. */
+  /** The challenger's bare name (`userName` of the sender's identity). */
   from: string;
   /** The format id exactly as the server holds it, custom rules (`@@@...`) included. */
   format: string;
@@ -64,8 +78,8 @@ export function parseChallenge(event: RoomEvent, botName: string): (Challenge & 
   const text = message.join("|");
   if (!text.startsWith(`${CHALLENGE} `)) return null;
   const bot = toId(botName);
-  const from = sender.slice(1);
-  if (toId(receiver.slice(1)) !== bot || toId(from) === bot) return null;
+  const from = userName(sender);
+  if (toId(userName(receiver)) !== bot || toId(from) === bot) return null;
   const fields = text.slice(CHALLENGE.length + 1).split("|");
   if (fields.length !== 5) throw new ChallengeError(`a /challenge body has 5 fields, not ${fields.length}: ${text}`);
   const [format, teambuilderFormat, ...extras] = fields as [string, string, string, string, string];
@@ -123,8 +137,9 @@ export function decideChallenge(event: RoomEvent, options: ChallengeFilterOption
  * room (server/rooms.ts:2011-2012, `onConnect`). The bot's own request keeps
  * the VGC Timer on even if the human turns theirs off
  * (server/room-battle.ts:215-258: `start` adds the requester, and `stop` by
- * a player removes only that player's request). A second request, on a
- * rejoin or with `forcetimer` already on, changes nothing (:217, :222-226).
+ * a player removes only that player's request). A second request changes
+ * little: on a rejoin it changes nothing (:217); with `forcetimer` already on
+ * it only adds the bot as a requester (:222-226).
  */
 export function timerOn(event: RoomEvent): string | null {
   return event.kind === "line" && event.line === "|init|battle" && event.room !== GLOBAL_ROOM

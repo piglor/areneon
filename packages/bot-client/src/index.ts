@@ -46,6 +46,7 @@ export {
   parseChallenge,
   timerOn,
   toId,
+  userName,
 } from "./challenge.ts";
 export {
   OtsDecline,
