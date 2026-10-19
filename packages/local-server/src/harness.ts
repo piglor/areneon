@@ -29,16 +29,16 @@ const SEATS: readonly Seat[] = ["p1", "p2"];
 
 /** The settings of a harness server: the sparring ones, with `logchallenges` on. */
 export function harnessSettings(port: number): ServerSetting[] {
-  return serverSettings(port).map((setting) =>
-    setting.key === "logchallenges"
-      ? { ...setting, value: true, why: "Harness only (ADR-005 §5): the server writes a finished challenge's input log under logs/." }
-      : setting,
-  );
+  return serverSettings(port, true);
 }
 
-/** `launch` with the harness settings. The only caller that turns `logchallenges` on. */
-export function launchHarness(options: Omit<LaunchOptions, "settings">): Promise<LocalServer> {
-  return launch({ ...options, settings: harnessSettings });
+/**
+ * `launch` with `logchallenges` on: the only caller that does. This module
+ * (the `./harness` export) imports bot-client, a devDependency of this
+ * package, so it must stay out of `index.ts`.
+ */
+export function launchHarness(options: Omit<LaunchOptions, "logChallenges">): Promise<LocalServer> {
+  return launch({ ...options, logChallenges: true });
 }
 
 export class HarnessError extends Error {
@@ -126,10 +126,9 @@ export interface HarnessFixture {
   /** Each seat's team as its bot sent it (`/utm`), nicknames and all. */
   teams: Record<Seat, PokemonSet[]>;
   /**
-   * The same teams as the server used them: its Nickname Clause rule clears
-   * every nickname, so the input log's packed team has none (a nickname would
-   * change `|switch|` names). Checked against the input log by
-   * `verifyHarnessFixture`. A1 plays these, not `teams`.
+   * The teams as the server used them, unpacked from the input log's own
+   * `>player` lines. The server may clear nicknames (its nickname filter
+   * decides), which changes `|switch|` names. A1 plays these, not `teams`.
    */
   served_teams: Record<Seat, PokemonSet[]>;
   /** `null` for a tie. */
@@ -195,6 +194,11 @@ export async function buildHarnessFixture(input: FixtureInput): Promise<HarnessF
     }
     channels[seat] = record.channels[0] as PlayerChannel;
   }
+  const served = (seat: Seat): PokemonSet[] => {
+    const team = engine.sim.Teams.unpack(players[seat].team);
+    if (team === null) throw new HarnessError(`${seat}'s team in the input log cannot be unpacked`);
+    return team;
+  };
   const winner = SEATS.find((seat) => players[seat].name === log.winner) ?? null;
   const fixture: HarnessFixture = {
     schema_version: 1,
@@ -210,10 +214,7 @@ export async function buildHarnessFixture(input: FixtureInput): Promise<HarnessF
       p2: { name: players.p2.name, avatar: players.p2.avatar, team: teamLabels.p2 },
     },
     teams,
-    served_teams: {
-      p1: teams.p1.map((set) => ({ ...set, name: "" })),
-      p2: teams.p2.map((set) => ({ ...set, name: "" })),
-    },
+    served_teams: { p1: served("p1"), p2: served("p2") },
     winner,
     turns: log.turns,
     channels,
@@ -257,10 +258,12 @@ export async function replayInputLog(engine: Engine, lines: readonly string[]): 
  * input log's seed, format, names, avatars and packed teams are the ones the
  * fixture states; each channel is that player's own (`playerChannel`: no
  * opponent SECRET line, no other player's request) and has no
- * `|showteam|`; and the pinned sim run on the input log gives the same
- * `|player|` lines (names and avatars) and winner as the channels. The
- * replay is one batch, so it holds only the last `|request|`: the full
- * channel comparison replays step by step (#764).
+ * `|showteam|`; `served_teams` is what the input log packs and differs from
+ * `teams` at most in nicknames; and the pinned sim run on the input log gives
+ * the fixture's `winner` and `turns` and the channels' `|player|` lines
+ * (names and avatars) and `|win|` line. The other channel lines are NOT
+ * compared with the replay: it is one batch, so it holds only the last
+ * `|request|`; the step-by-step comparison is #764.
  */
 export async function verifyHarnessFixture(engine: Engine, fixture: HarnessFixture): Promise<void> {
   const problems: string[] = [];
@@ -274,13 +277,28 @@ export async function verifyHarnessFixture(engine: Engine, fixture: HarnessFixtu
   for (const seat of SEATS) {
     const { name, avatar } = fixture.players[seat];
     if (players[seat].name !== name || players[seat].avatar !== avatar) problems.push(`${seat} name or avatar differs`);
-    if (players[seat].team !== engine.sim.Teams.pack(fixture.served_teams[seat])) problems.push(`${seat} served team differs from the input log`);
+    const logged = engine.sim.Teams.unpack(players[seat].team);
+    if (JSON.stringify(logged) !== JSON.stringify(fixture.served_teams[seat])) {
+      problems.push(
+        `${seat} served team differs from the input log: ${JSON.stringify(logged)} vs ${JSON.stringify(fixture.served_teams[seat])}`,
+      );
+    }
+    // The sent team and the served one differ at most in nicknames.
+    const core = (team: readonly PokemonSet[]): string =>
+      JSON.stringify(team.map(({ species, item, ability, moves }) => [species, item, ability, moves]));
+    if (core(fixture.teams[seat]) !== core(fixture.served_teams[seat])) {
+      problems.push(`${seat} sent and served teams differ in more than nicknames`);
+    }
     const channel = playerChannel(fixture.channels[seat]);
     if (channel.player !== seat || channel.data_class !== "synthetic") problems.push(`${seat} channel is not its own`);
     if (channel.lines.some((line) => line.startsWith("|showteam|"))) problems.push(`${seat} channel has a team sheet`);
   }
   const replay = await replayInputLog(engine, fixture.input_log.lines);
   const win = (lines: readonly string[]): string | undefined => lines.find((line) => line.startsWith("|win|"));
+  const last = replay.omniscient.filter((line) => line.startsWith("|turn|")).at(-1);
+  if (last !== `|turn|${fixture.turns}`) problems.push(`turns ${fixture.turns} differs from the replay's ${String(last)}`);
+  const replayWinner = SEATS.find((seat) => replay.omniscient.includes(`|win|${fixture.players[seat].name}`)) ?? null;
+  if (replayWinner !== fixture.winner) problems.push(`winner ${String(fixture.winner)} differs from the replay's ${String(replayWinner)}`);
   const header = (lines: readonly string[]): string[] => lines.filter((line) => line.startsWith("|player|"));
   for (const seat of SEATS) {
     const mine = fixture.channels[seat].lines;

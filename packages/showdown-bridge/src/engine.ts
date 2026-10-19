@@ -125,6 +125,7 @@ export interface ShowdownSim {
   TeamValidator: { get(formatId: string): { validateTeam(team: PokemonSet[]): string[] | null } };
   Teams: {
     pack(team: PokemonSet[]): string;
+    unpack(buf: string): PokemonSet[] | null;
     export(team: PokemonSet[]): string;
     import(buffer: string): PokemonSet[] | null;
   };

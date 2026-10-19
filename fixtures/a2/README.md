@@ -14,14 +14,14 @@ They are the input of the A1/A2 equality test: the A1 runner plays the same inpu
 | `seed` | the PRNG seed the server drew for the battle (the `>start` line) |
 | `players` | per seat: the user `name`, the `avatar` the server put on its `|player|` line, and the team file under `fixtures/teams/<format>/` |
 | `teams` | per seat: the team as the bot sent it (nicknames included) |
-| `served_teams` | per seat: the team as the server used it. The format's Nickname Clause makes the server clear every nickname, so the input log's packed team has none. Play these on A1, not `teams` |
+| `served_teams` | per seat: the team as the server used it, unpacked from the input log's own `>player` line. The server may clear nicknames (its nickname filter decides, so it varies between environments), which changes `|switch|` names. Play these on A1, not `teams` |
 | `channels` | per seat: its own `PlayerChannel` as its bot client received it (server-only lines already dropped by `A2Channel`, requests with their `rqid`) |
 | `input_log` | the server's input log, unmodified. **Omniscient**: both teams and every choice. An evaluation artifact, never an actor's input |
 | `winner`, `turns` | the result, from the server's log |
 
 Nothing is normalised. A1 must use the recorded `name` and `avatar` to produce the same `|player|` lines the channels carry (an empty avatar, as the golden battle has, would differ).
 
-The step-by-step A1 replay (`runBattle` with `replayActor`) is #764. `verifyHarnessFixture` (`packages/local-server/src/harness.ts`) already checks, with no server, that a fixture is synthetic with matching rights, names this commit, that its input log agrees with `seed`, `players` and `served_teams`, that each channel is that player's own (no opponent secret line, no `|showteam|`, only its own requests), and that the pinned sim run on the input log agrees with the channels on the `|player|` lines and the winner.
+The step-by-step A1 replay (`runBattle` with `replayActor`) is #764. `verifyHarnessFixture` (`packages/local-server/src/harness.ts`) already checks, with no server, that a fixture is synthetic with matching rights, names this commit, that its input log agrees with `seed`, `players` and `served_teams` (which differs from `teams` at most in nicknames), that each channel is that player's own (no opponent secret line, no `|showteam|`, only its own requests), and that the pinned sim run on the input log gives the fixture's `winner` and `turns` and the channels' `|player|` lines and `|win|` line. The other channel lines are not compared with the replay (that is #764).
 
 ## Provenance
 
@@ -31,7 +31,11 @@ The step-by-step A1 replay (`runBattle` with `replayActor`) is #764. `verifyHarn
 
 ## The seed
 
-A challenge cannot carry a seed (ADR-005 §5): the server draws one when the battle starts, and `/importinputlog` needs staff rights. So a recording is not byte-reproducible by running the recorder again (the seed, hence the battle, and the avatars the server hands out change). It is reproducible from the seed it documents: `seed` plus the choices in `input_log` replay to the same battle on the pinned sim, every time (`replayInputLog`; tested).
+Replaying the committed input log is deterministic: `seed` plus the choices in `input_log` give the same battle on the pinned sim every time (`replayInputLog`; tested).
+
+Re-recording yields a different battle. Fields that change: `seed`, `input_log`, `channels`, `winner`, `turns` and the avatars in `players`. Fields that stay fixed: the user names, `teams` and the team files, `manifest` (the pin) and `format_id`.
+
+This is a server limit that the ticket wording did not anticipate: a challenge takes no seed (the server draws one when the battle starts) and `/importinputlog` needs staff rights (ADR-005 §5).
 
 ## Re-recording
 

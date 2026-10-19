@@ -7,7 +7,7 @@ import { join, resolve } from "node:path";
 import type { Readable, Writable } from "node:stream";
 import { fileURLToPath } from "node:url";
 import { PINNED_SHOWDOWN_COMMIT } from "@areneon/showdown-bridge";
-import { checkServerConfig, type ServerSetting, serverSettings, loadServerConfig, LOOPBACK_ADDRESS, writeServerConfig } from "./config.ts";
+import { checkServerConfig, loadServerConfig, LOOPBACK_ADDRESS, writeServerConfig } from "./config.ts";
 import { acquireCopyLock, blockedMessage } from "./copy-lock.ts";
 import { type DigestedEntry, verifyRuntimeCopy } from "./runtime-copy.ts";
 import type { SupervisorConfig } from "./supervisor.ts";
@@ -38,11 +38,11 @@ export interface LaunchOptions {
   /** How long the supervisor waits after SIGTERM, and again after SIGKILL (default 5 s). */
   stopTimeoutMs?: number;
   /**
-   * The settings `config.js` carries, for `port`. Only `launchHarness`
-   * (harness.ts) passes it; the default is `serverSettings`, which never
-   * turns `logchallenges` on.
+   * Turn `logchallenges` on, so the server writes a finished challenge's
+   * input log (both teams: omniscient). Only `launchHarness` (harness.ts)
+   * sets it; every other check on the config still applies.
    */
-  settings?: (port: number) => ServerSetting[];
+  logChallenges?: boolean;
 }
 
 export interface SessionManifest {
@@ -130,9 +130,9 @@ export async function launch(options: LaunchOptions): Promise<LocalServer> {
     const expectedCommit = options.expectedCommit ?? PINNED_SHOWDOWN_COMMIT;
     // Before config.js is written and the copy's config defaults are loaded.
     verifyRuntimeCopy(dir, expectedCommit);
-    const settings = (options.settings ?? serverSettings)(port);
-    const config = writeServerConfig(dir, port, settings);
-    checkServerConfig(loadServerConfig(dir), port, settings);
+    const logChallenges = options.logChallenges === true;
+    const config = writeServerConfig(dir, port, logChallenges);
+    checkServerConfig(loadServerConfig(dir), port, logChallenges);
     await assertPortFree(port);
     // Again immediately before the spawn: this is the check the session records.
     const copy = verifyRuntimeCopy(dir, expectedCommit);

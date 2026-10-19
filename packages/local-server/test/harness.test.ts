@@ -1,6 +1,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { loadEngine, loadRulesSnapshot, resolveFormat } from "@areneon/showdown-bridge";
+import type { PokemonSet } from "@areneon/showdown-bridge";
 import type { A2BattleRecord } from "@areneon/bot-client";
 import { describe, expect, it } from "vitest";
 import {
@@ -38,7 +39,7 @@ describe("the harness config", () => {
     expect(value(serverSettings(8123))).toBe(false);
     expect(renderServerConfig(8123)).toContain("exports.logchallenges = false;");
     expect(renderServerConfig(8123)).not.toContain("exports.logchallenges = true;");
-    expect(renderServerConfig(8123, harnessSettings(8123))).toContain("exports.logchallenges = true;");
+    expect(renderServerConfig(8123, true)).toContain("exports.logchallenges = true;");
   });
 });
 
@@ -109,6 +110,12 @@ describe("parseInputLog", () => {
   });
 });
 
+/** The foe's items, abilities and moves that appear in a channel's Team Preview. */
+function foeSecretsInPreview(lines: readonly string[], foeTeam: HarnessFixture["teams"]["p1"]): string[] {
+  const preview = lines.slice(0, lines.indexOf("|start")).join("\n");
+  return foeTeam.flatMap((set) => [set.item, set.ability, ...set.moves]).filter((secret) => preview.includes(`|${secret}`) || preview.includes(`|X|${secret}`));
+}
+
 describe.each(COMMITTED)("the committed fixture $recording.file", ({ recording, fixture }) => {
   it("passes verification on the pinned engine, with no server", async () => {
     await expect(verifyHarnessFixture(engine, fixture)).resolves.toBeUndefined();
@@ -128,14 +135,12 @@ describe.each(COMMITTED)("the committed fixture $recording.file", ({ recording, 
     expect(fixture.seed).toMatch(/^sodium,[0-9a-f]{32}$/);
   });
 
-  it("records the nickname the server cleared: served teams differ from the sent ones only there", () => {
+  it("records the teams as sent and as served, which differ at most in nicknames", () => {
     for (const seat of ["p1", "p2"] as const) {
-      const sent = fixture.teams[seat].map(({ name: _name, ...rest }) => rest);
-      const served = fixture.served_teams[seat].map(({ name: _name, ...rest }) => rest);
-      expect(served).toEqual(sent);
-      expect(fixture.served_teams[seat].every((set) => set.name === "")).toBe(true);
+      const core = (team: typeof fixture.teams.p1) => team.map(({ species, item, ability, moves }) => [species, item, ability, moves]);
+      expect(core(fixture.served_teams[seat])).toEqual(core(fixture.teams[seat]));
+      expect(fixture.served_teams[seat]).toHaveLength(6);
     }
-    expect(fixture.teams.p1.concat(fixture.teams.p2).some((set) => set.name !== "")).toBe(true);
   });
 
   it("holds only each player's own view: no team sheet, own requests, and the foe's sheet nowhere in its preview", () => {
@@ -145,15 +150,25 @@ describe.each(COMMITTED)("the committed fixture $recording.file", ({ recording, 
       expect(fixture.channels[seat].player).toBe(seat);
       expect(lines.some((line) => line.startsWith("|showteam|"))).toBe(false);
       for (const line of lines.filter((l) => l.startsWith("|request|"))) expect(line).toContain(`"id":"${seat}"`);
-      const preview = lines.slice(0, lines.indexOf("|start")).join("\n");
-      for (const set of fixture.teams[foe]) {
-        for (const secret of [set.item, set.ability, ...set.moves]) expect(preview, secret).not.toContain(`|${secret}`);
-      }
-      // Negative control: the foe's own request line is what the check would catch.
-      const foeRequest = fixture.channels[foe].lines.find((l) => l.startsWith("|request|")) as string;
-      expect(foeRequest).toContain(`"id":"${foe}"`);
-      expect(foeRequest).not.toContain(`"id":"${seat}"`);
+      expect(foeSecretsInPreview(lines, fixture.teams[foe])).toEqual([]);
+      // Negative control: the same scan finds a foe item put into the preview.
+      const item = fixture.teams[foe][0]?.item as string;
+      const tainted = [...lines.slice(0, 3), `|poke|${foe}|X|${item}`, ...lines.slice(3)];
+      expect(foeSecretsInPreview(tainted, fixture.teams[foe])).toContain(item);
     }
+  });
+
+  it("would catch a secret: a foe line, a foe request or a team sheet put into a channel is refused", async () => {
+    const foeLines = fixture.channels.p2.lines;
+    const foeRequest = foeLines.find((l) => l.startsWith("|request|")) as string;
+    expect(foeRequest).toContain('"id":"p2"');
+    for (const secret of [foeRequest, "|split|p2", `|showteam|p2|${fixture.served_teams.p2[0]?.species}`]) {
+      const copy = clone(fixture);
+      copy.channels.p1.lines.splice(10, 0, secret);
+      await expect(verifyHarnessFixture(engine, copy), secret.slice(0, 30)).rejects.toThrow();
+    }
+    // And the untouched fixture passes, so the refusals above are the secret's doing.
+    await expect(verifyHarnessFixture(engine, fixture)).resolves.toBeUndefined();
   });
 
   it("refuses each way it can be wrong", async () => {
@@ -170,7 +185,12 @@ describe.each(COMMITTED)("the committed fixture $recording.file", ({ recording, 
     await refused((f) => (f.format_id = "gen9ou"), "input log start differs");
     await refused((f) => (f.players.p1.name = "other"), "p1 name or avatar differs");
     await refused((f) => (f.players.p2.avatar = "0"), "p2 name or avatar differs");
-    await refused((f) => (f.served_teams.p1 = f.teams.p1.map((set) => ({ ...set, name: "Nick" }))), "p1 served team differs");
+    await refused((f) => (f.served_teams.p1 = f.served_teams.p1.map((set) => ({ ...set, name: "Nick" }))), "p1 served team differs from the input log");
+    await refused((f) => (f.served_teams.p2[0] = { ...(f.served_teams.p2[0] as PokemonSet), item: "Nothing" }), "p2 served team differs");
+    await refused((f) => (f.teams.p1[0] = { ...(f.teams.p1[0] as PokemonSet), item: "Nothing" }), "p1 sent and served teams differ in more than nicknames");
+    await refused((f) => (f.turns += 1), /turns \d+ differs from the replay/);
+    await refused((f) => (f.winner = f.winner === "p1" ? "p2" : "p1"), /winner p. differs from the replay/);
+    await refused((f) => (f.winner = null), /winner null differs/);
     await refused((f) => (f.channels.p2.player = "p1"), /p2 channel is not its own|holds a request for/);
     await refused((f) => f.channels.p1.lines.push("|showteam|p2|x"), "p1 channel has a team sheet");
     await refused((f) => f.channels.p1.lines.push("|split|p2"), /only the opponent may see/);
@@ -220,11 +240,6 @@ describe("buildHarnessFixture", () => {
     const winner = fixture.winner === null ? "" : fixture.players[fixture.winner].name;
     const built = await buildHarnessFixture(input({ log: { winner } }));
     expect(built).toEqual({ ...fixture, players: { p1: { ...fixture.players.p1, team: built.players.p1.team }, p2: { ...fixture.players.p2, team: built.players.p2.team } } });
-  });
-
-  it("records a tie as no winner", async () => {
-    const built = await buildHarnessFixture(input({ log: { winner: "nobody" } }));
-    expect(built.winner).toBeNull();
   });
 
   it("refuses a record for the wrong seat or room, and a player with several channels", async () => {

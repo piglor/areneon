@@ -37,7 +37,7 @@ export interface ServerSetting {
  * `config-example.js` defaults (the server merges the two, `config.js` on
  * top). Anything not listed keeps the upstream default.
  */
-export function serverSettings(port: number): ServerSetting[] {
+export function serverSettings(port: number, logChallenges = false): ServerSetting[] {
   return [
     { key: "port", value: port, why: "The session's port; the launcher also passes it on the command line." },
     { key: "bindaddress", value: LOOPBACK_ADDRESS, why: "ADR-005 §4: loopback only (upstream default 0.0.0.0)." },
@@ -68,15 +68,17 @@ export function serverSettings(port: number): ServerSetting[] {
     { key: "dnsbl", value: false, why: "No DNS blocklist queries about connecting addresses." },
     {
       key: "logchallenges",
-      value: false,
-      why: "ADR-005 §5: a challenge's input log holds both teams; it stays off for sparring.",
+      value: logChallenges,
+      why: logChallenges
+        ? "Harness only (ADR-005 §5): the server writes a finished challenge's input log under logs/."
+        : "ADR-005 §5: a challenge's input log holds both teams; it stays off for sparring.",
     },
     { key: "crashguardemail", value: null, why: "No crash e-mails." },
   ];
 }
 
 /** The `config/config.js` text for a session on `port`. */
-export function renderServerConfig(port: number, settings: ServerSetting[] = serverSettings(port)): string {
+export function renderServerConfig(port: number, logChallenges = false): string {
   const lines = [
     "'use strict';",
     "",
@@ -84,7 +86,7 @@ export function renderServerConfig(port: number, settings: ServerSetting[] = ser
     "// the launcher rewrites it and checks the merged config before every start.",
     "",
   ];
-  for (const { key, value, why } of settings) {
+  for (const { key, value, why } of serverSettings(port, logChallenges)) {
     lines.push(`// ${why}`, `exports.${key} = ${JSON.stringify(value)};`, "");
   }
   return lines.join("\n");
@@ -109,13 +111,13 @@ export interface WrittenConfig {
 export function writeServerConfig(
   dir: string,
   port: number,
-  settings: ServerSetting[] = serverSettings(port),
+  logChallenges = false,
 ): WrittenConfig {
   if (!existsSync(join(dir, RUNTIME_MANIFEST))) {
     throw new ServerConfigError(`${dir} is not a runtime copy (no ${RUNTIME_MANIFEST})`);
   }
   for (const state of RUNTIME_STATE_DIRS) mkdirSync(join(dir, state), { recursive: true });
-  const text = renderServerConfig(port, settings);
+  const text = renderServerConfig(port, logChallenges);
   const path = join(dir, SERVER_CONFIG_PATH);
   writeFileSync(`${path}.tmp`, text);
   renameSync(`${path}.tmp`, path);
@@ -172,10 +174,10 @@ export function checkNoReplayUpload(config: Record<string, unknown>): void {
 export function checkServerConfig(
   config: Record<string, unknown>,
   port: number,
-  settings: ServerSetting[] = serverSettings(port),
+  logChallenges = false,
 ): void {
   checkNoReplayUpload(config);
-  const wrong = settings
+  const wrong = serverSettings(port, logChallenges)
     .filter(({ key, value }) => !isDeepStrictEqual(config[key], value))
     .map(({ key, value }) => `${key} is ${JSON.stringify(config[key])}, expected ${JSON.stringify(value)}`);
   if (wrong.length > 0) throw new ServerConfigError(`unsafe server config: ${wrong.join("; ")}`);

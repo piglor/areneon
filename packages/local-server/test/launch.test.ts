@@ -109,6 +109,8 @@ describe("launch with a stand-in server", () => {
     expect(Object.keys(started.env).filter((key) => key.startsWith("PS"))).toEqual([]);
 
     const config = readFileSync(join(copy.dir, SERVER_CONFIG_PATH));
+    // The default launch never turns the input log on (ADR-005 §5).
+    expect(config.toString()).toContain("exports.logchallenges = false;");
     const session = server.session;
     expect(session).toEqual({
       commit: copy.commit,
