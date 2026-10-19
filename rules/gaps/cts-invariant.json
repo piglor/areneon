@@ -3,17 +3,28 @@
   "gap_id": "cts-invariant",
   "area": "CTS invariant",
   "status": "unverified",
-  "description": "With Open Team Sheets declined, Team Preview shows the opponent's species, level and gender only; the sheet is sent only after `>show-openteamsheets`. Tested in-process by `cts.test.ts` (#676); the server-path decline is #709.",
+  "description": "With Open Team Sheets declined, Team Preview shows the opponent's species, level, gender and shiny flag; the sheet is sent only after `>show-openteamsheets`. The champions `teampreview` handler masks Xerneas, Zacian and Zamazenta formes but, unlike the base handler, does not strip `, shiny`: cosmetic, but a potential fingerprint. Whether the training observation strips it is open (owner: ADR-008 observation contract). The item field of every Team Preview `poke` message is empty at the pin, although `sim/SIM-PROTOCOL.md` documents an `item` marker; a pin that sends it would reveal item presence. CTS is a project choice (ADR-003), not the VGC tournament rule (see `open-team-sheets`); what in-game Ranked preview shows is unverified (format matrix U7). Tested in-process by `cts.test.ts` (#676); the server-path decline is #709.",
   "evidence": [
     {
       "kind": "engine",
       "path": "data/rulesets.ts",
-      "symbols": ["openteamsheets"]
+      "symbols": [
+        "openteamsheets"
+      ]
+    },
+    {
+      "kind": "engine",
+      "path": "data/mods/champions/rulesets.ts",
+      "symbols": [
+        "teampreview"
+      ]
     },
     {
       "kind": "engine",
       "path": "sim/battle.ts",
-      "symbols": ["showOpenTeamSheets"]
+      "symbols": [
+        "showOpenTeamSheets"
+      ]
     },
     {
       "kind": "fixture",

@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "gap_id": "simultaneous-faint",
+  "area": "Simultaneous last faint",
+  "status": "unverified",
+  "description": "When both sides' last Pokémon faint together, the engine gives the win to the side of the last entry processed in the faint queue (`faintData.target.side`, after any `lastFirst` reorder); a win check without faint data is a tie. The VGC Tournament Handbook §4.4 says the game decides by coded rules \"such as whose Pokémon fainted first or what moves were used on the last turn\", which are not published. Results of such games should be labelled with this gap (no detector exists yet).",
+  "evidence": [
+    {
+      "kind": "engine",
+      "path": "sim/battle.ts",
+      "symbols": [
+        "faintMessages",
+        "checkWin"
+      ]
+    }
+  ]
+}

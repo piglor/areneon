@@ -3,7 +3,7 @@
   "gap_id": "roster-and-learnsets",
   "area": "Roster and learnsets",
   "status": "unverified",
-  "description": "Champions-specific legality data",
+  "description": "Champions-specific legality data. The pool is defined by the champions formats data (the `Flat Rules` tag bans hit only battle-only formes at the pin); it has not been compared entry by entry with the official M-C Eligible Pokémon list (format matrix U4).",
   "evidence": [
     {
       "kind": "engine",
