@@ -12,6 +12,7 @@
           "sourceRepositoryURI": "https://github.com/piglor/areneon",
           "sourceRepositoryRef": "refs/heads/main",
           "sourceRepositoryDigest": "35f9c5f04aecbe1dfc38e55d2599b1013f1b43b7",
+          "runnerEnvironment": "github-hosted",
           "runInvocationURI": "https://github.com/piglor/areneon/actions/runs/39184492564/attempts/1"
         }
       },

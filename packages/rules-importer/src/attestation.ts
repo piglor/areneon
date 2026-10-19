@@ -75,8 +75,8 @@ export interface GhAttestationVerifierOptions {
 /**
  * Verifies with `gh attestation verify`, then re-checks gh's JSON itself:
  * a zero exit code alone is never trusted. Every returned result must name
- * the policy's repository, signer workflow and source ref and the file's
- * SHA-256 as a subject. The attested commit is deliberately not compared
+ * the policy's repository, signer workflow and source ref, a GitHub-hosted
+ * runner and the file's SHA-256 as a subject. The attested commit is deliberately not compared
  * with an artifact's `source_commit`: a later run (bootstrap, or catch-up
  * after a cancelled run) may release a channel file, and its attestation
  * names the commit that run checked out.
@@ -156,6 +156,8 @@ function checkResults(file: string, digest: string, results: unknown, policy: At
     ["verificationResult.signature.certificate.buildSignerURI", signerUri],
     ["verificationResult.signature.certificate.sourceRepositoryRef", policy.sourceRef],
     ["verificationResult.signature.certificate.githubWorkflowRef", policy.sourceRef],
+    // rules-publish runs on GitHub-hosted runners; a self-hosted one is outside the trust model.
+    ["verificationResult.signature.certificate.runnerEnvironment", "github-hosted"],
     ["verificationResult.statement._type", STATEMENT_TYPE],
     ["verificationResult.statement.predicateType", PROVENANCE_TYPE],
   ];

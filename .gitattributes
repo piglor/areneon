@@ -1,1 +1,3 @@
 fixtures/teams/**/*.txt whitespace=-trailing-space
+
+fixtures/rules-releases/** -text

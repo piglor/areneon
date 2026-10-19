@@ -13,7 +13,8 @@ import {
   spawnRunner,
 } from "../src/index.ts";
 
-const fixture = (name: string): string => fileURLToPath(new URL(`./fixtures/${name}`, import.meta.url));
+const fixture = (name: string): string =>
+  fileURLToPath(new URL(`../../../fixtures/rules-releases/${name}`, import.meta.url));
 
 // The two release assets of the first rules-publish run, and the real
 // `gh attestation verify --format json` output for them (one attestation
@@ -123,6 +124,12 @@ describe("GhAttestationVerifier", () => {
     ["githubWorkflowRef", "refs/pull/1/merge"],
   ])("refuses a wrong source ref in %s", async (key, value) => {
     expect(await refusal(edited(`${CERT}.${key}`, value))).toContain(`${CERT}.${key} is "${value}"`);
+  });
+
+  it("refuses an attestation signed on a self-hosted runner", async () => {
+    expect(await refusal(edited(`${CERT}.runnerEnvironment`, "self-hosted"))).toContain(
+      `${CERT}.runnerEnvironment is "self-hosted", expected github-hosted`,
+    );
   });
 
   it("refuses a certificate from another issuer", async () => {
