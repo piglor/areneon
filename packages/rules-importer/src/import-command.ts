@@ -4,7 +4,14 @@
 // JSON summary. The database URL comes only from the environment and never
 // reaches the output; a refusal anywhere gives a non-zero exit code.
 
-import { applyImport, connect, type ImportClient, type ImportResult } from "@areneon/rules-store";
+import {
+  applyImport,
+  connect,
+  DEFAULT_TIMEOUTS,
+  type ImportClient,
+  type ImportResult,
+  type SessionTimeouts,
+} from "@areneon/rules-store";
 import { planImport, type ImportPlan, type ReleaseSource } from "@areneon/showdown-bridge";
 
 /** The login role the import must run as (INSERT and SELECT on the rules tables only). */
@@ -21,11 +28,11 @@ export interface DbSession extends ImportClient {
 }
 
 export interface ImportCommandOptions {
-  /** Read for `DATABASE_URL` only. */
+  /** Read for `DATABASE_URL` and the `RULES_IMPORT_*_TIMEOUT_MS` settings (TIMEOUT_ENV) only. */
   readonly env: Readonly<Record<string, string | undefined>>;
   readonly source: ReleaseSource;
-  /** Opens the session; default the rules store's `pg` connect. */
-  readonly connect?: (url: string) => Promise<DbSession>;
+  /** Opens the session with the given timeouts; default the rules store's `pg` connect. */
+  readonly connect?: (url: string, timeouts: SessionTimeouts) => Promise<DbSession>;
   /** Applies the plan; default the rules store's applyImport. */
   readonly apply?: (client: ImportClient, plan: ImportPlan) => Promise<ImportResult>;
   /** Receives the one-line summary; default stdout. */
@@ -36,13 +43,40 @@ class ConfigError extends Error {
   override name = "ConfigError";
 }
 
-const connectImporter = (url: string): Promise<DbSession> => connect(url, "areneon-rules-importer");
+const connectImporter = (url: string, timeouts: SessionTimeouts): Promise<DbSession> =>
+  connect(url, { applicationName: "areneon-rules-importer", timeouts });
+
+/**
+ * The environment variables that override the session's timeouts, in
+ * milliseconds (defaults: 300000, 300000, 60000). A statement that exceeds
+ * one fails, and the import rolls back and exits EXIT_REFUSED.
+ */
+export const TIMEOUT_ENV: Readonly<Record<keyof SessionTimeouts, string>> = {
+  statementMs: "RULES_IMPORT_STATEMENT_TIMEOUT_MS",
+  lockMs: "RULES_IMPORT_LOCK_TIMEOUT_MS",
+  idleInTransactionMs: "RULES_IMPORT_IDLE_IN_TRANSACTION_TIMEOUT_MS",
+};
+// 1 ms to 999999999 ms (about 11.5 days), inside Postgres' integer range.
+const MILLISECONDS = /^[1-9][0-9]{0,8}$/;
+
+function timeoutsFrom(env: ImportCommandOptions["env"]): SessionTimeouts {
+  const read = (key: keyof SessionTimeouts): number => {
+    const value = env[TIMEOUT_ENV[key]];
+    if (value === undefined) return DEFAULT_TIMEOUTS[key];
+    if (!MILLISECONDS.test(value)) {
+      throw new ConfigError(`${TIMEOUT_ENV[key]} must be a whole number of milliseconds from 1 to 999999999`);
+    }
+    return Number(value);
+  };
+  return { statementMs: read("statementMs"), lockMs: read("lockMs"), idleInTransactionMs: read("idleInTransactionMs") };
+}
 
 /**
  * Run one import. Returns the exit code: EXIT_OK when every step was inserted
  * or already present, EXIT_REFUSED when anything refused (the plan, the
  * attestation, the database) or a channel step was stale, EXIT_CONFIG when
- * DATABASE_URL is missing or the session is not the importer role.
+ * DATABASE_URL is missing, a timeout setting is invalid, or the session is
+ * not the importer role.
  */
 export async function runImportCommand(options: ImportCommandOptions): Promise<number> {
   const out = options.out ?? ((line: string) => process.stdout.write(`${line}\n`));
@@ -53,7 +87,8 @@ export async function runImportCommand(options: ImportCommandOptions): Promise<n
   }
   let session: DbSession | undefined;
   try {
-    session = await (options.connect ?? connectImporter)(url);
+    const timeouts = timeoutsFrom(options.env);
+    session = await (options.connect ?? connectImporter)(url, timeouts);
     await requireImporter(session);
     const known = await storedSnapshots(session);
     const plan = await planImport(options.source, { snapshots: known });

@@ -1,9 +1,9 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { ImportClient, ImportResult, StepOutcome } from "@areneon/rules-store";
+import type { ImportClient, ImportResult, SessionTimeouts, StepOutcome } from "@areneon/rules-store";
 import type { ImportPlan, ReleaseAsset, ReleaseSource } from "@areneon/showdown-bridge";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { type DbSession, EXIT_CONFIG, EXIT_OK, EXIT_REFUSED, runImportCommand } from "../src/index.ts";
+import { type DbSession, EXIT_CONFIG, EXIT_OK, EXIT_REFUSED, runImportCommand, TIMEOUT_ENV } from "../src/index.ts";
 import { FIXTURES } from "./fake-gh.ts";
 
 const SNAPSHOT_HASH = "7c618d78d6f569e875d7e5be4863152599dc8f4207f6e10cfd5f12301a853fe8";
@@ -62,20 +62,22 @@ async function run(options: {
   env?: Record<string, string | undefined>;
   source?: ReleaseSource;
   db?: FakeDb;
-  connect?: (url: string) => Promise<DbSession>;
+  connect?: (url: string, timeouts: SessionTimeouts) => Promise<DbSession>;
   apply?: (client: ImportClient, plan: ImportPlan) => Promise<ImportResult>;
 }) {
   const lines: string[] = [];
   const db = fakeSession(options.db);
   const connected: string[] = [];
+  const timeouts: SessionTimeouts[] = [];
   const plans: ImportPlan[] = [];
   const code = await runImportCommand({
     env: options.env ?? { DATABASE_URL: URL_ },
     source: options.source ?? sourceOf(SNAPSHOT, CHANNEL),
     connect:
       options.connect ??
-      (async (url) => {
+      (async (url, given) => {
         connected.push(url);
+        timeouts.push(given);
         return db.session;
       }),
     apply:
@@ -91,7 +93,7 @@ async function run(options: {
   const output = lines[0] as string;
   expect(output).not.toContain(PASSWORD);
   expect(output).not.toContain("db.internal");
-  return { code, summary: JSON.parse(output) as Record<string, unknown>, db, connected, plans };
+  return { code, summary: JSON.parse(output) as Record<string, unknown>, db, connected, plans, timeouts };
 }
 
 afterEach(() => {
@@ -111,6 +113,53 @@ describe("runImportCommand", () => {
         { kind: "channel", channel: "stable", seq: 5, hash: SNAPSHOT_HASH, status: "inserted" },
       ],
     });
+    expect(db.ended()).toBe(1);
+  });
+
+  it("connects with the default timeouts", async () => {
+    const { timeouts } = await run({});
+    expect(timeouts).toEqual([{ statementMs: 300_000, lockMs: 300_000, idleInTransactionMs: 60_000 }]);
+  });
+
+  it("takes each timeout from its environment variable", async () => {
+    expect(TIMEOUT_ENV).toEqual({
+      statementMs: "RULES_IMPORT_STATEMENT_TIMEOUT_MS",
+      lockMs: "RULES_IMPORT_LOCK_TIMEOUT_MS",
+      idleInTransactionMs: "RULES_IMPORT_IDLE_IN_TRANSACTION_TIMEOUT_MS",
+    });
+    const env = {
+      DATABASE_URL: URL_,
+      RULES_IMPORT_STATEMENT_TIMEOUT_MS: "1",
+      RULES_IMPORT_LOCK_TIMEOUT_MS: "999999999",
+      RULES_IMPORT_IDLE_IN_TRANSACTION_TIMEOUT_MS: "45000",
+    };
+    const { code, timeouts } = await run({ env });
+    expect(code).toBe(EXIT_OK);
+    expect(timeouts).toEqual([{ statementMs: 1, lockMs: 999_999_999, idleInTransactionMs: 45_000 }]);
+  });
+
+  it.each(
+    Object.values(TIMEOUT_ENV).flatMap((name) =>
+      ["", "0", "-1", "1.5", "1e3", " 5", "05", "1000000000", "abc"].map((value) => [name, value] as const),
+    ),
+  )("refuses %s=%j without connecting", async (name, value) => {
+    const { code, summary, connected } = await run({ env: { DATABASE_URL: URL_, [name]: value } });
+    expect(code).toBe(EXIT_CONFIG);
+    expect(summary).toEqual({
+      ok: false,
+      error: `ConfigError: ${name} must be a whole number of milliseconds from 1 to 999999999`,
+    });
+    expect(connected).toEqual([]);
+  });
+
+  it("refuses an import a timeout cancelled (applyImport has rolled it back)", async () => {
+    const { code, summary, db } = await run({
+      apply: async () => {
+        throw Object.assign(new Error("canceling statement due to lock timeout"), { name: "error", code: "55P03" });
+      },
+    });
+    expect(code).toBe(EXIT_REFUSED);
+    expect(summary).toEqual({ ok: false, error: "error: canceling statement due to lock timeout" });
     expect(db.ended()).toBe(1);
   });
 

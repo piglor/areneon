@@ -8,6 +8,10 @@
 //                 server's CA is not a public one), so the server's
 //                 certificate and host name are checked.
 //   GH_TOKEN      a read-only GitHub token for gh (Releases and attestations).
+//   RULES_IMPORT_STATEMENT_TIMEOUT_MS, RULES_IMPORT_LOCK_TIMEOUT_MS,
+//   RULES_IMPORT_IDLE_IN_TRANSACTION_TIMEOUT_MS
+//                 optional session timeouts in ms (default 300000, 300000,
+//                 60000); exceeding one rolls the import back (exit 1).
 //
 // Prints one JSON line; exit 0 when every step was inserted or already
 // present, 1 on any refusal, 2 on a configuration error.
