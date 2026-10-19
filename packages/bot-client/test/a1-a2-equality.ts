@@ -1,6 +1,6 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { ProtocolReader } from "@areneon/bot-client";
+import { A2Channel, type A2ChannelOptions, ProtocolReader, splitFrame } from "@areneon/bot-client";
 import type { HarnessFixture, Seat } from "@areneon/local-server/harness";
 import {
   type BattleRecord,
@@ -18,10 +18,20 @@ import {
 
 /**
  * The A1/A2 equality check (ADR-005 gate 3, ADR-008 §4) over a recorded
- * bot-vs-bot fixture. `fixture.channels` is already the A2 adapter's output
- * (A2Channel + stripServerLines ran in the bot client that recorded it), so
- * it is the A2 side as it is; the input log only drives A1.
+ * bot-vs-bot fixture. The A2 side starts from `fixture.frames`: the raw
+ * server frames each bot received. They go through `ProtocolReader` and
+ * `A2Channel` (with `stripServerLines`) here, as the session loop does, so an
+ * adapter regression changes the result without any fixture changing. The
+ * stored `channels` are not read; the input log only drives A1.
  */
+
+/** The part of `A2Channel` the check uses; a test passes a broken one to prove the check notices. */
+export interface Adapter {
+  receive(frame: string): boolean;
+  build(): { channel: PlayerChannel; dropped: string[]; resent: number };
+}
+export type AdapterFactory = (options: A2ChannelOptions) => Adapter;
+const realAdapter: AdapterFactory = (options) => new A2Channel(options);
 
 export const SEATS: readonly Seat[] = ["p1", "p2"];
 export const A2_FIXTURES_DIR = fileURLToPath(new URL("../../../fixtures/a2/", import.meta.url));
@@ -66,36 +76,71 @@ export interface EqualityResult {
   /** Per seat: requests compared (wait included), decisions compared (observations). */
   requests: Record<Seat, number>;
   decisions: Record<Seat, number>;
+  /** Per seat, how much the adapter had to do: frames fed, lines in them, lines in the channel, re-sent requests it left out. */
+  frames: Record<Seat, number>;
+  framedLines: Record<Seat, number>;
+  channelLines: Record<Seat, number>;
+  resent: Record<Seat, number>;
 }
+
+const zeros = (): Record<Seat, number> => ({ p1: 0, p2: 0 });
 
 /**
  * Play `fixture` on A1, step by step, with `replayActor` over the choices of
  * its input log, and compare with the fixture's channels (the A2 side).
  * Never throws for a difference: it lists it.
  */
-export async function compareA1A2(engine: Engine, snapshot: RulesSnapshot, fixture: HarnessFixture): Promise<EqualityResult> {
+export async function compareA1A2(
+  engine: Engine,
+  snapshot: RulesSnapshot,
+  fixture: HarnessFixture,
+  adapter: AdapterFactory = realAdapter,
+): Promise<EqualityResult> {
   const differences: string[] = [];
   const diff = (message: string): void => void differences.push(message);
+  const result: EqualityResult = {
+    differences,
+    requests: zeros(),
+    decisions: zeros(),
+    frames: zeros(),
+    framedLines: zeros(),
+    channelLines: zeros(),
+    resent: zeros(),
+  };
 
-  // The A2 side: each seat's own stored channel, its requests through the
-  // protocol reader (request_seq, request_hash) as the session loop reads them.
+  // The A2 side: each seat's raw frames through the protocol reader
+  // (request_seq, request_hash) and the A2 channel adapter, frame by frame as
+  // the session loop feeds them. A re-sent request keeps its request_seq in
+  // the reader and is left out of the channel by the adapter.
   const a2: Record<Seat, { channel: PlayerChannel; waits: boolean[]; reads: { seq: number; hash: string }[] }> = {
     p1: undefined as never,
     p2: undefined as never,
   };
   for (const seat of SEATS) {
-    const channel = playerChannel(fixture.channels[seat]);
-    const reader = new ProtocolReader();
-    const room = "battle-equality";
-    reader.read(`>${room}\n|init|battle`);
-    const reads: { seq: number; hash: string }[] = [];
-    for (const line of channel.lines.filter((l) => l.startsWith(REQUEST))) {
-      for (const event of reader.read(`>${room}\n${line}`)) {
-        if (event.kind === "request") reads.push({ seq: event.request.request_seq, hash: event.request.request_hash });
+    try {
+      const reader = new ProtocolReader();
+      const channel = adapter({ room: fixture.room, player: seat, data_class: "synthetic" });
+      const reads: { seq: number; hash: string }[] = [];
+      for (const frame of fixture.frames[seat]) {
+        for (const event of reader.read(frame)) {
+          if (event.kind === "request" && !event.resend) {
+            reads.push({ seq: event.request.request_seq, hash: event.request.request_hash });
+          }
+        }
+        channel.receive(frame);
+        result.framedLines[seat] += splitFrame(frame).lines.length;
       }
+      const built = channel.build();
+      result.frames[seat] = fixture.frames[seat].length;
+      result.channelLines[seat] = built.channel.lines.length;
+      result.resent[seat] = built.resent;
+      const requests = built.channel.lines.filter((l) => l.startsWith(REQUEST));
+      a2[seat] = { channel: built.channel, waits: requests.map(isWait), reads };
+    } catch (error) {
+      diff(`${seat}: the A2 adapter refused the frames: ${(error as Error).message}`);
     }
-    a2[seat] = { channel, waits: channel.lines.filter((l) => l.startsWith(REQUEST)).map(isWait), reads };
   }
+  if (differences.length > 0) return result;
 
   // Not handled: refused (`[Unavailable choice]`), `default` and auto-chosen
   // turns. The mapping assumes one logged choice per non-wait request. A
@@ -136,7 +181,7 @@ export async function compareA1A2(engine: Engine, snapshot: RulesSnapshot, fixtu
     });
   } catch (error) {
     diff(`A1 could not replay the fixture: ${(error as Error).message}`);
-    return { differences, requests: { p1: 0, p2: 0 }, decisions: { p1: 0, p2: 0 } };
+    return result;
   }
 
   // A1 was started as the server was: the input log's own seed, names,
@@ -172,7 +217,6 @@ export async function compareA1A2(engine: Engine, snapshot: RulesSnapshot, fixtu
     diff("A1 was not started with the input log's >start and >player lines");
   }
 
-  const result: EqualityResult = { differences, requests: { p1: 0, p2: 0 }, decisions: { p1: 0, p2: 0 } };
   for (const seat of SEATS) {
     const mine = a2[seat].channel.lines;
     const theirs = record.channels[seat];
