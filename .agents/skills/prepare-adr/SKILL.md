@@ -127,10 +127,11 @@ Epic:
 
 ```text
 ADR issue "[ADR-NNN] <title>"   tracker ADR, standalone, Proposed → Accepted
-   │ relates (created only after Accepted)
-   ▼
+
 Roadmap version (Wave N)
-  └─ Epic "[Epic][ADR-NNN] <title>"   tracker Epic, fixed_version = Wave N
+  └─ Epic "[Epic][ADR-NNN] <title>"   tracker Epic, fixed_version = Wave N,
+       │                              created only after Accepted and
+       │                              related to the ADR issue
        └─ implementation tickets      Feature/Task, no fixed version (inherit)
 ```
 
