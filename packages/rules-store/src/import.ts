@@ -8,29 +8,7 @@
 // maximum seq is read, so concurrent imports of one channel run one after the
 // other and cannot commit their seqs out of order.
 
-// These mirror the planner's ImportPlan (`rules-import-plan.ts` in
-// @areneon/showdown-bridge); the import CLI switches to importing it.
-export interface ImportSnapshot {
-  kind: "snapshot";
-  hash: string;
-  /** The commit the snapshot's Release tag points at (40 hex). */
-  source_commit: string;
-  bytes: Uint8Array;
-}
-export interface ImportChannel {
-  kind: "channel";
-  channel: string;
-  seq: number;
-  hash: string;
-  source_commit: string;
-  /** Carried for parity with the planner's plan; unused here (rules_release has no body column). */
-  bytes: Uint8Array;
-}
-export type ImportStep = ImportSnapshot | ImportChannel;
-/** Snapshots first, then channels by (channel, seq). */
-export interface ImportPlan {
-  steps: ImportStep[];
-}
+import type { ImportChannel, ImportPlan, ImportSnapshot } from "@areneon/showdown-bridge";
 
 /** What happened to one step: written, already stored, or below the channel's history. */
 export type StepStatus = "inserted" | "already-present" | "stale";
