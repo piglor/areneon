@@ -57,6 +57,7 @@ function fakeVendor(edit: (dir: string) => void = () => {}): { dir: string; comm
   write(dir, "dist/server/index.js", "// server\n");
   write(dir, "server/static/index.html", "<!doctype html>\n");
   write(dir, "config/config-example.js", "exports.port = 8000;\n");
+  write(dir, "dist/config/config-example.js", "exports.port = 8000;\n");
   write(dir, "node_modules/dep/bin/dep.js", "#!/usr/bin/env node\n");
   mkdirSync(join(dir, "node_modules/.bin"));
   symlinkSync("../dep/bin/dep.js", join(dir, "node_modules/.bin/dep"));
@@ -277,14 +278,14 @@ describe("a runtime copy of a fake checkout", () => {
   });
 
   it.each([
-    ["the entry script", "pokemon-showdown"],
-    ["config-example.js", "config/config-example.js"],
-    ["package.json", "package.json"],
-    ["a static file", "server/static/index.html"],
-  ])("refuses a changed byte in %s", (_label, path) => {
+    ["the entry script", "pokemon-showdown", "pokemon-showdown"],
+    ["config-example.js", "config/config-example.js", "config/config-example.js"],
+    ["the config defaults the server loads", "dist/config/config-example.js", "dist"],
+    ["package.json", "package.json", "package.json"],
+    ["a static file", "server/static/index.html", "server/static"],
+  ])("refuses a changed byte in %s", (_label, path, entry) => {
     const dir = freshCopy();
     appendFileSync(join(dir, path), " ");
-    const entry = path.startsWith("server/static/") ? "server/static" : path;
     expect(() => verifyRuntimeCopy(dir, vendor.commit)).toThrow(
       new RegExp(`${entry} digest [0-9a-f]{64} does not match the recorded [0-9a-f]{64}; recreate the copy`),
     );

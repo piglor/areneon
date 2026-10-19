@@ -51,9 +51,10 @@ export const RUNTIME_ENTRIES = [
  * that its config loader merges under `config/config.js`), serves
  * `server/static/`, and reads `package.json` (Node reads it to load the entry
  * script as CommonJS; the server parses it as its package data). The copy's
- * `config/config-example.js` is digested too: the server does not load it
- * under `--skip-build`, but it is the source the build copies into `dist/`
- * and turns into a missing `config.js`.
+ * `config/config-example.js` is digested too: the server never loads it
+ * under `--skip-build`, but it is the source the build copies to
+ * `dist/config/config-example.js`, and the build also copies it to
+ * `config/config.js` when that file is missing.
  *
  * Not digested, by design:
  * - `node_modules/`: third-party packages that npm installs from the
@@ -67,6 +68,13 @@ export const RUNTIME_ENTRIES = [
  * - Everything else the server reads under `config/` or writes under `logs/`
  *   (`RUNTIME_STATE_DIRS`, `config/usergroups.csv`, ...): server state, not
  *   part of the copy.
+ * - `databases/` (the SQL schemas and migrations): not copied. At the pin
+ *   only the SQLite stores read them (friends, offline PMs, modlog, chat
+ *   plugins), behind `usesqlite`, which neither the upstream defaults nor
+ *   Areneon's `config.js` set (the friends child processes start, but open
+ *   no store without it), and the Postgres stores (room logs behind
+ *   `replaysdb`, teams behind `usepostgres`), both off in Areneon's
+ *   `config.js`. So nothing reads them under Areneon's config.
  */
 export const DIGESTED_ENTRIES = [
   "dist",

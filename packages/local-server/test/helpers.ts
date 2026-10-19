@@ -24,16 +24,20 @@ export function write(root: string, path: string, content: string): void {
 
 /**
  * A runtime copy of a small committed fake Showdown checkout whose
- * `pokemon-showdown` entry script is `entry` (a Node script).
+ * `pokemon-showdown` entry script is `entry` (a Node script), and whose
+ * config defaults the server loads (`dist/config/config-example.js`) are
+ * `distDefaults`.
  */
-export function fakeCopy(entry: string): RuntimeCopy & { vendorDir: string; runtimeRoot: string } {
+export function fakeCopy(
+  entry: string,
+  distDefaults = DEFAULTS,
+): RuntimeCopy & { vendorDir: string; runtimeRoot: string } {
   const dir = tempDir("vendor");
   write(dir, "dist/sim/index.js", "module.exports = {};\n");
   write(dir, "dist/server/index.js", "// server\n");
   write(dir, "server/static/index.html", "<!doctype html>\n");
-  const defaults = "exports.port = 8000;\nexports.bindaddress = '0.0.0.0';\n";
-  write(dir, "config/config-example.js", defaults);
-  write(dir, "dist/config/config-example.js", defaults);
+  write(dir, "config/config-example.js", DEFAULTS);
+  write(dir, "dist/config/config-example.js", distDefaults);
   write(dir, "node_modules/dep/bin/dep.js", "#!/usr/bin/env node\n");
   mkdirSync(join(dir, "node_modules/.bin"));
   symlinkSync("../dep/bin/dep.js", join(dir, "node_modules/.bin/dep"));
@@ -49,6 +53,8 @@ export function fakeCopy(entry: string): RuntimeCopy & { vendorDir: string; runt
   const copy = createRuntimeCopy({ vendorDir: dir, runtimeRoot, expectedCommit: git("rev-parse", "HEAD") });
   return { ...copy, vendorDir: dir, runtimeRoot };
 }
+
+const DEFAULTS = "exports.port = 8000;\nexports.bindaddress = '0.0.0.0';\n";
 
 /** A port nothing listens on right now, chosen by the OS on 127.0.0.1. */
 export function freePort(): Promise<number> {

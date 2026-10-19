@@ -362,17 +362,45 @@ setInterval(() => {}, 1000);
   });
 
   it.each([
-    ["entry script", "pokemon-showdown", "#!/usr/bin/env node\nrequire('fs').writeFileSync('ran', '');\n"],
-    ["config-example.js", "config/config-example.js", "exports.bindaddress = '0.0.0.0';\n"],
-  ])("refuses a tampered %s before writing the config or starting anything", async (_label, path, text) => {
+    [
+      "entry script",
+      "pokemon-showdown",
+      "#!/usr/bin/env node\nrequire('fs').writeFileSync('ran', '');\n",
+      "pokemon-showdown",
+    ],
+    ["config-example.js", "config/config-example.js", "exports.bindaddress = '0.0.0.0';\n", "config/config-example.js"],
+    [
+      "dist/config/config-example.js",
+      "dist/config/config-example.js",
+      "require('fs').writeFileSync('ran', '');\nexports.bindaddress = '0.0.0.0';\n",
+      "dist",
+    ],
+  ])("refuses a tampered %s before writing or loading the config", async (_label, path, text, entry) => {
     const copy = fakeCopy(fakeServer());
     writeFileSync(join(copy.dir, path), text);
     const launched = launch({ dir: copy.dir, port: await freePort(), expectedCommit: copy.commit });
     await expect(launched).rejects.toThrow(RuntimeCopyError);
-    await expect(launched).rejects.toThrow(`${path} digest`);
+    await expect(launched).rejects.toThrow(`${entry} digest`);
     expect(existsSync(join(copy.dir, SERVER_CONFIG_PATH))).toBe(false);
     expect(existsSync(join(copy.dir, "ran"))).toBe(false);
     expect(existsSync(join(copy.dir, "started.json"))).toBe(false);
+    expect(existsSync(lockPath(copy.dir))).toBe(false);
+  });
+
+  it("verifies the copy again immediately before the spawn", async () => {
+    // Loading these defaults changes the entry script after the first check,
+    // as a change between the config check and the spawn would.
+    const copy = fakeCopy(
+      fakeServer(),
+      "require('fs').appendFileSync(require('path').join(__dirname, '../../pokemon-showdown'), ' ');\n" +
+        "exports.port = 8000;\n",
+    );
+    const launched = launch({ dir: copy.dir, port: await freePort(), expectedCommit: copy.commit });
+    await expect(launched).rejects.toThrow(RuntimeCopyError);
+    await expect(launched).rejects.toThrow("pokemon-showdown digest");
+    expect(existsSync(join(copy.dir, SERVER_CONFIG_PATH))).toBe(true);
+    expect(existsSync(join(copy.dir, "started.json"))).toBe(false);
+    expect(existsSync(join(copy.dir, SESSION_MANIFEST))).toBe(false);
     expect(existsSync(lockPath(copy.dir))).toBe(false);
   });
 });
