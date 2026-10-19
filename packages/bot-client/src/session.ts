@@ -771,7 +771,12 @@ class Session {
     this.#log({ event: "server_auto_choose_detected", room: battle.room, detection });
   }
 
-  /** A deadline ran out for the request held for its snapshot (or the policy): the fallback goes out at once. */
+  /**
+   * A deadline ran out for the request held for its snapshot: the fallback goes out at once.
+   * The zero budget and null timer are right for `snapshot_missing` only, the one deadline
+   * the session arms. When a policy arms `overrun`, its real snapshot and budget must be
+   * passed here instead (the pending request will have to carry its `Deadline`).
+   */
   #watchdogFired(battle: Battle, fire: WatchdogFire): void {
     const pending = battle.pending as Pending;
     battle.pending = undefined;

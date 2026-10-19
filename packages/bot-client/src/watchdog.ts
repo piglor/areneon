@@ -16,14 +16,20 @@ import type { Budget } from "./deadline.ts";
  * - `snapshot_missing`: the request waits for the `|inactive|Time left`
  *   snapshot its budget comes from, and the server does not always send one.
  *   `RoomBattleTimer.nextRequest` (server/room-battle.ts:311-322) returns
- *   before the snapshot when the player has no bank left, or when fewer than
- *   two players have time left; then no turn timer runs for this request
- *   either (the tick is armed after the snapshot, :341), so the server will
- *   not time the bot out and nothing arrives to decide on. The policy: wait
- *   `snapshot_wait_ms` from the receipt (the snapshot is written right behind
- *   the request, so only the local round trip is at stake), then decide with
- *   no timer state and a zero budget, exactly as a re-sent request does. A
- *   snapshot that arrives later is ignored: the request is answered.
+ *   before the snapshot when the player has no bank left (:311), or when
+ *   fewer than two players have time left (:317). In the second case the
+ *   timer is cleared and not re-armed (the tick is armed after the snapshot,
+ *   :341), so no turn timer runs and the server will not time the bot out. In
+ *   the first, it returns before it clears the timer, so a tick left over from
+ *   the other player's earlier request may keep running, and `checkTimeout`
+ *   would forfeit the bot (its `secondsLeft > 0` fails, :452). Either way
+ *   nothing arrives to decide on. The policy: wait `snapshot_wait_ms` from
+ *   the receipt (the snapshot is written right behind the request, so only the
+ *   local round trip is at stake; the 1 s default is deliberately well under
+ *   the server's 5 s tick), then decide with no timer state and a zero
+ *   budget, exactly as a re-sent request does. A snapshot that arrives later
+ *   is ignored: the request is answered. `inherit` never carries this wait as
+ *   a turn deadline: only `overrun` deadlines are inheritable.
  *
  * Guarantees, whatever the caller does:
  *
@@ -95,11 +101,17 @@ interface OpenRequest extends AutoChooseDetection {
 export class DeadlineWatchdog {
   readonly #clock: () => number;
   readonly #onFire: (fire: WatchdogFire) => void;
-  /** Requests that fired or were settled: never armed again. */
+  /**
+   * Requests that fired or were settled: never armed again. Pruned to rqids
+   * at or above `#floor`; the server's rqids only rise, so an older one is
+   * stale and refused by `#arm` anyway.
+   */
   readonly #done = new Set<number>();
   #armed: Armed | undefined;
   /** The latest deadline, kept after it fires or settles: an `update` follow-up inherits it. */
   #latest: Deadline | undefined;
+  /** The highest rqid armed or settled. */
+  #floor = 0;
   #open: OpenRequest | undefined;
 
   constructor(options: WatchdogOptions) {
@@ -143,7 +155,7 @@ export class DeadlineWatchdog {
 
   /** The request was answered another way: its deadline is dropped and cannot fire. */
   settle(rqid: number): void {
-    this.#done.add(rqid);
+    this.#remember(rqid);
     if (this.#armed?.rqid === rqid) this.cancel();
   }
 
@@ -177,19 +189,32 @@ export class DeadlineWatchdog {
   }
 
   #arm(deadline: Deadline): boolean {
-    if (this.#done.has(deadline.rqid)) return false;
+    if (deadline.rqid < this.#floor || this.#done.has(deadline.rqid)) return false;
     this.cancel();
-    this.#latest = deadline;
+    this.#floor = deadline.rqid;
+    this.#prune();
+    // Only a turn deadline is inherited; the snapshot wait is not one.
+    if (deadline.reason === "overrun") this.#latest = deadline;
     const delay = Math.max(0, deadline.fire_at - this.#clock());
     const timer = setTimeout(() => this.#fire(deadline.rqid), delay);
     this.#armed = { ...deadline, timer };
     return true;
   }
 
+  #remember(rqid: number): void {
+    this.#done.add(rqid);
+    this.#floor = Math.max(this.#floor, rqid);
+    this.#prune();
+  }
+
+  #prune(): void {
+    for (const rqid of this.#done) if (rqid < this.#floor) this.#done.delete(rqid);
+  }
+
   #fire(rqid: number): void {
     const armed = this.#armed as Armed;
     this.#armed = undefined;
-    this.#done.add(rqid);
+    this.#remember(rqid);
     this.#onFire({ rqid, reason: armed.reason, fire_at: armed.fire_at });
   }
 }

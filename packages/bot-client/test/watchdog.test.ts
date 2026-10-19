@@ -81,6 +81,24 @@ describe("one fire per request, never for a stale one", () => {
     expect(fires).toHaveLength(1);
   });
 
+  it("forgets requests older than the latest, and refuses them all the same", () => {
+    const dog = make();
+    for (const rqid of [1, 3, 5]) {
+      dog.armSnapshotWait(rqid, now, 0);
+      advance(0);
+    }
+    dog.settle(7);
+    expect(fires).toHaveLength(3);
+    // Fired, settled, never seen and older than the latest: none can be armed.
+    for (const rqid of [1, 3, 5, 6, 7]) expect(dog.armSnapshotWait(rqid, now, 0)).toBe(false);
+    expect(dog.armSnapshotWait(8, now, 0)).toBe(true);
+    // Equal to the latest and already done stays refused (kept in the set).
+    advance(0);
+    expect(dog.armSnapshotWait(8, now, 0)).toBe(false);
+    advance(1_000);
+    expect(fires).toHaveLength(4);
+  });
+
   it("arming a newer request drops the older deadline", () => {
     const dog = make();
     dog.armSnapshotWait(1, 0, 100);
@@ -158,14 +176,30 @@ describe("inherited deadline", () => {
 
   it("fires at once when the original deadline has passed, and only once", () => {
     const dog = make();
-    dog.armSnapshotWait(3, 0, 1_000);
+    dog.armOverrun(3, 0, { submit_within_ms: 2_000, policy_budget_ms: 1_000 });
     advance(1_000);
     expect(fires).toHaveLength(1);
     expect(dog.inherit(7)).toBe(true);
     advance(0);
     expect(fires).toHaveLength(2);
-    expect(fires[1]).toEqual({ rqid: 7, reason: "snapshot_missing", fire_at: 1_000 });
+    expect(fires[1]).toEqual({ rqid: 7, reason: "overrun", fire_at: 1_000 });
     expect(dog.inherit(7)).toBe(false);
+  });
+
+  it("never carries a snapshot wait as the turn deadline", () => {
+    const dog = make();
+    dog.armSnapshotWait(3, 0, 1_000);
+    advance(1_000);
+    expect(dog.inherit(7)).toBe(false);
+    // An earlier turn deadline stays the one inherited.
+    dog.armOverrun(8, now, { submit_within_ms: 20_000, policy_budget_ms: 19_000 });
+    dog.settle(8);
+    dog.armSnapshotWait(9, now, 10);
+    dog.settle(9);
+    expect(dog.inherit(10)).toBe(true);
+    expect(dog.armed).toBe(10);
+    advance(19_000);
+    expect(fires.at(-1)).toEqual({ rqid: 10, reason: "overrun", fire_at: 1_000 + 19_000 });
   });
 
   it("has nothing to inherit before any deadline", () => {
