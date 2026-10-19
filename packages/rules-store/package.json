@@ -4,15 +4,18 @@
   "private": true,
   "license": "Apache-2.0",
   "type": "module",
+  "exports": {
+    ".": "./src/import.ts"
+  },
   "scripts": {
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@areneon/showdown-bridge": "workspace:*"
+    "@areneon/showdown-bridge": "workspace:*",
+    "pg": "8.23.1"
   },
   "devDependencies": {
-    "pg": "8.23.1",
     "@types/pg": "8.23.1"
   }
 }

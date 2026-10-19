@@ -11,6 +11,8 @@ export default defineConfig({
     coverage: {
       provider: "v8",
       include: ["packages/*/src/**"],
+      // Gated by its own run in `make db-test` (packages/rules-store/vitest.config.ts).
+      exclude: ["packages/rules-store/**"],
       thresholds: { perFile: true, lines: 90, branches: 90, functions: 90, statements: 90 },
     },
   },
