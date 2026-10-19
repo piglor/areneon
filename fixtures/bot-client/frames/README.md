@@ -30,7 +30,7 @@ Differences from a real server connection:
 
 - the wall-clock `|t:|` lines are dropped (as the runner drops them, so the file is deterministic);
 - the server's own room lines (`|init|`, `|title|`, `|j|`, `|inactive|` timer lines) are absent;
-- the `[Invalid choice] Can't do anything: It's not your turn` frame is sim-only. On a `wait` request the pinned server sets `isWait: 'cantUndo'` (`server/room-battle.ts`:810) and answers a choice itself with `[Invalid choice] There's nothing to choose` (:628), never forwarding it to the sim. That server answer is `nothing_to_choose` in `server-layer.json`.
+- the `[Invalid choice] Can't do anything: It's not your turn` frame is sim-only. On a `wait` request the pinned server sets `isWait: 'cantUndo'` (`server/room-battle.ts`:811) and answers a choice itself with `[Invalid choice] There's nothing to choose` (:628), never forwarding it to the sim. That server answer is `nothing_to_choose` in `server-layer.json`.
 
 ## `server-layer.json`: frames only the server sends, written by hand
 

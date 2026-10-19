@@ -272,7 +272,7 @@ function serverLayerFrames(battle: BattleFrames): ServerLayerFrames {
         frame: `${room}|request|${answered.raw}`,
       },
       nothing_to_choose: {
-        source: "server/room-battle.ts:628 (`choose` with no open request, a `wait` request included: `isWait: 'cantUndo'`, :810)",
+        source: "server/room-battle.ts:628 (`choose` with no open request, a `wait` request included: `isWait: 'cantUndo'`, :811)",
         frame: `${room}|error|[Invalid choice] There's nothing to choose`,
       },
       too_late: {
