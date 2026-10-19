@@ -11,6 +11,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@areneon/local-server": "workspace:*",
     "@areneon/showdown-bridge": "workspace:*"
   },
   "devDependencies": {
