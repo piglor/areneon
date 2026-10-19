@@ -36,6 +36,12 @@ importers:
         specifier: workspace:*
         version: link:../showdown-bridge
 
+  packages/local-server:
+    dependencies:
+      '@areneon/showdown-bridge':
+        specifier: workspace:*
+        version: link:../showdown-bridge
+
   packages/rules-importer:
     dependencies:
       '@areneon/rules-store':
