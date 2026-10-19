@@ -91,6 +91,8 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: rules store schema, roles and triggers on Postgres 18 (ADR-007)
         run: make db-up db-test
+      - name: bootstrap sends no role password outside its CREATE ROLE
+        run: make db-bootstrap-test
       - if: always()
         run: make db-down
 

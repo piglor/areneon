@@ -5,7 +5,8 @@
 --     psql "$SUPERUSER_URL" -v ON_ERROR_STOP=1 -f db/bootstrap.sql
 --
 -- Each password comes from the environment (on Coolify: a secret per role),
--- never from the repository. A missing one stops the script (ON_ERROR_STOP).
+-- never from the repository. A missing or blank one stops the script
+-- (ON_ERROR_STOP) before any password is sent to the server.
 -- `make db-up` runs it against the local container.
 
 \set ON_ERROR_STOP on
@@ -26,16 +27,23 @@
   DO $$ BEGIN RAISE EXCEPTION 'RULES_READER_PASSWORD is not set'; END $$;
 \endif
 
--- A blank secret is as bad as a missing one.
-SELECT :'migrator_password' = '' AS migrator_blank, :'importer_password' = '' AS importer_blank,
-  :'reader_password' = '' AS reader_blank \gset
-\if :migrator_blank
+-- A blank secret is as bad as a missing one. psql checks it on the client:
+-- each backtick runs `test` (a shell builtin) on the environment variable by
+-- name, so no password goes to the server, or into a process's arguments,
+-- except inside its own CREATE ROLE below.
+\set migrator_present `test -n "$RULES_MIGRATOR_PASSWORD" && echo true || echo false`
+\set importer_present `test -n "$RULES_IMPORTER_PASSWORD" && echo true || echo false`
+\set reader_present `test -n "$RULES_READER_PASSWORD" && echo true || echo false`
+\if :migrator_present
+\else
   DO $$ BEGIN RAISE EXCEPTION 'RULES_MIGRATOR_PASSWORD is empty'; END $$;
 \endif
-\if :importer_blank
+\if :importer_present
+\else
   DO $$ BEGIN RAISE EXCEPTION 'RULES_IMPORTER_PASSWORD is empty'; END $$;
 \endif
-\if :reader_blank
+\if :reader_present
+\else
   DO $$ BEGIN RAISE EXCEPTION 'RULES_READER_PASSWORD is empty'; END $$;
 \endif
 
