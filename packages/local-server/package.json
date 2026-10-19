@@ -5,12 +5,16 @@
   "license": "Apache-2.0",
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./harness": "./src/harness.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@areneon/showdown-bridge": "workspace:*"
+  },
+  "devDependencies": {
+    "@areneon/bot-client": "workspace:*"
   }
 }
