@@ -45,10 +45,14 @@ const realHash = rulesSnapshotHash(loadRulesSnapshot(PINNED_SHOWDOWN_COMMIT));
 const otherBytes = new TextEncoder().encode(`{"schema_version":1,"showdown_commit":"${"f".repeat(40)}","synthetic":true}`);
 const otherHash = createHash("sha256").update(otherBytes).digest("hex");
 const SOURCE = "a".repeat(40);
-const OPTIONS = { sourceCommit: SOURCE };
 const CHANNEL_BYTES = new TextEncoder().encode("{}");
 
-const snapshot = (hash: string, bytes: Uint8Array): ImportStep => ({ kind: "snapshot", hash, bytes });
+const snapshot = (hash: string, bytes: Uint8Array, source_commit = SOURCE): ImportStep => ({
+  kind: "snapshot",
+  hash,
+  source_commit,
+  bytes,
+});
 const channel = (seq: number, hash: string, source_commit: string): ImportChannel => ({
   kind: "channel",
   channel: "stable",
@@ -71,7 +75,7 @@ describe("applyImport", () => {
   it("writes a plan once and reports each step; re-running it is a no-op", async () => {
     await rolledBack(importer, async (client) => {
       const first = plan(snapshot(realHash, realBytes), channel(1, realHash, SOURCE));
-      expect(await applyImport(client, first, OPTIONS)).toEqual({
+      expect(await applyImport(client, first)).toEqual({
         steps: [
           { kind: "snapshot", hash: realHash, status: "inserted" },
           { kind: "channel", channel: "stable", seq: 1, hash: realHash, status: "inserted" },
@@ -81,7 +85,9 @@ describe("applyImport", () => {
       expect(after.releases).toEqual([{ channel: "stable", seq: 1, hash: realHash, source_commit: SOURCE }]);
       expect(after.snapshots).toEqual([{ hash: realHash, source_commit: SOURCE, schema_version: 1 }]);
 
-      expect(await applyImport(client, first, { sourceCommit: "b".repeat(40) })).toEqual({
+      // The stored snapshot keeps its first source_commit.
+      const again = plan(snapshot(realHash, realBytes, "b".repeat(40)), channel(1, realHash, SOURCE));
+      expect(await applyImport(client, again)).toEqual({
         steps: [
           { kind: "snapshot", hash: realHash, status: "already-present" },
           { kind: "channel", channel: "stable", seq: 1, hash: realHash, status: "already-present" },
@@ -93,11 +99,10 @@ describe("applyImport", () => {
 
   it("refuses a stale seq and writes it nowhere, while the rest of the plan lands", async () => {
     await rolledBack(importer, async (client) => {
-      await applyImport(client, plan(snapshot(realHash, realBytes), channel(1, realHash, SOURCE)), OPTIONS);
+      await applyImport(client, plan(snapshot(realHash, realBytes), channel(1, realHash, SOURCE)));
       const result = await applyImport(
         client,
         plan(snapshot(otherHash, otherBytes), channel(1, otherHash, "c".repeat(40)), channel(2, otherHash, "d".repeat(40))),
-        OPTIONS,
       );
       expect(result.steps.map((s) => s.status)).toEqual(["inserted", "stale", "inserted"]);
       expect((await stored(client)).releases).toEqual([
@@ -112,9 +117,8 @@ describe("applyImport", () => {
       await applyImport(
         client,
         plan(snapshot(realHash, realBytes), channel(1, realHash, SOURCE), channel(3, realHash, "e".repeat(40))),
-        OPTIONS,
       );
-      const result = await applyImport(client, plan(channel(2, realHash, "c".repeat(40))), OPTIONS);
+      const result = await applyImport(client, plan(channel(2, realHash, "c".repeat(40))));
       expect(result.steps).toEqual([{ kind: "channel", channel: "stable", seq: 2, hash: realHash, status: "stale" }]);
       expect((await stored(client)).releases).toHaveLength(2);
     });
@@ -138,16 +142,43 @@ describe("applyImport", () => {
     ],
   ])("rolls the whole plan back on %s", async (_label, failing, error) => {
     await rolledBack(importer, async (client) => {
-      await expect(applyImport(client, failing, OPTIONS)).rejects.toThrow(error);
+      await expect(applyImport(client, failing)).rejects.toThrow(error);
       expect(await stored(client)).toEqual({ snapshots: [], releases: [] });
     });
   });
 
+  it("waits for a concurrent import of the same channel to end before reading its seqs", async () => {
+    // The other import holds the channel's lock in an open transaction.
+    const other = await importer.connect();
+    try {
+      await other.query("BEGIN");
+      await other.query("SELECT pg_advisory_xact_lock(hashtext('areneon.rules_release:' || $1))", ["stable"]);
+      let settled = false;
+      const waiting = rolledBack(importer, async (client) => {
+        const result = await applyImport(client, plan(snapshot(realHash, realBytes), channel(1, realHash, SOURCE)));
+        expect(result.steps.map((s) => s.status)).toEqual(["inserted", "inserted"]);
+      }).finally(() => {
+        settled = true;
+      });
+      const blocked = "SELECT count(*)::int AS n FROM pg_locks WHERE locktype = 'advisory' AND NOT granted";
+      const deadline = Date.now() + 5000;
+      while ((await other.query(blocked)).rows[0].n !== 1) {
+        expect(Date.now()).toBeLessThan(deadline);
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      expect(settled).toBe(false);
+      await other.query("ROLLBACK");
+      await waiting;
+    } finally {
+      other.release();
+    }
+  });
+
   it("refuses to run as any role but importer, and writes nothing", async () => {
     await rolledBack(reader, async (client) => {
-      const run = applyImport(client, plan(snapshot(realHash, realBytes)), OPTIONS);
+      const run = applyImport(client, plan(snapshot(realHash, realBytes)));
       await expect(run).rejects.toThrow(ImportError);
-      await expect(applyImport(client, plan(), OPTIONS)).rejects.toThrow(
+      await expect(applyImport(client, plan())).rejects.toThrow(
         "the rules import runs as importer, not areneon_reader",
       );
     });
