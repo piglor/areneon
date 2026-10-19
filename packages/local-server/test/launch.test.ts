@@ -112,7 +112,7 @@ describe("launch with a stand-in server", () => {
     const session = server.session;
     expect(session).toEqual({
       commit: copy.commit,
-      dist_sha256: copy.distSha256,
+      runtime_sha256: copy.sha256,
       config_sha256: createHash("sha256").update(config).digest("hex"),
       bind_address: "127.0.0.1",
       port,
@@ -359,6 +359,21 @@ setInterval(() => {}, 1000);
       /digest/,
     );
     expect(existsSync(join(copy.dir, SERVER_CONFIG_PATH))).toBe(false);
+  });
+
+  it.each([
+    ["entry script", "pokemon-showdown", "#!/usr/bin/env node\nrequire('fs').writeFileSync('ran', '');\n"],
+    ["config-example.js", "config/config-example.js", "exports.bindaddress = '0.0.0.0';\n"],
+  ])("refuses a tampered %s before writing the config or starting anything", async (_label, path, text) => {
+    const copy = fakeCopy(fakeServer());
+    writeFileSync(join(copy.dir, path), text);
+    const launched = launch({ dir: copy.dir, port: await freePort(), expectedCommit: copy.commit });
+    await expect(launched).rejects.toThrow(RuntimeCopyError);
+    await expect(launched).rejects.toThrow(`${path} digest`);
+    expect(existsSync(join(copy.dir, SERVER_CONFIG_PATH))).toBe(false);
+    expect(existsSync(join(copy.dir, "ran"))).toBe(false);
+    expect(existsSync(join(copy.dir, "started.json"))).toBe(false);
+    expect(existsSync(lockPath(copy.dir))).toBe(false);
   });
 });
 

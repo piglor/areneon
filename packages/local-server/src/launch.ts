@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 import { PINNED_SHOWDOWN_COMMIT } from "@areneon/showdown-bridge";
 import { checkServerConfig, loadServerConfig, LOOPBACK_ADDRESS, writeServerConfig } from "./config.ts";
 import { acquireCopyLock, blockedMessage } from "./copy-lock.ts";
-import { verifyRuntimeCopy } from "./runtime-copy.ts";
+import { type DigestedEntry, verifyRuntimeCopy } from "./runtime-copy.ts";
 import type { SupervisorConfig } from "./supervisor.ts";
 
 /** The session manifest, inside the runtime copy (ADR-005 §4). */
@@ -41,8 +41,8 @@ export interface LaunchOptions {
 
 export interface SessionManifest {
   commit: string;
-  /** `treeDigest` of the copy's `dist/`, verified before the start. */
-  dist_sha256: string;
+  /** The copy's entry digests (`RuntimeCopy.sha256`), verified before the start. */
+  runtime_sha256: Record<DigestedEntry, string>;
   /** SHA-256 of the `config/config.js` the server loaded. */
   config_sha256: string;
   bind_address: string;
@@ -84,7 +84,7 @@ export class LaunchError extends Error {
  * only (ADR-005 §4).
  *
  * It takes the copy's lock (`lockPath`), then verifies the copy's commit and
- * `dist/` digest: a copy that fails is refused with a `RuntimeCopyError`,
+ * entry digests (`verifyRuntimeCopy`): a copy that fails is refused with a `RuntimeCopyError`,
  * and the caller recreates it with `createRuntimeCopy`. It writes and checks
  * `config/config.js`, refuses a port already held on 127.0.0.1 or ::1, and
  * starts a supervisor (`scripts/supervisor.ts`, see `supervise`) that runs
@@ -140,7 +140,7 @@ export async function launch(options: LaunchOptions): Promise<LocalServer> {
     await whenServing(supervisor, url, readyTimeoutMs);
     const session: SessionManifest = {
       commit: copy.commit,
-      dist_sha256: copy.distSha256,
+      runtime_sha256: copy.sha256,
       config_sha256: config.sha256,
       bind_address: LOOPBACK_ADDRESS,
       port,

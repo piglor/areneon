@@ -15,15 +15,19 @@ import {
   utimesSync,
   writeFileSync,
 } from "node:fs";
+import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
-import { dirname, join, relative } from "node:path";
+import { basename, dirname, join, relative } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { DEFAULT_SHOWDOWN_DIR, EngineError, PINNED_SHOWDOWN_COMMIT } from "@areneon/showdown-bridge";
 import {
   createRuntimeCopy,
   DEFAULT_RUNTIME_ROOT,
+  DIGESTED_ENTRIES,
+  entryDigest,
   RUNTIME_ENTRIES,
   RUNTIME_MANIFEST,
+  RUNTIME_MANIFEST_VERSION,
   RuntimeCopyError,
   STALE_STAGING_MS,
   treeDigest,
@@ -66,6 +70,10 @@ function fakeVendor(edit: (dir: string) => void = () => {}): { dir: string; comm
   git("add", "-A");
   git("-c", "user.name=t", "-c", "user.email=t@example.invalid", "commit", "-q", "-m", "fake");
   return { dir, commit: git("rev-parse", "HEAD") };
+}
+
+function sha256File(path: string): string {
+  return createHash("sha256").update(readFileSync(path)).digest("hex");
 }
 
 /** Path, type, size and mtime of everything under `root`, to prove nothing changed. */
@@ -179,7 +187,7 @@ describe("a runtime copy of a fake checkout", () => {
     return createRuntimeCopy(options).dir;
   }
 
-  it("holds exactly the runtime entries and a manifest of commit and dist/ digest", () => {
+  it("holds exactly the runtime entries and a manifest of commit and entry digests", () => {
     const before = listing(vendor.dir);
     const copy = createRuntimeCopy(options);
     expect(listing(vendor.dir)).toEqual(before);
@@ -192,10 +200,17 @@ describe("a runtime copy of a fake checkout", () => {
     expect(statSync(join(copy.dir, "pokemon-showdown")).mode & 0o111).toBe(0o111);
     expect(readlinkSync(join(copy.dir, "node_modules/.bin/dep"))).toBe("../dep/bin/dep.js");
     expect(readFileSync(join(copy.dir, "node_modules/.bin/dep"), "utf8")).toBe("#!/usr/bin/env node\n");
-    expect(copy.distSha256).toBe(treeDigest(join(vendor.dir, "dist")));
+    expect(copy.sha256).toEqual({
+      dist: treeDigest(join(vendor.dir, "dist")),
+      "server/static": treeDigest(join(vendor.dir, "server/static")),
+      "config/config-example.js": sha256File(join(vendor.dir, "config/config-example.js")),
+      "package.json": sha256File(join(vendor.dir, "package.json")),
+      "pokemon-showdown": sha256File(join(vendor.dir, "pokemon-showdown")),
+    });
     expect(JSON.parse(readFileSync(join(copy.dir, RUNTIME_MANIFEST), "utf8"))).toEqual({
+      version: RUNTIME_MANIFEST_VERSION,
       commit: vendor.commit,
-      dist_sha256: copy.distSha256,
+      sha256: copy.sha256,
     });
     expect(verifyRuntimeCopy(copy.dir, vendor.commit)).toEqual(copy);
   });
@@ -261,6 +276,46 @@ describe("a runtime copy of a fake checkout", () => {
     expect(() => verifyRuntimeCopy(dir, vendor.commit)).toThrow(/does not match the recorded/);
   });
 
+  it.each([
+    ["the entry script", "pokemon-showdown"],
+    ["config-example.js", "config/config-example.js"],
+    ["package.json", "package.json"],
+    ["a static file", "server/static/index.html"],
+  ])("refuses a changed byte in %s", (_label, path) => {
+    const dir = freshCopy();
+    appendFileSync(join(dir, path), " ");
+    const entry = path.startsWith("server/static/") ? "server/static" : path;
+    expect(() => verifyRuntimeCopy(dir, vendor.commit)).toThrow(
+      new RegExp(`${entry} digest [0-9a-f]{64} does not match the recorded [0-9a-f]{64}; recreate the copy`),
+    );
+  });
+
+  it.each(["pokemon-showdown", "config/config-example.js"])(
+    "refuses %s replaced by a symlink to the same bytes",
+    (path) => {
+      const dir = freshCopy();
+      renameSync(join(dir, path), join(dir, `${path}.real`));
+      symlinkSync(basename(`${path}.real`), join(dir, path));
+      expect(readFileSync(join(dir, path), "utf8")).toBe(readFileSync(join(vendor.dir, path), "utf8"));
+      expect(() => verifyRuntimeCopy(dir, vendor.commit)).toThrow(`${join(dir, path)} is not a regular file`);
+    },
+  );
+
+  it("refuses a copy with a manifest of the older version, which digested only dist/", () => {
+    const dir = freshCopy();
+    writeFileSync(
+      join(dir, RUNTIME_MANIFEST),
+      JSON.stringify({ commit: vendor.commit, dist_sha256: treeDigest(join(dir, "dist")) }),
+    );
+    expect(() => verifyRuntimeCopy(dir, vendor.commit)).toThrow(
+      new RuntimeCopyError(
+        `runtime manifest ${join(dir, RUNTIME_MANIFEST)} is version 1, not 2; recreate the copy with createRuntimeCopy`,
+      ),
+    );
+    expect(freshCopy()).toBe(dir);
+    expect(verifyRuntimeCopy(dir, vendor.commit).commit).toBe(vendor.commit);
+  });
+
   it("refuses a symlink planted in dist/", () => {
     const dir = freshCopy();
     symlinkSync(join(vendor.dir, "dist/sim/index.js"), join(dir, "dist/sim/planted.js"));
@@ -279,17 +334,45 @@ describe("a runtime copy of a fake checkout", () => {
   });
 
   it.each([
-    ["missing", null],
-    ["not JSON", "{"],
-    ["null", "null"],
-    ["an extra field", JSON.stringify({ commit: "c", dist_sha256: "d", extra: "e" })],
-    ["a missing field", JSON.stringify({ commit: "c" })],
-    ["a non-string field", JSON.stringify({ commit: "c", dist_sha256: 1 })],
-  ])("refuses a manifest that is %s", (_label, content) => {
+    ["missing", null, /cannot read runtime manifest/],
+    ["not JSON", "{", /cannot read runtime manifest/],
+    ["null", "null", /is not an object/],
+    ["of another version", { version: 3 }, /is version 3, not 2; recreate the copy/],
+    ["with an extra field", { extra: "e" }, /is not \{version, commit, sha256/],
+    ["without a commit", { commit: undefined }, /is not \{version, commit, sha256/],
+    ["with a non-string commit", { commit: 1 }, /is not \{version, commit, sha256/],
+    ["with null digests", { sha256: null }, /is not \{version, commit, sha256/],
+    ["with digests that are not an object", { sha256: "d" }, /is not \{version, commit, sha256/],
+    ["without an entry's digest", { sha256: { dist: "d" } }, /is not \{version, commit, sha256/],
+    [
+      "with a non-string digest",
+      { sha256: Object.fromEntries(DIGESTED_ENTRIES.map((entry) => [entry, 1])) },
+      /is not \{version, commit, sha256/,
+    ],
+  ])("refuses a manifest that is %s", (_label, change, message) => {
     const dir = freshCopy();
-    if (content === null) rmSync(join(dir, RUNTIME_MANIFEST));
-    else writeFileSync(join(dir, RUNTIME_MANIFEST), content);
+    const path = join(dir, RUNTIME_MANIFEST);
+    if (change === null) rmSync(path);
+    else if (typeof change === "string") writeFileSync(path, change);
+    else writeFileSync(path, JSON.stringify({ ...JSON.parse(readFileSync(path, "utf8")), ...change }));
     expect(() => verifyRuntimeCopy(dir, vendor.commit)).toThrow(RuntimeCopyError);
+    expect(() => verifyRuntimeCopy(dir, vendor.commit)).toThrow(message);
+  });
+});
+
+describe("the digested entries", () => {
+  it("are the runtime entries but node_modules", () => {
+    expect([...DIGESTED_ENTRIES]).toEqual(RUNTIME_ENTRIES.filter((entry) => entry !== "node_modules"));
+  });
+});
+
+describe("entryDigest", () => {
+  it("is treeDigest of a directory and the plain SHA-256 of a file", () => {
+    const dir = tempDir("entry");
+    write(dir, "d/x.js", "1");
+    write(dir, "f.js", "22");
+    expect(entryDigest(join(dir, "d"))).toBe(treeDigest(join(dir, "d")));
+    expect(entryDigest(join(dir, "f.js"))).toBe(createHash("sha256").update("22").digest("hex"));
   });
 });
 
@@ -336,7 +419,10 @@ describe("a runtime copy of the real pinned checkout", () => {
       expect(gitStatus()).toBe(statusBefore);
       expect(copy.commit).toBe(PINNED_SHOWDOWN_COMMIT);
       expect(copy.dir).toBe(join(root, PINNED_SHOWDOWN_COMMIT));
-      expect(copy.distSha256).toBe(treeDigest(join(DEFAULT_SHOWDOWN_DIR, "dist")));
+      expect(copy.sha256).toEqual(
+        Object.fromEntries(DIGESTED_ENTRIES.map((entry) => [entry, entryDigest(join(DEFAULT_SHOWDOWN_DIR, entry))])),
+      );
+      expect(copy.sha256.dist).toBe(treeDigest(join(DEFAULT_SHOWDOWN_DIR, "dist")));
       expect(verifyRuntimeCopy(copy.dir)).toEqual(copy);
       expect(existsSync(join(copy.dir, "server/static/index.html"))).toBe(true);
       expect(statSync(join(copy.dir, "pokemon-showdown")).mode & 0o111).not.toBe(0);

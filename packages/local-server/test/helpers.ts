@@ -31,7 +31,9 @@ export function fakeCopy(entry: string): RuntimeCopy & { vendorDir: string; runt
   write(dir, "dist/sim/index.js", "module.exports = {};\n");
   write(dir, "dist/server/index.js", "// server\n");
   write(dir, "server/static/index.html", "<!doctype html>\n");
-  write(dir, "config/config-example.js", "exports.port = 8000;\nexports.bindaddress = '0.0.0.0';\n");
+  const defaults = "exports.port = 8000;\nexports.bindaddress = '0.0.0.0';\n";
+  write(dir, "config/config-example.js", defaults);
+  write(dir, "dist/config/config-example.js", defaults);
   write(dir, "node_modules/dep/bin/dep.js", "#!/usr/bin/env node\n");
   mkdirSync(join(dir, "node_modules/.bin"));
   symlinkSync("../dep/bin/dep.js", join(dir, "node_modules/.bin/dep"));
