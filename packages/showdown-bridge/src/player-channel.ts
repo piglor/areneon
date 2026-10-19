@@ -44,8 +44,9 @@ export async function observe(input: Omit<ObservationInput, "sha256">): Promise<
  * HP only as a share of 100; the exact value is the opponent's SECRET half.
  * This is the engine's convention for every supported format; a format that
  * reported HP otherwise (exact, or the 48-pixel scale) would fail closed
- * here until this check learned it. Chat (`|c|`) is dropped by the server
- * adapters before this check (ADR-005 §5), so its free text never trips it.
+ * here until this check learned it. On the server path, chat (`|c|`) is
+ * dropped by `stripServerLines` before this check (ADR-005 §5), so its free
+ * text never trips it.
  */
 function secretOfOpponent(line: string, player: string): boolean {
   if (line.startsWith("|split|")) return true;
