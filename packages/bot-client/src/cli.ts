@@ -40,8 +40,9 @@ Each battle, finished or not, is stored as one JSON record (the bot's own
 channel and decisions) in --out, default private-data/a2 (mode 0700, files
 0600). An --out inside the checkout is refused unless --data-class is
 synthetic. A record of a battle that ended in an Open Team Sheets failure
-(ots_failure) may hold the human's accepted team sheet, so it is only ever
-written under private-data/, whatever --out says.`;
+(ots_failure), a forfeited decline, or a fatal error may hold the human's
+accepted team sheet, so it is only ever written under private-data/, whatever
+--out says.`;
 
 const DATA_CLASSES: readonly string[] = ["private", "synthetic"];
 /** A Showdown battle room id; the only shape of `record.room` that may go into a file name. */
@@ -125,7 +126,7 @@ export async function runCli(argv: string[], deps: CliDeps): Promise<number> {
   const stored = { rooms: new Set<string>(), failed: false };
   /**
    * Stores one record, once per room. The room id is checked before it goes
-   * into a path. A record with an `ots_failure` may hold the human's accepted
+   * into a path. A record with an `ots_failure`, an `ots` of `forfeited` or a `fatal` may hold the human's accepted
    * team sheet (a `|showteam|` line that came before the failure was
    * noticed), so it is written under `private-data/` only, whatever `--out`
    * says. A record that cannot be stored is reported and fails the run.
@@ -136,9 +137,14 @@ export async function runCli(argv: string[], deps: CliDeps): Promise<number> {
     try {
       if (!BATTLE_ROOM.test(record.room)) throw new RangeError(`not a battle room id: ${JSON.stringify(record.room)}`);
       let dir = out;
-      if (record.ots_failure !== null && !within(deps.privateDataDir, out)) {
+      // A forfeited decline or a fatal end can leave `ots_failure` null (the `/forfeit` could
+      // not be sent, or the run ended first) while a `|showteam|` line is already in the
+      // channel, so those route like an `ots_failure`. The line itself is not removed from the
+      // record: the channel is kept as received, and the routing rule is the guard.
+      const sheet = record.ots_failure !== null || record.ots === "forfeited" || record.fatal !== null;
+      if (sheet && !within(deps.privateDataDir, out)) {
         dir = deps.defaultOutDir;
-        deps.stderr(`${record.room}: ots_failure record goes to ${dir}, not ${out}: it may hold the opponent's team sheet`);
+        deps.stderr(`${record.room}: record goes to ${dir}, not ${out}: it may hold the opponent's team sheet`);
       }
       deps.makeDir(dir, DIR_MODE);
       deps.writeFile(join(dir, `${record.room}-${deps.now()}.json`), `${JSON.stringify(record, null, 2)}\n`, FILE_MODE);

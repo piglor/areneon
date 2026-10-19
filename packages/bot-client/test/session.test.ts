@@ -1,6 +1,7 @@
 import { EnumeratorDefectError, loadEngine, loadRulesSnapshot, UnsupportedFormatError } from "@areneon/showdown-bridge";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  type A2BattleRecord,
   type A2BotOptions,
   type A2SessionResult,
   type DecisionRecord,
@@ -926,21 +927,262 @@ describe("runA2Bot: reconnect during Team Preview (ADR-005 §1, §2)", () => {
     expect(run.events("sentchoice")).toHaveLength(1);
   });
 
-  it("forfeits when the drop came before the preview snapshot: the re-sent request has a zero budget", async () => {
-    // Documented behaviour, not a goal: with no snapshot the preview budget is 0, so the
-    // decline is sent on the rejoin with a deadline that has passed and the confirmation is late.
-    const run = await start();
+  /** The connection drops after the preview request, before its timer snapshot: the rejoin re-sends the request. */
+  async function droppedBeforeSnapshot(run: Run): Promise<void> {
     login(run.t());
     run.t().push(INIT);
     run.t().push(at(0));
     run.t().push(at(1));
     expect(rejects(run)).toBe(0);
+    // The snapshot went with the old connection, and the request's receipt is long past.
+    now = 30_000;
     await rejoin(run);
     run.t().push(at(1));
+  }
+
+  it("declines on the rejoin with a real budget when the drop came before the preview snapshot", async () => {
+    // #807: the re-sent request has no snapshot, so its decision budget is 0, but the decline
+    // gets `declineWaitMs` from the rejoin instead of a deadline that passed before it was sent.
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const run = await start();
+    await droppedBeforeSnapshot(run);
     expect(rejects(run)).toBe(1);
+    // Fail closed: the choice is held until the bot's own confirmation line.
+    expect(chooseLines(run.t())).toEqual([]);
+    now = 34_999;
+    run.t().push(CONFIRM);
+    expect(forfeits(run)).toBe(0);
+    expect(run.events("ots_failure")).toEqual([]);
+    const decision = run.decisions()[0] as DecisionRecord;
+    expect(decision).toMatchObject({ timer: null, budget: { submit_within_ms: 0, policy_budget_ms: 0 }, elapsed_ms: 30_000 });
+    expect(chooseLines(run.t())).toEqual([`${ROOM}|/choose ${decision.choice}|1`]);
+    // The battle goes on.
+    run.t().push(at(2));
+    run.t().push(room("|tie"));
+    await expect(run.result).resolves.toMatchObject({ battles: [{ ots: "confirmed", ots_failure: null }] });
+  });
+
+  it("pins the default 5 s window from the rejoin: confirmed just inside, forfeited at the boundary", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const inside = await start();
+    await droppedBeforeSnapshot(inside);
+    now = 34_999;
+    vi.advanceTimersByTime(4_999);
+    inside.t().push(CONFIRM);
+    expect(forfeits(inside)).toBe(0);
+    expect(chooseLines(inside.t())).toHaveLength(1);
+
+    const boundary = await start();
+    await droppedBeforeSnapshot(boundary);
+    now = 35_000;
+    boundary.t().push(CONFIRM);
+    expect(forfeits(boundary)).toBe(1);
+    expect(chooseLines(boundary.t())).toEqual([]);
+  });
+
+  it("forfeits by its own timer when no frame comes at all within the default window", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const run = await start();
+    await droppedBeforeSnapshot(run);
+    now = 34_999;
+    vi.advanceTimersByTime(5_000);
+    expect(forfeits(run)).toBe(0);
+    now = 35_000;
+    vi.advanceTimersByTime(1);
+    expect(forfeits(run)).toBe(1);
+  });
+
+  it("still forfeits when the rejoin decline is never confirmed within its window", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const run = await start({ declineWaitMs: 2_000 });
+    await droppedBeforeSnapshot(run);
+    now = 31_999;
+    vi.advanceTimersByTime(1_999);
+    expect(forfeits(run)).toBe(0);
+    now = 32_001;
+    vi.advanceTimersByTime(2);
+    expect(forfeits(run)).toBe(1);
+    expect(run.events("ots_failure")).toEqual([expect.objectContaining({ reason: "not_confirmed" })]);
+    // A late confirmation releases nothing.
+    run.t().push(CONFIRM);
+    expect(chooseLines(run.t())).toEqual([]);
+    run.t().push(room("|win|p2"));
+    await expect(run.result).resolves.toMatchObject({ battles: [{ ots: "forfeited", ots_failure: { reason: "not_confirmed" } }] });
+  });
+
+  it("forfeits a rejoin decline whose confirmation comes after the window", async () => {
+    const run = await start({ declineWaitMs: 2_000 });
+    await droppedBeforeSnapshot(run);
+    now = 32_000;
     run.t().push(CONFIRM);
     expect(forfeits(run)).toBe(1);
     expect(run.events("ots_failure")).toEqual([expect.objectContaining({ reason: "not_confirmed" })]);
     expect(chooseLines(run.t())).toEqual([]);
+  });
+
+  it("gives the decline the same window when the watchdog answers a preview whose snapshot never came", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const run = await start();
+    login(run.t());
+    run.t().push(INIT);
+    run.t().push(at(0));
+    run.t().push(at(1));
+    now = 1_000;
+    vi.advanceTimersByTime(1_000);
+    expect(run.events("watchdog")).toHaveLength(1);
+    expect(rejects(run)).toBe(1);
+    now = 5_999;
+    run.t().push(CONFIRM);
+    expect(forfeits(run)).toBe(0);
+    expect(chooseLines(run.t())).toHaveLength(1);
+    expect(run.decisions()[0]).toMatchObject({ watchdog: "snapshot_missing", timer: null });
+  });
+
+  it("forfeits a watchdog-answered preview whose confirmation comes at the end of the window", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const run = await start();
+    login(run.t());
+    run.t().push(INIT);
+    run.t().push(at(0));
+    run.t().push(at(1));
+    now = 1_000;
+    vi.advanceTimersByTime(1_000);
+    now = 6_000;
+    run.t().push(CONFIRM);
+    expect(forfeits(run)).toBe(1);
+    expect(chooseLines(run.t())).toEqual([]);
+  });
+
+  it("refuses a decline window that is not a positive whole number of ms", async () => {
+    await expect(runA2Bot({ ...base(), declineWaitMs: 0 })).rejects.toThrow(RangeError);
+    await expect(runA2Bot({ ...base(), declineWaitMs: 1.5 })).rejects.toThrow(RangeError);
+  });
+});
+
+describe("runA2Bot: a fatal error keeps the records of its battles (#807)", () => {
+  it("hands each unfinished battle to onBattle, with its channel, before it rejects", async () => {
+    const records: A2BattleRecord[] = [];
+    const run = await start({ onBattle: (record) => records.push(record) });
+    login(run.t());
+    preview(run.t());
+    run.t().push(at(2));
+    run.t().push(room("|error|/timer - something else"));
+    await expect(run.result).rejects.toThrow(RefusalError);
+    expect(records).toHaveLength(1);
+    expect(records[0]).toMatchObject({
+      room: ROOM,
+      player: "p1",
+      result: "unfinished",
+      ots: "confirmed",
+      fatal: { error: "RefusalError", channel_complete: true },
+    });
+    expect(records[0]?.decisions).toHaveLength(1);
+    expect(records[0]?.channels).toHaveLength(1);
+    expect(records[0]?.channels[0]?.lines.some((line) => line.startsWith("|request|"))).toBe(true);
+  });
+
+  it("keeps a forfeited decline's record, and reports a channel it could not build", async () => {
+    const records: A2BattleRecord[] = [];
+    const run = await start({ onBattle: (record) => records.push(record) });
+    login(run.t());
+    run.t().push(INIT);
+    run.t().push(at(0));
+    run.t().push(at(1));
+    run.t().push(time(90, 420, 90));
+    run.t().push(room("|showteam|p2|Gengar||focussash|||||||50|"));
+    // A request for the other seat: the channel refuses to be built from it, which is the fatal error.
+    run.t().push(
+      edited(3, (request) => {
+        (request.side as { id: string }).id = "p2";
+      }),
+    );
+    await expect(run.result).rejects.toThrow();
+    expect(records).toHaveLength(1);
+    expect(records[0]).toMatchObject({ ots: "forfeited", ots_failure: { reason: "showteam" } });
+    expect(records[0]?.fatal).toMatchObject({ channel_complete: false });
+  });
+
+  it("stores a battle that has no request yet as an empty record, and not the battles that ended", async () => {
+    const records: A2BattleRecord[] = [];
+    const run = await start({
+      battles: 2,
+      reconnect: { attempts: 1, delayMs: 0 },
+      onBattle: (record) => records.push(record),
+    });
+    login(run.t());
+    preview(run.t());
+    run.t().push(room("|tie"));
+    expect(records).toHaveLength(1);
+    // A second battle joins, then the server goes away for good.
+    const second = ">battle-gen9championsvgc2026regmc-2";
+    run.t().push(`${second}\n|init|battle\n|title|p1 vs. p2`);
+    run.t().end(1006);
+    await vi.waitFor(() => expect(run.transports).toHaveLength(2));
+    run.t().end(1006);
+    await expect(run.result).rejects.toThrow(SessionError);
+    expect(records).toHaveLength(2);
+    expect(records[1]).toMatchObject({
+      room: "battle-gen9championsvgc2026regmc-2",
+      player: null,
+      channels: [],
+      decisions: [],
+      fatal: { error: "SessionError", channel_complete: true },
+    });
+  });
+
+  it("names a fatal value that is not an Error as unknown", async () => {
+    const records: A2BattleRecord[] = [];
+    const run = await start({
+      onBattle: (record) => records.push(record),
+      onLog: (entry) => {
+        if (entry.event === "decision") throw "not an error";
+      },
+    });
+    login(run.t());
+    run.t().push(INIT);
+    run.t().push(at(0));
+    run.t().push(at(1));
+    run.t().push(time(90, 420, 90));
+    await expect(run.result).rejects.toBe("not an error");
+    expect(records[0]?.fatal).toEqual({ error: "unknown", channel_complete: true });
+  });
+
+  it("still hands over a battle whose end failed half-way (the room could not be left)", async () => {
+    const records: A2BattleRecord[] = [];
+    const transports: MemoryTransport[] = [];
+    const run = await start({
+      onBattle: (record) => records.push(record),
+      connect: async () => {
+        const transport = memoryTransport();
+        const send = transport.send.bind(transport);
+        transport.send = (line: string) => {
+          if (line.endsWith("/leave")) throw new Error("socket gone");
+          send(line);
+        };
+        transports.push(transport);
+        return transport;
+      },
+    });
+    await vi.waitFor(() => expect(transports).toHaveLength(1));
+    const t = transports[0] as MemoryTransport;
+    login(t);
+    preview(t);
+    t.push(room("|win|p2"));
+    await expect(run.result).rejects.toThrow("socket gone");
+    expect(records).toHaveLength(1);
+    expect(records[0]).toMatchObject({ result: "unfinished", fatal: { error: "Error" } });
+    expect(records[0]?.channels).toHaveLength(1);
+  });
+
+  it("rejects with the fatal error even when onBattle throws", async () => {
+    const run = await start({
+      onBattle: () => {
+        throw new Error("sink");
+      },
+    });
+    login(run.t());
+    preview(run.t());
+    run.t().push(room("|error|/timer - something else"));
+    await expect(run.result).rejects.toThrow(RefusalError);
   });
 });

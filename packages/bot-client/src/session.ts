@@ -78,6 +78,14 @@ export interface A2BotOptions {
    */
   snapshotWaitMs?: number;
   /**
+   * How long the Open Team Sheets decline waits for its confirmation when its
+   * Team Preview request has no timer snapshot (a rejoin that lost it, the
+   * watchdog's `snapshot_missing`, the timer off). Measured from the moment
+   * the decline is sent. Default 5 s: the confirmation is one local round
+   * trip, and the server's own tick is 5 s. See `#decide`.
+   */
+  declineWaitMs?: number;
+  /**
    * After a close the session reconnects at once, then every `delayMs`, up
    * to `attempts` times in a row without a login in between. Default 5 x 200 ms.
    */
@@ -89,7 +97,12 @@ export interface A2BotOptions {
    */
   acceptTimeoutMs?: number;
   onLog?: (entry: SessionLog) => void;
-  /** Called once per battle, when it ends. */
+  /**
+   * Called once per battle, when it ends. A fatal error that ends the session
+   * calls it too, once for each battle still unfinished (its record has
+   * `fatal` set), just before `runA2Bot` rejects; an `onBattle` that throws
+   * there does not change the rejection.
+   */
   onBattle?: (record: A2BattleRecord) => void;
 }
 
@@ -136,6 +149,15 @@ export interface A2BattleRecord {
   decisions: DecisionRecord[];
   /** This player's channel, one per connection that joined the room (each starts at its `|init|`). */
   channels: PlayerChannel[];
+  /**
+   * Set when a fatal error ended the session while this battle was unfinished
+   * (the bot forfeited it if it could): the error's class name, never its
+   * message (it can quote server text). The record is as complete as the
+   * session could make it: `player` is null and `channels` empty before the
+   * first request; `channel_complete` is false when the open connection's
+   * channel could not be built, so `channels` lacks that last part.
+   */
+  fatal: { error: string; channel_complete: boolean } | null;
 }
 
 export interface A2SessionResult {
@@ -185,6 +207,8 @@ const TIMER_OFF = "|inactiveoff|";
 const BATTLE_INIT = "|init|battle";
 /** No timer state: skip the policy and send at once. */
 const ZERO_BUDGET: Budget = Object.freeze({ submit_within_ms: 0, policy_budget_ms: 0 });
+/** The decline's confirmation window when its preview request has no snapshot (see `declineWaitMs`). */
+const DEFAULT_DECLINE_WAIT_MS = 5_000;
 
 /** A request waiting for its timer snapshot. */
 interface Pending {
@@ -294,6 +318,10 @@ export async function runA2Bot(options: A2BotOptions): Promise<A2SessionResult> 
   const format = resolveFormat(options.engine, options.format, options.snapshot);
   const verdict = validateTeam(options.engine, format, options.team);
   if (!verdict.valid) throw new SessionError(`the team is not valid for ${options.format}: ${verdict.problems.join("; ")}`);
+  const decline = options.declineWaitMs ?? DEFAULT_DECLINE_WAIT_MS;
+  if (!(Number.isSafeInteger(decline) && decline >= 1)) {
+    throw new RangeError(`declineWaitMs must be a positive whole number of ms, not ${decline}`);
+  }
   return new Session(options, battles).run();
 }
 
@@ -423,8 +451,36 @@ class Session {
         // Not connected: the server's timer ends the battle.
       }
     }
+    if (!this.#settled) this.#reportUnfinished(error);
     this.#settle(() => this.#done.reject(error));
     this.#connection?.transport.close();
+  }
+
+  /**
+   * A fatal error ends the session: every unfinished battle is handed to
+   * `onBattle` first, so its record is stored whatever the caller does with
+   * the rejection. The open connection's channel is kept now (a close would
+   * have kept it); if it cannot be built the record says so and goes without.
+   */
+  #reportUnfinished(error: unknown): void {
+    for (const battle of this.#battles.values()) {
+      if (battle.result !== "unfinished") continue;
+      const state = this.#connection?.rooms.get(battle.room);
+      let channel_complete = true;
+      if (state?.channel !== undefined) {
+        try {
+          this.#keepChannel(battle, state);
+        } catch {
+          channel_complete = false;
+        }
+      }
+      const fatal = { error: error instanceof Error ? error.name : "unknown", channel_complete };
+      try {
+        this.#options.onBattle?.(this.#record(battle, fatal));
+      } catch {
+        // The rejection stays the fatal error; a failing sink cannot replace it.
+      }
+    }
   }
 
   #finish(): void {
@@ -444,7 +500,7 @@ class Session {
     fn();
   }
 
-  #record(battle: Battle): A2BattleRecord {
+  #record(battle: Battle, fatal: A2BattleRecord["fatal"] = null): A2BattleRecord {
     return {
       room: battle.room,
       player: battle.player,
@@ -456,6 +512,7 @@ class Session {
       server_auto_chooses: battle.autoChooses,
       decisions: battle.decisions,
       channels: battle.channels,
+      fatal,
     };
   }
 
@@ -795,9 +852,25 @@ class Session {
     battle.watchdog.settle(request.rqid);
     const choice = actorRule(legal);
     if (request.phase === "preview" && battle.ots.status === "idle") {
+      // The decline's confirmation window. With the server's snapshot it is the preview
+      // `policy_budget_ms` from the request's receipt. Without one (a rejoin that lost the
+      // snapshot to the old connection, the watchdog's `snapshot_missing`, the timer off) the
+      // budget is 0 and the request's receipt may be long past, which would make the
+      // confirmation late before it was asked for. The decline is not the policy: it needs one
+      // round trip to the local server, so it gets `declineWaitMs` from the moment it is sent
+      // (the rejoin's receipt, the watchdog's fire). The turn timer is still running, so this
+      // cannot outlast it by more than the wait; the same window as the watchdog's, which also
+      // lets a missing snapshot cost one short, measured-from-now wait. Fail closed as ever:
+      // the preview choice is held until the bot's own confirmation line, and without it
+      // `tick` forfeits at the end of the window.
+      const sent = this.#clock();
+      const snapshotless = deadline.timer === null;
+      const from = snapshotless ? sent : received_at;
+      const window = snapshotless ? (this.#options.declineWaitMs ?? DEFAULT_DECLINE_WAIT_MS) : deadline.budget.policy_budget_ms;
+      const budget: Budget = { submit_within_ms: window, policy_budget_ms: window };
       const event: RoomEvent = { kind: "request", room: battle.room, request, resend: false };
-      this.#ots(battle, () => battle.ots.onEvent(event, received_at, deadline.budget));
-      this.#watchOts(battle, received_at + deadline.budget.policy_budget_ms);
+      this.#ots(battle, () => battle.ots.onEvent(event, from, budget));
+      this.#watchOts(battle, from + window);
     }
     const decision: DecisionRecord = {
       request_seq: request.request_seq,
@@ -873,14 +946,17 @@ class Session {
   }
 
   #end(battle: Battle, state: RoomOnConnection, line: string): void {
-    battle.winner = line === "|tie" ? null : line.slice("|win|".length);
-    battle.result =
-      battle.winner === null ? "tie" : toId(battle.winner) === toId(this.#options.name) ? "win" : "loss";
+    const winner = line === "|tie" ? null : line.slice("|win|".length);
+    const result = winner === null ? "tie" : toId(winner) === toId(this.#options.name) ? "win" : "loss";
     clearTimeout(battle.otsTimer);
     battle.watchdog.dispose();
+    // The battle counts as ended only once its channel is kept and the room left: if either
+    // throws, the fatal path still sees it unfinished and hands its record over.
     this.#keepChannel(battle, state);
     this.#send(`${battle.room}|/leave`);
-    this.#log({ event: "battle_ended", room: battle.room, result: battle.result, winner: battle.winner });
+    battle.winner = winner;
+    battle.result = result;
+    this.#log({ event: "battle_ended", room: battle.room, result, winner });
     this.#options.onBattle?.(this.#record(battle));
     this.#ended += 1;
     if (this.#ended >= this.#battlesWanted) this.#stop();
