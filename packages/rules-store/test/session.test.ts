@@ -63,6 +63,9 @@ describe("connect", () => {
     ["?idle_in_transaction_session_timeout=0", "idle_in_transaction_session_timeout"],
     ["?options=-c%20statement_timeout%3D0", "options"],
     ["?sslmode=disable&lock_timeout=1&options=x", "lock_timeout, options"],
+    ["?STATEMENT_TIMEOUT=0", "statement_timeout"],
+    ["?%73tatement_timeout=0", "statement_timeout"],
+    ["?Options=-c%20lock_timeout%3D0", "options"],
   ])("refuses a URL ending %s before connecting", async (query, keys) => {
     const connectSpy = vi.spyOn(pg.Client.prototype, "connect");
     const refusal = connect(`${IMPORTER_URL}${query}`);

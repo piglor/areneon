@@ -62,7 +62,13 @@ licences-selftest:
 # The rules store (ADR-007) on a local Postgres 18 container bound to
 # 127.0.0.1, never the Coolify database. db-up starts it fresh, bootstraps the
 # roles and runs the migrations with the pinned dbmate; db-test needs it up.
-DB_COMPOSE := docker compose -f db/compose.yaml
+# RULES_DB_PORT and RULES_DB_COMPOSE_PROJECT move it, e.g. to run the e2e
+# beside the default one; db-test and the e2e follow through RULES_DB_HOST.
+RULES_DB_PORT ?= 55432
+RULES_DB_COMPOSE_PROJECT ?= areneon-rules-db
+RULES_DB_HOST := 127.0.0.1:$(RULES_DB_PORT)
+export RULES_DB_PORT RULES_DB_COMPOSE_PROJECT RULES_DB_HOST
+DB_COMPOSE := docker compose -p $(RULES_DB_COMPOSE_PROJECT) -f db/compose.yaml
 DBMATE := docker run --rm --network host -v "$(CURDIR)/db:/db:ro" \
 	ghcr.io/amacneil/dbmate:2.36.0@sha256:520c740c6e0ad73fde2cd1ea7e2b779aaf789d22aca8858f87a478e7094535fb \
 	--no-dump-schema --migrations-dir /db/migrations
@@ -74,7 +80,7 @@ db-up:
 	$(DB_COMPOSE) down -v --remove-orphans
 	$(DB_COMPOSE) up -d --wait
 	$(DB_COMPOSE) exec -T $(LOCAL_ROLE_ENV) postgres psql -U postgres -d areneon -v ON_ERROR_STOP=1 -f - < db/bootstrap.sql
-	$(DBMATE) --url "postgres://rules_migrator:local-migrator@127.0.0.1:55432/areneon?sslmode=disable&search_path=rules" migrate
+	$(DBMATE) --url "postgres://rules_migrator:local-migrator@$(RULES_DB_HOST)/areneon?sslmode=disable&search_path=rules" migrate
 
 db-down:
 	$(DB_COMPOSE) down -v --remove-orphans

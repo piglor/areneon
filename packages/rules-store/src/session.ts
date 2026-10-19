@@ -44,6 +44,9 @@ const SETTING: Readonly<Record<keyof SessionTimeouts, string>> = {
 /**
  * URL query keys that would override the timeouts: pg lays the URL's
  * parameters over the explicit config, and `options=-c …` sets any setting.
+ * Keys are compared in lower case after the parser's percent-decoding. This
+ * early refusal only gives a clear message; the real guard is the
+ * pg_settings read-back after connecting, which catches any route.
  */
 const OVERRIDING_KEYS = [...Object.values(SETTING), "options"];
 
@@ -54,7 +57,8 @@ const OVERRIDING_KEYS = [...Object.values(SETTING), "options"];
  * a SessionConfigError, before connecting, a timeout that is not a positive
  * integer or a URL whose query sets a timeout or `options`; and, after
  * connecting (the client is then closed), a session whose settings differ
- * from the requested ones (as PGOPTIONS could make them). The client fits
+ * from the requested ones (as a pooler that drops startup parameters could
+ * make them). The client fits
  * applyImport's ImportClient; the caller ends it. A dropped idle connection
  * would emit 'error' and, unheard, crash the process; the next query reports
  * it instead.
@@ -68,7 +72,7 @@ export async function connect(url: string, options: SessionOptions = {}): Promis
   }
   let keys: string[];
   try {
-    keys = Object.keys(parse(url));
+    keys = Object.keys(parse(url)).map((key) => key.toLowerCase());
   } catch {
     // The parser's message could quote the URL.
     throw new SessionConfigError("the database URL is not a connection string");

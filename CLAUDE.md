@@ -23,6 +23,7 @@ make db-up db-test  # rules store on a fresh local Postgres 18 (127.0.0.1:55432)
 make db-down        # remove that container
 make db-bootstrap-test  # bootstrap.sql on its own throwaway Postgres: refuses missing/blank passwords, sends none outside its CREATE ROLE
 make importer-e2e   # build the importer image, import the recorded releases into a fresh db-up DB twice (commit, then no-op); db-up again before db-test
+RULES_DB_PORT=55433 RULES_DB_COMPOSE_PROJECT=areneon-e2e make importer-e2e  # the same beside the default DB (db-up/db-test/db-down honour both too)
 ```
 
 Single tests. The coverage thresholds apply per file and fail on a subset, so run without coverage:
