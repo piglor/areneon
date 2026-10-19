@@ -251,6 +251,30 @@ describe("runImportCommand", () => {
     expect(summary.error).toBe("Error: cannot reach [redacted]");
   });
 
+  it("redacts a password whose percent escape is malformed", async () => {
+    const { summary } = await run({
+      env: { DATABASE_URL: "postgres://importer:p%zzw@db.internal/areneon" },
+      connect: async () => {
+        throw new Error("auth failed for p%zzw");
+      },
+    });
+    expect(summary.error).toBe("Error: auth failed for [redacted]");
+  });
+
+  it("refuses a URL that sets a session timeout as a configuration error, before connecting", async () => {
+    const code = await runImportCommand({
+      env: { DATABASE_URL: `postgres://importer:${PASSWORD}@127.0.0.1:1/areneon?statement_timeout=0` },
+      source: sourceOf(),
+      out: (line) => {
+        expect(JSON.parse(line)).toEqual({
+          ok: false,
+          error: "SessionConfigError: the database URL must not set statement_timeout: the session's timeouts are fixed",
+        });
+      },
+    });
+    expect(code).toBe(EXIT_CONFIG);
+  });
+
   it("redacts a URL that is not WHATWG-parsable as a whole", async () => {
     const url = "host=db password=xyz";
     const { summary } = await run({

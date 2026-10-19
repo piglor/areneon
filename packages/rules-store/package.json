@@ -13,7 +13,8 @@
   },
   "dependencies": {
     "@areneon/showdown-bridge": "workspace:*",
-    "pg": "8.23.1"
+    "pg": "8.23.1",
+    "pg-connection-string": "2.14.1"
   },
   "devDependencies": {
     "@types/pg": "8.23.1"

@@ -10,6 +10,7 @@ import {
   DEFAULT_TIMEOUTS,
   type ImportClient,
   type ImportResult,
+  SessionConfigError,
   type SessionTimeouts,
 } from "@areneon/rules-store";
 import { planImport, type ImportPlan, type ReleaseSource } from "@areneon/showdown-bridge";
@@ -75,8 +76,8 @@ function timeoutsFrom(env: ImportCommandOptions["env"]): SessionTimeouts {
  * Run one import. Returns the exit code: EXIT_OK when every step was inserted
  * or already present, EXIT_REFUSED when anything refused (the plan, the
  * attestation, the database) or a channel step was stale, EXIT_CONFIG when
- * DATABASE_URL is missing, a timeout setting is invalid, or the session is
- * not the importer role.
+ * DATABASE_URL is missing or sets a session timeout, a timeout setting is
+ * invalid, or the session is not the importer role.
  */
 export async function runImportCommand(options: ImportCommandOptions): Promise<number> {
   const out = options.out ?? ((line: string) => process.stdout.write(`${line}\n`));
@@ -99,7 +100,7 @@ export async function runImportCommand(options: ImportCommandOptions): Promise<n
   } catch (error) {
     const { name, message } = error instanceof Error ? error : new Error(String(error));
     out(JSON.stringify({ ok: false, error: `${name}: ${redact(message, url)}` }));
-    return error instanceof ConfigError ? EXIT_CONFIG : EXIT_REFUSED;
+    return error instanceof ConfigError || error instanceof SessionConfigError ? EXIT_CONFIG : EXIT_REFUSED;
   } finally {
     await session?.end().catch(() => {});
   }
@@ -128,11 +129,19 @@ async function storedSnapshots(session: ImportClient): Promise<Set<string>> {
 /** Remove the URL and its password from a message, should a driver ever echo them. */
 function redact(message: string, url: string): string {
   const secrets = [url];
+  let password = "";
   try {
-    const { password } = new URL(url);
-    if (password !== "") secrets.push(password, decodeURIComponent(password));
+    ({ password } = new URL(url));
   } catch {
     // Not WHATWG-parsable; the whole URL is still redacted.
+  }
+  if (password !== "") {
+    secrets.push(password);
+    try {
+      secrets.push(decodeURIComponent(password));
+    } catch {
+      // A malformed escape: the raw form is redacted.
+    }
   }
   return secrets.reduce((text, secret) => text.replaceAll(secret, "[redacted]"), message);
 }

@@ -2,8 +2,8 @@
 
 import { loadRulesSnapshot, PINNED_SHOWDOWN_COMMIT, rulesSnapshotHash } from "@areneon/showdown-bridge";
 import pg from "pg";
-import { afterAll, describe, expect, it } from "vitest";
-import { applyImport, connect, DEFAULT_TIMEOUTS, type ImportClient } from "../src/index.ts";
+import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
+import { applyImport, connect, DEFAULT_TIMEOUTS, type ImportClient, SessionConfigError } from "../src/index.ts";
 
 const HOST = process.env.RULES_DB_HOST ?? "127.0.0.1:55432";
 // The throwaway local password `make db-up` sets (never the Coolify one).
@@ -12,6 +12,10 @@ const IMPORTER_URL = `postgres://importer:local-importer@${HOST}/areneon`;
 const open: { end(): Promise<void> }[] = [];
 afterAll(async () => {
   await Promise.all(open.map((client) => client.end()));
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
 });
 
 const SETTINGS = `SELECT current_setting('statement_timeout') AS statement,
@@ -48,7 +52,52 @@ describe("connect", () => {
 
   it.each([0, -1, 1.5, Number.NaN, 2 ** 53])("refuses a timeout of %s before connecting", async (value) => {
     const timeouts = { ...DEFAULT_TIMEOUTS, lockMs: value };
-    await expect(connect(IMPORTER_URL, { timeouts })).rejects.toThrow("timeout lockMs must be a positive integer");
+    const refusal = connect(IMPORTER_URL, { timeouts });
+    await expect(refusal).rejects.toBeInstanceOf(SessionConfigError);
+    await expect(refusal).rejects.toThrow("timeout lockMs must be a positive integer");
+  });
+
+  it.each([
+    ["?statement_timeout=0", "statement_timeout"],
+    ["?lock_timeout=0", "lock_timeout"],
+    ["?idle_in_transaction_session_timeout=0", "idle_in_transaction_session_timeout"],
+    ["?options=-c%20statement_timeout%3D0", "options"],
+    ["?sslmode=disable&lock_timeout=1&options=x", "lock_timeout, options"],
+  ])("refuses a URL ending %s before connecting", async (query, keys) => {
+    const connectSpy = vi.spyOn(pg.Client.prototype, "connect");
+    const refusal = connect(`${IMPORTER_URL}${query}`);
+    await expect(refusal).rejects.toBeInstanceOf(SessionConfigError);
+    await expect(refusal).rejects.toThrow(`the database URL must not set ${keys}: the session's timeouts are fixed`);
+    expect(connectSpy).not.toHaveBeenCalled();
+  });
+
+  it("accepts a URL query that sets no timeout", async () => {
+    const client = await connect(`${IMPORTER_URL}?sslmode=disable&application_name=x`);
+    open.push(client);
+    expect((await client.query(SETTINGS)).rows).toEqual([{ statement: "5min", lock: "5min", idle: "1min" }]);
+  });
+
+  it("refuses a URL the parser cannot read, without quoting it", async () => {
+    const refusal = connect("postgres://importer:pw@[::1/areneon");
+    await expect(refusal).rejects.toThrow(/^the database URL is not a connection string$/);
+  });
+
+  it("refuses and closes a session whose settings differ from the requested ones", async () => {
+    // As behind a pooler that drops startup parameters: the server reports its own value.
+    vi.spyOn(pg.Client.prototype, "query").mockImplementationOnce((async () => {
+      return {
+        rows: [
+          { name: "statement_timeout", setting: "300000" },
+          { name: "lock_timeout", setting: "0" },
+          { name: "idle_in_transaction_session_timeout", setting: "60000" },
+        ],
+      };
+    }) as unknown as typeof pg.Client.prototype.query);
+    const end = vi.spyOn(pg.Client.prototype, "end");
+    const refusal = connect(IMPORTER_URL);
+    await expect(refusal).rejects.toBeInstanceOf(SessionConfigError);
+    await expect(refusal).rejects.toThrow("lock_timeout is 0 ms, not the requested 300000 ms");
+    expect(end).toHaveBeenCalledTimes(1);
   });
 
   it("refuses an import that waits on a channel lock past lock_timeout, and rolls it back", async () => {
