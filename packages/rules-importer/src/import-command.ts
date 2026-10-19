@@ -73,8 +73,8 @@ function timeoutsFrom(env: ImportCommandOptions["env"]): SessionTimeouts {
 }
 
 /**
- * Run one import. Returns the exit code: EXIT_OK when every step was inserted
- * or already present, EXIT_REFUSED when anything refused (the plan, the
+ * Run one import. Returns the exit code: EXIT_OK when every step was inserted,
+ * already present or referenced, EXIT_REFUSED when anything refused (the plan, the
  * attestation, the database) or a channel step was stale, EXIT_CONFIG when
  * DATABASE_URL is missing or sets a session timeout, a timeout setting is
  * invalid, or the session is not the importer role.

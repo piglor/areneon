@@ -6,7 +6,8 @@
 # production image plus a stand-in gh that replays the recorded GitHub answers
 # for fixtures/rules-releases/) runs the unchanged CLI three times: with one
 # asset tampered it must refuse and write nothing; then it must commit both
-# artifacts, which a separate session must see; then it must be a no-op.
+# artifacts, which a separate session must see; then it must be a no-op that
+# downloads only the channel asset, checking the stored snapshot by reference.
 # Only the local throwaway importer password is used.
 set -euo pipefail
 
@@ -34,12 +35,20 @@ rows() {
     "SELECT hash, source_commit FROM rules.rules_snapshot ORDER BY hash;
      SELECT channel, seq, hash, source_commit FROM rules.rules_release ORDER BY channel, seq;"
 }
-run_import() { # run_import <expected status of both steps>
-  local out code=0
-  out=$(docker run --rm --network host -e DATABASE_URL="$url" "$image:e2e") || code=$?
-  expect "import exit code ($1)" "$code" 0
-  expect "import summary ($1)" "$out" \
-    "{\"ok\":true,\"steps\":[{\"kind\":\"snapshot\",\"hash\":\"$snapshot\",\"status\":\"$1\"},{\"kind\":\"channel\",\"channel\":\"stable\",\"seq\":5,\"hash\":\"$snapshot\",\"status\":\"$1\"}]}"
+# run_import <snapshot step status> <channel step status> <expected downloads>:
+# the stand-in gh logs its calls into a fresh directory, and the assets it was
+# asked to download (one name per line, sorted) must be <expected downloads>.
+# It leaves the log directory in gh_log.
+run_import() {
+  local out code=0 log
+  log=$(mktemp -d -p "$scratch")
+  chmod 0777 "$log"
+  gh_log=$log
+  out=$(docker run --rm --network host -e DATABASE_URL="$url" -v "$log:/fake-gh-log" "$image:e2e") || code=$?
+  expect "import exit code ($1, $2)" "$code" 0
+  expect "import summary ($1, $2)" "$out" \
+    "{\"ok\":true,\"steps\":[{\"kind\":\"snapshot\",\"hash\":\"$snapshot\",\"status\":\"$1\"},{\"kind\":\"channel\",\"channel\":\"stable\",\"seq\":5,\"hash\":\"$snapshot\",\"status\":\"$2\"}]}"
+  expect "assets downloaded ($1, $2)" "$(awk '$1 == "release" && $2 == "download" { print $7 }' "$log/calls" | sort)" "$3"
 }
 
 # The production image: the real gh, no stand-in, no fixtures, not root, and
@@ -70,6 +79,7 @@ expect "rows before the import" "$(rows)" ""
 scratch=$(mktemp -d)
 trap 'rm -rf "$scratch"' EXIT
 chmod 0755 "$scratch"
+snapshot_asset=rules-snapshot-$snapshot.json
 cp "fixtures/rules-releases/$channel_asset" "$scratch/$channel_asset"
 printf ' ' >>"$scratch/$channel_asset"
 chmod 0644 "$scratch/$channel_asset"
@@ -82,10 +92,15 @@ refused='^\{"ok":false,"error":"ImportPlanError: could not list the released rul
 echo "ok: tampered import refused by the attestation check"
 expect "rows after the tampered import" "$(rows)" ""
 
-run_import inserted
+run_import inserted inserted "$channel_asset
+$snapshot_asset"
 stored="$snapshot|$snapshot_commit
 stable|5|$snapshot|$channel_commit"
 expect "rows after the import (committed)" "$(rows)" "$stored"
-run_import already-present
+# The re-run downloads only the channel asset: the stored snapshot is planned
+# by reference and checked against its stored row.
+run_import referenced already-present "$channel_asset"
+# No gh call names the snapshot at all: no tag lookup, download or attestation.
+expect "re-run gh calls naming the snapshot" "$(grep -c "rules-snapshot-$snapshot" "$gh_log/calls" || true)" 0
 expect "rows after the re-run (unchanged)" "$(rows)" "$stored"
-echo "e2e: tampered import refused, rules import committed, re-run was a no-op"
+echo "e2e: tampered import refused, rules import committed, re-run was a no-op that downloaded no snapshot"

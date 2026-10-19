@@ -3,13 +3,15 @@
 // through the injected CommandRunner, so tests drive it without network.
 // Each asset is downloaded into a fresh private directory and attested; only
 // the bytes the AttestationVerifier returns become the asset's bytes, and the
-// downloaded path is never read again.
+// downloaded path is never read again. A snapshot asset whose hash the store
+// already holds is neither downloaded nor attested: the planner names it by
+// reference, and the import checks the stored row.
 
 import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { ReleaseAsset, ReleaseSource } from "@areneon/showdown-bridge";
+import type { KnownSnapshots, ReleaseAsset, ReleaseSource } from "@areneon/showdown-bridge";
 import {
   type AttestationVerifier,
   type CommandResult,
@@ -36,6 +38,8 @@ export interface GitHubReleaseSourceOptions {
 
 /** The tag prefixes rules-publish gives its Releases. */
 const RULES_TAG = /^rules-(?:snapshot|channel)-/;
+/** A snapshot Release's tag; its asset is `<tag>.json`. */
+const SNAPSHOT_TAG = /^rules-snapshot-([0-9a-f]{64})$/;
 // Tags and asset names go into API paths and gh arguments: plain characters only.
 const SAFE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const COMMIT = /^[0-9a-f]{40}$/;
@@ -66,6 +70,13 @@ const isObject = (value: unknown): value is Record<string, unknown> =>
  * unexpected API shape, a pre-release or asset-less rules Release, an asset
  * not fully uploaded, a tag that does not resolve to a commit, or a download
  * whose digest differs from the one GitHub reports.
+ *
+ * A snapshot Release's asset `<tag>.json` whose hash is in `known.snapshots`
+ * is left out without being downloaded (nor its tag resolved, when that was
+ * the Release's only asset), unless GitHub reports another digest for it,
+ * which is refused. A skipped asset is never used, so tampering with the
+ * Release of a stored snapshot is caught only by that reported digest; the
+ * stored row stays authoritative.
  */
 export class GitHubReleaseSource implements ReleaseSource {
   readonly #verifier: AttestationVerifier;
@@ -82,12 +93,13 @@ export class GitHubReleaseSource implements ReleaseSource {
     this.#tmpRoot = options.tmpRoot ?? tmpdir();
   }
 
-  async list(): Promise<ReleaseAsset[]> {
-    const releases = await this.#releases();
+  async list(known: KnownSnapshots): Promise<ReleaseAsset[]> {
+    const releases = (await this.#releases()).map((release) => ({ ...release, assets: unstoredAssets(release, known) }));
     const dir = await mkdtemp(join(this.#tmpRoot, "areneon-rules-"));
     try {
       const assets: ReleaseAsset[] = [];
       for (const [index, release] of releases.entries()) {
+        if (release.assets.length === 0) continue;
         const commit = await this.#commitOf(release.tag);
         // One subdirectory per Release, so two Releases' files cannot collide.
         const releaseDir = join(dir, String(index));
@@ -182,6 +194,19 @@ export class GitHubReleaseSource implements ReleaseSource {
     }
     return bytes;
   }
+}
+
+/** The Release's assets, less a snapshot asset the store already holds. */
+function unstoredAssets(release: Release, known: KnownSnapshots): Asset[] {
+  const hash = SNAPSHOT_TAG.exec(release.tag)?.[1];
+  if (hash === undefined || !known.snapshots.has(hash)) return release.assets;
+  return release.assets.filter((asset) => {
+    if (asset.name !== `${release.tag}.json`) return true;
+    if (asset.digest !== undefined && asset.digest !== hash) {
+      throw new ReleaseSourceError(`${release.tag}/${asset.name}: GitHub reports sha256 ${asset.digest}, not the stored ${hash}`);
+    }
+    return false;
+  });
 }
 
 function parseLine(line: string): unknown {

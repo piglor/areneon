@@ -16,9 +16,19 @@ export interface ReleaseAsset {
   bytes: Uint8Array;
 }
 
-/** Lists the assets of every published rules Release; the real one wraps GitHub. */
+/** What the rules store already holds: the hash of every stored snapshot. */
+export interface KnownSnapshots {
+  readonly snapshots: ReadonlySet<string>;
+}
+
+/**
+ * Lists the assets of every published rules Release; the real one wraps
+ * GitHub. It may leave out a snapshot asset whose hash (in its name) is in
+ * `known.snapshots`, so a stored snapshot is not fetched again; every asset
+ * it does list must be verified.
+ */
 export interface ReleaseSource {
-  list(): Promise<ReleaseAsset[]>;
+  list(known: KnownSnapshots): Promise<ReleaseAsset[]>;
 }
 
 export interface ImportSnapshot {
@@ -27,6 +37,16 @@ export interface ImportSnapshot {
   /** The commit the snapshot's Release tag points at. */
   source_commit: string;
   bytes: Uint8Array;
+}
+
+/**
+ * A snapshot the plan does not carry (the source left it out as already
+ * stored) but a channel step names: the importer must find it stored, with
+ * its hash the sha256 of its stored body, or refuse the whole plan.
+ */
+export interface ImportStoredSnapshot {
+  kind: "stored-snapshot";
+  hash: string;
 }
 
 export interface ImportChannel {
@@ -38,9 +58,12 @@ export interface ImportChannel {
   bytes: Uint8Array;
 }
 
-export type ImportStep = ImportSnapshot | ImportChannel;
+export type ImportStep = ImportSnapshot | ImportStoredSnapshot | ImportChannel;
 
-/** All snapshots first (by hash), then the channel steps by (channel, seq). */
+/**
+ * All snapshot and stored-snapshot steps first (by hash), then the channel
+ * steps by (channel, seq).
+ */
 export interface ImportPlan {
   steps: ImportStep[];
 }
@@ -112,20 +135,23 @@ function channelStep(asset: ReleaseAsset, channel: string, commit: string): Impo
  * canonical JCS and valid against the schemas of its own `schema_version`.
  * A channel step must name a snapshot that is in this release set or in
  * `known.snapshots` (already imported), and no channel may have two steps
- * with one seq. Every released snapshot is planned, imported or not, so the
- * importer can check stored bytes against released ones. The order is fixed
- * by content (snapshots by hash, then channel steps by channel and seq),
- * never by listing order, so the same release set always gives the same
- * plan. Fails closed: any refusal, including the source's own failure, is an
- * `ImportPlanError`.
+ * with one seq. The source is given `known` and may leave those snapshots
+ * out; every snapshot it lists is planned, stored or not. A snapshot a
+ * channel step names that is not listed but known is planned by reference
+ * (`stored-snapshot`), so the importer checks the stored row instead of
+ * trusting `known`. The order is fixed by content (snapshot and
+ * stored-snapshot steps by hash, then channel steps by channel and seq),
+ * never by listing order, so the same release set and store always give the
+ * same plan. Fails closed: any refusal, including the source's own failure,
+ * is an `ImportPlanError`.
  */
 export async function planImport(
   source: ReleaseSource,
-  known: { snapshots: ReadonlySet<string> },
+  known: KnownSnapshots,
 ): Promise<ImportPlan> {
   let assets: ReleaseAsset[];
   try {
-    assets = await source.list();
+    assets = await source.list(known);
   } catch (error) {
     throw new ImportPlanError(`could not list the released rules artifacts: ${(error as Error).message}`, {
       cause: error,
@@ -149,19 +175,24 @@ export async function planImport(
     else if (channel) channels.push(channelStep(asset, channel[1] as string, channel[2] as string));
     else throw new ImportPlanError(`asset ${asset.name} is neither a rules snapshot nor a channel artifact`);
   }
-  const available = new Set([...known.snapshots, ...snapshots.map((step) => step.hash)]);
+  const released = new Set(snapshots.map((step) => step.hash));
+  const stored = new Map<string, ImportStoredSnapshot>();
   const steps = new Set<string>();
   for (const step of channels) {
-    if (!available.has(step.hash)) {
-      throw new ImportPlanError(
-        `channel ${step.channel} seq ${step.seq} names snapshot ${step.hash}, which is neither released nor imported`,
-      );
+    if (!released.has(step.hash)) {
+      if (!known.snapshots.has(step.hash)) {
+        throw new ImportPlanError(
+          `channel ${step.channel} seq ${step.seq} names snapshot ${step.hash}, which is neither released nor imported`,
+        );
+      }
+      stored.set(step.hash, { kind: "stored-snapshot", hash: step.hash });
     }
     const key = `${step.channel} ${step.seq}`;
     if (steps.has(key)) throw new ImportPlanError(`channel ${step.channel} has two steps with seq ${step.seq}`);
     steps.add(key);
   }
-  snapshots.sort((a, b) => compare(a.hash, b.hash));
+  const first: (ImportSnapshot | ImportStoredSnapshot)[] = [...snapshots, ...stored.values()];
+  first.sort((a, b) => compare(a.hash, b.hash));
   channels.sort((a, b) => compare(a.channel, b.channel) || a.seq - b.seq);
-  return { steps: [...snapshots, ...channels] };
+  return { steps: [...first, ...channels] };
 }
