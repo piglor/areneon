@@ -22,7 +22,7 @@ packages/schema/             JSON Schema contracts (source of truth): rules reco
 packages/rules-store/        TS: the rules store on PostgreSQL 18 (ADR-007): idempotent import as `importer`, and its tests
 packages/rules-importer/     TS: rules importer CLI and image: attested rules Releases into the rules store (ADR-007)
 packages/bot-client/         TS: bot client for a local Showdown server (A2, ADR-005): transport port, local-only URL guard
-packages/local-server/       TS: pinned local Showdown server for sparring (ADR-005): verified runtime copy outside vendor/
+packages/local-server/       TS: pinned local Showdown server for sparring (ADR-005): verified runtime copy outside vendor/, locked-down config, supervised launcher on 127.0.0.1
 rules/                       Areneon's own rules as reviewed JSON records (ADR-007), never code constants
 crates/                      planned: Rust Cargo workspace (calculators, rules catalog, orchestration)
 services/, ml/               planned: Python services, PyTorch training, self-play league and evaluation
