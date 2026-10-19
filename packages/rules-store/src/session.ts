@@ -9,7 +9,7 @@ import pg from "pg";
 export interface SessionTimeouts {
   /** Cancel any statement running longer than this. */
   readonly statementMs: number;
-  /** Cancel any statement waiting longer than this for a lock, advisory locks included. */
+  /** Cancel any statement waiting longer than this for a lock, the per-channel import lock included. */
   readonly lockMs: number;
   /** End a session left idle inside an open transaction for longer than this. */
   readonly idleInTransactionMs: number;
@@ -22,7 +22,7 @@ export interface SessionOptions {
 
 /**
  * The defaults: 300 s for a statement and for a lock wait (generous for the
- * import's per-channel advisory lock behind another import), 60 s idle in a
+ * import's per-channel lock behind another import), 60 s idle in a
  * transaction.
  */
 export const DEFAULT_TIMEOUTS: SessionTimeouts = { statementMs: 300_000, lockMs: 300_000, idleInTransactionMs: 60_000 };
