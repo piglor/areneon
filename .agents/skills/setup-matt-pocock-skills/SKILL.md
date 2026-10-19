@@ -6,9 +6,11 @@ disable-model-invocation: true
 
 # Setup Matt Pocock's Skills
 
+> In this repo the configuration already exists: `.agents/issue-tracker.md`, `.agents/domain.md` and `.agents/triage-labels.md` (not `docs/agents/`). Edit those files instead of running this setup.
+
 Scaffold the per-repo configuration that the engineering skills assume:
 
-- **Issue tracker** — where issues live (GitHub by default; local markdown is also supported out of the box)
+- **Issue tracker** — where issues live (GitHub by default upstream; this repo uses Redmine, already configured in `.agents/issue-tracker.md`)
 - **Triage labels** — the strings used for the five canonical triage roles
 - **Domain docs** — where `CONTEXT.md` and ADRs live, and the consumer rules for reading them
 

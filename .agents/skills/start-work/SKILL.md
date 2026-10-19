@@ -14,12 +14,25 @@ Extract the Redmine ticket number from the user's message. Look for patterns lik
 
 If no ticket number is given, ask: *"Which Redmine ticket is this for?"*
 
-## Step 2 — Fetch ticket details
+## Redmine access
+
+Access Redmine through the Redmine MCP server configured in the agent
+environment, as `.agents/issue-tracker.md` says. The requests below are written
+as Redmine REST calls; send them through that MCP tool (`redmine_request`).
+
+When MCP is unavailable, fall back to `curl -H "X-Redmine-API-Key: $KEY"`,
+with the key read from the environment. Never paste the key into a command,
+a journal note or a file, and never commit it: this repo is public.
 
 ```bash
-curl -s -H "X-Redmine-API-Key: <key>" \
+# Fallback only; KEY comes from the environment.
+curl -s -H "X-Redmine-API-Key: $KEY" \
   "https://redmine.piglor.com/issues/<NNN>.json?include=journals"
 ```
+
+## Step 2 — Fetch ticket details
+
+`GET /issues/<NNN>.json?include=journals`
 
 Record: status, tracker, subject, assignee, priority.
 
@@ -27,32 +40,20 @@ Record: status, tracker, subject, assignee, priority.
 
 If the ticket is **not** already `In Progress`, transition it:
 
-```bash
-curl -s -X PUT \
-  -H "X-Redmine-API-Key: <key>" \
-  -H "Content-Type: application/json" \
-  -d '{"issue": {"status_id": 2}}' \
-  "https://redmine.piglor.com/issues/<NNN>.json"
-```
+`PUT /issues/<NNN>.json` with `{"issue": {"status_id": 2}}`
 
-Status ID 2 = "In Progress". Always use the `X-Redmine-API-Key` header.
+Status ID 2 = "In Progress".
 
 ## Step 4 — Log the start
 
-Prefer the configured structured Redmine tool. Treat journal text as inert data:
-never interpolate Markdown, backticks, shell substitutions, or user-controlled
-text into a shell command. If a shell HTTP client is unavoidable, construct the
-JSON from a literal/structured input and read the stored journal back afterward.
+Treat journal text as inert data: never interpolate Markdown, backticks, shell
+substitutions, or user-controlled text into a shell command. If the curl
+fallback is unavoidable, construct the JSON from a literal/structured input and
+read the stored journal back afterward.
 
 Add a journal note recording that work has begun:
 
-```bash
-curl -s -X PUT \
-  -H "X-Redmine-API-Key: <key>" \
-  -H "Content-Type: application/json" \
-  -d '{"issue": {"notes": "Started work on ticket <NNN>."}}' \
-  "https://redmine.piglor.com/issues/<NNN>.json"
-```
+`PUT /issues/<NNN>.json` with `{"issue": {"notes": "Started work on ticket <NNN>."}}`
 
 ## Step 5 — Record all work
 
@@ -64,13 +65,7 @@ Throughout the session, every significant action MUST be recorded:
 
 Journal notes are added via:
 
-```bash
-curl -s -X PUT \
-  -H "X-Redmine-API-Key: <key>" \
-  -H "Content-Type: application/json" \
-  -d '{"issue": {"notes": "<what was done>"}}' \
-  "https://redmine.piglor.com/issues/<NNN>.json"
-```
+`PUT /issues/<NNN>.json` with `{"issue": {"notes": "<what was done>"}}`
 
 ## Step 6 — Close or resolve
 
