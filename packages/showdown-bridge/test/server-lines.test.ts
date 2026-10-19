@@ -1,27 +1,27 @@
-import { readdirSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { type ChannelFixture, GOLDEN_CHANNELS, GOLDEN_DIR } from "../src/golden.ts";
 import { playerChannel } from "../src/player-channel.ts";
 import { serverOnlyLine, stripServerLines } from "../src/server-lines.ts";
 
 const SOURCE = new URL("../src/server-lines.ts", import.meta.url);
-const SHOWDOWN_FIXTURES = new URL("../../../fixtures/showdown/", import.meta.url);
 
-interface GoldenChannel {
-  channel: { schema_version: 1; data_class: "synthetic"; player: "p1" | "p2"; lines: string[] };
-}
+const golden = Object.keys(GOLDEN_CHANNELS).map((file) => ({
+  file,
+  ...(JSON.parse(readFileSync(join(GOLDEN_DIR, file), "utf8")) as ChannelFixture),
+}));
+const p1 = (golden.find(({ channel }) => channel.player === "p1") as ChannelFixture).channel.lines;
+const at = (prefix: string): number => p1.findIndex((line) => line.startsWith(prefix));
 
-const goldenChannels = readdirSync(SHOWDOWN_FIXTURES).flatMap((format) =>
-  ["p1", "p2"].map((player) => {
-    const url = new URL(`${format}/channels/${player}.json`, SHOWDOWN_FIXTURES);
-    return { name: `${format} ${player}`, ...(JSON.parse(readFileSync(url, "utf8")) as GoldenChannel) };
-  }),
-);
-
-// One example of every kind the filter drops, as the server sends it.
-const DROPPED: readonly string[] = [
+// One example of every kind the filter drops without a report.
+const SERVER: readonly string[] = [
   ">battle-gen9championsvgc2026regmc-1",
   "Plain-text notice from the server",
+  "Bob rejected open team sheets.",
+  "||The battle is starting",
   "|request|null",
+  "|player|p2|",
   "|j|Bob",
   "|J|Bob",
   "|join|Bob",
@@ -35,7 +35,7 @@ const DROPPED: readonly string[] = [
   "|c:|1760000000|Bob|gg",
   "|chat|Bob|gg",
   "|pm| Bob| Areneon Bot|hi",
-  "|raw|<div class=\"infobox\">hello</div>",
+  '|raw|<div class="infobox">hello</div>',
   "|html|<div>hello</div>",
   "|uhtml|invites|<div>This battle needs more players</div>",
   "|uhtmlchange|invites|",
@@ -67,11 +67,13 @@ const DROPPED: readonly string[] = [
   "|nametaken|bob|Name taken.",
   "|formats|,1|S/V Singles",
   "|queryresponse|userdetails|{}",
+  "|tournament|create|gen9championsvgc2026regmc|elimination",
+  "|battle|battle-1|Bob|Areneon Bot",
   "|sentchoice|move 1 1, move 1 2",
 ];
 
-// Engine lines the filter keeps although they look like server lines.
-const KEPT: readonly string[] = [
+// Sim lines that are kept although some look like server lines.
+const SIM: readonly string[] = [
   "",
   "|",
   "|error|[Unavailable choice] Can't move: Snorlax's Fire Punch is disabled",
@@ -79,11 +81,11 @@ const KEPT: readonly string[] = [
   "|message|Time's up! Going to tiebreaker...",
   "|-message|All players are inactive.",
   "|bigerror|You will auto-tie if the battle doesn't end in 10 turns (on turn 1000).",
+  "|-hint|Some effects can force a Pokemon to use Outrage again in a row.",
   "|tier|[Gen 9 Champions] VGC 2026 Reg M-C",
-  "|uhtml|otsrequest|<button name=\"send\" value=\"/acceptopenteamsheets\">Accept</button>",
-  "|uhtmlchange|otsrequest|",
   "|clearpoke",
-  "|request|{}",
+  "|turn|2",
+  "|-terastallize|p1a: Snorlax|Normal",
 ];
 
 describe("server-lines", () => {
@@ -96,36 +98,77 @@ describe("server-lines", () => {
     expect(source).not.toMatch(/\brequire\s*\(|\bimport\s*\(|\bimport\.meta\b/);
   });
 
-  it.each(DROPPED)("drops the server-only line %j", (line) => {
+  it.each(SERVER)("drops the server line %j without a report", (line) => {
     expect(serverOnlyLine(line)).toBe(true);
+    expect(stripServerLines([line])).toEqual({ lines: [], dropped: [] });
   });
 
-  it.each(KEPT)("keeps the engine line %j", (line) => {
+  it.each(SIM)("keeps the sim line %j", (line) => {
     expect(serverOnlyLine(line)).toBe(false);
+    expect(stripServerLines([line])).toEqual({ lines: [line], dropped: [] });
   });
 
-  it.each(goldenChannels)("returns the golden A1 channel $name unchanged", ({ channel }) => {
+  it("drops and reports a line of an unknown kind", () => {
+    const unknown = "|modal|Something new";
+    expect(serverOnlyLine(unknown)).toBe(false);
+    expect(stripServerLines(["|turn|1", unknown, "|upkeep"])).toEqual({
+      lines: ["|turn|1", "|upkeep"],
+      dropped: [unknown],
+    });
+  });
+
+  it.each(golden)("returns the golden A1 channel $file unchanged", ({ channel }) => {
     expect(channel.lines.length).toBeGreaterThan(0);
-    expect(stripServerLines(channel.lines)).toEqual(channel.lines);
+    expect(stripServerLines(channel.lines)).toEqual({ lines: channel.lines, dropped: [] });
   });
 
   it("drops a chat line shaped like the opponent's exact HP, which would fail the channel", () => {
     const chat = "|c|Bob|p2a: lol|3/4";
-    const { channel } = goldenChannels.find(({ name }) => name.endsWith("p1")) as GoldenChannel;
-    const at = channel.lines.findIndex((line) => line.startsWith("|request|"));
+    const end = at("|request|");
+    const stream = [">battle-1", "|j|Bob", ...p1.slice(0, end), chat, "|t:|1760000000", p1[end] as string];
+    const channel = { schema_version: 1, data_class: "synthetic", player: "p1" } as const;
     // Negative control: unfiltered, the chat line reads as p2's SECRET HP.
-    const stream = [">battle-1", "|j|Bob", ...channel.lines.slice(0, at), chat, "|t:|1760000000", channel.lines[at] as string];
     expect(() => playerChannel({ ...channel, lines: stream })).toThrow(/only the opponent may see/);
-    const lines = stripServerLines(stream);
-    expect(lines).toEqual(channel.lines.slice(0, at + 1));
+    const { lines } = stripServerLines(stream);
+    expect(lines).toEqual(p1.slice(0, end + 1));
     expect(playerChannel({ ...channel, lines }).lines).toEqual(lines);
   });
 
-  it("keeps the order of the lines it keeps", () => {
-    expect(stripServerLines(["|j|Bob", "|turn|1", "|c|Bob|hi", "|", "|error|[Invalid choice] x", "|t:|1"])).toEqual([
-      "|turn|1",
-      "|",
-      "|error|[Invalid choice] x",
-    ]);
+  it("keeps one Open Team Sheets prompt and the sim's own clear when the bot declines", () => {
+    const prompt = at("|uhtml|otsrequest|");
+    expect(at("|start")).toBeGreaterThan(prompt);
+    // The server clears the prompt for the declining player during Team
+    // Preview, and says so in a plain-text line; the sim clears it at |start.
+    const stream = [
+      ...p1.slice(0, prompt + 1),
+      "|uhtmlchange|otsrequest|",
+      "p1 rejected open team sheets.",
+      ...p1.slice(prompt + 1),
+    ];
+    expect(stream.filter((line) => line === "|uhtmlchange|otsrequest|")).toHaveLength(2);
+    expect(stripServerLines(stream)).toEqual({ lines: p1, dropped: [] });
+    // A prompt after |start is not the sim's.
+    expect(stripServerLines(["|start", p1[prompt] as string]).lines).toEqual(["|start"]);
+  });
+
+  it("keeps only the sim's |player| line per slot", () => {
+    const gametype = at("|gametype|");
+    const start = at("|start");
+    // addPlayer's lines come before the sim's |gametype|; a leave and a
+    // rejoin during Team Preview, and a rejoin after |start, follow.
+    const stream = [
+      "|init|battle",
+      "|title|p1 vs. p2",
+      "|player|p1|p1|1|",
+      "|player|p2|p2|2|",
+      ...p1.slice(gametype, start),
+      "|player|p2|",
+      "|player|p2|p2|2|",
+      ...p1.slice(start, start + 1),
+      "|player|p1|p1|1|",
+      ...p1.slice(start + 1),
+    ];
+    expect(gametype).toBe(0);
+    expect(stripServerLines(stream)).toEqual({ lines: p1, dropped: [] });
   });
 });
