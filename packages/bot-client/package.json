@@ -11,6 +11,10 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@areneon/schema": "workspace:*",
     "@areneon/showdown-bridge": "workspace:*"
+  },
+  "devDependencies": {
+    "fast-check": "4.10.2"
   }
 }
