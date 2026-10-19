@@ -108,7 +108,8 @@ describe("the copy lock", () => {
     const copy = join(tempDir("lock"), "abc");
     stale(lockPath(copy));
     // A dangling symlink reads as absent but refuses a wx create, like a lock
-    // a fresh taker created just after the re-read.
+    // a fresh taker created just after the re-read (a real loss reports that
+    // taker's lock as `live`; this stand-in has none, so it reports `busy`).
     const result = acquireCopyLock(copy, {
       whileBreaking: () => {
         rmSync(lockPath(copy));
@@ -176,7 +177,7 @@ process.stdin.on("end", () => process.exit(0));
     );
     expect(blockedMessage("/r/c", { state: "busy", breaker: "/r/c.lock.break" })).toBe(
       "another process is taking over the stale lock /r/c.lock; retry, or remove /r/c.lock.break " +
-        "once no launcher or createRuntimeCopy is running for commit c; " +
+        "once no launcher or createRuntimeCopy is running for copy c; " +
         "leftover /r/c.lock.<token>.tmp files are harmless and may be deleted too",
     );
   });

@@ -51,8 +51,9 @@ export interface LockHooks {
  * if it is still stale writes a unique temporary file and renames it over
  * the lock; if the lock has vanished meanwhile, it creates it with `wx`
  * instead, as a fresh taker would. It then re-reads the lock and owns it
- * only if it holds its own token. A breaker file left by a crash blocks every taker (`busy`) until it
- * is removed by hand; this fails closed rather than guessing.
+ * only if it holds its own token. A breaker file left by a crash blocks
+ * every taker (`busy`) until it is removed by hand; this fails closed rather
+ * than guessing.
  */
 export function acquireCopyLock(copyDir: string, hooks: LockHooks = {}): HeldLock | LockBlocked {
   const path = lockPath(copyDir);
@@ -203,7 +204,7 @@ export function blockedMessage(copyDir: string, blocked: LockBlocked): string {
     case "busy":
       return (
         `another process is taking over the stale lock ${lockPath(copyDir)}; retry, or remove ${blocked.breaker} ` +
-        `once no launcher or createRuntimeCopy is running for commit ${basename(copyDir)}; ` +
+        `once no launcher or createRuntimeCopy is running for copy ${basename(copyDir)}; ` +
         `leftover ${lockPath(copyDir)}.<token>.tmp files are harmless and may be deleted too`
       );
   }
