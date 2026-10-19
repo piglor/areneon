@@ -10,6 +10,7 @@ import {
   FakeAttestationVerifier,
   GhAttestationVerifier,
   RULES_PUBLISH_POLICY,
+  createSpawnRunner,
   spawnRunner,
 } from "../src/index.ts";
 
@@ -68,13 +69,18 @@ describe("GhAttestationVerifier", () => {
   it("accepts the real gh output for both published release assets", async () => {
     for (const file of [SNAPSHOT, CHANNEL]) {
       const { run, calls } = runner({ stdout: GH_JSON });
-      await expect(new GhAttestationVerifier({ run }).verify(file)).resolves.toBeUndefined();
+      await expect(new GhAttestationVerifier({ run }).verify(file)).resolves.toEqual(
+        new Uint8Array(await readFile(file)),
+      );
       expect(calls).toEqual([
         {
           command: "gh",
           args: [
             "attestation",
             "verify",
+            "--hostname",
+            "github.com",
+            "--deny-self-hosted-runners",
             "--repo",
             "piglor/areneon",
             "--signer-workflow",
@@ -100,7 +106,20 @@ describe("GhAttestationVerifier", () => {
     expect(attested).toBe("35f9c5f04aecbe1dfc38e55d2599b1013f1b43b7");
     expect(attested).not.toBe(channel.source_commit);
     const { run } = runner({ stdout: GH_JSON });
-    await expect(new GhAttestationVerifier({ run }).verify(CHANNEL)).resolves.toBeUndefined();
+    await expect(new GhAttestationVerifier({ run }).verify(CHANNEL)).resolves.toBeInstanceOf(Uint8Array);
+  });
+
+  it("returns the bytes it checked, not the file as it is after gh ran", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "rules-importer-"));
+    const file = join(dir, "rules-channel-stable-b226c3bfe889f8cf775933b0a964a44ef6d69913.json");
+    const original = await readFile(CHANNEL);
+    await writeFile(file, original);
+    const run: CommandRunner = async () => {
+      await writeFile(file, "{\"swapped\":true}");
+      return { code: 0, stdout: GH_JSON, stderr: "" };
+    };
+    const bytes = await new GhAttestationVerifier({ run }).verify(file);
+    expect(Buffer.from(bytes).equals(original)).toBe(true);
   });
 
   it.each([
@@ -230,12 +249,36 @@ describe("spawnRunner", () => {
   it("rejects when the command cannot be started", async () => {
     await expect(spawnRunner(join(tmpdir(), "no-such-gh-binary"), [])).rejects.toThrow(/ENOENT/);
   });
+
+  it("kills a command that runs past the timeout", async () => {
+    const run = createSpawnRunner({ timeoutMs: 200 });
+    const start = Date.now();
+    await expect(run(process.execPath, ["-e", "setTimeout(() => {}, 30000)"])).rejects.toThrow(
+      /timed out after 200 ms/,
+    );
+    expect(Date.now() - start).toBeLessThan(10_000);
+  });
+
+  it.each(["stdout", "stderr"])("kills a command whose %s exceeds the size limit", async (stream) => {
+    const run = createSpawnRunner({ maxOutputBytes: 1024 });
+    const script = `const b = "x".repeat(4096); for (let i = 0; i < 64; i++) process.${stream}.write(b)`;
+    await expect(run(process.execPath, ["-e", script])).rejects.toThrow(`${stream} exceeded 1024 bytes`);
+  });
+
+  it("keeps output within the size limit", async () => {
+    const run = createSpawnRunner({ maxOutputBytes: 3 });
+    await expect(run(process.execPath, ["-e", "process.stdout.write('abc')"])).resolves.toMatchObject({
+      code: 0,
+      stdout: "abc",
+    });
+  });
 });
 
 describe("FakeAttestationVerifier", () => {
-  it("accepts only the given paths and records each call", async () => {
-    const fake = new FakeAttestationVerifier([SNAPSHOT]);
-    await expect(fake.verify(SNAPSHOT)).resolves.toBeUndefined();
+  it("accepts only the given paths, returns their bytes and records each call", async () => {
+    const bytes = new Uint8Array([1, 2, 3]);
+    const fake = new FakeAttestationVerifier([[SNAPSHOT, bytes]]);
+    await expect(fake.verify(SNAPSHOT)).resolves.toBe(bytes);
     await expect(fake.verify(CHANNEL)).rejects.toThrow(AttestationError);
     expect(fake.calls).toEqual([SNAPSHOT, CHANNEL]);
   });
