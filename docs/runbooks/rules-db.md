@@ -198,7 +198,7 @@ On Coolify the server log is the database container's output: the resource's **L
 
    **If this step failed in any way, or you abandoned it**, handle it now, while the three variables are still exported, before step 3 clears them:
 
-   1. Check whether a password reached the server log. `grep -cF` prints only a count, never the matched line or the password:
+   1. Check whether a password reached the server log. `grep -cF` prints only a count, never the matched line or the password (the shell expands the variable, so the value stays out of your history; it is in `grep`'s arguments for the instant it runs, visible in `ps`, which is one more reason not to use a shared account):
 
       ```bash
       docker logs <db-uuid> 2>&1 | grep -cF -- "$RULES_MIGRATOR_PASSWORD"
@@ -216,15 +216,15 @@ On Coolify the server log is the database container's output: the resource's **L
       docker inspect --format '{{.HostConfig.LogConfig.Type}}' <db-uuid>
       ```
 
-      If it prints `json-file`, truncate the current log file and any rotated ones, as root (`-c` creates no file when there is nothing rotated):
+      If it prints `json-file`, truncate the current log file and any rotated ones. The glob must be expanded by root, because a normal user cannot list Docker's log directory; hence `sh -c` under `sudo` (`-c` creates no file when there is nothing rotated):
 
       ```bash
       LOG="$(docker inspect --format '{{.LogPath}}' <db-uuid>)"
-      sudo truncate -c -s 0 "$LOG" "$LOG".*
+      sudo sh -c 'truncate -c -s 0 "$1" "$1".*' _ "$LOG"
       docker logs <db-uuid> 2>&1 | grep -cF -- "$RULES_MIGRATOR_PASSWORD"
       ```
 
-      *Expected result:* the count is `0` (repeat it for the other two variables). For any other driver (`local`, `journald`, …) do not guess: `local` keeps compressed files that must not be edited, and `journald` can only drop whole journal files, which deletes every log on the host. Stop and decide with whoever runs the server. Remove any log drain copy too.
+      *Expected result:* the count is `0` (repeat it for the other two variables). Coolify's **Logs** view reads the same Docker log, so nothing more is needed there. For any other driver (`local`, `journald`, …) do not guess: `local` keeps compressed files that must not be edited, and `journald` can only drop whole journal files, which deletes every log on the host. Stop and decide with whoever runs the server. Remove any log drain copy too.
    4. Do steps 3 and 4 below, fix the cause, then run 2.3 step 3 and this section again.
 3. Clear the role passwords from the shell:
 
