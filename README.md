@@ -6,7 +6,7 @@ This repository covers offline training, evaluation and local bot sparring; it s
 
 **Status: Wave 1 (foundation), pre-alpha. No trained model exists yet.**
 
-- Engineering work, ADRs and experiments: [Redmine](https://redmine.piglor.com/projects/areneon) ([ADR index](https://redmine.piglor.com/projects/areneon/wiki/ADR))
+- Engineering work, ADRs and experiments: [Redmine](https://redmine.piglor.com/projects/areneon) ([ADR index](https://redmine.piglor.com/projects/areneon/wiki/ADR)); ADR copies: [docs/adr/](docs/adr/README.md)
 - GitHub Issues are for community contributions only; internal work lives in Redmine.
 - Setup and rules: [CONTRIBUTING.md](CONTRIBUTING.md). Domain glossary: [CONTEXT.md](CONTEXT.md).
 - Owner runbook for the dev rules store (ADR-007): [docs/runbooks/rules-db.md](docs/runbooks/rules-db.md).

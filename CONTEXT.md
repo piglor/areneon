@@ -63,5 +63,5 @@ A shared language for humans and agents working on Areneon. Use these terms exac
 | Term | Meaning |
 |---|---|
 | **Wave** | A Notion delivery contract (Wave 1–9) mapped to a Redmine version. |
-| **ADR** | Architecture Decision Record on the Redmine wiki under `ADR`. |
+| **ADR** | Architecture Decision Record on the Redmine wiki under `ADR`; copies of the ADRs are in `docs/adr/`. |
 | **EXP-nn** | A planned experiment from the Notion ADR register, tracked as a Redmine issue. |
