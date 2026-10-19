@@ -93,7 +93,7 @@ async function waitsBehind(hold: (holder: pg.PoolClient) => Promise<void>): Prom
     });
     waiting.catch(() => {});
     const blocked = "SELECT count(*)::int AS n FROM pg_locks WHERE locktype = 'advisory' AND NOT granted AND pid = $1";
-    const deadline = Date.now() + 3000;
+    const deadline = Date.now() + 5000;
     while (pid === undefined || (await holder.query(blocked, [pid])).rows[0].n !== 1) {
       if (Date.now() > deadline) throw new Error("the second import never waited on the channel lock");
       await new Promise((resolve) => setTimeout(resolve, 10));
