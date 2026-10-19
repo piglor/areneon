@@ -151,7 +151,7 @@ export interface DecisionRecord {
   deadline?: Deadline;
 }
 /**
- * Which request a decision answers (ADR-004 r2, ADR-008 §4). A consumer drops a recommendation unless request_seq and request_hash both match, and rqid too when both carry one.
+ * Which request a decision answers (ADR-008 §4). A consumer drops a recommendation unless request_seq and request_hash both match, and rqid too when both carry one.
  *
  * This interface was referenced by `Episode`'s JSON-Schema
  * via the `definition` "RequestIdentity".
@@ -162,11 +162,11 @@ export interface RequestIdentity {
    */
   request_seq: number;
   /**
-   * SHA-256 of the canonical request JSON without rqid (ADR-004 r2): lowercase hex.
+   * SHA-256 of the canonical request JSON without rqid (ADR-008 §4): lowercase hex.
    */
   request_hash: string;
   /**
-   * The Showdown server's request id; present only on the server path (A2, the advisor), never hashed.
+   * The Showdown server's request id; present only on the server path (A2), never hashed.
    */
   rqid?: number;
 }

@@ -4,7 +4,7 @@ import { canonicalJson, type Json } from "./canonical-json.ts";
 export { canonicalJson, type Json } from "./canonical-json.ts";
 
 /**
- * Areneon's request identity (ADR-004 r2): SHA-256 of the canonical request
+ * Areneon's request identity (ADR-008 §4): SHA-256 of the canonical request
  * JSON. `rqid` is excluded because only the Showdown server assigns it, so
  * the same request hashes identically on the sim and server paths.
  */

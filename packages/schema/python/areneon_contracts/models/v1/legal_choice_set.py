@@ -39,11 +39,11 @@ class LegalChoiceSet(BaseModel):
     """
     request_hash: Annotated[StrictStr, Field(pattern="^[0-9a-f]{64}$")]
     """
-    SHA-256 of the canonical request JSON without rqid (ADR-004 r2): lowercase hex.
+    SHA-256 of the canonical request JSON without rqid (ADR-008 §4): lowercase hex.
     """
     rqid: Annotated[StrictInt | MISSING, Field(ge=1, le=9007199254740991)] = MISSING
     """
-    The Showdown server's request id; present only on the server path (A2, the advisor), never hashed.
+    The Showdown server's request id; present only on the server path (A2), never hashed.
     """
     showdown_commit: Annotated[StrictStr, Field(pattern="^[0-9a-f]{40}$")]
     """

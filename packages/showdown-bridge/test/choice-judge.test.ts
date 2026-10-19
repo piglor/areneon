@@ -351,7 +351,7 @@ describe("legalChoiceSet", () => {
     expect(hashes).toEqual([request.request_hash]);
   });
 
-  it("without a judge (A2, advisor) offers the candidates unjudged", () => {
+  it("without a judge (A2) offers the candidates unjudged", () => {
     const set = run(null);
     expect(set).toMatchObject({ request_seq: 1, pending: [] });
     expect(set.choices).toHaveLength(360);
