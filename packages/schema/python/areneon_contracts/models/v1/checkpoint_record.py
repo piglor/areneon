@@ -92,9 +92,9 @@ class CheckpointRecord(BaseModel):
     """
     SHA-256 of JCS({tensors_sha256, sidecar}) of the generation's learner state (ADR-010 §1).
     """
-    encoder_version: Annotated[StrictStr, Field(max_length=128, min_length=1)]
+    encoder_version: Annotated[StrictStr, Field(pattern="^enc[0-9]+:[0-9a-f]{64}$")]
     """
-    The encoder the checkpoint was trained with; it carries the engine-data table's hash.
+    The encoder the checkpoint was trained with: enc<format>: and the SHA-256 that carries the engine-data table's hash (ADR-010 section 3).
     """
     data_class: Literal["synthetic", "private"]
     """

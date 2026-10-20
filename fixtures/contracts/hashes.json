@@ -42,6 +42,7 @@
   "v1/checkpoint-record/invalid/blank-lineage.json": "64af5f1a219c3b47f4d9da6ca6abcfda8ab76724d8415ae6a4db0ed6c2d5c9af",
   "v1/checkpoint-record/invalid/no-learner-state.json": "38a4e934f7ec4b9b87b227e1d99ae70332eecdf00183e55b8adfcc9e50a7721f",
   "v1/checkpoint-record/invalid/extra-field.json": "ebd3153d7bd3a681fb6336b1f3e41ccbc888db82bc2466491b4bbae2e7d48844",
+  "v1/checkpoint-record/invalid/bad-encoder-version.json": "954f874df70f621a0681842384016b2963a2abc01dee1f8a69e57839e6252973",
   "v1/checkpoint-record/invalid/next-version.json": "044d599ecd89956f98643f7a49c8bd1cf994e935f17c27de29fe69ca120c21a9",
   "v1/engine-data/invalid/damage-code-4.json": "14f13fc866b050b81efeaea8b31dc1409e0f45396490ff9dcd50d0bb71fc8b03",
   "v1/engine-data/invalid/three-types.json": "3aa655638f637fce819fb4d1b93bb0cf6d12eb9b8600bb8deb2eea9fef391e21",

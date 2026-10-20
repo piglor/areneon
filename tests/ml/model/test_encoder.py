@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import copy
+import ctypes
+import hashlib
 import json
 from typing import Any
 
 import pytest
 import torch
+from areneon_ml.model import encoder as module
 from areneon_ml.model.candidates import UnsupportedCandidate
 from areneon_ml.model.encoder import (
     EncodedQuery,
@@ -29,6 +32,7 @@ from areneon_ml.reducer import (
 
 from .support import (
     A2_DIR,
+    FORMAT_DIR,
     RANDOM,
     TINY_ENCODER,
     candidates_for,
@@ -41,6 +45,10 @@ from .support import (
 )
 
 MANY = 40
+
+
+def kind_of(body: dict[str, Any]) -> str:
+    return "preview" if body.get("teamPreview") else "battle"
 
 
 def same(a: EncodedQuery, b: EncodedQuery) -> bool:
@@ -72,22 +80,70 @@ def a2_fixture_points() -> list[
     return out
 
 
-def test_the_a1_and_a2_forms_of_every_adr005_fixture_request_encode_identically() -> None:
+def test_rqid_and_decision_context_are_ignored_at_every_adr005_fixture_request() -> None:
+    # Invariance on the recordings' derived channels with syntactic candidates; the A1 replay
+    # against the A2 frames, with the real enumerator, is the a2-pairs test below.
     points = a2_fixture_points()
     assert len(points) >= MANY
     context = sample("policy-query/valid/battle-a2.json")["observation"]["decision_context"]
     with_rqid = 0
     for name, player, index, lines, team, body in points:
         candidates = candidates_for(body)
-        a2 = observation(player, lines, team, "battle") | {"decision_context": context}
+        a2 = observation(player, lines, team, kind_of(body)) | {"decision_context": context}
         a2["identity"] = {"request_seq": 9, "request_hash": "a" * 64, "rqid": 7}
-        a1 = observation(player, [strip_rqid(line) for line in lines], team, "battle")
+        a1 = observation(player, [strip_rqid(line) for line in lines], team, kind_of(body))
         a1["identity"] = {"request_seq": 9, "request_hash": "a" * 64}
         with_rqid += lines != a1["log"]
         first = encoder().encode({"observation": a1, "candidates": candidates})
         second = encoder().encode({"observation": a2, "candidates": candidates})
         assert same(first, second), f"{name} {player} line {index}"
     assert with_rqid == len(points)  # the A2 forms really carry an rqid
+
+
+PAIRS = json.loads((FORMAT_DIR / "a2-pairs.json").read_text())
+
+
+def pair_query(document: dict[str, Any], decision: dict[str, Any], side: str) -> dict[str, Any]:
+    shown = decision[side]
+    log = document["streams"][side][shown["stream"]][: shown["length"]]
+    observation_ = observation(
+        decision["seat"], log, document["teams"][decision["team"]], decision["kind"]
+    )
+    observation_["identity"] = shown["identity"]
+    if shown.get("decision_context") is not None:
+        observation_["decision_context"] = shown["decision_context"]
+    return {
+        "observation": observation_,
+        "candidates": [{"choice": c, "pending": p} for c, p in decision["candidates"]],
+    }
+
+
+def test_the_a1_replay_and_the_a2_frames_encode_identically() -> None:
+    # ADR-010 §2: the A1 observations (the replayed battle's recordedChannel) and the A2 ones (the
+    # channels rebuilt from the recorded server frames) of the ADR-005 equality fixtures, with the
+    # candidates of the real enumerateCandidates (fixtures/showdown/<format>/a2-pairs.json,
+    # rewritten by packages/bot-client/scripts/capture-encoder-pairs.ts), give the same tensors.
+    assert PAIRS["data_class"] == "synthetic"
+    decisions = PAIRS["decisions"]
+    assert len(decisions) >= MANY
+    assert {d["kind"] for d in decisions} == {"preview", "battle"}
+    differing = 0
+    for decision in decisions:
+        one, two = pair_query(PAIRS, decision, "a1"), pair_query(PAIRS, decision, "a2")
+        assert "rqid" not in one["observation"]["identity"]
+        differing += one["observation"]["log"] != two["observation"]["log"]
+        assert one["candidates"]
+        assert same(encoder().encode(one), encoder().encode(two)), decision["fixture"]
+    assert sum(len(d["candidates"]) for d in decisions) > 1000
+    assert differing == len(decisions)  # the two forms really differ (rqid in the requests)
+
+
+def test_a_change_in_what_the_a1_replay_holds_breaks_the_equality() -> None:
+    # Negative control: the equality test above can fail.
+    decision = PAIRS["decisions"][-1]
+    one, two = pair_query(PAIRS, decision, "a1"), pair_query(PAIRS, decision, "a2")
+    two["candidates"][0]["pending"] = not two["candidates"][0]["pending"]
+    assert not same(encoder().encode(one), encoder().encode(two))
 
 
 def test_the_a1_and_a2_policy_query_samples_encode_identically() -> None:
@@ -167,7 +223,9 @@ def test_every_request_point_of_the_random_corpus_encodes_into_range() -> None:
         for player in ("p1", "p2"):
             lines = battle["channels"][player]["lines"]
             for index, body in request_points(lines):
-                obs = observation(player, lines[: index + 1], battle["teams"][player], "battle")
+                obs = observation(
+                    player, lines[: index + 1], battle["teams"][player], kind_of(body)
+                )
                 try:
                     encoded = encoder().encode(
                         {"observation": obs, "candidates": candidates_for(body)}
@@ -254,7 +312,6 @@ def test_what_cannot_be_encoded_is_refused() -> None:
         "move 9, move 1",
         "switch 7, move 1",
         "move 1, switch 6",
-        "team 1234567",
     ],
 )
 def test_a_candidate_the_request_cannot_back_is_unsupported(choice: str) -> None:
@@ -346,3 +403,70 @@ def test_buckets_are_stable_and_in_range() -> None:
     assert bucket("stealthrock", 32) == bucket("stealthrock", 32)
     assert all(0 <= bucket(name, 7) < 7 for name in ("a", "spikes", "tailwind", "reflect"))
     assert bucket("a", 1000) != bucket("b", 1000)
+
+
+def test_more_moves_than_max_moves_is_refused_not_truncated() -> None:
+    mon = PokemonState(own=False, base_species="venusaur", moves_revealed=["tackle"] * 5)
+    with pytest.raises(EncodingError, match="more than max_moves"):
+        encoder()._mon_cat(SideState(player="p2"), mon)
+
+
+def test_the_observation_kind_must_match_the_request_and_the_candidates() -> None:
+    preview, battle = (
+        sample("policy-query/valid/preview.json"),
+        sample("policy-query/valid/battle.json"),
+    )
+    wrong = copy.deepcopy(preview)
+    wrong["observation"]["kind"] = "battle"
+    with pytest.raises(EncodingError, match="battle observation at a preview request"):
+        encoder().encode(wrong)
+    wrong = copy.deepcopy(battle)
+    wrong["observation"]["kind"] = "preview"
+    with pytest.raises(EncodingError, match="preview observation at a move request"):
+        encoder().encode(wrong)
+    moves_in_preview = copy.deepcopy(preview)
+    moves_in_preview["candidates"] = [{"choice": "move 1 1, move 1 1", "pending": False}]
+    with pytest.raises(EncodingError, match="joint candidate in a preview query"):
+        encoder().encode(moves_in_preview)
+    teams_in_battle = copy.deepcopy(battle)
+    teams_in_battle["candidates"] = [{"choice": "team 1234", "pending": False}]
+    with pytest.raises(EncodingError, match="team candidate in a battle query"):
+        encoder().encode(teams_in_battle)
+
+
+# The golden values: they pin the encoder's semantics. If one fails, the features changed: bump
+# ENCODER_FORMAT (and review the diff) if that was meant, then re-pin both.
+GOLDEN_VERSION = "enc1:cec125199e5fc0b05a2a1d694ee38064851d1a4494ac4b571b3fccd6bc3f41dd"
+GOLDEN_TENSORS = "c49ec74a61a40adfa951452b853ab14b67c3f95f39390d81707832285c2ced48"
+
+
+def tensor_digest(encoded: EncodedQuery) -> str:
+    digest = hashlib.sha256()
+    for name, tensor in sorted(encoded.tensors().items()):
+        flat = tensor.contiguous()
+        digest.update(f"{name}{tuple(flat.shape)}{flat.dtype}".encode())
+        digest.update(ctypes.string_at(flat.data_ptr(), flat.numel() * flat.element_size()))
+    return digest.hexdigest()
+
+
+def test_the_encoder_version_and_the_tensors_of_a_fixed_query_are_pinned() -> None:
+    assert encoder().version == GOLDEN_VERSION
+    assert (
+        tensor_digest(encoder().encode(sample("policy-query/valid/battle.json"))) == GOLDEN_TENSORS
+    )
+    assert (
+        tensor_digest(encoder().encode(sample("policy-query/valid/preview.json"))) != GOLDEN_TENSORS
+    )
+
+
+def test_the_version_covers_the_attribute_tables_and_the_index_constants() -> None:
+    base = encoder_version(game(), TINY_ENCODER)
+    original = module.TARGET_OFFSET
+    try:
+        module.TARGET_OFFSET = original + 1
+        assert encoder_version(game(), TINY_ENCODER) != base
+    finally:
+        module.TARGET_OFFSET = original
+    changed = copy.deepcopy(table())
+    changed["moves"][0]["priority"] = 2
+    assert GameData.from_table(changed).attribute_digest != game().attribute_digest

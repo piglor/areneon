@@ -58,7 +58,7 @@ export interface CheckpointRecord {
    */
   learner_state_hash: string;
   /**
-   * The encoder the checkpoint was trained with; it carries the engine-data table's hash.
+   * The encoder the checkpoint was trained with: enc<format>: and the SHA-256 that carries the engine-data table's hash (ADR-010 section 3).
    */
   encoder_version: string;
   /**

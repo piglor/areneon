@@ -13,6 +13,8 @@ value in the table, so the scale also comes from the data.
 
 from __future__ import annotations
 
+import ctypes
+import hashlib
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
@@ -71,6 +73,16 @@ def _one_hot(position: int, size: int) -> list[float]:
     return [1.0 if i == position else 0.0 for i in range(size)]
 
 
+def _tensor_digest(*tensors: torch.Tensor) -> str:
+    """SHA-256 over the shapes and little-endian float32 bytes of CPU tensors, in order."""
+    digest = hashlib.sha256()
+    for tensor in tensors:
+        flat = tensor.detach().to(torch.float32).contiguous()
+        digest.update(repr(tuple(flat.shape)).encode())
+        digest.update(ctypes.string_at(flat.data_ptr(), flat.numel() * 4))
+    return digest.hexdigest()
+
+
 @dataclass(frozen=True)
 class GameData:
     """Vocabularies and attribute tables of one engine-data export."""
@@ -91,6 +103,11 @@ class GameData:
     move_attributes: torch.Tensor
     item_attributes: torch.Tensor
     move_base_pp: tuple[int, ...]
+
+    @property
+    def attribute_digest(self) -> str:
+        """Hash of the attribute tables as built: a change in how they are built changes it."""
+        return _tensor_digest(self.species_attributes, self.move_attributes, self.item_attributes)
 
     @classmethod
     def from_table(cls, table: Mapping[str, Any]) -> GameData:

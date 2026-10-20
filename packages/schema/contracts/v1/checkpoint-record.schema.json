@@ -82,10 +82,9 @@
       "pattern": "^[0-9a-f]{64}$"
     },
     "encoder_version": {
-      "description": "The encoder the checkpoint was trained with; it carries the engine-data table's hash.",
+      "description": "The encoder the checkpoint was trained with: enc<format>: and the SHA-256 that carries the engine-data table's hash (ADR-010 section 3).",
       "type": "string",
-      "minLength": 1,
-      "maxLength": 128
+      "pattern": "^enc[0-9]+:[0-9a-f]{64}$"
     },
     "data_class": {
       "description": "private when any training input was private; a private record is never committed (ADR-008 \u00a75).",

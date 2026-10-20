@@ -30,6 +30,8 @@ def test_every_candidate_of_the_corpus_round_trips_to_the_identical_string() -> 
     for name in ("policy-query/valid/battle.json", "policy-query/valid/preview.json"):
         for candidate in sample(name)["candidates"]:
             assert parse_choice(candidate["choice"]).format() == candidate["choice"]
+    # Independent of the loop: every candidate is an object with a "pending" key in the file text.
+    assert count == sum(path.read_text().count('"pending":') for path in CORPUS)
     assert count > MANY
 
 

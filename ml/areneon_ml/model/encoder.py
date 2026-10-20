@@ -48,7 +48,8 @@ ENCODER_FORMAT = 1
 REQUEST_KINDS = ("preview", "move", "forceSwitch")
 GENDERS = (None, "M", "F", "N")
 MAX_SLOT_LETTERS = 3  # triples is the widest gametype the reducer reads
-TARGET_CODES = 20  # 0 untargeted, else 10 + the engine's target location (-9..9)
+TARGET_OFFSET = 10
+TARGET_CODES = 20  # 0 untargeted, else TARGET_OFFSET + the engine's target location (-9..9)
 _REQUEST = "|request|"
 _SIDE = re.compile(r"^p[1-4]: ")
 STAT_NAMES = ("atk", "def", "spa", "spd", "spe")
@@ -167,16 +168,33 @@ class Layout:
 
 
 def encoder_version(game: GameData, config: EncoderConfig) -> str:
-    """``enc<format>:`` + SHA-256 of the engine-data hash, the config and the feature layout.
+    """``enc<format>:`` + SHA-256 of everything the feature values depend on.
 
-    A pin bump changes the engine-data hash, so it yields a new encoder
-    version, never a silent remap (ADR-010 §3).
+    That is the engine-data hash, the config (including the scales), the feature
+    layout, the attribute tables as built, and the constants that map a value to
+    an index (genders, request kinds, events, target codes, slot letters, the
+    bucket hash). A pin bump changes the engine-data hash, so it yields a new
+    encoder version, never a silent remap (ADR-010 §3). A change to how a value
+    is computed from the state, with the same names and constants, is not
+    visible to the hash: bump ``ENCODER_FORMAT``; the golden test in
+    ``tests/ml/model/test_encoder.py`` (a pinned version and a tensor digest of
+    one fixed query) fails on such a change if nobody did.
     """
     body = {
         "encoder_format": ENCODER_FORMAT,
         "engine_data_hash": game.engine_data_hash,
+        "attribute_digest": game.attribute_digest,
         "config": config.as_dict(),
         "layout": Layout.of(config).as_dict(),
+        "constants": {
+            "genders": list(GENDERS),
+            "request_kinds": list(REQUEST_KINDS),
+            "events": list(EVENTS),
+            "target_codes": TARGET_CODES,
+            "target_offset": TARGET_OFFSET,
+            "max_slot_letters": MAX_SLOT_LETTERS,
+            "bucket": "sha256 first 4 bytes big-endian modulo buckets",
+        },
     }
     return f"enc{ENCODER_FORMAT}:{sha256_hex(jcs(body))}"
 
@@ -247,8 +265,13 @@ class Encoder:
             self.game.vocabulary,
         )
         field_features = self._field(state)
+        wanted = "preview" if state.request_kind == "preview" else "battle"
+        if observation["kind"] != wanted:
+            raise EncodingError(
+                f"a {observation['kind']} observation at a {state.request_kind} request"
+            )
         request = self._request(state, observation["log"])
-        candidates = [self._candidate(c, request) for c in query["candidates"]]
+        candidates = [self._candidate(c, request, wanted) for c in query["candidates"]]
         return self._assemble(observation["kind"], state, field_features, candidates)
 
     # -- tokens --------------------------------------------------------------
@@ -272,7 +295,10 @@ class Encoder:
             ability = NONE if own else UNKNOWN
         shown = mon.moves_own if own and mon.moves_own is not None else mon.moves_revealed
         pad = NONE if own else UNKNOWN
-        moves = [game.moves.lookup(m) for m in shown[: self.config.max_moves]]
+        if len(shown) > self.config.max_moves:
+            # Transform, Mimic and Sketch can show more; truncating would hide moves silently.
+            raise EncodingError(f"a Pokémon shows {len(shown)} moves, more than max_moves")
+        moves = [game.moves.lookup(m) for m in shown]
         moves += [pad] * (self.config.max_moves - len(moves))
         if mon.gender not in GENDERS:
             raise EncodingError(f"unsupported gender {mon.gender!r}")
@@ -379,9 +405,11 @@ class Encoder:
         return request.order[position - 1]
 
     def _candidate(
-        self, candidate: Mapping[str, Any], request: _Request
+        self, candidate: Mapping[str, Any], request: _Request, kind: str
     ) -> tuple[list[list[int]], list[list[int]], list[int], float]:
         parsed: ParsedChoice = parse_choice(candidate["choice"])
+        if (parsed.kind == "team") != (kind == "preview"):
+            raise EncodingError(f"a {parsed.kind} candidate in a {kind} query")
         config = self.config
         cat = [[0] * len(self.layout.cand_cat) for _ in range(SLOTS)]
         tok = [[-1, -1] for _ in range(SLOTS)]
@@ -406,7 +434,7 @@ class Encoder:
                     raise UnsupportedCandidate("a candidate names a move the request lacks")
                 cat[slot][1] = moves[action.index - 1]
                 cat[slot][2] = action.index
-                cat[slot][3] = 0 if action.target is None else 10 + action.target
+                cat[slot][3] = 0 if action.target is None else TARGET_OFFSET + action.target
                 cat[slot][4] = 0 if action.event is None else 1 + EVENTS.index(action.event)
         return cat, tok, team, 1.0 if candidate["pending"] else 0.0
 

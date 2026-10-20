@@ -296,6 +296,7 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "checkpoint-record/blank-lineage": recordWith((r) => (r.lineage_id = "")),
     "checkpoint-record/no-learner-state": recordWith((r) => delete r.learner_state_hash),
     "checkpoint-record/extra-field": recordWith((r) => (r.verdicts = [])),
+    "checkpoint-record/bad-encoder-version": recordWith((r) => (r.encoder_version = "stub-1")),
     "checkpoint-record/next-version": recordWith((r) => (r.schema_version = 2)),
     "engine-data/damage-code-4": mutated(engineData, (t) => ((t.types as { damage_taken: number[] }[])[0] as { damage_taken: number[] }).damage_taken[0] = 4),
     "engine-data/three-types": mutated(engineData, (t) => ((t.species as { types: string[] }[])[0] as { types: string[] }).types = ["bug", "dark", "fire"]),
