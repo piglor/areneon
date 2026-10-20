@@ -4,7 +4,7 @@ import { ajvFor } from "@areneon/schema/ajv";
 import { beforeAll, describe, expect, it } from "vitest";
 import { syntheticFixtureHashes } from "../src/golden.ts";
 import { EngineDataError, readEngineData } from "../src/engine-data.ts";
-import { EpisodeError, loadEngine, readEpisode, readEvaluationRunManifest, readTrainingExample, readTrainingSet, TrainingLoaderError } from "../src/index.ts";
+import { contractVersions, EpisodeError, loadEngine, PolicyProtocolError, readHandshake, readPolicyQuery, readPolicyReply, readEpisode, readEvaluationRunManifest, readTrainingExample, readTrainingSet, TrainingLoaderError } from "../src/index.ts";
 import { contractSamples, SAMPLE_HASHES, SAMPLES_DIR } from "../src/samples.ts";
 
 const SCHEMAS = new URL("../../schema/contracts/v1/", import.meta.url);
@@ -68,6 +68,11 @@ describe("the shared contract sample corpus (ADR-008 §2)", () => {
       "v1/episode/reader-invalid/sparring-synthetic.json",
       "v1/evaluation-run-manifest/reader-invalid/duplicate.json",
       "v1/evaluation-run-manifest/reader-invalid/unsorted.json",
+      "v1/policy-handshake/reader-invalid/duplicate-contracts.json",
+      "v1/policy-handshake/reader-invalid/unsorted-checkpoints.json",
+      "v1/policy-handshake/reader-invalid/unsorted-contracts.json",
+      "v1/policy-query/reader-invalid/duplicate-candidate.json",
+      "v1/policy-query/reader-invalid/identity-differs.json",
       "v1/training-example/reader-invalid/choice-not-in-candidates.json",
       "v1/training-set/reader-invalid/duplicate-manifests.json",
       "v1/training-set/reader-invalid/learner-ready-no-policy.json",
@@ -87,6 +92,29 @@ describe("the shared contract sample corpus (ADR-008 §2)", () => {
     expect(Object.keys(fresh)).toContain(file);
     expect(() => reader(committed(file))).toThrow(TrainingLoaderError);
     expect(() => reader(committed(file))).toThrow(message);
+  });
+
+  // ADR-010 section 2: the worker protocol's readers refuse what the profile cannot say.
+  it.each([
+    ["v1/policy-query/reader-invalid/identity-differs.json", readPolicyQuery, "identity differs from its observation"],
+    ["v1/policy-query/reader-invalid/duplicate-candidate.json", readPolicyQuery, "is listed twice"],
+    ["v1/policy-handshake/reader-invalid/unsorted-contracts.json", readHandshake, "sorted by name"],
+    ["v1/policy-handshake/reader-invalid/duplicate-contracts.json", readHandshake, "sorted by name"],
+    ["v1/policy-handshake/reader-invalid/unsorted-checkpoints.json", readHandshake, "sorted by role"],
+  ])("the policy reader refuses %s", (file, reader, message) => {
+    expect(Object.keys(fresh)).toContain(file);
+    expect(() => reader(committed(file))).toThrow(PolicyProtocolError);
+    expect(() => reader(committed(file))).toThrow(message);
+  });
+
+  it("the policy readers accept the valid samples, and the hello lists this side's contracts", () => {
+    for (const name of ["battle", "preview", "battle-a2"]) expect(readPolicyQuery(committed(`v1/policy-query/valid/${name}.json`)).schema_version).toBe(1);
+    for (const name of ["recommendation", "unsupported-candidate", "invalid-query"]) {
+      expect(readPolicyReply(committed(`v1/policy-reply/valid/${name}.json`)).query_id).toBe(1);
+    }
+    expect(readHandshake(committed("v1/policy-handshake/valid/hello.json")).message.contracts).toEqual(contractVersions());
+    expect(readHandshake(committed("v1/policy-handshake/valid/ready.json")).message.kind).toBe("ready");
+    expect(() => readPolicyReply({})).toThrow(PolicyProtocolError);
   });
 
   // ADR-010 section 3: the engine-data reader refuses what the profile cannot say.

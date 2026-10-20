@@ -148,6 +148,7 @@ export {
 } from "./teams.ts";
 export {
   type Actor,
+  type ActorContext,
   BattleAbortedError,
   type BattleOptions,
   type BattleRecord,
@@ -176,3 +177,23 @@ export {
   PolicyWorkerError,
   UnsupportedCandidateError,
 } from "./evaluation-harness.ts";
+export { type PolicyActorOptions, policyActor, type PolicyGameOptions, policyGame, type PolicySeat, type SamplerInput, sampleU } from "./policy-actor.ts";
+export {
+  contractVersions,
+  encodeFrame,
+  type PolicyHandshake,
+  type PolicyQuery,
+  type PolicyQueryInput,
+  PolicyProtocolError,
+  type PolicyReply,
+  readHandshake,
+  readPolicyQuery,
+  readPolicyReply,
+} from "./policy-protocol.ts";
+export {
+  type PolicyClient,
+  PolicyHandshakeError,
+  PolicyReplyError,
+  PolicyWorkerClient,
+  type PolicyWorkerOptions,
+} from "./policy-worker.ts";

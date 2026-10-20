@@ -8,6 +8,7 @@ import {
   PolicyWorkerError,
   UnsupportedCandidateError,
 } from "../src/evaluation-harness.ts";
+import { PolicyProtocolError } from "../src/policy-protocol.ts";
 import { EpisodeError, episodeFromRecord } from "../src/index.ts";
 import { firstLegal, GOLDEN_FORMAT, GOLDEN_SEED, syntheticTeam } from "../src/golden.ts";
 import { type Actor, BattleAbortedError, ForfeitSignal, loadEngine, type Player, type RequestRecord } from "../src/index.ts";
@@ -145,6 +146,7 @@ describe("harness incidents", () => {
     ["unsupported_candidate", () => { throw new UnsupportedCandidateError("shape"); }, "unsupported_candidate"],
     ["no_candidate", () => { throw new NoCandidateError("empty"); }, "no_candidate"],
     ["enumerator_defect", () => { throw new EnumeratorDefectError([]); }, "enumerator_defect"],
+    ["policy_protocol", () => { throw new PolicyProtocolError("bad query"); }, "policy_protocol"],
     ["engine_error", () => { throw new BattleAbortedError("engine"); }, "engine_error"],
   ];
   for (const [name, fail, incident] of incidents) {

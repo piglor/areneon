@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "message": {
+    "kind": "bye",
+    "contracts": [
+      {
+        "name": "BattleObservation",
+        "schema_version": 1,
+        "schema_sha256": "91c8821e02392c77dde2908f810107ca2a8b5ad4eecf92b255d859cf35732dfe"
+      },
+      {
+        "name": "PolicyQuery",
+        "schema_version": 1,
+        "schema_sha256": "3201f807858143c38878c5f98072c7aae4143e2ed8b642c6a9424b48266dd181"
+      },
+      {
+        "name": "PolicyReply",
+        "schema_version": 1,
+        "schema_sha256": "479e0f5c0d09086b351582f5a186dcfbf0a8b26a5efac267c2c2009ddd29f670"
+      },
+      {
+        "name": "PreviewObservation",
+        "schema_version": 1,
+        "schema_sha256": "0140ea5fe86ec3e44e8a8599a716c5f4b9bd0cd4e57f5ba9f7f7f4119507b309"
+      },
+      {
+        "name": "Recommendation",
+        "schema_version": 1,
+        "schema_sha256": "e04b435e1b7a2fc6434fed68783c113f3c7de8eb74f957a626aea6e16558b827"
+      }
+    ]
+  }
+}

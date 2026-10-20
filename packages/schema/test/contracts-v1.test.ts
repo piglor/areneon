@@ -92,6 +92,28 @@ describe("TrainingExample", () => {
   });
 });
 
+describe("the policy worker contracts", () => {
+  const body = ({ $schema, $id, $defs, title, ...rest }: Record<string, unknown>) => rest;
+  const defsOf = (name: string) => (schema(name) as { $defs: Record<string, unknown> }).$defs;
+
+  it("PolicyQuery inlines the observation schemas' definitions and TrainingExample's Candidate unchanged", () => {
+    const defs = defsOf("policy-query");
+    expect(defs.PreviewObservation).toEqual(body(schema("preview-observation")));
+    expect(defs.BattleObservation).toEqual(body(schema("battle-observation")));
+    for (const source of ["preview-observation", "battle-observation"]) {
+      for (const [name, def] of Object.entries(defsOf(source))) expect(defs[name], name).toEqual(def);
+    }
+    expect(defs.Candidate).toEqual(defsOf("training-example").Candidate);
+    expect(defs.RequestIdentity).toEqual(defsOf("recommendation").RequestIdentity);
+  });
+
+  it("PolicyReply inlines Recommendation and its definitions unchanged", () => {
+    const defs = defsOf("policy-reply");
+    expect(defs.Recommendation).toEqual(body(schema("recommendation")));
+    for (const [name, def] of Object.entries(defsOf("recommendation"))) expect(defs[name], name).toEqual(def);
+  });
+});
+
 describe("Recommendation", () => {
   const valid = validator("recommendation");
   const rec = {

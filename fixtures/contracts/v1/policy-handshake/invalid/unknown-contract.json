@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "message": {
+    "kind": "hello",
+    "contracts": [
+      {
+        "name": "Episode",
+        "schema_version": 1,
+        "schema_sha256": "91c8821e02392c77dde2908f810107ca2a8b5ad4eecf92b255d859cf35732dfe"
+      }
+    ]
+  }
+}
