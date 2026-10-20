@@ -128,7 +128,9 @@ function headsAtRef(ref: string, dir: string, cwd: string): Map<string, string> 
       throw new EvaluationConfigError(`git ${args[0]} ${ref} failed: ${((error as { stderr?: string }).stderr ?? "").trim()}`);
     }
   };
-  const prefix = `${dir.replace(/\/+$/, "")}/`;
+  let trimmed = dir;
+  while (trimmed.endsWith("/")) trimmed = trimmed.slice(0, -1);
+  const prefix = `${trimmed}/`;
   const files = new Map<string, string>();
   for (const path of git("ls-tree", "--name-only", ref, "--", prefix).split("\n").filter((p) => HEAD_FILE.test(p))) {
     files.set(path.slice(prefix.length), git("show", `${ref}:${path}`));

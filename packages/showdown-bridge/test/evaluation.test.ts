@@ -634,7 +634,7 @@ describe("the evaluation-register CLI", () => {
     // A local, unmerged head 2 satisfies the working tree, not main.
     writeFileSync(join(repo, "evaluation/register-heads", `${String(2).padStart(10, "0")}.json`), JSON.stringify({ schema_version: 1, seq: 2, entry_hash: hashes()[1] }));
     const inRepo = (...args: string[]) => runEvaluationCli(args, clock, repo);
-    const common = ["--register", register, ...records, "--heads", "evaluation/register-heads", "--published", planHash(fx.plan)];
+    const common = ["--register", register, ...records, "--heads", "evaluation/register-heads/", "--published", planHash(fx.plan)];
     expect(inRepo("verify", ...common).code).toBe(0);
     const trusted = inRepo("verify", ...common, "--heads-ref", "main");
     expect(trusted.code).toBe(1);
