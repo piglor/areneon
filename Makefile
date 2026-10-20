@@ -53,9 +53,11 @@ team-guard:
 licences:
 	pnpm -r licenses list --prod --json | uv run --no-project python scripts/check_licenses.py
 	uv run --locked python scripts/python_licences.py | uv run --no-project python scripts/check_licenses.py
+	uv run --locked python -m scripts.check_cuda_separation
 
-# Proves `make licences` fails on an injected AGPL dependency, on a scratch
-# copy. CI-only: it needs network, so `make check` does not run it.
+# Proves `make licences` fails on an injected AGPL dependency (pnpm and Python)
+# and, through the CUDA separation guard (ADR-010 §5.2), on an injected
+# nvidia-* package, on a scratch copy. CI-only: it needs network, so `make check` does not run it.
 licences-selftest:
 	scripts/licences-selftest.sh
 

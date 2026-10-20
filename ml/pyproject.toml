@@ -1,0 +1,19 @@
+[project]
+name = "areneon-ml"
+version = "0.0.0"
+description = "Areneon's training pipeline and policy runtime (ADR-010); CPU torch only"
+requires-python = ">=3.12,<3.13"
+license = "Apache-2.0"
+dependencies = [
+    "torch==2.14.1",
+]
+
+[build-system]
+requires = ["hatchling==1.32.4"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["areneon_ml"]
+
+[tool.uv.sources]
+torch = { index = "pytorch-cpu" }
