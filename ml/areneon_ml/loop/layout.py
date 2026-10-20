@@ -164,7 +164,10 @@ def run_lock(run_dir: Path) -> Iterator[None]:
 
     Two drivers would race: the second would delete the first's live ``.partial`` generation.
     The lock is an advisory ``flock`` on an open file, so the operating system releases it when
-    the holder dies, however it dies.
+    the holder dies, however it dies. Caveats: ``fcntl`` is POSIX only; on NFS the lock needs a
+    working lock service; and on WSL2 a directory under ``/mnt/c`` (DrvFs or 9p) may not honour
+    ``flock`` at all, in which case two drivers would not exclude each other. Keep run
+    directories on a local Linux filesystem.
     """
     run_dir.mkdir(parents=True, exist_ok=True)
     with (run_dir / ".lock").open("a") as handle:
@@ -175,6 +178,20 @@ def run_lock(run_dir: Path) -> Iterator[None]:
                 f"another process is running in {run_dir}: its .lock is held"
             ) from exc
         yield
+
+
+def ensure_run_dirs(run_dir: Path) -> None:
+    """Create ``generations/`` and ``checkpoints/`` and flush the new entries and their parents.
+
+    A directory is durable only once its parent's entry is, so the run directory and its parent
+    are flushed too.
+    """
+    for path in (run_dir / "generations", run_dir / "checkpoints"):
+        if not path.is_dir():
+            path.mkdir(parents=True)
+            sync_dir(path)
+    sync_dir(run_dir)
+    sync_dir(run_dir.parent)
 
 
 def discard_stale_checkpoint_files(run_dir: Path) -> list[str]:

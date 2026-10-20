@@ -161,6 +161,9 @@ def test_a_commit_flushes_every_file_and_directory_before_the_one_rename(
         work / layout.MANIFEST,
     ]:
         assert str(path) in before, path
+    # the manifest is itself flushed, and the directory entry that names it, before the rename
+    manifest_at = log.index(str(work / layout.MANIFEST))
+    assert str(work) in log[manifest_at + 1 : rename]
     # the manifest was hashed from flushed bytes: the files were flushed before it was written
     assert log.index(str(work / "records" / "a.json")) < log.index(str(work / layout.MANIFEST))
     # and the parent of the renamed directory is flushed after the rename
@@ -219,3 +222,17 @@ def test_stale_checkpoint_temp_files_are_discarded(tmp_path: Path) -> None:
     assert layout.discard_stale_checkpoint_files(tmp_path) == [f".{'a' * 64}.partial"]
     assert [p.name for p in store.iterdir()] == [f"{'b' * 64}.safetensors"]
     assert layout.discard_stale_checkpoint_files(tmp_path / "none") == []
+
+
+def test_the_run_directory_and_its_entries_are_flushed_when_first_created(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    log = fsync_log(monkeypatch)
+    layout.ensure_run_dirs(run_dir)
+    assert {str(run_dir / "generations"), str(run_dir / "checkpoints")} <= set(log)
+    assert log[-2:] == [str(run_dir), str(tmp_path)]
+    log.clear()
+    layout.ensure_run_dirs(run_dir)  # nothing new to flush but the parents
+    assert log == [str(run_dir), str(tmp_path)]

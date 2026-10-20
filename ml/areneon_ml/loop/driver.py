@@ -154,6 +154,7 @@ class Loop:
             return self._run_locked(generations)
 
     def _run_locked(self, generations: int) -> RunResult:
+        layout.ensure_run_dirs(self.run_dir)
         self._bind_config()
         discarded = layout.discard_partials(self.run_dir)
         layout.discard_stale_checkpoint_files(self.run_dir)

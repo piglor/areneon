@@ -83,15 +83,19 @@ async function killWhen(config: string, runDir: string, generations: number, rea
   expect(await exited).toBeNull();
 }
 
+const blank = (): { dir: string; resumed: RunSummary } => ({ dir: "", resumed: undefined as unknown as RunSummary });
 const partial = (runDir: string, ...path: string[]): string => join(runDir, "generations", `.${gen(2)}.partial`, ...path);
 
 describe.skipIf(!existsSync(PYTHON) && process.env.ARENEON_REQUIRE_PYTHON_WORKER !== "1")("the training loop, tiny and on CPU", () => {
   let dir: string;
   let uninterrupted: string;
   let first: RunSummary;
-  // Two real kill points in generation 2: while the simulator side is alive (Node and the worker), and
-  // after it has finished while the driver reads, trains and writes.
-  const kills = { play: { dir: "", resumed: undefined as unknown as RunSummary }, train: { dir: "", resumed: undefined as unknown as RunSummary } };
+  // Three real SIGKILLs of the driver's process group in generation 2, each followed by a resume:
+  //  play: the simulator side is alive (Node and the worker), the partial may still be empty;
+  //  write: Node has played and is writing its files (generation.json is written last), the worker is still alive;
+  //  seal: the driver has trained (train-report.json exists) and is sealing, with no manifest yet and no rename.
+  type Point = { dir: string; resumed: RunSummary };
+  const kills: Record<"play" | "write" | "seal", Point> = { play: blank(), write: blank(), seal: blank() };
 
   beforeAll(async () => {
     dir = mkdtempSync(join(tmpdir(), "areneon-loop-"));
@@ -102,10 +106,26 @@ describe.skipIf(!existsSync(PYTHON) && process.env.ARENEON_REQUIRE_PYTHON_WORKER
     expect(liveProcesses(kills.play.dir)).toEqual([]); // the whole group went down with the driver
     expect(existsSync(partial(kills.play.dir, "manifest.json"))).toBe(false);
     kills.play.resumed = run(TINY, kills.play.dir, 2);
-    kills.train.dir = join(dir, "killed-training");
-    await killWhen(TINY, kills.train.dir, 2, () => existsSync(partial(kills.train.dir, "generation.json")));
-    expect(existsSync(partial(kills.train.dir, "manifest.json"))).toBe(false);
-    kills.train.resumed = run(TINY, kills.train.dir, 2);
+    kills.write.dir = join(dir, "killed-writing");
+    await killWhen(TINY, kills.write.dir, 2, () => existsSync(partial(kills.write.dir, "generation.json")) && liveProcesses(kills.write.dir).length >= 1);
+    expect(existsSync(partial(kills.write.dir, "manifest.json"))).toBe(false);
+    kills.write.resumed = run(TINY, kills.write.dir, 2);
+    // The seal window is short: if the signal lands after the commit, try again in a fresh directory.
+    for (let attempt = 1; ; attempt++) {
+      kills.seal.dir = join(dir, `killed-sealing-${attempt}`);
+      const at = kills.seal.dir;
+      let killed = false;
+      try {
+        await killWhen(TINY, at, 2, () => existsSync(partial(at, "train-report.json")) && !existsSync(partial(at, "manifest.json")));
+        killed = existsSync(partial(at)) && !existsSync(join(at, "generations", gen(2)));
+      } catch {
+        // the driver finished before the signal: the window was missed
+      }
+      if (killed) break;
+      if (attempt === 5) throw new Error("the seal window was missed five times");
+    }
+    expect(existsSync(partial(kills.seal.dir, "train-report.json"))).toBe(true);
+    kills.seal.resumed = run(TINY, kills.seal.dir, 2);
   });
   afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
@@ -149,7 +169,7 @@ describe.skipIf(!existsSync(PYTHON) && process.env.ARENEON_REQUIRE_PYTHON_WORKER
     }
   });
 
-  it.each(["play", "train"] as const)("resumes a run SIGKILLed at the %s point from its last complete generation, to the same learner-state hash", (point) => {
+  it.each(["play", "write", "seal"] as const)("resumes a run SIGKILLed at the %s point from its last complete generation, to the same learner-state hash", (point) => {
     const { dir: killed, resumed } = kills[point];
     expect(resumed).toMatchObject({ resumed_from: 1, discarded: [`.${gen(2)}.partial`], generation: 2, played: [2] });
     expect(resumed.learner_state_hash).toBe(first.learner_state_hash);
