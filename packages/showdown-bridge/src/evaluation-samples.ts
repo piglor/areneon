@@ -4,10 +4,12 @@
 // value here is a placeholder that pins a shape, never a real sealed set:
 // hashes are repeated characters, the sealed "teams" are never built.
 
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { type EvaluationConfig, PARAMETERS_FILE, readEvaluationConfig, RULE_FILE } from "./evaluation-config.ts";
 import { commitmentHash, planHash, type EvaluationPlan, type SealedSetCommitment } from "./evaluation-plan.ts";
 import { appendEntry, type EvaluationRegisterEntry } from "./evaluation-register.ts";
+import { sealedManifestHash, type SealedTeamSetManifest } from "./sealed-records.ts";
 
 export { CONFIG_DIR, PARAMETERS_FILE, RULE_FILE } from "./evaluation-config.ts";
 
@@ -132,12 +134,26 @@ export function evaluationSamples(): { valid: Record<string, unknown>; invalid: 
   const withEntry = (e: EvaluationRegisterEntry, change: (c: Record<string, unknown>) => void) => mutated(e, change);
   const claimsOf = (r: Record<string, unknown>) => r.claims as Record<string, unknown>[];
 
+  const setManifest = sealedSetManifestSample(commitment);
+  const retired = {
+    schema_version: 1,
+    data_class: "synthetic",
+    set_id: "set-1",
+    set_manifest_hash: sealedManifestHash(setManifest),
+    reveal: { key: hexOf("4"), salt: hexOf("5") },
+    files: { teams_sha256: hexOf("6"), rejections_sha256: hexOf("7"), discards_sha256: hexOf("8") },
+  };
+  const withSet = (change: (m: Record<string, unknown>) => void) => mutated(setManifest, change);
+  const withRetired = (change: (m: Record<string, unknown>) => void) => mutated(retired, change);
+
   const valid: Record<string, unknown> = {
     "evaluation-parameters/provisional": provisional,
     "evaluation-parameters/complete": complete,
     "training-gate-rule/v1": rule,
     "sealed-set-commitment/four-strata": commitment,
     "evaluation-plan/registered": plan,
+    "sealed-team-set-manifest/four-strata": setManifest,
+    "retired-sealed-manifest/revealed": retired,
     "evaluation-register-entry/set-commitment": entry("set_commitment"),
     "evaluation-register-entry/plan-registration": entry("plan_registration"),
     "evaluation-register-entry/l2a-recheck": entry("l2a_recheck"),
@@ -161,6 +177,10 @@ export function evaluationSamples(): { valid: Record<string, unknown>; invalid: 
     // Schema-valid, refused by readSealedSetCommitment.
     "sealed-set-commitment/strata-sum-mismatch": withCommitment((c) => (c.team_count = 33)),
     "sealed-set-commitment/unsorted-strata": withCommitment((c) => (c.stratum_counts as unknown[]).reverse()),
+    // Schema-valid, refused by readSealedTeamSetManifest and readRetiredSealedManifest.
+    "sealed-team-set-manifest/unsorted-strata": withSet((m) => (m.strata = [...(setManifest.strata as unknown[])].reverse())),
+    "sealed-team-set-manifest/quota-sum-mismatch": withSet((m) => (m.team_count = 33)),
+    "retired-sealed-manifest/seed-is-salt": withRetired((m) => (m.reveal = { key: hexOf("4"), salt: hexOf("4") })),
     // Schema-valid, refused by readEvaluationPlan.
     "evaluation-plan/candidate-roles-swapped": withPlan((p) => (p.candidate = [...(plan.candidate as unknown as unknown[])].reverse())),
     "evaluation-plan/unsorted-opponents": withPlan((p) => (p.opponents = [...plan.opponents].reverse())),
@@ -190,6 +210,14 @@ export function evaluationSamples(): { valid: Record<string, unknown>; invalid: 
     "sealed-set-commitment/sealed-teams": withCommitment((c) => (c.teams = [])),
     "sealed-set-commitment/salt": withCommitment((c) => (c.salt = hexOf("5"))),
     "sealed-set-commitment/no-count": withCommitment((c) => delete ((c.stratum_counts as Record<string, unknown>[])[0] as Record<string, unknown>).count),
+    "sealed-team-set-manifest/seed-field": withSet((m) => (m.key = hexOf("4"))),
+    "sealed-team-set-manifest/teams": withSet((m) => (m.teams = [])),
+    "sealed-team-set-manifest/real-class": withSet((m) => (m.data_class = "real")),
+    "sealed-team-set-manifest/no-commitment": withSet((m) => delete m.set_commitment),
+    "sealed-team-set-manifest/float-margin": withSet((m) => (m.sealed_margin_permille = 0.5)),
+    "retired-sealed-manifest/no-seed": withRetired((m) => (m.reveal = { salt: hexOf("5") })),
+    "retired-sealed-manifest/teams": withRetired((m) => (m.teams = [])),
+    "retired-sealed-manifest/short-salt": withRetired((m) => (m.reveal = { key: hexOf("4"), salt: "abc" })),
     "evaluation-plan/direction-less": withPlan((p) => ((p.claims as Record<string, unknown>[])[0] as Record<string, unknown>).direction = "less"),
     "evaluation-plan/extra-field": withPlan((p) => (p.seed_material = hexOf("6"))),
     "evaluation-plan/one-checkpoint": withPlan((p) => (p.candidate = (plan.candidate as unknown as unknown[]).slice(0, 1))),
@@ -204,4 +232,39 @@ export function evaluationSamples(): { valid: Record<string, unknown>; invalid: 
     "evaluation-register-head/extra-field": { ...head, secret: "x" },
   };
   return { valid, invalid, readerInvalid };
+}
+
+/** A SealedTeamSetManifest for the sample commitment: four strata of eight, no discards. Illustrative values only. */
+function sealedSetManifestSample(commitment: SealedSetCommitment): SealedTeamSetManifest {
+  return {
+    schema_version: 1,
+    data_class: "synthetic",
+    set_id: commitment.set_id,
+    generation: commitment.generation,
+    plan_id: "sealed-plan-1",
+    generator: {
+      generator_commit: "a".repeat(40),
+      config_hash: hexOf("a"),
+      label_set_hash: hexOf("b"),
+      vocabulary_hash: hexOf("c"),
+      manifest: {
+        showdown_commit: "7244fe8e28fa8bc4d0809ae30d183c608b62bb2b",
+        format_id: "gen9championsvgc2026regmc",
+        regulation: "M-C",
+        ruleset_hash: hexOf("d"),
+        format_rules_hash: hexOf("e"),
+      },
+    },
+    d_max: 120000,
+    sealed_margin_permille: 200,
+    d_team_differing_fields: 2,
+    pilot_draws: 40000,
+    team_count: commitment.team_count,
+    strata: [0, 1, 2, 3].map((stratum) => ({ stratum, pilot_hits: 9000, quota: 8 })) as SealedTeamSetManifest["strata"],
+    reference_pool_hash: hexOf("f"),
+    rejection_log: { log_sha256: hexOf("9"), draws: 900, rejections: 70, duplicates: 2, near_duplicates: 5, overflows: 791 },
+    discards: { count: 0, log_sha256: createHash("sha256").update("").digest("hex") },
+    set_commitment: commitment.set_commitment,
+    key_commitment: commitment.key_commitment,
+  };
 }

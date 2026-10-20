@@ -640,3 +640,76 @@ def test_no_tracked_json_has_a_duplicate_key() -> None:
     for name in names:
         if (ROOT / name).is_file():
             guard._documents(name, (ROOT / name).read_text(encoding="utf-8"))
+
+
+# ADR-013 slice (g): a sealed-set reveal or a sealed team is secret until the set retires.
+REVEAL_DOC = {
+    "schema_version": 1,
+    "data_class": "synthetic",
+    "set_id": "set-1",
+    "set_manifest_hash": "a" * 64,
+    "reveal": {"key": "b" * 64, "salt": "c" * 64},
+    "files": {"teams_sha256": "d" * 64},
+}
+SEALED_TEAM_LINE = {"k": 3, "paste": "Garchomp\n", "stratum": 4}
+
+
+@pytest.mark.parametrize("name", sorted(guard.REVEAL_ALLOWED))
+def test_reveal_corpus_samples_are_allowed(repo: Path, name: str) -> None:
+    assert guard.violations([write(repo, name, json.dumps(REVEAL_DOC))]) == []
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "packages/x/retired.json",
+        "fixtures/teams/x/retired-manifest.json",
+        "fixtures/contracts/v1/retired-sealed-manifest/valid/other.json",
+        "fixtures/contracts/v1/retired-sealed-manifest/valid/revealed.jsonl",
+    ],
+)
+def test_reveal_outside_the_reviewed_paths_is_rejected(repo: Path, name: str) -> None:
+    path = write(repo, name, json.dumps(REVEAL_DOC))
+    assert guard.violations([path]) == [f"{path}: {guard.REVEAL}"]
+
+
+def test_reveal_needs_its_own_synthetic_label(repo: Path) -> None:
+    doc = {key: value for key, value in REVEAL_DOC.items() if key != "data_class"}
+    path = write(repo, sorted(guard.REVEAL_ALLOWED)[0], json.dumps(doc))
+    assert guard.violations([path]) == [f"{path}: {guard.UNLABELLED_REVEAL}"]
+
+
+def test_sealed_team_lines_are_rejected_wherever_they_are(repo: Path) -> None:
+    line = json.dumps(SEALED_TEAM_LINE) + "\n"
+    path = write(repo, "fixtures/teams/x/teams.jsonl", line)
+    nested = write(repo, "fixtures/other/sealed.json", json.dumps({"teams": [SEALED_TEAM_LINE]}))
+    assert guard.violations([path, nested]) == [
+        f"{path}: {guard.REVEAL}",
+        f"{nested}: {guard.REVEAL}",
+    ]
+
+
+@pytest.mark.parametrize(
+    "document",
+    [
+        {"set_id": "s", "files": {}, "reveal": {"key": "k"}},  # no salt: not a reveal
+        {"set_id": "s", "reveal": {"key": "k", "salt": "s"}},  # no files
+        {"k": 1, "paste": "x", "stratum": 2, "extra": 3},  # not the exact sealed-team shape
+        {"k": "1", "paste": "x", "stratum": 2},
+        {"k": 1, "paste": 2, "stratum": 2},
+    ],
+)
+def test_other_shapes_are_not_reveals(repo: Path, document: dict[str, object]) -> None:
+    assert guard.violations([write(repo, "fixtures/other/o.json", json.dumps(document))]) == []
+
+
+def test_reveal_allowlist_matches_the_repo() -> None:
+    present = {
+        file.relative_to(ROOT).as_posix()
+        for file in (ROOT / "fixtures").rglob("*.json")
+        if any(
+            guard._is_reveal(obj)
+            for obj in guard._walk(json.loads(file.read_text(encoding="utf-8")))
+        )
+    }
+    assert present == set(guard.REVEAL_ALLOWED)

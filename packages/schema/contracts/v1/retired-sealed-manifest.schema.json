@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:areneon:schema:contracts:v1:retired-sealed-manifest",
+  "title": "RetiredSealedManifest",
+  "description": "The reveal of a retired sealed set (evaluation protocol L5): the secret seed key and salt, published as CC0 synthetic fixtures with the set's teams and rejection log. Anyone can open the L3 commitment with it, regenerate the set from the key and replay the L1 and L2 rejections against the reference pool. Only a set that the register logs as retired may be revealed; this record holds a secret until then and must never be committed before.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "data_class",
+    "set_id",
+    "set_manifest_hash",
+    "reveal",
+    "files"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "data_class": {
+      "description": "Always synthetic: the revealed set is generated, never a real team.",
+      "const": "synthetic"
+    },
+    "set_id": {
+      "description": "The set's name in the register.",
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$"
+    },
+    "set_manifest_hash": {
+      "description": "The domain hash of the set's SealedTeamSetManifest, which is published beside this record.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "reveal": {
+      "description": "What opens the commitment.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "key",
+        "salt"
+      ],
+      "properties": {
+        "key": {
+          "description": "The seed key, 64 hex digits; its SHA-256 is key_commitment.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "salt": {
+          "description": "The salt, 64 hex digits; SHA-256(JCS({salt, teams})) is set_commitment.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "files": {
+      "description": "The published files of the reveal, by hash.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "teams_sha256",
+        "rejections_sha256",
+        "discards_sha256"
+      ],
+      "properties": {
+        "teams_sha256": {
+          "description": "SHA-256 of teams.jsonl: one JCS line per sealed team, in the committed order.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "rejections_sha256": {
+          "description": "SHA-256 of rejections.jsonl, the L1/L2 and validator rejections of the generation that filled.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "discards_sha256": {
+          "description": "SHA-256 of discards.jsonl.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    }
+  }
+}

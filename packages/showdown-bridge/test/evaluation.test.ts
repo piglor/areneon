@@ -689,11 +689,11 @@ describe("the evaluation-register CLI", () => {
 });
 
 describe("the evaluation modules are engine-free", () => {
-  it.each(["evaluation-config", "evaluation-plan", "evaluation-register", "evaluation-cli", "evaluation-samples"])("%s imports no engine, runner or network module", (name) => {
+  it.each(["evaluation-config", "evaluation-plan", "evaluation-register", "evaluation-cli", "evaluation-samples", "sealed-records"])("%s imports no engine, runner or network module", (name) => {
     const source = readFileSync(new URL(`../src/${name}.ts`, import.meta.url), "utf8");
     const imports = [...source.matchAll(/^import [^;]*from "([^"]+)"/gm)].map((m) => m[1] as string);
     for (const specifier of imports) {
-      expect(specifier, `${name} imports ${specifier}`).toMatch(/^(node:(child_process|crypto|fs|os|path|url)|@areneon\/schema\/.*|\.\/(canonical-json|evaluation-[a-z]+)\.ts)$/);
+      expect(specifier, `${name} imports ${specifier}`).toMatch(/^(node:(child_process|crypto|fs|os|path|url)|@areneon\/schema\/.*|\.\/(canonical-json|evaluation-[a-z]+|sealed-records)\.ts)$/);
     }
   });
 });

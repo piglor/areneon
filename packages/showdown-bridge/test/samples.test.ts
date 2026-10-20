@@ -5,7 +5,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { syntheticFixtureHashes } from "../src/golden.ts";
 import { EngineDataError, readEngineData } from "../src/engine-data.ts";
 import { contractVersions, EpisodeError, readTeamDatasetManifest, readTeamGeneratorConfig, readTeamLabelSet, readTeamRecord, readTeamSnapshotManifest, readTeamVocabulary, TeamRecordError, TeamVocabularyError, loadEngine, PolicyProtocolError, readHandshake, readPolicyQuery, readPolicyReply, readEpisode, readTrainingRunConfig, readLeagueRunRecord, LeagueRunRecordError, TrainingRunConfigError, readEvaluationRunManifest, readTrainingExample, readTrainingSet, TrainingLoaderError } from "../src/index.ts";
-import { EvaluationConfigError, readEvaluationParameters, readEntry, RegisterError, readEvaluationPlan, readSealedSetCommitment, readTrainingGateRule, readEvaluationConfig } from "../src/index.ts";
+import { EvaluationConfigError, readEvaluationParameters, readEntry, RegisterError, readEvaluationPlan, readSealedSetCommitment, readTrainingGateRule, readEvaluationConfig, readSealedTeamSetManifest, readRetiredSealedManifest } from "../src/index.ts";
 import { contractSamples, SAMPLE_HASHES, SAMPLES_DIR } from "../src/samples.ts";
 import { exportEngineData } from "../src/engine-data.ts";
 import { GOLDEN_FORMAT } from "../src/golden.ts";
@@ -103,8 +103,11 @@ describe("the shared contract sample corpus (ADR-008 §2)", () => {
       "v1/policy-handshake/reader-invalid/unsorted-contracts.json",
       "v1/policy-query/reader-invalid/duplicate-candidate.json",
       "v1/policy-query/reader-invalid/identity-differs.json",
+      "v1/retired-sealed-manifest/reader-invalid/seed-is-salt.json",
       "v1/sealed-set-commitment/reader-invalid/strata-sum-mismatch.json",
       "v1/sealed-set-commitment/reader-invalid/unsorted-strata.json",
+      "v1/sealed-team-set-manifest/reader-invalid/quota-sum-mismatch.json",
+      "v1/sealed-team-set-manifest/reader-invalid/unsorted-strata.json",
       "v1/team-dataset-manifest/reader-invalid/merged-stratum-missing.json",
       "v1/team-dataset-manifest/reader-invalid/split-cell-is-a-member.json",
       "v1/team-dataset-manifest/reader-invalid/splits-out-of-order.json",
@@ -369,6 +372,9 @@ describe("the shared contract sample corpus (ADR-008 §2)", () => {
     ["v1/training-gate-rule/reader-invalid/unsorted-claims.json", readTrainingGateRule, "sorted by claim_id"],
     ["v1/training-gate-rule/reader-invalid/alternative-below-null.json", readTrainingGateRule, "must lie above"],
     ["v1/sealed-set-commitment/reader-invalid/strata-sum-mismatch.json", readSealedSetCommitment, "hold 32 teams"],
+    ["v1/sealed-team-set-manifest/reader-invalid/unsorted-strata.json", readSealedTeamSetManifest, "sorted by stratum"],
+    ["v1/sealed-team-set-manifest/reader-invalid/quota-sum-mismatch.json", readSealedTeamSetManifest, "sum to 32 but team_count is 33"],
+    ["v1/retired-sealed-manifest/reader-invalid/seed-is-salt.json", readRetiredSealedManifest, "key and the salt must differ"],
     ["v1/sealed-set-commitment/reader-invalid/unsorted-strata.json", readSealedSetCommitment, "sorted by label"],
     ["v1/evaluation-plan/reader-invalid/candidate-roles-swapped.json", readEvaluationPlan, "battle checkpoint, then the preview"],
     ["v1/evaluation-plan/reader-invalid/unsorted-opponents.json", readEvaluationPlan, "sorted by opponent_id"],
@@ -396,6 +402,8 @@ describe("the shared contract sample corpus (ADR-008 §2)", () => {
     expect(readEvaluationConfig(committed("v1/evaluation-parameters/valid/complete.json"), rule).parameters.n_teams).toBe(32);
     expect(readEvaluationPlan(committed("v1/evaluation-plan/valid/registered.json")).set_id).toBe("set-1");
     expect(readSealedSetCommitment(committed("v1/sealed-set-commitment/valid/four-strata.json")).team_count).toBe(32);
+    expect(readSealedTeamSetManifest(committed("v1/sealed-team-set-manifest/valid/four-strata.json")).team_count).toBe(32);
+    expect(readRetiredSealedManifest(committed("v1/retired-sealed-manifest/valid/revealed.json")).set_id).toBe("set-1");
     for (const kind of ["set-commitment", "plan-registration", "l2a-recheck", "run-outcome", "set-retirement", "incident"]) {
       expect(readEntry(committed(`v1/evaluation-register-entry/valid/${kind}.json`)).schema_version).toBe(1);
     }

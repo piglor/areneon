@@ -1,0 +1,62 @@
+{
+  "schema_version": 1,
+  "data_class": "real",
+  "set_id": "set-1",
+  "generation": 1,
+  "plan_id": "sealed-plan-1",
+  "generator": {
+    "generator_commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "config_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "label_set_hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "vocabulary_hash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "manifest": {
+      "showdown_commit": "7244fe8e28fa8bc4d0809ae30d183c608b62bb2b",
+      "format_id": "gen9championsvgc2026regmc",
+      "regulation": "M-C",
+      "ruleset_hash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "format_rules_hash": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+    }
+  },
+  "d_max": 120000,
+  "sealed_margin_permille": 200,
+  "d_team_differing_fields": 2,
+  "pilot_draws": 40000,
+  "team_count": 32,
+  "strata": [
+    {
+      "stratum": 0,
+      "pilot_hits": 9000,
+      "quota": 8
+    },
+    {
+      "stratum": 1,
+      "pilot_hits": 9000,
+      "quota": 8
+    },
+    {
+      "stratum": 2,
+      "pilot_hits": 9000,
+      "quota": 8
+    },
+    {
+      "stratum": 3,
+      "pilot_hits": 9000,
+      "quota": 8
+    }
+  ],
+  "reference_pool_hash": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+  "rejection_log": {
+    "log_sha256": "9999999999999999999999999999999999999999999999999999999999999999",
+    "draws": 900,
+    "rejections": 70,
+    "duplicates": 2,
+    "near_duplicates": 5,
+    "overflows": 791
+  },
+  "discards": {
+    "count": 0,
+    "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "set_commitment": "1111111111111111111111111111111111111111111111111111111111111111",
+  "key_commitment": "2222222222222222222222222222222222222222222222222222222222222222"
+}

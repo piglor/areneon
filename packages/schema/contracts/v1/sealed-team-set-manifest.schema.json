@@ -1,0 +1,314 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:areneon:schema:contracts:v1:sealed-team-set-manifest",
+  "title": "SealedTeamSetManifest",
+  "description": "One sealed team set's generation record (ADR-013 section 2, evaluation protocol L3 and L5): what it was made under, its quota plan, its log hashes and its commitments. It holds no key, no salt and no team, so it may leave the isolated store with the set's commitment; the reveal on retirement is a RetiredSealedManifest. A reader checks that the strata are sorted and unique and that the quotas sum to team_count (the contract profile cannot sum).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "data_class",
+    "set_id",
+    "generation",
+    "plan_id",
+    "generator",
+    "d_max",
+    "sealed_margin_permille",
+    "d_team_differing_fields",
+    "pilot_draws",
+    "team_count",
+    "strata",
+    "reference_pool_hash",
+    "rejection_log",
+    "discards",
+    "set_commitment",
+    "key_commitment"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "data_class": {
+      "description": "Always synthetic: a sealed team is generated from the pinned engine's data and a secret seed, never a real team.",
+      "const": "synthetic"
+    },
+    "set_id": {
+      "description": "The set's name in the register.",
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$"
+    },
+    "generation": {
+      "description": "Which generation of sealed sets this is.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 1000000
+    },
+    "plan_id": {
+      "description": "The plan whose stream the draws came from (the same for every attempt; the key differs).",
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+    },
+    "generator": {
+      "description": "What the run was made with.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "generator_commit",
+        "config_hash",
+        "label_set_hash",
+        "vocabulary_hash",
+        "manifest"
+      ],
+      "properties": {
+        "generator_commit": {
+          "description": "The git commit of the generator.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "config_hash": {
+          "description": "SHA-256 of the JCS bytes of the TeamGeneratorConfig.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "label_set_hash": {
+          "description": "SHA-256 of the JCS bytes of the TeamLabelSet.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "vocabulary_hash": {
+          "description": "SHA-256 of the JCS bytes of the TeamVocabulary.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "manifest": {
+          "$ref": "#/$defs/VersionManifest"
+        }
+      }
+    },
+    "d_max": {
+      "description": "The sealed draw budget: the public D_max over-provisioned by sealed_margin_permille.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "sealed_margin_permille": {
+      "description": "How far the draw budget is over-provisioned, in thousandths (the config's sealed_margin_permille).",
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 10000
+    },
+    "d_team_differing_fields": {
+      "description": "The near-duplicate bound of L2 (the parameters' d_team): a candidate within this many differing fields of a known team is refused.",
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 64
+    },
+    "pilot_draws": {
+      "description": "The draws of the recorded pilot the public plan rests on.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "team_count": {
+      "description": "Number of sealed teams; the parameters' n_teams.",
+      "type": "integer",
+      "minimum": 2,
+      "maximum": 1000000
+    },
+    "strata": {
+      "description": "The sealed quota of each stratum after the public D20 merge, sorted by stratum and unique (a reader rule); the quotas sum to team_count.",
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 65536,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "stratum",
+          "pilot_hits",
+          "quota"
+        ],
+        "properties": {
+          "stratum": {
+            "description": "A merged label cell (stratum) id.",
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 65535
+          },
+          "pilot_hits": {
+            "description": "Pilot draws that landed in the stratum (the public plan's count).",
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "quota": {
+            "description": "Sealed teams the stratum gets.",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000000
+          }
+        }
+      }
+    },
+    "merged_cells": {
+      "description": "The D20 cell merge (ADR-010 E1) that was applied before generation: which base label cells were merged into one stratum. A base cell is one combination of label values, numbered by reading the position of each label's value in its listed values (the default last) as a mixed-radix number, the first label of the label set most significant. A merged stratum takes the number of its lowest member. Only merged strata are listed, sorted by stratum; every other base cell is its own stratum, and a manifest without this list merged nothing. The reader checks that members are ascending, unique and disjoint across strata, that the stratum is its first member, and that no cell of a split is a member of a merged stratum without being that stratum.",
+      "type": "array",
+      "maxItems": 65536,
+      "items": {
+        "description": "One merged stratum and its members.",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "stratum",
+          "cells"
+        ],
+        "properties": {
+          "stratum": {
+            "description": "The merged stratum's number: its lowest member.",
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 65535
+          },
+          "cells": {
+            "description": "The base cell numbers merged into the stratum, ascending and unique.",
+            "type": "array",
+            "minItems": 2,
+            "maxItems": 65536,
+            "items": {
+              "description": "A base cell number.",
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 65535
+            }
+          }
+        }
+      }
+    },
+    "reference_pool_hash": {
+      "description": "SHA-256 of the sorted canonical team hashes of every team the set was checked against (public splits, released datasets, the training pool, retired sealed sets).",
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "rejection_log": {
+      "description": "The log of rejected, duplicate, near-duplicate and overflow draws of the attempt that filled, by reference. The log file stays in the isolated store until retirement (L5).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "log_sha256",
+        "draws",
+        "rejections",
+        "duplicates",
+        "near_duplicates",
+        "overflows"
+      ],
+      "properties": {
+        "log_sha256": {
+          "description": "SHA-256 of the log file.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "draws": {
+          "description": "Draws made until every bin was full.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "rejections": {
+          "description": "Draws the validator or the round trip refused.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "duplicates": {
+          "description": "Candidates skipped by L1: a canonical hash already known, or already in this set.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "near_duplicates": {
+          "description": "Candidates skipped by L2: within d_team of a known team.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "overflows": {
+          "description": "Candidates for a bin that was already full.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    "discards": {
+      "description": "The generations discarded before this one (a bin fell short and the sealed plan may not merge again), by reference. Hashes and counts only: a discarded key and its teams are dropped.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "count",
+        "log_sha256"
+      ],
+      "properties": {
+        "count": {
+          "description": "Discarded generations.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000
+        },
+        "log_sha256": {
+          "description": "SHA-256 of the discard log file (empty when count is 0).",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "set_commitment": {
+      "description": "SHA-256 of the JCS bytes of {salt, teams} (L3).",
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "key_commitment": {
+      "description": "SHA-256 of the secret seed key (L3).",
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  },
+  "$defs": {
+    "VersionManifest": {
+      "description": "Replay identity of a battle (ADR-003, ADR-007): the pinned engine commit, the format, and the hashes of the engine ruleset and of Areneon's own format rules.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "showdown_commit",
+        "format_id",
+        "regulation",
+        "ruleset_hash",
+        "format_rules_hash"
+      ],
+      "properties": {
+        "showdown_commit": {
+          "description": "The pinned engine commit.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "format_id": {
+          "type": "string",
+          "pattern": "^[a-z0-9]+$"
+        },
+        "regulation": {
+          "type": "string",
+          "minLength": 1
+        },
+        "ruleset_hash": {
+          "description": "SHA-256 of the canonical engine ruleset.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "format_rules_hash": {
+          "description": "SHA-256 of Areneon's format rules record (ADR-007).",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    }
+  }
+}

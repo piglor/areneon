@@ -26,3 +26,5 @@
 /pnpm-workspace.yaml            @arceushui
 /packages/private-team-store/   @arceushui
 /ml/gpu-env/                    @arceushui
+/packages/team-dataset/src/sealed*.ts  @arceushui
+/packages/team-dataset/scripts/sealed.ts  @arceushui

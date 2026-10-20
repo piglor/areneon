@@ -46,3 +46,31 @@ export {
   regenerate,
   writeFixtures,
 } from "./fixtures.ts";
+export {
+  fillSealed,
+  type FillArgs,
+  type FillResult,
+  generateSealedSet,
+  type KnownTeam,
+  loadSealedTeamHashes,
+  NearIndex,
+  readStoredSet,
+  referenceTeams,
+  SEALED_FILES,
+  type SealedGenerateInput,
+  type SealedGenerateResult,
+  SealedError,
+  type SealedPlan,
+  sealedBudget,
+  sealedPlan,
+  sealedQuotas,
+  SealedShortfallError,
+  type SealedTeam,
+  SealedTeamHashes,
+  setDirOf,
+  type StoredSet,
+  teamDistance,
+} from "./sealed.ts";
+export { readRevealDir, REVEAL_FILES, retireSealedSet, revealHash, revealOf, SealedRetireError, SealedVerifyError, verifyRetiredSealed, type VerifyInput, type VerifyReport } from "./sealed-retire.ts";
+export { assertPrivateStore, SealedStoreError } from "./sealed-store.ts";
+export { runSealedCli, type SealedCliIo } from "./sealed-command.ts";
