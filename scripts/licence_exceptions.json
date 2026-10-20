@@ -1,0 +1,26 @@
+{
+  "$comment": "ADR-001 clarification (2026-10-20), ADR-010 §5.1. Packages whose only licence metadata is the bare 'License :: OSI Approved :: BSD License' trove classifier, which does not say which BSD variant applies. An entry is a per-package decision: package, the SPDX licence verified from the package's own licence text, the version it was verified on, what was read, and the date. There is no mapping from the classifier to a licence. Edit only with a verified source; the file needs code-owner review.",
+  "exceptions": [
+    {
+      "package": "jinja2",
+      "licence": "BSD-3-Clause",
+      "version": "3.1.6",
+      "evidence": "dist-info/licenses/LICENSE.txt of the wheel (Copyright 2007 Pallets): three conditions incl. no endorsement. METADATA has no License-Expression, only the BSD classifier.",
+      "verified": "2026-10-20"
+    },
+    {
+      "package": "mpmath",
+      "licence": "BSD-3-Clause",
+      "version": "1.3.0",
+      "evidence": "dist-info/LICENSE of the wheel (Copyright 2005-2021 Fredrik Johansson and mpmath contributors): three conditions incl. no endorsement. METADATA has no License-Expression, only the BSD classifier and the free-text License 'BSD'.",
+      "verified": "2026-10-20"
+    },
+    {
+      "package": "sympy",
+      "licence": "BSD-3-Clause",
+      "version": "1.14.0",
+      "evidence": "dist-info/licenses/LICENSE of the wheel (Copyright 2006-2023 SymPy Development Team): three conditions incl. no endorsement; the Diofant patches, the multipledispatch submodule and the PyDy example repo it also covers carry the same three-clause BSD terms. METADATA has no License-Expression, only the BSD classifier and the free-text License 'BSD'.",
+      "verified": "2026-10-20"
+    }
+  ]
+}

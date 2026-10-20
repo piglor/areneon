@@ -17,16 +17,26 @@ dev = [
     "datamodel-code-generator==0.85.0",
     "types-jsonschema==4.26.0.20261006",
     "areneon-contracts",
+    "areneon-ml",
 ]
 
 [tool.uv]
 package = false
 
 [tool.uv.workspace]
-members = ["packages/schema/python"]
+members = ["packages/schema/python", "ml"]
 
 [tool.uv.sources]
 areneon-contracts = { workspace = true }
+areneon-ml = { workspace = true }
+
+# ADR-010 §5.1: the shipped lock resolves torch from the PyTorch CPU index
+# only (explicit: no other package may come from it). The torch source itself
+# is declared in ml/pyproject.toml.
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
 
 [tool.ruff]
 line-length = 100

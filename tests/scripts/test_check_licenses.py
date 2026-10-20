@@ -38,6 +38,19 @@ PNPM_AGPL = {
         ("MIT WITH", False),
         ("MIT WITH OR ISC", False),
         ("MIT or ISC", False),
+        # ADR-001 clarification: BSL-1.0 and Zlib are allowed (torch, numpy expressions).
+        ("BSL-1.0", True),
+        ("Zlib", True),
+        (
+            "Apache-2.0 AND Apache-2.0 WITH LLVM-exception AND BSD-2-Clause AND BSD-3-Clause"
+            " AND BSL-1.0 AND MIT",
+            True,
+        ),
+        ("BSD-3-Clause AND 0BSD AND MIT AND Zlib AND CC0-1.0", True),
+        # No CUDA or proprietary licence is allowlisted (ADR-010 §5.2).
+        ("LicenseRef-NVIDIA-Proprietary", False),
+        ("LicenseRef-NVIDIA-SOFTWARE-LICENSE", False),
+        ("MIT AND LicenseRef-NVIDIA-Proprietary", False),
     ],
 )
 def test_is_allowed(expression: str, allowed: bool) -> None:

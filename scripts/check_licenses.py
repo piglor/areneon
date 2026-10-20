@@ -27,6 +27,8 @@ ALLOWED = frozenset(
         "BlueOak-1.0.0",
         "BSD-2-Clause",
         "BSD-3-Clause",
+        # ADR-001 clarification (2026-10-20), ADR-010 Q9: OSI-approved, permissive.
+        "BSL-1.0",
         "CC0-1.0",
         "CC-BY-4.0",
         "ISC",
@@ -35,6 +37,7 @@ ALLOWED = frozenset(
         "PSF-2.0",
         "Python-2.0",
         "Unlicense",
+        "Zlib",
     }
 )
 
