@@ -34,14 +34,17 @@ describe("the shared contract sample corpus (ADR-008 §2)", () => {
   });
 
   it("is classified by Ajv as its directory says: only invalid fails; reader-invalid is schema-valid", () => {
+    // One parsed schema object per contract: Ajv compiles per object, so parsing it again for every sample recompiled it each time.
+    const schemas = new Map<string, { $id: string }>();
     for (const [file, content] of Object.entries(fresh)) {
       if (file === SAMPLE_HASHES) continue;
       const [, contract, kind] = file.split("/") as [string, string, string];
-      const schema = JSON.parse(readFileSync(new URL(`${contract}.schema.json`, SCHEMAS), "utf8")) as { $id: string };
+      if (!schemas.has(contract)) schemas.set(contract, JSON.parse(readFileSync(new URL(`${contract}.schema.json`, SCHEMAS), "utf8")) as { $id: string });
+      const schema = schemas.get(contract) as { $id: string };
       const profile = schema.$id.includes(":engine:") ? "engine-mirror" : "contract";
       expect(ajvFor(profile).validate(schema, content), file).toBe(kind !== "invalid");
     }
-  });
+  }, 30_000); // headroom only: about 1 s locally; the default 5 s was already main's and a loaded CI runner came close
 
   // ADR-009 section 4, test 2: schema-valid, yet readEpisode refuses each, for the named rule.
   it.each([
@@ -60,6 +63,11 @@ describe("the shared contract sample corpus (ADR-008 §2)", () => {
   it("holds every reader-invalid sample under its contract's directory, and each is refused above", () => {
     const readerInvalid = Object.keys(fresh).filter((f) => f.includes("/reader-invalid/"));
     expect(readerInvalid.sort()).toEqual([
+      "v1/checkpoint-record/reader-invalid/duplicate-training-sets.json",
+      "v1/checkpoint-record/reader-invalid/exploiter-of-self.json",
+      "v1/checkpoint-record/reader-invalid/opponent-is-self.json",
+      "v1/checkpoint-record/reader-invalid/parent-is-self.json",
+      "v1/checkpoint-record/reader-invalid/unsorted-league-opponents.json",
       "v1/engine-data/reader-invalid/dangling-type.json",
       "v1/engine-data/reader-invalid/duplicate-species.json",
       "v1/engine-data/reader-invalid/short-damage-row.json",

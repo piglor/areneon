@@ -61,4 +61,6 @@ omit = ["packages/schema/python/areneon_contracts/models/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# torch looks for numpy at import; the shipped closure has none (ADR-010 §5.1) and never needs it.
+filterwarnings = ["ignore:Failed to initialize NumPy:UserWarning"]
 addopts = "--strict-markers --cov=scripts --cov=areneon_contracts --cov=areneon_ml --cov-report=term-missing --cov-fail-under=90"

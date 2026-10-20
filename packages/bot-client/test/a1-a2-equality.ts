@@ -148,6 +148,17 @@ async function attempt(input: Parameters<typeof observe>[0]): Promise<Observatio
   }
 }
 
+/** The A1 and the A2 observation of one decision, as the check built them (`onPair`). */
+export interface ObservationPair {
+  seat: Seat;
+  /** The decision number among the seat's requests (A1's `request_seq`). */
+  request_seq: number;
+  a1: Observation;
+  a2: Observation;
+  /** The team the builder was given (the validator's defaults filled in). */
+  team: unknown;
+}
+
 /** One request as a connection's `ProtocolReader` read it. */
 interface Read {
   seq: number;
@@ -175,6 +186,7 @@ export async function compareA1A2(
   snapshot: RulesSnapshot,
   fixture: HarnessFixture,
   adapter: AdapterFactory = realAdapter,
+  onPair?: (pair: ObservationPair) => void,
 ): Promise<EqualityResult> {
   const differences: string[] = [];
   const diff = (message: string): void => void differences.push(message);
@@ -420,6 +432,7 @@ export async function compareA1A2(
           diff(`${who} decision ${seq}: observation request_hash ${two.identity.request_hash} vs ${request.request_hash}`);
         }
         if (comparable(one) !== comparable(two)) diff(`${who} decision ${seq}: observations differ`);
+        onPair?.({ seat, request_seq: request.request_seq, a1: one, a2: two, team: team.team });
       }
     }
     result.decisions[seat] = decided.size;
