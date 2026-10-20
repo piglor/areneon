@@ -2,33 +2,19 @@
 // (species, items, abilities, moves, Mega Evolution), judged by the pinned
 // engine, and which of those features a gap record names. Nothing here
 // decides legality or carries a rule: the engine judges the team, and the
-// gap flags are read from `rules/gaps/`. Output goes only under a
-// `private-data/` directory; stdout carries counts and paths, and an error
-// names a file, never what is in it.
+// gap flags are read from `rules/gaps/`. Teams come through a
+// `PrivateTeamSource` (ADR-014 section 11). Nothing is written to a file:
+// stdout carries counts only, the detail goes to the terminal device, and an
+// error names a team's label, never what is in it.
 
-import {
-  chmodSync,
-  lstatSync,
-  mkdirSync,
-  readdirSync,
-  readFileSync,
-  realpathSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
-import { basename, dirname, join, resolve, sep } from "node:path";
 import { type Engine, type PokemonSet } from "./engine.ts";
 import { resolveFormat } from "./formats.ts";
 import { loadRulesSnapshot } from "./rules-load.ts";
 import type { RulesSnapshot } from "./rules.ts";
+import { type PrivateTeamSource, InventoryError } from "./private-team-source.ts";
 import { importPaste, TeamImportError, validateTeam } from "./teams.ts";
 
-/** The only directory name teams are read from and reports written under. */
-export const PRIVATE_DATA = "private-data";
-
-export class InventoryError extends Error {
-  override name = "InventoryError";
-}
+export { InventoryError, PRIVATE_DATA } from "./private-team-source.ts";
 
 export type FeatureKind = "species" | "item" | "ability" | "move" | "mechanic";
 
@@ -202,68 +188,6 @@ export function inventoryTeam(
   };
 }
 
-/**
- * The `private-data` directory `path` lies in or is: the longest prefix of
- * its real path ending in a segment named `private-data`. A symlink is
- * followed first, so a link cannot lead out. Throws if there is none.
- */
-export function privateDataRoot(path: string): string {
-  const real = realpathOfDeepest(resolve(path));
-  const parts = real.split(sep);
-  const at = parts.lastIndexOf(PRIVATE_DATA);
-  if (at < 1) throw new InventoryError(`refusing a path outside a ${PRIVATE_DATA}/ directory`);
-  return parts.slice(0, at + 1).join(sep);
-}
-
-/** The real path of `path`, resolving the deepest part that exists. */
-function realpathOfDeepest(path: string): string {
-  let existing = path;
-  const rest: string[] = [];
-  for (;;) {
-    try {
-      return join(realpathSync(existing), ...rest.reverse());
-    } catch {
-      rest.push(basename(existing));
-      existing = dirname(existing); // the filesystem root always exists, so this ends
-    }
-  }
-}
-
-/** Write `text` to `path`, only if `path` is inside a `private-data/` directory. Mode 0600, dir 0700. */
-export function writePrivate(path: string, text: string): void {
-  const target = resolve(path);
-  const root = privateDataRoot(dirname(target));
-  const real = realpathOfDeepest(target);
-  if (!real.startsWith(root + sep)) {
-    throw new InventoryError(`refusing to write outside ${PRIVATE_DATA}/`);
-  }
-  mkdirSync(dirname(real), { recursive: true, mode: 0o700 });
-  chmodSync(dirname(real), 0o700);
-  // Replace, never reuse: an old file with looser modes must not hold the new text.
-  rmSync(real, { force: true });
-  writeFileSync(real, text, { mode: 0o600, flag: "wx" });
-}
-
-/** The `*.txt` files directly in `teamsDir`, sorted; each must really lie inside `private-data/`. */
-export function teamFiles(teamsDir: string): string[] {
-  const root = privateDataRoot(teamsDir);
-  let names: string[];
-  try {
-    names = readdirSync(teamsDir).filter((name) => name.endsWith(".txt")).sort();
-  } catch {
-    throw new InventoryError("the teams directory cannot be read");
-  }
-  const files = names.map((name) => join(teamsDir, name));
-  for (const [i, file] of files.entries()) {
-    const real = realpathSync(file);
-    if (!real.startsWith(root + sep) || !lstatSync(real).isFile()) {
-      throw new InventoryError(`refusing ${names[i]}: not a regular file inside ${PRIVATE_DATA}/`);
-    }
-  }
-  if (files.length === 0) throw new InventoryError("no .txt team files in the teams directory");
-  return files;
-}
-
 export function countReport(report: InventoryReport): InventoryCounts {
   const by = (status: TeamStatus): number => report.teams.filter((t) => t.status === status).length;
   return {
@@ -277,27 +201,29 @@ export function countReport(report: InventoryReport): InventoryCounts {
 
 export interface InventoryRun {
   engine: Engine;
-  teamsDir: string;
+  source: PrivateTeamSource;
   /** Defaults to the only format in the rules snapshot. */
   formatId?: string;
   snapshot?: RulesSnapshot;
 }
 
-/** Build the report for every `*.txt` in `teamsDir`. Writes nothing. */
-export function buildReport(run: InventoryRun): InventoryReport {
+/** Build the report for every team the source yields. Writes nothing. */
+export async function buildReport(run: InventoryRun): Promise<InventoryReport> {
   const snapshot = run.snapshot ?? loadRulesSnapshot(run.engine.commit);
   const formats = Object.keys(snapshot.formats);
   const formatId = run.formatId ?? (formats.length === 1 ? formats[0] : undefined);
   if (formatId === undefined) throw new InventoryError("several formats are supported: pass --format");
   const format = resolveFormat(run.engine, formatId, snapshot);
-  const teams = teamFiles(run.teamsDir).map((file) => {
+  const teams: TeamInventory[] = [];
+  for await (const entry of run.source.entries()) {
     try {
-      return inventoryTeam(run.engine, snapshot, formatId, basename(file), readFileSync(file, "utf8"));
+      teams.push(inventoryTeam(run.engine, snapshot, formatId, entry.name, entry.paste));
     } catch (error) {
-      // Only the file and the error class: an engine message can quote the team.
-      throw new InventoryError(`unexpected ${error instanceof Error ? error.name : "error"} on ${basename(file)}`);
+      // Only the label and the error class: an engine message can quote the team.
+      throw new InventoryError(`unexpected ${error instanceof Error ? error.name : "error"} on ${entry.name}`);
     }
-  });
+  }
+  if (teams.length === 0) throw new InventoryError("the source holds no teams");
   return {
     report_version: 1,
     data_class: "private",
@@ -313,17 +239,71 @@ export function buildReport(run: InventoryRun): InventoryReport {
   };
 }
 
-/** Where the report goes: `reports/team-inventory.json` beside the teams' `private-data` root. */
-export function reportPath(teamsDir: string): string {
-  return join(privateDataRoot(teamsDir), "reports", "team-inventory.json");
+/** How many teams carry a quarantined feature that each gap record names. Gap ids are public rules data. */
+export function gapMatchCounts(report: InventoryReport): Record<string, number> {
+  const counts: Record<string, number> = {};
+  for (const team of report.teams) {
+    const ids = new Set(team.quarantined.flatMap((f) => f.gaps.map((g) => g.gap_id)));
+    for (const id of [...ids].sort()) counts[id] = (counts[id] ?? 0) + 1;
+  }
+  return counts;
 }
 
-/** Build the report and write it. Returns its path and counts, never its content. */
-export function runInventory(run: InventoryRun): { path: string; counts: InventoryCounts } {
-  const report = buildReport(run);
-  const path = reportPath(run.teamsDir);
-  writePrivate(path, `${JSON.stringify(report, null, 2)}\n`);
-  return { path, counts: countReport(report) };
+/** A handle on the terminal device the private detail goes to. */
+export interface DetailSink {
+  write(text: string): void;
+  close(): void;
+}
+
+/**
+ * Where the output may go. `refusal` says why this is not an interactive
+ * terminal session (or null); `openDetail` opens the terminal device
+ * (`/dev/tty`) and throws if there is none. Detail never goes to stdout,
+ * stderr or a file.
+ */
+export interface InventoryTerminal {
+  refusal(): string | null;
+  openDetail(): DetailSink;
+}
+
+/**
+ * Why a run must be refused, or null (ADR-014 X6). Accident prevention, not a
+ * boundary: an agent that sets up a pty and clears its environment gets past it.
+ */
+export function terminalRefusal(
+  env: Record<string, string | undefined>,
+  isTerminal: { stdin: boolean; stdout: boolean; stderr: boolean },
+): string | null {
+  if (env["CLAUDECODE"] || env["AI_AGENT"]) {
+    return "refusing: an agent session is running this; use your own terminal";
+  }
+  if (!isTerminal.stdin || !isTerminal.stdout || !isTerminal.stderr) {
+    return "refusing: stdin, stdout and stderr must all be a terminal; run it in an interactive terminal";
+  }
+  return null;
+}
+
+export interface InventorySummary {
+  counts: InventoryCounts;
+  /** Gap id to the number of teams with a feature it names. */
+  gap_matches: Record<string, number>;
+}
+
+/**
+ * Build the report, send its detail to the terminal and return counts only.
+ * Refuses, and opens the terminal device, before reading any team. Writes no file.
+ */
+export async function runInventory(run: InventoryRun, terminal: InventoryTerminal): Promise<InventorySummary> {
+  const refusal = terminal.refusal();
+  if (refusal !== null) throw new InventoryError(refusal);
+  const sink = terminal.openDetail();
+  try {
+    const report = await buildReport(run);
+    sink.write(`${JSON.stringify(report, null, 2)}\n`);
+    return { counts: countReport(report), gap_matches: gapMatchCounts(report) };
+  } finally {
+    sink.close();
+  }
 }
 
 export const INVENTORY_USAGE =
