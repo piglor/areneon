@@ -92,7 +92,7 @@ jobs:
       # pnpm comes only from corepack, which checks the packageManager hash.
       - run: corepack enable && COREPACK_ENABLE_DOWNLOAD_PROMPT=0 pnpm --version
       - run: pnpm install --frozen-lockfile
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: rules-publish-plan
           path: dist/rules-publish
