@@ -30,6 +30,7 @@ ts: showdown
 	pnpm test
 	node packages/showdown-bridge/scripts/check-rules.ts
 	node packages/showdown-bridge/scripts/evaluation-register.ts heads-check --dir evaluation/register-heads
+	node packages/team-dataset/scripts/check-team-labels.ts
 	$(MAKE) contracts
 
 # Contract schemas (ADR-008): every schema in packages/schema/contracts/ must

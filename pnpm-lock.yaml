@@ -121,6 +121,12 @@ importers:
         specifier: 8.20.0
         version: 8.20.0
 
+  packages/team-dataset:
+    dependencies:
+      '@areneon/showdown-bridge':
+        specifier: workspace:*
+        version: link:../showdown-bridge
+
 packages:
 
   '@apidevtools/json-schema-ref-parser@11.9.3':
