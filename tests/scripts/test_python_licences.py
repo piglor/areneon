@@ -110,6 +110,7 @@ def test_report_groups_by_licence_and_marks_missing_packages_unknown() -> None:
 def test_main_prints_the_report_or_fails_closed(
     capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    monkeypatch.setattr(pl, "load_exceptions", dict)
     monkeypatch.setattr(
         pl, "report", lambda packages, **_kw: {"MIT": [{"name": p} for p in packages]}
     )
@@ -127,12 +128,38 @@ def test_the_shipped_closure_is_on_the_allowlist() -> None:
 
 
 BSD = "License :: OSI Approved :: BSD License"
-LISTED = {"sym-py": "BSD-3-Clause"}
+LISTED = {"sym-py": pl.Verified("BSD-3-Clause", "1")}
 
 
 def test_a_bsd_classifier_only_package_takes_its_named_exception() -> None:
-    assert pl.licence_of(meta(Name="Sym_Py", Classifier=[BSD]), LISTED) == "BSD-3-Clause"
-    assert pl.licence_of(meta(Name="sym.py", Classifier=[BSD]), LISTED) == "BSD-3-Clause"
+    assert (
+        pl.licence_of(meta(Name="Sym_Py", Version="1", Classifier=[BSD]), LISTED) == "BSD-3-Clause"
+    )
+    assert (
+        pl.licence_of(meta(Name="sym.py", Version="1", Classifier=[BSD]), LISTED) == "BSD-3-Clause"
+    )
+
+
+def test_an_exception_holds_only_for_the_version_it_was_verified_on() -> None:
+    bumped = meta(Name="sym-py", Version="2", Classifier=[BSD])
+    assert pl.licence_of(bumped, LISTED) == pl.UNKNOWN
+    assert pl.licence_of(meta(Name="sym-py", Classifier=[BSD]), LISTED) == pl.UNKNOWN
+    assert check_licenses.denied(pl.report(["sym-py"], lambda _n: bumped, LISTED)) == [
+        "sym-py@UNKNOWN"
+    ]
+
+
+def test_an_exception_for_a_package_outside_the_closure_is_stale() -> None:
+    assert pl.stale_exceptions(LISTED, ["Sym_Py", "other"]) == []
+    assert pl.stale_exceptions(LISTED, ["other"]) == ["sym-py"]
+
+
+def test_main_fails_closed_on_a_stale_exception(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(pl, "load_exceptions", lambda: LISTED)
+    assert pl.main(lambda _command: PYLOCK) == 1
+    assert "not shipped: ['sym-py']" in capsys.readouterr().err
 
 
 def test_an_unlisted_bsd_classifier_only_package_is_still_refused() -> None:
@@ -214,7 +241,7 @@ def test_main_fails_closed_on_a_bad_exception_list(
 
 def test_the_committed_exceptions_are_the_verified_bsd_packages() -> None:
     assert pl.load_exceptions() == {
-        "jinja2": "BSD-3-Clause",
-        "mpmath": "BSD-3-Clause",
-        "sympy": "BSD-3-Clause",
+        "jinja2": pl.Verified("BSD-3-Clause", "3.1.6"),
+        "mpmath": pl.Verified("BSD-3-Clause", "1.3.0"),
+        "sympy": pl.Verified("BSD-3-Clause", "1.14.0"),
     }

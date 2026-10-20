@@ -92,7 +92,7 @@ def test_shipped_must_not_name_the_gpu_environment() -> None:
     ]
 
 
-def test_no_dockerfile_may_refer_to_the_gpu_environment(tmp_path: Path) -> None:
+def test_no_image_recipe_may_refer_to_the_gpu_environment(tmp_path: Path) -> None:
     (tmp_path / "svc").mkdir()
     (tmp_path / "node_modules").mkdir()
     (tmp_path / "svc" / "Dockerfile").write_text("RUN uv sync --project ml/gpu-env\n")
@@ -104,6 +104,52 @@ def test_no_dockerfile_may_refer_to_the_gpu_environment(tmp_path: Path) -> None:
         "svc/Dockerfile refers to the GPU environment (ml/gpu-env)",
         "svc/Dockerfile.e2e refers to the GPU environment (ml/gpu-env)",
     ]
+
+
+@pytest.mark.parametrize(
+    ("file", "text"),
+    [
+        ("Dockerfile", "COPY ml/GPU-ENV /app"),
+        ("Dockerfile", "COPY ml/gpu_env /app"),
+        ("Dockerfile", "RUN pip install Areneon_GPU_Env"),
+        ("dockerfile", "COPY ml/gpu-env /app"),
+        ("api.dockerfile", "COPY ml/gpu-env /app"),
+        ("Containerfile", "COPY ml/gpu-env /app"),
+        ("containerfile.prod", "COPY ml/gpu-env /app"),
+        ("compose.yaml", "build:\n  dockerfile_inline: |\n    COPY ml/gpu-env /app\n"),
+        ("docker-compose.yml", "volumes: ['./ml/gpu-env:/gpu']"),
+        ("compose.override.yaml", "x: ml/gpu-env"),
+    ],
+)
+def test_the_bypasses_of_the_name_check_are_closed(tmp_path: Path, file: str, text: str) -> None:
+    (tmp_path / "a" / "vendor").mkdir(parents=True)
+    (tmp_path / "a" / "vendor" / file).write_text(text)
+    assert guard.dockerfile_violations(tmp_path) == [
+        f"a/vendor/{file} refers to the GPU environment (ml/gpu-env)"
+    ]
+
+
+def test_only_the_root_vendor_directory_is_skipped(tmp_path: Path) -> None:
+    (tmp_path / "vendor" / "pokemon-showdown").mkdir(parents=True)
+    (tmp_path / "vendor" / "pokemon-showdown" / "Dockerfile").write_text("ml/gpu-env")
+    (tmp_path / "svc").mkdir()
+    (tmp_path / "svc" / "compose.yaml").write_text("services: {}\n")
+    assert guard.dockerfile_violations(tmp_path) == []
+
+
+@pytest.mark.parametrize(
+    "member", ["./ml/gpu-env", "ml//gpu-env", "ml/../ml/gpu-env", " ml/gpu-env "]
+)
+def test_c1_normalises_workspace_members(member: str) -> None:
+    assert guard.workspace_violations(workspace("ml", member)) == [
+        f"workspace member {member!r} covers ml/gpu-env"
+    ]
+
+
+def test_an_excluded_gpu_environment_is_not_a_member() -> None:
+    text = workspace("ml", "ml/*") + 'exclude = ["ml/gpu-env"]\n'
+    assert guard.workspace_violations(text) == []
+    assert guard.workspace_violations(workspace("ml", "ml/*") + 'exclude = ["other"]\n') != []
 
 
 def make_root(tmp_path: Path, packages: tuple[str, ...] = ("torch",)) -> Path:

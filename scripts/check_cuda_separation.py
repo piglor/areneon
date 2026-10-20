@@ -19,6 +19,8 @@ from __future__ import annotations
 
 import fnmatch
 import os
+import posixpath
+import re
 import sys
 import tomllib
 from collections.abc import Callable, Iterator
@@ -31,7 +33,9 @@ GPU_ENV = "ml/gpu-env"
 GPU_PROJECT_NAME = "areneon-gpu-env"
 FORBIDDEN_EXACT = frozenset({"cuda-toolkit", "cuda-bindings", "triton"})
 FORBIDDEN_PREFIX = "nvidia-"
-_SKIP_DIRS = frozenset({".git", ".venv", "node_modules", "vendor", "__pycache__"})
+_SKIP_DIRS = frozenset({".git", ".venv", "node_modules", "__pycache__"})
+_SKIP_ROOT_DIRS = frozenset({"vendor"})  # the pinned engine checkout, at the repo root only
+_COMPOSE = re.compile(r"(docker-)?compose(\..+)?\.ya?ml", re.IGNORECASE)
 
 
 def is_cuda_package(name: str) -> bool:
@@ -59,13 +63,24 @@ def closure_violations(
     return sorted(found)
 
 
+def _covers(member: str, path: str) -> bool:
+    cleaned = posixpath.normpath(member.strip())
+    return fnmatch.fnmatchcase(path, cleaned)
+
+
 def workspace_violations(pyproject_text: str, shipped: tuple[str, ...] = SHIPPED) -> list[str]:
-    """C-1: neither the workspace members nor SHIPPED name the GPU environment."""
-    members = tomllib.loads(pyproject_text).get("tool", {}).get("uv", {}).get("workspace", {})
+    """C-1: neither the workspace members nor SHIPPED name the GPU environment.
+
+    A member is judged after path normalisation (``./ml/gpu-env/``), and the
+    environment counts as excluded (defence in depth) only if the workspace's
+    ``exclude`` covers it; a member that covers it is a violation either way.
+    """
+    workspace = tomllib.loads(pyproject_text).get("tool", {}).get("uv", {}).get("workspace", {})
+    excluded = any(_covers(e, GPU_ENV) for e in workspace.get("exclude", []))
     found = [
         f"workspace member {member!r} covers {GPU_ENV}"
-        for member in members.get("members", [])
-        if fnmatch.fnmatchcase(GPU_ENV, member.rstrip("/"))
+        for member in workspace.get("members", [])
+        if _covers(member, GPU_ENV) and not excluded
     ]
     found += [
         f"SHIPPED names the GPU environment: {name}"
@@ -75,24 +90,40 @@ def workspace_violations(pyproject_text: str, shipped: tuple[str, ...] = SHIPPED
     return found
 
 
+def _is_image_recipe(file: str) -> bool:
+    name = file.lower()
+    return (
+        name in {"dockerfile", "containerfile"}
+        or name.startswith(("dockerfile.", "containerfile."))
+        or name.endswith((".dockerfile", ".containerfile"))
+        or bool(_COMPOSE.fullmatch(file))
+    )
+
+
 def dockerfiles(root: Path) -> Iterator[Path]:
+    """Every Dockerfile, Containerfile and compose file under ``root``."""
     for directory, subdirs, files in os.walk(root):
-        subdirs[:] = [d for d in subdirs if d not in _SKIP_DIRS]
-        for file in files:
-            if (
-                file == "Dockerfile"
-                or file.startswith("Dockerfile.")
-                or file.endswith(".Dockerfile")
-            ):
-                yield Path(directory) / file
+        skip = _SKIP_DIRS | (_SKIP_ROOT_DIRS if Path(directory) == root else frozenset())
+        subdirs[:] = [d for d in subdirs if d not in skip]
+        yield from (Path(directory) / f for f in files if _is_image_recipe(f))
+
+
+def _squash(text: str) -> str:
+    return re.sub(r"[-_]", "", text.lower())
 
 
 def dockerfile_violations(root: Path) -> list[str]:
-    """C-3: no Dockerfile mentions the GPU environment's path or project name."""
+    """C-3: no image recipe mentions the GPU environment's path or project name.
+
+    This is a name-based check (case-insensitive, ``-`` and ``_`` ignored). That
+    an image installs from the root lock only is enforced by the build test of
+    the first ``ml/`` image, not here.
+    """
+    needles = (_squash("gpu-env"), _squash(GPU_PROJECT_NAME))
     found = []
     for path in dockerfiles(root):
-        text = path.read_text(encoding="utf-8", errors="replace")
-        if "gpu-env" in text or GPU_PROJECT_NAME in text:
+        text = _squash(path.read_text(encoding="utf-8", errors="replace"))
+        if any(needle in text for needle in needles):
             found.append(f"{path.relative_to(root)} refers to the GPU environment ({GPU_ENV})")
     return sorted(found)
 

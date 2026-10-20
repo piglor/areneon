@@ -30,6 +30,7 @@ from collections.abc import Callable, Mapping, Sequence
 from datetime import date
 from importlib import metadata
 from pathlib import Path
+from typing import NamedTuple
 
 # The shipped Python workspace packages (ADR-002): their production closure ships.
 SHIPPED = ("areneon-contracts", "areneon-ml")
@@ -49,6 +50,13 @@ class ClosureError(ValueError):
     """The exported closure is not a pylock this script can read."""
 
 
+class Verified(NamedTuple):
+    """What was read for one exception entry: the licence, on exactly this version."""
+
+    licence: str
+    version: str
+
+
 class ExceptionListError(ValueError):
     """The per-package exception list is missing or malformed."""
 
@@ -58,8 +66,8 @@ def normalise(name: str) -> str:
     return re.sub(r"[-_.]+", "-", name).lower()
 
 
-def load_exceptions(path: Path = EXCEPTIONS_FILE) -> dict[str, str]:
-    """``{normalised package: licence}`` from the reviewed exception list.
+def load_exceptions(path: Path = EXCEPTIONS_FILE) -> dict[str, Verified]:
+    """``{normalised package: Verified}`` from the reviewed exception list.
 
     Fails closed: a missing file, a malformed entry (wrong keys, a blank field,
     a date that is not ISO) or a package listed twice is an error.
@@ -70,7 +78,7 @@ def load_exceptions(path: Path = EXCEPTIONS_FILE) -> dict[str, str]:
             raise TypeError("exceptions is not a list")
     except (OSError, json.JSONDecodeError, KeyError, TypeError) as exc:
         raise ExceptionListError(f"cannot read {path.name}: {exc!r}") from exc
-    out: dict[str, str] = {}
+    out: dict[str, Verified] = {}
     for entry in entries:
         if not isinstance(entry, dict) or set(entry) != _ENTRY_KEYS:
             raise ExceptionListError(
@@ -85,7 +93,7 @@ def load_exceptions(path: Path = EXCEPTIONS_FILE) -> dict[str, str]:
         name = normalise(entry["package"])
         if name in out:
             raise ExceptionListError(f"{path.name}: {name!r} is listed twice")
-        out[name] = entry["licence"].strip()
+        out[name] = Verified(entry["licence"].strip(), entry["version"].strip())
     return out
 
 
@@ -117,11 +125,21 @@ def closure(package: str, run: Callable[[list[str]], str] | None = None) -> list
     return sorted(names)
 
 
-def licence_of(meta: metadata.PackageMetadata, exceptions: Mapping[str, str] | None = None) -> str:
+def stale_exceptions(exceptions: Mapping[str, Verified], packages: Sequence[str]) -> list[str]:
+    """Entries for packages that are not in the shipped closure (they must be removed)."""
+    present = {normalise(name) for name in packages}
+    return sorted(name for name in exceptions if name not in present)
+
+
+def licence_of(
+    meta: metadata.PackageMetadata, exceptions: Mapping[str, Verified] | None = None
+) -> str:
     """The SPDX licence a distribution declares, else its mapped classifier.
 
     A distribution whose only licence metadata is the bare BSD classifier gets
-    the licence its entry in ``exceptions`` names, and ``UNKNOWN`` if unlisted.
+    the licence its entry in ``exceptions`` names, but only on the version the
+    entry was verified on; unlisted or another version gives ``UNKNOWN``, so a
+    version bump needs the licence text read again.
     """
     expression = meta.get("License-Expression")
     if expression:
@@ -131,14 +149,16 @@ def licence_of(meta: metadata.PackageMetadata, exceptions: Mapping[str, str] | N
     if mapped:
         return " AND ".join(sorted(mapped))
     if BSD_CLASSIFIER in classifiers and exceptions:
-        return exceptions.get(normalise(meta.get("Name") or ""), UNKNOWN)
+        entry = exceptions.get(normalise(meta.get("Name") or ""))
+        if entry and entry.version == (meta.get("Version") or "").strip():
+            return entry.licence
     return UNKNOWN
 
 
 def report(
     packages: Sequence[str],
     lookup: Callable[[str], metadata.PackageMetadata] = metadata.metadata,
-    exceptions: Mapping[str, str] | None = None,
+    exceptions: Mapping[str, Verified] | None = None,
 ) -> dict[str, list[dict[str, str]]]:
     """``{licence: [{"name": package}]}`` for every package, as pnpm prints it."""
     out: dict[str, list[dict[str, str]]] = {}
@@ -155,6 +175,9 @@ def main(run: Callable[[list[str]], str] | None = None) -> int:
     try:
         packages = sorted({dep for package in SHIPPED for dep in closure(package, run)})
         exceptions = load_exceptions()
+        stale = stale_exceptions(exceptions, packages)
+        if stale:
+            raise ExceptionListError(f"exception entries for packages not shipped: {stale}")
     except (ClosureError, ExceptionListError) as exc:
         print(f"python licences failed closed: {exc}", file=sys.stderr)
         return 1

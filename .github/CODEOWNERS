@@ -8,6 +8,7 @@
 /Makefile                       @arceushui
 /ml/pyproject.toml              @arceushui
 /pyproject.toml                 @arceushui
+/uv.lock                        @arceushui
 /vitest.config.ts               @arceushui
 /scripts/check_licenses.py      @arceushui
 /scripts/python_licences.py     @arceushui

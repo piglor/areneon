@@ -19,7 +19,7 @@
       "package": "sympy",
       "licence": "BSD-3-Clause",
       "version": "1.14.0",
-      "evidence": "dist-info/licenses/LICENSE of the wheel (Copyright 2006-2023 SymPy Development Team): three conditions incl. no endorsement; the Diofant patches carry the same terms. METADATA has no License-Expression, only the BSD classifier and the free-text License 'BSD'.",
+      "evidence": "dist-info/licenses/LICENSE of the wheel (Copyright 2006-2023 SymPy Development Team): three conditions incl. no endorsement; the Diofant patches, the multipledispatch submodule and the PyDy example repo it also covers carry the same three-clause BSD terms. METADATA has no License-Expression, only the BSD classifier and the free-text License 'BSD'.",
       "verified": "2026-10-20"
     }
   ]
