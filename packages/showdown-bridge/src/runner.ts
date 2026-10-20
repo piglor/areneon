@@ -24,6 +24,27 @@ const PLAYERS: readonly Player[] = ["p1", "p2"];
  */
 export type Actor = (request: RequestRecord) => string | Promise<string>;
 
+/** Why a side's policy lost a game by forfeit (evaluation protocol D2). */
+export type ForfeitCause = "crash" | "out_of_memory" | "invalid_reply" | "latency_overrun";
+
+/**
+ * An actor throws this to forfeit the game: `runBattle` ends it as a win for
+ * the other seat and records the cause in `BattleRecord.forfeit`. Any other
+ * actor exception still aborts the battle, also one from the other seat after
+ * a forfeit was recorded (fail closed: it is an incident). The runner never
+ * retries.
+ */
+export class ForfeitSignal extends Error {
+  override name = "ForfeitSignal";
+  readonly cause_class: ForfeitCause;
+  readonly detail: string;
+  constructor(cause: ForfeitCause, detail: string) {
+    super(`forfeit (${cause}): ${detail}`);
+    this.cause_class = cause;
+    this.detail = detail;
+  }
+}
+
 export interface BattleOptions {
   engine: Engine;
   formatId: string;
@@ -142,6 +163,12 @@ export interface BattleRecord {
   choices: { player: Player; request_seq: number; choice: string; refused?: string }[];
   /** Hidden state, like `omniscient_log`: never an actor input. */
   hidden_verdicts: HiddenVerdicts[];
+  /**
+   * Set when a side forfeited (`ForfeitSignal`): the seat that lost, the
+   * request it failed to answer and why. `winner` is then the other seat.
+   * The forfeiting submission is not in `choices`.
+   */
+  forfeit?: { player: Player; request_seq: number; cause: ForfeitCause; detail: string };
 }
 
 export class InvalidTeamError extends Error {
@@ -219,6 +246,11 @@ export async function runBattle(options: BattleOptions): Promise<BattleRecord> {
     ended = true;
     streams.omniscient.writeEnd();
   };
+  const forfeit = (player: Player, request_seq: number, signal: ForfeitSignal): void => {
+    if (record.forfeit !== undefined || ended) return;
+    record.forfeit = { player, request_seq, cause: signal.cause_class, detail: signal.detail };
+    streams.omniscient.write(`>forcewin ${player === "p1" ? "p2" : "p1"}`);
+  };
   const abort = (error: Error): void => {
     failure ??= error;
     end();
@@ -285,12 +317,16 @@ export async function runBattle(options: BattleOptions): Promise<BattleRecord> {
               record.hidden_verdicts.push({ player, request_seq: request.request_seq, verdicts });
             }
             const choice = await actors[player](request);
-            if (ended) return;
+            if (ended || record.forfeit !== undefined) return;
             const entry = { player, request_seq: request.request_seq, choice };
             record.choices.push(entry);
             if (legal.pending.includes(choice)) pendingSubmission = entry;
             stream.write(choice);
           } catch (error) {
+            if (error instanceof ForfeitSignal) {
+              forfeit(player, request.request_seq, error);
+              continue;
+            }
             abort(error instanceof Error ? error : new Error(String(error)));
           }
         }

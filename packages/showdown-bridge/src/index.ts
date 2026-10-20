@@ -139,6 +139,8 @@ export {
   BattleAbortedError,
   type BattleOptions,
   type BattleRecord,
+  type ForfeitCause,
+  ForfeitSignal,
   type HiddenVerdicts,
   InvalidTeamError,
   type OmniscientLog,
@@ -150,3 +152,15 @@ export {
   runBattle,
   validatePlayers,
 } from "./runner.ts";
+export {
+  BaselineFailureError,
+  type GameOutcome,
+  type GuardOptions,
+  guardActor,
+  type IncidentClass,
+  type LatencyBudget,
+  type PlayedGame,
+  playGame,
+  PolicyWorkerError,
+  UnsupportedCandidateError,
+} from "./evaluation-harness.ts";
