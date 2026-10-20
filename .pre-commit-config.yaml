@@ -20,6 +20,11 @@ repos:
         entry: python3 scripts/check_data_class.py
         language: system
         files: \.jsonl?$
+      - id: binary-files
+        name: reject committed binary data files (ADR-013)
+        entry: python3 scripts/check_binary_files.py
+        language: system
+        types: [file]
       - id: eslint
         name: eslint
         entry: pnpm exec eslint

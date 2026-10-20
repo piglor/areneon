@@ -16,7 +16,12 @@
 /scripts/python_licences.py     @arceushui
 /scripts/licence_exceptions.json  @arceushui
 /scripts/check_cuda_separation.py @arceushui
+/scripts/check_binary_files.py  @arceushui
 /scripts/check_data_class.py    @arceushui
 /scripts/check_no_pokepaste.py  @arceushui
 /scripts/licences-selftest.sh   @arceushui
 /tests/scripts/                 @arceushui
+/package.json                   @arceushui
+/pnpm-lock.yaml                 @arceushui
+/pnpm-workspace.yaml            @arceushui
+/packages/private-team-store/   @arceushui

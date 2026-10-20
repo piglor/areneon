@@ -4,9 +4,11 @@ import { ajvFor } from "@areneon/schema/ajv";
 import { beforeAll, describe, expect, it } from "vitest";
 import { syntheticFixtureHashes } from "../src/golden.ts";
 import { EngineDataError, readEngineData } from "../src/engine-data.ts";
-import { contractVersions, EpisodeError, loadEngine, PolicyProtocolError, readHandshake, readPolicyQuery, readPolicyReply, readEpisode, readEvaluationRunManifest, readTrainingExample, readTrainingSet, TrainingLoaderError } from "../src/index.ts";
+import { contractVersions, EpisodeError, readTeamDatasetManifest, readTeamGeneratorConfig, readTeamLabelSet, readTeamRecord, readTeamSnapshotManifest, readTeamVocabulary, TeamRecordError, TeamVocabularyError, loadEngine, PolicyProtocolError, readHandshake, readPolicyQuery, readPolicyReply, readEpisode, readEvaluationRunManifest, readTrainingExample, readTrainingSet, TrainingLoaderError } from "../src/index.ts";
 import { EvaluationConfigError, readEvaluationParameters, readEntry, RegisterError, readEvaluationPlan, readSealedSetCommitment, readTrainingGateRule, readEvaluationConfig } from "../src/index.ts";
 import { contractSamples, SAMPLE_HASHES, SAMPLES_DIR } from "../src/samples.ts";
+import { exportEngineData } from "../src/engine-data.ts";
+import { GOLDEN_FORMAT } from "../src/golden.ts";
 
 const SCHEMAS = new URL("../../schema/contracts/v1/", import.meta.url);
 const committed = (file: string): unknown => JSON.parse(readFileSync(join(SAMPLES_DIR, file), "utf8"));
@@ -98,6 +100,44 @@ describe("the shared contract sample corpus (ADR-008 §2)", () => {
       "v1/policy-query/reader-invalid/identity-differs.json",
       "v1/sealed-set-commitment/reader-invalid/strata-sum-mismatch.json",
       "v1/sealed-set-commitment/reader-invalid/unsorted-strata.json",
+      "v1/team-dataset-manifest/reader-invalid/splits-out-of-order.json",
+      "v1/team-dataset-manifest/reader-invalid/teams-not-quota-sum.json",
+      "v1/team-dataset-manifest/reader-invalid/unsorted-cells.json",
+      "v1/team-generator-config/reader-invalid/duplicate-item-weights.json",
+      "v1/team-generator-config/reader-invalid/unknown-item.json",
+      "v1/team-generator-config/reader-invalid/unsorted-item-weights.json",
+      "v1/team-label-set/reader-invalid/duplicate-label-ids.json",
+      "v1/team-label-set/reader-invalid/duplicate-values.json",
+      "v1/team-label-set/reader-invalid/unknown-engine-id.json",
+      "v1/team-label-set/reader-invalid/unsorted-ids.json",
+      "v1/team-record/reader-invalid/canonical-hash-mismatch.json",
+      "v1/team-record/reader-invalid/duplicate-label-ids.json",
+      "v1/team-record/reader-invalid/foreign-label-set.json",
+      "v1/team-record/reader-invalid/labels-out-of-order.json",
+      "v1/team-record/reader-invalid/paste-not-engine-export.json",
+      "v1/team-record/reader-invalid/paste-unreproduced-line.json",
+      "v1/team-record/reader-invalid/team-hash-mismatch.json",
+      "v1/team-record/reader-invalid/value-not-in-label.json",
+      "v1/team-snapshot-manifest/reader-invalid/cells-missing.json",
+      "v1/team-snapshot-manifest/reader-invalid/cells-not-shard-sum.json",
+      "v1/team-snapshot-manifest/reader-invalid/cells-out-of-order.json",
+      "v1/team-snapshot-manifest/reader-invalid/duplicate-shard.json",
+      "v1/team-snapshot-manifest/reader-invalid/object-path-differs.json",
+      "v1/team-snapshot-manifest/reader-invalid/ranges-do-not-tile.json",
+      "v1/team-snapshot-manifest/reader-invalid/ranges-out-of-order.json",
+      "v1/team-snapshot-manifest/reader-invalid/rows-not-range-sum.json",
+      "v1/team-snapshot-manifest/reader-invalid/shards-out-of-order.json",
+      "v1/team-snapshot-manifest/reader-invalid/unsorted-dataset-hashes.json",
+      "v1/team-snapshot-manifest/reader-invalid/wrong-logical-hash.json",
+      "v1/team-vocabulary/reader-invalid/duplicate-moves.json",
+      "v1/team-vocabulary/reader-invalid/foreign-ability.json",
+      "v1/team-vocabulary/reader-invalid/min-over-max.json",
+      "v1/team-vocabulary/reader-invalid/picked-over-max.json",
+      "v1/team-vocabulary/reader-invalid/stale-engine-data-hash.json",
+      "v1/team-vocabulary/reader-invalid/unknown-species.json",
+      "v1/team-vocabulary/reader-invalid/unsorted-items.json",
+      "v1/team-vocabulary/reader-invalid/unsorted-natures.json",
+      "v1/team-vocabulary/reader-invalid/unsorted-roster.json",
       "v1/training-example/reader-invalid/choice-not-in-candidates.json",
       "v1/training-gate-rule/reader-invalid/alternative-below-null.json",
       "v1/training-gate-rule/reader-invalid/unsorted-claims.json",
@@ -158,6 +198,122 @@ describe("the shared contract sample corpus (ADR-008 §2)", () => {
 
   it("holds a valid engine-data sample the reader accepts", () => {
     expect(readEngineData(committed("v1/engine-data/valid/golden.json")).species).toHaveLength(2);
+  });
+
+  // ADR-013 section 4: the team readers refuse what the profile cannot compute or compare.
+  describe("the team records", () => {
+    const table = exportEngineData(loadEngine(), GOLDEN_FORMAT);
+    const slimTable = (): ReturnType<typeof exportEngineData> => {
+      const vocabulary = committed("v1/team-vocabulary/valid/golden.json") as { roster: { id: string; moves: string[] }[]; items: string[] };
+      const species = new Set(vocabulary.roster.map((r) => r.id));
+      const moves = new Set(vocabulary.roster.flatMap((r) => r.moves));
+      const kept = table.species.filter((s) => species.has(s.id));
+      const abilities = new Set(kept.flatMap((s) => s.abilities));
+      return {
+        ...table,
+        species: kept,
+        moves: table.moves.filter((m) => moves.has(m.id)),
+        items: table.items.filter((i) => vocabulary.items.includes(i.id)),
+        abilities: table.abilities.filter((a) => abilities.has(a.id)),
+      };
+    };
+    const engine = loadEngine();
+    const labelSet = (): ReturnType<typeof readTeamLabelSet> => readTeamLabelSet(committed("v1/team-label-set/valid/golden.json"));
+
+    it("accepts every valid sample", () => {
+      expect(readTeamVocabulary(committed("v1/team-vocabulary/valid/golden.json"), slimTable()).roster).toHaveLength(2);
+      expect(readTeamRecord(engine, committed("v1/team-record/valid/golden.json"), labelSet()).origin.split).toBe("dev");
+      expect(readTeamLabelSet(committed("v1/team-label-set/valid/golden.json"), table).labels).toHaveLength(3);
+      expect(readTeamGeneratorConfig(committed("v1/team-generator-config/valid/golden.json"), table).iv).toBe(31);
+      expect(readTeamDatasetManifest(committed("v1/team-dataset-manifest/valid/golden.json")).splits).toHaveLength(2);
+      for (const name of ["first", "extended"]) expect(readTeamSnapshotManifest(committed(`v1/team-snapshot-manifest/valid/${name}.json`)).shards.length).toBeGreaterThan(0);
+    });
+
+    it.each([
+      ["unsorted-roster", /roster: .* repeated or out of order/],
+      ["duplicate-moves", /moves: .* repeated or out of order/],
+      ["unsorted-natures", /natures: .* repeated or out of order/],
+      ["unsorted-items", /items: .* repeated or out of order/],
+      ["picked-over-max", /picked_team_size exceeds max_team_size/],
+      ["min-over-max", /min_team_size exceeds max_team_size/],
+      ["stale-engine-data-hash", /engine_data_hash is not the hash/],
+      ["unknown-species", /is not in the engine-data table/],
+      ["foreign-ability", /is not one of its engine-data abilities/],
+    ])("readTeamVocabulary refuses team-vocabulary/%s", (name, message) => {
+      const file = `v1/team-vocabulary/reader-invalid/${name}.json`;
+      expect(Object.keys(fresh)).toContain(file);
+      expect(() => readTeamVocabulary(committed(file), slimTable())).toThrow(TeamVocabularyError);
+      expect(() => readTeamVocabulary(committed(file), slimTable())).toThrow(message);
+    });
+
+    it.each([
+      ["team-hash-mismatch", /team_hash is not the hash/],
+      ["canonical-hash-mismatch", /canonical_team_hash is not the hash/],
+      ["paste-not-engine-export", /not the engine's own export/],
+      ["paste-unreproduced-line", /refused by the pinned engine/],
+      ["duplicate-label-ids", /label ids: a value is repeated/],
+      ["labels-out-of-order", /labels\[0\] is fake_out, but the label set's is speed_control/],
+      ["value-not-in-label", /sideways is not one of its values/],
+      ["foreign-label-set", /label_set_hash is not the hash/],
+    ])("readTeamRecord refuses team-record/%s", (name, message) => {
+      const file = `v1/team-record/reader-invalid/${name}.json`;
+      expect(Object.keys(fresh)).toContain(file);
+      expect(() => readTeamRecord(engine, committed(file), labelSet())).toThrow(TeamRecordError);
+      expect(() => readTeamRecord(engine, committed(file), labelSet())).toThrow(message);
+    });
+
+    it.each([
+      ["duplicate-label-ids", /label ids: a value is repeated/],
+      ["duplicate-values", /values: a value is repeated/],
+      ["unsorted-ids", /has_move ids: .* repeated or out of order/],
+      ["unknown-engine-id", /nosuchmove is not in the engine-data table/],
+    ])("readTeamLabelSet refuses team-label-set/%s", (name, message) => {
+      const file = `v1/team-label-set/reader-invalid/${name}.json`;
+      expect(Object.keys(fresh)).toContain(file);
+      expect(() => readTeamLabelSet(committed(file), table)).toThrow(TeamRecordError);
+      expect(() => readTeamLabelSet(committed(file), table)).toThrow(message);
+    });
+
+    it.each([
+      ["unsorted-item-weights", /item_weights: .* repeated or out of order/],
+      ["duplicate-item-weights", /item_weights: .* repeated or out of order/],
+      ["unknown-item", /nosuchitem is not in the engine-data table/],
+    ])("readTeamGeneratorConfig refuses team-generator-config/%s", (name, message) => {
+      const file = `v1/team-generator-config/reader-invalid/${name}.json`;
+      expect(Object.keys(fresh)).toContain(file);
+      expect(() => readTeamGeneratorConfig(committed(file), table)).toThrow(TeamRecordError);
+      expect(() => readTeamGeneratorConfig(committed(file), table)).toThrow(message);
+    });
+
+    it.each([
+      ["splits-out-of-order", /splits are repeated or not in the order/],
+      ["teams-not-quota-sum", /is not the sum of its quotas/],
+      ["unsorted-cells", /cell .* is repeated or out of order/],
+    ])("readTeamDatasetManifest refuses team-dataset-manifest/%s", (name, message) => {
+      const file = `v1/team-dataset-manifest/reader-invalid/${name}.json`;
+      expect(Object.keys(fresh)).toContain(file);
+      expect(() => readTeamDatasetManifest(committed(file))).toThrow(TeamRecordError);
+      expect(() => readTeamDatasetManifest(committed(file))).toThrow(message);
+    });
+
+    it.each([
+      ["unsorted-dataset-hashes", /dataset_hashes: .* repeated or out of order/],
+      ["wrong-logical-hash", /logical_snapshot_hash is not recomputed/],
+      ["object-path-differs", /object_key is not pub\/v1\/shards/],
+      ["ranges-do-not-tile", /cell ranges do not tile the shard/],
+      ["ranges-out-of-order", /repeated or out of stratum order/],
+      ["rows-not-range-sum", /is not the sum of its cell ranges/],
+      ["cells-not-shard-sum", /rows is not the shards' sum/],
+      ["cells-missing", /do not list exactly the cells/],
+      ["cells-out-of-order", /cells: .* repeated or out of order/],
+      ["shards-out-of-order", /shards: .* repeated or out of order/],
+      ["duplicate-shard", /shard logical hashes: a value is repeated/],
+    ])("readTeamSnapshotManifest refuses team-snapshot-manifest/%s", (name, message) => {
+      const file = `v1/team-snapshot-manifest/reader-invalid/${name}.json`;
+      expect(Object.keys(fresh)).toContain(file);
+      expect(() => readTeamSnapshotManifest(committed(file))).toThrow(TeamRecordError);
+      expect(() => readTeamSnapshotManifest(committed(file))).toThrow(message);
+    });
   });
 
   // ADR-010 sections 6, 7 and O1: the evaluation readers refuse what the profile cannot say.

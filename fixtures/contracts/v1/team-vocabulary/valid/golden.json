@@ -1,0 +1,64 @@
+{
+  "schema_version": 1,
+  "showdown_commit": "7244fe8e28fa8bc4d0809ae30d183c608b62bb2b",
+  "format_id": "gen9championsvgc2026regmc",
+  "mod": "champions",
+  "engine_data_hash": "33b42a81c85a29773d3a2da890f898b552179406a276925979d9e489aba971c0",
+  "rules": {
+    "adjust_level": 50,
+    "ev_limit": 66,
+    "item_clause": 1,
+    "min_team_size": 6,
+    "max_team_size": 6,
+    "picked_team_size": 4
+  },
+  "natures": [
+    {
+      "id": "adamant",
+      "name": "Adamant",
+      "plus": "atk",
+      "minus": "spa"
+    },
+    {
+      "id": "bashful",
+      "name": "Bashful",
+      "plus": "",
+      "minus": ""
+    },
+    {
+      "id": "bold",
+      "name": "Bold",
+      "plus": "def",
+      "minus": "atk"
+    }
+  ],
+  "items": [
+    "abomasite",
+    "absolite"
+  ],
+  "roster": [
+    {
+      "id": "abomasnow",
+      "abilities": [
+        "snowwarning",
+        "soundproof"
+      ],
+      "moves": [
+        "auroraveil",
+        "avalanche"
+      ]
+    },
+    {
+      "id": "absol",
+      "abilities": [
+        "justified",
+        "pressure",
+        "superluck"
+      ],
+      "moves": [
+        "aerialace",
+        "airslash"
+      ]
+    }
+  ]
+}

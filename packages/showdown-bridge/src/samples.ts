@@ -6,18 +6,23 @@
 // capture with the committed files.
 
 import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { PrivateTeamSpec } from "@areneon/schema/types/v1/private-team-spec.ts";
 import { jcs, type Json } from "./canonical-json.ts";
 import { legalChoiceSet } from "./choice-judge.ts";
 import { evaluationSamples } from "./evaluation-samples.ts";
-import { engineDataHash, exportEngineData } from "./engine-data.ts";
+import { type EngineData, engineDataHash, exportEngineData } from "./engine-data.ts";
 import type { Engine } from "./engine.ts";
 import { episodeFromRecord } from "./episode-io.ts";
-import { GOLDEN_FORMAT, goldenBattle, syntheticFixtureHashes, syntheticTeam } from "./golden.ts";
+import { GOLDEN_DIR, GOLDEN_FORMAT, goldenBattle, syntheticFixtureHashes, syntheticTeam } from "./golden.ts";
 import { observe, recordedChannel } from "./player-channel.ts";
 import { contractVersions } from "./policy-protocol.ts";
-import { battleClass, stampTeam } from "./team-class.ts";
+import { battleClass, stampTeam, teamHash } from "./team-class.ts";
+import { canonicalTeamHash, logicalSnapshotHash, recordHash, shardLogicalHash } from "./team-records.ts";
+import { exportPaste } from "./teams.ts";
+import { readTeamVocabulary, TEAM_VOCABULARY_FILE, teamVocabularyHash } from "./team-vocabulary.ts";
 import { evaluationRunManifest, loadTrainingSet } from "./training-loader.ts";
 import type { RequestRecord } from "./runner.ts";
 
@@ -204,6 +209,154 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
   };
   const recordWith = (change: (r: Record<string, unknown>) => void) => mutated(checkpointRecord, change);
 
+  // The team system's records (ADR-013 section 4). The team is the golden
+  // synthetic one; ids and keys that name no real artefact are placeholders.
+  const goldenSets = syntheticTeam();
+  const labelSet = {
+    schema_version: 1,
+    label_set_id: "golden-labels",
+    labels: [
+      {
+        label_id: "speed_control",
+        values: [
+          { value: "trick_room", when: { kind: "has_move", moves: ["trickroom"] } },
+          { value: "tailwind", when: { kind: "has_move", moves: ["tailwind"] } },
+        ],
+        default: "neither",
+      },
+      { label_id: "fake_out", values: [{ value: "yes", when: { kind: "has_move", moves: ["fakeout"] } }], default: "no" },
+      {
+        label_id: "sun_setter",
+        values: [{ value: "yes", when: { kind: "all_of", of: [{ kind: "has_ability", abilities: ["drought"] }, { kind: "has_move", moves: ["sunnyday"] }] } }],
+        default: "no",
+      },
+    ],
+  };
+  const labelSetHash = recordHash(labelSet);
+  const teamRecord = {
+    schema_version: 1,
+    data_class: "synthetic",
+    team_hash: teamHash(goldenSets),
+    canonical_team_hash: canonicalTeamHash(goldenSets),
+    paste: exportPaste(engine, goldenSets),
+    origin: { dataset_id: "golden-1", split: "dev", index: 0, draw_counter: 0 },
+    label_set_hash: labelSetHash,
+    labels: [
+      { label_id: "speed_control", value: "neither" },
+      { label_id: "fake_out", value: "yes" },
+      { label_id: "sun_setter", value: "no" },
+    ],
+  };
+  const recordWithTeam = (change: (r: Record<string, unknown>) => void) => mutated(teamRecord, change);
+  const generatorConfig = {
+    schema_version: 1,
+    config_id: "golden-config",
+    iv: 31,
+    stat_point_max_per_stat: 32,
+    gender_policy: "unset",
+    nickname_policy: "none",
+    default_item_weight: 1,
+    item_weights: [
+      { item: full.items[0]?.id as string, weight: 3 },
+      { item: full.items[1]?.id as string, weight: 5 },
+    ],
+    d_max: 4_000_000,
+    pilot_draws: 40_000,
+    pilot_min_hits: 20,
+    n_stratum_min: 2,
+    fill_quantile_permille: 990,
+    sealed_margin_permille: 200,
+    range_draws_log2: 20,
+    range_margin_permille: 100,
+    shard_rows_log2: 18,
+    two_platform_bound: 1_000_000,
+    sampled_ranges: 16,
+  };
+  const configWith = (change: (c: Record<string, unknown>) => void) => mutated(generatorConfig, change);
+  // The golden vocabulary is read, not exported: the export takes seconds, and team-vocabulary.test.ts holds the file equal to a fresh one.
+  const fullVocabulary = readTeamVocabulary(JSON.parse(readFileSync(join(GOLDEN_DIR, TEAM_VOCABULARY_FILE), "utf8")), full);
+  const vocabularyEntries = fullVocabulary.roster.filter((r) =>
+    full.species.some((x) => x.id === r.id && x.base_species === r.id),
+  ).slice(0, 2).map((r) => ({ ...r, moves: r.moves.slice(0, 2) as [string, ...string[]] }));
+  // A slim table of just what the slim vocabulary names, so its reader can close every id (the complete one is fixtures/showdown/<format>/team-vocabulary.json).
+  const vocabularyTable: EngineData = {
+    ...full,
+    species: full.species.filter((x) => vocabularyEntries.some((r) => r.id === x.id)),
+    moves: full.moves.filter((m) => vocabularyEntries.some((r) => r.moves.includes(m.id))),
+    items: full.items.slice(0, 2),
+    abilities: full.abilities.filter((a) => full.species.some((x) => vocabularyEntries.some((r) => r.id === x.id) && x.abilities.includes(a.id))),
+  };
+  const vocabulary = {
+    ...fullVocabulary,
+    engine_data_hash: engineDataHash(vocabularyTable),
+    natures: fullVocabulary.natures.slice(0, 3),
+    items: vocabularyTable.items.map((i) => i.id),
+    roster: vocabularyEntries.map((r) => ({ ...r, abilities: [...(vocabularyTable.species.find((x) => x.id === r.id)?.abilities as [string, ...string[]])].sort() as [string, ...string[]] })),
+  };
+  const vocabularyWith = (change: (v: Record<string, unknown>) => void) => mutated(vocabulary, change);
+  const datasetManifest = {
+    schema_version: 1,
+    data_class: "synthetic",
+    dataset_id: "golden-1",
+    plan_id: "golden-plan-1",
+    generator: {
+      generator_commit: "a".repeat(40),
+      config_hash: recordHash(generatorConfig),
+      label_set_hash: labelSetHash,
+      vocabulary_hash: teamVocabularyHash(vocabulary as never),
+      manifest: record.manifest,
+    },
+    key: { kind: "public", generation_key: hexOf("1"), assignment_key: hexOf("2") },
+    d_max: 4_000_000,
+    pilot_draws: 40_000,
+    splits: [
+      { split: "dev", teams: 5, cells: [{ stratum: 0, pilot_hits: 21_000, quota: 3 }, { stratum: 7, pilot_hits: 40, quota: 2 }] },
+      { split: "validation", teams: 2, cells: [{ stratum: 0, pilot_hits: 21_000, quota: 2 }] },
+    ],
+    reference_pool_hash: hexOf("3"),
+    rejection_log: { log_sha256: hexOf("4"), draws: 52_000, rejections: 300, duplicates: 2, overflows: 51_000 },
+  };
+  const datasetWith = (change: (d: Record<string, unknown>) => void) => mutated(datasetManifest, change);
+  const shardOf = (split: string, rows: number, seed: string, ranges: { stratum: number; first_row: number; rows: number }[]) => ({
+    object_key: `pub/v1/shards/${hexOf(seed)}`,
+    file_sha256: hexOf(seed),
+    bytes: 4096 * rows,
+    logical_hash: shardLogicalHash([hexOf(seed), hexOf("0")]),
+    rows,
+    split,
+    cell_ranges: ranges,
+  });
+  const sealSnapshot = (snapshot: Record<string, unknown>): Record<string, unknown> => ({
+    ...snapshot,
+    logical_snapshot_hash: logicalSnapshotHash(snapshot as never),
+  });
+  const snapshotBase = {
+    schema_version: 1,
+    data_class: "synthetic",
+    snapshot_id: "golden-snapshot-1",
+    dataset_hashes: [recordHash(datasetManifest)],
+    manifest: record.manifest,
+    vocabulary_hash: teamVocabularyHash(vocabulary as never),
+    logical_snapshot_hash: hexOf("0"),
+    shard_key: hexOf("5"),
+    shards: [shardOf("dev", 5, "6", [{ stratum: 0, first_row: 0, rows: 3 }, { stratum: 7, first_row: 3, rows: 2 }])],
+    cells: [{ split: "dev", stratum: 0, rows: 3 }, { split: "dev", stratum: 7, rows: 2 }],
+    writer: { name: "duckdb", version: "1.5.6", binary_sha256: hexOf("7") },
+    parquet_schema_version: 1,
+  };
+  const snapshot = sealSnapshot(snapshotBase);
+  const snapshotWith = (change: (s: Record<string, unknown>) => void) => mutated(snapshot, change);
+  // The same data after a second dataset: a parent, and a validation shard.
+  const extendedSnapshot = sealSnapshot({
+    ...snapshotBase,
+    parent_snapshot_hash: hexOf("8"),
+    shards: [
+      ...snapshotBase.shards,
+      shardOf("validation", 2, "9", [{ stratum: 0, first_row: 0, rows: 2 }]),
+    ],
+    cells: [...snapshotBase.cells, { split: "validation", stratum: 0, rows: 2 }],
+  });
+
   const valid: Record<string, unknown> = {
     "engine-data/golden": engineData,
     "checkpoint-record/battle": checkpointRecord,
@@ -217,6 +370,13 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
       r.exploiter_target = hexOf("2");
       r.league_opponents = [hexOf("2")];
     }),
+    "team-vocabulary/golden": vocabulary,
+    "team-record/golden": teamRecord,
+    "team-label-set/golden": labelSet,
+    "team-generator-config/golden": generatorConfig,
+    "team-dataset-manifest/golden": datasetManifest,
+    "team-snapshot-manifest/first": snapshot,
+    "team-snapshot-manifest/extended": extendedSnapshot,
     "training-example/preview": exampleOf("preview"),
     "training-example/battle": exampleOf("battle"),
     "training-example/legacy-battle": legacyExample,
@@ -283,6 +443,45 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "policy-handshake/unsorted-contracts": helloWith((m) => (m.contracts = contractsOf().reverse())),
     "policy-handshake/duplicate-contracts": helloWith((m) => (m.contracts = [contractsOf()[0], contractsOf()[0]])),
     "policy-handshake/unsorted-checkpoints": readyWith((m) => (m.checkpoints = [...checkpoints].reverse())),
+    // Schema-valid, refused by the team readers (ADR-013 section 4): what the profile cannot compute or compare.
+    "team-vocabulary/unsorted-roster": vocabularyWith((v) => (v.roster = [...vocabulary.roster].reverse())),
+    "team-vocabulary/duplicate-moves": vocabularyWith((v) => ((v.roster as { moves: string[] }[])[0] as { moves: string[] }).moves = [(vocabulary.roster[0] as { moves: string[] }).moves[0] as string, (vocabulary.roster[0] as { moves: string[] }).moves[0] as string]),
+    "team-vocabulary/unsorted-natures": vocabularyWith((v) => (v.natures = [...vocabulary.natures].reverse())),
+    "team-vocabulary/unsorted-items": vocabularyWith((v) => (v.items = [...vocabulary.items].reverse())),
+    "team-vocabulary/picked-over-max": vocabularyWith((v) => (v.rules = { ...vocabulary.rules, picked_team_size: vocabulary.rules.max_team_size + 1 })),
+    "team-vocabulary/min-over-max": vocabularyWith((v) => (v.rules = { ...vocabulary.rules, min_team_size: vocabulary.rules.max_team_size + 1 })),
+    "team-vocabulary/stale-engine-data-hash": vocabularyWith((v) => (v.engine_data_hash = hexOf("f"))),
+    "team-vocabulary/unknown-species": vocabularyWith((v) => ((v.roster as { id: string }[])[0] as { id: string }).id = "aaaaaaaaa"),
+    "team-vocabulary/foreign-ability": vocabularyWith((v) => ((v.roster as { abilities: string[] }[])[0] as { abilities: string[] }).abilities = [(vocabularyTable.abilities.find((a) => !(vocabularyTable.species[0] as { abilities: string[] }).abilities.includes(a.id)) as { id: string }).id]),
+    "team-record/team-hash-mismatch": recordWithTeam((r) => (r.team_hash = hexOf("a"))),
+    "team-record/canonical-hash-mismatch": recordWithTeam((r) => (r.canonical_team_hash = hexOf("a"))),
+    "team-record/paste-not-engine-export": recordWithTeam((r) => (r.paste = `${teamRecord.paste}\n\n`)),
+    "team-record/paste-unreproduced-line": recordWithTeam((r) => (r.paste = `${teamRecord.paste}\nSPs: 1 HP`)),
+    "team-record/duplicate-label-ids": recordWithTeam((r) => (r.labels = [teamRecord.labels[0], teamRecord.labels[0], teamRecord.labels[2]])),
+    "team-record/labels-out-of-order": recordWithTeam((r) => (r.labels = [teamRecord.labels[1], teamRecord.labels[0], teamRecord.labels[2]])),
+    "team-record/value-not-in-label": recordWithTeam((r) => (r.labels = [{ label_id: "speed_control", value: "sideways" }, teamRecord.labels[1], teamRecord.labels[2]])),
+    "team-record/foreign-label-set": recordWithTeam((r) => (r.label_set_hash = hexOf("a"))),
+    "team-label-set/duplicate-label-ids": mutated(labelSet, (l) => (l.labels = [labelSet.labels[0], labelSet.labels[0]])),
+    "team-label-set/duplicate-values": mutated(labelSet, (l) => ((l.labels as { values: unknown[] }[])[0] as { values: unknown[] }).values = [(labelSet.labels[0] as { values: unknown[] }).values[0], (labelSet.labels[0] as { values: unknown[] }).values[0]]),
+    "team-label-set/unsorted-ids": mutated(labelSet, (l) => ((l.labels as { values: { when: { moves: string[] } }[] }[])[0] as { values: { when: { moves: string[] } }[] }).values = [{ value: "both", when: { kind: "has_move", moves: ["trickroom", "tailwind"] } } as never]),
+    "team-label-set/unknown-engine-id": mutated(labelSet, (l) => ((l.labels as { values: { when: { moves: string[] } }[] }[])[0] as { values: { when: { moves: string[] } }[] }).values = [{ value: "ghost", when: { kind: "has_move", moves: ["nosuchmove"] } } as never]),
+    "team-generator-config/unsorted-item-weights": configWith((c) => (c.item_weights = [...generatorConfig.item_weights].reverse())),
+    "team-generator-config/duplicate-item-weights": configWith((c) => (c.item_weights = [generatorConfig.item_weights[0], generatorConfig.item_weights[0]])),
+    "team-generator-config/unknown-item": configWith((c) => (c.item_weights = [{ item: "nosuchitem", weight: 1 }])),
+    "team-dataset-manifest/splits-out-of-order": datasetWith((d) => (d.splits = [...datasetManifest.splits].reverse())),
+    "team-dataset-manifest/teams-not-quota-sum": datasetWith((d) => (d.splits = [{ ...datasetManifest.splits[0], teams: 6 }, datasetManifest.splits[1]])),
+    "team-dataset-manifest/unsorted-cells": datasetWith((d) => (d.splits = [{ ...datasetManifest.splits[0], cells: [...(datasetManifest.splits[0] as { cells: unknown[] }).cells].reverse() }, datasetManifest.splits[1]])),
+    "team-snapshot-manifest/unsorted-dataset-hashes": snapshotWith((s) => (s.dataset_hashes = [hexOf("b"), hexOf("a")])),
+    "team-snapshot-manifest/wrong-logical-hash": snapshotWith((s) => (s.logical_snapshot_hash = hexOf("a"))),
+    "team-snapshot-manifest/object-path-differs": snapshotWith((s) => ((s.shards as { object_key: string }[])[0] as { object_key: string }).object_key = `pub/v1/shards/${hexOf("a")}`),
+    "team-snapshot-manifest/ranges-do-not-tile": snapshotWith((s) => (((s.shards as { cell_ranges: { first_row: number }[] }[])[0] as { cell_ranges: { first_row: number }[] }).cell_ranges[1] as { first_row: number }).first_row = 4),
+    "team-snapshot-manifest/ranges-out-of-order": snapshotWith((s) => ((s.shards as { cell_ranges: unknown[] }[])[0] as { cell_ranges: unknown[] }).cell_ranges = [{ stratum: 7, first_row: 0, rows: 2 }, { stratum: 0, first_row: 2, rows: 3 }]),
+    "team-snapshot-manifest/rows-not-range-sum": snapshotWith((s) => ((s.shards as { rows: number }[])[0] as { rows: number }).rows = 6),
+    "team-snapshot-manifest/cells-not-shard-sum": snapshotWith((s) => (s.cells = [{ split: "dev", stratum: 0, rows: 4 }, { split: "dev", stratum: 7, rows: 2 }])),
+    "team-snapshot-manifest/cells-missing": snapshotWith((s) => (s.cells = [{ split: "dev", stratum: 0, rows: 3 }])),
+    "team-snapshot-manifest/cells-out-of-order": snapshotWith((s) => (s.cells = [{ split: "dev", stratum: 7, rows: 2 }, { split: "dev", stratum: 0, rows: 3 }])),
+    "team-snapshot-manifest/shards-out-of-order": mutated(extendedSnapshot, (s) => (s.shards = [...(extendedSnapshot.shards as unknown[])].reverse())),
+    "team-snapshot-manifest/duplicate-shard": mutated(snapshot, (s) => (s.shards = [snapshotBase.shards[0], { ...snapshotBase.shards[0], split: "validation" }])),
     "training-set/unsorted-episodes": { ...training.set, episode_hashes: [hashB, hashA] },
     "training-set/duplicate-manifests": { ...training.set, evaluation_manifest_hashes: [hashA, hashA] },
     "episode/sparring-synthetic": collected({ kind: "sparring", session_id: "sparring-session-1" }),
@@ -305,6 +504,46 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "engine-data/extra-field": { ...engineData, learnsets: [] },
     "engine-data/next-version": { ...engineData, schema_version: 2 },
     "engine-data/short-commit": { ...engineData, showdown_commit: "7244fe8" },
+    "team-vocabulary/no-rules": vocabularyWith((v) => delete v.rules),
+    "team-vocabulary/short-commit": vocabularyWith((v) => (v.showdown_commit = "7244fe8")),
+    "team-vocabulary/extra-field": vocabularyWith((v) => (v.learnsets = [])),
+    "team-vocabulary/next-version": vocabularyWith((v) => (v.schema_version = 2)),
+    "team-vocabulary/bad-stat": vocabularyWith((v) => (v.natures = [{ ...vocabulary.natures[0], plus: "hp" }])),
+    "team-vocabulary/empty-pool": vocabularyWith((v) => (v.roster = [{ ...vocabulary.roster[0], moves: [] }])),
+    "team-vocabulary/zero-item-clause": vocabularyWith((v) => (v.rules = { ...vocabulary.rules, item_clause: 0 })),
+    "team-record/no-paste": recordWithTeam((r) => delete r.paste),
+    "team-record/uppercase-team-hash": recordWithTeam((r) => (r.team_hash = hexOf("A"))),
+    "team-record/extra-field": recordWithTeam((r) => (r.rating = 1500)),
+    "team-record/next-version": recordWithTeam((r) => (r.schema_version = 2)),
+    "team-record/sealed-split": recordWithTeam((r) => (r.origin = { ...teamRecord.origin, split: "sealed" })),
+    "team-record/negative-index": recordWithTeam((r) => (r.origin = { ...teamRecord.origin, index: -1 })),
+    "team-record/float-draw-counter": recordWithTeam((r) => (r.origin = { ...teamRecord.origin, draw_counter: 1.5 })),
+    "team-record/label-extra-field": recordWithTeam((r) => (r.labels = [{ ...teamRecord.labels[0], weight: 1 }])),
+    "team-record/empty-paste": recordWithTeam((r) => (r.paste = "")),
+    "team-label-set/no-labels": mutated(labelSet, (l) => (l.labels = [])),
+    "team-label-set/unknown-predicate": mutated(labelSet, (l) => ((l.labels as { values: unknown[] }[])[0] as { values: unknown[] }).values = [{ value: "x", when: { kind: "has_type", types: ["fire"] } }]),
+    "team-label-set/nested-all-of": mutated(labelSet, (l) => ((l.labels as { values: unknown[] }[])[0] as { values: unknown[] }).values = [{ value: "x", when: { kind: "all_of", of: [{ kind: "all_of", of: [] }] } }]),
+    "team-label-set/empty-ids": mutated(labelSet, (l) => ((l.labels as { values: unknown[] }[])[0] as { values: unknown[] }).values = [{ value: "x", when: { kind: "has_move", moves: [] } }]),
+    "team-label-set/extra-field": mutated(labelSet, (l) => (l.scores = [])),
+    "team-generator-config/float-weight": configWith((c) => (c.default_item_weight = 0.5)),
+    "team-generator-config/iv-over-31": configWith((c) => (c.iv = 32)),
+    "team-generator-config/pilot-below-40000": configWith((c) => (c.pilot_draws = 39_999)),
+    "team-generator-config/quantile-as-fraction": configWith((c) => (c.fill_quantile_permille = 0.99)),
+    "team-generator-config/unknown-policy": configWith((c) => (c.gender_policy = "male")),
+    "team-generator-config/no-d-max": configWith((c) => delete c.d_max),
+    "team-dataset-manifest/no-splits": datasetWith((d) => (d.splits = [])),
+    "team-dataset-manifest/sealed-split": datasetWith((d) => (d.splits = [{ ...datasetManifest.splits[0], split: "sealed" }])),
+    "team-dataset-manifest/negative-quota": datasetWith((d) => (d.splits = [{ ...datasetManifest.splits[0], cells: [{ stratum: 0, pilot_hits: 1, quota: -1 }] }])),
+    "team-dataset-manifest/short-stream-hex": datasetWith((d) => (d.key = { ...datasetManifest.key, generation_key: "abc" })),
+    "team-dataset-manifest/extra-field": datasetWith((d) => (d.notes = "x")),
+    "team-dataset-manifest/no-rejection-log": datasetWith((d) => delete d.rejection_log),
+    "team-snapshot-manifest/no-shards": snapshotWith((s) => (s.shards = [])),
+    "team-snapshot-manifest/bad-object-path": snapshotWith((s) => ((s.shards as { object_key: string }[])[0] as { object_key: string }).object_key = "shards/x"),
+    "team-snapshot-manifest/writer-no-version": snapshotWith((s) => (s.writer = { name: "duckdb", binary_sha256: hexOf("7") })),
+    "team-snapshot-manifest/empty-range": snapshotWith((s) => (((s.shards as { cell_ranges: { rows: number }[] }[])[0] as { cell_ranges: { rows: number }[] }).cell_ranges[0] as { rows: number }).rows = 0),
+    "team-snapshot-manifest/short-dataset-hash": snapshotWith((s) => (s.dataset_hashes = ["abc"])),
+    "team-snapshot-manifest/next-version": snapshotWith((s) => (s.schema_version = 2)),
+    "team-snapshot-manifest/extra-field": snapshotWith((s) => (s.uploaded_by = "x")),
     "training-example/provenance": { ...exampleOf("battle"), provenance: { seed: record.seed } },
     "training-example/no-episode-hash": mutated(exampleOf("battle"), (e) => delete e.episode_hash),
     "training-example/omniscient-observation": mutated(exampleOf("battle"), (e) => {

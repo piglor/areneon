@@ -198,6 +198,34 @@ export {
   type PolicyWorkerOptions,
 } from "./policy-worker.ts";
 export {
+  canonicalTeamHash,
+  logicalSnapshotHash,
+  readTeamDatasetManifest,
+  readTeamGeneratorConfig,
+  readTeamLabelSet,
+  readTeamRecord,
+  readTeamSnapshotManifest,
+  recordHash,
+  shardLogicalHash,
+  snapshotHash,
+  type TeamDatasetManifest,
+  type TeamGeneratorConfig,
+  type TeamLabelSet,
+  type TeamRecord,
+  TeamRecordError,
+  type TeamSnapshotManifest,
+} from "./team-records.ts";
+export {
+  exportTeamVocabulary,
+  readTeamVocabulary,
+  TEAM_VOCABULARY_FILE,
+  TEAM_VOCABULARY_SUMMARY,
+  type TeamVocabulary,
+  TeamVocabularyError,
+  teamVocabularyHash,
+  teamVocabularySummary,
+} from "./team-vocabulary.ts";
+export {
   alphaPrimePpm,
   checkGateConsistency,
   covTolPpm,

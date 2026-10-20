@@ -3,6 +3,13 @@ updates:
   - package-ecosystem: npm
     directory: /
     schedule: { interval: weekly }
+    # The private team store's crypto dependencies (ADR-014): exact pins, bumped
+    # by hand after review. This ignores version updates only; security-update
+    # PRs may still open, and the osv job still scans.
+    ignore:
+      - dependency-name: "age-encryption"
+      - dependency-name: "@noble/*"
+      - dependency-name: "@scure/*"
   - package-ecosystem: uv
     directory: /
     schedule: { interval: weekly }

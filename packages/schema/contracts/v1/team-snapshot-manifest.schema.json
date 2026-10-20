@@ -1,0 +1,275 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:areneon:schema:contracts:v1:team-snapshot-manifest",
+  "title": "TeamSnapshotManifest",
+  "description": "One published team snapshot (ADR-013 sections 4 and 11): its datasets, its Parquet shards with their physical and logical hashes, its cells, and the writer. The logical_snapshot_hash is the writer-independent identity: SHA-256 of the JCS bytes of {shards: the sorted shard logical hashes, cells, dataset_hashes, manifest}. The snapshot hash is SHA-256 of the JCS bytes of this whole object and identifies one physical publication. The sorted and unique lists, the shard order, the cell ranges tiling each shard, the row sums and the logical hash are enforced by the reader (the contract profile cannot compute them).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "data_class",
+    "snapshot_id",
+    "dataset_hashes",
+    "manifest",
+    "vocabulary_hash",
+    "logical_snapshot_hash",
+    "shard_key",
+    "shards",
+    "cells",
+    "writer",
+    "parquet_schema_version"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "data_class": {
+      "description": "Always synthetic: a team in this system is generated from the pinned engine's data and a recorded seed, never a real team (ADR-013, ADR-008 section 5). The data-class guard refuses a record of this shape without it.",
+      "const": "synthetic"
+    },
+    "snapshot_id": {
+      "description": "A name for the snapshot.",
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+    },
+    "parent_snapshot_hash": {
+      "description": "The snapshot hash of the version this one extends; absent for the first.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "dataset_hashes": {
+      "description": "The dataset hashes the snapshot holds, sorted and unique.",
+      "type": "array",
+      "maxItems": 4096,
+      "items": {
+        "type": "string",
+        "pattern": "^[0-9a-f]{64}$"
+      },
+      "minItems": 1
+    },
+    "manifest": {
+      "$ref": "#/$defs/VersionManifest"
+    },
+    "vocabulary_hash": {
+      "description": "SHA-256 of the JCS bytes of the TeamVocabulary the datasets were generated from.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "logical_snapshot_hash": {
+      "description": "The writer-independent identity of the snapshot.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "shard_key": {
+      "description": "The public HMAC key that assigns a team to a shard, as hex.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "shards": {
+      "description": "The shards in fixed order: by split (dev, validation, training), then by logical hash.",
+      "type": "array",
+      "maxItems": 4096,
+      "items": {
+        "$ref": "#/$defs/Shard"
+      },
+      "minItems": 1
+    },
+    "cells": {
+      "description": "Rows per split and cell, sorted by split then stratum, unique.",
+      "type": "array",
+      "maxItems": 262144,
+      "items": {
+        "description": "One cell of one split.",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "split",
+          "stratum",
+          "rows"
+        ],
+        "properties": {
+          "split": {
+            "description": "The split a team belongs to. Sealed teams live only in the isolated evaluation store and have no public split.",
+            "enum": [
+              "dev",
+              "validation",
+              "training"
+            ]
+          },
+          "stratum": {
+            "description": "A merged label cell (stratum) id.",
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 65535
+          },
+          "rows": {
+            "description": "Rows in the cell across the split's shards.",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          }
+        }
+      },
+      "minItems": 1
+    },
+    "writer": {
+      "description": "What wrote the shard files; a writer change changes file bytes, never logical hashes.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "version",
+        "binary_sha256"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "binary_sha256": {
+          "description": "SHA-256 of the writer binary.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "parquet_schema_version": {
+      "description": "The version of the column layout the shards use.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 65535
+    }
+  },
+  "$defs": {
+    "VersionManifest": {
+      "description": "Replay identity of a battle (ADR-003, ADR-007): the pinned engine commit, the format, and the hashes of the engine ruleset and of Areneon's own format rules.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "showdown_commit",
+        "format_id",
+        "regulation",
+        "ruleset_hash",
+        "format_rules_hash"
+      ],
+      "properties": {
+        "showdown_commit": {
+          "description": "The pinned engine commit.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "format_id": {
+          "type": "string",
+          "pattern": "^[a-z0-9]+$"
+        },
+        "regulation": {
+          "type": "string",
+          "minLength": 1
+        },
+        "ruleset_hash": {
+          "description": "SHA-256 of the canonical engine ruleset.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "format_rules_hash": {
+          "description": "SHA-256 of Areneon's format rules record (ADR-007).",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "Shard": {
+      "description": "One immutable, content-addressed shard file.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "object_key",
+        "file_sha256",
+        "bytes",
+        "logical_hash",
+        "rows",
+        "split",
+        "cell_ranges"
+      ],
+      "properties": {
+        "object_key": {
+          "description": "pub/v1/shards/ followed by the file's SHA-256.",
+          "type": "string",
+          "pattern": "^pub/v1/shards/[0-9a-f]{64}$"
+        },
+        "file_sha256": {
+          "description": "SHA-256 of the shard file's bytes.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "bytes": {
+          "description": "The file's size.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "logical_hash": {
+          "description": "SHA-256 of the JCS bytes of the sorted list of the shard's record hashes.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "rows": {
+          "description": "Rows in the shard.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "split": {
+          "description": "The split a team belongs to. Sealed teams live only in the isolated evaluation store and have no public split.",
+          "enum": [
+            "dev",
+            "validation",
+            "training"
+          ]
+        },
+        "cell_ranges": {
+          "description": "Each cell's contiguous rows in the shard, in stratum order; together they tile the shard.",
+          "type": "array",
+          "maxItems": 65536,
+          "items": {
+            "description": "One cell's rows.",
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "stratum",
+              "first_row",
+              "rows"
+            ],
+            "properties": {
+              "stratum": {
+                "description": "A merged label cell (stratum) id.",
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 65535
+              },
+              "first_row": {
+                "description": "The first row of the range.",
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "rows": {
+                "description": "Rows in the range.",
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 9007199254740991
+              }
+            }
+          },
+          "minItems": 1
+        }
+      }
+    }
+  }
+}

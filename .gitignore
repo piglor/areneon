@@ -13,3 +13,8 @@ coverage/
 .pytest_cache/
 dist/
 .local-server/
+# Binary team data and databases (ADR-013): published to object storage, never committed.
+*.duckdb
+*.duckdb.wal
+*.parquet
+*.age

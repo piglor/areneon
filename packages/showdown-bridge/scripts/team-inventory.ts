@@ -1,18 +1,43 @@
-// Owner-team feature inventory (#775). Run it yourself, so your teams never
-// enter a chat or a log:
+// Owner-team feature inventory (#775). Run it yourself, in an interactive
+// terminal, so your teams never enter a chat or a log:
 //   node packages/showdown-bridge/scripts/team-inventory.ts [--teams-dir DIR] [--format ID]
-// Reads private-data/teams/*.txt, writes private-data/reports/team-inventory.json,
-// and prints only counts and the report path.
+// Reads private-data/teams/*.txt through a PasteDirectorySource. Stdout gets
+// counts only; the detail goes to /dev/tty. It writes no file, and it refuses
+// unless stdin, stdout and stderr are terminals and no agent variable is set.
+import { closeSync, openSync, writeSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { loadEngine } from "../src/engine.ts";
-import { InventoryError, parseInventoryArgs, runInventory } from "../src/team-inventory.ts";
+import { PasteDirectorySource } from "../src/private-team-source.ts";
+import { InventoryError, parseInventoryArgs, runInventory, terminalRefusal, type InventoryTerminal } from "../src/team-inventory.ts";
 
 const repoRoot = fileURLToPath(new URL("../../../", import.meta.url));
 
+const terminal: InventoryTerminal = {
+  refusal: () =>
+    terminalRefusal(process.env, {
+      stdin: Boolean(process.stdin.isTTY),
+      stdout: Boolean(process.stdout.isTTY),
+      stderr: Boolean(process.stderr.isTTY),
+    }),
+  openDetail() {
+    let fd: number;
+    try {
+      fd = openSync("/dev/tty", "w");
+    } catch {
+      throw new InventoryError("refusing: no controlling terminal to show the detail on");
+    }
+    return { write: (text) => void writeSync(fd, text), close: () => closeSync(fd) };
+  },
+};
+
 try {
-  const options = parseInventoryArgs(process.argv.slice(2), process.env, `${repoRoot}private-data/teams`);
-  const { path, counts } = runInventory({ engine: loadEngine(), ...options });
-  console.log(JSON.stringify({ report: path, ...counts }));
+  const { teamsDir, formatId } = parseInventoryArgs(process.argv.slice(2), process.env, `${repoRoot}private-data/teams`);
+  const source = new PasteDirectorySource(teamsDir);
+  const summary = await runInventory(
+    { engine: loadEngine(), source, ...(formatId === undefined ? {} : { formatId }) },
+    terminal,
+  );
+  console.log(JSON.stringify({ ...summary.counts, gap_matches: summary.gap_matches }));
 } catch (error) {
   // Never print an engine or parser message: it can quote a team.
   console.error(error instanceof InventoryError ? error.message : `failed: ${error instanceof Error ? error.name : "error"}`);

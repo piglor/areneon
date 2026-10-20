@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from pathlib import Path
 
 import pytest
@@ -187,3 +188,119 @@ def test_allowlist_matches_the_repo() -> None:
             sealed.add(rel)
     assert sealed == set(guard.SEALED_MARKERS)
     assert all((root / marker).is_file() for marker in guard.SEALED_MARKERS)
+
+
+# ADR-013 §4, §8: the team system's records and manifests.
+ROOT = Path(__file__).resolve().parents[2]
+RECORD = {
+    "schema_version": 1,
+    "data_class": "synthetic",
+    "team_hash": "a" * 64,
+    "paste": "Garchomp\nAbility: Rough Skin\n",
+}
+DATASET = {
+    "data_class": "synthetic",
+    "dataset_id": "d1",
+    "generator": {"config_hash": "a" * 64},
+    "key": {"kind": "public", "generation_key": "b" * 64},
+    "splits": [],
+}
+SNAPSHOT = {"data_class": "synthetic", "snapshot_id": "s1", "shards": [], "cells": []}
+UNLABELLED_RECORD = guard.UNLABELLED_RECORD
+UNKNOWN_KEY_KIND = guard.UNKNOWN_KEY_KIND
+
+
+def without(document: Mapping[str, object], key: str) -> dict[str, object]:
+    return {k: v for k, v in document.items() if k != key}
+
+
+@pytest.mark.parametrize("document", [RECORD, DATASET, SNAPSHOT])
+@pytest.mark.parametrize("in_fixtures", [False, True])
+def test_labelled_team_records_and_manifests_pass_everywhere(
+    document: dict[str, object], in_fixtures: bool
+) -> None:
+    assert guard.problems_in(document, in_fixtures) == []
+
+
+@pytest.mark.parametrize("record", [RECORD, DATASET, SNAPSHOT])
+@pytest.mark.parametrize("in_fixtures", [False, True])
+def test_a_record_without_data_class_is_rejected_even_in_fixtures(
+    record: dict[str, object], in_fixtures: bool
+) -> None:
+    # Negative controls: remove the label, or set it to anything but "synthetic".
+    assert guard.problems_in(without(record, "data_class"), in_fixtures) == [UNLABELLED_RECORD]
+    assert guard.problems_in({**record, "data_class": "public"}, in_fixtures) == [UNLABELLED_RECORD]
+    assert guard.problems_in({**record, "data_class": None}, in_fixtures) == [UNLABELLED_RECORD]
+
+
+def test_the_label_must_sit_on_the_record_not_the_document_root() -> None:
+    assert guard.problems_in(
+        {"data_class": "synthetic", "teams": [without(RECORD, "data_class")]}, True
+    ) == [UNLABELLED_RECORD]
+
+
+def test_a_private_record_is_rejected_as_private() -> None:
+    assert guard.problems_in({**RECORD, "data_class": "private"}, False) == [
+        PRIVATE,
+        UNLABELLED_RECORD,
+    ]
+
+
+@pytest.mark.parametrize(
+    "key",
+    [
+        {"kind": "sealed", "generation_key": "b" * 64},
+        {"kind": "secret"},
+        {"kind": "Public"},
+        {"generation_key": "b" * 64},
+        "b" * 64,
+        None,
+        [],
+    ],
+)
+def test_a_dataset_manifest_key_must_be_a_public_key(key: object) -> None:
+    assert guard.problems_in({**DATASET, "key": key}, True) == [UNKNOWN_KEY_KIND]
+
+
+def test_a_dataset_manifest_without_a_key_is_not_a_manifest_but_a_schema_failure() -> None:
+    # The shape needs `key`; a manifest missing it is refused by its schema, and
+    # carries no key to leak. An unlabelled one is still not shaped like the others.
+    assert guard.problems_in(without(DATASET, "key"), True) == []
+
+
+def test_a_record_inside_a_jsonl_line_is_checked_per_line(repo: Path) -> None:
+    lines = [RECORD, without(RECORD, "data_class")]
+    path = write(
+        repo, "fixtures/teams/dev.jsonl", "".join(json.dumps(line) + "\n" for line in lines)
+    )
+    assert guard.violations([path]) == [f"{path}: {UNLABELLED_RECORD}"]
+
+
+def test_a_json_schema_describing_the_records_is_not_a_record() -> None:
+    properties = {"paste": {"type": "string"}, "team_hash": {"type": "string"}}
+    assert guard.problems_in({"properties": properties}, False) == []
+    assert (
+        guard.problems_in({"properties": {"shards": {}, "cells": {}, "snapshot_id": {}}}, False)
+        == []
+    )
+    schema: dict[str, object] = {
+        "properties": {"dataset_id": {}, "generator": {}, "key": {}, "splits": {}}
+    }
+    assert guard.problems_in(schema, False) == []
+
+
+@pytest.mark.parametrize(
+    "path", sorted((ROOT / "fixtures/contracts/v1").glob("team-*/valid/*.json"))
+)
+def test_the_valid_corpus_samples_pass(path: Path) -> None:
+    assert guard.violations([str(path)]) == []
+
+
+def test_every_team_record_in_the_corpus_is_labelled_synthetic() -> None:
+    labelled = 0
+    for path in (ROOT / "fixtures/contracts/v1").glob("team-*/*/*.json"):
+        for obj in guard._walk(json.loads(path.read_text(encoding="utf-8"))):
+            if guard._is_team_record(obj) or guard._is_snapshot_manifest(obj):
+                assert obj.get("data_class") == "synthetic" or "invalid" in path.parts[-2]
+                labelled += 1
+    assert labelled > 0
