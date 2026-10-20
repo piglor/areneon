@@ -3,29 +3,30 @@
 //   node packages/showdown-bridge/scripts/team-inventory.ts [--teams-dir DIR] [--format ID]
 // Reads private-data/teams/*.txt through a PasteDirectorySource. Stdout gets
 // counts only; the detail goes to /dev/tty. It writes no file, and it refuses
-// when stdout is not a terminal.
+// unless stdin, stdout and stderr are terminals and no agent variable is set.
 import { closeSync, openSync, writeSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { loadEngine } from "../src/engine.ts";
 import { PasteDirectorySource } from "../src/private-team-source.ts";
-import { InventoryError, parseInventoryArgs, runInventory, type InventoryTerminal } from "../src/team-inventory.ts";
+import { InventoryError, parseInventoryArgs, runInventory, terminalRefusal, type InventoryTerminal } from "../src/team-inventory.ts";
 
 const repoRoot = fileURLToPath(new URL("../../../", import.meta.url));
 
 const terminal: InventoryTerminal = {
-  stdoutIsTerminal: Boolean(process.stdout.isTTY),
-  writeDetail(text) {
+  refusal: () =>
+    terminalRefusal(process.env, {
+      stdin: Boolean(process.stdin.isTTY),
+      stdout: Boolean(process.stdout.isTTY),
+      stderr: Boolean(process.stderr.isTTY),
+    }),
+  openDetail() {
     let fd: number;
     try {
       fd = openSync("/dev/tty", "w");
     } catch {
       throw new InventoryError("refusing: no controlling terminal to show the detail on");
     }
-    try {
-      writeSync(fd, text);
-    } finally {
-      closeSync(fd);
-    }
+    return { write: (text) => void writeSync(fd, text), close: () => closeSync(fd) };
   },
 };
 

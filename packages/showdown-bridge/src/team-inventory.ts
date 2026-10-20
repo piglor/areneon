@@ -249,14 +249,38 @@ export function gapMatchCounts(report: InventoryReport): Record<string, number> 
   return counts;
 }
 
+/** A handle on the terminal device the private detail goes to. */
+export interface DetailSink {
+  write(text: string): void;
+  close(): void;
+}
+
 /**
- * Where the output may go. `stdoutIsTerminal` says whether stdout is a
- * terminal; `writeDetail` sends the private detail to the terminal device
- * (`/dev/tty`), never to stdout, stderr or a file.
+ * Where the output may go. `refusal` says why this is not an interactive
+ * terminal session (or null); `openDetail` opens the terminal device
+ * (`/dev/tty`) and throws if there is none. Detail never goes to stdout,
+ * stderr or a file.
  */
 export interface InventoryTerminal {
-  stdoutIsTerminal: boolean;
-  writeDetail(text: string): void;
+  refusal(): string | null;
+  openDetail(): DetailSink;
+}
+
+/**
+ * Why a run must be refused, or null (ADR-014 X6). Accident prevention, not a
+ * boundary: an agent that sets up a pty and clears its environment gets past it.
+ */
+export function terminalRefusal(
+  env: Record<string, string | undefined>,
+  isTerminal: { stdin: boolean; stdout: boolean; stderr: boolean },
+): string | null {
+  if (env["CLAUDECODE"] || env["AI_AGENT"]) {
+    return "refusing: an agent session is running this; use your own terminal";
+  }
+  if (!isTerminal.stdin || !isTerminal.stdout || !isTerminal.stderr) {
+    return "refusing: stdin, stdout and stderr must all be a terminal; run it in an interactive terminal";
+  }
+  return null;
 }
 
 export interface InventorySummary {
@@ -267,15 +291,19 @@ export interface InventorySummary {
 
 /**
  * Build the report, send its detail to the terminal and return counts only.
- * Refuses, before reading any team, unless stdout is a terminal. Writes no file.
+ * Refuses, and opens the terminal device, before reading any team. Writes no file.
  */
 export async function runInventory(run: InventoryRun, terminal: InventoryTerminal): Promise<InventorySummary> {
-  if (!terminal.stdoutIsTerminal) {
-    throw new InventoryError("refusing: stdout is not a terminal; run it in an interactive terminal");
+  const refusal = terminal.refusal();
+  if (refusal !== null) throw new InventoryError(refusal);
+  const sink = terminal.openDetail();
+  try {
+    const report = await buildReport(run);
+    sink.write(`${JSON.stringify(report, null, 2)}\n`);
+    return { counts: countReport(report), gap_matches: gapMatchCounts(report) };
+  } finally {
+    sink.close();
   }
-  const report = await buildReport(run);
-  terminal.writeDetail(`${JSON.stringify(report, null, 2)}\n`);
-  return { counts: countReport(report), gap_matches: gapMatchCounts(report) };
 }
 
 export const INVENTORY_USAGE =
