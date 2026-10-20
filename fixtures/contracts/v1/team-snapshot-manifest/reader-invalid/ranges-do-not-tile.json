@@ -1,0 +1,58 @@
+{
+  "schema_version": 1,
+  "data_class": "synthetic",
+  "snapshot_id": "golden-snapshot-1",
+  "dataset_hashes": [
+    "0a312e09287e531092b664b754e598a792642931b065b8fb6c149ca8cea6f7d1"
+  ],
+  "manifest": {
+    "showdown_commit": "7244fe8e28fa8bc4d0809ae30d183c608b62bb2b",
+    "format_id": "gen9championsvgc2026regmc",
+    "regulation": "M-C",
+    "ruleset_hash": "4dd1f039bbcc6156e08c434972beae2370dc5fe8c9c6a263da7383c3247b68f3",
+    "format_rules_hash": "549cd2aa97324be093c567324676d46a5eff19d6b0c9d8491c483dab746d5dcc"
+  },
+  "vocabulary_hash": "48ec35e67d0f1454476648871d0388e2764d8f36f2096dede1f7ec7a9c7a0c56",
+  "logical_snapshot_hash": "fd85250b72bd30ea31a28b1cd319a718f212095dfa6e7a000ab1fc5e0a8ba36f",
+  "shard_key": "5555555555555555555555555555555555555555555555555555555555555555",
+  "shards": [
+    {
+      "object_key": "pub/v1/shards/6666666666666666666666666666666666666666666666666666666666666666",
+      "file_sha256": "6666666666666666666666666666666666666666666666666666666666666666",
+      "bytes": 20480,
+      "logical_hash": "e3345a377cff1a64eb5bd76df5ef835618fbf5b349b0968e2189ff19bd89da92",
+      "rows": 5,
+      "split": "dev",
+      "cell_ranges": [
+        {
+          "stratum": 0,
+          "first_row": 0,
+          "rows": 3
+        },
+        {
+          "stratum": 7,
+          "first_row": 4,
+          "rows": 2
+        }
+      ]
+    }
+  ],
+  "cells": [
+    {
+      "split": "dev",
+      "stratum": 0,
+      "rows": 3
+    },
+    {
+      "split": "dev",
+      "stratum": 7,
+      "rows": 2
+    }
+  ],
+  "writer": {
+    "name": "duckdb",
+    "version": "1.5.6",
+    "binary_sha256": "7777777777777777777777777777777777777777777777777777777777777777"
+  },
+  "parquet_schema_version": 1
+}

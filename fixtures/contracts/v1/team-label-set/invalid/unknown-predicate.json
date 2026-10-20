@@ -1,0 +1,62 @@
+{
+  "schema_version": 1,
+  "label_set_id": "golden-labels",
+  "labels": [
+    {
+      "label_id": "speed_control",
+      "values": [
+        {
+          "value": "x",
+          "when": {
+            "kind": "has_type",
+            "types": [
+              "fire"
+            ]
+          }
+        }
+      ],
+      "default": "neither"
+    },
+    {
+      "label_id": "fake_out",
+      "values": [
+        {
+          "value": "yes",
+          "when": {
+            "kind": "has_move",
+            "moves": [
+              "fakeout"
+            ]
+          }
+        }
+      ],
+      "default": "no"
+    },
+    {
+      "label_id": "sun_setter",
+      "values": [
+        {
+          "value": "yes",
+          "when": {
+            "kind": "all_of",
+            "of": [
+              {
+                "kind": "has_ability",
+                "abilities": [
+                  "drought"
+                ]
+              },
+              {
+                "kind": "has_move",
+                "moves": [
+                  "sunnyday"
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "default": "no"
+    }
+  ]
+}

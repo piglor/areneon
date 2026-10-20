@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "config_id": "golden-config",
+  "iv": 31,
+  "stat_point_max_per_stat": 32,
+  "gender_policy": "unset",
+  "nickname_policy": "none",
+  "default_item_weight": 1,
+  "item_weights": [
+    {
+      "item": "abomasite",
+      "weight": 3
+    },
+    {
+      "item": "absolite",
+      "weight": 5
+    }
+  ],
+  "d_max": 4000000,
+  "pilot_draws": 39999,
+  "pilot_min_hits": 20,
+  "n_stratum_min": 2,
+  "fill_quantile_permille": 990,
+  "sealed_margin_permille": 200,
+  "range_draws_log2": 20,
+  "range_margin_permille": 100,
+  "shard_rows_log2": 18,
+  "two_platform_bound": 1000000,
+  "sampled_ranges": 16
+}

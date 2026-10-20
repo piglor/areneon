@@ -44,11 +44,13 @@ contracts-update:
 
 guards: team-guard licences
 
-# Team guards: PokePaste text outside fixtures/, and JSON that is or may be
-# private team or game data (ADR-008 data_class).
+# Team guards: PokePaste text outside fixtures/, JSON that is or may be
+# private team or game data (ADR-008 data_class), and committed binary data
+# files (Parquet, DuckDB, age; ADR-013).
 team-guard:
 	git ls-files -z | xargs -0 uv run --no-project python scripts/check_no_pokepaste.py
 	git ls-files -z | xargs -0 uv run --no-project python scripts/check_data_class.py
+	git ls-files -z | xargs -0 uv run --no-project python scripts/check_binary_files.py
 
 licences:
 	pnpm -r licenses list --prod --json | uv run --no-project python scripts/check_licenses.py

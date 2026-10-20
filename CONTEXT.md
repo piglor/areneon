@@ -38,6 +38,16 @@ A shared language for humans and agents working on Areneon. Use these terms exac
 | **Headless runtime (A1)** | In-process sim BattleStream for training, evaluation and fixtures. |
 | **Bot client runtime (A2)** | The bot as a player on a local Showdown server, for local human sparring. |
 
+## Team system
+
+| Term | Meaning |
+|---|---|
+| **Team vocabulary** | What the team generator may draw from, read from the pinned engine for one format: the roster the validator accepts, each species' abilities and move pool, natures, unbanned items and the rule-table values. Hashed (`vocabulary_hash`). Builds on the engine-data table (ADR-013). |
+| **TeamRecord** | One public synthetic team: PokePaste in the engine's canonical form, its hashes, origin and labels. `data_class` is always `synthetic`. |
+| **`team_hash` / `canonical_team_hash`** | SHA-256 of the JCS bytes of the sets in paste order / sorted by species id (ties by the set's JCS bytes). The canonical hash is the same for every ordering of one team and is the identity for the no-overlap rules. |
+| **TeamLabelSet** | Team labels as data: leaf predicates over engine ids, hashed into every record and manifest. |
+| **Team snapshot** | A published set of immutable shards with a `TeamSnapshotManifest`. `logical_snapshot_hash` is independent of the file writer; the snapshot hash identifies one physical publication. |
+
 ## Observations and decisions
 
 | Term | Meaning |

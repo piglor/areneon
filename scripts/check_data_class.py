@@ -28,6 +28,17 @@ PokePaste guard does not see JSON teams, so this guard rejects a committed
   inspected. A marker added by another PR means rebasing onto this constant
   (the pinning test fails until it is edited).
 
+- holds a team record or manifest of the team system (ADR-013 §4, §8)
+  without ``"data_class": "synthetic"`` on the object itself, wherever it
+  is, ``fixtures/`` included. A TeamRecord is an object with a string
+  ``paste`` and ``team_hash``; a TeamDatasetManifest has ``dataset_id``,
+  ``generator``, ``key`` and ``splits``; a TeamSnapshotManifest has
+  ``snapshot_id``, ``shards`` and ``cells``; or
+- holds a TeamDatasetManifest whose ``key`` is not ``{"kind": "public", ...}``.
+  Only a public generation key may be committed; a sealed set's key lives in
+  the isolated evaluation store, so any other key kind, and a missing key, is
+  rejected.
+
 A file that is not valid JSON is rejected too, so JSON with comments or
 trailing commas (JSONC) cannot be committed: the guard cannot vouch for
 what it cannot read. Accepted residual risks: an unlabelled team inside
@@ -56,6 +67,10 @@ TEAM_SHAPES = (
 PRIVATE = 'has "data_class": "private"'
 SEALED = 'holds a sealed evaluation Episode ("kind": "evaluation", "sealed": true)'
 UNLABELLED_TEAM = 'holds a team without "data_class": "synthetic" at its root'
+UNLABELLED_RECORD = (
+    'holds a team record or manifest without "data_class": "synthetic" on the object itself'
+)
+UNKNOWN_KEY_KIND = 'holds a team dataset manifest whose key is not of kind "public"'
 
 
 def _walk(value: object) -> Iterator[dict[str, object]]:
@@ -72,6 +87,32 @@ def _is_team(obj: dict[str, object]) -> bool:
     # Real team data lists its moves; a JSON Schema's `properties` with the
     # same keys holds a subschema there instead.
     return isinstance(obj.get("moves"), list) and any(obj.keys() >= shape for shape in TEAM_SHAPES)
+
+
+def _is_str(obj: dict[str, object], *keys: str) -> bool:
+    return all(isinstance(obj.get(key), str) for key in keys)
+
+
+def _is_team_record(obj: dict[str, object]) -> bool:
+    # A JSON Schema's `properties` has the same keys but subschemas, not strings.
+    return _is_str(obj, "paste", "team_hash")
+
+
+def _is_dataset_manifest(obj: dict[str, object]) -> bool:
+    return (
+        _is_str(obj, "dataset_id")
+        and isinstance(obj.get("generator"), dict)
+        and "key" in obj
+        and isinstance(obj.get("splits"), list)
+    )
+
+
+def _is_snapshot_manifest(obj: dict[str, object]) -> bool:
+    return (
+        _is_str(obj, "snapshot_id")
+        and isinstance(obj.get("shards"), list)
+        and isinstance(obj.get("cells"), list)
+    )
 
 
 def _is_sealed(obj: dict[str, object]) -> bool:
@@ -100,6 +141,19 @@ def problems_in(document: object, in_fixtures: bool, sealed_marker_ok: bool = Fa
         )
         if not synthetic_marker:
             found.append(SEALED)
+    records = [
+        obj
+        for obj in objects
+        if _is_team_record(obj) or _is_dataset_manifest(obj) or _is_snapshot_manifest(obj)
+    ]
+    if any(obj.get("data_class") != "synthetic" for obj in records):
+        found.append(UNLABELLED_RECORD)
+    for obj in objects:
+        key = obj.get("key")
+        if _is_dataset_manifest(obj) and not (
+            isinstance(key, dict) and key.get("kind") == "public"
+        ):
+            found.append(UNKNOWN_KEY_KIND)
     synthetic_root = isinstance(document, dict) and document.get("data_class") == "synthetic"
     has_team = any(_is_team(obj) for obj in objects)
     if not in_fixtures and not synthetic_root and has_team:

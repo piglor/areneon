@@ -1,0 +1,11 @@
+{
+  "vocabulary_hash": "5fdd31126208dbb46948ddaca14dfc9c28b70c14b147318fc6ba74e50843cab2",
+  "engine_data_hash": "6f3d19f02b0e8464d813f4bbdced99c6f88140099818f5f225776ac43fa5590e",
+  "showdown_commit": "7244fe8e28fa8bc4d0809ae30d183c608b62bb2b",
+  "counts": {
+    "roster": 382,
+    "natures": 25,
+    "items": 166,
+    "pool_moves": 23176
+  }
+}
