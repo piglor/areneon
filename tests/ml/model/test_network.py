@@ -10,6 +10,7 @@ from typing import Any
 
 import pytest
 import torch
+from areneon_ml.learner.trainer import to_device
 from areneon_ml.model.batch import collate
 from areneon_ml.model.network import (
     ConfigError,
@@ -263,3 +264,13 @@ def test_model_config_round_trips_and_is_strict() -> None:
         replace(config, n_layers=0)
     with pytest.raises(ConfigError, match="d_model must be at least 1 and at most"):
         replace(config, d_model=1 << 40)
+
+
+@pytest.mark.parametrize("role", ["battle", "preview"])
+def test_a_forward_pass_builds_every_tensor_on_the_batch_device(role: str) -> None:
+    """A GPU learner moves the network and batch; a CPU-only constant would fail on `meta` here."""
+    meta = torch.device("meta")
+    net = init_network(role, game(), TINY_MODEL, 1).to(meta)
+    out = net(to_device(collate([query(role)]), meta))
+    assert out.logits.device == meta
+    assert out.value.device == meta

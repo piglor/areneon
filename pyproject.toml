@@ -25,6 +25,8 @@ package = false
 
 [tool.uv.workspace]
 members = ["packages/schema/python", "ml"]
+# The GPU training environment is its own uv project with its own lock (ADR-010 §5.2, C-1).
+exclude = ["ml/gpu-env"]
 
 [tool.uv.sources]
 areneon-contracts = { workspace = true }

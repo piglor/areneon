@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 import math
+import os
 import random
 from functools import cache
 from typing import Any
@@ -213,7 +214,13 @@ def test_a_cuda_config_is_refused_where_there_is_no_device(monkeypatch: pytest.M
     with pytest.raises(LearnerError, match="no usable CUDA device"):
         configure_learner(cuda)
     monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+    monkeypatch.setenv("CUBLAS_WORKSPACE_CONFIG", "x")
+    monkeypatch.delenv("CUBLAS_WORKSPACE_CONFIG")
     assert configure_learner(cuda) == torch.device("cuda")
+    assert os.environ["CUBLAS_WORKSPACE_CONFIG"] == ":4096:8"
+    monkeypatch.setenv("CUBLAS_WORKSPACE_CONFIG", ":16:8")  # an operator's own setting is kept
+    configure_learner(cuda)
+    assert os.environ["CUBLAS_WORKSPACE_CONFIG"] == ":16:8"
     torch.use_deterministic_algorithms(True)
 
 
