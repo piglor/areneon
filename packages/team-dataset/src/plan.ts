@@ -15,7 +15,8 @@
 //   - the draws it is expected to need, quota * pilot_draws / pilot_hits, are
 //     at most `d_max` (the cost rule),
 // where its quota is the sum over splits of max(n_stratum_min, the split's
-// size times the group's share of the pilot).
+// size times the group's share of the accepted pilot draws). The floors can
+// push a split above its requested size (the coverage report lists both).
 //
 // The merge runs from the base cells up. Every unaffordable group is replaced
 // by the group one level up, which takes in all the cells under it, affordable
@@ -99,8 +100,12 @@ export function planQuotas(p: PlanParameters): QuotaPlan {
   p.cellHits.forEach((h, c) => (prefix[c + 1] = (prefix[c] as number) + h));
   const hitsIn = (first: number, count: number): number => (prefix[first + count] as number) - (prefix[first] as number);
 
+  // A split's share of a group is its share of the ACCEPTED pilot draws: the rejected ones (about 7 percent) belong to no cell, and
+  // dividing by all pilot draws would deliver only the accepted fraction of the requested size. The cost rule below still uses the
+  // rate per draw of the stream (hits / pilot_draws), because a draw that is rejected is a draw spent.
+  if (total === 0) throw new PlanError("the pilot accepted no draw");
   const quotasOf = (hits: number): Partial<Record<Split, number>> =>
-    Object.fromEntries(splits.map((s) => [s, Math.max(p.nStratumMin, scaled(p.sizes[s] as number, hits, p.pilotDraws))]));
+    Object.fromEntries(splits.map((s) => [s, Math.max(p.nStratumMin, scaled(p.sizes[s] as number, hits, total))]));
   const affordable = (hits: number, quotas: Partial<Record<Split, number>>): boolean => {
     if (hits < p.pilotMinHits) return false;
     const bin = Object.values(quotas).reduce((a, b) => a + (b as number), 0);

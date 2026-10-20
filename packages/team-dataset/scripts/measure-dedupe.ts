@@ -1,3 +1,4 @@
+// A MEASUREMENT SCRIPT, not part of the tests or CI: it takes minutes at 10^7 hashes. The index it measures is covered by test/dedupe.test.ts.
 // Measure the memory of the dedupe index (ADR-013 section 2, "Not verified":
 // the prefix-set estimate). For each size it builds the index over that many
 // random 256-bit hashes (the sorted 64-bit prefix array and the exact stage

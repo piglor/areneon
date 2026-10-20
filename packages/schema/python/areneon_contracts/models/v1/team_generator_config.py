@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, StrictInt, StrictStr
+from pydantic import MISSING, BaseModel, ConfigDict, Field, StrictInt, StrictStr
 
 
 class ItemWeight(BaseModel):
@@ -50,6 +50,10 @@ class TeamGeneratorConfig(BaseModel):
     stat_point_max_per_stat: Annotated[StrictInt, Field(ge=1, le=252)]
     """
     The most Stat Points a draw puts into one stat.
+    """
+    moves_per_set: Annotated[StrictInt | MISSING, Field(ge=1, le=16)] = MISSING
+    """
+    The most moves a draw gives a set. The proposal needs it (the generator refuses a config without it); the validator judges the result, so a wrong value only raises the rejection rate. Optional in the contract so that configs written before it still read.
     """
     gender_policy: Literal["unset", "random"]
     """

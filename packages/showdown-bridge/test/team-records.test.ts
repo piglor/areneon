@@ -202,7 +202,7 @@ describe("readTeamDatasetManifest and readTeamSnapshotManifest", () => {
     expect(() => readTeamDatasetManifest({ ...tied, pilot_draws: 50_000 }, { config })).toThrow(/pilot_draws 50000 differs/);
     expect(() => readTeamDatasetManifest(foreign, { config })).toThrow(/config_hash is not the hash/);
     expect(() => readTeamDatasetManifest(foreign, { labelSet })).toThrow(/label_set_hash is not the hash/);
-    const outside = { ...tied, merged_cells: [{ stratum: 7, cells: [7, 12] }] };
+    const outside = { ...tied, merged_cells: [{ stratum: 0, cells: [0, 12] }] };
     expect(() => readTeamDatasetManifest(outside, { labelSet })).toThrow(/cell 12 is outside the label set's 12 cells/);
   });
 

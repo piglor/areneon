@@ -111,6 +111,13 @@ describe("the proposal refuses a vocabulary or config it cannot draw from", () =
   it("refuses a roster smaller than a team", () => {
     expect(() => new Proposal({ ...vocabulary, roster: vocabulary.roster.slice(0, 3) as never }, table, small())).toThrow(/smaller than a team/);
   });
+  it("refuses a config without moves_per_set, and gives a set no more moves than it says", () => {
+    const { moves_per_set: _omitted, ...without } = small();
+    expect(() => new Proposal(vocabulary, table, without as TeamGeneratorConfig)).toThrow(/no moves_per_set/);
+    const two = propose(small({ moves_per_set: 2 }), 3);
+    expect(two.every((s) => s.moves.length <= 2)).toBe(true);
+    expect(propose(small({ moves_per_set: 4 }), 3).some((s) => s.moves.length > 2)).toBe(true);
+  });
   it("refuses no natures", () => {
     expect(() => new Proposal({ ...vocabulary, natures: [] }, table, small())).toThrow(/no nature/);
   });

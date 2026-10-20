@@ -18,6 +18,10 @@ export interface TeamGeneratorConfig {
    */
   stat_point_max_per_stat: number;
   /**
+   * The most moves a draw gives a set. The proposal needs it (the generator refuses a config without it); the validator judges the result, so a wrong value only raises the rejection rate. Optional in the contract so that configs written before it still read.
+   */
+  moves_per_set?: number;
+  /**
    * unset leaves gender to the engine; random draws it.
    */
   gender_policy: "unset" | "random";

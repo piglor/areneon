@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { readTeamVocabulary, type TeamLabelSet } from "@areneon/showdown-bridge";
 import { afterAll, describe, expect, it } from "vitest";
 import { checkTeamConfigs, labelProblems, TEAMS_CONFIG_DIR } from "../src/check-labels.ts";
-import { CONFIG_DIR, engine, FORMAT, labelSet, table, VOCABULARY_FILE, vocabulary } from "./support.ts";
+import { CONFIG_DIR, config, engine, FORMAT, labelSet, table, VOCABULARY_FILE, vocabulary } from "./support.ts";
 
 const scratch = mkdtempSync(join(tmpdir(), "check-labels-"));
 afterAll(() => rmSync(scratch, { recursive: true, force: true }));
@@ -54,5 +54,17 @@ describe("check-team-labels (ADR-013 section 3)", () => {
     expect(checkTeamConfigs(engine, root, golden)).toContain(`${FORMAT}/generator.json is missing`);
     cpSync(join(CONFIG_DIR, "labels.json"), join(dir, "labels.json"));
     expect(checkTeamConfigs(engine, root, golden)).toEqual([`${FORMAT}/generator.json is missing`]);
+  });
+});
+
+describe("the Mega Stones of the committed data (a pin bump that adds a stone fails here)", () => {
+  const stones = [...new Set(vocabulary.roster.flatMap((r) => (r.required_item === undefined ? [] : [r.required_item])))].sort();
+
+  it("are exactly the items the roster's Mega formes require, in the label and in the zero item weights", () => {
+    const megaLabel = labelSet.labels.find((l) => l.label_id === "mega_stone") as TeamLabelSet["labels"][number];
+    const when = (megaLabel.values[0] as { when: { kind: string; items: string[] } }).when;
+    expect(when.kind).toBe("has_item");
+    expect(when.items).toEqual(stones);
+    expect(config.item_weights.filter((w) => w.weight === 0).map((w) => w.item)).toEqual(stones);
   });
 });

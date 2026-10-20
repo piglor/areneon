@@ -242,6 +242,9 @@ export function readTeamDatasetManifest(value: unknown, context: DatasetManifest
       const merged = owner.get(cell.stratum);
       if (merged !== undefined && merged !== cell.stratum) bad(`split ${plan.split}: cell ${cell.stratum} is a member of merged stratum ${merged}`);
     });
+    for (const stratum of new Set(owner.values())) {
+      if (!plan.cells.some((c) => c.stratum === stratum)) bad(`split ${plan.split}: merged stratum ${stratum} has no cell`);
+    }
     const total = plan.cells.reduce((sum, c) => sum + c.quota, 0);
     if (total !== plan.teams) bad(`split ${plan.split}: teams ${plan.teams} is not the sum of its quotas ${total}`);
   }

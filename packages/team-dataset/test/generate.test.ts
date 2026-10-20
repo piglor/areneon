@@ -129,6 +129,11 @@ describe("a generated dataset (ADR-013 section 2)", () => {
     expect(coverage.labels.map((l) => l.label_id)).toEqual(labelSet.labels.map((l) => l.label_id));
     expect(coverage.strata.map((s) => s.stratum)).toEqual(run.plan.strata.map((s) => s.stratum));
     expect(coverage.splits.map((s) => s.split)).toEqual(["dev", "validation", "training"]);
+    // requested versus delivered: the n_stratum_min floors lift the small splits above the request
+    expect(coverage.splits.map((s) => s.requested)).toEqual([2, 2, 5]);
+    for (const s of coverage.splits) expect(s.teams).toBeGreaterThanOrEqual(s.requested);
+    expect(coverage.replan).toBe(0);
+    for (const s of coverage.splits) expect(coverage.cells.reduce((n, c) => n + (c.held[s.split] ?? 0), 0)).toBe(s.teams);
     expect(coverage.stream.accepted).toBeGreaterThan(coverage.stream.draws * 0.8);
     expect(coverage.provisioning.provisioned_draws).toBeGreaterThanOrEqual(coverage.provisioning.planned_draws);
     expect(coverage.dedupe).toMatchObject({ reference_hashes: 0, prefix_bytes: 0, exact_checks: 0 });
@@ -236,6 +241,7 @@ describe("a shortfall re-plans with one more merge under a fresh plan id (ADR-01
     expect(result.planId).toBe(`test-plan-1-r${result.attempts.length - 1}`);
     expect(result.datasetId).toBe(`test-1-r${result.attempts.length - 1}`);
     expect(result.manifest.plan_id).toBe(result.planId);
+    expect(result.coverage.replan).toBe(result.attempts.length - 1);
     expect(readdirSync(dir)).toContain("rejections.attempt-0.jsonl");
     for (const record of Object.values(result.records).flat()) expect((record as TeamRecord).origin.dataset_id).toBe(result.datasetId);
   });

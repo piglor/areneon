@@ -60,11 +60,13 @@ describe("fill-time quantiles (range provisioning)", () => {
 describe("provision", () => {
   it("takes the largest stratum quantile, adds the margin and counts whole ranges", () => {
     const plan = planQuotas({ cellHits: [30_000, 9_000, 1_000], radices: [3], pilotDraws: 40_000, pilotMinHits: 5, dMax: 4_000_000, nStratumMin: 2, sizes: { dev: 3000 } });
-    const result = provision(plan, { pilotDraws: 40_000, fillQuantilePermille: 990, rangeMarginPermille: 100, rangeDrawsLog2: 10 });
+    const result = provision(plan, { pilotDraws: 40_000, fillQuantilePermille: 990, rangeMarginPermille: 100, rangeDrawsLog2: 10, dMax: 4_000_000 });
     const rarest = plan.strata[2] as { total: number; pilot_hits: number };
     expect(result.planned_draws).toBe(fillQuantile(rarest.total, rarest.pilot_hits, 40_000, 990));
     expect(result.provisioned_draws).toBe(Math.ceil(result.planned_draws * 1.1));
     expect(result.range_draws).toBe(1024);
+    expect(result.exceeds_d_max).toBe(false);
+    expect(provision(plan, { pilotDraws: 40_000, fillQuantilePermille: 990, rangeMarginPermille: 100, rangeDrawsLog2: 10, dMax: 100 }).exceeds_d_max).toBe(true);
     expect(result.ranges).toBe(Math.ceil(result.provisioned_draws / 1024));
   });
 });

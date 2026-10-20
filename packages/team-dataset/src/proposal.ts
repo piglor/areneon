@@ -12,7 +12,7 @@
 //   2. a species that must hold an item (a Mega forme) holds it;
 //   3. every other member draws an item by weight among the items the Item
 //      Clause still allows;
-//   4. each member draws an ability, up to four distinct moves from its pool
+//   4. each member draws an ability, up to `moves_per_set` distinct moves from its pool
 //      and a nature, all uniformly;
 //   5. Stat Points: until the total is spent, pick a stat that still has room
 //      and give it a uniform amount from one up to what room and total allow.
@@ -25,7 +25,6 @@ export class ProposalError extends Error {
 }
 
 const STATS = ["hp", "atk", "def", "spa", "spd", "spe"] as const;
-const MOVES_PER_SET = 4;
 
 type RosterEntry = TeamVocabulary["roster"][number];
 
@@ -35,6 +34,7 @@ export class Proposal {
   readonly #names: { species: Map<string, string>; moves: Map<string, string>; items: Map<string, string>; abilities: Map<string, string> };
   readonly #weights: number[];
   readonly #teamSize: number;
+  readonly #movesPerSet: number;
 
   constructor(vocabulary: TeamVocabulary, table: EngineData, config: TeamGeneratorConfig) {
     this.#vocabulary = vocabulary;
@@ -43,6 +43,8 @@ export class Proposal {
     this.#names = { species: names(table.species), moves: names(table.moves), items: names(table.items), abilities: names(table.abilities) };
     const { rules } = vocabulary;
     this.#teamSize = rules.max_team_size;
+    if (config.moves_per_set === undefined) throw new ProposalError("the generator config has no moves_per_set");
+    this.#movesPerSet = config.moves_per_set;
     if (vocabulary.roster.length < this.#teamSize) throw new ProposalError("the roster is smaller than a team");
     if (vocabulary.natures.length === 0) throw new ProposalError("the vocabulary lists no nature");
     if (config.stat_point_max_per_stat * STATS.length < rules.ev_limit) {
@@ -95,7 +97,7 @@ export class Proposal {
     const { natures, rules } = this.#vocabulary;
     const ability = entry.abilities[rng.below(entry.abilities.length)] as string;
     const pool = [...entry.moves];
-    const count = Math.min(MOVES_PER_SET, pool.length);
+    const count = Math.min(this.#movesPerSet, pool.length);
     for (let k = 0; k < count; k++) {
       const swap = k + rng.below(pool.length - k);
       [pool[k], pool[swap]] = [pool[swap] as string, pool[k] as string];

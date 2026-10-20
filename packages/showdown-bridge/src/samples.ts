@@ -416,7 +416,10 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "team-label-set/golden": labelSet,
     "team-generator-config/golden": generatorConfig,
     "team-dataset-manifest/golden": datasetManifest,
-    "team-dataset-manifest/merged": datasetWith((d) => (d.merged_cells = [{ stratum: 7, cells: [7, 9] }])),
+    "team-dataset-manifest/merged": datasetWith((d) => {
+      d.merged_cells = [{ stratum: 7, cells: [7, 9] }];
+      d.splits = [datasetManifest.splits[0], { split: "validation", teams: 3, cells: [{ stratum: 0, pilot_hits: 21_000, quota: 2 }, { stratum: 7, pilot_hits: 40, quota: 1 }] }];
+    }),
     "team-snapshot-manifest/first": snapshot,
     "team-snapshot-manifest/extended": extendedSnapshot,
     "training-run-config/tiny": runConfig,
@@ -527,6 +530,7 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "team-dataset-manifest/splits-out-of-order": datasetWith((d) => (d.splits = [...datasetManifest.splits].reverse())),
     "team-dataset-manifest/stratum-not-lowest-member": datasetWith((d) => (d.merged_cells = [{ stratum: 7, cells: [8, 9] }])),
     "team-dataset-manifest/split-cell-is-a-member": datasetWith((d) => (d.merged_cells = [{ stratum: 0, cells: [0, 7] }])),
+    "team-dataset-manifest/merged-stratum-missing": datasetWith((d) => (d.merged_cells = [{ stratum: 3, cells: [3, 5] }])),
     "team-dataset-manifest/teams-not-quota-sum": datasetWith((d) => (d.splits = [{ ...datasetManifest.splits[0], teams: 6 }, datasetManifest.splits[1]])),
     "team-dataset-manifest/unsorted-cells": datasetWith((d) => (d.splits = [{ ...datasetManifest.splits[0], cells: [...(datasetManifest.splits[0] as { cells: unknown[] }).cells].reverse() }, datasetManifest.splits[1]])),
     "team-snapshot-manifest/unsorted-dataset-hashes": snapshotWith((s) => (s.dataset_hashes = [hexOf("b"), hexOf("a")])),

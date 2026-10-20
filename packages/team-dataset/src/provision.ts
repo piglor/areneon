@@ -88,6 +88,8 @@ export interface Provision {
   /** Whole ranges of `range_draws` draws that cover `provisioned_draws`. */
   ranges: number;
   range_draws: number;
+  /** The plan was made on mean fill times (the cost rule) but the stream stops at d_max: when the high quantile is beyond it, a bin can fall short and trigger a re-plan. */
+  exceeds_d_max: boolean;
 }
 
 export interface ProvisionParameters {
@@ -95,11 +97,12 @@ export interface ProvisionParameters {
   fillQuantilePermille: number;
   rangeMarginPermille: number;
   rangeDrawsLog2: number;
+  dMax: number;
 }
 
 export function provision(plan: QuotaPlan, p: ProvisionParameters): Provision {
   const planned = plan.strata.reduce((most, s) => Math.max(most, fillQuantile(s.total, s.pilot_hits, p.pilotDraws, p.fillQuantilePermille)), 0);
   const withMargin = Math.ceil((planned * (1000 + p.rangeMarginPermille)) / 1000);
   const rangeDraws = 2 ** p.rangeDrawsLog2;
-  return { planned_draws: planned, provisioned_draws: withMargin, ranges: Math.ceil(withMargin / rangeDraws), range_draws: rangeDraws };
+  return { planned_draws: planned, provisioned_draws: withMargin, ranges: Math.ceil(withMargin / rangeDraws), range_draws: rangeDraws, exceeds_d_max: planned > p.dMax };
 }

@@ -100,6 +100,7 @@ describe("the shared contract sample corpus (ADR-008 §2)", () => {
       "v1/policy-query/reader-invalid/identity-differs.json",
       "v1/sealed-set-commitment/reader-invalid/strata-sum-mismatch.json",
       "v1/sealed-set-commitment/reader-invalid/unsorted-strata.json",
+      "v1/team-dataset-manifest/reader-invalid/merged-stratum-missing.json",
       "v1/team-dataset-manifest/reader-invalid/split-cell-is-a-member.json",
       "v1/team-dataset-manifest/reader-invalid/splits-out-of-order.json",
       "v1/team-dataset-manifest/reader-invalid/stratum-not-lowest-member.json",
@@ -306,6 +307,7 @@ describe("the shared contract sample corpus (ADR-008 §2)", () => {
 
     it.each([
       ["splits-out-of-order", /splits are repeated or not in the order/],
+      ["merged-stratum-missing", /merged stratum 3 has no cell/],
       ["stratum-not-lowest-member", /is not its lowest member/],
       ["split-cell-is-a-member", /is a member of merged stratum 0/],
       ["teams-not-quota-sum", /is not the sum of its quotas/],

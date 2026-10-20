@@ -42,12 +42,17 @@
     },
     {
       "split": "validation",
-      "teams": 2,
+      "teams": 3,
       "cells": [
         {
           "stratum": 0,
           "pilot_hits": 21000,
           "quota": 2
+        },
+        {
+          "stratum": 7,
+          "pilot_hits": 40,
+          "quota": 1
         }
       ]
     }

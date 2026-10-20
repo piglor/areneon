@@ -37,7 +37,7 @@ import {
 import { Binner } from "./binner.ts";
 import type { KnownHashes } from "./dedupe.ts";
 import { Drawer } from "./draw.ts";
-import { cellCount, cellLabels, labelTeam, radices } from "./labeller.ts";
+import { cellCount, cellLabels, cellOf, labelTeam, radices } from "./labeller.ts";
 import { type Pilot, runPilot } from "./pilot.ts";
 import { groupKey, manifestPlan, planQuotas, type QuotaPlan, type Split, type SplitSizes } from "./plan.ts";
 import { Proposal } from "./proposal.ts";
@@ -111,11 +111,14 @@ export interface CoverageReport {
   vocabulary_hash: string;
   labels: { label_id: string; values: string[] }[];
   pilot: { draws: number; rejected: number };
-  /** Every base cell: its label values (in the label set's order), pilot hits and stratum. */
-  cells: { cell: number; values: string[]; pilot_hits: number; stratum: number }[];
+  /** Every base cell: its label values (in the label set's order), pilot hits, stratum and the teams it holds in each split (inside a merged stratum the cells share the quota, so these show how it was spread). */
+  cells: { cell: number; values: string[]; pilot_hits: number; stratum: number; held: Partial<Record<Split, number>> }[];
   /** Every stratum after the merge, with the teams it holds in each split (its quotas, as every bin is full). */
   strata: { stratum: number; level: number; cells: number; pilot_hits: number; quotas: Partial<Record<Split, number>> }[];
-  splits: { split: Split; teams: number }[];
+  /** Requested and delivered teams per split: the quotas are proportional with a floor of n_stratum_min per stratum, so a split can hold more than was asked. */
+  splits: { split: Split; requested: number; teams: number }[];
+  /** 0 for the first plan; n for the n-th re-plan after a shortfall. */
+  replan: number;
   stream: { draws: number; accepted: number; rejections: number; duplicates: number; overflows: number };
   provisioning: Provision;
   attempts: Attempt[];
@@ -213,6 +216,13 @@ export function generate(input: GenerateInput): GenerateResult {
       },
       { config, labelSet },
     );
+    const held = new Map<string, number>();
+    for (const split of plan.splits) {
+      for (const r of records[split] as TeamRecord[]) {
+        const key = `${split}:${cellOf(labelSet, r.labels)}`;
+        held.set(key, (held.get(key) ?? 0) + 1);
+      }
+    }
     const coverage: CoverageReport = {
       dataset_id: datasetId,
       plan_id: planId,
@@ -226,6 +236,7 @@ export function generate(input: GenerateInput): GenerateResult {
         values: cellLabels(labelSet, cell).map((l) => l.value),
         pilot_hits: pilot.cell_hits[cell] as number,
         stratum: plan.stratumOf[cell] as number,
+        held: Object.fromEntries(plan.splits.map((split) => [split, (held.get(`${split}:${cell}`) ?? 0)])),
       })),
       strata: plan.strata.map((s) => ({
         stratum: s.stratum,
@@ -234,13 +245,15 @@ export function generate(input: GenerateInput): GenerateResult {
         pilot_hits: s.pilot_hits,
         quotas: s.quotas,
       })),
-      splits: plan.splits.map((split) => ({ split, teams: (records[split] as TeamRecord[]).length })),
+      splits: plan.splits.map((split) => ({ split, requested: input.sizes[split] as number, teams: (records[split] as TeamRecord[]).length })),
+      replan: attempt,
       stream: { draws, accepted, rejections: summary.rejections, duplicates: summary.duplicates, overflows: summary.overflows },
       provisioning: provision(plan, {
         pilotDraws: pilot.draws,
         fillQuantilePermille: config.fill_quantile_permille,
         rangeMarginPermille: config.range_margin_permille,
         rangeDrawsLog2: config.range_draws_log2,
+        dMax: config.d_max,
       }),
       attempts,
       dedupe: {

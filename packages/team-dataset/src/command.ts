@@ -38,7 +38,7 @@ import {
 import { recordHashes, writeDataset } from "./dataset-io.ts";
 import { FileStage, KnownHashes, referencePoolHash, sortedUnique } from "./dedupe.ts";
 import { Drawer } from "./draw.ts";
-import { generate, type ReferencePool } from "./generate.ts";
+import { type CoverageReport, generate, type ReferencePool } from "./generate.ts";
 import { type Pilot, readPilot, runPilot } from "./pilot.ts";
 import { SPLITS, type SplitSizes } from "./plan.ts";
 import { Proposal } from "./proposal.ts";
@@ -90,6 +90,16 @@ function count(text: string | undefined, name: string): number | undefined {
   if (text === undefined) return undefined;
   if (!/^[0-9]+$/.test(text) || !Number.isSafeInteger(Number(text))) throw new UsageError(`--${name} must be a whole number`);
   return Number(text);
+}
+
+/** What the operator should know about a finished run, one line each. */
+export function notices(coverage: Pick<CoverageReport, "provisioning" | "replan" | "splits">, dMax: number): string[] {
+  const lines: string[] = [];
+  const { provisioning } = coverage;
+  if (provisioning.exceeds_d_max) lines.push(`warning: the ${provisioning.planned_draws}-draw fill quantile is beyond d_max ${dMax}; a bin may fall short and re-plan`);
+  if (coverage.replan > 0) lines.push(`re-planned ${coverage.replan} time(s) after a shortfall: see coverage.json`);
+  for (const s of coverage.splits) if (s.teams !== s.requested) lines.push(`${s.split}: ${s.requested} requested, ${s.teams} delivered (proportional quotas with a floor of n_stratum_min per stratum)`);
+  return lines;
 }
 
 /** The pilot's length: `--draws` for a trial, else the config's `pilot_draws`. */
@@ -163,6 +173,7 @@ function runGenerate(values: Values, io: CliIo, engine: Engine): number {
     const files = writeDataset(out, result);
     const seconds = Math.max((Date.now() - started) / 1000, 0.001);
     const { stream } = result.coverage;
+    for (const line of notices(result.coverage, config.d_max)) io.err(line);
     const total = stream.draws + result.pilotDrawsRun;
     io.err(`${total} draws (${result.pilotDrawsRun} of them the pilot) in ${seconds.toFixed(1)} s: ${Math.round(total / seconds)} draws/s`);
     io.out(
@@ -208,7 +219,7 @@ export function runCli(argv: readonly string[], io: CliIo): number {
   } catch (error) {
     const code = (error as { code?: unknown }).code;
     const input = error instanceof Error && (INPUT_ERRORS.has(error.name) || (typeof code === "string" && (code === "ENOENT" || code.startsWith("ERR_PARSE_ARGS"))));
-    const refused = error instanceof Error && REFUSALS.has(error.name);
+    const refused = error instanceof Error && (REFUSALS.has(error.name) || OVERSIZE.has(String(code)) || (error instanceof RangeError && /Set maximum size|Invalid (string|array) length/.test(error.message)));
     if (!input && !refused) throw error;
     io.err(`${(error as Error).name}: ${(error as Error).message}`);
     return input ? 2 : 1;
@@ -217,5 +228,7 @@ export function runCli(argv: readonly string[], io: CliIo): number {
 
 /** Errors that mean the inputs are wrong: exit 2. */
 const INPUT_ERRORS = new Set(["UsageError", "SyntaxError", "TeamRecordError", "StreamError", "PilotError", "TeamVocabularyError", "EngineDataError", "UnsupportedFormatError", "EngineError"]);
+/** Node errors for data beyond what one string or one Set can hold: this slice builds its indexes in memory (the shard slice needs a binary builder). */
+const OVERSIZE = new Set(["ERR_STRING_TOO_LONG"]);
 /** Errors that mean the plan or the run cannot be completed: exit 1. */
 const REFUSALS = new Set(["PlanError", "GenerateError", "ProposalError", "DedupeError"]);

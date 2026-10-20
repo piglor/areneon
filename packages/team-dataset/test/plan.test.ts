@@ -86,7 +86,7 @@ describe("the cell merge (D20, ADR-013 section 2)", () => {
   });
 
   it("refuses a plan that is infeasible even with every cell merged", () => {
-    expect(() => planQuotas(params({ cellHits: evenly(0) }))).toThrow(/even all 64 cells together are not affordable/);
+    expect(() => planQuotas(params({ cellHits: evenly(1), pilotMinHits: 100 }))).toThrow(/even all 64 cells together are not affordable/);
     expect(() => planQuotas(params({ cellHits: evenly(10), dMax: 100, sizes: { dev: 1000 } }))).toThrow(PlanError);
   });
 });
@@ -103,6 +103,17 @@ describe("the quotas", () => {
     expect(quota(2, "validation")).toBe(2);
     expect(plan.strata.find((s) => s.stratum === 0)?.total).toBe(825);
     expect(plan.splits).toEqual(["dev", "validation"]);
+  });
+
+  it("share the requested size by the accepted pilot draws, so rejected draws do not shrink a split", () => {
+    // 4000 of 40000 pilot draws were accepted (the rest rejected): the shares are 3 : 1 of the 4000, not of 40000
+    const plan = planQuotas(params({ radices: [2], cellHits: [3000, 1000], sizes: { dev: 1000 }, pilotMinHits: 1 }));
+    expect(plan.strata.map((s) => s.quotas.dev)).toEqual([750, 250]);
+    expect(plan.strata.reduce((n, s) => n + s.total, 0)).toBe(1000);
+  });
+
+  it("refuses a pilot that accepted nothing", () => {
+    expect(() => planQuotas(params({ radices: [2], cellHits: [0, 0] }))).toThrow(/accepted no draw/);
   });
 
   it("leave out a split with no size, and keep the split order", () => {

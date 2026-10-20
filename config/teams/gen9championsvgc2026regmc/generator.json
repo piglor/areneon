@@ -3,6 +3,7 @@
   "config_id": "uniform-v1",
   "iv": 31,
   "stat_point_max_per_stat": 32,
+  "moves_per_set": 4,
   "gender_policy": "unset",
   "nickname_policy": "none",
   "default_item_weight": 1,

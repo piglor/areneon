@@ -3,7 +3,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { readTeamDatasetManifest, readTeamGeneratorConfig, recordHash, teamVocabularyHash, type TeamGeneratorConfig } from "@areneon/showdown-bridge";
 import { afterAll, describe, expect, it } from "vitest";
-import { runCli, type CliIo, trialDraws } from "../src/command.ts";
+import type { Engine } from "@areneon/showdown-bridge";
+import { notices, runCli, type CliIo, trialDraws } from "../src/command.ts";
 import { type Pilot, runPilot } from "../src/pilot.ts";
 import { ASSIGNMENT_KEY, drawerFor, engine, FORMAT, KEY, light, small, table, VOCABULARY_FILE, vocabulary } from "./support.ts";
 
@@ -162,8 +163,31 @@ describe("the command line refuses", () => {
     expect(run.err.join()).toMatch(/PlanError: no split has a team count/);
   });
 
+  it("data beyond the in-memory limits (exit 1, with a message, not a stack)", () => {
+    const failing = (error: Error): Engine => ({ commit: "x", sim: { get Dex(): never { throw error; } } }) as never;
+    const set = cli(generate(join(scratch, "i")), { engine: failing(new RangeError("Set maximum size exceeded")) });
+    expect(set.code).toBe(1);
+    expect(set.err.join()).toMatch(/Set maximum size exceeded/);
+    const long = cli(generate(join(scratch, "i")), { engine: failing(Object.assign(new Error("Cannot create a string longer than 0x1fffffe8 characters"), { code: "ERR_STRING_TOO_LONG" })) });
+    expect(long.code).toBe(1);
+  });
+
   it("an unexpected failure is not hidden", () => {
     mkdirSync(join(scratch, "h"), { recursive: true });
     expect(() => cli(generate(join(scratch, "h")), { engine: { commit: "x", sim: {} } as never })).toThrow();
+  });
+});
+
+describe("what a finished run tells the operator", () => {
+  const base = { provisioning: { exceeds_d_max: false, planned_draws: 900 }, replan: 0, splits: [{ split: "dev", requested: 10, teams: 10 }] };
+  it("says nothing when all went as planned", () => {
+    expect(notices(base as never, 1000)).toEqual([]);
+  });
+  it("warns about a quantile beyond d_max, a re-plan, and a split above its request", () => {
+    const lines = notices({ provisioning: { exceeds_d_max: true, planned_draws: 5000 }, replan: 2, splits: [{ split: "dev", requested: 20, teams: 55 }] } as never, 1000);
+    expect(lines).toHaveLength(3);
+    expect(lines[0]).toMatch(/5000-draw fill quantile is beyond d_max 1000/);
+    expect(lines[1]).toMatch(/re-planned 2 time/);
+    expect(lines[2]).toBe("dev: 20 requested, 55 delivered (proportional quotas with a floor of n_stratum_min per stratum)");
   });
 });
