@@ -83,6 +83,7 @@ export {
   stampTeam,
   type StampedTeam,
   type SyntheticTeamHashes,
+  syntheticTeamHashes,
   teamHash,
 } from "./team-class.ts";
 export { webSha256 } from "./web-sha256.ts";

@@ -5,18 +5,16 @@
 // the run goes; `dataset-io.ts` writes the rest.
 //
 // Splits. The bins are per stratum, sized by the sum of the strata's quotas
-// over the splits. When the bins are full, each stratum's teams are ordered by
-// HMAC-SHA256(assignment_key, canonical_team_hash) and dealt to dev,
-// validation and training by their quotas: the assignment rule of ADR-013
-// section 2, applied here so that every record carries its split. A reader
-// of `origin.split` can rely on the key, not on the stream position.
+// over the splits. When the bins are full, `assignSplits` (assign-splits.ts)
+// deals them to dev, validation and training by the assignment key, so that
+// every record carries its split. A reader of `origin.split` can rely on the
+// key, not on the stream position.
 //
 // Shortfall. If `d_max` draws leave a bin short, the dataset is planned again
 // with the short strata coarsened by one more level, under a fresh plan id
 // (`<plan_id>-r1`, ...) and dataset id, and the first attempt's log is kept
 // as `rejections.attempt-<n>.jsonl`.
 
-import { createHmac } from "node:crypto";
 import { renameSync } from "node:fs";
 import { join } from "node:path";
 import {
@@ -34,6 +32,7 @@ import {
   teamVocabularyHash,
   type EngineData,
 } from "@areneon/showdown-bridge";
+import { assignSplits } from "./assign-splits.ts";
 import { Binner } from "./binner.ts";
 import type { KnownHashes } from "./dedupe.ts";
 import { Drawer } from "./draw.ts";
@@ -192,7 +191,7 @@ export function generate(input: GenerateInput): GenerateResult {
     }
     attempts.push({ plan_id: planId, dataset_id: datasetId, short: [] });
 
-    const records = fillSplits({ plan, binner, assignmentKey, datasetId, labelSetHash });
+    const records = fillSplits({ plan, binner, assignmentKey, datasetId, labelSetHash, nStratumMin: config.n_stratum_min });
     for (const list of Object.values(records)) for (const record of list) checkRecord(engine, record, labelSet);
     const manifest = readTeamDatasetManifest(
       {
@@ -273,35 +272,26 @@ interface FillInput {
   assignmentKey: string;
   datasetId: string;
   labelSetHash: string;
+  nStratumMin: number;
 }
 
-/** Deal each stratum's full bin to the splits by HMAC order, and build the records. */
+/** Deal the full bins to the splits (`assignSplits`) and build the records. */
 function fillSplits(input: FillInput): Partial<Record<Split, TeamRecord[]>> {
   const { plan, binner } = input;
-  const key = Buffer.from(input.assignmentKey, "hex");
-  const out: Partial<Record<Split, TeamRecord[]>> = Object.fromEntries(plan.splits.map((s) => [s, []]));
-  for (const stratum of plan.strata) {
-    const ordered = binner
-      .bin(stratum.stratum)
-      .map((entry) => ({ entry, order: createHmac("sha256", key).update(entry.canonical_team_hash, "utf8").digest("hex") }))
-      .sort((a, b) => (a.order < b.order ? -1 : 1));
-    let at = 0;
-    for (const split of plan.splits) {
-      const list = out[split] as TeamRecord[];
-      for (const { entry } of ordered.slice(at, at + (stratum.quotas[split] as number))) {
-        list.push({
-          schema_version: 1,
-          data_class: "synthetic",
-          team_hash: entry.team_hash,
-          canonical_team_hash: entry.canonical_team_hash,
-          paste: entry.paste,
-          origin: { dataset_id: input.datasetId, split, index: list.length, draw_counter: entry.k },
-          label_set_hash: input.labelSetHash,
-          labels: entry.labels,
-        });
-      }
-      at += stratum.quotas[split] as number;
-    }
+  const pool = plan.strata.flatMap((s) => binner.bin(s.stratum).map((entry) => ({ ...entry, stratum: s.stratum })));
+  const dealt = assignSplits(pool, plan, input.assignmentKey, input.nStratumMin);
+  const out: Partial<Record<Split, TeamRecord[]>> = {};
+  for (const split of plan.splits) {
+    out[split] = dealt[split].map((entry, index) => ({
+      schema_version: 1,
+      data_class: "synthetic",
+      team_hash: entry.team_hash,
+      canonical_team_hash: entry.canonical_team_hash,
+      paste: entry.paste,
+      origin: { dataset_id: input.datasetId, split, index, draw_counter: entry.k },
+      label_set_hash: input.labelSetHash,
+      labels: entry.labels,
+    }));
   }
   return out;
 }

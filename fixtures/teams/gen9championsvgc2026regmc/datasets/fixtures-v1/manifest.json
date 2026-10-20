@@ -1,0 +1,496 @@
+{
+  "d_max": 4000000,
+  "data_class": "synthetic",
+  "dataset_id": "fixtures-v1",
+  "generator": {
+    "config_hash": "de2f06b2547de57401fb4072b172386f906f2988f73cf2d12a929b27b8c80def",
+    "generator_commit": "b7cda7af2f1744ad4934d38fb379b1d3cfc3ffc2",
+    "label_set_hash": "78008091053b6398add3a3e15d67711082dd7627ea81d98b07adae9c3f5f26db",
+    "manifest": {
+      "format_id": "gen9championsvgc2026regmc",
+      "format_rules_hash": "549cd2aa97324be093c567324676d46a5eff19d6b0c9d8491c483dab746d5dcc",
+      "regulation": "M-C",
+      "ruleset_hash": "4dd1f039bbcc6156e08c434972beae2370dc5fe8c9c6a263da7383c3247b68f3",
+      "showdown_commit": "7244fe8e28fa8bc4d0809ae30d183c608b62bb2b"
+    },
+    "vocabulary_hash": "5fdd31126208dbb46948ddaca14dfc9c28b70c14b147318fc6ba74e50843cab2"
+  },
+  "key": {
+    "assignment_key": "d0b56458ea47add3c8a5f577cd5d55562f8699849af72b59bb6be486410be726",
+    "generation_key": "372cc1a98b1ae8c29ea8fc7a166b84de1d9c4ad81e23e831d9af7713e73a3ce7",
+    "kind": "public"
+  },
+  "merged_cells": [
+    {
+      "cells": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15
+      ],
+      "stratum": 0
+    },
+    {
+      "cells": [
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23
+      ],
+      "stratum": 16
+    },
+    {
+      "cells": [
+        24,
+        25,
+        26,
+        27
+      ],
+      "stratum": 24
+    },
+    {
+      "cells": [
+        28,
+        29
+      ],
+      "stratum": 28
+    },
+    {
+      "cells": [
+        32,
+        33,
+        34,
+        35,
+        36,
+        37,
+        38,
+        39
+      ],
+      "stratum": 32
+    },
+    {
+      "cells": [
+        40,
+        41,
+        42,
+        43
+      ],
+      "stratum": 40
+    },
+    {
+      "cells": [
+        44,
+        45
+      ],
+      "stratum": 44
+    },
+    {
+      "cells": [
+        48,
+        49,
+        50,
+        51
+      ],
+      "stratum": 48
+    },
+    {
+      "cells": [
+        56,
+        57
+      ],
+      "stratum": 56
+    }
+  ],
+  "pilot_draws": 40000,
+  "plan_id": "fixtures-v1",
+  "reference_pool_hash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "rejection_log": {
+    "draws": 4830,
+    "duplicates": 0,
+    "log_sha256": "01b39643502c806b68e74f9ce20dd645600ffc4cf8db65ad588721d89dde2c86",
+    "overflows": 4105,
+    "rejections": 365
+  },
+  "schema_version": 1,
+  "splits": [
+    {
+      "cells": [
+        {
+          "pilot_hits": 127,
+          "quota": 2,
+          "stratum": 0
+        },
+        {
+          "pilot_hits": 351,
+          "quota": 2,
+          "stratum": 16
+        },
+        {
+          "pilot_hits": 71,
+          "quota": 2,
+          "stratum": 24
+        },
+        {
+          "pilot_hits": 63,
+          "quota": 2,
+          "stratum": 28
+        },
+        {
+          "pilot_hits": 1295,
+          "quota": 3,
+          "stratum": 30
+        },
+        {
+          "pilot_hits": 423,
+          "quota": 2,
+          "stratum": 31
+        },
+        {
+          "pilot_hits": 341,
+          "quota": 2,
+          "stratum": 32
+        },
+        {
+          "pilot_hits": 95,
+          "quota": 2,
+          "stratum": 40
+        },
+        {
+          "pilot_hits": 65,
+          "quota": 2,
+          "stratum": 44
+        },
+        {
+          "pilot_hits": 1286,
+          "quota": 3,
+          "stratum": 46
+        },
+        {
+          "pilot_hits": 441,
+          "quota": 2,
+          "stratum": 47
+        },
+        {
+          "pilot_hits": 158,
+          "quota": 2,
+          "stratum": 48
+        },
+        {
+          "pilot_hits": 213,
+          "quota": 2,
+          "stratum": 52
+        },
+        {
+          "pilot_hits": 31,
+          "quota": 2,
+          "stratum": 53
+        },
+        {
+          "pilot_hits": 4197,
+          "quota": 11,
+          "stratum": 54
+        },
+        {
+          "pilot_hits": 860,
+          "quota": 2,
+          "stratum": 55
+        },
+        {
+          "pilot_hits": 35,
+          "quota": 2,
+          "stratum": 56
+        },
+        {
+          "pilot_hits": 691,
+          "quota": 2,
+          "stratum": 58
+        },
+        {
+          "pilot_hits": 289,
+          "quota": 2,
+          "stratum": 59
+        },
+        {
+          "pilot_hits": 847,
+          "quota": 2,
+          "stratum": 60
+        },
+        {
+          "pilot_hits": 270,
+          "quota": 2,
+          "stratum": 61
+        },
+        {
+          "pilot_hits": 19048,
+          "quota": 51,
+          "stratum": 62
+        },
+        {
+          "pilot_hits": 5995,
+          "quota": 16,
+          "stratum": 63
+        }
+      ],
+      "split": "dev",
+      "teams": 120
+    },
+    {
+      "cells": [
+        {
+          "pilot_hits": 127,
+          "quota": 2,
+          "stratum": 0
+        },
+        {
+          "pilot_hits": 351,
+          "quota": 2,
+          "stratum": 16
+        },
+        {
+          "pilot_hits": 71,
+          "quota": 2,
+          "stratum": 24
+        },
+        {
+          "pilot_hits": 63,
+          "quota": 2,
+          "stratum": 28
+        },
+        {
+          "pilot_hits": 1295,
+          "quota": 3,
+          "stratum": 30
+        },
+        {
+          "pilot_hits": 423,
+          "quota": 2,
+          "stratum": 31
+        },
+        {
+          "pilot_hits": 341,
+          "quota": 2,
+          "stratum": 32
+        },
+        {
+          "pilot_hits": 95,
+          "quota": 2,
+          "stratum": 40
+        },
+        {
+          "pilot_hits": 65,
+          "quota": 2,
+          "stratum": 44
+        },
+        {
+          "pilot_hits": 1286,
+          "quota": 3,
+          "stratum": 46
+        },
+        {
+          "pilot_hits": 441,
+          "quota": 2,
+          "stratum": 47
+        },
+        {
+          "pilot_hits": 158,
+          "quota": 2,
+          "stratum": 48
+        },
+        {
+          "pilot_hits": 213,
+          "quota": 2,
+          "stratum": 52
+        },
+        {
+          "pilot_hits": 31,
+          "quota": 2,
+          "stratum": 53
+        },
+        {
+          "pilot_hits": 4197,
+          "quota": 11,
+          "stratum": 54
+        },
+        {
+          "pilot_hits": 860,
+          "quota": 2,
+          "stratum": 55
+        },
+        {
+          "pilot_hits": 35,
+          "quota": 2,
+          "stratum": 56
+        },
+        {
+          "pilot_hits": 691,
+          "quota": 2,
+          "stratum": 58
+        },
+        {
+          "pilot_hits": 289,
+          "quota": 2,
+          "stratum": 59
+        },
+        {
+          "pilot_hits": 847,
+          "quota": 2,
+          "stratum": 60
+        },
+        {
+          "pilot_hits": 270,
+          "quota": 2,
+          "stratum": 61
+        },
+        {
+          "pilot_hits": 19048,
+          "quota": 51,
+          "stratum": 62
+        },
+        {
+          "pilot_hits": 5995,
+          "quota": 16,
+          "stratum": 63
+        }
+      ],
+      "split": "validation",
+      "teams": 120
+    },
+    {
+      "cells": [
+        {
+          "pilot_hits": 127,
+          "quota": 2,
+          "stratum": 0
+        },
+        {
+          "pilot_hits": 351,
+          "quota": 2,
+          "stratum": 16
+        },
+        {
+          "pilot_hits": 71,
+          "quota": 2,
+          "stratum": 24
+        },
+        {
+          "pilot_hits": 63,
+          "quota": 2,
+          "stratum": 28
+        },
+        {
+          "pilot_hits": 1295,
+          "quota": 3,
+          "stratum": 30
+        },
+        {
+          "pilot_hits": 423,
+          "quota": 2,
+          "stratum": 31
+        },
+        {
+          "pilot_hits": 341,
+          "quota": 2,
+          "stratum": 32
+        },
+        {
+          "pilot_hits": 95,
+          "quota": 2,
+          "stratum": 40
+        },
+        {
+          "pilot_hits": 65,
+          "quota": 2,
+          "stratum": 44
+        },
+        {
+          "pilot_hits": 1286,
+          "quota": 3,
+          "stratum": 46
+        },
+        {
+          "pilot_hits": 441,
+          "quota": 2,
+          "stratum": 47
+        },
+        {
+          "pilot_hits": 158,
+          "quota": 2,
+          "stratum": 48
+        },
+        {
+          "pilot_hits": 213,
+          "quota": 2,
+          "stratum": 52
+        },
+        {
+          "pilot_hits": 31,
+          "quota": 2,
+          "stratum": 53
+        },
+        {
+          "pilot_hits": 4197,
+          "quota": 11,
+          "stratum": 54
+        },
+        {
+          "pilot_hits": 860,
+          "quota": 2,
+          "stratum": 55
+        },
+        {
+          "pilot_hits": 35,
+          "quota": 2,
+          "stratum": 56
+        },
+        {
+          "pilot_hits": 691,
+          "quota": 2,
+          "stratum": 58
+        },
+        {
+          "pilot_hits": 289,
+          "quota": 2,
+          "stratum": 59
+        },
+        {
+          "pilot_hits": 847,
+          "quota": 2,
+          "stratum": 60
+        },
+        {
+          "pilot_hits": 270,
+          "quota": 2,
+          "stratum": 61
+        },
+        {
+          "pilot_hits": 19048,
+          "quota": 51,
+          "stratum": 62
+        },
+        {
+          "pilot_hits": 5995,
+          "quota": 16,
+          "stratum": 63
+        }
+      ],
+      "split": "training",
+      "teams": 120
+    }
+  ]
+}

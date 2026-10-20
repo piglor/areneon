@@ -14,6 +14,24 @@ export type DataClass = PrivateTeamSpec["data_class"];
 export type SyntheticTeamHashes = ReadonlySet<string>;
 
 /**
+ * The known set built from verified lists of positional team hashes (the
+ * `team_hash` of each record of a verified dataset, ADR-013 section 4). It
+ * is the only way to turn hashes into a `SyntheticTeamHashes` besides the
+ * golden fixtures: a hash that is not a SHA-256 digest is refused, so a typo
+ * can never make an unrelated string a member.
+ */
+export function syntheticTeamHashes(...lists: Iterable<string>[]): SyntheticTeamHashes {
+  const known = new Set<string>();
+  for (const list of lists) {
+    for (const hash of list) {
+      if (!/^[0-9a-f]{64}$/.test(hash)) throw new TypeError(`${JSON.stringify(hash)} is not a team hash`);
+      known.add(hash);
+    }
+  }
+  return known;
+}
+
+/**
  * SHA-256 of the JCS bytes of a team's set ARRAY, the same on every path.
  * It excludes the spec's `data_class`, so one set of sets has one hash
  * whatever it is labelled.
