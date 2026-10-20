@@ -110,7 +110,16 @@ describe("readShard", () => {
     expect(await outcome(parquetOf(rows(), undefined, { extra: [{ name: "note", data: rows().map(() => "x") }] }))).toMatch(/unexpected column note/);
     expect(await outcome(parquetOf(rows(), undefined, { extra: [{ name: "paste", data: rows().map(() => "x") }] }))).toMatch(/unexpected column \(repeated\)/);
     const wrongType = rows().map((r) => ({ ...r, origin_index: String(r.origin_index) }));
-    expect(await outcome(parquetOf(wrongType, columnsFor(labelSet).map((c) => (c.name === "origin_index" ? { ...c, type: "VARCHAR" as const } : c))))).toMatch(/origin_index: expected an int64/);
+    expect(await outcome(parquetOf(wrongType, columnsFor(labelSet).map((c) => (c.name === "origin_index" ? { ...c, type: "VARCHAR" as const } : c))))).toMatch(/column origin_index has physical type BYTE_ARRAY/);
+  });
+
+  it("refuses a column of another physical type, and a labels struct with another set of fields", async () => {
+    expect(await outcome(parquetOf(rows(), undefined, { indexAsDouble: true }))).toMatch(/column origin_index has physical type DOUBLE, the layout says INT64/);
+    const withExtra = rows().map((r) => ({ ...r, labels: (r.labels as { label_id: string; value: string }[]).map((l) => ({ ...l, extra: "x" })) }));
+    expect(await outcome(parquetOf(withExtra, undefined, { labelExtra: true }))).toMatch(/column labels is not a list of \{label_id, value\}/);
+    const rowExtra = rows();
+    (rowExtra[0] as Record<string, unknown>).labels = [{ label_id: "speed_control", value: "both", extra: "x" }, ...((rowExtra[0] as Record<string, unknown>).labels as unknown[]).slice(1)];
+    expect(() => recordOf(rowExtra[0] as Record<string, unknown>, plan, "r")).toThrow(/labels\[0\] has fields extra,label_id,value/);
   });
 
   it("refuses a file without the schema version, or with another", async () => {

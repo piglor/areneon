@@ -105,6 +105,7 @@ export async function* eachSnapshotShard(
   plan: RowPlan,
   shardRows: number = SHARD_ROWS,
 ): AsyncGenerator<{ entry: ShardEntry; read: ShardRead }> {
+  readTeamSnapshotManifest(snapshot); // re-checked here: a caller's object may not have come from the reader
   for (const split of ["dev", "validation", "training"] as const) {
     const entries = snapshot.shards.filter((s) => s.split === split);
     if (entries.length === 0) continue;

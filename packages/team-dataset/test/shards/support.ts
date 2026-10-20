@@ -70,6 +70,10 @@ export interface ParquetOptions {
   codec?: "SNAPPY" | "UNCOMPRESSED";
   /** Extra columns (name, values) added after the layout's. */
   extra?: { name: string; data: unknown[] }[];
+  /** Write `origin_index` as DOUBLE. */
+  indexAsDouble?: boolean;
+  /** Give each labels struct a third field `extra`. */
+  labelExtra?: boolean;
   /** Columns to leave out. */
   without?: string[];
 }
@@ -80,13 +84,14 @@ export function parquetOf(rows: readonly Record<string, unknown>[], columns: rea
   const schema: Record<string, unknown>[] = [{ name: "root", num_children: kept.length + (options.extra?.length ?? 0) }];
   const columnData: { name: string; data: unknown[] }[] = [];
   for (const column of kept) {
-    columnData.push({ name: column.name, data: rows.map((r) => (column.type === "BIGINT" && typeof r[column.name] === "number" ? BigInt(r[column.name] as number) : r[column.name])) });
+    columnData.push({ name: column.name, data: rows.map((r) => (column.type === "BIGINT" && typeof r[column.name] === "number" && !(options.indexAsDouble === true && column.name === "origin_index") ? BigInt(r[column.name] as number) : r[column.name])) });
     if (column.type === "LABELS") {
       schema.push({ name: column.name, converted_type: "LIST", repetition_type: "OPTIONAL", num_children: 1 }, { name: "list", repetition_type: "REPEATED", num_children: 1 });
-      schema.push({ name: "element", repetition_type: "OPTIONAL", num_children: 2 });
+      schema.push({ name: "element", repetition_type: "OPTIONAL", num_children: options.labelExtra === true ? 3 : 2 });
       schema.push({ name: "label_id", type: "BYTE_ARRAY", converted_type: "UTF8", repetition_type: "OPTIONAL" }, { name: "value", type: "BYTE_ARRAY", converted_type: "UTF8", repetition_type: "OPTIONAL" });
+      if (options.labelExtra === true) schema.push({ name: "extra", type: "BYTE_ARRAY", converted_type: "UTF8", repetition_type: "OPTIONAL" });
     } else if (column.type === "BIGINT") {
-      schema.push({ name: column.name, type: "INT64", repetition_type: "OPTIONAL" });
+      schema.push({ name: column.name, type: options.indexAsDouble === true && column.name === "origin_index" ? "DOUBLE" : "INT64", repetition_type: "OPTIONAL" });
     } else {
       schema.push({ name: column.name, type: "BYTE_ARRAY", converted_type: "UTF8", repetition_type: "OPTIONAL" });
     }

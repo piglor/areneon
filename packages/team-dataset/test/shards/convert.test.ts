@@ -200,6 +200,16 @@ describe("verifySnapshot", () => {
   });
 });
 
+describe("a snapshot object that did not come from the reader", () => {
+  it("is re-checked before any shard is read (an object key that is not the file hash)", async () => {
+    const out = dir();
+    const { snapshot } = await convert(out);
+    const forged = structuredClone(snapshot);
+    (forged.shards[0] as { object_key: string }).object_key = `pub/v1/shards/${"0".repeat(64)}`;
+    await expect(readSnapshotShards(forged, shardsInDirectory(out), plan, 50)).rejects.toThrow(/object_key is not pub\/v1\/shards/);
+  });
+});
+
 describe("origin indices", () => {
   const recordsWith = (change: (records: ReturnType<typeof fixtureRecords>) => void): string => {
     const copy = dir();

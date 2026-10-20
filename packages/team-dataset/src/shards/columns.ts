@@ -127,6 +127,8 @@ function rebuild(row: Record<string, unknown>, plan: RowPlan): { record: TeamRec
   if (labelsRaw.length !== set.length) return refuse(`labels holds ${labelsRaw.length} entries, the label set has ${set.length}`);
   const labels = labelsRaw.map((entry, k): LabelEntry => {
     if (typeof entry !== "object" || entry === null) return refuse(`labels[${k}] is not a struct`);
+    const fields = Object.keys(entry).sort().join(",");
+    if (fields !== "label_id,value") return refuse(`labels[${k}] has fields ${fields}, expected label_id,value`);
     const { label_id, value } = entry as Record<string, unknown>;
     return { label_id: text(label_id, `labels[${k}].label_id`), value: text(value, `labels[${k}].value`) };
   });

@@ -43,12 +43,26 @@ const toBuffer = (file: ArrayBuffer | Uint8Array | AsyncBuffer): AsyncBuffer => 
 function checkFooter(metadata: Awaited<ReturnType<typeof parquetMetadataAsync>>, plan: RowPlan, expectedRows: number): void {
   const version = metadata.key_value_metadata?.find((kv) => kv.key === SCHEMA_VERSION_KEY)?.value;
   if (version !== String(PARQUET_SCHEMA_VERSION)) refuse(`the file's ${SCHEMA_VERSION_KEY} is ${version === undefined ? "missing" : version}, this reader reads ${PARQUET_SCHEMA_VERSION}`);
-  const present = parquetSchema(metadata).children.map((c) => c.element.name);
-  const wanted = columnsFor(plan.labelSet).map((c) => c.name);
+  const top = parquetSchema(metadata).children;
+  const present = top.map((c) => c.element.name);
+  const columns = columnsFor(plan.labelSet);
+  const wanted = columns.map((c) => c.name);
   const missing = wanted.filter((name) => !present.includes(name));
   const extra = present.filter((name) => !wanted.includes(name));
   if (missing.length > 0) refuse(`the file lacks column ${missing[0]}`);
   if (extra.length > 0 || present.length !== wanted.length) refuse(`the file has an unexpected column ${extra[0] ?? "(repeated)"}`);
+  for (const column of columns) {
+    const node = top[present.indexOf(column.name)] as (typeof top)[number];
+    if (column.type === "LABELS") {
+      const element = node.children[0]?.children[0];
+      const fields = element?.children.map((f) => `${f.element.name}:${f.element.type}`).join(",");
+      if (node.element.converted_type !== "LIST" || node.children.length !== 1 || element?.children.length !== 2 || fields !== "label_id:BYTE_ARRAY,value:BYTE_ARRAY") {
+        refuse(`column ${column.name} is not a list of {label_id, value} byte-array structs`);
+      }
+    } else if (node.children.length > 0 || node.element.type !== (column.type === "BIGINT" ? "INT64" : "BYTE_ARRAY")) {
+      refuse(`column ${column.name} has physical type ${node.element.type ?? "group"}, the layout says ${column.type === "BIGINT" ? "INT64" : "BYTE_ARRAY"}`);
+    }
+  }
   if (Number(metadata.num_rows) !== expectedRows) refuse(`the file holds ${metadata.num_rows} rows, the manifest says ${expectedRows}`);
 }
 
@@ -108,6 +122,7 @@ export async function readShard(
     });
     start = end;
   }
+  if (records.length !== expected.rows) refuse(`the row groups hold ${records.length} rows, the manifest says ${expected.rows}`);
   if (shardLogicalHash(recordHashes) !== expected.logical_hash) refuse("the shard's logical hash is not the manifest's");
   const ranges = cellRanges(strata);
   const same = ranges.length === expected.cell_ranges.length && ranges.every((r, k) => {
