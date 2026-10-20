@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { ajvFor } from "@areneon/schema/ajv";
 import { beforeAll, describe, expect, it } from "vitest";
 import { syntheticFixtureHashes } from "../src/golden.ts";
-import { EpisodeError, loadEngine, readEpisode, readEvaluationRunManifest, readTrainingSet, TrainingLoaderError } from "../src/index.ts";
+import { EpisodeError, loadEngine, readEpisode, readEvaluationRunManifest, readTrainingExample, readTrainingSet, TrainingLoaderError } from "../src/index.ts";
 import { contractSamples, SAMPLE_HASHES, SAMPLES_DIR } from "../src/samples.ts";
 
 const SCHEMAS = new URL("../../schema/contracts/v1/", import.meta.url);
@@ -63,7 +63,9 @@ describe("the shared contract sample corpus (ADR-008 §2)", () => {
       "v1/episode/reader-invalid/sparring-synthetic.json",
       "v1/evaluation-run-manifest/reader-invalid/duplicate.json",
       "v1/evaluation-run-manifest/reader-invalid/unsorted.json",
+      "v1/training-example/reader-invalid/choice-not-in-candidates.json",
       "v1/training-set/reader-invalid/duplicate-manifests.json",
+      "v1/training-set/reader-invalid/learner-ready-no-policy.json",
       "v1/training-set/reader-invalid/unsorted-episodes.json",
     ]);
   });
@@ -73,6 +75,8 @@ describe("the shared contract sample corpus (ADR-008 §2)", () => {
     ["v1/evaluation-run-manifest/reader-invalid/unsorted.json", readEvaluationRunManifest, "sorted and unique"],
     ["v1/evaluation-run-manifest/reader-invalid/duplicate.json", readEvaluationRunManifest, "sorted and unique"],
     ["v1/training-set/reader-invalid/unsorted-episodes.json", readTrainingSet, "episode_hashes must be sorted and unique"],
+    ["v1/training-example/reader-invalid/choice-not-in-candidates.json", readTrainingExample, "is not among its"],
+    ["v1/training-set/reader-invalid/learner-ready-no-policy.json", readTrainingSet, "must name its behaviour_policy_id"],
     ["v1/training-set/reader-invalid/duplicate-manifests.json", readTrainingSet, "evaluation_manifest_hashes must be sorted and unique"],
   ])("the reader refuses %s", (file, reader, message) => {
     expect(Object.keys(fresh)).toContain(file);

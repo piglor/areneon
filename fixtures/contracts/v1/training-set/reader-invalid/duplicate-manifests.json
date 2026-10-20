@@ -8,6 +8,8 @@
     "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
   ],
+  "learner_ready": true,
+  "behaviour_policy_id": "first-legal@golden",
   "examples": 10,
-  "stream_sha256": "54f3b970567c95272d2da3e6c060e3597157ca43fe341a2b34c225a7c3062e31"
+  "stream_sha256": "f712e6f949594db8bdc9ebca49045e19f264455460ad3db1e24efe0238c54f72"
 }

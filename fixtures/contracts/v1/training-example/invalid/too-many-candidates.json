@@ -1,0 +1,4353 @@
+{
+  "schema_version": 1,
+  "episode_hash": "8e3622c59ad468cc8532d2bcf07a072fbf449a070486e4a9058b8cfdf5ac9d53",
+  "observation": {
+    "schema_version": 1,
+    "data_class": "synthetic",
+    "player": "p1",
+    "manifest": {
+      "showdown_commit": "7244fe8e28fa8bc4d0809ae30d183c608b62bb2b",
+      "format_id": "gen9championsvgc2026regmc",
+      "regulation": "M-C",
+      "ruleset_hash": "4dd1f039bbcc6156e08c434972beae2370dc5fe8c9c6a263da7383c3247b68f3",
+      "format_rules_hash": "549cd2aa97324be093c567324676d46a5eff19d6b0c9d8491c483dab746d5dcc"
+    },
+    "identity": {
+      "request_seq": 2,
+      "request_hash": "e5b62f4038f7aa3cbdaa920efe8e0ac8da7feed1ec57ff96739364b16396e1bf"
+    },
+    "log": [
+      "|gametype|doubles",
+      "|player|p1|p1||",
+      "|player|p2|p2||",
+      "|gen|9",
+      "|tier|[Gen 9 Champions] VGC 2026 Reg M-C",
+      "|rule|Species Clause: Limit one of each Pokémon",
+      "|rule|Item Clause: Limit 1 of each item",
+      "|clearpoke",
+      "|poke|p1|Venusaur, L50, F|",
+      "|poke|p1|Charizard, L50, F|",
+      "|poke|p1|Blastoise, L50, M|",
+      "|poke|p1|Pikachu, L50, F|",
+      "|poke|p1|Snorlax, L50, F|",
+      "|poke|p1|Gengar, L50, M|",
+      "|poke|p2|Venusaur, L50, M|",
+      "|poke|p2|Charizard, L50, F|",
+      "|poke|p2|Blastoise, L50, M|",
+      "|poke|p2|Pikachu, L50, M|",
+      "|poke|p2|Snorlax, L50, M|",
+      "|poke|p2|Gengar, L50, M|",
+      "|teampreview|4",
+      "|uhtml|otsrequest|<button name=\"send\" value=\"/acceptopenteamsheets\" class=\"button\" style=\"margin-right: 10px;\"><strong>Accept Open Team Sheets</strong></button><button name=\"send\" value=\"/rejectopenteamsheets\" class=\"button\" style=\"margin-top: 10px\"><strong>Deny Open Team Sheets</strong></button>",
+      "|request|{\"teamPreview\":true,\"maxChosenTeamSize\":4,\"side\":{\"name\":\"p1\",\"id\":\"p1\",\"pokemon\":[{\"ident\":\"p1: Venusaur\",\"details\":\"Venusaur, L50, F\",\"condition\":\"159/159\",\"active\":true,\"stats\":{\"atk\":102,\"def\":103,\"spa\":120,\"spd\":120,\"spe\":104},\"moves\":[\"gigadrain\",\"sludgebomb\",\"protect\",\"sleeppowder\"],\"baseAbility\":\"overgrow\",\"item\":\"leftovers\",\"pokeball\":\"pokeball\",\"ability\":\"overgrow\",\"commanding\":false,\"reviving\":false},{\"ident\":\"p1: Charizard\",\"details\":\"Charizard, L50, F\",\"condition\":\"157/157\",\"active\":true,\"stats\":{\"atk\":104,\"def\":98,\"spa\":129,\"spd\":105,\"spe\":124},\"moves\":[\"flamethrower\",\"airslash\",\"protect\",\"heatwave\"],\"baseAbility\":\"blaze\",\"item\":\"charcoal\",\"pokeball\":\"pokeball\",\"ability\":\"blaze\",\"commanding\":false,\"reviving\":false},{\"ident\":\"p1: Blastoise\",\"details\":\"Blastoise, L50, M\",\"condition\":\"158/158\",\"active\":false,\"stats\":{\"atk\":103,\"def\":120,\"spa\":105,\"spd\":125,\"spe\":102},\"moves\":[\"surf\",\"icebeam\",\"protect\",\"fakeout\"],\"baseAbility\":\"torrent\",\"item\":\"mysticwater\",\"pokeball\":\"pokeball\",\"ability\":\"torrent\",\"commanding\":false,\"reviving\":false},{\"ident\":\"p1: Pikachu\",\"details\":\"Pikachu, L50, F\",\"condition\":\"114/114\",\"active\":false,\"stats\":{\"atk\":75,\"def\":60,\"spa\":70,\"spd\":70,\"spe\":114},\"moves\":[\"thunderbolt\",\"fakeout\",\"protect\",\"voltswitch\"],\"baseAbility\":\"static\",\"item\":\"lightball\",\"pokeball\":\"pokeball\",\"ability\":\"static\",\"commanding\":false,\"reviving\":false},{\"ident\":\"p1: Snorlax\",\"details\":\"Snorlax, L50, F\",\"condition\":\"239/239\",\"active\":false,\"stats\":{\"atk\":130,\"def\":85,\"spa\":85,\"spd\":130,\"spe\":54},\"moves\":[\"bodyslam\",\"protect\",\"curse\",\"rest\"],\"baseAbility\":\"thickfat\",\"item\":\"sitrusberry\",\"pokeball\":\"pokeball\",\"ability\":\"thickfat\",\"commanding\":false,\"reviving\":false},{\"ident\":\"p1: Gengar\",\"details\":\"Gengar, L50, M\",\"condition\":\"139/139\",\"active\":false,\"stats\":{\"atk\":85,\"def\":80,\"spa\":150,\"spd\":95,\"spe\":134},\"moves\":[\"shadowball\",\"sludgebomb\",\"protect\",\"icywind\"],\"baseAbility\":\"cursedbody\",\"item\":\"focussash\",\"pokeball\":\"pokeball\",\"ability\":\"cursedbody\",\"commanding\":false,\"reviving\":false}]}}",
+      "|",
+      "|teamsize|p1|4",
+      "|teamsize|p2|4",
+      "|start",
+      "|uhtmlchange|otsrequest|",
+      "|switch|p1a: Venusaur|Venusaur, L50, F|159/159",
+      "|switch|p1b: Charizard|Charizard, L50, F|157/157",
+      "|switch|p2a: Venusaur|Venusaur, L50, M|100/100",
+      "|switch|p2b: Charizard|Charizard, L50, F|100/100",
+      "|turn|1",
+      "|request|{\"active\":[{\"moves\":[{\"move\":\"Giga Drain\",\"id\":\"gigadrain\",\"pp\":12,\"maxpp\":12,\"target\":\"normal\",\"disabled\":false},{\"move\":\"Sludge Bomb\",\"id\":\"sludgebomb\",\"pp\":12,\"maxpp\":12,\"target\":\"normal\",\"disabled\":false},{\"move\":\"Protect\",\"id\":\"protect\",\"pp\":8,\"maxpp\":8,\"target\":\"self\",\"disabled\":false},{\"move\":\"Sleep Powder\",\"id\":\"sleeppowder\",\"pp\":16,\"maxpp\":16,\"target\":\"normal\",\"disabled\":false}]},{\"moves\":[{\"move\":\"Flamethrower\",\"id\":\"flamethrower\",\"pp\":16,\"maxpp\":16,\"target\":\"normal\",\"disabled\":false},{\"move\":\"Air Slash\",\"id\":\"airslash\",\"pp\":16,\"maxpp\":16,\"target\":\"any\",\"disabled\":false},{\"move\":\"Protect\",\"id\":\"protect\",\"pp\":8,\"maxpp\":8,\"target\":\"self\",\"disabled\":false},{\"move\":\"Heat Wave\",\"id\":\"heatwave\",\"pp\":12,\"maxpp\":12,\"target\":\"allAdjacentFoes\",\"disabled\":false}]}],\"side\":{\"name\":\"p1\",\"id\":\"p1\",\"pokemon\":[{\"ident\":\"p1: Venusaur\",\"details\":\"Venusaur, L50, F\",\"condition\":\"159/159\",\"active\":true,\"stats\":{\"atk\":102,\"def\":103,\"spa\":120,\"spd\":120,\"spe\":104},\"moves\":[\"gigadrain\",\"sludgebomb\",\"protect\",\"sleeppowder\"],\"baseAbility\":\"overgrow\",\"item\":\"leftovers\",\"pokeball\":\"pokeball\",\"ability\":\"overgrow\",\"commanding\":false,\"reviving\":false},{\"ident\":\"p1: Charizard\",\"details\":\"Charizard, L50, F\",\"condition\":\"157/157\",\"active\":true,\"stats\":{\"atk\":104,\"def\":98,\"spa\":129,\"spd\":105,\"spe\":124},\"moves\":[\"flamethrower\",\"airslash\",\"protect\",\"heatwave\"],\"baseAbility\":\"blaze\",\"item\":\"charcoal\",\"pokeball\":\"pokeball\",\"ability\":\"blaze\",\"commanding\":false,\"reviving\":false},{\"ident\":\"p1: Blastoise\",\"details\":\"Blastoise, L50, M\",\"condition\":\"158/158\",\"active\":false,\"stats\":{\"atk\":103,\"def\":120,\"spa\":105,\"spd\":125,\"spe\":102},\"moves\":[\"surf\",\"icebeam\",\"protect\",\"fakeout\"],\"baseAbility\":\"torrent\",\"item\":\"mysticwater\",\"pokeball\":\"pokeball\",\"ability\":\"torrent\",\"commanding\":false,\"reviving\":false},{\"ident\":\"p1: Pikachu\",\"details\":\"Pikachu, L50, F\",\"condition\":\"114/114\",\"active\":false,\"stats\":{\"atk\":75,\"def\":60,\"spa\":70,\"spd\":70,\"spe\":114},\"moves\":[\"thunderbolt\",\"fakeout\",\"protect\",\"voltswitch\"],\"baseAbility\":\"static\",\"item\":\"lightball\",\"pokeball\":\"pokeball\",\"ability\":\"static\",\"commanding\":false,\"reviving\":false}]}}"
+    ],
+    "team": {
+      "schema_version": 1,
+      "data_class": "synthetic",
+      "team": [
+        {
+          "name": "",
+          "species": "Venusaur",
+          "item": "Leftovers",
+          "ability": "Overgrow",
+          "moves": [
+            "Giga Drain",
+            "Sludge Bomb",
+            "Protect",
+            "Sleep Powder"
+          ],
+          "nature": "Serious",
+          "gender": "",
+          "evs": {
+            "hp": 4,
+            "atk": 0,
+            "def": 0,
+            "spa": 0,
+            "spd": 0,
+            "spe": 4
+          },
+          "ivs": {
+            "hp": 31,
+            "atk": 31,
+            "def": 31,
+            "spa": 31,
+            "spd": 31,
+            "spe": 31
+          },
+          "level": 50
+        },
+        {
+          "name": "",
+          "species": "Charizard",
+          "item": "Charcoal",
+          "ability": "Blaze",
+          "moves": [
+            "Flamethrower",
+            "Air Slash",
+            "Protect",
+            "Heat Wave"
+          ],
+          "nature": "Serious",
+          "gender": "",
+          "evs": {
+            "hp": 4,
+            "atk": 0,
+            "def": 0,
+            "spa": 0,
+            "spd": 0,
+            "spe": 4
+          },
+          "ivs": {
+            "hp": 31,
+            "atk": 31,
+            "def": 31,
+            "spa": 31,
+            "spd": 31,
+            "spe": 31
+          },
+          "level": 50
+        },
+        {
+          "name": "",
+          "species": "Blastoise",
+          "item": "Mystic Water",
+          "ability": "Torrent",
+          "moves": [
+            "Surf",
+            "Ice Beam",
+            "Protect",
+            "Fake Out"
+          ],
+          "nature": "Serious",
+          "gender": "",
+          "evs": {
+            "hp": 4,
+            "atk": 0,
+            "def": 0,
+            "spa": 0,
+            "spd": 0,
+            "spe": 4
+          },
+          "ivs": {
+            "hp": 31,
+            "atk": 31,
+            "def": 31,
+            "spa": 31,
+            "spd": 31,
+            "spe": 31
+          },
+          "level": 50
+        },
+        {
+          "name": "",
+          "species": "Pikachu",
+          "item": "Light Ball",
+          "ability": "Static",
+          "moves": [
+            "Thunderbolt",
+            "Fake Out",
+            "Protect",
+            "Volt Switch"
+          ],
+          "nature": "Serious",
+          "gender": "",
+          "evs": {
+            "hp": 4,
+            "atk": 0,
+            "def": 0,
+            "spa": 0,
+            "spd": 0,
+            "spe": 4
+          },
+          "ivs": {
+            "hp": 31,
+            "atk": 31,
+            "def": 31,
+            "spa": 31,
+            "spd": 31,
+            "spe": 31
+          },
+          "level": 50
+        },
+        {
+          "name": "",
+          "species": "Snorlax",
+          "item": "Sitrus Berry",
+          "ability": "Thick Fat",
+          "moves": [
+            "Body Slam",
+            "Protect",
+            "Curse",
+            "Rest"
+          ],
+          "nature": "Serious",
+          "gender": "",
+          "evs": {
+            "hp": 4,
+            "atk": 0,
+            "def": 0,
+            "spa": 0,
+            "spd": 0,
+            "spe": 4
+          },
+          "ivs": {
+            "hp": 31,
+            "atk": 31,
+            "def": 31,
+            "spa": 31,
+            "spd": 31,
+            "spe": 31
+          },
+          "level": 50
+        },
+        {
+          "name": "",
+          "species": "Gengar",
+          "item": "Focus Sash",
+          "ability": "Cursed Body",
+          "moves": [
+            "Shadow Ball",
+            "Sludge Bomb",
+            "Protect",
+            "Icy Wind"
+          ],
+          "nature": "Serious",
+          "gender": "",
+          "evs": {
+            "hp": 4,
+            "atk": 0,
+            "def": 0,
+            "spa": 0,
+            "spd": 0,
+            "spe": 4
+          },
+          "ivs": {
+            "hp": 31,
+            "atk": 31,
+            "def": 31,
+            "spa": 31,
+            "spd": 31,
+            "spe": 31
+          },
+          "level": 50
+        }
+      ]
+    },
+    "kind": "battle"
+  },
+  "choice": "move 1 1, move 1 1",
+  "candidates": [
+    {
+      "choice": "team 0",
+      "pending": false
+    },
+    {
+      "choice": "team 1",
+      "pending": false
+    },
+    {
+      "choice": "team 2",
+      "pending": false
+    },
+    {
+      "choice": "team 3",
+      "pending": false
+    },
+    {
+      "choice": "team 4",
+      "pending": false
+    },
+    {
+      "choice": "team 5",
+      "pending": false
+    },
+    {
+      "choice": "team 6",
+      "pending": false
+    },
+    {
+      "choice": "team 7",
+      "pending": false
+    },
+    {
+      "choice": "team 8",
+      "pending": false
+    },
+    {
+      "choice": "team 9",
+      "pending": false
+    },
+    {
+      "choice": "team 10",
+      "pending": false
+    },
+    {
+      "choice": "team 11",
+      "pending": false
+    },
+    {
+      "choice": "team 12",
+      "pending": false
+    },
+    {
+      "choice": "team 13",
+      "pending": false
+    },
+    {
+      "choice": "team 14",
+      "pending": false
+    },
+    {
+      "choice": "team 15",
+      "pending": false
+    },
+    {
+      "choice": "team 16",
+      "pending": false
+    },
+    {
+      "choice": "team 17",
+      "pending": false
+    },
+    {
+      "choice": "team 18",
+      "pending": false
+    },
+    {
+      "choice": "team 19",
+      "pending": false
+    },
+    {
+      "choice": "team 20",
+      "pending": false
+    },
+    {
+      "choice": "team 21",
+      "pending": false
+    },
+    {
+      "choice": "team 22",
+      "pending": false
+    },
+    {
+      "choice": "team 23",
+      "pending": false
+    },
+    {
+      "choice": "team 24",
+      "pending": false
+    },
+    {
+      "choice": "team 25",
+      "pending": false
+    },
+    {
+      "choice": "team 26",
+      "pending": false
+    },
+    {
+      "choice": "team 27",
+      "pending": false
+    },
+    {
+      "choice": "team 28",
+      "pending": false
+    },
+    {
+      "choice": "team 29",
+      "pending": false
+    },
+    {
+      "choice": "team 30",
+      "pending": false
+    },
+    {
+      "choice": "team 31",
+      "pending": false
+    },
+    {
+      "choice": "team 32",
+      "pending": false
+    },
+    {
+      "choice": "team 33",
+      "pending": false
+    },
+    {
+      "choice": "team 34",
+      "pending": false
+    },
+    {
+      "choice": "team 35",
+      "pending": false
+    },
+    {
+      "choice": "team 36",
+      "pending": false
+    },
+    {
+      "choice": "team 37",
+      "pending": false
+    },
+    {
+      "choice": "team 38",
+      "pending": false
+    },
+    {
+      "choice": "team 39",
+      "pending": false
+    },
+    {
+      "choice": "team 40",
+      "pending": false
+    },
+    {
+      "choice": "team 41",
+      "pending": false
+    },
+    {
+      "choice": "team 42",
+      "pending": false
+    },
+    {
+      "choice": "team 43",
+      "pending": false
+    },
+    {
+      "choice": "team 44",
+      "pending": false
+    },
+    {
+      "choice": "team 45",
+      "pending": false
+    },
+    {
+      "choice": "team 46",
+      "pending": false
+    },
+    {
+      "choice": "team 47",
+      "pending": false
+    },
+    {
+      "choice": "team 48",
+      "pending": false
+    },
+    {
+      "choice": "team 49",
+      "pending": false
+    },
+    {
+      "choice": "team 50",
+      "pending": false
+    },
+    {
+      "choice": "team 51",
+      "pending": false
+    },
+    {
+      "choice": "team 52",
+      "pending": false
+    },
+    {
+      "choice": "team 53",
+      "pending": false
+    },
+    {
+      "choice": "team 54",
+      "pending": false
+    },
+    {
+      "choice": "team 55",
+      "pending": false
+    },
+    {
+      "choice": "team 56",
+      "pending": false
+    },
+    {
+      "choice": "team 57",
+      "pending": false
+    },
+    {
+      "choice": "team 58",
+      "pending": false
+    },
+    {
+      "choice": "team 59",
+      "pending": false
+    },
+    {
+      "choice": "team 60",
+      "pending": false
+    },
+    {
+      "choice": "team 61",
+      "pending": false
+    },
+    {
+      "choice": "team 62",
+      "pending": false
+    },
+    {
+      "choice": "team 63",
+      "pending": false
+    },
+    {
+      "choice": "team 64",
+      "pending": false
+    },
+    {
+      "choice": "team 65",
+      "pending": false
+    },
+    {
+      "choice": "team 66",
+      "pending": false
+    },
+    {
+      "choice": "team 67",
+      "pending": false
+    },
+    {
+      "choice": "team 68",
+      "pending": false
+    },
+    {
+      "choice": "team 69",
+      "pending": false
+    },
+    {
+      "choice": "team 70",
+      "pending": false
+    },
+    {
+      "choice": "team 71",
+      "pending": false
+    },
+    {
+      "choice": "team 72",
+      "pending": false
+    },
+    {
+      "choice": "team 73",
+      "pending": false
+    },
+    {
+      "choice": "team 74",
+      "pending": false
+    },
+    {
+      "choice": "team 75",
+      "pending": false
+    },
+    {
+      "choice": "team 76",
+      "pending": false
+    },
+    {
+      "choice": "team 77",
+      "pending": false
+    },
+    {
+      "choice": "team 78",
+      "pending": false
+    },
+    {
+      "choice": "team 79",
+      "pending": false
+    },
+    {
+      "choice": "team 80",
+      "pending": false
+    },
+    {
+      "choice": "team 81",
+      "pending": false
+    },
+    {
+      "choice": "team 82",
+      "pending": false
+    },
+    {
+      "choice": "team 83",
+      "pending": false
+    },
+    {
+      "choice": "team 84",
+      "pending": false
+    },
+    {
+      "choice": "team 85",
+      "pending": false
+    },
+    {
+      "choice": "team 86",
+      "pending": false
+    },
+    {
+      "choice": "team 87",
+      "pending": false
+    },
+    {
+      "choice": "team 88",
+      "pending": false
+    },
+    {
+      "choice": "team 89",
+      "pending": false
+    },
+    {
+      "choice": "team 90",
+      "pending": false
+    },
+    {
+      "choice": "team 91",
+      "pending": false
+    },
+    {
+      "choice": "team 92",
+      "pending": false
+    },
+    {
+      "choice": "team 93",
+      "pending": false
+    },
+    {
+      "choice": "team 94",
+      "pending": false
+    },
+    {
+      "choice": "team 95",
+      "pending": false
+    },
+    {
+      "choice": "team 96",
+      "pending": false
+    },
+    {
+      "choice": "team 97",
+      "pending": false
+    },
+    {
+      "choice": "team 98",
+      "pending": false
+    },
+    {
+      "choice": "team 99",
+      "pending": false
+    },
+    {
+      "choice": "team 100",
+      "pending": false
+    },
+    {
+      "choice": "team 101",
+      "pending": false
+    },
+    {
+      "choice": "team 102",
+      "pending": false
+    },
+    {
+      "choice": "team 103",
+      "pending": false
+    },
+    {
+      "choice": "team 104",
+      "pending": false
+    },
+    {
+      "choice": "team 105",
+      "pending": false
+    },
+    {
+      "choice": "team 106",
+      "pending": false
+    },
+    {
+      "choice": "team 107",
+      "pending": false
+    },
+    {
+      "choice": "team 108",
+      "pending": false
+    },
+    {
+      "choice": "team 109",
+      "pending": false
+    },
+    {
+      "choice": "team 110",
+      "pending": false
+    },
+    {
+      "choice": "team 111",
+      "pending": false
+    },
+    {
+      "choice": "team 112",
+      "pending": false
+    },
+    {
+      "choice": "team 113",
+      "pending": false
+    },
+    {
+      "choice": "team 114",
+      "pending": false
+    },
+    {
+      "choice": "team 115",
+      "pending": false
+    },
+    {
+      "choice": "team 116",
+      "pending": false
+    },
+    {
+      "choice": "team 117",
+      "pending": false
+    },
+    {
+      "choice": "team 118",
+      "pending": false
+    },
+    {
+      "choice": "team 119",
+      "pending": false
+    },
+    {
+      "choice": "team 120",
+      "pending": false
+    },
+    {
+      "choice": "team 121",
+      "pending": false
+    },
+    {
+      "choice": "team 122",
+      "pending": false
+    },
+    {
+      "choice": "team 123",
+      "pending": false
+    },
+    {
+      "choice": "team 124",
+      "pending": false
+    },
+    {
+      "choice": "team 125",
+      "pending": false
+    },
+    {
+      "choice": "team 126",
+      "pending": false
+    },
+    {
+      "choice": "team 127",
+      "pending": false
+    },
+    {
+      "choice": "team 128",
+      "pending": false
+    },
+    {
+      "choice": "team 129",
+      "pending": false
+    },
+    {
+      "choice": "team 130",
+      "pending": false
+    },
+    {
+      "choice": "team 131",
+      "pending": false
+    },
+    {
+      "choice": "team 132",
+      "pending": false
+    },
+    {
+      "choice": "team 133",
+      "pending": false
+    },
+    {
+      "choice": "team 134",
+      "pending": false
+    },
+    {
+      "choice": "team 135",
+      "pending": false
+    },
+    {
+      "choice": "team 136",
+      "pending": false
+    },
+    {
+      "choice": "team 137",
+      "pending": false
+    },
+    {
+      "choice": "team 138",
+      "pending": false
+    },
+    {
+      "choice": "team 139",
+      "pending": false
+    },
+    {
+      "choice": "team 140",
+      "pending": false
+    },
+    {
+      "choice": "team 141",
+      "pending": false
+    },
+    {
+      "choice": "team 142",
+      "pending": false
+    },
+    {
+      "choice": "team 143",
+      "pending": false
+    },
+    {
+      "choice": "team 144",
+      "pending": false
+    },
+    {
+      "choice": "team 145",
+      "pending": false
+    },
+    {
+      "choice": "team 146",
+      "pending": false
+    },
+    {
+      "choice": "team 147",
+      "pending": false
+    },
+    {
+      "choice": "team 148",
+      "pending": false
+    },
+    {
+      "choice": "team 149",
+      "pending": false
+    },
+    {
+      "choice": "team 150",
+      "pending": false
+    },
+    {
+      "choice": "team 151",
+      "pending": false
+    },
+    {
+      "choice": "team 152",
+      "pending": false
+    },
+    {
+      "choice": "team 153",
+      "pending": false
+    },
+    {
+      "choice": "team 154",
+      "pending": false
+    },
+    {
+      "choice": "team 155",
+      "pending": false
+    },
+    {
+      "choice": "team 156",
+      "pending": false
+    },
+    {
+      "choice": "team 157",
+      "pending": false
+    },
+    {
+      "choice": "team 158",
+      "pending": false
+    },
+    {
+      "choice": "team 159",
+      "pending": false
+    },
+    {
+      "choice": "team 160",
+      "pending": false
+    },
+    {
+      "choice": "team 161",
+      "pending": false
+    },
+    {
+      "choice": "team 162",
+      "pending": false
+    },
+    {
+      "choice": "team 163",
+      "pending": false
+    },
+    {
+      "choice": "team 164",
+      "pending": false
+    },
+    {
+      "choice": "team 165",
+      "pending": false
+    },
+    {
+      "choice": "team 166",
+      "pending": false
+    },
+    {
+      "choice": "team 167",
+      "pending": false
+    },
+    {
+      "choice": "team 168",
+      "pending": false
+    },
+    {
+      "choice": "team 169",
+      "pending": false
+    },
+    {
+      "choice": "team 170",
+      "pending": false
+    },
+    {
+      "choice": "team 171",
+      "pending": false
+    },
+    {
+      "choice": "team 172",
+      "pending": false
+    },
+    {
+      "choice": "team 173",
+      "pending": false
+    },
+    {
+      "choice": "team 174",
+      "pending": false
+    },
+    {
+      "choice": "team 175",
+      "pending": false
+    },
+    {
+      "choice": "team 176",
+      "pending": false
+    },
+    {
+      "choice": "team 177",
+      "pending": false
+    },
+    {
+      "choice": "team 178",
+      "pending": false
+    },
+    {
+      "choice": "team 179",
+      "pending": false
+    },
+    {
+      "choice": "team 180",
+      "pending": false
+    },
+    {
+      "choice": "team 181",
+      "pending": false
+    },
+    {
+      "choice": "team 182",
+      "pending": false
+    },
+    {
+      "choice": "team 183",
+      "pending": false
+    },
+    {
+      "choice": "team 184",
+      "pending": false
+    },
+    {
+      "choice": "team 185",
+      "pending": false
+    },
+    {
+      "choice": "team 186",
+      "pending": false
+    },
+    {
+      "choice": "team 187",
+      "pending": false
+    },
+    {
+      "choice": "team 188",
+      "pending": false
+    },
+    {
+      "choice": "team 189",
+      "pending": false
+    },
+    {
+      "choice": "team 190",
+      "pending": false
+    },
+    {
+      "choice": "team 191",
+      "pending": false
+    },
+    {
+      "choice": "team 192",
+      "pending": false
+    },
+    {
+      "choice": "team 193",
+      "pending": false
+    },
+    {
+      "choice": "team 194",
+      "pending": false
+    },
+    {
+      "choice": "team 195",
+      "pending": false
+    },
+    {
+      "choice": "team 196",
+      "pending": false
+    },
+    {
+      "choice": "team 197",
+      "pending": false
+    },
+    {
+      "choice": "team 198",
+      "pending": false
+    },
+    {
+      "choice": "team 199",
+      "pending": false
+    },
+    {
+      "choice": "team 200",
+      "pending": false
+    },
+    {
+      "choice": "team 201",
+      "pending": false
+    },
+    {
+      "choice": "team 202",
+      "pending": false
+    },
+    {
+      "choice": "team 203",
+      "pending": false
+    },
+    {
+      "choice": "team 204",
+      "pending": false
+    },
+    {
+      "choice": "team 205",
+      "pending": false
+    },
+    {
+      "choice": "team 206",
+      "pending": false
+    },
+    {
+      "choice": "team 207",
+      "pending": false
+    },
+    {
+      "choice": "team 208",
+      "pending": false
+    },
+    {
+      "choice": "team 209",
+      "pending": false
+    },
+    {
+      "choice": "team 210",
+      "pending": false
+    },
+    {
+      "choice": "team 211",
+      "pending": false
+    },
+    {
+      "choice": "team 212",
+      "pending": false
+    },
+    {
+      "choice": "team 213",
+      "pending": false
+    },
+    {
+      "choice": "team 214",
+      "pending": false
+    },
+    {
+      "choice": "team 215",
+      "pending": false
+    },
+    {
+      "choice": "team 216",
+      "pending": false
+    },
+    {
+      "choice": "team 217",
+      "pending": false
+    },
+    {
+      "choice": "team 218",
+      "pending": false
+    },
+    {
+      "choice": "team 219",
+      "pending": false
+    },
+    {
+      "choice": "team 220",
+      "pending": false
+    },
+    {
+      "choice": "team 221",
+      "pending": false
+    },
+    {
+      "choice": "team 222",
+      "pending": false
+    },
+    {
+      "choice": "team 223",
+      "pending": false
+    },
+    {
+      "choice": "team 224",
+      "pending": false
+    },
+    {
+      "choice": "team 225",
+      "pending": false
+    },
+    {
+      "choice": "team 226",
+      "pending": false
+    },
+    {
+      "choice": "team 227",
+      "pending": false
+    },
+    {
+      "choice": "team 228",
+      "pending": false
+    },
+    {
+      "choice": "team 229",
+      "pending": false
+    },
+    {
+      "choice": "team 230",
+      "pending": false
+    },
+    {
+      "choice": "team 231",
+      "pending": false
+    },
+    {
+      "choice": "team 232",
+      "pending": false
+    },
+    {
+      "choice": "team 233",
+      "pending": false
+    },
+    {
+      "choice": "team 234",
+      "pending": false
+    },
+    {
+      "choice": "team 235",
+      "pending": false
+    },
+    {
+      "choice": "team 236",
+      "pending": false
+    },
+    {
+      "choice": "team 237",
+      "pending": false
+    },
+    {
+      "choice": "team 238",
+      "pending": false
+    },
+    {
+      "choice": "team 239",
+      "pending": false
+    },
+    {
+      "choice": "team 240",
+      "pending": false
+    },
+    {
+      "choice": "team 241",
+      "pending": false
+    },
+    {
+      "choice": "team 242",
+      "pending": false
+    },
+    {
+      "choice": "team 243",
+      "pending": false
+    },
+    {
+      "choice": "team 244",
+      "pending": false
+    },
+    {
+      "choice": "team 245",
+      "pending": false
+    },
+    {
+      "choice": "team 246",
+      "pending": false
+    },
+    {
+      "choice": "team 247",
+      "pending": false
+    },
+    {
+      "choice": "team 248",
+      "pending": false
+    },
+    {
+      "choice": "team 249",
+      "pending": false
+    },
+    {
+      "choice": "team 250",
+      "pending": false
+    },
+    {
+      "choice": "team 251",
+      "pending": false
+    },
+    {
+      "choice": "team 252",
+      "pending": false
+    },
+    {
+      "choice": "team 253",
+      "pending": false
+    },
+    {
+      "choice": "team 254",
+      "pending": false
+    },
+    {
+      "choice": "team 255",
+      "pending": false
+    },
+    {
+      "choice": "team 256",
+      "pending": false
+    },
+    {
+      "choice": "team 257",
+      "pending": false
+    },
+    {
+      "choice": "team 258",
+      "pending": false
+    },
+    {
+      "choice": "team 259",
+      "pending": false
+    },
+    {
+      "choice": "team 260",
+      "pending": false
+    },
+    {
+      "choice": "team 261",
+      "pending": false
+    },
+    {
+      "choice": "team 262",
+      "pending": false
+    },
+    {
+      "choice": "team 263",
+      "pending": false
+    },
+    {
+      "choice": "team 264",
+      "pending": false
+    },
+    {
+      "choice": "team 265",
+      "pending": false
+    },
+    {
+      "choice": "team 266",
+      "pending": false
+    },
+    {
+      "choice": "team 267",
+      "pending": false
+    },
+    {
+      "choice": "team 268",
+      "pending": false
+    },
+    {
+      "choice": "team 269",
+      "pending": false
+    },
+    {
+      "choice": "team 270",
+      "pending": false
+    },
+    {
+      "choice": "team 271",
+      "pending": false
+    },
+    {
+      "choice": "team 272",
+      "pending": false
+    },
+    {
+      "choice": "team 273",
+      "pending": false
+    },
+    {
+      "choice": "team 274",
+      "pending": false
+    },
+    {
+      "choice": "team 275",
+      "pending": false
+    },
+    {
+      "choice": "team 276",
+      "pending": false
+    },
+    {
+      "choice": "team 277",
+      "pending": false
+    },
+    {
+      "choice": "team 278",
+      "pending": false
+    },
+    {
+      "choice": "team 279",
+      "pending": false
+    },
+    {
+      "choice": "team 280",
+      "pending": false
+    },
+    {
+      "choice": "team 281",
+      "pending": false
+    },
+    {
+      "choice": "team 282",
+      "pending": false
+    },
+    {
+      "choice": "team 283",
+      "pending": false
+    },
+    {
+      "choice": "team 284",
+      "pending": false
+    },
+    {
+      "choice": "team 285",
+      "pending": false
+    },
+    {
+      "choice": "team 286",
+      "pending": false
+    },
+    {
+      "choice": "team 287",
+      "pending": false
+    },
+    {
+      "choice": "team 288",
+      "pending": false
+    },
+    {
+      "choice": "team 289",
+      "pending": false
+    },
+    {
+      "choice": "team 290",
+      "pending": false
+    },
+    {
+      "choice": "team 291",
+      "pending": false
+    },
+    {
+      "choice": "team 292",
+      "pending": false
+    },
+    {
+      "choice": "team 293",
+      "pending": false
+    },
+    {
+      "choice": "team 294",
+      "pending": false
+    },
+    {
+      "choice": "team 295",
+      "pending": false
+    },
+    {
+      "choice": "team 296",
+      "pending": false
+    },
+    {
+      "choice": "team 297",
+      "pending": false
+    },
+    {
+      "choice": "team 298",
+      "pending": false
+    },
+    {
+      "choice": "team 299",
+      "pending": false
+    },
+    {
+      "choice": "team 300",
+      "pending": false
+    },
+    {
+      "choice": "team 301",
+      "pending": false
+    },
+    {
+      "choice": "team 302",
+      "pending": false
+    },
+    {
+      "choice": "team 303",
+      "pending": false
+    },
+    {
+      "choice": "team 304",
+      "pending": false
+    },
+    {
+      "choice": "team 305",
+      "pending": false
+    },
+    {
+      "choice": "team 306",
+      "pending": false
+    },
+    {
+      "choice": "team 307",
+      "pending": false
+    },
+    {
+      "choice": "team 308",
+      "pending": false
+    },
+    {
+      "choice": "team 309",
+      "pending": false
+    },
+    {
+      "choice": "team 310",
+      "pending": false
+    },
+    {
+      "choice": "team 311",
+      "pending": false
+    },
+    {
+      "choice": "team 312",
+      "pending": false
+    },
+    {
+      "choice": "team 313",
+      "pending": false
+    },
+    {
+      "choice": "team 314",
+      "pending": false
+    },
+    {
+      "choice": "team 315",
+      "pending": false
+    },
+    {
+      "choice": "team 316",
+      "pending": false
+    },
+    {
+      "choice": "team 317",
+      "pending": false
+    },
+    {
+      "choice": "team 318",
+      "pending": false
+    },
+    {
+      "choice": "team 319",
+      "pending": false
+    },
+    {
+      "choice": "team 320",
+      "pending": false
+    },
+    {
+      "choice": "team 321",
+      "pending": false
+    },
+    {
+      "choice": "team 322",
+      "pending": false
+    },
+    {
+      "choice": "team 323",
+      "pending": false
+    },
+    {
+      "choice": "team 324",
+      "pending": false
+    },
+    {
+      "choice": "team 325",
+      "pending": false
+    },
+    {
+      "choice": "team 326",
+      "pending": false
+    },
+    {
+      "choice": "team 327",
+      "pending": false
+    },
+    {
+      "choice": "team 328",
+      "pending": false
+    },
+    {
+      "choice": "team 329",
+      "pending": false
+    },
+    {
+      "choice": "team 330",
+      "pending": false
+    },
+    {
+      "choice": "team 331",
+      "pending": false
+    },
+    {
+      "choice": "team 332",
+      "pending": false
+    },
+    {
+      "choice": "team 333",
+      "pending": false
+    },
+    {
+      "choice": "team 334",
+      "pending": false
+    },
+    {
+      "choice": "team 335",
+      "pending": false
+    },
+    {
+      "choice": "team 336",
+      "pending": false
+    },
+    {
+      "choice": "team 337",
+      "pending": false
+    },
+    {
+      "choice": "team 338",
+      "pending": false
+    },
+    {
+      "choice": "team 339",
+      "pending": false
+    },
+    {
+      "choice": "team 340",
+      "pending": false
+    },
+    {
+      "choice": "team 341",
+      "pending": false
+    },
+    {
+      "choice": "team 342",
+      "pending": false
+    },
+    {
+      "choice": "team 343",
+      "pending": false
+    },
+    {
+      "choice": "team 344",
+      "pending": false
+    },
+    {
+      "choice": "team 345",
+      "pending": false
+    },
+    {
+      "choice": "team 346",
+      "pending": false
+    },
+    {
+      "choice": "team 347",
+      "pending": false
+    },
+    {
+      "choice": "team 348",
+      "pending": false
+    },
+    {
+      "choice": "team 349",
+      "pending": false
+    },
+    {
+      "choice": "team 350",
+      "pending": false
+    },
+    {
+      "choice": "team 351",
+      "pending": false
+    },
+    {
+      "choice": "team 352",
+      "pending": false
+    },
+    {
+      "choice": "team 353",
+      "pending": false
+    },
+    {
+      "choice": "team 354",
+      "pending": false
+    },
+    {
+      "choice": "team 355",
+      "pending": false
+    },
+    {
+      "choice": "team 356",
+      "pending": false
+    },
+    {
+      "choice": "team 357",
+      "pending": false
+    },
+    {
+      "choice": "team 358",
+      "pending": false
+    },
+    {
+      "choice": "team 359",
+      "pending": false
+    },
+    {
+      "choice": "team 360",
+      "pending": false
+    },
+    {
+      "choice": "team 361",
+      "pending": false
+    },
+    {
+      "choice": "team 362",
+      "pending": false
+    },
+    {
+      "choice": "team 363",
+      "pending": false
+    },
+    {
+      "choice": "team 364",
+      "pending": false
+    },
+    {
+      "choice": "team 365",
+      "pending": false
+    },
+    {
+      "choice": "team 366",
+      "pending": false
+    },
+    {
+      "choice": "team 367",
+      "pending": false
+    },
+    {
+      "choice": "team 368",
+      "pending": false
+    },
+    {
+      "choice": "team 369",
+      "pending": false
+    },
+    {
+      "choice": "team 370",
+      "pending": false
+    },
+    {
+      "choice": "team 371",
+      "pending": false
+    },
+    {
+      "choice": "team 372",
+      "pending": false
+    },
+    {
+      "choice": "team 373",
+      "pending": false
+    },
+    {
+      "choice": "team 374",
+      "pending": false
+    },
+    {
+      "choice": "team 375",
+      "pending": false
+    },
+    {
+      "choice": "team 376",
+      "pending": false
+    },
+    {
+      "choice": "team 377",
+      "pending": false
+    },
+    {
+      "choice": "team 378",
+      "pending": false
+    },
+    {
+      "choice": "team 379",
+      "pending": false
+    },
+    {
+      "choice": "team 380",
+      "pending": false
+    },
+    {
+      "choice": "team 381",
+      "pending": false
+    },
+    {
+      "choice": "team 382",
+      "pending": false
+    },
+    {
+      "choice": "team 383",
+      "pending": false
+    },
+    {
+      "choice": "team 384",
+      "pending": false
+    },
+    {
+      "choice": "team 385",
+      "pending": false
+    },
+    {
+      "choice": "team 386",
+      "pending": false
+    },
+    {
+      "choice": "team 387",
+      "pending": false
+    },
+    {
+      "choice": "team 388",
+      "pending": false
+    },
+    {
+      "choice": "team 389",
+      "pending": false
+    },
+    {
+      "choice": "team 390",
+      "pending": false
+    },
+    {
+      "choice": "team 391",
+      "pending": false
+    },
+    {
+      "choice": "team 392",
+      "pending": false
+    },
+    {
+      "choice": "team 393",
+      "pending": false
+    },
+    {
+      "choice": "team 394",
+      "pending": false
+    },
+    {
+      "choice": "team 395",
+      "pending": false
+    },
+    {
+      "choice": "team 396",
+      "pending": false
+    },
+    {
+      "choice": "team 397",
+      "pending": false
+    },
+    {
+      "choice": "team 398",
+      "pending": false
+    },
+    {
+      "choice": "team 399",
+      "pending": false
+    },
+    {
+      "choice": "team 400",
+      "pending": false
+    },
+    {
+      "choice": "team 401",
+      "pending": false
+    },
+    {
+      "choice": "team 402",
+      "pending": false
+    },
+    {
+      "choice": "team 403",
+      "pending": false
+    },
+    {
+      "choice": "team 404",
+      "pending": false
+    },
+    {
+      "choice": "team 405",
+      "pending": false
+    },
+    {
+      "choice": "team 406",
+      "pending": false
+    },
+    {
+      "choice": "team 407",
+      "pending": false
+    },
+    {
+      "choice": "team 408",
+      "pending": false
+    },
+    {
+      "choice": "team 409",
+      "pending": false
+    },
+    {
+      "choice": "team 410",
+      "pending": false
+    },
+    {
+      "choice": "team 411",
+      "pending": false
+    },
+    {
+      "choice": "team 412",
+      "pending": false
+    },
+    {
+      "choice": "team 413",
+      "pending": false
+    },
+    {
+      "choice": "team 414",
+      "pending": false
+    },
+    {
+      "choice": "team 415",
+      "pending": false
+    },
+    {
+      "choice": "team 416",
+      "pending": false
+    },
+    {
+      "choice": "team 417",
+      "pending": false
+    },
+    {
+      "choice": "team 418",
+      "pending": false
+    },
+    {
+      "choice": "team 419",
+      "pending": false
+    },
+    {
+      "choice": "team 420",
+      "pending": false
+    },
+    {
+      "choice": "team 421",
+      "pending": false
+    },
+    {
+      "choice": "team 422",
+      "pending": false
+    },
+    {
+      "choice": "team 423",
+      "pending": false
+    },
+    {
+      "choice": "team 424",
+      "pending": false
+    },
+    {
+      "choice": "team 425",
+      "pending": false
+    },
+    {
+      "choice": "team 426",
+      "pending": false
+    },
+    {
+      "choice": "team 427",
+      "pending": false
+    },
+    {
+      "choice": "team 428",
+      "pending": false
+    },
+    {
+      "choice": "team 429",
+      "pending": false
+    },
+    {
+      "choice": "team 430",
+      "pending": false
+    },
+    {
+      "choice": "team 431",
+      "pending": false
+    },
+    {
+      "choice": "team 432",
+      "pending": false
+    },
+    {
+      "choice": "team 433",
+      "pending": false
+    },
+    {
+      "choice": "team 434",
+      "pending": false
+    },
+    {
+      "choice": "team 435",
+      "pending": false
+    },
+    {
+      "choice": "team 436",
+      "pending": false
+    },
+    {
+      "choice": "team 437",
+      "pending": false
+    },
+    {
+      "choice": "team 438",
+      "pending": false
+    },
+    {
+      "choice": "team 439",
+      "pending": false
+    },
+    {
+      "choice": "team 440",
+      "pending": false
+    },
+    {
+      "choice": "team 441",
+      "pending": false
+    },
+    {
+      "choice": "team 442",
+      "pending": false
+    },
+    {
+      "choice": "team 443",
+      "pending": false
+    },
+    {
+      "choice": "team 444",
+      "pending": false
+    },
+    {
+      "choice": "team 445",
+      "pending": false
+    },
+    {
+      "choice": "team 446",
+      "pending": false
+    },
+    {
+      "choice": "team 447",
+      "pending": false
+    },
+    {
+      "choice": "team 448",
+      "pending": false
+    },
+    {
+      "choice": "team 449",
+      "pending": false
+    },
+    {
+      "choice": "team 450",
+      "pending": false
+    },
+    {
+      "choice": "team 451",
+      "pending": false
+    },
+    {
+      "choice": "team 452",
+      "pending": false
+    },
+    {
+      "choice": "team 453",
+      "pending": false
+    },
+    {
+      "choice": "team 454",
+      "pending": false
+    },
+    {
+      "choice": "team 455",
+      "pending": false
+    },
+    {
+      "choice": "team 456",
+      "pending": false
+    },
+    {
+      "choice": "team 457",
+      "pending": false
+    },
+    {
+      "choice": "team 458",
+      "pending": false
+    },
+    {
+      "choice": "team 459",
+      "pending": false
+    },
+    {
+      "choice": "team 460",
+      "pending": false
+    },
+    {
+      "choice": "team 461",
+      "pending": false
+    },
+    {
+      "choice": "team 462",
+      "pending": false
+    },
+    {
+      "choice": "team 463",
+      "pending": false
+    },
+    {
+      "choice": "team 464",
+      "pending": false
+    },
+    {
+      "choice": "team 465",
+      "pending": false
+    },
+    {
+      "choice": "team 466",
+      "pending": false
+    },
+    {
+      "choice": "team 467",
+      "pending": false
+    },
+    {
+      "choice": "team 468",
+      "pending": false
+    },
+    {
+      "choice": "team 469",
+      "pending": false
+    },
+    {
+      "choice": "team 470",
+      "pending": false
+    },
+    {
+      "choice": "team 471",
+      "pending": false
+    },
+    {
+      "choice": "team 472",
+      "pending": false
+    },
+    {
+      "choice": "team 473",
+      "pending": false
+    },
+    {
+      "choice": "team 474",
+      "pending": false
+    },
+    {
+      "choice": "team 475",
+      "pending": false
+    },
+    {
+      "choice": "team 476",
+      "pending": false
+    },
+    {
+      "choice": "team 477",
+      "pending": false
+    },
+    {
+      "choice": "team 478",
+      "pending": false
+    },
+    {
+      "choice": "team 479",
+      "pending": false
+    },
+    {
+      "choice": "team 480",
+      "pending": false
+    },
+    {
+      "choice": "team 481",
+      "pending": false
+    },
+    {
+      "choice": "team 482",
+      "pending": false
+    },
+    {
+      "choice": "team 483",
+      "pending": false
+    },
+    {
+      "choice": "team 484",
+      "pending": false
+    },
+    {
+      "choice": "team 485",
+      "pending": false
+    },
+    {
+      "choice": "team 486",
+      "pending": false
+    },
+    {
+      "choice": "team 487",
+      "pending": false
+    },
+    {
+      "choice": "team 488",
+      "pending": false
+    },
+    {
+      "choice": "team 489",
+      "pending": false
+    },
+    {
+      "choice": "team 490",
+      "pending": false
+    },
+    {
+      "choice": "team 491",
+      "pending": false
+    },
+    {
+      "choice": "team 492",
+      "pending": false
+    },
+    {
+      "choice": "team 493",
+      "pending": false
+    },
+    {
+      "choice": "team 494",
+      "pending": false
+    },
+    {
+      "choice": "team 495",
+      "pending": false
+    },
+    {
+      "choice": "team 496",
+      "pending": false
+    },
+    {
+      "choice": "team 497",
+      "pending": false
+    },
+    {
+      "choice": "team 498",
+      "pending": false
+    },
+    {
+      "choice": "team 499",
+      "pending": false
+    },
+    {
+      "choice": "team 500",
+      "pending": false
+    },
+    {
+      "choice": "team 501",
+      "pending": false
+    },
+    {
+      "choice": "team 502",
+      "pending": false
+    },
+    {
+      "choice": "team 503",
+      "pending": false
+    },
+    {
+      "choice": "team 504",
+      "pending": false
+    },
+    {
+      "choice": "team 505",
+      "pending": false
+    },
+    {
+      "choice": "team 506",
+      "pending": false
+    },
+    {
+      "choice": "team 507",
+      "pending": false
+    },
+    {
+      "choice": "team 508",
+      "pending": false
+    },
+    {
+      "choice": "team 509",
+      "pending": false
+    },
+    {
+      "choice": "team 510",
+      "pending": false
+    },
+    {
+      "choice": "team 511",
+      "pending": false
+    },
+    {
+      "choice": "team 512",
+      "pending": false
+    },
+    {
+      "choice": "team 513",
+      "pending": false
+    },
+    {
+      "choice": "team 514",
+      "pending": false
+    },
+    {
+      "choice": "team 515",
+      "pending": false
+    },
+    {
+      "choice": "team 516",
+      "pending": false
+    },
+    {
+      "choice": "team 517",
+      "pending": false
+    },
+    {
+      "choice": "team 518",
+      "pending": false
+    },
+    {
+      "choice": "team 519",
+      "pending": false
+    },
+    {
+      "choice": "team 520",
+      "pending": false
+    },
+    {
+      "choice": "team 521",
+      "pending": false
+    },
+    {
+      "choice": "team 522",
+      "pending": false
+    },
+    {
+      "choice": "team 523",
+      "pending": false
+    },
+    {
+      "choice": "team 524",
+      "pending": false
+    },
+    {
+      "choice": "team 525",
+      "pending": false
+    },
+    {
+      "choice": "team 526",
+      "pending": false
+    },
+    {
+      "choice": "team 527",
+      "pending": false
+    },
+    {
+      "choice": "team 528",
+      "pending": false
+    },
+    {
+      "choice": "team 529",
+      "pending": false
+    },
+    {
+      "choice": "team 530",
+      "pending": false
+    },
+    {
+      "choice": "team 531",
+      "pending": false
+    },
+    {
+      "choice": "team 532",
+      "pending": false
+    },
+    {
+      "choice": "team 533",
+      "pending": false
+    },
+    {
+      "choice": "team 534",
+      "pending": false
+    },
+    {
+      "choice": "team 535",
+      "pending": false
+    },
+    {
+      "choice": "team 536",
+      "pending": false
+    },
+    {
+      "choice": "team 537",
+      "pending": false
+    },
+    {
+      "choice": "team 538",
+      "pending": false
+    },
+    {
+      "choice": "team 539",
+      "pending": false
+    },
+    {
+      "choice": "team 540",
+      "pending": false
+    },
+    {
+      "choice": "team 541",
+      "pending": false
+    },
+    {
+      "choice": "team 542",
+      "pending": false
+    },
+    {
+      "choice": "team 543",
+      "pending": false
+    },
+    {
+      "choice": "team 544",
+      "pending": false
+    },
+    {
+      "choice": "team 545",
+      "pending": false
+    },
+    {
+      "choice": "team 546",
+      "pending": false
+    },
+    {
+      "choice": "team 547",
+      "pending": false
+    },
+    {
+      "choice": "team 548",
+      "pending": false
+    },
+    {
+      "choice": "team 549",
+      "pending": false
+    },
+    {
+      "choice": "team 550",
+      "pending": false
+    },
+    {
+      "choice": "team 551",
+      "pending": false
+    },
+    {
+      "choice": "team 552",
+      "pending": false
+    },
+    {
+      "choice": "team 553",
+      "pending": false
+    },
+    {
+      "choice": "team 554",
+      "pending": false
+    },
+    {
+      "choice": "team 555",
+      "pending": false
+    },
+    {
+      "choice": "team 556",
+      "pending": false
+    },
+    {
+      "choice": "team 557",
+      "pending": false
+    },
+    {
+      "choice": "team 558",
+      "pending": false
+    },
+    {
+      "choice": "team 559",
+      "pending": false
+    },
+    {
+      "choice": "team 560",
+      "pending": false
+    },
+    {
+      "choice": "team 561",
+      "pending": false
+    },
+    {
+      "choice": "team 562",
+      "pending": false
+    },
+    {
+      "choice": "team 563",
+      "pending": false
+    },
+    {
+      "choice": "team 564",
+      "pending": false
+    },
+    {
+      "choice": "team 565",
+      "pending": false
+    },
+    {
+      "choice": "team 566",
+      "pending": false
+    },
+    {
+      "choice": "team 567",
+      "pending": false
+    },
+    {
+      "choice": "team 568",
+      "pending": false
+    },
+    {
+      "choice": "team 569",
+      "pending": false
+    },
+    {
+      "choice": "team 570",
+      "pending": false
+    },
+    {
+      "choice": "team 571",
+      "pending": false
+    },
+    {
+      "choice": "team 572",
+      "pending": false
+    },
+    {
+      "choice": "team 573",
+      "pending": false
+    },
+    {
+      "choice": "team 574",
+      "pending": false
+    },
+    {
+      "choice": "team 575",
+      "pending": false
+    },
+    {
+      "choice": "team 576",
+      "pending": false
+    },
+    {
+      "choice": "team 577",
+      "pending": false
+    },
+    {
+      "choice": "team 578",
+      "pending": false
+    },
+    {
+      "choice": "team 579",
+      "pending": false
+    },
+    {
+      "choice": "team 580",
+      "pending": false
+    },
+    {
+      "choice": "team 581",
+      "pending": false
+    },
+    {
+      "choice": "team 582",
+      "pending": false
+    },
+    {
+      "choice": "team 583",
+      "pending": false
+    },
+    {
+      "choice": "team 584",
+      "pending": false
+    },
+    {
+      "choice": "team 585",
+      "pending": false
+    },
+    {
+      "choice": "team 586",
+      "pending": false
+    },
+    {
+      "choice": "team 587",
+      "pending": false
+    },
+    {
+      "choice": "team 588",
+      "pending": false
+    },
+    {
+      "choice": "team 589",
+      "pending": false
+    },
+    {
+      "choice": "team 590",
+      "pending": false
+    },
+    {
+      "choice": "team 591",
+      "pending": false
+    },
+    {
+      "choice": "team 592",
+      "pending": false
+    },
+    {
+      "choice": "team 593",
+      "pending": false
+    },
+    {
+      "choice": "team 594",
+      "pending": false
+    },
+    {
+      "choice": "team 595",
+      "pending": false
+    },
+    {
+      "choice": "team 596",
+      "pending": false
+    },
+    {
+      "choice": "team 597",
+      "pending": false
+    },
+    {
+      "choice": "team 598",
+      "pending": false
+    },
+    {
+      "choice": "team 599",
+      "pending": false
+    },
+    {
+      "choice": "team 600",
+      "pending": false
+    },
+    {
+      "choice": "team 601",
+      "pending": false
+    },
+    {
+      "choice": "team 602",
+      "pending": false
+    },
+    {
+      "choice": "team 603",
+      "pending": false
+    },
+    {
+      "choice": "team 604",
+      "pending": false
+    },
+    {
+      "choice": "team 605",
+      "pending": false
+    },
+    {
+      "choice": "team 606",
+      "pending": false
+    },
+    {
+      "choice": "team 607",
+      "pending": false
+    },
+    {
+      "choice": "team 608",
+      "pending": false
+    },
+    {
+      "choice": "team 609",
+      "pending": false
+    },
+    {
+      "choice": "team 610",
+      "pending": false
+    },
+    {
+      "choice": "team 611",
+      "pending": false
+    },
+    {
+      "choice": "team 612",
+      "pending": false
+    },
+    {
+      "choice": "team 613",
+      "pending": false
+    },
+    {
+      "choice": "team 614",
+      "pending": false
+    },
+    {
+      "choice": "team 615",
+      "pending": false
+    },
+    {
+      "choice": "team 616",
+      "pending": false
+    },
+    {
+      "choice": "team 617",
+      "pending": false
+    },
+    {
+      "choice": "team 618",
+      "pending": false
+    },
+    {
+      "choice": "team 619",
+      "pending": false
+    },
+    {
+      "choice": "team 620",
+      "pending": false
+    },
+    {
+      "choice": "team 621",
+      "pending": false
+    },
+    {
+      "choice": "team 622",
+      "pending": false
+    },
+    {
+      "choice": "team 623",
+      "pending": false
+    },
+    {
+      "choice": "team 624",
+      "pending": false
+    },
+    {
+      "choice": "team 625",
+      "pending": false
+    },
+    {
+      "choice": "team 626",
+      "pending": false
+    },
+    {
+      "choice": "team 627",
+      "pending": false
+    },
+    {
+      "choice": "team 628",
+      "pending": false
+    },
+    {
+      "choice": "team 629",
+      "pending": false
+    },
+    {
+      "choice": "team 630",
+      "pending": false
+    },
+    {
+      "choice": "team 631",
+      "pending": false
+    },
+    {
+      "choice": "team 632",
+      "pending": false
+    },
+    {
+      "choice": "team 633",
+      "pending": false
+    },
+    {
+      "choice": "team 634",
+      "pending": false
+    },
+    {
+      "choice": "team 635",
+      "pending": false
+    },
+    {
+      "choice": "team 636",
+      "pending": false
+    },
+    {
+      "choice": "team 637",
+      "pending": false
+    },
+    {
+      "choice": "team 638",
+      "pending": false
+    },
+    {
+      "choice": "team 639",
+      "pending": false
+    },
+    {
+      "choice": "team 640",
+      "pending": false
+    },
+    {
+      "choice": "team 641",
+      "pending": false
+    },
+    {
+      "choice": "team 642",
+      "pending": false
+    },
+    {
+      "choice": "team 643",
+      "pending": false
+    },
+    {
+      "choice": "team 644",
+      "pending": false
+    },
+    {
+      "choice": "team 645",
+      "pending": false
+    },
+    {
+      "choice": "team 646",
+      "pending": false
+    },
+    {
+      "choice": "team 647",
+      "pending": false
+    },
+    {
+      "choice": "team 648",
+      "pending": false
+    },
+    {
+      "choice": "team 649",
+      "pending": false
+    },
+    {
+      "choice": "team 650",
+      "pending": false
+    },
+    {
+      "choice": "team 651",
+      "pending": false
+    },
+    {
+      "choice": "team 652",
+      "pending": false
+    },
+    {
+      "choice": "team 653",
+      "pending": false
+    },
+    {
+      "choice": "team 654",
+      "pending": false
+    },
+    {
+      "choice": "team 655",
+      "pending": false
+    },
+    {
+      "choice": "team 656",
+      "pending": false
+    },
+    {
+      "choice": "team 657",
+      "pending": false
+    },
+    {
+      "choice": "team 658",
+      "pending": false
+    },
+    {
+      "choice": "team 659",
+      "pending": false
+    },
+    {
+      "choice": "team 660",
+      "pending": false
+    },
+    {
+      "choice": "team 661",
+      "pending": false
+    },
+    {
+      "choice": "team 662",
+      "pending": false
+    },
+    {
+      "choice": "team 663",
+      "pending": false
+    },
+    {
+      "choice": "team 664",
+      "pending": false
+    },
+    {
+      "choice": "team 665",
+      "pending": false
+    },
+    {
+      "choice": "team 666",
+      "pending": false
+    },
+    {
+      "choice": "team 667",
+      "pending": false
+    },
+    {
+      "choice": "team 668",
+      "pending": false
+    },
+    {
+      "choice": "team 669",
+      "pending": false
+    },
+    {
+      "choice": "team 670",
+      "pending": false
+    },
+    {
+      "choice": "team 671",
+      "pending": false
+    },
+    {
+      "choice": "team 672",
+      "pending": false
+    },
+    {
+      "choice": "team 673",
+      "pending": false
+    },
+    {
+      "choice": "team 674",
+      "pending": false
+    },
+    {
+      "choice": "team 675",
+      "pending": false
+    },
+    {
+      "choice": "team 676",
+      "pending": false
+    },
+    {
+      "choice": "team 677",
+      "pending": false
+    },
+    {
+      "choice": "team 678",
+      "pending": false
+    },
+    {
+      "choice": "team 679",
+      "pending": false
+    },
+    {
+      "choice": "team 680",
+      "pending": false
+    },
+    {
+      "choice": "team 681",
+      "pending": false
+    },
+    {
+      "choice": "team 682",
+      "pending": false
+    },
+    {
+      "choice": "team 683",
+      "pending": false
+    },
+    {
+      "choice": "team 684",
+      "pending": false
+    },
+    {
+      "choice": "team 685",
+      "pending": false
+    },
+    {
+      "choice": "team 686",
+      "pending": false
+    },
+    {
+      "choice": "team 687",
+      "pending": false
+    },
+    {
+      "choice": "team 688",
+      "pending": false
+    },
+    {
+      "choice": "team 689",
+      "pending": false
+    },
+    {
+      "choice": "team 690",
+      "pending": false
+    },
+    {
+      "choice": "team 691",
+      "pending": false
+    },
+    {
+      "choice": "team 692",
+      "pending": false
+    },
+    {
+      "choice": "team 693",
+      "pending": false
+    },
+    {
+      "choice": "team 694",
+      "pending": false
+    },
+    {
+      "choice": "team 695",
+      "pending": false
+    },
+    {
+      "choice": "team 696",
+      "pending": false
+    },
+    {
+      "choice": "team 697",
+      "pending": false
+    },
+    {
+      "choice": "team 698",
+      "pending": false
+    },
+    {
+      "choice": "team 699",
+      "pending": false
+    },
+    {
+      "choice": "team 700",
+      "pending": false
+    },
+    {
+      "choice": "team 701",
+      "pending": false
+    },
+    {
+      "choice": "team 702",
+      "pending": false
+    },
+    {
+      "choice": "team 703",
+      "pending": false
+    },
+    {
+      "choice": "team 704",
+      "pending": false
+    },
+    {
+      "choice": "team 705",
+      "pending": false
+    },
+    {
+      "choice": "team 706",
+      "pending": false
+    },
+    {
+      "choice": "team 707",
+      "pending": false
+    },
+    {
+      "choice": "team 708",
+      "pending": false
+    },
+    {
+      "choice": "team 709",
+      "pending": false
+    },
+    {
+      "choice": "team 710",
+      "pending": false
+    },
+    {
+      "choice": "team 711",
+      "pending": false
+    },
+    {
+      "choice": "team 712",
+      "pending": false
+    },
+    {
+      "choice": "team 713",
+      "pending": false
+    },
+    {
+      "choice": "team 714",
+      "pending": false
+    },
+    {
+      "choice": "team 715",
+      "pending": false
+    },
+    {
+      "choice": "team 716",
+      "pending": false
+    },
+    {
+      "choice": "team 717",
+      "pending": false
+    },
+    {
+      "choice": "team 718",
+      "pending": false
+    },
+    {
+      "choice": "team 719",
+      "pending": false
+    },
+    {
+      "choice": "team 720",
+      "pending": false
+    },
+    {
+      "choice": "team 721",
+      "pending": false
+    },
+    {
+      "choice": "team 722",
+      "pending": false
+    },
+    {
+      "choice": "team 723",
+      "pending": false
+    },
+    {
+      "choice": "team 724",
+      "pending": false
+    },
+    {
+      "choice": "team 725",
+      "pending": false
+    },
+    {
+      "choice": "team 726",
+      "pending": false
+    },
+    {
+      "choice": "team 727",
+      "pending": false
+    },
+    {
+      "choice": "team 728",
+      "pending": false
+    },
+    {
+      "choice": "team 729",
+      "pending": false
+    },
+    {
+      "choice": "team 730",
+      "pending": false
+    },
+    {
+      "choice": "team 731",
+      "pending": false
+    },
+    {
+      "choice": "team 732",
+      "pending": false
+    },
+    {
+      "choice": "team 733",
+      "pending": false
+    },
+    {
+      "choice": "team 734",
+      "pending": false
+    },
+    {
+      "choice": "team 735",
+      "pending": false
+    },
+    {
+      "choice": "team 736",
+      "pending": false
+    },
+    {
+      "choice": "team 737",
+      "pending": false
+    },
+    {
+      "choice": "team 738",
+      "pending": false
+    },
+    {
+      "choice": "team 739",
+      "pending": false
+    },
+    {
+      "choice": "team 740",
+      "pending": false
+    },
+    {
+      "choice": "team 741",
+      "pending": false
+    },
+    {
+      "choice": "team 742",
+      "pending": false
+    },
+    {
+      "choice": "team 743",
+      "pending": false
+    },
+    {
+      "choice": "team 744",
+      "pending": false
+    },
+    {
+      "choice": "team 745",
+      "pending": false
+    },
+    {
+      "choice": "team 746",
+      "pending": false
+    },
+    {
+      "choice": "team 747",
+      "pending": false
+    },
+    {
+      "choice": "team 748",
+      "pending": false
+    },
+    {
+      "choice": "team 749",
+      "pending": false
+    },
+    {
+      "choice": "team 750",
+      "pending": false
+    },
+    {
+      "choice": "team 751",
+      "pending": false
+    },
+    {
+      "choice": "team 752",
+      "pending": false
+    },
+    {
+      "choice": "team 753",
+      "pending": false
+    },
+    {
+      "choice": "team 754",
+      "pending": false
+    },
+    {
+      "choice": "team 755",
+      "pending": false
+    },
+    {
+      "choice": "team 756",
+      "pending": false
+    },
+    {
+      "choice": "team 757",
+      "pending": false
+    },
+    {
+      "choice": "team 758",
+      "pending": false
+    },
+    {
+      "choice": "team 759",
+      "pending": false
+    },
+    {
+      "choice": "team 760",
+      "pending": false
+    },
+    {
+      "choice": "team 761",
+      "pending": false
+    },
+    {
+      "choice": "team 762",
+      "pending": false
+    },
+    {
+      "choice": "team 763",
+      "pending": false
+    },
+    {
+      "choice": "team 764",
+      "pending": false
+    },
+    {
+      "choice": "team 765",
+      "pending": false
+    },
+    {
+      "choice": "team 766",
+      "pending": false
+    },
+    {
+      "choice": "team 767",
+      "pending": false
+    },
+    {
+      "choice": "team 768",
+      "pending": false
+    },
+    {
+      "choice": "team 769",
+      "pending": false
+    },
+    {
+      "choice": "team 770",
+      "pending": false
+    },
+    {
+      "choice": "team 771",
+      "pending": false
+    },
+    {
+      "choice": "team 772",
+      "pending": false
+    },
+    {
+      "choice": "team 773",
+      "pending": false
+    },
+    {
+      "choice": "team 774",
+      "pending": false
+    },
+    {
+      "choice": "team 775",
+      "pending": false
+    },
+    {
+      "choice": "team 776",
+      "pending": false
+    },
+    {
+      "choice": "team 777",
+      "pending": false
+    },
+    {
+      "choice": "team 778",
+      "pending": false
+    },
+    {
+      "choice": "team 779",
+      "pending": false
+    },
+    {
+      "choice": "team 780",
+      "pending": false
+    },
+    {
+      "choice": "team 781",
+      "pending": false
+    },
+    {
+      "choice": "team 782",
+      "pending": false
+    },
+    {
+      "choice": "team 783",
+      "pending": false
+    },
+    {
+      "choice": "team 784",
+      "pending": false
+    },
+    {
+      "choice": "team 785",
+      "pending": false
+    },
+    {
+      "choice": "team 786",
+      "pending": false
+    },
+    {
+      "choice": "team 787",
+      "pending": false
+    },
+    {
+      "choice": "team 788",
+      "pending": false
+    },
+    {
+      "choice": "team 789",
+      "pending": false
+    },
+    {
+      "choice": "team 790",
+      "pending": false
+    },
+    {
+      "choice": "team 791",
+      "pending": false
+    },
+    {
+      "choice": "team 792",
+      "pending": false
+    },
+    {
+      "choice": "team 793",
+      "pending": false
+    },
+    {
+      "choice": "team 794",
+      "pending": false
+    },
+    {
+      "choice": "team 795",
+      "pending": false
+    },
+    {
+      "choice": "team 796",
+      "pending": false
+    },
+    {
+      "choice": "team 797",
+      "pending": false
+    },
+    {
+      "choice": "team 798",
+      "pending": false
+    },
+    {
+      "choice": "team 799",
+      "pending": false
+    },
+    {
+      "choice": "team 800",
+      "pending": false
+    },
+    {
+      "choice": "team 801",
+      "pending": false
+    },
+    {
+      "choice": "team 802",
+      "pending": false
+    },
+    {
+      "choice": "team 803",
+      "pending": false
+    },
+    {
+      "choice": "team 804",
+      "pending": false
+    },
+    {
+      "choice": "team 805",
+      "pending": false
+    },
+    {
+      "choice": "team 806",
+      "pending": false
+    },
+    {
+      "choice": "team 807",
+      "pending": false
+    },
+    {
+      "choice": "team 808",
+      "pending": false
+    },
+    {
+      "choice": "team 809",
+      "pending": false
+    },
+    {
+      "choice": "team 810",
+      "pending": false
+    },
+    {
+      "choice": "team 811",
+      "pending": false
+    },
+    {
+      "choice": "team 812",
+      "pending": false
+    },
+    {
+      "choice": "team 813",
+      "pending": false
+    },
+    {
+      "choice": "team 814",
+      "pending": false
+    },
+    {
+      "choice": "team 815",
+      "pending": false
+    },
+    {
+      "choice": "team 816",
+      "pending": false
+    },
+    {
+      "choice": "team 817",
+      "pending": false
+    },
+    {
+      "choice": "team 818",
+      "pending": false
+    },
+    {
+      "choice": "team 819",
+      "pending": false
+    },
+    {
+      "choice": "team 820",
+      "pending": false
+    },
+    {
+      "choice": "team 821",
+      "pending": false
+    },
+    {
+      "choice": "team 822",
+      "pending": false
+    },
+    {
+      "choice": "team 823",
+      "pending": false
+    },
+    {
+      "choice": "team 824",
+      "pending": false
+    },
+    {
+      "choice": "team 825",
+      "pending": false
+    },
+    {
+      "choice": "team 826",
+      "pending": false
+    },
+    {
+      "choice": "team 827",
+      "pending": false
+    },
+    {
+      "choice": "team 828",
+      "pending": false
+    },
+    {
+      "choice": "team 829",
+      "pending": false
+    },
+    {
+      "choice": "team 830",
+      "pending": false
+    },
+    {
+      "choice": "team 831",
+      "pending": false
+    },
+    {
+      "choice": "team 832",
+      "pending": false
+    },
+    {
+      "choice": "team 833",
+      "pending": false
+    },
+    {
+      "choice": "team 834",
+      "pending": false
+    },
+    {
+      "choice": "team 835",
+      "pending": false
+    },
+    {
+      "choice": "team 836",
+      "pending": false
+    },
+    {
+      "choice": "team 837",
+      "pending": false
+    },
+    {
+      "choice": "team 838",
+      "pending": false
+    },
+    {
+      "choice": "team 839",
+      "pending": false
+    },
+    {
+      "choice": "team 840",
+      "pending": false
+    },
+    {
+      "choice": "team 841",
+      "pending": false
+    },
+    {
+      "choice": "team 842",
+      "pending": false
+    },
+    {
+      "choice": "team 843",
+      "pending": false
+    },
+    {
+      "choice": "team 844",
+      "pending": false
+    },
+    {
+      "choice": "team 845",
+      "pending": false
+    },
+    {
+      "choice": "team 846",
+      "pending": false
+    },
+    {
+      "choice": "team 847",
+      "pending": false
+    },
+    {
+      "choice": "team 848",
+      "pending": false
+    },
+    {
+      "choice": "team 849",
+      "pending": false
+    },
+    {
+      "choice": "team 850",
+      "pending": false
+    },
+    {
+      "choice": "team 851",
+      "pending": false
+    },
+    {
+      "choice": "team 852",
+      "pending": false
+    },
+    {
+      "choice": "team 853",
+      "pending": false
+    },
+    {
+      "choice": "team 854",
+      "pending": false
+    },
+    {
+      "choice": "team 855",
+      "pending": false
+    },
+    {
+      "choice": "team 856",
+      "pending": false
+    },
+    {
+      "choice": "team 857",
+      "pending": false
+    },
+    {
+      "choice": "team 858",
+      "pending": false
+    },
+    {
+      "choice": "team 859",
+      "pending": false
+    },
+    {
+      "choice": "team 860",
+      "pending": false
+    },
+    {
+      "choice": "team 861",
+      "pending": false
+    },
+    {
+      "choice": "team 862",
+      "pending": false
+    },
+    {
+      "choice": "team 863",
+      "pending": false
+    },
+    {
+      "choice": "team 864",
+      "pending": false
+    },
+    {
+      "choice": "team 865",
+      "pending": false
+    },
+    {
+      "choice": "team 866",
+      "pending": false
+    },
+    {
+      "choice": "team 867",
+      "pending": false
+    },
+    {
+      "choice": "team 868",
+      "pending": false
+    },
+    {
+      "choice": "team 869",
+      "pending": false
+    },
+    {
+      "choice": "team 870",
+      "pending": false
+    },
+    {
+      "choice": "team 871",
+      "pending": false
+    },
+    {
+      "choice": "team 872",
+      "pending": false
+    },
+    {
+      "choice": "team 873",
+      "pending": false
+    },
+    {
+      "choice": "team 874",
+      "pending": false
+    },
+    {
+      "choice": "team 875",
+      "pending": false
+    },
+    {
+      "choice": "team 876",
+      "pending": false
+    },
+    {
+      "choice": "team 877",
+      "pending": false
+    },
+    {
+      "choice": "team 878",
+      "pending": false
+    },
+    {
+      "choice": "team 879",
+      "pending": false
+    },
+    {
+      "choice": "team 880",
+      "pending": false
+    },
+    {
+      "choice": "team 881",
+      "pending": false
+    },
+    {
+      "choice": "team 882",
+      "pending": false
+    },
+    {
+      "choice": "team 883",
+      "pending": false
+    },
+    {
+      "choice": "team 884",
+      "pending": false
+    },
+    {
+      "choice": "team 885",
+      "pending": false
+    },
+    {
+      "choice": "team 886",
+      "pending": false
+    },
+    {
+      "choice": "team 887",
+      "pending": false
+    },
+    {
+      "choice": "team 888",
+      "pending": false
+    },
+    {
+      "choice": "team 889",
+      "pending": false
+    },
+    {
+      "choice": "team 890",
+      "pending": false
+    },
+    {
+      "choice": "team 891",
+      "pending": false
+    },
+    {
+      "choice": "team 892",
+      "pending": false
+    },
+    {
+      "choice": "team 893",
+      "pending": false
+    },
+    {
+      "choice": "team 894",
+      "pending": false
+    },
+    {
+      "choice": "team 895",
+      "pending": false
+    },
+    {
+      "choice": "team 896",
+      "pending": false
+    },
+    {
+      "choice": "team 897",
+      "pending": false
+    },
+    {
+      "choice": "team 898",
+      "pending": false
+    },
+    {
+      "choice": "team 899",
+      "pending": false
+    },
+    {
+      "choice": "team 900",
+      "pending": false
+    },
+    {
+      "choice": "team 901",
+      "pending": false
+    },
+    {
+      "choice": "team 902",
+      "pending": false
+    },
+    {
+      "choice": "team 903",
+      "pending": false
+    },
+    {
+      "choice": "team 904",
+      "pending": false
+    },
+    {
+      "choice": "team 905",
+      "pending": false
+    },
+    {
+      "choice": "team 906",
+      "pending": false
+    },
+    {
+      "choice": "team 907",
+      "pending": false
+    },
+    {
+      "choice": "team 908",
+      "pending": false
+    },
+    {
+      "choice": "team 909",
+      "pending": false
+    },
+    {
+      "choice": "team 910",
+      "pending": false
+    },
+    {
+      "choice": "team 911",
+      "pending": false
+    },
+    {
+      "choice": "team 912",
+      "pending": false
+    },
+    {
+      "choice": "team 913",
+      "pending": false
+    },
+    {
+      "choice": "team 914",
+      "pending": false
+    },
+    {
+      "choice": "team 915",
+      "pending": false
+    },
+    {
+      "choice": "team 916",
+      "pending": false
+    },
+    {
+      "choice": "team 917",
+      "pending": false
+    },
+    {
+      "choice": "team 918",
+      "pending": false
+    },
+    {
+      "choice": "team 919",
+      "pending": false
+    },
+    {
+      "choice": "team 920",
+      "pending": false
+    },
+    {
+      "choice": "team 921",
+      "pending": false
+    },
+    {
+      "choice": "team 922",
+      "pending": false
+    },
+    {
+      "choice": "team 923",
+      "pending": false
+    },
+    {
+      "choice": "team 924",
+      "pending": false
+    },
+    {
+      "choice": "team 925",
+      "pending": false
+    },
+    {
+      "choice": "team 926",
+      "pending": false
+    },
+    {
+      "choice": "team 927",
+      "pending": false
+    },
+    {
+      "choice": "team 928",
+      "pending": false
+    },
+    {
+      "choice": "team 929",
+      "pending": false
+    },
+    {
+      "choice": "team 930",
+      "pending": false
+    },
+    {
+      "choice": "team 931",
+      "pending": false
+    },
+    {
+      "choice": "team 932",
+      "pending": false
+    },
+    {
+      "choice": "team 933",
+      "pending": false
+    },
+    {
+      "choice": "team 934",
+      "pending": false
+    },
+    {
+      "choice": "team 935",
+      "pending": false
+    },
+    {
+      "choice": "team 936",
+      "pending": false
+    },
+    {
+      "choice": "team 937",
+      "pending": false
+    },
+    {
+      "choice": "team 938",
+      "pending": false
+    },
+    {
+      "choice": "team 939",
+      "pending": false
+    },
+    {
+      "choice": "team 940",
+      "pending": false
+    },
+    {
+      "choice": "team 941",
+      "pending": false
+    },
+    {
+      "choice": "team 942",
+      "pending": false
+    },
+    {
+      "choice": "team 943",
+      "pending": false
+    },
+    {
+      "choice": "team 944",
+      "pending": false
+    },
+    {
+      "choice": "team 945",
+      "pending": false
+    },
+    {
+      "choice": "team 946",
+      "pending": false
+    },
+    {
+      "choice": "team 947",
+      "pending": false
+    },
+    {
+      "choice": "team 948",
+      "pending": false
+    },
+    {
+      "choice": "team 949",
+      "pending": false
+    },
+    {
+      "choice": "team 950",
+      "pending": false
+    },
+    {
+      "choice": "team 951",
+      "pending": false
+    },
+    {
+      "choice": "team 952",
+      "pending": false
+    },
+    {
+      "choice": "team 953",
+      "pending": false
+    },
+    {
+      "choice": "team 954",
+      "pending": false
+    },
+    {
+      "choice": "team 955",
+      "pending": false
+    },
+    {
+      "choice": "team 956",
+      "pending": false
+    },
+    {
+      "choice": "team 957",
+      "pending": false
+    },
+    {
+      "choice": "team 958",
+      "pending": false
+    },
+    {
+      "choice": "team 959",
+      "pending": false
+    },
+    {
+      "choice": "team 960",
+      "pending": false
+    },
+    {
+      "choice": "team 961",
+      "pending": false
+    },
+    {
+      "choice": "team 962",
+      "pending": false
+    },
+    {
+      "choice": "team 963",
+      "pending": false
+    },
+    {
+      "choice": "team 964",
+      "pending": false
+    },
+    {
+      "choice": "team 965",
+      "pending": false
+    },
+    {
+      "choice": "team 966",
+      "pending": false
+    },
+    {
+      "choice": "team 967",
+      "pending": false
+    },
+    {
+      "choice": "team 968",
+      "pending": false
+    },
+    {
+      "choice": "team 969",
+      "pending": false
+    },
+    {
+      "choice": "team 970",
+      "pending": false
+    },
+    {
+      "choice": "team 971",
+      "pending": false
+    },
+    {
+      "choice": "team 972",
+      "pending": false
+    },
+    {
+      "choice": "team 973",
+      "pending": false
+    },
+    {
+      "choice": "team 974",
+      "pending": false
+    },
+    {
+      "choice": "team 975",
+      "pending": false
+    },
+    {
+      "choice": "team 976",
+      "pending": false
+    },
+    {
+      "choice": "team 977",
+      "pending": false
+    },
+    {
+      "choice": "team 978",
+      "pending": false
+    },
+    {
+      "choice": "team 979",
+      "pending": false
+    },
+    {
+      "choice": "team 980",
+      "pending": false
+    },
+    {
+      "choice": "team 981",
+      "pending": false
+    },
+    {
+      "choice": "team 982",
+      "pending": false
+    },
+    {
+      "choice": "team 983",
+      "pending": false
+    },
+    {
+      "choice": "team 984",
+      "pending": false
+    },
+    {
+      "choice": "team 985",
+      "pending": false
+    },
+    {
+      "choice": "team 986",
+      "pending": false
+    },
+    {
+      "choice": "team 987",
+      "pending": false
+    },
+    {
+      "choice": "team 988",
+      "pending": false
+    },
+    {
+      "choice": "team 989",
+      "pending": false
+    },
+    {
+      "choice": "team 990",
+      "pending": false
+    },
+    {
+      "choice": "team 991",
+      "pending": false
+    },
+    {
+      "choice": "team 992",
+      "pending": false
+    },
+    {
+      "choice": "team 993",
+      "pending": false
+    },
+    {
+      "choice": "team 994",
+      "pending": false
+    },
+    {
+      "choice": "team 995",
+      "pending": false
+    },
+    {
+      "choice": "team 996",
+      "pending": false
+    },
+    {
+      "choice": "team 997",
+      "pending": false
+    },
+    {
+      "choice": "team 998",
+      "pending": false
+    },
+    {
+      "choice": "team 999",
+      "pending": false
+    },
+    {
+      "choice": "team 1000",
+      "pending": false
+    },
+    {
+      "choice": "team 1001",
+      "pending": false
+    },
+    {
+      "choice": "team 1002",
+      "pending": false
+    },
+    {
+      "choice": "team 1003",
+      "pending": false
+    },
+    {
+      "choice": "team 1004",
+      "pending": false
+    },
+    {
+      "choice": "team 1005",
+      "pending": false
+    },
+    {
+      "choice": "team 1006",
+      "pending": false
+    },
+    {
+      "choice": "team 1007",
+      "pending": false
+    },
+    {
+      "choice": "team 1008",
+      "pending": false
+    },
+    {
+      "choice": "team 1009",
+      "pending": false
+    },
+    {
+      "choice": "team 1010",
+      "pending": false
+    },
+    {
+      "choice": "team 1011",
+      "pending": false
+    },
+    {
+      "choice": "team 1012",
+      "pending": false
+    },
+    {
+      "choice": "team 1013",
+      "pending": false
+    },
+    {
+      "choice": "team 1014",
+      "pending": false
+    },
+    {
+      "choice": "team 1015",
+      "pending": false
+    },
+    {
+      "choice": "team 1016",
+      "pending": false
+    },
+    {
+      "choice": "team 1017",
+      "pending": false
+    },
+    {
+      "choice": "team 1018",
+      "pending": false
+    },
+    {
+      "choice": "team 1019",
+      "pending": false
+    },
+    {
+      "choice": "team 1020",
+      "pending": false
+    },
+    {
+      "choice": "team 1021",
+      "pending": false
+    },
+    {
+      "choice": "team 1022",
+      "pending": false
+    },
+    {
+      "choice": "team 1023",
+      "pending": false
+    },
+    {
+      "choice": "team 1024",
+      "pending": false
+    }
+  ],
+  "outcome": "loss"
+}

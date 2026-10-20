@@ -246,5 +246,480 @@
     },
     "kind": "battle"
   },
-  "choice": "move 1 1, move 1 1"
+  "choice": "move 1 1, move 1 1",
+  "candidates": [
+    {
+      "choice": "move 1 1, move 1 1",
+      "pending": false
+    },
+    {
+      "choice": "move 1 1, move 1 2",
+      "pending": false
+    },
+    {
+      "choice": "move 1 1, move 1 -1",
+      "pending": false
+    },
+    {
+      "choice": "move 1 1, move 2 1",
+      "pending": false
+    },
+    {
+      "choice": "move 1 1, move 2 2",
+      "pending": false
+    },
+    {
+      "choice": "move 1 1, move 2 -1",
+      "pending": false
+    },
+    {
+      "choice": "move 1 1, move 3",
+      "pending": false
+    },
+    {
+      "choice": "move 1 1, move 4",
+      "pending": false
+    },
+    {
+      "choice": "move 1 1, switch 3",
+      "pending": false
+    },
+    {
+      "choice": "move 1 1, switch 4",
+      "pending": false
+    },
+    {
+      "choice": "move 1 2, move 1 1",
+      "pending": false
+    },
+    {
+      "choice": "move 1 2, move 1 2",
+      "pending": false
+    },
+    {
+      "choice": "move 1 2, move 1 -1",
+      "pending": false
+    },
+    {
+      "choice": "move 1 2, move 2 1",
+      "pending": false
+    },
+    {
+      "choice": "move 1 2, move 2 2",
+      "pending": false
+    },
+    {
+      "choice": "move 1 2, move 2 -1",
+      "pending": false
+    },
+    {
+      "choice": "move 1 2, move 3",
+      "pending": false
+    },
+    {
+      "choice": "move 1 2, move 4",
+      "pending": false
+    },
+    {
+      "choice": "move 1 2, switch 3",
+      "pending": false
+    },
+    {
+      "choice": "move 1 2, switch 4",
+      "pending": false
+    },
+    {
+      "choice": "move 1 -2, move 1 1",
+      "pending": false
+    },
+    {
+      "choice": "move 1 -2, move 1 2",
+      "pending": false
+    },
+    {
+      "choice": "move 1 -2, move 1 -1",
+      "pending": false
+    },
+    {
+      "choice": "move 1 -2, move 2 1",
+      "pending": false
+    },
+    {
+      "choice": "move 1 -2, move 2 2",
+      "pending": false
+    },
+    {
+      "choice": "move 1 -2, move 2 -1",
+      "pending": false
+    },
+    {
+      "choice": "move 1 -2, move 3",
+      "pending": false
+    },
+    {
+      "choice": "move 1 -2, move 4",
+      "pending": false
+    },
+    {
+      "choice": "move 1 -2, switch 3",
+      "pending": false
+    },
+    {
+      "choice": "move 1 -2, switch 4",
+      "pending": false
+    },
+    {
+      "choice": "move 2 1, move 1 1",
+      "pending": false
+    },
+    {
+      "choice": "move 2 1, move 1 2",
+      "pending": false
+    },
+    {
+      "choice": "move 2 1, move 1 -1",
+      "pending": false
+    },
+    {
+      "choice": "move 2 1, move 2 1",
+      "pending": false
+    },
+    {
+      "choice": "move 2 1, move 2 2",
+      "pending": false
+    },
+    {
+      "choice": "move 2 1, move 2 -1",
+      "pending": false
+    },
+    {
+      "choice": "move 2 1, move 3",
+      "pending": false
+    },
+    {
+      "choice": "move 2 1, move 4",
+      "pending": false
+    },
+    {
+      "choice": "move 2 1, switch 3",
+      "pending": false
+    },
+    {
+      "choice": "move 2 1, switch 4",
+      "pending": false
+    },
+    {
+      "choice": "move 2 2, move 1 1",
+      "pending": false
+    },
+    {
+      "choice": "move 2 2, move 1 2",
+      "pending": false
+    },
+    {
+      "choice": "move 2 2, move 1 -1",
+      "pending": false
+    },
+    {
+      "choice": "move 2 2, move 2 1",
+      "pending": false
+    },
+    {
+      "choice": "move 2 2, move 2 2",
+      "pending": false
+    },
+    {
+      "choice": "move 2 2, move 2 -1",
+      "pending": false
+    },
+    {
+      "choice": "move 2 2, move 3",
+      "pending": false
+    },
+    {
+      "choice": "move 2 2, move 4",
+      "pending": false
+    },
+    {
+      "choice": "move 2 2, switch 3",
+      "pending": false
+    },
+    {
+      "choice": "move 2 2, switch 4",
+      "pending": false
+    },
+    {
+      "choice": "move 2 -2, move 1 1",
+      "pending": false
+    },
+    {
+      "choice": "move 2 -2, move 1 2",
+      "pending": false
+    },
+    {
+      "choice": "move 2 -2, move 1 -1",
+      "pending": false
+    },
+    {
+      "choice": "move 2 -2, move 2 1",
+      "pending": false
+    },
+    {
+      "choice": "move 2 -2, move 2 2",
+      "pending": false
+    },
+    {
+      "choice": "move 2 -2, move 2 -1",
+      "pending": false
+    },
+    {
+      "choice": "move 2 -2, move 3",
+      "pending": false
+    },
+    {
+      "choice": "move 2 -2, move 4",
+      "pending": false
+    },
+    {
+      "choice": "move 2 -2, switch 3",
+      "pending": false
+    },
+    {
+      "choice": "move 2 -2, switch 4",
+      "pending": false
+    },
+    {
+      "choice": "move 3, move 1 1",
+      "pending": false
+    },
+    {
+      "choice": "move 3, move 1 2",
+      "pending": false
+    },
+    {
+      "choice": "move 3, move 1 -1",
+      "pending": false
+    },
+    {
+      "choice": "move 3, move 2 1",
+      "pending": false
+    },
+    {
+      "choice": "move 3, move 2 2",
+      "pending": false
+    },
+    {
+      "choice": "move 3, move 2 -1",
+      "pending": false
+    },
+    {
+      "choice": "move 3, move 3",
+      "pending": false
+    },
+    {
+      "choice": "move 3, move 4",
+      "pending": false
+    },
+    {
+      "choice": "move 3, switch 3",
+      "pending": false
+    },
+    {
+      "choice": "move 3, switch 4",
+      "pending": false
+    },
+    {
+      "choice": "move 4 1, move 1 1",
+      "pending": false
+    },
+    {
+      "choice": "move 4 1, move 1 2",
+      "pending": false
+    },
+    {
+      "choice": "move 4 1, move 1 -1",
+      "pending": false
+    },
+    {
+      "choice": "move 4 1, move 2 1",
+      "pending": false
+    },
+    {
+      "choice": "move 4 1, move 2 2",
+      "pending": false
+    },
+    {
+      "choice": "move 4 1, move 2 -1",
+      "pending": false
+    },
+    {
+      "choice": "move 4 1, move 3",
+      "pending": false
+    },
+    {
+      "choice": "move 4 1, move 4",
+      "pending": false
+    },
+    {
+      "choice": "move 4 1, switch 3",
+      "pending": false
+    },
+    {
+      "choice": "move 4 1, switch 4",
+      "pending": false
+    },
+    {
+      "choice": "move 4 2, move 1 1",
+      "pending": false
+    },
+    {
+      "choice": "move 4 2, move 1 2",
+      "pending": false
+    },
+    {
+      "choice": "move 4 2, move 1 -1",
+      "pending": false
+    },
+    {
+      "choice": "move 4 2, move 2 1",
+      "pending": false
+    },
+    {
+      "choice": "move 4 2, move 2 2",
+      "pending": false
+    },
+    {
+      "choice": "move 4 2, move 2 -1",
+      "pending": false
+    },
+    {
+      "choice": "move 4 2, move 3",
+      "pending": false
+    },
+    {
+      "choice": "move 4 2, move 4",
+      "pending": false
+    },
+    {
+      "choice": "move 4 2, switch 3",
+      "pending": false
+    },
+    {
+      "choice": "move 4 2, switch 4",
+      "pending": false
+    },
+    {
+      "choice": "move 4 -2, move 1 1",
+      "pending": false
+    },
+    {
+      "choice": "move 4 -2, move 1 2",
+      "pending": false
+    },
+    {
+      "choice": "move 4 -2, move 1 -1",
+      "pending": false
+    },
+    {
+      "choice": "move 4 -2, move 2 1",
+      "pending": false
+    },
+    {
+      "choice": "move 4 -2, move 2 2",
+      "pending": false
+    },
+    {
+      "choice": "move 4 -2, move 2 -1",
+      "pending": false
+    },
+    {
+      "choice": "move 4 -2, move 3",
+      "pending": false
+    },
+    {
+      "choice": "move 4 -2, move 4",
+      "pending": false
+    },
+    {
+      "choice": "move 4 -2, switch 3",
+      "pending": false
+    },
+    {
+      "choice": "move 4 -2, switch 4",
+      "pending": false
+    },
+    {
+      "choice": "switch 3, move 1 1",
+      "pending": false
+    },
+    {
+      "choice": "switch 3, move 1 2",
+      "pending": false
+    },
+    {
+      "choice": "switch 3, move 1 -1",
+      "pending": false
+    },
+    {
+      "choice": "switch 3, move 2 1",
+      "pending": false
+    },
+    {
+      "choice": "switch 3, move 2 2",
+      "pending": false
+    },
+    {
+      "choice": "switch 3, move 2 -1",
+      "pending": false
+    },
+    {
+      "choice": "switch 3, move 3",
+      "pending": false
+    },
+    {
+      "choice": "switch 3, move 4",
+      "pending": false
+    },
+    {
+      "choice": "switch 3, switch 4",
+      "pending": false
+    },
+    {
+      "choice": "switch 4, move 1 1",
+      "pending": false
+    },
+    {
+      "choice": "switch 4, move 1 2",
+      "pending": false
+    },
+    {
+      "choice": "switch 4, move 1 -1",
+      "pending": false
+    },
+    {
+      "choice": "switch 4, move 2 1",
+      "pending": false
+    },
+    {
+      "choice": "switch 4, move 2 2",
+      "pending": false
+    },
+    {
+      "choice": "switch 4, move 2 -1",
+      "pending": false
+    },
+    {
+      "choice": "switch 4, move 3",
+      "pending": false
+    },
+    {
+      "choice": "switch 4, move 4",
+      "pending": false
+    },
+    {
+      "choice": "switch 4, switch 3",
+      "pending": false
+    }
+  ],
+  "outcome": "loss"
 }

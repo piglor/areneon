@@ -39,6 +39,23 @@
       "description": "The decision label: the choice the player made, in canonical engine syntax.",
       "type": "string",
       "minLength": 1
+    },
+    "candidates": {
+      "description": "The candidate joint choices of the request this decision answers, each with its pending flag, in the enumerator's canonical order (ADR-006): what the learner scores the choice against. Computed by the training loader with enumerateCandidates from the observation's own request, never from a CloneJudge verdict. maxItems is N_max (ADR-010 \u00a73): the larger of the Team Preview bound (6\u00b75\u00b74\u00b73 = 360) and the battle bound (at most 4 moves \u00d7 3 targets \u00d7 (1 + 1 event) + 2 switches = 26 options per slot, so at most 676 joint choices), rounded up to a power of two; the oracle test checks it against the pinned engine for every supported format. Optional so stored streams stay valid; required, with outcome, in every example of a learner_ready TrainingSet (a reader rule: the contract profile has no if/then). The reader also checks that choice is among them.",
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 1024,
+      "items": {
+        "$ref": "#/$defs/Candidate"
+      }
+    },
+    "outcome": {
+      "description": "How the game ended, from the player's view: win, loss or tie. Optional; required, with candidates, in every example of a learner_ready TrainingSet (a reader rule).",
+      "enum": [
+        "win",
+        "loss",
+        "tie"
+      ]
     }
   },
   "$defs": {
@@ -481,6 +498,26 @@
           "type": "integer",
           "minimum": 0,
           "maximum": 9007199254740991
+        }
+      }
+    },
+    "Candidate": {
+      "description": "One candidate joint choice (ADR-006): canonical engine syntax and whether its legality depends on information the engine hides from the player.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "choice",
+        "pending"
+      ],
+      "properties": {
+        "choice": {
+          "description": "Canonical engine syntax, e.g. move 1 2 mega, switch 3.",
+          "type": "string",
+          "minLength": 1
+        },
+        "pending": {
+          "description": "True when the legality of the choice depends on hidden information (maybeTrapped, maybeDisabled, maybeLocked); no verdict on it is ever given.",
+          "type": "boolean"
         }
       }
     }

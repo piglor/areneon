@@ -51,6 +51,15 @@
       "description": "SHA-256 of the stream's bytes: its JCS lines, each ended by a newline.",
       "type": "string",
       "pattern": "^[0-9a-f]{64}$"
+    },
+    "learner_ready": {
+      "description": "true when every example of the stream carries candidates and outcome, and choice is among its candidates. The profile has no if/then, so the reader checks it (readTrainingSet; the Python stream check); the learner refuses a set without the flag (ADR-010 \u00a75). Requires behaviour_policy_id.",
+      "const": true
+    },
+    "behaviour_policy_id": {
+      "description": "The loader's behaviour_policy_id filter value: the one policy whose own seats this stream trains (ADR-010 \u00a71). Every Episode in it has that policy as its provenance.behaviour_policy_id.",
+      "type": "string",
+      "minLength": 1
     }
   }
 }

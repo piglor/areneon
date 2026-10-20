@@ -27,4 +27,12 @@ export interface TrainingSet {
    * SHA-256 of the stream's bytes: its JCS lines, each ended by a newline.
    */
   stream_sha256: string;
+  /**
+   * true when every example of the stream carries candidates and outcome, and choice is among its candidates. The profile has no if/then, so the reader checks it (readTrainingSet; the Python stream check); the learner refuses a set without the flag (ADR-010 §5). Requires behaviour_policy_id.
+   */
+  learner_ready?: true;
+  /**
+   * The loader's behaviour_policy_id filter value: the one policy whose own seats this stream trains (ADR-010 §1). Every Episode in it has that policy as its provenance.behaviour_policy_id.
+   */
+  behaviour_policy_id?: string;
 }

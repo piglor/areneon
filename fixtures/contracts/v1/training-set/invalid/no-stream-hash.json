@@ -7,5 +7,7 @@
   "evaluation_manifest_hashes": [
     "ea92634eef6c5fab8f76cb565eb50cf8c70983b7354830415c44a60f85ac5f90"
   ],
+  "learner_ready": true,
+  "behaviour_policy_id": "first-legal@golden",
   "examples": 10
 }
