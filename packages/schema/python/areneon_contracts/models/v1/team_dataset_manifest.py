@@ -5,7 +5,40 @@ from __future__ import annotations
 
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, StrictInt, StrictStr
+from pydantic import (
+    MISSING,
+    BaseModel,
+    ConfigDict,
+    Field,
+    RootModel,
+    StrictInt,
+    StrictStr,
+)
+
+
+class Cell(RootModel[StrictInt]):
+    root: Annotated[StrictInt, Field(ge=0, le=65535)]
+    """
+    A base cell number.
+    """
+
+
+class MergedCell(BaseModel):
+    """
+    One merged stratum and its members.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    stratum: Annotated[StrictInt, Field(ge=0, le=65535)]
+    """
+    The merged stratum's number: its lowest member.
+    """
+    cells: Annotated[list[Cell], Field(max_length=65536, min_length=2)]
+    """
+    The base cell numbers merged into the stratum, ascending and unique.
+    """
 
 
 class RejectionLog(BaseModel):
@@ -81,7 +114,7 @@ class PublicKey(BaseModel):
     """
 
 
-class Cell(BaseModel):
+class Cell1(BaseModel):
     """
     One cell's pilot count and quota.
     """
@@ -119,7 +152,7 @@ class SplitPlan(BaseModel):
     """
     The split's team count: the sum of its cells' quotas.
     """
-    cells: Annotated[list[Cell], Field(max_length=65536, min_length=1)]
+    cells: Annotated[list[Cell1], Field(max_length=65536, min_length=1)]
     """
     The cells after the D20 merge, sorted by stratum, unique.
     """
@@ -191,6 +224,12 @@ class TeamDatasetManifest(BaseModel):
     splits: Annotated[list[SplitPlan], Field(max_length=3, min_length=1)]
     """
     The quota plan per split, sorted by split (dev, validation, training), unique.
+    """
+    merged_cells: Annotated[list[MergedCell] | MISSING, Field(max_length=65536)] = (
+        MISSING
+    )
+    """
+    The D20 cell merge (ADR-010 E1) that was applied before generation: which base label cells were merged into one stratum. A base cell is one combination of label values, numbered by reading the position of each label's value in its listed values (the default last) as a mixed-radix number, the first label of the label set most significant. A merged stratum takes the number of its lowest member. Only merged strata are listed, sorted by stratum; every other base cell is its own stratum, and a manifest without this list merged nothing. The reader checks that members are ascending, unique and disjoint across strata, that the stratum is its first member, and that no cell of a split is a member of a merged stratum without being that stratum.
     """
     reference_pool_hash: Annotated[StrictStr, Field(pattern="^[0-9a-f]{64}$")]
     """

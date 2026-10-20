@@ -8,6 +8,7 @@ import { SAMPLES_DIR } from "../src/samples.ts";
 import { teamHash } from "../src/team-class.ts";
 import {
   canonicalTeamHash,
+  labelCellCount,
   logicalSnapshotHash,
   readTeamDatasetManifest,
   readTeamGeneratorConfig,
@@ -17,6 +18,7 @@ import {
   recordHash,
   shardLogicalHash,
   snapshotHash,
+  type TeamGeneratorConfig,
   type TeamLabelSet,
   type TeamRecord,
   TeamRecordError,
@@ -187,6 +189,29 @@ describe("readTeamDatasetManifest and readTeamSnapshotManifest", () => {
     expect(() => readTeamDatasetManifest({ ...dataset, splits: [] })).toThrow(/invalid team dataset manifest/);
     expect(() => readTeamSnapshotManifest({ ...snapshot, shards: [] })).toThrow(/invalid team snapshot manifest/);
     expect(readTeamSnapshotManifest(snapshot).snapshot_id).toBe("golden-snapshot-1");
+  });
+
+  it("ties the manifest to its config and label set, and refuses a mismatch", () => {
+    const dataset = sample<Record<string, unknown>>("team-dataset-manifest/valid/golden.json");
+    const config = sample<TeamGeneratorConfig>("team-generator-config/valid/golden.json");
+    const tied = dataset;
+    const foreign = { ...dataset, generator: { ...(dataset.generator as object), config_hash: "a".repeat(64), label_set_hash: "b".repeat(64) } };
+    expect(readTeamDatasetManifest(tied, { config, labelSet }).dataset_id).toBe("golden-1");
+    expect(labelCellCount(labelSet)).toBe(12);
+    expect(() => readTeamDatasetManifest({ ...tied, d_max: 5 }, { config })).toThrow(/d_max 5 differs from the config's/);
+    expect(() => readTeamDatasetManifest({ ...tied, pilot_draws: 50_000 }, { config })).toThrow(/pilot_draws 50000 differs/);
+    expect(() => readTeamDatasetManifest(foreign, { config })).toThrow(/config_hash is not the hash/);
+    expect(() => readTeamDatasetManifest(foreign, { labelSet })).toThrow(/label_set_hash is not the hash/);
+    const outside = { ...tied, merged_cells: [{ stratum: 0, cells: [0, 12] }] };
+    expect(() => readTeamDatasetManifest(outside, { labelSet })).toThrow(/cell 12 is outside the label set's 12 cells/);
+  });
+
+  it("refuses a malformed cell merge", () => {
+    const dataset = sample<Record<string, unknown>>("team-dataset-manifest/valid/golden.json");
+    const merged = (groups: unknown): Record<string, unknown> => ({ ...dataset, merged_cells: groups });
+    expect(() => readTeamDatasetManifest(merged([{ stratum: 7, cells: [7, 9] }, { stratum: 7, cells: [7, 10] }]))).toThrow(/stratum 7 is repeated or out of order/);
+    expect(() => readTeamDatasetManifest(merged([{ stratum: 3, cells: [3, 9] }, { stratum: 4, cells: [4, 9] }]))).toThrow(/cell 9 is in two strata/);
+    expect(() => readTeamDatasetManifest(merged([{ stratum: 3, cells: [3, 9, 8] }]))).toThrow(/cell 8 is repeated or out of order/);
   });
 
   it("refuses repeated splits", () => {

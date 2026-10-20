@@ -1,0 +1,203 @@
+{
+  "schema_version": 1,
+  "label_set_id": "coverage-v1",
+  "labels": [
+    {
+      "label_id": "speed_control",
+      "values": [
+        {
+          "value": "both",
+          "when": {
+            "kind": "all_of",
+            "of": [
+              {
+                "kind": "has_move",
+                "moves": [
+                  "trickroom"
+                ]
+              },
+              {
+                "kind": "has_move",
+                "moves": [
+                  "tailwind"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "value": "trick_room",
+          "when": {
+            "kind": "has_move",
+            "moves": [
+              "trickroom"
+            ]
+          }
+        },
+        {
+          "value": "tailwind",
+          "when": {
+            "kind": "has_move",
+            "moves": [
+              "tailwind"
+            ]
+          }
+        }
+      ],
+      "default": "neither"
+    },
+    {
+      "label_id": "weather_terrain_setter",
+      "values": [
+        {
+          "value": "yes",
+          "when": {
+            "kind": "has_ability",
+            "abilities": [
+              "deltastream",
+              "desolateland",
+              "drizzle",
+              "drought",
+              "electricsurge",
+              "grassysurge",
+              "hadronengine",
+              "mistysurge",
+              "orichalcumpulse",
+              "primordialsea",
+              "psychicsurge",
+              "sandstream",
+              "snowwarning"
+            ]
+          }
+        }
+      ],
+      "default": "no"
+    },
+    {
+      "label_id": "redirection",
+      "values": [
+        {
+          "value": "yes",
+          "when": {
+            "kind": "has_move",
+            "moves": [
+              "followme",
+              "ragepowder"
+            ]
+          }
+        }
+      ],
+      "default": "no"
+    },
+    {
+      "label_id": "fake_out",
+      "values": [
+        {
+          "value": "yes",
+          "when": {
+            "kind": "has_move",
+            "moves": [
+              "fakeout"
+            ]
+          }
+        }
+      ],
+      "default": "no"
+    },
+    {
+      "label_id": "mega_stone",
+      "values": [
+        {
+          "value": "yes",
+          "when": {
+            "kind": "has_item",
+            "items": [
+              "abomasite",
+              "absolite",
+              "absolitez",
+              "aerodactylite",
+              "aggronite",
+              "alakazite",
+              "altarianite",
+              "ampharosite",
+              "audinite",
+              "banettite",
+              "barbaracite",
+              "baxcalibrite",
+              "beedrillite",
+              "blastoisinite",
+              "blazikenite",
+              "cameruptite",
+              "chandelurite",
+              "charizarditex",
+              "charizarditey",
+              "chesnaughtite",
+              "chimechite",
+              "clefablite",
+              "crabominite",
+              "delphoxite",
+              "dragalgite",
+              "dragoninite",
+              "drampanite",
+              "eelektrossite",
+              "emboarite",
+              "excadrite",
+              "falinksite",
+              "feraligite",
+              "floettite",
+              "froslassite",
+              "galladite",
+              "garchompite",
+              "garchompitez",
+              "gardevoirite",
+              "gengarite",
+              "glalitite",
+              "glimmoranite",
+              "golisopite",
+              "golurkite",
+              "greninjite",
+              "gyaradosite",
+              "hawluchanite",
+              "heracronite",
+              "houndoominite",
+              "kangaskhanite",
+              "lopunnite",
+              "lucarionite",
+              "lucarionitez",
+              "malamarite",
+              "manectite",
+              "mawilite",
+              "medichamite",
+              "meganiumite",
+              "meowsticite",
+              "metagrossite",
+              "pidgeotite",
+              "pinsirite",
+              "pyroarite",
+              "raichunitex",
+              "raichunitey",
+              "sablenite",
+              "salamencite",
+              "sceptilite",
+              "scizorite",
+              "scolipite",
+              "scovillainite",
+              "scraftinite",
+              "sharpedonite",
+              "skarmorite",
+              "slowbronite",
+              "staraptite",
+              "starminite",
+              "steelixite",
+              "swampertite",
+              "tyranitarite",
+              "venusaurite",
+              "victreebelite"
+            ]
+          }
+        }
+      ],
+      "default": "no"
+    }
+  ]
+}

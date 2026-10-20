@@ -47,6 +47,12 @@
       "minimum": 1,
       "maximum": 252
     },
+    "moves_per_set": {
+      "description": "The most moves a draw gives a set. The proposal needs it (the generator refuses a config without it); the validator judges the result, so a wrong value only raises the rejection rate. Optional in the contract so that configs written before it still read.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 16
+    },
     "gender_policy": {
       "description": "unset leaves gender to the engine; random draws it.",
       "enum": [

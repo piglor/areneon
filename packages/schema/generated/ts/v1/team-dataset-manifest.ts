@@ -56,6 +56,28 @@ export interface TeamDatasetManifest {
    */
   splits: [SplitPlan, ...SplitPlan[]];
   /**
+   * The D20 cell merge (ADR-010 E1) that was applied before generation: which base label cells were merged into one stratum. A base cell is one combination of label values, numbered by reading the position of each label's value in its listed values (the default last) as a mixed-radix number, the first label of the label set most significant. A merged stratum takes the number of its lowest member. Only merged strata are listed, sorted by stratum; every other base cell is its own stratum, and a manifest without this list merged nothing. The reader checks that members are ascending, unique and disjoint across strata, that the stratum is its first member, and that no cell of a split is a member of a merged stratum without being that stratum.
+   *
+   * @maxItems 65536
+   *
+   * Items: One merged stratum and its members.
+   */
+  merged_cells?: {
+    /**
+     * The merged stratum's number: its lowest member.
+     */
+    stratum: number;
+    /**
+     * The base cell numbers merged into the stratum, ascending and unique.
+     *
+     * @minItems 2
+     * @maxItems 65536
+     *
+     * Items: A base cell number.
+     */
+    cells: [number, number, ...number[]];
+  }[];
+  /**
    * SHA-256 of the sorted canonical team hashes of every earlier released dataset the run deduplicated against.
    */
   reference_pool_hash: string;

@@ -75,6 +75,8 @@ jobs:
         run: node packages/showdown-bridge/scripts/evaluation-register.ts heads-check --dir evaluation/register-heads --base HEAD^1
       - name: contract schemas and generated TS types (ADR-008)
         run: node packages/schema/scripts/contracts.ts
+      - name: team label sets and generator configs against the pinned engine (ADR-013)
+        run: node packages/team-dataset/scripts/check-team-labels.ts
 
   team-guard:
     runs-on: ubuntu-latest

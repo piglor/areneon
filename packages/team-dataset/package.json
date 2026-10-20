@@ -1,0 +1,16 @@
+{
+  "name": "@areneon/team-dataset",
+  "version": "0.0.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@areneon/showdown-bridge": "workspace:*"
+  }
+}
