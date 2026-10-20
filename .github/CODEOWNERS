@@ -25,3 +25,4 @@
 /pnpm-lock.yaml                 @arceushui
 /pnpm-workspace.yaml            @arceushui
 /packages/private-team-store/   @arceushui
+/ml/gpu-env/                    @arceushui
