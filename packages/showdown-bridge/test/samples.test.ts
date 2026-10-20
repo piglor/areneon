@@ -44,7 +44,7 @@ describe("the shared contract sample corpus (ADR-008 §2)", () => {
       const profile = schema.$id.includes(":engine:") ? "engine-mirror" : "contract";
       expect(ajvFor(profile).validate(schema, content), file).toBe(kind !== "invalid");
     }
-  });
+  }, 30_000); // compiling every contract schema takes seconds on a slow runner
 
   // ADR-009 section 4, test 2: schema-valid, yet readEpisode refuses each, for the named rule.
   it.each([
