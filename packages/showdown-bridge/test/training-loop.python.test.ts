@@ -144,7 +144,7 @@ describe.skipIf(!existsSync(PYTHON) && process.env.ARENEON_REQUIRE_PYTHON_WORKER
     const refused = spawnSync(PYTHON, args(file, uninterrupted, 2), { encoding: "utf8", env });
     expect(refused.status).toBe(3);
     expect(refused.stderr).toContain("another TrainingRunConfig");
-  });
+  }, 120_000); // each call starts Python and imports torch: seconds on a loaded CI runner, where the default 5 s was exceeded
 
   it("leaves records the C1/C6 checker reads: the first pair is in the second pair's ancestry", () => {
     const out = join(dir, "provenance");
@@ -155,7 +155,7 @@ describe.skipIf(!existsSync(PYTHON) && process.env.ARENEON_REQUIRE_PYTHON_WORKER
         execFileSync(PYTHON, ["-I", "-m", "areneon_ml.checkpoint", "classify", "--records", join(out, "records"), "--sources", join(out, "sources.json"), "--candidate", candidate, "--opponent", opponent], { encoding: "utf8", env }),
       ) as { label: string };
     expect(classify(child, parent).label).toBe("seen");
-  });
+  }, 120_000);
 });
 
 describe.skipIf(!existsSync(PYTHON) && process.env.ARENEON_REQUIRE_PYTHON_WORKER !== "1")("play-generation with the real worker, in this process", () => {
