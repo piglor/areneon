@@ -14,3 +14,19 @@ image.
   every production dependency.
 - The DuckDB CLI, the `age` CLI and OpenSSL are user-installed tools, never
   listed in a `package.json`, `pyproject.toml` or Dockerfile.
+
+## Dependency note
+
+`@noble/post-quantum` 0.5.4 declares the tilde ranges `~2.0.0` for
+`@noble/curves` and `@noble/hashes`, which resolve to 2.0.1. The lockfile
+therefore holds two copies of each: the hybrid ML-KEM path runs on the 2.0.1
+copies, while age's X25519 uses the exact 2.4.0 pins. A later
+`@noble/post-quantum` bump must re-check which copies it resolves.
+
+## Operator rule
+
+A repository test sees only tracked files. A Coolify application configured in
+the UI, or a Nixpacks or Railpack build that runs a root `pnpm install` through
+the `packages/*` workspace glob, is not detectable by it. Configure every build
+with an explicit filter (`pnpm install --filter <package>...`) and never build
+from the repository root without one.
