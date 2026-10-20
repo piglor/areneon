@@ -60,6 +60,11 @@ describe("the shared contract sample corpus (ADR-008 §2)", () => {
   it("holds every reader-invalid sample under its contract's directory, and each is refused above", () => {
     const readerInvalid = Object.keys(fresh).filter((f) => f.includes("/reader-invalid/"));
     expect(readerInvalid.sort()).toEqual([
+      "v1/checkpoint-record/reader-invalid/duplicate-training-sets.json",
+      "v1/checkpoint-record/reader-invalid/exploiter-of-self.json",
+      "v1/checkpoint-record/reader-invalid/opponent-is-self.json",
+      "v1/checkpoint-record/reader-invalid/parent-is-self.json",
+      "v1/checkpoint-record/reader-invalid/unsorted-league-opponents.json",
       "v1/engine-data/reader-invalid/dangling-type.json",
       "v1/engine-data/reader-invalid/duplicate-species.json",
       "v1/engine-data/reader-invalid/short-damage-row.json",

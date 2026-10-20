@@ -1,0 +1,145 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:areneon:schema:contracts:v1:checkpoint-record",
+  "title": "CheckpointRecord",
+  "description": "The provenance record of one frozen checkpoint (ADR-010 \u00a75, protocol C7): who it came from, what it trained against and on, and under which run it was made. The C1/C6 checker computes seen or held out and independence from these records alone. The sorted and unique arrays and the self-reference rules are enforced by the reader (the contract profile has no uniqueItems and cannot compare two fields). A record is content-addressed by the JCS bytes of this object.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "checkpoint_id",
+    "role",
+    "lineage_id",
+    "league_opponents",
+    "training_set_hashes",
+    "team_set_manifest_hash",
+    "run_config_hash",
+    "learner_state_hash",
+    "encoder_version",
+    "data_class",
+    "manifest"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "checkpoint_id": {
+      "description": "The checkpoint's id: SHA-256 of its safetensors file bytes.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "role": {
+      "description": "Which network the checkpoint holds; a Preview and a Battle checkpoint are promoted as a pair.",
+      "enum": [
+        "battle",
+        "preview"
+      ]
+    },
+    "lineage_id": {
+      "description": "A label for the lineage this checkpoint belongs to; informational, the checker never trusts it for independence.",
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+    },
+    "parent": {
+      "description": "The checkpoint this one was initialised from, when there is one (the warm start or the previous generation); absent for a fresh random initialisation.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "league_opponents": {
+      "description": "Learned checkpoints it trained against, sorted and unique (a reader rule). Scripted baselines are not listed: they never count for ancestry (C6).",
+      "type": "array",
+      "maxItems": 4096,
+      "items": {
+        "$ref": "#/$defs/Sha256"
+      }
+    },
+    "exploiter_target": {
+      "description": "The frozen candidate this checkpoint was trained only to beat, when it is an evaluation exploiter (pool X); absent otherwise.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "training_set_hashes": {
+      "description": "SHA-256 of the JCS bytes of each TrainingSet this checkpoint was trained on, sorted and unique (a reader rule).",
+      "type": "array",
+      "maxItems": 4096,
+      "items": {
+        "$ref": "#/$defs/Sha256"
+      }
+    },
+    "team_set_manifest_hash": {
+      "description": "SHA-256 of the content-addressed team-set manifest: every team the training drew (protocol C7, T3).",
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "run_config_hash": {
+      "description": "SHA-256 of the JCS bytes of the TrainingRunConfig of the run.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "learner_state_hash": {
+      "description": "SHA-256 of JCS({tensors_sha256, sidecar}) of the generation's learner state (ADR-010 \u00a71).",
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "encoder_version": {
+      "description": "The encoder the checkpoint was trained with; it carries the engine-data table's hash.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "data_class": {
+      "description": "private when any training input was private; a private record is never committed (ADR-008 \u00a75).",
+      "enum": [
+        "synthetic",
+        "private"
+      ]
+    },
+    "manifest": {
+      "$ref": "#/$defs/VersionManifest"
+    }
+  },
+  "$defs": {
+    "Sha256": {
+      "description": "SHA-256 as lowercase hex.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "VersionManifest": {
+      "description": "Replay identity of a battle (ADR-003, ADR-007): the pinned engine commit, the format, and the hashes of the engine ruleset and of Areneon's own format rules.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "showdown_commit",
+        "format_id",
+        "regulation",
+        "ruleset_hash",
+        "format_rules_hash"
+      ],
+      "properties": {
+        "showdown_commit": {
+          "description": "The pinned engine commit.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "format_id": {
+          "type": "string",
+          "pattern": "^[a-z0-9]+$"
+        },
+        "regulation": {
+          "type": "string",
+          "minLength": 1
+        },
+        "ruleset_hash": {
+          "description": "SHA-256 of the canonical engine ruleset.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "format_rules_hash": {
+          "description": "SHA-256 of Areneon's format rules record (ADR-007).",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    }
+  }
+}

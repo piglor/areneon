@@ -184,8 +184,38 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
   const helloWith = (change: (m: Record<string, unknown>) => void) => mutated(hello, (h) => change(h.message as Record<string, unknown>));
   const contractsOf = () => contractVersions() as unknown as Record<string, unknown>[];
 
+  // A CheckpointRecord (ADR-010 section 5): ids are placeholders, the shape is what the corpus pins.
+  const hexOf = (c: string): string => c.repeat(64);
+  const checkpointRecord = {
+    schema_version: 1,
+    checkpoint_id: hexOf("1"),
+    role: "battle",
+    lineage_id: "main-0",
+    parent: hexOf("2"),
+    league_opponents: [hexOf("3"), hexOf("4")],
+    training_set_hashes: [hexOf("5"), hexOf("6")],
+    team_set_manifest_hash: hexOf("7"),
+    run_config_hash: hexOf("8"),
+    learner_state_hash: hexOf("9"),
+    encoder_version: `enc1:${hexOf("e")}`,
+    data_class: "synthetic",
+    manifest: record.manifest,
+  };
+  const recordWith = (change: (r: Record<string, unknown>) => void) => mutated(checkpointRecord, change);
+
   const valid: Record<string, unknown> = {
     "engine-data/golden": engineData,
+    "checkpoint-record/battle": checkpointRecord,
+    "checkpoint-record/preview-fresh": recordWith((r) => {
+      r.role = "preview";
+      delete r.parent;
+      r.league_opponents = [];
+    }),
+    "checkpoint-record/exploiter": recordWith((r) => {
+      r.lineage_id = "exploiter-of-main-0";
+      r.exploiter_target = hexOf("2");
+      r.league_opponents = [hexOf("2")];
+    }),
     "training-example/preview": exampleOf("preview"),
     "training-example/battle": exampleOf("battle"),
     "training-example/legacy-battle": legacyExample,
@@ -229,6 +259,12 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
   // No valid sparring sample exists: it must be private, and the data-class
   // guard refuses a committed "data_class": "private".
   const readerInvalid: Record<string, unknown> = {
+    // Schema-valid, refused by the CheckpointRecord reader: the arrays are sorted and unique, and no id refers to the record itself.
+    "checkpoint-record/unsorted-league-opponents": recordWith((r) => (r.league_opponents = [hexOf("4"), hexOf("3")])),
+    "checkpoint-record/duplicate-training-sets": recordWith((r) => (r.training_set_hashes = [hexOf("5"), hexOf("5")])),
+    "checkpoint-record/parent-is-self": recordWith((r) => (r.parent = r.checkpoint_id)),
+    "checkpoint-record/opponent-is-self": recordWith((r) => (r.league_opponents = [r.checkpoint_id])),
+    "checkpoint-record/exploiter-of-self": recordWith((r) => (r.exploiter_target = r.checkpoint_id)),
     "engine-data/unsorted-species": { ...engineData, species: [speciesB, speciesA] },
     "engine-data/duplicate-species": { ...engineData, species: [speciesA, speciesA] },
     "engine-data/dangling-type": mutated(engineData, (t) => ((t.species as { types: string[] }[])[0] as { types: string[] }).types = ["nosuchtype"]),
@@ -252,6 +288,15 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "episode/class-below-opponent": collected({ ...league, opponent_team_data_class: "private" }),
   };
   const invalid: Record<string, unknown> = {
+    "checkpoint-record/no-manifest": recordWith((r) => delete r.manifest),
+    "checkpoint-record/short-checkpoint-id": recordWith((r) => (r.checkpoint_id = "abc")),
+    "checkpoint-record/uppercase-parent": recordWith((r) => (r.parent = hexOf("A"))),
+    "checkpoint-record/unknown-role": recordWith((r) => (r.role = "value")),
+    "checkpoint-record/public-class": recordWith((r) => (r.data_class = "public")),
+    "checkpoint-record/blank-lineage": recordWith((r) => (r.lineage_id = "")),
+    "checkpoint-record/no-learner-state": recordWith((r) => delete r.learner_state_hash),
+    "checkpoint-record/extra-field": recordWith((r) => (r.verdicts = [])),
+    "checkpoint-record/next-version": recordWith((r) => (r.schema_version = 2)),
     "engine-data/damage-code-4": mutated(engineData, (t) => ((t.types as { damage_taken: number[] }[])[0] as { damage_taken: number[] }).damage_taken[0] = 4),
     "engine-data/three-types": mutated(engineData, (t) => ((t.species as { types: string[] }[])[0] as { types: string[] }).types = ["bug", "dark", "fire"]),
     "engine-data/unknown-category": mutated(engineData, (t) => ((t.moves as { category: string }[])[0] as { category: string }).category = "Typeless"),
