@@ -1,4 +1,5 @@
-import { readdirSync, readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -10,7 +11,6 @@ import { PRIVATE_TEAM_STORE_PACKAGE } from "../src/index.ts";
 
 const PACKAGE_DIR = join(dirname(fileURLToPath(import.meta.url)), "..");
 const ROOT = join(PACKAGE_DIR, "..", "..");
-const SKIPPED = new Set(["node_modules", "vendor", ".git", "coverage", "dist", "private-data"]);
 const NAME = PRIVATE_TEAM_STORE_PACKAGE;
 const DEP_FIELDS = ["dependencies", "devDependencies", "peerDependencies", "optionalDependencies"];
 const EXACT = /^\d+\.\d+\.\d+$/;
@@ -23,18 +23,16 @@ const REQUIRED_PINS = [
   "@scure/base",
 ];
 
-function walk(dir: string): string[] {
-  const files: string[] = [];
-  for (const entry of readdirSync(dir, { withFileTypes: true })) {
-    if (SKIPPED.has(entry.name)) continue;
-    const path = join(dir, entry.name);
-    if (entry.isDirectory()) files.push(...walk(path));
-    else if (entry.isFile()) files.push(path);
-  }
-  return files;
+// Tracked files only: what a checkout (and so any image build context) holds.
+function trackedFiles(): string[] {
+  const out = execFileSync("git", ["ls-files", "-z"], { cwd: ROOT, encoding: "utf8", maxBuffer: 1 << 26 });
+  return out
+    .split("\0")
+    .filter((path) => path !== "")
+    .map((path) => join(ROOT, path));
 }
 
-const FILES = walk(ROOT);
+const FILES = trackedFiles();
 const rel = (path: string): string => relative(ROOT, path);
 const text = (path: string): string => readFileSync(path, "utf8");
 // Dockerfile, Dockerfile.e2e, ... but not Dockerfile.dockerignore (a file list).
