@@ -7,6 +7,7 @@ import copy
 import hashlib
 import itertools
 import json
+import os
 import struct
 import sys
 from collections.abc import Callable
@@ -329,3 +330,19 @@ def test_generic_tensors_pack_deterministically_and_unpack_only_as_expected() ->
 def test_a_dtype_that_is_not_stored_is_refused() -> None:
     with pytest.raises(CheckpointFileError, match="dtype that is not stored"):
         pack_safetensors({"x": torch.zeros(2, dtype=torch.int64)})
+
+
+def test_a_stored_checkpoint_is_flushed_with_its_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    synced: list[str] = []
+    real = os.fsync
+
+    def fsync(descriptor: int) -> None:
+        synced.append(os.readlink(f"/proc/self/fd/{descriptor}"))
+        real(descriptor)
+
+    monkeypatch.setattr(os, "fsync", fsync)
+    found = write_checkpoint(tmp_path, b"bytes")
+    assert synced[0].endswith(f".{found}.partial")
+    assert synced[-1] == str(tmp_path / "checkpoints")

@@ -37,6 +37,9 @@
         "games": 2
       }
     ],
+    "excluded_abilities": [
+      "Illusion"
+    ],
     "max_turns": 6,
     "n_parallel": 2,
     "latency_budget_ms": {

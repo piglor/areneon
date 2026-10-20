@@ -179,14 +179,22 @@ def unpack_safetensors(
 
 
 def write_checkpoint(run_dir: Path, data: bytes) -> str:
-    """Store ``data`` as ``<run_dir>/checkpoints/<id>.safetensors`` and return the id."""
+    """Store ``data`` durably as ``<run_dir>/checkpoints/<id>.safetensors`` and return the id."""
     found = checkpoint_id(data)
     directory = run_dir / "checkpoints"
     directory.mkdir(parents=True, exist_ok=True)
     target = directory / f"{found}.safetensors"
     partial = directory / f".{found}.partial"
-    partial.write_bytes(data)
+    with partial.open("wb") as handle:
+        handle.write(data)
+        handle.flush()
+        os.fsync(handle.fileno())
     os.replace(partial, target)
+    descriptor = os.open(directory, os.O_RDONLY)  # the rename is durable once its directory is
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
     return found
 
 

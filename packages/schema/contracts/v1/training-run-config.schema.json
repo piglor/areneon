@@ -113,6 +113,7 @@
       "required": [
         "games",
         "baseline_games",
+        "excluded_abilities",
         "max_turns",
         "n_parallel",
         "latency_budget_ms",
@@ -132,6 +133,16 @@
           "maxItems": 2,
           "items": {
             "$ref": "#/$defs/Baseline"
+          }
+        },
+        "excluded_abilities": {
+          "description": "Teams with a set holding any of these abilities are not drawn. A stop-gap for a known gap of the log-to-state reducer (Illusion's replace line, follow-up #851); a value of this record, not of the code, so it goes when the gap does.",
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
           }
         },
         "max_turns": {

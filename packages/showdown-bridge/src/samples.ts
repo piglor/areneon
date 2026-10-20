@@ -372,6 +372,7 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     generation: {
       games: 4,
       baseline_games: [{ actor: "random-legal", policy_id: "random-legal@tiny", games: 2 }],
+      excluded_abilities: ["Illusion"],
       max_turns: 6,
       n_parallel: 2,
       latency_budget_ms: { preview_ms: 30000, battle_ms: 30000 },

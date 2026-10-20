@@ -39,6 +39,7 @@ class Baseline:
 class GenerationSettings:
     games: int
     baselines: tuple[Baseline, ...]
+    excluded_abilities: tuple[str, ...]
     max_turns: int
     n_parallel: int
     preview_ms: int
@@ -111,6 +112,7 @@ def read_run_config(raw: object) -> RunConfig:
             baselines=tuple(
                 Baseline(b["actor"], b["policy_id"], b["games"]) for b in gen["baseline_games"]
             ),
+            excluded_abilities=tuple(gen["excluded_abilities"]),
             max_turns=gen["max_turns"],
             n_parallel=gen["n_parallel"],
             preview_ms=gen["latency_budget_ms"]["preview_ms"],

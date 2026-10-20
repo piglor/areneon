@@ -38,6 +38,7 @@ def test_the_tiny_sample_is_read_with_every_real_value_exact() -> None:
     gen = config.generation
     assert (gen.games, gen.max_turns, gen.n_parallel, gen.max_line_bytes) == (4, 6, 2, 4_000_000)
     assert (gen.preview_ms, gen.battle_ms, gen.handshake_timeout_ms) == (30000, 30000, 60000)
+    assert gen.excluded_abilities == ("Illusion",)
     assert [(b.actor, b.policy_id, b.games) for b in gen.baselines] == [
         ("random-legal", "random-legal@tiny", 2)
     ]
