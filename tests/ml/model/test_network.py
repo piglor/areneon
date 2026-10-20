@@ -53,6 +53,12 @@ def test_initialisation_is_a_function_of_the_seed_and_leaves_the_global_rng_alon
     assert any(not torch.equal(a[k], c[k]) for k in a)
 
 
+@pytest.mark.parametrize("seed", [-1, 2**63, 2**64])
+def test_a_seed_outside_the_range_is_refused(seed: int) -> None:
+    with pytest.raises(ConfigError, match="seed must be between"):
+        init_network("battle", game(), TINY_MODEL, seed)
+
+
 def test_sizes_are_configuration_and_the_vocabularies_come_from_the_game_data() -> None:
     small = init_network("battle", game(), TINY_MODEL, 1)
     wide = init_network(
@@ -94,14 +100,27 @@ def test_the_battle_and_preview_networks_are_separate_networks() -> None:
     assert any(k.startswith("place") for k in preview)
 
 
+def different_queries(role: str) -> list[Any]:
+    """Queries unlike the target: a shortened candidate list, the other form, another request."""
+    raw = sample(f"policy-query/valid/{role}.json")
+    short = {**raw, "candidates": raw["candidates"][:5]}
+    reversed_ = {**raw, "candidates": raw["candidates"][::-1]}
+    queries = [short, reversed_]
+    if role == "battle":
+        queries.append(sample("policy-query/valid/battle-a2.json"))
+    return [encoder().encode(q) for q in queries]
+
+
 @pytest.mark.parametrize("role", ["battle", "preview"])
 def test_a_query_scores_the_same_alone_and_after_other_queries(
     role: str, cpu_inference: None
 ) -> None:
-    # Batch invariance (ADR-010 §2): one query per forward pass, deterministic CPU.
+    # Batch invariance (ADR-010 §2): one query per forward pass, deterministic CPU; the queries
+    # scored before differ from the target in size, order and form.
     net = network(role)
     target = query(role)
-    others = [query(role), encoder().encode(sample(f"policy-query/valid/{role}.json"))]
+    others = different_queries(role)
+    assert {o.pending.shape[0] for o in others} != {target.pending.shape[0]}
     alone = net(collate([target]))
     for other in others:
         net(collate([other]))
@@ -238,3 +257,5 @@ def test_model_config_round_trips_and_is_strict() -> None:
         ModelConfig(d_model=10, n_heads=4)
     with pytest.raises(ConfigError, match="n_layers must be at least 1"):
         ModelConfig(n_layers=0)
+    with pytest.raises(ConfigError, match="d_model must be at least 1 and at most"):
+        ModelConfig(d_model=1 << 40)

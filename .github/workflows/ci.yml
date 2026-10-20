@@ -48,9 +48,12 @@ jobs:
         # areneon-ml: CPU torch and safetensors, from the locked CPU index (ADR-010
         # §5.1). No CUDA package may come with it (§5.2).
         run: |
+          set -euo pipefail
           uv sync --locked --package areneon-ml
-          if uv pip list | grep -i -E '^(nvidia|triton|cuda)'; then echo "no CUDA package may be installed here"; exit 1; fi
-          uv pip list | grep -i -E '^(torch|safetensors) '
+          # Capture first: a grep in a pipeline could not fail the step if uv itself failed.
+          installed=$(uv pip list)
+          if grep -i -E '^(nvidia|triton|cuda)' <<<"$installed"; then echo "no CUDA package may be installed here"; exit 1; fi
+          grep -i -E '^(torch|safetensors) ' <<<"$installed"
       - name: build pinned Showdown
         run: make showdown
       - run: pnpm lint

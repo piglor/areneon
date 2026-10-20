@@ -26,12 +26,18 @@ Battle pair, or one checkpoint):
 
 * a scripted baseline is **seen** (C5);
 * **seen** when an opponent checkpoint is in the candidate's ancestry;
-* **held out** when an opponent is an evaluation exploiter of the candidate
-  (it was trained after the candidate was frozen; the candidate never trained
-  against it, C2/C3);
-* **held out** when the two ancestries are independent (C6);
-* otherwise **seen**: a related lineage (they share a learned checkpoint or a
-  data source).
+* otherwise each opponent checkpoint must qualify, and the pair is **held out**
+  only if all of its members do: a member qualifies when it is an evaluation
+  exploiter of the candidate (trained after the candidate was frozen; the
+  candidate never trained against it, C2/C3) or when its ancestry is
+  independent of the candidate's (C6);
+* a member that does not qualify makes the pair **seen**: a related lineage
+  (they share a learned checkpoint or a data source).
+
+The records must also agree with each other: a parent shares its child's
+encoder version, parent, league opponents and exploiter target have the
+child's role (a record lists the same-role checkpoint of an opponent pair), and
+nothing synthetic descends from a private checkpoint.
 """
 
 from __future__ import annotations
@@ -91,6 +97,7 @@ class ProvenanceGraph:
         self._sources = {key: tuple(value) for key, value in sources.items()}
         self._check_registry()
         self._check_references()
+        self._check_consistency()
         self._check_exploiters()
         self._ancestry: dict[str, Ancestry] = {}
         self._resolve_all()
@@ -127,6 +134,37 @@ class ProvenanceGraph:
         for source, generators in self._sources.items():
             for generator in generators:
                 self._require(generator, f"generator of data source {source}")
+
+    def _check_consistency(self) -> None:
+        """What the records say about each other must agree where the data permits.
+
+        A checkpoint is initialised from, and trained against, checkpoints of its own
+        role (a record lists the same-role checkpoint of an opponent pair); a warm start
+        keeps the encoder; and nothing synthetic descends from something private.
+        """
+        for record in self._records.values():
+            who = record.checkpoint_id
+            if record.parent is not None:
+                parent = self._records[record.parent]
+                if parent.encoder_version != record.encoder_version:
+                    raise ProvenanceError(
+                        f"{who} and its parent {parent.checkpoint_id} differ in encoder_version"
+                    )
+            same_role = [record.parent, record.exploiter_target, *record.league_opponents]
+            for other in (self._records[o] for o in same_role if o is not None):
+                if other.role != record.role:
+                    raise ProvenanceError(
+                        f"{who} ({record.role}) refers to {other.checkpoint_id} ({other.role})"
+                    )
+            generators = [g for t in record.training_set_hashes for g in self._sources[t]]
+            for other in (
+                self._records[o] for o in [*(x for x in same_role if x is not None), *generators]
+            ):
+                if other.data_class == "private" and record.data_class != "private":
+                    raise ProvenanceError(
+                        f"{who} is {record.data_class} but descends from private "
+                        f"{other.checkpoint_id}"
+                    )
 
     def _check_exploiters(self) -> None:
         """C3: an evaluation exploiter is never in the league of the candidate it targets."""
@@ -216,10 +254,21 @@ class ProvenanceGraph:
         inside = sorted(set(theirs) & mine.checkpoints)
         if inside:
             return Classification(SEEN, f"{inside[0]} is in the candidate's ancestry")
-        if any(self._records[o].exploiter_target in ours for o in theirs):
+        # Held out only if EVERY member qualifies: one related member makes the pair seen.
+        exploiters = 0
+        for member in theirs:
+            if self._records[member].exploiter_target in ours:
+                exploiters += 1
+                continue
+            independence = self.independent(candidate, [member])
+            if not independence.independent:
+                shared = (*independence.shared_checkpoints, *independence.shared_sources)
+                return Classification(SEEN, f"a related lineage: {member} shares {shared[0]} (C6)")
+        if exploiters == len(theirs):
             return Classification(HELD_OUT, "an evaluation exploiter of the candidate (C3)")
-        independence = self.independent(candidate, theirs)
-        if independence.independent:
-            return Classification(HELD_OUT, "an independent lineage (C6)")
-        shared = (*independence.shared_checkpoints, *independence.shared_sources)
-        return Classification(SEEN, f"a related lineage: shares {shared[0]} (C6)")
+        if exploiters:
+            return Classification(
+                HELD_OUT,
+                "evaluation exploiters of the candidate (C3) and independent lineages (C6)",
+            )
+        return Classification(HELD_OUT, "an independent lineage (C6)")

@@ -76,9 +76,22 @@ def encoder_config_from_dict(source: Mapping[str, Any]) -> EncoderConfig:
         raise ConfigError(str(exc)) from exc
 
 
+# Outer admissibility bounds (ADR-010 §5: code holds bounds, never the values). They keep a crafted
+# configuration from allocating without limit; they are far above any size the slice trains.
+MAX_DIMENSION = 4096
+MAX_LAYERS = 64
+MAX_HEADS = 64
+MAX_FEED_FORWARD = 16384
+MAX_SEED = 2**63 - 1
+
+
 @dataclass(frozen=True)
 class ModelConfig:
-    """Network sizes: configuration, never code constants (ADR-010 §3)."""
+    """Network sizes: configuration, never code constants (ADR-010 §3).
+
+    The defaults below are placeholders for the Wave 4 slice: the TrainingRunConfig
+    of the training loop (#840) carries the real values and replaces them.
+    """
 
     encoder: EncoderConfig = field(default_factory=EncoderConfig)
     d_model: int = 128
@@ -87,9 +100,15 @@ class ModelConfig:
     d_ff: int = 256
 
     def __post_init__(self) -> None:
-        for name in ("d_model", "n_layers", "n_heads", "d_ff"):
-            if getattr(self, name) < 1:
-                raise ConfigError(f"{name} must be at least 1")
+        bounds = {
+            "d_model": MAX_DIMENSION,
+            "n_layers": MAX_LAYERS,
+            "n_heads": MAX_HEADS,
+            "d_ff": MAX_FEED_FORWARD,
+        }
+        for name, bound in bounds.items():
+            if not 1 <= getattr(self, name) <= bound:
+                raise ConfigError(f"{name} must be at least 1 and at most {bound}")
         if self.d_model % self.n_heads:
             raise ConfigError("d_model must be a multiple of n_heads")
 
@@ -311,10 +330,13 @@ class PolicyNetwork(nn.Module):
 
 
 def init_network(role: str, game: GameData, config: ModelConfig, seed: int) -> PolicyNetwork:
-    """A freshly initialised network; the same seed gives the same weights.
+    """A freshly initialised network; the same seed gives the same weights on one machine.
 
-    The global RNG is left as it was.
+    Same machine and same software only: no claim is made across instruction sets
+    or torch builds. The global RNG is left as it was.
     """
+    if not 0 <= seed <= MAX_SEED:
+        raise ConfigError(f"seed must be between 0 and {MAX_SEED}")
     with torch.random.fork_rng(devices=[]):
         torch.manual_seed(seed)
         return PolicyNetwork(role, game, config)

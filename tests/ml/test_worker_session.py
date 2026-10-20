@@ -219,13 +219,20 @@ def test_a_query_answers_the_same_alone_and_after_others(tmp_path: Path) -> None
     # are bit-identical (tests/ml/model/test_network.py checks the float tensors too).
     worker = make_worker(tmp_path)
     target = battle_query(query_id=9, sampling={"kind": "sample", "u": 2**52})
-    others = [preview_query(query_id=1), battle_query(query_id=2), preview_query(query_id=3)]
+    battle = battle_query()
+    others = [
+        preview_query(query_id=1),
+        battle_query(query_id=2, candidates=battle["candidates"][:5]),
+        sample("policy-query/valid/battle-a2.json") | {"query_id": 3},
+        preview_query(query_id=4, candidates=preview_query()["candidates"][::-1]),
+    ]
     _, alone = session(worker, line(hello()), line(target))
     _, after = session(worker, line(hello()), *(line(q) for q in others), line(target))
-    assert recommendation_of(alone, 1) == recommendation_of(after, 4)
+    assert recommendation_of(alone, 1) == recommendation_of(after, 1 + len(others))
     scorer = worker._scorer
     first = scorer.probabilities(encoder_input(target))
-    scorer.probabilities(encoder_input(others[0]))
+    for other in others:
+        scorer.probabilities(encoder_input(other))
     assert scorer.probabilities(encoder_input(target)) == first
 
 
@@ -292,7 +299,9 @@ def test_checkpoints_load_only_by_id_from_the_run_directory(tmp_path: Path) -> N
         store.load("1" * 64)
 
 
-def test_the_worker_package_opens_no_socket() -> None:
+def test_the_ml_package_opens_no_socket() -> None:
+    # The scan covers all of areneon_ml (worker, model, checkpoint, reducer); the running test below
+    # covers a session. Third-party modules (torch) are not scanned.
     banned = {
         "socket",
         "socketserver",
@@ -305,8 +314,10 @@ def test_the_worker_package_opens_no_socket() -> None:
         "ftplib",
         "smtplib",
     }
-    package = Path(areneon_ml.worker.__file__).parent
-    for source in package.glob("*.py"):
+    package = Path(areneon_ml.__file__).parent
+    sources = list(package.rglob("*.py"))
+    assert len(sources) > 25
+    for source in sources:
         for node in ast.walk(ast.parse(source.read_text(encoding="utf-8"))):
             names = (
                 [a.name for a in node.names]

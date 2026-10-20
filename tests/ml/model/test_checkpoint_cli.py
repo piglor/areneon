@@ -64,7 +64,9 @@ def test_init_uses_the_default_sizes_without_a_config_file(tmp_path: Path) -> No
     code, out = run(*args, "--run-dir", str(tmp_path))
     assert code == 0
     network = load_checkpoint(
-        (tmp_path / "checkpoints" / f"{out['checkpoint_id']}.safetensors").read_bytes(), game()
+        (tmp_path / "checkpoints" / f"{out['checkpoint_id']}.safetensors").read_bytes(),
+        game(),
+        out["checkpoint_id"],
     )
     assert network.config.d_model == 128
 
@@ -78,6 +80,17 @@ def test_init_refuses_a_bad_config(tmp_path: Path, capsys: pytest.CaptureFixture
     assert "keys must be exactly" in capsys.readouterr().err
 
 
+@pytest.mark.parametrize("seed", ["-1", str(2**64)])
+def test_init_refuses_a_seed_out_of_range(
+    tmp_path: Path, config_file: Path, capsys: pytest.CaptureFixture[str], seed: str
+) -> None:
+    args = ["init", "--role", "battle", "--seed", seed, "--engine-data", ENGINE_DATA]
+    code, _ = run(*args, "--model-config", str(config_file), "--run-dir", str(tmp_path))
+    assert code == EXIT_REFUSED
+    assert "seed must be between" in capsys.readouterr().err
+    assert not (tmp_path / "checkpoints").exists()
+
+
 @pytest.fixture
 def provenance(tmp_path: Path) -> tuple[Path, Path]:
     records = tmp_path / "records"
@@ -85,7 +98,7 @@ def provenance(tmp_path: Path) -> tuple[Path, Path]:
     for record in RECORDS:
         (records / f"{record.lineage_id}.json").write_bytes(jcs(record.to_json()))
     sources = tmp_path / "sources.json"
-    sources.write_text(json.dumps(SOURCES))
+    sources.write_bytes(jcs(SOURCES))
     return records, sources
 
 
@@ -94,6 +107,7 @@ def test_classify_prints_the_c1_class(provenance: tuple[Path, Path]) -> None:
     base = ["classify", "--records", str(records), "--sources", str(sources)]
     code, out = run(*base, "--candidate", h("A2"), "--opponent", h("B1"))
     assert (code, out["label"]) == (0, "held_out")
+    assert out["sources_hash"] == hashlib.sha256(jcs(SOURCES)).hexdigest()
     _, out = run(*base, "--candidate", h("A2"), "--opponent", h("C0"))
     assert out["label"] == "seen"
     _, out = run(*base, "--candidate", h("A2"), "--opponent", "first-legal@golden")
@@ -107,7 +121,12 @@ def test_independent_prints_c6(provenance: tuple[Path, Path]) -> None:
     base = ["independent", "--records", str(records), "--sources", str(sources)]
     code, out = run(*base, "--a", h("A2"), "--b", h("C0"))
     assert code == 0
-    assert out == {"independent": False, "shared_checkpoints": [], "shared_sources": [h("bc")]}
+    assert out == {
+        "independent": False,
+        "shared_checkpoints": [],
+        "shared_sources": [h("bc")],
+        "sources_hash": hashlib.sha256(jcs(SOURCES)).hexdigest(),
+    }
     _, out = run(*base, "--a", h("A2"), "--b", h("B1"))
     assert out["independent"] is True
 
@@ -128,6 +147,9 @@ def test_unusable_records_are_refused_with_exit_3(
     assert run(*base, "--records", str(records))[0] == EXIT_REFUSED
     sources.write_text("[]")
     assert run(*base, "--records", str(records))[0] == EXIT_REFUSED
+    sources.write_text(json.dumps(SOURCES, indent=2))  # valid JSON, not canonical
+    assert run(*base, "--records", str(records))[0] == EXIT_REFUSED
+    assert "not canonical" in capsys.readouterr().err
     sources.write_text("not json")
     assert run(*base, "--records", str(records))[0] == EXIT_REFUSED
 

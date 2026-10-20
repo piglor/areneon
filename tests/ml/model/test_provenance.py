@@ -45,7 +45,7 @@ def record(
         team_set_manifest_hash=h("teams"),
         run_config_hash=h("config"),
         learner_state_hash=h("state"),
-        encoder_version="enc1:x",
+        encoder_version="enc1:" + "e" * 64,
         data_class="synthetic",
         manifest=MANIFEST,
     )
@@ -240,3 +240,38 @@ def test_the_questions_are_checked_too() -> None:
         g.ancestry([])
     with pytest.raises(ProvenanceError, match="has no record"):
         g.independent(h("A2"), h("unknown"))
+
+
+def test_a_pair_is_held_out_only_if_every_member_qualifies() -> None:
+    mixed = graph().classify((h("A2"),), (h("E"), h("C0")))  # an exploiter and a related lineage
+    assert mixed.label == SEEN
+    assert h("C0") in mixed.reason
+    both = graph().classify(
+        (h("A2"),), (h("E"), h("B1"))
+    )  # an exploiter and an independent lineage
+    assert both.label == HELD_OUT
+    assert "exploiters" in both.reason
+    assert graph().classify((h("A2"),), (h("E"),)).label == HELD_OUT
+    assert graph().classify((h("A2"),), (h("B1"), h("B0"))).label == HELD_OUT
+    assert graph().classify((h("A2"),), (h("B1"), h("A1"))).label == SEEN
+
+
+def test_records_must_agree_with_each_other() -> None:
+    base = [record("P", sets=("s",)), record("K", parent="P")]
+    sources: dict[str, list[str]] = {h("s"): []}
+    ProvenanceGraph(base, sources)  # consistent
+    other_encoder = replace(base[0], encoder_version="enc2:" + "e" * 64)
+    refused("differ in encoder_version", [other_encoder, base[1]], sources)
+    preview_parent = replace(base[0], role="preview")
+    refused(r"\(battle\) refers to .* \(preview\)", [preview_parent, base[1]], sources)
+    other_role_opponent = [replace(record("O"), role="preview"), record("K", league=("O",))]
+    refused("refers to", other_role_opponent)
+    other_role_target = [replace(record("O"), role="preview"), record("K", target="O")]
+    refused("refers to", other_role_target)
+    private = replace(base[0], data_class="private")
+    refused("descends from private", [private, base[1]], sources)
+    refused("descends from private", [private, record("K", league=("P",))], sources)
+    generated = [replace(record("G"), data_class="private"), record("K", sets=("s",))]
+    refused("descends from private", generated, {h("s"): [h("G")]})
+    both_private = replace(base[1], data_class="private")
+    ProvenanceGraph([private, both_private], sources)  # private may descend from private

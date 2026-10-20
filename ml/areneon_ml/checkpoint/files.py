@@ -103,10 +103,13 @@ def checkpoint_bytes(network: PolicyNetwork, game: GameData) -> bytes:
     """
     if sys.byteorder != "little":
         raise CheckpointFileError("checkpoints are little-endian; this machine is not")
-    state = {
-        name: tensor.detach().to(torch.float32).contiguous()
-        for name, tensor in sorted(network.state_dict().items())
-    }
+    state = {}
+    for name, tensor in sorted(network.state_dict().items()):
+        try:
+            # .cpu() first: data_ptr() of a device tensor is not a host address.
+            state[name] = tensor.detach().cpu().to(torch.float32).contiguous()
+        except (NotImplementedError, RuntimeError) as exc:
+            raise CheckpointFileError(f"tensor {name} cannot be copied to the host") from exc
     header: dict[str, Any] = {
         "__metadata__": {
             f"{PREFIX}format": FORMAT,
@@ -145,20 +148,23 @@ def write_checkpoint(run_dir: Path, data: bytes) -> str:
 
 
 def load_checkpoint(
-    data: bytes, game: GameData, expected_id: str | None = None, role: str | None = None
+    data: bytes, game: GameData, expected_id: str, role: str | None = None
 ) -> PolicyNetwork:
     """Rebuild the network a checkpoint holds, refusing anything that does not fit.
+
+    ``expected_id`` is required: the hash gate runs before the header is read or
+    anything is allocated, and the configuration is bounded as well, so a crafted
+    file cannot make this allocate without limit.
 
     Refused: bytes that do not hash to ``expected_id``; a file of another format or
     (when ``role`` is given) another role;
     another engine-data table or encoder version than ``game``'s; a configuration
     that is not valid; tensors whose names, dtype or shapes differ from the network's.
     """
-    if expected_id is not None:
-        if not _ID.fullmatch(expected_id):
-            raise CheckpointFileError("a checkpoint id is 64 lowercase hex digits")
-        if checkpoint_id(data) != expected_id:
-            raise CheckpointFileError(f"checkpoint {expected_id}: its bytes hash to another id")
+    if not _ID.fullmatch(expected_id):
+        raise CheckpointFileError("a checkpoint id is 64 lowercase hex digits")
+    if checkpoint_id(data) != expected_id:
+        raise CheckpointFileError(f"checkpoint {expected_id}: its bytes hash to another id")
     header = _header(data)
     meta = _metadata(header)
     if meta[f"{PREFIX}format"] != FORMAT:
@@ -170,7 +176,7 @@ def load_checkpoint(
     try:
         config = ModelConfig.from_dict(json.loads(meta[f"{PREFIX}model_config"]))
         network = init_network(meta[f"{PREFIX}role"], game, config, seed=0)
-    except (json.JSONDecodeError, ConfigError) as exc:
+    except (json.JSONDecodeError, ConfigError, RuntimeError, MemoryError) as exc:
         raise CheckpointFileError(f"the checkpoint's configuration is not valid: {exc}") from exc
     if meta[f"{PREFIX}engine_data_hash"] != game.engine_data_hash:
         raise CheckpointFileError("the checkpoint was made for another engine-data table")

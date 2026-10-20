@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import copy
 import hashlib
 import itertools
@@ -24,7 +25,7 @@ from areneon_ml.checkpoint.files import (
 )
 from areneon_ml.model.batch import collate
 from areneon_ml.model.gamedata import GameData
-from areneon_ml.model.network import init_network
+from areneon_ml.model.network import PolicyNetwork, init_network
 from areneon_ml.worker.checkpoints import CheckpointStore
 from safetensors import deserialize
 
@@ -35,6 +36,11 @@ Mutate = Callable[[dict[str, Any]], None]
 
 def make(role: str = "battle", seed: int = 1) -> bytes:
     return checkpoint_bytes(init_network(role, game(), TINY_MODEL, seed), game())
+
+
+def load(data: bytes, game_: GameData | None = None, role: str | None = None) -> PolicyNetwork:
+    """The file's own id: for tests of what the loader does after the hash gate."""
+    return load_checkpoint(data, game_ or game(), checkpoint_id(data), role=role)
 
 
 def split(data: bytes) -> tuple[dict[str, Any], bytes]:
@@ -96,13 +102,50 @@ def test_the_file_is_a_plain_safetensors_file_with_the_documented_layout() -> No
     assert b"pickle" not in data
 
 
-def test_no_checkpoint_path_uses_pickle_or_torch_load() -> None:
+BANNED_IMPORTS = {"pickle", "cPickle", "dill", "cloudpickle", "shelve", "marshal", "numpy"}
+BANNED_CALLS = {("torch", "load"), ("torch", "jit", "load")}
+
+
+def violations(source: str) -> list[str]:
+    """Imports of a serialisation or numpy module, and calls of torch.load / torch.jit.load."""
+    found = []
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, ast.Import):
+            found += [a.name for a in node.names if a.name.split(".")[0] in BANNED_IMPORTS]
+        elif isinstance(node, ast.ImportFrom):
+            module = node.module or ""
+            if module.split(".")[0] in BANNED_IMPORTS:
+                found.append(module)
+            if module in ("torch", "torch.jit") and any(a.name == "load" for a in node.names):
+                found.append(f"{module}.load")
+        elif isinstance(node, ast.Attribute) and node.attr == "load":
+            chain = []
+            value: ast.expr = node
+            while isinstance(value, ast.Attribute):
+                chain.append(value.attr)
+                value = value.value
+            if isinstance(value, ast.Name) and (value.id, *reversed(chain)) in BANNED_CALLS:
+                found.append(".".join((value.id, *reversed(chain))))
+    return found
+
+
+def test_the_scan_finds_what_it_looks_for() -> None:
+    assert violations("import pickle") == ["pickle"]
+    assert violations("from numpy import array") == ["numpy"]
+    assert violations("import numpy.linalg as la") == ["numpy.linalg"]
+    assert violations("import torch\nx = torch.load(p)") == ["torch.load"]
+    assert violations("import torch\nx = torch.jit.load(p)") == ["torch.jit.load"]
+    assert violations("from torch import load") == ["torch.load"]
+    assert violations("from torch.jit import load") == ["torch.jit.load"]
+    assert violations("import json\nimport torch\njson.load(f)\nnp.load(f)") == []
+
+
+def test_no_module_uses_pickle_torch_load_or_numpy() -> None:
     root = Path(areneon_ml.__file__).parent
-    for source in root.rglob("*.py"):
-        text = source.read_text(encoding="utf-8")
-        assert "torch.load" not in text.replace("`torch.load`", ""), source
-        assert "import pickle" not in text, source
-        assert "weights_only" not in text, source
+    sources = list(root.rglob("*.py"))
+    assert len(sources) > 25
+    for source in sources:
+        assert violations(source.read_text(encoding="utf-8")) == [], source
 
 
 def test_a_loader_refuses_bytes_that_do_not_hash_to_the_id_it_was_given() -> None:
@@ -115,24 +158,25 @@ def test_a_loader_refuses_bytes_that_do_not_hash_to_the_id_it_was_given() -> Non
     for bad in ("", "abc", checkpoint_id(data).upper(), checkpoint_id(data) + "\n"):
         with pytest.raises(CheckpointFileError, match="64 lowercase hex"):
             load_checkpoint(data, game(), bad)
-    assert load_checkpoint(data, game()).role == "battle"  # without an id the caller vouches
+    with pytest.raises(TypeError):
+        load_checkpoint(data, game())  # type: ignore[call-arg]
 
 
 def test_a_loader_refuses_another_role() -> None:
     with pytest.raises(CheckpointFileError, match="holds a battle network, not preview"):
-        load_checkpoint(make("battle"), game(), role="preview")
+        load(make("battle"), role="preview")
 
 
 def test_a_loader_refuses_another_engine_data_table_or_encoder_version() -> None:
     changed = copy.deepcopy(table())
     changed["items"][0]["fling_power"] += 1
     with pytest.raises(CheckpointFileError, match="another engine-data table"):
-        load_checkpoint(make(), GameData.from_table(changed))
+        load(make(), GameData.from_table(changed))
     data = rewrite(
         make(), lambda h: h["__metadata__"].update({"areneon.encoder_version": "enc1:x"})
     )
     with pytest.raises(CheckpointFileError, match="another encoder version"):
-        load_checkpoint(data, game())
+        load(data)
 
 
 def _drop_tensor(header: dict[str, Any]) -> None:
@@ -184,7 +228,7 @@ def _reshape(header: dict[str, Any]) -> None:
 )
 def test_a_file_that_does_not_fit_the_network_is_refused(change: Mutate, message: str) -> None:
     with pytest.raises(CheckpointFileError, match=message):
-        load_checkpoint(rewrite(make(), change), game())
+        load(rewrite(make(), change))
 
 
 def test_a_damaged_container_is_refused() -> None:
@@ -200,7 +244,7 @@ def test_a_damaged_container_is_refused() -> None:
     }
     for message, broken in cases.items():
         with pytest.raises(CheckpointFileError, match=message.strip()):
-            load_checkpoint(broken, game())
+            load(broken)
 
 
 def test_a_big_endian_machine_refuses_to_write(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -219,3 +263,31 @@ def test_write_checkpoint_stores_the_file_under_its_id(tmp_path: Path) -> None:
     assert CheckpointStore(tmp_path).load(found) == data
     loaded = load_checkpoint(CheckpointStore(tmp_path).load(found), game(), found)
     assert checkpoint_bytes(loaded, game()) == data
+
+
+def test_a_network_off_the_host_cannot_be_written() -> None:
+    # data_ptr() of a device tensor is no host address: the writer copies to the host first, and
+    # a tensor that cannot be copied (here the meta device, which has no data) is refused.
+    net = init_network("battle", game(), TINY_MODEL, 1).to("meta")
+    with pytest.raises(CheckpointFileError, match="cannot be copied to the host"):
+        checkpoint_bytes(net, game())
+
+
+def test_a_crafted_size_cannot_make_the_loader_allocate() -> None:
+    def huge(header: dict[str, Any]) -> None:
+        config = json.loads(header["__metadata__"]["areneon.model_config"])
+        config["d_model"] = 1 << 40
+        header["__metadata__"]["areneon.model_config"] = json.dumps(config)
+
+    with pytest.raises(CheckpointFileError, match="d_model must be at least 1 and at most"):
+        load(rewrite(make(), huge))
+
+    def many_buckets(header: dict[str, Any]) -> None:
+        config = json.loads(header["__metadata__"]["areneon.model_config"])
+        config["encoder"]["volatile_buckets"] = 1 << 40
+        header["__metadata__"]["areneon.model_config"] = json.dumps(config)
+
+    with pytest.raises(
+        CheckpointFileError, match="volatile_buckets must be at least 1 and at most"
+    ):
+        load(rewrite(make(), many_buckets))
