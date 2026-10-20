@@ -25,6 +25,7 @@
 /pnpm-lock.yaml                 @arceushui
 /pnpm-workspace.yaml            @arceushui
 /packages/private-team-store/   @arceushui
+/packages/team-dataset/scripts/duckdb-pin.json @arceushui
 /ml/gpu-env/                    @arceushui
 /packages/team-dataset/src/sealed*.ts  @arceushui
 /packages/team-dataset/scripts/sealed.ts  @arceushui
