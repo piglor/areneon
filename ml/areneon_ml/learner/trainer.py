@@ -187,6 +187,8 @@ class Learner:
                 batch = to_device(collate([table.steps[i].query for i in index]), self.device)
                 out = network(batch)
                 chosen = torch.tensor([table.steps[i].chosen for i in index], device=self.device)
+                # `policy_terms` masks padding again although the network already pushes padded
+                # logits to the dtype minimum: defence in depth, so a loss never depends on it.
                 loss = ppo_loss(
                     policy_terms(out.logits, batch.cand_mask, chosen),
                     out.value,

@@ -13,7 +13,7 @@ import torch
 from areneon_ml.checkpoint.files import checkpoint_bytes, checkpoint_id
 from areneon_ml.learner.config import RunConfig
 from areneon_ml.learner.data import Trajectory, trajectories
-from areneon_ml.learner.ppo import gae, policy_terms, terminal_rewards
+from areneon_ml.learner.ppo import LossWeights, gae, policy_terms, ppo_loss, terminal_rewards
 from areneon_ml.learner.trainer import Learner, LearnerError, configure_learner, to_device
 from areneon_ml.model.batch import collate
 from areneon_ml.model.encoder import Encoder
@@ -224,3 +224,18 @@ def test_a_batch_moves_whole() -> None:
     moved = to_device(batch, torch.device("cpu"))
     assert moved.kind == batch.kind
     assert torch.equal(moved.cand_mask, batch.cand_mask)
+
+
+def test_the_configured_loss_weights_reach_the_loss(monkeypatch: pytest.MonkeyPatch) -> None:
+    config = tiny_config(value_coef_micro=700_000, entropy_coef_micro=30_000, clip_micro=150_000)
+    seen: list[LossWeights] = []
+    real = ppo_loss
+
+    def spy(terms: Any, value: Any, targets: Any, weights: LossWeights) -> Any:
+        seen.append(weights)
+        return real(terms, value, targets, weights)
+
+    monkeypatch.setattr("areneon_ml.learner.trainer.ppo_loss", spy)
+    learner(config).train(trajs(config))
+    assert seen
+    assert set(seen) == {LossWeights(clip=0.15, value_coef=0.7, entropy_coef=0.03)}
