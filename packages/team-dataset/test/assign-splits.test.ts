@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, createHmac } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { AssignError, assignSplits, type PoolEntry } from "../src/assign-splits.ts";
 import { planQuotas, SPLITS } from "../src/plan.ts";
@@ -56,6 +56,17 @@ describe("assignSplits", () => {
     expect(assignSplits([...pool].reverse(), plan, KEY)).toEqual(first);
     const shuffled = [...pool].sort((a, b) => (hash(a.stratum) + a.canonical_team_hash < hash(b.stratum) + b.canonical_team_hash ? 1 : -1));
     expect(assignSplits(shuffled, plan, KEY)).toEqual(first);
+  });
+
+  it("orders each stratum by ascending HMAC-SHA256(key, canonical hash), dev first", () => {
+    const pool = poolOf();
+    const out = assignSplits(pool, plan, KEY);
+    const hmac = (h: string): string => createHmac("sha256", Buffer.from(KEY, "hex")).update(h, "utf8").digest("hex");
+    for (const s of plan.strata) {
+      const expected = pool.filter((e) => e.stratum === s.stratum).map((e) => e.canonical_team_hash).sort((a, b) => (hmac(a) < hmac(b) ? -1 : 1));
+      const dealt = SPLITS.flatMap((split) => out[split].filter((e) => e.stratum === s.stratum).map((e) => e.canonical_team_hash));
+      expect(dealt).toEqual(expected);
+    }
   });
 
   it("orders a stratum by the HMAC of its hash: another key deals differently", () => {

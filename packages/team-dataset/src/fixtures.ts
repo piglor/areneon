@@ -20,7 +20,9 @@ import {
   readTeamLabelSet,
   readTeamVocabulary,
   resolveFormat,
+  recordHash,
   type SyntheticTeamHashes,
+  teamVocabularyHash,
   type TeamRecord,
 } from "@areneon/showdown-bridge";
 import { COMMITTED_SPLITS, type CommittedSplit, type DatasetContext, datasetSyntheticHashes, HASHES_FILE, hashIndex, MANIFEST_FILE, readDataset, teamsFile } from "./dataset-reader.ts";
@@ -29,7 +31,6 @@ import { KnownHashes, referencePoolHash } from "./dedupe.ts";
 import { generate } from "./generate.ts";
 import { type Pilot, readPilot } from "./pilot.ts";
 import type { SplitSizes } from "./plan.ts";
-import { recordHash, teamVocabularyHash } from "@areneon/showdown-bridge";
 
 export const REPO_ROOT = fileURLToPath(new URL("../../..", import.meta.url));
 export const DATASETS_DIR = (formatId: string): string => join(REPO_ROOT, "fixtures/teams", formatId, "datasets");
@@ -69,8 +70,8 @@ export function loadFixtureInputs(engine: Engine, formatId: string) {
   const labelSet = readTeamLabelSet(json(join(REPO_ROOT, "config/teams", formatId, "labels.json")), table);
   const vocabulary = readTeamVocabulary(json(join(REPO_ROOT, "fixtures/showdown", formatId, "team-vocabulary.json")), table);
   const format = resolveFormat(engine, formatId);
-  const context: DatasetContext = { engine, format, table, config, labelSet };
-  return { ...context, vocabulary };
+  const context: DatasetContext = { engine, format, table, config, labelSet, vocabulary };
+  return context;
 }
 
 export type FixtureInputs = ReturnType<typeof loadFixtureInputs>;

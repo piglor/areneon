@@ -1,8 +1,8 @@
 // The committed dev and validation fixtures (src/fixtures.ts).
 //   node packages/team-dataset/scripts/fixtures.ts write [--full]   (re)make the files
 //   node packages/team-dataset/scripts/fixtures.ts check [--full]   fail if a committed file differs
-// Without --full the recorded pilot.json is reused (about 15 s); --full runs the config's
-// pilot again too (about 1 minute) and so also checks pilot.json.
+// Without --full the recorded pilot.json is reused (about 5 s); --full runs the config's
+// pilot again too (about 45 s) and so also checks pilot.json.
 import { join } from "node:path";
 import { loadEngine } from "@areneon/showdown-bridge";
 import { DATASETS_DIR, differing, loadFixtureInputs, readFixtureRun, recordedPilot, regenerate, writeFixtures } from "../src/fixtures.ts";

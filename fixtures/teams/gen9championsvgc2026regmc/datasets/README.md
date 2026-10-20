@@ -36,7 +36,7 @@ same run (the pool is assigned once) but is not committed.
 ### Regenerating
 
 ```bash
-node packages/team-dataset/scripts/fixtures.ts check          # about 15 s: reuses pilot.json
+node packages/team-dataset/scripts/fixtures.ts check          # about 5 s: reuses pilot.json
 node packages/team-dataset/scripts/fixtures.ts check --full   # about 45 s: also reruns the pilot
 node packages/team-dataset/scripts/fixtures.ts write --full   # remake the files (review the diff)
 ```

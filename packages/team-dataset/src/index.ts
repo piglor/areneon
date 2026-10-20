@@ -34,3 +34,15 @@ export {
   trainingPool,
   type VerifiedDataset,
 } from "./dataset-reader.ts";
+export {
+  committedDatasetHashes,
+  differing,
+  FixtureError,
+  type FixtureInputs,
+  type FixtureRun,
+  loadFixtureInputs,
+  readFixtureRun,
+  recordedPilot,
+  regenerate,
+  writeFixtures,
+} from "./fixtures.ts";

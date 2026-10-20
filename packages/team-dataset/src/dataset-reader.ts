@@ -32,8 +32,12 @@ import {
   type TeamGeneratorConfig,
   type TeamLabelSet,
   type TeamRecord,
+  type TeamVocabulary,
+  teamVocabularyHash,
+  canonicalTeamHash,
   validateTeam,
 } from "@areneon/showdown-bridge";
+import { referencePoolHash, sortedUnique } from "./dedupe.ts";
 import { checkRecord } from "./generate.ts";
 import { cellOf } from "./labeller.ts";
 
@@ -74,9 +78,18 @@ export interface DatasetContext {
   table: EngineData;
   config: TeamGeneratorConfig;
   labelSet: TeamLabelSet;
+  /** The vocabulary the dataset was drawn from: its hash must be the manifest's `vocabulary_hash`. */
+  vocabulary: TeamVocabulary;
+  /** The canonical hashes of the earlier datasets it deduplicated against (none for the first dataset): `reference_pool_hash` must be their hash. */
+  referenceHashes?: readonly string[];
 }
 
-export interface VerifiedDataset {
+/** A dataset that `readDataset` returned. Only such an object is accepted by `trainingPool`. */
+export type VerifiedDataset = VerifiedShape & { readonly [VERIFIED]: true };
+declare const VERIFIED: unique symbol;
+const verifiedDatasets = new WeakSet<object>();
+
+interface VerifiedShape {
   manifest: TeamDatasetManifest;
   manifest_hash: string;
   splits: Record<CommittedSplit, TeamRecord[]>;
@@ -173,7 +186,10 @@ function readSplit(dir: string, split: CommittedSplit, manifest: TeamDatasetMani
 
 /**
  * Read and verify the committed dataset in `dir`. Every refusal is a
- * `DatasetReadError`.
+ * `DatasetReadError`. The manifest's config, label set, vocabulary and
+ * reference pool hashes and its version manifest are recomputed from the
+ * context. `generator_commit` cannot be verified here (it names code, not
+ * data); the byte-for-byte regeneration test is what ties it to the files.
  */
 export function readDataset(dir: string, context: DatasetContext): VerifiedDataset {
   let manifest: TeamDatasetManifest;
@@ -184,6 +200,8 @@ export function readDataset(dir: string, context: DatasetContext): VerifiedDatas
     return bad(`${MANIFEST_FILE}: ${(error as Error).message}`);
   }
   if (jcs(manifest.generator.manifest as never) !== jcs(context.format.manifest as never)) bad("the dataset was generated under another version manifest than the pinned engine's");
+  if (manifest.generator.vocabulary_hash !== teamVocabularyHash(context.vocabulary)) bad("vocabulary_hash is not the hash of the given vocabulary");
+  if (manifest.reference_pool_hash !== referencePoolHash(sortedUnique([...(context.referenceHashes ?? [])]))) bad("reference_pool_hash is not the hash of the given reference hashes");
   const splits = { dev: readSplit(dir, "dev", manifest, context), validation: readSplit(dir, "validation", manifest, context) };
   // L1: no team in two splits, and none twice.
   const seen = new Map<string, string>();
@@ -195,7 +213,9 @@ export function readDataset(dir: string, context: DatasetContext): VerifiedDatas
     }
   }
   const hashes = readHashIndex(readJson(dir, HASHES_FILE), hashIndex(manifest, splits));
-  return { manifest, manifest_hash: hashes.manifest_hash, splits, hashes };
+  const verified = { manifest, manifest_hash: hashes.manifest_hash, splits, hashes } as VerifiedDataset;
+  verifiedDatasets.add(verified);
+  return verified;
 }
 
 /** The index in `hashes.json`, which must equal the one recomputed from the records. */
@@ -224,35 +244,49 @@ const refuse = (message: string): never => {
   throw new TrainingDrawError(message);
 };
 
-/** Teams a training run may play: dev and training records, never validation. */
+const pools = new WeakSet<object>();
+
+/** Teams a training run may play: only `trainingPool` makes one. */
 export interface TrainingPool {
   readonly records: readonly TeamRecord[];
+  readonly [POOL]: true;
 }
+declare const POOL: unique symbol;
 
 /**
- * The training pool (ADR-010 E2): the dev and training records given, as long
- * as none is a validation record and none repeats a validation team. The
- * refusal is absolute: a validation record is refused whatever else the
- * pool holds, and a training or dev record whose canonical hash is in the
- * validation set is refused even though its own split label is allowed.
+ * The training pool (ADR-010 E2) of verified datasets: their dev records,
+ * never validation. Nothing is taken on a caller's word: a dataset must be
+ * the result of `readDataset`; every canonical hash is recomputed from the
+ * paste through the engine (a record's own hash field is not trusted); and a
+ * dev team whose recomputed hash equals a validation team's, in any of the
+ * given datasets, is refused. The refusal is absolute.
  */
-export function trainingPool(records: readonly TeamRecord[], validation: readonly TeamRecord[]): TrainingPool {
-  const blocked = new Set(validation.map((r) => r.canonical_team_hash));
+export function trainingPool(datasets: readonly VerifiedDataset[], engine: Engine): TrainingPool {
+  if (datasets.length === 0) refuse("the training pool has no dataset");
+  const canonical = (record: TeamRecord): string => canonicalTeamHash(importPaste(engine, record.paste));
+  for (const dataset of datasets) if (!verifiedDatasets.has(dataset)) refuse("a dataset that readDataset did not return is not trusted");
+  const blocked = new Set(datasets.flatMap((d) => d.splits.validation.map(canonical)));
+  const records: TeamRecord[] = [];
   const seen = new Set<string>();
-  for (const record of records) {
-    if (record.origin.split === "validation") refuse(`${record.canonical_team_hash} is a validation team: validation is never trained on`);
-    if (blocked.has(record.canonical_team_hash)) refuse(`${record.canonical_team_hash} duplicates a validation team`);
-    if (seen.has(record.canonical_team_hash)) refuse(`${record.canonical_team_hash} is in the training pool twice`);
-    seen.add(record.canonical_team_hash);
+  for (const dataset of datasets) {
+    for (const record of dataset.splits.dev) {
+      if (record.origin.split !== "dev") refuse(`${record.canonical_team_hash} is not a dev record`);
+      const hash = canonical(record);
+      if (blocked.has(hash)) refuse(`${hash} duplicates a validation team`);
+      if (seen.has(hash)) refuse(`${hash} is in the training pool twice`);
+      seen.add(hash);
+      records.push(record);
+    }
   }
   if (records.length === 0) refuse("the training pool is empty");
-  return { records };
+  const pool = { records } as unknown as TrainingPool;
+  pools.add(pool);
+  return pool;
 }
 
-/** The team at `index` of the pool (the caller's seeded generator picks the index). */
+/** The team at `index` of a pool `trainingPool` made (the caller's seeded generator picks the index). */
 export function drawTrainingTeam(pool: TrainingPool, index: number): TeamRecord {
+  if (!pools.has(pool)) refuse("a pool that trainingPool did not make is not trusted");
   if (!Number.isSafeInteger(index) || index < 0 || index >= pool.records.length) return refuse(`draw ${index} is outside the pool of ${pool.records.length} teams`);
-  const record = pool.records[index] as TeamRecord;
-  if (record.origin.split === "validation") return refuse(`${record.canonical_team_hash} is a validation team`);
-  return record;
+  return pool.records[index] as TeamRecord;
 }

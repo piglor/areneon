@@ -21,8 +21,9 @@ import {
   MANIFEST_FILE,
   readDataset,
   teamsFile,
-  TrainingDrawError,
   trainingPool,
+  type TrainingPool,
+  type VerifiedDataset,
 } from "../src/dataset-reader.ts";
 import { DATASETS_DIR } from "../src/fixtures.ts";
 import { loadFixtureInputs } from "../src/fixtures.ts";
@@ -190,30 +191,58 @@ describe("SyntheticTeamHashes from the dataset", () => {
 });
 
 describe("the training pool", () => {
-  const dev = dataset.splits.dev;
+  const fresh = (): VerifiedDataset => readDataset(SOURCE, inputs);
   const validation = dataset.splits.validation;
 
   it("draws dev teams", () => {
-    const pool = trainingPool(dev, validation);
+    const pool = trainingPool([dataset], engine);
+    const dev = dataset.splits.dev;
+    expect(pool.records).toHaveLength(dev.length);
     expect(drawTrainingTeam(pool, 0)).toBe(dev[0]);
     expect(drawTrainingTeam(pool, dev.length - 1)).toBe(dev[dev.length - 1]);
   });
-  it("refuses a validation record, absolutely", () => {
-    expect(() => trainingPool([...dev, validation[0] as TeamRecord], validation)).toThrow(TrainingDrawError);
-    expect(() => trainingPool([validation[0] as TeamRecord], [])).toThrow(/validation is never trained on/);
+  it("holds no validation team", () => {
+    const blocked = new Set(validation.map((r) => r.canonical_team_hash));
+    expect(trainingPool([dataset], engine).records.some((r) => blocked.has(r.canonical_team_hash) || r.origin.split !== "dev")).toBe(false);
   });
-  it("refuses a training record that duplicates a validation team", () => {
+  it("refuses a dataset readDataset did not return (a validation record relabelled training)", () => {
     const v = validation[0] as TeamRecord;
-    const clone: TeamRecord = { ...v, origin: { ...v.origin, split: "training" } };
-    expect(() => trainingPool([...dev, clone], validation)).toThrow(/duplicates a validation team/);
+    const forged = { ...dataset, splits: { dev: [{ ...v, origin: { ...v.origin, split: "training" } }], validation: [] } } as unknown as VerifiedDataset;
+    expect(() => trainingPool([forged], engine)).toThrow(/did not return/);
   });
-  it("refuses a team twice, an empty pool and a draw outside the pool", () => {
-    expect(() => trainingPool([dev[0] as TeamRecord, dev[0] as TeamRecord], validation)).toThrow(/twice/);
-    expect(() => trainingPool([], validation)).toThrow(/empty/);
-    const pool = trainingPool(dev, validation);
-    for (const bad of [-1, dev.length, 1.5, Number.NaN]) expect(() => drawTrainingTeam(pool, bad)).toThrow(/outside the pool/);
+  it("recomputes hashes from the paste: a validation team under a forged hash is still refused", () => {
+    const own = fresh();
+    const v = validation[0] as TeamRecord;
+    own.splits.dev[0] = { ...v, canonical_team_hash: "0".repeat(64), origin: { ...v.origin, split: "dev" } };
+    expect(() => trainingPool([own], engine)).toThrow(/duplicates a validation team/);
   });
-  it("refuses a validation record in a pool built by hand", () => {
-    expect(() => drawTrainingTeam({ records: [validation[0] as TeamRecord] }, 0)).toThrow(/validation team/);
+  it("refuses a validation record relabelled dev, and a dev team twice", () => {
+    const own = fresh();
+    const v = validation[0] as TeamRecord;
+    own.splits.dev[0] = { ...v, origin: { ...v.origin, split: "validation" } };
+    expect(() => trainingPool([own], engine)).toThrow(/not a dev record/);
+    const twice = fresh();
+    twice.splits.dev[1] = twice.splits.dev[0] as TeamRecord;
+    expect(() => trainingPool([twice], engine)).toThrow(/twice/);
+  });
+  it("refuses no dataset and an empty pool", () => {
+    expect(() => trainingPool([], engine)).toThrow(/no dataset/);
+    const own = fresh();
+    own.splits.dev.length = 0;
+    expect(() => trainingPool([own], engine)).toThrow(/empty/);
+  });
+  it("draws only from a pool trainingPool made, and only inside it", () => {
+    const pool = trainingPool([dataset], engine);
+    for (const bad of [-1, pool.records.length, 1.5, Number.NaN]) expect(() => drawTrainingTeam(pool, bad)).toThrow(/outside the pool/);
+    const v = validation[0] as TeamRecord;
+    const handBuilt = { records: [{ ...v, origin: { ...v.origin, split: "dev" } }] } as unknown as TrainingPool;
+    expect(() => drawTrainingTeam(handBuilt, 0)).toThrow(/did not make/);
+  });
+});
+
+describe("what readDataset recomputes from its context", () => {
+  it("refuses another vocabulary or reference pool", () => {
+    expect(() => readDataset(SOURCE, { ...inputs, vocabulary: { ...inputs.vocabulary, roster: inputs.vocabulary.roster.slice(1) } })).toThrow(/vocabulary_hash/);
+    expect(() => readDataset(SOURCE, { ...inputs, referenceHashes: ["1".repeat(64)] })).toThrow(/reference_pool_hash/);
   });
 });
