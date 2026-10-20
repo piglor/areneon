@@ -18,3 +18,8 @@ dist/
 *.duckdb.wal
 *.parquet
 *.age
+# ADR-014: a synthetic Parquet fixture may live under fixtures/ (the binary-file
+# guard still refuses it unless its exact path is in ALLOWED).
+!fixtures/**/*.parquet
+# DuckDB's spill directory and other session scratch (ADR-014).
+.tmp/
