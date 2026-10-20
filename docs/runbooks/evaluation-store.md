@@ -139,7 +139,7 @@ sudo -u areneon-eval scripts/check-evaluation-store.sh \
 ```bash
 sudo -u <training user> scripts/check-evaluation-store.sh --store /srv/areneon-eval/store --probe-denied
 ```
-*Expected result:* two `PASS` lines saying `ls` and `cd` are refused with `Permission denied`. A path that does not exist fails (it is not a refusal), so run the owner-mode check first: it proves the store exists. Run it again **inside a training container** (`docker exec <training container> /path/to/check-evaluation-store.sh --store /srv/areneon-eval/store --probe-denied`, with the script copied or mounted read-only into the container) to show the container sees nothing either. (Owner: verify that the path does not exist or is denied inside the container.)
+*Expected result:* two `PASS` lines saying `ls` and `cd` are refused with `Permission denied`. A path that does not exist fails (it is not a refusal), so run the owner-mode check first: it proves the store exists. Run it as the training user **on the host where the store exists**: the probe passes only on "Permission denied" and fails on a path that does not exist, so it cannot be run inside a container that has no such path. For training containers use the mount check above (`--training-container`), which shows that nothing containing the store is mounted.
 
 Record the outputs on #846 (hashes of nothing secret are involved). Repeat after any change to users, groups, containers or mounts. The unit tests of the script (`tests/scripts/test_check_evaluation_store.py`) show that it fails on each leak it names; they run in CI against a scratch directory, not against your store.
 

@@ -228,7 +228,12 @@ function execute(command: string, options: Options, now: () => Date, cwd: string
     }
     case "gen-secret": {
       const secret = generateSecret();
-      writeFileSync(need(options, "out"), secret, { flag: "wx", mode: 0o600 });
+      try {
+        writeFileSync(need(options, "out"), secret, { flag: "wx", mode: 0o600 });
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "EEXIST") throw new EvaluationConfigError(`${need(options, "out")} already exists: a secret is never overwritten`);
+        throw error;
+      }
       return line({ sha256: keyCommitment(secret) });
     }
     default:

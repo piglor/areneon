@@ -187,12 +187,12 @@ describe("the sealed-set commitment and the plan (protocol L3, I2)", () => {
     const salt = hex("a");
     const key = hex("b");
     const teams: Json[] = Array.from({ length: 32 }, (_, i) => ({ species: `s${i}`, band: ["a", "b", "c", "d"][i % 4] as string }));
-    const labels = { stratumOf: (team: Json) => `speed=${(team as { band: string }).band}`, n_stratum_min: 2 };
+    const labels = (team: Json) => `speed=${(team as { band: string }).band}`;
     const commitment = { ...fx.commitment, set_commitment: setCommitment(salt, teams), key_commitment: keyCommitment(key) };
-    expect(checkReveal(commitment, { salt, teams, key }, labels)).toBe(true);
-    expect(checkReveal(commitment, { salt, teams: [...teams].reverse(), key }, labels)).toBe(false);
-    expect(checkReveal(commitment, { salt: hex("c"), teams, key }, labels)).toBe(false);
-    expect(checkReveal(commitment, { salt, teams, key: hex("c") }, labels)).toBe(false);
+    expect(checkReveal(commitment, { salt, teams, key }, labels, fx.config)).toBe(true);
+    expect(checkReveal(commitment, { salt, teams: [...teams].reverse(), key }, labels, fx.config)).toBe(false);
+    expect(checkReveal(commitment, { salt: hex("c"), teams, key }, labels, fx.config)).toBe(false);
+    expect(checkReveal(commitment, { salt, teams, key: hex("c") }, labels, fx.config)).toBe(false);
   });
 
   it("a reveal of fewer teams, other strata or a thin stratum does not open a commitment it hashes to", () => {
@@ -200,7 +200,7 @@ describe("the sealed-set commitment and the plan (protocol L3, I2)", () => {
     const key = hex("b");
     const open = (teams: Json[], declared: SealedSetCommitment) => {
       const commitment = { ...declared, set_commitment: setCommitment(salt, teams), key_commitment: keyCommitment(key) };
-      return checkReveal(commitment, { salt, teams, key }, { stratumOf: (t) => `speed=${(t as { band: string }).band}`, n_stratum_min: 2 });
+      return checkReveal(commitment, { salt, teams, key }, (t) => `speed=${(t as { band: string }).band}`, fx.config);
     };
     const one: Json[] = [{ band: "a" }];
     expect(open(one, { ...fx.commitment, team_count: 32 })).toBe(false);
@@ -661,7 +661,10 @@ describe("the evaluation-register CLI", () => {
     expect(JSON.parse(made.out)).toEqual({ sha256: keyCommitment(secret) });
     expect(made.out).not.toContain(secret);
     expect(execFileSync("stat", ["-c", "%a", p("key")], { encoding: "utf8" }).trim()).toBe("600");
-    expect(() => run("gen-secret", "--out", p("key"))).toThrow(/EEXIST/);
+    const again = run("gen-secret", "--out", p("key"));
+    expect(again.code).toBe(1);
+    expect(again.err).toMatch(/already exists/);
+    expect(readFileSync(p("key"), "utf8")).toBe(secret);
   });
 
   it("lets an operating-system error through instead of reporting it as a refusal", () => {

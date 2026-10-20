@@ -47,20 +47,27 @@ export const generateSecret = (): string => randomBytes(32).toString("hex");
  * L5: whether a published reveal opens a commitment, and is the set it
  * declared: the hashes match, the number of teams is `team_count`, and the
  * strata the teams fall into (by `stratumOf`, the reviewed labeller) are
- * exactly `stratum_counts`, each holding at least `n_stratum_min` (erratum
- * E1). Anyone can run it once the set retires.
+ * exactly `stratum_counts`, each holding at least the PARAMETERS' `n_stratum_min`
+ * (erratum E1; the caller cannot lower it). `stratumOf` is the reviewed
+ * labeller of ADR-010 O6 (a data record naming engine ids; no ids in code); its
+ * identity hash is meant to be pinned in the registered plan, which has no field
+ * for it yet (a follow-up on #846). Anyone can run it once the set retires.
  */
 export function checkReveal(
   commitment: SealedSetCommitment,
   reveal: { salt: string; teams: readonly Json[]; key: string },
-  labels: { stratumOf: (team: Json) => string; n_stratum_min: number },
+  stratumOf: (team: Json) => string,
+  config: EvaluationConfig,
 ): boolean {
   if (setCommitment(reveal.salt, reveal.teams) !== commitment.set_commitment || keyCommitment(reveal.key) !== commitment.key_commitment) return false;
   if (reveal.teams.length !== commitment.team_count) return false;
   const counts = new Map<string, number>();
-  for (const team of reveal.teams) counts.set(labels.stratumOf(team), (counts.get(labels.stratumOf(team)) ?? 0) + 1);
+  for (const team of reveal.teams) {
+    const stratum = stratumOf(team);
+    counts.set(stratum, (counts.get(stratum) ?? 0) + 1);
+  }
   const declared = commitment.stratum_counts;
-  return counts.size === declared.length && declared.every((s) => counts.get(s.stratum) === s.count && s.count >= labels.n_stratum_min);
+  return counts.size === declared.length && declared.every((s) => counts.get(s.stratum) === s.count && s.count >= config.parameters.n_stratum_min);
 }
 
 /** Read a SealedSetCommitment: the schema, then the sorted-and-unique strata and their sum. */
