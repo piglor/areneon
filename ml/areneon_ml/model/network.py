@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, fields
 from typing import Any
 
 import torch
@@ -62,7 +62,7 @@ def _number_field(source: Mapping[str, Any], name: str) -> float:
 
 def encoder_config_from_dict(source: Mapping[str, Any]) -> EncoderConfig:
     """The inverse of ``EncoderConfig.as_dict``; unknown or missing keys are refused."""
-    expected = set(EncoderConfig().as_dict())
+    expected = {f.name for f in fields(EncoderConfig)}
     if set(source) != expected:
         raise ConfigError(f"encoder config keys must be exactly {sorted(expected)}")
     ints = ("volatile_buckets", "condition_buckets", "max_moves", "max_team", "max_picks")
@@ -89,15 +89,14 @@ MAX_SEED = 2**63 - 1
 class ModelConfig:
     """Network sizes: configuration, never code constants (ADR-010 §3).
 
-    The defaults below are placeholders for the Wave 4 slice: the TrainingRunConfig
-    of the training loop (#840) carries the real values and replaces them.
+    They come from the ``model`` section of the run's ``TrainingRunConfig``; there are no defaults.
     """
 
-    encoder: EncoderConfig = field(default_factory=EncoderConfig)
-    d_model: int = 128
-    n_layers: int = 3
-    n_heads: int = 4
-    d_ff: int = 256
+    encoder: EncoderConfig
+    d_model: int
+    n_layers: int
+    n_heads: int
+    d_ff: int
 
     def __post_init__(self) -> None:
         bounds = {

@@ -59,16 +59,11 @@ def test_init_writes_a_seeded_checkpoint_under_its_id(tmp_path: Path, config_fil
     assert (again, same) == (0, out)
 
 
-def test_init_uses_the_default_sizes_without_a_config_file(tmp_path: Path) -> None:
+def test_init_needs_a_config_file_there_are_no_default_sizes(tmp_path: Path) -> None:
     args = ["init", "--role", "preview", "--seed", "1", "--engine-data", ENGINE_DATA]
-    code, out = run(*args, "--run-dir", str(tmp_path))
-    assert code == 0
-    network = load_checkpoint(
-        (tmp_path / "checkpoints" / f"{out['checkpoint_id']}.safetensors").read_bytes(),
-        game(),
-        out["checkpoint_id"],
-    )
-    assert network.config.d_model == 128
+    with pytest.raises(SystemExit) as stop:
+        run(*args, "--run-dir", str(tmp_path))
+    assert stop.value.code == 2
 
 
 def test_init_refuses_a_bad_config(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:

@@ -6,6 +6,7 @@ import copy
 import ctypes
 import hashlib
 import json
+from dataclasses import replace
 from typing import Any
 
 import pytest
@@ -15,7 +16,6 @@ from areneon_ml.model.candidates import UnsupportedCandidate
 from areneon_ml.model.encoder import (
     EncodedQuery,
     Encoder,
-    EncoderConfig,
     EncodingError,
     Layout,
     bucket,
@@ -359,9 +359,7 @@ def test_a_move_in_a_forced_switch_request_is_unsupported() -> None:
 
 
 def test_a_side_larger_than_max_team_is_refused() -> None:
-    small = Encoder(
-        game(), EncoderConfig(max_team=5, max_picks=4, volatile_buckets=4, condition_buckets=4)
-    )
+    small = Encoder(game(), replace(TINY_ENCODER, max_team=5))
     with pytest.raises(EncodingError, match="max_team"):
         small.encode(sample("policy-query/valid/preview.json"))
 
@@ -377,9 +375,9 @@ def test_the_encoder_version_carries_the_table_hash_and_every_feature_choice() -
     assert version == encoder_version(game(), TINY_ENCODER)
     assert version.startswith("enc1:")
     assert len(version) < 128
-    assert encoder_version(game(), EncoderConfig()) != version
-    assert encoder_version(game(), EncoderConfig(max_moves=3)) != encoder_version(
-        game(), EncoderConfig()
+    assert encoder_version(game(), replace(TINY_ENCODER, volatile_buckets=5)) != version
+    assert encoder_version(game(), replace(TINY_ENCODER, max_moves=3)) != encoder_version(
+        game(), TINY_ENCODER
     )
     changed = copy.deepcopy(table())
     changed["items"][0]["fling_power"] += 1
@@ -401,7 +399,7 @@ def test_the_encoder_version_carries_the_table_hash_and_every_feature_choice() -
 )
 def test_an_invalid_encoder_config_is_refused(change: dict[str, Any]) -> None:
     with pytest.raises(ValueError, match=r"at least 1|exceed|positive"):
-        EncoderConfig(**change)
+        replace(TINY_ENCODER, **change)
 
 
 def test_buckets_are_stable_and_in_range() -> None:

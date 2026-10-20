@@ -72,7 +72,10 @@ def _parser() -> argparse.ArgumentParser:
     init.add_argument("--engine-data", type=Path, required=True)
     init.add_argument("--run-dir", type=Path, required=True)
     init.add_argument(
-        "--model-config", type=Path, help="a ModelConfig JSON file (default sizes if absent)"
+        "--model-config",
+        type=Path,
+        required=True,
+        help="a ModelConfig JSON file: the model section of a TrainingRunConfig",
     )
     classify = commands.add_parser("classify", help="C1: seen or held out")
     independent = commands.add_parser("independent", help="C6: independence of two checkpoints")
@@ -95,11 +98,7 @@ def _parser() -> argparse.ArgumentParser:
 
 def _init(args: argparse.Namespace) -> dict[str, Any]:
     game = GameData.from_table(_load_json(args.engine_data))
-    config = (
-        ModelConfig()
-        if args.model_config is None
-        else ModelConfig.from_dict(_load_json(args.model_config))
-    )
+    config = ModelConfig.from_dict(_load_json(args.model_config))
     data = checkpoint_bytes(init_network(args.role, game, config, args.seed), game)
     found = write_checkpoint(args.run_dir, data)
     return {

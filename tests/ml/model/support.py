@@ -20,7 +20,15 @@ A2_DIR = ROOT / "fixtures" / "a2" / "gen9championsvgc2026regmc"
 RANDOM = sorted((FORMAT_DIR / "random").glob("b*.json"))
 
 # A small model: the sizes are configuration, the tests run fast on CPU.
-TINY_ENCODER = EncoderConfig(volatile_buckets=4, condition_buckets=4)
+TINY_ENCODER = EncoderConfig(
+    volatile_buckets=4,
+    condition_buckets=4,
+    max_moves=4,
+    max_team=6,
+    max_picks=4,
+    stat_scale=500.0,
+    turn_scale=100.0,
+)
 TINY_MODEL = ModelConfig(encoder=TINY_ENCODER, d_model=16, n_layers=1, n_heads=2, d_ff=32)
 
 

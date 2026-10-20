@@ -356,6 +356,47 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     ],
     cells: [...snapshotBase.cells, { split: "validation", stratum: 0, rows: 2 }],
   });
+  // A TrainingRunConfig (ADR-010 section 5): the tiny run the CPU end-to-end tests train, in the corpus so every language reads the same record.
+  const runConfig = {
+    schema_version: 1,
+    lineage_id: "tiny-main",
+    format_id: GOLDEN_FORMAT,
+    seeds: { run_key: "tiny-run", init_preview: 11, init_battle: 12, learner: 13 },
+    model: {
+      encoder: { volatile_buckets: 4, condition_buckets: 4, max_moves: 4, max_team: 6, max_picks: 4, stat_scale: 500, turn_scale: 100 },
+      d_model: 16,
+      n_layers: 1,
+      n_heads: 2,
+      d_ff: 32,
+    },
+    generation: {
+      games: 4,
+      baseline_games: [{ actor: "random-legal", policy_id: "random-legal@tiny", games: 2 }],
+      max_turns: 6,
+      n_parallel: 2,
+      latency_budget_ms: { preview_ms: 30000, battle_ms: 30000 },
+      handshake_timeout_ms: 60000,
+      max_line_bytes: 4000000,
+    },
+    ppo: {
+      epochs: 2,
+      minibatch_size: 16,
+      learning_rate_micro: 1000,
+      discount_micro: 1000000,
+      gae_lambda_micro: 950000,
+      clip_micro: 200000,
+      value_coef_micro: 500000,
+      entropy_coef_micro: 10000,
+      max_grad_norm_micro: 500000,
+      adam_beta1_micro: 900000,
+      adam_beta2_micro: 999000,
+      adam_eps_nano: 10,
+      normalize_advantages: true,
+    },
+    learner: { device: "cpu", threads: 1 },
+  };
+  const runConfigWith = (change: (c: Record<string, unknown>) => void) => mutated(runConfig, change);
+  const runSection = (c: Record<string, unknown>, name: string) => c[name] as Record<string, unknown>;
 
   const valid: Record<string, unknown> = {
     "engine-data/golden": engineData,
@@ -377,6 +418,8 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "team-dataset-manifest/golden": datasetManifest,
     "team-snapshot-manifest/first": snapshot,
     "team-snapshot-manifest/extended": extendedSnapshot,
+    "training-run-config/tiny": runConfig,
+    "training-run-config/no-baselines": runConfigWith((c) => (runSection(c, "generation").baseline_games = [])),
     "training-example/preview": exampleOf("preview"),
     "training-example/battle": exampleOf("battle"),
     "training-example/legacy-battle": legacyExample,
@@ -422,6 +465,17 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
   const readerInvalid: Record<string, unknown> = {
     // Schema-valid, refused by the CheckpointRecord reader: the arrays are sorted and unique, and no id refers to the record itself.
     "checkpoint-record/unsorted-league-opponents": recordWith((r) => (r.league_opponents = [hexOf("4"), hexOf("3")])),
+    // Schema-valid, refused by the TrainingRunConfig reader: the model, encoder and baseline rules the profile cannot say.
+    "training-run-config/heads-do-not-divide-width": runConfigWith((c) => (runSection(c, "model").n_heads = 3)),
+    "training-run-config/picks-exceed-team": runConfigWith((c) => {
+      const encoder = runSection(runSection(c, "model"), "encoder");
+      encoder.max_team = 3;
+      encoder.max_picks = 4;
+    }),
+    "training-run-config/duplicate-baseline": runConfigWith((c) => {
+      const games = runSection(c, "generation");
+      games.baseline_games = [...(games.baseline_games as unknown[]), ...(games.baseline_games as unknown[])];
+    }),
     "checkpoint-record/duplicate-training-sets": recordWith((r) => (r.training_set_hashes = [hexOf("5"), hexOf("5")])),
     "checkpoint-record/parent-is-self": recordWith((r) => (r.parent = r.checkpoint_id)),
     "checkpoint-record/opponent-is-self": recordWith((r) => (r.league_opponents = [r.checkpoint_id])),
@@ -495,6 +549,16 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "checkpoint-record/public-class": recordWith((r) => (r.data_class = "public")),
     "checkpoint-record/blank-lineage": recordWith((r) => (r.lineage_id = "")),
     "checkpoint-record/no-learner-state": recordWith((r) => delete r.learner_state_hash),
+    "training-run-config/extra-field": runConfigWith((c) => (c.notes = "x")),
+    "training-run-config/fractional-rate": runConfigWith((c) => (runSection(c, "ppo").learning_rate_micro = 0.5)),
+    "training-run-config/zero-games": runConfigWith((c) => (runSection(c, "generation").games = 0)),
+    "training-run-config/unknown-device": runConfigWith((c) => (runSection(c, "learner").device = "tpu")),
+    "training-run-config/no-ppo": runConfigWith((c) => delete c.ppo),
+    "training-run-config/blank-run-name": runConfigWith((c) => (runSection(c, "seeds").run_key = "")),
+    "training-run-config/unknown-baseline": runConfigWith((c) => {
+      ((runSection(c, "generation").baseline_games as Record<string, unknown>[])[0] as Record<string, unknown>).actor = "heuristic";
+    }),
+    "training-run-config/next-version": runConfigWith((c) => (c.schema_version = 2)),
     "checkpoint-record/extra-field": recordWith((r) => (r.verdicts = [])),
     "checkpoint-record/bad-encoder-version": recordWith((r) => (r.encoder_version = "stub-1")),
     "checkpoint-record/next-version": recordWith((r) => (r.schema_version = 2)),

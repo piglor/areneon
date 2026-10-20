@@ -63,13 +63,13 @@ class EncodingError(ValueError):
 class EncoderConfig:
     """Feature widths and scales: configuration, part of ``encoder_version``."""
 
-    volatile_buckets: int = 32
-    condition_buckets: int = 32
-    max_moves: int = 4  # moves per Pokémon (the validator allows at most four)
-    max_team: int = 6  # Pokémon per side
-    max_picks: int = 4  # Team Preview positions an order names
-    stat_scale: float = 500.0  # divisor of a Pokémon's exact stats
-    turn_scale: float = 100.0  # divisor of the turn counter
+    volatile_buckets: int
+    condition_buckets: int
+    max_moves: int  # moves per Pokémon
+    max_team: int  # Pokémon per side
+    max_picks: int  # Team Preview positions an order names
+    stat_scale: float  # divisor of a Pokémon's exact stats
+    turn_scale: float  # divisor of the turn counter
 
     def __post_init__(self) -> None:
         limits = {
@@ -254,9 +254,9 @@ class _Request:
 class Encoder:
     """Observation + candidates to ``EncodedQuery``: pure and deterministic."""
 
-    def __init__(self, game: GameData, config: EncoderConfig | None = None) -> None:
+    def __init__(self, game: GameData, config: EncoderConfig) -> None:
         self.game = game
-        self.config = config or EncoderConfig()
+        self.config = config
         self.layout = Layout.of(self.config)
         self.version = encoder_version(game, self.config)
 

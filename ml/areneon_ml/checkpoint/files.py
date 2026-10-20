@@ -60,7 +60,7 @@ def _no_duplicates(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
     return dict(pairs)
 
 
-def _header(data: bytes) -> dict[str, Any]:
+def read_header(data: bytes) -> dict[str, Any]:
     """The safetensors JSON header, with a size cap and no duplicate keys."""
     if len(data) < LENGTH_PREFIX:
         raise CheckpointFileError("not a safetensors file: shorter than its length prefix")
@@ -92,8 +92,13 @@ def _metadata(header: Mapping[str, Any]) -> dict[str, str]:
     return dict(meta)
 
 
-def checkpoint_bytes(network: PolicyNetwork, game: GameData) -> bytes:
-    """The safetensors file of ``network``: the same bytes for the same weights.
+_DTYPES = {torch.float32: "F32", torch.uint8: "U8"}
+
+
+def pack_safetensors(
+    tensors: Mapping[str, torch.Tensor], metadata: Mapping[str, str] | None = None
+) -> bytes:
+    """The safetensors file of ``tensors`` (float32 or uint8): the same bytes for the same input.
 
     The library's serializer orders the metadata by hash-map iteration, so the
     bytes of one network would differ between runs and an id would not name a
@@ -103,28 +108,20 @@ def checkpoint_bytes(network: PolicyNetwork, game: GameData) -> bytes:
     """
     if sys.byteorder != "little":
         raise CheckpointFileError("checkpoints are little-endian; this machine is not")
-    state = {}
-    for name, tensor in sorted(network.state_dict().items()):
-        try:
-            # .cpu() first: data_ptr() of a device tensor is not a host address.
-            state[name] = tensor.detach().cpu().to(torch.float32).contiguous()
-        except (NotImplementedError, RuntimeError) as exc:
-            raise CheckpointFileError(f"tensor {name} cannot be copied to the host") from exc
-    header: dict[str, Any] = {
-        "__metadata__": {
-            f"{PREFIX}format": FORMAT,
-            f"{PREFIX}role": network.role,
-            f"{PREFIX}model_config": jcs(network.config.as_dict()).decode("utf-8"),
-            f"{PREFIX}encoder_version": encoder_version(game, network.config.encoder),
-            f"{PREFIX}engine_data_hash": game.engine_data_hash,
-        }
-    }
+    header: dict[str, Any] = {} if metadata is None else {"__metadata__": dict(metadata)}
     chunks = []
     offset = 0
-    for name, tensor in state.items():
+    for name, source in sorted(tensors.items()):
+        if source.dtype not in _DTYPES:
+            raise CheckpointFileError(f"tensor {name} has a dtype that is not stored")
+        try:
+            # .cpu() first: data_ptr() of a device tensor is not a host address.
+            tensor = source.detach().cpu().contiguous()
+        except (NotImplementedError, RuntimeError) as exc:
+            raise CheckpointFileError(f"tensor {name} cannot be copied to the host") from exc
         size = tensor.numel() * tensor.element_size()
         header[name] = {
-            "dtype": _DTYPE,
+            "dtype": _DTYPES[tensor.dtype],
             "shape": list(tensor.shape),
             "data_offsets": [offset, offset + size],
         }
@@ -133,6 +130,52 @@ def checkpoint_bytes(network: PolicyNetwork, game: GameData) -> bytes:
     text = json.dumps(header, sort_keys=True, separators=(",", ":")).encode("utf-8")
     text += b" " * (-len(text) % LENGTH_PREFIX)
     return struct.pack("<Q", len(text)) + text + b"".join(chunks)
+
+
+def checkpoint_bytes(network: PolicyNetwork, game: GameData) -> bytes:
+    """The safetensors file of ``network``: the same bytes for the same weights."""
+    state = {name: tensor.to(torch.float32) for name, tensor in network.state_dict().items()}
+    return pack_safetensors(
+        state,
+        {
+            f"{PREFIX}format": FORMAT,
+            f"{PREFIX}role": network.role,
+            f"{PREFIX}model_config": jcs(network.config.as_dict()).decode("utf-8"),
+            f"{PREFIX}encoder_version": encoder_version(game, network.config.encoder),
+            f"{PREFIX}engine_data_hash": game.engine_data_hash,
+        },
+    )
+
+
+def unpack_safetensors(
+    data: bytes, expected: Mapping[str, tuple[torch.dtype, tuple[int, ...]]]
+) -> dict[str, torch.Tensor]:
+    """The tensors of ``data``, only if it holds exactly ``expected`` (name, dtype, shape).
+
+    The header is checked against ``expected`` before the library reads a tensor,
+    so a file cannot make this read a buffer of another size.
+    """
+    header = read_header(data)
+    listed = {name: entry for name, entry in header.items() if name != "__metadata__"}
+    if set(listed) != set(expected):
+        raise CheckpointFileError("the file's tensors are not the expected ones")
+    for name, (dtype, shape) in expected.items():
+        entry = listed[name]
+        if not (
+            isinstance(entry, dict)
+            and entry.get("dtype") == _DTYPES.get(dtype)
+            and isinstance(entry.get("shape"), list)
+            and tuple(entry["shape"]) == shape
+        ):
+            raise CheckpointFileError(f"tensor {name}: dtype or shape differs from the expected")
+    try:
+        raw = dict(deserialize(data))  # type: ignore[no-untyped-call]
+    except SafetensorError as exc:
+        raise CheckpointFileError(f"the tensor data is not valid: {exc}") from exc
+    return {
+        name: torch.frombuffer(bytearray(raw[name]["data"]), dtype=dtype).reshape(shape).clone()
+        for name, (dtype, shape) in expected.items()
+    }
 
 
 def write_checkpoint(run_dir: Path, data: bytes) -> str:
@@ -165,7 +208,7 @@ def load_checkpoint(
         raise CheckpointFileError("a checkpoint id is 64 lowercase hex digits")
     if checkpoint_id(data) != expected_id:
         raise CheckpointFileError(f"checkpoint {expected_id}: its bytes hash to another id")
-    header = _header(data)
+    header = read_header(data)
     meta = _metadata(header)
     if meta[f"{PREFIX}format"] != FORMAT:
         raise CheckpointFileError(f"unsupported checkpoint format {meta[f'{PREFIX}format']!r}")

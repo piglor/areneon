@@ -72,6 +72,7 @@ export {
   type TrainingStream,
   trainingExample,
 } from "./training-loader.ts";
+export { readTrainingRunConfig, runConfigHash, type TrainingRunConfig, TrainingRunConfigError } from "./training-run-config.ts";
 export { EpisodeError, episodeFromRecord, type EpisodeOptions, readEpisode } from "./episode-io.ts";
 export {
   battleClass,

@@ -4,7 +4,7 @@ import { ajvFor } from "@areneon/schema/ajv";
 import { beforeAll, describe, expect, it } from "vitest";
 import { syntheticFixtureHashes } from "../src/golden.ts";
 import { EngineDataError, readEngineData } from "../src/engine-data.ts";
-import { contractVersions, EpisodeError, readTeamDatasetManifest, readTeamGeneratorConfig, readTeamLabelSet, readTeamRecord, readTeamSnapshotManifest, readTeamVocabulary, TeamRecordError, TeamVocabularyError, loadEngine, PolicyProtocolError, readHandshake, readPolicyQuery, readPolicyReply, readEpisode, readEvaluationRunManifest, readTrainingExample, readTrainingSet, TrainingLoaderError } from "../src/index.ts";
+import { contractVersions, EpisodeError, readTeamDatasetManifest, readTeamGeneratorConfig, readTeamLabelSet, readTeamRecord, readTeamSnapshotManifest, readTeamVocabulary, TeamRecordError, TeamVocabularyError, loadEngine, PolicyProtocolError, readHandshake, readPolicyQuery, readPolicyReply, readEpisode, readTrainingRunConfig, TrainingRunConfigError, readEvaluationRunManifest, readTrainingExample, readTrainingSet, TrainingLoaderError } from "../src/index.ts";
 import { EvaluationConfigError, readEvaluationParameters, readEntry, RegisterError, readEvaluationPlan, readSealedSetCommitment, readTrainingGateRule, readEvaluationConfig } from "../src/index.ts";
 import { contractSamples, SAMPLE_HASHES, SAMPLES_DIR } from "../src/samples.ts";
 import { exportEngineData } from "../src/engine-data.ts";
@@ -141,6 +141,9 @@ describe("the shared contract sample corpus (ADR-008 §2)", () => {
       "v1/training-example/reader-invalid/choice-not-in-candidates.json",
       "v1/training-gate-rule/reader-invalid/alternative-below-null.json",
       "v1/training-gate-rule/reader-invalid/unsorted-claims.json",
+      "v1/training-run-config/reader-invalid/duplicate-baseline.json",
+      "v1/training-run-config/reader-invalid/heads-do-not-divide-width.json",
+      "v1/training-run-config/reader-invalid/picks-exceed-team.json",
       "v1/training-set/reader-invalid/duplicate-manifests.json",
       "v1/training-set/reader-invalid/learner-ready-no-policy.json",
       "v1/training-set/reader-invalid/unsorted-episodes.json",
@@ -159,6 +162,17 @@ describe("the shared contract sample corpus (ADR-008 §2)", () => {
     expect(Object.keys(fresh)).toContain(file);
     expect(() => reader(committed(file))).toThrow(TrainingLoaderError);
     expect(() => reader(committed(file))).toThrow(message);
+  });
+
+  // ADR-010 section 5: the TrainingRunConfig reader refuses what the profile cannot say.
+  it.each([
+    ["v1/training-run-config/reader-invalid/heads-do-not-divide-width.json", "must be a multiple of n_heads"],
+    ["v1/training-run-config/reader-invalid/picks-exceed-team.json", "cannot exceed max_team"],
+    ["v1/training-run-config/reader-invalid/duplicate-baseline.json", "may be listed once"],
+  ])("readTrainingRunConfig refuses %s", (file, message) => {
+    expect(Object.keys(fresh)).toContain(file);
+    expect(() => readTrainingRunConfig(committed(file))).toThrow(TrainingRunConfigError);
+    expect(() => readTrainingRunConfig(committed(file))).toThrow(message);
   });
 
   // ADR-010 section 2: the worker protocol's readers refuse what the profile cannot say.
