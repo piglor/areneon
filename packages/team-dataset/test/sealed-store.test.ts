@@ -2,7 +2,7 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, statSync, symlin
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
-import { assertPrivateStore, createPrivateDir, createSecretFile, ensurePrivateDir, parseSecretJson, readSecretFile, SealedStoreError, writeSecretFile } from "../src/sealed-store.ts";
+import { assertPrivateStore, ownerOk, createPrivateDir, createSecretFile, ensurePrivateDir, parseSecretJson, readSecretFile, SealedStoreError, writeSecretFile } from "../src/sealed-store.ts";
 
 const root = mkdtempSync(join(tmpdir(), "sealed-store-test-"));
 afterAll(() => rmSync(root, { recursive: true, force: true }));
@@ -44,6 +44,16 @@ describe("assertPrivateStore", () => {
     const uid = process.getuid?.() as number;
     vi.spyOn(process, "getuid").mockReturnValue(uid + 1);
     expect(() => assertPrivateStore(path)).toThrow(/not owned by the invoking user/);
+  });
+
+  it("refuses a store below a directory that another user owns", () => {
+    const parent = dir();
+    const inside = join(parent, "store");
+    mkdirSync(inside, { mode: 0o700 });
+    const me = process.getuid?.() as number;
+    // the store passes as the first caller's, the parent then belongs to somebody else
+    vi.spyOn(process, "getuid").mockReturnValueOnce(me).mockReturnValue(me + 1);
+    expect(() => assertPrivateStore(inside)).toThrow(/owned by neither the invoking user nor root/);
   });
 
   it("refuses a platform without POSIX ownership", () => {
@@ -120,6 +130,21 @@ describe("the files of the store", () => {
     const uid = process.getuid?.() as number;
     vi.spyOn(process, "getuid").mockReturnValue(uid + 1);
     expect(() => readSecretFile(file)).toThrow(/not owned by the invoking user/);
+  });
+
+  it("lets only the invoking user or root own the directories above the store", () => {
+    expect(ownerOk(1000, 1000)).toBe(true);
+    expect(ownerOk(0, 1000)).toBe(true);
+    expect(ownerOk(1001, 1000)).toBe(false);
+  });
+
+  it("refuses a link where a secret file is expected", () => {
+    const base = dir();
+    const real = join(base, "real");
+    writeSecretFile(real, "abc");
+    symlinkSync(real, join(base, "link"));
+    expect(() => readSecretFile(join(base, "link"))).toThrow(/ELOOP/);
+    expect(() => readSecretFile(join(base, "missing"))).toThrow(/ENOENT/);
   });
 
   it("does not create a file in a missing directory", () => {

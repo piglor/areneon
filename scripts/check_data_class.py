@@ -71,7 +71,7 @@ PokePaste guard does not see JSON teams, so this guard rejects a committed
   is a ``RetiredSealedManifest``: an object with a string ``set_id``, a
   ``reveal`` object holding a string ``key`` and ``salt``, and a ``files``
   object. A sealed team is a line ``{k, paste, stratum}`` of a set's
-  ``teams.jsonl``. Both are secret until the set retires, and public
+  ``teams.jsonl`` (extra keys do not evade). Both are secret until the set retires, and public
   (CC0) after, so a retired bundle is committed by a visible, code-owner-
   reviewed edit of ``REVEAL_ALLOWED`` (initially the corpus samples of the
   reveal only). A reveal must also say ``"data_class": "synthetic"`` on
@@ -222,7 +222,7 @@ def _is_reveal(obj: dict[str, object]) -> bool:
 
 def _is_sealed_team(obj: dict[str, object]) -> bool:
     return (
-        obj.keys() == {"k", "paste", "stratum"}
+        obj.keys() >= {"k", "paste", "stratum"}
         and isinstance(obj.get("paste"), str)
         and isinstance(obj.get("k"), int)
         and isinstance(obj.get("stratum"), int)

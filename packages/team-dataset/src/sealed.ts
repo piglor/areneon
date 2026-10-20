@@ -72,6 +72,7 @@ import { KnownHashes, referencePoolHash, sortedUnique } from "./dedupe.ts";
 import { Drawer } from "./draw.ts";
 import { cellCount } from "./labeller.ts";
 import { Proposal } from "./proposal.ts";
+import { fillQuantile } from "./provision.ts";
 import { RejectionLog, type LogSummary } from "./rejection-log.ts";
 import { assertPrivateStore, createPrivateDir, createSecretFile, ensurePrivateDir, parseSecretJson, readSecretFile, writeSecretFile } from "./sealed-store.ts";
 import { checkKey, type StreamIdentity } from "./stream.ts";
@@ -241,6 +242,8 @@ export interface SealedPlan {
   /** The sealed draw budget: the public `d_max` over-provisioned. */
   dMax: number;
   pilotDraws: number;
+  /** Strata whose fill-time quantile is beyond the budget: the generation may fall short and be discarded. */
+  warnings: string[];
 }
 
 /** ceil(dMax * (1000 + margin) / 1000), exact. */
@@ -289,6 +292,8 @@ export interface SealedPlanInput {
   teamCount: number;
   nStratumMin: number;
   marginPermille: number;
+  /** The config's fill quantile: a stratum whose quantile of fill time is beyond the budget is reported, as the public plan does. */
+  fillQuantilePermille: number;
 }
 
 /** The sealed plan on the public plan's strata. Refused: a stratum that the budget cannot be expected to fill. */
@@ -304,13 +309,18 @@ export function sealedPlan(input: SealedPlanInput): SealedPlan {
       fail(`stratum ${s.stratum} needs about ${Math.ceil((s.quota * m.pilot_draws) / s.pilot_hits)} draws for ${s.quota} teams, over the sealed budget ${dMax}; lower n_teams or raise sealed_margin_permille`);
     }
   }
-  return planOf(strata, m.merged_cells ?? [], dMax, m.pilot_draws, input.teamCount);
+  const plan = planOf(strata, m.merged_cells ?? [], dMax, m.pilot_draws, input.teamCount);
+  for (const x of strata) {
+    const quantile = fillQuantile(x.quota, x.pilot_hits, m.pilot_draws, input.fillQuantilePermille);
+    if (quantile > dMax) plan.warnings.push(`stratum ${x.stratum}: the ${input.fillQuantilePermille}/1000 fill quantile is ${quantile} draws, beyond the sealed budget ${dMax}; a generation may fall short and be discarded`);
+  }
+  return plan;
 }
 
 function planOf(strata: SealedStratum[], mergedCells: { stratum: number; cells: number[] }[], dMax: number, pilotDraws: number, teamCount: number): SealedPlan {
   const owner = new Map<number, number>();
   for (const g of mergedCells) for (const cell of g.cells) owner.set(cell, g.stratum);
-  return { teamCount, strata, mergedCells, stratumOfCell: (cell) => owner.get(cell) ?? cell, dMax, pilotDraws };
+  return { teamCount, strata, mergedCells, stratumOfCell: (cell) => owner.get(cell) ?? cell, dMax, pilotDraws, warnings: [] };
 }
 
 /** The plan a manifest records: how a reveal is regenerated. */
@@ -339,16 +349,10 @@ export type FillResult = { filled: true; teams: SealedTeam[]; summary: LogSummar
 /** Draw until every stratum's bin is full or the budget is spent. Deterministic given the key (inside `drawer`), the plan and the known teams. */
 export function fillSealed(args: FillArgs): FillResult {
   const { engine, drawer, plan } = args;
-  let candidate: string | undefined;
-  let nearHit = false;
-  const binner = new Binner(new Map(plan.strata.map((s) => [s.stratum, s.quota])), {
-    has: (hash) => {
-      nearHit = false;
-      if (args.known.has(hash)) return true;
-      nearHit = args.near.near(importPaste(engine, candidate as string));
-      return nearHit;
-    },
-  });
+  const quotas = new Map(plan.strata.map((x) => [x.stratum, x.quota]));
+  // The checks run here, in the binner's order (full bin, then L1, then L2), so each refusal has its own reason.
+  const binner = new Binner(quotas, { has: () => false });
+  const binned = new Set<string>();
   const log = new RejectionLog(args.logPath);
   const every = args.progressEvery ?? 10_000;
   let draws = 0;
@@ -358,10 +362,18 @@ export function fillSealed(args: FillArgs): FillResult {
       log.write({ k: draw.k, reason: draw.reason, canonical_team_hash: draw.canonical_team_hash, detail: draw.detail });
     } else {
       const stratum = plan.stratumOfCell(draw.cell);
-      candidate = draw.paste;
-      const offer = binner.offer(draw, stratum);
-      if (offer === "duplicate") log.write({ k: draw.k, reason: nearHit ? "near_duplicate" : "duplicate", canonical_team_hash: draw.canonical_team_hash, stratum });
-      else if (offer === "overflow") log.write({ k: draw.k, reason: "overflow", canonical_team_hash: draw.canonical_team_hash, stratum });
+      const hash = draw.canonical_team_hash;
+      const open = binner.bin(stratum).length < (quotas.get(stratum) as number);
+      const refusal: "duplicate" | "near_duplicate" | undefined = !open
+        ? undefined
+        : binned.has(hash) || args.known.has(hash)
+          ? "duplicate"
+          : args.near.near(importPaste(engine, draw.paste))
+            ? "near_duplicate"
+            : undefined;
+      if (refusal !== undefined) log.write({ k: draw.k, reason: refusal, canonical_team_hash: hash, stratum });
+      else if (binner.offer(draw, stratum) === "overflow") log.write({ k: draw.k, reason: "overflow", canonical_team_hash: hash, stratum });
+      else binned.add(hash);
     }
     draws++;
     if (args.onProgress !== undefined && draws % every === 0) args.onProgress({ draws, open: binner.short.length });
@@ -436,6 +448,8 @@ export interface SealedGenerateResult {
   dir: string;
   /** Generations discarded before the one that filled. */
   discarded: number;
+  /** Strata the plan expects may fall short (counts only). */
+  warnings: string[];
 }
 
 const sealedKey = (secret: () => string, what: string): string => checkKey(secret(), what);
@@ -468,7 +482,7 @@ export function generateSealedSet(input: SealedGenerateInput): SealedGenerateRes
     return fail((error as EvaluationConfigError).message);
   }
   checkSamePool(input);
-  const plan = sealedPlan({ publicManifest: input.publicManifest, teamCount: p.n_teams as number, nStratumMin: p.n_stratum_min, marginPermille: input.config.sealed_margin_permille });
+  const plan = sealedPlan({ publicManifest: input.publicManifest, teamCount: p.n_teams as number, nStratumMin: p.n_stratum_min, marginPermille: input.config.sealed_margin_permille, fillQuantilePermille: input.config.fill_quantile_permille });
   if (plan.strata.some((s) => s.stratum >= cellCount(input.labelSet))) fail("the public plan names a cell outside the label set");
   const reference = referenceTeams(input.engine, input.known, p.d_team.differing_fields);
   const secret = input.secret ?? generateSecret;
@@ -573,7 +587,7 @@ function commitSet(a: CommitArgs): SealedGenerateResult {
   renameSync(a.logPath, join(dir, SEALED_FILES.rejections));
   writeSecretFile(join(dir, SEALED_FILES.manifest), pretty(manifest));
   writeSecretFile(join(dir, SEALED_FILES.commitment), pretty(commitment));
-  return { manifest, commitment, dir, discarded: a.discarded };
+  return { manifest, commitment, dir, discarded: a.discarded, warnings: plan.warnings };
 }
 
 // ---------------------------------------------------------------------------
@@ -589,6 +603,9 @@ export interface StoredSet {
   /** The exact bytes of the three logs and the teams file, for the reveal. */
   texts: { teams: string; rejections: string; discards: string };
 }
+
+/** The sets `readStoredSet` returned: the commitment was recomputed for each. Only these may build `SealedTeamHashes`. */
+const verifiedSets = new WeakSet<object>();
 
 /** Parse `teams.jsonl`: one JCS line per team. */
 export function parseSealedTeams(text: string): SealedTeam[] {
@@ -616,7 +633,9 @@ export function readStoredSet(storeDir: string, setId: string): StoredSet {
   if (manifest.set_id !== setId || commitment.set_id !== setId) fail(`the records in ${dir} are not set ${setId}`);
   if (setCommitment(salt, teams as never) !== commitment.set_commitment || commitment.set_commitment !== manifest.set_commitment) fail("the stored salt and teams do not open the set commitment");
   if (keyCommitment(key) !== commitment.key_commitment || commitment.key_commitment !== manifest.key_commitment) fail("the stored key does not open the key commitment");
-  return { manifest, commitment, teams, key, salt, texts: { teams: teamsText, rejections: text(SEALED_FILES.rejections), discards: text(SEALED_FILES.discards) } };
+  const stored: StoredSet = { manifest, commitment, teams, key, salt, texts: { teams: teamsText, rejections: text(SEALED_FILES.rejections), discards: text(SEALED_FILES.discards) } };
+  verifiedSets.add(stored);
+  return stored;
 }
 
 /**
@@ -636,9 +655,10 @@ export class SealedTeamHashes {
     this.#canonical = canonical;
   }
 
-  /** @internal Use `loadSealedTeamHashes`. */
-  static fromVerified(engine: Engine, teams: readonly SealedTeam[]): SealedTeamHashes {
-    const sets = teams.map((t) => importPaste(engine, t.paste));
+  /** Only a set that `readStoredSet` returned (its L3 commitment recomputed) is accepted. */
+  static fromVerified(engine: Engine, stored: StoredSet): SealedTeamHashes {
+    if (!verifiedSets.has(stored)) fail("a set that readStoredSet did not return is not trusted");
+    const sets = stored.teams.map((t) => importPaste(engine, t.paste));
     return new SealedTeamHashes(new Set(sets.map((s) => teamHash(s))), new Set(sets.map((s) => canonicalTeamHash(s))));
   }
 
@@ -672,7 +692,7 @@ export class SealedTeamHashes {
 /** Build `SealedTeamHashes` from the store, after recomputing the L3 commitment. */
 export function loadSealedTeamHashes(engine: Engine, storeDir: string, setId: string): SealedTeamHashes {
   const stored = readStoredSet(storeDir, setId);
-  return SealedTeamHashes.fromVerified(engine, stored.teams);
+  return SealedTeamHashes.fromVerified(engine, stored);
 }
 
 export { sha256 as textSha256 };

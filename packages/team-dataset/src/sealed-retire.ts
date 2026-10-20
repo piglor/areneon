@@ -36,6 +36,8 @@ import {
   recordHash,
   type ResolvedFormat,
   type RetiredSealedManifest,
+  type SealedTeamSetManifest,
+  type TeamDatasetManifest,
   retiredManifestHash,
   type SealedSetCommitment,
   sealedManifestHash,
@@ -59,6 +61,7 @@ import {
   readStoredSet,
   referenceTeams,
   SEALED_FILES,
+  sealedPlan,
   type SealedTeam,
   type StoredSet,
   textSha256,
@@ -169,6 +172,10 @@ export interface VerifyInput {
   config: TeamGeneratorConfig;
   evaluation: EvaluationConfig;
   bundle: RevealBundle;
+  /** The public dataset the set shares its D20 strata with: the plan is recomputed from it, never taken from the bundle. */
+  publicManifest: TeamDatasetManifest;
+  /** The evaluation register's text, obtained from the owner's published chain (check its heads separately with the register CLI's `verify --heads-ref`). The bundle must be the set the register committed and retired. */
+  registerText: string;
   /** The reference pool: every team the set was checked against (the public splits, released datasets, the training pool, earlier retired sets). */
   known: readonly KnownTeam[];
 }
@@ -232,6 +239,7 @@ export function verifyRetiredSealed(input: VerifyInput): VerifyReport {
   if (g.config_hash !== recordHash(input.config) || g.label_set_hash !== recordHash(input.labelSet) || g.vocabulary_hash !== teamVocabularyHash(input.vocabulary)) bad("the set was made with another config, label set or vocabulary than the ones given");
   if (jcs(g.manifest as never) !== jcs(input.format.manifest as never)) bad("the set was made under another version manifest than the pinned engine's");
   if (manifest.d_team_differing_fields !== evaluation.parameters.d_team.differing_fields) bad("the set used another d_team than the parameters give");
+  checkPlan(input, manifest);
   const reference = referenceTeams(engine, input.known, manifest.d_team_differing_fields);
   if (reference.hash !== manifest.reference_pool_hash) bad("the given reference teams are not the reference pool the set names");
 
@@ -248,10 +256,51 @@ export function verifyRetiredSealed(input: VerifyInput): VerifyReport {
       bad("the L1/L2 rejections replayed against the reference pool are not the logged ones");
     }
     checkTeams(input, teams, reference);
+    checkRegister(input, commitment, retired);
     return { set_id: manifest.set_id, teams: teams.length, replayed: { draws: replay.draws, rejections: s.rejections, duplicates: s.duplicates, near_duplicates: s.near_duplicates, overflows: s.overflows } };
   } finally {
     rmSync(scratch, { recursive: true, force: true });
   }
+}
+
+/**
+ * Without the register a forger could make a fresh key, salt and set that are
+ * consistent with themselves. The register's committed set (by commitment hash)
+ * and its retirement (by reveal hash) are what the bundle must be.
+ */
+function checkRegister(input: VerifyInput, commitment: SealedSetCommitment, retired: RetiredSealedManifest): void {
+  let state;
+  try {
+    state = verifyRegister(input.registerText, [input.evaluation]);
+  } catch (error) {
+    return bad(`the register does not verify: ${(error as Error).message}`);
+  }
+  const set = state.sets.get(retired.set_id);
+  if (set === undefined) return bad(`the register has no set ${retired.set_id}`);
+  if (commitmentHash(set.commitment) !== commitmentHash(commitment)) bad("the bundle's commitment is not the one the register committed for this set");
+  const entry = state.entries.find((e) => e.kind === "set_retirement" && e.set_id === retired.set_id);
+  if (entry === undefined || entry.kind !== "set_retirement") bad(`the register has not retired set ${retired.set_id}`);
+  else if (entry.reveal_hash !== retiredManifestHash(retired)) bad("the reveal is not the one the register's set_retirement names");
+}
+
+/** The plan the manifest records must be the one the public dataset, the config and the parameters give: same strata and merge, no further merge. */
+function checkPlan(input: VerifyInput, manifest: SealedTeamSetManifest): void {
+  const pub = input.publicManifest;
+  const g = manifest.generator;
+  if (pub.generator.config_hash !== g.config_hash || pub.generator.label_set_hash !== g.label_set_hash || pub.generator.vocabulary_hash !== g.vocabulary_hash || jcs(pub.generator.manifest as never) !== jcs(g.manifest as never)) {
+    bad("the public dataset was made by another generator than the set");
+  }
+  if (manifest.sealed_margin_permille !== input.config.sealed_margin_permille) bad("the set's margin is not the config's sealed_margin_permille");
+  let expected;
+  try {
+    expected = sealedPlan({ publicManifest: pub, teamCount: manifest.team_count, nStratumMin: input.evaluation.parameters.n_stratum_min, marginPermille: input.config.sealed_margin_permille, fillQuantilePermille: input.config.fill_quantile_permille });
+  } catch (error) {
+    return bad(`the plan cannot be recomputed from the public dataset: ${(error as Error).message}`);
+  }
+  const actual = planOfManifest(manifest);
+  if (jcs(expected.strata as never) !== jcs(actual.strata as never)) bad("the set's strata and quotas are not the public strata shared by n_teams");
+  if (jcs(expected.mergedCells as never) !== jcs(actual.mergedCells as never)) bad("the set's merged cells are not the public dataset's: no further merge is allowed");
+  if (expected.dMax !== actual.dMax || expected.pilotDraws !== actual.pilotDraws) bad("the set's draw budget is not the public d_max over-provisioned by the margin");
 }
 
 /** Each team again, on its own: legal for the pinned validator, and neither equal to nor within d_team of a known team (L1, L2). */

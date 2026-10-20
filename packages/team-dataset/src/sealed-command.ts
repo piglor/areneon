@@ -8,7 +8,8 @@
 //   reveal-hash  --store DIR --set-id ID
 //   retire       --store DIR --set-id ID --out DIR --register FILE
 //                --parameters FILE --rule FILE   (repeat the pair for a register that spans versions)
-//   verify       --dir DIR --parameters FILE --rule FILE --config FILE --labels FILE --format ID
+//   verify       --dir DIR --public-manifest FILE --register FILE --parameters FILE --rule FILE
+//                --config FILE --labels FILE --format ID
 //                [--vocabulary FILE] [--known FILE]...
 //
 // `--known` files are JSON Lines of teams (records or revealed sealed teams)
@@ -150,10 +151,12 @@ function runGenerate(values: Values, io: SealedCliIo, engine: Engine): number {
     progressEvery: count(values["progress-every"], "progress-every", 10_000),
     onProgress: ({ attempt, draws, open }) => io.err(`attempt ${attempt}: ${draws} draws, ${open} bins open`),
   });
+  for (const warning of result.warnings) io.err(`warning: ${warning}`);
   io.out(
     JSON.stringify({
       set_id: setId,
       team_count: result.manifest.team_count,
+      attempts: result.discarded + 1,
       discarded: result.discarded,
       set_manifest_hash: sealedManifestHash(result.manifest),
       commitment_hash: commitmentHash(result.commitment),
@@ -187,7 +190,9 @@ function runVerify(values: Values, io: SealedCliIo, engine: Engine): number {
   const evaluation = configs[0] as (typeof configs)[number];
   const inputs = generatorInputs(values, engine);
   const bundle = readRevealDir(need(values, "dir"));
-  const report = verifyRetiredSealed({ engine, ...inputs, evaluation, bundle, known: knownTeams(values.known ?? []) });
+  const publicManifest = readTeamDatasetManifest(json(need(values, "public-manifest")), { config: inputs.config, labelSet: inputs.labelSet });
+  const registerText = readFileSync(need(values, "register"), "utf8");
+  const report = verifyRetiredSealed({ engine, ...inputs, evaluation, bundle, publicManifest, registerText, known: knownTeams(values.known ?? []) });
   io.out(JSON.stringify({ verified: true, ...report }));
   return 0;
 }

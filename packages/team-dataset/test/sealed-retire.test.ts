@@ -100,7 +100,7 @@ const readdirSyncSafe = (dir: string): string[] => {
 };
 
 const verify = (bundle: RevealBundle, over: Partial<VerifyInput> = {}): VerifyInput => ({
-  engine, format, table, vocabulary, labelSet: light, config: cfg, evaluation, bundle, known: publicTeams, ...over,
+  engine, format, table, vocabulary, labelSet: light, config: cfg, evaluation, bundle, publicManifest, registerText: register(revealHash(storeDir, "set-r")), known: publicTeams, ...over,
 });
 
 /** The reveal bundle as retirement writes it, in memory. */
@@ -176,7 +176,55 @@ describe("verifying a reveal", () => {
     const b = bundle();
     expect(() => verifyRetiredSealed(verify(rebound(b, (m) => (m.plan_id = "another-plan"))))).toThrow(/gives other teams/);
     expect(() => verifyRetiredSealed(verify(rebound(b, (m) => (m.rejection_log = { ...(m.rejection_log as object), rejections: 999 }))))).toThrow(/replayed against the reference pool are not the logged ones/);
-    expect(() => verifyRetiredSealed(verify(rebound(b, (m) => (m.d_max = 3))))).toThrow(/leaves strata .* short/);
+    expect(() => verifyRetiredSealed(verify(rebound(b, (m) => (m.d_max = 3))))).toThrow(/draw budget is not the public d_max/);
+  });
+
+  it("is bound to the register: a self-consistent forged bundle fails against the real register", () => {
+    const forgedStore = fresh();
+    const forged = generateSealedSet({
+      engine, format, table, vocabulary, labelSet: light, config: cfg, evaluation, publicManifest, known: publicTeams,
+      storeDir: forgedStore, setId: "set-r", generation: 1, planId: "plan-r", generatorCommit: "b".repeat(40), maxAttempts: 3, secret: counterSecret("forger"),
+    });
+    const forgedHash = revealHash(forgedStore, "set-r");
+    const out = join(fresh(), "forged");
+    const forgedRegister = (() => {
+      let text = appendEntry("", draft({ kind: "set_commitment", commitment: forged.commitment }), [evaluation]).text;
+      text = appendEntry(text, draft({ kind: "incident", set_id: "set-r", cause: "sealed_artifact_read", description: "x", affected_candidates: [] }), [evaluation]).text;
+      return appendEntry(text, draft({ kind: "set_retirement", set_id: "set-r", reason: "contaminated", reveal_hash: forgedHash }), [evaluation]).text;
+    })();
+    retireSealedSet({ storeDir: forgedStore, setId: "set-r", outDir: out, registerText: forgedRegister, configs: [evaluation] });
+    const bundleOfForger = readRevealDir(out);
+    // the control: against the forger's own register it is a perfectly good reveal
+    expect(verifyRetiredSealed(verify(bundleOfForger, { registerText: forgedRegister })).teams).toBe(24);
+    // against the real register it is not
+    expect(() => verifyRetiredSealed(verify(bundleOfForger))).toThrow(/not the one the register committed/);
+  });
+
+  it("needs a register that verifies, commits the set and retires it with this reveal", () => {
+    const b = bundle();
+    const real = register(revealHash(storeDir, "set-r"));
+    expect(() => verifyRetiredSealed(verify(b, { registerText: "" }))).toThrow(/the register has no set set-r/);
+    expect(() => verifyRetiredSealed(verify(b, { registerText: "not a register\n" }))).toThrow(/the register does not verify/);
+    expect(() => verifyRetiredSealed(verify(b, { registerText: register("0".repeat(64), { retire: false }) }))).toThrow(/has not retired set set-r/);
+    expect(() => verifyRetiredSealed(verify(b, { registerText: register("0".repeat(64)) }))).toThrow(/names a reveal|not the one the register's set_retirement names/);
+    expect(verifyRetiredSealed(verify(b, { registerText: real })).teams).toBe(24);
+  });
+
+  it("recomputes the plan from the public dataset: strata, merge, pilot counts, budget and margin are not taken on the bundle's word", () => {
+    const b = bundle();
+    const cells = publicManifest.splits[0]!.cells;
+    const pub = (change: (m: Record<string, unknown>) => void) => {
+      const copy = structuredClone(publicManifest) as unknown as Record<string, unknown>;
+      change(copy);
+      return copy as unknown as typeof publicManifest;
+    };
+    expect(() => verifyRetiredSealed(verify(b, { publicManifest: pub((m) => (m.d_max = (m.d_max as number) + 100)) }))).toThrow(/draw budget is not the public d_max/);
+    expect(() => verifyRetiredSealed(verify(b, { publicManifest: pub((m) => (m.merged_cells = [])) }))).toThrow(/merged cells are not the public dataset's/);
+    expect(() => verifyRetiredSealed(verify(b, { publicManifest: pub((m) => ((m.splits as { cells: { pilot_hits: number }[] }[]).forEach((s) => (s.cells[0]!.pilot_hits += 50)))) }))).toThrow(/strata and quotas are not the public strata/);
+    expect(cells.length).toBeGreaterThan(1);
+    expect(() => verifyRetiredSealed(verify(b, { publicManifest: pub((m) => ((m.generator as { config_hash: string }).config_hash = "0".repeat(64))) }))).toThrow(/another generator than the set/);
+    expect(() => verifyRetiredSealed(verify(rebound(b, (m) => (m.sealed_margin_permille = 0))))).toThrow(/margin is not the config's/);
+    expect(() => verifyRetiredSealed(verify(b, { publicManifest: pub((m) => (m.d_max = 1)) }))).toThrow(/cannot be recomputed from the public dataset/);
   });
 
   it("checks each team again for L1, L2 and legality", () => {

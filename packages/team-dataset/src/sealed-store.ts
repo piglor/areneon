@@ -9,7 +9,7 @@
 // that is read back must still be the invoking user's and private, so a copy
 // somebody loosened is refused instead of used.
 
-import { type Stats, chmodSync, closeSync, fstatSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync, writeSync } from "node:fs";
+import { type Stats, chmodSync, constants, closeSync, fstatSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync, writeSync } from "node:fs";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 
 export class SealedStoreError extends Error {
@@ -48,10 +48,14 @@ export function assertPrivateStore(dir: string): string {
     const parent = dirname(here);
     if (parent === here) break;
     const up = lstatOrRefuse(parent);
+    if (!ownerOk(up.uid, uid())) refuse(`${parent} is owned by neither the invoking user nor root, so ${path} could be swapped`);
     if ((up.mode & GROUP_OTHER_WRITE) !== 0 && (up.mode & STICKY) === 0) refuse(`${parent} is writable by group or other, so ${path} could be swapped`);
   }
   return path;
 }
+
+/** A directory above the store may belong to the invoking user or to root, and to nobody else. */
+export const ownerOk = (owner: number, me: number): boolean => owner === me || owner === 0;
 
 function lstatOrRefuse(path: string): Stats {
   try {
@@ -107,13 +111,28 @@ export function writeSecretFile(path: string, data: string | Buffer): void {
 /** An empty private file, for a log that is written as the run goes. */
 export const createSecretFile = (path: string): void => writeSecretFile(path, "");
 
-/** Read a file of the store: it must be a regular file of the invoking user with no group or other bit. */
+/**
+ * Read a file of the store: open it without following a link, then check the
+ * open file (a regular file of the invoking user with no group or other bit),
+ * then read that same descriptor, so the file cannot change between the check
+ * and the read.
+ */
 export function readSecretFile(path: string): string {
-  const stat = lstatOrRefuse(path);
-  if (!stat.isFile()) refuse(`${path} is not a regular file`);
-  if (stat.uid !== uid()) refuse(`${path} is not owned by the invoking user`);
-  if ((stat.mode & GROUP_OTHER) !== 0) refuse(`${path} has group or other permission bits (mode ${(stat.mode & 0o7777).toString(8)}); it must be 0600`);
-  return readFileSync(path, "utf8");
+  let fd: number;
+  try {
+    fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+  } catch (error) {
+    return refuse(`${path}: ${(error as NodeJS.ErrnoException).code ?? "cannot be read"}`);
+  }
+  try {
+    const stat = fstatSync(fd);
+    if (!stat.isFile()) refuse(`${path} is not a regular file`);
+    if (stat.uid !== uid()) refuse(`${path} is not owned by the invoking user`);
+    if ((stat.mode & GROUP_OTHER) !== 0) refuse(`${path} has group or other permission bits (mode ${(stat.mode & 0o7777).toString(8)}); it must be 0600`);
+    return readFileSync(fd, "utf8");
+  } finally {
+    closeSync(fd);
+  }
 }
 
 /** JSON.parse that never echoes the text: a parse error message can quote the input, and the input may be a secret. */

@@ -16,6 +16,7 @@ import {
   SealedError,
   type SealedGenerateInput,
   SealedShortfallError,
+  SealedTeamHashes,
   sealedBudget,
   sealedPlan,
   sealedQuotas,
@@ -148,15 +149,15 @@ describe("the sealed plan", () => {
   });
 
   it("is built on the public strata with their merge, and refuses a stratum the budget cannot fill", () => {
-    const plan = sealedPlan({ publicManifest, teamCount: 24, nStratumMin: 2, marginPermille: 200 });
+    const plan = sealedPlan({ publicManifest, teamCount: 24, nStratumMin: 2, marginPermille: 200, fillQuantilePermille: 990 });
     expect(plan.strata.map((s) => s.stratum)).toEqual(publicManifest.splits[0]!.cells.map((c) => c.stratum));
     expect(plan.strata.reduce((n, s) => n + s.quota, 0)).toBe(24);
     expect(plan.dMax).toBe(7200);
     const merged = publicManifest.merged_cells?.[0];
     expect(plan.stratumOfCell(merged?.cells[1] ?? 99)).toBe(merged?.stratum ?? 99);
     expect(plan.stratumOfCell(3)).toBe(merged === undefined ? 3 : plan.stratumOfCell(3));
-    expect(() => sealedPlan({ publicManifest: { ...publicManifest, d_max: 100 }, teamCount: 24, nStratumMin: 2, marginPermille: 0 })).toThrow(/over the sealed budget 100/);
-    expect(() => sealedPlan({ publicManifest: { ...publicManifest, splits: [] as never }, teamCount: 24, nStratumMin: 2, marginPermille: 0 })).toThrow(/no split/);
+    expect(() => sealedPlan({ publicManifest: { ...publicManifest, d_max: 100 }, teamCount: 24, nStratumMin: 2, marginPermille: 0, fillQuantilePermille: 990 })).toThrow(/over the sealed budget 100/);
+    expect(() => sealedPlan({ publicManifest: { ...publicManifest, splits: [] as never }, teamCount: 24, nStratumMin: 2, marginPermille: 0, fillQuantilePermille: 990 })).toThrow(/no split/);
   });
 });
 
@@ -224,7 +225,11 @@ describe("generating a sealed set in the store", () => {
 
   it("never lets the key, the salt or a team appear in a result, a progress event, or any output", () => {
     const writes: string[] = [];
-    const spies = [vi.spyOn(process.stdout, "write"), vi.spyOn(process.stderr, "write")].map((s) => s.mockImplementation((chunk: unknown) => (writes.push(String(chunk)), true)));
+    const spies = [
+      vi.spyOn(process.stdout, "write").mockImplementation((chunk: unknown) => (writes.push(String(chunk)), true)),
+      vi.spyOn(process.stderr, "write").mockImplementation((chunk: unknown) => (writes.push(String(chunk)), true)),
+      ...(["log", "error", "warn", "info", "debug"] as const).map((name) => vi.spyOn(console, name).mockImplementation((...args: unknown[]) => void writes.push(args.map(String).join(" ")))),
+    ];
     const events: unknown[] = [];
     const secretOf = counterSecret("canary");
     const made: string[] = [];
@@ -242,6 +247,15 @@ describe("generating a sealed set in the store", () => {
       expect(text.includes(stored.key) || text.includes(stored.salt), file).toBe(false);
     }
     expect(made.length).toBe(2);
+    expect(writes.join("")).toBe("");
+  });
+
+  it("warns, with counts only, of strata whose fill quantile is beyond the budget", () => {
+    const tightPlan = sealedPlan({ publicManifest: { ...publicManifest, d_max: 334 }, teamCount: 24, nStratumMin: 2, marginPermille: 200, fillQuantilePermille: 990 });
+    expect(tightPlan.warnings.length).toBeGreaterThan(0);
+    expect(tightPlan.warnings[0]).toMatch(/^stratum \d+: the 990\/1000 fill quantile is \d+ draws, beyond the sealed budget 401/);
+    expect(sealedPlan({ publicManifest, teamCount: 24, nStratumMin: 2, marginPermille: 200, fillQuantilePermille: 500 }).warnings).toEqual([]);
+    expect(generateSealedSet(input({ publicManifest: { ...publicManifest, d_max: 334 }, setId: "set-w", maxAttempts: 40 })).warnings.length).toBeGreaterThan(0);
   });
 
   it("refuses a bad set id, generation or attempt count", () => {
@@ -379,7 +393,7 @@ describe("a shortfall discards the whole generation", () => {
 
   it("fillSealed reports the short strata when the budget runs out", () => {
     const s = store();
-    const plan = { ...sealedPlan({ publicManifest, teamCount: 24, nStratumMin: 2, marginPermille: 0 }), dMax: 5 };
+    const plan = { ...sealedPlan({ publicManifest, teamCount: 24, nStratumMin: 2, marginPermille: 0, fillQuantilePermille: 990 }), dMax: 5 };
     const reference = referenceTeams(engine, [], 2);
     const logPath = join(s, "log");
     writeFileSync(logPath, "", { mode: 0o600 });
@@ -453,5 +467,50 @@ describe("SealedTeamHashes (stamping inside the store)", () => {
     expect(() => parseSealedTeams('{"stratum":2,"paste":"p","k":1}\n')).toThrow(/canonical/);
     expect(() => parseSealedTeams(`${jcs({ k: 1, paste: "p" })}\n`)).toThrow(/not a sealed team/);
     expect(() => parseSealedTeams(`${jcs({ k: 1.5, paste: "p", stratum: 1 })}\n`)).toThrow(/not a sealed team/);
+  });
+});
+
+describe("the reason of a skipped candidate comes from the check that skipped it", () => {
+  it("logs a, near, a as duplicate-free, near_duplicate, duplicate (a repeated binned team is not near)", () => {
+    const [a, b, c] = publicTeams.slice(0, 3).map((t) => t.paste) as [string, string, string];
+    const neighbour = importPaste(engine, b);
+    neighbour[0]!.nature = neighbour[0]!.nature === "Hardy" ? "Serious" : "Hardy";
+    const reference = referenceTeams(engine, [{ paste: exportPaste(engine, neighbour) }], 2);
+    const order = [a, b, a, c];
+    const drawer = {
+      draw: (_stream: unknown, k: number) => ({ status: "accepted", k, canonical_team_hash: canonicalTeamHash(importPaste(engine, order[k]!)), team_hash: "", paste: order[k]!, labels: [], cell: 0 }),
+    } as unknown as Drawer;
+    const plan = { teamCount: 3, strata: [{ stratum: 0, pilot_hits: 1, quota: 3 }], mergedCells: [], stratumOfCell: () => 0, dMax: 4, pilotDraws: 1, warnings: [] };
+    const dir = store();
+    const logPath = join(dir, "log");
+    writeFileSync(logPath, "", { mode: 0o600 });
+    const result = fillSealed({ engine, drawer, stream: { config_hash: "0".repeat(64), plan_id: "p" }, plan, known: reference.known, near: reference.near, logPath });
+    const reasons = readFileSync(logPath, "utf8").split("\n").filter(Boolean).map((l) => (JSON.parse(l) as { k: number; reason: string }));
+    expect(reasons).toEqual([
+      { k: 1, reason: "near_duplicate", canonical_team_hash: expect.any(String), stratum: 0 },
+      { k: 2, reason: "duplicate", canonical_team_hash: expect.any(String), stratum: 0 },
+    ]);
+    expect(result.draws).toBe(4);
+  });
+});
+
+describe("the test seams for the key source", () => {
+  it("are never used by production code: the script passes none, and only the command forwards the injected one", () => {
+    const root = new URL("../", import.meta.url);
+    const script = readFileSync(new URL("scripts/sealed.ts", root), "utf8");
+    expect(script).not.toMatch(/secret/);
+    const sources = readdirSync(new URL("src/", root)).filter((f) => f.startsWith("sealed")).map((f) => readFileSync(new URL(`src/${f}`, root), "utf8"));
+    const passes = sources.join("\n").match(/\bsecret: [a-z]+\.[a-z]+/g) ?? [];
+    expect(passes).toHaveLength(1);
+    expect(sources.join("\n")).toContain("secret: io.secret");
+  });
+});
+
+describe("SealedTeamHashes accepts only a set read from the store", () => {
+  it("refuses a hand-built set", () => {
+    const run = generateSealedSet(input({ setId: "set-b" }));
+    const real = readStoredSet(dirOfStore(run.dir), "set-b");
+    expect(() => SealedTeamHashes.fromVerified(engine, { ...real })).toThrow(/did not return is not trusted/);
+    expect(SealedTeamHashes.fromVerified(engine, real).size).toBe(24);
   });
 });

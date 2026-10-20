@@ -679,6 +679,11 @@ def test_reveal_needs_its_own_synthetic_label(repo: Path) -> None:
     assert guard.violations([path]) == [f"{path}: {guard.UNLABELLED_REVEAL}"]
 
 
+def test_a_sealed_team_with_an_extra_key_is_still_a_sealed_team(repo: Path) -> None:
+    path = write(repo, "fixtures/other/t.json", json.dumps({**SEALED_TEAM_LINE, "extra": 1}))
+    assert guard.violations([path]) == [f"{path}: {guard.REVEAL}"]
+
+
 def test_sealed_team_lines_are_rejected_wherever_they_are(repo: Path) -> None:
     line = json.dumps(SEALED_TEAM_LINE) + "\n"
     path = write(repo, "fixtures/teams/x/teams.jsonl", line)
@@ -694,7 +699,6 @@ def test_sealed_team_lines_are_rejected_wherever_they_are(repo: Path) -> None:
     [
         {"set_id": "s", "files": {}, "reveal": {"key": "k"}},  # no salt: not a reveal
         {"set_id": "s", "reveal": {"key": "k", "salt": "s"}},  # no files
-        {"k": 1, "paste": "x", "stratum": 2, "extra": 3},  # not the exact sealed-team shape
         {"k": "1", "paste": "x", "stratum": 2},
         {"k": 1, "paste": 2, "stratum": 2},
     ],

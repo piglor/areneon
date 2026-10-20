@@ -2,7 +2,7 @@ import { chmodSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, w
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { appendEntry } from "@areneon/showdown-bridge";
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it, vi } from "vitest";
 import { runSealedCli, type SealedCliIo } from "../src/sealed-command.ts";
 import { cfg, completeParameters, counterSecret, evaluation, evaluationRule, freshStore, publicManifest, publicTeams } from "./sealed-support.ts";
 import { engine, FORMAT, light, VOCABULARY_FILE } from "./support.ts";
@@ -59,7 +59,7 @@ describe("the sealed command line", () => {
     expect(run.code).toBe(0);
     const summary = JSON.parse(run.out[0] as string) as Record<string, unknown>;
     expect(summary).toMatchObject({ set_id: "set-c", team_count: 24, discarded: 0 });
-    expect(Object.keys(summary).sort()).toEqual(["commitment_hash", "discarded", "key_commitment", "set_commitment", "set_id", "set_manifest_hash", "team_count"]);
+    expect(Object.keys(summary).sort()).toEqual(["attempts", "commitment_hash", "discarded", "key_commitment", "set_commitment", "set_id", "set_manifest_hash", "team_count"]);
     expect(run.err.some((l) => /^attempt 1: \d+ draws, \d+ bins open$/.test(l))).toBe(true);
   });
 
@@ -91,7 +91,7 @@ describe("the sealed command line", () => {
     const retired = cli(["retire", "--store", storeDir, "--set-id", "set-c", "--out", out, "--register", registerFile, "--parameters", files.parameters, "--rule", files.rule]);
     expect(retired.code).toBe(0);
     expect(JSON.parse(retired.out[0] as string)).toMatchObject({ set_id: "set-c", reveal_hash: hash });
-    const verified = cli(["verify", "--dir", out, "--parameters", files.parameters, "--rule", files.rule, "--config", files.config, "--labels", files.labels, "--format", FORMAT, "--vocabulary", VOCABULARY_FILE, "--known", files.known]);
+    const verified = cli(["verify", "--dir", out, "--public-manifest", files.manifest, "--register", registerFile, "--parameters", files.parameters, "--rule", files.rule, "--config", files.config, "--labels", files.labels, "--format", FORMAT, "--vocabulary", VOCABULARY_FILE, "--known", files.known]);
     expect(verified.code).toBe(0);
     expect(JSON.parse(verified.out[0] as string)).toMatchObject({ verified: true, set_id: "set-c", teams: 24 });
     // a tampered reveal exits 1 and the message does not quote the file
@@ -99,9 +99,28 @@ describe("the sealed command line", () => {
     mkdirSync(bad);
     for (const f of readdirSync(out)) writeFileSync(join(bad, f), readFileSync(join(out, f), "utf8"));
     writeFileSync(join(bad, "teams.jsonl"), `${readFileSync(join(out, "teams.jsonl"), "utf8")}\n`);
-    const refused = cli(["verify", "--dir", bad, "--parameters", files.parameters, "--rule", files.rule, "--config", files.config, "--labels", files.labels, "--format", FORMAT, "--vocabulary", VOCABULARY_FILE, "--known", files.known]);
+    const refused = cli(["verify", "--dir", bad, "--public-manifest", files.manifest, "--register", registerFile, "--parameters", files.parameters, "--rule", files.rule, "--config", files.config, "--labels", files.labels, "--format", FORMAT, "--vocabulary", VOCABULARY_FILE, "--known", files.known]);
     expect(refused.code).toBe(1);
     expect(refused.err.join()).toMatch(/SealedVerifyError: teams.jsonl is not the file the reveal names/);
+  });
+});
+
+describe("the sealed command line writes nowhere but its io", () => {
+  it("prints nothing to the console or the process streams, whatever it handles", () => {
+    const writes: string[] = [];
+    const spies = [
+      vi.spyOn(process.stdout, "write").mockImplementation((c: unknown) => (writes.push(String(c)), true)),
+      vi.spyOn(process.stderr, "write").mockImplementation((c: unknown) => (writes.push(String(c)), true)),
+      ...(["log", "error", "warn", "info", "debug"] as const).map((n) => vi.spyOn(console, n).mockImplementation((...a: unknown[]) => void writes.push(a.map(String).join(" ")))),
+    ];
+    const seen: string[] = [];
+    const next = counterSecret("quiet");
+    const run = cli(generateArgs(store()), { secret: () => (seen.push(next()), seen.at(-1) as string) });
+    spies.forEach((x) => x.mockRestore());
+    expect(run.code).toBe(0);
+    expect(writes).toEqual([]);
+    expect([...run.out, ...run.err].join("\n")).not.toContain(seen[0] as string);
+    expect(JSON.parse(run.out[0] as string)).toMatchObject({ attempts: 1 });
   });
 });
 
