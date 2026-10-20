@@ -14,6 +14,8 @@ from typing import Any, BinaryIO
 
 from areneon_contracts.contracts import jcs
 
+from areneon_ml.model.encoder import EncodingError
+from areneon_ml.reducer import ReducerError
 from areneon_ml.worker.candidates import UnsupportedCandidate, parse_choice
 from areneon_ml.worker.protocol import (
     FrameError,
@@ -94,7 +96,15 @@ class Worker:
             return self._error(query_id, "invalid_query", str(exc))
         except UnsupportedCandidate as exc:
             return self._error(query_id, "unsupported_candidate", str(exc))
-        probabilities = self._scorer.probabilities(encoder_input(query))
+        try:
+            probabilities = self._scorer.probabilities(encoder_input(query))
+        except UnsupportedCandidate as exc:
+            return self._error(query_id, "unsupported_candidate", str(exc))
+        except ReducerError as exc:
+            # The channel is the player's own, but the line is not echoed back.
+            return self._error(query_id, "invalid_query", f"{type(exc).__name__}: {exc.message}")
+        except EncodingError as exc:
+            return self._error(query_id, "invalid_query", f"EncodingError: {exc}")
         check_probabilities(probabilities, len(query["candidates"]))
         index = select(probabilities, query["sampling"])
         elapsed = int((time.perf_counter() - started) * 1000)

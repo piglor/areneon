@@ -1,8 +1,9 @@
-// The real Python worker (ml/areneon_ml/worker, stub scorer) behind the TS client, A1 battles on top.
+// The real Python worker (ml/areneon_ml/worker, real networks) behind the TS client, A1 battles on top.
 // It needs the project's Python environment (`make setup`, uv sync); without it the file is skipped,
-// unless ARENEON_REQUIRE_PYTHON_WORKER=1. The typescript CI job installs the worker's environment without torch and requires this file to run.
-import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+// unless ARENEON_REQUIRE_PYTHON_WORKER=1. The typescript CI job installs the worker's environment (CPU torch) and requires this file to run.
+// The checkpoints are seeded, untrained tiny networks written by `python -m areneon_ml.checkpoint init`.
+import { execFileSync } from "node:child_process";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -15,7 +16,14 @@ import { PolicyHandshakeError, PolicyWorkerClient, type PolicyWorkerOptions } fr
 
 const ROOT = fileURLToPath(new URL("../../../", import.meta.url));
 const PYTHON = join(ROOT, ".venv/bin/python");
-const sha = (data: Buffer | string): string => createHash("sha256").update(data).digest("hex");
+// Tiny sizes keep the test fast; sizes are configuration (ADR-010 section 3).
+const TINY_MODEL = {
+  encoder: { volatile_buckets: 4, condition_buckets: 4, max_moves: 4, max_team: 6, max_picks: 4, stat_scale: 500, turn_scale: 100 },
+  d_model: 16,
+  n_layers: 1,
+  n_heads: 2,
+  d_ff: 32,
+};
 
 // CI sets ARENEON_REQUIRE_PYTHON_WORKER, so a missing environment fails there instead of skipping.
 describe.skipIf(!existsSync(PYTHON) && process.env.ARENEON_REQUIRE_PYTHON_WORKER !== "1")("the Python policy worker behind the TS client", () => {
@@ -28,17 +36,24 @@ describe.skipIf(!existsSync(PYTHON) && process.env.ARENEON_REQUIRE_PYTHON_WORKER
   let runDir: string;
   let preview: string;
   let battle: string;
+  let encoderVersion: string;
 
   beforeAll(() => {
     runDir = mkdtempSync(join(tmpdir(), "areneon-run-"));
-    mkdirSync(join(runDir, "checkpoints"));
-    const ids = ["preview", "battle"].map((role) => {
-      const bytes = Buffer.from(`stub weights for the ${role} policy`);
-      writeFileSync(join(runDir, "checkpoints", `${sha(bytes)}.safetensors`), bytes);
-      return sha(bytes);
-    });
-    [preview, battle] = ids as [string, string];
-  });
+    const configFile = join(runDir, "model.json");
+    writeFileSync(configFile, JSON.stringify(TINY_MODEL));
+    const init = (role: string, seed: number): { checkpoint_id: string; encoder_version: string } =>
+      JSON.parse(
+        execFileSync(PYTHON, ["-I", "-m", "areneon_ml.checkpoint", "init", "--role", role, "--seed", String(seed), "--engine-data", dataFile, "--model-config", configFile, "--run-dir", runDir], {
+          encoding: "utf8",
+          env: {},
+        }),
+      );
+    const [first, second] = [init("preview", 1), init("battle", 2)];
+    preview = first.checkpoint_id;
+    battle = second.checkpoint_id;
+    encoderVersion = first.encoder_version;
+  }, 120_000);
   afterAll(() => rmSync(runDir, { recursive: true, force: true }));
 
   const options = (change: Partial<PolicyWorkerOptions["expect"]> = {}): PolicyWorkerOptions => ({
@@ -52,7 +67,7 @@ describe.skipIf(!existsSync(PYTHON) && process.env.ARENEON_REQUIRE_PYTHON_WORKER
     n_parallel: 2,
     handshake_timeout_ms: 30_000,
     expect: {
-      encoder_version: "stub-1",
+      encoder_version: encoderVersion,
       engine_data_hash: expectedHash,
       checkpoints: [
         { role: "battle", checkpoint_id: battle },
@@ -71,7 +86,7 @@ describe.skipIf(!existsSync(PYTHON) && process.env.ARENEON_REQUIRE_PYTHON_WORKER
     });
   };
 
-  it("plays A1 battles against the stub model, and a game reproduces from its seed and index", async () => {
+  it("plays A1 battles against the networks, and a game reproduces from its seed and index", async () => {
     const client = new PolicyWorkerClient(options());
     await client.start();
     try {
@@ -88,6 +103,6 @@ describe.skipIf(!existsSync(PYTHON) && process.env.ARENEON_REQUIRE_PYTHON_WORKER
 
   it("refuses a session whose engine data or checkpoints are not the expected ones", async () => {
     await expect(new PolicyWorkerClient(options({ engine_data_hash: "0".repeat(64) })).start()).rejects.toThrow(PolicyHandshakeError);
-    await expect(new PolicyWorkerClient(options({ encoder_version: "stub-2" })).start()).rejects.toThrow(/encoder_version/);
+    await expect(new PolicyWorkerClient(options({ encoder_version: `${encoderVersion}x` })).start()).rejects.toThrow(/encoder_version/);
   }, 60_000);
 });

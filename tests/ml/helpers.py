@@ -2,16 +2,21 @@
 
 from __future__ import annotations
 
-import hashlib
 import io
 import json
+from functools import cache
 from pathlib import Path
 from typing import Any
 
 from areneon_contracts.contracts import jcs
+from areneon_ml.checkpoint.files import checkpoint_bytes, checkpoint_id, load_checkpoint
+from areneon_ml.model.gamedata import GameData
+from areneon_ml.model.network import init_network
+from areneon_ml.model.scorer import NetworkScorer
 from areneon_ml.worker.checkpoints import CheckpointStore
-from areneon_ml.worker.scorer import StubScorer
 from areneon_ml.worker.serve import Worker
+
+from tests.ml.model.support import TINY_MODEL
 
 REPO = Path(__file__).resolve().parents[2]
 SAMPLES = REPO / "fixtures/contracts/v1"
@@ -44,23 +49,37 @@ def hello(**changes: Any) -> dict[str, Any]:
     return {"schema_version": 1, "message": message}
 
 
+@cache
+def game() -> GameData:
+    return GameData.from_table(json.loads(ENGINE_DATA.read_text()))
+
+
+@cache
+def tiny_checkpoint(role: str) -> bytes:
+    """An untrained tiny network of ``role``, seeded: the same bytes every time."""
+    return checkpoint_bytes(init_network(role, game(), TINY_MODEL, seed=len(role)), game())
+
+
 def make_run_dir(root: Path) -> tuple[Path, str, str]:
     """A run directory holding a Preview and a Battle checkpoint; their ids."""
     ids = []
     for role in ("preview", "battle"):
-        data = f"stub weights for the {role} policy".encode()
-        checkpoint_id = hashlib.sha256(data).hexdigest()
+        data = tiny_checkpoint(role)
         (root / "checkpoints").mkdir(exist_ok=True)
-        (root / "checkpoints" / f"{checkpoint_id}.safetensors").write_bytes(data)
-        ids.append(checkpoint_id)
+        (root / "checkpoints" / f"{checkpoint_id(data)}.safetensors").write_bytes(data)
+        ids.append(checkpoint_id(data))
     return root, ids[0], ids[1]
 
 
 def make_worker(root: Path, max_line_bytes: int = MAX_LINE) -> Worker:
     run_dir, preview, battle = make_run_dir(root)
     store = CheckpointStore(run_dir)
+    networks = {
+        role: load_checkpoint(store.load(found), game(), found, role=role)
+        for role, found in (("preview", preview), ("battle", battle))
+    }
     return Worker(
-        scorer=StubScorer({"preview": store.load(preview), "battle": store.load(battle)}),
+        scorer=NetworkScorer(game(), networks),
         engine_data_hash=ENGINE_DATA_HASH,
         checkpoints=[
             {"role": "preview", "checkpoint_id": preview},
