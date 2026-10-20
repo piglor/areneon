@@ -138,7 +138,7 @@ describe("the Dependabot configuration", () => {
     const npm = blocks.find((block) => /^\s*npm\b/.test(block));
     expect(npm).toBeDefined();
     for (const name of ["age-encryption", "@noble/*", "@scure/*"]) {
-      expect(npm).toMatch(new RegExp(`dependency-name:\\s*["']${name.replace(/[*/]/g, "\\$&")}["']`));
+      expect(npm).toContain(`dependency-name: "${name}"`);
     }
   });
 });
