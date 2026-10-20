@@ -21,6 +21,8 @@ from areneon_ml.checkpoint.files import (
     checkpoint_bytes,
     checkpoint_id,
     load_checkpoint,
+    pack_safetensors,
+    unpack_safetensors,
     write_checkpoint,
 )
 from areneon_ml.model.batch import collate
@@ -301,3 +303,29 @@ def test_a_crafted_size_cannot_make_the_loader_allocate() -> None:
         CheckpointFileError, match="volatile_buckets must be at least 1 and at most"
     ):
         load(rewrite(make(), many_buckets))
+
+
+def test_generic_tensors_pack_deterministically_and_unpack_only_as_expected() -> None:
+    tensors = {
+        "b": torch.arange(6, dtype=torch.float32).reshape(2, 3),
+        "a": torch.tensor([7, 8], dtype=torch.uint8),
+    }
+    data = pack_safetensors(tensors)
+    assert data == pack_safetensors(dict(reversed(tensors.items())))
+    expected = {"a": (torch.uint8, (2,)), "b": (torch.float32, (2, 3))}
+    loaded = unpack_safetensors(data, expected)
+    assert loaded["a"].tolist() == [7, 8]
+    assert torch.equal(loaded["b"], tensors["b"])
+    with pytest.raises(CheckpointFileError, match="not the expected ones"):
+        unpack_safetensors(data, {"a": (torch.uint8, (2,))})
+    with pytest.raises(CheckpointFileError, match="dtype or shape"):
+        unpack_safetensors(data, {**expected, "a": (torch.float32, (2,))})
+    with pytest.raises(CheckpointFileError, match="dtype or shape"):
+        unpack_safetensors(data, {**expected, "b": (torch.float32, (3, 2))})
+    with pytest.raises(CheckpointFileError, match="tensor data is not valid"):
+        unpack_safetensors(data[:-1], expected)
+
+
+def test_a_dtype_that_is_not_stored_is_refused() -> None:
+    with pytest.raises(CheckpointFileError, match="dtype that is not stored"):
+        pack_safetensors({"x": torch.zeros(2, dtype=torch.int64)})

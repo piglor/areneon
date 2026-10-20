@@ -18,7 +18,7 @@ import areneon_ml.worker
 import pytest
 from areneon_contracts.contracts import jcs
 from areneon_ml.checkpoint.files import checkpoint_bytes, write_checkpoint
-from areneon_ml.model.encoder import EncoderConfig, encoder_version
+from areneon_ml.model.encoder import encoder_version
 from areneon_ml.model.network import init_network
 from areneon_ml.worker.__main__ import EXIT_CHECKPOINT, main
 from areneon_ml.worker.checkpoints import CheckpointError, CheckpointStore
@@ -394,7 +394,7 @@ def test_main_refuses_networks_trained_with_different_encoders(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     run_dir, _, battle = make_run_dir(tmp_path)
-    other = replace(TINY_MODEL, encoder=EncoderConfig(volatile_buckets=5, condition_buckets=4))
+    other = replace(TINY_MODEL, encoder=replace(TINY_MODEL.encoder, volatile_buckets=5))
     data = checkpoint_bytes(init_network("preview", game(), other, 1), game())
     found = write_checkpoint(run_dir, data)
     assert main(cli(run_dir, found, battle)) == EXIT_CHECKPOINT

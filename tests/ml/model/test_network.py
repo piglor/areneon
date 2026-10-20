@@ -5,12 +5,12 @@ from __future__ import annotations
 import copy
 import json
 from collections.abc import Iterator
+from dataclasses import replace
 from typing import Any
 
 import pytest
 import torch
 from areneon_ml.model.batch import collate
-from areneon_ml.model.encoder import EncoderConfig
 from areneon_ml.model.network import (
     ConfigError,
     ModelConfig,
@@ -22,7 +22,7 @@ from areneon_ml.model.runtime import configure_cpu_inference
 from areneon_ml.model.scorer import NetworkScorer, ScorerError
 from areneon_ml.worker.view import encoder_input
 
-from .support import TINY_MODEL, encoder, game, sample
+from .support import TINY_ENCODER, TINY_MODEL, encoder, game, sample
 
 
 @pytest.fixture
@@ -219,7 +219,7 @@ def test_the_scorer_refuses_networks_that_cannot_serve_one_session() -> None:
         "preview",
         game(),
         ModelConfig(
-            encoder=EncoderConfig(volatile_buckets=5, condition_buckets=4),
+            encoder=replace(TINY_ENCODER, volatile_buckets=5),
             d_model=16,
             n_layers=1,
             n_heads=2,
@@ -238,7 +238,11 @@ def test_deterministic_cpu_inference_is_switched_on(cpu_inference: None) -> None
 
 def test_model_config_round_trips_and_is_strict() -> None:
     config = ModelConfig(
-        encoder=EncoderConfig(max_moves=3, stat_scale=400.0), d_model=24, n_heads=3
+        encoder=replace(TINY_ENCODER, max_moves=3, stat_scale=400.0),
+        d_model=24,
+        n_layers=1,
+        n_heads=3,
+        d_ff=48,
     )
     assert ModelConfig.from_dict(json.loads(json.dumps(config.as_dict()))) == config
     with pytest.raises(ConfigError, match="keys must be exactly"):
@@ -254,8 +258,8 @@ def test_model_config_round_trips_and_is_strict() -> None:
     with pytest.raises(ConfigError, match="at least 1"):
         encoder_config_from_dict({**config.encoder.as_dict(), "max_moves": 0})
     with pytest.raises(ConfigError, match="multiple of n_heads"):
-        ModelConfig(d_model=10, n_heads=4)
+        replace(config, d_model=10, n_heads=4)
     with pytest.raises(ConfigError, match="n_layers must be at least 1"):
-        ModelConfig(n_layers=0)
+        replace(config, n_layers=0)
     with pytest.raises(ConfigError, match="d_model must be at least 1 and at most"):
-        ModelConfig(d_model=1 << 40)
+        replace(config, d_model=1 << 40)
