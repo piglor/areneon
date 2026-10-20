@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "data_class": "private",
+  "team_id": "00112233445566778899aabbccddeeff",
+  "revision": 1,
+  "supersedes_record_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "team_hash": "293686e76385acf578e7c0900b4351a1f6659833bfd98e51ea25d61ec3f54f20",
+  "canonical_team_hash": "3941b89f08b819bb62f26a5f6148d103aa48a3d3119a2a1b941c9a0836c6069b",
+  "paste": "Venusaur @ Leftovers  \nAbility: Overgrow  \nLevel: 50  \nEVs: 32 HP / 2 Def / 32 SpA  \nModest Nature  \n- Giga Drain  \n- Sludge Bomb  \n- Protect  \n- Sleep Powder  \n\nEmber (Charizard) (F) @ Charcoal  \nAbility: Blaze  \nLevel: 50  \nEVs: 2 HP / 32 SpA / 32 Spe  \nTimid Nature  \n- Flamethrower  \n- Air Slash  \n- Protect  \n- Heat Wave  \n\nBlastoise @ Mystic Water  \nAbility: Torrent  \nLevel: 50  \nEVs: 32 HP / 32 Def / 2 SpD  \nBold Nature  \n- Surf  \n- Ice Beam  \n- Protect  \n- Fake Out  \n\nPikachu @ Light Ball  \nAbility: Static  \nLevel: 50  \nEVs: 2 HP / 32 SpA / 32 Spe  \nTimid Nature  \n- Thunderbolt  \n- Fake Out  \n- Protect  \n- Volt Switch  \n\nSnorlax @ Sitrus Berry  \nAbility: Thick Fat  \nLevel: 50  \nEVs: 32 HP / 32 Atk / 2 SpD  \nAdamant Nature  \n- Body Slam  \n- Protect  \n- Curse  \n- Rest  \n\nGengar @ Focus Sash  \nAbility: Cursed Body  \nLevel: 50  \nEVs: 2 HP / 32 SpA / 32 Spe  \nTimid Nature  \n- Shadow Ball  \n- Sludge Bomb  \n- Protect  \n- Icy Wind  \n\n",
+  "status": "active",
+  "tags": [],
+  "labels": []
+}

@@ -1,0 +1,141 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:areneon:schema:contracts:v1:signed-statement",
+  "title": "SignedStatement",
+  "description": "The signed envelope of the private team store (ADR-014 section 3). Only the private-head kind is defined; the run statement kinds stay reserved until their slice. Each signature is Ed25519 over the JCS (RFC 8785) bytes of {\"domain\": \"areneon/private-head/v1\", \"schema_version\": 1, \"body\": ...}, so the schema version and the kind's domain string are inside the signed bytes. The statement's hash is SHA-256 of the JCS bytes of the whole statement, signatures included. Verification is strict (RFC 8032): non-canonical encodings are rejected, S >= L included. The reader enforces what the profile cannot say: signatures sorted by key_id and unique, key_id equal to SHA-256 of the raw public key, object_digests sorted and unique, parent_head_hash null exactly for seq 1, and one signature unless next_public_key is set, then two, one of them by next_public_key. Which key may sign is the pin's decision, not the reader's.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "kind",
+    "body",
+    "signatures"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "kind": {
+      "description": "What the statement says. Only private-head is defined.",
+      "const": "private-head"
+    },
+    "body": {
+      "$ref": "#/$defs/PrivateHeadBody"
+    },
+    "signatures": {
+      "description": "One or two signatures, sorted by key_id and unique (reader-enforced). Two only on a key rotation.",
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 2,
+      "items": {
+        "$ref": "#/$defs/Signature"
+      }
+    }
+  },
+  "$defs": {
+    "PrivateHeadBody": {
+      "description": "A private head: the latest committed private snapshot, linked to the head before it.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "seq",
+        "parent_head_hash",
+        "issued_at",
+        "snapshot_hash",
+        "logical_snapshot_hash",
+        "manifest_ciphertext_sha256",
+        "object_digests",
+        "recipient_type",
+        "next_public_key"
+      ],
+      "properties": {
+        "seq": {
+          "description": "The head's number: 1 for the first, plus 1 per commit.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "parent_head_hash": {
+          "description": "The hash of the head at seq - 1; null exactly for seq 1 (reader-enforced).",
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "issued_at": {
+          "description": "Unix seconds on the owner's clock.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "snapshot_hash": {
+          "description": "SHA-256 of the JCS bytes of the PrivateSnapshotManifest: the physical identity.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "logical_snapshot_hash": {
+          "description": "The writer-independent identity of the snapshot (ADR-013).",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "manifest_ciphertext_sha256": {
+          "description": "SHA-256 of the encrypted manifest object.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "object_digests": {
+          "description": "The ciphertext_sha256 of every shard, sorted and unique (reader-enforced), at most 4096.",
+          "type": "array",
+          "maxItems": 4096,
+          "items": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          }
+        },
+        "recipient_type": {
+          "description": "The age recipient type the objects are encrypted to.",
+          "enum": [
+            "mlkem768x25519",
+            "x25519"
+          ]
+        },
+        "next_public_key": {
+          "description": "Null, or the new signing public key (32 bytes as hex) during a rotation, when the head carries two signatures.",
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "Signature": {
+      "description": "One Ed25519 signature and the public key that made it.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "key_id",
+        "public_key",
+        "signature"
+      ],
+      "properties": {
+        "key_id": {
+          "description": "SHA-256 of the raw public key bytes, as hex (reader-enforced).",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "public_key": {
+          "description": "The raw 32-byte Ed25519 public key, as hex.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "signature": {
+          "description": "The raw 64-byte signature, as hex.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{128}$"
+        }
+      }
+    }
+  }
+}

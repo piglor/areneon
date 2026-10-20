@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "data_class": "synthetic",
+  "team_id": "00112233445566778899aabbccddeeff",
+  "revision": 2,
+  "supersedes_record_hash": "f2c793a6b744cd7c4775d88c9300b20378e09d83366168c3dad871f5e7b44820",
+  "team_hash": "00752ba3db81cff4a9ea57e54fed1cfadcf780ca01b62d168139bbcb42e067f4",
+  "canonical_team_hash": "c459b993732583f47429881b909a0f3f5859c0bbe5ea9669452973a3fcd6c9bc",
+  "paste": "",
+  "status": "active",
+  "tags": [
+    "synthetic",
+    "vgc"
+  ],
+  "labels": [
+    {
+      "label_id": "archetype",
+      "value": "offense"
+    }
+  ]
+}

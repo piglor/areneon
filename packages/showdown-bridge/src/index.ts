@@ -220,6 +220,19 @@ export {
   type TeamSnapshotManifest,
 } from "./team-records.ts";
 export {
+  acceptHeadSignatures,
+  checkPrivateRecordSet,
+  keyIdOf,
+  PRIVATE_HEAD_DOMAIN,
+  type PrivateTeamRecord,
+  PrivateRecordError,
+  privateHeadHash,
+  privateHeadSigningBytes,
+  readPrivateTeamRecord,
+  readSignedStatement,
+  type SignedStatement,
+} from "./private-records.ts";
+export {
   exportTeamVocabulary,
   readTeamVocabulary,
   TEAM_VOCABULARY_FILE,

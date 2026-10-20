@@ -88,10 +88,23 @@ SEALED_MARKERS = frozenset(
         "fixtures/contracts/v1/episode/invalid/collection-evaluation-no-seed.json",
     }
 )
-PRIVATE_SAMPLE_MARKERS: frozenset[str] = frozenset()
-# The root keys of a PrivateTeamRecord (ADR-014 section 4); the contract itself
-# is defined by the contracts slice (#869), which edits this one constant. A
-# marked sample has exactly these keys, so team content cannot ride in others.
+PRIVATE_SAMPLE_MARKERS = frozenset(
+    {
+        "fixtures/contracts/v1/private-team-record/reader-invalid/canonical-hash-mismatch.json",
+        "fixtures/contracts/v1/private-team-record/reader-invalid/duplicate-label-ids.json",
+        "fixtures/contracts/v1/private-team-record/reader-invalid/duplicate-tags.json",
+        "fixtures/contracts/v1/private-team-record/reader-invalid/first-revision-supersedes.json",
+        "fixtures/contracts/v1/private-team-record/reader-invalid/later-revision-no-predecessor.json",
+        "fixtures/contracts/v1/private-team-record/reader-invalid/team-hash-mismatch.json",
+        "fixtures/contracts/v1/private-team-record/reader-invalid/unsorted-tags.json",
+        "fixtures/contracts/v1/private-team-record/valid/edited.json",
+        "fixtures/contracts/v1/private-team-record/valid/first.json",
+        "fixtures/contracts/v1/private-team-record/valid/retired.json",
+    }
+)
+# The root keys of a PrivateTeamRecord (ADR-014 section 4). A marked sample has
+# exactly these keys, so team content cannot ride in others. A test pins this
+# set to the properties of private-team-record.schema.json.
 PRIVATE_RECORD_KEYS = frozenset(
     {
         "schema_version",
