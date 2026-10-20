@@ -175,7 +175,8 @@ describe("the packaging rule on this repository", () => {
   it("has CODEOWNERS cover the files that can undo these guarantees", () => {
     const owners = text(join(ROOT, ".github", "CODEOWNERS"));
     for (const path of ["/pnpm-lock.yaml", "/package.json", "/pnpm-workspace.yaml", `/${PACKAGE_PATH}/`]) {
-      expect(owners).toMatch(new RegExp(`^${path.replace(/[./]/g, "\\$&")}\\s+@\\S+`, "m"));
+      const line = owners.split("\n").find((l) => l.split(/\s+/)[0] === path);
+      expect(line, path).toMatch(/\s@\S+$/);
     }
   });
 
