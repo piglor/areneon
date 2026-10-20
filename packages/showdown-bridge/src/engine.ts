@@ -122,6 +122,8 @@ export interface ShowdownSim {
   /** `battle` is the in-process battle once `>start` has been written. */
   BattleStream: new () => { battle: SimBattle | null };
   getPlayerStreams(stream: object): Record<"omniscient" | "p1" | "p2", SimStream>;
+  /** The engine's seeded generator (`sodium,<hex>` seeds): `random()` is a 32-bit word divided by 2^32. */
+  PRNG: new (seed: string) => { random(): number };
   Dex: {
     formats: {
       get(id: string): SimFormat;

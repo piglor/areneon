@@ -100,12 +100,15 @@ describe("the shared contract sample corpus (ADR-008 §2)", () => {
       "v1/policy-query/reader-invalid/identity-differs.json",
       "v1/sealed-set-commitment/reader-invalid/strata-sum-mismatch.json",
       "v1/sealed-set-commitment/reader-invalid/unsorted-strata.json",
+      "v1/team-dataset-manifest/reader-invalid/split-cell-is-a-member.json",
       "v1/team-dataset-manifest/reader-invalid/splits-out-of-order.json",
+      "v1/team-dataset-manifest/reader-invalid/stratum-not-lowest-member.json",
       "v1/team-dataset-manifest/reader-invalid/teams-not-quota-sum.json",
       "v1/team-dataset-manifest/reader-invalid/unsorted-cells.json",
       "v1/team-generator-config/reader-invalid/duplicate-item-weights.json",
       "v1/team-generator-config/reader-invalid/unknown-item.json",
       "v1/team-generator-config/reader-invalid/unsorted-item-weights.json",
+      "v1/team-label-set/reader-invalid/default-is-a-value.json",
       "v1/team-label-set/reader-invalid/duplicate-label-ids.json",
       "v1/team-label-set/reader-invalid/duplicate-values.json",
       "v1/team-label-set/reader-invalid/unknown-engine-id.json",
@@ -240,6 +243,7 @@ describe("the shared contract sample corpus (ADR-008 §2)", () => {
       expect(readTeamLabelSet(committed("v1/team-label-set/valid/golden.json"), table).labels).toHaveLength(3);
       expect(readTeamGeneratorConfig(committed("v1/team-generator-config/valid/golden.json"), table).iv).toBe(31);
       expect(readTeamDatasetManifest(committed("v1/team-dataset-manifest/valid/golden.json")).splits).toHaveLength(2);
+      expect(readTeamDatasetManifest(committed("v1/team-dataset-manifest/valid/merged.json")).merged_cells).toHaveLength(1);
       for (const name of ["first", "extended"]) expect(readTeamSnapshotManifest(committed(`v1/team-snapshot-manifest/valid/${name}.json`)).shards.length).toBeGreaterThan(0);
     });
 
@@ -279,6 +283,7 @@ describe("the shared contract sample corpus (ADR-008 §2)", () => {
     it.each([
       ["duplicate-label-ids", /label ids: a value is repeated/],
       ["duplicate-values", /values: a value is repeated/],
+      ["default-is-a-value", /the default yes is also a listed value/],
       ["unsorted-ids", /has_move ids: .* repeated or out of order/],
       ["unknown-engine-id", /nosuchmove is not in the engine-data table/],
     ])("readTeamLabelSet refuses team-label-set/%s", (name, message) => {
@@ -301,6 +306,8 @@ describe("the shared contract sample corpus (ADR-008 §2)", () => {
 
     it.each([
       ["splits-out-of-order", /splits are repeated or not in the order/],
+      ["stratum-not-lowest-member", /is not its lowest member/],
+      ["split-cell-is-a-member", /is a member of merged stratum 0/],
       ["teams-not-quota-sum", /is not the sum of its quotas/],
       ["unsorted-cells", /cell .* is repeated or out of order/],
     ])("readTeamDatasetManifest refuses team-dataset-manifest/%s", (name, message) => {

@@ -200,6 +200,8 @@ export {
 } from "./policy-worker.ts";
 export {
   canonicalTeamHash,
+  type DatasetManifestContext,
+  labelCellCount,
   logicalSnapshotHash,
   readTeamDatasetManifest,
   readTeamGeneratorConfig,

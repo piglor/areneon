@@ -1,0 +1,71 @@
+{
+  "schema_version": 1,
+  "label_set_id": "golden-labels",
+  "labels": [
+    {
+      "label_id": "speed_control",
+      "values": [
+        {
+          "value": "trick_room",
+          "when": {
+            "kind": "has_move",
+            "moves": [
+              "trickroom"
+            ]
+          }
+        },
+        {
+          "value": "tailwind",
+          "when": {
+            "kind": "has_move",
+            "moves": [
+              "tailwind"
+            ]
+          }
+        }
+      ],
+      "default": "neither"
+    },
+    {
+      "label_id": "fake_out",
+      "values": [
+        {
+          "value": "yes",
+          "when": {
+            "kind": "has_move",
+            "moves": [
+              "fakeout"
+            ]
+          }
+        }
+      ],
+      "default": "yes"
+    },
+    {
+      "label_id": "sun_setter",
+      "values": [
+        {
+          "value": "yes",
+          "when": {
+            "kind": "all_of",
+            "of": [
+              {
+                "kind": "has_ability",
+                "abilities": [
+                  "drought"
+                ]
+              },
+              {
+                "kind": "has_move",
+                "moves": [
+                  "sunnyday"
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "default": "no"
+    }
+  ]
+}

@@ -163,6 +163,7 @@ export function readTeamLabelSet(value: unknown, table?: EngineData): TeamLabelS
   distinct(set.labels.map((l) => l.label_id), "label ids");
   for (const label of set.labels) {
     distinct(label.values.map((v) => v.value), `label ${label.label_id} values`);
+    if (label.values.some((v) => v.value === label.default)) bad(`label ${label.label_id}: the default ${label.default} is also a listed value`);
     for (const { when } of label.values) {
       for (const leaf of when.kind === "all_of" ? when.of : [when]) {
         const [field, vocabulary] = LEAF_IDS[leaf.kind];
@@ -192,19 +193,72 @@ export function readTeamGeneratorConfig(value: unknown, table?: EngineData): Tea
 
 const SPLIT_ORDER = { dev: 0, validation: 1, training: 2 } as const;
 
-/** Parse a TeamDatasetManifest: the schema, then split and cell order and each split's team count. */
-export function readTeamDatasetManifest(value: unknown): TeamDatasetManifest {
+/** What a dataset manifest is read against, when the reader has it. */
+export interface DatasetManifestContext {
+  /** The generator config: `d_max`, `pilot_draws` and `config_hash` must agree with it. */
+  config?: TeamGeneratorConfig;
+  /** The label set: its hash must be `label_set_hash`, and every cell number must exist in its label space. */
+  labelSet?: TeamLabelSet;
+}
+
+/** The base cells of a label set: one per combination of a label's listed values and its default. */
+export const labelCellCount = (set: TeamLabelSet): number => set.labels.reduce((n, l) => n * (l.values.length + 1), 1);
+
+/** The merged strata of a manifest, checked: ascending, disjoint, each numbered by its lowest member. Returns the stratum of each member cell. */
+function mergedStrata(manifest: TeamDatasetManifest): Map<number, number> {
+  const owner = new Map<number, number>();
+  let previous = -1;
+  for (const group of manifest.merged_cells ?? []) {
+    if (group.stratum <= previous) bad(`merged_cells: stratum ${group.stratum} is repeated or out of order`);
+    previous = group.stratum;
+    if (group.cells[0] !== group.stratum) bad(`merged_cells: stratum ${group.stratum} is not its lowest member`);
+    group.cells.forEach((cell, k) => {
+      if (k > 0 && (group.cells[k - 1] as number) >= cell) bad(`merged_cells: stratum ${group.stratum}: cell ${cell} is repeated or out of order`);
+      if (owner.has(cell)) bad(`merged_cells: cell ${cell} is in two strata`);
+      owner.set(cell, group.stratum);
+    });
+  }
+  return owner;
+}
+
+/**
+ * Parse a TeamDatasetManifest: the schema, then split and cell order, each
+ * split's team count, and the cell merge: the merged strata are well formed
+ * and every cell of a split is a merged stratum or an unmerged base cell.
+ * With the config it was generated with, also that `d_max`, `pilot_draws`
+ * and `config_hash` agree with it; with the label set, that `label_set_hash`
+ * is its hash and no cell number lies outside its label space.
+ */
+export function readTeamDatasetManifest(value: unknown, context: DatasetManifestContext = {}): TeamDatasetManifest {
   const manifest = parsed<TeamDatasetManifest>(validators.dataset, value, "team dataset manifest");
   const splits = manifest.splits.map((s) => s.split);
   if (!splits.every((s, k) => k === 0 || SPLIT_ORDER[splits[k - 1] as keyof typeof SPLIT_ORDER] < SPLIT_ORDER[s])) {
     bad("splits are repeated or not in the order dev, validation, training");
   }
+  const owner = mergedStrata(manifest);
   for (const plan of manifest.splits) {
     plan.cells.forEach((cell, k) => {
       if (k > 0 && (plan.cells[k - 1] as { stratum: number }).stratum >= cell.stratum) bad(`split ${plan.split}: cell ${cell.stratum} is repeated or out of order`);
+      const merged = owner.get(cell.stratum);
+      if (merged !== undefined && merged !== cell.stratum) bad(`split ${plan.split}: cell ${cell.stratum} is a member of merged stratum ${merged}`);
     });
     const total = plan.cells.reduce((sum, c) => sum + c.quota, 0);
     if (total !== plan.teams) bad(`split ${plan.split}: teams ${plan.teams} is not the sum of its quotas ${total}`);
+  }
+  const { config, labelSet } = context;
+  if (config !== undefined) {
+    if (manifest.d_max !== config.d_max) bad(`d_max ${manifest.d_max} differs from the config's ${config.d_max}`);
+    if (manifest.pilot_draws !== config.pilot_draws) bad(`pilot_draws ${manifest.pilot_draws} differs from the config's ${config.pilot_draws}`);
+    if (manifest.generator.config_hash !== recordHash(config)) bad("config_hash is not the hash of the given config");
+  }
+  if (labelSet !== undefined) {
+    if (manifest.generator.label_set_hash !== recordHash(labelSet)) bad("label_set_hash is not the hash of the given label set");
+    const cells = labelCellCount(labelSet);
+    const numbers = [
+      ...manifest.splits.flatMap((p) => p.cells.map((c) => c.stratum)),
+      ...(manifest.merged_cells ?? []).flatMap((g) => g.cells),
+    ];
+    for (const n of numbers) if (n >= cells) bad(`cell ${n} is outside the label set's ${cells} cells`);
   }
   return manifest;
 }

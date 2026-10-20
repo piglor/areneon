@@ -154,7 +154,7 @@ class LabelValue(BaseModel):
 
 class Label(BaseModel):
     """
-    One label: the first value, in order, whose predicate holds is the team's value; otherwise the default.
+    One label: the first value, in order, whose predicate holds is the team's value; otherwise the default. The default is not one of the listed values (the reader checks).
     """
 
     model_config = ConfigDict(
@@ -176,7 +176,7 @@ class Label(BaseModel):
 
 class TeamLabelSet(BaseModel):
     """
-    A set of team labels as data (ADR-013 section 3, ADR-010 O6): each label names engine ids and the labeller code holds none. A leaf predicate holds when at least one member of the team matches one of its ids; all_of holds when every leaf holds. The sorted and unique id lists, unique label ids and values, and the ids' existence in the pinned engine are enforced by the checker (the contract profile has no uniqueItems or cross references). Its RFC 8785 SHA-256 is the label-set hash carried by every TeamRecord and manifest.
+    A set of team labels as data (ADR-013 section 3, ADR-010 O6): each label names engine ids and the labeller code holds none. A leaf predicate holds when at least one member of the team matches one of its ids; all_of holds when every leaf holds. The sorted and unique id lists, unique label ids and values, a default that is none of the listed values, and the ids' existence in the pinned engine are enforced by the checker (the contract profile has no uniqueItems or cross references). Its RFC 8785 SHA-256 is the label-set hash carried by every TeamRecord and manifest.
     """
 
     model_config = ConfigDict(
@@ -191,5 +191,5 @@ class TeamLabelSet(BaseModel):
     """
     labels: Annotated[list[Label], Field(max_length=64, min_length=1)]
     """
-    The labels, in the order TeamRecord.labels follows.
+    The labels, in the order TeamRecord.labels follows. The order is also the D20 merge order (ADR-010 E1): labels are listed from the most to the least important, and the merge drops the last label first.
     """

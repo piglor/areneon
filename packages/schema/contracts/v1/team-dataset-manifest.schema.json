@@ -97,6 +97,40 @@
       },
       "minItems": 1
     },
+    "merged_cells": {
+      "description": "The D20 cell merge (ADR-010 E1) that was applied before generation: which base label cells were merged into one stratum. A base cell is one combination of label values, numbered by reading the position of each label's value in its listed values (the default last) as a mixed-radix number, the first label of the label set most significant. A merged stratum takes the number of its lowest member. Only merged strata are listed, sorted by stratum; every other base cell is its own stratum, and a manifest without this list merged nothing. The reader checks that members are ascending, unique and disjoint across strata, that the stratum is its first member, and that no cell of a split is a member of a merged stratum without being that stratum.",
+      "type": "array",
+      "maxItems": 65536,
+      "items": {
+        "description": "One merged stratum and its members.",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "stratum",
+          "cells"
+        ],
+        "properties": {
+          "stratum": {
+            "description": "The merged stratum's number: its lowest member.",
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 65535
+          },
+          "cells": {
+            "description": "The base cell numbers merged into the stratum, ascending and unique.",
+            "type": "array",
+            "minItems": 2,
+            "maxItems": 65536,
+            "items": {
+              "description": "A base cell number.",
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 65535
+            }
+          }
+        }
+      }
+    },
     "reference_pool_hash": {
       "description": "SHA-256 of the sorted canonical team hashes of every earlier released dataset the run deduplicated against.",
       "type": "string",
