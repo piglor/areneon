@@ -34,10 +34,13 @@ describe("the shared contract sample corpus (ADR-008 §2)", () => {
   });
 
   it("is classified by Ajv as its directory says: only invalid fails; reader-invalid is schema-valid", () => {
+    // One parsed schema object per contract: Ajv compiles per object, so parsing it again for every sample recompiled it each time.
+    const schemas = new Map<string, { $id: string }>();
     for (const [file, content] of Object.entries(fresh)) {
       if (file === SAMPLE_HASHES) continue;
       const [, contract, kind] = file.split("/") as [string, string, string];
-      const schema = JSON.parse(readFileSync(new URL(`${contract}.schema.json`, SCHEMAS), "utf8")) as { $id: string };
+      if (!schemas.has(contract)) schemas.set(contract, JSON.parse(readFileSync(new URL(`${contract}.schema.json`, SCHEMAS), "utf8")) as { $id: string });
+      const schema = schemas.get(contract) as { $id: string };
       const profile = schema.$id.includes(":engine:") ? "engine-mirror" : "contract";
       expect(ajvFor(profile).validate(schema, content), file).toBe(kind !== "invalid");
     }
