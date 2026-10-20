@@ -9,7 +9,7 @@
 export type EngineId = string;
 
 /**
- * The game vocabularies and their numeric attributes, exported from the pinned engine's data for one format's mod (ADR-010 section 3). Every list is sorted by id and its position is the entry's vocabulary index. Its RFC 8785 SHA-256 is the engine-data hash, part of the encoder version: a pin bump that changes any engine data changes the hash. Sorted and unique ids and references that resolve are enforced by the reader (the contract profile has no uniqueItems or cross references).
+ * The game vocabularies and their numeric attributes, exported from the pinned engine's data for one format's mod (ADR-010 section 3). Every list is sorted by id and its position is the entry's vocabulary index. Its RFC 8785 SHA-256 is the engine-data hash, part of the encoder version: a pin bump that changes any engine data changes the hash. Sorted and unique ids and references that resolve are enforced by the reader (the contract profile has no uniqueItems or cross references). Natures, volatile conditions, learnsets and other attributes (evos, requiredItem, move effects, species height and gender) are not part of version 1; adding any needs schema_version 2. Derived from the pinned Showdown data files (MIT licence, see fixtures/showdown/<format>/NOTICE-engine-data.txt).
  */
 export interface EngineData {
   schema_version: 1;

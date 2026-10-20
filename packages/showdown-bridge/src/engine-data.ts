@@ -4,6 +4,16 @@
 // canonical order (each list sorted by id), and refuses any shape it does not
 // know. Its JCS hash goes into the encoder version, so a pin bump that changes
 // any engine data changes the hash and never silently remaps a vocabulary.
+//
+// Scope of EngineData v1: only the species, move, item and ability vocabularies
+// with numeric attributes, the type chart, and the status, weather and terrain
+// ids. Natures (the request gives exact stats), volatile conditions, learnsets
+// and other attributes (evos, requiredItem, move effects such as drain or
+// heal, species height or gender) are deliberately not exported; adding any
+// needs schema_version 2, because the contract is closed.
+//
+// The table is derived from the pinned Showdown data files (MIT licence; see
+// fixtures/showdown/<format>/NOTICE-engine-data.txt).
 
 import { createHash } from "node:crypto";
 import { ajvFor } from "@areneon/schema/ajv";
@@ -99,16 +109,18 @@ export function exportEngineData(engine: Engine, formatId: string): EngineData {
     .map((t) => ({ ...named(t, "type"), damageTaken: rec(t.damageTaken, "type damageTaken") }))
     .sort(byId);
   const typeOf = resolver(typeEntries, "type");
-  // A standard forme may name a base species the engine marks nonstandard;
-  // the vocabulary holds that one too, so no reference dangles.
+  // The vocabulary is the entries the engine marks standard for the mod, plus
+  // every base species a standard forme names (even when the engine marks that
+  // base nonstandard, e.g. Past: the seven species cramorant, eiscue, floette,
+  // meloetta, minior, ogerpon, terapagos at this pin), so no reference dangles.
   const bases = new Set(standard(dex.species.all(), "species").map((s) => str(s.baseSpecies, "species baseSpecies")));
   const speciesEntries = dex.species
     .all()
     .map((s) => rec(s, "species"))
     .filter((s) => s.exists === true && (s.isNonstandard === null || bases.has(str(s.name, "species name"))));
-  // A standard species may list an ability the engine marks nonstandard (the
-  // validator refuses it on a set); the vocabulary holds it so that no
-  // reference dangles and the encoder never meets an unlisted ability.
+  // Likewise every ability a standard species lists, even a nonstandard one
+  // (Aura Guard, Future, on Lucario-Mega-Z at this pin; the validator refuses
+  // it on a set), so no reference dangles.
   const listed = new Set(speciesEntries.flatMap((s) => Object.values(rec(s.abilities, "species abilities")).map((a) => str(a, "ability name"))));
   const abilityEntries = dex.abilities
     .all()
@@ -183,6 +195,9 @@ export function exportEngineData(engine: Engine, formatId: string): EngineData {
   const conditions = Object.keys(dex.data.Conditions).map((id) => rec(dex.conditions.get(id), "condition"));
   const ofKind = (effectType: string) =>
     conditions.filter((c) => c.effectType === effectType).map((c) => named(c, effectType)).sort(byId);
+  // Statuses and weathers are every condition of that effect type in the mod;
+  // the engine has no condition table for terrains, so they are the terrains
+  // the standard moves set.
   const terrains = unique(moveEntries.filter((m) => m.terrain !== undefined).map((m) => str(m.terrain, "move terrain")))
     .map((id) => {
       const condition = rec(dex.conditions.get(id), "terrain condition");

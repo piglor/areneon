@@ -54,9 +54,10 @@ function patched(change: (lists: Lists, conditions: string[]) => void): Engine {
 const byName = (list: Raw[], name: string): Raw => list.find((e) => e.name === name) as Raw;
 
 describe("the golden engine-data export (ADR-010 section 3)", () => {
-  it("is reproducible from the pin: a fresh export equals the committed table and summary", () => {
-    expect(fresh).toEqual(golden(ENGINE_DATA_FILE));
-    expect(engineDataSummary(fresh)).toEqual(golden(ENGINE_DATA_SUMMARY));
+  it("is reproducible from the pin: a fresh export equals the committed table and summary, byte for byte", () => {
+    const bytes = (value: unknown) => `${JSON.stringify(value, null, 2)}\n`;
+    expect(readFileSync(join(GOLDEN_DIR, ENGINE_DATA_FILE), "utf8")).toBe(bytes(fresh));
+    expect(readFileSync(join(GOLDEN_DIR, ENGINE_DATA_SUMMARY), "utf8")).toBe(bytes(engineDataSummary(fresh)));
     expect(readEngineData(golden(ENGINE_DATA_FILE))).toEqual(fresh);
   });
 
@@ -90,9 +91,12 @@ describe("the golden engine-data export (ADR-010 section 3)", () => {
     expect(fresh.terrains.length).toBeGreaterThan(0);
   });
 
-  it("keeps a nonstandard base species and a listed nonstandard ability, so no reference dangles", () => {
-    expect(fresh.species.some((s) => s.id === "meloetta")).toBe(true);
-    expect(fresh.abilities.some((a) => a.id === "auraguard")).toBe(true);
+  it("admits exactly these nonstandard entries, so a pin bump that changes them is visible", () => {
+    const dex = (engine.sim.Dex as unknown as { mod(name: string): Record<"species" | "abilities", { get(n: string): Raw }> }).mod(fresh.mod);
+    const nonstandard = (kind: "species" | "abilities", entries: { name: string }[]) =>
+      entries.filter((e) => dex[kind].get(e.name).isNonstandard !== null).map((e) => e.name);
+    expect(nonstandard("species", fresh.species)).toEqual(["Cramorant", "Eiscue", "Floette", "Meloetta", "Minior", "Ogerpon", "Terapagos"]);
+    expect(nonstandard("abilities", fresh.abilities)).toEqual(["Aura Guard"]);
   });
 
   it("is the table of the format's mod", () => {
