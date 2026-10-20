@@ -1,5 +1,6 @@
 // The edits below reach into nested JSON documents by path; `any` keeps each mutation one line.
 /* eslint-disable @typescript-eslint/no-explicit-any */
+import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -12,7 +13,7 @@ import {
   EvaluationConfigError,
   halfWidthOf,
   isComplete,
-  jsonHash,
+  domainHash,
   maxHalfWidthPpm,
   normalQuantile,
   readEvaluationConfig,
@@ -27,13 +28,15 @@ import {
   checkPlan,
   checkReveal,
   commitmentHash,
+  generateSecret,
   keyCommitment,
   planHash,
   readEvaluationPlan,
   readSealedSetCommitment,
+  type SealedSetCommitment,
   setCommitment,
 } from "../src/evaluation-plan.ts";
-import { appendEntry, assertPlanPublished, checkHeads, entryHash, GENESIS, readEntry, readHead, RegisterError, verifyRegister } from "../src/evaluation-register.ts";
+import { appendEntry, assertPlanPublished, checkHeads, checkHeadsAddOnly, entryHash, GENESIS, readEntry, readHead, RegisterError, verifyRegister } from "../src/evaluation-register.ts";
 import { evaluationFixtures, PARAMETERS_FILE, RULE_FILE } from "../src/evaluation-samples.ts";
 
 const fx = evaluationFixtures();
@@ -69,8 +72,9 @@ describe("EvaluationParameters and TrainingGateRule (ADR-010 sections 6 and 7)",
     expect(alphaPrimePpm(config.parameters)).toBe(12500);
     expect(isComplete(config.parameters)).toBe(false);
     expect(() => requireComplete(config.parameters)).toThrow(/n_teams_floor, n_teams, n_seeds, d_team/);
-    expect(config.parameters_hash).toBe(jsonHash(fx.provisional));
-    expect(config.rule_hash).toBe(jsonHash(fx.rule));
+    expect(config.parameters_hash).toBe(domainHash("evaluation-parameters", fx.provisional));
+    expect(config.rule_hash).toBe(domainHash("training-gate-rule", fx.rule));
+    expect(domainHash("evaluation-plan", fx.provisional)).not.toBe(config.parameters_hash);
   });
 
   it("complete parameters pass requireComplete", () => {
@@ -125,6 +129,8 @@ describe("EvaluationParameters and TrainingGateRule (ADR-010 sections 6 and 7)",
     ["unsorted checks", (r: Record<string, any>) => r.required_checks.reverse(), /required_checks must be sorted/],
     ["an alternative below its null", (r: Record<string, any>) => (r.alternatives_ppm.floor = 700000), /must lie above the margin null/],
     ["a G3b alternative of zero", (r: Record<string, any>) => (r.alternatives_ppm.progress_gain = 0), /must lie above the margin null 0/],
+    ["a family without a G3b claim", (r: Record<string, any>) => r.claims.pop(), /must include a G3b claim/],
+    ["a family without a G2 claim", (r: Record<string, any>) => (r.claims = r.claims.slice(2)), /must include a G2 claim/],
     ["a margin that leaves no room", (r: Record<string, any>) => (r.margins_ppm.floor = 500000), /leaves no room/],
   ])("readTrainingGateRule refuses %s", (_what, change, message) => {
     expect(() => readTrainingGateRule(edit(fx.rule, change))).toThrow(EvaluationConfigError);
@@ -156,6 +162,19 @@ describe("EvaluationParameters and TrainingGateRule (ADR-010 sections 6 and 7)",
     expect(changed.rule_hash).toBe(fx.config.rule_hash);
   });
 
+  it("pins the gate conditions G6 and G7 the ADR names, as data in the committed rule", () => {
+    expect(fx.rule.required_checks).toEqual([
+      "a1-a2-observation-equality",
+      "batch-invariance",
+      "candidate-parser-roundtrip",
+      "d11-coverage",
+      "encoder-equality",
+      "enumerator-worst-case-oracle",
+      "l2a-recheck",
+      "privacy-tests",
+    ]);
+  });
+
   it("holds the committed records as data: the files the CLI reads are the ones the fixtures use", () => {
     expect(JSON.parse(readFileSync(PARAMETERS_FILE, "utf8"))).toEqual(fx.provisional);
     expect(JSON.parse(readFileSync(RULE_FILE, "utf8"))).toEqual(fx.rule);
@@ -164,15 +183,38 @@ describe("EvaluationParameters and TrainingGateRule (ADR-010 sections 6 and 7)",
 });
 
 describe("the sealed-set commitment and the plan (protocol L3, I2)", () => {
-  it("commits to {salt, teams} and the key by hash; a reveal opens it and nothing else does", () => {
+  it("commits to {salt, teams} and the key by hash; a reveal opens it only if it is the set declared", () => {
     const salt = hex("a");
     const key = hex("b");
-    const teams: Json[] = [{ species: "x" }, { species: "y" }];
+    const teams: Json[] = Array.from({ length: 32 }, (_, i) => ({ species: `s${i}`, band: ["a", "b", "c", "d"][i % 4] as string }));
+    const labels = { stratumOf: (team: Json) => `speed=${(team as { band: string }).band}`, n_stratum_min: 2 };
     const commitment = { ...fx.commitment, set_commitment: setCommitment(salt, teams), key_commitment: keyCommitment(key) };
-    expect(checkReveal(commitment, { salt, teams, key })).toBe(true);
-    expect(checkReveal(commitment, { salt, teams: [teams[1] as Json, teams[0] as Json], key })).toBe(false);
-    expect(checkReveal(commitment, { salt: hex("c"), teams, key })).toBe(false);
-    expect(checkReveal(commitment, { salt, teams, key: hex("c") })).toBe(false);
+    expect(checkReveal(commitment, { salt, teams, key }, labels)).toBe(true);
+    expect(checkReveal(commitment, { salt, teams: [...teams].reverse(), key }, labels)).toBe(false);
+    expect(checkReveal(commitment, { salt: hex("c"), teams, key }, labels)).toBe(false);
+    expect(checkReveal(commitment, { salt, teams, key: hex("c") }, labels)).toBe(false);
+  });
+
+  it("a reveal of fewer teams, other strata or a thin stratum does not open a commitment it hashes to", () => {
+    const salt = hex("a");
+    const key = hex("b");
+    const open = (teams: Json[], declared: SealedSetCommitment) => {
+      const commitment = { ...declared, set_commitment: setCommitment(salt, teams), key_commitment: keyCommitment(key) };
+      return checkReveal(commitment, { salt, teams, key }, { stratumOf: (t) => `speed=${(t as { band: string }).band}`, n_stratum_min: 2 });
+    };
+    const one: Json[] = [{ band: "a" }];
+    expect(open(one, { ...fx.commitment, team_count: 32 })).toBe(false);
+    const wrongStrata: Json[] = Array.from({ length: 32 }, () => ({ band: "z" }));
+    expect(open(wrongStrata, fx.commitment)).toBe(false);
+    const thin = { ...fx.commitment, team_count: 3, stratum_counts: [{ stratum: "speed=a", count: 2 }, { stratum: "speed=b", count: 1 }] } as SealedSetCommitment;
+    expect(open([{ band: "a" }, { band: "a" }, { band: "b" }], thin)).toBe(false);
+  });
+
+  it("generates 256-bit secrets that the commitment functions accept", () => {
+    const secret = generateSecret();
+    expect(secret).toMatch(/^[0-9a-f]{64}$/);
+    expect(generateSecret()).not.toBe(secret);
+    expect(() => keyCommitment(secret)).not.toThrow();
   });
 
   it("refuses a short salt or key (a short list could be guessed by hashing candidates)", () => {
@@ -206,7 +248,7 @@ describe("the sealed-set commitment and the plan (protocol L3, I2)", () => {
   it("a plan that matches its records checks, and its hash is the JCS digest", () => {
     const plan = readEvaluationPlan(fx.plan);
     expect(() => checkPlan(plan, { config: fx.config, commitment: fx.commitment })).not.toThrow();
-    expect(planHash(plan)).toBe(jsonHash(fx.plan));
+    expect(planHash(plan)).toBe(domainHash("evaluation-plan", fx.plan));
   });
 
   it.each([
@@ -292,6 +334,29 @@ describe("the evaluation register (protocol I6, ADR-010 O1)", () => {
     expect(() => verifyRegister(`${asLine(badPlan)}\n`)).toThrow(/line 1: .*listed twice/);
   });
 
+  it("refuses a date that is only shaped like one", () => {
+    expect(() => verifyRegister(`${asLine({ ...entryAt(1), recorded_at: "9999-99-99T99:99:99Z" })}\n`)).toThrow(/not a real UTC date/);
+    expect(() => verifyRegister(`${asLine({ ...entryAt(1), recorded_at: "2026-02-30T10:00:00Z" })}\n`)).toThrow(/not a real UTC date/);
+  });
+
+  it("refuses a chain-valid line the records would not allow, once the verifier has the records", () => {
+    const crafted = appendEntry("", { kind: "set_commitment", recorded_at: "2026-11-01T10:00:00Z", operator: "owner", commitment: { ...fx.commitment, b_sealed: 5, team_count: 3, stratum_counts: [{ stratum: "a", count: 3 }], evaluation_parameters_hash: hex("1") } }).text;
+    expect(verifyRegister(crafted).entries).toHaveLength(1);
+    expect(() => verifyRegister(crafted, [fx.config])).toThrow(/names records .* that were not given/);
+    const sameRecords = appendEntry("", { kind: "set_commitment", recorded_at: "2026-11-01T10:00:00Z", operator: "owner", commitment: { ...fx.commitment, team_count: 3, stratum_counts: [{ stratum: "a", count: 3 }] } }).text;
+    expect(() => verifyRegister(sameRecords, [fx.config])).toThrow(/differs from the parameters' n_teams/);
+  });
+
+  it("takes the run budget from the parameters, not from the commitment's own field", () => {
+    // The commitment claims a budget of 2; the parameters (b_sealed 1) win once they are given.
+    const greedy = { ...fx.commitment, b_sealed: 2 };
+    const first = appendEntry("", { kind: "set_commitment", recorded_at: at, operator: "owner", commitment: greedy });
+    const plan = { ...fx.plan, set_commitment_hash: commitmentHash(greedy) };
+    const second = appendEntry(first.text, { kind: "plan_registration", recorded_at: at, operator: "owner", plan: { ...plan, a2_matches_min: 11 } });
+    expect(() => appendEntry(second.text, { kind: "plan_registration", recorded_at: at, operator: "owner", plan: { ...plan, a2_matches_min: 12 } })).toThrow(/candidate .* already has a plan/);
+    expect(() => verifyRegister(first.text, [fx.config])).toThrow(/differs from the parameters' 1/);
+  });
+
   it("refuses a recorded_at that goes back", () => {
     const first = appendEntry("", { kind: "set_commitment", recorded_at: "2026-11-02T10:00:00Z", operator: "owner", commitment: fx.commitment });
     expect(() => appendEntry(first.text, { kind: "plan_registration", recorded_at: "2026-11-01T10:00:00Z", operator: "owner", plan: fx.plan })).toThrow(/is before the previous entry/);
@@ -365,6 +430,24 @@ describe("the evaluation register (protocol I6, ADR-010 O1)", () => {
   });
 });
 
+describe("head files are add-only (O1)", () => {
+  const file = (seq: number, hash = hex("1")) => [`${String(seq).padStart(10, "0")}.json`, JSON.stringify({ schema_version: 1, seq, entry_hash: hash })] as const;
+  const files = (...entries: (readonly [string, string])[]) => new Map(entries);
+
+  it("accepts a new head beyond the published ones and refuses a modification, a deletion and a new head behind", () => {
+    const base = files(file(2));
+    expect(() => checkHeadsAddOnly(base, files(file(2), file(3)))).not.toThrow();
+    expect(() => checkHeadsAddOnly(base, files(file(2, hex("2"))))).toThrow(/was modified/);
+    expect(() => checkHeadsAddOnly(base, files())).toThrow(/was deleted/);
+    expect(() => checkHeadsAddOnly(base, files(file(2), file(1)))).toThrow(/not beyond the published 2/);
+  });
+
+  it("refuses a file that is not a head or is named for another position", () => {
+    expect(() => checkHeadsAddOnly(files(), files(["0000000001.json", "{oops"]))).toThrow(/0000000001.json/);
+    expect(() => checkHeadsAddOnly(files(), files(["1.json", file(1)[1]]))).toThrow(/file name must be the zero-padded position/);
+  });
+});
+
 describe("published chain heads (O1)", () => {
   const { text, entries } = fx.chain;
   const state = verifyRegister(text);
@@ -411,110 +494,178 @@ describe("the evaluation-register CLI", () => {
     return p(name);
   };
   const clock = () => new Date("2026-11-07T08:09:10.123Z");
-  const run = (...args: string[]) => runEvaluationCli(args, clock);
+  const run = (...args: string[]) => runEvaluationCli(args, clock, dir);
   const records = ["--parameters", write("params.json", fx.complete), "--rule", write("rule.json", fx.rule)];
   const register = p("register.jsonl");
+  const heads = p("heads");
+  const hashes = (): string[] => verifyRegister(readFileSync(register, "utf8")).hashes;
+  const publish = (seq: number, hash = hashes()[seq - 1]) => {
+    mkdirSync(heads, { recursive: true });
+    writeFileSync(join(heads, `${String(seq).padStart(10, "0")}.json`), JSON.stringify({ schema_version: 1, seq, entry_hash: hash }));
+  };
 
-  it("config-check prints the hashes and refuses a provisional record under --complete", () => {
+  it("config-check prints the hashes and refuses a provisional record under --complete; the defaults are the committed v1 files", () => {
     const ok = run("config-check", ...records);
     expect(ok.code).toBe(0);
     expect(JSON.parse(ok.out)).toEqual({ parameters_hash: fx.config.parameters_hash, rule_hash: fx.config.rule_hash, alpha_prime_ppm: 12500, complete: true });
-    const provisional = run("config-check", "--parameters", PARAMETERS_FILE, "--rule", RULE_FILE);
+    const provisional = run("config-check");
     expect(JSON.parse(provisional.out).complete).toBe(false);
-    const refused = run("config-check", "--parameters", PARAMETERS_FILE, "--rule", RULE_FILE, "--complete");
-    expect(refused.code).toBe(1);
-    expect(refused.err).toMatch(/provisional/);
+    expect(run("config-check", "--complete").err).toMatch(/provisional/);
+    expect(run("config-check", ...records, "--parameters", PARAMETERS_FILE).code).toBe(2);
+    expect(PARAMETERS_FILE).toMatch(/evaluation-parameters\.v1\.json$/);
+    expect(RULE_FILE).toMatch(/training-gate-rule\.v1\.json$/);
   });
 
-  it("commits a set, registers a plan, appends the run entries and verifies, end to end", () => {
-    const commit = run("commit-set", "--register", register, "--commitment", write("commitment.json", fx.commitment), ...records, "--operator", "owner");
+  it("a mistyped register path cannot start a chain: only init does, and only once", () => {
+    for (const command of [
+      ["commit-set", "--commitment", write("commitment.json", fx.commitment)],
+      ["register-plan", "--plan", write("plan.json", fx.plan)],
+      ["append", "--entry", write("e.json", { kind: "incident" })],
+    ]) {
+      const result = run(command[0] as string, "--register", p("typo.jsonl"), ...command.slice(1), ...records, "--operator", "owner");
+      expect(result.code).toBe(1);
+      expect(result.err).toMatch(/does not exist \(a new register is started only with init\)/);
+    }
+    expect(existsSync(p("typo.jsonl"))).toBe(false);
+    expect(run("verify", "--register", p("typo.jsonl")).code).toBe(1);
+    expect(run("head", "--register", p("typo.jsonl")).code).toBe(1);
+    expect(run("init", "--register", register).code).toBe(0);
+    expect(readFileSync(register, "utf8")).toBe("");
+    expect(run("init", "--register", register).err).toMatch(/already exists/);
+    expect(run("head", "--register", register, ...records).err).toMatch(/empty/);
+  });
+
+  it("commits a set and registers a plan, refusing what does not match the records", () => {
+    const commit = run("commit-set", "--register", register, "--commitment", p("commitment.json"), ...records, "--operator", "owner");
     expect(commit.code, commit.err).toBe(0);
     expect(JSON.parse(commit.out).head.seq).toBe(1);
-    const registered = run("register-plan", "--register", register, "--plan", write("plan.json", fx.plan), ...records, "--operator", "owner", "--recorded-at", "2026-11-07T09:00:00Z");
-    expect(registered.code, registered.err).toBe(0);
-    expect(JSON.parse(registered.out).plan_hash).toBe(planHash(fx.plan));
-    const recheck = run("append", "--register", register, "--entry", write("recheck.json", { kind: "l2a_recheck", set_id: "set-1", plan_hash: planHash(fx.plan), result: "pass" }), "--operator", "evaluation-job", "--recorded-at", "2026-11-07T10:00:00Z");
-    expect(recheck.code, recheck.err).toBe(0);
-
-    const verified = JSON.parse(run("verify", "--register", register).out);
-    expect(verified).toMatchObject({ entries: 3, sets: 1, published_through: null });
-    const text = readFileSync(register, "utf8");
-    expect(text.split("\n")).toHaveLength(4);
-    expect(JSON.parse(lines(text)[0] as string).recorded_at).toBe("2026-11-07T08:09:10Z");
-    expect(JSON.parse(run("head", "--register", register).out)).toEqual(verified.head);
-  });
-
-  it("refuses to register a plan that does not match its records, and leaves the register untouched", () => {
     const before = readFileSync(register, "utf8");
     const bad = run("register-plan", "--register", register, "--plan", write("bad-plan.json", { ...fx.plan, alpha_ppm: 100000 }), ...records, "--operator", "owner");
     expect(bad.code).toBe(1);
     expect(bad.err).toMatch(/alpha_ppm 100000 differs/);
-    const unknown = run("register-plan", "--register", register, "--plan", write("set2.json", { ...fx.plan, set_id: "set-2" }), ...records, "--operator", "owner");
-    expect(unknown.err).toMatch(/set set-2 has no commitment in the register/);
-    const provisional = run("register-plan", "--register", register, "--plan", p("plan.json"), "--parameters", PARAMETERS_FILE, "--rule", RULE_FILE, "--operator", "owner");
-    expect(provisional.err).toMatch(/provisional/);
+    expect(run("register-plan", "--register", register, "--plan", write("set2.json", { ...fx.plan, set_id: "set-2" }), ...records, "--operator", "owner").err).toMatch(/set set-2 has no commitment/);
+    expect(run("register-plan", "--register", register, "--plan", p("plan.json"), "--operator", "owner").err).toMatch(/names records .* that were not given/);
     expect(readFileSync(register, "utf8")).toBe(before);
+    const registered = run("register-plan", "--register", register, "--plan", p("plan.json"), ...records, "--operator", "owner", "--recorded-at", "2026-11-07T09:00:00Z");
+    expect(registered.code, registered.err).toBe(0);
+    expect(JSON.parse(registered.out).plan_hash).toBe(planHash(fx.plan));
   });
 
-  it("append refuses the kinds that carry records and an entry the chain refuses", () => {
-    const records2 = run("append", "--register", register, "--entry", write("c.json", { kind: "set_commitment" }), "--operator", "o");
-    expect(records2.code).toBe(2);
-    expect(records2.err).toMatch(/use commit-set/);
-    expect(run("append", "--register", register, "--entry", write("pr.json", { kind: "plan_registration" }), "--operator", "o").err).toMatch(/use register-plan/);
-    const refused = run("append", "--register", register, "--entry", write("r.json", { kind: "run_outcome", plan_hash: hex("1"), outcome: "failed", reason: "x" }), "--operator", "o", "--recorded-at", "2026-11-08T10:00:00Z");
+  it("refuses to append a run entry for a plan whose head is not published, and accepts it once it is", () => {
+    const recheck = write("recheck.json", { kind: "l2a_recheck", set_id: "set-1", plan_hash: planHash(fx.plan), result: "pass" });
+    const append = (...extra: string[]) => run("append", "--register", register, "--entry", recheck, ...records, "--operator", "evaluation-job", "--recorded-at", "2026-11-07T10:00:00Z", ...extra);
+    expect(append().code).toBe(2);
+    expect(append().err).toMatch(/records a run: give --heads/);
+    expect(append("--heads-ref", "main").err).toMatch(/--heads-ref needs --heads/);
+    expect(append("--heads", heads).err).toMatch(/merge the chain head first/);
+    publish(2);
+    const done = append("--heads", heads);
+    expect(done.code, done.err).toBe(0);
+    const wrongPlan = write("run.json", { kind: "run_outcome", plan_hash: hex("1"), outcome: "failed", reason: "x" });
+    expect(run("append", "--register", register, "--entry", wrongPlan, ...records, "--operator", "o", "--heads", heads).err).toMatch(/plan .* is not in the register/);
+  });
+
+  it("append refuses the kinds that carry records, a non-object and an entry the chain refuses", () => {
+    const opts = ["--register", register, ...records, "--operator", "o", "--recorded-at", "2026-11-08T10:00:00Z"];
+    expect(run("append", ...opts, "--entry", write("c.json", { kind: "set_commitment" })).err).toMatch(/use commit-set/);
+    expect(run("append", ...opts, "--entry", write("pr.json", { kind: "plan_registration" })).err).toMatch(/use register-plan/);
+    expect(run("append", ...opts, "--entry", write("arr.json", [])).code).toBe(2);
+    const refused = run("append", ...opts, "--entry", write("inc.json", { kind: "incident", set_id: "nope", cause: "plan_deviation", description: "x", affected_candidates: [] }));
     expect(refused.code).toBe(1);
-    expect(refused.err).toMatch(/is not registered before this entry/);
-    expect(run("append", "--register", register, "--entry", write("arr.json", []), "--operator", "o").code).toBe(2);
+    expect(refused.err).toMatch(/has no commitment/);
   });
 
-  it("verify checks the published heads and --published gates a run on its plan's head", () => {
-    const heads = p("heads");
-    mkdirSync(heads);
-    const state = verifyRegister(readFileSync(register, "utf8"));
-    const headOf = (seq: number) => ({ schema_version: 1, seq, entry_hash: state.hashes[seq - 1] });
-    const publish = (seq: number) => writeFileSync(join(heads, `${String(seq).padStart(10, "0")}.json`), JSON.stringify(headOf(seq)));
+  it("verify checks every line against the records, and ties the commitment to the files given", () => {
+    const verified = JSON.parse(run("verify", "--register", register, ...records).out);
+    expect(verified).toMatchObject({ entries: 3, sets: 1, published_through: null });
+    expect(JSON.parse(run("head", "--register", register, ...records).out)).toEqual(verified.head);
+    expect(readFileSync(register, "utf8").split("\n")).toHaveLength(4);
+    expect(JSON.parse(readFileSync(register, "utf8").split("\n")[0] as string).recorded_at).toBe("2026-11-07T08:09:10Z");
+    // Without the records the set names, and with the committed (provisional) v1 files, the verifier refuses.
+    expect(run("verify", "--register", register).err).toMatch(/names records .* that were not given/);
+    // Editing a records file in place changes its hash: the commitment no longer ties to it.
+    const edited = write("params-edited.json", { ...fx.complete, max_turns: 301 });
+    expect(run("verify", "--register", register, "--parameters", edited, "--rule", p("rule.json")).err).toMatch(/names records .* that were not given/);
+    expect(run("verify", "--register", register, "--parameters", edited, "--rule", p("rule.json"), ...records).code).toBe(0);
+    expect(run("verify", "--register", register, ...records, "--rule", p("rule.json")).code).toBe(2);
+  });
+
+  it("verify checks the published heads; --published gates a run on its plan's head", () => {
     publish(1);
-    expect(JSON.parse(run("verify", "--register", register, "--heads", heads).out)).toMatchObject({ published_through: 1, unpublished: 2 });
-    const gated = run("verify", "--register", register, "--heads", heads, "--published", planHash(fx.plan));
+    rmHead(2);
+    expect(JSON.parse(run("verify", "--register", register, ...records, "--heads", heads).out)).toMatchObject({ published_through: 1, unpublished: 2 });
+    const gated = run("verify", "--register", register, ...records, "--heads", heads, "--published", planHash(fx.plan));
     expect(gated.code).toBe(1);
     expect(gated.err).toMatch(/merge the chain head first/);
     publish(2);
-    expect(run("verify", "--register", register, "--heads", heads, "--published", planHash(fx.plan)).code).toBe(0);
-    expect(run("verify", "--register", register, "--published", planHash(fx.plan)).code).toBe(2);
+    expect(run("verify", "--register", register, ...records, "--heads", heads, "--published", planHash(fx.plan)).code).toBe(0);
+    expect(run("verify", "--register", register, ...records, "--published", planHash(fx.plan)).code).toBe(2);
     expect(JSON.parse(run("heads-check", "--dir", heads).out)).toEqual({ heads: 2, latest: 2 });
     expect(JSON.parse(run("heads-check", "--dir", p("no-such-dir")).out)).toEqual({ heads: 0, latest: null });
   });
 
+  function rmHead(seq: number): void {
+    const file = join(heads, `${String(seq).padStart(10, "0")}.json`);
+    if (existsSync(file)) execFileSync("rm", [file]);
+  }
+
   it("verify refuses a rolled-back, a tampered and a forked register against the heads", () => {
-    const heads = p("heads");
     const text = readFileSync(register, "utf8");
-    writeFileSync(p("rolled-back.jsonl"), `${lines(text)[0]}\n`);
-    expect(run("verify", "--register", p("rolled-back.jsonl"), "--heads", heads).err).toMatch(/rollback/);
-    const tampered = lines(text);
+    const rows = text.slice(0, -1).split("\n");
+    writeFileSync(p("rolled-back.jsonl"), `${rows[0]}\n`);
+    expect(run("verify", "--register", p("rolled-back.jsonl"), ...records, "--heads", heads).err).toMatch(/rollback/);
+    const tampered = [...rows];
     tampered[1] = (tampered[1] as string).replace("owner", "owneR");
     writeFileSync(p("tampered.jsonl"), `${tampered.join("\n")}\n`);
-    expect(run("verify", "--register", p("tampered.jsonl"), "--heads", heads).code).toBe(1);
-    // A fork: same first entry, a different second one, at a position a head covers.
-    const fork = appendEntry(`${lines(text)[0]}\n`, { kind: "plan_registration", recorded_at: "2026-11-07T09:30:00Z", operator: "owner", plan: { ...fx.plan, a2_matches_min: 99 } });
+    expect(run("verify", "--register", p("tampered.jsonl"), ...records, "--heads", heads).code).toBe(1);
+    const fork = appendEntry(`${rows[0]}\n`, { kind: "plan_registration", recorded_at: "2026-11-07T09:30:00Z", operator: "owner", plan: { ...fx.plan, a2_matches_min: 99 } });
     writeFileSync(p("fork.jsonl"), fork.text);
-    expect(run("verify", "--register", p("fork.jsonl"), "--heads", heads).err).toMatch(/fork or rewrite: position 2/);
+    expect(run("verify", "--register", p("fork.jsonl"), ...records, "--heads", heads).err).toMatch(/fork or rewrite: position 2/);
+  });
+
+  it("an unmerged head in the working tree does not count when the heads are read from main", () => {
+    const repo = p("repo");
+    mkdirSync(join(repo, "evaluation/register-heads"), { recursive: true });
+    const git = (...args: string[]) => execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@example.com", ...args], { cwd: repo, stdio: "pipe" });
+    git("init", "-q", "-b", "main");
+    const name = `${String(1).padStart(10, "0")}.json`;
+    writeFileSync(join(repo, "evaluation/register-heads", name), JSON.stringify({ schema_version: 1, seq: 1, entry_hash: hashes()[0] }));
+    git("add", "."); git("commit", "-q", "-m", "head 1");
+    // A local, unmerged head 2 satisfies the working tree, not main.
+    writeFileSync(join(repo, "evaluation/register-heads", `${String(2).padStart(10, "0")}.json`), JSON.stringify({ schema_version: 1, seq: 2, entry_hash: hashes()[1] }));
+    const inRepo = (...args: string[]) => runEvaluationCli(args, clock, repo);
+    const common = ["--register", register, ...records, "--heads", "evaluation/register-heads", "--published", planHash(fx.plan)];
+    expect(inRepo("verify", ...common).code).toBe(0);
+    const trusted = inRepo("verify", ...common, "--heads-ref", "main");
+    expect(trusted.code).toBe(1);
+    expect(trusted.err).toMatch(/merge the chain head first/);
+    expect(inRepo("verify", ...common, "--heads-ref", "no-such-ref").err).toMatch(/git ls-tree no-such-ref failed/);
+    // heads-check --base: head 2 is added beyond head 1 (ok); modifying head 1 is refused.
+    expect(JSON.parse(inRepo("heads-check", "--dir", "evaluation/register-heads", "--base", "main").out)).toEqual({ heads: 2, latest: 2 });
+    writeFileSync(join(repo, "evaluation/register-heads", name), JSON.stringify({ schema_version: 1, seq: 1, entry_hash: hex("1") }));
+    expect(inRepo("heads-check", "--dir", "evaluation/register-heads", "--base", "main").err).toMatch(/was modified/);
   });
 
   it("refuses a head file whose name is not its position", () => {
-    const heads = p("misnamed");
-    mkdirSync(heads);
-    writeFileSync(join(heads, "a.json"), JSON.stringify({ schema_version: 1, seq: 1, entry_hash: hex("1") }));
-    expect(run("heads-check", "--dir", heads).err).toMatch(/file name must be the zero-padded position/);
+    const misnamed = p("misnamed");
+    mkdirSync(misnamed);
+    writeFileSync(join(misnamed, "a.json"), JSON.stringify({ schema_version: 1, seq: 1, entry_hash: hex("1") }));
+    expect(run("heads-check", "--dir", misnamed).err).toMatch(/file name must be the zero-padded position/);
   });
 
-  it("head of an empty register is refused; a missing register file reads as empty", () => {
-    expect(run("head", "--register", p("none.jsonl")).err).toMatch(/empty/);
-    expect(existsSync(p("none.jsonl"))).toBe(false);
-    expect(run("verify", "--register", p("none.jsonl")).code).toBe(0);
+  it("gen-secret writes 256 random bits readable by the owner only, never overwrites, and prints only the hash", () => {
+    const made = run("gen-secret", "--out", p("key"));
+    expect(made.code).toBe(0);
+    const secret = readFileSync(p("key"), "utf8");
+    expect(secret).toMatch(/^[0-9a-f]{64}$/);
+    expect(JSON.parse(made.out)).toEqual({ sha256: keyCommitment(secret) });
+    expect(made.out).not.toContain(secret);
+    expect(execFileSync("stat", ["-c", "%a", p("key")], { encoding: "utf8" }).trim()).toBe("600");
+    expect(() => run("gen-secret", "--out", p("key"))).toThrow(/EEXIST/);
   });
 
   it("lets an operating-system error through instead of reporting it as a refusal", () => {
-    expect(() => run("commit-set", "--register", p("no-such-dir/register.jsonl"), "--commitment", p("commitment.json"), ...records, "--operator", "owner")).toThrow(/ENOENT/);
+    expect(() => run("init", "--register", p("no-such-dir/register.jsonl"))).toThrow(/ENOENT/);
   });
 
   it("usage errors exit 2", () => {
@@ -526,11 +677,11 @@ describe("the evaluation-register CLI", () => {
     expect(run("config-check", "--parameters", p("missing.json"), "--rule", p("rule.json")).err).toMatch(/cannot read/);
   });
 
-  it("uses the real clock by default", () => {
-    expect(runEvaluationCli(["verify", "--register", p("none.jsonl")]).code).toBe(0);
+  it("uses the real clock and the process directory by default", () => {
+    expect(runEvaluationCli(["init", "--register", p("clock.jsonl")]).code).toBe(0);
     const stamped = runEvaluationCli(["commit-set", "--register", p("clock.jsonl"), "--commitment", p("commitment.json"), ...records, "--operator", "owner"]);
-    expect(stamped.code).toBe(0);
-    expect(JSON.parse(lines(readFileSync(p("clock.jsonl"), "utf8"))[0] as string).recorded_at).toMatch(/^20\d\d-\d\d-\d\dT\d\d:\d\d:\d\dZ$/);
+    expect(stamped.code, stamped.err).toBe(0);
+    expect(JSON.parse(readFileSync(p("clock.jsonl"), "utf8").split("\n")[0] as string).recorded_at).toMatch(/^20\d\d-\d\d-\d\dT\d\d:\d\d:\d\dZ$/);
   });
 });
 
@@ -539,7 +690,7 @@ describe("the evaluation modules are engine-free", () => {
     const source = readFileSync(new URL(`../src/${name}.ts`, import.meta.url), "utf8");
     const imports = [...source.matchAll(/^import [^;]*from "([^"]+)"/gm)].map((m) => m[1] as string);
     for (const specifier of imports) {
-      expect(specifier, `${name} imports ${specifier}`).toMatch(/^(node:(crypto|fs|os|path|url)|@areneon\/schema\/.*|\.\/(canonical-json|evaluation-[a-z]+)\.ts)$/);
+      expect(specifier, `${name} imports ${specifier}`).toMatch(/^(node:(child_process|crypto|fs|os|path|url)|@areneon\/schema\/.*|\.\/(canonical-json|evaluation-[a-z]+)\.ts)$/);
     }
   });
 });

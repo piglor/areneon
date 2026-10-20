@@ -4,6 +4,8 @@
 # admins merge through the bypass.
 /.github/                       @arceushui
 /.pokepaste-guard-allow         @arceushui
+/config/evaluation/             @arceushui
+/evaluation/register-heads/     @arceushui
 /.pre-commit-config.yaml        @arceushui
 /Makefile                       @arceushui
 /ml/pyproject.toml              @arceushui

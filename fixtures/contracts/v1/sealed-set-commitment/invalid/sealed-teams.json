@@ -23,8 +23,8 @@
       "count": 8
     }
   ],
-  "evaluation_parameters_hash": "dc316efeccb25ec6bc65d30b1d1c78f10263670d3b7354697f4ce5db0acbe673",
-  "training_gate_rule_hash": "0ebaa6c502091d58e431267eb081d5ed7ddb79e75d739ffcde4b2939ce797cfa",
+  "evaluation_parameters_hash": "e69999dc565cf4c72fa2aeed4f545030ae0c258b7b313d72025e10fd12d14975",
+  "training_gate_rule_hash": "a6de4eb5ed7b2eb94da1c9095bda73090f74c1837440b53415c0a1e38fd8a13d",
   "b_sealed": 1,
   "teams": []
 }

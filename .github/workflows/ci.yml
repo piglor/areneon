@@ -68,6 +68,11 @@ jobs:
         env:
           RULES_BASE_REF: HEAD^1
         run: node packages/showdown-bridge/scripts/check-rules.ts
+      - name: evaluation register heads are add-only (ADR-010 O1)
+        # A published head is a timestamp: a pull request may add heads beyond
+        # the ones on the base branch (the first parent, as above) but never
+        # change or remove one.
+        run: node packages/showdown-bridge/scripts/evaluation-register.ts heads-check --dir evaluation/register-heads --base HEAD^1
       - name: contract schemas and generated TS types (ADR-008)
         run: node packages/schema/scripts/contracts.ts
 

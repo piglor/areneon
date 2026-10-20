@@ -99,7 +99,7 @@ def test_a_world_writable_parent_fails(tmp_path: Path) -> None:
     parent.chmod(0o777)
     result = run("--store", str(child), "--owner", ME)
     assert result.returncode == 1
-    assert "world-writable" in result.stdout
+    assert "writable by group or other" in result.stdout
 
 
 def test_a_missing_store_fails(tmp_path: Path) -> None:
@@ -108,7 +108,7 @@ def test_a_missing_store_fails(tmp_path: Path) -> None:
     assert "not a directory" in result.stdout
 
 
-def test_the_probe_passes_where_the_user_cannot_enter(store: Path) -> None:
+def test_the_probe_passes_where_the_user_is_refused(store: Path) -> None:
     # A directory this user cannot enter stands in for the store as seen by the training user.
     store.chmod(0o000)
     try:
@@ -117,6 +117,7 @@ def test_the_probe_passes_where_the_user_cannot_enter(store: Path) -> None:
         store.chmod(0o700)
     assert result.returncode == 0, result.stdout
     assert "FAIL" not in result.stdout
+    assert result.stdout.count("Permission denied") == 2
 
 
 def test_the_probe_fails_where_the_user_can_read(store: Path) -> None:
@@ -125,73 +126,185 @@ def test_the_probe_fails_where_the_user_can_read(store: Path) -> None:
     assert "succeeds" in result.stdout
 
 
+def test_the_probe_fails_for_a_path_that_does_not_exist(tmp_path: Path) -> None:
+    """A typo is not a refusal: ENOENT must not pass."""
+    result = run("--store", str(tmp_path / "nonexistent" / "zzz"), "--probe-denied")
+    assert result.returncode == 1
+    assert "PASS" not in result.stdout
+    assert "not with Permission denied" in result.stdout
+
+
 def test_the_container_checks_need_docker(store: Path, tmp_path: Path) -> None:
     empty_bin = tmp_path / "bin"
     empty_bin.mkdir()
-    bash = which("bash")
-    env = {"PATH": str(empty_bin)}
     for tool in ("stat", "find", "dirname", "readlink", "git", "grep", "id"):
         (empty_bin / tool).symlink_to(which(tool))
     result = subprocess.run(
-        [bash, str(SCRIPT), "--store", str(store), "--owner", ME, "--training-container", "t1"],
+        [
+            which("bash"),
+            str(SCRIPT),
+            "--store",
+            str(store),
+            "--owner",
+            ME,
+            "--training-container",
+            "t1",
+        ],
         capture_output=True,
         text=True,
         check=False,
-        env=env,
+        env={"PATH": str(empty_bin)},
     )
     assert result.returncode == 1
     assert "docker is not on PATH" in result.stdout
 
 
-def test_a_fake_docker_shows_the_mount_rules(store: Path, tmp_path: Path) -> None:
-    """A stand-in `docker inspect` answers; the script reads mounts and read-only flags from it."""
+FAKE_DOCKER = """#!/usr/bin/env bash
+# A stand-in `docker inspect`: the container name is the last argument.
+name="${@: -1}"
+case "$*" in
+  *"{{.Source}} {{.RW}}"*)
+    case "$name" in
+      eval-ok) printf "STORE/sealed false\\nSTORE/runs true\\n" ;;
+      eval-rw) printf "STORE/sealed true\\n" ;;
+      *) exit 1 ;;
+    esac ;;
+  *"{{.Config.User}}"*)
+    case "$name" in
+      train-root) printf "" ;;
+      train-zero) printf "0:0" ;;
+      nope) exit 1 ;;
+      *) printf "1001:1001" ;;
+    esac ;;
+  *"{{.HostConfig.Privileged}}"*)
+    case "$name" in
+      train-priv) printf "true" ;;
+      *) printf "false" ;;
+    esac ;;
+  *)
+    case "$name" in
+      train-clean|train-root|train-zero|train-priv) printf "/data/train\\n" ;;
+      train-leaky) printf "STORE/sealed\\n" ;;
+      train-store) printf "STORE\\n" ;;
+      train-parent) printf "PARENT\\n" ;;
+      train-everything) printf "/\\n" ;;
+      train-below) printf "STORE/sealed/teams\\n" ;;
+      train-sock) printf "/var/run/docker.sock\\n" ;;
+      *) exit 1 ;;
+    esac ;;
+esac
+"""
+
+
+@pytest.fixture
+def docker_env(store: Path, tmp_path: Path) -> dict[str, str]:
+    """A PATH whose `docker` answers from the table above, with the store's real paths filled in."""
     fake = tmp_path / "fakebin"
     fake.mkdir()
     real = store.resolve()
-    (fake / "docker").write_text(
-        "#!/usr/bin/env bash\n"
-        'case "$*" in\n'
-        '  *"{{.Source}} {{.RW}}"*) case "${@: -1}" in\n'
-        f'    eval-ok) printf "{real}/sealed false\\n{real}/runs true\\n" ;;\n'
-        f'    eval-rw) printf "{real}/sealed true\\n" ;;\n'
-        "    *) exit 1 ;;\n"
-        "  esac ;;\n"
-        '  *) case "${@: -1}" in\n'
-        '    train-clean) printf "/data/train\\n" ;;\n'
-        f'    train-leaky) printf "{real}/sealed\\n" ;;\n'
-        '    train-sock) printf "/var/run/docker.sock\\n" ;;\n'
-        "    *) exit 1 ;;\n"
-        "  esac ;;\n"
-        "esac\n"
-    )
+    text = FAKE_DOCKER.replace("STORE", str(real)).replace("PARENT", str(real.parent))
+    (fake / "docker").write_text(text)
     (fake / "docker").chmod(0o755)
-    env = {**os.environ, "PATH": f"{fake}:{os.environ['PATH']}"}
+    return {**os.environ, "PATH": f"{fake}:{os.environ['PATH']}"}
 
-    def check(*extra: str) -> subprocess.CompletedProcess[str]:
-        return subprocess.run(
-            [str(SCRIPT), "--store", str(store), "--owner", ME, *extra],
-            capture_output=True,
-            text=True,
-            check=False,
-            env=env,
-        )
 
-    good = check("--training-container", "train-clean", "--evaluation-container", "eval-ok")
+def check_with(env: dict[str, str], store: Path, *extra: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [str(SCRIPT), "--store", str(store), "--owner", ME, *extra],
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
+    )
+
+
+def test_a_clean_training_container_and_a_read_only_evaluation_container_pass(
+    store: Path, docker_env: dict[str, str]
+) -> None:
+    good = check_with(
+        docker_env,
+        store,
+        "--training-container",
+        "train-clean",
+        "--evaluation-container",
+        "eval-ok",
+    )
     assert good.returncode == 0, good.stdout
-    assert "mounts nothing under" in good.stdout
+    assert "runs as 1001:1001" in good.stdout
     assert "read-only" in good.stdout
-    leaky = check("--training-container", "train-leaky")
-    assert leaky.returncode == 1
-    assert "mounts a path under" in leaky.stdout
-    sock = check("--training-container", "train-sock")
-    assert sock.returncode == 1
-    assert "Docker socket" in sock.stdout
-    rw = check("--evaluation-container", "eval-rw")
+
+
+@pytest.mark.parametrize(
+    ("container", "message"),
+    [
+        ("train-leaky", "contains or lies under"),
+        ("train-store", "contains or lies under"),
+        ("train-parent", "contains or lies under"),
+        ("train-everything", "mounts /, which contains"),
+        ("train-below", "contains or lies under"),
+        ("train-sock", "Docker socket"),
+        ("train-root", "runs as root or an unknown user"),
+        ("train-zero", "runs as root or an unknown user"),
+        ("train-priv", "is privileged"),
+    ],
+)
+def test_a_training_container_that_can_reach_the_store_fails(
+    store: Path, docker_env: dict[str, str], container: str, message: str
+) -> None:
+    result = check_with(docker_env, store, "--training-container", container)
+    assert result.returncode == 1
+    assert message in result.stdout
+
+
+def test_a_read_write_sealed_mount_and_an_unknown_container_fail(
+    store: Path, docker_env: dict[str, str]
+) -> None:
+    rw = check_with(docker_env, store, "--evaluation-container", "eval-rw")
     assert rw.returncode == 1
     assert "read-write" in rw.stdout
-    unknown = check("--training-container", "nope", "--evaluation-container", "nope")
+    unknown = check_with(
+        docker_env, store, "--training-container", "nope", "--evaluation-container", "nope"
+    )
     assert unknown.returncode == 1
     assert unknown.stdout.count("cannot inspect") == 2
+
+
+def test_a_group_writable_parent_fails(tmp_path: Path) -> None:
+    parent = tmp_path / "shared"
+    parent.mkdir()
+    child = parent / "store"
+    child.mkdir()
+    child.chmod(0o700)
+    parent.chmod(0o775)
+    result = run("--store", str(child), "--owner", ME)
+    assert result.returncode == 1
+    assert "writable by group or other" in result.stdout
+
+
+def test_the_code_checkout_must_not_be_writable_by_others(tmp_path: Path, store: Path) -> None:
+    code = tmp_path / "code"
+    code.mkdir()
+    (code / "tool.ts").write_text("x")
+    code.chmod(0o755)
+    (code / "tool.ts").chmod(0o644)
+    good = run("--store", str(store), "--owner", ME, "--code", str(code))
+    assert good.returncode == 0, good.stdout
+    assert "is owned by" in good.stdout
+    (code / "tool.ts").chmod(0o664)
+    bad = run("--store", str(store), "--owner", ME, "--code", str(code))
+    assert bad.returncode == 1
+    assert "writable by group or other" in bad.stdout
+    missing = run("--store", str(store), "--owner", ME, "--code", str(tmp_path / "none"))
+    assert missing.returncode == 1
+
+
+def test_a_code_checkout_owned_by_someone_else_fails(tmp_path: Path, store: Path) -> None:
+    code = tmp_path / "code"
+    code.mkdir()
+    code.chmod(0o755)
+    result = run("--store", str(store), "--owner", "nobody", "--code", str(code))
+    assert result.returncode == 1
+    assert "owned by neither nobody nor root" in result.stdout
 
 
 def test_usage_errors_exit_2() -> None:

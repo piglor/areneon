@@ -207,7 +207,7 @@ export {
   type EvaluationParameters,
   halfWidthOf,
   isComplete,
-  jsonHash,
+  domainHash,
   maxHalfWidthPpm,
   normalQuantile,
   PPM,

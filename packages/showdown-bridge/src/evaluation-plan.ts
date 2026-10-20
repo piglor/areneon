@@ -6,14 +6,14 @@
 //
 // Engine-free and Node-only, like `evaluation-config.ts`.
 
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { ajvFor } from "@areneon/schema/ajv";
 import planSchema from "@areneon/schema/contracts/v1/evaluation-plan.schema.json" with { type: "json" };
 import commitmentSchema from "@areneon/schema/contracts/v1/sealed-set-commitment.schema.json" with { type: "json" };
 import type { EvaluationPlan } from "@areneon/schema/types/v1/evaluation-plan.ts";
 import type { SealedSetCommitment } from "@areneon/schema/types/v1/sealed-set-commitment.ts";
 import { jcs, type Json } from "./canonical-json.ts";
-import { alphaPrimePpm, deriveClaims, type EvaluationConfig, EvaluationConfigError, jsonHash, requireComplete, strictlyAscending } from "./evaluation-config.ts";
+import { alphaPrimePpm, deriveClaims, domainHash, type EvaluationConfig, EvaluationConfigError, requireComplete, strictlyAscending } from "./evaluation-config.ts";
 
 export type { EvaluationPlan, SealedSetCommitment };
 
@@ -21,8 +21,8 @@ const validCommitment = ajvFor("contract").compile(commitmentSchema);
 const validPlan = ajvFor("contract").compile(planSchema);
 
 /** SHA-256 of the JCS bytes of a commitment record or a plan: how the register names them. */
-export const commitmentHash = (commitment: SealedSetCommitment): string => jsonHash(commitment);
-export const planHash = (plan: EvaluationPlan): string => jsonHash(plan);
+export const commitmentHash = (commitment: SealedSetCommitment): string => domainHash("sealed-set-commitment", commitment);
+export const planHash = (plan: EvaluationPlan): string => domainHash("evaluation-plan", plan);
 
 const sha256Text = (text: string): string => createHash("sha256").update(text, "utf8").digest("hex");
 
@@ -40,9 +40,27 @@ export function keyCommitment(key: string): string {
   return sha256Text(key);
 }
 
-/** L5: whether a published reveal opens a commitment. Anyone can run it once the set retires. */
-export function checkReveal(commitment: SealedSetCommitment, reveal: { salt: string; teams: readonly Json[]; key: string }): boolean {
-  return setCommitment(reveal.salt, reveal.teams) === commitment.set_commitment && keyCommitment(reveal.key) === commitment.key_commitment;
+/** 256 random bits as 64 hex characters: a salt or a seed key. */
+export const generateSecret = (): string => randomBytes(32).toString("hex");
+
+/**
+ * L5: whether a published reveal opens a commitment, and is the set it
+ * declared: the hashes match, the number of teams is `team_count`, and the
+ * strata the teams fall into (by `stratumOf`, the reviewed labeller) are
+ * exactly `stratum_counts`, each holding at least `n_stratum_min` (erratum
+ * E1). Anyone can run it once the set retires.
+ */
+export function checkReveal(
+  commitment: SealedSetCommitment,
+  reveal: { salt: string; teams: readonly Json[]; key: string },
+  labels: { stratumOf: (team: Json) => string; n_stratum_min: number },
+): boolean {
+  if (setCommitment(reveal.salt, reveal.teams) !== commitment.set_commitment || keyCommitment(reveal.key) !== commitment.key_commitment) return false;
+  if (reveal.teams.length !== commitment.team_count) return false;
+  const counts = new Map<string, number>();
+  for (const team of reveal.teams) counts.set(labels.stratumOf(team), (counts.get(labels.stratumOf(team)) ?? 0) + 1);
+  const declared = commitment.stratum_counts;
+  return counts.size === declared.length && declared.every((s) => counts.get(s.stratum) === s.count && s.count >= labels.n_stratum_min);
 }
 
 /** Read a SealedSetCommitment: the schema, then the sorted-and-unique strata and their sum. */

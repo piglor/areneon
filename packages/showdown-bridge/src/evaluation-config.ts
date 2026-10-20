@@ -9,6 +9,7 @@
 // plan registration use it without loading the engine.
 
 import { createHash } from "node:crypto";
+import { fileURLToPath } from "node:url";
 import { ajvFor } from "@areneon/schema/ajv";
 import parametersSchema from "@areneon/schema/contracts/v1/evaluation-parameters.schema.json" with { type: "json" };
 import ruleSchema from "@areneon/schema/contracts/v1/training-gate-rule.schema.json" with { type: "json" };
@@ -25,9 +26,18 @@ export class EvaluationConfigError extends Error {
   override name = "EvaluationConfigError";
 }
 
-/** SHA-256 (hex) of a JSON value's JCS bytes: how every record is referenced. */
-export function jsonHash(value: unknown): string {
-  return createHash("sha256").update(jcs(value as Json)).digest("hex");
+/** The committed v1 records (data): the default the verifier ties hashes to. */
+export const CONFIG_DIR = fileURLToPath(new URL("../../../config/evaluation", import.meta.url));
+export const PARAMETERS_FILE = `${CONFIG_DIR}/evaluation-parameters.v1.json`;
+export const RULE_FILE = `${CONFIG_DIR}/training-gate-rule.v1.json`;
+
+/**
+ * SHA-256 (hex) of `areneon:<domain>:v1\n` followed by the value's JCS bytes:
+ * how every record, entry, commitment and plan is referenced. The domain tag
+ * keeps a hash of one kind from ever standing for another.
+ */
+export function domainHash(domain: string, value: unknown): string {
+  return createHash("sha256").update(`areneon:${domain}:v1\n${jcs(value as Json)}`, "utf8").digest("hex");
 }
 
 const validParameters = ajvFor("contract").compile(parametersSchema);
@@ -174,6 +184,9 @@ export function readTrainingGateRule(value: unknown): TrainingGateRule {
     throw new EvaluationConfigError("selection.reference_fractions_ppm must be strictly ascending");
   }
   sortedUnique("required_checks", rule.required_checks);
+  for (const gate of ["G2", "G3", "G3b"] as const) {
+    if (!rule.claims.some((c) => c.gate === gate)) throw new EvaluationConfigError(`the claim family must include a ${gate} claim`);
+  }
   for (const claim of deriveClaims(rule)) {
     if (claim.margin_null_ppm >= PPM) throw new EvaluationConfigError(`${claim.claim_id}: the margin null ${claim.margin_null_ppm} ppm leaves no room above it`);
     if (claim.alternative_ppm <= claim.margin_null_ppm) {
@@ -241,5 +254,5 @@ export function readEvaluationConfig(parametersValue: unknown, ruleValue: unknow
   const parameters = readEvaluationParameters(parametersValue);
   const rule = readTrainingGateRule(ruleValue);
   checkGateConsistency(parameters, rule);
-  return { parameters, rule, parameters_hash: jsonHash(parameters), rule_hash: jsonHash(rule) };
+  return { parameters, rule, parameters_hash: domainHash("evaluation-parameters", parameters), rule_hash: domainHash("training-gate-rule", rule) };
 }

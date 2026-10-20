@@ -5,14 +5,11 @@
 // hashes are repeated characters, the sealed "teams" are never built.
 
 import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import { type EvaluationConfig, readEvaluationConfig } from "./evaluation-config.ts";
+import { type EvaluationConfig, PARAMETERS_FILE, readEvaluationConfig, RULE_FILE } from "./evaluation-config.ts";
 import { commitmentHash, planHash, type EvaluationPlan, type SealedSetCommitment } from "./evaluation-plan.ts";
 import { appendEntry, type EvaluationRegisterEntry } from "./evaluation-register.ts";
 
-export const CONFIG_DIR = fileURLToPath(new URL("../../../config/evaluation", import.meta.url));
-export const PARAMETERS_FILE = `${CONFIG_DIR}/evaluation-parameters.v1.json`;
-export const RULE_FILE = `${CONFIG_DIR}/training-gate-rule.v1.json`;
+export { CONFIG_DIR, PARAMETERS_FILE, RULE_FILE } from "./evaluation-config.ts";
 
 const readJson = (path: string): Record<string, unknown> => JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>;
 
@@ -174,6 +171,7 @@ export function evaluationSamples(): { valid: Record<string, unknown>; invalid: 
       e.outcome = "failed";
       delete e.outcome_hash;
     }),
+    "evaluation-register-entry/impossible-date": withEntry(run, (e) => (e.recorded_at = "9999-99-99T99:99:99Z")),
     "evaluation-register-entry/unsorted-affected-candidates": withEntry(incident, (e) => (e.affected_candidates = [hexOf("4"), hexOf("3")])),
   };
   const invalid: Record<string, unknown> = {

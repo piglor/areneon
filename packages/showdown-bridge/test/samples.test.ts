@@ -86,6 +86,7 @@ describe("the shared contract sample corpus (ADR-008 §2)", () => {
       "v1/evaluation-plan/reader-invalid/candidate-roles-swapped.json",
       "v1/evaluation-plan/reader-invalid/unsorted-opponents.json",
       "v1/evaluation-register-entry/reader-invalid/failed-without-reason.json",
+      "v1/evaluation-register-entry/reader-invalid/impossible-date.json",
       "v1/evaluation-register-entry/reader-invalid/reported-without-outcome-hash.json",
       "v1/evaluation-register-entry/reader-invalid/unsorted-affected-candidates.json",
       "v1/evaluation-run-manifest/reader-invalid/duplicate.json",
@@ -185,6 +186,7 @@ describe("the shared contract sample corpus (ADR-008 §2)", () => {
     ["v1/evaluation-register-entry/reader-invalid/reported-without-outcome-hash.json", "needs its outcome_hash"],
     ["v1/evaluation-register-entry/reader-invalid/failed-without-reason.json", "needs its reason"],
     ["v1/evaluation-register-entry/reader-invalid/unsorted-affected-candidates.json", "sorted and unique"],
+    ["v1/evaluation-register-entry/reader-invalid/impossible-date.json", "not a real UTC date"],
   ])("readEntry refuses %s", (file, message) => {
     expect(Object.keys(fresh)).toContain(file);
     expect(() => readEntry(committed(file))).toThrow(RegisterError);
