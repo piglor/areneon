@@ -1,0 +1,16 @@
+# Gitleaks reads this file from the repository root (pre-commit and CI).
+title = "Areneon gitleaks configuration"
+
+[extend]
+useDefault = true
+
+# The synthetic team datasets name their two HMAC keys in the manifest and the
+# run record. A public dataset has public keys (ADR-013 section 2: the
+# `key` kind is "public", enforced by check_data_class.py), so a 64-digit hex
+# value under these two keys is not a secret.
+[[allowlists]]
+description = "public generation and assignment keys of committed synthetic datasets"
+condition = "AND"
+paths = ['''^fixtures/teams/[^/]+/datasets/[^/]+/(manifest|run)\.json$''']
+regexTarget = "line"
+regexes = ['''"(generation|assignment)_key": "[0-9a-f]{64}"''']

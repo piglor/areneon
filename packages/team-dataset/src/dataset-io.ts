@@ -14,7 +14,7 @@ import type { GenerateResult } from "./generate.ts";
 import { SPLITS } from "./plan.ts";
 
 /** Indented JSON with the keys in JCS order. */
-const pretty = (value: unknown): string => `${JSON.stringify(JSON.parse(jcs(value as never)), null, 2)}\n`;
+export const pretty = (value: unknown): string => `${JSON.stringify(JSON.parse(jcs(value as never)), null, 2)}\n`;
 
 export const recordsFile = (split: string): string => `records.${split}.jsonl`;
 

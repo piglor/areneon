@@ -1,3 +1,4 @@
+export { AssignError, assignSplits, type PoolEntry } from "./assign-splits.ts";
 export { checkTeamConfigs, labelProblems, TEAMS_CONFIG_DIR } from "./check-labels.ts";
 export { recordHashes, recordsFile, writeDataset } from "./dataset-io.ts";
 export { Binner, BinError, type Offer } from "./binner.ts";
@@ -13,3 +14,23 @@ export { fillQuantile, provision, type Provision } from "./provision.ts";
 export { rangeSummary } from "./range.ts";
 export { RejectionLog } from "./rejection-log.ts";
 export { drawSeed, engineRng, pilotSeed, type Rng, StreamError } from "./stream.ts";
+export {
+  COMMITTED_SPLITS,
+  type CommittedSplit,
+  type DatasetContext,
+  DatasetReadError,
+  datasetSyntheticHashes,
+  drawTrainingTeam,
+  HASHES_FILE,
+  type HashIndex,
+  hashIndex,
+  MANIFEST_FILE,
+  readDataset,
+  splitHashes,
+  type SplitHashes,
+  teamsFile,
+  TrainingDrawError,
+  type TrainingPool,
+  trainingPool,
+  type VerifiedDataset,
+} from "./dataset-reader.ts";

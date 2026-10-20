@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "dataset_id": "fixtures-v1",
+  "sizes": {
+    "dev": 100,
+    "validation": 100,
+    "training": 100
+  },
+  "generator_commit": "b7cda7af2f1744ad4934d38fb379b1d3cfc3ffc2",
+  "generation_key": "372cc1a98b1ae8c29ea8fc7a166b84de1d9c4ad81e23e831d9af7713e73a3ce7",
+  "assignment_key": "d0b56458ea47add3c8a5f577cd5d55562f8699849af72b59bb6be486410be726"
+}

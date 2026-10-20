@@ -1,0 +1,1440 @@
+{
+  "attempts": [
+    {
+      "dataset_id": "fixtures-v1",
+      "plan_id": "fixtures-v1",
+      "short": []
+    }
+  ],
+  "cells": [
+    {
+      "cell": 0,
+      "held": {
+        "dev": 0,
+        "training": 0,
+        "validation": 0
+      },
+      "pilot_hits": 0,
+      "stratum": 0,
+      "values": [
+        "both",
+        "yes",
+        "yes",
+        "yes",
+        "yes"
+      ]
+    },
+    {
+      "cell": 1,
+      "held": {
+        "dev": 0,
+        "training": 0,
+        "validation": 0
+      },
+      "pilot_hits": 0,
+      "stratum": 0,
+      "values": [
+        "both",
+        "yes",
+        "yes",
+        "yes",
+        "no"
+      ]
+    },
+    {
+      "cell": 2,
+      "held": {
+        "dev": 0,
+        "training": 0,
+        "validation": 0
+      },
+      "pilot_hits": 2,
+      "stratum": 0,
+      "values": [
+        "both",
+        "yes",
+        "yes",
+        "no",
+        "yes"
+      ]
+    },
+    {
+      "cell": 3,
+      "held": {
+        "dev": 0,
+        "training": 0,
+        "validation": 0
+      },
+      "pilot_hits": 0,
+      "stratum": 0,
+      "values": [
+        "both",
+        "yes",
+        "yes",
+        "no",
+        "no"
+      ]
+    },
+    {
+      "cell": 4,
+      "held": {
+        "dev": 0,
+        "training": 0,
+        "validation": 0
+      },
+      "pilot_hits": 0,
+      "stratum": 0,
+      "values": [
+        "both",
+        "yes",
+        "no",
+        "yes",
+        "yes"
+      ]
+    },
+    {
+      "cell": 5,
+      "held": {
+        "dev": 0,
+        "training": 0,
+        "validation": 0
+      },
+      "pilot_hits": 0,
+      "stratum": 0,
+      "values": [
+        "both",
+        "yes",
+        "no",
+        "yes",
+        "no"
+      ]
+    },
+    {
+      "cell": 6,
+      "held": {
+        "dev": 0,
+        "training": 1,
+        "validation": 0
+      },
+      "pilot_hits": 14,
+      "stratum": 0,
+      "values": [
+        "both",
+        "yes",
+        "no",
+        "no",
+        "yes"
+      ]
+    },
+    {
+      "cell": 7,
+      "held": {
+        "dev": 0,
+        "training": 0,
+        "validation": 0
+      },
+      "pilot_hits": 1,
+      "stratum": 0,
+      "values": [
+        "both",
+        "yes",
+        "no",
+        "no",
+        "no"
+      ]
+    },
+    {
+      "cell": 8,
+      "held": {
+        "dev": 0,
+        "training": 0,
+        "validation": 0
+      },
+      "pilot_hits": 0,
+      "stratum": 0,
+      "values": [
+        "both",
+        "no",
+        "yes",
+        "yes",
+        "yes"
+      ]
+    },
+    {
+      "cell": 9,
+      "held": {
+        "dev": 0,
+        "training": 0,
+        "validation": 0
+      },
+      "pilot_hits": 0,
+      "stratum": 0,
+      "values": [
+        "both",
+        "no",
+        "yes",
+        "yes",
+        "no"
+      ]
+    },
+    {
+      "cell": 10,
+      "held": {
+        "dev": 0,
+        "training": 0,
+        "validation": 0
+      },
+      "pilot_hits": 5,
+      "stratum": 0,
+      "values": [
+        "both",
+        "no",
+        "yes",
+        "no",
+        "yes"
+      ]
+    },
+    {
+      "cell": 11,
+      "held": {
+        "dev": 1,
+        "training": 0,
+        "validation": 0
+      },
+      "pilot_hits": 1,
+      "stratum": 0,
+      "values": [
+        "both",
+        "no",
+        "yes",
+        "no",
+        "no"
+      ]
+    },
+    {
+      "cell": 12,
+      "held": {
+        "dev": 0,
+        "training": 0,
+        "validation": 0
+      },
+      "pilot_hits": 3,
+      "stratum": 0,
+      "values": [
+        "both",
+        "no",
+        "no",
+        "yes",
+        "yes"
+      ]
+    },
+    {
+      "cell": 13,
+      "held": {
+        "dev": 0,
+        "training": 0,
+        "validation": 0
+      },
+      "pilot_hits": 0,
+      "stratum": 0,
+      "values": [
+        "both",
+        "no",
+        "no",
+        "yes",
+        "no"
+      ]
+    },
+    {
+      "cell": 14,
+      "held": {
+        "dev": 1,
+        "training": 1,
+        "validation": 1
+      },
+      "pilot_hits": 79,
+      "stratum": 0,
+      "values": [
+        "both",
+        "no",
+        "no",
+        "no",
+        "yes"
+      ]
+    },
+    {
+      "cell": 15,
+      "held": {
+        "dev": 0,
+        "training": 0,
+        "validation": 1
+      },
+      "pilot_hits": 22,
+      "stratum": 0,
+      "values": [
+        "both",
+        "no",
+        "no",
+        "no",
+        "no"
+      ]
+    },
+    {
+      "cell": 16,
+      "held": {
+        "dev": 0,
+        "training": 0,
+        "validation": 0
+      },
+      "pilot_hits": 0,
+      "stratum": 16,
+      "values": [
+        "trick_room",
+        "yes",
+        "yes",
+        "yes",
+        "yes"
+      ]
+    },
+    {
+      "cell": 17,
+      "held": {
+        "dev": 0,
+        "training": 0,
+        "validation": 0
+      },
+      "pilot_hits": 0,
+      "stratum": 16,
+      "values": [
+        "trick_room",
+        "yes",
+        "yes",
+        "yes",
+        "no"
+      ]
+    },
+    {
+      "cell": 18,
+      "held": {
+        "dev": 0,
+        "training": 0,
+        "validation": 0
+      },
+      "pilot_hits": 6,
+      "stratum": 16,
+      "values": [
+        "trick_room",
+        "yes",
+        "yes",
+        "no",
+        "yes"
+      ]
+    },
+    {
+      "cell": 19,
+      "held": {
+        "dev": 0,
+        "training": 0,
+        "validation": 0
+      },
+      "pilot_hits": 2,
+      "stratum": 16,
+      "values": [
+        "trick_room",
+        "yes",
+        "yes",
+        "no",
+        "no"
+      ]
+    },
+    {
+      "cell": 20,
+      "held": {
+        "dev": 0,
+        "training": 1,
+        "validation": 0
+      },
+      "pilot_hits": 12,
+      "stratum": 16,
+      "values": [
+        "trick_room",
+        "yes",
+        "no",
+        "yes",
+        "yes"
+      ]
+    },
+    {
+      "cell": 21,
+      "held": {
+        "dev": 0,
+        "training": 0,
+        "validation": 0
+      },
+      "pilot_hits": 6,
+      "stratum": 16,
+      "values": [
+        "trick_room",
+        "yes",
+        "no",
+        "yes",
+        "no"
+      ]
+    },
+    {
+      "cell": 22,
+      "held": {
+        "dev": 1,
+        "training": 1,
+        "validation": 2
+      },
+      "pilot_hits": 270,
+      "stratum": 16,
+      "values": [
+        "trick_room",
+        "yes",
+        "no",
+        "no",
+        "yes"
+      ]
+    },
+    {
+      "cell": 23,
+      "held": {
+        "dev": 1,
+        "training": 0,
+        "validation": 0
+      },
+      "pilot_hits": 55,
+      "stratum": 16,
+      "values": [
+        "trick_room",
+        "yes",
+        "no",
+        "no",
+        "no"
+      ]
+    },
+    {
+      "cell": 24,
+      "held": {
+        "dev": 0,
+        "training": 0,
+        "validation": 0
+      },
+      "pilot_hits": 2,
+      "stratum": 24,
+      "values": [
+        "trick_room",
+        "no",
+        "yes",
+        "yes",
+        "yes"
+      ]
+    },
+    {
+      "cell": 25,
+      "held": {
+        "dev": 0,
+        "training": 0,
+        "validation": 0
+      },
+      "pilot_hits": 0,
+      "stratum": 24,
+      "values": [
+        "trick_room",
+        "no",
+        "yes",
+        "yes",
+        "no"
+      ]
+    },
+    {
+      "cell": 26,
+      "held": {
+        "dev": 1,
+        "training": 1,
+        "validation": 1
+      },
+      "pilot_hits": 54,
+      "stratum": 24,
+      "values": [
+        "trick_room",
+        "no",
+        "yes",
+        "no",
+        "yes"
+      ]
+    },
+    {
+      "cell": 27,
+      "held": {
+        "dev": 1,
+        "training": 1,
+        "validation": 1
+      },
+      "pilot_hits": 15,
+      "stratum": 24,
+      "values": [
+        "trick_room",
+        "no",
+        "yes",
+        "no",
+        "no"
+      ]
+    },
+    {
+      "cell": 28,
+      "held": {
+        "dev": 1,
+        "training": 1,
+        "validation": 1
+      },
+      "pilot_hits": 45,
+      "stratum": 28,
+      "values": [
+        "trick_room",
+        "no",
+        "no",
+        "yes",
+        "yes"
+      ]
+    },
+    {
+      "cell": 29,
+      "held": {
+        "dev": 1,
+        "training": 1,
+        "validation": 1
+      },
+      "pilot_hits": 18,
+      "stratum": 28,
+      "values": [
+        "trick_room",
+        "no",
+        "no",
+        "yes",
+        "no"
+      ]
+    },
+    {
+      "cell": 30,
+      "held": {
+        "dev": 3,
+        "training": 3,
+        "validation": 3
+      },
+      "pilot_hits": 1295,
+      "stratum": 30,
+      "values": [
+        "trick_room",
+        "no",
+        "no",
+        "no",
+        "yes"
+      ]
+    },
+    {
+      "cell": 31,
+      "held": {
+        "dev": 2,
+        "training": 2,
+        "validation": 2
+      },
+      "pilot_hits": 423,
+      "stratum": 31,
+      "values": [
+        "trick_room",
+        "no",
+        "no",
+        "no",
+        "no"
+      ]
+    },
+    {
+      "cell": 32,
+      "held": {
+        "dev": 0,
+        "training": 0,
+        "validation": 0
+      },
+      "pilot_hits": 0,
+      "stratum": 32,
+      "values": [
+        "tailwind",
+        "yes",
+        "yes",
+        "yes",
+        "yes"
+      ]
+    },
+    {
+      "cell": 33,
+      "held": {
+        "dev": 0,
+        "training": 0,
+        "validation": 0
+      },
+      "pilot_hits": 0,
+      "stratum": 32,
+      "values": [
+        "tailwind",
+        "yes",
+        "yes",
+        "yes",
+        "no"
+      ]
+    },
+    {
+      "cell": 34,
+      "held": {
+        "dev": 0,
+        "training": 0,
+        "validation": 0
+      },
+      "pilot_hits": 8,
+      "stratum": 32,
+      "values": [
+        "tailwind",
+        "yes",
+        "yes",
+        "no",
+        "yes"
+      ]
+    },
+    {
+      "cell": 35,
+      "held": {
+        "dev": 0,
+        "training": 0,
+        "validation": 0
+      },
+      "pilot_hits": 3,
+      "stratum": 32,
+      "values": [
+        "tailwind",
+        "yes",
+        "yes",
+        "no",
+        "no"
+      ]
+    },
+    {
+      "cell": 36,
+      "held": {
+        "dev": 0,
+        "training": 0,
+        "validation": 0
+      },
+      "pilot_hits": 13,
+      "stratum": 32,
+      "values": [
+        "tailwind",
+        "yes",
+        "no",
+        "yes",
+        "yes"
+      ]
+    },
+    {
+      "cell": 37,
+      "held": {
+        "dev": 0,
+        "training": 0,
+        "validation": 0
+      },
+      "pilot_hits": 1,
+      "stratum": 32,
+      "values": [
+        "tailwind",
+        "yes",
+        "no",
+        "yes",
+        "no"
+      ]
+    },
+    {
+      "cell": 38,
+      "held": {
+        "dev": 1,
+        "training": 2,
+        "validation": 2
+      },
+      "pilot_hits": 259,
+      "stratum": 32,
+      "values": [
+        "tailwind",
+        "yes",
+        "no",
+        "no",
+        "yes"
+      ]
+    },
+    {
+      "cell": 39,
+      "held": {
+        "dev": 1,
+        "training": 0,
+        "validation": 0
+      },
+      "pilot_hits": 57,
+      "stratum": 32,
+      "values": [
+        "tailwind",
+        "yes",
+        "no",
+        "no",
+        "no"
+      ]
+    },
+    {
+      "cell": 40,
+      "held": {
+        "dev": 0,
+        "training": 0,
+        "validation": 0
+      },
+      "pilot_hits": 6,
+      "stratum": 40,
+      "values": [
+        "tailwind",
+        "no",
+        "yes",
+        "yes",
+        "yes"
+      ]
+    },
+    {
+      "cell": 41,
+      "held": {
+        "dev": 0,
+        "training": 0,
+        "validation": 0
+      },
+      "pilot_hits": 1,
+      "stratum": 40,
+      "values": [
+        "tailwind",
+        "no",
+        "yes",
+        "yes",
+        "no"
+      ]
+    },
+    {
+      "cell": 42,
+      "held": {
+        "dev": 1,
+        "training": 0,
+        "validation": 1
+      },
+      "pilot_hits": 64,
+      "stratum": 40,
+      "values": [
+        "tailwind",
+        "no",
+        "yes",
+        "no",
+        "yes"
+      ]
+    },
+    {
+      "cell": 43,
+      "held": {
+        "dev": 1,
+        "training": 2,
+        "validation": 1
+      },
+      "pilot_hits": 24,
+      "stratum": 40,
+      "values": [
+        "tailwind",
+        "no",
+        "yes",
+        "no",
+        "no"
+      ]
+    },
+    {
+      "cell": 44,
+      "held": {
+        "dev": 0,
+        "training": 1,
+        "validation": 2
+      },
+      "pilot_hits": 52,
+      "stratum": 44,
+      "values": [
+        "tailwind",
+        "no",
+        "no",
+        "yes",
+        "yes"
+      ]
+    },
+    {
+      "cell": 45,
+      "held": {
+        "dev": 2,
+        "training": 1,
+        "validation": 0
+      },
+      "pilot_hits": 13,
+      "stratum": 44,
+      "values": [
+        "tailwind",
+        "no",
+        "no",
+        "yes",
+        "no"
+      ]
+    },
+    {
+      "cell": 46,
+      "held": {
+        "dev": 3,
+        "training": 3,
+        "validation": 3
+      },
+      "pilot_hits": 1286,
+      "stratum": 46,
+      "values": [
+        "tailwind",
+        "no",
+        "no",
+        "no",
+        "yes"
+      ]
+    },
+    {
+      "cell": 47,
+      "held": {
+        "dev": 2,
+        "training": 2,
+        "validation": 2
+      },
+      "pilot_hits": 441,
+      "stratum": 47,
+      "values": [
+        "tailwind",
+        "no",
+        "no",
+        "no",
+        "no"
+      ]
+    },
+    {
+      "cell": 48,
+      "held": {
+        "dev": 0,
+        "training": 0,
+        "validation": 0
+      },
+      "pilot_hits": 6,
+      "stratum": 48,
+      "values": [
+        "neither",
+        "yes",
+        "yes",
+        "yes",
+        "yes"
+      ]
+    },
+    {
+      "cell": 49,
+      "held": {
+        "dev": 0,
+        "training": 0,
+        "validation": 0
+      },
+      "pilot_hits": 3,
+      "stratum": 48,
+      "values": [
+        "neither",
+        "yes",
+        "yes",
+        "yes",
+        "no"
+      ]
+    },
+    {
+      "cell": 50,
+      "held": {
+        "dev": 2,
+        "training": 2,
+        "validation": 2
+      },
+      "pilot_hits": 122,
+      "stratum": 48,
+      "values": [
+        "neither",
+        "yes",
+        "yes",
+        "no",
+        "yes"
+      ]
+    },
+    {
+      "cell": 51,
+      "held": {
+        "dev": 0,
+        "training": 0,
+        "validation": 0
+      },
+      "pilot_hits": 27,
+      "stratum": 48,
+      "values": [
+        "neither",
+        "yes",
+        "yes",
+        "no",
+        "no"
+      ]
+    },
+    {
+      "cell": 52,
+      "held": {
+        "dev": 2,
+        "training": 2,
+        "validation": 2
+      },
+      "pilot_hits": 213,
+      "stratum": 52,
+      "values": [
+        "neither",
+        "yes",
+        "no",
+        "yes",
+        "yes"
+      ]
+    },
+    {
+      "cell": 53,
+      "held": {
+        "dev": 2,
+        "training": 2,
+        "validation": 2
+      },
+      "pilot_hits": 31,
+      "stratum": 53,
+      "values": [
+        "neither",
+        "yes",
+        "no",
+        "yes",
+        "no"
+      ]
+    },
+    {
+      "cell": 54,
+      "held": {
+        "dev": 11,
+        "training": 11,
+        "validation": 11
+      },
+      "pilot_hits": 4197,
+      "stratum": 54,
+      "values": [
+        "neither",
+        "yes",
+        "no",
+        "no",
+        "yes"
+      ]
+    },
+    {
+      "cell": 55,
+      "held": {
+        "dev": 2,
+        "training": 2,
+        "validation": 2
+      },
+      "pilot_hits": 860,
+      "stratum": 55,
+      "values": [
+        "neither",
+        "yes",
+        "no",
+        "no",
+        "no"
+      ]
+    },
+    {
+      "cell": 56,
+      "held": {
+        "dev": 1,
+        "training": 2,
+        "validation": 1
+      },
+      "pilot_hits": 26,
+      "stratum": 56,
+      "values": [
+        "neither",
+        "no",
+        "yes",
+        "yes",
+        "yes"
+      ]
+    },
+    {
+      "cell": 57,
+      "held": {
+        "dev": 1,
+        "training": 0,
+        "validation": 1
+      },
+      "pilot_hits": 9,
+      "stratum": 56,
+      "values": [
+        "neither",
+        "no",
+        "yes",
+        "yes",
+        "no"
+      ]
+    },
+    {
+      "cell": 58,
+      "held": {
+        "dev": 2,
+        "training": 2,
+        "validation": 2
+      },
+      "pilot_hits": 691,
+      "stratum": 58,
+      "values": [
+        "neither",
+        "no",
+        "yes",
+        "no",
+        "yes"
+      ]
+    },
+    {
+      "cell": 59,
+      "held": {
+        "dev": 2,
+        "training": 2,
+        "validation": 2
+      },
+      "pilot_hits": 289,
+      "stratum": 59,
+      "values": [
+        "neither",
+        "no",
+        "yes",
+        "no",
+        "no"
+      ]
+    },
+    {
+      "cell": 60,
+      "held": {
+        "dev": 2,
+        "training": 2,
+        "validation": 2
+      },
+      "pilot_hits": 847,
+      "stratum": 60,
+      "values": [
+        "neither",
+        "no",
+        "no",
+        "yes",
+        "yes"
+      ]
+    },
+    {
+      "cell": 61,
+      "held": {
+        "dev": 2,
+        "training": 2,
+        "validation": 2
+      },
+      "pilot_hits": 270,
+      "stratum": 61,
+      "values": [
+        "neither",
+        "no",
+        "no",
+        "yes",
+        "no"
+      ]
+    },
+    {
+      "cell": 62,
+      "held": {
+        "dev": 51,
+        "training": 51,
+        "validation": 51
+      },
+      "pilot_hits": 19048,
+      "stratum": 62,
+      "values": [
+        "neither",
+        "no",
+        "no",
+        "no",
+        "yes"
+      ]
+    },
+    {
+      "cell": 63,
+      "held": {
+        "dev": 16,
+        "training": 16,
+        "validation": 16
+      },
+      "pilot_hits": 5995,
+      "stratum": 63,
+      "values": [
+        "neither",
+        "no",
+        "no",
+        "no",
+        "no"
+      ]
+    }
+  ],
+  "config_hash": "de2f06b2547de57401fb4072b172386f906f2988f73cf2d12a929b27b8c80def",
+  "dataset_id": "fixtures-v1",
+  "dedupe": {
+    "exact_checks": 0,
+    "prefix_bytes": 0,
+    "prefix_misses": 360,
+    "reference_hashes": 0
+  },
+  "label_set_hash": "78008091053b6398add3a3e15d67711082dd7627ea81d98b07adae9c3f5f26db",
+  "labels": [
+    {
+      "label_id": "speed_control",
+      "values": [
+        "both",
+        "trick_room",
+        "tailwind",
+        "neither"
+      ]
+    },
+    {
+      "label_id": "weather_terrain_setter",
+      "values": [
+        "yes",
+        "no"
+      ]
+    },
+    {
+      "label_id": "redirection",
+      "values": [
+        "yes",
+        "no"
+      ]
+    },
+    {
+      "label_id": "fake_out",
+      "values": [
+        "yes",
+        "no"
+      ]
+    },
+    {
+      "label_id": "mega_stone",
+      "values": [
+        "yes",
+        "no"
+      ]
+    }
+  ],
+  "pilot": {
+    "draws": 40000,
+    "rejected": 2808
+  },
+  "plan_id": "fixtures-v1",
+  "provisioning": {
+    "exceeds_d_max": false,
+    "planned_draws": 16911,
+    "provisioned_draws": 18603,
+    "range_draws": 1048576,
+    "ranges": 1
+  },
+  "replan": 0,
+  "splits": [
+    {
+      "requested": 100,
+      "split": "dev",
+      "teams": 120
+    },
+    {
+      "requested": 100,
+      "split": "validation",
+      "teams": 120
+    },
+    {
+      "requested": 100,
+      "split": "training",
+      "teams": 120
+    }
+  ],
+  "strata": [
+    {
+      "cells": 16,
+      "level": 4,
+      "pilot_hits": 127,
+      "quotas": {
+        "dev": 2,
+        "training": 2,
+        "validation": 2
+      },
+      "stratum": 0
+    },
+    {
+      "cells": 8,
+      "level": 3,
+      "pilot_hits": 351,
+      "quotas": {
+        "dev": 2,
+        "training": 2,
+        "validation": 2
+      },
+      "stratum": 16
+    },
+    {
+      "cells": 4,
+      "level": 2,
+      "pilot_hits": 71,
+      "quotas": {
+        "dev": 2,
+        "training": 2,
+        "validation": 2
+      },
+      "stratum": 24
+    },
+    {
+      "cells": 2,
+      "level": 1,
+      "pilot_hits": 63,
+      "quotas": {
+        "dev": 2,
+        "training": 2,
+        "validation": 2
+      },
+      "stratum": 28
+    },
+    {
+      "cells": 1,
+      "level": 0,
+      "pilot_hits": 1295,
+      "quotas": {
+        "dev": 3,
+        "training": 3,
+        "validation": 3
+      },
+      "stratum": 30
+    },
+    {
+      "cells": 1,
+      "level": 0,
+      "pilot_hits": 423,
+      "quotas": {
+        "dev": 2,
+        "training": 2,
+        "validation": 2
+      },
+      "stratum": 31
+    },
+    {
+      "cells": 8,
+      "level": 3,
+      "pilot_hits": 341,
+      "quotas": {
+        "dev": 2,
+        "training": 2,
+        "validation": 2
+      },
+      "stratum": 32
+    },
+    {
+      "cells": 4,
+      "level": 2,
+      "pilot_hits": 95,
+      "quotas": {
+        "dev": 2,
+        "training": 2,
+        "validation": 2
+      },
+      "stratum": 40
+    },
+    {
+      "cells": 2,
+      "level": 1,
+      "pilot_hits": 65,
+      "quotas": {
+        "dev": 2,
+        "training": 2,
+        "validation": 2
+      },
+      "stratum": 44
+    },
+    {
+      "cells": 1,
+      "level": 0,
+      "pilot_hits": 1286,
+      "quotas": {
+        "dev": 3,
+        "training": 3,
+        "validation": 3
+      },
+      "stratum": 46
+    },
+    {
+      "cells": 1,
+      "level": 0,
+      "pilot_hits": 441,
+      "quotas": {
+        "dev": 2,
+        "training": 2,
+        "validation": 2
+      },
+      "stratum": 47
+    },
+    {
+      "cells": 4,
+      "level": 2,
+      "pilot_hits": 158,
+      "quotas": {
+        "dev": 2,
+        "training": 2,
+        "validation": 2
+      },
+      "stratum": 48
+    },
+    {
+      "cells": 1,
+      "level": 0,
+      "pilot_hits": 213,
+      "quotas": {
+        "dev": 2,
+        "training": 2,
+        "validation": 2
+      },
+      "stratum": 52
+    },
+    {
+      "cells": 1,
+      "level": 0,
+      "pilot_hits": 31,
+      "quotas": {
+        "dev": 2,
+        "training": 2,
+        "validation": 2
+      },
+      "stratum": 53
+    },
+    {
+      "cells": 1,
+      "level": 0,
+      "pilot_hits": 4197,
+      "quotas": {
+        "dev": 11,
+        "training": 11,
+        "validation": 11
+      },
+      "stratum": 54
+    },
+    {
+      "cells": 1,
+      "level": 0,
+      "pilot_hits": 860,
+      "quotas": {
+        "dev": 2,
+        "training": 2,
+        "validation": 2
+      },
+      "stratum": 55
+    },
+    {
+      "cells": 2,
+      "level": 1,
+      "pilot_hits": 35,
+      "quotas": {
+        "dev": 2,
+        "training": 2,
+        "validation": 2
+      },
+      "stratum": 56
+    },
+    {
+      "cells": 1,
+      "level": 0,
+      "pilot_hits": 691,
+      "quotas": {
+        "dev": 2,
+        "training": 2,
+        "validation": 2
+      },
+      "stratum": 58
+    },
+    {
+      "cells": 1,
+      "level": 0,
+      "pilot_hits": 289,
+      "quotas": {
+        "dev": 2,
+        "training": 2,
+        "validation": 2
+      },
+      "stratum": 59
+    },
+    {
+      "cells": 1,
+      "level": 0,
+      "pilot_hits": 847,
+      "quotas": {
+        "dev": 2,
+        "training": 2,
+        "validation": 2
+      },
+      "stratum": 60
+    },
+    {
+      "cells": 1,
+      "level": 0,
+      "pilot_hits": 270,
+      "quotas": {
+        "dev": 2,
+        "training": 2,
+        "validation": 2
+      },
+      "stratum": 61
+    },
+    {
+      "cells": 1,
+      "level": 0,
+      "pilot_hits": 19048,
+      "quotas": {
+        "dev": 51,
+        "training": 51,
+        "validation": 51
+      },
+      "stratum": 62
+    },
+    {
+      "cells": 1,
+      "level": 0,
+      "pilot_hits": 5995,
+      "quotas": {
+        "dev": 16,
+        "training": 16,
+        "validation": 16
+      },
+      "stratum": 63
+    }
+  ],
+  "stream": {
+    "accepted": 4465,
+    "draws": 4830,
+    "duplicates": 0,
+    "overflows": 4105,
+    "rejections": 365
+  },
+  "vocabulary_hash": "5fdd31126208dbb46948ddaca14dfc9c28b70c14b147318fc6ba74e50843cab2"
+}
