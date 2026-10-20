@@ -106,6 +106,12 @@ export interface SimBattle {
   toJSON(): object;
 }
 
+/** One mod's data tables, narrowed to name lookups. */
+export interface SimModdedDex {
+  items: { get(name: string): { exists: boolean; name: string; megaStone?: Record<string, string> } };
+  species: { get(name: string): { exists: boolean; name: string } };
+}
+
 /** The slice of Showdown's `sim` module Areneon depends on. */
 export interface ShowdownSim {
   Battle: {
@@ -121,6 +127,8 @@ export interface ShowdownSim {
       get(id: string): SimFormat;
       getRuleTable(format: SimFormat): SimRuleTable;
     };
+    /** The data of one mod (a format's `mod`), narrowed to what the team inventory reads. */
+    mod(mod: string): SimModdedDex;
   };
   TeamValidator: { get(formatId: string): { validateTeam(team: PokemonSet[]): string[] | null } };
   Teams: {
