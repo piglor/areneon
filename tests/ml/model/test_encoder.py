@@ -138,12 +138,17 @@ def test_the_a1_replay_and_the_a2_frames_encode_identically() -> None:
     assert differing == len(decisions)  # the two forms really differ (rqid in the requests)
 
 
-def test_a_change_in_what_the_a1_replay_holds_breaks_the_equality() -> None:
-    # Negative control: the equality test above can fail.
+def test_the_a1_a2_equality_can_fail_on_the_candidates_and_on_the_log() -> None:
+    # Negative controls: the equality test above would notice a difference in either input.
     decision = PAIRS["decisions"][-1]
     one, two = pair_query(PAIRS, decision, "a1"), pair_query(PAIRS, decision, "a2")
-    two["candidates"][0]["pending"] = not two["candidates"][0]["pending"]
-    assert not same(encoder().encode(one), encoder().encode(two))
+    assert same(encoder().encode(one), encoder().encode(two))
+    flagged = copy.deepcopy(two)
+    flagged["candidates"][0]["pending"] = not flagged["candidates"][0]["pending"]
+    assert not same(encoder().encode(one), encoder().encode(flagged))
+    damaged = copy.deepcopy(two)
+    damaged["observation"]["log"].insert(-1, "|-weather|SunnyDay")
+    assert not same(encoder().encode(one), encoder().encode(damaged))
 
 
 def test_the_a1_and_a2_policy_query_samples_encode_identically() -> None:
@@ -438,6 +443,7 @@ def test_the_observation_kind_must_match_the_request_and_the_candidates() -> Non
 # ENCODER_FORMAT (and review the diff) if that was meant, then re-pin both.
 GOLDEN_VERSION = "enc1:cec125199e5fc0b05a2a1d694ee38064851d1a4494ac4b571b3fccd6bc3f41dd"
 GOLDEN_TENSORS = "c49ec74a61a40adfa951452b853ab14b67c3f95f39390d81707832285c2ced48"
+GOLDEN_BOOSTED = "d8dd7c69184ae9589e462f1a284b0734d50f0ff2e9a65054af45b1047b066148"
 
 
 def tensor_digest(encoded: EncodedQuery) -> str:
@@ -449,6 +455,16 @@ def tensor_digest(encoded: EncodedQuery) -> str:
     return digest.hexdigest()
 
 
+def boosted_query() -> dict[str, Any]:
+    """The battle sample after boosts on both sides (the sample itself has none) and sun."""
+    query = copy.deepcopy(sample("policy-query/valid/battle.json"))
+    log = query["observation"]["log"]
+    own = next(line for line in log if line.startswith("|switch|p1a:")).split("|")[2]
+    foe = next(line for line in log if line.startswith("|switch|p2a:")).split("|")[2]
+    log[-1:-1] = [f"|-boost|{foe}|atk|2", f"|-unboost|{own}|spe|3", "|-weather|SunnyDay"]
+    return query
+
+
 def test_the_encoder_version_and_the_tensors_of_a_fixed_query_are_pinned() -> None:
     assert encoder().version == GOLDEN_VERSION
     assert (
@@ -457,6 +473,11 @@ def test_the_encoder_version_and_the_tensors_of_a_fixed_query_are_pinned() -> No
     assert (
         tensor_digest(encoder().encode(sample("policy-query/valid/preview.json"))) != GOLDEN_TENSORS
     )
+    # Boosts are scaled by 6 in the features: the unboosted sample alone would not notice that.
+    boosted = encoder().encode(boosted_query())
+    column = Layout.of(TINY_ENCODER).mon_num.index("boost_atk")
+    assert float(boosted.mon_num[:, column].abs().max()) == pytest.approx(2 / 6)
+    assert tensor_digest(boosted) == GOLDEN_BOOSTED
 
 
 def test_the_version_covers_the_attribute_tables_and_the_index_constants() -> None:

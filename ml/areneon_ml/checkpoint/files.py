@@ -187,10 +187,12 @@ def load_checkpoint(
     if set(listed) != set(expected):
         raise CheckpointFileError("the checkpoint's tensors are not the network's parameters")
     for name, entry in listed.items():
-        if (
-            not isinstance(entry, dict)
-            or entry.get("dtype") != _DTYPE
-            or tuple(entry.get("shape", ())) != expected[name]
+        shape = entry.get("shape") if isinstance(entry, dict) else None
+        if not (
+            isinstance(entry, dict)
+            and entry.get("dtype") == _DTYPE
+            and isinstance(shape, list)
+            and tuple(shape) == expected[name]
         ):
             raise CheckpointFileError(f"tensor {name}: dtype or shape differs from the network's")
     try:

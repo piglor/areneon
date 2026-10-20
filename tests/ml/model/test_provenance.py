@@ -263,11 +263,11 @@ def test_records_must_agree_with_each_other() -> None:
     other_encoder = replace(base[0], encoder_version="enc2:" + "e" * 64)
     refused("differ in encoder_version", [other_encoder, base[1]], sources)
     preview_parent = replace(base[0], role="preview")
-    refused(r"\(battle\) refers to .* \(preview\)", [preview_parent, base[1]], sources)
-    other_role_opponent = [replace(record("O"), role="preview"), record("K", league=("O",))]
-    refused("refers to", other_role_opponent)
-    other_role_target = [replace(record("O"), role="preview"), record("K", target="O")]
-    refused("refers to", other_role_target)
+    refused(r"\(battle\) has parent .* \(preview\)", [preview_parent, base[1]], sources)
+    # Either half of a frozen pair may be an opponent or an exploiter target.
+    other_half = replace(record("O"), role="preview")
+    ProvenanceGraph([other_half, record("K", league=("O",))], {})
+    ProvenanceGraph([other_half, record("K", target="O")], {})
     private = replace(base[0], data_class="private")
     refused("descends from private", [private, base[1]], sources)
     refused("descends from private", [private, record("K", league=("P",))], sources)

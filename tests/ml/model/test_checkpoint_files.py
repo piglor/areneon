@@ -195,6 +195,14 @@ def _reshape(header: dict[str, Any]) -> None:
     header["pending.bias"]["shape"] = [1, header["pending.bias"]["shape"][0]]
 
 
+def _scalar_shape(header: dict[str, Any]) -> None:
+    header["pending.bias"]["shape"] = 5
+
+
+def _not_an_entry(header: dict[str, Any]) -> None:
+    header["pending.bias"] = 5
+
+
 @pytest.mark.parametrize(
     ("change", "message"),
     [
@@ -202,6 +210,8 @@ def _reshape(header: dict[str, Any]) -> None:
         (_add_tensor, "not the network's parameters"),
         (_half_precision, "dtype or shape differs"),
         (_reshape, "dtype or shape differs"),
+        (_scalar_shape, "dtype or shape differs"),
+        (_not_an_entry, "dtype or shape differs"),
         (
             lambda h: h["__metadata__"].update({"areneon.format": "2"}),
             "unsupported checkpoint format",

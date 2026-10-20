@@ -35,9 +35,9 @@ Battle pair, or one checkpoint):
   (they share a learned checkpoint or a data source).
 
 The records must also agree with each other: a parent shares its child's
-encoder version, parent, league opponents and exploiter target have the
-child's role (a record lists the same-role checkpoint of an opponent pair), and
-nothing synthetic descends from a private checkpoint.
+encoder version and role (a warm start cannot cross architectures), and
+nothing synthetic descends from a private checkpoint. League opponents and the
+exploiter target may be either half of a frozen Preview + Battle pair.
 """
 
 from __future__ import annotations
@@ -138,9 +138,9 @@ class ProvenanceGraph:
     def _check_consistency(self) -> None:
         """What the records say about each other must agree where the data permits.
 
-        A checkpoint is initialised from, and trained against, checkpoints of its own
-        role (a record lists the same-role checkpoint of an opponent pair); a warm start
-        keeps the encoder; and nothing synthetic descends from something private.
+        A warm start keeps the encoder and the role (it cannot cross architectures);
+        league opponents and the exploiter target may be either half of a frozen
+        pair; and nothing synthetic descends from something private.
         """
         for record in self._records.values():
             who = record.checkpoint_id
@@ -150,15 +150,14 @@ class ProvenanceGraph:
                     raise ProvenanceError(
                         f"{who} and its parent {parent.checkpoint_id} differ in encoder_version"
                     )
-            same_role = [record.parent, record.exploiter_target, *record.league_opponents]
-            for other in (self._records[o] for o in same_role if o is not None):
-                if other.role != record.role:
+                if parent.role != record.role:
                     raise ProvenanceError(
-                        f"{who} ({record.role}) refers to {other.checkpoint_id} ({other.role})"
+                        f"{who} ({record.role}) has parent {parent.checkpoint_id} ({parent.role})"
                     )
+            related = [record.parent, record.exploiter_target, *record.league_opponents]
             generators = [g for t in record.training_set_hashes for g in self._sources[t]]
             for other in (
-                self._records[o] for o in [*(x for x in same_role if x is not None), *generators]
+                self._records[o] for o in [*(x for x in related if x is not None), *generators]
             ):
                 if other.data_class == "private" and record.data_class != "private":
                     raise ProvenanceError(
