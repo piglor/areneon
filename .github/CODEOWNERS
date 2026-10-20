@@ -18,3 +18,7 @@
 /scripts/check_no_pokepaste.py  @arceushui
 /scripts/licences-selftest.sh   @arceushui
 /tests/scripts/                 @arceushui
+/package.json                   @arceushui
+/pnpm-lock.yaml                 @arceushui
+/pnpm-workspace.yaml            @arceushui
+/packages/private-team-store/   @arceushui
