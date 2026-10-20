@@ -1,0 +1,154 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:areneon:schema:contracts:v1:policy-handshake",
+  "title": "PolicyHandshake",
+  "description": "The two messages that open a policy worker session (ADR-010 §2, ADR-008 §3). The client sends hello with the contracts it speaks; the worker answers ready with its own set plus its encoder version, the hash of the engine-data table it was built with and the ids of the checkpoints it loaded. Any difference refuses the session before a battle starts.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "message"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "message": {
+      "type": "object",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/Hello"
+        },
+        {
+          "$ref": "#/$defs/Ready"
+        }
+      ],
+      "discriminator": {
+        "propertyName": "kind"
+      }
+    }
+  },
+  "$defs": {
+    "ContractVersion": {
+      "description": "One contract the two sides must agree on: its name, schema_version and the SHA-256 of its schema file's JCS bytes.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "schema_version",
+        "schema_sha256"
+      ],
+      "properties": {
+        "name": {
+          "enum": [
+            "BattleObservation",
+            "PolicyQuery",
+            "PolicyReply",
+            "PreviewObservation",
+            "Recommendation"
+          ]
+        },
+        "schema_version": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "schema_sha256": {
+          "description": "SHA-256 of the contract schema's JCS bytes: lowercase hex.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "Checkpoint": {
+      "description": "A loaded checkpoint: its role and id (the SHA-256 of its safetensors file bytes).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "role",
+        "checkpoint_id"
+      ],
+      "properties": {
+        "role": {
+          "enum": [
+            "battle",
+            "preview"
+          ]
+        },
+        "checkpoint_id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "Hello": {
+      "description": "Client to worker: the contracts the client speaks.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "contracts"
+      ],
+      "properties": {
+        "kind": {
+          "const": "hello"
+        },
+        "contracts": {
+          "description": "Sorted by name, no name twice (a reader rule).",
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 5,
+          "items": {
+            "$ref": "#/$defs/ContractVersion"
+          }
+        }
+      }
+    },
+    "Ready": {
+      "description": "Worker to client: its contracts and what it loaded.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "contracts",
+        "encoder_version",
+        "engine_data_hash",
+        "checkpoints"
+      ],
+      "properties": {
+        "kind": {
+          "const": "ready"
+        },
+        "contracts": {
+          "description": "Sorted by name, no name twice (a reader rule).",
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 5,
+          "items": {
+            "$ref": "#/$defs/ContractVersion"
+          }
+        },
+        "encoder_version": {
+          "description": "The encoder the worker reads observations with.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "engine_data_hash": {
+          "description": "SHA-256 of the engine-data table (EngineData JCS bytes) the encoder's vocabularies come from.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "checkpoints": {
+          "description": "Sorted by role, each role once (a reader rule).",
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 2,
+          "items": {
+            "$ref": "#/$defs/Checkpoint"
+          }
+        }
+      }
+    }
+  }
+}

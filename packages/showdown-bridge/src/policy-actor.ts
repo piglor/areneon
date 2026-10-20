@@ -1,0 +1,109 @@
+// The A1 policy actor (ADR-010 §2): the online observation adapter and the
+// hash-based sampler. For each request it builds the player's observation
+// from their own stream so far, with the candidates `enumerateCandidates`
+// returns for it, and asks the policy worker. The policy sees only that and
+// `u`, never the battle seed, an opponent's hidden information or a
+// CloneJudge verdict.
+
+import { createHash } from "node:crypto";
+import type { PolicyQuery } from "@areneon/schema/types/v1/policy-query.ts";
+import { NoCandidateError } from "./actor-rule.ts";
+import { type Json, jcs } from "./canonical-json.ts";
+import { enumerateCandidates } from "./choices.ts";
+import { UnsupportedCandidateError } from "./evaluation-harness.ts";
+import type { VersionManifest } from "./formats.ts";
+import { observe, playerChannel } from "./player-channel.ts";
+import { type PolicyClient, PolicyReplyError } from "./policy-worker.ts";
+import { PolicyProtocolError } from "./policy-protocol.ts";
+import { type Actor, ForfeitSignal, type Player } from "./runner.ts";
+import type { DataClass } from "./team-class.ts";
+import type { PrivateTeamSpec } from "@areneon/schema/types/v1/private-team-spec.ts";
+
+/** What the sampler hashes (ADR-010 §2). */
+export interface SamplerInput {
+  /** The battle seed, as `BattleOptions.seed` holds it. */
+  seed: string;
+  /** The game's index within its protocol block or league match. */
+  game: number;
+  player: Player;
+  policy_id: string;
+  request_seq: number;
+}
+
+/**
+ * The uniform draw of one decision, as an integer in `[0, 2^53 - 1]`: the
+ * first 53 bits of SHA-256 over the JCS of the input. The worker turns it
+ * into `u / 2^53`. The game index gives games that share a battle seed (games
+ * 1 and 3 of a block) independent streams; the policy id and seat keep two
+ * policies, or two seats, from sharing one.
+ */
+export function sampleU(input: SamplerInput): number {
+  const digest = createHash("sha256").update(jcs({ ...input } as unknown as Json)).digest();
+  return Number(digest.readBigUInt64BE(0) >> 11n);
+}
+
+export interface PolicyActorOptions {
+  client: PolicyClient;
+  /** Names this game to the client, which allows one outstanding query per battle. */
+  battle: string;
+  player: Player;
+  /** This player's own team, as the observation records it. */
+  team: PrivateTeamSpec;
+  manifest: VersionManifest;
+  /** The class of the player's channel: the battle's, from both teams (`battleClass`). */
+  channel_class: DataClass;
+  seed: string;
+  game: number;
+  policy_id: string;
+  sampling: "argmax" | "sample";
+}
+
+/**
+ * An A1 `Actor` that asks the policy worker. Run it under `guardActor` with
+ * role `policy`: a dead worker or an invalid reply forfeits the game; a
+ * candidate the worker cannot parse, a candidate list above `N_max` or a
+ * request the adapter cannot observe is a harness incident.
+ */
+export function policyActor(options: PolicyActorOptions): Actor {
+  const { client, battle, player, team, manifest, channel_class, seed, game, policy_id, sampling } = options;
+  return async (request, context) => {
+    if (context === undefined || context.player !== player) {
+      throw new PolicyProtocolError(`the policy actor of ${player} needs its own player's channel`);
+    }
+    let candidates;
+    try {
+      candidates = enumerateCandidates(request).candidates;
+    } catch (error) {
+      throw new UnsupportedCandidateError((error as Error).message);
+    }
+    if (candidates.length === 0) throw new NoCandidateError("the request has no candidate");
+    let observation;
+    try {
+      const channel = playerChannel({ schema_version: 1, data_class: channel_class, player, lines: context.channel });
+      observation = await observe({ channel, team, manifest });
+    } catch (error) {
+      throw new PolicyProtocolError(`cannot observe the request: ${(error as Error).message}`);
+    }
+    const { identity } = observation;
+    if (identity.request_seq !== request.request_seq || identity.request_hash !== request.request_hash) {
+      throw new PolicyProtocolError("the observation is of another request than the one asked");
+    }
+    const query = {
+      schema_version: 1,
+      identity,
+      observation,
+      candidates: candidates.map(({ choice, pending }) => ({ choice, pending })),
+      sampling:
+        sampling === "argmax"
+          ? { kind: "argmax" }
+          : { kind: "sample", u: sampleU({ seed, game, player, policy_id, request_seq: identity.request_seq }) },
+      policy_id,
+    } as Omit<PolicyQuery, "query_id">;
+    try {
+      return (await client.ask(battle, query)).choice;
+    } catch (error) {
+      if (error instanceof PolicyReplyError) throw new ForfeitSignal("invalid_reply", error.message);
+      throw error;
+    }
+  };
+}

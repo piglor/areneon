@@ -1,0 +1,159 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:areneon:schema:contracts:v1:policy-reply",
+  "title": "PolicyReply",
+  "description": "The policy worker's answer to one PolicyQuery (ADR-010 §2): a Recommendation, or a refusal. unsupported_candidate (the worker's parser does not know a candidate's shape) is a harness incident, never a policy forfeit; invalid_query (the query broke a contract or reader rule) is a harness fault too. The client re-checks a Recommendation before use: its identity is the query's and its choice one of the query's candidates.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "query_id",
+    "reply"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "query_id": {
+      "description": "The query_id of the PolicyQuery this answers.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "reply": {
+      "type": "object",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/RecommendationReply"
+        },
+        {
+          "$ref": "#/$defs/ErrorReply"
+        }
+      ],
+      "discriminator": {
+        "propertyName": "kind"
+      }
+    }
+  },
+  "$defs": {
+    "Recommendation": {
+      "description": "A policy's answer to one request (#678 §4.3). A consumer drops it unless its identity matches the current request (ADR-008 §4).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "identity",
+        "choice",
+        "source_policy_id",
+        "elapsed_ms",
+        "deadline_outcome"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": 1
+        },
+        "identity": {
+          "$ref": "#/$defs/RequestIdentity"
+        },
+        "choice": {
+          "description": "One choice from the request's LegalChoiceSet, in canonical engine syntax.",
+          "type": "string",
+          "minLength": 1
+        },
+        "source_policy_id": {
+          "description": "The policy that produced the choice; the fallback's ID when it fell back.",
+          "type": "string",
+          "minLength": 1
+        },
+        "elapsed_ms": {
+          "description": "From receipt of the request to the choice being ready.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "deadline_outcome": {
+          "description": "How the submitted choice came about (#678 §3).",
+          "enum": [
+            "in_budget",
+            "fallback_timeout",
+            "fallback_error",
+            "fallback_invalid",
+            "skipped_low_budget",
+            "last_resort_default"
+          ]
+        }
+      }
+    },
+    "RequestIdentity": {
+      "description": "Which request a decision answers (ADR-008 §4). A consumer drops a recommendation unless request_seq and request_hash both match, and rqid too when both carry one.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "request_seq",
+        "request_hash"
+      ],
+      "properties": {
+        "request_seq": {
+          "description": "Areneon's 1-based count of the requests one player has received in this battle, including wait requests.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "request_hash": {
+          "description": "SHA-256 of the canonical request JSON without rqid (ADR-008 §4): lowercase hex.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "rqid": {
+          "description": "The Showdown server's request id; present only on the server path (A2), never hashed.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    "RecommendationReply": {
+      "description": "The worker chose.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "recommendation"
+      ],
+      "properties": {
+        "kind": {
+          "const": "recommendation"
+        },
+        "recommendation": {
+          "$ref": "#/$defs/Recommendation"
+        }
+      }
+    },
+    "ErrorReply": {
+      "description": "The worker refused the query.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "error",
+        "detail"
+      ],
+      "properties": {
+        "kind": {
+          "const": "error"
+        },
+        "error": {
+          "enum": [
+            "unsupported_candidate",
+            "invalid_query"
+          ]
+        },
+        "detail": {
+          "description": "A short reason, never the query's content.",
+          "type": "string",
+          "maxLength": 1024
+        }
+      }
+    }
+  }
+}

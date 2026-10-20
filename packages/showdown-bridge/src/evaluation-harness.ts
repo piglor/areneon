@@ -1,5 +1,6 @@
 import { NoCandidateError } from "./actor-rule.ts";
 import { EnumeratorDefectError } from "./choice-judge.ts";
+import { PolicyProtocolError } from "./policy-protocol.ts";
 import {
   type Actor,
   BattleAbortedError,
@@ -63,6 +64,7 @@ const isHarnessFault = (error: unknown): boolean =>
   error instanceof UnsupportedCandidateError ||
   error instanceof NoCandidateError ||
   error instanceof EnumeratorDefectError ||
+  error instanceof PolicyProtocolError ||
   error instanceof BattleAbortedError ||
   error instanceof ForfeitSignal;
 
@@ -98,7 +100,7 @@ export function guardActor(actor: Actor, options: GuardOptions): Actor {
   for (const ms of [latency_budget.preview_ms, latency_budget.battle_ms]) {
     if (!Number.isFinite(ms) || ms <= 0) throw new RangeError("latency budget must be a positive number of ms");
   }
-  return async (request) => {
+  return async (request, context) => {
     const started = performance.now();
     const budget = request.phase === "preview" ? latency_budget.preview_ms : latency_budget.battle_ms;
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -107,7 +109,7 @@ export function guardActor(actor: Actor, options: GuardOptions): Actor {
     });
     let reply: unknown;
     try {
-      const answer = await Promise.race([Promise.resolve().then(() => actor(request)), overrun]);
+      const answer = await Promise.race([Promise.resolve().then(() => actor(request, context)), overrun]);
       if (answer === "overrun") {
         if (role === "scripted") throw new BaselineFailureError(`scripted actor exceeded ${budget} ms`);
         throw new ForfeitSignal("latency_overrun", `no reply within ${budget} ms`);
@@ -143,6 +145,7 @@ export type IncidentClass =
   | "enumerator_defect"
   | "invalid_team"
   | "no_candidate"
+  | "policy_protocol"
   | "baseline_failure"
   | "engine_error"
   | "unclassified";
@@ -173,6 +176,7 @@ function incidentClass(error: unknown): IncidentClass {
   if (error instanceof EnumeratorDefectError) return "enumerator_defect";
   if (error instanceof InvalidTeamError) return "invalid_team";
   if (error instanceof NoCandidateError) return "no_candidate";
+  if (error instanceof PolicyProtocolError) return "policy_protocol";
   if (error instanceof BaselineFailureError) return "baseline_failure";
   if (error instanceof BattleAbortedError) return "engine_error";
   return "unclassified";

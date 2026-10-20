@@ -10,11 +10,12 @@ import { fileURLToPath } from "node:url";
 import type { PrivateTeamSpec } from "@areneon/schema/types/v1/private-team-spec.ts";
 import { jcs, type Json } from "./canonical-json.ts";
 import { legalChoiceSet } from "./choice-judge.ts";
-import { exportEngineData } from "./engine-data.ts";
+import { engineDataHash, exportEngineData } from "./engine-data.ts";
 import type { Engine } from "./engine.ts";
 import { episodeFromRecord } from "./episode-io.ts";
 import { GOLDEN_FORMAT, goldenBattle, syntheticFixtureHashes, syntheticTeam } from "./golden.ts";
 import { observe, recordedChannel } from "./player-channel.ts";
+import { contractVersions } from "./policy-protocol.ts";
 import { battleClass, stampTeam } from "./team-class.ts";
 import { evaluationRunManifest, loadTrainingSet } from "./training-loader.ts";
 import type { RequestRecord } from "./runner.ts";
@@ -125,6 +126,64 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
   };
   const [speciesA, speciesB] = engineData.species as [(typeof species)[number], (typeof species)[number]];
 
+  // The policy worker's contracts (ADR-010 section 2). A query is the
+  // training example's observation and candidates plus a sampling rule; its
+  // A2 form adds an rqid and a decision context, which the encoder ignores.
+  const policyId = `policy:${"c".repeat(64)}`;
+  const queryOf = (kind: "preview" | "battle", sampling: unknown) => {
+    const example = exampleOf(kind);
+    return {
+      schema_version: 1,
+      query_id: 1,
+      identity: example.observation.identity,
+      observation: example.observation,
+      candidates: (example.candidates as NonNullable<typeof example.candidates>).map(({ choice, pending }) => ({ choice, pending })),
+      sampling,
+      policy_id: policyId,
+    };
+  };
+  const sampleBy = { kind: "sample", u: 4503599627370496 };
+  const battleQuery = queryOf("battle", sampleBy);
+  const previewQuery = queryOf("preview", { kind: "argmax" });
+  const withRqid = (line: string): string =>
+    line.startsWith("|request|") ? `|request|${JSON.stringify({ ...JSON.parse(line.slice("|request|".length)), rqid: 7 })}` : line;
+  const battleQueryA2 = mutated(battleQuery, (q) => {
+    q.query_id = 2;
+    const observation = q.observation as { identity: Record<string, unknown>; log: string[]; decision_context?: unknown };
+    observation.identity = { ...observation.identity, rqid: 7 };
+    observation.log = observation.log.map(withRqid);
+    observation.decision_context = context;
+    q.identity = observation.identity;
+    q.sampling = { kind: "argmax" };
+  });
+  const recommendation = {
+    schema_version: 1,
+    identity: battleQuery.identity,
+    choice: battleQuery.candidates[0]?.choice,
+    source_policy_id: policyId,
+    elapsed_ms: 3,
+    deadline_outcome: "in_budget",
+  };
+  const replyOf = (reply: unknown) => ({ schema_version: 1, query_id: 1, reply });
+  const hello = { schema_version: 1, message: { kind: "hello", contracts: contractVersions() } };
+  const checkpoints = [
+    { role: "battle", checkpoint_id: hashA },
+    { role: "preview", checkpoint_id: hashB },
+  ];
+  const ready = {
+    schema_version: 1,
+    message: {
+      kind: "ready",
+      contracts: contractVersions(),
+      encoder_version: "stub-1",
+      engine_data_hash: engineDataHash(full),
+      checkpoints,
+    },
+  };
+  const readyWith = (change: (m: Record<string, unknown>) => void) => mutated(ready, (r) => change(r.message as Record<string, unknown>));
+  const helloWith = (change: (m: Record<string, unknown>) => void) => mutated(hello, (h) => change(h.message as Record<string, unknown>));
+  const contractsOf = () => contractVersions() as unknown as Record<string, unknown>[];
+
   const valid: Record<string, unknown> = {
     "engine-data/golden": engineData,
     "training-example/preview": exampleOf("preview"),
@@ -146,6 +205,14 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "version-manifest/golden": record.manifest,
     "preview-observation/p1": previewObservation,
     "battle-observation/p1": battleObservation,
+    "policy-query/battle": battleQuery,
+    "policy-query/preview": previewQuery,
+    "policy-query/battle-a2": battleQueryA2,
+    "policy-reply/recommendation": replyOf({ kind: "recommendation", recommendation }),
+    "policy-reply/unsupported-candidate": replyOf({ kind: "error", error: "unsupported_candidate", detail: "a candidate has a shape the worker does not know" }),
+    "policy-reply/invalid-query": replyOf({ kind: "error", error: "invalid_query", detail: "the query's identity differs from its observation's identity" }),
+    "policy-handshake/hello": hello,
+    "policy-handshake/ready": ready,
     "recommendation/in-budget": {
       schema_version: 1,
       identity,
@@ -173,6 +240,12 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "training-set/learner-ready-no-policy": mutated(training.set, (t) => delete t.behaviour_policy_id),
     // Schema-valid, refused by the stream check: choice must be among the candidates.
     "training-example/choice-not-in-candidates": { ...exampleOf("battle"), choice: "not a candidate" },
+    // Schema-valid, refused by the worker's and the client's readers: the profile cannot compare fields.
+    "policy-query/identity-differs": mutated(battleQuery, (q) => (q.identity = { ...battleQuery.identity, request_seq: battleQuery.identity.request_seq + 1 })),
+    "policy-query/duplicate-candidate": mutated(battleQuery, (q) => ((q.candidates as unknown[])[1] = (battleQuery.candidates as unknown[])[0])),
+    "policy-handshake/unsorted-contracts": helloWith((m) => (m.contracts = contractsOf().reverse())),
+    "policy-handshake/duplicate-contracts": helloWith((m) => (m.contracts = [contractsOf()[0], contractsOf()[0]])),
+    "policy-handshake/unsorted-checkpoints": readyWith((m) => (m.checkpoints = [...checkpoints].reverse())),
     "training-set/unsorted-episodes": { ...training.set, episode_hashes: [hashB, hashA] },
     "training-set/duplicate-manifests": { ...training.set, evaluation_manifest_hashes: [hashA, hashA] },
     "episode/sparring-synthetic": collected({ kind: "sparring", session_id: "sparring-session-1" }),
@@ -204,6 +277,26 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "evaluation-run-manifest/no-run-id": { schema_version: 1, sealed: true, episode_hashes: [] },
     "evaluation-run-manifest/uppercase-hash": { ...sealedManifest, episode_hashes: [hashA.toUpperCase()] },
     "evaluation-run-manifest/sealed-flag-string": { ...sealedManifest, sealed: "yes" },
+    "policy-query/no-candidates": { ...battleQuery, candidates: [] },
+    "policy-query/too-many-candidates": { ...battleQuery, candidates: candidatesOf(1025) },
+    "policy-query/seed": { ...battleQuery, seed: record.seed },
+    "policy-query/candidate-verdict": mutated(battleQuery, (q) => ((q.candidates as Record<string, unknown>[])[0] as Record<string, unknown>).legal = true),
+    "policy-query/unknown-sampling": { ...battleQuery, sampling: { kind: "temperature", t: 2 } },
+    "policy-query/u-negative": { ...battleQuery, sampling: { kind: "sample", u: -1 } },
+    "policy-query/argmax-with-u": { ...battleQuery, sampling: { kind: "argmax", u: 1 } },
+    "policy-query/no-policy-id": mutated(battleQuery, (q) => delete q.policy_id),
+    "policy-query/no-query-id": mutated(battleQuery, (q) => delete q.query_id),
+    "policy-query/omniscient-observation": mutated(battleQuery, (q) => ((q.observation as Record<string, unknown>).omniscient_log = ["|split|p2"])),
+    "policy-reply/unknown-error": replyOf({ kind: "error", error: "timeout", detail: "slow" }),
+    "policy-reply/unknown-kind": replyOf({ kind: "retry" }),
+    "policy-reply/extra-field": { ...replyOf({ kind: "recommendation", recommendation }), probabilities: [1] },
+    "policy-reply/no-query-id": mutated(replyOf({ kind: "recommendation", recommendation }), (r) => delete r.query_id),
+    "policy-reply/bad-outcome": replyOf({ kind: "recommendation", recommendation: { ...recommendation, deadline_outcome: "late" } }),
+    "policy-handshake/hello-with-encoder": helloWith((m) => (m.encoder_version = "stub-1")),
+    "policy-handshake/unknown-contract": helloWith((m) => (m.contracts = [{ ...contractsOf()[0], name: "Episode" }])),
+    "policy-handshake/short-schema-hash": helloWith((m) => (m.contracts = [{ ...contractsOf()[0], schema_sha256: "abc" }])),
+    "policy-handshake/ready-no-checkpoints": readyWith((m) => delete m.checkpoints),
+    "policy-handshake/unknown-kind": helloWith((m) => (m.kind = "bye")),
     "request-identity/rqid-zero": { ...identity, rqid: 0 },
     "legal-choice-set/next-version": mutated(legal, (s) => (s.schema_version = 2)),
     "decision-context/negative-budget": { ...context, policy_budget_ms: -1 },

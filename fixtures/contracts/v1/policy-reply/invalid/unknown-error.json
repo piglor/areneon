@@ -1,0 +1,9 @@
+{
+  "schema_version": 1,
+  "query_id": 1,
+  "reply": {
+    "kind": "error",
+    "error": "timeout",
+    "detail": "slow"
+  }
+}

@@ -22,7 +22,18 @@ const PLAYERS: readonly Player[] = ["p1", "p2"];
  * refused as `[Unavailable choice]` brings a new request; any other
  * `|error|` aborts the battle rather than being retried.
  */
-export type Actor = (request: RequestRecord) => string | Promise<string>;
+export type Actor = (request: RequestRecord, context?: ActorContext) => string | Promise<string>;
+
+/**
+ * What `runBattle` hands an actor besides the request: the actor's own
+ * player and that player's own stream so far, up to and including the
+ * request being answered (a copy). The same lines the engine sent that
+ * player, never the omniscient log, and no `|t:|` timestamps.
+ */
+export interface ActorContext {
+  player: Player;
+  channel: readonly string[];
+}
 
 /** Why a side's policy lost a game by forfeit (evaluation protocol D2). */
 export type ForfeitCause = "crash" | "out_of_memory" | "invalid_reply" | "latency_overrun";
@@ -316,7 +327,7 @@ export async function runBattle(options: BattleOptions): Promise<BattleRecord> {
               const verdicts = judge.judge(request.request_hash, legal.pending);
               record.hidden_verdicts.push({ player, request_seq: request.request_seq, verdicts });
             }
-            const choice = await actors[player](request);
+            const choice = await actors[player](request, { player, channel: record.channels[player].slice() });
             if (ended || record.forfeit !== undefined) return;
             const entry = { player, request_seq: request.request_seq, choice };
             record.choices.push(entry);

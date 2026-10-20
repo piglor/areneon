@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "message": {
+    "kind": "hello",
+    "contracts": [
+      {
+        "name": "BattleObservation",
+        "schema_version": 1,
+        "schema_sha256": "abc"
+      }
+    ]
+  }
+}
