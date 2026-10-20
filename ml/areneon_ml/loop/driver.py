@@ -135,7 +135,7 @@ class Loop:
             if sha256_hex(jcs(stored)) != self.config.hash:
                 raise LoopError("this run directory belongs to another TrainingRunConfig")
         else:
-            layout.write_json(path, self.config.raw)
+            layout.write_atomic(path, jcs(self.config.raw) + b"\n")
 
     def _new_learner(self, networks: dict[str, PolicyNetwork] | None = None) -> Learner:
         seeds = {"preview": self.config.init_preview, "battle": self.config.init_battle}
@@ -150,9 +150,13 @@ class Loop:
         """Continue the run until ``generations`` are committed; returns what this call did."""
         if generations < 0:
             raise LoopError("the number of generations cannot be negative")
-        self.run_dir.mkdir(parents=True, exist_ok=True)
+        with layout.run_lock(self.run_dir):
+            return self._run_locked(generations)
+
+    def _run_locked(self, generations: int) -> RunResult:
         self._bind_config()
         discarded = layout.discard_partials(self.run_dir)
+        layout.discard_stale_checkpoint_files(self.run_dir)
         newest = layout.latest_complete(self.run_dir)
         result = RunResult(None if newest is None else newest.generation, discarded)
         if newest is None:
@@ -203,13 +207,22 @@ class Loop:
         for role in ROLES:
             found = checkpoint_bytes(learner.networks[role], self.game)
             record = records[role]
-            if (
-                checkpoint_id(found) != checkpoints.get(role)
-                or record.checkpoint_id != checkpoints[role]
-            ):
+            if checkpoint_id(found) != checkpoints.get(role):
                 raise LoopError(
                     f"generation {newest.generation}: the {role} weights differ from its checkpoint"
                 )
+            if record.checkpoint_id != checkpoints[role]:
+                raise LoopError(
+                    f"generation {newest.generation}: the {role} record names another checkpoint"
+                )
+            if record.training_set_hashes != (() if ts_hash is None else (ts_hash,)):
+                raise LoopError(
+                    f"generation {newest.generation}: the {role} record's training sets "
+                    "differ from its manifest"
+                )
+            # The store may have lost the file (the worker reads it by id): the weights are
+            # verified above, so write them again.
+            write_checkpoint(self.run_dir, found)
             if (
                 record.learner_state_hash != state_hash
                 or record.run_config_hash != self.config.hash

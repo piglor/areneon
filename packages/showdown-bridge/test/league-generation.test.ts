@@ -126,7 +126,7 @@ describe("playGeneration", () => {
     playGeneration({ engine, config, generation: 1, policy_id: POLICY, client: actorClient({ begun: () => begun++ }), pool, ...change });
   beforeAll(async () => {
     result = await run();
-  }, 120_000);
+  });
 
   it("plays every planned game and writes an Episode for each seat", () => {
     expect(result.games).toHaveLength(6);
@@ -156,13 +156,39 @@ describe("playGeneration", () => {
     expect(new Set(sides.map((c) => c.opponent_policy_id))).toEqual(new Set([POLICY, "random-legal@tiny"]));
   });
 
+  it("always samples at the frozen pair's own seats, never argmax, and no baseline decision is queried or loaded", async () => {
+    const inner = actorClient();
+    const asked: { battle: string; kind: string; policy: string }[] = [];
+    const spying: PolicyClient & { beginGame: () => Promise<void> } = {
+      beginGame: inner.beginGame,
+      ask: (battle, query) => {
+        asked.push({ battle, kind: query.sampling.kind, policy: query.policy_id });
+        return inner.ask(battle, query);
+      },
+    };
+    const run2 = await run({ client: spying });
+    expect(asked.length).toBeGreaterThan(0);
+    expect(new Set(asked.map((q) => q.kind))).toEqual(new Set(["sample"]));
+    expect(new Set(asked.map((q) => q.policy))).toEqual(new Set([POLICY]));
+    // The worker is never asked for a seat a baseline plays: game 4 puts the policy at p1, game 5 at p2.
+    const seats = new Set(asked.map((q) => q.battle));
+    expect(seats.has("game-4-p1") && !seats.has("game-4-p2")).toBe(true);
+    expect(seats.has("game-5-p2") && !seats.has("game-5-p1")).toBe(true);
+    // Every line of the stream belongs to an Episode of the pair; none to a baseline's.
+    const baselineHashes = run2.episode_hashes.filter((_, i) => at(run2.episodes, i).provenance.behaviour_policy_id !== POLICY);
+    expect(baselineHashes).toHaveLength(2);
+    for (const hash of baselineHashes) expect(run2.stream.includes(`"episode_hash":"${hash}"`)).toBe(false);
+    const hashesInStream = new Set(run2.stream.split("\n").filter(Boolean).map((line) => (JSON.parse(line) as { episode_hash: string }).episode_hash));
+    expect(hashesInStream).toEqual(new Set(run2.set.episode_hashes));
+  });
+
   it("is reproducible: the same plan, policy and worker give the same stream, hash and teams", async () => {
     const again = await run();
     expect(again.stream).toBe(result.stream);
     expect(again.training_set_hash).toBe(result.training_set_hash);
     expect(again.episode_hashes).toEqual(result.episode_hashes);
     expect(again.team_hashes).toEqual(result.team_hashes);
-  }, 120_000);
+  });
 
   it("reports the teams it drew by hash, the version manifest and a hash of the TrainingSet", () => {
     const expected = new Set(result.plan.flatMap((g) => [at(pool.hashes, g.teams.p1), at(pool.hashes, g.teams.p2)]));
@@ -201,12 +227,12 @@ describe("playGeneration", () => {
     await expect(run({ client: failing })).rejects.toThrow(/every game was forfeited/);
     const gone: PolicyClient = { ask: () => Promise.reject(new PolicyWorkerError("crash", "gone")) };
     await expect(run({ client: gone })).rejects.toThrow(GenerationError);
-  }, 120_000);
+  });
 
   it("fails the generation on a harness incident: a candidate shape the worker cannot read is not a policy forfeit", async () => {
     const unsupported: PolicyClient = { ask: () => Promise.reject(new UnsupportedCandidateError("a candidate has a shape the worker does not know")) };
     await expect(run({ client: unsupported })).rejects.toThrow(/game 0 \(sodium,[0-9a-f]{32}\): unsupported_candidate/);
-  }, 120_000);
+  });
 
   it("counts a forfeited game in the rows and trains on the games that were played", async () => {
     let calls = 0;
@@ -219,7 +245,7 @@ describe("playGeneration", () => {
     expect(partial.games.filter((g) => g.outcome === "forfeit")).toHaveLength(1);
     expect(partial.episodes.length).toBeLessThan(12);
     expect(partial.set.examples).toBeGreaterThan(0);
-  }, 120_000);
+  });
 });
 
 /** The stream lines of one Episode: what the learner sees of that seat's battle. */
@@ -247,5 +273,5 @@ describe("writeGeneration", () => {
     expect(summary).toMatchObject({ schema_version: 1, generation: 2, forfeits: 0, training_set_hash: result.training_set_hash, examples: result.set.examples });
     expect(read("generation.json")).toBe(`${jcs(summary as Json)}\n`);
     expect(JSON.parse(read("plan.json"))).toHaveLength(6);
-  }, 120_000);
+  });
 });

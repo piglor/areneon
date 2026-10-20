@@ -11,7 +11,7 @@
 // is reported by its hash, which becomes the team-set manifest of the run.
 
 import { createHash } from "node:crypto";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { closeSync, fsyncSync, mkdirSync, openSync, readFileSync, writeSync } from "node:fs";
 import { join } from "node:path";
 import type { Engine, PokemonSet } from "./engine.ts";
 import { jcs, type Json } from "./canonical-json.ts";
@@ -269,12 +269,14 @@ export async function playGeneration(options: GenerationOptions): Promise<Genera
  * the hashes the Python driver records). Nothing in them depends on the clock.
  */
 export function writeGeneration(dir: string, result: GenerationResult): void {
-  mkdirSync(join(dir, "episodes"), { recursive: true });
-  const put = (name: string, value: unknown): void => writeFileSync(join(dir, name), `${jcs(value as Json)}\n`);
+  const episodes = join(dir, "episodes");
+  mkdirSync(episodes, { recursive: true });
+  const put = (name: string, value: unknown): void => writeDurable(join(dir, name), `${jcs(value as Json)}\n`);
   result.episodes.forEach((episode, index) => put(`episodes/${result.episode_hashes[index]}.json`, episode));
-  writeFileSync(join(dir, "stream.jsonl"), result.stream);
+  writeDurable(join(dir, "stream.jsonl"), result.stream);
   put("training-set.json", result.set);
   put("plan.json", result.plan);
+  // generation.json last: it is the file that says the rest is whole.
   put("generation.json", {
     schema_version: 1,
     generation: result.generation,
@@ -286,4 +288,27 @@ export function writeGeneration(dir: string, result: GenerationResult): void {
     manifest: result.manifest,
     team_hashes: result.team_hashes,
   });
+  syncDir(episodes);
+  syncDir(dir);
+}
+
+/** Write a file and flush it to disk before returning. */
+function writeDurable(path: string, data: string): void {
+  const descriptor = openSync(path, "w");
+  try {
+    writeSync(descriptor, data);
+    fsyncSync(descriptor);
+  } finally {
+    closeSync(descriptor);
+  }
+}
+
+/** Flush a directory's entries to disk. */
+function syncDir(path: string): void {
+  const descriptor = openSync(path, "r");
+  try {
+    fsyncSync(descriptor);
+  } finally {
+    closeSync(descriptor);
+  }
 }

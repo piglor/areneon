@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import json
+import os
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -116,3 +119,103 @@ def test_names_are_zero_padded(tmp_path: Path) -> None:
     assert layout.generation_name(7) == "g000007"
     assert layout.partial_dir(tmp_path, 7).name == ".g000007.partial"
     assert json.loads(layout.write_json(tmp_path / "n.json", {"n": 1})) == {"n": 1}
+
+
+def fsync_log(monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    """Every path os.fsync is called on, and every os.replace as ``rename:<target>``."""
+    log: list[str] = []
+    real_fsync, real_replace = os.fsync, os.replace
+
+    def fsync(descriptor: int) -> None:
+        log.append(os.readlink(f"/proc/self/fd/{descriptor}"))
+        real_fsync(descriptor)
+
+    def replace(source: Path, target: Path) -> None:
+        log.append(f"rename:{target}")
+        real_replace(source, target)
+
+    monkeypatch.setattr(os, "fsync", fsync)
+    monkeypatch.setattr(os, "replace", replace)
+    return log
+
+
+def test_a_commit_flushes_every_file_and_directory_before_the_one_rename(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    work = layout.partial_dir(tmp_path, 0)
+    # a file made without fsync, as the Node side does
+    (work / "records").mkdir(parents=True)
+    (work / "records" / "a.json").write_bytes(b"1")
+    (work / "episodes").mkdir()
+    (work / "episodes" / "e.json").write_bytes(b"2")
+    log = fsync_log(monkeypatch)
+    layout.commit_generation(tmp_path, 0, {})
+    rename = log.index(f"rename:{layout.generation_dir(tmp_path, 0)}")
+    before = set(log[:rename])
+    for path in [
+        work / "records" / "a.json",
+        work / "episodes" / "e.json",
+        work / "records",
+        work / "episodes",
+        work,
+        work / layout.MANIFEST,
+    ]:
+        assert str(path) in before, path
+    # the manifest was hashed from flushed bytes: the files were flushed before it was written
+    assert log.index(str(work / "records" / "a.json")) < log.index(str(work / layout.MANIFEST))
+    # and the parent of the renamed directory is flushed after the rename
+    assert str(layout.generations_dir(tmp_path)) in log[rename + 1 :]
+
+
+def test_an_atomic_write_leaves_all_or_nothing_and_no_temp_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path / "run-config.json"
+    log = fsync_log(monkeypatch)
+    layout.write_atomic(path, b"one")
+    layout.write_atomic(path, b"two")
+    assert path.read_bytes() == b"two"
+    assert [p.name for p in tmp_path.iterdir()] == ["run-config.json"]
+    assert str(tmp_path) in log  # the directory holding the rename
+
+
+def test_a_second_driver_on_a_run_directory_fails_fast_until_the_first_is_gone(
+    tmp_path: Path,
+) -> None:
+    holder = subprocess.Popen(
+        [
+            sys.executable, "-c",
+            "import sys; from pathlib import Path; from areneon_ml.loop.layout import run_lock\n"
+            "with run_lock(Path(sys.argv[1])):\n"
+            "    print('locked', flush=True); sys.stdin.read()",
+            str(tmp_path),
+        ],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        text=True,
+    )  # fmt: skip
+    try:
+        assert holder.stdout is not None
+        assert holder.stdout.readline().strip() == "locked"
+        with (
+            pytest.raises(layout.RunDirError, match="another process is running"),
+            layout.run_lock(tmp_path),
+        ):
+            pass
+        holder.kill()  # a killed holder releases the lock: it is the operating system's
+        holder.wait()
+        with layout.run_lock(tmp_path):
+            pass
+    finally:
+        holder.kill()
+        holder.wait()
+
+
+def test_stale_checkpoint_temp_files_are_discarded(tmp_path: Path) -> None:
+    store = tmp_path / "checkpoints"
+    store.mkdir()
+    (store / f".{'a' * 64}.partial").write_bytes(b"half")
+    (store / f"{'b' * 64}.safetensors").write_bytes(b"whole")
+    assert layout.discard_stale_checkpoint_files(tmp_path) == [f".{'a' * 64}.partial"]
+    assert [p.name for p in store.iterdir()] == [f"{'b' * 64}.safetensors"]
+    assert layout.discard_stale_checkpoint_files(tmp_path / "none") == []

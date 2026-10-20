@@ -55,6 +55,21 @@ const json = <T = Doc>(runDir: string, ...path: string[]): T => JSON.parse(read(
 const manifest = (runDir: string, g: number): Manifest => json<Manifest>(runDir, "generations", gen(g), "manifest.json");
 const gen = (n: number): string => `g${String(n).padStart(6, "0")}`;
 
+/** Command lines of the live processes that mention `runDir` (Linux): the Node play script and the policy worker of that run. */
+function liveProcesses(runDir: string): string[] {
+  const found: string[] = [];
+  for (const entry of readdirSync("/proc")) {
+    if (!/^\d+$/.test(entry)) continue;
+    try {
+      const command = readFileSync(`/proc/${entry}/cmdline`, "utf8").replaceAll("\0", " ");
+      if (command.includes(runDir) && /play-generation\.ts|areneon_ml\.worker/.test(command)) found.push(command);
+    } catch {
+      // the process ended while it was being read
+    }
+  }
+  return found;
+}
+
 /** Start the driver in its own process group and SIGKILL the whole group once `ready` holds. */
 async function killWhen(config: string, runDir: string, generations: number, ready: () => boolean): Promise<void> {
   const child: ChildProcess = spawn(PYTHON, args(config, runDir, generations), { env, detached: true, stdio: "ignore" });
@@ -62,28 +77,36 @@ async function killWhen(config: string, runDir: string, generations: number, rea
   const deadline = Date.now() + 240_000;
   while (!ready()) {
     if (child.exitCode !== null || Date.now() > deadline) throw new Error("the driver ended or stalled before the kill point");
-    await new Promise((resolve) => setTimeout(resolve, 10));
+    await new Promise((resolve) => setTimeout(resolve, 5));
   }
   process.kill(-(child.pid as number), "SIGKILL");
   expect(await exited).toBeNull();
 }
 
+const partial = (runDir: string, ...path: string[]): string => join(runDir, "generations", `.${gen(2)}.partial`, ...path);
+
 describe.skipIf(!existsSync(PYTHON) && process.env.ARENEON_REQUIRE_PYTHON_WORKER !== "1")("the training loop, tiny and on CPU", () => {
   let dir: string;
   let uninterrupted: string;
-  let killed: string;
   let first: RunSummary;
-  let resumed: RunSummary;
+  // Two real kill points in generation 2: while the simulator side is alive (Node and the worker), and
+  // after it has finished while the driver reads, trains and writes.
+  const kills = { play: { dir: "", resumed: undefined as unknown as RunSummary }, train: { dir: "", resumed: undefined as unknown as RunSummary } };
 
   beforeAll(async () => {
     dir = mkdtempSync(join(tmpdir(), "areneon-loop-"));
     uninterrupted = join(dir, "uninterrupted");
-    killed = join(dir, "killed");
     first = run(TINY, uninterrupted, 2);
-    // A real kill: SIGKILL the driver, its Node child and the worker as soon as generation 2 is under way.
-    await killWhen(TINY, killed, 2, () => existsSync(join(killed, "generations", `.${gen(2)}.partial`)));
-    resumed = run(TINY, killed, 2);
-  }, 600_000);
+    kills.play.dir = join(dir, "killed-playing");
+    await killWhen(TINY, kills.play.dir, 2, () => existsSync(partial(kills.play.dir)) && liveProcesses(kills.play.dir).length >= 2);
+    expect(liveProcesses(kills.play.dir)).toEqual([]); // the whole group went down with the driver
+    expect(existsSync(partial(kills.play.dir, "manifest.json"))).toBe(false);
+    kills.play.resumed = run(TINY, kills.play.dir, 2);
+    kills.train.dir = join(dir, "killed-training");
+    await killWhen(TINY, kills.train.dir, 2, () => existsSync(partial(kills.train.dir, "generation.json")));
+    expect(existsSync(partial(kills.train.dir, "manifest.json"))).toBe(false);
+    kills.train.resumed = run(TINY, kills.train.dir, 2);
+  });
   afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
   it("plays, trains and commits two generations, each with records, a learner state and a manifest", () => {
@@ -121,10 +144,13 @@ describe.skipIf(!existsSync(PYTHON) && process.env.ARENEON_REQUIRE_PYTHON_WORKER
   });
 
   it("reproduces: the same config gives the same generation 1, byte for byte, in an independent run", () => {
-    expect(read(killed, "generations", gen(1), "manifest.json")).toBe(read(uninterrupted, "generations", gen(1), "manifest.json"));
+    for (const { dir: killed } of Object.values(kills)) {
+      expect(read(killed, "generations", gen(1), "manifest.json")).toBe(read(uninterrupted, "generations", gen(1), "manifest.json"));
+    }
   });
 
-  it("resumes a SIGKILLed run from its last complete generation and ends with the same learner-state hash", () => {
+  it.each(["play", "train"] as const)("resumes a run SIGKILLed at the %s point from its last complete generation, to the same learner-state hash", (point) => {
+    const { dir: killed, resumed } = kills[point];
     expect(resumed).toMatchObject({ resumed_from: 1, discarded: [`.${gen(2)}.partial`], generation: 2, played: [2] });
     expect(resumed.learner_state_hash).toBe(first.learner_state_hash);
     expect(resumed.checkpoints).toEqual(first.checkpoints);
@@ -144,7 +170,7 @@ describe.skipIf(!existsSync(PYTHON) && process.env.ARENEON_REQUIRE_PYTHON_WORKER
     const refused = spawnSync(PYTHON, args(file, uninterrupted, 2), { encoding: "utf8", env });
     expect(refused.status).toBe(3);
     expect(refused.stderr).toContain("another TrainingRunConfig");
-  }, 120_000); // each call starts Python and imports torch: seconds on a loaded CI runner, where the default 5 s was exceeded
+  });
 
   it("leaves records the C1/C6 checker reads: the first pair is in the second pair's ancestry", () => {
     const out = join(dir, "provenance");
@@ -155,7 +181,7 @@ describe.skipIf(!existsSync(PYTHON) && process.env.ARENEON_REQUIRE_PYTHON_WORKER
         execFileSync(PYTHON, ["-I", "-m", "areneon_ml.checkpoint", "classify", "--records", join(out, "records"), "--sources", join(out, "sources.json"), "--candidate", candidate, "--opponent", opponent], { encoding: "utf8", env }),
       ) as { label: string };
     expect(classify(child, parent).label).toBe("seen");
-  }, 120_000);
+  });
 });
 
 describe.skipIf(!existsSync(PYTHON) && process.env.ARENEON_REQUIRE_PYTHON_WORKER !== "1")("play-generation with the real worker, in this process", () => {
@@ -193,5 +219,5 @@ describe.skipIf(!existsSync(PYTHON) && process.env.ARENEON_REQUIRE_PYTHON_WORKER
     expect(summary.games).toHaveLength(6);
     expect(summary.forfeits).toBe(0);
     expect(readdirSync(join(out, "episodes"))).toHaveLength(12);
-  }, 180_000);
+  });
 });

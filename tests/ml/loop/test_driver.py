@@ -14,7 +14,7 @@ from areneon_ml.checkpoint.provenance import HELD_OUT, SEEN
 from areneon_ml.checkpoint.record import read_record
 from areneon_ml.learner.data import LearnerDataError
 from areneon_ml.learner.state import LearnerStateError
-from areneon_ml.loop import layout
+from areneon_ml.loop import layout, records
 from areneon_ml.loop.driver import (
     LoopError,
     export_provenance,
@@ -434,3 +434,82 @@ def test_the_stored_pair_is_the_learners_weights(finished: Path) -> None:
             checkpoint_id(checkpoint_bytes(learner.networks[role], game()))
             == loop.frozen.checkpoints[role]
         )
+
+
+# -- review fixes: records versus manifest, the store, the lock, stale files ----------------
+
+
+def test_a_record_naming_another_checkpoint_than_the_manifest_is_refused(
+    finished: Path, tmp_path: Path
+) -> None:
+    run_dir = _copy(finished, tmp_path)
+    path = layout.generation_dir(run_dir, 2) / "records" / "battle.json"
+    record = layout.read_json(path)
+    record["checkpoint_id"] = "f" * 64
+    layout.write_json(path, record)
+    reseal(run_dir, 2)
+    with pytest.raises(LoopError, match="battle record names another checkpoint"):
+        make_loop(run_dir).run(2)
+
+
+def test_a_record_whose_training_sets_differ_from_the_manifest_is_refused(
+    finished: Path, tmp_path: Path
+) -> None:
+    run_dir = _copy(finished, tmp_path)
+    path = layout.generation_dir(run_dir, 2) / "records" / "battle.json"
+    record = layout.read_json(path)
+    record["training_set_hashes"] = ["e" * 64]
+    layout.write_json(path, record)
+    reseal(run_dir, 2)
+    with pytest.raises(LoopError, match="training sets differ from its manifest"):
+        make_loop(run_dir).run(2)
+    # and generation 0 has none
+    run_dir = tmp_path / "zero"
+    make_loop(run_dir).run(0)
+    path = layout.generation_dir(run_dir, 0) / "records" / "preview.json"
+    record = layout.read_json(path)
+    record["training_set_hashes"] = ["e" * 64]
+    layout.write_json(path, record)
+    reseal(run_dir, 0)
+    with pytest.raises(LoopError, match="training sets differ"):
+        make_loop(run_dir).run(0)
+
+
+def test_a_checkpoint_missing_from_the_store_is_written_again_on_resume(
+    finished: Path, tmp_path: Path
+) -> None:
+    run_dir = _copy(finished, tmp_path)
+    loop = make_loop(run_dir)
+    loop.run(2)
+    lost = run_dir / "checkpoints" / f"{loop.frozen.checkpoints['battle']}.safetensors"
+    original = lost.read_bytes()
+    lost.unlink()
+    make_loop(run_dir).run(2)
+    assert lost.read_bytes() == original
+
+
+def test_a_resume_discards_the_temp_files_of_a_killed_checkpoint_write(
+    finished: Path, tmp_path: Path
+) -> None:
+    run_dir = _copy(finished, tmp_path)
+    stale = run_dir / "checkpoints" / f".{'c' * 64}.partial"
+    stale.write_bytes(b"half")
+    make_loop(run_dir).run(2)
+    assert not stale.exists()
+
+
+def test_the_run_config_is_bound_atomically(tmp_path: Path) -> None:
+    make_loop(tmp_path).run(0)
+    assert layout.read_json(tmp_path / layout.CONFIG) == tiny_config().raw
+    assert not (tmp_path / f".{layout.CONFIG}.partial").exists()
+
+
+def test_a_run_directory_held_by_another_driver_is_refused(tmp_path: Path) -> None:
+    with layout.run_lock(tmp_path), pytest.raises(layout.RunDirError, match="another process"):
+        # flock locks belong to the open file, so a second open in this process conflicts too
+        make_loop(tmp_path).run(0)
+    make_loop(tmp_path).run(0)  # released with the first holder
+
+
+def test_the_pair_always_plays_by_sampling_and_the_policy_id_says_so() -> None:
+    assert (records.MODE, records.TEMPERATURE, records.PRECISION) == ("sample", 1, "float32")
