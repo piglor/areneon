@@ -1,0 +1,784 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:areneon:schema:contracts:v1:evaluation-register-entry",
+  "title": "EvaluationRegisterEntry",
+  "description": "One line of the evaluation register (evaluation protocol I6, ADR-010 O1): an append-only, hash-chained JSON Lines file in the isolated store. Each entry carries the previous entry's hash; an entry's hash is the SHA-256 of its JCS bytes, and the line is exactly those bytes. The chain head (seq and hash, no secret) is merged to main by pull request. The profile cannot relate entries; the verifier checks the chain and the state rules (budget, order, re-check, contamination).",
+  "type": "object",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/SetCommitmentEntry"
+    },
+    {
+      "$ref": "#/$defs/PlanRegistrationEntry"
+    },
+    {
+      "$ref": "#/$defs/RunOutcomeEntry"
+    },
+    {
+      "$ref": "#/$defs/L2aRecheckEntry"
+    },
+    {
+      "$ref": "#/$defs/IncidentEntry"
+    },
+    {
+      "$ref": "#/$defs/SetRetirementEntry"
+    }
+  ],
+  "discriminator": {
+    "propertyName": "kind"
+  },
+  "$defs": {
+    "SealedSetCommitment": {
+      "description": "The L3 commitment of one sealed team set (evaluation protocol L3, I2; ADR-010 erratum E1): hashes and counts only. set_commitment is SHA-256(JCS({salt, teams})) with a random salt and key_commitment the SHA-256 of the secret seed key; neither the teams, the salt nor the key appear. The reader checks the counts against the parameters (the total, n_stratum_min in each stratum, b_sealed) and that the strata are sorted and unique.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "set_id",
+        "generation",
+        "set_commitment",
+        "key_commitment",
+        "team_count",
+        "stratum_counts",
+        "evaluation_parameters_hash",
+        "training_gate_rule_hash",
+        "b_sealed"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": 1
+        },
+        "set_id": {
+          "description": "The set's name in the register.",
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$"
+        },
+        "generation": {
+          "description": "Which generation of sealed sets this is.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000
+        },
+        "set_commitment": {
+          "description": "SHA-256 of the JCS bytes of {salt, teams}.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "key_commitment": {
+          "description": "SHA-256 of the secret seed key.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "team_count": {
+          "description": "Number of sealed teams; the parameters' n_teams.",
+          "type": "integer",
+          "minimum": 2,
+          "maximum": 1000000
+        },
+        "stratum_counts": {
+          "description": "Teams per stratum cell, sorted by stratum and unique (a reader rule); logged with the commitment (erratum E1).",
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 100000,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "stratum",
+              "count"
+            ],
+            "properties": {
+              "stratum": {
+                "description": "A stratum label tuple, as the merge rule produced it.",
+                "type": "string",
+                "pattern": "^[A-Za-z0-9._:|=,+-]{1,128}$"
+              },
+              "count": {
+                "description": "Teams in the cell.",
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 1000000
+              }
+            }
+          }
+        },
+        "evaluation_parameters_hash": {
+          "description": "SHA-256 of the JCS bytes of the EvaluationParameters record in force.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "training_gate_rule_hash": {
+          "description": "SHA-256 of the JCS bytes of the TrainingGateRule record in force.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "b_sealed": {
+          "description": "Runs this set allows; the parameters' b_sealed.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000
+        }
+      }
+    },
+    "EvaluationPlan": {
+      "description": "The plan registered before a sealed run (evaluation protocol I2): candidate and opponent hashes, the comparison family with each claim's direction and margin null, the block plan size, the levels, the interval method, the harness commit, the report template and the L3 commitments. It holds no secret. plan_hash is SHA-256 of its JCS bytes. The reader checks it against the records it names: the family equals the rule's claims, the levels follow from the parameters, the sizes equal the commitment's, and the parameters are complete.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "set_id",
+        "set_commitment_hash",
+        "evaluation_parameters_hash",
+        "training_gate_rule_hash",
+        "candidate",
+        "progress_reference",
+        "opponents",
+        "claims",
+        "alpha_ppm",
+        "alpha_prime_ppm",
+        "b_boot",
+        "interval",
+        "block_plan",
+        "learner_step_budget",
+        "a2_matches_min",
+        "harness_commit",
+        "report_template_hash",
+        "showdown_commit",
+        "format_id",
+        "format_rules_hash"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": 1
+        },
+        "set_id": {
+          "description": "The sealed set the run uses.",
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$"
+        },
+        "set_commitment_hash": {
+          "description": "SHA-256 of the JCS bytes of the SealedSetCommitment record.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "evaluation_parameters_hash": {
+          "description": "SHA-256 of the JCS bytes of the EvaluationParameters record.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "training_gate_rule_hash": {
+          "description": "SHA-256 of the JCS bytes of the TrainingGateRule record.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "candidate": {
+          "description": "The candidate pair: a Preview and a Battle checkpoint, in that role order (battle, preview; a reader rule).",
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "role",
+              "checkpoint_id",
+              "provenance_record_hash"
+            ],
+            "properties": {
+              "role": {
+                "enum": [
+                  "battle",
+                  "preview"
+                ]
+              },
+              "checkpoint_id": {
+                "description": "The checkpoint's id.",
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              "provenance_record_hash": {
+                "description": "SHA-256 of the checkpoint's CheckpointRecord JCS bytes.",
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              }
+            }
+          }
+        },
+        "progress_reference": {
+          "description": "L1's own frozen pair at the progress share of the candidate's steps (G3b): a Preview and a Battle checkpoint, in that role order (battle, preview; a reader rule).",
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "role",
+              "checkpoint_id",
+              "provenance_record_hash"
+            ],
+            "properties": {
+              "role": {
+                "enum": [
+                  "battle",
+                  "preview"
+                ]
+              },
+              "checkpoint_id": {
+                "description": "The checkpoint's id.",
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              "provenance_record_hash": {
+                "description": "SHA-256 of the checkpoint's CheckpointRecord JCS bytes.",
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              }
+            }
+          }
+        },
+        "opponents": {
+          "description": "Sorted by opponent_id and unique (a reader rule).",
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 4096,
+          "items": {
+            "description": "One opponent.",
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "opponent_id",
+              "definition_hash",
+              "pool"
+            ],
+            "properties": {
+              "opponent_id": {
+                "description": "A baseline id, or a frozen checkpoint id.",
+                "type": "string",
+                "pattern": "^[a-z0-9][a-z0-9._:-]{0,127}$"
+              },
+              "definition_hash": {
+                "description": "The opponent's code commit hash or checkpoint hash and provenance.",
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              "pool": {
+                "description": "B scripted, F frozen, X exploiter.",
+                "enum": [
+                  "B",
+                  "F",
+                  "X"
+                ]
+              },
+              "lineage_id": {
+                "description": "The lineage of an F or X opponent; absent for B.",
+                "type": "string",
+                "pattern": "^[a-z0-9][a-z0-9._:-]{0,127}$"
+              }
+            }
+          }
+        },
+        "claims": {
+          "description": "The comparison family in the rule's claim order.",
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 1000,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "claim_id",
+              "gate",
+              "opponent_id",
+              "direction",
+              "margin_null_ppm"
+            ],
+            "properties": {
+              "claim_id": {
+                "description": "As in the rule.",
+                "type": "string",
+                "pattern": "^[a-z0-9][a-z0-9._:-]{0,127}$"
+              },
+              "gate": {
+                "enum": [
+                  "G2",
+                  "G3",
+                  "G3b"
+                ]
+              },
+              "opponent_id": {
+                "description": "One of the opponents.",
+                "type": "string",
+                "pattern": "^[a-z0-9][a-z0-9._:-]{0,127}$"
+              },
+              "direction": {
+                "description": "Every gate claim is directional (D14).",
+                "const": "greater"
+              },
+              "margin_null_ppm": {
+                "description": "The claim's margin null, derived from the rule.",
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 1000000
+              }
+            }
+          }
+        },
+        "alpha_ppm": {
+          "description": "alpha.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 500000
+        },
+        "alpha_prime_ppm": {
+          "description": "alpha / (m * B_sealed).",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 500000
+        },
+        "b_boot": {
+          "description": "Bootstrap resamples.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000000
+        },
+        "interval": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "method",
+            "fallback"
+          ],
+          "properties": {
+            "method": {
+              "enum": [
+                "percentile_bootstrap"
+              ]
+            },
+            "fallback": {
+              "enum": [
+                "bca"
+              ]
+            }
+          }
+        },
+        "block_plan": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "n_teams",
+            "n_seeds"
+          ],
+          "properties": {
+            "n_teams": {
+              "description": "Sealed teams.",
+              "type": "integer",
+              "minimum": 2,
+              "maximum": 1000000
+            },
+            "n_seeds": {
+              "description": "Seeds per team pair.",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000000
+            }
+          }
+        },
+        "learner_step_budget": {
+          "description": "The pre-registered learner-step budget of the candidate's lineage (G1).",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000000000
+        },
+        "a2_matches_min": {
+          "description": "Local bot-vs-bot matches required for G7.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000
+        },
+        "harness_commit": {
+          "description": "The evaluation harness commit.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "report_template_hash": {
+          "description": "SHA-256 of the report template.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "showdown_commit": {
+          "description": "The pinned engine commit.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "format_id": {
+          "description": "The format.",
+          "type": "string",
+          "pattern": "^[a-z0-9]+$"
+        },
+        "format_rules_hash": {
+          "description": "The format rules record's hash (version manifest).",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "SetCommitmentEntry": {
+      "description": "L3: a sealed set is committed.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "kind",
+        "seq",
+        "prev_hash",
+        "recorded_at",
+        "operator",
+        "commitment"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": 1
+        },
+        "kind": {
+          "const": "set_commitment"
+        },
+        "seq": {
+          "description": "1-based position in the register.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000000
+        },
+        "prev_hash": {
+          "description": "The previous entry's hash; 64 zeros for the first entry.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "recorded_at": {
+          "description": "The operator's claim, UTC, non-decreasing along the chain. Not a trusted timestamp: the trusted time is the merge of the chain head (ADR-010 O1).",
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+        },
+        "operator": {
+          "description": "Who appended it.",
+          "type": "string",
+          "pattern": "^[A-Za-z0-9._@-]{1,64}$"
+        },
+        "commitment": {
+          "$ref": "#/$defs/SealedSetCommitment"
+        }
+      }
+    },
+    "PlanRegistrationEntry": {
+      "description": "I2: a plan is registered for a committed set.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "kind",
+        "seq",
+        "prev_hash",
+        "recorded_at",
+        "operator",
+        "plan"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": 1
+        },
+        "kind": {
+          "const": "plan_registration"
+        },
+        "seq": {
+          "description": "1-based position in the register.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000000
+        },
+        "prev_hash": {
+          "description": "The previous entry's hash; 64 zeros for the first entry.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "recorded_at": {
+          "description": "The operator's claim, UTC, non-decreasing along the chain. Not a trusted timestamp: the trusted time is the merge of the chain head (ADR-010 O1).",
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+        },
+        "operator": {
+          "description": "Who appended it.",
+          "type": "string",
+          "pattern": "^[A-Za-z0-9._@-]{1,64}$"
+        },
+        "plan": {
+          "$ref": "#/$defs/EvaluationPlan"
+        }
+      }
+    },
+    "RunOutcomeEntry": {
+      "description": "I6: the outcome of a registered plan's run, reported or not.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "kind",
+        "seq",
+        "prev_hash",
+        "recorded_at",
+        "operator",
+        "plan_hash",
+        "outcome"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": 1
+        },
+        "kind": {
+          "const": "run_outcome"
+        },
+        "seq": {
+          "description": "1-based position in the register.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000000
+        },
+        "prev_hash": {
+          "description": "The previous entry's hash; 64 zeros for the first entry.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "recorded_at": {
+          "description": "The operator's claim, UTC, non-decreasing along the chain. Not a trusted timestamp: the trusted time is the merge of the chain head (ADR-010 O1).",
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+        },
+        "operator": {
+          "description": "Who appended it.",
+          "type": "string",
+          "pattern": "^[A-Za-z0-9._@-]{1,64}$"
+        },
+        "plan_hash": {
+          "description": "SHA-256 of the registered plan.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "outcome": {
+          "enum": [
+            "aborted",
+            "failed",
+            "reported",
+            "unreported"
+          ]
+        },
+        "outcome_hash": {
+          "description": "SHA-256 of the run's outcome (the EvaluationRunManifest and report); required when reported (a reader rule).",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "reason": {
+          "description": "Why a run was not reported; required unless reported (a reader rule).",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        }
+      }
+    },
+    "L2aRecheckEntry": {
+      "description": "L2a: the pre-run re-check inside the isolated store; only its verdict is logged.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "kind",
+        "seq",
+        "prev_hash",
+        "recorded_at",
+        "operator",
+        "set_id",
+        "result"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": 1
+        },
+        "kind": {
+          "const": "l2a_recheck"
+        },
+        "seq": {
+          "description": "1-based position in the register.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000000
+        },
+        "prev_hash": {
+          "description": "The previous entry's hash; 64 zeros for the first entry.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "recorded_at": {
+          "description": "The operator's claim, UTC, non-decreasing along the chain. Not a trusted timestamp: the trusted time is the merge of the chain head (ADR-010 O1).",
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+        },
+        "operator": {
+          "description": "Who appended it.",
+          "type": "string",
+          "pattern": "^[A-Za-z0-9._@-]{1,64}$"
+        },
+        "set_id": {
+          "description": "The set.",
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$"
+        },
+        "plan_hash": {
+          "description": "The plan the run is for, when there is one.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "result": {
+          "enum": [
+            "fail",
+            "pass"
+          ]
+        }
+      }
+    },
+    "IncidentEntry": {
+      "description": "I8: the seal is broken; the set is contaminated and retired at once.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "kind",
+        "seq",
+        "prev_hash",
+        "recorded_at",
+        "operator",
+        "set_id",
+        "cause",
+        "description",
+        "affected_candidates"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": 1
+        },
+        "kind": {
+          "const": "incident"
+        },
+        "seq": {
+          "description": "1-based position in the register.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000000
+        },
+        "prev_hash": {
+          "description": "The previous entry's hash; 64 zeros for the first entry.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "recorded_at": {
+          "description": "The operator's claim, UTC, non-decreasing along the chain. Not a trusted timestamp: the trusted time is the merge of the chain head (ADR-010 O1).",
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+        },
+        "operator": {
+          "description": "Who appended it.",
+          "type": "string",
+          "pattern": "^[A-Za-z0-9._@-]{1,64}$"
+        },
+        "set_id": {
+          "description": "The set.",
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$"
+        },
+        "cause": {
+          "enum": [
+            "budget_exceeded",
+            "l2a_failed",
+            "plan_deviation",
+            "run_not_registered",
+            "sealed_artifact_read",
+            "sealed_result_misused",
+            "sealed_team_committed"
+          ]
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "affected_candidates": {
+          "description": "Candidate checkpoint ids the incident touched, sorted and unique (a reader rule).",
+          "type": "array",
+          "maxItems": 4096,
+          "items": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          }
+        }
+      }
+    },
+    "SetRetirementEntry": {
+      "description": "L5: the set is retired; its reveal is published separately.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "kind",
+        "seq",
+        "prev_hash",
+        "recorded_at",
+        "operator",
+        "set_id",
+        "reason"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": 1
+        },
+        "kind": {
+          "const": "set_retirement"
+        },
+        "seq": {
+          "description": "1-based position in the register.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000000
+        },
+        "prev_hash": {
+          "description": "The previous entry's hash; 64 zeros for the first entry.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "recorded_at": {
+          "description": "The operator's claim, UTC, non-decreasing along the chain. Not a trusted timestamp: the trusted time is the merge of the chain head (ADR-010 O1).",
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+        },
+        "operator": {
+          "description": "Who appended it.",
+          "type": "string",
+          "pattern": "^[A-Za-z0-9._@-]{1,64}$"
+        },
+        "set_id": {
+          "description": "The set.",
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$"
+        },
+        "reason": {
+          "enum": [
+            "budget_spent",
+            "contaminated",
+            "withdrawn"
+          ]
+        },
+        "reveal_hash": {
+          "description": "SHA-256 of the published reveal bundle (salt, teams, key), when it exists.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    }
+  }
+}

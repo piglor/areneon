@@ -1,0 +1,15 @@
+{
+  "kind": "incident",
+  "recorded_at": "2026-11-04T10:00:00Z",
+  "operator": "owner",
+  "set_id": "set-1",
+  "cause": "sealed_artifact_read",
+  "description": "A training container listed the store mount.",
+  "affected_candidates": [
+    "4444444444444444444444444444444444444444444444444444444444444444",
+    "3333333333333333333333333333333333333333333333333333333333333333"
+  ],
+  "schema_version": 1,
+  "seq": 4,
+  "prev_hash": "fb284e022c61633b91ee1513ab22bb6cd650c6a3da18be7c2f56dce359edb40d"
+}

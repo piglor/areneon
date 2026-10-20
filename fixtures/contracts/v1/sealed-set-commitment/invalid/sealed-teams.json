@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "set_id": "set-1",
+  "generation": 1,
+  "set_commitment": "1111111111111111111111111111111111111111111111111111111111111111",
+  "key_commitment": "2222222222222222222222222222222222222222222222222222222222222222",
+  "team_count": 32,
+  "stratum_counts": [
+    {
+      "stratum": "speed=a",
+      "count": 8
+    },
+    {
+      "stratum": "speed=b",
+      "count": 8
+    },
+    {
+      "stratum": "speed=c",
+      "count": 8
+    },
+    {
+      "stratum": "speed=d",
+      "count": 8
+    }
+  ],
+  "evaluation_parameters_hash": "e69999dc565cf4c72fa2aeed4f545030ae0c258b7b313d72025e10fd12d14975",
+  "training_gate_rule_hash": "a6de4eb5ed7b2eb94da1c9095bda73090f74c1837440b53415c0a1e38fd8a13d",
+  "b_sealed": 1,
+  "teams": []
+}

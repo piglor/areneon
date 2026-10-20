@@ -1,0 +1,11 @@
+{
+  "kind": "l2a_recheck",
+  "recorded_at": "2026-11-03T10:00:00Z",
+  "operator": "evaluation-job",
+  "set_id": "set-1",
+  "plan_hash": "781bbc3039fcb044eddf026aabcd9ddd535c86a94ed13860963a4f9193e0c378",
+  "result": "pass",
+  "schema_version": 1,
+  "seq": 3,
+  "prev_hash": "81220d275d8a4962935f8f4ac24e4355eb733b3a25596aa04081110dc7dd91b9"
+}

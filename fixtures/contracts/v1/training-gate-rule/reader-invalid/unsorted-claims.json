@@ -1,0 +1,67 @@
+{
+  "schema_version": 1,
+  "rule_version": 1,
+  "test": "bonferroni",
+  "chance_ppm": 500000,
+  "margins_ppm": {
+    "floor": 250000,
+    "held_out": 50000
+  },
+  "alternatives_ppm": {
+    "floor": 850000,
+    "held_out": 600000,
+    "progress_gain": 50000
+  },
+  "target_power_ppm": 800000,
+  "claims": [
+    {
+      "claim_id": "g3b-progress-l2",
+      "gate": "G3b",
+      "opponent": "l2"
+    },
+    {
+      "claim_id": "g3-held-out-l2",
+      "gate": "G3",
+      "opponent": "l2"
+    },
+    {
+      "claim_id": "g2-random-legal",
+      "gate": "G2",
+      "opponent": "random-legal"
+    },
+    {
+      "claim_id": "g2-actor-rule",
+      "gate": "G2",
+      "opponent": "actor-rule"
+    }
+  ],
+  "selection": {
+    "reference_fractions_ppm": [
+      250000,
+      500000,
+      750000
+    ],
+    "held_out_max_step_ppm": 500000,
+    "progress_step_ppm": 500000
+  },
+  "health": {
+    "max_harness_incidents": 0,
+    "max_crash_forfeits": 0
+  },
+  "required_checks": [
+    "a1-a2-observation-equality",
+    "batch-invariance",
+    "candidate-parser-roundtrip",
+    "d11-coverage",
+    "encoder-equality",
+    "enumerator-worst-case-oracle",
+    "l2a-recheck",
+    "privacy-tests"
+  ],
+  "review": {
+    "fresh_context_only": true,
+    "states_single_model_family_limit": true,
+    "owner_signoff_issue": 790
+  },
+  "exploiters_gate": false
+}

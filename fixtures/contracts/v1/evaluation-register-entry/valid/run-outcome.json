@@ -1,0 +1,11 @@
+{
+  "kind": "run_outcome",
+  "recorded_at": "2026-11-04T10:00:00Z",
+  "operator": "evaluation-job",
+  "plan_hash": "781bbc3039fcb044eddf026aabcd9ddd535c86a94ed13860963a4f9193e0c378",
+  "outcome": "reported",
+  "outcome_hash": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+  "schema_version": 1,
+  "seq": 4,
+  "prev_hash": "fb284e022c61633b91ee1513ab22bb6cd650c6a3da18be7c2f56dce359edb40d"
+}

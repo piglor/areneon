@@ -1,0 +1,235 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:areneon:schema:contracts:v1:training-gate-rule",
+  "title": "TrainingGateRule",
+  "description": "The Training gate rule v1 (ADR-010 section 7) as a reviewed config record. The margins, the alternatives and the target power are owner decisions; changing any is a new rule_version, never an edit. Ratios are integers in ppm. The profile cannot relate fields, so the reader derives each claim's margin null (chance plus its margin, or zero for the paired difference) and checks that each alternative lies beyond it, that claims are sorted by id, and, against the EvaluationParameters, the family size, the opponents and the half-widths the target power allows. The record is referenced only by the SHA-256 of its JCS bytes.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "rule_version",
+    "test",
+    "chance_ppm",
+    "margins_ppm",
+    "alternatives_ppm",
+    "target_power_ppm",
+    "claims",
+    "selection",
+    "health",
+    "required_checks",
+    "review",
+    "exploiters_gate"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "rule_version": {
+      "description": "Bumped by every change.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 1000000
+    },
+    "test": {
+      "description": "The familywise test of the gate family (G4).",
+      "enum": [
+        "bonferroni"
+      ]
+    },
+    "chance_ppm": {
+      "description": "The null score of a mean-score claim against an opponent of equal strength.",
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 1000000
+    },
+    "margins_ppm": {
+      "description": "Margins above the null (owner choices).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "floor",
+        "held_out"
+      ],
+      "properties": {
+        "floor": {
+          "description": "The margin over chance a candidate must show against a scripted baseline (G2).",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000
+        },
+        "held_out": {
+          "description": "The margin over chance a candidate must show against a held-out reference (G3).",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000
+        }
+      }
+    },
+    "alternatives_ppm": {
+      "description": "The owner's alternatives (theta_1).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "floor",
+        "held_out",
+        "progress_gain"
+      ],
+      "properties": {
+        "floor": {
+          "description": "The G2 score the owner wants to pass at the target power.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000
+        },
+        "held_out": {
+          "description": "The G3 score the owner wants to pass at the target power.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000
+        },
+        "progress_gain": {
+          "description": "The G3b paired difference the owner wants to pass at the target power.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000
+        }
+      }
+    },
+    "target_power_ppm": {
+      "description": "Target power at the alternatives.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 999999
+    },
+    "claims": {
+      "description": "The gate family, in ascending claim_id order (a reader rule).",
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 1000,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "claim_id",
+          "gate",
+          "opponent"
+        ],
+        "properties": {
+          "claim_id": {
+            "description": "Unique, ascending in the list.",
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9._:-]{0,127}$"
+          },
+          "gate": {
+            "enum": [
+              "G2",
+              "G3",
+              "G3b"
+            ]
+          },
+          "opponent": {
+            "description": "G2: a baseline id of the parameters' pool; G3 and G3b: a held-out lineage of the parameters' pool.",
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9._:-]{0,127}$"
+          }
+        }
+      }
+    },
+    "selection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "reference_fractions_ppm",
+        "held_out_max_step_ppm",
+        "progress_step_ppm"
+      ],
+      "properties": {
+        "reference_fractions_ppm": {
+          "description": "Validation reference set: L1's frozen pairs at these fractions of the budget (G1), strictly ascending (a reader rule).",
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "items": {
+            "description": "A fraction of the learner-step budget.",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 999999
+          }
+        },
+        "held_out_max_step_ppm": {
+          "description": "A held-out reference comes from at most this share of the candidate's learner steps (G3).",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000
+        },
+        "progress_step_ppm": {
+          "description": "G3b compares with L1's frozen pair at this share of the candidate's steps.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000
+        }
+      }
+    },
+    "health": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "max_harness_incidents",
+        "max_crash_forfeits"
+      ],
+      "properties": {
+        "max_harness_incidents": {
+          "description": "G5.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000
+        },
+        "max_crash_forfeits": {
+          "description": "Crash, out-of-memory or invalid-reply forfeits allowed (G5).",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000
+        }
+      }
+    },
+    "required_checks": {
+      "description": "Green at the evaluated commit (G6, G7), sorted and unique (a reader rule).",
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 64,
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z0-9][a-z0-9._:-]{0,127}$"
+      }
+    },
+    "review": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "fresh_context_only",
+        "states_single_model_family_limit",
+        "owner_signoff_issue"
+      ],
+      "properties": {
+        "fresh_context_only": {
+          "description": "Reviewers get only the artifacts (G8, O14).",
+          "const": true
+        },
+        "states_single_model_family_limit": {
+          "description": "Every report repeats the single-model-family limit (C-R4).",
+          "const": true
+        },
+        "owner_signoff_issue": {
+          "description": "The tracker issue of the owner's sign-off.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000000
+        }
+      }
+    },
+    "exploiters_gate": {
+      "description": "Exploiter results are reported, not gating (owner decision Q4).",
+      "const": false
+    }
+  }
+}
