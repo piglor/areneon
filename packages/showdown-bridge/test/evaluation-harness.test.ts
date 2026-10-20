@@ -8,8 +8,9 @@ import {
   PolicyWorkerError,
   UnsupportedCandidateError,
 } from "../src/evaluation-harness.ts";
+import { EpisodeError, episodeFromRecord } from "../src/index.ts";
 import { firstLegal, GOLDEN_FORMAT, GOLDEN_SEED, syntheticTeam } from "../src/golden.ts";
-import { type Actor, BattleAbortedError, loadEngine, type Player, type RequestRecord } from "../src/index.ts";
+import { type Actor, BattleAbortedError, ForfeitSignal, loadEngine, type Player, type RequestRecord } from "../src/index.ts";
 
 const engine = loadEngine();
 const team = syntheticTeam();
@@ -83,11 +84,44 @@ describe("policy forfeits", () => {
     expect(outcome).toMatchObject({ kind: "forfeit", loser: "p1", cause: "latency_overrun" });
   });
 
-  it("when both sides fail at once only the first failure is recorded, and it is no incident", async () => {
+  it("when both sides fail, the first failure is the one recorded, and it is no incident", async () => {
+    const quick = guardActor(() => "nonsense", policy);
+    const later = guardActor(async () => { await sleep(60); return "nonsense"; }, policy);
+    const { outcome, record } = await game({ p1: quick, p2: later });
+    expect(outcome).toMatchObject({ kind: "forfeit", loser: "p1", winner: "p2" });
+    expect(record?.forfeit?.player).toBe("p1");
+    expect(record?.omniscient_log.filter((l) => l.startsWith("|win|"))).toHaveLength(1);
+  });
+
+  it("another error after a forfeit is recorded still aborts, as an incident (fail closed)", async () => {
+    const quick = guardActor(() => "nonsense", policy);
+    const broken: Actor = async () => { await sleep(60); throw new Error("harness bug"); };
+    const { outcome, record } = await game({ p1: quick, p2: broken });
+    expect(outcome).toMatchObject({ kind: "incident", incident: "unclassified" });
+    expect(record).toBeNull();
+  });
+
+  it("records only the detail, without the signal's prefix", async () => {
+    const bad = guardActor(() => { throw new Error("segfault"); }, policy);
+    const { record } = await game({ p1: bad, p2: guardActor(firstLegal, policy) });
+    expect(record?.forfeit?.detail).toBe("segfault");
+  });
+
+  it("a synchronous actor that busy-waits past the budget forfeits though it answered", async () => {
+    const busy: Actor = (request) => {
+      const end = performance.now() + 40;
+      while (performance.now() < end);
+      return firstLegal(request);
+    };
+    const tight = { role: "policy", latency_budget: { preview_ms: 20, battle_ms: 20 } } as const;
+    const { outcome } = await game({ p1: guardActor(busy, tight), p2: guardActor(firstLegal, policy) });
+    expect(outcome).toMatchObject({ kind: "forfeit", loser: "p1", cause: "latency_overrun" });
+  });
+
+  it("a forfeited game is refused as an Episode", async () => {
     const bad = guardActor(() => "nonsense", policy);
-    const { outcome, record } = await game({ p1: bad, p2: bad });
-    expect(outcome.kind).toBe("forfeit");
-    expect(record?.forfeit).toBeDefined();
+    const { record } = await game({ p1: bad, p2: guardActor(firstLegal, policy) });
+    await expect(episodeFromRecord(record as never, "p2", {} as never)).rejects.toBeInstanceOf(EpisodeError);
   });
 
   it("a forfeit does not stop the next game of the run", async () => {
@@ -131,6 +165,14 @@ describe("harness incidents", () => {
         p1: guardActor(fail, { role: "scripted", latency_budget: { preview_ms: 50, battle_ms: 50 } }),
         p2: good,
       });
+      expect(outcome).toMatchObject({ kind: "incident", incident: "baseline_failure" });
+    }
+  });
+
+  it("a forfeit signal from a scripted actor, or one wrapping a policy actor, is an incident", async () => {
+    const wrapped = guardActor(() => "nonsense", policy);
+    for (const fail of [() => { throw new ForfeitSignal("crash", "x"); }, wrapped]) {
+      const { outcome } = await game({ p1: guardActor(fail, scripted), p2: good });
       expect(outcome).toMatchObject({ kind: "incident", incident: "baseline_failure" });
     }
   });

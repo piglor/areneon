@@ -51,7 +51,7 @@ Research for Redmine #681 (Notion Wave 1 acceptance gate: "held-out evaluation p
 | **Policy forfeit** | For the candidate or a learned opponent: an exception or crash in the policy, out-of-memory, a submission that is not in the request's legal choice set, or one decision whose compute time exceeds `latency_budget` (parameter, §10) | The game is scored as a **loss for the side whose policy failed** and recorded as a forfeit with its cause. The candidate is penalised for its own failures. Forfeits are reported per opponent. A latency forfeit depends on hardware timing and cannot be replayed exactly (§8.2). |
 | **Harness incident** | `EnumeratorDefectError`, `InvalidTeamError`, `NoCandidateError`, an engine `|error|` that aborts the battle (`BattleAbortedError`), or a failure of a scripted baseline | Not scored. The **run fails** and is reported with the block id; its results are not used. Dropping these games instead would bias the estimate towards the games the code survives. |
 
-A sealed run that fails still uses one unit of the sealed budget (I3): a rerun would be a second look at the same set. Recording a forfeit needs harness support around `runBattle`, which has no forfeit outcome today (O12).
+A sealed run that fails still uses one unit of the sealed budget (I3): a rerun would be a second look at the same set. Forfeits are recorded by the harness around `runBattle` (`evaluation-harness.ts`, O12).
 
 **Deadline compliance.** `latency_budget` is measured on A1 on the evaluation hardware. Compliance with the VGC Timer itself (bank never exhausted, no server auto-choose) can only be observed where the timer runs: ADR-005's A2 runtime with its deadline watchdog and the `deadline_outcome` records ([timer-deadline-budget.md §4](timer-deadline-budget.md)). That evidence is outside this protocol, and any gate that asks for clean deadline metrics must take it from there.
 
@@ -368,7 +368,7 @@ No value is set here. Each is chosen and recorded in ADR-010 by the stated rule.
 | O9 | A synthetic team generator with the O6 coverage labeller does not exist yet; it needs an implementation ticket | The first held-out team sets |
 | O10 | Whether a Preview Policy is also evaluated alone (with the Battle Policy fixed to a baseline) or only as part of the pair | Reporting of preview-only progress |
 | O11 | The isolated store of I1 (OS user, container or secret store), the provenance record schema and the C1/C6 checker of C7 | The first sealed set; any held-out classification |
-| O12 | Harness support for policy forfeits (D2) around `runBattle`, which has no forfeit outcome | Scoring forfeits as losses |
+| O12 | Harness support for policy forfeits (D2) around `runBattle` (`evaluation-harness.ts`) | Scoring forfeits as losses |
 | O13 | Scheduling the evaluation job's repository scan for sealed team hashes (§7) | Nothing; until it is scheduled, review and the isolated store are the only defence |
 | O14 | Independence of the reviewer in a small team (I1). Relaxed by erratum E7 (ADR-010 G8, O14) | Acceptance of a sealed report |
 

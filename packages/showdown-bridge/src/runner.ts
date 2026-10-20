@@ -30,14 +30,18 @@ export type ForfeitCause = "crash" | "out_of_memory" | "invalid_reply" | "latenc
 /**
  * An actor throws this to forfeit the game: `runBattle` ends it as a win for
  * the other seat and records the cause in `BattleRecord.forfeit`. Any other
- * actor exception still aborts the battle. The runner never retries.
+ * actor exception still aborts the battle, also one from the other seat after
+ * a forfeit was recorded (fail closed: it is an incident). The runner never
+ * retries.
  */
 export class ForfeitSignal extends Error {
   override name = "ForfeitSignal";
   readonly cause_class: ForfeitCause;
+  readonly detail: string;
   constructor(cause: ForfeitCause, detail: string) {
     super(`forfeit (${cause}): ${detail}`);
     this.cause_class = cause;
+    this.detail = detail;
   }
 }
 
@@ -244,7 +248,7 @@ export async function runBattle(options: BattleOptions): Promise<BattleRecord> {
   };
   const forfeit = (player: Player, request_seq: number, signal: ForfeitSignal): void => {
     if (record.forfeit !== undefined || ended) return;
-    record.forfeit = { player, request_seq, cause: signal.cause_class, detail: signal.message };
+    record.forfeit = { player, request_seq, cause: signal.cause_class, detail: signal.detail };
     streams.omniscient.write(`>forcewin ${player === "p1" ? "p2" : "p1"}`);
   };
   const abort = (error: Error): void => {

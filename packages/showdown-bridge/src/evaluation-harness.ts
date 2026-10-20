@@ -75,7 +75,20 @@ function workerCause(error: unknown): ForfeitCause {
 }
 
 /**
- * Wrap an actor. A policy that throws, answers after its budget, or answers
+ * Wrap an actor.
+ *
+ * Latency is the wall-clock time from the call to the reply, measured with
+ * `performance.now()`: a reply later than the budget forfeits even if it
+ * arrived. A budget can interrupt only work that yields: a policy must run in
+ * a worker or otherwise asynchronously (the ADR-010 worker protocol does). A
+ * synchronous call that blocks forever cannot be interrupted here and hangs
+ * the process; guarding against that is the caller's concern. Timed-out work
+ * is not cancelled (`Actor` has no abort signal), but its late reply is
+ * dropped, so it can never submit a choice afterwards.
+ *
+ * Nothing here is retried within a game.
+ *
+ * Roles: A policy that throws, answers after its budget, or answers
  * outside the request's legal choice set forfeits (`ForfeitSignal`). Harness
  * faults, and every failure of a `scripted` actor, pass through unchanged for
  * `playGame` to classify as incidents. The actor still sees only the request.
@@ -86,6 +99,7 @@ export function guardActor(actor: Actor, options: GuardOptions): Actor {
     if (!Number.isFinite(ms) || ms <= 0) throw new RangeError("latency budget must be a positive number of ms");
   }
   return async (request) => {
+    const started = performance.now();
     const budget = request.phase === "preview" ? latency_budget.preview_ms : latency_budget.battle_ms;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const overrun = new Promise<"overrun">((resolve) => {
@@ -99,9 +113,17 @@ export function guardActor(actor: Actor, options: GuardOptions): Actor {
         throw new ForfeitSignal("latency_overrun", `no reply within ${budget} ms`);
       }
       reply = answer;
+      if (performance.now() - started > budget) {
+        const detail = `reply took longer than ${budget} ms`;
+        if (role === "scripted") throw new BaselineFailureError(detail);
+        throw new ForfeitSignal("latency_overrun", detail);
+      }
     } catch (error) {
-      if (error instanceof BaselineFailureError || isHarnessFault(error)) throw error;
-      if (role === "scripted") throw new BaselineFailureError(describe(error));
+      // A baseline failure is always an incident, even a forfeit it raises.
+      if (role === "scripted") {
+        throw error instanceof BaselineFailureError ? error : new BaselineFailureError(describe(error));
+      }
+      if (isHarnessFault(error)) throw error;
       throw new ForfeitSignal(workerCause(error), describe(error));
     } finally {
       clearTimeout(timer);

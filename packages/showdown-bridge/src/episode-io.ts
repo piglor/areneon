@@ -211,6 +211,9 @@ export async function episodeFromRecord(
   player: Player,
   { team, opponent_team, known_synthetic, behaviour_policy_id, collection }: EpisodeOptions,
 ): Promise<Episode> {
+  if (record.forfeit !== undefined) {
+    throw new EpisodeError("a forfeited game is not an Episode: it is not training data");
+  }
   const rival = player === "p1" ? "p2" : "p1";
   for (const [who, spec] of [[player, team], [rival, opponent_team]] as const) {
     if (teamHash(spec.team) !== record.team_hashes[who]) {
