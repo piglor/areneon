@@ -1,0 +1,97 @@
+{
+  "schema_version": 1,
+  "set_id": "set-1",
+  "set_commitment_hash": "71cd94b54bf11adbe1695c526285fc8a8b47e66a28cf133d2992b20a7f319f34",
+  "evaluation_parameters_hash": "dc316efeccb25ec6bc65d30b1d1c78f10263670d3b7354697f4ce5db0acbe673",
+  "training_gate_rule_hash": "0ebaa6c502091d58e431267eb081d5ed7ddb79e75d739ffcde4b2939ce797cfa",
+  "candidate": [
+    {
+      "role": "battle",
+      "checkpoint_id": "3333333333333333333333333333333333333333333333333333333333333333",
+      "provenance_record_hash": "4444444444444444444444444444444444444444444444444444444444444444"
+    },
+    {
+      "role": "preview",
+      "checkpoint_id": "4444444444444444444444444444444444444444444444444444444444444444",
+      "provenance_record_hash": "3333333333333333333333333333333333333333333333333333333333333333"
+    }
+  ],
+  "progress_reference": [
+    {
+      "role": "battle",
+      "checkpoint_id": "5555555555555555555555555555555555555555555555555555555555555555",
+      "provenance_record_hash": "6666666666666666666666666666666666666666666666666666666666666666"
+    },
+    {
+      "role": "preview",
+      "checkpoint_id": "6666666666666666666666666666666666666666666666666666666666666666",
+      "provenance_record_hash": "5555555555555555555555555555555555555555555555555555555555555555"
+    }
+  ],
+  "opponents": [
+    {
+      "opponent_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "definition_hash": "7777777777777777777777777777777777777777777777777777777777777777",
+      "pool": "F",
+      "lineage_id": "l2"
+    },
+    {
+      "opponent_id": "actor-rule",
+      "definition_hash": "8888888888888888888888888888888888888888888888888888888888888888",
+      "pool": "B"
+    },
+    {
+      "opponent_id": "random-legal",
+      "definition_hash": "9999999999999999999999999999999999999999999999999999999999999999",
+      "pool": "B"
+    }
+  ],
+  "claims": [
+    {
+      "claim_id": "g2-actor-rule",
+      "gate": "G2",
+      "opponent_id": "actor-rule",
+      "direction": "less",
+      "margin_null_ppm": 750000
+    },
+    {
+      "claim_id": "g2-random-legal",
+      "gate": "G2",
+      "opponent_id": "random-legal",
+      "direction": "greater",
+      "margin_null_ppm": 750000
+    },
+    {
+      "claim_id": "g3-held-out-l2",
+      "gate": "G3",
+      "opponent_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "direction": "greater",
+      "margin_null_ppm": 550000
+    },
+    {
+      "claim_id": "g3b-progress-l2",
+      "gate": "G3b",
+      "opponent_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "direction": "greater",
+      "margin_null_ppm": 0
+    }
+  ],
+  "alpha_ppm": 50000,
+  "alpha_prime_ppm": 12500,
+  "b_boot": 20000,
+  "interval": {
+    "method": "percentile_bootstrap",
+    "fallback": "bca"
+  },
+  "block_plan": {
+    "n_teams": 32,
+    "n_seeds": 1
+  },
+  "learner_step_budget": 1000000,
+  "a2_matches_min": 10,
+  "harness_commit": "cccccccccccccccccccccccccccccccccccccccc",
+  "report_template_hash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  "showdown_commit": "7244fe8e28fa8bc4d0809ae30d183c608b62bb2b",
+  "format_id": "gen9championsvgc2026regmc",
+  "format_rules_hash": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+}

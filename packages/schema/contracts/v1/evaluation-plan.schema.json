@@ -1,0 +1,306 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:areneon:schema:contracts:v1:evaluation-plan",
+  "title": "EvaluationPlan",
+  "description": "The plan registered before a sealed run (evaluation protocol I2): candidate and opponent hashes, the comparison family with each claim's direction and margin null, the block plan size, the levels, the interval method, the harness commit, the report template and the L3 commitments. It holds no secret. plan_hash is SHA-256 of its JCS bytes. The reader checks it against the records it names: the family equals the rule's claims, the levels follow from the parameters, the sizes equal the commitment's, and the parameters are complete.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "set_id",
+    "set_commitment_hash",
+    "evaluation_parameters_hash",
+    "training_gate_rule_hash",
+    "candidate",
+    "progress_reference",
+    "opponents",
+    "claims",
+    "alpha_ppm",
+    "alpha_prime_ppm",
+    "b_boot",
+    "interval",
+    "block_plan",
+    "learner_step_budget",
+    "a2_matches_min",
+    "harness_commit",
+    "report_template_hash",
+    "showdown_commit",
+    "format_id",
+    "format_rules_hash"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "set_id": {
+      "description": "The sealed set the run uses.",
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$"
+    },
+    "set_commitment_hash": {
+      "description": "SHA-256 of the JCS bytes of the SealedSetCommitment record.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "evaluation_parameters_hash": {
+      "description": "SHA-256 of the JCS bytes of the EvaluationParameters record.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "training_gate_rule_hash": {
+      "description": "SHA-256 of the JCS bytes of the TrainingGateRule record.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "candidate": {
+      "description": "The candidate pair: a Preview and a Battle checkpoint, in that role order (battle, preview; a reader rule).",
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "role",
+          "checkpoint_id",
+          "provenance_record_hash"
+        ],
+        "properties": {
+          "role": {
+            "enum": [
+              "battle",
+              "preview"
+            ]
+          },
+          "checkpoint_id": {
+            "description": "The checkpoint's id.",
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "provenance_record_hash": {
+            "description": "SHA-256 of the checkpoint's CheckpointRecord JCS bytes.",
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          }
+        }
+      }
+    },
+    "progress_reference": {
+      "description": "L1's own frozen pair at the progress share of the candidate's steps (G3b): a Preview and a Battle checkpoint, in that role order (battle, preview; a reader rule).",
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "role",
+          "checkpoint_id",
+          "provenance_record_hash"
+        ],
+        "properties": {
+          "role": {
+            "enum": [
+              "battle",
+              "preview"
+            ]
+          },
+          "checkpoint_id": {
+            "description": "The checkpoint's id.",
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "provenance_record_hash": {
+            "description": "SHA-256 of the checkpoint's CheckpointRecord JCS bytes.",
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          }
+        }
+      }
+    },
+    "opponents": {
+      "description": "Sorted by opponent_id and unique (a reader rule).",
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 4096,
+      "items": {
+        "description": "One opponent.",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "opponent_id",
+          "definition_hash",
+          "pool"
+        ],
+        "properties": {
+          "opponent_id": {
+            "description": "A baseline id, or a frozen checkpoint id.",
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9._:-]{0,127}$"
+          },
+          "definition_hash": {
+            "description": "The opponent's code commit hash or checkpoint hash and provenance.",
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "pool": {
+            "description": "B scripted, F frozen, X exploiter.",
+            "enum": [
+              "B",
+              "F",
+              "X"
+            ]
+          },
+          "lineage_id": {
+            "description": "The lineage of an F or X opponent; absent for B.",
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9._:-]{0,127}$"
+          }
+        }
+      }
+    },
+    "claims": {
+      "description": "The comparison family in the rule's claim order.",
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 1000,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "claim_id",
+          "gate",
+          "opponent_id",
+          "direction",
+          "margin_null_ppm"
+        ],
+        "properties": {
+          "claim_id": {
+            "description": "As in the rule.",
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9._:-]{0,127}$"
+          },
+          "gate": {
+            "enum": [
+              "G2",
+              "G3",
+              "G3b"
+            ]
+          },
+          "opponent_id": {
+            "description": "One of the opponents.",
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9._:-]{0,127}$"
+          },
+          "direction": {
+            "description": "Every gate claim is directional (D14).",
+            "const": "greater"
+          },
+          "margin_null_ppm": {
+            "description": "The claim's margin null, derived from the rule.",
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1000000
+          }
+        }
+      }
+    },
+    "alpha_ppm": {
+      "description": "alpha.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 500000
+    },
+    "alpha_prime_ppm": {
+      "description": "alpha / (m * B_sealed).",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 500000
+    },
+    "b_boot": {
+      "description": "Bootstrap resamples.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 1000000000
+    },
+    "interval": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "method",
+        "fallback"
+      ],
+      "properties": {
+        "method": {
+          "enum": [
+            "percentile_bootstrap"
+          ]
+        },
+        "fallback": {
+          "enum": [
+            "bca"
+          ]
+        }
+      }
+    },
+    "block_plan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "n_teams",
+        "n_seeds"
+      ],
+      "properties": {
+        "n_teams": {
+          "description": "Sealed teams.",
+          "type": "integer",
+          "minimum": 2,
+          "maximum": 1000000
+        },
+        "n_seeds": {
+          "description": "Seeds per team pair.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000
+        }
+      }
+    },
+    "learner_step_budget": {
+      "description": "The pre-registered learner-step budget of the candidate's lineage (G1).",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 1000000000000
+    },
+    "a2_matches_min": {
+      "description": "Local bot-vs-bot matches required for G7.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 1000000
+    },
+    "harness_commit": {
+      "description": "The evaluation harness commit.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "report_template_hash": {
+      "description": "SHA-256 of the report template.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "showdown_commit": {
+      "description": "The pinned engine commit.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "format_id": {
+      "description": "The format.",
+      "type": "string",
+      "pattern": "^[a-z0-9]+$"
+    },
+    "format_rules_hash": {
+      "description": "The format rules record's hash (version manifest).",
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  }
+}

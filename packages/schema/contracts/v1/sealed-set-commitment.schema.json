@@ -1,0 +1,95 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:areneon:schema:contracts:v1:sealed-set-commitment",
+  "title": "SealedSetCommitment",
+  "description": "The L3 commitment of one sealed team set (evaluation protocol L3, I2; ADR-010 erratum E1): hashes and counts only. set_commitment is SHA-256(JCS({salt, teams})) with a random salt and key_commitment the SHA-256 of the secret seed key; neither the teams, the salt nor the key appear. The reader checks the counts against the parameters (the total, n_stratum_min in each stratum, b_sealed) and that the strata are sorted and unique.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "set_id",
+    "generation",
+    "set_commitment",
+    "key_commitment",
+    "team_count",
+    "stratum_counts",
+    "evaluation_parameters_hash",
+    "training_gate_rule_hash",
+    "b_sealed"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "set_id": {
+      "description": "The set's name in the register.",
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$"
+    },
+    "generation": {
+      "description": "Which generation of sealed sets this is.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 1000000
+    },
+    "set_commitment": {
+      "description": "SHA-256 of the JCS bytes of {salt, teams}.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "key_commitment": {
+      "description": "SHA-256 of the secret seed key.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "team_count": {
+      "description": "Number of sealed teams; the parameters' n_teams.",
+      "type": "integer",
+      "minimum": 2,
+      "maximum": 1000000
+    },
+    "stratum_counts": {
+      "description": "Teams per stratum cell, sorted by stratum and unique (a reader rule); logged with the commitment (erratum E1).",
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 100000,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "stratum",
+          "count"
+        ],
+        "properties": {
+          "stratum": {
+            "description": "A stratum label tuple, as the merge rule produced it.",
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._:|=,+-]{1,128}$"
+          },
+          "count": {
+            "description": "Teams in the cell.",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000000
+          }
+        }
+      }
+    },
+    "evaluation_parameters_hash": {
+      "description": "SHA-256 of the JCS bytes of the EvaluationParameters record in force.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "training_gate_rule_hash": {
+      "description": "SHA-256 of the JCS bytes of the TrainingGateRule record in force.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "b_sealed": {
+      "description": "Runs this set allows; the parameters' b_sealed.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 1000
+    }
+  }
+}

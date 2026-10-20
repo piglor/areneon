@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "parameters_version": 1,
+  "alpha_ppm": 50000,
+  "b_sealed": 1,
+  "family_size": 4,
+  "half_width_ppm": {
+    "g2": 80000,
+    "g3": 40000,
+    "g3b": 40000
+  },
+  "n_teams_floor": 24,
+  "n_teams": 32,
+  "n_seeds": 1,
+  "b_boot": 20000,
+  "r_cov": 4000,
+  "cov_tol_se_multiple": 2,
+  "n_stratum_min": 2,
+  "d_team": {
+    "differing_fields": 2,
+    "basis": "measured"
+  },
+  "latency_budget_ms": {
+    "battle_decision": 2000,
+    "preview_decision": 10000
+  },
+  "sigma_prior_ppm": 2302585,
+  "max_turns": 300,
+  "pool": {
+    "baselines": [
+      "random-legal",
+      "actor-rule"
+    ],
+    "seen_lineages": [
+      "l1"
+    ],
+    "held_out_lineages": [
+      "l2"
+    ],
+    "min_exploiters": 1
+  }
+}

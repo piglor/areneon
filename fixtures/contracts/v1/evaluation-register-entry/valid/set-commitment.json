@@ -1,0 +1,37 @@
+{
+  "kind": "set_commitment",
+  "recorded_at": "2026-11-01T10:00:00Z",
+  "operator": "owner",
+  "commitment": {
+    "schema_version": 1,
+    "set_id": "set-1",
+    "generation": 1,
+    "set_commitment": "1111111111111111111111111111111111111111111111111111111111111111",
+    "key_commitment": "2222222222222222222222222222222222222222222222222222222222222222",
+    "team_count": 32,
+    "stratum_counts": [
+      {
+        "stratum": "speed=a",
+        "count": 8
+      },
+      {
+        "stratum": "speed=b",
+        "count": 8
+      },
+      {
+        "stratum": "speed=c",
+        "count": 8
+      },
+      {
+        "stratum": "speed=d",
+        "count": 8
+      }
+    ],
+    "evaluation_parameters_hash": "dc316efeccb25ec6bc65d30b1d1c78f10263670d3b7354697f4ce5db0acbe673",
+    "training_gate_rule_hash": "0ebaa6c502091d58e431267eb081d5ed7ddb79e75d739ffcde4b2939ce797cfa",
+    "b_sealed": 1
+  },
+  "schema_version": 1,
+  "seq": 1,
+  "prev_hash": "0000000000000000000000000000000000000000000000000000000000000000"
+}

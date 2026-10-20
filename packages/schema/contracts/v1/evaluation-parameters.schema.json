@@ -1,0 +1,243 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:areneon:schema:contracts:v1:evaluation-parameters",
+  "title": "EvaluationParameters",
+  "description": "The values of the evaluation protocol's section 10 parameters (ADR-010 section 6), as a reviewed config record. Every ratio is an integer in parts per million (ppm). The profile cannot relate fields, so the reader derives and checks the rest: alpha' = alpha / (family_size * b_sealed) must be a whole number of ppm, b_boot exceeds family_size * b_sealed / alpha, r_cov is at least 1 / alpha', the coverage tolerance is cov_tol_se_multiple times the Monte Carlo standard error (derived, never stored), and the sorted-and-unique rules. The measured entries (n_teams_floor, n_teams, n_seeds, d_team) are null until Wave 4 measures them; a record with a null, or a d_team still at its starting value, is provisional and cannot be registered in a plan. A change is a new parameters_version, never an edit; the record is referenced only by the SHA-256 of its JCS bytes.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "parameters_version",
+    "alpha_ppm",
+    "b_sealed",
+    "family_size",
+    "half_width_ppm",
+    "n_teams_floor",
+    "n_teams",
+    "n_seeds",
+    "b_boot",
+    "r_cov",
+    "cov_tol_se_multiple",
+    "n_stratum_min",
+    "d_team",
+    "latency_budget_ms",
+    "sigma_prior_ppm",
+    "max_turns",
+    "pool"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "parameters_version": {
+      "description": "Bumped by every change; a registered plan names the record by hash.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 1000000
+    },
+    "alpha_ppm": {
+      "description": "Familywise error rate per sealed set (alpha), in ppm.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 500000
+    },
+    "b_sealed": {
+      "description": "Sealed runs per sealed set (B_sealed).",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 1000
+    },
+    "family_size": {
+      "description": "Number of registered gate claims (m); the TrainingGateRule lists exactly this many.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 1000
+    },
+    "half_width_ppm": {
+      "description": "Target half-width of the two-sided interval at alpha' per gate. The reader checks each is at most what the gate rule's target power allows (ADR-010 section 6.1 step 2).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "g2",
+        "g3",
+        "g3b"
+      ],
+      "properties": {
+        "g2": {
+          "description": "h for each G2 claim (scripted baselines), in ppm.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 500000
+        },
+        "g3": {
+          "description": "h for each G3 claim (held-out reference), in ppm.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 500000
+        },
+        "g3b": {
+          "description": "h for each G3b claim (training progress), in ppm.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 500000
+        }
+      }
+    },
+    "n_teams_floor": {
+      "description": "Smallest allowed number of sealed teams; null until measured on validation.",
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 2,
+      "maximum": 1000000
+    },
+    "n_teams": {
+      "description": "Sealed teams; null until measured; at least the floor.",
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 2,
+      "maximum": 1000000
+    },
+    "n_seeds": {
+      "description": "Seeds per team pair; null until measured.",
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 1,
+      "maximum": 1000000
+    },
+    "b_boot": {
+      "description": "Bootstrap resamples.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 1000000000
+    },
+    "r_cov": {
+      "description": "Coverage-check replications.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 1000000000
+    },
+    "cov_tol_se_multiple": {
+      "description": "cov_tol is this many Monte Carlo standard errors of the coverage estimate; the reader derives it.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 100
+    },
+    "n_stratum_min": {
+      "description": "Smallest stratum cell in each split (protocol D20, erratum E1); at least 2.",
+      "type": "integer",
+      "minimum": 2,
+      "maximum": 1000
+    },
+    "d_team": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "differing_fields",
+        "basis"
+      ],
+      "properties": {
+        "differing_fields": {
+          "description": "Near-duplicate distance for L2: teams differing in fewer fields are near-duplicates.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000
+        },
+        "basis": {
+          "description": "starting_value until the first validation measurement replaces it.",
+          "enum": [
+            "measured",
+            "starting_value"
+          ]
+        }
+      }
+    },
+    "latency_budget_ms": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "battle_decision",
+        "preview_decision"
+      ],
+      "properties": {
+        "battle_decision": {
+          "description": "Per battle decision, on the evaluation hardware.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3600000
+        },
+        "preview_decision": {
+          "description": "Per Team Preview decision, on the evaluation hardware.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3600000
+        }
+      }
+    },
+    "sigma_prior_ppm": {
+      "description": "Prior scale of the rating fit (D17), in ppm of a natural-log unit.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 1000000000
+    },
+    "max_turns": {
+      "description": "Turn cap passed to runBattle explicitly by the harness, never taken from the runner's default.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 100000
+    },
+    "pool": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "baselines",
+        "seen_lineages",
+        "held_out_lineages",
+        "min_exploiters"
+      ],
+      "properties": {
+        "baselines": {
+          "description": "Scripted baseline opponent ids (pool B), sorted and unique (a reader rule).",
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9._:-]{0,127}$"
+          }
+        },
+        "seen_lineages": {
+          "description": "Lineages whose frozen checkpoints are seen opponents (pool F), sorted and unique.",
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9._:-]{0,127}$"
+          }
+        },
+        "held_out_lineages": {
+          "description": "Lineages whose frozen checkpoints are held out (pool F), sorted and unique, disjoint from seen_lineages.",
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9._:-]{0,127}$"
+          }
+        },
+        "min_exploiters": {
+          "description": "Fewest evaluation exploiters (pool X) per candidate.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000
+        }
+      }
+    }
+  }
+}

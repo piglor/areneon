@@ -1,0 +1,11 @@
+{
+  "kind": "set_retirement",
+  "recorded_at": "2026-11-05T10:00:00Z",
+  "operator": "owner",
+  "set_id": "set-1",
+  "reason": "budget_spent",
+  "reveal_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+  "schema_version": 1,
+  "seq": 5,
+  "prev_hash": "910eca28a3d718be6bb587e469913c9810916d41a1572359e6f0a23056b62dcc"
+}

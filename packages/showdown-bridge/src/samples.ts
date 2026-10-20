@@ -10,6 +10,7 @@ import { fileURLToPath } from "node:url";
 import type { PrivateTeamSpec } from "@areneon/schema/types/v1/private-team-spec.ts";
 import { jcs, type Json } from "./canonical-json.ts";
 import { legalChoiceSet } from "./choice-judge.ts";
+import { evaluationSamples } from "./evaluation-samples.ts";
 import { engineDataHash, exportEngineData } from "./engine-data.ts";
 import type { Engine } from "./engine.ts";
 import { episodeFromRecord } from "./episode-io.ts";
@@ -381,7 +382,8 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
   };
 
   const samples: Record<string, unknown> = {};
-  for (const [kind, cases] of [["valid", valid], ["invalid", invalid], ["reader-invalid", readerInvalid]] as const) {
+  const evalSamples = evaluationSamples();
+  for (const [kind, cases] of [["valid", { ...valid, ...evalSamples.valid }], ["invalid", { ...invalid, ...evalSamples.invalid }], ["reader-invalid", { ...readerInvalid, ...evalSamples.readerInvalid }]] as const) {
     for (const [key, value] of Object.entries(cases)) {
       const [contract, name] = key.split("/") as [string, string];
       samples[`v1/${contract}/${kind}/${name}.json`] = value;
