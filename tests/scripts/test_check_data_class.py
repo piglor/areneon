@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from collections.abc import Mapping
 from pathlib import Path
 
@@ -119,7 +120,7 @@ SEALED = guard.SEALED
 )
 def test_sealed_episode_outside_the_marker_path_is_rejected(repo: Path, name: str) -> None:
     path = write(repo, name, episode() + "\n")
-    assert guard.violations([path]) == [f"{path}: {SEALED}"]
+    assert SEALED in [r.split(": ", 1)[1] for r in guard.violations([path])]
 
 
 @pytest.mark.parametrize("name", sorted(guard.SEALED_MARKERS))
@@ -319,9 +320,17 @@ PASTE_ONLY = {"paste": "Garchomp\nAbility: Rough Skin\n"}
 PRIVATE_RECORD = {
     "schema_version": 1,
     "data_class": "private",
+    "team_id": "0" * 32,
+    "revision": 1,
+    "supersedes_record_hash": None,
     "team_hash": "a" * 64,
+    "canonical_team_hash": "b" * 64,
     "paste": "Garchomp\nAbility: Rough Skin\n",
+    "status": "active",
+    "tags": ["synthetic"],
+    "labels": [{"label_id": "fake_out", "value": "yes"}],
 }
+SHAPE = guard.MARKER_SHAPE
 MARKER = "fixtures/contracts/v1/private-team-record/valid/sample.json"
 NOT_IN_CORPUS = guard.PASTE_NOT_IN_CORPUS
 
@@ -329,6 +338,7 @@ NOT_IN_CORPUS = guard.PASTE_NOT_IN_CORPUS
 @pytest.fixture
 def corpus(repo: Path, monkeypatch: pytest.MonkeyPatch) -> frozenset[str]:
     write(repo, "corpus/a.txt", PASTE_ONLY["paste"])
+    write(repo, "corpus/d/teams-dev.jsonl", json.dumps({"paste": "From a jsonl line\n"}) + "\n")
     write(repo, "corpus/b.json", json.dumps({"data_class": "synthetic", **PASTE_ONLY}))
     monkeypatch.setattr(guard, "TEAM_CORPUS", repo / "corpus")
     monkeypatch.setattr(guard, "PRIVATE_SAMPLE_MARKERS", frozenset({MARKER}))
@@ -401,10 +411,69 @@ def test_a_marked_file_must_be_a_private_record_with_only_corpus_pastes(
     assert NOT_IN_CORPUS in [r.split(": ", 1)[1] for r in guard.violations([path])]
 
 
+def test_the_corpus_reads_text_json_and_jsonl_pastes(corpus: frozenset[str]) -> None:
+    assert corpus == {PASTE_ONLY["paste"], "From a jsonl line\n"}
+
+
+def test_the_marker_record_keys_are_the_private_team_record_shape() -> None:
+    assert set(PRIVATE_RECORD) == guard.PRIVATE_RECORD_KEYS
+
+
 def test_the_marker_waives_only_the_root_private_label(repo: Path, corpus: frozenset[str]) -> None:
+    # An extra key is refused (the shape), and its private label is not waived.
     nested = {**PRIVATE_RECORD, "other": {"data_class": "private"}}
     path = write(repo, MARKER, json.dumps(nested))
-    assert guard.violations([path]) == [f"{path}: {PRIVATE}"]
+    assert {PRIVATE, SHAPE} <= {r.split(": ", 1)[1] for r in guard.violations([path])}
+
+
+REAL = "Garchomp @ Sitrus Berry\nAbility: Rough Skin\n- Earthquake\n"
+
+
+@pytest.mark.parametrize(
+    "extra",
+    [
+        # The reviewer's three attacks, and variants.
+        {"sets": [{"species": "Garchomp", "moves": ["Earthquake"], "evs": {"atk": 32}}]},
+        {"pastes": [REAL]},
+        {"notes": "Garchomp @ Sitrus Berry"},
+        {"species": "Garchomp", "moves": ["Earthquake"], "evs": {"atk": 32}},
+        {"nested": {"deeper": [{"paste": PASTE_ONLY["paste"]}]}},
+    ],
+)
+def test_a_marked_file_cannot_carry_extra_content(
+    repo: Path, corpus: frozenset[str], extra: dict[str, object]
+) -> None:
+    path = write(repo, MARKER, json.dumps({**PRIVATE_RECORD, **extra}))
+    assert SHAPE in [r.split(": ", 1)[1] for r in guard.violations([path])]
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        {"tags": ["Ability: Rough Skin"]},
+        {"tags": ["- Earthquake"]},
+        {"labels": [{"label_id": "x", "value": "Garchomp @ Sitrus Berry"}]},
+        {"status": "Garchomp @ Sitrus Berry"},
+        {"team_id": "line one\nAbility: Intimidate"},
+    ],
+)
+def test_a_paste_hidden_in_an_allowed_key_is_refused(
+    repo: Path, corpus: frozenset[str], field: dict[str, object]
+) -> None:
+    path = write(repo, MARKER, json.dumps({**PRIVATE_RECORD, **field}))
+    assert SHAPE in [r.split(": ", 1)[1] for r in guard.violations([path])]
+
+
+def test_a_paste_hidden_in_a_key_name_is_refused(repo: Path, corpus: frozenset[str]) -> None:
+    record = {**PRIVATE_RECORD, "labels": [{"Garchomp @ Sitrus Berry": "x"}]}
+    path = write(repo, MARKER, json.dumps(record))
+    assert SHAPE in [r.split(": ", 1)[1] for r in guard.violations([path])]
+
+
+def test_a_key_missing_from_the_record_is_refused(repo: Path, corpus: frozenset[str]) -> None:
+    record = {k: v for k, v in PRIVATE_RECORD.items() if k != "tags"}
+    path = write(repo, MARKER, json.dumps(record))
+    assert SHAPE in [r.split(": ", 1)[1] for r in guard.violations([path])]
 
 
 def test_the_marker_does_not_waive_the_sealed_rule(repo: Path, corpus: frozenset[str]) -> None:
@@ -413,7 +482,7 @@ def test_the_marker_does_not_waive_the_sealed_rule(repo: Path, corpus: frozenset
         "provenance": {"collection": {"kind": "evaluation", "sealed": True}},
     }
     path = write(repo, MARKER, json.dumps(sealed))
-    assert guard.violations([path]) == [f"{path}: {SEALED}"]
+    assert SEALED in [r.split(": ", 1)[1] for r in guard.violations([path])]
 
 
 def test_the_marker_does_not_waive_the_unlabelled_team_rule(
@@ -434,20 +503,24 @@ def test_a_marked_record_without_a_label_is_still_unlabelled(
     assert {r.split(": ", 1)[1] for r in guard.violations([path])} == {
         UNLABELLED_RECORD,
         NOT_IN_CORPUS,
+        SHAPE,
     }
 
 
 def test_the_private_markers_match_the_repo() -> None:
+    # The whole tracked tree, not only fixtures/: a private label anywhere needs a marker.
+    listed = subprocess.run(
+        ["git", "ls-files", "-z"], cwd=ROOT, check=True, capture_output=True
+    ).stdout.split(b"\0")
     private = set()
-    for file in (ROOT / "fixtures").rglob("*.json*"):
-        text = file.read_text(encoding="utf-8")
-        docs = (
-            [json.loads(text)]
-            if file.suffix == ".json"
-            else [json.loads(line) for line in text.splitlines() if line.strip()]
-        )
+    for raw in listed:
+        name = raw.decode()
+        if not name.endswith(guard.SUFFIXES) or not (ROOT / name).is_file():
+            continue
+        text = (ROOT / name).read_text(encoding="utf-8")
+        docs = guard._documents(name, text)
         if any(obj.get("data_class") == "private" for doc in docs for obj in guard._walk(doc)):
-            private.add(file.relative_to(ROOT).as_posix())
+            private.add(name)
     assert private == set(guard.PRIVATE_SAMPLE_MARKERS)
     assert all((ROOT / marker).is_file() for marker in guard.PRIVATE_SAMPLE_MARKERS)
     assert all(marker.startswith("fixtures/") for marker in guard.PRIVATE_SAMPLE_MARKERS)

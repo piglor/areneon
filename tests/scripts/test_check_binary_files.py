@@ -69,6 +69,10 @@ def test_the_allowlist_starts_empty() -> None:
         "x.db-wal",
         "x.DB-SHM",
         "x.ddb",
+        "teams/shard.parquet.snappy",
+        "teams/shard.parquet.bz2",
+        "x.db-journal",
+        "x.sqlite-journal",
     ],
 )
 def test_binary_names_are_rejected_even_with_text_content(repo: Path, name: str) -> None:
@@ -114,7 +118,6 @@ def test_a_file_that_is_not_utf8_is_rejected(repo: Path) -> None:
     [
         b"PAR1 but otherwise plain text",
         b"age-encryption.org/v1\nplain text after the header\n",
-        b"PARE but otherwise plain text",
         b"12345678DUCK and plain text",
     ],
 )
@@ -171,7 +174,23 @@ def test_a_sqlite_header_alone_is_a_signature(repo: Path) -> None:
 
 
 def test_the_encrypted_parquet_footer_signature_is_a_signature(repo: Path) -> None:
-    assert SIGNATURE in guard_reasons(b"PARE" + bytes(range(1, 40)) + b"PARE")
+    assert SIGNATURE in guard_reasons(b"PARE" + bytes(range(0x80, 0xC0)) + b"PARE")
+    assert SIGNATURE in guard_reasons(b"PARE\0")
+
+
+def test_text_starting_with_pare_is_not_an_encrypted_footer(repo: Path) -> None:
+    # A CSV may start PARENT,CHILD; negative control for the binary requirement.
+    for text in (b"PARENT,CHILD\n1,2\n", b"PARE but otherwise plain text", "PARE é".encode()):
+        assert guard.violations([write(repo, "data.csv", text)]) == []
+
+
+def test_text_starting_with_par1_is_refused_and_allowed_by_exact_path(
+    repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = write(repo, "docs/par1.txt", b"PAR1 is a word here\n")
+    assert guard.violations([path]) == [f"{path}: {SIGNATURE}"]
+    monkeypatch.setattr(guard, "ALLOWED", frozenset({path}))
+    assert guard.violations([path]) == []
 
 
 def test_armored_age_text_is_rejected_anywhere_in_a_file(repo: Path) -> None:
@@ -199,7 +218,7 @@ def wrap(data: bytes, width: int | None = None, urlsafe: bool = False) -> bytes:
 
 BLOBS = {
     "parquet": PARQUET,
-    "pare": b"PARE" + bytes(range(1, 200)),
+    "pare": b"PARE" + bytes(range(0x80, 0xFF)),
     "age": b"age-encryption.org/v1\n-> X25519 abc\n--- def\n" + bytes(range(1, 200)),
     "sqlite": b"SQLite format 3\0" + bytes(range(1, 200)),
     "duckdb": bytes(8) + b"DUCK" + bytes(range(1, 200)),

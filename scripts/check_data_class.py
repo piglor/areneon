@@ -41,7 +41,11 @@ PokePaste guard does not see JSON teams, so this guard rejects a committed
   the root object only (a record at the root is not "unlabelled" for being
   private); the sealed and unlabelled-team rules still apply. A marker added
   by another PR means rebasing onto this constant (the pinning test fails
-  until it is edited); or
+  until it is edited). The marked root's keys must equal ``PRIVATE_RECORD_KEYS``
+  (the PrivateTeamRecord shape), no other object in the file may be team-shaped,
+  and no other string (keys included) may look like a paste (a ``Species @ Item``,
+  ``Ability:`` or ``- Move`` line), so real team text cannot ride in a marked
+  file; or
 - holds a team record or manifest of the team system (ADR-013 §4, §8)
   without ``"data_class": "synthetic"`` on the object itself, wherever it
   is, ``fixtures/`` included. A TeamRecord is an object with a string
@@ -63,6 +67,7 @@ non-JSON text (YAML, source code, raw logs) are outside this guard.
 from __future__ import annotations
 
 import json
+import re
 import sys
 from collections.abc import Iterator, Sequence
 from pathlib import Path, PurePosixPath
@@ -74,6 +79,26 @@ SEALED_MARKERS = frozenset(
     }
 )
 PRIVATE_SAMPLE_MARKERS: frozenset[str] = frozenset()
+# The root keys of a PrivateTeamRecord (ADR-014 section 4); the contract itself
+# is defined by the contracts slice (#869), which edits this one constant. A
+# marked sample has exactly these keys, so team content cannot ride in others.
+PRIVATE_RECORD_KEYS = frozenset(
+    {
+        "schema_version",
+        "data_class",
+        "team_id",
+        "revision",
+        "supersedes_record_hash",
+        "team_hash",
+        "canonical_team_hash",
+        "paste",
+        "status",
+        "tags",
+        "labels",
+    }
+)
+# A PokePaste signature: `Species @ Item`, an `Ability:` line or a `- Move` line.
+PASTE_LINE = re.compile(r"^(?:[^\n]+ @ [^\n]+|Ability: [^\n]*|- \S[^\n]*)$", re.MULTILINE)
 TEAM_CORPUS = Path(__file__).resolve().parents[1] / "fixtures" / "teams"
 SUFFIXES = (".json", ".jsonl")
 TEAM_SHAPES = (
@@ -89,6 +114,10 @@ UNLABELLED_RECORD = (
 PASTE_NOT_IN_CORPUS = (
     "is a private sample marker, but not a private record whose every paste "
     "(and at least one) is in the synthetic team corpus (fixtures/teams/**)"
+)
+MARKER_SHAPE = (
+    "is a private sample marker holding more than a PrivateTeamRecord: other root keys, "
+    "another team-shaped object, or paste text outside `paste`"
 )
 UNKNOWN_KEY_KIND = 'holds a team dataset manifest whose key is not of kind "public"'
 
@@ -157,11 +186,12 @@ def team_corpus(root: Path | None = None) -> frozenset[str]:
     for file in sorted((TEAM_CORPUS if root is None else root).rglob("*")):
         if file.suffix == ".txt":
             pastes.add(file.read_text(encoding="utf-8"))
-        elif file.suffix == ".json":
-            for obj in _walk(json.loads(file.read_text(encoding="utf-8"))):
-                paste = obj.get("paste")
-                if isinstance(paste, str):
-                    pastes.add(paste)
+        elif file.suffix in SUFFIXES:
+            for doc in _documents(file.name, file.read_text(encoding="utf-8")):
+                for obj in _walk(doc):
+                    paste = obj.get("paste")
+                    if isinstance(paste, str):
+                        pastes.add(paste)
     return frozenset(pastes)
 
 
@@ -180,14 +210,17 @@ def problems_in(
     """
     found: list[str] = []
     objects = list(_walk(document))
-    waived = (
-        private_marker_ok
-        and isinstance(document, dict)
+    record_ok = (
+        isinstance(document, dict)
         and document.get("data_class") == "private"
         and _marker_pastes_ok(objects, corpus)
     )
-    if private_marker_ok and not waived:
+    shape_ok = _marker_shape_ok(document, objects)
+    waived = private_marker_ok and record_ok and shape_ok
+    if private_marker_ok and not record_ok:
         found.append(PASTE_NOT_IN_CORPUS)
+    if private_marker_ok and not shape_ok:
+        found.append(MARKER_SHAPE)
     if any(
         obj.get("data_class") == "private" and not (waived and obj is document) for obj in objects
     ):
@@ -225,6 +258,27 @@ def problems_in(
 def _marker_pastes_ok(objects: list[dict[str, object]], corpus: frozenset[str] | None) -> bool:
     pastes = [obj["paste"] for obj in objects if "paste" in obj]
     return bool(pastes) and all(isinstance(p, str) and p in (corpus or frozenset()) for p in pastes)
+
+
+def _strings(value: object) -> Iterator[str]:
+    if isinstance(value, str):
+        yield value
+    elif isinstance(value, dict):
+        for key, item in value.items():
+            yield key
+            yield from _strings(item)
+    elif isinstance(value, list):
+        for item in value:
+            yield from _strings(item)
+
+
+def _marker_shape_ok(document: object, objects: list[dict[str, object]]) -> bool:
+    if not isinstance(document, dict) or document.keys() != PRIVATE_RECORD_KEYS:
+        return False
+    if any(_is_team(obj) for obj in objects if obj is not document):
+        return False
+    rest = {key: value for key, value in document.items() if key != "paste"}
+    return not any(PASTE_LINE.search(text) for text in _strings(rest))
 
 
 def _documents(path: str, text: str) -> list[object]:

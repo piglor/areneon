@@ -6,22 +6,31 @@ DuckDB, and the private team store is age-encrypted. All are binary, so
 read them, and an encrypted file cannot be read by any guard. They are kept
 out of git, so this guard rejects a tracked file that
 
-- is named like one: ``.parquet`` (also ``.parquet.gz`` and ``.parquet.zst``),
+- is named like one: ``.parquet`` (also ``.parquet.gz``, ``.zst``, ``.snappy``
+  and ``.bz2``),
   ``.age``, ``.duckdb`` (also ``.duckdb.wal``), ``.ddb``, ``.arrow``,
   ``.feather``, ``.sqlite``, ``.sqlite3`` and ``.db``, each also with a
-  ``-wal`` or ``-shm`` journal suffix where the format has one (whatever the
+  ``-wal``, ``-shm`` or ``-journal`` suffix where the format has one (whatever the
   content); or
 - is not valid UTF-8, or holds a NUL byte (a text file never does), so a
   binary renamed to ``notes.txt`` is caught; or
 - starts with a magic number as a second check, for a small file that happens
-  to be valid text: Parquet ``PAR1``, or ``PARE`` for an encrypted footer, at
-  offset 0, the SQLite header at offset 0, the age header
-  ``age-encryption.org/v1`` at offset 0, DuckDB ``DUCK`` at offset 8; or
+  to be valid text: Parquet ``PAR1`` at offset 0, ``PARE`` (the encrypted
+  footer) at offset 0 when the file also holds a NUL or non-UTF-8 byte (a CSV
+  starting ``PARENT,CHILD`` is text; an encrypted Parquet file is binary), the
+  SQLite header at offset 0, the age header ``age-encryption.org/v1`` at
+  offset 0, DuckDB ``DUCK`` at offset 8; or
 - holds the ASCII-armoured age header anywhere (armoured age is text, so no
   NUL byte or offset gives it away); or
 - holds a base64 run (standard or URL-safe alphabet, wrapped over lines or
   not, at any 4-character boundary) whose decoded bytes start with one of
   those signatures: a binary pasted into a text file.
+
+Non-goals, accepted evasions: a base64 run that does not start on a 4-character
+boundary of its run, wrapping narrower than 8 characters per line, a run split
+into quoted chunks or space-separated groups, and any other encoding (hex,
+compression). A text file that legitimately starts with ``PAR1`` is refused;
+the remedy is an exact entry in ``ALLOWED``.
 
 ``ALLOWED`` is an exact list of repo-relative paths that may be binary; it
 starts empty, and an entry is a visible, code-owner-reviewed edit (the pinning
@@ -43,6 +52,8 @@ BINARY_SUFFIXES = (
     ".parquet",
     ".parquet.gz",
     ".parquet.zst",
+    ".parquet.snappy",
+    ".parquet.bz2",
     ".age",
     ".duckdb",
     ".duckdb.wal",
@@ -58,15 +69,19 @@ BINARY_SUFFIXES = (
     ".db",
     ".db-wal",
     ".db-shm",
+    ".db-journal",
+    ".sqlite-journal",
+    ".sqlite3-journal",
 )
 # (offset, bytes): the format's own file signature.
 MAGIC = (
     (0, b"PAR1"),
-    (0, b"PARE"),
     (0, b"SQLite format 3\0"),
     (0, b"age-encryption.org/v1"),
     (8, b"DUCK"),
 )
+# Parquet's encrypted footer: only binary content counts (a CSV may start PARENT).
+ENCRYPTED_PARQUET = b"PARE"
 # Split so that this file does not contain the header it forbids.
 ARMOR_HEADER = b"-----BEGIN AGE " + b"ENCRYPTED FILE-----"
 # A base64 run, and its continuation lines when it is wrapped.
@@ -89,7 +104,19 @@ def _wraps_a_signature(text: str) -> bool:
     return False
 
 
+def _is_binary(data: bytes) -> bool:
+    if b"\0" in data:
+        return True
+    try:
+        data.decode("utf-8")
+    except UnicodeDecodeError:
+        return True
+    return False
+
+
 def _has_signature(data: bytes) -> bool:
+    if data.startswith(ENCRYPTED_PARQUET) and _is_binary(data):
+        return True
     return any(data[offset : offset + len(magic)] == magic for offset, magic in MAGIC)
 
 
