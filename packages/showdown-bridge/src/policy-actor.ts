@@ -14,6 +14,7 @@ import { enumerateCandidates } from "./choices.ts";
 import type { Engine, PokemonSet } from "./engine.ts";
 import { guardActor, type LatencyBudget, type PlayedGame, playGame, UnsupportedCandidateError } from "./evaluation-harness.ts";
 import { resolveFormat, type VersionManifest } from "./formats.ts";
+import { policyStreamLabel } from "./league-seed.ts";
 import { observe, playerChannel } from "./player-channel.ts";
 import { type PolicyClient, PolicyReplyError } from "./policy-worker.ts";
 import { PolicyProtocolError } from "./policy-protocol.ts";
@@ -39,7 +40,7 @@ export interface SamplerInput {
  * policies, or two seats, from sharing one.
  */
 export function sampleU(input: SamplerInput): number {
-  const digest = createHash("sha256").update(jcs({ ...input } as unknown as Json)).digest();
+  const digest = createHash("sha256").update(jcs({ ...policyStreamLabel(input.seed, input.game, input.player, input.policy_id), request_seq: input.request_seq } as unknown as Json)).digest();
   return Number(digest.readBigUInt64BE(0) >> 11n);
 }
 

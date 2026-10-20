@@ -19,12 +19,38 @@ from areneon_contracts.contracts import jcs, sha256_hex
 from areneon_ml.learner.config import RunConfig
 from areneon_ml.loop import layout
 from areneon_ml.loop.driver import Loop
+from areneon_ml.loop.league import league_game_seed
 from areneon_ml.loop.play import PlayRequest
 
 from tests.ml.learner.support import episode_lines, stream_of, tiny_config
 from tests.ml.model.support import game, sample
 
 MANIFEST = sample("version-manifest/valid/golden.json")
+
+
+def league_files(
+    config: RunConfig, generation: int, pair: str, games: int = 2
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """A match plan of ``games`` self-play games and the LeagueRunRecord that names it."""
+    plan = [
+        {"game": n, "seed": league_game_seed(config.run_key, generation, n), "opponent": "self"}
+        for n in range(games)
+    ]
+    record = {
+        "schema_version": 1,
+        "run_id": config.run_key,
+        "run_config_hash": config.hash,
+        "generation": generation,
+        "seed_derivation": "league-seed/1",
+        "plan_hash": sha256_hex(jcs(plan)),
+        "pair_policy_id": pair,
+        "games": games,
+        "played": games,
+        "forfeits": 0,
+        "episodes": 2 * games,
+        "opponents": [{"opponent_policy_id": pair, "games": games}],
+    }
+    return plan, record
 
 
 class FakePlayer:
@@ -62,6 +88,9 @@ class FakePlayer:
         if self.change is not None:
             self.change(summary, training_set)
         out = request.out_dir
+        plan, record = league_files(tiny_config(), generation, request.policy_id)
+        layout.write_json(out / "plan.json", plan)
+        layout.write_json(out / "league-run.json", record)
         (out / "stream.jsonl").write_text(text, encoding="utf-8")
         layout.write_json(out / "training-set.json", training_set)
         layout.write_json(out / "generation.json", summary)

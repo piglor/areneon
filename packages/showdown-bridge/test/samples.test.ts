@@ -4,7 +4,7 @@ import { ajvFor } from "@areneon/schema/ajv";
 import { beforeAll, describe, expect, it } from "vitest";
 import { syntheticFixtureHashes } from "../src/golden.ts";
 import { EngineDataError, readEngineData } from "../src/engine-data.ts";
-import { contractVersions, EpisodeError, readTeamDatasetManifest, readTeamGeneratorConfig, readTeamLabelSet, readTeamRecord, readTeamSnapshotManifest, readTeamVocabulary, TeamRecordError, TeamVocabularyError, loadEngine, PolicyProtocolError, readHandshake, readPolicyQuery, readPolicyReply, readEpisode, readTrainingRunConfig, TrainingRunConfigError, readEvaluationRunManifest, readTrainingExample, readTrainingSet, TrainingLoaderError } from "../src/index.ts";
+import { contractVersions, EpisodeError, readTeamDatasetManifest, readTeamGeneratorConfig, readTeamLabelSet, readTeamRecord, readTeamSnapshotManifest, readTeamVocabulary, TeamRecordError, TeamVocabularyError, loadEngine, PolicyProtocolError, readHandshake, readPolicyQuery, readPolicyReply, readEpisode, readTrainingRunConfig, readLeagueRunRecord, LeagueRunRecordError, TrainingRunConfigError, readEvaluationRunManifest, readTrainingExample, readTrainingSet, TrainingLoaderError } from "../src/index.ts";
 import { EvaluationConfigError, readEvaluationParameters, readEntry, RegisterError, readEvaluationPlan, readSealedSetCommitment, readTrainingGateRule, readEvaluationConfig } from "../src/index.ts";
 import { contractSamples, SAMPLE_HASHES, SAMPLES_DIR } from "../src/samples.ts";
 import { exportEngineData } from "../src/engine-data.ts";
@@ -93,6 +93,11 @@ describe("the shared contract sample corpus (ADR-008 §2)", () => {
       "v1/evaluation-register-entry/reader-invalid/unsorted-affected-candidates.json",
       "v1/evaluation-run-manifest/reader-invalid/duplicate.json",
       "v1/evaluation-run-manifest/reader-invalid/unsorted.json",
+      "v1/league-run-record/reader-invalid/counts-disagree.json",
+      "v1/league-run-record/reader-invalid/duplicate-opponent.json",
+      "v1/league-run-record/reader-invalid/episodes-not-two-per-game.json",
+      "v1/league-run-record/reader-invalid/opponents-do-not-sum.json",
+      "v1/league-run-record/reader-invalid/unsorted-opponents.json",
       "v1/policy-handshake/reader-invalid/duplicate-contracts.json",
       "v1/policy-handshake/reader-invalid/unsorted-checkpoints.json",
       "v1/policy-handshake/reader-invalid/unsorted-contracts.json",
@@ -177,6 +182,19 @@ describe("the shared contract sample corpus (ADR-008 §2)", () => {
     expect(Object.keys(fresh)).toContain(file);
     expect(() => readTrainingRunConfig(committed(file))).toThrow(TrainingRunConfigError);
     expect(() => readTrainingRunConfig(committed(file))).toThrow(message);
+  });
+
+  // ADR-009 section 3: the LeagueRunRecord reader refuses what the profile cannot say.
+  it.each([
+    ["v1/league-run-record/reader-invalid/counts-disagree.json", "played + forfeits must equal games"],
+    ["v1/league-run-record/reader-invalid/episodes-not-two-per-game.json", "two per played game"],
+    ["v1/league-run-record/reader-invalid/unsorted-opponents.json", "sorted by opponent_policy_id"],
+    ["v1/league-run-record/reader-invalid/duplicate-opponent.json", "sorted by opponent_policy_id"],
+    ["v1/league-run-record/reader-invalid/opponents-do-not-sum.json", "must sum to games"],
+  ])("readLeagueRunRecord refuses %s", (file, message) => {
+    expect(Object.keys(fresh)).toContain(file);
+    expect(() => readLeagueRunRecord(committed(file))).toThrow(LeagueRunRecordError);
+    expect(() => readLeagueRunRecord(committed(file))).toThrow(message);
   });
 
   // ADR-010 section 2: the worker protocol's readers refuse what the profile cannot say.

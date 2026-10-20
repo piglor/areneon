@@ -21,6 +21,7 @@ from areneon_ml.loop.driver import (
     provenance_graph,
     sources_registry,
 )
+from areneon_ml.loop.play import PlayRequest
 from areneon_ml.loop.records import policy_id, team_set_hash, team_set_manifest
 from areneon_ml.model.network import ROLES
 
@@ -355,6 +356,54 @@ def test_a_summary_of_another_generation_is_refused(tmp_path: Path) -> None:
     player = FakePlayer(lambda summary, _set: summary.update(generation=7))
     with pytest.raises(LoopError, match="another generation than asked"):
         make_loop(tmp_path, player=player).run(1)
+
+
+class SpoiledLeague(FakePlayer):
+    """A simulator side whose ``name`` file (league-run.json or plan.json) ``change`` edits."""
+
+    def __init__(self, name: str, change: Any) -> None:
+        super().__init__()
+        self.name = name
+        self.edit = change
+
+    def play(self, request: PlayRequest) -> None:
+        super().play(request)
+        path = request.out_dir / self.name
+        data = layout.read_json(path)
+        self.edit(data)
+        layout.write_json(path, data)
+
+
+def test_a_league_record_that_does_not_belong_to_the_run_is_refused(tmp_path: Path) -> None:
+    player = SpoiledLeague("league-run.json", lambda r: r.update(run_id="other"))
+    with pytest.raises(LoopError, match=r"league-run\.json: run_id other"):
+        make_loop(tmp_path, player=player).run(1)
+
+
+def test_a_plan_with_a_seed_the_run_key_does_not_give_is_refused(tmp_path: Path) -> None:
+    def forge(plan: list[dict[str, Any]]) -> None:
+        plan[0]["seed"] = "sodium," + "0" * 32
+
+    player = SpoiledLeague("plan.json", forge)
+    with pytest.raises(LoopError, match=r"league-run\.json: .*plan_hash"):
+        make_loop(tmp_path, player=player).run(1)
+
+
+def test_a_record_of_another_generation_or_pair_is_refused(tmp_path: Path) -> None:
+    def other_pair(record: dict[str, Any]) -> None:
+        record["pair_policy_id"] = "policy:" + "0" * 64
+        record["opponents"] = [{"opponent_policy_id": record["pair_policy_id"], "games": 2}]
+
+    with pytest.raises(LoopError, match="another generation or pair"):
+        make_loop(tmp_path, player=SpoiledLeague("league-run.json", other_pair)).run(1)
+
+
+def test_a_record_that_counts_other_forfeits_than_the_summary_is_refused(tmp_path: Path) -> None:
+    def forfeit(record: dict[str, Any]) -> None:
+        record.update(played=1, forfeits=1, episodes=2)
+
+    with pytest.raises(LoopError, match="other forfeits"):
+        make_loop(tmp_path, player=SpoiledLeague("league-run.json", forfeit)).run(1)
 
 
 def test_a_training_set_that_is_not_the_one_reported_is_refused(tmp_path: Path) -> None:

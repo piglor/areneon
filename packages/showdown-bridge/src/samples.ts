@@ -17,6 +17,7 @@ import { type EngineData, engineDataHash, exportEngineData } from "./engine-data
 import type { Engine } from "./engine.ts";
 import { episodeFromRecord } from "./episode-io.ts";
 import { GOLDEN_DIR, GOLDEN_FORMAT, goldenBattle, syntheticFixtureHashes, syntheticTeam } from "./golden.ts";
+import { LEAGUE_SEED_DERIVATION } from "./league-seed.ts";
 import { observe, recordedChannel } from "./player-channel.ts";
 import { contractVersions } from "./policy-protocol.ts";
 import { battleClass, stampTeam, teamHash } from "./team-class.ts";
@@ -24,6 +25,7 @@ import { canonicalTeamHash, logicalSnapshotHash, recordHash, shardLogicalHash } 
 import { exportPaste } from "./teams.ts";
 import { readTeamVocabulary, TEAM_VOCABULARY_FILE, teamVocabularyHash } from "./team-vocabulary.ts";
 import { evaluationRunManifest, loadTrainingSet } from "./training-loader.ts";
+import { runConfigHash, type TrainingRunConfig } from "./training-run-config.ts";
 import type { RequestRecord } from "./runner.ts";
 
 export const SAMPLES_DIR = fileURLToPath(new URL("../../../fixtures/contracts", import.meta.url));
@@ -396,6 +398,26 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     },
     learner: { device: "cpu", threads: 1 },
   };
+  // A LeagueRunRecord (ADR-009 section 3): one generation of the tiny run, tied to that config by its hash.
+  const pairId = `policy:${"a".repeat(64)}`;
+  const leagueRun = {
+    schema_version: 1,
+    run_id: "tiny-run",
+    run_config_hash: await runConfigHash(runConfig as unknown as TrainingRunConfig),
+    generation: 1,
+    seed_derivation: LEAGUE_SEED_DERIVATION,
+    plan_hash: "b".repeat(64),
+    pair_policy_id: pairId,
+    games: 6,
+    played: 5,
+    forfeits: 1,
+    episodes: 10,
+    opponents: [
+      { opponent_policy_id: pairId, games: 4 },
+      { opponent_policy_id: "random-legal@tiny", games: 2 },
+    ],
+  };
+  const leagueRunWith = (change: (r: Record<string, unknown>) => void) => mutated(leagueRun, change);
   const runConfigWith = (change: (c: Record<string, unknown>) => void) => mutated(runConfig, change);
   const runSection = (c: Record<string, unknown>, name: string) => c[name] as Record<string, unknown>;
 
@@ -425,6 +447,14 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "team-snapshot-manifest/extended": extendedSnapshot,
     "training-run-config/tiny": runConfig,
     "training-run-config/no-baselines": runConfigWith((c) => (runSection(c, "generation").baseline_games = [])),
+    "league-run-record/tiny": leagueRun,
+    "league-run-record/self-play-only": leagueRunWith((r) => {
+      r.games = 4;
+      r.played = 4;
+      r.forfeits = 0;
+      r.episodes = 8;
+      r.opponents = [{ opponent_policy_id: pairId, games: 4 }];
+    }),
     "training-example/preview": exampleOf("preview"),
     "training-example/battle": exampleOf("battle"),
     "training-example/legacy-battle": legacyExample,
@@ -481,6 +511,12 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
       const games = runSection(c, "generation");
       games.baseline_games = [...(games.baseline_games as unknown[]), ...(games.baseline_games as unknown[])];
     }),
+    // Schema-valid, refused by the LeagueRunRecord reader: the counts agree, and the opponents are sorted and unique.
+    "league-run-record/counts-disagree": leagueRunWith((r) => (r.forfeits = 2)),
+    "league-run-record/episodes-not-two-per-game": leagueRunWith((r) => (r.episodes = 9)),
+    "league-run-record/unsorted-opponents": leagueRunWith((r) => (r.opponents = [...(leagueRun.opponents as unknown[])].reverse())),
+    "league-run-record/duplicate-opponent": leagueRunWith((r) => (r.opponents = [{ opponent_policy_id: pairId, games: 3 }, { opponent_policy_id: pairId, games: 3 }])),
+    "league-run-record/opponents-do-not-sum": leagueRunWith((r) => (r.opponents = [{ opponent_policy_id: pairId, games: 4 }, { opponent_policy_id: "random-legal@tiny", games: 1 }])),
     "checkpoint-record/duplicate-training-sets": recordWith((r) => (r.training_set_hashes = [hexOf("5"), hexOf("5")])),
     "checkpoint-record/parent-is-self": recordWith((r) => (r.parent = r.checkpoint_id)),
     "checkpoint-record/opponent-is-self": recordWith((r) => (r.league_opponents = [r.checkpoint_id])),
@@ -558,6 +594,13 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "checkpoint-record/public-class": recordWith((r) => (r.data_class = "public")),
     "checkpoint-record/blank-lineage": recordWith((r) => (r.lineage_id = "")),
     "checkpoint-record/no-learner-state": recordWith((r) => delete r.learner_state_hash),
+    "league-run-record/extra-field": leagueRunWith((r) => (r.notes = "x")),
+    "league-run-record/fractional-games": leagueRunWith((r) => (r.games = 6.5)),
+    "league-run-record/zero-generation": leagueRunWith((r) => (r.generation = 0)),
+    "league-run-record/next-derivation": leagueRunWith((r) => (r.seed_derivation = "league-seed/2")),
+    "league-run-record/short-config-hash": leagueRunWith((r) => (r.run_config_hash = "abc")),
+    "league-run-record/bare-pair-id": leagueRunWith((r) => (r.pair_policy_id = "a".repeat(64))),
+    "league-run-record/no-plan-hash": leagueRunWith((r) => delete r.plan_hash),
     "training-run-config/extra-field": runConfigWith((c) => (c.notes = "x")),
     "training-run-config/fractional-rate": runConfigWith((c) => (runSection(c, "ppo").learning_rate_micro = 0.5)),
     "training-run-config/zero-games": runConfigWith((c) => (runSection(c, "generation").games = 0)),
