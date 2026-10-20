@@ -34,6 +34,7 @@ from areneon_ml.learner.data import trajectories
 from areneon_ml.learner.state import pack_state, restore_state
 from areneon_ml.learner.trainer import Learner, configure_learner
 from areneon_ml.loop import layout
+from areneon_ml.loop.league import LeagueRecordError, check_generation_plan, read_league_run_record
 from areneon_ml.loop.play import GenerationPlayer, PlayRequest
 from areneon_ml.loop.records import (
     RecordFacts,
@@ -266,6 +267,7 @@ class Loop:
         training_set = layout.read_json(work / "training-set.json")
         if summary.get("generation") != generation:
             raise LoopError("the simulator side played another generation than asked")
+        self._check_league_run(work, generation, pair, summary)
         if sha256_hex(jcs(training_set)) != summary.get("training_set_hash"):
             raise LoopError("the TrainingSet differs from the hash the simulator side reported")
         stream = (work / "stream.jsonl").read_text(encoding="utf-8")
@@ -279,6 +281,20 @@ class Loop:
             previous.checkpoints, summary["training_set_hash"], tuple(teams), summary["manifest"]
         )
         return self._seal(generation, work, sealing)
+
+    def _check_league_run(
+        self, work: Path, generation: int, pair: str, summary: dict[str, Any]
+    ) -> None:
+        """The record is this run's and generation's, and the plan's seeds are the run key's."""
+        try:
+            record = read_league_run_record(layout.read_json(work / "league-run.json"), self.config)
+            check_generation_plan(record, layout.read_json(work / "plan.json"), self.config)
+        except LeagueRecordError as exc:
+            raise LoopError(f"league-run.json: {exc}") from exc
+        if record.generation != generation or record.pair_policy_id != pair:
+            raise LoopError("league-run.json names another generation or pair than the one played")
+        if record.forfeits != summary.get("forfeits"):
+            raise LoopError("league-run.json counts other forfeits than generation.json")
 
     # -- freezing a generation -----------------------------------------------
 

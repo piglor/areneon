@@ -1,0 +1,110 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:areneon:schema:contracts:v1:league-run-record",
+  "title": "LeagueRunRecord",
+  "description": "What one generation of a league run played (ADR-009 section 3, ADR-010 section 4): the run it belongs to, the TrainingRunConfig it ran under, the seed derivation that made every battle seed and team draw, the hash of the match plan, the frozen pair and counts of the games by opponent. Written by the simulator side next to the generation's Episodes and referenced only by the SHA-256 of its JCS bytes. The record names the derivation; the seeds themselves are recomputed from the run key and the game index, and only the Episodes' collection records keep them. Counts agree and opponents are sorted and unique (reader rules: the profile has no arithmetic and no uniqueItems).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "run_id",
+    "run_config_hash",
+    "generation",
+    "seed_derivation",
+    "plan_hash",
+    "pair_policy_id",
+    "games",
+    "played",
+    "forfeits",
+    "episodes",
+    "opponents"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "run_id": {
+      "description": "The league run key (TrainingRunConfig.seeds.run_key), as each Episode's collection record names the run.",
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+    },
+    "run_config_hash": {
+      "description": "SHA-256 of the run's TrainingRunConfig JCS bytes (runConfigHash).",
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "generation": {
+      "description": "The generation the record covers, counted from 1.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "seed_derivation": {
+      "description": "The version of the derivation of every battle seed, team draw and baseline stream from (run_id, generation, game index): SHA-256 over the JCS of those fields. A different byte layout is a different version.",
+      "const": "league-seed/1"
+    },
+    "plan_hash": {
+      "description": "SHA-256 of the JCS bytes of the generation's match plan (plan.json): the plan's identity.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "pair_policy_id": {
+      "description": "The frozen pair's behaviour_policy_id, policy: plus a SHA-256.",
+      "type": "string",
+      "pattern": "^policy:[0-9a-f]{64}$"
+    },
+    "games": {
+      "description": "Games in the plan.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "played": {
+      "description": "Games played to an end (each wrote two Episodes). played + forfeits = games.",
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "forfeits": {
+      "description": "Games a policy forfeited: not Episodes, not training data.",
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "episodes": {
+      "description": "Episodes written: two per played game.",
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "opponents": {
+      "description": "Games per opponent policy id, sorted by opponent_policy_id, each id once; the counts sum to games.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Opponent"
+      }
+    }
+  },
+  "$defs": {
+    "Opponent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "opponent_policy_id",
+        "games"
+      ],
+      "properties": {
+        "opponent_policy_id": {
+          "description": "The opponent's policy id as the Episodes' collection records name it: the frozen pair itself (self-play) or a scripted baseline, <name>@<commit>.",
+          "type": "string",
+          "pattern": "^(policy:[0-9a-f]{64}|[a-z0-9][a-z0-9._-]*@[A-Za-z0-9._-]+)$"
+        },
+        "games": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        }
+      }
+    }
+  }
+}

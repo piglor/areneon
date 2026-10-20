@@ -15,7 +15,7 @@ import {
   type TrainingPool,
   writeGeneration,
 } from "../src/league-generation.ts";
-import { loadEngine } from "../src/index.ts";
+import { checkLeagueRunRecord, LEAGUE_SEED_DERIVATION, leagueBattleSeed, loadEngine, readLeagueRunRecord } from "../src/index.ts";
 import { type PolicyClient, PolicyWorkerError } from "../src/index.ts";
 import { UnsupportedCandidateError } from "../src/evaluation-harness.ts";
 import { readTrainingSet } from "../src/training-loader.ts";
@@ -255,6 +255,15 @@ const linesOf = (result: GenerationResult, hash: string): string =>
     .filter((line) => line.includes(`"episode_hash":"${hash}"`))
     .join("\n");
 
+describe("league seeds in a generation", () => {
+  it("makes every battle seed, and every Episode's recorded seed, from the run key and the game index", async () => {
+    const result = await playGeneration({ engine, config, generation: 2, policy_id: POLICY, client: actorClient(), pool });
+    for (const entry of result.plan) expect(entry.seed).toBe(leagueBattleSeed(config.seeds.run_key, 2, entry.game));
+    const recorded = new Set(result.episodes.map((episode) => (episode.provenance as { collection: { seed: string } }).collection.seed));
+    expect(recorded).toEqual(new Set(result.plan.map((entry) => entry.seed)));
+  });
+});
+
 describe("writeGeneration", () => {
   let dir: string;
   beforeAll(() => {
@@ -273,5 +282,10 @@ describe("writeGeneration", () => {
     expect(summary).toMatchObject({ schema_version: 1, generation: 2, forfeits: 0, training_set_hash: result.training_set_hash, examples: result.set.examples });
     expect(read("generation.json")).toBe(`${jcs(summary as Json)}\n`);
     expect(JSON.parse(read("plan.json"))).toHaveLength(6);
+    const written = readLeagueRunRecord(JSON.parse(read("league-run.json")));
+    expect(written).toEqual(result.run_record);
+    expect(read("league-run.json")).toBe(`${jcs(written as unknown as Json)}\n`);
+    expect(written).toMatchObject({ generation: 2, pair_policy_id: POLICY, games: 6, seed_derivation: LEAGUE_SEED_DERIVATION });
+    await checkLeagueRunRecord(written, config);
   });
 });

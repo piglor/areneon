@@ -10,11 +10,12 @@
 // generator is not built yet, and this pool is the interim. Every team drawn
 // is reported by its hash, which becomes the team-set manifest of the run.
 
-import { createHash } from "node:crypto";
 import { closeSync, fsyncSync, mkdirSync, openSync, readFileSync, writeSync } from "node:fs";
 import { join } from "node:path";
 import type { Engine, PokemonSet } from "./engine.ts";
 import { jcs, type Json } from "./canonical-json.ts";
+import { buildLeagueRunRecord, type LeagueRunRecord } from "./league-run-record.ts";
+import { leagueGameStreams } from "./league-seed.ts";
 import { episodeFromRecord } from "./episode-io.ts";
 import { episodeHash } from "./episode.ts";
 import { guardActor, type LatencyBudget, type PlayedGame } from "./evaluation-harness.ts";
@@ -84,13 +85,11 @@ export interface GamePlan {
   baseline_seed: number;
 }
 
-const digestOf = (value: Json): Buffer => createHash("sha256").update(jcs(value)).digest();
-
 /**
  * The generation's match plan: `generation.games` self-play games, then each
- * listed baseline's games. Every number comes from SHA-256 of the JCS of the
- * run key, the generation and the game index, so the plan is reproducible
- * from the config alone. A baseline game alternates the policy's seat.
+ * listed baseline's games. Every number comes from `leagueGameStreams` (league-seed/1: SHA-256
+ * of the JCS of the run key, the generation and the game index), so the plan
+ * is reproducible from the config alone. A baseline game alternates the policy's seat.
  */
 export function planGeneration(config: TrainingRunConfig, generation: number, poolSize: number): GamePlan[] {
   if (!Number.isInteger(generation) || generation < 1) throw new RangeError("a generation is numbered from 1");
@@ -102,14 +101,14 @@ export function planGeneration(config: TrainingRunConfig, generation: number, po
     for (let i = 0; i < baseline.games; i++) opponents.push({ actor: baseline.actor, policy_id: baseline.policy_id });
   }
   return opponents.map((opponent, game) => {
-    const digest = digestOf({ run_key: config.seeds.run_key, generation, game, purpose: "league-game" });
+    const streams = leagueGameStreams(config.seeds.run_key, generation, game);
     return {
       game,
-      seed: `sodium,${digest.subarray(0, 16).toString("hex")}`,
-      teams: { p1: digest.readUInt32BE(16) % poolSize, p2: digest.readUInt32BE(20) % poolSize },
+      seed: streams.seed,
+      teams: { p1: streams.team_draws.p1 % poolSize, p2: streams.team_draws.p2 % poolSize },
       opponent,
       policy_seat: opponent === "self" ? "both" : game % 2 === 0 ? "p1" : "p2",
-      baseline_seed: digest.readUInt32BE(24),
+      baseline_seed: streams.baseline_seed,
     };
   });
 }
@@ -144,6 +143,8 @@ export interface GenerationResult {
   episode_hashes: string[];
   stream: string;
   set: TrainingSet;
+  /** What the generation played, tied to the run config and the seed derivation (`league-run.json`). */
+  run_record: LeagueRunRecord;
   /** SHA-256 of the TrainingSet's JCS bytes: what `CheckpointRecord.training_set_hashes` holds. */
   training_set_hash: string;
   manifest: VersionManifest;
@@ -255,6 +256,7 @@ export async function playGeneration(options: GenerationOptions): Promise<Genera
     episode_hashes: await Promise.all(episodes.map((episode) => episodeHash(episode, nodeSha256))),
     stream,
     set,
+    run_record: await buildLeagueRunRecord({ config, generation, pair_policy_id: policy_id, plan, games: rows }),
     training_set_hash: await nodeSha256(new TextEncoder().encode(jcs(set as unknown as Json))),
     manifest: resolveFormat(engine, config.format_id).manifest,
     team_hashes: [...drawn].sort(),
@@ -265,7 +267,7 @@ export async function playGeneration(options: GenerationOptions): Promise<Genera
  * Write a generation's files under `dir` (created if needed), all canonical JSON
  * except the stream, which is the loader's own bytes:
  * `episodes/<episode hash>.json` (every played seat), `stream.jsonl`,
- * `training-set.json`, `plan.json` and `generation.json` (the per-game rows and
+ * `training-set.json`, `plan.json`, `league-run.json` (the LeagueRunRecord) and `generation.json` (the per-game rows and
  * the hashes the Python driver records). Nothing in them depends on the clock.
  */
 export function writeGeneration(dir: string, result: GenerationResult): void {
@@ -276,6 +278,7 @@ export function writeGeneration(dir: string, result: GenerationResult): void {
   writeDurable(join(dir, "stream.jsonl"), result.stream);
   put("training-set.json", result.set);
   put("plan.json", result.plan);
+  put("league-run.json", result.run_record);
   // generation.json last: it is the file that says the rest is whole.
   put("generation.json", {
     schema_version: 1,

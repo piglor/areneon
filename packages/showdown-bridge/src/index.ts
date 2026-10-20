@@ -277,3 +277,20 @@ export {
   verifyRegister,
 } from "./evaluation-register.ts";
 export { runEvaluationCli } from "./evaluation-cli.ts";
+export {
+  buildLeagueRunRecord,
+  checkLeagueRunRecord,
+  type LeagueRunFacts,
+  type LeagueRunRecord,
+  LeagueRunRecordError,
+  leagueRunRecordHash,
+  readLeagueRunRecord,
+} from "./league-run-record.ts";
+export {
+  type GameStreams,
+  LEAGUE_SEED_DERIVATION,
+  leagueBattleSeed,
+  leagueGameStreams,
+  type PolicyStreamLabel,
+  policyStreamLabel,
+} from "./league-seed.ts";

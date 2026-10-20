@@ -33,6 +33,7 @@ describe("writeGeneration is durable", () => {
     const result = {
       generation: 1,
       plan: [],
+      run_record: { schema_version: 1 },
       games: [],
       episodes: [{ a: 1 }],
       episode_hashes: ["h1"],
@@ -49,6 +50,7 @@ describe("writeGeneration is durable", () => {
       join(out, "stream.jsonl"),
       join(out, "training-set.json"),
       join(out, "plan.json"),
+      join(out, "league-run.json"),
       join(out, "generation.json"),
       join(out, "episodes"),
       out,

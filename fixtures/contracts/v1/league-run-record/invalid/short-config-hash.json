@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "run_id": "tiny-run",
+  "run_config_hash": "abc",
+  "generation": 1,
+  "seed_derivation": "league-seed/1",
+  "plan_hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "pair_policy_id": "policy:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "games": 6,
+  "played": 5,
+  "forfeits": 1,
+  "episodes": 10,
+  "opponents": [
+    {
+      "opponent_policy_id": "policy:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "games": 4
+    },
+    {
+      "opponent_policy_id": "random-legal@tiny",
+      "games": 2
+    }
+  ]
+}
