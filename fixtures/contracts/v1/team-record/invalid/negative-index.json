@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "data_class": "synthetic",
+  "team_hash": "8c94996edd59777b4432a5202f3504c8a50cc0e26f68e00049df756963dedb06",
+  "canonical_team_hash": "4facaf1430712cff7120235ea73f8996df67406a9980e3f3175a06c0a0db900b",
+  "paste": "Venusaur @ Leftovers  \nAbility: Overgrow  \nLevel: 50  \nEVs: 4 HP / 4 Spe  \nSerious Nature  \n- Giga Drain  \n- Sludge Bomb  \n- Protect  \n- Sleep Powder  \n\nCharizard @ Charcoal  \nAbility: Blaze  \nLevel: 50  \nEVs: 4 HP / 4 Spe  \nSerious Nature  \n- Flamethrower  \n- Air Slash  \n- Protect  \n- Heat Wave  \n\nBlastoise @ Mystic Water  \nAbility: Torrent  \nLevel: 50  \nEVs: 4 HP / 4 Spe  \nSerious Nature  \n- Surf  \n- Ice Beam  \n- Protect  \n- Fake Out  \n\nPikachu @ Light Ball  \nAbility: Static  \nLevel: 50  \nEVs: 4 HP / 4 Spe  \nSerious Nature  \n- Thunderbolt  \n- Fake Out  \n- Protect  \n- Volt Switch  \n\nSnorlax @ Sitrus Berry  \nAbility: Thick Fat  \nLevel: 50  \nEVs: 4 HP / 4 Spe  \nSerious Nature  \n- Body Slam  \n- Protect  \n- Curse  \n- Rest  \n\nGengar @ Focus Sash  \nAbility: Cursed Body  \nLevel: 50  \nEVs: 4 HP / 4 Spe  \nSerious Nature  \n- Shadow Ball  \n- Sludge Bomb  \n- Protect  \n- Icy Wind  \n\n",
+  "origin": {
+    "dataset_id": "golden-1",
+    "split": "dev",
+    "index": -1,
+    "draw_counter": 0
+  },
+  "label_set_hash": "550048f401dfd0e9722921d89c6735dba9a58c2e9899013b282fcb97983a30e2",
+  "labels": [
+    {
+      "label_id": "speed_control",
+      "value": "neither"
+    },
+    {
+      "label_id": "fake_out",
+      "value": "yes"
+    },
+    {
+      "label_id": "sun_setter",
+      "value": "no"
+    }
+  ]
+}

@@ -1,0 +1,56 @@
+{
+  "schema_version": 1,
+  "data_class": "synthetic",
+  "dataset_id": "golden-1",
+  "plan_id": "golden-plan-1",
+  "generator": {
+    "generator_commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "config_hash": "762031a2d336733a102e7e6c3ec536df6d6b1ee5eb4ee2b0f02874ef5066f28e",
+    "label_set_hash": "550048f401dfd0e9722921d89c6735dba9a58c2e9899013b282fcb97983a30e2",
+    "vocabulary_hash": "48ec35e67d0f1454476648871d0388e2764d8f36f2096dede1f7ec7a9c7a0c56",
+    "manifest": {
+      "showdown_commit": "7244fe8e28fa8bc4d0809ae30d183c608b62bb2b",
+      "format_id": "gen9championsvgc2026regmc",
+      "regulation": "M-C",
+      "ruleset_hash": "4dd1f039bbcc6156e08c434972beae2370dc5fe8c9c6a263da7383c3247b68f3",
+      "format_rules_hash": "549cd2aa97324be093c567324676d46a5eff19d6b0c9d8491c483dab746d5dcc"
+    }
+  },
+  "key": {
+    "kind": "public",
+    "generation_key": "1111111111111111111111111111111111111111111111111111111111111111",
+    "assignment_key": "2222222222222222222222222222222222222222222222222222222222222222"
+  },
+  "d_max": 4000000,
+  "pilot_draws": 40000,
+  "splits": [
+    {
+      "split": "dev",
+      "teams": 5,
+      "cells": [
+        {
+          "stratum": 0,
+          "pilot_hits": 21000,
+          "quota": 3
+        },
+        {
+          "stratum": 7,
+          "pilot_hits": 40,
+          "quota": 2
+        }
+      ]
+    },
+    {
+      "split": "validation",
+      "teams": 2,
+      "cells": [
+        {
+          "stratum": 0,
+          "pilot_hits": 21000,
+          "quota": 2
+        }
+      ]
+    }
+  ],
+  "reference_pool_hash": "3333333333333333333333333333333333333333333333333333333333333333"
+}

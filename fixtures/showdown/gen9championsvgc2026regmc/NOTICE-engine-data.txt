@@ -1,5 +1,6 @@
-engine-data.json and engine-data.summary.json are derived from the data files of
-the pinned Pokemon Showdown checkout (commit 7244fe8e28fa8bc4d0809ae30d183c608b62bb2b,
+engine-data.json, engine-data.summary.json, team-vocabulary.json and
+team-vocabulary.summary.json are derived from the data files (and, for the
+vocabulary, the team validator's verdicts) of the pinned Pokemon Showdown checkout (commit 7244fe8e28fa8bc4d0809ae30d183c608b62bb2b,
 smogon/pokemon-showdown, MIT licence). They are not marked CC0. The upstream
 copyright notice and licence text follow.
 

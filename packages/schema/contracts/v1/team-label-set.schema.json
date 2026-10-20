@@ -1,0 +1,260 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:areneon:schema:contracts:v1:team-label-set",
+  "title": "TeamLabelSet",
+  "description": "A set of team labels as data (ADR-013 section 3, ADR-010 O6): each label names engine ids and the labeller code holds none. A leaf predicate holds when at least one member of the team matches one of its ids; all_of holds when every leaf holds. The sorted and unique id lists, unique label ids and values, and the ids' existence in the pinned engine are enforced by the checker (the contract profile has no uniqueItems or cross references). Its RFC 8785 SHA-256 is the label-set hash carried by every TeamRecord and manifest.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "label_set_id",
+    "labels"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "label_set_id": {
+      "description": "A name for the label set.",
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+    },
+    "labels": {
+      "description": "The labels, in the order TeamRecord.labels follows.",
+      "type": "array",
+      "maxItems": 64,
+      "items": {
+        "$ref": "#/$defs/Label"
+      },
+      "minItems": 1
+    }
+  },
+  "$defs": {
+    "HasSpecies": {
+      "description": "A species of the team is one of these. The ids are checked against the pinned engine's data.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "species"
+      ],
+      "properties": {
+        "kind": {
+          "const": "has_species"
+        },
+        "species": {
+          "description": "Engine species ids, sorted and unique.",
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "description": "An id.",
+            "type": "string",
+            "pattern": "^[a-z0-9]+$",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "minItems": 1
+        }
+      }
+    },
+    "HasMove": {
+      "description": "A member of the team knows one of these moves. The ids are checked against the pinned engine's data.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "moves"
+      ],
+      "properties": {
+        "kind": {
+          "const": "has_move"
+        },
+        "moves": {
+          "description": "Engine move ids, sorted and unique.",
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "description": "An id.",
+            "type": "string",
+            "pattern": "^[a-z0-9]+$",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "minItems": 1
+        }
+      }
+    },
+    "HasItem": {
+      "description": "A member of the team holds one of these items. The ids are checked against the pinned engine's data.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "items"
+      ],
+      "properties": {
+        "kind": {
+          "const": "has_item"
+        },
+        "items": {
+          "description": "Engine item ids, sorted and unique.",
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "description": "An id.",
+            "type": "string",
+            "pattern": "^[a-z0-9]+$",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "minItems": 1
+        }
+      }
+    },
+    "HasAbility": {
+      "description": "A member of the team has one of these abilities. The ids are checked against the pinned engine's data.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "abilities"
+      ],
+      "properties": {
+        "kind": {
+          "const": "has_ability"
+        },
+        "abilities": {
+          "description": "Engine ability ids, sorted and unique.",
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "description": "An id.",
+            "type": "string",
+            "pattern": "^[a-z0-9]+$",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "minItems": 1
+        }
+      }
+    },
+    "AllOf": {
+      "description": "Holds when every leaf predicate holds. Leaves only: there is no deeper nesting.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "of"
+      ],
+      "properties": {
+        "kind": {
+          "const": "all_of"
+        },
+        "of": {
+          "description": "The leaf predicates, all of which must hold.",
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "$ref": "#/$defs/Leaf"
+          },
+          "minItems": 1
+        }
+      }
+    },
+    "Leaf": {
+      "description": "A leaf predicate over the team's own sets.",
+      "type": "object",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/HasSpecies"
+        },
+        {
+          "$ref": "#/$defs/HasMove"
+        },
+        {
+          "$ref": "#/$defs/HasItem"
+        },
+        {
+          "$ref": "#/$defs/HasAbility"
+        }
+      ],
+      "discriminator": {
+        "propertyName": "kind"
+      }
+    },
+    "Predicate": {
+      "description": "A leaf predicate, or all_of a list of leaf predicates.",
+      "type": "object",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/HasSpecies"
+        },
+        {
+          "$ref": "#/$defs/HasMove"
+        },
+        {
+          "$ref": "#/$defs/HasItem"
+        },
+        {
+          "$ref": "#/$defs/HasAbility"
+        },
+        {
+          "$ref": "#/$defs/AllOf"
+        }
+      ],
+      "discriminator": {
+        "propertyName": "kind"
+      }
+    },
+    "LabelValue": {
+      "description": "One value a label can take, and when it applies.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "value",
+        "when"
+      ],
+      "properties": {
+        "value": {
+          "description": "The value.",
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+        },
+        "when": {
+          "$ref": "#/$defs/Predicate"
+        }
+      }
+    },
+    "Label": {
+      "description": "One label: the first value, in order, whose predicate holds is the team's value; otherwise the default.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "label_id",
+        "values",
+        "default"
+      ],
+      "properties": {
+        "label_id": {
+          "description": "The label's id.",
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+        },
+        "values": {
+          "description": "The values in the order they are tried.",
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "$ref": "#/$defs/LabelValue"
+          },
+          "minItems": 1
+        },
+        "default": {
+          "description": "The value when no predicate holds.",
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+        }
+      }
+    }
+  }
+}

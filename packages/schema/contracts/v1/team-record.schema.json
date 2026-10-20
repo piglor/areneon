@@ -1,0 +1,112 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:areneon:schema:contracts:v1:team-record",
+  "title": "TeamRecord",
+  "description": "One public synthetic team (ADR-013 section 4): its PokePaste in the engine's canonical form, the hashes that identify it, where it was drawn, and its labels. The positional team_hash is SHA-256 of the JCS bytes of the set array in paste order; canonical_team_hash is the same hash of the sets sorted by species id (ties by the set's JCS bytes), so it does not depend on order and is the identity for the no-overlap rules. A record is content-addressed: record_hash is SHA-256 of the JCS bytes of this object. The paste's round trip through the engine, both hashes, the label order and the labels' agreement with the label set are enforced by the reader (the contract profile cannot compute them).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "data_class",
+    "team_hash",
+    "canonical_team_hash",
+    "paste",
+    "origin",
+    "label_set_hash",
+    "labels"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "data_class": {
+      "description": "Always synthetic: a team in this system is generated from the pinned engine's data and a recorded seed, never a real team (ADR-013, ADR-008 section 5). The data-class guard refuses a record of this shape without it.",
+      "const": "synthetic"
+    },
+    "team_hash": {
+      "description": "SHA-256 of the JCS bytes of the team's set array, in paste order.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "canonical_team_hash": {
+      "description": "SHA-256 of the JCS bytes of the set array sorted by species id, ties broken by the set's JCS bytes.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "paste": {
+      "description": "The team as PokePaste text, exactly as the engine exports it.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 16384
+    },
+    "origin": {
+      "description": "Where in a generation run the team came from.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "dataset_id",
+        "split",
+        "index",
+        "draw_counter"
+      ],
+      "properties": {
+        "dataset_id": {
+          "description": "The TeamDatasetManifest this team was generated under.",
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+        },
+        "split": {
+          "description": "The split a team belongs to. Sealed teams live only in the isolated evaluation store and have no public split.",
+          "enum": [
+            "dev",
+            "validation",
+            "training"
+          ]
+        },
+        "index": {
+          "description": "The team's position in its split, in the dataset's fixed order.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "draw_counter": {
+          "description": "The counter k of the draw in the stream that produced the team.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    "label_set_hash": {
+      "description": "SHA-256 of the JCS bytes of the TeamLabelSet the labels were computed with.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "labels": {
+      "description": "One entry per label of the label set, in the label set's order (order is significant).",
+      "type": "array",
+      "maxItems": 64,
+      "items": {
+        "description": "A label's value for this team.",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "label_id",
+          "value"
+        ],
+        "properties": {
+          "label_id": {
+            "description": "The label's id.",
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+          },
+          "value": {
+            "description": "The value the label takes.",
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+          }
+        }
+      }
+    }
+  }
+}

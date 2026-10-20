@@ -1,0 +1,166 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:areneon:schema:contracts:v1:team-generator-config",
+  "title": "TeamGeneratorConfig",
+  "description": "The named parameters of the team generator (ADR-013 section 2). Level, team size, the Stat Point total and the Item Clause are not here: they come from the pinned engine's rule table. Every value is an integer, and a wrong value only changes how many draws the engine rejects, because the validator judges every team. The sorted and unique item list and the item ids' existence are enforced by the reader and the checker. Its RFC 8785 SHA-256 is the config hash.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "config_id",
+    "iv",
+    "stat_point_max_per_stat",
+    "gender_policy",
+    "nickname_policy",
+    "default_item_weight",
+    "item_weights",
+    "d_max",
+    "pilot_draws",
+    "pilot_min_hits",
+    "n_stratum_min",
+    "fill_quantile_permille",
+    "sealed_margin_permille",
+    "range_draws_log2",
+    "range_margin_permille",
+    "shard_rows_log2",
+    "two_platform_bound",
+    "sampled_ranges"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "config_id": {
+      "description": "A name for the configuration.",
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+    },
+    "iv": {
+      "description": "The IV every stat takes.",
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 31
+    },
+    "stat_point_max_per_stat": {
+      "description": "The most Stat Points a draw puts into one stat.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 252
+    },
+    "gender_policy": {
+      "description": "unset leaves gender to the engine; random draws it.",
+      "enum": [
+        "unset",
+        "random"
+      ]
+    },
+    "nickname_policy": {
+      "description": "none gives no nickname; species gives the species name.",
+      "enum": [
+        "none",
+        "species"
+      ]
+    },
+    "default_item_weight": {
+      "description": "The weight of an item the list below does not name.",
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 1000000
+    },
+    "item_weights": {
+      "description": "Weights that override the default, sorted by item id and unique.",
+      "type": "array",
+      "maxItems": 4096,
+      "items": {
+        "description": "An item and its integer draw weight.",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "item",
+          "weight"
+        ],
+        "properties": {
+          "item": {
+            "description": "An item id.",
+            "type": "string",
+            "pattern": "^[a-z0-9]+$",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "weight": {
+            "description": "The weight.",
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1000000
+          }
+        }
+      }
+    },
+    "d_max": {
+      "description": "D_max: the most draws of the single stream one plan may use.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "pilot_draws": {
+      "description": "The draws of the recorded pilot (at least 40,000).",
+      "type": "integer",
+      "minimum": 40000,
+      "maximum": 9007199254740991
+    },
+    "pilot_min_hits": {
+      "description": "The fewest pilot hits a cell needs to count as affordable.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "n_stratum_min": {
+      "description": "The fewest teams every cell must have in each split.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "fill_quantile_permille": {
+      "description": "The quantile of a cell's fill time the plan is sized for, in thousandths (990 is 0.99).",
+      "type": "integer",
+      "minimum": 500,
+      "maximum": 999
+    },
+    "sealed_margin_permille": {
+      "description": "How far a sealed plan is over-provisioned, in thousandths.",
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 10000
+    },
+    "range_draws_log2": {
+      "description": "The stream is split into ranges of 2^this draws.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 40
+    },
+    "range_margin_permille": {
+      "description": "The extra ranges provisioned beyond the planned stream length, in thousandths (100 is 10 percent).",
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 10000
+    },
+    "shard_rows_log2": {
+      "description": "A shard holds about 2^this rows.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 40
+    },
+    "two_platform_bound": {
+      "description": "Up to this many teams both platforms run the whole pipeline.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "sampled_ranges": {
+      "description": "Above the bound, the second platform recomputes this many ranges.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 4096
+    }
+  }
+}

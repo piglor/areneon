@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "data_class": "synthetic",
+  "team_hash": "8c94996edd59777b4432a5202f3504c8a50cc0e26f68e00049df756963dedb06",
+  "canonical_team_hash": "4facaf1430712cff7120235ea73f8996df67406a9980e3f3175a06c0a0db900b",
+  "paste": "",
+  "origin": {
+    "dataset_id": "golden-1",
+    "split": "dev",
+    "index": 0,
+    "draw_counter": 0
+  },
+  "label_set_hash": "550048f401dfd0e9722921d89c6735dba9a58c2e9899013b282fcb97983a30e2",
+  "labels": [
+    {
+      "label_id": "speed_control",
+      "value": "neither"
+    },
+    {
+      "label_id": "fake_out",
+      "value": "yes"
+    },
+    {
+      "label_id": "sun_setter",
+      "value": "no"
+    }
+  ]
+}
