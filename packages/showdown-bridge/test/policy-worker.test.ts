@@ -99,6 +99,8 @@ describe("failures are classified for guardActor (ADR-010 section 2)", () => {
   it.each([
     ["malformed", /not UTF-8 JSON/],
     ["bad-utf8", /not UTF-8 JSON/],
+    ["spaced", /not in RFC 8785/],
+    ["duplicate-key", /not in RFC 8785/],
     ["unknown-id", /names no outstanding query/],
     ["long", /longer than 4000000 bytes/],
     ["long-unterminated", /longer than 4000000 bytes/],
@@ -146,6 +148,16 @@ describe("failures are classified for guardActor (ADR-010 section 2)", () => {
   });
 });
 
+describe("a worker's stderr", () => {
+  it("never reaches a forfeit detail beyond the class of its last line", async () => {
+    const worker = await started("leaky");
+    const error = (await worker.ask("g1", INPUT).catch((e: unknown) => e)) as PolicyWorkerError;
+    expect(error).toBeInstanceOf(PolicyWorkerError);
+    expect(error.message).toContain("ValueError");
+    for (const leaked of ["bad value", "species", "Traceback"]) expect(error.message).not.toContain(leaked);
+  });
+});
+
 describe("one query per battle, at most n_parallel at once (ADR-010 section 2)", () => {
   it("refuses a second query for a battle that has one outstanding", async () => {
     const worker = await started("slow");
@@ -173,6 +185,17 @@ describe("one query per battle, at most n_parallel at once (ADR-010 section 2)",
 });
 
 describe("restart and close", () => {
+  it("beginGame leaves a healthy worker running, and restarts one that has an abandoned query", async () => {
+    const worker = await started("slow");
+    await worker.beginGame();
+    const abandoned = worker.ask("g1", INPUT).catch((e: unknown) => e);
+    // The query is still outstanding (a guard gave up on it): its battle id is taken.
+    await expect(worker.ask("g1", INPUT)).rejects.toThrow(/already has a query outstanding/);
+    await worker.beginGame();
+    expect(await abandoned).toBeInstanceOf(PolicyWorkerError);
+    expect((await worker.ask("g1", INPUT)).identity).toEqual(INPUT.identity);
+  });
+
   it("restarts a crashed worker between games, with a fresh session", async () => {
     const worker = await started("crash");
     await expect(worker.ask("g1", INPUT)).rejects.toThrow(PolicyWorkerError);

@@ -61,6 +61,10 @@ lines.on("line", (text) => {
       process.stderr.write("MemoryError: cannot allocate\n");
       process.exit(1);
       break;
+    case "leaky":
+      process.stderr.write(`Traceback (most recent call last):\nValueError: bad value ${JSON.stringify(query.observation.team)}\n`);
+      process.exit(1);
+      break;
     case "kill":
       process.kill(process.pid, "SIGKILL");
       break;
@@ -69,6 +73,12 @@ lines.on("line", (text) => {
       break;
     case "bad-utf8":
       process.stdout.write(Buffer.from([0xff, 0xfe, 0x0a]));
+      break;
+    case "spaced":
+      process.stdout.write(`${JSON.stringify({ schema_version: 1, query_id: query.query_id, reply: { kind: "error", error: "invalid_query", detail: "x" } }, null, 1).replaceAll("\n", "")}\n`);
+      break;
+    case "duplicate-key":
+      process.stdout.write(`{"query_id":${query.query_id},"query_id":${query.query_id},"reply":{"detail":"x","error":"invalid_query","kind":"error"},"schema_version":1}\n`);
       break;
     case "unknown-id":
       write({ schema_version: 1, query_id: query.query_id + 100, reply: { kind: "error", error: "invalid_query", detail: "x" } });

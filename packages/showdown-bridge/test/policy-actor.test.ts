@@ -8,7 +8,7 @@ import { guardActor, type GuardOptions, playGame, PolicyWorkerError, Unsupported
 import { GOLDEN_FORMAT, GOLDEN_SEED, syntheticFixtureHashes, syntheticTeam } from "../src/golden.ts";
 import { type Actor, type ActorContext, type BattleRecord, loadEngine, type Player, type RequestRecord, runBattle } from "../src/index.ts";
 import { recordedChannel } from "../src/player-channel.ts";
-import { type PolicyActorOptions, policyActor, sampleU } from "../src/policy-actor.ts";
+import { type PolicyActorOptions, policyActor, policyGame, sampleU } from "../src/policy-actor.ts";
 import { PolicyProtocolError, type PolicyQueryInput } from "../src/policy-protocol.ts";
 import { type PolicyClient, PolicyReplyError, PolicyWorkerClient } from "../src/policy-worker.ts";
 import { resolveFormat } from "../src/formats.ts";
@@ -198,7 +198,7 @@ describe("failures reach guardActor classified (ADR-010 section 2)", () => {
     expect(outcome).toMatchObject({ kind: "incident", incident: "policy_protocol" });
   });
 
-  it("a worker that is too slow forfeits as latency_overrun", async () => {
+  it("a worker that is too slow forfeits as latency_overrun, and the next game is not charged for it", async () => {
     const worker = new PolicyWorkerClient({
       command: process.execPath,
       args: [FAKE, "slow"],
@@ -210,13 +210,21 @@ describe("failures reach guardActor classified (ADR-010 section 2)", () => {
     });
     await worker.start();
     try {
-      const tight = { role: "policy" as const, latency_budget: { preview_ms: 100, battle_ms: 100 } };
-      const actors = { p1: guardActor(policyActor(optionsFor(worker, "p1")), tight), p2: guardActor(policyActor(optionsFor(worker, "p2")), tight) };
-      expect((await play(actors)).outcome).toMatchObject({ kind: "forfeit", cause: "latency_overrun" });
+      const seat = { client: worker, policy_id: `policy:${"a".repeat(64)}`, sampling: "sample" as const };
+      const game = (ms: number, index: number) =>
+        policyGame({
+          engine, formatId: GOLDEN_FORMAT, seed: GOLDEN_SEED, game: index, teams: { p1: sets, p2: sets }, known_synthetic: known,
+          seats: { p1: seat, p2: seat }, latency_budget: { preview_ms: ms, battle_ms: ms }, maxTurns: 1,
+        });
+      await worker.beginGame();
+      expect((await game(100, 0)).outcome).toMatchObject({ kind: "forfeit", cause: "latency_overrun" });
+      // The abandoned query would keep the worker busy; beginGame gives the next game a clean one.
+      await worker.beginGame();
+      expect((await game(5_000, 1)).outcome.kind).toBe("played");
     } finally {
       await worker.close();
     }
-  });
+  }, 30_000);
 
   describe("the adapter's own refusals", () => {
     const request = async (): Promise<RequestRecord> => {
@@ -295,10 +303,42 @@ describe("a whole A1 battle through the worker process (stub model)", () => {
     return worker;
   };
 
+  const run = (worker: PolicyWorkerClient, game = 0) => {
+    const seat = { client: worker, policy_id: `policy:${"a".repeat(64)}`, sampling: "sample" as const };
+    return policyGame({
+      engine, formatId: GOLDEN_FORMAT, seed: GOLDEN_SEED, game, teams: { p1: sets, p2: sets }, known_synthetic: known,
+      seats: { p1: seat, p2: seat }, latency_budget: budget,
+    });
+  };
+
+  it("takes the seed once: the battle and the sampler run on the same one", async () => {
+    const client = recorder();
+    const seat = { client, policy_id: `policy:${"a".repeat(64)}`, sampling: "sample" as const };
+    const { record } = await policyGame({
+      engine, formatId: GOLDEN_FORMAT, seed: GOLDEN_SEED, game: 2, teams: { p1: sets, p2: sets }, known_synthetic: known,
+      seats: { p1: seat, p2: seat }, latency_budget: budget,
+    });
+    expect((record as BattleRecord).seed).toBe(GOLDEN_SEED);
+    for (const { query } of client.queries) {
+      const sampling = query.sampling as { u: number };
+      expect(sampling.u).toBe(sampleU({ seed: GOLDEN_SEED, game: 2, player: query.observation.player, policy_id: seat.policy_id, request_seq: query.identity.request_seq }));
+    }
+  });
+
+  it("leaves a seat that is already an actor as it is", async () => {
+    const worker = await open("ok");
+    const seat = { client: worker, policy_id: `policy:${"a".repeat(64)}`, sampling: "argmax" as const };
+    const { outcome } = await policyGame({
+      engine, formatId: GOLDEN_FORMAT, seed: GOLDEN_SEED, game: 0, teams: { p1: sets, p2: sets }, known_synthetic: known,
+      seats: { p1: seat, p2: guardActor((r) => actorRule(r.legal as NonNullable<RequestRecord["legal"]>), policy) }, latency_budget: budget, maxTurns: 3,
+    });
+    expect(outcome.kind).toBe("played");
+  });
+
   it("plays to a result, and the same commit, seed and game reproduce the log", async () => {
     const worker = await open("ok");
-    const first = await play(both(worker));
-    const second = await play(both(worker));
+    const first = await run(worker);
+    const second = await run(worker);
     expect(first.outcome.kind).toBe("played");
     expect((second.record as BattleRecord).omniscient_log).toEqual((first.record as BattleRecord).omniscient_log);
     expect((first.record as BattleRecord).choices.length).toBeGreaterThan(4);
@@ -306,14 +346,14 @@ describe("a whole A1 battle through the worker process (stub model)", () => {
 
   it("a worker that crashes mid-game forfeits it, and is restarted between games", async () => {
     const worker = await open("crash");
-    const lost = await play(both(worker));
+    const lost = await run(worker);
     expect(lost.outcome).toMatchObject({ kind: "forfeit", cause: "crash" });
-    await worker.restart();
-    expect((await play(both(worker))).outcome).toMatchObject({ kind: "forfeit", cause: "crash" });
+    await worker.beginGame();
+    expect((await run(worker)).outcome).toMatchObject({ kind: "forfeit", cause: "crash" });
   });
 
   it("a worker that answers outside the candidates forfeits as invalid_reply", async () => {
     const worker = await open("wrong-choice");
-    expect((await play(both(worker))).outcome).toMatchObject({ kind: "forfeit", cause: "invalid_reply" });
+    expect((await run(worker)).outcome).toMatchObject({ kind: "forfeit", cause: "invalid_reply" });
   });
 });

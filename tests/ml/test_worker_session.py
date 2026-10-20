@@ -173,7 +173,9 @@ def recommendation_of(frames: list[dict[str, Any]], index: int) -> dict[str, Any
 
 def test_a_query_answers_the_same_alone_and_after_others(tmp_path: Path) -> None:
     # Batch invariance (ADR-010 §2): evaluation scores one query per pass, so what
-    # was scored before cannot change the answer.
+    # was scored before cannot change the answer. Against the stateless stub this
+    # holds trivially; it tests the session's one-query-per-pass shape. The real
+    # check, on the network's float accumulation, lands with the network slice (#839).
     worker = make_worker(tmp_path)
     target = battle_query(query_id=9, sampling={"kind": "sample", "u": 2**52})
     others = [preview_query(query_id=1), battle_query(query_id=2), preview_query(query_id=3)]
@@ -231,7 +233,15 @@ def test_checkpoints_load_only_by_id_from_the_run_directory(tmp_path: Path) -> N
     run_dir, preview, _ = make_run_dir(tmp_path)
     store = CheckpointStore(run_dir)
     assert hashlib.sha256(store.load(preview)).hexdigest() == preview
-    for bad in ["../../etc/passwd", "ABC", preview.upper(), "0" * 63, "", f"{preview}/.."]:
+    for bad in [
+        "../../etc/passwd",
+        "ABC",
+        preview.upper(),
+        "0" * 63,
+        "",
+        f"{preview}/..",
+        f"{preview}\n",
+    ]:
         with pytest.raises(CheckpointError, match="64 lowercase"):
             store.load(bad)
     with pytest.raises(CheckpointError, match="cannot be read"):

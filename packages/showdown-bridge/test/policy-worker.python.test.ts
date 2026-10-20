@@ -1,33 +1,27 @@
 // The real Python worker (ml/areneon_ml/worker, stub scorer) behind the TS client, A1 battles on top.
 // It needs the project's Python environment (`make setup`, uv sync); without it the file is skipped,
-// as the typescript CI job has none. The python job covers the worker on its own (tests/ml).
+// unless ARENEON_REQUIRE_PYTHON_WORKER=1. The typescript CI job installs the worker's environment without torch and requires this file to run.
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { PrivateTeamSpec } from "@areneon/schema/types/v1/private-team-spec.ts";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { engineDataHash, readEngineData } from "../src/engine-data.ts";
-import { guardActor, playGame } from "../src/evaluation-harness.ts";
 import { GOLDEN_DIR, GOLDEN_FORMAT, GOLDEN_SEED, syntheticFixtureHashes, syntheticTeam } from "../src/golden.ts";
 import { type BattleRecord, loadEngine } from "../src/index.ts";
-import { resolveFormat } from "../src/formats.ts";
-import { policyActor } from "../src/policy-actor.ts";
+import { policyGame } from "../src/policy-actor.ts";
 import { PolicyHandshakeError, PolicyWorkerClient, type PolicyWorkerOptions } from "../src/policy-worker.ts";
-import { battleClass, stampTeam, teamHash } from "../src/team-class.ts";
 
 const ROOT = fileURLToPath(new URL("../../../", import.meta.url));
 const PYTHON = join(ROOT, ".venv/bin/python");
 const sha = (data: Buffer | string): string => createHash("sha256").update(data).digest("hex");
 
-describe.skipIf(!existsSync(PYTHON))("the Python policy worker behind the TS client", () => {
+// CI sets ARENEON_REQUIRE_PYTHON_WORKER, so a missing environment fails there instead of skipping.
+describe.skipIf(!existsSync(PYTHON) && process.env.ARENEON_REQUIRE_PYTHON_WORKER !== "1")("the Python policy worker behind the TS client", () => {
   const engine = loadEngine();
   const known = syntheticFixtureHashes(engine);
   const sets = syntheticTeam();
-  const team = stampTeam(sets as PrivateTeamSpec["team"], known);
-  const manifest = resolveFormat(engine, GOLDEN_FORMAT).manifest;
-  const channel_class = battleClass({ p1: teamHash(sets), p2: teamHash(sets) }, known);
   const dataFile = join(GOLDEN_DIR, "engine-data.json");
   const expectedHash = engineDataHash(readEngineData(JSON.parse(readFileSync(dataFile, "utf8"))));
   const maxLine = 4_000_000;
@@ -68,13 +62,13 @@ describe.skipIf(!existsSync(PYTHON))("the Python policy worker behind the TS cli
     },
   });
 
-  const play = (client: PolicyWorkerClient, game: number) => {
-    const actor = (player: "p1" | "p2") =>
-      guardActor(
-        policyActor({ client, battle: `g${game}-${player}`, player, team, manifest, channel_class, seed: GOLDEN_SEED, game, policy_id: `policy:${"a".repeat(64)}`, sampling: "sample" }),
-        { role: "policy", latency_budget: { preview_ms: 30_000, battle_ms: 30_000 } },
-      );
-    return playGame({ engine, formatId: GOLDEN_FORMAT, seed: GOLDEN_SEED, teams: { p1: sets, p2: sets }, actors: { p1: actor("p1"), p2: actor("p2") } });
+  const play = async (client: PolicyWorkerClient, game: number) => {
+    await client.beginGame();
+    const seat = { client, policy_id: `policy:${"a".repeat(64)}`, sampling: "sample" as const };
+    return policyGame({
+      engine, formatId: GOLDEN_FORMAT, seed: GOLDEN_SEED, game, teams: { p1: sets, p2: sets }, known_synthetic: known,
+      seats: { p1: seat, p2: seat }, latency_budget: { preview_ms: 30_000, battle_ms: 30_000 },
+    });
   };
 
   it("plays A1 battles against the stub model, and a game reproduces from its seed and index", async () => {

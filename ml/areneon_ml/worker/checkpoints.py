@@ -12,7 +12,7 @@ import hashlib
 import re
 from pathlib import Path
 
-_ID = re.compile(r"^[0-9a-f]{64}$")
+_ID = re.compile(r"[0-9a-f]{64}")
 
 
 class CheckpointError(ValueError):
@@ -24,7 +24,7 @@ class CheckpointStore:
         self._dir = run_dir / "checkpoints"
 
     def load(self, checkpoint_id: str) -> bytes:
-        if not _ID.match(checkpoint_id):
+        if not _ID.fullmatch(checkpoint_id):
             raise CheckpointError("a checkpoint id is 64 lowercase hex digits")
         path = self._dir / f"{checkpoint_id}.safetensors"
         try:

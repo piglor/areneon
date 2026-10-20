@@ -7,17 +7,18 @@
 
 import { createHash } from "node:crypto";
 import type { PolicyQuery } from "@areneon/schema/types/v1/policy-query.ts";
+import type { PrivateTeamSpec } from "@areneon/schema/types/v1/private-team-spec.ts";
 import { NoCandidateError } from "./actor-rule.ts";
 import { type Json, jcs } from "./canonical-json.ts";
 import { enumerateCandidates } from "./choices.ts";
-import { UnsupportedCandidateError } from "./evaluation-harness.ts";
-import type { VersionManifest } from "./formats.ts";
+import type { Engine, PokemonSet } from "./engine.ts";
+import { guardActor, type LatencyBudget, type PlayedGame, playGame, UnsupportedCandidateError } from "./evaluation-harness.ts";
+import { resolveFormat, type VersionManifest } from "./formats.ts";
 import { observe, playerChannel } from "./player-channel.ts";
 import { type PolicyClient, PolicyReplyError } from "./policy-worker.ts";
 import { PolicyProtocolError } from "./policy-protocol.ts";
 import { type Actor, ForfeitSignal, type Player } from "./runner.ts";
-import type { DataClass } from "./team-class.ts";
-import type { PrivateTeamSpec } from "@areneon/schema/types/v1/private-team-spec.ts";
+import { battleClass, type DataClass, stampTeam, type SyntheticTeamHashes, teamHash } from "./team-class.ts";
 
 /** What the sampler hashes (ADR-010 §2). */
 export interface SamplerInput {
@@ -52,6 +53,10 @@ export interface PolicyActorOptions {
   manifest: VersionManifest;
   /** The class of the player's channel: the battle's, from both teams (`battleClass`). */
   channel_class: DataClass;
+  /**
+   * The battle seed `runBattle` is given. The sampler hashes it, so it must be
+   * the same value; `policyGame` takes it once and passes it to both. Prefer it.
+   */
   seed: string;
   game: number;
   policy_id: string;
@@ -106,4 +111,60 @@ export function policyActor(options: PolicyActorOptions): Actor {
       throw error;
     }
   };
+}
+
+/** One seat of a `policyGame`: a learned policy behind a worker. */
+export interface PolicySeat {
+  client: PolicyClient;
+  policy_id: string;
+  sampling: "argmax" | "sample";
+}
+
+export interface PolicyGameOptions {
+  engine: Engine;
+  formatId: string;
+  /** The battle seed: the one value the engine runs on and the sampler hashes. */
+  seed: string;
+  /** The game's index within its protocol block or league match. */
+  game: number;
+  teams: Record<Player, PokemonSet[]>;
+  known_synthetic: SyntheticTeamHashes;
+  /** A policy seat, or an actor already guarded by the caller (a scripted baseline). */
+  seats: Record<Player, PolicySeat | Actor>;
+  latency_budget: LatencyBudget;
+  maxTurns?: number;
+}
+
+/**
+ * Play one A1 game with policy seats. The seed is taken once and used for
+ * both the battle and the sampler, so the two cannot differ; each policy seat
+ * is guarded as role `policy`. Call `client.beginGame()` before it.
+ */
+export async function policyGame(options: PolicyGameOptions): Promise<PlayedGame> {
+  const { engine, formatId, seed, game, teams, known_synthetic, seats, latency_budget, maxTurns } = options;
+  const manifest = resolveFormat(engine, formatId).manifest;
+  const channel_class = battleClass({ p1: teamHash(teams.p1), p2: teamHash(teams.p2) }, known_synthetic);
+  const actorOf = (player: Player): Actor => {
+    const seat = seats[player];
+    if (typeof seat === "function") return seat;
+    const actor = policyActor({
+      ...seat,
+      battle: `game-${game}-${player}`,
+      player,
+      team: stampTeam(teams[player] as PrivateTeamSpec["team"], known_synthetic),
+      manifest,
+      channel_class,
+      seed,
+      game,
+    });
+    return guardActor(actor, { role: "policy", latency_budget });
+  };
+  return playGame({
+    engine,
+    formatId,
+    seed,
+    teams,
+    actors: { p1: actorOf("p1"), p2: actorOf("p2") },
+    ...(maxTurns === undefined ? {} : { maxTurns }),
+  });
 }

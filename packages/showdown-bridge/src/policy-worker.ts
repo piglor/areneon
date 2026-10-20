@@ -6,6 +6,18 @@
 // `UnsupportedCandidateError` and a query the client itself cannot send a
 // `PolicyProtocolError` (both harness incidents). Nothing is retried; a
 // crashed worker is restarted between games (`restart`), never mid-game.
+//
+// Overrun rule: `guardActor` cannot cancel a query that ran past its budget,
+// so that query stays outstanding (its battle id and its `n_parallel` slot
+// stay taken) until the worker answers, and a serial worker makes the next
+// game's queries wait behind it. Call `beginGame()` before every game, while
+// no game is running on the client: it restarts the worker if a query was
+// abandoned or the session has failed, so the next game gets a clean worker
+// and is never charged for the last one's overrun. Without a restart it does
+// nothing.
+//
+// Frames are as strict as the worker's: a reply line must be the JCS bytes of
+// its value (no duplicate keys, no spacing, no floats), or it is invalid.
 
 import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process";
 import type { Ready } from "@areneon/schema/types/v1/policy-handshake.ts";
@@ -72,6 +84,16 @@ interface Outstanding {
 
 const STDERR_TAIL = 2048;
 const OUT_OF_MEMORY = /MemoryError|out of memory/i;
+
+/**
+ * What a forfeit detail may say of a worker's stderr: the class of its last
+ * line (`MemoryError` of `MemoryError: ...`) and nothing else, since the rest
+ * may hold values from a query.
+ */
+function errorClass(stderr: string): string {
+  const last = stderr.trim().split("\n").at(-1) ?? "";
+  return /^([A-Za-z_][A-Za-z0-9_.]*):/.exec(last)?.[1] ?? "unknown error";
+}
 
 /** A `PolicyClient` on a child process speaking the worker protocol. */
 export class PolicyWorkerClient implements PolicyClient {
@@ -191,6 +213,17 @@ export class PolicyWorkerClient implements PolicyClient {
     clearTimeout(kill);
   }
 
+  /**
+   * Call before each game, with no game running on this client: restarts the
+   * worker if a query was abandoned (it overran its budget) or the session
+   * failed; otherwise does nothing. See the overrun rule above.
+   */
+  async beginGame(): Promise<void> {
+    if (this.#child === undefined || this.#failure !== undefined || this.#outstanding.size > 0) {
+      await this.restart();
+    }
+  }
+
   /** Close, then start again: between games only, never within one. */
   async restart(): Promise<void> {
     await this.close();
@@ -219,7 +252,14 @@ export class PolicyWorkerClient implements PolicyClient {
   #line(bytes: Buffer): void {
     let value: unknown;
     try {
-      value = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
+      const text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+      value = JSON.parse(text);
+      // JSON.parse keeps the last of two equal keys and reads 1.0 as 1; the
+      // canonical form of what it kept differs from the line in both cases.
+      if (jcs(value as Json) !== text) {
+        this.#fail(new PolicyReplyError("a reply line is not in RFC 8785 (JCS) canonical form"));
+        return;
+      }
     } catch {
       this.#fail(new PolicyReplyError("a reply line is not UTF-8 JSON"));
       return;
@@ -272,12 +312,13 @@ export class PolicyWorkerClient implements PolicyClient {
   #closed(code: number | null, signal: NodeJS.Signals | null): void {
     const tail = this.#stderr.trim();
     const cause = OUT_OF_MEMORY.test(tail) || signal === "SIGKILL" ? "out_of_memory" : "crash";
+    const summary = tail === "" ? "" : `; ${errorClass(tail)}`;
     const how = signal === null ? `exit code ${code}` : `signal ${signal}`;
     this.#child = undefined;
     if (this.#closing) {
       this.#fail(new PolicyWorkerError("crash", "the policy worker was closed"), false);
     } else {
-      this.#fail(new PolicyWorkerError(cause, `the policy worker ended (${how})${tail === "" ? "" : `: ${tail}`}`), false);
+      this.#fail(new PolicyWorkerError(cause, `the policy worker ended (${how}${summary})`), false);
     }
   }
 
