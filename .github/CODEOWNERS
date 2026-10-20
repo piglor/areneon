@@ -26,3 +26,10 @@
 /pnpm-workspace.yaml            @arceushui
 /packages/private-team-store/   @arceushui
 /ml/gpu-env/                    @arceushui
+/packages/team-dataset/src/sealed*.ts  @arceushui
+/packages/team-dataset/scripts/sealed.ts  @arceushui
+/packages/showdown-bridge/src/sealed-records.ts  @arceushui
+/packages/schema/contracts/v1/sealed-team-set-manifest.schema.json  @arceushui
+/packages/schema/contracts/v1/retired-sealed-manifest.schema.json  @arceushui
+/packages/team-dataset/src/rejection-log.ts  @arceushui
+/packages/team-dataset/test/sealed*.ts  @arceushui

@@ -8,7 +8,8 @@ import { createHash } from "node:crypto";
 import { closeSync, openSync, writeSync } from "node:fs";
 import { jcs } from "@areneon/showdown-bridge";
 
-export type LogReason = "invalid" | "round_trip" | "duplicate" | "overflow";
+/** `near_duplicate` is L2 (a sealed set only: within `d_team` of a known team). */
+export type LogReason = "invalid" | "round_trip" | "duplicate" | "near_duplicate" | "overflow";
 
 export interface LogEntry {
   k: number;
@@ -24,6 +25,8 @@ export interface LogSummary {
   log_sha256: string;
   rejections: number;
   duplicates: number;
+  /** L2 refusals; 0 for a public dataset. */
+  near_duplicates: number;
   overflows: number;
 }
 
@@ -36,6 +39,7 @@ export class RejectionLog {
   #size = 0;
   #rejections = 0;
   #duplicates = 0;
+  #nearDuplicates = 0;
   #overflows = 0;
 
   constructor(path: string) {
@@ -44,6 +48,7 @@ export class RejectionLog {
 
   write(entry: LogEntry): void {
     if (entry.reason === "duplicate") this.#duplicates++;
+    else if (entry.reason === "near_duplicate") this.#nearDuplicates++;
     else if (entry.reason === "overflow") this.#overflows++;
     else this.#rejections++;
     const line = `${jcs(entry as never)}\n`;
@@ -63,6 +68,6 @@ export class RejectionLog {
   close(): LogSummary {
     this.#flush();
     closeSync(this.#fd);
-    return { log_sha256: this.#hash.digest("hex"), rejections: this.#rejections, duplicates: this.#duplicates, overflows: this.#overflows };
+    return { log_sha256: this.#hash.digest("hex"), rejections: this.#rejections, duplicates: this.#duplicates, near_duplicates: this.#nearDuplicates, overflows: this.#overflows };
   }
 }

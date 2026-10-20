@@ -10,4 +10,9 @@ export default tseslint.config(
       "@typescript-eslint/no-unused-vars": ["error", { ignoreRestSiblings: true }],
     },
   },
+  {
+    // Sealed-set code handles the key, the salt and the sealed teams: it must not print anything. Output goes through the injected `io` of the command.
+    files: ["packages/team-dataset/src/sealed*.ts"],
+    rules: { "no-console": "error" },
+  },
 );

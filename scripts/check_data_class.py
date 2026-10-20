@@ -66,6 +66,17 @@ PokePaste guard does not see JSON teams, so this guard rejects a committed
   Only a public generation key may be committed; a sealed set's key lives in
   the isolated evaluation store, so any other key kind, and a missing key, is
   rejected.
+- holds a sealed-set reveal or a sealed team (ADR-013 slice (g), protocol
+  L3 and L5) anywhere but at an exact path in ``REVEAL_ALLOWED``. A reveal
+  is a ``RetiredSealedManifest``: an object with a string ``set_id``, a
+  ``reveal`` object holding a string ``key`` and ``salt``, and a ``files``
+  object. A sealed team is a line ``{k, paste, stratum}`` of a set's
+  ``teams.jsonl`` (extra keys do not evade). Both are secret until the set retires, and public
+  (CC0) after, so a retired bundle is committed by a visible, code-owner-
+  reviewed edit of ``REVEAL_ALLOWED`` (initially the corpus samples of the
+  reveal only). A reveal must also say ``"data_class": "synthetic"`` on
+  itself. The guard checks structure and path, not retirement: whether the
+  register logs the set as retired is the evaluation job's check (O13).
 
 A file that is not valid JSON is rejected too, so JSON with comments or
 trailing commas (JSONC) cannot be committed: the guard cannot vouch for
@@ -119,6 +130,14 @@ MAX_REVISION = 2**31 - 1
 # A PokePaste signature: `Species @ Item`, an `Ability:` line or a `- Move` line.
 PASTE_LINE = re.compile(r"^(?:[^\n]+ @ [^\n]+|Ability: [^\n]*|- \S[^\n]*)$", re.MULTILINE)
 TEAM_CORPUS = Path(__file__).resolve().parents[1] / "fixtures" / "teams"
+REVEAL_ALLOWED = frozenset(
+    {
+        "fixtures/contracts/v1/retired-sealed-manifest/valid/revealed.json",
+        "fixtures/contracts/v1/retired-sealed-manifest/invalid/short-salt.json",
+        "fixtures/contracts/v1/retired-sealed-manifest/invalid/teams.json",
+        "fixtures/contracts/v1/retired-sealed-manifest/reader-invalid/seed-is-salt.json",
+    }
+)
 SUFFIXES = (".json", ".jsonl")
 TEAM_SHAPES = (
     frozenset({"species", "moves", "evs"}),  # a set (PokemonSet, PokePaste import)
@@ -140,6 +159,10 @@ MARKER_SHAPE = (
     "outside `paste`"
 )
 DUPLICATE_KEY = "has a duplicate JSON object key, so a reader would see only the last value"
+REVEAL = "holds a sealed-set reveal or a sealed team outside a reviewed path"
+UNLABELLED_REVEAL = (
+    'holds a sealed-set reveal without "data_class": "synthetic" on the object itself'
+)
 UNKNOWN_KEY_KIND = 'holds a team dataset manifest whose key is not of kind "public"'
 
 
@@ -187,6 +210,25 @@ def _is_snapshot_manifest(obj: dict[str, object]) -> bool:
     )
 
 
+def _is_reveal(obj: dict[str, object]) -> bool:
+    reveal = obj.get("reveal")
+    return (
+        _is_str(obj, "set_id")
+        and isinstance(obj.get("files"), dict)
+        and isinstance(reveal, dict)
+        and _is_str(reveal, "key", "salt")
+    )
+
+
+def _is_sealed_team(obj: dict[str, object]) -> bool:
+    return (
+        obj.keys() >= {"k", "paste", "stratum"}
+        and isinstance(obj.get("paste"), str)
+        and isinstance(obj.get("k"), int)
+        and isinstance(obj.get("stratum"), int)
+    )
+
+
 def _is_sealed(obj: dict[str, object]) -> bool:
     return obj.get("kind") == "evaluation" and obj.get("sealed") is True
 
@@ -216,18 +258,25 @@ def team_corpus(root: Path | None = None) -> frozenset[str]:
     return frozenset(pastes)
 
 
-def problems_in(
+def is_reveal_path(path: str) -> bool:
+    """True for the exact paths where a sealed-set reveal or sealed team may be committed."""
+    return PurePosixPath(Path(path).as_posix()).as_posix() in REVEAL_ALLOWED
+
+
+def problems_in(  # noqa: PLR0913, PLR0917 - one flag per exact-path allowlist
     document: object,
     in_fixtures: bool,
     sealed_marker_ok: bool = False,
     private_marker_ok: bool = False,
     corpus: frozenset[str] | None = None,
+    reveal_ok: bool = False,
 ) -> list[str]:
     """Why one parsed JSON document must not be committed (empty if it may).
 
     ``sealed_marker_ok`` is true only for a file at ``is_sealed_marker_path``;
     ``private_marker_ok`` only for one at ``is_private_marker_path``, and then
-    ``corpus`` is the set of pastes the marked file may hold.
+    ``corpus`` is the set of pastes the marked file may hold; ``reveal_ok`` only
+    for one at ``is_reveal_path``.
     """
     found: list[str] = []
     objects = list(_walk(document))
@@ -254,6 +303,10 @@ def problems_in(
         )
         if not synthetic_marker:
             found.append(SEALED)
+    if any(_is_reveal(obj) or _is_sealed_team(obj) for obj in objects) and not reveal_ok:
+        found.append(REVEAL)
+    if any(_is_reveal(obj) and obj.get("data_class") != "synthetic" for obj in objects):
+        found.append(UNLABELLED_REVEAL)
     records = [
         obj
         for obj in objects
@@ -383,10 +436,11 @@ def violations(paths: Sequence[str]) -> list[str]:
         marker_ok = is_sealed_marker_path(path)
         private_ok = is_private_marker_path(path)
         corpus = team_corpus() if private_ok else None
+        reveal_ok = is_reveal_path(path)
         reasons = {
             reason
             for doc in documents
-            for reason in problems_in(doc, in_fixtures, marker_ok, private_ok, corpus)
+            for reason in problems_in(doc, in_fixtures, marker_ok, private_ok, corpus, reveal_ok)
         }
         found.extend(f"{path}: {reason}" for reason in sorted(reasons))
     return found

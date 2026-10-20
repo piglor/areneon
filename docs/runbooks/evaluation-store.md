@@ -14,6 +14,7 @@ Labels: **Owner: decide** marks a choice to record on #846. **Owner: verify** ma
 | 6 | Verify the isolation (the check script) |
 | 7 | Owner checklist |
 | 8 | If the seal breaks |
+| 9 | Sealed team generation, retirement and reveal (L3 to L5) |
 
 ## 1. What is isolated, from whom
 
@@ -58,6 +59,8 @@ sudo -u areneon-eval install -d -m 700 \
 sudo -u areneon-eval -H $ER gen-secret --out /srv/areneon-eval/store/sealed/key
 sudo -u areneon-eval -H $ER gen-secret --out /srv/areneon-eval/store/sealed/salt
 ```
+
+Sealed team generation (section 9) makes its own key and salt for each set, in `sealed/<set_id>/`, so these two files are not needed for it.
 
 `openssl rand -hex 32 > file` (with `umask 077`) makes an equivalent secret. Never print the key or the salt, never copy them out of the store, and never put them in a ticket, a chat or a shell history: the register keeps only their hashes (`key_commitment`, and the salt inside `set_commitment`).
 
@@ -160,3 +163,47 @@ Record the outputs on #846 (hashes of nothing secret are involved). Repeat after
 ## 8. If the seal breaks
 
 Protocol I8 applies: a sealed key, team or artifact read by a training job or committed; a result used for selection; an unregistered run; an exceeded budget; a run that deviates from its plan; a failed L2a re-check. Append an `incident` entry (the tool then treats the set as contaminated and retired and accepts only an aborted run for it), publish the new head, make a new set under L3 with a new key, and write the cause and the affected candidates to the tracker. Results obtained before the breach are kept but labelled with it.
+
+## 9. Sealed team generation, retirement and reveal (L3 to L5)
+
+The sealed team set is generated inside the store, by the store user, from a 256-bit key of the OS CSPRNG that the tool makes itself and writes only below the store (ADR-013 section 2; protocol L1 to L5). The commands are `node packages/team-dataset/scripts/sealed.ts <command>`, from the same reviewed checkout as the register tool (section 5). Nothing here is run by an agent or by CI against a real store; the tests use a throwaway directory and throwaway keys.
+
+```bash
+SE="node packages/team-dataset/scripts/sealed.ts"
+S=/srv/areneon-eval/store
+```
+
+The tool refuses a store directory that is not absolute, not a real directory, not owned by the invoking user, has any group or other permission bit, lies inside a git working tree, or sits below a parent that group or other can write to (a sticky bit as on `/tmp` is accepted). It creates directories 0700 and files 0600, never overwrites, and refuses to read a store file that has been loosened. No option takes a key or a salt, and nothing it prints carries one: output is hashes and counts.
+
+1. **Generate** (before the first training run of a generation, once the parameters are complete: `n_teams`, `n_teams_floor`, `n_seeds` and `d_team` measured):
+   ```bash
+   $SE generate --store $S --set-id set-1 --generation 1 \
+     --public-manifest <manifest.json of the public dataset whose strata the set shares> \
+     --parameters $P --rule $G --config config/teams/<format>/generator.json --labels config/teams/<format>/labels.json --format <format> \
+     --known <records.jsonl> --known <records.jsonl> ... --max-attempts 3
+   ```
+   - **Same generator as the public pool.** The public manifest must be made with the same config, label set, vocabulary and version manifest (the tool checks the hashes). The strata are the public plan's, merged as it merged them: the sealed plan never merges again.
+   - **`--known`** lists JSON Lines files whose lines carry the engine's `paste`: every public split (dev, validation and the training split), every released dataset, the training pool and every retired sealed set (their `teams.jsonl`). L1 (equal canonical hash) and L2 (within `d_team` differing fields, inclusive) skip a candidate that matches any of them. Omitting a file weakens L1/L2: list them all.
+   - **Over-provision and discard.** The draw budget is the public `d_max` raised by the config's `sealed_margin_permille`. If a bin is still short, the whole generation is dropped (its key, teams and rejections are deleted), one line of hashes and counts goes to `discards.jsonl`, and a new key is drawn, up to `--max-attempts`. If every attempt is dropped nothing is committed and the discard log stays in `sealed/<set_id>/`: use a new set id. Do not repeat the run selectively on the strength of what was rejected (protocol §4.4).
+   - It writes `sealed/<set_id>/{key,salt,teams.jsonl,rejections.jsonl,discards.jsonl,manifest.json,commitment.json}` and prints the commitment hashes. `commitment.json` holds hashes and counts only: pass it to the register as in section 5 step 3 (`commit-set`), and publish the head.
+2. **Stamping.** The evaluation job builds `SealedTeamHashes` in memory with `loadSealedTeamHashes` (it recomputes the L3 commitment from the salt and the teams first) and unions it with the public hashes. It has no serialisation: never write it out.
+3. **Retire (L5)**, when the budget is used or the set is contaminated. Order matters, because the register must name the reveal before it is published:
+   ```bash
+   $SE reveal-hash --store $S --set-id set-1          # prints {set_id, reveal_hash}: a hash only
+   $ER append --register $R --entry <set_retirement draft with that reveal_hash> ...   # section 5; publish the head
+   $SE retire --store $S --set-id set-1 --out <new directory> --register $R --parameters $P --rule $G
+   ```
+   `retire` refuses unless the register logs `set_retirement` for the set, with exactly this reveal's hash and the commitment this store holds. It writes `retired-manifest.json` (the key and the salt), `set-manifest.json`, `commitment.json`, `teams.jsonl`, `rejections.jsonl` and `discards.jsonl` into a **new** directory (0700, files 0600). From then on the set is CC0 and belongs to the training pool: copy the bundle out of the store only now, and add its teams to every later `--known` list.
+4. **Verify (anyone, no store needed).** The register comparison is **mandatory** for a third party: a bundle that is consistent with itself proves nothing, because the config and the reference pool are public and anyone can generate a fresh key, salt and set. Obtain the register from the owner's published chain and check its heads against merged `main` first (`$ER verify --register <file> --heads <dir> --heads-ref origin/main`), then:
+   ```bash
+   $SE verify --dir <bundle> --public-manifest <manifest.json of the public dataset> --register <register.jsonl> \
+     --parameters $P --rule $G --config ... --labels ... --format <format> --known <reference pool files>
+   ```
+   It requires that the register committed this set's commitment (equal commitment hash) and retired it with this reveal's hash; it recomputes the plan from the public dataset (same strata, quotas, merged cells and pilot counts, the draw budget from the public `d_max` and the config's `sealed_margin_permille`) instead of trusting the bundle; it opens both commitments and the strata with the labeller (`checkReveal`); it regenerates the set from the revealed key against the reference pool (teams and the whole rejection log, L1 and L2 skips included, must be byte-equal); and it checks every team again for legality, L1 and L2. Exit 1 names the first difference.
+5. **Every generation is recorded.** An abandoned set is not tamper-evident by itself, so after every `generate` run, successful or not, write its `set_id`, the printed `attempts` and `discarded` counts (or the shortfall error) on #846 or the tracker. Discarded generations are also accountable at L5: `discards.jsonl` (each discarded key's hash) is part of the published bundle and its hash is in the set manifest. A set id whose run failed keeps its directory and discard log; use a new id.
+
+A `warning:` line from `generate` means a stratum's fill-time quantile is beyond the sealed budget, so a generation may be discarded; raise `sealed_margin_permille` in a new config, or lower `n_teams`, rather than rerunning selectively.
+
+**Decisions this tool fixes where the protocol is silent** (recorded on #861; change them only with the protocol): L2 "within `d_team`" is distance at most `d_team` (inclusive; protocol §10 defines `d_team` as the smallest distance at which two teams play differently, so read literally "within" would be strictly below it: an erratum candidate recorded on #861); the distance of two teams is the fewest differing fields over all pairings of their sets, a field being species, item, ability, nature, the move set or the Stat Points of one set; two sealed teams are compared with each other by L1 only; the quotas share `n_teams` over the public strata by their pilot hits (largest remainder, at least `n_stratum_min` each), so the total is exactly `n_teams`. The L1/L2 index is in memory: at the scale of the shard store it needs a later slice.
+
+**Owner: verify** before relying on it: that the store directory checks pass on the real mount (the tool refuses rather than guesses), and that the retirement entry's `reveal_hash` printed by `reveal-hash` is the one you appended.

@@ -255,6 +255,7 @@ export {
   checkReveal,
   commitmentHash,
   type EvaluationPlan,
+  generateSecret,
   keyCommitment,
   planHash,
   readEvaluationPlan,
@@ -262,6 +263,15 @@ export {
   type SealedSetCommitment,
   setCommitment,
 } from "./evaluation-plan.ts";
+export {
+  readRetiredSealedManifest,
+  readSealedTeamSetManifest,
+  type RetiredSealedManifest,
+  retiredManifestHash,
+  type SealedTeamSetManifest,
+  sealedManifestHash,
+  stratumLabel,
+} from "./sealed-records.ts";
 export {
   appendEntry,
   assertPlanPublished,
