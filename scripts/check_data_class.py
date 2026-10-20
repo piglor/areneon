@@ -12,6 +12,8 @@ PokePaste guard does not see JSON teams, so this guard rejects a committed
   line). Team-shaped means a set (``species``, ``moves`` and ``evs`` keys) or
   a Pokémon as a ``|request|`` carries it (``details``, ``stats`` and
   ``moves``), whose stats reveal the spread; in both, ``moves`` is a list; or
+  any object with a string ``paste`` member (ADR-014 §10: a PokePaste record
+  with none of those keys); or
 - holds a sealed evaluation Episode (ADR-009 rule T2; evaluation protocol I7
   and O13): any object with ``"kind": "evaluation"`` and ``"sealed": true``,
   which is ``provenance.collection`` of an Episode. Sealed material lives only
@@ -28,6 +30,32 @@ PokePaste guard does not see JSON teams, so this guard rejects a committed
   inspected. A marker added by another PR means rebasing onto this constant
   (the pinning test fails until it is edited).
 
+- holds ``"data_class": "private"`` outside a path in ``PRIVATE_SAMPLE_MARKERS``
+  (ADR-014 §10). A marker is an exact file, never a directory, for a synthetic
+  sample of a private record (the contract corpus needs one; ``data_class``
+  stays ``private`` in the type). The guard itself checks the marked file: its
+  root says ``"data_class": "private"``, it holds at least one ``paste``, and
+  every ``paste`` equals a paste in the committed synthetic team corpus
+  (``fixtures/teams/**``: a ``.txt`` file's whole text, or a ``paste`` string
+  in a JSON file there). The marker waives only the private-class reason, for
+  the root object only (a record at the root is not "unlabelled" for being
+  private); the sealed and unlabelled-team rules still apply. A marker added
+  by another PR means rebasing onto this constant (the pinning test fails
+  until it is edited). The marked root's keys must equal ``PRIVATE_RECORD_KEYS``
+  (the PrivateTeamRecord shape), no other object in the file may be team-shaped,
+  and no other string (keys included) may look like a paste (a ``Species @ Item``,
+  ``Ability:`` or ``- Move`` line), so real team text cannot ride in a marked
+  file. Every value is also type-checked against the PrivateTeamRecord (ADR-014
+  §4): ``schema_version`` 1, ``data_class`` ``private``, ``team_id`` 32 hex,
+  ``revision`` 1 to 2**31-1, ``supersedes_record_hash`` null or 64 hex, both team
+  hashes 64 hex, ``status`` active or retired, at most 16 ``tags`` matching
+  ``[a-z0-9][a-z0-9-]{0,31}``, at most 64 ``labels`` that are exactly
+  ``{label_id, value}`` token pairs (ADR-013), and one corpus ``paste``. That
+  both hashes equal the paste's hashes needs the engine's ``Teams.import``, so
+  the guard cannot check it: the vitest round-trip of the contracts slice does; or
+- has a duplicate key in any JSON object (and, for JSONL, in any line): a
+  reader keeps the last value while the earlier one stays in the committed
+  bytes, so the guard refuses the file; or
 - holds a team record or manifest of the team system (ADR-013 §4, §8)
   without ``"data_class": "synthetic"`` on the object itself, wherever it
   is, ``fixtures/`` included. A TeamRecord is an object with a string
@@ -49,6 +77,7 @@ non-JSON text (YAML, source code, raw logs) are outside this guard.
 from __future__ import annotations
 
 import json
+import re
 import sys
 from collections.abc import Iterator, Sequence
 from pathlib import Path, PurePosixPath
@@ -59,6 +88,37 @@ SEALED_MARKERS = frozenset(
         "fixtures/contracts/v1/episode/invalid/collection-evaluation-no-seed.json",
     }
 )
+PRIVATE_SAMPLE_MARKERS: frozenset[str] = frozenset()
+# The root keys of a PrivateTeamRecord (ADR-014 section 4); the contract itself
+# is defined by the contracts slice (#869), which edits this one constant. A
+# marked sample has exactly these keys, so team content cannot ride in others.
+PRIVATE_RECORD_KEYS = frozenset(
+    {
+        "schema_version",
+        "data_class",
+        "team_id",
+        "revision",
+        "supersedes_record_hash",
+        "team_hash",
+        "canonical_team_hash",
+        "paste",
+        "status",
+        "tags",
+        "labels",
+    }
+)
+# ADR-014 section 4 field types; labels are ADR-013's (an array of at most 64
+# {label_id, value} pairs whose strings match the ADR-013 token pattern).
+HEX64 = re.compile(r"[0-9a-f]{64}")
+HEX32 = re.compile(r"[0-9a-f]{32}")
+TAG = re.compile(r"[a-z0-9][a-z0-9-]{0,31}")
+LABEL_TOKEN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}")
+MAX_TAGS = 16
+MAX_LABELS = 64
+MAX_REVISION = 2**31 - 1
+# A PokePaste signature: `Species @ Item`, an `Ability:` line or a `- Move` line.
+PASTE_LINE = re.compile(r"^(?:[^\n]+ @ [^\n]+|Ability: [^\n]*|- \S[^\n]*)$", re.MULTILINE)
+TEAM_CORPUS = Path(__file__).resolve().parents[1] / "fixtures" / "teams"
 SUFFIXES = (".json", ".jsonl")
 TEAM_SHAPES = (
     frozenset({"species", "moves", "evs"}),  # a set (PokemonSet, PokePaste import)
@@ -70,6 +130,16 @@ UNLABELLED_TEAM = 'holds a team without "data_class": "synthetic" at its root'
 UNLABELLED_RECORD = (
     'holds a team record or manifest without "data_class": "synthetic" on the object itself'
 )
+PASTE_NOT_IN_CORPUS = (
+    "is a private sample marker, but not a private record whose every paste "
+    "(and at least one) is in the synthetic team corpus (fixtures/teams/**)"
+)
+MARKER_SHAPE = (
+    "is a private sample marker holding more than a PrivateTeamRecord: other root keys, "
+    "values that break the record's types, another team-shaped object, or paste text "
+    "outside `paste`"
+)
+DUPLICATE_KEY = "has a duplicate JSON object key, so a reader would see only the last value"
 UNKNOWN_KEY_KIND = 'holds a team dataset manifest whose key is not of kind "public"'
 
 
@@ -86,6 +156,8 @@ def _walk(value: object) -> Iterator[dict[str, object]]:
 def _is_team(obj: dict[str, object]) -> bool:
     # Real team data lists its moves; a JSON Schema's `properties` with the
     # same keys holds a subschema there instead.
+    if isinstance(obj.get("paste"), str):
+        return True
     return isinstance(obj.get("moves"), list) and any(obj.keys() >= shape for shape in TEAM_SHAPES)
 
 
@@ -124,14 +196,55 @@ def is_sealed_marker_path(path: str) -> bool:
     return PurePosixPath(Path(path).as_posix()).as_posix() in SEALED_MARKERS
 
 
-def problems_in(document: object, in_fixtures: bool, sealed_marker_ok: bool = False) -> list[str]:
+def is_private_marker_path(path: str) -> bool:
+    """True for the exact paths where a synthetic private-record sample may live."""
+    return PurePosixPath(Path(path).as_posix()).as_posix() in PRIVATE_SAMPLE_MARKERS
+
+
+def team_corpus(root: Path | None = None) -> frozenset[str]:
+    """Every paste string in the committed synthetic team corpus."""
+    pastes: set[str] = set()
+    for file in sorted((TEAM_CORPUS if root is None else root).rglob("*")):
+        if file.suffix == ".txt":
+            pastes.add(file.read_text(encoding="utf-8"))
+        elif file.suffix in SUFFIXES:
+            for doc in _documents(file.name, file.read_text(encoding="utf-8")):
+                for obj in _walk(doc):
+                    paste = obj.get("paste")
+                    if isinstance(paste, str):
+                        pastes.add(paste)
+    return frozenset(pastes)
+
+
+def problems_in(
+    document: object,
+    in_fixtures: bool,
+    sealed_marker_ok: bool = False,
+    private_marker_ok: bool = False,
+    corpus: frozenset[str] | None = None,
+) -> list[str]:
     """Why one parsed JSON document must not be committed (empty if it may).
 
-    ``sealed_marker_ok`` is true only for a file at ``is_sealed_marker_path``.
+    ``sealed_marker_ok`` is true only for a file at ``is_sealed_marker_path``;
+    ``private_marker_ok`` only for one at ``is_private_marker_path``, and then
+    ``corpus`` is the set of pastes the marked file may hold.
     """
     found: list[str] = []
     objects = list(_walk(document))
-    if any(obj.get("data_class") == "private" for obj in objects):
+    record_ok = (
+        isinstance(document, dict)
+        and document.get("data_class") == "private"
+        and _marker_pastes_ok(objects, corpus)
+    )
+    shape_ok = _marker_shape_ok(document, objects)
+    waived = private_marker_ok and record_ok and shape_ok
+    if private_marker_ok and not record_ok:
+        found.append(PASTE_NOT_IN_CORPUS)
+    if private_marker_ok and not shape_ok:
+        found.append(MARKER_SHAPE)
+    if any(
+        obj.get("data_class") == "private" and not (waived and obj is document) for obj in objects
+    ):
         found.append(PRIVATE)
     if any(_is_sealed(obj) for obj in objects):
         synthetic_marker = (
@@ -146,7 +259,9 @@ def problems_in(document: object, in_fixtures: bool, sealed_marker_ok: bool = Fa
         for obj in objects
         if _is_team_record(obj) or _is_dataset_manifest(obj) or _is_snapshot_manifest(obj)
     ]
-    if any(obj.get("data_class") != "synthetic" for obj in records):
+    if any(
+        obj.get("data_class") != "synthetic" and not (waived and obj is document) for obj in records
+    ):
         found.append(UNLABELLED_RECORD)
     for obj in objects:
         key = obj.get("key")
@@ -161,10 +276,92 @@ def problems_in(document: object, in_fixtures: bool, sealed_marker_ok: bool = Fa
     return found
 
 
+def _marker_pastes_ok(objects: list[dict[str, object]], corpus: frozenset[str] | None) -> bool:
+    pastes = [obj["paste"] for obj in objects if "paste" in obj]
+    return bool(pastes) and all(isinstance(p, str) and p in (corpus or frozenset()) for p in pastes)
+
+
+def _strings(value: object) -> Iterator[str]:
+    if isinstance(value, str):
+        yield value
+    elif isinstance(value, dict):
+        for key, item in value.items():
+            yield key
+            yield from _strings(item)
+    elif isinstance(value, list):
+        for item in value:
+            yield from _strings(item)
+
+
+def _is_int(value: object, low: int, high: int) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool) and low <= value <= high
+
+
+def _is_match(pattern: re.Pattern[str], value: object) -> bool:
+    return isinstance(value, str) and pattern.fullmatch(value) is not None
+
+
+def _labels_ok(labels: object) -> bool:
+    if not isinstance(labels, list) or len(labels) > MAX_LABELS:
+        return False
+    return all(
+        isinstance(label, dict)
+        and label.keys() == {"label_id", "value"}
+        and _is_match(LABEL_TOKEN, label["label_id"])
+        and _is_match(LABEL_TOKEN, label["value"])
+        for label in labels
+    )
+
+
+def _record_types_ok(record: dict[str, object]) -> bool:
+    tags = record["tags"]
+    supersedes = record["supersedes_record_hash"]
+    return (
+        _is_int(record["schema_version"], 1, 1)
+        and record["data_class"] == "private"
+        and _is_match(HEX32, record["team_id"])
+        and _is_int(record["revision"], 1, MAX_REVISION)
+        and (supersedes is None or _is_match(HEX64, supersedes))
+        and _is_match(HEX64, record["team_hash"])
+        and _is_match(HEX64, record["canonical_team_hash"])
+        and record["status"] in ("active", "retired")
+        and isinstance(tags, list)
+        and len(tags) <= MAX_TAGS
+        and all(_is_match(TAG, tag) for tag in tags)
+        and _labels_ok(record["labels"])
+    )
+
+
+def _marker_shape_ok(document: object, objects: list[dict[str, object]]) -> bool:
+    if not isinstance(document, dict) or document.keys() != PRIVATE_RECORD_KEYS:
+        return False
+    if not _record_types_ok(document):
+        return False
+    if any(_is_team(obj) for obj in objects if obj is not document):
+        return False
+    rest = {key: value for key, value in document.items() if key != "paste"}
+    return not any(PASTE_LINE.search(text) for text in _strings(rest))
+
+
+class DuplicateKeyError(ValueError):
+    """A JSON object names one key twice."""
+
+
+def _no_duplicates(pairs: list[tuple[str, object]]) -> dict[str, object]:
+    keys = [key for key, _ in pairs]
+    if len(set(keys)) != len(keys):
+        raise DuplicateKeyError(keys)
+    return dict(pairs)
+
+
+def _loads(text: str) -> object:
+    return json.loads(text, object_pairs_hook=_no_duplicates)
+
+
 def _documents(path: str, text: str) -> list[object]:
     if path.endswith(".jsonl"):
-        return [json.loads(line) for line in text.splitlines() if line.strip()]
-    return [json.loads(text)]
+        return [_loads(line) for line in text.splitlines() if line.strip()]
+    return [_loads(text)]
 
 
 def violations(paths: Sequence[str]) -> list[str]:
@@ -176,13 +373,20 @@ def violations(paths: Sequence[str]) -> list[str]:
             documents = _documents(path, Path(path).read_text(encoding="utf-8"))
         except (FileNotFoundError, IsADirectoryError):
             continue
+        except DuplicateKeyError:
+            found.append(f"{path}: {DUPLICATE_KEY}")
+            continue
         except (json.JSONDecodeError, UnicodeDecodeError):
             found.append(f"{path}: is not valid JSON, so it cannot be checked")
             continue
         in_fixtures = PurePosixPath(Path(path).as_posix()).parts[:1] == ("fixtures",)
         marker_ok = is_sealed_marker_path(path)
+        private_ok = is_private_marker_path(path)
+        corpus = team_corpus() if private_ok else None
         reasons = {
-            reason for doc in documents for reason in problems_in(doc, in_fixtures, marker_ok)
+            reason
+            for doc in documents
+            for reason in problems_in(doc, in_fixtures, marker_ok, private_ok, corpus)
         }
         found.extend(f"{path}: {reason}" for reason in sorted(reasons))
     return found

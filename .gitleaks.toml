@@ -14,3 +14,11 @@ condition = "AND"
 paths = ['''^fixtures/teams/[^/]+/datasets/[^/]+/(manifest|run)\.json$''']
 regexTarget = "line"
 regexes = ['''"(generation|assignment)_key": "[0-9a-f]{64}"''']
+
+# The default `age-secret-key` rule matches an X25519 identity
+# (AGE-SECRET-KEY-1...) but not a hybrid post-quantum one (ADR-014 section 10).
+[[rules]]
+id = "age-secret-key-pq"
+description = "Found an age post-quantum (hybrid) secret key, which decrypts the private team store."
+regex = '''AGE-SECRET-KEY-PQ-1[QPZRY9X8GF2TVDW0S3JN54KHCE6MUA7L]{58}'''
+keywords = ["age-secret-key-pq-1"]

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from collections.abc import Mapping
 from pathlib import Path
 
@@ -119,7 +120,7 @@ SEALED = guard.SEALED
 )
 def test_sealed_episode_outside_the_marker_path_is_rejected(repo: Path, name: str) -> None:
     path = write(repo, name, episode() + "\n")
-    assert guard.violations([path]) == [f"{path}: {SEALED}"]
+    assert SEALED in [r.split(": ", 1)[1] for r in guard.violations([path])]
 
 
 @pytest.mark.parametrize("name", sorted(guard.SEALED_MARKERS))
@@ -228,9 +229,12 @@ def test_a_record_without_data_class_is_rejected_even_in_fixtures(
     record: dict[str, object], in_fixtures: bool
 ) -> None:
     # Negative controls: remove the label, or set it to anything but "synthetic".
-    assert guard.problems_in(without(record, "data_class"), in_fixtures) == [UNLABELLED_RECORD]
-    assert guard.problems_in({**record, "data_class": "public"}, in_fixtures) == [UNLABELLED_RECORD]
-    assert guard.problems_in({**record, "data_class": None}, in_fixtures) == [UNLABELLED_RECORD]
+    # A paste-shaped record outside fixtures/ is also an unlabelled team (ADR-014 §10).
+    extra = [UNLABELLED] if record is RECORD and not in_fixtures else []
+    expected = [UNLABELLED_RECORD, *extra]
+    assert guard.problems_in(without(record, "data_class"), in_fixtures) == expected
+    assert guard.problems_in({**record, "data_class": "public"}, in_fixtures) == expected
+    assert guard.problems_in({**record, "data_class": None}, in_fixtures) == expected
 
 
 def test_the_label_must_sit_on_the_record_not_the_document_root() -> None:
@@ -240,9 +244,14 @@ def test_the_label_must_sit_on_the_record_not_the_document_root() -> None:
 
 
 def test_a_private_record_is_rejected_as_private() -> None:
+    assert guard.problems_in({**RECORD, "data_class": "private"}, True) == [
+        PRIVATE,
+        UNLABELLED_RECORD,
+    ]
     assert guard.problems_in({**RECORD, "data_class": "private"}, False) == [
         PRIVATE,
         UNLABELLED_RECORD,
+        UNLABELLED,
     ]
 
 
@@ -304,3 +313,330 @@ def test_every_team_record_in_the_corpus_is_labelled_synthetic() -> None:
                 assert obj.get("data_class") == "synthetic" or "invalid" in path.parts[-2]
                 labelled += 1
     assert labelled > 0
+
+
+# ADR-014 §10: the paste shape and the private sample markers.
+PASTE_ONLY = {"paste": "Garchomp\nAbility: Rough Skin\n"}
+PRIVATE_RECORD = {
+    "schema_version": 1,
+    "data_class": "private",
+    "team_id": "0" * 32,
+    "revision": 1,
+    "supersedes_record_hash": None,
+    "team_hash": "a" * 64,
+    "canonical_team_hash": "b" * 64,
+    "paste": "Garchomp\nAbility: Rough Skin\n",
+    "status": "active",
+    "tags": ["synthetic"],
+    "labels": [{"label_id": "fake_out", "value": "yes"}],
+}
+SHAPE = guard.MARKER_SHAPE
+MARKER = "fixtures/contracts/v1/private-team-record/valid/sample.json"
+NOT_IN_CORPUS = guard.PASTE_NOT_IN_CORPUS
+
+
+@pytest.fixture
+def corpus(repo: Path, monkeypatch: pytest.MonkeyPatch) -> frozenset[str]:
+    write(repo, "corpus/a.txt", PASTE_ONLY["paste"])
+    write(repo, "corpus/d/teams-dev.jsonl", json.dumps({"paste": "From a jsonl line\n"}) + "\n")
+    write(repo, "corpus/b.json", json.dumps({"data_class": "synthetic", **PASTE_ONLY}))
+    monkeypatch.setattr(guard, "TEAM_CORPUS", repo / "corpus")
+    monkeypatch.setattr(guard, "PRIVATE_SAMPLE_MARKERS", frozenset({MARKER}))
+    return guard.team_corpus()
+
+
+def test_a_paste_without_other_team_keys_is_team_shaped() -> None:
+    assert guard.problems_in(PASTE_ONLY, False) == [UNLABELLED]
+    assert guard.problems_in({"x": [PASTE_ONLY]}, False) == [UNLABELLED]
+    assert guard.problems_in({"data_class": "synthetic", **PASTE_ONLY}, False) == []
+    # Negative controls: inside fixtures, a schema, a non-string paste.
+    assert guard.problems_in(PASTE_ONLY, True) == []
+    assert guard.problems_in({"properties": {"paste": {"type": "string"}}}, False) == []
+    assert guard.problems_in({"paste": 3}, False) == []
+
+
+def test_the_paste_shape_is_enforced_on_files(repo: Path) -> None:
+    path = write(repo, "docs/example.json", json.dumps(PASTE_ONLY))
+    assert guard.violations([path]) == [f"{path}: {UNLABELLED}"]
+
+
+def test_the_markers_start_empty_and_the_corpus_is_the_committed_one() -> None:
+    assert frozenset() == guard.PRIVATE_SAMPLE_MARKERS
+    corpus = guard.team_corpus()
+    assert (ROOT / "fixtures/teams/gen9championsvgc2026regmc/legal-synthetic.txt").read_text(
+        encoding="utf-8"
+    ) in corpus
+
+
+def test_a_marked_private_record_with_corpus_pastes_passes(
+    repo: Path, corpus: frozenset[str]
+) -> None:
+    path = write(repo, MARKER, json.dumps(PRIVATE_RECORD))
+    assert guard.violations([path]) == []
+    in_json = write(repo, MARKER, json.dumps({**PRIVATE_RECORD, "paste": PASTE_ONLY["paste"]}))
+    assert guard.violations([in_json]) == []
+
+
+def test_the_same_record_at_an_unmarked_path_is_rejected(
+    repo: Path, corpus: frozenset[str]
+) -> None:
+    path = write(repo, MARKER.replace("sample", "other"), json.dumps(PRIVATE_RECORD))
+    assert guard.violations([path]) == [f"{path}: {PRIVATE}", f"{path}: {UNLABELLED_RECORD}"]
+
+
+def test_the_marker_is_an_exact_file_not_a_directory(repo: Path, corpus: frozenset[str]) -> None:
+    sibling = write(repo, MARKER + ".bak.json", json.dumps(PRIVATE_RECORD))
+    nested = write(repo, "x/" + MARKER, json.dumps(PRIVATE_RECORD))
+    parent = write(repo, str(Path(MARKER).parent / "sub" / "b.json"), json.dumps(PRIVATE_RECORD))
+    for path in (sibling, nested, parent):
+        assert PRIVATE in [r.split(": ", 1)[1] for r in guard.violations([path])]
+
+
+@pytest.mark.parametrize(
+    "record",
+    [
+        {**PRIVATE_RECORD, "paste": "Not a corpus paste\n"},
+        {**PRIVATE_RECORD, "paste": ""},
+        {k: v for k, v in PRIVATE_RECORD.items() if k != "paste"},
+        {**PRIVATE_RECORD, "paste": 3},
+        {**PRIVATE_RECORD, "extra": [{"paste": "Not a corpus paste\n"}]},
+        {**PRIVATE_RECORD, "data_class": "synthetic"},
+        [PRIVATE_RECORD],
+    ],
+)
+def test_a_marked_file_must_be_a_private_record_with_only_corpus_pastes(
+    repo: Path, corpus: frozenset[str], record: object
+) -> None:
+    path = write(repo, MARKER, json.dumps(record))
+    assert NOT_IN_CORPUS in [r.split(": ", 1)[1] for r in guard.violations([path])]
+
+
+def test_the_corpus_reads_text_json_and_jsonl_pastes(corpus: frozenset[str]) -> None:
+    assert corpus == {PASTE_ONLY["paste"], "From a jsonl line\n"}
+
+
+def test_the_marker_record_keys_are_the_private_team_record_shape() -> None:
+    assert set(PRIVATE_RECORD) == guard.PRIVATE_RECORD_KEYS
+
+
+def test_the_marker_waives_only_the_root_private_label(repo: Path, corpus: frozenset[str]) -> None:
+    # An extra key is refused (the shape), and its private label is not waived.
+    nested = {**PRIVATE_RECORD, "other": {"data_class": "private"}}
+    path = write(repo, MARKER, json.dumps(nested))
+    assert {PRIVATE, SHAPE} <= {r.split(": ", 1)[1] for r in guard.violations([path])}
+
+
+REAL = "Garchomp @ Sitrus Berry\nAbility: Rough Skin\n- Earthquake\n"
+
+
+@pytest.mark.parametrize(
+    "extra",
+    [
+        # The reviewer's three attacks, and variants.
+        {"sets": [{"species": "Garchomp", "moves": ["Earthquake"], "evs": {"atk": 32}}]},
+        {"pastes": [REAL]},
+        {"notes": "Garchomp @ Sitrus Berry"},
+        {"species": "Garchomp", "moves": ["Earthquake"], "evs": {"atk": 32}},
+        {"nested": {"deeper": [{"paste": PASTE_ONLY["paste"]}]}},
+    ],
+)
+def test_a_marked_file_cannot_carry_extra_content(
+    repo: Path, corpus: frozenset[str], extra: dict[str, object]
+) -> None:
+    path = write(repo, MARKER, json.dumps({**PRIVATE_RECORD, **extra}))
+    assert SHAPE in [r.split(": ", 1)[1] for r in guard.violations([path])]
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        {"tags": ["Ability: Rough Skin"]},
+        {"tags": ["- Earthquake"]},
+        {"labels": [{"label_id": "x", "value": "Garchomp @ Sitrus Berry"}]},
+        {"status": "Garchomp @ Sitrus Berry"},
+        {"team_id": "line one\nAbility: Intimidate"},
+    ],
+)
+def test_a_paste_hidden_in_an_allowed_key_is_refused(
+    repo: Path, corpus: frozenset[str], field: dict[str, object]
+) -> None:
+    path = write(repo, MARKER, json.dumps({**PRIVATE_RECORD, **field}))
+    assert SHAPE in [r.split(": ", 1)[1] for r in guard.violations([path])]
+
+
+def test_a_paste_hidden_in_a_key_name_is_refused(repo: Path, corpus: frozenset[str]) -> None:
+    record = {**PRIVATE_RECORD, "labels": [{"Garchomp @ Sitrus Berry": "x"}]}
+    path = write(repo, MARKER, json.dumps(record))
+    assert SHAPE in [r.split(": ", 1)[1] for r in guard.violations([path])]
+
+
+def test_a_key_missing_from_the_record_is_refused(repo: Path, corpus: frozenset[str]) -> None:
+    record = {k: v for k, v in PRIVATE_RECORD.items() if k != "tags"}
+    path = write(repo, MARKER, json.dumps(record))
+    assert SHAPE in [r.split(": ", 1)[1] for r in guard.violations([path])]
+
+
+def test_the_marker_does_not_waive_the_sealed_rule(repo: Path, corpus: frozenset[str]) -> None:
+    sealed = {
+        **PRIVATE_RECORD,
+        "provenance": {"collection": {"kind": "evaluation", "sealed": True}},
+    }
+    path = write(repo, MARKER, json.dumps(sealed))
+    assert SEALED in [r.split(": ", 1)[1] for r in guard.violations([path])]
+
+
+def test_the_marker_does_not_waive_the_unlabelled_team_rule(
+    repo: Path, monkeypatch: pytest.MonkeyPatch, corpus: frozenset[str]
+) -> None:
+    # Outside fixtures/ a team needs a synthetic root, which a private record lacks.
+    outside = "packages/x/sample.json"
+    monkeypatch.setattr(guard, "PRIVATE_SAMPLE_MARKERS", frozenset({outside}))
+    path = write(repo, outside, json.dumps(PRIVATE_RECORD))
+    assert guard.violations([path]) == [f"{path}: {UNLABELLED}"]
+
+
+def test_a_marked_record_without_a_label_is_still_unlabelled(
+    repo: Path, corpus: frozenset[str]
+) -> None:
+    record = {k: v for k, v in PRIVATE_RECORD.items() if k != "data_class"}
+    path = write(repo, MARKER, json.dumps(record))
+    assert {r.split(": ", 1)[1] for r in guard.violations([path])} == {
+        UNLABELLED_RECORD,
+        NOT_IN_CORPUS,
+        SHAPE,
+    }
+
+
+def test_the_private_markers_match_the_repo() -> None:
+    # The whole tracked tree, not only fixtures/: a private label anywhere needs a marker.
+    listed = subprocess.run(
+        ["git", "ls-files", "-z"], cwd=ROOT, check=True, capture_output=True
+    ).stdout.split(b"\0")
+    private = set()
+    for raw in listed:
+        name = raw.decode()
+        if not name.endswith(guard.SUFFIXES) or not (ROOT / name).is_file():
+            continue
+        text = (ROOT / name).read_text(encoding="utf-8")
+        docs = guard._documents(name, text)
+        if any(obj.get("data_class") == "private" for doc in docs for obj in guard._walk(doc)):
+            private.add(name)
+    assert private == set(guard.PRIVATE_SAMPLE_MARKERS)
+    assert all((ROOT / marker).is_file() for marker in guard.PRIVATE_SAMPLE_MARKERS)
+    assert all(marker.startswith("fixtures/") for marker in guard.PRIVATE_SAMPLE_MARKERS)
+
+
+BAD_TYPES = [
+    ("schema_version", 2),
+    ("schema_version", True),
+    ("schema_version", "1"),
+    ("data_class", "synthetic"),
+    ("team_id", "0" * 31),
+    ("team_id", "A" * 32),
+    ("team_id", "g" * 32),
+    ("revision", 0),
+    ("revision", 2**31),
+    ("revision", True),
+    ("revision", 1.5),
+    ("supersedes_record_hash", "a" * 63),
+    ("supersedes_record_hash", ""),
+    ("team_hash", "A" * 64),
+    ("team_hash", None),
+    ("canonical_team_hash", "a" * 65),
+    ("status", "Active"),
+    ("status", "deleted"),
+    ("tags", "synthetic"),
+    ("tags", ["Garchomp"]),
+    ("tags", ["-leading"]),
+    ("tags", ["a" * 33]),
+    ("tags", ["ok"] * 17),
+    ("tags", [1]),
+    ("labels", {"team": {"mon1": {"species": "Garchomp", "moves": "Earthquake, Dragon Claw"}}}),
+    ("labels", [{"label_id": "x", "value": "y", "extra": "z"}]),
+    ("labels", [{"label_id": "x"}]),
+    ("labels", [{"label_id": "x", "value": "has space"}]),
+    ("labels", [{"label_id": "x" * 129, "value": "y"}]),
+    ("labels", [{"label_id": "x", "value": "y"}] * 65),
+    ("labels", ["Garchomp"]),
+    ("labels", {"m": ["Earthquake", "Dragon Claw"]}),
+    # Opaque encodings of a paste in a free-form field.
+    ("team_id", "R2FyY2hvbXAgQCBTaXRydXMgQmVycnk="),
+    ("status", "47617263686f6d7020402053697472757320426572727920"),
+    # Look-alikes of the line-shaped signatures.
+    ("tags", ["Garchomp\u00a0@\u00a0Sitrus Berry"]),
+    ("tags", ["Garchomp \uff20 Sitrus Berry"]),
+    ("tags", ["Ability:Rough Skin"]),
+    ("tags", ["ability: rough skin"]),
+    ("tags", ["-Earthquake"]),
+    ("tags", ["\u2013 Earthquake"]),
+    ("tags", ["EVs: 4 HP / 252 Atk"]),
+    ("tags", ["Adamant Nature"]),
+]
+
+
+@pytest.mark.parametrize(("key", "value"), BAD_TYPES)
+def test_every_marked_value_is_type_checked(
+    repo: Path, corpus: frozenset[str], key: str, value: object
+) -> None:
+    path = write(repo, MARKER, json.dumps({**PRIVATE_RECORD, key: value}))
+    assert SHAPE in [r.split(": ", 1)[1] for r in guard.violations([path])]
+
+
+def test_the_record_with_every_field_valid_passes_and_edge_values_pass(
+    repo: Path, corpus: frozenset[str]
+) -> None:
+    edges = {
+        "revision": 2**31 - 1,
+        "supersedes_record_hash": "c" * 64,
+        "status": "retired",
+        "tags": ["a", "a" + "b" * 31] + ["x"] * 14,
+        "labels": [{"label_id": "A.b_c:d-e", "value": "0"}] * 64,
+    }
+    path = write(repo, MARKER, json.dumps({**PRIVATE_RECORD, **edges}))
+    assert guard.violations([path]) == []
+
+
+# Duplicate keys: json.loads keeps the last value, the earlier one stays in the bytes.
+REAL_PASTE = json.dumps("Garchomp @ Sitrus Berry\nAbility: Rough Skin\n- Earthquake\n")
+CORPUS_PASTE = json.dumps(PASTE_ONLY["paste"])
+
+
+def record_text(**replace: str) -> str:
+    fields = {k: json.dumps(v) for k, v in PRIVATE_RECORD.items()} | replace
+    return "{" + ", ".join(f'"{k}": {v}' for k, v in fields.items()) + "}"
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        # The reviewer's attack: a real paste first, the corpus paste last.
+        record_text()[:-1] + f', "paste": {CORPUS_PASTE}}}',
+        '{"paste": ' + REAL_PASTE + ", " + record_text()[1:],
+        '{"data_class": "synthetic", ' + record_text()[1:],
+        '{"a": {"b": 1, "b": 2}}',
+        '{"list": [{"x": 1}, {"y": 1, "y": 2}]}',
+    ],
+)
+@pytest.mark.parametrize("name", [MARKER, "docs/example.json", "fixtures/other/x.json"])
+def test_duplicate_keys_are_refused_everywhere(
+    repo: Path, corpus: frozenset[str], text: str, name: str
+) -> None:
+    path = write(repo, name, text)
+    assert guard.violations([path]) == [f"{path}: {guard.DUPLICATE_KEY}"]
+
+
+def test_duplicate_keys_in_one_jsonl_line_are_refused(repo: Path) -> None:
+    path = write(repo, "episodes/run.jsonl", '{"a": 1}\n{"a": 1, "a": 2}\n')
+    assert guard.violations([path]) == [f"{path}: {guard.DUPLICATE_KEY}"]
+    clean = write(repo, "episodes/ok.jsonl", '{"a": 1}\n{"a": 2}\n')
+    assert guard.violations([clean]) == []
+
+
+def test_no_tracked_json_has_a_duplicate_key() -> None:
+    listed = subprocess.run(
+        ["git", "ls-files", "-z"], cwd=ROOT, check=True, capture_output=True
+    ).stdout.split(b"\0")
+    names = [n.decode() for n in listed if n.endswith((b".json", b".jsonl"))]
+    for name in names:
+        if (ROOT / name).is_file():
+            guard._documents(name, (ROOT / name).read_text(encoding="utf-8"))
