@@ -4,12 +4,13 @@ Research for Redmine #681 (Notion Wave 1 acceptance gate: "held-out evaluation p
 
 **What this note fixes.** How a learned policy is judged offline: against which opponents, on which teams and seeds, in which seats, with which confidence intervals, and under which rules the sealed test stays sealed. It sets no numeric target. Every value that would be a policy choice (interval width, team count, seed count, run budget, error rate) is named as a **parameter** in [§10](#10-parameters-left-to-adr-010) with the rule for choosing it; ADR-010 records the values.
 
-**What the results mean.** Evaluation teams are synthetic (§4.1), so every result generalises to the **team generator's distribution** (after the §4.4 pre-checks), not to the distribution of teams people actually play. Training may use real teams kept in `private-data/`; the gap between the two distributions is not measured by this protocol.
+**What the results mean.** Evaluation teams are synthetic (§4.1), so every result generalises to the **team generator's distribution** (after the §4.4 pre-checks), not to the distribution of teams people actually play. A Training-gate candidate and every evaluation opponent train on synthetic teams only; real teams appear only in a separate private lineage after the gate (erratum E6, ADR-010). The gap between the synthetic and the real distribution is not measured by this protocol.
 
 **How to read it.**
 
 - Facts that are not the project's own decision cite a source label `[S#]` (see [Sources](#sources)). Engine facts cite `file:line` in the pinned submodule `vendor/pokemon-showdown` at `7244fe8e28fa8bc4d0809ae30d183c608b62bb2b` [S1].
 - **Decision** marks a rule this protocol sets. **Inference** marks a conclusion drawn from cited facts that no source states.
+- The [Errata](#errata-adr-010) at the end record corrections decided in ADR-010 (accepted r7); where an erratum and the text it names differ, the erratum governs, and the named text has been corrected in place with a pointer to it.
 - Glossary terms (`CONTEXT.md`) are used exactly: Preview Policy, Battle Policy, legal heuristic, sealed test, version manifest, Episode, player-perspective observation.
 
 ## 1. Questions answered and questions left open
@@ -58,7 +59,7 @@ A sealed run that fails still uses one unit of the sealed budget (I3): a rerun w
 
 ## 3. Opponent pools
 
-The candidate is a pair of frozen checkpoints: one Preview Policy and one Battle Policy, each identified by a content hash. Every opponent is identified the same way: an opponent id, the code commit or checkpoint hash that defines it, and, for stochastic opponents, how its random stream is derived from the block seed (§5.4). Every learned opponent trains only on teams of the training pool (§4.2): never on sealed teams, and on dev or validation teams only under the D6 rule (they then join the training pool).
+The candidate is a pair of frozen checkpoints: one Preview Policy and one Battle Policy, each identified by a content hash. Every opponent is identified the same way: an opponent id, the code commit or checkpoint hash that defines it, and, for stochastic opponents, how its random stream is derived from the block seed (§5.4). Every learned opponent trains only on teams of the training pool (§4.2): never on sealed teams, and on dev teams only under the D6 rule (they then join the training pool); never on validation teams (erratum E2, ADR-010).
 
 | Pool | Members | How built | Versioned and frozen by | What it tells you | Seen or held out |
 |---|---|---|---|---|---|
@@ -98,7 +99,7 @@ A generator draws species, items, abilities, moves and Stat Points from what the
 | Split | Used for | Committed? | Seeds |
 |---|---|---|---|
 | **dev** | Debugging, smoke runs, ablations, plots. Free to use. | Yes, as CC0 fixtures under `fixtures/` | Public derivation key |
-| **validation** | Model selection: checkpoint choice, early stopping, hyperparameters, league tuning, and the coverage check of §6.1 | Yes (CC0) or private-data/, as ADR-010 decides. Its results may be read as often as needed, which is why it is not a test | Public derivation key, distinct from dev |
+| **validation** | Model selection: checkpoint choice, early stopping, hyperparameters, league tuning, and the coverage check of §6.1 | Yes, as CC0 fixtures (erratum E2, ADR-010). Its results may be read as often as needed, which is why it is not a test | Public derivation key, distinct from dev |
 | **sealed test** | One confirmatory measurement per registered candidate (§7) | **No.** Only commitments (hashes) are committed while the set is sealed; the teams live in the isolated store of I1 | Secret key, committed by hash |
 
 **Decision (D6): the training pool is a union.** The **training pool** is the union of every team used, at any point, by:
@@ -108,7 +109,7 @@ A generator draws species, items, abilities, moves and Stat Points from what the
 - usage-statistics opponents (pool U), if they exist;
 - every **retired sealed set**, once published (L5), whether or not anyone trained on it yet.
 
-The whole training pool is disjoint from the sealed set and from its L2 neighbourhood. Dev and validation teams must also be disjoint from the sealed set. A training job may use dev or validation teams only if they then join the training pool, so L1 and L2 (and L2a) are applied to them against the sealed set; whether to allow it at all is ADR-010's choice. Sealed teams and unretired sealed sets are never trained on.
+The whole training pool is disjoint from the sealed set and from its L2 neighbourhood. Dev and validation teams must also be disjoint from the sealed set. A training job may use dev teams only if they then join the training pool, so L1 and L2 (and L2a) are applied to them against the sealed set. Training on validation teams is **forbidden** (erratum E2, ADR-010): validation stays out-of-sample for selection, the coverage check of §6.1 and D11. Sealed teams and unretired sealed sets are never trained on.
 
 ### 4.3 Size and coverage
 
@@ -122,7 +123,7 @@ The whole training pool is disjoint from the sealed set and from its L2 neighbou
 
 **Coverage labels.** Each team carries labels computed from its own data by a public, deterministic labeller (O6, O9): for example a speed-control mode (Trick Room setter, Tailwind setter, neither), a weather or terrain setter, a Mega Stone holder, redirection, Fake Out. The labels are multi-dimensional, so they are not strata by themselves.
 
-**Strata (Decision D20).** The strata are **one partition** of the teams: each team's stratum is the tuple of its label values. A cell with fewer than `n_stratum_min` teams (§10, at least 2, because a one-team cell is never varied by resampling and so understates variance) is merged by a merge rule fixed before assignment: drop the label dimensions one at a time in a pre-registered order, coarsening only the undersized cells, until every cell meets the minimum. The same partition drives the D5 split assignment and the §6.1 resampling. The labels, their order and `n_stratum_min` depend on O6, which this rule blocks on. The report lists the cells and their counts per split.
+**Strata (Decision D20).** The strata are **one partition** of the teams: each team's stratum is the tuple of its label values. A cell with fewer than `n_stratum_min` teams (§10, at least 2, because a one-team cell is never varied by resampling and so understates variance) is merged by a merge rule fixed before assignment: drop the label dimensions one at a time in a pre-registered order, coarsening only the undersized cells, until every cell meets the minimum. The minimum holds **in each split**, the sealed split included: the merge rule runs on the generated pool before assignment and coarsens until every cell, under the stratified per-split quota, gets at least `n_stratum_min` teams in each split, and the evaluation job computes the sealed counts inside the isolated store at assignment and logs them with the L3 commitment (erratum E1, ADR-010). The same partition drives the D5 split assignment and the §6.1 resampling. The labels, their order and `n_stratum_min` depend on O6, which this rule blocks on. The report lists the cells and their counts per split.
 
 **Roster coverage.** The report lists, per split, the species used and their overlap with the training pool. The held-out unit is the **team** (its combination of sets), not the species: the roster is finite and species will recur. A separate, labelled stress subset may hold species absent from training.
 
@@ -185,7 +186,7 @@ Seed pairing is a weak variance-reduction device whose gain must be measured (re
 
 ### 5.4 Seeds
 
-**Decision (D9).** Seeds are derived, never typed in: `seed = "sodium," + hex32(HMAC-SHA-256(key_split, canonical(block_id)))`, where `block_id` names the opponent, the ordered team pair and the seed index, and `hex32` keeps the first 32 hex digits (the format the runner already uses, `runner.ts` `BattleOptions.seed`). Each split has its own key (§4.2). A stochastic policy (candidate or opponent) gets its own random stream from the same derivation with the seat and the policy id in the label, so that its sampling is reproducible and independent of the battle PRNG.
+**Decision (D9).** Seeds are derived, never typed in: `seed = "sodium," + hex32(HMAC-SHA-256(key_split, canonical(block_id)))`, where `block_id` names the opponent, the ordered team pair and the seed index, and `hex32` keeps the first 32 hex digits (the format the runner already uses, `runner.ts` `BattleOptions.seed`). Each split has its own key (§4.2). A stochastic policy (candidate or opponent) gets its own random stream from the same derivation with the seat, the policy id and the game index in the label (erratum E5, ADR-010), so that its sampling is reproducible and independent of the battle PRNG.
 
 ## 6. Statistics
 
@@ -196,7 +197,7 @@ Seed pairing is a weak variance-reduction device whose gain must be measured (re
 1. Within each cell of the D20 partition, draw as many teams with replacement as the cell holds.
 2. For every unordered pair of distinct drawn copies whose teams differ, keep that pair's blocks once, with all seeds and all four games. A pair of two copies of the **same** team has no block (D7 requires `a ≠ b`) and is skipped; mirror matches are not substituted. A resample with duplicated teams therefore holds fewer pairs than the original plan; the coverage check below covers the effect of this.
 3. Compute the mean score on that resample. Repeat `B_boot` times (§10) with a recorded bootstrap seed.
-4. The interval is the `α'/2` and `1 − α'/2` quantiles, where `α'` is the adjusted level of §6.4.
+4. The interval is the `α'/2` and `1 − α'/2` quantiles, where `α'` is the adjusted level of §6.4. For a directional gate claim the interval is instead the one-sided bound `[L, 1]` (`[L, ∞)` for a paired difference), `L` being the `α'`-quantile of the resampled values (erratum E3, ADR-010).
 
 Why this method, and what is not proven:
 
@@ -225,8 +226,8 @@ Two checkpoints `A` and `B` are compared on the **same** block plan. For each bl
 
 ### 6.4 Multiple comparisons, p-values and sequential looking
 
-- **Bootstrap p-value (D13).** A percentile interval does not by itself define a p-value. This protocol defines it by **interval inversion**: for a statistic `θ` and the null value `θ_0` (½ for a mean score, 0 for a paired difference), `p` is the smallest level at which the equal-tailed percentile interval excludes `θ_0`, computed with the usual add-one correction so that `p` is never 0: for a **directional** claim "`θ > θ_0`", `p = (#{θ* ≤ θ_0} + 1) / (B_boot + 1)` (and symmetrically for "`θ < θ_0`"); for a two-sided claim, `p = min(1, 2·min(#{θ* ≤ θ_0} + 1, #{θ* ≥ θ_0} + 1) / (B_boot + 1))`, over the `B_boot` resampled values `θ*`. With the BCa fallback, the BCa interval is inverted instead. The resolution of `p` is about `1/B_boot`, so `B_boot` must make the tail at the smallest Holm threshold well populated (§10).
-- **Pre-registered family (D14).** Before a sealed run, the plan lists every comparison that may support a claim (candidate versus each opponent, candidate versus each named checkpoint), `m` in all, with the direction of each claim. Because each claim is registered with a direction, Holm's step-down procedure [S7] runs on the **one-sided** D13 p-values; a claim registered without a direction uses the two-sided p-value. Claims across that family control the familywise error rate this way, or, for intervals, with Bonferroni-adjusted levels. Any other comparison in the report is labelled exploratory.
+- **Bootstrap p-value (D13).** A percentile interval does not by itself define a p-value. This protocol defines it by **interval inversion**: for a statistic `θ` and the null value `θ_0` (½ for a mean score, 0 for a paired difference), `p` is the smallest level at which the equal-tailed percentile interval excludes `θ_0`, computed with the usual add-one correction so that `p` is never 0: for a **directional** claim "`θ > θ_0`", `p = (#{θ* ≤ θ_0} + 1) / (B_boot + 1)` (and symmetrically for "`θ < θ_0`"); for a two-sided claim, `p = min(1, 2·min(#{θ* ≤ θ_0} + 1, #{θ* ≥ θ_0} + 1) / (B_boot + 1))`, over the `B_boot` resampled values `θ*`. With the BCa fallback, the BCa interval is inverted instead. For a directional claim the one-sided percentile bound is inverted (the `α'`-quantile of the resampled values), with the add-one formula above and `θ_0` set to the claim's margin null (erratum E3, ADR-010). The resolution of `p` is about `1/B_boot`, so `B_boot` must make the tail at the smallest Holm threshold well populated (§10).
+- **Pre-registered family (D14).** Before a sealed run, the plan lists every comparison that may support a claim (candidate versus each opponent, candidate versus each named checkpoint), `m` in all, with the direction of each claim. Because each claim is registered with a direction, Holm's step-down procedure [S7] runs on the **one-sided** D13 p-values; a claim registered without a direction uses the two-sided p-value. Claims across that family control the familywise error rate this way, or, for intervals, with Bonferroni-adjusted levels. The Training gate's family uses Bonferroni: each claim passes when its one-sided lower bound at `α'` exceeds its margin null; Holm p-values are reported beside the bounds but do not change the verdict (erratum E5, ADR-010). Any other comparison in the report is labelled exploratory.
 - **Across the sealed budget (D15).** Choosing a new candidate after seeing an earlier sealed result is adaptive use of the set; a budget bounds that reuse but does not correct for it [S9]. Either `B_sealed = 1`, or the level is split across the budget: each run uses `α/B_sealed` as its family level, so the per-comparison Bonferroni level is `α' = α/(m·B_sealed)`. When later candidates are chosen after seeing earlier sealed results, the runs are adaptive [S9] and this split is only a **heuristic** bound on the familywise error across the budget; it also does not remove selection effects from the point estimates of later runs. `B_sealed = 1` is the only clean option, and the report states which was used.
 - **No peeking on the sealed test (D16).** The sealed plan is fixed in size in advance and run once to completion. Results are not inspected while it runs, and it is not stopped early on a good or bad result.
 - **Validation may be monitored, with limits.** If validation runs are watched as they accumulate and stopped when an interval looks decisive, a fixed-`n` interval loses its coverage. Time-uniform confidence sequences hold "for all stopping times" [S8], but their guarantees rest on the observations forming a (super)martingale structure with respect to a filtration, with conditions on the increments [S8] §2. [S8] does not require independence. **Inference** of this document: games that share teams in the crossed design do not give increments with the required conditional structure for the mean over the team distribution, because games revealed later depend on team effects already seen. Confidence sequences are therefore applied only to **independent units** (the §6.2 setting); on the crossed plan any sequential interval is labelled **heuristic**. Validation results remain non-confirmatory either way.
@@ -255,7 +256,7 @@ A Bradley-Terry model, in which the probability that `i` beats `j` is `τ_i / (�
 
 - **Scale.** With `λ_i = ln τ_i`, the shown rating is `(400 / ln 10)·λ_i`, so a 400-point difference means odds of 10 to 1. This is a display convention only.
 - **Ties.** Ties enter as half a win and half a loss in a quasi-likelihood fit, or through Davidson's tie model for Bradley-Terry, which adds a parameter for the probability of a tie [S20]. The report names the choice.
-- **Separation.** If a policy wins (or loses) every game against the others it met, its maximum-likelihood rating is infinite. The fit then uses a Jeffreys-prior penalty on the likelihood (Firth's bias-reducing penalty [S21]), which gives finite estimates in binomial-response GLMs, a class that includes logistic regression [S22]; a Bradley-Terry fit on wins and losses is a logistic regression. Or it uses a Gaussian prior on `λ` with scale `σ_prior` (§10). The report says which, and flags every separated policy.
+- **Separation.** If a policy wins (or loses) every game against the others it met, its maximum-likelihood rating is infinite. The fit then uses a Jeffreys-prior penalty on the likelihood (Firth's bias-reducing penalty [S21]), which gives finite estimates in a broad class of binomial generalized linear models that includes logistic regression [S22]; a Bradley-Terry fit on wins and losses is a logistic regression. Or it uses a Gaussian prior on `λ` with scale `σ_prior` (§10). The report says which, and flags every separated policy.
 
 **Decision (D18).** Such a rating is a summary, never a goal, a gate criterion or a selection rule, because:
 
@@ -270,7 +271,7 @@ The matrix and per-opponent intervals are the result; the rating is a view of th
 
 | # | Rule |
 |---|---|
-| I1 | **Who, and how it is enforced.** Only the evaluation job runs the sealed test. The sealed key, the sealed teams and the sealed run artifacts live in an **isolated store** outside the repository working tree: a separate OS user or container whose files and secret store training jobs cannot read. Training jobs run under a different user or container without access. The owner holds the key and starts sealed runs. The report is reviewed independently before the owner accepts it (#790). The concrete store is O11. |
+| I1 | **Who, and how it is enforced.** Only the evaluation job runs the sealed test. The sealed key, the sealed teams and the sealed run artifacts live in an **isolated store** outside the repository working tree: a separate OS user or container whose files and secret store training jobs cannot read. Training jobs run under a different user or container without access. The owner holds the key and starts sealed runs. The report is reviewed before the owner accepts it (#790), under the relaxed O14 rule of erratum E7 (ADR-010). The concrete store is O11. |
 | I2 | **Pre-registration with a trusted timestamp.** Before a sealed run, its plan is written down and hashed: candidate checkpoint hashes and provenance record hashes; opponent ids and hashes; the comparison family with each claim's direction and the decision rule (D13-D15); the block plan size; `α`, `α'`, `B_boot`, the interval method and fallback; the evaluation harness commit; the report template; the L3 set and key commitments. The plan holds no secret. It is timestamped by a mechanism the owner cannot backdate: merged to `main` through a pull request, or attested with GitHub's artifact attestation as the rules publishing workflow already does (`.github/workflows/rules-publish.yml`). The run must match the registered plan. |
 | I3 | **Budget.** Each sealed set allows at most `B_sealed` runs (§10), one registered candidate each, with the level split of D15. Reusing a holdout adaptively "can easily lead to overfitting to the holdout set itself" [S9]. Failed runs count against the budget (D2). When the budget is spent, the set retires (L5) and a new set is made under L3. |
 | I4 | **Never for model selection.** A sealed result may not choose between checkpoints, set a hyperparameter, stop training, change the league or the training pool, or tune an opponent. Model selection uses the validation split only. |
@@ -345,12 +346,12 @@ No value is set here. Each is chosen and recorded in ADR-010 by the stated rule.
 | `n_teams`, `n_seeds` | Sealed teams; seeds per team pair | §4.3 projection at the adjusted level, not below the floor |
 | `B_boot` | Bootstrap resamples | Far above `m·B_sealed/α`, so that the expected number of resamples beyond the smallest Holm threshold (`B_boot·α'/2`) is large; check that interval endpoints and p-values change by less than the reporting precision between two bootstrap seeds |
 | `R_cov`, `cov_tol` | Coverage-check replications and tolerance | `R_cov` at least `1/α'` and large enough that the Monte Carlo standard error of the estimated coverage is small against `α'`; `cov_tol` a small multiple of that standard error |
-| `n_stratum_min` | Smallest stratum cell (D20) | At least 2; raise it until the coverage check passes with the merged cells |
+| `n_stratum_min` | Smallest stratum cell (D20) | At least 2, in each split (erratum E1); raise it until the coverage check passes with the merged cells |
 | `d_team` | Near-duplicate distance for L2 | Smallest distance at which two teams play differently in validation runs |
 | `latency_budget` | Per-decision compute limit on A1 (D2) | From the policy budget rules of [timer-deadline-budget.md](timer-deadline-budget.md), measured on the evaluation hardware |
 | `σ_prior` | Prior scale for the rating fit under separation (D17) | Weak enough that it moves ratings of non-separated policies by less than their interval width |
 | Pool membership | Which frozen checkpoints and lineages, whether pool U exists (ADR-009), how many exploiters per candidate | ADR-010 league design, with C1-C7 applied |
-| `maxTurns` | Turn cap that forces a tie | Above the longest validation game observed; the runner default is 300 |
+| `maxTurns` | Turn cap that forces a tie | Above the longest validation game observed; the runner default is 300. Held in `EvaluationParameters` and passed to `runBattle` explicitly, never taken from the runner's default (erratum E5, ADR-010) |
 
 ## 11. Open questions
 
@@ -369,7 +370,7 @@ No value is set here. Each is chosen and recorded in ADR-010 by the stated rule.
 | O11 | The isolated store of I1 (OS user, container or secret store), the provenance record schema and the C1/C6 checker of C7 | The first sealed set; any held-out classification |
 | O12 | Harness support for policy forfeits (D2) around `runBattle`, which has no forfeit outcome | Scoring forfeits as losses |
 | O13 | Scheduling the evaluation job's repository scan for sealed team hashes (§7) | Nothing; until it is scheduled, review and the isolated store are the only defence |
-| O14 | Independence of the reviewer in a small team (I1) | Acceptance of a sealed report |
+| O14 | Independence of the reviewer in a small team (I1). Relaxed by erratum E7 (ADR-010 G8, O14) | Acceptance of a sealed report |
 
 ## 12. Acceptance checklist
 
@@ -382,6 +383,20 @@ No value is set here. Each is chosen and recorded in ADR-010 by the stated rule.
 | Confidence-interval method defined | §6.1 (primary, D10; coverage check and fallback, D11), §6.2 (Wilson, independent trials only), §6.3 (paired differences), §6.4 (p-values, multiplicity, sealed budget, sequential looking) |
 | No numeric Elo or win-rate targets | No targets anywhere; values are parameters (§10); Elo reported only (D17, D18) |
 | Sealed-test isolation rules written down | §7 (I1-I8), §4.4 (L2a-L6) |
+
+## Errata (ADR-010)
+
+Corrections decided by the accepted ADR-010 (AI policy and training loop, #729, revision 7, section 8 and its resolved conflicts C-R1 and C-R4), recorded by #848. Each names the text it corrects, which has been fixed in place with a pointer back here. They change no other part of the protocol.
+
+| # | ADR-010 | Correction |
+|---|---|---|
+| E1 | E1 (D20/D5) | `n_stratum_min` holds in **each split**, the sealed split included. The merge rule runs on the generated pool before assignment and coarsens until every cell, under the stratified per-split quota, gets at least `n_stratum_min` teams in each split. The evaluation job computes the sealed counts inside the isolated store at assignment and logs them with the L3 commitment. Corrects D20 (§4.3) and the `n_stratum_min` row of §10. |
+| E2 | E2 (D6) | Training on validation teams is **forbidden**: validation stays out-of-sample for selection, the §4.3 projection and D11. Dev teams may be trained on and then join the training pool. Validation teams are committed as CC0 fixtures. Corrects D6 and the validation row of §4.2, and §3. |
+| E3 | E3 (D10, D11, D13) | A directional claim inverts the one-sided percentile bound (the `α'`-quantile of the resampled values), with the add-one formula of D13 and `θ_0` set to the claim's margin null. For gate claims the D10 interval is the one-sided bound `[L, 1]` (`[L, ∞)` for a paired difference), not the equal-tailed interval. D11 checks the coverage of that one-sided bound. Corrects D10 (§6.1) and D13 (§6.4). |
+| E4 | E4 | The S22 entry of the Sources is a verbatim quotation of the published abstract (the arXiv record of the same paper), and the one in-text mention of its result is worded to match. |
+| E5 | E5 (D14, D9, section 10) | (a) The Training gate's claim family uses Bonferroni at `α'` with one-sided lower bounds against margin nulls; Holm p-values are reported beside them and do not change the verdict (D14, §6.4). (b) The policy-stream label of D9 carries the game index as well as the seat and the policy id (§5.4). (c) `maxTurns` is held in `EvaluationParameters` and passed to `runBattle` explicitly (§10). |
+| E6 | E6 (C-R1) | A Training-gate candidate, `L2` and every exploiter train on synthetic teams only. Real teams appear only in a separate private lineage after the gate. Corrects "What the results mean" (top) and the validation row of §4.2. |
+| E7 | E7 (C-R4; G8, O14) | O14 (and the independent review of I1) is relaxed to the ADR-010 rule: fresh-context reviewers given only the artifacts (registered plan, report, per-game table, records), the pre-registered gate (I2), the owner's sign-off on #790, and the single-model-family limit stated in every report. Reviewer independence across model families is not met and is not claimed. |
 
 ## Sources
 
@@ -410,7 +425,7 @@ All accessed 2026-10-19.
 | S19 | A. B. Owen, D. Eckles, "Bootstrapping data arrays of arbitrary order" | <https://arxiv.org/abs/1106.2125> | Annals of Applied Statistics 6(3), 895-927, 2012 | For multifactor crossed random-effects data, a bootstrap giving each observation "the product of independently sampled factor weights" is "mildly conservative, meaning biased toward overestimating the variance" under sufficient conditions |
 | S20 | R. R. Davidson, "On extending the Bradley-Terry model to accommodate ties in paired comparison experiments" | <https://doi.org/10.1080/01621459.1970.10481082> | Journal of the American Statistical Association 65(329), 317-328, 1970 | Extends Bradley-Terry with a parameter governing the probability of a tie |
 | S21 | D. Firth, "Bias reduction of maximum likelihood estimates" | <https://doi.org/10.1093/biomet/80.1.27> | Biometrika 80(1), 27-38, 1993 | Origin of the bias-reducing penalised likelihood, which for logistic regression is a Jeffreys-prior penalty |
-| S22 | I. Kosmidis, D. Firth, "Jeffreys-prior penalty, finiteness and shrinkage in binomial-response generalized linear models" | <https://doi.org/10.1093/biomet/asaa052> (preprint <https://arxiv.org/abs/1812.01938>) | Biometrika 108(1), 71-82, 2021 | Abstract: penalisation by Jeffreys' prior "is shown to produce finite-valued maximum penalized likelihood estimates" in a class of binomial-response GLMs that "includes logistic regression, where the Jeffreys-prior penalty is known additionally to reduce the asymptotic bias of the maximum likelihood estimator" |
+| S22 | I. Kosmidis, D. Firth, "Jeffreys-prior penalty, finiteness and shrinkage in binomial-response generalized linear models" | <https://doi.org/10.1093/biomet/asaa052> (preprint <https://arxiv.org/abs/1812.01938>) | Biometrika 108(1), 71-82, 2021 | Abstract, quoted verbatim from the arXiv record (first two sentences): "Penalization of the likelihood by Jeffreys' invariant prior, or by a positive power thereof, is shown to produce finite-valued maximum penalized likelihood estimates in a broad class of binomial generalized linear models. The class of models includes logistic regression, where the Jeffreys-prior penalty is known additionally to reduce the asymptotic bias of the maximum likelihood estimator; and also models with other commonly used link functions such as probit and log-log." |
 
 Notes on sources:
 
