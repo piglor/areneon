@@ -10,12 +10,16 @@ import runpy
 import socket
 import subprocess
 import sys
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
 import areneon_ml.worker
 import pytest
 from areneon_contracts.contracts import jcs
+from areneon_ml.checkpoint.files import checkpoint_bytes, write_checkpoint
+from areneon_ml.model.encoder import EncoderConfig, encoder_version
+from areneon_ml.model.network import init_network
 from areneon_ml.worker.__main__ import EXIT_CHECKPOINT, main
 from areneon_ml.worker.checkpoints import CheckpointError, CheckpointStore
 from areneon_ml.worker.protocol import QueryError, check
@@ -28,6 +32,7 @@ from tests.ml.helpers import (
     ENGINE_DATA_HASH,
     MAX_LINE,
     battle_query,
+    game,
     hello,
     line,
     make_run_dir,
@@ -36,6 +41,7 @@ from tests.ml.helpers import (
     sample,
     session,
 )
+from tests.ml.model.support import TINY_MODEL
 
 REPLIES = 2  # the ready message and one reply
 
@@ -60,7 +66,8 @@ def test_the_ready_message_names_the_worker_it_is(tmp_path: Path) -> None:
     _, [ready] = session(make_worker(tmp_path), line(hello()))
     message = ready["message"]
     assert message["contracts"] == hello()["message"]["contracts"]
-    assert message["encoder_version"] == "stub-1"
+    assert message["encoder_version"] == encoder_version(game(), TINY_MODEL.encoder)
+    assert message["encoder_version"].startswith("enc1:")
     assert message["engine_data_hash"] == ENGINE_DATA_HASH
     assert [c["role"] for c in message["checkpoints"]] == ["battle", "preview"]
 
@@ -160,6 +167,41 @@ def test_a_candidate_of_an_unknown_shape_is_unsupported_not_invalid(tmp_path: Pa
     check("policy-reply", reply)
 
 
+def reply_to(tmp_path: Path, query: dict[str, Any]) -> dict[str, Any]:
+    _, [_, reply] = session(make_worker(tmp_path), line(hello()), line(query))
+    check("policy-reply", reply)
+    answer: dict[str, Any] = reply["reply"]
+    return answer
+
+
+def test_a_candidate_the_encoder_cannot_back_is_unsupported_not_invalid(tmp_path: Path) -> None:
+    # Syntactically a candidate, but the request lists fewer than nine moves.
+    query = battle_query()
+    query["candidates"] = [{"choice": "move 9, move 1", "pending": False}]
+    answer = reply_to(tmp_path, query)
+    assert answer["error"] == "unsupported_candidate"
+    assert "move the request lacks" in answer["detail"]
+
+
+def test_an_observation_the_reducer_refuses_is_an_invalid_query(tmp_path: Path) -> None:
+    query = battle_query()
+    query["observation"]["log"].insert(-1, "|nosuchline|SECRET-FIELD")
+    answer = reply_to(tmp_path, query)
+    assert answer["error"] == "invalid_query"
+    assert answer["detail"].startswith("UnknownLineError: no rule for line type")
+    assert "SECRET-FIELD" not in answer["detail"]
+
+
+def test_a_query_at_a_wait_request_is_an_invalid_query(tmp_path: Path) -> None:
+    query = battle_query()
+    waiting = json.loads(query["observation"]["log"][-1][len("|request|") :])
+    waiting = {"wait": True, "side": waiting["side"]}
+    query["observation"]["log"][-1] = "|request|" + json.dumps(waiting)
+    answer = reply_to(tmp_path, query)
+    assert answer["error"] == "invalid_query"
+    assert answer["detail"].startswith("EncodingError: no decision")
+
+
 def test_read_query_applies_the_reader_rules() -> None:
     assert read_query(battle_query())["query_id"] == 1
     with pytest.raises(QueryError):
@@ -173,18 +215,24 @@ def recommendation_of(frames: list[dict[str, Any]], index: int) -> dict[str, Any
 
 def test_a_query_answers_the_same_alone_and_after_others(tmp_path: Path) -> None:
     # Batch invariance (ADR-010 §2): evaluation scores one query per pass, so what
-    # was scored before cannot change the answer. Against the stateless stub this
-    # holds trivially; it tests the session's one-query-per-pass shape. The real
-    # check, on the network's float accumulation, lands with the network slice (#839).
+    # was scored before cannot change the answer: the real network's probabilities
+    # are bit-identical (tests/ml/model/test_network.py checks the float tensors too).
     worker = make_worker(tmp_path)
     target = battle_query(query_id=9, sampling={"kind": "sample", "u": 2**52})
-    others = [preview_query(query_id=1), battle_query(query_id=2), preview_query(query_id=3)]
+    battle = battle_query()
+    others = [
+        preview_query(query_id=1),
+        battle_query(query_id=2, candidates=battle["candidates"][:5]),
+        sample("policy-query/valid/battle-a2.json") | {"query_id": 3},
+        preview_query(query_id=4, candidates=preview_query()["candidates"][::-1]),
+    ]
     _, alone = session(worker, line(hello()), line(target))
     _, after = session(worker, line(hello()), *(line(q) for q in others), line(target))
-    assert recommendation_of(alone, 1) == recommendation_of(after, 4)
+    assert recommendation_of(alone, 1) == recommendation_of(after, 1 + len(others))
     scorer = worker._scorer
     first = scorer.probabilities(encoder_input(target))
-    scorer.probabilities(encoder_input(others[0]))
+    for other in others:
+        scorer.probabilities(encoder_input(other))
     assert scorer.probabilities(encoder_input(target)) == first
 
 
@@ -251,7 +299,9 @@ def test_checkpoints_load_only_by_id_from_the_run_directory(tmp_path: Path) -> N
         store.load("1" * 64)
 
 
-def test_the_worker_package_opens_no_socket() -> None:
+def test_the_ml_package_opens_no_socket() -> None:
+    # The scan covers all of areneon_ml (worker, model, checkpoint, reducer); the running test below
+    # covers a session. Third-party modules (torch) are not scanned.
     banned = {
         "socket",
         "socketserver",
@@ -264,8 +314,10 @@ def test_the_worker_package_opens_no_socket() -> None:
         "ftplib",
         "smtplib",
     }
-    package = Path(areneon_ml.worker.__file__).parent
-    for source in package.glob("*.py"):
+    package = Path(areneon_ml.__file__).parent
+    sources = list(package.rglob("*.py"))
+    assert len(sources) > 25
+    for source in sources:
         for node in ast.walk(ast.parse(source.read_text(encoding="utf-8"))):
             names = (
                 [a.name for a in node.names]
@@ -317,6 +369,36 @@ def test_main_refuses_a_missing_checkpoint(
     run_dir, preview, _ = make_run_dir(tmp_path)
     assert main(cli(run_dir, preview, "9" * 64)) == EXIT_CHECKPOINT
     assert "cannot be read" in capsys.readouterr().err
+
+
+def test_main_refuses_a_checkpoint_of_the_wrong_role(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    run_dir, preview, battle = make_run_dir(tmp_path)
+    assert main(cli(run_dir, battle, preview)) == EXIT_CHECKPOINT
+    assert "holds a battle network, not preview" in capsys.readouterr().err
+
+
+def test_main_refuses_bytes_that_are_not_a_checkpoint(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    run_dir, _, battle = make_run_dir(tmp_path)
+    junk = b"stub weights for the preview policy"
+    found = hashlib.sha256(junk).hexdigest()
+    (run_dir / "checkpoints" / f"{found}.safetensors").write_bytes(junk)
+    assert main(cli(run_dir, found, battle)) == EXIT_CHECKPOINT
+    assert "not a safetensors file" in capsys.readouterr().err
+
+
+def test_main_refuses_networks_trained_with_different_encoders(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    run_dir, _, battle = make_run_dir(tmp_path)
+    other = replace(TINY_MODEL, encoder=EncoderConfig(volatile_buckets=5, condition_buckets=4))
+    data = checkpoint_bytes(init_network("preview", game(), other, 1), game())
+    found = write_checkpoint(run_dir, data)
+    assert main(cli(run_dir, found, battle)) == EXIT_CHECKPOINT
+    assert "different encoders" in capsys.readouterr().err
 
 
 def test_main_refuses_a_non_positive_line_limit(tmp_path: Path) -> None:

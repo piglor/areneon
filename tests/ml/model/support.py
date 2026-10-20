@@ -11,6 +11,7 @@ from typing import Any
 
 from areneon_ml.model.encoder import Encoder, EncoderConfig
 from areneon_ml.model.gamedata import GameData
+from areneon_ml.model.network import ModelConfig
 
 ROOT = Path(__file__).resolve().parents[3]
 FORMAT_DIR = ROOT / "fixtures" / "showdown" / "gen9championsvgc2026regmc"
@@ -20,6 +21,7 @@ RANDOM = sorted((FORMAT_DIR / "random").glob("b*.json"))
 
 # A small model: the sizes are configuration, the tests run fast on CPU.
 TINY_ENCODER = EncoderConfig(volatile_buckets=4, condition_buckets=4)
+TINY_MODEL = ModelConfig(encoder=TINY_ENCODER, d_model=16, n_layers=1, n_heads=2, d_ff=32)
 
 
 @cache

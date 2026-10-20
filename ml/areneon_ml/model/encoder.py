@@ -72,9 +72,16 @@ class EncoderConfig:
     turn_scale: float = 100.0  # divisor of the turn counter
 
     def __post_init__(self) -> None:
-        for name in ("volatile_buckets", "condition_buckets", "max_moves", "max_team", "max_picks"):
-            if getattr(self, name) < 1:
-                raise ValueError(f"{name} must be at least 1")
+        limits = {
+            "volatile_buckets": 4096,
+            "condition_buckets": 4096,
+            "max_moves": 16,
+            "max_team": 16,
+            "max_picks": 16,
+        }
+        for name, limit in limits.items():
+            if not 1 <= getattr(self, name) <= limit:
+                raise ValueError(f"{name} must be at least 1 and at most {limit}")
         if self.stat_scale <= 0 or self.turn_scale <= 0:
             raise ValueError("scales must be positive")
         if self.max_picks > self.max_team:
