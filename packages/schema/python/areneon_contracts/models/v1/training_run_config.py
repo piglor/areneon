@@ -5,7 +5,15 @@ from __future__ import annotations
 
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictInt, StrictStr
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    RootModel,
+    StrictBool,
+    StrictInt,
+    StrictStr,
+)
 
 
 class Seeds(BaseModel):
@@ -32,6 +40,10 @@ class Seeds(BaseModel):
     """
     Seed of the learner's own generator (minibatch order).
     """
+
+
+class ExcludedAbility(RootModel[StrictStr]):
+    root: Annotated[StrictStr, Field(max_length=64, min_length=1)]
 
 
 class Ppo(BaseModel):
@@ -236,6 +248,10 @@ class Generation(BaseModel):
     baseline_games: Annotated[list[Baseline], Field(max_length=2)]
     """
     Games against scripted baselines, at most one entry per actor (a reader rule).
+    """
+    excluded_abilities: Annotated[list[ExcludedAbility], Field(max_length=256)]
+    """
+    Teams with a set holding any of these abilities are not drawn. A stop-gap for a known gap of the log-to-state reducer (Illusion's replace line, follow-up #851); a value of this record, not of the code, so it goes when the gap does.
     """
     max_turns: Annotated[StrictInt, Field(ge=1, le=1000)]
     """

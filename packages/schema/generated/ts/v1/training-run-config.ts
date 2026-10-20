@@ -71,6 +71,12 @@ export interface TrainingRunConfig {
      */
     baseline_games: Baseline[];
     /**
+     * Teams with a set holding any of these abilities are not drawn. A stop-gap for a known gap of the log-to-state reducer (Illusion's replace line, follow-up #851); a value of this record, not of the code, so it goes when the gap does.
+     *
+     * @maxItems 256
+     */
+    excluded_abilities: string[];
+    /**
      * Turns after which the engine forces a tie.
      */
     max_turns: number;
