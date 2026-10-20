@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "name": "duckdb",
+  "version": "1.5.6",
+  "assets": {
+    "linux-amd64": {
+      "url": "https://github.com/duckdb/duckdb/releases/download/v1.5.6/duckdb_cli-linux-amd64.zip",
+      "zip_sha256": "6e89deac1ebbc36eed0291caf8b567b030c7b86ac35998f71854e22b3c5d5e2f",
+      "binary_sha256": "61238cfbe9dfeaad4bcfcd8a48f6f7123dae2e9603aaadb1f77a4217aeb8980c"
+    },
+    "linux-arm64": {
+      "url": "https://github.com/duckdb/duckdb/releases/download/v1.5.6/duckdb_cli-linux-arm64.zip",
+      "zip_sha256": "c544e92c9b7c31fc53c2139802cabd8e2d1b2b3e3f933117f31611239c1402db",
+      "binary_sha256": "c0ac0b79e243ee312b3af29c34ac0b94e518aa44c4345036d5d96c1c042c9d48"
+    }
+  }
+}

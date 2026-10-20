@@ -74,3 +74,4 @@ export {
 export { readRevealDir, REVEAL_FILES, retireSealedSet, revealHash, revealOf, SealedRetireError, SealedVerifyError, verifyRetiredSealed, type VerifyInput, type VerifyReport } from "./sealed-retire.ts";
 export { assertPrivateStore, SealedStoreError } from "./sealed-store.ts";
 export { runSealedCli, type SealedCliIo } from "./sealed-command.ts";
+export * from "./shards/index.ts";
