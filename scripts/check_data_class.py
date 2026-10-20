@@ -45,7 +45,17 @@ PokePaste guard does not see JSON teams, so this guard rejects a committed
   (the PrivateTeamRecord shape), no other object in the file may be team-shaped,
   and no other string (keys included) may look like a paste (a ``Species @ Item``,
   ``Ability:`` or ``- Move`` line), so real team text cannot ride in a marked
-  file; or
+  file. Every value is also type-checked against the PrivateTeamRecord (ADR-014
+  §4): ``schema_version`` 1, ``data_class`` ``private``, ``team_id`` 32 hex,
+  ``revision`` 1 to 2**31-1, ``supersedes_record_hash`` null or 64 hex, both team
+  hashes 64 hex, ``status`` active or retired, at most 16 ``tags`` matching
+  ``[a-z0-9][a-z0-9-]{0,31}``, at most 64 ``labels`` that are exactly
+  ``{label_id, value}`` token pairs (ADR-013), and one corpus ``paste``. That
+  both hashes equal the paste's hashes needs the engine's ``Teams.import``, so
+  the guard cannot check it: the vitest round-trip of the contracts slice does; or
+- has a duplicate key in any JSON object (and, for JSONL, in any line): a
+  reader keeps the last value while the earlier one stays in the committed
+  bytes, so the guard refuses the file; or
 - holds a team record or manifest of the team system (ADR-013 §4, §8)
   without ``"data_class": "synthetic"`` on the object itself, wherever it
   is, ``fixtures/`` included. A TeamRecord is an object with a string
@@ -97,6 +107,15 @@ PRIVATE_RECORD_KEYS = frozenset(
         "labels",
     }
 )
+# ADR-014 section 4 field types; labels are ADR-013's (an array of at most 64
+# {label_id, value} pairs whose strings match the ADR-013 token pattern).
+HEX64 = re.compile(r"[0-9a-f]{64}")
+HEX32 = re.compile(r"[0-9a-f]{32}")
+TAG = re.compile(r"[a-z0-9][a-z0-9-]{0,31}")
+LABEL_TOKEN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}")
+MAX_TAGS = 16
+MAX_LABELS = 64
+MAX_REVISION = 2**31 - 1
 # A PokePaste signature: `Species @ Item`, an `Ability:` line or a `- Move` line.
 PASTE_LINE = re.compile(r"^(?:[^\n]+ @ [^\n]+|Ability: [^\n]*|- \S[^\n]*)$", re.MULTILINE)
 TEAM_CORPUS = Path(__file__).resolve().parents[1] / "fixtures" / "teams"
@@ -117,8 +136,10 @@ PASTE_NOT_IN_CORPUS = (
 )
 MARKER_SHAPE = (
     "is a private sample marker holding more than a PrivateTeamRecord: other root keys, "
-    "another team-shaped object, or paste text outside `paste`"
+    "values that break the record's types, another team-shaped object, or paste text "
+    "outside `paste`"
 )
+DUPLICATE_KEY = "has a duplicate JSON object key, so a reader would see only the last value"
 UNKNOWN_KEY_KIND = 'holds a team dataset manifest whose key is not of kind "public"'
 
 
@@ -272,8 +293,49 @@ def _strings(value: object) -> Iterator[str]:
             yield from _strings(item)
 
 
+def _is_int(value: object, low: int, high: int) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool) and low <= value <= high
+
+
+def _is_match(pattern: re.Pattern[str], value: object) -> bool:
+    return isinstance(value, str) and pattern.fullmatch(value) is not None
+
+
+def _labels_ok(labels: object) -> bool:
+    if not isinstance(labels, list) or len(labels) > MAX_LABELS:
+        return False
+    return all(
+        isinstance(label, dict)
+        and label.keys() == {"label_id", "value"}
+        and _is_match(LABEL_TOKEN, label["label_id"])
+        and _is_match(LABEL_TOKEN, label["value"])
+        for label in labels
+    )
+
+
+def _record_types_ok(record: dict[str, object]) -> bool:
+    tags = record["tags"]
+    supersedes = record["supersedes_record_hash"]
+    return (
+        _is_int(record["schema_version"], 1, 1)
+        and record["data_class"] == "private"
+        and _is_match(HEX32, record["team_id"])
+        and _is_int(record["revision"], 1, MAX_REVISION)
+        and (supersedes is None or _is_match(HEX64, supersedes))
+        and _is_match(HEX64, record["team_hash"])
+        and _is_match(HEX64, record["canonical_team_hash"])
+        and record["status"] in ("active", "retired")
+        and isinstance(tags, list)
+        and len(tags) <= MAX_TAGS
+        and all(_is_match(TAG, tag) for tag in tags)
+        and _labels_ok(record["labels"])
+    )
+
+
 def _marker_shape_ok(document: object, objects: list[dict[str, object]]) -> bool:
     if not isinstance(document, dict) or document.keys() != PRIVATE_RECORD_KEYS:
+        return False
+    if not _record_types_ok(document):
         return False
     if any(_is_team(obj) for obj in objects if obj is not document):
         return False
@@ -281,10 +343,25 @@ def _marker_shape_ok(document: object, objects: list[dict[str, object]]) -> bool
     return not any(PASTE_LINE.search(text) for text in _strings(rest))
 
 
+class DuplicateKeyError(ValueError):
+    """A JSON object names one key twice."""
+
+
+def _no_duplicates(pairs: list[tuple[str, object]]) -> dict[str, object]:
+    keys = [key for key, _ in pairs]
+    if len(set(keys)) != len(keys):
+        raise DuplicateKeyError(keys)
+    return dict(pairs)
+
+
+def _loads(text: str) -> object:
+    return json.loads(text, object_pairs_hook=_no_duplicates)
+
+
 def _documents(path: str, text: str) -> list[object]:
     if path.endswith(".jsonl"):
-        return [json.loads(line) for line in text.splitlines() if line.strip()]
-    return [json.loads(text)]
+        return [_loads(line) for line in text.splitlines() if line.strip()]
+    return [_loads(text)]
 
 
 def violations(paths: Sequence[str]) -> list[str]:
@@ -295,6 +372,9 @@ def violations(paths: Sequence[str]) -> list[str]:
         try:
             documents = _documents(path, Path(path).read_text(encoding="utf-8"))
         except (FileNotFoundError, IsADirectoryError):
+            continue
+        except DuplicateKeyError:
+            found.append(f"{path}: {DUPLICATE_KEY}")
             continue
         except (json.JSONDecodeError, UnicodeDecodeError):
             found.append(f"{path}: is not valid JSON, so it cannot be checked")

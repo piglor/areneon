@@ -524,3 +524,119 @@ def test_the_private_markers_match_the_repo() -> None:
     assert private == set(guard.PRIVATE_SAMPLE_MARKERS)
     assert all((ROOT / marker).is_file() for marker in guard.PRIVATE_SAMPLE_MARKERS)
     assert all(marker.startswith("fixtures/") for marker in guard.PRIVATE_SAMPLE_MARKERS)
+
+
+BAD_TYPES = [
+    ("schema_version", 2),
+    ("schema_version", True),
+    ("schema_version", "1"),
+    ("data_class", "synthetic"),
+    ("team_id", "0" * 31),
+    ("team_id", "A" * 32),
+    ("team_id", "g" * 32),
+    ("revision", 0),
+    ("revision", 2**31),
+    ("revision", True),
+    ("revision", 1.5),
+    ("supersedes_record_hash", "a" * 63),
+    ("supersedes_record_hash", ""),
+    ("team_hash", "A" * 64),
+    ("team_hash", None),
+    ("canonical_team_hash", "a" * 65),
+    ("status", "Active"),
+    ("status", "deleted"),
+    ("tags", "synthetic"),
+    ("tags", ["Garchomp"]),
+    ("tags", ["-leading"]),
+    ("tags", ["a" * 33]),
+    ("tags", ["ok"] * 17),
+    ("tags", [1]),
+    ("labels", {"team": {"mon1": {"species": "Garchomp", "moves": "Earthquake, Dragon Claw"}}}),
+    ("labels", [{"label_id": "x", "value": "y", "extra": "z"}]),
+    ("labels", [{"label_id": "x"}]),
+    ("labels", [{"label_id": "x", "value": "has space"}]),
+    ("labels", [{"label_id": "x" * 129, "value": "y"}]),
+    ("labels", [{"label_id": "x", "value": "y"}] * 65),
+    ("labels", ["Garchomp"]),
+    ("labels", {"m": ["Earthquake", "Dragon Claw"]}),
+    # Opaque encodings of a paste in a free-form field.
+    ("team_id", "R2FyY2hvbXAgQCBTaXRydXMgQmVycnk="),
+    ("status", "47617263686f6d7020402053697472757320426572727920"),
+    # Look-alikes of the line-shaped signatures.
+    ("tags", ["Garchomp\u00a0@\u00a0Sitrus Berry"]),
+    ("tags", ["Garchomp \uff20 Sitrus Berry"]),
+    ("tags", ["Ability:Rough Skin"]),
+    ("tags", ["ability: rough skin"]),
+    ("tags", ["-Earthquake"]),
+    ("tags", ["\u2013 Earthquake"]),
+    ("tags", ["EVs: 4 HP / 252 Atk"]),
+    ("tags", ["Adamant Nature"]),
+]
+
+
+@pytest.mark.parametrize(("key", "value"), BAD_TYPES)
+def test_every_marked_value_is_type_checked(
+    repo: Path, corpus: frozenset[str], key: str, value: object
+) -> None:
+    path = write(repo, MARKER, json.dumps({**PRIVATE_RECORD, key: value}))
+    assert SHAPE in [r.split(": ", 1)[1] for r in guard.violations([path])]
+
+
+def test_the_record_with_every_field_valid_passes_and_edge_values_pass(
+    repo: Path, corpus: frozenset[str]
+) -> None:
+    edges = {
+        "revision": 2**31 - 1,
+        "supersedes_record_hash": "c" * 64,
+        "status": "retired",
+        "tags": ["a", "a" + "b" * 31] + ["x"] * 14,
+        "labels": [{"label_id": "A.b_c:d-e", "value": "0"}] * 64,
+    }
+    path = write(repo, MARKER, json.dumps({**PRIVATE_RECORD, **edges}))
+    assert guard.violations([path]) == []
+
+
+# Duplicate keys: json.loads keeps the last value, the earlier one stays in the bytes.
+REAL_PASTE = json.dumps("Garchomp @ Sitrus Berry\nAbility: Rough Skin\n- Earthquake\n")
+CORPUS_PASTE = json.dumps(PASTE_ONLY["paste"])
+
+
+def record_text(**replace: str) -> str:
+    fields = {k: json.dumps(v) for k, v in PRIVATE_RECORD.items()} | replace
+    return "{" + ", ".join(f'"{k}": {v}' for k, v in fields.items()) + "}"
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        # The reviewer's attack: a real paste first, the corpus paste last.
+        record_text()[:-1] + f', "paste": {CORPUS_PASTE}}}',
+        '{"paste": ' + REAL_PASTE + ", " + record_text()[1:],
+        '{"data_class": "synthetic", ' + record_text()[1:],
+        '{"a": {"b": 1, "b": 2}}',
+        '{"list": [{"x": 1}, {"y": 1, "y": 2}]}',
+    ],
+)
+@pytest.mark.parametrize("name", [MARKER, "docs/example.json", "fixtures/other/x.json"])
+def test_duplicate_keys_are_refused_everywhere(
+    repo: Path, corpus: frozenset[str], text: str, name: str
+) -> None:
+    path = write(repo, name, text)
+    assert guard.violations([path]) == [f"{path}: {guard.DUPLICATE_KEY}"]
+
+
+def test_duplicate_keys_in_one_jsonl_line_are_refused(repo: Path) -> None:
+    path = write(repo, "episodes/run.jsonl", '{"a": 1}\n{"a": 1, "a": 2}\n')
+    assert guard.violations([path]) == [f"{path}: {guard.DUPLICATE_KEY}"]
+    clean = write(repo, "episodes/ok.jsonl", '{"a": 1}\n{"a": 2}\n')
+    assert guard.violations([clean]) == []
+
+
+def test_no_tracked_json_has_a_duplicate_key() -> None:
+    listed = subprocess.run(
+        ["git", "ls-files", "-z"], cwd=ROOT, check=True, capture_output=True
+    ).stdout.split(b"\0")
+    names = [n.decode() for n in listed if n.endswith((b".json", b".jsonl"))]
+    for name in names:
+        if (ROOT / name).is_file():
+            guard._documents(name, (ROOT / name).read_text(encoding="utf-8"))
