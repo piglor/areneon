@@ -8,6 +8,8 @@ import {
   episodeFromRecord,
   episodeHash,
   evaluationRunManifest,
+  decodeRequest,
+  enumerateCandidates,
   loadEngine,
   loadTrainingSet,
   nodeSha256,
@@ -15,6 +17,8 @@ import {
   readTrainingSet,
   stampTeam,
   teamHash,
+  trainingExample,
+  type TrainingExample,
   TrainingLoaderError,
 } from "../src/index.ts";
 import type { PrivateTeamSpec } from "@areneon/schema/types/v1/private-team-spec.ts";
@@ -31,6 +35,7 @@ const mutate = (episode: Episode, change: (copy: Episode) => void): Episode => {
 // A stored Episode as a hostile writer could have changed it: outside the types.
 const forged = (value: unknown): never => value as never;
 
+const POLICY = "first-legal";
 let record: BattleRecord;
 let p1: Episode;
 let p2: Episode;
@@ -43,7 +48,7 @@ beforeAll(async () => {
 });
 
 const load = (episodes: unknown[], evaluation_manifests: unknown[] = []) =>
-  loadTrainingSet({ episodes, evaluation_manifests, known_synthetic: KNOWN });
+  loadTrainingSet({ episodes, evaluation_manifests, known_synthetic: KNOWN, behaviour_policy_id: POLICY });
 const refusal = (promise: Promise<unknown>, message: string | RegExp) => expect(promise).rejects.toThrow(message);
 
 describe("loadTrainingSet", () => {
@@ -54,7 +59,7 @@ describe("loadTrainingSet", () => {
     expect(examples[0]?.observation.kind).toBe("preview");
     const hash = await episodeHash(p1, nodeSha256);
     for (const example of examples) {
-      expect(Object.keys(example).sort()).toEqual(["choice", "episode_hash", "observation", "schema_version"]);
+      expect(Object.keys(example).sort()).toEqual(["candidates", "choice", "episode_hash", "observation", "outcome", "schema_version"]);
       expect(example.episode_hash).toBe(hash);
       expect(JSON.stringify(example)).not.toContain(record.seed as string);
     }
@@ -65,10 +70,52 @@ describe("loadTrainingSet", () => {
       data_class: "synthetic",
       episode_hashes: [hash],
       evaluation_manifest_hashes: [],
+      learner_ready: true,
+      behaviour_policy_id: POLICY,
       examples: examples.length,
       stream_sha256: await nodeSha256(new TextEncoder().encode(stream)),
     });
     expect(readTrainingSet(set)).toEqual(set);
+  });
+
+  it("carries the request's candidates in canonical order, and the outcome from the player's view", async () => {
+    for (const [player, episode] of [["p1", p1], ["p2", p2]] as const) {
+      const { examples, set } = await load([episode]);
+      expect(set.learner_ready).toBe(true);
+      const outcome = record.winner === null ? "tie" : record.winner === player ? "win" : "loss";
+      for (const example of examples) {
+        expect(example.outcome).toBe(outcome);
+        const line = example.observation.log.at(-1) as string;
+        expect(example.candidates).toEqual(enumerateCandidates(decodeRequest(line.slice("|request|".length))).candidates);
+        expect(example.candidates?.map((c) => c.choice)).toContain(example.choice);
+        // The CloneJudge's record of the same request agrees on which candidates are pending, but is not the source.
+        const legal = (record.requests[player].find((r) => r.request_seq === example.observation.identity.request_seq) as { legal: { choices: string[]; pending: string[] } }).legal;
+        expect(example.candidates?.filter((c) => !c.pending).map((c) => c.choice).sort()).toEqual([...legal.choices].sort());
+        expect(example.candidates?.filter((c) => c.pending).map((c) => c.choice).sort()).toEqual([...legal.pending].sort());
+      }
+      expect(JSON.stringify(examples)).not.toContain("hidden_verdicts");
+    }
+  });
+
+  it("scores a tied game as a tie", async () => {
+    const tied = mutate(p1, (e) => {
+      e.channel = e.channel.map((line) => (line.startsWith("|win|") ? "|tie" : line)) as Episode["channel"];
+      e.result.winner = null;
+    });
+    expect(new Set((await load([tied])).examples.map((e) => e.outcome))).toEqual(new Set(["tie"]));
+  });
+
+  it("refuses an Episode of another policy, so only the trained policy's seats train", async () => {
+    const other = await episodeFromRecord(record, "p2", {
+      team,
+      opponent_team: team,
+      known_synthetic: KNOWN,
+      behaviour_policy_id: "policy:frozen",
+      collection: league(record),
+    });
+    await refusal(load([p1, other]), "Episode 1 was played by policy:frozen, not first-legal: only the trained policy's own seats train");
+    const { set } = await loadTrainingSet({ episodes: [other], evaluation_manifests: [], known_synthetic: KNOWN, behaviour_policy_id: "policy:frozen" });
+    expect(set.behaviour_policy_id).toBe("policy:frozen");
   });
 
   it("orders Episodes by hash, whatever order they are given in", async () => {
@@ -218,11 +265,65 @@ describe("readEvaluationRunManifest and readTrainingSet", () => {
     }
   });
 
+  it("refuse a learner_ready TrainingSet that names no policy, and a learner_ready that is not true", async () => {
+    const { set } = await load([p1]);
+    expect(readTrainingSet(set)).toEqual(set);
+    const { behaviour_policy_id: _dropped, ...unnamed } = set;
+    expect(() => readTrainingSet(unnamed)).toThrow("a learner_ready TrainingSet must name its behaviour_policy_id");
+    expect(() => readTrainingSet({ ...set, learner_ready: false })).toThrow("invalid TrainingSet");
+    expect(() => readTrainingSet({ ...set, behaviour_policy_id: "" })).toThrow("invalid TrainingSet");
+    // The legacy shape stays readable: neither property.
+    const { learner_ready: _ready, ...legacy } = unnamed;
+    expect(readTrainingSet(legacy)).toEqual(legacy);
+  });
+
   it("refuse a TrainingSet that is unsorted, repeated or off the schema", async () => {
     const { set } = await load([p1, p2]);
     const [a, b] = set.episode_hashes as [string, string];
     expect(() => readTrainingSet({ ...set, episode_hashes: [b, a] })).toThrow("episode_hashes must be sorted and unique");
     expect(() => readTrainingSet({ ...set, evaluation_manifest_hashes: [a, a] })).toThrow("evaluation_manifest_hashes must be sorted and unique");
     expect(() => readTrainingSet({ ...set, examples: 0 })).toThrow("invalid TrainingSet");
+  });
+});
+
+describe("trainingExample", () => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const request = (edit: (r: { [key: string]: any }) => void) => {
+    const preview = structuredClone(JSON.parse((p1Observation.log.at(-1) as string).slice("|request|".length)));
+    edit(preview);
+    return `|request|${JSON.stringify(preview)}`;
+  };
+  let p1Observation: TrainingExample["observation"];
+  const input = (log: string, choice = "team 1234") => ({
+    observation: { ...p1Observation, log: [...p1Observation.log.slice(0, -1), log] } as unknown as TrainingExample["observation"],
+    choice,
+    outcome: "win" as const,
+    episode_hash: "a".repeat(64),
+  });
+  beforeAll(async () => {
+    p1Observation = (await load([p1])).examples[0]?.observation as TrainingExample["observation"];
+  });
+
+  it("builds a learner-ready example from the request that ends the log", () => {
+    const example = trainingExample(input(p1Observation.log.at(-1) as string));
+    expect(example.candidates).toHaveLength(360);
+    expect(example.outcome).toBe("win");
+  });
+
+  it("refuses a choice that is not among the candidates", () => {
+    expect(() => trainingExample(input(p1Observation.log.at(-1) as string, "team 1235 "))).toThrow(/is not among its 360 candidates/);
+    expect(() => trainingExample(input(p1Observation.log.at(-1) as string, "move 1"))).toThrow(TrainingLoaderError);
+  });
+
+  it("refuses a request the decoder or the enumerator does not understand", () => {
+    expect(() => trainingExample(input(request((r) => (r.unknownField = 1))))).toThrow(/has no candidates: request does not match/);
+    expect(() => trainingExample(input(request((r) => (r.maxChosenTeamSize = 0))))).toThrow(/has no candidates: .*maxChosenTeamSize/);
+  });
+
+  it("refuses a request that has more candidates than N_max", () => {
+    const wide = request((r) => {
+      r.side.pokemon = [...r.side.pokemon, ...r.side.pokemon.slice(0, 3)];
+    });
+    expect(() => trainingExample(input(wide))).toThrow(/invalid TrainingExample.*maxItems/);
   });
 });

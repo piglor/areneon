@@ -111,3 +111,58 @@ def test_refuses_a_manifest_class_below_its_examples() -> None:
 def test_refuses_a_manifest_that_is_not_an_object() -> None:
     with pytest.raises(ContractError):
         read_stream(STREAM, [])
+
+
+def test_reads_a_legacy_stream_without_candidates_or_outcome() -> None:
+    legacy = sample("training-example/valid/legacy-battle.json")
+    stream = stream_of(jcs(legacy).decode("utf-8"))
+    manifest = sample("training-set/valid/legacy.json")
+    manifest = {
+        **manifest,
+        "examples": 1,
+        "stream_sha256": sha256_hex(stream.encode("utf-8")),
+        "episode_hashes": [legacy["episode_hash"]],
+    }
+    assert "learner_ready" not in manifest
+    assert len(read_stream(stream, manifest)) == 1
+
+
+def test_a_learner_ready_set_names_its_policy_and_its_examples_are_complete() -> None:
+    assert SET["learner_ready"] is True
+    assert SET["behaviour_policy_id"]
+    without_policy = {k: v for k, v in manifest_for(STREAM).items() if k != "behaviour_policy_id"}
+    with pytest.raises(TrainingStreamError, match="must name its behaviour_policy_id"):
+        read_stream(STREAM, without_policy)
+    # The reader-invalid corpus sample is the same set, as stored.
+    stored = sample("training-set/reader-invalid/learner-ready-no-policy.json")
+    with pytest.raises(TrainingStreamError, match="must name its behaviour_policy_id"):
+        read_stream(STREAM, stored)
+
+
+@pytest.mark.parametrize("field", ["candidates", "outcome"])
+def test_refuses_a_learner_ready_example_missing_a_field(field: str) -> None:
+    incomplete = {k: v for k, v in EXAMPLES[1].items() if k != field}
+    stream = stream_of(jcs(EXAMPLES[0]).decode("utf-8"), jcs(incomplete).decode("utf-8"))
+    with pytest.raises(TrainingStreamError, match=f"line 2: .*has no {field}"):
+        read_stream(stream, manifest_for(stream))
+
+
+def test_refuses_a_choice_that_is_not_among_the_candidates() -> None:
+    stored = sample("training-example/reader-invalid/choice-not-in-candidates.json")
+    stream = stream_of(jcs(stored).decode("utf-8"))
+    for ready in (True, False):
+        manifest = manifest_for(stream)
+        if not ready:
+            manifest = {
+                k: v
+                for k, v in manifest.items()
+                if k not in ("learner_ready", "behaviour_policy_id")
+            }
+        with pytest.raises(TrainingStreamError, match="line 1: its choice is not among"):
+            read_stream(stream, manifest)
+
+
+def test_the_corpus_examples_carry_candidates_and_an_outcome() -> None:
+    for example in EXAMPLES:
+        assert example["outcome"] in ("win", "loss", "tie")
+        assert example["choice"] in [c["choice"] for c in example["candidates"]]

@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "data_class": "synthetic",
+  "episode_hashes": [
+    "8e3622c59ad468cc8532d2bcf07a072fbf449a070486e4a9058b8cfdf5ac9d53"
+  ],
+  "evaluation_manifest_hashes": [
+    "ea92634eef6c5fab8f76cb565eb50cf8c70983b7354830415c44a60f85ac5f90"
+  ],
+  "learner_ready": false,
+  "behaviour_policy_id": "first-legal@golden",
+  "examples": 10,
+  "stream_sha256": "f712e6f949594db8bdc9ebca49045e19f264455460ad3db1e24efe0238c54f72"
+}

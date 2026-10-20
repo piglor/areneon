@@ -94,14 +94,26 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
   });
   // Hash-only: all of a sealed run that may leave the isolated store (ADR-009 §4).
   const sealedManifest = await evaluationRunManifest({ run_id: "eval-run-1", sealed: true, episodes: [sealedEpisode] });
-  const training = await loadTrainingSet({ episodes: [leagueEpisode], evaluation_manifests: [sealedManifest], known_synthetic: known });
+  const training = await loadTrainingSet({ episodes: [leagueEpisode], evaluation_manifests: [sealedManifest], known_synthetic: known, behaviour_policy_id: "first-legal@golden" });
   const exampleOf = (kind: "preview" | "battle") => training.examples.find((e) => e.observation.kind === kind) as (typeof training.examples)[number];
+  // The stored shape before candidates and outcome: still valid (ADR-010 section 5).
+  const legacyExample = mutated(exampleOf("battle"), (e) => {
+    delete e.candidates;
+    delete e.outcome;
+  });
+  const legacySet = mutated(training.set, (t) => {
+    delete t.learner_ready;
+    delete t.behaviour_policy_id;
+  });
+  const candidatesOf = (count: number) => Array.from({ length: count }, (_, i) => ({ choice: `team ${i}`, pending: false }));
   const [hashA, hashB] = ["a", "b"].map((c) => c.repeat(64)) as [string, string];
 
   const valid: Record<string, unknown> = {
     "training-example/preview": exampleOf("preview"),
     "training-example/battle": exampleOf("battle"),
+    "training-example/legacy-battle": legacyExample,
     "training-set/league": training.set,
+    "training-set/legacy": legacySet,
     "evaluation-run-manifest/sealed": sealedManifest,
     "evaluation-run-manifest/open-empty": { schema_version: 1, run_id: "eval-run-2", sealed: false, episode_hashes: [] },
     "request-identity/a1": identity,
@@ -135,6 +147,10 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     // Schema-valid, refused by the readers: the hashes must be sorted and unique.
     "evaluation-run-manifest/unsorted": { schema_version: 1, run_id: "eval-run-3", sealed: false, episode_hashes: [hashB, hashA] },
     "evaluation-run-manifest/duplicate": { schema_version: 1, run_id: "eval-run-3", sealed: false, episode_hashes: [hashA, hashA] },
+    // Schema-valid, refused by readTrainingSet: a learner_ready set must name its policy.
+    "training-set/learner-ready-no-policy": mutated(training.set, (t) => delete t.behaviour_policy_id),
+    // Schema-valid, refused by the stream check: choice must be among the candidates.
+    "training-example/choice-not-in-candidates": { ...exampleOf("battle"), choice: "not a candidate" },
     "training-set/unsorted-episodes": { ...training.set, episode_hashes: [hashB, hashA] },
     "training-set/duplicate-manifests": { ...training.set, evaluation_manifest_hashes: [hashA, hashA] },
     "episode/sparring-synthetic": collected({ kind: "sparring", session_id: "sparring-session-1" }),
@@ -147,6 +163,13 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
       (e.observation as Record<string, unknown>).omniscient_log = ["|split|p2"];
     }),
     "training-example/short-episode-hash": { ...exampleOf("battle"), episode_hash: "abc" },
+    "training-example/empty-candidates": { ...exampleOf("battle"), candidates: [] },
+    "training-example/too-many-candidates": { ...exampleOf("battle"), candidates: candidatesOf(1025) },
+    "training-example/candidate-no-pending": mutated(exampleOf("battle"), (e) => delete (e.candidates as Record<string, unknown>[])[0]?.pending),
+    "training-example/candidate-verdict": mutated(exampleOf("battle"), (e) => ((e.candidates as Record<string, unknown>[])[0] as Record<string, unknown>).legal = true),
+    "training-example/unknown-outcome": { ...exampleOf("battle"), outcome: "draw" },
+    "training-set/learner-ready-false": { ...training.set, learner_ready: false },
+    "training-set/empty-policy-id": { ...training.set, behaviour_policy_id: "" },
     "training-set/no-stream-hash": mutated(training.set, (t) => delete t.stream_sha256),
     "training-set/no-examples": { ...training.set, examples: 0 },
     "training-set/public-class": { ...training.set, data_class: "public" },

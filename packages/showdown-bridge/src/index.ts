@@ -53,12 +53,14 @@ export {
   evaluationRunManifest,
   loadTrainingSet,
   readEvaluationRunManifest,
+  readTrainingExample,
   readTrainingSet,
   type TrainingExample,
   type TrainingInput,
   TrainingLoaderError,
   type TrainingSet,
   type TrainingStream,
+  trainingExample,
 } from "./training-loader.ts";
 export { EpisodeError, episodeFromRecord, type EpisodeOptions, readEpisode } from "./episode-io.ts";
 export {

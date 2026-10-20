@@ -5,7 +5,15 @@ from __future__ import annotations
 
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, RootModel, StrictInt, StrictStr
+from pydantic import (
+    MISSING,
+    BaseModel,
+    ConfigDict,
+    Field,
+    RootModel,
+    StrictInt,
+    StrictStr,
+)
 
 
 class EpisodeHash(RootModel[StrictStr]):
@@ -44,4 +52,12 @@ class TrainingSet(BaseModel):
     stream_sha256: Annotated[StrictStr, Field(pattern="^[0-9a-f]{64}$")]
     """
     SHA-256 of the stream's bytes: its JCS lines, each ended by a newline.
+    """
+    learner_ready: Literal[True] | MISSING = MISSING
+    """
+    true when every example of the stream carries candidates and outcome, and choice is among its candidates. The profile has no if/then, so the reader checks it (readTrainingSet; the Python stream check); the learner refuses a set without the flag (ADR-010 §5). Requires behaviour_policy_id.
+    """
+    behaviour_policy_id: Annotated[StrictStr | MISSING, Field(min_length=1)] = MISSING
+    """
+    The loader's behaviour_policy_id filter value: the one policy whose own seats this stream trains (ADR-010 §1). Every Episode in it has that policy as its provenance.behaviour_policy_id.
     """

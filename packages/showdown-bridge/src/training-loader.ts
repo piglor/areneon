@@ -10,14 +10,17 @@
 
 import { ajvFor } from "@areneon/schema/ajv";
 import evaluationRunManifestSchema from "@areneon/schema/contracts/v1/evaluation-run-manifest.schema.json" with { type: "json" };
+import trainingExampleSchema from "@areneon/schema/contracts/v1/training-example.schema.json" with { type: "json" };
 import trainingSetSchema from "@areneon/schema/contracts/v1/training-set.schema.json" with { type: "json" };
 import type { EvaluationRunManifest } from "@areneon/schema/types/v1/evaluation-run-manifest.ts";
 import type { TrainingExample } from "@areneon/schema/types/v1/training-example.ts";
 import type { TrainingSet } from "@areneon/schema/types/v1/training-set.ts";
 import { jcs, type Json } from "./canonical-json.ts";
+import { enumerateCandidates, EnumerationError } from "./choices.ts";
 import { type Episode, episodeHash } from "./episode.ts";
 import { decisionObservations, readEpisode } from "./episode-io.ts";
 import { nodeSha256 } from "./player-channel.ts";
+import { decodeRequest, RequestDecodeError } from "./request.ts";
 import type { SyntheticTeamHashes } from "./team-class.ts";
 
 export type { EvaluationRunManifest, TrainingExample, TrainingSet };
@@ -28,6 +31,7 @@ export class TrainingLoaderError extends Error {
 
 const validManifest = ajvFor("contract").compile(evaluationRunManifestSchema);
 const validSet = ajvFor("contract").compile(trainingSetSchema);
+const validExample = ajvFor("contract").compile(trainingExampleSchema);
 
 /** True when `hashes` is strictly ascending: sorted and without a repeat. */
 const strictlyAscending = (hashes: readonly string[]): boolean => hashes.every((h, i) => i === 0 || (hashes[i - 1] as string) < h);
@@ -45,14 +49,37 @@ export function readEvaluationRunManifest(value: unknown): EvaluationRunManifest
   return manifest;
 }
 
-/** Read a TrainingSet: the schema, then sorted and unique hash lists. */
+/**
+ * Read a TrainingSet: the schema, then what the profile cannot say: sorted
+ * and unique hash lists, and a learner_ready set names the policy it trains
+ * (ADR-010 §5; the examples' own fields are checked by the stream check).
+ */
 export function readTrainingSet(value: unknown): TrainingSet {
   if (!validSet(value)) throw new TrainingLoaderError(`invalid TrainingSet: ${JSON.stringify(validSet.errors)}`);
   const set = structuredClone(value) as unknown as TrainingSet;
   for (const field of ["episode_hashes", "evaluation_manifest_hashes"] as const) {
     if (!strictlyAscending(set[field])) throw new TrainingLoaderError(`the TrainingSet's ${field} must be sorted and unique`);
   }
+  if (set.learner_ready === true && set.behaviour_policy_id === undefined) {
+    throw new TrainingLoaderError("a learner_ready TrainingSet must name its behaviour_policy_id");
+  }
   return set;
+}
+
+/**
+ * Read a TrainingExample: the schema, then what the profile cannot say: when
+ * it carries `candidates`, its `choice` is one of them (ADR-010 §5). Whether
+ * a stream's examples all carry them is the stream check's (learner_ready).
+ */
+export function readTrainingExample(value: unknown): TrainingExample {
+  if (!validExample(value)) throw new TrainingLoaderError(`invalid TrainingExample: ${JSON.stringify(validExample.errors)}`);
+  const example = structuredClone(value) as unknown as TrainingExample;
+  if (example.candidates !== undefined && !example.candidates.some((candidate) => candidate.choice === example.choice)) {
+    throw new TrainingLoaderError(
+      `the choice "${example.choice}" of ${example.episode_hash} #${example.observation.identity.request_seq} is not among its ${example.candidates.length} candidates`,
+    );
+  }
+  return example;
 }
 
 export interface EvaluationRunInput {
@@ -89,6 +116,13 @@ export interface TrainingInput {
   evaluation_manifests: readonly unknown[];
   /** The synthetic teams there are (hashes), as `readEpisode` requires. */
   known_synthetic: SyntheticTeamHashes;
+  /**
+   * The one policy whose own seats train (ADR-010 §1): an Episode whose
+   * `provenance.behaviour_policy_id` differs is refused, so a frozen
+   * opponent's or a baseline's decisions never enter the update. Recorded in
+   * the TrainingSet.
+   */
+  behaviour_policy_id: string;
 }
 
 export interface TrainingStream {
@@ -101,15 +135,39 @@ export interface TrainingStream {
 
 const sha256Text = (text: string): Promise<string> => nodeSha256(new TextEncoder().encode(text));
 
-/** The Episode's TrainingExamples: each decision's observation, and the choice. */
+/** The game score from the player's view (ADR-010 §1). */
+const outcomeOf = ({ player, result }: Episode): NonNullable<TrainingExample["outcome"]> =>
+  result.winner === null ? "tie" : result.winner === player ? "win" : "loss";
+
+/**
+ * One decision as a learner-ready TrainingExample. The candidates are
+ * `enumerateCandidates` on the observation's own request (the `|request|`
+ * line that ends its log), in canonical order, with their pending flags;
+ * no CloneJudge verdict is used. Refused: a request the enumerator or
+ * decoder does not understand, a `choice` that is not among the candidates,
+ * and an example the schema refuses (more candidates than N_max).
+ */
+export function trainingExample(
+  { observation, choice, outcome, episode_hash }: Pick<TrainingExample, "observation" | "choice" | "episode_hash"> & { outcome: NonNullable<TrainingExample["outcome"]> },
+): TrainingExample {
+  const line = observation.log.at(-1) as string;
+  let candidates;
+  try {
+    candidates = enumerateCandidates(decodeRequest(line.slice("|request|".length))).candidates;
+  } catch (error) {
+    if (!(error instanceof EnumerationError || error instanceof RequestDecodeError)) throw error;
+    throw new TrainingLoaderError(`the request of ${episode_hash} #${observation.identity.request_seq} has no candidates: ${error.message}`, { cause: error });
+  }
+  return readTrainingExample({ schema_version: 1, episode_hash, observation, choice, candidates, outcome });
+}
+
+/** The Episode's TrainingExamples, one per decision. */
 async function examplesOf(episode: Episode, hash: string): Promise<TrainingExample[]> {
   const observations = await decisionObservations(episode);
-  return episode.decisions.map(({ choice }, i) => ({
-    schema_version: 1,
-    episode_hash: hash,
-    observation: observations[i] as TrainingExample["observation"],
-    choice,
-  }));
+  const outcome = outcomeOf(episode);
+  return episode.decisions.map(({ choice }, i) =>
+    trainingExample({ observation: observations[i] as TrainingExample["observation"], choice, outcome, episode_hash: hash }),
+  );
 }
 
 /**
@@ -122,11 +180,15 @@ async function examplesOf(episode: Episode, hash: string): Promise<TrainingExamp
  *   only `league` trains (C4);
  * - one whose hash an EvaluationRunManifest lists, which catches an
  *   evaluation Episode written under a wrong label;
+ * - one played by another policy than `behaviour_policy_id` (ADR-010 §1);
+ * - a decision whose `choice` is not among the candidates `enumerateCandidates`
+ *   returns for its request (ADR-010 §5);
  * - the same Episode or manifest twice, an invalid manifest, or no Episode.
+ * Every example carries `candidates` and `outcome`, so the set is `learner_ready`.
  * A relabelled copy of an evaluation Episode has other bytes and so another
  * hash: only the storage partition catches it, not this check.
  */
-export async function loadTrainingSet({ episodes, evaluation_manifests, known_synthetic }: TrainingInput): Promise<TrainingStream> {
+export async function loadTrainingSet({ episodes, evaluation_manifests, known_synthetic, behaviour_policy_id }: TrainingInput): Promise<TrainingStream> {
   const manifestHashes = new Set<string>();
   const evaluated = new Set<string>();
   for (const value of evaluation_manifests) {
@@ -139,7 +201,7 @@ export async function loadTrainingSet({ episodes, evaluation_manifests, known_sy
 
   const accepted = new Map<string, Episode>();
   for (const [index, value] of episodes.entries()) {
-    const episode = await readTraining(value, index, known_synthetic);
+    const episode = await readTraining(value, index, known_synthetic, behaviour_policy_id);
     const hash = await episodeHash(episode, nodeSha256);
     if (evaluated.has(hash)) throw new TrainingLoaderError(`Episode ${index} (${hash}) is listed in an EvaluationRunManifest: evaluation games never train`);
     if (accepted.has(hash)) throw new TrainingLoaderError(`Episode ${index} (${hash}) is given twice`);
@@ -157,13 +219,15 @@ export async function loadTrainingSet({ episodes, evaluation_manifests, known_sy
     data_class: "synthetic",
     episode_hashes: hashes as TrainingSet["episode_hashes"],
     evaluation_manifest_hashes: [...manifestHashes].sort(),
+    learner_ready: true,
+    behaviour_policy_id,
     examples: examples.length,
     stream_sha256: await sha256Text(stream),
   };
   return { examples, stream, set };
 }
 
-async function readTraining(value: unknown, index: number, known_synthetic: SyntheticTeamHashes): Promise<Episode> {
+async function readTraining(value: unknown, index: number, known_synthetic: SyntheticTeamHashes, behaviour_policy_id: string): Promise<Episode> {
   const episode = await readEpisode(value, { known_synthetic }).catch((error: Error) => {
     throw new TrainingLoaderError(`Episode ${index} is refused: ${error.message}`, { cause: error });
   });
@@ -174,6 +238,9 @@ async function readTraining(value: unknown, index: number, known_synthetic: Synt
   }
   if (episode.data_class !== "synthetic" || episode.rights !== "cc0-synthetic") {
     throw new TrainingLoaderError(`Episode ${index} is ${episode.data_class} with ${episode.rights} rights: only synthetic, cc0-synthetic data is loaded`);
+  }
+  if (episode.provenance.behaviour_policy_id !== behaviour_policy_id) {
+    throw new TrainingLoaderError(`Episode ${index} was played by ${episode.provenance.behaviour_policy_id}, not ${behaviour_policy_id}: only the trained policy's own seats train`);
   }
   return episode;
 }

@@ -17,6 +17,17 @@ export interface TrainingExample {
    * The decision label: the choice the player made, in canonical engine syntax.
    */
   choice: string;
+  /**
+   * The candidate joint choices of the request this decision answers, each with its pending flag, in the enumerator's canonical order (ADR-006): what the learner scores the choice against. Computed by the training loader with enumerateCandidates from the observation's own request, never from a CloneJudge verdict. maxItems is N_max (ADR-010 §3): the larger of the Team Preview bound (6·5·4·3 = 360) and the battle bound (at most 4 moves × 3 targets × (1 + 1 event) + 2 switches = 26 options per slot, so at most 676 joint choices), rounded up to a power of two; the oracle test checks it against the pinned engine for every supported format. Optional so stored streams stay valid; required, with outcome, in every example of a learner_ready TrainingSet (a reader rule: the contract profile has no if/then). The reader also checks that choice is among them.
+   *
+   * @minItems 1
+   * @maxItems 1024
+   */
+  candidates?: [Candidate, ...Candidate[]];
+  /**
+   * How the game ended, from the player's view: win, loss or tie. Optional; required, with candidates, in every example of a learner_ready TrainingSet (a reader rule).
+   */
+  outcome?: "win" | "loss" | "tie";
 }
 /**
  * What one player may know at a Team Preview decision (ADR-008 §5): their own channel, request and team. Built only by the ObservationBuilder.
@@ -311,6 +322,22 @@ export interface DecisionContext1 {
    * The policy must answer within this; 0 means skip the policy and send the fallback.
    */
   policy_budget_ms: number;
+}
+/**
+ * One candidate joint choice (ADR-006): canonical engine syntax and whether its legality depends on information the engine hides from the player.
+ *
+ * This interface was referenced by `TrainingExample`'s JSON-Schema
+ * via the `definition` "Candidate".
+ */
+export interface Candidate {
+  /**
+   * Canonical engine syntax, e.g. move 1 2 mega, switch 3.
+   */
+  choice: string;
+  /**
+   * True when the legality of the choice depends on hidden information (maybeTrapped, maybeDisabled, maybeLocked); no verdict on it is ever given.
+   */
+  pending: boolean;
 }
 /**
  * Which request a decision answers (ADR-008 §4). A consumer drops a recommendation unless request_seq and request_hash both match, and rqid too when both carry one.
