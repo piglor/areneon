@@ -1,11 +1,11 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, describe, expect, it } from "vitest";
 import { loadEngine } from "../src/engine.ts";
-import { TEAMS_DIR } from "../src/golden.ts";
+import { TEAMS_DIR, teamFixtureFiles } from "../src/golden.ts";
 import { loadRulesSnapshot } from "../src/rules-load.ts";
 import {
   buildReport,
@@ -39,6 +39,20 @@ function privateDir(files: Record<string, string>): string {
   return teams;
 }
 
+const PINNED_FLAGS: Record<string, string[]> = {
+  "illegal-five-pokemon.txt": ["species:Charizard=mega-request-shape"],
+  "illegal-item-clause.txt": ["species:Charizard=mega-request-shape"],
+  "illegal-not-in-roster.txt": ["species:Charizard=mega-request-shape"],
+  "illegal-restricted-legendary.txt": ["species:Charizard=mega-request-shape"],
+  "illegal-species-clause.txt": ["species:Charizard=mega-request-shape"],
+  "illegal-stat-points-over-32.txt": ["species:Charizard=mega-request-shape"],
+  "illegal-stat-points-over-total.txt": ["species:Charizard=mega-request-shape"],
+  "illegal-unlearnable-move.txt": ["species:Charizard=mega-request-shape"],
+  "illegal-zero-stat-points.txt": ["species:Charizard=mega-request-shape"],
+  // "Trick" is a false positive: the trick-room gap prose says "Trick Room".
+  "legal-opponent.txt": ["move:Trick=trick-room"],
+  "legal-synthetic.txt": ["species:Charizard=mega-request-shape"],
+};
 const megaPaste = fixture("legal-synthetic.txt").replace("Leftovers", "Venusaurite");
 
 describe("inventoryTeam", () => {
@@ -50,6 +64,7 @@ describe("inventoryTeam", () => {
     ]);
     expect(team.pokemon[0]).toEqual({
       species: "Venusaur",
+      base_species: "Venusaur",
       item: "Leftovers",
       ability: "Overgrow",
       moves: ["Giga Drain", "Sludge Bomb", "Protect", "Sleep Powder"],
@@ -87,6 +102,11 @@ describe("inventoryTeam", () => {
     expect(mega?.gaps.map((g) => g.gap_id)).toEqual(["mega-evolution", "mega-request-shape"]);
   });
 
+  it("does not call an unrelated item's holder a Mega user", () => {
+    const team = inventoryTeam(engine, snapshot, FORMAT, "n.txt", fixture("legal-synthetic.txt").replace("Charcoal", "Venusaurite"));
+    expect(team.pokemon[1]?.mega).toBeNull();
+  });
+
   it("takes its flags from the gap records", () => {
     const withGap = structuredClone(snapshot);
     withGap.gaps["x-protect"] = {
@@ -99,6 +119,53 @@ describe("inventoryTeam", () => {
     const flagged = Object.fromEntries(team.quarantined.map((f) => [f.name, f.gaps]));
     expect(Object.keys(flagged).sort()).toEqual(["Charcoal", "Charizard", "Protect", "Sleep Powder"]);
     expect(flagged["Protect"]).toEqual([{ gap_id: "x-protect", status: "unsupported" }]);
+  });
+});
+
+describe("real gap records", () => {
+  // Pins what the committed gap records flag on the committed fixture teams, so
+  // editing a record in rules/gaps/ shows up here. Advisory name matches only.
+  it("flag the fixture teams as pinned", () => {
+    const flags = Object.fromEntries(
+      teamFixtureFiles().map((file) => {
+        const team = inventoryTeam(engine, snapshot, FORMAT, file, fixture(file));
+        return [file, team.quarantined.map((f) => `${f.kind}:${f.name}=${f.gaps.map((g) => g.gap_id).join("+")}`)];
+      }),
+    );
+    expect(flags).toEqual(PINNED_FLAGS);
+  });
+
+  it("list every gap record as format-wide, flagged or not", () => {
+    const report = buildReport({ engine, teamsDir: privateDir({ "a.txt": fixture("legal-synthetic.txt") }), snapshot });
+    expect(report.flags_are_advisory).toBe(true);
+    expect(report.flags_note).toMatch(/not a complete list/);
+    expect(report.format_wide_gaps.map((g) => g.gap_id)).toEqual(Object.keys(snapshot.gaps).sort());
+    expect(report.format_wide_gaps[0]).toEqual({
+      gap_id: expect.any(String),
+      status: expect.any(String),
+      area: expect.any(String),
+    });
+  });
+
+  it("match a forme by its base species and read a pasted Mega forme through it", () => {
+    const withGap = structuredClone(snapshot);
+    withGap.gaps["x-venusaur"] = { area: "Venusaur", status: "unverified", description: "d", evidence: [] };
+    // The engine's import turns a pasted X-Mega back into X, so present the Mega forme to the lookup.
+    const realMod = engine.sim.Dex.mod.bind(engine.sim.Dex);
+    const dexMod: typeof engine.sim.Dex.mod = (mod) => {
+      const dex = realMod(mod);
+      return {
+        items: dex.items,
+        species: {
+          get: (name) => (name === "Gengar" ? { exists: false, name, baseSpecies: name } : name === "Venusaur" ? { exists: true, name: "Venusaur-Mega", baseSpecies: "Venusaur" } : dex.species.get(name)),
+        },
+      };
+    };
+    const asMega = { ...engine, sim: { ...engine.sim, Dex: { ...engine.sim.Dex, mod: dexMod } } };
+    const team = inventoryTeam(asMega, withGap, FORMAT, "v.txt", megaPaste);
+    expect(team.pokemon[0]).toMatchObject({ species: "Venusaur", base_species: "Venusaur", mega: "Venusaur-Mega" });
+    expect(team.pokemon.at(-1)?.base_species).toBe("Gengar");
+    expect(team.quarantined.find((f) => f.name === "Venusaur")?.gaps[0]?.gap_id).toBe("x-venusaur");
   });
 });
 
@@ -154,6 +221,31 @@ describe("paths", () => {
     expect(existsSync(join(scratch, "leak.json"))).toBe(false);
     expect(() => writePrivate(join(teams, "..", "..", "leak.json"), "{}")).toThrow(InventoryError);
     expect(existsSync(join(teams, "..", "..", "leak.json"))).toBe(false);
+  });
+
+  it("replaces an older report and tightens a loose reports directory", () => {
+    const teams = privateDir({});
+    const dir = join(teams, "..", "reports");
+    const file = join(dir, "out.json");
+    mkdirSync(dir);
+    writeFileSync(file, "old", { mode: 0o644 });
+    chmodSync(file, 0o644);
+    chmodSync(dir, 0o755);
+    writePrivate(file, "new");
+    expect(readFileSync(file, "utf8")).toBe("new");
+    expect(statSync(file).mode & 0o777).toBe(0o600);
+    expect(statSync(dir).mode & 0o777).toBe(0o700);
+  });
+
+  it("refuses a report that is a link to a file outside", () => {
+    const teams = privateDir({});
+    const dir = join(teams, "..", "reports");
+    mkdirSync(dir);
+    const outside = join(scratch, "elsewhere.json");
+    writeFileSync(outside, "keep");
+    symlinkSync(outside, join(dir, "out.json"));
+    expect(() => writePrivate(join(dir, "out.json"), "x")).toThrow(/outside/);
+    expect(readFileSync(outside, "utf8")).toBe("keep");
   });
 
   it("refuses to write through a link that leaves private-data", () => {

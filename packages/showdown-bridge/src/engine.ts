@@ -109,7 +109,7 @@ export interface SimBattle {
 /** One mod's data tables, narrowed to name lookups. */
 export interface SimModdedDex {
   items: { get(name: string): { exists: boolean; name: string; megaStone?: Record<string, string> } };
-  species: { get(name: string): { exists: boolean; name: string } };
+  species: { get(name: string): { exists: boolean; name: string; baseSpecies: string } };
 }
 
 /** The slice of Showdown's `sim` module Areneon depends on. */

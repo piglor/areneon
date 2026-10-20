@@ -6,7 +6,16 @@
 // `private-data/` directory; stdout carries counts and paths, and an error
 // names a file, never what is in it.
 
-import { chmodSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  lstatSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { basename, dirname, join, resolve, sep } from "node:path";
 import { type Engine, type PokemonSet } from "./engine.ts";
 import { resolveFormat } from "./formats.ts";
@@ -34,6 +43,8 @@ export interface QuarantinedFeature extends Feature {
 
 export interface PokemonInventory {
   species: string;
+  /** The species without its forme (Rotom-Wash: Rotom); gap prose usually names this. */
+  base_species: string;
   item: string;
   ability: string;
   moves: string[];
@@ -55,9 +66,24 @@ export interface TeamInventory {
   quarantined: QuarantinedFeature[];
 }
 
+export interface FormatWideGap {
+  gap_id: string;
+  status: string;
+  area: string;
+}
+
+export const ADVISORY_NOTE =
+  "Per-team flags are whole-word name matches against gap record prose and evidence symbols. " +
+  "They are not a complete list of unverified features: a team is never clean because nothing matched, " +
+  "so read format_wide_gaps too.";
+
 export interface InventoryReport {
   report_version: 1;
   data_class: "private";
+  flags_are_advisory: true;
+  flags_note: string;
+  /** Every gap record in the rules snapshot: they all describe the pinned engine for the format. */
+  format_wide_gaps: FormatWideGap[];
   showdown_commit: string;
   format_id: string;
   rules_snapshot_hash: string;
@@ -94,16 +120,24 @@ export function gapsNaming(
       return gap.evidence.some((item) => item.kind === "engine" && item.symbols.some((s) => toId(s) === toId(name)));
     })
     .map(([gap_id, gap]) => ({ gap_id, status: gap.status }))
-    .sort((a, b) => (a.gap_id < b.gap_id ? -1 : 1));
+    .sort((a, b) => a.gap_id.localeCompare(b.gap_id));
 }
 
-/** The Mega forme `set`'s item gives its species in the format's mod, if any. */
+/**
+ * The Mega forme `set`'s item gives its species in the format's mod, if any.
+ * A pasted Mega forme (`X-Mega`) is checked through its base species too.
+ */
 function megaForme(engine: Engine, mod: string, set: PokemonSet): string | null {
   const dex = engine.sim.Dex.mod(mod);
   const item = dex.items.get(set.item);
   const species = dex.species.get(set.species);
   if (!item.exists || !species.exists || !item.megaStone) return null;
-  return item.megaStone[species.name] ?? null;
+  return item.megaStone[species.name] ?? item.megaStone[species.baseSpecies] ?? null;
+}
+
+function baseSpecies(engine: Engine, mod: string, name: string): string {
+  const species = engine.sim.Dex.mod(mod).species.get(name);
+  return species.exists ? species.baseSpecies : name;
 }
 
 const MEGA_MECHANIC = "Mega Evolution";
@@ -111,6 +145,7 @@ const MEGA_MECHANIC = "Mega Evolution";
 function pokemonInventory(engine: Engine, mod: string, set: PokemonSet): PokemonInventory {
   return {
     species: set.species,
+    base_species: baseSpecies(engine, mod, set.species),
     item: set.item,
     ability: set.ability,
     moves: [...set.moves],
@@ -125,6 +160,7 @@ function featuresOf(pokemon: PokemonInventory[]): Feature[] {
   };
   for (const p of pokemon) {
     add("species", p.species);
+    add("species", p.base_species);
     add("item", p.item);
     add("ability", p.ability);
     for (const move of p.moves) add("move", move);
@@ -188,9 +224,7 @@ function realpathOfDeepest(path: string): string {
       return join(realpathSync(existing), ...rest.reverse());
     } catch {
       rest.push(basename(existing));
-      const parent = dirname(existing);
-      if (parent === existing) throw new InventoryError("no existing directory on the path");
-      existing = parent;
+      existing = dirname(existing); // the filesystem root always exists, so this ends
     }
   }
 }
@@ -204,8 +238,10 @@ export function writePrivate(path: string, text: string): void {
     throw new InventoryError(`refusing to write outside ${PRIVATE_DATA}/`);
   }
   mkdirSync(dirname(real), { recursive: true, mode: 0o700 });
-  writeFileSync(real, text, { mode: 0o600 });
-  chmodSync(real, 0o600);
+  chmodSync(dirname(real), 0o700);
+  // Replace, never reuse: an old file with looser modes must not hold the new text.
+  rmSync(real, { force: true });
+  writeFileSync(real, text, { mode: 0o600, flag: "wx" });
 }
 
 /** The `*.txt` files directly in `teamsDir`, sorted; each must really lie inside `private-data/`. */
@@ -265,6 +301,11 @@ export function buildReport(run: InventoryRun): InventoryReport {
   return {
     report_version: 1,
     data_class: "private",
+    flags_are_advisory: true,
+    flags_note: ADVISORY_NOTE,
+    format_wide_gaps: Object.entries(snapshot.gaps)
+      .map(([gap_id, gap]) => ({ gap_id, status: gap.status, area: gap.area }))
+      .sort((a, b) => a.gap_id.localeCompare(b.gap_id)),
     showdown_commit: run.engine.commit,
     format_id: formatId,
     rules_snapshot_hash: format.rules_snapshot_hash,
