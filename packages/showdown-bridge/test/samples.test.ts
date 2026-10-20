@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { ajvFor } from "@areneon/schema/ajv";
 import { beforeAll, describe, expect, it } from "vitest";
 import { syntheticFixtureHashes } from "../src/golden.ts";
+import { EngineDataError, readEngineData } from "../src/engine-data.ts";
 import { EpisodeError, loadEngine, readEpisode, readEvaluationRunManifest, readTrainingExample, readTrainingSet, TrainingLoaderError } from "../src/index.ts";
 import { contractSamples, SAMPLE_HASHES, SAMPLES_DIR } from "../src/samples.ts";
 
@@ -59,6 +60,10 @@ describe("the shared contract sample corpus (ADR-008 §2)", () => {
   it("holds every reader-invalid sample under its contract's directory, and each is refused above", () => {
     const readerInvalid = Object.keys(fresh).filter((f) => f.includes("/reader-invalid/"));
     expect(readerInvalid.sort()).toEqual([
+      "v1/engine-data/reader-invalid/dangling-type.json",
+      "v1/engine-data/reader-invalid/duplicate-species.json",
+      "v1/engine-data/reader-invalid/short-damage-row.json",
+      "v1/engine-data/reader-invalid/unsorted-species.json",
       "v1/episode/reader-invalid/class-below-opponent.json",
       "v1/episode/reader-invalid/sparring-synthetic.json",
       "v1/evaluation-run-manifest/reader-invalid/duplicate.json",
@@ -82,5 +87,21 @@ describe("the shared contract sample corpus (ADR-008 §2)", () => {
     expect(Object.keys(fresh)).toContain(file);
     expect(() => reader(committed(file))).toThrow(TrainingLoaderError);
     expect(() => reader(committed(file))).toThrow(message);
+  });
+
+  // ADR-010 section 3: the engine-data reader refuses what the profile cannot say.
+  it.each([
+    ["v1/engine-data/reader-invalid/unsorted-species.json", /species: .* repeated or out of order/],
+    ["v1/engine-data/reader-invalid/duplicate-species.json", /species: .* repeated or out of order/],
+    ["v1/engine-data/reader-invalid/dangling-type.json", /unknown type/],
+    ["v1/engine-data/reader-invalid/short-damage-row.json", /damage_taken is not one entry per type/],
+  ])("readEngineData refuses %s", (file, message) => {
+    expect(Object.keys(fresh)).toContain(file);
+    expect(() => readEngineData(committed(file))).toThrow(EngineDataError);
+    expect(() => readEngineData(committed(file))).toThrow(message);
+  });
+
+  it("holds a valid engine-data sample the reader accepts", () => {
+    expect(readEngineData(committed("v1/engine-data/valid/golden.json")).species).toHaveLength(2);
   });
 });

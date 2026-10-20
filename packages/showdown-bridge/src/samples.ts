@@ -10,9 +10,10 @@ import { fileURLToPath } from "node:url";
 import type { PrivateTeamSpec } from "@areneon/schema/types/v1/private-team-spec.ts";
 import { jcs, type Json } from "./canonical-json.ts";
 import { legalChoiceSet } from "./choice-judge.ts";
+import { exportEngineData } from "./engine-data.ts";
 import type { Engine } from "./engine.ts";
 import { episodeFromRecord } from "./episode-io.ts";
-import { goldenBattle, syntheticFixtureHashes, syntheticTeam } from "./golden.ts";
+import { GOLDEN_FORMAT, goldenBattle, syntheticFixtureHashes, syntheticTeam } from "./golden.ts";
 import { observe, recordedChannel } from "./player-channel.ts";
 import { battleClass, stampTeam } from "./team-class.ts";
 import { evaluationRunManifest, loadTrainingSet } from "./training-loader.ts";
@@ -108,7 +109,24 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
   const candidatesOf = (count: number) => Array.from({ length: count }, (_, i) => ({ choice: `team ${i}`, pending: false }));
   const [hashA, hashB] = ["a", "b"].map((c) => c.repeat(64)) as [string, string];
 
+  // A slim table (full type list, two entries of each other vocabulary): the
+  // complete one is fixtures/showdown/<format>/engine-data.json.
+  const full = exportEngineData(engine, GOLDEN_FORMAT);
+  const species = full.species.filter((x) => x.base_species === x.id).slice(0, 2);
+  const moves = full.moves.slice(0, 2);
+  const engineData = {
+    ...full,
+    species,
+    moves,
+    items: full.items.slice(0, 2),
+    abilities: full.abilities.filter((a) => species.some((x) => x.abilities.includes(a.id))),
+    move_targets: [...new Set(moves.map((m) => m.target))].sort(),
+    move_flags: [...new Set(moves.flatMap((m) => m.flags))].sort(),
+  };
+  const [speciesA, speciesB] = engineData.species as [(typeof species)[number], (typeof species)[number]];
+
   const valid: Record<string, unknown> = {
+    "engine-data/golden": engineData,
     "training-example/preview": exampleOf("preview"),
     "training-example/battle": exampleOf("battle"),
     "training-example/legacy-battle": legacyExample,
@@ -144,6 +162,10 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
   // No valid sparring sample exists: it must be private, and the data-class
   // guard refuses a committed "data_class": "private".
   const readerInvalid: Record<string, unknown> = {
+    "engine-data/unsorted-species": { ...engineData, species: [speciesB, speciesA] },
+    "engine-data/duplicate-species": { ...engineData, species: [speciesA, speciesA] },
+    "engine-data/dangling-type": mutated(engineData, (t) => ((t.species as { types: string[] }[])[0] as { types: string[] }).types = ["nosuchtype"]),
+    "engine-data/short-damage-row": mutated(engineData, (t) => ((t.types as { damage_taken: number[] }[])[0] as { damage_taken: number[] }).damage_taken.pop()),
     // Schema-valid, refused by the readers: the hashes must be sorted and unique.
     "evaluation-run-manifest/unsorted": { schema_version: 1, run_id: "eval-run-3", sealed: false, episode_hashes: [hashB, hashA] },
     "evaluation-run-manifest/duplicate": { schema_version: 1, run_id: "eval-run-3", sealed: false, episode_hashes: [hashA, hashA] },
@@ -157,6 +179,12 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "episode/class-below-opponent": collected({ ...league, opponent_team_data_class: "private" }),
   };
   const invalid: Record<string, unknown> = {
+    "engine-data/damage-code-4": mutated(engineData, (t) => ((t.types as { damage_taken: number[] }[])[0] as { damage_taken: number[] }).damage_taken[0] = 4),
+    "engine-data/three-types": mutated(engineData, (t) => ((t.species as { types: string[] }[])[0] as { types: string[] }).types = ["bug", "dark", "fire"]),
+    "engine-data/unknown-category": mutated(engineData, (t) => ((t.moves as { category: string }[])[0] as { category: string }).category = "Typeless"),
+    "engine-data/extra-field": { ...engineData, learnsets: [] },
+    "engine-data/next-version": { ...engineData, schema_version: 2 },
+    "engine-data/short-commit": { ...engineData, showdown_commit: "7244fe8" },
     "training-example/provenance": { ...exampleOf("battle"), provenance: { seed: record.seed } },
     "training-example/no-episode-hash": mutated(exampleOf("battle"), (e) => delete e.episode_hash),
     "training-example/omniscient-observation": mutated(exampleOf("battle"), (e) => {
