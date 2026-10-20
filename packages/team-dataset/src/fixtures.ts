@@ -21,8 +21,9 @@ import {
   readTeamVocabulary,
   resolveFormat,
   type SyntheticTeamHashes,
+  type TeamRecord,
 } from "@areneon/showdown-bridge";
-import { COMMITTED_SPLITS, type DatasetContext, datasetSyntheticHashes, HASHES_FILE, hashIndex, MANIFEST_FILE, readDataset, teamsFile } from "./dataset-reader.ts";
+import { COMMITTED_SPLITS, type CommittedSplit, type DatasetContext, datasetSyntheticHashes, HASHES_FILE, hashIndex, MANIFEST_FILE, readDataset, teamsFile } from "./dataset-reader.ts";
 import { pretty, recordsFile, writeDataset } from "./dataset-io.ts";
 import { KnownHashes, referencePoolHash } from "./dedupe.ts";
 import { generate } from "./generate.ts";
@@ -105,8 +106,8 @@ export function regenerate(inputs: FixtureInputs, run: FixtureRun, pilot?: Pilot
     for (const name of [MANIFEST_FILE, COVERAGE_FILE, PILOT_FILE]) {
       out[name] = readFileSync(join(scratch, name), "utf8");
     }
-    const { dev, validation } = result.records;
-    out[HASHES_FILE] = pretty(hashIndex(result.manifest, { dev: dev ?? [], validation: validation ?? [] }));
+    const { dev, validation } = result.records as Record<CommittedSplit, TeamRecord[]>;
+    out[HASHES_FILE] = pretty(hashIndex(result.manifest, { dev, validation }));
     return out;
   } finally {
     rmSync(scratch, { recursive: true, force: true });
