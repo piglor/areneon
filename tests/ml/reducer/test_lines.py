@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+from areneon_ml.reducer import MalformedLineError, ReducerError, UnknownLineError, VocabularyError
 
 from .support import opp, own, run
 
@@ -232,7 +233,7 @@ def test_field_conditions() -> None:
 def test_side_conditions() -> None:
     state = run(
         "|-sidestart|p2: Bob|move: Tailwind",
-        "|-sidestart|p1: Alice|move: Spikes",
+        "|-sidestart|p1: Alice|Spikes",
         "|-sidestart|p1: Alice|Spikes",
         "|-sideend|p2: Bob|move: Tailwind",
         "|-sidestart|p2: Bob|move: Reflect",
@@ -261,10 +262,10 @@ def test_volatiles() -> None:
 
 def test_mega_forme_and_transform_lines() -> None:
     state = run(
-        "|-mega|p2b: Charizard|Charizardite X",
+        "|-mega|p2b: Charizard|Charizard|Charizardite X",
         "|detailschange|p2b: Charizard|Charizard-Mega-X, L50, F|100/100",
-        "|-formechange|p2a: Venusaur|Venusaur-Mega|80/100",
-        "|-transform|p1a: Venusaur|Charizard",
+        "|-formechange|p2a: Venusaur|Venusaur-Mega|",
+        "|-transform|p1a: Venusaur|p2b: Charizard|[from] ability: Imposter",
         "|detailschange|p1b: Charizard|Charizard-Mega-X, L50, F",
     )
     charizard = opp(state, "Charizard")
@@ -274,11 +275,10 @@ def test_mega_forme_and_transform_lines() -> None:
         "charizardmegax",
     )
     assert charizard.base_species == "charizard"
-    assert (opp(state, "Venusaur").temp_species, opp(state, "Venusaur").hp_num) == (
-        "venusaurmega",
-        80,
-    )
-    assert own(state, "Venusaur").temp_species == "charizard"
+    assert opp(state, "Venusaur").temp_species == "venusaurmega"
+    assert opp(state, "Venusaur").hp_num == 100
+    assert own(state, "Venusaur").temp_species == "charizardmegax"
+    assert "transform" in own(state, "Venusaur").volatiles
     assert own(state, "Charizard").species == "charizardmegax"
 
 
@@ -312,6 +312,9 @@ def test_turn_and_results() -> None:
         "|-resisted|p1a: Venusaur",
         "|-immune|p1a: Venusaur",
         "|-fail|p1a: Venusaur|move: Protect",
+        "|-fail|p1a: Venusaur|unboost|atk|[from] ability: Inner Focus|[of] p1a: Venusaur",
+        "|-anim|p1a: Venusaur|Tackle|p2a: Venusaur",
+        "|-immune|p1a: Venusaur|confusion|[from] ability: Own Tempo",
         "|-block|p1a: Venusaur|move: Protect|Tackle|p2a: Venusaur",
         "|-notarget|p1a: Venusaur",
         "|-miss|p2a: Venusaur|p1a: Venusaur",
@@ -355,3 +358,69 @@ def test_a_from_tag_that_names_no_item_or_ability_reveals_nothing() -> None:
         "|-damage|p2b: Charizard|90/100|[from] move: Flail",
     )
     assert (opp(state, "Venusaur").item, opp(state, "Charizard").item) == (None, None)
+
+
+@pytest.mark.parametrize(
+    ("hp", "colour"), [("50/100g", 50), ("50/100y", 50), ("20/100y", 20), ("20/100r", 20)]
+)
+def test_the_champions_hp_colour_class_is_accepted_and_dropped(hp: str, colour: int) -> None:
+    state = run(f"|-damage|p2a: Venusaur|{hp}", f"|-damage|p2b: Charizard|{hp} psn")
+    assert opp(state, "Venusaur").hp_num == colour
+    assert opp(state, "Charizard").status == "psn"
+
+
+@pytest.mark.parametrize("hp", ["51/100g", "50/100r", "20/100g", "50/100x", "50/100gg"])
+def test_a_colour_class_on_any_other_hp_is_refused(hp: str) -> None:
+    with pytest.raises(ReducerError):
+        run(f"|-damage|p2a: Venusaur|{hp}")
+
+
+def test_an_own_hp_never_carries_a_colour_class() -> None:
+    with pytest.raises(MalformedLineError):
+        run("|-damage|p1a: Venusaur|50/100g")
+
+
+def test_opaque_volatiles_keep_their_shape_checked() -> None:
+    state = run(
+        "|-start|p2a: Venusaur|perish3",
+        "|-start|p2a: Venusaur|move: Heal Block",
+        "|-start|p2b: Charizard|stockpile2",
+        "|-start|p2b: Charizard|fallen1",
+        "|-end|p2b: Charizard|stockpile2",
+    )
+    assert opp(state, "Venusaur").volatiles == {"perish3", "healblock"}
+    assert opp(state, "Charizard").volatiles == {"fallen1"}
+    with pytest.raises(MalformedLineError):
+        run("|-start|p2a: Venusaur|<script>")
+
+
+def test_a_target_of_null_and_bare_repeated_tags() -> None:
+    state = run(
+        "|move|p2a: Venusaur|Fire Spin|null|[notarget]",
+        "|move|p2b: Charizard|Life Dew||[still]|[still]",
+    )
+    assert opp(state, "Venusaur").moves_revealed == ["firespin"]
+    with pytest.raises(MalformedLineError):
+        run("|-damage|p2a: Venusaur|50/100|[from] drain|[from] drain")
+
+
+def test_ability_copies_and_skill_swap() -> None:
+    state = run(
+        "|-ability|p2a: Venusaur|Intimidate|Trace|[from] ability: Trace|[of] p1b: Charizard",
+        "|-activate|p2b: Charizard|move: Skill Swap|Blaze|Overgrow|[of] p1a: Venusaur",
+        "|-item|p2b: Charizard|Leftovers|[from] ability: Frisk|[of] p1a: Venusaur|[identify]",
+    )
+    assert opp(state, "Venusaur").ability == "intimidate"
+    assert own(state, "Charizard").ability == "intimidate"
+    assert opp(state, "Charizard").ability is None
+    assert own(state, "Venusaur").ability is None
+    assert opp(state, "Charizard").item == "leftovers"
+    state = run("|-ability|p2a: Venusaur|Static|[from] move: Role Play|[of] p1a: Venusaur")
+    assert own(state, "Venusaur").ability == "static"
+    with pytest.raises(VocabularyError):
+        run("|-ability|p2a: Venusaur|Static|Nonsense")
+
+
+def test_illusion_is_a_named_refusal() -> None:
+    with pytest.raises(UnknownLineError, match="Illusion"):
+        run("|replace|p2a: Venusaur|Charizard, L50, F|100/100")

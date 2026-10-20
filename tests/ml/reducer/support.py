@@ -61,3 +61,41 @@ def opp(state: BattleState, name: str) -> PokemonState:
 
 def own(state: BattleState, name: str) -> PokemonState:
     return next(mon for mon in state.own.roster if mon.name == name)
+
+
+PERCENT = 100
+
+
+def integers(value: Any) -> list[int]:
+    if isinstance(value, bool):
+        return []
+    if isinstance(value, int):
+        return [value]
+    if isinstance(value, dict):
+        return [n for item in value.values() for n in integers(item)]
+    if isinstance(value, list):
+        return [n for item in value for n in integers(item)]
+    return []
+
+
+def unrevealed_ids(team: list[dict[str, Any]], channel_text: str) -> set[str]:
+    """Item, ability and move ids of `team` whose names the channel never prints."""
+    text = channel_text.lower()
+    secrets: set[str] = set()
+    for pokemon_set in team:
+        for name in [pokemon_set["item"], pokemon_set["ability"], *pokemon_set["moves"]]:
+            if name.lower() not in text:
+                secrets.add(name.replace(" ", "").lower())
+    return secrets
+
+
+def leaks(opponent: dict[str, Any], secret_ids: set[str]) -> list[str]:
+    """What in the opponent half of a state is an exact value or an unrevealed id."""
+    found = []
+    for mon in opponent["roster"]:
+        if mon["stats"] is not None or mon["moves_own"] is not None or mon["pp"]:
+            found.append(f"exact own-side fields on {mon['name']}")
+        known = {mon["item"], mon["ability"], *mon["moves_revealed"], *mon["volatiles"]}
+        found.extend(f"secret {name}" for name in known & secret_ids)
+    found.extend(f"integer {n}" for n in integers(opponent) if n > PERCENT)
+    return found

@@ -44,6 +44,7 @@ from .vocab import Vocabulary, to_id
 # ever move state. Any other tag raises `UnknownFieldError`.
 KNOWN_TAGS = frozenset(
     {
+        "identify",
         "from", "of", "spread", "miss", "still", "silent", "anim", "upkeep", "eat", "msg",
         "weak", "weaken", "wisher", "persistent", "fail", "notarget", "damage", "consumed",
         "interrupt", "partiallytrapped", "move", "ability", "forme", "ohko", "heavy",
@@ -53,9 +54,6 @@ KNOWN_TAGS = frozenset(
 
 # Lines whose text may hold `[` or `|`-free prose: no tag parsing.
 _FREE_TEXT = frozenset({"uhtml", "uhtmlchange", "-message", "-hint", "rule", "tier"})
-
-# Engine tokens that name a volatile without being a move, ability or item.
-_GRAMMAR_EFFECTS = frozenset({"confusion", "typechange", "typeadd"})
 
 # Lines that change no state, with the number of positional fields they carry.
 _NO_STATE: dict[str, tuple[int, int | None]] = {
@@ -70,14 +68,14 @@ _NO_STATE: dict[str, tuple[int, int | None]] = {
     "-crit": (1, 1),
     "-supereffective": (1, 2),
     "-resisted": (1, 2),
-    "-immune": (1, 1),
-    "-fail": (1, 2),
+    "-immune": (1, 3),
+    "-fail": (1, 4),
+    "-anim": (1, 4),
     "-block": (2, 4),
     "-notarget": (0, 1),
     "-miss": (1, 2),
     "-hint": (1, None),
     "-message": (1, None),
-    "-activate": (1, 4),
     "-center": (0, 0),
     "-combine": (0, 0),
     "-waiting": (2, 2),
@@ -95,7 +93,12 @@ _TAG = re.compile(r"^\[([a-z]+)\]\s*(.*)$")
 _REF = re.compile(r"^(p[1-4])([a-d])?: (.+)$")
 _SIDE = re.compile(r"^(p[1-4]): ")
 _LEVEL = re.compile(r"^L(\d{1,3})$")
-_HP = re.compile(r"^(\d+)(?:/(\d+))?$")
+_HP = re.compile(r"^(\d+)(?:/(\d+)([gyr])?)?$")
+_VOLATILE = re.compile(r"^(?:(move|ability|item): )?([A-Za-z][A-Za-z0-9 '.-]*)$")
+# Colour class the champions mod appends to a shared HP at exactly 50% or 20%.
+_HP_COLOURS = {50: "gy", 20: "yr"}
+# `[from]` effects after which the `[of]` Pokemon holds the new ability too.
+_ABILITY_COPIES = frozenset({"abilitytrace", "moveroleplay"})
 _PREFIXED = re.compile(r"^(move|ability|item): (.+)$")
 HP_PERCENT = 100  # the denominator of every opponent HP
 MAX_BOOST = 6
@@ -166,7 +169,8 @@ def _parse_line(raw: str) -> _Line:
         name, value = match.groups()
         if name not in KNOWN_TAGS:
             raise UnknownFieldError(f"unknown tag [{name}]", raw)
-        if name in tags:
+        if name in tags and (tags[name] != value or value):
+            # The engine repeats a bare tag ([still], [miss]) when two effects add it.
             raise MalformedLineError(f"duplicate tag [{name}]", raw)
         tags[name] = value
     return _Line(raw, kind, args, tags)
@@ -223,6 +227,8 @@ class _Reducer:
             "detailschange": self._detailschange,
             "-formechange": self._formechange,
             "swap": self._swap,
+            "replace": self._replace,
+            "-activate": self._activate,
             "move": self._move,
             "faint": self._faint,
             "-damage": self._hp_line,
@@ -355,6 +361,7 @@ class _Reducer:
             raise MalformedLineError(f"{text!r} is not an HP", line.raw)
         num = int(match.group(1))
         den = int(match.group(2)) if match.group(2) else None
+        colour = match.group(3)
         if den is None:
             if status != "fnt" or num != 0:
                 raise MalformedLineError(f"{text!r} is not an HP", line.raw)
@@ -363,6 +370,8 @@ class _Reducer:
             raise OpponentSecretError("an opponent HP that is not a percentage", line.raw)
         if num > den or den == 0:
             raise MalformedLineError(f"{text!r} is not an HP", line.raw)
+        if colour is not None and (mon.own or colour not in _HP_COLOURS.get(num, "")):
+            raise MalformedLineError(f"{text!r} has a colour class an HP cannot carry", line.raw)
         if status and status != "fnt":
             status = self.vocab.status(status)
         elif status == "fnt":
@@ -380,6 +389,7 @@ class _Reducer:
         mon.fainted = num == 0
 
     def _resolve_effect(self, text: str, line: _Line) -> tuple[str, str]:
+        """A field or side condition (a move or an ability), looked up."""
         prefixed = _PREFIXED.match(text)
         if prefixed:
             kind, name = prefixed.groups()
@@ -392,17 +402,25 @@ class _Reducer:
             if found not in known:
                 raise VocabularyError(f"unknown {kind} {name!r}", line.raw)
             return kind, found
+        # Some conditions print bare (`Reflect`); a bare name is a move or an ability.
         found = to_id(text)
-        if found in _GRAMMAR_EFFECTS:
-            return "grammar", found
-        for kind, known in (
-            ("move", self.vocab.moves),
-            ("ability", self.vocab.abilities),
-            ("item", self.vocab.items),
-        ):
+        for kind, known in (("move", self.vocab.moves), ("ability", self.vocab.abilities)):
             if found in known:
                 return kind, found
-        raise VocabularyError(f"unknown effect {text!r}", line.raw)
+        raise VocabularyError(f"unknown condition {text!r}", line.raw)
+
+    def _volatile(self, text: str, line: _Line) -> tuple[str, str]:
+        """A volatile's id. The engine-data export has no volatile table (engine-data v2
+        would), so its shape is checked and the id kept as an opaque public string; only
+        `ability:` names are looked up, because they also reveal the holder's ability."""
+        match = _VOLATILE.match(text)
+        if match is None:
+            raise MalformedLineError(f"{text!r} is not a volatile id", line.raw)
+        kind, name = match.groups()
+        found = to_id(name)
+        if kind == "ability":
+            return kind, self.vocab.ability(name)
+        return kind or "volatile", found
 
     def _reveal_from(self, mon: PokemonState, line: _Line) -> None:
         """`[from] item:` / `[from] ability:` without `[of]` names the target's own."""
@@ -633,9 +651,6 @@ class _Reducer:
         _arity(line, 2, 3)
         mon = self._mon(line.args[0], line)
         mon.temp_species = self.vocab.species(line.args[1])
-        hp = _optional(line, 2)
-        if hp is not None:
-            self._set_hp(mon, hp, line)
 
     def _swap(self, line: _Line) -> None:
         _arity(line, 2, 2)
@@ -652,15 +667,32 @@ class _Reducer:
             if index is not None:
                 side.roster[index].active_slot = slot
 
+    def _replace(self, line: _Line) -> None:
+        raise UnknownLineError("|replace| (Illusion ending) is not supported", line.raw)
+
+    def _activate(self, line: _Line) -> None:
+        _arity(line, 1, 4)
+        if len(line.args) > 1 and to_id(line.args[1]) == "moveskillswap":
+            # Both abilities changed; what each now holds is not stated per Pokemon.
+            self._mon(line.args[0], line).ability = None
+            if "of" in line.tags:
+                self._mon(line.tags["of"], line).ability = None
+
     def _mega(self, line: _Line) -> None:
-        _arity(line, 2, 2)
+        # `|-mega|POKEMON|SPECIES|STONE`: the species is the one shown before the forme change.
+        _arity(line, 3, 3)
         mon = self._mon(line.args[0], line)
-        mon.mega, mon.mega_stone = True, self.vocab.item(line.args[1])
+        self.vocab.species(line.args[1])
+        mon.mega, mon.mega_stone = True, self.vocab.item(line.args[2])
         mon.can_mega_evo = False
 
     def _transform(self, line: _Line) -> None:
+        # `|-transform|POKEMON|TARGET`: the second field is the copied Pokemon's id.
         _arity(line, 2, 2)
-        self._mon(line.args[0], line).temp_species = self.vocab.species(line.args[1])
+        mon = self._mon(line.args[0], line)
+        target = self._mon(line.args[1], line)
+        mon.temp_species = target.temp_species or target.species
+        mon.volatiles.add("transform")
 
     # -- actions and hit points ----------------------------------------------
 
@@ -669,7 +701,7 @@ class _Reducer:
         mon = self._mon(line.args[0], line)
         move = self.vocab.move(line.args[1])
         target = _optional(line, 2)
-        if target:
+        if target and target != "null":  # "null": a move with no target ([notarget])
             self._ref(target, line)
         if "from" not in line.tags and move not in mon.moves_revealed:
             mon.moves_revealed.append(move)
@@ -834,7 +866,7 @@ class _Reducer:
     def _volatile_start(self, line: _Line) -> None:
         _arity(line, 2, 3)
         mon = self._mon(line.args[0], line)
-        kind, found = self._resolve_effect(line.args[1], line)
+        kind, found = self._volatile(line.args[1], line)
         if kind == "ability":
             mon.ability = found
         mon.volatiles.add(found)
@@ -842,7 +874,7 @@ class _Reducer:
     def _volatile_end(self, line: _Line) -> None:
         _arity(line, 2, 3)
         mon = self._mon(line.args[0], line)
-        _, found = self._resolve_effect(line.args[1], line)
+        _, found = self._volatile(line.args[1], line)
         mon.volatiles.discard(found)
 
     def _item(self, line: _Line) -> None:
@@ -859,10 +891,14 @@ class _Reducer:
     def _ability(self, line: _Line) -> None:
         _arity(line, 2, 3)
         extra = _optional(line, 2)
+        # A third field is `boost` (Intimidate) or the ability being replaced (Trace).
         if extra not in (None, "boost"):
-            raise UnknownFieldError(f"unknown ability field {extra!r}", line.raw)
+            self.vocab.ability(extra or "")
         mon = self._mon(line.args[0], line)
         mon.ability, mon.ability_suppressed = self.vocab.ability(line.args[1]), False
+        source, holder = line.tags.get("from"), line.tags.get("of")
+        if source is not None and holder is not None and to_id(source) in _ABILITY_COPIES:
+            self._mon(holder, line).ability = mon.ability
 
     def _endability(self, line: _Line) -> None:
         _arity(line, 1, 1)
