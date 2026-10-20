@@ -9,7 +9,7 @@ Notes for reading the copies:
 
 | ADR | Title | Status | Tracker version | Summary |
 |---|---|---|---|---|
-| [ADR-001](ADR-001-open-source-licence.md) | Open-source licence | Accepted 2026-10-17 | 3 | Apache-2.0 code, CC0 synthetic fixtures, DCO sign-off, no CLA. |
+| [ADR-001](ADR-001-open-source-licence.md) | Open-source licence | Accepted 2026-10-17 | 5 | Apache-2.0 code, CC0 synthetic fixtures, DCO sign-off, no CLA. |
 | [ADR-002](ADR-002-languages-and-repository-layout.md) | Languages and repository layout | Accepted 2026-10-17 (r3, Rust added 2026-10-18) | 7 | One polyglot monorepo: TypeScript, Python and Rust, JSON Schema contracts, pinned Showdown submodule. |
 | [ADR-003](ADR-003-pinned-showdown-reference-simulator.md) | Pinned Showdown reference simulator and format | Accepted 2026-10-18 (r2) | 4 | Upstream Showdown pinned to an exact commit is the only mechanics and legality authority; Bo1 Closed Team Sheet format. |
 | [ADR-005](ADR-005-bot-opponent-runtime.md) | Bot opponent runtime | Accepted 2026-10-19 | 16 | A1 in-process sim for training and evaluation; A2 bot client on a local pinned server for human sparring. |
