@@ -24,6 +24,16 @@ export {
   type Verdict,
 } from "./choice-judge.ts";
 export {
+  ENGINE_DATA_FILE,
+  ENGINE_DATA_SUMMARY,
+  type EngineData,
+  EngineDataError,
+  engineDataHash,
+  engineDataSummary,
+  exportEngineData,
+  readEngineData,
+} from "./engine-data.ts";
+export {
   DEFAULT_SHOWDOWN_DIR,
   type Engine,
   EngineError,

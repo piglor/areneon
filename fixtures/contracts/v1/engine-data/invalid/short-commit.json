@@ -1,0 +1,703 @@
+{
+  "schema_version": 1,
+  "showdown_commit": "7244fe8",
+  "format_id": "gen9championsvgc2026regmc",
+  "mod": "champions",
+  "types": [
+    {
+      "id": "bug",
+      "name": "Bug",
+      "damage_taken": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        2,
+        1,
+        1,
+        0,
+        2,
+        2,
+        0,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "id": "dark",
+      "name": "Dark",
+      "damage_taken": [
+        1,
+        2,
+        0,
+        0,
+        1,
+        1,
+        0,
+        0,
+        2,
+        0,
+        0,
+        0,
+        0,
+        0,
+        3,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "id": "dragon",
+      "name": "Dragon",
+      "damage_taken": [
+        0,
+        0,
+        1,
+        2,
+        1,
+        0,
+        2,
+        0,
+        0,
+        2,
+        0,
+        1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        2
+      ]
+    },
+    {
+      "id": "electric",
+      "name": "Electric",
+      "damage_taken": [
+        0,
+        0,
+        0,
+        2,
+        0,
+        0,
+        0,
+        2,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        2,
+        0,
+        0
+      ]
+    },
+    {
+      "id": "fairy",
+      "name": "Fairy",
+      "damage_taken": [
+        2,
+        2,
+        3,
+        0,
+        0,
+        2,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        1,
+        0,
+        0
+      ]
+    },
+    {
+      "id": "fighting",
+      "name": "Fighting",
+      "damage_taken": [
+        2,
+        2,
+        0,
+        0,
+        1,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1,
+        2,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "id": "fire",
+      "name": "Fire",
+      "damage_taken": [
+        2,
+        0,
+        0,
+        0,
+        2,
+        0,
+        2,
+        0,
+        0,
+        2,
+        1,
+        2,
+        0,
+        0,
+        0,
+        1,
+        2,
+        0,
+        1
+      ]
+    },
+    {
+      "id": "flying",
+      "name": "Flying",
+      "damage_taken": [
+        2,
+        0,
+        0,
+        1,
+        0,
+        2,
+        0,
+        0,
+        0,
+        2,
+        3,
+        1,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "id": "ghost",
+      "name": "Ghost",
+      "damage_taken": [
+        2,
+        1,
+        0,
+        0,
+        0,
+        3,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0,
+        3,
+        2,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "id": "grass",
+      "name": "Grass",
+      "damage_taken": [
+        1,
+        0,
+        0,
+        2,
+        0,
+        0,
+        1,
+        1,
+        0,
+        2,
+        2,
+        1,
+        0,
+        1,
+        0,
+        0,
+        0,
+        0,
+        2
+      ]
+    },
+    {
+      "id": "ground",
+      "name": "Ground",
+      "damage_taken": [
+        0,
+        0,
+        0,
+        3,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1,
+        0,
+        1,
+        0,
+        2,
+        0,
+        2,
+        0,
+        0,
+        1
+      ]
+    },
+    {
+      "id": "ice",
+      "name": "Ice",
+      "damage_taken": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        1,
+        1,
+        0,
+        0,
+        0,
+        0,
+        2,
+        0,
+        0,
+        0,
+        1,
+        1,
+        0,
+        0
+      ]
+    },
+    {
+      "id": "normal",
+      "name": "Normal",
+      "damage_taken": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        3,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "id": "poison",
+      "name": "Poison",
+      "damage_taken": [
+        2,
+        0,
+        0,
+        0,
+        2,
+        2,
+        0,
+        0,
+        0,
+        2,
+        1,
+        0,
+        0,
+        2,
+        1,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "id": "psychic",
+      "name": "Psychic",
+      "damage_taken": [
+        1,
+        1,
+        0,
+        0,
+        0,
+        2,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        2,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "id": "rock",
+      "name": "Rock",
+      "damage_taken": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        1,
+        2,
+        2,
+        0,
+        1,
+        1,
+        0,
+        2,
+        2,
+        0,
+        0,
+        1,
+        0,
+        1
+      ]
+    },
+    {
+      "id": "steel",
+      "name": "Steel",
+      "damage_taken": [
+        2,
+        0,
+        2,
+        0,
+        2,
+        1,
+        1,
+        2,
+        0,
+        2,
+        1,
+        2,
+        2,
+        3,
+        2,
+        2,
+        2,
+        0,
+        0
+      ]
+    },
+    {
+      "id": "stellar",
+      "name": "Stellar",
+      "damage_taken": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "id": "water",
+      "name": "Water",
+      "damage_taken": [
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        2,
+        0,
+        0,
+        1,
+        0,
+        2,
+        0,
+        0,
+        0,
+        0,
+        2,
+        0,
+        2
+      ]
+    }
+  ],
+  "move_targets": [
+    "normal",
+    "self"
+  ],
+  "move_flags": [
+    "contact",
+    "metronome",
+    "mirror",
+    "protect",
+    "snatch"
+  ],
+  "species": [
+    {
+      "id": "abomasnow",
+      "name": "Abomasnow",
+      "num": 460,
+      "base_species": "abomasnow",
+      "types": [
+        "grass",
+        "ice"
+      ],
+      "base_stats": {
+        "hp": 90,
+        "atk": 92,
+        "def": 75,
+        "spa": 92,
+        "spd": 85,
+        "spe": 60
+      },
+      "weight_hg": 1355,
+      "abilities": [
+        "snowwarning",
+        "soundproof"
+      ]
+    },
+    {
+      "id": "absol",
+      "name": "Absol",
+      "num": 359,
+      "base_species": "absol",
+      "types": [
+        "dark"
+      ],
+      "base_stats": {
+        "hp": 65,
+        "atk": 130,
+        "def": 60,
+        "spa": 75,
+        "spd": 60,
+        "spe": 75
+      },
+      "weight_hg": 470,
+      "abilities": [
+        "pressure",
+        "superluck",
+        "justified"
+      ]
+    }
+  ],
+  "moves": [
+    {
+      "id": "accelerock",
+      "name": "Accelerock",
+      "num": 709,
+      "type": "rock",
+      "category": "Physical",
+      "base_power": 40,
+      "accuracy": 100,
+      "always_hits": false,
+      "priority": 1,
+      "pp": 20,
+      "crit_ratio": 1,
+      "target": "normal",
+      "flags": [
+        "contact",
+        "metronome",
+        "mirror",
+        "protect"
+      ]
+    },
+    {
+      "id": "acidarmor",
+      "name": "Acid Armor",
+      "num": 151,
+      "type": "poison",
+      "category": "Status",
+      "base_power": 0,
+      "accuracy": 0,
+      "always_hits": true,
+      "priority": 0,
+      "pp": 20,
+      "crit_ratio": 1,
+      "target": "self",
+      "flags": [
+        "metronome",
+        "snatch"
+      ]
+    }
+  ],
+  "items": [
+    {
+      "id": "abomasite",
+      "name": "Abomasite",
+      "num": 674,
+      "is_berry": false,
+      "fling_power": 80
+    },
+    {
+      "id": "absolite",
+      "name": "Absolite",
+      "num": 677,
+      "is_berry": false,
+      "fling_power": 80
+    }
+  ],
+  "abilities": [
+    {
+      "id": "justified",
+      "name": "Justified",
+      "num": 154
+    },
+    {
+      "id": "pressure",
+      "name": "Pressure",
+      "num": 46
+    },
+    {
+      "id": "snowwarning",
+      "name": "Snow Warning",
+      "num": 117
+    },
+    {
+      "id": "soundproof",
+      "name": "Soundproof",
+      "num": 43
+    },
+    {
+      "id": "superluck",
+      "name": "Super Luck",
+      "num": 105
+    }
+  ],
+  "statuses": [
+    {
+      "id": "brn",
+      "name": "brn"
+    },
+    {
+      "id": "frz",
+      "name": "frz"
+    },
+    {
+      "id": "par",
+      "name": "par"
+    },
+    {
+      "id": "psn",
+      "name": "psn"
+    },
+    {
+      "id": "slp",
+      "name": "slp"
+    },
+    {
+      "id": "tox",
+      "name": "tox"
+    }
+  ],
+  "weathers": [
+    {
+      "id": "deltastream",
+      "name": "DeltaStream"
+    },
+    {
+      "id": "desolateland",
+      "name": "DesolateLand"
+    },
+    {
+      "id": "hail",
+      "name": "Hail"
+    },
+    {
+      "id": "primordialsea",
+      "name": "PrimordialSea"
+    },
+    {
+      "id": "raindance",
+      "name": "RainDance"
+    },
+    {
+      "id": "sandstorm",
+      "name": "Sandstorm"
+    },
+    {
+      "id": "snowscape",
+      "name": "Snowscape"
+    },
+    {
+      "id": "sunnyday",
+      "name": "SunnyDay"
+    }
+  ],
+  "terrains": [
+    {
+      "id": "electricterrain",
+      "name": "Electric Terrain"
+    },
+    {
+      "id": "grassyterrain",
+      "name": "Grassy Terrain"
+    },
+    {
+      "id": "mistyterrain",
+      "name": "Misty Terrain"
+    },
+    {
+      "id": "psychicterrain",
+      "name": "Psychic Terrain"
+    }
+  ]
+}

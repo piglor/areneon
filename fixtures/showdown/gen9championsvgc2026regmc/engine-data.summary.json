@@ -1,0 +1,14 @@
+{
+  "engine_data_hash": "6f3d19f02b0e8464d813f4bbdced99c6f88140099818f5f225776ac43fa5590e",
+  "showdown_commit": "7244fe8e28fa8bc4d0809ae30d183c608b62bb2b",
+  "counts": {
+    "types": 19,
+    "species": 399,
+    "moves": 515,
+    "items": 166,
+    "abilities": 317,
+    "statuses": 6,
+    "weathers": 8,
+    "terrains": 4
+  }
+}
