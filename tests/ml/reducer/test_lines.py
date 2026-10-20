@@ -392,6 +392,9 @@ def test_opaque_volatiles_keep_their_shape_checked() -> None:
     assert opp(state, "Charizard").volatiles == {"fallen1"}
     with pytest.raises(MalformedLineError):
         run("|-start|p2a: Venusaur|<script>")
+    assert opp(run(f"|-start|p2a: Venusaur|{'a' * 64}"), "Venusaur").volatiles == {"a" * 64}
+    with pytest.raises(MalformedLineError):
+        run(f"|-start|p2a: Venusaur|{'a' * 65}")
 
 
 def test_a_target_of_null_and_bare_repeated_tags() -> None:

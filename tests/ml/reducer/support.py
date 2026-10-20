@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from areneon_ml.reducer import BattleState, PokemonState, Vocabulary, reduce_channel
+from areneon_ml.reducer.vocab import to_id
 
 ROOT = Path(__file__).resolve().parents[3]
 FORMAT_DIR = ROOT / "fixtures" / "showdown" / "gen9championsvgc2026regmc"
@@ -87,6 +88,25 @@ def unrevealed_ids(team: list[dict[str, Any]], channel_text: str) -> set[str]:
             if name.lower() not in text:
                 secrets.add(name.replace(" ", "").lower())
     return secrets
+
+
+def unattributed(opponent: dict[str, Any], lines: list[str], opponent_id: str) -> list[str]:
+    """Revealed opponent items, abilities and moves that no line about the opponent names.
+
+    A value must come from a line that mentions one of the opponent's Pokemon; a value
+    only the opponent's team holds and no such line prints is a leak.
+    """
+    about = "\n".join(
+        to_id(line)
+        for line in lines
+        if any(f"{opponent_id}{slot}: " in line for slot in ("a", "b", "c", ""))
+    )
+    found = []
+    for mon in opponent["roster"]:
+        for value in {mon["item"], mon["ability"], *mon["moves_revealed"]} - {None}:
+            if value not in about:
+                found.append(f"{value} on {mon['name']}")
+    return found
 
 
 def leaks(opponent: dict[str, Any], secret_ids: set[str]) -> list[str]:

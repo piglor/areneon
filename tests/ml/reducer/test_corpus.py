@@ -15,7 +15,7 @@ from typing import Any
 import pytest
 from areneon_ml.reducer import ReducerError, UnknownLineError, reduce_channel
 
-from .support import FORMAT_DIR, VOCAB, leaks, unrevealed_ids
+from .support import FORMAT_DIR, VOCAB, leaks, unattributed, unrevealed_ids
 
 CORPUS = sorted((FORMAT_DIR / "random").glob("b*.json"))
 # Line types the reducer names as unsupported: the channel is not reduced past them.
@@ -64,6 +64,10 @@ def test_the_corpus_exercises_the_lines_that_broke_the_first_version() -> None:
 
 
 def test_the_canary_holds_at_every_request_point_of_every_channel() -> None:
+    # Two checks per state: no id of the opponent's team that the channel never names, and
+    # every revealed value is named by a line about an opponent Pokemon. It cannot tell a
+    # value the player was legitimately shown from the same value read off another line
+    # (a Protect the own side used, say): it catches values from nowhere, not misattribution.
     checked = 0
     for path in CORPUS:
         battle = _load(path)
@@ -75,7 +79,9 @@ def test_the_canary_holds_at_every_request_point_of_every_channel() -> None:
                 prefix = lines[:end]
                 state = reduce_channel(player, prefix, battle["teams"][player], VOCAB)
                 secrets = unrevealed_ids(battle["teams"][other], "\n".join(prefix))
-                assert leaks(state.to_dict()["opponent"], secrets) == [], (path.name, player, end)
+                opponent = state.to_dict()["opponent"]
+                assert leaks(opponent, secrets) == [], (path.name, player, end)
+                assert unattributed(opponent, prefix, other) == [], (path.name, player, end)
                 checked += 1
     assert checked > 1000
 

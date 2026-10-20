@@ -94,6 +94,7 @@ _REF = re.compile(r"^(p[1-4])([a-d])?: (.+)$")
 _SIDE = re.compile(r"^(p[1-4]): ")
 _LEVEL = re.compile(r"^L(\d{1,3})$")
 _HP = re.compile(r"^(\d+)(?:/(\d+)([gyr])?)?$")
+MAX_VOLATILE_LENGTH = 64  # an opaque volatile id is short; a longer one is not an id
 _VOLATILE = re.compile(r"^(?:(move|ability|item): )?([A-Za-z][A-Za-z0-9 '.-]*)$")
 # Colour class the champions mod appends to a shared HP at exactly 50% or 20%.
 _HP_COLOURS = {50: "gy", 20: "yr"}
@@ -414,7 +415,7 @@ class _Reducer:
         would), so its shape is checked and the id kept as an opaque public string; only
         `ability:` names are looked up, because they also reveal the holder's ability."""
         match = _VOLATILE.match(text)
-        if match is None:
+        if match is None or len(text) > MAX_VOLATILE_LENGTH:
             raise MalformedLineError(f"{text!r} is not a volatile id", line.raw)
         kind, name = match.groups()
         found = to_id(name)
