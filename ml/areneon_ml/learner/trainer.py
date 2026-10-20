@@ -16,6 +16,7 @@ CUDA run is not bit-reproducible.
 from __future__ import annotations
 
 import dataclasses
+import os
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 
@@ -42,8 +43,11 @@ class LearnerError(ValueError):
 
 def configure_learner(config: RunConfig) -> torch.device:
     """Set this process up for the learner and return its device; call once at start-up."""
-    if config.device == "cuda" and not torch.cuda.is_available():
-        raise LearnerError("the config asks for cuda, but this torch has no usable CUDA device")
+    if config.device == "cuda":
+        if not torch.cuda.is_available():
+            raise LearnerError("the config asks for cuda, but this torch has no usable CUDA device")
+        # cuBLAS is deterministic only with a fixed workspace; set before the first CUDA call.
+        os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
     torch.use_deterministic_algorithms(True, warn_only=config.device == "cuda")
     torch.set_num_threads(config.threads)
     return torch.device(config.device)

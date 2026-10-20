@@ -195,7 +195,7 @@ def _gather(tokens: torch.Tensor, index: torch.Tensor) -> torch.Tensor:
     """Rows of ``tokens`` [B, M, d] at ``index`` [B, ...]; index -1 gives a zero vector."""
     b = tokens.shape[0]
     padded = torch.cat([torch.zeros_like(tokens[:, :1]), tokens], dim=1)
-    rows = torch.arange(b).reshape(b, *([1] * (index.dim() - 1)))
+    rows = torch.arange(b, device=tokens.device).reshape(b, *([1] * (index.dim() - 1)))
     return padded[rows, index + 1]
 
 
@@ -314,7 +314,8 @@ class PolicyNetwork(nn.Module):
         field_token = field_token + self.field_num(batch.field_num)
         aggregate = self.aggregate.expand(b, d)
         x = torch.cat([aggregate[:, None], field_token[:, None], mons], dim=1)
-        mask = torch.cat([torch.ones(b, 2, dtype=torch.bool), batch.token_mask], dim=1)
+        fixed = torch.ones(b, 2, dtype=torch.bool, device=batch.token_mask.device)
+        mask = torch.cat([fixed, batch.token_mask], dim=1)
         for block in self.blocks:
             x = block(x, mask)
         x = self.final_norm(x)

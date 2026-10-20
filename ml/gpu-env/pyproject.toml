@@ -1,0 +1,30 @@
+[project]
+name = "areneon-gpu-env"
+version = "0.0.0"
+description = "Local, unshipped GPU training environment (ADR-010 section 5.2): CUDA torch beside the shipped areneon-ml package"
+requires-python = ">=3.12,<3.13"
+license = "Apache-2.0"
+# The same torch version as the shipped CPU closure, from the CUDA 13.0 build (RTX 5070 Ti, sm_120).
+dependencies = [
+    "areneon-ml",
+    "areneon-contracts",
+    "torch==2.14.1",
+]
+
+[tool.uv]
+package = false
+# areneon-ml names the CPU torch index for its own torch requirement; here that requirement is replaced
+# by the CUDA build, so the two indexes do not conflict.
+override-dependencies = ["torch==2.14.1"]
+
+# Not a member of the root uv workspace and never in SHIPPED (C-1): the sources are plain
+# paths, and the root pyproject.toml excludes this directory from the workspace.
+[tool.uv.sources]
+areneon-ml = { path = "..", editable = true }
+areneon-contracts = { path = "../../packages/schema/python", editable = true }
+torch = { index = "pytorch-cu130" }
+
+[[tool.uv.index]]
+name = "pytorch-cu130"
+url = "https://download.pytorch.org/whl/cu130"
+explicit = true
