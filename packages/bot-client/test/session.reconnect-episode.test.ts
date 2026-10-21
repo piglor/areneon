@@ -80,6 +80,7 @@ async function play(fixture: HarnessFixture, connections: readonly (readonly str
     team: structuredClone(fixture.teams[seat]),
     known_synthetic: new Set(SEATS.map((who) => teamHash(fixture.teams[who]))),
     opponent_team: structuredClone(fixture.teams[rivalOf(seat)]),
+    mode: "harness",
     battles: 1,
     clock: () => 0,
     reconnect: { attempts: 2, delayMs: 5 },

@@ -20,7 +20,7 @@ export function fixtureTeamHashes(): Set<string> {
   const teams = readdirSync(TEAMS_DIR)
     .filter((file) => file.endsWith(".txt"))
     .map((file) => importPaste(engine, readFileSync(join(TEAMS_DIR, file), "utf8")));
-  return withPlayedForms(engine, FORMAT, teams) as Set<string>;
+  return withPlayedForms(engine, FORMAT, new Set(teams.map(teamHash)), teams);
 }
 
 /** A synthetic CC0 team from fixtures/teams (see its manifest). */
@@ -103,6 +103,7 @@ export async function playRecordedBattle(local: {
       team: structuredClone(team),
       known_synthetic,
       opponent_team: structuredClone(opponent),
+      mode: "harness",
       battles: 1,
       reconnect: { attempts: 5, delayMs: 100 },
       connect: connectWebSocket,

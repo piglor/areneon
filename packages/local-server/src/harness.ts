@@ -334,16 +334,22 @@ export function channelFromFrames(
 }
 
 /**
- * The synthetic teams there are, as the harness sees them: each given team's
- * hash and the hash of its played form. The bot's validator edits a team in
- * place (it fills the nickname, the gender of a genderless species), so a stored
- * fixture holds the played form; the pinned validator produces it here, on a
- * copy, so no rule of it is written by hand.
+ * Widens a known synthetic set by the played form of teams already in it. The
+ * bot's validator edits a team in place (it fills the nickname, the gender of a
+ * genderless species), so a stored fixture holds the played form; the pinned
+ * validator produces it here, on a copy, so no rule of it is written by hand.
+ * It cannot make a team synthetic: a team whose own hash is not in `known` is
+ * refused (`HarnessError`), and only the played forms of listed teams are added.
  */
-export function withPlayedForms(engine: Engine, formatId: string, teams: readonly (readonly PokemonSet[])[]): SyntheticTeamHashes {
-  const hashes = new Set<string>();
+export function withPlayedForms(
+  engine: Engine,
+  formatId: string,
+  known: SyntheticTeamHashes,
+  teams: readonly (readonly PokemonSet[])[],
+): Set<string> {
+  const hashes = new Set(known);
   for (const team of teams) {
-    hashes.add(teamHash(team));
+    if (!known.has(teamHash(team))) throw new HarnessError("a played form is added only for a team already known synthetic");
     const played = structuredClone(team) as PokemonSet[];
     engine.sim.TeamValidator.get(formatId).validateTeam(played);
     hashes.add(teamHash(played));
@@ -801,7 +807,7 @@ export async function playBotVsBot(options: BotVsBotOptions): Promise<BotPair> {
   // Each bot knows the other's team (the harness gave both), so a class can be proven. The validator edits
   // a bot's team in place, so the other bot is given a copy taken before either ran.
   const pristine = structuredClone(teams);
-  const common = { engine, snapshot, url, format, known_synthetic: options.known_synthetic, battles: 1 };
+  const common = { engine, snapshot, url, format, known_synthetic: options.known_synthetic, mode: "harness" as const, battles: 1 };
   let loggedIn: () => void = () => {};
   const ready = new Promise<void>((done) => (loggedIn = done));
   const sparring = runA2Bot({

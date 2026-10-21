@@ -2,6 +2,7 @@ import { loadEngine, loadRulesSnapshot, type PokemonSet, teamHash } from "@arene
 import { type HarnessFixture, type Seat } from "@areneon/local-server/harness";
 import { describe, expect, it, vi } from "vitest";
 import { type A2BotOptions, type A2BattleRecord, memoryTransport, type MemoryTransport, runA2Bot, SessionError } from "../src/index.ts";
+import { fixtureTeam } from "./local-battle.ts";
 import { fixtureFiles, readFixture } from "./a1-a2-equality.ts";
 
 // ADR-008 §5, ADR-009 (#824): the class of what a session records is proven
@@ -25,6 +26,7 @@ async function classOf(extra: Partial<A2BotOptions>): Promise<string[]> {
     challenger: fixture.players[rival].name,
     format: fixture.format_id,
     team: structuredClone(fixture.teams[seat]),
+    mode: "harness",
     battles: 1,
     clock: () => 0,
     reconnect: { attempts: 1, delayMs: 5 },
@@ -55,6 +57,16 @@ describe("the class of a session's channels is derived (#824)", () => {
     expect(await classOf({ known_synthetic: both(), opponent_team: rivalTeam() })).toEqual(["synthetic"]);
   }, 60_000);
 
+  it("hashes the teams as brought, before the validator fills nicknames in place", async () => {
+    const [mine, theirs] = [fixtureTeam("legal-synthetic.txt"), fixtureTeam("legal-opponent.txt")];
+    const known = new Set([teamHash(mine), teamHash(theirs)]);
+    expect(await classOf({ team: structuredClone(mine), known_synthetic: known, opponent_team: structuredClone(theirs) })).toEqual(["synthetic"]);
+    // Control: the paste's hash is not the played form's, so the class would be private if it were taken after validation.
+    const played = structuredClone(mine);
+    engine.sim.TeamValidator.get(fixture.format_id).validateTeam(played);
+    expect(teamHash(played)).not.toBe(teamHash(mine));
+  }, 60_000);
+
   it("is private when the opponent's team is unknown, even if the bot's own is synthetic", async () => {
     expect(await classOf({ known_synthetic: both() })).toEqual(["private"]);
   }, 60_000);
@@ -67,9 +79,11 @@ describe("the class of a session's channels is derived (#824)", () => {
     const rivalOnly = new Set([teamHash(fixture.teams[rival])]);
     expect(await classOf({ known_synthetic: rivalOnly, opponent_team: rivalTeam() })).toEqual(["private"]);
     expect(await classOf({})).toEqual(["private"]);
+    // Both teams known to the harness but no synthetic set given: nothing is proven.
+    expect(await classOf({ opponent_team: rivalTeam() })).toEqual(["private"]);
   }, 60_000);
 
-  it("refuses an opponent team in a live match: a human's team is never known", async () => {
+  it.each([["live_match" as const], [undefined]])("refuses an opponent team unless the mode is explicitly harness (mode %s)", async (mode) => {
     await expect(
       runA2Bot({
         engine,
@@ -79,7 +93,7 @@ describe("the class of a session's channels is derived (#824)", () => {
         challenger: "Human",
         format: fixture.format_id,
         team: structuredClone(fixture.teams[seat]),
-        mode: "live_match",
+        ...(mode === undefined ? {} : { mode }),
         opponent_team: rivalTeam(),
       }),
     ).rejects.toThrow(SessionError);

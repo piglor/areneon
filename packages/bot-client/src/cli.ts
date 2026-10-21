@@ -49,12 +49,12 @@ Each battle, finished or not, is stored as one JSON record (the bot's own
 channel and decisions) in --out, default private-data/a2 (mode 0700, files
 0600). A battle that finished cleanly is also stored as the bot's own Episode
 (<room>-<time>.episode.json). A sparring Episode is always private, so it goes
-to private-data/a2, whatever --out says. The bot cannot see the human's team, so
-every record is private (a class is proven from team hashes, never given): an
---out inside the checkout is refused. A record of a battle that ended in an Open
-Team Sheets failure (ots_failure), a forfeited decline, or a fatal error may hold the human's
-accepted team sheet, so it is only ever written under private-data/, whatever
---out says.`;
+to private-data/a2, whatever --out says. The bot cannot see the human's team,
+so every record is private (a class is proven from team hashes, never given):
+an --out inside the checkout is refused. A record of a battle that ended in an
+Open Team Sheets failure (ots_failure), a forfeited decline, or a fatal error
+may hold the human's accepted team sheet, so it is only ever written under
+private-data/, whatever --out says.`;
 
 /** A Showdown battle room id; the only shape of `record.room` that may go into a file name. */
 const BATTLE_ROOM = /^battle-[a-z0-9-]+$/;

@@ -4,7 +4,7 @@
 import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { importPaste, loadEngine, loadRulesSnapshot } from "@areneon/showdown-bridge";
+import { importPaste, loadEngine, loadRulesSnapshot, teamHash } from "@areneon/showdown-bridge";
 import { createRuntimeCopy } from "../src/index.ts";
 import { launchHarness, ReconnectNotPlannedError, recordHarnessBattle, withPlayedForms } from "../src/harness.ts";
 import { FIXTURE_FORMAT, RECORDINGS, recordingProvenance } from "../src/recordings.ts";
@@ -21,13 +21,10 @@ const engine = loadEngine();
 const snapshot = loadRulesSnapshot(engine.commit);
 // The synthetic teams there are: every committed paste fixture. A recording of any other team is refused.
 const TEAM_DIR = join(REPO, "fixtures", "teams", FIXTURE_FORMAT);
-const known_synthetic = withPlayedForms(
-  engine,
-  FIXTURE_FORMAT,
-  readdirSync(TEAM_DIR)
-    .filter((file) => file.endsWith(".txt"))
-    .map((file) => importPaste(engine, readFileSync(join(TEAM_DIR, file), "utf8"))),
-);
+const pastes = readdirSync(TEAM_DIR)
+  .filter((file) => file.endsWith(".txt"))
+  .map((file) => importPaste(engine, readFileSync(join(TEAM_DIR, file), "utf8")));
+const known_synthetic = withPlayedForms(engine, FIXTURE_FORMAT, new Set(pastes.map(teamHash)), pastes);
 const team = (file: string) => importPaste(engine, readFileSync(join(REPO, "fixtures", "teams", FIXTURE_FORMAT, file), "utf8"));
 
 const root = flag("--runtime-root");

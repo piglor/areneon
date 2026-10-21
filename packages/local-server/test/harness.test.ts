@@ -23,6 +23,7 @@ import {
   tapTransport,
   upgradeFixture,
   verifyHarnessFixture,
+  withPlayedForms,
 } from "../src/harness.ts";
 import { renderServerConfig, serverSettings } from "../src/index.ts";
 import { FIXTURE_FORMAT, RECORDINGS, recordingProvenance } from "../src/recordings.ts";
@@ -496,6 +497,16 @@ describe("buildHarnessFixture", () => {
     without.delete(teamHash(fixture.teams.p1));
     await expect(verifyHarnessFixture(engine, clone(fixture), without)).rejects.toThrow("p1 team is not a known synthetic team");
     await expect(verifyHarnessFixture(engine, clone(fixture), new Set())).rejects.toThrow("p2 team is not a known synthetic team");
+  });
+
+  it("withPlayedForms adds the played form of a listed team and refuses a team that is not listed", () => {
+    const sets = fixture.teams.p1;
+    // Unlisted: the played form of a stored team is in no set until its paste is.
+    expect(() => withPlayedForms(engine, FIXTURE_FORMAT, new Set(), [sets])).toThrow("only for a team already known synthetic");
+    const widened = withPlayedForms(engine, FIXTURE_FORMAT, new Set([teamHash(sets)]), [sets]);
+    expect(widened.has(teamHash(sets))).toBe(true);
+    // Only the listed team's hash and its played form: nothing else is added.
+    expect(widened.size).toBeLessThanOrEqual(2);
   });
 
   it("builds a fixture only from teams in the known synthetic set: either team unknown is refused", async () => {

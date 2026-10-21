@@ -67,7 +67,9 @@ export interface A2BotOptions {
    * The opponent's team, when the harness knows it (bot-vs-bot recordings). The
    * server never shows a bot the full opposing team (Closed Team Sheet), so an
    * unknown opponent counts as `private`. A `live_match` is against a human whose
-   * team is never known: giving one there is refused.
+   * team is never known. Harness runs only: it is refused unless `mode` is
+   * explicitly `harness` (the default is not enough), so a caller cannot name a
+   * human's team as known by leaving the mode out.
    */
   opponent_team?: PokemonSet[];
   /** `live_match` only against a human (ADR-005 §1). Default `harness`. */
@@ -358,8 +360,8 @@ export async function runA2Bot(options: A2BotOptions): Promise<A2SessionResult> 
   if (battles !== Infinity && !(Number.isSafeInteger(battles) && battles >= 1)) {
     throw new RangeError(`battles must be a positive integer, not ${battles}`);
   }
-  if (options.mode === "live_match" && options.opponent_team !== undefined) {
-    throw new SessionError("a live match is against a human: their team class is never known");
+  if (options.opponent_team !== undefined && options.mode !== "harness") {
+    throw new SessionError("an opponent team is given only to a bot-vs-bot harness run (mode harness): a human's team is never known");
   }
   // Before the validator, which normalises the sets in place.
   const dataClass = battleClassOf(options);

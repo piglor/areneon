@@ -1,5 +1,5 @@
 import { readdirSync, readFileSync } from "node:fs";
-import { type Engine, importPaste } from "@areneon/showdown-bridge";
+import { type Engine, importPaste, teamHash } from "@areneon/showdown-bridge";
 import { fileURLToPath } from "node:url";
 import { FIXTURE_FORMAT, RECORDINGS } from "../src/recordings.ts";
 import { type HarnessFixture, type HarnessFixtureV2, upgradeFixture, withPlayedForms } from "../src/harness.ts";
@@ -24,5 +24,5 @@ export function fixtureTeamHashes(engine: Engine): Set<string> {
   const teams = readdirSync(dir)
     .filter((file) => file.endsWith(".txt"))
     .map((file) => importPaste(engine, readFileSync(`${dir}${file}`, "utf8")));
-  return withPlayedForms(engine, FIXTURE_FORMAT, teams) as Set<string>;
+  return withPlayedForms(engine, FIXTURE_FORMAT, new Set(teams.map(teamHash)), teams);
 }
