@@ -5,7 +5,10 @@
 import { ajvFor } from "@areneon/schema/ajv";
 import episodeSchema from "@areneon/schema/contracts/v1/episode.schema.json" with { type: "json" };
 import type { PrivateTeamSpec } from "@areneon/schema/types/v1/private-team-spec.ts";
-import type { Engine } from "./engine.ts";
+import { type Engine, EngineError } from "./engine.ts";
+import { resolveFormat, UnsupportedFormatError } from "./formats.ts";
+import { loadRulesSnapshot } from "./rules-load.ts";
+import type { RulesSnapshot } from "./rules.ts";
 import { type CollectionInput, type Episode, rightsFor } from "./episode.ts";
 import { buildObservation, type Observation, type PlayerChannel } from "./observation.ts";
 import { assertOwnTeamStats, pinnedEngine } from "./own-team-stats.ts";
@@ -112,7 +115,8 @@ export async function readEpisode(
     assertProven(episode.team, known_synthetic);
     return episode;
   } catch (error) {
-    if (error instanceof EpisodeError) throw error;
+    // An unavailable engine is the host's fault, not a defect of the Episode.
+    if (error instanceof EpisodeError || error instanceof EngineError) throw error;
     throw new EpisodeError(`invalid Episode: ${(error as Error).message}`);
   }
 }
@@ -138,7 +142,9 @@ async function read(value: unknown, engine: Engine | undefined): Promise<Episode
   const preview = cut(channel, 1);
   if (!preview) throw new EpisodeError("the channel holds no request");
   await observeAt(episode, channel, 1);
-  assertOwnTeamStats(engine ?? pinnedEngine(), episode.provenance.manifest.format_id, episode.team, preview);
+  const sim = engine ?? pinnedEngine();
+  assertSupportedFormat(sim, episode.provenance.manifest.format_id);
+  assertOwnTeamStats(sim, episode.provenance.manifest.format_id, episode.team, preview);
   let last = 0;
   for (const decision of episode.decisions) {
     const { identity } = decision;
@@ -153,6 +159,23 @@ async function read(value: unknown, engine: Engine | undefined): Promise<Episode
     }
   }
   return episode;
+}
+
+const snapshots = new Map<string, RulesSnapshot>();
+
+/** The format the Episode names must be one the rules snapshot supports and the engine defines as it says. */
+function assertSupportedFormat(engine: Engine, formatId: string): void {
+  let snapshot = snapshots.get(engine.commit);
+  if (snapshot === undefined) {
+    snapshot = loadRulesSnapshot(engine.commit);
+    snapshots.set(engine.commit, snapshot);
+  }
+  try {
+    resolveFormat(engine, formatId, snapshot);
+  } catch (error) {
+    if (!(error instanceof UnsupportedFormatError)) throw error;
+    throw new EpisodeError("the Episode's format is not a supported format");
+  }
 }
 
 /**

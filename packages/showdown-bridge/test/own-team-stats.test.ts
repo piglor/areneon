@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { PrivateTeamSpec } from "@areneon/schema/types/v1/private-team-spec.ts";
-import { beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 import { type ChannelFixture, GOLDEN_DIR, GOLDEN_FORMAT, goldenBattle, syntheticFixtureHashes, syntheticTeam } from "../src/golden.ts";
 import {
   assertOwnTeamStats,
@@ -90,10 +90,13 @@ describe("assertOwnTeamStats", () => {
     );
   });
 
-  it("does not see an IV: the Champions stat formula ignores IVs, so the request cannot show one", () => {
-    const team = mutated((set) => void (set.ivs.atk = 0));
-    expect(() => assertOwnTeamStats(engine, GOLDEN_FORMAT, spec(team), channelOf("p1"))).not.toThrow();
-  });
+  it.each(["hp", "atk", "def", "spa", "spd", "spe"] as const)(
+    "does not see an IV (%s): the Champions stat formula ignores IVs, so the request cannot show one",
+    (stat) => {
+      const team = mutated((set) => void (set.ivs[stat] = 0));
+      expect(() => assertOwnTeamStats(engine, GOLDEN_FORMAT, spec(team), channelOf("p1"))).not.toThrow();
+    },
+  );
 
   it("refuses the same team in another order, and the other player's team", () => {
     const reordered = [...syntheticTeam().slice(1), syntheticTeam()[0] as PokemonSet];
@@ -167,6 +170,49 @@ describe("the pairing points", () => {
     await expect(readEpisode(forged, { known_synthetic: knownMirror })).rejects.toThrow(EpisodeError);
     await expect(readEpisode(forged, { known_synthetic: knownMirror })).rejects.toThrow("at position 2");
     expect(team satisfies StampedTeam).toBeDefined();
+  });
+
+  it("refuses an Episode of a format the repo does not support, before the stats check", async () => {
+    const record = await goldenBattle(engine);
+    const known = syntheticFixtureHashes(engine);
+    const team = stampTeam(syntheticTeam() as PrivateTeamSpec["team"], known);
+    const episode = await episodeFromRecord(record, "p1", { team, opponent_team: team, known_synthetic: known, behaviour_policy_id: "x" });
+    const other = structuredClone(episode);
+    other.provenance.manifest.format_id = "gen9ou";
+    const asked: string[] = [];
+    const spy = { ...engine, sim: { ...engine.sim, Battle: class extends engine.sim.Battle {
+      constructor(options: { formatid: string; seed: string }) { super(options); asked.push(options.formatid); }
+    } } } as Engine;
+    await expect(readEpisode(other, { known_synthetic: known, engine: spy })).rejects.toThrow(
+      "the Episode's format is not a supported format",
+    );
+    expect(asked).toEqual([]);
+  });
+
+  it("reports an unavailable engine as an infrastructure fault with a fixed message", async () => {
+    vi.resetModules();
+    vi.doMock("../src/engine.ts", async (original) => ({
+      ...(await original<typeof import("../src/engine.ts")>()),
+      loadEngine: () => {
+        throw new Error("Showdown checkout is at /secret/path, expected pinned abc123");
+      },
+    }));
+    try {
+      const fresh = await import("../src/own-team-stats.ts");
+      expect(() => fresh.pinnedEngine()).toThrow("the pinned Showdown engine is not available");
+      const record = await goldenBattle(engine);
+      const known = syntheticFixtureHashes(engine);
+      const team = stampTeam(syntheticTeam() as PrivateTeamSpec["team"], known);
+      const episode = await episodeFromRecord(record, "p1", { team, opponent_team: team, known_synthetic: known, behaviour_policy_id: "x" });
+      const reader = await import("../src/episode-io.ts");
+      const failure = await reader.readEpisode(episode, { known_synthetic: known }).catch((error: Error) => error);
+      expect(failure).toBeInstanceOf(Error);
+      expect((failure as Error).name).toBe("EngineError");
+      expect((failure as Error).message).toBe("the pinned Showdown engine is not available");
+    } finally {
+      vi.doUnmock("../src/engine.ts");
+      vi.resetModules();
+    }
   });
 
   it("pins that the validator allows no Hidden Power, so a bare one cannot reach the move match", () => {

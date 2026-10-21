@@ -18,7 +18,7 @@
 // bump that allows the move fails there and the case is decided then.
 
 import type { PrivateTeamSpec } from "@areneon/schema/types/v1/private-team-spec.ts";
-import { type Engine, loadEngine } from "./engine.ts";
+import { type Engine, EngineError, loadEngine } from "./engine.ts";
 import { ObservationError, type PlayerChannel } from "./observation.ts";
 
 /**
@@ -52,7 +52,14 @@ const SEED = "sodium,00000000000000000000000000000000";
 let pinned: Engine | undefined;
 /** The pinned engine, loaded once: `loadEngine` checks the checkout with git on every call. */
 export function pinnedEngine(): Engine {
-  pinned ??= loadEngine();
+  if (pinned === undefined) {
+    try {
+      pinned = loadEngine();
+    } catch {
+      // The cause names a path or a commit: the message stays fixed.
+      throw new EngineError("the pinned Showdown engine is not available");
+    }
+  }
   return pinned;
 }
 
@@ -67,6 +74,10 @@ function numbers(mon: RequestMon): string {
 /**
  * Check that the engine, given `team` in `formatid`, sends `channel.player` a
  * Team Preview request with the stats of the channel's own first request.
+ * It checks one game start: it runs once per game, at the Team Preview
+ * request. A harness that resumes a game from a channel it did not start
+ * (a rejoin, a restart) must call it itself; `readEpisode` and `policyActor`
+ * (request 1 only) do not repeat it. It costs about 1.5 ms per call.
  * Throws OwnTeamStatsError (never echoing the team) on any difference, on a
  * channel that does not start at Team Preview, on a team of another size and
  * on a team the engine cannot start a battle with.
