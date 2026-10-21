@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 from collections.abc import Callable
@@ -21,7 +22,7 @@ from tests.ml.inspector.support import FIXTURE, ROOT, copy_run, fixture_pool
 SIM = ROOT / "vendor" / "pokemon-showdown" / "dist" / "sim"
 
 
-def loader(pool: Pool):  # type: ignore[no-untyped-def]
+def loader(pool: Pool) -> command.PoolLoader:
     def load(repo: Path, node: str, config: Path) -> Pool:
         assert config.name == layout.CONFIG
         return pool
@@ -50,7 +51,7 @@ def test_it_writes_the_pages_beside_the_run_and_never_inside_it(tmp_path: Path) 
         command.inspect_run(run, run, repo=ROOT, node="node", pool_loader=loader(fixture_pool()))
 
 
-def test_it_changes_nothing_in_the_run_directory_and_removes_only_its_own_stale_pages(
+def test_it_changes_nothing_in_the_run_directory_and_replaces_an_earlier_output(
     tmp_path: Path,
 ) -> None:
     run = copy_run(tmp_path)
@@ -58,14 +59,74 @@ def test_it_changes_nothing_in_the_run_directory_and_removes_only_its_own_stale_
     out = tmp_path / "pages"
     out.mkdir()
     (out / "teams-0099.html").write_text("old")
-    (out / "notes.txt").write_text("mine")
     command.inspect_run(run, out, repo=ROOT, node="node", pool_loader=loader(fixture_pool()))
     assert not (out / "teams-0099.html").exists()
-    assert (out / "notes.txt").read_text() == "mine"
     assert before == {p: p.read_bytes() for p in run.rglob("*") if p.is_file()}
     first = {p.name: p.read_bytes() for p in out.glob("*.html")}
     command.inspect_run(run, out, repo=ROOT, node="node", pool_loader=loader(fixture_pool()))
     assert first == {p.name: p.read_bytes() for p in out.glob("*.html")}
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["pages", "run"]  # no partial or backup
+
+
+def test_it_refuses_a_directory_that_is_not_an_inspector_output(tmp_path: Path) -> None:
+    run = copy_run(tmp_path)
+    makers: list[Callable[[Path], object]] = [
+        lambda d: (d / "notes.txt").write_text("mine"),
+        lambda d: (d / "sub").mkdir(),
+        lambda d: (d / "index.html").symlink_to(tmp_path),
+    ]
+    for make in makers:
+        out = tmp_path / "pages"
+        shutil.rmtree(out, ignore_errors=True)
+        out.mkdir()
+        make(out)
+        before = sorted(p.name for p in out.iterdir())
+        with pytest.raises(InspectError, match="something other than inspector pages"):
+            command.inspect_run(
+                run, out, repo=ROOT, node="node", pool_loader=loader(fixture_pool())
+            )
+        assert sorted(p.name for p in out.iterdir()) == before
+    file = tmp_path / "afile"
+    file.write_text("x")
+    with pytest.raises(InspectError, match="something other than inspector pages"):
+        command.inspect_run(run, file, repo=ROOT, node="node", pool_loader=loader(fixture_pool()))
+
+
+def test_a_failed_write_leaves_the_earlier_output_whole(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    run = copy_run(tmp_path)
+    out = tmp_path / "pages"
+    command.inspect_run(run, out, repo=ROOT, node="node", pool_loader=loader(fixture_pool()))
+    before = {p.name: p.read_bytes() for p in out.iterdir()}
+    real = layout.write_file
+    calls: list[str] = []
+
+    def failing(path: Path, data: bytes) -> None:
+        calls.append(path.name)
+        if len(calls) == 3:
+            raise OSError("disk full")
+        real(path, data)
+
+    monkeypatch.setattr(layout, "write_file", failing)
+    with pytest.raises(OSError, match="disk full"):
+        command.inspect_run(run, out, repo=ROOT, node="node", pool_loader=loader(fixture_pool()))
+    assert before == {p.name: p.read_bytes() for p in out.iterdir()}
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["pages", "run"]
+    # A failure after the old output was moved aside puts it back.
+    monkeypatch.setattr(layout, "write_file", real)
+    replace = os.replace
+
+    def once(src: Path, dst: Path) -> None:
+        if Path(dst) == out and Path(src).name.endswith(".partial"):
+            raise OSError("rename failed")
+        replace(src, dst)
+
+    monkeypatch.setattr(os, "replace", once)
+    with pytest.raises(OSError, match="rename failed"):
+        command.inspect_run(run, out, repo=ROOT, node="node", pool_loader=loader(fixture_pool()))
+    assert before == {p.name: p.read_bytes() for p in out.iterdir()}
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["pages", "run"]
 
 
 def test_it_refuses_before_writing_anything(tmp_path: Path) -> None:
@@ -128,6 +189,8 @@ def test_the_pool_listing_refuses_what_it_does_not_know() -> None:
         (lambda v: v["teams"][0].update(extra=1), "extra"),
         (lambda v: v["teams"][0]["sets"][0].update(mega_stone="no"), "mega_stone"),
         (lambda v: v["teams"][0]["sets"][0]["evs"].update(hp="x"), "evs hp"),
+        (lambda v: v["teams"][0]["sets"][0]["evs"].update(luck=1), "luck"),
+        (lambda v: v["teams"][0]["sets"][0]["evs"].pop("hp"), "lacks hp"),
         (lambda v: v["teams"][0].update(canonical_team_hash="x"), "canonical hash"),
         (lambda v: v["teams"][0].update(labels=[{"label_id": "a"}]), "lacks value"),
         (lambda v: v["teams"].reverse(), "sorted and unique"),

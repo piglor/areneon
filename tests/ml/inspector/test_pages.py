@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import dataclasses
 import hashlib
+import html
 import json
 import re
 import socket
@@ -25,7 +26,13 @@ PS = chr(0x2029)
 HOSTILE_NAME = "</script><img src=x onerror=alert(1)>"
 HOSTILE_LOG = "a </script> b <!-- c " + LS + " d " + PS + " e \"q\" 's' & <b>"
 HOSTILE_LABEL = 'lab"el<x>'
-HOSTILE_RUN = "run</script><svg onload=alert(2)>"
+HOSTILE_RUN = "run\"'</script><svg onload=alert(2)>" + LS + PS
+HOSTILE_ATTR = 'x" onmouseover="alert(3)" a=\'b\' autofocus c="'
+ATTRIBUTES = {
+    "aria-label", "charset", "class", "content", "height", "hidden", "href", "http-equiv", "id",
+    "lang", "name", "role", "rx", "text-anchor", "type", "viewbox", "width", "x", "x1", "x2", "y",
+    "y1", "y2", "title",
+}  # fmt: skip
 CANARIES = (HOSTILE_NAME, HOSTILE_LOG, HOSTILE_LABEL, HOSTILE_RUN)
 TEMPLATE_TAGS = {
     "html",
@@ -110,6 +117,8 @@ def problems(raw: str, canaries: tuple[str, ...] = CANARIES) -> list[str]:
     a = audit(raw)
     if not set(a.tags) <= TEMPLATE_TAGS:
         found.append(f"elements the template does not have: {sorted(set(a.tags) - TEMPLATE_TAGS)}")
+    if not {name for _, name, _ in a.attrs} <= ATTRIBUTES:
+        found.append("an attribute the template does not have")
     if any(name.startswith("on") or name == "style" for _, name, _ in a.attrs):
         found.append("an event handler or style attribute")
     if any(name in ("src", "href") and not _local(value) for _, name, value in a.attrs):
@@ -167,7 +176,7 @@ def hostile_model() -> InspectModel:
                     "forfeit",
                     None,
                     0,
-                    Forfeit("p1", HOSTILE_LOG, 3, HOSTILE_NAME),
+                    Forfeit("p1", HOSTILE_LOG, 3, HOSTILE_ATTR),
                 )
                 game = dataclasses.replace(game, row=row)  # noqa: PLW2901
             games.append(game)
@@ -428,3 +437,49 @@ def test_the_script_filters_only_through_ids_the_page_lists() -> None:
     assert data["noun"] == "games"
     assert 'id="filter"' in raw
     assert "hidden" in raw
+
+
+def test_hostile_text_stays_inside_an_attribute_value_and_a_data_block() -> None:
+    """A quote or apostrophe cannot end an attribute; U+2028 and U+2029 stay escaped in a block."""
+    pages = render.build_pages(hostile_model())
+    games = pages["games-g000001.html"]
+    a = audit(games)
+    titles = [value for _, name, value in a.attrs if name == "title"]
+    assert HOSTILE_ATTR in titles
+    assert not any(name.startswith("on") for _, name, _ in a.attrs)
+    assert 'title="x&quot; onmouseover=&quot;' in games
+    block = next(body for attrs, body in a.scripts if attrs.get("type") == "application/json")
+    assert LS not in block
+    assert PS not in block
+    assert "\\u2028" in games
+    assert "\\u2029" in games
+    assert json.loads(block)["run"] == HOSTILE_RUN
+
+
+def test_negative_control_quotes_left_unescaped_break_the_attribute(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Escaping text but not quotes (the quote=False mutation) fails the same page checks."""
+
+    def no_quotes(value: object) -> str:
+        return html.escape(str(value), quote=False)
+
+    monkeypatch.setattr(render, "esc", no_quotes)
+    mutated = render.build_pages(hostile_model())["games-g000001.html"]
+    found = problems(mutated)
+    assert any("attribute the template does not have" in p or "event handler" in p for p in found)
+    assert "onmouseover" in {name for _, name, _ in audit(mutated).attrs}
+
+
+def test_negative_control_a_data_block_without_the_separator_escapes_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def naive(value: Any, block_id: str = "page-data") -> str:
+        body = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        for char, code in (("&", "\\u0026"), ("<", "\\u003c"), (">", "\\u003e")):
+            body = body.replace(char, code)
+        return f'<script type="application/json" id="{block_id}">{body}</script>'
+
+    monkeypatch.setattr(page, "json_block", naive)
+    mutated = render.build_pages(hostile_model())["games-g000001.html"]
+    assert any("data block" in p for p in problems(mutated))

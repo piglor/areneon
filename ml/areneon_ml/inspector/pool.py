@@ -22,6 +22,8 @@ from areneon_ml.inspector.readers import (
     text,
 )
 
+#: The six stat keys of the engine's stat table (Stat Points in the Champions mod).
+STATS = ("hp", "atk", "def", "spa", "spd", "spe")
 SCRIPT = "packages/team-dataset/scripts/print-pool.ts"
 LISTING_KEYS: tuple[set[str], set[str]] = (
     {"schema_version", "source", "dataset_hash", "records_before", "excluded_abilities", "teams"},
@@ -85,11 +87,7 @@ def _read_set(raw: object, what: str) -> PoolSet:
     body = closed(raw, SET_KEYS, what)
     if not isinstance(body["mega_stone"], bool):
         raise InspectError(f"{what} mega_stone is not a boolean")
-    evs = closed(
-        body["evs"],
-        (set(), set(body["evs"]) if isinstance(body["evs"], dict) else set()),
-        f"{what} evs",
-    )
+    evs = closed(body["evs"], (set(STATS), set()), f"{what} evs")
     return PoolSet(
         text(body["name"], f"{what} name"),
         text(body["species"], f"{what} species"),

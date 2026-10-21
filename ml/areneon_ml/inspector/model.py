@@ -126,7 +126,13 @@ def read_run_dir_config(run_dir: Path) -> RunConfig:
 
 
 def refuse_non_public(config: RunConfig) -> None:
-    """Only a synthetic, public-lineage run is inspected (ADR-017 section 4a)."""
+    """Refuse a run whose lineage is named private (ADR-017 section 4a).
+
+    This matches the lineage name only, so it is a guard against an obvious mistake and not the
+    defence. The defence is the data: ``read_episode_facts`` refuses any Episode that is not
+    labelled synthetic and ``cc0-synthetic`` (and its opponent team synthetic), and the pool comes
+    from the loop's own function over a verified synthetic dataset or the committed fixture teams.
+    """
     lineage = config.lineage_id.lower()
     if lineage.startswith("private") or "private" in lineage.split("-"):
         raise InspectError(

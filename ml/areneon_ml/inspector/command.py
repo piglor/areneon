@@ -7,7 +7,10 @@ nothing back. The pool is rebuilt by the loop's own TypeScript function through 
 
 from __future__ import annotations
 
+import os
 import re
+import shutil
+import tempfile
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -40,16 +43,53 @@ def inspect_run(
     target = (out if out is not None else default_out(run_dir)).resolve()
     if target == run_dir or run_dir in target.parents:
         raise InspectError("the output directory must not be inside the run directory")
+    check_target(target)
     config = read_run_dir_config(run_dir)
     pool = pool_loader(repo, node, run_dir / layout.CONFIG)
     pages = build_pages(build_model(run_dir, pool, config))
-    target.mkdir(parents=True, exist_ok=True)
-    for stale in target.iterdir():
-        if stale.is_file() and _OURS.fullmatch(stale.name) and stale.name not in pages:
-            stale.unlink()
-    total = 0
-    for name, text in sorted(pages.items()):
-        data = text.encode("utf-8")
-        (target / name).write_bytes(data)
-        total += len(data)
+    total = write_pages(target, pages)
     return {"out": str(target), "pages": len(pages), "bytes": total}
+
+
+def check_target(target: Path) -> None:
+    """The output may be new or an earlier inspector output; any other directory is not touched."""
+    if not target.exists():
+        return
+    if not target.is_dir() or any(
+        not (path.is_file() and not path.is_symlink() and _OURS.fullmatch(path.name))
+        for path in target.iterdir()
+    ):
+        raise InspectError(
+            "the output exists and holds something other than inspector pages: "
+            "give an empty or new directory"
+        )
+
+
+def write_pages(target: Path, pages: dict[str, str]) -> int:
+    """Write the pages into a temporary sibling, flush them, and rename it over ``target``.
+
+    A reader of ``target`` sees the old set or the new one, never a mixture, and a failed build
+    leaves the old set. Returns the bytes written.
+    """
+    check_target(target)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    work = Path(tempfile.mkdtemp(prefix=f".{target.name}.", suffix=".partial", dir=target.parent))
+    backup = work.with_name(work.name + ".old")
+    try:
+        total = 0
+        for name, text in sorted(pages.items()):
+            data = text.encode("utf-8")
+            layout.write_file(work / name, data)
+            total += len(data)
+        layout.sync_dir(work)
+        if target.exists():
+            os.replace(target, backup)
+        os.replace(work, target)
+        layout.sync_dir(target.parent)
+    except BaseException:
+        shutil.rmtree(work, ignore_errors=True)
+        if backup.exists() and not target.exists():
+            os.replace(backup, target)
+        raise
+    shutil.rmtree(backup, ignore_errors=True)
+    return total
