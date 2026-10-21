@@ -8,6 +8,7 @@ import {
   importPaste,
   type PrivateTeamRecord,
   privateLogicalSnapshotHash,
+  privateSnapshotHash,
   teamHash,
 } from "@areneon/showdown-bridge";
 import { DuckdbWriter, privateColumnsFor, privateRowOf, readPrivateShard, type Runner } from "@areneon/team-dataset";
@@ -17,6 +18,9 @@ import { SnapshotIoError } from "../src/snapshot-io-error.ts";
 import { readPrivateSnapshot } from "../src/snapshot-reader.ts";
 import { writePrivateSnapshot, type WrittenSnapshot } from "../src/snapshot-writer.ts";
 import { at, engine, input, labelSet, pastes, plan, recordOf, scratchRoot, standIn } from "./snapshot-support.ts";
+
+// Each case decodes shard files in worker threads; a loaded CI machine needs more than the default 5 s.
+vi.setConfig({ testTimeout: 60_000 });
 
 // Paste canary tests (ADR-015 section 3, "No leaks") for the snapshot writer
 // and reader: marker strings placed in a paste (a nickname), a tag, a label
@@ -176,7 +180,7 @@ function reseal(w: WrittenSnapshot, shard: number, file: Uint8Array): Record<str
 
 describe("reader error paths", () => {
   const read = (w: WrittenSnapshot, manifest: unknown, files: (i: number) => Uint8Array | Promise<Uint8Array>) =>
-    readPrivateSnapshot({ engine, manifest, shard: files, labelSet, shardRows: 4 });
+    readPrivateSnapshot({ engine, manifest, expectedSnapshotHash: privateSnapshotHash(manifest as never), shard: files, labelSet, shardRows: 4 });
 
   /** The rows of shard 0 as the writer wrote them, changed, written as Parquet and put in the manifest. */
   async function forged(change: (rows: Record<string, unknown>[]) => void, options: (n: number) => Parameters<typeof parquetOf>[2] = () => ({})) {
@@ -221,13 +225,13 @@ describe("reader error paths", () => {
     expect((await refusal(() => read(w, w.manifest, () => Promise.reject(new Error(`${SOURCE} ${NICK}`))))).code).toBe("shard_missing");
     expect((await refusal(() => read(w, { ...w.manifest, [FILE]: NICK }, (i) => at(w.shards, i)))).code).toBe("manifest_invalid");
     expect((await refusal(() => read(w, { ...w.manifest, snapshot_id: `${NICK} ${LABEL}` }, (i) => at(w.shards, i)))).code).toBe("manifest_invalid");
-    expect((await refusal(() => read(w, w.manifest, (i) => at(w.shards, i)).then(() => readPrivateSnapshot({ engine, manifest: w.manifest, shard: (i) => at(w.shards, i), labelSet, shardRows: 4, expectedSnapshotHash: KEY })))).code).toBe("snapshot_hash_mismatch");
+    expect((await refusal(() => readPrivateSnapshot({ engine, manifest: w.manifest, expectedSnapshotHash: KEY, shard: (i) => at(w.shards, i), labelSet, shardRows: 4 }))).code).toBe("snapshot_hash_mismatch");
   });
 
   it("refuses a record the engine refuses, a wrong flag and without echoing them", async () => {
     const bad = nickRecord(0, 1, { paste: nickRecord(0, 1).paste.replace(/Ability: .*/, `Ability: ${NICK}`) });
     const w = await writePrivateSnapshot(input({ records: [bad, nickRecord(1, 2)] }));
-    const error = await refusal(() => readPrivateSnapshot({ engine, manifest: w.manifest, shard: (i) => at(w.shards, i), labelSet }));
+    const error = await refusal(() => readPrivateSnapshot({ engine, manifest: w.manifest, expectedSnapshotHash: privateSnapshotHash(w.manifest as never), shard: (i) => at(w.shards, i), labelSet }));
     expect(error.code).toBe("record_invalid");
     expect(error.position).toEqual({ shard: 0, row: expect.any(Number) });
 

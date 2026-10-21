@@ -4,8 +4,9 @@
 // trusted. In order:
 //   - the manifest through `readPrivateSnapshotManifest` (shape, shard order
 //     and indices, tiling, sums, counts, recomputed logical hash), a parent
-//     that is not the snapshot's own hash, the hash it was fetched under (when
-//     the caller knows it), the label set and the Parquet layout version;
+//     that is not the snapshot's own hash, the hash it was fetched under (always
+//     given), the version manifest and vocabulary hash the caller expects (when
+//     given), the label set and the Parquet layout version;
 //   - the shard layout: `shardCount(rows)` shards, no two with one file digest;
 //   - each shard file: its size and SHA-256, then the engine-free decode and
 //     rebuild of `readPrivateShard` (columns, order, placement, logical hash,
@@ -25,7 +26,9 @@ import { createHash } from "node:crypto";
 import {
   checkPrivateRecordSet,
   type Engine,
+  canonicalJson,
   holdoutFlag,
+  type Json,
   type PrivateSnapshotManifest,
   type PrivateTeamRecord,
   privateSnapshotHash,
@@ -45,10 +48,24 @@ export interface ReadSnapshotInput {
   /** The shard file with this manifest index (`snapshots/<hash>/shards/<index>.parquet`). */
   readonly shard: (index: number) => Uint8Array | Promise<Uint8Array>;
   readonly labelSet: TeamLabelSet;
-  /** The snapshot hash the manifest was stored under, when known; the manifest must hash to it. */
-  readonly expectedSnapshotHash?: string;
+  /**
+   * The snapshot hash the manifest was stored under (its bucket key, or the
+   * hash a run pinned); the manifest must hash to it. Required: a reader that
+   * takes whatever manifest it is handed has no anchor, and there is no way to
+   * switch the check off.
+   */
+  readonly expectedSnapshotHash: string;
+  /**
+   * The version manifest and vocabulary hash the caller derives from the
+   * pinned engine and rules; when given, the snapshot must carry exactly
+   * these. (Left out only by a reader that inspects a snapshot made under
+   * another pin.)
+   */
+  readonly expected?: { readonly manifest: PrivateSnapshotManifest["manifest"]; readonly vocabularyHash: string };
   /** Rows per shard the layout used; the default is 2^18. Tests make it small. */
   readonly shardRows?: number;
+  /** Wall-clock limit of one shard's decode, in ms; the default is 300000. Tests make it short. */
+  readonly decodeTimeoutMs?: number;
 }
 
 export interface SnapshotRead {
@@ -69,8 +86,11 @@ export async function readPrivateSnapshot(input: ReadSnapshotInput): Promise<Sna
   }
   const snapshotHash = privateSnapshotHash(manifest);
   if (manifest.parent_snapshot_hash === snapshotHash) throw new SnapshotIoError("parent_is_self");
-  if (input.expectedSnapshotHash !== undefined && input.expectedSnapshotHash !== snapshotHash) throw new SnapshotIoError("snapshot_hash_mismatch");
+  if (input.expectedSnapshotHash !== snapshotHash) throw new SnapshotIoError("snapshot_hash_mismatch");
   if (manifest.label_set_hash !== recordHash(input.labelSet)) throw new SnapshotIoError("label_set_mismatch");
+  if (input.expected !== undefined && (canonicalJson(manifest.manifest as unknown as Json) !== canonicalJson(input.expected.manifest as unknown as Json) || manifest.vocabulary_hash !== input.expected.vocabularyHash)) {
+    throw new SnapshotIoError("version_manifest_mismatch");
+  }
   if (manifest.parquet_schema_version !== PARQUET_SCHEMA_VERSION) throw new SnapshotIoError("version_mismatch");
 
   if (new Set(manifest.shards.map((s) => s.file_sha256)).size !== manifest.shards.length) throw new SnapshotIoError("shard_file_repeated");
@@ -98,7 +118,7 @@ export async function readPrivateSnapshot(input: ReadSnapshotInput): Promise<Sna
     if (createHash("sha256").update(bytes).digest("hex") !== entry.file_sha256) throw new SnapshotIoError("shard_digest_mismatch", { shard: entry.index });
     let read: Awaited<ReturnType<typeof readPrivateShard>>;
     try {
-      read = await readPrivateShard(bytes, entry, plan, assign);
+      read = await readPrivateShard(bytes, entry, plan, assign, input.decodeTimeoutMs);
     } catch {
       throw new SnapshotIoError("shard_invalid", { shard: entry.index });
     }

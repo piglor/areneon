@@ -6,6 +6,7 @@ import { describe, expect, it, vi } from "vitest";
 const FIXED = "00".repeat(32);
 vi.mock("@areneon/showdown-bridge", async (original) => ({ ...(await original<typeof import("@areneon/showdown-bridge")>()), privateSnapshotHash: () => FIXED }));
 
+const { privateSnapshotHash } = await import("@areneon/showdown-bridge");
 const { readPrivateSnapshot } = await import("../src/snapshot-reader.ts");
 const { writePrivateSnapshot } = await import("../src/snapshot-writer.ts");
 const { at, engine, input, labelSet, recordOf } = await import("./snapshot-support.ts");
@@ -13,7 +14,7 @@ const { at, engine, input, labelSet, recordOf } = await import("./snapshot-suppo
 describe("a parent equal to the snapshot's own hash", () => {
   it("is refused by the reader", async () => {
     const w = await writePrivateSnapshot(input({ records: [recordOf(0, 1)], parentSnapshotHash: FIXED }));
-    const error = await readPrivateSnapshot({ engine, manifest: w.manifest, shard: (i) => at(w.shards, i), labelSet }).catch((e: unknown) => e);
+    const error = await readPrivateSnapshot({ engine, manifest: w.manifest, expectedSnapshotHash: privateSnapshotHash(w.manifest as never), shard: (i) => at(w.shards, i), labelSet }).catch((e: unknown) => e);
     expect((error as { code: string }).code).toBe("parent_is_self");
   });
 });

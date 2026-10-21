@@ -1,5 +1,5 @@
 // Reading one private Parquet shard back into PrivateTeamRecords (ADR-015
-// sections 2 and 3). The decoder is hyparquet, as for the public shards; the
+// sections 2 and 3). The decoder is hyparquet, run in a worker thread (`private-decode.ts`); the
 // checks are those of `reader.ts` with the private columns: the footer, the
 // rebuild rules of `private-shards.ts`, the row order, the HMAC placement, the
 // recomputed `logical_hash` and the cell ranges with their active rows.
@@ -8,10 +8,9 @@
 // each hold-out flag is right is the snapshot reader's work. Nothing in a
 // message comes from the file (no column name, value or library text).
 
-import { parquetMetadataAsync, parquetReadObjects, parquetSchema, type AsyncBuffer } from "hyparquet";
-import { compressors } from "hyparquet-compressors";
 import { recordHash, shardLogicalHash, type PrivateTeamRecord, type PrivateSnapshotManifest } from "@areneon/showdown-bridge";
-import { PARQUET_SCHEMA_VERSION, refuse, type RowPlan, SCHEMA_VERSION_KEY } from "./columns.ts";
+import { refuse, type RowPlan } from "./columns.ts";
+import { decodeIsolated } from "./private-decode.ts";
 import { byPrivateOrder, privateCellRanges, privateColumnsFor, privateRecordOf } from "./private-shards.ts";
 
 /** What the manifest says a private shard holds. */
@@ -28,43 +27,6 @@ export interface PrivateShardRead {
   index?: number;
 }
 
-const toBuffer = (file: ArrayBuffer | Uint8Array | AsyncBuffer): AsyncBuffer => {
-  if (file instanceof Uint8Array) return file.buffer.slice(file.byteOffset, file.byteOffset + file.byteLength) as ArrayBuffer;
-  return file;
-};
-
-type Footer = Awaited<ReturnType<typeof parquetMetadataAsync>>;
-type SchemaNode = ReturnType<typeof parquetSchema>["children"][number];
-
-const PHYSICAL = { VARCHAR: "BYTE_ARRAY", NULLABLE_VARCHAR: "BYTE_ARRAY", BIGINT: "INT64", BOOLEAN: "BOOLEAN" } as const;
-
-function checkFooter(metadata: Footer, plan: RowPlan, expectedRows: number): void {
-  const version = metadata.key_value_metadata?.find((kv) => kv.key === SCHEMA_VERSION_KEY)?.value;
-  if (version !== String(PARQUET_SCHEMA_VERSION)) refuse("the file's schema version is missing or not the one this reader reads");
-  const top = parquetSchema(metadata).children;
-  const columns = privateColumnsFor(plan.labelSet);
-  const present = top.map((c) => c.element.name);
-  // Position by position, so a missing, extra, repeated or reordered column refuses without naming any.
-  if (present.length !== columns.length || columns.some((c, k) => present[k] !== c.name)) refuse("the file's columns are not the private layout's");
-  columns.forEach((column, k) => {
-    const node = top[k] as SchemaNode;
-    const ok = (() => {
-      if (column.type === "LABELS") {
-        const element = node.children[0]?.children[0];
-        const fields = element?.children.map((f) => `${f.element.name}:${f.element.type}`).join(",");
-        return node.element.converted_type === "LIST" && node.children.length === 1 && element?.children.length === 2 && fields === "label_id:BYTE_ARRAY,value:BYTE_ARRAY";
-      }
-      if (column.type === "VARCHAR_LIST") {
-        const element = node.children[0]?.children[0];
-        return node.element.converted_type === "LIST" && node.children.length === 1 && element?.children.length === 0 && element.element.type === "BYTE_ARRAY";
-      }
-      return node.children.length === 0 && node.element.type === PHYSICAL[column.type];
-    })();
-    if (!ok) refuse(`column ${column.name} does not have the layout's type`);
-  });
-  if (Number(metadata.num_rows) !== expectedRows) refuse("the file's row count is not the manifest's");
-}
-
 /**
  * Decode, rebuild and verify one private shard. Every refusal is a
  * `ShardError` with a fixed message. `assign`, when given, maps a canonical
@@ -72,34 +34,19 @@ function checkFooter(metadata: Footer, plan: RowPlan, expectedRows: number): voi
  * returned.
  */
 export async function readPrivateShard(
-  file: ArrayBuffer | Uint8Array | AsyncBuffer,
+  file: ArrayBuffer | Uint8Array,
   expected: PrivateShardExpectation,
   plan: RowPlan,
   assign?: (canonicalTeamHash: string) => number,
+  timeoutMs?: number,
 ): Promise<PrivateShardRead> {
-  const buffer = toBuffer(file);
-  let metadata: Footer;
-  try {
-    metadata = await parquetMetadataAsync(buffer);
-  } catch {
-    return refuse("not a readable Parquet file");
-  }
-  checkFooter(metadata, plan, expected.rows);
+  const bytes = file instanceof Uint8Array ? file : new Uint8Array(file);
+  const rows = await decodeIsolated(bytes, { columns: privateColumnsFor(plan.labelSet), rows: expected.rows }, timeoutMs);
   const records: PrivateTeamRecord[] = [];
   const recordHashes: string[] = [];
   const strata: number[] = [];
   let index: number | undefined;
-  let start = 0;
-  for (const group of metadata.row_groups) {
-    const end = start + Number(group.num_rows);
-    let rows: Record<string, unknown>[];
-    try {
-      rows = await parquetReadObjects({ file: buffer, metadata, compressors, rowStart: start, rowEnd: end });
-    } catch {
-      return refuse("not a readable Parquet file");
-    }
-    rows.forEach((row, k) => {
-      const n = start + k;
+  rows.forEach((row, n) => {
       const where = `row ${n}`;
       const { record, stratum } = privateRecordOf(row, plan, where);
       const previous = records[n - 1];
@@ -117,9 +64,7 @@ export async function readPrivateShard(
       records.push(record);
       recordHashes.push(recordHash(record));
       strata.push(stratum);
-    });
-    start = end;
-  }
+  });
   if (records.length !== expected.rows) refuse("the row groups do not hold the manifest's row count");
   if (shardLogicalHash(recordHashes) !== expected.logical_hash) refuse("the shard's logical hash is not the manifest's");
   const ranges = privateCellRanges(records.map((r, k) => ({ stratum: strata[k] as number, status: r.status })));

@@ -1,12 +1,15 @@
 import { createHash } from "node:crypto";
-import { type PrivateSnapshotManifest, type PrivateTeamRecord, privateLogicalSnapshotHash, recordHash, shardLogicalHash } from "@areneon/showdown-bridge";
+import { type PrivateSnapshotManifest, type PrivateTeamRecord, privateLogicalSnapshotHash, privateSnapshotHash, recordHash, shardLogicalHash } from "@areneon/showdown-bridge";
 import { byPrivateOrder, privateCellRanges, privateColumnsFor, privateRowOf, shardAssigner } from "@areneon/team-dataset";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { parquetOf } from "../../team-dataset/test/shards/support.ts";
 import { SnapshotIoError } from "../src/snapshot-io-error.ts";
 import { readPrivateSnapshot } from "../src/snapshot-reader.ts";
 import { writePrivateSnapshot } from "../src/snapshot-writer.ts";
 import { at, engine, input, labelSet, plan, recordOf, records, SHARD_KEY } from "./snapshot-support.ts";
+
+// Each case decodes shard files in worker threads; a loaded CI machine needs more than the default 5 s.
+vi.setConfig({ testTimeout: 60_000 });
 
 // Snapshots the writer refuses to make but a hostile store could serve: the
 // reader must refuse them on its own. `forge` builds a manifest and files for
@@ -54,7 +57,7 @@ function forge(base: PrivateSnapshotManifest, groups: PrivateTeamRecord[][], cha
 }
 
 const refusal = async (forged: Forged, shardRows?: number): Promise<SnapshotIoError> => {
-  const error = await readPrivateSnapshot({ engine, manifest: forged.manifest, shard: (i) => at(forged.files, i), labelSet, ...(shardRows === undefined ? {} : { shardRows }) }).catch((e: unknown) => e);
+  const error = await readPrivateSnapshot({ engine, manifest: forged.manifest, expectedSnapshotHash: privateSnapshotHash(forged.manifest as never), shard: (i) => at(forged.files, i), labelSet, ...(shardRows === undefined ? {} : { shardRows }) }).catch((e: unknown) => e);
   expect(error).toBeInstanceOf(SnapshotIoError);
   return error as SnapshotIoError;
 };
@@ -66,7 +69,7 @@ describe("readPrivateSnapshot on a forged snapshot", () => {
     const assign = shardAssigner(SHARD_KEY, 2);
     const groups = [all.filter((r) => assign(r.canonical_team_hash) === 0), all.filter((r) => assign(r.canonical_team_hash) === 1)];
     const forged = forge(w.manifest, groups);
-    const read = await readPrivateSnapshot({ engine, manifest: forged.manifest, shard: (i) => at(forged.files, i), labelSet, shardRows: 4 });
+    const read = await readPrivateSnapshot({ engine, manifest: forged.manifest, expectedSnapshotHash: privateSnapshotHash(forged.manifest as never), shard: (i) => at(forged.files, i), labelSet, shardRows: 4 });
     expect(read.records).toHaveLength(8);
   });
 

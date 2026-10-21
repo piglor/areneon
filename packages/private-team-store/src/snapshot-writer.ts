@@ -43,12 +43,13 @@ import {
   privateColumnsFor,
   privateRowOf,
   readPrivateShard,
+  removeTree,
   shardAssigner,
   type WriteOptions,
 } from "@areneon/team-dataset";
 import { SnapshotIoError } from "./snapshot-io-error.ts";
 import { labelPlan } from "./snapshot-plan.ts";
-import { assertWorkDir, type WorkDirProbe } from "./work-dir.ts";
+import { assertWorkDir } from "./work-dir.ts";
 
 export interface WriteSnapshotInput {
   /** The whole next record list (one record per team_id), flags set. */
@@ -73,8 +74,6 @@ export interface WriteSnapshotInput {
   readonly shardRows?: number;
   /** Row group size and compression; the private path is added by this function. */
   readonly write?: Omit<WriteOptions, "isolated">;
-  /** Test seam for the working-directory check. */
-  readonly probe?: WorkDirProbe;
 }
 
 export interface WrittenSnapshot {
@@ -107,7 +106,7 @@ function writeLines(file: string, lines: readonly string[]): void {
 
 /** Write a snapshot. Throws `SnapshotIoError` and nothing else; leaves nothing behind in `workDir`. */
 export async function writePrivateSnapshot(input: WriteSnapshotInput): Promise<WrittenSnapshot> {
-  const workDir = assertWorkDir(input.workDir, input.probe);
+  const workDir = assertWorkDir(input.workDir);
   step("writer_not_pinned", () => input.writer.requirePinned(input.pin));
   if (input.records.length === 0) throw new SnapshotIoError("no_records");
   step("records_invalid", () => checkPrivateRecordSet(input.records));
@@ -153,9 +152,12 @@ export async function writePrivateSnapshot(input: WriteSnapshotInput): Promise<W
       }
       built.push({ file: bytes, entry });
     }
-  } finally {
-    rmSync(scratch, { recursive: true, force: true });
+  } catch (error) {
+    // Removal never replaces the error that stopped the write, and says nothing about the contents.
+    removeTree(scratch);
+    throw error;
   }
+  if (!removeTree(scratch)) throw new SnapshotIoError("cleanup_failed");
 
   built.sort((a, b) => codeUnits(a.entry.logical_hash, b.entry.logical_hash));
   const entries = built.map((b, index) => ({ ...b.entry, index }));

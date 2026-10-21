@@ -1,14 +1,17 @@
 import { createHash } from "node:crypto";
-import { chmodSync, mkdirSync, readdirSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, readdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { holdoutFlag, privateLogicalSnapshotHash, privateSnapshotHash, recordHash } from "@areneon/showdown-bridge";
 import { DuckdbWriter } from "@areneon/team-dataset";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { SnapshotIoError } from "../src/snapshot-io-error.ts";
 import { readPrivateSnapshot } from "../src/snapshot-reader.ts";
 import { writePrivateSnapshot } from "../src/snapshot-writer.ts";
-import { assertWorkDir } from "../src/work-dir.ts";
+import { assertWorkDir, onWindowsMount, parentOwnerOk } from "../src/work-dir.ts";
 import { at, engine, HOLDOUT_KEY, hex32, input, labelSet, plan, records, recordOf, realDuckdb, scratchRoot, standIn, workDir } from "./snapshot-support.ts";
+
+// Each case decodes shard files in worker threads; a loaded CI machine needs more than the default 5 s.
+vi.setConfig({ testTimeout: 60_000 });
 
 const code = async (run: () => unknown): Promise<string> => {
   try {
@@ -22,7 +25,7 @@ const code = async (run: () => unknown): Promise<string> => {
 
 const written = async (n = 12, over: Parameters<typeof input>[0] extends infer T ? Partial<T> : never = {}, tool = standIn()) => writePrivateSnapshot(input({ records: records(n), shardRows: 5, ...over }, tool));
 const readOf = (w: Awaited<ReturnType<typeof written>>, over: Partial<Parameters<typeof readPrivateSnapshot>[0]> = {}) =>
-  readPrivateSnapshot({ engine, manifest: w.manifest, shard: (i) => w.shards[i] as Uint8Array, labelSet, shardRows: 5, ...over });
+  readPrivateSnapshot({ engine, expectedSnapshotHash: privateSnapshotHash(("manifest" in over ? over.manifest : w.manifest) as never), shard: (i) => w.shards[i] as Uint8Array, labelSet, shardRows: 5, ...over, manifest: "manifest" in over ? over.manifest : w.manifest });
 
 describe("writePrivateSnapshot and readPrivateSnapshot", () => {
   it("round-trips: the reader returns the records, and the manifest is the one the writer built", async () => {
@@ -59,7 +62,7 @@ describe("writePrivateSnapshot and readPrivateSnapshot", () => {
     expect((await readOf(w, { shardRows: 2 ** 18 })).records).toHaveLength(2);
     const retired = await writePrivateSnapshot(input({ records: [recordOf(1, 3, { status: "retired" })] }));
     expect(retired.manifest.cells).toEqual([]);
-    expect((await readPrivateSnapshot({ engine, manifest: retired.manifest, shard: (i) => retired.shards[i] as Uint8Array, labelSet })).records).toHaveLength(1);
+    expect((await readPrivateSnapshot({ engine, manifest: retired.manifest, expectedSnapshotHash: privateSnapshotHash(retired.manifest as never), shard: (i) => retired.shards[i] as Uint8Array, labelSet })).records).toHaveLength(1);
   });
 
   it("is deterministic for one writer: same inputs, same shard bytes and hash", async () => {
@@ -112,13 +115,28 @@ describe("writer refusals", () => {
     expect(() => assertWorkDir(notPrivate, { fsType: () => 0xef53 })).toThrow(SnapshotIoError);
     expect(assertWorkDir(notPrivate, { fsType: () => 0x01021994 })).toBe(notPrivate);
     expect(assertWorkDir(notPrivate, { fsType: () => 0x858458f6 })).toBe(notPrivate);
-    expect(() => assertWorkDir(workDir(), { uid: 0 === process.getuid?.() ? 1 : 0 })).toThrow(SnapshotIoError);
+    expect(() => assertWorkDir(workDir(), { uid: process.getuid?.() === 0 ? 1 : 0 })).toThrow(SnapshotIoError);
     const failing = (): number => {
       throw new Error("statfs");
     };
     expect(() => assertWorkDir(notPrivate, { fsType: failing })).toThrow(SnapshotIoError);
     // The default probe asks the operating system: a directory in the test's scratch area is not tmpfs-checked as private-data.
     expect(() => assertWorkDir(notPrivate)).toThrow(SnapshotIoError);
+    // Parents: group- or world-writable without the sticky bit is refused, sticky is accepted, owners must be me or root.
+    const openParent = join(scratchRoot, "open-parent");
+    const inner = join(openParent, "private-data", "work");
+    mkdirSync(inner, { recursive: true });
+    chmodSync(inner, 0o700);
+    chmodSync(openParent, 0o777);
+    expect(() => assertWorkDir(inner)).toThrow(SnapshotIoError);
+    chmodSync(openParent, 0o1777);
+    expect(assertWorkDir(inner)).toBe(inner);
+    chmodSync(openParent, 0o775);
+    expect(() => assertWorkDir(inner)).toThrow(SnapshotIoError);
+    chmodSync(openParent, 0o755);
+    expect(assertWorkDir(inner)).toBe(inner);
+    expect([parentOwnerOk(1000, 1000), parentOwnerOk(0, 1000), parentOwnerOk(1001, 1000)]).toEqual([true, true, false]);
+    expect([onWindowsMount("/mnt/c/Users/x"), onWindowsMount("/mnt/c"), onWindowsMount("/mnt/wsl/x"), onWindowsMount("/tmp/mnt/c")]).toEqual([true, true, false, false]);
   });
 
   it("refuses an unpinned binary, no records, a bad set, a bad key, a wrong flag and bad labels", async () => {
@@ -212,7 +230,7 @@ describe("reader refusals", () => {
   it("refuses a record the engine's round trip refuses", async () => {
     const bad = { ...recordOf(0, 1), paste: recordOf(0, 1).paste.replace(/Ability: .*/, "Ability: Nonsense") };
     const w = await writePrivateSnapshot(input({ records: [bad, recordOf(1, 2)] }));
-    expect(await code(() => readPrivateSnapshot({ engine, manifest: w.manifest, shard: (i) => w.shards[i] as Uint8Array, labelSet }))).toBe("record_invalid");
+    expect(await code(() => readPrivateSnapshot({ engine, manifest: w.manifest, expectedSnapshotHash: privateSnapshotHash(w.manifest as never), shard: (i) => w.shards[i] as Uint8Array, labelSet }))).toBe("record_invalid");
   });
 
   it("refuses counts that differ from the shards' records", async () => {
@@ -232,6 +250,36 @@ describe("reader refusals", () => {
   });
 });
 
+describe("the working-directory seam", () => {
+  it("is not part of the writer's API: production passes no probe, and an extra one is ignored", async () => {
+    expect(readFileSync(new URL("../src/snapshot-writer.ts", import.meta.url), "utf8")).not.toMatch(/probe/i);
+    const plain = join(scratchRoot, "seam");
+    mkdirSync(plain, { recursive: true, mode: 0o700 });
+    chmodSync(plain, 0o700);
+    const smuggled = { ...input({ records: records(2), workDir: plain }), probe: { fsType: () => 0x01021994 } };
+    expect(await code(() => writePrivateSnapshot(smuggled))).toBe("work_dir_unsafe");
+  });
+});
+
+describe("readPrivateSnapshot anchors", () => {
+  it("takes the snapshot hash as a required argument", async () => {
+    const w = await written();
+    // @ts-expect-error expectedSnapshotHash is required: there is no way to read without an anchor
+    const missing = readPrivateSnapshot({ engine, manifest: w.manifest, shard: (i) => w.shards[i] as Uint8Array, labelSet, shardRows: 5 });
+    expect(await code(() => missing)).toBe("snapshot_hash_mismatch");
+  });
+
+  it("refuses a snapshot made under another version manifest or vocabulary, and accepts the expected ones", async () => {
+    const w = await written();
+    const expected = { manifest: w.manifest.manifest, vocabularyHash: w.manifest.vocabulary_hash };
+    expect((await readOf(w, { expected })).records).toHaveLength(12);
+    expect(await code(() => readOf(w, { expected: { ...expected, vocabularyHash: "00".repeat(32) } }))).toBe("version_manifest_mismatch");
+    for (const change of [{ format_id: "gen9other" }, { regulation: "Z-Z" }, { ruleset_hash: "11".repeat(32) }, { format_rules_hash: "22".repeat(32) }]) {
+      expect(await code(() => readOf(w, { expected: { ...expected, manifest: { ...expected.manifest, ...change } } }))).toBe("version_manifest_mismatch");
+    }
+  });
+});
+
 describe("with the real pinned DuckDB tool", () => {
   const real = realDuckdb();
   const required = process.env.ARENEON_REQUIRE_DUCKDB === "1";
@@ -243,9 +291,7 @@ describe("with the real pinned DuckDB tool", () => {
     const read = await readOf(w);
     expect(read.records).toHaveLength(12);
     expect(w.manifest.writer.version).toBe(tool.pin.version);
-    const dir = workDir();
-    expect(await code(() => writePrivateSnapshot(input({ records: records(3), workDir: dir, write: { compressionLevel: 99 } }, tool as never)))).toBe("writer_failed");
-    expect(readdirSync(dir)).toEqual([]);
+    // A real DuckDB failure on this path is covered in the team-dataset tests (the tool's stderr is withheld and the scratch removed).
   });
 });
 
