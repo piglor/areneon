@@ -5,6 +5,7 @@ export {
   type RandomLegalState,
   RandomStateError,
 } from "./random-legal.ts";
+export { pendingFirstActor } from "./random-corpus.ts";
 export {
   type Candidate,
   type CandidateSet,

@@ -52,6 +52,12 @@ KNOWN_TAGS = frozenset(
     }
 )  # fmt: skip
 
+# Tags the engine appends to the move line once per call (`attrLastMove`), so a line a second
+# call reaches carries one more, with the targets that call hit (Magic Bounce reflecting a
+# spread move: the bounced move and the original both add theirs to the bounce's line).
+# Display-only; the last value is kept.
+_REPEATABLE_TAGS = frozenset({"spread"})
+
 # Lines whose text may hold `[` or `|`-free prose: no tag parsing.
 _FREE_TEXT = frozenset({"uhtml", "uhtmlchange", "-message", "-hint", "rule", "tier", "error"})
 
@@ -176,7 +182,7 @@ def _parse_line(raw: str) -> _Line:
         name, value = match.groups()
         if name not in KNOWN_TAGS:
             raise UnknownFieldError(f"unknown tag [{name}]", raw)
-        if name in tags and (tags[name] != value or value):
+        if name in tags and name not in _REPEATABLE_TAGS and (tags[name] != value or value):
             # The engine repeats a bare tag ([still], [miss]) when two effects add it.
             raise MalformedLineError(f"duplicate tag [{name}]", raw)
         tags[name] = value
@@ -820,8 +826,10 @@ class _Reducer:
 
     def _copyboost(self, line: _Line) -> None:
         _arity(line, 2, 2)
-        source, target = self._mon(line.args[0], line), self._mon(line.args[1], line)
-        target.boosts = dict(source.boosts)
+        # The pinned engine (Psych Up, Costar) sets the first Pokemon's boosts from the second's,
+        # the reverse of what sim/SIM-PROTOCOL.md says.
+        copier, copied = self._mon(line.args[0], line), self._mon(line.args[1], line)
+        copier.boosts = dict(copied.boosts)
 
     # -- field ---------------------------------------------------------------
 
