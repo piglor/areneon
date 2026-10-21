@@ -3,7 +3,8 @@
 // derivation that made its battle seeds. The schema checks the shape; the rules
 // the contract profile cannot say are checked here, and again by the Python
 // reader (`areneon_ml.loop.league`): the counts agree, and the opponents are
-// sorted and unique.
+// sorted and unique, and the forfeit causes, when present, are sorted, unique
+// and sum to the forfeits.
 
 import { ajvFor } from "@areneon/schema/ajv";
 import leagueRunRecordSchema from "@areneon/schema/contracts/v1/league-run-record.schema.json" with { type: "json" };
@@ -11,6 +12,7 @@ import type { LeagueRunRecord } from "@areneon/schema/types/v1/league-run-record
 import { type Json, jcs } from "./canonical-json.ts";
 import { LEAGUE_SEED_DERIVATION } from "./league-seed.ts";
 import { nodeSha256 } from "./player-channel.ts";
+import type { ForfeitCause } from "./runner.ts";
 import type { TrainingRunConfig } from "./training-run-config.ts";
 import { runConfigHash } from "./training-run-config.ts";
 
@@ -35,6 +37,15 @@ export function readLeagueRunRecord(value: unknown): LeagueRunRecord {
   if (record.opponents.reduce((sum, opponent) => sum + opponent.games, 0) !== record.games) {
     throw new LeagueRunRecordError("the opponents' games must sum to games");
   }
+  const causes = record.forfeit_causes;
+  if (causes !== undefined) {
+    if (causes.some((entry, index) => index > 0 && entry.cause <= (causes[index - 1]?.cause ?? ""))) {
+      throw new LeagueRunRecordError("forfeit_causes must be sorted by cause, each once");
+    }
+    if (causes.reduce((sum, entry) => sum + entry.count, 0) !== record.forfeits) {
+      throw new LeagueRunRecordError("the forfeit causes' counts must sum to forfeits");
+    }
+  }
   return record;
 }
 
@@ -55,7 +66,7 @@ export interface LeagueRunFacts {
   /** The match plan, as `plan.json` holds it. */
   plan: readonly unknown[];
   /** One entry per game: who the pair played, and whether it was played to an end. */
-  games: readonly { opponent: string; outcome: "played" | "forfeit" }[];
+  games: readonly { opponent: string; outcome: "played" | "forfeit"; forfeit?: { cause: ForfeitCause } }[];
 }
 
 /** Build the record of a generation from what it played, and read it back so a bad one cannot leave. */
@@ -64,6 +75,10 @@ export async function buildLeagueRunRecord(facts: LeagueRunFacts): Promise<Leagu
   const counts = new Map<string, number>();
   for (const game of games) counts.set(game.opponent, (counts.get(game.opponent) ?? 0) + 1);
   const played = games.filter((game) => game.outcome === "played").length;
+  // Per-cause totals, sorted by cause; absent when no game forfeited, so a run without forfeits writes the bytes it always did.
+  const byCause = new Map<string, number>();
+  for (const game of games) if (game.forfeit !== undefined) byCause.set(game.forfeit.cause, (byCause.get(game.forfeit.cause) ?? 0) + 1);
+  const forfeit_causes = [...byCause.entries()].sort(([a], [b]) => (a < b ? -1 : 1)).map(([cause, count]) => ({ cause, count }));
   return readLeagueRunRecord({
     schema_version: 1,
     run_id: config.seeds.run_key,
@@ -75,6 +90,7 @@ export async function buildLeagueRunRecord(facts: LeagueRunFacts): Promise<Leagu
     games: games.length,
     played,
     forfeits: games.length - played,
+    ...(games.length > played ? { forfeit_causes } : {}),
     episodes: 2 * played,
     opponents: [...counts.entries()]
       .sort(([a], [b]) => (a < b ? -1 : 1))

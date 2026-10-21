@@ -48,6 +48,7 @@ class LeagueRunRecord:
     forfeits: int
     episodes: int
     opponents: tuple[tuple[str, int], ...]
+    forfeit_causes: tuple[tuple[str, int], ...]
     raw: dict[str, Any]
 
 
@@ -67,6 +68,11 @@ def read_league_run_record(raw: object, config: RunConfig) -> LeagueRunRecord:
         raise LeagueRecordError("opponents must be sorted by opponent_policy_id, each once")
     if sum(games for _, games in opponents) != raw["games"]:
         raise LeagueRecordError("the opponents' games must sum to games")
+    causes = tuple((c["cause"], c["count"]) for c in raw.get("forfeit_causes", []))
+    if not all(a[0] < b[0] for a, b in itertools.pairwise(causes)):
+        raise LeagueRecordError("forfeit_causes must be sorted by cause, each once")
+    if "forfeit_causes" in raw and sum(count for _, count in causes) != raw["forfeits"]:
+        raise LeagueRecordError("the forfeit causes' counts must sum to forfeits")
     if raw["run_id"] != config.run_key:
         raise LeagueRecordError(f"run_id {raw['run_id']} is not the config's run key")
     if raw["run_config_hash"] != config.hash:
@@ -82,6 +88,7 @@ def read_league_run_record(raw: object, config: RunConfig) -> LeagueRunRecord:
         forfeits=raw["forfeits"],
         episodes=raw["episodes"],
         opponents=opponents,
+        forfeit_causes=causes,
         raw=raw,
     )
 

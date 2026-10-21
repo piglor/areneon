@@ -406,6 +406,23 @@ def test_a_record_that_counts_other_forfeits_than_the_summary_is_refused(tmp_pat
         make_loop(tmp_path, player=SpoiledLeague("league-run.json", forfeit)).run(1)
 
 
+def test_a_record_that_counts_other_forfeit_causes_than_the_summary_is_refused(
+    tmp_path: Path,
+) -> None:
+    def record_says_latency(record: dict[str, Any]) -> None:
+        record.update(
+            played=1,
+            forfeits=1,
+            episodes=2,
+            forfeit_causes=[{"cause": "latency_overrun", "count": 1}],
+        )
+
+    player = SpoiledLeague("league-run.json", record_says_latency)
+    player.change = lambda summary, _set: summary.update(forfeits=1, forfeit_causes={"crash": 1})
+    with pytest.raises(LoopError, match="other forfeit causes"):
+        make_loop(tmp_path, player=player).run(1)
+
+
 def test_a_training_set_that_is_not_the_one_reported_is_refused(tmp_path: Path) -> None:
     player = FakePlayer(lambda summary, _set: summary.update(training_set_hash="0" * 64))
     with pytest.raises(LoopError, match="differs from the hash"):

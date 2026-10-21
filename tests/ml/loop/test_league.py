@@ -56,6 +56,12 @@ def test_the_valid_samples_are_read_and_the_hash_is_the_configs() -> None:
     assert (record.run_id, record.generation, record.games, record.played) == ("tiny-run", 1, 6, 5)
     assert record.opponents[1] == ("random-legal@tiny", 2)
     assert read_league_run_record(raw("valid/self-play-only.json"), tiny_config()).forfeits == 0
+    assert record.forfeit_causes == (("crash", 1),)
+    assert (
+        read_league_run_record(raw("valid/self-play-only.json"), tiny_config()).forfeit_causes == ()
+    )
+    mixed = read_league_run_record(raw("valid/mixed-causes.json"), tiny_config())
+    assert mixed.forfeit_causes == (("crash", 1), ("latency_overrun", 2))
 
 
 @pytest.mark.parametrize(
@@ -66,6 +72,9 @@ def test_the_valid_samples_are_read_and_the_hash_is_the_configs() -> None:
         ("unsorted-opponents.json", "sorted by opponent_policy_id"),
         ("duplicate-opponent.json", "sorted by opponent_policy_id"),
         ("opponents-do-not-sum.json", "must sum to games"),
+        ("causes-do-not-sum.json", "causes' counts must sum to forfeits"),
+        ("unsorted-causes.json", "forfeit_causes must be sorted"),
+        ("duplicate-cause.json", "forfeit_causes must be sorted"),
     ],
 )
 def test_the_reader_rules_the_profile_cannot_say(name: str, message: str) -> None:
@@ -75,7 +84,7 @@ def test_the_reader_rules_the_profile_cannot_say(name: str, message: str) -> Non
 
 
 def test_every_reader_invalid_sample_is_checked_above() -> None:
-    assert len(list((RECORDS / "reader-invalid").iterdir())) == 5
+    assert len(list((RECORDS / "reader-invalid").iterdir())) == 8
 
 
 @pytest.mark.parametrize("name", sorted(p.name for p in (RECORDS / "invalid").iterdir()))

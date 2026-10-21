@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:areneon:schema:contracts:v1:league-run-record",
   "title": "LeagueRunRecord",
-  "description": "What one generation of a league run played (ADR-009 section 3, ADR-010 section 4): the run it belongs to, the TrainingRunConfig it ran under, the seed derivation that made every battle seed and team draw, the hash of the match plan, the frozen pair and counts of the games by opponent. Written by the simulator side next to the generation's Episodes and referenced only by the SHA-256 of its JCS bytes. The record names the derivation; the seeds themselves are recomputed from the run key and the game index, and only the Episodes' collection records keep them. Counts agree and opponents are sorted and unique (reader rules: the profile has no arithmetic and no uniqueItems).",
+  "description": "What one generation of a league run played (ADR-009 section 3, ADR-010 section 4): the run it belongs to, the TrainingRunConfig it ran under, the seed derivation that made every battle seed and team draw, the hash of the match plan, the frozen pair and counts of the games by opponent. Written by the simulator side next to the generation's Episodes and referenced only by the SHA-256 of its JCS bytes. The record names the derivation; the seeds themselves are recomputed from the run key and the game index, and only the Episodes' collection records keep them. Counts agree, opponents are sorted and unique and the forfeit causes are sorted, unique and sum to forfeits (reader rules: the profile has no arithmetic and no uniqueItems).",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -71,6 +71,14 @@
       "minimum": 0,
       "maximum": 9007199254740991
     },
+    "forfeit_causes": {
+      "description": "Forfeits by cause, sorted by cause, each cause once, each count at least 1; the counts sum to forfeits. Absent when no game was forfeited. Added within v1 (ADR-008 section 3, ADR-017 slice 2): a reader older than the field rejects a record that carries it.",
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/ForfeitCauseCount"
+      }
+    },
     "episodes": {
       "description": "Episodes written: two per played game.",
       "type": "integer",
@@ -86,6 +94,30 @@
     }
   },
   "$defs": {
+    "ForfeitCauseCount": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "cause",
+        "count"
+      ],
+      "properties": {
+        "cause": {
+          "description": "Why the policy failed, as the harness classifies a forfeit (runner.ts ForfeitCause).",
+          "enum": [
+            "crash",
+            "invalid_reply",
+            "latency_overrun",
+            "out_of_memory"
+          ]
+        },
+        "count": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        }
+      }
+    },
     "Opponent": {
       "type": "object",
       "additionalProperties": false,

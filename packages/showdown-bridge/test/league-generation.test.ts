@@ -253,8 +253,12 @@ describe("playGeneration", () => {
     const dir = mkdtempSync(join(tmpdir(), "forfeit-reason-"));
     writeGeneration(dir, partial);
     const summary = JSON.parse(readFileSync(join(dir, "generation.json"), "utf8"));
+    const written = readLeagueRunRecord(JSON.parse(readFileSync(join(dir, "league-run.json"), "utf8")));
     rmSync(dir, { recursive: true, force: true });
     expect(summary).toMatchObject({ forfeits: 1, forfeit_causes: { crash: 1 } });
+    // The record's totals are the summary's counts, as a sorted list.
+    expect(written.forfeit_causes).toEqual(Object.entries(summary.forfeit_causes).map(([cause, count]) => ({ cause, count })));
+    expect(partial.run_record.forfeit_causes).toEqual([{ cause: "crash", count: 1 }]);
   });
 });
 
@@ -290,6 +294,7 @@ describe("writeGeneration", () => {
     expect(read("training-set.json")).toBe(`${jcs(result.set as unknown as Json)}\n`);
     const summary = JSON.parse(read("generation.json")) as Record<string, unknown>;
     expect(summary).not.toHaveProperty("forfeit_causes");
+    expect(result.run_record).not.toHaveProperty("forfeit_causes");
     expect(summary).toMatchObject({ schema_version: 1, generation: 2, forfeits: 0, training_set_hash: result.training_set_hash, examples: result.set.examples });
     expect(read("generation.json")).toBe(`${jcs(summary as Json)}\n`);
     expect(JSON.parse(read("plan.json"))).toHaveLength(6);

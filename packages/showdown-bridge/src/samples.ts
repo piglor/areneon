@@ -413,6 +413,7 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     games: 6,
     played: 5,
     forfeits: 1,
+    forfeit_causes: [{ cause: "crash", count: 1 }],
     episodes: 10,
     opponents: [
       { opponent_policy_id: pairId, games: 4 },
@@ -455,8 +456,16 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
       r.games = 4;
       r.played = 4;
       r.forfeits = 0;
+      delete r.forfeit_causes;
       r.episodes = 8;
       r.opponents = [{ opponent_policy_id: pairId, games: 4 }];
+    }),
+    "league-run-record/mixed-causes": leagueRunWith((r) => {
+      r.games = 8;
+      r.played = 5;
+      r.forfeits = 3;
+      r.forfeit_causes = [{ cause: "crash", count: 1 }, { cause: "latency_overrun", count: 2 }];
+      r.opponents = [{ opponent_policy_id: pairId, games: 6 }, { opponent_policy_id: "random-legal@tiny", games: 2 }];
     }),
     "training-example/preview": exampleOf("preview"),
     "training-example/battle": exampleOf("battle"),
@@ -519,6 +528,19 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "league-run-record/episodes-not-two-per-game": leagueRunWith((r) => (r.episodes = 9)),
     "league-run-record/unsorted-opponents": leagueRunWith((r) => (r.opponents = [...(leagueRun.opponents as unknown[])].reverse())),
     "league-run-record/duplicate-opponent": leagueRunWith((r) => (r.opponents = [{ opponent_policy_id: pairId, games: 3 }, { opponent_policy_id: pairId, games: 3 }])),
+    "league-run-record/causes-do-not-sum": leagueRunWith((r) => (r.forfeit_causes = [{ cause: "crash", count: 2 }])),
+    "league-run-record/unsorted-causes": leagueRunWith((r) => {
+      r.games = 8;
+      r.forfeits = 3;
+      r.forfeit_causes = [{ cause: "latency_overrun", count: 2 }, { cause: "crash", count: 1 }];
+      r.opponents = [{ opponent_policy_id: pairId, games: 6 }, { opponent_policy_id: "random-legal@tiny", games: 2 }];
+    }),
+    "league-run-record/duplicate-cause": leagueRunWith((r) => {
+      r.forfeits = 2;
+      r.games = 7;
+      r.forfeit_causes = [{ cause: "crash", count: 1 }, { cause: "crash", count: 1 }];
+      r.opponents = [{ opponent_policy_id: pairId, games: 5 }, { opponent_policy_id: "random-legal@tiny", games: 2 }];
+    }),
     "league-run-record/opponents-do-not-sum": leagueRunWith((r) => (r.opponents = [{ opponent_policy_id: pairId, games: 4 }, { opponent_policy_id: "random-legal@tiny", games: 1 }])),
     "checkpoint-record/duplicate-training-sets": recordWith((r) => (r.training_set_hashes = [hexOf("5"), hexOf("5")])),
     "checkpoint-record/parent-is-self": recordWith((r) => (r.parent = r.checkpoint_id)),
@@ -597,6 +619,9 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "checkpoint-record/public-class": recordWith((r) => (r.data_class = "public")),
     "checkpoint-record/blank-lineage": recordWith((r) => (r.lineage_id = "")),
     "checkpoint-record/no-learner-state": recordWith((r) => delete r.learner_state_hash),
+    "league-run-record/unknown-forfeit-cause": leagueRunWith((r) => (r.forfeit_causes = [{ cause: "timeout", count: 1 }])),
+    "league-run-record/empty-forfeit-causes": leagueRunWith((r) => (r.forfeit_causes = [])),
+    "league-run-record/zero-cause-count": leagueRunWith((r) => (r.forfeit_causes = [{ cause: "crash", count: 0 }])),
     "league-run-record/extra-field": leagueRunWith((r) => (r.notes = "x")),
     "league-run-record/fractional-games": leagueRunWith((r) => (r.games = 6.5)),
     "league-run-record/zero-generation": leagueRunWith((r) => (r.generation = 0)),
