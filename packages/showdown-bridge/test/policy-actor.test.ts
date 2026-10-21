@@ -270,6 +270,18 @@ describe("failures reach guardActor classified (ADR-010 section 2)", () => {
       await expect(policyActor(optionsFor(recorder(), "p1", { team: foreign }))(asked, context)).rejects.toThrow(PolicyProtocolError);
     });
 
+    it("refuses a team whose stats are not the Team Preview request's, as a harness fault, and asks the given engine", async () => {
+      const asked = await request();
+      const context = await contextFor();
+      const mirror = structuredClone(team) as { team: { evs: { atk: number } }[] };
+      (mirror.team[2] as { evs: { atk: number } }).evs.atk += 1;
+      await expect(policyActor(optionsFor(recorder(), "p1", { team: mirror as unknown as PrivateTeamSpec }))(asked, context)).rejects.toThrow(
+        /cannot observe the request: the stats of the team's Pokémon at position 2/,
+      );
+      const noPreview = { ...engine, sim: { ...engine.sim, Battle: class { sides = []; setPlayer(): void {} } } } as unknown as typeof engine;
+      await expect(policyActor(optionsFor(recorder(), "p1", { engine: noPreview }))(asked, context)).rejects.toThrow(/sent no Team Preview/);
+    });
+
     it("reports a request the enumerator does not know as an unsupported candidate", async () => {
       const asked = await request();
       const odd = { ...asked, request: { ...(asked.request as object), mysteryField: 1 } } as RequestRecord;
