@@ -1,6 +1,8 @@
 import { ajvFor } from "@areneon/schema/ajv";
 import engineRequestSchema from "@areneon/schema/contracts/v1/engine-request.schema.json" with { type: "json" };
-import { type Json, requestHash } from "./request-identity.ts";
+import type { Json } from "./canonical-json.ts";
+import { nodeSha256Hex } from "./request-identity.ts";
+import { requestIdentityBytes } from "./request-bytes.ts";
 
 export type JsonObject = { [key: string]: Json };
 
@@ -17,6 +19,12 @@ export interface DecodedRequest {
   preview?: { teamSize: number; maxChosenTeamSize: number };
   request: JsonObject;
 }
+
+/** A request validated and decoded, not yet hashed (`decodeRequest` adds `request_hash`). */
+export type ParsedRequest = Omit<DecodedRequest, "request_hash"> & {
+  /** The bytes `request_hash` is the SHA-256 of (`requestIdentityBytes`). */
+  identity_bytes: Uint8Array;
+};
 
 export class RequestDecodeError extends Error {
   override name = "RequestDecodeError";
@@ -43,11 +51,12 @@ function phaseOf(request: JsonObject): RequestPhase {
 }
 
 /**
- * Decode the JSON body of one `|request|` line. The body is validated against
- * the engine-mirror `EngineRequest` schema before `request_hash` is computed
- * (ADR-008 §4), so only a request of the pinned engine's shape is hashed.
+ * Parse the JSON body of one `|request|` line. Pure: it validates the body
+ * against the engine-mirror `EngineRequest` schema (ADR-008 §4), decodes the
+ * phase and returns the bytes a request identity hashes, and it hashes
+ * nothing, so it runs wherever a `Sha256` port does.
  */
-export function decodeRequest(body: string): DecodedRequest {
+export function parseRequest(body: string): ParsedRequest {
   const parsed = JSON.parse(body) as Json;
   if (!validEngineRequest(parsed)) {
     const why = (validEngineRequest.errors ?? [])
@@ -60,19 +69,25 @@ export function decodeRequest(body: string): DecodedRequest {
   }
   const request = parsed as JsonObject;
   const side = request.side as { id: string; pokemon: Json[] };
-  const decoded: DecodedRequest = {
+  const result: ParsedRequest = {
     phase: phaseOf(request),
     player: side.id,
-    request_hash: requestHash(request),
+    identity_bytes: requestIdentityBytes(request),
     request,
   };
-  if (typeof request.rqid === "number") decoded.rqid = request.rqid;
-  if (decoded.phase === "preview") {
+  if (typeof request.rqid === "number") result.rqid = request.rqid;
+  if (result.phase === "preview") {
     const max = request.maxChosenTeamSize;
     if (typeof max !== "number") {
       throw new RequestDecodeError("preview request has no maxChosenTeamSize");
     }
-    decoded.preview = { teamSize: side.pokemon.length, maxChosenTeamSize: max };
+    result.preview = { teamSize: side.pokemon.length, maxChosenTeamSize: max };
   }
-  return decoded;
+  return result;
+}
+
+/** `parseRequest`, then `request_hash` on Node (the A1 and A2 Node path). */
+export function decodeRequest(body: string): DecodedRequest {
+  const { identity_bytes, ...parsed } = parseRequest(body);
+  return { ...parsed, request_hash: nodeSha256Hex(identity_bytes) };
 }
