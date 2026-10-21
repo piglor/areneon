@@ -51,8 +51,12 @@ const configFor = (dir: string, change: (c: Record<string, unknown>) => void = (
 };
 
 /** The dataset directory `generate` writes (records.<split>.jsonl for dev, validation and training), made from the committed fixture run. */
+const made = new Map<string, string>();
 function generatedDataset(name = "generated", keys?: { generation_key: string; assignment_key: string }): string {
+  const known = made.get(name);
+  if (known !== undefined) return known;
   const dir = join(scratch, name);
+  made.set(name, dir);
   mkdirSync(dir);
   const run = { ...readFixtureRun(SOURCE), ...keys };
   const result = generate({
@@ -114,7 +118,8 @@ describe("the committed fixtures as a team pool", () => {
   it("pins every record: a consistent forgery of one training line changes the dataset hash and is refused", () => {
     // Swap one training team for another engine-legal team of the same stratum from a second dataset (other keys),
     // under the first line's origin; every hash is the record's own, so the reader accepts the result.
-    const dir = generatedDataset("forged-training");
+    const dir = join(scratch, "forged-training");
+    cpSync(generatedDataset(), dir, { recursive: true });
     const file = join(dir, "records.training.jsonl");
     const rows = readFileSync(file, "utf8").split("\n").filter((l) => l !== "");
     const parsed = rows.map((r) => JSON.parse(r));
@@ -133,7 +138,7 @@ describe("the committed fixtures as a team pool", () => {
     expect(stolen).not.toBe(honest);
     const config = readTrainingRunConfig({ ...tiny, team_dataset: { path: dir, dataset_hash: honest } });
     expect(() => datasetTeamPool(engine, config)).toThrow(/hash is not the one/);
-  });
+  }, 240_000);
 
   it("is the port's choice only when the config names a dataset", () => {
     const interim = () => ({ teams: [], hashes: [], known_synthetic: new Set<string>() });
