@@ -35,7 +35,7 @@ export {
   trainingPool,
   type VerifiedDataset,
 } from "./dataset-reader.ts";
-export { datasetPoolSource, datasetTeamPool } from "./loop-pool.ts";
+export { datasetPoolDetail, datasetPoolSource, datasetTeamPool } from "./loop-pool.ts";
 export {
   committedDatasetHashes,
   differing,
@@ -77,3 +77,4 @@ export { readRevealDir, REVEAL_FILES, retireSealedSet, revealHash, revealOf, Sea
 export { assertPrivateStore, SealedStoreError } from "./sealed-store.ts";
 export { runSealedCli, type SealedCliIo } from "./sealed-command.ts";
 export * from "./shards/index.ts";
+export { listPool, type ListedSet, type ListedTeam, type PoolListing } from "./pool-listing.ts";

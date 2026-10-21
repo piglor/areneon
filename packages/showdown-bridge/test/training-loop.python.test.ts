@@ -163,6 +163,27 @@ describe.skipIf(!existsSync(PYTHON) && process.env.ARENEON_REQUIRE_PYTHON_WORKER
     }
   });
 
+  it("writes the files the training-data inspector reads with exactly the key sets it pins (fixtures/loop/inspector-run)", () => {
+    // The inspector's strict readers (ml/areneon_ml/inspector/readers.py) are tested against the committed fixture run,
+    // whose key sets tests/ml/inspector/test_readers.py ties to the readers. A change to the loop's writer shows here.
+    const fixture = join(ROOT, "fixtures/loop/inspector-run");
+    const keys = (value: unknown): string[] => Object.keys(value as object).sort();
+    const shape = (root: string): Record<string, unknown> => {
+      const plan = json<Record<string, unknown>[]>(root, "generations", gen(1), "plan.json");
+      const generation = json<{ games: Record<string, unknown>[]; manifest: unknown }>(root, "generations", gen(1), "generation.json");
+      return {
+        plan: [...new Set(plan.map((entry) => keys(entry).join()))],
+        teams: [...new Set(plan.map((entry) => keys(entry.teams).join()))],
+        generation: keys(generation),
+        games: [...new Set(generation.games.map((game) => keys(game).join()))],
+        manifest: keys(generation.manifest),
+        teamSet: keys(json(root, "generations", gen(1), "team-set.json")),
+        teamSetG0: keys(json(root, "generations", gen(0), "team-set.json")),
+      };
+    };
+    expect(shape(uninterrupted)).toEqual(shape(fixture));
+  });
+
   it("reproduces: the same config gives the same generation 1, byte for byte, in an independent run", () => {
     for (const { dir: killed } of Object.values(kills)) {
       expect(read(killed, "generations", gen(1), "manifest.json")).toBe(read(uninterrupted, "generations", gen(1), "manifest.json"));
