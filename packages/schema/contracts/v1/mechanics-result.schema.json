@@ -1,0 +1,620 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:areneon:schema:contracts:v1:mechanics-result",
+  "title": "MechanicsResult",
+  "description": "The probe's answer to one MechanicsQuery (ADR-016 section 2), tagged by kind: computed (the engine's own values), unsupported (the query is outside the mechanics config's scope or the probe cannot answer it exactly: a closed reason and a position) or refused (a set the engine does not accept: a closed code and the set's position). No field holds free text from the input; the validator's messages go to the caller's stderr, never into a result. The result's data_class equals the query's. Integers only. The same showdown_commit, format_rules_hash, mechanics_config_hash, adapter_format and query give byte-identical results (repeatability class exact). A query that fails the MechanicsQuery schema has no result.",
+  "type": "object",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/Computed"
+    },
+    {
+      "$ref": "#/$defs/Unsupported"
+    },
+    {
+      "$ref": "#/$defs/Refused"
+    }
+  ],
+  "discriminator": {
+    "propertyName": "kind"
+  },
+  "$defs": {
+    "VersionManifest": {
+      "description": "Replay identity of a battle (ADR-003, ADR-007): the pinned engine commit, the format, and the hashes of the engine ruleset and of Areneon's own format rules.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "showdown_commit",
+        "format_id",
+        "regulation",
+        "ruleset_hash",
+        "format_rules_hash"
+      ],
+      "properties": {
+        "showdown_commit": {
+          "description": "The pinned engine commit.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "format_id": {
+          "type": "string",
+          "pattern": "^[a-z0-9]+$"
+        },
+        "regulation": {
+          "type": "string",
+          "minLength": 1
+        },
+        "ruleset_hash": {
+          "description": "SHA-256 of the canonical engine ruleset.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "format_rules_hash": {
+          "description": "SHA-256 of Areneon's format rules record (ADR-007).",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "Computed": {
+      "description": "Values the engine computed.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "kind",
+        "data_class",
+        "query_hash",
+        "manifest",
+        "mechanics_config_hash",
+        "adapter_format",
+        "gap_ids",
+        "answer"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": 1
+        },
+        "kind": {
+          "const": "computed"
+        },
+        "data_class": {
+          "description": "Equal to the query's data_class.",
+          "enum": [
+            "synthetic",
+            "private"
+          ]
+        },
+        "query_hash": {
+          "description": "SHA-256 of the query's JCS bytes.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "manifest": {
+          "$ref": "#/$defs/VersionManifest"
+        },
+        "mechanics_config_hash": {
+          "description": "SHA-256 of the JCS bytes of the mechanics config the probe used.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "adapter_format": {
+          "description": "A constant of the probe, bumped when it changes how it reads a value from the engine (as ENCODER_FORMAT is for the encoder).",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "gap_ids": {
+          "description": "The gap ledger rows the result depends on, sorted and unique (reader rule).",
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$"
+          }
+        },
+        "answer": {
+          "description": "The engine's values, tagged by the query kind.",
+          "type": "object",
+          "oneOf": [
+            {
+              "$ref": "#/$defs/StatsAnswer"
+            },
+            {
+              "$ref": "#/$defs/SpeedOrderAnswer"
+            },
+            {
+              "$ref": "#/$defs/DamageAnswer"
+            }
+          ],
+          "discriminator": {
+            "propertyName": "kind"
+          }
+        }
+      }
+    },
+    "Unsupported": {
+      "description": "The query is outside what the probe answers exactly; nothing is approximated.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "kind",
+        "data_class",
+        "query_hash",
+        "manifest",
+        "mechanics_config_hash",
+        "adapter_format",
+        "gap_ids",
+        "reason",
+        "position"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": 1
+        },
+        "kind": {
+          "const": "unsupported"
+        },
+        "data_class": {
+          "description": "Equal to the query's data_class.",
+          "enum": [
+            "synthetic",
+            "private"
+          ]
+        },
+        "query_hash": {
+          "description": "SHA-256 of the query's JCS bytes.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "manifest": {
+          "$ref": "#/$defs/VersionManifest"
+        },
+        "mechanics_config_hash": {
+          "description": "SHA-256 of the JCS bytes of the mechanics config the probe used.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "adapter_format": {
+          "description": "A constant of the probe, bumped when it changes how it reads a value from the engine (as ENCODER_FORMAT is for the encoder).",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "gap_ids": {
+          "description": "The gap ledger rows the result depends on, sorted and unique (reader rule).",
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$"
+          }
+        },
+        "reason": {
+          "description": "query_kind: the kind is not in the mechanics config's scope. scenario_rule_table: the engine's rule tables differ from the config's scenario. random_effect: the engine drew a random number the probe does not expect.",
+          "enum": [
+            "query_kind",
+            "random_effect",
+            "scenario_rule_table"
+          ]
+        },
+        "position": {
+          "description": "The index of the set, action or Pokemon the reason names; null when it names the query as a whole.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 15
+        }
+      }
+    },
+    "Refused": {
+      "description": "A set the engine does not accept.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "kind",
+        "data_class",
+        "query_hash",
+        "manifest",
+        "mechanics_config_hash",
+        "adapter_format",
+        "gap_ids",
+        "code",
+        "position"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": 1
+        },
+        "kind": {
+          "const": "refused"
+        },
+        "data_class": {
+          "description": "Equal to the query's data_class.",
+          "enum": [
+            "synthetic",
+            "private"
+          ]
+        },
+        "query_hash": {
+          "description": "SHA-256 of the query's JCS bytes.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "manifest": {
+          "$ref": "#/$defs/VersionManifest"
+        },
+        "mechanics_config_hash": {
+          "description": "SHA-256 of the JCS bytes of the mechanics config the probe used.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "adapter_format": {
+          "description": "A constant of the probe, bumped when it changes how it reads a value from the engine (as ENCODER_FORMAT is for the encoder).",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "gap_ids": {
+          "description": "The gap ledger rows the result depends on, sorted and unique (reader rule).",
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$"
+          }
+        },
+        "code": {
+          "description": "invalid_set: the set is not the engine's canonical PokePaste of one Pokemon, or the pinned validator refuses it in the format.",
+          "enum": [
+            "invalid_set"
+          ]
+        },
+        "position": {
+          "description": "The index of the refused set in the query (stats: 0; speed_order: the sides' Pokemon in order; damage: attacker 0, defender 1).",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 15
+        }
+      }
+    },
+    "StatsAnswer": {
+      "description": "The six stats at the format's level.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "stats"
+      ],
+      "properties": {
+        "kind": {
+          "const": "stats"
+        },
+        "stats": {
+          "$ref": "#/$defs/Stats"
+        }
+      }
+    },
+    "Stats": {
+      "description": "The engine's own values: maximum HP and the five stats.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "hp",
+        "atk",
+        "def",
+        "spa",
+        "spd",
+        "spe"
+      ],
+      "properties": {
+        "hp": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 99999
+        },
+        "atk": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 99999
+        },
+        "def": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 99999
+        },
+        "spa": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 99999
+        },
+        "spd": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 99999
+        },
+        "spe": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 99999
+        }
+      }
+    },
+    "SpeedOrderAnswer": {
+      "description": "The turn order of the declared actions.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "order_basis",
+        "actions",
+        "groups"
+      ],
+      "properties": {
+        "kind": {
+          "const": "speed_order"
+        },
+        "order_basis": {
+          "description": "turn_start: the order at the start of the turn; speed changes during the turn are not modelled.",
+          "const": "turn_start"
+        },
+        "actions": {
+          "description": "The query's actions, in query order.",
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 4,
+          "items": {
+            "$ref": "#/$defs/ActionOrder"
+          }
+        },
+        "groups": {
+          "description": "Tie groups in execution order: each lists the indices into actions of the actions the engine orders exactly equally (their order among themselves is a draw and is never sampled). A Mega Evolution is its own group, before any move.",
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 4,
+          "items": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 4,
+            "items": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 3
+            }
+          }
+        }
+      }
+    },
+    "ActionOrder": {
+      "description": "One action's keys in the engine's ordering.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "side",
+        "position",
+        "mega",
+        "order",
+        "priority",
+        "speed"
+      ],
+      "properties": {
+        "side": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "position": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "mega": {
+          "type": "boolean"
+        },
+        "order": {
+          "description": "The engine's action order value (lower acts first).",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9999
+        },
+        "priority": {
+          "type": "integer",
+          "minimum": -9999,
+          "maximum": 9999
+        },
+        "speed": {
+          "description": "The action speed the engine computes.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 99999
+        }
+      }
+    },
+    "DamageAnswer": {
+      "description": "Two 16-roll damage vectors, the crit chance, the defender's HP and the KO counts.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "no_crit",
+        "crit",
+        "crit_chance",
+        "hp_current",
+        "hp_max",
+        "ko"
+      ],
+      "properties": {
+        "kind": {
+          "const": "damage"
+        },
+        "no_crit": {
+          "$ref": "#/$defs/Rolls"
+        },
+        "crit": {
+          "$ref": "#/$defs/Rolls"
+        },
+        "crit_chance": {
+          "$ref": "#/$defs/CritChance"
+        },
+        "hp_current": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 99999
+        },
+        "hp_max": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 99999
+        },
+        "ko": {
+          "$ref": "#/$defs/KoCounts"
+        }
+      }
+    },
+    "Rolls": {
+      "description": "Damage for each random roll 0 to 15, as the engine's getDamage returns it: before the HP clamp and before damage-time effects.",
+      "type": "array",
+      "minItems": 16,
+      "maxItems": 16,
+      "items": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 99999
+      }
+    },
+    "CritChance": {
+      "description": "always: the move always crits. never: the engine makes no crit draw or cancels the crit. chance: the engine's one randomChance call, exactly as passed.",
+      "type": "object",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/CritAlways"
+        },
+        {
+          "$ref": "#/$defs/CritNever"
+        },
+        {
+          "$ref": "#/$defs/CritRandom"
+        }
+      ],
+      "discriminator": {
+        "propertyName": "kind"
+      }
+    },
+    "CritAlways": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind"
+      ],
+      "properties": {
+        "kind": {
+          "const": "always"
+        }
+      }
+    },
+    "CritNever": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind"
+      ],
+      "properties": {
+        "kind": {
+          "const": "never"
+        }
+      }
+    },
+    "CritRandom": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "numerator",
+        "denominator"
+      ],
+      "properties": {
+        "kind": {
+          "const": "chance"
+        },
+        "numerator": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9999
+        },
+        "denominator": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9999
+        }
+      }
+    },
+    "KoCounts": {
+      "description": "counts: integers, never combined into a probability. unsupported: the defender holds an item or ability on the config's ko_blockers list, so no count is given.",
+      "type": "object",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/KoCountsGiven"
+        },
+        {
+          "$ref": "#/$defs/KoUnsupported"
+        }
+      ],
+      "discriminator": {
+        "propertyName": "kind"
+      }
+    },
+    "KoCountsGiven": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "ohko_no_crit",
+        "ohko_crit",
+        "thko_no_crit"
+      ],
+      "properties": {
+        "kind": {
+          "const": "counts"
+        },
+        "ohko_no_crit": {
+          "description": "Rolls of 16 whose damage is at least the defender's current HP.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 16
+        },
+        "ohko_crit": {
+          "description": "The same with a crit.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 16
+        },
+        "thko_no_crit": {
+          "description": "Ordered pairs of two independent rolls (of 256) whose sum is at least that HP, no crit on either hit and the same damage vector for both.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 256
+        }
+      }
+    },
+    "KoUnsupported": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "reason"
+      ],
+      "properties": {
+        "kind": {
+          "const": "unsupported"
+        },
+        "reason": {
+          "const": "ko_state_change"
+        }
+      }
+    }
+  }
+}

@@ -3,6 +3,21 @@
   "gap_id": "damage-formula",
   "area": "Damage formula",
   "status": "unverified",
-  "description": "Damage formula and rounding. These are covered by the calculator work, not by this pin.",
-  "evidence": []
+  "description": "The pin has its own Champions damage formula: the champions mod overrides `modifyDamage` (spread modifier, weather, critical hit, the 16-step random factor, STAB, type effectiveness, burn and final modifiers; screens come from the base move data). No in-game observation confirms the values yet, so the formula is the engine's, not the game's.",
+  "evidence": [
+    {
+      "kind": "engine",
+      "path": "data/mods/champions/scripts.ts",
+      "symbols": [
+        "modifyDamage"
+      ]
+    },
+    {
+      "kind": "engine",
+      "path": "sim/battle-actions.ts",
+      "symbols": [
+        "getDamage"
+      ]
+    }
+  ]
 }

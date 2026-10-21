@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "adapter_format": 1,
+  "data_class": "synthetic",
+  "query_hash": "735c85d1a935af192fa022d8336c6f03603500831cc621f47d6280fb530fdaac",
+  "manifest": {
+    "showdown_commit": "7244fe8e28fa8bc4d0809ae30d183c608b62bb2b",
+    "format_id": "gen9championsvgc2026regmc",
+    "regulation": "M-C",
+    "ruleset_hash": "4dd1f039bbcc6156e08c434972beae2370dc5fe8c9c6a263da7383c3247b68f3",
+    "format_rules_hash": "549cd2aa97324be093c567324676d46a5eff19d6b0c9d8491c483dab746d5dcc"
+  },
+  "mechanics_config_hash": "83ddcfd5d9c0f2fe9f597eab6d9d5da7d393730c647506c6b28d3ddd80322bc9",
+  "gap_ids": [
+    "level",
+    "stat-points"
+  ],
+  "kind": "refused",
+  "code": "invalid_set",
+  "position": 0,
+  "message": "Venusaur has more than 32 Stat Points in HP."
+}
