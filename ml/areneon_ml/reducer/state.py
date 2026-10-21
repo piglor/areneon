@@ -38,6 +38,9 @@ class PokemonState:
     boosts: dict[str, int] = field(default_factory=zero_boosts)
     volatiles: set[str] = field(default_factory=set)
     moves_revealed: list[str] = field(default_factory=list)
+    # The move list the Pokemon returns to on switching out: set when Transform replaces the
+    # current one (not part of `to_dict`: it is bookkeeping, not an observation).
+    moves_base: list[str] | None = None
     item: str | None = None
     item_known: bool = False
     item_lost: bool = False

@@ -757,6 +757,8 @@ class _Reducer:
         mon.volatiles = set()
         mon.temp_species = None
         mon.ability_suppressed = False
+        if mon.moves_base is not None:  # Transform ends with the stay on the field
+            mon.moves_revealed, mon.moves_base = mon.moves_base, None
 
     def _detailschange(self, line: _Line) -> None:
         _arity(line, 2, 3)
@@ -1061,6 +1063,13 @@ class _Reducer:
         target = self._mon(line.args[1], line)
         mon.temp_species = target.temp_species or target.species
         mon.volatiles.add("transform")
+        # The engine replaces the whole move list with the target's (and puts it back on
+        # switching out), so the moves shown so far are not the ones it has now; what it
+        # uses from here on is. The target's own list is not copied: the log does not say
+        # which of its moves a copy keeps visible.
+        if mon.moves_base is None:
+            mon.moves_base = mon.moves_revealed
+        mon.moves_revealed = []
 
     # -- actions and hit points ----------------------------------------------
 

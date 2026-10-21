@@ -4,7 +4,7 @@ import { interimPoolSource, type PokemonSet, readTrainingRunConfig } from "@aren
 import { describe, expect, it } from "vitest";
 import { enumerateCandidates, type RequestRecord } from "@areneon/showdown-bridge";
 import { caseSpec, loadCorpus, replayCase } from "../../showdown-bridge/src/choice-corpus.ts";
-import { parseSweepArgs, playSweepBattle, restrictPool, SWEEP_MIXES, SweepUsageError, uniformAllActor } from "../src/reducer-sweep.ts";
+import { parseSweepArgs, playSweepBattle, restrictPool, restrictPoolToMoves, SWEEP_MIXES, SweepUsageError, uniformAllActor } from "../src/reducer-sweep.ts";
 import { engine, FORMAT } from "./support.ts";
 
 const ROOT = fileURLToPath(new URL("../../..", import.meta.url));
@@ -73,6 +73,7 @@ describe("parseSweepArgs", () => {
     expect(parseSweepArgs(good)).toEqual({ config: "c.json", out: "o.jsonl", mix: "uniform-all", battles: 5, start: 0, run_key: "sweep-1" });
     expect(parseSweepArgs([...good, "--start", "7", "--run-key", "k"])).toMatchObject({ start: 7, run_key: "k" });
     expect(parseSweepArgs([...good, "--only-ability", "Illusion"])).toMatchObject({ only_ability: "Illusion" });
+    expect(parseSweepArgs([...good, "--only-move", "Transform, Mimic"])).toMatchObject({ only_move: ["Transform", "Mimic"] });
   });
   it.each([
     [["--bogus", "1", ...good], /unknown argument/],
@@ -85,6 +86,8 @@ describe("parseSweepArgs", () => {
     [[...good.slice(0, -1), "2.5"], /whole number/],
     [[...good.slice(0, -1), "-3"], /whole number/],
     [[...good, "--start", "-1"], /at least 0/],
+    [[...good, "--only-move", "Mimic,,Sketch"], /comma-separated/],
+    [[...good, "--only-move", "Mimic,mimic"], /twice/],
     [good.map((x) => (x === "uniform-all" ? "nope" : x)), /--mix is one of/],
   ])("refuses %j", (argv, message) => {
     expect(() => parseSweepArgs(argv as string[])).toThrow(SweepUsageError);
@@ -105,5 +108,20 @@ describe("restrictPool", () => {
 
   it("refuses a pool with no such team", () => {
     expect(() => restrictPool(pool, "No Such Ability")).toThrow(SweepUsageError);
+  });
+});
+
+describe("restrictPoolToMoves", () => {
+  it("keeps the teams that hold one of the moves, by name or id, with their hashes", () => {
+    const marked = pool.teams.map((team) => team.map((set) => ({ ...set, moves: ["Protect", "Splash", "Struggle", "Tackle"] })));
+    const first = marked[0] as PokemonSet[];
+    first[0] = { ...(first[0] as PokemonSet), moves: ["Mimic", "Protect", "Splash", "Tackle"] };
+    const restricted = restrictPoolToMoves({ ...pool, teams: marked }, ["mimic", "Sketch"]);
+    expect(restricted.teams).toEqual([marked[0]]);
+    expect(restricted.hashes).toEqual([pool.hashes[0]]);
+  });
+
+  it("refuses a pool with no such team", () => {
+    expect(() => restrictPoolToMoves(pool, ["No Such Move"])).toThrow(SweepUsageError);
   });
 });
