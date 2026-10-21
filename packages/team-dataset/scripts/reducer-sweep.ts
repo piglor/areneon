@@ -8,25 +8,22 @@ import { readFileSync } from "node:fs";
 import { once } from "node:events";
 import { loadEngine, readTrainingRunConfig } from "@areneon/showdown-bridge";
 import { datasetTeamPool } from "../src/loop-pool.ts";
-import { playSweepBattle, SWEEP_MIXES, type SweepMix } from "../src/reducer-sweep.ts";
+import { parseSweepArgs, playSweepBattle, SweepUsageError } from "../src/reducer-sweep.ts";
 
-const args = new Map<string, string>();
-for (let i = 2; i < process.argv.length; i += 2) args.set(process.argv[i] as string, process.argv[i + 1] ?? "");
-const need = (name: string): string => {
-  const value = args.get(name);
-  if (value === undefined || value === "") throw new Error(`reducer-sweep: ${name} is required`);
-  return value;
-};
-const mix = need("--mix") as SweepMix;
-if (!SWEEP_MIXES.includes(mix)) throw new Error(`reducer-sweep: --mix is one of ${SWEEP_MIXES.join(", ")}`);
-const battles = Number(need("--battles"));
-const start = Number(args.get("--start") ?? "0");
-const runKey = args.get("--run-key") ?? "sweep-1";
+let args;
+try {
+  args = parseSweepArgs(process.argv.slice(2));
+} catch (error) {
+  if (!(error instanceof SweepUsageError)) throw error;
+  console.error(`reducer-sweep: ${error.message}`);
+  process.exit(2);
+}
+const { mix, battles, start, run_key: runKey } = args;
 
-const config = readTrainingRunConfig(JSON.parse(readFileSync(need("--config"), "utf8")));
+const config = readTrainingRunConfig(JSON.parse(readFileSync(args.config, "utf8")));
 const engine = loadEngine(process.env.SHOWDOWN_DIR || undefined);
 const pool = datasetTeamPool(engine, config);
-const out = createWriteStream(need("--out"));
+const out = createWriteStream(args.out);
 for (let index = start; index < start + battles; index++) {
   const battle = await playSweepBattle(engine, config.format_id, pool, { run_key: runKey, mix, index, max_turns: config.generation.max_turns });
   if (!out.write(`${JSON.stringify(battle)}\n`)) await once(out, "drain");

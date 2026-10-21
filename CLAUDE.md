@@ -39,7 +39,7 @@ Reducer sweep (#919; reads a verified dataset, writes only to `--out`; the actor
 
 ```bash
 node packages/team-dataset/scripts/reducer-sweep.ts --config RUN_CONFIG.json --mix random-legal|pending-first|rule-vs-random|uniform-all|uniform-vs-random --battles 1100 [--start 0] [--run-key sweep-1] --out OUT.jsonl
-uv run python scripts/reducer_sweep.py OUT.jsonl...   # reducer and encoder at every request; each refusal kind with a count and its shortest example; exit 1 on any but the named `|replace|` exclusion
+uv run python scripts/reducer_sweep.py OUT.jsonl...   # reducer and encoder at every request; each refusal kind with a count and its shortest example; exit 1 on any but the named `|replace|` exclusion and on an input that checked nothing; the play script exits 2 on an unknown flag, a missing value, an unknown mix or a `--battles` below 1
 ```
 
 Re-capture golden fixtures and team verdicts (only after a deliberate Showdown pin bump or engine-facing change; review the diff):

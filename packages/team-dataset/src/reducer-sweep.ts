@@ -135,3 +135,52 @@ export async function playSweepBattle(
     };
   }
 }
+
+export interface SweepArgs {
+  config: string;
+  out: string;
+  mix: SweepMix;
+  battles: number;
+  start: number;
+  run_key: string;
+}
+
+export class SweepUsageError extends Error {
+  override name = "SweepUsageError";
+}
+
+const FLAGS = ["--config", "--out", "--mix", "--battles", "--start", "--run-key"];
+
+/** Strict `--flag value` parsing: an unknown flag, a missing or repeated value, a bad mix or a count that is not a whole number (battles at least 1) is refused, so a sweep cannot play nothing and pass. */
+export function parseSweepArgs(argv: readonly string[]): SweepArgs {
+  const values = new Map<string, string>();
+  for (let i = 0; i < argv.length; i += 2) {
+    const flag = argv[i] as string;
+    if (!FLAGS.includes(flag)) throw new SweepUsageError(`unknown argument ${flag}`);
+    const value = argv[i + 1];
+    if (value === undefined || value === "" || value.startsWith("--")) throw new SweepUsageError(`${flag} needs a value`);
+    if (values.has(flag)) throw new SweepUsageError(`${flag} is given twice`);
+    values.set(flag, value);
+  }
+  const need = (flag: string): string => {
+    const value = values.get(flag);
+    if (value === undefined) throw new SweepUsageError(`${flag} is required`);
+    return value;
+  };
+  const whole = (flag: string, text: string, least: number): number => {
+    if (!/^\d+$/.test(text) || Number(text) < least || !Number.isSafeInteger(Number(text))) {
+      throw new SweepUsageError(`${flag} is a whole number of at least ${least}`);
+    }
+    return Number(text);
+  };
+  const mix = need("--mix");
+  if (!(SWEEP_MIXES as readonly string[]).includes(mix)) throw new SweepUsageError(`--mix is one of ${SWEEP_MIXES.join(", ")}`);
+  return {
+    config: need("--config"),
+    out: need("--out"),
+    mix: mix as SweepMix,
+    battles: whole("--battles", need("--battles"), 1),
+    start: whole("--start", values.get("--start") ?? "0", 0),
+    run_key: values.get("--run-key") ?? "sweep-1",
+  };
+}

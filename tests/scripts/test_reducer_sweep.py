@@ -110,3 +110,17 @@ def test_main_reads_files_and_reports_through_the_exit_status(
     assert reducer_sweep.main([str(good)]) == 0
     assert reducer_sweep.main([str(good), str(bad)]) == 1
     assert "battles 2" in capsys.readouterr().out
+
+
+def test_a_sweep_that_checked_nothing_does_not_pass(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    empty = tmp_path / "empty.jsonl"
+    empty.write_text("")
+    assert reducer_sweep.main([str(empty)]) == 1
+    assert "nothing was checked" in capsys.readouterr().err
+    failed = tmp_path / "failed.jsonl"  # a battle that failed to play has no queries either
+    failed.write_text(
+        json.dumps({**sweep_battle(), "failure": {"kind": "E", "message": "m"}}) + "\n"
+    )
+    assert reducer_sweep.main([str(failed)]) == 1
