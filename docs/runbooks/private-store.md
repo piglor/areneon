@@ -55,8 +55,7 @@ Do this now, again after the lock (section 4) and after every change of the buck
    - **Custom domains:** none listed.
    - **Public Development URL** (the `r2.dev` URL): disabled. If it is enabled, disable it; the dashboard may ask you to type `disallow` to confirm. **Owner: verify on Cloudflare** these labels and the confirmation word.
    *Expected result:* no custom domain and no `r2.dev` URL for this bucket. **Owner: verify on Cloudflare** the section and setting names.
-2. If an `r2.dev` URL is shown for the bucket, disable it and confirm the setting reads disabled.
-3. Do not test this with a request that carries an account id on a command line. Instead check in the dashboard that the bucket has no public URL of either kind (step 1), and that its settings show no domain. If you want an unauthenticated probe, type the URL into a browser address bar, not a shell; *Expected result:* an error page or an access-denied answer, never a file listing. **Owner: verify on Cloudflare** the exact answer.
+2. Do not test this with a request that carries an account id: it would put the id in a shell history. The dashboard check in step 1 is the check.
 
 ## 4. Lock `snapshots/` for 90 days
 
@@ -88,27 +87,27 @@ For each:
    *Expected result:* two tokens exist; each lists the private bucket only, the right permission and an expiry date about 90 days out. **Owner: verify on Cloudflare** the field names, whether the form offers an expiry, and the longest lifetime it allows.
 5. Write the creation date and expiry of each token in your password manager's entry (section 8 uses them).
 
-Do not create a token with the bucket-configuration permission, and do not enable the Admin API for this account's work on this bucket.
+No Admin token, no Admin API token and no token with a bucket-configuration permission is created anywhere in this runbook. Do not enable the Admin API for this work.
 
 ## 6. Credential handling
 
 Rules, from ADR-015 sections 1 and 7:
 
-- **One env file per token**, each mode `0600`, under gitignored `private-data/` (for example `private-data/secrets/r2-write.env` and `private-data/secrets/r2-read.env`; the directory mode `0700`). The alternative is a hidden terminal prompt (`read -rs`) that fills the variable for one command. Never both in one file, never in the repository, in a dotfile that a shell loads on every start, or in a Coolify or CI secret.
+- **One env file per token**, each mode `0600`, under gitignored `private-data/` (for example `private-data/secrets/r2-write.env` and `private-data/secrets/r2-read.env`; the directory mode `0700`). There is no other way to supply a token in this runbook. Never both tokens in one file, never in the repository, in a dotfile that a shell loads on every start, or in a Coolify or CI secret.
 - **Loaded only into the one command that needs it.** The write token's file goes into the import command only; the read token's file into a reader only. A subshell does it without leaving the variables in your shell:
   ```bash
   ( set -a; . private-data/secrets/r2-read.env; set +a; <one command> )
   ```
-  Each file is complete on its own: `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, the account id, and the two endpoint lines `AWS_ENDPOINT_URL=https://<account-id>.r2.cloudflarestorage.com` and `AWS_DEFAULT_REGION=auto` (section 7). The planned commands (#887 and #890) state the exact variable names; follow them, not this runbook, if they differ. **Owner: verify** each command against the names it documents. The endpoint and the region are never set inline in a command.
-- **Create the file with hidden prompts, not an editor** (an editor can leave swap, backup or undo copies of a secret next to the file or in your home directory):
+  Each file is complete on its own: `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` and the two endpoint lines `AWS_ENDPOINT_URL=https://<account-id>.r2.cloudflarestorage.com` and `AWS_DEFAULT_REGION=auto` (section 7). The account id lives only inside the endpoint line of the env file. The planned commands (#887 and #890) state the exact variable names; follow them, not this runbook, if they differ. **Owner: verify** each command against the names it documents. The endpoint and the region are never set inline in a command.
+- **Create each file with hidden prompts, not an editor** (an editor can leave swap, backup or undo copies of a secret next to the file or in your home directory). Run this from the repository root, once per token, in a bash shell; it runs in a subshell, so the `umask` and the variables do not persist, and `>` overwrites an existing file (the recipe recreates a file whole, never appends):
   ```bash
-  umask 077; mkdir -p private-data/secrets
-  read -rs -p 'access key id: ' k; echo; read -rs -p 'secret access key: ' s; echo; read -rs -p 'account id: ' a; echo
-  printf 'AWS_ACCESS_KEY_ID=%s\nAWS_SECRET_ACCESS_KEY=%s\nAWS_ENDPOINT_URL=https://%s.r2.cloudflarestorage.com\nAWS_DEFAULT_REGION=auto\n' "$k" "$s" "$a" > private-data/secrets/r2-read.env
-  unset k s a
-  stat -c '%a %n' private-data/secrets/r2-read.env
+  ( umask 077; mkdir -p private-data/secrets
+    read -rp 'file name (r2-read.env or r2-write.env): ' f
+    read -rsp 'access key id: ' k; echo; read -rsp 'secret access key: ' s; echo; read -rsp 'account id: ' a; echo
+    printf 'AWS_ACCESS_KEY_ID=%s\nAWS_SECRET_ACCESS_KEY=%s\nAWS_ENDPOINT_URL=https://%s.r2.cloudflarestorage.com\nAWS_DEFAULT_REGION=auto\n' "$k" "$s" "$a" > "private-data/secrets/$f"
+    stat -c '%a %n' "private-data/secrets/$f" )
   ```
-  Do the same for the write token's file (`r2-write.env`). `printf` is a shell builtin, so the values do not appear in `ps`; the prompts do not echo and are not saved in history. *Expected result:* `600`. Confirm `git status` shows nothing under `private-data/` (it is gitignored; if it shows up, stop). **Owner: verify** the recipe in your shell (`read -s` and `-p` are bash).
+  `printf` is a shell builtin, so the values do not appear in `ps`; the prompts do not echo and are not saved in history. *Expected result:* `600`. Confirm `git status` shows nothing under `private-data/` (it is gitignored; if it shows up, stop). **Owner: verify** the recipe in your shell.
 - **Never** put a token, an access key id or the account id in: a chat, a ticket or issue, a PR, a commit, a log, an error message, a screenshot, a command-line argument or a shell history line. An argument shows in `ps` and in history; a variable in the environment of one process does not stay in your shell.
 - **Never a persistent DuckDB secret** (`CREATE PERSISTENT SECRET`): it is stored unencrypted under `~/.duckdb/stored_secrets`. The planned recipe (#890) uses a temporary secret only.
 - **Agents never run a command that holds a token.** Do not start a coding agent session in a shell where the variables are exported, and do not paste an env file's content into one. The planned commands refuse agent sessions and non-terminals as accident prevention, not as a boundary.
@@ -119,14 +118,14 @@ Rules, from ADR-015 sections 1 and 7:
 
 This closes the ADR's Unknown: whether an object token's overwrite and delete are refused under the lock (the docs say so; it was not tested). The command line tool below is user-installed and in no `package.json`, lockfile or image of this repository; any S3 client that can set an endpoint works. Commands that need the planned import (#887) are not used.
 
-Preparation: install an S3-compatible client yourself (for example the AWS CLI). The endpoint (it contains the account id) is read by the client from the environment, so it never appears on a command line. It goes into **both** token env files (section 6), so each file is complete on its own. Add these two lines to `private-data/secrets/r2-write.env` and to `private-data/secrets/r2-read.env`:
+Preparation: install an S3-compatible client yourself (for example the AWS CLI). The endpoint (it contains the account id) is read by the client from the environment, so it never appears on a command line. Section 6 puts it into **both** token env files, so each file is complete on its own. Confirm that `private-data/secrets/r2-write.env` and `private-data/secrets/r2-read.env` each contain these two lines (section 6 writes them; do not add them a second time):
 
 ```text
 AWS_ENDPOINT_URL=https://<account-id>.r2.cloudflarestorage.com
 AWS_DEFAULT_REGION=auto
 ```
 
-Do this by the hidden-prompt recipe in section 6 (you type the account id once into a prompt, never into a command line). **Warning:** a bucket created in a jurisdiction needs a different endpoint than `https://<account-id>.r2.cloudflarestorage.com`; ADR-015 uses the default jurisdiction, so this one applies. **Owner: verify on Cloudflare** the endpoint shown for your bucket, and **Owner: verify** that your client version reads `AWS_ENDPOINT_URL` and accepts `auto` as the region for R2; if not, follow Cloudflare's R2 documentation for your client.
+If a line is missing, recreate the whole file with the recipe in section 6 rather than appending. **Warning:** a bucket created in a jurisdiction needs a different endpoint than `https://<account-id>.r2.cloudflarestorage.com`; ADR-015 uses the default jurisdiction, so this one applies. **Owner: verify on Cloudflare** the endpoint shown for your bucket, and **Owner: verify** that your client version reads `AWS_ENDPOINT_URL` and accepts `auto` as the region for R2; if not, follow Cloudflare's R2 documentation for your client.
 
 The throwaway object stays in the bucket until its lock ends (that is the point of the test): use a key outside the layout the import will write, and put no team content in it.
 
@@ -154,12 +153,12 @@ The throwaway object stays in the bucket until its lock ends (that is the point 
    ```
    *Expected result:* `lock check`. This read is what makes the next check valid: it shows the read token, the bucket and the endpoint are all correct, so a refusal below is the token's permission and not a wrong endpoint or a typo. Then try a write with the read token to a key of another date that does not exist:
    ```bash
-   ( set -a; . private-data/secrets/r2-read.env; set +a; aws s3api put-object --bucket <bucket> --key snapshots/_lock-check/read-token-write-probe.txt --body /tmp/lock-check-back.txt )
+   ( set -a; . private-data/secrets/r2-read.env; set +a; aws s3api put-object --bucket <bucket> --key snapshots/_lock-check/read-probe-<yyyy-mm-dd>.txt --body /tmp/lock-check-back.txt )
    ```
    *Expected result:* **refused** with an access error (not a "no such bucket" or signature or endpoint error: if the error is of that kind, fix the env file and repeat from the read). If the write succeeds, the read token is not read-only: stop, delete that token in the dashboard, and put the result on the ticket (the stray object cannot be deleted for 90 days under the lock; it holds one line of text). Delete both `/tmp` files afterwards. The throwaway object stays for 90 days; it is not a team and is harmless.
 5. Record the results (section 10): overwrite refused or not, delete refused or not, read-token write refused or not, the dashboard's maximum token lifetime (section 5), and the date.
 
-**The `_lock-check/` object is not a snapshot.** Nothing may list `snapshots/` and treat an unknown key there as a snapshot: a snapshot is a `snapshots/<snapshot_hash>/` directory with a manifest whose digests verify, and any other key (including `_lock-check/`) is ignored. A repeat of this check needs a different date in the key, because the earlier object cannot be overwritten or deleted while its lock runs. #887 (the import and the readers) must ignore the `_lock-check/` prefix.
+**The `_lock-check/` object is not a snapshot.** Nothing may list `snapshots/` and treat an unknown key there as a snapshot: a snapshot is a `snapshots/<snapshot_hash>/` directory with a manifest whose digests verify, and any other key (including `_lock-check/`) is ignored. A repeat of this check needs a different date in the key (and a different probe key in step 4), because the earlier objects cannot be overwritten or deleted while their lock runs. #887 (the import), #888 (the snapshot-backed source) and #890 (the DuckDB read recipe) must all ignore the `snapshots/_lock-check/` prefix.
 
 ## 8. Rotation
 
@@ -197,7 +196,7 @@ Check each item, then post the note.
 - [ ] No custom domain and no `r2.dev` URL (section 3).
 - [ ] A 90-day lock on `snapshots/` (section 4).
 - [ ] An Object Read & Write token and an Object Read only token, each scoped to the bucket only, each with an expiry (section 5); neither is an Admin token, and no Admin API token was created.
-- [ ] Each token is in its own mode-`0600` file under `private-data/secrets/` or filled from a prompt; `git status` shows nothing from `private-data/` (section 6).
+- [ ] Each token is in its own mode-`0600` file under `private-data/secrets/`; `git status` shows nothing from `private-data/` (section 6).
 - [ ] The throwaway-object check ran: overwrite refused, delete refused, read-token write refused (section 7).
 - [ ] The dashboard's maximum token lifetime is recorded.
 - [ ] The expiry dates are in your calendar (section 8).
