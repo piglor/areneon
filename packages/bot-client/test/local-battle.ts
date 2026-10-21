@@ -1,10 +1,11 @@
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createRuntimeCopy, launch, type LocalServer } from "@areneon/local-server";
+import { withPlayedForms } from "@areneon/local-server/harness";
 import { fileURLToPath } from "node:url";
-import { importPaste, loadEngine, loadRulesSnapshot, type PokemonSet } from "@areneon/showdown-bridge";
+import { importPaste, loadEngine, loadRulesSnapshot, type PokemonSet, teamHash } from "@areneon/showdown-bridge";
 import { type A2BattleRecord, connectWebSocket, runA2Bot } from "../src/index.ts";
 
 /** Helpers for the tests that run the pinned server on 127.0.0.1 (ADR-005 §4). */
@@ -12,6 +13,15 @@ import { type A2BattleRecord, connectWebSocket, runA2Bot } from "../src/index.ts
 export const FORMAT = "gen9championsvgc2026regmc";
 
 export const TEAMS_DIR = fileURLToPath(new URL(`../../../fixtures/teams/${FORMAT}`, import.meta.url));
+
+/** The hashes of every committed paste fixture (CC0, synthetic): the synthetic teams there are. */
+export function fixtureTeamHashes(): Set<string> {
+  const engine = loadEngine();
+  const teams = readdirSync(TEAMS_DIR)
+    .filter((file) => file.endsWith(".txt"))
+    .map((file) => importPaste(engine, readFileSync(join(TEAMS_DIR, file), "utf8")));
+  return withPlayedForms(engine, FORMAT, new Set(teams.map(teamHash)), teams);
+}
 
 /** A synthetic CC0 team from fixtures/teams (see its manifest). */
 export function fixtureTeam(file: "legal-synthetic.txt" | "legal-opponent.txt"): PokemonSet[] {
@@ -80,7 +90,9 @@ export async function playRecordedBattle(local: {
   const snapshot = loadRulesSnapshot(engine.commit);
   const suffix = local.server.session.bot_name_suffix;
   // The validator edits a team in place (nicknames go): each bot gets its own copy.
-  const play = (name: string, challenger: string, team: PokemonSet[], challenge?: string) =>
+  const [own, rival] = [fixtureTeam("legal-synthetic.txt"), fixtureTeam("legal-opponent.txt")];
+  const known_synthetic = new Set([teamHash(own), teamHash(rival)]);
+  const play = (name: string, challenger: string, team: PokemonSet[], opponent: PokemonSet[], challenge?: string) =>
     runA2Bot({
       engine,
       snapshot,
@@ -89,18 +101,21 @@ export async function playRecordedBattle(local: {
       challenger,
       format: FORMAT,
       team: structuredClone(team),
-      data_class: "synthetic",
+      known_synthetic,
+      opponent_team: structuredClone(opponent),
+      mode: "harness",
       battles: 1,
       reconnect: { attempts: 5, delayMs: 100 },
       connect: connectWebSocket,
       ...(challenge === undefined ? {} : { challenge }),
     });
-  const sparring = play(`Areneon-bot-${suffix}`, `Areneon-ch-${suffix}`, fixtureTeam("legal-synthetic.txt"));
+  const sparring = play(`Areneon-bot-${suffix}`, `Areneon-ch-${suffix}`, own, rival);
   await new Promise((done) => setTimeout(done, 500));
   const challenger = play(
     `Areneon-ch-${suffix}`,
     `Areneon-bot-${suffix}`,
-    fixtureTeam("legal-opponent.txt"),
+    rival,
+    own,
     `Areneon-bot-${suffix}`,
   );
   const [a, b] = await Promise.all([sparring, challenger]);

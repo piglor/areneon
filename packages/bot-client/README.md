@@ -16,7 +16,6 @@ node packages/bot-client/scripts/a2-bot.ts --challenger <YourName> --team <bot-t
 |---|---|---|
 | `--challenger NAME` | Required. The only user whose challenge the bot accepts. | none |
 | `--team PASTE` | Required. The bot's team, a PokePaste file in the engine's canonical form. It must be valid for the format, or the run stops before play. | none |
-| `--data-class private\|synthetic` | What the team is. A `private` team's records stay under `private-data/`. | `private` |
 | `--format ID` | The format id. Optional while the rules snapshot holds one format, as it does now. | the only format |
 | `--port N` | The server's port, 1 to 65535. | `8000` |
 | `--runtime-root DIR` | Where the verified runtime copy of the server is made. | `<repo>/.local-server/runtime` |
@@ -28,7 +27,7 @@ To try the setup without a real team, use the synthetic fixture:
 
 ```bash
 node packages/bot-client/scripts/a2-bot.ts --challenger <YourName> \
-  --team fixtures/teams/gen9championsvgc2026regmc/legal-synthetic.txt --data-class synthetic
+  --team fixtures/teams/gen9championsvgc2026regmc/legal-synthetic.txt
 ```
 
 When the server is up, the program prints one JSON line:
@@ -87,7 +86,7 @@ The server listens on `127.0.0.1` inside WSL2 and the launcher cannot bind anoth
 
 Each battle, finished or not, is stored as one JSON record: the bot's own player channel (what it was allowed to see) and its decisions with their deadlines. Records go to `private-data/a2` (directory mode 0700, files 0600, named `<battle-room>-<epoch ms>.json`). `private-data/` is gitignored.
 
-**A sparring record is private.** It holds your play and your challenger name, and, after an `ots_failure`, possibly your accepted team sheet. Never commit one or paste it into an issue. The program refuses an `--out` inside the checkout unless `--data-class synthetic`, and a record with an `ots_failure`, a forfeited decline (`ots: forfeited`) or a fatal end (`fatal` set) is only ever written under `private-data/`, whatever `--out` says. The record itself is not stripped of a `|showteam|` line: the channel is kept as received, and this routing is the guard.
+**A sparring record is private.** It holds your play and your challenger name, and, after an `ots_failure`, possibly your accepted team sheet. Never commit one or paste it into an issue. The program refuses an `--out` inside the checkout (a record's class is derived from team hashes, never given: the human's team is unknown to the bot, and the known-synthetic set is empty here, so every sparring record is private), and a record with an `ots_failure`, a forfeited decline (`ots: forfeited`) or a fatal end (`fatal` set) is only ever written under `private-data/`, whatever `--out` says. The record itself is not stripped of a `|showteam|` line: the channel is kept as received, and this routing is the guard.
 
 A battle that finished cleanly (the Open Team Sheets decline confirmed, no defect, no server auto-choose, a timer snapshot for every decision) is also stored as the bot's own **Episode** (ADR-008, ADR-009 slice f) as `<battle-room>-<epoch ms>.episode.json`, with a `sparring` collection record and the session id. A sparring Episode is always `private` / `owner-private`, so it goes to `private-data/a2` whatever `--out` says. A battle that spanned a reconnect is one Episode like any other: the session joins each connection's channel to the ones before it (`continueChannel`, ADR-008 §3-5), so the bot observes, decides and numbers its requests on the battle's one continuous channel, and `a2Episode` stores that channel. A rejoin that does not continue the earlier channel (it does not replay the earlier room log, a re-sent request has another `rqid`, a request is for the other seat) ends the run as a fatal error, and the record is not an Episode. A decision first made on a rejoin whose timer snapshot went to the old connection has no deadline record to carry (see the reconnect notes below), so such a battle is stored as a record only (section 9, "Unanswered request at a reconnect"). A battle that cannot be an Episode is reported on stderr (`no Episode: <reason>`) and skipped; its record is stored all the same. `a2Episode` (`src/a2-episode.ts`) is the writer: the bot never sees the opponent's full team, so an Episode of a bot-versus-bot league or evaluation battle is `private` unless the harness passes the opponent's stamped team; the opponent's class is recorded in its collection record and the opponent's team itself never is. The server removes nicknames, so the Episode's team carries the names the channel shows, so a stored synthetic A2 Episode reads back only if the reader's `known_synthetic` holds the hash of the team under those names (when they differ from the paste's).
 

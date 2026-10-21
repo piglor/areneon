@@ -8,6 +8,9 @@ import {
   type PokemonSet,
   resolveFormat,
   type RulesSnapshot,
+  type SyntheticTeamHashes,
+  higherClass,
+  classOfSets,
   validateTeam,
 } from "@areneon/showdown-bridge";
 import { A2Channel } from "./a2-channel.ts";
@@ -53,8 +56,22 @@ export interface A2BotOptions {
   /** The format the team is for. The team must pass the pinned validator for it. */
   format: string;
   team: PokemonSet[];
-  /** `private` for a real team, `synthetic` for a fixture (ADR-008 §5). */
-  data_class: PlayerChannel["data_class"];
+  /**
+   * The synthetic teams there are (hashes, `syntheticTeamHashes`). The class of
+   * every channel the session builds is proven from it, never given (ADR-008 §5):
+   * `synthetic` only if the bot's team is in this set and the opponent's team is
+   * known and in it too. Default: none, so every channel is `private`.
+   */
+  known_synthetic?: SyntheticTeamHashes;
+  /**
+   * The opponent's team, when the harness knows it (bot-vs-bot recordings). The
+   * server never shows a bot the full opposing team (Closed Team Sheet), so an
+   * unknown opponent counts as `private`. A `live_match` is against a human whose
+   * team is never known. Harness runs only: it is refused unless `mode` is
+   * explicitly `harness` (the default is not enough), so a caller cannot name a
+   * human's team as known by leaving the mode out.
+   */
+  opponent_team?: PokemonSet[];
   /** `live_match` only against a human (ADR-005 §1). Default `harness`. */
   mode?: RefusalMode;
   /** Stop once this many battles have ended. Default: never. */
@@ -343,6 +360,11 @@ export async function runA2Bot(options: A2BotOptions): Promise<A2SessionResult> 
   if (battles !== Infinity && !(Number.isSafeInteger(battles) && battles >= 1)) {
     throw new RangeError(`battles must be a positive integer, not ${battles}`);
   }
+  if (options.opponent_team !== undefined && options.mode !== "harness") {
+    throw new SessionError("an opponent team is given only to a bot-vs-bot harness run (mode harness): a human's team is never known");
+  }
+  // Before the validator, which normalises the sets in place.
+  const dataClass = battleClassOf(options);
   const format = resolveFormat(options.engine, options.format, options.snapshot);
   const verdict = validateTeam(options.engine, format, options.team);
   if (!verdict.valid) throw new SessionError(`the team is not valid for ${options.format}: ${verdict.problems.join("; ")}`);
@@ -350,10 +372,24 @@ export async function runA2Bot(options: A2BotOptions): Promise<A2SessionResult> 
   if (!(Number.isSafeInteger(decline) && decline >= 1)) {
     throw new RangeError(`declineWaitMs must be a positive whole number of ms, not ${decline}`);
   }
-  return new Session(options, battles).run();
+  return new Session(options, battles, dataClass).run();
+}
+
+/**
+ * The class of what the session records, proven by source: the higher of the
+ * bot's team and the opponent's, each `synthetic` only for a hash in
+ * `known_synthetic`. An opponent the bot cannot hash counts as `private`.
+ * Taken before the validator, which normalises sets in place.
+ */
+function battleClassOf(options: A2BotOptions): PlayerChannel["data_class"] {
+  const known = options.known_synthetic ?? new Set<string>();
+  const own = classOfSets(options.team, known);
+  const rival = options.opponent_team === undefined ? "private" : classOfSets(options.opponent_team, known);
+  return higherClass(own, rival);
 }
 
 class Session {
+  readonly #dataClass: PlayerChannel["data_class"];
   readonly #options: A2BotOptions;
   readonly #battlesWanted: number;
   readonly #clock: () => number;
@@ -373,7 +409,8 @@ class Session {
   #settled = false;
   readonly #done = Promise.withResolvers<A2SessionResult>();
 
-  constructor(options: A2BotOptions, battles: number) {
+  constructor(options: A2BotOptions, battles: number, dataClass: PlayerChannel["data_class"]) {
+    this.#dataClass = dataClass;
     this.#options = options;
     this.#battlesWanted = battles;
     this.#clock = options.clock ?? (() => performance.now());
@@ -695,7 +732,7 @@ class Session {
       throw new SessionError(`${battle.room}: a rejoin received a request for ${player}, not the bot's seat ${battle.player}`);
     }
     battle.player = player;
-    state.channel = new A2Channel({ room: battle.room, player, data_class: this.#options.data_class });
+    state.channel = new A2Channel({ room: battle.room, player, data_class: this.#dataClass });
     for (const kept of state.frames) state.channel.receive(kept);
     state.frames = [];
   }
@@ -1021,7 +1058,7 @@ class Session {
     // A rejoin of a room that ended while the bot was away replays the log with no request:
     // the channel of this connection is made from the replay, on the seat the bot had.
     if (state.channel === undefined && battle.player !== null) {
-      state.channel = new A2Channel({ room: battle.room, player: battle.player, data_class: this.#options.data_class });
+      state.channel = new A2Channel({ room: battle.room, player: battle.player, data_class: this.#dataClass });
       for (const kept of state.frames) state.channel.receive(kept);
       state.frames = [];
     }

@@ -62,7 +62,6 @@ function bot(
     snapshot,
     url: local.ws,
     format: FORMAT,
-    data_class: "synthetic",
     battles: 1,
     reconnect: { attempts: 5, delayMs: 100 },
     onLog(entry) {

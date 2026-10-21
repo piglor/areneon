@@ -92,7 +92,6 @@ describe("runCli (the A2 sparring entry point)", () => {
       name: "Areneon-bot-abc123",
       challenger: "Sparring Human",
       format: FORMAT,
-      data_class: "private",
       mode: "live_match",
     });
     expect(options.team.map((set) => set.species)).toHaveLength(6);
@@ -106,11 +105,14 @@ describe("runCli (the A2 sparring entry point)", () => {
 
   it("passes the runtime root, record directory, data class and format through", async () => {
     const f = fake();
-    const argv = ["--challenger", "h", "--team", TEAM, "--data-class", "synthetic", "--format", FORMAT];
+    const argv = ["--challenger", "h", "--team", TEAM, "--format", FORMAT];
     expect(await runCli([...argv, "--runtime-root", "/rt", "--out", "/out"], f.deps)).toBe(0);
     expect(f.calls).toContain("copy /rt");
     expect(f.calls).toContain("launch /copy 8000");
-    expect(f.bot[0]?.data_class).toBe("synthetic");
+    // The class is proven from team hashes, never given: nothing to pass.
+    expect(f.bot[0]).not.toHaveProperty("data_class");
+    expect(f.bot[0]?.known_synthetic).toBeUndefined();
+    expect(f.bot[0]?.opponent_team).toBeUndefined();
     expect(f.files[0]?.[0]).toBe("/out/battle-x-1-1234.json");
   });
 
@@ -175,7 +177,7 @@ describe("runCli (the A2 sparring entry point)", () => {
     const failed = { room: "battle-x-3", ots: "forfeited", fatal: null, ots_failure: { reason: "showteam", detail: "|showteam|p2" } } as A2BattleRecord;
     const run = (extra: string[]) => {
       const f = fake({ runBot: async () => ({ battles: [failed] }) });
-      return runCli(["--challenger", "h", "--team", TEAM, "--data-class", "synthetic", ...extra], f.deps).then(
+      return runCli(["--challenger", "h", "--team", TEAM, ...extra], f.deps).then(
         () => f,
       );
     };
@@ -194,12 +196,12 @@ describe("runCli (the A2 sparring entry point)", () => {
   ])("writes the record of %s under private-data only", async (_name, fields) => {
     const record = { room: "battle-x-7", ...fields } as A2BattleRecord;
     const f = fake({ runBot: async () => ({ battles: [record] }) });
-    await runCli(["--challenger", "h", "--team", TEAM, "--data-class", "synthetic", "--out", "/elsewhere"], f.deps);
+    await runCli(["--challenger", "h", "--team", TEAM, "--out", "/elsewhere"], f.deps);
     expect(f.files.map(([path]) => path)).toEqual(["/repo/private-data/a2/battle-x-7-1234.json"]);
     expect(f.err[0]).toContain("may hold the opponent's team sheet");
   });
 
-  it("refuses an --out inside the checkout unless the data class is synthetic or it is under private-data", async () => {
+  it("refuses an --out inside the checkout unless it is under private-data (every record is private)", async () => {
     const argv = ["--challenger", "h", "--team", TEAM];
     for (const out of ["/repo/records", "/repo", "/repo/private-data/../records"]) {
       const f = fake();
@@ -207,9 +209,6 @@ describe("runCli (the A2 sparring entry point)", () => {
       expect(f.err[0]).toContain("is inside the checkout");
       expect(f.calls).toEqual([]);
     }
-    const ok = fake();
-    expect(await runCli([...argv, "--out", "/repo/records", "--data-class", "synthetic"], ok.deps)).toBe(0);
-    expect(ok.files[0]?.[0]).toBe("/repo/records/battle-x-1-1234.json");
     const priv = fake();
     expect(await runCli([...argv, "--out", "/repo/private-data/x"], priv.deps)).toBe(0);
     const outside = fake();
@@ -275,7 +274,7 @@ describe("runCli (the A2 sparring entry point)", () => {
   it.each([
     [["--team", TEAM], "--challenger and --team are required"],
     [["--challenger", "h"], "--challenger and --team are required"],
-    [["--challenger", "h", "--team", TEAM, "--data-class", "public"], "--data-class must be private or synthetic"],
+    [["--challenger", "h", "--team", TEAM, "--data-class", "synthetic"], "Unknown option '--data-class'"],
     [["--challenger", "h", "--team", TEAM, "--port", "0"], "--port must be an integer from 1 to 65535"],
     [["--challenger", "h", "--team", TEAM, "--port", "x"], "--port must be an integer"],
     [["--challenger", "h", "--bogus"], "Unknown option '--bogus'"],
@@ -318,7 +317,7 @@ describe("the a2-bot process", () => {
       const out = tempDir("cli-out");
       const child = spawn(
         process.execPath,
-        [SCRIPT, "--challenger", "Nobody Here", "--team", TEAM, "--data-class", "synthetic"].concat(
+        [SCRIPT, "--challenger", "Nobody Here", "--team", TEAM].concat(
           ["--port", String(await freePort()), "--runtime-root", runtime.dir, "--out", out.dir],
         ),
         { stdio: ["ignore", "pipe", "pipe"] },
@@ -360,7 +359,7 @@ describe("runCli: the bot's own Episode (ADR-009 slice f)", () => {
   };
 
   it("stores a finished battle as a private sparring Episode beside its record, under private-data only", async () => {
-    const { f, code } = await run(real, {}, ["--data-class", "synthetic", "--out", "/elsewhere"]);
+    const { f, code } = await run(real, {}, ["--out", "/elsewhere"]);
     expect(code).toBe(0);
     expect(f.err).toEqual([]);
     const [record, episode] = f.files;

@@ -3,6 +3,7 @@ import { loadEngine, loadRulesSnapshot, observe, type PlayerChannel, playerChann
 import { channelFromFrames, type HarnessFixture, reconnectEvidence, verifyHarnessFixture } from "@areneon/local-server/harness";
 import { describe, expect, it } from "vitest";
 import { type Adapter, type AdapterFactory, compareA1A2, fixtureFiles, readFixture, SEATS } from "./a1-a2-equality.ts";
+import { fixtureTeamHashes } from "./local-battle.ts";
 
 const engine = loadEngine();
 const snapshot = loadRulesSnapshot(engine.commit);
@@ -145,7 +146,7 @@ describe("A1/A2 equality (ADR-005 gate 3)", () => {
 
   describe.each(files)("%s", (path) => {
     it("is a valid harness fixture", async () => {
-      await verifyHarnessFixture(engine, readFixture(path));
+      await verifyHarnessFixture(engine, readFixture(path), fixtureTeamHashes());
     });
 
     it("starts from raw server frames: the stored channels are what the adapter makes of each connection", () => {
@@ -153,7 +154,7 @@ describe("A1/A2 equality (ADR-005 gate 3)", () => {
       for (const seat of SEATS) {
         expect(fixture.channels[seat]).toHaveLength(fixture.frames[seat].length);
         fixture.frames[seat].forEach((frames, c) => {
-          const { channel, requests } = channelFromFrames(frames, fixture.room, seat);
+          const { channel, requests } = channelFromFrames(frames, fixture.room, seat, fixture.data_class);
           expect(channel).toEqual(fixture.channels[seat][c]);
           expect(requests).toBeGreaterThan(0);
         });
@@ -402,11 +403,11 @@ describe.each(reconnecting)("a real reconnect: %s", (path) => {
     const fixture = clone(path);
     const seat = seatOf(fixture);
     // The untouched copy is accepted, so the refusal below is the change's doing.
-    await expect(verifyHarnessFixture(engine, clone(path))).resolves.toBeUndefined();
+    await expect(verifyHarnessFixture(engine, clone(path), fixtureTeamHashes())).resolves.toBeUndefined();
     editLine(fixture, seat, (l) => l.startsWith("|request|"), (l) => l.replace(/"rqid":\d+/, '"rqid":1'), false, 1);
     const { differences } = await compareA1A2(engine, snapshot, fixture);
     expect(differences.some((d) => d.includes("does not follow") || d.includes("refused the frames"))).toBe(true);
-    await expect(verifyHarnessFixture(engine, fixture)).rejects.toThrow(/connection 2 starts with a request older than/);
+    await expect(verifyHarnessFixture(engine, fixture, fixtureTeamHashes())).rejects.toThrow(/connection 2 starts with a request older than/);
   });
 
   it("rejects a |sentchoice| that was removed, one that was added, and one whose choice is not the one played", async () => {
