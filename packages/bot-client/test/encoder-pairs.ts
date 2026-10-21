@@ -23,9 +23,10 @@ export async function encoderPairs(engine: Engine, snapshot: RulesSnapshot): Pro
     const [format, name] = file.split("/") as [string, string];
     const fixture = readFixture(file);
     const pairs: ObservationPair[] = [];
-    const result = await compareA1A2(engine, snapshot, fixture, undefined, (pair) => pairs.push(pair));
+    const result = await compareA1A2(engine, snapshot, fixture, undefined, (pair) => void (pair.connection === 0 && pairs.push(pair)));
     if (result.differences.length > 0) throw new Error(`${file}: ${result.differences.join("; ")}`);
     const target = (byFormat[format] ??= { a1: new Streams(), a2: new Streams(), teams: [], decisions: [] });
+    // The committed corpus holds each seat's first connection (a later one's decisions are equal in kind and add no new case).
     for (const pair of pairs) {
       const line = pair.a1.log.at(-1) as string;
       const candidates = enumerateCandidates(decodeRequest(line.slice("|request|".length))).candidates;

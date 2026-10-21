@@ -7,6 +7,7 @@ import { ajvFor } from "@areneon/schema/ajv";
 import battleSchema from "@areneon/schema/contracts/v1/battle-observation.schema.json" with { type: "json" };
 import channelSchema from "@areneon/schema/contracts/v1/player-channel-log.schema.json" with { type: "json" };
 import previewSchema from "@areneon/schema/contracts/v1/preview-observation.schema.json" with { type: "json" };
+import type { Json } from "./canonical-json.ts";
 import type { PlayerChannelLog } from "@areneon/schema/types/v1/player-channel-log.ts";
 import {
   buildObservation,
@@ -16,6 +17,7 @@ import {
   type PlayerChannel,
   type Sha256,
 } from "./observation.ts";
+import { requestIdentityText } from "./request-bytes.ts";
 import { decodeRequest } from "./request.ts";
 import type { BattleRecord, Player } from "./runner.ts";
 import type { BattleClass } from "./team-class.ts";
@@ -98,4 +100,122 @@ export function recordedChannel(
   const end = lines.findIndex((line) => line.startsWith("|request|") && ++seen === request_seq);
   if (end < 0) throw new ObservationError(`${player} received no request ${request_seq}`);
   return playerChannel({ schema_version: 1, data_class, player, lines: lines.slice(0, end + 1) });
+}
+
+const REQUEST = "|request|";
+const ERROR = "|error|";
+/** Lines the server sends to the player alone and never adds to the room log it replays on a rejoin. */
+const ALONE = [REQUEST, ERROR];
+
+const isAlone = (line: string): boolean => ALONE.some((kind) => line.startsWith(kind));
+
+/** A request line's rqid and its body without the rqid (the bytes `request_hash` covers). */
+function identityOf(line: string): { rqid: unknown; body: string } {
+  const request = JSON.parse(line.slice(REQUEST.length)) as { [key: string]: Json };
+  return { rqid: request.rqid, body: requestIdentityText(request) };
+}
+
+/**
+ * The channel of a player who reconnected (ADR-008 §3, §4): `earlier`, the
+ * channel of the connection(s) before, joined with `rejoin`, the channel of
+ * the connection after. This is how an observation is built after a rejoin.
+ *
+ * A rejoin channel alone has no Team Preview request: the server replays the
+ * room log to a joining connection, and that log holds neither `|request|`
+ * nor `|error|` lines (it sends those to the player alone and never adds
+ * them to the log). So the rejoin's replay lines are the earlier channel's
+ * lines and more, minus every player-alone line. The rule: the rejoin channel
+ * carries the anchor of the connection it continues. The result is the
+ * replay with the earlier channel's player-alone lines put back at the
+ * places they had (the count of room lines before each), then the rejoin's
+ * own. A first request of the rejoin that is the earlier channel's last
+ * request sent again (same `rqid`, same body, at the place the earlier one
+ * had it) is that request, not a new one, and stays where the earlier
+ * channel had it. The result is the one continuous channel of the battle:
+ * equal to what A1 gives the player, and what an Episode stores (ADR-008 §5
+ * and the glossary: one channel per player and battle).
+ *
+ * It uses only the two channels of this player, already checked by
+ * `playerChannel`, and adds nothing of its own: no opponent line, no request
+ * the player did not receive. It fails closed (`ObservationError`) unless
+ * both are the same player's, the earlier channel's room lines are a
+ * prefix of the rejoin's (so a replay of another battle, or a tampered one,
+ * is refused), the rejoin's player-alone lines all come after its replay,
+ * a re-sent request keeps its `rqid` (same body, other `rqid` is refused)
+ * and, on the server path, the `rqid`s of the joined requests rise strictly
+ * with none missing. Across several reconnects, fold it: the result of one
+ * join is the `earlier` of the next. The rqids are the server's (§4 leaves
+ * them out of A1/A2 equality) and the request count follows the player's
+ * own view.
+ */
+export function continueChannel(earlier: PlayerChannel, rejoin: PlayerChannel): PlayerChannel {
+  if (earlier.player !== rejoin.player) {
+    throw new ObservationError(`cannot continue ${earlier.player}'s channel with ${rejoin.player}'s`);
+  }
+  const room = (lines: readonly string[]): string[] => lines.filter((line) => !isAlone(line));
+  const alone = (lines: readonly string[]): { at: number; line: string }[] => {
+    let at = 0;
+    return lines.flatMap((line) => (isAlone(line) ? [{ at, line }] : (at++, [])));
+  };
+  const before = room(earlier.lines);
+  const replay = room(rejoin.lines);
+  if (before.length > replay.length || before.some((line, i) => line !== replay[i])) {
+    throw new ObservationError("the rejoin channel does not replay the earlier channel's room log");
+  }
+  const mine = alone(earlier.lines);
+  const theirs = alone(rejoin.lines);
+  const sent = mine.findLast((entry) => entry.line.startsWith(REQUEST));
+  // The server sends a rejoin's player-alone lines after the whole replay, so
+  // none of them can sit inside the room lines the player already had.
+  if (theirs.some((entry) => entry.at < before.length)) {
+    throw new ObservationError("the rejoin channel has a request or error line inside the room log the player already had");
+  }
+  const again = theirs[0];
+  let dropped = 0;
+  if (again?.line.startsWith(REQUEST) === true && sent !== undefined && again.at === sent.at) {
+    const a = identityOf(again.line);
+    const b = identityOf(sent.line);
+    if (a.body === b.body && (a.rqid !== undefined || b.rqid !== undefined)) {
+      if (a.rqid !== b.rqid) {
+        throw new ObservationError("the rejoin's first request has the body of the earlier last request but another rqid");
+      }
+      theirs.shift();
+      dropped = 1;
+    }
+  }
+  const lines: string[] = [];
+  const put = (list: { at: number; line: string }[], at: number): void => {
+    for (const entry of list) if (entry.at === at) lines.push(entry.line);
+  };
+  replay.forEach((line, i) => {
+    put(mine, i);
+    put(theirs, i);
+    lines.push(line);
+  });
+  put(mine, replay.length);
+  put(theirs, replay.length);
+  const requests = lines.filter((line) => line.startsWith(REQUEST));
+  const expected = earlier.lines.filter((line) => line.startsWith(REQUEST)).length +
+    rejoin.lines.filter((line) => line.startsWith(REQUEST)).length - dropped;
+  if (requests.length !== expected) {
+    throw new ObservationError("the joined channel's request sequence is not contiguous");
+  }
+  // `rqid` exists only on the server path (A2): an A1 channel has none, and a
+  // channel must not mix the two.
+  const rqids = requests.map((line) => identityOf(line).rqid);
+  if (rqids.some((rqid) => rqid !== undefined)) {
+    let last = -Infinity;
+    for (const rqid of rqids) {
+      if (typeof rqid !== "number" || !(rqid > last)) {
+        throw new ObservationError("the rqid of the joined requests must be present and rise strictly");
+      }
+      last = rqid;
+    }
+  }
+  return playerChannel({
+    schema_version: 1,
+    data_class: earlier.data_class === "private" || rejoin.data_class === "private" ? "private" : "synthetic",
+    player: earlier.player,
+    lines,
+  });
 }

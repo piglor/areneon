@@ -1,8 +1,8 @@
 import { A2Channel, type A2ChannelOptions, splitFrame } from "@areneon/bot-client";
-import { loadEngine, loadRulesSnapshot, playerChannel } from "@areneon/showdown-bridge";
+import { loadEngine, loadRulesSnapshot, observe, type PlayerChannel, playerChannel } from "@areneon/showdown-bridge";
 import { channelFromFrames, type HarnessFixture, reconnectEvidence, verifyHarnessFixture } from "@areneon/local-server/harness";
 import { describe, expect, it } from "vitest";
-import { type Adapter, type AdapterFactory, compareA1A2, fixtureFiles, readFixture, rebased, SEATS } from "./a1-a2-equality.ts";
+import { type Adapter, type AdapterFactory, compareA1A2, fixtureFiles, readFixture, SEATS } from "./a1-a2-equality.ts";
 
 const engine = loadEngine();
 const snapshot = loadRulesSnapshot(engine.commit);
@@ -104,11 +104,19 @@ function noStrip(options: A2ChannelOptions): Adapter {
   };
 }
 
+/**
+ * A mutated line is noticed as a channel line difference, or, in a seat that reconnected, already
+ * when the rejoin's replay no longer continues the earlier connection (`continueChannel` refuses).
+ */
+const noticed = (fixture: HarnessFixture, seat: Seat, at: number, differences: readonly string[]): boolean =>
+  differences.some(
+    (d) =>
+      d.startsWith(`${who(fixture, seat)} channel line ${at + 1} differs`) ||
+      (fixture.frames[seat].length > 1 && d.startsWith(`${seat}: the A2 adapter refused the frames`)),
+  );
+
 const stripBypassNoticed = (differences: readonly string[]): boolean =>
   differences.some((d) => d.includes("channel line") || d.includes("refused"));
-
-/** The message the observation builder gives for a channel that has no Team Preview request. */
-const NO_PREVIEW = "the channel does not start at Team Preview, so the team cannot be checked";
 
 const reconnecting = files.filter((path) => reconnected(readFixture(path)).length > 0);
 const plain = files.filter((path) => !reconnecting.includes(path));
@@ -152,7 +160,7 @@ describe("A1/A2 equality (ADR-005 gate 3)", () => {
       }
     });
 
-    it("plays on A1 to the same per-player channels, request hashes and observations as A2", async () => {
+    it("plays on A1 to the same per-player channels, request hashes and full observations as A2", async () => {
       const fixture = readFixture(path);
       const result = await compareA1A2(engine, snapshot, fixture);
       expect(result.differences).toEqual([]);
@@ -170,15 +178,12 @@ describe("A1/A2 equality (ADR-005 gate 3)", () => {
         expect(result.requests[seat]).toBe(requests.length - result.resentAcross[seat]);
         expect(result.resentAcross[seat]).toBe(connections - 1);
         expect(result.decisions[seat]).toBe(result.requests[seat] - waits.length);
-        // Every observation of the first connection is built and equal; a later connection's channel
-        // has no Team Preview request, so neither side can build one (see the file header).
-        const first = channels[0]?.lines.filter((l) => l.startsWith("|request|")) ?? [];
-        const firstWaits = first.filter((l) => (JSON.parse(l.slice(9)) as { wait?: true }).wait === true);
-        expect(result.observations[seat]).toBe(first.length - firstWaits.length);
-        expect(result.observations[seat] + result.refused[seat]).toBe(requests.length - waits.length);
-        expect(result.refused[seat] > 0).toBe(connections > 1);
-        // A1's channel has the `|request|` lines that the last connection's lacks, none for one connection.
-        expect(result.rebasedBy[seat] > 0).toBe(connections > 1);
+        // One observation per non-wait request a connection received, every one built and equal to
+        // A1's full observation, including those of a later connection (its joined channel).
+        expect(result.observations[seat]).toBe(requests.length - waits.length);
+        // The last connection's joined channel is the whole battle: one continuous channel.
+        expect(result.continued[seat]).toHaveLength(connections);
+        expect(result.continued[seat].at(-1)?.lines.filter((l) => l.startsWith("|request|"))).toHaveLength(result.requests[seat]);
         // The adapter had work to do: several frames, and server-only lines
         // (|j|, |inactive|, |title|, |t:|, ...) that it left out of the channel.
         expect(result.frames[seat]).toBeGreaterThan(10);
@@ -187,7 +192,6 @@ describe("A1/A2 equality (ADR-005 gate 3)", () => {
         for (const kind of ["|j|", "|inactive|", "|t:|0", "|title|"]) expect(raw).toContain(kind);
         expect(result.channelLines[seat]).toBe(channels.reduce((sum, c) => sum + c.lines.length, 0));
       }
-      expect(result.refusals).toEqual(reconnecting.includes(path) ? [NO_PREVIEW] : []);
     });
 
     it("still agrees when the server re-sends a request and sends server lines between frames", async () => {
@@ -209,7 +213,7 @@ describe("A1/A2 equality (ADR-005 gate 3)", () => {
         expect(at).toBeGreaterThan(0);
         editLine(mutated, "p1", (l) => l.startsWith("|move|"), (l) => `${l}x`);
         const { differences } = await compareA1A2(engine, snapshot, mutated);
-        expect(differences.some((d) => d.startsWith(`${who(mutated, "p1")} channel line ${at + 1} differs`))).toBe(true);
+        expect(noticed(mutated, "p1", at, differences)).toBe(true);
       });
 
       it("rejects a frame with one line dropped", async () => {
@@ -218,7 +222,7 @@ describe("A1/A2 equality (ADR-005 gate 3)", () => {
         expect(at).toBeGreaterThan(0);
         editLine(mutated, "p2", (l) => l.startsWith("|-damage|"), () => "");
         const { differences } = await compareA1A2(engine, snapshot, mutated);
-        expect(differences.some((d) => d.startsWith(`${who(mutated, "p2")} channel line ${at + 1} differs`))).toBe(true);
+        expect(noticed(mutated, "p2", at, differences)).toBe(true);
       });
 
       it("rejects two frames swapped", async () => {
@@ -263,7 +267,8 @@ describe("A1/A2 equality (ADR-005 gate 3)", () => {
         expect(broken.differences.length).toBeGreaterThan(0);
         // The extra request line is one more channel line than A1's channel has.
         expect(stripBypassNoticed(broken.differences)).toBe(true);
-        expect(broken.differences.some((d) => d.includes("channel line"))).toBe(true);
+        // Either the channel has the extra line, or (in a seat that reconnected) the join refuses the repeated rqid.
+        expect(broken.differences.some((d) => d.includes("channel line") || d.includes("refused the frames"))).toBe(true);
       });
 
       it("fails when the stripServerLines call is bypassed", async () => {
@@ -316,30 +321,33 @@ describe("A1/A2 equality (ADR-005 gate 3)", () => {
 describe.each(reconnecting)("a real reconnect: %s", (path) => {
   const seatOf = (fixture: HarnessFixture): Seat => reconnected(fixture)[0] as Seat;
 
-  it("restarts the A2 channel at the rejoin, which is A1's channel without its earlier |request| lines", async () => {
+  it("joins the rejoin channel to the connection before it: A1's one continuous channel, built into full observations", async () => {
     const fixture = readFixture(path);
     const seat = seatOf(fixture);
     const [before, after] = fixture.channels[seat] as [HarnessFixture["channels"]["p1"][0], HarnessFixture["channels"]["p1"][0]];
     const result = await compareA1A2(engine, snapshot, fixture);
     expect(result.differences).toEqual([]);
-    // The replayed log has no |request| line, so the rejoin channel is shorter by exactly the earlier ones.
-    const requestLines = (lines: readonly string[]) => lines.filter((l) => l.startsWith("|request|")).length;
-    const earlier = requestLines(before.lines) - 1;
-    expect(earlier).toBeGreaterThan(0);
-    expect(result.rebasedBy[seat]).toBe(earlier);
-    // Its first request is the one the first connection ended on: same rqid, same body.
-    const lastBefore = before.lines.filter((l) => l.startsWith("|request|")).at(-1);
-    expect(after.lines.find((l) => l.startsWith("|request|"))).toBe(lastBefore);
-    // The rebase is the only thing: against A1's whole channel the rejoin channel differs.
-    const a1Like = [...before.lines];
-    expect(rebased(a1Like, 2).length).toBe(a1Like.length - 1);
+    const requestLines = (lines: readonly string[]) => lines.filter((l) => l.startsWith("|request|"));
+    // The replayed log has no |request| line: the rejoin channel alone has no Team Preview request ...
+    expect(after.lines.filter((l) => !l.startsWith("|request|")).length).toBeGreaterThan(before.lines.filter((l) => !l.startsWith("|request|")).length);
+    expect(requestLines(after.lines).some((l) => JSON.parse(l.slice(9)).teamPreview === true)).toBe(false);
+    const lastBefore = requestLines(before.lines).at(-1);
+    expect(requestLines(after.lines)[0]).toBe(lastBefore);
+    // ... and the joined channel has every request once, the re-sent one not twice.
+    const joined = result.continued[seat].at(-1) as PlayerChannel;
+    expect(requestLines(joined.lines).length).toBe(requestLines(before.lines).length + requestLines(after.lines).length - 1);
+    expect(joined.lines.filter((l) => !l.startsWith("|request|"))).toEqual(after.lines.filter((l) => !l.startsWith("|request|")));
+    // Without the join, no observation can be built from the rejoin channel.
+    const raw = playerChannel(after);
+    const team = { schema_version: 1 as const, data_class: "synthetic" as const, team: [] as never };
+    await expect(observe({ channel: raw, team, manifest: fixture.manifest as never })).rejects.toThrow(/continueChannel/);
   });
 
   it("fails for an adapter that does not restart at the rejoin", async () => {
     const fixture = readFixture(path);
     const seat = seatOf(fixture);
     const { differences } = await compareA1A2(engine, snapshot, fixture, brokenRejoin());
-    expect(differences.some((d) => d.startsWith(`${seat} connection 2 channel line`))).toBe(true);
+    expect(differences.some((d) => d.startsWith(`${seat} connection 2 channel line`) || d.startsWith(`${seat}: the A2 adapter refused the frames`))).toBe(true);
   });
 
   it("fails for a no-dedupe adapter when the server also re-sends the request within the rejoin connection", async () => {
@@ -350,7 +358,9 @@ describe.each(reconnecting)("a real reconnect: %s", (path) => {
     expect(real.differences).toEqual([]);
     expect(real.resent[seat]).toBe(1);
     const broken = await compareA1A2(engine, snapshot, fixture, noDedupe);
-    expect(broken.differences.some((d) => d.startsWith(`${seat} connection 2 channel line`))).toBe(true);
+    expect(
+      broken.differences.some((d) => d.startsWith(`${seat} connection 2 channel line`) || d.startsWith(`${seat}: the A2 adapter refused the frames`)),
+    ).toBe(true);
   });
 
   it("rejects a rejoin whose replayed log lost a line, and one whose re-sent request is another", async () => {
@@ -358,7 +368,7 @@ describe.each(reconnecting)("a real reconnect: %s", (path) => {
     const seat = seatOf(lost);
     editLine(lost, seat, (l) => l.startsWith("|-damage|"), () => "", false, 1);
     const first = await compareA1A2(engine, snapshot, lost);
-    expect(first.differences.some((d) => d.startsWith(`${seat} connection 2 channel line`))).toBe(true);
+    expect(first.differences.some((d) => d.startsWith(`${seat}: the A2 adapter refused the frames`))).toBe(true);
 
     const other = clone(path);
     editLine(
@@ -373,10 +383,10 @@ describe.each(reconnecting)("a real reconnect: %s", (path) => {
       false,
       1,
     );
-    // Not the same request any more (the hash differs), so it is a new one: one request too many.
+    // Not the same request any more (the hash differs), so it is a new one with the earlier request's rqid:
+    // the join refuses it (rqid must rise), so the adapter refuses the frames.
     const second = await compareA1A2(engine, snapshot, other);
-    expect(second.differences.some((d) => d.includes("requests, A1 sent"))).toBe(true);
-    expect(second.differences.some((d) => d.includes("request_hash"))).toBe(true);
+    expect(second.differences.some((d) => d.startsWith(`${seat}: the A2 adapter refused the frames`))).toBe(true);
   });
 
   it("rejects a second connection that does not start at an |init|battle", async () => {
@@ -395,7 +405,7 @@ describe.each(reconnecting)("a real reconnect: %s", (path) => {
     await expect(verifyHarnessFixture(engine, clone(path))).resolves.toBeUndefined();
     editLine(fixture, seat, (l) => l.startsWith("|request|"), (l) => l.replace(/"rqid":\d+/, '"rqid":1'), false, 1);
     const { differences } = await compareA1A2(engine, snapshot, fixture);
-    expect(differences.some((d) => d.includes("does not follow"))).toBe(true);
+    expect(differences.some((d) => d.includes("does not follow") || d.includes("refused the frames"))).toBe(true);
     await expect(verifyHarnessFixture(engine, fixture)).rejects.toThrow(/connection 2 starts with a request older than/);
   });
 
