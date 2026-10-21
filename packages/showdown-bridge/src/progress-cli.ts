@@ -121,8 +121,9 @@ export async function runProgressCli(argv: readonly string[], print: (line: stri
     });
   const client = workerFor({ preview, battle });
   const previousPair = given.length === 0 ? undefined : { preview: need("previous-preview"), battle: need("previous-battle") };
-  const previousClient = previousPair === undefined ? undefined : workerFor(previousPair);
+  let previousClient: PolicyWorkerClient | undefined;
   try {
+    previousClient = previousPair === undefined ? undefined : workerFor(previousPair);
     const pool = poolSource(engine, config);
     await client.start();
     await previousClient?.start();
@@ -168,7 +169,10 @@ export async function runProgressCli(argv: readonly string[], print: (line: stri
     }
     throw error;
   } finally {
-    await client.close();
-    await previousClient?.close();
+    try {
+      await client.close();
+    } finally {
+      await previousClient?.close(); // the second worker is closed even if closing the first throws
+    }
   }
 }

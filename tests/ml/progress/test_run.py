@@ -425,6 +425,18 @@ def test_generation_zero_has_no_previous_generation_and_says_so(run: Path, tmp_p
             "previous generation's pair|policy_id is not its checkpoints",
         ),
         (
+            "a consistent substitution: another pair, its own policy ids",
+            lambda d: [
+                m["opponent"].update(
+                    checkpoints={"preview": "0" * 64, "battle": "1" * 64},
+                    policy_id=policy_id("0" * 64, "1" * 64, m["mode"]),
+                )
+                for m in d["matches"]
+                if m["opponent"]["kind"] == "previous"
+            ],
+            "not the previous generation's frozen pair",
+        ),
+        (
             "only one previous mode",
             lambda d: d.update(
                 matches=[m for m in d["matches"] if m["match_id"] != "previous-argmax"],
