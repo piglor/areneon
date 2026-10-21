@@ -1,0 +1,112 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:areneon:schema:contracts:v1:private-team-record",
+  "title": "PrivateTeamRecord",
+  "description": "One revision of one team in the private team store (ADR-015 section 2): the PokePaste in the engine's canonical form, the hashes that identify it, its status, tags and labels. The data class is always private. A record is content-addressed: record_hash is SHA-256 of the JCS bytes of this object; supersedes_record_hash links a revision to the one before it. The paste's round trip through the pinned engine, both team hashes, revision 1 having no predecessor, the hold-out flag being a boolean, sorted and unique tags and unique label ids are enforced by the reader (the contract profile cannot compute them); so are the snapshot-level rules (unique team_id, unique canonical_team_hash among active records).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "data_class",
+    "team_id",
+    "revision",
+    "supersedes_record_hash",
+    "team_hash",
+    "canonical_team_hash",
+    "paste",
+    "status",
+    "tags",
+    "labels",
+    "holdout"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "data_class": {
+      "description": "Always private. The data-class guard refuses this label everywhere except at the exact corpus sample paths it lists (ADR-015 section 6).",
+      "const": "private"
+    },
+    "team_id": {
+      "description": "A 128-bit random id as 32 lower-case hex characters; stable across revisions.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{32}$"
+    },
+    "revision": {
+      "description": "The revision, 1 for the first and plus 1 per edit.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 2147483647
+    },
+    "supersedes_record_hash": {
+      "description": "Null for revision 1; otherwise the record_hash of the previous revision.",
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "team_hash": {
+      "description": "SHA-256 of the JCS bytes of the team's set array, in paste order (ADR-013).",
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "canonical_team_hash": {
+      "description": "SHA-256 of the JCS bytes of the set array sorted by species id, ties broken by the set's JCS bytes (ADR-013).",
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "paste": {
+      "description": "The team as PokePaste text, exactly as the engine exports it.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 8192
+    },
+    "status": {
+      "description": "Whether the team is in use.",
+      "enum": [
+        "active",
+        "retired"
+      ]
+    },
+    "tags": {
+      "description": "The owner's tags, sorted and unique (reader-enforced).",
+      "type": "array",
+      "maxItems": 16,
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z0-9][a-z0-9-]{0,31}$"
+      }
+    },
+    "holdout": {
+      "description": "Whether the team is held out of training (ADR-015 section 2). Derived from the first 8 bytes of HMAC-SHA256(snapshot holdout key, team_id) read as an unsigned integer, below ppm / 10^6 of 2^64; it depends on team_id alone, so it is the same on every revision. The reader of this record checks only that it is a boolean; the snapshot reader, which has the key, recomputes it.",
+      "type": "boolean"
+    },
+    "labels": {
+      "description": "Label values in the form of ADR-013's TeamRecord labels; label ids are unique (reader-enforced).",
+      "type": "array",
+      "maxItems": 64,
+      "items": {
+        "description": "A label's value for this team.",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "label_id",
+          "value"
+        ],
+        "properties": {
+          "label_id": {
+            "description": "The label's id.",
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+          },
+          "value": {
+            "description": "The value the label takes.",
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+          }
+        }
+      }
+    }
+  }
+}
