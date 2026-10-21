@@ -1,4 +1,4 @@
-import { EnumeratorDefectError, loadEngine, loadRulesSnapshot, UnsupportedFormatError } from "@areneon/showdown-bridge";
+import { continueChannel, EnumeratorDefectError, loadEngine, loadRulesSnapshot, UnsupportedFormatError } from "@areneon/showdown-bridge";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   type A2BattleRecord,
@@ -873,6 +873,89 @@ describe("runA2Bot: reconnects (ADR-005 §1, §3)", () => {
     controller.abort();
     await expect(run.result).resolves.toEqual({ battles: [] });
     expect(connect).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("runA2Bot: a rejoin of a room whose battle already ended", () => {
+  /** The room log as the server replays it on a join: the battle frames without the bot's own requests and errors (the server sends those to it alone). */
+  const replay = battle.frames.filter((frame) => !frame.includes("|request|") && !frame.includes("|error|"));
+  const END = replay.length - 1;
+
+  /** The bot has answered request 3 on its first connection when the connection drops; it logs in again. */
+  async function dropped(): Promise<{ run: Run; records: A2BattleRecord[] }> {
+    const records: A2BattleRecord[] = [];
+    const run = await start({ onBattle: (record) => records.push(record) });
+    login(run.t());
+    preview(run.t());
+    run.t().push(at(2));
+    run.t().push(at(3));
+    run.t().push(time(55, 400));
+    run.t().end(1006);
+    await vi.waitFor(() => expect(run.transports).toHaveLength(2));
+    login(run.t());
+    return { run, records };
+  }
+
+  it("joins its unfinished room on login, records the end from the replay and leaves", async () => {
+    const { run, records } = await dropped();
+    // The server does not rejoin a user to a battle that ended while it was away: only a /join tells.
+    expect(run.t().sent.at(-1)).toBe(`|/join ${ROOM}`);
+    run.t().push(INIT);
+    for (const frame of replay.slice(0, END)) run.t().push(frame);
+    expect(run.events("battle_ended")).toEqual([]);
+    run.t().push(replay[END] as string);
+    expect(run.t().sent.filter((line) => line === `${ROOM}|/leave`)).toHaveLength(1);
+    const { battles } = await run.result;
+    expect(records).toEqual(battles);
+    const [record] = battles as [A2BattleRecord];
+    expect(record).toMatchObject({ result: "loss", winner: "p1", player: "p1", fatal: null });
+    expect(record.channels).toHaveLength(2);
+    expect(record.channels[0]?.lines.some((line) => line.startsWith("|win|"))).toBe(false);
+    expect(record.channels[1]?.lines).toContain("|win|p1");
+    // The two channels join (fail closed otherwise) into the one the Episode stores.
+    expect(record.channels.reduce(continueChannel).lines).toContain("|win|p1");
+    expect(record.decisions.map((d) => d.rqid)).toEqual([1, 3]);
+    expect(run.events("battle_ended")).toEqual([{ event: "battle_ended", room: ROOM, result: "loss", winner: "p1" }]);
+  });
+
+  it("records a tie from the replay", async () => {
+    const { run } = await dropped();
+    run.t().push(INIT);
+    for (const frame of replay.slice(0, END)) run.t().push(frame);
+    run.t().push(room("|tie"));
+    const { battles } = await run.result;
+    expect(battles[0]).toMatchObject({ result: "tie", winner: null });
+  });
+
+  it("records the result of a battle that ended before the bot's first request, with no channel to keep", async () => {
+    const run = await start();
+    login(run.t());
+    run.t().push(INIT);
+    run.t().end(1006);
+    await vi.waitFor(() => expect(run.transports).toHaveLength(2));
+    login(run.t());
+    expect(run.t().sent.at(-1)).toBe(`|/join ${ROOM}`);
+    run.t().push(INIT);
+    run.t().push(room("|win|p2"));
+    const { battles } = await run.result;
+    expect(battles[0]).toMatchObject({ result: "loss", player: null, channels: [] });
+  });
+
+  it("fails closed on a replay that does not continue the earlier channel", async () => {
+    const { run, records } = await dropped();
+    run.t().push(INIT);
+    // The log of the earlier connection is missing from this replay.
+    run.t().push(room("|win|p1"));
+    await expect(run.result).rejects.toThrow();
+    expect(records).toHaveLength(1);
+    expect(records[0]).toMatchObject({ result: "unfinished", fatal: { channel_complete: false } });
+  });
+
+  it("fails closed when the server refuses the join of an unfinished battle", async () => {
+    const { run, records } = await dropped();
+    run.t().push(room("|noinit|nonexistent|The room \"battle\" does not exist."));
+    await expect(run.result).rejects.toThrow(SessionError);
+    expect(records[0]).toMatchObject({ result: "unfinished", fatal: { error: "SessionError" } });
   });
 });
 

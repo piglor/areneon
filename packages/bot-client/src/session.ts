@@ -544,7 +544,12 @@ class Session {
     if (events.some((event) => event.kind === "line" && event.line === BATTLE_INIT)) this.#joined(connection, room);
     const battle = this.#battles.get(room);
     const state = connection.rooms.get(room);
-    if (battle === undefined || state === undefined || battle.result !== "unfinished") return;
+    if (battle === undefined || battle.result !== "unfinished") return;
+    if (events.some((event) => event.kind === "line" && event.line.startsWith("|noinit|"))) {
+      // The room the bot is in a battle of is gone or refused: the battle can no longer be finished.
+      throw new SessionError(`${room}: the server refused the join of an unfinished battle`);
+    }
+    if (state === undefined) return;
     this.#receive(battle, state, frame, events);
     events.forEach((event, i) => this.#battleEvent(battle, state, event, events.slice(i + 1), now));
   }
@@ -572,6 +577,12 @@ class Session {
     this.#failures = 0;
     this.#send(`|/utm ${this.#packedTeam}`);
     this.#log({ event: "logged_in", name: userName(identity) });
+    // The server rejoins the user to its running battles on its own, but not to one that ended
+    // while the bot was away: a `/join` is the only way to learn its end. For a room the
+    // connection is in already it does nothing (server/users.ts `joinRoom`), so it is always sent.
+    for (const battle of this.#battles.values()) {
+      if (battle.result === "unfinished") this.#send(`|/join ${battle.room}`);
+    }
     const { challenge, format } = this.#options;
     if (challenge !== undefined && !this.#challenged) {
       this.#challenged = true;
@@ -989,6 +1000,13 @@ class Session {
     const result = winner === null ? "tie" : toId(winner) === toId(this.#options.name) ? "win" : "loss";
     clearTimeout(battle.otsTimer);
     battle.watchdog.dispose();
+    // A rejoin of a room that ended while the bot was away replays the log with no request:
+    // the channel of this connection is made from the replay, on the seat the bot had.
+    if (state.channel === undefined && battle.player !== null) {
+      state.channel = new A2Channel({ room: battle.room, player: battle.player, data_class: this.#options.data_class });
+      for (const kept of state.frames) state.channel.receive(kept);
+      state.frames = [];
+    }
     // The battle counts as ended only once its channel is kept and the room left: if either
     // throws, the fatal path still sees it unfinished and hands its record over.
     this.#keepChannel(battle, state);
