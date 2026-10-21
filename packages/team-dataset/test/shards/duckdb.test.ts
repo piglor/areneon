@@ -1,14 +1,15 @@
+import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { columnsFor, ShardError } from "../../src/shards/columns.ts";
 import { convertDataset, verifySnapshot } from "../../src/shards/convert.ts";
-import { type DuckdbPin, DuckdbWriter, locateDuckdb, PIN_FILE, platformKey, readPin } from "../../src/shards/duckdb.ts";
+import { type DuckdbPin, DuckdbWriter, locateDuckdb, PIN_FILE, platformKey, readPin, type Runner, WITHHELD_MESSAGE } from "../../src/shards/duckdb.ts";
 import { readShard } from "../../src/shards/reader.ts";
 import { DATASET_DIR } from "./paths.ts";
-import { expectationOf, fixtureRecords, labelSet, plan, SHARD_KEY, shardOrder, standInRunner } from "./support.ts";
+import { at, expectationOf, fixtureRecords, labelSet, plan, SHARD_KEY, shardOrder, standInRunner } from "./support.ts";
 
 const scratch = mkdtempSync(join(tmpdir(), "duckdb-writer-"));
 afterAll(() => rmSync(scratch, { recursive: true, force: true }));
@@ -122,6 +123,76 @@ describe("DuckdbWriter with a stand-in tool", () => {
     const failing = DuckdbWriter.open(fakeBinary, (_f, args) => (args[0] === "--version" ? { status: 0, stdout: "v1.5.6 (x)\n", stderr: "" } : { status: 1, stdout: "", stderr: "IO Error: no such file\n" }));
     expect(() => failing.writeShard("a", "b", cols)).toThrow(/DuckDB failed \(1\): IO Error: no such file/);
   });
+  it("on the private path runs in a scratch directory of the caller's, with a minimal environment, and withholds the tool's stderr", () => {
+    const dir = mkdtempSync(join(scratch, "iso-"));
+    const cols = columnsFor(labelSet);
+    const runner = standInRunner();
+    const writer = DuckdbWriter.open(fakeBinary, runner);
+    const rows = join(dir, "r.jsonl");
+    writeFileSync(rows, shardOrder(fixtureRecords("dev").slice(0, 3)).map((s) => `${JSON.stringify(s.row)}\n`).join(""));
+    writer.writeShard(rows, join(dir, "o.parquet"), cols, { isolated: { dir } });
+    const call = at(runner.calls, -1);
+    expect(call.env).toEqual({ PATH: "", HOME: call.cwd, TMPDIR: call.cwd, DUCKDB_HISTORY: "/dev/null" });
+    expect(call.cwd?.startsWith(dir)).toBe(true);
+    expect(existsSync(call.cwd as string)).toBe(false);
+    const failing = DuckdbWriter.open(fakeBinary, (_f, args) => (args[0] === "--version" ? { status: 0, stdout: "v1.5.6 (x)\n", stderr: "" } : { status: 1, stdout: "", stderr: "Conversion Error: PASTE-TEXT" }));
+    expect(() => failing.writeShard("a", "b", cols, { isolated: { dir } })).toThrow(WITHHELD_MESSAGE);
+    expect(() => failing.writeShard("a", "b", cols, { isolated: { dir } })).not.toThrow(/PASTE-TEXT/);
+    expect(readdirSync(dir).sort()).toEqual(["o.parquet", "r.jsonl"]);
+  });
+
+  it("on the private path turns extension install and load off first, locks the configuration before the copy, and passes a time limit", () => {
+    const dir = mkdtempSync(join(scratch, "iso-"));
+    const runner = standInRunner();
+    const writer = DuckdbWriter.open(fakeBinary, runner);
+    const rows = join(dir, "r.jsonl");
+    writeFileSync(rows, shardOrder(fixtureRecords("dev").slice(0, 2)).map((s) => `${JSON.stringify(s.row)}\n`).join(""));
+    writer.writeShard(rows, join(dir, "o.parquet"), columnsFor(labelSet), { isolated: { dir } });
+    const sql = at(runner.calls, -1).input.split("\n");
+    expect(sql.slice(0, 5)).toEqual([
+      "SET autoinstall_known_extensions = false;",
+      "SET autoload_known_extensions = false;",
+      "SET threads = 1;",
+      "SET preserve_insertion_order = true;",
+      "SET lock_configuration = true;",
+    ]);
+    expect(sql[5]).toMatch(/^COPY /);
+    // The public path is unchanged.
+    writer.writeShard(rows, join(dir, "p.parquet"), columnsFor(labelSet));
+    expect(at(runner.calls, -1).input).not.toContain("autoinstall");
+    expect(at(runner.calls, -1).input).not.toContain("lock_configuration");
+  });
+
+  it("on the private path kills a tool that runs past the limit, removes the scratch directory and says only the fixed message", () => {
+    const dir = mkdtempSync(join(scratch, "slow-"));
+    const script = join(dir, "duckdb");
+    writeFileSync(script, "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then echo 'v1.5.6 (Test) abc'; exit 0; fi\ncat > /dev/null\nsleep 30\n");
+    chmodSync(script, 0o755);
+    const writer = DuckdbWriter.open(script);
+    const work = mkdtempSync(join(dir, "work-"));
+    const started = Date.now();
+    expect(() => writer.writeShard("a", "b", columnsFor(labelSet), { isolated: { dir: work, timeoutMs: 300 } })).toThrow(WITHHELD_MESSAGE);
+    expect(Date.now() - started).toBeLessThan(10_000);
+    expect(readdirSync(work)).toEqual([]);
+  });
+
+  it("on the private path repairs a scratch directory the tool left read-only and removes it", () => {
+    const dir = mkdtempSync(join(scratch, "stuck-"));
+    const runner = standInRunner();
+    const rows = join(dir, "r.jsonl");
+    writeFileSync(rows, shardOrder(fixtureRecords("dev").slice(0, 2)).map((s) => `${JSON.stringify(s.row)}\n`).join(""));
+    const sticky = ((f, a, i, e, c, t) => {
+      if (a[0] !== "--version" && c !== undefined) {
+        writeFileSync(join(c, "leftover"), "x");
+        chmodSync(join(c, "leftover"), 0o400);
+        chmodSync(c, 0o500);
+      }
+      return runner(f, a, i, e, c, t);
+    }) as typeof runner;
+    const tricky = DuckdbWriter.open(fakeBinary, sticky);
+    tricky.writeShard(rows, join(dir, "o.parquet"), columnsFor(labelSet), { isolated: { dir } });
+    expect(readdirSync(dir).sort()).toEqual(["o.parquet", "r.jsonl"]);
+  });
 });
 
 // The same checks with a real DuckDB command-line tool, where one is installed
@@ -199,5 +270,61 @@ describe.skipIf(binary === undefined)("DuckdbWriter with the real tool", () => {
   it("reports an error for a rows file DuckDB cannot read", () => {
     const writer = DuckdbWriter.open(binary as string);
     expect(() => writer.writeShard(join(scratch, "missing.jsonl"), join(scratch, "m.parquet"), columnsFor(labelSet))).toThrow(/DuckDB failed/);
+  });
+
+  it("on the private path turns the extension settings off inside the child, and the copy still works with the configuration locked", () => {
+    const dir = mkdtempSync(join(scratch, "real-iso-"));
+    const rows = join(dir, "r.jsonl");
+    writeFileSync(rows, staged.slice(0, 3).map((s) => `${JSON.stringify(s.row)}\n`).join(""));
+    const captured: string[] = [];
+    const readBack: string[] = [];
+    const runner: Runner = (file, args, input, env, cwd, timeoutMs) => {
+      const result = spawnSync(file, [...args], { input, env, cwd, encoding: "utf8", timeout: timeoutMs });
+      if (args[0] === "-bail") {
+        captured.push(input);
+        // The same preamble, then the settings read back inside a child of the same shape.
+        const preamble = input.split("\n").filter((l) => l.startsWith("SET "));
+        const probe = spawnSync(file, ["-batch", "-csv", "-noheader"], {
+          input: `${preamble.join("\n")}\nSELECT current_setting('autoinstall_known_extensions'), current_setting('autoload_known_extensions'), current_setting('lock_configuration');`,
+          env,
+          cwd,
+          encoding: "utf8",
+        });
+        readBack.push(probe.stdout.trim());
+      }
+      return { status: result.status, stdout: result.stdout ?? "", stderr: result.stderr ?? "" };
+    };
+    const writer = DuckdbWriter.open(binary as string, runner);
+    writer.writeShard(rows, join(dir, "o.parquet"), columnsFor(labelSet), { isolated: { dir } });
+    expect(readBack).toEqual(["false,false,true"]);
+    expect(existsSync(join(dir, "o.parquet"))).toBe(true);
+    expect(captured[0]).toContain("SET lock_configuration = true;");
+  });
+
+  it("on the private path withholds a real DuckDB error that quotes the rows, which the public path forwards", () => {
+    const dir = mkdtempSync(join(scratch, "real-err-"));
+    const rows = join(dir, "bad.jsonl");
+    writeFileSync(rows, '{"schema_version": "CanaryReal7 (Garchomp) @ Item"}\n');
+    const writer = DuckdbWriter.open(binary as string);
+    const cols = columnsFor(labelSet);
+    const publicError = (() => {
+      try {
+        writer.writeShard(rows, join(dir, "p.parquet"), cols);
+      } catch (error) {
+        return (error as Error).message;
+      }
+      return "no error";
+    })();
+    expect(publicError).toMatch(/^DuckDB failed \(1\): /);
+    expect(publicError).toContain("CanaryReal7");
+    const work = mkdtempSync(join(dir, "work-"));
+    let privateError = "no error";
+    try {
+      writer.writeShard(rows, join(dir, "q.parquet"), cols, { isolated: { dir: work } });
+    } catch (error) {
+      privateError = (error as Error).message;
+    }
+    expect(privateError).toBe(WITHHELD_MESSAGE);
+    expect(readdirSync(work)).toEqual([]);
   });
 });

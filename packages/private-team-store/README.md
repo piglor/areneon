@@ -3,8 +3,11 @@
 The private team store (ADR-015). So far this package holds the pure import
 planner (`src/import-plan.ts`, with `src/staged-file.ts` for the staged-file header and `src/import-error.ts` for the typed refusals: staged files plus the parent snapshot's records
 in, the next records and a counts-only summary out, or a typed refusal that
-never repeats input text), its exact-pinned dependencies and the packaging rule
-that keeps it out of every image.
+never repeats input text), the private snapshot writer and reader
+(`src/snapshot-writer.ts`, `src/snapshot-reader.ts`: records to Parquet shards and
+manifest through the pinned DuckDB tool, and the full verification of a stored
+snapshot; fixed-message refusals only), its exact-pinned dependencies and the
+packaging rule that keeps it out of every image.
 
 - `"private": true` and **never shipped**: no Dockerfile, compose file, Coolify
   build or other workspace package refers to it. `test/packaging.test.ts`
