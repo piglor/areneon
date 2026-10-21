@@ -1,0 +1,597 @@
+"""The report page (ADR-017 section 4, slice 6): every number comes from ``model.py``.
+
+Every string that comes from data goes through ``esc`` (HTML) or the JSON data block (tips); a link
+is built only from a name this module's caller checked against ``[a-z0-9_-]+`` and a file that exists.
+The page says on top, and in every progress section, what it is not: a progress view on the fixed
+validation plan, never the Training gate, and loss is not skill.
+"""
+
+# ruff: noqa: E501  (HTML template lines are kept whole so the markup reads as written)
+
+from __future__ import annotations
+
+from collections.abc import Callable, Iterable
+from dataclasses import dataclass, field
+from functools import partial
+
+from areneon_ml.inspector.page import esc
+from areneon_ml.report.charts import Pt, Series, Stack, Tips, line_chart, stacked_chart
+from areneon_ml.report.model import (
+    METRICS,
+    NOT_RECORDED,
+    GenerationFacts,
+    MatchFacts,
+    ReportModel,
+    Tally,
+)
+from areneon_ml.report.page import document
+
+BANNER = "Progress view on validation teams. Not the Training gate. Loss is not skill."
+CLAIM = (
+    "Allowed claim: the frozen pair of generation G scored s against opponent O on these "
+    "validation teams under this fixed plan (interval conditional on the plan). Nothing about "
+    "the generator's distribution of teams; never stronger, never a rating, never a gate claim."
+)
+CONDITIONAL = (
+    "Wilson 95% intervals on the score, conditional on the fixed validation plan: the same pairs "
+    "and seeds in every match, mode and generation. Several generations viewed together are a "
+    "sequence of looks, so their intervals are not simultaneous."
+)
+SEEN = "seen, same-lineage comparison: it can cycle"
+NOT_EVALUATED = "not evaluated yet"
+MODES = (("sample", 1, "circle"), ("argmax", 2, "square"))
+LABELS = {
+    "policy_loss": "Policy loss",
+    "value_loss": "Value loss",
+    "entropy": "Entropy",
+    "approx_kl": "Approximate KL",
+    "clip_fraction": "Clip fraction",
+}
+
+
+@dataclass(frozen=True)
+class Links:
+    """Relative links into an inspector output that exists next to the report."""
+
+    games: dict[int, str] = field(default_factory=dict)
+    replays: dict[int, tuple[tuple[str, str], ...]] = field(default_factory=dict)
+
+
+def permille(ppm: int) -> int:
+    return (ppm + 500) // 1000
+
+
+def pct(ppm: int, *, up: bool = False, down: bool = False) -> str:
+    """A ppm value as a percentage with one decimal, in integers (rounded outward when asked)."""
+    tenths = ppm // 1000 if down else (ppm + 999) // 1000 if up else permille(ppm)
+    return f"{tenths // 10}.{tenths % 10}%"
+
+
+def tenths(total: int, games: int) -> str:
+    """``total / games`` to one decimal, in integers."""
+    t = (10 * total + games // 2) // games
+    return f"{t // 10}.{t % 10}"
+
+
+def _table(head: list[tuple[str, bool]], rows: Iterable[list[str]], caption: str) -> str:
+    """A table; the first column is the row header, numeric columns right-aligned."""
+    heads = "".join(
+        f'<th scope="col"{' class="n"' if numeric and index else ""}>{esc(name)}</th>'
+        for index, (name, numeric) in enumerate(head)
+    )
+    body = ""
+    for row in rows:
+        cells = [f'<th scope="row">{esc(row[0])}</th>']
+        for (_, numeric), cell in zip(head[1:], row[1:], strict=True):
+            cells.append(f'<td class="{"n" if numeric else "txt"}">{cell}</td>')
+        body += "<tr>" + "".join(cells) + "</tr>"
+    return (
+        f'<div class="scroll"><table><caption class="muted">{esc(caption)}</caption>'
+        f"<thead><tr>{heads}</tr></thead><tbody>{body}</tbody></table></div>"
+    )
+
+
+def _stem(match: MatchFacts) -> str:
+    return match.match_id.removesuffix("-" + match.mode)
+
+
+def _progress_section(model: ReportModel, tips: Tips) -> str:
+    out = ["<h2>Progress evaluation</h2>", f'<p class="banner">{esc(BANNER)}</p>']
+    if not model.progress_root:
+        out.append(
+            f"<p>Progress evaluation: {NOT_EVALUATED}. No progress directory was given, so no "
+            "generation has a score here; the training curves below do not replace it.</p>"
+        )
+        return "".join(out)
+    xs = [g.number for g in model.generations]
+    done = sorted(model.progress)
+    if not done:
+        out.append(
+            f"<p>Progress evaluation: {NOT_EVALUATED}. The progress directory holds no committed generation.</p>"
+        )
+        return "".join(out)
+    missing = [str(g) for g in xs if g not in model.progress]
+    out.append(f'<p class="claim">{esc(CLAIM)}</p><p class="note">{esc(CONDITIONAL)}</p>')
+    out.append(
+        f'<p class="note">Evaluated generations: {esc(", ".join(map(str, done)))}. '
+        f"Not evaluated yet: {esc(', '.join(missing) if missing else 'none')}. Games per match: "
+        f"{esc(', '.join(sorted({str(p.games_per_match) for p in model.progress.values()})))}.</p>"
+    )
+    xs = [x for x in xs if x <= done[-1]]
+    stems = sorted({_stem(m) for p in model.progress.values() for m in p.matches})
+    charts = []
+    for stem in stems:
+        series = []
+        seen_label = None
+        for mode, slot, shape in MODES:
+            pts = []
+            for g in done:
+                for m in model.progress[g].matches:
+                    if _stem(m) == stem and m.mode == mode:
+                        seen_label = m.seen_label or seen_label
+                        low, high = pct(m.low_ppm, down=True), pct(m.high_ppm, up=True)
+                        text = (
+                            f"Generation {g}, {mode} vs {stem}: score {pct(m.score_ppm)} "
+                            f"(Wilson 95% {low} to {high}, conditional on the fixed validation plan); "
+                            f"{m.wins} wins, {m.ties} ties, {m.losses} losses of {m.games} games"
+                        )
+                        pts.append(
+                            Pt(
+                                g,
+                                m.score_ppm / 1e6,
+                                text,
+                                f"{pct(m.score_ppm)} ({low} to {high})",
+                                m.low_ppm // 1000 / 1000,
+                                ((m.high_ppm + 999) // 1000) / 1000,
+                            )
+                        )
+            if pts:
+                series.append(Series(mode, slot, shape, tuple(pts)))
+        title = f"Score vs {stem}" + (f" ({SEEN})" if seen_label else "")
+        charts.append(
+            line_chart(
+                title,
+                "Progress score by generation with its Wilson interval, conditional on the fixed validation plan. Dashed line: 50%. Lines join looks, not a trend.",
+                xs,
+                series,
+                tips,
+                y_range=(0.0, 1.0),
+                y_label=lambda v: f"{round(v * 100)}%",
+                ref=0.5,
+                missing="not applicable" if stem == "previous" else NOT_EVALUATED,
+            )
+        )
+    out.append(f'<div class="charts">{"".join(charts)}</div>')
+    rows = []
+    for g in done:
+        for m in model.progress[g].matches:
+            low, high = pct(m.low_ppm, down=True), pct(m.high_ppm, up=True)
+            forfeits = sum(n for _, _, n in m.forfeits)
+            rows.append(
+                [
+                    str(g),
+                    esc(m.match_id)
+                    + (f' <span class="muted">({esc(SEEN)})</span>' if m.seen_label else ""),
+                    str(m.games),
+                    f"{m.wins} / {m.ties} / {m.losses}",
+                    pct(m.score_ppm),
+                    f"{low} to {high}",
+                    str(forfeits),
+                    tenths(m.turns_total, m.games),
+                    str(m.turn_cap_ties),
+                ]
+            )
+    out.append("<h3>Matches</h3>")
+    out.append(
+        _table(
+            [
+                ("Generation", True),
+                ("Match", False),
+                ("Games", True),
+                ("Wins / ties / losses", True),
+                ("Score", True),
+                ("Wilson 95%, conditional on the plan", True),
+                ("Forfeits", True),
+                ("Mean turns", True),
+                ("Turn-cap ties", True),
+            ],
+            rows,
+            "Each row: the frozen pair of that generation against the opponent, on the validation plan.",
+        ).replace('<td class="txt">', '<td class="txt">')
+    )
+    out.append("<h3>Score by seat (diagnostic)</h3>")
+    out.append(
+        _table(
+            [
+                ("Generation", True),
+                ("Match", False),
+                ("Candidate on p1: W / T / L", True),
+                ("Candidate on p2: W / T / L", True),
+            ],
+            [
+                [str(g), esc(m.match_id), *(f"{w} / {t} / {lo}" for _, w, t, lo in m.seats)]
+                for g in done
+                for m in model.progress[g].matches
+            ],
+            "The candidate alternates seats by game (p1 on even games). Descriptive, no interval.",
+        )
+    )
+    causes = [
+        [str(g), m.match_id, side, cause, str(n)]
+        for g in done
+        for m in model.progress[g].matches
+        for side, cause, n in m.forfeits
+    ]
+    out.append("<h3>Progress forfeits by cause</h3>")
+    if causes:
+        out.append(
+            _table(
+                [
+                    ("Generation", True),
+                    ("Match", False),
+                    ("Side", False),
+                    ("Cause", False),
+                    ("Count", True),
+                ],
+                [[r[0], *(esc(c) for c in r[1:4]), r[4]] for r in causes],
+                "A forfeit is a scored loss for the failing side; side is candidate or opponent.",
+            )
+        )
+    else:
+        out.append('<p class="muted">No forfeit in any evaluated match.</p>')
+    return "".join(out)
+
+
+def _baseline(kind: str, g: GenerationFacts) -> Tally | None:
+    return g.baselines.get(kind)
+
+
+def _avg(t: Tally) -> float | None:
+    return None if t.played == 0 else t.turns / t.played
+
+
+def _training_section(model: ReportModel, tips: Tips) -> str:
+    played = [g for g in model.generations if g.number > 0]
+    xs = [g.number for g in played]
+    out = ["<h2>Training games</h2>"]
+    out.append(
+        '<p class="note">Games the frozen pair played to train on: self-play and games against the scripted baselines, '
+        "sampling at temperature 1. Descriptive counts of the run, not a progress measure.</p>"
+    )
+    if not played:
+        out.append(
+            '<p class="muted">The run has no generation with games yet (generation 0 is the seeded pair).</p>'
+        )
+        return "".join(out)
+    sp = [g for g in played if g.self_play is not None and g.self_play.games]
+    stacks = [
+        Stack("p1 won", 1, {g.number: g.self_play.a for g in sp if g.self_play}),
+        Stack("p2 won", 2, {g.number: g.self_play.b for g in sp if g.self_play}),
+        Stack("tied", 3, {g.number: g.self_play.ties for g in sp if g.self_play}),
+        Stack("forfeited", 8, {g.number: g.self_play.forfeits for g in sp if g.self_play}),
+    ]
+    charts = [
+        stacked_chart(
+            "Self-play outcomes",
+            "Games per generation by result, the frozen pair against itself (the seats are p1 and p2).",
+            [g.number for g in sp],
+            stacks,
+            tips,
+            "No self-play games.",
+        )
+    ]
+    kinds = sorted({k for g in played for k in g.baselines})
+    lengths = []
+    kinds_list: list[tuple[str, Callable[[GenerationFacts], Tally | None]]] = [
+        ("self-play", lambda g: g.self_play)
+    ]
+    kinds_list += [(k, partial(_baseline, k)) for k in kinds]
+    for slot, (name, pick) in enumerate(kinds_list, start=1):
+        pts = []
+        for g in played:
+            tally = pick(g)
+            avg = None if tally is None else _avg(tally)
+            if tally is not None and avg is not None:
+                text = f"Generation {g.number}, {name}: {tenths(tally.turns, tally.played)} turns on average over {tally.played} played games"
+                pts.append(Pt(g.number, avg, text, tenths(tally.turns, tally.played)))
+        if pts:
+            lengths.append(Series(name, slot, "circle" if slot % 2 else "square", tuple(pts)))
+    charts.append(
+        line_chart(
+            "Average game length",
+            "Mean turns of the played games per generation, by opponent kind (forfeited games excluded).",
+            xs,
+            lengths,
+            tips,
+        )
+    )
+    out.append(f'<div class="charts">{"".join(charts)}</div>')
+    rows = []
+    for g in played:
+        for name, tally, a, b in [
+            ("self-play", g.self_play, "p1 won", "p2 won"),
+            *[(k, g.baselines[k], "pair won", "baseline won") for k in sorted(g.baselines)],
+        ]:
+            if tally is None or not tally.games:
+                continue
+            rows.append(
+                [
+                    str(g.number),
+                    esc(name),
+                    str(tally.games),
+                    f"{tally.a} ({a})",
+                    f"{tally.b} ({b})",
+                    str(tally.ties),
+                    str(tally.forfeits),
+                    tenths(tally.turns, tally.played) if tally.played else "none played",
+                ]
+            )
+    out.append("<h3>Games by opponent kind</h3>")
+    out.append(
+        _table(
+            [
+                ("Generation", True),
+                ("Opponent", False),
+                ("Games", True),
+                ("First side", True),
+                ("Second side", True),
+                ("Ties", True),
+                ("Forfeits", True),
+                ("Mean turns", True),
+            ],
+            rows,
+            "Self-play: p1 and p2. Against a scripted baseline: the frozen pair and the baseline.",
+        )
+    )
+    return "".join(out)
+
+
+def _cause_stacks(played: list[GenerationFacts]) -> list[Stack]:
+    names = sorted({c for g in played for c in (g.forfeit_causes or {}) if c != NOT_RECORDED})
+    shown, folded = names[:6], names[6:]
+    stacks = [
+        Stack(name, slot, {g.number: (g.forfeit_causes or {}).get(name, 0) for g in played})
+        for slot, name in enumerate(shown, start=1)
+    ]
+    if folded:
+        stacks.append(
+            Stack(
+                f"other causes ({len(folded)})",
+                7,
+                {g.number: sum((g.forfeit_causes or {}).get(n, 0) for n in folded) for g in played},
+            )
+        )
+    if any((g.forfeit_causes or {}).get(NOT_RECORDED) for g in played):
+        stacks.append(
+            Stack(
+                "cause not recorded",
+                9,
+                {g.number: (g.forfeit_causes or {}).get(NOT_RECORDED, 0) for g in played},
+            )
+        )
+    return stacks
+
+
+def _forfeit_section(model: ReportModel, tips: Tips) -> str:
+    played = [g for g in model.generations if g.number > 0]
+    out = ["<h2>Training forfeits by cause</h2>"]
+    if not played:
+        return "".join(out) + '<p class="muted">No generation with games yet.</p>'
+    stacks = _cause_stacks(played)
+    total = sum(g.forfeits or 0 for g in played)
+    out.append(
+        '<p class="note">A forfeit is a game one side lost by failing (for example a late or invalid answer). '
+        "The cause is the one the loop recorded for that game; where none was recorded it says so.</p>"
+    )
+    out.append(
+        stacked_chart(
+            "Forfeits per generation by cause",
+            "Training games lost by forfeit, per generation, by recorded cause.",
+            [g.number for g in played],
+            stacks,
+            tips,
+            "No training game was forfeited in any generation."
+            if total == 0
+            else "No forfeit causes.",
+        )
+    )
+    return "".join(out)
+
+
+def _counts_section(model: ReportModel, tips: Tips) -> str:
+    played = [g for g in model.generations if g.number > 0]
+    xs = [g.number for g in played]
+    if not played:
+        return ""
+
+    def one(
+        title: str, caption: str, pick: Callable[[GenerationFacts], int | None], name: str
+    ) -> str:
+        pts = [
+            Pt(g.number, float(v), f"Generation {g.number}: {v} {name}", str(v))
+            for g in played
+            if (v := pick(g)) is not None
+        ]
+        return line_chart(
+            title,
+            caption,
+            xs,
+            [Series(name, 1, "circle", tuple(pts))],
+            tips,
+            y_range=(0.0, float(max((p.y for p in pts), default=1.0))),
+        )
+
+    steps = []
+    for role, slot, shape in (("battle", 1, "circle"), ("preview", 2, "square")):
+        pts = [
+            Pt(
+                g.number,
+                float(g.train.roles[role]["steps"]),
+                f"Generation {g.number}, {role}: {int(g.train.roles[role]['steps'])} steps",
+                str(int(g.train.roles[role]["steps"])),
+            )
+            for g in played
+            if g.train is not None
+        ]
+        steps.append(Series(role, slot, shape, tuple(pts)))
+    out = ["<h2>Games and examples per generation</h2>"]
+    out.append(
+        '<p class="note">Wall-clock time is not recorded in the run files, so none is shown. '
+        "Steps are the decisions the learner trained on in that generation.</p>"
+    )
+    out.append(
+        '<div class="charts">'
+        + one("Games per generation", "Games played or forfeited.", lambda g: g.games, "games")
+        + one(
+            "Examples per generation",
+            "Training examples written.",
+            lambda g: g.examples,
+            "examples",
+        )
+        + line_chart(
+            "Learner steps per generation",
+            "Decisions trained on, by network.",
+            xs,
+            steps,
+            tips,
+            empty="No train-report.json was recorded.",
+        )
+        + "</div>"
+    )
+    return "".join(out)
+
+
+def _diagnostics_section(model: ReportModel, tips: Tips) -> str:
+    played = [g for g in model.generations if g.number > 0]
+    xs = [g.number for g in played]
+    out = [
+        "<h2>Training diagnostics</h2>",
+        '<p class="note">What the learner reports about its own optimisation. These show whether training is '
+        "stable, not whether the policy is any good: loss is not skill.</p>",
+    ]
+    charts = []
+    for metric in METRICS:
+        series = []
+        for role, slot, shape in (("battle", 1, "circle"), ("preview", 2, "square")):
+            pts = [
+                Pt(
+                    g.number,
+                    g.train.roles[role][metric],
+                    f"Generation {g.number}, {role} {LABELS[metric].lower()}: {g.train.roles[role][metric]:.4g}",
+                    f"{g.train.roles[role][metric]:.4g}",
+                )
+                for g in played
+                if g.train is not None
+            ]
+            if pts:
+                series.append(Series(role, slot, shape, tuple(pts)))
+        charts.append(
+            line_chart(
+                LABELS[metric],
+                "Per generation, from train-report.json.",
+                xs,
+                series,
+                tips,
+                empty="No train-report.json was recorded.",
+            )
+        )
+    out.append(f'<div class="charts">{"".join(charts)}</div>')
+    return "".join(out)
+
+
+def _score_cell(model: ReportModel, g: int) -> str:
+    if g not in model.progress:
+        return NOT_EVALUATED
+    parts = [f"{_stem(m)} {m.mode} {pct(m.score_ppm)}" for m in model.progress[g].matches]
+    return esc("; ".join(parts))
+
+
+def _links_cell(g: int, links: Links) -> str:
+    parts = []
+    if g in links.games:
+        parts.append(f'<a href="{esc(links.games[g])}">games</a>')
+    for label, href in links.replays.get(g, ()):
+        parts.append(f'<a href="{esc(href)}">{esc(label)}</a>')
+    return " ".join(parts) if parts else '<span class="muted">none</span>'
+
+
+def _comparison(model: ReportModel, links: Links) -> str:
+    rows = []
+    for g in model.generations:
+
+        def cell(v: int | None) -> str:
+            return NOT_RECORDED if v is None else str(v)
+
+        rows.append(
+            [
+                str(g.number),
+                cell(g.games),
+                cell(g.played),
+                cell(g.forfeits),
+                cell(g.episodes),
+                cell(g.examples),
+                _score_cell(model, g.number) if model.progress_root else NOT_EVALUATED,
+                _links_cell(g.number, links),
+            ]
+        )
+    return "<h2>Generations</h2>" + _table(
+        [
+            ("Generation", True),
+            ("Games", True),
+            ("Played", True),
+            ("Forfeits", True),
+            ("Episodes", True),
+            ("Examples", True),
+            ("Progress scores (conditional on the plan)", False),
+            ("Inspector", False),
+        ],
+        rows,
+        "One row per committed generation. Generation 0 is the seeded pair and plays no training games.",
+    )
+
+
+def _inputs(model: ReportModel) -> str:
+    rows = "".join(
+        f'<tr><th scope="row" class="m">{esc(path)}</th><td class="m">{esc(digest)}</td></tr>'
+        for path, digest in model.inputs.items()
+    )
+    return (
+        f'<h2>Inputs</h2><p class="note">The SHA-256 of every file this page was built from ({len(model.inputs)} files). '
+        "The same files give the same page, byte for byte.</p>"
+        '<details><summary>Show the input hashes</summary><div class="scroll"><table>'
+        f'<thead><tr><th scope="col">File</th><th scope="col">SHA-256</th></tr></thead><tbody>{rows}</tbody></table></div></details>'
+    )
+
+
+def build_report(model: ReportModel, links: Links | None = None) -> str:
+    links = links or Links()
+    tips = Tips()
+    evaluated = len(model.progress)
+    head = (
+        f"<h1>Run report: {esc(model.run_key)}</h1>"
+        f'<p class="banner">{esc(BANNER)}</p>'
+        '<div class="grid">'
+        f'<div class="stat"><b>{len(model.generations)}</b>generations committed</div>'
+        f'<div class="stat"><b>{evaluated if model.progress_root else NOT_EVALUATED}</b>generations with a progress evaluation</div>'
+        f'<div class="stat"><b>{esc(model.format_id)}</b>format</div>'
+        f'<div class="stat"><b>{esc(model.lineage_id)}</b>lineage</div></div>'
+        f'<p class="note">Run config hash <code>{esc(model.config_hash)}</code>. Synthetic, public-lineage runs only.</p>'
+    )
+    body = "".join(
+        [
+            head,
+            _progress_section(model, tips),
+            _training_section(model, tips),
+            _forfeit_section(model, tips),
+            _counts_section(model, tips),
+            _diagnostics_section(model, tips),
+            _comparison(model, links),
+            _inputs(model),
+        ]
+    )
+    return document(
+        f"Run report {model.run_key}",
+        body,
+        tips.items,
+        f"{esc(BANNER)} Built by <code>python -m areneon_ml.loop report</code> from the files listed above; it reads no Episode content beyond counts.",
+    )
