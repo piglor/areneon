@@ -16,6 +16,9 @@ import { SAMPLES_DIR } from "../src/samples.ts";
 const sample = (contract: string, name: string): Record<string, unknown> =>
   JSON.parse(readFileSync(join(SAMPLES_DIR, `v1/${contract}/valid/${name}.json`), "utf8")) as Record<string, unknown>;
 
+const readerInvalid = (name: string): Record<string, unknown> =>
+  JSON.parse(readFileSync(join(SAMPLES_DIR, `v1/league-run-record/reader-invalid/${name}.json`), "utf8")) as Record<string, unknown>;
+
 const config = () => readTrainingRunConfig(sample("training-run-config", "tiny"));
 
 describe("the LeagueRunRecord reader (ADR-009 §3)", () => {
@@ -25,6 +28,13 @@ describe("the LeagueRunRecord reader (ADR-009 §3)", () => {
     expect(record).toEqual(raw);
     expect(record).not.toBe(raw);
     expect(readLeagueRunRecord(sample("league-run-record", "self-play-only")).forfeits).toBe(0);
+  });
+
+  it("reads the cause totals and refuses the ones the profile cannot check", () => {
+    expect(readLeagueRunRecord(sample("league-run-record", "mixed-causes")).forfeit_causes).toEqual([{ cause: "crash", count: 1 }, { cause: "latency_overrun", count: 2 }]);
+    expect(() => readLeagueRunRecord(readerInvalid("causes-do-not-sum"))).toThrow(/sum to forfeits/);
+    expect(() => readLeagueRunRecord(readerInvalid("unsorted-causes"))).toThrow(/sorted by cause/);
+    expect(() => readLeagueRunRecord(readerInvalid("duplicate-cause"))).toThrow(/sorted by cause/);
   });
 
   it("refuses a record the schema refuses and an unknown derivation", () => {
@@ -60,10 +70,11 @@ describe("buildLeagueRunRecord", () => {
       plan,
       games: [
         { opponent: "random-legal@tiny", outcome: "played" },
-        { opponent: pair, outcome: "forfeit" },
+        { opponent: pair, outcome: "forfeit", forfeit: { cause: "crash" } },
         { opponent: pair, outcome: "played" },
       ],
     });
+    expect(record.forfeit_causes).toEqual([{ cause: "crash", count: 1 }]);
     expect(record).toMatchObject({
       run_id: "tiny-run",
       generation: 2,
@@ -80,6 +91,24 @@ describe("buildLeagueRunRecord", () => {
     expect(record.run_config_hash).toBe(await runConfigHash(config()));
     expect(record.plan_hash).toMatch(/^[0-9a-f]{64}$/);
     await checkLeagueRunRecord(record, config());
+  });
+
+  it("totals the forfeits by cause, sorted, and writes none for a forfeit-free generation", async () => {
+    const forfeit = (cause: "crash" | "latency_overrun") => ({ opponent: pair, outcome: "forfeit" as const, forfeit: { cause } });
+    const base = { config: config(), generation: 1, pair_policy_id: pair, plan: [] };
+    const record = await buildLeagueRunRecord({
+      ...base,
+      games: [forfeit("latency_overrun"), forfeit("crash"), forfeit("latency_overrun"), { opponent: pair, outcome: "played" }],
+    });
+    expect(record.forfeit_causes).toEqual([{ cause: "crash", count: 1 }, { cause: "latency_overrun", count: 2 }]);
+    const clean = await buildLeagueRunRecord({ ...base, games: [{ opponent: pair, outcome: "played" }] });
+    expect(clean).not.toHaveProperty("forfeit_causes");
+  });
+
+  it("refuses a forfeit that names no cause: the totals would not sum", async () => {
+    await expect(
+      buildLeagueRunRecord({ config: config(), generation: 1, pair_policy_id: pair, plan: [], games: [{ opponent: pair, outcome: "forfeit" }, { opponent: pair, outcome: "played" }] }),
+    ).rejects.toThrow(/sum to forfeits/);
   });
 
   it("refuses a generation that played nothing", async () => {

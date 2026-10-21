@@ -295,6 +295,8 @@ class Loop:
             raise LoopError("league-run.json names another generation or pair than the one played")
         if record.forfeits != summary.get("forfeits"):
             raise LoopError("league-run.json counts other forfeits than generation.json")
+        if dict(record.forfeit_causes) != (summary.get("forfeit_causes") or {}):
+            raise LoopError("league-run.json counts other forfeit causes than generation.json")
 
     # -- freezing a generation -----------------------------------------------
 

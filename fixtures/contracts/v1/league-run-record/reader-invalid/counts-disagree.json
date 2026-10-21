@@ -9,6 +9,12 @@
   "games": 6,
   "played": 5,
   "forfeits": 2,
+  "forfeit_causes": [
+    {
+      "cause": "crash",
+      "count": 1
+    }
+  ],
   "episodes": 10,
   "opponents": [
     {

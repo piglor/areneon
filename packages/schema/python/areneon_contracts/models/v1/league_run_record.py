@@ -5,7 +5,18 @@ from __future__ import annotations
 
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, StrictInt, StrictStr
+from pydantic import MISSING, BaseModel, ConfigDict, Field, StrictInt, StrictStr
+
+
+class ForfeitCauseCount(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    cause: Literal["crash", "invalid_reply", "latency_overrun", "out_of_memory"]
+    """
+    Why the policy failed, as the harness classifies a forfeit (runner.ts ForfeitCause).
+    """
+    count: Annotated[StrictInt, Field(ge=1, le=9007199254740991)]
 
 
 class Opponent(BaseModel):
@@ -24,7 +35,7 @@ class Opponent(BaseModel):
 
 class LeagueRunRecord(BaseModel):
     """
-    What one generation of a league run played (ADR-009 section 3, ADR-010 section 4): the run it belongs to, the TrainingRunConfig it ran under, the seed derivation that made every battle seed and team draw, the hash of the match plan, the frozen pair and counts of the games by opponent. Written by the simulator side next to the generation's Episodes and referenced only by the SHA-256 of its JCS bytes. The record names the derivation; the seeds themselves are recomputed from the run key and the game index, and only the Episodes' collection records keep them. Counts agree and opponents are sorted and unique (reader rules: the profile has no arithmetic and no uniqueItems).
+    What one generation of a league run played (ADR-009 section 3, ADR-010 section 4): the run it belongs to, the TrainingRunConfig it ran under, the seed derivation that made every battle seed and team draw, the hash of the match plan, the frozen pair and counts of the games by opponent. Written by the simulator side next to the generation's Episodes and referenced only by the SHA-256 of its JCS bytes. The record names the derivation; the seeds themselves are recomputed from the run key and the game index, and only the Episodes' collection records keep them. Counts agree, opponents are sorted and unique and the forfeit causes are sorted, unique and sum to forfeits (reader rules: the profile has no arithmetic and no uniqueItems).
     """
 
     model_config = ConfigDict(
@@ -66,6 +77,10 @@ class LeagueRunRecord(BaseModel):
     forfeits: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
     """
     Games a policy forfeited: not Episodes, not training data.
+    """
+    forfeit_causes: list[ForfeitCauseCount] | MISSING = MISSING
+    """
+    Forfeits by cause, sorted by cause, each cause once, each count at least 1; the counts sum to forfeits. Absent when no game was forfeited. Added within v1 (ADR-008 section 3, ADR-017 slice 2): a reader older than the field rejects a record that carries it.
     """
     episodes: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
     """
