@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { runConfigHash, readTrainingRunConfig, TrainingRunConfigError } from "../src/index.ts";
@@ -14,6 +14,18 @@ describe("the TrainingRunConfig reader (ADR-010 §5)", () => {
     expect(config).toEqual(raw);
     expect(config).not.toBe(raw);
     expect(readTrainingRunConfig(sample("no-baselines")).generation.baseline_games).toEqual([]);
+  });
+
+  it("reads the committed run configs and the sample that names a team dataset", () => {
+    const named = readTrainingRunConfig(sample("team-dataset"));
+    expect(named.team_dataset?.path).toBe(".tmp/datasets/train-v1");
+    const dir = join(SAMPLES_DIR, "../../config/training");
+    for (const file of readdirSync(dir)) {
+      const config = readTrainingRunConfig(JSON.parse(readFileSync(join(dir, file), "utf8")));
+      expect(config.learner.device).toBe("cuda");
+      expect(config.generation.baseline_games.map((b) => b.actor).sort()).toEqual(["actor-rule", "random-legal"]);
+      expect(config.team_dataset).toBeDefined();
+    }
   });
 
   it("refuses a record the schema refuses, naming nothing it was not given", () => {

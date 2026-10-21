@@ -1,5 +1,6 @@
 import {
   actorRule,
+  continueChannel,
   type Engine,
   legalChoiceSet,
   type LegalChoiceSet,
@@ -7,6 +8,9 @@ import {
   type PokemonSet,
   resolveFormat,
   type RulesSnapshot,
+  type SyntheticTeamHashes,
+  higherClass,
+  classOfSets,
   validateTeam,
 } from "@areneon/showdown-bridge";
 import { A2Channel } from "./a2-channel.ts";
@@ -52,8 +56,22 @@ export interface A2BotOptions {
   /** The format the team is for. The team must pass the pinned validator for it. */
   format: string;
   team: PokemonSet[];
-  /** `private` for a real team, `synthetic` for a fixture (ADR-008 §5). */
-  data_class: PlayerChannel["data_class"];
+  /**
+   * The synthetic teams there are (hashes, `syntheticTeamHashes`). The class of
+   * every channel the session builds is proven from it, never given (ADR-008 §5):
+   * `synthetic` only if the bot's team is in this set and the opponent's team is
+   * known and in it too. Default: none, so every channel is `private`.
+   */
+  known_synthetic?: SyntheticTeamHashes;
+  /**
+   * The opponent's team, when the harness knows it (bot-vs-bot recordings). The
+   * server never shows a bot the full opposing team (Closed Team Sheet), so an
+   * unknown opponent counts as `private`. A `live_match` is against a human whose
+   * team is never known. Harness runs only: it is refused unless `mode` is
+   * explicitly `harness` (the default is not enough), so a caller cannot name a
+   * human's team as known by leaving the mode out.
+   */
+  opponent_team?: PokemonSet[];
   /** `live_match` only against a human (ADR-005 §1). Default `harness`. */
   mode?: RefusalMode;
   /** Stop once this many battles have ended. Default: never. */
@@ -127,6 +145,12 @@ export interface DecisionRecord {
   inherited: boolean;
   /** Set when the watchdog, not a timer snapshot, made this decision: the fallback went out unbudgeted. */
   watchdog?: WatchdogReason;
+  /**
+   * Set when this decision was first made after a rejoin, with the timer on and no snapshot for it
+   * (the server sent the snapshot to the old connection and does not replay it). An Episode cannot
+   * carry such a decision (`a2Episode` refuses it with a code of its own); the record is kept.
+   */
+  rejoin_without_snapshot?: true;
   remaining_decisions_estimate?: number;
   /** Local ms from the (original) request's receipt to the send. */
   elapsed_ms: number;
@@ -147,7 +171,13 @@ export interface A2BattleRecord {
   /** Requests the server answered for the bot (`server_auto_choose_detected`): it must never fire (ADR-005 §3). */
   server_auto_chooses: AutoChooseDetection[];
   decisions: DecisionRecord[];
-  /** This player's channel, one per connection that joined the room (each starts at its `|init|`). */
+  /**
+   * This player's channel, one per connection that joined the room (each
+   * starts at its `|init|`). A rejoin's channel holds the replayed room log,
+   * not the requests before it: `a2Episode` joins them (`continueChannel`)
+   * into the one channel an Episode stores. The session joins them as it goes,
+   * so a decision's `channel_request_seq` already numbers the joined channel.
+   */
   channels: PlayerChannel[];
   /**
    * Set when a fatal error ended the session while this battle was unfinished
@@ -197,6 +227,11 @@ export type SessionLog =
   /** The server chose for the bot: a newer request arrived while this one was unanswered. */
   | { event: "server_auto_choose_detected"; room: string; detection: AutoChooseDetection }
   | { event: "battle_ended"; room: string; result: BattleResult; winner: string | null }
+  /**
+   * A decision was first made after a rejoin with no timer snapshot: the battle plays on and its
+   * record is kept for analysis, but it can never be an Episode or training data (ADR-008 E1b).
+   */
+  | { event: "incident"; room: string; kind: "rejoin_without_timer_snapshot"; request_seq: number }
   /** A `|popup|` or a global `|error|`: server text for the operator. */
   | { event: "server_message"; line: string };
 
@@ -223,6 +258,7 @@ interface Deadline {
   budget: Budget;
   inherited: boolean;
   watchdog?: WatchdogReason;
+  rejoin_without_snapshot?: true;
   remaining_decisions_estimate?: number;
 }
 
@@ -259,7 +295,14 @@ interface Battle {
   defect: boolean;
   autoChooses: AutoChooseDetection[];
   decisions: DecisionRecord[];
+  /** Each kept connection's own channel, as the record lists them. */
   channels: PlayerChannel[];
+  /**
+   * The kept channels joined into the battle's one continuous channel
+   * (`continueChannel`); undefined before the first connection is kept. The
+   * request numbers of an observation, and so of a decision, follow it.
+   */
+  joined: PlayerChannel | undefined;
 }
 
 /** One battle room on one connection. */
@@ -302,7 +345,9 @@ interface Connection {
  *   which also detects the server choosing for the bot.
  * - On a close it reconnects and logs in again; the server rejoins the bot
  *   to its battle and re-sends its request, with `|sentchoice|` if it holds
- *   a choice (ADR-005 §1). Each connection's channel starts at its `|init|`.
+ *   a choice (ADR-005 §1). Each connection's channel starts at its `|init|`;
+ *   the session joins them (`continueChannel`) so a rejoined bot observes, decides and numbers
+ *   its requests on the battle's one channel.
  * - An `|error|` no rule classifies, an enumerator defect in a harness run,
  *   or a request the pinned decoder refuses ends the session: it forfeits the
  *   open battle and rejects.
@@ -315,6 +360,11 @@ export async function runA2Bot(options: A2BotOptions): Promise<A2SessionResult> 
   if (battles !== Infinity && !(Number.isSafeInteger(battles) && battles >= 1)) {
     throw new RangeError(`battles must be a positive integer, not ${battles}`);
   }
+  if (options.opponent_team !== undefined && options.mode !== "harness") {
+    throw new SessionError("an opponent team is given only to a bot-vs-bot harness run (mode harness): a human's team is never known");
+  }
+  // Before the validator, which normalises the sets in place.
+  const dataClass = battleClassOf(options);
   const format = resolveFormat(options.engine, options.format, options.snapshot);
   const verdict = validateTeam(options.engine, format, options.team);
   if (!verdict.valid) throw new SessionError(`the team is not valid for ${options.format}: ${verdict.problems.join("; ")}`);
@@ -322,10 +372,24 @@ export async function runA2Bot(options: A2BotOptions): Promise<A2SessionResult> 
   if (!(Number.isSafeInteger(decline) && decline >= 1)) {
     throw new RangeError(`declineWaitMs must be a positive whole number of ms, not ${decline}`);
   }
-  return new Session(options, battles).run();
+  return new Session(options, battles, dataClass).run();
+}
+
+/**
+ * The class of what the session records, proven by source: the higher of the
+ * bot's team and the opponent's, each `synthetic` only for a hash in
+ * `known_synthetic`. An opponent the bot cannot hash counts as `private`.
+ * Taken before the validator, which normalises sets in place.
+ */
+function battleClassOf(options: A2BotOptions): PlayerChannel["data_class"] {
+  const known = options.known_synthetic ?? new Set<string>();
+  const own = classOfSets(options.team, known);
+  const rival = options.opponent_team === undefined ? "private" : classOfSets(options.opponent_team, known);
+  return higherClass(own, rival);
 }
 
 class Session {
+  readonly #dataClass: PlayerChannel["data_class"];
   readonly #options: A2BotOptions;
   readonly #battlesWanted: number;
   readonly #clock: () => number;
@@ -345,7 +409,8 @@ class Session {
   #settled = false;
   readonly #done = Promise.withResolvers<A2SessionResult>();
 
-  constructor(options: A2BotOptions, battles: number) {
+  constructor(options: A2BotOptions, battles: number, dataClass: PlayerChannel["data_class"]) {
+    this.#dataClass = dataClass;
     this.#options = options;
     this.#battlesWanted = battles;
     this.#clock = options.clock ?? (() => performance.now());
@@ -528,7 +593,12 @@ class Session {
     if (events.some((event) => event.kind === "line" && event.line === BATTLE_INIT)) this.#joined(connection, room);
     const battle = this.#battles.get(room);
     const state = connection.rooms.get(room);
-    if (battle === undefined || state === undefined || battle.result !== "unfinished") return;
+    if (battle === undefined || battle.result !== "unfinished") return;
+    if (events.some((event) => event.kind === "line" && event.line.startsWith("|noinit|"))) {
+      // The room the bot is in a battle of is gone or refused: the battle can no longer be finished.
+      throw new SessionError(`${room}: the server refused the join of an unfinished battle`);
+    }
+    if (state === undefined) return;
     this.#receive(battle, state, frame, events);
     events.forEach((event, i) => this.#battleEvent(battle, state, event, events.slice(i + 1), now));
   }
@@ -556,6 +626,12 @@ class Session {
     this.#failures = 0;
     this.#send(`|/utm ${this.#packedTeam}`);
     this.#log({ event: "logged_in", name: userName(identity) });
+    // The server rejoins the user to its running battles on its own, but not to one that ended
+    // while the bot was away: a `/join` is the only way to learn its end. For a room the
+    // connection is in already it does nothing (server/users.ts `joinRoom`), so it is always sent.
+    for (const battle of this.#battles.values()) {
+      if (battle.result === "unfinished") this.#send(`|/join ${battle.room}`);
+    }
     const { challenge, format } = this.#options;
     if (challenge !== undefined && !this.#challenged) {
       this.#challenged = true;
@@ -635,6 +711,7 @@ class Session {
       autoChooses: [],
       decisions: [],
       channels: [],
+      joined: undefined,
     };
     this.#battles.set(room, battle);
     this.#log({ event: "battle_started", room });
@@ -650,22 +727,44 @@ class Session {
     const request = events.find((event) => event.kind === "request");
     if (request === undefined) return;
     const player = request.request.player as PlayerChannel["player"];
+    // A rejoin is the same seat (ADR-008 §3): a request for the other one is not this battle's channel.
+    if (battle.player !== null && battle.player !== player) {
+      throw new SessionError(`${battle.room}: a rejoin received a request for ${player}, not the bot's seat ${battle.player}`);
+    }
     battle.player = player;
-    state.channel = new A2Channel({ room: battle.room, player, data_class: this.#options.data_class });
+    state.channel = new A2Channel({ room: battle.room, player, data_class: this.#dataClass });
     for (const kept of state.frames) state.channel.receive(kept);
     state.frames = [];
   }
 
-  /** This player's channel as built now; logs each dropped line once per channel. */
-  #build(battle: Battle, channel: A2Channel, state: RoomOnConnection): PlayerChannel {
+  /**
+   * This connection's channel as built now, and the battle's one channel with
+   * it: the kept channels of the earlier connections joined to it by
+   * `continueChannel` (equal to the channel itself on the first connection).
+   * Logs each dropped line once per channel. The join fails closed
+   * (`ObservationError`) on a rejoin that does not continue the earlier
+   * channel, which ends the session like any channel that cannot be built.
+   */
+  #built(battle: Battle, channel: A2Channel, state: RoomOnConnection): { own: PlayerChannel; joined: PlayerChannel } {
     const built = channel.build();
     for (const line of built.dropped.slice(state.logged)) this.#log({ event: "dropped", room: battle.room, line });
     state.logged = built.dropped.length;
-    return built.channel;
+    const own = built.channel;
+    return { own, joined: battle.joined === undefined ? own : continueChannel(battle.joined, own) };
   }
 
+  /** The battle's channel as it stands: what an observation of the next decision is built from. */
+  #build(battle: Battle, channel: A2Channel, state: RoomOnConnection): PlayerChannel {
+    return this.#built(battle, channel, state).joined;
+  }
+
+  /** The connection ends: its channel is kept as it is and joined to the battle's. */
   #keepChannel(battle: Battle, state: RoomOnConnection): void {
-    if (state.channel !== undefined) battle.channels.push(this.#build(battle, state.channel, state));
+    if (state.channel !== undefined) {
+      const { own, joined } = this.#built(battle, state.channel, state);
+      battle.channels.push(own);
+      battle.joined = joined;
+    }
     state.channel = undefined;
   }
 
@@ -788,7 +887,9 @@ class Session {
       battle.watchdog.armSnapshotWait(rqid, now, this.#options.snapshotWaitMs ?? DEFAULT_SNAPSHOT_WAIT_MS);
       return;
     }
-    this.#decide(battle, pending, { timer: null, budget: ZERO_BUDGET, inherited: false });
+    // With the timer on, a request first seen on a rejoin has lost its snapshot to the old connection.
+    const lost = rejoin && battle.timer;
+    this.#decide(battle, pending, { timer: null, budget: ZERO_BUDGET, inherited: false, ...(lost ? { rejoin_without_snapshot: true as const } : {}) });
   }
 
   /** A request the bot has seen before, re-sent on a rejoin (ADR-005 §1). */
@@ -816,7 +917,7 @@ class Session {
       // Its snapshot went to the old connection: decide now, from the original receipt.
       battle.pending = undefined;
       const refreshed = { ...pending, request, legal: legal as LegalChoiceSet, channel_request_seq };
-      this.#decide(battle, refreshed, { timer: null, budget: ZERO_BUDGET, inherited: false });
+      this.#decide(battle, refreshed, { timer: null, budget: ZERO_BUDGET, inherited: false, rejoin_without_snapshot: true });
     }
   }
 
@@ -884,6 +985,7 @@ class Session {
       budget: deadline.budget,
       inherited: deadline.inherited,
       ...(deadline.watchdog === undefined ? {} : { watchdog: deadline.watchdog }),
+      ...(deadline.rejoin_without_snapshot === undefined ? {} : { rejoin_without_snapshot: true as const }),
       ...(deadline.remaining_decisions_estimate === undefined
         ? {}
         : { remaining_decisions_estimate: deadline.remaining_decisions_estimate }),
@@ -895,6 +997,9 @@ class Session {
     battle.decisions.push(decision);
     this.#submit(battle, request, choice);
     this.#log({ event: "decision", room: battle.room, decision });
+    if (deadline.rejoin_without_snapshot === true) {
+      this.#log({ event: "incident", room: battle.room, kind: "rejoin_without_timer_snapshot", request_seq: request.request_seq });
+    }
   }
 
   #submit(battle: Battle, request: Pending["request"], choice: string): void {
@@ -950,6 +1055,13 @@ class Session {
     const result = winner === null ? "tie" : toId(winner) === toId(this.#options.name) ? "win" : "loss";
     clearTimeout(battle.otsTimer);
     battle.watchdog.dispose();
+    // A rejoin of a room that ended while the bot was away replays the log with no request:
+    // the channel of this connection is made from the replay, on the seat the bot had.
+    if (state.channel === undefined && battle.player !== null) {
+      state.channel = new A2Channel({ room: battle.room, player: battle.player, data_class: this.#dataClass });
+      for (const kept of state.frames) state.channel.receive(kept);
+      state.frames = [];
+    }
     // The battle counts as ended only once its channel is kept and the room left: if either
     // throws, the fatal path still sees it unfinished and hands its record over.
     this.#keepChannel(battle, state);

@@ -1,0 +1,13 @@
+// One generation of A1 play for the Python training driver, for a run whose
+// config names a team dataset (`team_dataset`); without one it plays the
+// interim pool exactly as packages/showdown-bridge/scripts/play-generation.ts.
+//   node packages/team-dataset/scripts/play-generation.ts --config … --generation N …
+import { interimPoolSource, runGenerationCli, UsageError } from "@areneon/showdown-bridge";
+import { datasetPoolSource } from "../src/loop-pool.ts";
+
+try {
+  process.exitCode = await runGenerationCli(process.argv.slice(2), console.log, datasetPoolSource(interimPoolSource));
+} catch (error) {
+  console.error(`play-generation: ${(error as Error).message}`);
+  process.exitCode = error instanceof UsageError ? 2 : 1;
+}

@@ -196,14 +196,33 @@ describe("a2Episode on a battle of the local server", () => {
     ["a defect", (r: A2BattleRecord) => (r.defect = true), /defect/],
     ["a server auto-choose", (r: A2BattleRecord) => r.server_auto_chooses.push({ rqid: 1, reason: "x" } as never), /auto-chose/],
     ["no seat", (r: A2BattleRecord) => (r.player = null), /no player seat/],
-    ["no channel", (r: A2BattleRecord) => (r.channels = []), /0 channels/],
-    ["a rejoin's second channel", (r: A2BattleRecord) => r.channels.push(r.channels[0] as never), /2 channels/],
+    ["no channel", (r: A2BattleRecord) => (r.channels = []), /no channel/],
+    ["a second channel that does not continue the first", (r: A2BattleRecord) => r.channels.push(r.channels[0] as never), /2 connections' channels do not join/],
     ["another player's channel", (r: A2BattleRecord) => ((r.channels[0] as { player: string }).player = r.player === "p1" ? "p2" : "p1"), /not the bot's own/],
     ["a decision with no timer snapshot", (r: A2BattleRecord) => (decision(r).timer = null), /no timer snapshot/],
     ["an overrun with no fallback", (r: A2BattleRecord) => (decision(r, 1).elapsed_ms = decision(r, 1).budget.submit_within_ms + 1), /overran/],
   ])("refuses %s", async (_name, change, message) => {
     await expect(a2Episode(edited(change), options())).rejects.toThrow(message);
     await expect(a2Episode(edited(change), options())).rejects.toBeInstanceOf(A2EpisodeError);
+  });
+
+  it("refuses a decision first made after a rejoin with no snapshot under its own code, quoting nothing", async () => {
+    const refused = await a2Episode(
+      edited((r) => {
+        decision(r).timer = null;
+        decision(r).rejoin_without_snapshot = true;
+      }),
+      options(),
+    ).catch((error: unknown) => error);
+    expect(refused).toBeInstanceOf(A2EpisodeError);
+    expect(refused).toMatchObject({ code: "rejoin_without_timer_snapshot" });
+    expect((refused as Error).message).toBe(
+      "a decision was first made after a reconnect with no timer snapshot (the server does not replay it): " +
+        "the battle is kept as a record and an incident, never as an Episode or training data",
+    );
+    // Any other missing snapshot is a refusal without that code.
+    const plain = await a2Episode(edited((r) => (decision(r).timer = null)), options()).catch((error: unknown) => error);
+    expect((plain as A2EpisodeError).code).toBeUndefined();
   });
 
   it("maps the session's deadline evidence: watchdog, zero budget, rounded times, the next fresh snapshot", async () => {

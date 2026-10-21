@@ -5,6 +5,7 @@ export {
   type RandomLegalState,
   RandomStateError,
 } from "./random-legal.ts";
+export { pendingFirstActor } from "./random-corpus.ts";
 export {
   type Candidate,
   type CandidateSet,
@@ -55,7 +56,8 @@ export {
   type PreviewObservation,
   type Sha256,
 } from "./observation.ts";
-export { nodeSha256, observe, playerChannel, recordedChannel } from "./player-channel.ts";
+export { assertOwnTeamStats, OwnTeamStatsError } from "./own-team-stats.ts";
+export { continueChannel, nodeSha256, observe, playerChannel, recordedChannel } from "./player-channel.ts";
 export { answersRequest, type Collection, type CollectionInput, type Episode, episodeHash, type Recommendation, rightsFor } from "./episode.ts";
 export {
   type EvaluationRunInput,
@@ -72,6 +74,8 @@ export {
   type TrainingStream,
   trainingExample,
 } from "./training-loader.ts";
+export { interimPoolSource, type PoolSource, runGenerationCli, UsageError } from "./generation-cli.ts";
+export { GenerationError, type TrainingPool as GenerationTeamPool, playGeneration } from "./league-generation.ts";
 export { readTrainingRunConfig, runConfigHash, type TrainingRunConfig, TrainingRunConfigError } from "./training-run-config.ts";
 export { EpisodeError, episodeFromRecord, type EpisodeOptions, readEpisode } from "./episode-io.ts";
 export {
@@ -136,9 +140,12 @@ export {
   type DecodedRequest,
   decodeRequest,
   type JsonObject,
+  type ParsedRequest,
+  parseRequest,
   RequestDecodeError,
   type RequestPhase,
 } from "./request.ts";
+export { hashRequest, requestIdentityBytes, requestIdentityText } from "./request-bytes.ts";
 export { canonicalJson, type Json, requestHash } from "./request-identity.ts";
 export { serverOnlyLine, type StrippedLines, stripServerLines } from "./server-lines.ts";
 export {
@@ -219,6 +226,22 @@ export {
   TeamRecordError,
   type TeamSnapshotManifest,
 } from "./team-records.ts";
+export {
+  checkPrivateRecordSet,
+  type PrivateTeamRecord,
+  PrivateRecordError,
+  readPrivateTeamRecord,
+} from "./private-records.ts";
+export {
+  HOLDOUT_PPM,
+  HOLDOUT_RULE,
+  holdoutFlag,
+  PrivateSnapshotError,
+  type PrivateSnapshotManifest,
+  privateLogicalSnapshotHash,
+  privateSnapshotHash,
+  readPrivateSnapshotManifest,
+} from "./private-snapshot.ts";
 export {
   exportTeamVocabulary,
   readTeamVocabulary,

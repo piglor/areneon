@@ -20,6 +20,7 @@ import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import type { TeamSnapshotManifest } from "@areneon/showdown-bridge";
 import { type Column, PARQUET_SCHEMA_VERSION, refuse, SCHEMA_VERSION_KEY } from "./columns.ts";
+import { removeTree } from "./scratch.ts";
 
 export type WriterIdentity = TeamSnapshotManifest["writer"];
 
@@ -64,10 +65,17 @@ export interface CommandResult {
   stderr: string;
 }
 /** Run a program with text on stdin; the writer's only contact with the outside. */
-export type Runner = (file: string, args: readonly string[], input: string, env: Record<string, string>) => CommandResult;
+export type Runner = (file: string, args: readonly string[], input: string, env: Record<string, string>, cwd?: string, timeoutMs?: number) => CommandResult;
 
-const run: Runner = (file, args, input, env) => {
-  const result = spawnSync(file, [...args], { input, env, encoding: "utf8", maxBuffer: 1 << 24 });
+const run: Runner = (file, args, input, env, cwd, timeoutMs) => {
+  const result = spawnSync(file, [...args], {
+    input,
+    env,
+    encoding: "utf8",
+    maxBuffer: 1 << 24,
+    ...(cwd === undefined ? {} : { cwd }),
+    ...(timeoutMs === undefined ? {} : { timeout: timeoutMs, killSignal: "SIGKILL" as const }),
+  });
   return { status: result.status, stdout: result.stdout ?? "", stderr: result.error === undefined ? (result.stderr ?? "") : result.error.message };
 };
 
@@ -93,7 +101,28 @@ export interface WriteOptions {
   rowGroupSize?: number;
   compression?: "zstd" | "snappy" | "uncompressed";
   compressionLevel?: number;
+  /**
+   * The private path (ADR-015 section 3). The tool runs with a scratch HOME,
+   * TMPDIR and working directory made inside `dir` (so its spill directory and
+   * any stray file land there, never in the caller's directory or in `/tmp`), a
+   * history file of `/dev/null`, and nothing else in its environment. Its
+   * output is never forwarded: a failure is the fixed message below, because
+   * DuckDB's stderr can quote the rows (a paste). The extension auto-install
+   * and auto-load settings are turned off before any other statement and the
+   * configuration is locked before the copy, so the tool cannot fetch or load
+   * code. The tool is killed after `timeoutMs` (default 10 minutes). The
+   * scratch directory is removed afterwards, also on failure; if it cannot be
+   * removed the call fails with `CLEANUP_MESSAGE` unless it failed already
+   * (the first error is never replaced). `dir` is checked by the caller.
+   */
+  isolated?: { dir: string; timeoutMs?: number };
 }
+
+/** What a private-path failure says; DuckDB's own text is dropped. */
+/** What a private-path call says when its scratch directory could not be removed. */
+export const CLEANUP_MESSAGE = "the scratch directory could not be removed";
+export const DEFAULT_TOOL_TIMEOUT_MS = 600_000;
+export const WITHHELD_MESSAGE = "DuckDB failed; its output is withheld because it can quote a paste";
 export const DEFAULT_ROW_GROUP_SIZE = 131072;
 
 const literal = (text: string): string => {
@@ -131,26 +160,42 @@ export class DuckdbWriter {
 
   /** Convert a JSON Lines file of rows (keys = column names) into one Parquet file, keeping the row order. */
   writeShard(rowsFile: string, out: string, columns: readonly Column[], options: WriteOptions = {}): void {
-    const types = { VARCHAR: "VARCHAR", BIGINT: "BIGINT", LABELS: "STRUCT(label_id VARCHAR, value VARCHAR)[]" } as const;
+    const types = {
+      VARCHAR: "VARCHAR",
+      NULLABLE_VARCHAR: "VARCHAR",
+      BIGINT: "BIGINT",
+      BOOLEAN: "BOOLEAN",
+      VARCHAR_LIST: "VARCHAR[]",
+      LABELS: "STRUCT(label_id VARCHAR, value VARCHAR)[]",
+    } as const;
     const group = options.rowGroupSize ?? DEFAULT_ROW_GROUP_SIZE;
     if (!Number.isSafeInteger(group) || group < 1) return refuse("the row group size must be a positive integer");
     const compression = options.compression ?? "zstd";
     const level = options.compressionLevel;
     if (level !== undefined && (!Number.isInteger(level) || level < 1 || level > 22)) return refuse("the compression level must be between 1 and 22");
     const shape = columns.map((c) => `${literal(c.name)}: '${types[c.type]}'`).join(", ");
+    const isolated = options.isolated;
     const sql = [
+      ...(isolated === undefined ? [] : ["SET autoinstall_known_extensions = false;", "SET autoload_known_extensions = false;"]),
       "SET threads = 1;",
       "SET preserve_insertion_order = true;",
+      ...(isolated === undefined ? [] : ["SET lock_configuration = true;"]),
       `COPY (SELECT * FROM read_json(${literal(rowsFile)}, format = 'newline_delimited', columns = {${shape}})) TO ${literal(out)}`,
       `(FORMAT parquet, COMPRESSION ${compression}${level === undefined ? "" : `, COMPRESSION_LEVEL ${level}`}, ROW_GROUP_SIZE ${group}, KV_METADATA {${SCHEMA_VERSION_KEY}: '${PARQUET_SCHEMA_VERSION}'});`,
     ].join("\n");
     // A scratch HOME keeps the tool away from any ~/.duckdbrc and extension directory.
-    const home = mkdtempSync(join(tmpdir(), "duckdb-home-"));
+    const home = mkdtempSync(join(isolated?.dir ?? tmpdir(), "duckdb-home-"));
+    let done = false;
     try {
-      const result = this.#runner(this.#binary, ["-bail", "-batch"], sql, { PATH: "", HOME: home });
-      if (result.status !== 0) refuse(`DuckDB failed (${result.status}): ${result.stderr.trim()}`);
+      const result =
+        isolated === undefined
+          ? this.#runner(this.#binary, ["-bail", "-batch"], sql, { PATH: "", HOME: home })
+          : this.#runner(this.#binary, ["-bail", "-batch"], sql, { PATH: "", HOME: home, TMPDIR: home, DUCKDB_HISTORY: "/dev/null" }, home, isolated.timeoutMs ?? DEFAULT_TOOL_TIMEOUT_MS);
+      if (result.status !== 0) refuse(isolated === undefined ? `DuckDB failed (${result.status}): ${result.stderr.trim()}` : WITHHELD_MESSAGE);
+      done = true;
     } finally {
-      rmSync(home, { recursive: true, force: true });
+      if (isolated === undefined) rmSync(home, { recursive: true, force: true });
+      else if (!removeTree(home) && done) refuse(CLEANUP_MESSAGE);
     }
   }
 }

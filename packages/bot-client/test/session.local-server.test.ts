@@ -1,12 +1,23 @@
-import { loadEngine, loadRulesSnapshot, type PokemonSet } from "@areneon/showdown-bridge";
+import {
+  continueChannel,
+  loadEngine,
+  loadRulesSnapshot,
+  type PokemonSet,
+  resolveFormat,
+  stampTeam,
+  type StampedTeam,
+  teamHash,
+} from "@areneon/showdown-bridge";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   type A2BattleRecord,
   type A2BotOptions,
+  a2Episode,
   type A2SessionResult,
   connectWebSocket,
   runA2Bot,
   type SessionLog,
+  timerRulesOf,
   type Transport,
 } from "../src/index.ts";
 import { fixtureTeam, FORMAT, startLocalServer } from "./local-battle.ts";
@@ -51,7 +62,6 @@ function bot(
     snapshot,
     url: local.ws,
     format: FORMAT,
-    data_class: "synthetic",
     battles: 1,
     reconnect: { attempts: 5, delayMs: 100 },
     onLog(entry) {
@@ -111,6 +121,17 @@ function expectOwnNumbering(record: A2BattleRecord): void {
   for (const decision of record.decisions) expect(decision.channel_request_seq).toBe(decision.request_seq);
 }
 
+/** After a reconnect the decisions are numbered on the joined channel: strictly rising, though the connection restarts its own count. */
+function expectJoinedNumbering(record: A2BattleRecord): void {
+  const numbers = record.decisions.map((decision) => decision.channel_request_seq);
+  expect(numbers.length).toBeGreaterThan(0);
+  expect(numbers).toEqual([...numbers].sort((a, b) => a - b));
+  expect(new Set(numbers).size).toBe(numbers.length);
+  const joined = record.channels.reduce(continueChannel);
+  const requests = joined.lines.filter((line) => line.startsWith("|request|")).length;
+  expect(Math.max(...numbers)).toBeLessThanOrEqual(requests);
+}
+
 describe("runA2Bot on the pinned local server", () => {
   it(
     "plays one Bo1 to the end with open team sheets declined, choosing only candidates",
@@ -164,30 +185,53 @@ describe("runA2Bot on the pinned local server", () => {
     60_000,
   );
 
-  it(
-    "reconnects mid-battle, keeps one decline per room and plays on to the end",
-    async () => {
+  // Where the drop falls relative to the server's handling of the choice varies with timing, so
+  // the drop positions are varied: `immediate` closes at once (the server may or may not have
+  // handled the choice), `blind` hears nothing more and closes only once the other bot has
+  // answered the next request. This does not force the stale re-send (a re-send after the room
+  // moved on): client timing cannot, and `rejoin-channel.test.ts` is the cover for that case.
+  const drops = [
+    { mode: "immediate", choice: 1 },
+    { mode: "immediate", choice: 2 },
+    { mode: "blind", choice: 1 },
+    { mode: "blind", choice: 2 },
+  ] as const;
+  it.each(drops)(
+    "reconnects mid-battle after choice $choice ($mode drop), keeps one decline per room and plays on to the end",
+    async ({ mode, choice }) => {
       const suffix = local.server.session.bot_name_suffix;
       let dropped = false;
-      // Drop the sparring bot's first connection right after its second move choice.
-      const sparring = bot(
+      const moves = (lines: string[]): number => lines.filter((l) => l.includes("|/choose move")).length;
+      const chooses = (lines: string[]): number => lines.filter((l) => l.includes("|/choose ")).length;
+      const sparring: Bot = bot(
         { name: `Areneon-b2-${suffix}`, challenger: `Areneon-c2-${suffix}`, team: own },
         (transport, index) =>
           index > 0
             ? transport
             : {
                 ...transport,
+                onFrame(cb) {
+                  transport.onFrame((frame) => {
+                    if (!(dropped && mode === "blind")) cb(frame);
+                  });
+                },
                 send(line) {
                   transport.send(line);
-                  if (!dropped && line.includes("|/choose move") && sparring.sent.filter((l) => l.includes("|/choose move")).length === 2) {
+                  if (!dropped && line.includes("|/choose move") && moves(sparring.sent) === choice) {
                     dropped = true;
-                    setTimeout(() => transport.close(), 0);
+                    if (mode === "immediate") return void setTimeout(() => transport.close(), 0);
+                    const sent = chooses(sparring.sent);
+                    const wait = setInterval(() => {
+                      if (chooses(challenger.sent) <= sent) return;
+                      clearInterval(wait);
+                      transport.close();
+                    }, 1);
                   }
                 },
               },
       );
       await sparring.loggedIn;
-      const challenger = bot({
+      const challenger: Bot = bot({
         name: `Areneon-c2-${suffix}`,
         challenger: `Areneon-b2-${suffix}`,
         challenge: `Areneon-b2-${suffix}`,
@@ -202,9 +246,89 @@ describe("runA2Bot on the pinned local server", () => {
       expect(record.channels).toHaveLength(2);
       expect(sparring.sent.filter((line) => line.endsWith("|/rejectopenteamsheets"))).toHaveLength(1);
       expect(expectCandidateChoices(sparring.sent, record)).toBeGreaterThanOrEqual(record.decisions.length);
-      // Each connection numbers its own channel's requests from 1.
-      expectOwnNumbering(record);
+      // Each connection numbers its own requests from 1; a decision is numbered on the joined channel.
+      expectJoinedNumbering(record);
+      // The record of a reconnected battle is one Episode on the one joined channel (ADR-008 §5),
+      // unless a request first decided on the rejoin lost its timer snapshot to the old connection:
+      // which of the two happens depends on where the drop fell, and each is pinned by the fixtures.
+      const known = new Set([teamHash(own), teamHash(opponent)]);
+      const written = a2Episode(record, {
+        team: stampTeam(own as StampedTeam["team"], known),
+        known_synthetic: known,
+        manifest: resolveFormat(engine, FORMAT, snapshot).manifest,
+        timer_rules: timerRulesOf(engine, FORMAT, 5),
+        behaviour_policy_id: "actor-rule@a2",
+        collection: { kind: "sparring", session_id: "reconnect" },
+      });
+      if (record.decisions.some((decision) => decision.timer === null)) {
+        await expect(written).rejects.toMatchObject({ code: "rejoin_without_timer_snapshot" });
+      } else {
+        const episode = await written;
+        expect(episode.channel).toEqual(record.channels.reduce(continueChannel).lines);
+        expect(episode.decisions.map((d) => d.identity.request_seq)).toEqual(record.decisions.map((d) => d.channel_request_seq));
+      }
       expectClosedPreview(record, opponent);
+    },
+    60_000,
+  );
+  // The first connection is closed at the frame that carries the end (`|win|` or `|tie`), which it
+  // never delivers to the bot; the server has ended the battle by then, so the rejoin finds a
+  // finished room and gets the replayed log without a request. What is forced: the first connection
+  // never sees the end, and the rejoin comes after the end. What is not: the replay's content
+  // beyond that (the server decides it).
+  it(
+    "rejoins a room whose battle already ended, records the result from the replay and leaves",
+    async () => {
+      const suffix = local.server.session.bot_name_suffix;
+      let dropped = false;
+      const sparring: Bot = bot(
+        { name: `Areneon-b3-${suffix}`, challenger: `Areneon-c3-${suffix}`, team: own },
+        (transport, index) =>
+          index > 0
+            ? transport
+            : {
+                ...transport,
+                onFrame(cb) {
+                  transport.onFrame((frame) => {
+                    if (dropped) return;
+                    if (/\n\|(win\|.*|tie)(\n|$)/.test(frame)) {
+                      dropped = true;
+                      return void setTimeout(() => transport.close(), 0);
+                    }
+                    cb(frame);
+                  });
+                },
+              },
+      );
+      await sparring.loggedIn;
+      const challenger: Bot = bot({
+        name: `Areneon-c3-${suffix}`,
+        challenger: `Areneon-b3-${suffix}`,
+        challenge: `Areneon-b3-${suffix}`,
+        team: opponent,
+      });
+      const [a, b] = await Promise.all([sparring.result, challenger.result]);
+      const [record] = a.battles as [A2BattleRecord];
+      const [theirs] = b.battles as [A2BattleRecord];
+      expect(dropped).toBe(true);
+      expect(sparring.logs.filter((entry) => entry.event === "logged_in")).toHaveLength(2);
+      expect(record.result).toBe(theirs.result === "win" ? "loss" : theirs.result === "loss" ? "win" : "tie");
+      expect(sparring.logs.filter((entry) => entry.event === "battle_ended")).toHaveLength(1);
+      expect(sparring.sent.filter((line) => line === `${record.room}|/leave`)).toHaveLength(1);
+      expect(record.channels).toHaveLength(2);
+      const joined = record.channels.reduce(continueChannel);
+      expect(joined.lines.some((line) => line.startsWith("|win|") || line === "|tie")).toBe(true);
+      const known = new Set([teamHash(own), teamHash(opponent)]);
+      // The decision made after the drop is on the first connection, so the Episode is whole.
+      const episode = await a2Episode(record, {
+        team: stampTeam(own as StampedTeam["team"], known),
+        known_synthetic: known,
+        manifest: resolveFormat(engine, FORMAT, snapshot).manifest,
+        timer_rules: timerRulesOf(engine, FORMAT, 5),
+        behaviour_policy_id: "actor-rule@a2",
+        collection: { kind: "sparring", session_id: "ended-rejoin" },
+      });
+      expect(episode.channel).toEqual(joined.lines);
     },
     60_000,
   );

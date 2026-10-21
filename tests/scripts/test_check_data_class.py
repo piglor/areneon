@@ -3,7 +3,8 @@ from __future__ import annotations
 import json
 import subprocess
 from collections.abc import Mapping
-from pathlib import Path
+from pathlib import Path, PurePosixPath
+from typing import Any
 
 import pytest
 
@@ -229,7 +230,7 @@ def test_a_record_without_data_class_is_rejected_even_in_fixtures(
     record: dict[str, object], in_fixtures: bool
 ) -> None:
     # Negative controls: remove the label, or set it to anything but "synthetic".
-    # A paste-shaped record outside fixtures/ is also an unlabelled team (ADR-014 §10).
+    # A paste-shaped record outside fixtures/ is also an unlabelled team (ADR-015 §6).
     extra = [UNLABELLED] if record is RECORD and not in_fixtures else []
     expected = [UNLABELLED_RECORD, *extra]
     assert guard.problems_in(without(record, "data_class"), in_fixtures) == expected
@@ -315,7 +316,7 @@ def test_every_team_record_in_the_corpus_is_labelled_synthetic() -> None:
     assert labelled > 0
 
 
-# ADR-014 §10: the paste shape and the private sample markers.
+# ADR-015 §6: the paste shape and the private sample markers.
 PASTE_ONLY = {"paste": "Garchomp\nAbility: Rough Skin\n"}
 PRIVATE_RECORD = {
     "schema_version": 1,
@@ -329,6 +330,7 @@ PRIVATE_RECORD = {
     "status": "active",
     "tags": ["synthetic"],
     "labels": [{"label_id": "fake_out", "value": "yes"}],
+    "holdout": False,
 }
 SHAPE = guard.MARKER_SHAPE
 MARKER = "fixtures/contracts/v1/private-team-record/valid/sample.json"
@@ -360,12 +362,46 @@ def test_the_paste_shape_is_enforced_on_files(repo: Path) -> None:
     assert guard.violations([path]) == [f"{path}: {UNLABELLED}"]
 
 
-def test_the_markers_start_empty_and_the_corpus_is_the_committed_one() -> None:
-    assert frozenset() == guard.PRIVATE_SAMPLE_MARKERS
+def test_the_corpus_is_the_committed_one() -> None:
     corpus = guard.team_corpus()
     assert (ROOT / "fixtures/teams/gen9championsvgc2026regmc/legal-synthetic.txt").read_text(
         encoding="utf-8"
     ) in corpus
+
+
+def test_the_markers_are_the_record_samples_of_the_contract_corpus() -> None:
+    assert guard.PRIVATE_SAMPLE_MARKERS
+    for marker in guard.PRIVATE_SAMPLE_MARKERS:
+        path = PurePosixPath(marker)
+        assert path.parts[:4] == ("fixtures", "contracts", "v1", "private-team-record")
+        assert path.parts[4] in ("valid", "reader-invalid")
+        assert (ROOT / marker).is_file(), marker
+
+
+def test_the_marked_samples_pass_the_guard_as_committed() -> None:
+    assert guard.violations(sorted(guard.PRIVATE_SAMPLE_MARKERS)) == []
+
+
+def test_the_marker_record_keys_and_types_follow_the_contract_schema() -> None:
+    schema = json.loads(
+        (ROOT / "packages/schema/contracts/v1/private-team-record.schema.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    props = schema["properties"]
+    assert guard.PRIVATE_RECORD_KEYS == set(props) == set(schema["required"])
+    assert props["team_id"]["pattern"] == f"^{guard.HEX32.pattern}$"
+    assert props["supersedes_record_hash"]["pattern"] == f"^{guard.HEX64.pattern}$"
+    assert props["revision"]["maximum"] == guard.MAX_REVISION
+    assert props["revision"]["minimum"] == 1
+    assert props["holdout"]["type"] == "boolean"
+    assert props["status"]["enum"] == ["active", "retired"]
+    assert props["tags"]["maxItems"] == guard.MAX_TAGS
+    assert props["tags"]["items"]["pattern"] == f"^{guard.TAG.pattern}$"
+    assert props["labels"]["maxItems"] == guard.MAX_LABELS
+    label = props["labels"]["items"]["properties"]
+    token = f"^{guard.LABEL_TOKEN.pattern}$"
+    assert label["label_id"]["pattern"] == label["value"]["pattern"] == token
 
 
 def test_a_marked_private_record_with_corpus_pastes_passes(
@@ -521,9 +557,11 @@ def test_the_private_markers_match_the_repo() -> None:
         docs = guard._documents(name, text)
         if any(obj.get("data_class") == "private" for doc in docs for obj in guard._walk(doc)):
             private.add(name)
-    assert private == set(guard.PRIVATE_SAMPLE_MARKERS)
-    assert all((ROOT / marker).is_file() for marker in guard.PRIVATE_SAMPLE_MARKERS)
-    assert all(marker.startswith("fixtures/") for marker in guard.PRIVATE_SAMPLE_MARKERS)
+    every = set(guard.PRIVATE_SAMPLE_MARKERS) | set(guard.PRIVATE_MANIFEST_MARKERS)
+    assert private == every
+    assert not set(guard.PRIVATE_SAMPLE_MARKERS) & set(guard.PRIVATE_MANIFEST_MARKERS)
+    assert all((ROOT / marker).is_file() for marker in every)
+    assert all(marker.startswith("fixtures/") for marker in every)
 
 
 BAD_TYPES = [
@@ -545,6 +583,9 @@ BAD_TYPES = [
     ("canonical_team_hash", "a" * 65),
     ("status", "Active"),
     ("status", "deleted"),
+    ("holdout", "false"),
+    ("holdout", 0),
+    ("holdout", None),
     ("tags", "synthetic"),
     ("tags", ["Garchomp"]),
     ("tags", ["-leading"]),
@@ -717,3 +758,222 @@ def test_reveal_allowlist_matches_the_repo() -> None:
         )
     }
     assert present == set(guard.REVEAL_ALLOWED)
+
+
+# ADR-015 section 2: the strict shape of a private snapshot manifest.
+MANIFEST_MARKER = "fixtures/contracts/v1/private-snapshot-manifest/valid/sample.json"
+MANIFEST_SHAPE = guard.MANIFEST_SHAPE
+MANIFEST = json.loads(
+    (ROOT / "fixtures/contracts/v1/private-snapshot-manifest/valid/extended.json").read_text(
+        encoding="utf-8"
+    )
+)
+MANIFEST_FIRST = json.loads(
+    (ROOT / "fixtures/contracts/v1/private-snapshot-manifest/valid/first.json").read_text(
+        encoding="utf-8"
+    )
+)
+
+
+@pytest.fixture
+def marked(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(guard, "PRIVATE_MANIFEST_MARKERS", frozenset({MANIFEST_MARKER}))
+
+
+def manifest_reasons(repo: Path, document: object, name: str = MANIFEST_MARKER) -> list[str]:
+    path = write(repo, name, json.dumps(document))
+    return [r.split(": ", 1)[1] for r in guard.violations([path])]
+
+
+def test_the_manifest_markers_are_manifest_samples_of_the_contract_corpus() -> None:
+    assert guard.PRIVATE_MANIFEST_MARKERS
+    for marker in guard.PRIVATE_MANIFEST_MARKERS:
+        path = PurePosixPath(marker)
+        assert path.parts[:4] == ("fixtures", "contracts", "v1", "private-snapshot-manifest")
+        assert path.parts[4] in ("valid", "reader-invalid")
+        assert (ROOT / marker).is_file(), marker
+
+
+def test_the_marked_manifest_samples_pass_the_guard_as_committed() -> None:
+    assert guard.violations(sorted(guard.PRIVATE_MANIFEST_MARKERS)) == []
+    invalid = sorted(
+        str(p.relative_to(ROOT))
+        for p in (ROOT / "fixtures/contracts/v1/private-snapshot-manifest/invalid").glob("*.json")
+    )
+    assert invalid
+    assert guard.violations(invalid) == []
+
+
+def test_the_manifest_spec_follows_the_contract_schema() -> None:
+    schema = json.loads(
+        (ROOT / "packages/schema/contracts/v1/private-snapshot-manifest.schema.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    required: Any
+    required, optional = guard.PRIVATE_MANIFEST_SPEC
+    props = schema["properties"]
+    assert set(required) == set(schema["required"])
+    assert set(required) | set(optional) == set(props)
+    assert set(optional) == {"parent_snapshot_hash", "first"}
+    assert props["parent_snapshot_hash"]["pattern"] == f"^{guard.HEX64.pattern}$"
+    assert props["first"]["const"] is True
+    assert props["shards"]["maxItems"] == required["shards"][1]
+    assert props["cells"]["maxItems"] == required["cells"][1]
+    assert set(props["holdout"]["properties"]) == set(required["holdout"][0])
+    assert props["holdout"]["properties"]["ppm"]["const"] == required["holdout"][0]["ppm"][1]
+    assert props["holdout"]["properties"]["rule"]["const"] == required["holdout"][0]["rule"][1]
+    assert props["writer"]["properties"]["version"]["pattern"] == f"^{guard.VERSION.pattern}$"
+    shard = schema["$defs"]["Shard"]
+    assert set(shard["properties"]) == set(required["shards"][2][0])
+    assert set(shard["properties"]["cell_ranges"]["items"]["properties"]) == set(
+        required["shards"][2][0]["cell_ranges"][2][0]
+    )
+    assert shard["properties"]["index"]["maximum"] == required["shards"][2][0]["index"][2]
+    assert set(props["cells"]["items"]["properties"]) == set(required["cells"][2][0])
+    assert set(schema["$defs"]["VersionManifest"]["properties"]) == set(required["manifest"][0])
+
+
+@pytest.mark.usefixtures("marked")
+def test_a_marked_manifest_in_both_lineage_forms_passes(repo: Path) -> None:
+    assert manifest_reasons(repo, MANIFEST) == []
+    assert manifest_reasons(repo, MANIFEST_FIRST) == []
+    empty = {**MANIFEST_FIRST, "cells": [], "records": {"active": 0, "retired": 1}}
+    assert manifest_reasons(repo, empty) == []
+
+
+@pytest.mark.usefixtures("marked")
+def test_the_same_manifest_at_an_unmarked_path_is_rejected(repo: Path) -> None:
+    other = MANIFEST_MARKER.replace("sample", "other")
+    assert manifest_reasons(repo, MANIFEST, other) == [PRIVATE, UNLABELLED_RECORD]
+
+
+@pytest.mark.usefixtures("marked")
+def test_the_manifest_marker_is_an_exact_file(repo: Path) -> None:
+    for name in (MANIFEST_MARKER + ".bak.json", "x/" + MANIFEST_MARKER):
+        assert PRIVATE in manifest_reasons(repo, MANIFEST, name)
+
+
+@pytest.mark.usefixtures("marked")
+def test_a_manifest_marker_does_not_free_a_private_record(repo: Path) -> None:
+    # The two marker sets are separate: a record at a manifest marker is not a manifest.
+    assert MANIFEST_SHAPE in manifest_reasons(repo, PRIVATE_RECORD)
+
+
+EXTRA = [
+    {"notes": "Garchomp @ Sitrus Berry"},
+    {"paste": PASTE_ONLY["paste"]},
+    {"pastes": ["Garchomp @ Sitrus Berry\nAbility: Rough Skin\n- Earthquake\n"]},
+    {"species": "Garchomp", "moves": ["Earthquake"], "evs": {"atk": 32}},
+    {"dataset_hashes": ["a" * 64]},
+    {"uploaded_by": "x"},
+    {"nested": {"data_class": "private"}},
+]
+
+
+@pytest.mark.usefixtures("marked")
+@pytest.mark.parametrize("extra", EXTRA)
+def test_a_manifest_with_an_extra_key_is_refused(repo: Path, extra: dict[str, object]) -> None:
+    assert MANIFEST_SHAPE in manifest_reasons(repo, {**MANIFEST, **extra})
+
+
+def with_path(change: Mapping[str, object], *path: str | int) -> dict[str, object]:
+    """A copy of MANIFEST with the value at ``path`` replaced (or removed for a ``...`` marker)."""
+    copy = json.loads(json.dumps(MANIFEST))
+    node = copy
+    for step in path[:-1]:
+        node = node[step]
+    node[path[-1]] = change["value"]
+    return copy  # type: ignore[no-any-return]
+
+
+FREE_TEXT = [
+    (("snapshot_id",), "my team notes"),
+    (("snapshot_id",), "Garchomp @ Sitrus Berry"),
+    (("snapshot_id",), "Ability: Rough Skin"),
+    (("snapshot_id",), "- Earthquake"),
+    (("snapshot_id",), "line one\nline two"),
+    (("snapshot_id",), "R2FyY2hvbXAgQCBTaXRydXMgQmVycnk=" + "A" * 200),
+    (("manifest", "regulation"), "M C"),
+    (("manifest", "format_id"), "Gen9 Champions"),
+    (("manifest", "showdown_commit"), "a" * 39),
+    (("writer", "name"), "duck db"),
+    (("writer", "version"), "1.5.6 beta"),
+    (("holdout", "rule"), "hmac-sha256-team-id/2"),
+    (("holdout", "key"), "A" * 64),
+    (("holdout", "ppm"), 300000),
+    (("data_class",), "synthetic"),
+    (("schema_version",), 2),
+    (("schema_version",), True),
+    (("parent_snapshot_hash",), "abc"),
+    (("first",), False),
+    (("first",), "true"),
+    (("shard_key",), "z" * 64),
+    (("label_set_hash",), None),
+    (("records", "active"), -1),
+    (("records", "retired"), 1.5),
+    (("records", "active"), True),
+    (("records", "active"), 2**53),
+    (("parquet_schema_version",), 0),
+    (("shards", 0, "index"), 4096),
+    (("shards", 0, "split"), "dev"),
+    (("shards", 0, "rows"), 0),
+    (("shards", 0, "file_sha256"), "g" * 64),
+    (("shards", 0, "cell_ranges", 0, "active_rows"), -1),
+    (("shards", 0, "cell_ranges", 0, "stratum"), 65536),
+    (("cells", 0, "split"), "dev"),
+    (("cells", 0, "rows"), 0),
+    (("shards",), "none"),
+    (("cells",), {"0": 1}),
+    (("holdout",), "hmac"),
+    (("shards", 0), "Garchomp @ Sitrus Berry"),
+]
+
+
+@pytest.mark.usefixtures("marked")
+@pytest.mark.parametrize(("path", "value"), FREE_TEXT)
+def test_every_manifest_value_is_type_checked(
+    repo: Path, path: tuple[str | int, ...], value: object
+) -> None:
+    document = with_path({"value": value}, *path)
+    assert MANIFEST_SHAPE in manifest_reasons(repo, document)
+
+
+@pytest.mark.usefixtures("marked")
+def test_a_paste_hidden_in_a_manifest_key_name_is_refused(repo: Path) -> None:
+    document = json.loads(json.dumps(MANIFEST))
+    document["holdout"]["Garchomp @ Sitrus Berry"] = "x"
+    assert MANIFEST_SHAPE in manifest_reasons(repo, document)
+    document = json.loads(json.dumps(MANIFEST))
+    document["shards"][0]["cell_ranges"][0]["Ability: Rough Skin"] = 1
+    assert MANIFEST_SHAPE in manifest_reasons(repo, document)
+
+
+@pytest.mark.usefixtures("marked")
+def test_a_missing_manifest_key_or_a_wrong_container_is_refused(repo: Path) -> None:
+    for key in guard.PRIVATE_MANIFEST_SPEC[0]:
+        assert MANIFEST_SHAPE in manifest_reasons(
+            repo, {k: v for k, v in MANIFEST.items() if k != key}
+        )
+    assert MANIFEST_SHAPE in manifest_reasons(repo, [MANIFEST])
+    too_many = {**MANIFEST, "cells": [MANIFEST["cells"][0]] * 65537}
+    assert MANIFEST_SHAPE in manifest_reasons(repo, too_many)
+
+
+@pytest.mark.usefixtures("marked")
+def test_a_marked_manifest_does_not_waive_a_sealed_marker_or_a_team(repo: Path) -> None:
+    sealed = {**MANIFEST, "provenance": {"collection": {"kind": "evaluation", "sealed": True}}}
+    reasons = manifest_reasons(repo, sealed)
+    assert SEALED in reasons
+    assert MANIFEST_SHAPE in reasons
+
+
+def test_the_manifest_leaf_kinds() -> None:
+    assert guard._leaf_ok("hex64", "a" * 64)
+    assert not guard._leaf_ok("hex64", "a" * 63)
+    assert guard._leaf_ok(("const", True), True)
+    assert not guard._leaf_ok(("const", True), 1)
+    assert not guard._leaf_ok(("const", 1), True)
+    assert guard._leaf_ok(("int", 0, 3), 3)
+    assert not guard._leaf_ok(("int", 0, 3), 4)
+    assert not guard._leaf_ok(("int", 0, 3), False)

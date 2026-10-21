@@ -79,13 +79,13 @@ describe("the ObservationBuilder module", () => {
   const specifiers = (source: string): string[] =>
     [...source.matchAll(/(?:\bfrom|\bimport|\brequire)\s*\(?\s*["']([^"']+)["']/g)].map((m) => m[1] as string);
 
-  it.each(["observation.ts", "web-sha256.ts", "episode.ts"])("%s imports only contracts and canonical JSON", (file) => {
+  it.each(["observation.ts", "request-bytes.ts", "web-sha256.ts", "episode.ts"])("%s imports only contracts and canonical JSON", (file) => {
     const source = readFileSync(new URL(`../src/${file}`, import.meta.url), "utf8");
     const found = specifiers(source);
     expect(found.length).toBeGreaterThan(0);
     for (const specifier of found) {
       expect(specifier).toMatch(
-        /^(@areneon\/schema\/types\/v1\/[a-z-]+\.ts|@areneon\/schema\/contracts\/v1\/[a-z-]+\.schema\.json|\.\/canonical-json\.ts|\.\/observation\.ts)$/,
+        /^(@areneon\/schema\/types\/v1\/[a-z-]+\.ts|@areneon\/schema\/contracts\/v1\/[a-z-]+\.schema\.json|\.\/canonical-json\.ts|\.\/request-bytes\.ts|\.\/observation\.ts)$/,
       );
     }
   });

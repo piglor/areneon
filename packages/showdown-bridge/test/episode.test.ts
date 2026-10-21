@@ -11,6 +11,7 @@ import {
   type BattleRecord,
   buildObservation,
   type Episode,
+  continueChannel,
   EpisodeError,
   episodeFromRecord,
   episodeHash,
@@ -275,6 +276,29 @@ describe("readEpisode", () => {
       decisions: (e.decisions as object[]).map((d) => ({ ...d, decision_context: context, deadline })),
     };
     expect((await readEpisode(a2, { known_synthetic: KNOWN })).provenance.runtime).toBe("A2");
+  });
+
+  it("stores a battle with a reconnect as one continuous channel: the joined connections read, the rejoin channel alone does not (#813)", async () => {
+    const e = stored();
+    const lines = e.channel as string[];
+    const requests = lines.flatMap((line, i) => (line.startsWith("|request|") ? [i] : []));
+    const cut = requests[2] as number;
+    const wrap = (l: string[]) => playerChannel({ schema_version: 1, data_class: "synthetic", player: "p1", lines: l });
+    const withRqids = (l: string[]) => {
+      let n = 0;
+      return l.map((line) => (line.startsWith("|request|") ? `|request|${JSON.stringify({ ...JSON.parse(line.slice(9)), rqid: ++n })}` : line));
+    };
+    // Connection 1 ends at the third request; the rejoin replays the room log and sends that request again.
+    const before = withRqids(lines.slice(0, cut + 1));
+    const again = before.at(-1) as string;
+    let next = 99;
+    const rest = lines.slice(cut + 1).map((line) => (line.startsWith("|request|") ? `|request|${JSON.stringify({ ...JSON.parse(line.slice(9)), rqid: ++next })}` : line));
+    const rejoin = [...before.slice(0, -1).filter((line) => !line.startsWith("|request|")), again, ...rest];
+    const joined = continueChannel(wrap(before), wrap(rejoin)).lines;
+    expect(joined.filter((line) => !line.startsWith("|request|"))).toEqual(lines.filter((line) => !line.startsWith("|request|")));
+    expect(joined.filter((line) => line.startsWith("|request|"))).toHaveLength(requests.length);
+    expect((await readEpisode({ ...e, channel: joined }, { known_synthetic: KNOWN })).channel).toEqual(joined);
+    await expect(readEpisode({ ...e, channel: rejoin }, { known_synthetic: KNOWN })).rejects.toThrow(EpisodeError);
   });
 
   it("returns a copy: changing the record or the input later changes no Episode", async () => {

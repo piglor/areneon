@@ -165,7 +165,7 @@ def test_boost_manipulation_lines() -> None:
         "|-unboost|p2a: Venusaur|def|1",
         "|-swapboost|p2a: Venusaur|p2b: Charizard|atk, def",
         "|-boost|p2b: Charizard|spe|3",
-        "|-copyboost|p2b: Charizard|p1a: Venusaur",
+        "|-copyboost|p1a: Venusaur|p2b: Charizard",
         "|-invertboost|p2b: Charizard",
     )
     venusaur, charizard = opp(state, "Venusaur"), opp(state, "Charizard")
@@ -176,6 +176,20 @@ def test_boost_manipulation_lines() -> None:
         -3,
     )
     assert own(state, "Venusaur").boosts["atk"] == 2
+
+
+def test_copyboost_gives_the_first_pokemon_the_second_one_s_boosts() -> None:
+    # The pinned engine's Psych Up and Costar set the FIRST named Pokemon's boosts from the
+    # second's (`source.boosts[i] = target.boosts[i]`), whatever sim/SIM-PROTOCOL.md's prose says.
+    # Captured from a sweep: reading it the other way took a Pokemon past +-6.
+    state = run(
+        "|-unboost|p2a: Venusaur|spe|2",
+        "|-boost|p2b: Charizard|atk|1",
+        "|-copyboost|p2b: Charizard|p2a: Venusaur|[from] move: Psych Up",
+    )
+    assert opp(state, "Charizard").boosts["spe"] == -2
+    assert opp(state, "Charizard").boosts["atk"] == 0
+    assert opp(state, "Venusaur").boosts["spe"] == -2
 
 
 def test_swapboost_without_a_stat_list_swaps_everything() -> None:
@@ -407,6 +421,24 @@ def test_a_target_of_null_and_bare_repeated_tags() -> None:
         run("|-damage|p2a: Venusaur|50/100|[from] drain|[from] drain")
 
 
+def test_a_bounced_spread_move_carries_one_spread_tag_per_call() -> None:
+    # Captured from a sweep battle (Magic Bounce reflecting Sweet Scent): the bounced move
+    # runs under the bounce's own |move| line, and the engine's attrLastMove appends a
+    # [spread] to it once for each call that reaches the line, so it appears twice.
+    bounce = "|move|p2b: Charizard|Sweet Scent|p1b: Charizard|[from] ability: Magic Bounce"
+    state = run(
+        "|move|p1b: Charizard|Sweet Scent|p2b: Charizard",
+        f"{bounce}|[spread] p1b|[spread] p2a",
+        player="p1",
+    )
+    assert opp(state, "Charizard").moves_revealed == []
+    # Only the display-only [spread] repeats: a repeated tag that carries state still fails closed.
+    with pytest.raises(MalformedLineError):
+        run(f"{bounce}|[from] ability: Trace")
+    with pytest.raises(MalformedLineError):
+        run("|move|p2b: Charizard|Sweet Scent|p1b: Charizard|[msg] a|[msg] b")
+
+
 def test_ability_copies_and_skill_swap() -> None:
     state = run(
         "|-ability|p2a: Venusaur|Intimidate|Trace|[from] ability: Trace|[of] p1b: Charizard",
@@ -427,3 +459,26 @@ def test_ability_copies_and_skill_swap() -> None:
 def test_illusion_is_a_named_refusal() -> None:
     with pytest.raises(UnknownLineError, match="Illusion"):
         run("|replace|p2a: Venusaur|Charizard, L50, F|100/100")
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "|error|[Unavailable choice] Can't switch: The active Pokémon is trapped",
+        "|error|[Unavailable choice] Can't move: Your Pokémon's Taunt move is disabled | x",
+        "|error|[Invalid choice] There's nothing to choose",
+        "|error|[Invalid choice] Sorry, too late to make a different move",
+    ],
+)
+def test_a_choice_refusal_to_the_player_changes_no_state(line: str) -> None:
+    # The engine (A1) or the server layer (A2) tells the player alone that a choice was not
+    # taken; a new request may follow. Nothing about either side changes.
+    assert run(line).to_dict() == run().to_dict()
+    assert (
+        run("|move|p2a: Venusaur|Protect|p2a: Venusaur", line).to_dict()
+        == run("|move|p2a: Venusaur|Protect|p2a: Venusaur").to_dict()
+    )
+
+
+def test_a_z_move_breaking_protect_changes_no_state() -> None:
+    assert run("|-zbroken|p2a: Venusaur").to_dict() == run().to_dict()

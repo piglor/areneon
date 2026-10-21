@@ -34,7 +34,12 @@ export const refuse = (message: string): never => {
   throw new ShardError(message);
 };
 
-export type ColumnType = "VARCHAR" | "BIGINT" | "LABELS";
+/**
+ * The column types the writer knows. The last three serve the private layout
+ * (`private-shards.ts`): a string column that may hold null, a boolean and a
+ * list of strings.
+ */
+export type ColumnType = "VARCHAR" | "BIGINT" | "LABELS" | "NULLABLE_VARCHAR" | "BOOLEAN" | "VARCHAR_LIST";
 export interface Column {
   name: string;
   type: ColumnType;

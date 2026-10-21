@@ -10,7 +10,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { HarnessError, playBotVsBot, ReconnectNotPlannedError, recordHarnessBattle } from "../src/harness.ts";
 import { FIXTURE_FORMAT } from "../src/recordings.ts";
-import { COMMITTED } from "./harness-fixtures.ts";
+import { COMMITTED, fixtureTeamHashes } from "./harness-fixtures.ts";
 import { tempDir } from "./helpers.ts";
 
 const engine = loadEngine();
@@ -21,6 +21,7 @@ const options = {
   format: "f",
   names: { sparring: "s", challenger: "c" },
   teams: { sparring: [], challenger: [] },
+  known_synthetic: new Set<string>(),
 };
 const battle = (room: string) => ({ battles: [{ room }] }) as unknown as A2SessionResult;
 
@@ -46,6 +47,25 @@ describe("playBotVsBot", () => {
     expect(order).toEqual(["sparring", "challenger->s"]);
     expect(pair.connections).toEqual({ sparring: [], challenger: [] });
     expect(pair.sparring.room).toBe(pair.challenger.room);
+  });
+
+  it("gives each bot the known synthetic set and the other's team, and no class label", async () => {
+    const seen: A2BotOptions[] = [];
+    run.mockImplementation(async (o) => {
+      seen.push(o);
+      o.onLog?.({ event: "logged_in", name: "s" });
+      return battle("battle-f-1");
+    });
+    const known = new Set(["a".repeat(64)]);
+    const mine = [{ species: "A" }] as never;
+    const theirs = [{ species: "B" }] as never;
+    await playBotVsBot({ ...options, known_synthetic: known, teams: { sparring: mine, challenger: theirs } });
+    const [sparring, challenger] = seen as [A2BotOptions, A2BotOptions];
+    expect(sparring.known_synthetic).toBe(known);
+    expect(sparring.opponent_team).toEqual(theirs);
+    expect(challenger.opponent_team).toEqual(mine);
+    expect(sparring).not.toHaveProperty("data_class");
+    expect(challenger).not.toHaveProperty("data_class");
   });
 
   it("taps each bot's own connections at the transport, one list of frames per connection", async () => {
@@ -197,6 +217,7 @@ describe("recordHarnessBattle's check of the planned reconnect", () => {
       names: recording.names,
       teams: { sparring: fixture.teams[seatOf("sparring")], challenger: fixture.teams[seatOf("challenger")] },
       teamLabels: recording.teams,
+      known_synthetic: fixtureTeamHashes(engine),
       provenance: fixture.provenance,
       ...(drop === undefined ? {} : { drop }),
       connect,

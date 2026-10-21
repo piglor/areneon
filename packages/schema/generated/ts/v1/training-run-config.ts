@@ -152,6 +152,19 @@ export interface TrainingRunConfig {
     normalize_advantages: boolean;
   };
   /**
+   * Optional (a minor change within v1): the generated team dataset the generation loop draws its teams from. Absent means the interim pool of committed fixture teams. The directory is read by the dataset reader, which trusts nothing; the pool takes the dev and training splits, never validation. The dataset hash pins the manifest and every record: a directory that hashes differently is refused.
+   */
+  team_dataset?: {
+    /**
+     * The dataset directory, relative to the directory the generation process runs in (the repository root for the loop driver) or absolute.
+     */
+    path: string;
+    /**
+     * SHA-256 of the JCS of {manifest_hash, splits: {dev, validation, training}}: the dataset manifest's own hash and, per split, the sorted record_hash list of the records the reader verified (empty training list for the committed layout). A swapped, added or removed record changes it.
+     */
+    dataset_hash: string;
+  };
+  /**
    * Where the learner runs (ADR-010 section 4). A cuda run is not claimed to be bit-reproducible, and its hash differs from a cpu run's.
    */
   learner: {

@@ -1,27 +1,28 @@
 # @areneon/private-team-store
 
-The private team store (ADR-014). Today this package holds no features, only
-its exact-pinned dependencies and the packaging rule that keeps it out of every
-image.
+The private team store (ADR-015). So far this package holds the pure import
+planner (`src/import-plan.ts`, with `src/staged-file.ts` for the staged-file
+header and `src/import-error.ts` for the typed refusals), the private snapshot
+writer and reader (`src/snapshot-writer.ts`, `src/snapshot-reader.ts`: records
+to Parquet shards and manifest through the pinned DuckDB tool, and the full
+verification of a stored snapshot; fixed-message refusals only), the object
+store port with its in-memory and R2 implementations (`src/object-store.ts`,
+`src/memory-store.ts`, `src/r2-client.ts`, `src/r2-settings.ts`), the publish
+sequence (`src/publish.ts`, `src/local-copy.ts`, `src/current-pointer.ts`,
+`src/snapshot-store.ts`), its exact-pinned dependency and the packaging rule
+that keeps it out of every image. The import and export commands are not built.
 
 - `"private": true` and **never shipped**: no Dockerfile, compose file, Coolify
   build or other workspace package refers to it. `test/packaging.test.ts`
   enforces that.
-- `age-encryption` (BSD-3-Clause) and the `@noble/*` and `@scure/base` packages
-  (MIT) are pinned to exact versions. Dependabot ignores them for version
-  updates, so a bump is a manual, reviewed change (security-update PRs may
-  still open, and the `osv` job still scans). `make licences` checks them like
-  every production dependency.
+- `aws4fetch` (MIT, no dependencies) signs the R2 requests (SigV4) and is
+  pinned to an exact version. Dependabot ignores it for version updates, so a
+  bump is a manual, reviewed change (security-update PRs may still open, and
+  the `osv` job still scans). `make licences` checks it like every production
+  dependency. Only `src/r2-settings.ts` imports it, and only
+  `r2-client.ts` calls `fetch`.
 - The DuckDB CLI, the `age` CLI and OpenSSL are user-installed tools, never
   listed in a `package.json`, `pyproject.toml` or Dockerfile.
-
-## Dependency note
-
-`@noble/post-quantum` 0.5.4 declares the tilde ranges `~2.0.0` for
-`@noble/curves` and `@noble/hashes`, which resolve to 2.0.1. The lockfile
-therefore holds two copies of each: the hybrid ML-KEM path runs on the 2.0.1
-copies, while age's X25519 uses the exact 2.4.0 pins. A later
-`@noble/post-quantum` bump must re-check which copies it resolves.
 
 ## Operator rule
 

@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "data_class": "synthetic",
+  "team_id": "00112233445566778899aabbccddeeff",
+  "revision": 2,
+  "supersedes_record_hash": "5a41fcb61f1cb78ab3db8f982d1ad9fe8cbaf01b002097554315f4380d6c1260",
+  "team_hash": "00752ba3db81cff4a9ea57e54fed1cfadcf780ca01b62d168139bbcb42e067f4",
+  "canonical_team_hash": "c459b993732583f47429881b909a0f3f5859c0bbe5ea9669452973a3fcd6c9bc",
+  "paste": "Tyranitar @ Smooth Rock  \nAbility: Sand Stream  \nLevel: 50  \nEVs: 32 HP / 32 Atk / 2 SpD  \nAdamant Nature  \n- Rock Slide  \n- Crunch  \n- Low Kick  \n- Stone Edge  \n\nRex (Garchomp) @ Life Orb  \nAbility: Rough Skin  \nLevel: 50  \nEVs: 2 HP / 32 Atk / 32 Spe  \nJolly Nature  \n- Earthquake  \n- Dragon Claw  \n- Fire Fang  \n- Swords Dance  \n\nGardevoir @ Choice Scarf  \nAbility: Trace  \nLevel: 50  \nEVs: 2 HP / 32 SpA / 32 Spe  \nTimid Nature  \n- Moonblast  \n- Psychic  \n- Dazzling Gleam  \n- Trick  \n\nArcanine @ Expert Belt  \nAbility: Intimidate  \nLevel: 50  \nEVs: 32 HP / 32 Atk / 2 Spe  \nAdamant Nature  \n- Flare Blitz  \n- Extreme Speed  \n- Snarl  \n- Wild Charge  \n\nMetagross @ Lum Berry  \nAbility: Clear Body  \nLevel: 50  \nEVs: 32 HP / 32 Atk / 2 Def  \nAdamant Nature  \n- Meteor Mash  \n- Zen Headbutt  \n- Bullet Punch  \n- Iron Defense  \n\nGyarados @ Rocky Helmet  \nAbility: Moxie  \nLevel: 50  \nEVs: 32 HP / 32 Atk / 2 Spe  \nAdamant Nature  \n- Waterfall  \n- Bounce  \n- Dragon Dance  \n- Taunt  \n\n",
+  "status": "active",
+  "tags": [
+    "synthetic",
+    "vgc"
+  ],
+  "labels": [
+    {
+      "label_id": "archetype",
+      "value": "offense"
+    }
+  ],
+  "holdout": false,
+  "rating": 1500
+}

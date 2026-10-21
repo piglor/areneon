@@ -25,7 +25,6 @@ from .support import HEADER, TEAM, VOCAB, run
         "|-zpower|p2a: Venusaur",
         "|inactive|Alice has 30 seconds left.",
         "|t:|1700000000",
-        "|error|[Invalid choice] nope",
         "|somethingnew|p2a: Venusaur",
     ],
 )
@@ -180,3 +179,28 @@ def test_own_team_must_be_complete_and_unambiguous() -> None:
 def test_a_switch_without_a_known_name_for_the_own_side_is_refused() -> None:
     with pytest.raises(MalformedLineError):
         run("|switch|p1a: Stranger|Pikachu, L50, F|114/114")
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "|error|",
+        "|error|boom",
+        "|error|[Invalid choice]",
+        "|error|[Invalid choice] ",
+        "|error|[Invalid choice]nope",
+        "|error|[Unavailable choice]  ",
+        "|error|[Other choice] nope",
+        "|error|[invalid choice] nope",
+        "|error| [Invalid choice] nope",
+    ],
+)
+def test_an_error_line_that_is_not_a_choice_refusal_raises(line: str) -> None:
+    with pytest.raises(MalformedLineError) as error:
+        run(line)
+    assert error.value.line == line
+
+
+def test_a_zbroken_line_with_the_wrong_arity_raises() -> None:
+    with pytest.raises(MalformedLineError):
+        run("|-zbroken")

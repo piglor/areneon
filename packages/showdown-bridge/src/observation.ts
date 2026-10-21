@@ -14,13 +14,14 @@ import type { PlayerChannelLog } from "@areneon/schema/types/v1/player-channel-l
 import type { PreviewObservation } from "@areneon/schema/types/v1/preview-observation.ts";
 import type { PrivateTeamSpec } from "@areneon/schema/types/v1/private-team-spec.ts";
 import type { VersionManifest } from "@areneon/schema/types/v1/version-manifest.ts";
-import { canonicalJson, type Json } from "./canonical-json.ts";
+import type { Json } from "./canonical-json.ts";
+import { hashRequest, type Sha256 } from "./request-bytes.ts";
 
 export type { BattleObservation, PreviewObservation };
 export type Observation = PreviewObservation | BattleObservation;
 
-/** SHA-256 of `bytes` as lowercase hex: Node's `createHash` or WebCrypto. */
-export type Sha256 = (bytes: Uint8Array) => Promise<string>;
+// The Sha256 port is defined beside the identity bytes it hashes.
+export type { Sha256 };
 
 /**
  * One player's own channel, checked by an adapter (`playerChannel`): it
@@ -107,14 +108,16 @@ interface RequestMon {
  * must match one set by species, item, ability and its moves in any order
  * (and by nickname when the set has one). A mirror team with other items or
  * moves fails, as does a channel that does not start at Team Preview.
- * Residual risk (#743): a mirror differing only in EVs, IVs, nature or level
- * passes, since telling them apart needs the engine's stat calculation.
+ * A mirror differing only in Stat Points, nature or level passes this
+ * engine-free check; `own-team-stats.ts` (#893) refuses it with the engine's
+ * stat calculation, where the team and the channel meet (`readEpisode`,
+ * `policyActor`).
  */
 function assertOwnTeam(team: PrivateTeamSpec, lines: readonly string[]): void {
   const first = lines.find((line) => line.startsWith(REQUEST));
   const preview = JSON.parse((first as string).slice(REQUEST.length)) as { teamPreview?: true; side: { pokemon: RequestMon[] } };
   if (preview.teamPreview !== true) {
-    throw new ObservationError("the channel does not start at Team Preview, so the team cannot be checked");
+    throw new ObservationError("the channel does not start at Team Preview, so the team cannot be checked (a channel after a rejoin is joined to the earlier one with continueChannel first)");
   }
   const key = (species: string, item: string, ability: string, moves: readonly string[]): string =>
     [toID(species), toID(item), toID(ability), ...moves.map(toID).sort()].join("|");
@@ -131,9 +134,9 @@ function assertOwnTeam(team: PrivateTeamSpec, lines: readonly string[]): void {
 /**
  * The observation for the last `|request|` in the channel: the decision that
  * request asks for. Its identity is computed exactly as `decodeRequest`
- * computes it: `request_seq` counts every request so far, wait requests
- * included, and `request_hash` is the SHA-256 of the canonical request
- * without `rqid`.
+ * computes it (`request-bytes.ts` is the one definition of the hashed
+ * bytes): `request_seq` counts every request so far, wait requests included,
+ * and `request_hash` is the SHA-256 of the canonical request without `rqid`.
  */
 export async function buildObservation({
   channel,
@@ -153,10 +156,10 @@ export async function buildObservation({
   if (at < 0) throw new ObservationError("the channel holds no request to observe");
   const request = JSON.parse((channel.lines[at] as string).slice(REQUEST.length)) as { [key: string]: Json };
   if (request.wait === true) throw new ObservationError("the last request is a wait request: there is no decision");
-  const { rqid, ...hashed } = request;
+  const { rqid } = request;
   const identity = {
     request_seq: channel.lines.slice(0, at + 1).filter((line) => line.startsWith(REQUEST)).length,
-    request_hash: await sha256(new TextEncoder().encode(canonicalJson(hashed))),
+    request_hash: await hashRequest(request, sha256),
     ...(typeof rqid === "number" ? { rqid } : {}),
   };
   const common: Omit<BattleObservation, "kind"> = {

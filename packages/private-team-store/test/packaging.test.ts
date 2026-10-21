@@ -30,15 +30,8 @@ const PACKAGE_DIR = join(dirname(fileURLToPath(import.meta.url)), "..");
 const ROOT = join(PACKAGE_DIR, "..", "..");
 const DEP_FIELDS = ["dependencies", "devDependencies", "peerDependencies", "optionalDependencies"];
 const EXACT = /^\d+\.\d+\.\d+$/;
-const REQUIRED_PINS = [
-  "age-encryption",
-  "@noble/ciphers",
-  "@noble/curves",
-  "@noble/hashes",
-  "@noble/post-quantum",
-  "@scure/base",
-];
-const IGNORED_FOR_VERSION_UPDATES = ["age-encryption", "@noble/*", "@scure/*"];
+const REQUIRED_PINS = ["aws4fetch"];
+const IGNORED_FOR_VERSION_UPDATES = ["aws4fetch"];
 
 // Tracked files only: what a checkout (and so any image build context) holds.
 function trackedFiles(): string[] {
@@ -88,12 +81,14 @@ describe("the private team store package", () => {
   it("pins every dependency to an exact version, with no range", () => {
     for (const field of DEP_FIELDS) {
       for (const [dep, version] of Object.entries((manifest[field] ?? {}) as Record<string, string>)) {
-        expect(version, `${field}.${dep}`).toMatch(EXACT);
+        // A workspace link to this repository's own package is not a registry version.
+        if (dep.startsWith("@areneon/")) expect(version, `${field}.${dep}`).toBe("workspace:*");
+        else expect(version, `${field}.${dep}`).toMatch(EXACT);
       }
     }
     const deps = (manifest["dependencies"] ?? {}) as Record<string, string>;
     expect(Object.keys(deps)).toEqual(expect.arrayContaining(REQUIRED_PINS));
-    expect(deps["age-encryption"]).toBe("0.3.1");
+    expect(deps["aws4fetch"]).toBe("1.0.20");
   });
 
   it("has the lockfile resolve each pin to exactly the version in package.json", () => {
@@ -166,7 +161,7 @@ describe("the packaging rule on this repository", () => {
     }
   });
 
-  it("has dependabot.yml ignore age-encryption, @noble/* and @scure/* for version updates", () => {
+  it("has dependabot.yml ignore aws4fetch for version updates", () => {
     expect(dependabotNpmIgnored(text(join(ROOT, ".github", "dependabot.yml")))).toEqual(
       expect.arrayContaining(IGNORED_FOR_VERSION_UPDATES),
     );

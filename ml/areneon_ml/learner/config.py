@@ -67,7 +67,11 @@ class PPOSettings:
 
 @dataclass(frozen=True)
 class RunConfig:
-    """A validated TrainingRunConfig and its hash."""
+    """A validated TrainingRunConfig and its hash.
+
+    ``team_dataset`` says the record names a generated team dataset (the Node side
+    reads and verifies it; this reader only needs to know whether to start that script).
+    """
 
     lineage_id: str
     format_id: str
@@ -80,6 +84,7 @@ class RunConfig:
     ppo: PPOSettings
     device: str
     threads: int
+    team_dataset: bool
     raw: dict[str, Any]
     hash: str
 
@@ -137,6 +142,7 @@ def read_run_config(raw: object) -> RunConfig:
         ),
         device=raw["learner"]["device"],
         threads=raw["learner"]["threads"],
+        team_dataset="team_dataset" in raw,
         raw=raw,
         hash=sha256_hex(jcs(raw)),
     )

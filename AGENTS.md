@@ -36,7 +36,7 @@ Default five-label vocabulary (`needs-triage`, `needs-info`, `ready-for-agent`, 
 
 ### Privacy rules (hard)
 
-- Never commit a real competitive team. Private teams live only in gitignored `private-data/`; public fixtures are sanitized or synthetic and CC0.
+- Never commit a real competitive team. Private teams live in the private R2 bucket (ADR-015) and, on the owner's workstation, only under gitignored `private-data/` (staging and the verified local snapshot copy). Tokens for that bucket never enter the repository, a log, a chat or a command line; agents never run commands holding them. Private teams never reach a cloud worker, a public dataset or a published checkpoint or Episode. Public fixtures are sanitized or synthetic and CC0.
 - Policy inputs are player-perspective only. Opponent hidden information must never enter an observation, log, checkpoint or model input.
 - The pinned Showdown engine is the only legality authority.
 - Do not copy AGPL code (Showdown client, Champions Calc).

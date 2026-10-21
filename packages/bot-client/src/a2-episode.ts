@@ -1,10 +1,12 @@
 import type { DecisionContext } from "@areneon/schema/types/v1/decision-context.ts";
 import {
+  continueChannel,
   type CollectionInput,
   type DataClass,
   type Engine,
   type Episode,
   higherClass,
+  type PlayerChannel,
   readEpisode,
   rightsFor,
   type StampedTeam,
@@ -18,7 +20,20 @@ import type { A2BattleRecord, DecisionRecord } from "./session.ts";
 /** An A2 battle record that cannot become an Episode. The message never quotes server text. */
 export class A2EpisodeError extends Error {
   override name = "A2EpisodeError";
+  /**
+   * Set for a refusal that is a deliberate policy and not a defect of the record:
+   * `rejoin_without_timer_snapshot`, a decision first made after a reconnect with
+   * no timer snapshot (ADR-008 E1b). The battle is kept as a record and an incident.
+   */
+  readonly code: A2EpisodeRefusal | undefined;
+
+  constructor(message: string, code?: A2EpisodeRefusal) {
+    super(message);
+    this.code = code;
+  }
 }
+
+export type A2EpisodeRefusal = "rejoin_without_timer_snapshot";
 
 export interface A2EpisodeOptions {
   /** The bot's own team as it brought it; its class is proven by `stampTeam`. */
@@ -94,6 +109,13 @@ function decisionOf(
 ): EpisodeDecision {
   const { timer } = decision;
   if (timer === null) {
+    if (decision.rejoin_without_snapshot === true) {
+      throw new A2EpisodeError(
+        "a decision was first made after a reconnect with no timer snapshot (the server does not replay it): " +
+          "the battle is kept as a record and an incident, never as an Episode or training data",
+        "rejoin_without_timer_snapshot",
+      );
+    }
     throw new A2EpisodeError(`decision ${decision.request_seq} has no timer snapshot: its deadline record cannot be written`);
   }
   const elapsed = Math.max(0, Math.ceil(decision.elapsed_ms));
@@ -170,6 +192,18 @@ function turnsOf(lines: readonly string[]): number {
   return turns;
 }
 
+/** The connections' channels, in order, as the battle's one continuous channel. */
+function joinedChannel(channels: readonly PlayerChannel[]): PlayerChannel {
+  const [first, ...rest] = channels;
+  if (first === undefined) throw new A2EpisodeError("the battle has no channel");
+  try {
+    return rest.reduce(continueChannel, first);
+  } catch {
+    // Whatever refused (the join, or a request in a channel), its text is not quoted: it can hold the server's.
+    throw new A2EpisodeError(`the ${channels.length} connections' channels do not join into one continuous channel`);
+  }
+}
+
 /**
  * The bot's own Episode of one finished A2 battle (ADR-009 slice f, ADR-008
  * §3), from the record the session hands over. Only the bot's own channel,
@@ -184,10 +218,14 @@ function turnsOf(lines: readonly string[]): number {
  *
  * It fails closed (`A2EpisodeError`) on a battle that did not finish, ended on
  * a fatal error, forfeited its Open Team Sheets decline, was classed a defect,
- * had a server auto-choose, spans several connections (a rejoin's channel
- * restarts, so no one channel holds the battle), or has a decision without a
- * timer snapshot. The result is read back through `readEpisode`, so it is
- * valid by the same checks a stored copy gets (`EpisodeError`).
+ * had a server auto-choose, or has a decision without a timer snapshot (a
+ * request the bot first decided on a rejoin, whose snapshot went to the old
+ * connection, is one). A battle that spans several connections is written as
+ * one Episode: `continueChannel` joins the connections' channels, in order,
+ * into the one continuous channel the Episode stores (ADR-008 §5), and it
+ * fails closed (`A2EpisodeError`) on channels that do not join. The result is
+ * read back through `readEpisode`, so it is valid by the same checks a stored
+ * copy gets (`EpisodeError`).
  *
  * Reading a stored synthetic Episode back: the team is stored under the names
  * the server gave it, so `readEpisode` proves it synthetic only if its
@@ -208,10 +246,7 @@ export async function a2Episode(record: A2BattleRecord, options: A2EpisodeOption
   if (record.server_auto_chooses.length > 0) throw new A2EpisodeError("the server auto-chose for the bot");
   if (record.player === null) throw new A2EpisodeError("the battle has no player seat");
   const { player } = record;
-  const [channel, ...rest] = record.channels;
-  if (channel === undefined || rest.length > 0) {
-    throw new A2EpisodeError(`the battle has ${record.channels.length} channels: an Episode needs exactly one connection's channel`);
-  }
+  const channel = joinedChannel(record.channels);
   if (channel.player !== player) throw new A2EpisodeError("the channel is not the bot's own");
   if (collection.kind === "sparring" && opponent_team !== undefined) {
     throw new A2EpisodeError("a sparring opponent is a human: their team class is never known");

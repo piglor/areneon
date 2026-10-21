@@ -10,7 +10,8 @@ This repository covers offline training, evaluation and local bot sparring; it s
 - GitHub Issues are for community contributions only; internal work lives in Redmine.
 - Setup and rules: [CONTRIBUTING.md](CONTRIBUTING.md). Domain glossary: [CONTEXT.md](CONTEXT.md).
 - Owner runbook for the dev rules store (ADR-007): [docs/runbooks/rules-db.md](docs/runbooks/rules-db.md).
-- Private competitive teams must never be committed. Use sanitized fixtures only.
+- Owner runbook for the private team bucket, lock and tokens (ADR-015): [docs/runbooks/private-store.md](docs/runbooks/private-store.md).
+- Private competitive teams must never be committed. Use sanitized fixtures only. The owner's real teams (training-pipeline inputs for a separate private run, never for public datasets or published checkpoints) are kept in a private bucket once it is set up (ADR-015; #889, #891); on the owner's workstation they appear only under gitignored `private-data/`. Tokens for that bucket never enter the repository, a log or a command line.
 
 ## Layout
 
@@ -31,7 +32,7 @@ fixtures/                    sanitized/synthetic fixtures only (CC0)
   showdown/<format>/         golden request fixtures from the pinned engine
   teams/<format>/            PokePaste team fixtures + validator verdict log
 docs/                        contributor-facing contracts and research notes (docs/research/)
-private-data/                gitignored: your private teams
+private-data/                gitignored, owner's workstation only: teams staging, verified local snapshot copies, private run outputs
 ```
 
 ## Licence

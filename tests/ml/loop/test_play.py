@@ -57,6 +57,22 @@ def test_play_passes_the_whole_request_and_the_run_as_flags(tmp_path: Path) -> N
     }
 
 
+def test_play_runs_the_script_it_is_given(tmp_path: Path) -> None:
+    out = tmp_path / "which.txt"
+    other = tmp_path / "packages/team-dataset/scripts"
+    other.mkdir(parents=True)
+    (other / "play-generation.ts").write_text(f"open({str(out)!r}, 'w').write('dataset')")
+    chosen = player(tmp_path, "", "raise SystemExit(1)")
+    chosen = NodePlayer(
+        **{
+            **chosen.__dict__,
+            "play_script": "packages/team-dataset/scripts/play-generation.ts",
+        }
+    )
+    chosen.play(PlayRequest(1, "policy:abc", "p" * 64, "b" * 64, tmp_path / "work"))
+    assert out.read_text() == "dataset"
+
+
 def test_a_failing_script_surfaces_the_end_of_its_stderr(tmp_path: Path) -> None:
     script = "import sys; sys.stderr.write('x' * 5000 + 'the cause'); sys.exit(1)"
     request = PlayRequest(1, "policy:abc", "p" * 64, "b" * 64, tmp_path / "work")

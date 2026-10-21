@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { PolicyWorkerError, UnsupportedCandidateError } from "../src/evaluation-harness.ts";
 import { PolicyProtocolError, type PolicyQueryInput } from "../src/policy-protocol.ts";
 import { PolicyHandshakeError, PolicyReplyError, PolicyWorkerClient, type PolicyWorkerOptions } from "../src/policy-worker.ts";
@@ -57,6 +57,26 @@ describe("the handshake (ADR-008 section 3)", () => {
 
   it("refuses a worker that does not answer the hello in time", async () => {
     await expect(client("silent", { handshake_timeout_ms: 300 }).start()).rejects.toThrow(/no handshake reply within 300 ms/);
+  });
+
+  it("does not end a session that outlives the handshake timeout", async () => {
+    const worker = await started("ok", { handshake_timeout_ms: 2000 });
+    await new Promise((resolve) => setTimeout(resolve, 2300));
+    const recommendation = await worker.ask("g1", INPUT);
+    expect(INPUT.candidates.map((c) => c.choice)).toContain(recommendation.choice);
+  }, 15_000);
+
+  it("closes the worker and clears the timer when the hello cannot be written", async () => {
+    const cleared = vi.spyOn(globalThis, "clearTimeout");
+    try {
+      const worker = client("ok", { max_line_bytes: 8 });
+      await expect(worker.start()).rejects.toThrow();
+      // the failed start left no child behind: a second start is not "already started"
+      await expect(worker.start()).rejects.not.toThrow(/already started/);
+      expect(cleared).toHaveBeenCalled();
+    } finally {
+      cleared.mockRestore();
+    }
   });
 
   it("refuses a hello answered with something that is not a handshake", async () => {
