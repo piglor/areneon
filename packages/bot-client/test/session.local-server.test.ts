@@ -272,4 +272,65 @@ describe("runA2Bot on the pinned local server", () => {
     },
     60_000,
   );
+  // The first connection is closed at the frame that carries the end (`|win|` or `|tie`), which it
+  // never delivers to the bot; the server has ended the battle by then, so the rejoin finds a
+  // finished room and gets the replayed log without a request. What is forced: the first connection
+  // never sees the end, and the rejoin comes after the end. What is not: the replay's content
+  // beyond that (the server decides it).
+  it(
+    "rejoins a room whose battle already ended, records the result from the replay and leaves",
+    async () => {
+      const suffix = local.server.session.bot_name_suffix;
+      let dropped = false;
+      const sparring: Bot = bot(
+        { name: `Areneon-b3-${suffix}`, challenger: `Areneon-c3-${suffix}`, team: own },
+        (transport, index) =>
+          index > 0
+            ? transport
+            : {
+                ...transport,
+                onFrame(cb) {
+                  transport.onFrame((frame) => {
+                    if (dropped) return;
+                    if (/\n\|(win\|.*|tie)(\n|$)/.test(frame)) {
+                      dropped = true;
+                      return void setTimeout(() => transport.close(), 0);
+                    }
+                    cb(frame);
+                  });
+                },
+              },
+      );
+      await sparring.loggedIn;
+      const challenger: Bot = bot({
+        name: `Areneon-c3-${suffix}`,
+        challenger: `Areneon-b3-${suffix}`,
+        challenge: `Areneon-b3-${suffix}`,
+        team: opponent,
+      });
+      const [a, b] = await Promise.all([sparring.result, challenger.result]);
+      const [record] = a.battles as [A2BattleRecord];
+      const [theirs] = b.battles as [A2BattleRecord];
+      expect(dropped).toBe(true);
+      expect(sparring.logs.filter((entry) => entry.event === "logged_in")).toHaveLength(2);
+      expect(record.result).toBe(theirs.result === "win" ? "loss" : theirs.result === "loss" ? "win" : "tie");
+      expect(sparring.logs.filter((entry) => entry.event === "battle_ended")).toHaveLength(1);
+      expect(sparring.sent.filter((line) => line === `${record.room}|/leave`)).toHaveLength(1);
+      expect(record.channels).toHaveLength(2);
+      const joined = record.channels.reduce(continueChannel);
+      expect(joined.lines.some((line) => line.startsWith("|win|") || line === "|tie")).toBe(true);
+      const known = new Set([teamHash(own), teamHash(opponent)]);
+      // The decision made after the drop is on the first connection, so the Episode is whole.
+      const episode = await a2Episode(record, {
+        team: stampTeam(own as StampedTeam["team"], known),
+        known_synthetic: known,
+        manifest: resolveFormat(engine, FORMAT, snapshot).manifest,
+        timer_rules: timerRulesOf(engine, FORMAT, 5),
+        behaviour_policy_id: "actor-rule@a2",
+        collection: { kind: "sparring", session_id: "ended-rejoin" },
+      });
+      expect(episode.channel).toEqual(joined.lines);
+    },
+    60_000,
+  );
 });
