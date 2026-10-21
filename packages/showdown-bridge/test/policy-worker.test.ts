@@ -59,6 +59,13 @@ describe("the handshake (ADR-008 section 3)", () => {
     await expect(client("silent", { handshake_timeout_ms: 300 }).start()).rejects.toThrow(/no handshake reply within 300 ms/);
   });
 
+  it("does not end a session that outlives the handshake timeout", async () => {
+    const worker = await started("ok", { handshake_timeout_ms: 2000 });
+    await new Promise((resolve) => setTimeout(resolve, 2300));
+    const recommendation = await worker.ask("g1", INPUT);
+    expect(INPUT.candidates.map((c) => c.choice)).toContain(recommendation.choice);
+  }, 15_000);
+
   it("refuses a hello answered with something that is not a handshake", async () => {
     await expect(client("garbage-ready").start()).rejects.toThrow(/not UTF-8 JSON/);
   });

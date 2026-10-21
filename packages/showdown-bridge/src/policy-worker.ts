@@ -131,9 +131,10 @@ export class PolicyWorkerClient implements PolicyClient {
     this.#nextId = 1;
     const child = spawn(command, [...args], { cwd, env: { ...env }, stdio: ["pipe", "pipe", "pipe"] });
     this.#child = child;
+    let timer: ReturnType<typeof setTimeout> | undefined;
     const ready = new Promise<unknown>((resolve, reject) => {
       this.#onReady = resolve;
-      const timer = setTimeout(
+      timer = setTimeout(
         () => this.#fail(new PolicyHandshakeError(`no handshake reply within ${handshake_timeout_ms} ms`)),
         handshake_timeout_ms,
       );
@@ -155,6 +156,10 @@ export class PolicyWorkerClient implements PolicyClient {
     } catch (error) {
       await this.close();
       throw error;
+    } finally {
+      // The timer bounds the handshake only: left running it would end every
+      // session that lasts that long, killing the worker mid-game (#912).
+      clearTimeout(timer);
     }
   }
 

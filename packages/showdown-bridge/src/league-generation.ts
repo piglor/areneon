@@ -26,7 +26,7 @@ import { type PolicyClient } from "./policy-worker.ts";
 import { type PolicyGameOptions, policyGame, type PolicySeat } from "./policy-actor.ts";
 import { loadRandomCorpus } from "./random-corpus.ts";
 import { randomLegalActor } from "./random-legal.ts";
-import type { Actor, Player } from "./runner.ts";
+import type { Actor, ForfeitCause, Player } from "./runner.ts";
 import { importPaste } from "./teams.ts";
 import { stampTeam, type SyntheticTeamHashes, teamHash } from "./team-class.ts";
 import { loadTrainingSet, type TrainingSet } from "./training-loader.ts";
@@ -131,6 +131,15 @@ export interface GameRow {
   outcome: "played" | "forfeit";
   winner: Player | null;
   turns: number;
+  /** Only on a forfeited game: the seat that lost, why, at which request of its channel, and the harness's detail (#912). */
+  forfeit?: { loser: Player; cause: ForfeitCause; request_seq: number; detail: string };
+}
+
+/** The forfeits of a generation by cause, sorted by cause; empty when none. */
+export function forfeitCauses(games: readonly GameRow[]): Record<string, number> {
+  const counts: Record<string, number> = {};
+  for (const game of games) if (game.forfeit !== undefined) counts[game.forfeit.cause] = (counts[game.forfeit.cause] ?? 0) + 1;
+  return Object.fromEntries(Object.entries(counts).sort(([a], [b]) => (a < b ? -1 : 1)));
 }
 
 export interface GenerationResult {
@@ -217,7 +226,12 @@ export async function playGeneration(options: GenerationOptions): Promise<Genera
       if (outcome.kind === "incident") throw new GenerationError(`game ${entry.game} (${entry.seed}): ${outcome.incident}: ${outcome.message}`);
       const row = { game: entry.game, seed: entry.seed, opponent: idOf(entry.opponent, policy_id) };
       if (outcome.kind === "forfeit" || record === null) {
-        rows.push({ ...row, outcome: "forfeit", winner: outcome.kind === "forfeit" ? outcome.winner : null, turns: outcome.kind === "forfeit" ? outcome.turns : 0 });
+        if (outcome.kind !== "forfeit") {
+          rows.push({ ...row, outcome: "forfeit", winner: null, turns: 0 });
+        } else {
+          const { loser, cause, request_seq, detail } = outcome;
+          rows.push({ ...row, outcome: "forfeit", winner: outcome.winner, turns: outcome.turns, forfeit: { loser, cause, request_seq, detail } });
+        }
         continue;
       }
       rows.push({ ...row, outcome: "played", winner: record.winner, turns: record.turns });
@@ -285,6 +299,8 @@ export function writeGeneration(dir: string, result: GenerationResult): void {
     generation: result.generation,
     games: result.games,
     forfeits: result.games.filter((game) => game.outcome === "forfeit").length,
+    // Present only when a game was forfeited, so a run without forfeits writes the bytes it always did.
+    ...(result.games.some((game) => game.outcome === "forfeit") ? { forfeit_causes: forfeitCauses(result.games) } : {}),
     episode_hashes: [...result.episode_hashes].sort(),
     training_set_hash: result.training_set_hash,
     examples: result.set.examples,
