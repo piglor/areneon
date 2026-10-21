@@ -102,7 +102,8 @@ def test_the_page_is_the_template_the_script_and_one_data_block() -> None:
     # the script is the interpreter then the view, byte for byte
     web = ROOT / "packages" / "replay-view" / "web"
     assert script == (
-        (web / "interpreter.cjs").read_text().rstrip("\n")
+        'var AR_MODE = "player";\n'
+        + (web / "interpreter.cjs").read_text().rstrip("\n")
         + "\n"
         + (web / "view.cjs").read_text().rstrip("\n")
     )

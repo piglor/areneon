@@ -29,13 +29,22 @@ _TOKEN = re.compile(r"[^A-Za-z0-9]+")
 
 
 @cache
-def assets() -> tuple[str, str]:
-    """(script, style) of a replay page. The script is the interpreter then the view."""
+def assets(mode: str = "player") -> tuple[str, str]:
+    """(script, style) of a replay page. The script is the mode constant, the interpreter, then the
+    view. The mode (``player`` or ``omniscient``) is written by the page generator into the hashed
+    script, never read from the page's data, so a data block cannot switch a page's mode."""
+    if mode not in ("player", "omniscient"):
+        raise InspectError("a replay page is a player view or an omniscient view")
     parts = {name: (ASSETS / name).read_bytes().decode("utf-8") for name in (
         "interpreter.cjs", "view.cjs", "replay.css")}  # fmt: skip
     if any("\r" in text for text in parts.values()):
         raise InspectError("a replay asset has a carriage return: the page bytes must be fixed")
-    script = parts["interpreter.cjs"].rstrip("\n") + "\n" + parts["view.cjs"].rstrip("\n")
+    script = (
+        f'var AR_MODE = "{mode}";\n'
+        + parts["interpreter.cjs"].rstrip("\n")
+        + "\n"
+        + parts["view.cjs"].rstrip("\n")
+    )
     style = page.STYLE + "\n" + parts["replay.css"].strip()
     return script, style
 
@@ -71,7 +80,11 @@ def dex_for(table: Mapping[str, Any], game: GameReplay) -> dict[str, Any]:
     """The species table for this game's page: name, base species and types, for the species it
     uses (the type colours come from here), and the terrain ids (they tell a terrain from a field
     condition). Read from the hashed engine-data export; no list of game content is written here."""
-    ids = species_in(game)
+    return dex_for_ids(table, species_in(game))
+
+
+def dex_for_ids(table: Mapping[str, Any], ids: set[str]) -> dict[str, Any]:
+    """The same table for the species ``ids`` (any word that is not a species id is ignored)."""
     species = {
         row["id"]: {"name": row["name"], "base": row["base_species"], "types": row["types"]}
         for row in table["species"]

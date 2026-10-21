@@ -4,7 +4,8 @@
   committed. A directory with committed generations is resumed from the last one; an
   unfinished generation is discarded and replayed. Prints one JCS JSON line.
 * ``inspect``: write the training-data inspector's static pages (teams and games) for a run.
-* ``replay``: write graphical replay pages of training games (each game's two own channels).
+* ``replay``: write graphical replay pages of training games (each game's two own channels), or
+  with ``--progress-dir`` of stored progress games (the omniscient view, for local use).
 * ``provenance``: write the run's CheckpointRecords and its sources registry into a
   directory, ready for ``python -m areneon_ml.checkpoint classify|independent``.
 * ``report``: write the run dashboard (training curves and, with a progress root, the progress
@@ -32,6 +33,7 @@ from areneon_ml.checkpoint.files import CheckpointFileError
 from areneon_ml.checkpoint.provenance import ProvenanceError
 from areneon_ml.checkpoint.record import RecordError
 from areneon_ml.inspector.command import inspect_run
+from areneon_ml.inspector.progress_replay_command import replay_progress
 from areneon_ml.inspector.readers import InspectError
 from areneon_ml.inspector.replay_command import Selection, parse_games, replay_games
 from areneon_ml.learner.config import RunConfigError, read_run_config
@@ -110,7 +112,13 @@ def _parser() -> argparse.ArgumentParser:
     replay = commands.add_parser(
         "replay", help="write replay pages of training games under <out>/replays/"
     )
-    replay.add_argument("--run-dir", type=Path, required=True)
+    replay.add_argument("--run-dir", type=Path, help="the run (required unless --progress-dir)")
+    replay.add_argument(
+        "--progress-dir",
+        type=Path,
+        help="replay stored progress games of this progress root instead (omniscient pages)",
+    )
+    replay.add_argument("--match", help="with --progress-dir: one match, e.g. actor-rule-sample")
     replay.add_argument("--generation", type=int, required=True)
     replay.add_argument(
         "--game",
@@ -184,7 +192,20 @@ def main(argv: list[str] | None = None) -> int:
             out = report_run(args.run_dir, args.progress_dir, args.out, args.inspect_dir)
         elif args.command == "progress":
             out = _progress(args)
+        elif args.command == "replay" and args.progress_dir is not None:
+            out = replay_progress(
+                args.progress_dir,
+                args.generation,
+                args.out,
+                repo=REPO,
+                match=args.match,
+                games=parse_games(args.game),
+                run_dir=args.run_dir,
+                engine_data=args.engine_data,
+            )
         elif args.command == "replay":
+            if args.run_dir is None or args.match is not None:
+                _parser().error("replay needs --run-dir (and --match only with --progress-dir)")
             out = replay_games(
                 args.run_dir,
                 args.out,

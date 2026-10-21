@@ -67,3 +67,5 @@ svg.board .ty-steel{fill:#b7b7ce}
 svg.board .ty-stellar{fill:#40b5a5}
 svg.board .ty-water{fill:#6390f0}
 svg.board .ty-unknown{fill:#8a8a85}
+.warn{border:2px solid var(--bad);border-radius:6px;padding:8px 12px;color:var(--bad);max-width:none}
+.opts li.pending{font-style:italic}
