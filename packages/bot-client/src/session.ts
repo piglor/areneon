@@ -128,6 +128,12 @@ export interface DecisionRecord {
   inherited: boolean;
   /** Set when the watchdog, not a timer snapshot, made this decision: the fallback went out unbudgeted. */
   watchdog?: WatchdogReason;
+  /**
+   * Set when this decision was first made after a rejoin, with the timer on and no snapshot for it
+   * (the server sent the snapshot to the old connection and does not replay it). An Episode cannot
+   * carry such a decision (`a2Episode` refuses it with a code of its own); the record is kept.
+   */
+  rejoin_without_snapshot?: true;
   remaining_decisions_estimate?: number;
   /** Local ms from the (original) request's receipt to the send. */
   elapsed_ms: number;
@@ -204,6 +210,11 @@ export type SessionLog =
   /** The server chose for the bot: a newer request arrived while this one was unanswered. */
   | { event: "server_auto_choose_detected"; room: string; detection: AutoChooseDetection }
   | { event: "battle_ended"; room: string; result: BattleResult; winner: string | null }
+  /**
+   * A decision was first made after a rejoin with no timer snapshot: the battle plays on and its
+   * record is kept for analysis, but it can never be an Episode or training data (ADR-008 E1b).
+   */
+  | { event: "incident"; room: string; kind: "rejoin_without_timer_snapshot"; request_seq: number }
   /** A `|popup|` or a global `|error|`: server text for the operator. */
   | { event: "server_message"; line: string };
 
@@ -230,6 +241,7 @@ interface Deadline {
   budget: Budget;
   inherited: boolean;
   watchdog?: WatchdogReason;
+  rejoin_without_snapshot?: true;
   remaining_decisions_estimate?: number;
 }
 
@@ -838,7 +850,9 @@ class Session {
       battle.watchdog.armSnapshotWait(rqid, now, this.#options.snapshotWaitMs ?? DEFAULT_SNAPSHOT_WAIT_MS);
       return;
     }
-    this.#decide(battle, pending, { timer: null, budget: ZERO_BUDGET, inherited: false });
+    // With the timer on, a request first seen on a rejoin has lost its snapshot to the old connection.
+    const lost = rejoin && battle.timer;
+    this.#decide(battle, pending, { timer: null, budget: ZERO_BUDGET, inherited: false, ...(lost ? { rejoin_without_snapshot: true as const } : {}) });
   }
 
   /** A request the bot has seen before, re-sent on a rejoin (ADR-005 §1). */
@@ -866,7 +880,7 @@ class Session {
       // Its snapshot went to the old connection: decide now, from the original receipt.
       battle.pending = undefined;
       const refreshed = { ...pending, request, legal: legal as LegalChoiceSet, channel_request_seq };
-      this.#decide(battle, refreshed, { timer: null, budget: ZERO_BUDGET, inherited: false });
+      this.#decide(battle, refreshed, { timer: null, budget: ZERO_BUDGET, inherited: false, rejoin_without_snapshot: true });
     }
   }
 
@@ -934,6 +948,7 @@ class Session {
       budget: deadline.budget,
       inherited: deadline.inherited,
       ...(deadline.watchdog === undefined ? {} : { watchdog: deadline.watchdog }),
+      ...(deadline.rejoin_without_snapshot === undefined ? {} : { rejoin_without_snapshot: true as const }),
       ...(deadline.remaining_decisions_estimate === undefined
         ? {}
         : { remaining_decisions_estimate: deadline.remaining_decisions_estimate }),
@@ -945,6 +960,9 @@ class Session {
     battle.decisions.push(decision);
     this.#submit(battle, request, choice);
     this.#log({ event: "decision", room: battle.room, decision });
+    if (deadline.rejoin_without_snapshot === true) {
+      this.#log({ event: "incident", room: battle.room, kind: "rejoin_without_timer_snapshot", request_seq: request.request_seq });
+    }
   }
 
   #submit(battle: Battle, request: Pending["request"], choice: string): void {

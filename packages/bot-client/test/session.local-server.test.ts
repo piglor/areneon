@@ -262,7 +262,7 @@ describe("runA2Bot on the pinned local server", () => {
         collection: { kind: "sparring", session_id: "reconnect" },
       });
       if (record.decisions.some((decision) => decision.timer === null)) {
-        await expect(written).rejects.toThrow(/no timer snapshot/);
+        await expect(written).rejects.toMatchObject({ code: "rejoin_without_timer_snapshot" });
       } else {
         const episode = await written;
         expect(episode.channel).toEqual(record.channels.reduce(continueChannel).lines);

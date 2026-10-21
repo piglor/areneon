@@ -726,14 +726,15 @@ describe("runA2Bot: reconnects (ADR-005 §1, §3)", () => {
     run.t().push(at(2));
     now = 2_400;
     run.t().push(at(3));
-    expect(run.decisions()[1]).toMatchObject({ rqid: 3, request_seq: 1, timer: null, elapsed_ms: 400 });
+    expect(run.decisions()[1]).toMatchObject({ rqid: 3, request_seq: 1, timer: null, elapsed_ms: 400, rejoin_without_snapshot: true });
+    expect(run.events("incident")).toEqual([{ event: "incident", room: ROOM, kind: "rejoin_without_timer_snapshot", request_seq: 1 }]);
     expect(chooseLines(run.t())).toHaveLength(1);
   });
 
   it("decides at once a request it first sees on a rejoin, and ignores a re-sent wait", async () => {
     const { run } = await answeredThenDropped();
     run.t().push(at(10));
-    expect(run.decisions()[2]).toMatchObject({ rqid: 8, phase: "forceSwitch", timer: null, request_seq: 1 });
+    expect(run.decisions()[2]).toMatchObject({ rqid: 8, phase: "forceSwitch", timer: null, request_seq: 1, rejoin_without_snapshot: true });
     run.t().push(at(18));
     run.t().push(at(18));
     expect(chooseLines(run.t())).toHaveLength(1);
