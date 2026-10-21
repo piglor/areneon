@@ -53,7 +53,7 @@ KNOWN_TAGS = frozenset(
 )  # fmt: skip
 
 # Lines whose text may hold `[` or `|`-free prose: no tag parsing.
-_FREE_TEXT = frozenset({"uhtml", "uhtmlchange", "-message", "-hint", "rule", "tier"})
+_FREE_TEXT = frozenset({"uhtml", "uhtmlchange", "-message", "-hint", "rule", "tier", "error"})
 
 # Lines that change no state, with the number of positional fields they carry.
 _NO_STATE: dict[str, tuple[int, int | None]] = {
@@ -87,8 +87,14 @@ _NO_STATE: dict[str, tuple[int, int | None]] = {
     "-singleturn": (2, 2),
     "-fieldactivate": (1, 1),
     "-ohko": (0, 0),
+    "-zbroken": (1, 1),
 }
 
+# The refusal text the engine (or, on the A2 server path, the server layer) sends to the
+# player alone for a choice it did not take. It carries only the player's own refusal, is
+# never part of the room log, and is followed by a fresh `|request|` (an `[Unavailable
+# choice]`) or by nothing (an `[Invalid choice]`): no state changes. Any other form is refused.
+_ERROR_TEXT = re.compile(r"^\[(?:Unavailable|Invalid) choice\] \S[^\n\r]*$")
 _TAG = re.compile(r"^\[([a-z]+)\]\s*(.*)$")
 _REF = re.compile(r"^(p[1-4])([a-d])?: (.+)$")
 _SIDE = re.compile(r"^(p[1-4]): ")
@@ -212,6 +218,7 @@ class _Reducer:
             )
         self._handlers: dict[str, Callable[[_Line], None]] = {
             "player": self._player,
+            "error": self._error,
             "tier": self._tier,
             "gametype": self._gametype,
             "clearpoke": self._clearpoke,
@@ -448,6 +455,11 @@ class _Reducer:
     def _tier(self, line: _Line) -> None:
         _arity(line, 1, 1)
         self.state.format_name = line.args[0]
+
+    def _error(self, line: _Line) -> None:
+        text = "|".join(line.args)
+        if _ERROR_TEXT.match(text) is None:
+            raise MalformedLineError("an |error| line that is not a choice refusal", line.raw)
 
     def _gametype(self, line: _Line) -> None:
         _arity(line, 1, 1)

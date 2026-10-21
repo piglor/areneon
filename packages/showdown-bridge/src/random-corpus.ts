@@ -9,11 +9,18 @@ import { join } from "node:path";
 import type { PlayerChannelLog } from "@areneon/schema/types/v1/player-channel-log.ts";
 import type { Engine, PokemonSet } from "./engine.ts";
 import { GOLDEN_DIR, GOLDEN_FORMAT } from "./golden.ts";
-import { randomLegalActor } from "./random-legal.ts";
-import { type BattleRecord, type Player, runBattle } from "./runner.ts";
+import { NoCandidateError } from "./actor-rule.ts";
+import { randomLegal, randomLegalActor } from "./random-legal.ts";
+import { type Actor, type BattleRecord, type Player, runBattle } from "./runner.ts";
 
 export const RANDOM_DIR = join(GOLDEN_DIR, "random");
 export const RANDOM_MANIFEST = "manifest.json";
+/**
+ * Battles in which a player submitted a pending candidate the engine refused as
+ * `[Unavailable choice]` (ADR-006 rule 5): `|error|` lines in a player's own
+ * channel, which random-legal play never reaches.
+ */
+export const UNAVAILABLE_DIR = join(GOLDEN_DIR, "unavailable");
 
 /** Battles are cut here (a forced tie) so the committed channels stay small. */
 export const RANDOM_MAX_TURNS = 30;
@@ -38,15 +45,39 @@ export interface RandomBattleFile extends RandomBattleSpec {
   channels: Record<Player, PlayerChannelLog>;
 }
 
-export function playRandomBattle(engine: Engine, spec: RandomBattleSpec): Promise<BattleRecord> {
+/**
+ * Like `randomLegalActor`, but plays a pending candidate whenever the set has
+ * one (the opposite preference), so the engine may refuse it as
+ * `[Unavailable choice]`. Same seeding rules as `randomLegalActor`.
+ */
+export function pendingFirstActor(seed: number): Actor {
+  const fallback = randomLegalActor(seed);
+  let state = seed;
+  return (request, context) => {
+    const legal = request.legal;
+    if (legal === undefined) {
+      throw new NoCandidateError(`${request.player}: request ${request.request_seq} has no legal choice set`);
+    }
+    if (legal.pending.length === 0) return fallback(request, context);
+    const pick = randomLegal({ choices: [], pending: legal.pending }, state);
+    state = pick.state;
+    return pick.choice;
+  };
+}
+
+export function playRandomBattle(
+  engine: Engine,
+  spec: RandomBattleSpec,
+  actorFor: (seed: number) => Actor = randomLegalActor,
+): Promise<BattleRecord> {
   return runBattle({
     engine,
     formatId: GOLDEN_FORMAT,
     seed: spec.seed,
     teams: spec.teams,
     actors: {
-      p1: randomLegalActor(spec.actor_seeds.p1),
-      p2: randomLegalActor(spec.actor_seeds.p2),
+      p1: actorFor(spec.actor_seeds.p1),
+      p2: actorFor(spec.actor_seeds.p2),
     },
     maxTurns: RANDOM_MAX_TURNS,
   });
