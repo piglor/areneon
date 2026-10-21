@@ -61,6 +61,10 @@ def _parser() -> argparse.ArgumentParser:
 
 def _run(args: argparse.Namespace) -> dict[str, object]:
     config = read_run_config(json.loads(args.config.read_text(encoding="utf-8")))
+    if config.run_key.startswith("CHANGE-ME"):
+        raise RunConfigError(
+            "seeds.run_key is still the CHANGE-ME placeholder: give the run its own name"
+        )
     game = GameData.from_table(json.loads(args.engine_data.read_text(encoding="utf-8")))
     player = NodePlayer(
         repo=REPO,
@@ -70,6 +74,11 @@ def _run(args: argparse.Namespace) -> dict[str, object]:
         config_path=args.run_dir.resolve() / layout.CONFIG,
         engine_data=args.engine_data.resolve(),
         encoder_version=encoder_version(game, config.model.encoder),
+        play_script=(
+            "packages/team-dataset/scripts/play-generation.ts"
+            if config.team_dataset
+            else "packages/showdown-bridge/scripts/play-generation.ts"
+        ),
     )
     loop = Loop(config, args.run_dir.resolve(), game, player)
     result = loop.run(args.generations)

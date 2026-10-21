@@ -1,0 +1,75 @@
+{
+  "schema_version": 1,
+  "lineage_id": "public-main",
+  "format_id": "gen9championsvgc2026regmc",
+  "seeds": {
+    "run_key": "CHANGE-ME-PER-RUN",
+    "init_preview": 101,
+    "init_battle": 102,
+    "learner": 103
+  },
+  "model": {
+    "encoder": {
+      "volatile_buckets": 64,
+      "condition_buckets": 64,
+      "max_moves": 4,
+      "max_team": 6,
+      "max_picks": 4,
+      "stat_scale": 500,
+      "turn_scale": 100
+    },
+    "d_model": 256,
+    "n_layers": 6,
+    "n_heads": 8,
+    "d_ff": 1024
+  },
+  "generation": {
+    "games": 256,
+    "baseline_games": [
+      {
+        "actor": "random-legal",
+        "policy_id": "random-legal@v1",
+        "games": 64
+      },
+      {
+        "actor": "actor-rule",
+        "policy_id": "actor-rule@v1",
+        "games": 64
+      }
+    ],
+    "excluded_abilities": [
+      "Illusion"
+    ],
+    "max_turns": 100,
+    "n_parallel": 8,
+    "latency_budget_ms": {
+      "preview_ms": 30000,
+      "battle_ms": 30000
+    },
+    "handshake_timeout_ms": 60000,
+    "max_line_bytes": 4000000
+  },
+  "ppo": {
+    "epochs": 4,
+    "minibatch_size": 256,
+    "learning_rate_micro": 300,
+    "discount_micro": 1000000,
+    "gae_lambda_micro": 950000,
+    "clip_micro": 200000,
+    "value_coef_micro": 500000,
+    "entropy_coef_micro": 10000,
+    "max_grad_norm_micro": 500000,
+    "adam_beta1_micro": 900000,
+    "adam_beta2_micro": 999000,
+    "adam_eps_nano": 10,
+    "normalize_advantages": true
+  },
+  "learner": {
+    "device": "cuda",
+    "threads": 1
+  },
+  "team_dataset": {
+    "path": ".tmp/datasets/train-v1",
+    "dataset_hash": "0000000000000000000000000000000000000000000000000000000000000000"
+  }
+}

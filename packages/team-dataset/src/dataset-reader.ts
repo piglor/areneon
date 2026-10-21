@@ -7,6 +7,10 @@
 //   hashes.json                               the sorted record_hash and canonical_team_hash
 //                                             lists of each committed split, and the manifest hash
 // (the training split is generated with the others but never committed).
+// A dataset directory as `generate` wrote it (`records.<split>.jsonl` for dev,
+// validation and training, `manifest.json`; no `hashes.json`, which belongs to
+// the committed fixtures) is read the same way and also yields its training
+// split. The layout is told by the presence of `records.dev.jsonl`.
 // `readDataset` trusts none of it: the manifest is read against the config and
 // label set, every record is read through the bridge (the engine's paste round
 // trip, both hashes), judged by the pinned validator, and its labels must be
@@ -16,7 +20,7 @@
 // fixtures and the shards cannot drift apart). Whether a team is legal is the
 // engine's call (`validateTeam`), never this file's.
 
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   type Engine,
@@ -38,6 +42,7 @@ import {
   validateTeam,
 } from "@areneon/showdown-bridge";
 import { referencePoolHash, sortedUnique } from "./dedupe.ts";
+import { recordsFile } from "./dataset-io.ts";
 import { checkRecord } from "./generate.ts";
 import { cellOf } from "./labeller.ts";
 
@@ -52,6 +57,7 @@ const bad = (message: string): never => {
 /** The splits a dataset directory commits. Training is never one of them. */
 export const COMMITTED_SPLITS = ["dev", "validation"] as const;
 export type CommittedSplit = (typeof COMMITTED_SPLITS)[number];
+type ReadSplit = CommittedSplit | "training";
 
 export const teamsFile = (split: string): string => `teams-${split}.jsonl`;
 export const MANIFEST_FILE = "manifest.json";
@@ -93,6 +99,8 @@ interface VerifiedShape {
   manifest: TeamDatasetManifest;
   manifest_hash: string;
   splits: Record<CommittedSplit, TeamRecord[]>;
+  /** The training split of a dataset directory as `generate` wrote it; null for the committed layout. */
+  training: TeamRecord[] | null;
   hashes: HashIndex;
 }
 
@@ -138,9 +146,8 @@ function stratumOf(manifest: TeamDatasetManifest, cell: number): number {
   return group === undefined ? cell : group.stratum;
 }
 
-function readSplit(dir: string, split: CommittedSplit, manifest: TeamDatasetManifest, context: DatasetContext): TeamRecord[] {
+function readSplit(dir: string, split: ReadSplit, file: string, manifest: TeamDatasetManifest, context: DatasetContext): TeamRecord[] {
   const { engine, format, labelSet } = context;
-  const file = teamsFile(split);
   let text: string;
   try {
     text = readFileSync(join(dir, file), "utf8");
@@ -202,18 +209,22 @@ export function readDataset(dir: string, context: DatasetContext): VerifiedDatas
   if (jcs(manifest.generator.manifest as never) !== jcs(context.format.manifest as never)) bad("the dataset was generated under another version manifest than the pinned engine's");
   if (manifest.generator.vocabulary_hash !== teamVocabularyHash(context.vocabulary)) bad("vocabulary_hash is not the hash of the given vocabulary");
   if (manifest.reference_pool_hash !== referencePoolHash(sortedUnique([...(context.referenceHashes ?? [])]))) bad("reference_pool_hash is not the hash of the given reference hashes");
-  const splits = { dev: readSplit(dir, "dev", manifest, context), validation: readSplit(dir, "validation", manifest, context) };
+  const generated = existsSync(join(dir, recordsFile("dev")));
+  const fileOf = (split: ReadSplit): string => (generated ? recordsFile(split) : teamsFile(split));
+  const splits = { dev: readSplit(dir, "dev", fileOf("dev"), manifest, context), validation: readSplit(dir, "validation", fileOf("validation"), manifest, context) };
+  const training = generated ? readSplit(dir, "training", fileOf("training"), manifest, context) : null;
   // L1: no team in two splits, and none twice.
   const seen = new Map<string, string>();
-  for (const split of COMMITTED_SPLITS) {
-    for (const record of splits[split]) {
+  for (const [split, records] of [["dev", splits.dev], ["validation", splits.validation], ["training", training ?? []]] as const) {
+    for (const record of records) {
       const earlier = seen.get(record.canonical_team_hash);
       if (earlier !== undefined) bad(`team ${record.canonical_team_hash} is in ${earlier} and in ${split}`);
       seen.set(record.canonical_team_hash, split);
     }
   }
-  const hashes = readHashIndex(readJson(dir, HASHES_FILE), hashIndex(manifest, splits));
-  const verified = { manifest, manifest_hash: hashes.manifest_hash, splits, hashes } as VerifiedDataset;
+  const recomputed = hashIndex(manifest, splits);
+  const hashes = generated ? recomputed : readHashIndex(readJson(dir, HASHES_FILE), recomputed);
+  const verified = { manifest, manifest_hash: hashes.manifest_hash, splits, training, hashes } as VerifiedDataset;
   verifiedDatasets.add(verified);
   return verified;
 }
@@ -231,9 +242,24 @@ function readHashIndex(value: unknown, expected: HashIndex): HashIndex {
   return expected;
 }
 
-/** The positional `team_hash` of every committed team: the teams that are synthetic by source. */
+/**
+ * The dataset hash a run config pins: SHA-256 of the JCS of the manifest's own
+ * hash and, per split, the sorted `record_hash` list of the records the reader
+ * verified (computed here from the records, never read from a file; the
+ * committed layout has no training split, an empty list). A swapped, added or
+ * removed record changes it.
+ */
+export function datasetHash(dataset: VerifiedDataset): string {
+  const list = (records: readonly TeamRecord[]): string[] => splitHashes(records).record_hashes;
+  return recordHash({
+    manifest_hash: recordHash(dataset.manifest),
+    splits: { dev: list(dataset.splits.dev), validation: list(dataset.splits.validation), training: list(dataset.training ?? []) },
+  } as never);
+}
+
+/** The positional `team_hash` of every team a verified dataset holds: the teams that are synthetic by source. */
 export function datasetSyntheticHashes(datasets: readonly VerifiedDataset[]): SyntheticTeamHashes {
-  return syntheticTeamHashes(datasets.flatMap((d) => COMMITTED_SPLITS.flatMap((split) => d.splits[split].map((r) => r.team_hash))));
+  return syntheticTeamHashes(datasets.flatMap((d) => [...COMMITTED_SPLITS.flatMap((split) => d.splits[split]), ...(d.training ?? [])].map((r) => r.team_hash)));
 }
 
 export class TrainingDrawError extends Error {
@@ -254,8 +280,9 @@ export interface TrainingPool {
 declare const POOL: unique symbol;
 
 /**
- * The training pool (ADR-010 E2) of verified datasets: their dev records,
- * never validation. Nothing is taken on a caller's word: a dataset must be
+ * The training pool (ADR-010 E2) of verified datasets: their dev records and,
+ * for a dataset directory `generate` wrote, their training records; never
+ * validation. Nothing is taken on a caller's word: a dataset must be
  * the result of `readDataset`; every canonical hash is recomputed from the
  * paste through the engine (a record's own hash field is not trusted); and a
  * dev team whose recomputed hash equals a validation team's, in any of the
@@ -269,8 +296,9 @@ export function trainingPool(datasets: readonly VerifiedDataset[], engine: Engin
   const records: TeamRecord[] = [];
   const seen = new Set<string>();
   for (const dataset of datasets) {
-    for (const record of dataset.splits.dev) {
-      if (record.origin.split !== "dev") refuse(`${record.canonical_team_hash} is not a dev record`);
+    const taken = [...dataset.splits.dev.map((record) => ["dev", record] as const), ...(dataset.training ?? []).map((record) => ["training", record] as const)];
+    for (const [split, record] of taken) {
+      if (record.origin.split !== split) refuse(`${record.canonical_team_hash} is not a ${split} record`);
       const hash = canonical(record);
       if (blocked.has(hash)) refuse(`${hash} duplicates a validation team`);
       if (seen.has(hash)) refuse(`${hash} is in the training pool twice`);
