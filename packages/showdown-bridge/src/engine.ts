@@ -44,6 +44,8 @@ export interface SimFormat {
   name: string;
   mod: string;
   gameType: string;
+  /** The format's `battle` options (for example `trunc`), when it sets any. */
+  battle?: Record<string, unknown>;
 }
 
 /** A resolved format rule table: rule ID -> where it came from. */
@@ -55,6 +57,21 @@ export interface SimRuleTable extends Map<string, string> {
   pickedTeamSize: number | null;
   adjustLevel: number | null;
   evLimit: number | null;
+  /** The level and move-count rules the format sets, read by the mechanics scenario check. */
+  adjustLevelDown?: number | null;
+  minLevel?: number;
+  maxLevel?: number;
+  defaultLevel?: number;
+  maxMoveCount?: number;
+  minSourceGen?: number;
+  maxTotalLevel?: number | null;
+}
+
+/** One Pokémon of a battle, narrowed to the stats the mechanics probe reads. */
+export interface SimPokemon {
+  maxhp: number;
+  /** The five stats other than HP, as the engine computed them at the format's level. */
+  storedStats: Record<"atk" | "def" | "spa" | "spd" | "spe", number>;
 }
 
 /** One parsed action of a side's choice (`side.choice.actions`). */
@@ -110,6 +127,7 @@ export interface SimBattle {
 export interface SimModdedDex {
   items: { get(name: string): { exists: boolean; name: string; megaStone?: Record<string, string> } };
   species: { get(name: string): { exists: boolean; name: string; baseSpecies: string } };
+  abilities: { get(name: string): { exists: boolean; name: string } };
 }
 
 /** The slice of Showdown's `sim` module Areneon depends on. */
@@ -132,7 +150,13 @@ export interface ShowdownSim {
     /** The data of one mod (a format's `mod`), narrowed to what the team inventory reads. */
     mod(mod: string): SimModdedDex;
   };
-  TeamValidator: { get(formatId: string): { validateTeam(team: PokemonSet[]): string[] | null } };
+  TeamValidator: {
+    get(formatId: string): {
+      validateTeam(team: PokemonSet[]): string[] | null;
+      /** One set against the format's rules; it normalises `set` in place, so pass a copy. */
+      validateSet(set: PokemonSet, teamHas: Record<string, number>): string[] | null;
+    };
+  };
   Teams: {
     pack(team: PokemonSet[]): string;
     unpack(buf: string): PokemonSet[] | null;

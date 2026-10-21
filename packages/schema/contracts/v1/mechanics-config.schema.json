@@ -1,0 +1,129 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:areneon:schema:contracts:v1:mechanics-config",
+  "title": "MechanicsConfig",
+  "description": "The configuration of the mechanics probe for one format (ADR-016 section 3): reviewed data in config/mechanics/<format>.json, outside rules/ and outside the published rules snapshot, so it moves neither format_rules_hash nor rules_snapshot_hash. It names the rules removed from the target format to build the scenario format and the exact rule-table keys that removal takes away (the probe refuses to run unless the engine's tables differ by exactly those keys), the query kinds the probe supports with the gap ledger rows each depends on, and the items and abilities that stop KO counts. The config can only restrict the probe: a name in it never makes the probe handle more. Lists are sorted and unique (reader rule: the profile has no uniqueItems). Its RFC 8785 SHA-256 is mechanics_config_hash, carried by every MechanicsResult.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "format_id",
+    "scenario",
+    "scope",
+    "ko_blockers"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "format_id": {
+      "description": "The target format (a format of the rules snapshot) the scenario format is derived from.",
+      "type": "string",
+      "pattern": "^[a-z0-9]+$"
+    },
+    "scenario": {
+      "description": "How the scenario format is made from the target format: the target's id, then the custom rules `!<rule>` for each removed rule.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "removed_rules",
+        "removed_rule_keys"
+      ],
+      "properties": {
+        "removed_rules": {
+          "description": "The rules the scenario format removes, by the name the engine's custom-rule syntax takes (for example `Team Preview`), sorted and unique.",
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9 .'-]{0,63}$"
+          }
+        },
+        "removed_rule_keys": {
+          "description": "The keys of the target's rule table that are absent from the scenario's, as the engine names them, sorted and unique. The scenario's table must equal the target's minus exactly these keys, with no key of its own.",
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z0-9]+$"
+          }
+        }
+      }
+    },
+    "scope": {
+      "description": "The query kinds the probe supports in this config. A kind not listed here is answered `unsupported`; listing one never makes the probe handle it.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "query_kinds"
+      ],
+      "properties": {
+        "query_kinds": {
+          "description": "Sorted by kind, each once.",
+          "type": "array",
+          "maxItems": 3,
+          "items": {
+            "$ref": "#/$defs/SupportedKind"
+          }
+        }
+      }
+    },
+    "ko_blockers": {
+      "description": "Items and abilities that act when damage is dealt or change the second hit (Focus Sash, Sturdy, Disguise and the like): a defender holding one gets `unsupported` KO counts. Read by the damage probe only; empty until the KO slice (ADR-016 slice 5) fills it, and no query kind that reads it is in scope before then.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "abilities",
+        "items"
+      ],
+      "properties": {
+        "abilities": {
+          "description": "Engine ability ids, sorted and unique.",
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z0-9]+$"
+          }
+        },
+        "items": {
+          "description": "Engine item ids, sorted and unique.",
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z0-9]+$"
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "SupportedKind": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "gap_ids"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "damage",
+            "speed_order",
+            "stats"
+          ]
+        },
+        "gap_ids": {
+          "description": "The gap ledger rows (rules/gaps/) a result of this kind depends on, sorted and unique; every result lists them, so an unverified row stays visible. Each must exist in the rules snapshot.",
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$"
+          }
+        }
+      }
+    }
+  }
+}

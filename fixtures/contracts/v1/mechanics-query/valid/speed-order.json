@@ -1,0 +1,73 @@
+{
+  "schema_version": 1,
+  "data_class": "synthetic",
+  "format_id": "gen9championsvgc2026regmc",
+  "query": {
+    "kind": "speed_order",
+    "sides": [
+      [
+        {
+          "set": "Venusaur @ Leftovers  \nAbility: Overgrow  \nLevel: 50  \nEVs: 32 HP / 2 Def / 32 SpA  \nModest Nature  \n- Giga Drain  \n- Sludge Bomb  \n- Protect  \n- Sleep Powder  \n\n",
+          "boosts": {
+            "atk": 0,
+            "def": 0,
+            "spa": 0,
+            "spd": 0,
+            "spe": 0
+          },
+          "status": null,
+          "hp": null,
+          "mega": false
+        }
+      ],
+      [
+        {
+          "set": "Tyranitar @ Smooth Rock  \nAbility: Sand Stream  \nLevel: 50  \nEVs: 32 HP / 32 Atk / 2 SpD  \nAdamant Nature  \n- Rock Slide  \n- Crunch  \n- Low Kick  \n- Stone Edge  \n\n",
+          "boosts": {
+            "atk": 0,
+            "def": 0,
+            "spa": 0,
+            "spd": 0,
+            "spe": 0
+          },
+          "status": null,
+          "hp": null,
+          "mega": false
+        }
+      ]
+    ],
+    "actions": [
+      {
+        "side": 0,
+        "position": 0,
+        "move": "protect",
+        "mega": false
+      },
+      {
+        "side": 1,
+        "position": 0,
+        "move": "protect",
+        "mega": false
+      }
+    ],
+    "state": {
+      "weather": null,
+      "terrain": null,
+      "trick_room": false,
+      "sides": [
+        {
+          "aurora_veil": false,
+          "light_screen": false,
+          "reflect": false,
+          "tailwind": false
+        },
+        {
+          "aurora_veil": false,
+          "light_screen": false,
+          "reflect": false,
+          "tailwind": false
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,329 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:areneon:schema:contracts:v1:mechanics-query",
+  "title": "MechanicsQuery",
+  "description": "A question to the mechanics probe (ADR-016 section 2): declared sets and declared state, never a battle. The probe asks the pinned engine on a scenario battle built from them; it takes no Battle, BattleRecord, OmniscientLog, PlayerChannel or opponent's real set, and an opponent's set in an analysis is stated here as an assumption. Sets are PokePaste in the engine's canonical form (as importPaste accepts it), one Pokemon per set. State uses engine ids; boosts are absolute stages set after the battle starts, so a switch-in effect is replaced by the declared value, never added silently. data_class is synthetic or private: a query holding a private set is private and is never committed. query_hash is the SHA-256 of this document's JCS bytes. A document that fails this schema is not a query: the CLI reports an error and writes no result.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "data_class",
+    "format_id",
+    "query"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "data_class": {
+      "description": "synthetic: CC0, may be committed; private: a real team or a human's games, kept only in private-data/ (ADR-008 section 5).",
+      "enum": [
+        "synthetic",
+        "private"
+      ]
+    },
+    "format_id": {
+      "description": "The target format (a format of the rules snapshot).",
+      "type": "string",
+      "pattern": "^[a-z0-9]+$"
+    },
+    "query": {
+      "description": "The question, tagged by kind: stats (the six stats of one set), speed_order (the turn order of up to two Pokemon per side) or damage (two 16-roll vectors and the KO counts of one move).",
+      "type": "object",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/StatsQuery"
+        },
+        {
+          "$ref": "#/$defs/SpeedOrderQuery"
+        },
+        {
+          "$ref": "#/$defs/DamageQuery"
+        }
+      ],
+      "discriminator": {
+        "propertyName": "kind"
+      }
+    }
+  },
+  "$defs": {
+    "Paste": {
+      "description": "One Pokemon as PokePaste in the engine's canonical form.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2048
+    },
+    "Boosts": {
+      "description": "Absolute stat stages, set after the battle starts.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "atk",
+        "def",
+        "spa",
+        "spd",
+        "spe"
+      ],
+      "properties": {
+        "atk": {
+          "type": "integer",
+          "minimum": -6,
+          "maximum": 6
+        },
+        "def": {
+          "type": "integer",
+          "minimum": -6,
+          "maximum": 6
+        },
+        "spa": {
+          "type": "integer",
+          "minimum": -6,
+          "maximum": 6
+        },
+        "spd": {
+          "type": "integer",
+          "minimum": -6,
+          "maximum": 6
+        },
+        "spe": {
+          "type": "integer",
+          "minimum": -6,
+          "maximum": 6
+        }
+      }
+    },
+    "Combatant": {
+      "description": "One Pokemon with its declared state.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "set",
+        "boosts",
+        "status",
+        "hp",
+        "mega"
+      ],
+      "properties": {
+        "set": {
+          "$ref": "#/$defs/Paste"
+        },
+        "boosts": {
+          "$ref": "#/$defs/Boosts"
+        },
+        "status": {
+          "description": "The engine's id of the major status, or null.",
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[a-z0-9]+$"
+        },
+        "hp": {
+          "description": "The current HP, or null for full HP.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1,
+          "maximum": 9999
+        },
+        "mega": {
+          "description": "True when the Pokemon has Mega Evolved or does so this turn, as the query kind says.",
+          "type": "boolean"
+        }
+      }
+    },
+    "SideState": {
+      "description": "The conditions on one side.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "aurora_veil",
+        "light_screen",
+        "reflect",
+        "tailwind"
+      ],
+      "properties": {
+        "aurora_veil": {
+          "type": "boolean"
+        },
+        "light_screen": {
+          "type": "boolean"
+        },
+        "reflect": {
+          "type": "boolean"
+        },
+        "tailwind": {
+          "type": "boolean"
+        }
+      }
+    },
+    "FieldState": {
+      "description": "The declared field.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "weather",
+        "terrain",
+        "trick_room",
+        "sides"
+      ],
+      "properties": {
+        "weather": {
+          "description": "The engine's weather id, or null.",
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[a-z0-9]+$"
+        },
+        "terrain": {
+          "description": "The engine's terrain id, or null.",
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[a-z0-9]+$"
+        },
+        "trick_room": {
+          "type": "boolean"
+        },
+        "sides": {
+          "description": "Side 0 then side 1.",
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": {
+            "$ref": "#/$defs/SideState"
+          }
+        }
+      }
+    },
+    "Action": {
+      "description": "One Pokemon's action this turn.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "side",
+        "position",
+        "move",
+        "mega"
+      ],
+      "properties": {
+        "side": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "position": {
+          "description": "The index of the acting Pokemon in its side's list.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "move": {
+          "description": "The engine's move id, or null for a switch.",
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[a-z0-9]+$"
+        },
+        "mega": {
+          "description": "True when the action Mega Evolves first.",
+          "type": "boolean"
+        }
+      }
+    },
+    "StatsQuery": {
+      "description": "The six stats of one set at the format's level.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "set"
+      ],
+      "properties": {
+        "kind": {
+          "const": "stats"
+        },
+        "set": {
+          "$ref": "#/$defs/Paste"
+        }
+      }
+    },
+    "SpeedOrderQuery": {
+      "description": "The turn order of the declared actions.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "sides",
+        "actions",
+        "state"
+      ],
+      "properties": {
+        "kind": {
+          "const": "speed_order"
+        },
+        "sides": {
+          "description": "Side 0 then side 1, one or two Pokemon each.",
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 2,
+            "items": {
+              "$ref": "#/$defs/Combatant"
+            }
+          }
+        },
+        "actions": {
+          "description": "One action per acting Pokemon.",
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 4,
+          "items": {
+            "$ref": "#/$defs/Action"
+          }
+        },
+        "state": {
+          "$ref": "#/$defs/FieldState"
+        }
+      }
+    },
+    "DamageQuery": {
+      "description": "One move from the attacker into the defender.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "attacker",
+        "defender",
+        "move",
+        "state"
+      ],
+      "properties": {
+        "kind": {
+          "const": "damage"
+        },
+        "attacker": {
+          "$ref": "#/$defs/Combatant"
+        },
+        "defender": {
+          "$ref": "#/$defs/Combatant"
+        },
+        "move": {
+          "description": "The engine's move id.",
+          "type": "string",
+          "pattern": "^[a-z0-9]+$"
+        },
+        "state": {
+          "$ref": "#/$defs/FieldState"
+        }
+      }
+    }
+  }
+}

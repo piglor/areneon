@@ -179,6 +179,7 @@ describe("real gap records", () => {
       const dex = realMod(mod);
       return {
         items: dex.items,
+        abilities: dex.abilities,
         species: {
           get: (name) => (name === "Gengar" ? { exists: false, name, baseSpecies: name } : name === "Venusaur" ? { exists: true, name: "Venusaur-Mega", baseSpecies: "Venusaur" } : dex.species.get(name)),
         },

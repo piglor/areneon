@@ -321,6 +321,32 @@ export {
   readLeagueRunRecord,
 } from "./league-run-record.ts";
 export {
+  checkMechanicsConfig,
+  loadMechanicsConfig,
+  MECHANICS_CONFIG_DIR,
+  type MechanicsConfig,
+  MechanicsConfigError,
+  mechanicsConfigHash,
+  readMechanicsConfig,
+} from "./mechanics-config.ts";
+export { type MechanicsContext, MechanicsProbeError, type ProbeOutcome, probeMechanics } from "./mechanics-probe.ts";
+export {
+  declaredSets,
+  type MechanicsQuery,
+  MechanicsQueryError,
+  mechanicsQueryHash,
+  type ParsedMechanicsQuery,
+  readMechanicsQuery,
+} from "./mechanics-query.ts";
+export {
+  buildResult,
+  MECHANICS_ADAPTER_FORMAT,
+  type MechanicsResult,
+  MechanicsResultError,
+  readMechanicsResult,
+} from "./mechanics-result.ts";
+export { checkScenario, ScenarioError, scenarioFormatId } from "./mechanics-scenario.ts";
+export {
   type GameStreams,
   LEAGUE_SEED_DERIVATION,
   leagueBattleSeed,

@@ -1,0 +1,9 @@
+{
+  "schema_version": 1,
+  "data_class": "synthetic",
+  "format_id": "gen9championsvgc2026regmc",
+  "query": {
+    "kind": "stats",
+    "set": "Venusaur @ Leftovers  \nAbility: Overgrow  \nLevel: 50  \nEVs: 32 HP / 2 Def / 32 SpA  \nModest Nature  \n- Giga Drain  \n- Sludge Bomb  \n- Protect  \n- Sleep Powder  \n\n"
+  }
+}

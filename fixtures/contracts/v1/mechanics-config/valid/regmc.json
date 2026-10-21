@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "format_id": "gen9championsvgc2026regmc",
+  "scenario": {
+    "removed_rules": [
+      "Min Team Size",
+      "Open Team Sheets",
+      "Picked Team Size",
+      "Team Preview",
+      "VGC Timer"
+    ],
+    "removed_rule_keys": [
+      "dctimerbank",
+      "minteamsize",
+      "openteamsheets",
+      "pickedteamsize",
+      "teampreview",
+      "timeoutautochoose",
+      "timeraddperturn",
+      "timergrace",
+      "timermaxfirstturn",
+      "timermaxperturn",
+      "timerstarting",
+      "vgctimer"
+    ]
+  },
+  "scope": {
+    "query_kinds": [
+      {
+        "kind": "stats",
+        "gap_ids": [
+          "level",
+          "stat-points"
+        ]
+      }
+    ]
+  },
+  "ko_blockers": {
+    "abilities": [],
+    "items": []
+  }
+}

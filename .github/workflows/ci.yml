@@ -96,6 +96,8 @@ jobs:
         run: node packages/schema/scripts/contracts.ts
       - name: team label sets and generator configs against the pinned engine (ADR-013)
         run: node packages/team-dataset/scripts/check-team-labels.ts
+      - name: mechanics probe config against the pinned engine (ADR-016)
+        run: node packages/showdown-bridge/scripts/check-mechanics-config.ts
 
   team-guard:
     runs-on: ubuntu-latest
