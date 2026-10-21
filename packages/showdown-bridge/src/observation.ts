@@ -14,13 +14,14 @@ import type { PlayerChannelLog } from "@areneon/schema/types/v1/player-channel-l
 import type { PreviewObservation } from "@areneon/schema/types/v1/preview-observation.ts";
 import type { PrivateTeamSpec } from "@areneon/schema/types/v1/private-team-spec.ts";
 import type { VersionManifest } from "@areneon/schema/types/v1/version-manifest.ts";
-import { canonicalJson, type Json } from "./canonical-json.ts";
+import type { Json } from "./canonical-json.ts";
+import { hashRequest, type Sha256 } from "./request-bytes.ts";
 
 export type { BattleObservation, PreviewObservation };
 export type Observation = PreviewObservation | BattleObservation;
 
-/** SHA-256 of `bytes` as lowercase hex: Node's `createHash` or WebCrypto. */
-export type Sha256 = (bytes: Uint8Array) => Promise<string>;
+// The Sha256 port is defined beside the identity bytes it hashes.
+export type { Sha256 };
 
 /**
  * One player's own channel, checked by an adapter (`playerChannel`): it
@@ -131,7 +132,7 @@ function assertOwnTeam(team: PrivateTeamSpec, lines: readonly string[]): void {
 /**
  * The observation for the last `|request|` in the channel: the decision that
  * request asks for. Its identity is computed exactly as `decodeRequest`
- * computes it: `request_seq` counts every request so far, wait requests
+ * computes it (`request-bytes.ts` is the one definition of the hashed bytes): `request_seq` counts every request so far, wait requests
  * included, and `request_hash` is the SHA-256 of the canonical request
  * without `rqid`.
  */
@@ -153,10 +154,10 @@ export async function buildObservation({
   if (at < 0) throw new ObservationError("the channel holds no request to observe");
   const request = JSON.parse((channel.lines[at] as string).slice(REQUEST.length)) as { [key: string]: Json };
   if (request.wait === true) throw new ObservationError("the last request is a wait request: there is no decision");
-  const { rqid, ...hashed } = request;
+  const { rqid } = request;
   const identity = {
     request_seq: channel.lines.slice(0, at + 1).filter((line) => line.startsWith(REQUEST)).length,
-    request_hash: await sha256(new TextEncoder().encode(canonicalJson(hashed))),
+    request_hash: await hashRequest(request, sha256),
     ...(typeof rqid === "number" ? { rqid } : {}),
   };
   const common: Omit<BattleObservation, "kind"> = {
