@@ -149,7 +149,7 @@ function identityOf(line: string): { rqid: unknown; body: string } {
  * and fails the order below) and, on the server path, the `rqid`s of the
  * joined requests rise strictly (the server's one counter numbers every
  * request of both players, waits included)
- * with none missing. Across several reconnects, fold it: the result of one
+ * present on every request. Across several reconnects, fold it: the result of one
  * join is the `earlier` of the next. The rqids are the server's (§4 leaves
  * them out of A1/A2 equality) and the request count follows the player's
  * own view.

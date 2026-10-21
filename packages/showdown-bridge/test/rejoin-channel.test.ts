@@ -230,4 +230,13 @@ describe("continueChannel", () => {
     const earlier = channel([...all.slice(0, at(2)), bare(2)]);
     expect(() => continueChannel(earlier, channel([...replayOf(at(3)), request(3)]))).toThrow(/rise strictly/);
   });
+
+  it("keeps an identical request that carries no rqid on either side (nothing proves it is a re-send)", () => {
+    const bare = (k: number): string => REQUEST + JSON.stringify({ ...JSON.parse(request(k).slice(REQUEST.length)), rqid: undefined });
+    const earlier = channel([...all.slice(0, at(2)).filter((l) => !isRequest(l) || l === request(1)), bare(2)]);
+    const plain = channel([...earlier.lines.map((l) => (l === request(1) ? bare(1) : l))]);
+    const rejoin = channel([...replayOf(at(2)), bare(2)]);
+    const joined = continueChannel(plain, rejoin);
+    expect(joined.lines.filter(isRequest)).toHaveLength(plain.lines.filter(isRequest).length + 1);
+  });
 });

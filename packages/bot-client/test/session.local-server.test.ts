@@ -187,9 +187,10 @@ describe("runA2Bot on the pinned local server", () => {
   );
 
   // Where the drop falls relative to the server's handling of the choice varies with timing, so
-  // each position is forced: `immediate` closes at once (the server may or may not have handled
-  // the choice), `blind` hears nothing more and closes only once the other bot has answered the
-  // next request, i.e. after the server handled the choice and moved the room on.
+  // the drop positions are varied: `immediate` closes at once (the server may or may not have
+  // handled the choice), `blind` hears nothing more and closes only once the other bot has
+  // answered the next request. This does not force the stale re-send (a re-send after the room
+  // moved on): client timing cannot, and `rejoin-channel.test.ts` is the cover for that case.
   const drops = [
     { mode: "immediate", choice: 1 },
     { mode: "immediate", choice: 2 },
@@ -244,11 +245,6 @@ describe("runA2Bot on the pinned local server", () => {
       expect(record.result).not.toBe("unfinished");
       expect(record.ots).toBe("confirmed");
       expect(record.channels).toHaveLength(2);
-      if (mode === "blind") {
-        // The room moved on while the bot was away: the replay holds room lines it never saw.
-        const room = (lines: string[]): number => lines.filter((l) => !l.startsWith("|request|") && !l.startsWith("|error|")).length;
-        expect(room((record.channels[1] as { lines: string[] }).lines)).toBeGreaterThan(room((record.channels[0] as { lines: string[] }).lines));
-      }
       expect(sparring.sent.filter((line) => line.endsWith("|/rejectopenteamsheets"))).toHaveLength(1);
       expect(expectCandidateChoices(sparring.sent, record)).toBeGreaterThanOrEqual(record.decisions.length);
       // Each connection numbers its own requests from 1; a decision is numbered on the joined channel.
