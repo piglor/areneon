@@ -115,7 +115,7 @@ function assertOwnTeam(team: PrivateTeamSpec, lines: readonly string[]): void {
   const first = lines.find((line) => line.startsWith(REQUEST));
   const preview = JSON.parse((first as string).slice(REQUEST.length)) as { teamPreview?: true; side: { pokemon: RequestMon[] } };
   if (preview.teamPreview !== true) {
-    throw new ObservationError("the channel does not start at Team Preview, so the team cannot be checked");
+    throw new ObservationError("the channel does not start at Team Preview, so the team cannot be checked (a channel after a rejoin is joined to the earlier one with continueChannel first)");
   }
   const key = (species: string, item: string, ability: string, moves: readonly string[]): string =>
     [toID(species), toID(item), toID(ability), ...moves.map(toID).sort()].join("|");

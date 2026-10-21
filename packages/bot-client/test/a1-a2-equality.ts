@@ -8,6 +8,7 @@ import {
   type Engine,
   jcs,
   type Observation,
+  continueChannel,
   ObservationError,
   observe,
   type PlayerChannel,
@@ -34,20 +35,20 @@ import {
  * channel are the same stream, line for line, and every observation is
  * compared with `decision_context` and `rqid` removed (ADR-008 §4), nothing else.
  *
- * A seat that reconnected has several connections, and they cannot all equal
- * A1's one continuous channel:
+ * A seat that reconnected has several connections. Each is its own channel
+ * (it restarts at its own `|init|battle`; the server replays the room log to
+ * it, and that log holds no `|request|` line, so the rejoin channel alone has
+ * no Team Preview request and its `request_seq` counts from 1 again). The
+ * check joins them with `continueChannel` (the rule of #813: a rejoin channel
+ * carries the anchor of the connection it continues), connection by
+ * connection, and compares the joined channel as the plain case does:
  *
- * - Connection 1 is a prefix of A1's channel: compared as in the plain case.
- * - A later connection restarts at its own `|init|battle`. The server
- *   replays the room log to it and then re-sends the current request, but
- *   the log holds no `|request|` line (those go to the player alone and are
- *   never logged). So its channel is A1's channel with every `|request|`
- *   line before its first request taken out, and its `request_seq` counts
- *   from 1 again. That is the one difference, inherent to the server: the
- *   comparison for such a connection is against A1's channel rebased the
- *   same way (`rebased`), cut at the same request, and it must equal line
- *   for line and observation for observation (again with `decision_context`
- *   and `rqid` removed). Nothing else is normalised.
+ * - The joined channel of every connection is a prefix of A1's one continuous
+ *   channel, and of the last one it is equal, line for line, with nothing
+ *   normalised but `rqid` (ADR-008 §4).
+ * - At every decision a connection received, the observation from the joined
+ *   channel equals A1's FULL observation of that request (`request_seq`, log
+ *   and team included), with `decision_context` and `rqid` removed.
  * - Across connections a request is identified by `rqid` + `request_hash`
  *   (ADR-008 §4): a later connection's first request that has the previous
  *   connection's last request's `rqid` and hash is that request sent again,
@@ -99,17 +100,6 @@ export function comparable(observation: Observation): string {
   return jcs({ ...rest, identity, log: rest.log.map(withoutRqid) } as never);
 }
 
-/**
- * `lines` as a connection that first saw request number `firstRequest`
- * (1-based) sees them: the `|request|` lines before it are not there, because
- * the server replays the room log to a joining connection and the log never
- * holds a request. Every other line stays.
- */
-export function rebased(lines: readonly string[], firstRequest: number): string[] {
-  let seen = 0;
-  return lines.filter((line) => !line.startsWith(REQUEST) || ++seen >= firstRequest);
-}
-
 export interface EqualityResult {
   /** Every difference found; empty when A1 and A2 agree. */
   differences: string[];
@@ -118,14 +108,8 @@ export interface EqualityResult {
   decisions: Record<Seat, number>;
   /** Per seat: observations compared (a decision seen by two connections is compared on both). */
   observations: Record<Seat, number>;
-  /**
-   * Per seat: decisions of a later connection whose observation neither side can build, and the
-   * refusals' messages. Their request hashes and channel lines are compared all the same.
-   */
-  refused: Record<Seat, number>;
-  refusals: string[];
-  /** Per seat: the `|request|` lines of A1's channel that the last connection's channel lacks (its base); 0 for one connection. */
-  rebasedBy: Record<Seat, number>;
+  /** Per seat: each connection's channel joined to the ones before it (`continueChannel`); the last is the whole battle. */
+  continued: Record<Seat, PlayerChannel[]>;
   /** Per seat: connections, and requests that a later connection received again from the one before (same `rqid` and hash). */
   connections: Record<Seat, number>;
   resentAcross: Record<Seat, number>;
@@ -138,19 +122,11 @@ export interface EqualityResult {
 
 const zeros = (): Record<Seat, number> => ({ p1: 0, p2: 0 });
 
-/** An observation, or the message of the `ObservationError` the builder refused with. */
-async function attempt(input: Parameters<typeof observe>[0]): Promise<Observation | string> {
-  try {
-    return await observe(input);
-  } catch (error) {
-    if (error instanceof ObservationError) return error.message;
-    throw error;
-  }
-}
-
 /** The A1 and the A2 observation of one decision, as the check built them (`onPair`). */
 export interface ObservationPair {
   seat: Seat;
+  /** The connection of the seat that received the decision (0 for the first). */
+  connection: number;
   /** The decision number among the seat's requests (A1's `request_seq`). */
   request_seq: number;
   a1: Observation;
@@ -169,6 +145,7 @@ interface Read {
 
 /** One connection of a seat as the A2 side rebuilt it. */
 interface A2Connection {
+  /** The channel of this connection joined to the ones before it. */
   channel: PlayerChannel;
   reads: Read[];
   /** Requests before this connection's first one: its k-th read is A1's request `base + k`. */
@@ -195,9 +172,7 @@ export async function compareA1A2(
     requests: zeros(),
     decisions: zeros(),
     observations: zeros(),
-    refused: zeros(),
-    refusals: [],
-    rebasedBy: zeros(),
+    continued: { p1: [], p2: [] },
     connections: zeros(),
     resentAcross: zeros(),
     frames: zeros(),
@@ -242,10 +217,11 @@ export async function compareA1A2(
         const base = logical.length - (again ? 1 : 0);
         if (again) result.resentAcross[seat] += 1;
         logical.push(...reads.slice(again ? 1 : 0));
-        connections.push({ channel: built.channel, reads, base });
+        const earlier = connections.at(-1)?.channel;
+        connections.push({ channel: earlier === undefined ? built.channel : continueChannel(earlier, built.channel), reads, base });
       }
       result.connections[seat] = connections.length;
-      result.rebasedBy[seat] = connections.at(-1)?.base ?? 0;
+      result.continued[seat] = connections.map((c) => c.channel);
       a2[seat] = { connections, logical };
     } catch (error) {
       diff(`${seat}: the A2 adapter refused the frames: ${(error as Error).message}`);
@@ -376,8 +352,8 @@ export async function compareA1A2(
     for (const [c, connection] of connections.entries()) {
       const who = connections.length === 1 ? seat : `${seat} connection ${c + 1}`;
       const mine = connection.channel.lines;
-      // The connection's A1 channel: A1's own for the first, rebased for a later one.
-      const expected = rebased(theirs, connection.base + 1);
+      // The joined channel is a prefix of A1's one continuous channel, the whole of it for the last.
+      const expected = theirs;
       // Per-player channel lines, in order; only a request's rqid is left out.
       // A connection that was cut is a prefix of what follows it.
       const width = c === connections.length - 1 ? Math.max(mine.length, expected.length) : mine.length;
@@ -395,7 +371,7 @@ export async function compareA1A2(
         const request = requests[connection.base + seq - 1];
         if (read.wait || request === undefined) continue;
         let seen = 0;
-        const end = mine.findIndex((l) => l.startsWith(REQUEST) && ++seen === seq);
+        const end = mine.findIndex((l) => l.startsWith(REQUEST) && ++seen === connection.base + seq);
         if (end < 0) {
           diff(`${who} request ${seq}: not in the A2 channel`);
           continue;
@@ -408,31 +384,23 @@ export async function compareA1A2(
           battleClass(record.team_hashes, new Set(Object.values(record.team_hashes))),
         );
         const common = { team, manifest: fixture.manifest as never };
-        const one = await attempt({ ...common, channel: playerChannel({ ...cut, lines: rebased(cut.lines, connection.base + 1) }) });
-        const two = await attempt({
-          ...common,
-          channel: playerChannel({ ...connection.channel, lines: mine.slice(0, end + 1) }),
-        });
-        decided.add(connection.base + seq);
-        if (typeof one === "string" || typeof two === "string") {
-          // The builder checks the team against the channel's Team Preview request, which a
-          // later connection's channel does not hold (the room log replay has no requests).
-          // Both sides must refuse alike, and only a later connection may: the first must build.
-          const show = (side: Observation | string): string => (typeof side === "string" ? side : "built");
-          if (typeof one === "string" && one === two && connection.base > 0) {
-            if (!result.refusals.includes(one)) result.refusals.push(one);
-          } else {
-            diff(`${who} decision ${seq}: observation refused on one side only or on the first connection: A2 ${show(two)} vs A1 ${show(one)}`);
-          }
-          result.refused[seat] += 1;
+        let one: Observation;
+        let two: Observation;
+        try {
+          one = await observe({ ...common, channel: cut });
+          two = await observe({ ...common, channel: playerChannel({ ...connection.channel, lines: mine.slice(0, end + 1) }) });
+        } catch (error) {
+          if (!(error instanceof ObservationError)) throw error;
+          diff(`${who} decision ${seq}: no observation could be built: ${error.message}`);
           continue;
         }
+        decided.add(connection.base + seq);
         result.observations[seat] += 1;
         if (two.identity.request_hash !== request.request_hash) {
           diff(`${who} decision ${seq}: observation request_hash ${two.identity.request_hash} vs ${request.request_hash}`);
         }
         if (comparable(one) !== comparable(two)) diff(`${who} decision ${seq}: observations differ`);
-        onPair?.({ seat, request_seq: request.request_seq, a1: one, a2: two, team: team.team });
+        onPair?.({ seat, connection: c, request_seq: request.request_seq, a1: one, a2: two, team: team.team });
       }
     }
     result.decisions[seat] = decided.size;
