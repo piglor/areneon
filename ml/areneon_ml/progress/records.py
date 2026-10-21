@@ -1,0 +1,186 @@
+"""The progress evaluation's records, read in Python (ADR-017 section 3).
+
+``read_progress_record`` and ``read_game_record`` validate against the contracts (closed objects,
+integers only, ``data_class`` the constant ``synthetic``) and then apply the rules the contract
+profile cannot say. They are the same rules as the TS readers
+(``packages/showdown-bridge/src/progress-records.ts``): the counts add up and agree with the
+game rows, matches and hashes are sorted and unique, a stored game's choices are among its
+candidates, and every hash and the seed recompute. ``read_progress_record`` also ties the record
+to the run it claims (run key and config hash, the turn cap and latency budgets, each policy id
+from its pair's checkpoints and the match's mode); the TS reader has no policy-id constants.
+"""
+
+from __future__ import annotations
+
+import itertools
+from typing import Any
+
+from areneon_contracts.contracts import ContractError, jcs, sha256_hex, validate
+
+from areneon_ml.learner.config import RunConfig
+from areneon_ml.loop.records import policy_id
+from areneon_ml.progress.seeds import PAIRING, SEED_DERIVATION, progress_game_seed
+
+
+class ProgressRecordError(ValueError):
+    """A progress record breaks a rule."""
+
+
+def record_hash(record: object) -> str:
+    """SHA-256 of a record's JCS bytes: the hash a record is named by."""
+    return sha256_hex(jcs(record))
+
+
+def log_hash(lines: list[str]) -> str:
+    """SHA-256 of the JCS bytes of the omniscient log's lines, as a JSON array of strings."""
+    return sha256_hex(jcs(lines))
+
+
+def _ascending(values: list[str]) -> bool:
+    return all(a < b for a, b in itertools.pairwise(values))
+
+
+def _tally(rows: list[dict[str, Any]], max_turns: int) -> dict[str, Any]:
+    """What a match's game rows say, recounted from the candidate's side."""
+    won = tied = lost = cap_ties = turns = 0
+    forfeits: dict[tuple[str, str], int] = {}
+    for row in rows:
+        outcome = row["outcome"]
+        turns += outcome["turns"]
+        if outcome["kind"] == "forfeit":
+            key = (outcome["loser"], outcome["cause"])
+            forfeits[key] = forfeits.get(key, 0) + 1
+            lost += outcome["loser"] == "candidate"
+            won += outcome["loser"] == "opponent"
+        else:
+            tied += outcome["winner"] == "tie"
+            cap_ties += outcome["winner"] == "tie" and outcome["turns"] > max_turns
+            won += outcome["winner"] == "candidate"
+            lost += outcome["winner"] == "opponent"
+    return {
+        "wins": won,
+        "ties": tied,
+        "losses": lost,
+        "turn_cap_ties": cap_ties,
+        "turns_total": turns,
+        "forfeits": forfeits,
+    }
+
+
+def _recount(match: dict[str, Any], rows: list[dict[str, Any]], max_turns: int) -> None:
+    found = _tally(rows, max_turns)
+    name = match["match_id"]
+    if any(match[k] != found[k] for k in ("wins", "ties", "losses")):
+        raise ProgressRecordError(f"{name}: wins, ties and losses must equal the game rows")
+    if match["turn_cap_ties"] != found["turn_cap_ties"]:
+        raise ProgressRecordError(f"{name}: turn_cap_ties must equal the tied games past max_turns")
+    if match["turns_total"] != found["turns_total"]:
+        raise ProgressRecordError(f"{name}: turns_total must equal the sum of the game rows' turns")
+    listed = [(f["side"], f["cause"]) for f in match["forfeits"]]
+    if not all(a < b for a, b in itertools.pairwise(listed)):
+        raise ProgressRecordError(f"{name}: forfeits must be sorted by side then cause, each once")
+    if {(f["side"], f["cause"]): f["count"] for f in match["forfeits"]} != found["forfeits"]:
+        raise ProgressRecordError(f"{name}: forfeits must equal the forfeited game rows")
+
+
+def _check_match(match: dict[str, Any], rows: list[dict[str, Any]], plan: dict[str, Any]) -> None:
+    name = match["match_id"]
+    if match["games"] != plan["games_per_match"]:
+        raise ProgressRecordError(f"{name}: games must equal plan.games_per_match")
+    if match["wins"] + match["ties"] + match["losses"] != match["games"]:
+        raise ProgressRecordError(f"{name}: wins + ties + losses must equal games")
+    if len(rows) != match["games"]:
+        raise ProgressRecordError(f"{name}: there must be one game row per game")
+    for index, row in enumerate(rows):
+        seat = "p1" if index % 2 == 0 else "p2"
+        if (row["game"], row["pair"], row["candidate_seat"]) != (index, index, seat):
+            raise ProgressRecordError(
+                f"{name}: game rows must run 0..games-1, pair = game, seats alternating"
+            )
+    _recount(match, rows, plan["max_turns"])
+    hashes = match["game_record_hashes"]
+    if not _ascending(hashes) or len(hashes) != plan["recorded_games_per_match"]:
+        raise ProgressRecordError(
+            f"{name}: game_record_hashes must be sorted, unique, recorded_games_per_match long"
+        )
+
+
+def read_progress_record(raw: object, config: RunConfig | None = None) -> dict[str, Any]:
+    """Validate a ProgressEvaluationRecord; with ``config`` also tie it to the run that made it."""
+    try:
+        validate("progress-evaluation-record", raw)
+    except ContractError as exc:
+        raise ProgressRecordError(str(exc)) from exc
+    assert isinstance(raw, dict)  # validate() accepted an object
+    plan, matches, games = raw["plan"], raw["matches"], raw["games"]
+    if raw["teams"]["pairs_used"] != plan["games_per_match"]:
+        raise ProgressRecordError("teams.pairs_used must equal plan.games_per_match")
+    if plan["recorded_games_per_match"] > plan["games_per_match"]:
+        raise ProgressRecordError("recorded_games_per_match must not exceed games_per_match")
+    ids = [m["match_id"] for m in matches]
+    if not _ascending(ids):
+        raise ProgressRecordError("matches must be sorted by match_id, each once")
+    by_match: dict[str, list[dict[str, Any]]] = {i: [] for i in ids}
+    for row in games:
+        if row["match_id"] not in by_match:
+            raise ProgressRecordError(f"a game row names the unknown match {row['match_id']}")
+        by_match[row["match_id"]].append(row)
+    if [row for i in ids for row in by_match[i]] != games:
+        raise ProgressRecordError("game rows must be in match then game order")
+    for match in matches:
+        _check_match(match, by_match[match["match_id"]], plan)
+    if plan["seed_derivation"] != SEED_DERIVATION or plan["pairing"] != PAIRING:
+        raise ProgressRecordError("the plan names another seed derivation or pairing")
+    if config is not None:
+        _check_run(raw, config)
+    return raw
+
+
+def _check_run(raw: dict[str, Any], config: RunConfig) -> None:
+    if raw["run_id"] != config.run_key or raw["run_config_hash"] != config.hash:
+        raise ProgressRecordError("the record belongs to another run or run config")
+    plan = raw["plan"]
+    gen = config.generation
+    if plan["max_turns"] != gen.max_turns or plan["latency_budget_ms"] != {
+        "preview_ms": gen.preview_ms,
+        "battle_ms": gen.battle_ms,
+    }:
+        raise ProgressRecordError(
+            "the plan's turn cap or latency budgets differ from the run config's"
+        )
+    pair = raw["checkpoints"]
+    for match in raw["matches"]:
+        if match["policy_id"] != policy_id(pair["preview"], pair["battle"], match["mode"]):
+            raise ProgressRecordError(
+                f"{match['match_id']}: policy_id is not the frozen pair's in this mode"
+            )
+        opponent = match["opponent"]
+        if opponent["kind"] == "previous" and opponent["policy_id"] != policy_id(
+            opponent["checkpoints"]["preview"], opponent["checkpoints"]["battle"], match["mode"]
+        ):
+            raise ProgressRecordError(
+                f"{match['match_id']}: the previous pair's policy_id is not its checkpoints'"
+            )
+
+
+def read_game_record(raw: object) -> dict[str, Any]:
+    """Validate a ProgressGameRecord: choices among candidates; hashes and seed recompute."""
+    try:
+        validate("progress-game-record", raw)
+    except ContractError as exc:
+        raise ProgressRecordError(str(exc)) from exc
+    assert isinstance(raw, dict)  # validate() accepted an object
+    for decision in raw["decisions"]:
+        if decision["chosen"] not in [c["choice"] for c in decision["candidates"]]:
+            raise ProgressRecordError(
+                f"the choice of {decision['player']} at request {decision['request_seq']} "
+                "is not among its candidates"
+            )
+    for seat in ("p1", "p2"):
+        if sha256_hex(jcs(raw["teams"][seat]["team"])) != raw["teams"][seat]["team_hash"]:
+            raise ProgressRecordError(f"the team hash of {seat} does not recompute")
+    if log_hash(raw["omniscient_log"]) != raw["omniscient_log_sha256"]:
+        raise ProgressRecordError("omniscient_log_sha256 does not recompute")
+    if progress_game_seed(raw["run_id"], raw["game"]) != raw["seed"]:
+        raise ProgressRecordError("the seed is not the one progress-seed/1 gives this game index")
+    return raw

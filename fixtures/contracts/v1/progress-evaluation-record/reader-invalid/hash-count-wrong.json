@@ -1,0 +1,86 @@
+{
+  "schema_version": 1,
+  "data_class": "synthetic",
+  "run_id": "tiny-run",
+  "run_config_hash": "3333333333333333333333333333333333333333333333333333333333333333",
+  "generation": 1,
+  "generation_manifest_sha256": "4444444444444444444444444444444444444444444444444444444444444444",
+  "checkpoints": {
+    "preview": "1111111111111111111111111111111111111111111111111111111111111111",
+    "battle": "2222222222222222222222222222222222222222222222222222222222222222"
+  },
+  "version_manifest": {
+    "showdown_commit": "7244fe8e28fa8bc4d0809ae30d183c608b62bb2b",
+    "format_id": "gen9championsvgc2026regmc",
+    "regulation": "M-C",
+    "ruleset_hash": "4dd1f039bbcc6156e08c434972beae2370dc5fe8c9c6a263da7383c3247b68f3",
+    "format_rules_hash": "549cd2aa97324be093c567324676d46a5eff19d6b0c9d8491c483dab746d5dcc"
+  },
+  "teams": {
+    "dataset_hash": "5555555555555555555555555555555555555555555555555555555555555555",
+    "split": "validation",
+    "pairs_used": 2
+  },
+  "plan": {
+    "seed_derivation": "progress-seed/1",
+    "pairing": "progress-pairing/1",
+    "games_per_match": 2,
+    "recorded_games_per_match": 1,
+    "max_turns": 100,
+    "latency_budget_ms": {
+      "preview_ms": 30000,
+      "battle_ms": 30000
+    }
+  },
+  "matches": [
+    {
+      "match_id": "actor-rule-argmax",
+      "policy_id": "policy:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "opponent": {
+        "kind": "baseline",
+        "policy_id": "actor-rule@v1"
+      },
+      "mode": "argmax",
+      "games": 2,
+      "wins": 0,
+      "ties": 1,
+      "losses": 1,
+      "turn_cap_ties": 0,
+      "turns_total": 11,
+      "forfeits": [
+        {
+          "side": "candidate",
+          "cause": "latency_overrun",
+          "count": 1
+        }
+      ],
+      "game_record_hashes": []
+    }
+  ],
+  "games": [
+    {
+      "match_id": "actor-rule-argmax",
+      "game": 0,
+      "pair": 0,
+      "candidate_seat": "p1",
+      "outcome": {
+        "kind": "played",
+        "winner": "tie",
+        "turns": 4
+      }
+    },
+    {
+      "match_id": "actor-rule-argmax",
+      "game": 1,
+      "pair": 1,
+      "candidate_seat": "p2",
+      "outcome": {
+        "kind": "forfeit",
+        "loser": "candidate",
+        "cause": "latency_overrun",
+        "request_seq": 3,
+        "turns": 7
+      }
+    }
+  ]
+}

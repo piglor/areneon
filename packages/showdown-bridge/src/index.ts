@@ -327,3 +327,35 @@ export {
   type PolicyStreamLabel,
   policyStreamLabel,
 } from "./league-seed.ts";
+export {
+  playProgress,
+  PROGRESS_BASELINES,
+  PROGRESS_MODES,
+  ProgressError,
+  type ProgressMode,
+  type ProgressOptions,
+  type ProgressPool,
+  buildProgressGameRecord,
+  type GameFacts,
+  progressPlan,
+  type ProgressResult,
+  type ProgressTeam,
+  writeProgress,
+} from "./progress-evaluation.ts";
+export { committedPlanSeeds, type ProgressPoolSource, runProgressCli } from "./progress-cli.ts";
+export {
+  omniscientLogHash,
+  progressRecordHash,
+  type ProgressEvaluationRecord,
+  type ProgressGameRecord,
+  ProgressRecordError,
+  readProgressEvaluationRecord,
+  readProgressGameRecord,
+} from "./progress-records.ts";
+export {
+  PROGRESS_PAIRING,
+  PROGRESS_SEED_DERIVATION,
+  progressGameStreams,
+  progressPairs,
+  type ProgressStreams,
+} from "./progress-seed.ts";
