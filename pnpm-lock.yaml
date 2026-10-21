@@ -58,6 +58,9 @@ importers:
 
   packages/private-team-store:
     dependencies:
+      '@areneon/showdown-bridge':
+        specifier: workspace:*
+        version: link:../showdown-bridge
       '@noble/ciphers':
         specifier: 2.4.0
         version: 2.4.0
