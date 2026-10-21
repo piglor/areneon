@@ -4,25 +4,28 @@
 // tag, a header value, a species or move name, or an id. The messages below are
 // fixed strings, so an error can be printed or logged without leaking a team.
 
-export type ImportRefusal =
-  | "header_malformed"
-  | "comment_line"
-  | "import_refused"
-  | "team_illegal"
-  | "record_invalid"
-  | "team_id_unknown"
-  | "team_id_repeated"
-  | "duplicate_of_active"
-  | "duplicate_canonical_hash"
-  | "retire_id_malformed"
-  | "retire_repeated"
-  | "retire_unknown"
-  | "retire_not_active"
-  | "retire_and_staged"
-  | "parent_invalid"
-  | "active_record_lost"
-  | "id_source_invalid"
-  | "no_teams";
+export const IMPORT_REFUSALS = [
+  "header_malformed",
+  "comment_line",
+  "import_refused",
+  "team_illegal",
+  "record_invalid",
+  "team_id_unknown",
+  "team_id_repeated",
+  "duplicate_canonical_hash",
+  "retire_id_malformed",
+  "retire_repeated",
+  "retire_unknown",
+  "retire_and_staged",
+  "parent_invalid",
+  "holdout_mismatch",
+  "active_record_lost",
+  "result_invalid",
+  "id_source_invalid",
+  "hook_failed",
+  "no_teams",
+] as const;
+export type ImportRefusal = (typeof IMPORT_REFUSALS)[number];
 
 const MESSAGES: Readonly<Record<ImportRefusal, string>> = {
   header_malformed: "the header line is not exactly `#! team_id=<32 hex> tags=<tag>[,<tag>...]` (either key optional, tags sorted-unique, at most 16)",
@@ -32,14 +35,15 @@ const MESSAGES: Readonly<Record<ImportRefusal, string>> = {
   record_invalid: "the team does not make a valid private record",
   team_id_unknown: "the header's team_id is not in the parent snapshot",
   team_id_repeated: "two staged files name the same team_id",
-  duplicate_of_active: "the team is already an active record (same canonical hash); stage it with its team_id header to edit it",
-  duplicate_canonical_hash: "the result would hold the same team in two active records",
+  duplicate_canonical_hash: "the result would hold the same team in two active records (a revision or a revival takes another active record's team)",
   retire_id_malformed: "a --retire value is not a 32 lowercase hex team_id",
   retire_repeated: "a --retire value is given twice",
   retire_unknown: "a --retire team_id is not in the parent snapshot",
-  retire_not_active: "a --retire team_id is not an active record",
   retire_and_staged: "a team is both staged and retired in this import",
   parent_invalid: "the parent records are not a valid private record set",
+  holdout_mismatch: "a parent record's hold-out flag differs from the hold-out rule's value for its team_id",
+  result_invalid: "the result is not a valid private record set",
+  hook_failed: "a labels, hold-out or team_id hook failed",
   active_record_lost: "an active parent record is missing from the result without --retire",
   id_source_invalid: "the team_id source returned an id that is malformed or already used",
   no_teams: "the import would produce a snapshot with no records",

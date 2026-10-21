@@ -18,7 +18,7 @@ export interface StagedFile {
 export interface ParsedStagedFile {
   /** The header's `team_id`, or null when the header has none (or there is no header). */
   readonly team_id: string | null;
-  /** The header's tags, sorted and unique; null when the header names none (tags are then left as they are). */
+  /** The header's tags, sorted and unique; `[]` for an empty `tags=` (clear the tags); null when the header has no `tags=` (tags are then left as they are). */
   readonly tags: readonly string[] | null;
   /** The PokePaste with the header removed. */
   readonly paste: string;
@@ -47,7 +47,7 @@ export function parseStagedFile(text: string, file: number): ParsedStagedFile {
     team_id = match[1] ?? null;
     const rawTags = match[2] ?? match[3];
     if (rawTags !== undefined) {
-      const list = rawTags.split(",");
+      const list = rawTags === "" ? [] : rawTags.split(",");
       const sorted = [...list].sort();
       if (list.length > MAX_TAGS || !list.every((t) => TAG.test(t)) || sorted.some((t, k) => k > 0 && t === sorted[k - 1])) {
         return fail(file, "header_malformed");

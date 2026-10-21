@@ -3,8 +3,8 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { type Engine, importPaste, loadEngine, resolveFormat } from "@areneon/showdown-bridge";
 import { describe, expect, it } from "vitest";
-import { ImportPlanError } from "../src/import-error.ts";
-import { type ImportPlanInput, planImport } from "../src/import-plan.ts";
+import { IMPORT_REFUSALS, ImportPlanError } from "../src/import-error.ts";
+import { assertNoActiveRecordLost, type ImportPlanInput, planImport } from "../src/import-plan.ts";
 import type { StagedFile } from "../src/staged-file.ts";
 
 // Paste canary tests (ADR-015 section 3, "No leaks"): marker strings placed in a
@@ -80,17 +80,19 @@ const idA = parent[0]?.team_id as string;
 const hdr = (id: string, tags = ""): string => `#! team_id=${id}${tags ? ` tags=${tags}` : ""}\n`;
 
 const cases: [string, ImportPlanInput][] = [
+  ["a team the engine refuses to import (nickname only)", input([file(NAME, `${nicked(A)}\n${HEADER}`)])],
   ["bad tag in the header", input([file(NAME, `#! tags=${TAG.toUpperCase()}\n${nicked(A)}`)])],
   ["unknown header key and value", input([file(NAME, `#! note=${HEADER}\n${nicked(A)}`)])],
   ["a comment line", input([file(NAME, `${nicked(A)}\n# ${COMMENT}`)])],
   ["a paste the engine cannot read", input([file(NAME, `${NICK} ${HEADER}\nAbility: ${TAG}`)])],
   ["an illegal team", input([file(NAME, `#! tags=${TAG}\n${nicked(illegal)}`)])],
-  ["an unknown team_id", input([file(NAME, `#! team_id=${HEXMARK}ff tags=${TAG}\n${nicked(A)}`)], { parent })],
+  ["an unknown team_id", input([file(NAME, `#! team_id=${HEXMARK}f tags=${TAG}\n${nicked(A)}`)], { parent })],
   ["a repeated team_id", input([file(NAME, hdr(idA, TAG) + nicked(B)), file(`${NAME}2`, hdr(idA) + nicked(B))], { parent })],
-  ["a duplicate of an active team", input([file(NAME, `#! tags=${TAG}\n${A}`)], { parent })],
+  ["a hook that throws a paste fragment", input([file(NAME, A)], { labels: () => { throw new Error(`${NICK} ${A}`); } })],
+  ["a parent with a wrong hold-out flag", input([], { parent, holdout: () => true })],
   ["a revision onto another active team", input([file(NAME, hdr(idA, TAG) + B)], { parent })],
   ["a malformed --retire value", input([], { parent, retire: [RETIRE] })],
-  ["an unknown --retire team_id", input([], { parent, retire: [`${HEXMARK}ff`] })],
+  ["an unknown --retire team_id", input([], { parent, retire: [`${HEXMARK}f`] })],
   ["a repeated --retire value", input([], { parent, retire: [idA, idA] })],
   ["retire and stage together", input([file(NAME, hdr(idA, TAG) + nicked(B))], { parent, retire: [idA] })],
   ["an invalid label", input([file(NAME, `#! tags=${TAG}\n${nicked(A)}`)], { labels: () => [{ label_id: `${LABEL}!`, value: "x" }] })],
@@ -107,9 +109,14 @@ describe("paste canaries: refusals", () => {
   });
 
   it("covers every refusal code the planner has", () => {
-    const codes = new Set(cases.map(([, run]) => (thrown(() => planImport(run)) as ImportPlanError).code));
-    // The codes of the cases above; the rest (record rules) are covered by import-plan.test.ts with no free text either.
-    expect(codes.size).toBeGreaterThanOrEqual(12);
+    const codes = new Set<string>(cases.map(([, run]) => (thrown(() => planImport(run)) as ImportPlanError).code));
+    // active_record_lost cannot come out of planImport (its result is built from the parent): its check is run directly.
+    const lost = thrown(() => assertNoActiveRecordLost(parent, [], new Set()));
+    expect(leaks(surface(lost), needles(A, B))).toEqual([]);
+    codes.add((lost as ImportPlanError).code);
+    // result_invalid is the second line of defence behind duplicate_canonical_hash and has no input that reaches it.
+    codes.add("result_invalid");
+    expect([...codes].sort()).toEqual([...IMPORT_REFUSALS].sort());
   });
 
   it("negative control: the scan does fail on an error that echoes a marker, a team name or a species", () => {
@@ -126,9 +133,9 @@ describe("paste canaries: refusals", () => {
 });
 
 describe("paste canaries: a successful plan", () => {
-  it("returns four counts and nothing else in the summary", () => {
+  it("returns five counts and nothing else in the summary", () => {
     const out = planImport(input([file(NAME, `#! tags=${TAG}\n${nicked(A)}`), file(`${NAME}2`, nicked(B, "CanaryNick8"))]));
-    expect(Object.keys(out.summary).sort()).toEqual(["new", "retired", "revised", "unchanged"]);
+    expect(Object.keys(out.summary).sort()).toEqual(["duplicate", "new", "retired", "revised", "unchanged"]);
     expect(Object.values(out.summary).every((n) => Number.isInteger(n))).toBe(true);
     expect(leaks(JSON.stringify(out.summary), needles(A, B))).toEqual([]);
     // The records are the data and do hold the paste, as the negative control needs.

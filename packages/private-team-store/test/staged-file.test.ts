@@ -23,6 +23,12 @@ describe("parseStagedFile", () => {
     expect(parseStagedFile(`#! team_id=${ID} tags=zeta,alpha,m-1\n${BODY}`, 1)).toEqual({ team_id: ID, tags: ["alpha", "m-1", "zeta"], paste: BODY });
   });
 
+  it("reads an empty tags= as clearing the tags, and a missing tags= as leaving them", () => {
+    expect(parseStagedFile(`#! tags=\n${BODY}`, 1).tags).toEqual([]);
+    expect(parseStagedFile(`#! team_id=${ID} tags=\n${BODY}`, 1)).toEqual({ team_id: ID, tags: [], paste: BODY });
+    expect(parseStagedFile(`#! team_id=${ID}\n${BODY}`, 1).tags).toBeNull();
+  });
+
   it("takes either key alone", () => {
     expect(parseStagedFile(`#! team_id=${ID}\n${BODY}`, 1)).toEqual({ team_id: ID, tags: null, paste: BODY });
     expect(parseStagedFile(`#! tags=a\n${BODY}`, 1)).toEqual({ team_id: null, tags: ["a"], paste: BODY });
@@ -44,7 +50,6 @@ describe("parseStagedFile", () => {
     ["an uppercase id", `#! team_id=${ID.toUpperCase()}\n${BODY}`],
     ["a short id", `#! team_id=${ID.slice(1)}\n${BODY}`],
     ["tags before the id", `#! tags=a team_id=${ID}\n${BODY}`],
-    ["an empty tags value", `#! tags=\n${BODY}`],
     ["a space after a comma", `#! tags=a, b\n${BODY}`],
     ["an uppercase tag", `#! tags=Aa\n${BODY}`],
     ["a tag starting with a hyphen", `#! tags=-a\n${BODY}`],

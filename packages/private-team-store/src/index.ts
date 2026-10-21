@@ -2,7 +2,7 @@
 // build or other workspace package may depend on it (test/packaging.test.ts).
 // Built so far: the pure import planner (import-plan.ts, staged-file.ts).
 export const PRIVATE_TEAM_STORE_PACKAGE = "@areneon/private-team-store";
-export { ImportPlanError, type ImportRefusal, type RefusalPosition } from "./import-error.ts";
+export { IMPORT_REFUSALS, ImportPlanError, type ImportRefusal, type RefusalPosition } from "./import-error.ts";
 export {
   assertNoActiveRecordLost,
   type ChangeSummary,

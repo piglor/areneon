@@ -71,7 +71,7 @@ const record = (id: string): PrivateTeamRecord => parent.find((r) => r.team_id =
 
 describe("a first import", () => {
   it("makes revision-1 active records with fresh ids, sorted by team_id, and counts them", () => {
-    expect(first.summary).toEqual({ new: 3, revised: 0, unchanged: 0, retired: 0 });
+    expect(first.summary).toEqual({ new: 3, duplicate: 0, revised: 0, unchanged: 0, retired: 0 });
     expect(first.records.map((r) => r.team_id)).toEqual([hex(1), hex(2), hex(3)]);
     for (const r of first.records) {
       expect(readPrivateTeamRecord(engine, r)).toEqual(r);
@@ -115,7 +115,7 @@ describe("a later import", () => {
 
   it("carries absent teams unchanged: the same record objects, summary unchanged", () => {
     const out = next({ staged: [file("d", D)] });
-    expect(out.summary).toEqual({ new: 1, revised: 0, unchanged: 3, retired: 0 });
+    expect(out.summary).toEqual({ new: 1, duplicate: 0, revised: 0, unchanged: 3, retired: 0 });
     expect(out.records).toHaveLength(4);
     for (const r of parent) expect(out.records).toContainEqual(r);
   });
@@ -123,7 +123,7 @@ describe("a later import", () => {
   it("makes no change for a revision file that matches (paste and tags), whatever its header", () => {
     const out = next({ staged: [file("a", header(idA) + A), file("b", header(idB, "keep") + B)] });
     expect(out.records).toEqual(parent);
-    expect(out.summary).toEqual({ new: 0, revised: 0, unchanged: 3, retired: 0 });
+    expect(out.summary).toEqual({ new: 0, duplicate: 0, revised: 0, unchanged: 3, retired: 0 });
   });
 
   it("raises the revision by 1 and links the record it replaces", () => {
@@ -132,7 +132,7 @@ describe("a later import", () => {
     expect(revised).toMatchObject({ revision: 2, supersedes_record_hash: recordHash(record(idA)), status: "active" });
     expect(revised.canonical_team_hash).toBe(canonicalTeamHash(importPaste(engine, D)));
     expect(readPrivateTeamRecord(engine, revised)).toEqual(revised);
-    expect(out.summary).toEqual({ new: 0, revised: 1, unchanged: 2, retired: 0 });
+    expect(out.summary).toEqual({ new: 0, duplicate: 0, revised: 1, unchanged: 2, retired: 0 });
   });
 
   it("revises on a tag change alone, and keeps the parent's tags when the header names none", () => {
@@ -157,14 +157,14 @@ describe("a later import", () => {
     const out = next({ retire: [idC] });
     const gone = out.records.find((r) => r.team_id === idC) as PrivateTeamRecord;
     expect(gone).toMatchObject({ status: "retired", revision: 2, supersedes_record_hash: recordHash(record(idC)), paste: record(idC).paste });
-    expect(out.summary).toEqual({ new: 0, revised: 0, unchanged: 2, retired: 1 });
+    expect(out.summary).toEqual({ new: 0, duplicate: 0, revised: 0, unchanged: 2, retired: 1 });
     expect(() => checkPrivateRecordSet(out.records)).not.toThrow();
   });
 
   it("lets a retired team's hash be staged again as a new team", () => {
     const retired = next({ retire: [idC] }).records;
     const out = plan({ parent: retired, staged: [file("c", C)], newTeamId: idSource(200) });
-    expect(out.summary).toEqual({ new: 1, revised: 0, unchanged: 3, retired: 0 });
+    expect(out.summary).toEqual({ new: 1, duplicate: 0, revised: 0, unchanged: 3, retired: 0 });
     expect(out.records.filter((r) => r.canonical_team_hash === record(idC).canonical_team_hash).map((r) => r.status).sort()).toEqual(["active", "retired"]);
   });
 
@@ -172,7 +172,41 @@ describe("a later import", () => {
     const retired = next({ retire: [idC] }).records;
     const out = plan({ parent: retired, staged: [file("c", header(idC) + C)] });
     expect(out.records.find((r) => r.team_id === idC)).toMatchObject({ status: "active", revision: 3 });
-    expect(out.summary).toEqual({ new: 0, revised: 1, unchanged: 2, retired: 0 });
+    expect(out.summary).toEqual({ new: 0, duplicate: 0, revised: 1, unchanged: 2, retired: 0 });
+  });
+
+  it("counts an id-less file that repeats an active team as a duplicate and changes nothing", () => {
+    const out = next({ staged: [file("a", A), file("b", `#! tags=x\n${B}`)] });
+    expect(out.records).toEqual(parent);
+    expect(out.summary).toEqual({ new: 0, duplicate: 2, revised: 0, unchanged: 3, retired: 0 });
+  });
+
+  it("counts the second of two id-less files with one team as a duplicate of the first", () => {
+    const out = next({ staged: [file("a", D), file("b", D)] });
+    expect(out.summary).toEqual({ new: 1, duplicate: 1, revised: 0, unchanged: 3, retired: 0 });
+    expect(out.records).toHaveLength(4);
+  });
+
+  it("a re-import of the same staged folder against its own result is a no-op", () => {
+    const staged = [file("a", A), file("b", `#! tags=keep\n${B}`), file("c", C)];
+    const again = plan({ staged, parent: first.records, newTeamId: idSource(500) });
+    expect(again.records).toEqual(first.records);
+    expect(again.summary).toEqual({ new: 0, duplicate: 3, revised: 0, unchanged: 3, retired: 0 });
+    const third = plan({ staged, parent: again.records, newTeamId: idSource(600) });
+    expect(third.records).toEqual(first.records);
+  });
+
+  it("clears tags with an empty tags= and keeps them when tags= is absent", () => {
+    const cleared = next({ staged: [file("b", `#! team_id=${idB} tags=\n${B}`)] });
+    expect(cleared.records.find((r) => r.team_id === idB)).toMatchObject({ revision: 2, tags: [] });
+    expect(next({ staged: [file("b", header(idB) + B)] }).records).toEqual(parent);
+  });
+
+  it("treats retiring an already-retired record as a no-op counted as unchanged", () => {
+    const retired = next({ retire: [idC] }).records;
+    const out = plan({ parent: retired, retire: [idC] });
+    expect(out.records).toEqual(retired);
+    expect(out.summary).toEqual({ new: 0, duplicate: 0, revised: 0, unchanged: 3, retired: 0 });
   });
 
   it("allows a revision to take the hash an import-mate gives up", () => {
@@ -182,7 +216,7 @@ describe("a later import", () => {
 
   it("mixes new, revised, retired and unchanged", () => {
     const out = next({ staged: [file("a", header(idA) + D), file("n", fixture("legal-synthetic.txt"))], retire: [idB] });
-    expect(out.summary).toEqual({ new: 1, revised: 1, unchanged: 1, retired: 1 });
+    expect(out.summary).toEqual({ new: 1, duplicate: 0, revised: 1, unchanged: 1, retired: 1 });
   });
 });
 
@@ -190,7 +224,7 @@ describe("refusals", () => {
   const next = (over: Partial<ImportPlanInput>) => ({ parent, ...over });
 
   it.each<[ImportRefusal, Partial<ImportPlanInput>]>([
-    ["header_malformed", { staged: [file("a", `#! tags=\n${A}`)] }],
+    ["header_malformed", { staged: [file("a", `#! tags=Z\n${A}`)] }],
     ["comment_line", { staged: [file("a", `${A}\n# note`)] }],
     ["import_refused", { staged: [file("a", "this is not a team")] }],
     ["import_refused", { staged: [file("a", "")] }],
@@ -200,15 +234,16 @@ describe("refusals", () => {
     ["team_id_unknown", next({ staged: [file("a", header(hex(999)) + D)] })],
     ["team_id_unknown", { staged: [file("a", header(hex(1)) + D)] }],
     ["team_id_repeated", next({ staged: [file("a", header(idA) + D), file("b", header(idA) + A)] })],
-    ["duplicate_of_active", next({ staged: [file("a", A)] })],
-    ["duplicate_of_active", { staged: [file("a", A), file("b", A)] }],
-    ["duplicate_of_active", next({ staged: [file("a", header(idA) + D), file("b", D)], newTeamId: idSource(100) })],
     ["duplicate_canonical_hash", next({ staged: [file("a", header(idA) + B)] })],
     ["duplicate_canonical_hash", next({ staged: [file("a", header(idC) + A)] })],
     ["retire_id_malformed", next({ retire: ["ABC"] })],
     ["retire_repeated", next({ retire: [idA, idA] })],
     ["retire_unknown", next({ retire: [hex(999)] })],
     ["retire_unknown", { retire: [hex(1)], staged: [file("a", A)] }],
+    ["hook_failed", { staged: [file("a", A)], labels: () => { throw new Error(A); } }],
+    ["hook_failed", { staged: [file("a", A)], holdout: () => { throw new Error(A); } }],
+    ["hook_failed", { staged: [file("a", A)], newTeamId: () => { throw new Error(A); } }],
+    ["holdout_mismatch", next({ holdout: () => true })],
     ["retire_and_staged", next({ retire: [idA], staged: [file("a", header(idA) + D)] })],
     ["record_invalid", { staged: [file("a", A)], labels: () => [{ label_id: "!", value: "x" }] }],
     ["id_source_invalid", { staged: [file("a", A)], newTeamId: () => "not-an-id" }],
@@ -218,9 +253,16 @@ describe("refusals", () => {
     expect(code(over)).toBe(expected);
   });
 
-  it("refuses to retire a record that is already retired", () => {
+  it("refuses a revival that takes an active record's team", () => {
     const retired = plan({ parent, retire: [idC] }).records;
-    expect(code({ parent: retired, retire: [idC] })).toBe("retire_not_active");
+    const withTwin = plan({ parent: retired, staged: [file("n", C)], newTeamId: idSource(300) }).records;
+    expect(code({ parent: withTwin, staged: [file("c", header(idC) + C)] })).toBe("duplicate_canonical_hash");
+  });
+
+  it("never lets a hook's text out of a refusal", () => {
+    const e = refusal({ staged: [file("a", A)], labels: () => { throw new Error("PASTE-FRAGMENT Gallade"); } });
+    expect(e.message).not.toMatch(/PASTE-FRAGMENT|Gallade/);
+    expect(e.cause).toBeUndefined();
   });
 
   it("refuses an unreadable parent: a tampered record, a repeated team_id, a repeated active team", () => {
