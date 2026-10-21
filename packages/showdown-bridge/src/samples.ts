@@ -19,7 +19,7 @@ import { episodeFromRecord } from "./episode-io.ts";
 import { GOLDEN_DIR, GOLDEN_FORMAT, goldenBattle, syntheticFixtureHashes, syntheticTeam } from "./golden.ts";
 import { LEAGUE_SEED_DERIVATION } from "./league-seed.ts";
 import { observe, recordedChannel } from "./player-channel.ts";
-import { privateSamples } from "./private-samples.ts";
+import { privateSamples, privateSnapshotSamples } from "./private-samples.ts";
 import { contractVersions } from "./policy-protocol.ts";
 import { battleClass, stampTeam, teamHash } from "./team-class.ts";
 import { canonicalTeamHash, logicalSnapshotHash, recordHash, shardLogicalHash } from "./team-records.ts";
@@ -741,6 +741,8 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
   const samples: Record<string, unknown> = {};
   const evalSamples = evaluationSamples();
   const privateOnes = privateSamples(engine);
+  const privateManifests = privateSnapshotSamples({ manifest: record.manifest, vocabularyHash: teamVocabularyHash(vocabulary as never), labelSetHash });
+  for (const kind of ["valid", "invalid", "readerInvalid"] as const) Object.assign(privateOnes[kind], privateManifests[kind]);
   for (const [kind, cases] of [["valid", { ...valid, ...evalSamples.valid, ...privateOnes.valid }], ["invalid", { ...invalid, ...evalSamples.invalid, ...privateOnes.invalid }], ["reader-invalid", { ...readerInvalid, ...evalSamples.readerInvalid, ...privateOnes.readerInvalid }]] as const) {
     for (const [key, value] of Object.entries(cases)) {
       const [contract, name] = key.split("/") as [string, string];
