@@ -448,7 +448,7 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "team-snapshot-manifest/extended": extendedSnapshot,
     "training-run-config/tiny": runConfig,
     "training-run-config/no-baselines": runConfigWith((c) => (runSection(c, "generation").baseline_games = [])),
-    "training-run-config/team-dataset": runConfigWith((c) => (c.team_dataset = { path: ".tmp/datasets/train-v1", manifest_hash: hexOf("5") })),
+    "training-run-config/team-dataset": runConfigWith((c) => (c.team_dataset = { path: ".tmp/datasets/train-v1", dataset_hash: hexOf("5") })),
     "league-run-record/tiny": leagueRun,
     "league-run-record/self-play-only": leagueRunWith((r) => {
       r.games = 4;
@@ -612,8 +612,8 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "training-run-config/unknown-baseline": runConfigWith((c) => {
       ((runSection(c, "generation").baseline_games as Record<string, unknown>[])[0] as Record<string, unknown>).actor = "heuristic";
     }),
-    "training-run-config/dataset-short-hash": runConfigWith((c) => (c.team_dataset = { path: ".tmp/datasets/train-v1", manifest_hash: "abc" })),
-    "training-run-config/dataset-no-path": runConfigWith((c) => (c.team_dataset = { manifest_hash: hexOf("5") })),
+    "training-run-config/dataset-short-hash": runConfigWith((c) => (c.team_dataset = { path: ".tmp/datasets/train-v1", dataset_hash: "abc" })),
+    "training-run-config/dataset-no-path": runConfigWith((c) => (c.team_dataset = { dataset_hash: hexOf("5") })),
     "training-run-config/next-version": runConfigWith((c) => (c.schema_version = 2)),
     "checkpoint-record/extra-field": recordWith((r) => (r.verdicts = [])),
     "checkpoint-record/bad-encoder-version": recordWith((r) => (r.encoder_version = "stub-1")),

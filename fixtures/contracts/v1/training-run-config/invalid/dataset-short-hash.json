@@ -65,6 +65,6 @@
   },
   "team_dataset": {
     "path": ".tmp/datasets/train-v1",
-    "manifest_hash": "abc"
+    "dataset_hash": "abc"
   }
 }

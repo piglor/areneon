@@ -111,7 +111,7 @@ class Ppo(BaseModel):
 
 class TeamDataset(BaseModel):
     """
-    Optional (a minor change within v1): the generated team dataset the generation loop draws its teams from. Absent means the interim pool of committed fixture teams. The directory is read by the dataset reader, which trusts nothing; the pool takes the dev and training splits, never validation. The manifest hash pins the dataset: a directory whose manifest hashes differently is refused.
+    Optional (a minor change within v1): the generated team dataset the generation loop draws its teams from. Absent means the interim pool of committed fixture teams. The directory is read by the dataset reader, which trusts nothing; the pool takes the dev and training splits, never validation. The dataset hash pins the manifest and every record: a directory that hashes differently is refused.
     """
 
     model_config = ConfigDict(
@@ -121,9 +121,9 @@ class TeamDataset(BaseModel):
     """
     The dataset directory, relative to the directory the generation process runs in (the repository root for the loop driver) or absolute.
     """
-    manifest_hash: Annotated[StrictStr, Field(pattern="^[0-9a-f]{64}$")]
+    dataset_hash: Annotated[StrictStr, Field(pattern="^[0-9a-f]{64}$")]
     """
-    SHA-256 of the dataset manifest's JCS bytes (the dataset hash).
+    SHA-256 of the JCS of {manifest_hash, splits: {dev, validation, training}}: the dataset manifest's own hash and, per split, the sorted record_hash list of the records the reader verified (empty training list for the committed layout). A swapped, added or removed record changes it.
     """
 
 
@@ -328,7 +328,7 @@ class TrainingRunConfig(BaseModel):
     """
     team_dataset: TeamDataset | MISSING = MISSING
     """
-    Optional (a minor change within v1): the generated team dataset the generation loop draws its teams from. Absent means the interim pool of committed fixture teams. The directory is read by the dataset reader, which trusts nothing; the pool takes the dev and training splits, never validation. The manifest hash pins the dataset: a directory whose manifest hashes differently is refused.
+    Optional (a minor change within v1): the generated team dataset the generation loop draws its teams from. Absent means the interim pool of committed fixture teams. The directory is read by the dataset reader, which trusts nothing; the pool takes the dev and training splits, never validation. The dataset hash pins the manifest and every record: a directory that hashes differently is refused.
     """
     learner: Learner
     """

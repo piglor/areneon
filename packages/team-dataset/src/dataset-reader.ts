@@ -242,6 +242,21 @@ function readHashIndex(value: unknown, expected: HashIndex): HashIndex {
   return expected;
 }
 
+/**
+ * The dataset hash a run config pins: SHA-256 of the JCS of the manifest's own
+ * hash and, per split, the sorted `record_hash` list of the records the reader
+ * verified (computed here from the records, never read from a file; the
+ * committed layout has no training split, an empty list). A swapped, added or
+ * removed record changes it.
+ */
+export function datasetHash(dataset: VerifiedDataset): string {
+  const list = (records: readonly TeamRecord[]): string[] => splitHashes(records).record_hashes;
+  return recordHash({
+    manifest_hash: recordHash(dataset.manifest),
+    splits: { dev: list(dataset.splits.dev), validation: list(dataset.splits.validation), training: list(dataset.training ?? []) },
+  } as never);
+}
+
 /** The positional `team_hash` of every team a verified dataset holds: the teams that are synthetic by source. */
 export function datasetSyntheticHashes(datasets: readonly VerifiedDataset[]): SyntheticTeamHashes {
   return syntheticTeamHashes(datasets.flatMap((d) => [...COMMITTED_SPLITS.flatMap((split) => d.splits[split]), ...(d.training ?? [])].map((r) => r.team_hash)));

@@ -10,6 +10,7 @@ import {
   readTrainingRunConfig,
   stampTeam,
   importPaste,
+  jcs,
   resolveFormat,
   teamHash,
   type TrainingRunConfig,
@@ -21,6 +22,7 @@ import { writeDataset } from "../src/dataset-io.ts";
 import { DATASETS_DIR, loadFixtureInputs, readFixtureRun, recordedPilot } from "../src/fixtures.ts";
 import { generate } from "../src/generate.ts";
 import { KnownHashes, referencePoolHash } from "../src/dedupe.ts";
+import { verifiedDatasetHash } from "../src/dataset-hash.ts";
 import { datasetPoolSource, datasetTeamPool } from "../src/loop-pool.ts";
 import { engine, FORMAT } from "./support.ts";
 
@@ -39,20 +41,20 @@ const playedHash = (paste: string): string => {
   return teamHash(team);
 };
 const pastes = (file: string): string[] => readFileSync(file, "utf8").split("\n").filter((l) => l !== "").map((l) => JSON.parse(l).paste as string);
-const manifestHash = (dir: string): string => readDataset(dir, inputs).manifest_hash;
+const pinned = (dir: string): string => verifiedDatasetHash(engine, dir, FORMAT);
 const configFor = (dir: string, change: (c: Record<string, unknown>) => void = () => undefined): TrainingRunConfig => {
   const raw = structuredClone(tiny);
   (raw.generation as Record<string, unknown>).excluded_abilities = [];
-  raw.team_dataset = { path: dir, manifest_hash: manifestHash(dir) };
+  raw.team_dataset = { path: dir, dataset_hash: pinned(dir) };
   change(raw);
   return readTrainingRunConfig(raw);
 };
 
 /** The dataset directory `generate` writes (records.<split>.jsonl for dev, validation and training), made from the committed fixture run. */
-function generatedDataset(): string {
-  const dir = join(scratch, "generated");
+function generatedDataset(name = "generated", keys?: { generation_key: string; assignment_key: string }): string {
+  const dir = join(scratch, name);
   mkdirSync(dir);
-  const run = readFixtureRun(SOURCE);
+  const run = { ...readFixtureRun(SOURCE), ...keys };
   const result = generate({
     engine, format: inputs.format, table: inputs.table, vocabulary: inputs.vocabulary, labelSet: inputs.labelSet, config: inputs.config,
     generationKey: run.generation_key, assignmentKey: run.assignment_key, datasetId: run.dataset_id, planId: run.dataset_id, sizes: run.sizes,
@@ -93,8 +95,8 @@ describe("the committed fixtures as a team pool", () => {
   });
 
   it("refuses a dataset whose manifest is not the one the config names, or a config that names none", () => {
-    const wrong = readTrainingRunConfig({ ...tiny, team_dataset: { path: SOURCE, manifest_hash: "0".repeat(64) } });
-    expect(() => datasetTeamPool(engine, wrong)).toThrow(/manifest hash/);
+    const wrong = readTrainingRunConfig({ ...tiny, team_dataset: { path: SOURCE, dataset_hash: "0".repeat(64) } });
+    expect(() => datasetTeamPool(engine, wrong)).toThrow(/hash is not the one/);
     expect(() => datasetTeamPool(engine, readTrainingRunConfig(tiny))).toThrow(/names no team dataset/);
   });
 
@@ -106,7 +108,31 @@ describe("the committed fixtures as a team pool", () => {
     writeFileSync(join(dir, teamsFile("dev")), [first, ...dev.slice(1)].map((l) => `${l}\n`).join(""));
     expect(() => readDataset(dir, inputs)).toThrow();
     writeFileSync(join(dir, MANIFEST_FILE), "{}");
-    expect(() => datasetTeamPool(engine, readTrainingRunConfig({ ...tiny, team_dataset: { path: dir, manifest_hash: "0".repeat(64) } }))).toThrow();
+    expect(() => datasetTeamPool(engine, readTrainingRunConfig({ ...tiny, team_dataset: { path: dir, dataset_hash: "0".repeat(64) } }))).toThrow();
+  });
+
+  it("pins every record: a consistent forgery of one training line changes the dataset hash and is refused", () => {
+    // Swap one training team for another engine-legal team of the same stratum from a second dataset (other keys),
+    // under the first line's origin; every hash is the record's own, so the reader accepts the result.
+    const dir = generatedDataset("forged-training");
+    const file = join(dir, "records.training.jsonl");
+    const rows = readFileSync(file, "utf8").split("\n").filter((l) => l !== "");
+    const parsed = rows.map((r) => JSON.parse(r));
+    const stratumOf = (row: { labels: { value: string }[] }): string => row.labels.map((l) => l.value).join();
+    const known = new Set(parsed.map((r) => r.canonical_team_hash as string));
+    const elsewhere = generatedDataset("second", { generation_key: "1".repeat(64), assignment_key: "2".repeat(64) });
+    const others = readFileSync(join(elsewhere, "records.training.jsonl"), "utf8").split("\n").filter((l) => l !== "").map((l) => JSON.parse(l));
+    const target = parsed.findIndex((row) => others.some((r) => stratumOf(r) === stratumOf(row) && !known.has(r.canonical_team_hash)));
+    expect(target).toBeGreaterThanOrEqual(0);
+    const donor = others.find((r) => stratumOf(r) === stratumOf(parsed[target]) && !known.has(r.canonical_team_hash));
+    const swapped = rows.map((row, i) => (i === target ? jcs({ ...donor, origin: parsed[target].origin }) : row));
+    const honest = pinned(dir);
+    writeFileSync(file, swapped.map((r) => `${r}\n`).join(""));
+    expect(() => pinned(dir)).not.toThrow(); // the reader accepts the forgery: it is consistent
+    const stolen = pinned(dir);
+    expect(stolen).not.toBe(honest);
+    const config = readTrainingRunConfig({ ...tiny, team_dataset: { path: dir, dataset_hash: honest } });
+    expect(() => datasetTeamPool(engine, config)).toThrow(/hash is not the one/);
   });
 
   it("is the port's choice only when the config names a dataset", () => {

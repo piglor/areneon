@@ -29,7 +29,7 @@ import {
   type TrainingRunConfig,
   validateTeam,
 } from "@areneon/showdown-bridge";
-import { drawTrainingTeam, readDataset, trainingPool } from "./dataset-reader.ts";
+import { datasetHash, drawTrainingTeam, readDataset, trainingPool } from "./dataset-reader.ts";
 import { loadFixtureInputs } from "./fixtures.ts";
 
 /** The pool a run config's `team_dataset` names, sorted by team hash so an index names the same team everywhere. */
@@ -37,7 +37,7 @@ export function datasetTeamPool(engine: Engine, config: TrainingRunConfig): Gene
   const named = config.team_dataset;
   if (named === undefined) throw new GenerationError("the run config names no team dataset");
   const dataset = readDataset(named.path, loadFixtureInputs(engine, config.format_id));
-  if (dataset.manifest_hash !== named.manifest_hash) throw new GenerationError("the dataset's manifest hash is not the one the run config names");
+  if (datasetHash(dataset) !== named.dataset_hash) throw new GenerationError("the dataset's hash is not the one the run config names");
   const pool = trainingPool([dataset], engine);
   const format = resolveFormat(engine, config.format_id);
   const excluded = new Set(config.generation.excluded_abilities);

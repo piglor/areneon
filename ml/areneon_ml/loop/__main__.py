@@ -61,6 +61,10 @@ def _parser() -> argparse.ArgumentParser:
 
 def _run(args: argparse.Namespace) -> dict[str, object]:
     config = read_run_config(json.loads(args.config.read_text(encoding="utf-8")))
+    if config.run_key.startswith("CHANGE-ME"):
+        raise RunConfigError(
+            "seeds.run_key is still the CHANGE-ME placeholder: give the run its own name"
+        )
     game = GameData.from_table(json.loads(args.engine_data.read_text(encoding="utf-8")))
     player = NodePlayer(
         repo=REPO,

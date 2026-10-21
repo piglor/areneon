@@ -74,11 +74,24 @@ def test_run_prints_one_canonical_line_and_builds_the_node_player_from_its_flags
     assert kwargs["play_script"] == "packages/showdown-bridge/scripts/play-generation.ts"
 
 
+def test_a_placeholder_run_key_is_refused_before_anything_starts(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    built = fake_node(monkeypatch)
+    raw = tiny_config().raw
+    placeholder = {**raw, "seeds": {**raw["seeds"], "run_key": "CHANGE-ME-PER-RUN"}}
+    config = tmp_path / "placeholder.json"
+    config.write_text(json.dumps(placeholder))
+    assert main(run(config, tmp_path / "r", 1)) != 0
+    assert "CHANGE-ME" in capsys.readouterr().err
+    assert built == []
+
+
 def test_a_config_naming_a_team_dataset_starts_the_script_that_can_read_it(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     built = fake_node(monkeypatch)
-    named = {**tiny_config().raw, "team_dataset": {"path": "d", "manifest_hash": "a" * 64}}
+    named = {**tiny_config().raw, "team_dataset": {"path": "d", "dataset_hash": "a" * 64}}
     config = tmp_path / "named.json"
     config.write_text(json.dumps(named))
     main(

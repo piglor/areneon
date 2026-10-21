@@ -70,6 +70,7 @@ export async function runGenerationCli(
   const generation = Number(need("generation"));
   if (!Number.isInteger(generation) || generation < 1) throw new UsageError("--generation must be a positive integer");
   const config = readTrainingRunConfig(JSON.parse(readFileSync(need("config"), "utf8")));
+  if (config.seeds.run_key.startsWith("CHANGE-ME")) throw new UsageError("seeds.run_key is still the CHANGE-ME placeholder: give the run its own name");
   const engine = loadEngine(process.env.SHOWDOWN_DIR || undefined);
   const dataFile = need("engine-data");
   const dataHash = engineDataHash(readEngineData(JSON.parse(readFileSync(dataFile, "utf8"))));

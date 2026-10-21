@@ -52,12 +52,18 @@ describe("play-generation", () => {
   });
 
   it("refuses a config that names a team dataset instead of playing it on the interim pool", async () => {
-    const named = { ...tiny, team_dataset: { path: "somewhere", manifest_hash: "a".repeat(64) } };
+    const named = { ...tiny, team_dataset: { path: "somewhere", dataset_hash: "a".repeat(64) } };
     const file = join(dir, "named.json");
     writeFileSync(file, JSON.stringify(named));
     await expect(runGenerationCli(flags(file))).rejects.toThrow(/team-dataset\/scripts\/play-generation/);
     expect(() => interimPoolSource(loadEngine(), readTrainingRunConfig(named))).toThrow(UsageError);
     expect(interimPoolSource(loadEngine(), readTrainingRunConfig(tiny)).teams.length).toBeGreaterThan(60);
+  });
+
+  it("refuses a run_key that is still the CHANGE-ME placeholder", async () => {
+    const file = join(dir, "placeholder.json");
+    writeFileSync(file, JSON.stringify({ ...tiny, seeds: { ...(tiny.seeds as object), run_key: "CHANGE-ME-PER-RUN" } }));
+    await expect(runGenerationCli(flags(file))).rejects.toThrow(/CHANGE-ME/);
   });
 
   it("takes its teams from the pool source it is given", async () => {

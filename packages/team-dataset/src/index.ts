@@ -19,6 +19,7 @@ export {
   type CommittedSplit,
   type DatasetContext,
   DatasetReadError,
+  datasetHash,
   datasetSyntheticHashes,
   drawTrainingTeam,
   HASHES_FILE,
