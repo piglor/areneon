@@ -141,6 +141,8 @@ export class PolicyWorkerClient implements PolicyClient {
       child.once("close", () => clearTimeout(timer));
       this.#rejectReady = reject;
     });
+    // If the hello cannot be written, `ready` is never awaited: its later rejection is not unhandled.
+    ready.catch(() => undefined);
     child.stdout.on("data", (chunk: Buffer) => this.#read(chunk));
     child.stderr.on("data", (chunk: Buffer) => {
       this.#stderr = (this.#stderr + chunk.toString("utf8")).slice(-STDERR_TAIL);
