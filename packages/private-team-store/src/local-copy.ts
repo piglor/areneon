@@ -35,10 +35,21 @@ function syncDirectory(path: string): void {
   }
 }
 
-/** Create `dir` (mode 0700) if it is not there; the parent must already exist. */
+const PRIVATE_DATA_SEGMENT = /(^|\/)private-data(\/|$)/;
+const SNAPSHOT_HASH = /^[0-9a-f]{64}$/;
+
+/**
+ * Create `dir` (mode 0700) if it is not there; the parent must already exist.
+ * A missing directory is created only under a `private-data` path, so a
+ * refused location (which `assertWorkDir` would reject afterwards) is never
+ * left behind. An existing directory is left for `assertWorkDir` to judge.
+ */
 export function ensurePrivateDirectory(dir: string): void {
   try {
-    if (!existsSync(dir)) mkdirSync(dir, { mode: 0o700 });
+    if (!existsSync(dir)) {
+      if (!PRIVATE_DATA_SEGMENT.test(dir)) throw new SnapshotIoError("work_dir_unsafe");
+      mkdirSync(dir, { mode: 0o700 });
+    }
   } catch {
     throw new SnapshotIoError("work_dir_unsafe");
   }
@@ -46,6 +57,7 @@ export function ensurePrivateDirectory(dir: string): void {
 
 /** Refuse early (before anything is uploaded) if the local copy cannot be made: unsafe directory or a copy that exists. */
 export function checkLocalCopyTarget(snapshotsDir: string, snapshotHash: string): string {
+  if (!SNAPSHOT_HASH.test(snapshotHash)) throw new SnapshotIoError("local_copy_failed");
   ensurePrivateDirectory(snapshotsDir);
   const root = assertWorkDir(snapshotsDir);
   if (existsSync(join(root, snapshotHash))) throw new SnapshotIoError("local_copy_exists");
