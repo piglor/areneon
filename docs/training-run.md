@@ -44,7 +44,10 @@ node packages/team-dataset/scripts/dataset-hash.ts --dir .tmp/datasets/train-v1 
 
 `config/training/public-gpu16.json` is sized for a 16 GB GPU (6 layers of width
 256, 256 self-play games and 64 games against each scripted baseline per
-generation, 8 games in parallel). Copy it, then change:
+generation, 8 games in parallel). The encoder holds up to 8 moves per Pokémon
+(`max_moves`), because Mimic, Sketch and Transform can show a Pokémon more moves
+than its set holds; it refuses a Pokémon that shows more than `max_moves`, so a
+run fails closed rather than dropping a move. Copy it, then change:
 
 - `seeds.run_key`: a fresh name for every run (it names the battle seeds, the
   team draws and each Episode's collection record);
