@@ -21,7 +21,7 @@
 //     validator.
 //
 // Nothing in a refusal or in the summary is taken from an input (see
-// import-error.ts); the summary holds four counts.
+// import-error.ts); the summary holds five counts.
 
 import {
   canonicalTeamHash,
