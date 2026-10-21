@@ -1,0 +1,69 @@
+/* The replay board (ADR-017 section 4b). Plain CSS, no image, no font file; one hashed style block. */
+.controls{display:flex;flex-wrap:wrap;gap:6px 8px;align-items:center;margin:8px 0;position:sticky;top:0;background:var(--bg);padding:6px 0;z-index:1}
+.controls button,.controls select{font:inherit;color:var(--fg);background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:4px 10px;min-height:32px}
+.controls button{cursor:pointer;min-width:38px}
+.controls input[type=range]{flex:1 1 160px;min-width:120px}
+.views{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,420px),1fr));gap:12px}
+.viewpanel[hidden]{display:none}
+.viewpanel{min-width:0}
+.viewpanel h2{font-size:1rem;margin:8px 0 4px;overflow-wrap:anywhere}
+svg.board{width:100%;height:auto;display:block;border-radius:10px}
+svg.board .bg{fill:var(--panel);stroke:var(--line)}
+svg.board .mid{stroke:var(--line);stroke-dasharray:4 4}
+svg.board text{fill:var(--fg);font:12px system-ui,sans-serif}
+svg.board .who,svg.board .turn{fill:var(--muted);font-size:12px}
+svg.board .nm{font-weight:700;font-size:14px}
+svg.board .lv,svg.board .hpt,svg.board .chips{fill:var(--muted);font-size:11px}
+svg.board .hptrack{fill:var(--line)}
+svg.board .hp-g{fill:#3aa655}svg.board .hp-y{fill:#d8a521}svg.board .hp-r{fill:#d03b3b}
+svg.board .slot.empty{opacity:.25}
+svg.board .slot.empty .hptrack{display:none}
+svg.board .slot.fainted{opacity:.5;filter:grayscale(1)}
+svg.board .ring{fill:none;stroke:var(--fg);stroke-opacity:.35;stroke-width:1.5}
+svg.board .blank{fill:none;stroke:var(--muted);stroke-dasharray:3 3}
+svg.board .tk{fill:var(--muted)}
+svg.board .status{font-weight:700;font-size:11px;fill:var(--bad)}
+svg.board .status.st-none{fill:none}
+svg.board .benchmon.fainted{opacity:.4;filter:grayscale(1)}
+svg.board .badge rect{fill:var(--bg);stroke:var(--line)}
+svg.board .badge.weather rect{stroke:var(--s1)}svg.board .badge.terrain rect{stroke:var(--good)}
+svg.board .badge.field rect{stroke:var(--s2)}svg.board .badge.side rect{stroke:var(--muted)}
+svg.board .badge text{font-size:11px}
+.caption{margin:6px 0;padding:6px 10px;border-left:4px solid var(--s1);background:var(--panel);min-height:2.2em}
+.caption.flagged,.line.flagged{border-left-color:var(--bad);color:var(--bad)}
+.flagnote{color:var(--bad);margin:2px 0;font-size:13px}
+.notes .note{background:var(--panel);padding:6px 10px;border-radius:6px}
+.decision h3,.decisionbox h3{font-size:.95rem;margin:6px 0}
+.decision h4{margin:6px 0 2px;font-size:.9rem}
+.chosen-line{font-weight:600;margin:2px 0;overflow-wrap:anywhere}
+ul.opts,ol.opts{list-style:none;margin:2px 0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:4px}
+.opt{border:1px solid var(--line);border-radius:6px;padding:2px 8px;font-size:13px}
+.opt.chosen{border-color:var(--good);background:var(--panel);font-weight:700;box-shadow:inset 4px 0 0 var(--good)}
+.opt.disabled{opacity:.5}
+.log{max-height:260px;overflow:auto;border:1px solid var(--line);border-radius:6px;padding:4px 8px;font-size:13px}
+.log.raw{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;white-space:pre-wrap;overflow-wrap:anywhere}
+.line{padding:1px 0 1px 6px;border-left:3px solid transparent}
+.line.future{opacity:.35}.line.cur{border-left-color:var(--s1);font-weight:700}
+.set{font-size:13px;margin:2px 0}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+@media print{.controls{display:none}}
+svg.board .ty-bug{fill:#a6b91a}
+svg.board .ty-dark{fill:#4f3a2d}
+svg.board .ty-dragon{fill:#6f35fc}
+svg.board .ty-electric{fill:#f7d02c}
+svg.board .ty-fairy{fill:#d685ad}
+svg.board .ty-fighting{fill:#c22e28}
+svg.board .ty-fire{fill:#ee8130}
+svg.board .ty-flying{fill:#a98ff3}
+svg.board .ty-ghost{fill:#735797}
+svg.board .ty-grass{fill:#7ac74c}
+svg.board .ty-ground{fill:#e2bf65}
+svg.board .ty-ice{fill:#96d9d6}
+svg.board .ty-normal{fill:#a8a77a}
+svg.board .ty-poison{fill:#a33ea1}
+svg.board .ty-psychic{fill:#f95587}
+svg.board .ty-rock{fill:#b6a136}
+svg.board .ty-steel{fill:#b7b7ce}
+svg.board .ty-stellar{fill:#40b5a5}
+svg.board .ty-water{fill:#6390f0}
+svg.board .ty-unknown{fill:#8a8a85}

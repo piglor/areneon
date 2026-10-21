@@ -4,6 +4,7 @@
   committed. A directory with committed generations is resumed from the last one; an
   unfinished generation is discarded and replayed. Prints one JCS JSON line.
 * ``inspect``: write the training-data inspector's static pages (teams and games) for a run.
+* ``replay``: write graphical replay pages of training games (each game's two own channels).
 * ``provenance``: write the run's CheckpointRecords and its sources registry into a
   directory, ready for ``python -m areneon_ml.checkpoint classify|independent``.
 * ``progress``: the progress evaluation of a committed generation (ADR-017): its frozen pair
@@ -30,6 +31,7 @@ from areneon_ml.checkpoint.provenance import ProvenanceError
 from areneon_ml.checkpoint.record import RecordError
 from areneon_ml.inspector.command import inspect_run
 from areneon_ml.inspector.readers import InspectError
+from areneon_ml.inspector.replay_command import Selection, parse_games, replay_games
 from areneon_ml.learner.config import RunConfigError, read_run_config
 from areneon_ml.learner.data import LearnerDataError
 from areneon_ml.learner.state import LearnerStateError
@@ -95,6 +97,19 @@ def _parser() -> argparse.ArgumentParser:
     progress.add_argument("--engine-data", type=Path, required=True)
     progress.add_argument("--node", default="node", help="the node executable")
     progress.add_argument("--worker-python", default=sys.executable, help="CPU torch worker python")
+    replay = commands.add_parser(
+        "replay", help="write replay pages of training games under <out>/replays/"
+    )
+    replay.add_argument("--run-dir", type=Path, required=True)
+    replay.add_argument("--generation", type=int, required=True)
+    replay.add_argument(
+        "--game",
+        help="game numbers, e.g. 3 or 2,5-7 (default: every played game of the generation)",
+    )
+    replay.add_argument("--out", type=Path, help="default: <run-dir>.inspect/, beside the run")
+    replay.add_argument(
+        "--engine-data", type=Path, help="default: the committed export for the run's format"
+    )
     return parser
 
 
@@ -157,6 +172,14 @@ def main(argv: list[str] | None = None) -> int:
             out = inspect_run(args.run_dir, args.out, repo=REPO, node=args.node)
         elif args.command == "progress":
             out = _progress(args)
+        elif args.command == "replay":
+            out = replay_games(
+                args.run_dir,
+                args.out,
+                Selection(args.generation, parse_games(args.game)),
+                repo=REPO,
+                engine_data=args.engine_data,
+            )
         else:
             out = {"sources_hash": export_provenance(args.run_dir, args.out)}
     except PlayError as exc:

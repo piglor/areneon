@@ -22,7 +22,7 @@ import hashlib
 import html
 import json
 import re
-from typing import Any
+from typing import Any, NamedTuple
 
 _LINK_ID = re.compile(r"[a-z0-9_-]+")
 
@@ -128,24 +128,47 @@ def sha256_source(text: str) -> str:
     )
 
 
-def csp() -> str:
+def csp(script: str = SCRIPT, style: str = STYLE) -> str:
     return (
-        f"default-src 'none'; script-src {sha256_source(SCRIPT)}; style-src {sha256_source(STYLE)}; "
+        f"default-src 'none'; script-src {sha256_source(script)}; style-src {sha256_source(style)}; "
         "img-src 'none'; base-uri 'none'; form-action 'none'"
     )
 
 
-def document(
-    title: str, nav: str, body: str, data: dict[str, Any] | None = None, footer: str = ""
+class Shell(NamedTuple):
+    """What a page carries besides its content: its one script, its one style block, its data id."""
+
+    script: str = SCRIPT
+    style: str = STYLE
+    data_id: str = "page-data"
+
+
+def document(  # noqa: PLR0913  (the shell is one extra, optional argument)
+    title: str,
+    nav: str,
+    body: str,
+    data: dict[str, Any] | None = None,
+    footer: str = "",
+    *,
+    shell: Shell = Shell(),  # noqa: B008  (an immutable NamedTuple)
 ) -> str:
-    """One page. ``nav``, ``body`` and ``footer`` are HTML the caller built with ``esc``."""
-    block = json_block(data) if data is not None else ""
+    """One page. ``nav``, ``body`` and ``footer`` are HTML the caller built with ``esc``.
+
+    ``script`` and ``style`` are the page's one script and one style block (our code, no data in
+    either); the CSP names exactly their hashes. A page with its own pair (the replay page) passes
+    them here, so the shell, the escaping and the policy stay this module's.
+    """
+    script, style, data_id = shell
+    for text, end in ((script, "</script"), (style, "</style")):
+        if end in text.lower() or "<!--" in text:
+            raise ValueError("a script or style block must not hold a closing tag or a comment")
+    block = json_block(data, data_id) if data is not None else ""
     return (
         '<!doctype html>\n<html lang="en">\n<head>\n'
-        f'<meta http-equiv="Content-Security-Policy" content="{esc(csp())}">\n'
+        f'<meta http-equiv="Content-Security-Policy" content="{esc(csp(script, style))}">\n'
         '<meta charset="utf-8">\n'
         '<meta name="viewport" content="width=device-width, initial-scale=1">\n'
-        f"<title>{esc(title)}</title>\n<style>{STYLE}</style>\n</head>\n<body>\n"
+        f"<title>{esc(title)}</title>\n<style>{style}</style>\n</head>\n<body>\n"
         f'<header class="top"><nav>{nav}</nav></header>\n<main>\n{body}\n</main>\n'
-        f"<footer>{footer}</footer>\n{block}\n<script>{SCRIPT}</script>\n</body>\n</html>\n"
+        f"<footer>{footer}</footer>\n{block}\n<script>{script}</script>\n</body>\n</html>\n"
     )
