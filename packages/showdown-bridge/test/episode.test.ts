@@ -291,7 +291,8 @@ describe("readEpisode", () => {
     // Connection 1 ends at the third request; the rejoin replays the room log and sends that request again.
     const before = withRqids(lines.slice(0, cut + 1));
     const again = before.at(-1) as string;
-    const rest = lines.slice(cut + 1).map((line) => (line.startsWith("|request|") ? `|request|${JSON.stringify({ ...JSON.parse(line.slice(9)), rqid: 99 })}` : line));
+    let next = 99;
+    const rest = lines.slice(cut + 1).map((line) => (line.startsWith("|request|") ? `|request|${JSON.stringify({ ...JSON.parse(line.slice(9)), rqid: ++next })}` : line));
     const rejoin = [...before.slice(0, -1).filter((line) => !line.startsWith("|request|")), again, ...rest];
     const joined = continueChannel(wrap(before), wrap(rejoin)).lines;
     expect(joined.filter((line) => !line.startsWith("|request|"))).toEqual(lines.filter((line) => !line.startsWith("|request|")));

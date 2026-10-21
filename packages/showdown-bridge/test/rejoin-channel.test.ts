@@ -105,4 +105,40 @@ describe("continueChannel", () => {
     const seen = new Set([...earlier.lines, ...rejoin.lines]);
     expect(continueChannel(earlier, rejoin).lines.every((line) => seen.has(line))).toBe(true);
   });
+
+  it("refuses a player-alone line of the rejoin that sits inside the room log the player already had", () => {
+    const earlier = channel(all.slice(0, at(3) + 1));
+    const replay = replayOf(at(3));
+    const inside = [...replay.slice(0, 2), request(2), ...replay.slice(2), request(3)];
+    expect(() => continueChannel(earlier, channel(inside))).toThrow(/inside the room log/);
+    const error = [...replay.slice(0, 2), "|error|[Invalid choice] forged", ...replay.slice(2), request(3)];
+    expect(() => continueChannel(earlier, channel(error))).toThrow(/inside the room log/);
+  });
+
+  it("refuses a stray old request placed before the re-sent one", () => {
+    const earlier = channel(all.slice(0, at(3) + 1));
+    expect(() => continueChannel(earlier, channel([...replayOf(at(3)), request(1), request(3)]))).toThrow(/rise strictly/);
+  });
+
+  it("refuses a re-sent request with the same body and another rqid, and one without an rqid", () => {
+    const earlier = channel(all.slice(0, at(3) + 1));
+    const other = REQUEST + JSON.stringify({ ...JSON.parse(request(3).slice(REQUEST.length)), rqid: 50 });
+    expect(() => continueChannel(earlier, channel([...replayOf(at(3)), other]))).toThrow(/another rqid/);
+    const none = REQUEST + JSON.stringify({ ...JSON.parse(request(3).slice(REQUEST.length)), rqid: undefined });
+    expect(() => continueChannel(earlier, channel([...replayOf(at(3)), none]))).toThrow(/another rqid/);
+  });
+
+  it("refuses rqids that do not rise strictly across the joined requests", () => {
+    const earlier = channel(all.slice(0, at(2) + 1));
+    const back = REQUEST + JSON.stringify({ ...JSON.parse(request(3).slice(REQUEST.length)), rqid: 1 });
+    expect(() => continueChannel(earlier, channel([...replayOf(at(3)), back]))).toThrow(/rise strictly/);
+    const same = REQUEST + JSON.stringify({ ...JSON.parse(request(3).slice(REQUEST.length)), rqid: 2 });
+    expect(() => continueChannel(earlier, channel([...replayOf(at(3)), same]))).toThrow(/rise strictly/);
+  });
+
+  it("refuses requests that carry no rqid at all", () => {
+    const bare = (k: number): string => REQUEST + JSON.stringify({ ...JSON.parse(request(k).slice(REQUEST.length)), rqid: undefined });
+    const earlier = channel([...all.slice(0, at(2)), bare(2)]);
+    expect(() => continueChannel(earlier, channel([...replayOf(at(3)), request(3)]))).toThrow(/rise strictly/);
+  });
 });

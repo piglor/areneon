@@ -267,7 +267,8 @@ describe("A1/A2 equality (ADR-005 gate 3)", () => {
         expect(broken.differences.length).toBeGreaterThan(0);
         // The extra request line is one more channel line than A1's channel has.
         expect(stripBypassNoticed(broken.differences)).toBe(true);
-        expect(broken.differences.some((d) => d.includes("channel line"))).toBe(true);
+        // Either the channel has the extra line, or (in a seat that reconnected) the join refuses the repeated rqid.
+        expect(broken.differences.some((d) => d.includes("channel line") || d.includes("refused the frames"))).toBe(true);
       });
 
       it("fails when the stripServerLines call is bypassed", async () => {
@@ -346,7 +347,7 @@ describe.each(reconnecting)("a real reconnect: %s", (path) => {
     const fixture = readFixture(path);
     const seat = seatOf(fixture);
     const { differences } = await compareA1A2(engine, snapshot, fixture, brokenRejoin());
-    expect(differences.some((d) => d.startsWith(`${seat} connection 2 channel line`))).toBe(true);
+    expect(differences.some((d) => d.startsWith(`${seat} connection 2 channel line`) || d.startsWith(`${seat}: the A2 adapter refused the frames`))).toBe(true);
   });
 
   it("fails for a no-dedupe adapter when the server also re-sends the request within the rejoin connection", async () => {
@@ -357,7 +358,9 @@ describe.each(reconnecting)("a real reconnect: %s", (path) => {
     expect(real.differences).toEqual([]);
     expect(real.resent[seat]).toBe(1);
     const broken = await compareA1A2(engine, snapshot, fixture, noDedupe);
-    expect(broken.differences.some((d) => d.startsWith(`${seat} connection 2 channel line`))).toBe(true);
+    expect(
+      broken.differences.some((d) => d.startsWith(`${seat} connection 2 channel line`) || d.startsWith(`${seat}: the A2 adapter refused the frames`)),
+    ).toBe(true);
   });
 
   it("rejects a rejoin whose replayed log lost a line, and one whose re-sent request is another", async () => {
@@ -380,10 +383,10 @@ describe.each(reconnecting)("a real reconnect: %s", (path) => {
       false,
       1,
     );
-    // Not the same request any more (the hash differs), so it is a new one: one request too many.
+    // Not the same request any more (the hash differs), so it is a new one with the earlier request's rqid:
+    // the join refuses it (rqid must rise), so the adapter refuses the frames.
     const second = await compareA1A2(engine, snapshot, other);
-    expect(second.differences.some((d) => d.includes("requests, A1 sent"))).toBe(true);
-    expect(second.differences.some((d) => d.includes("request_hash"))).toBe(true);
+    expect(second.differences.some((d) => d.startsWith(`${seat}: the A2 adapter refused the frames`))).toBe(true);
   });
 
   it("rejects a second connection that does not start at an |init|battle", async () => {
@@ -402,7 +405,7 @@ describe.each(reconnecting)("a real reconnect: %s", (path) => {
     await expect(verifyHarnessFixture(engine, clone(path))).resolves.toBeUndefined();
     editLine(fixture, seat, (l) => l.startsWith("|request|"), (l) => l.replace(/"rqid":\d+/, '"rqid":1'), false, 1);
     const { differences } = await compareA1A2(engine, snapshot, fixture);
-    expect(differences.some((d) => d.includes("does not follow"))).toBe(true);
+    expect(differences.some((d) => d.includes("does not follow") || d.includes("refused the frames"))).toBe(true);
     await expect(verifyHarnessFixture(engine, fixture)).rejects.toThrow(/connection 2 starts with a request older than/);
   });
 
