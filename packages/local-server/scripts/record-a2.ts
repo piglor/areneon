@@ -1,12 +1,12 @@
 // Record the synthetic bot-vs-bot fixtures of fixtures/a2/ (ADR-005 §5):
 //   node packages/local-server/scripts/record-a2.ts [--out DIR] [--runtime-root DIR] [--port N] [--only FILE]
 // Pure wiring: the real engine, launcher and files; see fixtures/a2/README.md.
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { importPaste, loadEngine, loadRulesSnapshot } from "@areneon/showdown-bridge";
 import { createRuntimeCopy } from "../src/index.ts";
-import { launchHarness, ReconnectNotPlannedError, recordHarnessBattle } from "../src/harness.ts";
+import { launchHarness, ReconnectNotPlannedError, recordHarnessBattle, withPlayedForms } from "../src/harness.ts";
 import { FIXTURE_FORMAT, RECORDINGS, recordingProvenance } from "../src/recordings.ts";
 
 const REPO = fileURLToPath(new URL("../../../", import.meta.url));
@@ -19,6 +19,15 @@ const only = flag("--only");
 const out = flag("--out") ?? join(REPO, "fixtures", "a2", FIXTURE_FORMAT);
 const engine = loadEngine();
 const snapshot = loadRulesSnapshot(engine.commit);
+// The synthetic teams there are: every committed paste fixture. A recording of any other team is refused.
+const TEAM_DIR = join(REPO, "fixtures", "teams", FIXTURE_FORMAT);
+const known_synthetic = withPlayedForms(
+  engine,
+  FIXTURE_FORMAT,
+  readdirSync(TEAM_DIR)
+    .filter((file) => file.endsWith(".txt"))
+    .map((file) => importPaste(engine, readFileSync(join(TEAM_DIR, file), "utf8"))),
+);
 const team = (file: string) => importPaste(engine, readFileSync(join(REPO, "fixtures", "teams", FIXTURE_FORMAT, file), "utf8"));
 
 const root = flag("--runtime-root");
@@ -41,6 +50,7 @@ async function play(recording: (typeof RECORDINGS)[number]) {
       names: recording.names,
       teams: { sparring: team(recording.teams.sparring), challenger: team(recording.teams.challenger) },
       teamLabels: recording.teams,
+      known_synthetic,
       provenance: recordingProvenance(engine.commit, recording.drop),
       ...(recording.drop === undefined ? {} : { drop: recording.drop }),
     });

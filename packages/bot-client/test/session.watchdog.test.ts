@@ -61,7 +61,6 @@ async function start(options: Partial<A2BotOptions> = {}): Promise<Run> {
     challenger: "Sparring Human",
     format: FORMAT,
     team: fixtureTeam("legal-synthetic.txt"),
-    data_class: "synthetic",
     battles: 1,
     clock: () => now,
     reconnect: { attempts: 2, delayMs: 5 },

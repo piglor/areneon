@@ -80,7 +80,6 @@ async function start(options: Partial<A2BotOptions> = {}): Promise<Run> {
     challenger: HUMAN,
     format: FORMAT,
     team: own,
-    data_class: "synthetic",
     battles: 1,
     clock: () => now,
     reconnect: { attempts: 2, delayMs: 5 },
@@ -190,7 +189,6 @@ function base(): A2BotOptions {
     challenger: HUMAN,
     format: FORMAT,
     team: own,
-    data_class: "synthetic",
     connect: async () => memoryTransport(),
   };
 }

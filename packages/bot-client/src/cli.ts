@@ -39,7 +39,7 @@ export interface CliDeps {
   stderr(line: string): void;
 }
 
-export const USAGE = `usage: a2-bot --challenger NAME --team PASTE [--data-class private|synthetic]
+export const USAGE = `usage: a2-bot --challenger NAME --team PASTE
               [--format ID] [--port N] [--runtime-root DIR] [--out DIR]
 
 Starts the pinned Showdown server on 127.0.0.1 and the A2 sparring bot on it.
@@ -49,13 +49,13 @@ Each battle, finished or not, is stored as one JSON record (the bot's own
 channel and decisions) in --out, default private-data/a2 (mode 0700, files
 0600). A battle that finished cleanly is also stored as the bot's own Episode
 (<room>-<time>.episode.json). A sparring Episode is always private, so it goes
-to private-data/a2, whatever --out says. An --out inside the checkout is refused unless --data-class is
-synthetic. A record of a battle that ended in an Open Team Sheets failure
-(ots_failure), a forfeited decline, or a fatal error may hold the human's
+to private-data/a2, whatever --out says. The bot cannot see the human's team, so
+every record is private (a class is proven from team hashes, never given): an
+--out inside the checkout is refused. A record of a battle that ended in an Open
+Team Sheets failure (ots_failure), a forfeited decline, or a fatal error may hold the human's
 accepted team sheet, so it is only ever written under private-data/, whatever
 --out says.`;
 
-const DATA_CLASSES: readonly string[] = ["private", "synthetic"];
 /** A Showdown battle room id; the only shape of `record.room` that may go into a file name. */
 const BATTLE_ROOM = /^battle-[a-z0-9-]+$/;
 
@@ -98,7 +98,6 @@ export async function runCli(argv: string[], deps: CliDeps): Promise<number> {
       options: {
         challenger: { type: "string" },
         team: { type: "string" },
-        "data-class": { type: "string", default: "private" },
         format: { type: "string" },
         port: { type: "string", default: "8000" },
         "runtime-root": { type: "string" },
@@ -110,7 +109,7 @@ export async function runCli(argv: string[], deps: CliDeps): Promise<number> {
     deps.stderr(`${(error as Error).message}\n${USAGE}`);
     return 2;
   }
-  const { challenger, team: teamPath, "data-class": dataClass, port: portText } = values;
+  const { challenger, team: teamPath, port: portText } = values;
   const formats = Object.keys(deps.snapshot.formats);
   const format = values.format ?? (formats.length === 1 ? formats[0] : undefined);
   const port = Number(portText);
@@ -118,15 +117,13 @@ export async function runCli(argv: string[], deps: CliDeps): Promise<number> {
   const problem =
     challenger === undefined || teamPath === undefined
       ? "--challenger and --team are required"
-      : !DATA_CLASSES.includes(dataClass)
-        ? `--data-class must be private or synthetic, not ${dataClass}`
-        : !Number.isInteger(port) || port < 1 || port > 65535
-          ? `--port must be an integer from 1 to 65535, not ${portText}`
-          : format === undefined
-            ? `--format is required: the rules snapshot has ${formats.length} formats`
-            : within(deps.repoRoot, out) && !within(deps.privateDataDir, out) && dataClass !== "synthetic"
-              ? `--out ${out} is inside the checkout: records of a ${dataClass} team go under private-data/ only`
-              : undefined;
+      : !Number.isInteger(port) || port < 1 || port > 65535
+        ? `--port must be an integer from 1 to 65535, not ${portText}`
+        : format === undefined
+          ? `--format is required: the rules snapshot has ${formats.length} formats`
+          : within(deps.repoRoot, out) && !within(deps.privateDataDir, out)
+            ? `--out ${out} is inside the checkout: records of a private battle go under private-data/ only`
+            : undefined;
   if (problem !== undefined) {
     deps.stderr(`${problem}\n${USAGE}`);
     return 2;
@@ -233,7 +230,6 @@ export async function runCli(argv: string[], deps: CliDeps): Promise<number> {
       challenger: challenger as string,
       format: format as string,
       team,
-      data_class: dataClass as A2BotOptions["data_class"],
       mode: "live_match",
       signal: controller.signal,
       onLog: (entry: SessionLog) => deps.stdout(json(operatorLog(entry))),

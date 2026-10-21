@@ -1,6 +1,6 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { enumerateCandidates, loadEngine, loadRulesSnapshot, resolveFormat } from "@areneon/showdown-bridge";
+import { enumerateCandidates, loadEngine, loadRulesSnapshot, resolveFormat, teamHash } from "@areneon/showdown-bridge";
 import type { PokemonSet } from "@areneon/showdown-bridge";
 import type { A2BattleRecord } from "@areneon/bot-client";
 import { describe, expect, it, vi } from "vitest";
@@ -26,10 +26,11 @@ import {
 } from "../src/harness.ts";
 import { renderServerConfig, serverSettings } from "../src/index.ts";
 import { FIXTURE_FORMAT, RECORDINGS, recordingProvenance } from "../src/recordings.ts";
-import { COMMITTED, stored } from "./harness-fixtures.ts";
+import { COMMITTED, fixtureTeamHashes, stored } from "./harness-fixtures.ts";
 import { tempDir } from "./helpers.ts";
 
 const engine = loadEngine();
+const known = fixtureTeamHashes(engine);
 const snapshot = loadRulesSnapshot(engine.commit);
 const clone = (fixture: HarnessFixture): HarnessFixture => structuredClone(fixture);
 
@@ -132,7 +133,7 @@ const reconnectSeats = (fixture: HarnessFixture): ("p1" | "p2")[] =>
 
 describe.each(COMMITTED)("the committed fixture $recording.file", ({ recording, fixture }) => {
   it("passes verification on the pinned engine, with no server", async () => {
-    await expect(verifyHarnessFixture(engine, fixture)).resolves.toBeUndefined();
+    await expect(verifyHarnessFixture(engine, fixture, known)).resolves.toBeUndefined();
   });
 
   it("is synthetic CC0 for the pinned format, recorded for the documented bots and teams", () => {
@@ -199,19 +200,19 @@ describe.each(COMMITTED)("the committed fixture $recording.file", ({ recording, 
     for (const secret of [foeRequest, "|split|p2", `|showteam|p2|${fixture.served_teams.p2[0]?.species}`]) {
       const copy = clone(fixture);
       (copy.channels.p1[0] as (typeof fixture.channels.p1)[0]).lines.splice(10, 0, secret);
-      await expect(verifyHarnessFixture(engine, copy), secret.slice(0, 30)).rejects.toThrow();
+      await expect(verifyHarnessFixture(engine, copy, known), secret.slice(0, 30)).rejects.toThrow();
     }
     // And the untouched fixture passes, so the refusals above are the secret's doing.
-    await expect(verifyHarnessFixture(engine, fixture)).resolves.toBeUndefined();
+    await expect(verifyHarnessFixture(engine, fixture, known)).resolves.toBeUndefined();
   });
 
   it("refuses each way it can be wrong", async () => {
     // The untouched copy is accepted, so each refusal below is the change's doing and nothing else's.
-    await expect(verifyHarnessFixture(engine, clone(fixture))).resolves.toBeUndefined();
+    await expect(verifyHarnessFixture(engine, clone(fixture), known)).resolves.toBeUndefined();
     const refused = async (change: (f: HarnessFixture) => void, reason: string | RegExp): Promise<void> => {
       const copy = clone(fixture);
       change(copy);
-      await expect(verifyHarnessFixture(engine, copy)).rejects.toThrow(reason);
+      await expect(verifyHarnessFixture(engine, copy, known)).rejects.toThrow(reason);
     };
     const channel = (f: HarnessFixture, seat: "p1" | "p2", c = 0) => f.channels[seat][c] as (typeof f.channels.p1)[0];
     await refused((f) => ((f as { schema_version: number }).schema_version = 1), "schema_version 1 is not 2 or 3");
@@ -257,7 +258,7 @@ describe.each(COMMITTED)("the committed fixture $recording.file", ({ recording, 
         expect(fixture.channels[seat][c]?.lines.some((line) => line.startsWith("|j|"))).toBe(false);
         // Only the seat's own stream: its requests, no team sheet, no split marker, no clock.
         expect(raw).not.toMatch(/\|showteam\||\|split\||\|t:\|(?!0\b)/);
-        const built = channelFromFrames(frames, fixture.room, seat);
+        const built = channelFromFrames(frames, fixture.room, seat, fixture.data_class);
         expect(built.channel).toEqual(fixture.channels[seat][c]);
         expect(built.dropped).toEqual([]);
         expect(built.requests).toBe(fixture.channels[seat][c]?.lines.filter((line) => line.startsWith("|request|")).length);
@@ -268,11 +269,11 @@ describe.each(COMMITTED)("the committed fixture $recording.file", ({ recording, 
 
   it("refuses frames that are malformed, not its own, clocked or not what the channel is", async () => {
     // The untouched copy is accepted, so each refusal below is the change's doing and nothing else's.
-    await expect(verifyHarnessFixture(engine, clone(fixture))).resolves.toBeUndefined();
+    await expect(verifyHarnessFixture(engine, clone(fixture), known)).resolves.toBeUndefined();
     const refused = async (change: (f: HarnessFixture) => void, reason: string | RegExp): Promise<void> => {
       const copy = clone(fixture);
       change(copy);
-      await expect(verifyHarnessFixture(engine, copy)).rejects.toThrow(reason);
+      await expect(verifyHarnessFixture(engine, copy, known)).rejects.toThrow(reason);
     };
     const first = (f: HarnessFixture, seat: "p1" | "p2") => f.frames[seat][0] as string[];
     const at = (f: HarnessFixture, seat: "p1" | "p2", prefix: string): number =>
@@ -309,11 +310,11 @@ describe.each(COMMITTED)("the committed fixture $recording.file", ({ recording, 
 
   it("refuses a seat whose connections and channels do not pair up, or whose later connection is wrong", async () => {
     // The untouched copy is accepted, so each refusal below is the change's doing and nothing else's.
-    await expect(verifyHarnessFixture(engine, clone(fixture))).resolves.toBeUndefined();
+    await expect(verifyHarnessFixture(engine, clone(fixture), known)).resolves.toBeUndefined();
     const refused = async (change: (f: HarnessFixture) => void, reason: string | RegExp): Promise<void> => {
       const copy = clone(fixture);
       change(copy);
-      await expect(verifyHarnessFixture(engine, copy)).rejects.toThrow(reason);
+      await expect(verifyHarnessFixture(engine, copy, known)).rejects.toThrow(reason);
     };
     // A second connection's frames without a channel for it: the stored channels are one short.
     const single = reconnectSeats(fixture).includes("p1") ? "p2" : "p1";
@@ -370,12 +371,12 @@ describe("schema versions", () => {
   });
 
   it("checks a version 2 fixture as its upgrade, and hands a version 3 one back as it is", async () => {
-    await expect(verifyHarnessFixture(engine, raw)).resolves.toBeUndefined();
+    await expect(verifyHarnessFixture(engine, raw, known)).resolves.toBeUndefined();
     const v3 = upgradeFixture(raw);
     expect(upgradeFixture(v3)).toBe(v3);
     const bad = structuredClone(raw) as { frames: { p1: string[] } };
     bad.frames.p1.splice(bad.frames.p1.findIndex((frame) => frame.includes("\n|move|")), 1);
-    await expect(verifyHarnessFixture(engine, bad as never)).rejects.toThrow("p1 channel is not what its frames give");
+    await expect(verifyHarnessFixture(engine, bad as never, known)).rejects.toThrow("p1 channel is not what its frames give");
   });
 
   type Loose = { channels: Record<string, unknown>; frames: Record<string, unknown> };
@@ -394,7 +395,7 @@ describe("schema versions", () => {
     for (const [fixture, reason] of cases) {
       expect(() => upgradeFixture(fixture)).toThrow(HarnessError);
       expect(() => upgradeFixture(fixture)).toThrow(reason);
-      await expect(verifyHarnessFixture(engine, fixture)).rejects.toThrow(HarnessError);
+      await expect(verifyHarnessFixture(engine, fixture, known)).rejects.toThrow(HarnessError);
     }
     const old = (change: (f: Loose) => void) => {
       const copy = structuredClone(raw) as unknown as Loose;
@@ -403,7 +404,7 @@ describe("schema versions", () => {
     };
     for (const bad of [old((f) => (f.channels.p1 = [f.channels.p1] as never)), old((f) => (f.frames.p2 = "x" as never))]) {
       expect(() => upgradeFixture(bad)).toThrow(/frames of a version 2 fixture are one list of frames/);
-      await expect(verifyHarnessFixture(engine, bad)).rejects.toThrow(HarnessError);
+      await expect(verifyHarnessFixture(engine, bad, known)).rejects.toThrow(HarnessError);
     }
   });
 
@@ -441,6 +442,7 @@ describe("buildHarnessFixture", () => {
     connections: over.connections ?? { p1: from.frames.p1, p2: from.frames.p2 },
     teams: from.teams,
     teamLabels: labels,
+    known_synthetic: known,
   });
   const winnerOf = (f: HarnessFixture) => (f.winner === null ? "" : f.players[f.winner].name);
 
@@ -487,6 +489,26 @@ describe("buildHarnessFixture", () => {
     await expect(buildHarnessFixture(input({ records, connections: { p1: fixture.frames.p1, p2: [p2] } }))).rejects.toThrow(
       "the bots did not play the same battle",
     );
+  });
+
+  it("verifies a stored fixture only against the known synthetic set: an unknown team is refused", async () => {
+    const without = new Set(known);
+    without.delete(teamHash(fixture.teams.p1));
+    await expect(verifyHarnessFixture(engine, clone(fixture), without)).rejects.toThrow("p1 team is not a known synthetic team");
+    await expect(verifyHarnessFixture(engine, clone(fixture), new Set())).rejects.toThrow("p2 team is not a known synthetic team");
+  });
+
+  it("builds a fixture only from teams in the known synthetic set: either team unknown is refused", async () => {
+    const hashes = [...known];
+    expect(hashes.length).toBeGreaterThan(1);
+    for (const seat of ["p1", "p2"] as const) {
+      const without = new Set(known);
+      without.delete(teamHash(fixture.teams[seat]));
+      await expect(buildHarnessFixture({ ...input(), known_synthetic: without })).rejects.toThrow(
+        "a fixture is built only from known synthetic teams",
+      );
+    }
+    await expect(buildHarnessFixture({ ...input(), known_synthetic: new Set() })).rejects.toThrow("known synthetic teams");
   });
 
   it("refuses a record for the wrong seat or room, and channels that are not one per connection", async () => {

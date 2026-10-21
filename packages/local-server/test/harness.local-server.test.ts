@@ -12,7 +12,7 @@ import {
 } from "../src/harness.ts";
 import { createRuntimeCopy, launch, type LocalServer, SERVER_CONFIG_PATH } from "../src/index.ts";
 import { FIXTURE_FORMAT, RECORDINGS, recordingProvenance } from "../src/recordings.ts";
-import { A2_DIR } from "./harness-fixtures.ts";
+import { A2_DIR, fixtureTeamHashes } from "./harness-fixtures.ts";
 import { freePort, tempDir } from "./helpers.ts";
 
 // The pinned server on 127.0.0.1 with the harness config, two bot clients
@@ -45,6 +45,7 @@ const bots = (server: LocalServer) => ({
   format: FIXTURE_FORMAT,
   names: recording.names,
   teams: { sparring: team(recording.teams.sparring), challenger: team(recording.teams.challenger) },
+  known_synthetic: fixtureTeamHashes(engine),
 });
 
 describe("the harness server", () => {
@@ -63,7 +64,7 @@ describe("the harness server", () => {
         provenance: recordingProvenance(engine.commit),
         teamLabels: recording.teams,
       });
-      await verifyHarnessFixture(engine, fixture);
+      await verifyHarnessFixture(engine, fixture, fixtureTeamHashes(engine));
       const names = [fixture.players.p1.name, fixture.players.p2.name].sort();
       expect(names).toEqual([recording.names.challenger, recording.names.sparring].sort());
       // The challenger sits in the seat the server gave it, with that team.

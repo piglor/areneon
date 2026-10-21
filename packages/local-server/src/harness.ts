@@ -12,6 +12,7 @@ import {
 } from "@areneon/bot-client";
 import {
   type Engine,
+  classOfSets,
   enumerateCandidates,
   type PlayerChannel,
   playerChannel,
@@ -19,6 +20,8 @@ import {
   resolveFormat,
   rightsFor,
   type RulesSnapshot,
+  type SyntheticTeamHashes,
+  teamHash,
   type VersionManifest,
 } from "@areneon/showdown-bridge";
 import { type ServerSetting, serverSettings } from "./config.ts";
@@ -133,7 +136,7 @@ export async function readServerInputLog(
  */
 export interface HarnessFixture {
   schema_version: 3;
-  // synthetic by construction (recorded fixtures); derive it from team hashes (team-class.ts) when real teams can reach this path.
+  /** Proven from the two teams' hashes (`buildHarnessFixture` refuses a fixture that is not synthetic). */
   data_class: "synthetic";
   rights: "cc0-synthetic";
   license: "CC0-1.0";
@@ -313,10 +316,10 @@ export function channelFromFrames(
   frames: readonly string[],
   room: string,
   seat: Seat,
+  data_class: PlayerChannel["data_class"],
 ): { channel: PlayerChannel; dropped: string[]; resent: number; requests: number } {
   const reader = new ProtocolReader();
-  // synthetic by construction (recorded fixtures); derive it from team hashes (team-class.ts) when real teams can reach this path.
-  const adapter = new A2Channel({ room, player: seat, data_class: "synthetic" });
+  const adapter = new A2Channel({ room, player: seat, data_class });
   let requests = 0;
   for (const frame of frames) {
     for (const event of reader.read(frame)) {
@@ -328,6 +331,24 @@ export function channelFromFrames(
   }
   const built = adapter.build();
   return { ...built, requests };
+}
+
+/**
+ * The synthetic teams there are, as the harness sees them: each given team's
+ * hash and the hash of its played form. The bot's validator edits a team in
+ * place (it fills the nickname, the gender of a genderless species), so a stored
+ * fixture holds the played form; the pinned validator produces it here, on a
+ * copy, so no rule of it is written by hand.
+ */
+export function withPlayedForms(engine: Engine, formatId: string, teams: readonly (readonly PokemonSet[])[]): SyntheticTeamHashes {
+  const hashes = new Set<string>();
+  for (const team of teams) {
+    hashes.add(teamHash(team));
+    const played = structuredClone(team) as PokemonSet[];
+    engine.sim.TeamValidator.get(formatId).validateTeam(played);
+    hashes.add(teamHash(played));
+  }
+  return hashes;
 }
 
 export interface FixtureInput {
@@ -343,11 +364,17 @@ export interface FixtureInput {
   teams: Record<Seat, PokemonSet[]>;
   /** A label for each seat's team, e.g. its file under fixtures/teams. */
   teamLabels: Record<Seat, string>;
+  /** The synthetic teams there are: both teams must be in it, or no fixture is built. */
+  known_synthetic: SyntheticTeamHashes;
 }
 
 /** Build the fixture of a finished battle; it must pass `verifyHarnessFixture`. */
 export async function buildHarnessFixture(input: FixtureInput): Promise<HarnessFixture> {
-  const { engine, snapshot, format, log, records, connections, teams, teamLabels } = input;
+  const { engine, snapshot, format, log, records, connections, teams, teamLabels, known_synthetic } = input;
+  // A fixture is committed CC0 data: its class is proven from the hashes, and only synthetic is built.
+  if (SEATS.some((seat) => classOfSets(teams[seat], known_synthetic) !== "synthetic")) {
+    throw new HarnessError("a fixture is built only from known synthetic teams");
+  }
   const { start, players } = parseInputLog(log.lines);
   const channels = {} as Record<Seat, PlayerChannel[]>;
   const frames = {} as Record<Seat, string[][]>;
@@ -371,7 +398,6 @@ export async function buildHarnessFixture(input: FixtureInput): Promise<HarnessF
   const winner = SEATS.find((seat) => players[seat].name === log.winner) ?? null;
   const fixture: HarnessFixture = {
     schema_version: 3,
-    // synthetic by construction (recorded fixtures); derive it from team hashes (team-class.ts) when real teams can reach this path.
     data_class: "synthetic",
     rights: rightsFor("synthetic") as "cc0-synthetic",
     license: "CC0-1.0",
@@ -392,7 +418,7 @@ export async function buildHarnessFixture(input: FixtureInput): Promise<HarnessF
     channels,
     input_log: { omniscient: true, lines: log.lines },
   };
-  await verifyHarnessFixture(engine, fixture);
+  await verifyHarnessFixture(engine, fixture, known_synthetic);
   return fixture;
 }
 
@@ -482,7 +508,7 @@ function frameProblems(fixture: HarnessFixture, seat: Seat): string[] {
       if (!line.includes(`"id":"${seat}"`)) problems.push(`${who} frames hold a request that is not its own`);
     }
     try {
-      const replayed = channelFromFrames(frames, fixture.room, seat).channel;
+      const replayed = channelFromFrames(frames, fixture.room, seat, fixture.data_class).channel;
       if (JSON.stringify(replayed) !== JSON.stringify(channels[c])) {
         problems.push(`${who} channel is not what its frames give through ProtocolReader and A2Channel`);
       }
@@ -518,12 +544,18 @@ function frameProblems(fixture: HarnessFixture, seat: Seat): string[] {
  * compared with the replay: it is one batch, so it holds only the last
  * `|request|`; the step-by-step comparison is #764.
  */
-export async function verifyHarnessFixture(engine: Engine, stored: HarnessFixture | HarnessFixtureV2): Promise<void> {
+export async function verifyHarnessFixture(
+  engine: Engine,
+  stored: HarnessFixture | HarnessFixtureV2,
+  known_synthetic: SyntheticTeamHashes,
+): Promise<void> {
   const fixture = upgradeFixture(stored);
   const problems: string[] = [];
-  // synthetic by construction (recorded fixtures); derive it from team hashes (team-class.ts) when real teams can reach this path.
   if (fixture.data_class !== "synthetic" || fixture.rights !== rightsFor(fixture.data_class)) {
     problems.push("not synthetic with cc0-synthetic rights");
+  }
+  for (const seat of SEATS) {
+    if (classOfSets(fixture.teams[seat], known_synthetic) !== "synthetic") problems.push(`${seat} team is not a known synthetic team`);
   }
   if (fixture.manifest.showdown_commit !== engine.commit) problems.push("recorded for another Showdown commit");
   const { start, players } = parseInputLog(fixture.input_log.lines);
@@ -545,8 +577,7 @@ export async function verifyHarnessFixture(engine: Engine, stored: HarnessFixtur
     }
     for (const own of fixture.channels[seat]) {
       const channel = playerChannel(own);
-      // synthetic by construction (recorded fixtures); derive it from team hashes (team-class.ts) when real teams can reach this path.
-      if (channel.player !== seat || channel.data_class !== "synthetic") problems.push(`${seat} channel is not its own`);
+      if (channel.player !== seat || channel.data_class !== fixture.data_class) problems.push(`${seat} channel is not its own`);
       if (channel.lines.some((line) => line.startsWith("|showteam|"))) problems.push(`${seat} channel has a team sheet`);
     }
     problems.push(...frameProblems(fixture, seat));
@@ -742,6 +773,8 @@ export interface BotVsBotOptions {
   /** The sparring bot's and the challenger's user names. */
   names: { sparring: string; challenger: string };
   teams: { sparring: PokemonSet[]; challenger: PokemonSet[] };
+  /** The synthetic teams there are (hashes): each bot proves its channels' class from it and the other's team. */
+  known_synthetic: SyntheticTeamHashes;
   /** Opens a transport to `url`; default `connectWebSocket`. For tests. */
   connect?: (url: string) => Promise<Transport>;
   /** Cut one bot's first connection mid-battle so it reconnects (see `DropPlan`); none by default. */
@@ -765,8 +798,10 @@ export async function playBotVsBot(options: BotVsBotOptions): Promise<BotPair> {
     const transport = await open(to);
     return tapTransport(drop === undefined ? transport : drop.wrap(who, index, transport), frames);
   };
-  // synthetic by construction (recorded fixtures); derive it from team hashes (team-class.ts) when real teams can reach this path.
-  const common = { engine, snapshot, url, format, data_class: "synthetic" as const, battles: 1 };
+  // Each bot knows the other's team (the harness gave both), so a class can be proven. The validator edits
+  // a bot's team in place, so the other bot is given a copy taken before either ran.
+  const pristine = structuredClone(teams);
+  const common = { engine, snapshot, url, format, known_synthetic: options.known_synthetic, battles: 1 };
   let loggedIn: () => void = () => {};
   const ready = new Promise<void>((done) => (loggedIn = done));
   const sparring = runA2Bot({
@@ -774,6 +809,7 @@ export async function playBotVsBot(options: BotVsBotOptions): Promise<BotPair> {
     name: names.sparring,
     challenger: names.challenger,
     team: teams.sparring,
+    opponent_team: pristine.challenger,
     connect: tapped("sparring"),
     onLog(entry) {
       if (entry.event === "logged_in") loggedIn();
@@ -786,6 +822,7 @@ export async function playBotVsBot(options: BotVsBotOptions): Promise<BotPair> {
     challenger: names.sparring,
     challenge: names.sparring,
     team: teams.challenger,
+    opponent_team: pristine.sparring,
     connect: tapped("challenger"),
   });
   const [a, b] = await Promise.all([sparring, challenger]);
@@ -877,6 +914,7 @@ export async function recordHarnessBattle(options: RecordOptions): Promise<Harne
     } as Record<Seat, string[][]>,
     teams: { [sparringSeat]: teams.sparring, [challengerSeat]: teams.challenger } as Record<Seat, PokemonSet[]>,
     teamLabels: { [sparringSeat]: teamLabels.sparring, [challengerSeat]: teamLabels.challenger } as Record<Seat, string>,
+    known_synthetic: options.known_synthetic,
   });
   if (options.drop !== undefined) {
     // The recording is only worth keeping if the cut happened as planned.
