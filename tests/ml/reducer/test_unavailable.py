@@ -19,7 +19,7 @@ from typing import Any
 
 import pytest
 from areneon_ml.model.encoder import Encoder
-from areneon_ml.reducer import ReducerError, UnknownLineError, reduce_channel
+from areneon_ml.reducer import reduce_channel
 
 from tests.ml.model.support import TINY_ENCODER, game, observation
 
@@ -84,10 +84,7 @@ def test_the_encoder_takes_every_decision_with_the_error_lines_in_the_log(
     encoded = 0
     for end in [i + 1 for i, line in enumerate(lines) if line.startswith("|request|")]:
         prefix = lines[:end]
-        try:
-            state = reduce_channel(player, prefix, battle["teams"][player], VOCAB)
-        except ReducerError:
-            return
+        state = reduce_channel(player, prefix, battle["teams"][player], VOCAB)
         if state.request_kind == "wait":
             continue
         kind = "preview" if state.request_kind == "preview" else "battle"
@@ -120,10 +117,7 @@ def test_the_canary_holds_at_every_request_point_with_error_lines(path: Path) ->
         lines = _lines(battle, player)
         for end in [i + 1 for i, line in enumerate(lines) if line.startswith("|request|")]:
             prefix = lines[:end]
-            try:
-                opponent = _reduce(battle, player, prefix)["opponent"]
-            except ReducerError:
-                break
+            opponent = _reduce(battle, player, prefix)["opponent"]
             secrets = unrevealed_ids(battle["teams"][other], "\n".join(prefix))
             assert leaks(opponent, secrets) == []
             assert unattributed(opponent, prefix, other) == []
@@ -148,10 +142,7 @@ def _snapshots() -> list[tuple[Path, str]]:
 )
 def test_the_reduced_state_matches_its_golden_snapshot(path: Path, player: str) -> None:
     battle = _load(path)
-    try:
-        state = _reduce(battle, player, _lines(battle, player))
-    except UnknownLineError:
-        pytest.skip("the battle shows an Illusion ending, which the reducer names as unsupported")
+    state = _reduce(battle, player, _lines(battle, player))
     document = (
         json.dumps(
             {

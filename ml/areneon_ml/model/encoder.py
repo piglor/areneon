@@ -456,7 +456,11 @@ class Encoder:
     ) -> EncodedQuery:
         own = [(state.own, mon) for mon in state.own.roster]
         opponent = [(state.opponent, mon) for mon in state.opponent.roster]
-        if len(own) > self.config.max_team or len(opponent) > self.config.max_team:
+        # An added entry (an Illusion user shown alongside the Pokémon it is shown as) is no
+        # extra Pokémon of the team: it does not count against max_team.
+        if any(
+            sum(not m.phantom for _, m in side) > self.config.max_team for side in (own, opponent)
+        ):
             raise EncodingError("a side has more Pokémon than max_team")
         field_cat, field_num = field_features
         rows = [*own, *opponent]

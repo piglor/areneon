@@ -21,7 +21,6 @@ from .support import HEADER, TEAM, VOCAB, run
     [
         "|c|Bob|hello",
         "|-terastallize|p2a: Venusaur|Fire",
-        "|replace|p2a: Venusaur|Zoroark, L50, M|100/100",
         "|-zpower|p2a: Venusaur",
         "|inactive|Alice has 30 seconds left.",
         "|t:|1700000000",

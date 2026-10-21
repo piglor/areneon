@@ -27,7 +27,6 @@ from areneon_ml.reducer import (
     PokemonState,
     ReducerError,
     SideState,
-    UnknownLineError,
 )
 
 from .support import (
@@ -231,12 +230,7 @@ def test_every_request_point_of_the_random_corpus_encodes_into_range() -> None:
                 obs = observation(
                     player, lines[: index + 1], battle["teams"][player], kind_of(body)
                 )
-                try:
-                    encoded = encoder().encode(
-                        {"observation": obs, "candidates": candidates_for(body)}
-                    )
-                except UnknownLineError:
-                    break  # a line type the reducer names as unsupported (Illusion)
+                encoded = encoder().encode({"observation": obs, "candidates": candidates_for(body)})
                 points += 1
                 for column, (_, kind) in enumerate(layout.mon_cat):
                     assert encoded.mon_cat[:, column].lt(sizes[kind]).all(), kind

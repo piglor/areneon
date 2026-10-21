@@ -38,3 +38,11 @@ class VocabularyError(ReducerError):
 
 class OpponentSecretError(ReducerError):
     """The channel holds something only the opponent (or the omniscient log) may see."""
+
+
+class IllusionError(ReducerError):
+    """An Illusion ending that the channel alone cannot attribute without guessing.
+
+    Raised where the player's view of a disguise is ambiguous: a disguise shown more than once,
+    an Illusion user that fainted under its disguise, or a Pokemon shown in two positions.
+    """
