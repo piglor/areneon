@@ -165,7 +165,7 @@ def test_boost_manipulation_lines() -> None:
         "|-unboost|p2a: Venusaur|def|1",
         "|-swapboost|p2a: Venusaur|p2b: Charizard|atk, def",
         "|-boost|p2b: Charizard|spe|3",
-        "|-copyboost|p2b: Charizard|p1a: Venusaur",
+        "|-copyboost|p1a: Venusaur|p2b: Charizard",
         "|-invertboost|p2b: Charizard",
     )
     venusaur, charizard = opp(state, "Venusaur"), opp(state, "Charizard")
@@ -176,6 +176,20 @@ def test_boost_manipulation_lines() -> None:
         -3,
     )
     assert own(state, "Venusaur").boosts["atk"] == 2
+
+
+def test_copyboost_gives_the_first_pokemon_the_second_one_s_boosts() -> None:
+    # The pinned engine's Psych Up and Costar set the FIRST named Pokemon's boosts from the
+    # second's (`source.boosts[i] = target.boosts[i]`), whatever sim/SIM-PROTOCOL.md's prose says.
+    # Captured from a sweep: reading it the other way took a Pokemon past +-6.
+    state = run(
+        "|-unboost|p2a: Venusaur|spe|2",
+        "|-boost|p2b: Charizard|atk|1",
+        "|-copyboost|p2b: Charizard|p2a: Venusaur|[from] move: Psych Up",
+    )
+    assert opp(state, "Charizard").boosts["spe"] == -2
+    assert opp(state, "Charizard").boosts["atk"] == 0
+    assert opp(state, "Venusaur").boosts["spe"] == -2
 
 
 def test_swapboost_without_a_stat_list_swaps_everything() -> None:
@@ -405,6 +419,24 @@ def test_a_target_of_null_and_bare_repeated_tags() -> None:
     assert opp(state, "Venusaur").moves_revealed == ["firespin"]
     with pytest.raises(MalformedLineError):
         run("|-damage|p2a: Venusaur|50/100|[from] drain|[from] drain")
+
+
+def test_a_bounced_spread_move_carries_one_spread_tag_per_call() -> None:
+    # Captured from a sweep battle (Magic Bounce reflecting Sweet Scent): the bounced move
+    # runs under the bounce's own |move| line, and the engine's attrLastMove appends a
+    # [spread] to it once for each call that reaches the line, so it appears twice.
+    bounce = "|move|p2b: Charizard|Sweet Scent|p1b: Charizard|[from] ability: Magic Bounce"
+    state = run(
+        "|move|p1b: Charizard|Sweet Scent|p2b: Charizard",
+        f"{bounce}|[spread] p1b|[spread] p2a",
+        player="p1",
+    )
+    assert opp(state, "Charizard").moves_revealed == []
+    # Only the display-only [spread] repeats: a repeated tag that carries state still fails closed.
+    with pytest.raises(MalformedLineError):
+        run(f"{bounce}|[from] ability: Trace")
+    with pytest.raises(MalformedLineError):
+        run("|move|p2b: Charizard|Sweet Scent|p1b: Charizard|[msg] a|[msg] b")
 
 
 def test_ability_copies_and_skill_swap() -> None:
