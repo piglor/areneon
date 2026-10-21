@@ -11,8 +11,11 @@
 
 /**
  * @typedef {{ choice: string, request_seq: number, policy: string }} Decision
+ * @typedef {{ seat: string, frame: number, kind: string, request_seq: number, chosen: string,
+ *   refused: string | null, policy: string, candidates: { choice: string, pending: boolean }[] }} DecisionPoint
  * @typedef {{ player: string, label: string, lines: string[], team: any[], decisions: Decision[],
- *   result: string }} ViewData
+ *   result: string, omniscient?: boolean, teams?: Record<string, any[]>, seats?: { seat: string, label: string }[],
+ *   decision_points?: DecisionPoint[] }} ViewData
  * @typedef {{ title: string, views: ViewData[], dex: any, links: { label: string, href: string }[],
  *   notes: string[] }} ReplayData
  */
@@ -176,12 +179,12 @@ var ArView = (function () {
     return f > 0.5 ? "hp-g" : f > 0.2 ? "hp-y" : "hp-r";
   }
 
-  /** @param {any} mon */
-  function hpText(mon) {
+  /** @param {any} mon @param {boolean} [exact] both sides' exact values (an omniscient view) */
+  function hpText(mon, exact) {
     if (mon.hp_num === null) { return "HP ?"; }
     if (mon.fainted) { return "fainted"; }
     var pct = Math.round(100 * fraction(mon.hp_num, mon.hp_den));
-    return mon.own && mon.hp_den ? mon.hp_num + "/" + mon.hp_den + " (" + pct + "%)" : pct + "%";
+    return (mon.own || exact) && mon.hp_den ? mon.hp_num + "/" + mon.hp_den + " (" + pct + "%)" : pct + "%";
   }
 
   /** @param {any} mon @param {Record<string, string>} labels */
@@ -223,11 +226,12 @@ var ArView = (function () {
    * The board of one channel: built once, then `update`d from states.
    * @param {Document} doc
    * @param {{ dex: any, animate: () => boolean, raf: (f: (t: number) => void) => void, now: () => number }} env
-   * @param {string} perspective e.g. "p1"
+   * @param {string} perspective e.g. "p1", or "omniscient" for the engine's full log
    */
   function createBoard(doc, env, perspective) {
-    var svg = make(doc, "svg", { viewBox: "0 0 " + W + " 400", class: "board", role: "img", "aria-label": "Battle board as " + perspective + " sees it" }, [], true);
-    var title = make(doc, "title", null, ["Battle board, " + perspective + "'s own view"], true);
+    var seen = perspective === "omniscient" ? "Omniscient battle board (both sides)" : "Battle board as " + perspective + " sees it";
+    var svg = make(doc, "svg", { viewBox: "0 0 " + W + " 400", class: "board", role: "img", "aria-label": seen }, [], true);
+    var title = make(doc, "title", null, [perspective === "omniscient" ? seen : "Battle board, " + perspective + "'s own view"], true);
     svg.appendChild(title);
     svg.appendChild(make(doc, "rect", { x: 0, y: 0, width: W, height: 400, rx: 10, class: "bg" }, [], true));
     svg.appendChild(make(doc, "line", { x1: 20, y1: 200, x2: W - 20, y2: 200, class: "mid" }, [], true));
@@ -285,9 +289,9 @@ var ArView = (function () {
     }
 
     /**
-     * @param {any} slot @param {any} mon @param {Record<string, string>} labels @param {boolean} animated
+     * @param {any} slot @param {any} mon @param {Record<string, string>} labels @param {boolean} animated @param {boolean} exact
      */
-    function fillSlot(slot, mon, labels, animated) {
+    function fillSlot(slot, mon, labels, animated, exact) {
       if (!mon) {
         slot.g.setAttribute("class", "slot empty");
         clear(slot.holder);
@@ -314,7 +318,7 @@ var ArView = (function () {
       slot.bar.setAttribute("class", "hp " + hpClass(f));
       slot.name.textContent = clip(nameOf(mon, env.dex, labels), 16) + (mon.gender ? " " + (mon.gender === "M" ? "♂" : "♀") : "");
       slot.level.textContent = (mon.level !== null ? "L" + mon.level : "") + (mon.mega ? "  Mega" : "") + (mon.temp_species && mon.temp_species !== mon.species ? "  as " + pretty(mon.temp_species, labels) : "");
-      slot.hp.textContent = hpText(mon);
+      slot.hp.textContent = hpText(mon, exact);
       slot.status.textContent = mon.status ? mon.status.toUpperCase() : "";
       slot.status.setAttribute("class", "status st-" + (token(mon.status || "") || "none"));
       var boosts = Object.keys(mon.boosts).filter(function (k) { return mon.boosts[k] !== 0; }).sort().map(function (k) { return k + (mon.boosts[k] > 0 ? " +" : " ") + mon.boosts[k]; });
@@ -326,6 +330,7 @@ var ArView = (function () {
 
     /** @param {any} side @param {any} node @param {number} y @param {any} state @param {Record<string, string>} labels @param {boolean} top */
     function fillBench(side, node, y, state, labels, top) {
+      var exact = !!state.omniscient;
       clear(node);
       var x = 20;
       var inPlay = {};
@@ -339,7 +344,7 @@ var ArView = (function () {
       items.forEach(function (/** @type {any} */ m) {
         var shape = tokenShape(doc, x + 12, y, 12, typesOf(m, env.dex), false);
         var cls = "benchmon" + (m.fainted ? " fainted" : "");
-        var g = make(doc, "g", { class: cls }, [shape, make(doc, "title", null, [detailText(m, labels) + "; " + hpText(m)], true)], true);
+        var g = make(doc, "g", { class: cls }, [shape, make(doc, "title", null, [detailText(m, labels) + "; " + hpText(m, exact)], true)], true);
         node.appendChild(g);
         x += 32;
       });
@@ -358,15 +363,16 @@ var ArView = (function () {
       var labels = state.labels || {};
       var own = state.own;
       var opp = state.opponent;
-      who.textContent = (opp.username || opp.player) + " (opponent, as revealed)";
-      whoBottom.textContent = (own.username || own.player) + " (this view)";
+      var omni = !!state.omniscient;
+      who.textContent = (opp.username || opp.player) + (omni ? " (" + opp.player + ", exact)" : " (opponent, as revealed)");
+      whoBottom.textContent = (own.username || own.player) + (omni ? " (" + own.player + ", exact)" : " (this view)");
       turn.textContent = state.turn ? "Turn " + state.turn + (state.winner ? " · finished" : "") : state.started ? "Start" : "Team Preview";
       [["top", opp], ["bottom", own]].forEach(function (pair) {
         var side = /** @type {any} */ (pair[1]);
         var group = /** @type {any[]} */ (slotGroups[/** @type {string} */ (pair[0])]);
         ["a", "b"].forEach(function (letter, i) {
           var index = side.slots[letter];
-          fillSlot(group[i], index === undefined || index === null ? null : side.roster[index], labels, animated);
+          fillSlot(group[i], index === undefined || index === null ? null : side.roster[index], labels, animated, omni);
         });
       });
       fillBench(opp, benchTop, 40, state, labels, true);
@@ -469,6 +475,52 @@ var ArView = (function () {
     return box;
   }
 
+  // ---- decisions of an omniscient view -----------------------------------------------------------
+
+  /**
+   * The decision points of each seat in force at frame `idx`: the latest position at or before it
+   * (a refused choice and the retry that answered it share one position).
+   * @param {ViewData} data @param {string} seat @param {number} idx
+   * @returns {DecisionPoint[]}
+   */
+  function pointsAt(data, seat, idx) {
+    var points = (data.decision_points || []).filter(function (p) { return p.seat === seat && p.frame <= idx; });
+    var at = points.length ? /** @type {DecisionPoint} */ (points[points.length - 1]).frame : -1;
+    return points.filter(function (p) { return p.frame === at; });
+  }
+
+  /** @param {ViewData} data @param {number} idx @returns {string} what changes when the panel must be rebuilt */
+  function omniKey(data, idx) {
+    return (data.seats || []).map(function (s) {
+      return s.seat + ":" + pointsAt(data, s.seat, idx).map(function (p) { return p.request_seq; }).join(",");
+    }).join(";");
+  }
+
+  /**
+   * Both seats' decisions at frame `idx`: the candidate list each seat's own request gave, the
+   * choice made, the policy, and the engine's refusal when it refused a pending choice.
+   * @param {Document} doc @param {ViewData} data @param {number} idx
+   */
+  function omniscientDecisions(doc, data, idx) {
+    var box = make(doc, "div", { class: "decision" }, []);
+    (data.seats || []).forEach(function (s) {
+      var wrap = make(doc, "div", { class: "slotopts" }, [make(doc, "h4", null, [s.label])]);
+      var points = pointsAt(data, s.seat, idx);
+      if (points.length === 0) { wrap.appendChild(make(doc, "p", { class: "muted" }, ["No decision yet."])); }
+      points.forEach(function (p) {
+        wrap.appendChild(make(doc, "p", { class: "chosen-line" }, [
+          "Request " + p.request_seq + " (" + p.kind + "): chose " + p.chosen + "  (policy " + p.policy + ")" + (p.refused ? "  — refused by the engine: " + p.refused : ""),
+        ]));
+        var list = make(doc, "ol", { class: "opts" }, p.candidates.map(function (c) {
+          return make(doc, "li", { class: "opt" + (c.choice === p.chosen ? " chosen" : "") + (c.pending ? " pending" : "") }, [c.choice + (c.pending ? "  (pending)" : "")]);
+        }));
+        wrap.appendChild(make(doc, "details", { class: "candidates" }, [make(doc, "summary", null, ["Candidates (" + p.candidates.length + ")"]), list]));
+      });
+      box.appendChild(wrap);
+    });
+    return box;
+  }
+
   // ---- the page -----------------------------------------------------------------------------------
 
   /**
@@ -489,7 +541,7 @@ var ArView = (function () {
     var animateOn = true;
     var env = { dex: data.dex || {}, animate: function () { return animateOn && !reduced(); }, raf: raf, now: now };
 
-    var runs = data.views.map(function (v) { return ArReplay.interpretChannel(v.player, v.lines, data.dex); });
+    var runs = data.views.map(function (v) { return ArReplay.interpretChannel(v.player, v.lines, data.dex, v.omniscient === true); });
     if (!runs[0]) { throw new Error("a replay needs at least one view"); }
     var master = runs[0];
     var maps = runs.map(function (run, i) { return i === 0 ? null : align(data.views[0] ? data.views[0].lines : [], data.views[i] ? data.views[i].lines : []); });
@@ -500,7 +552,7 @@ var ArView = (function () {
     var speed = 1;
 
     var views = data.views.map(function (v, i) {
-      var board = createBoard(doc, env, v.player);
+      var board = createBoard(doc, env, v.omniscient ? "omniscient" : v.player);
       var caption = make(doc, "p", { class: "caption" }, [""]);
       var decision = make(doc, "div", { class: "decisionbox" }, []);
       var logList = make(doc, "div", { class: "log" }, []);
@@ -519,11 +571,15 @@ var ArView = (function () {
       });
       logRows.forEach(function (r) { logList.appendChild(r.node); });
       rawRows.forEach(function (n) { rawList.appendChild(n); });
-      var teamBox = make(doc, "details", { class: "team" }, [make(doc, "summary", null, ["Own team (" + (v.team || []).length + " sets)"])]);
-      (v.team || []).forEach(function (/** @type {any} */ set) {
-        teamBox.appendChild(make(doc, "p", { class: "set" }, [
-          (set.name && set.name !== set.species ? set.name + " (" + set.species + ")" : set.species) + " @ " + (set.item || "no item") + " · " + set.ability + " · " + (set.moves || []).join(", "),
-        ]));
+      var teamBox = make(doc, "details", { class: "team" }, [make(doc, "summary", null, [v.teams ? "Both teams" : "Own team (" + (v.team || []).length + " sets)"])]);
+      var lists = v.teams ? Object.keys(v.teams).sort().map(function (k) { return { heading: k, sets: /** @type {any[]} */ (/** @type {any} */ (v.teams)[k]) }; }) : [{ heading: "", sets: v.team || [] }];
+      lists.forEach(function (list) {
+        if (list.heading) { teamBox.appendChild(make(doc, "h4", null, [list.heading])); }
+        list.sets.forEach(function (/** @type {any} */ set) {
+          teamBox.appendChild(make(doc, "p", { class: "set" }, [
+            (set.name && set.name !== set.species ? set.name + " (" + set.species + ")" : set.species) + " @ " + (set.item || "no item") + " · " + set.ability + " · " + (set.moves || []).join(", "),
+          ]));
+        });
       });
       var flags = make(doc, "p", { class: "flagnote" }, [run && run.flags.length ? run.flags.length + " line(s) were not recognised and are shown flagged." : ""]);
       var panel = make(doc, "section", { class: "viewpanel", "data-player": v.player }, [
@@ -535,7 +591,7 @@ var ArView = (function () {
         make(doc, "details", { class: "logwrap" }, [make(doc, "summary", null, ["Raw log"]), rawList]),
         make(doc, "p", { class: "muted" }, ["Result: " + v.result]),
       ]);
-      return { data: v, board: board, caption: caption, decision: decision, panel: panel, frames: frames, run: run, logRows: logRows, rawRows: rawRows, logList: logList, rawList: rawList, lastCaption: "", shownFrame: -1 };
+      return { data: v, board: board, caption: caption, decision: decision, panel: panel, frames: frames, run: run, logRows: logRows, rawRows: rawRows, logList: logList, rawList: rawList, lastCaption: "", shownFrame: -1, omniKey: "" };
     });
 
     // controls
@@ -565,7 +621,7 @@ var ArView = (function () {
     var play = btn("▶", "Play");
     var fwd = btn("▶▶", "Next event");
     var toEnd = btn("⏭", "To the end");
-    var bar = make(doc, "div", { class: "controls" }, [toStart, back, play, fwd, toEnd, slider, jump, speedSel, viewSel, animLabel, status]);
+    var bar = make(doc, "div", { class: "controls" }, [toStart, back, play, fwd, toEnd, slider, jump, speedSel, data.views.length > 1 ? viewSel : null, animLabel, status]);
     root.appendChild(bar);
     if (data.notes && data.notes.length) {
       root.appendChild(make(doc, "div", { class: "notes" }, data.notes.map(function (n) { return make(doc, "p", { class: "note" }, [n]); })));
@@ -601,14 +657,24 @@ var ArView = (function () {
         v.caption.textContent = text;
         var flagged = !!f.flagged;
         v.caption.setAttribute("class", flagged ? "caption flagged" : "caption");
-        var requestNo = f.request;
-        var request = v.run && requestNo > 0 ? v.run.requests[requestNo - 1] : null;
-        var decision = null;
-        v.data.decisions.forEach(function (d) { if (d.request_seq === requestNo) { decision = d; } });
-        while (v.decision.firstChild) { v.decision.removeChild(v.decision.firstChild); }
-        var heading = request ? "Request " + requestNo + " of " + (v.run ? v.run.requests.length : 0) + ", turn " + f.state.turn : "";
-        v.decision.appendChild(make(doc, "h3", null, [heading || "Before the first request"]));
-        v.decision.appendChild(decisionPanel(doc, request, decision, f.state.labels || {}));
+        if (v.data.omniscient) {
+          var key = omniKey(v.data, idx);
+          if (v.omniKey !== key) {
+            while (v.decision.firstChild) { v.decision.removeChild(v.decision.firstChild); }
+            v.decision.appendChild(make(doc, "h3", null, ["Decisions at turn " + f.state.turn]));
+            v.decision.appendChild(omniscientDecisions(doc, v.data, idx));
+            v.omniKey = key;
+          }
+        } else {
+          var requestNo = f.request;
+          var request = v.run && requestNo > 0 ? v.run.requests[requestNo - 1] : null;
+          var decision = null;
+          v.data.decisions.forEach(function (d) { if (d.request_seq === requestNo) { decision = d; } });
+          while (v.decision.firstChild) { v.decision.removeChild(v.decision.firstChild); }
+          var heading = request ? "Request " + requestNo + " of " + (v.run ? v.run.requests.length : 0) + ", turn " + f.state.turn : "";
+          v.decision.appendChild(make(doc, "h3", null, [heading || "Before the first request"]));
+          v.decision.appendChild(decisionPanel(doc, request, decision, f.state.labels || {}));
+        }
         // the log: lines after the position are dimmed, so a reader sees where the replay is
         v.logRows.forEach(function (r) { r.node.setAttribute("class", (r.node.getAttribute("class") || "line").replace(" future", "") + (r.frame > idx ? " future" : "")); });
         v.rawRows.forEach(function (n, k) { n.setAttribute("class", (n.getAttribute("class") || "line").replace(/ (future|cur)/g, "") + (k + 1 > idx ? " future" : k + 1 === idx ? " cur" : "")); });
@@ -702,7 +768,7 @@ var ArView = (function () {
     return page;
   }
 
-  return { init: init, boot: boot, make: make, allowUrlAttribute: allowUrlAttribute, forbidUrlAttributes: forbidUrlAttributes, align: align, parseChoice: parseChoice, createBoard: createBoard, decisionPanel: decisionPanel };
+  return { init: init, boot: boot, make: make, omniscientDecisions: omniscientDecisions, allowUrlAttribute: allowUrlAttribute, forbidUrlAttributes: forbidUrlAttributes, align: align, parseChoice: parseChoice, createBoard: createBoard, decisionPanel: decisionPanel };
 })();
 
 if (typeof module !== "undefined") { module.exports = ArView; } // the tests load this file; the page does not

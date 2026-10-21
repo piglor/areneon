@@ -71,7 +71,11 @@ def dex_for(table: Mapping[str, Any], game: GameReplay) -> dict[str, Any]:
     """The species table for this game's page: name, base species and types, for the species it
     uses (the type colours come from here), and the terrain ids (they tell a terrain from a field
     condition). Read from the hashed engine-data export; no list of game content is written here."""
-    ids = species_in(game)
+    return dex_for_ids(table, species_in(game))
+
+
+def dex_for_ids(table: Mapping[str, Any], ids: set[str]) -> dict[str, Any]:
+    """The same table for the species ``ids`` (any word that is not a species id is ignored)."""
     species = {
         row["id"]: {"name": row["name"], "base": row["base_species"], "types": row["types"]}
         for row in table["species"]

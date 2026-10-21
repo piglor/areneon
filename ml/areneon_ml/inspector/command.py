@@ -27,6 +27,9 @@ _OURS = re.compile(r"(index|distributions|games-g\d{6}|drawn-g\d{6}|teams-\d{4})
 PoolLoader = Callable[[Path, str, Path], Pool]
 #: The directory the replay command fills; an inspector build keeps it as it is.
 REPLAYS = "replays"
+#: The directory the progress-game replay command fills (omniscient pages): kept the same way.
+PROGRESS_REPLAYS = "progress-replays"
+_KEPT = (REPLAYS, PROGRESS_REPLAYS)
 
 
 def existing_replays(out: Path) -> set[tuple[int, int]]:
@@ -78,7 +81,7 @@ def check_target(target: Path) -> None:
     if not target.is_dir() or any(
         not (
             (path.is_file() and not path.is_symlink() and _OURS.fullmatch(path.name))
-            or (path.name == REPLAYS and path.is_dir() and not path.is_symlink())
+            or (path.name in _KEPT and path.is_dir() and not path.is_symlink())
         )
         for path in target.iterdir()
     ):
@@ -105,8 +108,9 @@ def write_pages(target: Path, pages: dict[str, str]) -> int:
             layout.write_file(work / name, data)
             total += len(data)
         layout.sync_dir(work)
-        if (target / REPLAYS).is_dir():  # the replay pages are not rebuilt here: they move across
-            os.replace(target / REPLAYS, work / REPLAYS)
+        for kept in _KEPT:  # the replay pages are not rebuilt here: they move across
+            if (target / kept).is_dir():
+                os.replace(target / kept, work / kept)
         if target.exists():
             os.replace(target, backup)
         os.replace(work, target)
@@ -114,8 +118,9 @@ def write_pages(target: Path, pages: dict[str, str]) -> int:
     except BaseException:
         if backup.exists() and not target.exists():
             os.replace(backup, target)
-        if (work / REPLAYS).is_dir() and target.is_dir() and not (target / REPLAYS).exists():
-            os.replace(work / REPLAYS, target / REPLAYS)
+        for kept in _KEPT:
+            if (work / kept).is_dir() and target.is_dir() and not (target / kept).exists():
+                os.replace(work / kept, target / kept)
         shutil.rmtree(work, ignore_errors=True)
         raise
     shutil.rmtree(backup, ignore_errors=True)

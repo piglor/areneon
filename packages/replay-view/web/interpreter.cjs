@@ -28,7 +28,7 @@
  * @typedef {{ player: string, format_name: string | null, gametype: string | null, turn: number,
  *   started: boolean, request_kind: string | null, weather: string | null, terrain: string | null,
  *   field_conditions: string[], winner: string | null, own: Side, opponent: Side,
- *   labels: Record<string, string> }} State
+ *   labels: Record<string, string>, omniscient?: boolean }} State
  * @typedef {{ raw: string, kind: string, args: string[], tags: Record<string, string> }} Line
  * @typedef {{ species?: Record<string, { name?: string, base: string, types: string[] }>,
  *   terrains?: string[] }} Dex
@@ -159,12 +159,19 @@ var ArReplay = (function () {
   }
 
   /**
-   * One interpreter for one player's own channel.
-   * @param {{ player: string, dex?: Dex }} options
+   * One interpreter for one player's own channel, or (`omniscient`) for the engine's omniscient log
+   * of a recorded evaluation game: both sides' exact values, as an owner's local evaluation view.
+   * An omniscient state is p1 as `own` and p2 as `opponent`; every Pokemon is built from the
+   * `|poke|` lines, so it needs no request, and `state.omniscient` is true. A `|split|` pair is
+   * taken once, by its first (secret) line; its second (public) line is dropped, never applied twice.
+   * @param {{ player: string, dex?: Dex, omniscient?: boolean }} options
    */
   function createInterpreter(options) {
     var player = options.player;
+    var omni = options.omniscient === true;
     if (player !== "p1" && player !== "p2") { throw new Error("unsupported player"); }
+    if (omni && player !== "p1") { throw new Error("an omniscient view is p1's"); }
+    var splitLeft = 0;
     var dex = options.dex || {};
     var speciesTable = dex.species || {};
     var terrains = dex.terrains || [];
@@ -174,6 +181,7 @@ var ArReplay = (function () {
       weather: null, terrain: null, field_conditions: [], winner: null,
       own: newSide(player), opponent: newSide(player === "p1" ? "p2" : "p1"), labels: {},
     };
+    if (omni) { state.omniscient = true; }
     /** @type {Record<string, string>} */
     var shown = {};
     /** @type {Record<string, { index: number, before: Mon | null }>} */
@@ -259,9 +267,9 @@ var ArReplay = (function () {
         need(!(status !== "fnt" || num !== 0), "'" + text + "' is not an HP");
         return { num: 0, den: null, status: null };
       }
-      need(!(!m.own && den !== 100), "an opponent HP that is not a percentage (refused: a secret half)");
+      need(!(!m.own && !omni && den !== 100), "an opponent HP that is not a percentage (refused: a secret half)");
       need(!(num > den || den === 0), "'" + text + "' is not an HP");
-      if (match[3] && (m.own || !({ 50: "gy", 20: "yr" }[num] || "").includes(match[3]))) {
+      if (match[3] && !omni && (m.own || !({ 50: "gy", 20: "yr" }[num] || "").includes(match[3]))) {
         return flag("'" + text + "' has a colour class an HP cannot carry");
       }
       if (status === "fnt") {
@@ -376,6 +384,7 @@ var ArReplay = (function () {
       var sideData = body && body.side;
       need(!(!sideData || typeof sideData !== "object"), "a request with no side");
       need(!(sideData.id !== state.own.player), "a request for the other player (refused: a secret half)");
+      need(!omni, "a request in an omniscient log (a player's own half)");
       var kind = body.wait ? "wait" : body.teamPreview ? "preview" : "forceSwitch" in body ? "forceSwitch" : "active" in body ? "move" : null;
       need(!(kind === null), "a request with no phase");
       var entries = sideData.pokemon || [];
@@ -631,10 +640,12 @@ var ArReplay = (function () {
         });
       },
       clearpoke: function () {
-        state.opponent.roster = [];
-        Object.keys(state.opponent.slots).forEach(function (k) { state.opponent.slots[k] = null; });
-        [shown, disguise].forEach(function (table) {
-          Object.keys(table).forEach(function (k) { if (k.slice(0, 2) === state.opponent.player) { delete table[k]; } });
+        (omni ? [state.own, state.opponent] : [state.opponent]).forEach(function (side) {
+          side.roster = [];
+          Object.keys(side.slots).forEach(function (k) { side.slots[k] = null; });
+          [shown, disguise].forEach(function (table) {
+            Object.keys(table).forEach(function (k) { if (k.slice(0, 2) === side.player) { delete table[k]; } });
+          });
         });
       },
       poke: function (line) {
@@ -643,7 +654,7 @@ var ArReplay = (function () {
         need(!(flagText !== undefined && flagText !== "" && flagText !== "item"), "unknown item flag '" + flagText + "'");
         var side = sideOf(arg(line, 0), line);
         var d = details(arg(line, 1));
-        if (side === state.own) { return; }
+        if (side === state.own && !omni) { return; }
         var m = newMon(false);
         m.base_species = d.base;
         m.species = d.hidden ? null : d.species;
@@ -660,7 +671,7 @@ var ArReplay = (function () {
           return side.username !== null && side.username === line.args[0];
         })[0];
         need(!(!label), "'" + line.args[0] + "' is neither player");
-        state.winner = /** @type {string} */ (label[0]);
+        state.winner = omni ? /** @type {Side} */ (label[1]).player : /** @type {string} */ (label[0]);
       },
       tie: function () { state.winner = "tie"; },
       request: onRequest,
@@ -914,6 +925,16 @@ var ArReplay = (function () {
     function feed(raw) {
       var kind = "";
       try {
+        if (omni && raw.slice(0, 7) === "|split|") {
+          kind = "split";
+          need(/^\|split\|p[1-4]$/.test(raw), "a |split| marker that names no side");
+          splitLeft = 2;
+          return { kind: kind, caption: null, flagged: null };
+        }
+        if (omni && splitLeft > 0) {
+          splitLeft -= 1;
+          if (splitLeft === 0) { return { kind: "split-public", caption: null, flagged: null }; }
+        }
         if (raw.slice(0, 7) === "|split|") { kind = "split"; return flag("a |split| marker holds the opponent's secret half (refused)"); }
         var line = parseLine(raw);
         kind = line.kind;
@@ -946,10 +967,11 @@ var ArReplay = (function () {
    * @param {string} player
    * @param {string[]} lines
    * @param {Dex} [dex]
+   * @param {boolean} [omniscient] the log is the engine's omniscient one (player `p1`, both sides exact)
    * @returns {{ frames: Frame[], flags: { index: number, line: string, reason: string }[], requests: any[] }}
    */
-  function interpretChannel(player, lines, dex) {
-    var interp = createInterpreter({ player: player, dex: dex || {} });
+  function interpretChannel(player, lines, dex, omniscient) {
+    var interp = createInterpreter({ player: player, dex: dex || {}, omniscient: omniscient === true });
     var first = interp.snapshot();
     /** @type {Frame[]} */
     var frames = [{ index: -1, line: "", kind: "", caption: null, flagged: null, request: 0, state: first }];

@@ -28,13 +28,13 @@ export interface Interpreted {
 export interface Api {
   toId(text: string): string;
   parseLine(raw: string): { raw: string; kind: string; args: string[]; tags: Record<string, string> };
-  createInterpreter(options: { player: string; dex?: unknown }): {
+  createInterpreter(options: { player: string; dex?: unknown; omniscient?: boolean }): {
     feed(raw: string): { kind: string; caption: string | null; flagged: string | null };
     snapshot(): any;
     requestCount(): number;
     requests(): any[];
   };
-  interpretChannel(player: string, lines: string[], dex?: unknown): Interpreted;
+  interpretChannel(player: string, lines: string[], dex?: unknown, omniscient?: boolean): Interpreted;
 }
 
 /**
