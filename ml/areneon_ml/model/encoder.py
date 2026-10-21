@@ -303,7 +303,7 @@ class Encoder:
         shown = mon.moves_own if own and mon.moves_own is not None else mon.moves_revealed
         pad = NONE if own else UNKNOWN
         if len(shown) > self.config.max_moves:
-            # Transform, Mimic and Sketch can show more; truncating would hide moves silently.
+            # The reducer bounds a list at four slots plus Struggle; truncating would hide moves.
             raise EncodingError(f"a Pokémon shows {len(shown)} moves, more than max_moves")
         moves = [game.moves.lookup(m) for m in shown]
         moves += [pad] * (self.config.max_moves - len(moves))

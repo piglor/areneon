@@ -145,6 +145,20 @@ export interface SweepArgs {
   run_key: string;
   /** Play only teams that hold this ability (and do not apply the run config's excluded abilities). */
   only_ability?: string;
+  /** Play only teams that hold at least one of these moves (names or ids), e.g. Transform, Mimic, Sketch. */
+  only_move?: string[];
+}
+
+const idOf = (name: string): string => name.toLowerCase().replace(/[^a-z0-9]/g, "");
+
+/** The pool's teams with at least one set that has one of `moves`; refused when none do, so a sweep cannot play nothing. */
+export function restrictPoolToMoves(pool: GenerationTeamPool, moves: readonly string[]): GenerationTeamPool {
+  const wanted = new Set(moves.map(idOf));
+  const keep = pool.teams.map((team) => team.some((set) => set.moves.some((move) => wanted.has(idOf(move)))));
+  const teams = pool.teams.filter((_, i) => keep[i]);
+  if (teams.length === 0) throw new SweepUsageError(`no team of the pool holds any of the moves ${moves.join(", ")}`);
+  const hashes = pool.hashes.filter((_, i) => keep[i]);
+  return { teams, hashes, known_synthetic: pool.known_synthetic };
 }
 
 /** The pool's teams that have at least one set with `ability`; refused when none do, so a sweep cannot play nothing. */
@@ -156,11 +170,19 @@ export function restrictPool(pool: GenerationTeamPool, ability: string): Generat
   return { teams, hashes, known_synthetic: pool.known_synthetic };
 }
 
+/** A comma-separated list of moves: every entry non-empty, none twice. */
+function onlyMove(text: string): string[] {
+  const moves = text.split(",").map((move) => move.trim());
+  if (moves.some((move) => idOf(move) === "")) throw new SweepUsageError("--only-move is a comma-separated list of moves");
+  if (new Set(moves.map(idOf)).size !== moves.length) throw new SweepUsageError("--only-move names a move twice");
+  return moves;
+}
+
 export class SweepUsageError extends Error {
   override name = "SweepUsageError";
 }
 
-const FLAGS = ["--config", "--out", "--mix", "--battles", "--start", "--run-key", "--only-ability"];
+const FLAGS = ["--config", "--out", "--mix", "--battles", "--start", "--run-key", "--only-ability", "--only-move"];
 
 /** Strict `--flag value` parsing: an unknown flag, a missing or repeated value, a bad mix or a count that is not a whole number (battles at least 1) is refused, so a sweep cannot play nothing and pass. */
 export function parseSweepArgs(argv: readonly string[]): SweepArgs {
@@ -193,6 +215,7 @@ export function parseSweepArgs(argv: readonly string[]): SweepArgs {
     battles: whole("--battles", need("--battles"), 1),
     start: whole("--start", values.get("--start") ?? "0", 0),
     run_key: values.get("--run-key") ?? "sweep-1",
+    ...(values.has("--only-move") ? { only_move: onlyMove(values.get("--only-move") as string) } : {}),
     ...(values.has("--only-ability") ? { only_ability: values.get("--only-ability") as string } : {}),
   };
 }
