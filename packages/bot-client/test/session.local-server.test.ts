@@ -1,12 +1,23 @@
-import { loadEngine, loadRulesSnapshot, type PokemonSet } from "@areneon/showdown-bridge";
+import {
+  continueChannel,
+  loadEngine,
+  loadRulesSnapshot,
+  type PokemonSet,
+  resolveFormat,
+  stampTeam,
+  type StampedTeam,
+  teamHash,
+} from "@areneon/showdown-bridge";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   type A2BattleRecord,
   type A2BotOptions,
+  a2Episode,
   type A2SessionResult,
   connectWebSocket,
   runA2Bot,
   type SessionLog,
+  timerRulesOf,
   type Transport,
 } from "../src/index.ts";
 import { fixtureTeam, FORMAT, startLocalServer } from "./local-battle.ts";
@@ -111,6 +122,17 @@ function expectOwnNumbering(record: A2BattleRecord): void {
   for (const decision of record.decisions) expect(decision.channel_request_seq).toBe(decision.request_seq);
 }
 
+/** After a reconnect the decisions are numbered on the joined channel: strictly rising, though the connection restarts its own count. */
+function expectJoinedNumbering(record: A2BattleRecord): void {
+  const numbers = record.decisions.map((decision) => decision.channel_request_seq);
+  expect(numbers.length).toBeGreaterThan(0);
+  expect(numbers).toEqual([...numbers].sort((a, b) => a - b));
+  expect(new Set(numbers).size).toBe(numbers.length);
+  const joined = record.channels.reduce(continueChannel);
+  const requests = joined.lines.filter((line) => line.startsWith("|request|")).length;
+  expect(Math.max(...numbers)).toBeLessThanOrEqual(requests);
+}
+
 describe("runA2Bot on the pinned local server", () => {
   it(
     "plays one Bo1 to the end with open team sheets declined, choosing only candidates",
@@ -202,8 +224,27 @@ describe("runA2Bot on the pinned local server", () => {
       expect(record.channels).toHaveLength(2);
       expect(sparring.sent.filter((line) => line.endsWith("|/rejectopenteamsheets"))).toHaveLength(1);
       expect(expectCandidateChoices(sparring.sent, record)).toBeGreaterThanOrEqual(record.decisions.length);
-      // Each connection numbers its own channel's requests from 1.
-      expectOwnNumbering(record);
+      // Each connection numbers its own requests from 1; a decision is numbered on the joined channel.
+      expectJoinedNumbering(record);
+      // The record of a reconnected battle is one Episode on the one joined channel (ADR-008 §5),
+      // unless a request first decided on the rejoin lost its timer snapshot to the old connection:
+      // which of the two happens depends on where the drop fell, and each is pinned by the fixtures.
+      const known = new Set([teamHash(own), teamHash(opponent)]);
+      const written = a2Episode(record, {
+        team: stampTeam(own as StampedTeam["team"], known),
+        known_synthetic: known,
+        manifest: resolveFormat(engine, FORMAT, snapshot).manifest,
+        timer_rules: timerRulesOf(engine, FORMAT, 5),
+        behaviour_policy_id: "actor-rule@a2",
+        collection: { kind: "sparring", session_id: "reconnect" },
+      });
+      if (record.decisions.some((decision) => decision.timer === null)) {
+        await expect(written).rejects.toThrow(/no timer snapshot/);
+      } else {
+        const episode = await written;
+        expect(episode.channel).toEqual(record.channels.reduce(continueChannel).lines);
+        expect(episode.decisions.map((d) => d.identity.request_seq)).toEqual(record.decisions.map((d) => d.channel_request_seq));
+      }
       expectClosedPreview(record, opponent);
     },
     60_000,

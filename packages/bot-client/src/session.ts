@@ -1,5 +1,6 @@
 import {
   actorRule,
+  continueChannel,
   type Engine,
   legalChoiceSet,
   type LegalChoiceSet,
@@ -147,7 +148,13 @@ export interface A2BattleRecord {
   /** Requests the server answered for the bot (`server_auto_choose_detected`): it must never fire (ADR-005 §3). */
   server_auto_chooses: AutoChooseDetection[];
   decisions: DecisionRecord[];
-  /** This player's channel, one per connection that joined the room (each starts at its `|init|`). */
+  /**
+   * This player's channel, one per connection that joined the room (each
+   * starts at its `|init|`). A rejoin's channel holds the replayed room log,
+   * not the requests before it: `a2Episode` joins them (`continueChannel`)
+   * into the one channel an Episode stores. The session joins them as it goes,
+   * so a decision's `channel_request_seq` already numbers the joined channel.
+   */
   channels: PlayerChannel[];
   /**
    * Set when a fatal error ended the session while this battle was unfinished
@@ -259,7 +266,14 @@ interface Battle {
   defect: boolean;
   autoChooses: AutoChooseDetection[];
   decisions: DecisionRecord[];
+  /** Each kept connection's own channel, as the record lists them. */
   channels: PlayerChannel[];
+  /**
+   * The kept channels joined into the battle's one continuous channel
+   * (`continueChannel`); undefined before the first connection is kept. The
+   * request numbers of an observation, and so of a decision, follow it.
+   */
+  joined: PlayerChannel | undefined;
 }
 
 /** One battle room on one connection. */
@@ -302,7 +316,9 @@ interface Connection {
  *   which also detects the server choosing for the bot.
  * - On a close it reconnects and logs in again; the server rejoins the bot
  *   to its battle and re-sends its request, with `|sentchoice|` if it holds
- *   a choice (ADR-005 §1). Each connection's channel starts at its `|init|`.
+ *   a choice (ADR-005 §1). Each connection's channel starts at its `|init|`;
+ *   the session joins them (`continueChannel`) so a rejoined bot observes, decides and numbers
+ *   its requests on the battle's one channel.
  * - An `|error|` no rule classifies, an enumerator defect in a harness run,
  *   or a request the pinned decoder refuses ends the session: it forfeits the
  *   open battle and rejects.
@@ -635,6 +651,7 @@ class Session {
       autoChooses: [],
       decisions: [],
       channels: [],
+      joined: undefined,
     };
     this.#battles.set(room, battle);
     this.#log({ event: "battle_started", room });
@@ -650,22 +667,44 @@ class Session {
     const request = events.find((event) => event.kind === "request");
     if (request === undefined) return;
     const player = request.request.player as PlayerChannel["player"];
+    // A rejoin is the same seat (ADR-008 §3): a request for the other one is not this battle's channel.
+    if (battle.player !== null && battle.player !== player) {
+      throw new SessionError(`${battle.room}: a rejoin received a request for ${player}, not the bot's seat ${battle.player}`);
+    }
     battle.player = player;
     state.channel = new A2Channel({ room: battle.room, player, data_class: this.#options.data_class });
     for (const kept of state.frames) state.channel.receive(kept);
     state.frames = [];
   }
 
-  /** This player's channel as built now; logs each dropped line once per channel. */
-  #build(battle: Battle, channel: A2Channel, state: RoomOnConnection): PlayerChannel {
+  /**
+   * This connection's channel as built now, and the battle's one channel with
+   * it: the kept channels of the earlier connections joined to it by
+   * `continueChannel` (equal to the channel itself on the first connection).
+   * Logs each dropped line once per channel. The join fails closed
+   * (`ObservationError`) on a rejoin that does not continue the earlier
+   * channel, which ends the session like any channel that cannot be built.
+   */
+  #built(battle: Battle, channel: A2Channel, state: RoomOnConnection): { own: PlayerChannel; joined: PlayerChannel } {
     const built = channel.build();
     for (const line of built.dropped.slice(state.logged)) this.#log({ event: "dropped", room: battle.room, line });
     state.logged = built.dropped.length;
-    return built.channel;
+    const own = built.channel;
+    return { own, joined: battle.joined === undefined ? own : continueChannel(battle.joined, own) };
   }
 
+  /** The battle's channel as it stands: what an observation of the next decision is built from. */
+  #build(battle: Battle, channel: A2Channel, state: RoomOnConnection): PlayerChannel {
+    return this.#built(battle, channel, state).joined;
+  }
+
+  /** The connection ends: its channel is kept as it is and joined to the battle's. */
   #keepChannel(battle: Battle, state: RoomOnConnection): void {
-    if (state.channel !== undefined) battle.channels.push(this.#build(battle, state.channel, state));
+    if (state.channel !== undefined) {
+      const { own, joined } = this.#built(battle, state.channel, state);
+      battle.channels.push(own);
+      battle.joined = joined;
+    }
     state.channel = undefined;
   }
 
