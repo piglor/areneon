@@ -206,6 +206,25 @@ describe("a2Episode on a battle of the local server", () => {
     await expect(a2Episode(edited(change), options())).rejects.toBeInstanceOf(A2EpisodeError);
   });
 
+  it("refuses a decision first made after a rejoin with no snapshot under its own code, quoting nothing", async () => {
+    const refused = await a2Episode(
+      edited((r) => {
+        decision(r).timer = null;
+        decision(r).rejoin_without_snapshot = true;
+      }),
+      options(),
+    ).catch((error: unknown) => error);
+    expect(refused).toBeInstanceOf(A2EpisodeError);
+    expect(refused).toMatchObject({ code: "rejoin_without_timer_snapshot" });
+    expect((refused as Error).message).toBe(
+      "a decision was first made after a reconnect with no timer snapshot (the server does not replay it): " +
+        "the battle is kept as a record and an incident, never as an Episode or training data",
+    );
+    // Any other missing snapshot is a refusal without that code.
+    const plain = await a2Episode(edited((r) => (decision(r).timer = null)), options()).catch((error: unknown) => error);
+    expect((plain as A2EpisodeError).code).toBeUndefined();
+  });
+
   it("maps the session's deadline evidence: watchdog, zero budget, rounded times, the next fresh snapshot", async () => {
     const episode = await a2Episode(
       edited((r) => {

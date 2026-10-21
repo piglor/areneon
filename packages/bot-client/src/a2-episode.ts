@@ -20,7 +20,20 @@ import type { A2BattleRecord, DecisionRecord } from "./session.ts";
 /** An A2 battle record that cannot become an Episode. The message never quotes server text. */
 export class A2EpisodeError extends Error {
   override name = "A2EpisodeError";
+  /**
+   * Set for a refusal that is a deliberate policy and not a defect of the record:
+   * `rejoin_without_timer_snapshot`, a decision first made after a reconnect with
+   * no timer snapshot (ADR-008 E1b). The battle is kept as a record and an incident.
+   */
+  readonly code: A2EpisodeRefusal | undefined;
+
+  constructor(message: string, code?: A2EpisodeRefusal) {
+    super(message);
+    this.code = code;
+  }
 }
+
+export type A2EpisodeRefusal = "rejoin_without_timer_snapshot";
 
 export interface A2EpisodeOptions {
   /** The bot's own team as it brought it; its class is proven by `stampTeam`. */
@@ -96,6 +109,13 @@ function decisionOf(
 ): EpisodeDecision {
   const { timer } = decision;
   if (timer === null) {
+    if (decision.rejoin_without_snapshot === true) {
+      throw new A2EpisodeError(
+        "a decision was first made after a reconnect with no timer snapshot (the server does not replay it): " +
+          "the battle is kept as a record and an incident, never as an Episode or training data",
+        "rejoin_without_timer_snapshot",
+      );
+    }
     throw new A2EpisodeError(`decision ${decision.request_seq} has no timer snapshot: its deadline record cannot be written`);
   }
   const elapsed = Math.max(0, Math.ceil(decision.elapsed_ms));

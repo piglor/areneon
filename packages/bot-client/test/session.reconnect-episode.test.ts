@@ -278,11 +278,19 @@ describe("a reconnect whose re-sent request lost its timer snapshot", () => {
   const fixture = readFixture(WITHOUT_SNAPSHOT);
   const seat = seatOf(fixture);
 
-  it("plays on, but writes no Episode: that decision has no deadline record to carry", async () => {
-    const record = finished(await play(fixture, fixture.frames[seat]));
+  it("plays on, keeps the record and an incident, and writes no Episode: that decision has no deadline record to carry (ADR-008 E1b)", async () => {
+    const played = await play(fixture, fixture.frames[seat]);
+    const record = finished(played);
     const snapshotless = record.decisions.filter((d) => d.timer === null);
     expect(snapshotless).toHaveLength(1);
-    await expect(a2Episode(record, optionsFor(fixture, seat))).rejects.toThrow(/no timer snapshot/);
+    expect(snapshotless[0]?.rejoin_without_snapshot).toBe(true);
+    expect(record.decisions.filter((d) => d.rejoin_without_snapshot === true)).toHaveLength(1);
+    expect(played.logs.filter((entry) => entry.event === "incident")).toEqual([
+      { event: "incident", room: record.room, kind: "rejoin_without_timer_snapshot", request_seq: snapshotless[0]?.request_seq },
+    ]);
+    const refused = await a2Episode(record, optionsFor(fixture, seat)).catch((error: unknown) => error);
+    expect(refused).toBeInstanceOf(A2EpisodeError);
+    expect(refused).toMatchObject({ code: "rejoin_without_timer_snapshot", message: expect.stringContaining("no timer snapshot") });
   }, 60_000);
 });
 

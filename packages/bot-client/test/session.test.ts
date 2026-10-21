@@ -726,14 +726,15 @@ describe("runA2Bot: reconnects (ADR-005 §1, §3)", () => {
     run.t().push(at(2));
     now = 2_400;
     run.t().push(at(3));
-    expect(run.decisions()[1]).toMatchObject({ rqid: 3, request_seq: 1, timer: null, elapsed_ms: 400 });
+    expect(run.decisions()[1]).toMatchObject({ rqid: 3, request_seq: 1, timer: null, elapsed_ms: 400, rejoin_without_snapshot: true });
+    expect(run.events("incident")).toEqual([{ event: "incident", room: ROOM, kind: "rejoin_without_timer_snapshot", request_seq: 1 }]);
     expect(chooseLines(run.t())).toHaveLength(1);
   });
 
   it("decides at once a request it first sees on a rejoin, and ignores a re-sent wait", async () => {
     const { run } = await answeredThenDropped();
     run.t().push(at(10));
-    expect(run.decisions()[2]).toMatchObject({ rqid: 8, phase: "forceSwitch", timer: null, request_seq: 1 });
+    expect(run.decisions()[2]).toMatchObject({ rqid: 8, phase: "forceSwitch", timer: null, request_seq: 1, rejoin_without_snapshot: true });
     run.t().push(at(18));
     run.t().push(at(18));
     expect(chooseLines(run.t())).toHaveLength(1);
@@ -956,6 +957,52 @@ describe("runA2Bot: a rejoin of a room whose battle already ended", () => {
     run.t().push(room("|noinit|nonexistent|The room \"battle\" does not exist."));
     await expect(run.result).rejects.toThrow(SessionError);
     expect(records[0]).toMatchObject({ result: "unfinished", fatal: { error: "SessionError" } });
+  });
+});
+
+describe("runA2Bot: negative controls for a rejoin without a timer snapshot and for an ended room", () => {
+  const NO_TIMER_INIT = room("|init|battle", "|title|p1 vs. p2", `|j| ${BOT}`);
+
+  it("marks no decision and logs no incident when the timer is off, on a rejoin or not", async () => {
+    const run = await start();
+    login(run.t());
+    run.t().push(NO_TIMER_INIT);
+    run.t().push(at(0));
+    run.t().push(at(1));
+    run.t().push(CONFIRM);
+    run.t().push(at(2));
+    // A first decision with no snapshot, the timer off.
+    expect(run.decisions()[0]).toMatchObject({ timer: null });
+    run.t().end(1006);
+    await vi.waitFor(() => expect(run.transports).toHaveLength(2));
+    login(run.t());
+    run.t().push(NO_TIMER_INIT);
+    run.t().push(at(0));
+    run.t().push(at(2));
+    // A request first seen on the rejoin, the timer off: no snapshot would have come anyway.
+    run.t().push(at(3));
+    expect(run.decisions()).toHaveLength(2);
+    expect(run.decisions()[1]).toMatchObject({ rqid: 3, timer: null });
+    for (const decision of run.decisions()) expect(decision.rejoin_without_snapshot).toBeUndefined();
+    expect(run.events("incident")).toEqual([]);
+  });
+
+  it("ignores a |noinit| for a battle that has ended, and sends no /join for it after a reconnect", async () => {
+    const run = await start({ battles: 2 });
+    login(run.t());
+    preview(run.t());
+    run.t().push(at(2));
+    run.t().push(room("|tie"));
+    expect(run.events("battle_ended")).toHaveLength(1);
+    run.t().push(room("|noinit|nonexistent|The room does not exist."));
+    run.t().end(1006);
+    await vi.waitFor(() => expect(run.transports).toHaveLength(2));
+    login(run.t());
+    expect(run.t().sent.filter((line) => line.startsWith("|/join"))).toEqual([]);
+    run.t().push(room("|noinit|nonexistent|The room does not exist."));
+    const settled = await Promise.race([run.result.then(() => "resolved"), new Promise((resolve) => setTimeout(() => resolve("pending"), 50))]);
+    expect(settled).toBe("pending");
+    run.t().end(1000);
   });
 });
 
