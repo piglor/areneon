@@ -250,6 +250,9 @@ function revivalCandidates(flags: boolean[], team: Mon[]): Candidate[] {
   team.forEach((m, i) => {
     if (m.fainted) options.push({ text: `switch ${i + 1}`, pending: false });
   });
+  if (options.length === 0) {
+    throw new EnumerationError("Revival Blessing request with no fainted Pokémon to revive");
+  }
   if (benchSlots(team).length === 0) options.push(PASS);
   const perSlot = flags.map((flag): SlotOption[] => (flag ? options : [PASS]));
   return joint(perSlot[0] as SlotOption[], perSlot[1] as SlotOption[]);

@@ -360,6 +360,22 @@ describe("Revival Blessing (the engine's `reviving` request)", () => {
       },
     ],
     [
+      "a second reviving Pokémon in an unflagged slot",
+      "force-switch.request.json",
+      (r: Parameters<Edit>[0]) => {
+        revive([3])(r);
+        r.side.pokemon[1].reviving = true;
+      },
+    ],
+    [
+      "a reviver with no fainted Pokémon to revive",
+      "force-switch.request.json",
+      (r: Parameters<Edit>[0]) => {
+        revive([])(r);
+        r.side.pokemon[1].condition = "100/157";
+      },
+    ],
+    [
       "a reviver next to a forced switch that is not a revival",
       "force-switch.request.json",
       (r: Parameters<Edit>[0]) => revive([2, 3], [true, true])(r),
