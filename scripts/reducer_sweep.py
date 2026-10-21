@@ -172,6 +172,9 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     report = run(args.files, build_encoder(args.engine_data, json.loads(args.encoder_config)))
     print(render(report))
+    if report.queries == 0:
+        print("nothing was checked: the input holds no battle with a request", file=sys.stderr)
+        return 1
     return 0 if report.unexplained == 0 else 1
 
 
