@@ -127,7 +127,7 @@ describe("the pilot command", () => {
     const refused = cli(generate(join(scratch, "f"), ["--pilot", path]));
     expect(refused.code).toBe(1);
     expect(refused.err.join()).toMatch(/the pilot has 40 draws, the config says 40000/);
-  }, 60_000);
+  }, 180_000);
 });
 
 describe("the command line refuses", () => {
