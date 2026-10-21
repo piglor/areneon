@@ -57,11 +57,17 @@ describe("the request identity has one definition", () => {
   });
 
   it("no module but request-bytes.ts turns a request into hashed bytes", () => {
-    for (const file of readdirSync(new URL("../src/", import.meta.url))) {
-      if (!file.endsWith(".ts") || file === "request-bytes.ts") continue;
-      const source = src(file);
+    const dirs = ["../src/", "../../bot-client/src/"];
+    const all = dirs.flatMap((d) =>
+      readdirSync(new URL(d, import.meta.url))
+        .filter((f) => f.endsWith(".ts"))
+        .map((f) => [`${d}${f}`, readFileSync(new URL(`${d}${f}`, import.meta.url), "utf8")] as const),
+    );
+    expect(all.some(([f]) => f.includes("bot-client"))).toBe(true);
+    for (const [file, source] of all) {
+      if (file === "../src/request-bytes.ts") continue;
       expect(source, file).not.toMatch(/const \{ rqid,? \.\.\./);
-      if (file === "observation.ts") expect(source).not.toMatch(/canonicalJson|TextEncoder/);
+      if (file === "../src/observation.ts") expect(source).not.toMatch(/canonicalJson|TextEncoder/);
     }
   });
 });

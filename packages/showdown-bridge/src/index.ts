@@ -141,7 +141,7 @@ export {
   RequestDecodeError,
   type RequestPhase,
 } from "./request.ts";
-export { hashRequest, requestIdentityBytes } from "./request-bytes.ts";
+export { hashRequest, requestIdentityBytes, requestIdentityText } from "./request-bytes.ts";
 export { canonicalJson, type Json, requestHash } from "./request-identity.ts";
 export { serverOnlyLine, type StrippedLines, stripServerLines } from "./server-lines.ts";
 export {

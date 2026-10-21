@@ -1,8 +1,8 @@
 import {
-  canonicalJson,
   type Json,
   type PlayerChannel,
   playerChannel,
+  requestIdentityText,
   stripServerLines,
 } from "@areneon/showdown-bridge";
 import { splitFrame } from "./protocol.ts";
@@ -65,8 +65,8 @@ function requestIdentity(line: string): ChannelState["last"] {
     return undefined; // Kept as it is: `playerChannel` refuses it on build.
   }
   if (typeof request !== "object" || request === null || !("rqid" in request)) return undefined;
-  const { rqid, ...rest } = request as { rqid: unknown };
-  return typeof rqid === "number" ? { rqid, body: canonicalJson(rest as Json) } : undefined;
+  const { rqid } = request as { rqid: unknown };
+  return typeof rqid === "number" ? { rqid, body: requestIdentityText(request as { [key: string]: Json }) } : undefined;
 }
 
 /**

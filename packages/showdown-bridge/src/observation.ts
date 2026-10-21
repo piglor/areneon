@@ -132,9 +132,9 @@ function assertOwnTeam(team: PrivateTeamSpec, lines: readonly string[]): void {
 /**
  * The observation for the last `|request|` in the channel: the decision that
  * request asks for. Its identity is computed exactly as `decodeRequest`
- * computes it (`request-bytes.ts` is the one definition of the hashed bytes): `request_seq` counts every request so far, wait requests
- * included, and `request_hash` is the SHA-256 of the canonical request
- * without `rqid`.
+ * computes it (`request-bytes.ts` is the one definition of the hashed
+ * bytes): `request_seq` counts every request so far, wait requests included,
+ * and `request_hash` is the SHA-256 of the canonical request without `rqid`.
  */
 export async function buildObservation({
   channel,

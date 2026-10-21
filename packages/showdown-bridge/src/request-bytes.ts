@@ -13,8 +13,13 @@ export type Sha256 = (bytes: Uint8Array) => Promise<string>;
  * and server paths hash alike. Pure; it hashes nothing.
  */
 export function requestIdentityBytes(request: { [key: string]: Json }): Uint8Array {
+  return new TextEncoder().encode(requestIdentityText(request));
+}
+
+/** The same bytes as text: the canonical request JSON without `rqid`. */
+export function requestIdentityText(request: { [key: string]: Json }): string {
   const { rqid, ...rest } = request;
-  return new TextEncoder().encode(canonicalJson(rest));
+  return canonicalJson(rest);
 }
 
 /** `request_hash` through an injected `Sha256` port. */
