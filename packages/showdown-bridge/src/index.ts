@@ -229,6 +229,16 @@ export {
   readPrivateTeamRecord,
 } from "./private-records.ts";
 export {
+  HOLDOUT_PPM,
+  HOLDOUT_RULE,
+  holdoutFlag,
+  PrivateSnapshotError,
+  type PrivateSnapshotManifest,
+  privateLogicalSnapshotHash,
+  privateSnapshotHash,
+  readPrivateSnapshotManifest,
+} from "./private-snapshot.ts";
+export {
   exportTeamVocabulary,
   readTeamVocabulary,
   TEAM_VOCABULARY_FILE,

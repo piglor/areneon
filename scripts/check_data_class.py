@@ -54,6 +54,15 @@ PokePaste guard does not see JSON teams, so this guard rejects a committed
   both hashes equal the paste's hashes needs the engine's ``Teams.import``, so
   the guard cannot check it: the vitest round-trip in private-records.test.ts (this
   slice) does, and the pytest tests here pin the keys and types to the schema; or
+- holds ``"data_class": "private"`` as the root of a PrivateSnapshotManifest
+  outside a path in ``PRIVATE_MANIFEST_MARKERS`` (ADR-015 §2, §6), or at such a
+  path with anything but the strict manifest shape: exactly the manifest's keys
+  at every level (``parent_snapshot_hash`` and ``first`` optional), every string
+  a 64-hex hash, the 40-hex engine commit, a fixed word or an id token
+  (``[A-Za-z0-9][A-Za-z0-9._:-]{0,127}``), every number an integer in the
+  schema's range, and no ``paste``. No free text and no team content can ride in
+  a manifest; the marker waives only the root's private label. The test files
+  pin the keys, types and ranges to the schema; or
 - has a duplicate key in any JSON object (and, for JSONL, in any line): a
   reader keeps the last value while the earlier one stays in the committed
   bytes, so the guard refuses the file; or
@@ -93,6 +102,7 @@ import re
 import sys
 from collections.abc import Iterator, Sequence
 from pathlib import Path, PurePosixPath
+from typing import Any
 
 SEALED_MARKERS = frozenset(
     {
@@ -115,6 +125,117 @@ PRIVATE_SAMPLE_MARKERS = frozenset(
         "fixtures/contracts/v1/private-team-record/valid/retired.json",
     }
 )
+# ADR-015 section 2 field types; labels are ADR-013's (an array of at most 64
+# {label_id, value} pairs whose strings match the ADR-013 token pattern).
+HEX64 = re.compile(r"[0-9a-f]{64}")
+HEX32 = re.compile(r"[0-9a-f]{32}")
+TAG = re.compile(r"[a-z0-9][a-z0-9-]{0,31}")
+LABEL_TOKEN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}")
+MAX_TAGS = 16
+MAX_LABELS = 64
+MAX_REVISION = 2**31 - 1
+MAX_SAFE = 2**53 - 1
+HEX40 = re.compile(r"[0-9a-f]{40}")
+FORMAT_ID = re.compile(r"[a-z0-9]+")
+VERSION = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:+-]{0,63}")
+# Exact files that may hold a synthetic sample of a PrivateSnapshotManifest
+# (ADR-015 section 2), each checked against the strict shape below.
+PRIVATE_MANIFEST_MARKERS = frozenset(
+    {
+        "fixtures/contracts/v1/private-snapshot-manifest/reader-invalid/active-rows-over-rows.json",
+        "fixtures/contracts/v1/private-snapshot-manifest/reader-invalid/both-parent-and-first.json",
+        "fixtures/contracts/v1/private-snapshot-manifest/reader-invalid/cell-not-active-sum.json",
+        "fixtures/contracts/v1/private-snapshot-manifest/reader-invalid/cells-out-of-order.json",
+        "fixtures/contracts/v1/private-snapshot-manifest/reader-invalid/counts-not-shard-rows.json",
+        "fixtures/contracts/v1/private-snapshot-manifest/reader-invalid/duplicate-shard.json",
+        "fixtures/contracts/v1/private-snapshot-manifest/reader-invalid/neither-parent-nor-first.json",
+        "fixtures/contracts/v1/private-snapshot-manifest/reader-invalid/ranges-do-not-tile.json",
+        "fixtures/contracts/v1/private-snapshot-manifest/reader-invalid/ranges-out-of-order.json",
+        "fixtures/contracts/v1/private-snapshot-manifest/reader-invalid/records-active-not-cells.json",
+        "fixtures/contracts/v1/private-snapshot-manifest/reader-invalid/rows-not-range-sum.json",
+        "fixtures/contracts/v1/private-snapshot-manifest/reader-invalid/shard-index-not-position.json",
+        "fixtures/contracts/v1/private-snapshot-manifest/reader-invalid/shards-out-of-order.json",
+        "fixtures/contracts/v1/private-snapshot-manifest/reader-invalid/unlisted-active-cell.json",
+        "fixtures/contracts/v1/private-snapshot-manifest/reader-invalid/wrong-logical-hash.json",
+        "fixtures/contracts/v1/private-snapshot-manifest/valid/all-retired.json",
+        "fixtures/contracts/v1/private-snapshot-manifest/valid/extended.json",
+        "fixtures/contracts/v1/private-snapshot-manifest/valid/first.json",
+    }
+)
+# The strict PrivateSnapshotManifest shape: a spec per object (required keys,
+# optional keys). A leaf is a kind name or a tuple, see _leaf_ok; a
+# ("list", maximum length, item spec) is an array.
+_VERSION_MANIFEST: Any = (
+    {
+        "showdown_commit": "hex40",
+        "format_id": "format",
+        "regulation": "token",
+        "ruleset_hash": "hex64",
+        "format_rules_hash": "hex64",
+    },
+    {},
+)
+_RANGE: Any = (
+    {
+        "stratum": ("int", 0, 65535),
+        "first_row": ("int", 0, MAX_SAFE),
+        "rows": ("int", 1, MAX_SAFE),
+        "active_rows": ("int", 0, MAX_SAFE),
+    },
+    {},
+)
+_SHARD: Any = (
+    {
+        "index": ("int", 0, 4095),
+        "file_sha256": "hex64",
+        "bytes": ("int", 1, MAX_SAFE),
+        "logical_hash": "hex64",
+        "rows": ("int", 1, MAX_SAFE),
+        "split": ("const", "owner"),
+        "cell_ranges": ("list", 65536, _RANGE),
+    },
+    {},
+)
+_CELL: Any = (
+    {
+        "split": ("const", "owner"),
+        "stratum": ("int", 0, 65535),
+        "rows": ("int", 1, MAX_SAFE),
+    },
+    {},
+)
+PRIVATE_MANIFEST_SPEC: Any = (
+    {
+        "schema_version": ("const", 1),
+        "data_class": ("const", "private"),
+        "snapshot_id": "token",
+        "manifest": _VERSION_MANIFEST,
+        "vocabulary_hash": "hex64",
+        "label_set_hash": "hex64",
+        "logical_snapshot_hash": "hex64",
+        "shard_key": "hex64",
+        "shards": ("list", 4096, _SHARD),
+        "cells": ("list", 65536, _CELL),
+        "records": (
+            {"active": ("int", 0, MAX_SAFE), "retired": ("int", 0, MAX_SAFE)},
+            {},
+        ),
+        "holdout": (
+            {
+                "rule": ("const", "hmac-sha256-team-id/1"),
+                "key": "hex64",
+                "ppm": ("const", 200000),
+            },
+            {},
+        ),
+        "writer": (
+            {"name": "token", "version": "version", "binary_sha256": "hex64"},
+            {},
+        ),
+        "parquet_schema_version": ("int", 1, 65535),
+    },
+    {"parent_snapshot_hash": "hex64", "first": ("const", True)},
+)
 # The root keys of a PrivateTeamRecord (ADR-015 section 2). A marked sample has
 # exactly these keys, so team content cannot ride in others. A test pins this
 # set to the properties of private-team-record.schema.json.
@@ -134,15 +255,6 @@ PRIVATE_RECORD_KEYS = frozenset(
         "holdout",
     }
 )
-# ADR-015 section 2 field types; labels are ADR-013's (an array of at most 64
-# {label_id, value} pairs whose strings match the ADR-013 token pattern).
-HEX64 = re.compile(r"[0-9a-f]{64}")
-HEX32 = re.compile(r"[0-9a-f]{32}")
-TAG = re.compile(r"[a-z0-9][a-z0-9-]{0,31}")
-LABEL_TOKEN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}")
-MAX_TAGS = 16
-MAX_LABELS = 64
-MAX_REVISION = 2**31 - 1
 # A PokePaste signature: `Species @ Item`, an `Ability:` line or a `- Move` line.
 PASTE_LINE = re.compile(r"^(?:[^\n]+ @ [^\n]+|Ability: [^\n]*|- \S[^\n]*)$", re.MULTILINE)
 TEAM_CORPUS = Path(__file__).resolve().parents[1] / "fixtures" / "teams"
@@ -168,6 +280,11 @@ UNLABELLED_RECORD = (
 PASTE_NOT_IN_CORPUS = (
     "is a private sample marker, but not a private record whose every paste "
     "(and at least one) is in the synthetic team corpus (fixtures/teams/**)"
+)
+MANIFEST_SHAPE = (
+    "is a private manifest sample marker, but not exactly a PrivateSnapshotManifest: "
+    "other keys, strings that are not hashes, id tokens or fixed words, or numbers "
+    "out of range"
 )
 MARKER_SHAPE = (
     "is a private sample marker holding more than a PrivateTeamRecord: other root keys, "
@@ -259,6 +376,11 @@ def is_private_marker_path(path: str) -> bool:
     return PurePosixPath(Path(path).as_posix()).as_posix() in PRIVATE_SAMPLE_MARKERS
 
 
+def is_private_manifest_path(path: str) -> bool:
+    """True for the exact paths where a synthetic private-manifest sample may live."""
+    return PurePosixPath(Path(path).as_posix()).as_posix() in PRIVATE_MANIFEST_MARKERS
+
+
 def team_corpus(root: Path | None = None) -> frozenset[str]:
     """Every paste string in the committed synthetic team corpus."""
     pastes: set[str] = set()
@@ -286,13 +408,15 @@ def problems_in(  # noqa: PLR0913, PLR0917 - one flag per exact-path allowlist
     private_marker_ok: bool = False,
     corpus: frozenset[str] | None = None,
     reveal_ok: bool = False,
+    manifest_marker_ok: bool = False,
 ) -> list[str]:
     """Why one parsed JSON document must not be committed (empty if it may).
 
     ``sealed_marker_ok`` is true only for a file at ``is_sealed_marker_path``;
     ``private_marker_ok`` only for one at ``is_private_marker_path``, and then
     ``corpus`` is the set of pastes the marked file may hold; ``reveal_ok`` only
-    for one at ``is_reveal_path``.
+    for one at ``is_reveal_path``; ``manifest_marker_ok`` only for one at
+    ``is_private_manifest_path``, which must then be a strict PrivateSnapshotManifest.
     """
     found: list[str] = []
     objects = list(_walk(document))
@@ -302,7 +426,10 @@ def problems_in(  # noqa: PLR0913, PLR0917 - one flag per exact-path allowlist
         and _marker_pastes_ok(objects, corpus)
     )
     shape_ok = _marker_shape_ok(document, objects)
-    waived = private_marker_ok and record_ok and shape_ok
+    manifest_ok = manifest_marker_ok and _spec_ok(PRIVATE_MANIFEST_SPEC, document)
+    waived = (private_marker_ok and record_ok and shape_ok) or manifest_ok
+    if manifest_marker_ok and not manifest_ok:
+        found.append(MANIFEST_SHAPE)
     if private_marker_ok and not record_ok:
         found.append(PASTE_NOT_IN_CORPUS)
     if private_marker_ok and not shape_ok:
@@ -402,6 +529,41 @@ def _record_types_ok(record: dict[str, object]) -> bool:
     )
 
 
+def _leaf_ok(kind: object, value: object) -> bool:
+    """One leaf of PRIVATE_MANIFEST_SPEC: a kind name, ("int", low, high) or ("const", x)."""
+    if isinstance(kind, tuple):
+        if kind[0] == "const":
+            return type(value) is type(kind[1]) and value == kind[1]
+        return _is_int(value, kind[1], kind[2])
+    patterns = {
+        "hex64": HEX64,
+        "hex40": HEX40,
+        "format": FORMAT_ID,
+        "token": LABEL_TOKEN,
+        "version": VERSION,
+    }
+    return _is_match(patterns[str(kind)], value)
+
+
+def _spec_ok(spec: object, value: object) -> bool:
+    """True when ``value`` is exactly what ``spec`` describes: no other key, no other leaf."""
+    if isinstance(spec, tuple) and isinstance(spec[0], dict):
+        required, optional = spec
+        if not isinstance(value, dict):
+            return False
+        keys = required.keys() | optional.keys()
+        if not (required.keys() <= value.keys() <= keys):
+            return False
+        return all(_spec_ok({**required, **optional}[key], item) for key, item in value.items())
+    if isinstance(spec, tuple) and spec[0] == "list":
+        return (
+            isinstance(value, list)
+            and len(value) <= spec[1]
+            and all(_spec_ok(spec[2], item) for item in value)
+        )
+    return _leaf_ok(spec, value)
+
+
 def _marker_shape_ok(document: object, objects: list[dict[str, object]]) -> bool:
     if not isinstance(document, dict) or document.keys() != PRIVATE_RECORD_KEYS:
         return False
@@ -454,10 +616,13 @@ def violations(paths: Sequence[str]) -> list[str]:
         private_ok = is_private_marker_path(path)
         corpus = team_corpus() if private_ok else None
         reveal_ok = is_reveal_path(path)
+        manifest_ok = is_private_manifest_path(path)
         reasons = {
             reason
             for doc in documents
-            for reason in problems_in(doc, in_fixtures, marker_ok, private_ok, corpus, reveal_ok)
+            for reason in problems_in(
+                doc, in_fixtures, marker_ok, private_ok, corpus, reveal_ok, manifest_ok
+            )
         }
         found.extend(f"{path}: {reason}" for reason in sorted(reasons))
     return found

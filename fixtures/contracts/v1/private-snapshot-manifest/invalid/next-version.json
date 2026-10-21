@@ -1,0 +1,68 @@
+{
+  "schema_version": 2,
+  "data_class": "synthetic",
+  "snapshot_id": "owner-snapshot-1",
+  "first": true,
+  "manifest": {
+    "showdown_commit": "7244fe8e28fa8bc4d0809ae30d183c608b62bb2b",
+    "format_id": "gen9championsvgc2026regmc",
+    "regulation": "M-C",
+    "ruleset_hash": "4dd1f039bbcc6156e08c434972beae2370dc5fe8c9c6a263da7383c3247b68f3",
+    "format_rules_hash": "549cd2aa97324be093c567324676d46a5eff19d6b0c9d8491c483dab746d5dcc"
+  },
+  "vocabulary_hash": "48ec35e67d0f1454476648871d0388e2764d8f36f2096dede1f7ec7a9c7a0c56",
+  "label_set_hash": "550048f401dfd0e9722921d89c6735dba9a58c2e9899013b282fcb97983a30e2",
+  "logical_snapshot_hash": "552472cdc8bc00163ccd52088943436e10e7654cb6b79d7bb250a50e5c8b07a0",
+  "shard_key": "5555555555555555555555555555555555555555555555555555555555555555",
+  "shards": [
+    {
+      "index": 0,
+      "file_sha256": "6666666666666666666666666666666666666666666666666666666666666666",
+      "bytes": 20480,
+      "logical_hash": "e3345a377cff1a64eb5bd76df5ef835618fbf5b349b0968e2189ff19bd89da92",
+      "rows": 5,
+      "split": "owner",
+      "cell_ranges": [
+        {
+          "stratum": 0,
+          "first_row": 0,
+          "rows": 3,
+          "active_rows": 3
+        },
+        {
+          "stratum": 7,
+          "first_row": 3,
+          "rows": 2,
+          "active_rows": 1
+        }
+      ]
+    }
+  ],
+  "cells": [
+    {
+      "split": "owner",
+      "stratum": 0,
+      "rows": 3
+    },
+    {
+      "split": "owner",
+      "stratum": 7,
+      "rows": 1
+    }
+  ],
+  "records": {
+    "active": 4,
+    "retired": 1
+  },
+  "holdout": {
+    "rule": "hmac-sha256-team-id/1",
+    "key": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+    "ppm": 200000
+  },
+  "writer": {
+    "name": "duckdb",
+    "version": "1.5.6",
+    "binary_sha256": "7777777777777777777777777777777777777777777777777777777777777777"
+  },
+  "parquet_schema_version": 1
+}
