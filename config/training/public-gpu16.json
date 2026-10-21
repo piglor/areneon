@@ -12,7 +12,7 @@
     "encoder": {
       "volatile_buckets": 64,
       "condition_buckets": 64,
-      "max_moves": 4,
+      "max_moves": 8,
       "max_team": 6,
       "max_picks": 4,
       "stat_scale": 500,
