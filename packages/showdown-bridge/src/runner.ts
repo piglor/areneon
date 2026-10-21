@@ -36,7 +36,8 @@ export interface ActorContext {
 }
 
 /** Why a side's policy lost a game by forfeit (evaluation protocol D2). */
-export type ForfeitCause = "crash" | "out_of_memory" | "invalid_reply" | "latency_overrun";
+export const FORFEIT_CAUSES = ["crash", "out_of_memory", "invalid_reply", "latency_overrun"] as const;
+export type ForfeitCause = (typeof FORFEIT_CAUSES)[number];
 
 /**
  * An actor throws this to forfeit the game: `runBattle` ends it as a win for

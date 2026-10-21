@@ -161,6 +161,7 @@ export {
   BattleAbortedError,
   type BattleOptions,
   type BattleRecord,
+  FORFEIT_CAUSES,
   type ForfeitCause,
   ForfeitSignal,
   type HiddenVerdicts,

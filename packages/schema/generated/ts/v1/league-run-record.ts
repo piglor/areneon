@@ -43,8 +43,10 @@ export interface LeagueRunRecord {
   forfeits: number;
   /**
    * Forfeits by cause, sorted by cause, each cause once, each count at least 1; the counts sum to forfeits. Absent when no game was forfeited. Added within v1 (ADR-008 section 3, ADR-017 slice 2): a reader older than the field rejects a record that carries it.
+   *
+   * @minItems 1
    */
-  forfeit_causes?: ForfeitCauseCount[];
+  forfeit_causes?: [ForfeitCauseCount, ...ForfeitCauseCount[]];
   /**
    * Episodes written: two per played game.
    */

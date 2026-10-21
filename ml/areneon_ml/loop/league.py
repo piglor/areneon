@@ -71,7 +71,7 @@ def read_league_run_record(raw: object, config: RunConfig) -> LeagueRunRecord:
     causes = tuple((c["cause"], c["count"]) for c in raw.get("forfeit_causes", []))
     if not all(a[0] < b[0] for a, b in itertools.pairwise(causes)):
         raise LeagueRecordError("forfeit_causes must be sorted by cause, each once")
-    if causes and sum(count for _, count in causes) != raw["forfeits"]:
+    if "forfeit_causes" in raw and sum(count for _, count in causes) != raw["forfeits"]:
         raise LeagueRecordError("the forfeit causes' counts must sum to forfeits")
     if raw["run_id"] != config.run_key:
         raise LeagueRecordError(f"run_id {raw['run_id']} is not the config's run key")

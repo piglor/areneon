@@ -620,6 +620,7 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "checkpoint-record/blank-lineage": recordWith((r) => (r.lineage_id = "")),
     "checkpoint-record/no-learner-state": recordWith((r) => delete r.learner_state_hash),
     "league-run-record/unknown-forfeit-cause": leagueRunWith((r) => (r.forfeit_causes = [{ cause: "timeout", count: 1 }])),
+    "league-run-record/empty-forfeit-causes": leagueRunWith((r) => (r.forfeit_causes = [])),
     "league-run-record/zero-cause-count": leagueRunWith((r) => (r.forfeit_causes = [{ cause: "crash", count: 0 }])),
     "league-run-record/extra-field": leagueRunWith((r) => (r.notes = "x")),
     "league-run-record/fractional-games": leagueRunWith((r) => (r.games = 6.5)),

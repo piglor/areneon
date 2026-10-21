@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildLeagueRunRecord,
   checkLeagueRunRecord,
+  FORFEIT_CAUSES,
   LEAGUE_SEED_DERIVATION,
   LeagueRunRecordError,
   leagueRunRecordHash,
@@ -35,6 +36,13 @@ describe("the LeagueRunRecord reader (ADR-009 §3)", () => {
     expect(() => readLeagueRunRecord(readerInvalid("causes-do-not-sum"))).toThrow(/sum to forfeits/);
     expect(() => readLeagueRunRecord(readerInvalid("unsorted-causes"))).toThrow(/sorted by cause/);
     expect(() => readLeagueRunRecord(readerInvalid("duplicate-cause"))).toThrow(/sorted by cause/);
+  });
+
+  it("keeps the schema's cause enum equal to the harness's ForfeitCause list", () => {
+    const schema = JSON.parse(readFileSync(join(SAMPLES_DIR, "../../packages/schema/contracts/v1/league-run-record.schema.json"), "utf8")) as {
+      $defs: { ForfeitCauseCount: { properties: { cause: { enum: string[] } } } };
+    };
+    expect([...schema.$defs.ForfeitCauseCount.properties.cause.enum].sort()).toEqual([...FORFEIT_CAUSES].sort());
   });
 
   it("refuses a record the schema refuses and an unknown derivation", () => {
@@ -108,7 +116,7 @@ describe("buildLeagueRunRecord", () => {
   it("refuses a forfeit that names no cause: the totals would not sum", async () => {
     await expect(
       buildLeagueRunRecord({ config: config(), generation: 1, pair_policy_id: pair, plan: [], games: [{ opponent: pair, outcome: "forfeit" }, { opponent: pair, outcome: "played" }] }),
-    ).rejects.toThrow(/sum to forfeits/);
+    ).rejects.toThrow(/invalid LeagueRunRecord/);
   });
 
   it("refuses a generation that played nothing", async () => {

@@ -81,6 +81,7 @@
   "v1/checkpoint-record/invalid/blank-lineage.json": "64af5f1a219c3b47f4d9da6ca6abcfda8ab76724d8415ae6a4db0ed6c2d5c9af",
   "v1/checkpoint-record/invalid/no-learner-state.json": "38a4e934f7ec4b9b87b227e1d99ae70332eecdf00183e55b8adfcc9e50a7721f",
   "v1/league-run-record/invalid/unknown-forfeit-cause.json": "ca9ee63d270051f926b97aa0ed0e9f9c693c5e62f7bff8363a9d30dd336d80c3",
+  "v1/league-run-record/invalid/empty-forfeit-causes.json": "e592caaa024920228e9862065654ccc0d4074b7bbe3c520dc1ff9f650abe96fa",
   "v1/league-run-record/invalid/zero-cause-count.json": "a1cca4b624266fde330d1bcb1a490e9af4f6657c9b63d5225a8e512f7cf6af8d",
   "v1/league-run-record/invalid/extra-field.json": "cfc45ca76eece3bb857343b2295a14939267b2c564cf2e3bf29a34e535e8274f",
   "v1/league-run-record/invalid/fractional-games.json": "5008f23902f5214df85b1c3aca60d094b4d575c02dc64c07169251271a0e5c82",

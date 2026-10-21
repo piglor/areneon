@@ -39,7 +39,7 @@ export function readLeagueRunRecord(value: unknown): LeagueRunRecord {
   }
   const causes = record.forfeit_causes;
   if (causes !== undefined) {
-    if (causes.some((entry, index) => index > 0 && entry.cause <= (causes[index - 1] as { cause: string }).cause)) {
+    if (causes.some((entry, index) => index > 0 && entry.cause <= (causes[index - 1]?.cause ?? ""))) {
       throw new LeagueRunRecordError("forfeit_causes must be sorted by cause, each once");
     }
     if (causes.reduce((sum, entry) => sum + entry.count, 0) !== record.forfeits) {

@@ -78,7 +78,9 @@ class LeagueRunRecord(BaseModel):
     """
     Games a policy forfeited: not Episodes, not training data.
     """
-    forfeit_causes: list[ForfeitCauseCount] | MISSING = MISSING
+    forfeit_causes: Annotated[list[ForfeitCauseCount] | MISSING, Field(min_length=1)] = (
+        MISSING
+    )
     """
     Forfeits by cause, sorted by cause, each cause once, each count at least 1; the counts sum to forfeits. Absent when no game was forfeited. Added within v1 (ADR-008 section 3, ADR-017 slice 2): a reader older than the field rejects a record that carries it.
     """
