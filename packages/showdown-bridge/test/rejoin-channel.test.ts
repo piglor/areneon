@@ -61,6 +61,95 @@ describe("continueChannel", () => {
     expect(continueChannel(earlier, rejoin).lines).toEqual(all.slice(0, at(3) + 1));
   });
 
+  // Real-server patterns (the server keeps each player's last request and sends it after the
+  // replay; its one rqid counter numbers both players' requests, so a player's rqids have gaps).
+  describe("a rejoin after the room moved on while the connection was down", () => {
+    it("joins a stale re-sent request: same rqid and body as the earlier last one, after room lines the player never saw", () => {
+      // The choice for request 3 was handled while the connection dropped; the replay holds the turn
+      // that followed, and the request the server still stores for the player is request 3.
+      const earlier = channel(all.slice(0, at(3) + 1));
+      const rejoin = channel([...replayOf(at(4)), request(3)]);
+      expect(rejoin.lines.length).toBeGreaterThan(earlier.lines.length);
+      const joined = continueChannel(earlier, rejoin);
+      // One copy of request 3, where the player had it; the later room lines follow.
+      expect(joined.lines).toEqual(all.slice(0, at(4)));
+      expect(joined.lines.filter(isRequest)).toHaveLength(3);
+    });
+
+    it("joins a stale re-sent request followed by the next one, and the observation equals the continuous channel's", async () => {
+      const earlier = channel(all.slice(0, at(3) + 1));
+      const joined = continueChannel(earlier, channel([...replayOf(at(4)), request(3), request(4)]));
+      expect(joined.lines).toEqual(all.slice(0, at(4) + 1));
+      const team = { schema_version: 1 as const, data_class: "synthetic" as const, team: syntheticTeam() as never };
+      const common = { team, manifest: fixture.manifest };
+      const got = await observe({ ...common, channel: joined });
+      expect(got).toEqual(await observe({ ...common, channel: channel(all.slice(0, at(4) + 1)) }));
+      expect(got.identity.request_seq).toBe(4);
+    });
+
+    it("joins a next request the old connection never received (a new rqid after the replay)", () => {
+      const earlier = channel(all.slice(0, at(3) + 1));
+      expect(continueChannel(earlier, channel([...replayOf(at(4)), request(4)])).lines).toEqual(all.slice(0, at(4) + 1));
+    });
+
+    it("folds a stale re-send into later joins", () => {
+      const second = continueChannel(channel(all.slice(0, at(2) + 1)), channel([...replayOf(at(3)), request(2)]));
+      expect(second.lines).toEqual(all.slice(0, at(3)));
+      const third = channel([...replayOf(at(3)), request(2), request(3)]);
+      expect(continueChannel(second, third).lines).toEqual(all.slice(0, at(3) + 1));
+    });
+
+    it("accepts rqids with gaps (the server numbers both players' requests with one counter)", () => {
+      let k = 0;
+      const gapped = all.map((line) => (isRequest(line) ? REQUEST + JSON.stringify({ ...JSON.parse(line.slice(REQUEST.length)) as object, rqid: 2 + 3 * ++k }) : line));
+      const pos = (n: number): number => gapped.findIndex((line, i) => isRequest(line) && gapped.slice(0, i + 1).filter(isRequest).length === n);
+      const earlier = channel(gapped.slice(0, pos(3) + 1));
+      const stale = gapped[pos(3)] as string;
+      const rejoin = channel([...gapped.slice(0, pos(4)).filter((l) => !isRequest(l)), stale, gapped[pos(4)] as string]);
+      expect(continueChannel(earlier, rejoin).lines).toEqual(gapped.slice(0, pos(4) + 1));
+    });
+
+    it("keeps a request with the earlier last body but a higher rqid, away from the earlier one's place, as a new request", () => {
+      const earlier = channel(all.slice(0, at(3) + 1));
+      const body = JSON.parse(request(3).slice(REQUEST.length)) as object;
+      const next = REQUEST + JSON.stringify({ ...body, rqid: 40 });
+      const joined = continueChannel(earlier, channel([...replayOf(at(4)), next]));
+      expect(joined.lines.filter(isRequest)).toHaveLength(4);
+    });
+
+    it("refuses a re-send with the same rqid and another body (it is not a re-send)", () => {
+      const earlier = channel(all.slice(0, at(3) + 1));
+      const body = JSON.parse(request(3).slice(REQUEST.length)) as Record<string, unknown>;
+      const changed = REQUEST + JSON.stringify({ ...body, update: true });
+      expect(() => continueChannel(earlier, channel([...replayOf(at(4)), changed]))).toThrow(/rise strictly/);
+      // At the earlier one's own place too.
+      expect(() => continueChannel(earlier, channel([...replayOf(at(3)), changed]))).toThrow(/rise strictly/);
+    });
+
+    it("refuses a stale re-send of an older request than the earlier last one", () => {
+      const earlier = channel(all.slice(0, at(3) + 1));
+      expect(() => continueChannel(earlier, channel([...replayOf(at(4)), request(2)]))).toThrow(/rise strictly/);
+      expect(() => continueChannel(earlier, channel([...replayOf(at(4)), request(2), request(3)]))).toThrow(/rise strictly/);
+    });
+
+    it("drops only one copy: a re-sent request twice is refused", () => {
+      const earlier = channel(all.slice(0, at(3) + 1));
+      expect(() => continueChannel(earlier, channel([...replayOf(at(4)), request(3), request(3)]))).toThrow(/rise strictly/);
+    });
+
+    it("refuses a stale re-send without an rqid on a channel whose requests carry one", () => {
+      const earlier = channel(all.slice(0, at(3) + 1));
+      const none = REQUEST + JSON.stringify({ ...JSON.parse(request(3).slice(REQUEST.length)), rqid: undefined });
+      expect(() => continueChannel(earlier, channel([...replayOf(at(4)), none]))).toThrow(/present and rise strictly/);
+    });
+
+    it("refuses a stale re-send inside the room log the player already had", () => {
+      const earlier = channel(all.slice(0, at(3) + 1));
+      const replay = replayOf(at(4));
+      expect(() => continueChannel(earlier, channel([...replay.slice(0, 5), request(3), ...replay.slice(5)]))).toThrow(/inside the room log/);
+    });
+  });
+
   it("puts the player-alone |error| lines of the earlier channel back where they were", () => {
     const error = "|error|[Invalid choice] synthetic";
     const earlier = channel([...all.slice(0, at(2) + 1), error]);
@@ -140,5 +229,14 @@ describe("continueChannel", () => {
     const bare = (k: number): string => REQUEST + JSON.stringify({ ...JSON.parse(request(k).slice(REQUEST.length)), rqid: undefined });
     const earlier = channel([...all.slice(0, at(2)), bare(2)]);
     expect(() => continueChannel(earlier, channel([...replayOf(at(3)), request(3)]))).toThrow(/rise strictly/);
+  });
+
+  it("keeps an identical request that carries no rqid on either side (nothing proves it is a re-send)", () => {
+    const bare = (k: number): string => REQUEST + JSON.stringify({ ...JSON.parse(request(k).slice(REQUEST.length)), rqid: undefined });
+    const earlier = channel([...all.slice(0, at(2)).filter((l) => !isRequest(l) || l === request(1)), bare(2)]);
+    const plain = channel([...earlier.lines.map((l) => (l === request(1) ? bare(1) : l))]);
+    const rejoin = channel([...replayOf(at(2)), bare(2)]);
+    const joined = continueChannel(plain, rejoin);
+    expect(joined.lines.filter(isRequest)).toHaveLength(plain.lines.filter(isRequest).length + 1);
   });
 });

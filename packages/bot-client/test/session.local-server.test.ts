@@ -186,30 +186,53 @@ describe("runA2Bot on the pinned local server", () => {
     60_000,
   );
 
-  it(
-    "reconnects mid-battle, keeps one decline per room and plays on to the end",
-    async () => {
+  // Where the drop falls relative to the server's handling of the choice varies with timing, so
+  // the drop positions are varied: `immediate` closes at once (the server may or may not have
+  // handled the choice), `blind` hears nothing more and closes only once the other bot has
+  // answered the next request. This does not force the stale re-send (a re-send after the room
+  // moved on): client timing cannot, and `rejoin-channel.test.ts` is the cover for that case.
+  const drops = [
+    { mode: "immediate", choice: 1 },
+    { mode: "immediate", choice: 2 },
+    { mode: "blind", choice: 1 },
+    { mode: "blind", choice: 2 },
+  ] as const;
+  it.each(drops)(
+    "reconnects mid-battle after choice $choice ($mode drop), keeps one decline per room and plays on to the end",
+    async ({ mode, choice }) => {
       const suffix = local.server.session.bot_name_suffix;
       let dropped = false;
-      // Drop the sparring bot's first connection right after its second move choice.
-      const sparring = bot(
+      const moves = (lines: string[]): number => lines.filter((l) => l.includes("|/choose move")).length;
+      const chooses = (lines: string[]): number => lines.filter((l) => l.includes("|/choose ")).length;
+      const sparring: Bot = bot(
         { name: `Areneon-b2-${suffix}`, challenger: `Areneon-c2-${suffix}`, team: own },
         (transport, index) =>
           index > 0
             ? transport
             : {
                 ...transport,
+                onFrame(cb) {
+                  transport.onFrame((frame) => {
+                    if (!(dropped && mode === "blind")) cb(frame);
+                  });
+                },
                 send(line) {
                   transport.send(line);
-                  if (!dropped && line.includes("|/choose move") && sparring.sent.filter((l) => l.includes("|/choose move")).length === 2) {
+                  if (!dropped && line.includes("|/choose move") && moves(sparring.sent) === choice) {
                     dropped = true;
-                    setTimeout(() => transport.close(), 0);
+                    if (mode === "immediate") return void setTimeout(() => transport.close(), 0);
+                    const sent = chooses(sparring.sent);
+                    const wait = setInterval(() => {
+                      if (chooses(challenger.sent) <= sent) return;
+                      clearInterval(wait);
+                      transport.close();
+                    }, 1);
                   }
                 },
               },
       );
       await sparring.loggedIn;
-      const challenger = bot({
+      const challenger: Bot = bot({
         name: `Areneon-c2-${suffix}`,
         challenger: `Areneon-b2-${suffix}`,
         challenge: `Areneon-b2-${suffix}`,
