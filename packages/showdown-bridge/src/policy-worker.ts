@@ -150,8 +150,8 @@ export class PolicyWorkerClient implements PolicyClient {
     });
     child.once("error", (error) => this.#fail(new PolicyWorkerError("crash", `cannot start the worker: ${error.message}`)));
     child.once("close", (code, signal) => this.#closed(code, signal));
-    child.stdin.write(encodeFrame({ schema_version: 1, message: { kind: "hello", contracts: contractVersions() } }, max_line_bytes));
     try {
+      child.stdin.write(encodeFrame({ schema_version: 1, message: { kind: "hello", contracts: contractVersions() } }, max_line_bytes));
       this.#check(await ready);
     } catch (error) {
       await this.close();
