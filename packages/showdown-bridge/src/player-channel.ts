@@ -129,9 +129,12 @@ function identityOf(line: string): { rqid: unknown; body: string } {
  * replay with the earlier channel's player-alone lines put back at the
  * places they had (the count of room lines before each), then the rejoin's
  * own. A first request of the rejoin that is the earlier channel's last
- * request sent again (same `rqid`, same body, at the place the earlier one
- * had it) is that request, not a new one, and stays where the earlier
- * channel had it. The result is the one continuous channel of the battle:
+ * request sent again (same `rqid`, same body) is that request, not a new
+ * one, and stays where the earlier channel had it. It need not sit at the
+ * place the earlier one had: the server keeps each player's last request and
+ * sends it after the replay, and the room may have moved on meanwhile (the
+ * choice it answered was handled while the connection dropped, and the next
+ * request was not yet stored when the player joined). The result is the one continuous channel of the battle:
  * equal to what A1 gives the player, and what an Episode stores (ADR-008 §5
  * and the glossary: one channel per player and battle).
  *
@@ -141,8 +144,11 @@ function identityOf(line: string): { rqid: unknown; body: string } {
  * both are the same player's, the earlier channel's room lines are a
  * prefix of the rejoin's (so a replay of another battle, or a tampered one,
  * is refused), the rejoin's player-alone lines all come after its replay,
- * a re-sent request keeps its `rqid` (same body, other `rqid` is refused)
- * and, on the server path, the `rqid`s of the joined requests rise strictly
+ * a re-sent request keeps its `rqid` (same body, other `rqid` at the
+ * earlier one's place is refused; same `rqid`, other body is not a re-send
+ * and fails the order below) and, on the server path, the `rqid`s of the
+ * joined requests rise strictly (the server's one counter numbers every
+ * request of both players, waits included)
  * with none missing. Across several reconnects, fold it: the result of one
  * join is the `earlier` of the next. The rqids are the server's (§4 leaves
  * them out of A1/A2 equality) and the request count follows the player's
@@ -172,15 +178,19 @@ export function continueChannel(earlier: PlayerChannel, rejoin: PlayerChannel): 
   }
   const again = theirs[0];
   let dropped = 0;
-  if (again?.line.startsWith(REQUEST) === true && sent !== undefined && again.at === sent.at) {
+  if (again?.line.startsWith(REQUEST) === true && sent !== undefined) {
     const a = identityOf(again.line);
     const b = identityOf(sent.line);
-    if (a.body === b.body && (a.rqid !== undefined || b.rqid !== undefined)) {
-      if (a.rqid !== b.rqid) {
-        throw new ObservationError("the rejoin's first request has the body of the earlier last request but another rqid");
-      }
+    const same = a.body === b.body;
+    if (same && a.rqid !== undefined && a.rqid === b.rqid) {
+      // The server keeps each player's last request and sends it again on a join, after the
+      // replay. The room may have moved on since the player got it (the choice it answered
+      // was handled while the connection dropped), so the place does not tell: the rqid and
+      // the body do. The earlier channel's copy stays where the player had it.
       theirs.shift();
       dropped = 1;
+    } else if (same && again.at === sent.at && (a.rqid !== undefined || b.rqid !== undefined)) {
+      throw new ObservationError("the rejoin's first request has the body of the earlier last request but another rqid");
     }
   }
   const lines: string[] = [];
