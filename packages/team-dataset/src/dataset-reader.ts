@@ -42,7 +42,7 @@ import {
   validateTeam,
 } from "@areneon/showdown-bridge";
 import { referencePoolHash, sortedUnique } from "./dedupe.ts";
-import { recordsFile } from "./dataset-io.ts";
+import { eachLine, endsWithNewline, recordsFile } from "./dataset-io.ts";
 import { checkRecord } from "./generate.ts";
 import { cellOf } from "./labeller.ts";
 
@@ -148,16 +148,16 @@ function stratumOf(manifest: TeamDatasetManifest, cell: number): number {
 
 function readSplit(dir: string, split: ReadSplit, file: string, manifest: TeamDatasetManifest, context: DatasetContext): TeamRecord[] {
   const { engine, format, labelSet } = context;
-  let text: string;
+  const path = join(dir, file);
   try {
-    text = readFileSync(join(dir, file), "utf8");
+    if (!endsWithNewline(path)) bad(`${file} does not end with a newline`);
   } catch (error) {
+    if (error instanceof DatasetReadError) throw error;
     return bad(`${file}: ${(error as Error).message}`);
   }
-  if (text !== "" && !text.endsWith("\n")) bad(`${file} does not end with a newline`);
   const plan = manifest.splits.find((s) => s.split === split) ?? bad(`the manifest has no ${split} split`);
-  const lines = text === "" ? [] : text.slice(0, -1).split("\n");
-  const records = lines.map((line, n) => {
+  const records: TeamRecord[] = [];
+  const check = (line: string, n: number): void => {
     const where = `${file} line ${n + 1}`;
     let value: unknown;
     try {
@@ -176,8 +176,9 @@ function readSplit(dir: string, split: ReadSplit, file: string, manifest: TeamDa
     if (record.origin.index !== n) bad(`${where}: its origin index is ${record.origin.index}`);
     const verdict = validateTeam(engine, format, importPaste(engine, record.paste));
     if (!verdict.valid) bad(`${where}: the pinned validator refuses the team: ${verdict.problems[0]}`);
-    return record;
-  });
+    records.push(record);
+  };
+  eachLine(path, check);
   if (records.length !== plan.teams) bad(`${file} holds ${records.length} teams, the manifest says ${plan.teams}`);
   // Each stratum holds exactly its quota.
   const held = new Map<number, number>();

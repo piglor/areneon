@@ -30,8 +30,14 @@ export const prefixOf = (hash: string): bigint => BigInt(`0x${hash.slice(0, 16)}
 /** The sorted, unique hashes of a pool. */
 export function sortedUnique(hashes: Iterable<string>): string[] {
   // sort, then drop neighbours that repeat: a Set would stop at 2^24 entries
-  const sorted = [...hashes].map(checked).sort();
-  return sorted.filter((h, k) => k === 0 || h !== sorted[k - 1]);
+  const sorted: string[] = [];
+  for (const hash of hashes) sorted.push(checked(hash));
+  sorted.sort();
+  // drop repeats in place: one array, no second copy
+  let kept = 0;
+  for (const hash of sorted) if (kept === 0 || hash !== sorted[kept - 1]) sorted[kept++] = hash;
+  sorted.length = kept;
+  return sorted;
 }
 
 /** SHA-256 of the JCS bytes of the sorted unique hash list: the `reference_pool_hash`. */
