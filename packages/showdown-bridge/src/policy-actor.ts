@@ -15,6 +15,7 @@ import type { Engine, PokemonSet } from "./engine.ts";
 import { guardActor, type LatencyBudget, type PlayedGame, playGame, UnsupportedCandidateError } from "./evaluation-harness.ts";
 import { resolveFormat, type VersionManifest } from "./formats.ts";
 import { policyStreamLabel } from "./league-seed.ts";
+import { assertOwnTeamStats, pinnedEngine } from "./own-team-stats.ts";
 import { observe, playerChannel } from "./player-channel.ts";
 import { type PolicyClient, PolicyReplyError } from "./policy-worker.ts";
 import { PolicyProtocolError } from "./policy-protocol.ts";
@@ -62,6 +63,8 @@ export interface PolicyActorOptions {
   game: number;
   policy_id: string;
   sampling: "argmax" | "sample";
+  /** The engine that checks the team's stats against the Team Preview request (default: the pinned checkout). */
+  engine?: Engine;
 }
 
 /**
@@ -71,7 +74,7 @@ export interface PolicyActorOptions {
  * request the adapter cannot observe is a harness incident.
  */
 export function policyActor(options: PolicyActorOptions): Actor {
-  const { client, battle, player, team, manifest, channel_class, seed, game, policy_id, sampling } = options;
+  const { client, battle, player, team, manifest, channel_class, seed, game, policy_id, sampling, engine } = options;
   return async (request, context) => {
     if (context === undefined || context.player !== player) {
       throw new PolicyProtocolError(`the policy actor of ${player} needs its own player's channel`);
@@ -87,6 +90,9 @@ export function policyActor(options: PolicyActorOptions): Actor {
     try {
       const channel = playerChannel({ schema_version: 1, data_class: channel_class, player, lines: context.channel });
       observation = await observe({ channel, team, manifest });
+      // The team the observation records must give the stats the engine sent
+      // this player at Team Preview (once per game: the first request).
+      if (request.request_seq === 1) assertOwnTeamStats(engine ?? pinnedEngine(), manifest.format_id, team, channel);
     } catch (error) {
       throw new PolicyProtocolError(`cannot observe the request: ${(error as Error).message}`);
     }
@@ -157,6 +163,7 @@ export async function policyGame(options: PolicyGameOptions): Promise<PlayedGame
       channel_class,
       seed,
       game,
+      engine,
     });
     return guardActor(actor, { role: "policy", latency_budget });
   };

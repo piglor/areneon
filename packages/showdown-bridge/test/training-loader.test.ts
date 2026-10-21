@@ -156,7 +156,7 @@ describe("loadTrainingSet", () => {
   });
 
   it("refuses private data, even in a league Episode", async () => {
-    const sets = (syntheticTeam() as PrivateTeamSpec["team"]).map((s, i) => (i === 0 ? { ...s, evs: { ...s.evs, hp: 8 } } : s));
+    const sets = (syntheticTeam() as PrivateTeamSpec["team"]).map((s, i) => (i === 0 ? { ...s, ivs: { ...s.ivs, atk: 30 } } : s));
     const own = stampTeam(sets as PrivateTeamSpec["team"], KNOWN);
     expect(own.data_class).toBe("private");
     const privateRecord = { ...record, team_hashes: { ...record.team_hashes } };
@@ -182,7 +182,8 @@ describe("loadTrainingSet", () => {
     });
     await refusal(load([sparringRelabelled]), "Episode 0 is refused: a sparring Episode is private");
     const unknownTeam = mutate(p1, (e) => {
-      (e.team.team[0] as { evs: { hp: number } }).evs.hp = 8;
+      // An IV changes the team's hash, not the stats the engine shows.
+      (e.team.team[0] as { ivs: { atk: number } }).ivs.atk = 30;
     });
     await refusal(load([unknownTeam]), "Episode 0 is refused: a team labelled synthetic is not a known synthetic team");
   });

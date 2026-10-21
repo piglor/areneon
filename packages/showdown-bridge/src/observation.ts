@@ -108,8 +108,10 @@ interface RequestMon {
  * must match one set by species, item, ability and its moves in any order
  * (and by nickname when the set has one). A mirror team with other items or
  * moves fails, as does a channel that does not start at Team Preview.
- * Residual risk (#743): a mirror differing only in EVs, IVs, nature or level
- * passes, since telling them apart needs the engine's stat calculation.
+ * A mirror differing only in Stat Points, nature or level passes this
+ * engine-free check; `own-team-stats.ts` (#893) refuses it with the engine's
+ * stat calculation, where the team and the channel meet (`readEpisode`,
+ * `policyActor`).
  */
 function assertOwnTeam(team: PrivateTeamSpec, lines: readonly string[]): void {
   const first = lines.find((line) => line.startsWith(REQUEST));

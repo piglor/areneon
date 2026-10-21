@@ -55,6 +55,7 @@ export {
   type PreviewObservation,
   type Sha256,
 } from "./observation.ts";
+export { assertOwnTeamStats, OwnTeamStatsError } from "./own-team-stats.ts";
 export { continueChannel, nodeSha256, observe, playerChannel, recordedChannel } from "./player-channel.ts";
 export { answersRequest, type Collection, type CollectionInput, type Episode, episodeHash, type Recommendation, rightsFor } from "./episode.ts";
 export {

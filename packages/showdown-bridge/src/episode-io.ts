@@ -5,8 +5,10 @@
 import { ajvFor } from "@areneon/schema/ajv";
 import episodeSchema from "@areneon/schema/contracts/v1/episode.schema.json" with { type: "json" };
 import type { PrivateTeamSpec } from "@areneon/schema/types/v1/private-team-spec.ts";
+import type { Engine } from "./engine.ts";
 import { type CollectionInput, type Episode, rightsFor } from "./episode.ts";
 import { buildObservation, type Observation, type PlayerChannel } from "./observation.ts";
+import { assertOwnTeamStats, pinnedEngine } from "./own-team-stats.ts";
 import { nodeSha256, playerChannel } from "./player-channel.ts";
 import type { BattleRecord, Player } from "./runner.ts";
 import { higherClass, type StampedTeam, type SyntheticTeamHashes, teamHash } from "./team-class.ts";
@@ -77,6 +79,11 @@ export async function decisionObservations(episode: Episode): Promise<Observatio
  * - Its team must be the player's own. This is checked by building the Team
  *   Preview observation, then every decision's, which must carry the
  *   decision's identity, in request order.
+ * - Its team's stats must be the player's own: the pinned engine (`engine`,
+ *   default the pinned checkout) computes them from the team and they must
+ *   equal those of the Team Preview request, which `buildObservation` cannot
+ *   tell (a mirror team differing in Stat Points, IVs, nature or level;
+ *   `own-team-stats.ts`, #893).
  * - On A2, every decision carries its deadline record and timer context, the
  *   never-auto-choose evidence ADR-005 needs.
  * - A `collection` record (ADR-009 §4) is checked against the class: the
@@ -98,10 +105,10 @@ export async function decisionObservations(episode: Episode): Promise<Observatio
  */
 export async function readEpisode(
   value: unknown,
-  { known_synthetic }: { known_synthetic: SyntheticTeamHashes },
+  { known_synthetic, engine }: { known_synthetic: SyntheticTeamHashes; engine?: Engine },
 ): Promise<Episode> {
   try {
-    const episode = await read(structuredClone(value));
+    const episode = await read(structuredClone(value), engine);
     assertProven(episode.team, known_synthetic);
     return episode;
   } catch (error) {
@@ -110,7 +117,7 @@ export async function readEpisode(
   }
 }
 
-async function read(value: unknown): Promise<Episode> {
+async function read(value: unknown, engine: Engine | undefined): Promise<Episode> {
   const version = (value as { schema_version?: unknown } | null)?.schema_version;
   const validate = typeof version === "number" ? READERS[version] : undefined;
   if (!validate) throw new EpisodeError(`no reader for an Episode with schema_version ${JSON.stringify(version)}`);
@@ -131,6 +138,7 @@ async function read(value: unknown): Promise<Episode> {
   const preview = cut(channel, 1);
   if (!preview) throw new EpisodeError("the channel holds no request");
   await observeAt(episode, channel, 1);
+  assertOwnTeamStats(engine ?? pinnedEngine(), episode.provenance.manifest.format_id, episode.team, preview);
   let last = 0;
   for (const decision of episode.decisions) {
     const { identity } = decision;
