@@ -140,10 +140,17 @@ def problems(raw: str, canaries: tuple[str, ...] = CANARIES) -> list[str]:
     return found
 
 
+LOCAL_LINK = r"(#[a-z0-9_-]+|[a-z0-9_-]+\.html(#[a-z0-9_-]+)?|replays/g\d{6}/game-\d{6}\.html)"
+
+
 def _local(value: str | None) -> bool:
     return (
         value is not None
-        and re.fullmatch(r"(#[a-z0-9_-]+|[a-z0-9_-]+\.html(#[a-z0-9_-]+)?)", value) is not None
+        and re.fullmatch(
+            r"(#[a-z0-9_-]+|[a-z0-9_-]+\.html(#[a-z0-9_-]+)?|replays/g\d{6}/game-\d{6}\.html)",
+            value,
+        )
+        is not None
     )
 
 

@@ -19,11 +19,31 @@ from areneon_ml.inspector.model import build_model, read_run_dir_config
 from areneon_ml.inspector.pool import Pool, load_pool
 from areneon_ml.inspector.readers import InspectError
 from areneon_ml.inspector.render import build_pages
+from areneon_ml.inspector.replay import GAME_FILE, GEN_DIR
 from areneon_ml.loop import layout
 
 _OURS = re.compile(r"(index|distributions|games-g\d{6}|drawn-g\d{6}|teams-\d{4})\.html")
 
 PoolLoader = Callable[[Path, str, Path], Pool]
+#: The directory the replay command fills; an inspector build keeps it as it is.
+REPLAYS = "replays"
+
+
+def existing_replays(out: Path) -> set[tuple[int, int]]:
+    """The (generation, game) pairs that have a replay page under ``out/replays``."""
+    found: set[tuple[int, int]] = set()
+    base = out / REPLAYS
+    if not base.is_dir() or base.is_symlink():
+        return found
+    for folder in base.iterdir():
+        gen = GEN_DIR.fullmatch(folder.name)
+        if gen is None or not folder.is_dir() or folder.is_symlink():
+            continue
+        for file in folder.iterdir():
+            game = GAME_FILE.fullmatch(file.name)
+            if game is not None and file.is_file() and not file.is_symlink():
+                found.add((int(gen[1]), int(game[1])))
+    return found
 
 
 def default_out(run_dir: Path) -> Path:
@@ -46,7 +66,7 @@ def inspect_run(
     check_target(target)
     config = read_run_dir_config(run_dir)
     pool = pool_loader(repo, node, run_dir / layout.CONFIG)
-    pages = build_pages(build_model(run_dir, pool, config))
+    pages = build_pages(build_model(run_dir, pool, config), existing_replays(target))
     total = write_pages(target, pages)
     return {"out": str(target), "pages": len(pages), "bytes": total}
 
@@ -56,7 +76,10 @@ def check_target(target: Path) -> None:
     if not target.exists():
         return
     if not target.is_dir() or any(
-        not (path.is_file() and not path.is_symlink() and _OURS.fullmatch(path.name))
+        not (
+            (path.is_file() and not path.is_symlink() and _OURS.fullmatch(path.name))
+            or (path.name == REPLAYS and path.is_dir() and not path.is_symlink())
+        )
         for path in target.iterdir()
     ):
         raise InspectError(
@@ -82,14 +105,18 @@ def write_pages(target: Path, pages: dict[str, str]) -> int:
             layout.write_file(work / name, data)
             total += len(data)
         layout.sync_dir(work)
+        if (target / REPLAYS).is_dir():  # the replay pages are not rebuilt here: they move across
+            os.replace(target / REPLAYS, work / REPLAYS)
         if target.exists():
             os.replace(target, backup)
         os.replace(work, target)
         layout.sync_dir(target.parent)
     except BaseException:
-        shutil.rmtree(work, ignore_errors=True)
         if backup.exists() and not target.exists():
             os.replace(backup, target)
+        if (work / REPLAYS).is_dir() and target.is_dir() and not (target / REPLAYS).exists():
+            os.replace(work / REPLAYS, target / REPLAYS)
+        shutil.rmtree(work, ignore_errors=True)
         raise
     shutil.rmtree(backup, ignore_errors=True)
     return total

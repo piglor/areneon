@@ -15,6 +15,7 @@ from areneon_ml.inspector import charts
 from areneon_ml.inspector.model import RESULTS, Game, Generation, InspectModel, TeamUse
 from areneon_ml.inspector.page import document, esc, link_id
 from areneon_ml.inspector.pool import PoolSet, PoolTeam
+from areneon_ml.inspector.replay_page import page_path as replay_path
 
 CHUNK = 500
 #: A rate is shown only from this many games; below it the page shows counts alone.
@@ -215,7 +216,18 @@ def _opponent(game: Game) -> str:
     return f"{game.plan.opponent} ({baseline_seat})"
 
 
-def _game_row(pages: dict[str, int], game: Game) -> str:
+def _replay_cell(game: Game, replays: frozenset[tuple[int, int]]) -> str:
+    """A link to the game's replay page when it exists (``replay.page_path``), else why not."""
+    if game.row.outcome == "forfeit":
+        return "none (forfeit)"
+    if (game.generation, game.plan.game) in replays:
+        return f'<a href="{esc(replay_path(game.generation, game.plan.game))}">replay</a>'
+    return "not built"
+
+
+def _game_row(
+    pages: dict[str, int], game: Game, replays: frozenset[tuple[int, int]] = frozenset()
+) -> str:
     row = game.row
     winner = "tie" if row.outcome == "played" and row.winner is None else (row.winner or "none")
     loser = cause = ""
@@ -229,13 +241,16 @@ def _game_row(pages: dict[str, int], game: Game) -> str:
         f'<tr id="g{game.plan.game}"><td class="n">{game.plan.game}</td><td class="m">{esc(row.seed.removeprefix("sodium,")[:12])}</td>'
         f"<td>{_team_link(pages, game.hashes['p1'])}</td><td>{_team_link(pages, game.hashes['p2'])}</td>"
         f'<td>{esc(_opponent(game))}</td><td>{esc(winner)}</td><td class="n">{row.turns}</td>'
-        f"<td>{esc(row.outcome)}</td><td>{esc(loser)}</td><td{title}>{esc(cause)}</td></tr>"
+        f"<td>{esc(row.outcome)}</td><td>{esc(loser)}</td><td{title}>{esc(cause)}</td>"
+        f"<td>{_replay_cell(game, replays)}</td></tr>"
     )
 
 
-def games_generation_page(model: InspectModel, gen: Generation) -> str:
+def games_generation_page(
+    model: InspectModel, gen: Generation, replays: frozenset[tuple[int, int]] = frozenset()
+) -> str:
     pages = _page_of(model)
-    rows = [_game_row(pages, g) for g in gen.games]
+    rows = [_game_row(pages, g, replays) for g in gen.games]
     head = [
         ("Game", True),
         ("Seed", False),
@@ -247,6 +262,7 @@ def games_generation_page(model: InspectModel, gen: Generation) -> str:
         ("Outcome", False),
         ("Forfeit loser", False),
         ("Cause", False),
+        ("Replay", False),
     ]
     causes = (
         ", ".join(f"{esc(k)} {v}" for k, v in sorted(gen.forfeit_causes.items()))
@@ -258,7 +274,8 @@ def games_generation_page(model: InspectModel, gen: Generation) -> str:
         f"<h1>Games of generation {gen.number}</h1>"
         f'<p class="note">Every planned game, played by the frozen pair {esc(gen.pair_policy_id)}. '
         f"Forfeits: {gen.forfeits} ({causes}). Seeds are the battle seeds without the sodium prefix. "
-        f'Replay pages are not part of this build. <a href="{drawn_page(gen.number)}">Teams drawn</a></p>'
+        f"Replay pages are built on demand (<code>python -m areneon_ml.loop replay</code>); a link shows "
+        f'where one exists. <a href="{drawn_page(gen.number)}">Teams drawn</a></p>'
         '<input class="filter" id="filter" type="search" hidden aria-label="Filter the games">'
         '<p class="muted" id="filter-count"></p>'
         f"{_table(head, rows)}"
@@ -363,11 +380,13 @@ def teams_chunk_page(model: InspectModel, chunk: int) -> str:
     return document(f"Pool teams {start + 1} to {stop}", _nav(model), body, data, _footer(model))
 
 
-def build_pages(model: InspectModel) -> dict[str, str]:
+def build_pages(
+    model: InspectModel, replays: frozenset[tuple[int, int]] | set[tuple[int, int]] = frozenset()
+) -> dict[str, str]:
     """Every page of the set by file name."""
     pages = {INDEX: index_page(model), DISTRIBUTIONS: distributions_page(model)}
     for gen in model.generations:
-        pages[games_page(gen.number)] = games_generation_page(model, gen)
+        pages[games_page(gen.number)] = games_generation_page(model, gen, frozenset(replays))
         pages[drawn_page(gen.number)] = drawn_generation_page(model, gen)
     for chunk in range((len(model.pool.teams) + CHUNK - 1) // CHUNK):
         pages[teams_page(chunk)] = teams_chunk_page(model, chunk)

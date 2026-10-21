@@ -224,6 +224,27 @@ def _episodes(
     return found
 
 
+def _episodes_by_seed(
+    path: Path, expected: tuple[str, ...], run_key: str
+) -> dict[str, dict[str, Path]]:
+    """Every Episode file of a generation by battle seed and seat, after the same checks as
+    ``_episodes``: the file names are the ``episode_hashes``, each file hashes to its name, and each
+    is a synthetic league Episode of this run. The replay reads their content."""
+    folder = path / "episodes"
+    present = sorted(p.stem for p in folder.glob("*.json")) if folder.is_dir() else []
+    if present != sorted(expected) or len(set(expected)) != len(expected):
+        raise InspectError(
+            f"{path.name}: the Episode files are not the episode_hashes of generation.json"
+        )
+    by_seed: dict[str, dict[str, Path]] = defaultdict(dict)
+    for name in sorted(expected):
+        seed, player, _ = read_episode_facts(folder / f"{name}.json", run_key)
+        if player in by_seed[seed]:
+            raise InspectError(f"{path.name}: two Episodes for one seed and seat")
+        by_seed[seed][player] = folder / f"{name}.json"
+    return dict(by_seed)
+
+
 def _check_generation_files(
     number: int, path: Path, config: RunConfig, pool: Pool
 ) -> tuple[LeagueRunRecord, tuple[PlanEntry, ...], Any, tuple[str, ...]]:
