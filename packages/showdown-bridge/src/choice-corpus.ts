@@ -24,6 +24,13 @@ const bench = (r: DecodedRequest): number =>
 const forced = (r: DecodedRequest): number =>
   r.phase === "forceSwitch" ? (r.request.forceSwitch as boolean[]).filter(Boolean).length : 0;
 
+const reviving = (r: DecodedRequest): boolean =>
+  r.phase === "forceSwitch" &&
+  (r.request.side as { pokemon: { reviving?: boolean }[] }).pokemon.some(
+    (m) => m.reviving === true,
+  );
+const faintedCount = (r: DecodedRequest): number => team(r).filter(fainted).length;
+
 /**
  * The situations the corpus must show (ADR-006 rule 7), each a test on the
  * case's request. Every kind needs at least one case; what the engine
@@ -41,6 +48,10 @@ export const CASE_KINDS = {
   /** Both slots may switch and the bench has two: the same-slot conflict. */
   "double-switch": (r) =>
     actives(r).length === 2 && actives(r).every((a) => a.trapped !== true) && bench(r) >= 2,
+  /** A Pokémon used Revival Blessing: the engine asks it to pick a fainted ally. */
+  "force-switch-revival": (r) => reviving(r) && faintedCount(r) >= 1,
+  /** The same with two or more fainted Pokémon to choose from. */
+  "force-switch-revival-many": (r) => reviving(r) && faintedCount(r) >= 2,
   trapped: (r) => actives(r).some((a) => a.trapped === true),
   "maybe-trapped": (r) => actives(r).some((a) => a.maybeTrapped === true),
   "maybe-disabled": (r) =>

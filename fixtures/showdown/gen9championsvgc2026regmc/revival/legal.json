@@ -1,0 +1,26 @@
+[
+  {
+    "schema_version": 1,
+    "request_seq": 21,
+    "request_hash": "60ce493dd563e26b9aae517fe0147f248f7c6b83d2ae6d80f482552f226c7a54",
+    "showdown_commit": "7244fe8e28fa8bc4d0809ae30d183c608b62bb2b",
+    "choices": [
+      "switch 3, pass",
+      "switch 4, pass",
+      "pass, pass"
+    ],
+    "pending": []
+  },
+  {
+    "schema_version": 1,
+    "request_seq": 22,
+    "request_hash": "60ddb1aab8716665527e150f963742a8b369c2013f70449567bf1134929d5385",
+    "showdown_commit": "7244fe8e28fa8bc4d0809ae30d183c608b62bb2b",
+    "choices": [
+      "switch 3, pass",
+      "switch 4, pass",
+      "pass, pass"
+    ],
+    "pending": []
+  }
+]

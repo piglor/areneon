@@ -61,6 +61,11 @@ export class JudgeStateError extends Error {
   override name = "JudgeStateError";
 }
 
+/** Each Pokémon's `switchFlag`, the one flag a successful choice can clear. */
+function switchFlags(side: SimSide): string {
+  return JSON.stringify(side.pokemon.map((p) => (p as { switchFlag?: unknown }).switchFlag));
+}
+
 /**
  * Judges choices on a clone of the battle (`Battle.fromJSON(battle.toJSON())`),
  * never on the live battle: a refused choice makes the engine write an
@@ -131,10 +136,12 @@ export class CloneJudge implements ChoiceJudge {
     }
     let side: SimSide | undefined = at;
     let request = JSON.stringify(at.activeRequest);
+    let flags = switchFlags(at);
     return choices.map((choice) => {
       if (side === undefined) {
         side = this.#clone();
         request = JSON.stringify(side.activeRequest);
+        flags = switchFlags(side);
       }
       side.clearChoice();
       const legal = side.choose(choice) && side.isChoiceDone();
@@ -142,7 +149,16 @@ export class CloneJudge implements ChoiceJudge {
       const verdict: Verdict = { choice, legal, error };
       if (legal) verdict.action = actionKey(side, side.choice.actions);
       side.clearChoice();
-      if (!legal && JSON.stringify(side.activeRequest) !== request) side = undefined;
+      // A refusal that rewrote the request, or a choice that left a Pokémon's
+      // `switchFlag` changed (a Revival Blessing pick clears it, and
+      // `clearChoice` does not put it back), leaves a clone that is no
+      // longer the battle the player sees.
+      if (
+        (!legal && JSON.stringify(side.activeRequest) !== request) ||
+        switchFlags(side) !== flags
+      ) {
+        side = undefined;
+      }
       return verdict;
     });
   }
