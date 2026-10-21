@@ -1,0 +1,430 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:areneon:schema:contracts:v1:progress-game-record",
+  "title": "ProgressGameRecord",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "data_class",
+    "run_id",
+    "generation",
+    "match_id",
+    "game",
+    "seed",
+    "version_manifest",
+    "teams",
+    "policies",
+    "decisions",
+    "outcome",
+    "omniscient_log",
+    "omniscient_log_sha256"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "data_class": {
+      "description": "Always synthetic: a private class is schema-invalid.",
+      "const": "synthetic"
+    },
+    "run_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+    },
+    "generation": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "match_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$"
+    },
+    "game": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "seed": {
+      "description": "The battle seed, in the engine's sodium,<32 hex> form.",
+      "type": "string",
+      "pattern": "^sodium,[0-9a-f]{32}$"
+    },
+    "version_manifest": {
+      "$ref": "#/$defs/VersionManifest"
+    },
+    "teams": {
+      "$ref": "#/$defs/Teams"
+    },
+    "policies": {
+      "$ref": "#/$defs/Policies"
+    },
+    "decisions": {
+      "description": "Both seats' decisions, in the order they were submitted.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Decision"
+      }
+    },
+    "outcome": {
+      "$ref": "#/$defs/Outcome"
+    },
+    "omniscient_log": {
+      "description": "The engine's omniscient lines of the battle, wall-clock |t:| lines dropped. It holds BOTH sides' hidden information: an evaluation artifact for the owner, never a policy input and never training data.",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "omniscient_log_sha256": {
+      "description": "SHA-256 of the JCS bytes of the omniscient_log array (the lines as a JSON array of strings).",
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  },
+  "description": "One stored game of a progress evaluation (ADR-017 section 3): seed, both teams, both seats' decisions and the omniscient log, enough to replay the engine side exactly. It is not an Episode: the training loader refuses it. Reader rules: every chosen is among its candidates, both team hashes recompute, the log hash recomputes, the seed is the one progress-seed/1 gives the game index.",
+  "$defs": {
+    "VersionManifest": {
+      "description": "Replay identity of a battle (ADR-003, ADR-007): the pinned engine commit, the format, and the hashes of the engine ruleset and of Areneon's own format rules.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "showdown_commit",
+        "format_id",
+        "regulation",
+        "ruleset_hash",
+        "format_rules_hash"
+      ],
+      "properties": {
+        "showdown_commit": {
+          "description": "The pinned engine commit.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "format_id": {
+          "type": "string",
+          "pattern": "^[a-z0-9]+$"
+        },
+        "regulation": {
+          "type": "string",
+          "minLength": 1
+        },
+        "ruleset_hash": {
+          "description": "SHA-256 of the canonical engine ruleset.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "format_rules_hash": {
+          "description": "SHA-256 of Areneon's format rules record (ADR-007).",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "PokemonSet": {
+      "description": "One set, as the pinned engine's PokemonSet (sim/teams.ts) holds it. Legality is the engine validator's, not this schema's.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "species",
+        "item",
+        "ability",
+        "moves",
+        "nature",
+        "gender",
+        "evs",
+        "ivs",
+        "level"
+      ],
+      "properties": {
+        "name": {
+          "description": "Nickname; empty when none.",
+          "type": "string"
+        },
+        "species": {
+          "type": "string",
+          "minLength": 1
+        },
+        "item": {
+          "type": "string"
+        },
+        "ability": {
+          "type": "string"
+        },
+        "moves": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "nature": {
+          "type": "string"
+        },
+        "gender": {
+          "enum": [
+            "",
+            "M",
+            "F",
+            "N"
+          ]
+        },
+        "evs": {
+          "description": "Stat Points in the champions mod (ADR-003).",
+          "$ref": "#/$defs/StatTable"
+        },
+        "ivs": {
+          "$ref": "#/$defs/StatTable"
+        },
+        "level": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    "StatTable": {
+      "description": "One integer per stat.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "hp",
+        "atk",
+        "def",
+        "spa",
+        "spd",
+        "spe"
+      ],
+      "properties": {
+        "hp": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "atk": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "def": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "spa": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "spd": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "spe": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    "SeatTeam": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "team",
+        "team_hash"
+      ],
+      "properties": {
+        "team": {
+          "description": "The set array the seat's team was brought with (the form the engine's validator normalises it to).",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PokemonSet"
+          },
+          "minItems": 1
+        },
+        "team_hash": {
+          "description": "SHA-256 of the JCS bytes of the set array, in the given order (teamHash).",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "Teams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "p1",
+        "p2"
+      ],
+      "properties": {
+        "p1": {
+          "$ref": "#/$defs/SeatTeam"
+        },
+        "p2": {
+          "$ref": "#/$defs/SeatTeam"
+        }
+      }
+    },
+    "Policies": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "p1",
+        "p2"
+      ],
+      "properties": {
+        "p1": {
+          "description": "The policy of seat p1: policy:<SHA-256>, or a scripted baseline's <name>@<version>.",
+          "type": "string",
+          "pattern": "^(policy:[0-9a-f]{64}|[a-z0-9][a-z0-9._-]*@[A-Za-z0-9._-]+)$"
+        },
+        "p2": {
+          "description": "The policy of seat p2.",
+          "type": "string",
+          "pattern": "^(policy:[0-9a-f]{64}|[a-z0-9][a-z0-9._-]*@[A-Za-z0-9._-]+)$"
+        }
+      }
+    },
+    "Candidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "choice",
+        "pending"
+      ],
+      "properties": {
+        "choice": {
+          "type": "string",
+          "minLength": 1
+        },
+        "pending": {
+          "type": "boolean"
+        }
+      }
+    },
+    "Decision": {
+      "description": "One submitted choice. Hidden verdicts on pending candidates are not recorded.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "player",
+        "request_seq",
+        "candidates",
+        "chosen"
+      ],
+      "properties": {
+        "player": {
+          "enum": [
+            "p1",
+            "p2"
+          ]
+        },
+        "request_seq": {
+          "description": "The player's own request number.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "candidates": {
+          "description": "The candidates the player's own request gave, in canonical order.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Candidate"
+          }
+        },
+        "chosen": {
+          "description": "The choice submitted, in canonical engine syntax.",
+          "type": "string",
+          "minLength": 1
+        },
+        "refused": {
+          "description": "The engine's [Unavailable choice] refusal when the chosen candidate was pending and the engine refused it (ADR-006); the next request is answered afresh.",
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "Played": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "winner",
+        "turns"
+      ],
+      "properties": {
+        "kind": {
+          "const": "played"
+        },
+        "winner": {
+          "enum": [
+            "p1",
+            "p2",
+            "tie"
+          ]
+        },
+        "turns": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    "Forfeit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "loser",
+        "cause",
+        "request_seq",
+        "turns"
+      ],
+      "properties": {
+        "kind": {
+          "const": "forfeit"
+        },
+        "loser": {
+          "enum": [
+            "p1",
+            "p2"
+          ]
+        },
+        "cause": {
+          "description": "Why the policy failed, as the harness classifies a forfeit (crash, out_of_memory, invalid_reply, latency_overrun).",
+          "type": "string",
+          "pattern": "^[a-z][a-z_]{0,31}$"
+        },
+        "request_seq": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "turns": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    "Outcome": {
+      "description": "How the game ended, by seat.",
+      "type": "object",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/Played"
+        },
+        {
+          "$ref": "#/$defs/Forfeit"
+        }
+      ],
+      "discriminator": {
+        "propertyName": "kind"
+      }
+    }
+  }
+}

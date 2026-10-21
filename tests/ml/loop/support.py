@@ -57,9 +57,12 @@ class FakePlayer:
     """The simulator side without a simulator."""
 
     def __init__(
-        self, change: Callable[[dict[str, Any], dict[str, Any]], None] | None = None
+        self,
+        change: Callable[[dict[str, Any], dict[str, Any]], None] | None = None,
+        config: RunConfig | None = None,
     ) -> None:
         self.change = change
+        self.config = config
         self.requests: list[PlayRequest] = []
 
     def manifest(self, format_id: str) -> dict[str, Any]:
@@ -88,7 +91,7 @@ class FakePlayer:
         if self.change is not None:
             self.change(summary, training_set)
         out = request.out_dir
-        plan, record = league_files(tiny_config(), generation, request.policy_id)
+        plan, record = league_files(self.config or tiny_config(), generation, request.policy_id)
         layout.write_json(out / "plan.json", plan)
         layout.write_json(out / "league-run.json", record)
         (out / "stream.jsonl").write_text(text, encoding="utf-8")

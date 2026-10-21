@@ -6,6 +6,9 @@
 * ``inspect``: write the training-data inspector's static pages (teams and games) for a run.
 * ``provenance``: write the run's CheckpointRecords and its sources registry into a
   directory, ready for ``python -m areneon_ml.checkpoint classify|independent``.
+* ``progress``: the progress evaluation of a committed generation (ADR-017): its frozen pair
+  against the scripted baselines on the validation teams, written to ``<run-dir>.progress/``.
+  A progress view, never the Training gate; the run directory is only read.
 
 The learner runs in this process (``learner.device`` of the config: ``cpu``, or ``cuda``
 from the separate GPU environment); the A1 games run in Node, whose policy worker uses
@@ -36,6 +39,16 @@ from areneon_ml.loop.driver import Loop, LoopError, export_provenance
 from areneon_ml.loop.play import NodePlayer, PlayError
 from areneon_ml.model.encoder import encoder_version
 from areneon_ml.model.gamedata import GameData
+from areneon_ml.progress.records import ProgressRecordError
+from areneon_ml.progress.run import (
+    DEFAULT_GAMES,
+    DEFAULT_RECORD_GAMES,
+    NodeProgressPlayer,
+    ProgressError,
+    committed_generations,
+    progress_generation,
+    progress_root,
+)
 
 EXIT_REFUSED = 3
 EXIT_PLAY = 4
@@ -67,7 +80,46 @@ def _parser() -> argparse.ArgumentParser:
         "--out", type=Path, help="default: <run-dir>.inspect/, beside the run directory"
     )
     inspect.add_argument("--node", default="node", help="the node executable")
+    progress = commands.add_parser("progress", help="progress evaluation of a committed generation")
+    progress.add_argument("--run-dir", type=Path, required=True)
+    which = progress.add_mutually_exclusive_group(required=True)
+    which.add_argument("--generation", type=int, help="the generation to evaluate")
+    which.add_argument("--all", action="store_true", help="every committed generation")
+    progress.add_argument("--games", type=int, default=DEFAULT_GAMES, help="games per match")
+    progress.add_argument(
+        "--record-games",
+        type=int,
+        help=f"games stored per match (default {DEFAULT_RECORD_GAMES}, at most --games)",
+    )
+    progress.add_argument("--progress-dir", type=Path, help="default: <run-dir>.progress")
+    progress.add_argument("--engine-data", type=Path, required=True)
+    progress.add_argument("--node", default="node", help="the node executable")
+    progress.add_argument("--worker-python", default=sys.executable, help="CPU torch worker python")
     return parser
+
+
+def _progress(args: argparse.Namespace) -> dict[str, object]:
+    run_dir = args.run_dir.resolve()
+    config = read_run_config(layout.read_json(run_dir / layout.CONFIG))
+    game = GameData.from_table(json.loads(args.engine_data.read_text(encoding="utf-8")))
+    player = NodeProgressPlayer(
+        repo=REPO,
+        node=args.node,
+        worker_python=args.worker_python,
+        run_dir=run_dir,
+        config_path=run_dir / layout.CONFIG,
+        engine_data=args.engine_data.resolve(),
+        encoder_version=encoder_version(game, config.model.encoder),
+    )
+    root = progress_root(run_dir, args.progress_dir)
+    record_games = (
+        min(DEFAULT_RECORD_GAMES, args.games) if args.record_games is None else args.record_games
+    )
+    generations = committed_generations(run_dir) if args.all else [args.generation]
+    done = [
+        progress_generation(run_dir, g, root, player, args.games, record_games) for g in generations
+    ]
+    return {"progress_dir": str(root), "generations": done}
 
 
 def _run(args: argparse.Namespace) -> dict[str, object]:
@@ -103,6 +155,8 @@ def main(argv: list[str] | None = None) -> int:
             out = _run(args)
         elif args.command == "inspect":
             out = inspect_run(args.run_dir, args.out, repo=REPO, node=args.node)
+        elif args.command == "progress":
+            out = _progress(args)
         else:
             out = {"sources_hash": export_provenance(args.run_dir, args.out)}
     except PlayError as exc:
@@ -120,6 +174,8 @@ def main(argv: list[str] | None = None) -> int:
         RecordError,
         ContractError,
         InspectError,
+        ProgressError,
+        ProgressRecordError,
         OSError,
         json.JSONDecodeError,
     ) as exc:

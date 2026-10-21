@@ -19,12 +19,16 @@ TEMPERATURE = 1
 PRECISION = "float32"
 
 
-def policy_id(preview: str, battle: str) -> str:
-    """``policy:`` + SHA-256 of ``JCS({preview, battle, mode, temperature, precision})``."""
+def policy_id(preview: str, battle: str, mode: str = MODE) -> str:
+    """``policy:`` + SHA-256 of ``JCS({preview, battle, mode, temperature, precision})``.
+
+    The loop plays ``sample`` (the default); the progress evaluation also plays ``argmax``,
+    which is a different policy with a different id.
+    """
     body = {
         "preview": preview,
         "battle": battle,
-        "mode": MODE,
+        "mode": mode,
         "temperature": TEMPERATURE,
         "precision": PRECISION,
     }

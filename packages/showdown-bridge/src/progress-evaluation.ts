@@ -1,0 +1,295 @@
+// The progress evaluation's play (ADR-017 section 2): the frozen pair of one
+// generation plays scripted baselines on the validation teams of the run's
+// team dataset, in sample and in argmax mode, on A1 with one query per forward
+// pass (ADR-010 section 2: evaluation never batches). Every match uses the same
+// pairs and seeds (`progress-seed/1`, `progress-pairing/1`): game k is pair k,
+// and the candidate sits on p1 for an even k and on p2 for an odd one, so the
+// games of a match share no team and no seed.
+//
+// A progress evaluation is a progress view, never the Training gate: it
+// writes no Episode, and its game records are an evaluation artifact (they
+// hold both sides' hidden information) that the training loader refuses.
+// A harness incident fails the whole evaluation and commits nothing; a policy
+// forfeit is a scored loss for the failing side, kept with its cause.
+
+import { closeSync, fsyncSync, mkdirSync, openSync, writeSync } from "node:fs";
+import { join } from "node:path";
+import { enumerateCandidates } from "./choices.ts";
+import { type Json, jcs } from "./canonical-json.ts";
+import type { Engine, PokemonSet } from "./engine.ts";
+import { guardActor, type LatencyBudget, type PlayedGame } from "./evaluation-harness.ts";
+import { resolveFormat } from "./formats.ts";
+import { firstLegal } from "./golden.ts";
+import { type PolicyClient } from "./policy-worker.ts";
+import { policyGame, type PolicySeat } from "./policy-actor.ts";
+import { PROGRESS_PAIRING, PROGRESS_SEED_DERIVATION, progressGameStreams, progressPairs } from "./progress-seed.ts";
+import { omniscientLogHash, progressRecordHash, tallyRows, type ProgressEvaluationRecord, type ProgressGameRecord, readProgressEvaluationRecord, readProgressGameRecord } from "./progress-records.ts";
+import { randomLegalActor } from "./random-legal.ts";
+import type { Actor, Player } from "./runner.ts";
+import type { SyntheticTeamHashes } from "./team-class.ts";
+import { teamHash } from "./team-class.ts";
+import { runConfigHash, type TrainingRunConfig } from "./training-run-config.ts";
+
+/** The teams a progress evaluation may play: the validation split, proven synthetic by where it was read from. */
+export interface ProgressTeam {
+  /** The team's canonical hash (order of the sets does not matter): its identity in the pairing order. */
+  canonical_team_hash: string;
+  /** The set array the engine's validator normalised the paste to: the team a battle starts with. */
+  sets: PokemonSet[];
+}
+
+export interface ProgressPool {
+  /** The dataset's hash, as the run config names it. */
+  dataset_hash: string;
+  teams: readonly ProgressTeam[];
+  /** The hash (`teamHash`) of every team of the pool: the synthetic proof. */
+  known_synthetic: SyntheticTeamHashes;
+}
+
+/** The scripted opponents, named by what the ADR names them. */
+export const PROGRESS_BASELINES = [
+  { actor: "actor-rule", policy_id: "actor-rule@v1" },
+  { actor: "random-legal", policy_id: "random-legal@v1" },
+] as const;
+
+export const PROGRESS_MODES = ["argmax", "sample"] as const;
+export type ProgressMode = (typeof PROGRESS_MODES)[number];
+
+/** A progress evaluation that cannot be made: a refusal, or a harness incident. */
+export class ProgressError extends Error {
+  override name = "ProgressError";
+}
+
+export interface ProgressOptions {
+  engine: Engine;
+  config: TrainingRunConfig;
+  generation: number;
+  /** SHA-256 of `generations/g<N>/manifest.json`. */
+  generation_manifest_sha256: string;
+  /** The frozen pair's checkpoint ids. */
+  checkpoints: { preview: string; battle: string };
+  /** The pair's policy id in each mode (the Python side derives them). */
+  policy_ids: Record<ProgressMode, string>;
+  /** A started worker client with the pair loaded; one query at a time. */
+  client: PolicyClient & { beginGame?: () => Promise<void> };
+  pool: ProgressPool;
+  /** Games per match; refused above the number of disjoint pairs. */
+  games: number;
+  /** The first this-many games of every match are stored as ProgressGameRecords. */
+  record_games: number;
+  /** The run's own training team hashes (`team-set.json`): a pool team in it is refused. */
+  training_teams: ReadonlySet<string>;
+  /** Every battle seed of the run's committed `plan.json`s: a progress seed in it is refused. */
+  league_seeds: ReadonlySet<string>;
+}
+
+export interface ProgressResult {
+  record: ProgressEvaluationRecord;
+  /** The stored games, by file name (`<match_id>-<k>.json`). */
+  game_records: Map<string, ProgressGameRecord>;
+  /** Wall-clock milliseconds per match: a measurement for the operator, never stored in a record. */
+  wall_ms: Record<string, number>;
+}
+
+const seatOf = (index: number): Player => (index % 2 === 0 ? "p1" : "p2");
+const rival = (player: Player): Player => (player === "p1" ? "p2" : "p1");
+/** Who a seat (or no seat: a tie) is, seen from the candidate. */
+const whose = (candidate: Player): Record<string, "candidate" | "opponent" | "tie"> => ({ [candidate]: "candidate", [rival(candidate)]: "opponent", null: "tie" });
+
+type Row = ProgressEvaluationRecord["games"][number];
+
+/** One game's row and (for a played or forfeited game) the data of its stored form. */
+function rowOf(match_id: string, game: number, candidate: Player, played: PlayedGame): Row {
+  const { outcome } = played;
+  if (outcome.kind === "incident") throw new ProgressError(`game ${game} of ${match_id}: ${outcome.incident}: ${outcome.message}`);
+  const common = { match_id, game, pair: game, candidate_seat: candidate };
+  if (outcome.kind === "forfeit") {
+    const { cause, request_seq, turns } = outcome;
+    return { ...common, outcome: { kind: "forfeit", loser: whose(candidate)[outcome.loser] as "candidate" | "opponent", cause, request_seq, turns } };
+  }
+  return { ...common, outcome: { kind: "played", winner: whose(candidate)[String(outcome.winner)] as "candidate" | "opponent" | "tie", turns: outcome.turns } };
+}
+
+/** What a stored game is built from. */
+export interface GameFacts {
+  run_id: string;
+  generation: number;
+  match_id: string;
+  game: number;
+  /** The set arrays the two seats were brought with. */
+  teams: Record<Player, PokemonSet[]>;
+  policies: Record<Player, string>;
+  played: PlayedGame;
+}
+
+/** Build the ProgressGameRecord of a played or forfeited game, and read it back so a bad one cannot leave. */
+export function buildProgressGameRecord(facts: GameFacts): ProgressGameRecord {
+  const { played } = facts;
+  const { record, outcome } = played;
+  if (record === null || outcome.kind === "incident") throw new ProgressError("an incident game cannot be stored");
+  const decisions: ProgressGameRecord["decisions"] = record.choices.map((entry) => {
+    const request = record.requests[entry.player][entry.request_seq - 1];
+    if (request === undefined || request.request_seq !== entry.request_seq) throw new ProgressError("a choice names a request the record does not hold");
+    return {
+      player: entry.player,
+      request_seq: entry.request_seq,
+      candidates: enumerateCandidates(request).candidates.map(({ choice, pending }) => ({ choice, pending })),
+      chosen: entry.choice,
+      ...(entry.refused === undefined ? {} : { refused: entry.refused }),
+    };
+  });
+  const seen: ProgressGameRecord["outcome"] =
+    outcome.kind === "forfeit"
+      ? { kind: "forfeit", loser: outcome.loser, cause: outcome.cause, request_seq: outcome.request_seq, turns: outcome.turns }
+      : { kind: "played", winner: ({ p1: "p1", p2: "p2", null: "tie" } as const)[String(outcome.winner) as "p1" | "p2" | "null"], turns: outcome.turns };
+  const lines = [...record.omniscient_log];
+  const team = (seat: Player) => ({ team: facts.teams[seat] as unknown as ProgressGameRecord["teams"]["p1"]["team"], team_hash: record.team_hashes[seat] });
+  return readProgressGameRecord({
+    schema_version: 1,
+    data_class: "synthetic",
+    run_id: facts.run_id,
+    generation: facts.generation,
+    match_id: facts.match_id,
+    game: facts.game,
+    seed: record.seed,
+    version_manifest: record.manifest,
+    teams: { p1: team("p1"), p2: team("p2") },
+    policies: facts.policies,
+    decisions,
+    outcome: seen,
+    omniscient_log: lines,
+    omniscient_log_sha256: omniscientLogHash(lines),
+  });
+}
+
+/**
+ * The teams of each pair, from the pool, refusing a pool team that the run trained on
+ * and more games than there are disjoint pairs.
+ */
+export function progressPlan(options: Pick<ProgressOptions, "config" | "pool" | "games" | "training_teams" | "league_seeds">): { pairs: [ProgressTeam, ProgressTeam][]; seeds: string[] } {
+  const { config, pool, games, training_teams, league_seeds } = options;
+  if (!Number.isSafeInteger(games) || games < 1) throw new ProgressError("--games must be a positive integer");
+  const byCanonical = new Map(pool.teams.map((team) => [team.canonical_team_hash, team]));
+  if (byCanonical.size !== pool.teams.length) throw new ProgressError("a team appears twice in the validation pool");
+  for (const team of pool.teams) {
+    if (training_teams.has(teamHash(team.sets))) throw new ProgressError("a validation team is in the run's team-set.json: the run trained on it");
+    if (!pool.known_synthetic.has(teamHash(team.sets))) throw new ProgressError("a validation team is not proven synthetic");
+  }
+  const pairs = progressPairs(config.seeds.run_key, [...byCanonical.keys()]);
+  if (games > pairs.length) throw new ProgressError(`${games} games need ${games} disjoint team pairs: the validation split gives ${pairs.length}`);
+  const seeds: string[] = [];
+  for (let game = 0; game < games; game++) {
+    const { seed } = progressGameStreams(config.seeds.run_key, game);
+    if (league_seeds.has(seed)) throw new ProgressError(`the progress seed of game ${game} equals a seed of a committed plan`);
+    seeds.push(seed);
+  }
+  return { pairs: pairs.slice(0, games).map(([a, b]) => [byCanonical.get(a) as ProgressTeam, byCanonical.get(b) as ProgressTeam]), seeds };
+}
+
+/**
+ * Play every match of the generation's progress evaluation and return its record
+ * and the stored games. Refused before any game: a pool team the run trained on,
+ * a seed equal to a committed plan's, more games than disjoint pairs. A harness
+ * incident in any game throws `ProgressError` and nothing is returned.
+ */
+export async function playProgress(options: ProgressOptions): Promise<ProgressResult> {
+  const { engine, config, generation, client, pool, games, record_games } = options;
+  if (!Number.isSafeInteger(record_games) || record_games < 0 || record_games > games) throw new ProgressError("--record-games must be between 0 and --games");
+  const plan = progressPlan(options);
+  const budget: LatencyBudget = { preview_ms: config.generation.latency_budget_ms.preview_ms, battle_ms: config.generation.latency_budget_ms.battle_ms };
+  const manifest = resolveFormat(engine, config.format_id).manifest;
+  const matches: ProgressEvaluationRecord["matches"] = [];
+  const rows: Row[] = [];
+  const stored = new Map<string, ProgressGameRecord>();
+  const wall_ms: Record<string, number> = {};
+  for (const baseline of PROGRESS_BASELINES) {
+    for (const mode of PROGRESS_MODES) {
+      const match_id = `${baseline.actor}-${mode}`;
+      const policy_id = options.policy_ids[mode];
+      const matchRows: Row[] = [];
+      const hashes: string[] = [];
+      const started = performance.now();
+      for (let game = 0; game < games; game++) {
+        const candidate = seatOf(game);
+        const [first, second] = plan.pairs[game] as [ProgressTeam, ProgressTeam];
+        const teams: Record<Player, PokemonSet[]> = { p1: first.sets, p2: second.sets };
+        const streams = progressGameStreams(config.seeds.run_key, game);
+        const scripted: Actor = guardActor(baseline.actor === "actor-rule" ? firstLegal : randomLegalActor(streams.baseline_seed), { role: "scripted", latency_budget: budget });
+        const seat: PolicySeat = { client, policy_id, sampling: mode };
+        await client.beginGame?.();
+        const played = await policyGame({
+          engine,
+          formatId: config.format_id,
+          seed: streams.seed,
+          game,
+          teams,
+          known_synthetic: pool.known_synthetic,
+          seats: { [candidate]: seat, [rival(candidate)]: scripted } as Record<Player, PolicySeat | Actor>,
+          latency_budget: budget,
+          maxTurns: config.generation.max_turns,
+        });
+        matchRows.push(rowOf(match_id, game, candidate, played));
+        if (game < record_games) {
+          const policies = { [candidate]: policy_id, [rival(candidate)]: baseline.policy_id } as Record<Player, string>;
+          const stored_game = buildProgressGameRecord({ run_id: config.seeds.run_key, generation, match_id, game, teams, policies, played });
+          stored.set(`${match_id}-${game}.json`, stored_game);
+          hashes.push(progressRecordHash(stored_game));
+        }
+      }
+      wall_ms[match_id] = Math.round(performance.now() - started);
+      rows.push(...matchRows);
+      matches.push(summarise(match_id, policy_id, baseline.policy_id, mode, matchRows, hashes, config.generation.max_turns));
+    }
+  }
+  // The baselines and the modes are listed in sorted order, so the matches (and their rows) are sorted by match_id; the reader refuses otherwise.
+  const record = readProgressEvaluationRecord({
+    schema_version: 1,
+    data_class: "synthetic",
+    run_id: config.seeds.run_key,
+    run_config_hash: await runConfigHash(config),
+    generation,
+    generation_manifest_sha256: options.generation_manifest_sha256,
+    checkpoints: options.checkpoints,
+    version_manifest: manifest,
+    teams: { dataset_hash: pool.dataset_hash, split: "validation", pairs_used: games },
+    plan: {
+      seed_derivation: PROGRESS_SEED_DERIVATION,
+      pairing: PROGRESS_PAIRING,
+      games_per_match: games,
+      recorded_games_per_match: record_games,
+      max_turns: config.generation.max_turns,
+      latency_budget_ms: budget,
+    },
+    matches,
+    games: rows,
+  });
+  return { record, game_records: stored, wall_ms };
+}
+
+function summarise(match_id: string, policy_id: string, opponent_policy: string, mode: ProgressMode, rows: readonly Row[], hashes: string[], maxTurns: number): ProgressEvaluationRecord["matches"][number] {
+  return {
+    match_id,
+    policy_id,
+    opponent: { kind: "baseline", policy_id: opponent_policy },
+    mode,
+    games: rows.length,
+    ...tallyRows(rows, maxTurns),
+    game_record_hashes: hashes.sort(),
+  };
+}
+
+/** Write a result's files under `dir` (created if needed): `progress.json` and `games/<name>.json`, each durable. */
+export function writeProgress(dir: string, result: ProgressResult): void {
+  mkdirSync(join(dir, "games"), { recursive: true });
+  const put = (path: string, value: unknown): void => {
+    const descriptor = openSync(path, "w");
+    try {
+      writeSync(descriptor, `${jcs(value as Json)}\n`);
+      fsyncSync(descriptor);
+    } finally {
+      closeSync(descriptor);
+    }
+  };
+  for (const [name, record] of result.game_records) put(join(dir, "games", name), record);
+  put(join(dir, "progress.json"), result.record);
+}
