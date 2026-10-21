@@ -5,7 +5,7 @@ import { holdoutFlag, privateLogicalSnapshotHash, privateSnapshotHash, recordHas
 import { DuckdbWriter } from "@areneon/team-dataset";
 import { describe, expect, it, vi } from "vitest";
 import { SnapshotIoError } from "../src/snapshot-io-error.ts";
-import { readPrivateSnapshot } from "../src/snapshot-reader.ts";
+import { INSPECT_ONLY, readPrivateSnapshot } from "../src/snapshot-reader.ts";
 import { writePrivateSnapshot } from "../src/snapshot-writer.ts";
 import { assertWorkDir, onWindowsMount, parentOwnerOk } from "../src/work-dir.ts";
 import { at, engine, HOLDOUT_KEY, hex32, input, labelSet, plan, records, recordOf, realDuckdb, scratchRoot, standIn, workDir } from "./snapshot-support.ts";
@@ -25,7 +25,7 @@ const code = async (run: () => unknown): Promise<string> => {
 
 const written = async (n = 12, over: Parameters<typeof input>[0] extends infer T ? Partial<T> : never = {}, tool = standIn()) => writePrivateSnapshot(input({ records: records(n), shardRows: 5, ...over }, tool));
 const readOf = (w: Awaited<ReturnType<typeof written>>, over: Partial<Parameters<typeof readPrivateSnapshot>[0]> = {}) =>
-  readPrivateSnapshot({ engine, expectedSnapshotHash: privateSnapshotHash(("manifest" in over ? over.manifest : w.manifest) as never), shard: (i) => w.shards[i] as Uint8Array, labelSet, shardRows: 5, ...over, manifest: "manifest" in over ? over.manifest : w.manifest });
+  readPrivateSnapshot({ engine, expected: INSPECT_ONLY, expectedSnapshotHash: privateSnapshotHash(("manifest" in over ? over.manifest : w.manifest) as never), shard: (i) => w.shards[i] as Uint8Array, labelSet, shardRows: 5, ...over, manifest: "manifest" in over ? over.manifest : w.manifest });
 
 describe("writePrivateSnapshot and readPrivateSnapshot", () => {
   it("round-trips: the reader returns the records, and the manifest is the one the writer built", async () => {
@@ -62,7 +62,7 @@ describe("writePrivateSnapshot and readPrivateSnapshot", () => {
     expect((await readOf(w, { shardRows: 2 ** 18 })).records).toHaveLength(2);
     const retired = await writePrivateSnapshot(input({ records: [recordOf(1, 3, { status: "retired" })] }));
     expect(retired.manifest.cells).toEqual([]);
-    expect((await readPrivateSnapshot({ engine, manifest: retired.manifest, expectedSnapshotHash: privateSnapshotHash(retired.manifest as never), shard: (i) => retired.shards[i] as Uint8Array, labelSet })).records).toHaveLength(1);
+    expect((await readPrivateSnapshot({ engine, expected: INSPECT_ONLY, manifest: retired.manifest, expectedSnapshotHash: privateSnapshotHash(retired.manifest as never), shard: (i) => retired.shards[i] as Uint8Array, labelSet })).records).toHaveLength(1);
   });
 
   it("is deterministic for one writer: same inputs, same shard bytes and hash", async () => {
@@ -230,7 +230,7 @@ describe("reader refusals", () => {
   it("refuses a record the engine's round trip refuses", async () => {
     const bad = { ...recordOf(0, 1), paste: recordOf(0, 1).paste.replace(/Ability: .*/, "Ability: Nonsense") };
     const w = await writePrivateSnapshot(input({ records: [bad, recordOf(1, 2)] }));
-    expect(await code(() => readPrivateSnapshot({ engine, manifest: w.manifest, expectedSnapshotHash: privateSnapshotHash(w.manifest as never), shard: (i) => w.shards[i] as Uint8Array, labelSet }))).toBe("record_invalid");
+    expect(await code(() => readPrivateSnapshot({ engine, expected: INSPECT_ONLY, manifest: w.manifest, expectedSnapshotHash: privateSnapshotHash(w.manifest as never), shard: (i) => w.shards[i] as Uint8Array, labelSet }))).toBe("record_invalid");
   });
 
   it("refuses counts that differ from the shards' records", async () => {
@@ -265,8 +265,16 @@ describe("readPrivateSnapshot anchors", () => {
   it("takes the snapshot hash as a required argument", async () => {
     const w = await written();
     // @ts-expect-error expectedSnapshotHash is required: there is no way to read without an anchor
-    const missing = readPrivateSnapshot({ engine, manifest: w.manifest, shard: (i) => w.shards[i] as Uint8Array, labelSet, shardRows: 5 });
+    const missing = readPrivateSnapshot({ engine, expected: INSPECT_ONLY, manifest: w.manifest, shard: (i) => w.shards[i] as Uint8Array, labelSet, shardRows: 5 });
     expect(await code(() => missing)).toBe("snapshot_hash_mismatch");
+  });
+
+  it("takes the expected version as a required argument: leaving it out is a refusal, INSPECT_ONLY is said out loud", async () => {
+    const w = await written();
+    // @ts-expect-error expected is required: a reader that compares nothing must say INSPECT_ONLY
+    const omitted = readPrivateSnapshot({ engine, manifest: w.manifest, expectedSnapshotHash: w.snapshotHash, shard: (i) => w.shards[i] as Uint8Array, labelSet, shardRows: 5 });
+    expect(await code(() => omitted)).toBe("version_manifest_mismatch");
+    expect((await readOf(w, { expected: INSPECT_ONLY })).records).toHaveLength(12);
   });
 
   it("refuses a snapshot made under another version manifest or vocabulary, and accepts the expected ones", async () => {
