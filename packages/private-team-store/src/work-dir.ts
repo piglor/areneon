@@ -5,7 +5,7 @@
 // directory; nothing is created here.
 
 import { lstatSync, realpathSync, statfsSync } from "node:fs";
-import { isAbsolute, sep } from "node:path";
+import { isAbsolute, resolve, sep } from "node:path";
 import { SnapshotIoError } from "./snapshot-io-error.ts";
 
 /** `f_type` of tmpfs and ramfs (linux/magic.h). */
@@ -29,7 +29,7 @@ export function assertWorkDir(dir: string, probe: WorkDirProbe = {}): string {
     const stat = lstatSync(dir);
     if (!stat.isDirectory()) return fail();
     const real = realpathSync(dir);
-    if (real !== dir.replace(/\/+$/, "")) return fail();
+    if (real !== resolve(dir)) return fail();
     if (stat.uid !== (probe.uid ?? process.getuid?.())) return fail();
     if ((stat.mode & 0o077) !== 0) return fail();
     const fsType = probe.fsType ?? ((p: string) => Number(statfsSync(p).type));
