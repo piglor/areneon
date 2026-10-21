@@ -1,0 +1,18 @@
+{
+  "provenance": "synthetic: see b*.json; teams of the committed fixtures-v1 dataset, found by capture-unavailable-corpus.ts",
+  "format": "gen9championsvgc2026regmc",
+  "battles": [
+    {
+      "id": "b00",
+      "seed": "sodium,0000000000000000000000000000502c",
+      "turns": 12,
+      "winner": "p1"
+    },
+    {
+      "id": "b01",
+      "seed": "sodium,00000000000000000000000000005068",
+      "turns": 19,
+      "winner": "p2"
+    }
+  ]
+}

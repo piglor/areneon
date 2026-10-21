@@ -427,3 +427,26 @@ def test_ability_copies_and_skill_swap() -> None:
 def test_illusion_is_a_named_refusal() -> None:
     with pytest.raises(UnknownLineError, match="Illusion"):
         run("|replace|p2a: Venusaur|Charizard, L50, F|100/100")
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "|error|[Unavailable choice] Can't switch: The active Pokémon is trapped",
+        "|error|[Unavailable choice] Can't move: Your Pokémon's Taunt move is disabled | x",
+        "|error|[Invalid choice] There's nothing to choose",
+        "|error|[Invalid choice] Sorry, too late to make a different move",
+    ],
+)
+def test_a_choice_refusal_to_the_player_changes_no_state(line: str) -> None:
+    # The engine (A1) or the server layer (A2) tells the player alone that a choice was not
+    # taken; a new request may follow. Nothing about either side changes.
+    assert run(line).to_dict() == run().to_dict()
+    assert (
+        run("|move|p2a: Venusaur|Protect|p2a: Venusaur", line).to_dict()
+        == run("|move|p2a: Venusaur|Protect|p2a: Venusaur").to_dict()
+    )
+
+
+def test_a_z_move_breaking_protect_changes_no_state() -> None:
+    assert run("|-zbroken|p2a: Venusaur").to_dict() == run().to_dict()
