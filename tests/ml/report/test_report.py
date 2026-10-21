@@ -233,7 +233,7 @@ def assert_inert(text: str, canaries: tuple[str, ...]) -> None:
     for canary in canaries:
         assert canary not in text
         assert "<img" not in text
-        assert not any("onerror" in v for v in found.values)
+        assert "onerror" not in found.attrs
 
 
 def hostile_model(run_dir: Path) -> Any:
@@ -667,3 +667,100 @@ def test_a_run_with_only_the_seeded_pair(tmp_path: Path) -> None:
 def test_the_committed_fixture_is_read_without_copying() -> None:
     model = read_report_model(FIXTURE, None)
     assert model.run_key == "inspector-fixture"
+
+
+# --- the interval's order and the progress strings ---
+
+
+def _low(ppm: int) -> str:
+    tenths = ppm // 1000
+    return f"{tenths // 10}.{tenths % 10}%"
+
+
+def _high(ppm: int) -> str:
+    tenths = (ppm + 999) // 1000
+    return f"{tenths // 10}.{tenths % 10}%"
+
+
+def test_the_wilson_interval_reads_low_then_high(run: Path, root: Path) -> None:
+    model = read_report_model(run, root)
+    text = build_report(model)
+    found = parsed(text)
+    tips = json.loads(next(b for t, b in found.bodies if t == "script"))["tips"]
+    for g, facts in model.progress.items():
+        for m in facts.matches:
+            interval = wilson(m.wins, m.ties, m.games)
+            assert (m.low_ppm, m.high_ppm) == (interval.low_ppm, interval.high_ppm)
+            low, high = _low(interval.low_ppm), _high(interval.high_ppm)
+            assert interval.low_ppm <= interval.score_ppm <= interval.high_ppm
+            row = re.search(
+                rf'<tr><th scope="row">{g}</th><td class="txt">{m.match_id}[^\n]*?</tr>', text
+            )
+            assert row is not None
+            assert f"{low} to {high}" in row[0]
+            tip = f"Generation {g}, {m.mode} vs {m.match_id.removesuffix('-' + m.mode)}: "
+            assert any(
+                t.startswith(tip) and f"(Wilson 95% {low} to {high}, conditional" in t for t in tips
+            )
+    first = re.search(r"(\d+\.\d)% to (\d+\.\d)%", text)
+    assert first is not None
+    assert float(first[1]) <= float(first[2])
+
+
+def test_the_score_by_seat_and_the_previous_cells(run: Path, root: Path) -> None:
+    model = read_report_model(run, root)
+    text = build_report(model)
+    for g, facts in model.progress.items():
+        record = json.loads((root / f"g{g:06d}" / "progress.json").read_text())
+        for m in facts.matches:
+            for seat, won, tied, lost in m.seats:
+                rows = [r for r in record["games"] if r["match_id"] == m.match_id]
+                mine = [r for r in rows if r["candidate_seat"] == seat]
+                outcomes = [r["outcome"] for r in mine]
+                assert won + tied + lost == len(mine)
+                assert won == sum(
+                    o.get("winner") == "candidate" or o.get("loser") == "opponent" for o in outcomes
+                )
+            assert sum(w + t + lo for _, w, t, lo in m.seats) == m.games
+    assert "Score by seat (diagnostic)" in text
+    assert "not applicable" in text  # generation 0 has no previous generation
+    assert "Lines join looks, not a trend." in text
+
+
+def hostile_progress(run: Path, root: Path) -> Any:
+    model = read_report_model(run, root)
+    facts = model.progress[1]
+    hostile = dataclasses.replace(
+        facts.matches[0],
+        match_id=HOSTILE + "-sample",
+        mode="sample",
+        forfeits=((HOSTILE, HOSTILE, 1),),
+        seen_label=HOSTILE,
+    )
+    previous = dataclasses.replace(
+        facts.matches[1], match_id="previous-argmax", mode="argmax", seen_label=HOSTILE
+    )
+    changed = dataclasses.replace(facts, matches=(hostile, previous))
+    return dataclasses.replace(model, progress={**model.progress, 1: changed})
+
+
+def test_hostile_progress_strings_are_inert(run: Path, root: Path) -> None:
+    assert_inert(build_report(hostile_progress(run, root)), (HOSTILE,))
+
+
+def test_hostile_progress_negative_control(run: Path, root: Path) -> None:
+    text = build_report(hostile_progress(run, root))
+    for old in ("&lt;img src=x onerror=alert(1)&gt;", "&lt;/script&gt;"):
+        broken = text.replace(old, old.replace("&lt;", "<").replace("&gt;", ">"), 1)
+        with pytest.raises(AssertionError):
+            assert_inert(broken, (HOSTILE,))
+
+
+def test_a_symlinked_replays_directory_is_not_followed(run: Path, tmp_path: Path) -> None:
+    real = tmp_path / "elsewhere" / "g000001"
+    real.mkdir(parents=True)
+    (real / "game-1.html").write_text("x")
+    inspect = tmp_path / "inspect"
+    inspect.mkdir()
+    (inspect / "replays").symlink_to(real.parent, target_is_directory=True)
+    assert inspector_links(inspect, tmp_path, [1]).replays == {}

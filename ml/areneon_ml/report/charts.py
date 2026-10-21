@@ -144,6 +144,7 @@ def line_chart(  # noqa: PLR0913
     y_label: Callable[[float], str] = _label,
     ref: float | None = None,
     empty: str = "Not recorded for any generation.",
+    missing: str = "not recorded",
 ) -> str:
     """Lines per series over the generations; a point with ``low``/``high`` carries a whisker."""
     values = [v for s in series for p in s.points for v in (p.y, p.low, p.high) if v is not None]
@@ -197,7 +198,7 @@ def line_chart(  # noqa: PLR0913
                 f'{mark} tabindex="0" data-t="{t}"><title>{esc(p.tip)}</title></{"circle" if s.shape == "circle" else "rect"}>'
             )
     legend = _legend([(s.name, s.slot, s.shape) for s in series])
-    table = _table(xs, [(s.name, {p.x: p.cell for p in s.points}) for s in series], "not recorded")
+    table = _table(xs, [(s.name, {p.x: p.cell for p in s.points}) for s in series], missing)
     return (
         f"<figure><h3>{esc(title)}</h3>{legend}"
         f'<svg class="chart" viewBox="0 0 {W} {H}" role="group" aria-label="{esc(title)}: {esc(caption)}">{"".join(parts)}</svg>'

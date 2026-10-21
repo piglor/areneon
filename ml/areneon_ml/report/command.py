@@ -51,8 +51,9 @@ def inspector_links(inspect_dir: Path | None, base: Path, generations: list[int]
         page = inspect_dir / name
         if page.is_file() and not page.is_symlink():
             games[g] = _href(page, base)
-        folder = inspect_dir / "replays" / layout.generation_name(g)
-        if folder.is_dir() and not folder.is_symlink():
+        replays_dir = inspect_dir / "replays"
+        folder = replays_dir / layout.generation_name(g)
+        if not replays_dir.is_symlink() and folder.is_dir() and not folder.is_symlink():
             found = sorted(
                 p
                 for p in folder.iterdir()

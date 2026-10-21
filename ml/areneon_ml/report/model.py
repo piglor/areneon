@@ -121,6 +121,8 @@ class MatchFacts:
     turn_cap_ties: int
     forfeits: tuple[tuple[str, str, int], ...]
     seen_label: str | None
+    #: The candidate's wins, ties and losses by seat it sat in: (seat, wins, ties, losses).
+    seats: tuple[tuple[str, int, int, int], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -260,6 +262,29 @@ def _check_synthetic(path: Path, number: int) -> None:
             raise ReportError("only synthetic, public-lineage runs are reported")
 
 
+def _seat_counts(
+    rows: list[dict[str, Any]], match_id: str
+) -> tuple[tuple[str, int, int, int], ...]:
+    """The candidate's results by the seat it sat in, from the match's game rows."""
+    out = []
+    for seat in ("p1", "p2"):
+        won = tied = lost = 0
+        for row in rows:
+            if row["match_id"] != match_id or row["candidate_seat"] != seat:
+                continue
+            outcome = row["outcome"]
+            who = outcome["loser"] if outcome["kind"] == "forfeit" else outcome["winner"]
+            if outcome["kind"] == "forfeit":
+                won += who == "opponent"
+                lost += who == "candidate"
+            else:
+                won += who == "candidate"
+                tied += who == "tie"
+                lost += who == "opponent"
+        out.append((seat, won, tied, lost))
+    return tuple(out)
+
+
 def _progress_facts(record: dict[str, Any]) -> ProgressFacts:
     by_id = {s["match_id"]: s for s in summary_of(record)}
     matches = []
@@ -281,6 +306,7 @@ def _progress_facts(record: dict[str, Any]) -> ProgressFacts:
                 match["turn_cap_ties"],
                 tuple((f["side"], f["cause"], f["count"]) for f in match["forfeits"]),
                 summary.get("comparison"),
+                _seat_counts(record["games"], match["match_id"]),
             )
         )
     plan = record["plan"]

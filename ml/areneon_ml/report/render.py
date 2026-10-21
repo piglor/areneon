@@ -151,13 +151,14 @@ def _progress_section(model: ReportModel, tips: Tips) -> str:
         charts.append(
             line_chart(
                 title,
-                "Progress score by generation with its Wilson interval, conditional on the fixed validation plan. Dashed line: 50%.",
+                "Progress score by generation with its Wilson interval, conditional on the fixed validation plan. Dashed line: 50%. Lines join looks, not a trend.",
                 xs,
                 series,
                 tips,
                 y_range=(0.0, 1.0),
                 y_label=lambda v: f"{round(v * 100)}%",
                 ref=0.5,
+                missing="not applicable" if stem == "previous" else NOT_EVALUATED,
             )
         )
     out.append(f'<div class="charts">{"".join(charts)}</div>')
@@ -197,6 +198,23 @@ def _progress_section(model: ReportModel, tips: Tips) -> str:
             rows,
             "Each row: the frozen pair of that generation against the opponent, on the validation plan.",
         ).replace('<td class="txt">', '<td class="txt">')
+    )
+    out.append("<h3>Score by seat (diagnostic)</h3>")
+    out.append(
+        _table(
+            [
+                ("Generation", True),
+                ("Match", False),
+                ("Candidate on p1: W / T / L", True),
+                ("Candidate on p2: W / T / L", True),
+            ],
+            [
+                [str(g), esc(m.match_id), *(f"{w} / {t} / {lo}" for _, w, t, lo in m.seats)]
+                for g in done
+                for m in model.progress[g].matches
+            ],
+            "The candidate alternates seats by game (p1 on even games). Descriptive, no interval.",
+        )
     )
     causes = [
         [str(g), m.match_id, side, cause, str(n)]
