@@ -1063,6 +1063,7 @@ class _Reducer:
         target = self._mon(line.args[1], line)
         mon.temp_species = target.temp_species or target.species
         mon.volatiles.add("transform")
+        mon.boosts = dict(target.boosts)  # `transformInto` copies the target's stat stages
         # The engine replaces the whole move list with the target's (and puts it back on
         # switching out), so the moves shown so far are not the ones it has now; what it
         # uses from here on is. The target's own list is not copied: the log does not say

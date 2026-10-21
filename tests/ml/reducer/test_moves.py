@@ -20,7 +20,7 @@ from areneon_ml.reducer import reduce_channel
 
 from tests.ml.model.support import TINY_ENCODER, game, observation
 
-from .support import FORMAT_DIR, VOCAB, opp, run
+from .support import FORMAT_DIR, VOCAB, opp, own, run
 
 TRANSFORM = (
     "|move|p2a: Venusaur|Transform|p1b: Charizard",
@@ -110,3 +110,16 @@ def test_the_battle_that_stopped_the_run_encodes_at_every_decision(player: str) 
     )
     assert ditto.moves_revealed == ["roost", "batonpass", "protect", "tailwind", "struggle"]
     assert ditto.moves_base == ["transform"]
+
+
+def test_transform_copies_the_targets_stat_stages() -> None:
+    # The sweep found a Ditto at +7 Defense: it had copied a Pokemon at +5 and been boosted by 2.
+    state = run(
+        "|-boost|p1b: Charizard|def|6",
+        *TRANSFORM,
+        "|-unboost|p2a: Venusaur|def|1",
+        "|-boost|p2a: Venusaur|atk|2",
+    )
+    assert opp(state, "Venusaur").boosts["def"] == 5
+    assert opp(state, "Venusaur").boosts["atk"] == 2
+    assert own(state, "Charizard").boosts["def"] == 6
