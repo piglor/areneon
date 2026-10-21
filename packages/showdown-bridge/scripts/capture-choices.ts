@@ -20,7 +20,7 @@ import {
 } from "../src/choice-corpus.ts";
 import { loadEngine, type PokemonSet } from "../src/engine.ts";
 import { GOLDEN_FORMAT, syntheticTeam } from "../src/golden.ts";
-import { decodeRequest } from "../src/request.ts";
+import { type DecodedRequest, decodeRequest } from "../src/request.ts";
 import type { Player } from "../src/runner.ts";
 
 const engine = loadEngine();
@@ -63,6 +63,27 @@ const TARGETS: PokemonSet[] = [
   set("Arcanine", "Charcoal", "Intimidate", ["Howl", "Flamethrower", "Extreme Speed", "Protect"]),
 ];
 
+/** Golden team; its first Pokémon is a Pawmot that knows Revival Blessing. */
+const REVIVER: PokemonSet[] = [
+  set("Pawmot", "Lum Berry", "Iron Fist", [
+    "Revival Blessing",
+    "Protect",
+    "Close Combat",
+    "Thunder Punch",
+  ]),
+  ...syntheticTeam().slice(1),
+];
+
+/** Use Revival Blessing (move 1) once `n` of the side's Pokémon have fainted. */
+const reviveWhen =
+  (n: number) =>
+  (request: DecodedRequest): RegExp =>
+    (request.request.side as { pokemon: { condition: string }[] }).pokemon.filter((m) =>
+      m.condition.endsWith(" fnt"),
+    ).length >= n
+      ? /^move 1,/
+      : /^move [23],/;
+
 const withItems = (items: Record<string, string>): PokemonSet[] =>
   syntheticTeam().map((s) => ({ ...s, item: items[s.species] ?? s.item }));
 
@@ -83,7 +104,7 @@ interface Search {
   /** Team Preview choice per side; otherwise searched like any request. */
   preview?: Partial<Record<Player, string>>;
   /** Steer a side: pick among the accepted candidates matching this. */
-  prefer?: Partial<Record<Player, RegExp>>;
+  prefer?: Partial<Record<Player, RegExp | ((request: DecodedRequest) => RegExp)>>;
 }
 
 const SEARCHES: Search[] = [
@@ -164,6 +185,32 @@ const SEARCHES: Search[] = [
     teams: { p1: GOLDEN, p2: GOLDEN },
     player: "p1",
     prefer: { p2: /move 4$/ },
+  },
+  {
+    id: "force-switch-revival",
+    kind: "force-switch-revival",
+    purpose: "Revival Blessing used with a fainted ally: the engine's reviving request",
+    teams: { p1: REVIVER, p2: GOLDEN },
+    player: "p1",
+    preview: { p1: "team 1234" },
+    prefer: {
+      // Revival Blessing (one PP) only once enough allies have fainted; p2 hits hard.
+      p1: reviveWhen(1),
+      p2: /^move 4/,
+    },
+  },
+  {
+    id: "force-switch-revival-many",
+    kind: "force-switch-revival-many",
+    purpose: "Revival Blessing used with two or more fainted allies: the engine's reviving request",
+    teams: { p1: REVIVER, p2: GOLDEN },
+    player: "p1",
+    preview: { p1: "team 1234" },
+    prefer: {
+      // The same, once two allies have fainted.
+      p1: reviveWhen(2),
+      p2: /^move 4/,
+    },
   },
   {
     id: "trapped",
@@ -250,7 +297,9 @@ function search(s: Search, battles = 200, maxTurns = 60): ChoiceCaseSpec {
             showdown_commit: engine.commit,
             judge: new CloneJudge(engine, battle, player),
           });
-          const preferred = choices.filter((c) => s.prefer?.[player]?.test(c) === true);
+          const want = s.prefer?.[player];
+          const pattern = typeof want === "function" ? want(request) : want;
+          const preferred = choices.filter((c) => pattern?.test(c) === true);
           const pool = preferred.length > 0 ? preferred : choices;
           choice = pool.length > 0 ? (pool[Math.floor(next() * pool.length)] as string) : "default";
         }

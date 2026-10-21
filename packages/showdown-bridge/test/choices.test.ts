@@ -295,6 +295,80 @@ describe("forced switches", () => {
   });
 });
 
+describe("Revival Blessing (the engine's `reviving` request)", () => {
+  /** The golden forced switch, edited into a reviving request: Venusaur is the reviver. */
+  const revive =
+    (fainted: number[], flags = [true, false]): Edit =>
+    (r) => {
+      r.forceSwitch = flags;
+      r.side.pokemon[0].condition = "50/159";
+      r.side.pokemon[0].reviving = true;
+      for (const i of fainted) r.side.pokemon[i].condition = "0 fnt";
+    };
+
+  it("offers every fainted Pokémon, never a living one, and no pass while a bench Pokémon lives", () => {
+    const withLiving: Edit = (r) => {
+      revive([2, 3])(r);
+      r.side.pokemon.push({ ...r.side.pokemon[1], condition: "100/100" });
+    };
+    expect(choices(enumerate("force-switch.request.json", withLiving))).toEqual([
+      "switch 3, pass",
+      "switch 4, pass",
+    ]);
+  });
+
+  it("includes an active slot's fainted Pokémon as a target", () => {
+    expect(choices(enumerate("force-switch.request.json", revive([1, 3])))).toEqual([
+      "switch 2, pass",
+      "switch 4, pass",
+    ]);
+  });
+
+  it("lets the slot pass only when the engine has more flagged slots than switch-ins", () => {
+    // Bench has no living Pokémon: forcedSwitches 0, forcedPasses 1 (sim/side.ts clearChoice).
+    expect(choices(enumerate("force-switch.request.json", revive([1, 2, 3])))).toEqual([
+      "switch 2, pass",
+      "switch 3, pass",
+      "switch 4, pass",
+      "pass, pass",
+    ]);
+    expect(choices(enumerate("force-switch.request.json", revive([2, 3])))).toContain("pass, pass");
+  });
+
+  it("marks no candidate pending: nothing about it is hidden", () => {
+    const candidates = enumerate("force-switch.request.json", revive([2, 3]));
+    expect(candidates.every((c) => !c.pending)).toBe(true);
+  });
+
+  it.each([
+    ["a reviving Pokémon on a move request", "turn.request.json", (r: Parameters<Edit>[0]) => (r.side.pokemon[2].reviving = true)],
+    [
+      "a reviving Pokémon that is not in a flagged slot",
+      "force-switch.request.json",
+      (r: Parameters<Edit>[0]) => {
+        revive([2])(r);
+        r.side.pokemon[0].reviving = false;
+        r.side.pokemon[2].reviving = true;
+      },
+    ],
+    [
+      "two reviving Pokémon",
+      "force-switch.request.json",
+      (r: Parameters<Edit>[0]) => {
+        revive([3], [true, true])(r);
+        r.side.pokemon[1].reviving = true;
+      },
+    ],
+    [
+      "a reviver next to a forced switch that is not a revival",
+      "force-switch.request.json",
+      (r: Parameters<Edit>[0]) => revive([2, 3], [true, true])(r),
+    ],
+  ])("fails closed on %s", (_label, file, edit) => {
+    expect(() => enumerate(file, edit)).toThrow(EnumerationError);
+  });
+});
+
 describe("wait", () => {
   it("offers nothing", () => {
     const request = golden("turn.request.json");

@@ -3,7 +3,7 @@
   "gap_id": "joint-legal-choices",
   "area": "Joint legal choices",
   "status": "unverified",
-  "description": "Enumerated from the player's own request and judged by the pinned engine (ADR-006, `choices.ts`, `choice-judge.ts`). The golden choice corpus covers preview, every target type in the format's move pool, Mega, forced switches, conflicting switches, visible and hidden trapping, Imprison (`maybeDisabled`/`maybeLocked`), a fainted active with no replacement and a locked move; a brute-force oracle finds no engine-accepted action outside the enumerated set. `maybeLocked` is reached only with `maybeDisabled` (the engine derives one from the other outside gen 1), so the Imprison case covers both. The oracle leaves out engine auto-choice (`default`), which ADR-006 never offers. Unverified: no in-game fixture yet.",
+  "description": "Enumerated from the player's own request and judged by the pinned engine (ADR-006, `choices.ts`, `choice-judge.ts`). The golden choice corpus covers preview, every target type in the format's move pool, Mega, forced switches, conflicting switches, visible and hidden trapping, Imprison (`maybeDisabled`/`maybeLocked`), a fainted active with no replacement, a locked move and Revival Blessing (the `reviving` forced switch: the reviving slot names a fainted Pokémon, and passes only when no living bench Pokémon exists; two flagged slots at once fail closed); a brute-force oracle finds no engine-accepted action outside the enumerated set. `maybeLocked` is reached only with `maybeDisabled` (the engine derives one from the other outside gen 1), so the Imprison case covers both. The oracle leaves out engine auto-choice (`default`), which ADR-006 never offers. Unverified: no in-game fixture yet.",
   "evidence": [
     {
       "kind": "engine",
@@ -22,6 +22,10 @@
         "getMoveRequestData",
         "maybeLocked"
       ]
+    },
+    {
+      "kind": "fixture",
+      "path": "fixtures/showdown/gen9championsvgc2026regmc/choices/force-switch-revival.json"
     },
     {
       "kind": "fixture",

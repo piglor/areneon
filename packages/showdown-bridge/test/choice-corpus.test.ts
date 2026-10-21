@@ -100,7 +100,14 @@ describe("the golden choice corpus (ADR-006 rule 7)", () => {
   });
 
   it("judges in one batch exactly as with a fresh clone per choice", () => {
-    for (const file of ["maybe-trapped.json", "maybe-disabled.json"]) {
+    // The revival cases show a successful pick changing engine state (it clears
+    // the reviver's `switchFlag`), which a batch on one clone must not carry over.
+    for (const file of [
+      "maybe-trapped.json",
+      "maybe-disabled.json",
+      "force-switch-revival.json",
+      "force-switch-revival-many.json",
+    ]) {
       const c = corpus[file] as ChoiceCase;
       const { battle, request } = replayCase(engine, caseSpec(c));
       const judge = new CloneJudge(engine, battle, c.player);

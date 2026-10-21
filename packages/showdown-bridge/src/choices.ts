@@ -141,16 +141,16 @@ function joint(
 interface Mon {
   fainted: boolean;
   commanding: boolean;
+  /** The engine asks this Pokémon (Revival Blessing) to pick a fainted ally. */
+  reviving: boolean;
 }
 
 function readSide(request: JsonObject): Mon[] {
   const side = object(request.side, "request.side", SIDE_KEYS);
   return array(side.pokemon, "side.pokemon").map((raw, i) => {
     const mon = object(raw, `side.pokemon[${i}]`, POKEMON_KEYS);
-    if (mon.reviving === true) {
-      throw new EnumerationError("Revival Blessing (`reviving`) is not supported");
-    }
     return {
+      reviving: mon.reviving === true,
       fainted: typeof mon.condition === "string" && mon.condition.endsWith(" fnt"),
       commanding: mon.commanding === true,
     };
@@ -226,11 +226,41 @@ function previewCandidates(request: JsonObject, team: Mon[]): Candidate[] {
   return permutations(team.length, k).map((p) => ({ choice: `team ${p}`, pending: false }));
 }
 
+/**
+ * A Revival Blessing request (`side.pokemon[i].reviving`, pinned
+ * sim/side.ts `chooseSwitch`): the one flagged slot names a fainted Pokémon
+ * of the side by position, active slots included. As for any forced switch
+ * it may pass only when no living bench Pokémon could switch in
+ * (`forcedPassesLeft`, sim/side.ts `clearChoice`). The engine's two
+ * counters interact by slot order when a second slot is flagged, and each
+ * switch request is made right after the action that flagged it, so exactly
+ * one flagged slot, the reviving one, is expected: anything else fails
+ * closed. The engine judges every candidate (a test and the corpus).
+ */
+function revivalCandidates(flags: boolean[], team: Mon[]): Candidate[] {
+  const slot = flags.indexOf(true);
+  if (
+    flags.filter(Boolean).length !== 1 ||
+    team.filter((m) => m.reviving).length !== 1 ||
+    team[slot]?.reviving !== true
+  ) {
+    throw new EnumerationError("Revival Blessing outside one flagged reviving slot is not supported");
+  }
+  const options: SlotOption[] = [];
+  team.forEach((m, i) => {
+    if (m.fainted) options.push({ text: `switch ${i + 1}`, pending: false });
+  });
+  if (benchSlots(team).length === 0) options.push(PASS);
+  const perSlot = flags.map((flag): SlotOption[] => (flag ? options : [PASS]));
+  return joint(perSlot[0] as SlotOption[], perSlot[1] as SlotOption[]);
+}
+
 function forceSwitchCandidates(request: JsonObject, team: Mon[]): Candidate[] {
   const flags = array(request.forceSwitch, "forceSwitch");
   if (flags.length !== ACTIVE_SLOTS || flags.some((f) => typeof f !== "boolean")) {
     throw new EnumerationError("forceSwitch must hold one boolean per doubles slot");
   }
+  if (team.some((m) => m.reviving)) return revivalCandidates(flags as boolean[], team);
   const bench = benchSlots(team);
   const forced = Math.min(flags.filter(Boolean).length, bench.length);
   const perSlot = flags.map((flag): SlotOption[] =>
@@ -258,6 +288,9 @@ export function enumerateCandidates(decoded: DecodedRequest): CandidateSet {
   const { phase } = decoded;
   if (phase === "wait") return { phase, candidates: [] };
   if (phase === "preview") return { phase, candidates: previewCandidates(request, team) };
+  if (team.some((m) => m.reviving) && phase !== "forceSwitch") {
+    throw new EnumerationError("a reviving Pokémon outside a forced switch request");
+  }
   if (phase === "forceSwitch") return { phase, candidates: forceSwitchCandidates(request, team) };
 
   const active = array(request.active, "active");
