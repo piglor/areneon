@@ -68,6 +68,78 @@ describe("the request identity has one definition", () => {
       if (file === "../src/request-bytes.ts") continue;
       expect(source, file).not.toMatch(/const \{ rqid,? \.\.\./);
       if (file === "../src/observation.ts") expect(source).not.toMatch(/canonicalJson|TextEncoder/);
+      if (file.includes("bot-client")) {
+        expect(botClientRebuilds(source), file).toEqual([]);
+      }
     }
   });
+
+  describe("bot-client scan", () => {
+    it("flags every banned pattern in a fixture source (negative control)", () => {
+      const bad: Record<string, string> = {
+        "canonicalJson call": "const t = canonicalJson(request);",
+        "canonicalJson import": 'import { canonicalJson } from "@areneon/showdown-bridge";',
+        "jcs call": "const t = jcs(body);",
+        "hash built locally": 'const h = createHash("sha256");',
+        "bytes built locally": "const b = new TextEncoder().encode(text);",
+        "rqid rest destructuring": "const { rqid, ...rest } = request;",
+        "rqid discarded by rename": "const { rqid: _drop, ...rest } = request;",
+        "rqid delete": "delete body.rqid;",
+        "JSON.stringify of a request": "const t = JSON.stringify(rest);\nconst u = JSON.stringify(request);",
+      };
+      for (const [name, source] of Object.entries(bad)) {
+        expect(botClientRebuilds(source), name).not.toEqual([]);
+      }
+    });
+
+    it("ignores the same words in comments and string literals, and allows the shared helpers", () => {
+      const ok = [
+        "// canonicalJson of a request, { rqid, ...rest }",
+        "/* createHash and\n   delete body.rqid */",
+        'const m = "canonicalJson TextEncoder";',
+        "const n = 'jcs';",
+        'import { requestIdentityText, hashRequest, requestIdentityBytes } from "@areneon/showdown-bridge";',
+        "const t = requestIdentityText(request);",
+        "const { rqid } = request as { rqid: unknown };",
+        "const s = JSON.stringify(episode, null, 2);",
+        'const e = "it\\"s canonicalJson";',
+      ];
+      for (const source of ok) expect(botClientRebuilds(source), source).toEqual([]);
+    });
+
+    it("has no exceptions: the shared helpers are the only way bot-client touches the identity bytes", () => {
+      // BOT_CLIENT_EXCEPTIONS is empty on purpose: `git grep canonicalJson packages/bot-client/src`
+      // is empty today. An exception would be a [file, pattern name, reason] entry here.
+      expect(BOT_CLIENT_EXCEPTIONS).toEqual([]);
+    });
+  });
 });
+
+/** Entries are [file, rule name, reason]; none today. */
+const BOT_CLIENT_EXCEPTIONS: readonly (readonly [string, string, string])[] = [];
+
+const BOT_CLIENT_BANS: readonly (readonly [string, RegExp])[] = [
+  ["canonicalJson", /\bcanonicalJson\b/],
+  ["jcs", /\bjcs\b/],
+  ["createHash", /\bcreateHash\b/],
+  ["TextEncoder", /\bTextEncoder\b/],
+  ["rqid rest destructuring", /\{[^}]*\brqid\b[^}]*\.\.\.\s*\w+[^}]*\}\s*=/],
+  ["rqid delete", /\bdelete\s+[\w.[\]]*\brqid\b/],
+  ["JSON.stringify of a request", /JSON\.stringify\(\s*(?:request|req|rest|body)\b/],
+];
+
+/**
+ * Names of the banned patterns found in a bot-client source. Comments and
+ * '...' / "..." literals are blanked first (so prose and messages may use the
+ * words); template literals are left as they are, so code inside `${...}` is
+ * still scanned and the scan can only err towards flagging. A regex literal
+ * holding a quote would confuse the blanking: none exists there today, and the
+ * real-file pass would flag, not hide, the result.
+ */
+function botClientRebuilds(source: string): string[] {
+  const code = source.replace(
+    /\/\/[^\n]*|\/\*[\s\S]*?\*\/|'(?:\\.|[^'\\\n])*'|"(?:\\.|[^"\\\n])*"|`(?:\\.|[^`\\])*`/g,
+    (m) => (m.startsWith("`") ? m : m.startsWith("/") ? " " : '""'),
+  );
+  return BOT_CLIENT_BANS.filter(([, re]) => re.test(code)).map(([name]) => name);
+}
