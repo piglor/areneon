@@ -182,7 +182,7 @@ This is an internal Areneon skill and the canonical source of durable project le
 
 - **CTS is not automatic.** The M-C format carries Open Team Sheets (opt-in Bo1, forced Bo3). Use Bo1 only and have every actor decline team sheets; prove it with a fixture.
 
-- **Never commit private teams.** Real competitive teams live only in gitignored `private-data/`. Public fixtures are sanitized or synthetic, carry a provenance label, and are CC0.
+- **Never commit private teams.** Private teams live in the private R2 bucket (ADR-015) and, on the owner's workstation, only under gitignored `private-data/` (staging and the verified local snapshot copy). Tokens for that bucket never enter the repository, a log, a chat or a command line; agents never run commands holding them. Private teams never reach a cloud worker, a public dataset or a published checkpoint or Episode. Public fixtures are sanitized or synthetic, carry a provenance label, and are CC0.
 
 - **Actor inputs are player-perspective only.** The omniscient sim stream, opponent hidden sets or future state must never reach a policy input, log, checkpoint or model input. Hidden state may be used only as an evaluation upper bound, labelled as such.
 
