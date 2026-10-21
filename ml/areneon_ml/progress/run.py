@@ -45,10 +45,22 @@ GAMES = "games"
 SCRIPT = "packages/team-dataset/scripts/progress.ts"
 DEFAULT_GAMES = 100
 DEFAULT_RECORD_GAMES = 8
+#: Says what a ``previous-*`` row is: the pair's own lineage, so it can cycle (ADR-017 section 2).
+SEEN_LABEL = "seen, same-lineage comparison: it can cycle"
 
 
 class ProgressError(ValueError):
     """The progress evaluation cannot be made or its files disagree: refused, nothing committed."""
+
+
+@dataclass(frozen=True)
+class PreviousPair:
+    """The previous generation's frozen pair, the opponent of the ``previous-*`` matches."""
+
+    preview: str
+    battle: str
+    policy_id_sample: str
+    policy_id_argmax: str
 
 
 @dataclass(frozen=True)
@@ -65,6 +77,8 @@ class ProgressRequest:
     games: int
     record_games: int
     out_dir: Path
+    #: None at generation 0, which has no previous generation (no ``previous-*`` matches then).
+    previous: PreviousPair | None = None
 
 
 class ProgressPlayer(Protocol):
@@ -75,6 +89,17 @@ class NodeProgressPlayer(NodePlayer):
     """Runs ``packages/team-dataset/scripts/progress.ts`` as a child process."""
 
     def progress(self, request: ProgressRequest) -> dict[str, Any]:
+        previous = request.previous
+        more = (
+            ()
+            if previous is None
+            else (
+                *("--previous-preview", previous.preview),
+                *("--previous-battle", previous.battle),
+                *("--previous-policy-id-sample", previous.policy_id_sample),
+                *("--previous-policy-id-argmax", previous.policy_id_argmax),
+            )
+        )
         out = self._run(
             SCRIPT,
             *("--config", str(self.config_path)),
@@ -92,6 +117,7 @@ class NodeProgressPlayer(NodePlayer):
             *("--games", str(request.games)),
             *("--record-games", str(request.record_games)),
             *("--out", str(request.out_dir)),
+            *more,
         )
         try:
             found = json.loads(out)
@@ -213,8 +239,55 @@ def _source(run_dir: Path, config: RunConfig, generation: int) -> _Source:
     )
 
 
-def _verify_output(
-    work: Path, config: RunConfig, source: _Source, games: int, record_games: int
+def _check_previous(record: dict[str, Any], previous: PreviousPair | None, *, legacy: bool) -> None:
+    """The ``previous-*`` matches are exactly the previous generation's frozen pair in both modes.
+
+    At generation 0 there are none. From generation 1 there are two (sample and argmax), naming
+    the checkpoints of the generation before; ``legacy`` lets a record committed before these
+    matches existed (slice 4) pass with none, but never with a wrong or half set.
+    """
+    found = {m["match_id"]: m for m in record["matches"] if m["opponent"]["kind"] == "previous"}
+    if previous is None:
+        if found:
+            raise ProgressError("generation 0 has no previous generation to play")
+        return
+    if not found and legacy:
+        return
+    if set(found) != {"previous-argmax", "previous-sample"}:
+        raise ProgressError("a generation from 1 on plays previous-sample and previous-argmax")
+    ids = {"sample": previous.policy_id_sample, "argmax": previous.policy_id_argmax}
+    for match in found.values():
+        opponent = match["opponent"]
+        if (
+            match["match_id"] != f"previous-{match['mode']}"
+            or opponent["checkpoints"] != {"preview": previous.preview, "battle": previous.battle}
+            or opponent["policy_id"] != ids[match["mode"]]
+        ):
+            raise ProgressError(
+                f"{match['match_id']}: the opponent is not the previous generation's frozen pair"
+            )
+
+
+def _previous_pair(run_dir: Path, config: RunConfig, generation: int) -> PreviousPair | None:
+    """The frozen pair of generation ``generation - 1`` (verified), or None at generation 0."""
+    if generation == 0:
+        return None
+    before = _source(run_dir, config, generation - 1)
+    return PreviousPair(
+        before.preview,
+        before.battle,
+        policy_id(before.preview, before.battle, "sample"),
+        policy_id(before.preview, before.battle, "argmax"),
+    )
+
+
+def _verify_output(  # noqa: PLR0913, PLR0917
+    work: Path,
+    config: RunConfig,
+    source: _Source,
+    games: int,
+    record_games: int,
+    previous: PreviousPair | None = None,
 ) -> dict[str, Any]:
     """The simulator side's files are the record's: read both kinds, check every hash and name."""
     record = read_progress_record(layout.read_json(work / PROGRESS), config)
@@ -228,6 +301,7 @@ def _verify_output(
         or record["version_manifest"] != source.version_manifest
     ):
         raise ProgressError("progress.json is not the record asked for")
+    _check_previous(record, previous, legacy=False)
     expected = set()
     for match in record["matches"]:
         listed = []
@@ -270,9 +344,11 @@ def summary_of(record: dict[str, Any]) -> list[dict[str, Any]]:
                 "wilson_low_ppm": interval.low_ppm,
                 "wilson_high_ppm": interval.high_ppm,
                 "interval": CONDITIONAL_LABEL,
+                "opponent": match["opponent"]["kind"],
                 "forfeits": sum(f["count"] for f in match["forfeits"]),
                 "turn_cap_ties": match["turn_cap_ties"],
             }
+            | ({"comparison": SEEN_LABEL} if match["opponent"]["kind"] == "previous" else {})
         )
     return out
 
@@ -289,6 +365,8 @@ def verify_progress_dir(
         or record["generation"] != generation
     ):
         raise ProgressError(f"{target.name}: the record is not of the committed generation")
+    # A record committed before the previous-generation matches existed (slice 4) stays valid.
+    _check_previous(record, _previous_pair(run_dir, config, generation), legacy=True)
     for match in record["matches"]:
         for name in sorted(p.name for p in (target / GAMES).glob(f"{match['match_id']}-*.json")):
             read_game_record(layout.read_json(target / GAMES / name))
@@ -315,8 +393,14 @@ def progress_generation(  # noqa: PLR0913, PLR0917
             shutil.rmtree(stale)
         if target.exists():
             record = verify_progress_dir(target, config, run_dir, generation)
-            return {"generation": generation, "skipped": True, "matches": summary_of(record)}
+            return {
+                "generation": generation,
+                "skipped": True,
+                "previous": _previous_status(record, generation),
+                "matches": summary_of(record),
+            }
         source = _source(run_dir, config, generation)
+        previous = _previous_pair(run_dir, config, generation)
         limit = max_pairs(config)
         if games > limit:
             raise ProgressError(
@@ -347,9 +431,10 @@ def progress_generation(  # noqa: PLR0913, PLR0917
                     games=games,
                     record_games=record_games,
                     out_dir=work,
+                    previous=previous,
                 )
             )
-            record = _verify_output(work, config, source, games, record_games)
+            record = _verify_output(work, config, source, games, record_games, previous)
             layout.fsync_tree(work)
             layout.write_json(
                 work / layout.MANIFEST,
@@ -369,9 +454,22 @@ def progress_generation(  # noqa: PLR0913, PLR0917
         return {
             "generation": generation,
             "skipped": False,
+            "previous": _previous_status(record, generation),
             "wall_ms": facts.get("wall_ms", {}),
             "matches": summary_of(record),
         }
+
+
+def _previous_status(record: dict[str, Any], generation: int) -> str:
+    """Says what the record holds of the previous-generation matches, in words for the operator."""
+    if generation == 0:
+        return "none: generation 0 has no previous generation"
+    if any(m["opponent"]["kind"] == "previous" for m in record["matches"]):
+        return "played"
+    return (
+        "missing: committed before the previous-generation matches existed; "
+        "evaluate into a new --progress-dir to add them"
+    )
 
 
 def committed_generations(run_dir: Path) -> list[int]:

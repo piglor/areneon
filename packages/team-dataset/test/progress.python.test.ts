@@ -70,7 +70,7 @@ describe.skipIf(!existsSync(PYTHON) && process.env.ARENEON_REQUIRE_PYTHON_WORKER
       const files = tree(join(a, gen(g)));
       expect(files).toContain("progress.json");
       expect(files).toContain("manifest.json");
-      expect(files.filter((f) => f.startsWith("games/"))).toHaveLength(8); // 4 matches, 2 recorded games each
+      expect(files.filter((f) => f.startsWith("games/"))).toHaveLength(g === 0 ? 8 : 12); // 4 matches (6 from generation 1), 2 recorded games each
       expect(tree(join(b, gen(g)))).toEqual(files);
       for (const file of files) expect(readFileSync(join(a, gen(g), file), "utf8"), file).toBe(readFileSync(join(b, gen(g), file), "utf8"));
     }
@@ -92,7 +92,13 @@ describe.skipIf(!existsSync(PYTHON) && process.env.ARENEON_REQUIRE_PYTHON_WORKER
     expect(readProgressEvaluationRecord(record).plan.games_per_match).toBe(3);
     expect(record.generation_manifest_sha256).toMatch(/^[0-9a-f]{64}$/);
     const games = tree(join(a, gen(1), "games")).map((f) => readProgressGameRecord(json(a, gen(1), "games", f)));
-    expect(games).toHaveLength(8);
+    expect(games).toHaveLength(12);
+    // Generation 1 also played the previous generation's frozen pair, named by its checkpoint ids; generation 0 played none.
+    const g0 = json<{ checkpoints: Record<string, string> }>(runDir, "generations", gen(0), "manifest.json").checkpoints;
+    const previous = record.matches.filter((m) => m.opponent.kind === "previous");
+    expect(previous.map((m) => m.match_id)).toEqual(["previous-argmax", "previous-sample"]);
+    for (const m of previous) expect(m.opponent).toMatchObject({ kind: "previous", checkpoints: g0 });
+    expect(json<ProgressEvaluationRecord>(a, gen(0), "progress.json").matches.some((m) => m.opponent.kind === "previous")).toBe(false);
     for (const stored of games) {
       for (const seat of ["p1", "p2"] as const) {
         expect(trained.has(stored.teams[seat].team_hash)).toBe(false);
@@ -182,6 +188,16 @@ describe.skipIf(!existsSync(PYTHON) && process.env.ARENEON_REQUIRE_PYTHON_WORKER
       expect(Object.keys(printed.wall_ms)).toHaveLength(4);
       expect(tree(out)).toContain("progress.json");
     }, 120_000);
+
+    it("plays the previous generation's pair when given, and refuses half a set of previous flags", async () => {
+      const g0 = json<{ checkpoints: Record<string, string> }>(runDir, "generations", gen(0), "manifest.json").checkpoints;
+      const out = join(dir, "cli-previous");
+      const { code, lines } = await run(out, { "previous-preview": g0.preview as string, "previous-battle": g0.battle as string, "previous-policy-id-sample": `policy:${"e".repeat(64)}`, "previous-policy-id-argmax": `policy:${"f".repeat(64)}` });
+      expect(code).toBe(0);
+      const printed = JSON.parse(lines[0] as string) as { matches: { match_id: string }[] };
+      expect(printed.matches.map((m) => m.match_id)).toEqual(["actor-rule-argmax", "actor-rule-sample", "previous-argmax", "previous-sample", "random-legal-argmax", "random-legal-sample"]);
+      await expect(run(join(dir, "half"), { "previous-preview": g0.preview as string })).rejects.toThrow(/go together/);
+    }, 180_000);
 
     it("refuses a missing flag, an unknown flag and a bad integer as usage errors", async () => {
       await expect(runProgressCli(["--generation", "1"], () => undefined, datasetValidationPool)).rejects.toThrow(UsageError);

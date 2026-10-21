@@ -72,6 +72,16 @@ export interface ProgressOptions {
   policy_ids: Record<ProgressMode, string>;
   /** A started worker client with the pair loaded; one query at a time. */
   client: PolicyClient & { beginGame?: () => Promise<void> };
+  /**
+   * The previous generation's frozen pair (G >= 1; absent at G = 0), behind a worker of its own
+   * (a worker session holds one pair). Its matches are played sample against sample and argmax
+   * against argmax, on the same plan as the baselines'.
+   */
+  previous?: {
+    checkpoints: { preview: string; battle: string };
+    policy_ids: Record<ProgressMode, string>;
+    client: PolicyClient & { beginGame?: () => Promise<void> };
+  };
   pool: ProgressPool;
   /** Games per match; refused above the number of disjoint pairs. */
   games: number;
@@ -96,6 +106,7 @@ const rival = (player: Player): Player => (player === "p1" ? "p2" : "p1");
 /** Who a seat (or no seat: a tie) is, seen from the candidate. */
 const whose = (candidate: Player): Record<string, "candidate" | "opponent" | "tie"> => ({ [candidate]: "candidate", [rival(candidate)]: "opponent", null: "tie" });
 
+type Match = ProgressEvaluationRecord["matches"][number];
 type Row = ProgressEvaluationRecord["games"][number];
 
 /** One game's row and (for a played or forfeited game) the data of its stored form. */
@@ -127,7 +138,10 @@ export function buildProgressGameRecord(facts: GameFacts): ProgressGameRecord {
   const { played } = facts;
   const { record, outcome } = played;
   if (record === null || outcome.kind === "incident") throw new ProgressError("an incident game cannot be stored");
-  const decisions: ProgressGameRecord["decisions"] = record.choices.map((entry) => {
+  // The runner records a choice when its actor answers. With two learned seats behind two workers the answers can
+  // arrive in either order, so the stored order is by request_seq, then seat: the same bytes on every rerun.
+  const ordered = [...record.choices].sort((a, b) => a.request_seq - b.request_seq || (a.player < b.player ? -1 : a.player > b.player ? 1 : 0));
+  const decisions: ProgressGameRecord["decisions"] = ordered.map((entry) => {
     const request = record.requests[entry.player][entry.request_seq - 1];
     if (request === undefined || request.request_seq !== entry.request_seq) throw new ProgressError("a choice names a request the record does not hold");
     return {
@@ -200,12 +214,34 @@ export async function playProgress(options: ProgressOptions): Promise<ProgressRe
   const manifest = resolveFormat(engine, config.format_id).manifest;
   const matches: ProgressEvaluationRecord["matches"] = [];
   const rows: Row[] = [];
+  const rowsByMatch = new Map<string, Row[]>();
   const stored = new Map<string, ProgressGameRecord>();
   const wall_ms: Record<string, number> = {};
-  for (const baseline of PROGRESS_BASELINES) {
+  type Opponent = { id: string; opponent: (mode: ProgressMode) => Match["opponent"]; seat: (mode: ProgressMode, game: number) => PolicySeat | Actor; policies: (mode: ProgressMode) => string; begin: () => Promise<void> };
+  const opponents: Opponent[] = PROGRESS_BASELINES.map((baseline) => ({
+    id: baseline.actor,
+    opponent: () => ({ kind: "baseline", policy_id: baseline.policy_id }),
+    seat: (_mode, game) => guardActor(baseline.actor === "actor-rule" ? firstLegal : randomLegalActor(progressGameStreams(config.seeds.run_key, game).baseline_seed), { role: "scripted", latency_budget: budget }),
+    policies: () => baseline.policy_id,
+    begin: () => Promise.resolve(),
+  }));
+  const { previous } = options;
+  if (previous !== undefined) {
+    opponents.push({
+      id: "previous",
+      opponent: (mode) => ({ kind: "previous", policy_id: previous.policy_ids[mode], checkpoints: previous.checkpoints }),
+      seat: (mode) => ({ client: previous.client, policy_id: previous.policy_ids[mode], sampling: mode }),
+      policies: (mode) => previous.policy_ids[mode],
+      begin: async () => {
+        await previous.client.beginGame?.();
+      },
+    });
+  }
+  for (const baseline of opponents) {
     for (const mode of PROGRESS_MODES) {
-      const match_id = `${baseline.actor}-${mode}`;
+      const match_id = `${baseline.id}-${mode}`;
       const policy_id = options.policy_ids[mode];
+      const opponent_policy = baseline.policies(mode);
       const matchRows: Row[] = [];
       const hashes: string[] = [];
       const started = performance.now();
@@ -214,9 +250,9 @@ export async function playProgress(options: ProgressOptions): Promise<ProgressRe
         const [first, second] = plan.pairs[game] as [ProgressTeam, ProgressTeam];
         const teams: Record<Player, PokemonSet[]> = { p1: first.sets, p2: second.sets };
         const streams = progressGameStreams(config.seeds.run_key, game);
-        const scripted: Actor = guardActor(baseline.actor === "actor-rule" ? firstLegal : randomLegalActor(streams.baseline_seed), { role: "scripted", latency_budget: budget });
         const seat: PolicySeat = { client, policy_id, sampling: mode };
         await client.beginGame?.();
+        await baseline.begin();
         const played = await policyGame({
           engine,
           formatId: config.format_id,
@@ -224,24 +260,26 @@ export async function playProgress(options: ProgressOptions): Promise<ProgressRe
           game,
           teams,
           known_synthetic: pool.known_synthetic,
-          seats: { [candidate]: seat, [rival(candidate)]: scripted } as Record<Player, PolicySeat | Actor>,
+          seats: { [candidate]: seat, [rival(candidate)]: baseline.seat(mode, game) } as Record<Player, PolicySeat | Actor>,
           latency_budget: budget,
           maxTurns: config.generation.max_turns,
         });
         matchRows.push(rowOf(match_id, game, candidate, played));
         if (game < record_games) {
-          const policies = { [candidate]: policy_id, [rival(candidate)]: baseline.policy_id } as Record<Player, string>;
+          const policies = { [candidate]: policy_id, [rival(candidate)]: opponent_policy } as Record<Player, string>;
           const stored_game = buildProgressGameRecord({ run_id: config.seeds.run_key, generation, match_id, game, teams, policies, played });
           stored.set(`${match_id}-${game}.json`, stored_game);
           hashes.push(progressRecordHash(stored_game));
         }
       }
+      rowsByMatch.set(match_id, matchRows);
       wall_ms[match_id] = Math.round(performance.now() - started);
-      rows.push(...matchRows);
-      matches.push(summarise(match_id, policy_id, baseline.policy_id, mode, matchRows, hashes, config.generation.max_turns));
+      matches.push(summarise(match_id, policy_id, baseline.opponent(mode), mode, matchRows, hashes, config.generation.max_turns));
     }
   }
-  // The baselines and the modes are listed in sorted order, so the matches (and their rows) are sorted by match_id; the reader refuses otherwise.
+  // Matches and their rows go in match_id order, which the reader requires (`actor-rule`, `previous`, `random-legal`).
+  matches.sort((a, b) => (a.match_id < b.match_id ? -1 : 1));
+  for (const match of matches) rows.push(...(rowsByMatch.get(match.match_id) as Row[]));
   const record = readProgressEvaluationRecord({
     schema_version: 1,
     data_class: "synthetic",
@@ -266,11 +304,11 @@ export async function playProgress(options: ProgressOptions): Promise<ProgressRe
   return { record, game_records: stored, wall_ms };
 }
 
-function summarise(match_id: string, policy_id: string, opponent_policy: string, mode: ProgressMode, rows: readonly Row[], hashes: string[], maxTurns: number): ProgressEvaluationRecord["matches"][number] {
+function summarise(match_id: string, policy_id: string, opponent: Match["opponent"], mode: ProgressMode, rows: readonly Row[], hashes: string[], maxTurns: number): Match {
   return {
     match_id,
     policy_id,
-    opponent: { kind: "baseline", policy_id: opponent_policy },
+    opponent,
     mode,
     games: rows.length,
     ...tallyRows(rows, maxTurns),

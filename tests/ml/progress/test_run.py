@@ -12,8 +12,12 @@ from areneon_contracts.contracts import sha256_hex
 from areneon_ml.learner.config import read_run_config
 from areneon_ml.loop import layout
 from areneon_ml.loop.play import PlayError
+from areneon_ml.loop.records import policy_id
+from areneon_ml.progress import run as run_module
 from areneon_ml.progress.records import ProgressRecordError, read_progress_record
 from areneon_ml.progress.run import (
+    SEEN_LABEL,
+    PreviousPair,
     ProgressError,
     ProgressRequest,
     committed_generations,
@@ -75,6 +79,8 @@ def test_a_generation_is_evaluated_and_committed_whole(run: Path, tmp_path: Path
     assert [m["match_id"] for m in done["matches"]] == [
         "actor-rule-argmax",
         "actor-rule-sample",
+        "previous-argmax",
+        "previous-sample",
         "random-legal-argmax",
         "random-legal-sample",
     ]
@@ -360,3 +366,147 @@ def test_every_committed_generation_is_listed_and_summarised(run: Path, tmp_path
     record = read_progress_record(layout.read_json(root / "g000000" / "progress.json"))
     assert summary_of(record) == done["matches"]
     assert not list((root / "g000000").rglob("*-0.json"))  # --record-games 0 stores no game
+
+
+def previous_of(run: Path, generation: int) -> dict[str, str]:
+    checkpoints = layout.read_json(layout.generation_dir(run, generation) / layout.MANIFEST)[
+        "checkpoints"
+    ]
+    assert isinstance(checkpoints, dict)
+    return dict(checkpoints)
+
+
+def test_generation_one_plays_the_previous_pair_and_the_rows_carry_its_checkpoint_ids(
+    run: Path, tmp_path: Path
+) -> None:
+    root = tmp_path / "p"
+    fake = player(run)
+    done = progress_generation(run, 1, root, fake, games=2, record_games=1)
+    (request,) = fake.requests
+    zero = previous_of(run, 0)
+    assert request.previous is not None
+    assert (request.previous.preview, request.previous.battle) == (zero["preview"], zero["battle"])
+    assert request.previous.policy_id_sample == policy_id(zero["preview"], zero["battle"], "sample")
+    assert request.previous.policy_id_argmax == policy_id(zero["preview"], zero["battle"], "argmax")
+    assert done["previous"] == "played"
+    record = read_progress_record(layout.read_json(root / "g000001" / "progress.json"))
+    rows = {m["match_id"]: m for m in record["matches"] if m["opponent"]["kind"] == "previous"}
+    assert sorted(rows) == ["previous-argmax", "previous-sample"]
+    for mode, match in (("sample", rows["previous-sample"]), ("argmax", rows["previous-argmax"])):
+        assert match["mode"] == mode
+        assert match["opponent"]["checkpoints"] == zero
+        assert match["opponent"]["policy_id"] == request.previous.__dict__[f"policy_id_{mode}"]
+        assert match["policy_id"] == policy_id(request.preview, request.battle, mode)
+        assert match["policy_id"] != match["opponent"]["policy_id"]
+    # The summary labels the previous rows as the seen, same-lineage comparison they are.
+    labelled = {m["match_id"]: m.get("comparison") for m in done["matches"]}
+    assert labelled["previous-sample"] == SEEN_LABEL
+    assert labelled["actor-rule-sample"] is None
+
+
+def test_generation_zero_has_no_previous_generation_and_says_so(run: Path, tmp_path: Path) -> None:
+    fake = player(run)
+    done = progress_generation(run, 0, tmp_path / "p", fake, games=2, record_games=1)
+    assert fake.requests[0].previous is None
+    assert done["previous"].startswith("none: generation 0")
+    assert not [m for m in done["matches"] if m["match_id"].startswith("previous")]
+
+
+@pytest.mark.parametrize(
+    ("name", "change", "message"),
+    [
+        (
+            "another previous pair",
+            lambda d: [
+                m["opponent"]["checkpoints"].update(preview="0" * 64)
+                for m in d["matches"]
+                if m["opponent"]["kind"] == "previous"
+            ],
+            "previous generation's pair|policy_id is not its checkpoints",
+        ),
+        (
+            "a consistent substitution: another pair, its own policy ids",
+            lambda d: [
+                m["opponent"].update(
+                    checkpoints={"preview": "0" * 64, "battle": "1" * 64},
+                    policy_id=policy_id("0" * 64, "1" * 64, m["mode"]),
+                )
+                for m in d["matches"]
+                if m["opponent"]["kind"] == "previous"
+            ],
+            "not the previous generation's frozen pair",
+        ),
+        (
+            "only one previous mode",
+            lambda d: d.update(
+                matches=[m for m in d["matches"] if m["match_id"] != "previous-argmax"],
+                games=[g for g in d["games"] if g["match_id"] != "previous-argmax"],
+            ),
+            "plays previous-sample and previous-argmax",
+        ),
+    ],
+)
+def test_wrong_previous_matches_are_refused_before_anything_commits(
+    run: Path, tmp_path: Path, name: str, change: Any, message: str
+) -> None:
+    def hook(out: Path, request: ProgressRequest) -> None:
+        rewrite(out / "progress.json", change)
+
+    root = tmp_path / "p"
+    with pytest.raises((ProgressError, ProgressRecordError), match=message):
+        progress_generation(
+            run,
+            1,
+            root,
+            FakeProgressPlayer(dataset_config(), committed_manifest(run, 0), hook),
+            games=2,
+            record_games=1,
+        )
+    assert sorted(p.name for p in root.iterdir()) == [".lock"], name
+
+
+def test_previous_matches_at_generation_zero_are_refused(run: Path, tmp_path: Path) -> None:
+    class Eager(FakeProgressPlayer):
+        def progress(self, request: ProgressRequest) -> dict[str, Any]:
+            first = ProgressRequest(**{**request.__dict__, "previous": None})
+            two = FakeProgressPlayer(self.config, self.manifest)
+            two.progress(
+                ProgressRequest(**{**first.__dict__, "previous": fake_previous(request.preview)})
+            )
+            return {}
+
+    with pytest.raises(ProgressError, match="generation 0 has no previous generation"):
+        progress_generation(
+            run, 0, tmp_path / "p", Eager(dataset_config(), committed_manifest(run, 0)), 2, 1
+        )
+
+
+def fake_previous(preview: str) -> PreviousPair:
+    return PreviousPair(preview, preview, policy_id(preview, preview, "sample"), "x")
+
+
+def test_a_root_evaluated_before_the_previous_matches_existed_is_verified_and_kept(
+    run: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "p"
+    old = FakeProgressPlayer(dataset_config(), committed_manifest(run, 0), previous=False)
+    with monkeypatch.context() as m:  # what slice 4 did: no previous pair was asked for
+        m.setattr(run_module, "_previous_pair", lambda *_: None)
+        progress_generation(run, 1, root, old, games=2, record_games=1)
+    before = (root / "g000001" / "manifest.json").read_bytes()
+    again = player(run)
+    done = progress_generation(run, 1, root, again, games=2, record_games=1)
+    assert done["skipped"] is True
+    assert again.requests == []
+    assert done["previous"].startswith("missing")
+    assert (root / "g000001" / "manifest.json").read_bytes() == before
+
+
+def test_two_runs_give_byte_identical_records_with_the_previous_matches(
+    run: Path, tmp_path: Path
+) -> None:
+    for name in ("a", "b"):
+        progress_generation(run, 1, tmp_path / name, player(run), games=2, record_games=1)
+    a, b = (sorted((tmp_path / n / "g000001").rglob("*.json")) for n in ("a", "b"))
+    assert [p.relative_to(tmp_path / "a") for p in a] == [p.relative_to(tmp_path / "b") for p in b]
+    assert all(x.read_bytes() == y.read_bytes() for x, y in zip(a, b, strict=True))
