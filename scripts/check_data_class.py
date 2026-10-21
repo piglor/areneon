@@ -52,7 +52,8 @@ PokePaste guard does not see JSON teams, so this guard rejects a committed
   ``[a-z0-9][a-z0-9-]{0,31}``, at most 64 ``labels`` that are exactly
   ``{label_id, value}`` token pairs (ADR-013), a boolean ``holdout``, and one corpus ``paste``. That
   both hashes equal the paste's hashes needs the engine's ``Teams.import``, so
-  the guard cannot check it: the vitest round-trip of the contracts slice does; or
+  the guard cannot check it: the vitest round-trip in private-records.test.ts (this
+  slice) does, and the pytest tests here pin the keys and types to the schema; or
 - has a duplicate key in any JSON object (and, for JSONL, in any line): a
   reader keeps the last value while the earlier one stays in the committed
   bytes, so the guard refuses the file; or

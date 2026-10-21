@@ -146,6 +146,8 @@ describe("readPrivateTeamRecord", () => {
       { ...first, revision: 0 },
       { ...first, holdout: first.paste },
       { ...first, tags: [first.paste], extra: first.paste },
+      { ...first, [`${lines[0]}`]: 1 },
+      { ...first, labels: [{ label_id: "a", value: "b", [`${lines[1]}`]: 1 }] },
     ];
     for (const value of cases) {
       let message = "";
@@ -159,6 +161,12 @@ describe("readPrivateTeamRecord", () => {
       expect(message).not.toContain(marker);
       for (const line of lines) expect(message).not.toContain(line);
     }
+  });
+
+  it("negative control: the leak check detects a message that does carry a paste line", () => {
+    const leaky = `invalid private team record: ${JSON.stringify({ additionalProperty: first.paste.split("\n")[0] })}`;
+    const line = first.paste.split("\n").filter((l) => l.length > 5)[0] as string;
+    expect(leaky.includes(line)).toBe(true);
   });
 
   it("refuses a holdout that is not a boolean", () => {

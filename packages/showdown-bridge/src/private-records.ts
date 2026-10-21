@@ -35,8 +35,11 @@ const validators = {
 };
 
 function parsed<T>(validate: ((value: unknown) => boolean) & { errors?: unknown }, value: unknown, what: string): T {
-  // Ajv's errors name schema paths and keywords, never the offending value, unless verbose is on (it is not).
-  if (!validate(value)) return bad(`invalid ${what}: ${JSON.stringify(validate.errors)}`);
+  // Only the path and keyword of each error: `params` can hold the offending key name (additionalProperties), so it is never used.
+  if (!validate(value)) {
+    const errors = (validate.errors ?? []) as { instancePath: string; keyword: string }[];
+    return bad(`invalid ${what}: ${errors.map((e) => `${e.instancePath || "/"} ${e.keyword}`).join("; ")}`);
+  }
   return value as T;
 }
 
