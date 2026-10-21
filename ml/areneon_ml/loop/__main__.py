@@ -3,6 +3,7 @@
 * ``run``: continue the run in ``--run-dir`` until ``--generations`` generations are
   committed. A directory with committed generations is resumed from the last one; an
   unfinished generation is discarded and replayed. Prints one JCS JSON line.
+* ``inspect``: write the training-data inspector's static pages (teams and games) for a run.
 * ``provenance``: write the run's CheckpointRecords and its sources registry into a
   directory, ready for ``python -m areneon_ml.checkpoint classify|independent``.
 
@@ -24,6 +25,8 @@ from areneon_contracts.contracts import ContractError, jcs
 from areneon_ml.checkpoint.files import CheckpointFileError
 from areneon_ml.checkpoint.provenance import ProvenanceError
 from areneon_ml.checkpoint.record import RecordError
+from areneon_ml.inspector.command import inspect_run
+from areneon_ml.inspector.readers import InspectError
 from areneon_ml.learner.config import RunConfigError, read_run_config
 from areneon_ml.learner.data import LearnerDataError
 from areneon_ml.learner.state import LearnerStateError
@@ -56,6 +59,14 @@ def _parser() -> argparse.ArgumentParser:
     provenance = commands.add_parser("provenance", help="export the records and sources registry")
     provenance.add_argument("--run-dir", type=Path, required=True)
     provenance.add_argument("--out", type=Path, required=True)
+    inspect = commands.add_parser(
+        "inspect", help="write the training-data inspector's static pages"
+    )
+    inspect.add_argument("--run-dir", type=Path, required=True)
+    inspect.add_argument(
+        "--out", type=Path, help="default: <run-dir>.inspect/, beside the run directory"
+    )
+    inspect.add_argument("--node", default="node", help="the node executable")
     return parser
 
 
@@ -90,6 +101,8 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.command == "run":
             out = _run(args)
+        elif args.command == "inspect":
+            out = inspect_run(args.run_dir, args.out, repo=REPO, node=args.node)
         else:
             out = {"sources_hash": export_provenance(args.run_dir, args.out)}
     except PlayError as exc:
@@ -106,6 +119,7 @@ def main(argv: list[str] | None = None) -> int:
         ProvenanceError,
         RecordError,
         ContractError,
+        InspectError,
         OSError,
         json.JSONDecodeError,
     ) as exc:
