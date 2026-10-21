@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import subprocess
 from collections.abc import Mapping
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 import pytest
 
@@ -229,7 +229,7 @@ def test_a_record_without_data_class_is_rejected_even_in_fixtures(
     record: dict[str, object], in_fixtures: bool
 ) -> None:
     # Negative controls: remove the label, or set it to anything but "synthetic".
-    # A paste-shaped record outside fixtures/ is also an unlabelled team (ADR-014 §10).
+    # A paste-shaped record outside fixtures/ is also an unlabelled team (ADR-015 §6).
     extra = [UNLABELLED] if record is RECORD and not in_fixtures else []
     expected = [UNLABELLED_RECORD, *extra]
     assert guard.problems_in(without(record, "data_class"), in_fixtures) == expected
@@ -315,7 +315,7 @@ def test_every_team_record_in_the_corpus_is_labelled_synthetic() -> None:
     assert labelled > 0
 
 
-# ADR-014 §10: the paste shape and the private sample markers.
+# ADR-015 §6: the paste shape and the private sample markers.
 PASTE_ONLY = {"paste": "Garchomp\nAbility: Rough Skin\n"}
 PRIVATE_RECORD = {
     "schema_version": 1,
@@ -329,6 +329,7 @@ PRIVATE_RECORD = {
     "status": "active",
     "tags": ["synthetic"],
     "labels": [{"label_id": "fake_out", "value": "yes"}],
+    "holdout": False,
 }
 SHAPE = guard.MARKER_SHAPE
 MARKER = "fixtures/contracts/v1/private-team-record/valid/sample.json"
@@ -360,12 +361,46 @@ def test_the_paste_shape_is_enforced_on_files(repo: Path) -> None:
     assert guard.violations([path]) == [f"{path}: {UNLABELLED}"]
 
 
-def test_the_markers_start_empty_and_the_corpus_is_the_committed_one() -> None:
-    assert frozenset() == guard.PRIVATE_SAMPLE_MARKERS
+def test_the_corpus_is_the_committed_one() -> None:
     corpus = guard.team_corpus()
     assert (ROOT / "fixtures/teams/gen9championsvgc2026regmc/legal-synthetic.txt").read_text(
         encoding="utf-8"
     ) in corpus
+
+
+def test_the_markers_are_the_record_samples_of_the_contract_corpus() -> None:
+    assert guard.PRIVATE_SAMPLE_MARKERS
+    for marker in guard.PRIVATE_SAMPLE_MARKERS:
+        path = PurePosixPath(marker)
+        assert path.parts[:4] == ("fixtures", "contracts", "v1", "private-team-record")
+        assert path.parts[4] in ("valid", "reader-invalid")
+        assert (ROOT / marker).is_file(), marker
+
+
+def test_the_marked_samples_pass_the_guard_as_committed() -> None:
+    assert guard.violations(sorted(guard.PRIVATE_SAMPLE_MARKERS)) == []
+
+
+def test_the_marker_record_keys_and_types_follow_the_contract_schema() -> None:
+    schema = json.loads(
+        (ROOT / "packages/schema/contracts/v1/private-team-record.schema.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    props = schema["properties"]
+    assert guard.PRIVATE_RECORD_KEYS == set(props) == set(schema["required"])
+    assert props["team_id"]["pattern"] == f"^{guard.HEX32.pattern}$"
+    assert props["supersedes_record_hash"]["pattern"] == f"^{guard.HEX64.pattern}$"
+    assert props["revision"]["maximum"] == guard.MAX_REVISION
+    assert props["revision"]["minimum"] == 1
+    assert props["holdout"]["type"] == "boolean"
+    assert props["status"]["enum"] == ["active", "retired"]
+    assert props["tags"]["maxItems"] == guard.MAX_TAGS
+    assert props["tags"]["items"]["pattern"] == f"^{guard.TAG.pattern}$"
+    assert props["labels"]["maxItems"] == guard.MAX_LABELS
+    label = props["labels"]["items"]["properties"]
+    token = f"^{guard.LABEL_TOKEN.pattern}$"
+    assert label["label_id"]["pattern"] == label["value"]["pattern"] == token
 
 
 def test_a_marked_private_record_with_corpus_pastes_passes(
@@ -545,6 +580,9 @@ BAD_TYPES = [
     ("canonical_team_hash", "a" * 65),
     ("status", "Active"),
     ("status", "deleted"),
+    ("holdout", "false"),
+    ("holdout", 0),
+    ("holdout", None),
     ("tags", "synthetic"),
     ("tags", ["Garchomp"]),
     ("tags", ["-leading"]),

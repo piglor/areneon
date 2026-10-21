@@ -12,7 +12,7 @@ PokePaste guard does not see JSON teams, so this guard rejects a committed
   line). Team-shaped means a set (``species``, ``moves`` and ``evs`` keys) or
   a Pokémon as a ``|request|`` carries it (``details``, ``stats`` and
   ``moves``), whose stats reveal the spread; in both, ``moves`` is a list; or
-  any object with a string ``paste`` member (ADR-014 §10: a PokePaste record
+  any object with a string ``paste`` member (ADR-015 §6: a PokePaste record
   with none of those keys); or
 - holds a sealed evaluation Episode (ADR-009 rule T2; evaluation protocol I7
   and O13): any object with ``"kind": "evaluation"`` and ``"sealed": true``,
@@ -31,7 +31,7 @@ PokePaste guard does not see JSON teams, so this guard rejects a committed
   (the pinning test fails until it is edited).
 
 - holds ``"data_class": "private"`` outside a path in ``PRIVATE_SAMPLE_MARKERS``
-  (ADR-014 §10). A marker is an exact file, never a directory, for a synthetic
+  (ADR-015 §6). A marker is an exact file, never a directory, for a synthetic
   sample of a private record (the contract corpus needs one; ``data_class``
   stays ``private`` in the type). The guard itself checks the marked file: its
   root says ``"data_class": "private"``, it holds at least one ``paste``, and
@@ -45,14 +45,15 @@ PokePaste guard does not see JSON teams, so this guard rejects a committed
   (the PrivateTeamRecord shape), no other object in the file may be team-shaped,
   and no other string (keys included) may look like a paste (a ``Species @ Item``,
   ``Ability:`` or ``- Move`` line), so real team text cannot ride in a marked
-  file. Every value is also type-checked against the PrivateTeamRecord (ADR-014
-  §4): ``schema_version`` 1, ``data_class`` ``private``, ``team_id`` 32 hex,
+  file. Every value is also type-checked against the PrivateTeamRecord (ADR-015
+  §2): ``schema_version`` 1, ``data_class`` ``private``, ``team_id`` 32 hex,
   ``revision`` 1 to 2**31-1, ``supersedes_record_hash`` null or 64 hex, both team
   hashes 64 hex, ``status`` active or retired, at most 16 ``tags`` matching
   ``[a-z0-9][a-z0-9-]{0,31}``, at most 64 ``labels`` that are exactly
-  ``{label_id, value}`` token pairs (ADR-013), and one corpus ``paste``. That
+  ``{label_id, value}`` token pairs (ADR-013), a boolean ``holdout``, and one corpus ``paste``. That
   both hashes equal the paste's hashes needs the engine's ``Teams.import``, so
-  the guard cannot check it: the vitest round-trip of the contracts slice does; or
+  the guard cannot check it: the vitest round-trip in private-records.test.ts (this
+  slice) does, and the pytest tests here pin the keys and types to the schema; or
 - has a duplicate key in any JSON object (and, for JSONL, in any line): a
   reader keeps the last value while the earlier one stays in the committed
   bytes, so the guard refuses the file; or
@@ -99,10 +100,24 @@ SEALED_MARKERS = frozenset(
         "fixtures/contracts/v1/episode/invalid/collection-evaluation-no-seed.json",
     }
 )
-PRIVATE_SAMPLE_MARKERS: frozenset[str] = frozenset()
-# The root keys of a PrivateTeamRecord (ADR-014 section 4); the contract itself
-# is defined by the contracts slice (#869), which edits this one constant. A
-# marked sample has exactly these keys, so team content cannot ride in others.
+PRIVATE_SAMPLE_MARKERS = frozenset(
+    {
+        "fixtures/contracts/v1/private-team-record/reader-invalid/canonical-hash-mismatch.json",
+        "fixtures/contracts/v1/private-team-record/reader-invalid/duplicate-label-ids.json",
+        "fixtures/contracts/v1/private-team-record/reader-invalid/duplicate-tags.json",
+        "fixtures/contracts/v1/private-team-record/reader-invalid/first-revision-supersedes.json",
+        "fixtures/contracts/v1/private-team-record/reader-invalid/later-revision-no-predecessor.json",
+        "fixtures/contracts/v1/private-team-record/reader-invalid/team-hash-mismatch.json",
+        "fixtures/contracts/v1/private-team-record/reader-invalid/unsorted-tags.json",
+        "fixtures/contracts/v1/private-team-record/valid/edited.json",
+        "fixtures/contracts/v1/private-team-record/valid/first.json",
+        "fixtures/contracts/v1/private-team-record/valid/holdout.json",
+        "fixtures/contracts/v1/private-team-record/valid/retired.json",
+    }
+)
+# The root keys of a PrivateTeamRecord (ADR-015 section 2). A marked sample has
+# exactly these keys, so team content cannot ride in others. A test pins this
+# set to the properties of private-team-record.schema.json.
 PRIVATE_RECORD_KEYS = frozenset(
     {
         "schema_version",
@@ -116,9 +131,10 @@ PRIVATE_RECORD_KEYS = frozenset(
         "status",
         "tags",
         "labels",
+        "holdout",
     }
 )
-# ADR-014 section 4 field types; labels are ADR-013's (an array of at most 64
+# ADR-015 section 2 field types; labels are ADR-013's (an array of at most 64
 # {label_id, value} pairs whose strings match the ADR-013 token pattern).
 HEX64 = re.compile(r"[0-9a-f]{64}")
 HEX32 = re.compile(r"[0-9a-f]{32}")
@@ -382,6 +398,7 @@ def _record_types_ok(record: dict[str, object]) -> bool:
         and len(tags) <= MAX_TAGS
         and all(_is_match(TAG, tag) for tag in tags)
         and _labels_ok(record["labels"])
+        and isinstance(record["holdout"], bool)
     )
 
 

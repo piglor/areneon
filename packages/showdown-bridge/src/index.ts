@@ -223,6 +223,12 @@ export {
   type TeamSnapshotManifest,
 } from "./team-records.ts";
 export {
+  checkPrivateRecordSet,
+  type PrivateTeamRecord,
+  PrivateRecordError,
+  readPrivateTeamRecord,
+} from "./private-records.ts";
+export {
   exportTeamVocabulary,
   readTeamVocabulary,
   TEAM_VOCABULARY_FILE,
