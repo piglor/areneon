@@ -9,15 +9,32 @@ import { readFileSync } from "node:fs";
 import { parseArgs } from "node:util";
 import { engineDataHash, readEngineData } from "./engine-data.ts";
 import { loadEngine } from "./engine.ts";
-import { GenerationError, playGeneration, trainingTeamPool, writeGeneration } from "./league-generation.ts";
+import type { Engine } from "./engine.ts";
+import { GenerationError, playGeneration, type TrainingPool, trainingTeamPool, writeGeneration } from "./league-generation.ts";
 import { type Json, jcs } from "./canonical-json.ts";
 import { resolveFormat } from "./formats.ts";
 import { PolicyWorkerClient } from "./policy-worker.ts";
-import { readTrainingRunConfig, runConfigHash } from "./training-run-config.ts";
+import { readTrainingRunConfig, runConfigHash, type TrainingRunConfig } from "./training-run-config.ts";
 
 export class UsageError extends Error {
   override name = "UsageError";
 }
+
+/** Where a run's teams come from: the CLI asks for the pool once the config and the engine are read. */
+export type PoolSource = (engine: Engine, config: TrainingRunConfig) => TrainingPool;
+
+/**
+ * The pool of this package's own script: the interim fixture pool. A config
+ * that names a team dataset is refused here, never played on the interim pool:
+ * the dataset reader lives in `@areneon/team-dataset`, which depends on this
+ * package, so its script supplies the pool through `runGenerationCli`'s port.
+ */
+export const interimPoolSource: PoolSource = (engine, config) => {
+  if (config.team_dataset !== undefined) {
+    throw new UsageError("this config names a team dataset: run packages/team-dataset/scripts/play-generation.ts");
+  }
+  return trainingTeamPool(engine, config.generation.excluded_abilities);
+};
 
 const FLAGS = {
   config: { type: "string" },
@@ -33,7 +50,11 @@ const FLAGS = {
 } as const;
 
 /** Run one generation; returns the process exit code and writes its one JSON line with `print`. */
-export async function runGenerationCli(argv: readonly string[], print: (line: string) => void = console.log): Promise<number> {
+export async function runGenerationCli(
+  argv: readonly string[],
+  print: (line: string) => void = console.log,
+  poolSource: PoolSource = interimPoolSource,
+): Promise<number> {
   let values: Record<keyof typeof FLAGS, string | undefined>;
   try {
     values = parseArgs({ args: [...argv], options: FLAGS, strict: true }).values as typeof values;
@@ -75,7 +96,7 @@ export async function runGenerationCli(argv: readonly string[], print: (line: st
     },
   });
   try {
-    const pool = trainingTeamPool(engine, config.generation.excluded_abilities);
+    const pool = poolSource(engine, config);
     await client.start();
     const result = await playGeneration({ engine, config, generation, policy_id: need("policy-id"), client, pool });
     writeGeneration(need("out"), result);

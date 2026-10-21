@@ -56,6 +56,23 @@ def test_the_hash_is_the_sha256_of_the_jcs_bytes_and_ignores_key_order() -> None
     assert read_run_config(other).hash != config.hash
 
 
+def test_a_run_may_name_a_team_dataset_and_the_default_names_none() -> None:
+    assert read_run_config(raw()).team_dataset is False
+    named = read_run_config(raw("valid/team-dataset.json"))
+    assert named.team_dataset is True
+    assert named.raw["team_dataset"]["path"] == ".tmp/datasets/train-v1"
+    assert named.hash != read_run_config(raw()).hash
+
+
+def test_the_committed_run_configs_are_valid() -> None:
+    files = sorted((SAMPLES.parents[2] / "config/training").glob("*.json"))
+    assert files
+    for file in files:
+        config = read_run_config(json.loads(file.read_text()))
+        assert config.team_dataset is True
+        assert {b.actor for b in config.generation.baselines} == {"random-legal", "actor-rule"}
+
+
 def test_no_baselines_is_a_valid_run() -> None:
     assert read_run_config(raw("valid/no-baselines.json")).generation.baselines == ()
 

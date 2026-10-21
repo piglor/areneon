@@ -70,6 +70,11 @@ def _run(args: argparse.Namespace) -> dict[str, object]:
         config_path=args.run_dir.resolve() / layout.CONFIG,
         engine_data=args.engine_data.resolve(),
         encoder_version=encoder_version(game, config.model.encoder),
+        play_script=(
+            "packages/team-dataset/scripts/play-generation.ts"
+            if config.team_dataset
+            else "packages/showdown-bridge/scripts/play-generation.ts"
+        ),
     )
     loop = Loop(config, args.run_dir.resolve(), game, player)
     result = loop.run(args.generations)

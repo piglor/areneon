@@ -50,9 +50,13 @@ class NodePlayer:
     config_path: Path
     engine_data: Path
     encoder_version: str
+    #: The play script, relative to the repository. A run that names a team dataset
+    #: needs the script of ``packages/team-dataset``, which sees both the bridge and
+    #: the dataset reader.
+    play_script: str = "packages/showdown-bridge/scripts/play-generation.ts"
 
     def _run(self, script: str, *args: str) -> str:
-        command = [self.node, str(self.repo / "packages/showdown-bridge/scripts" / script), *args]
+        command = [self.node, str(self.repo / script), *args]
         try:
             done = subprocess.run(
                 command, capture_output=True, text=True, check=False, stdin=subprocess.DEVNULL
@@ -66,14 +70,16 @@ class NodePlayer:
         return done.stdout
 
     def manifest(self, format_id: str) -> dict[str, Any]:
-        found = json.loads(self._run("format-manifest.ts", "--format", format_id))
+        found = json.loads(
+            self._run("packages/showdown-bridge/scripts/format-manifest.ts", "--format", format_id)
+        )
         if not isinstance(found, dict):
             raise PlayError("format-manifest.ts did not print an object")
         return found
 
     def play(self, request: PlayRequest) -> None:
         self._run(
-            "play-generation.ts",
+            self.play_script,
             *("--config", str(self.config_path)),
             *("--generation", str(request.generation)),
             *("--policy-id", request.policy_id),

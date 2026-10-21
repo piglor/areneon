@@ -272,6 +272,28 @@
         }
       }
     },
+    "team_dataset": {
+      "description": "Optional (a minor change within v1): the generated team dataset the generation loop draws its teams from. Absent means the interim pool of committed fixture teams. The directory is read by the dataset reader, which trusts nothing; the pool takes the dev and training splits, never validation. The manifest hash pins the dataset: a directory whose manifest hashes differently is refused.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "manifest_hash"
+      ],
+      "properties": {
+        "path": {
+          "description": "The dataset directory, relative to the directory the generation process runs in (the repository root for the loop driver) or absolute.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        },
+        "manifest_hash": {
+          "description": "SHA-256 of the dataset manifest's JCS bytes (the dataset hash).",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
     "learner": {
       "description": "Where the learner runs (ADR-010 section 4). A cuda run is not claimed to be bit-reproducible, and its hash differs from a cpu run's.",
       "type": "object",

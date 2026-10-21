@@ -71,6 +71,20 @@ def test_run_prints_one_canonical_line_and_builds_the_node_player_from_its_flags
     assert kwargs["config_path"] == (tmp_path / "r").resolve() / "run-config.json"
     assert kwargs["engine_data"] == DATA.resolve()
     assert kwargs["encoder_version"].startswith("enc1:")
+    assert kwargs["play_script"] == "packages/showdown-bridge/scripts/play-generation.ts"
+
+
+def test_a_config_naming_a_team_dataset_starts_the_script_that_can_read_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    built = fake_node(monkeypatch)
+    named = {**tiny_config().raw, "team_dataset": {"path": "d", "manifest_hash": "a" * 64}}
+    config = tmp_path / "named.json"
+    config.write_text(json.dumps(named))
+    main(
+        run(config, tmp_path / "r", 1)
+    )  # the fake player's records are the tiny config's: the run itself is not the point
+    assert built[0]["play_script"] == "packages/team-dataset/scripts/play-generation.ts"
 
 
 def test_a_second_call_resumes_and_says_so(

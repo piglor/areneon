@@ -34,6 +34,7 @@ export {
   trainingPool,
   type VerifiedDataset,
 } from "./dataset-reader.ts";
+export { datasetPoolSource, datasetTeamPool } from "./loop-pool.ts";
 export {
   committedDatasetHashes,
   differing,

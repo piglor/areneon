@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { runGenerationCli, runManifestCli, UsageError } from "../src/generation-cli.ts";
+import { interimPoolSource, runGenerationCli, runManifestCli, UsageError } from "../src/generation-cli.ts";
 import { GOLDEN_DIR, GOLDEN_FORMAT } from "../src/golden.ts";
 import { loadEngine, readTrainingRunConfig } from "../src/index.ts";
 import { trainingTeamPool } from "../src/league-generation.ts";
@@ -49,6 +49,24 @@ describe("play-generation", () => {
     await expect(runGenerationCli([...flags(config), "--unknown", "1"])).rejects.toThrow(UsageError);
     writeFileSync(join(dir, "bad.json"), JSON.stringify({ ...tiny, notes: "x" }));
     await expect(runGenerationCli(flags(join(dir, "bad.json")))).rejects.toThrow(/invalid TrainingRunConfig/);
+  });
+
+  it("refuses a config that names a team dataset instead of playing it on the interim pool", async () => {
+    const named = { ...tiny, team_dataset: { path: "somewhere", manifest_hash: "a".repeat(64) } };
+    const file = join(dir, "named.json");
+    writeFileSync(file, JSON.stringify(named));
+    await expect(runGenerationCli(flags(file))).rejects.toThrow(/team-dataset\/scripts\/play-generation/);
+    expect(() => interimPoolSource(loadEngine(), readTrainingRunConfig(named))).toThrow(UsageError);
+    expect(interimPoolSource(loadEngine(), readTrainingRunConfig(tiny)).teams.length).toBeGreaterThan(60);
+  });
+
+  it("takes its teams from the pool source it is given", async () => {
+    const file = join(dir, "tiny.json");
+    writeFileSync(file, JSON.stringify(tiny));
+    const refuse = (): never => {
+      throw new UsageError("from the port");
+    };
+    await expect(runGenerationCli(flags(file), console.log, refuse)).rejects.toThrow("from the port");
   });
 
   it("fails with exit 1 when the config leaves no team to draw, before it starts the worker", async () => {

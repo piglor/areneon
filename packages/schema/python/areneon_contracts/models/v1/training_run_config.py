@@ -6,6 +6,7 @@ from __future__ import annotations
 from typing import Annotated, Literal
 
 from pydantic import (
+    MISSING,
     BaseModel,
     ConfigDict,
     Field,
@@ -105,6 +106,24 @@ class Ppo(BaseModel):
     normalize_advantages: StrictBool
     """
     Normalise advantages to zero mean and unit deviation within each role's batch.
+    """
+
+
+class TeamDataset(BaseModel):
+    """
+    Optional (a minor change within v1): the generated team dataset the generation loop draws its teams from. Absent means the interim pool of committed fixture teams. The directory is read by the dataset reader, which trusts nothing; the pool takes the dev and training splits, never validation. The manifest hash pins the dataset: a directory whose manifest hashes differently is refused.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    path: Annotated[StrictStr, Field(max_length=1024, min_length=1)]
+    """
+    The dataset directory, relative to the directory the generation process runs in (the repository root for the loop driver) or absolute.
+    """
+    manifest_hash: Annotated[StrictStr, Field(pattern="^[0-9a-f]{64}$")]
+    """
+    SHA-256 of the dataset manifest's JCS bytes (the dataset hash).
     """
 
 
@@ -306,6 +325,10 @@ class TrainingRunConfig(BaseModel):
     ppo: Ppo
     """
     PPO with GAE (ADR-010 section 1). Real-valued settings are integers in millionths (_micro) or billionths (_nano), because contracts carry no floating-point numbers.
+    """
+    team_dataset: TeamDataset | MISSING = MISSING
+    """
+    Optional (a minor change within v1): the generated team dataset the generation loop draws its teams from. Absent means the interim pool of committed fixture teams. The directory is read by the dataset reader, which trusts nothing; the pool takes the dev and training splits, never validation. The manifest hash pins the dataset: a directory whose manifest hashes differently is refused.
     """
     learner: Learner
     """
