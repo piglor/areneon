@@ -52,10 +52,15 @@ class Page(HTMLParser):
         self.values: list[str] = []
         self.text: list[str] = []
         self.first_in_head: str | None = None
+        self.bodies: list[tuple[str, str]] = []  # (tag, text) of every script and style element
+        self._open: str | None = None
         self._in_head = False
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         self.tags[tag] += 1
+        if tag in ("script", "style"):
+            self._open = tag
+            self.bodies.append((tag, ""))
         if tag == "head":
             self._in_head = True
         elif self._in_head and self.first_in_head is None:
@@ -65,10 +70,14 @@ class Page(HTMLParser):
             self.values.append(value or "")
 
     def handle_endtag(self, tag: str) -> None:
+        if tag == self._open:
+            self._open = None
         if tag == "head":
             self._in_head = False
 
     def handle_data(self, data: str) -> None:
+        if self._open is not None:
+            self.bodies[-1] = (self._open, self.bodies[-1][1] + data)
         self.text.append(data)
 
 
@@ -217,7 +226,8 @@ def assert_inert(text: str, canaries: tuple[str, ...]) -> None:
     assert "style" not in found.attrs
     assert text.count("</script") == 2  # the data block and the one script, nothing else
     assert "<!--" not in text
-    for body in re.findall(r"<script[^>]*>(.*?)</script>", text, re.S):
+    for tag, body in found.bodies:
+        assert tag in ("script", "style")
         assert chr(0x2028) not in body
         assert chr(0x2029) not in body
     for canary in canaries:
@@ -278,11 +288,11 @@ def test_csp_is_first_and_matches_the_inline_blocks(run: Path, root: Path) -> No
         policy = re.search(r'http-equiv="Content-Security-Policy" content="([^"]+)"', text)
         assert policy is not None
         content = policy[1].replace("&#x27;", "'")
-        style = re.search(r"<style>(.*?)</style>", text, re.S)
-        script = re.search(r"<script>(.*?)</script>", text, re.S)
-        assert style is not None
-        assert script is not None
-        for kind, body in (("style", style[1]), ("script", script[1])):
+        styles = [b for t, b in found.bodies if t == "style"]
+        scripts = [b for t, b in found.bodies if t == "script"]
+        assert len(styles) == 1
+        assert len(scripts) == 2  # the data block and our one script
+        for kind, body in (("style", styles[0]), ("script", scripts[1])):
             digest = base64.b64encode(hashlib.sha256(body.encode()).digest()).decode()
             assert f"{kind}-src 'sha256-{digest}'" in content
         for part in (
