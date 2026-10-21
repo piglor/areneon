@@ -960,6 +960,52 @@ describe("runA2Bot: a rejoin of a room whose battle already ended", () => {
   });
 });
 
+describe("runA2Bot: negative controls for a rejoin without a timer snapshot and for an ended room", () => {
+  const NO_TIMER_INIT = room("|init|battle", "|title|p1 vs. p2", `|j| ${BOT}`);
+
+  it("marks no decision and logs no incident when the timer is off, on a rejoin or not", async () => {
+    const run = await start();
+    login(run.t());
+    run.t().push(NO_TIMER_INIT);
+    run.t().push(at(0));
+    run.t().push(at(1));
+    run.t().push(CONFIRM);
+    run.t().push(at(2));
+    // A first decision with no snapshot, the timer off.
+    expect(run.decisions()[0]).toMatchObject({ timer: null });
+    run.t().end(1006);
+    await vi.waitFor(() => expect(run.transports).toHaveLength(2));
+    login(run.t());
+    run.t().push(NO_TIMER_INIT);
+    run.t().push(at(0));
+    run.t().push(at(2));
+    // A request first seen on the rejoin, the timer off: no snapshot would have come anyway.
+    run.t().push(at(3));
+    expect(run.decisions()).toHaveLength(2);
+    expect(run.decisions()[1]).toMatchObject({ rqid: 3, timer: null });
+    for (const decision of run.decisions()) expect(decision.rejoin_without_snapshot).toBeUndefined();
+    expect(run.events("incident")).toEqual([]);
+  });
+
+  it("ignores a |noinit| for a battle that has ended, and sends no /join for it after a reconnect", async () => {
+    const run = await start({ battles: 2 });
+    login(run.t());
+    preview(run.t());
+    run.t().push(at(2));
+    run.t().push(room("|tie"));
+    expect(run.events("battle_ended")).toHaveLength(1);
+    run.t().push(room("|noinit|nonexistent|The room does not exist."));
+    run.t().end(1006);
+    await vi.waitFor(() => expect(run.transports).toHaveLength(2));
+    login(run.t());
+    expect(run.t().sent.filter((line) => line.startsWith("|/join"))).toEqual([]);
+    run.t().push(room("|noinit|nonexistent|The room does not exist."));
+    const settled = await Promise.race([run.result.then(() => "resolved"), new Promise((resolve) => setTimeout(() => resolve("pending"), 50))]);
+    expect(settled).toBe("pending");
+    run.t().end(1000);
+  });
+});
+
 describe("runA2Bot: reconnect during Team Preview (ADR-005 §1, §2)", () => {
   const rejects = (run: Run): number =>
     run.transports.flatMap((t) => t.sent).filter((line) => line.endsWith("/rejectopenteamsheets")).length;
