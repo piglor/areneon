@@ -6,6 +6,7 @@ import { actorRule } from "../src/actor-rule.ts";
 import { jcs, type Json } from "../src/canonical-json.ts";
 import { readTrainingRunConfig } from "../src/training-run-config.ts";
 import {
+  forfeitCauses,
   GenerationError,
   type GenerationOptions,
   type GenerationResult,
@@ -245,6 +246,15 @@ describe("playGeneration", () => {
     expect(partial.games.filter((g) => g.outcome === "forfeit")).toHaveLength(1);
     expect(partial.episodes.length).toBeLessThan(12);
     expect(partial.set.examples).toBeGreaterThan(0);
+    const forfeited = partial.games.filter((g) => g.outcome === "forfeit");
+    expect(forfeited[0]?.forfeit).toMatchObject({ cause: "crash", detail: expect.stringContaining("gone") });
+    expect(forfeitCauses(partial.games)).toEqual({ crash: 1 });
+    expect(partial.games.filter((g) => g.outcome === "played").every((g) => !("forfeit" in g))).toBe(true);
+    const dir = mkdtempSync(join(tmpdir(), "forfeit-reason-"));
+    writeGeneration(dir, partial);
+    const summary = JSON.parse(readFileSync(join(dir, "generation.json"), "utf8"));
+    rmSync(dir, { recursive: true, force: true });
+    expect(summary).toMatchObject({ forfeits: 1, forfeit_causes: { crash: 1 } });
   });
 });
 
@@ -279,6 +289,7 @@ describe("writeGeneration", () => {
     expect(read("stream.jsonl")).toBe(result.stream);
     expect(read("training-set.json")).toBe(`${jcs(result.set as unknown as Json)}\n`);
     const summary = JSON.parse(read("generation.json")) as Record<string, unknown>;
+    expect(summary).not.toHaveProperty("forfeit_causes");
     expect(summary).toMatchObject({ schema_version: 1, generation: 2, forfeits: 0, training_set_hash: result.training_set_hash, examples: result.set.examples });
     expect(read("generation.json")).toBe(`${jcs(summary as Json)}\n`);
     expect(JSON.parse(read("plan.json"))).toHaveLength(6);

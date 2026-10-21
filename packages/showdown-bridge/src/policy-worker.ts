@@ -131,15 +131,18 @@ export class PolicyWorkerClient implements PolicyClient {
     this.#nextId = 1;
     const child = spawn(command, [...args], { cwd, env: { ...env }, stdio: ["pipe", "pipe", "pipe"] });
     this.#child = child;
+    let timer: ReturnType<typeof setTimeout> | undefined;
     const ready = new Promise<unknown>((resolve, reject) => {
       this.#onReady = resolve;
-      const timer = setTimeout(
+      timer = setTimeout(
         () => this.#fail(new PolicyHandshakeError(`no handshake reply within ${handshake_timeout_ms} ms`)),
         handshake_timeout_ms,
       );
       child.once("close", () => clearTimeout(timer));
       this.#rejectReady = reject;
     });
+    // If the hello cannot be written, `ready` is never awaited: its later rejection is not unhandled.
+    ready.catch(() => undefined);
     child.stdout.on("data", (chunk: Buffer) => this.#read(chunk));
     child.stderr.on("data", (chunk: Buffer) => {
       this.#stderr = (this.#stderr + chunk.toString("utf8")).slice(-STDERR_TAIL);
@@ -149,12 +152,16 @@ export class PolicyWorkerClient implements PolicyClient {
     });
     child.once("error", (error) => this.#fail(new PolicyWorkerError("crash", `cannot start the worker: ${error.message}`)));
     child.once("close", (code, signal) => this.#closed(code, signal));
-    child.stdin.write(encodeFrame({ schema_version: 1, message: { kind: "hello", contracts: contractVersions() } }, max_line_bytes));
     try {
+      child.stdin.write(encodeFrame({ schema_version: 1, message: { kind: "hello", contracts: contractVersions() } }, max_line_bytes));
       this.#check(await ready);
     } catch (error) {
       await this.close();
       throw error;
+    } finally {
+      // The timer bounds the handshake only: left running it would end every
+      // session that lasts that long, killing the worker mid-game (#912).
+      clearTimeout(timer);
     }
   }
 
