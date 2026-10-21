@@ -12,6 +12,7 @@ import {
   interimPoolSource,
   importPaste,
   type PokemonSet,
+  type TeamRecord,
   type TrainingRunConfig,
 } from "@areneon/showdown-bridge";
 import { datasetPoolDetail } from "./loop-pool.ts";
@@ -73,8 +74,7 @@ export function listPool(engine: Engine, config: TrainingRunConfig): PoolListing
   if (config.team_dataset !== undefined) {
     const detail = datasetPoolDetail(engine, config);
     const teams = detail.pool.hashes.map((hash): ListedTeam => {
-      const record = detail.records.get(hash);
-      if (record === undefined) throw new Error("a pool team has no dataset record");
+      const record = detail.records.get(hash) as TeamRecord; // `datasetPoolDetail` keys one record per pool team
       return {
         hash,
         canonical_team_hash: record.canonical_team_hash,
