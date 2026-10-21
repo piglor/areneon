@@ -1,7 +1,7 @@
 import { loadEngine, loadRulesSnapshot, type PokemonSet, teamHash } from "@areneon/showdown-bridge";
 import { type HarnessFixture, type Seat } from "@areneon/local-server/harness";
 import { describe, expect, it, vi } from "vitest";
-import { type A2BotOptions, type A2BattleRecord, memoryTransport, type MemoryTransport, runA2Bot, SessionError } from "../src/index.ts";
+import { type A2BotOptions, type A2BattleRecord, memoryTransport, type MemoryTransport, runA2Bot } from "../src/index.ts";
 import { fixtureTeam } from "./local-battle.ts";
 import { fixtureFiles, readFixture } from "./a1-a2-equality.ts";
 
@@ -96,6 +96,6 @@ describe("the class of a session's channels is derived (#824)", () => {
         ...(mode === undefined ? {} : { mode }),
         opponent_team: rivalTeam(),
       }),
-    ).rejects.toThrow(SessionError);
+    ).rejects.toThrow(/only to a bot-vs-bot harness run/);
   });
 });

@@ -338,8 +338,9 @@ export function channelFromFrames(
  * bot's validator edits a team in place (it fills the nickname, the gender of a
  * genderless species), so a stored fixture holds the played form; the pinned
  * validator produces it here, on a copy, so no rule of it is written by hand.
- * It cannot make a team synthetic: a team whose own hash is not in `known` is
- * refused (`HarnessError`), and only the played forms of listed teams are added.
+ * It cannot widen beyond the `known` set it is given: a team whose own hash is
+ * not in `known` is refused (`HarnessError`), and only the played forms of listed
+ * teams are added. `known` itself stays trusted caller input.
  */
 export function withPlayedForms(
   engine: Engine,
