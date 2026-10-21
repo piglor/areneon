@@ -41,7 +41,13 @@ const FLAGS = {
   games: { type: "string" },
   "record-games": { type: "string" },
   out: { type: "string" },
+  // The previous generation's frozen pair (G >= 1): all four together, or none (G = 0).
+  "previous-preview": { type: "string" },
+  "previous-battle": { type: "string" },
+  "previous-policy-id-sample": { type: "string" },
+  "previous-policy-id-argmax": { type: "string" },
 } as const;
+const PREVIOUS = ["previous-preview", "previous-battle", "previous-policy-id-sample", "previous-policy-id-argmax"] as const;
 
 const integer = (name: string, text: string, least: number): number => {
   const value = Number(text);
@@ -76,7 +82,9 @@ export async function runProgressCli(argv: readonly string[], print: (line: stri
     throw new UsageError((error as Error).message);
   }
   const need = (name: keyof typeof FLAGS): string => values[name] ?? ((): never => { throw new UsageError(`--${name} is required`); })();
-  for (const name of Object.keys(FLAGS) as (keyof typeof FLAGS)[]) need(name);
+  for (const name of Object.keys(FLAGS) as (keyof typeof FLAGS)[]) if (!(PREVIOUS as readonly string[]).includes(name)) need(name);
+  const given = PREVIOUS.filter((name) => values[name] !== undefined);
+  if (given.length !== 0 && given.length !== PREVIOUS.length) throw new UsageError(`the previous-generation flags go together: ${PREVIOUS.map((n) => `--${n}`).join(", ")}`);
   const generation = integer("generation", need("generation"), 0);
   const games = integer("games", need("games"), 1);
   const record_games = integer("record-games", need("record-games"), 0);
@@ -93,25 +101,31 @@ export async function runProgressCli(argv: readonly string[], print: (line: stri
   const { max_line_bytes, handshake_timeout_ms } = config.generation;
   const preview = need("preview");
   const battle = need("battle");
-  const client = new PolicyWorkerClient({
-    command: need("worker-python"),
-    args: ["-I", "-m", "areneon_ml.worker", "--run-dir", need("run-dir"), "--preview", preview, "--battle", battle, "--engine-data", dataFile, "--max-line-bytes", String(max_line_bytes)],
-    env: {},
-    max_line_bytes,
-    n_parallel: 1, // evaluation never batches (ADR-010 section 2)
-    handshake_timeout_ms,
-    expect: {
-      encoder_version: need("encoder-version"),
-      engine_data_hash: dataHash,
-      checkpoints: [
-        { role: "battle", checkpoint_id: battle },
-        { role: "preview", checkpoint_id: preview },
-      ],
-    },
-  });
+  // One worker session holds one frozen pair, so the previous generation's pair gets a worker of its own.
+  const workerFor = (pair: { preview: string; battle: string }): PolicyWorkerClient =>
+    new PolicyWorkerClient({
+      command: need("worker-python"),
+      args: ["-I", "-m", "areneon_ml.worker", "--run-dir", need("run-dir"), "--preview", pair.preview, "--battle", pair.battle, "--engine-data", dataFile, "--max-line-bytes", String(max_line_bytes)],
+      env: {},
+      max_line_bytes,
+      n_parallel: 1, // evaluation never batches (ADR-010 section 2)
+      handshake_timeout_ms,
+      expect: {
+        encoder_version: need("encoder-version"),
+        engine_data_hash: dataHash,
+        checkpoints: [
+          { role: "battle", checkpoint_id: pair.battle },
+          { role: "preview", checkpoint_id: pair.preview },
+        ],
+      },
+    });
+  const client = workerFor({ preview, battle });
+  const previousPair = given.length === 0 ? undefined : { preview: need("previous-preview"), battle: need("previous-battle") };
+  const previousClient = previousPair === undefined ? undefined : workerFor(previousPair);
   try {
     const pool = poolSource(engine, config);
     await client.start();
+    await previousClient?.start();
     const policy_ids: Record<ProgressMode, string> = { sample: need("policy-id-sample"), argmax: need("policy-id-argmax") };
     const result = await playProgress({
       engine,
@@ -121,6 +135,15 @@ export async function runProgressCli(argv: readonly string[], print: (line: stri
       checkpoints: { preview, battle },
       policy_ids,
       client,
+      ...(previousPair === undefined || previousClient === undefined
+        ? {}
+        : {
+            previous: {
+              checkpoints: previousPair,
+              policy_ids: { sample: need("previous-policy-id-sample"), argmax: need("previous-policy-id-argmax") },
+              client: previousClient,
+            },
+          }),
       pool,
       games,
       record_games,
@@ -146,5 +169,6 @@ export async function runProgressCli(argv: readonly string[], print: (line: stri
     throw error;
   } finally {
     await client.close();
+    await previousClient?.close();
   }
 }

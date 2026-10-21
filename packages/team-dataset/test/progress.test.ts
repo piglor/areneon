@@ -20,6 +20,7 @@ import {
   progressPlan,
   playProgress,
   ProgressError,
+  type ProgressGameRecord,
   type ProgressOptions,
   progressRecordHash,
   readProgressEvaluationRecord,
@@ -151,6 +152,58 @@ describe("playProgress", () => {
     }
   }, 120_000);
 
+  describe("against the previous generation's frozen pair", () => {
+    const previous = (client = actorClient()): NonNullable<ProgressOptions["previous"]> => ({
+      checkpoints: { preview: "3".repeat(64), battle: "4".repeat(64) },
+      policy_ids: { sample: `policy:${"e".repeat(64)}`, argmax: `policy:${"f".repeat(64)}` },
+      client,
+    });
+
+    it("adds previous-sample and previous-argmax, each pair in its own mode, on the same plan and seeds", async () => {
+      const client = actorClient();
+      const other = actorClient();
+      const result = await playProgress(options({ client, previous: previous(other), record_games: 2 }));
+      const { record } = result;
+      expect(record.matches.map((m) => m.match_id)).toEqual(["actor-rule-argmax", "actor-rule-sample", "previous-argmax", "previous-sample", "random-legal-argmax", "random-legal-sample"]);
+      expect(record.games).toHaveLength(12);
+      for (const mode of PROGRESS_MODES) {
+        const match = record.matches.find((m) => m.match_id === `previous-${mode}`) as (typeof record.matches)[number];
+        expect(match.mode).toBe(mode);
+        expect(match.policy_id).toBe(options().policy_ids[mode]);
+        expect(match.opponent).toEqual({ kind: "previous", policy_id: previous().policy_ids[mode], checkpoints: previous().checkpoints });
+      }
+      // Both pairs were queried, each in the mode of its match; the candidate's worker also served the baselines.
+      expect(other.asked).toBeGreaterThan(0);
+      expect(other.modes).toEqual(new Set(["sample", "argmax"]));
+      expect(client.asked).toBeGreaterThan(other.asked);
+      // Same plan: the previous games use the seeds and pairs of the baseline games, and name both policy ids.
+      const baseline = result.game_records.get("actor-rule-sample-1.json") as ProgressGameRecord;
+      const versus = result.game_records.get("previous-sample-1.json") as ProgressGameRecord;
+      expect(versus.seed).toBe(baseline.seed);
+      expect(versus.teams).toEqual(baseline.teams);
+      expect(versus.seed).toBe(progressGameStreams(config.seeds.run_key, 1).seed);
+      const seats = (g: ProgressGameRecord): string[] => [g.policies.p1, g.policies.p2];
+      expect(seats(versus).sort()).toEqual([options().policy_ids.sample, previous().policy_ids.sample].sort());
+      // The candidate sits on p2 in an odd game.
+      expect(versus.policies.p2).toBe(options().policy_ids.sample);
+      expect(Object.keys(result.wall_ms)).toHaveLength(6);
+    }, 240_000);
+
+    it("is byte-identical when run twice", async () => {
+      const run = () => playProgress(options({ previous: previous() }));
+      const [a, b] = [await run(), await run()];
+      expect(jcs(a.record as unknown as Json)).toBe(jcs(b.record as unknown as Json));
+      for (const [name, stored] of a.game_records) expect(jcs(stored as unknown as Json)).toBe(jcs(b.game_records.get(name) as unknown as Json));
+    }, 240_000);
+
+    it("still refuses a progress seed equal to a committed plan's before any game is played", async () => {
+      const seed = progressGameStreams(config.seeds.run_key, 0).seed;
+      const other = actorClient();
+      await expect(playProgress(options({ previous: previous(other), league_seeds: new Set([seed]) }))).rejects.toThrow(/equals a seed of a committed plan/);
+      expect(other.asked).toBe(0);
+    });
+  });
+
   it("is byte-identical when run twice", async () => {
     const a = await playProgress(options());
     const b = await playProgress(options());
@@ -231,6 +284,16 @@ describe("buildProgressGameRecord", () => {
     const stored = buildProgressGameRecord(facts(game));
     expect(stored.decisions[0]?.refused).toBe("[Unavailable choice] a hidden reason");
     expect(stored.decisions[1]).not.toHaveProperty("refused");
+  });
+
+  it("stores decisions by request then seat, whichever seat's worker answered first", async () => {
+    const game = await played();
+    const expected = buildProgressGameRecord(facts(game));
+    const choices = (game.record as { choices: unknown[] }).choices;
+    choices.reverse();
+    const reversed = buildProgressGameRecord(facts(game));
+    expect(jcs(reversed as unknown as Json)).toBe(jcs(expected as unknown as Json));
+    expect(expected.decisions.map((d) => [d.request_seq, d.player])).toEqual([...expected.decisions].map((d) => [d.request_seq, d.player]).sort((a, b) => (a[0] as number) - (b[0] as number) || String(a[1]).localeCompare(String(b[1]))));
   });
 
   it("records a forfeit by seat, with its cause and request", async () => {

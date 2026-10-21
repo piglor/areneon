@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import shutil
 import sys
@@ -13,7 +14,7 @@ from areneon_contracts.contracts import jcs
 from areneon_ml.loop import __main__ as module
 from areneon_ml.loop.__main__ import EXIT_PLAY, EXIT_REFUSED, main
 from areneon_ml.loop.play import PlayError
-from areneon_ml.progress.run import NodeProgressPlayer, ProgressRequest
+from areneon_ml.progress.run import NodeProgressPlayer, PreviousPair, ProgressRequest
 
 from tests.ml.model.support import FORMAT_DIR
 from tests.ml.progress.support import (
@@ -151,7 +152,7 @@ def test_the_default_games_stored_never_exceed_the_games_played(
         == 0
     )
     capsys.readouterr()
-    assert len(list((tmp_path / "p" / "g000001" / "games").glob("*.json"))) == 8  # 4 matches x 2
+    assert len(list((tmp_path / "p" / "g000001" / "games").glob("*.json"))) == 12  # 6 matches x 2
 
 
 def test_a_generation_or_all_is_required_and_the_two_exclude_each_other(run: Path) -> None:
@@ -209,6 +210,17 @@ def test_the_node_player_passes_the_whole_request_and_the_run_as_flags(tmp_path:
         "--games": "7",
         "--record-games": "2",
         "--out": str(tmp_path / "work"),
+    }
+    with_previous = dataclasses.replace(
+        request, previous=PreviousPair("q" * 64, "c" * 64, "policy:ps", "policy:pa")
+    )
+    player.progress(with_previous)
+    argv = json.loads(out.read_text())
+    assert dict(zip(argv[::2], argv[1::2], strict=True)) | {} == flags | {
+        "--previous-preview": "q" * 64,
+        "--previous-battle": "c" * 64,
+        "--previous-policy-id-sample": "policy:ps",
+        "--previous-policy-id-argmax": "policy:pa",
     }
 
 

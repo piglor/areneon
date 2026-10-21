@@ -9,6 +9,7 @@ commit protocol run for real while the engine does not.
 from __future__ import annotations
 
 import copy
+import dataclasses
 import json
 from collections.abc import Callable
 from pathlib import Path
@@ -80,13 +81,30 @@ def progress_files(
     stored: dict[str, dict[str, Any]] = {}
     matches = []
     rows = []
-    for _actor, baseline in BASELINES:
+    opponents: list[tuple[str, str, dict[str, Any] | None]] = [
+        (actor, baseline, None) for actor, baseline in BASELINES
+    ]
+    if request.previous is not None:
+        opponents.append(("previous", "", {}))
+    for _actor, baseline, previous in opponents:
         for mode in MODES:
             match_id = f"{_actor}-{mode}"
             pair = policy_id(request.preview, request.battle, mode)
+            other = baseline
+            opponent: dict[str, Any] = {"kind": "baseline", "policy_id": baseline}
+            if previous is not None and request.previous is not None:
+                other = policy_id(request.previous.preview, request.previous.battle, mode)
+                opponent = {
+                    "kind": "previous",
+                    "policy_id": other,
+                    "checkpoints": {
+                        "preview": request.previous.preview,
+                        "battle": request.previous.battle,
+                    },
+                }
             hashes = []
             for game in range(request.record_games):
-                found = game_file(config, request, match_id, game, pair, baseline)
+                found = game_file(config, request, match_id, game, pair, other)
                 found["omniscient_log_sha256"] = log_hash(found["omniscient_log"])
                 stored[f"{match_id}-{game}.json"] = found
                 hashes.append(record_hash(found))
@@ -110,7 +128,7 @@ def progress_files(
                 {
                     "match_id": match_id,
                     "policy_id": pair,
-                    "opponent": {"kind": "baseline", "policy_id": baseline},
+                    "opponent": opponent,
                     "mode": mode,
                     "games": games,
                     "wins": wins,
@@ -144,7 +162,7 @@ def progress_files(
             },
         },
         "matches": sorted(matches, key=lambda m: str(m["match_id"])),
-        "games": rows,
+        "games": sorted(rows, key=lambda r: (str(r["match_id"]), int(str(r["game"])))),
     }
     return record, stored
 
@@ -156,8 +174,14 @@ class FakeProgressPlayer:
     """The simulator side of the progress evaluation, without a simulator."""
 
     def __init__(
-        self, config: RunConfig, manifest: dict[str, Any], change: Change | None = None
+        self,
+        config: RunConfig,
+        manifest: dict[str, Any],
+        change: Change | None = None,
+        *,
+        previous: bool = True,
     ) -> None:
+        self.previous = previous  # False plays like slice 4: baselines only
         self.config = config
         self.manifest = manifest
         self.change = change
@@ -165,7 +189,8 @@ class FakeProgressPlayer:
 
     def progress(self, request: ProgressRequest) -> dict[str, Any]:
         self.requests.append(request)
-        record, stored = progress_files(self.config, request, self.manifest)
+        files = request if self.previous else dataclasses.replace(request, previous=None)
+        record, stored = progress_files(self.config, files, self.manifest)
         out = request.out_dir
         layout.write_json(out / "progress.json", record)
         for name, found in stored.items():
