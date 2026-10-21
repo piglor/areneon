@@ -88,7 +88,9 @@ describe("the private team store package", () => {
   it("pins every dependency to an exact version, with no range", () => {
     for (const field of DEP_FIELDS) {
       for (const [dep, version] of Object.entries((manifest[field] ?? {}) as Record<string, string>)) {
-        expect(version, `${field}.${dep}`).toMatch(EXACT);
+        // A workspace link to this repository's own package is not a registry version.
+        if (dep.startsWith("@areneon/")) expect(version, `${field}.${dep}`).toBe("workspace:*");
+        else expect(version, `${field}.${dep}`).toMatch(EXACT);
       }
     }
     const deps = (manifest["dependencies"] ?? {}) as Record<string, string>;

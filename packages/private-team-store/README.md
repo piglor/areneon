@@ -1,8 +1,10 @@
 # @areneon/private-team-store
 
-The private team store (ADR-014). Today this package holds no features, only
-its exact-pinned dependencies and the packaging rule that keeps it out of every
-image.
+The private team store (ADR-015). So far this package holds the pure import
+planner (`src/import-plan.ts`: staged files plus the parent snapshot's records
+in, the next records and a counts-only summary out, or a typed refusal that
+never repeats input text), its exact-pinned dependencies and the packaging rule
+that keeps it out of every image.
 
 - `"private": true` and **never shipped**: no Dockerfile, compose file, Coolify
   build or other workspace package refers to it. `test/packaging.test.ts`
