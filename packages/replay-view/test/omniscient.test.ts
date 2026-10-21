@@ -67,19 +67,13 @@ describe("the omniscient interpreter", () => {
     expect(omniscient([...SMALL.slice(0, -1), "|win|Cy"]).flags.map((f) => f.reason)).toEqual(["'Cy' is neither player"]);
   });
 
-  it("takes a |split| pair once: the secret line applies, the public line is dropped", () => {
-    const lines = [...SMALL.slice(0, 19), "|split|p1", "|-damage|p1a: Venusaur|7/159", "|-damage|p1a: Venusaur|5/100", ...SMALL.slice(20)];
+  it("refuses a |split| marker like a player's own channel: the omniscient stream carries none", () => {
+    const lines = [...SMALL.slice(0, 19), "|split|p1", "|-damage|p1a: Venusaur|7/159", ...SMALL.slice(20)];
     const run = omniscient(lines);
-    expect(run.flags).toEqual([]);
-    const state = run.frames.at(-1)!.state;
-    expect(state.own.roster[0].hp_num).toBe(7);
-    expect(state.own.roster[0].hp_den).toBe(159);
-    expect(run.frames.map((f) => f.kind)).toContain("split-public");
-    // the same log without the pair gives the same final state
-    expect(JSON.stringify(state)).toEqual(JSON.stringify(omniscient(SMALL).frames.at(-1)!.state));
-    // a marker that names no side is flagged, and does not swallow the next lines
-    const bad = omniscient([...SMALL.slice(0, 19), "|split|", ...SMALL.slice(19)]);
-    expect(bad.flags.map((f) => f.reason)).toEqual(["a |split| marker that names no side"]);
+    expect(run.flags.map((f) => f.reason)).toEqual(["a |split| marker holds the opponent's secret half (refused)"]);
+    expect(run.frames.map((f) => f.kind)).not.toContain("split-public");
+    // the following line is not swallowed: it is applied
+    expect(run.frames.at(-1)!.state.own.roster[0].hp_num).toBe(7);
   });
 
   it("refuses a request line, and still refuses a |split| in a player's own channel", () => {
@@ -145,7 +139,7 @@ describe("the omniscient interpreter against the engine's own logs", () => {
   }, 120_000);
 });
 
-function omniPage(extra: Record<string, unknown> = {}) {
+function omniPage(extra: Record<string, unknown> = {}, mode = true) {
   const doc = new FakeDocument();
   const root = doc.createElement("div");
   const points = [
@@ -158,7 +152,7 @@ function omniPage(extra: Record<string, unknown> = {}) {
     title: "t",
     views: [
       {
-        player: "p1", omniscient: true, label: "Omniscient log", lines: SMALL, team: [], decisions: [],
+        player: "p1", label: "Omniscient log", lines: SMALL, team: [], decisions: [],
         teams: { p1: [{ species: "Venusaur", item: "x", ability: "y", moves: ["a"] }], p2: [{ name: "Nick", species: "Venusaur", item: "", ability: "y", moves: [] }] },
         seats: [{ seat: "p1", label: "p1: the candidate" }, { seat: "p2", label: "p2: the opponent" }],
         decision_points: points, result: "p1 won after 2 turns", ...extra,
@@ -166,13 +160,24 @@ function omniPage(extra: Record<string, unknown> = {}) {
     ],
     dex, links: [], notes: ["omniscient"],
   };
-  const page = view.init(doc, root, data, { raf: (f: any) => f(0), now: () => 0, setTimeout: () => 0, clearTimeout: () => undefined, reducedMotion: () => false });
+  const page = view.init(doc, root, data, { raf: (f: any) => f(0), now: () => 0, setTimeout: () => 0, clearTimeout: () => undefined, reducedMotion: () => false, omniscient: mode });
   return { doc, root, page };
 }
 
 const texts = (node: FakeNode, cls: string) => node.byClass(cls).map((n) => n.textContent);
 
 describe("the omniscient view", () => {
+  it("is switched on by the page's script, never by its data", () => {
+    // a player-view page whose data claims to be omniscient stays a player view: own team only, no
+    // decision points, and a |split| marker still refused
+    const hostile = omniPage({ omniscient: true, lines: ["|player|p1|Ann|", "|split|p1"] }, false);
+    expect(hostile.page.runs[0]!.flags.map((f: any) => f.reason)).toEqual(["a |split| marker holds the opponent's secret half (refused)"]);
+    expect(hostile.root.find((n) => n.tagName === "SUMMARY").map((n) => n.textContent)).toContain("Own team (0 sets)");
+    expect(texts(hostile.root, "chosen-line")).toEqual([]);
+    expect(texts(hostile.root, "who").join("|")).toContain("opponent, as revealed");
+    expect(hostile.root.find((n) => n.tagName === "SVG" && (n.getAttribute("aria-label") ?? "").startsWith("Omniscient"))).toHaveLength(0);
+  });
+
   it("is one panel with no channel selector, both teams and exact HP on both sides", () => {
     const { root, page } = omniPage();
     expect(root.byClass("viewpanel")).toHaveLength(1);

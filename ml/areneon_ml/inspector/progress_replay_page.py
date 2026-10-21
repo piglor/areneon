@@ -82,7 +82,6 @@ def payload(game: ProgressGame, dex: dict[str, Any]) -> dict[str, Any]:
     record = game.record
     view = {
         "player": "p1",
-        "omniscient": True,
         "label": "Omniscient log: both sides, exact values",
         "lines": list(record["omniscient_log"]),
         "team": [],
@@ -116,7 +115,7 @@ def _nav(game: ProgressGame, *, inspector: bool) -> str:
 
 def replay_page(game: ProgressGame, dex: dict[str, Any], *, inspector: bool = False) -> str:
     """One game's page."""
-    script, style = assets()
+    script, style = assets("omniscient")
     title = f"Progress replay: generation {game.generation}, {game.match_id}, game {game.game}"
     seed = game.record["seed"].removeprefix("sodium,")[:12]
     body = (

@@ -27,7 +27,7 @@ export default tseslint.config(
   },
   {
     files: ["packages/replay-view/web/view.cjs"],
-    languageOptions: { globals: { ArReplay: "readonly" } },
+    languageOptions: { globals: { ArReplay: "readonly", AR_MODE: "readonly" } },
   },
   {
     // The replay tests drive the loaded scripts and a DOM stand-in: their values are untyped by nature.

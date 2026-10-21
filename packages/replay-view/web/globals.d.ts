@@ -8,3 +8,4 @@ declare var ArReplay: {
   };
   [name: string]: any;
 };
+declare var AR_MODE: string | undefined;

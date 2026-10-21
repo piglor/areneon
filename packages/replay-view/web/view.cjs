@@ -14,7 +14,7 @@
  * @typedef {{ seat: string, frame: number, kind: string, request_seq: number, chosen: string,
  *   refused: string | null, policy: string, candidates: { choice: string, pending: boolean }[] }} DecisionPoint
  * @typedef {{ player: string, label: string, lines: string[], team: any[], decisions: Decision[],
- *   result: string, omniscient?: boolean, teams?: Record<string, any[]>, seats?: { seat: string, label: string }[],
+ *   result: string, teams?: Record<string, any[]>, seats?: { seat: string, label: string }[],
  *   decision_points?: DecisionPoint[] }} ViewData
  * @typedef {{ title: string, views: ViewData[], dex: any, links: { label: string, href: string }[],
  *   notes: string[] }} ReplayData
@@ -529,7 +529,7 @@ var ArView = (function () {
    * @param {any} root
    * @param {ReplayData} data
    * @param {{ raf?: (f: (t: number) => void) => void, now?: () => number, setTimeout?: (f: () => void, ms: number) => any,
-   *   clearTimeout?: (h: any) => void, reducedMotion?: () => boolean }} [options]
+   *   clearTimeout?: (h: any) => void, reducedMotion?: () => boolean, omniscient?: boolean }} [options]
    */
   function init(doc, root, data, options) {
     var opts = options || {};
@@ -539,9 +539,11 @@ var ArView = (function () {
     var cancel = opts.clearTimeout || function () {};
     var reduced = opts.reducedMotion || function () { return false; };
     var animateOn = true;
+    // The mode belongs to the page's script (the generator writes it), never to the data.
+    var omni = opts.omniscient === true;
     var env = { dex: data.dex || {}, animate: function () { return animateOn && !reduced(); }, raf: raf, now: now };
 
-    var runs = data.views.map(function (v) { return ArReplay.interpretChannel(v.player, v.lines, data.dex, v.omniscient === true); });
+    var runs = data.views.map(function (v) { return ArReplay.interpretChannel(v.player, v.lines, data.dex, omni); });
     if (!runs[0]) { throw new Error("a replay needs at least one view"); }
     var master = runs[0];
     var maps = runs.map(function (run, i) { return i === 0 ? null : align(data.views[0] ? data.views[0].lines : [], data.views[i] ? data.views[i].lines : []); });
@@ -552,7 +554,7 @@ var ArView = (function () {
     var speed = 1;
 
     var views = data.views.map(function (v, i) {
-      var board = createBoard(doc, env, v.omniscient ? "omniscient" : v.player);
+      var board = createBoard(doc, env, omni ? "omniscient" : v.player);
       var caption = make(doc, "p", { class: "caption" }, [""]);
       var decision = make(doc, "div", { class: "decisionbox" }, []);
       var logList = make(doc, "div", { class: "log" }, []);
@@ -571,8 +573,8 @@ var ArView = (function () {
       });
       logRows.forEach(function (r) { logList.appendChild(r.node); });
       rawRows.forEach(function (n) { rawList.appendChild(n); });
-      var teamBox = make(doc, "details", { class: "team" }, [make(doc, "summary", null, [v.teams ? "Both teams" : "Own team (" + (v.team || []).length + " sets)"])]);
-      var lists = v.teams ? Object.keys(v.teams).sort().map(function (k) { return { heading: k, sets: /** @type {any[]} */ (/** @type {any} */ (v.teams)[k]) }; }) : [{ heading: "", sets: v.team || [] }];
+      var teamBox = make(doc, "details", { class: "team" }, [make(doc, "summary", null, [omni && v.teams ? "Both teams" : "Own team (" + (v.team || []).length + " sets)"])]);
+      var lists = omni && v.teams ? Object.keys(v.teams).sort().map(function (k) { return { heading: k, sets: /** @type {any[]} */ (/** @type {any} */ (v.teams)[k]) }; }) : [{ heading: "", sets: v.team || [] }];
       lists.forEach(function (list) {
         if (list.heading) { teamBox.appendChild(make(doc, "h4", null, [list.heading])); }
         list.sets.forEach(function (/** @type {any} */ set) {
@@ -657,7 +659,7 @@ var ArView = (function () {
         v.caption.textContent = text;
         var flagged = !!f.flagged;
         v.caption.setAttribute("class", flagged ? "caption flagged" : "caption");
-        if (v.data.omniscient) {
+        if (omni) {
           var key = omniKey(v.data, idx);
           if (v.omniKey !== key) {
             while (v.decision.firstChild) { v.decision.removeChild(v.decision.firstChild); }
@@ -760,6 +762,7 @@ var ArView = (function () {
       now: function () { return win.performance.now(); },
       setTimeout: function (f, ms) { return win.setTimeout(f, ms); },
       clearTimeout: function (h) { win.clearTimeout(h); },
+      omniscient: typeof AR_MODE !== "undefined" && AR_MODE === "omniscient",
       reducedMotion: function () { return !!(win.matchMedia && win.matchMedia("(prefers-reduced-motion: reduce)").matches); },
     });
     // `#f=120` opens the replay at frame 120: a link to a moment of the game.

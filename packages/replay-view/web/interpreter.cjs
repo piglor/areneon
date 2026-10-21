@@ -162,8 +162,8 @@ var ArReplay = (function () {
    * One interpreter for one player's own channel, or (`omniscient`) for the engine's omniscient log
    * of a recorded evaluation game: both sides' exact values, as an owner's local evaluation view.
    * An omniscient state is p1 as `own` and p2 as `opponent`; every Pokemon is built from the
-   * `|poke|` lines, so it needs no request, and `state.omniscient` is true. A `|split|` pair is
-   * taken once, by its first (secret) line; its second (public) line is dropped, never applied twice.
+   * `|poke|` lines, so it needs no request, and `state.omniscient` is true. The engine's omniscient stream
+   * carries the secret line already and no `|split|` marker, so a marker is refused here too (fail closed).
    * @param {{ player: string, dex?: Dex, omniscient?: boolean }} options
    */
   function createInterpreter(options) {
@@ -171,7 +171,6 @@ var ArReplay = (function () {
     var omni = options.omniscient === true;
     if (player !== "p1" && player !== "p2") { throw new Error("unsupported player"); }
     if (omni && player !== "p1") { throw new Error("an omniscient view is p1's"); }
-    var splitLeft = 0;
     var dex = options.dex || {};
     var speciesTable = dex.species || {};
     var terrains = dex.terrains || [];
@@ -925,16 +924,6 @@ var ArReplay = (function () {
     function feed(raw) {
       var kind = "";
       try {
-        if (omni && raw.slice(0, 7) === "|split|") {
-          kind = "split";
-          need(/^\|split\|p[1-4]$/.test(raw), "a |split| marker that names no side");
-          splitLeft = 2;
-          return { kind: kind, caption: null, flagged: null };
-        }
-        if (omni && splitLeft > 0) {
-          splitLeft -= 1;
-          if (splitLeft === 0) { return { kind: "split-public", caption: null, flagged: null }; }
-        }
         if (raw.slice(0, 7) === "|split|") { kind = "split"; return flag("a |split| marker holds the opponent's secret half (refused)"); }
         var line = parseLine(raw);
         kind = line.kind;

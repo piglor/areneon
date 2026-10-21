@@ -182,6 +182,8 @@ def log_result(lines: list[str]) -> tuple[str | None, int]:
 
 
 def _check_outcome(record: dict[str, Any]) -> None:
+    # A forfeit is not checked: the committed forfeit sample's log shows turn 4 while its outcome
+    # says 3 turns, so "the log's last turn is at most outcome.turns" does not hold for the corpus.
     outcome = record["outcome"]
     winner, turns = log_result(record["omniscient_log"])
     if outcome["kind"] == "played" and (winner != outcome["winner"] or turns != outcome["turns"]):

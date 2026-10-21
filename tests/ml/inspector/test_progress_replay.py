@@ -70,6 +70,43 @@ def make_consistent(out: Path, request: ProgressRequest) -> None:
     layout.write_json(out / "progress.json", record)
 
 
+def make_candidate_wins_from_p2(out: Path, request: ProgressRequest) -> None:
+    """Game 1 of each match (the candidate sits in p2) is won by the candidate; the rest tie."""
+    record = layout.read_json(out / "progress.json")
+    cap = record["plan"]["max_turns"]
+    for row in record["games"]:
+        won = row["game"] == 1
+        row["outcome"] = {"kind": "played", "winner": "candidate" if won else "tie", "turns": 4}
+    for match in record["matches"]:
+        name = out / "games" / f"{match['match_id']}-1.json"
+        stored = layout.read_json(name)
+        stored["omniscient_log"][-1] = "|win|p2"
+        stored["omniscient_log_sha256"] = log_hash(stored["omniscient_log"])
+        stored["outcome"] = {"kind": "played", "winner": "p2", "turns": 4}
+        layout.write_json(name, stored)
+        hashes = [
+            record_hash(layout.read_json(out / "games" / f"{match['match_id']}-{k}.json"))
+            for k in (0, 1)
+        ]
+        ties = match["games"] - 1
+        match.update(
+            wins=1, ties=ties, losses=0, turn_cap_ties=ties if cap < 4 else 0,
+            turns_total=4 * match["games"], game_record_hashes=sorted(hashes),
+        )  # fmt: skip
+    layout.write_json(out / "progress.json", record)
+
+
+@pytest.fixture(scope="module")
+def built_p2(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    base = tmp_path_factory.mktemp("progress-p2")
+    run = base / "run"
+    config = make_run(run, generations=2)
+    root = base / "run.progress"
+    player = FakeProgressPlayer(config, committed_manifest(run, 0), make_candidate_wins_from_p2)
+    progress_generation(run, 1, root, player, games=GAMES, record_games=2)
+    return root
+
+
 @pytest.fixture(scope="module")
 def built(tmp_path_factory: pytest.TempPathFactory) -> tuple[Path, Path]:
     """(run dir, progress root) of a committed run with generation 1 evaluated."""
@@ -439,7 +476,7 @@ def problems(raw: str) -> list[str]:
     if raw.count("<!--") != 0:
         found.append("a comment opener in the page")
     ours = [s for s in a.scripts if s[0].get("type") != "application/json"]
-    if len(ours) != 1 or ours[0][1] != assets()[0]:
+    if len(ours) != 1 or ours[0][1] != assets("omniscient")[0]:
         found.append("the executable script is not exactly ours")
     data = [s for s in a.scripts if s[0].get("type") == "application/json"]
     if len(data) != 1 or data[0][0].get("id") != "replay-data":
@@ -469,7 +506,7 @@ def test_the_page_is_the_template_the_script_and_one_data_block(root: Path) -> N
     game = games_of(root)[0]
     raw = build(game)
     assert problems(raw) == []
-    script, style = assets()
+    script, style = assets("omniscient")
     assert script in raw
     assert style in raw
     assert page_module.WARNING in raw
@@ -478,7 +515,8 @@ def test_the_page_is_the_template_the_script_and_one_data_block(root: Path) -> N
     data = json.loads(block)
     assert set(data) == {"title", "views", "dex", "links", "notes"}
     (view,) = data["views"]
-    assert view["omniscient"] is True
+    assert script.startswith('var AR_MODE = "omniscient";\n')
+    assert "omniscient" not in view  # the mode is the script's, never the data's
     assert view["lines"] == game.record["omniscient_log"]
     assert set(view["teams"]) == {"p1", "p2"}
     assert [s["seat"] for s in view["seats"]] == ["p1", "p2"]
@@ -789,3 +827,50 @@ def test_a_page_builds_from_each_committed_corpus_sample(name: str) -> None:
     view = json.loads(block)["views"][0]
     assert len(view["decision_points"]) == len(game.record["decisions"])
     assert view["lines"] == game.record["omniscient_log"]
+
+
+def test_a_candidate_in_p2_wins_on_the_right_side(built_p2: Path, tmp_path: Path) -> None:
+    root = tmp_path / "run.progress"
+    shutil.copytree(built_p2, root)
+    found = games_of(root, match="actor-rule-sample")
+    by_game = {g.game: g for g in found}
+    assert by_game[1].candidate_seat == "p2"
+    assert by_game[0].candidate_seat == "p1"
+    shown = page_module.payload(by_game[1], {})["views"][0]
+    assert shown["result"] == "p2 won after 4 turns"
+    assert "p2: the candidate" in shown["seats"][1]["label"]
+    assert page_module.payload(by_game[0], {})["views"][0]["result"] == "tie after 4 turns"
+    # the winner the page shows is the log's own, and the candidate's seat is where it sat
+    assert pr.log_result(by_game[1].record["omniscient_log"]) == ("p2", 4)
+
+    # a record that says the other seat won is refused against the row (candidate won, in p2)
+    def flip(g: dict[str, Any]) -> None:
+        g["omniscient_log"][-1] = "|win|p1"
+        g["outcome"] = {"kind": "played", "winner": "p1", "turns": 4}
+
+    edit_game(root, "actor-rule-sample-1.json", flip)
+    with pytest.raises(InspectError, match="outcome differs"):
+        games_of(root)
+
+
+def test_the_output_may_not_be_inside_the_run_beside_the_progress_root(
+    root: Path, tmp_path: Path
+) -> None:
+    assert command.sibling_run(root) is None
+    run = tmp_path / "run"
+    run.mkdir()
+    assert command.sibling_run(root) == run
+    assert command.sibling_run(tmp_path / "plain") is None
+    assert command.sibling_run(tmp_path / ".progress") is None
+    for out in (run, run / "pages"):
+        with pytest.raises(InspectError, match="inside the run directory"):
+            command.replay_progress(root, 1, out, repo=ROOT)
+    assert not (run / "pages").exists()
+
+
+def test_the_forfeit_sample_does_not_satisfy_a_log_turn_bound() -> None:
+    """Why a forfeit's log is not checked against its outcome: the sample breaks the bound."""
+    record = read_game_record(sample("progress-game-record/valid/forfeit"))
+    assert record["outcome"]["kind"] == "forfeit"
+    assert pr.log_result(record["omniscient_log"])[1] > record["outcome"]["turns"]
+    pr._check_outcome(record)  # no refusal

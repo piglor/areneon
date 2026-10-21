@@ -34,6 +34,15 @@ def default_out(progress_dir: Path) -> Path:
     return progress_dir.with_name(stem + ".inspect")
 
 
+def sibling_run(progress_dir: Path) -> Path | None:
+    """The run directory a ``<run>.progress`` root sits beside, when that directory exists."""
+    name = progress_dir.name.removesuffix(".progress")
+    if not name or name == progress_dir.name:
+        return None
+    run = progress_dir.with_name(name)
+    return run if run.is_dir() else None
+
+
 def existing_pages(out: Path) -> list[tuple[int, str, int]]:
     """The (generation, match, game) triples that have a page under ``out/progress-replays``."""
     found: list[tuple[int, str, int]] = []
@@ -67,8 +76,9 @@ def replay_progress(  # noqa: PLR0913
     target = (out if out is not None else default_out(progress_dir)).resolve()
     if target == progress_dir or progress_dir in target.parents:
         raise InspectError("the output directory must not be inside the progress directory")
-    if run_dir is not None and (target == run_dir.resolve() or run_dir.resolve() in target.parents):
-        raise InspectError("the output directory must not be inside the run directory")
+    for run in {r.resolve() for r in (run_dir, sibling_run(progress_dir)) if r is not None}:
+        if target == run or run in target.parents:
+            raise InspectError("the output directory must not be inside the run directory")
     selected = read_progress_games(progress_dir, generation, match, games, run_dir)
     manifest = selected[0].record["version_manifest"]
     table = read_engine_data(
