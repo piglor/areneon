@@ -64,10 +64,10 @@ export interface CommandResult {
   stderr: string;
 }
 /** Run a program with text on stdin; the writer's only contact with the outside. */
-export type Runner = (file: string, args: readonly string[], input: string, env: Record<string, string>) => CommandResult;
+export type Runner = (file: string, args: readonly string[], input: string, env: Record<string, string>, cwd?: string) => CommandResult;
 
-const run: Runner = (file, args, input, env) => {
-  const result = spawnSync(file, [...args], { input, env, encoding: "utf8", maxBuffer: 1 << 24 });
+const run: Runner = (file, args, input, env, cwd) => {
+  const result = spawnSync(file, [...args], { input, env, encoding: "utf8", maxBuffer: 1 << 24, ...(cwd === undefined ? {} : { cwd }) });
   return { status: result.status, stdout: result.stdout ?? "", stderr: result.error === undefined ? (result.stderr ?? "") : result.error.message };
 };
 
@@ -93,7 +93,20 @@ export interface WriteOptions {
   rowGroupSize?: number;
   compression?: "zstd" | "snappy" | "uncompressed";
   compressionLevel?: number;
+  /**
+   * The private path (ADR-015 section 3). The tool runs with a scratch HOME,
+   * TMPDIR and working directory made inside `dir` (so its spill directory and
+   * any stray file land there, never in the caller's directory or in `/tmp`), a
+   * history file of `/dev/null`, and nothing else in its environment. Its
+   * output is never forwarded: a failure is the fixed message below, because
+   * DuckDB's stderr can quote the rows (a paste). The scratch directory is
+   * removed afterwards, also on failure. `dir` is checked by the caller.
+   */
+  isolated?: { dir: string };
 }
+
+/** What a private-path failure says; DuckDB's own text is dropped. */
+export const WITHHELD_MESSAGE = "DuckDB failed; its output is withheld because it can quote a paste";
 export const DEFAULT_ROW_GROUP_SIZE = 131072;
 
 const literal = (text: string): string => {
@@ -131,7 +144,14 @@ export class DuckdbWriter {
 
   /** Convert a JSON Lines file of rows (keys = column names) into one Parquet file, keeping the row order. */
   writeShard(rowsFile: string, out: string, columns: readonly Column[], options: WriteOptions = {}): void {
-    const types = { VARCHAR: "VARCHAR", BIGINT: "BIGINT", LABELS: "STRUCT(label_id VARCHAR, value VARCHAR)[]" } as const;
+    const types = {
+      VARCHAR: "VARCHAR",
+      NULLABLE_VARCHAR: "VARCHAR",
+      BIGINT: "BIGINT",
+      BOOLEAN: "BOOLEAN",
+      VARCHAR_LIST: "VARCHAR[]",
+      LABELS: "STRUCT(label_id VARCHAR, value VARCHAR)[]",
+    } as const;
     const group = options.rowGroupSize ?? DEFAULT_ROW_GROUP_SIZE;
     if (!Number.isSafeInteger(group) || group < 1) return refuse("the row group size must be a positive integer");
     const compression = options.compression ?? "zstd";
@@ -145,10 +165,14 @@ export class DuckdbWriter {
       `(FORMAT parquet, COMPRESSION ${compression}${level === undefined ? "" : `, COMPRESSION_LEVEL ${level}`}, ROW_GROUP_SIZE ${group}, KV_METADATA {${SCHEMA_VERSION_KEY}: '${PARQUET_SCHEMA_VERSION}'});`,
     ].join("\n");
     // A scratch HOME keeps the tool away from any ~/.duckdbrc and extension directory.
-    const home = mkdtempSync(join(tmpdir(), "duckdb-home-"));
+    const isolated = options.isolated;
+    const home = mkdtempSync(join(isolated?.dir ?? tmpdir(), "duckdb-home-"));
     try {
-      const result = this.#runner(this.#binary, ["-bail", "-batch"], sql, { PATH: "", HOME: home });
-      if (result.status !== 0) refuse(`DuckDB failed (${result.status}): ${result.stderr.trim()}`);
+      const result =
+        isolated === undefined
+          ? this.#runner(this.#binary, ["-bail", "-batch"], sql, { PATH: "", HOME: home })
+          : this.#runner(this.#binary, ["-bail", "-batch"], sql, { PATH: "", HOME: home, TMPDIR: home, DUCKDB_HISTORY: "/dev/null" }, home);
+      if (result.status !== 0) refuse(isolated === undefined ? `DuckDB failed (${result.status}): ${result.stderr.trim()}` : WITHHELD_MESSAGE);
     } finally {
       rmSync(home, { recursive: true, force: true });
     }

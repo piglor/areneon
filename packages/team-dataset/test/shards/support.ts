@@ -24,6 +24,13 @@ import { datasetPlan } from "../../src/shards/snapshot.ts";
 import { CONFIG_DIR, DATASET_DIR } from "./paths.ts";
 
 
+/** The element at `k` (negative counts from the end), or a failure: tests index without `!`. */
+export function at<T>(list: readonly T[] | RegExpExecArray | null | undefined, k: number): T {
+  const value = list?.at(k) as T | undefined;
+  if (value === undefined) throw new Error(`no element at ${k}`);
+  return value;
+}
+
 export const labelSet: TeamLabelSet = readTeamLabelSet(JSON.parse(readFileSync(join(CONFIG_DIR, "labels.json"), "utf8")));
 export const manifest: TeamDatasetManifest = readTeamDatasetManifest(JSON.parse(readFileSync(join(DATASET_DIR, "manifest.json"), "utf8")), { labelSet });
 export const plan: RowPlan = datasetPlan(manifest, labelSet);
@@ -90,6 +97,11 @@ export function parquetOf(rows: readonly Record<string, unknown>[], columns: rea
       schema.push({ name: "element", repetition_type: "OPTIONAL", num_children: options.labelExtra === true ? 3 : 2 });
       schema.push({ name: "label_id", type: "BYTE_ARRAY", converted_type: "UTF8", repetition_type: "OPTIONAL" }, { name: "value", type: "BYTE_ARRAY", converted_type: "UTF8", repetition_type: "OPTIONAL" });
       if (options.labelExtra === true) schema.push({ name: "extra", type: "BYTE_ARRAY", converted_type: "UTF8", repetition_type: "OPTIONAL" });
+    } else if (column.type === "VARCHAR_LIST") {
+      schema.push({ name: column.name, converted_type: "LIST", repetition_type: "OPTIONAL", num_children: 1 }, { name: "list", repetition_type: "REPEATED", num_children: 1 });
+      schema.push({ name: "element", type: "BYTE_ARRAY", converted_type: "UTF8", repetition_type: "OPTIONAL" });
+    } else if (column.type === "BOOLEAN") {
+      schema.push({ name: column.name, type: "BOOLEAN", repetition_type: "OPTIONAL" });
     } else if (column.type === "BIGINT") {
       schema.push({ name: column.name, type: options.indexAsDouble === true && column.name === "origin_index" ? "DOUBLE" : "INT64", repetition_type: "OPTIONAL" });
     } else {
@@ -117,10 +129,10 @@ export function parquetOf(rows: readonly Record<string, unknown>[], columns: rea
  * writer sends it reads the rows file named in it and writes the Parquet file
  * named in it through hyparquet-writer. `calls` records every invocation.
  */
-export function standInRunner(version = "v1.5.6 (Variegata) 0123456789"): Runner & { calls: { args: readonly string[]; input: string; env: Record<string, string> }[] } {
-  const calls: { args: readonly string[]; input: string; env: Record<string, string> }[] = [];
-  const runner = ((_file, args, input, env) => {
-    calls.push({ args, input, env });
+export function standInRunner(version = "v1.5.6 (Variegata) 0123456789"): Runner & { calls: { args: readonly string[]; input: string; env: Record<string, string>; cwd: string | undefined }[] } {
+  const calls: { args: readonly string[]; input: string; env: Record<string, string>; cwd: string | undefined }[] = [];
+  const runner = ((_file, args, input, env, cwd) => {
+    calls.push({ args, input, env, cwd });
     if (args[0] === "--version") return { status: 0, stdout: `${version}\n`, stderr: "" };
     const rowsFile = /read_json\('((?:[^']|'')*)'/.exec(input)?.[1]?.replaceAll("''", "'");
     const out = /TO '((?:[^']|'')*)'/.exec(input)?.[1]?.replaceAll("''", "'");
@@ -129,8 +141,9 @@ export function standInRunner(version = "v1.5.6 (Variegata) 0123456789"): Runner
       .split("\n")
       .filter((l) => l !== "")
       .map((l) => JSON.parse(l) as Record<string, unknown>);
-    const names = [...input.matchAll(/'((?:[^']|'')*)': '(VARCHAR|BIGINT|STRUCT\(label_id VARCHAR, value VARCHAR\)\[\])'/g)];
-    const columns: Column[] = names.map((m) => ({ name: (m[1] as string).replaceAll("''", "'"), type: m[2] === "VARCHAR" ? "VARCHAR" : m[2] === "BIGINT" ? "BIGINT" : "LABELS" }));
+    const names = [...input.matchAll(/'((?:[^']|'')*)': '(VARCHAR|BIGINT|BOOLEAN|VARCHAR\[\]|STRUCT\(label_id VARCHAR, value VARCHAR\)\[\])'/g)];
+    const typeOf = { VARCHAR: "VARCHAR", BIGINT: "BIGINT", BOOLEAN: "BOOLEAN", "VARCHAR[]": "VARCHAR_LIST" } as const;
+    const columns: Column[] = names.map((m) => ({ name: (m[1] as string).replaceAll("''", "'"), type: typeOf[m[2] as keyof typeof typeOf] ?? "LABELS" }));
     const group = Number(/ROW_GROUP_SIZE (\d+)/.exec(input)?.[1] ?? 100);
     writeFileSync(out, parquetOf(rows, columns, { rowGroupSize: group, codec: /COMPRESSION uncompressed/.test(input) ? "UNCOMPRESSED" : "SNAPPY" }));
     return { status: 0, stdout: "", stderr: "" };

@@ -1,14 +1,14 @@
 import { createHash } from "node:crypto";
-import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { columnsFor, ShardError } from "../../src/shards/columns.ts";
 import { convertDataset, verifySnapshot } from "../../src/shards/convert.ts";
-import { type DuckdbPin, DuckdbWriter, locateDuckdb, PIN_FILE, platformKey, readPin } from "../../src/shards/duckdb.ts";
+import { type DuckdbPin, DuckdbWriter, locateDuckdb, PIN_FILE, platformKey, readPin, WITHHELD_MESSAGE } from "../../src/shards/duckdb.ts";
 import { readShard } from "../../src/shards/reader.ts";
 import { DATASET_DIR } from "./paths.ts";
-import { expectationOf, fixtureRecords, labelSet, plan, SHARD_KEY, shardOrder, standInRunner } from "./support.ts";
+import { at, expectationOf, fixtureRecords, labelSet, plan, SHARD_KEY, shardOrder, standInRunner } from "./support.ts";
 
 const scratch = mkdtempSync(join(tmpdir(), "duckdb-writer-"));
 afterAll(() => rmSync(scratch, { recursive: true, force: true }));
@@ -121,6 +121,23 @@ describe("DuckdbWriter with a stand-in tool", () => {
     expect(() => writer.writeShard("a\nb", "b", cols)).toThrow(/control character/);
     const failing = DuckdbWriter.open(fakeBinary, (_f, args) => (args[0] === "--version" ? { status: 0, stdout: "v1.5.6 (x)\n", stderr: "" } : { status: 1, stdout: "", stderr: "IO Error: no such file\n" }));
     expect(() => failing.writeShard("a", "b", cols)).toThrow(/DuckDB failed \(1\): IO Error: no such file/);
+  });
+  it("on the private path runs in a scratch directory of the caller's, with a minimal environment, and withholds the tool's stderr", () => {
+    const dir = mkdtempSync(join(scratch, "iso-"));
+    const cols = columnsFor(labelSet);
+    const runner = standInRunner();
+    const writer = DuckdbWriter.open(fakeBinary, runner);
+    const rows = join(dir, "r.jsonl");
+    writeFileSync(rows, shardOrder(fixtureRecords("dev").slice(0, 3)).map((s) => `${JSON.stringify(s.row)}\n`).join(""));
+    writer.writeShard(rows, join(dir, "o.parquet"), cols, { isolated: { dir } });
+    const call = at(runner.calls, -1);
+    expect(call.env).toEqual({ PATH: "", HOME: call.cwd, TMPDIR: call.cwd, DUCKDB_HISTORY: "/dev/null" });
+    expect(call.cwd?.startsWith(dir)).toBe(true);
+    expect(existsSync(call.cwd as string)).toBe(false);
+    const failing = DuckdbWriter.open(fakeBinary, (_f, args) => (args[0] === "--version" ? { status: 0, stdout: "v1.5.6 (x)\n", stderr: "" } : { status: 1, stdout: "", stderr: "Conversion Error: PASTE-TEXT" }));
+    expect(() => failing.writeShard("a", "b", cols, { isolated: { dir } })).toThrow(WITHHELD_MESSAGE);
+    expect(() => failing.writeShard("a", "b", cols, { isolated: { dir } })).not.toThrow(/PASTE-TEXT/);
+    expect(readdirSync(dir).sort()).toEqual(["o.parquet", "r.jsonl"]);
   });
 });
 
