@@ -1,7 +1,10 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { createRequire } from "node:module";
 import vm from "node:vm";
+
+const require = createRequire(import.meta.url);
 
 export const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 export const FORMAT = "gen9championsvgc2026regmc";
@@ -34,10 +37,13 @@ export interface Api {
   interpretChannel(player: string, lines: string[], dex?: unknown): Interpreted;
 }
 
-/** The interpreter, loaded as the page loads it: the same bytes, a classic script, no module. */
+/**
+ * The interpreter, `require`d from its own file so coverage sees it: it is a classic script that
+ * also exports itself when a `module` exists (the page has none). The page-shaped load, one script
+ * in a fresh context, is `loadPageScript`.
+ */
 export function loadInterpreter(): Api {
-  const source = readFileSync(join(WEB, "interpreter.js"), "utf8");
-  return vm.runInNewContext(`${source}\n;ArReplay`, {}) as Api;
+  return require(join(WEB, "interpreter.cjs")) as Api;
 }
 
 export function readJson(path: string): any {
@@ -88,13 +94,24 @@ export interface ViewApi {
   init(doc: any, root: any, data: any, options?: any): any;
   boot(doc: any, win: any): any;
   make(doc: any, tag: string, attrs: Record<string, string | number> | null, kids?: unknown[], svg?: boolean): any;
+  allowUrlAttribute(tag: string, name: string): void;
+  forbidUrlAttributes(): void;
   align(master: string[], other: string[]): number[];
+  createBoard(doc: any, env: any, perspective: string): any;
+  decisionPanel(doc: any, request: any, decision: any, labels: Record<string, string>): any;
   parseChoice(choice: string): { kind: string; index: number; target: string; extra: string; raw: string }[];
 }
 
-/** The interpreter and the view, loaded in one context the way the page loads them (one script). */
-export function loadView(globals: Record<string, unknown> = {}): { replay: Api; view: ViewApi } {
-  const source = ["interpreter.js", "view.js"].map((f) => readFileSync(join(WEB, f), "utf8")).join("\n");
+/** The interpreter and the view, `require`d (the view finds the interpreter as a global, as in the page). */
+export function loadView(): { replay: Api; view: ViewApi } {
+  const replay = loadInterpreter();
+  (globalThis as Record<string, unknown>).ArReplay = replay;
+  return { replay, view: require(join(WEB, "view.cjs")) as ViewApi };
+}
+
+/** The page's own load: the two files joined into one script and run in a fresh context. */
+export function loadPageScript(globals: Record<string, unknown> = {}): { replay: Api; view: ViewApi } {
+  const source = ["interpreter.cjs", "view.cjs"].map((f) => readFileSync(join(WEB, f), "utf8")).join("\n");
   const context = vm.createContext({ ...globals });
   vm.runInContext(source, context);
   return vm.runInContext("({ replay: ArReplay, view: ArView })", context) as { replay: Api; view: ViewApi };

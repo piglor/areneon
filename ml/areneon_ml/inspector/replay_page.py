@@ -32,10 +32,10 @@ _TOKEN = re.compile(r"[^A-Za-z0-9]+")
 def assets() -> tuple[str, str]:
     """(script, style) of a replay page. The script is the interpreter then the view."""
     parts = {name: (ASSETS / name).read_bytes().decode("utf-8") for name in (
-        "interpreter.js", "view.js", "replay.css")}  # fmt: skip
+        "interpreter.cjs", "view.cjs", "replay.css")}  # fmt: skip
     if any("\r" in text for text in parts.values()):
         raise InspectError("a replay asset has a carriage return: the page bytes must be fixed")
-    script = parts["interpreter.js"].rstrip("\n") + "\n" + parts["view.js"].rstrip("\n")
+    script = parts["interpreter.cjs"].rstrip("\n") + "\n" + parts["view.cjs"].rstrip("\n")
     style = page.STYLE + "\n" + parts["replay.css"].strip()
     return script, style
 

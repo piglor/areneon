@@ -77,9 +77,15 @@ var ArReplay = (function () {
     throw new Flag(reason);
   }
 
+  /** A guard: the line is flagged unless `ok`. One place for the branch every check would repeat. */
+  /** @param {any} ok @param {string} reason @returns {asserts ok} */
+  function need(ok, reason) {
+    if (!ok) { throw new Flag(reason); }
+  }
+
   /** @param {string} raw @returns {Line} */
   function parseLine(raw) {
-    if (raw.charAt(0) !== "|") { return flag("a protocol line starts with '|'"); }
+    need(!(raw.charAt(0) !== "|"), "a protocol line starts with '|'");
     var rest = raw.slice(1);
     var cut = rest.indexOf("|");
     var kind = cut < 0 ? rest : rest.slice(0, cut);
@@ -93,7 +99,7 @@ var ArReplay = (function () {
     var seenTag = false;
     parts.forEach(function (part) {
       var m = TAG.exec(part);
-      if (m) { tags[m[1] || ""] = m[2] || ""; seenTag = true; return; }
+      if (m) { tags[String(m[1])] = String(m[2]); seenTag = true; return; }
       if (seenTag) { flag("a positional field after a tag"); }
       args.push(part);
     });
@@ -140,6 +146,12 @@ var ArReplay = (function () {
     return parseInt(text, 10);
   }
 
+  /** The field at `i`, or an empty string: one place for the fallback every handler needs. */
+  /** @param {Line} line @param {number} i */
+  function arg(line, i) {
+    return line.args[i] || "";
+  }
+
   /** @param {Line} line @param {number} low @param {number | null} high */
   function arity(line, low, high) {
     if (line.args.length < low) { flag(line.kind + " needs at least " + low + " fields"); }
@@ -173,7 +185,7 @@ var ArReplay = (function () {
     /** @param {string} text @returns {string} the id */
     function named(text) {
       var p = PREFIXED.exec(text);
-      var name = p ? (p[2] || "") : text;
+      var name = p ? (String(p[2])) : text;
       var id = toId(name);
       if (id !== "" && name !== id) { state.labels[id] = name; }
       return id;
@@ -189,8 +201,8 @@ var ArReplay = (function () {
     /** @param {string} text @param {Line} line @returns {{ side: Side, letter: string | null, name: string }} */
     function ref(text, line) {
       var m = REF.exec(text);
-      if (!m) { return flag("'" + text + "' is not a Pokemon id"); }
-      return { side: sideOf(m[1] || "", line), letter: m[2] || null, name: m[3] || "" };
+      need(!(!m), "'" + text + "' is not a Pokemon id");
+      return { side: sideOf(String(m[1]), line), letter: m[2] || null, name: String(m[3]) };
     }
 
     /** @param {string} text @param {Line} line @returns {Mon} */
@@ -240,20 +252,20 @@ var ArReplay = (function () {
       var number = cut < 0 ? text : text.slice(0, cut);
       var status = cut < 0 ? "" : text.slice(cut + 1);
       var match = HP.exec(number);
-      if (!match) { return flag("'" + text + "' is not an HP"); }
+      need(!(!match), "'" + text + "' is not an HP");
       var num = parseInt(match[1] || "0", 10);
       var den = match[2] ? parseInt(match[2], 10) : null;
       if (den === null) {
-        if (status !== "fnt" || num !== 0) { return flag("'" + text + "' is not an HP"); }
+        need(!(status !== "fnt" || num !== 0), "'" + text + "' is not an HP");
         return { num: 0, den: null, status: null };
       }
-      if (!m.own && den !== 100) { return flag("an opponent HP that is not a percentage (refused: a secret half)"); }
-      if (num > den || den === 0) { return flag("'" + text + "' is not an HP"); }
+      need(!(!m.own && den !== 100), "an opponent HP that is not a percentage (refused: a secret half)");
+      need(!(num > den || den === 0), "'" + text + "' is not an HP");
       if (match[3] && (m.own || !({ 50: "gy", 20: "yr" }[num] || "").includes(match[3]))) {
         return flag("'" + text + "' has a colour class an HP cannot carry");
       }
       if (status === "fnt") {
-        if (num !== 0) { return flag("'" + text + "' is not an HP"); }
+        need(!(num !== 0), "'" + text + "' is not an HP");
         status = "";
       } else if (status) { status = toId(status); }
       return { num: num, den: den, status: status || null };
@@ -280,7 +292,7 @@ var ArReplay = (function () {
     /** @param {string} text @returns {{ kind: string, id: string }} */
     function effect(text) {
       var p = PREFIXED.exec(text);
-      if (p) { return { kind: p[1] || "", id: named(text) }; }
+      if (p) { return { kind: String(p[1]), id: named(text) }; }
       return { kind: "bare", id: named(text) };
     }
 
@@ -290,8 +302,8 @@ var ArReplay = (function () {
       if (source === undefined || line.tags.of !== undefined) { return; }
       var p = PREFIXED.exec(source);
       if (!p) { return; }
-      if (p[1] === "item") { m.item = toId(p[2] || ""); m.item_known = true; }
-      else if (p[1] === "ability") { m.ability = toId(p[2] || ""); }
+      if (p[1] === "item") { m.item = toId(String(p[2])); m.item_known = true; }
+      else if (p[1] === "ability") { m.ability = toId(String(p[2])); }
     }
 
     /** @param {Side} side @param {string} name @param {{ species: string, base: string }} d @returns {number | null} */
@@ -315,8 +327,8 @@ var ArReplay = (function () {
         if (held.name === null) { held.name = name; }
         return held;
       }
-      if (side.roster.length > 0 && /** @type {Mon} */ (side.roster[0]).own) { return flag("'" + name + "' is not in the own team"); }
-      if (side.teamsize !== null && side.roster.length >= side.teamsize) { return flag("'" + name + "' is more Pokemon than the team size"); }
+      need(!(side.roster.length > 0 && /** @type {Mon} */ (side.roster[0]).own), "'" + name + "' is not in the own team");
+      need(!(side.teamsize !== null && side.roster.length >= side.teamsize), "'" + name + "' is more Pokemon than the team size");
       var created = newMon(false);
       created.name = name;
       created.base_species = d.base;
@@ -360,12 +372,12 @@ var ArReplay = (function () {
     /** @param {Line} line */
     function onRequest(line) {
       var body;
-      try { body = JSON.parse(line.args[0] || ""); } catch { return flag("a request that is not JSON"); }
+      try { body = JSON.parse(arg(line, 0)); } catch { return flag("a request that is not JSON"); }
       var sideData = body && body.side;
-      if (!sideData || typeof sideData !== "object") { return flag("a request with no side"); }
-      if (sideData.id !== state.own.player) { return flag("a request for the other player (refused: a secret half)"); }
+      need(!(!sideData || typeof sideData !== "object"), "a request with no side");
+      need(!(sideData.id !== state.own.player), "a request for the other player (refused: a secret half)");
       var kind = body.wait ? "wait" : body.teamPreview ? "preview" : "forceSwitch" in body ? "forceSwitch" : "active" in body ? "move" : null;
-      if (kind === null) { return flag("a request with no phase"); }
+      need(!(kind === null), "a request with no phase");
       var entries = sideData.pokemon || [];
       requests.push(body);
       if (kind !== "preview") { settleOwn(entries); }
@@ -426,9 +438,9 @@ var ArReplay = (function () {
       var key = side.player + letter;
       var d = disguise[key];
       delete disguise[key];
-      if (!d || d.before === null) { return flag("the disguise was not on the roster"); }
+      need(!(!d || d.before === null), "the disguise was not on the roster");
       var sh = /** @type {Mon} */ (side.roster[d.index]);
-      if (real.active_slot !== null && real.active_slot !== letter) { return flag("the replaced Pokemon is already in play"); }
+      need(!(real.active_slot !== null && real.active_slot !== letter), "the replaced Pokemon is already in play");
       carry(sh, d.before, real, letter);
       var restored = side.roster[d.index] = d.before;
       if (restored.active_slot !== null) { switchOut(restored); }
@@ -438,12 +450,12 @@ var ArReplay = (function () {
     /** @param {Line} line */
     function onReplace(line) {
       arity(line, 2, 3);
-      var r = ref(line.args[0] || "", line);
+      var r = ref(arg(line, 0), line);
       var side = r.side;
       var letter = r.letter;
       var slotIndex = letter === null ? undefined : side.slots[letter];
-      if (letter === null || slotIndex === undefined || slotIndex === null) { return flag("replace names a position nobody holds"); }
-      var d = details(line.args[1] || "");
+      need(!(letter === null || slotIndex === undefined || slotIndex === null), "replace names a position nobody holds");
+      var d = details(arg(line, 1));
       var key = side.player + letter;
       var real;
       if (disguise[key]) {
@@ -454,14 +466,14 @@ var ArReplay = (function () {
             (m.species === null || m.species === d.species);
         });
         var found = named.length > 0 ? named : unnamed;
-        if (found.length !== 1) { return flag("a replace that names no single Pokemon of the roster"); }
+        need(!(found.length !== 1), "a replace that names no single Pokemon of the roster");
         real = /** @type {Mon} */ (found[0]);
         settle(side, letter, real);
       } else {
         real = /** @type {Mon} */ (side.roster[slotIndex]);
-        if (!(real.own && real.name === r.name)) { return flag("a replace with no disguise on record"); }
+        need(!(!(real.own && real.name === r.name)), "a replace with no disguise on record");
       }
-      if (real.base_species !== d.base) { return flag("the Pokemon shown in a replace is not the roster's"); }
+      need(!(real.base_species !== d.base), "the Pokemon shown in a replace is not the roster's");
       real.name = r.name; real.brought = true;
       real.species = d.species; real.level = d.level;
       real.gender = d.gender || null; real.shiny = d.shiny;
@@ -475,11 +487,11 @@ var ArReplay = (function () {
     /** @param {Line} line */
     function onSwitch(line) {
       arity(line, 3, 3);
-      var r = ref(line.args[0] || "", line);
+      var r = ref(arg(line, 0), line);
       var side = r.side;
       var letter = r.letter;
-      if (letter === null || !(letter in side.slots)) { return flag("a switch needs an active position"); }
-      var d = details(line.args[1] || "");
+      need(!(letter === null || !(letter in side.slots)), "a switch needs an active position");
+      var d = details(arg(line, 1));
       var located = locate(side, r.name, d);
       var before = located === null ? null : clone(/** @type {Mon} */ (side.roster[located]));
       var m = bind(side, r.name, d);
@@ -516,19 +528,19 @@ var ArReplay = (function () {
       m.species = d.species; m.level = d.level;
       m.gender = d.gender || null; m.shiny = d.shiny;
       if (!m.own && m.base_species === "") { m.base_species = d.base; }
-      setHp(m, line.args[2] || "");
+      setHp(m, arg(line, 2));
       if (twin) { flag("a Pokemon shown in two positions (an Illusion twin) is not reconciled"); }
     }
 
     /** @param {Line} line */
     function onSwap(line) {
       arity(line, 2, 2);
-      var r = ref(line.args[0] || "", line);
+      var r = ref(arg(line, 0), line);
       var side = r.side;
-      var target = String.fromCharCode(97 + integer(line.args[1] || ""));
+      var target = String.fromCharCode(97 + integer(arg(line, 1)));
       var letter = r.letter;
-      if (letter === null || !(letter in side.slots) || !(target in side.slots)) { return flag("swap names an unknown position"); }
-      if (side.slots[letter] === null || shown[side.player + letter] !== r.name) { return flag("swap of a Pokemon that is not in that position"); }
+      need(!(letter === null || !(letter in side.slots) || !(target in side.slots)), "swap names an unknown position");
+      need(!(side.slots[letter] === null || shown[side.player + letter] !== r.name), "swap of a Pokemon that is not in that position");
       var tmp = side.slots[letter];
       side.slots[letter] = /** @type {number | null} */ (side.slots[target]);
       side.slots[target] = /** @type {number | null} */ (tmp);
@@ -551,8 +563,8 @@ var ArReplay = (function () {
     /** @param {Line} line */
     function onFaint(line) {
       arity(line, 1, 1);
-      var r = ref(line.args[0] || "", line);
-      var m = mon(line.args[0] || "", line);
+      var r = ref(arg(line, 0), line);
+      var m = mon(arg(line, 0), line);
       m.fainted = true; m.hp_num = 0;
       if (r.letter !== null && r.side.slots[r.letter] === indexOf(r.side, m)) {
         r.side.slots[r.letter] = null;
@@ -565,21 +577,21 @@ var ArReplay = (function () {
     /** @param {Line} line @param {boolean} withStatus */
     function onHp(line, withStatus) {
       arity(line, 2, 2);
-      var m = mon(line.args[0] || "", line);
-      setHp(m, line.args[1] || "", withStatus);
+      var m = mon(arg(line, 0), line);
+      setHp(m, arg(line, 1), withStatus);
       if (withStatus) { revealFrom(m, line); }
     }
 
     /** @param {Line} line */
     function onBoost(line) {
       arity(line, 3, 3);
-      var m = mon(line.args[0] || "", line);
-      var stat = line.args[1] || "";
-      if (STAT_KEYS.indexOf(stat) < 0) { return flag("unknown stat '" + stat + "'"); }
-      var amount = integer(line.args[2] || "");
+      var m = mon(arg(line, 0), line);
+      var stat = arg(line, 1);
+      need(!(STAT_KEYS.indexOf(stat) < 0), "unknown stat '" + stat + "'");
+      var amount = integer(arg(line, 2));
       var current = /** @type {number} */ (m.boosts[stat]);
       var value = line.kind === "-boost" ? current + amount : line.kind === "-unboost" ? current - amount : amount;
-      if (Math.abs(value) > MAX_BOOST) { return flag("boost " + value + " is outside -6..6"); }
+      need(!(Math.abs(value) > MAX_BOOST), "boost " + value + " is outside -6..6");
       m.boosts[stat] = value;
       revealFrom(m, line);
     }
@@ -587,13 +599,13 @@ var ArReplay = (function () {
     /** @param {Line} line @returns {string} */
     function sideConditionName(line) {
       arity(line, 2, 2);
-      if (!SIDE.test(line.args[0] || "")) { return flag("'" + line.args[0] + "' is not a side"); }
-      return effect(line.args[1] || "").id;
+      need(!(!SIDE.test(arg(line, 0))), "'" + line.args[0] + "' is not a side");
+      return effect(arg(line, 1)).id;
     }
 
     /** @param {Line} line @returns {Side} */
     function sideOfArg(line) {
-      var m = SIDE.exec(line.args[0] || "");
+      var m = SIDE.exec(arg(line, 0));
       return sideOf((m && m[1]) || "", line);
     }
 
@@ -601,7 +613,7 @@ var ArReplay = (function () {
     var handlers = {
       player: function (line) {
         arity(line, 1, 4);
-        var side = sideOf(line.args[0] || "", line);
+        var side = sideOf(arg(line, 0), line);
         if (line.args.length > 1) { side.username = line.args[1] || null; }
       },
       error: function (line) {
@@ -611,7 +623,7 @@ var ArReplay = (function () {
       gametype: function (line) {
         arity(line, 1, 1);
         var letters = SLOTS[/** @type {keyof typeof SLOTS} */ (line.args[0])];
-        if (!letters) { return flag("unsupported gametype '" + line.args[0] + "'"); }
+        need(!(!letters), "unsupported gametype '" + line.args[0] + "'");
         state.gametype = line.args[0] || null;
         [state.own, state.opponent].forEach(function (side) {
           side.slots = {};
@@ -628,9 +640,9 @@ var ArReplay = (function () {
       poke: function (line) {
         arity(line, 2, 3);
         var flagText = line.args[2];
-        if (flagText !== undefined && flagText !== "" && flagText !== "item") { return flag("unknown item flag '" + flagText + "'"); }
-        var side = sideOf(line.args[0] || "", line);
-        var d = details(line.args[1] || "");
+        need(!(flagText !== undefined && flagText !== "" && flagText !== "item"), "unknown item flag '" + flagText + "'");
+        var side = sideOf(arg(line, 0), line);
+        var d = details(arg(line, 1));
         if (side === state.own) { return; }
         var m = newMon(false);
         m.base_species = d.base;
@@ -638,16 +650,16 @@ var ArReplay = (function () {
         m.level = d.level; m.gender = d.gender || null; m.shiny = d.shiny;
         side.roster.push(m);
       },
-      teamsize: function (line) { arity(line, 2, 2); sideOf(line.args[0] || "", line).teamsize = integer(line.args[1] || ""); },
+      teamsize: function (line) { arity(line, 2, 2); sideOf(arg(line, 0), line).teamsize = integer(arg(line, 1)); },
       start: function () { state.started = true; },
-      turn: function (line) { arity(line, 1, 1); state.turn = integer(line.args[0] || ""); },
+      turn: function (line) { arity(line, 1, 1); state.turn = integer(arg(line, 0)); },
       win: function (line) {
         arity(line, 1, 1);
         var label = [["own", state.own], ["opponent", state.opponent]].filter(function (pair) {
           var side = /** @type {Side} */ (pair[1]);
           return side.username !== null && side.username === line.args[0];
         })[0];
-        if (!label) { return flag("'" + line.args[0] + "' is neither player"); }
+        need(!(!label), "'" + line.args[0] + "' is neither player");
         state.winner = /** @type {string} */ (label[0]);
       },
       tie: function () { state.winner = "tie"; },
@@ -656,25 +668,25 @@ var ArReplay = (function () {
       drag: onSwitch,
       detailschange: function (line) {
         arity(line, 2, 3);
-        var m = mon(line.args[0] || "", line);
-        var d = details(line.args[1] || "");
+        var m = mon(arg(line, 0), line);
+        var d = details(arg(line, 1));
         m.species = d.species; m.level = d.level; m.gender = d.gender || null; m.shiny = d.shiny;
         if (line.args[2] !== undefined) { setHp(m, line.args[2]); }
       },
-      "-formechange": function (line) { arity(line, 2, 3); mon(line.args[0] || "", line).temp_species = toId(line.args[1] || ""); },
+      "-formechange": function (line) { arity(line, 2, 3); mon(arg(line, 0), line).temp_species = toId(arg(line, 1)); },
       swap: onSwap,
       replace: onReplace,
       "-activate": function (line) {
         arity(line, 1, 4);
-        if (line.args.length > 1 && toId(line.args[1] || "") === "moveskillswap") {
-          mon(line.args[0] || "", line).ability = null;
+        if (line.args.length > 1 && toId(arg(line, 1)) === "moveskillswap") {
+          mon(arg(line, 0), line).ability = null;
           if (line.tags.of !== undefined) { mon(line.tags.of, line).ability = null; }
         }
       },
       move: function (line) {
         arity(line, 2, 3);
-        var m = mon(line.args[0] || "", line);
-        var move = named(line.args[1] || "");
+        var m = mon(arg(line, 0), line);
+        var move = named(arg(line, 1));
         var target = line.args[2];
         if (target && target !== "null") { ref(target, line); }
         if (line.tags.from === undefined && m.moves_revealed.indexOf(move) < 0) { m.moves_revealed.push(move); }
@@ -685,22 +697,22 @@ var ArReplay = (function () {
       "-sethp": function (line) { onHp(line, false); },
       "-status": function (line) {
         arity(line, 2, 2);
-        var m = mon(line.args[0] || "", line);
-        m.status = toId(line.args[1] || "");
+        var m = mon(arg(line, 0), line);
+        m.status = toId(arg(line, 1));
         revealFrom(m, line);
       },
-      "-curestatus": function (line) { arity(line, 2, 2); mon(line.args[0] || "", line).status = null; },
+      "-curestatus": function (line) { arity(line, 2, 2); mon(arg(line, 0), line).status = null; },
       "-cureteam": function (line) {
         arity(line, 1, 1);
-        ref(line.args[0] || "", line).side.roster.forEach(function (m) { m.status = null; });
+        ref(arg(line, 0), line).side.roster.forEach(function (m) { m.status = null; });
       },
       "-boost": onBoost,
       "-unboost": onBoost,
       "-setboost": onBoost,
       "-swapboost": function (line) {
         arity(line, 2, 3);
-        var a = mon(line.args[0] || "", line);
-        var b = mon(line.args[1] || "", line);
+        var a = mon(arg(line, 0), line);
+        var b = mon(arg(line, 1), line);
         var stats = line.args[2] === undefined ? STAT_KEYS : line.args[2].split(",").map(function (s) { return s.trim(); });
         stats.forEach(function (stat) {
           if (STAT_KEYS.indexOf(stat) < 0) { flag("unknown stat '" + stat + "'"); }
@@ -711,38 +723,38 @@ var ArReplay = (function () {
       },
       "-invertboost": function (line) {
         arity(line, 1, 1);
-        var m = mon(line.args[0] || "", line);
+        var m = mon(arg(line, 0), line);
         STAT_KEYS.forEach(function (k) { m.boosts[k] = -(/** @type {number} */ (m.boosts[k])) || 0; });
       },
-      "-clearboost": function (line) { arity(line, 1, 1); mon(line.args[0] || "", line).boosts = zeroBoosts(); },
+      "-clearboost": function (line) { arity(line, 1, 1); mon(arg(line, 0), line).boosts = zeroBoosts(); },
       "-clearallboost": function () {
         [state.own, state.opponent].forEach(function (side) { side.roster.forEach(function (m) { m.boosts = zeroBoosts(); }); });
       },
       "-clearpositiveboost": function (line) {
         arity(line, 3, 3);
-        var m = mon(line.args[0] || "", line);
-        mon(line.args[1] || "", line);
+        var m = mon(arg(line, 0), line);
+        mon(arg(line, 1), line);
         STAT_KEYS.forEach(function (k) { m.boosts[k] = Math.min(/** @type {number} */ (m.boosts[k]), 0); });
       },
       "-clearnegativeboost": function (line) {
         arity(line, 1, 1);
-        var m = mon(line.args[0] || "", line);
+        var m = mon(arg(line, 0), line);
         STAT_KEYS.forEach(function (k) { m.boosts[k] = Math.max(/** @type {number} */ (m.boosts[k]), 0); });
       },
       "-copyboost": function (line) {
         arity(line, 2, 2);
-        var copier = mon(line.args[0] || "", line);
-        copier.boosts = clone(mon(line.args[1] || "", line).boosts);
+        var copier = mon(arg(line, 0), line);
+        copier.boosts = clone(mon(arg(line, 1), line).boosts);
       },
-      "-weather": function (line) { arity(line, 1, 1); state.weather = line.args[0] === "none" ? null : named(line.args[0] || ""); },
+      "-weather": function (line) { arity(line, 1, 1); state.weather = line.args[0] === "none" ? null : named(arg(line, 0)); },
       "-fieldstart": function (line) {
         arity(line, 1, 1);
-        var id = effect(line.args[0] || "").id;
+        var id = effect(arg(line, 0)).id;
         if (terrains.indexOf(id) >= 0) { state.terrain = id; } else { addSorted(state.field_conditions, id); }
       },
       "-fieldend": function (line) {
         arity(line, 1, 1);
-        var id = effect(line.args[0] || "").id;
+        var id = effect(arg(line, 0)).id;
         if (terrains.indexOf(id) >= 0) { if (state.terrain === id) { state.terrain = null; } }
         else { state.field_conditions = state.field_conditions.filter(function (c) { return c !== id; }); }
       },
@@ -757,55 +769,55 @@ var ArReplay = (function () {
       },
       "-start": function (line) {
         arity(line, 2, 3);
-        var m = mon(line.args[0] || "", line);
-        var text = line.args[1] || "";
+        var m = mon(arg(line, 0), line);
+        var text = arg(line, 1);
         var v = VOLATILE.exec(text);
-        if (!v || text.length > 64) { return flag("'" + text + "' is not a volatile id"); }
-        var id = named(v[2] || "");
+        need(!(!v || text.length > 64), "'" + text + "' is not a volatile id");
+        var id = named(String(v[2]));
         if (v[1] === "ability") { m.ability = id; }
         addSorted(m.volatiles, id);
       },
       "-end": function (line) {
         arity(line, 2, 3);
-        var m = mon(line.args[0] || "", line);
-        var text = line.args[1] || "";
+        var m = mon(arg(line, 0), line);
+        var text = arg(line, 1);
         var v = VOLATILE.exec(text);
-        if (!v || text.length > 64) { return flag("'" + text + "' is not a volatile id"); }
-        var id = toId(v[2] || "");
+        need(!(!v || text.length > 64), "'" + text + "' is not a volatile id");
+        var id = toId(String(v[2]));
         m.volatiles = m.volatiles.filter(function (x) { return x !== id; });
       },
       "-item": function (line) {
         arity(line, 2, 2);
-        var m = mon(line.args[0] || "", line);
-        m.item = named(line.args[1] || ""); m.item_known = true; m.item_lost = false;
+        var m = mon(arg(line, 0), line);
+        m.item = named(arg(line, 1)); m.item_known = true; m.item_lost = false;
       },
       "-enditem": function (line) {
         arity(line, 2, 2);
-        var m = mon(line.args[0] || "", line);
+        var m = mon(arg(line, 0), line);
         m.item = null; m.item_known = true; m.item_lost = true;
       },
       "-ability": function (line) {
         arity(line, 2, 3);
-        var m = mon(line.args[0] || "", line);
-        m.ability = named(line.args[1] || ""); m.ability_suppressed = false;
+        var m = mon(arg(line, 0), line);
+        m.ability = named(arg(line, 1)); m.ability_suppressed = false;
         var from = line.tags.from;
         var holder = line.tags.of;
         if (from !== undefined && holder !== undefined && ABILITY_COPIES[/** @type {keyof typeof ABILITY_COPIES} */ (toId(from))]) {
           mon(holder, line).ability = m.ability;
         }
       },
-      "-endability": function (line) { arity(line, 1, 1); mon(line.args[0] || "", line).ability_suppressed = true; },
+      "-endability": function (line) { arity(line, 1, 1); mon(arg(line, 0), line).ability_suppressed = true; },
       "-transform": function (line) {
         arity(line, 2, 2);
-        var m = mon(line.args[0] || "", line);
-        var t = mon(line.args[1] || "", line);
+        var m = mon(arg(line, 0), line);
+        var t = mon(arg(line, 1), line);
         m.temp_species = t.temp_species || t.species;
         addSorted(m.volatiles, "transform");
       },
       "-mega": function (line) {
         arity(line, 3, 3);
-        var m = mon(line.args[0] || "", line);
-        m.mega = true; m.mega_stone = named(line.args[2] || ""); m.can_mega_evo = false;
+        var m = mon(arg(line, 0), line);
+        m.mega = true; m.mega_stone = named(arg(line, 2)); m.can_mega_evo = false;
       },
     };
 
@@ -814,13 +826,13 @@ var ArReplay = (function () {
     /** @param {string} text @returns {string} the Pokemon's name without its position */
     function who(text) {
       var m = REF.exec(text);
-      return m ? (m[3] || "") : text;
+      return m ? (String(m[3])) : text;
     }
 
     /** @param {string} text @returns {string} */
     function words(text) {
       var p = PREFIXED.exec(text);
-      return p ? (p[2] || "") : text;
+      return p ? (String(p[2])) : text;
     }
 
     /** @param {Line} line @returns {string | null} */
@@ -908,7 +920,7 @@ var ArReplay = (function () {
         var text = caption(line);
         if (NO_STATE[line.kind] === 1 && !handlers[line.kind]) { return { kind: kind, caption: text, flagged: null }; }
         var handler = handlers[line.kind];
-        if (!handler) { return flag("no rule for line type '" + line.kind + "'"); }
+        need(!(!handler), "no rule for line type '" + line.kind + "'");
         handler(line);
         return { kind: kind, caption: text, flagged: null };
       } catch (error) {
@@ -958,3 +970,5 @@ var ArReplay = (function () {
 
   return { toId: toId, createInterpreter: createInterpreter, interpretChannel: interpretChannel, parseLine: parseLine };
 })();
+
+if (typeof module !== "undefined") { module.exports = ArReplay; } // the tests load this file; the page does not

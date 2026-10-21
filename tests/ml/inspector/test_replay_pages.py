@@ -102,9 +102,9 @@ def test_the_page_is_the_template_the_script_and_one_data_block() -> None:
     # the script is the interpreter then the view, byte for byte
     web = ROOT / "packages" / "replay-view" / "web"
     assert script == (
-        (web / "interpreter.js").read_text().rstrip("\n")
+        (web / "interpreter.cjs").read_text().rstrip("\n")
         + "\n"
-        + (web / "view.js").read_text().rstrip("\n")
+        + (web / "view.cjs").read_text().rstrip("\n")
     )
     assert style.startswith(page.STYLE)
     assert (web / "replay.css").read_text().strip() in style
@@ -272,8 +272,8 @@ def test_the_engine_data_must_be_the_runs_export(tmp_path: Path) -> None:
 def test_an_asset_with_a_carriage_return_is_refused(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    for name in ("interpreter.js", "view.js", "replay.css"):
-        (tmp_path / name).write_text("x\r\n" if name == "view.js" else "x\n", newline="")
+    for name in ("interpreter.cjs", "view.cjs", "replay.css"):
+        (tmp_path / name).write_text("x\r\n" if name == "view.cjs" else "x\n", newline="")
     monkeypatch.setattr(replay_page, "ASSETS", tmp_path)
     replay_page.assets.cache_clear()
     try:
@@ -292,26 +292,28 @@ def test_a_shell_with_a_closing_tag_is_refused() -> None:
     assert "<h1>x</h1>" in page.document("t", "", "<h1>x</h1>")
 
 
-BROWSER = (
-    os.environ.get("ARENEON_BROWSER") or shutil.which("google-chrome") or shutil.which("chromium")
+RENDERER = (
+    os.environ.get("ARENEON_RENDER_BIN")
+    or shutil.which("google-chrome")
+    or shutil.which("chromium")
 )
 
 
 @pytest.mark.skipif(
-    os.environ.get("ARENEON_BROWSER_TEST") != "1" or BROWSER is None,
-    reason="the real-browser render is a manual check: ARENEON_BROWSER_TEST=1 and a Chrome or Chromium",
+    os.environ.get("ARENEON_RENDER_TEST") != "1" or RENDERER is None,
+    reason="the headless render is a manual check: ARENEON_RENDER_TEST=1 and a Chrome or Chromium",
 )
-def test_a_real_browser_renders_the_page_with_the_network_unreachable(tmp_path: Path) -> None:
+def test_a_headless_render_draws_the_page_with_the_network_unreachable(tmp_path: Path) -> None:
     """Manual check (the ADR-017 section 4 headless render): the page runs under its CSP and draws
     the board with every host name unresolvable, so any request would fail the page."""
-    assert BROWSER is not None
+    assert RENDERER is not None
     target = tmp_path / "game.html"
     target.write_text(build(), encoding="utf-8")
     shown = {}
     for frame in (0, 60):
         run = subprocess.run(
             [
-                BROWSER, "--headless=new", "--no-sandbox", "--disable-gpu", "--dump-dom",
+                RENDERER, "--headless=new", "--no-sandbox", "--disable-gpu", "--dump-dom",
                 "--virtual-time-budget=4000", "--host-resolver-rules=MAP * ~NOTFOUND",
                 f"{target.as_uri()}#f={frame}",
             ],

@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { FakeDocument, FakeNode } from "./dom.ts";
-import { WEB, fullDex, loadView } from "./support.ts";
+import { WEB, fixtures, fullDex, loadPageScript, loadView } from "./support.ts";
 
 const { view } = loadView();
 const LS = String.fromCharCode(0x2028);
@@ -141,7 +141,7 @@ describe("hostile strings stay text (ADR-017 4c)", () => {
 });
 
 describe("the viewer's own code", () => {
-  const sources = ["interpreter.js", "view.js"].map((f) => [f, readFileSync(join(WEB, f), "utf8")] as const);
+  const sources = ["interpreter.cjs", "view.cjs"].map((f) => [f, readFileSync(join(WEB, f), "utf8")] as const);
   const css = readFileSync(join(WEB, "replay.css"), "utf8");
 
   it("writes through no HTML sink and calls out to nothing", () => {
@@ -171,5 +171,50 @@ describe("the viewer's own code", () => {
   it("the style block has no url, import or remote font", () => {
     expect(css).not.toMatch(/url\(|@import|@font-face|https?:/i);
     expect(css).not.toContain("\r");
+  });
+});
+
+describe("the page's own load", () => {
+  it("the two files joined into one script run in a fresh context with no module", () => {
+    const page = loadPageScript();
+    const f = fixtures()[0]!;
+    const run = page.replay.interpretChannel(f.player, f.lines, fullDex());
+    expect(run.frames.length).toBe(f.lines.length + 1);
+    expect(typeof page.view.init).toBe("function");
+    // with no document or window the script boots nothing
+    expect(page.view.boot(new FakeDocument(), {})).toBeNull();
+  });
+});
+
+describe("attributes that take a URL, and class names made of data", () => {
+  it("refuses href, src and xlink:href until a slice opts in for that tag and name", () => {
+    const doc = new FakeDocument();
+    for (const name of ["href", "src", "xlink:href", "srcset", "HREF"]) {
+      expect(() => view.make(doc, "a", { [name]: "x" })).toThrow(/opt-in/);
+    }
+    view.allowUrlAttribute("image", "href");
+    try {
+      expect(view.make(doc, "image", { href: "data:image/png;base64,AA" }, [], true).getAttribute("href")).toBe("data:image/png;base64,AA");
+      expect(() => view.make(doc, "a", { href: "x" })).toThrow(/opt-in/); // the opt-in is for that tag only
+      expect(() => view.make(doc, "image", { src: "x" })).toThrow(/opt-in/); // and that name only
+    } finally {
+      view.forbidUrlAttributes();
+    }
+    expect(() => view.make(doc, "image", { href: "x" })).toThrow(/opt-in/);
+  });
+
+  it("builds a class from a status or a type only out of lower-case letters and digits", () => {
+    const doc = new FakeDocument();
+    const board = view.createBoard(doc, { dex: { species: { zed: { name: "Zed", base: "zed", types: ['fire" onclick="x', "Water<b>"] } } }, animate: () => false, raf: () => undefined, now: () => 0 }, "p1");
+    const hostile = { own: true, name: "n", base_species: "zed", species: "zed", temp_species: null, level: 5, gender: null, hp_num: 1, hp_den: 2, status: 'par" onclick="x ' + NICK, fainted: false, active_slot: "a", boosts: {}, volatiles: [], moves_revealed: [], item: null, item_known: false, mega: false, brought: true };
+    const side = (roster: unknown[]) => ({ player: "p1", username: null, teamsize: null, roster, slots: { a: roster.length ? 0 : null, b: null }, conditions: {} });
+    board.update({ player: "p1", turn: 1, started: true, weather: null, terrain: null, field_conditions: [], winner: null, own: side([hostile]), opponent: side([]), labels: {} }, false);
+    const classes = board.svg.all().map((n: FakeNode) => n.getAttribute("class")).filter((c: string | null) => c !== null) as string[];
+    const tokens = classes.filter((c) => /\b(ty|st)-/.test(c));
+    expect(tokens.length).toBeGreaterThan(0);
+    for (const c of tokens) expect(c).toMatch(/^(status st-[a-z0-9]+|ty-[a-z0-9]+)$/);
+    expect(classes.some((c) => c.startsWith("status st-par"))).toBe(true);
+    expect(classes).toContain("ty-fireonclickx");
+    expect(classes).toContain("ty-waterb");
   });
 });

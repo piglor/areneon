@@ -1,6 +1,6 @@
 "use strict";
 // The replay view (ADR-017 section 4b): an SVG board, controls, caption bar, decision panel and
-// log panel drawn from the interpreter's states (interpreter.js, loaded first in the same script).
+// log panel drawn from the interpreter's states (interpreter.cjs, loaded first in the same script).
 // Page security (ADR-017 section 4c): every string reaches the page through `textContent`, and every
 // node is made with `createElement` / `createElementNS`. No markup string is ever parsed (the page
 // uses none of the DOM's HTML-writing properties or methods), there is no inline handler, and
@@ -21,6 +21,26 @@ var ArView = (function () {
   var W = 640;
   var HP_W = 110;
   var FORBIDDEN_ATTR = /^(style|on.*)$/i;
+  // Attributes that take a URL are refused too, unless a slice that needs one opts in for that tag
+  // and name (the local sprite pack would, with a `data:` image): `allowUrlAttribute`.
+  var URL_ATTR = /^(href|src|srcset|xlink:href|action|formaction|poster|data|ping)$/i;
+  /** @type {Record<string, boolean>} */
+  var urlAllowed = {};
+
+  /** @param {string} tag @param {string} name */
+  function allowUrlAttribute(tag, name) {
+    urlAllowed[tag.toLowerCase() + " " + name.toLowerCase()] = true;
+  }
+
+  function forbidUrlAttributes() {
+    urlAllowed = {};
+  }
+
+  /** A class name part made of data (a type, a status): lower-case letters and digits only. */
+  /** @param {string} text */
+  function token(text) {
+    return String(text).toLowerCase().replace(/[^a-z0-9]/g, "");
+  }
 
   /**
    * Make an element; text goes in as a text node (textContent), never as markup.
@@ -35,6 +55,9 @@ var ArView = (function () {
     var node = svg ? doc.createElementNS(SVG, tag) : doc.createElement(tag);
     Object.keys(attrs || {}).forEach(function (name) {
       if (FORBIDDEN_ATTR.test(name)) { throw new Error("attribute not allowed: " + name); }
+      if (URL_ATTR.test(name) && !urlAllowed[tag.toLowerCase() + " " + name.toLowerCase()]) {
+        throw new Error("attribute not allowed without an opt-in: " + name);
+      }
       node.setAttribute(name, String(/** @type {any} */ (attrs)[name]));
     });
     (kids || []).forEach(function (kid) {
@@ -187,10 +210,10 @@ var ArView = (function () {
     var a = types[0] || "unknown";
     var b = types[1] || null;
     if (b === null) {
-      g.appendChild(make(doc, "circle", { cx: cx, cy: cy, r: r, class: "ty-" + a }, [], true));
+      g.appendChild(make(doc, "circle", { cx: cx, cy: cy, r: r, class: "ty-" + token(a) }, [], true));
     } else {
-      g.appendChild(make(doc, "path", { d: "M " + cx + " " + (cy - r) + " A " + r + " " + r + " 0 0 0 " + cx + " " + (cy + r) + " Z", class: "ty-" + a }, [], true));
-      g.appendChild(make(doc, "path", { d: "M " + cx + " " + (cy - r) + " A " + r + " " + r + " 0 0 1 " + cx + " " + (cy + r) + " Z", class: "ty-" + b }, [], true));
+      g.appendChild(make(doc, "path", { d: "M " + cx + " " + (cy - r) + " A " + r + " " + r + " 0 0 0 " + cx + " " + (cy + r) + " Z", class: "ty-" + token(a) }, [], true));
+      g.appendChild(make(doc, "path", { d: "M " + cx + " " + (cy - r) + " A " + r + " " + r + " 0 0 1 " + cx + " " + (cy + r) + " Z", class: "ty-" + token(b) }, [], true));
     }
     g.appendChild(make(doc, "circle", { cx: cx, cy: cy, r: r, class: "ring" }, [], true));
     return g;
@@ -293,7 +316,7 @@ var ArView = (function () {
       slot.level.textContent = (mon.level !== null ? "L" + mon.level : "") + (mon.mega ? "  Mega" : "") + (mon.temp_species && mon.temp_species !== mon.species ? "  as " + pretty(mon.temp_species, labels) : "");
       slot.hp.textContent = hpText(mon);
       slot.status.textContent = mon.status ? mon.status.toUpperCase() : "";
-      slot.status.setAttribute("class", "status st-" + (mon.status || "none"));
+      slot.status.setAttribute("class", "status st-" + (token(mon.status || "") || "none"));
       var boosts = Object.keys(mon.boosts).filter(function (k) { return mon.boosts[k] !== 0; }).sort().map(function (k) { return k + (mon.boosts[k] > 0 ? " +" : " ") + mon.boosts[k]; });
       var vols = mon.volatiles.map(function (v) { return pretty(v, labels); });
       slot.chips.textContent = clip(boosts.concat(vols).join("  "), 44);
@@ -410,7 +433,7 @@ var ArView = (function () {
     for (var slot = 0; slot < count; slot += 1) {
       var pick = picks[slot];
       var mon = side[slot];
-      var title = "Slot " + "ab".charAt(slot) + ": " + (mon ? (mon.ident || "").replace(/^p[1-4]: /, "") : "?");
+      var title = "Slot " + "abc".charAt(slot) + ": " + (mon ? (mon.ident || "").replace(/^p[1-4]: /, "") : "?");
       var wrap = make(doc, "div", { class: "slotopts" }, [make(doc, "h4", null, [title])]);
       var active = moveSlots[slot];
       if (active) {
@@ -608,7 +631,6 @@ var ArView = (function () {
     function tick() {
       timer = null;
       if (!playing) { return; }
-      if (position >= last) { stop(); return; }
       show(nextEvent(position, 1), true);
       if (position >= last) { stop(); return; }
       timer = later(tick, Math.round(1100 / speed));
@@ -680,7 +702,8 @@ var ArView = (function () {
     return page;
   }
 
-  return { init: init, boot: boot, make: make, align: align, parseChoice: parseChoice, createBoard: createBoard, decisionPanel: decisionPanel };
+  return { init: init, boot: boot, make: make, allowUrlAttribute: allowUrlAttribute, forbidUrlAttributes: forbidUrlAttributes, align: align, parseChoice: parseChoice, createBoard: createBoard, decisionPanel: decisionPanel };
 })();
 
+if (typeof module !== "undefined") { module.exports = ArView; } // the tests load this file; the page does not
 if (typeof document !== "undefined" && typeof window !== "undefined") { ArView.boot(document, window); }
