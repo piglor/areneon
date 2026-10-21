@@ -25,6 +25,10 @@ from areneon_ml.progress.seeds import progress_game_seed
 from tests.ml.learner.support import edited_config
 from tests.ml.loop.support import FakePlayer, make_loop, reseal
 
+DATASET = (
+    Path(__file__).resolve().parents[3]
+    / "fixtures/teams/gen9championsvgc2026regmc/datasets/fixtures-v1"
+)
 SAMPLES = Path(__file__).resolve().parents[3] / "fixtures" / "contracts" / "v1"
 BASELINES = (("actor-rule", "actor-rule@v1"), ("random-legal", "random-legal@v1"))
 MODES = ("argmax", "sample")
@@ -34,7 +38,7 @@ def dataset_config() -> RunConfig:
     """The tiny config, naming a team dataset (the Node side reads it; Python only checks it)."""
 
     def edit(raw: dict[str, Any]) -> None:
-        raw["team_dataset"] = {"path": "fixtures/teams/x", "dataset_hash": "5" * 64}
+        raw["team_dataset"] = {"path": str(DATASET), "dataset_hash": "5" * 64}
 
     return edited_config(edit)
 

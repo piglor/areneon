@@ -12,7 +12,7 @@ import type { Engine } from "./engine.ts";
 import { playGame } from "./evaluation-harness.ts";
 import { firstLegal, GOLDEN_FORMAT, syntheticTeam } from "./golden.ts";
 import { buildProgressGameRecord } from "./progress-evaluation.ts";
-import { progressRecordHash } from "./progress-records.ts";
+import { omniscientLogHash, progressRecordHash } from "./progress-records.ts";
 import { progressGameStreams } from "./progress-seed.ts";
 
 const hexOf = (c: string): string => c.repeat(64);
@@ -96,6 +96,14 @@ export async function progressSamples(engine: Engine): Promise<ProgressSamples> 
   });
   const withEval = (change: (e: Record<string, any>) => void) => mutated(evaluation, change);
   const withGame = (change: (g: Record<string, any>) => void) => mutated(game, change);
+  // A faulty sample whose fault does not depend on the log's length carries a few lines, so the corpus stays small.
+  const withShortGame = (change: (g: Record<string, any>) => void) =>
+    withGame((g) => {
+      g.omniscient_log = g.omniscient_log.slice(0, 3);
+      g.omniscient_log_sha256 = omniscientLogHash(g.omniscient_log);
+      g.decisions = g.decisions.slice(0, 2);
+      change(g);
+    });
   const forfeitGame = withGame((g) => (g.outcome = { kind: "forfeit", loser: "p2", cause: "invalid_reply", request_seq: 4, turns: 3 }));
   return {
     valid: {
@@ -113,11 +121,11 @@ export async function progressSamples(engine: Engine): Promise<ProgressSamples> 
       "progress-evaluation-record/test-split": withEval((e) => (e.teams.split = "dev")),
       "progress-evaluation-record/unknown-outcome": withEval((e) => (e.games[0].outcome = { kind: "abandoned", turns: 1 })),
       "progress-evaluation-record/no-manifest-hash": withEval((e) => delete e.generation_manifest_sha256),
-      "progress-game-record/public-class": withGame((g) => (g.data_class = "public")),
-      "progress-game-record/extra-field": withGame((g) => (g.notes = "x")),
-      "progress-game-record/bad-seed-form": withGame((g) => (g.seed = "1,2,3,4")),
-      "progress-game-record/unknown-outcome": withGame((g) => (g.outcome = { kind: "abandoned", turns: 1 })),
-      "progress-game-record/no-log-hash": withGame((g) => delete g.omniscient_log_sha256),
+      "progress-game-record/public-class": withShortGame((g) => (g.data_class = "public")),
+      "progress-game-record/extra-field": withShortGame((g) => (g.notes = "x")),
+      "progress-game-record/bad-seed-form": withShortGame((g) => (g.seed = "1,2,3,4")),
+      "progress-game-record/unknown-outcome": withShortGame((g) => (g.outcome = { kind: "abandoned", turns: 1 })),
+      "progress-game-record/no-log-hash": withShortGame((g) => delete g.omniscient_log_sha256),
     },
     readerInvalid: {
       "progress-evaluation-record/counts-disagree": withEval((e) => (e.matches[0].wins += 1)),
@@ -129,10 +137,10 @@ export async function progressSamples(engine: Engine): Promise<ProgressSamples> 
       "progress-evaluation-record/hash-count-wrong": withEval((e) => (e.matches[0].game_record_hashes = [])),
       "progress-evaluation-record/seat-wrong": withEval((e) => (e.games[1].candidate_seat = "p1")),
       "progress-evaluation-record/pairs-used-wrong": withEval((e) => (e.teams.pairs_used = 3)),
-      "progress-game-record/chosen-not-candidate": withGame((g) => (g.decisions[0].chosen = "not a choice")),
-      "progress-game-record/team-hash-wrong": withGame((g) => (g.teams.p1.team_hash = hexOf("0"))),
-      "progress-game-record/log-hash-wrong": withGame((g) => (g.omniscient_log_sha256 = hexOf("0"))),
-      "progress-game-record/seed-wrong": withGame((g) => (g.seed = `sodium,${"0".repeat(32)}`)),
+      "progress-game-record/chosen-not-candidate": withShortGame((g) => (g.decisions[0].chosen = "not a choice")),
+      "progress-game-record/team-hash-wrong": withShortGame((g) => (g.teams.p1.team_hash = hexOf("0"))),
+      "progress-game-record/log-hash-wrong": withShortGame((g) => (g.omniscient_log_sha256 = hexOf("0"))),
+      "progress-game-record/seed-wrong": withShortGame((g) => (g.seed = `sodium,${"0".repeat(32)}`)),
     },
   };
 }

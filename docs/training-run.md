@@ -110,7 +110,13 @@ pairs and seeds are the same for every opponent, mode and generation, so two
 generations are compared on the same plan. At most half as many games per match
 as there are validation teams (107 for 214 teams); more is refused. The run's
 `team-set.json` must not hold a validation team, and no progress seed may equal
-a seed of a committed training plan; either refuses the command.
+a seed of a committed training plan; either refuses the command. The seed
+check runs at evaluation time against the plans committed then: a later
+generation's `plan.json` is not covered by an earlier record, and an evaluation of
+generation 0 sees no plans yet. The remaining risk is about 2^-128 per seed
+(the two derivations hash different purpose strings). `--games` above the
+number of pairs the validation split gives is refused before the worker starts,
+naming the limit.
 
 **Reading the numbers.**
 

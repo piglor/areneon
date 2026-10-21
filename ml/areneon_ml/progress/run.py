@@ -139,6 +139,21 @@ def progress_lock(root: Path) -> Iterator[None]:
         yield
 
 
+def max_pairs(config: RunConfig) -> int:
+    """The most disjoint validation pairs the run's dataset can give: half its validation teams.
+
+    Read from the dataset's manifest before anything starts. It is an upper bound (the Node side
+    also drops teams with an excluded ability and refuses exactly), so a refusal here is certain.
+    """
+    path = Path(config.raw["team_dataset"]["path"]) / "manifest.json"
+    try:
+        manifest = json.loads(path.read_text(encoding="utf-8"))
+        teams = next(s["teams"] for s in manifest["splits"] if s["split"] == "validation")
+    except (OSError, ValueError, KeyError, StopIteration) as exc:
+        raise ProgressError(f"cannot read the validation split's size from {path}") from exc
+    return int(teams) // 2
+
+
 def _read_config(run_dir: Path) -> RunConfig:
     stored = layout.read_json(run_dir / layout.CONFIG)
     config = read_run_config(stored)
@@ -302,6 +317,12 @@ def progress_generation(  # noqa: PLR0913, PLR0917
             record = verify_progress_dir(target, config, run_dir, generation)
             return {"generation": generation, "skipped": True, "matches": summary_of(record)}
         source = _source(run_dir, config, generation)
+        limit = max_pairs(config)
+        if games > limit:
+            raise ProgressError(
+                f"--games {games} needs {games} disjoint validation team pairs: "
+                f"the dataset gives at most {limit}"
+            )
         try:
             check_not_training_seeds(run_dir, config.run_key, games)
         except ValueError as exc:

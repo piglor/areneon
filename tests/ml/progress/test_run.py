@@ -9,6 +9,7 @@ from typing import Any
 
 import pytest
 from areneon_contracts.contracts import sha256_hex
+from areneon_ml.learner.config import read_run_config
 from areneon_ml.loop import layout
 from areneon_ml.loop.play import PlayError
 from areneon_ml.progress.records import ProgressRecordError, read_progress_record
@@ -16,6 +17,7 @@ from areneon_ml.progress.run import (
     ProgressError,
     ProgressRequest,
     committed_generations,
+    max_pairs,
     progress_generation,
     progress_lock,
     progress_root,
@@ -232,6 +234,25 @@ def test_a_generation_that_is_not_committed_is_refused(run: Path, tmp_path: Path
     for generation in (3, -1):
         with pytest.raises(ProgressError, match="is not committed"):
             progress_generation(run, generation, tmp_path / "p", player(run), 2, 1)
+
+
+def test_more_games_than_pairs_is_refused_before_the_worker_starts(
+    run: Path, tmp_path: Path
+) -> None:
+    fake = player(run)
+    with pytest.raises(ProgressError, match="at most 60"):
+        progress_generation(run, 1, tmp_path / "p", fake, 61, 1)
+    assert fake.requests == []
+    assert sorted(p.name for p in (tmp_path / "p").iterdir()) == [".lock"]
+    progress_generation(run, 1, tmp_path / "p", fake, 60, 0)  # the limit itself is allowed
+
+
+def test_a_dataset_manifest_that_cannot_be_read_refuses(run: Path, tmp_path: Path) -> None:
+    copy = copied(run, tmp_path)
+    config = copy / "run-config.json"
+    rewrite(config, lambda d: d["team_dataset"].update(path=str(tmp_path / "nowhere")))
+    with pytest.raises(ProgressError, match="cannot read the validation split"):
+        max_pairs(read_run_config(layout.read_json(config)))
 
 
 def test_sizes_are_checked_first(run: Path, tmp_path: Path) -> None:
