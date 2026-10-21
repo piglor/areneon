@@ -7,6 +7,8 @@
 * ``replay``: write graphical replay pages of training games (each game's two own channels).
 * ``provenance``: write the run's CheckpointRecords and its sources registry into a
   directory, ready for ``python -m areneon_ml.checkpoint classify|independent``.
+* ``report``: write the run dashboard (training curves and, with a progress root, the progress
+  evaluation) as one offline HTML page.
 * ``progress``: the progress evaluation of a committed generation (ADR-017): its frozen pair
   against the scripted baselines on the validation teams, written to ``<run-dir>.progress/``.
   A progress view, never the Training gate; the run directory is only read.
@@ -51,6 +53,7 @@ from areneon_ml.progress.run import (
     progress_generation,
     progress_root,
 )
+from areneon_ml.report.command import report_run
 
 EXIT_REFUSED = 3
 EXIT_PLAY = 4
@@ -82,6 +85,13 @@ def _parser() -> argparse.ArgumentParser:
         "--out", type=Path, help="default: <run-dir>.inspect/, beside the run directory"
     )
     inspect.add_argument("--node", default="node", help="the node executable")
+    report = commands.add_parser("report", help="write the run dashboard (one offline HTML page)")
+    report.add_argument("--run-dir", type=Path, required=True)
+    report.add_argument("--progress-dir", type=Path, help="a progress root (optional)")
+    report.add_argument(
+        "--out", type=Path, help="a .html file or a directory (default beside the run)"
+    )
+    report.add_argument("--inspect-dir", type=Path, help="an inspector output to link to")
     progress = commands.add_parser("progress", help="progress evaluation of a committed generation")
     progress.add_argument("--run-dir", type=Path, required=True)
     which = progress.add_mutually_exclusive_group(required=True)
@@ -170,6 +180,8 @@ def main(argv: list[str] | None = None) -> int:
             out = _run(args)
         elif args.command == "inspect":
             out = inspect_run(args.run_dir, args.out, repo=REPO, node=args.node)
+        elif args.command == "report":
+            out = report_run(args.run_dir, args.progress_dir, args.out, args.inspect_dir)
         elif args.command == "progress":
             out = _progress(args)
         elif args.command == "replay":
