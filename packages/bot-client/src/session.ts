@@ -1058,7 +1058,7 @@ class Session {
     // A rejoin of a room that ended while the bot was away replays the log with no request:
     // the channel of this connection is made from the replay, on the seat the bot had.
     if (state.channel === undefined && battle.player !== null) {
-      state.channel = new A2Channel({ room: battle.room, player: battle.player, data_class: this.#options.data_class });
+      state.channel = new A2Channel({ room: battle.room, player: battle.player, data_class: this.#dataClass });
       for (const kept of state.frames) state.channel.receive(kept);
       state.frames = [];
     }
