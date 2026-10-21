@@ -1,6 +1,7 @@
 """Log-to-state reducer (ADR-010 §3): one player's channel to a public battle state."""
 
 from .errors import (
+    IllusionError,
     MalformedLineError,
     OpponentSecretError,
     ReducerError,
@@ -14,6 +15,7 @@ from .vocab import Vocabulary
 
 __all__ = [
     "BattleState",
+    "IllusionError",
     "MalformedLineError",
     "OpponentSecretError",
     "PokemonState",

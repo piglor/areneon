@@ -1,10 +1,10 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { interimPoolSource, readTrainingRunConfig } from "@areneon/showdown-bridge";
+import { interimPoolSource, type PokemonSet, readTrainingRunConfig } from "@areneon/showdown-bridge";
 import { describe, expect, it } from "vitest";
 import { enumerateCandidates, type RequestRecord } from "@areneon/showdown-bridge";
 import { caseSpec, loadCorpus, replayCase } from "../../showdown-bridge/src/choice-corpus.ts";
-import { parseSweepArgs, playSweepBattle, SWEEP_MIXES, SweepUsageError, uniformAllActor } from "../src/reducer-sweep.ts";
+import { parseSweepArgs, playSweepBattle, restrictPool, SWEEP_MIXES, SweepUsageError, uniformAllActor } from "../src/reducer-sweep.ts";
 import { engine, FORMAT } from "./support.ts";
 
 const ROOT = fileURLToPath(new URL("../../..", import.meta.url));
@@ -72,6 +72,7 @@ describe("parseSweepArgs", () => {
   it("reads the flags and defaults the rest", () => {
     expect(parseSweepArgs(good)).toEqual({ config: "c.json", out: "o.jsonl", mix: "uniform-all", battles: 5, start: 0, run_key: "sweep-1" });
     expect(parseSweepArgs([...good, "--start", "7", "--run-key", "k"])).toMatchObject({ start: 7, run_key: "k" });
+    expect(parseSweepArgs([...good, "--only-ability", "Illusion"])).toMatchObject({ only_ability: "Illusion" });
   });
   it.each([
     [["--bogus", "1", ...good], /unknown argument/],
@@ -88,5 +89,21 @@ describe("parseSweepArgs", () => {
   ])("refuses %j", (argv, message) => {
     expect(() => parseSweepArgs(argv as string[])).toThrow(SweepUsageError);
     expect(() => parseSweepArgs(argv as string[])).toThrow(message as RegExp);
+  });
+});
+
+describe("restrictPool", () => {
+  it("keeps the teams that hold the ability, with their hashes", () => {
+    const [first, second] = pool.teams as [PokemonSet[], PokemonSet[]];
+    const marked = pool.teams.map((team) => team.map((set) => ({ ...set })));
+    (marked[0] as PokemonSet[])[0] = { ...(first[0] as PokemonSet), ability: "Illusion" };
+    const restricted = restrictPool({ ...pool, teams: marked }, "Illusion");
+    expect(restricted.teams).toEqual([marked[0]]);
+    expect(restricted.hashes).toEqual([pool.hashes[0]]);
+    expect(second.length).toBeGreaterThan(0);
+  });
+
+  it("refuses a pool with no such team", () => {
+    expect(() => restrictPool(pool, "No Such Ability")).toThrow(SweepUsageError);
   });
 });

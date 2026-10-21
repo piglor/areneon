@@ -2,8 +2,8 @@
 
 Seeded random-legal vs random-legal battles on random synthetic teams
 (`packages/showdown-bridge/src/random-corpus.ts`; CI re-plays each one).
-Every channel must reduce without a refusal, except at an allowlisted line
-type; the canary runs over every request point of every channel.
+Every channel must reduce without a refusal (the Illusion ending `|replace|` included, #851);
+the canary runs over every request point of every channel.
 """
 
 from __future__ import annotations
@@ -13,13 +13,11 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from areneon_ml.reducer import ReducerError, UnknownLineError, reduce_channel
+from areneon_ml.reducer import ReducerError, reduce_channel
 
 from .support import FORMAT_DIR, VOCAB, leaks, unattributed, unrevealed_ids
 
 CORPUS = sorted((FORMAT_DIR / "random").glob("b*.json"))
-# Line types the reducer names as unsupported: the channel is not reduced past them.
-UNSUPPORTED = {"replace"}  # Illusion ending: the disguise's bindings would be wrong
 
 
 def _load(path: Path) -> dict[str, Any]:
@@ -41,25 +39,17 @@ def test_the_corpus_is_there() -> None:
     assert all(_load(p)["data_class"] == "synthetic" for p in CORPUS)
 
 
-def test_every_channel_reduces_except_at_a_named_unsupported_line_type() -> None:
-    refused = []
+def test_every_channel_reduces() -> None:
     for path in CORPUS:
         battle = _load(path)
         for player in ("p1", "p2"):
-            error = _first_refusal(player, battle)
-            if error is None:
-                continue
-            assert isinstance(error, UnknownLineError), f"{path.name} {player}: {error}"
-            assert error.line is not None
-            assert error.line.split("|")[1] in UNSUPPORTED, f"{path.name} {player}: {error}"
-            refused.append((path.name, player))
-    # Illusion is rare in random teams: nearly every channel is reduced to its end.
-    assert len(refused) <= len(CORPUS) // 4
+            assert _first_refusal(player, battle) is None, f"{path.name} {player}"
 
 
 def test_the_corpus_exercises_the_lines_that_broke_the_first_version() -> None:
     text = "\n".join(line for p in CORPUS for line in _load(p)["channels"]["p1"]["lines"])
-    for marker in ("|-mega|", "|-formechange|", "[notarget]", "/100g", "/100y", "|-fail|"):
+    markers = ("|-mega|", "|-formechange|", "[notarget]", "/100g", "/100y", "|-fail|", "|replace|")
+    for marker in markers:
         assert marker in text, marker
 
 
@@ -72,8 +62,6 @@ def test_the_canary_holds_at_every_request_point_of_every_channel() -> None:
     for path in CORPUS:
         battle = _load(path)
         for player, other in (("p1", "p2"), ("p2", "p1")):
-            if _first_refusal(player, battle) is not None:
-                continue
             lines = battle["channels"][player]["lines"]
             for end in [i + 1 for i, line in enumerate(lines) if line.startswith("|request|")]:
                 prefix = lines[:end]

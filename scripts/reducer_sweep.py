@@ -6,8 +6,9 @@ the request and the candidates) and, at every request of every player, builds th
 the policy worker would get and runs the encoder on it (which runs ``reduce_channel``).
 Every refusal is grouped by its kind (the error class and its message, with the channel
 line kept out of the key); a group keeps a count and the example with the fewest lines.
-A channel is checked up to its first refusal. The one named exclusion is the Illusion
-``|replace|`` line. Exit status 0 only when nothing else was refused.
+A channel is checked up to its first refusal. Nothing is excluded: the Illusion ``|replace|``
+line is reduced like any other (#851), and a refusal at it is a finding. Exit status 0 only when
+nothing was refused.
 
     uv run python scripts/reducer_sweep.py [--engine-data FILE] [--encoder-config JSON] OUT.jsonl...
 """
@@ -35,15 +36,12 @@ DEFAULT_ENCODER = {
     "volatile_buckets": 64, "condition_buckets": 64, "max_moves": 8, "max_team": 6,
     "max_picks": 4, "stat_scale": 500, "turn_scale": 100,
 }  # fmt: skip
-# Line types the reducer names as unsupported (Illusion ending); a refusal at one is excluded.
-EXCLUDED_LINES = frozenset({"replace"})
 
 
 @dataclass
 class Group:
     kind: str
     count: int = 0
-    excluded: bool = False
     example: dict[str, Any] | None = None
 
 
@@ -58,20 +56,13 @@ class Report:
 
     @property
     def unexplained(self) -> int:
-        return sum(g.count for g in self.groups.values() if not g.excluded) + sum(
-            self.failed_battles.values()
-        )
+        return sum(g.count for g in self.groups.values()) + sum(self.failed_battles.values())
 
 
 def refusal_kind(error: Exception) -> str:
     """The error class and its message, without the offending line or any Pokemon name."""
     message = error.message if isinstance(error, ReducerError) else str(error)
     return f"{type(error).__name__}: {re.sub(r'[0-9]+', 'N', message)[:160]}"
-
-
-def _excluded(error: Exception) -> bool:
-    line = error.line if isinstance(error, ReducerError) else None
-    return line is not None and line.startswith("|") and line[1:].split("|", 1)[0] in EXCLUDED_LINES
 
 
 def queries(battle: dict[str, Any], player: str) -> Iterator[tuple[int, dict[str, Any]]]:
@@ -122,7 +113,7 @@ def record(
 ) -> None:
     battle, player, position = where
     kind = refusal_kind(error)
-    group = report.groups.setdefault(kind, Group(kind=kind, excluded=_excluded(error)))
+    group = report.groups.setdefault(kind, Group(kind=kind))
     group.count += 1
     lines = len(query["observation"]["log"])
     if group.example is None or lines < group.example["log_lines"]:
@@ -151,8 +142,7 @@ def render(report: Report) -> str:
             f"BATTLE FAILURE x{count}: {key}  example {json.dumps(report.failed_example[key])}"
         )
     for group in sorted(report.groups.values(), key=lambda g: -g.count):
-        tag = "excluded" if group.excluded else "REFUSAL"
-        out.append(f"{tag} x{group.count}: {group.kind}  example {json.dumps(group.example)}")
+        out.append(f"REFUSAL x{group.count}: {group.kind}  example {json.dumps(group.example)}")
     out.append(f"unexplained: {report.unexplained}")
     return "\n".join(out)
 

@@ -71,18 +71,17 @@ def test_a_refusal_is_grouped_by_kind_and_keeps_the_shortest_example() -> None:
     assert report.unexplained == 2
     (group,) = report.groups.values()
     assert group.count == 2
-    assert not group.excluded
     assert group.example is not None
     assert group.example["line"] in {"|bogus|x", "|bogus|y"}
     assert "REFUSAL x2" in reducer_sweep.render(report)
 
 
-def test_the_illusion_replace_line_is_the_named_exclusion() -> None:
+def test_an_illusion_ending_is_checked_like_any_other_line() -> None:
+    # No exclusion since #851: a replace the roster cannot explain is a finding.
     report = report_of(inject(sweep_battle(), "|replace|p2a: Zoroark|Zoroark, L50, M"))
-    assert report.unexplained == 0
+    assert report.unexplained == 1
     (group,) = report.groups.values()
-    assert group.excluded
-    assert "excluded x1" in reducer_sweep.render(report)
+    assert group.kind.startswith("IllusionError")
 
 
 def test_a_battle_that_failed_to_play_is_a_finding() -> None:

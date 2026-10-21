@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import pytest
-from areneon_ml.reducer import MalformedLineError, ReducerError, UnknownLineError, VocabularyError
+from areneon_ml.reducer import MalformedLineError, ReducerError, VocabularyError
 
 from .support import opp, own, run
 
@@ -454,11 +454,6 @@ def test_ability_copies_and_skill_swap() -> None:
     assert own(state, "Venusaur").ability == "static"
     with pytest.raises(VocabularyError):
         run("|-ability|p2a: Venusaur|Static|Nonsense")
-
-
-def test_illusion_is_a_named_refusal() -> None:
-    with pytest.raises(UnknownLineError, match="Illusion"):
-        run("|replace|p2a: Venusaur|Charizard, L50, F|100/100")
 
 
 @pytest.mark.parametrize(

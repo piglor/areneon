@@ -18,11 +18,16 @@ Rules the reducer keeps:
   tag (with `[of]`, which of the two Pokemon owns the effect depends on the
   message); a move counts as revealed when it was chosen, not when another
   effect called it (`[from]`).
+* Illusion. A switch-in is bound to the Pokemon it is shown as. `|replace|` (and, for the
+  player's own Pokemon, the player's next request) says who it was: everything seen under the
+  disguise moves to the real Pokemon and the disguised one is put back as it was before the
+  switch-in. What the channel cannot attribute without guessing raises `IllusionError`.
 * Deterministic. The same lines and team always give the same state.
 """
 
 from __future__ import annotations
 
+import copy
 import json
 import re
 from collections.abc import Callable, Mapping, Sequence
@@ -30,6 +35,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from .errors import (
+    IllusionError,
     MalformedLineError,
     OpponentSecretError,
     ReducerError,
@@ -140,6 +146,7 @@ _ACTIVE_KEYS = frozenset(
     {"moves", "maybeDisabled", "maybeLocked", "trapped", "maybeTrapped", *_MEGA_FLAGS}
 )
 _MOVE_KEYS = frozenset({"move", "id", "pp", "maxpp", "target", "disabled", "disabledSource"})
+ILLUSION = "Illusion"  # the ability whose end `|replace|` reports (protocol: "Illusion has ended")
 _SET_KEYS = ("species", "name", "item", "ability", "moves", "level", "gender")
 
 
@@ -149,6 +156,26 @@ class _Line:
     kind: str
     args: list[str]
     tags: dict[str, str] = field(default_factory=dict)
+
+
+@dataclass
+class _Disguise:
+    """A switch-in bound to the Pokemon it is shown as, until a `|replace|` or an own request
+    says who it was."""
+
+    index: int  # the roster entry the position is bound to
+    before: PokemonState | None  # that entry before the switch-in (None: created by it)
+
+
+@dataclass
+class _Pair:
+    """The same Pokemon shown in two positions: one of the two is an Illusion user, and the
+    channel does not say which. `phantom` is the added entry of the second one shown."""
+
+    owner: int  # the roster entry shown first
+    phantom: int  # the added roster entry
+    owner_before: PokemonState | None  # the owner before its switch-in (None: known to be real)
+    phantom_before: PokemonState
 
 
 @dataclass(frozen=True)
@@ -215,6 +242,10 @@ class _Reducer:
         self.state.own = SideState(player=player)
         self.state.opponent = SideState(player="p2" if player == "p1" else "p1")
         self._preview_own: set[int] = set()
+        # By (player, position letter): the name the position shows, and its unsettled disguise.
+        self._shown: dict[tuple[str, str], str] = {}
+        self._disguise: dict[tuple[str, str], _Disguise] = {}
+        self._pairs: dict[tuple[str, int], _Pair] = {}  # by (player, added entry)
         for pokemon_set in team:
             self.state.own.roster.append(self._own_mon(pokemon_set))
         names = [mon.name for mon in self.state.own.roster]
@@ -340,7 +371,7 @@ class _Reducer:
         side, letter, name = self._ref(text, line)
         if letter is not None:
             index = side.slots.get(letter)
-            if index is not None and side.roster[index].name == name:
+            if index is not None and self._shown.get((side.player, letter)) == name:
                 return side.roster[index]
         for mon in side.roster:
             if mon.name == name:
@@ -480,6 +511,10 @@ class _Reducer:
         _arity(line, 0, 0)
         self.state.opponent.roster.clear()
         self.state.opponent.slots = dict.fromkeys(self.state.opponent.slots)
+        opponent = self.state.opponent.player
+        self._shown = {key: v for key, v in self._shown.items() if key[0] != opponent}
+        self._disguise = {key: v for key, v in self._disguise.items() if key[0] != opponent}
+        self._pairs = {key: v for key, v in self._pairs.items() if key[0] != opponent}
         self._preview_own.clear()
 
     def _poke(self, line: _Line) -> None:
@@ -552,7 +587,14 @@ class _Reducer:
         if side_data.get("id") != self.state.own.player:
             raise OpponentSecretError("a request for the other player", line.raw)
         kind = self._request_kind(body, line)
-        listed = [self._apply_request_mon(entry, line) for entry in side_data.get("pokemon", [])]
+        entries = side_data.get("pokemon", [])
+        for entry in entries:
+            self._keys(entry, _POKEMON_KEYS, line, "request pokemon")
+        if kind != "preview":
+            self._settle_own(entries, line)
+        if any(mon.phantom for mon in self.state.own.roster):
+            raise IllusionError("an own Pokemon the request cannot tell from its twin", line.raw)
+        listed = [self._apply_request_mon(entry, line) for entry in entries]
         if kind != "preview":
             for mon in self.state.own.roster:
                 mon.brought = mon in listed
@@ -588,9 +630,7 @@ class _Reducer:
         if extra:
             raise UnknownFieldError(f"{what} carries unknown keys {extra}", line.raw)
 
-    def _apply_request_mon(self, entry: object, line: _Line) -> PokemonState:
-        self._keys(entry, _POKEMON_KEYS, line, "request pokemon")
-        assert isinstance(entry, dict)
+    def _own_by_ident(self, entry: Mapping[str, Any], line: _Line) -> PokemonState:
         match = _SIDE.match(str(entry["ident"]))
         name = str(entry["ident"])[match.end() :] if match else ""
         mon = next((m for m in self.state.own.roster if m.name == name), None)
@@ -598,6 +638,12 @@ class _Reducer:
             raise MalformedLineError(
                 f"request lists {entry['ident']!r}, who is not in the own team", line.raw
             )
+        return mon
+
+    def _apply_request_mon(self, entry: object, line: _Line) -> PokemonState:
+        self._keys(entry, _POKEMON_KEYS, line, "request pokemon")
+        assert isinstance(entry, dict)
+        mon = self._own_by_ident(entry, line)
         details = self._details(entry["details"], line)
         mon.species, mon.level = details.species, details.level
         mon.gender, mon.shiny = details.gender or None, details.shiny
@@ -611,20 +657,31 @@ class _Reducer:
 
     # -- switching and forms -------------------------------------------------
 
-    def _bind(self, side: SideState, name: str, details: _Details, line: _Line) -> PokemonState:
-        for mon in side.roster:
+    def _locate(self, side: SideState, name: str, details: _Details) -> int | None:
+        """The roster entry a switch-in binds to, or None (nothing is changed)."""
+        for index, mon in enumerate(side.roster):
             if mon.name == name:
-                return mon
+                return index
         if side.roster and side.roster[0].own:
-            raise MalformedLineError(f"{name!r} is not in the own team", line.raw)
-        for mon in side.roster:
+            return None
+        for index, mon in enumerate(side.roster):
             if (
                 mon.name is None
                 and mon.base_species == details.base_species
                 and mon.species in (None, details.species)
             ):
+                return index
+        return None
+
+    def _bind(self, side: SideState, name: str, details: _Details, line: _Line) -> PokemonState:
+        index = self._locate(side, name, details)
+        if index is not None:
+            mon = side.roster[index]
+            if mon.name is None:
                 mon.name = name
-                return mon
+            return mon
+        if side.roster and side.roster[0].own:
+            raise MalformedLineError(f"{name!r} is not in the own team", line.raw)
         if side.teamsize is not None and len(side.roster) >= side.teamsize:
             raise MalformedLineError(f"{name!r} is more Pokemon than the team size", line.raw)
         mon = PokemonState(own=False, name=name, base_species=details.base_species)
@@ -637,12 +694,57 @@ class _Reducer:
         if letter is None or letter not in side.slots:
             raise MalformedLineError("a switch needs an active position", line.raw)
         details = self._details(line.args[1], line)
+        located = self._locate(side, name, details)
+        before = None if located is None else copy.deepcopy(side.roster[located])
         mon = self._bind(side, name, details, line)
+        key = (side.player, letter)
+        if mon.fainted and not mon.own:
+            # A fainted Pokemon cannot come back: the one that fainted was an Illusion user
+            # shown as this one (no `|replace|`). Its faint stays on an entry of its own, whose
+            # identity the channel does not give, and this entry starts again.
+            dead = copy.deepcopy(mon)
+            dead.phantom = True
+            side.roster.append(dead)
+            slot = self._index_of(side, mon)
+            mon = side.roster[slot] = PokemonState(
+                own=False, name=mon.name, base_species=mon.base_species, species=mon.species
+            )
+            before = copy.deepcopy(mon)
+        if mon.active_slot not in (None, letter):
+            # Shown in two positions: one of the two is an Illusion user, and the channel does
+            # not say which, so this one gets an entry of its own until a replace or a request.
+            owner = self._index_of(side, mon)
+            known = next(
+                (
+                    pair
+                    for (player, _), pair in self._pairs.items()
+                    if player == side.player and pair.owner == owner
+                ),
+                None,
+            )
+            if known is None:
+                first = self._disguise.get((side.player, mon.active_slot))
+                mon = self._phantom(side, mon)
+                self._pairs[(side.player, len(side.roster) - 1)] = _Pair(
+                    owner,
+                    len(side.roster) - 1,
+                    None if first is None else first.before,
+                    copy.deepcopy(mon),
+                )
+            elif side.roster[known.phantom].active_slot is None:
+                mon = side.roster[known.phantom]  # the added one is back
+            else:
+                raise IllusionError("a Pokemon is shown in three positions", line.raw)
+            disguise = _Disguise(self._index_of(side, mon), copy.deepcopy(mon))
+        else:
+            disguise = _Disguise(self._index_of(side, mon), before)
+        index = self._index_of(side, mon)
         previous = side.slots[letter]
         if previous is not None:
             self._switch_out(side.roster[previous])
-        index = side.roster.index(mon)
         side.slots[letter] = index
+        self._shown[key] = name
+        self._disguise[key] = disguise
         self._switch_out(mon)
         mon.active_slot, mon.brought = letter, True
         mon.species, mon.level = details.species, details.level
@@ -678,16 +780,263 @@ class _Reducer:
         target = chr(ord("a") + position)
         if letter is None or letter not in side.slots or target not in side.slots:
             raise MalformedLineError("swap names an unknown position", line.raw)
-        if side.slots[letter] is None or side.roster[side.slots[letter] or 0].name != name:
+        if side.slots[letter] is None or self._shown.get((side.player, letter)) != name:
             raise MalformedLineError("swap of a Pokemon that is not in that position", line.raw)
         side.slots[letter], side.slots[target] = side.slots[target], side.slots[letter]
+        here, there = (side.player, letter), (side.player, target)
+        shown_first, shown_second = self._shown.pop(here, None), self._shown.pop(there, None)
+        if shown_first is not None:
+            self._shown[there] = shown_first
+        if shown_second is not None:
+            self._shown[here] = shown_second
+        held_first, held_second = self._disguise.pop(here, None), self._disguise.pop(there, None)
+        if held_first is not None:
+            self._disguise[there] = held_first
+        if held_second is not None:
+            self._disguise[here] = held_second
         for slot in (letter, target):
             index = side.slots[slot]
             if index is not None:
                 side.roster[index].active_slot = slot
 
+    # -- Illusion ---------------------------------------------------------------
+
+    @staticmethod
+    def _index_of(side: SideState, mon: PokemonState) -> int:
+        return next(index for index, held in enumerate(side.roster) if held is mon)
+
+    def _is_added(self, side: SideState, key: tuple[str, str]) -> bool:
+        disguise = self._disguise.get(key)
+        return disguise is not None and (side.player, disguise.index) in self._pairs
+
+    def _phantom(self, side: SideState, mon: PokemonState) -> PokemonState:
+        """A fresh entry for a Pokemon that is already shown in another position."""
+        if mon.own:
+            extra = copy.deepcopy(mon)
+            extra.moves_revealed = []
+        else:
+            extra = PokemonState(own=False, name=mon.name, base_species=mon.base_species)
+        extra.phantom = True
+        side.roster.append(extra)
+        return extra
+
+    def _drop_phantom(self, side: SideState, index: int) -> None:
+        """Remove an added entry and renumber everything that names a later one."""
+        side.roster.pop(index)
+
+        def shift(held: int) -> int:
+            return held - 1 if held > index else held
+
+        for letter, held in side.slots.items():
+            if held is not None:
+                side.slots[letter] = shift(held)
+        for (player, _), disguise in self._disguise.items():
+            if player == side.player:
+                disguise.index = shift(disguise.index)
+        renumbered = {}
+        for (player, added), pair in self._pairs.items():
+            if player == side.player:
+                pair.owner, pair.phantom = shift(pair.owner), shift(pair.phantom)
+            renumbered[(player, pair.phantom if player == side.player else added)] = pair
+        self._pairs = renumbered
+
+    def _end_pair(self, side: SideState, pair: _Pair) -> None:
+        """The pair is resolved: forget it, its positions' disguises and the added entry."""
+        del self._pairs[(side.player, pair.phantom)]
+        for key in [
+            key
+            for key, d in self._disguise.items()
+            if key[0] == side.player and d.index in (pair.owner, pair.phantom)
+        ]:
+            del self._disguise[key]
+        self._drop_phantom(side, pair.phantom)
+
     def _replace(self, line: _Line) -> None:
-        raise UnknownLineError("|replace| (Illusion ending) is not supported", line.raw)
+        """`|replace|POKEMON|DETAILS`: the disguise at that position ended; POKEMON is the real one.
+
+        Everything the channel showed at the position since the switch-in belongs to the real
+        Pokemon (its own state does not change, only who it is shown as), and the Pokemon it was
+        shown as is put back as it was before that switch-in.
+        """
+        _arity(line, 2, 3)
+        side, letter, name = self._ref(line.args[0], line)
+        shown_index = None if letter is None else side.slots.get(letter)
+        if letter is None or shown_index is None:
+            raise MalformedLineError("replace names a position nobody holds", line.raw)
+        details = self._details(line.args[1], line)
+        key = (side.player, letter)
+        if key in self._disguise:
+            real = self._locate_real(side, key, name, details, line)
+            self._settle(side, letter, real, line)
+        else:
+            # An own request settled it already (`_settle_own`): the position holds the real one.
+            real = side.roster[shown_index]
+            if not (real.own and real.name == name):
+                raise IllusionError("a replace with no disguise on record", line.raw)
+        if real.base_species != details.base_species:
+            raise IllusionError("the Pokemon shown in a replace is not the roster's", line.raw)
+        real.name, real.brought = name, True
+        real.species, real.level = details.species, details.level
+        real.gender, real.shiny = details.gender or None, details.shiny
+        real.ability = self.vocab.ability(ILLUSION)
+        self._shown[key] = name
+        hp = _optional(line, 2)
+        if hp is not None:
+            self._set_hp(real, hp, line)
+
+    def _locate_real(
+        self, side: SideState, key: tuple[str, str], name: str, details: _Details, line: _Line
+    ) -> PokemonState:
+        """The roster entry a replace names: the one called `name`, else the one never shown yet."""
+        shown = self._disguise[key].index
+        skip = {shown}
+        for pair in self._pairs.values():
+            if shown in (pair.owner, pair.phantom):
+                skip |= {pair.owner, pair.phantom}
+        candidates = [
+            mon for index, mon in enumerate(side.roster) if index not in skip and not mon.phantom
+        ]
+        found = [mon for mon in candidates if mon.name == name] or [
+            mon
+            for mon in candidates
+            if not mon.own
+            and mon.name is None
+            and mon.base_species == details.base_species
+            and mon.species in (None, details.species)
+        ]
+        if len(found) > 1:
+            raise IllusionError("a replace that fits more than one Pokemon", line.raw)
+        if not found:
+            raise IllusionError("a replace names a Pokemon outside the roster", line.raw)
+        return found[0]
+
+    def _settle(self, side: SideState, letter: str, real: PokemonState, line: _Line) -> None:
+        """The Pokemon at `letter` is the roster entry `real`: carry over what was seen there
+        since its switch-in and put the Pokemon it was shown as back."""
+        disguise = self._disguise.pop((side.player, letter))
+        shown = side.roster[disguise.index]
+        if real.active_slot not in (None, letter):
+            raise IllusionError("the replaced Pokemon is already in play", line.raw)
+        if disguise.before is None:
+            raise IllusionError("the disguise was not on the roster", line.raw)
+        added = self._pairs.get((side.player, disguise.index))
+        owned = next(
+            (
+                p
+                for (pl, _), p in self._pairs.items()
+                if pl == side.player and p.owner == disguise.index
+            ),
+            None,
+        )
+        self._carry(shown, disguise.before, real, letter)
+        if added is not None:
+            # The added entry was the Illusion user; the entry shown first is real as it stands.
+            self._end_pair(side, added)
+        elif owned is not None:
+            self._settle_owned(side, disguise, owned)
+        else:
+            self._restore(side, disguise)
+        side.slots[letter] = self._index_of(side, real)
+
+    def _settle_owned(self, side: SideState, disguise: _Disguise, pair: _Pair) -> None:
+        """The entry shown first was the Illusion user (its state is carried to it already);
+        the added entry is the Pokemon it was shown as, and takes its place again."""
+        twin = side.roster[pair.phantom]
+        restored = self._restore(side, disguise)
+        self._carry(twin, pair.phantom_before, restored, twin.active_slot)
+        restored.name, restored.species, restored.level = twin.name, twin.species, twin.level
+        restored.gender, restored.shiny = twin.gender, twin.shiny
+        if twin.active_slot is not None:
+            side.slots[twin.active_slot] = disguise.index
+        self._end_pair(side, pair)
+
+    def _restore(self, side: SideState, disguise: _Disguise) -> PokemonState:
+        """Put the Pokemon the disguise was shown as back as it was before the switch-in."""
+        assert disguise.before is not None
+        restored = side.roster[disguise.index] = disguise.before
+        if restored.active_slot is not None:
+            # It was in play and left when the Illusion user took its place.
+            self._switch_out(restored)
+        return restored
+
+    def _carry(
+        self, shown: PokemonState, before: PokemonState, real: PokemonState, letter: str | None
+    ) -> None:
+        """Move what `shown` gained since `before` (the entry at the switch-in) to `real`."""
+        real.hp_num, real.hp_den = shown.hp_num, shown.hp_den
+        real.status, real.fainted = shown.status, shown.fainted
+        if (shown.item, shown.item_known, shown.item_lost) != (
+            before.item,
+            before.item_known,
+            before.item_lost,
+        ):
+            real.item, real.item_known, real.item_lost = (
+                shown.item,
+                shown.item_known,
+                shown.item_lost,
+            )
+        if shown.ability != before.ability:
+            real.ability = shown.ability
+        if shown.mega != before.mega:
+            real.mega, real.mega_stone = shown.mega, shown.mega_stone
+        real.boosts, real.volatiles = dict(shown.boosts), set(shown.volatiles)
+        real.temp_species, real.ability_suppressed = shown.temp_species, shown.ability_suppressed
+        real.moves_revealed = real.moves_revealed + [
+            move
+            for move in shown.moves_revealed
+            if move not in real.moves_revealed and move not in before.moves_revealed
+        ]
+        real.active_slot, real.brought = letter, True
+
+    def _settle_own(self, entries: Sequence[Mapping[str, Any]], line: _Line) -> None:
+        """An own request names the Pokemon in each position, so an Illusion user shown as another
+        Pokemon is found here, before its `|replace|` (the own channel shows the disguise)."""
+        side = self.state.own
+        illusion = self.vocab.ability(ILLUSION)
+        keyed = [((side.player, chr(ord("a") + i)), entry) for i, entry in enumerate(entries)]
+        # An added entry last: its twin, if it was the Illusion user, settles both.
+        keyed.sort(key=lambda item: self._is_added(side, item[0]))
+        for key, entry in keyed:
+            disguise = self._disguise.get(key)
+            if disguise is None:
+                continue
+            real = self._own_by_ident(entry, line)
+            added = self._pairs.get((side.player, disguise.index))
+            shown_here = self._index_of(side, real) == (added.owner if added else disguise.index)
+            is_illusion = (
+                self.vocab.ability(entry.get("ability") or entry["baseAbility"]) == illusion
+            )
+            if not entry.get("active") or shown_here or not is_illusion:
+                # Nothing to find: it is the Pokemon shown (an added entry's twin settles it).
+                del self._disguise[key]
+                continue
+            self._settle(side, key[1], real, line)
+        self._settle_left_pairs(entries, line)
+
+    def _settle_left_pairs(self, entries: Sequence[Mapping[str, Any]], line: _Line) -> None:
+        """A pair whose first-shown entry left play: if the request finds the real Pokemon in the
+        added entry's position, the first one was the Illusion user, and the own team (its
+        abilities are known) names it when exactly one Pokemon could be."""
+        side = self.state.own
+        illusion = self.vocab.ability(ILLUSION)
+        for pair in [p for (player, _), p in self._pairs.items() if player == side.player]:
+            twin = side.roster[pair.phantom]
+            owner = side.roster[pair.owner]
+            if (
+                twin.active_slot is None
+                or owner.active_slot is not None
+                or pair.owner_before is None
+            ):
+                continue
+            position = ord(twin.active_slot) - ord("a")
+            if self._own_by_ident(entries[position], line) is not owner:
+                continue
+            users = [
+                m for m in side.roster if m.ability == illusion and m is not owner and not m.phantom
+            ]
+            if len(users) == 1:
+                self._carry(owner, pair.owner_before, users[0], None)
+                self._settle_owned(side, _Disguise(pair.owner, pair.owner_before), pair)
 
     def _activate(self, line: _Line) -> None:
         _arity(line, 1, 4)
@@ -730,8 +1079,9 @@ class _Reducer:
         side, letter, _ = self._ref(line.args[0], line)
         mon = self._mon(line.args[0], line)
         mon.fainted, mon.hp_num = True, 0
-        if letter is not None and side.slots.get(letter) == side.roster.index(mon):
+        if letter is not None and side.slots.get(letter) == self._index_of(side, mon):
             side.slots[letter] = None
+            self._disguise.pop((side.player, letter), None)
         self._switch_out(mon)
         mon.status = None
 

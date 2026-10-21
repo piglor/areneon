@@ -143,13 +143,24 @@ export interface SweepArgs {
   battles: number;
   start: number;
   run_key: string;
+  /** Play only teams that hold this ability (and do not apply the run config's excluded abilities). */
+  only_ability?: string;
+}
+
+/** The pool's teams that have at least one set with `ability`; refused when none do, so a sweep cannot play nothing. */
+export function restrictPool(pool: GenerationTeamPool, ability: string): GenerationTeamPool {
+  const keep = pool.teams.map((team) => team.some((set) => set.ability === ability));
+  const teams = pool.teams.filter((_, i) => keep[i]);
+  if (teams.length === 0) throw new SweepUsageError(`no team of the pool holds the ability ${ability}`);
+  const hashes = pool.hashes.filter((_, i) => keep[i]);
+  return { teams, hashes, known_synthetic: pool.known_synthetic };
 }
 
 export class SweepUsageError extends Error {
   override name = "SweepUsageError";
 }
 
-const FLAGS = ["--config", "--out", "--mix", "--battles", "--start", "--run-key"];
+const FLAGS = ["--config", "--out", "--mix", "--battles", "--start", "--run-key", "--only-ability"];
 
 /** Strict `--flag value` parsing: an unknown flag, a missing or repeated value, a bad mix or a count that is not a whole number (battles at least 1) is refused, so a sweep cannot play nothing and pass. */
 export function parseSweepArgs(argv: readonly string[]): SweepArgs {
@@ -182,5 +193,6 @@ export function parseSweepArgs(argv: readonly string[]): SweepArgs {
     battles: whole("--battles", need("--battles"), 1),
     start: whole("--start", values.get("--start") ?? "0", 0),
     run_key: values.get("--run-key") ?? "sweep-1",
+    ...(values.has("--only-ability") ? { only_ability: values.get("--only-ability") as string } : {}),
   };
 }

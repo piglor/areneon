@@ -50,6 +50,9 @@ class PokemonState:
     moves_own: list[str] | None = None
     pp: dict[str, int] = field(default_factory=dict)
     can_mega_evo: bool = False
+    # An entry the channel forced the reducer to add (Illusion): the same Pokemon shown twice
+    # (one is an Illusion user), or a Pokemon that fainted shown as another. See `reducer.py`.
+    phantom: bool = False
 
     @property
     def hp_fraction(self) -> float | None:
@@ -59,7 +62,7 @@ class PokemonState:
 
     def to_dict(self) -> dict[str, Any]:
         fraction = self.hp_fraction
-        return {
+        document = {
             "name": self.name,
             "base_species": self.base_species,
             "species": self.species,
@@ -89,6 +92,9 @@ class PokemonState:
             "pp": dict(sorted(self.pp.items())),
             "can_mega_evo": self.can_mega_evo,
         }
+        if self.phantom:  # only an added entry says so: every other state keeps its keys
+            document["phantom"] = True
+        return document
 
 
 @dataclass
