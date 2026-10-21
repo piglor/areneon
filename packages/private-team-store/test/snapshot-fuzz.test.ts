@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { privateLogicalSnapshotHash, privateSnapshotHash, recordHash } from "@areneon/showdown-bridge";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { SnapshotIoError } from "../src/snapshot-io-error.ts";
-import { readPrivateSnapshot } from "../src/snapshot-reader.ts";
+import { INSPECT_ONLY, readPrivateSnapshot } from "../src/snapshot-reader.ts";
 import { writePrivateSnapshot, type WrittenSnapshot } from "../src/snapshot-writer.ts";
 import { at, engine, input, labelSet, realDuckdb, records } from "./snapshot-support.ts";
 
@@ -61,7 +61,7 @@ beforeEach(() => {
 afterAll(() => process.off("unhandledRejection", onUnhandled));
 
 async function fuzz(w: WrittenSnapshot, cases: number, seed: number): Promise<{ same: number; refused: number }> {
-  const original = await readPrivateSnapshot({ engine, manifest: w.manifest, expectedSnapshotHash: w.snapshotHash, shard: (i) => at(w.shards, i), labelSet, decodeTimeoutMs: 20_000 });
+  const original = await readPrivateSnapshot({ engine, expected: INSPECT_ONLY, manifest: w.manifest, expectedSnapshotHash: w.snapshotHash, shard: (i) => at(w.shards, i), labelSet, decodeTimeoutMs: 20_000 });
   const wanted = original.records.map((r) => recordHash(r));
   const random = mulberry32(seed);
   let same = 0;
@@ -74,6 +74,7 @@ async function fuzz(w: WrittenSnapshot, cases: number, seed: number): Promise<{ 
     manifest.logical_snapshot_hash = privateLogicalSnapshotHash(manifest as never);
     try {
       const read = await readPrivateSnapshot({
+        expected: INSPECT_ONLY,
         engine,
         manifest,
         expectedSnapshotHash: privateSnapshotHash(manifest as never),

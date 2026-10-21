@@ -127,8 +127,8 @@ const WORKER_SOURCE = (module: string): URL =>
 /**
  * Decode in a worker thread with an empty environment, a heap limit and a
  * wall-clock limit. A refusal is a `ShardError` with a fixed message; a worker
- * that fails, runs out of memory or exceeds the limit is `UNREADABLE` (a worker
- * that ends silently is caught by the limit).
+ * that fails, runs out of memory, ends without an answer or exceeds the limit is
+ * `UNREADABLE`.
  */
 export function decodeIsolated(bytes: Uint8Array, spec: DecodeSpec, timeoutMs: number = DEFAULT_DECODE_TIMEOUT_MS): Promise<Record<string, unknown>[]> {
   return new Promise((resolve, reject) => {
@@ -150,5 +150,7 @@ export function decodeIsolated(bytes: Uint8Array, spec: DecodeSpec, timeoutMs: n
     const timer = setTimeout(() => finish(() => reject(new ShardError(UNREADABLE))), timeoutMs);
     worker.on("message", (answer: DecodeAnswer) => finish(() => (answer.ok ? resolve(answer.rows) : reject(new ShardError(answer.message)))));
     worker.on("error", () => finish(() => reject(new ShardError(UNREADABLE))));
+    // A worker that ends without an answer (process.exit in the worker, a crash that raises no error) settles at once instead of at the limit.
+    worker.on("exit", () => finish(() => reject(new ShardError(UNREADABLE))));
   });
 }

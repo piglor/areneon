@@ -29,6 +29,13 @@ export const SNAPSHOT_IO_REFUSALS = [
   "shard_layout_invalid",
   "shard_invalid",
   "record_invalid",
+  "manifest_missing",
+  "parent_mismatch",
+  "current_invalid",
+  "current_changed",
+  "download_mismatch",
+  "local_copy_exists",
+  "local_copy_failed",
 ] as const;
 export type SnapshotIoRefusal = (typeof SNAPSHOT_IO_REFUSALS)[number];
 
@@ -56,6 +63,13 @@ const MESSAGES: Readonly<Record<SnapshotIoRefusal, string>> = {
   shard_layout_invalid: "the shards do not match the layout the shard key and row count give",
   shard_invalid: "a shard file is not a valid private shard of this manifest",
   record_invalid: "a record is refused by the private record reader or the pinned engine",
+  manifest_missing: "no manifest is stored for this snapshot hash",
+  parent_mismatch: "the snapshot's parent is not the snapshot current.json is expected to name",
+  current_invalid: "current.json is not a pointer of the form this store writes",
+  current_changed: "current.json does not name the expected parent snapshot; nothing was changed in it",
+  download_mismatch: "an object read back from the store differs from the bytes that were uploaded",
+  local_copy_exists: "a local copy of this snapshot already exists; it was not replaced",
+  local_copy_failed: "the verified local copy could not be written",
 };
 
 export interface SnapshotIoPosition {

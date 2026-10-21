@@ -5,8 +5,8 @@
 //   - the manifest through `readPrivateSnapshotManifest` (shape, shard order
 //     and indices, tiling, sums, counts, recomputed logical hash), a parent
 //     that is not the snapshot's own hash, the hash it was fetched under (always
-//     given), the version manifest and vocabulary hash the caller expects (when
-//     given), the label set and the Parquet layout version;
+//     given), the version manifest and vocabulary hash the caller expects (always
+//     given, or `INSPECT_ONLY` said out loud), the label set and the Parquet layout version;
 //   - the shard layout: `shardCount(rows)` shards, no two with one file digest;
 //   - each shard file: its size and SHA-256, then the engine-free decode and
 //     rebuild of `readPrivateShard` (columns, order, placement, logical hash,
@@ -41,6 +41,14 @@ import { PARQUET_SCHEMA_VERSION, readPrivateShard, SHARD_ROWS, shardAssigner, sh
 import { SnapshotIoError } from "./snapshot-io-error.ts";
 import { labelPlan } from "./snapshot-plan.ts";
 
+export interface ExpectedVersion {
+  readonly manifest: PrivateSnapshotManifest["manifest"];
+  readonly vocabularyHash: string;
+}
+
+/** The explicit "no pin to compare with" of an inspect-only reader (a snapshot made under an older pin). */
+export const INSPECT_ONLY = "inspect-only" as const;
+
 export interface ReadSnapshotInput {
   readonly engine: Engine;
   /** The parsed `manifest.json`. */
@@ -57,11 +65,12 @@ export interface ReadSnapshotInput {
   readonly expectedSnapshotHash: string;
   /**
    * The version manifest and vocabulary hash the caller derives from the
-   * pinned engine and rules; when given, the snapshot must carry exactly
-   * these. (Left out only by a reader that inspects a snapshot made under
-   * another pin.)
+   * pinned engine and rules: the snapshot must carry exactly these. Required,
+   * like `expectedSnapshotHash`; a reader that looks at a snapshot made under
+   * another pin says so with `INSPECT_ONLY`, which the import and the verify
+   * path never pass.
    */
-  readonly expected?: { readonly manifest: PrivateSnapshotManifest["manifest"]; readonly vocabularyHash: string };
+  readonly expected: ExpectedVersion | typeof INSPECT_ONLY;
   /** Rows per shard the layout used; the default is 2^18. Tests make it small. */
   readonly shardRows?: number;
   /** Wall-clock limit of one shard's decode, in ms; the default is 300000. Tests make it short. */
@@ -77,6 +86,15 @@ export interface SnapshotRead {
 
 const codeUnits = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
 
+/** The manifest's version manifest and vocabulary hash are the expected ones; an absent `expected` (a JavaScript caller) matches nothing. */
+function versionMatches(manifest: PrivateSnapshotManifest, expected: ExpectedVersion | undefined): boolean {
+  return (
+    expected?.manifest !== undefined &&
+    canonicalJson(manifest.manifest as unknown as Json) === canonicalJson(expected.manifest as unknown as Json) &&
+    manifest.vocabulary_hash === expected.vocabularyHash
+  );
+}
+
 export async function readPrivateSnapshot(input: ReadSnapshotInput): Promise<SnapshotRead> {
   let manifest: PrivateSnapshotManifest;
   try {
@@ -88,9 +106,7 @@ export async function readPrivateSnapshot(input: ReadSnapshotInput): Promise<Sna
   if (manifest.parent_snapshot_hash === snapshotHash) throw new SnapshotIoError("parent_is_self");
   if (input.expectedSnapshotHash !== snapshotHash) throw new SnapshotIoError("snapshot_hash_mismatch");
   if (manifest.label_set_hash !== recordHash(input.labelSet)) throw new SnapshotIoError("label_set_mismatch");
-  if (input.expected !== undefined && (canonicalJson(manifest.manifest as unknown as Json) !== canonicalJson(input.expected.manifest as unknown as Json) || manifest.vocabulary_hash !== input.expected.vocabularyHash)) {
-    throw new SnapshotIoError("version_manifest_mismatch");
-  }
+  if (input.expected !== INSPECT_ONLY && !versionMatches(manifest, input.expected)) throw new SnapshotIoError("version_manifest_mismatch");
   if (manifest.parquet_schema_version !== PARQUET_SCHEMA_VERSION) throw new SnapshotIoError("version_mismatch");
 
   if (new Set(manifest.shards.map((s) => s.file_sha256)).size !== manifest.shards.length) throw new SnapshotIoError("shard_file_repeated");
