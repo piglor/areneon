@@ -56,6 +56,17 @@ export function randomLegal(
   return { choice: pool[draw.value] as string, state: draw.state };
 }
 
+/**
+ * A uniform integer in `[0, n)` from the same Mulberry32 stream, for a caller that needs a draw of
+ * its own (the damage-aware baseline's `epsilon_ppm`, ADR-018 section 5). Pure like `randomLegal`:
+ * it returns the next state. `n` is an integer from 1 to 2^32.
+ */
+export function randomBelow(n: number, state: RandomLegalState): { value: number; state: RandomLegalState } {
+  checkState(state);
+  if (!Number.isInteger(n) || n < 1 || n > 2 ** 32) throw new RangeError("the bound must be an integer from 1 to 2^32");
+  return below(n, state);
+}
+
 /** Throw `RandomStateError` unless `state` is an unsigned 32-bit integer. */
 function checkState(state: RandomLegalState): void {
   if (!Number.isInteger(state) || state < 0 || state > 0xffffffff) {

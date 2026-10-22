@@ -33,6 +33,15 @@ export type Actor = (request: RequestRecord, context?: ActorContext) => string |
 export interface ActorContext {
   player: Player;
   channel: readonly string[];
+  /**
+   * The acting seat's own set array as `runBattle` was given it: a deeply
+   * frozen copy (what `team_hashes` binds), never the opponent's. It lets a
+   * scripted actor ask the mechanics probe about its own Pokemon (ADR-018 §2),
+   * which a request does not carry whole. Optional: actors that do not need it
+   * ignore it, and the context type holds nothing of the opponent's team, the
+   * omniscient log, the hidden verdicts or the seed.
+   */
+  team?: readonly Readonly<PokemonSet>[];
 }
 
 /** Why a side's policy lost a game by forfeit (evaluation protocol D2). */
@@ -183,6 +192,11 @@ export interface BattleRecord {
   forfeit?: { player: Player; request_seq: number; cause: ForfeitCause; detail: string };
 }
 
+function deepFreeze<T extends object>(value: T): T {
+  for (const inner of Object.values(value)) if (typeof inner === "object" && inner !== null) deepFreeze(inner);
+  return Object.freeze(value);
+}
+
 export class InvalidTeamError extends Error {
   override name = "InvalidTeamError";
   readonly player: Player;
@@ -228,6 +242,8 @@ export async function runBattle(options: BattleOptions): Promise<BattleRecord> {
   // caller's sets stay as brought and hash the same after the run.
   const team_hashes = { p1: teamHash(teams.p1), p2: teamHash(teams.p2) };
   const played = { p1: structuredClone(teams.p1), p2: structuredClone(teams.p2) };
+  // What each actor is shown of its own team: a frozen copy of the sets as brought, taken before the validator fills defaults into `played`.
+  const brought = { p1: deepFreeze(structuredClone(teams.p1)), p2: deepFreeze(structuredClone(teams.p2)) };
   const resolved = resolveFormat(engine, formatId, snapshot);
   for (const player of PLAYERS) {
     const verdict = validateTeam(engine, resolved, played[player]);
@@ -328,7 +344,7 @@ export async function runBattle(options: BattleOptions): Promise<BattleRecord> {
               const verdicts = judge.judge(request.request_hash, legal.pending);
               record.hidden_verdicts.push({ player, request_seq: request.request_seq, verdicts });
             }
-            const choice = await actors[player](request, { player, channel: record.channels[player].slice() });
+            const choice = await actors[player](request, { player, channel: record.channels[player].slice(), team: brought[player] });
             if (ended || record.forfeit !== undefined) return;
             const entry = { player, request_seq: request.request_seq, choice };
             record.choices.push(entry);
