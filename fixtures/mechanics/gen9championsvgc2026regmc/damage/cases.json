@@ -1,0 +1,1453 @@
+{
+  "data_class": "synthetic",
+  "format_id": "gen9championsvgc2026regmc",
+  "source": "Hand-worked from the champions mod's modifyDamage steps (data/mods/champions/scripts.ts at the pinned commit) with Python integer arithmetic outside the probe: stats from base stat + Stat Points + 20 with the nature, then base damage floor(floor(floor(floor(2*50/5+2) * BP * A / D) / 50) + 2, spread 0.75, weather, crit x1.5, the 16 rolls floor(x*(100-r)/100), STAB 1.5, type steps, burn, screens 2732/4096 (not on a crit). The expected KO field is the slice-3 placeholder (KO counts are slice 5). The sets are synthetic and CC0.",
+  "cases": [
+    {
+      "id": "single-target",
+      "description": "Dragon Claw into Arcanine: one target, STAB, neutral",
+      "working": {
+        "category": "physical",
+        "base_power": 80,
+        "attack": 200,
+        "defense": 100,
+        "spread": false,
+        "weather_chain": null,
+        "stab": true,
+        "type_steps": 0,
+        "burn": false,
+        "screen": false,
+        "note": ""
+      },
+      "query": {
+        "schema_version": 1,
+        "data_class": "synthetic",
+        "format_id": "gen9championsvgc2026regmc",
+        "query": {
+          "kind": "damage",
+          "attacker": {
+            "set": "Garchomp  \nAbility: Rough Skin  \nLevel: 50  \nEVs: 32 HP / 32 Atk / 2 Spe  \nAdamant Nature  \n- Dragon Claw  \n- Rock Slide  \n- Slash  \n\n",
+            "boosts": {
+              "atk": 0,
+              "def": 0,
+              "spa": 0,
+              "spd": 0,
+              "spe": 0
+            },
+            "status": null,
+            "hp": null,
+            "mega": false
+          },
+          "defender": {
+            "set": "Arcanine  \nAbility: Intimidate  \nLevel: 50  \nEVs: 32 HP / 32 SpA  \nModest Nature  \n- Heat Wave  \n- Protect  \n\n",
+            "boosts": {
+              "atk": 0,
+              "def": 0,
+              "spa": 0,
+              "spd": 0,
+              "spe": 0
+            },
+            "status": null,
+            "hp": null,
+            "mega": false
+          },
+          "move": "dragonclaw",
+          "state": {
+            "weather": null,
+            "terrain": null,
+            "trick_room": false,
+            "sides": [
+              {
+                "aurora_veil": false,
+                "light_screen": false,
+                "reflect": false,
+                "tailwind": false
+              },
+              {
+                "aurora_veil": false,
+                "light_screen": false,
+                "reflect": false,
+                "tailwind": false
+              }
+            ]
+          }
+        }
+      },
+      "expected": {
+        "no_crit": [
+          108,
+          106,
+          105,
+          103,
+          103,
+          102,
+          100,
+          99,
+          99,
+          97,
+          96,
+          96,
+          94,
+          93,
+          91,
+          91
+        ],
+        "crit": [
+          162,
+          159,
+          157,
+          156,
+          154,
+          153,
+          151,
+          150,
+          148,
+          147,
+          145,
+          144,
+          142,
+          139,
+          138,
+          136
+        ],
+        "crit_chance": {
+          "kind": "chance",
+          "numerator": 1,
+          "denominator": 24
+        },
+        "hp_current": 197,
+        "hp_max": 197,
+        "ko": {
+          "kind": "unsupported",
+          "reason": "ko_state_change"
+        }
+      }
+    },
+    {
+      "id": "spread",
+      "description": "Rock Slide into Arcanine: two foes, so 0.75; Rock is super effective on Fire; no STAB",
+      "working": {
+        "category": "physical",
+        "base_power": 75,
+        "attack": 200,
+        "defense": 100,
+        "spread": true,
+        "weather_chain": null,
+        "stab": false,
+        "type_steps": 1,
+        "burn": false,
+        "screen": false,
+        "note": ""
+      },
+      "query": {
+        "schema_version": 1,
+        "data_class": "synthetic",
+        "format_id": "gen9championsvgc2026regmc",
+        "query": {
+          "kind": "damage",
+          "attacker": {
+            "set": "Garchomp  \nAbility: Rough Skin  \nLevel: 50  \nEVs: 32 HP / 32 Atk / 2 Spe  \nAdamant Nature  \n- Dragon Claw  \n- Rock Slide  \n- Slash  \n\n",
+            "boosts": {
+              "atk": 0,
+              "def": 0,
+              "spa": 0,
+              "spd": 0,
+              "spe": 0
+            },
+            "status": null,
+            "hp": null,
+            "mega": false
+          },
+          "defender": {
+            "set": "Arcanine  \nAbility: Intimidate  \nLevel: 50  \nEVs: 32 HP / 32 SpA  \nModest Nature  \n- Heat Wave  \n- Protect  \n\n",
+            "boosts": {
+              "atk": 0,
+              "def": 0,
+              "spa": 0,
+              "spd": 0,
+              "spe": 0
+            },
+            "status": null,
+            "hp": null,
+            "mega": false
+          },
+          "move": "rockslide",
+          "state": {
+            "weather": null,
+            "terrain": null,
+            "trick_room": false,
+            "sides": [
+              {
+                "aurora_veil": false,
+                "light_screen": false,
+                "reflect": false,
+                "tailwind": false
+              },
+              {
+                "aurora_veil": false,
+                "light_screen": false,
+                "reflect": false,
+                "tailwind": false
+              }
+            ]
+          }
+        }
+      },
+      "expected": {
+        "no_crit": [
+          102,
+          100,
+          98,
+          98,
+          96,
+          96,
+          94,
+          94,
+          92,
+          92,
+          90,
+          90,
+          88,
+          88,
+          86,
+          86
+        ],
+        "crit": [
+          152,
+          150,
+          148,
+          146,
+          144,
+          144,
+          142,
+          140,
+          138,
+          138,
+          136,
+          134,
+          132,
+          132,
+          130,
+          128
+        ],
+        "crit_chance": {
+          "kind": "chance",
+          "numerator": 1,
+          "denominator": 24
+        },
+        "hp_current": 197,
+        "hp_max": 197,
+        "ko": {
+          "kind": "unsupported",
+          "reason": "ko_state_change"
+        }
+      }
+    },
+    {
+      "id": "reflect",
+      "description": "Dragon Claw into Empoleon behind Reflect: Steel resists Dragon, 2732/4096 in doubles, not on a crit",
+      "working": {
+        "category": "physical",
+        "base_power": 80,
+        "attack": 200,
+        "defense": 108,
+        "spread": false,
+        "weather_chain": null,
+        "stab": true,
+        "type_steps": -1,
+        "burn": false,
+        "screen": true,
+        "note": ""
+      },
+      "query": {
+        "schema_version": 1,
+        "data_class": "synthetic",
+        "format_id": "gen9championsvgc2026regmc",
+        "query": {
+          "kind": "damage",
+          "attacker": {
+            "set": "Garchomp  \nAbility: Rough Skin  \nLevel: 50  \nEVs: 32 HP / 32 Atk / 2 Spe  \nAdamant Nature  \n- Dragon Claw  \n- Rock Slide  \n- Slash  \n\n",
+            "boosts": {
+              "atk": 0,
+              "def": 0,
+              "spa": 0,
+              "spd": 0,
+              "spe": 0
+            },
+            "status": null,
+            "hp": null,
+            "mega": false
+          },
+          "defender": {
+            "set": "Empoleon  \nAbility: Torrent  \nLevel: 50  \nEVs: 32 HP / 32 SpA / 2 Spe  \nModest Nature  \n- Surf  \n- Protect  \n\n",
+            "boosts": {
+              "atk": 0,
+              "def": 0,
+              "spa": 0,
+              "spd": 0,
+              "spe": 0
+            },
+            "status": null,
+            "hp": null,
+            "mega": false
+          },
+          "move": "dragonclaw",
+          "state": {
+            "weather": null,
+            "terrain": null,
+            "trick_room": false,
+            "sides": [
+              {
+                "aurora_veil": false,
+                "light_screen": false,
+                "reflect": false,
+                "tailwind": false
+              },
+              {
+                "aurora_veil": false,
+                "light_screen": false,
+                "reflect": true,
+                "tailwind": false
+              }
+            ]
+          }
+        }
+      },
+      "expected": {
+        "no_crit": [
+          33,
+          33,
+          32,
+          32,
+          32,
+          31,
+          31,
+          31,
+          30,
+          30,
+          30,
+          29,
+          29,
+          29,
+          28,
+          28
+        ],
+        "crit": [
+          75,
+          74,
+          73,
+          72,
+          72,
+          71,
+          70,
+          69,
+          69,
+          68,
+          67,
+          66,
+          66,
+          65,
+          64,
+          63
+        ],
+        "crit_chance": {
+          "kind": "chance",
+          "numerator": 1,
+          "denominator": 24
+        },
+        "hp_current": 191,
+        "hp_max": 191,
+        "ko": {
+          "kind": "unsupported",
+          "reason": "ko_state_change"
+        }
+      }
+    },
+    {
+      "id": "light-screen-spread",
+      "description": "Heat Wave from Arcanine into Empoleon behind Light Screen: spread and screen; Fire is resisted by Water and weak to Steel",
+      "working": {
+        "category": "special",
+        "base_power": 95,
+        "attack": 167,
+        "defense": 121,
+        "spread": true,
+        "weather_chain": null,
+        "stab": true,
+        "type_steps": 0,
+        "burn": false,
+        "screen": true,
+        "note": ""
+      },
+      "query": {
+        "schema_version": 1,
+        "data_class": "synthetic",
+        "format_id": "gen9championsvgc2026regmc",
+        "query": {
+          "kind": "damage",
+          "attacker": {
+            "set": "Arcanine  \nAbility: Intimidate  \nLevel: 50  \nEVs: 32 HP / 32 SpA  \nModest Nature  \n- Heat Wave  \n- Protect  \n\n",
+            "boosts": {
+              "atk": 0,
+              "def": 0,
+              "spa": 0,
+              "spd": 0,
+              "spe": 0
+            },
+            "status": null,
+            "hp": null,
+            "mega": false
+          },
+          "defender": {
+            "set": "Empoleon  \nAbility: Torrent  \nLevel: 50  \nEVs: 32 HP / 32 SpA / 2 Spe  \nModest Nature  \n- Surf  \n- Protect  \n\n",
+            "boosts": {
+              "atk": 0,
+              "def": 0,
+              "spa": 0,
+              "spd": 0,
+              "spe": 0
+            },
+            "status": null,
+            "hp": null,
+            "mega": false
+          },
+          "move": "heatwave",
+          "state": {
+            "weather": null,
+            "terrain": null,
+            "trick_room": false,
+            "sides": [
+              {
+                "aurora_veil": false,
+                "light_screen": false,
+                "reflect": false,
+                "tailwind": false
+              },
+              {
+                "aurora_veil": false,
+                "light_screen": true,
+                "reflect": false,
+                "tailwind": false
+              }
+            ]
+          }
+        }
+      },
+      "expected": {
+        "no_crit": [
+          44,
+          43,
+          43,
+          42,
+          42,
+          41,
+          41,
+          40,
+          40,
+          40,
+          39,
+          39,
+          38,
+          38,
+          37,
+          37
+        ],
+        "crit": [
+          99,
+          97,
+          96,
+          96,
+          94,
+          93,
+          93,
+          91,
+          90,
+          90,
+          88,
+          87,
+          87,
+          85,
+          84,
+          84
+        ],
+        "crit_chance": {
+          "kind": "chance",
+          "numerator": 1,
+          "denominator": 24
+        },
+        "hp_current": 191,
+        "hp_max": 191,
+        "ko": {
+          "kind": "unsupported",
+          "reason": "ko_state_change"
+        }
+      }
+    },
+    {
+      "id": "rain",
+      "description": "Surf from Empoleon into Arcanine in rain: spread, Water x1.5 (6144/4096), super effective",
+      "working": {
+        "category": "special",
+        "base_power": 90,
+        "attack": 179,
+        "defense": 100,
+        "spread": true,
+        "weather_chain": [
+          [
+            3,
+            2
+          ]
+        ],
+        "stab": true,
+        "type_steps": 1,
+        "burn": false,
+        "screen": false,
+        "note": ""
+      },
+      "query": {
+        "schema_version": 1,
+        "data_class": "synthetic",
+        "format_id": "gen9championsvgc2026regmc",
+        "query": {
+          "kind": "damage",
+          "attacker": {
+            "set": "Empoleon  \nAbility: Torrent  \nLevel: 50  \nEVs: 32 HP / 32 SpA / 2 Spe  \nModest Nature  \n- Surf  \n- Protect  \n\n",
+            "boosts": {
+              "atk": 0,
+              "def": 0,
+              "spa": 0,
+              "spd": 0,
+              "spe": 0
+            },
+            "status": null,
+            "hp": null,
+            "mega": false
+          },
+          "defender": {
+            "set": "Arcanine  \nAbility: Intimidate  \nLevel: 50  \nEVs: 32 HP / 32 SpA  \nModest Nature  \n- Heat Wave  \n- Protect  \n\n",
+            "boosts": {
+              "atk": 0,
+              "def": 0,
+              "spa": 0,
+              "spd": 0,
+              "spe": 0
+            },
+            "status": null,
+            "hp": null,
+            "mega": false
+          },
+          "move": "surf",
+          "state": {
+            "weather": "raindance",
+            "terrain": null,
+            "trick_room": false,
+            "sides": [
+              {
+                "aurora_veil": false,
+                "light_screen": false,
+                "reflect": false,
+                "tailwind": false
+              },
+              {
+                "aurora_veil": false,
+                "light_screen": false,
+                "reflect": false,
+                "tailwind": false
+              }
+            ]
+          }
+        }
+      },
+      "expected": {
+        "no_crit": [
+          242,
+          240,
+          236,
+          234,
+          230,
+          228,
+          228,
+          224,
+          222,
+          218,
+          216,
+          216,
+          212,
+          210,
+          206,
+          204
+        ],
+        "crit": [
+          362,
+          356,
+          354,
+          350,
+          348,
+          342,
+          338,
+          336,
+          332,
+          330,
+          324,
+          320,
+          318,
+          314,
+          312,
+          306
+        ],
+        "crit_chance": {
+          "kind": "chance",
+          "numerator": 1,
+          "denominator": 24
+        },
+        "hp_current": 197,
+        "hp_max": 197,
+        "ko": {
+          "kind": "unsupported",
+          "reason": "ko_state_change"
+        }
+      }
+    },
+    {
+      "id": "sun",
+      "description": "The same Surf in harsh sun: Water x0.5",
+      "working": {
+        "category": "special",
+        "base_power": 90,
+        "attack": 179,
+        "defense": 100,
+        "spread": true,
+        "weather_chain": [
+          [
+            1,
+            2
+          ]
+        ],
+        "stab": true,
+        "type_steps": 1,
+        "burn": false,
+        "screen": false,
+        "note": ""
+      },
+      "query": {
+        "schema_version": 1,
+        "data_class": "synthetic",
+        "format_id": "gen9championsvgc2026regmc",
+        "query": {
+          "kind": "damage",
+          "attacker": {
+            "set": "Empoleon  \nAbility: Torrent  \nLevel: 50  \nEVs: 32 HP / 32 SpA / 2 Spe  \nModest Nature  \n- Surf  \n- Protect  \n\n",
+            "boosts": {
+              "atk": 0,
+              "def": 0,
+              "spa": 0,
+              "spd": 0,
+              "spe": 0
+            },
+            "status": null,
+            "hp": null,
+            "mega": false
+          },
+          "defender": {
+            "set": "Arcanine  \nAbility: Intimidate  \nLevel: 50  \nEVs: 32 HP / 32 SpA  \nModest Nature  \n- Heat Wave  \n- Protect  \n\n",
+            "boosts": {
+              "atk": 0,
+              "def": 0,
+              "spa": 0,
+              "spd": 0,
+              "spe": 0
+            },
+            "status": null,
+            "hp": null,
+            "mega": false
+          },
+          "move": "surf",
+          "state": {
+            "weather": "sunnyday",
+            "terrain": null,
+            "trick_room": false,
+            "sides": [
+              {
+                "aurora_veil": false,
+                "light_screen": false,
+                "reflect": false,
+                "tailwind": false
+              },
+              {
+                "aurora_veil": false,
+                "light_screen": false,
+                "reflect": false,
+                "tailwind": false
+              }
+            ]
+          }
+        }
+      },
+      "expected": {
+        "no_crit": [
+          80,
+          78,
+          78,
+          78,
+          74,
+          74,
+          74,
+          74,
+          72,
+          72,
+          72,
+          72,
+          68,
+          68,
+          68,
+          66
+        ],
+        "crit": [
+          120,
+          116,
+          116,
+          114,
+          114,
+          114,
+          110,
+          110,
+          108,
+          108,
+          108,
+          104,
+          104,
+          102,
+          102,
+          102
+        ],
+        "crit_chance": {
+          "kind": "chance",
+          "numerator": 1,
+          "denominator": 24
+        },
+        "hp_current": 197,
+        "hp_max": 197,
+        "ko": {
+          "kind": "unsupported",
+          "reason": "ko_state_change"
+        }
+      }
+    },
+    {
+      "id": "mega",
+      "description": "Mega Gengar (SpA 222 after Mega Evolution) Shadow Ball into Empoleon",
+      "working": {
+        "category": "special",
+        "base_power": 80,
+        "attack": 222,
+        "defense": 121,
+        "spread": false,
+        "weather_chain": null,
+        "stab": true,
+        "type_steps": 0,
+        "burn": false,
+        "screen": false,
+        "note": ""
+      },
+      "query": {
+        "schema_version": 1,
+        "data_class": "synthetic",
+        "format_id": "gen9championsvgc2026regmc",
+        "query": {
+          "kind": "damage",
+          "attacker": {
+            "set": "Gengar @ Gengarite  \nAbility: Cursed Body  \nLevel: 50  \nEVs: 32 HP / 32 SpA / 2 Spe  \nTimid Nature  \n- Shadow Ball  \n- Protect  \n\n",
+            "boosts": {
+              "atk": 0,
+              "def": 0,
+              "spa": 0,
+              "spd": 0,
+              "spe": 0
+            },
+            "status": null,
+            "hp": null,
+            "mega": true
+          },
+          "defender": {
+            "set": "Empoleon  \nAbility: Torrent  \nLevel: 50  \nEVs: 32 HP / 32 SpA / 2 Spe  \nModest Nature  \n- Surf  \n- Protect  \n\n",
+            "boosts": {
+              "atk": 0,
+              "def": 0,
+              "spa": 0,
+              "spd": 0,
+              "spe": 0
+            },
+            "status": null,
+            "hp": null,
+            "mega": false
+          },
+          "move": "shadowball",
+          "state": {
+            "weather": null,
+            "terrain": null,
+            "trick_room": false,
+            "sides": [
+              {
+                "aurora_veil": false,
+                "light_screen": false,
+                "reflect": false,
+                "tailwind": false
+              },
+              {
+                "aurora_veil": false,
+                "light_screen": false,
+                "reflect": false,
+                "tailwind": false
+              }
+            ]
+          }
+        }
+      },
+      "expected": {
+        "no_crit": [
+          99,
+          97,
+          96,
+          96,
+          94,
+          93,
+          93,
+          91,
+          90,
+          90,
+          88,
+          87,
+          87,
+          85,
+          84,
+          84
+        ],
+        "crit": [
+          148,
+          147,
+          145,
+          144,
+          142,
+          141,
+          139,
+          138,
+          136,
+          135,
+          133,
+          132,
+          130,
+          129,
+          127,
+          126
+        ],
+        "crit_chance": {
+          "kind": "chance",
+          "numerator": 1,
+          "denominator": 24
+        },
+        "hp_current": 191,
+        "hp_max": 191,
+        "ko": {
+          "kind": "unsupported",
+          "reason": "ko_state_change"
+        }
+      }
+    },
+    {
+      "id": "burn",
+      "description": "Dragon Claw from a burned Garchomp: x0.5 on physical damage",
+      "working": {
+        "category": "physical",
+        "base_power": 80,
+        "attack": 200,
+        "defense": 100,
+        "spread": false,
+        "weather_chain": null,
+        "stab": true,
+        "type_steps": 0,
+        "burn": true,
+        "screen": false,
+        "note": ""
+      },
+      "query": {
+        "schema_version": 1,
+        "data_class": "synthetic",
+        "format_id": "gen9championsvgc2026regmc",
+        "query": {
+          "kind": "damage",
+          "attacker": {
+            "set": "Garchomp  \nAbility: Rough Skin  \nLevel: 50  \nEVs: 32 HP / 32 Atk / 2 Spe  \nAdamant Nature  \n- Dragon Claw  \n- Rock Slide  \n- Slash  \n\n",
+            "boosts": {
+              "atk": 0,
+              "def": 0,
+              "spa": 0,
+              "spd": 0,
+              "spe": 0
+            },
+            "status": "brn",
+            "hp": null,
+            "mega": false
+          },
+          "defender": {
+            "set": "Arcanine  \nAbility: Intimidate  \nLevel: 50  \nEVs: 32 HP / 32 SpA  \nModest Nature  \n- Heat Wave  \n- Protect  \n\n",
+            "boosts": {
+              "atk": 0,
+              "def": 0,
+              "spa": 0,
+              "spd": 0,
+              "spe": 0
+            },
+            "status": null,
+            "hp": null,
+            "mega": false
+          },
+          "move": "dragonclaw",
+          "state": {
+            "weather": null,
+            "terrain": null,
+            "trick_room": false,
+            "sides": [
+              {
+                "aurora_veil": false,
+                "light_screen": false,
+                "reflect": false,
+                "tailwind": false
+              },
+              {
+                "aurora_veil": false,
+                "light_screen": false,
+                "reflect": false,
+                "tailwind": false
+              }
+            ]
+          }
+        }
+      },
+      "expected": {
+        "no_crit": [
+          54,
+          53,
+          52,
+          51,
+          51,
+          51,
+          50,
+          49,
+          49,
+          48,
+          48,
+          48,
+          47,
+          46,
+          45,
+          45
+        ],
+        "crit": [
+          81,
+          79,
+          78,
+          78,
+          77,
+          76,
+          75,
+          75,
+          74,
+          73,
+          72,
+          72,
+          71,
+          69,
+          69,
+          68
+        ],
+        "crit_chance": {
+          "kind": "chance",
+          "numerator": 1,
+          "denominator": 24
+        },
+        "hp_current": 197,
+        "hp_max": 197,
+        "ko": {
+          "kind": "unsupported",
+          "reason": "ko_state_change"
+        }
+      }
+    },
+    {
+      "id": "always-crit",
+      "description": "Frost Breath always crits: the engine draws nothing for the chance; Ice is 4x on Garchomp",
+      "working": {
+        "category": "special",
+        "base_power": 60,
+        "attack": 158,
+        "defense": 105,
+        "spread": false,
+        "weather_chain": null,
+        "stab": true,
+        "type_steps": 2,
+        "burn": false,
+        "screen": false,
+        "note": ""
+      },
+      "query": {
+        "schema_version": 1,
+        "data_class": "synthetic",
+        "format_id": "gen9championsvgc2026regmc",
+        "query": {
+          "kind": "damage",
+          "attacker": {
+            "set": "Abomasnow  \nAbility: Snow Warning  \nLevel: 50  \nEVs: 32 HP / 32 SpA  \nModest Nature  \n- Frost Breath  \n- Protect  \n\n",
+            "boosts": {
+              "atk": 0,
+              "def": 0,
+              "spa": 0,
+              "spd": 0,
+              "spe": 0
+            },
+            "status": null,
+            "hp": null,
+            "mega": false
+          },
+          "defender": {
+            "set": "Garchomp  \nAbility: Rough Skin  \nLevel: 50  \nEVs: 32 HP / 32 Atk / 2 Spe  \nAdamant Nature  \n- Dragon Claw  \n- Rock Slide  \n- Slash  \n\n",
+            "boosts": {
+              "atk": 0,
+              "def": 0,
+              "spa": 0,
+              "spd": 0,
+              "spe": 0
+            },
+            "status": null,
+            "hp": null,
+            "mega": false
+          },
+          "move": "frostbreath",
+          "state": {
+            "weather": null,
+            "terrain": null,
+            "trick_room": false,
+            "sides": [
+              {
+                "aurora_veil": false,
+                "light_screen": false,
+                "reflect": false,
+                "tailwind": false
+              },
+              {
+                "aurora_veil": false,
+                "light_screen": false,
+                "reflect": false,
+                "tailwind": false
+              }
+            ]
+          }
+        }
+      },
+      "expected": {
+        "no_crit": [
+          244,
+          240,
+          240,
+          232,
+          232,
+          228,
+          228,
+          228,
+          220,
+          220,
+          216,
+          216,
+          216,
+          208,
+          208,
+          204
+        ],
+        "crit": [
+          364,
+          360,
+          352,
+          352,
+          348,
+          340,
+          340,
+          336,
+          336,
+          328,
+          324,
+          324,
+          316,
+          316,
+          312,
+          304
+        ],
+        "crit_chance": {
+          "kind": "always"
+        },
+        "hp_current": 215,
+        "hp_max": 215,
+        "ko": {
+          "kind": "unsupported",
+          "reason": "ko_state_change"
+        }
+      }
+    },
+    {
+      "id": "crit-immune",
+      "description": "Dragon Claw into Samurott (Shell Armor): the crit is cancelled, so the crit vector equals the plain one",
+      "working": {
+        "category": "physical",
+        "base_power": 80,
+        "attack": 200,
+        "defense": 117,
+        "spread": false,
+        "weather_chain": null,
+        "stab": true,
+        "type_steps": 0,
+        "burn": false,
+        "screen": false,
+        "note": "Shell Armor cancels the crit (CriticalHit event), so the crit vector is the plain one"
+      },
+      "query": {
+        "schema_version": 1,
+        "data_class": "synthetic",
+        "format_id": "gen9championsvgc2026regmc",
+        "query": {
+          "kind": "damage",
+          "attacker": {
+            "set": "Garchomp  \nAbility: Rough Skin  \nLevel: 50  \nEVs: 32 HP / 32 Atk / 2 Spe  \nAdamant Nature  \n- Dragon Claw  \n- Rock Slide  \n- Slash  \n\n",
+            "boosts": {
+              "atk": 0,
+              "def": 0,
+              "spa": 0,
+              "spd": 0,
+              "spe": 0
+            },
+            "status": null,
+            "hp": null,
+            "mega": false
+          },
+          "defender": {
+            "set": "Samurott  \nAbility: Shell Armor  \nLevel: 50  \nEVs: 32 HP / 2 Def  \nBold Nature  \n- Surf  \n- Protect  \n\n",
+            "boosts": {
+              "atk": 0,
+              "def": 0,
+              "spa": 0,
+              "spd": 0,
+              "spe": 0
+            },
+            "status": null,
+            "hp": null,
+            "mega": false
+          },
+          "move": "dragonclaw",
+          "state": {
+            "weather": null,
+            "terrain": null,
+            "trick_room": false,
+            "sides": [
+              {
+                "aurora_veil": false,
+                "light_screen": false,
+                "reflect": false,
+                "tailwind": false
+              },
+              {
+                "aurora_veil": false,
+                "light_screen": false,
+                "reflect": false,
+                "tailwind": false
+              }
+            ]
+          }
+        }
+      },
+      "expected": {
+        "no_crit": [
+          93,
+          91,
+          90,
+          90,
+          88,
+          87,
+          87,
+          85,
+          85,
+          84,
+          82,
+          82,
+          81,
+          79,
+          79,
+          78
+        ],
+        "crit": [
+          93,
+          91,
+          90,
+          90,
+          88,
+          87,
+          87,
+          85,
+          85,
+          84,
+          82,
+          82,
+          81,
+          79,
+          79,
+          78
+        ],
+        "crit_chance": {
+          "kind": "never"
+        },
+        "hp_current": 202,
+        "hp_max": 202,
+        "ko": {
+          "kind": "unsupported",
+          "reason": "ko_state_change"
+        }
+      }
+    },
+    {
+      "id": "high-crit-ratio",
+      "description": "Slash (80 base power in the Champions data) has a higher crit stage: the engine's draw is 1 in 8",
+      "working": {
+        "category": "physical",
+        "base_power": 80,
+        "attack": 200,
+        "defense": 100,
+        "spread": false,
+        "weather_chain": null,
+        "stab": false,
+        "type_steps": 0,
+        "burn": false,
+        "screen": false,
+        "note": ""
+      },
+      "query": {
+        "schema_version": 1,
+        "data_class": "synthetic",
+        "format_id": "gen9championsvgc2026regmc",
+        "query": {
+          "kind": "damage",
+          "attacker": {
+            "set": "Garchomp  \nAbility: Rough Skin  \nLevel: 50  \nEVs: 32 HP / 32 Atk / 2 Spe  \nAdamant Nature  \n- Dragon Claw  \n- Rock Slide  \n- Slash  \n\n",
+            "boosts": {
+              "atk": 0,
+              "def": 0,
+              "spa": 0,
+              "spd": 0,
+              "spe": 0
+            },
+            "status": null,
+            "hp": null,
+            "mega": false
+          },
+          "defender": {
+            "set": "Arcanine  \nAbility: Intimidate  \nLevel: 50  \nEVs: 32 HP / 32 SpA  \nModest Nature  \n- Heat Wave  \n- Protect  \n\n",
+            "boosts": {
+              "atk": 0,
+              "def": 0,
+              "spa": 0,
+              "spd": 0,
+              "spe": 0
+            },
+            "status": null,
+            "hp": null,
+            "mega": false
+          },
+          "move": "slash",
+          "state": {
+            "weather": null,
+            "terrain": null,
+            "trick_room": false,
+            "sides": [
+              {
+                "aurora_veil": false,
+                "light_screen": false,
+                "reflect": false,
+                "tailwind": false
+              },
+              {
+                "aurora_veil": false,
+                "light_screen": false,
+                "reflect": false,
+                "tailwind": false
+              }
+            ]
+          }
+        }
+      },
+      "expected": {
+        "no_crit": [
+          72,
+          71,
+          70,
+          69,
+          69,
+          68,
+          67,
+          66,
+          66,
+          65,
+          64,
+          64,
+          63,
+          62,
+          61,
+          61
+        ],
+        "crit": [
+          108,
+          106,
+          105,
+          104,
+          103,
+          102,
+          101,
+          100,
+          99,
+          98,
+          97,
+          96,
+          95,
+          93,
+          92,
+          91
+        ],
+        "crit_chance": {
+          "kind": "chance",
+          "numerator": 1,
+          "denominator": 8
+        },
+        "hp_current": 197,
+        "hp_max": 197,
+        "ko": {
+          "kind": "unsupported",
+          "reason": "ko_state_change"
+        }
+      }
+    },
+    {
+      "id": "boost-and-hp",
+      "description": "Dragon Claw at +2 Attack into a defender declared at 50 HP",
+      "working": {
+        "category": "physical",
+        "base_power": 80,
+        "attack": 400,
+        "defense": 100,
+        "spread": false,
+        "weather_chain": null,
+        "stab": true,
+        "type_steps": 0,
+        "burn": false,
+        "screen": false,
+        "note": ""
+      },
+      "query": {
+        "schema_version": 1,
+        "data_class": "synthetic",
+        "format_id": "gen9championsvgc2026regmc",
+        "query": {
+          "kind": "damage",
+          "attacker": {
+            "set": "Garchomp  \nAbility: Rough Skin  \nLevel: 50  \nEVs: 32 HP / 32 Atk / 2 Spe  \nAdamant Nature  \n- Dragon Claw  \n- Rock Slide  \n- Slash  \n\n",
+            "boosts": {
+              "atk": 2,
+              "def": 0,
+              "spa": 0,
+              "spd": 0,
+              "spe": 0
+            },
+            "status": null,
+            "hp": null,
+            "mega": false
+          },
+          "defender": {
+            "set": "Arcanine  \nAbility: Intimidate  \nLevel: 50  \nEVs: 32 HP / 32 SpA  \nModest Nature  \n- Heat Wave  \n- Protect  \n\n",
+            "boosts": {
+              "atk": 0,
+              "def": 0,
+              "spa": 0,
+              "spd": 0,
+              "spe": 0
+            },
+            "status": null,
+            "hp": 50,
+            "mega": false
+          },
+          "move": "dragonclaw",
+          "state": {
+            "weather": null,
+            "terrain": null,
+            "trick_room": false,
+            "sides": [
+              {
+                "aurora_veil": false,
+                "light_screen": false,
+                "reflect": false,
+                "tailwind": false
+              },
+              {
+                "aurora_veil": false,
+                "light_screen": false,
+                "reflect": false,
+                "tailwind": false
+              }
+            ]
+          }
+        }
+      },
+      "expected": {
+        "no_crit": [
+          213,
+          210,
+          208,
+          205,
+          204,
+          201,
+          199,
+          198,
+          195,
+          193,
+          190,
+          189,
+          186,
+          184,
+          183,
+          180
+        ],
+        "crit": [
+          319,
+          315,
+          312,
+          309,
+          306,
+          303,
+          300,
+          297,
+          292,
+          289,
+          286,
+          283,
+          280,
+          277,
+          274,
+          271
+        ],
+        "crit_chance": {
+          "kind": "chance",
+          "numerator": 1,
+          "denominator": 24
+        },
+        "hp_current": 50,
+        "hp_max": 197,
+        "ko": {
+          "kind": "unsupported",
+          "reason": "ko_state_change"
+        }
+      }
+    }
+  ]
+}

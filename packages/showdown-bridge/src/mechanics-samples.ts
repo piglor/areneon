@@ -3,11 +3,14 @@
 // valid, invalid (schema) and reader-invalid samples of the MechanicsConfig,
 // the MechanicsQuery and the MechanicsResult. The `computed` stats, `refused`
 // and `unsupported` results are real probe outputs on synthetic fixture sets;
-// the speed_order and damage results are shape samples (the probes for those
-// kinds come in later slices), so their numbers are not engine outputs.
+// the damage query and result are a hand-worked fixture case and the probe's
+// output for it; the speed_order result and the damage result with KO counts
+// are shape samples (their probes come in later slices), so their numbers are
+// not engine outputs.
 
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import type { Engine, PokemonSet } from "./engine.ts";
 import { GOLDEN_FORMAT, TEAMS_DIR } from "./golden.ts";
 import { loadMechanicsConfig } from "./mechanics-config.ts";
@@ -15,6 +18,8 @@ import { type MechanicsContext, probeMechanics } from "./mechanics-probe.ts";
 import { readMechanicsQuery } from "./mechanics-query.ts";
 import type { MechanicsResult } from "./mechanics-result.ts";
 import { exportPaste, importPaste } from "./teams.ts";
+
+const DAMAGE_CASES = fileURLToPath(new URL("../../../fixtures/mechanics/gen9championsvgc2026regmc/damage/cases.json", import.meta.url));
 
 type Cases = Record<string, unknown>;
 
@@ -51,15 +56,17 @@ export function mechanicsSamples(engine: Engine): { valid: Cases; invalid: Cases
     ],
     state: field,
   });
-  const damage = wrap({ kind: "damage", attacker: combatant(own), defender: combatant(foe), move: "protect", state: field });
+  const damageCases = JSON.parse(readFileSync(DAMAGE_CASES, "utf8")) as { cases: { id: string; query: unknown }[] };
+  const damage = (damageCases.cases.find((c) => c.id === "single-target") as { query: any }).query;
 
   const run = (query: unknown): MechanicsResult => probeMechanics(context, readMechanicsQuery(query)).result;
   const computed = run(stats);
   const refusedQuery = wrap({ kind: "stats", set: setOf(engine, "illegal-stat-points-over-32.txt", 0) });
   const unsupported = run(speedOrder);
   const identity = { schema_version: 1, data_class: "synthetic", query_hash: computed.query_hash, manifest: computed.manifest, mechanics_config_hash: computed.mechanics_config_hash, adapter_format: computed.adapter_format, gap_ids: computed.gap_ids };
+  const damageComputed = run(damage) as any;
   const rolls = Array.from({ length: 16 }, (_, i) => 80 + i * 2);
-  const damageResult = (ko: unknown) => ({ ...identity, kind: "computed", answer: { kind: "damage", no_crit: rolls, crit: rolls.map((r) => Math.floor(r * 1.5)), crit_chance: { kind: "chance", numerator: 1, denominator: 24 }, hp_current: 150, hp_max: 150, ko } });
+  const damageResult = (ko: unknown) => ({ ...damageComputed, answer: { ...damageComputed.answer, ko } });
   const counts = { kind: "counts", ohko_no_crit: 0, ohko_crit: 0, thko_no_crit: 256 };
   const speedResult = { ...identity, kind: "computed", answer: { kind: "speed_order", order_basis: "turn_start", actions: [{ side: 0, position: 0, mega: false, order: 200, priority: 4, speed: 100 }, { side: 1, position: 0, mega: false, order: 200, priority: 4, speed: 100 }], groups: [[0, 1]] } };
 
@@ -73,8 +80,8 @@ export function mechanicsSamples(engine: Engine): { valid: Cases; invalid: Cases
       "mechanics-result/unsupported-query-kind": unsupported,
       "mechanics-result/refused-invalid-set": run(refusedQuery),
       "mechanics-result/computed-speed-order": speedResult,
-      "mechanics-result/computed-damage": damageResult(counts),
-      "mechanics-result/computed-damage-ko-unsupported": damageResult({ kind: "unsupported", reason: "ko_state_change" }),
+      "mechanics-result/computed-damage": damageComputed,
+      "mechanics-result/computed-damage-ko-counts": damageResult(counts),
     },
     invalid: {
       "mechanics-config/extra-field": mutated(config, (c) => (c.scenario.note = "x")),

@@ -1,12 +1,13 @@
 // The mechanics probe (ADR-016 section 1): Areneon computes no stat, Speed or
 // damage value. It builds a scenario battle from declared sets and reads the
-// pinned engine's own values. This slice answers the `stats` kind; the other
+// pinned engine's own values. This probe answers the `stats` and `damage` kinds; the other
 // kinds are in the contract and stay `unsupported` until the mechanics config
-// lists them (slices 2 and 3). Decision order (ADR-016 figure 4): set check
+// lists them (slice 2). Decision order (ADR-016 figure 4): set check
 // (`refused`), scope check, scenario check (`unsupported`), then the probe.
 
 import type { Engine, PokemonSet } from "./engine.ts";
 import { resolveFormat } from "./formats.ts";
+import { DamageStateError, probeDamage } from "./mechanics-damage.ts";
 import { checkScenario, ScenarioError, scenarioPokemon, startScenario } from "./mechanics-scenario.ts";
 import { type MechanicsConfig, mechanicsConfigHash } from "./mechanics-config.ts";
 import { declaredSets, mechanicsQueryHash, type ParsedMechanicsQuery } from "./mechanics-query.ts";
@@ -91,6 +92,15 @@ export function probeMechanics(context: MechanicsContext, query: ParsedMechanics
     scenarioId = checkScenario(engine, config);
   } catch (error) {
     return done({ kind: "unsupported", reason: "scenario_rule_table", position: null }, (error as ScenarioError).problems);
+  }
+  if (query.query.kind === "damage") {
+    try {
+      const outcome = probeDamage(engine, scenarioId, query.query, sets[0] as PokemonSet, sets[1] as PokemonSet);
+      return done(outcome);
+    } catch (error) {
+      if (error instanceof DamageStateError) throw new MechanicsProbeError(error.message);
+      throw error;
+    }
   }
   if (kind !== "stats") throw new MechanicsProbeError(`the config lists ${kind}, which this probe cannot answer yet`);
   return done({ kind: "computed", answer: { kind: "stats", stats: statsOf(engine, scenarioId, sets[0] as PokemonSet) } });

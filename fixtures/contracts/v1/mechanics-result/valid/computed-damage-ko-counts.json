@@ -1,0 +1,73 @@
+{
+  "schema_version": 1,
+  "adapter_format": 1,
+  "data_class": "synthetic",
+  "query_hash": "9b41c699cea053865cce425adcaac10d4c61928ee09d6fb851d0f9e5d09e1543",
+  "manifest": {
+    "showdown_commit": "7244fe8e28fa8bc4d0809ae30d183c608b62bb2b",
+    "format_id": "gen9championsvgc2026regmc",
+    "regulation": "M-C",
+    "ruleset_hash": "4dd1f039bbcc6156e08c434972beae2370dc5fe8c9c6a263da7383c3247b68f3",
+    "format_rules_hash": "549cd2aa97324be093c567324676d46a5eff19d6b0c9d8491c483dab746d5dcc"
+  },
+  "mechanics_config_hash": "ae134425ddc74bbec63c1904f9762d8fc5d80dabac2bea3f301313fadfd78675",
+  "gap_ids": [
+    "damage-formula",
+    "level",
+    "mega-evolution",
+    "stat-points"
+  ],
+  "kind": "computed",
+  "answer": {
+    "kind": "damage",
+    "no_crit": [
+      108,
+      106,
+      105,
+      103,
+      103,
+      102,
+      100,
+      99,
+      99,
+      97,
+      96,
+      96,
+      94,
+      93,
+      91,
+      91
+    ],
+    "crit": [
+      162,
+      159,
+      157,
+      156,
+      154,
+      153,
+      151,
+      150,
+      148,
+      147,
+      145,
+      144,
+      142,
+      139,
+      138,
+      136
+    ],
+    "crit_chance": {
+      "kind": "chance",
+      "numerator": 1,
+      "denominator": 24
+    },
+    "hp_current": 197,
+    "hp_max": 197,
+    "ko": {
+      "kind": "counts",
+      "ohko_no_crit": 0,
+      "ohko_crit": 0,
+      "thko_no_crit": 256
+    }
+  }
+}
