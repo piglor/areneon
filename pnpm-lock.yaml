@@ -109,15 +109,16 @@ importers:
 
   packages/showdown-bridge:
     dependencies:
-      '@areneon/public-state':
-        specifier: workspace:*
-        version: link:../public-state
       '@areneon/schema':
         specifier: workspace:*
         version: link:../schema
       ajv:
         specifier: 8.20.0
         version: 8.20.0
+    devDependencies:
+      '@areneon/public-state':
+        specifier: workspace:*
+        version: link:../public-state
 
   packages/team-dataset:
     dependencies:

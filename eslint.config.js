@@ -16,7 +16,7 @@ export default tseslint.config(
     rules: { "no-console": "error" },
   },
   {
-    // The replay viewer is two classic scripts that Python inlines into one page: they share globals
+    // The replay viewer and the shared state reader (packages/public-state) are classic scripts that Python inlines into one page: they share globals
     // (`ArReplay`, `ArView`) instead of importing, and read the page's own document and window.
     files: ["packages/replay-view/web/**/*.cjs", "packages/public-state/src/**/*.cjs"],
     languageOptions: { sourceType: "script", globals: { document: "readonly", window: "readonly", module: "writable" } },

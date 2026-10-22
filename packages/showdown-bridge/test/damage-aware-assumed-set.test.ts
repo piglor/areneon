@@ -124,9 +124,14 @@ describe("assumed opponent sets over the committed random-corpus channels", () =
         expect(problems(copy, c.mon).length, c.id).toBeGreaterThan(0);
         flagged++;
       }
-      if (flagged > 40) return;
+      if (flagged >= 40) break;
     }
-    expect(flagged).toBeGreaterThan(0);
+    expect(flagged).toBeGreaterThanOrEqual(40);
+  });
+
+  it("refuses a record whose nature the vocabulary lacks", () => {
+    const odd = { ...config, assumed_set: { ...config.assumed_set, nature: "grumpy" } };
+    expect(() => buildAssumedSet({ ...context(), config: odd }, mon())).toThrow("nature");
   });
 });
 
@@ -191,7 +196,7 @@ describe("buildAssumedSet", () => {
     expect(() => buildAssumedSet(context(), mon((m) => { m.species = "notamon"; m.base_species = "notamon"; }))).toThrow("roster");
     expect(() => buildAssumedSet(context(), mon((m) => (m.hp_den = 160)))).toThrow("out of 100");
     const five = venusaur().moves.slice(0, 5);
-    expect(() => buildAssumedSet(context(), mon((m) => (m.moves_revealed = five)))).toThrow("more than four");
+    expect(() => buildAssumedSet(context(), mon((m) => (m.moves_revealed = five)))).toThrow("no legal set");
     expect(() => buildAssumedSet(context(), mon((m) => (m.item = "notanitem", m.item_known = true)))).toThrow("no legal set");
   });
 

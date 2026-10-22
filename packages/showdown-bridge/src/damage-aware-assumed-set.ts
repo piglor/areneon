@@ -45,6 +45,7 @@ export interface AssumedSetContext {
   config: DamageAwareConfig;
 }
 
+/** Showdown's own default IV; the Champions mod ignores IVs (Stat Points replace EVs), so the value never changes a stat. */
 const IV_DEFAULT = 31;
 
 const pick = <T>(list: readonly T[], rule: "first_in_vocabulary_order" | "last_in_vocabulary_order"): T | undefined =>
@@ -75,7 +76,7 @@ export function buildAssumedSet(context: AssumedSetContext, mon: PublicMon): Ass
   const { engine, vocabulary, config } = context;
   if (mon.own) throw new AssumedSetError("an assumed set is for an opponent's Pokemon");
   const rule = config.assumed_set;
-  const candidates = mon.mega ? [mon.base_species] : [mon.species ?? "", mon.base_species];
+  const candidates = mon.mega ? [mon.base_species] : [...(mon.species === null ? [] : [mon.species]), mon.base_species];
   // The forme shown comes first; a forme the roster does not list (a battle-only forme) falls back to its base species.
   const entry = candidates.map((id) => vocabulary.roster.find((r) => r.id === id)).find((r) => r !== undefined);
   if (entry === undefined) throw new AssumedSetError("the species is not in the team vocabulary's roster");
@@ -85,17 +86,20 @@ export function buildAssumedSet(context: AssumedSetContext, mon: PublicMon): Ass
   if (ability === undefined) throw new AssumedSetError("the species has no ability in the team vocabulary");
 
   let item: string;
+  // A Mega Evolved Pokemon is declared as its base forme holding the revealed stone; the probe query sets `mega`.
   if (mon.mega) item = mon.mega_stone ?? "";
   else if (mon.item_known) item = mon.item ?? "";
   else item = rule.item.kind === "fixed" ? rule.item.item : "";
 
   const pool = new Set(entry.moves);
-  const revealed = mon.moves_revealed.filter((move) => pool.has(move)).slice(0, 4);
+  // Every revealed move the species' pool holds goes on the set; the validator, not a count written here, refuses too many.
+  const revealed = mon.moves_revealed.filter((move) => pool.has(move));
   const unplaceable = mon.moves_revealed.filter((move) => !pool.has(move));
-  if (mon.moves_revealed.filter((move) => pool.has(move)).length > 4) throw new AssumedSetError("more than four revealed moves in the species' pool");
   const filler = revealed.length === 0 ? pick(entry.moves, rule.filler_move) : undefined;
   if (revealed.length === 0 && filler === undefined) throw new AssumedSetError("the species has no move in the team vocabulary");
 
+  const natureName = vocabulary.natures.find((n) => n.id === rule.nature)?.name;
+  if (natureName === undefined) throw new AssumedSetError("the record's nature is not in the team vocabulary");
   const evs = { ...rule.stat_points } as StatTable;
   const ivs: StatTable = { hp: IV_DEFAULT, atk: IV_DEFAULT, def: IV_DEFAULT, spa: IV_DEFAULT, spd: IV_DEFAULT, spe: IV_DEFAULT };
   const set: PokemonSet = {
@@ -104,7 +108,7 @@ export function buildAssumedSet(context: AssumedSetContext, mon: PublicMon): Ass
     item: item === "" ? "" : dex.items.get(item).name,
     ability: dex.abilities.get(ability).name,
     moves: (revealed.length > 0 ? revealed : [filler as string]).map((move) => dex.moves.get(move).name),
-    nature: vocabulary.natures.find((n) => n.id === rule.nature)?.name ?? rule.nature,
+    nature: natureName,
     gender: mon.gender ?? "",
     evs,
     ivs,
