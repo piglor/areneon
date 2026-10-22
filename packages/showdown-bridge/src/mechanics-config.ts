@@ -15,6 +15,7 @@ import { type Json, jcs } from "./canonical-json.ts";
 import type { Engine } from "./engine.ts";
 import { resolveFormat } from "./formats.ts";
 import { checkScenario, ScenarioError } from "./mechanics-scenario.ts";
+import { MEGA_GAP_ID } from "./mechanics-speed.ts";
 import { loadRulesSnapshot } from "./rules-load.ts";
 import { type RulesSnapshot, sha256Hex } from "./rules.ts";
 
@@ -76,6 +77,8 @@ export function checkMechanicsConfig(engine: Engine, config: MechanicsConfig, sn
       if (!(gap in snapshot.gaps)) problems.push(`${entry.kind}: gap ${gap} is not in the gap ledger`);
     }
   }
+  // a speed order names the Mega row itself when a Mega Evolution is involved (the probe's constant, not the config's)
+  if (config.scope.query_kinds.some((entry) => entry.kind === "speed_order") && !(MEGA_GAP_ID in snapshot.gaps)) problems.push(`speed_order: gap ${MEGA_GAP_ID} is not in the gap ledger`);
   const dex = engine.sim.Dex.mod(engine.sim.Dex.formats.get(config.format_id).mod);
   for (const id of config.ko_blockers.items) if (!dex.items.get(id).exists) problems.push(`ko_blockers: ${id} is not an item`);
   for (const id of config.ko_blockers.abilities) if (!dex.abilities.get(id).exists) problems.push(`ko_blockers: ${id} is not an ability`);

@@ -1,19 +1,18 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 // The mechanics contracts' share of the sample corpus (ADR-008 section 2):
 // valid, invalid (schema) and reader-invalid samples of the MechanicsConfig,
-// the MechanicsQuery and the MechanicsResult. The `computed` stats, `refused`
-// and `unsupported` results are real probe outputs on synthetic fixture sets;
-// the damage query and result are a hand-worked fixture case and the probe's
-// output for it; the speed_order result and the damage result with KO counts
-// are shape samples (their probes come in later slices), so their numbers are
-// not engine outputs.
+// the MechanicsQuery and the MechanicsResult. The `computed` stats, damage and
+// speed_order, `refused` and `unsupported` results are real probe outputs on
+// synthetic fixture sets (the unsupported one from a config that lists stats
+// alone); the damage result with KO counts is a shape sample, so its numbers
+// are not engine outputs.
 
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Engine, PokemonSet } from "./engine.ts";
 import { GOLDEN_FORMAT, TEAMS_DIR } from "./golden.ts";
-import { loadMechanicsConfig } from "./mechanics-config.ts";
+import { loadMechanicsConfig, type MechanicsConfig } from "./mechanics-config.ts";
 import { type MechanicsContext, probeMechanics } from "./mechanics-probe.ts";
 import { readMechanicsQuery } from "./mechanics-query.ts";
 import type { MechanicsResult } from "./mechanics-result.ts";
@@ -62,13 +61,13 @@ export function mechanicsSamples(engine: Engine): { valid: Cases; invalid: Cases
   const run = (query: unknown): MechanicsResult => probeMechanics(context, readMechanicsQuery(query)).result;
   const computed = run(stats);
   const refusedQuery = wrap({ kind: "stats", set: setOf(engine, "illegal-stat-points-over-32.txt", 0) });
-  const unsupported = run(speedOrder);
-  const identity = { schema_version: 1, data_class: "synthetic", query_hash: computed.query_hash, manifest: computed.manifest, mechanics_config_hash: computed.mechanics_config_hash, adapter_format: computed.adapter_format, gap_ids: computed.gap_ids };
+  const statsOnly: MechanicsConfig = { ...config, scope: { query_kinds: config.scope.query_kinds.filter((entry) => entry.kind === "stats") } };
+  const unsupported = probeMechanics({ engine, config: statsOnly }, readMechanicsQuery(speedOrder)).result;
+  const speedResult = run(speedOrder);
   const damageComputed = run(damage) as any;
   const rolls = Array.from({ length: 16 }, (_, i) => 80 + i * 2);
   const damageResult = (ko: unknown) => ({ ...damageComputed, answer: { ...damageComputed.answer, ko } });
   const counts = { kind: "counts", ohko_no_crit: 0, ohko_crit: 0, thko_no_crit: 256 };
-  const speedResult = { ...identity, kind: "computed", answer: { kind: "speed_order", order_basis: "turn_start", actions: [{ side: 0, position: 0, mega: false, order: 200, priority: 4, speed: 100 }, { side: 1, position: 0, mega: false, order: 200, priority: 4, speed: 100 }], groups: [[0, 1]] } };
 
   return {
     valid: {

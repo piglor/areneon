@@ -119,17 +119,17 @@ export interface SpeedOrderAnswer {
    */
   order_basis: "turn_start";
   /**
-   * The query's actions, in query order.
+   * The query's actions, in query order. order, priority and speed are the action's own keys (a switch or a move) read after every Mega Evolution of the turn has run, so a Mega's new Speed counts; the Evolution's own order is only its place in groups.
    *
    * @minItems 1
    * @maxItems 4
    */
   actions: [ActionOrder, ...ActionOrder[]];
   /**
-   * Tie groups in execution order: each lists the indices into actions of the actions the engine orders exactly equally (their order among themselves is a draw and is never sampled). A Mega Evolution is its own group, before any move.
+   * Tie groups in execution order: each lists the indices into actions of the actions the engine orders exactly equally (their order among themselves is a draw and is never sampled). A Mega Evolution is its own group, before any move (and after any switch), so up to four move or switch groups and four Evolution groups.
    *
    * @minItems 1
-   * @maxItems 4
+   * @maxItems 8
    */
   groups: [[number, ...number[]], ...[number, ...number[]][]];
 }
@@ -146,7 +146,7 @@ export interface ActionOrder {
   order: number;
   priority: number;
   /**
-   * The action speed the engine computes.
+   * The action speed the engine computes: the Speed stat after boosts and modifiers, or its negative under Trick Room (the champions mod negates it, with no wrap).
    */
   speed: number;
 }

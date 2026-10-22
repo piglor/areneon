@@ -29,7 +29,24 @@ export function readMechanicsQuery(value: unknown): ParsedMechanicsQuery {
     const where = errors.map((error) => `${error.instancePath || "/"} ${error.message}`);
     throw new MechanicsQueryError(`invalid MechanicsQuery: ${where.join("; ")}`);
   }
-  return structuredClone(value) as unknown as ParsedMechanicsQuery;
+  const parsed = structuredClone(value) as unknown as ParsedMechanicsQuery;
+  const problems = parsed.query.kind === "speed_order" ? speedOrderProblems(parsed.query) : [];
+  if (problems.length > 0) throw new MechanicsQueryError(`invalid MechanicsQuery: ${problems.join("; ")}`);
+  return parsed;
+}
+
+/** What the profile cannot say of a `speed_order` query: each action names one Pokemon of the declared sides, once, and does not Mega Evolve one that already has. */
+export function speedOrderProblems(query: Extract<MechanicsQuery["query"], { kind: "speed_order" }>): string[] {
+  const problems: string[] = [];
+  const seen = new Set<string>();
+  for (const [index, action] of query.actions.entries()) {
+    const combatant = query.sides[action.side]?.[action.position];
+    if (combatant === undefined) problems.push(`/actions/${index} names a Pokemon the sides do not declare`);
+    if (seen.has(`${action.side}/${action.position}`)) problems.push(`/actions/${index} repeats an acting Pokemon`);
+    seen.add(`${action.side}/${action.position}`);
+    if (action.mega && combatant?.mega) problems.push(`/actions/${index} Mega Evolves a Pokemon that already has`);
+  }
+  return problems;
 }
 
 /** SHA-256 of the query's JCS bytes: its identity in a result. */

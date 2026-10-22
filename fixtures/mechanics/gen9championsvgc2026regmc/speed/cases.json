@@ -1,0 +1,1468 @@
+{
+  "data_class": "synthetic",
+  "format_id": "gen9championsvgc2026regmc",
+  "provenance": "Synthetic sets written for this fixture (CC0). The expected values were worked by hand from the champions stat formula (HP: base + Stat Points + 75; other stats: floor((base + Stat Points + 20) x nature), level 50) and the engine's modifier rules (stage table, Tailwind x2, paralysis x0.5, Choice Scarf x1.5, Trick Room as minus the Speed), not read from the probe. See README.md.",
+  "sets": {
+    "venusaur": "Venusaur @ Leftovers  \nAbility: Overgrow  \nLevel: 50  \nEVs: 32 HP / 2 Def / 32 SpA  \nSerious Nature  \n- Giga Drain  \n- Sludge Bomb  \n- Protect  \n- Sleep Powder  \n\n",
+    "venusaur_scarf": "Venusaur @ Choice Scarf  \nAbility: Overgrow  \nLevel: 50  \nEVs: 32 HP / 2 Def / 32 SpA  \nSerious Nature  \n- Giga Drain  \n- Sludge Bomb  \n- Protect  \n- Sleep Powder  \n\n",
+    "venusaur_quick_claw": "Venusaur @ Quick Claw  \nAbility: Overgrow  \nLevel: 50  \nEVs: 32 HP / 2 Def / 32 SpA  \nSerious Nature  \n- Giga Drain  \n- Sludge Bomb  \n- Protect  \n- Sleep Powder  \n\n",
+    "blastoise": "Blastoise @ Mystic Water  \nAbility: Torrent  \nLevel: 50  \nEVs: 32 HP / 32 Def / 2 SpD  \nSerious Nature  \n- Surf  \n- Ice Beam  \n- Protect  \n- Fake Out  \n\n",
+    "pikachu": "Pikachu @ Light Ball  \nAbility: Static  \nLevel: 50  \nEVs: 2 HP / 32 SpA / 32 Spe  \nTimid Nature  \n- Thunderbolt  \n- Fake Out  \n- Protect  \n- Volt Switch  \n\n",
+    "pikachu_scarf": "Pikachu @ Choice Scarf  \nAbility: Static  \nLevel: 50  \nEVs: 2 HP / 32 SpA / 32 Spe  \nTimid Nature  \n- Thunderbolt  \n- Fake Out  \n- Protect  \n- Volt Switch  \n\n",
+    "garchomp": "Garchomp @ Sitrus Berry  \nAbility: Rough Skin  \nLevel: 50  \nEVs: 32 HP / 32 Atk / 2 Def  \nSerious Nature  \n- Earthquake  \n- Rock Slide  \n- Protect  \n- Dragon Tail  \n\n",
+    "garchomp_fast": "Garchomp @ Sitrus Berry  \nAbility: Rough Skin  \nLevel: 50  \nEVs: 28 HP / 32 Atk / 6 Spe  \nJolly Nature  \n- Earthquake  \n- Rock Slide  \n- Protect  \n- Dragon Tail  \n\n",
+    "garchomp_mega": "Garchomp @ Garchompite  \nAbility: Rough Skin  \nLevel: 50  \nEVs: 32 HP / 32 Atk / 2 Def  \nSerious Nature  \n- Earthquake  \n- Rock Slide  \n- Protect  \n- Dragon Tail  \n\n",
+    "venusaur_chlorophyll": "Venusaur @ Leftovers  \nAbility: Chlorophyll  \nLevel: 50  \nEVs: 32 HP / 2 Def / 32 SpA  \nSerious Nature  \n- Giga Drain  \n- Sludge Bomb  \n- Protect  \n- Sleep Powder  \n\n",
+    "ninetales": "Ninetales @ Charcoal  \nAbility: Drought  \nLevel: 50  \nEVs: 32 HP / 32 SpA / 2 SpD  \nSerious Nature  \n- Flamethrower  \n- Heat Wave  \n- Protect  \n- Will-O-Wisp  \n\n",
+    "gengar": "Gengar @ Gengarite  \nAbility: Cursed Body  \nLevel: 50  \nEVs: 32 HP / 32 Def / 2 SpD  \nSerious Nature  \n- Shadow Ball  \n- Sludge Bomb  \n- Protect  \n- Will-O-Wisp  \n\n"
+  },
+  "cases": [
+    {
+      "id": "priority-brackets",
+      "description": "Protect (+4) beats Fake Out (+3) beats a plain move (0) beats Dragon Tail (-6), whatever the Speed.",
+      "worked": [
+        "Speeds: Venusaur 100, Blastoise 98, Pikachu 156, Garchomp 122 (see README.md).",
+        "Priority is the move's own: protect 4, fakeout 3, an attack 0, dragontail -6; order 200 for a move.",
+        "Priority first: [Venusaur protect], [Blastoise fake out], [Pikachu attack], [Garchomp dragon tail]."
+      ],
+      "query": {
+        "sides": [
+          [
+            {
+              "set": "venusaur"
+            },
+            {
+              "set": "blastoise"
+            }
+          ],
+          [
+            {
+              "set": "pikachu"
+            },
+            {
+              "set": "garchomp"
+            }
+          ]
+        ],
+        "actions": [
+          {
+            "side": 0,
+            "position": 0,
+            "move": "protect"
+          },
+          {
+            "side": 0,
+            "position": 1,
+            "move": "fakeout"
+          },
+          {
+            "side": 1,
+            "position": 0,
+            "move": "thunderbolt"
+          },
+          {
+            "side": 1,
+            "position": 1,
+            "move": "dragontail"
+          }
+        ]
+      },
+      "real_battle": true,
+      "expected": {
+        "actions": [
+          {
+            "speed": 100,
+            "priority": 4,
+            "order": 200
+          },
+          {
+            "speed": 98,
+            "priority": 3,
+            "order": 200
+          },
+          {
+            "speed": 156,
+            "priority": 0,
+            "order": 200
+          },
+          {
+            "speed": 122,
+            "priority": -6,
+            "order": 200
+          }
+        ],
+        "groups": [
+          [
+            0
+          ],
+          [
+            1
+          ],
+          [
+            2
+          ],
+          [
+            3
+          ]
+        ],
+        "gap_ids": [
+          "paralysis",
+          "trick-room"
+        ]
+      }
+    },
+    {
+      "id": "speed-within-a-bracket-and-switch",
+      "description": "A switch is order 103: before every move. Moves of one priority go by Speed.",
+      "worked": [
+        "Switch: order 103, priority 0, Speed 100 (Venusaur).",
+        "Moves: Pikachu 156 before Garchomp 122; all order 200."
+      ],
+      "query": {
+        "sides": [
+          [
+            {
+              "set": "venusaur"
+            }
+          ],
+          [
+            {
+              "set": "garchomp"
+            },
+            {
+              "set": "pikachu"
+            }
+          ]
+        ],
+        "actions": [
+          {
+            "side": 0,
+            "position": 0,
+            "move": null
+          },
+          {
+            "side": 1,
+            "position": 0,
+            "move": "earthquake"
+          },
+          {
+            "side": 1,
+            "position": 1,
+            "move": "thunderbolt"
+          }
+        ]
+      },
+      "real_battle": false,
+      "expected": {
+        "actions": [
+          {
+            "speed": 100,
+            "priority": 0,
+            "order": 103
+          },
+          {
+            "speed": 122,
+            "priority": 0,
+            "order": 200
+          },
+          {
+            "speed": 156,
+            "priority": 0,
+            "order": 200
+          }
+        ],
+        "groups": [
+          [
+            0
+          ],
+          [
+            2
+          ],
+          [
+            1
+          ]
+        ],
+        "gap_ids": [
+          "paralysis",
+          "trick-room"
+        ]
+      }
+    },
+    {
+      "id": "exact-tie",
+      "description": "Equal Speed and priority is one group, never ordered: Venusaur against Venusaur, both 100.",
+      "worked": [
+        "Pikachu 156 acts first. Venusaur (side 0) and Venusaur (side 1) are both 100 with priority 0: one tie group."
+      ],
+      "query": {
+        "sides": [
+          [
+            {
+              "set": "venusaur"
+            },
+            {
+              "set": "pikachu"
+            }
+          ],
+          [
+            {
+              "set": "venusaur"
+            }
+          ]
+        ],
+        "actions": [
+          {
+            "side": 0,
+            "position": 0,
+            "move": "gigadrain"
+          },
+          {
+            "side": 0,
+            "position": 1,
+            "move": "thunderbolt"
+          },
+          {
+            "side": 1,
+            "position": 0,
+            "move": "gigadrain"
+          }
+        ]
+      },
+      "real_battle": false,
+      "expected": {
+        "actions": [
+          {
+            "speed": 100,
+            "priority": 0,
+            "order": 200
+          },
+          {
+            "speed": 156,
+            "priority": 0,
+            "order": 200
+          },
+          {
+            "speed": 100,
+            "priority": 0,
+            "order": 200
+          }
+        ],
+        "groups": [
+          [
+            1
+          ],
+          [
+            0,
+            2
+          ]
+        ],
+        "gap_ids": [
+          "paralysis",
+          "trick-room"
+        ]
+      }
+    },
+    {
+      "id": "tailwind-doubles-speed",
+      "description": "Tailwind on side 0 doubles its Speed: Venusaur 100 x 2 = 200, ahead of Pikachu 156.",
+      "worked": [
+        "Venusaur 100 x 2 = 200; Pikachu 156; Blastoise 98 (no Tailwind on side 1)."
+      ],
+      "query": {
+        "sides": [
+          [
+            {
+              "set": "venusaur"
+            }
+          ],
+          [
+            {
+              "set": "pikachu"
+            },
+            {
+              "set": "blastoise"
+            }
+          ]
+        ],
+        "actions": [
+          {
+            "side": 0,
+            "position": 0,
+            "move": "gigadrain"
+          },
+          {
+            "side": 1,
+            "position": 0,
+            "move": "thunderbolt"
+          },
+          {
+            "side": 1,
+            "position": 1,
+            "move": "surf"
+          }
+        ],
+        "state": {
+          "tailwind": [
+            0
+          ]
+        }
+      },
+      "real_battle": true,
+      "expected": {
+        "actions": [
+          {
+            "speed": 200,
+            "priority": 0,
+            "order": 200
+          },
+          {
+            "speed": 156,
+            "priority": 0,
+            "order": 200
+          },
+          {
+            "speed": 98,
+            "priority": 0,
+            "order": 200
+          }
+        ],
+        "groups": [
+          [
+            0
+          ],
+          [
+            1
+          ],
+          [
+            2
+          ]
+        ],
+        "gap_ids": [
+          "paralysis",
+          "trick-room"
+        ]
+      }
+    },
+    {
+      "id": "trick-room-reverses",
+      "description": "Trick Room: the action speed is minus the Speed, so the slowest acts first.",
+      "worked": [
+        "Speeds 100, 122, 156, 98 become -100, -122, -156, -98.",
+        "Higher value first: -98 (Blastoise), -100 (Venusaur), -122 (Garchomp), -156 (Pikachu)."
+      ],
+      "query": {
+        "sides": [
+          [
+            {
+              "set": "venusaur"
+            },
+            {
+              "set": "garchomp"
+            }
+          ],
+          [
+            {
+              "set": "pikachu"
+            },
+            {
+              "set": "blastoise"
+            }
+          ]
+        ],
+        "actions": [
+          {
+            "side": 0,
+            "position": 0,
+            "move": "gigadrain"
+          },
+          {
+            "side": 0,
+            "position": 1,
+            "move": "earthquake"
+          },
+          {
+            "side": 1,
+            "position": 0,
+            "move": "thunderbolt"
+          },
+          {
+            "side": 1,
+            "position": 1,
+            "move": "surf"
+          }
+        ],
+        "state": {
+          "trick_room": true
+        }
+      },
+      "real_battle": true,
+      "expected": {
+        "actions": [
+          {
+            "speed": -100,
+            "priority": 0,
+            "order": 200
+          },
+          {
+            "speed": -122,
+            "priority": 0,
+            "order": 200
+          },
+          {
+            "speed": -156,
+            "priority": 0,
+            "order": 200
+          },
+          {
+            "speed": -98,
+            "priority": 0,
+            "order": 200
+          }
+        ],
+        "groups": [
+          [
+            3
+          ],
+          [
+            0
+          ],
+          [
+            1
+          ],
+          [
+            2
+          ]
+        ],
+        "gap_ids": [
+          "paralysis",
+          "trick-room"
+        ]
+      }
+    },
+    {
+      "id": "trick-room-speed-over-1809-acts-last",
+      "description": "No wrap in the champions mod: Speed 1872 under Trick Room is -1872, below Venusaur's -100, so it acts last.",
+      "worked": [
+        "Pikachu 156 at +6: floor(156 x 4) = 624. Choice Scarf and Tailwind chain to 3x (1.5 x 2): 624 x 3 = 1872.",
+        "Trick Room: -1872 and Venusaur -100. -100 is higher: Venusaur first, Pikachu last."
+      ],
+      "query": {
+        "sides": [
+          [
+            {
+              "set": "pikachu_scarf",
+              "boosts": {
+                "spe": 6
+              }
+            }
+          ],
+          [
+            {
+              "set": "venusaur"
+            }
+          ]
+        ],
+        "actions": [
+          {
+            "side": 0,
+            "position": 0,
+            "move": "thunderbolt"
+          },
+          {
+            "side": 1,
+            "position": 0,
+            "move": "gigadrain"
+          }
+        ],
+        "state": {
+          "trick_room": true,
+          "tailwind": [
+            0
+          ]
+        }
+      },
+      "real_battle": true,
+      "expected": {
+        "actions": [
+          {
+            "speed": -1872,
+            "priority": 0,
+            "order": 200
+          },
+          {
+            "speed": -100,
+            "priority": 0,
+            "order": 200
+          }
+        ],
+        "groups": [
+          [
+            1
+          ],
+          [
+            0
+          ]
+        ],
+        "gap_ids": [
+          "paralysis",
+          "trick-room"
+        ]
+      }
+    },
+    {
+      "id": "speed-over-1809-without-trick-room",
+      "description": "The same state without Trick Room: 1872 is the highest Speed and acts first.",
+      "worked": [
+        "Same Speeds as the case above, positive: 1872 against 100."
+      ],
+      "query": {
+        "sides": [
+          [
+            {
+              "set": "pikachu_scarf",
+              "boosts": {
+                "spe": 6
+              }
+            }
+          ],
+          [
+            {
+              "set": "venusaur"
+            }
+          ]
+        ],
+        "actions": [
+          {
+            "side": 0,
+            "position": 0,
+            "move": "thunderbolt"
+          },
+          {
+            "side": 1,
+            "position": 0,
+            "move": "gigadrain"
+          }
+        ],
+        "state": {
+          "tailwind": [
+            0
+          ]
+        }
+      },
+      "real_battle": true,
+      "expected": {
+        "actions": [
+          {
+            "speed": 1872,
+            "priority": 0,
+            "order": 200
+          },
+          {
+            "speed": 100,
+            "priority": 0,
+            "order": 200
+          }
+        ],
+        "groups": [
+          [
+            0
+          ],
+          [
+            1
+          ]
+        ],
+        "gap_ids": [
+          "paralysis",
+          "trick-room"
+        ]
+      }
+    },
+    {
+      "id": "paralysis-halves-speed",
+      "description": "Paralysis halves Speed: Venusaur 100 becomes 50, behind Blastoise 98.",
+      "worked": [
+        "floor(100 x 0.5) = 50 against 98."
+      ],
+      "query": {
+        "sides": [
+          [
+            {
+              "set": "venusaur",
+              "status": "par"
+            }
+          ],
+          [
+            {
+              "set": "blastoise"
+            }
+          ]
+        ],
+        "actions": [
+          {
+            "side": 0,
+            "position": 0,
+            "move": "gigadrain"
+          },
+          {
+            "side": 1,
+            "position": 0,
+            "move": "surf"
+          }
+        ]
+      },
+      "real_battle": true,
+      "expected": {
+        "actions": [
+          {
+            "speed": 50,
+            "priority": 0,
+            "order": 200
+          },
+          {
+            "speed": 98,
+            "priority": 0,
+            "order": 200
+          }
+        ],
+        "groups": [
+          [
+            1
+          ],
+          [
+            0
+          ]
+        ],
+        "gap_ids": [
+          "paralysis",
+          "trick-room"
+        ]
+      }
+    },
+    {
+      "id": "choice-scarf-multiplies-by-1-5",
+      "description": "Choice Scarf: Venusaur 100 x 1.5 = 150, ahead of Garchomp 122 and behind Pikachu 156.",
+      "worked": [
+        "100 x 1.5 = 150."
+      ],
+      "query": {
+        "sides": [
+          [
+            {
+              "set": "venusaur_scarf"
+            }
+          ],
+          [
+            {
+              "set": "pikachu"
+            },
+            {
+              "set": "garchomp"
+            }
+          ]
+        ],
+        "actions": [
+          {
+            "side": 0,
+            "position": 0,
+            "move": "gigadrain"
+          },
+          {
+            "side": 1,
+            "position": 0,
+            "move": "thunderbolt"
+          },
+          {
+            "side": 1,
+            "position": 1,
+            "move": "earthquake"
+          }
+        ]
+      },
+      "real_battle": true,
+      "expected": {
+        "actions": [
+          {
+            "speed": 150,
+            "priority": 0,
+            "order": 200
+          },
+          {
+            "speed": 156,
+            "priority": 0,
+            "order": 200
+          },
+          {
+            "speed": 122,
+            "priority": 0,
+            "order": 200
+          }
+        ],
+        "groups": [
+          [
+            1
+          ],
+          [
+            0
+          ],
+          [
+            2
+          ]
+        ],
+        "gap_ids": [
+          "paralysis",
+          "trick-room"
+        ]
+      }
+    },
+    {
+      "id": "boost-stages",
+      "description": "Stages: -1 is floor(100 / 1.5) = 66, +2 is 98 x 2 = 196.",
+      "worked": [
+        "Stage table 1, 1.5, 2, ...: a lower stage divides, a higher one multiplies, both rounded down."
+      ],
+      "query": {
+        "sides": [
+          [
+            {
+              "set": "venusaur",
+              "boosts": {
+                "spe": -1
+              }
+            }
+          ],
+          [
+            {
+              "set": "blastoise",
+              "boosts": {
+                "spe": 2
+              }
+            }
+          ]
+        ],
+        "actions": [
+          {
+            "side": 0,
+            "position": 0,
+            "move": "gigadrain"
+          },
+          {
+            "side": 1,
+            "position": 0,
+            "move": "surf"
+          }
+        ]
+      },
+      "real_battle": true,
+      "expected": {
+        "actions": [
+          {
+            "speed": 66,
+            "priority": 0,
+            "order": 200
+          },
+          {
+            "speed": 196,
+            "priority": 0,
+            "order": 200
+          }
+        ],
+        "groups": [
+          [
+            1
+          ],
+          [
+            0
+          ]
+        ],
+        "gap_ids": [
+          "paralysis",
+          "trick-room"
+        ]
+      }
+    },
+    {
+      "id": "weather-cleared-by-the-declaration",
+      "description": "Ninetales' Drought sets sun at the start, but the declared weather is none: it is cleared, and Chlorophyll does not double Venusaur (100, behind Ninetales 120).",
+      "worked": [
+        "Ninetales base 100: 100 + 20 = 120. Venusaur 100 without sun; Pikachu 156."
+      ],
+      "query": {
+        "sides": [
+          [
+            {
+              "set": "venusaur_chlorophyll"
+            },
+            {
+              "set": "ninetales"
+            }
+          ],
+          [
+            {
+              "set": "pikachu"
+            }
+          ]
+        ],
+        "actions": [
+          {
+            "side": 0,
+            "position": 0,
+            "move": "gigadrain"
+          },
+          {
+            "side": 0,
+            "position": 1,
+            "move": "flamethrower"
+          },
+          {
+            "side": 1,
+            "position": 0,
+            "move": "thunderbolt"
+          }
+        ]
+      },
+      "real_battle": true,
+      "expected": {
+        "actions": [
+          {
+            "speed": 100,
+            "priority": 0,
+            "order": 200
+          },
+          {
+            "speed": 120,
+            "priority": 0,
+            "order": 200
+          },
+          {
+            "speed": 156,
+            "priority": 0,
+            "order": 200
+          }
+        ],
+        "groups": [
+          [
+            2
+          ],
+          [
+            1
+          ],
+          [
+            0
+          ]
+        ],
+        "gap_ids": [
+          "paralysis",
+          "trick-room"
+        ]
+      }
+    },
+    {
+      "id": "declared-sun-doubles-chlorophyll",
+      "description": "With sun declared, Chlorophyll doubles Venusaur: 200, ahead of Pikachu 156.",
+      "worked": [
+        "100 x 2 = 200; Ninetales 120; Pikachu 156."
+      ],
+      "query": {
+        "sides": [
+          [
+            {
+              "set": "venusaur_chlorophyll"
+            },
+            {
+              "set": "ninetales"
+            }
+          ],
+          [
+            {
+              "set": "pikachu"
+            }
+          ]
+        ],
+        "actions": [
+          {
+            "side": 0,
+            "position": 0,
+            "move": "gigadrain"
+          },
+          {
+            "side": 0,
+            "position": 1,
+            "move": "flamethrower"
+          },
+          {
+            "side": 1,
+            "position": 0,
+            "move": "thunderbolt"
+          }
+        ],
+        "state": {
+          "weather": "sunnyday"
+        }
+      },
+      "real_battle": true,
+      "expected": {
+        "actions": [
+          {
+            "speed": 200,
+            "priority": 0,
+            "order": 200
+          },
+          {
+            "speed": 120,
+            "priority": 0,
+            "order": 200
+          },
+          {
+            "speed": 156,
+            "priority": 0,
+            "order": 200
+          }
+        ],
+        "groups": [
+          [
+            0
+          ],
+          [
+            2
+          ],
+          [
+            1
+          ]
+        ],
+        "gap_ids": [
+          "paralysis",
+          "trick-room"
+        ]
+      }
+    },
+    {
+      "id": "mega-becomes-faster-and-moves-first",
+      "description": "Gengar (130) is slower than Garchomp (140) before Mega Evolving and faster (150) after: the Evolution is its own group, then Gengar moves first.",
+      "worked": [
+        "Gengar base 110: 110 + 0 + 20 = 130. Mega Gengar base 130: 130 + 20 = 150. Garchomp base 102, Jolly, 6 Stat Points: floor((102 + 6 + 20) x 1.1) = floor(140.8) = 140.",
+        "Groups: [Gengar Mega Evolves], then moves: Gengar 150 before Garchomp 140."
+      ],
+      "query": {
+        "sides": [
+          [
+            {
+              "set": "gengar"
+            }
+          ],
+          [
+            {
+              "set": "garchomp_fast"
+            }
+          ]
+        ],
+        "actions": [
+          {
+            "side": 0,
+            "position": 0,
+            "move": "shadowball",
+            "mega": true
+          },
+          {
+            "side": 1,
+            "position": 0,
+            "move": "earthquake"
+          }
+        ]
+      },
+      "real_battle": true,
+      "expected": {
+        "actions": [
+          {
+            "speed": 150,
+            "priority": 0,
+            "order": 200
+          },
+          {
+            "speed": 140,
+            "priority": 0,
+            "order": 200
+          }
+        ],
+        "groups": [
+          [
+            0
+          ],
+          [
+            0
+          ],
+          [
+            1
+          ]
+        ],
+        "gap_ids": [
+          "mega-evolution",
+          "paralysis",
+          "trick-room"
+        ]
+      }
+    },
+    {
+      "id": "no-mega-control",
+      "description": "The same Pokemon without the Evolution: Gengar stays at 130, behind Garchomp 140.",
+      "worked": [
+        "130 against 140."
+      ],
+      "query": {
+        "sides": [
+          [
+            {
+              "set": "gengar"
+            }
+          ],
+          [
+            {
+              "set": "garchomp_fast"
+            }
+          ]
+        ],
+        "actions": [
+          {
+            "side": 0,
+            "position": 0,
+            "move": "shadowball"
+          },
+          {
+            "side": 1,
+            "position": 0,
+            "move": "earthquake"
+          }
+        ]
+      },
+      "real_battle": true,
+      "expected": {
+        "actions": [
+          {
+            "speed": 130,
+            "priority": 0,
+            "order": 200
+          },
+          {
+            "speed": 140,
+            "priority": 0,
+            "order": 200
+          }
+        ],
+        "groups": [
+          [
+            1
+          ],
+          [
+            0
+          ]
+        ],
+        "gap_ids": [
+          "paralysis",
+          "trick-room"
+        ]
+      }
+    },
+    {
+      "id": "two-megas-in-speed-order",
+      "description": "Two Evolutions: Gengar (130 before) goes first, then Garchomp (122 before); afterwards Gengar is 150 and Garchomp 112.",
+      "worked": [
+        "Garchomp base 102: 122; Mega Garchomp base 92: 92 + 20 = 112."
+      ],
+      "query": {
+        "sides": [
+          [
+            {
+              "set": "gengar"
+            }
+          ],
+          [
+            {
+              "set": "garchomp_mega"
+            }
+          ]
+        ],
+        "actions": [
+          {
+            "side": 0,
+            "position": 0,
+            "move": "shadowball",
+            "mega": true
+          },
+          {
+            "side": 1,
+            "position": 0,
+            "move": "earthquake",
+            "mega": true
+          }
+        ]
+      },
+      "real_battle": true,
+      "expected": {
+        "actions": [
+          {
+            "speed": 150,
+            "priority": 0,
+            "order": 200
+          },
+          {
+            "speed": 112,
+            "priority": 0,
+            "order": 200
+          }
+        ],
+        "groups": [
+          [
+            0
+          ],
+          [
+            1
+          ],
+          [
+            0
+          ],
+          [
+            1
+          ]
+        ],
+        "gap_ids": [
+          "mega-evolution",
+          "paralysis",
+          "trick-room"
+        ]
+      }
+    },
+    {
+      "id": "two-megas-tie",
+      "description": "Two Evolutions of equal Speed are one group, and so are their moves.",
+      "worked": [
+        "Both Gengar are 130 before and 150 after."
+      ],
+      "query": {
+        "sides": [
+          [
+            {
+              "set": "gengar"
+            }
+          ],
+          [
+            {
+              "set": "gengar"
+            }
+          ]
+        ],
+        "actions": [
+          {
+            "side": 0,
+            "position": 0,
+            "move": "shadowball",
+            "mega": true
+          },
+          {
+            "side": 1,
+            "position": 0,
+            "move": "shadowball",
+            "mega": true
+          }
+        ]
+      },
+      "real_battle": false,
+      "expected": {
+        "actions": [
+          {
+            "speed": 150,
+            "priority": 0,
+            "order": 200
+          },
+          {
+            "speed": 150,
+            "priority": 0,
+            "order": 200
+          }
+        ],
+        "groups": [
+          [
+            0,
+            1
+          ],
+          [
+            0,
+            1
+          ]
+        ],
+        "gap_ids": [
+          "mega-evolution",
+          "paralysis",
+          "trick-room"
+        ]
+      }
+    },
+    {
+      "id": "already-evolved",
+      "description": "A Pokemon declared as already Mega Evolved is 150 with no Evolution of its own.",
+      "worked": [
+        "Mega Gengar 150 against Garchomp 140; one group per move."
+      ],
+      "query": {
+        "sides": [
+          [
+            {
+              "set": "gengar",
+              "mega": true
+            }
+          ],
+          [
+            {
+              "set": "garchomp_fast"
+            }
+          ]
+        ],
+        "actions": [
+          {
+            "side": 0,
+            "position": 0,
+            "move": "shadowball"
+          },
+          {
+            "side": 1,
+            "position": 0,
+            "move": "earthquake"
+          }
+        ]
+      },
+      "real_battle": false,
+      "expected": {
+        "actions": [
+          {
+            "speed": 150,
+            "priority": 0,
+            "order": 200
+          },
+          {
+            "speed": 140,
+            "priority": 0,
+            "order": 200
+          }
+        ],
+        "groups": [
+          [
+            0
+          ],
+          [
+            1
+          ]
+        ],
+        "gap_ids": [
+          "mega-evolution",
+          "paralysis",
+          "trick-room"
+        ]
+      }
+    },
+    {
+      "id": "quick-claw-is-unsupported",
+      "description": "Quick Claw draws a random number: the probe answers unsupported (random_effect) and names the action, never a guess.",
+      "worked": [
+        "No order is given."
+      ],
+      "query": {
+        "sides": [
+          [
+            {
+              "set": "venusaur_quick_claw"
+            }
+          ],
+          [
+            {
+              "set": "pikachu"
+            }
+          ]
+        ],
+        "actions": [
+          {
+            "side": 0,
+            "position": 0,
+            "move": "gigadrain"
+          },
+          {
+            "side": 1,
+            "position": 0,
+            "move": "thunderbolt"
+          }
+        ]
+      },
+      "real_battle": false,
+      "expected": {
+        "unsupported": {
+          "reason": "random_effect",
+          "position": 0
+        },
+        "gap_ids": [
+          "paralysis",
+          "trick-room"
+        ]
+      }
+    },
+    {
+      "id": "switch-before-mega",
+      "description": "A switch (order 103) comes before a Mega Evolution (order 104), which comes before the moves.",
+      "worked": [
+        "Garchomp (140) switches: order 103, priority 0, Speed 140. Gengar Mega Evolves (130 before), then moves at 150."
+      ],
+      "query": {
+        "sides": [
+          [
+            {
+              "set": "gengar"
+            }
+          ],
+          [
+            {
+              "set": "garchomp_fast"
+            }
+          ]
+        ],
+        "actions": [
+          {
+            "side": 0,
+            "position": 0,
+            "move": "shadowball",
+            "mega": true
+          },
+          {
+            "side": 1,
+            "position": 0,
+            "move": null
+          }
+        ]
+      },
+      "real_battle": false,
+      "expected": {
+        "actions": [
+          {
+            "speed": 150,
+            "priority": 0,
+            "order": 200
+          },
+          {
+            "speed": 140,
+            "priority": 0,
+            "order": 103
+          }
+        ],
+        "groups": [
+          [
+            1
+          ],
+          [
+            0
+          ],
+          [
+            0
+          ]
+        ],
+        "gap_ids": [
+          "mega-evolution",
+          "paralysis",
+          "trick-room"
+        ]
+      }
+    },
+    {
+      "id": "four-actions-and-a-mega-make-five-groups",
+      "description": "Four actions with distinct keys and one Evolution give five groups: the Evolution's own and four of the actions.",
+      "worked": [
+        "Speeds: Venusaur 100, Pikachu 156, Garchomp 140; Gengar 130 then 150 after its Evolution.",
+        "Garchomp and Pikachu switch (order 103; 156 before 140). Gengar Mega Evolves, then moves (150). Venusaur moves (100)."
+      ],
+      "query": {
+        "sides": [
+          [
+            {
+              "set": "gengar"
+            },
+            {
+              "set": "venusaur"
+            }
+          ],
+          [
+            {
+              "set": "garchomp_fast"
+            },
+            {
+              "set": "pikachu"
+            }
+          ]
+        ],
+        "actions": [
+          {
+            "side": 0,
+            "position": 0,
+            "move": "shadowball",
+            "mega": true
+          },
+          {
+            "side": 0,
+            "position": 1,
+            "move": "gigadrain"
+          },
+          {
+            "side": 1,
+            "position": 0,
+            "move": null
+          },
+          {
+            "side": 1,
+            "position": 1,
+            "move": null
+          }
+        ]
+      },
+      "real_battle": false,
+      "expected": {
+        "actions": [
+          {
+            "speed": 150,
+            "priority": 0,
+            "order": 200
+          },
+          {
+            "speed": 100,
+            "priority": 0,
+            "order": 200
+          },
+          {
+            "speed": 140,
+            "priority": 0,
+            "order": 103
+          },
+          {
+            "speed": 156,
+            "priority": 0,
+            "order": 103
+          }
+        ],
+        "groups": [
+          [
+            3
+          ],
+          [
+            2
+          ],
+          [
+            0
+          ],
+          [
+            0
+          ],
+          [
+            1
+          ]
+        ],
+        "gap_ids": [
+          "mega-evolution",
+          "paralysis",
+          "trick-room"
+        ]
+      }
+    }
+  ]
+}
