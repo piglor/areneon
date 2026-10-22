@@ -98,6 +98,8 @@ jobs:
         run: node packages/team-dataset/scripts/check-team-labels.ts
       - name: mechanics probe config against the pinned engine (ADR-016)
         run: node packages/showdown-bridge/scripts/check-mechanics-config.ts
+      - name: damage-aware baseline config against the pinned engine's team vocabulary (ADR-018)
+        run: node packages/showdown-bridge/scripts/check-damage-aware-config.ts
 
   team-guard:
     runs-on: ubuntu-latest

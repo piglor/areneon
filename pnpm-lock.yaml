@@ -109,6 +109,9 @@ importers:
 
   packages/showdown-bridge:
     dependencies:
+      '@areneon/public-state':
+        specifier: workspace:*
+        version: link:../public-state
       '@areneon/schema':
         specifier: workspace:*
         version: link:../schema

@@ -15,6 +15,7 @@ import {
 } from "./runner.ts";
 import { battleClass, type SyntheticTeamHashes, teamHash } from "./team-class.ts";
 import { importPaste, type TeamVerdict, validateTeam } from "./teams.ts";
+import { readTeamVocabulary, TEAM_VOCABULARY_FILE, type TeamVocabulary } from "./team-vocabulary.ts";
 import type { PlayerChannelLog } from "@areneon/schema/types/v1/player-channel-log.ts";
 
 /** Sanitized request fixtures for the pinned engine (CC0, see fixtures/LICENSE). */
@@ -42,6 +43,14 @@ export const GOLDEN_PHASES: Readonly<Record<string, RequestPhase>> = {
   "turn.request.json": "move",
   "force-switch.request.json": "forceSwitch",
 };
+
+/**
+ * The golden team vocabulary, read from the committed export (`team-vocabulary.test.ts` holds the
+ * file equal to a fresh export of the pinned engine, which takes seconds).
+ */
+export function goldenTeamVocabulary(): TeamVocabulary {
+  return readTeamVocabulary(JSON.parse(readFileSync(join(GOLDEN_DIR, TEAM_VOCABULARY_FILE), "utf8")));
+}
 
 /** The synthetic team both sides bring. It is not a real competitive team. */
 export function syntheticTeam(): PokemonSet[] {

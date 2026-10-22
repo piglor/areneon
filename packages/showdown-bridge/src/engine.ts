@@ -128,6 +128,7 @@ export interface SimModdedDex {
   items: { get(name: string): { exists: boolean; name: string; megaStone?: Record<string, string> } };
   species: { get(name: string): { exists: boolean; name: string; baseSpecies: string } };
   abilities: { get(name: string): { exists: boolean; name: string } };
+  moves: { get(name: string): { exists: boolean; name: string } };
 }
 
 /** The slice of Showdown's `sim` module Areneon depends on. */

@@ -1,0 +1,185 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:areneon:schema:contracts:v1:damage-aware-config",
+  "title": "DamageAwareConfig",
+  "description": "The reviewed assumption record of the damage-aware scripted baseline (ADR-018 sections 3 to 5): reviewed data in config/baselines/damage-aware.<version>.json, never code. It states how every unrevealed field of an opponent's Pokemon is filled when the baseline builds an assumed set for the mechanics probe (revealed facts are always used as revealed), how the shown hit-point percentage becomes a hit-point value, the scoring weights, and the exploration rate. The record never carries a game rule: every id in it is checked against the pinned engine's team vocabulary by the reader, and an assumed set must pass the target format's validator. Integers only: weights are parts per million. Its RFC 8785 SHA-256 is baseline_config_hash, a part of the baseline identity (ADR-018 section 5). A change of any value is a new record version, never an edit.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "format_id",
+    "assumed_set",
+    "hp_rounding",
+    "scoring",
+    "epsilon_ppm"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "format_id": {
+      "description": "The target format (a format of the rules snapshot) the assumed sets are built for.",
+      "type": "string",
+      "pattern": "^[a-z0-9]+$"
+    },
+    "assumed_set": {
+      "description": "The rule for every opponent field that is not revealed. A revealed species, forme, level, gender, move, item, ability or Mega is used as revealed; an unrevealed move is never invented.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "item",
+        "ability",
+        "nature",
+        "stat_points",
+        "filler_move"
+      ],
+      "properties": {
+        "item": {
+          "description": "The item of an assumed set whose item is not revealed.",
+          "type": "object",
+          "oneOf": [
+            {
+              "$ref": "#/$defs/NoItem"
+            },
+            {
+              "$ref": "#/$defs/FixedItem"
+            }
+          ],
+          "discriminator": {
+            "propertyName": "kind"
+          }
+        },
+        "ability": {
+          "description": "Which of the species' abilities, in the team vocabulary's order, an unrevealed ability becomes. When the vocabulary allows one ability the two rules agree.",
+          "$ref": "#/$defs/VocabularyOrderRule"
+        },
+        "nature": {
+          "description": "An engine nature id of the team vocabulary.",
+          "type": "string",
+          "pattern": "^[a-z0-9]+$"
+        },
+        "stat_points": {
+          "description": "The Stat Point spread of every assumed set. The sum and each value must pass the target format's validator; the reader checks the sum against the format's Stat Point limit.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "hp",
+            "atk",
+            "def",
+            "spa",
+            "spd",
+            "spe"
+          ],
+          "properties": {
+            "hp": {
+              "$ref": "#/$defs/StatPoints"
+            },
+            "atk": {
+              "$ref": "#/$defs/StatPoints"
+            },
+            "def": {
+              "$ref": "#/$defs/StatPoints"
+            },
+            "spa": {
+              "$ref": "#/$defs/StatPoints"
+            },
+            "spd": {
+              "$ref": "#/$defs/StatPoints"
+            },
+            "spe": {
+              "$ref": "#/$defs/StatPoints"
+            }
+          }
+        },
+        "filler_move": {
+          "description": "Which move of the species' pool, in the team vocabulary's order, fills a set that has no revealed move (a set needs a move to be legal). A filler move is marked and is never scored as a threat.",
+          "$ref": "#/$defs/VocabularyOrderRule"
+        }
+      }
+    },
+    "hp_rounding": {
+      "description": "How the shown hit-point percentage becomes a hit-point value of the assumed set's maximum hit points: nearest rounds half up. A shown percentage above 0 never becomes 0.",
+      "enum": [
+        "ceil",
+        "floor",
+        "nearest"
+      ]
+    },
+    "scoring": {
+      "description": "The scoring weights, parts per million (ADR-018 section 4).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ko_weight_ppm",
+        "turn_order_discount_ppm",
+        "crit_weight_ppm"
+      ],
+      "properties": {
+        "ko_weight_ppm": {
+          "description": "The weight of the share of damage rolls that reach the target's hit points.",
+          "$ref": "#/$defs/Ppm"
+        },
+        "turn_order_discount_ppm": {
+          "description": "The discount of an action whose actor is slower than a target that can knock it out with a revealed move.",
+          "$ref": "#/$defs/Ppm"
+        },
+        "crit_weight_ppm": {
+          "description": "The weight of the critical-hit damage vector, multiplied by the probe's exact crit chance; 0 leaves crits out.",
+          "$ref": "#/$defs/Ppm"
+        }
+      }
+    },
+    "epsilon_ppm": {
+      "description": "The probability, in parts per million, that the baseline plays a uniformly random non-pending candidate (training diversity). 0 for every evaluation use, where no random number is ever drawn; a non-zero value is a different baseline.",
+      "$ref": "#/$defs/Ppm"
+    }
+  },
+  "$defs": {
+    "VocabularyOrderRule": {
+      "enum": [
+        "first_in_vocabulary_order",
+        "last_in_vocabulary_order"
+      ]
+    },
+    "StatPoints": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 255
+    },
+    "Ppm": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 1000000
+    },
+    "NoItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind"
+      ],
+      "properties": {
+        "kind": {
+          "const": "none"
+        }
+      }
+    },
+    "FixedItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "item"
+      ],
+      "properties": {
+        "kind": {
+          "const": "fixed"
+        },
+        "item": {
+          "description": "An engine item id of the team vocabulary.",
+          "type": "string",
+          "pattern": "^[a-z0-9]+$"
+        }
+      }
+    }
+  }
+}
