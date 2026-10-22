@@ -71,6 +71,16 @@ A run with a `team_dataset` starts `packages/team-dataset/scripts/play-generatio
 for each generation; one without starts the bridge's own script. The driver
 resumes a killed run from the last committed generation.
 
+Self-play is bound by the one policy worker and the one Node process that judges every
+request. `--game-processes S` shares a generation's games over `S` Node processes and
+`--policy-workers K` gives each its own `K` worker processes (for example `--game-processes 4
+--policy-workers 3` on a 28-core machine). Both default to 1 and are flags of the driver, not
+fields of the run config: the plan, the seeds, every Episode, the stream and the learner-state
+hashes are the same for any `S` and `K` (a game stays on one worker, every worker is
+deterministic and no draw depends on which process served a game). Each game process loads the
+team pool itself, so memory and start-up CPU grow with `S`. Byte equality holds while no query overruns its latency budget (an overrun is a recorded
+forfeit, as at one worker). Progress evaluation never batches or shards.
+
 After each generation commits, the driver writes `<run-dir>/metrics/g<NNNNNN>.json`: wall
 clock per phase (play, load, train, write, seal), throughput, the learner's peak
 accelerator memory (null on a CPU learner), device and threads. The file is outside the

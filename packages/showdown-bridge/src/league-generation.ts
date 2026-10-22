@@ -121,6 +121,18 @@ export interface GenerationOptions {
   policy_id: string;
   /** A started worker client; `beginGame` (when it has one) runs before each wave, as the client's overrun rule asks. */
   client: PolicyClient & { beginGame?: () => Promise<void> };
+  /**
+   * Further workers of the same frozen pair (#957). A game stays on one worker, and
+   * every worker answers a query the same way (it is deterministic and the sampling
+   * draw is the harness's), so the Episodes do not depend on how many workers there
+   * are or which serves a game. Waves grow with the workers so each keeps
+   * `n_parallel` games in flight.
+   */
+  peers?: readonly (PolicyClient & { beginGame?: () => Promise<void> })[];
+  /** The games this process plays (default all). The rest come from `others`. */
+  shard?: Shard;
+  /** The entries of the games of the other shards, played by other game processes. */
+  others?: Promise<readonly PlayedEntry[]>;
   pool: TrainingPool;
 }
 
@@ -175,8 +187,8 @@ function baselineActor(opponent: BaselineOpponent, plan: GamePlan, budget: Laten
   return guardActor(actor, { role: "scripted", latency_budget: budget });
 }
 
-async function playOne(options: GenerationOptions, plan: GamePlan): Promise<PlayedGame> {
-  const { engine, config, policy_id, client, pool } = options;
+async function playOne(options: GenerationOptions, plan: GamePlan, client: PolicyClient): Promise<PlayedGame> {
+  const { engine, config, policy_id, pool } = options;
   const { generation: settings } = config;
   const budget = { preview_ms: settings.latency_budget_ms.preview_ms, battle_ms: settings.latency_budget_ms.battle_ms };
   const seat: PolicySeat = { client, policy_id, sampling: "sample" };
@@ -201,25 +213,46 @@ async function playOne(options: GenerationOptions, plan: GamePlan): Promise<Play
 
 const idOf = (opponent: GamePlan["opponent"], policy_id: string): string => (opponent === "self" ? policy_id : opponent.policy_id);
 
+/** A slice of the plan for one game process: games `g` with `g mod of = index`. */
+export interface Shard {
+  index: number;
+  of: number;
+}
+
+/** One played game: its row and the Episodes of its seats (none for a forfeit). */
+export interface PlayedEntry {
+  game: number;
+  row: GameRow;
+  episodes: Episode[];
+}
+
+function checkShard(shard: Shard): void {
+  if (!Number.isInteger(shard.of) || shard.of < 1 || !Number.isInteger(shard.index) || shard.index < 0 || shard.index >= shard.of) {
+    throw new RangeError("a shard is an index below a positive count");
+  }
+}
+
 /**
- * Play the generation's plan against `client` (started, with the frozen pair
- * loaded) in waves of `n_parallel` games, write an Episode for every played
- * seat, and load the pair's own seats through the training loader.
+ * Play the games of `shard` (all of them without one) against `options.client` and
+ * `options.peers` (started, with the frozen pair loaded) in waves, and write an
+ * Episode for every played seat. A wave holds `n_parallel` games for each worker.
+ * A game's result depends on its plan entry alone, never on its worker, its wave
+ * or the other games, so any split of the plan gives the same entries.
  *
- * Refused: a harness incident in any game (the generation fails, nothing is
- * retried); no Episode of the pair at all (every game forfeited). A game that
- * a policy forfeited is not an Episode (it is not training data) and is
- * reported in `games`.
+ * Refused: a harness incident in any game (nothing is retried).
  */
-export async function playGeneration(options: GenerationOptions): Promise<GenerationResult> {
-  const { engine, config, generation, policy_id, client, pool } = options;
-  const plan = planGeneration(config, generation, pool.teams.length);
-  const rows: GameRow[] = [];
-  const episodes: Episode[] = [];
-  for (let start = 0; start < plan.length; start += config.generation.n_parallel) {
-    await client.beginGame?.();
-    const wave = plan.slice(start, start + config.generation.n_parallel);
-    const played = await Promise.all(wave.map((entry) => playOne(options, entry)));
+export async function playEntries(options: GenerationOptions, shard: Shard = { index: 0, of: 1 }): Promise<PlayedEntry[]> {
+  checkShard(shard);
+  const { config, generation, policy_id, client, pool } = options;
+  const workers = [client, ...(options.peers ?? [])];
+  const mine = planGeneration(config, generation, pool.teams.length).filter((entry) => entry.game % shard.of === shard.index);
+  const entries: PlayedEntry[] = [];
+  const waveSize = config.generation.n_parallel * workers.length;
+  for (let start = 0; start < mine.length; start += waveSize) {
+    await Promise.all(workers.map((worker) => worker.beginGame?.()));
+    const wave = mine.slice(start, start + waveSize);
+    // A game stays on one worker, chosen by its place in the wave.
+    const played = await Promise.all(wave.map((entry, place) => playOne(options, entry, workers[place % workers.length] as PolicyClient)));
     for (const [index, game] of played.entries()) {
       const entry = wave[index] as GamePlan;
       const { outcome, record } = game;
@@ -227,18 +260,18 @@ export async function playGeneration(options: GenerationOptions): Promise<Genera
       const row = { game: entry.game, seed: entry.seed, opponent: idOf(entry.opponent, policy_id) };
       if (outcome.kind === "forfeit" || record === null) {
         if (outcome.kind !== "forfeit") {
-          rows.push({ ...row, outcome: "forfeit", winner: null, turns: 0 });
+          entries.push({ game: entry.game, row: { ...row, outcome: "forfeit", winner: null, turns: 0 }, episodes: [] });
         } else {
           const { loser, cause, request_seq, detail } = outcome;
-          rows.push({ ...row, outcome: "forfeit", winner: outcome.winner, turns: outcome.turns, forfeit: { loser, cause, request_seq, detail } });
+          entries.push({ game: entry.game, row: { ...row, outcome: "forfeit", winner: outcome.winner, turns: outcome.turns, forfeit: { loser, cause, request_seq, detail } }, episodes: [] });
         }
         continue;
       }
-      rows.push({ ...row, outcome: "played", winner: record.winner, turns: record.turns });
       const sides: Record<Player, string> = {
         p1: entry.opponent !== "self" && entry.policy_seat !== "p1" ? entry.opponent.policy_id : policy_id,
         p2: entry.opponent !== "self" && entry.policy_seat !== "p2" ? entry.opponent.policy_id : policy_id,
       };
+      const episodes: Episode[] = [];
       for (const player of ["p1", "p2"] as const) {
         episodes.push(
           await episodeFromRecord(record, player, {
@@ -250,8 +283,35 @@ export async function playGeneration(options: GenerationOptions): Promise<Genera
           }),
         );
       }
+      entries.push({ game: entry.game, row: { ...row, outcome: "played", winner: record.winner, turns: record.turns }, episodes });
     }
   }
+  return entries;
+}
+
+/**
+ * Play the generation's plan: `options.shard`'s games here, the rest through
+ * `options.others` (entries played by other game processes), then write nothing
+ * yet and load the pair's own seats through the training loader. The entries are
+ * put in plan order, so the result is the one a single process gives.
+ *
+ * Refused: a harness incident in any game (the generation fails, nothing is
+ * retried); a game missing or played twice; no Episode of the pair at all (every
+ * game forfeited). A game that a policy forfeited is not an Episode (it is not
+ * training data) and is reported in `games`.
+ */
+export async function playGeneration(options: GenerationOptions): Promise<GenerationResult> {
+  const { engine, config, generation, policy_id, pool } = options;
+  const plan = planGeneration(config, generation, pool.teams.length);
+  const here = playEntries(options, options.shard);
+  const there = options.others ?? Promise.resolve([]);
+  there.catch(() => undefined); // a failure here is reported through the Promise.all below
+  const entries = (await Promise.all([here, there])).flat().sort((a, b) => a.game - b.game);
+  if (entries.length !== plan.length || entries.some((entry, index) => entry.game !== index)) {
+    throw new GenerationError("the played games are not the plan's games, each once");
+  }
+  const rows = entries.map((entry) => entry.row);
+  const episodes = entries.flatMap((entry) => entry.episodes);
   const own = episodes.filter((episode) => episode.provenance.behaviour_policy_id === policy_id);
   if (own.length === 0) throw new GenerationError("no Episode of the frozen pair: every game was forfeited");
   const { stream, set } = await loadTrainingSet({

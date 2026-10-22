@@ -67,6 +67,13 @@ EXIT_PLAY = 4
 REPO = Path(__file__).resolve().parents[3]
 
 
+def _positive(text: str) -> int:
+    value = int(text)
+    if value < 1:
+        raise argparse.ArgumentTypeError("must be at least 1")
+    return value
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="areneon_ml.loop")
     commands = parser.add_subparsers(dest="command", required=True)
@@ -80,6 +87,20 @@ def _parser() -> argparse.ArgumentParser:
         "--worker-python",
         default=sys.executable,
         help="the Python for the policy worker: CPU torch from the shipped closure",
+    )
+    run.add_argument(
+        "--policy-workers",
+        type=_positive,
+        default=1,
+        help="policy worker processes per game process (operational: the generation's files "
+        "are the same for any number)",
+    )
+    run.add_argument(
+        "--game-processes",
+        type=_positive,
+        default=1,
+        help="Node processes sharing a generation's games, each with --policy-workers workers "
+        "(operational: the generation's files are the same for any number)",
     )
     provenance = commands.add_parser("provenance", help="export the records and sources registry")
     provenance.add_argument("--run-dir", type=Path, required=True)
@@ -243,6 +264,8 @@ def _run(args: argparse.Namespace) -> dict[str, object]:
         config_path=args.run_dir.resolve() / layout.CONFIG,
         engine_data=args.engine_data.resolve(),
         encoder_version=encoder_version(game, config.model.encoder),
+        policy_workers=args.policy_workers,
+        game_processes=args.game_processes,
         play_script=(
             "packages/team-dataset/scripts/play-generation.ts"
             if config.team_dataset

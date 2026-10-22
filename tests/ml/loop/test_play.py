@@ -57,6 +57,19 @@ def test_play_passes_the_whole_request_and_the_run_as_flags(tmp_path: Path) -> N
     }
 
 
+def test_play_passes_worker_and_process_counts_only_when_not_one(tmp_path: Path) -> None:
+    out = tmp_path / "args.json"
+    script = f"import sys, json; open({str(out)!r}, 'w').write(json.dumps(sys.argv[1:]))"
+    request = PlayRequest(3, "policy:abc", "p" * 64, "b" * 64, tmp_path / "work")
+    chosen = player(tmp_path, "", script)
+    NodePlayer(**{**chosen.__dict__, "policy_workers": 3, "game_processes": 2}).play(request)
+    argv = json.loads(out.read_text())
+    assert argv[-4:] == ["--policy-workers", "3", "--game-processes", "2"]
+    chosen.play(request)
+    assert "--policy-workers" not in json.loads(out.read_text())
+    assert "--game-processes" not in json.loads(out.read_text())
+
+
 def test_play_runs_the_script_it_is_given(tmp_path: Path) -> None:
     out = tmp_path / "which.txt"
     other = tmp_path / "packages/team-dataset/scripts"

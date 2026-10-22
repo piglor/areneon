@@ -54,6 +54,12 @@ class NodePlayer:
     #: needs the script of ``packages/team-dataset``, which sees both the bridge and
     #: the dataset reader.
     play_script: str = "packages/showdown-bridge/scripts/play-generation.ts"
+    #: How many policy worker processes serve a generation's games (#957). Operational only:
+    #: it is not in the run config, and the generation's files do not depend on it.
+    policy_workers: int = 1
+    #: How many Node game processes share a generation's games (#957), each with its own
+    #: ``policy_workers``. Operational too.
+    game_processes: int = 1
 
     def _run(self, script: str, *args: str) -> str:
         command = [self.node, str(self.repo / script), *args]
@@ -90,4 +96,7 @@ class NodePlayer:
             *("--encoder-version", self.encoder_version),
             *("--worker-python", self.worker_python),
             *("--out", str(request.out_dir)),
+            # Absent at one worker, so the default command line is the one it always was.
+            *(("--policy-workers", str(self.policy_workers)) if self.policy_workers != 1 else ()),
+            *(("--game-processes", str(self.game_processes)) if self.game_processes != 1 else ()),
         )

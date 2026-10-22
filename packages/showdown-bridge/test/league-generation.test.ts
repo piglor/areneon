@@ -11,6 +11,7 @@ import {
   type GenerationOptions,
   type GenerationResult,
   planGeneration,
+  playEntries,
   playGeneration,
   trainingTeamPool,
   type TrainingPool,
@@ -303,5 +304,59 @@ describe("writeGeneration", () => {
     expect(read("league-run.json")).toBe(`${jcs(written as unknown as Json)}\n`);
     expect(written).toMatchObject({ generation: 2, pair_policy_id: POLICY, games: 6, seed_derivation: LEAGUE_SEED_DERIVATION });
     await checkLeagueRunRecord(written, config);
+  });
+});
+
+describe("several workers and game processes (#957)", () => {
+  const opts = (change: Partial<GenerationOptions> = {}): GenerationOptions => ({ engine, config, generation: 1, policy_id: POLICY, client: actorClient(), pool, ...change });
+  let single: GenerationResult;
+  beforeAll(async () => {
+    single = await playGeneration(opts());
+  });
+  /** What the files of a result say, in the bytes the loop commits. */
+  const bytes = (result: GenerationResult): string[] => [result.stream, jcs(result.set as unknown as Json), jcs(result.games as unknown as Json), ...result.episode_hashes, result.training_set_hash, ...result.team_hashes];
+
+  it("gives the same generation with any number of workers, each game staying on one of them", async () => {
+    const workers = [actorClient(), actorClient(), actorClient()];
+    const seen = new Map<string, Set<number>>();
+    const spy = (worker: ReturnType<typeof actorClient>, id: number): PolicyClient & { beginGame: () => Promise<void> } => ({
+      beginGame: worker.beginGame,
+      ask: (battle, query) => {
+        seen.set(battle, (seen.get(battle) ?? new Set<number>()).add(id));
+        return worker.ask(battle, query);
+      },
+    });
+    const many = await playGeneration(opts({ client: spy(workers[0] as never, 0), peers: [spy(workers[1] as never, 1), spy(workers[2] as never, 2)] }));
+    expect(bytes(many)).toEqual(bytes(single));
+    expect(many.episodes).toEqual(single.episodes);
+    expect(workers.map((w) => w.asked > 0)).toEqual([true, true, true]);
+    expect(seen.size).toBeGreaterThan(0);
+    for (const ids of seen.values()) expect(ids.size).toBe(1);
+  });
+
+  it("gives the same generation when game processes each play a slice, in whatever order they finish", async () => {
+    const of = 3;
+    const slice = (index: number): Promise<Awaited<ReturnType<typeof playEntries>>> => playEntries(opts({ peers: [actorClient()] }), { index, of });
+    const slow = slice(2).then(async (entries) => {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      return entries;
+    });
+    const split = await playGeneration(opts({ shard: { index: 0, of }, others: Promise.all([slice(1), slow]).then((all) => all.flat()) }));
+    expect(bytes(split)).toEqual(bytes(single));
+    expect(split.run_record).toEqual(single.run_record);
+    expect(split.episodes).toEqual(single.episodes);
+    // A slice holds exactly its games (game mod of = index), and its entries survive a trip through JSON.
+    const entries = await playEntries(opts(), { index: 1, of });
+    expect(entries.map((e) => e.game)).toEqual([1, 4]);
+    expect(JSON.parse(jcs(entries as unknown as Json))).toEqual(entries);
+  });
+
+  it("refuses a slice that is not an index below a count, a game that is missing or twice, and another process's failure", async () => {
+    await expect(playEntries(opts(), { index: 3, of: 3 })).rejects.toThrow(RangeError);
+    await expect(playEntries(opts(), { index: 0, of: 0 })).rejects.toThrow(RangeError);
+    const all = await playEntries(opts());
+    await expect(playGeneration(opts({ shard: { index: 0, of: 2 }, others: Promise.resolve(all.filter((e) => e.game % 2 === 1).slice(1)) }))).rejects.toThrow(/each once/);
+    await expect(playGeneration(opts({ others: Promise.resolve(all.slice(0, 1)) }))).rejects.toThrow(/each once/);
+    await expect(playGeneration(opts({ shard: { index: 0, of: 2 }, others: Promise.reject(new GenerationError("game process 1 failed")) }))).rejects.toThrow(/game process 1 failed/);
   });
 });
