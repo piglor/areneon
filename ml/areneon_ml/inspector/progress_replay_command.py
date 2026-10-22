@@ -9,6 +9,7 @@ inside the progress directory. Each page is written to a temporary name and rena
 
 from __future__ import annotations
 
+from collections import Counter
 from pathlib import Path
 from typing import Any
 
@@ -26,6 +27,7 @@ from areneon_ml.inspector.replay import GEN_DIR
 from areneon_ml.inspector.replay_command import _write
 from areneon_ml.inspector.replay_page import read_engine_data
 from areneon_ml.loop import layout
+from areneon_ml.progress.looks import Look, append_look, looks_path
 
 
 def default_out(progress_dir: Path) -> Path:
@@ -80,6 +82,14 @@ def replay_progress(  # noqa: PLR0913
         if target == run or run in target.parents:
             raise InspectError("the output directory must not be inside the run directory")
     selected = read_progress_games(progress_dir, generation, match, games, run_dir)
+    # The stored games are read and consistent, so a validation result is about to be shown.
+    shown = Counter((g.generation, g.match_id) for g in selected)
+    append_look(
+        looks_path(progress_dir, run_dir),
+        "replay",
+        selected[0].run_id,
+        [Look(g, m, n) for (g, m), n in shown.items()],
+    )
     manifest = selected[0].record["version_manifest"]
     table = read_engine_data(
         engine_data or repo / "fixtures" / "showdown" / manifest["format_id"] / "engine-data.json",

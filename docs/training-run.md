@@ -144,6 +144,18 @@ naming the limit.
   plan; across matches, modes and generations they share the plan on purpose.
 - Looking at several generations is a sequence of looks: their intervals are not
   simultaneous, and a difference between two generations is not a test result.
+- Every look at a validation result is logged. The validation teams are used
+  again at every look, so the result is a progress view the owner has looked at
+  many times: it is never cited as held-out evidence, a strength claim or a gate
+  result. The log is the sibling file `<run-dir>.progress.looks.jsonl` (for a
+  custom root, `<progress-dir>.looks.jsonl`), never inside the progress root or the
+  run. `progress`, `report` and `replay --progress-dir` each append one line
+  (run, generations, matches, game counts, command) under an exclusive lock when
+  they show a result; `inspect` shows none and writes none. Each line is the JCS
+  bytes of the entry with the SHA-256 of the line before (the first carries a
+  fixed genesis value), so a dropped, changed or reordered line is refused by
+  every reader and by the next append. The dashboard shows the number of looks
+  and lists the log's SHA-256 among its inputs.
 - A forfeit is a scored loss for the failing side, kept with its cause. A harness
   incident (an unsupported candidate, an enumerator defect, a protocol error)
   fails the whole evaluation: nothing is committed and the command exits

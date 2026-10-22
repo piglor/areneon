@@ -7,6 +7,7 @@ written to a temporary sibling and renamed, so a reader sees the old page or the
 
 from __future__ import annotations
 
+import dataclasses
 import os
 import re
 import tempfile
@@ -14,6 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from areneon_ml.loop import layout
+from areneon_ml.progress.looks import Look, append_look, looks_path
 from areneon_ml.report.model import ReportError, read_report_model
 from areneon_ml.report.render import Links, build_report
 
@@ -82,6 +84,22 @@ def report_run(
     ):
         raise ReportError("the report must not be written inside the run or progress directory")
     model = read_report_model(run_dir, progress_dir.resolve() if progress_dir else None)
+    if progress_dir is not None and model.progress:
+        # The page shows validation results: log the look first, so the page counts it.
+        log = looks_path(progress_dir, run_dir)
+        state = append_look(
+            log,
+            "report",
+            model.run_key,
+            [Look(g, m.match_id, m.games) for g, p in model.progress.items() for m in p.matches],
+        )
+        model = dataclasses.replace(
+            model,
+            looks=state.count,
+            inputs=dict(
+                sorted({**model.inputs, f"progress-looks/{log.name}": state.file_sha256}.items())
+            ),
+        )
     links = inspector_links(inspect_dir, target.parent, [g.number for g in model.generations])
     page = build_report(model, links).encode("utf-8")
     target.parent.mkdir(parents=True, exist_ok=True)
