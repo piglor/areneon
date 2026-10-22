@@ -1,0 +1,3312 @@
+{
+  "schema_version": 1,
+  "data_class": "synthetic",
+  "run_id": "tiny-run",
+  "generation": 1,
+  "match_id": "actor-rule-argmax",
+  "game": 1,
+  "seed": "sodium,fdcc1e97337e1de1f3f22fcddb66060a",
+  "version_manifest": {
+    "showdown_commit": "7244fe8e28fa8bc4d0809ae30d183c608b62bb2b",
+    "format_id": "gen9championsvgc2026regmc",
+    "regulation": "M-C",
+    "ruleset_hash": "4dd1f039bbcc6156e08c434972beae2370dc5fe8c9c6a263da7383c3247b68f3",
+    "format_rules_hash": "549cd2aa97324be093c567324676d46a5eff19d6b0c9d8491c483dab746d5dcc"
+  },
+  "teams": {
+    "p1": {
+      "team": [
+        {
+          "name": "",
+          "species": "Venusaur",
+          "item": "Leftovers",
+          "ability": "Overgrow",
+          "moves": [
+            "Giga Drain",
+            "Sludge Bomb",
+            "Protect",
+            "Sleep Powder"
+          ],
+          "nature": "Serious",
+          "gender": "",
+          "evs": {
+            "hp": 4,
+            "atk": 0,
+            "def": 0,
+            "spa": 0,
+            "spd": 0,
+            "spe": 4
+          },
+          "ivs": {
+            "hp": 31,
+            "atk": 31,
+            "def": 31,
+            "spa": 31,
+            "spd": 31,
+            "spe": 31
+          },
+          "level": 50
+        },
+        {
+          "name": "",
+          "species": "Charizard",
+          "item": "Charcoal",
+          "ability": "Blaze",
+          "moves": [
+            "Flamethrower",
+            "Air Slash",
+            "Protect",
+            "Heat Wave"
+          ],
+          "nature": "Serious",
+          "gender": "",
+          "evs": {
+            "hp": 4,
+            "atk": 0,
+            "def": 0,
+            "spa": 0,
+            "spd": 0,
+            "spe": 4
+          },
+          "ivs": {
+            "hp": 31,
+            "atk": 31,
+            "def": 31,
+            "spa": 31,
+            "spd": 31,
+            "spe": 31
+          },
+          "level": 50
+        },
+        {
+          "name": "",
+          "species": "Blastoise",
+          "item": "Mystic Water",
+          "ability": "Torrent",
+          "moves": [
+            "Surf",
+            "Ice Beam",
+            "Protect",
+            "Fake Out"
+          ],
+          "nature": "Serious",
+          "gender": "",
+          "evs": {
+            "hp": 4,
+            "atk": 0,
+            "def": 0,
+            "spa": 0,
+            "spd": 0,
+            "spe": 4
+          },
+          "ivs": {
+            "hp": 31,
+            "atk": 31,
+            "def": 31,
+            "spa": 31,
+            "spd": 31,
+            "spe": 31
+          },
+          "level": 50
+        },
+        {
+          "name": "",
+          "species": "Pikachu",
+          "item": "Light Ball",
+          "ability": "Static",
+          "moves": [
+            "Thunderbolt",
+            "Fake Out",
+            "Protect",
+            "Volt Switch"
+          ],
+          "nature": "Serious",
+          "gender": "",
+          "evs": {
+            "hp": 4,
+            "atk": 0,
+            "def": 0,
+            "spa": 0,
+            "spd": 0,
+            "spe": 4
+          },
+          "ivs": {
+            "hp": 31,
+            "atk": 31,
+            "def": 31,
+            "spa": 31,
+            "spd": 31,
+            "spe": 31
+          },
+          "level": 50
+        },
+        {
+          "name": "",
+          "species": "Snorlax",
+          "item": "Sitrus Berry",
+          "ability": "Thick Fat",
+          "moves": [
+            "Body Slam",
+            "Protect",
+            "Curse",
+            "Rest"
+          ],
+          "nature": "Serious",
+          "gender": "",
+          "evs": {
+            "hp": 4,
+            "atk": 0,
+            "def": 0,
+            "spa": 0,
+            "spd": 0,
+            "spe": 4
+          },
+          "ivs": {
+            "hp": 31,
+            "atk": 31,
+            "def": 31,
+            "spa": 31,
+            "spd": 31,
+            "spe": 31
+          },
+          "level": 50
+        },
+        {
+          "name": "",
+          "species": "Gengar",
+          "item": "Focus Sash",
+          "ability": "Cursed Body",
+          "moves": [
+            "Shadow Ball",
+            "Sludge Bomb",
+            "Protect",
+            "Icy Wind"
+          ],
+          "nature": "Serious",
+          "gender": "",
+          "evs": {
+            "hp": 4,
+            "atk": 0,
+            "def": 0,
+            "spa": 0,
+            "spd": 0,
+            "spe": 4
+          },
+          "ivs": {
+            "hp": 31,
+            "atk": 31,
+            "def": 31,
+            "spa": 31,
+            "spd": 31,
+            "spe": 31
+          },
+          "level": 50
+        }
+      ],
+      "team_hash": "8c94996edd59777b4432a5202f3504c8a50cc0e26f68e00049df756963dedb06"
+    },
+    "p2": {
+      "team": [
+        {
+          "name": "",
+          "species": "Venusaur",
+          "item": "Leftovers",
+          "ability": "Overgrow",
+          "moves": [
+            "Giga Drain",
+            "Sludge Bomb",
+            "Protect",
+            "Sleep Powder"
+          ],
+          "nature": "Serious",
+          "gender": "",
+          "evs": {
+            "hp": 4,
+            "atk": 0,
+            "def": 0,
+            "spa": 0,
+            "spd": 0,
+            "spe": 4
+          },
+          "ivs": {
+            "hp": 31,
+            "atk": 31,
+            "def": 31,
+            "spa": 31,
+            "spd": 31,
+            "spe": 31
+          },
+          "level": 50
+        },
+        {
+          "name": "",
+          "species": "Charizard",
+          "item": "Charcoal",
+          "ability": "Blaze",
+          "moves": [
+            "Flamethrower",
+            "Air Slash",
+            "Protect",
+            "Heat Wave"
+          ],
+          "nature": "Serious",
+          "gender": "",
+          "evs": {
+            "hp": 4,
+            "atk": 0,
+            "def": 0,
+            "spa": 0,
+            "spd": 0,
+            "spe": 4
+          },
+          "ivs": {
+            "hp": 31,
+            "atk": 31,
+            "def": 31,
+            "spa": 31,
+            "spd": 31,
+            "spe": 31
+          },
+          "level": 50
+        },
+        {
+          "name": "",
+          "species": "Blastoise",
+          "item": "Mystic Water",
+          "ability": "Torrent",
+          "moves": [
+            "Surf",
+            "Ice Beam",
+            "Protect",
+            "Fake Out"
+          ],
+          "nature": "Serious",
+          "gender": "",
+          "evs": {
+            "hp": 4,
+            "atk": 0,
+            "def": 0,
+            "spa": 0,
+            "spd": 0,
+            "spe": 4
+          },
+          "ivs": {
+            "hp": 31,
+            "atk": 31,
+            "def": 31,
+            "spa": 31,
+            "spd": 31,
+            "spe": 31
+          },
+          "level": 50
+        },
+        {
+          "name": "",
+          "species": "Pikachu",
+          "item": "Light Ball",
+          "ability": "Static",
+          "moves": [
+            "Thunderbolt",
+            "Fake Out",
+            "Protect",
+            "Volt Switch"
+          ],
+          "nature": "Serious",
+          "gender": "",
+          "evs": {
+            "hp": 4,
+            "atk": 0,
+            "def": 0,
+            "spa": 0,
+            "spd": 0,
+            "spe": 4
+          },
+          "ivs": {
+            "hp": 31,
+            "atk": 31,
+            "def": 31,
+            "spa": 31,
+            "spd": 31,
+            "spe": 31
+          },
+          "level": 50
+        },
+        {
+          "name": "",
+          "species": "Snorlax",
+          "item": "Sitrus Berry",
+          "ability": "Thick Fat",
+          "moves": [
+            "Body Slam",
+            "Protect",
+            "Curse",
+            "Rest"
+          ],
+          "nature": "Serious",
+          "gender": "",
+          "evs": {
+            "hp": 4,
+            "atk": 0,
+            "def": 0,
+            "spa": 0,
+            "spd": 0,
+            "spe": 4
+          },
+          "ivs": {
+            "hp": 31,
+            "atk": 31,
+            "def": 31,
+            "spa": 31,
+            "spd": 31,
+            "spe": 31
+          },
+          "level": 50
+        },
+        {
+          "name": "",
+          "species": "Gengar",
+          "item": "Focus Sash",
+          "ability": "Cursed Body",
+          "moves": [
+            "Shadow Ball",
+            "Sludge Bomb",
+            "Protect",
+            "Icy Wind"
+          ],
+          "nature": "Serious",
+          "gender": "",
+          "evs": {
+            "hp": 4,
+            "atk": 0,
+            "def": 0,
+            "spa": 0,
+            "spd": 0,
+            "spe": 4
+          },
+          "ivs": {
+            "hp": 31,
+            "atk": 31,
+            "def": 31,
+            "spa": 31,
+            "spd": 31,
+            "spe": 31
+          },
+          "level": 50
+        }
+      ],
+      "team_hash": "8c94996edd59777b4432a5202f3504c8a50cc0e26f68e00049df756963dedb06"
+    }
+  },
+  "policies": {
+    "p1": "policy:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "p2": "actor-rule@v1"
+  },
+  "decisions": [
+    {
+      "player": "p1",
+      "request_seq": 1,
+      "candidates": [
+        {
+          "choice": "team 1234",
+          "pending": false
+        },
+        {
+          "choice": "team 1235",
+          "pending": false
+        },
+        {
+          "choice": "team 1236",
+          "pending": false
+        },
+        {
+          "choice": "team 1243",
+          "pending": false
+        },
+        {
+          "choice": "team 1245",
+          "pending": false
+        },
+        {
+          "choice": "team 1246",
+          "pending": false
+        },
+        {
+          "choice": "team 1253",
+          "pending": false
+        },
+        {
+          "choice": "team 1254",
+          "pending": false
+        },
+        {
+          "choice": "team 1256",
+          "pending": false
+        },
+        {
+          "choice": "team 1263",
+          "pending": false
+        },
+        {
+          "choice": "team 1264",
+          "pending": false
+        },
+        {
+          "choice": "team 1265",
+          "pending": false
+        },
+        {
+          "choice": "team 1324",
+          "pending": false
+        },
+        {
+          "choice": "team 1325",
+          "pending": false
+        },
+        {
+          "choice": "team 1326",
+          "pending": false
+        },
+        {
+          "choice": "team 1342",
+          "pending": false
+        },
+        {
+          "choice": "team 1345",
+          "pending": false
+        },
+        {
+          "choice": "team 1346",
+          "pending": false
+        },
+        {
+          "choice": "team 1352",
+          "pending": false
+        },
+        {
+          "choice": "team 1354",
+          "pending": false
+        },
+        {
+          "choice": "team 1356",
+          "pending": false
+        },
+        {
+          "choice": "team 1362",
+          "pending": false
+        },
+        {
+          "choice": "team 1364",
+          "pending": false
+        },
+        {
+          "choice": "team 1365",
+          "pending": false
+        },
+        {
+          "choice": "team 1423",
+          "pending": false
+        },
+        {
+          "choice": "team 1425",
+          "pending": false
+        },
+        {
+          "choice": "team 1426",
+          "pending": false
+        },
+        {
+          "choice": "team 1432",
+          "pending": false
+        },
+        {
+          "choice": "team 1435",
+          "pending": false
+        },
+        {
+          "choice": "team 1436",
+          "pending": false
+        },
+        {
+          "choice": "team 1452",
+          "pending": false
+        },
+        {
+          "choice": "team 1453",
+          "pending": false
+        },
+        {
+          "choice": "team 1456",
+          "pending": false
+        },
+        {
+          "choice": "team 1462",
+          "pending": false
+        },
+        {
+          "choice": "team 1463",
+          "pending": false
+        },
+        {
+          "choice": "team 1465",
+          "pending": false
+        },
+        {
+          "choice": "team 1523",
+          "pending": false
+        },
+        {
+          "choice": "team 1524",
+          "pending": false
+        },
+        {
+          "choice": "team 1526",
+          "pending": false
+        },
+        {
+          "choice": "team 1532",
+          "pending": false
+        },
+        {
+          "choice": "team 1534",
+          "pending": false
+        },
+        {
+          "choice": "team 1536",
+          "pending": false
+        },
+        {
+          "choice": "team 1542",
+          "pending": false
+        },
+        {
+          "choice": "team 1543",
+          "pending": false
+        },
+        {
+          "choice": "team 1546",
+          "pending": false
+        },
+        {
+          "choice": "team 1562",
+          "pending": false
+        },
+        {
+          "choice": "team 1563",
+          "pending": false
+        },
+        {
+          "choice": "team 1564",
+          "pending": false
+        },
+        {
+          "choice": "team 1623",
+          "pending": false
+        },
+        {
+          "choice": "team 1624",
+          "pending": false
+        },
+        {
+          "choice": "team 1625",
+          "pending": false
+        },
+        {
+          "choice": "team 1632",
+          "pending": false
+        },
+        {
+          "choice": "team 1634",
+          "pending": false
+        },
+        {
+          "choice": "team 1635",
+          "pending": false
+        },
+        {
+          "choice": "team 1642",
+          "pending": false
+        },
+        {
+          "choice": "team 1643",
+          "pending": false
+        },
+        {
+          "choice": "team 1645",
+          "pending": false
+        },
+        {
+          "choice": "team 1652",
+          "pending": false
+        },
+        {
+          "choice": "team 1653",
+          "pending": false
+        },
+        {
+          "choice": "team 1654",
+          "pending": false
+        },
+        {
+          "choice": "team 2134",
+          "pending": false
+        },
+        {
+          "choice": "team 2135",
+          "pending": false
+        },
+        {
+          "choice": "team 2136",
+          "pending": false
+        },
+        {
+          "choice": "team 2143",
+          "pending": false
+        },
+        {
+          "choice": "team 2145",
+          "pending": false
+        },
+        {
+          "choice": "team 2146",
+          "pending": false
+        },
+        {
+          "choice": "team 2153",
+          "pending": false
+        },
+        {
+          "choice": "team 2154",
+          "pending": false
+        },
+        {
+          "choice": "team 2156",
+          "pending": false
+        },
+        {
+          "choice": "team 2163",
+          "pending": false
+        },
+        {
+          "choice": "team 2164",
+          "pending": false
+        },
+        {
+          "choice": "team 2165",
+          "pending": false
+        },
+        {
+          "choice": "team 2314",
+          "pending": false
+        },
+        {
+          "choice": "team 2315",
+          "pending": false
+        },
+        {
+          "choice": "team 2316",
+          "pending": false
+        },
+        {
+          "choice": "team 2341",
+          "pending": false
+        },
+        {
+          "choice": "team 2345",
+          "pending": false
+        },
+        {
+          "choice": "team 2346",
+          "pending": false
+        },
+        {
+          "choice": "team 2351",
+          "pending": false
+        },
+        {
+          "choice": "team 2354",
+          "pending": false
+        },
+        {
+          "choice": "team 2356",
+          "pending": false
+        },
+        {
+          "choice": "team 2361",
+          "pending": false
+        },
+        {
+          "choice": "team 2364",
+          "pending": false
+        },
+        {
+          "choice": "team 2365",
+          "pending": false
+        },
+        {
+          "choice": "team 2413",
+          "pending": false
+        },
+        {
+          "choice": "team 2415",
+          "pending": false
+        },
+        {
+          "choice": "team 2416",
+          "pending": false
+        },
+        {
+          "choice": "team 2431",
+          "pending": false
+        },
+        {
+          "choice": "team 2435",
+          "pending": false
+        },
+        {
+          "choice": "team 2436",
+          "pending": false
+        },
+        {
+          "choice": "team 2451",
+          "pending": false
+        },
+        {
+          "choice": "team 2453",
+          "pending": false
+        },
+        {
+          "choice": "team 2456",
+          "pending": false
+        },
+        {
+          "choice": "team 2461",
+          "pending": false
+        },
+        {
+          "choice": "team 2463",
+          "pending": false
+        },
+        {
+          "choice": "team 2465",
+          "pending": false
+        },
+        {
+          "choice": "team 2513",
+          "pending": false
+        },
+        {
+          "choice": "team 2514",
+          "pending": false
+        },
+        {
+          "choice": "team 2516",
+          "pending": false
+        },
+        {
+          "choice": "team 2531",
+          "pending": false
+        },
+        {
+          "choice": "team 2534",
+          "pending": false
+        },
+        {
+          "choice": "team 2536",
+          "pending": false
+        },
+        {
+          "choice": "team 2541",
+          "pending": false
+        },
+        {
+          "choice": "team 2543",
+          "pending": false
+        },
+        {
+          "choice": "team 2546",
+          "pending": false
+        },
+        {
+          "choice": "team 2561",
+          "pending": false
+        },
+        {
+          "choice": "team 2563",
+          "pending": false
+        },
+        {
+          "choice": "team 2564",
+          "pending": false
+        },
+        {
+          "choice": "team 2613",
+          "pending": false
+        },
+        {
+          "choice": "team 2614",
+          "pending": false
+        },
+        {
+          "choice": "team 2615",
+          "pending": false
+        },
+        {
+          "choice": "team 2631",
+          "pending": false
+        },
+        {
+          "choice": "team 2634",
+          "pending": false
+        },
+        {
+          "choice": "team 2635",
+          "pending": false
+        },
+        {
+          "choice": "team 2641",
+          "pending": false
+        },
+        {
+          "choice": "team 2643",
+          "pending": false
+        },
+        {
+          "choice": "team 2645",
+          "pending": false
+        },
+        {
+          "choice": "team 2651",
+          "pending": false
+        },
+        {
+          "choice": "team 2653",
+          "pending": false
+        },
+        {
+          "choice": "team 2654",
+          "pending": false
+        },
+        {
+          "choice": "team 3124",
+          "pending": false
+        },
+        {
+          "choice": "team 3125",
+          "pending": false
+        },
+        {
+          "choice": "team 3126",
+          "pending": false
+        },
+        {
+          "choice": "team 3142",
+          "pending": false
+        },
+        {
+          "choice": "team 3145",
+          "pending": false
+        },
+        {
+          "choice": "team 3146",
+          "pending": false
+        },
+        {
+          "choice": "team 3152",
+          "pending": false
+        },
+        {
+          "choice": "team 3154",
+          "pending": false
+        },
+        {
+          "choice": "team 3156",
+          "pending": false
+        },
+        {
+          "choice": "team 3162",
+          "pending": false
+        },
+        {
+          "choice": "team 3164",
+          "pending": false
+        },
+        {
+          "choice": "team 3165",
+          "pending": false
+        },
+        {
+          "choice": "team 3214",
+          "pending": false
+        },
+        {
+          "choice": "team 3215",
+          "pending": false
+        },
+        {
+          "choice": "team 3216",
+          "pending": false
+        },
+        {
+          "choice": "team 3241",
+          "pending": false
+        },
+        {
+          "choice": "team 3245",
+          "pending": false
+        },
+        {
+          "choice": "team 3246",
+          "pending": false
+        },
+        {
+          "choice": "team 3251",
+          "pending": false
+        },
+        {
+          "choice": "team 3254",
+          "pending": false
+        },
+        {
+          "choice": "team 3256",
+          "pending": false
+        },
+        {
+          "choice": "team 3261",
+          "pending": false
+        },
+        {
+          "choice": "team 3264",
+          "pending": false
+        },
+        {
+          "choice": "team 3265",
+          "pending": false
+        },
+        {
+          "choice": "team 3412",
+          "pending": false
+        },
+        {
+          "choice": "team 3415",
+          "pending": false
+        },
+        {
+          "choice": "team 3416",
+          "pending": false
+        },
+        {
+          "choice": "team 3421",
+          "pending": false
+        },
+        {
+          "choice": "team 3425",
+          "pending": false
+        },
+        {
+          "choice": "team 3426",
+          "pending": false
+        },
+        {
+          "choice": "team 3451",
+          "pending": false
+        },
+        {
+          "choice": "team 3452",
+          "pending": false
+        },
+        {
+          "choice": "team 3456",
+          "pending": false
+        },
+        {
+          "choice": "team 3461",
+          "pending": false
+        },
+        {
+          "choice": "team 3462",
+          "pending": false
+        },
+        {
+          "choice": "team 3465",
+          "pending": false
+        },
+        {
+          "choice": "team 3512",
+          "pending": false
+        },
+        {
+          "choice": "team 3514",
+          "pending": false
+        },
+        {
+          "choice": "team 3516",
+          "pending": false
+        },
+        {
+          "choice": "team 3521",
+          "pending": false
+        },
+        {
+          "choice": "team 3524",
+          "pending": false
+        },
+        {
+          "choice": "team 3526",
+          "pending": false
+        },
+        {
+          "choice": "team 3541",
+          "pending": false
+        },
+        {
+          "choice": "team 3542",
+          "pending": false
+        },
+        {
+          "choice": "team 3546",
+          "pending": false
+        },
+        {
+          "choice": "team 3561",
+          "pending": false
+        },
+        {
+          "choice": "team 3562",
+          "pending": false
+        },
+        {
+          "choice": "team 3564",
+          "pending": false
+        },
+        {
+          "choice": "team 3612",
+          "pending": false
+        },
+        {
+          "choice": "team 3614",
+          "pending": false
+        },
+        {
+          "choice": "team 3615",
+          "pending": false
+        },
+        {
+          "choice": "team 3621",
+          "pending": false
+        },
+        {
+          "choice": "team 3624",
+          "pending": false
+        },
+        {
+          "choice": "team 3625",
+          "pending": false
+        },
+        {
+          "choice": "team 3641",
+          "pending": false
+        },
+        {
+          "choice": "team 3642",
+          "pending": false
+        },
+        {
+          "choice": "team 3645",
+          "pending": false
+        },
+        {
+          "choice": "team 3651",
+          "pending": false
+        },
+        {
+          "choice": "team 3652",
+          "pending": false
+        },
+        {
+          "choice": "team 3654",
+          "pending": false
+        },
+        {
+          "choice": "team 4123",
+          "pending": false
+        },
+        {
+          "choice": "team 4125",
+          "pending": false
+        },
+        {
+          "choice": "team 4126",
+          "pending": false
+        },
+        {
+          "choice": "team 4132",
+          "pending": false
+        },
+        {
+          "choice": "team 4135",
+          "pending": false
+        },
+        {
+          "choice": "team 4136",
+          "pending": false
+        },
+        {
+          "choice": "team 4152",
+          "pending": false
+        },
+        {
+          "choice": "team 4153",
+          "pending": false
+        },
+        {
+          "choice": "team 4156",
+          "pending": false
+        },
+        {
+          "choice": "team 4162",
+          "pending": false
+        },
+        {
+          "choice": "team 4163",
+          "pending": false
+        },
+        {
+          "choice": "team 4165",
+          "pending": false
+        },
+        {
+          "choice": "team 4213",
+          "pending": false
+        },
+        {
+          "choice": "team 4215",
+          "pending": false
+        },
+        {
+          "choice": "team 4216",
+          "pending": false
+        },
+        {
+          "choice": "team 4231",
+          "pending": false
+        },
+        {
+          "choice": "team 4235",
+          "pending": false
+        },
+        {
+          "choice": "team 4236",
+          "pending": false
+        },
+        {
+          "choice": "team 4251",
+          "pending": false
+        },
+        {
+          "choice": "team 4253",
+          "pending": false
+        },
+        {
+          "choice": "team 4256",
+          "pending": false
+        },
+        {
+          "choice": "team 4261",
+          "pending": false
+        },
+        {
+          "choice": "team 4263",
+          "pending": false
+        },
+        {
+          "choice": "team 4265",
+          "pending": false
+        },
+        {
+          "choice": "team 4312",
+          "pending": false
+        },
+        {
+          "choice": "team 4315",
+          "pending": false
+        },
+        {
+          "choice": "team 4316",
+          "pending": false
+        },
+        {
+          "choice": "team 4321",
+          "pending": false
+        },
+        {
+          "choice": "team 4325",
+          "pending": false
+        },
+        {
+          "choice": "team 4326",
+          "pending": false
+        },
+        {
+          "choice": "team 4351",
+          "pending": false
+        },
+        {
+          "choice": "team 4352",
+          "pending": false
+        },
+        {
+          "choice": "team 4356",
+          "pending": false
+        },
+        {
+          "choice": "team 4361",
+          "pending": false
+        },
+        {
+          "choice": "team 4362",
+          "pending": false
+        },
+        {
+          "choice": "team 4365",
+          "pending": false
+        },
+        {
+          "choice": "team 4512",
+          "pending": false
+        },
+        {
+          "choice": "team 4513",
+          "pending": false
+        },
+        {
+          "choice": "team 4516",
+          "pending": false
+        },
+        {
+          "choice": "team 4521",
+          "pending": false
+        },
+        {
+          "choice": "team 4523",
+          "pending": false
+        },
+        {
+          "choice": "team 4526",
+          "pending": false
+        },
+        {
+          "choice": "team 4531",
+          "pending": false
+        },
+        {
+          "choice": "team 4532",
+          "pending": false
+        },
+        {
+          "choice": "team 4536",
+          "pending": false
+        },
+        {
+          "choice": "team 4561",
+          "pending": false
+        },
+        {
+          "choice": "team 4562",
+          "pending": false
+        },
+        {
+          "choice": "team 4563",
+          "pending": false
+        },
+        {
+          "choice": "team 4612",
+          "pending": false
+        },
+        {
+          "choice": "team 4613",
+          "pending": false
+        },
+        {
+          "choice": "team 4615",
+          "pending": false
+        },
+        {
+          "choice": "team 4621",
+          "pending": false
+        },
+        {
+          "choice": "team 4623",
+          "pending": false
+        },
+        {
+          "choice": "team 4625",
+          "pending": false
+        },
+        {
+          "choice": "team 4631",
+          "pending": false
+        },
+        {
+          "choice": "team 4632",
+          "pending": false
+        },
+        {
+          "choice": "team 4635",
+          "pending": false
+        },
+        {
+          "choice": "team 4651",
+          "pending": false
+        },
+        {
+          "choice": "team 4652",
+          "pending": false
+        },
+        {
+          "choice": "team 4653",
+          "pending": false
+        },
+        {
+          "choice": "team 5123",
+          "pending": false
+        },
+        {
+          "choice": "team 5124",
+          "pending": false
+        },
+        {
+          "choice": "team 5126",
+          "pending": false
+        },
+        {
+          "choice": "team 5132",
+          "pending": false
+        },
+        {
+          "choice": "team 5134",
+          "pending": false
+        },
+        {
+          "choice": "team 5136",
+          "pending": false
+        },
+        {
+          "choice": "team 5142",
+          "pending": false
+        },
+        {
+          "choice": "team 5143",
+          "pending": false
+        },
+        {
+          "choice": "team 5146",
+          "pending": false
+        },
+        {
+          "choice": "team 5162",
+          "pending": false
+        },
+        {
+          "choice": "team 5163",
+          "pending": false
+        },
+        {
+          "choice": "team 5164",
+          "pending": false
+        },
+        {
+          "choice": "team 5213",
+          "pending": false
+        },
+        {
+          "choice": "team 5214",
+          "pending": false
+        },
+        {
+          "choice": "team 5216",
+          "pending": false
+        },
+        {
+          "choice": "team 5231",
+          "pending": false
+        },
+        {
+          "choice": "team 5234",
+          "pending": false
+        },
+        {
+          "choice": "team 5236",
+          "pending": false
+        },
+        {
+          "choice": "team 5241",
+          "pending": false
+        },
+        {
+          "choice": "team 5243",
+          "pending": false
+        },
+        {
+          "choice": "team 5246",
+          "pending": false
+        },
+        {
+          "choice": "team 5261",
+          "pending": false
+        },
+        {
+          "choice": "team 5263",
+          "pending": false
+        },
+        {
+          "choice": "team 5264",
+          "pending": false
+        },
+        {
+          "choice": "team 5312",
+          "pending": false
+        },
+        {
+          "choice": "team 5314",
+          "pending": false
+        },
+        {
+          "choice": "team 5316",
+          "pending": false
+        },
+        {
+          "choice": "team 5321",
+          "pending": false
+        },
+        {
+          "choice": "team 5324",
+          "pending": false
+        },
+        {
+          "choice": "team 5326",
+          "pending": false
+        },
+        {
+          "choice": "team 5341",
+          "pending": false
+        },
+        {
+          "choice": "team 5342",
+          "pending": false
+        },
+        {
+          "choice": "team 5346",
+          "pending": false
+        },
+        {
+          "choice": "team 5361",
+          "pending": false
+        },
+        {
+          "choice": "team 5362",
+          "pending": false
+        },
+        {
+          "choice": "team 5364",
+          "pending": false
+        },
+        {
+          "choice": "team 5412",
+          "pending": false
+        },
+        {
+          "choice": "team 5413",
+          "pending": false
+        },
+        {
+          "choice": "team 5416",
+          "pending": false
+        },
+        {
+          "choice": "team 5421",
+          "pending": false
+        },
+        {
+          "choice": "team 5423",
+          "pending": false
+        },
+        {
+          "choice": "team 5426",
+          "pending": false
+        },
+        {
+          "choice": "team 5431",
+          "pending": false
+        },
+        {
+          "choice": "team 5432",
+          "pending": false
+        },
+        {
+          "choice": "team 5436",
+          "pending": false
+        },
+        {
+          "choice": "team 5461",
+          "pending": false
+        },
+        {
+          "choice": "team 5462",
+          "pending": false
+        },
+        {
+          "choice": "team 5463",
+          "pending": false
+        },
+        {
+          "choice": "team 5612",
+          "pending": false
+        },
+        {
+          "choice": "team 5613",
+          "pending": false
+        },
+        {
+          "choice": "team 5614",
+          "pending": false
+        },
+        {
+          "choice": "team 5621",
+          "pending": false
+        },
+        {
+          "choice": "team 5623",
+          "pending": false
+        },
+        {
+          "choice": "team 5624",
+          "pending": false
+        },
+        {
+          "choice": "team 5631",
+          "pending": false
+        },
+        {
+          "choice": "team 5632",
+          "pending": false
+        },
+        {
+          "choice": "team 5634",
+          "pending": false
+        },
+        {
+          "choice": "team 5641",
+          "pending": false
+        },
+        {
+          "choice": "team 5642",
+          "pending": false
+        },
+        {
+          "choice": "team 5643",
+          "pending": false
+        },
+        {
+          "choice": "team 6123",
+          "pending": false
+        },
+        {
+          "choice": "team 6124",
+          "pending": false
+        },
+        {
+          "choice": "team 6125",
+          "pending": false
+        },
+        {
+          "choice": "team 6132",
+          "pending": false
+        },
+        {
+          "choice": "team 6134",
+          "pending": false
+        },
+        {
+          "choice": "team 6135",
+          "pending": false
+        },
+        {
+          "choice": "team 6142",
+          "pending": false
+        },
+        {
+          "choice": "team 6143",
+          "pending": false
+        },
+        {
+          "choice": "team 6145",
+          "pending": false
+        },
+        {
+          "choice": "team 6152",
+          "pending": false
+        },
+        {
+          "choice": "team 6153",
+          "pending": false
+        },
+        {
+          "choice": "team 6154",
+          "pending": false
+        },
+        {
+          "choice": "team 6213",
+          "pending": false
+        },
+        {
+          "choice": "team 6214",
+          "pending": false
+        },
+        {
+          "choice": "team 6215",
+          "pending": false
+        },
+        {
+          "choice": "team 6231",
+          "pending": false
+        },
+        {
+          "choice": "team 6234",
+          "pending": false
+        },
+        {
+          "choice": "team 6235",
+          "pending": false
+        },
+        {
+          "choice": "team 6241",
+          "pending": false
+        },
+        {
+          "choice": "team 6243",
+          "pending": false
+        },
+        {
+          "choice": "team 6245",
+          "pending": false
+        },
+        {
+          "choice": "team 6251",
+          "pending": false
+        },
+        {
+          "choice": "team 6253",
+          "pending": false
+        },
+        {
+          "choice": "team 6254",
+          "pending": false
+        },
+        {
+          "choice": "team 6312",
+          "pending": false
+        },
+        {
+          "choice": "team 6314",
+          "pending": false
+        },
+        {
+          "choice": "team 6315",
+          "pending": false
+        },
+        {
+          "choice": "team 6321",
+          "pending": false
+        },
+        {
+          "choice": "team 6324",
+          "pending": false
+        },
+        {
+          "choice": "team 6325",
+          "pending": false
+        },
+        {
+          "choice": "team 6341",
+          "pending": false
+        },
+        {
+          "choice": "team 6342",
+          "pending": false
+        },
+        {
+          "choice": "team 6345",
+          "pending": false
+        },
+        {
+          "choice": "team 6351",
+          "pending": false
+        },
+        {
+          "choice": "team 6352",
+          "pending": false
+        },
+        {
+          "choice": "team 6354",
+          "pending": false
+        },
+        {
+          "choice": "team 6412",
+          "pending": false
+        },
+        {
+          "choice": "team 6413",
+          "pending": false
+        },
+        {
+          "choice": "team 6415",
+          "pending": false
+        },
+        {
+          "choice": "team 6421",
+          "pending": false
+        },
+        {
+          "choice": "team 6423",
+          "pending": false
+        },
+        {
+          "choice": "team 6425",
+          "pending": false
+        },
+        {
+          "choice": "team 6431",
+          "pending": false
+        },
+        {
+          "choice": "team 6432",
+          "pending": false
+        },
+        {
+          "choice": "team 6435",
+          "pending": false
+        },
+        {
+          "choice": "team 6451",
+          "pending": false
+        },
+        {
+          "choice": "team 6452",
+          "pending": false
+        },
+        {
+          "choice": "team 6453",
+          "pending": false
+        },
+        {
+          "choice": "team 6512",
+          "pending": false
+        },
+        {
+          "choice": "team 6513",
+          "pending": false
+        },
+        {
+          "choice": "team 6514",
+          "pending": false
+        },
+        {
+          "choice": "team 6521",
+          "pending": false
+        },
+        {
+          "choice": "team 6523",
+          "pending": false
+        },
+        {
+          "choice": "team 6524",
+          "pending": false
+        },
+        {
+          "choice": "team 6531",
+          "pending": false
+        },
+        {
+          "choice": "team 6532",
+          "pending": false
+        },
+        {
+          "choice": "team 6534",
+          "pending": false
+        },
+        {
+          "choice": "team 6541",
+          "pending": false
+        },
+        {
+          "choice": "team 6542",
+          "pending": false
+        },
+        {
+          "choice": "team 6543",
+          "pending": false
+        }
+      ],
+      "chosen": "team 1234"
+    },
+    {
+      "player": "p2",
+      "request_seq": 1,
+      "candidates": [
+        {
+          "choice": "team 1234",
+          "pending": false
+        },
+        {
+          "choice": "team 1235",
+          "pending": false
+        },
+        {
+          "choice": "team 1236",
+          "pending": false
+        },
+        {
+          "choice": "team 1243",
+          "pending": false
+        },
+        {
+          "choice": "team 1245",
+          "pending": false
+        },
+        {
+          "choice": "team 1246",
+          "pending": false
+        },
+        {
+          "choice": "team 1253",
+          "pending": false
+        },
+        {
+          "choice": "team 1254",
+          "pending": false
+        },
+        {
+          "choice": "team 1256",
+          "pending": false
+        },
+        {
+          "choice": "team 1263",
+          "pending": false
+        },
+        {
+          "choice": "team 1264",
+          "pending": false
+        },
+        {
+          "choice": "team 1265",
+          "pending": false
+        },
+        {
+          "choice": "team 1324",
+          "pending": false
+        },
+        {
+          "choice": "team 1325",
+          "pending": false
+        },
+        {
+          "choice": "team 1326",
+          "pending": false
+        },
+        {
+          "choice": "team 1342",
+          "pending": false
+        },
+        {
+          "choice": "team 1345",
+          "pending": false
+        },
+        {
+          "choice": "team 1346",
+          "pending": false
+        },
+        {
+          "choice": "team 1352",
+          "pending": false
+        },
+        {
+          "choice": "team 1354",
+          "pending": false
+        },
+        {
+          "choice": "team 1356",
+          "pending": false
+        },
+        {
+          "choice": "team 1362",
+          "pending": false
+        },
+        {
+          "choice": "team 1364",
+          "pending": false
+        },
+        {
+          "choice": "team 1365",
+          "pending": false
+        },
+        {
+          "choice": "team 1423",
+          "pending": false
+        },
+        {
+          "choice": "team 1425",
+          "pending": false
+        },
+        {
+          "choice": "team 1426",
+          "pending": false
+        },
+        {
+          "choice": "team 1432",
+          "pending": false
+        },
+        {
+          "choice": "team 1435",
+          "pending": false
+        },
+        {
+          "choice": "team 1436",
+          "pending": false
+        },
+        {
+          "choice": "team 1452",
+          "pending": false
+        },
+        {
+          "choice": "team 1453",
+          "pending": false
+        },
+        {
+          "choice": "team 1456",
+          "pending": false
+        },
+        {
+          "choice": "team 1462",
+          "pending": false
+        },
+        {
+          "choice": "team 1463",
+          "pending": false
+        },
+        {
+          "choice": "team 1465",
+          "pending": false
+        },
+        {
+          "choice": "team 1523",
+          "pending": false
+        },
+        {
+          "choice": "team 1524",
+          "pending": false
+        },
+        {
+          "choice": "team 1526",
+          "pending": false
+        },
+        {
+          "choice": "team 1532",
+          "pending": false
+        },
+        {
+          "choice": "team 1534",
+          "pending": false
+        },
+        {
+          "choice": "team 1536",
+          "pending": false
+        },
+        {
+          "choice": "team 1542",
+          "pending": false
+        },
+        {
+          "choice": "team 1543",
+          "pending": false
+        },
+        {
+          "choice": "team 1546",
+          "pending": false
+        },
+        {
+          "choice": "team 1562",
+          "pending": false
+        },
+        {
+          "choice": "team 1563",
+          "pending": false
+        },
+        {
+          "choice": "team 1564",
+          "pending": false
+        },
+        {
+          "choice": "team 1623",
+          "pending": false
+        },
+        {
+          "choice": "team 1624",
+          "pending": false
+        },
+        {
+          "choice": "team 1625",
+          "pending": false
+        },
+        {
+          "choice": "team 1632",
+          "pending": false
+        },
+        {
+          "choice": "team 1634",
+          "pending": false
+        },
+        {
+          "choice": "team 1635",
+          "pending": false
+        },
+        {
+          "choice": "team 1642",
+          "pending": false
+        },
+        {
+          "choice": "team 1643",
+          "pending": false
+        },
+        {
+          "choice": "team 1645",
+          "pending": false
+        },
+        {
+          "choice": "team 1652",
+          "pending": false
+        },
+        {
+          "choice": "team 1653",
+          "pending": false
+        },
+        {
+          "choice": "team 1654",
+          "pending": false
+        },
+        {
+          "choice": "team 2134",
+          "pending": false
+        },
+        {
+          "choice": "team 2135",
+          "pending": false
+        },
+        {
+          "choice": "team 2136",
+          "pending": false
+        },
+        {
+          "choice": "team 2143",
+          "pending": false
+        },
+        {
+          "choice": "team 2145",
+          "pending": false
+        },
+        {
+          "choice": "team 2146",
+          "pending": false
+        },
+        {
+          "choice": "team 2153",
+          "pending": false
+        },
+        {
+          "choice": "team 2154",
+          "pending": false
+        },
+        {
+          "choice": "team 2156",
+          "pending": false
+        },
+        {
+          "choice": "team 2163",
+          "pending": false
+        },
+        {
+          "choice": "team 2164",
+          "pending": false
+        },
+        {
+          "choice": "team 2165",
+          "pending": false
+        },
+        {
+          "choice": "team 2314",
+          "pending": false
+        },
+        {
+          "choice": "team 2315",
+          "pending": false
+        },
+        {
+          "choice": "team 2316",
+          "pending": false
+        },
+        {
+          "choice": "team 2341",
+          "pending": false
+        },
+        {
+          "choice": "team 2345",
+          "pending": false
+        },
+        {
+          "choice": "team 2346",
+          "pending": false
+        },
+        {
+          "choice": "team 2351",
+          "pending": false
+        },
+        {
+          "choice": "team 2354",
+          "pending": false
+        },
+        {
+          "choice": "team 2356",
+          "pending": false
+        },
+        {
+          "choice": "team 2361",
+          "pending": false
+        },
+        {
+          "choice": "team 2364",
+          "pending": false
+        },
+        {
+          "choice": "team 2365",
+          "pending": false
+        },
+        {
+          "choice": "team 2413",
+          "pending": false
+        },
+        {
+          "choice": "team 2415",
+          "pending": false
+        },
+        {
+          "choice": "team 2416",
+          "pending": false
+        },
+        {
+          "choice": "team 2431",
+          "pending": false
+        },
+        {
+          "choice": "team 2435",
+          "pending": false
+        },
+        {
+          "choice": "team 2436",
+          "pending": false
+        },
+        {
+          "choice": "team 2451",
+          "pending": false
+        },
+        {
+          "choice": "team 2453",
+          "pending": false
+        },
+        {
+          "choice": "team 2456",
+          "pending": false
+        },
+        {
+          "choice": "team 2461",
+          "pending": false
+        },
+        {
+          "choice": "team 2463",
+          "pending": false
+        },
+        {
+          "choice": "team 2465",
+          "pending": false
+        },
+        {
+          "choice": "team 2513",
+          "pending": false
+        },
+        {
+          "choice": "team 2514",
+          "pending": false
+        },
+        {
+          "choice": "team 2516",
+          "pending": false
+        },
+        {
+          "choice": "team 2531",
+          "pending": false
+        },
+        {
+          "choice": "team 2534",
+          "pending": false
+        },
+        {
+          "choice": "team 2536",
+          "pending": false
+        },
+        {
+          "choice": "team 2541",
+          "pending": false
+        },
+        {
+          "choice": "team 2543",
+          "pending": false
+        },
+        {
+          "choice": "team 2546",
+          "pending": false
+        },
+        {
+          "choice": "team 2561",
+          "pending": false
+        },
+        {
+          "choice": "team 2563",
+          "pending": false
+        },
+        {
+          "choice": "team 2564",
+          "pending": false
+        },
+        {
+          "choice": "team 2613",
+          "pending": false
+        },
+        {
+          "choice": "team 2614",
+          "pending": false
+        },
+        {
+          "choice": "team 2615",
+          "pending": false
+        },
+        {
+          "choice": "team 2631",
+          "pending": false
+        },
+        {
+          "choice": "team 2634",
+          "pending": false
+        },
+        {
+          "choice": "team 2635",
+          "pending": false
+        },
+        {
+          "choice": "team 2641",
+          "pending": false
+        },
+        {
+          "choice": "team 2643",
+          "pending": false
+        },
+        {
+          "choice": "team 2645",
+          "pending": false
+        },
+        {
+          "choice": "team 2651",
+          "pending": false
+        },
+        {
+          "choice": "team 2653",
+          "pending": false
+        },
+        {
+          "choice": "team 2654",
+          "pending": false
+        },
+        {
+          "choice": "team 3124",
+          "pending": false
+        },
+        {
+          "choice": "team 3125",
+          "pending": false
+        },
+        {
+          "choice": "team 3126",
+          "pending": false
+        },
+        {
+          "choice": "team 3142",
+          "pending": false
+        },
+        {
+          "choice": "team 3145",
+          "pending": false
+        },
+        {
+          "choice": "team 3146",
+          "pending": false
+        },
+        {
+          "choice": "team 3152",
+          "pending": false
+        },
+        {
+          "choice": "team 3154",
+          "pending": false
+        },
+        {
+          "choice": "team 3156",
+          "pending": false
+        },
+        {
+          "choice": "team 3162",
+          "pending": false
+        },
+        {
+          "choice": "team 3164",
+          "pending": false
+        },
+        {
+          "choice": "team 3165",
+          "pending": false
+        },
+        {
+          "choice": "team 3214",
+          "pending": false
+        },
+        {
+          "choice": "team 3215",
+          "pending": false
+        },
+        {
+          "choice": "team 3216",
+          "pending": false
+        },
+        {
+          "choice": "team 3241",
+          "pending": false
+        },
+        {
+          "choice": "team 3245",
+          "pending": false
+        },
+        {
+          "choice": "team 3246",
+          "pending": false
+        },
+        {
+          "choice": "team 3251",
+          "pending": false
+        },
+        {
+          "choice": "team 3254",
+          "pending": false
+        },
+        {
+          "choice": "team 3256",
+          "pending": false
+        },
+        {
+          "choice": "team 3261",
+          "pending": false
+        },
+        {
+          "choice": "team 3264",
+          "pending": false
+        },
+        {
+          "choice": "team 3265",
+          "pending": false
+        },
+        {
+          "choice": "team 3412",
+          "pending": false
+        },
+        {
+          "choice": "team 3415",
+          "pending": false
+        },
+        {
+          "choice": "team 3416",
+          "pending": false
+        },
+        {
+          "choice": "team 3421",
+          "pending": false
+        },
+        {
+          "choice": "team 3425",
+          "pending": false
+        },
+        {
+          "choice": "team 3426",
+          "pending": false
+        },
+        {
+          "choice": "team 3451",
+          "pending": false
+        },
+        {
+          "choice": "team 3452",
+          "pending": false
+        },
+        {
+          "choice": "team 3456",
+          "pending": false
+        },
+        {
+          "choice": "team 3461",
+          "pending": false
+        },
+        {
+          "choice": "team 3462",
+          "pending": false
+        },
+        {
+          "choice": "team 3465",
+          "pending": false
+        },
+        {
+          "choice": "team 3512",
+          "pending": false
+        },
+        {
+          "choice": "team 3514",
+          "pending": false
+        },
+        {
+          "choice": "team 3516",
+          "pending": false
+        },
+        {
+          "choice": "team 3521",
+          "pending": false
+        },
+        {
+          "choice": "team 3524",
+          "pending": false
+        },
+        {
+          "choice": "team 3526",
+          "pending": false
+        },
+        {
+          "choice": "team 3541",
+          "pending": false
+        },
+        {
+          "choice": "team 3542",
+          "pending": false
+        },
+        {
+          "choice": "team 3546",
+          "pending": false
+        },
+        {
+          "choice": "team 3561",
+          "pending": false
+        },
+        {
+          "choice": "team 3562",
+          "pending": false
+        },
+        {
+          "choice": "team 3564",
+          "pending": false
+        },
+        {
+          "choice": "team 3612",
+          "pending": false
+        },
+        {
+          "choice": "team 3614",
+          "pending": false
+        },
+        {
+          "choice": "team 3615",
+          "pending": false
+        },
+        {
+          "choice": "team 3621",
+          "pending": false
+        },
+        {
+          "choice": "team 3624",
+          "pending": false
+        },
+        {
+          "choice": "team 3625",
+          "pending": false
+        },
+        {
+          "choice": "team 3641",
+          "pending": false
+        },
+        {
+          "choice": "team 3642",
+          "pending": false
+        },
+        {
+          "choice": "team 3645",
+          "pending": false
+        },
+        {
+          "choice": "team 3651",
+          "pending": false
+        },
+        {
+          "choice": "team 3652",
+          "pending": false
+        },
+        {
+          "choice": "team 3654",
+          "pending": false
+        },
+        {
+          "choice": "team 4123",
+          "pending": false
+        },
+        {
+          "choice": "team 4125",
+          "pending": false
+        },
+        {
+          "choice": "team 4126",
+          "pending": false
+        },
+        {
+          "choice": "team 4132",
+          "pending": false
+        },
+        {
+          "choice": "team 4135",
+          "pending": false
+        },
+        {
+          "choice": "team 4136",
+          "pending": false
+        },
+        {
+          "choice": "team 4152",
+          "pending": false
+        },
+        {
+          "choice": "team 4153",
+          "pending": false
+        },
+        {
+          "choice": "team 4156",
+          "pending": false
+        },
+        {
+          "choice": "team 4162",
+          "pending": false
+        },
+        {
+          "choice": "team 4163",
+          "pending": false
+        },
+        {
+          "choice": "team 4165",
+          "pending": false
+        },
+        {
+          "choice": "team 4213",
+          "pending": false
+        },
+        {
+          "choice": "team 4215",
+          "pending": false
+        },
+        {
+          "choice": "team 4216",
+          "pending": false
+        },
+        {
+          "choice": "team 4231",
+          "pending": false
+        },
+        {
+          "choice": "team 4235",
+          "pending": false
+        },
+        {
+          "choice": "team 4236",
+          "pending": false
+        },
+        {
+          "choice": "team 4251",
+          "pending": false
+        },
+        {
+          "choice": "team 4253",
+          "pending": false
+        },
+        {
+          "choice": "team 4256",
+          "pending": false
+        },
+        {
+          "choice": "team 4261",
+          "pending": false
+        },
+        {
+          "choice": "team 4263",
+          "pending": false
+        },
+        {
+          "choice": "team 4265",
+          "pending": false
+        },
+        {
+          "choice": "team 4312",
+          "pending": false
+        },
+        {
+          "choice": "team 4315",
+          "pending": false
+        },
+        {
+          "choice": "team 4316",
+          "pending": false
+        },
+        {
+          "choice": "team 4321",
+          "pending": false
+        },
+        {
+          "choice": "team 4325",
+          "pending": false
+        },
+        {
+          "choice": "team 4326",
+          "pending": false
+        },
+        {
+          "choice": "team 4351",
+          "pending": false
+        },
+        {
+          "choice": "team 4352",
+          "pending": false
+        },
+        {
+          "choice": "team 4356",
+          "pending": false
+        },
+        {
+          "choice": "team 4361",
+          "pending": false
+        },
+        {
+          "choice": "team 4362",
+          "pending": false
+        },
+        {
+          "choice": "team 4365",
+          "pending": false
+        },
+        {
+          "choice": "team 4512",
+          "pending": false
+        },
+        {
+          "choice": "team 4513",
+          "pending": false
+        },
+        {
+          "choice": "team 4516",
+          "pending": false
+        },
+        {
+          "choice": "team 4521",
+          "pending": false
+        },
+        {
+          "choice": "team 4523",
+          "pending": false
+        },
+        {
+          "choice": "team 4526",
+          "pending": false
+        },
+        {
+          "choice": "team 4531",
+          "pending": false
+        },
+        {
+          "choice": "team 4532",
+          "pending": false
+        },
+        {
+          "choice": "team 4536",
+          "pending": false
+        },
+        {
+          "choice": "team 4561",
+          "pending": false
+        },
+        {
+          "choice": "team 4562",
+          "pending": false
+        },
+        {
+          "choice": "team 4563",
+          "pending": false
+        },
+        {
+          "choice": "team 4612",
+          "pending": false
+        },
+        {
+          "choice": "team 4613",
+          "pending": false
+        },
+        {
+          "choice": "team 4615",
+          "pending": false
+        },
+        {
+          "choice": "team 4621",
+          "pending": false
+        },
+        {
+          "choice": "team 4623",
+          "pending": false
+        },
+        {
+          "choice": "team 4625",
+          "pending": false
+        },
+        {
+          "choice": "team 4631",
+          "pending": false
+        },
+        {
+          "choice": "team 4632",
+          "pending": false
+        },
+        {
+          "choice": "team 4635",
+          "pending": false
+        },
+        {
+          "choice": "team 4651",
+          "pending": false
+        },
+        {
+          "choice": "team 4652",
+          "pending": false
+        },
+        {
+          "choice": "team 4653",
+          "pending": false
+        },
+        {
+          "choice": "team 5123",
+          "pending": false
+        },
+        {
+          "choice": "team 5124",
+          "pending": false
+        },
+        {
+          "choice": "team 5126",
+          "pending": false
+        },
+        {
+          "choice": "team 5132",
+          "pending": false
+        },
+        {
+          "choice": "team 5134",
+          "pending": false
+        },
+        {
+          "choice": "team 5136",
+          "pending": false
+        },
+        {
+          "choice": "team 5142",
+          "pending": false
+        },
+        {
+          "choice": "team 5143",
+          "pending": false
+        },
+        {
+          "choice": "team 5146",
+          "pending": false
+        },
+        {
+          "choice": "team 5162",
+          "pending": false
+        },
+        {
+          "choice": "team 5163",
+          "pending": false
+        },
+        {
+          "choice": "team 5164",
+          "pending": false
+        },
+        {
+          "choice": "team 5213",
+          "pending": false
+        },
+        {
+          "choice": "team 5214",
+          "pending": false
+        },
+        {
+          "choice": "team 5216",
+          "pending": false
+        },
+        {
+          "choice": "team 5231",
+          "pending": false
+        },
+        {
+          "choice": "team 5234",
+          "pending": false
+        },
+        {
+          "choice": "team 5236",
+          "pending": false
+        },
+        {
+          "choice": "team 5241",
+          "pending": false
+        },
+        {
+          "choice": "team 5243",
+          "pending": false
+        },
+        {
+          "choice": "team 5246",
+          "pending": false
+        },
+        {
+          "choice": "team 5261",
+          "pending": false
+        },
+        {
+          "choice": "team 5263",
+          "pending": false
+        },
+        {
+          "choice": "team 5264",
+          "pending": false
+        },
+        {
+          "choice": "team 5312",
+          "pending": false
+        },
+        {
+          "choice": "team 5314",
+          "pending": false
+        },
+        {
+          "choice": "team 5316",
+          "pending": false
+        },
+        {
+          "choice": "team 5321",
+          "pending": false
+        },
+        {
+          "choice": "team 5324",
+          "pending": false
+        },
+        {
+          "choice": "team 5326",
+          "pending": false
+        },
+        {
+          "choice": "team 5341",
+          "pending": false
+        },
+        {
+          "choice": "team 5342",
+          "pending": false
+        },
+        {
+          "choice": "team 5346",
+          "pending": false
+        },
+        {
+          "choice": "team 5361",
+          "pending": false
+        },
+        {
+          "choice": "team 5362",
+          "pending": false
+        },
+        {
+          "choice": "team 5364",
+          "pending": false
+        },
+        {
+          "choice": "team 5412",
+          "pending": false
+        },
+        {
+          "choice": "team 5413",
+          "pending": false
+        },
+        {
+          "choice": "team 5416",
+          "pending": false
+        },
+        {
+          "choice": "team 5421",
+          "pending": false
+        },
+        {
+          "choice": "team 5423",
+          "pending": false
+        },
+        {
+          "choice": "team 5426",
+          "pending": false
+        },
+        {
+          "choice": "team 5431",
+          "pending": false
+        },
+        {
+          "choice": "team 5432",
+          "pending": false
+        },
+        {
+          "choice": "team 5436",
+          "pending": false
+        },
+        {
+          "choice": "team 5461",
+          "pending": false
+        },
+        {
+          "choice": "team 5462",
+          "pending": false
+        },
+        {
+          "choice": "team 5463",
+          "pending": false
+        },
+        {
+          "choice": "team 5612",
+          "pending": false
+        },
+        {
+          "choice": "team 5613",
+          "pending": false
+        },
+        {
+          "choice": "team 5614",
+          "pending": false
+        },
+        {
+          "choice": "team 5621",
+          "pending": false
+        },
+        {
+          "choice": "team 5623",
+          "pending": false
+        },
+        {
+          "choice": "team 5624",
+          "pending": false
+        },
+        {
+          "choice": "team 5631",
+          "pending": false
+        },
+        {
+          "choice": "team 5632",
+          "pending": false
+        },
+        {
+          "choice": "team 5634",
+          "pending": false
+        },
+        {
+          "choice": "team 5641",
+          "pending": false
+        },
+        {
+          "choice": "team 5642",
+          "pending": false
+        },
+        {
+          "choice": "team 5643",
+          "pending": false
+        },
+        {
+          "choice": "team 6123",
+          "pending": false
+        },
+        {
+          "choice": "team 6124",
+          "pending": false
+        },
+        {
+          "choice": "team 6125",
+          "pending": false
+        },
+        {
+          "choice": "team 6132",
+          "pending": false
+        },
+        {
+          "choice": "team 6134",
+          "pending": false
+        },
+        {
+          "choice": "team 6135",
+          "pending": false
+        },
+        {
+          "choice": "team 6142",
+          "pending": false
+        },
+        {
+          "choice": "team 6143",
+          "pending": false
+        },
+        {
+          "choice": "team 6145",
+          "pending": false
+        },
+        {
+          "choice": "team 6152",
+          "pending": false
+        },
+        {
+          "choice": "team 6153",
+          "pending": false
+        },
+        {
+          "choice": "team 6154",
+          "pending": false
+        },
+        {
+          "choice": "team 6213",
+          "pending": false
+        },
+        {
+          "choice": "team 6214",
+          "pending": false
+        },
+        {
+          "choice": "team 6215",
+          "pending": false
+        },
+        {
+          "choice": "team 6231",
+          "pending": false
+        },
+        {
+          "choice": "team 6234",
+          "pending": false
+        },
+        {
+          "choice": "team 6235",
+          "pending": false
+        },
+        {
+          "choice": "team 6241",
+          "pending": false
+        },
+        {
+          "choice": "team 6243",
+          "pending": false
+        },
+        {
+          "choice": "team 6245",
+          "pending": false
+        },
+        {
+          "choice": "team 6251",
+          "pending": false
+        },
+        {
+          "choice": "team 6253",
+          "pending": false
+        },
+        {
+          "choice": "team 6254",
+          "pending": false
+        },
+        {
+          "choice": "team 6312",
+          "pending": false
+        },
+        {
+          "choice": "team 6314",
+          "pending": false
+        },
+        {
+          "choice": "team 6315",
+          "pending": false
+        },
+        {
+          "choice": "team 6321",
+          "pending": false
+        },
+        {
+          "choice": "team 6324",
+          "pending": false
+        },
+        {
+          "choice": "team 6325",
+          "pending": false
+        },
+        {
+          "choice": "team 6341",
+          "pending": false
+        },
+        {
+          "choice": "team 6342",
+          "pending": false
+        },
+        {
+          "choice": "team 6345",
+          "pending": false
+        },
+        {
+          "choice": "team 6351",
+          "pending": false
+        },
+        {
+          "choice": "team 6352",
+          "pending": false
+        },
+        {
+          "choice": "team 6354",
+          "pending": false
+        },
+        {
+          "choice": "team 6412",
+          "pending": false
+        },
+        {
+          "choice": "team 6413",
+          "pending": false
+        },
+        {
+          "choice": "team 6415",
+          "pending": false
+        },
+        {
+          "choice": "team 6421",
+          "pending": false
+        },
+        {
+          "choice": "team 6423",
+          "pending": false
+        },
+        {
+          "choice": "team 6425",
+          "pending": false
+        },
+        {
+          "choice": "team 6431",
+          "pending": false
+        },
+        {
+          "choice": "team 6432",
+          "pending": false
+        },
+        {
+          "choice": "team 6435",
+          "pending": false
+        },
+        {
+          "choice": "team 6451",
+          "pending": false
+        },
+        {
+          "choice": "team 6452",
+          "pending": false
+        },
+        {
+          "choice": "team 6453",
+          "pending": false
+        },
+        {
+          "choice": "team 6512",
+          "pending": false
+        },
+        {
+          "choice": "team 6513",
+          "pending": false
+        },
+        {
+          "choice": "team 6514",
+          "pending": false
+        },
+        {
+          "choice": "team 6521",
+          "pending": false
+        },
+        {
+          "choice": "team 6523",
+          "pending": false
+        },
+        {
+          "choice": "team 6524",
+          "pending": false
+        },
+        {
+          "choice": "team 6531",
+          "pending": false
+        },
+        {
+          "choice": "team 6532",
+          "pending": false
+        },
+        {
+          "choice": "team 6534",
+          "pending": false
+        },
+        {
+          "choice": "team 6541",
+          "pending": false
+        },
+        {
+          "choice": "team 6542",
+          "pending": false
+        },
+        {
+          "choice": "team 6543",
+          "pending": false
+        }
+      ],
+      "chosen": "team 1234"
+    }
+  ],
+  "outcome": {
+    "kind": "played",
+    "winner": "tie",
+    "turns": 4
+  },
+  "omniscient_log": [
+    "|gametype|doubles",
+    "|player|p1|p1||",
+    "|player|p2|p2||"
+  ],
+  "omniscient_log_sha256": "7d75c12ce5ed106431e437987688ad10e111e295aa84ae4c854f5ec4ce7f2816",
+  "pair": 0
+}

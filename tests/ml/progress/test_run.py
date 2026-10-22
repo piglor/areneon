@@ -22,7 +22,6 @@ from areneon_ml.progress.run import (
     ProgressRequest,
     committed_generations,
     max_pairs,
-    progress_generation,
     progress_lock,
     progress_root,
     summary_of,
@@ -38,6 +37,23 @@ from tests.ml.progress.support import (
     dataset_config,
     make_run,
 )
+
+
+def progress_generation(  # noqa: PLR0913, PLR0917
+    run_dir: Path,
+    generation: int,
+    root: Path,
+    player: Any,
+    games: int = 2,
+    record_games: int = 1,
+    anchors: tuple[int, ...] = (),
+    anchor_games: int = 4,
+    **kwargs: Any,
+) -> dict[str, Any]:
+    """The command's function with the fixture dataset's size: 2 games, no anchors unless asked."""
+    return run_module.progress_generation(
+        run_dir, generation, root, player, games, record_games, anchors, anchor_games, **kwargs
+    )
 
 
 @pytest.fixture(scope="module")
@@ -247,10 +263,10 @@ def test_more_games_than_pairs_is_refused_before_the_worker_starts(
 ) -> None:
     fake = player(run)
     with pytest.raises(ProgressError, match="at most 60"):
-        progress_generation(run, 1, tmp_path / "p", fake, 61, 1)
+        progress_generation(run, 1, tmp_path / "p", fake, 122, 1)  # 61 pairs
     assert fake.requests == []
     assert sorted(p.name for p in (tmp_path / "p").iterdir()) == [".lock"]
-    progress_generation(run, 1, tmp_path / "p", fake, 60, 0)  # the limit itself is allowed
+    progress_generation(run, 1, tmp_path / "p", fake, 120, 0)  # 60 pairs: the limit is allowed
 
 
 def test_a_dataset_manifest_that_cannot_be_read_refuses(run: Path, tmp_path: Path) -> None:
@@ -262,8 +278,8 @@ def test_a_dataset_manifest_that_cannot_be_read_refuses(run: Path, tmp_path: Pat
 
 
 def test_sizes_are_checked_first(run: Path, tmp_path: Path) -> None:
-    for games, record in ((0, 0), (2, 3), (2, -1)):
-        with pytest.raises(ProgressError, match="positive"):
+    for games, record in ((0, 0), (2, 3), (2, -1), (3, 1)):
+        with pytest.raises(ProgressError, match="even number of at least 2"):
             progress_generation(run, 1, tmp_path / "p", player(run), games, record)
 
 
@@ -308,10 +324,10 @@ def test_a_progress_seed_equal_to_a_training_seed_is_refused(run: Path, tmp_path
     config = dataset_config()
     plan_file = layout.generation_dir(copy, 1) / "plan.json"
     plan = layout.read_json(plan_file)
-    plan[0]["seed"] = progress_game_seed(config.run_key, 1)
+    plan[0]["seed"] = progress_game_seed(config.run_key, 0)  # the one pair of 2 games
     layout.write_json(plan_file, plan)
     reseal(copy, 1)
-    with pytest.raises(ProgressError, match="game 1 equals a seed"):
+    with pytest.raises(ProgressError, match="game 0 equals a seed"):
         progress_generation(copy, 2, tmp_path / "p", player(copy), 2, 1)
 
 
@@ -359,7 +375,7 @@ def test_every_committed_generation_is_listed_and_summarised(run: Path, tmp_path
     assert committed_generations(run) == [0, 1, 2]
     assert committed_generations(tmp_path) == []
     root = tmp_path / "p"
-    done = progress_generation(run, 0, root, player(run), games=3, record_games=0)
+    done = progress_generation(run, 0, root, player(run), games=4, record_games=0)
     first = done["matches"][0]
     assert first["interval"] == "conditional on the fixed validation plan"
     assert first["wilson_low_ppm"] <= first["score_ppm"] <= first["wilson_high_ppm"]
@@ -381,7 +397,7 @@ def test_generation_one_plays_the_previous_pair_and_the_rows_carry_its_checkpoin
 ) -> None:
     root = tmp_path / "p"
     fake = player(run)
-    done = progress_generation(run, 1, root, fake, games=2, record_games=1)
+    done = progress_generation(run, 1, root, fake, games=2, record_games=1, anchors=())
     (request,) = fake.requests
     zero = previous_of(run, 0)
     assert request.previous is not None
@@ -510,3 +526,209 @@ def test_two_runs_give_byte_identical_records_with_the_previous_matches(
     a, b = (sorted((tmp_path / n / "g000001").rglob("*.json")) for n in ("a", "b"))
     assert [p.relative_to(tmp_path / "a") for p in a] == [p.relative_to(tmp_path / "b") for p in b]
     assert all(x.read_bytes() == y.read_bytes() for x, y in zip(a, b, strict=True))
+
+
+def anchor_rows(record: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    return {m["match_id"]: m for m in record["matches"] if m["opponent"]["kind"] == "anchor"}
+
+
+def test_an_anchor_is_the_fixed_earlier_generations_pair_played_from_both_seats(
+    run: Path, tmp_path: Path
+) -> None:
+    root = tmp_path / "p"
+    fake = player(run)
+    # Generation 1 is not earlier than itself: asking for it as an anchor leaves it out.
+    done = progress_generation(
+        run, 1, root, fake, games=2, record_games=1, anchors=(0, 1), anchor_games=4
+    )
+    (request,) = fake.requests
+    zero = previous_of(run, 0)
+    assert [(a.generation, a.preview, a.battle) for a in request.anchors] == [
+        (0, zero["preview"], zero["battle"])
+    ]
+    assert request.anchors[0].policy_id_sample == policy_id(
+        zero["preview"], zero["battle"], "sample"
+    )
+    assert request.anchor_games == 4
+    assert done["anchors"] == "played: g0; skipped (not earlier than this generation): g1"
+    record = read_progress_record(layout.read_json(root / "g000001" / "progress.json"))
+    found = anchor_rows(record)
+    assert sorted(found) == ["anchor-g0-argmax", "anchor-g0-sample"]
+    for mode, match in (
+        ("sample", found["anchor-g0-sample"]),
+        ("argmax", found["anchor-g0-argmax"]),
+    ):
+        assert match["games"] == 4
+        assert match["opponent"] == {
+            "kind": "anchor",
+            "generation": 0,
+            "policy_id": policy_id(zero["preview"], zero["battle"], mode),
+            "checkpoints": zero,
+        }
+    rows = [r for r in record["games"] if r["match_id"] == "anchor-g0-sample"]
+    assert [(r["game"], r["pair"], r["candidate_seat"]) for r in rows] == [
+        (0, 0, "p1"),
+        (1, 0, "p2"),
+        (2, 1, "p1"),
+        (3, 1, "p2"),
+    ]
+    assert record["plan"]["anchor_games_per_match"] == 4
+    assert record["plan"]["games_per_match"] == 2
+    assert record["teams"]["pairs_used"] == 2
+    summary = {m["match_id"]: m for m in done["matches"]}["anchor-g0-sample"]
+    assert summary["comparison"] == SEEN_LABEL
+    assert summary["score_ppm"] == 500_000
+    baseline = {m["match_id"]: m for m in done["matches"]}["actor-rule-sample"]
+    assert "comparison" not in baseline
+
+
+def test_no_anchor_is_played_at_or_below_its_own_generation(run: Path, tmp_path: Path) -> None:
+    fake = player(run)
+    done = progress_generation(
+        run, 0, tmp_path / "p", fake, games=2, record_games=1, anchors=(0, 5), anchor_games=4
+    )
+    assert fake.requests[0].anchors == ()
+    assert fake.requests[0].anchor_games == 0
+    assert done["anchors"].startswith("none requested or played; skipped")
+    assert not [m for m in done["matches"] if m["match_id"].startswith("anchor")]
+
+
+@pytest.mark.parametrize(
+    ("anchors", "anchor_games", "message"),
+    [
+        ((0,), 3, "even number of at least 2"),
+        ((0,), 0, "even number of at least 2"),
+        ((-1,), 4, "generation numbers of 0 or more"),
+        ((0,), 10_000, "validation team pairs"),
+    ],
+)
+def test_wrong_anchor_arguments_are_refused_before_the_worker_starts(
+    run: Path, tmp_path: Path, anchors: tuple[int, ...], anchor_games: int, message: str
+) -> None:
+    fake = player(run)
+    with pytest.raises(ProgressError, match=message):
+        progress_generation(
+            run, 1, tmp_path / "p", fake, 2, 1, anchors=anchors, anchor_games=anchor_games
+        )
+    assert fake.requests == []
+
+
+@pytest.mark.parametrize(
+    ("name", "change", "message"),
+    [
+        (
+            "another anchor pair",
+            lambda d: [
+                m["opponent"]["checkpoints"].update(preview="0" * 64)
+                for m in d["matches"]
+                if m["opponent"]["kind"] == "anchor"
+            ],
+            "policy_id is not its checkpoints",
+        ),
+        (
+            "a consistent substitution: another pair, its own policy ids",
+            lambda d: [
+                m["opponent"].update(
+                    checkpoints={"preview": "0" * 64, "battle": "1" * 64},
+                    policy_id=policy_id("0" * 64, "1" * 64, m["mode"]),
+                )
+                for m in d["matches"]
+                if m["opponent"]["kind"] == "anchor"
+            ],
+            "not generation 0's pair",
+        ),
+        (
+            "only one anchor mode",
+            lambda d: d.update(
+                matches=[m for m in d["matches"] if m["match_id"] != "anchor-g0-argmax"],
+                games=[g for g in d["games"] if g["match_id"] != "anchor-g0-argmax"],
+            ),
+            "both sample and argmax",
+        ),
+        (
+            "anchors that were not asked for",
+            lambda d: d.update(
+                matches=[m for m in d["matches"] if m["opponent"]["kind"] != "anchor"],
+                games=[g for g in d["games"] if not g["match_id"].startswith("anchor")],
+                plan={k: v for k, v in d["plan"].items() if k != "anchor_games_per_match"},
+                teams={**d["teams"], "pairs_used": 1},
+            ),
+            "not the anchors asked for",
+        ),
+    ],
+)
+def test_wrong_anchor_matches_are_refused_before_anything_commits(
+    run: Path, tmp_path: Path, name: str, change: Any, message: str
+) -> None:
+    def hook(out: Path, request: ProgressRequest) -> None:
+        rewrite(out / "progress.json", change)
+
+    root = tmp_path / "p"
+    with pytest.raises((ProgressError, ProgressRecordError), match=message):
+        progress_generation(
+            run,
+            1,
+            root,
+            FakeProgressPlayer(dataset_config(), committed_manifest(run, 0), hook),
+            games=2,
+            record_games=1,
+            anchors=(0,),
+            anchor_games=4,
+        )
+    assert sorted(p.name for p in root.iterdir()) == [".lock"], name
+
+
+def test_a_committed_anchor_directory_is_verified_kept_and_a_missing_anchor_is_said(
+    run: Path, tmp_path: Path
+) -> None:
+    root = tmp_path / "p"
+    progress_generation(run, 1, root, player(run), 2, 1, anchors=(0,), anchor_games=4)
+    before = (root / "g000001" / "manifest.json").read_bytes()
+    again = player(run)
+    done = progress_generation(run, 1, root, again, 2, 1, anchors=(0,), anchor_games=4)
+    assert done["skipped"] is True
+    assert again.requests == []
+    assert done["anchors"] == "played: g0"
+    # An anchor asked for later that the directory lacks is reported, never added.
+    none = tmp_path / "q"
+    progress_generation(run, 1, none, player(run), 2, 1)
+    said = progress_generation(run, 1, none, player(run), 2, 1, anchors=(0,), anchor_games=4)
+    assert said["skipped"] is True
+    assert said["anchors"].startswith("none requested or played; missing: g0")
+    assert (root / "g000001" / "manifest.json").read_bytes() == before
+
+
+def test_two_runs_give_byte_identical_records_with_the_anchor_matches(
+    run: Path, tmp_path: Path
+) -> None:
+    for name in ("a", "b"):
+        progress_generation(
+            run, 1, tmp_path / name, player(run), 2, 1, anchors=(0,), anchor_games=4
+        )
+    a, b = (sorted((tmp_path / n / "g000001").rglob("*.json")) for n in ("a", "b"))
+    assert all(x.read_bytes() == y.read_bytes() for x, y in zip(a, b, strict=True))
+    assert any("anchor-g0-sample-3" in p.name or "anchor-g0-sample-0" in p.name for p in a)
+
+
+def test_a_stored_anchor_record_with_a_wrong_opponent_is_refused_on_verification(
+    run: Path, tmp_path: Path
+) -> None:
+    root = tmp_path / "p"
+    progress_generation(run, 1, root, player(run), 2, 1, anchors=(0,), anchor_games=4)
+    config = read_run_config(layout.read_json(run / layout.CONFIG))
+    record = layout.read_json(root / "g000001" / "progress.json")
+    for match in record["matches"]:
+        if match["opponent"]["kind"] == "anchor":
+            match["opponent"]["checkpoints"]["battle"] = "0" * 64
+            match["opponent"]["policy_id"] = policy_id(
+                match["opponent"]["checkpoints"]["preview"], "0" * 64, match["mode"]
+            )
+    layout.write_json(root / "g000001" / "progress.json", record)
+    with pytest.raises(layout.RunDirError):
+        verify_progress_dir(root / "g000001", config, run, 1)  # the manifest hash no longer holds
+    target = root / "g000001"
+    manifest = layout.read_json(target / layout.MANIFEST)
+    manifest["files"] = layout.hash_tree(target)
+    layout.write_json(target / layout.MANIFEST, manifest)
+    with pytest.raises(ProgressError, match="not generation 0's pair"):
+        verify_progress_dir(root / "g000001", config, run, 1)

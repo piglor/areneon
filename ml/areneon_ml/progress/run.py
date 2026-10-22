@@ -18,7 +18,7 @@ import fcntl
 import json
 import os
 import shutil
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -32,7 +32,9 @@ from areneon_ml.loop import layout
 from areneon_ml.loop.play import NodePlayer, PlayError
 from areneon_ml.loop.records import policy_id
 from areneon_ml.progress.records import (
+    SCHEMA_V2,
     ProgressRecordError,
+    is_v2,
     read_game_record,
     read_progress_record,
     record_hash,
@@ -43,8 +45,12 @@ from areneon_ml.progress.stats import CONDITIONAL_LABEL, wilson
 PROGRESS = "progress.json"
 GAMES = "games"
 SCRIPT = "packages/team-dataset/scripts/progress.ts"
+#: Games per baseline match (even: every pair is played from both seats, ADR-017 erratum E2).
 DEFAULT_GAMES = 100
 DEFAULT_RECORD_GAMES = 8
+#: Games per anchor match (even): each of this many / 2 validation pairs from both seats.
+DEFAULT_ANCHOR_GAMES = 200
+MIN_GAMES = 2
 #: Says what a ``previous-*`` row is: the pair's own lineage, so it can cycle (ADR-017 section 2).
 SEEN_LABEL = "seen, same-lineage comparison: it can cycle"
 
@@ -57,6 +63,17 @@ class ProgressError(ValueError):
 class PreviousPair:
     """The previous generation's frozen pair, the opponent of the ``previous-*`` matches."""
 
+    preview: str
+    battle: str
+    policy_id_sample: str
+    policy_id_argmax: str
+
+
+@dataclass(frozen=True)
+class AnchorPair:
+    """A fixed earlier generation's frozen pair, the opponent of its ``anchor-g<N>-*`` matches."""
+
+    generation: int
     preview: str
     battle: str
     policy_id_sample: str
@@ -79,6 +96,10 @@ class ProgressRequest:
     out_dir: Path
     #: None at generation 0, which has no previous generation (no ``previous-*`` matches then).
     previous: PreviousPair | None = None
+    #: Fixed earlier generations to play (each earlier than ``generation``), both seats per pair.
+    anchors: tuple[AnchorPair, ...] = ()
+    #: Games in each anchor match (even); 0 with no anchors.
+    anchor_games: int = 0
 
 
 class ProgressPlayer(Protocol):
@@ -100,6 +121,14 @@ class NodeProgressPlayer(NodePlayer):
                 *("--previous-policy-id-argmax", previous.policy_id_argmax),
             )
         )
+        anchors = tuple(
+            arg
+            for a in request.anchors
+            for arg in (
+                "--anchor",
+                f"{a.generation},{a.preview},{a.battle},{a.policy_id_sample},{a.policy_id_argmax}",
+            )
+        ) + (("--anchor-games", str(request.anchor_games)) if request.anchors else ())
         out = self._run(
             SCRIPT,
             *("--config", str(self.config_path)),
@@ -118,6 +147,7 @@ class NodeProgressPlayer(NodePlayer):
             *("--record-games", str(request.record_games)),
             *("--out", str(request.out_dir)),
             *more,
+            *anchors,
         )
         try:
             found = json.loads(out)
@@ -281,13 +311,58 @@ def _previous_pair(run_dir: Path, config: RunConfig, generation: int) -> Previou
     )
 
 
+def _anchor_pair(run_dir: Path, config: RunConfig, generation: int) -> AnchorPair:
+    """The frozen pair of a committed generation (verified), as an opponent."""
+    found = _source(run_dir, config, generation)
+    return AnchorPair(
+        generation,
+        found.preview,
+        found.battle,
+        policy_id(found.preview, found.battle, "sample"),
+        policy_id(found.preview, found.battle, "argmax"),
+    )
+
+
+def _check_anchors(
+    record: dict[str, Any], anchors: Sequence[AnchorPair] | None, run_dir: Path, config: RunConfig
+) -> None:
+    """Every anchor match plays exactly its generation's frozen pair, read from its own records.
+
+    ``anchors`` is the set asked for (a fresh evaluation: all of them, both modes); None checks
+    only what the record holds (a committed directory may hold any subset of earlier anchors).
+    """
+    found: dict[int, dict[str, dict[str, Any]]] = {}
+    for match in record["matches"]:
+        if match["opponent"]["kind"] == "anchor":
+            found.setdefault(match["opponent"]["generation"], {})[match["mode"]] = match
+    if anchors is not None and set(found) != {a.generation for a in anchors}:
+        raise ProgressError("the record's anchor matches are not the anchors asked for")
+    for generation, modes in found.items():
+        if set(modes) != {"argmax", "sample"}:
+            raise ProgressError(f"anchor g{generation}: both sample and argmax must be played")
+        pair = _anchor_pair(run_dir, config, generation)
+        ids = {"sample": pair.policy_id_sample, "argmax": pair.policy_id_argmax}
+        for mode, match in modes.items():
+            opponent = match["opponent"]
+            if (
+                opponent["checkpoints"] != {"preview": pair.preview, "battle": pair.battle}
+                or opponent["policy_id"] != ids[mode]
+            ):
+                raise ProgressError(
+                    f"{match['match_id']}: the opponent is not generation {generation}'s pair"
+                )
+
+
 def _verify_output(  # noqa: PLR0913, PLR0917
     work: Path,
     config: RunConfig,
     source: _Source,
     games: int,
     record_games: int,
-    previous: PreviousPair | None = None,
+    previous: PreviousPair | None,
+    anchors: Sequence[AnchorPair],
+    run_dir: Path,
+    anchor_games: int,
 ) -> dict[str, Any]:
     """The simulator side's files are the record's: read both kinds, check every hash and name."""
     record = read_progress_record(layout.read_json(work / PROGRESS), config)
@@ -301,11 +376,16 @@ def _verify_output(  # noqa: PLR0913, PLR0917
         or record["version_manifest"] != source.version_manifest
     ):
         raise ProgressError("progress.json is not the record asked for")
+    if record["schema_version"] != SCHEMA_V2:
+        raise ProgressError("a new evaluation is a schema version 2 record")
     _check_previous(record, previous, legacy=False)
+    _check_anchors(record, anchors, run_dir, config)
+    if plan.get("anchor_games_per_match", 0) != anchor_games:
+        raise ProgressError("progress.json is not the record asked for")
     expected = set()
     for match in record["matches"]:
         listed = []
-        for game in range(record_games):
+        for game in range(min(record_games, match["games"])):
             name = f"{match['match_id']}-{game}.json"
             expected.add(name)
             stored = read_game_record(layout.read_json(work / GAMES / name))
@@ -314,6 +394,7 @@ def _verify_output(  # noqa: PLR0913, PLR0917
                 or stored["generation"] != source.generation
                 or stored["match_id"] != match["match_id"]
                 or stored["game"] != game
+                or stored.get("pair") != game // 2
                 or stored["version_manifest"] != record["version_manifest"]
             ):
                 raise ProgressError(f"games/{name} is not the game it is named for")
@@ -329,7 +410,12 @@ def _verify_output(  # noqa: PLR0913, PLR0917
 
 
 def summary_of(record: dict[str, Any]) -> list[dict[str, Any]]:
-    """Per match: the counts and the derived score with its Wilson interval (never stored)."""
+    """Per match: the counts and the derived score with its Wilson interval (never stored).
+
+    For a version 2 record (every pair from both seats) the games of a pair are not independent,
+    so this interval is the per-game one the version 1 reader gave; the pair-level interval is
+    a separate slice (ADR-017 erratum E2, item 2).
+    """
     out = []
     for match in record["matches"]:
         interval = wilson(match["wins"], match["ties"], match["games"])
@@ -348,7 +434,11 @@ def summary_of(record: dict[str, Any]) -> list[dict[str, Any]]:
                 "forfeits": sum(f["count"] for f in match["forfeits"]),
                 "turn_cap_ties": match["turn_cap_ties"],
             }
-            | ({"comparison": SEEN_LABEL} if match["opponent"]["kind"] == "previous" else {})
+            | (
+                {"comparison": SEEN_LABEL}
+                if match["opponent"]["kind"] in ("previous", "anchor")
+                else {}
+            )
         )
     return out
 
@@ -365,11 +455,14 @@ def verify_progress_dir(
         or record["generation"] != generation
     ):
         raise ProgressError(f"{target.name}: the record is not of the committed generation")
-    # A record committed before the previous-generation matches existed (slice 4) stays valid.
+    # Previous-generation matches are optional (a record may hold them or not).
     _check_previous(record, _previous_pair(run_dir, config, generation), legacy=True)
+    _check_anchors(record, None, run_dir, config)
     for match in record["matches"]:
         for name in sorted(p.name for p in (target / GAMES).glob(f"{match['match_id']}-*.json")):
-            read_game_record(layout.read_json(target / GAMES / name))
+            stored = read_game_record(layout.read_json(target / GAMES / name))
+            if is_v2(record) and stored.get("pair") != stored["game"] // 2:
+                raise ProgressError(f"games/{name}: a both-seats game must name its pair")
     if manifest.get("run_id") != config.run_key:
         raise ProgressError(f"{target.name}: its manifest names another run")
     return record
@@ -382,10 +475,26 @@ def progress_generation(  # noqa: PLR0913, PLR0917
     player: ProgressPlayer,
     games: int = DEFAULT_GAMES,
     record_games: int = DEFAULT_RECORD_GAMES,
+    anchors: Sequence[int] = (),
+    anchor_games: int = DEFAULT_ANCHOR_GAMES,
 ) -> dict[str, Any]:
-    """Evaluate one generation into ``root``; a committed directory is verified and kept."""
-    if games < 1 or record_games < 0 or record_games > games:
-        raise ProgressError("--games must be positive and --record-games between 0 and --games")
+    """Evaluate one generation into ``root``; a committed directory is verified and kept.
+
+    Every pair is played from both seats (version 2 records), so ``games`` is even. ``anchors``
+    are fixed earlier generations to play as well (one that is not earlier than ``generation`` is
+    left out: a generation is never its own anchor); ``anchor_games`` games per anchor match.
+    """
+    if games < MIN_GAMES or games % 2 or record_games < 0 or record_games > games:
+        raise ProgressError(
+            "--games must be an even number of at least 2 (every pair is played from both seats) "
+            "and --record-games between 0 and --games"
+        )
+    if any(a < 0 for a in anchors):
+        raise ProgressError("--anchors must be generation numbers of 0 or more")
+    wanted = sorted({a for a in anchors if a < generation})
+    dropped = sorted({a for a in anchors if a >= generation})
+    if wanted and (anchor_games < MIN_GAMES or anchor_games % 2):
+        raise ProgressError("--anchor-games must be an even number of at least 2")
     config = _read_config(run_dir)
     with progress_lock(root):
         target = progress_dir_of(root, generation)
@@ -397,18 +506,23 @@ def progress_generation(  # noqa: PLR0913, PLR0917
                 "generation": generation,
                 "skipped": True,
                 "previous": _previous_status(record, generation),
+                "anchors": _anchor_status(record, wanted, dropped),
                 "matches": summary_of(record),
             }
         source = _source(run_dir, config, generation)
-        previous = _previous_pair(run_dir, config, generation)
+        previous_pair = _previous_pair(run_dir, config, generation)
+        previous = previous_pair
+        anchor_pairs = tuple(_anchor_pair(run_dir, config, a) for a in wanted)
+        played_anchor_games = anchor_games if wanted else 0
+        needed = max(games, played_anchor_games) // 2
         limit = max_pairs(config)
-        if games > limit:
+        if needed > limit:
             raise ProgressError(
-                f"--games {games} needs {games} disjoint validation team pairs: "
-                f"the dataset gives at most {limit}"
+                f"--games {games} / --anchor-games {played_anchor_games} need {needed} disjoint "
+                f"validation team pairs: the dataset gives at most {limit}"
             )
         try:
-            check_not_training_seeds(run_dir, config.run_key, games)
+            check_not_training_seeds(run_dir, config.run_key, needed)
         except ValueError as exc:
             raise ProgressError(str(exc)) from exc
         teams = layout.read_json(source.team_set)
@@ -432,9 +546,21 @@ def progress_generation(  # noqa: PLR0913, PLR0917
                     record_games=record_games,
                     out_dir=work,
                     previous=previous,
+                    anchors=anchor_pairs,
+                    anchor_games=played_anchor_games,
                 )
             )
-            record = _verify_output(work, config, source, games, record_games, previous)
+            record = _verify_output(
+                work,
+                config,
+                source,
+                games,
+                record_games,
+                previous_pair,
+                anchor_pairs,
+                run_dir,
+                played_anchor_games,
+            )
             layout.fsync_tree(work)
             layout.write_json(
                 work / layout.MANIFEST,
@@ -455,6 +581,7 @@ def progress_generation(  # noqa: PLR0913, PLR0917
             "generation": generation,
             "skipped": False,
             "previous": _previous_status(record, generation),
+            "anchors": _anchor_status(record, wanted, dropped),
             "wall_ms": facts.get("wall_ms", {}),
             "matches": summary_of(record),
         }
@@ -472,12 +599,40 @@ def _previous_status(record: dict[str, Any], generation: int) -> str:
     )
 
 
+def _anchor_status(
+    record: dict[str, Any], wanted: Sequence[int], skipped: Sequence[int] = ()
+) -> str:
+    """Says which anchors the record holds, and which asked for are missing."""
+    held = sorted(
+        {
+            m["opponent"]["generation"]
+            for m in record["matches"]
+            if m["opponent"]["kind"] == "anchor"
+        }
+    )
+    missing = [a for a in wanted if a not in held]
+    text = "played: " + ", ".join(f"g{a}" for a in held) if held else "none requested or played"
+    if missing:
+        text += (
+            "; missing: "
+            + ", ".join(f"g{a}" for a in missing)
+            + " (committed without them; evaluate into a new --progress-dir to add them)"
+        )
+    if skipped:
+        text += "; skipped (not earlier than this generation): " + ", ".join(
+            f"g{a}" for a in skipped
+        )
+    return text
+
+
 def committed_generations(run_dir: Path) -> list[int]:
     newest = layout.latest_complete(run_dir)
     return [] if newest is None else list(range(newest.generation + 1))
 
 
 __all__ = [
+    "DEFAULT_ANCHOR_GAMES",
+    "AnchorPair",
     "NodeProgressPlayer",
     "ProgressError",
     "ProgressPlayer",

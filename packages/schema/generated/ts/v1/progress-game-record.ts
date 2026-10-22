@@ -22,6 +22,10 @@ export interface ProgressGameRecord {
   match_id: string;
   game: number;
   /**
+   * Present in a game of a ProgressEvaluationRecordV2 (both seats per pair): the validation pair, equal to game / 2 rounded down. The seed is then progress-seed/1's for the pair, not for the game index.
+   */
+  pair?: number;
+  /**
    * The battle seed, in the engine's sodium,<32 hex> form.
    */
   seed: string;

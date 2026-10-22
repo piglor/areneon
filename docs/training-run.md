@@ -104,44 +104,72 @@ and skips it.
 **What is played.** Four matches per generation: `random-legal@v1` and
 `actor-rule@v1`, each against the pair in sample mode (temperature 1, as in
 training) and in argmax mode. From generation 1 on there are two more, against
-the previous generation's frozen pair: `previous-sample` (both pairs sample)
-and `previous-argmax` (both argmax), six in all. A `previous-*` row names the
-opponent's checkpoint ids and is a **seen, same-lineage comparison**: the two
-pairs share a lineage, so it can cycle and it says nothing about a held-out
-opponent. Generation 0 has no previous generation and plays four; its output
-says so. The previous pair is served by a second worker. A progress root made
-before these matches existed is verified and skipped as before; the command
-reports `previous: missing` for such a generation, and to get the matches you
-evaluate into a new `--progress-dir` (a committed generation is never rewritten).
+the previous generation's frozen pair: `previous-sample` (both pairs sample) and
+`previous-argmax` (both argmax), six in all. `--anchors 0,10,20` adds, for each
+listed generation earlier than the one evaluated, an `anchor-g<A>-sample` and an
+`anchor-g<A>-argmax` match against generation A's frozen pair (`--anchor-games`
+games each, even, default 200, so 100 pairs). A `previous-*` or `anchor-*` row
+names the opponent's checkpoint ids and is a **seen, same-lineage comparison**:
+the two pairs share a lineage, so it can cycle and it says nothing about a
+held-out opponent. Each anchor and the previous pair are served by a worker of
+their own; the checkpoint ids and policy ids of an anchor are verified from
+generation A's own records, when the evaluation is made and again when a
+committed directory is verified. Generation 0 has no previous generation and
+plays four; its output says so. A progress root made before these matches
+existed is verified and skipped as before; the command reports `previous:
+missing` or `anchors: ... missing` for such a generation, and to get the
+matches you evaluate into a new `--progress-dir` (a committed generation is
+never rewritten).
 
-Game `k` of every match uses validation team pair
-`k` (disjoint pairs, no team twice in a match) and the seed `progress-seed/1`
-gives it, with the pair on seat p1 for an even `k` and p2 for an odd one. The
-pairs and seeds are the same for every opponent, mode and generation, so two
-generations are compared on the same plan. At most half as many games per match
-as there are validation teams (107 for 214 teams); more is refused. The run's
-`team-set.json` must not hold a validation team, and no progress seed may equal
-a seed of a committed training plan; either refuses the command. The seed
-check runs at evaluation time against the plans committed then: a later
-generation's `plan.json` is not covered by an earlier record, and an evaluation of
-generation 0 sees no plans yet. The remaining risk is about 2^-128 per seed
-(the two derivations hash different purpose strings). `--games` above the
-number of pairs the validation split gives is refused before the worker starts,
-naming the limit.
+**Every pair is played from both seats (ADR-017 erratum E2).** Validation pair
+`k` is two games, `2k` and `2k+1`: the candidate on p1 holding team `a` against
+the opponent on p2 holding `b`, then the opponent on p1 holding `a` against the
+candidate on p2 holding `b`. The teams stay on their seats and the policies
+swap, so the two games cancel the seat and the team advantage; both games use
+the same `progress-seed/1` battle seed (the pair index names it; the sampling
+draw still differs, because the seat is in its label). A match of `n` pairs has
+`2n` games, so `--games` and `--anchor-games` are even, and **the unit of
+analysis is the pair**. The pairs and seeds are the same for every opponent,
+mode and generation, so two generations are compared on the same plan. At most
+as many games per match as there are validation teams (214 for 214 teams: 107
+pairs); more is refused, never wrapped. The run's `team-set.json` must not hold
+a validation team, and no progress seed may equal a seed of a committed
+training plan; either refuses the command. The seed check runs at evaluation
+time against the plans committed then: a later generation's `plan.json` is not
+covered by an earlier record, and an evaluation of generation 0 sees no plans
+yet. The remaining risk is about 2^-128 per seed (the two derivations hash
+different purpose strings). A request above the pairs the validation split
+gives is refused before the worker starts, naming the limit.
+
+**Records.** A new evaluation writes a `ProgressEvaluationRecordV2`
+(`schema_version` 2, contract `progress-evaluation-record-2` beside the
+unchanged version 1). Its games name their pair (`game >> 1`, also an optional
+`pair` field of the stored game record, a minor change within v1, whose seed is
+then the pair's). The opponent variants are `baseline`, `previous` and `anchor`
+(`{kind, generation, policy_id, checkpoints}`); `plan.anchor_games_per_match` is
+present exactly when anchor matches are, and `teams.pairs_used` is half the
+largest games per match. A version 1 record (one game per pair, the candidate
+alternating seats) stays readable as it is and is never rewritten or upgraded.
+The pair-level interval, the look log, the default schedule and the dashboard
+and replay pages for version 2 are separate tickets (#948 to #951); until they
+land the printed summary and the dashboard still print the per-game Wilson
+interval, which for a both-seats record is not valid (the two games of a pair
+are not independent): read the counts, not that interval.
 
 **Reading the numbers.**
 
 - The record stores counts. A **score** counts a tie as half a win:
   `(wins + ties / 2) / games`. The command prints it, with its **Wilson 95%
   interval**, in parts per million (`score_ppm`, `wilson_low_ppm`,
-  `wilson_high_ppm`); the interval is derived, never stored. At 100 games a score
-  of 0.5 has an interval of about 0.40 to 0.60, and 0.85 about 0.77 to 0.91.
+  `wilson_high_ppm`); the interval is derived, never stored. For a version 1
+  record at 100 games a score of 0.5 has an interval of about 0.40 to 0.60.
 - Every interval is **conditional on the fixed validation plan**: it describes
   these validation teams under this pairing and these seeds, not the team
   generator's whole distribution. That is a labelled deviation from protocol
   6.2, which allows Wilson only for fresh team pairs from the generator (a
   protocol erratum candidate). Within a match the games are independent given the
-  plan; across matches, modes and generations they share the plan on purpose.
+  plan (version 1); across matches, modes and generations they share the plan on
+  purpose.
 - Looking at several generations is a sequence of looks: their intervals are not
   simultaneous, and a difference between two generations is not a test result.
 - A forfeit is a scored loss for the failing side, kept with its cause. A harness
@@ -156,8 +184,8 @@ naming the limit.
 batching. A measured run on the shared development machine (a 6-layer, width-256
 pair, while a training run used the CPU) took about 0.6 s per game and about 25 s
 of fixed start-up per command (verifying the generation, reading the dataset), so
-100 games in each of the 4 matches took about 5 minutes. With the two previous-generation
-matches (600 games, from generation 1) the same machine gives about 6.5 minutes
-per generation: 48 games at generation 2 took 29 s (0.6 s per game) and a three-generation
-`--all` of 8 games per match took 2.5 minutes in all. The figure depends on the
+100 games in each of the 4 matches took about 5 minutes. Each anchor adds two
+matches of `--anchor-games` games (200 games: about 4 minutes at 0.6 s per game,
+more while two networks answer). The previous-generation matches add 600 games
+from generation 1 on (about 6.5 minutes in all). The figure depends on the
 machine and on how long the games are.

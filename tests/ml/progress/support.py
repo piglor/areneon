@@ -65,7 +65,8 @@ def game_file(  # noqa: PLR0913, PLR0917
     stored["generation"] = request.generation
     stored["match_id"] = match_id
     stored["game"] = game
-    stored["seed"] = progress_game_seed(config.run_key, game)
+    stored["pair"] = game // 2  # every pair is played from both seats (version 2)
+    stored["seed"] = progress_game_seed(config.run_key, game // 2)
     stored["policies"] = {"p1": pair, "p2": opponent}
     return stored
 
@@ -86,13 +87,26 @@ def progress_files(
     ]
     if request.previous is not None:
         opponents.append(("previous", "", {}))
+    anchors = {a.generation: a for a in request.anchors}
+    for generation in sorted(anchors):
+        opponents.append((f"anchor-g{generation}", "", {"anchor": generation}))
     for _actor, baseline, previous in opponents:
         for mode in MODES:
             match_id = f"{_actor}-{mode}"
             pair = policy_id(request.preview, request.battle, mode)
             other = baseline
             opponent: dict[str, Any] = {"kind": "baseline", "policy_id": baseline}
-            if previous is not None and request.previous is not None:
+            count = request.anchor_games if previous and "anchor" in previous else games
+            if previous is not None and "anchor" in previous:
+                found_anchor = anchors[previous["anchor"]]
+                other = policy_id(found_anchor.preview, found_anchor.battle, mode)
+                opponent = {
+                    "kind": "anchor",
+                    "generation": found_anchor.generation,
+                    "policy_id": other,
+                    "checkpoints": {"preview": found_anchor.preview, "battle": found_anchor.battle},
+                }
+            elif previous is not None and request.previous is not None:
                 other = policy_id(request.previous.preview, request.previous.battle, mode)
                 opponent = {
                     "kind": "previous",
@@ -103,12 +117,12 @@ def progress_files(
                     },
                 }
             hashes = []
-            for game in range(request.record_games):
+            for game in range(min(request.record_games, count)):
                 found = game_file(config, request, match_id, game, pair, other)
                 found["omniscient_log_sha256"] = log_hash(found["omniscient_log"])
                 stored[f"{match_id}-{game}.json"] = found
                 hashes.append(record_hash(found))
-            for game in range(games):
+            for game in range(count):
                 outcome = (
                     {"kind": "played", "winner": "candidate", "turns": 5}
                     if game % 2 == 0
@@ -118,30 +132,30 @@ def progress_files(
                     {
                         "match_id": match_id,
                         "game": game,
-                        "pair": game,
+                        "pair": game // 2,
                         "candidate_seat": "p1" if game % 2 == 0 else "p2",
                         "outcome": outcome,
                     }
                 )
-            wins = (games + 1) // 2
+            wins = (count + 1) // 2
             matches.append(
                 {
                     "match_id": match_id,
                     "policy_id": pair,
                     "opponent": opponent,
                     "mode": mode,
-                    "games": games,
+                    "games": count,
                     "wins": wins,
                     "ties": 0,
-                    "losses": games - wins,
+                    "losses": count - wins,
                     "turn_cap_ties": 0,
-                    "turns_total": 5 * wins + 3 * (games - wins),
+                    "turns_total": 5 * wins + 3 * (count - wins),
                     "forfeits": [],
                     "game_record_hashes": sorted(hashes),
                 }
             )
     record = {
-        "schema_version": 1,
+        "schema_version": 2,
         "data_class": "synthetic",
         "run_id": config.run_key,
         "run_config_hash": config.hash,
@@ -149,12 +163,17 @@ def progress_files(
         "generation_manifest_sha256": request.manifest_sha256,
         "checkpoints": {"preview": request.preview, "battle": request.battle},
         "version_manifest": manifest,
-        "teams": {"dataset_hash": "5" * 64, "split": "validation", "pairs_used": games},
+        "teams": {
+            "dataset_hash": "5" * 64,
+            "split": "validation",
+            "pairs_used": max(games, request.anchor_games) // 2,
+        },
         "plan": {
             "seed_derivation": "progress-seed/1",
             "pairing": "progress-pairing/1",
             "games_per_match": games,
             "recorded_games_per_match": request.record_games,
+            **({"anchor_games_per_match": request.anchor_games} if anchors else {}),
             "max_turns": config.generation.max_turns,
             "latency_budget_ms": {
                 "preview_ms": config.generation.preview_ms,

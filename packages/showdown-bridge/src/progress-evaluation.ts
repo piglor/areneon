@@ -2,9 +2,10 @@
 // generation plays scripted baselines on the validation teams of the run's
 // team dataset, in sample and in argmax mode, on A1 with one query per forward
 // pass (ADR-010 section 2: evaluation never batches). Every match uses the same
-// pairs and seeds (`progress-seed/1`, `progress-pairing/1`): game k is pair k,
-// and the candidate sits on p1 for an even k and on p2 for an odd one, so the
-// games of a match share no team and no seed.
+// pairs and seeds (`progress-seed/1`, `progress-pairing/1`), and plays every
+// pair TWICE (ADR-017 erratum E2): game g is pair g >> 1, the candidate sits on
+// p1 for an even g and on p2 for an odd g, the teams stay on their seats
+// (p1 holds the pair's first team) and both games share the pair's battle seed.
 //
 // A progress evaluation is a progress view, never the Training gate: it
 // writes no Episode, and its game records are an evaluation artifact (they
@@ -23,7 +24,7 @@ import { firstLegal } from "./golden.ts";
 import { type PolicyClient } from "./policy-worker.ts";
 import { policyGame, type PolicySeat } from "./policy-actor.ts";
 import { PROGRESS_PAIRING, PROGRESS_SEED_DERIVATION, progressGameStreams, progressPairs } from "./progress-seed.ts";
-import { omniscientLogHash, progressRecordHash, tallyRows, type ProgressEvaluationRecord, type ProgressGameRecord, readProgressEvaluationRecord, readProgressGameRecord } from "./progress-records.ts";
+import { omniscientLogHash, progressRecordHash, tallyRows, type ProgressEvaluationRecordV2, type ProgressGameRecord, readProgressEvaluationRecordV2, readProgressGameRecord } from "./progress-records.ts";
 import { randomLegalActor } from "./random-legal.ts";
 import type { Actor, Player } from "./runner.ts";
 import type { SyntheticTeamHashes } from "./team-class.ts";
@@ -82,10 +83,26 @@ export interface ProgressOptions {
     policy_ids: Record<ProgressMode, string>;
     client: PolicyClient & { beginGame?: () => Promise<void> };
   };
+  /**
+   * Fixed earlier generations' frozen pairs (anchors), each behind a worker of its own and earlier than
+   * `generation`. Each is played in sample and argmax against the candidate's same mode, every validation
+   * pair from both seats (see `anchor_games`), as every match does.
+   */
+  anchors?: readonly {
+    generation: number;
+    checkpoints: { preview: string; battle: string };
+    policy_ids: Record<ProgressMode, string>;
+    client: PolicyClient & { beginGame?: () => Promise<void> };
+  }[];
+  /**
+   * Games in every anchor match: even, game 2k and 2k+1 are pair k with the candidate on p1 then on p2.
+   * Required with `anchors`; refused above twice the number of disjoint pairs.
+   */
+  anchor_games?: number;
   pool: ProgressPool;
-  /** Games per match; refused above the number of disjoint pairs. */
+  /** Games per baseline and previous match: even, two per pair; refused above twice the number of disjoint pairs. */
   games: number;
-  /** The first this-many games of every match are stored as ProgressGameRecords. */
+  /** The first this-many games of every match (at most its games) are stored as ProgressGameRecords. */
   record_games: number;
   /** The run's own training team hashes (`team-set.json`): a pool team in it is refused. */
   training_teams: ReadonlySet<string>;
@@ -94,7 +111,7 @@ export interface ProgressOptions {
 }
 
 export interface ProgressResult {
-  record: ProgressEvaluationRecord;
+  record: ProgressEvaluationRecordV2;
   /** The stored games, by file name (`<match_id>-<k>.json`). */
   game_records: Map<string, ProgressGameRecord>;
   /** Wall-clock milliseconds per match: a measurement for the operator, never stored in a record. */
@@ -106,14 +123,14 @@ const rival = (player: Player): Player => (player === "p1" ? "p2" : "p1");
 /** Who a seat (or no seat: a tie) is, seen from the candidate. */
 const whose = (candidate: Player): Record<string, "candidate" | "opponent" | "tie"> => ({ [candidate]: "candidate", [rival(candidate)]: "opponent", null: "tie" });
 
-type Match = ProgressEvaluationRecord["matches"][number];
-type Row = ProgressEvaluationRecord["games"][number];
+type Match = ProgressEvaluationRecordV2["matches"][number];
+type Row = ProgressEvaluationRecordV2["games"][number];
 
 /** One game's row and (for a played or forfeited game) the data of its stored form. */
-function rowOf(match_id: string, game: number, candidate: Player, played: PlayedGame): Row {
+function rowOf(match_id: string, game: number, pair: number, candidate: Player, played: PlayedGame): Row {
   const { outcome } = played;
   if (outcome.kind === "incident") throw new ProgressError(`game ${game} of ${match_id}: ${outcome.incident}: ${outcome.message}`);
-  const common = { match_id, game, pair: game, candidate_seat: candidate };
+  const common = { match_id, game, pair, candidate_seat: candidate };
   if (outcome.kind === "forfeit") {
     const { cause, request_seq, turns } = outcome;
     return { ...common, outcome: { kind: "forfeit", loser: whose(candidate)[outcome.loser] as "candidate" | "opponent", cause, request_seq, turns } };
@@ -127,6 +144,8 @@ export interface GameFacts {
   generation: number;
   match_id: string;
   game: number;
+  /** The validation pair the game used (both games of a pair share it): `game >> 1`; absent for a game that is not part of a both-seats evaluation. */
+  pair?: number;
   /** The set arrays the two seats were brought with. */
   teams: Record<Player, PokemonSet[]>;
   policies: Record<Player, string>;
@@ -165,6 +184,7 @@ export function buildProgressGameRecord(facts: GameFacts): ProgressGameRecord {
     generation: facts.generation,
     match_id: facts.match_id,
     game: facts.game,
+    ...(facts.pair === undefined ? {} : { pair: facts.pair }),
     seed: record.seed,
     version_manifest: record.manifest,
     teams: { p1: team("p1"), p2: team("p2") },
@@ -180,9 +200,12 @@ export function buildProgressGameRecord(facts: GameFacts): ProgressGameRecord {
  * The teams of each pair, from the pool, refusing a pool team that the run trained on
  * and more games than there are disjoint pairs.
  */
-export function progressPlan(options: Pick<ProgressOptions, "config" | "pool" | "games" | "training_teams" | "league_seeds">): { pairs: [ProgressTeam, ProgressTeam][]; seeds: string[] } {
+export function progressPlan(options: Pick<ProgressOptions, "config" | "pool" | "games" | "training_teams" | "league_seeds"> & { anchor_games?: number }): { pairs: [ProgressTeam, ProgressTeam][]; seeds: string[] } {
   const { config, pool, games, training_teams, league_seeds } = options;
-  if (!Number.isSafeInteger(games) || games < 1) throw new ProgressError("--games must be a positive integer");
+  const anchorGames = options.anchor_games ?? 0;
+  if (!Number.isSafeInteger(games) || games < 2 || games % 2 !== 0) throw new ProgressError("--games must be an even integer of at least 2: every pair is played from both seats");
+  if (!Number.isSafeInteger(anchorGames) || anchorGames < 0 || anchorGames % 2 !== 0) throw new ProgressError("--anchor-games must be an even integer");
+  const needed = Math.max(games, anchorGames) / 2;
   const byCanonical = new Map(pool.teams.map((team) => [team.canonical_team_hash, team]));
   if (byCanonical.size !== pool.teams.length) throw new ProgressError("a team appears twice in the validation pool");
   for (const team of pool.teams) {
@@ -190,14 +213,14 @@ export function progressPlan(options: Pick<ProgressOptions, "config" | "pool" | 
     if (!pool.known_synthetic.has(teamHash(team.sets))) throw new ProgressError("a validation team is not proven synthetic");
   }
   const pairs = progressPairs(config.seeds.run_key, [...byCanonical.keys()]);
-  if (games > pairs.length) throw new ProgressError(`${games} games need ${games} disjoint team pairs: the validation split gives ${pairs.length}`);
+  if (needed > pairs.length) throw new ProgressError(`${needed * 2} games need ${needed} disjoint team pairs: the validation split gives ${pairs.length}`);
   const seeds: string[] = [];
-  for (let game = 0; game < games; game++) {
-    const { seed } = progressGameStreams(config.seeds.run_key, game);
-    if (league_seeds.has(seed)) throw new ProgressError(`the progress seed of game ${game} equals a seed of a committed plan`);
+  for (let pair = 0; pair < needed; pair++) {
+    const { seed } = progressGameStreams(config.seeds.run_key, pair);
+    if (league_seeds.has(seed)) throw new ProgressError(`the progress seed of pair ${pair} equals a seed of a committed plan`);
     seeds.push(seed);
   }
-  return { pairs: pairs.slice(0, games).map(([a, b]) => [byCanonical.get(a) as ProgressTeam, byCanonical.get(b) as ProgressTeam]), seeds };
+  return { pairs: pairs.slice(0, needed).map(([a, b]) => [byCanonical.get(a) as ProgressTeam, byCanonical.get(b) as ProgressTeam]), seeds };
 }
 
 /**
@@ -209,15 +232,21 @@ export function progressPlan(options: Pick<ProgressOptions, "config" | "pool" | 
 export async function playProgress(options: ProgressOptions): Promise<ProgressResult> {
   const { engine, config, generation, client, pool, games, record_games } = options;
   if (!Number.isSafeInteger(record_games) || record_games < 0 || record_games > games) throw new ProgressError("--record-games must be between 0 and --games");
+  const anchors = options.anchors ?? [];
+  const anchorGames = options.anchor_games ?? 0;
+  if (anchors.length > 0 && anchorGames < 2) throw new ProgressError("--anchor-games must be at least 2 when anchors are given");
+  if (anchors.length === 0 && anchorGames !== 0) throw new ProgressError("--anchor-games needs at least one anchor");
+  if (new Set(anchors.map((a) => a.generation)).size !== anchors.length) throw new ProgressError("an anchor generation may be given once");
+  if (anchors.some((a) => !Number.isSafeInteger(a.generation) || a.generation < 0 || a.generation >= generation)) throw new ProgressError("an anchor must be an earlier generation than the one evaluated");
   const plan = progressPlan(options);
   const budget: LatencyBudget = { preview_ms: config.generation.latency_budget_ms.preview_ms, battle_ms: config.generation.latency_budget_ms.battle_ms };
   const manifest = resolveFormat(engine, config.format_id).manifest;
-  const matches: ProgressEvaluationRecord["matches"] = [];
+  const matches: ProgressEvaluationRecordV2["matches"] = [];
   const rows: Row[] = [];
   const rowsByMatch = new Map<string, Row[]>();
   const stored = new Map<string, ProgressGameRecord>();
   const wall_ms: Record<string, number> = {};
-  type Opponent = { id: string; opponent: (mode: ProgressMode) => Match["opponent"]; seat: (mode: ProgressMode, game: number) => PolicySeat | Actor; policies: (mode: ProgressMode) => string; begin: () => Promise<void> };
+  type Opponent = { id: string; anchored?: true; opponent: (mode: ProgressMode) => Match["opponent"]; seat: (mode: ProgressMode, game: number) => PolicySeat | Actor; policies: (mode: ProgressMode) => string; begin: () => Promise<void> };
   const opponents: Opponent[] = PROGRESS_BASELINES.map((baseline) => ({
     id: baseline.actor,
     opponent: () => ({ kind: "baseline", policy_id: baseline.policy_id }),
@@ -237,7 +266,22 @@ export async function playProgress(options: ProgressOptions): Promise<ProgressRe
       },
     });
   }
+  for (const anchor of anchors) {
+    opponents.push({
+      id: `anchor-g${anchor.generation}`,
+      anchored: true,
+      opponent: (mode) => ({ kind: "anchor", generation: anchor.generation, policy_id: anchor.policy_ids[mode], checkpoints: anchor.checkpoints }),
+      seat: (mode) => ({ client: anchor.client, policy_id: anchor.policy_ids[mode], sampling: mode }),
+      policies: (mode) => anchor.policy_ids[mode],
+      begin: async () => {
+        await anchor.client.beginGame?.();
+      },
+    });
+  }
   for (const baseline of opponents) {
+    // Every match plays each pair from both seats (E2); an anchor match may be longer than the others.
+    const count = baseline.anchored === true ? anchorGames : games;
+    const recorded = Math.min(record_games, count);
     for (const mode of PROGRESS_MODES) {
       const match_id = `${baseline.id}-${mode}`;
       const policy_id = options.policy_ids[mode];
@@ -245,11 +289,13 @@ export async function playProgress(options: ProgressOptions): Promise<ProgressRe
       const matchRows: Row[] = [];
       const hashes: string[] = [];
       const started = performance.now();
-      for (let game = 0; game < games; game++) {
+      for (let game = 0; game < count; game++) {
         const candidate = seatOf(game);
-        const [first, second] = plan.pairs[game] as [ProgressTeam, ProgressTeam];
+        const pair = game >> 1;
+        const [first, second] = plan.pairs[pair] as [ProgressTeam, ProgressTeam];
+        // Teams stay on their seats; the policies swap. Both games of a pair share the pair's battle seed.
         const teams: Record<Player, PokemonSet[]> = { p1: first.sets, p2: second.sets };
-        const streams = progressGameStreams(config.seeds.run_key, game);
+        const streams = progressGameStreams(config.seeds.run_key, pair);
         const seat: PolicySeat = { client, policy_id, sampling: mode };
         await client.beginGame?.();
         await baseline.begin();
@@ -257,17 +303,17 @@ export async function playProgress(options: ProgressOptions): Promise<ProgressRe
           engine,
           formatId: config.format_id,
           seed: streams.seed,
-          game,
+          game: pair,
           teams,
           known_synthetic: pool.known_synthetic,
-          seats: { [candidate]: seat, [rival(candidate)]: baseline.seat(mode, game) } as Record<Player, PolicySeat | Actor>,
+          seats: { [candidate]: seat, [rival(candidate)]: baseline.seat(mode, pair) } as Record<Player, PolicySeat | Actor>,
           latency_budget: budget,
           maxTurns: config.generation.max_turns,
         });
-        matchRows.push(rowOf(match_id, game, candidate, played));
-        if (game < record_games) {
+        matchRows.push(rowOf(match_id, game, pair, candidate, played));
+        if (game < recorded) {
           const policies = { [candidate]: policy_id, [rival(candidate)]: opponent_policy } as Record<Player, string>;
-          const stored_game = buildProgressGameRecord({ run_id: config.seeds.run_key, generation, match_id, game, teams, policies, played });
+          const stored_game = buildProgressGameRecord({ run_id: config.seeds.run_key, generation, match_id, game, pair, teams, policies, played });
           stored.set(`${match_id}-${game}.json`, stored_game);
           hashes.push(progressRecordHash(stored_game));
         }
@@ -277,11 +323,11 @@ export async function playProgress(options: ProgressOptions): Promise<ProgressRe
       matches.push(summarise(match_id, policy_id, baseline.opponent(mode), mode, matchRows, hashes, config.generation.max_turns));
     }
   }
-  // Matches and their rows go in match_id order, which the reader requires (`actor-rule`, `previous`, `random-legal`).
+  // Matches and their rows go in match_id order, which the reader requires (`actor-rule`, `anchor-g*`, `previous`, `random-legal`).
   matches.sort((a, b) => (a.match_id < b.match_id ? -1 : 1));
   for (const match of matches) rows.push(...(rowsByMatch.get(match.match_id) as Row[]));
-  const record = readProgressEvaluationRecord({
-    schema_version: 1,
+  const record = readProgressEvaluationRecordV2({
+    schema_version: 2,
     data_class: "synthetic",
     run_id: config.seeds.run_key,
     run_config_hash: await runConfigHash(config),
@@ -289,12 +335,13 @@ export async function playProgress(options: ProgressOptions): Promise<ProgressRe
     generation_manifest_sha256: options.generation_manifest_sha256,
     checkpoints: options.checkpoints,
     version_manifest: manifest,
-    teams: { dataset_hash: pool.dataset_hash, split: "validation", pairs_used: games },
+    teams: { dataset_hash: pool.dataset_hash, split: "validation", pairs_used: Math.max(games, anchorGames) / 2 },
     plan: {
       seed_derivation: PROGRESS_SEED_DERIVATION,
       pairing: PROGRESS_PAIRING,
       games_per_match: games,
       recorded_games_per_match: record_games,
+      ...(anchors.length === 0 ? {} : { anchor_games_per_match: anchorGames }),
       max_turns: config.generation.max_turns,
       latency_budget_ms: budget,
     },

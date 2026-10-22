@@ -50,7 +50,7 @@ TAGS = {
     "strong", "div", "noscript", "footer", "script",
 }  # fmt: skip
 ATTRS = {"charset", "class", "content", "href", "http-equiv", "id", "lang", "name", "type"}
-GAMES = 3
+GAMES = 4
 
 
 def make_consistent(out: Path, request: ProgressRequest) -> None:
@@ -337,8 +337,8 @@ def test_a_progress_json_that_cannot_be_read_or_breaks_a_rule_is_refused(root: P
 
 
 def test_a_game_that_has_no_row_in_progress_json_is_refused(root: Path) -> None:
-    seed = progress_game_seed(dataset_config().run_key, 7)
-    edit_game(root, "actor-rule-sample-0.json", lambda g: g.update(game=7, seed=seed))
+    seed = progress_game_seed(dataset_config().run_key, 3)
+    edit_game(root, "actor-rule-sample-0.json", lambda g: g.update(game=7, pair=3, seed=seed))
     with pytest.raises(InspectError, match="no game row"):
         games_of(root)
 
