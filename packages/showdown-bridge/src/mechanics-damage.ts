@@ -50,11 +50,16 @@ interface DmgPokemon {
   setStatus(status: string): unknown;
   getMoveHitData(move: DmgMove): HitData;
 }
+type HitStep = (targets: DmgPokemon[], pokemon: DmgPokemon, move: DmgMove) => (number | boolean | "" | undefined)[] | undefined;
 interface DmgActions {
   runMegaEvo(pokemon: DmgPokemon): unknown;
   useMoveInner(move: string, pokemon: DmgPokemon, options: { target: DmgPokemon }): unknown;
   getDamage(source: DmgPokemon, target: DmgPokemon, move: DmgMove, suppressMessages: boolean): unknown;
   hitStepAccuracy: (targets: DmgPokemon[]) => boolean[];
+  hitStepInvulnerabilityEvent: HitStep;
+  hitStepTryHitEvent: HitStep;
+  hitStepTypeImmunity: HitStep;
+  hitStepTryImmunity: HitStep;
   hitStepMoveHitLoop: (targets: DmgPokemon[], pokemon: DmgPokemon, move: DmgMove) => boolean[];
 }
 interface DmgSide {
@@ -163,6 +168,8 @@ interface Run {
   draws: RecordingRandom["draws"];
   /** The damage loop was reached for the defender. */
   hit: boolean;
+  /** An immunity or protection step of the engine removed the defender: the move deals nothing. */
+  blocked: boolean;
   damage: number;
   crit: boolean;
 }
@@ -179,9 +186,19 @@ function run(engine: Engine, base: DmgBattle, moveId: string, roll: number, crit
   battle.prng = random;
   const attacker = battle.sides[0]?.pokemon[0] as DmgPokemon;
   const defender = battle.sides[1]?.pokemon[0] as DmgPokemon;
-  const seen: Run = { draws: random.draws, hit: false, damage: 0, crit: false };
+  const seen: Run = { draws: random.draws, hit: false, blocked: false, damage: 0, crit: false };
   // Nothing is dealt and no accuracy is rolled: the step that deals damage reads it instead.
   battle.actions.hitStepAccuracy = (targets) => targets.map(() => true);
+  // The engine's own steps that can remove the defender (an immunity, Protect, Volt Absorb) are kept; the run notes it.
+  for (const name of ["hitStepInvulnerabilityEvent", "hitStepTryHitEvent", "hitStepTypeImmunity", "hitStepTryImmunity"] as const) {
+    const step = battle.actions[name];
+    battle.actions[name] = function (this: unknown, targets, pokemon, move) {
+      const results = step.call(this, targets, pokemon, move);
+      const index = targets.indexOf(defender);
+      if (results !== undefined && index >= 0 && !(results[index] || results[index] === 0)) seen.blocked = true;
+      return results;
+    };
+  }
   battle.actions.hitStepMoveHitLoop = (targets, pokemon, move) => {
     if (targets.includes(defender)) {
       if (crit !== undefined) move.willCrit = crit;
@@ -211,6 +228,11 @@ export function probeDamage(engine: Engine, scenarioId: string, query: DamageQue
   // Outside the v1 scope (ADR-016 section 3): a move that deals no damage of its own, and a multi-hit move.
   if (move.category === "Status" || move.multihit !== undefined) return { kind: "unsupported", reason: "query_kind", position: null };
 
+  // The move never reached the damage loop for a reason other than an engine immunity (a charge turn, a failed
+  // precondition, a self-targeting move): its damage is not this query's answer, so nothing is claimed.
+  const observed = run(engine, base, query.move, 0, undefined, true);
+  if (!observed.hit && !observed.blocked) return { kind: "unsupported", reason: "query_kind", position: null };
+
   const vectors = (crit: boolean): number[] | null => {
     const out: number[] = [];
     for (const roll of ROLLS) {
@@ -222,7 +244,6 @@ export function probeDamage(engine: Engine, scenarioId: string, query: DamageQue
   };
   const noCrit = vectors(false);
   const critVector = vectors(true);
-  const observed = run(engine, base, query.move, 0, undefined, true);
   if (noCrit === null || critVector === null || !acceptedDraws(observed.draws, true)) return { kind: "unsupported", reason: "random_effect", position: null };
 
   // The chance is the engine's own: an exact `randomChance` pair, a crit it always makes, or none.

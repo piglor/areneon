@@ -107,6 +107,12 @@ describe("moves and states outside what the probe answers exactly", () => {
     }
   });
 
+  it("a move that never reaches the damage step for another reason (a charge turn, a failed precondition) is unsupported, not zero", () => {
+    for (const move of ["solarbeam", "fly", "suckerpunch", "counter"]) {
+      expect(probe(variant((q) => (q.move = move))).result, move).toMatchObject({ kind: "unsupported", reason: "query_kind", position: null });
+    }
+  });
+
   it("an immunity deals nothing: sixteen zeros and no crit", () => {
     // Normal into a Ghost: the Gengar set is the attacker of the Mega fixture.
     const ghost = ((fixture.cases.find((c) => c.id === "mega") as Case).query as typeof base).query.attacker.set;
