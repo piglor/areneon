@@ -78,8 +78,8 @@ request. `--game-processes S` shares a generation's games over `S` Node processe
 fields of the run config: the plan, the seeds, every Episode, the stream and the learner-state
 hashes are the same for any `S` and `K` (a game stays on one worker, every worker is
 deterministic and no draw depends on which process served a game). Each game process loads the
-team pool itself, so memory and start-up CPU grow with `S`. Progress evaluation never
-batches or shards.
+team pool itself, so memory and start-up CPU grow with `S`. Byte equality holds while no query overruns its latency budget (an overrun is a recorded
+forfeit, as at one worker). Progress evaluation never batches or shards.
 
 After each generation commits, the driver writes `<run-dir>/metrics/g<NNNNNN>.json`: wall
 clock per phase (play, load, train, write, seal), throughput, the learner's peak

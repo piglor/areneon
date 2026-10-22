@@ -64,7 +64,7 @@ describe("play-generation", () => {
     const file = join(dir, "tiny.json");
     writeFileSync(file, JSON.stringify(tiny));
     for (const flag of ["--policy-workers", "--game-processes"]) {
-      for (const bad of ["0", "1.5", "x", "", "65"]) {
+      for (const bad of ["0", "1.5", "x", "", "65", "0x2", "1e0", " 2"]) {
         await expect(runGenerationCli([...flags(file), flag, bad], console.log, undefined, "play.ts")).rejects.toThrow(new RegExp(`${flag} must be an integer from 1 to 64`));
       }
     }

@@ -94,7 +94,8 @@ export async function runGenerationCli(
   const preview = need("preview");
   const battle = need("battle");
   const count = (name: "policy-workers" | "game-processes"): number => {
-    const value = Number(values[name] ?? "1");
+    const text = values[name] ?? "1";
+    const value = /^\d+$/.test(text) ? Number(text) : Number.NaN;
     if (!Number.isInteger(value) || value < 1 || value > MAX_PARALLEL) throw new UsageError(`--${name} must be an integer from 1 to ${MAX_PARALLEL}`);
     return value;
   };
@@ -147,7 +148,11 @@ export async function runGenerationCli(
     await Promise.all(clients.map((client) => client.start()));
     const [client, ...peers] = clients as [PolicyWorkerClient, ...PolicyWorkerClient[]];
     if (values.shard !== undefined) {
-      // A further game process: play the slice and leave it for the process that started this one.
+      // A further game process: it ends if the process that started it dies (its stdin closes).
+      process.stdin.once("end", () => process.exit(1));
+      process.stdin.resume();
+      (process.stdin as unknown as { unref?: () => void }).unref?.(); // an open pipe must not keep the finished process alive
+      // It plays the slice and leaves it for the process that started this one.
       const entries = await playEntries({ engine, config, generation, policy_id: need("policy-id"), client, peers, pool }, own);
       mkdirSync(need("out"), { recursive: true });
       writeFileSync(join(need("out"), SHARD_FILE), `${jcs(entries as unknown as Json)}\n`);
@@ -180,16 +185,16 @@ export interface ShardProcess {
 }
 
 export function startShard(script: string, args: readonly string[], out: string, index: number, node: string = process.execPath): ShardProcess {
-  const child = spawn(node, [...process.execArgv, script, ...args], { stdio: ["ignore", "ignore", "pipe"] });
+  const child = spawn(node, [...process.execArgv, script, ...args], { stdio: ["pipe", "ignore", "pipe"] }); // stdin stays open: the child ends when this process does
   let stderr = "";
   child.stderr.on("data", (chunk: Buffer) => {
     stderr = (stderr + chunk.toString("utf8")).slice(-2000);
   });
   const entries = new Promise<PlayedEntry[]>((resolve, reject) => {
     child.once("error", (error) => reject(new GenerationError(`game process ${index} did not start: ${error.message}`)));
-    child.once("close", (code) => {
+    child.once("close", (code, signal) => {
       if (code !== 0) {
-        reject(new GenerationError(`game process ${index} failed (exit ${code}): ${stderr.trim()}`));
+        reject(new GenerationError(`game process ${index} failed (${signal === null ? `exit ${code}` : `signal ${signal}`}): ${stderr.trim()}`));
         return;
       }
       try {
