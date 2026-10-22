@@ -51,6 +51,8 @@ DEFAULT_RECORD_GAMES = 8
 #: Games per anchor match (even): each of this many / 2 validation pairs from both seats.
 DEFAULT_ANCHOR_GAMES = 200
 MIN_GAMES = 2
+#: ``--all`` evaluates the committed generations whose number is a multiple of this, 0 included.
+SCHEDULE_EVERY = 5
 #: Says what a ``previous-*`` row is: the pair's own lineage, so it can cycle (ADR-017 section 2).
 SEEN_LABEL = "seen, same-lineage comparison: it can cycle"
 
@@ -272,19 +274,20 @@ def _source(run_dir: Path, config: RunConfig, generation: int) -> _Source:
 def _check_previous(record: dict[str, Any], previous: PreviousPair | None, *, legacy: bool) -> None:
     """The ``previous-*`` matches are exactly the previous generation's frozen pair in both modes.
 
-    At generation 0 there are none. From generation 1 there are two (sample and argmax), naming
-    the checkpoints of the generation before; ``legacy`` lets a record committed before these
-    matches existed (slice 4) pass with none, but never with a wrong or half set.
+    They are opt-in (ADR-017 E2). ``previous`` is None when none were asked for (always at
+    generation 0): the record then holds none. Otherwise there are two (sample and argmax),
+    naming the checkpoints of the generation before; ``legacy`` is a committed record, which may
+    hold none (committed without them), but never a wrong or half set.
     """
     found = {m["match_id"]: m for m in record["matches"] if m["opponent"]["kind"] == "previous"}
     if previous is None:
         if found:
-            raise ProgressError("generation 0 has no previous generation to play")
+            raise ProgressError("this evaluation asks for no previous-generation matches")
         return
     if not found and legacy:
         return
     if set(found) != {"previous-argmax", "previous-sample"}:
-        raise ProgressError("a generation from 1 on plays previous-sample and previous-argmax")
+        raise ProgressError("previous-generation matches are previous-sample and previous-argmax")
     ids = {"sample": previous.policy_id_sample, "argmax": previous.policy_id_argmax}
     for match in found.values():
         opponent = match["opponent"]
@@ -477,12 +480,15 @@ def progress_generation(  # noqa: PLR0913, PLR0917
     record_games: int = DEFAULT_RECORD_GAMES,
     anchors: Sequence[int] = (),
     anchor_games: int = DEFAULT_ANCHOR_GAMES,
+    previous_matches: bool = False,
 ) -> dict[str, Any]:
     """Evaluate one generation into ``root``; a committed directory is verified and kept.
 
     Every pair is played from both seats (version 2 records), so ``games`` is even. ``anchors``
     are fixed earlier generations to play as well (one that is not earlier than ``generation`` is
     left out: a generation is never its own anchor); ``anchor_games`` games per anchor match.
+    The previous-generation matches are played only with ``previous_matches`` (and never at
+    generation 0, which has no previous generation).
     """
     if games < MIN_GAMES or games % 2 or record_games < 0 or record_games > games:
         raise ProgressError(
@@ -510,8 +516,7 @@ def progress_generation(  # noqa: PLR0913, PLR0917
                 "matches": summary_of(record),
             }
         source = _source(run_dir, config, generation)
-        previous_pair = _previous_pair(run_dir, config, generation)
-        previous = previous_pair
+        previous = _previous_pair(run_dir, config, generation) if previous_matches else None
         anchor_pairs = tuple(_anchor_pair(run_dir, config, a) for a in wanted)
         played_anchor_games = anchor_games if wanted else 0
         needed = max(games, played_anchor_games) // 2
@@ -556,7 +561,7 @@ def progress_generation(  # noqa: PLR0913, PLR0917
                 source,
                 games,
                 record_games,
-                previous_pair,
+                previous,
                 anchor_pairs,
                 run_dir,
                 played_anchor_games,
@@ -594,8 +599,8 @@ def _previous_status(record: dict[str, Any], generation: int) -> str:
     if any(m["opponent"]["kind"] == "previous" for m in record["matches"]):
         return "played"
     return (
-        "missing: committed before the previous-generation matches existed; "
-        "evaluate into a new --progress-dir to add them"
+        "none: previous-generation matches are opt-in (--previous-matches); a committed "
+        "generation is never rewritten, so evaluate into a new --progress-dir to add them"
     )
 
 
@@ -630,8 +635,14 @@ def committed_generations(run_dir: Path) -> list[int]:
     return [] if newest is None else list(range(newest.generation + 1))
 
 
+def scheduled_generations(run_dir: Path) -> list[int]:
+    """The generations ``--all`` evaluates: multiples of ``SCHEDULE_EVERY``, 0 included."""
+    return [g for g in committed_generations(run_dir) if g % SCHEDULE_EVERY == 0]
+
+
 __all__ = [
     "DEFAULT_ANCHOR_GAMES",
+    "SCHEDULE_EVERY",
     "AnchorPair",
     "NodeProgressPlayer",
     "ProgressError",
@@ -641,6 +652,7 @@ __all__ = [
     "committed_generations",
     "progress_generation",
     "progress_root",
+    "scheduled_generations",
     "summary_of",
     "verify_progress_dir",
 ]

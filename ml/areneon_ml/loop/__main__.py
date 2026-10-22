@@ -47,16 +47,18 @@ from areneon_ml.loop.driver import Loop, LoopError, export_provenance
 from areneon_ml.loop.play import NodePlayer, PlayError
 from areneon_ml.model.encoder import encoder_version
 from areneon_ml.model.gamedata import GameData
+from areneon_ml.progress.looks import Look, LookError, append_look, looks_path
 from areneon_ml.progress.records import ProgressRecordError
 from areneon_ml.progress.run import (
     DEFAULT_ANCHOR_GAMES,
     DEFAULT_GAMES,
     DEFAULT_RECORD_GAMES,
+    SCHEDULE_EVERY,
     NodeProgressPlayer,
     ProgressError,
-    committed_generations,
     progress_generation,
     progress_root,
+    scheduled_generations,
 )
 from areneon_ml.report.command import report_run
 
@@ -101,7 +103,12 @@ def _parser() -> argparse.ArgumentParser:
     progress.add_argument("--run-dir", type=Path, required=True)
     which = progress.add_mutually_exclusive_group(required=True)
     which.add_argument("--generation", type=int, help="the generation to evaluate")
-    which.add_argument("--all", action="store_true", help="every committed generation")
+    which.add_argument(
+        "--all",
+        action="store_true",
+        help=f"every committed generation whose number is a multiple of {SCHEDULE_EVERY} "
+        "(0 included)",
+    )
     progress.add_argument(
         "--games",
         type=int,
@@ -126,6 +133,12 @@ def _parser() -> argparse.ArgumentParser:
         default=DEFAULT_ANCHOR_GAMES,
         help=f"games per anchor match, even (default {DEFAULT_ANCHOR_GAMES}): "
         "each validation pair from both seats",
+    )
+    progress.add_argument(
+        "--previous-matches",
+        action="store_true",
+        help="also play the previous generation's frozen pair (previous-sample, previous-argmax): "
+        "a seen, same-lineage comparison that can cycle; off by default",
     )
     progress.add_argument("--progress-dir", type=Path, help="default: <run-dir>.progress")
     progress.add_argument("--engine-data", type=Path, required=True)
@@ -178,7 +191,7 @@ def _progress(args: argparse.Namespace) -> dict[str, object]:
     record_games = (
         min(DEFAULT_RECORD_GAMES, args.games) if args.record_games is None else args.record_games
     )
-    generations = committed_generations(run_dir) if args.all else [args.generation]
+    generations = scheduled_generations(run_dir) if args.all else [args.generation]
     done = [
         progress_generation(
             run_dir,
@@ -189,10 +202,18 @@ def _progress(args: argparse.Namespace) -> dict[str, object]:
             record_games,
             args.anchors,
             args.anchor_games,
+            args.previous_matches,
         )
         for g in generations
     ]
-    return {"progress_dir": str(root), "generations": done}
+    # Everything above succeeded, so a validation result is about to be shown: log the look.
+    looks = [
+        Look(int(r["generation"]), str(m["match_id"]), int(m["games"]))
+        for r in done
+        for m in r["matches"]
+    ]
+    state = append_look(looks_path(root, run_dir), "progress", config.run_key, looks)
+    return {"progress_dir": str(root), "generations": done, "looks": state.count}
 
 
 def _run(args: argparse.Namespace) -> dict[str, object]:
@@ -272,6 +293,7 @@ def main(argv: list[str] | None = None) -> int:
         InspectError,
         ProgressError,
         ProgressRecordError,
+        LookError,
         OSError,
         json.JSONDecodeError,
     ) as exc:

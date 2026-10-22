@@ -51,9 +51,10 @@ def progress_generation(  # noqa: PLR0913, PLR0917
     **kwargs: Any,
 ) -> dict[str, Any]:
     """The command's function with the fixture dataset's size: 2 games, no anchors unless asked."""
-    return run_module.progress_generation(
+    found: dict[str, Any] = run_module.progress_generation(
         run_dir, generation, root, player, games, record_games, anchors, anchor_games, **kwargs
     )
+    return found
 
 
 @pytest.fixture(scope="module")
@@ -92,11 +93,10 @@ def test_a_generation_is_evaluated_and_committed_whole(run: Path, tmp_path: Path
     fake = player(run)
     done = progress_generation(run, 1, root, fake, games=2, record_games=1)
     assert done["skipped"] is False
+    assert fake.requests[0].previous is None  # the previous-generation matches are opt-in
     assert [m["match_id"] for m in done["matches"]] == [
         "actor-rule-argmax",
         "actor-rule-sample",
-        "previous-argmax",
-        "previous-sample",
         "random-legal-argmax",
         "random-legal-sample",
     ]
@@ -397,7 +397,9 @@ def test_generation_one_plays_the_previous_pair_and_the_rows_carry_its_checkpoin
 ) -> None:
     root = tmp_path / "p"
     fake = player(run)
-    done = progress_generation(run, 1, root, fake, games=2, record_games=1, anchors=())
+    done = progress_generation(
+        run, 1, root, fake, games=2, record_games=1, anchors=(), previous_matches=True
+    )
     (request,) = fake.requests
     zero = previous_of(run, 0)
     assert request.previous is not None
@@ -458,7 +460,7 @@ def test_generation_zero_has_no_previous_generation_and_says_so(run: Path, tmp_p
                 matches=[m for m in d["matches"] if m["match_id"] != "previous-argmax"],
                 games=[g for g in d["games"] if g["match_id"] != "previous-argmax"],
             ),
-            "plays previous-sample and previous-argmax",
+            "are previous-sample and previous-argmax",
         ),
     ],
 )
@@ -477,6 +479,7 @@ def test_wrong_previous_matches_are_refused_before_anything_commits(
             FakeProgressPlayer(dataset_config(), committed_manifest(run, 0), hook),
             games=2,
             record_games=1,
+            previous_matches=True,
         )
     assert sorted(p.name for p in root.iterdir()) == [".lock"], name
 
@@ -491,7 +494,7 @@ def test_previous_matches_at_generation_zero_are_refused(run: Path, tmp_path: Pa
             )
             return {}
 
-    with pytest.raises(ProgressError, match="generation 0 has no previous generation"):
+    with pytest.raises(ProgressError, match="asks for no previous-generation matches"):
         progress_generation(
             run, 0, tmp_path / "p", Eager(dataset_config(), committed_manifest(run, 0)), 2, 1
         )
@@ -501,28 +504,49 @@ def fake_previous(preview: str) -> PreviousPair:
     return PreviousPair(preview, preview, policy_id(preview, preview, "sample"), "x")
 
 
-def test_a_root_evaluated_before_the_previous_matches_existed_is_verified_and_kept(
-    run: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+def test_a_root_without_previous_matches_is_verified_and_kept_whatever_the_flag(
+    run: Path, tmp_path: Path
 ) -> None:
     root = tmp_path / "p"
-    old = FakeProgressPlayer(dataset_config(), committed_manifest(run, 0), previous=False)
-    with monkeypatch.context() as m:  # what slice 4 did: no previous pair was asked for
-        m.setattr(run_module, "_previous_pair", lambda *_: None)
-        progress_generation(run, 1, root, old, games=2, record_games=1)
+    progress_generation(run, 1, root, player(run), games=2, record_games=1)
     before = (root / "g000001" / "manifest.json").read_bytes()
-    again = player(run)
-    done = progress_generation(run, 1, root, again, games=2, record_games=1)
-    assert done["skipped"] is True
-    assert again.requests == []
-    assert done["previous"].startswith("missing")
+    for flag in (False, True):
+        again = player(run)
+        done = progress_generation(
+            run, 1, root, again, games=2, record_games=1, previous_matches=flag
+        )
+        assert done["skipped"] is True
+        assert again.requests == []
+        assert done["previous"].startswith("none: previous-generation matches are opt-in")
     assert (root / "g000001" / "manifest.json").read_bytes() == before
+
+
+def test_the_flag_at_generation_zero_changes_nothing(run: Path, tmp_path: Path) -> None:
+    fake = player(run)
+    done = progress_generation(
+        run, 0, tmp_path / "p", fake, games=2, record_games=1, previous_matches=True
+    )
+    assert fake.requests[0].previous is None
+    assert done["previous"].startswith("none: generation 0")
+
+
+def test_a_committed_root_with_previous_matches_is_skipped_and_reported_played(
+    run: Path, tmp_path: Path
+) -> None:
+    root = tmp_path / "p"
+    progress_generation(run, 1, root, player(run), 2, 1, previous_matches=True)
+    done = progress_generation(run, 1, root, player(run), 2, 1)
+    assert done["skipped"] is True
+    assert done["previous"] == "played"
 
 
 def test_two_runs_give_byte_identical_records_with_the_previous_matches(
     run: Path, tmp_path: Path
 ) -> None:
     for name in ("a", "b"):
-        progress_generation(run, 1, tmp_path / name, player(run), games=2, record_games=1)
+        progress_generation(
+            run, 1, tmp_path / name, player(run), games=2, record_games=1, previous_matches=True
+        )
     a, b = (sorted((tmp_path / n / "g000001").rglob("*.json")) for n in ("a", "b"))
     assert [p.relative_to(tmp_path / "a") for p in a] == [p.relative_to(tmp_path / "b") for p in b]
     assert all(x.read_bytes() == y.read_bytes() for x, y in zip(a, b, strict=True))

@@ -95,6 +95,16 @@ def _stem(match: MatchFacts) -> str:
     return match.match_id.removesuffix("-" + match.mode)
 
 
+def _looks_note(model: ReportModel) -> str:
+    if model.looks is None:
+        return ""
+    return (
+        f'<p class="note">Looks at validation results logged for this run: {model.looks}. '
+        "The validation teams are used again at every look, so a validation result is a "
+        "progress view, never held-out evidence or a strength claim.</p>"
+    )
+
+
 def _progress_section(model: ReportModel, tips: Tips) -> str:
     out = ["<h2>Progress evaluation</h2>", f'<p class="banner">{esc(BANNER)}</p>']
     if not model.progress_root:
@@ -111,6 +121,7 @@ def _progress_section(model: ReportModel, tips: Tips) -> str:
         )
         return "".join(out)
     missing = [str(g) for g in xs if g not in model.progress]
+    out.append(_looks_note(model))
     out.append(f'<p class="claim">{esc(CLAIM)}</p><p class="note">{esc(CONDITIONAL)}</p>')
     out.append(
         f'<p class="note">Evaluated generations: {esc(", ".join(map(str, done)))}. '
@@ -503,7 +514,8 @@ def _score_cell(model: ReportModel, g: int) -> str:
     if g not in model.progress:
         return NOT_EVALUATED
     parts = [f"{_stem(m)} {m.mode} {pct(m.score_ppm)}" for m in model.progress[g].matches]
-    return esc("; ".join(parts))
+    looks = "" if model.looks is None else f" (looks logged: {model.looks})"
+    return esc("; ".join(parts) + looks)
 
 
 def _links_cell(g: int, links: Links) -> str:

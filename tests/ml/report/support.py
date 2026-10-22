@@ -171,7 +171,7 @@ def progress_root(run: Path, root: Path, generations: tuple[int, ...] = (0, 1, 2
     """A progress root for a run made by ``make_run``, written by the real command."""
     player = FakeProgressPlayer(_config(run), committed_manifest(run, 0))
     for g in generations:
-        progress_generation(run, g, root, player, games=2, record_games=1)
+        progress_generation(run, g, root, player, games=2, record_games=1, previous_matches=True)
     return root
 
 

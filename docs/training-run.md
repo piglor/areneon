@@ -86,6 +86,11 @@ claim, it never selects a checkpoint, and nothing in the run reads its output.
   --generation 5 --games 100 --record-games 8      # or --all
 ```
 
+`--all` evaluates the committed generations whose number is a multiple of 5,
+generation 0 included (0, 5, 10, ...), which is the default schedule (ADR-017
+erratum E2); `--generation G` evaluates any one generation. A committed
+generation is verified and skipped, never rewritten.
+
 It reads the run directory and never writes into it. The results go to the
 progress root, `<run-dir>.progress/` (or `--progress-dir`), one directory per
 generation, committed atomically (a partial directory, `manifest.json` last, one
@@ -103,23 +108,26 @@ and skips it.
 
 **What is played.** Four matches per generation: `random-legal@v1` and
 `actor-rule@v1`, each against the pair in sample mode (temperature 1, as in
-training) and in argmax mode. From generation 1 on there are two more, against
-the previous generation's frozen pair: `previous-sample` (both pairs sample) and
-`previous-argmax` (both argmax), six in all. `--anchors 0,10,20` adds, for each
-listed generation earlier than the one evaluated, an `anchor-g<A>-sample` and an
-`anchor-g<A>-argmax` match against generation A's frozen pair (`--anchor-games`
-games each, even, default 200, so 100 pairs). A `previous-*` or `anchor-*` row
-names the opponent's checkpoint ids and is a **seen, same-lineage comparison**:
-the two pairs share a lineage, so it can cycle and it says nothing about a
-held-out opponent. Each anchor and the previous pair are served by a worker of
-their own; the checkpoint ids and policy ids of an anchor are verified from
-generation A's own records, when the evaluation is made and again when a
-committed directory is verified. Generation 0 has no previous generation and
-plays four; its output says so. A progress root made before these matches
-existed is verified and skipped as before; the command reports `previous:
-missing` or `anchors: ... missing` for such a generation, and to get the
-matches you evaluate into a new `--progress-dir` (a committed generation is
-never rewritten).
+training) and in argmax mode. With `--previous-matches`, from generation 1 on,
+there are two more, against the previous generation's frozen pair:
+`previous-sample` (both pairs sample) and `previous-argmax` (both argmax), six
+in all. They are off by default because a comparison of adjacent generations is
+too noisy to show progress (ADR-017 erratum E2). A `previous-*` row names the
+opponent's checkpoint ids and is a **seen, same-lineage comparison**: the two
+pairs share a lineage, so it can cycle and it says nothing about a held-out
+opponent. Generation 0 has no previous generation and plays four whatever the
+flag says; the output says so. The previous pair is served by a second worker.
+A committed generation is never rewritten, so the matches cannot be added to
+it: evaluate into a new `--progress-dir` (the command reports `previous: none`
+for a generation without them).
+`--anchors 0,10,20` adds, for each listed generation earlier than the one evaluated,
+an `anchor-g<A>-sample` and an `anchor-g<A>-argmax` match against generation A's
+frozen pair (`--anchor-games` games each, even, default 200, so 100 pairs), each
+served by a worker of its own; the checkpoint ids and policy ids of an anchor are
+verified from generation A's own records when the evaluation is made and again when
+a committed directory is verified. An `anchor-*` row is a **seen, same-lineage
+comparison** too, and a directory committed without the anchors it was asked for
+is kept and reported (`anchors: ... missing`).
 
 **Every pair is played from both seats (ADR-017 erratum E2).** Validation pair
 `k` is two games, `2k` and `2k+1`: the candidate on p1 holding team `a` against
@@ -150,9 +158,8 @@ then the pair's). The opponent variants are `baseline`, `previous` and `anchor`
 present exactly when anchor matches are, and `teams.pairs_used` is half the
 largest games per match. A version 1 record (one game per pair, the candidate
 alternating seats) stays readable as it is and is never rewritten or upgraded.
-The pair-level interval, the look log, the default schedule and the dashboard
-and replay pages for version 2 are separate tickets (#948 to #951); until they
-land the printed summary and the dashboard still print the per-game Wilson
+The pair-level interval and the dashboard and replay pages for version 2 are
+separate tickets (#948, #951); until they land the printed summary and the dashboard still print the per-game Wilson
 interval, which for a both-seats record is not valid (the two games of a pair
 are not independent): read the counts, not that interval.
 
@@ -172,6 +179,18 @@ are not independent): read the counts, not that interval.
   purpose.
 - Looking at several generations is a sequence of looks: their intervals are not
   simultaneous, and a difference between two generations is not a test result.
+- Every look at a validation result is logged. The validation teams are used
+  again at every look, so the result is a progress view the owner has looked at
+  many times: it is never cited as held-out evidence, a strength claim or a gate
+  result. The log is the sibling file `<run-dir>.progress.looks.jsonl` (for a
+  custom root, `<progress-dir>.looks.jsonl`), never inside the progress root or the
+  run. `progress`, `report` and `replay --progress-dir` each append one line
+  (run, generations, matches, game counts, command) under an exclusive lock when
+  they show a result; `inspect` shows none and writes none. Each line is the JCS
+  bytes of the entry with the SHA-256 of the line before (the first carries a
+  fixed genesis value), so a dropped, changed or reordered line is refused by
+  every reader and by the next append. The dashboard shows the number of looks
+  and lists the log's SHA-256 among its inputs.
 - A forfeit is a scored loss for the failing side, kept with its cause. A harness
   incident (an unsupported candidate, an enumerator defect, a protocol error)
   fails the whole evaluation: nothing is committed and the command exits
@@ -184,8 +203,10 @@ are not independent): read the counts, not that interval.
 batching. A measured run on the shared development machine (a 6-layer, width-256
 pair, while a training run used the CPU) took about 0.6 s per game and about 25 s
 of fixed start-up per command (verifying the generation, reading the dataset), so
-100 games in each of the 4 matches took about 5 minutes. Each anchor adds two
-matches of `--anchor-games` games (200 games: about 4 minutes at 0.6 s per game,
-more while two networks answer). The previous-generation matches add 600 games
-from generation 1 on (about 6.5 minutes in all). The figure depends on the
+100 games in each of the 4 matches took about 5 minutes. Each anchor adds two matches of `--anchor-games` games (200 games: about 4
+minutes at 0.6 s per game, more while two networks answer). With the two previous-generation
+matches (600 games, from generation 1, `--previous-matches`) the same machine gives about
+6.5 minutes
+per generation: 48 games at generation 2 took 29 s (0.6 s per game) and a three-generation
+`--all` of 8 games per match took 2.5 minutes in all. The figure depends on the
 machine and on how long the games are.

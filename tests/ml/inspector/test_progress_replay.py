@@ -24,6 +24,7 @@ from areneon_ml.inspector.readers import InspectError
 from areneon_ml.inspector.replay_page import assets, read_engine_data
 from areneon_ml.loop import __main__ as loop_main
 from areneon_ml.loop import layout
+from areneon_ml.progress.looks import looks_path, read_looks
 from areneon_ml.progress.records import log_hash, read_game_record, record_hash
 from areneon_ml.progress.run import ProgressRequest, progress_generation
 from areneon_ml.progress.seeds import progress_game_seed
@@ -103,7 +104,7 @@ def built_p2(tmp_path_factory: pytest.TempPathFactory) -> Path:
     config = make_run(run, generations=2)
     root = base / "run.progress"
     player = FakeProgressPlayer(config, committed_manifest(run, 0), make_candidate_wins_from_p2)
-    progress_generation(run, 1, root, player, games=GAMES, record_games=2)
+    progress_generation(run, 1, root, player, games=GAMES, record_games=2, previous_matches=True)
     return root
 
 
@@ -115,7 +116,7 @@ def built(tmp_path_factory: pytest.TempPathFactory) -> tuple[Path, Path]:
     config = make_run(run, generations=2)
     root = base / "run.progress"
     player = FakeProgressPlayer(config, committed_manifest(run, 0), make_consistent)
-    progress_generation(run, 1, root, player, games=GAMES, record_games=2)
+    progress_generation(run, 1, root, player, games=GAMES, record_games=2, previous_matches=True)
     return run, root
 
 
@@ -874,3 +875,17 @@ def test_the_forfeit_sample_does_not_satisfy_a_log_turn_bound() -> None:
     assert record["outcome"]["kind"] == "forfeit"
     assert pr.log_result(record["omniscient_log"])[1] > record["outcome"]["turns"]
     pr._check_outcome(record)  # no refusal
+
+
+def test_a_replay_logs_a_look_beside_the_root_and_the_root_stays_untouched(
+    root: Path, tmp_path: Path
+) -> None:
+    before = tree(root)
+    command.replay_progress(root, 1, None, repo=ROOT, match="actor-rule-sample", games=[0, 1])
+    log = looks_path(root)
+    assert log == tmp_path / "run.progress.looks.jsonl"
+    assert read_looks(log).count == 1
+    (entry,) = [json.loads(x) for x in log.read_text().splitlines()]
+    assert entry["command"] == "replay"
+    assert entry["matches"] == [{"generation": 1, "match_id": "actor-rule-sample", "games": 2}]
+    assert tree(root) == before

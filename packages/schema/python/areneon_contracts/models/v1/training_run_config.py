@@ -107,6 +107,12 @@ class Ppo(BaseModel):
     """
     Normalise advantages to zero mean and unit deviation within each role's batch.
     """
+    target_kl_micro: Annotated[StrictInt | MISSING, Field(ge=1, le=1000000000)] = (
+        MISSING
+    )
+    """
+    Optional (a minor change within v1, ADR-010 erratum A1): after each complete epoch, if the arithmetic mean of that epoch's per-minibatch approximate KL (in minibatch order) is greater than this value in millionths, the role's remaining epochs of the generation are skipped. Absent means every configured epoch runs. A config that carries it is a new run.
+    """
 
 
 class TeamDataset(BaseModel):
