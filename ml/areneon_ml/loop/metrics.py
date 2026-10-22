@@ -9,7 +9,9 @@ the write loses that generation's timings and no resume writes them again (the d
 ``not recorded``); the file has no tamper evidence of its own.
 
 The record is the ``RunMetrics`` contract (integers only). A rate is the count times 3,600,000
-divided by the phase's milliseconds, truncated, and 0 when the phase took no time.
+divided by the phase's milliseconds, truncated, and 0 when the phase took no time. A CUDA
+learner's generation that trains nothing (generation 0) records a peak of 0. A failed write
+raises out of ``Loop.run`` after the commit: the generation is whole and a resume continues.
 """
 
 from __future__ import annotations
@@ -73,7 +75,7 @@ def build_metrics(
             "decisions": per_hour(counts.decisions, phase_ms.get("train", 0)),
             "optimiser_steps": per_hour(counts.optimiser_steps, phase_ms.get("train", 0)),
         },
-        "peak_accelerator_memory_bytes": peak_memory if config.device == "cuda" else None,
+        "peak_accelerator_memory_bytes": (peak_memory or 0) if config.device == "cuda" else None,
         "device": config.device,
         "threads": config.threads,
     }

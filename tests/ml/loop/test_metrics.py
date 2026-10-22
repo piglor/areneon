@@ -141,7 +141,9 @@ def test_build_metrics_on_a_cuda_config_keeps_the_peak() -> None:
     assert (record["device"], record["threads"]) == ("cuda", 2)
     assert record["per_hour"]["decisions"] == 18_000
     assert read_run_metrics(record, config, 3) == record
-    assert build_metrics(config, 3, {}, Counts(), None)["peak_accelerator_memory_bytes"] is None
+    untrained = build_metrics(config, 0, {}, Counts(), None)
+    assert untrained["peak_accelerator_memory_bytes"] == 0
+    assert read_run_metrics(untrained, config, 0) == untrained
 
 
 def test_per_hour_truncates_and_is_zero_without_time() -> None:
