@@ -77,8 +77,9 @@ export class ChunkedFileWriter {
 
   /** Close without flushing (after a failure). */
   close(): void {
-    if (this.#open) closeSync(this.#descriptor);
+    if (!this.#open) return;
     this.#open = false;
+    closeSync(this.#descriptor);
   }
 }
 

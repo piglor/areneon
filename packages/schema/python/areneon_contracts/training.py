@@ -115,7 +115,10 @@ def stream_lines(path: Path) -> Iterator[str]:
     """The lines of a file, each with its newline, split on newline only."""
     with path.open("rb") as handle:
         for raw in handle:
-            yield raw.decode("utf-8")
+            try:
+                yield raw.decode("utf-8")
+            except UnicodeDecodeError as error:
+                raise TrainingStreamError("the stream is not UTF-8") from error
 
 
 def check_stream_file(path: Path, manifest: object) -> None:

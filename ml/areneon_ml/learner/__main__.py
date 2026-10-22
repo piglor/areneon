@@ -38,7 +38,7 @@ def main(argv: list[str] | None = None) -> int:
         config = read_run_config(json.loads(args.config.read_text(encoding="utf-8")))
         game = GameData.from_table(json.loads(args.engine_data.read_text(encoding="utf-8")))
         manifest = json.loads((args.stream_dir / "training-set.json").read_text(encoding="utf-8"))
-        stream = (args.stream_dir / "stream.jsonl").read_text(encoding="utf-8")
+        stream = args.stream_dir / "stream.jsonl"
         result = benchmark(config, game, Recorded(stream, manifest), args.repeats)
     except (RunConfigError, LearnerError, LearnerDataError, ValueError, OSError) as exc:
         print(f"areneon_ml.learner: {exc}", file=sys.stderr)

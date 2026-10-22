@@ -58,7 +58,7 @@ const FLAGS = {
   "policy-workers": { type: "string" },
   // Operational too: game processes, this one included, each with its own workers (default 1).
   "game-processes": { type: "string" },
-  // Internal: set on the game processes this one starts (`INDEX/COUNT`); such a process plays its slice and writes `shard.json`.
+  // Internal: set on the game processes this one starts (`INDEX/COUNT`); such a process plays its slice and writes `shard.jsonl`.
   shard: { type: "string" },
 } as const;
 

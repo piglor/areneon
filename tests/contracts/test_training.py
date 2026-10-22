@@ -219,3 +219,12 @@ def test_the_file_reader_refuses_what_the_string_reader_refuses(tmp_path: Path) 
     for stream, manifest, message in cases:
         with pytest.raises(TrainingStreamError, match=message):
             check_file(tmp_path, stream, manifest)
+
+
+def test_the_file_reader_refuses_bytes_that_are_not_utf8(tmp_path: Path) -> None:
+    bad = b"\xff\xfe\n"
+    path = tmp_path / "stream.jsonl"
+    path.write_bytes(bad)
+    manifest = {**SET, "examples": 1, "stream_sha256": sha256_hex(bad)}
+    with pytest.raises(TrainingStreamError, match="not UTF-8"):
+        check_stream_file(path, manifest)
