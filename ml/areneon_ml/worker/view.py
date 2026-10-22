@@ -34,6 +34,31 @@ def encoder_input(query: dict[str, Any]) -> dict[str, Any]:
     return {"observation": observation, "candidates": query["candidates"]}
 
 
+class IncrementalView:
+    """``encoder_input`` for the growing prefixes of one channel, cleaning each line once.
+
+    The result equals ``encoder_input(query)`` for every query. A log that does
+    not extend the lines already cleaned is cleaned from the start.
+    """
+
+    def __init__(self) -> None:
+        self._raw: list[str] = []
+        self._clean: list[str] = []
+
+    def encoder_input(self, query: dict[str, Any]) -> dict[str, Any]:
+        observation = {k: v for k, v in query["observation"].items() if k != "decision_context"}
+        observation["identity"] = {k: v for k, v in observation["identity"].items() if k != "rqid"}
+        log = observation["log"]
+        seen = len(self._raw)
+        if log[:seen] != self._raw:
+            self._raw, self._clean, seen = [], [], 0
+        new = log[seen:]
+        self._raw.extend(new)
+        self._clean.extend(_without_rqid(line) for line in new)
+        observation["log"] = list(self._clean)
+        return {"observation": observation, "candidates": query["candidates"]}
+
+
 def view_digest(query: dict[str, Any]) -> str:
     """SHA-256 of the view's JCS bytes: equal for the A1 and A2 forms of one decision."""
     return sha256_hex(jcs(encoder_input(query)))

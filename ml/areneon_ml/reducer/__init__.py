@@ -9,12 +9,13 @@ from .errors import (
     UnknownLineError,
     VocabularyError,
 )
-from .reducer import reduce_channel
+from .reducer import ChannelReducer, reduce_channel
 from .state import BattleState, PokemonState, SideState
 from .vocab import Vocabulary
 
 __all__ = [
     "BattleState",
+    "ChannelReducer",
     "IllusionError",
     "MalformedLineError",
     "OpponentSecretError",
