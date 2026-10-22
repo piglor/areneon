@@ -61,7 +61,7 @@ SEAT_CAPTION_PAIRS = (
     "games (a Wilson-only record alternates by game instead). Descriptive, no interval."
 )
 ANCHOR_NOTE = (
-    "An anchor is a fixed earlier generation's frozen pair (generation 0 and every 10th), played "
+    "An anchor is a fixed earlier generation's frozen pair, played "
     "from both seats on the same validation pairs and seeds. The paired difference is the pair "
     "score minus one half; above zero means the candidate scored more than the anchor on these "
     "pairs. Descriptive pair-level bootstrap intervals, conditional on the fixed validation plan, "
@@ -216,7 +216,9 @@ def _progress_section(model: ReportModel, tips: Tips) -> str:
                 y_range=(0.0, 1.0),
                 y_label=lambda v: f"{round(v * 100)}%",
                 ref=0.5,
-                missing="not applicable" if stem == "previous" else NOT_EVALUATED,
+                missing="not applicable"
+                if stem == "previous" or stem.startswith("anchor-")
+                else NOT_EVALUATED,
             )
         )
     out.append(f'<div class="charts">{"".join(charts)}</div>')

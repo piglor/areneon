@@ -265,12 +265,12 @@ def read_progress_games(
     rows = {(r["match_id"], r["game"]): r for r in progress["games"]}
     both = is_v2(progress)
     out: list[ProgressGame] = []
+    # Both games of a version 2 pair are built together, so each page can link to the other.
+    asked = None if games is None else {g ^ 1 if both else g for g in games} | set(games)
     for name in sorted(p.name for p in (target / "games").glob("*.json")):
         found = GAME_FILE.fullmatch(name)
         if found is None or found[1] not in matches:
             raise InspectError(f"games/{name} is not a game of a match of progress.json")
-        # Both games of a version 2 pair are built together, so each page can link to the other.
-        asked = None if games is None else {g ^ 1 if both else g for g in games} | set(games)
         if (match is not None and found[1] != match) or (
             asked is not None and int(found[2]) not in asked
         ):

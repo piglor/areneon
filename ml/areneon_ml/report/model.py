@@ -143,7 +143,7 @@ class MatchFacts:
     #: Version 2 only: the pairs played (two games each).
     pairs: int = 0
     #: Anchor and previous-generation matches of a version 2 record: the pair score minus 1/2 as
-    #: (mean, low, high) in parts per million; None for every other match.
+    #: (mean, low, high) in parts per million (the page shows the anchors'); None for the others.
     diff: tuple[int, int, int] | None = None
     #: The generation of an anchor match's opponent; None for every other match.
     anchor_generation: int | None = None
