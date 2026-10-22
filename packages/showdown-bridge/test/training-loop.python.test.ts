@@ -29,13 +29,13 @@ interface RunSummary {
   played: number[];
 }
 
-const args = (config: string, runDir: string, generations: number): string[] => [
+const args = (config: string, runDir: string, generations: number, ...extra: string[]): string[] => [
   "-I", "-m", "areneon_ml.loop", "run", "--config", config, "--run-dir", runDir, "--engine-data", DATA,
-  "--generations", String(generations), "--node", process.execPath, "--worker-python", PYTHON,
+  "--generations", String(generations), "--node", process.execPath, "--worker-python", PYTHON, ...extra,
 ];
 const env = { ...(process.env.SHOWDOWN_DIR ? { SHOWDOWN_DIR: process.env.SHOWDOWN_DIR } : {}) };
-const run = (config: string, runDir: string, generations: number): RunSummary =>
-  JSON.parse(execFileSync(PYTHON, args(config, runDir, generations), { encoding: "utf8", env })) as RunSummary;
+const run = (config: string, runDir: string, generations: number, ...extra: string[]): RunSummary =>
+  JSON.parse(execFileSync(PYTHON, args(config, runDir, generations, ...extra), { encoding: "utf8", env })) as RunSummary;
 const read = (runDir: string, ...path: string[]): string => readFileSync(join(runDir, ...path), "utf8");
 interface Manifest {
   checkpoints: Record<string, string>;
@@ -91,6 +91,8 @@ describe.skipIf(!existsSync(PYTHON) && process.env.ARENEON_REQUIRE_PYTHON_WORKER
   let dir: string;
   let uninterrupted: string;
   let first: RunSummary;
+  let sharded: string;
+  let shardedSummary: RunSummary;
   // Three real SIGKILLs of the driver's process group in generation 2, each followed by a resume:
   //  play: the simulator side is alive (Node and the worker), the partial may still be empty;
   //  write: Node has played and is writing its files (generation.json is written last), the worker is still alive;
@@ -102,6 +104,9 @@ describe.skipIf(!existsSync(PYTHON) && process.env.ARENEON_REQUIRE_PYTHON_WORKER
     dir = mkdtempSync(join(tmpdir(), "areneon-loop-"));
     uninterrupted = join(dir, "uninterrupted");
     first = run(TINY, uninterrupted, 2);
+    // The same run with two policy workers in each of two game processes (#957): operational flags, not config.
+    sharded = join(dir, "sharded");
+    shardedSummary = run(TINY, sharded, 2, "--policy-workers", "2", "--game-processes", "2");
     kills.play.dir = join(dir, "killed-playing");
     await killWhen(TINY, kills.play.dir, 2, () => existsSync(partial(kills.play.dir)) && liveProcesses(kills.play.dir).length >= 2);
     expect(liveProcesses(kills.play.dir)).toEqual([]); // the whole group went down with the driver
@@ -191,6 +196,18 @@ describe.skipIf(!existsSync(PYTHON) && process.env.ARENEON_REQUIRE_PYTHON_WORKER
     expect(shape(uninterrupted)).toEqual(shape(fixture));
   });
 
+  it("gives the same run with several policy workers and game processes: every generation's manifest and the learner-state hash", () => {
+    expect(shardedSummary).toEqual(first);
+    for (const g of [0, 1, 2]) {
+      expect(read(sharded, "generations", gen(g), "manifest.json")).toBe(read(uninterrupted, "generations", gen(g), "manifest.json"));
+    }
+    for (const name of ["plan.json", "generation.json", "stream.jsonl", "league-run.json"]) {
+      expect(read(sharded, "generations", gen(2), name)).toBe(read(uninterrupted, "generations", gen(2), name));
+    }
+    expect(json(sharded, "run-config.json")).toEqual(json(uninterrupted, "run-config.json")); // no operational flag reaches the config
+    expect(readdirSync(join(sharded, "generations", gen(2))).sort()).toEqual(readdirSync(join(uninterrupted, "generations", gen(2))).sort());
+  });
+
   it("reproduces: the same config gives the same generation 1, byte for byte, in an independent run", () => {
     for (const { dir: killed } of Object.values(kills)) {
       expect(read(killed, "generations", gen(1), "manifest.json")).toBe(read(uninterrupted, "generations", gen(1), "manifest.json"));
@@ -267,5 +284,29 @@ describe.skipIf(!existsSync(PYTHON) && process.env.ARENEON_REQUIRE_PYTHON_WORKER
     expect(summary.games).toHaveLength(6);
     expect(summary.forfeits).toBe(0);
     expect(readdirSync(join(out, "episodes"))).toHaveLength(12);
+
+    const scratchBefore = readdirSync(tmpdir()).filter((n) => n.startsWith("areneon-shards-"));
+    // Two policy workers in each of two game processes write the very same files (#957), and leave nothing else behind.
+    const sharded = join(dir, "sharded");
+    const script = join(ROOT, "packages/showdown-bridge/scripts/play-generation.ts");
+    const shardedLines: string[] = [];
+    const shardedCode = await runGenerationCli(
+      [
+        "--config", TINY, "--generation", "1", "--policy-id", `policy:${"e".repeat(64)}`, "--preview", preview.checkpoint_id, "--battle", battle.checkpoint_id,
+        "--run-dir", dir, "--engine-data", DATA, "--encoder-version", preview.encoder_version, "--worker-python", PYTHON, "--out", sharded,
+        "--policy-workers", "2", "--game-processes", "2",
+      ],
+      (line) => shardedLines.push(line),
+      undefined,
+      script,
+    );
+    expect(shardedCode).toBe(0);
+    expect(shardedLines).toEqual(lines);
+    const names = (root: string): string[] => readdirSync(root, { recursive: true, encoding: "utf8" }).sort();
+    expect(names(sharded)).toEqual(names(out));
+    for (const name of names(out).filter((n) => n.endsWith(".json") || n.endsWith(".jsonl"))) {
+      expect(readFileSync(join(sharded, name), "utf8")).toBe(readFileSync(join(out, name), "utf8"));
+    }
+    expect(readdirSync(tmpdir()).filter((n) => n.startsWith("areneon-shards-") && !scratchBefore.includes(n))).toEqual([]);
   });
 });

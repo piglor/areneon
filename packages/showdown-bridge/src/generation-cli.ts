@@ -5,16 +5,22 @@
 // generation's `generation.json`. Exit 0 ok, 1 a generation that failed, 2 a
 // usage or configuration error. Nothing is retried.
 
-import { readFileSync } from "node:fs";
+import { spawn } from "node:child_process";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { parseArgs } from "node:util";
 import { engineDataHash, readEngineData } from "./engine-data.ts";
 import { loadEngine } from "./engine.ts";
 import type { Engine } from "./engine.ts";
-import { GenerationError, playGeneration, type TrainingPool, trainingTeamPool, writeGeneration } from "./league-generation.ts";
+import { GenerationError, type PlayedEntry, playEntries, playGeneration, type Shard, type TrainingPool, trainingTeamPool, writeGeneration } from "./league-generation.ts";
 import { type Json, jcs } from "./canonical-json.ts";
 import { resolveFormat } from "./formats.ts";
 import { PolicyWorkerClient } from "./policy-worker.ts";
 import { readTrainingRunConfig, runConfigHash, type TrainingRunConfig } from "./training-run-config.ts";
+
+/** An upper bound on `--policy-workers` and `--game-processes`: each is an operating system process. */
+const MAX_PARALLEL = 64;
 
 export class UsageError extends Error {
   override name = "UsageError";
@@ -47,13 +53,23 @@ const FLAGS = {
   "encoder-version": { type: "string" },
   "worker-python": { type: "string" },
   out: { type: "string" },
+  // Operational, not part of the run config: how many worker processes serve the games (default 1).
+  "policy-workers": { type: "string" },
+  // Operational too: game processes, this one included, each with its own workers (default 1).
+  "game-processes": { type: "string" },
+  // Internal: set on the game processes this one starts (`INDEX/COUNT`); such a process plays its slice and writes `shard.json`.
+  shard: { type: "string" },
 } as const;
+
+const OPTIONAL: readonly (keyof typeof FLAGS)[] = ["policy-workers", "game-processes", "shard"];
 
 /** Run one generation; returns the process exit code and writes its one JSON line with `print`. */
 export async function runGenerationCli(
   argv: readonly string[],
   print: (line: string) => void = console.log,
   poolSource: PoolSource = interimPoolSource,
+  /** The script that started this process: `--game-processes` above 1 runs it again for each further game process. */
+  shardScript?: string,
 ): Promise<number> {
   let values: Record<keyof typeof FLAGS, string | undefined>;
   try {
@@ -66,7 +82,7 @@ export async function runGenerationCli(
     if (value === undefined) throw new UsageError(`--${name} is required`);
     return value;
   };
-  for (const name of Object.keys(FLAGS) as (keyof typeof FLAGS)[]) need(name); // refuse a missing flag before anything starts
+  for (const name of Object.keys(FLAGS) as (keyof typeof FLAGS)[]) if (!OPTIONAL.includes(name)) need(name); // refuse a missing flag before anything starts
   const generation = Number(need("generation"));
   if (!Number.isInteger(generation) || generation < 1) throw new UsageError("--generation must be a positive integer");
   const config = readTrainingRunConfig(JSON.parse(readFileSync(need("config"), "utf8")));
@@ -77,7 +93,24 @@ export async function runGenerationCli(
   const { max_line_bytes, n_parallel, handshake_timeout_ms } = config.generation;
   const preview = need("preview");
   const battle = need("battle");
-  const client = new PolicyWorkerClient({
+  const count = (name: "policy-workers" | "game-processes"): number => {
+    const value = Number(values[name] ?? "1");
+    if (!Number.isInteger(value) || value < 1 || value > MAX_PARALLEL) throw new UsageError(`--${name} must be an integer from 1 to ${MAX_PARALLEL}`);
+    return value;
+  };
+  const workerCount = count("policy-workers");
+  const processes = count("game-processes");
+  let own: Shard | undefined;
+  if (values.shard !== undefined) {
+    const match = /^(\d+)\/(\d+)$/.exec(values.shard);
+    if (match === null || processes !== 1) throw new UsageError("--shard is INDEX/COUNT, and only for a process of its own");
+    own = { index: Number(match[1]), of: Number(match[2]) };
+    if (own.of < 2 || own.of > MAX_PARALLEL || own.index >= own.of) throw new UsageError("--shard is INDEX/COUNT, and only for a process of its own");
+  } else if (processes > 1) {
+    own = { index: 0, of: processes };
+    if (shardScript === undefined) throw new UsageError("--game-processes needs the script to start again");
+  }
+  const makeClient = (): PolicyWorkerClient => new PolicyWorkerClient({
     command: need("worker-python"),
     args: [
       "-I", "-m", "areneon_ml.worker", "--run-dir", need("run-dir"), "--preview", preview, "--battle", battle,
@@ -96,10 +129,32 @@ export async function runGenerationCli(
       ],
     },
   });
+  const clients = Array.from({ length: workerCount }, makeClient);
+  const scratch = values.shard === undefined && processes > 1 ? mkdtempSync(join(tmpdir(), "areneon-shards-")) : undefined;
+  const children: ShardProcess[] = [];
   try {
+    // Start the further game processes first: each loads its own pool while this one does.
+    if (scratch !== undefined) {
+      for (let index = 1; index < processes; index++) {
+        const out = join(scratch, String(index));
+        const rest = Object.entries(values).flatMap(([name, value]) =>
+          value === undefined || ["out", "game-processes", "shard"].includes(name) ? [] : [`--${name}`, value],
+        );
+        children.push(startShard(shardScript as string, [...rest, "--out", out, "--shard", `${index}/${processes}`], out, index));
+      }
+    }
     const pool = poolSource(engine, config);
-    await client.start();
-    const result = await playGeneration({ engine, config, generation, policy_id: need("policy-id"), client, pool });
+    await Promise.all(clients.map((client) => client.start()));
+    const [client, ...peers] = clients as [PolicyWorkerClient, ...PolicyWorkerClient[]];
+    if (values.shard !== undefined) {
+      // A further game process: play the slice and leave it for the process that started this one.
+      const entries = await playEntries({ engine, config, generation, policy_id: need("policy-id"), client, peers, pool }, own);
+      mkdirSync(need("out"), { recursive: true });
+      writeFileSync(join(need("out"), SHARD_FILE), `${jcs(entries as unknown as Json)}\n`);
+      return 0;
+    }
+    const others = Promise.all(children.map((child) => child.entries));
+    const result = await playGeneration({ engine, config, generation, policy_id: need("policy-id"), client, peers, pool, ...(own === undefined ? {} : { shard: own }), others: others.then((all) => all.flat()) });
     writeGeneration(need("out"), result);
     print(jcs({ generation, run_config_hash: await runConfigHash(config), training_set_hash: result.training_set_hash, examples: result.set.examples }));
     return 0;
@@ -110,8 +165,42 @@ export async function runGenerationCli(
     }
     throw error;
   } finally {
-    await client.close();
+    for (const child of children) child.stop();
+    await Promise.all(clients.map((client) => client.close()));
+    if (scratch !== undefined) rmSync(scratch, { recursive: true, force: true });
   }
+}
+
+const SHARD_FILE = "shard.json";
+
+/** A further game process: the entries it will have played, and a way to end it. */
+export interface ShardProcess {
+  entries: Promise<PlayedEntry[]>;
+  stop: () => void;
+}
+
+export function startShard(script: string, args: readonly string[], out: string, index: number, node: string = process.execPath): ShardProcess {
+  const child = spawn(node, [...process.execArgv, script, ...args], { stdio: ["ignore", "ignore", "pipe"] });
+  let stderr = "";
+  child.stderr.on("data", (chunk: Buffer) => {
+    stderr = (stderr + chunk.toString("utf8")).slice(-2000);
+  });
+  const entries = new Promise<PlayedEntry[]>((resolve, reject) => {
+    child.once("error", (error) => reject(new GenerationError(`game process ${index} did not start: ${error.message}`)));
+    child.once("close", (code) => {
+      if (code !== 0) {
+        reject(new GenerationError(`game process ${index} failed (exit ${code}): ${stderr.trim()}`));
+        return;
+      }
+      try {
+        resolve(JSON.parse(readFileSync(join(out, SHARD_FILE), "utf8")) as PlayedEntry[]);
+      } catch (error) {
+        reject(new GenerationError(`game process ${index} left no readable result: ${(error as Error).message}`));
+      }
+    });
+  });
+  entries.catch(() => undefined); // reported where it is awaited
+  return { entries, stop: () => void child.kill("SIGKILL") };
 }
 
 /** `scripts/format-manifest.ts --format <id>`: print the version manifest of a supported format as one canonical JSON line. */

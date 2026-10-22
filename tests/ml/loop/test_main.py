@@ -72,6 +72,39 @@ def test_run_prints_one_canonical_line_and_builds_the_node_player_from_its_flags
     assert kwargs["engine_data"] == DATA.resolve()
     assert kwargs["encoder_version"].startswith("enc1:")
     assert kwargs["play_script"] == "packages/showdown-bridge/scripts/play-generation.ts"
+    assert (kwargs["policy_workers"], kwargs["game_processes"]) == (1, 1)
+
+
+def test_worker_and_process_counts_are_flags_of_the_player_not_of_the_config(
+    tmp_path: Path, config_file: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    built = fake_node(monkeypatch)
+    before = config_file.read_text()
+    assert (
+        main(run(config_file, tmp_path / "r", 1, "--policy-workers", "3", "--game-processes", "4"))
+        == 0
+    )
+    assert (built[0]["policy_workers"], built[0]["game_processes"]) == (3, 4)
+    assert config_file.read_text() == before
+    # the run's own copy of the config, which is hashed, is the same bytes for any count
+    other = fake_node(monkeypatch)
+    assert main(run(config_file, tmp_path / "s", 1)) == 0
+    assert (tmp_path / "r" / "run-config.json").read_bytes() == (
+        tmp_path / "s" / "run-config.json"
+    ).read_bytes()
+    assert other[0]["policy_workers"] == 1
+
+
+@pytest.mark.parametrize("flag", ["--policy-workers", "--game-processes"])
+@pytest.mark.parametrize("value", ["0", "-2"])
+def test_a_count_below_one_is_a_usage_error(
+    tmp_path: Path, config_file: Path, monkeypatch: pytest.MonkeyPatch, flag: str, value: str
+) -> None:
+    built = fake_node(monkeypatch)
+    with pytest.raises(SystemExit) as stop:
+        main(run(config_file, tmp_path / "r", 1, flag, value))
+    assert stop.value.code == 2
+    assert built == []
 
 
 def test_a_placeholder_run_key_is_refused_before_anything_starts(

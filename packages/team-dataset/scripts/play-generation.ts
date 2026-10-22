@@ -6,7 +6,7 @@ import { interimPoolSource, runGenerationCli, UsageError } from "@areneon/showdo
 import { datasetPoolSource } from "../src/loop-pool.ts";
 
 try {
-  process.exitCode = await runGenerationCli(process.argv.slice(2), console.log, datasetPoolSource(interimPoolSource));
+  process.exitCode = await runGenerationCli(process.argv.slice(2), console.log, datasetPoolSource(interimPoolSource), process.argv[1]);
 } catch (error) {
   console.error(`play-generation: ${(error as Error).message}`);
   process.exitCode = error instanceof UsageError ? 2 : 1;

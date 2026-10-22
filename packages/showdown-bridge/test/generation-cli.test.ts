@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { interimPoolSource, runGenerationCli, runManifestCli, UsageError } from "../src/generation-cli.ts";
+import { interimPoolSource, runGenerationCli, runManifestCli, startShard, UsageError } from "../src/generation-cli.ts";
 import { GOLDEN_DIR, GOLDEN_FORMAT } from "../src/golden.ts";
 import { loadEngine, readTrainingRunConfig } from "../src/index.ts";
 import { trainingTeamPool } from "../src/league-generation.ts";
@@ -60,6 +60,21 @@ describe("play-generation", () => {
     expect(interimPoolSource(loadEngine(), readTrainingRunConfig(tiny)).teams.length).toBeGreaterThan(60);
   });
 
+  it("refuses a worker or process count that is not a small positive integer, and a slice it cannot place", async () => {
+    const file = join(dir, "tiny.json");
+    writeFileSync(file, JSON.stringify(tiny));
+    for (const flag of ["--policy-workers", "--game-processes"]) {
+      for (const bad of ["0", "1.5", "x", "", "65"]) {
+        await expect(runGenerationCli([...flags(file), flag, bad], console.log, undefined, "play.ts")).rejects.toThrow(new RegExp(`${flag} must be an integer from 1 to 64`));
+      }
+    }
+    await expect(runGenerationCli([...flags(file), "--game-processes", "2"])).rejects.toThrow(/needs the script to start again/);
+    for (const bad of ["1", "x/2", "2/2", "0/1", "0/65"]) {
+      await expect(runGenerationCli([...flags(file), "--shard", bad])).rejects.toThrow(/INDEX\/COUNT/);
+    }
+    await expect(runGenerationCli([...flags(file), "--shard", "1/2", "--game-processes", "2"], console.log, undefined, "play.ts")).rejects.toThrow(/INDEX\/COUNT/);
+  });
+
   it("refuses a run_key that is still the CHANGE-ME placeholder", async () => {
     const file = join(dir, "placeholder.json");
     writeFileSync(file, JSON.stringify({ ...tiny, seeds: { ...(tiny.seeds as object), run_key: "CHANGE-ME-PER-RUN" } }));
@@ -87,5 +102,31 @@ describe("play-generation", () => {
     } finally {
       error.mockRestore();
     }
+  });
+});
+
+describe("a further game process", () => {
+  const script = (name: string, body: string): string => {
+    const file = join(dir, name);
+    writeFileSync(file, body);
+    return file;
+  };
+
+  it("hands back the entries it wrote", async () => {
+    const out = join(dir, "shard-ok");
+    const ok = script("ok.mjs", `import { mkdirSync, writeFileSync } from "node:fs"; mkdirSync(process.argv[2], { recursive: true }); writeFileSync(process.argv[2] + "/shard.json", '[{"game":1}]');`);
+    await expect(startShard(ok, [out], out, 1).entries).resolves.toEqual([{ game: 1 }]);
+  });
+
+  it("fails the generation when the process exits non-zero, leaves no result, or does not start", async () => {
+    const out = join(dir, "shard-none");
+    const failing = script("failing.mjs", `console.error("boom"); process.exit(3);`);
+    await expect(startShard(failing, [], out, 2).entries).rejects.toThrow(/game process 2 failed \(exit 3\): boom/);
+    const silent = script("silent.mjs", "");
+    await expect(startShard(silent, [], out, 3).entries).rejects.toThrow(/game process 3 left no readable result/);
+    await expect(startShard(silent, [], out, 4, join(dir, "no-such-node")).entries).rejects.toThrow(/game process 4 did not start/);
+    const child = startShard(script("slow.mjs", "setTimeout(() => {}, 60000);"), [], out, 5);
+    child.stop();
+    await expect(child.entries).rejects.toThrow(/game process 5 failed/);
   });
 });
