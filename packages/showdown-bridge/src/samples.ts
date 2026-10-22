@@ -421,6 +421,19 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
       { opponent_policy_id: "random-legal@tiny", games: 2 },
     ],
   };
+  // A RunMetrics record (ADR-010 erratum A1, item 3): one generation of the tiny run on a CPU learner.
+  const runMetrics = {
+    schema_version: 1,
+    run_config_hash: await runConfigHash(runConfig as unknown as TrainingRunConfig),
+    generation: 1,
+    phase_ms: { play: 41_250, write: 310, load: 1_900, train: 8_400, seal: 120 },
+    counts: { games: 6, decisions: 480, optimiser_steps: 36 },
+    per_hour: { games: 523, decisions: 205_714, optimiser_steps: 15_428 },
+    peak_accelerator_memory_bytes: null,
+    device: "cpu",
+    threads: 1,
+  };
+  const runMetricsWith = (change: (r: Record<string, unknown>) => void) => mutated(runMetrics, change);
   const leagueRunWith = (change: (r: Record<string, unknown>) => void) => mutated(leagueRun, change);
   const runConfigWith = (change: (c: Record<string, unknown>) => void) => mutated(runConfig, change);
   const runSection = (c: Record<string, unknown>, name: string) => c[name] as Record<string, unknown>;
@@ -453,6 +466,17 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "training-run-config/no-baselines": runConfigWith((c) => (runSection(c, "generation").baseline_games = [])),
     "training-run-config/target-kl": runConfigWith((c) => (runSection(c, "ppo").target_kl_micro = 20000)),
     "training-run-config/team-dataset": runConfigWith((c) => (c.team_dataset = { path: ".tmp/datasets/train-v1", dataset_hash: hexOf("5") })),
+    "run-metrics/cpu": runMetrics,
+    "run-metrics/cuda": runMetricsWith((r) => {
+      r.device = "cuda";
+      r.peak_accelerator_memory_bytes = 3_221_225_472;
+    }),
+    "run-metrics/seeded-pair": runMetricsWith((r) => {
+      r.generation = 0;
+      r.phase_ms = { play: 0, write: 95, load: 0, train: 0, seal: 60 };
+      r.counts = { games: 0, decisions: 0, optimiser_steps: 0 };
+      r.per_hour = { games: 0, decisions: 0, optimiser_steps: 0 };
+    }),
     "league-run-record/tiny": leagueRun,
     "league-run-record/self-play-only": leagueRunWith((r) => {
       r.games = 4;
@@ -621,6 +645,14 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "checkpoint-record/public-class": recordWith((r) => (r.data_class = "public")),
     "checkpoint-record/blank-lineage": recordWith((r) => (r.lineage_id = "")),
     "checkpoint-record/no-learner-state": recordWith((r) => delete r.learner_state_hash),
+    "run-metrics/extra-field": runMetricsWith((r) => (r.notes = "x")),
+    "run-metrics/fractional-ms": runMetricsWith((r) => (r.phase_ms = { ...runMetrics.phase_ms, play: 1.5 })),
+    "run-metrics/negative-memory": runMetricsWith((r) => (r.peak_accelerator_memory_bytes = -1)),
+    "run-metrics/missing-phase": runMetricsWith((r) => (r.phase_ms = { play: 1, write: 1, load: 1, train: 1 })),
+    "run-metrics/unknown-device": runMetricsWith((r) => (r.device = "tpu")),
+    "run-metrics/zero-threads": runMetricsWith((r) => (r.threads = 0)),
+    "run-metrics/short-config-hash": runMetricsWith((r) => (r.run_config_hash = "abc")),
+    "run-metrics/no-counts": runMetricsWith((r) => delete r.counts),
     "league-run-record/unknown-forfeit-cause": leagueRunWith((r) => (r.forfeit_causes = [{ cause: "timeout", count: 1 }])),
     "league-run-record/empty-forfeit-causes": leagueRunWith((r) => (r.forfeit_causes = [])),
     "league-run-record/zero-cause-count": leagueRunWith((r) => (r.forfeit_causes = [{ cause: "crash", count: 0 }])),

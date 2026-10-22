@@ -19,11 +19,14 @@ across machines or torch builds, and a CUDA learner is not bit-reproducible.
 from __future__ import annotations
 
 import shutil
-from collections.abc import Callable
+import time
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+import torch
 from areneon_contracts.contracts import jcs, sha256_hex
 
 from areneon_ml.checkpoint.files import checkpoint_bytes, checkpoint_id, write_checkpoint
@@ -34,7 +37,13 @@ from areneon_ml.learner.data import trajectories
 from areneon_ml.learner.state import pack_state, restore_state
 from areneon_ml.learner.trainer import Learner, configure_learner
 from areneon_ml.loop import layout
-from areneon_ml.loop.league import LeagueRecordError, check_generation_plan, read_league_run_record
+from areneon_ml.loop.league import (
+    LeagueRecordError,
+    LeagueRunRecord,
+    check_generation_plan,
+    read_league_run_record,
+)
+from areneon_ml.loop.metrics import Counts, build_metrics, write_metrics
 from areneon_ml.loop.play import GenerationPlayer, PlayRequest
 from areneon_ml.loop.records import (
     RecordFacts,
@@ -48,6 +57,7 @@ from areneon_ml.model.gamedata import GameData
 from areneon_ml.model.network import ROLES, PolicyNetwork, init_network
 
 StageHook = Callable[[int, str], None]
+Clock = Callable[[], float]
 
 
 class LoopError(ValueError):
@@ -100,6 +110,25 @@ class Sealing:
     version_manifest: dict[str, Any]
 
 
+class Timing:
+    """Wall-clock milliseconds per phase of one generation, for its run-metrics record."""
+
+    def __init__(self, clock: Clock) -> None:
+        self._clock = clock
+        self.phase_ms: dict[str, int] = {}
+        self.counts = Counts()
+        self.peak_memory: int | None = None
+
+    @contextmanager
+    def phase(self, name: str) -> Iterator[None]:
+        started = self._clock()
+        try:
+            yield
+        finally:
+            elapsed = int((self._clock() - started) * 1000)
+            self.phase_ms[name] = self.phase_ms.get(name, 0) + max(elapsed, 0)
+
+
 def _learner_files(generation: int) -> tuple[str, str]:
     return f"learner-{generation}.safetensors", f"learner-{generation}.json"
 
@@ -120,6 +149,8 @@ class Loop:
         self.game = game
         self.player = player
         self._on_stage = on_stage or (lambda _generation, _stage: None)
+        #: Wall-clock source for the run-metrics record; a test replaces it.
+        self.clock: Clock = time.monotonic
         self.device = configure_learner(config)
         self.encoder_version = encoder_version(game, config.model.encoder)
         self._encoders = {role: Encoder(game, config.model.encoder) for role in ROLES}
@@ -183,7 +214,7 @@ class Loop:
         work = layout.partial_dir(self.run_dir, 0)
         work.mkdir(parents=True)
         manifest = self.player.manifest(self.config.format_id)
-        return self._seal(0, work, Sealing(None, None, (), manifest))
+        return self._seal(0, work, Sealing(None, None, (), manifest), Timing(self.clock))
 
     # -- resume --------------------------------------------------------------
 
@@ -253,38 +284,51 @@ class Loop:
         work = layout.partial_dir(self.run_dir, generation)
         work.mkdir(parents=True)
         pair = policy_id(previous.checkpoints["preview"], previous.checkpoints["battle"])
-        self.player.play(
-            PlayRequest(
-                generation,
-                pair,
-                previous.checkpoints["preview"],
-                previous.checkpoints["battle"],
-                work,
+        timing = Timing(self.clock)
+        with timing.phase("play"):
+            self.player.play(
+                PlayRequest(
+                    generation,
+                    pair,
+                    previous.checkpoints["preview"],
+                    previous.checkpoints["battle"],
+                    work,
+                )
             )
-        )
         self._on_stage(generation, "played")
-        summary = layout.read_json(work / "generation.json")
-        training_set = layout.read_json(work / "training-set.json")
-        if summary.get("generation") != generation:
-            raise LoopError("the simulator side played another generation than asked")
-        self._check_league_run(work, generation, pair, summary)
-        if sha256_hex(jcs(training_set)) != summary.get("training_set_hash"):
-            raise LoopError("the TrainingSet differs from the hash the simulator side reported")
-        stream = (work / "stream.jsonl").read_text(encoding="utf-8")
-        found = trajectories(stream, training_set, self._encoders, pair)
-        report = learner.train(found)
+        with timing.phase("load"):
+            summary = layout.read_json(work / "generation.json")
+            training_set = layout.read_json(work / "training-set.json")
+            if summary.get("generation") != generation:
+                raise LoopError("the simulator side played another generation than asked")
+            league = self._check_league_run(work, generation, pair, summary)
+            if sha256_hex(jcs(training_set)) != summary.get("training_set_hash"):
+                raise LoopError("the TrainingSet differs from the hash the simulator side reported")
+            stream = (work / "stream.jsonl").read_text(encoding="utf-8")
+            found = trajectories(stream, training_set, self._encoders, pair)
+        if self.device.type == "cuda":
+            torch.cuda.reset_peak_memory_stats(self.device)
+        with timing.phase("train"):
+            report = learner.train(found)
+        if self.device.type == "cuda":
+            timing.peak_memory = int(torch.cuda.max_memory_allocated(self.device))
+        roles = report.roles.values()
+        timing.counts = Counts(
+            league.games, sum(r.steps for r in roles), sum(r.optimiser_steps for r in roles)
+        )
         result.reports[generation] = report.as_dict()
-        layout.write_json(work / "train-report.json", report.as_dict())
+        with timing.phase("write"):
+            layout.write_json(work / "train-report.json", report.as_dict())
         self._on_stage(generation, "trained")
         teams = sorted(set(previous.team_hashes) | set(summary["team_hashes"]))
         sealing = Sealing(
             previous.checkpoints, summary["training_set_hash"], tuple(teams), summary["manifest"]
         )
-        return self._seal(generation, work, sealing)
+        return self._seal(generation, work, sealing, timing)
 
     def _check_league_run(
         self, work: Path, generation: int, pair: str, summary: dict[str, Any]
-    ) -> None:
+    ) -> LeagueRunRecord:
         """The record is this run's and generation's, and the plan's seeds are the run key's."""
         try:
             record = read_league_run_record(layout.read_json(work / "league-run.json"), self.config)
@@ -297,55 +341,68 @@ class Loop:
             raise LoopError("league-run.json counts other forfeits than generation.json")
         if dict(record.forfeit_causes) != (summary.get("forfeit_causes") or {}):
             raise LoopError("league-run.json counts other forfeit causes than generation.json")
+        return record
 
     # -- freezing a generation -----------------------------------------------
 
-    def _seal(self, generation: int, work: Path, sealing: Sealing) -> Frozen:
-        """Store the pair, write the learner state, records and team set, and commit."""
+    def _seal(self, generation: int, work: Path, sealing: Sealing, timing: Timing) -> Frozen:
+        """Store the pair, write the learner state, records and team set, and commit.
+
+        The run-metrics record is written last, after the commit and outside every hash
+        (ADR-010 erratum A1): a crash before it loses this generation's timings only.
+        """
         learner = self._learner
         assert learner is not None
-        checkpoints = {
-            role: write_checkpoint(
-                self.run_dir, checkpoint_bytes(learner.networks[role], self.game)
-            )
-            for role in ROLES
-        }
-        packed = pack_state(learner)
-        tensors_name, sidecar_name = _learner_files(generation)
-        layout.write_file(work / tensors_name, packed.tensors)
-        layout.write_file(work / sidecar_name, packed.sidecar)
-        manifest = team_set_manifest(sealing.teams)
-        layout.write_json(work / "team-set.json", manifest)
-        for role in ROLES:
-            record = checkpoint_record(
-                self.config,
-                RecordFacts(
-                    role=role,
-                    checkpoint_id=checkpoints[role],
-                    parent=None if sealing.parents is None else sealing.parents[role],
-                    training_set_hashes=[]
-                    if sealing.training_set_hash is None
-                    else [sealing.training_set_hash],
-                    team_set_manifest_hash=team_set_hash(manifest),
-                    learner_state_hash=packed.hash,
-                    encoder_version=self.encoder_version,
-                    manifest=sealing.version_manifest,
-                ),
-            )
-            layout.write_json(work / "records" / f"{role}.json", record.to_json())
+        with timing.phase("write"):
+            checkpoints = {
+                role: write_checkpoint(
+                    self.run_dir, checkpoint_bytes(learner.networks[role], self.game)
+                )
+                for role in ROLES
+            }
+            packed = pack_state(learner)
+            tensors_name, sidecar_name = _learner_files(generation)
+            layout.write_file(work / tensors_name, packed.tensors)
+            layout.write_file(work / sidecar_name, packed.sidecar)
+            manifest = team_set_manifest(sealing.teams)
+            layout.write_json(work / "team-set.json", manifest)
+            for role in ROLES:
+                record = checkpoint_record(
+                    self.config,
+                    RecordFacts(
+                        role=role,
+                        checkpoint_id=checkpoints[role],
+                        parent=None if sealing.parents is None else sealing.parents[role],
+                        training_set_hashes=[]
+                        if sealing.training_set_hash is None
+                        else [sealing.training_set_hash],
+                        team_set_manifest_hash=team_set_hash(manifest),
+                        learner_state_hash=packed.hash,
+                        encoder_version=self.encoder_version,
+                        manifest=sealing.version_manifest,
+                    ),
+                )
+                layout.write_json(work / "records" / f"{role}.json", record.to_json())
         self._on_stage(generation, "written")
-        layout.commit_generation(
-            self.run_dir,
-            generation,
-            {
-                "checkpoints": checkpoints,
-                "learner_state_hash": packed.hash,
-                "training_set_hash": sealing.training_set_hash,
-                "team_set_manifest_hash": team_set_hash(manifest),
-                "run_config_hash": self.config.hash,
-            },
-        )
+        with timing.phase("seal"):
+            layout.commit_generation(
+                self.run_dir,
+                generation,
+                {
+                    "checkpoints": checkpoints,
+                    "learner_state_hash": packed.hash,
+                    "training_set_hash": sealing.training_set_hash,
+                    "team_set_manifest_hash": team_set_hash(manifest),
+                    "run_config_hash": self.config.hash,
+                },
+            )
         self._on_stage(generation, "committed")
+        write_metrics(
+            self.run_dir,
+            build_metrics(
+                self.config, generation, timing.phase_ms, timing.counts, timing.peak_memory
+            ),
+        )
         return Frozen(
             generation, checkpoints, packed.hash, sealing.training_set_hash, sealing.teams
         )

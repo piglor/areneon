@@ -1,0 +1,144 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:areneon:schema:contracts:v1:run-metrics",
+  "title": "RunMetrics",
+  "description": "What one generation of a training run cost in wall-clock time (ADR-010 erratum A1, item 3): milliseconds per phase of the loop driver, the counts and throughput that follow from them, the learner's peak accelerator memory and its device. Wall-clock values differ on every run, so the record lives in <run-dir>/metrics/g<NNNNNN>.json, written after the generation commits and outside every manifest and hash; the loop, the loader and the learner never read it, and a crash between the commit and the write loses it. Integers only: milliseconds, counts, bytes and per-hour rates (the rate is the count times 3,600,000 divided by the phase's milliseconds, truncated, and 0 when the phase took no time).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "run_config_hash",
+    "generation",
+    "phase_ms",
+    "counts",
+    "per_hour",
+    "peak_accelerator_memory_bytes",
+    "device",
+    "threads"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "run_config_hash": {
+      "description": "SHA-256 of the run's TrainingRunConfig JCS bytes (runConfigHash).",
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "generation": {
+      "description": "The committed generation the timings belong to; generation 0 (the seeded pair) plays and trains nothing.",
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "phase_ms": {
+      "$ref": "#/$defs/PhaseMs"
+    },
+    "counts": {
+      "$ref": "#/$defs/Counts"
+    },
+    "per_hour": {
+      "$ref": "#/$defs/PerHour"
+    },
+    "peak_accelerator_memory_bytes": {
+      "description": "The most memory the learner's accelerator held at once during the generation (torch.cuda.max_memory_allocated); null on a CPU learner.",
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "device": {
+      "description": "The learner's device, as the run config names it.",
+      "enum": [
+        "cpu",
+        "cuda"
+      ]
+    },
+    "threads": {
+      "description": "The learner's thread count, as the run config names it.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 4096
+    }
+  },
+  "$defs": {
+    "PhaseMs": {
+      "description": "Wall-clock milliseconds per phase of the generation, 0 for a phase the generation does not have. play: the simulator side (its battles and its own files). load: reading the generation's files and encoding the trajectories. train: the learner's epochs. write: the driver's own files (train report, learner state, records, team set) and the checkpoint store. seal: fsync of the partial directory, the manifest and the commit rename.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "play",
+        "write",
+        "load",
+        "train",
+        "seal"
+      ],
+      "properties": {
+        "play": {
+          "$ref": "#/$defs/Count"
+        },
+        "write": {
+          "$ref": "#/$defs/Count"
+        },
+        "load": {
+          "$ref": "#/$defs/Count"
+        },
+        "train": {
+          "$ref": "#/$defs/Count"
+        },
+        "seal": {
+          "$ref": "#/$defs/Count"
+        }
+      }
+    },
+    "Counts": {
+      "description": "What the generation processed: games planned, decisions the learner trained on (both networks) and optimiser steps taken (both networks).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "games",
+        "decisions",
+        "optimiser_steps"
+      ],
+      "properties": {
+        "games": {
+          "$ref": "#/$defs/Count"
+        },
+        "decisions": {
+          "$ref": "#/$defs/Count"
+        },
+        "optimiser_steps": {
+          "$ref": "#/$defs/Count"
+        }
+      }
+    },
+    "PerHour": {
+      "description": "Throughput as integers per hour: games over the play phase, decisions and optimiser steps over the train phase.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "games",
+        "decisions",
+        "optimiser_steps"
+      ],
+      "properties": {
+        "games": {
+          "$ref": "#/$defs/Count"
+        },
+        "decisions": {
+          "$ref": "#/$defs/Count"
+        },
+        "optimiser_steps": {
+          "$ref": "#/$defs/Count"
+        }
+      }
+    },
+    "Count": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    }
+  }
+}

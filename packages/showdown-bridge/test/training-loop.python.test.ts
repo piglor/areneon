@@ -40,6 +40,7 @@ const read = (runDir: string, ...path: string[]): string => readFileSync(join(ru
 interface Manifest {
   checkpoints: Record<string, string>;
   training_set_hash: string | null;
+  files: Record<string, string>;
 }
 interface Doc {
   role: string;
@@ -136,6 +137,12 @@ describe.skipIf(!existsSync(PYTHON) && process.env.ARENEON_REQUIRE_PYTHON_WORKER
       expect(files).toEqual(expect.arrayContaining([`learner-${g}.safetensors`, `learner-${g}.json`, "manifest.json", "records", "team-set.json"]));
     }
     expect(readdirSync(join(uninterrupted, "generations")).filter((n) => n.endsWith(".partial"))).toEqual([]);
+    // The run metrics (ADR-010 erratum A1) sit beside the generations, outside every manifest.
+    expect(readdirSync(join(uninterrupted, "metrics")).sort()).toEqual([0, 1, 2].map((g) => `${gen(g)}.json`));
+    for (const g of [0, 1, 2]) {
+      expect(json(uninterrupted, "metrics", `${gen(g)}.json`)).toMatchObject({ schema_version: 1, generation: g, device: "cpu", peak_accelerator_memory_bytes: null });
+      expect(Object.keys(manifest(uninterrupted, g).files).some((name) => name.includes("metrics"))).toBe(false);
+    }
     const records = ["battle", "preview"].map((role) => json(uninterrupted, "generations", gen(2), "records", `${role}.json`));
     for (const record of records) {
       expect(record).toMatchObject({ schema_version: 1, lineage_id: "tiny-main", data_class: "synthetic", learner_state_hash: first.learner_state_hash });

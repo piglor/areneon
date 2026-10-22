@@ -71,6 +71,14 @@ A run with a `team_dataset` starts `packages/team-dataset/scripts/play-generatio
 for each generation; one without starts the bridge's own script. The driver
 resumes a killed run from the last committed generation.
 
+After each generation commits, the driver writes `<run-dir>/metrics/g<NNNNNN>.json`: wall
+clock per phase (play, load, train, write, seal), throughput, the learner's peak
+accelerator memory (null on a CPU learner), device and threads. The file is outside the
+generation manifest and every hash, so reruns stay byte-identical. A crash between the
+commit and the write loses that generation's timings, and a resume does not write them
+again; the run dashboard (`python -m areneon_ml.loop report`) says `not recorded` for it
+and lists the SHA-256 of each metrics file among its inputs.
+
 ## 4. Look at a generation: the progress evaluation
 
 `python -m areneon_ml.loop progress` plays the frozen pair of a committed
