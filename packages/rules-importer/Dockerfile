@@ -50,12 +50,14 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY packages/rules-importer/package.json packages/rules-importer/
 COPY packages/rules-store/package.json packages/rules-store/
 COPY packages/showdown-bridge/package.json packages/showdown-bridge/
+COPY packages/public-state/package.json packages/public-state/
 COPY packages/schema/package.json packages/schema/
 RUN corepack enable \
   && pnpm install --frozen-lockfile --prod --ignore-scripts --filter "@areneon/rules-importer..."
 COPY packages/rules-importer/src packages/rules-importer/src
 COPY packages/rules-store/src packages/rules-store/src
 COPY packages/showdown-bridge/src packages/showdown-bridge/src
+COPY packages/public-state/src packages/public-state/src
 COPY packages/schema/src packages/schema/src
 COPY packages/schema/rules packages/schema/rules
 COPY packages/schema/contracts packages/schema/contracts
