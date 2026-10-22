@@ -10,10 +10,11 @@
 // held item (a Mega forme): its sets name the abilities of the forme it comes
 // from, the form Team Preview shows, so a consumer plays such an entry as that
 // base forme plus the stone, never as a literal Mega forme with those abilities.
-// Limit: JSON.parse keeps the last of two equal species keys in the source. Anything that does not resolve refuses the whole export; the
+// Anything that does not resolve refuses the whole export; the
 // table is never partial. The random-battle level, preferred types and Tera
 // types are dropped, and no role logic is ported: nothing turns a role into an
-// item or a spread. Every list is sorted, and the export is hashed
+// item or a spread. Limit: JSON.parse keeps the last of two equal species keys
+// in the source. Every list is sorted, and the export is hashed
 // (`roleSetTableHash`) so a pin bump that changes the file changes the hash.
 
 import { createHash } from "node:crypto";
@@ -78,7 +79,7 @@ export function roleSetSourcePath(format: SimFormat): string {
 
 /**
  * Export the role sets of `formatId` from the pinned engine checkout at `dir`
- * (the checkout `engine` was loaded from; the default, and a doctored copy in a test).
+ * (it defaults to the pinned checkout; a test passes a doctored copy).
  * `vocabulary` is the team vocabulary of the same format and `table` its
  * engine-data table (exported here when omitted). Refuses a missing or
  * malformed source, a name that does not resolve, a species outside the
