@@ -41,6 +41,7 @@ from tests.ml.progress.support import (
     committed_manifest,
     dataset_config,
     make_run,
+    sample,
 )
 
 
@@ -382,8 +383,11 @@ def test_every_committed_generation_is_listed_and_summarised(run: Path, tmp_path
     root = tmp_path / "p"
     done = progress_generation(run, 0, root, player(run), games=4, record_games=0)
     first = done["matches"][0]
-    assert first["interval"] == "conditional on the fixed validation plan"
-    assert first["wilson_low_ppm"] <= first["score_ppm"] <= first["wilson_high_ppm"]
+    assert "pair" in first["interval"]
+    assert "descriptive" in first["interval"]
+    assert "wilson_low_ppm" not in first  # a both-seats record has no per-game interval
+    assert first["interval_low_ppm"] <= first["score_ppm"] <= first["interval_high_ppm"]
+    assert first["pairs"] == first["games"] // 2
     record = read_progress_record(layout.read_json(root / "g000000" / "progress.json"))
     assert summary_of(record) == done["matches"]
     assert not list((root / "g000000").rglob("*-0.json"))  # --record-games 0 stores no game
@@ -810,17 +814,28 @@ def test_the_ablation_reports_three_scores_and_the_paired_differences_in_integer
     done = ablate(run, tmp_path / "p", games=4, record_games=0)
     rows = done["ablation"]["baselines"]["actor-rule"]
     assert "conditional on the fixed validation plan" in done["ablation"]["interval"]
-    assert rows["learned"] == {"pairs": 2, "score_ppm": 500_000}  # a split pair is 1/2
+    assert "descriptive" in done["ablation"]["interval"]
+    # a split pair is 1/2
+    assert rows["learned"] == {
+        "pairs": 2,
+        "score_ppm": 500_000,
+        "low_ppm": 500_000,
+        "high_ppm": 500_000,
+    }
     assert rows["random"]["score_ppm"] == 0
     assert rows["g0"]["score_ppm"] == 1_000_000
     assert rows["random"]["minus_learned"] == {
         "mean_ppm": -500_000,
+        "low_ppm": -500_000,
+        "high_ppm": -500_000,
         "better": 0,
         "equal": 0,
         "worse": 2,
     }
     assert rows["g0"]["minus_learned"] == {
         "mean_ppm": 500_000,
+        "low_ppm": 500_000,
+        "high_ppm": 500_000,
         "better": 2,
         "equal": 0,
         "worse": 0,
@@ -936,3 +951,37 @@ def test_a_directory_of_the_other_kind_is_refused_not_skipped(run: Path, tmp_pat
         ablate(run, normal)
     with pytest.raises(ProgressError, match="already holds a Preview ablation record"):
         progress_generation(run, 1, ablated, player(run), 2, 1)
+
+
+def test_a_version_1_summary_keeps_its_wilson_keys_and_order() -> None:
+    record = read_progress_record(sample("progress-evaluation-record/valid/baseline-match"))
+    for row in summary_of(record):
+        assert list(row)[:9] == [
+            "match_id",
+            "games",
+            "wins",
+            "ties",
+            "losses",
+            "score_ppm",
+            "wilson_low_ppm",
+            "wilson_high_ppm",
+            "interval",
+        ]
+        assert row["interval"] == "conditional on the fixed validation plan"
+        assert "pairs" not in row
+
+
+def test_a_head_to_head_summary_carries_the_pair_score_minus_one_half() -> None:
+    record = read_progress_record(sample("progress-evaluation-record-2/valid/anchor-match"))
+    rows = [r for r in summary_of(record) if r["opponent"] == "anchor"]
+    assert rows
+    for row in rows:
+        assert row["diff_mean_ppm"] == row["score_ppm"] - 500_000
+        assert row["diff_low_ppm"] == row["interval_low_ppm"] - 500_000
+        assert row["diff_high_ppm"] == row["interval_high_ppm"] - 500_000
+    # a baseline match has no difference to a half
+    base = summary_of(
+        read_progress_record(sample("progress-evaluation-record-2/valid/baseline-match"))
+    )
+    assert all("diff_mean_ppm" not in r for r in base)
+    assert summary_of(record) == summary_of(json.loads(json.dumps(record)))  # a rerun is identical

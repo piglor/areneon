@@ -176,10 +176,44 @@ then the pair's). The opponent variants are `baseline`, `previous` and `anchor`
 present exactly when anchor matches are, and `teams.pairs_used` is half the
 largest games per match. A version 1 record (one game per pair, the candidate
 alternating seats) stays readable as it is and is never rewritten or upgraded.
-The pair-level interval and the dashboard and replay pages for version 2 are
-separate tickets (#948, #951); until they land the printed summary and the dashboard still print the per-game Wilson
-interval, which for a both-seats record is not valid (the two games of a pair
-are not independent): read the counts, not that interval.
+A version 2 record carries no per-game Wilson interval: its games are not
+independent, and its printed summary and dashboard show the pair-level interval
+below (**The pair-level interval**). The replay pages for version 2 are a separate
+ticket (#951).
+
+**The pair-level interval (ADR-017 erratum E2 items 2 and 6; #948).** For a
+version 2 record the unit is the pair. A pair's score is the mean of its two game
+scores (0, 1/4, 1/2, 3/4, 1; a tie is half, a forfeit a scored loss for the side
+that forfeited), kept as an integer in half-games (0 to 4), and each pair counts
+once. The interval is a **percentile bootstrap over pairs** (the protocol's 6.1
+team-clustered bootstrap specialised to disjoint pairs, not the 6.3 block plan),
+in integers only: `B = 4000` resamples of `n` pairs with replacement, each
+summarised by its integer sum; the interval is the sorted sums at ranks
+`floor(B * 25 / 1000)` = 100 and `B - 1 - 100` (the 2.5% and 97.5% order
+statistics, a 95% interval), in parts per million, rounded outward. `B` and the
+rule are fixed in `progress/stats.py` and are not stored (the protocol's
+`B_boot` of 20,000 belongs to the sealed run; a progress view does not need it).
+The resampling stream is SHA-256 over `JCS({run_key, generation, label, purpose:
+"progress-bootstrap/1"})` used as `SHA-256(key || counter)` in 32-bit words with
+rejection (no modulo bias), where `label` names the statistic (`match:<id>`,
+`ablation:<baseline>:<variant>:<score|minus-learned>`); so the same record shows
+the same interval on every machine and every look, and two statistics do not
+share draws. `summary_of` returns, instead of the Wilson keys, `pairs`,
+`interval_low_ppm`, `interval_high_ppm` and an `interval` label ("pair-level
+percentile bootstrap, descriptive, conditional on the fixed validation plan"); a
+match against an anchor or the previous generation also returns `diff_mean_ppm`,
+`diff_low_ppm` and `diff_high_ppm`, the pair score minus 1/2 (the same resamples,
+shifted). The Preview ablation rows carry `low_ppm` and `high_ppm`, and the paired
+difference to the learned Preview its own interval over `d_k`
+(`paired_differences`). Intervals are **descriptive**: one evaluation shows many
+(every match, baseline, anchor and variant) with no multiplicity control, none is a
+test, a rating or a claim, and all are conditional on the fixed validation plan.
+Nothing is stored: the record keeps counts and game rows. Version 1 records keep
+the per-game Wilson interval, unchanged. Paired differences of the candidate
+against an anchor's own baseline matches (`d_k` = candidate minus anchor on the
+same baseline pairs) need the anchor to play the baselines in the same record;
+the record does not hold those matches yet, so only `paired_differences` (used for
+the ablation) exists, and the head-to-head `diff_*` is what anchors give today.
 
 **Team Preview ablation (#940).** `--preview-ablation` with
 `--generation G` (1 or more; not `--all`; no `--anchors` or `--previous-matches`)
@@ -203,8 +237,8 @@ generation's own records. The command prints, per baseline and variant, the mean
 pair score in parts per million and, for the random and the earlier Preview, the
 paired difference to the learned one on the same pairs: the mean of `d_k`
 (variant minus learned) and how many pairs were better, equal or worse. All
-integers, conditional on the fixed validation plan; the interval over pairs is
-the pair-level interval's own ticket. With 100 pairs a Preview matters only if
+integers, with the pair-level interval of the section above, conditional on the
+fixed validation plan. With 100 pairs a Preview matters only if
 the difference is clear of what the pair-to-pair spread allows: the counts of
 better and worse pairs are the first thing to look at. A progress view, never
 the Training gate.
@@ -213,7 +247,7 @@ the Training gate.
 
 - The record stores counts. A **score** counts a tie as half a win:
   `(wins + ties / 2) / games`. The command prints it, with its **Wilson 95%
-  interval**, in parts per million (`score_ppm`, `wilson_low_ppm`,
+  interval** (version 1 records; a version 2 record has the pair-level interval above), in parts per million (`score_ppm`, `wilson_low_ppm`,
   `wilson_high_ppm`); the interval is derived, never stored. For a version 1
   record at 100 games a score of 0.5 has an interval of about 0.40 to 0.60.
 - Every interval is **conditional on the fixed validation plan**: it describes

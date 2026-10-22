@@ -133,6 +133,8 @@ class MatchFacts:
     seen_label: str | None
     #: The candidate's wins, ties and losses by seat it sat in: (seat, wins, ties, losses).
     seats: tuple[tuple[str, int, int, int], ...] = ()
+    #: "wilson" (a version 1 record, per game) or "pairs" (version 2, bootstrap over pairs).
+    interval_kind: str = "wilson"
 
 
 @dataclass(frozen=True)
@@ -308,6 +310,7 @@ def _progress_facts(record: dict[str, Any]) -> ProgressFacts:
     matches = []
     for match in record["matches"]:
         summary = by_id[match["match_id"]]
+        pairs = "interval_low_ppm" in summary
         matches.append(
             MatchFacts(
                 match["match_id"],
@@ -318,13 +321,14 @@ def _progress_facts(record: dict[str, Any]) -> ProgressFacts:
                 match["ties"],
                 match["losses"],
                 summary["score_ppm"],
-                summary["wilson_low_ppm"],
-                summary["wilson_high_ppm"],
+                summary["interval_low_ppm" if pairs else "wilson_low_ppm"],
+                summary["interval_high_ppm" if pairs else "wilson_high_ppm"],
                 match["turns_total"],
                 match["turn_cap_ties"],
                 tuple((f["side"], f["cause"], f["count"]) for f in match["forfeits"]),
                 summary.get("comparison"),
                 _seat_counts(record["games"], match["match_id"]),
+                "pairs" if pairs else "wilson",
             )
         )
     plan = record["plan"]

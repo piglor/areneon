@@ -42,7 +42,15 @@ from areneon_ml.progress.records import (
     record_hash,
 )
 from areneon_ml.progress.seeds import check_not_training_seeds
-from areneon_ml.progress.stats import CONDITIONAL_LABEL, wilson
+from areneon_ml.progress.stats import (
+    CONDITIONAL_LABEL,
+    PAIR_INTERVAL_LABEL,
+    PPM,
+    bootstrap_stream_key,
+    match_pair_scores,
+    pair_interval,
+    wilson,
+)
 
 PROGRESS = "progress.json"
 GAMES = "games"
@@ -469,15 +477,27 @@ def _check_ablation(
 
 
 def summary_of(record: dict[str, Any]) -> list[dict[str, Any]]:
-    """Per match: the counts and the derived score with its Wilson interval (never stored).
+    """Per match: the counts and the derived score with its interval (never stored).
 
-    For a version 2 record (every pair from both seats) the games of a pair are not independent,
-    so this interval is the per-game one the version 1 reader gave; the pair-level interval is
-    a separate slice (ADR-017 erratum E2, item 2).
+    A version 1 record (one game per pair) gets the per-game Wilson interval. A version 2 record
+    plays every pair from both seats, so its games are not independent: it gets the pair-level
+    percentile bootstrap of ADR-017 erratum E2 instead (``pairs``, ``interval_low_ppm``,
+    ``interval_high_ppm``, no Wilson keys), seeded from the run key; a match against an anchor
+    or the previous generation also carries ``diff_*``, the pair score minus 1/2.
     """
     out = []
+    pairs_version = record["schema_version"] == SCHEMA_V2
     for match in record["matches"]:
-        interval = wilson(match["wins"], match["ties"], match["games"])
+        if pairs_version:
+            stats = _pair_stats(record, match)
+        else:
+            interval = wilson(match["wins"], match["ties"], match["games"])
+            stats = {
+                "score_ppm": interval.score_ppm,
+                "wilson_low_ppm": interval.low_ppm,
+                "wilson_high_ppm": interval.high_ppm,
+                "interval": CONDITIONAL_LABEL,
+            }
         out.append(
             {
                 "match_id": match["match_id"],
@@ -485,10 +505,9 @@ def summary_of(record: dict[str, Any]) -> list[dict[str, Any]]:
                 "wins": match["wins"],
                 "ties": match["ties"],
                 "losses": match["losses"],
-                "score_ppm": interval.score_ppm,
-                "wilson_low_ppm": interval.low_ppm,
-                "wilson_high_ppm": interval.high_ppm,
-                "interval": CONDITIONAL_LABEL,
+            }
+            | stats
+            | {
                 "opponent": match["opponent"]["kind"],
                 "forfeits": sum(f["count"] for f in match["forfeits"]),
                 "turn_cap_ties": match["turn_cap_ties"],
@@ -499,6 +518,29 @@ def summary_of(record: dict[str, Any]) -> list[dict[str, Any]]:
                 else {}
             )
         )
+    return out
+
+
+def _pair_stats(record: dict[str, Any], match: dict[str, Any]) -> dict[str, Any]:
+    scores = match_pair_scores(record, match["match_id"])
+    interval = pair_interval(
+        scores,
+        bootstrap_stream_key(record["run_id"], record["generation"], f"match:{match['match_id']}"),
+    )
+    out: dict[str, Any] = {
+        "score_ppm": (2 * match["wins"] + match["ties"]) * PPM // (2 * match["games"]),
+        "pairs": interval.pairs,
+        "interval_low_ppm": interval.low_ppm,
+        "interval_high_ppm": interval.high_ppm,
+        "interval": PAIR_INTERVAL_LABEL,
+    }
+    if match["opponent"]["kind"] in ("previous", "anchor"):
+        # pair score minus 1/2: the same resamples, shifted, so the bounds shift exactly
+        out |= {
+            "diff_mean_ppm": interval.mean_ppm - PPM // 2,
+            "diff_low_ppm": interval.low_ppm - PPM // 2,
+            "diff_high_ppm": interval.high_ppm - PPM // 2,
+        }
     return out
 
 

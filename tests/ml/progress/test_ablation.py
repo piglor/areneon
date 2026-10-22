@@ -23,8 +23,24 @@ def test_the_sample_ablation_is_read_pair_by_pair() -> None:
     summary = ablation_summary(sample(BASE))
     rows = summary["baselines"]["actor-rule"]
     # Every variant of the sample has the same four games: win, loss, win, tie = pair scores 2, 3.
-    assert rows["learned"] == {"pairs": 2, "score_ppm": 625_000}
-    assert rows["random"]["minus_learned"] == {"mean_ppm": 0, "better": 0, "equal": 2, "worse": 0}
+    # two pairs scoring 2 and 3 half-games: resample means are 1/2, 5/8 or 3/4, so the interval
+    # is the extremes (the 2.5% and 97.5% ranks of 4,000 resamples)
+    assert rows["learned"] == {
+        "pairs": 2,
+        "score_ppm": 625_000,
+        "low_ppm": 500_000,
+        "high_ppm": 750_000,
+    }
+    # identical pairs: every difference is 0, so there is no spread
+    assert rows["random"]["minus_learned"] == {
+        "mean_ppm": 0,
+        "low_ppm": 0,
+        "high_ppm": 0,
+        "better": 0,
+        "equal": 2,
+        "worse": 0,
+    }
+    assert "descriptive" in summary["interval"]
     assert rows["g0"]["minus_learned"]["equal"] == 2
 
 

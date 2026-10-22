@@ -7,9 +7,10 @@ compared pair by pair. A pair scores the mean of its two games (a win 1, a tie 1
 kept as an integer in half-games (0 to 4). Per baseline and variant this gives the mean pair
 score, and for the random and the earlier Preview the paired difference to the learned one:
 the mean of ``d_k`` (variant minus learned on pair ``k``) in parts per million and how many
-pairs the variant did better, equally or worse. All integer arithmetic. The interval over pairs
-is the pair-level interval's own slice (#948); like every number here these are conditional on
-the fixed validation plan and a progress view, never the Training gate.
+pairs the variant did better, equally or worse. All integer arithmetic. Each score and
+difference carries the pair-level bootstrap interval of ``stats.pair_interval`` (#948); like
+every number here they are descriptive, conditional on the fixed validation plan and a progress
+view, never the Training gate.
 """
 
 from __future__ import annotations
@@ -17,10 +18,15 @@ from __future__ import annotations
 from typing import Any
 
 from areneon_ml.progress.records import preview_variant
-from areneon_ml.progress.stats import CONDITIONAL_LABEL, PPM, pair_scores_of
+from areneon_ml.progress.stats import (
+    PAIR_INTERVAL_LABEL,
+    bootstrap_stream_key,
+    match_pair_scores,
+    pair_interval,
+    paired_differences,
+)
 
 LEARNED = "learned"
-HALVES_PER_PAIR = 4
 
 
 def expected_ablation_matches(spec: Any) -> list[str]:
@@ -33,21 +39,6 @@ def expected_ablation_matches(spec: Any) -> list[str]:
     ]
 
 
-def _pair_scores(record: dict[str, Any], match_id: str) -> list[int]:
-    results = []
-    for row in record["games"]:
-        if row["match_id"] != match_id:
-            continue
-        outcome = row["outcome"]
-        if outcome["kind"] == "forfeit":
-            results.append("loss" if outcome["loser"] == "candidate" else "win")
-        else:
-            results.append(
-                {"candidate": "win", "opponent": "loss", "tie": "tie"}[outcome["winner"]]
-            )
-    return pair_scores_of(results)
-
-
 def ablation_summary(record: dict[str, Any]) -> dict[str, Any]:
     """The ablation of a record: ``{}`` when it has no ablation match."""
     matches = [m for m in record["matches"] if m.get("candidate_preview") is not None]
@@ -56,23 +47,35 @@ def ablation_summary(record: dict[str, Any]) -> dict[str, Any]:
     scores: dict[tuple[str, str], list[int]] = {}
     for match in matches:
         baseline = match["opponent"]["policy_id"].split("@")[0]
-        scores[(baseline, preview_variant(match["candidate_preview"]))] = _pair_scores(
+        scores[(baseline, preview_variant(match["candidate_preview"]))] = match_pair_scores(
             record, match["match_id"]
         )
-    out: dict[str, Any] = {"interval": CONDITIONAL_LABEL, "baselines": {}}
+    out: dict[str, Any] = {"interval": PAIR_INTERVAL_LABEL, "baselines": {}}
+
+    def key(baseline: str, variant: str, what: str) -> bytes:
+        return bootstrap_stream_key(
+            record["run_id"], record["generation"], f"ablation:{baseline}:{variant}:{what}"
+        )
+
     for baseline in sorted({b for b, _ in scores}):
         learned = scores.get((baseline, LEARNED))
         rows = {}
         for variant in sorted(v for b, v in scores if b == baseline):
             mine = scores[(baseline, variant)]
+            interval = pair_interval(mine, key(baseline, variant, "score"))
             row: dict[str, Any] = {
                 "pairs": len(mine),
-                "score_ppm": sum(mine) * PPM // (HALVES_PER_PAIR * len(mine)),
+                "score_ppm": interval.mean_ppm,
+                "low_ppm": interval.low_ppm,
+                "high_ppm": interval.high_ppm,
             }
             if learned is not None and variant != LEARNED and len(learned) == len(mine):
-                diffs = [a - b for a, b in zip(mine, learned, strict=True)]
+                diffs = paired_differences(mine, learned)
+                spread = pair_interval(diffs, key(baseline, variant, "minus-learned"))
                 row["minus_learned"] = {
-                    "mean_ppm": sum(diffs) * PPM // (HALVES_PER_PAIR * len(diffs)),
+                    "mean_ppm": spread.mean_ppm,
+                    "low_ppm": spread.low_ppm,
+                    "high_ppm": spread.high_ppm,
                     "better": sum(d > 0 for d in diffs),
                     "equal": sum(d == 0 for d in diffs),
                     "worse": sum(d < 0 for d in diffs),

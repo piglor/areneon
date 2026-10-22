@@ -21,7 +21,11 @@ from areneon_ml.inspector.readers import InspectError
 from areneon_ml.loop import layout
 from areneon_ml.loop.__main__ import main
 from areneon_ml.progress.looks import LookError, looks_path, read_looks
-from areneon_ml.progress.stats import wilson
+from areneon_ml.progress.stats import (
+    bootstrap_stream_key,
+    match_pair_scores,
+    pair_interval,
+)
 from areneon_ml.report import charts, page
 from areneon_ml.report.command import inspector_links, report_run
 from areneon_ml.report.model import (
@@ -31,7 +35,15 @@ from areneon_ml.report.model import (
     read_report_model,
     read_train_report,
 )
-from areneon_ml.report.render import BANNER, CLAIM, CONDITIONAL, SEEN, Links, build_report
+from areneon_ml.report.render import (
+    BANNER,
+    CLAIM,
+    CONDITIONAL,
+    CONDITIONAL_PAIRS,
+    SEEN,
+    Links,
+    build_report,
+)
 
 from tests.ml.report.support import (
     FIXTURE,
@@ -152,9 +164,10 @@ def test_progress_numbers_equal_the_records(run: Path, root: Path) -> None:
                 match["ties"],
                 match["losses"],
             )
-            interval = wilson(match["wins"], match["ties"], match["games"])
+            interval = recomputed(record, match)
+            assert found.interval_kind == "pairs"
             assert (found.score_ppm, found.low_ppm, found.high_ppm) == (
-                interval.score_ppm,
+                (2 * match["wins"] + match["ties"]) * 1_000_000 // (2 * match["games"]),
                 interval.low_ppm,
                 interval.high_ppm,
             )
@@ -162,9 +175,16 @@ def test_progress_numbers_equal_the_records(run: Path, root: Path) -> None:
             low = (interval.low_ppm // 1000) / 10
             assert f"{low:.1f}%" in text
     assert CLAIM in html_unescape(text)
-    assert CONDITIONAL in html_unescape(text)
+    assert CONDITIONAL_PAIRS in html_unescape(text)
+    assert CONDITIONAL not in html_unescape(text)  # no Wilson interval is on a both-seats page
     assert SEEN in html_unescape(text)
     assert BANNER in html_unescape(text)
+
+
+def recomputed(record: dict[str, Any], match: dict[str, Any]) -> Any:
+    """The pair-level interval of one match, from the record's own games."""
+    key = bootstrap_stream_key(record["run_id"], record["generation"], f"match:{match['match_id']}")
+    return pair_interval(match_pair_scores(record, match["match_id"]), key)
 
 
 def html_unescape(text: str) -> str:
@@ -698,17 +718,19 @@ def _high(ppm: int) -> str:
     return f"{tenths // 10}.{tenths % 10}%"
 
 
-def test_the_wilson_interval_reads_low_then_high(run: Path, root: Path) -> None:
+def test_the_pair_interval_reads_low_then_high(run: Path, root: Path) -> None:
     model = read_report_model(run, root)
     text = build_report(model)
     found = parsed(text)
     tips = json.loads(next(b for t, b in found.bodies if t == "script"))["tips"]
     for g, facts in model.progress.items():
         for m in facts.matches:
-            interval = wilson(m.wins, m.ties, m.games)
+            record = json.loads((root / f"g{g:06d}" / "progress.json").read_text())
+            match = next(x for x in record["matches"] if x["match_id"] == m.match_id)
+            interval = recomputed(record, match)
             assert (m.low_ppm, m.high_ppm) == (interval.low_ppm, interval.high_ppm)
             low, high = _low(interval.low_ppm), _high(interval.high_ppm)
-            assert interval.low_ppm <= interval.score_ppm <= interval.high_ppm
+            assert interval.low_ppm <= m.score_ppm <= interval.high_ppm
             row = re.search(
                 rf'<tr><th scope="row">{g}</th><td class="txt">{m.match_id}[^\n]*?</tr>', text
             )
@@ -716,11 +738,32 @@ def test_the_wilson_interval_reads_low_then_high(run: Path, root: Path) -> None:
             assert f"{low} to {high}" in row[0]
             tip = f"Generation {g}, {m.mode} vs {m.match_id.removesuffix('-' + m.mode)}: "
             assert any(
-                t.startswith(tip) and f"(Wilson 95% {low} to {high}, conditional" in t for t in tips
+                t.startswith(tip)
+                and f"(pair bootstrap 95%, descriptive {low} to {high}, conditional" in t
+                for t in tips
             )
     first = re.search(r"(\d+\.\d)% to (\d+\.\d)%", text)
     assert first is not None
     assert float(first[1]) <= float(first[2])
+
+
+def test_a_version_1_page_keeps_the_wilson_wording(run: Path, root: Path) -> None:
+    model = read_report_model(run, root)
+    old = {
+        g: dataclasses.replace(
+            facts,
+            matches=tuple(
+                dataclasses.replace(m, interval_kind="wilson", low_ppm=0, high_ppm=1_000_000)
+                for m in facts.matches
+            ),
+        )
+        for g, facts in model.progress.items()
+    }
+    text = html_unescape(build_report(dataclasses.replace(model, progress=old)))
+    assert CONDITIONAL in text
+    assert CONDITIONAL_PAIRS not in text
+    assert "Wilson 95%, conditional on the plan" in text
+    assert "(Wilson 95% 0.0% to 100.0%, conditional on the fixed validation plan)" in text
 
 
 def test_the_score_by_seat_and_the_previous_cells(run: Path, root: Path) -> None:
