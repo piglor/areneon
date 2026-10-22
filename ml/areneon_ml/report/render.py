@@ -37,6 +37,21 @@ CONDITIONAL = (
     "and seeds in every match, mode and generation. Several generations viewed together are a "
     "sequence of looks, so their intervals are not simultaneous."
 )
+CONDITIONAL_PAIRS = (
+    "Pair-level 95% percentile bootstrap intervals on the score (every pair is played from both "
+    "seats, so the pair is the unit), descriptive and conditional on the fixed validation plan: "
+    "the same pairs and seeds in every match, mode and generation, no multiplicity control "
+    "across matches. Several generations viewed together are a sequence of looks, so their "
+    "intervals are not simultaneous."
+)
+WILSON = "Wilson 95%"
+PAIRS = "pair bootstrap 95%, descriptive"
+
+
+def _interval_name(match: MatchFacts) -> str:
+    return PAIRS if match.interval_kind == "pairs" else WILSON
+
+
 SEEN = "seen, same-lineage comparison: it can cycle"
 NOT_EVALUATED = "not evaluated yet"
 MODES = (("sample", 1, "circle"), ("argmax", 2, "square"))
@@ -122,7 +137,13 @@ def _progress_section(model: ReportModel, tips: Tips) -> str:
         return "".join(out)
     missing = [str(g) for g in xs if g not in model.progress]
     out.append(_looks_note(model))
-    out.append(f'<p class="claim">{esc(CLAIM)}</p><p class="note">{esc(CONDITIONAL)}</p>')
+    kinds = {m.interval_kind for p in model.progress.values() for m in p.matches}
+    notes = "".join(
+        f'<p class="note">{esc(text)}</p>'
+        for kind, text in (("wilson", CONDITIONAL), ("pairs", CONDITIONAL_PAIRS))
+        if kind in kinds
+    )
+    out.append(f'<p class="claim">{esc(CLAIM)}</p>{notes}')
     out.append(
         f'<p class="note">Evaluated generations: {esc(", ".join(map(str, done)))}. '
         f"Not evaluated yet: {esc(', '.join(missing) if missing else 'none')}. Games per match: "
@@ -143,7 +164,7 @@ def _progress_section(model: ReportModel, tips: Tips) -> str:
                         low, high = pct(m.low_ppm, down=True), pct(m.high_ppm, up=True)
                         text = (
                             f"Generation {g}, {mode} vs {stem}: score {pct(m.score_ppm)} "
-                            f"(Wilson 95% {low} to {high}, conditional on the fixed validation plan); "
+                            f"({_interval_name(m)} {low} to {high}, conditional on the fixed validation plan); "
                             f"{m.wins} wins, {m.ties} ties, {m.losses} losses of {m.games} games"
                         )
                         pts.append(
@@ -162,7 +183,7 @@ def _progress_section(model: ReportModel, tips: Tips) -> str:
         charts.append(
             line_chart(
                 title,
-                "Progress score by generation with its Wilson interval, conditional on the fixed validation plan. Dashed line: 50%. Lines join looks, not a trend.",
+                "Progress score by generation with its interval, conditional on the fixed validation plan. Dashed line: 50%. Lines join looks, not a trend.",
                 xs,
                 series,
                 tips,
@@ -201,7 +222,12 @@ def _progress_section(model: ReportModel, tips: Tips) -> str:
                 ("Games", True),
                 ("Wins / ties / losses", True),
                 ("Score", True),
-                ("Wilson 95%, conditional on the plan", True),
+                (
+                    "Wilson 95%, conditional on the plan"
+                    if kinds == {"wilson"}
+                    else "Interval (Wilson per game, or pair bootstrap), conditional on the plan",
+                    True,
+                ),
                 ("Forfeits", True),
                 ("Mean turns", True),
                 ("Turn-cap ties", True),
