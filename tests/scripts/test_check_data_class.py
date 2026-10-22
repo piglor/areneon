@@ -977,3 +977,51 @@ def test_the_manifest_leaf_kinds() -> None:
     assert guard._leaf_ok(("int", 0, 3), 3)
     assert not guard._leaf_ok(("int", 0, 3), 4)
     assert not guard._leaf_ok(("int", 0, 3), False)
+
+
+ROLE_SET_TABLE: dict[str, object] = {
+    "schema_version": 1,
+    "source_path": "data/random-battles/champions/doubles-sets.json",
+    "source_sha256": "a" * 64,
+    "species": [
+        {
+            "id": "venusaur",
+            "sets": [
+                {"role": "Offensive Protect", "moves": ["protect"], "abilities": ["overgrow"]}
+            ],
+        }
+    ],
+}
+
+
+@pytest.mark.parametrize("in_fixtures", [True, False])
+def test_a_role_set_table_without_team_text_passes(in_fixtures: bool) -> None:
+    assert guard.problems_in(ROLE_SET_TABLE, in_fixtures) == []
+
+
+@pytest.mark.parametrize(
+    "intruder",
+    [
+        {"paste": "Venusaur @ Leftovers"},
+        {"paste": 7},
+        {"species": "Venusaur", "moves": ["Protect"], "evs": {"hp": 1}},
+        {"evs": {"hp": 1}},
+    ],
+)
+@pytest.mark.parametrize("in_fixtures", [True, False])
+def test_a_role_set_table_may_not_hold_a_paste_or_a_team(
+    intruder: dict[str, object], in_fixtures: bool
+) -> None:
+    table = {**ROLE_SET_TABLE, "note": intruder}
+    assert guard.ROLE_SET_TEAM in guard.problems_in(table, in_fixtures)
+
+
+def test_a_team_shaped_set_inside_a_species_entry_is_caught() -> None:
+    entry = {"id": "venusaur", "sets": [{"species": "Venusaur", "moves": ["Protect"], "evs": {}}]}
+    table = {**ROLE_SET_TABLE, "species": [entry]}
+    assert guard.ROLE_SET_TEAM in guard.problems_in(table, True)
+
+
+def test_other_documents_are_not_role_set_tables() -> None:
+    other = {"source_path": "x", "species": []}
+    assert guard.ROLE_SET_TEAM not in guard.problems_in({**other, "paste": "x"}, True)

@@ -4,7 +4,7 @@ import { ajvFor } from "@areneon/schema/ajv";
 import { beforeAll, describe, expect, it } from "vitest";
 import { syntheticFixtureHashes } from "../src/golden.ts";
 import { EngineDataError, readEngineData } from "../src/engine-data.ts";
-import { contractVersions, EpisodeError, readTeamDatasetManifest, readTeamGeneratorConfig, readTeamLabelSet, readTeamRecord, readTeamSnapshotManifest, readTeamVocabulary, TeamRecordError, TeamVocabularyError, loadEngine, PolicyProtocolError, readHandshake, readPolicyQuery, readPolicyReply, readEpisode, readTrainingRunConfig, readLeagueRunRecord, LeagueRunRecordError, TrainingRunConfigError, readEvaluationRunManifest, readTrainingExample, readTrainingSet, TrainingLoaderError } from "../src/index.ts";
+import { contractVersions, EpisodeError, readTeamDatasetManifest, readTeamGeneratorConfig, readTeamLabelSet, readTeamRecord, readTeamSnapshotManifest, readTeamVocabulary, readRoleSetTable, RoleSetError, TeamRecordError, TeamVocabularyError, loadEngine, PolicyProtocolError, readHandshake, readPolicyQuery, readPolicyReply, readEpisode, readTrainingRunConfig, readLeagueRunRecord, LeagueRunRecordError, TrainingRunConfigError, readEvaluationRunManifest, readTrainingExample, readTrainingSet, TrainingLoaderError } from "../src/index.ts";
 import { EvaluationConfigError, readEvaluationParameters, readEntry, RegisterError, readEvaluationPlan, readSealedSetCommitment, readTrainingGateRule, readEvaluationConfig, readSealedTeamSetManifest, readRetiredSealedManifest } from "../src/index.ts";
 import { contractSamples, SAMPLE_HASHES, SAMPLES_DIR } from "../src/samples.ts";
 import { exportEngineData } from "../src/engine-data.ts";
@@ -164,6 +164,14 @@ describe("the shared contract sample corpus (ADR-008 §2)", () => {
       "v1/progress-game-record/reader-invalid/seed-wrong.json",
       "v1/progress-game-record/reader-invalid/team-hash-wrong.json",
       "v1/retired-sealed-manifest/reader-invalid/seed-is-salt.json",
+      "v1/role-set-table/reader-invalid/duplicate-sets.json",
+      "v1/role-set-table/reader-invalid/foreign-ability.json",
+      "v1/role-set-table/reader-invalid/foreign-move.json",
+      "v1/role-set-table/reader-invalid/stale-vocabulary-hash.json",
+      "v1/role-set-table/reader-invalid/unknown-species.json",
+      "v1/role-set-table/reader-invalid/unsorted-moves.json",
+      "v1/role-set-table/reader-invalid/unsorted-sets.json",
+      "v1/role-set-table/reader-invalid/unsorted-species.json",
       "v1/sealed-set-commitment/reader-invalid/strata-sum-mismatch.json",
       "v1/sealed-set-commitment/reader-invalid/unsorted-strata.json",
       "v1/sealed-team-set-manifest/reader-invalid/quota-sum-mismatch.json",
@@ -344,6 +352,30 @@ describe("the shared contract sample corpus (ADR-008 §2)", () => {
       expect(Object.keys(fresh)).toContain(file);
       expect(() => readTeamVocabulary(committed(file), slimTable())).toThrow(TeamVocabularyError);
       expect(() => readTeamVocabulary(committed(file), slimTable())).toThrow(message);
+    });
+
+    // ADR-020 section 3: the role-set reader refuses what the profile cannot say, against the sample vocabulary.
+    it.each([
+      ["unsorted-species", /species: .* repeated or out of order/],
+      ["duplicate-sets", /set 1 is repeated or out of order/],
+      ["unsorted-sets", /set 1 is repeated or out of order/],
+      ["unsorted-moves", /moves: .* repeated or out of order/],
+      ["unknown-species", /is not in the vocabulary roster/],
+      ["foreign-move", /is not in its roster move pool/],
+      ["foreign-ability", /is not in its roster abilities/],
+      ["stale-vocabulary-hash", /vocabulary_hash is not the hash/],
+    ])("readRoleSetTable refuses role-set-table/%s", (name, message) => {
+      const file = `v1/role-set-table/reader-invalid/${name}.json`;
+      const vocabulary = readTeamVocabulary(committed("v1/team-vocabulary/valid/golden.json"), slimTable());
+      expect(Object.keys(fresh)).toContain(file);
+      expect(() => readRoleSetTable(committed(file), vocabulary)).toThrow(RoleSetError);
+      expect(() => readRoleSetTable(committed(file), vocabulary)).toThrow(message);
+    });
+
+    it("accepts the valid role-set sample, with and without its vocabulary", () => {
+      const vocabulary = readTeamVocabulary(committed("v1/team-vocabulary/valid/golden.json"), slimTable());
+      expect(readRoleSetTable(committed("v1/role-set-table/valid/golden.json"), vocabulary).species).toHaveLength(2);
+      expect(readRoleSetTable(committed("v1/role-set-table/valid/golden.json")).species).toHaveLength(2);
     });
 
     it.each([
