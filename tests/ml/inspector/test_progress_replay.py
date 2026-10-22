@@ -203,8 +203,12 @@ def test_it_reads_every_stored_game_and_places_the_decisions(root: Path) -> None
 
 def test_it_selects_by_match_and_game_and_refuses_what_is_not_there(root: Path) -> None:
     only = games_of(root, match="actor-rule-sample", games=[1])
-    assert [(g.match_id, g.game) for g in only] == [("actor-rule-sample", 1)]
-    assert only[0].candidate_seat == "p2"
+    # the other game of the pair comes with it, so each page can link to its twin
+    assert [(g.match_id, g.game, g.pair, g.twin) for g in only] == [
+        ("actor-rule-sample", 0, 0, 1),
+        ("actor-rule-sample", 1, 0, 0),
+    ]
+    assert only[1].candidate_seat == "p2"
     with pytest.raises(InspectError, match="has no match nope"):
         games_of(root, match="nope")
     with pytest.raises(InspectError, match="no stored game matches"):
@@ -654,12 +658,13 @@ def test_a_second_call_adds_pages_and_keeps_the_earlier_ones(root: Path, tmp_pat
     command.replay_progress(root, 1, out, repo=ROOT, match="actor-rule-sample", games=[0])
     first = tree(out)
     done = command.replay_progress(root, 1, out, repo=ROOT, match="random-legal-argmax")
-    assert done["replays"] == 3
+    assert done["replays"] == 4  # game 0 came with its twin
     after = tree(out)
     name = "progress-replays/g000001/actor-rule-sample-0.html"
     assert after[name] == first[name]
     assert command.existing_pages(out) == [
-        (1, "actor-rule-sample", 0), (1, "random-legal-argmax", 0), (1, "random-legal-argmax", 1)
+        (1, "actor-rule-sample", 0), (1, "actor-rule-sample", 1),
+        (1, "random-legal-argmax", 0), (1, "random-legal-argmax", 1),
     ]  # fmt: skip
 
 
@@ -773,7 +778,7 @@ def test_the_command_line_replays_progress_games(
          "--game", "0", "--out", str(out), "--run-dir", str(built[0])]
     )  # fmt: skip
     assert code == 0
-    assert json.loads(capsys.readouterr().out)["pages"] == 1
+    assert json.loads(capsys.readouterr().out)["pages"] == 2  # game 0 and the other of its pair
     assert (out / "progress-replays" / "g000001" / "actor-rule-sample-0.html").is_file()
     assert (
         loop_main.main(

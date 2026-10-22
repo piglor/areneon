@@ -10,6 +10,7 @@ inside the progress directory. Each page is written to a temporary name and rena
 from __future__ import annotations
 
 from collections import Counter
+from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
@@ -28,6 +29,7 @@ from areneon_ml.inspector.replay_command import _write
 from areneon_ml.inspector.replay_page import read_engine_data
 from areneon_ml.loop import layout
 from areneon_ml.progress.looks import Look, append_look, looks_path
+from areneon_ml.progress.records import SCHEMA_V2
 
 
 def default_out(progress_dir: Path) -> Path:
@@ -43,6 +45,22 @@ def sibling_run(progress_dir: Path) -> Path | None:
         return None
     run = progress_dir.with_name(name)
     return run if run.is_dir() else None
+
+
+def both_seat_generations(progress_dir: Path, numbers: Iterable[int]) -> set[int]:
+    """The generations among ``numbers`` whose committed record is version 2 (both seats).
+
+    Display only (how the index groups games): a record that cannot be read counts as version 1.
+    """
+    found: set[int] = set()
+    for number in set(numbers):
+        try:
+            raw = layout.read_json(progress_dir / layout.generation_name(number) / "progress.json")
+        except (layout.RunDirError, OSError, ValueError):
+            continue
+        if isinstance(raw, dict) and raw.get("schema_version") == SCHEMA_V2:
+            found.add(number)
+    return found
 
 
 def existing_pages(out: Path) -> list[tuple[int, str, int]]:
@@ -107,6 +125,11 @@ def replay_progress(  # noqa: PLR0913
     listing = existing_pages(target)
     total += _write(
         target / PROGRESS_REPLAYS / "index.html",
-        index_page(listing, selected[0].run_id, inspector=inspector),
+        index_page(
+            listing,
+            selected[0].run_id,
+            inspector=inspector,
+            both_seats=both_seat_generations(progress_dir, (g for g, _, _ in listing)),
+        ),
     )
     return {"out": str(target), "pages": len(pages), "bytes": total, "replays": len(listing)}

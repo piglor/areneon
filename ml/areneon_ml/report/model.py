@@ -48,7 +48,12 @@ from areneon_ml.loop.league import (
     read_league_run_record,
 )
 from areneon_ml.loop.metrics import METRICS_DIR, MetricsError, metrics_path, read_run_metrics
-from areneon_ml.progress.records import ProgressRecordError, read_progress_record
+from areneon_ml.progress.ablation import ablation_summary
+from areneon_ml.progress.records import (
+    ProgressRecordError,
+    preview_variant,
+    read_progress_record,
+)
 from areneon_ml.progress.run import summary_of
 
 NOT_RECORDED = "not recorded"
@@ -135,6 +140,16 @@ class MatchFacts:
     seats: tuple[tuple[str, int, int, int], ...] = ()
     #: "wilson" (a version 1 record, per game) or "pairs" (version 2, bootstrap over pairs).
     interval_kind: str = "wilson"
+    #: Version 2 only: the pairs played (two games each).
+    pairs: int = 0
+    #: Anchor and previous-generation matches of a version 2 record: the pair score minus 1/2 as
+    #: (mean, low, high) in parts per million; None for every other match.
+    diff: tuple[int, int, int] | None = None
+    #: The generation of an anchor match's opponent; None for every other match.
+    anchor_generation: int | None = None
+    #: The candidate's Team Preview variant of a Preview ablation match (``learned``, ``random``
+    #: or ``g<N>``); None for every other match.
+    variant: str | None = None
 
 
 @dataclass(frozen=True)
@@ -144,6 +159,10 @@ class ProgressFacts:
     recorded_games_per_match: int
     max_turns: int
     matches: tuple[MatchFacts, ...]
+    #: Games in each anchor match (version 2 records that have anchors); None otherwise.
+    anchor_games: int | None = None
+    #: The Preview ablation (``ablation_summary``: integers only); empty without ablation matches.
+    ablation: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -329,6 +348,18 @@ def _progress_facts(record: dict[str, Any]) -> ProgressFacts:
                 summary.get("comparison"),
                 _seat_counts(record["games"], match["match_id"]),
                 "pairs" if pairs else "wilson",
+                summary.get("pairs", 0),
+                (
+                    (summary["diff_mean_ppm"], summary["diff_low_ppm"], summary["diff_high_ppm"])
+                    if "diff_mean_ppm" in summary
+                    else None
+                ),
+                match["opponent"]["generation"] if match["opponent"]["kind"] == "anchor" else None,
+                (
+                    preview_variant(match["candidate_preview"])
+                    if match.get("candidate_preview") is not None
+                    else None
+                ),
             )
         )
     plan = record["plan"]
@@ -338,6 +369,8 @@ def _progress_facts(record: dict[str, Any]) -> ProgressFacts:
         plan["recorded_games_per_match"],
         plan["max_turns"],
         tuple(matches),
+        plan.get("anchor_games_per_match"),
+        ablation_summary(record),
     )
 
 
