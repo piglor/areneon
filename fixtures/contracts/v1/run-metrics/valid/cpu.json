@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "run_config_hash": "853e9e39b7ed10ee57224d43d247e309da5819d713951cbbade42d0556aade16",
+  "generation": 1,
+  "phase_ms": {
+    "play": 41250,
+    "write": 310,
+    "load": 1900,
+    "train": 8400,
+    "seal": 120
+  },
+  "counts": {
+    "games": 6,
+    "decisions": 480,
+    "optimiser_steps": 36
+  },
+  "per_hour": {
+    "games": 523,
+    "decisions": 205714,
+    "optimiser_steps": 15428
+  },
+  "peak_accelerator_memory_bytes": null,
+  "device": "cpu",
+  "threads": 1
+}

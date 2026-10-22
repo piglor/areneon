@@ -447,8 +447,8 @@ def _counts_section(model: ReportModel, tips: Tips) -> str:
         steps.append(Series(role, slot, shape, tuple(pts)))
     out = ["<h2>Games and examples per generation</h2>"]
     out.append(
-        '<p class="note">Wall-clock time is not recorded in the run files, so none is shown. '
-        "Steps are the decisions the learner trained on in that generation.</p>"
+        '<p class="note">Steps are the decisions the learner trained on in that generation. '
+        "Wall-clock time and throughput are in the next section.</p>"
     )
     out.append(
         '<div class="charts">'
@@ -470,6 +470,65 @@ def _counts_section(model: ReportModel, tips: Tips) -> str:
         + "</div>"
     )
     return "".join(out)
+
+
+def _seconds(ms: int) -> str:
+    return f"{ms // 1000}.{ms % 1000:03d} s"
+
+
+def _memory(value: int | None) -> str:
+    if value is None:
+        return "none (CPU learner)"
+    return f"{value // 2**20} MiB"
+
+
+def _metrics_section(model: ReportModel) -> str:
+    rows = []
+    for g in model.generations:
+        m = g.metrics
+        if m is None:
+            rows.append([str(g.number), *[NOT_RECORDED] * 11])
+            continue
+        p, c, r = m["phase_ms"], m["counts"], m["per_hour"]
+        rows.append(
+            [
+                str(g.number),
+                *(_seconds(p[name]) for name in ("play", "load", "train", "write", "seal")),
+                str(c["games"]),
+                str(r["games"]),
+                str(r["decisions"]),
+                str(r["optimiser_steps"]),
+                _memory(m["peak_accelerator_memory_bytes"]),
+                f"{m['device']}, {m['threads']} thread{'s' if m['threads'] != 1 else ''}",
+            ]
+        )
+    return (
+        "<h2>Wall-clock time and throughput</h2>"
+        '<p class="note">From <code>metrics/gNNNNNN.json</code>, written after each generation '
+        "committed and outside every manifest and hash: it has no tamper evidence of its own, and "
+        "its SHA-256 is listed under Inputs. A generation whose file is missing (a crash between "
+        "its commit and the write) says not recorded; no resume writes it again. Games per "
+        "hour are over the play phase, decisions and optimiser steps per hour over the train phase. "
+        "Timings differ on every run and say nothing about skill.</p>"
+        + _table(
+            [
+                ("Generation", True),
+                ("Play", True),
+                ("Load", True),
+                ("Train", True),
+                ("Write", True),
+                ("Seal", True),
+                ("Games", True),
+                ("Games per hour", True),
+                ("Decisions per hour", True),
+                ("Optimiser steps per hour", True),
+                ("Peak accelerator memory", True),
+                ("Learner", False),
+            ],
+            rows,
+            "Wall-clock time per phase of each committed generation, and the throughput that follows.",
+        )
+    )
 
 
 def _diagnostics_section(model: ReportModel, tips: Tips) -> str:
@@ -596,6 +655,7 @@ def build_report(model: ReportModel, links: Links | None = None) -> str:
             _training_section(model, tips),
             _forfeit_section(model, tips),
             _counts_section(model, tips),
+            _metrics_section(model),
             _diagnostics_section(model, tips),
             _comparison(model, links),
             _inputs(model),

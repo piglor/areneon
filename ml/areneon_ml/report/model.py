@@ -10,8 +10,11 @@ records are not synthetic, is refused. A progress record is tied to the generati
 SHA-256 of that generation's manifest.
 
 The page's numbers are these integers (and the training diagnostics' floats, shown as they are
-stored); nothing is estimated. A fact the files do not hold (wall-clock time, a forfeit's cause in
-a generation written before causes were recorded) is ``None`` or ``"not recorded"``, never zero.
+stored); nothing is estimated. A fact the files do not hold (a generation's wall-clock time and
+throughput when ``metrics/g<NNNNNN>.json`` is missing, a forfeit's cause in a generation written
+before causes were recorded) is ``None`` or ``"not recorded"``, never zero. The metrics files
+(ADR-010 erratum A1) sit outside every manifest and hash: they are read through the RunMetrics
+reader, tied to the run and the generation, and their SHA-256 is listed among the page's inputs.
 """
 
 from __future__ import annotations
@@ -20,7 +23,7 @@ import json
 import math
 import re
 from collections import Counter
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
@@ -44,6 +47,7 @@ from areneon_ml.loop.league import (
     check_generation_plan,
     read_league_run_record,
 )
+from areneon_ml.loop.metrics import METRICS_DIR, MetricsError, metrics_path, read_run_metrics
 from areneon_ml.progress.records import ProgressRecordError, read_progress_record
 from areneon_ml.progress.run import summary_of
 
@@ -55,6 +59,7 @@ KL_STOP_KEYS = ("epochs_run", "kl_stopped")  # only when ppo.target_kl_micro is 
 TRAIN_ROLE_KEYS = (frozenset({*METRICS, *STEPS_KEYS}), frozenset(KL_STOP_KEYS))
 TRAIN_KEYS = (frozenset(ROLES), frozenset[str]())
 _PROGRESS_DIR = re.compile(r"g(\d{6})")
+_METRICS_FILE = re.compile(r"g(\d{6})\.json")
 
 
 class ReportError(InspectError):
@@ -106,6 +111,8 @@ class GenerationFacts:
     #: None for a generation without games.
     forfeit_causes: dict[str, int] | None
     train: TrainFacts | None
+    #: The RunMetrics record as stored; None when the generation has no metrics file.
+    metrics: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -359,6 +366,40 @@ def read_progress_root(
     return found
 
 
+def read_metrics(
+    run_dir: Path, config: RunConfig, numbers: list[int], inputs: dict[str, str]
+) -> dict[int, dict[str, Any]]:
+    """The run-metrics record of each generation that has one; none is estimated for the rest.
+
+    The directory may be absent (a run from before the records) or lack a generation (a crash
+    between its commit and the write). A file for a generation the run does not hold, a file that
+    is not named like a record or one that breaks the contract is refused.
+    """
+    base = run_dir / METRICS_DIR
+    if not base.exists():
+        return {}
+    if base.is_symlink() or not base.is_dir():
+        raise ReportError(f"{METRICS_DIR} is not a directory of the run")
+    found: dict[int, dict[str, Any]] = {}
+    for path in sorted(base.iterdir()):
+        if path.name.startswith("."):
+            continue  # a write that was interrupted
+        match = _METRICS_FILE.fullmatch(path.name)
+        if match is None or not path.is_file() or path.is_symlink():
+            raise ReportError(f"{METRICS_DIR}/{path.name} is not a metrics file of this run")
+        number = int(match[1])
+        if number not in numbers:
+            raise ReportError(f"{METRICS_DIR}/{path.name}: the run has no such generation")
+        try:
+            found[number] = read_run_metrics(_json(path), config, number)
+        except MetricsError as exc:
+            raise ReportError(f"{METRICS_DIR}/{path.name}: {exc}") from exc
+        inputs[f"{METRICS_DIR}/{path.name}"] = sha256_hex(
+            metrics_path(run_dir, number).read_bytes()
+        )
+    return found
+
+
 def read_report_model(run_dir: Path, progress_dir: Path | None) -> ReportModel:
     """Read ``run_dir`` (and ``progress_dir`` if given) read-only; refuse anything inconsistent."""
     if progress_dir is not None and not progress_dir.is_dir():
@@ -385,6 +426,7 @@ def read_report_model(run_dir: Path, progress_dir: Path | None) -> ReportModel:
             )
         else:
             generations.append(_played_generation(number, path, config, shas[number], inputs))
+    metrics = read_metrics(run_dir, config, sorted(shas), inputs)
     progress = (
         {} if progress_dir is None else read_progress_root(progress_dir, config, shas, inputs)
     )
@@ -393,7 +435,7 @@ def read_report_model(run_dir: Path, progress_dir: Path | None) -> ReportModel:
         config.lineage_id,
         config.format_id,
         config.hash,
-        tuple(generations),
+        tuple(replace(g, metrics=metrics.get(g.number)) for g in generations),
         progress,
         progress_dir is not None,
         dict(sorted(inputs.items())),
