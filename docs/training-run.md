@@ -86,6 +86,11 @@ claim, it never selects a checkpoint, and nothing in the run reads its output.
   --generation 5 --games 100 --record-games 8      # or --all
 ```
 
+`--all` evaluates the committed generations whose number is a multiple of 5,
+generation 0 included (0, 5, 10, ...), which is the default schedule (ADR-017
+erratum E2); `--generation G` evaluates any one generation. A committed
+generation is verified and skipped, never rewritten.
+
 It reads the run directory and never writes into it. The results go to the
 progress root, `<run-dir>.progress/` (or `--progress-dir`), one directory per
 generation, committed atomically (a partial directory, `manifest.json` last, one
@@ -103,16 +108,18 @@ and skips it.
 
 **What is played.** Four matches per generation: `random-legal@v1` and
 `actor-rule@v1`, each against the pair in sample mode (temperature 1, as in
-training) and in argmax mode. From generation 1 on there are two more, against
-the previous generation's frozen pair: `previous-sample` (both pairs sample)
-and `previous-argmax` (both argmax), six in all. A `previous-*` row names the
+training) and in argmax mode. With `--previous-matches`, from generation 1 on,
+there are two more, against the previous generation's frozen pair:
+`previous-sample` (both pairs sample) and `previous-argmax` (both argmax), six
+in all. They are off by default because a comparison of adjacent generations is
+too noisy to show progress (ADR-017 erratum E2). A `previous-*` row names the
 opponent's checkpoint ids and is a **seen, same-lineage comparison**: the two
 pairs share a lineage, so it can cycle and it says nothing about a held-out
-opponent. Generation 0 has no previous generation and plays four; its output
-says so. The previous pair is served by a second worker. A progress root made
-before these matches existed is verified and skipped as before; the command
-reports `previous: missing` for such a generation, and to get the matches you
-evaluate into a new `--progress-dir` (a committed generation is never rewritten).
+opponent. Generation 0 has no previous generation and plays four whatever the
+flag says; the output says so. The previous pair is served by a second worker.
+A committed generation is never rewritten, so the matches cannot be added to
+it: evaluate into a new `--progress-dir` (the command reports `previous: none`
+for a generation without them).
 
 Game `k` of every match uses validation team pair
 `k` (disjoint pairs, no team twice in a match) and the seed `progress-seed/1`
@@ -169,7 +176,7 @@ batching. A measured run on the shared development machine (a 6-layer, width-256
 pair, while a training run used the CPU) took about 0.6 s per game and about 25 s
 of fixed start-up per command (verifying the generation, reading the dataset), so
 100 games in each of the 4 matches took about 5 minutes. With the two previous-generation
-matches (600 games, from generation 1) the same machine gives about 6.5 minutes
+matches (600 games, from generation 1, `--previous-matches`) the same machine gives about 6.5 minutes
 per generation: 48 games at generation 2 took 29 s (0.6 s per game) and a three-generation
 `--all` of 8 games per match took 2.5 minutes in all. The figure depends on the
 machine and on how long the games are.

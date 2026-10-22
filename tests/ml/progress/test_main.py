@@ -14,6 +14,7 @@ from areneon_contracts.contracts import jcs
 from areneon_ml.loop import __main__ as module
 from areneon_ml.loop.__main__ import EXIT_PLAY, EXIT_REFUSED, main
 from areneon_ml.loop.play import PlayError
+from areneon_ml.progress import run as run_module
 from areneon_ml.progress.looks import read_looks
 from areneon_ml.progress.run import NodeProgressPlayer, PreviousPair, ProgressRequest
 
@@ -85,20 +86,44 @@ def test_one_generation_prints_one_canonical_line_and_builds_the_player_from_its
     assert (tmp_path / "p" / "g000001" / "progress.json").is_file()
 
 
-def test_all_evaluates_every_committed_generation_and_skips_the_ones_already_done(
+def test_all_evaluates_exactly_the_multiples_of_five_present_and_skips_committed_ones(
     run: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     fake_node(monkeypatch, run)
     common = ["--games", "2", "--record-games", "0", "--progress-dir", str(tmp_path / "p")]
-    assert main(args(run, "--generation", "1", *common)) == 0
+    assert main(args(run, "--generation", "0", *common)) == 0
     capsys.readouterr()
     assert main(args(run, "--all", *common)) == 0
     printed = json.loads(capsys.readouterr().out)
-    assert [(g["generation"], g["skipped"]) for g in printed["generations"]] == [
-        (0, False),
-        (1, True),
-        (2, False),
-    ]
+    # The run holds generations 0 to 2: only generation 0 is a multiple of 5, and it is committed.
+    assert [(g["generation"], g["skipped"]) for g in printed["generations"]] == [(0, True)]
+    assert not (tmp_path / "p" / "g000001").exists()
+
+
+def test_the_schedule_is_every_fifth_committed_generation_from_zero(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    for newest, expected in ((-1, []), (0, [0]), (4, [0]), (5, [0, 5]), (12, [0, 5, 10])):
+        monkeypatch.setattr(
+            run_module, "committed_generations", lambda _r, n=newest: list(range(n + 1))
+        )
+        assert run_module.scheduled_generations(tmp_path) == expected
+    assert run_module.SCHEDULE_EVERY == 5
+
+
+def test_the_previous_matches_flag_restores_them_and_the_default_leaves_them_out(
+    run: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    fake_node(monkeypatch, run)
+    common = ["--games", "2", "--record-games", "0"]
+    assert main(args(run, "--generation", "1", *common, "--progress-dir", str(tmp_path / "a"))) == 0
+    default = json.loads(capsys.readouterr().out)["generations"][0]
+    assert not [m for m in default["matches"] if m["match_id"].startswith("previous")]
+    flag = [*common, "--previous-matches", "--progress-dir", str(tmp_path / "b")]
+    assert main(args(run, "--generation", "1", *flag)) == 0
+    asked = json.loads(capsys.readouterr().out)["generations"][0]
+    assert asked["previous"] == "played"
+    assert len([m for m in asked["matches"] if m["match_id"].startswith("previous")]) == 2
 
 
 def test_the_default_root_is_the_sibling_of_the_run(
@@ -153,7 +178,7 @@ def test_the_default_games_stored_never_exceed_the_games_played(
         == 0
     )
     capsys.readouterr()
-    assert len(list((tmp_path / "p" / "g000001" / "games").glob("*.json"))) == 12  # 6 matches x 2
+    assert len(list((tmp_path / "p" / "g000001" / "games").glob("*.json"))) == 8  # 4 matches x 2
 
 
 def test_a_generation_or_all_is_required_and_the_two_exclude_each_other(run: Path) -> None:
