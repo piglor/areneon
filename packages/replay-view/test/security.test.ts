@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { FakeDocument, FakeNode } from "./dom.ts";
-import { WEB, fixtures, fullDex, loadPageScript, loadView } from "./support.ts";
+import { INTERPRETER, WEB, fixtures, fullDex, loadPageScript, loadView } from "./support.ts";
 
 const { view } = loadView();
 const LS = String.fromCharCode(0x2028);
@@ -141,7 +141,7 @@ describe("hostile strings stay text (ADR-017 4c)", () => {
 });
 
 describe("the viewer's own code", () => {
-  const sources = ["interpreter.cjs", "view.cjs"].map((f) => [f, readFileSync(join(WEB, f), "utf8")] as const);
+  const sources = [["interpreter.cjs", INTERPRETER], ["view.cjs", join(WEB, "view.cjs")]].map(([name, path]) => [name!, readFileSync(path!, "utf8")] as const);
   const css = readFileSync(join(WEB, "replay.css"), "utf8");
 
   it("writes through no HTML sink and calls out to nothing", () => {

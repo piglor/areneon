@@ -103,7 +103,7 @@ def test_the_page_is_the_template_the_script_and_one_data_block() -> None:
     web = ROOT / "packages" / "replay-view" / "web"
     assert script == (
         'var AR_MODE = "player";\n'
-        + (web / "interpreter.cjs").read_text().rstrip("\n")
+        + replay_page.INTERPRETER.read_text().rstrip("\n")
         + "\n"
         + (web / "view.cjs").read_text().rstrip("\n")
     )
@@ -276,6 +276,7 @@ def test_an_asset_with_a_carriage_return_is_refused(
     for name in ("interpreter.cjs", "view.cjs", "replay.css"):
         (tmp_path / name).write_text("x\r\n" if name == "view.cjs" else "x\n", newline="")
     monkeypatch.setattr(replay_page, "ASSETS", tmp_path)
+    monkeypatch.setattr(replay_page, "INTERPRETER", tmp_path / "interpreter.cjs")
     replay_page.assets.cache_clear()
     try:
         with pytest.raises(InspectError, match="carriage return"):

@@ -1,8 +1,8 @@
 """The replay page and its index (ADR-017 sections 4, 4b and 4c).
 
-One page per game: the clean-room interpreter and the board view (``packages/replay-view/web``,
-inlined byte for byte as the page's ONE script, with the board's CSS after the inspector's as its
-ONE style block), and one JSON data block read by ``JSON.parse``. Everything that comes from data
+One page per game: the clean-room interpreter (``packages/public-state``) and the board view
+(``packages/replay-view/web``), inlined byte for byte as the page's ONE script, with the board's
+CSS after the inspector's as its ONE style block, and one JSON data block read by ``JSON.parse``. Everything that comes from data
 (names, log lines, decisions, policy ids) is in that block, escaped by ``page.json_block``, or is
 escaped HTML text by ``page.esc``. No data is spliced into the script, and no art ships.
 """
@@ -25,6 +25,10 @@ from areneon_ml.inspector.replay import GAME_NAME, GameReplay, SeatView, to_id
 
 #: The viewer's own files: plain JavaScript and CSS, read as they are (no bundler, no build step).
 ASSETS = Path(__file__).resolve().parents[3] / "packages" / "replay-view" / "web"
+#: The shared state reader (``packages/public-state``): the same file the baseline's TypeScript wrapper loads.
+INTERPRETER = (
+    Path(__file__).resolve().parents[3] / "packages" / "public-state" / "src" / "interpreter.cjs"
+)
 _TOKEN = re.compile(r"[^A-Za-z0-9]+")
 
 
@@ -36,7 +40,8 @@ def assets(mode: str = "player") -> tuple[str, str]:
     if mode not in ("player", "omniscient"):
         raise InspectError("a replay page is a player view or an omniscient view")
     parts = {name: (ASSETS / name).read_bytes().decode("utf-8") for name in (
-        "interpreter.cjs", "view.cjs", "replay.css")}  # fmt: skip
+        "view.cjs", "replay.css")}  # fmt: skip
+    parts["interpreter.cjs"] = INTERPRETER.read_bytes().decode("utf-8")
     if any("\r" in text for text in parts.values()):
         raise InspectError("a replay asset has a carriage return: the page bytes must be fixed")
     script = (

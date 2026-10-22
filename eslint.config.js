@@ -18,7 +18,7 @@ export default tseslint.config(
   {
     // The replay viewer is two classic scripts that Python inlines into one page: they share globals
     // (`ArReplay`, `ArView`) instead of importing, and read the page's own document and window.
-    files: ["packages/replay-view/web/**/*.cjs"],
+    files: ["packages/replay-view/web/**/*.cjs", "packages/public-state/src/**/*.cjs"],
     languageOptions: { sourceType: "script", globals: { document: "readonly", window: "readonly", module: "writable" } },
     rules: {
       "@typescript-eslint/no-unused-vars": ["error", { ignoreRestSiblings: true, varsIgnorePattern: "^Ar(Replay|View)$" }],
@@ -31,7 +31,7 @@ export default tseslint.config(
   },
   {
     // The replay tests drive the loaded scripts and a DOM stand-in: their values are untyped by nature.
-    files: ["packages/replay-view/test/**/*.ts", "packages/replay-view/web/**/*.d.ts"],
+    files: ["packages/replay-view/test/**/*.ts", "packages/replay-view/web/**/*.d.ts", "packages/public-state/test/**/*.ts"],
     rules: {
       "@typescript-eslint/no-explicit-any": "off",
       "@typescript-eslint/no-non-null-assertion": "off",
