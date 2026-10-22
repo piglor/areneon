@@ -13,5 +13,8 @@
   "dependencies": {
     "@areneon/schema": "workspace:*",
     "ajv": "8.20.0"
+  },
+  "devDependencies": {
+    "@areneon/public-state": "workspace:*"
   }
 }

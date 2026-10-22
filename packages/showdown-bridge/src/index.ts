@@ -320,6 +320,15 @@ export {
   leagueRunRecordHash,
   readLeagueRunRecord,
 } from "./league-run-record.ts";
+export { type AssumedSet, type AssumedSetContext, AssumedSetError, assumedHp, buildAssumedSet } from "./damage-aware-assumed-set.ts";
+export {
+  DAMAGE_AWARE_CONFIG_DIR,
+  type DamageAwareConfig,
+  DamageAwareConfigError,
+  damageAwareConfigHash,
+  loadDamageAwareConfig,
+  readDamageAwareConfig,
+} from "./damage-aware-config.ts";
 export {
   checkMechanicsConfig,
   loadMechanicsConfig,

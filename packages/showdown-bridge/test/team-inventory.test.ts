@@ -180,6 +180,7 @@ describe("real gap records", () => {
       return {
         items: dex.items,
         abilities: dex.abilities,
+        moves: dex.moves,
         species: {
           get: (name) => (name === "Gengar" ? { exists: false, name, baseSpecies: name } : name === "Venusaur" ? { exists: true, name: "Venusaur-Mega", baseSpecies: "Venusaur" } : dex.species.get(name)),
         },

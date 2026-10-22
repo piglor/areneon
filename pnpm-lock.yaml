@@ -68,6 +68,8 @@ importers:
         specifier: 1.0.20
         version: 1.0.20
 
+  packages/public-state: {}
+
   packages/replay-view: {}
 
   packages/rules-importer:
@@ -113,6 +115,10 @@ importers:
       ajv:
         specifier: 8.20.0
         version: 8.20.0
+    devDependencies:
+      '@areneon/public-state':
+        specifier: workspace:*
+        version: link:../public-state
 
   packages/team-dataset:
     dependencies:

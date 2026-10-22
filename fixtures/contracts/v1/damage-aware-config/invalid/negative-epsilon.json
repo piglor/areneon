@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "format_id": "gen9championsvgc2026regmc",
+  "assumed_set": {
+    "item": {
+      "kind": "none"
+    },
+    "ability": "first_in_vocabulary_order",
+    "nature": "hardy",
+    "stat_points": {
+      "hp": 11,
+      "atk": 11,
+      "def": 11,
+      "spa": 11,
+      "spd": 11,
+      "spe": 11
+    },
+    "filler_move": "first_in_vocabulary_order"
+  },
+  "hp_rounding": "nearest",
+  "scoring": {
+    "ko_weight_ppm": 1000000,
+    "turn_order_discount_ppm": 500000,
+    "crit_weight_ppm": 1000000
+  },
+  "epsilon_ppm": -1
+}
