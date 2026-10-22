@@ -371,7 +371,7 @@
         "policy_id": {
           "type": "string",
           "pattern": "^policy:[0-9a-f]{64}$",
-          "description": "The candidate's policy id in this match's mode: policy: plus SHA-256 of the JCS of {preview, battle, mode, temperature, precision}."
+          "description": "The candidate's policy id in this match's mode: policy: plus SHA-256 of the JCS of {preview, battle, mode, temperature, precision}; for a candidate_preview of kind random the preview is the word random-preview@v1, for kind generation that generation's Preview checkpoint id."
         },
         "opponent": {
           "$ref": "#/$defs/Opponent"
@@ -382,6 +382,9 @@
             "sample",
             "argmax"
           ]
+        },
+        "candidate_preview": {
+          "$ref": "#/$defs/CandidatePreview"
         },
         "games": {
           "type": "integer",
@@ -552,6 +555,76 @@
           "$ref": "#/$defs/Outcome"
         }
       }
+    },
+    "CandidatePreview": {
+      "description": "Which Team Preview the candidate's Battle network played with in an ablation match (ADR-017 erratum E1). Absent: the candidate's own learned Preview, as in every other match.",
+      "type": "object",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/LearnedPreview"
+        },
+        {
+          "$ref": "#/$defs/RandomPreview"
+        },
+        {
+          "$ref": "#/$defs/GenerationPreview"
+        }
+      ],
+      "discriminator": {
+        "propertyName": "kind"
+      }
+    },
+    "LearnedPreview": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind"
+      ],
+      "properties": {
+        "kind": {
+          "const": "learned"
+        }
+      },
+      "description": "The generation's own learned Preview network."
+    },
+    "RandomPreview": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind"
+      ],
+      "properties": {
+        "kind": {
+          "const": "random"
+        }
+      },
+      "description": "A uniformly random choice among the legal Preview choices the engine's request lists, seeded per seat from the policy stream label."
+    },
+    "GenerationPreview": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "generation",
+        "checkpoint"
+      ],
+      "properties": {
+        "kind": {
+          "const": "generation"
+        },
+        "generation": {
+          "description": "The earlier generation whose Preview network is used (0 is the seeded initial pair).",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "checkpoint": {
+          "description": "Checkpoint id of that generation's Preview network.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      },
+      "description": "An earlier generation's learned Preview network."
     }
   }
 }

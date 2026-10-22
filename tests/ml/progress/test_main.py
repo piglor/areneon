@@ -17,6 +17,7 @@ from areneon_ml.loop.play import PlayError
 from areneon_ml.progress import run as run_module
 from areneon_ml.progress.looks import read_looks
 from areneon_ml.progress.run import (
+    AblationSpec,
     AnchorPair,
     NodeProgressPlayer,
     PreviousPair,
@@ -279,6 +280,14 @@ def test_the_node_player_passes_the_whole_request_and_the_run_as_flags(tmp_path:
         f"10,{'e' * 64},{'f' * 64},policy:1s,policy:1a",
     ]
     assert argv[argv.index("--anchor-games") + 1] == "200"
+    with_ablation = dataclasses.replace(
+        request, ablation=AblationSpec(0, "a" * 64, "policy:ab", "policy:rd")
+    )
+    player.progress(with_ablation)
+    argv = json.loads(out.read_text())
+    assert argv[argv.index("--ablation-preview") + 1] == f"0,{'a' * 64},policy:ab"
+    assert argv[argv.index("--ablation-random-policy-id") + 1] == "policy:rd"
+    assert "--anchor" not in argv
 
 
 def test_anchors_and_anchor_games_reach_the_evaluation(
@@ -299,6 +308,25 @@ def test_anchors_and_anchor_games_reach_the_evaluation(
     ids = [m["match_id"] for m in done["matches"]]
     assert "anchor-g0-sample" in ids
     assert "anchor-g7-sample" not in ids
+
+
+def test_the_preview_ablation_flag_reaches_the_evaluation_and_refuses_all(
+    run: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    fake_node(monkeypatch, run)
+    code = main(
+        args(
+            run,
+            *("--generation", "1", "--games", "2", "--record-games", "0", "--preview-ablation"),
+            *("--progress-dir", str(tmp_path / "e1")),
+        )
+    )
+    assert code == 0
+    (done,) = json.loads(capsys.readouterr().out)["generations"]
+    assert sorted(done["ablation"]["baselines"]) == ["actor-rule", "random-legal"]
+    assert all(m["match_id"].startswith("preview-") for m in done["matches"])
+    assert main(args(run, "--all", "--preview-ablation", "--games", "2")) == EXIT_REFUSED
+    assert "needs --generation" in capsys.readouterr().err
 
 
 def test_a_malformed_anchor_list_is_a_usage_error(run: Path) -> None:

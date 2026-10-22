@@ -107,6 +107,31 @@ describe.skipIf(!existsSync(PYTHON) && process.env.ARENEON_REQUIRE_PYTHON_WORKER
     expect(first.policies.p2).toBe(second.policies.p1);
   }, 600_000);
 
+  it("plays the Team Preview ablation with the real worker: three Previews, the random one never asked of the worker", () => {
+    const f = join(dir, "f.progress");
+    const printed = JSON.parse(loop("progress", "--run-dir", runDir, "--engine-data", DATA, "--games", "4", "--record-games", "4", "--generation", "1", "--preview-ablation", "--progress-dir", f, "--node", process.execPath, "--worker-python", PYTHON)) as { generations: { matches: { match_id: string }[]; ablation: { baselines: Record<string, Record<string, { pairs: number; score_ppm: number }>> } }[] };
+    const done = printed.generations[0] as (typeof printed.generations)[number];
+    expect(done.matches.map((m) => m.match_id)).toHaveLength(6);
+    expect(Object.keys(done.ablation.baselines).sort()).toEqual(["actor-rule", "random-legal"]);
+    expect(Object.keys(done.ablation.baselines["actor-rule"] as object).sort()).toEqual(["g0", "learned", "random"]);
+    const record = readProgressEvaluationRecordV2(json<ProgressEvaluationRecordV2>(f, gen(1), "progress.json"));
+    expect(record.matches.map((m) => m.candidate_preview?.kind).sort()).toEqual(["generation", "generation", "learned", "learned", "random", "random"]);
+    const g0 = json<{ checkpoints: Record<string, string> }>(runDir, "generations", gen(0), "manifest.json").checkpoints;
+    expect(record.matches.find((m) => m.candidate_preview?.kind === "generation")?.candidate_preview).toMatchObject({ generation: 0, checkpoint: g0.preview });
+    // The random Preview is a legal Preview choice of the engine's own request, for the candidate on either seat.
+    for (const k of [0, 1, 2, 3]) {
+      const stored = readProgressGameRecord(json(f, gen(1), "games", `preview-random-actor-rule-argmax-${k}.json`));
+      const seat = k % 2 === 0 ? "p1" : "p2";
+      const first = stored.decisions.find((d) => d.player === seat && d.request_seq === 1) as ProgressGameRecord["decisions"][number];
+      expect(first.candidates.map((c) => c.choice)).toContain(first.chosen);
+      expect(first.chosen).toMatch(/^team /);
+    }
+    // Played alone: --all and anchors are refused, and a committed directory is kept.
+    const refused = spawnSync(PYTHON, ["-I", "-m", "areneon_ml.loop", "progress", "--run-dir", runDir, "--engine-data", DATA, "--generation", "1", "--preview-ablation", "--anchors", "0", "--progress-dir", join(dir, "g.progress")], { encoding: "utf8", env, cwd: ROOT });
+    expect(refused.status).toBe(3);
+    expect(refused.stderr).toMatch(/played alone/);
+  }, 600_000);
+
   it("plays validation teams only, never a team of the run's team-set, on seeds no training game used", () => {
     const a = join(dir, "a.progress");
     const run = readTrainingRunConfig(json(runDir, "run-config.json"));
@@ -250,6 +275,23 @@ describe.skipIf(!existsSync(PYTHON) && process.env.ARENEON_REQUIRE_PYTHON_WORKER
       }
       expect(said.join("\n")).toMatch(/anchor-games must be an even integer/);
     }, 240_000);
+
+    it("takes the ablation flags together and alone", async () => {
+      const g0 = json<{ checkpoints: Record<string, string> }>(runDir, "generations", gen(0), "manifest.json").checkpoints;
+      const spec = `0,${g0.preview},policy:${"1".repeat(64)}`;
+      const random = `policy:${"2".repeat(64)}`;
+      const more = (extra: string[]) => [...flags(join(dir, "ablation")), ...extra];
+      await expect(runProgressCli(more(["--ablation-preview", spec]), () => undefined, datasetValidationPool)).rejects.toThrow(/go together/);
+      await expect(runProgressCli(more(["--ablation-random-policy-id", random]), () => undefined, datasetValidationPool)).rejects.toThrow(/go together/);
+      await expect(runProgressCli(more(["--ablation-preview", "x,y", "--ablation-random-policy-id", random]), () => undefined, datasetValidationPool)).rejects.toThrow(/--ablation-preview must be/);
+      await expect(runProgressCli(more(["--ablation-preview", spec, "--ablation-random-policy-id", random, "--anchor", `0,${g0.preview},${g0.battle},policy:${"a".repeat(64)},policy:${"b".repeat(64)}`, "--anchor-games", "2"]), () => undefined, datasetValidationPool)).rejects.toThrow(/played alone/);
+      const lines: string[] = [];
+      const out = join(dir, "cli-ablation");
+      const code = await runProgressCli(more(["--ablation-preview", spec, "--ablation-random-policy-id", random]).map((a, i, all) => (all[i - 1] === "--out" ? out : a)), (l) => lines.push(l), datasetValidationPool);
+      expect(code).toBe(0);
+      const printed = JSON.parse(lines[0] as string) as { matches: { match_id: string }[] };
+      expect(printed.matches).toHaveLength(6);
+    }, 300_000);
 
     it("refuses a missing flag, an unknown flag and a bad integer as usage errors", async () => {
       await expect(runProgressCli(["--generation", "1"], () => undefined, datasetValidationPool)).rejects.toThrow(UsageError);

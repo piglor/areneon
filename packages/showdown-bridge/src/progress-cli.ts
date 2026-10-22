@@ -49,8 +49,12 @@ const FLAGS = {
   // Anchors (fixed earlier generations): each `--anchor <generation>,<preview>,<battle>,<policy-id-sample>,<policy-id-argmax>`.
   anchor: { type: "string", multiple: true },
   "anchor-games": { type: "string" },
+  // The Preview ablation (ADR-017 erratum E1): `--ablation-preview <generation>,<preview-checkpoint>,<policy-id-argmax>` (this
+  // Battle with an earlier generation's Preview) and `--ablation-random-policy-id` (this Battle with a random Preview).
+  "ablation-preview": { type: "string" },
+  "ablation-random-policy-id": { type: "string" },
 } as const;
-const OPTIONAL = new Set<string>(["previous-preview", "previous-battle", "previous-policy-id-sample", "previous-policy-id-argmax", "anchor", "anchor-games"]);
+const OPTIONAL = new Set<string>(["previous-preview", "previous-battle", "previous-policy-id-sample", "previous-policy-id-argmax", "anchor", "anchor-games", "ablation-preview", "ablation-random-policy-id"]);
 const PREVIOUS = ["previous-preview", "previous-battle", "previous-policy-id-sample", "previous-policy-id-argmax"] as const;
 
 const integer = (name: string, text: string, least: number): number => {
@@ -95,6 +99,10 @@ export async function runProgressCli(argv: readonly string[], print: (line: stri
   });
   if ((anchorSpecs.length === 0) !== (values["anchor-games"] === undefined)) throw new UsageError("--anchor and --anchor-games go together");
   const anchor_games = values["anchor-games"] === undefined ? undefined : integer("anchor-games", values["anchor-games"], 2);
+  if ((values["ablation-preview"] === undefined) !== (values["ablation-random-policy-id"] === undefined)) throw new UsageError("--ablation-preview and --ablation-random-policy-id go together");
+  const ablationParts = values["ablation-preview"]?.split(",");
+  if (ablationParts !== undefined && (ablationParts.length !== 3 || !/^\d+$/.test(ablationParts[0] as string))) throw new UsageError("--ablation-preview must be <generation>,<preview-checkpoint>,<policy-id-argmax>");
+  if (ablationParts !== undefined && (anchorSpecs.length > 0 || PREVIOUS.some((name) => values[name] !== undefined))) throw new UsageError("the Preview ablation is played alone: no anchors and no previous-generation flags");
   const given = PREVIOUS.filter((name) => values[name] !== undefined);
   if (given.length !== 0 && given.length !== PREVIOUS.length) throw new UsageError(`the previous-generation flags go together: ${PREVIOUS.map((n) => `--${n}`).join(", ")}`);
   const generation = integer("generation", need("generation"), 0);
@@ -134,12 +142,15 @@ export async function runProgressCli(argv: readonly string[], print: (line: stri
   const client = workerFor({ preview, battle });
   const previousPair = given.length === 0 ? undefined : { preview: need("previous-preview"), battle: need("previous-battle") };
   let previousClient: PolicyWorkerClient | undefined;
+  // The ablation's third variant: this generation's Battle with an earlier generation's Preview, behind a worker of its own.
+  const ablationClient = ablationParts === undefined ? undefined : workerFor({ preview: ablationParts[1] as string, battle });
   const anchorClients: PolicyWorkerClient[] = [];
   try {
     previousClient = previousPair === undefined ? undefined : workerFor(previousPair);
     const pool = poolSource(engine, config);
     await client.start();
     await previousClient?.start();
+    await ablationClient?.start();
     for (const spec of anchorSpecs) {
       const anchorClient = workerFor(spec.checkpoints);
       anchorClients.push(anchorClient); // closed in `finally` even if its start fails
@@ -164,6 +175,14 @@ export async function runProgressCli(argv: readonly string[], print: (line: stri
             },
           }),
       ...(anchor_games === undefined ? {} : { anchors: anchorSpecs.map((spec, index) => ({ ...spec, client: anchorClients[index] as PolicyWorkerClient })), anchor_games }),
+      ...(ablationParts === undefined || ablationClient === undefined
+        ? {}
+        : {
+            ablation: {
+              generation: { generation: Number(ablationParts[0]), checkpoint: ablationParts[1] as string, policy_id: ablationParts[2] as string, client: ablationClient },
+              random_policy_id: need("ablation-random-policy-id"),
+            },
+          }),
       pool,
       games,
       record_games,
@@ -194,7 +213,7 @@ export async function runProgressCli(argv: readonly string[], print: (line: stri
       try {
         await previousClient?.close(); // every worker is closed even if closing another throws
       } finally {
-        await Promise.allSettled(anchorClients.map((anchorClient) => anchorClient.close()));
+        await Promise.allSettled([...anchorClients, ...(ablationClient === undefined ? [] : [ablationClient])].map((c) => c.close()));
       }
     }
   }

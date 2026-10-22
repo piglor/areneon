@@ -31,7 +31,9 @@ from areneon_ml.learner.config import RunConfig, read_run_config
 from areneon_ml.loop import layout
 from areneon_ml.loop.play import NodePlayer, PlayError
 from areneon_ml.loop.records import policy_id
+from areneon_ml.progress.ablation import ablation_summary, expected_ablation_matches
 from areneon_ml.progress.records import (
+    RANDOM_PREVIEW_POLICY,
     SCHEMA_V2,
     ProgressRecordError,
     is_v2,
@@ -83,6 +85,17 @@ class AnchorPair:
 
 
 @dataclass(frozen=True)
+class AblationSpec:
+    """The Preview ablation (ADR-017 erratum E1): this generation's Battle network with its own
+    learned Preview, a uniformly random Preview and an earlier generation's Preview."""
+
+    generation: int
+    preview: str
+    policy_id_argmax: str
+    random_policy_id: str
+
+
+@dataclass(frozen=True)
 class ProgressRequest:
     """What the simulator side needs to play one generation's progress evaluation."""
 
@@ -102,6 +115,8 @@ class ProgressRequest:
     anchors: tuple[AnchorPair, ...] = ()
     #: Games in each anchor match (even); 0 with no anchors.
     anchor_games: int = 0
+    #: The Preview ablation, played instead of the usual matches (no previous, no anchors).
+    ablation: AblationSpec | None = None
 
 
 class ProgressPlayer(Protocol):
@@ -131,6 +146,16 @@ class NodeProgressPlayer(NodePlayer):
                 f"{a.generation},{a.preview},{a.battle},{a.policy_id_sample},{a.policy_id_argmax}",
             )
         ) + (("--anchor-games", str(request.anchor_games)) if request.anchors else ())
+        ablation = (
+            ()
+            if request.ablation is None
+            else (
+                "--ablation-preview",
+                f"{request.ablation.generation},{request.ablation.preview},"
+                f"{request.ablation.policy_id_argmax}",
+                *("--ablation-random-policy-id", request.ablation.random_policy_id),
+            )
+        )
         out = self._run(
             SCRIPT,
             *("--config", str(self.config_path)),
@@ -150,6 +175,7 @@ class NodeProgressPlayer(NodePlayer):
             *("--out", str(request.out_dir)),
             *more,
             *anchors,
+            *ablation,
         )
         try:
             found = json.loads(out)
@@ -366,6 +392,7 @@ def _verify_output(  # noqa: PLR0913, PLR0917
     anchors: Sequence[AnchorPair],
     run_dir: Path,
     anchor_games: int,
+    ablation: AblationSpec | None = None,
 ) -> dict[str, Any]:
     """The simulator side's files are the record's: read both kinds, check every hash and name."""
     record = read_progress_record(layout.read_json(work / PROGRESS), config)
@@ -385,6 +412,7 @@ def _verify_output(  # noqa: PLR0913, PLR0917
     _check_anchors(record, anchors, run_dir, config)
     if plan.get("anchor_games_per_match", 0) != anchor_games:
         raise ProgressError("progress.json is not the record asked for")
+    _check_ablation(record, ablation, run_dir, config, fresh=True)
     expected = set()
     for match in record["matches"]:
         listed = []
@@ -410,6 +438,36 @@ def _verify_output(  # noqa: PLR0913, PLR0917
     if found != expected:
         raise ProgressError("games/ holds other files than the record lists")
     return record
+
+
+def _check_ablation(
+    record: dict[str, Any],
+    ablation: AblationSpec | None,
+    run_dir: Path,
+    config: RunConfig,
+    *,
+    fresh: bool,
+) -> None:
+    """The Preview ablation matches are exactly the six asked for (a fresh evaluation), and an
+    earlier generation's Preview is that generation's own, read from its records."""
+    found = [m for m in record["matches"] if m.get("candidate_preview") is not None]
+    if fresh:
+        asked = (
+            [] if ablation is None else expected_ablation_matches(ablation, record["checkpoints"])
+        )
+        if sorted(m["match_id"] for m in found) != sorted(asked) or (
+            ablation is not None and len(found) != len(record["matches"])
+        ):
+            raise ProgressError("the record's ablation matches are not the ones asked for")
+    for match in found:
+        preview = match["candidate_preview"]
+        if preview["kind"] == "generation":
+            theirs = _source(run_dir, config, preview["generation"]).preview
+            if preview["checkpoint"] != theirs:
+                raise ProgressError(
+                    f"{match['match_id']}: the Preview is not generation "
+                    f"{preview['generation']}'s own"
+                )
 
 
 def summary_of(record: dict[str, Any]) -> list[dict[str, Any]]:
@@ -461,6 +519,7 @@ def verify_progress_dir(
     # Previous-generation matches are optional (a record may hold them or not).
     _check_previous(record, _previous_pair(run_dir, config, generation), legacy=True)
     _check_anchors(record, None, run_dir, config)
+    _check_ablation(record, None, run_dir, config, fresh=False)
     for match in record["matches"]:
         for name in sorted(p.name for p in (target / GAMES).glob(f"{match['match_id']}-*.json")):
             stored = read_game_record(layout.read_json(target / GAMES / name))
@@ -481,8 +540,14 @@ def progress_generation(  # noqa: PLR0913, PLR0917
     anchors: Sequence[int] = (),
     anchor_games: int = DEFAULT_ANCHOR_GAMES,
     previous_matches: bool = False,
+    preview_ablation: bool = False,
 ) -> dict[str, Any]:
     """Evaluate one generation into ``root``; a committed directory is verified and kept.
+
+    ``preview_ablation`` plays the Team Preview ablation (ADR-017 erratum E1) instead of the usual
+    matches: this generation's Battle network with its own Preview, a random Preview and
+    generation 0's Preview, argmax, against both baselines. It is played alone (no anchors, no
+    previous-generation matches) and needs a generation of 1 or more.
 
     Every pair is played from both seats (version 2 records), so ``games`` is even. ``anchors``
     are fixed earlier generations to play as well (one that is not earlier than ``generation`` is
@@ -501,6 +566,13 @@ def progress_generation(  # noqa: PLR0913, PLR0917
     dropped = sorted({a for a in anchors if a >= generation})
     if wanted and (anchor_games < MIN_GAMES or anchor_games % 2):
         raise ProgressError("--anchor-games must be an even number of at least 2")
+    if preview_ablation and (anchors or previous_matches or generation < 1):
+        raise ProgressError(
+            "the Preview ablation is played alone, for a generation of 1 or more: "
+            "no --anchors and no --previous-matches"
+        )
+    if preview_ablation:
+        wanted, dropped = [], []
     config = _read_config(run_dir)
     with progress_lock(root):
         target = progress_dir_of(root, generation)
@@ -514,9 +586,10 @@ def progress_generation(  # noqa: PLR0913, PLR0917
                 "previous": _previous_status(record, generation),
                 "anchors": _anchor_status(record, wanted, dropped),
                 "matches": summary_of(record),
-            }
+            } | _ablation_part(record)
         source = _source(run_dir, config, generation)
         previous = _previous_pair(run_dir, config, generation) if previous_matches else None
+        ablation = _ablation_spec(run_dir, config, source) if preview_ablation else None
         anchor_pairs = tuple(_anchor_pair(run_dir, config, a) for a in wanted)
         played_anchor_games = anchor_games if wanted else 0
         needed = max(games, played_anchor_games) // 2
@@ -553,6 +626,7 @@ def progress_generation(  # noqa: PLR0913, PLR0917
                     previous=previous,
                     anchors=anchor_pairs,
                     anchor_games=played_anchor_games,
+                    ablation=ablation,
                 )
             )
             record = _verify_output(
@@ -565,6 +639,7 @@ def progress_generation(  # noqa: PLR0913, PLR0917
                 anchor_pairs,
                 run_dir,
                 played_anchor_games,
+                ablation,
             )
             layout.fsync_tree(work)
             layout.write_json(
@@ -589,7 +664,24 @@ def progress_generation(  # noqa: PLR0913, PLR0917
             "anchors": _anchor_status(record, wanted, dropped),
             "wall_ms": facts.get("wall_ms", {}),
             "matches": summary_of(record),
-        }
+        } | _ablation_part(record)
+
+
+def _ablation_spec(run_dir: Path, config: RunConfig, source: _Source) -> AblationSpec:
+    """Generation 0's Preview (verified) with this generation's Battle, and the random Preview."""
+    first = _source(run_dir, config, 0)
+    return AblationSpec(
+        0,
+        first.preview,
+        policy_id(first.preview, source.battle, "argmax"),
+        policy_id(RANDOM_PREVIEW_POLICY, source.battle, "argmax"),
+    )
+
+
+def _ablation_part(record: dict[str, Any]) -> dict[str, Any]:
+    """The Preview ablation's scores and paired differences, when the record is one."""
+    found = ablation_summary(record)
+    return {"ablation": found} if found else {}
 
 
 def _previous_status(record: dict[str, Any], generation: int) -> str:
@@ -643,6 +735,7 @@ def scheduled_generations(run_dir: Path) -> list[int]:
 __all__ = [
     "DEFAULT_ANCHOR_GAMES",
     "SCHEDULE_EVERY",
+    "AblationSpec",
     "AnchorPair",
     "NodeProgressPlayer",
     "ProgressError",

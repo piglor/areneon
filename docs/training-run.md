@@ -171,6 +171,34 @@ separate tickets (#948, #951); until they land the printed summary and the dashb
 interval, which for a both-seats record is not valid (the two games of a pair
 are not independent): read the counts, not that interval.
 
+**Team Preview ablation (ADR-017 erratum E1).** `--preview-ablation` with
+`--generation G` (1 or more; not `--all`; no `--anchors` or `--previous-matches`)
+plays generation G's **Battle network** with three Team Previews instead of the
+usual matches: (i) its own learned Preview, (ii) a uniformly random Preview and
+(iii) generation 0's learned Preview, each in argmax against `random-legal@v1`
+and `actor-rule@v1`: six matches `preview-<variant>-<baseline>-argmax`
+(`learned`, `random`, `g0`), on the same validation pairs and seeds and from both
+seats as every other match. The random Preview is a uniform pick among the legal
+Preview choices the engine listed in the candidate's own request (no rule is
+written in the code), seeded per seat and game from the policy stream label
+(`random-preview@v1`, protocol D9); the worker is not asked for the Preview, and
+it never sees opponent information. Generation 0's Preview needs a worker of its
+own that holds that Preview and G's Battle. Use a progress directory of its own
+(`--progress-dir`): it holds one `g<NNNNNN>/` per generation like any other. The
+record is a `ProgressEvaluationRecordV2` whose matches carry an optional
+`candidate_preview` (`learned`, `random` or `generation` with its checkpoint id);
+a candidate's policy id is built from that Preview (`random-preview@v1` for the
+random one), and an earlier generation's Preview is checked against that
+generation's own records. The command prints, per baseline and variant, the mean
+pair score in parts per million and, for the random and the earlier Preview, the
+paired difference to the learned one on the same pairs: the mean of `d_k`
+(variant minus learned) and how many pairs were better, equal or worse. All
+integers, conditional on the fixed validation plan; the interval over pairs is
+the pair-level interval's own ticket. With 100 pairs a Preview matters only if
+the difference is clear of what the pair-to-pair spread allows: the counts of
+better and worse pairs are the first thing to look at. A progress view, never
+the Training gate.
+
 **Reading the numbers.**
 
 - The record stores counts. A **score** counts a tie as half a win:

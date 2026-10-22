@@ -17,6 +17,7 @@ import {
   PROGRESS_BASELINES,
   PROGRESS_MODES,
   progressGameStreams,
+  randomPreviewSeed,
   progressPlan,
   playProgress,
   ProgressError,
@@ -50,16 +51,20 @@ afterAll(() => rmSync(scratch, { recursive: true, force: true }));
 
 const firstLegal: Actor = (request) => actorRule(request.legal as never);
 
-type Client = PolicyClient & { beginGame: () => Promise<void>; asked: number; modes: Set<string> };
+type Client = PolicyClient & { beginGame: () => Promise<void>; asked: number; modes: Set<string>; previews: number; kinds: Set<string> };
 /** An in-process worker: the shared actor rule over the query's own candidates. */
 function actorClient(fail?: (n: number) => Error | undefined): Client {
   const client: Client = {
     asked: 0,
+    previews: 0,
+    kinds: new Set(),
     modes: new Set(),
     beginGame: () => Promise.resolve(),
     ask(_battle, query) {
       client.asked++;
       client.modes.add(query.sampling.kind);
+      client.kinds.add(query.observation.kind);
+      if (query.observation.kind === "preview") client.previews++;
       const error = fail?.(client.asked);
       if (error !== undefined) return Promise.reject(error);
       const open = query.candidates.filter((c) => !c.pending).map((c) => c.choice);
@@ -274,6 +279,61 @@ describe("playProgress", () => {
     it("checks the anchor seeds against the committed plans too", async () => {
       const seed = progressGameStreams(config.seeds.run_key, 1).seed; // the anchors' second pair
       await expect(playProgress(options({ generation: 2, anchors: [anchor(0)], anchor_games: 4, games: 2, league_seeds: new Set([seed]) }))).rejects.toThrow(/equals a seed of a committed plan/);
+    });
+  });
+
+  describe("the Team Preview ablation", () => {
+    const ablation = (generationClient = actorClient()): NonNullable<ProgressOptions["ablation"]> => ({
+      generation: { generation: 0, checkpoint: "7".repeat(64), policy_id: `policy:${"8".repeat(64)}`, client: generationClient },
+      random_policy_id: `policy:${"9".repeat(64)}`,
+    });
+
+    it("plays three Previews against both baselines, argmax, on the same pairs and seeds, and asks the worker for no random Preview", async () => {
+      const client = actorClient();
+      const earlier = actorClient();
+      const result = await playProgress(options({ generation: 1, client, ablation: ablation(earlier), games: 2, record_games: 2 }));
+      const { record } = result;
+      expect(record.matches.map((m) => m.match_id)).toEqual(["preview-g0-actor-rule-argmax", "preview-g0-random-legal-argmax", "preview-learned-actor-rule-argmax", "preview-learned-random-legal-argmax", "preview-random-actor-rule-argmax", "preview-random-random-legal-argmax"]);
+      expect(new Set(record.matches.map((m) => m.mode))).toEqual(new Set(["argmax"]));
+      const byId = new Map(record.matches.map((m) => [m.match_id, m]));
+      expect(byId.get("preview-learned-actor-rule-argmax")).toMatchObject({ candidate_preview: { kind: "learned" }, policy_id: options().policy_ids.argmax });
+      expect(byId.get("preview-random-actor-rule-argmax")).toMatchObject({ candidate_preview: { kind: "random" }, policy_id: ablation().random_policy_id });
+      expect(byId.get("preview-g0-actor-rule-argmax")).toMatchObject({ candidate_preview: { kind: "generation", generation: 0, checkpoint: "7".repeat(64) }, policy_id: ablation().generation.policy_id });
+      // The same pair, seed and both seats in every match; teams stay on their seats.
+      const games = [...result.game_records.values()];
+      expect(new Set(games.map((g) => g.seed))).toEqual(new Set([progressGameStreams(config.seeds.run_key, 0).seed]));
+      for (const g of games) expect(g.teams).toEqual(games[0]?.teams);
+      const learned = result.game_records.get("preview-learned-actor-rule-argmax-1.json") as ProgressGameRecord;
+      const random = result.game_records.get("preview-random-actor-rule-argmax-1.json") as ProgressGameRecord;
+      expect([learned.policies.p2, random.policies.p2]).toEqual([options().policy_ids.argmax, ablation().random_policy_id]);
+      // The worker is asked for the Preview in the learned and the earlier-generation matches only: 2 baselines x 2 games each.
+      expect(client.previews).toBe(4 + 0);
+      expect(earlier.previews).toBe(4);
+      expect(client.asked).toBeGreaterThan(client.previews);
+      expect(() => readProgressEvaluationRecordV2(JSON.parse(jcs(record as unknown as Json)))).not.toThrow();
+    }, 300_000);
+
+    it("plays a random Preview among the legal Preview choices, different for the two seats and reproducible", async () => {
+      const run = () => playProgress(options({ generation: 1, ablation: ablation(), games: 4, record_games: 4 }));
+      const [a, b] = [await run(), await run()];
+      expect(jcs(a.record as unknown as Json)).toBe(jcs(b.record as unknown as Json));
+      for (const [name, stored] of a.game_records) expect(jcs(stored as unknown as Json)).toBe(jcs(b.game_records.get(name) as unknown as Json));
+      // Every random Preview choice is one the engine's request listed (the game record keeps each decision's candidates).
+      const previews = [...a.game_records.entries()].filter(([name]) => name.startsWith("preview-random-")).flatMap(([, g]) => g.decisions.filter((d) => d.request_seq === 1));
+      expect(previews.length).toBeGreaterThan(0);
+      for (const d of previews) expect(d.candidates.map((c) => c.choice)).toContain(d.chosen);
+      // The seed is per seat and game: the labels differ, so the streams do.
+      expect(randomPreviewSeed("sodium,a", 0, "p1")).not.toBe(randomPreviewSeed("sodium,a", 0, "p2"));
+      expect(randomPreviewSeed("sodium,a", 0, "p1")).not.toBe(randomPreviewSeed("sodium,a", 1, "p1"));
+      expect(randomPreviewSeed("sodium,a", 0, "p1")).toBe(randomPreviewSeed("sodium,a", 0, "p1"));
+    }, 300_000);
+
+    it("is played alone and from an earlier generation", async () => {
+      const other = actorClient();
+      const anchor = { generation: 0, checkpoints: { preview: "3".repeat(64), battle: "4".repeat(64) }, policy_ids: { sample: `policy:${"e".repeat(64)}`, argmax: `policy:${"f".repeat(64)}` }, client: other };
+      await expect(playProgress(options({ generation: 2, ablation: ablation(), anchors: [anchor], anchor_games: 2 }))).rejects.toThrow(/played alone/);
+      await expect(playProgress(options({ generation: 1, ablation: { ...ablation(), generation: { ...ablation().generation, generation: 1 } } }))).rejects.toThrow(/earlier generation/);
+      expect(other.asked).toBe(0);
     });
   });
 

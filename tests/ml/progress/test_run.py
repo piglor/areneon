@@ -14,9 +14,14 @@ from areneon_ml.loop import layout
 from areneon_ml.loop.play import PlayError
 from areneon_ml.loop.records import policy_id
 from areneon_ml.progress import run as run_module
-from areneon_ml.progress.records import ProgressRecordError, read_progress_record
+from areneon_ml.progress.records import (
+    RANDOM_PREVIEW_POLICY,
+    ProgressRecordError,
+    read_progress_record,
+)
 from areneon_ml.progress.run import (
     SEEN_LABEL,
+    AblationSpec,
     PreviousPair,
     ProgressError,
     ProgressRequest,
@@ -756,3 +761,168 @@ def test_a_stored_anchor_record_with_a_wrong_opponent_is_refused_on_verification
     layout.write_json(target / layout.MANIFEST, manifest)
     with pytest.raises(ProgressError, match="not generation 0's pair"):
         verify_progress_dir(root / "g000001", config, run, 1)
+
+
+# ---- the Team Preview ablation (ADR-017 erratum E1) --------------------------------------------
+
+
+def ablate(run: Path, root: Path, fake: Any = None, **kwargs: Any) -> dict[str, Any]:
+    return progress_generation(run, 1, root, fake or player(run), preview_ablation=True, **kwargs)
+
+
+def test_the_ablation_plays_three_previews_against_both_baselines_and_nothing_else(
+    run: Path, tmp_path: Path
+) -> None:
+    fake = player(run)
+    done = ablate(run, tmp_path / "p", fake)
+    (request,) = fake.requests
+    zero = previous_of(run, 0)
+    assert request.ablation is not None
+    assert request.ablation.preview == zero["preview"]
+    assert request.ablation.generation == 0
+    assert request.ablation.policy_id_argmax == policy_id(zero["preview"], request.battle, "argmax")
+    assert request.ablation.random_policy_id == policy_id(
+        RANDOM_PREVIEW_POLICY, request.battle, "argmax"
+    )
+    assert request.previous is None
+    assert request.anchors == ()
+    assert [m["match_id"] for m in done["matches"]] == [
+        f"preview-{v}-{b}-argmax"
+        for v in ("g0", "learned", "random")
+        for b in ("actor-rule", "random-legal")
+    ]
+    record = read_progress_record(layout.read_json(tmp_path / "p" / "g000001" / "progress.json"))
+    kinds = {m["match_id"]: m["candidate_preview"]["kind"] for m in record["matches"]}
+    assert kinds["preview-learned-actor-rule-argmax"] == "learned"
+    assert kinds["preview-random-actor-rule-argmax"] == "random"
+    assert kinds["preview-g0-actor-rule-argmax"] == "generation"
+    assert {m["mode"] for m in record["matches"]} == {"argmax"}
+    assert not {p.name for p in (tmp_path / "p" / "g000001" / "games").iterdir()} - {
+        f"preview-{v}-{b}-argmax-0.json"
+        for v in ("g0", "learned", "random")
+        for b in ("actor-rule", "random-legal")
+    }
+
+
+def test_the_ablation_reports_three_scores_and_the_paired_differences_in_integers(
+    run: Path, tmp_path: Path
+) -> None:
+    done = ablate(run, tmp_path / "p", games=4, record_games=0)
+    rows = done["ablation"]["baselines"]["actor-rule"]
+    assert "conditional on the fixed validation plan" in done["ablation"]["interval"]
+    assert rows["learned"] == {"pairs": 2, "score_ppm": 500_000}  # a split pair is 1/2
+    assert rows["random"]["score_ppm"] == 0
+    assert rows["g0"]["score_ppm"] == 1_000_000
+    assert rows["random"]["minus_learned"] == {
+        "mean_ppm": -500_000,
+        "better": 0,
+        "equal": 0,
+        "worse": 2,
+    }
+    assert rows["g0"]["minus_learned"] == {
+        "mean_ppm": 500_000,
+        "better": 2,
+        "equal": 0,
+        "worse": 0,
+    }
+    assert sorted(done["ablation"]["baselines"]) == ["actor-rule", "random-legal"]
+    # A committed directory is verified and skipped, and says the same.
+    again = ablate(run, tmp_path / "p", player(run), games=4, record_games=0)
+    assert again["skipped"] is True
+    assert again["ablation"] == done["ablation"]
+
+
+def test_a_record_without_ablation_matches_has_no_ablation_section(
+    run: Path, tmp_path: Path
+) -> None:
+    assert "ablation" not in progress_generation(run, 1, tmp_path / "p", player(run), 2, 1)
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [{"anchors": (0,)}, {"previous_matches": True}],
+)
+def test_the_ablation_is_played_alone(run: Path, tmp_path: Path, kwargs: dict[str, Any]) -> None:
+    fake = player(run)
+    with pytest.raises(ProgressError, match="played alone"):
+        ablate(run, tmp_path / "p", fake, **kwargs)
+    assert fake.requests == []
+
+
+def test_the_ablation_needs_a_generation_of_one_or_more(run: Path, tmp_path: Path) -> None:
+    with pytest.raises(ProgressError, match="played alone"):
+        progress_generation(run, 0, tmp_path / "p", player(run), 2, 1, preview_ablation=True)
+
+
+@pytest.mark.parametrize(
+    ("name", "change", "message"),
+    [
+        (
+            "another generation's Preview",
+            lambda d: [
+                m["candidate_preview"].update(checkpoint="0" * 64)
+                for m in d["matches"]
+                if m["candidate_preview"]["kind"] == "generation"
+            ],
+            "policy_id is not the frozen pair's",
+        ),
+        (
+            "a variant missing",
+            lambda d: d.update(
+                matches=[m for m in d["matches"] if "random" not in m["match_id"]],
+                games=[g for g in d["games"] if "random" not in g["match_id"]],
+            ),
+            "not the ones asked for",
+        ),
+        (
+            "a null candidate_preview",
+            lambda d: d["matches"].append(
+                {**d["matches"][0], "match_id": "zzz-argmax", "candidate_preview": None}
+            ),
+            "candidate_preview",
+        ),
+    ],
+)
+def test_wrong_ablation_matches_are_refused_before_anything_commits(
+    run: Path, tmp_path: Path, name: str, change: Any, message: str
+) -> None:
+    def hook(out: Path, request: ProgressRequest) -> None:
+        rewrite(out / "progress.json", change)
+
+    root = tmp_path / "p"
+    with pytest.raises((ProgressError, ProgressRecordError), match=message):
+        ablate(run, root, FakeProgressPlayer(dataset_config(), committed_manifest(run, 0), hook))
+    assert sorted(p.name for p in root.iterdir()) == [".lock"], name
+
+
+def test_ablation_matches_nobody_asked_for_are_refused(run: Path, tmp_path: Path) -> None:
+    class Eager(FakeProgressPlayer):
+        def progress(self, request: ProgressRequest) -> dict[str, Any]:
+            zero = previous_of(run, 0)
+            ask = AblationSpec(0, zero["preview"], "policy:" + "0" * 64, "policy:" + "1" * 64)
+            return super().progress(ProgressRequest(**{**request.__dict__, "ablation": ask}))
+
+    with pytest.raises(ProgressError, match="not the ones asked for"):
+        progress_generation(
+            run, 1, tmp_path / "p", Eager(dataset_config(), committed_manifest(run, 0)), 2, 1
+        )
+
+
+def test_a_committed_ablation_whose_earlier_preview_is_not_that_generations_is_refused(
+    run: Path, tmp_path: Path
+) -> None:
+    root = tmp_path / "p"
+    ablate(run, root)
+    config = read_run_config(layout.read_json(run / layout.CONFIG))
+    record = layout.read_json(root / "g000001" / "progress.json")
+    for match in record["matches"]:
+        if match["candidate_preview"]["kind"] == "generation":
+            match["candidate_preview"]["checkpoint"] = "0" * 64
+            match["policy_id"] = policy_id("0" * 64, record["checkpoints"]["battle"], "argmax")
+    layout.write_json(root / "g000001" / "progress.json", record)
+    target = root / "g000001"
+    manifest = layout.read_json(target / layout.MANIFEST)
+    manifest["files"] = layout.hash_tree(target)
+    layout.write_json(target / layout.MANIFEST, manifest)
+    with pytest.raises(ProgressError, match="not generation 0's own"):
+        verify_progress_dir(target, config, run, 1)

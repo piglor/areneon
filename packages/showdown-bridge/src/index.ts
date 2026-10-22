@@ -187,7 +187,7 @@ export {
   PolicyWorkerError,
   UnsupportedCandidateError,
 } from "./evaluation-harness.ts";
-export { type PolicyActorOptions, policyActor, type PolicyGameOptions, policyGame, type PolicySeat, type SamplerInput, sampleU } from "./policy-actor.ts";
+export { type PolicyActorOptions, policyActor, type PolicyGameOptions, policyGame, type PolicySeat, RANDOM_PREVIEW_POLICY, randomPreviewSeed, type SamplerInput, sampleU } from "./policy-actor.ts";
 export {
   contractVersions,
   encodeFrame,

@@ -118,6 +118,17 @@ export async function progressSamples(engine: Engine): Promise<ProgressSamples> 
       e.plan.anchor_games_per_match = 4;
       change?.(e);
     });
+  // The Preview ablation (ADR-017 erratum E1): one Battle network with three Previews against one baseline, argmax.
+  const v2Ablation = (change?: (e: Record<string, any>) => void) =>
+    withV2((e) => {
+      const variant = (id: string, candidate_preview: unknown, policy_id: string) => ({ ...e.matches[0], match_id: id, policy_id, candidate_preview });
+      const learned = variant("preview-learned-actor-rule-argmax", { kind: "learned" }, `policy:${hexOf("a")}`);
+      const random = variant("preview-random-actor-rule-argmax", { kind: "random" }, `policy:${hexOf("c")}`);
+      const earlier = variant("preview-g0-actor-rule-argmax", { kind: "generation", generation: 0, checkpoint: hexOf("8") }, `policy:${hexOf("d")}`);
+      e.matches = [earlier, learned, random];
+      e.games = e.matches.flatMap((m: any) => (["candidate", "opponent", "candidate", "tie"] as const).map((winner, index) => ({ match_id: m.match_id, game: index, pair: index >> 1, candidate_seat: index % 2 === 0 ? "p1" : "p2", outcome: { kind: "played", winner, turns } })));
+      change?.(e);
+    });
   const withEval = (change: (e: Record<string, any>) => void) => mutated(evaluation, change);
   const withGame = (change: (g: Record<string, any>) => void) => mutated(game, change);
   // A faulty sample whose fault does not depend on the log's length carries a few lines, so the corpus stays small.
@@ -138,6 +149,7 @@ export async function progressSamples(engine: Engine): Promise<ProgressSamples> 
       "progress-evaluation-record-2/baseline-match": v2,
       "progress-evaluation-record-2/previous-match": v2Previous,
       "progress-evaluation-record-2/anchor-match": v2Anchor(),
+      "progress-evaluation-record-2/ablation-match": v2Ablation(),
       "progress-game-record/played": game,
       "progress-game-record/played-pair": pairGame,
       "progress-game-record/forfeit": forfeitGame,
@@ -154,6 +166,7 @@ export async function progressSamples(engine: Engine): Promise<ProgressSamples> 
       "progress-evaluation-record-2/public-class": withV2((e) => (e.data_class = "public")),
       "progress-evaluation-record-2/schema-version-1": withV2((e) => (e.schema_version = 1)),
       "progress-evaluation-record-2/anchor-no-generation": v2Anchor((e) => delete e.matches[0].opponent.generation),
+      "progress-evaluation-record-2/ablation-no-checkpoint": v2Ablation((e) => delete e.matches[0].candidate_preview.checkpoint),
       "progress-evaluation-record-2/fractional-wins": withV2((e) => (e.matches[0].wins = 0.5)),
       "progress-game-record/public-class": withShortGame((g) => (g.data_class = "public")),
       "progress-game-record/extra-field": withShortGame((g) => (g.notes = "x")),
@@ -171,6 +184,9 @@ export async function progressSamples(engine: Engine): Promise<ProgressSamples> 
       "progress-evaluation-record/hash-count-wrong": withEval((e) => (e.matches[0].game_record_hashes = [])),
       "progress-evaluation-record/seat-wrong": withEval((e) => (e.games[1].candidate_seat = "p1")),
       "progress-evaluation-record/pairs-used-wrong": withEval((e) => (e.teams.pairs_used = 3)),
+      "progress-evaluation-record-2/ablation-vs-anchor": v2Ablation((e) => ((e.plan.anchor_games_per_match = 4), (e.matches[0].opponent = { kind: "anchor", generation: 0, policy_id: `policy:${hexOf("b")}`, checkpoints: { preview: hexOf("6"), battle: hexOf("7") } }))),
+      "progress-evaluation-record-2/ablation-misnamed": v2Ablation((e) => ((e.matches[0].match_id = "preview-g0-random-legal-argmax"), e.games.slice(0, 4).forEach((g: any) => (g.match_id = "preview-g0-random-legal-argmax")))),
+      "progress-evaluation-record-2/ablation-not-earlier": v2Ablation((e) => (e.matches[0].candidate_preview.generation = 1)),
       "progress-evaluation-record-2/counts-disagree": withV2((e) => (e.matches[0].wins += 1)),
       "progress-evaluation-record-2/pair-is-game": withV2((e) => (e.games[2].pair = 2)),
       "progress-evaluation-record-2/seat-wrong": withV2((e) => (e.games[1].candidate_seat = "p1")),

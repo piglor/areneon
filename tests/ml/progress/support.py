@@ -19,7 +19,7 @@ from areneon_contracts.contracts import jcs
 from areneon_ml.learner.config import RunConfig
 from areneon_ml.loop import layout
 from areneon_ml.loop.records import policy_id
-from areneon_ml.progress.records import log_hash, record_hash
+from areneon_ml.progress.records import RANDOM_PREVIEW_POLICY, log_hash, record_hash
 from areneon_ml.progress.run import ProgressRequest
 from areneon_ml.progress.seeds import progress_game_seed
 
@@ -71,6 +71,76 @@ def game_file(  # noqa: PLR0913, PLR0917
     return stored
 
 
+ABLATION_RESULTS: dict[str, Callable[[int], str]] = {
+    # The stand-in's outcome of game ``g`` per Preview variant: learned splits every pair, a
+    # random Preview loses every game and generation 0's wins every game.
+    "learned": lambda g: "candidate" if g % 2 == 0 else "opponent",
+    "random": lambda g: "opponent",
+    "g0": lambda g: "candidate",
+}
+
+
+def add_ablation(  # noqa: PLR0913, PLR0917
+    config: RunConfig,
+    request: ProgressRequest,
+    games: int,
+    matches: list[dict[str, Any]],
+    rows: list[dict[str, Any]],
+    stored: dict[str, dict[str, Any]],
+) -> None:
+    """The six matches of a Preview ablation: three Previews against the two baselines, argmax."""
+    spec = request.ablation
+    assert spec is not None
+    previews: dict[str, tuple[str, dict[str, Any]]] = {
+        "learned": (request.preview, {"kind": "learned"}),
+        "random": (RANDOM_PREVIEW_POLICY, {"kind": "random"}),
+        "g0": (
+            spec.preview,
+            {"kind": "generation", "generation": spec.generation, "checkpoint": spec.preview},
+        ),
+    }
+    for variant, (preview_id, candidate_preview) in previews.items():
+        mine = policy_id(preview_id, request.battle, "argmax")
+        for actor, baseline in BASELINES:
+            match_id = f"preview-{variant}-{actor}-argmax"
+            hashes = []
+            for game in range(min(request.record_games, games)):
+                found = game_file(config, request, match_id, game, mine, baseline)
+                found["omniscient_log_sha256"] = log_hash(found["omniscient_log"])
+                stored[f"{match_id}-{game}.json"] = found
+                hashes.append(record_hash(found))
+            wins = 0
+            for game in range(games):
+                winner = ABLATION_RESULTS[variant](game)
+                wins += winner == "candidate"
+                rows.append(
+                    {
+                        "match_id": match_id,
+                        "game": game,
+                        "pair": game // 2,
+                        "candidate_seat": "p1" if game % 2 == 0 else "p2",
+                        "outcome": {"kind": "played", "winner": winner, "turns": 4},
+                    }
+                )
+            matches.append(
+                {
+                    "match_id": match_id,
+                    "policy_id": mine,
+                    "opponent": {"kind": "baseline", "policy_id": baseline},
+                    "mode": "argmax",
+                    "candidate_preview": candidate_preview,
+                    "games": games,
+                    "wins": wins,
+                    "ties": 0,
+                    "losses": games - wins,
+                    "turn_cap_ties": 0,
+                    "turns_total": 4 * games,
+                    "forfeits": [],
+                    "game_record_hashes": sorted(hashes),
+                }
+            )
+
+
 def progress_files(
     config: RunConfig,
     request: ProgressRequest,
@@ -80,8 +150,8 @@ def progress_files(
     """The record and the stored games the simulator side would write for ``request``."""
     games = request.games if games is None else games
     stored: dict[str, dict[str, Any]] = {}
-    matches = []
-    rows = []
+    matches: list[dict[str, Any]] = []
+    rows: list[dict[str, Any]] = []
     opponents: list[tuple[str, str, dict[str, Any] | None]] = [
         (actor, baseline, None) for actor, baseline in BASELINES
     ]
@@ -90,6 +160,9 @@ def progress_files(
     anchors = {a.generation: a for a in request.anchors}
     for generation in sorted(anchors):
         opponents.append((f"anchor-g{generation}", "", {"anchor": generation}))
+    if request.ablation is not None:
+        opponents = []
+        add_ablation(config, request, games, matches, rows, stored)
     for _actor, baseline, previous in opponents:
         for mode in MODES:
             match_id = f"{_actor}-{mode}"
