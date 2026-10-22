@@ -210,6 +210,47 @@ class GameRow(BaseModel):
     outcome: Outcome
 
 
+class LearnedPreview(BaseModel):
+    """
+    The generation's own learned Preview network.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    kind: Literal["learned"]
+
+
+class RandomPreview(BaseModel):
+    """
+    A uniformly random choice among the legal Preview choices the engine's request lists, seeded per seat from the policy stream label.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    kind: Literal["random"]
+
+
+class GenerationPreview(BaseModel):
+    """
+    An earlier generation's learned Preview network.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    kind: Literal["generation"]
+    generation: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+    """
+    The earlier generation whose Preview network is used (0 is the seeded initial pair).
+    """
+    checkpoint: Annotated[StrictStr, Field(pattern="^[0-9a-f]{64}$")]
+    """
+    Checkpoint id of that generation's Preview network.
+    """
+
+
 class Plan(BaseModel):
     """
     What every match played: derivations, sizes and caps.
@@ -251,6 +292,15 @@ class Opponent(RootModel[BaselineOpponent | PreviousOpponent | AnchorOpponent]):
     """
 
 
+class CandidatePreview(RootModel[LearnedPreview | RandomPreview | GenerationPreview]):
+    root: Annotated[
+        LearnedPreview | RandomPreview | GenerationPreview, Field(discriminator="kind")
+    ]
+    """
+    Which Team Preview the candidate's Battle network played with in an ablation match (ADR-017 erratum E1). Absent: the candidate's own learned Preview, as in every other match.
+    """
+
+
 class Match(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
@@ -261,13 +311,14 @@ class Match(BaseModel):
     """
     policy_id: Annotated[StrictStr, Field(pattern="^policy:[0-9a-f]{64}$")]
     """
-    The candidate's policy id in this match's mode: policy: plus SHA-256 of the JCS of {preview, battle, mode, temperature, precision}.
+    The candidate's policy id in this match's mode: policy: plus SHA-256 of the JCS of {preview, battle, mode, temperature, precision}; for a candidate_preview of kind random the preview is the word random-preview@v1, for kind generation that generation's Preview checkpoint id.
     """
     opponent: Opponent
     mode: Literal["sample", "argmax"]
     """
     The candidate's choice rule: sample at temperature 1, or argmax.
     """
+    candidate_preview: CandidatePreview | MISSING = MISSING
     games: Annotated[StrictInt, Field(ge=1, le=9007199254740991)]
     wins: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
     """

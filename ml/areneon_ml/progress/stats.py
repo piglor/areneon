@@ -53,3 +53,15 @@ def wilson(wins: int, ties: int, games: int) -> Interval:
     high = min(PPM, -((-PPM * (centre + root)) // denominator))
     score = (a * PPM) // (2 * n)
     return Interval(score_ppm=score, low_ppm=low, high_ppm=high, games=n)
+
+
+RESULT_HALVES = {"win": 2, "tie": 1, "loss": 0}
+
+
+def pair_scores_of(results: list[str]) -> list[int]:
+    """Per pair, the candidate's score in half-games (0 to 4); games 2k and 2k + 1 are pair k."""
+    if not results or len(results) % 2 or any(r not in RESULT_HALVES for r in results):
+        raise ValueError("a match needs an even number of win, tie or loss results")
+    return [
+        RESULT_HALVES[results[i]] + RESULT_HALVES[results[i + 1]] for i in range(0, len(results), 2)
+    ]

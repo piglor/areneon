@@ -11,6 +11,7 @@ from typing import Any
 import pytest
 from areneon_ml.loop.records import policy_id
 from areneon_ml.progress.records import (
+    RANDOM_PREVIEW_POLICY,
     ProgressRecordError,
     log_hash,
     read_game_record,
@@ -100,6 +101,9 @@ def test_each_evaluation_rule_has_its_own_message(name: str, message: str) -> No
         ("anchor-games-odd", "must be even"),
         ("anchor-not-earlier", "plays an earlier generation"),
         ("anchor-misnamed", "is named anchor-g<generation>-<mode>"),
+        ("ablation-vs-anchor", "an ablation match plays a scripted baseline"),
+        ("ablation-misnamed", "named preview-<variant>-<baseline>-<mode>"),
+        ("ablation-not-earlier", "comes from an earlier generation"),
     ],
 )
 def test_each_version_2_rule_has_its_own_message(name: str, message: str) -> None:
@@ -249,3 +253,37 @@ def test_hashes_are_of_the_jcs_bytes() -> None:
     raw = sample(f"{GAME}/valid/played")
     assert log_hash(raw["omniscient_log"]) == raw["omniscient_log_sha256"]
     assert len(record_hash(raw)) == 64
+
+
+def test_an_ablation_candidate_policy_id_is_built_from_its_preview() -> None:
+    config = tiny_config()
+    raw = copy.deepcopy(sample(f"{EVALUATION2}/valid/ablation-match"))
+    raw["run_config_hash"] = config.hash
+    raw["plan"]["max_turns"] = config.generation.max_turns
+    raw["plan"]["latency_budget_ms"] = {"preview_ms": 30000, "battle_ms": 30000}
+    battle = raw["checkpoints"]["battle"]
+    with pytest.raises(ProgressRecordError, match="not the frozen pair's"):
+        read_progress_record(raw, config)  # the sample's placeholder policy ids
+    for match in raw["matches"]:
+        preview = match["candidate_preview"]
+        own = {"learned": raw["checkpoints"]["preview"], "random": RANDOM_PREVIEW_POLICY}.get(
+            preview["kind"], preview.get("checkpoint")
+        )
+        match["policy_id"] = policy_id(own, battle, match["mode"])
+    assert len(read_progress_record(raw, config)["matches"]) == 3
+    raw["matches"][0]["policy_id"] = policy_id(raw["checkpoints"]["preview"], battle, "argmax")
+    with pytest.raises(ProgressRecordError, match="not the frozen pair's"):
+        read_progress_record(raw, config)  # generation 0's Preview with the learned one's id
+
+
+def test_an_ablation_match_is_argmax_and_never_mixed_with_ordinary_matches() -> None:
+    raw = copy.deepcopy(sample(f"{EVALUATION2}/valid/ablation-match"))
+    raw["matches"][0]["mode"] = "sample"
+    with pytest.raises(ProgressRecordError, match="played in argmax"):
+        read_progress_record(raw)
+    mixed = copy.deepcopy(sample(f"{EVALUATION2}/valid/ablation-match"))
+    ordinary = copy.deepcopy(sample(f"{EVALUATION2}/valid/baseline-match"))
+    mixed["matches"].insert(0, ordinary["matches"][0])
+    mixed["games"] = ordinary["games"] + mixed["games"]
+    with pytest.raises(ProgressRecordError, match="ablation matches only"):
+        read_progress_record(mixed)

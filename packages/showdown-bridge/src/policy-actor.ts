@@ -11,6 +11,7 @@ import type { PrivateTeamSpec } from "@areneon/schema/types/v1/private-team-spec
 import { NoCandidateError } from "./actor-rule.ts";
 import { type Json, jcs } from "./canonical-json.ts";
 import { enumerateCandidates } from "./choices.ts";
+import { randomLegalActor } from "./random-legal.ts";
 import type { Engine, PokemonSet } from "./engine.ts";
 import { guardActor, type LatencyBudget, type PlayedGame, playGame, UnsupportedCandidateError } from "./evaluation-harness.ts";
 import { resolveFormat, type VersionManifest } from "./formats.ts";
@@ -21,6 +22,19 @@ import { type PolicyClient, PolicyReplyError } from "./policy-worker.ts";
 import { PolicyProtocolError } from "./policy-protocol.ts";
 import { type Actor, ForfeitSignal, type Player } from "./runner.ts";
 import { battleClass, type DataClass, stampTeam, type SyntheticTeamHashes, teamHash } from "./team-class.ts";
+
+/** Names the uniformly random Team Preview of the Preview ablation in its stream label and policy id (#940). */
+export const RANDOM_PREVIEW_POLICY = "random-preview@v1";
+
+/**
+ * The Mulberry32 seed of a random Preview: the first 8 hex digits of SHA-256 over the JCS of the policy stream label of
+ * this seat (protocol D9: seed, game, seat, policy id), read as a uint32 by `parseInt`. The label carries the seat, so
+ * the two seats of a game, and the two games of a pair (candidate on p1, then on p2), draw from different streams.
+ */
+export function randomPreviewSeed(seed: string, game: number, player: Player): number {
+  const digest = createHash("sha256").update(jcs(policyStreamLabel(seed, game, player, RANDOM_PREVIEW_POLICY) as unknown as Json)).digest("hex");
+  return Number.parseInt(digest.slice(0, 8), 16);
+}
 
 /** What the sampler hashes (ADR-010 §2). */
 export interface SamplerInput {
@@ -65,6 +79,11 @@ export interface PolicyActorOptions {
   sampling: "argmax" | "sample";
   /** The engine that checks the team's stats against the Team Preview request (default: the pinned checkout). */
   engine?: Engine;
+  /**
+   * Answers the Team Preview request instead of the worker (the Preview ablation's random Preview). It sees only this
+   * player's own request, whose legal choice set the engine judged; the worker is never asked for the Preview.
+   */
+  preview_actor?: Actor;
 }
 
 /**
@@ -74,10 +93,19 @@ export interface PolicyActorOptions {
  * request the adapter cannot observe is a harness incident.
  */
 export function policyActor(options: PolicyActorOptions): Actor {
-  const { client, battle, player, team, manifest, channel_class, seed, game, policy_id, sampling, engine } = options;
+  const { client, battle, player, team, manifest, channel_class, seed, game, policy_id, sampling, engine, preview_actor } = options;
   return async (request, context) => {
     if (context === undefined || context.player !== player) {
       throw new PolicyProtocolError(`the policy actor of ${player} needs its own player's channel`);
+    }
+    if (preview_actor !== undefined && request.phase === "preview") {
+      // The worker is not asked, but the team is still checked against the stats the engine sent this player.
+      try {
+        assertOwnTeamStats(engine ?? pinnedEngine(), manifest.format_id, team, playerChannel({ schema_version: 1, data_class: channel_class, player, lines: context.channel }));
+      } catch (error) {
+        throw new PolicyProtocolError(`cannot observe the request: ${(error as Error).message}`);
+      }
+      return preview_actor(request, context);
     }
     let candidates;
     try {
@@ -125,6 +153,8 @@ export interface PolicySeat {
   client: PolicyClient;
   policy_id: string;
   sampling: "argmax" | "sample";
+  /** Play the Team Preview uniformly at random among the legal Preview choices (the Preview ablation), seeded per seat. */
+  random_preview?: true;
 }
 
 export interface PolicyGameOptions {
@@ -154,8 +184,10 @@ export async function policyGame(options: PolicyGameOptions): Promise<PlayedGame
   const actorOf = (player: Player): Actor => {
     const seat = seats[player];
     if (typeof seat === "function") return seat;
+    const { random_preview, ...asked } = seat;
     const actor = policyActor({
-      ...seat,
+      ...asked,
+      ...(random_preview === undefined ? {} : { preview_actor: randomLegalActor(randomPreviewSeed(seed, game, player)) }),
       battle: `game-${game}-${player}`,
       player,
       team: stampTeam(teams[player] as PrivateTeamSpec["team"], known_synthetic),

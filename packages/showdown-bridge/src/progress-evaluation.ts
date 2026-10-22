@@ -99,6 +99,17 @@ export interface ProgressOptions {
    * Required with `anchors`; refused above twice the number of disjoint pairs.
    */
   anchor_games?: number;
+  /**
+   * The Team Preview ablation (ticket #940): instead of the usual matches, the generation's Battle network plays
+   * `random-legal` and `actor-rule` (argmax) with (i) its own learned Preview, (ii) a uniformly random Preview and
+   * (iii) an earlier generation's Preview (behind a worker of its own that holds that Preview and this Battle). Same
+   * pairs, seeds and both seats as every other match. Excludes `previous` and `anchors`.
+   */
+  ablation?: {
+    generation: { generation: number; checkpoint: string; policy_id: string; client: PolicyClient & { beginGame?: () => Promise<void> } };
+    /** The policy id of the learned Battle with a random Preview. */
+    random_policy_id: string;
+  };
   pool: ProgressPool;
   /** Games per baseline and previous match: even, two per pair; refused above twice the number of disjoint pairs. */
   games: number;
@@ -238,6 +249,11 @@ export async function playProgress(options: ProgressOptions): Promise<ProgressRe
   if (anchors.length === 0 && anchorGames !== 0) throw new ProgressError("--anchor-games needs at least one anchor");
   if (new Set(anchors.map((a) => a.generation)).size !== anchors.length) throw new ProgressError("an anchor generation may be given once");
   if (anchors.some((a) => !Number.isSafeInteger(a.generation) || a.generation < 0 || a.generation >= generation)) throw new ProgressError("an anchor must be an earlier generation than the one evaluated");
+  const { ablation } = options;
+  if (ablation !== undefined) {
+    if (anchors.length > 0 || options.previous !== undefined) throw new ProgressError("the Preview ablation is played alone: no anchors and no previous-generation matches");
+    if (!Number.isSafeInteger(ablation.generation.generation) || ablation.generation.generation < 0 || ablation.generation.generation >= generation) throw new ProgressError("the ablation's Preview must come from an earlier generation");
+  }
   const plan = progressPlan(options);
   const budget: LatencyBudget = { preview_ms: config.generation.latency_budget_ms.preview_ms, battle_ms: config.generation.latency_budget_ms.battle_ms };
   const manifest = resolveFormat(engine, config.format_id).manifest;
@@ -255,6 +271,24 @@ export async function playProgress(options: ProgressOptions): Promise<ProgressRe
     begin: () => Promise.resolve(),
   }));
   const { previous } = options;
+  // The candidates: the generation's own pair, or the three Previews of the ablation (argmax only, against the baselines).
+  type Candidate = { prefix: string; client: PolicyClient & { beginGame?: () => Promise<void> }; policy_ids: Record<ProgressMode, string>; random_preview?: true; candidate_preview?: Match["candidate_preview"] };
+  const candidates: Candidate[] = [{ prefix: "", client, policy_ids: options.policy_ids }];
+  let modes: readonly ProgressMode[] = PROGRESS_MODES;
+  if (ablation !== undefined) {
+    modes = ["argmax"];
+    candidates.length = 0;
+    candidates.push(
+      { prefix: "preview-learned-", client, policy_ids: options.policy_ids, candidate_preview: { kind: "learned" } },
+      { prefix: "preview-random-", client, policy_ids: { ...options.policy_ids, argmax: ablation.random_policy_id }, random_preview: true, candidate_preview: { kind: "random" } },
+      {
+        prefix: `preview-g${ablation.generation.generation}-`,
+        client: ablation.generation.client,
+        policy_ids: { ...options.policy_ids, argmax: ablation.generation.policy_id },
+        candidate_preview: { kind: "generation", generation: ablation.generation.generation, checkpoint: ablation.generation.checkpoint },
+      },
+    );
+  }
   if (previous !== undefined) {
     opponents.push({
       id: "previous",
@@ -278,13 +312,14 @@ export async function playProgress(options: ProgressOptions): Promise<ProgressRe
       },
     });
   }
-  for (const baseline of opponents) {
+  for (const candidateKind of candidates) {
+    for (const baseline of opponents) {
     // Every match plays each pair from both seats (E2); an anchor match may be longer than the others.
     const count = baseline.anchored === true ? anchorGames : games;
     const recorded = Math.min(record_games, count);
-    for (const mode of PROGRESS_MODES) {
-      const match_id = `${baseline.id}-${mode}`;
-      const policy_id = options.policy_ids[mode];
+    for (const mode of modes) {
+      const match_id = `${candidateKind.prefix}${baseline.id}-${mode}`;
+      const policy_id = candidateKind.policy_ids[mode];
       const opponent_policy = baseline.policies(mode);
       const matchRows: Row[] = [];
       const hashes: string[] = [];
@@ -296,8 +331,8 @@ export async function playProgress(options: ProgressOptions): Promise<ProgressRe
         // Teams stay on their seats; the policies swap. Both games of a pair share the pair's battle seed.
         const teams: Record<Player, PokemonSet[]> = { p1: first.sets, p2: second.sets };
         const streams = progressGameStreams(config.seeds.run_key, pair);
-        const seat: PolicySeat = { client, policy_id, sampling: mode };
-        await client.beginGame?.();
+        const seat: PolicySeat = { client: candidateKind.client, policy_id, sampling: mode, ...(candidateKind.random_preview === undefined ? {} : { random_preview: true }) };
+        await candidateKind.client.beginGame?.();
         await baseline.begin();
         const played = await policyGame({
           engine,
@@ -320,7 +355,8 @@ export async function playProgress(options: ProgressOptions): Promise<ProgressRe
       }
       rowsByMatch.set(match_id, matchRows);
       wall_ms[match_id] = Math.round(performance.now() - started);
-      matches.push(summarise(match_id, policy_id, baseline.opponent(mode), mode, matchRows, hashes, config.generation.max_turns));
+      matches.push(summarise(match_id, policy_id, baseline.opponent(mode), mode, matchRows, hashes, config.generation.max_turns, candidateKind.candidate_preview));
+    }
     }
   }
   // Matches and their rows go in match_id order, which the reader requires (`actor-rule`, `anchor-g*`, `previous`, `random-legal`).
@@ -351,12 +387,13 @@ export async function playProgress(options: ProgressOptions): Promise<ProgressRe
   return { record, game_records: stored, wall_ms };
 }
 
-function summarise(match_id: string, policy_id: string, opponent: Match["opponent"], mode: ProgressMode, rows: readonly Row[], hashes: string[], maxTurns: number): Match {
+function summarise(match_id: string, policy_id: string, opponent: Match["opponent"], mode: ProgressMode, rows: readonly Row[], hashes: string[], maxTurns: number, candidate_preview?: Match["candidate_preview"]): Match {
   return {
     match_id,
     policy_id,
     opponent,
     mode,
+    ...(candidate_preview === undefined ? {} : { candidate_preview }),
     games: rows.length,
     ...tallyRows(rows, maxTurns),
     game_record_hashes: hashes.sort(),

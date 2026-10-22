@@ -147,11 +147,48 @@ def is_v2(record: dict[str, Any]) -> bool:
     return bool(record["schema_version"] == SCHEMA_V2)
 
 
+#: Names the uniformly random Preview in a policy id and a stream label (ticket #940).
+RANDOM_PREVIEW_POLICY = "random-preview@v1"
+
+
+def candidate_preview_id(preview: dict[str, Any] | None, own: str) -> str:
+    """The Preview part of a candidate's policy id: its own checkpoint, the random word or the
+    checkpoint of the earlier generation whose Preview it used."""
+    if preview is None or preview["kind"] == "learned":
+        return own
+    return RANDOM_PREVIEW_POLICY if preview["kind"] == "random" else str(preview["checkpoint"])
+
+
+def preview_variant(preview: dict[str, Any]) -> str:
+    """The word an ablation match id carries for its candidate's Preview."""
+    return f"g{preview['generation']}" if preview["kind"] == "generation" else str(preview["kind"])
+
+
+def _check_ablation_match(match: dict[str, Any], generation: int) -> None:
+    """A Preview ablation match (ticket #940) plays a baseline and is named for its variant."""
+    preview = match.get("candidate_preview")
+    if preview is None:
+        return
+    name, opponent = match["match_id"], match["opponent"]
+    if match["mode"] != "argmax":
+        raise ProgressRecordError(f"{name}: an ablation match is played in argmax")
+    if opponent["kind"] != "baseline":
+        raise ProgressRecordError(f"{name}: an ablation match plays a scripted baseline")
+    if preview["kind"] == "generation" and preview["generation"] >= generation:
+        raise ProgressRecordError(f"{name}: an ablation Preview comes from an earlier generation")
+    baseline = opponent["policy_id"].split("@")[0]
+    if name != f"preview-{preview_variant(preview)}-{baseline}-{match['mode']}":
+        raise ProgressRecordError(
+            f"{name}: an ablation match is named preview-<variant>-<baseline>-<mode>"
+        )
+
+
 def _check_match_v2(
     match: dict[str, Any], rows: list[dict[str, Any]], plan: dict[str, Any], generation: int
 ) -> None:
     name = match["match_id"]
     opponent = match["opponent"]
+    _check_ablation_match(match, generation)
     if opponent["kind"] == "anchor":
         if (
             opponent["generation"] >= generation
@@ -185,6 +222,11 @@ def _check_match_v2(
         )
 
 
+def _check_not_mixed(matches: list[dict[str, Any]]) -> None:
+    if len({m.get("candidate_preview") is None for m in matches}) > 1:
+        raise ProgressRecordError("a Preview ablation record holds ablation matches only")
+
+
 def _read_v2(raw: dict[str, Any], config: RunConfig | None) -> dict[str, Any]:
     try:
         validate("progress-evaluation-record-2", raw)
@@ -211,6 +253,7 @@ def _read_v2(raw: dict[str, Any], config: RunConfig | None) -> dict[str, Any]:
     ids = [m["match_id"] for m in matches]
     if not _ascending(ids):
         raise ProgressRecordError("matches must be sorted by match_id, each once")
+    _check_not_mixed(matches)
     by_match: dict[str, list[dict[str, Any]]] = {i: [] for i in ids}
     for row in games:
         if row["match_id"] not in by_match:
@@ -241,7 +284,11 @@ def _check_run(raw: dict[str, Any], config: RunConfig) -> None:
         )
     pair = raw["checkpoints"]
     for match in raw["matches"]:
-        if match["policy_id"] != policy_id(pair["preview"], pair["battle"], match["mode"]):
+        if match["policy_id"] != policy_id(
+            candidate_preview_id(match.get("candidate_preview"), pair["preview"]),
+            pair["battle"],
+            match["mode"],
+        ):
             raise ProgressRecordError(
                 f"{match['match_id']}: policy_id is not the frozen pair's in this mode"
             )

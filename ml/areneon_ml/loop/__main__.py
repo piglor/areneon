@@ -140,6 +140,15 @@ def _parser() -> argparse.ArgumentParser:
         help="also play the previous generation's frozen pair (previous-sample, previous-argmax): "
         "a seen, same-lineage comparison that can cycle; off by default",
     )
+    progress.add_argument(
+        "--preview-ablation",
+        action="store_true",
+        help="instead of the usual matches (#940): the generation's Battle network "
+        "with its own learned Preview, a uniformly random Preview and generation 0's Preview, "
+        "argmax, against random-legal and actor-rule on the same pairs and seeds, both seats; "
+        "needs --generation of 1 or more, and no --anchors or --previous-matches. Use its own "
+        "--progress-dir",
+    )
     progress.add_argument("--progress-dir", type=Path, help="default: <run-dir>.progress")
     progress.add_argument("--engine-data", type=Path, required=True)
     progress.add_argument("--node", default="node", help="the node executable")
@@ -187,6 +196,8 @@ def _progress(args: argparse.Namespace) -> dict[str, object]:
         engine_data=args.engine_data.resolve(),
         encoder_version=encoder_version(game, config.model.encoder),
     )
+    if args.preview_ablation and args.all:
+        raise ProgressError("--preview-ablation needs --generation, not --all")
     root = progress_root(run_dir, args.progress_dir)
     record_games = (
         min(DEFAULT_RECORD_GAMES, args.games) if args.record_games is None else args.record_games
@@ -203,6 +214,7 @@ def _progress(args: argparse.Namespace) -> dict[str, object]:
             args.anchors,
             args.anchor_games,
             args.previous_matches,
+            args.preview_ablation,
         )
         for g in generations
     ]

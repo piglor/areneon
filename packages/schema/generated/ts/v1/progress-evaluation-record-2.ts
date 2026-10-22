@@ -8,6 +8,13 @@
  */
 export type Opponent = BaselineOpponent | PreviousOpponent | AnchorOpponent;
 /**
+ * Which Team Preview the candidate's Battle network played with in an ablation match (ADR-017 erratum E1). Absent: the candidate's own learned Preview, as in every other match.
+ *
+ * This interface was referenced by `ProgressEvaluationRecordV2`'s JSON-Schema
+ * via the `definition` "CandidatePreview".
+ */
+export type CandidatePreview = LearnedPreview | RandomPreview | GenerationPreview;
+/**
  * How one game ended, seen from the candidate: played to an end, or forfeited by a policy.
  *
  * This interface was referenced by `ProgressEvaluationRecordV2`'s JSON-Schema
@@ -155,7 +162,7 @@ export interface Match {
    */
   match_id: string;
   /**
-   * The candidate's policy id in this match's mode: policy: plus SHA-256 of the JCS of {preview, battle, mode, temperature, precision}.
+   * The candidate's policy id in this match's mode: policy: plus SHA-256 of the JCS of {preview, battle, mode, temperature, precision}; for a candidate_preview of kind random the preview is the word random-preview@v1, for kind generation that generation's Preview checkpoint id.
    */
   policy_id: string;
   opponent: Opponent;
@@ -163,6 +170,7 @@ export interface Match {
    * The candidate's choice rule: sample at temperature 1, or argmax.
    */
   mode: "sample" | "argmax";
+  candidate_preview?: CandidatePreview;
   games: number;
   /**
    * Candidate wins, forfeits by the opponent included.
@@ -230,6 +238,41 @@ export interface AnchorOpponent {
    */
   policy_id: string;
   checkpoints: Checkpoints;
+}
+/**
+ * The generation's own learned Preview network.
+ *
+ * This interface was referenced by `ProgressEvaluationRecordV2`'s JSON-Schema
+ * via the `definition` "LearnedPreview".
+ */
+export interface LearnedPreview {
+  kind: "learned";
+}
+/**
+ * A uniformly random choice among the legal Preview choices the engine's request lists, seeded per seat from the policy stream label.
+ *
+ * This interface was referenced by `ProgressEvaluationRecordV2`'s JSON-Schema
+ * via the `definition` "RandomPreview".
+ */
+export interface RandomPreview {
+  kind: "random";
+}
+/**
+ * An earlier generation's learned Preview network.
+ *
+ * This interface was referenced by `ProgressEvaluationRecordV2`'s JSON-Schema
+ * via the `definition` "GenerationPreview".
+ */
+export interface GenerationPreview {
+  kind: "generation";
+  /**
+   * The earlier generation whose Preview network is used (0 is the seeded initial pair).
+   */
+  generation: number;
+  /**
+   * Checkpoint id of that generation's Preview network.
+   */
+  checkpoint: string;
 }
 /**
  * This interface was referenced by `ProgressEvaluationRecordV2`'s JSON-Schema

@@ -135,10 +135,20 @@ export function readProgressEvaluationRecordV2(value: unknown): ProgressEvaluati
     if (rows === undefined) return fail(`a game row names the unknown match ${row.match_id}`);
     rows.push(row);
   }
+  if (new Set(matches.map((match) => match.candidate_preview === undefined)).size > 1) fail("a Preview ablation record holds ablation matches only");
   const flat = ids.flatMap((id) => rowsOf.get(id) as RowV2[]);
   if (flat.some((row, index) => row !== games[index])) fail("game rows must be in match then game order");
   for (const match of matches) {
     const rows = rowsOf.get(match.match_id) as RowV2[];
+    const preview = match.candidate_preview;
+    if (preview !== undefined) {
+      // A Preview ablation match (ticket #940): a baseline opponent, named preview-<variant>-<baseline>-<mode>.
+      if (match.mode !== "argmax") fail(`${match.match_id}: an ablation match is played in argmax`);
+      if (match.opponent.kind !== "baseline") fail(`${match.match_id}: an ablation match plays a scripted baseline`);
+      const variant = preview.kind === "generation" ? `g${preview.generation}` : preview.kind;
+      if (preview.kind === "generation" && preview.generation >= record.generation) fail(`${match.match_id}: an ablation Preview comes from an earlier generation`);
+      if (match.match_id !== `preview-${variant}-${match.opponent.policy_id.split("@")[0] as string}-${match.mode}`) fail(`${match.match_id}: an ablation match is named preview-<variant>-<baseline>-<mode>`);
+    }
     const anchor = match.opponent.kind === "anchor" ? match.opponent : undefined;
     if (anchor !== undefined && (anchor.generation >= record.generation || match.match_id !== `anchor-g${anchor.generation}-${match.mode}`)) fail(`${match.match_id}: an anchor match is named anchor-g<generation>-<mode> and plays an earlier generation`);
     if (match.games !== (anchor === undefined ? plan.games_per_match : (anchorGames as number))) fail(`${match.match_id}: games must equal ${anchor === undefined ? "plan.games_per_match" : "plan.anchor_games_per_match"}`);
