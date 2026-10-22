@@ -1286,6 +1286,14 @@ class _Reducer:
         self._mon(line.args[0], line).ability_suppressed = True
 
 
+class ChannelReducer(_Reducer):
+    """The reducer fed one line at a time.
+
+    ``state`` is what `reduce_channel` returns for the lines fed so far. It is
+    live and changes with the next ``feed``: read it (or encode it) first.
+    """
+
+
 def reduce_channel(
     player: str,
     lines: Sequence[str],
@@ -1298,7 +1306,7 @@ def reduce_channel(
     including the request being answered; `team` is that player's own
     `PrivateTeamSpec.team`. Raises a `ReducerError` on anything unknown.
     """
-    reducer = _Reducer(player, team, vocab)
+    reducer = ChannelReducer(player, team, vocab)
     for raw in lines:
         reducer.feed(raw)
     return reducer.state

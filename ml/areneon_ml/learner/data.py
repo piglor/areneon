@@ -22,9 +22,9 @@ from typing import Any
 from areneon_contracts.training import TrainingStreamError, read_stream
 
 from areneon_ml.learner.ppo import GAME_SCORE
-from areneon_ml.model.encoder import EncodedQuery, Encoder
+from areneon_ml.model.encoder import EncodedQuery, Encoder, EncoderSession
 from areneon_ml.model.network import ROLES
-from areneon_ml.worker.view import encoder_input
+from areneon_ml.worker.view import IncrementalView
 
 
 class LearnerDataError(ValueError):
@@ -66,6 +66,10 @@ def trajectories(
     order: list[str] = []
     steps: dict[tuple[str, str], list[Step]] = {}
     scores: dict[str, float] = {}
+    # One reduction and one rqid clean per channel: the stream lists an Episode's examples
+    # together, in request order, each log a prefix of the next. Anything else restarts.
+    views: dict[tuple[str, str], tuple[IncrementalView, EncoderSession]] = {}
+    current: str | None = None
     for line in stream.split("\n")[:-1]:
         example = json.loads(line)
         observation = example["observation"]
@@ -78,8 +82,14 @@ def trajectories(
             raise LearnerDataError(f"Episode {episode} has two outcomes")
         candidates = example["candidates"]
         chosen = [candidate["choice"] for candidate in candidates].index(example["choice"])
-        query = encoders[role].encode(
-            encoder_input({"observation": observation, "candidates": candidates})
+        if episode != current:
+            views.clear()
+            current = episode
+        if (episode, role) not in views:
+            views[(episode, role)] = (IncrementalView(), encoders[role].session())
+        view, session = views[(episode, role)]
+        query = session.encode(
+            view.encoder_input({"observation": observation, "candidates": candidates})
         )
         steps.setdefault((episode, role), []).append(Step(query, chosen))
     return [

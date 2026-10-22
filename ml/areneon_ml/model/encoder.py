@@ -39,7 +39,7 @@ from areneon_ml.model.candidates import (
     parse_choice,
 )
 from areneon_ml.model.gamedata import NONE, UNKNOWN, GameData
-from areneon_ml.reducer import BattleState, PokemonState, SideState, reduce_channel
+from areneon_ml.reducer import BattleState, ChannelReducer, PokemonState, SideState, reduce_channel
 from areneon_ml.reducer.state import STAT_KEYS
 
 # Bump when the meaning of a feature changes without its name or width changing.
@@ -243,6 +243,12 @@ class EncodedQuery:
         }
 
 
+def _last_request(log: Sequence[str]) -> str | None:
+    """The last ``|request|`` line of a channel, or None."""
+    found = [line for line in log if line.startswith(_REQUEST)]
+    return found[-1] if found else None
+
+
 @dataclass
 class _Request:
     """The parts of the player's own last request a candidate refers to."""
@@ -271,13 +277,23 @@ class Encoder:
             observation["team"]["team"],
             self.game.vocabulary,
         )
+        return self._encode_state(query, state, _last_request(observation["log"]))
+
+    def session(self) -> EncoderSession:
+        """An incremental encoder: the same tensors as ``encode``, one reduction per channel."""
+        return EncoderSession(self)
+
+    def _encode_state(
+        self, query: Mapping[str, Any], state: BattleState, last_request: str | None
+    ) -> EncodedQuery:
+        observation = query["observation"]
         field_features = self._field(state)
         wanted = "preview" if state.request_kind == "preview" else "battle"
         if observation["kind"] != wanted:
             raise EncodingError(
                 f"a {observation['kind']} observation at a {state.request_kind} request"
             )
-        request = self._request(state, observation["log"])
+        request = self._request(state, last_request)
         candidates = [self._candidate(c, request, wanted) for c in query["candidates"]]
         return self._assemble(observation["kind"], state, field_features, candidates)
 
@@ -387,13 +403,13 @@ class Encoder:
 
     # -- the request ---------------------------------------------------------
 
-    def _request(self, state: BattleState, log: Sequence[str]) -> _Request:
+    def _request(self, state: BattleState, raw: str | None) -> _Request:
         """The player's own last ``|request|``: its Pokémon order and its moves.
 
         ``rqid`` is never read.
         """
         # The reducer saw a request (_field refused a state without one), so a line exists.
-        raw = [line for line in log if line.startswith(_REQUEST)][-1]
+        assert raw is not None
         body = json.loads(raw[len(_REQUEST) :])
         by_name = {mon.name: i for i, mon in enumerate(state.own.roster)}
         out = _Request()
@@ -483,3 +499,47 @@ class Encoder:
             ),
             pending=torch.tensor([c[3] for c in candidates], dtype=torch.float32),
         )
+
+
+class EncoderSession:
+    """Encode the queries of one channel with one pass of the reducer over it.
+
+    ``Encoder.encode`` reduces a query's log from its first line. The queries of
+    one Episode carry growing prefixes of the same channel, so a session feeds
+    the reducer only the lines it has not seen and encodes at once, while the
+    state is the one ``reduce_channel`` would return for that prefix. A query
+    that does not extend the lines already fed (another player, another team, a
+    shorter or different log) starts the reduction again, so the result never
+    differs from ``Encoder.encode``; a refusal is raised at the same line and
+    leaves the session empty. The tensors are fresh, nothing aliases the state.
+    """
+
+    def __init__(self, encoder: Encoder) -> None:
+        self._encoder = encoder
+        self._key: tuple[Any, Any] | None = None
+        self._reducer: ChannelReducer | None = None
+        self._fed: list[str] = []
+        self._last_request: str | None = None
+
+    def encode(self, query: Mapping[str, Any]) -> EncodedQuery:
+        observation = query["observation"]
+        log = observation["log"]
+        key = (observation["player"], observation["team"]["team"])
+        fed = len(self._fed)
+        if self._reducer is None or self._key != key or log[:fed] != self._fed:
+            self._reducer = ChannelReducer(key[0], key[1], self._encoder.game.vocabulary)
+            self._key = key
+            self._fed = []
+            self._last_request = None
+            fed = 0
+        try:
+            for line in log[fed:]:
+                self._reducer.feed(line)
+                self._fed.append(line)
+                if line.startswith(_REQUEST):
+                    self._last_request = line
+            return self._encoder._encode_state(query, self._reducer.state, self._last_request)
+        except BaseException:
+            self._reducer = None
+            self._fed = []
+            raise
