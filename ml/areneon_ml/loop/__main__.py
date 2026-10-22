@@ -50,11 +50,12 @@ from areneon_ml.progress.records import ProgressRecordError
 from areneon_ml.progress.run import (
     DEFAULT_GAMES,
     DEFAULT_RECORD_GAMES,
+    SCHEDULE_EVERY,
     NodeProgressPlayer,
     ProgressError,
-    committed_generations,
     progress_generation,
     progress_root,
+    scheduled_generations,
 )
 from areneon_ml.report.command import report_run
 
@@ -99,12 +100,23 @@ def _parser() -> argparse.ArgumentParser:
     progress.add_argument("--run-dir", type=Path, required=True)
     which = progress.add_mutually_exclusive_group(required=True)
     which.add_argument("--generation", type=int, help="the generation to evaluate")
-    which.add_argument("--all", action="store_true", help="every committed generation")
+    which.add_argument(
+        "--all",
+        action="store_true",
+        help=f"every committed generation whose number is a multiple of {SCHEDULE_EVERY} "
+        "(0 included)",
+    )
     progress.add_argument("--games", type=int, default=DEFAULT_GAMES, help="games per match")
     progress.add_argument(
         "--record-games",
         type=int,
         help=f"games stored per match (default {DEFAULT_RECORD_GAMES}, at most --games)",
+    )
+    progress.add_argument(
+        "--previous-matches",
+        action="store_true",
+        help="also play the previous generation's frozen pair (previous-sample, previous-argmax): "
+        "a seen, same-lineage comparison that can cycle; off by default",
     )
     progress.add_argument("--progress-dir", type=Path, help="default: <run-dir>.progress")
     progress.add_argument("--engine-data", type=Path, required=True)
@@ -149,9 +161,12 @@ def _progress(args: argparse.Namespace) -> dict[str, object]:
     record_games = (
         min(DEFAULT_RECORD_GAMES, args.games) if args.record_games is None else args.record_games
     )
-    generations = committed_generations(run_dir) if args.all else [args.generation]
+    generations = scheduled_generations(run_dir) if args.all else [args.generation]
     done = [
-        progress_generation(run_dir, g, root, player, args.games, record_games) for g in generations
+        progress_generation(
+            run_dir, g, root, player, args.games, record_games, args.previous_matches
+        )
+        for g in generations
     ]
     # Everything above succeeded, so a validation result is about to be shown: log the look.
     looks = [

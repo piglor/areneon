@@ -104,7 +104,7 @@ def built_p2(tmp_path_factory: pytest.TempPathFactory) -> Path:
     config = make_run(run, generations=2)
     root = base / "run.progress"
     player = FakeProgressPlayer(config, committed_manifest(run, 0), make_candidate_wins_from_p2)
-    progress_generation(run, 1, root, player, games=GAMES, record_games=2)
+    progress_generation(run, 1, root, player, games=GAMES, record_games=2, previous_matches=True)
     return root
 
 
@@ -116,7 +116,7 @@ def built(tmp_path_factory: pytest.TempPathFactory) -> tuple[Path, Path]:
     config = make_run(run, generations=2)
     root = base / "run.progress"
     player = FakeProgressPlayer(config, committed_manifest(run, 0), make_consistent)
-    progress_generation(run, 1, root, player, games=GAMES, record_games=2)
+    progress_generation(run, 1, root, player, games=GAMES, record_games=2, previous_matches=True)
     return run, root
 
 
