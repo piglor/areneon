@@ -2,10 +2,11 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { interimPoolSource, runGenerationCli, runManifestCli, startShard, UsageError } from "../src/generation-cli.ts";
+import { jcs, type Json } from "../src/canonical-json.ts";
+import { interimPoolSource, readShardFile, runGenerationCli, runManifestCli, startShard, UsageError, writeShardFile } from "../src/generation-cli.ts";
 import { GOLDEN_DIR, GOLDEN_FORMAT } from "../src/golden.ts";
 import { loadEngine, readTrainingRunConfig } from "../src/index.ts";
-import { trainingTeamPool } from "../src/league-generation.ts";
+import { type PlayedEntry, trainingTeamPool } from "../src/league-generation.ts";
 import { SAMPLES_DIR } from "../src/samples.ts";
 
 const DATA = join(GOLDEN_DIR, "engine-data.json");
@@ -128,5 +129,15 @@ describe("a further game process", () => {
     const child = startShard(script("slow.mjs", "setTimeout(() => {}, 60000);"), [], out, 5);
     child.stop();
     await expect(child.entries).rejects.toThrow(/game process 5 failed/);
+  });
+});
+
+describe("the shard handoff file (#998)", () => {
+  it("is one canonical entry per line and reads back to the same entries, however many", () => {
+    const path = join(mkdtempSync(join(tmpdir(), "shard-file-")), "shard.jsonl");
+    const entries = Array.from({ length: 50 }, (_, game) => ({ game, row: { game, note: "ünï".repeat(game) }, episodes: [] })) as unknown as PlayedEntry[];
+    writeShardFile(path, entries);
+    expect(readFileSync(path, "utf8")).toBe(entries.map((entry) => `${jcs(entry as unknown as Json)}\n`).join(""));
+    expect(readShardFile(path)).toEqual(entries);
   });
 });
