@@ -118,7 +118,7 @@ export async function progressSamples(engine: Engine): Promise<ProgressSamples> 
       e.plan.anchor_games_per_match = 4;
       change?.(e);
     });
-  // The Preview ablation (ADR-017 erratum E1): one Battle network with three Previews against one baseline, argmax.
+  // The Preview ablation (#940): one Battle network with three Previews against one baseline, argmax.
   const v2Ablation = (change?: (e: Record<string, any>) => void) =>
     withV2((e) => {
       const variant = (id: string, candidate_preview: unknown, policy_id: string) => ({ ...e.matches[0], match_id: id, policy_id, candidate_preview });

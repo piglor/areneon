@@ -49,7 +49,7 @@ const FLAGS = {
   // Anchors (fixed earlier generations): each `--anchor <generation>,<preview>,<battle>,<policy-id-sample>,<policy-id-argmax>`.
   anchor: { type: "string", multiple: true },
   "anchor-games": { type: "string" },
-  // The Preview ablation (ADR-017 erratum E1): `--ablation-preview <generation>,<preview-checkpoint>,<policy-id-argmax>` (this
+  // The Preview ablation (#940): `--ablation-preview <generation>,<preview-checkpoint>,<policy-id-argmax>` (this
   // Battle with an earlier generation's Preview) and `--ablation-random-policy-id` (this Battle with a random Preview).
   "ablation-preview": { type: "string" },
   "ablation-random-policy-id": { type: "string" },

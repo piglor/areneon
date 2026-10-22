@@ -114,6 +114,17 @@ describe("ProgressEvaluationRecordV2 (both seats, ADR-017 erratum E2)", () => {
     expect(() => readProgressEvaluationRecordV2(sample(`${V2}/invalid/${name}`))).toThrow(/invalid ProgressEvaluationRecordV2/);
   });
 
+  it("plays an ablation in argmax only and never beside ordinary matches", () => {
+    const sampleMode = sample(`${V2}/valid/ablation-match`);
+    sampleMode.matches[0].mode = "sample";
+    expect(() => readProgressEvaluationRecordV2(sampleMode)).toThrow(/played in argmax/);
+    const mixed = sample(`${V2}/valid/ablation-match`);
+    const ordinary = sample(`${V2}/valid/baseline-match`);
+    mixed.matches.unshift(ordinary.matches[0]);
+    mixed.games.unshift(...ordinary.games);
+    expect(() => readProgressEvaluationRecordV2(mixed)).toThrow(/ablation matches only/);
+  });
+
   it("is a different version from v1: each reader refuses the other's record", () => {
     expect(() => readProgressEvaluationRecord(sample(`${V2}/valid/baseline-match`))).toThrow(/invalid ProgressEvaluationRecord/);
     expect(() => readProgressEvaluationRecordV2(sample(`${EVALUATION}/valid/baseline-match`))).toThrow(/invalid ProgressEvaluationRecordV2/);

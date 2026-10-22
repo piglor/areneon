@@ -100,7 +100,7 @@ export interface ProgressOptions {
    */
   anchor_games?: number;
   /**
-   * The Team Preview ablation (ADR-017 erratum E1): instead of the usual matches, the generation's Battle network plays
+   * The Team Preview ablation (ticket #940): instead of the usual matches, the generation's Battle network plays
    * `random-legal` and `actor-rule` (argmax) with (i) its own learned Preview, (ii) a uniformly random Preview and
    * (iii) an earlier generation's Preview (behind a worker of its own that holds that Preview and this Battle). Same
    * pairs, seeds and both seats as every other match. Excludes `previous` and `anchors`.
@@ -312,7 +312,8 @@ export async function playProgress(options: ProgressOptions): Promise<ProgressRe
       },
     });
   }
-  for (const candidateKind of candidates) for (const baseline of opponents) {
+  for (const candidateKind of candidates) {
+    for (const baseline of opponents) {
     // Every match plays each pair from both seats (E2); an anchor match may be longer than the others.
     const count = baseline.anchored === true ? anchorGames : games;
     const recorded = Math.min(record_games, count);
@@ -355,6 +356,7 @@ export async function playProgress(options: ProgressOptions): Promise<ProgressRe
       rowsByMatch.set(match_id, matchRows);
       wall_ms[match_id] = Math.round(performance.now() - started);
       matches.push(summarise(match_id, policy_id, baseline.opponent(mode), mode, matchRows, hashes, config.generation.max_turns, candidateKind.candidate_preview));
+    }
     }
   }
   // Matches and their rows go in match_id order, which the reader requires (`actor-rule`, `anchor-g*`, `previous`, `random-legal`).

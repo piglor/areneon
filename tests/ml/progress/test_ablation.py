@@ -55,7 +55,7 @@ def test_a_missing_learned_match_leaves_out_the_differences_and_a_forfeit_is_a_l
 
 def test_the_expected_matches_are_three_previews_by_two_baselines() -> None:
     spec = AblationSpec(0, "a" * 64, "policy:x", "policy:y")
-    assert expected_ablation_matches(spec, {}) == [
+    assert expected_ablation_matches(spec) == [
         "preview-learned-actor-rule-argmax",
         "preview-learned-random-legal-argmax",
         "preview-random-actor-rule-argmax",

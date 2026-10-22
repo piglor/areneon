@@ -86,7 +86,7 @@ class AnchorPair:
 
 @dataclass(frozen=True)
 class AblationSpec:
-    """The Preview ablation (ADR-017 erratum E1): this generation's Battle network with its own
+    """The Preview ablation (#940): this generation's Battle network with its own
     learned Preview, a uniformly random Preview and an earlier generation's Preview."""
 
     generation: int
@@ -452,9 +452,7 @@ def _check_ablation(
     earlier generation's Preview is that generation's own, read from its records."""
     found = [m for m in record["matches"] if m.get("candidate_preview") is not None]
     if fresh:
-        asked = (
-            [] if ablation is None else expected_ablation_matches(ablation, record["checkpoints"])
-        )
+        asked = [] if ablation is None else expected_ablation_matches(ablation)
         if sorted(m["match_id"] for m in found) != sorted(asked) or (
             ablation is not None and len(found) != len(record["matches"])
         ):
@@ -544,7 +542,7 @@ def progress_generation(  # noqa: PLR0913, PLR0917
 ) -> dict[str, Any]:
     """Evaluate one generation into ``root``; a committed directory is verified and kept.
 
-    ``preview_ablation`` plays the Team Preview ablation (ADR-017 erratum E1) instead of the usual
+    ``preview_ablation`` plays the Team Preview ablation (#940) instead of the usual
     matches: this generation's Battle network with its own Preview, a random Preview and
     generation 0's Preview, argmax, against both baselines. It is played alone (no anchors, no
     previous-generation matches) and needs a generation of 1 or more.
@@ -580,6 +578,12 @@ def progress_generation(  # noqa: PLR0913, PLR0917
             shutil.rmtree(stale)
         if target.exists():
             record = verify_progress_dir(target, config, run_dir, generation)
+            if preview_ablation != bool(ablation_summary(record)):
+                raise ProgressError(
+                    f"{target.name} already holds a "
+                    f"{'normal' if preview_ablation else 'Preview ablation'} record: "
+                    "use a progress directory of its own for the other kind"
+                )
             return {
                 "generation": generation,
                 "skipped": True,

@@ -326,6 +326,9 @@ describe("playProgress", () => {
       expect(randomPreviewSeed("sodium,a", 0, "p1")).not.toBe(randomPreviewSeed("sodium,a", 0, "p2"));
       expect(randomPreviewSeed("sodium,a", 0, "p1")).not.toBe(randomPreviewSeed("sodium,a", 1, "p1"));
       expect(randomPreviewSeed("sodium,a", 0, "p1")).toBe(randomPreviewSeed("sodium,a", 0, "p1"));
+      // Known answers, computed outside the TS code with Python's hashlib over the JCS of the policy stream label.
+      expect(randomPreviewSeed("sodium,0123456789abcdef0123456789abcdef", 0, "p1")).toBe(5868395);
+      expect(randomPreviewSeed("sodium,0123456789abcdef0123456789abcdef", 3, "p2")).toBe(221793958);
     }, 300_000);
 
     it("is played alone and from an earlier generation", async () => {

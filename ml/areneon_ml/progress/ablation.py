@@ -1,4 +1,4 @@
-"""The Team Preview ablation's reading, derived on display and never stored (ADR-017 erratum E1).
+"""The Team Preview ablation's reading, derived on display and never stored (ticket #940).
 
 One generation's Battle network plays two scripted baselines (argmax) with three Previews: its
 own learned one, a uniformly random one and an earlier generation's (generation 0). Every
@@ -16,20 +16,15 @@ from __future__ import annotations
 
 from typing import Any
 
+from areneon_ml.progress.records import preview_variant
 from areneon_ml.progress.stats import CONDITIONAL_LABEL, PPM, pair_scores_of
 
 LEARNED = "learned"
 HALVES_PER_PAIR = 4
 
 
-def variant_name(preview: dict[str, Any]) -> str:
-    """``learned``, ``random`` or ``g<N>`` for a candidate Preview."""
-    return f"g{preview['generation']}" if preview["kind"] == "generation" else str(preview["kind"])
-
-
-def expected_ablation_matches(spec: Any, checkpoints: dict[str, str]) -> list[str]:
+def expected_ablation_matches(spec: Any) -> list[str]:
     """The six match ids an ablation of ``spec`` plays: three Previews against two baselines."""
-    del checkpoints
     variants = (LEARNED, "random", f"g{spec.generation}")
     return [
         f"preview-{variant}-{baseline}-argmax"
@@ -61,7 +56,7 @@ def ablation_summary(record: dict[str, Any]) -> dict[str, Any]:
     scores: dict[tuple[str, str], list[int]] = {}
     for match in matches:
         baseline = match["opponent"]["policy_id"].split("@")[0]
-        scores[(baseline, variant_name(match["candidate_preview"]))] = _pair_scores(
+        scores[(baseline, preview_variant(match["candidate_preview"]))] = _pair_scores(
             record, match["match_id"]
         )
     out: dict[str, Any] = {"interval": CONDITIONAL_LABEL, "baselines": {}}

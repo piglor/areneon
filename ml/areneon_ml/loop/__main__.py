@@ -143,7 +143,7 @@ def _parser() -> argparse.ArgumentParser:
     progress.add_argument(
         "--preview-ablation",
         action="store_true",
-        help="instead of the usual matches (ADR-017 erratum E1): the generation's Battle network "
+        help="instead of the usual matches (#940): the generation's Battle network "
         "with its own learned Preview, a uniformly random Preview and generation 0's Preview, "
         "argmax, against random-legal and actor-rule on the same pairs and seeds, both seats; "
         "needs --generation of 1 or more, and no --anchors or --previous-matches. Use its own "

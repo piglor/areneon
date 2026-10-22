@@ -926,3 +926,13 @@ def test_a_committed_ablation_whose_earlier_preview_is_not_that_generations_is_r
     layout.write_json(target / layout.MANIFEST, manifest)
     with pytest.raises(ProgressError, match="not generation 0's own"):
         verify_progress_dir(target, config, run, 1)
+
+
+def test_a_directory_of_the_other_kind_is_refused_not_skipped(run: Path, tmp_path: Path) -> None:
+    normal, ablated = tmp_path / "n", tmp_path / "a"
+    progress_generation(run, 1, normal, player(run), 2, 1)
+    ablate(run, ablated)
+    with pytest.raises(ProgressError, match="already holds a normal record"):
+        ablate(run, normal)
+    with pytest.raises(ProgressError, match="already holds a Preview ablation record"):
+        progress_generation(run, 1, ablated, player(run), 2, 1)

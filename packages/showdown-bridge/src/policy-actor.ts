@@ -23,7 +23,7 @@ import { PolicyProtocolError } from "./policy-protocol.ts";
 import { type Actor, ForfeitSignal, type Player } from "./runner.ts";
 import { battleClass, type DataClass, stampTeam, type SyntheticTeamHashes, teamHash } from "./team-class.ts";
 
-/** Names the uniformly random Team Preview of the Preview ablation in its stream label and policy id (ADR-017 erratum E1). */
+/** Names the uniformly random Team Preview of the Preview ablation in its stream label and policy id (#940). */
 export const RANDOM_PREVIEW_POLICY = "random-preview@v1";
 
 /**

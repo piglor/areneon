@@ -171,7 +171,7 @@ separate tickets (#948, #951); until they land the printed summary and the dashb
 interval, which for a both-seats record is not valid (the two games of a pair
 are not independent): read the counts, not that interval.
 
-**Team Preview ablation (ADR-017 erratum E1).** `--preview-ablation` with
+**Team Preview ablation (#940).** `--preview-ablation` with
 `--generation G` (1 or more; not `--all`; no `--anchors` or `--previous-matches`)
 plays generation G's **Battle network** with three Team Previews instead of the
 usual matches: (i) its own learned Preview, (ii) a uniformly random Preview and
