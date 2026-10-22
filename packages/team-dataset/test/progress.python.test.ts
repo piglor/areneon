@@ -63,9 +63,12 @@ describe.skipIf(!existsSync(PYTHON) && process.env.ARENEON_REQUIRE_PYTHON_WORKER
   it("evaluates both committed generations, twice, with byte-identical records", () => {
     const a = join(dir, "a.progress");
     const b = join(dir, "b.progress");
+    // The default schedule (--all) is every 5th generation from 0; generation 1 is asked for, with the opt-in previous matches.
     const first = progress(a, "--all");
+    expect(first.generations.map((g) => [g.generation, g.skipped])).toEqual([[0, false]]);
+    expect(progress(a, "--generation", "1", "--previous-matches").generations.map((g) => [g.generation, g.skipped])).toEqual([[1, false]]);
     progress(b, "--all");
-    expect(first.generations.map((g) => [g.generation, g.skipped])).toEqual([[0, false], [1, false]]);
+    progress(b, "--generation", "1", "--previous-matches");
     for (const g of [0, 1]) {
       const files = tree(join(a, gen(g)));
       expect(files).toContain("progress.json");
@@ -76,8 +79,8 @@ describe.skipIf(!existsSync(PYTHON) && process.env.ARENEON_REQUIRE_PYTHON_WORKER
     }
     // Nothing was written into the run directory, and a second command verifies and keeps what is there.
     expect(readdirSync(runDir).sort()).toEqual([".lock", "checkpoints", "generations", "run-config.json"].filter((n) => existsSync(join(runDir, n))).sort());
-    const again = progress(a, "--all");
-    expect(again.generations.map((g) => g.skipped)).toEqual([true, true]);
+    expect(progress(a, "--all").generations.map((g) => g.skipped)).toEqual([true]);
+    expect(progress(a, "--generation", "1").generations.map((g) => g.skipped)).toEqual([true]);
   }, 600_000);
 
   it("plays validation teams only, never a team of the run's team-set, on seeds no training game used", () => {

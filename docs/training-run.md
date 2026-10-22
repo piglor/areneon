@@ -176,7 +176,8 @@ batching. A measured run on the shared development machine (a 6-layer, width-256
 pair, while a training run used the CPU) took about 0.6 s per game and about 25 s
 of fixed start-up per command (verifying the generation, reading the dataset), so
 100 games in each of the 4 matches took about 5 minutes. With the two previous-generation
-matches (600 games, from generation 1, `--previous-matches`) the same machine gives about 6.5 minutes
+matches (600 games, from generation 1, `--previous-matches`) the same machine gives about
+6.5 minutes
 per generation: 48 games at generation 2 took 29 s (0.6 s per game) and a three-generation
 `--all` of 8 games per match took 2.5 minutes in all. The figure depends on the
 machine and on how long the games are.
