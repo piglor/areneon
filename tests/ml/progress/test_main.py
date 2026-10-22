@@ -14,6 +14,7 @@ from areneon_contracts.contracts import jcs
 from areneon_ml.loop import __main__ as module
 from areneon_ml.loop.__main__ import EXIT_PLAY, EXIT_REFUSED, main
 from areneon_ml.loop.play import PlayError
+from areneon_ml.progress.looks import read_looks
 from areneon_ml.progress.run import NodeProgressPlayer, PreviousPair, ProgressRequest
 
 from tests.ml.model.support import FORMAT_DIR
@@ -241,3 +242,51 @@ def test_a_script_that_prints_no_object_is_a_play_error(tmp_path: Path, printed:
     request = ProgressRequest(0, "p", "b", "s", "a", "m", tmp_path, 1, 0, tmp_path)
     with pytest.raises(PlayError):
         player.progress(request)
+
+
+def tree_of(path: Path) -> dict[str, bytes]:
+    return {
+        str(p.relative_to(path)): p.read_bytes() for p in sorted(path.rglob("*")) if p.is_file()
+    }
+
+
+def test_a_progress_command_logs_one_look_beside_the_root_and_writes_nothing_in_it_or_the_run(
+    run: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    fake_node(monkeypatch, run)
+    copy = tmp_path / "copy"
+    shutil.copytree(run, copy)
+    before_run = tree_of(copy)
+    common = ["--games", "2", "--record-games", "0"]
+    assert main(args(copy, "--generation", "1", *common)) == 0
+    assert json.loads(capsys.readouterr().out)["looks"] == 1
+    root = tmp_path / "copy.progress"
+    log = tmp_path / "copy.progress.looks.jsonl"
+    assert log.is_file()
+    assert not any("looks" in p.name for p in root.rglob("*"))
+    assert tree_of(copy) == before_run
+    root_files = {k: v for k, v in tree_of(root).items() if k != ".lock"}
+    # A second look (a skipped, committed generation is still a result shown) is a second line.
+    assert main(args(copy, "--generation", "1", *common)) == 0
+    assert json.loads(capsys.readouterr().out)["looks"] == 2
+    assert {k: v for k, v in tree_of(root).items() if k != ".lock"} == root_files
+    assert tree_of(copy) == before_run
+    assert read_looks(log).count == 2
+    entry = json.loads(log.read_text().splitlines()[0])
+    assert (entry["command"], entry["run_id"], entry["generations"]) == (
+        "progress",
+        json.loads((copy / "run-config.json").read_text())["seeds"]["run_key"],
+        [1],
+    )
+
+
+def test_a_tampered_look_log_stops_the_command_with_exit_3(
+    run: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fake_node(monkeypatch, run)
+    copy = tmp_path / "copy"
+    shutil.copytree(run, copy)
+    (tmp_path / "copy.progress.looks.jsonl").write_bytes(b"not a look\n")
+    assert (
+        main(args(copy, "--generation", "0", "--games", "2", "--record-games", "0")) == EXIT_REFUSED
+    )

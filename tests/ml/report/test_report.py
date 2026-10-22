@@ -20,6 +20,7 @@ import pytest
 from areneon_ml.inspector.readers import InspectError
 from areneon_ml.loop import layout
 from areneon_ml.loop.__main__ import main
+from areneon_ml.progress.looks import LookError, looks_path, read_looks
 from areneon_ml.progress.stats import wilson
 from areneon_ml.report import charts, page
 from areneon_ml.report.command import inspector_links, report_run
@@ -351,13 +352,16 @@ def test_the_build_needs_no_network(run: Path, root: Path, monkeypatch: pytest.M
     assert build(run, root)
 
 
-def test_the_page_is_deterministic(run: Path, root: Path, tmp_path: Path) -> None:
+def test_the_page_is_deterministic(run: Path, tmp_path: Path) -> None:
+    root = progress_root(run, tmp_path / "progress")
     assert build(run, root) == build(run, root)
     out = tmp_path / "x" / "a.html"
     report_run(run, root, out)
     first = out.read_bytes()
+    assert b"logged for this run: 1." in first
+    # The same files give the same page; the second run is a look of its own, so the log differs.
     report_run(run, root, out)
-    assert out.read_bytes() == first
+    assert b"logged for this run: 2." in out.read_bytes()
     assert out.stat().st_mode & 0o777 == 0o644
 
 
@@ -764,3 +768,36 @@ def test_a_symlinked_replays_directory_is_not_followed(run: Path, tmp_path: Path
     inspect.mkdir()
     (inspect / "replays").symlink_to(real.parent, target_is_directory=True)
     assert inspector_links(inspect, tmp_path, [1]).replays == {}
+
+
+def test_the_report_logs_a_look_and_shows_the_count_and_the_log_hash(
+    run: Path, tmp_path: Path
+) -> None:
+    root = progress_root(run, tmp_path / "progress")
+    before = {p: p.read_bytes() for p in sorted(root.rglob("*")) if p.is_file()}
+    out = tmp_path / "o" / "r.html"
+    report_run(run, root, out)
+    log = looks_path(root)
+    assert read_looks(log).count == 1
+    text = out.read_text()
+    assert "Looks at validation results logged for this run: 1." in text
+    assert "(looks logged: 1)" in text
+    assert "never held-out evidence" in text
+    assert hashlib.sha256(log.read_bytes()).hexdigest() in text
+    assert {p: p.read_bytes() for p in sorted(root.rglob("*")) if p.is_file()} == before
+    # No progress directory, or nothing evaluated: no result is shown, so no look is logged.
+    report_run(run, None, tmp_path / "o" / "n.html")
+    assert read_looks(log).count == 1
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    report_run(run, empty, tmp_path / "o" / "e.html")
+    assert not looks_path(empty).exists()
+
+
+def test_a_tampered_log_stops_the_report_before_it_writes(run: Path, tmp_path: Path) -> None:
+    root = progress_root(run, tmp_path / "progress")
+    looks_path(root).write_bytes(b"x\n")
+    out = tmp_path / "o.html"
+    with pytest.raises(LookError):
+        report_run(run, root, out)
+    assert not out.exists()

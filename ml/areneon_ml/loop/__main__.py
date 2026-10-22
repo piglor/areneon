@@ -45,6 +45,7 @@ from areneon_ml.loop.driver import Loop, LoopError, export_provenance
 from areneon_ml.loop.play import NodePlayer, PlayError
 from areneon_ml.model.encoder import encoder_version
 from areneon_ml.model.gamedata import GameData
+from areneon_ml.progress.looks import Look, LookError, append_look, looks_path
 from areneon_ml.progress.records import ProgressRecordError
 from areneon_ml.progress.run import (
     DEFAULT_GAMES,
@@ -152,7 +153,14 @@ def _progress(args: argparse.Namespace) -> dict[str, object]:
     done = [
         progress_generation(run_dir, g, root, player, args.games, record_games) for g in generations
     ]
-    return {"progress_dir": str(root), "generations": done}
+    # Everything above succeeded, so a validation result is about to be shown: log the look.
+    looks = [
+        Look(int(r["generation"]), str(m["match_id"]), int(m["games"]))
+        for r in done
+        for m in r["matches"]
+    ]
+    state = append_look(looks_path(root, run_dir), "progress", config.run_key, looks)
+    return {"progress_dir": str(root), "generations": done, "looks": state.count}
 
 
 def _run(args: argparse.Namespace) -> dict[str, object]:
@@ -232,6 +240,7 @@ def main(argv: list[str] | None = None) -> int:
         InspectError,
         ProgressError,
         ProgressRecordError,
+        LookError,
         OSError,
         json.JSONDecodeError,
     ) as exc:

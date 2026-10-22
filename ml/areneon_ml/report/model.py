@@ -144,6 +144,8 @@ class ReportModel:
     progress: dict[int, ProgressFacts]
     progress_root: bool
     inputs: dict[str, str] = field(default_factory=dict)
+    #: The number of looks at validation results logged so far (None: no progress root given).
+    looks: int | None = None
 
 
 def _json(path: Path) -> Any:
