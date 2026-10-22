@@ -78,7 +78,7 @@ describe.skipIf(!existsSync(PYTHON) && process.env.ARENEON_REQUIRE_PYTHON_WORKER
       for (const file of files) expect(readFileSync(join(a, gen(g), file), "utf8"), file).toBe(readFileSync(join(b, gen(g), file), "utf8"));
     }
     // Nothing was written into the run directory, and a second command verifies and keeps what is there.
-    expect(readdirSync(runDir).sort()).toEqual([".lock", "checkpoints", "generations", "run-config.json"].filter((n) => existsSync(join(runDir, n))).sort());
+    expect(readdirSync(runDir).sort()).toEqual([".lock", "checkpoints", "generations", "metrics", "run-config.json"].filter((n) => existsSync(join(runDir, n))).sort());
     expect(progress(a, "--all").generations.map((g) => g.skipped)).toEqual([true]);
     expect(progress(a, "--generation", "1").generations.map((g) => g.skipped)).toEqual([true]);
   }, 600_000);
