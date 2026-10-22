@@ -47,74 +47,6 @@ class ExcludedAbility(RootModel[StrictStr]):
     root: Annotated[StrictStr, Field(max_length=64, min_length=1)]
 
 
-class Ppo(BaseModel):
-    """
-    PPO with GAE (ADR-010 section 1). Real-valued settings are integers in millionths (_micro) or billionths (_nano), because contracts carry no floating-point numbers.
-    """
-
-    model_config = ConfigDict(
-        extra="forbid",
-    )
-    epochs: Annotated[StrictInt, Field(ge=1, le=64)]
-    """
-    Passes over the generation's TrainingSet.
-    """
-    minibatch_size: Annotated[StrictInt, Field(ge=1, le=65536)]
-    """
-    Decisions per optimiser step.
-    """
-    learning_rate_micro: Annotated[StrictInt, Field(ge=1, le=1000000)]
-    """
-    Adam step size, in millionths.
-    """
-    discount_micro: Annotated[StrictInt, Field(ge=0, le=1000000)]
-    """
-    Discount gamma, in millionths.
-    """
-    gae_lambda_micro: Annotated[StrictInt, Field(ge=0, le=1000000)]
-    """
-    GAE lambda, in millionths.
-    """
-    clip_micro: Annotated[StrictInt, Field(ge=1, le=1000000)]
-    """
-    PPO ratio clip epsilon, in millionths.
-    """
-    value_coef_micro: Annotated[StrictInt, Field(ge=0, le=10000000)]
-    """
-    Weight of the value loss, in millionths.
-    """
-    entropy_coef_micro: Annotated[StrictInt, Field(ge=0, le=10000000)]
-    """
-    Weight of the entropy bonus, in millionths.
-    """
-    max_grad_norm_micro: Annotated[StrictInt, Field(ge=1, le=1000000000)]
-    """
-    Gradient-norm clip bound, in millionths.
-    """
-    adam_beta1_micro: Annotated[StrictInt, Field(ge=0, le=999999)]
-    """
-    Adam beta1, in millionths.
-    """
-    adam_beta2_micro: Annotated[StrictInt, Field(ge=0, le=999999)]
-    """
-    Adam beta2, in millionths.
-    """
-    adam_eps_nano: Annotated[StrictInt, Field(ge=1, le=1000000000)]
-    """
-    Adam epsilon, in billionths.
-    """
-    normalize_advantages: StrictBool
-    """
-    Normalise advantages to zero mean and unit deviation within each role's batch.
-    """
-    target_kl_micro: Annotated[StrictInt | MISSING, Field(ge=1, le=1000000000)] = (
-        MISSING
-    )
-    """
-    Optional (a minor change within v1, ADR-010 erratum A1): after each complete epoch, if the arithmetic mean of that epoch's per-minibatch approximate KL (in minibatch order) is greater than this value in millionths, the role's remaining epochs of the generation are skipped. Absent means every configured epoch runs. A config that carries it is a new run.
-    """
-
-
 class TeamDataset(BaseModel):
     """
     Optional (a minor change within v1): the generated team dataset the generation loop draws its teams from. Absent means the interim pool of committed fixture teams. The directory is read by the dataset reader, which trusts nothing; the pool takes the dev and training splits, never validation. The dataset hash pins the manifest and every record: a directory that hashes differently is refused.
@@ -231,6 +163,28 @@ class Baseline(BaseModel):
     """
 
 
+class ConstantSchedule(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    kind: Literal["constant"]
+
+
+class LinearSchedule(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    kind: Literal["linear"]
+    final_micro: Annotated[StrictInt, Field(ge=1, le=1000000)]
+    """
+    The step size from update `generations` on, in millionths.
+    """
+    generations: Annotated[StrictInt, Field(ge=1, le=1000000)]
+    """
+    Updates over which the rate moves from learning_rate_micro to final_micro.
+    """
+
+
 class Model(BaseModel):
     """
     Network sizes (ADR-010 section 3): configuration, never code constants. d_model must be a multiple of n_heads (a reader rule).
@@ -294,6 +248,82 @@ class Generation(BaseModel):
     max_line_bytes: Annotated[StrictInt, Field(ge=1, le=1073741824)]
     """
     Longest line of the worker protocol.
+    """
+
+
+class LearningRateSchedule(RootModel[ConstantSchedule | LinearSchedule]):
+    root: Annotated[ConstantSchedule | LinearSchedule, Field(discriminator="kind")]
+
+
+class Ppo(BaseModel):
+    """
+    PPO with GAE (ADR-010 section 1). Real-valued settings are integers in millionths (_micro) or billionths (_nano), because contracts carry no floating-point numbers.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    epochs: Annotated[StrictInt, Field(ge=1, le=64)]
+    """
+    Passes over the generation's TrainingSet.
+    """
+    minibatch_size: Annotated[StrictInt, Field(ge=1, le=65536)]
+    """
+    Decisions per optimiser step.
+    """
+    learning_rate_micro: Annotated[StrictInt, Field(ge=1, le=1000000)]
+    """
+    Adam step size, in millionths.
+    """
+    discount_micro: Annotated[StrictInt, Field(ge=0, le=1000000)]
+    """
+    Discount gamma, in millionths.
+    """
+    gae_lambda_micro: Annotated[StrictInt, Field(ge=0, le=1000000)]
+    """
+    GAE lambda, in millionths.
+    """
+    clip_micro: Annotated[StrictInt, Field(ge=1, le=1000000)]
+    """
+    PPO ratio clip epsilon, in millionths.
+    """
+    value_coef_micro: Annotated[StrictInt, Field(ge=0, le=10000000)]
+    """
+    Weight of the value loss, in millionths.
+    """
+    entropy_coef_micro: Annotated[StrictInt, Field(ge=0, le=10000000)]
+    """
+    Weight of the entropy bonus, in millionths.
+    """
+    max_grad_norm_micro: Annotated[StrictInt, Field(ge=1, le=1000000000)]
+    """
+    Gradient-norm clip bound, in millionths.
+    """
+    adam_beta1_micro: Annotated[StrictInt, Field(ge=0, le=999999)]
+    """
+    Adam beta1, in millionths.
+    """
+    adam_beta2_micro: Annotated[StrictInt, Field(ge=0, le=999999)]
+    """
+    Adam beta2, in millionths.
+    """
+    adam_eps_nano: Annotated[StrictInt, Field(ge=1, le=1000000000)]
+    """
+    Adam epsilon, in billionths.
+    """
+    normalize_advantages: StrictBool
+    """
+    Normalise advantages to zero mean and unit deviation within each role's batch.
+    """
+    target_kl_micro: Annotated[StrictInt | MISSING, Field(ge=1, le=1000000000)] = (
+        MISSING
+    )
+    """
+    Optional (a minor change within v1, ADR-010 erratum A1): after each complete epoch, if the arithmetic mean of that epoch's per-minibatch approximate KL (in minibatch order) is greater than this value in millionths, the role's remaining epochs of the generation are skipped. Absent means every configured epoch runs. A config that carries it is a new run.
+    """
+    learning_rate_schedule: LearningRateSchedule | MISSING = MISSING
+    """
+    Optional (a minor change within v1, ADR-010 erratum A1): the Adam step size per learner update. Absent or constant means learning_rate_micro for every update. Linear: with t the update index from 0, rate(t) = learning_rate_micro + trunc((final_micro - learning_rate_micro) * min(t, generations) / generations) in exact integers, truncating toward zero, so update `generations` and every later one use exactly final_micro. Both roles alike. A config that carries it is a new run.
     """
 
 

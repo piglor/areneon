@@ -133,12 +133,23 @@ class Learner:
         self.generator = torch.Generator(device="cpu")
         self.generator.manual_seed(config.learner_seed)
         self.generation = 0
+        # Millionths used by the newest update; set only under a linear schedule (it is stored in
+        # the learner-state sidecar then, and nowhere otherwise).
+        self.last_rate_micro: int | None = None
 
     # -- one generation ------------------------------------------------------
 
     def train(self, trajectories: Sequence[Trajectory]) -> TrainReport:
         """Run the configured PPO epochs on the generation's trajectories, then count it."""
         roles = {}
+        schedule = self.config.ppo.schedule
+        if schedule is not None:
+            # ADR-010 erratum A1: the rate is a function of the config and the update index (the
+            # generation counter, restored on a resume), set on both optimisers before any epoch.
+            self.last_rate_micro = schedule.rate_micro(self.generation)
+            for optimiser in self.optimisers.values():
+                for group in optimiser.param_groups:
+                    group["lr"] = schedule.rate(self.generation)
         for role in ROLES:
             mine = [t for t in trajectories if t.role == role]
             if mine:

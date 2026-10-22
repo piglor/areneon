@@ -275,6 +275,10 @@
           "type": "integer",
           "minimum": 1,
           "maximum": 1000000000
+        },
+        "learning_rate_schedule": {
+          "description": "Optional (a minor change within v1, ADR-010 erratum A1): the Adam step size per learner update. Absent or constant means learning_rate_micro for every update. Linear: with t the update index from 0, rate(t) = learning_rate_micro + trunc((final_micro - learning_rate_micro) * min(t, generations) / generations) in exact integers, truncating toward zero, so update `generations` and every later one use exactly final_micro. Both roles alike. A config that carries it is a new run.",
+          "$ref": "#/$defs/LearningRateSchedule"
         }
       }
     },
@@ -434,6 +438,58 @@
           "type": "integer",
           "minimum": 1,
           "maximum": 65536
+        }
+      }
+    },
+    "LearningRateSchedule": {
+      "type": "object",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/ConstantSchedule"
+        },
+        {
+          "$ref": "#/$defs/LinearSchedule"
+        }
+      ],
+      "discriminator": {
+        "propertyName": "kind"
+      }
+    },
+    "ConstantSchedule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind"
+      ],
+      "properties": {
+        "kind": {
+          "const": "constant"
+        }
+      }
+    },
+    "LinearSchedule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "final_micro",
+        "generations"
+      ],
+      "properties": {
+        "kind": {
+          "const": "linear"
+        },
+        "final_micro": {
+          "description": "The step size from update `generations` on, in millionths.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000
+        },
+        "generations": {
+          "description": "Updates over which the rate moves from learning_rate_micro to final_micro.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000
         }
       }
     }

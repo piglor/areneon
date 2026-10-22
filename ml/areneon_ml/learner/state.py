@@ -74,6 +74,8 @@ def pack_state(learner: Learner) -> PackedState:
         "optimizer_steps": steps,
         "rng": {"learner": "rng.learner"},
     }
+    if learner.last_rate_micro is not None:  # linear schedule only: the key is otherwise omitted
+        sidecar["learning_rate_micro"] = learner.last_rate_micro
     data = pack_safetensors(tensors)
     return PackedState(data, jcs(sidecar), state_hash(data, sidecar))
 
@@ -135,7 +137,27 @@ def _check_sidecar(described: Mapping[str, Any], learner: Learner) -> int:
         raise LearnerStateError("the sidecar's generation is not a counter")
     if described.get("rng") != {"learner": "rng.learner"}:
         raise LearnerStateError("the sidecar does not describe the learner generator")
+    schedule = learner.config.ppo.schedule
+    if schedule is None or generation == 0:
+        expected_rate = None
+    else:
+        expected_rate = schedule.rate_micro(generation - 1)
+    if described.get("learning_rate_micro") != expected_rate or (
+        expected_rate is None and "learning_rate_micro" in described
+    ):
+        raise LearnerStateError("the sidecar's learning rate is not the schedule's rate")
     return generation
+
+
+def _apply_schedule(learner: Learner) -> None:
+    """After a restore: the rate of the update just done, as an uninterrupted run holds it."""
+    schedule = learner.config.ppo.schedule
+    if schedule is None or learner.generation == 0:
+        return
+    learner.last_rate_micro = schedule.rate_micro(learner.generation - 1)
+    for optimiser in learner.optimisers.values():
+        for group in optimiser.param_groups:
+            group["lr"] = schedule.rate(learner.generation - 1)
 
 
 def restore_state(learner: Learner, tensors: bytes, sidecar: bytes, expected_hash: str) -> None:
@@ -194,3 +216,4 @@ def restore_state(learner: Learner, tensors: bytes, sidecar: bytes, expected_has
         )
     learner.generator.set_state(loaded["rng.learner"])
     learner.generation = generation
+    _apply_schedule(learner)
