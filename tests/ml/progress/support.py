@@ -299,4 +299,37 @@ def committed_manifest(run_dir: Path, generation: int) -> dict[str, Any]:
     return found
 
 
-__all__ = ["FakeProgressPlayer", "committed_manifest", "jcs", "make_run", "reseal"]
+def downgrade_to_v1(generation_dir: Path) -> None:
+    """Rewrite a committed baseline-only version 2 generation as a version 1 record (one game per
+    pair, one seed per game) and reseal its manifest: the shape a record written before ADR-017
+    erratum E2 has. Every game keeps its stand-in outcome; ``pair`` is the game index."""
+    record = layout.read_json(generation_dir / "progress.json")
+    assert record["schema_version"] == 2
+    record["schema_version"] = 1
+    record["teams"]["pairs_used"] = record["plan"]["games_per_match"]
+    for row in record["games"]:
+        row["pair"] = row["game"]
+    keep: dict[str, str] = {}
+    for path in sorted((generation_dir / "games").glob("*.json")):
+        stored = layout.read_json(path)
+        before = record_hash(stored)
+        stored.pop("pair", None)
+        stored["seed"] = progress_game_seed(stored["run_id"], stored["game"])
+        layout.write_json(path, stored)
+        keep[before] = record_hash(stored)
+    for match in record["matches"]:
+        match["game_record_hashes"] = sorted(keep[h] for h in match["game_record_hashes"])
+    layout.write_json(generation_dir / "progress.json", record)
+    manifest = layout.read_json(generation_dir / layout.MANIFEST)
+    manifest["files"] = layout.hash_tree(generation_dir)
+    layout.write_json(generation_dir / layout.MANIFEST, manifest)
+
+
+__all__ = [
+    "FakeProgressPlayer",
+    "committed_manifest",
+    "downgrade_to_v1",
+    "jcs",
+    "make_run",
+    "reseal",
+]

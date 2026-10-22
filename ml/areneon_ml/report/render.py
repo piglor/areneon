@@ -53,6 +53,28 @@ def _interval_name(match: MatchFacts) -> str:
 
 
 SEEN = "seen, same-lineage comparison: it can cycle"
+SEAT_CAPTION = (
+    "The candidate alternates seats by game (p1 on even games). Descriptive, no interval."
+)
+SEAT_CAPTION_PAIRS = (
+    "Every pair is played from both seats: the candidate sits in p1 in even games and in p2 in odd "
+    "games (a Wilson-only record alternates by game instead). Descriptive, no interval."
+)
+ANCHOR_NOTE = (
+    "An anchor is a fixed earlier generation's frozen pair, played "
+    "from both seats on the same validation pairs and seeds. The paired difference is the pair "
+    "score minus one half; above zero means the candidate scored more than the anchor on these "
+    "pairs. Descriptive pair-level bootstrap intervals, conditional on the fixed validation plan, "
+    "no multiplicity control across anchors and modes: none is a test or a claim."
+)
+ABLATION_NOTE = (
+    "Team Preview ablation: this generation's Battle network plays both scripted baselines "
+    "(argmax) with three Previews: its own learned one, a uniformly random one and an earlier "
+    "generation's. Every variant plays the same validation pairs on the same seeds from both "
+    "seats. A pair scores the mean of its two games. The difference to the learned Preview is "
+    "per pair, with its pair-level bootstrap interval: descriptive, conditional on the fixed "
+    "validation plan, no multiplicity control; not a test or a claim."
+)
 NOT_EVALUATED = "not evaluated yet"
 MODES = (("sample", 1, "circle"), ("argmax", 2, "square"))
 LABELS = {
@@ -144,13 +166,17 @@ def _progress_section(model: ReportModel, tips: Tips) -> str:
         if kind in kinds
     )
     out.append(f'<p class="claim">{esc(CLAIM)}</p>{notes}')
+    anchored = sorted({str(p.anchor_games) for p in model.progress.values() if p.anchor_games})
+    anchor_games = f"; games per anchor match: {', '.join(anchored)}" if anchored else ""
     out.append(
         f'<p class="note">Evaluated generations: {esc(", ".join(map(str, done)))}. '
         f"Not evaluated yet: {esc(', '.join(missing) if missing else 'none')}. Games per match: "
-        f"{esc(', '.join(sorted({str(p.games_per_match) for p in model.progress.values()})))}.</p>"
+        f"{esc(', '.join(sorted({str(p.games_per_match) for p in model.progress.values()})) + anchor_games)}.</p>"
     )
     xs = [x for x in xs if x <= done[-1]]
-    stems = sorted({_stem(m) for p in model.progress.values() for m in p.matches})
+    stems = sorted(
+        {_stem(m) for p in model.progress.values() for m in p.matches if m.variant is None}
+    )
     charts = []
     for stem in stems:
         series = []
@@ -159,7 +185,7 @@ def _progress_section(model: ReportModel, tips: Tips) -> str:
             pts = []
             for g in done:
                 for m in model.progress[g].matches:
-                    if _stem(m) == stem and m.mode == mode:
+                    if _stem(m) == stem and m.mode == mode and m.variant is None:
                         seen_label = m.seen_label or seen_label
                         low, high = pct(m.low_ppm, down=True), pct(m.high_ppm, up=True)
                         text = (
@@ -190,7 +216,9 @@ def _progress_section(model: ReportModel, tips: Tips) -> str:
                 y_range=(0.0, 1.0),
                 y_label=lambda v: f"{round(v * 100)}%",
                 ref=0.5,
-                missing="not applicable" if stem == "previous" else NOT_EVALUATED,
+                missing="not applicable"
+                if stem == "previous" or stem.startswith("anchor-")
+                else NOT_EVALUATED,
             )
         )
     out.append(f'<div class="charts">{"".join(charts)}</div>')
@@ -236,6 +264,7 @@ def _progress_section(model: ReportModel, tips: Tips) -> str:
             "Each row: the frozen pair of that generation against the opponent, on the validation plan.",
         ).replace('<td class="txt">', '<td class="txt">')
     )
+    out.append(_anchor_section(model, done))
     out.append("<h3>Score by seat (diagnostic)</h3>")
     out.append(
         _table(
@@ -250,7 +279,7 @@ def _progress_section(model: ReportModel, tips: Tips) -> str:
                 for g in done
                 for m in model.progress[g].matches
             ],
-            "The candidate alternates seats by game (p1 on even games). Descriptive, no interval.",
+            SEAT_CAPTION if kinds == {"wilson"} else SEAT_CAPTION_PAIRS,
         )
     )
     causes = [
@@ -276,6 +305,7 @@ def _progress_section(model: ReportModel, tips: Tips) -> str:
         )
     else:
         out.append('<p class="muted">No forfeit in any evaluated match.</p>')
+    out.append(_ablation_section(model, done))
     return "".join(out)
 
 
@@ -693,3 +723,91 @@ def build_report(model: ReportModel, links: Links | None = None) -> str:
         tips.items,
         f"{esc(BANNER)} Built by <code>python -m areneon_ml.loop report</code> from the files listed above; it reads no Episode content beyond counts.",
     )
+
+
+def signed_pct(ppm: int, *, up: bool = False, down: bool = False) -> str:
+    """A signed ppm value as a percentage with one decimal, in integers (outward when asked)."""
+    tenths = ppm // 1000 if down else -((-ppm) // 1000) if up else (ppm + 500) // 1000
+    sign = "-" if tenths < 0 else "+" if tenths > 0 else ""
+    return f"{sign}{abs(tenths) // 10}.{abs(tenths) % 10}%"
+
+
+def _anchor_section(model: ReportModel, done: list[int]) -> str:
+    rows = [
+        [
+            str(g),
+            esc(m.match_id) + f' <span class="muted">({esc(SEEN)})</span>',
+            str(m.games),
+            str(m.pairs),
+            f"{m.wins} / {m.ties} / {m.losses}",
+            pct(m.score_ppm),
+            signed_pct(m.diff[0]),
+            f"{signed_pct(m.diff[1], down=True)} to {signed_pct(m.diff[2], up=True)}",
+        ]
+        for g in done
+        for m in model.progress[g].matches
+        if m.anchor_generation is not None and m.diff is not None
+    ]
+    if not rows:
+        return ""
+    return "<h3>Anchor comparisons (paired differences)</h3>" + _table(
+        [
+            ("Generation", True),
+            ("Match", False),
+            ("Games", True),
+            ("Pairs", True),
+            ("Wins / ties / losses", True),
+            ("Pair score", True),
+            ("Difference to one half", True),
+            (f"{PAIRS}, conditional on the plan", True),
+        ],
+        rows,
+        ANCHOR_NOTE,
+    )
+
+
+def _signed_cell(mean: int, low: int, high: int) -> str:
+    return f"{signed_pct(mean)} ({signed_pct(low, down=True)} to {signed_pct(high, up=True)})"
+
+
+def _ablation_section(model: ReportModel, done: list[int]) -> str:
+    out = []
+    for g in done:
+        ablation = model.progress[g].ablation
+        if not ablation:
+            continue
+        rows = []
+        for baseline, variants in sorted(ablation["baselines"].items()):
+            for variant, row in sorted(variants.items()):
+                diff = row.get("minus_learned")
+                rows.append(
+                    [
+                        str(g),
+                        esc(baseline),
+                        esc(variant),
+                        str(row["pairs"]),
+                        f"{pct(row['score_ppm'])} ({pct(row['low_ppm'], down=True)} to {pct(row['high_ppm'], up=True)})",
+                        "-"
+                        if diff is None
+                        else _signed_cell(diff["mean_ppm"], diff["low_ppm"], diff["high_ppm"]),
+                        "-"
+                        if diff is None
+                        else f"{diff['better']} / {diff['equal']} / {diff['worse']}",
+                    ]
+                )
+        out.append(
+            _table(
+                [
+                    ("Generation", True),
+                    ("Baseline", False),
+                    ("Preview", False),
+                    ("Pairs", True),
+                    (f"Mean pair score ({PAIRS})", True),
+                    ("Difference to the learned Preview", True),
+                    ("Pairs better / equal / worse", True),
+                ],
+                rows,
+                ABLATION_NOTE,
+            )
+        )
+    return ("<h3>Team Preview ablation</h3>" + "".join(out)) if out else ""

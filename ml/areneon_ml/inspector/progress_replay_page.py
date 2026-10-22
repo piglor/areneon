@@ -21,6 +21,7 @@ from areneon_ml.inspector.replay import to_id
 from areneon_ml.inspector.replay_page import assets, dex_for_ids
 
 PAGES = "progress-replays"
+SEEN = "seen, same-lineage comparison: it can cycle"
 WARNING = (
     "Omniscient view: both sides' hidden information. An evaluation artifact, never policy input; "
     "local use only. Do not share or commit this page."
@@ -55,16 +56,24 @@ def species_in(game: ProgressGame) -> set[str]:
     return found
 
 
+def _opponent_words(game: ProgressGame) -> str:
+    if game.opponent_kind == "previous":
+        return "the previous generation's frozen pair"
+    if game.opponent_kind == "anchor":
+        return f"generation {game.opponent_generation}'s frozen pair, an anchor"
+    return "the scripted baseline"
+
+
 def _seat_label(game: ProgressGame, seat: str) -> str:
     policy = game.record["policies"][seat]
     if seat == game.candidate_seat:
-        return f"{seat}: the candidate, the frozen pair in {game.mode} mode ({policy})"
-    who = (
-        "the previous generation's frozen pair"
-        if game.opponent_kind == "previous"
-        else "the scripted baseline"
-    )
-    return f"{seat}: the opponent, {who} ({policy})"
+        preview = (
+            ""
+            if game.preview_variant is None
+            else f", Team Preview ablation: {game.preview_variant} Preview"
+        )
+        return f"{seat}: the candidate, the frozen pair in {game.mode} mode{preview} ({policy})"
+    return f"{seat}: the opponent, {_opponent_words(game)} ({policy})"
 
 
 def _result(game: ProgressGame) -> str:
@@ -106,6 +115,23 @@ def payload(game: ProgressGame, dex: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _context(game: ProgressGame) -> str:
+    """What the match is, in words: the opponent and, where it applies, how the pair is played."""
+    if game.pair is None:  # a version 1 game: the wording its pages always had
+        return f"{game.mode} mode against {game.opponent_kind}."
+    words = _opponent_words(game)
+    if game.opponent_kind in ("previous", "anchor"):
+        words += f" ({SEEN})"
+    return f"{game.mode} mode against {words}. Pair {game.pair}, game {game.game % 2 + 1} of 2: each pair is played from both seats with the same teams and battle seed."
+
+
+def _twin(game: ProgressGame) -> str:
+    if game.twin is None:
+        return ""
+    other = f"{game.match_id} game {game.twin}"
+    return f'<p class="note">The other game of this pair: <a href="{page_name(game.match_id, game.twin)}">{esc(other)}</a></p>'
+
+
 def _nav(game: ProgressGame, *, inspector: bool) -> str:
     links = '<a href="../index.html">Progress replays</a>'
     if inspector:
@@ -121,9 +147,10 @@ def replay_page(game: ProgressGame, dex: dict[str, Any], *, inspector: bool = Fa
     body = (
         f"<h1>{esc(title)}</h1>"
         f'<p class="warn"><strong>{esc(WARNING)}</strong></p>'
-        f'<p class="note">Run {esc(game.run_id)}, seed {esc(seed)}, {esc(game.mode)} mode against '
-        f"{esc(game.opponent_kind)}. Synthetic, public-lineage game from a progress evaluation (a "
+        f'<p class="note">Run {esc(game.run_id)}, seed {esc(seed)}, {esc(_context(game))} '
+        "Synthetic, public-lineage game from a progress evaluation (a "
         "progress view, not the Training gate). Arrow keys step, the space bar plays.</p>"
+        f"{_twin(game)}"
         '<div id="replay-root"></div>'
         "<noscript><p>The replay needs JavaScript. It loads nothing from a network.</p></noscript>"
     )
@@ -143,19 +170,49 @@ def dex_for(table: Mapping[str, Any], game: ProgressGame) -> dict[str, Any]:
     return dex_for_ids(table, species_in(game))
 
 
+def _seen(match: str) -> str:
+    """The label of a match that plays an earlier generation of the same lineage (by its id)."""
+    return f" ({esc(SEEN)})" if match.startswith(("anchor-", "previous-")) else ""
+
+
+def _game_links(generation: int, games: list[tuple[str, int]], both_seats: bool) -> str:
+    if not both_seats:
+        return " · ".join(
+            f'<a href="{replay_dir(generation)}/{page_name(m, g)}">{esc(m)} game {g}</a>'
+            for m, g in games
+        )
+    by_pair: dict[tuple[str, int], list[int]] = {}
+    for m, g in games:
+        by_pair.setdefault((m, g // 2), []).append(g)
+    return " · ".join(
+        f"{esc(m)} pair {k}{_seen(m)}: "
+        + ", ".join(
+            f'<a href="{replay_dir(generation)}/{page_name(m, g)}">game {g}</a>'
+            for g in sorted(found)
+        )
+        for (m, k), found in by_pair.items()
+    )
+
+
 def index_page(
-    found: Iterable[tuple[int, str, int]], run_id: str | None = None, *, inspector: bool = False
+    found: Iterable[tuple[int, str, int]],
+    run_id: str | None = None,
+    *,
+    inspector: bool = False,
+    both_seats: Iterable[int] = (),
 ) -> str:
-    """The progress replay pages that exist, by generation, match and game (links are relative)."""
+    """The progress replay pages that exist, by generation, match and game (links are relative).
+
+    A generation in ``both_seats`` is a version 2 evaluation: its games are listed by pair, the two
+    games of a pair side by side.
+    """
+    versions = set(both_seats)
     by_gen: dict[int, list[tuple[str, int]]] = {}
     for generation, match, game in sorted(found):
         by_gen.setdefault(generation, []).append((match, game))
     sections = []
     for generation, games in by_gen.items():
-        links = " · ".join(
-            f'<a href="{replay_dir(generation)}/{page_name(m, g)}">{esc(m)} game {g}</a>'
-            for m, g in games
-        )
+        links = _game_links(generation, games, generation in versions)
         sections.append(f"<h2>Generation {generation}</h2><p>{links}</p>")
     body = (
         "<h1>Progress-game replays</h1>"

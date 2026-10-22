@@ -23,6 +23,7 @@ never used to place a decision.
 
 from __future__ import annotations
 
+import dataclasses
 import itertools
 import re
 from dataclasses import dataclass
@@ -36,6 +37,8 @@ from areneon_ml.inspector.readers import InspectError
 from areneon_ml.loop import layout
 from areneon_ml.progress.records import (
     ProgressRecordError,
+    is_v2,
+    preview_variant,
     read_game_record,
     read_progress_record,
     record_hash,
@@ -60,6 +63,14 @@ class ProgressGame:
     candidate_seat: str
     record: dict[str, Any]
     points: tuple[dict[str, Any], ...]
+    #: Version 2 (both seats): the pair this game belongs to and the other game of the pair when
+    #: its file is stored; None for a version 1 game.
+    pair: int | None = None
+    twin: int | None = None
+    #: The generation of an anchor match's opponent, and the candidate's Team Preview variant of
+    #: an ablation match (``learned``, ``random``, ``g<N>``); None otherwise.
+    opponent_generation: int | None = None
+    preview_variant: str | None = None
 
 
 def _read(path: Path, what: str) -> Any:
@@ -252,13 +263,16 @@ def read_progress_games(
     if match is not None and match not in matches:
         raise InspectError(f"progress {target.name} has no match {match}")
     rows = {(r["match_id"], r["game"]): r for r in progress["games"]}
+    both = is_v2(progress)
     out: list[ProgressGame] = []
+    # Both games of a version 2 pair are built together, so each page can link to the other.
+    asked = None if games is None else {g ^ 1 if both else g for g in games} | set(games)
     for name in sorted(p.name for p in (target / "games").glob("*.json")):
         found = GAME_FILE.fullmatch(name)
         if found is None or found[1] not in matches:
             raise InspectError(f"games/{name} is not a game of a match of progress.json")
         if (match is not None and found[1] != match) or (
-            games is not None and int(found[2]) not in games
+            asked is not None and int(found[2]) not in asked
         ):
             continue
         try:
@@ -281,8 +295,22 @@ def read_progress_games(
                 row["candidate_seat"],
                 record,
                 decision_points(record),
+                record["game"] // 2 if both else None,
+                None,
+                matches[found[1]]["opponent"].get("generation"),
+                (
+                    preview_variant(matches[found[1]]["candidate_preview"])
+                    if matches[found[1]].get("candidate_preview") is not None
+                    else None
+                ),
             )
         )
+    if both:
+        stored = {(g.match_id, g.game) for g in out}
+        out = [
+            dataclasses.replace(g, twin=g.game ^ 1 if (g.match_id, g.game ^ 1) in stored else None)
+            for g in out
+        ]
     wanted = [g for g in (games or []) if not any(x.game == g for x in out)]
     if wanted or not out:
         raise InspectError(
