@@ -114,7 +114,7 @@ describe("a further game process", () => {
 
   it("hands back the entries it wrote", async () => {
     const out = join(dir, "shard-ok");
-    const ok = script("ok.mjs", `import { mkdirSync, writeFileSync } from "node:fs"; mkdirSync(process.argv[2], { recursive: true }); writeFileSync(process.argv[2] + "/shard.json", '[{"game":1}]');`);
+    const ok = script("ok.mjs", `import { mkdirSync, writeFileSync } from "node:fs"; mkdirSync(process.argv[2], { recursive: true }); writeFileSync(process.argv[2] + "/shard.jsonl", '{"game":1}\\n');`);
     await expect(startShard(ok, [out], out, 1).entries).resolves.toEqual([{ game: 1 }]);
   });
 

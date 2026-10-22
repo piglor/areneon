@@ -13,6 +13,7 @@ every other file in it; resuming refuses a generation whose files differ.
 from __future__ import annotations
 
 import fcntl
+import hashlib
 import json
 import os
 import re
@@ -23,7 +24,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from areneon_contracts.contracts import CanonicalError, jcs, sha256_hex
+from areneon_contracts.contracts import CanonicalError, jcs
 
 MANIFEST = "manifest.json"
 CONFIG = "run-config.json"
@@ -116,8 +117,17 @@ def hash_tree(root: Path) -> dict[str, str]:
     """SHA-256 of every file under ``root`` except the manifest, by relative path."""
     out = {}
     for path in sorted(p for p in root.rglob("*") if p.is_file() and p.name != MANIFEST):
-        out[path.relative_to(root).as_posix()] = sha256_hex(path.read_bytes())
+        out[path.relative_to(root).as_posix()] = sha256_file(path)
     return out
+
+
+def sha256_file(path: Path) -> str:
+    """SHA-256 of a file, read in chunks (a generation's stream is over a gigabyte)."""
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        while chunk := handle.read(1 << 20):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def commit_generation(run_dir: Path, generation: int, facts: Mapping[str, Any]) -> Path:

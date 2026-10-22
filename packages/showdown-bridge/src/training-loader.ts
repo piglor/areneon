@@ -8,6 +8,7 @@
 // opponent id can reach a model) and the TrainingSet manifest that Python
 // checks against the stream.
 
+import { createHash } from "node:crypto";
 import { ajvFor } from "@areneon/schema/ajv";
 import evaluationRunManifestSchema from "@areneon/schema/contracts/v1/evaluation-run-manifest.schema.json" with { type: "json" };
 import trainingExampleSchema from "@areneon/schema/contracts/v1/training-example.schema.json" with { type: "json" };
@@ -16,6 +17,7 @@ import type { EvaluationRunManifest } from "@areneon/schema/types/v1/evaluation-
 import type { TrainingExample } from "@areneon/schema/types/v1/training-example.ts";
 import type { TrainingSet } from "@areneon/schema/types/v1/training-set.ts";
 import { jcs, type Json } from "./canonical-json.ts";
+import { type ChunkLimits, ChunkedFileWriter, checkStringLength } from "./chunked-file.ts";
 import { enumerateCandidates, EnumerationError } from "./choices.ts";
 import { type Episode, episodeHash } from "./episode.ts";
 import { decisionObservations, readEpisode } from "./episode-io.ts";
@@ -133,6 +135,14 @@ export interface TrainingStream {
   set: TrainingSet;
 }
 
+/**
+ * Where a stream's lines go: a file written in chunks (`path`, the way a generation
+ * is written: no string holds the whole stream), and the limits on string sizes.
+ */
+export interface StreamOptions extends ChunkLimits {
+  path: string;
+}
+
 const sha256Text = (text: string): Promise<string> => nodeSha256(new TextEncoder().encode(text));
 
 /** The game score from the player's view (ADR-010 §1). */
@@ -188,7 +198,47 @@ async function examplesOf(episode: Episode, hash: string): Promise<TrainingExamp
  * A relabelled copy of an evaluation Episode has other bytes and so another
  * hash: only the storage partition catches it, not this check.
  */
-export async function loadTrainingSet({ episodes, evaluation_manifests, known_synthetic, behaviour_policy_id }: TrainingInput): Promise<TrainingStream> {
+export async function loadTrainingSet(input: TrainingInput, limits: ChunkLimits = {}): Promise<TrainingStream> {
+  const examples: TrainingExample[] = [];
+  const pieces: string[] = [];
+  let chars = 0;
+  const set = await streamTraining(input, limits, (example, line) => {
+    examples.push(example);
+    pieces.push(line);
+    chars += line.length;
+    // The stream as one string must fit one: a larger one is written with `writeTrainingStream`.
+    if (limits.max_string_chars !== undefined && chars > limits.max_string_chars) {
+      throw new TrainingLoaderError(`the stream is over ${limits.max_string_chars} characters: write it with writeTrainingStream, not as one string`);
+    }
+  });
+  return { examples, stream: pieces.join(""), set };
+}
+
+/**
+ * The same checks and the same bytes as `loadTrainingSet`, with the stream written
+ * to `options.path` in chunks as the examples are made and none kept: neither the
+ * stream nor the examples are ever held whole, so a stream over Node's string limit
+ * (about 512 MB) is no problem (#998). The file is flushed to disk; the TrainingSet
+ * (its `stream_sha256` is the file's digest) is returned. The file is left behind
+ * when a check refuses: the caller discards the directory it wrote into.
+ */
+export async function writeTrainingStream(input: TrainingInput, options: StreamOptions): Promise<TrainingSet> {
+  const writer = new ChunkedFileWriter(options.path, options);
+  try {
+    const set = await streamTraining(input, options, (_example, line) => writer.write(line));
+    writer.finish();
+    return set;
+  } finally {
+    writer.close();
+  }
+}
+
+/** The checks, the examples in stream order and the TrainingSet; `each` gets every example and its line. */
+async function streamTraining(
+  { episodes, evaluation_manifests, known_synthetic, behaviour_policy_id }: TrainingInput,
+  limits: ChunkLimits,
+  each: (example: TrainingExample, line: string) => void,
+): Promise<TrainingSet> {
   const manifestHashes = new Set<string>();
   const evaluated = new Set<string>();
   for (const value of evaluation_manifests) {
@@ -210,10 +260,18 @@ export async function loadTrainingSet({ episodes, evaluation_manifests, known_sy
   if (accepted.size === 0) throw new TrainingLoaderError("no Episode to load");
 
   const hashes = [...accepted.keys()].sort();
-  const examples: TrainingExample[] = [];
-  for (const hash of hashes) examples.push(...(await examplesOf(accepted.get(hash) as Episode, hash)));
-  const stream = examples.map((example) => `${jcs(example as unknown as Json)}\n`).join("");
-  const set: TrainingSet = {
+  const digest = createHash("sha256");
+  let count = 0;
+  for (const hash of hashes) {
+    for (const example of await examplesOf(accepted.get(hash) as Episode, hash)) {
+      const line = `${jcs(example as unknown as Json)}\n`;
+      checkStringLength(line, limits, "a stream line");
+      digest.update(line, "utf8");
+      count++;
+      each(example, line);
+    }
+  }
+  return {
     schema_version: 1,
     // The highest class of the Episodes: readTraining refuses every private Episode, so it is synthetic.
     data_class: "synthetic",
@@ -221,10 +279,9 @@ export async function loadTrainingSet({ episodes, evaluation_manifests, known_sy
     evaluation_manifest_hashes: [...manifestHashes].sort(),
     learner_ready: true,
     behaviour_policy_id,
-    examples: examples.length,
-    stream_sha256: await sha256Text(stream),
+    examples: count,
+    stream_sha256: digest.digest("hex"),
   };
-  return { examples, stream, set };
 }
 
 async function readTraining(value: unknown, index: number, known_synthetic: SyntheticTeamHashes, behaviour_policy_id: string): Promise<Episode> {

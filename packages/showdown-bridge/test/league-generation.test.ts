@@ -1,4 +1,4 @@
-import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -26,6 +26,11 @@ import { teamHash } from "../src/team-class.ts";
 
 const engine = loadEngine();
 const at = <T>(items: readonly T[], index: number): T => items[index] as T;
+/** The stream of a result played without a `stream_path`. */
+const memoryStream = (result: GenerationResult): string => {
+  if (result.stream === null) throw new Error("the stream was written to a file");
+  return result.stream;
+};
 const sample = (name: string): unknown => JSON.parse(readFileSync(join(SAMPLES_DIR, `v1/training-run-config/valid/${name}.json`), "utf8"));
 const config = readTrainingRunConfig(sample("tiny"));
 const POLICY = `policy:${"c".repeat(64)}`;
@@ -151,7 +156,7 @@ describe("playGeneration", () => {
     expect(result.set.episode_hashes).toEqual([...ownHashes].sort());
     for (const hash of result.episode_hashes.filter((h) => !ownHashes.includes(h))) expect(result.set.episode_hashes).not.toContain(hash);
     expect(result.set).toMatchObject({ learner_ready: true, behaviour_policy_id: POLICY, data_class: "synthetic" });
-    expect(readTrainingSet(result.set).examples).toBe(result.stream.split("\n").length - 1);
+    expect(readTrainingSet(result.set).examples).toBe(memoryStream(result).split("\n").length - 1);
     // a baseline game names the policy as the baseline's opponent and the baseline as the policy's
     const baselineGame = result.episodes.slice(8);
     const sides = baselineGame.map((e) => e.provenance.collection as { opponent_policy_id: string });
@@ -179,8 +184,8 @@ describe("playGeneration", () => {
     // Every line of the stream belongs to an Episode of the pair; none to a baseline's.
     const baselineHashes = run2.episode_hashes.filter((_, i) => at(run2.episodes, i).provenance.behaviour_policy_id !== POLICY);
     expect(baselineHashes).toHaveLength(2);
-    for (const hash of baselineHashes) expect(run2.stream.includes(`"episode_hash":"${hash}"`)).toBe(false);
-    const hashesInStream = new Set(run2.stream.split("\n").filter(Boolean).map((line) => (JSON.parse(line) as { episode_hash: string }).episode_hash));
+    for (const hash of baselineHashes) expect(memoryStream(run2).includes(`"episode_hash":"${hash}"`)).toBe(false);
+    const hashesInStream = new Set(memoryStream(run2).split("\n").filter(Boolean).map((line) => (JSON.parse(line) as { episode_hash: string }).episode_hash));
     expect(hashesInStream).toEqual(new Set(run2.set.episode_hashes));
   });
 
@@ -265,7 +270,7 @@ describe("playGeneration", () => {
 
 /** The stream lines of one Episode: what the learner sees of that seat's battle. */
 const linesOf = (result: GenerationResult, hash: string): string =>
-  result.stream
+  memoryStream(result)
     .split("\n")
     .filter((line) => line.includes(`"episode_hash":"${hash}"`))
     .join("\n");
@@ -307,6 +312,41 @@ describe("writeGeneration", () => {
   });
 });
 
+describe("a stream over the string limit (#998)", () => {
+  let dir: string;
+  beforeAll(() => {
+    dir = mkdtempSync(join(tmpdir(), "areneon-chunked-"));
+  });
+  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+  const opts = (change: Partial<GenerationOptions> = {}): GenerationOptions => ({ engine, config, generation: 1, policy_id: POLICY, client: actorClient(), pool, ...change });
+  it("is written in chunks with no joined string, to the same bytes, TrainingSet and files as the in-memory writer", async () => {
+    const reference = await playGeneration(opts());
+    const text = memoryStream(reference);
+    const longest = Math.max(...text.split("\n").map((line) => line.length + 1));
+    expect(text.length).toBeGreaterThan(longest * 3); // the stream is several times the limit below
+    const limits = { chunk_chars: longest, max_string_chars: longest * 2 };
+    // The in-memory form needs one string for the stream and refuses at the limit ...
+    await expect(playGeneration(opts({ stream_limits: limits }))).rejects.toThrow(/write it with writeTrainingStream/);
+    // ... the file form never makes one.
+    const out = join(dir, "chunked");
+    mkdirSync(out, { recursive: true });
+    const chunked = await playGeneration(opts({ stream_path: join(out, "stream.jsonl"), stream_limits: limits }));
+    expect(chunked.stream).toBeNull();
+    expect(chunked.set).toEqual(reference.set);
+    expect(chunked.training_set_hash).toBe(reference.training_set_hash);
+    writeGeneration(out, chunked);
+    writeGeneration(join(dir, "inmemory"), reference);
+    const files = (root: string): Record<string, string> =>
+      Object.fromEntries(
+        ["stream.jsonl", "training-set.json", "plan.json", "league-run.json", "generation.json"].map((name) => [name, readFileSync(join(root, name), "utf8")]),
+      );
+    expect(files(out)).toEqual(files(join(dir, "inmemory")));
+    expect(files(out)["stream.jsonl"]).toBe(text);
+    // A stream written elsewhere than where writeGeneration looks is refused.
+    expect(() => writeGeneration(join(dir, "elsewhere"), { ...chunked, stream_path: join(out, "other.jsonl") })).toThrow(GenerationError);
+  });
+});
+
 describe("several workers and game processes (#957)", () => {
   const opts = (change: Partial<GenerationOptions> = {}): GenerationOptions => ({ engine, config, generation: 1, policy_id: POLICY, client: actorClient(), pool, ...change });
   let single: GenerationResult;
@@ -314,7 +354,7 @@ describe("several workers and game processes (#957)", () => {
     single = await playGeneration(opts());
   });
   /** What the files of a result say, in the bytes the loop commits. */
-  const bytes = (result: GenerationResult): string[] => [result.stream, jcs(result.set as unknown as Json), jcs(result.games as unknown as Json), ...result.episode_hashes, result.training_set_hash, ...result.team_hashes];
+  const bytes = (result: GenerationResult): string[] => [memoryStream(result), jcs(result.set as unknown as Json), jcs(result.games as unknown as Json), ...result.episode_hashes, result.training_set_hash, ...result.team_hashes];
 
   it("gives the same generation with any number of workers, each game staying on one of them", async () => {
     const workers = [actorClient(), actorClient(), actorClient()];

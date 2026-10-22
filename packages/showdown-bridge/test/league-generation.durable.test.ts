@@ -38,6 +38,7 @@ describe("writeGeneration is durable", () => {
       episodes: [{ a: 1 }],
       episode_hashes: ["h1"],
       stream: "line\n",
+      stream_path: null,
       set: { examples: 1 },
       training_set_hash: "t",
       manifest: {},
