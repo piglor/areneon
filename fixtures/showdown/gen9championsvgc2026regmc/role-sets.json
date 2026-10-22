@@ -1,0 +1,8014 @@
+{
+  "schema_version": 1,
+  "showdown_commit": "7244fe8e28fa8bc4d0809ae30d183c608b62bb2b",
+  "format_id": "gen9championsvgc2026regmc",
+  "engine_data_hash": "6f3d19f02b0e8464d813f4bbdced99c6f88140099818f5f225776ac43fa5590e",
+  "vocabulary_hash": "5fdd31126208dbb46948ddaca14dfc9c28b70c14b147318fc6ba74e50843cab2",
+  "source_path": "data/random-battles/champions/doubles-sets.json",
+  "source_sha256": "45e02b5ed8475c178007c28185ed1604ab8bc98b544668dff8696340b5f71590",
+  "species": [
+    {
+      "id": "abomasnow",
+      "sets": [
+        {
+          "role": "Doubles Bulky Attacker",
+          "moves": [
+            "auroraveil",
+            "blizzard",
+            "iceshard",
+            "protect",
+            "woodhammer"
+          ],
+          "abilities": [
+            "snowwarning"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "abomasnowmega",
+      "sets": [
+        {
+          "role": "Doubles Bulky Attacker",
+          "moves": [
+            "auroraveil",
+            "blizzard",
+            "iceshard",
+            "protect",
+            "woodhammer"
+          ],
+          "abilities": [
+            "snowwarning"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "absol",
+      "sets": [
+        {
+          "role": "Doubles Wallbreaker",
+          "moves": [
+            "knockoff",
+            "playrough",
+            "protect",
+            "suckerpunch"
+          ],
+          "abilities": [
+            "justified"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "absolmega",
+      "sets": [
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "closecombat",
+            "knockoff",
+            "playrough",
+            "protect",
+            "suckerpunch"
+          ],
+          "abilities": [
+            "justified"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "absolmegaz",
+      "sets": [
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "closecombat",
+            "protect",
+            "shadowclaw",
+            "suckerpunch",
+            "swordsdance"
+          ],
+          "abilities": [
+            "justified"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "aegislash",
+      "sets": [
+        {
+          "role": "Doubles Wallbreaker",
+          "moves": [
+            "flashcannon",
+            "kingsshield",
+            "poltergeist",
+            "shadowsneak"
+          ],
+          "abilities": [
+            "stancechange"
+          ]
+        },
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "closecombat",
+            "kingsshield",
+            "poltergeist",
+            "shadowsneak"
+          ],
+          "abilities": [
+            "stancechange"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "aerodactyl",
+      "sets": [
+        {
+          "role": "Doubles Fast Attacker",
+          "moves": [
+            "dualwingbeat",
+            "protect",
+            "rockslide",
+            "tailwind"
+          ],
+          "abilities": [
+            "unnerve"
+          ]
+        },
+        {
+          "role": "Doubles Fast Attacker",
+          "moves": [
+            "protect",
+            "rockslide",
+            "stealthrock",
+            "tailwind",
+            "taunt",
+            "wideguard"
+          ],
+          "abilities": [
+            "unnerve"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "aerodactylmega",
+      "sets": [
+        {
+          "role": "Doubles Fast Attacker",
+          "moves": [
+            "dualwingbeat",
+            "protect",
+            "rockslide",
+            "tailwind"
+          ],
+          "abilities": [
+            "unnerve"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "aggron",
+      "sets": [
+        {
+          "role": "Doubles Bulky Attacker",
+          "moves": [
+            "bodypress",
+            "headsmash",
+            "heavyslam",
+            "protect",
+            "thunderwave"
+          ],
+          "abilities": [
+            "rockhead"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "aggronmega",
+      "sets": [
+        {
+          "role": "Doubles Bulky Setup",
+          "moves": [
+            "bodypress",
+            "heavyslam",
+            "irondefense",
+            "protect",
+            "thunderwave"
+          ],
+          "abilities": [
+            "sturdy"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "alakazam",
+      "sets": [
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "focusblast",
+            "protect",
+            "psychic",
+            "shadowball"
+          ],
+          "abilities": [
+            "magicguard"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "alakazammega",
+      "sets": [
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "focusblast",
+            "protect",
+            "psychic",
+            "shadowball"
+          ],
+          "abilities": [
+            "magicguard"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "alcremie",
+      "sets": [
+        {
+          "role": "Doubles Bulky Attacker",
+          "moves": [
+            "alluringvoice",
+            "dazzlinggleam",
+            "decorate",
+            "helpinghand",
+            "protect"
+          ],
+          "abilities": [
+            "aromaveil"
+          ]
+        },
+        {
+          "role": "Doubles Support",
+          "moves": [
+            "alluringvoice",
+            "dazzlinggleam",
+            "decorate",
+            "encore",
+            "protect"
+          ],
+          "abilities": [
+            "aromaveil"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "altaria",
+      "sets": [
+        {
+          "role": "Doubles Bulky Setup",
+          "moves": [
+            "bravebird",
+            "roost",
+            "tailwind",
+            "willowisp"
+          ],
+          "abilities": [
+            "naturalcure"
+          ]
+        },
+        {
+          "role": "Doubles Support",
+          "moves": [
+            "bravebird",
+            "dracometeor",
+            "fireblast",
+            "helpinghand",
+            "tailwind",
+            "willowisp"
+          ],
+          "abilities": [
+            "naturalcure"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "altariamega",
+      "sets": [
+        {
+          "role": "Doubles Support",
+          "moves": [
+            "fireblast",
+            "hypervoice",
+            "protect",
+            "roost",
+            "tailwind",
+            "willowisp"
+          ],
+          "abilities": [
+            "naturalcure"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ampharos",
+      "sets": [
+        {
+          "role": "Doubles Support",
+          "moves": [
+            "electroweb",
+            "focusblast",
+            "helpinghand",
+            "thunderbolt",
+            "voltswitch"
+          ],
+          "abilities": [
+            "static"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ampharosmega",
+      "sets": [
+        {
+          "role": "Doubles Support",
+          "moves": [
+            "dragonpulse",
+            "electroweb",
+            "protect",
+            "thunderbolt",
+            "voltswitch"
+          ],
+          "abilities": [
+            "static"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "annihilape",
+      "sets": [
+        {
+          "role": "Doubles Bulky Attacker",
+          "moves": [
+            "closecombat",
+            "coaching",
+            "encore",
+            "protect",
+            "ragefist"
+          ],
+          "abilities": [
+            "defiant"
+          ]
+        },
+        {
+          "role": "Doubles Bulky Setup",
+          "moves": [
+            "bulkup",
+            "drainpunch",
+            "protect",
+            "ragefist"
+          ],
+          "abilities": [
+            "defiant"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "appletun",
+      "sets": [
+        {
+          "role": "Doubles Bulky Setup",
+          "moves": [
+            "appleacid",
+            "dragonpulse",
+            "leechseed",
+            "protect"
+          ],
+          "abilities": [
+            "ripen",
+            "thickfat"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "araquanid",
+      "sets": [
+        {
+          "role": "Doubles Bulky Attacker",
+          "moves": [
+            "liquidation",
+            "lunge",
+            "protect",
+            "stickyweb",
+            "wideguard"
+          ],
+          "abilities": [
+            "waterbubble"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "arbok",
+      "sets": [
+        {
+          "role": "Doubles Bulky Attacker",
+          "moves": [
+            "glare",
+            "gunkshot",
+            "knockoff",
+            "toxicspikes"
+          ],
+          "abilities": [
+            "intimidate"
+          ]
+        },
+        {
+          "role": "Doubles Bulky Setup",
+          "moves": [
+            "coil",
+            "gunkshot",
+            "knockoff",
+            "protect",
+            "stompingtantrum"
+          ],
+          "abilities": [
+            "intimidate"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "arboliva",
+      "sets": [
+        {
+          "role": "Doubles Wallbreaker",
+          "moves": [
+            "earthpower",
+            "energyball",
+            "hypervoice",
+            "pollenpuff",
+            "protect",
+            "strengthsap"
+          ],
+          "abilities": [
+            "seedsower"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "arcanine",
+      "sets": [
+        {
+          "role": "Doubles Bulky Attacker",
+          "moves": [
+            "closecombat",
+            "extremespeed",
+            "flareblitz",
+            "howl",
+            "morningsun",
+            "snarl",
+            "willowisp"
+          ],
+          "abilities": [
+            "intimidate"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "arcaninehisui",
+      "sets": [
+        {
+          "role": "Choice Item user",
+          "moves": [
+            "closecombat",
+            "flareblitz",
+            "headsmash",
+            "rockslide"
+          ],
+          "abilities": [
+            "intimidate"
+          ]
+        },
+        {
+          "role": "Doubles Bulky Attacker",
+          "moves": [
+            "extremespeed",
+            "flareblitz",
+            "protect",
+            "rockslide",
+            "willowisp"
+          ],
+          "abilities": [
+            "intimidate"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "archaludon",
+      "sets": [
+        {
+          "role": "Doubles Bulky Setup",
+          "moves": [
+            "aurasphere",
+            "dragonpulse",
+            "flashcannon",
+            "protect",
+            "thunderwave"
+          ],
+          "abilities": [
+            "stamina"
+          ]
+        },
+        {
+          "role": "Doubles Support",
+          "moves": [
+            "breakingswipe",
+            "dracometeor",
+            "flashcannon",
+            "snarl",
+            "thunderwave"
+          ],
+          "abilities": [
+            "stamina"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ariados",
+      "sets": [
+        {
+          "role": "Doubles Bulky Attacker",
+          "moves": [
+            "megahorn",
+            "poisonjab",
+            "ragepowder",
+            "stickyweb"
+          ],
+          "abilities": [
+            "insomnia"
+          ]
+        },
+        {
+          "role": "Doubles Support",
+          "moves": [
+            "knockoff",
+            "megahorn",
+            "protect",
+            "ragepowder",
+            "stickyweb"
+          ],
+          "abilities": [
+            "insomnia"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "armarouge",
+      "sets": [
+        {
+          "role": "Choice Item user",
+          "moves": [
+            "armorcannon",
+            "energyball",
+            "heatwave",
+            "psychic"
+          ],
+          "abilities": [
+            "flashfire"
+          ]
+        },
+        {
+          "role": "Doubles Wallbreaker",
+          "moves": [
+            "heatwave",
+            "protect",
+            "psychic",
+            "trickroom"
+          ],
+          "abilities": [
+            "flashfire"
+          ]
+        },
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "armorcannon",
+            "heatwave",
+            "protect",
+            "psychic"
+          ],
+          "abilities": [
+            "weakarmor"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "aromatisse",
+      "sets": [
+        {
+          "role": "Doubles Support",
+          "moves": [
+            "encore",
+            "healpulse",
+            "helpinghand",
+            "moonblast",
+            "trickroom"
+          ],
+          "abilities": [
+            "aromaveil"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "audino",
+      "sets": [
+        {
+          "role": "Doubles Support",
+          "moves": [
+            "bodyslam",
+            "encore",
+            "healpulse",
+            "helpinghand",
+            "icywind",
+            "lifedew"
+          ],
+          "abilities": [
+            "regenerator"
+          ]
+        },
+        {
+          "role": "Doubles Support",
+          "moves": [
+            "doubleedge",
+            "encore",
+            "healpulse",
+            "helpinghand",
+            "lifedew",
+            "trickroom",
+            "yawn"
+          ],
+          "abilities": [
+            "regenerator"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "audinomega",
+      "sets": [
+        {
+          "role": "Doubles Bulky Setup",
+          "moves": [
+            "calmmind",
+            "dazzlinggleam",
+            "fireblast",
+            "protect"
+          ],
+          "abilities": [
+            "regenerator"
+          ]
+        },
+        {
+          "role": "Doubles Support",
+          "moves": [
+            "dazzlinggleam",
+            "encore",
+            "healpulse",
+            "helpinghand",
+            "lifedew",
+            "trickroom",
+            "yawn"
+          ],
+          "abilities": [
+            "regenerator"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "aurorus",
+      "sets": [
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "auroraveil",
+            "blizzard",
+            "earthpower",
+            "protect"
+          ],
+          "abilities": [
+            "snowwarning"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "avalugg",
+      "sets": [
+        {
+          "role": "Doubles Bulky Setup",
+          "moves": [
+            "bodypress",
+            "icespinner",
+            "protect",
+            "recover"
+          ],
+          "abilities": [
+            "sturdy"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "avalugghisui",
+      "sets": [
+        {
+          "role": "Doubles Bulky Attacker",
+          "moves": [
+            "bodypress",
+            "mountaingale",
+            "protect",
+            "rockslide"
+          ],
+          "abilities": [
+            "sturdy"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "azumarill",
+      "sets": [
+        {
+          "role": "Doubles Bulky Attacker",
+          "moves": [
+            "aquajet",
+            "liquidation",
+            "playrough",
+            "protect"
+          ],
+          "abilities": [
+            "hugepower"
+          ]
+        },
+        {
+          "role": "Doubles Setup Sweeper",
+          "moves": [
+            "aquajet",
+            "bellydrum",
+            "liquidation",
+            "playrough"
+          ],
+          "abilities": [
+            "hugepower"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "banette",
+      "sets": [
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "gunkshot",
+            "poltergeist",
+            "protect",
+            "shadowsneak"
+          ],
+          "abilities": [
+            "frisk"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "banettemega",
+      "sets": [
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "encore",
+            "gunkshot",
+            "poltergeist",
+            "protect",
+            "thunderwave",
+            "willowisp"
+          ],
+          "abilities": [
+            "frisk"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "barbaracle",
+      "sets": [
+        {
+          "role": "Doubles Setup Sweeper",
+          "moves": [
+            "liquidation",
+            "protect",
+            "rockslide",
+            "shellsmash"
+          ],
+          "abilities": [
+            "toughclaws"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "barbaraclemega",
+      "sets": [
+        {
+          "role": "Doubles Setup Sweeper",
+          "moves": [
+            "closecombat",
+            "protect",
+            "rockslide",
+            "shellsmash"
+          ],
+          "abilities": [
+            "toughclaws"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "basculegion",
+      "sets": [
+        {
+          "role": "Choice Item user",
+          "moves": [
+            "aquajet",
+            "flipturn",
+            "lastrespects",
+            "wavecrash"
+          ],
+          "abilities": [
+            "adaptability"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "basculegionf",
+      "sets": [
+        {
+          "role": "Choice Item user",
+          "moves": [
+            "flipturn",
+            "lastrespects",
+            "muddywater",
+            "wavecrash"
+          ],
+          "abilities": [
+            "adaptability"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "bastiodon",
+      "sets": [
+        {
+          "role": "Doubles Bulky Setup",
+          "moves": [
+            "bodypress",
+            "foulplay",
+            "irondefense",
+            "protect",
+            "rest"
+          ],
+          "abilities": [
+            "sturdy"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "baxcalibur",
+      "sets": [
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "glaiverush",
+            "highhorsepower",
+            "iceshard",
+            "iciclecrash",
+            "protect"
+          ],
+          "abilities": [
+            "thermalexchange"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "baxcaliburmega",
+      "sets": [
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "glaiverush",
+            "highhorsepower",
+            "iceshard",
+            "iciclecrash",
+            "protect"
+          ],
+          "abilities": [
+            "thermalexchange"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "beartic",
+      "sets": [
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "aquajet",
+            "closecombat",
+            "iciclecrash",
+            "protect"
+          ],
+          "abilities": [
+            "slushrush",
+            "swiftswim"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "beedrill",
+      "sets": [
+        {
+          "role": "Doubles Fast Attacker",
+          "moves": [
+            "knockoff",
+            "poisonjab",
+            "toxicspikes",
+            "uturn"
+          ],
+          "abilities": [
+            "swarm"
+          ]
+        },
+        {
+          "role": "Doubles Fast Attacker",
+          "moves": [
+            "lunge",
+            "poisonjab",
+            "protect",
+            "toxicspikes"
+          ],
+          "abilities": [
+            "swarm"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "beedrillmega",
+      "sets": [
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "drillrun",
+            "poisonjab",
+            "protect",
+            "uturn"
+          ],
+          "abilities": [
+            "swarm"
+          ]
+        },
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "lunge",
+            "poisonjab",
+            "protect",
+            "uturn"
+          ],
+          "abilities": [
+            "swarm"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "bellibolt",
+      "sets": [
+        {
+          "role": "Doubles Bulky Setup",
+          "moves": [
+            "electroweb",
+            "muddywater",
+            "slackoff",
+            "thunderbolt"
+          ],
+          "abilities": [
+            "electromorphosis"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "blastoise",
+      "sets": [
+        {
+          "role": "Doubles Setup Sweeper",
+          "moves": [
+            "dragonpulse",
+            "muddywater",
+            "protect",
+            "shellsmash"
+          ],
+          "abilities": [
+            "torrent"
+          ]
+        },
+        {
+          "role": "Doubles Support",
+          "moves": [
+            "fakeout",
+            "icywind",
+            "lifedew",
+            "wavecrash"
+          ],
+          "abilities": [
+            "torrent"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "blastoisemega",
+      "sets": [
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "aurasphere",
+            "darkpulse",
+            "dragonpulse",
+            "muddywater",
+            "protect"
+          ],
+          "abilities": [
+            "raindish"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "blaziken",
+      "sets": [
+        {
+          "role": "Doubles Wallbreaker",
+          "moves": [
+            "closecombat",
+            "heatwave",
+            "protect",
+            "vacuumwave"
+          ],
+          "abilities": [
+            "speedboost"
+          ]
+        },
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "closecombat",
+            "knockoff",
+            "overheat",
+            "protect"
+          ],
+          "abilities": [
+            "speedboost"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "blazikenmega",
+      "sets": [
+        {
+          "role": "Doubles Setup Sweeper",
+          "moves": [
+            "closecombat",
+            "flareblitz",
+            "protect",
+            "swordsdance"
+          ],
+          "abilities": [
+            "speedboost"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "camerupt",
+      "sets": [
+        {
+          "role": "Doubles Bulky Attacker",
+          "moves": [
+            "earthpower",
+            "heatwave",
+            "protect",
+            "stealthrock",
+            "willowisp"
+          ],
+          "abilities": [
+            "solidrock"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cameruptmega",
+      "sets": [
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "earthpower",
+            "fireblast",
+            "heatwave",
+            "protect"
+          ],
+          "abilities": [
+            "solidrock"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "castform",
+      "sets": [
+        {
+          "role": "Doubles Support",
+          "moves": [
+            "bodyslam",
+            "fireblast",
+            "icebeam",
+            "icywind",
+            "scald",
+            "thunderbolt",
+            "thunderwave"
+          ],
+          "abilities": [
+            "forecast"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ceruledge",
+      "sets": [
+        {
+          "role": "Doubles Setup Sweeper",
+          "moves": [
+            "bitterblade",
+            "poltergeist",
+            "protect",
+            "shadowsneak",
+            "swordsdance"
+          ],
+          "abilities": [
+            "weakarmor"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "chandelure",
+      "sets": [
+        {
+          "role": "Choice Item user",
+          "moves": [
+            "energyball",
+            "heatwave",
+            "shadowball",
+            "trick"
+          ],
+          "abilities": [
+            "flashfire"
+          ]
+        },
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "energyball",
+            "heatwave",
+            "protect",
+            "shadowball",
+            "willowisp"
+          ],
+          "abilities": [
+            "flashfire"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "chandeluremega",
+      "sets": [
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "calmmind",
+            "energyball",
+            "heatwave",
+            "protect",
+            "shadowball",
+            "willowisp"
+          ],
+          "abilities": [
+            "flashfire"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "charizard",
+      "sets": [
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "heatwave",
+            "hurricane",
+            "protect",
+            "scorchingsands",
+            "willowisp"
+          ],
+          "abilities": [
+            "blaze"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "charizardmegax",
+      "sets": [
+        {
+          "role": "Doubles Setup Sweeper",
+          "moves": [
+            "dragonclaw",
+            "dragondance",
+            "flareblitz",
+            "protect"
+          ],
+          "abilities": [
+            "blaze"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "charizardmegay",
+      "sets": [
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "heatwave",
+            "protect",
+            "solarbeam",
+            "weatherball"
+          ],
+          "abilities": [
+            "blaze"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "chesnaught",
+      "sets": [
+        {
+          "role": "Doubles Bulky Setup",
+          "moves": [
+            "bodypress",
+            "coaching",
+            "knockoff",
+            "leechseed",
+            "spikyshield",
+            "woodhammer"
+          ],
+          "abilities": [
+            "bulletproof"
+          ]
+        },
+        {
+          "role": "Doubles Bulky Setup",
+          "moves": [
+            "bodypress",
+            "irondefense",
+            "leechseed",
+            "spikyshield"
+          ],
+          "abilities": [
+            "bulletproof"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "chesnaughtmega",
+      "sets": [
+        {
+          "role": "Doubles Bulky Setup",
+          "moves": [
+            "bodypress",
+            "coaching",
+            "knockoff",
+            "leechseed",
+            "spikyshield",
+            "woodhammer"
+          ],
+          "abilities": [
+            "bulletproof"
+          ]
+        },
+        {
+          "role": "Doubles Bulky Setup",
+          "moves": [
+            "bodypress",
+            "irondefense",
+            "leechseed",
+            "spikyshield"
+          ],
+          "abilities": [
+            "bulletproof"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "chimecho",
+      "sets": [
+        {
+          "role": "Doubles Support",
+          "moves": [
+            "encore",
+            "healpulse",
+            "helpinghand",
+            "icywind",
+            "psychic",
+            "snarl",
+            "thunderwave"
+          ],
+          "abilities": [
+            "levitate"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "chimechomega",
+      "sets": [
+        {
+          "role": "Doubles Support",
+          "moves": [
+            "encore",
+            "flashcannon",
+            "healpulse",
+            "helpinghand",
+            "icywind",
+            "psychic",
+            "recover",
+            "snarl"
+          ],
+          "abilities": [
+            "levitate"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cinderace",
+      "sets": [
+        {
+          "role": "Doubles Fast Attacker",
+          "moves": [
+            "highjumpkick",
+            "protect",
+            "pyroball",
+            "suckerpunch",
+            "uturn"
+          ],
+          "abilities": [
+            "blaze"
+          ]
+        },
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "highjumpkick",
+            "protect",
+            "pyroball",
+            "suckerpunch",
+            "uturn"
+          ],
+          "abilities": [
+            "blaze"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "clawitzer",
+      "sets": [
+        {
+          "role": "Choice Item user",
+          "moves": [
+            "aurasphere",
+            "darkpulse",
+            "dragonpulse",
+            "muddywater",
+            "uturn"
+          ],
+          "abilities": [
+            "megalauncher"
+          ]
+        },
+        {
+          "role": "Doubles Support",
+          "moves": [
+            "dragonpulse",
+            "healpulse",
+            "muddywater",
+            "protect"
+          ],
+          "abilities": [
+            "megalauncher"
+          ]
+        },
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "aurasphere",
+            "darkpulse",
+            "dragonpulse",
+            "muddywater",
+            "protect"
+          ],
+          "abilities": [
+            "megalauncher"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "clefable",
+      "sets": [
+        {
+          "role": "Doubles Support",
+          "moves": [
+            "followme",
+            "helpinghand",
+            "lifedew",
+            "moonblast",
+            "moonlight"
+          ],
+          "abilities": [
+            "unaware"
+          ]
+        },
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "dazzlinggleam",
+            "fireblast",
+            "icywind",
+            "moonblast",
+            "protect",
+            "thunderwave"
+          ],
+          "abilities": [
+            "magicguard"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "clefablemega",
+      "sets": [
+        {
+          "role": "Doubles Bulky Attacker",
+          "moves": [
+            "dazzlinggleam",
+            "fireblast",
+            "followme",
+            "icywind",
+            "lifedew",
+            "moonblast",
+            "moonlight",
+            "protect"
+          ],
+          "abilities": [
+            "unaware"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cofagrigus",
+      "sets": [
+        {
+          "role": "Doubles Bulky Attacker",
+          "moves": [
+            "bodypress",
+            "shadowball",
+            "toxicspikes",
+            "trickroom",
+            "willowisp"
+          ],
+          "abilities": [
+            "mummy"
+          ]
+        },
+        {
+          "role": "Doubles Bulky Setup",
+          "moves": [
+            "bodypress",
+            "irondefense",
+            "shadowball",
+            "trickroom"
+          ],
+          "abilities": [
+            "mummy"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "conkeldurr",
+      "sets": [
+        {
+          "role": "Doubles Bulky Attacker",
+          "moves": [
+            "drainpunch",
+            "knockoff",
+            "machpunch",
+            "protect"
+          ],
+          "abilities": [
+            "ironfist"
+          ]
+        },
+        {
+          "role": "Doubles Support",
+          "moves": [
+            "drainpunch",
+            "icepunch",
+            "knockoff",
+            "machpunch"
+          ],
+          "abilities": [
+            "ironfist"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "corviknight",
+      "sets": [
+        {
+          "role": "Doubles Bulky Setup",
+          "moves": [
+            "bodypress",
+            "bravebird",
+            "irondefense",
+            "roost",
+            "tailwind"
+          ],
+          "abilities": [
+            "mirrorarmor"
+          ]
+        },
+        {
+          "role": "Doubles Bulky Setup",
+          "moves": [
+            "bravebird",
+            "ironhead",
+            "roost",
+            "tailwind"
+          ],
+          "abilities": [
+            "mirrorarmor"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "crabominable",
+      "sets": [
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "drainpunch",
+            "icehammer",
+            "machpunch",
+            "protect"
+          ],
+          "abilities": [
+            "ironfist"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "crabominablemega",
+      "sets": [
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "drainpunch",
+            "icehammer",
+            "machpunch",
+            "protect"
+          ],
+          "abilities": [
+            "hypercutter"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "decidueye",
+      "sets": [
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "leafstorm",
+            "protect",
+            "spiritshackle",
+            "tailwind"
+          ],
+          "abilities": [
+            "overgrow"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "decidueyehisui",
+      "sets": [
+        {
+          "role": "Doubles Support",
+          "moves": [
+            "knockoff",
+            "leafblade",
+            "protect",
+            "tailwind",
+            "triplearrows"
+          ],
+          "abilities": [
+            "scrappy"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "dedenne",
+      "sets": [
+        {
+          "role": "Doubles Support",
+          "moves": [
+            "dazzlinggleam",
+            "helpinghand",
+            "nuzzle",
+            "superfang",
+            "thunderbolt"
+          ],
+          "abilities": [
+            "cheekpouch"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "delphox",
+      "sets": [
+        {
+          "role": "Doubles Setup Sweeper",
+          "moves": [
+            "heatwave",
+            "nastyplot",
+            "protect",
+            "psychic"
+          ],
+          "abilities": [
+            "blaze"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "delphoxmega",
+      "sets": [
+        {
+          "role": "Doubles Setup Sweeper",
+          "moves": [
+            "heatwave",
+            "nastyplot",
+            "protect",
+            "psychic"
+          ],
+          "abilities": [
+            "blaze"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "diggersby",
+      "sets": [
+        {
+          "role": "Choice Item user",
+          "moves": [
+            "bodyslam",
+            "foulplay",
+            "highhorsepower",
+            "uturn"
+          ],
+          "abilities": [
+            "hugepower"
+          ]
+        },
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "bodyslam",
+            "highhorsepower",
+            "protect",
+            "quickattack"
+          ],
+          "abilities": [
+            "hugepower"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ditto",
+      "sets": [
+        {
+          "role": "Choice Item user",
+          "moves": [
+            "transform"
+          ],
+          "abilities": [
+            "imposter"
+          ]
+        },
+        {
+          "role": "Doubles Bulky Attacker",
+          "moves": [
+            "transform"
+          ],
+          "abilities": [
+            "imposter"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "dragalge",
+      "sets": [
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "dracometeor",
+            "dragonpulse",
+            "protect",
+            "sludgebomb"
+          ],
+          "abilities": [
+            "adaptability"
+          ]
+        },
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "dracometeor",
+            "focusblast",
+            "protect",
+            "sludgebomb"
+          ],
+          "abilities": [
+            "adaptability"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "dragalgemega",
+      "sets": [
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "dracometeor",
+            "flipturn",
+            "focusblast",
+            "icywind",
+            "protect",
+            "sludgebomb"
+          ],
+          "abilities": [
+            "poisonpoint"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "dragapult",
+      "sets": [
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "dracometeor",
+            "dragondarts",
+            "protect",
+            "shadowball"
+          ],
+          "abilities": [
+            "clearbody"
+          ]
+        },
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "dragondarts",
+            "fireblast",
+            "protect",
+            "shadowball"
+          ],
+          "abilities": [
+            "clearbody"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "dragonite",
+      "sets": [
+        {
+          "role": "Doubles Setup Sweeper",
+          "moves": [
+            "dragonclaw",
+            "fireblast",
+            "protect",
+            "tailwind"
+          ],
+          "abilities": [
+            "innerfocus"
+          ]
+        },
+        {
+          "role": "Doubles Wallbreaker",
+          "moves": [
+            "dracometeor",
+            "firepunch",
+            "ironhead",
+            "tailwind"
+          ],
+          "abilities": [
+            "innerfocus"
+          ]
+        },
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "dracometeor",
+            "extremespeed",
+            "firepunch",
+            "protect",
+            "superpower"
+          ],
+          "abilities": [
+            "innerfocus"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "dragonitemega",
+      "sets": [
+        {
+          "role": "Doubles Bulky Attacker",
+          "moves": [
+            "dracometeor",
+            "fireblast",
+            "hurricane",
+            "protect",
+            "roost",
+            "tailwind"
+          ],
+          "abilities": [
+            "multiscale"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "drampa",
+      "sets": [
+        {
+          "role": "Doubles Bulky Attacker",
+          "moves": [
+            "dracometeor",
+            "glare",
+            "hypervoice",
+            "roost"
+          ],
+          "abilities": [
+            "berserk"
+          ]
+        },
+        {
+          "role": "Doubles Bulky Setup",
+          "moves": [
+            "calmmind",
+            "earthpower",
+            "hypervoice",
+            "protect"
+          ],
+          "abilities": [
+            "berserk"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "drampamega",
+      "sets": [
+        {
+          "role": "Doubles Bulky Attacker",
+          "moves": [
+            "calmmind",
+            "earthpower",
+            "hypervoice",
+            "protect",
+            "roost"
+          ],
+          "abilities": [
+            "berserk"
+          ]
+        },
+        {
+          "role": "Doubles Support",
+          "moves": [
+            "dracometeor",
+            "glare",
+            "hypervoice",
+            "roost"
+          ],
+          "abilities": [
+            "berserk"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "eelektross",
+      "sets": [
+        {
+          "role": "Doubles Support",
+          "moves": [
+            "closecombat",
+            "electroweb",
+            "flamethrower",
+            "gigadrain",
+            "knockoff",
+            "thunderbolt",
+            "uturn"
+          ],
+          "abilities": [
+            "levitate"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "eelektrossmega",
+      "sets": [
+        {
+          "role": "Doubles Bulky Setup",
+          "moves": [
+            "coil",
+            "drainpunch",
+            "knockoff",
+            "protect",
+            "wildcharge"
+          ],
+          "abilities": [
+            "levitate"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "emboar",
+      "sets": [
+        {
+          "role": "Choice Item user",
+          "moves": [
+            "closecombat",
+            "flareblitz",
+            "headsmash",
+            "knockoff",
+            "wildcharge"
+          ],
+          "abilities": [
+            "reckless"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "emboarmega",
+      "sets": [
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "closecombat",
+            "flareblitz",
+            "knockoff",
+            "protect",
+            "suckerpunch"
+          ],
+          "abilities": [
+            "reckless"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "emolga",
+      "sets": [
+        {
+          "role": "Doubles Support",
+          "moves": [
+            "acrobatics",
+            "encore",
+            "nuzzle",
+            "protect",
+            "taunt",
+            "thunderbolt"
+          ],
+          "abilities": [
+            "motordrive"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "empoleon",
+      "sets": [
+        {
+          "role": "Doubles Support",
+          "moves": [
+            "flashcannon",
+            "hydropump",
+            "icywind",
+            "protect",
+            "yawn"
+          ],
+          "abilities": [
+            "competitive"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "espathra",
+      "sets": [
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "batonpass",
+            "dazzlinggleam",
+            "luminacrash",
+            "protect",
+            "shadowball"
+          ],
+          "abilities": [
+            "speedboost"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "espeon",
+      "sets": [
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "alluringvoice",
+            "protect",
+            "psychic",
+            "shadowball"
+          ],
+          "abilities": [
+            "magicbounce"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "excadrill",
+      "sets": [
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "highhorsepower",
+            "ironhead",
+            "protect",
+            "rockslide",
+            "swordsdance"
+          ],
+          "abilities": [
+            "moldbreaker",
+            "sandrush"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "excadrillmega",
+      "sets": [
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "highhorsepower",
+            "ironhead",
+            "protect",
+            "rockslide",
+            "swordsdance"
+          ],
+          "abilities": [
+            "moldbreaker"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "falinks",
+      "sets": [
+        {
+          "role": "Doubles Setup Sweeper",
+          "moves": [
+            "closecombat",
+            "ironhead",
+            "knockoff",
+            "noretreat",
+            "protect",
+            "rockslide"
+          ],
+          "abilities": [
+            "defiant"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "falinksmega",
+      "sets": [
+        {
+          "role": "Doubles Setup Sweeper",
+          "moves": [
+            "closecombat",
+            "ironhead",
+            "knockoff",
+            "noretreat",
+            "protect",
+            "rockslide"
+          ],
+          "abilities": [
+            "defiant"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "farfetchd",
+      "sets": [
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "bravebird",
+            "closecombat",
+            "knockoff",
+            "leafblade",
+            "protect",
+            "slash"
+          ],
+          "abilities": [
+            "defiant"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "farigiraf",
+      "sets": [
+        {
+          "role": "Doubles Bulky Attacker",
+          "moves": [
+            "hypervoice",
+            "nastyplot",
+            "psychic",
+            "trickroom"
+          ],
+          "abilities": [
+            "armortail"
+          ]
+        },
+        {
+          "role": "Doubles Wallbreaker",
+          "moves": [
+            "hypervoice",
+            "protect",
+            "psychic",
+            "trickroom"
+          ],
+          "abilities": [
+            "armortail"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "feraligatr",
+      "sets": [
+        {
+          "role": "Doubles Setup Sweeper",
+          "moves": [
+            "dragondance",
+            "icepunch",
+            "liquidation",
+            "protect"
+          ],
+          "abilities": [
+            "sheerforce"
+          ]
+        },
+        {
+          "role": "Doubles Wallbreaker",
+          "moves": [
+            "aquajet",
+            "icepunch",
+            "liquidation",
+            "swordsdance"
+          ],
+          "abilities": [
+            "sheerforce"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "feraligatrmega",
+      "sets": [
+        {
+          "role": "Doubles Setup Sweeper",
+          "moves": [
+            "doubleedge",
+            "dragondance",
+            "liquidation",
+            "protect"
+          ],
+          "abilities": [
+            "sheerforce"
+          ]
+        },
+        {
+          "role": "Doubles Wallbreaker",
+          "moves": [
+            "aquajet",
+            "doubleedge",
+            "liquidation",
+            "swordsdance"
+          ],
+          "abilities": [
+            "sheerforce"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "flapple",
+      "sets": [
+        {
+          "role": "Choice Item user",
+          "moves": [
+            "gravapple",
+            "outrage",
+            "suckerpunch",
+            "uturn"
+          ],
+          "abilities": [
+            "hustle"
+          ]
+        },
+        {
+          "role": "Doubles Setup Sweeper",
+          "moves": [
+            "dragondance",
+            "dragonrush",
+            "gravapple",
+            "protect"
+          ],
+          "abilities": [
+            "ripen"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "flareon",
+      "sets": [
+        {
+          "role": "Doubles Bulky Attacker",
+          "moves": [
+            "flareblitz",
+            "protect",
+            "superpower",
+            "willowisp"
+          ],
+          "abilities": [
+            "flashfire"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "floetteeternal",
+      "sets": [
+        {
+          "role": "Choice Item user",
+          "moves": [
+            "dazzlinggleam",
+            "lightofruin",
+            "moonblast",
+            "trick"
+          ],
+          "abilities": [
+            "flowerveil"
+          ]
+        },
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "dazzlinggleam",
+            "lightofruin",
+            "moonblast",
+            "protect"
+          ],
+          "abilities": [
+            "flowerveil"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "floettemega",
+      "sets": [
+        {
+          "role": "Doubles Bulky Attacker",
+          "moves": [
+            "dazzlinggleam",
+            "lightofruin",
+            "moonblast",
+            "protect"
+          ],
+          "abilities": [
+            "flowerveil"
+          ]
+        },
+        {
+          "role": "Doubles Bulky Setup",
+          "moves": [
+            "calmmind",
+            "dazzlinggleam",
+            "drainingkiss",
+            "protect"
+          ],
+          "abilities": [
+            "flowerveil"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "florges",
+      "sets": [
+        {
+          "role": "Doubles Bulky Setup",
+          "moves": [
+            "calmmind",
+            "dazzlinggleam",
+            "moonblast",
+            "protect",
+            "synthesis"
+          ],
+          "abilities": [
+            "flowerveil"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "forretress",
+      "sets": [
+        {
+          "role": "Doubles Bulky Setup",
+          "moves": [
+            "bodypress",
+            "irondefense",
+            "ironhead",
+            "protect"
+          ],
+          "abilities": [
+            "sturdy"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "froslass",
+      "sets": [
+        {
+          "role": "Doubles Support",
+          "moves": [
+            "icywind",
+            "poltergeist",
+            "protect",
+            "taunt",
+            "tripleaxel",
+            "willowisp"
+          ],
+          "abilities": [
+            "cursedbody"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "froslassmega",
+      "sets": [
+        {
+          "role": "Doubles Support",
+          "moves": [
+            "auroraveil",
+            "blizzard",
+            "protect",
+            "shadowball"
+          ],
+          "abilities": [
+            "cursedbody"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "furfrou",
+      "sets": [
+        {
+          "role": "Doubles Support",
+          "moves": [
+            "charm",
+            "doubleedge",
+            "snarl",
+            "thunderwave"
+          ],
+          "abilities": [
+            "furcoat"
+          ]
+        },
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "crunch",
+            "doubleedge",
+            "protect",
+            "thunderwave"
+          ],
+          "abilities": [
+            "furcoat"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "gallade",
+      "sets": [
+        {
+          "role": "Choice Item user",
+          "moves": [
+            "leafblade",
+            "nightslash",
+            "psychocut",
+            "sacredsword",
+            "trick"
+          ],
+          "abilities": [
+            "sharpness"
+          ]
+        },
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "leafblade",
+            "nightslash",
+            "protect",
+            "psychocut",
+            "sacredsword"
+          ],
+          "abilities": [
+            "sharpness"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "gallademega",
+      "sets": [
+        {
+          "role": "Doubles Setup Sweeper",
+          "moves": [
+            "closecombat",
+            "protect",
+            "swordsdance",
+            "zenheadbutt"
+          ],
+          "abilities": [
+            "justified"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "garbodor",
+      "sets": [
+        {
+          "role": "Doubles Bulky Attacker",
+          "moves": [
+            "gunkshot",
+            "haze",
+            "stompingtantrum",
+            "toxicspikes"
+          ],
+          "abilities": [
+            "aftermath"
+          ]
+        },
+        {
+          "role": "Doubles Bulky Attacker",
+          "moves": [
+            "gunkshot",
+            "protect",
+            "stompingtantrum",
+            "toxicspikes"
+          ],
+          "abilities": [
+            "aftermath"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "garchomp",
+      "sets": [
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "dragonclaw",
+            "protect",
+            "rockslide",
+            "stompingtantrum",
+            "swordsdance"
+          ],
+          "abilities": [
+            "roughskin"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "garchompmega",
+      "sets": [
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "dracometeor",
+            "protect",
+            "rockslide",
+            "stompingtantrum"
+          ],
+          "abilities": [
+            "roughskin"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "garchompmegaz",
+      "sets": [
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "dracometeor",
+            "dragonpulse",
+            "earthpower",
+            "ironhead",
+            "protect"
+          ],
+          "abilities": [
+            "roughskin"
+          ]
+        },
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "dracometeor",
+            "dragonpulse",
+            "earthpower",
+            "protect"
+          ],
+          "abilities": [
+            "roughskin"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "gardevoir",
+      "sets": [
+        {
+          "role": "Choice Item user",
+          "moves": [
+            "dazzlinggleam",
+            "moonblast",
+            "mysticalfire",
+            "psychic"
+          ],
+          "abilities": [
+            "trace"
+          ]
+        },
+        {
+          "role": "Choice Item user",
+          "moves": [
+            "dazzlinggleam",
+            "moonblast",
+            "mysticalfire",
+            "psychic",
+            "trick"
+          ],
+          "abilities": [
+            "trace"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "gardevoirmega",
+      "sets": [
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "calmmind",
+            "hypervoice",
+            "mysticalfire",
+            "protect",
+            "psychic"
+          ],
+          "abilities": [
+            "trace"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "garganacl",
+      "sets": [
+        {
+          "role": "Doubles Bulky Setup",
+          "moves": [
+            "bodypress",
+            "irondefense",
+            "recover",
+            "stoneedge"
+          ],
+          "abilities": [
+            "purifyingsalt"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "gengar",
+      "sets": [
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "focusblast",
+            "protect",
+            "shadowball",
+            "sludgebomb",
+            "taunt",
+            "willowisp"
+          ],
+          "abilities": [
+            "cursedbody"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "gengarmega",
+      "sets": [
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "disable",
+            "icywind",
+            "protect",
+            "shadowball",
+            "sludgebomb",
+            "willowisp"
+          ],
+          "abilities": [
+            "cursedbody"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "gholdengo",
+      "sets": [
+        {
+          "role": "Choice Item user",
+          "moves": [
+            "focusblast",
+            "makeitrain",
+            "shadowball",
+            "thunderbolt",
+            "trick"
+          ],
+          "abilities": [
+            "goodasgold"
+          ]
+        },
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "focusblast",
+            "makeitrain",
+            "nastyplot",
+            "protect",
+            "shadowball"
+          ],
+          "abilities": [
+            "goodasgold"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "glaceon",
+      "sets": [
+        {
+          "role": "Doubles Bulky Setup",
+          "moves": [
+            "calmmind",
+            "freezedry",
+            "mudshot",
+            "protect"
+          ],
+          "abilities": [
+            "icebody"
+          ]
+        },
+        {
+          "role": "Doubles Support",
+          "moves": [
+            "freezedry",
+            "icywind",
+            "mudshot",
+            "protect"
+          ],
+          "abilities": [
+            "icebody"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "glalie",
+      "sets": [
+        {
+          "role": "Doubles Support",
+          "moves": [
+            "disable",
+            "freezedry",
+            "helpinghand",
+            "icywind",
+            "protect"
+          ],
+          "abilities": [
+            "innerfocus"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "glaliemega",
+      "sets": [
+        {
+          "role": "Doubles Support",
+          "moves": [
+            "bodyslam",
+            "freezedry",
+            "icywind",
+            "protect"
+          ],
+          "abilities": [
+            "innerfocus"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "glimmora",
+      "sets": [
+        {
+          "role": "Doubles Fast Attacker",
+          "moves": [
+            "earthpower",
+            "mortalspin",
+            "powergem",
+            "sludgebomb",
+            "spikyshield"
+          ],
+          "abilities": [
+            "toxicdebris"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "glimmoramega",
+      "sets": [
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "earthpower",
+            "powergem",
+            "sludgebomb",
+            "spikyshield"
+          ],
+          "abilities": [
+            "toxicdebris"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "gliscor",
+      "sets": [
+        {
+          "role": "Doubles Support",
+          "moves": [
+            "dualwingbeat",
+            "highhorsepower",
+            "knockoff",
+            "tailwind",
+            "toxicspikes"
+          ],
+          "abilities": [
+            "hypercutter"
+          ]
+        },
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "dualwingbeat",
+            "highhorsepower",
+            "knockoff",
+            "protect",
+            "swordsdance",
+            "tailwind"
+          ],
+          "abilities": [
+            "hypercutter"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "gogoat",
+      "sets": [
+        {
+          "role": "Doubles Bulky Setup",
+          "moves": [
+            "highhorsepower",
+            "hornleech",
+            "milkdrink",
+            "protect"
+          ],
+          "abilities": [
+            "sapsipper"
+          ]
+        },
+        {
+          "role": "Doubles Wallbreaker",
+          "moves": [
+            "highhorsepower",
+            "hornleech",
+            "milkdrink",
+            "rockslide"
+          ],
+          "abilities": [
+            "sapsipper"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "golisopod",
+      "sets": [
+        {
+          "role": "Doubles Bulky Attacker",
+          "moves": [
+            "firstimpression",
+            "leechlife",
+            "liquidation",
+            "protect",
+            "uturn"
+          ],
+          "abilities": [
+            "emergencyexit"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "golisopodmega",
+      "sets": [
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "drillrun",
+            "firstimpression",
+            "ironhead",
+            "leechlife",
+            "protect",
+            "uturn"
+          ],
+          "abilities": [
+            "emergencyexit"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "golurk",
+      "sets": [
+        {
+          "role": "Doubles Wallbreaker",
+          "moves": [
+            "dynamicpunch",
+            "headlongrush",
+            "poltergeist",
+            "protect"
+          ],
+          "abilities": [
+            "noguard"
+          ]
+        },
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "drainpunch",
+            "headlongrush",
+            "icepunch",
+            "poltergeist",
+            "protect"
+          ],
+          "abilities": [
+            "ironfist"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "golurkmega",
+      "sets": [
+        {
+          "role": "Doubles Wallbreaker",
+          "moves": [
+            "closecombat",
+            "headlongrush",
+            "poltergeist",
+            "protect"
+          ],
+          "abilities": [
+            "ironfist"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "goodra",
+      "sets": [
+        {
+          "role": "Doubles Bulky Attacker",
+          "moves": [
+            "dracometeor",
+            "fireblast",
+            "powerwhip",
+            "protect",
+            "scald",
+            "sludgebomb"
+          ],
+          "abilities": [
+            "sapsipper"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "goodrahisui",
+      "sets": [
+        {
+          "role": "Doubles Bulky Attacker",
+          "moves": [
+            "dracometeor",
+            "fireblast",
+            "heavyslam",
+            "protect"
+          ],
+          "abilities": [
+            "sapsipper"
+          ]
+        },
+        {
+          "role": "Doubles Bulky Setup",
+          "moves": [
+            "bodypress",
+            "heavyslam",
+            "lifedew",
+            "protect",
+            "shelter"
+          ],
+          "abilities": [
+            "sapsipper"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "gourgeist",
+      "sets": [
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "poltergeist",
+            "powerwhip",
+            "protect",
+            "shadowsneak",
+            "willowisp"
+          ],
+          "abilities": [
+            "frisk"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "gourgeistlarge",
+      "sets": [
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "poltergeist",
+            "powerwhip",
+            "protect",
+            "shadowsneak",
+            "trickroom"
+          ],
+          "abilities": [
+            "frisk"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "gourgeistsmall",
+      "sets": [
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "poltergeist",
+            "powerwhip",
+            "protect",
+            "shadowsneak",
+            "willowisp"
+          ],
+          "abilities": [
+            "frisk"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "gourgeistsuper",
+      "sets": [
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "poltergeist",
+            "powerwhip",
+            "protect",
+            "shadowsneak",
+            "trickroom"
+          ],
+          "abilities": [
+            "frisk"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "grapploct",
+      "sets": [
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "machpunch",
+            "payback",
+            "protect",
+            "stormthrow"
+          ],
+          "abilities": [
+            "technician"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "greninja",
+      "sets": [
+        {
+          "role": "Doubles Wallbreaker",
+          "moves": [
+            "grassknot",
+            "gunkshot",
+            "hydropump",
+            "icebeam",
+            "protect",
+            "uturn"
+          ],
+          "abilities": [
+            "protean"
+          ]
+        },
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "darkpulse",
+            "gunkshot",
+            "hydropump",
+            "protect",
+            "taunt"
+          ],
+          "abilities": [
+            "torrent"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "greninjamega",
+      "sets": [
+        {
+          "role": "Doubles Wallbreaker",
+          "moves": [
+            "darkpulse",
+            "gunkshot",
+            "hydropump",
+            "protect"
+          ],
+          "abilities": [
+            "protean"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "grimmsnarl",
+      "sets": [
+        {
+          "role": "Doubles Bulky Attacker",
+          "moves": [
+            "fakeout",
+            "lightscreen",
+            "partingshot",
+            "reflect",
+            "spiritbreak"
+          ],
+          "abilities": [
+            "prankster"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "gyarados",
+      "sets": [
+        {
+          "role": "Doubles Setup Sweeper",
+          "moves": [
+            "dragondance",
+            "powerwhip",
+            "protect",
+            "waterfall"
+          ],
+          "abilities": [
+            "intimidate"
+          ]
+        },
+        {
+          "role": "Doubles Setup Sweeper",
+          "moves": [
+            "dragondance",
+            "protect",
+            "temperflare",
+            "waterfall"
+          ],
+          "abilities": [
+            "intimidate"
+          ]
+        },
+        {
+          "role": "Doubles Support",
+          "moves": [
+            "helpinghand",
+            "icywind",
+            "taunt",
+            "thunderwave",
+            "waterfall"
+          ],
+          "abilities": [
+            "intimidate"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "gyaradosmega",
+      "sets": [
+        {
+          "role": "Doubles Setup Sweeper",
+          "moves": [
+            "crunch",
+            "dragondance",
+            "protect",
+            "waterfall"
+          ],
+          "abilities": [
+            "intimidate"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "hatterene",
+      "sets": [
+        {
+          "role": "Doubles Wallbreaker",
+          "moves": [
+            "dazzlinggleam",
+            "mysticalfire",
+            "protect",
+            "psychic",
+            "trickroom"
+          ],
+          "abilities": [
+            "magicbounce"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "hawlucha",
+      "sets": [
+        {
+          "role": "Doubles Setup Sweeper",
+          "moves": [
+            "bravebird",
+            "closecombat",
+            "protect",
+            "swordsdance"
+          ],
+          "abilities": [
+            "unburden"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "hawluchamega",
+      "sets": [
+        {
+          "role": "Doubles Setup Sweeper",
+          "moves": [
+            "bravebird",
+            "closecombat",
+            "protect",
+            "rockslide",
+            "stoneedge",
+            "swordsdance"
+          ],
+          "abilities": [
+            "limber"
+          ]
+        },
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "bravebird",
+            "closecombat",
+            "encore",
+            "protect",
+            "taunt"
+          ],
+          "abilities": [
+            "limber"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "heliolisk",
+      "sets": [
+        {
+          "role": "Doubles Bulky Attacker",
+          "moves": [
+            "hypervoice",
+            "protect",
+            "shedtail",
+            "thunderbolt"
+          ],
+          "abilities": [
+            "dryskin"
+          ]
+        },
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "glare",
+            "hypervoice",
+            "protect",
+            "thunderbolt",
+            "voltswitch"
+          ],
+          "abilities": [
+            "dryskin"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "heracross",
+      "sets": [
+        {
+          "role": "Choice Item user",
+          "moves": [
+            "closecombat",
+            "knockoff",
+            "megahorn",
+            "rockslide"
+          ],
+          "abilities": [
+            "moxie"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "heracrossmega",
+      "sets": [
+        {
+          "role": "Doubles Wallbreaker",
+          "moves": [
+            "closecombat",
+            "pinmissile",
+            "protect",
+            "rockblast"
+          ],
+          "abilities": [
+            "moxie"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "hippowdon",
+      "sets": [
+        {
+          "role": "Doubles Bulky Setup",
+          "moves": [
+            "highhorsepower",
+            "slackoff",
+            "stealthrock",
+            "stoneedge",
+            "whirlwind"
+          ],
+          "abilities": [
+            "sandstream"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "houndoom",
+      "sets": [
+        {
+          "role": "Doubles Fast Attacker",
+          "moves": [
+            "darkpulse",
+            "heatwave",
+            "nastyplot",
+            "protect",
+            "suckerpunch"
+          ],
+          "abilities": [
+            "flashfire",
+            "unnerve"
+          ]
+        },
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "darkpulse",
+            "heatwave",
+            "nastyplot",
+            "protect",
+            "suckerpunch"
+          ],
+          "abilities": [
+            "flashfire",
+            "unnerve"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "houndoommega",
+      "sets": [
+        {
+          "role": "Doubles Setup Sweeper",
+          "moves": [
+            "darkpulse",
+            "heatwave",
+            "nastyplot",
+            "protect"
+          ],
+          "abilities": [
+            "flashfire",
+            "unnerve"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "houndstone",
+      "sets": [
+        {
+          "role": "Choice Item user",
+          "moves": [
+            "bodypress",
+            "lastrespects",
+            "shadowsneak",
+            "trick"
+          ],
+          "abilities": [
+            "fluffy"
+          ]
+        },
+        {
+          "role": "Choice Item user",
+          "moves": [
+            "bodypress",
+            "lastrespects",
+            "trick",
+            "willowisp"
+          ],
+          "abilities": [
+            "fluffy"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "hydrapple",
+      "sets": [
+        {
+          "role": "Doubles Bulky Setup",
+          "moves": [
+            "earthpower",
+            "ficklebeam",
+            "gigadrain",
+            "leafstorm",
+            "pollenpuff",
+            "protect"
+          ],
+          "abilities": [
+            "regenerator"
+          ]
+        },
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "dracometeor",
+            "earthpower",
+            "ficklebeam",
+            "leafstorm",
+            "protect"
+          ],
+          "abilities": [
+            "regenerator"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "hydreigon",
+      "sets": [
+        {
+          "role": "Choice Item user",
+          "moves": [
+            "darkpulse",
+            "dracometeor",
+            "flashcannon",
+            "heatwave",
+            "snarl"
+          ],
+          "abilities": [
+            "levitate"
+          ]
+        },
+        {
+          "role": "Doubles Wallbreaker",
+          "moves": [
+            "darkpulse",
+            "dracometeor",
+            "heatwave",
+            "protect",
+            "snarl",
+            "tailwind"
+          ],
+          "abilities": [
+            "levitate"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "incineroar",
+      "sets": [
+        {
+          "role": "Doubles Support",
+          "moves": [
+            "darkestlariat",
+            "fakeout",
+            "flareblitz",
+            "partingshot"
+          ],
+          "abilities": [
+            "intimidate"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "indeedee",
+      "sets": [
+        {
+          "role": "Choice Item user",
+          "moves": [
+            "expandingforce",
+            "hypervoice",
+            "mysticalfire",
+            "trick"
+          ],
+          "abilities": [
+            "psychicsurge"
+          ]
+        },
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "encore",
+            "expandingforce",
+            "hypervoice",
+            "mysticalfire",
+            "protect"
+          ],
+          "abilities": [
+            "psychicsurge"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "indeedeef",
+      "sets": [
+        {
+          "role": "Doubles Support",
+          "moves": [
+            "followme",
+            "healpulse",
+            "helpinghand",
+            "hypervoice",
+            "mysticalfire",
+            "protect",
+            "psychic"
+          ],
+          "abilities": [
+            "psychicsurge"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "infernape",
+      "sets": [
+        {
+          "role": "Doubles Fast Attacker",
+          "moves": [
+            "closecombat",
+            "fakeout",
+            "knockoff",
+            "overheat",
+            "protect"
+          ],
+          "abilities": [
+            "blaze"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "inteleon",
+      "sets": [
+        {
+          "role": "Doubles Fast Attacker",
+          "moves": [
+            "hydropump",
+            "icywind",
+            "muddywater",
+            "protect",
+            "scald"
+          ],
+          "abilities": [
+            "torrent"
+          ]
+        },
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "hydropump",
+            "icebeam",
+            "muddywater",
+            "protect",
+            "scald"
+          ],
+          "abilities": [
+            "torrent"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "jolteon",
+      "sets": [
+        {
+          "role": "Doubles Bulky Setup",
+          "moves": [
+            "alluringvoice",
+            "calmmind",
+            "protect",
+            "thunderbolt"
+          ],
+          "abilities": [
+            "voltabsorb"
+          ]
+        },
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "alluringvoice",
+            "protect",
+            "thunderbolt",
+            "thunderwave",
+            "voltswitch"
+          ],
+          "abilities": [
+            "voltabsorb"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "kangaskhan",
+      "sets": [
+        {
+          "role": "Doubles Bulky Attacker",
+          "moves": [
+            "fakeout",
+            "lastresort"
+          ],
+          "abilities": [
+            "scrappy"
+          ]
+        },
+        {
+          "role": "Doubles Support",
+          "moves": [
+            "bodyslam",
+            "drainpunch",
+            "fakeout",
+            "suckerpunch"
+          ],
+          "abilities": [
+            "scrappy"
+          ]
+        },
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "doubleedge",
+            "drainpunch",
+            "fakeout",
+            "protect"
+          ],
+          "abilities": [
+            "scrappy"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "kangaskhanmega",
+      "sets": [
+        {
+          "role": "Doubles Support",
+          "moves": [
+            "bodyslam",
+            "crunch",
+            "drainpunch",
+            "fakeout",
+            "suckerpunch"
+          ],
+          "abilities": [
+            "scrappy"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "kingambit",
+      "sets": [
+        {
+          "role": "Doubles Bulky Attacker",
+          "moves": [
+            "ironhead",
+            "kowtowcleave",
+            "protect",
+            "suckerpunch"
+          ],
+          "abilities": [
+            "defiant"
+          ]
+        },
+        {
+          "role": "Doubles Bulky Attacker",
+          "moves": [
+            "ironhead",
+            "protect",
+            "suckerpunch",
+            "swordsdance"
+          ],
+          "abilities": [
+            "defiant"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "kleavor",
+      "sets": [
+        {
+          "role": "Choice Item user",
+          "moves": [
+            "closecombat",
+            "stoneaxe",
+            "uturn",
+            "xscissor"
+          ],
+          "abilities": [
+            "sharpness"
+          ]
+        },
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "closecombat",
+            "protect",
+            "stoneaxe",
+            "tailwind",
+            "uturn",
+            "xscissor"
+          ],
+          "abilities": [
+            "sharpness"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "klefki",
+      "sets": [
+        {
+          "role": "Doubles Support",
+          "moves": [
+            "dazzlinggleam",
+            "lightscreen",
+            "reflect",
+            "thunderwave"
+          ],
+          "abilities": [
+            "prankster"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "kommoo",
+      "sets": [
+        {
+          "role": "Doubles Bulky Setup",
+          "moves": [
+            "bodypress",
+            "irondefense",
+            "protect",
+            "throatchop"
+          ],
+          "abilities": [
+            "bulletproof"
+          ]
+        },
+        {
+          "role": "Doubles Bulky Setup",
+          "moves": [
+            "clangingscales",
+            "clangoroussoul",
+            "drainpunch",
+            "ironhead"
+          ],
+          "abilities": [
+            "bulletproof",
+            "soundproof"
+          ]
+        },
+        {
+          "role": "Doubles Bulky Setup",
+          "moves": [
+            "clangingscales",
+            "clangoroussoul",
+            "ironhead",
+            "protect"
+          ],
+          "abilities": [
+            "bulletproof",
+            "soundproof"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "krookodile",
+      "sets": [
+        {
+          "role": "Choice Item user",
+          "moves": [
+            "gunkshot",
+            "highhorsepower",
+            "knockoff",
+            "rockslide"
+          ],
+          "abilities": [
+            "intimidate"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "leafeon",
+      "sets": [
+        {
+          "role": "Doubles Setup Sweeper",
+          "moves": [
+            "doubleedge",
+            "knockoff",
+            "leafblade",
+            "protect",
+            "swordsdance",
+            "synthesis"
+          ],
+          "abilities": [
+            "chlorophyll"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "liepard",
+      "sets": [
+        {
+          "role": "Doubles Fast Attacker",
+          "moves": [
+            "encore",
+            "fakeout",
+            "knockoff",
+            "thunderwave"
+          ],
+          "abilities": [
+            "prankster"
+          ]
+        },
+        {
+          "role": "Doubles Support",
+          "moves": [
+            "encore",
+            "fakeout",
+            "knockoff",
+            "thunderwave"
+          ],
+          "abilities": [
+            "prankster"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "lopunny",
+      "sets": [
+        {
+          "role": "Choice Item user",
+          "moves": [
+            "encore",
+            "fakeout",
+            "switcheroo",
+            "thunderwave"
+          ],
+          "abilities": [
+            "klutz"
+          ]
+        },
+        {
+          "role": "Doubles Support",
+          "moves": [
+            "encore",
+            "fakeout",
+            "thunderwave",
+            "uturn"
+          ],
+          "abilities": [
+            "limber"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "lopunnymega",
+      "sets": [
+        {
+          "role": "Doubles Wallbreaker",
+          "moves": [
+            "closecombat",
+            "encore",
+            "fakeout",
+            "protect",
+            "thunderwave",
+            "uturn"
+          ],
+          "abilities": [
+            "limber"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "lucario",
+      "sets": [
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "closecombat",
+            "extremespeed",
+            "meteormash",
+            "protect"
+          ],
+          "abilities": [
+            "innerfocus"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "lucariomega",
+      "sets": [
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "closecombat",
+            "extremespeed",
+            "meteormash",
+            "protect",
+            "vacuumwave"
+          ],
+          "abilities": [
+            "innerfocus"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "lucariomegaz",
+      "sets": [
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "aurasphere",
+            "darkpulse",
+            "flashcannon",
+            "nastyplot",
+            "protect",
+            "vacuumwave"
+          ],
+          "abilities": [
+            "innerfocus"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "luxray",
+      "sets": [
+        {
+          "role": "Doubles Bulky Attacker",
+          "moves": [
+            "electroweb",
+            "snarl",
+            "superpower",
+            "voltswitch",
+            "wildcharge"
+          ],
+          "abilities": [
+            "intimidate"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "lycanroc",
+      "sets": [
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "accelerock",
+            "closecombat",
+            "protect",
+            "rockslide",
+            "swordsdance"
+          ],
+          "abilities": [
+            "sandrush"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "lycanrocdusk",
+      "sets": [
+        {
+          "role": "Doubles Wallbreaker",
+          "moves": [
+            "accelerock",
+            "closecombat",
+            "protect",
+            "rockslide"
+          ],
+          "abilities": [
+            "toughclaws"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "lycanrocmidnight",
+      "sets": [
+        {
+          "role": "Choice Item user",
+          "moves": [
+            "closecombat",
+            "knockoff",
+            "rockslide",
+            "stoneedge"
+          ],
+          "abilities": [
+            "noguard"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "mabosstiff",
+      "sets": [
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "crunch",
+            "playrough",
+            "protect",
+            "psychicfangs",
+            "wildcharge"
+          ],
+          "abilities": [
+            "intimidate"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "machamp",
+      "sets": [
+        {
+          "role": "Doubles Bulky Attacker",
+          "moves": [
+            "bulletpunch",
+            "dynamicpunch",
+            "knockoff",
+            "protect",
+            "stoneedge"
+          ],
+          "abilities": [
+            "noguard"
+          ]
+        },
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "bulletpunch",
+            "dynamicpunch",
+            "knockoff",
+            "protect",
+            "stoneedge"
+          ],
+          "abilities": [
+            "noguard"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "malamar",
+      "sets": [
+        {
+          "role": "Doubles Bulky Setup",
+          "moves": [
+            "knockoff",
+            "poisonjab",
+            "protect",
+            "superpower",
+            "trickroom",
+            "zenheadbutt"
+          ],
+          "abilities": [
+            "contrary"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "malamarmega",
+      "sets": [
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "knockoff",
+            "poisonjab",
+            "protect",
+            "superpower",
+            "zenheadbutt"
+          ],
+          "abilities": [
+            "contrary"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "mamoswine",
+      "sets": [
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "highhorsepower",
+            "iceshard",
+            "iciclecrash",
+            "protect"
+          ],
+          "abilities": [
+            "thickfat"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "manectric",
+      "sets": [
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "flamethrower",
+            "overheat",
+            "protect",
+            "thunderbolt",
+            "thunderwave",
+            "voltswitch"
+          ],
+          "abilities": [
+            "lightningrod"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "manectricmega",
+      "sets": [
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "flamethrower",
+            "overheat",
+            "protect",
+            "snarl",
+            "thunderbolt",
+            "voltswitch"
+          ],
+          "abilities": [
+            "lightningrod"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "maushold",
+      "sets": [
+        {
+          "role": "Doubles Setup Sweeper",
+          "moves": [
+            "encore",
+            "populationbomb",
+            "protect",
+            "tidyup"
+          ],
+          "abilities": [
+            "technician"
+          ]
+        },
+        {
+          "role": "Doubles Support",
+          "moves": [
+            "encore",
+            "followme",
+            "populationbomb",
+            "protect"
+          ],
+          "abilities": [
+            "technician"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "mawile",
+      "sets": [
+        {
+          "role": "Doubles Bulky Attacker",
+          "moves": [
+            "icywind",
+            "ironhead",
+            "knockoff",
+            "playrough",
+            "protect",
+            "suckerpunch"
+          ],
+          "abilities": [
+            "intimidate"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "mawilemega",
+      "sets": [
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "ironhead",
+            "playrough",
+            "protect",
+            "suckerpunch"
+          ],
+          "abilities": [
+            "intimidate"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "medicham",
+      "sets": [
+        {
+          "role": "Choice Item user",
+          "moves": [
+            "closecombat",
+            "icepunch",
+            "poisonjab",
+            "trick",
+            "zenheadbutt"
+          ],
+          "abilities": [
+            "purepower"
+          ]
+        },
+        {
+          "role": "Doubles Fast Attacker",
+          "moves": [
+            "closecombat",
+            "fakeout",
+            "protect",
+            "zenheadbutt"
+          ],
+          "abilities": [
+            "purepower"
+          ]
+        },
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "bulletpunch",
+            "closecombat",
+            "icepunch",
+            "protect",
+            "zenheadbutt"
+          ],
+          "abilities": [
+            "purepower"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "medichammega",
+      "sets": [
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "closecombat",
+            "fakeout",
+            "protect",
+            "zenheadbutt"
+          ],
+          "abilities": [
+            "telepathy"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "meganium",
+      "sets": [
+        {
+          "role": "Doubles Support",
+          "moves": [
+            "encore",
+            "energyball",
+            "knockoff",
+            "leechseed",
+            "pollenpuff"
+          ],
+          "abilities": [
+            "overgrow"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "meganiummega",
+      "sets": [
+        {
+          "role": "Doubles Bulky Attacker",
+          "moves": [
+            "dazzlinggleam",
+            "solarbeam",
+            "synthesis",
+            "weatherball"
+          ],
+          "abilities": [
+            "leafguard"
+          ]
+        },
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "dazzlinggleam",
+            "protect",
+            "solarbeam",
+            "weatherball"
+          ],
+          "abilities": [
+            "leafguard"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "meowscarada",
+      "sets": [
+        {
+          "role": "Choice Item user",
+          "moves": [
+            "flowertrick",
+            "knockoff",
+            "tripleaxel",
+            "uturn"
+          ],
+          "abilities": [
+            "protean"
+          ]
+        },
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "flowertrick",
+            "knockoff",
+            "protect",
+            "suckerpunch",
+            "taunt",
+            "uturn"
+          ],
+          "abilities": [
+            "overgrow"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "meowstic",
+      "sets": [
+        {
+          "role": "Doubles Bulky Attacker",
+          "moves": [
+            "fakeout",
+            "lightscreen",
+            "psychic",
+            "reflect",
+            "thunderwave"
+          ],
+          "abilities": [
+            "prankster"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "meowsticf",
+      "sets": [
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "alluringvoice",
+            "darkpulse",
+            "protect",
+            "psychic",
+            "thunderbolt"
+          ],
+          "abilities": [
+            "competitive"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "meowsticfmega",
+      "sets": [
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "alluringvoice",
+            "darkpulse",
+            "nastyplot",
+            "protect",
+            "psychic",
+            "thunderbolt"
+          ],
+          "abilities": [
+            "competitive"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "meowsticmmega",
+      "sets": [
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "alluringvoice",
+            "darkpulse",
+            "nastyplot",
+            "protect",
+            "psychic",
+            "thunderbolt"
+          ],
+          "abilities": [
+            "infiltrator"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "metagross",
+      "sets": [
+        {
+          "role": "Doubles Bulky Attacker",
+          "moves": [
+            "bulletpunch",
+            "meteormash",
+            "protect",
+            "psychicfangs",
+            "stompingtantrum"
+          ],
+          "abilities": [
+            "clearbody"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "metagrossmega",
+      "sets": [
+        {
+          "role": "Doubles Bulky Attacker",
+          "moves": [
+            "bodypress",
+            "bulletpunch",
+            "ironhead",
+            "protect",
+            "psychicfangs"
+          ],
+          "abilities": [
+            "clearbody"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "milotic",
+      "sets": [
+        {
+          "role": "Doubles Bulky Setup",
+          "moves": [
+            "blizzard",
+            "coil",
+            "muddywater",
+            "recover"
+          ],
+          "abilities": [
+            "competitive"
+          ]
+        },
+        {
+          "role": "Doubles Bulky Setup",
+          "moves": [
+            "icywind",
+            "protect",
+            "recover",
+            "scald"
+          ],
+          "abilities": [
+            "competitive"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "mimikyu",
+      "sets": [
+        {
+          "role": "Doubles Setup Sweeper",
+          "moves": [
+            "playrough",
+            "protect",
+            "shadowclaw",
+            "shadowsneak",
+            "swordsdance"
+          ],
+          "abilities": [
+            "disguise"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "morpeko",
+      "sets": [
+        {
+          "role": "Doubles Support",
+          "moves": [
+            "aurawheel",
+            "fakeout",
+            "knockoff",
+            "protect"
+          ],
+          "abilities": [
+            "hungerswitch"
+          ]
+        },
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "aurawheel",
+            "knockoff",
+            "partingshot",
+            "protect",
+            "voltswitch"
+          ],
+          "abilities": [
+            "hungerswitch"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "mrmime",
+      "sets": [
+        {
+          "role": "Doubles Fast Attacker",
+          "moves": [
+            "dazzlinggleam",
+            "fakeout",
+            "icywind",
+            "psychic",
+            "thunderwave"
+          ],
+          "abilities": [
+            "filter"
+          ]
+        },
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "dazzlinggleam",
+            "encore",
+            "mysticalfire",
+            "protect",
+            "psychic"
+          ],
+          "abilities": [
+            "filter"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "mrrime",
+      "sets": [
+        {
+          "role": "Doubles Support",
+          "moves": [
+            "encore",
+            "fakeout",
+            "freezedry",
+            "icywind",
+            "protect",
+            "psychic"
+          ],
+          "abilities": [
+            "screencleaner"
+          ]
+        },
+        {
+          "role": "Doubles Support",
+          "moves": [
+            "encore",
+            "fakeout",
+            "icywind",
+            "protect",
+            "psychic"
+          ],
+          "abilities": [
+            "screencleaner"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "mudsdale",
+      "sets": [
+        {
+          "role": "Doubles Support",
+          "moves": [
+            "bodypress",
+            "heavyslam",
+            "highhorsepower",
+            "stealthrock",
+            "stoneedge"
+          ],
+          "abilities": [
+            "stamina"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "musharna",
+      "sets": [
+        {
+          "role": "Doubles Bulky Setup",
+          "moves": [
+            "moonblast",
+            "moonlight",
+            "psychic",
+            "trickroom"
+          ],
+          "abilities": [
+            "synchronize"
+          ]
+        },
+        {
+          "role": "Doubles Support",
+          "moves": [
+            "helpinghand",
+            "moonblast",
+            "psychic",
+            "trickroom"
+          ],
+          "abilities": [
+            "synchronize"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ninetales",
+      "sets": [
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "heatwave",
+            "protect",
+            "solarbeam",
+            "weatherball"
+          ],
+          "abilities": [
+            "drought"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ninetalesalola",
+      "sets": [
+        {
+          "role": "Doubles Support",
+          "moves": [
+            "auroraveil",
+            "blizzard",
+            "moonblast",
+            "protect"
+          ],
+          "abilities": [
+            "snowwarning"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "noivern",
+      "sets": [
+        {
+          "role": "Doubles Wallbreaker",
+          "moves": [
+            "dracometeor",
+            "flamethrower",
+            "hurricane",
+            "protect",
+            "tailwind"
+          ],
+          "abilities": [
+            "frisk"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "oranguru",
+      "sets": [
+        {
+          "role": "Doubles Support",
+          "moves": [
+            "hypervoice",
+            "instruct",
+            "psychic",
+            "trickroom"
+          ],
+          "abilities": [
+            "innerfocus"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "orthworm",
+      "sets": [
+        {
+          "role": "Doubles Bulky Attacker",
+          "moves": [
+            "bodypress",
+            "heavyslam",
+            "helpinghand",
+            "protect",
+            "shedtail"
+          ],
+          "abilities": [
+            "eartheater"
+          ]
+        },
+        {
+          "role": "Doubles Bulky Setup",
+          "moves": [
+            "bodypress",
+            "heavyslam",
+            "irondefense",
+            "protect"
+          ],
+          "abilities": [
+            "eartheater"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "overqwil",
+      "sets": [
+        {
+          "role": "Doubles Setup Sweeper",
+          "moves": [
+            "crunch",
+            "gunkshot",
+            "protect",
+            "swordsdance"
+          ],
+          "abilities": [
+            "intimidate"
+          ]
+        },
+        {
+          "role": "Doubles Support",
+          "moves": [
+            "crunch",
+            "gunkshot",
+            "icywind",
+            "toxicspikes"
+          ],
+          "abilities": [
+            "intimidate"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "palafin",
+      "sets": [
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "flipturn",
+            "jetpunch",
+            "protect",
+            "wavecrash"
+          ],
+          "abilities": [
+            "zerotohero"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "pangoro",
+      "sets": [
+        {
+          "role": "Choice Item user",
+          "moves": [
+            "drainpunch",
+            "gunkshot",
+            "headlongrush",
+            "knockoff",
+            "partingshot"
+          ],
+          "abilities": [
+            "ironfist"
+          ]
+        },
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "closecombat",
+            "knockoff",
+            "partingshot",
+            "protect"
+          ],
+          "abilities": [
+            "scrappy"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "passimian",
+      "sets": [
+        {
+          "role": "Choice Item user",
+          "moves": [
+            "closecombat",
+            "gunkshot",
+            "knockoff",
+            "rockslide",
+            "uturn"
+          ],
+          "abilities": [
+            "defiant"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "pawmot",
+      "sets": [
+        {
+          "role": "Doubles Fast Attacker",
+          "moves": [
+            "closecombat",
+            "doubleshock",
+            "fakeout",
+            "revivalblessing"
+          ],
+          "abilities": [
+            "ironfist"
+          ]
+        },
+        {
+          "role": "Doubles Wallbreaker",
+          "moves": [
+            "closecombat",
+            "doubleshock",
+            "protect",
+            "revivalblessing"
+          ],
+          "abilities": [
+            "ironfist"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "pelipper",
+      "sets": [
+        {
+          "role": "Doubles Support",
+          "moves": [
+            "hurricane",
+            "muddywater",
+            "protect",
+            "tailwind",
+            "weatherball",
+            "wideguard"
+          ],
+          "abilities": [
+            "drizzle"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "perrserker",
+      "sets": [
+        {
+          "role": "Doubles Support",
+          "moves": [
+            "closecombat",
+            "fakeout",
+            "helpinghand",
+            "ironhead",
+            "knockoff",
+            "protect",
+            "uturn"
+          ],
+          "abilities": [
+            "toughclaws"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "persian",
+      "sets": [
+        {
+          "role": "Doubles Support",
+          "moves": [
+            "doubleedge",
+            "fakeout",
+            "helpinghand",
+            "icywind",
+            "taunt",
+            "uturn"
+          ],
+          "abilities": [
+            "technician"
+          ]
+        },
+        {
+          "role": "Doubles Wallbreaker",
+          "moves": [
+            "doubleedge",
+            "fakeout",
+            "icywind",
+            "knockoff"
+          ],
+          "abilities": [
+            "technician"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "persianalola",
+      "sets": [
+        {
+          "role": "Doubles Support",
+          "moves": [
+            "fakeout",
+            "foulplay",
+            "helpinghand",
+            "icywind",
+            "knockoff",
+            "partingshot",
+            "snarl",
+            "taunt"
+          ],
+          "abilities": [
+            "furcoat"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "pidgeot",
+      "sets": [
+        {
+          "role": "Doubles Bulky Setup",
+          "moves": [
+            "bravebird",
+            "protect",
+            "roost",
+            "tailwind"
+          ],
+          "abilities": [
+            "bigpecks"
+          ]
+        },
+        {
+          "role": "Doubles Support",
+          "moves": [
+            "bravebird",
+            "protect",
+            "tailwind",
+            "uturn"
+          ],
+          "abilities": [
+            "bigpecks"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "pidgeotmega",
+      "sets": [
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "heatwave",
+            "hurricane",
+            "protect",
+            "tailwind"
+          ],
+          "abilities": [
+            "bigpecks"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "pikachu",
+      "sets": [
+        {
+          "role": "Doubles Support",
+          "moves": [
+            "encore",
+            "fakeout",
+            "grassknot",
+            "knockoff",
+            "protect",
+            "volttackle"
+          ],
+          "abilities": [
+            "lightningrod"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "pincurchin",
+      "sets": [
+        {
+          "role": "Doubles Bulky Setup",
+          "moves": [
+            "electroweb",
+            "recover",
+            "risingvoltage",
+            "scald"
+          ],
+          "abilities": [
+            "electricsurge"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "pinsir",
+      "sets": [
+        {
+          "role": "Choice Item user",
+          "moves": [
+            "closecombat",
+            "highhorsepower",
+            "lunge",
+            "rockslide",
+            "stoneedge"
+          ],
+          "abilities": [
+            "hypercutter"
+          ]
+        },
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "closecombat",
+            "highhorsepower",
+            "lunge",
+            "protect",
+            "rockslide",
+            "stoneedge"
+          ],
+          "abilities": [
+            "hypercutter"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "pinsirmega",
+      "sets": [
+        {
+          "role": "Doubles Wallbreaker",
+          "moves": [
+            "bodyslam",
+            "closecombat",
+            "feint",
+            "protect"
+          ],
+          "abilities": [
+            "hypercutter"
+          ]
+        },
+        {
+          "role": "Doubles Wallbreaker",
+          "moves": [
+            "bodyslam",
+            "feint",
+            "highhorsepower",
+            "protect"
+          ],
+          "abilities": [
+            "hypercutter"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "politoed",
+      "sets": [
+        {
+          "role": "Choice Item user",
+          "moves": [
+            "icebeam",
+            "icywind",
+            "muddywater",
+            "weatherball"
+          ],
+          "abilities": [
+            "drizzle"
+          ]
+        },
+        {
+          "role": "Doubles Support",
+          "moves": [
+            "encore",
+            "helpinghand",
+            "icywind",
+            "muddywater"
+          ],
+          "abilities": [
+            "drizzle"
+          ]
+        },
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "icebeam",
+            "muddywater",
+            "protect",
+            "weatherball"
+          ],
+          "abilities": [
+            "drizzle"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "polteageist",
+      "sets": [
+        {
+          "role": "Doubles Setup Sweeper",
+          "moves": [
+            "protect",
+            "shadowball",
+            "shellsmash",
+            "storedpower"
+          ],
+          "abilities": [
+            "cursedbody"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "primarina",
+      "sets": [
+        {
+          "role": "Choice Item user",
+          "moves": [
+            "flipturn",
+            "hydropump",
+            "hypervoice",
+            "moonblast"
+          ],
+          "abilities": [
+            "liquidvoice"
+          ]
+        },
+        {
+          "role": "Doubles Bulky Attacker",
+          "moves": [
+            "hypervoice",
+            "icywind",
+            "moonblast",
+            "protect"
+          ],
+          "abilities": [
+            "liquidvoice"
+          ]
+        },
+        {
+          "role": "Doubles Bulky Setup",
+          "moves": [
+            "calmmind",
+            "hypervoice",
+            "moonblast",
+            "protect"
+          ],
+          "abilities": [
+            "liquidvoice"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "pyroar",
+      "sets": [
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "fireblast",
+            "hypervoice",
+            "protect",
+            "scorchingsands",
+            "taunt",
+            "willowisp"
+          ],
+          "abilities": [
+            "unnerve"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "pyroarmega",
+      "sets": [
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "fireblast",
+            "heatwave",
+            "hypervoice",
+            "protect"
+          ],
+          "abilities": [
+            "unnerve"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "quaquaval",
+      "sets": [
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "aquajet",
+            "aquastep",
+            "closecombat",
+            "knockoff",
+            "protect",
+            "tripleaxel"
+          ],
+          "abilities": [
+            "moxie"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "qwilfish",
+      "sets": [
+        {
+          "role": "Doubles Support",
+          "moves": [
+            "flipturn",
+            "gunkshot",
+            "icywind",
+            "taunt",
+            "thunderwave",
+            "toxicspikes"
+          ],
+          "abilities": [
+            "intimidate"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "raichu",
+      "sets": [
+        {
+          "role": "Doubles Support",
+          "moves": [
+            "encore",
+            "fakeout",
+            "grassknot",
+            "knockoff",
+            "nuzzle",
+            "thunderbolt"
+          ],
+          "abilities": [
+            "lightningrod"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "raichualola",
+      "sets": [
+        {
+          "role": "Doubles Fast Attacker",
+          "moves": [
+            "fakeout",
+            "nuzzle",
+            "psychic",
+            "thunderbolt"
+          ],
+          "abilities": [
+            "surgesurfer"
+          ]
+        },
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "nastyplot",
+            "protect",
+            "psychic",
+            "thunderbolt",
+            "voltswitch"
+          ],
+          "abilities": [
+            "surgesurfer"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "raichumegax",
+      "sets": [
+        {
+          "role": "Doubles Support",
+          "moves": [
+            "fakeout",
+            "knockoff",
+            "protect",
+            "voltswitch",
+            "volttackle"
+          ],
+          "abilities": [
+            "lightningrod"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "raichumegay",
+      "sets": [
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "encore",
+            "fakeout",
+            "focusblast",
+            "protect",
+            "voltswitch",
+            "zapcannon"
+          ],
+          "abilities": [
+            "lightningrod"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "rampardos",
+      "sets": [
+        {
+          "role": "Choice Item user",
+          "moves": [
+            "firepunch",
+            "headsmash",
+            "rockslide",
+            "superpower"
+          ],
+          "abilities": [
+            "sheerforce"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "reuniclus",
+      "sets": [
+        {
+          "role": "Doubles Wallbreaker",
+          "moves": [
+            "focusblast",
+            "protect",
+            "psychic",
+            "shadowball",
+            "trickroom"
+          ],
+          "abilities": [
+            "magicguard"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "rhyperior",
+      "sets": [
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "highhorsepower",
+            "protect",
+            "rockpolish",
+            "rockslide"
+          ],
+          "abilities": [
+            "solidrock"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "rillaboom",
+      "sets": [
+        {
+          "role": "Doubles Wallbreaker",
+          "moves": [
+            "fakeout",
+            "grassyglide",
+            "highhorsepower",
+            "woodhammer"
+          ],
+          "abilities": [
+            "grassysurge"
+          ]
+        },
+        {
+          "role": "Doubles Wallbreaker",
+          "moves": [
+            "fakeout",
+            "grassyglide",
+            "uturn",
+            "woodhammer"
+          ],
+          "abilities": [
+            "grassysurge"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "roserade",
+      "sets": [
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "gigadrain",
+            "leafstorm",
+            "protect",
+            "sleeppowder",
+            "sludgebomb",
+            "toxicspikes"
+          ],
+          "abilities": [
+            "naturalcure"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "rotom",
+      "sets": [
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "nastyplot",
+            "protect",
+            "shadowball",
+            "thunderbolt",
+            "voltswitch",
+            "willowisp"
+          ],
+          "abilities": [
+            "levitate"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "rotomfan",
+      "sets": [
+        {
+          "role": "Doubles Bulky Attacker",
+          "moves": [
+            "airslash",
+            "electroweb",
+            "protect",
+            "thunderbolt",
+            "voltswitch",
+            "willowisp"
+          ],
+          "abilities": [
+            "levitate"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "rotomfrost",
+      "sets": [
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "blizzard",
+            "protect",
+            "thunderbolt",
+            "voltswitch",
+            "willowisp"
+          ],
+          "abilities": [
+            "levitate"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "rotomheat",
+      "sets": [
+        {
+          "role": "Doubles Bulky Attacker",
+          "moves": [
+            "electroweb",
+            "overheat",
+            "protect",
+            "thunderbolt",
+            "voltswitch",
+            "willowisp"
+          ],
+          "abilities": [
+            "levitate"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "rotommow",
+      "sets": [
+        {
+          "role": "Doubles Bulky Attacker",
+          "moves": [
+            "electroweb",
+            "leafstorm",
+            "protect",
+            "thunderbolt",
+            "voltswitch",
+            "willowisp"
+          ],
+          "abilities": [
+            "levitate"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "rotomwash",
+      "sets": [
+        {
+          "role": "Doubles Bulky Attacker",
+          "moves": [
+            "electroweb",
+            "hydropump",
+            "protect",
+            "thunderbolt",
+            "voltswitch",
+            "willowisp"
+          ],
+          "abilities": [
+            "levitate"
+          ]
+        },
+        {
+          "role": "Doubles Bulky Setup",
+          "moves": [
+            "hydropump",
+            "nastyplot",
+            "protect",
+            "thunderbolt"
+          ],
+          "abilities": [
+            "levitate"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "runerigus",
+      "sets": [
+        {
+          "role": "Doubles Bulky Attacker",
+          "moves": [
+            "bodypress",
+            "poltergeist",
+            "toxicspikes",
+            "trickroom",
+            "willowisp"
+          ],
+          "abilities": [
+            "wanderingspirit"
+          ]
+        },
+        {
+          "role": "Doubles Bulky Setup",
+          "moves": [
+            "bodypress",
+            "irondefense",
+            "poltergeist",
+            "trickroom"
+          ],
+          "abilities": [
+            "wanderingspirit"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "sableye",
+      "sets": [
+        {
+          "role": "Doubles Bulky Attacker",
+          "moves": [
+            "fakeout",
+            "knockoff",
+            "quash",
+            "willowisp"
+          ],
+          "abilities": [
+            "prankster"
+          ]
+        },
+        {
+          "role": "Doubles Support",
+          "moves": [
+            "encore",
+            "fakeout",
+            "knockoff",
+            "thunderwave"
+          ],
+          "abilities": [
+            "prankster"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "sableyemega",
+      "sets": [
+        {
+          "role": "Doubles Bulky Attacker",
+          "moves": [
+            "fakeout",
+            "knockoff",
+            "recover",
+            "thunderwave",
+            "willowisp"
+          ],
+          "abilities": [
+            "prankster"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "salamence",
+      "sets": [
+        {
+          "role": "Doubles Wallbreaker",
+          "moves": [
+            "dracometeor",
+            "dualwingbeat",
+            "fireblast",
+            "protect",
+            "tailwind"
+          ],
+          "abilities": [
+            "intimidate"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "salamencemega",
+      "sets": [
+        {
+          "role": "Doubles Wallbreaker",
+          "moves": [
+            "doubleedge",
+            "dracometeor",
+            "fireblast",
+            "protect",
+            "tailwind"
+          ],
+          "abilities": [
+            "intimidate"
+          ]
+        },
+        {
+          "role": "Doubles Wallbreaker",
+          "moves": [
+            "doubleedge",
+            "fireblast",
+            "hypervoice",
+            "protect",
+            "tailwind"
+          ],
+          "abilities": [
+            "intimidate"
+          ]
+        },
+        {
+          "role": "Doubles Wallbreaker",
+          "moves": [
+            "doubleedge",
+            "hypervoice",
+            "protect",
+            "tailwind"
+          ],
+          "abilities": [
+            "intimidate"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "salazzle",
+      "sets": [
+        {
+          "role": "Doubles Fast Attacker",
+          "moves": [
+            "encore",
+            "fakeout",
+            "heatwave",
+            "protect",
+            "sludgebomb"
+          ],
+          "abilities": [
+            "oblivious"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "samurott",
+      "sets": [
+        {
+          "role": "Choice Item user",
+          "moves": [
+            "flipturn",
+            "grassknot",
+            "hydropump",
+            "icebeam",
+            "knockoff",
+            "megahorn"
+          ],
+          "abilities": [
+            "torrent"
+          ]
+        },
+        {
+          "role": "Doubles Setup Sweeper",
+          "moves": [
+            "aquajet",
+            "knockoff",
+            "liquidation",
+            "megahorn",
+            "protect",
+            "sacredsword",
+            "swordsdance"
+          ],
+          "abilities": [
+            "torrent"
+          ]
+        },
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "aquajet",
+            "flipturn",
+            "grassknot",
+            "hydropump",
+            "icebeam",
+            "knockoff",
+            "megahorn",
+            "protect"
+          ],
+          "abilities": [
+            "torrent"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "samurotthisui",
+      "sets": [
+        {
+          "role": "Choice Item user",
+          "moves": [
+            "ceaselessedge",
+            "flipturn",
+            "razorshell",
+            "sacredsword"
+          ],
+          "abilities": [
+            "sharpness"
+          ]
+        },
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "ceaselessedge",
+            "protect",
+            "razorshell",
+            "suckerpunch"
+          ],
+          "abilities": [
+            "sharpness"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "sandaconda",
+      "sets": [
+        {
+          "role": "Doubles Bulky Setup",
+          "moves": [
+            "coil",
+            "highhorsepower",
+            "rest",
+            "stoneedge"
+          ],
+          "abilities": [
+            "shedskin"
+          ]
+        },
+        {
+          "role": "Doubles Bulky Setup",
+          "moves": [
+            "glare",
+            "highhorsepower",
+            "rest",
+            "stoneedge"
+          ],
+          "abilities": [
+            "shedskin"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "sceptile",
+      "sets": [
+        {
+          "role": "Doubles Support",
+          "moves": [
+            "earthpower",
+            "leafstorm",
+            "protect",
+            "shedtail"
+          ],
+          "abilities": [
+            "overgrow"
+          ]
+        },
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "acrobatics",
+            "breakingswipe",
+            "earthpower",
+            "leafstorm",
+            "protect"
+          ],
+          "abilities": [
+            "unburden"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "sceptilemega",
+      "sets": [
+        {
+          "role": "Doubles Fast Attacker",
+          "moves": [
+            "dragonpulse",
+            "earthpower",
+            "leafstorm",
+            "protect"
+          ],
+          "abilities": [
+            "overgrow"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "scizor",
+      "sets": [
+        {
+          "role": "Doubles Setup Sweeper",
+          "moves": [
+            "bugbite",
+            "bulletpunch",
+            "closecombat",
+            "protect",
+            "swordsdance"
+          ],
+          "abilities": [
+            "technician"
+          ]
+        },
+        {
+          "role": "Doubles Support",
+          "moves": [
+            "bulletpunch",
+            "closecombat",
+            "tailwind",
+            "uturn"
+          ],
+          "abilities": [
+            "technician"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "scizormega",
+      "sets": [
+        {
+          "role": "Doubles Setup Sweeper",
+          "moves": [
+            "bugbite",
+            "bulletpunch",
+            "closecombat",
+            "protect",
+            "swordsdance"
+          ],
+          "abilities": [
+            "lightmetal"
+          ]
+        },
+        {
+          "role": "Doubles Support",
+          "moves": [
+            "bulletpunch",
+            "roost",
+            "tailwind",
+            "uturn"
+          ],
+          "abilities": [
+            "lightmetal"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "scolipede",
+      "sets": [
+        {
+          "role": "Doubles Setup Sweeper",
+          "moves": [
+            "gunkshot",
+            "megahorn",
+            "protect",
+            "stompingtantrum",
+            "swordsdance"
+          ],
+          "abilities": [
+            "speedboost"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "scolipedemega",
+      "sets": [
+        {
+          "role": "Doubles Setup Sweeper",
+          "moves": [
+            "gunkshot",
+            "leechlife",
+            "protect",
+            "swordsdance"
+          ],
+          "abilities": [
+            "speedboost"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "scovillain",
+      "sets": [
+        {
+          "role": "Choice Item user",
+          "moves": [
+            "burningjealousy",
+            "energyball",
+            "flareblitz",
+            "leafstorm"
+          ],
+          "abilities": [
+            "chlorophyll"
+          ]
+        },
+        {
+          "role": "Doubles Support",
+          "moves": [
+            "energyball",
+            "fireblast",
+            "protect",
+            "ragepowder",
+            "willowisp"
+          ],
+          "abilities": [
+            "chlorophyll"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "scovillainmega",
+      "sets": [
+        {
+          "role": "Doubles Support",
+          "moves": [
+            "fireblast",
+            "gigadrain",
+            "protect",
+            "ragepowder"
+          ],
+          "abilities": [
+            "chlorophyll"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "scrafty",
+      "sets": [
+        {
+          "role": "Doubles Bulky Setup",
+          "moves": [
+            "bulkup",
+            "drainpunch",
+            "knockoff",
+            "protect"
+          ],
+          "abilities": [
+            "intimidate"
+          ]
+        },
+        {
+          "role": "Doubles Support",
+          "moves": [
+            "closecombat",
+            "encore",
+            "fakeout",
+            "knockoff",
+            "snarl"
+          ],
+          "abilities": [
+            "intimidate"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "scraftymega",
+      "sets": [
+        {
+          "role": "Doubles Support",
+          "moves": [
+            "closecombat",
+            "coaching",
+            "encore",
+            "fakeout",
+            "knockoff",
+            "snarl"
+          ],
+          "abilities": [
+            "intimidate"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "serperior",
+      "sets": [
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "dragonpulse",
+            "glare",
+            "leafstorm",
+            "protect"
+          ],
+          "abilities": [
+            "contrary"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "sharpedo",
+      "sets": [
+        {
+          "role": "Doubles Fast Attacker",
+          "moves": [
+            "closecombat",
+            "crunch",
+            "liquidation",
+            "protect"
+          ],
+          "abilities": [
+            "speedboost"
+          ]
+        },
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "closecombat",
+            "crunch",
+            "liquidation",
+            "protect"
+          ],
+          "abilities": [
+            "speedboost"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "sharpedomega",
+      "sets": [
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "closecombat",
+            "crunch",
+            "liquidation",
+            "protect",
+            "psychicfangs"
+          ],
+          "abilities": [
+            "speedboost"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "simipour",
+      "sets": [
+        {
+          "role": "Doubles Setup Sweeper",
+          "moves": [
+            "hydropump",
+            "icebeam",
+            "nastyplot",
+            "protect"
+          ],
+          "abilities": [
+            "torrent"
+          ]
+        },
+        {
+          "role": "Doubles Support",
+          "moves": [
+            "fakeout",
+            "flipturn",
+            "icywind",
+            "protect",
+            "scald",
+            "taunt"
+          ],
+          "abilities": [
+            "torrent"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "simisage",
+      "sets": [
+        {
+          "role": "Doubles Support",
+          "moves": [
+            "energyball",
+            "fakeout",
+            "protect",
+            "superpower",
+            "taunt"
+          ],
+          "abilities": [
+            "overgrow"
+          ]
+        },
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "gunkshot",
+            "leafstorm",
+            "protect",
+            "superpower"
+          ],
+          "abilities": [
+            "overgrow"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "simisear",
+      "sets": [
+        {
+          "role": "Doubles Setup Sweeper",
+          "moves": [
+            "grassknot",
+            "heatwave",
+            "nastyplot",
+            "protect"
+          ],
+          "abilities": [
+            "blaze"
+          ]
+        },
+        {
+          "role": "Doubles Support",
+          "moves": [
+            "fakeout",
+            "heatwave",
+            "protect",
+            "taunt",
+            "willowisp"
+          ],
+          "abilities": [
+            "blaze"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "sinistcha",
+      "sets": [
+        {
+          "role": "Doubles Bulky Setup",
+          "moves": [
+            "calmmind",
+            "matchagotcha",
+            "protect",
+            "shadowball"
+          ],
+          "abilities": [
+            "hospitality"
+          ]
+        },
+        {
+          "role": "Doubles Support",
+          "moves": [
+            "lifedew",
+            "matchagotcha",
+            "protect",
+            "ragepowder",
+            "strengthsap",
+            "trickroom"
+          ],
+          "abilities": [
+            "hospitality"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "sirfetchd",
+      "sets": [
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "bravebird",
+            "closecombat",
+            "firstimpression",
+            "knockoff",
+            "poisonjab",
+            "protect"
+          ],
+          "abilities": [
+            "scrappy"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "skarmory",
+      "sets": [
+        {
+          "role": "Doubles Bulky Setup",
+          "moves": [
+            "bodypress",
+            "bravebird",
+            "irondefense",
+            "protect",
+            "roost",
+            "tailwind"
+          ],
+          "abilities": [
+            "sturdy"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "skarmorymega",
+      "sets": [
+        {
+          "role": "Doubles Bulky Setup",
+          "moves": [
+            "bravebird",
+            "drillrun",
+            "protect",
+            "swordsdance"
+          ],
+          "abilities": [
+            "sturdy"
+          ]
+        },
+        {
+          "role": "Doubles Setup Sweeper",
+          "moves": [
+            "bravebird",
+            "drillrun",
+            "ironhead",
+            "protect",
+            "swordsdance"
+          ],
+          "abilities": [
+            "sturdy"
+          ]
+        },
+        {
+          "role": "Doubles Support",
+          "moves": [
+            "bravebird",
+            "drillrun",
+            "ironhead",
+            "protect",
+            "tailwind"
+          ],
+          "abilities": [
+            "sturdy"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "skeledirge",
+      "sets": [
+        {
+          "role": "Doubles Bulky Setup",
+          "moves": [
+            "protect",
+            "shadowball",
+            "slackoff",
+            "torchsong"
+          ],
+          "abilities": [
+            "unaware"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "slowbro",
+      "sets": [
+        {
+          "role": "Doubles Support",
+          "moves": [
+            "healpulse",
+            "helpinghand",
+            "psychic",
+            "scald",
+            "trickroom"
+          ],
+          "abilities": [
+            "regenerator"
+          ]
+        },
+        {
+          "role": "Doubles Wallbreaker",
+          "moves": [
+            "fireblast",
+            "hydropump",
+            "icebeam",
+            "psychic",
+            "scald",
+            "trickroom"
+          ],
+          "abilities": [
+            "regenerator"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "slowbrogalar",
+      "sets": [
+        {
+          "role": "Doubles Wallbreaker",
+          "moves": [
+            "fireblast",
+            "psychic",
+            "shellsidearm",
+            "trickroom"
+          ],
+          "abilities": [
+            "regenerator"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "slowbromega",
+      "sets": [
+        {
+          "role": "Doubles Support",
+          "moves": [
+            "bodypress",
+            "psychic",
+            "scald",
+            "slackoff",
+            "trickroom"
+          ],
+          "abilities": [
+            "regenerator"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "slowking",
+      "sets": [
+        {
+          "role": "Doubles Support",
+          "moves": [
+            "healpulse",
+            "helpinghand",
+            "psychic",
+            "scald",
+            "trickroom"
+          ],
+          "abilities": [
+            "regenerator"
+          ]
+        },
+        {
+          "role": "Doubles Wallbreaker",
+          "moves": [
+            "fireblast",
+            "hydropump",
+            "icebeam",
+            "psychic",
+            "scald",
+            "trickroom"
+          ],
+          "abilities": [
+            "regenerator"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "slowkinggalar",
+      "sets": [
+        {
+          "role": "Doubles Wallbreaker",
+          "moves": [
+            "fireblast",
+            "psychic",
+            "sludgebomb",
+            "trickroom"
+          ],
+          "abilities": [
+            "regenerator"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "slurpuff",
+      "sets": [
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "dazzlinggleam",
+            "flamethrower",
+            "protect",
+            "stickyweb"
+          ],
+          "abilities": [
+            "unburden"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "sneasler",
+      "sets": [
+        {
+          "role": "Doubles Fast Attacker",
+          "moves": [
+            "closecombat",
+            "direclaw",
+            "fakeout",
+            "protect",
+            "uturn"
+          ],
+          "abilities": [
+            "poisontouch"
+          ]
+        },
+        {
+          "role": "Doubles Setup Sweeper",
+          "moves": [
+            "closecombat",
+            "direclaw",
+            "protect",
+            "swordsdance"
+          ],
+          "abilities": [
+            "unburden"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "snorlax",
+      "sets": [
+        {
+          "role": "Doubles Bulky Setup",
+          "moves": [
+            "bodyslam",
+            "curse",
+            "highhorsepower",
+            "protect"
+          ],
+          "abilities": [
+            "thickfat"
+          ]
+        },
+        {
+          "role": "Doubles Support",
+          "moves": [
+            "bodyslam",
+            "encore",
+            "helpinghand",
+            "highhorsepower",
+            "icywind",
+            "yawn"
+          ],
+          "abilities": [
+            "thickfat"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "spiritomb",
+      "sets": [
+        {
+          "role": "Doubles Bulky Attacker",
+          "moves": [
+            "foulplay",
+            "snarl",
+            "trickroom",
+            "willowisp"
+          ],
+          "abilities": [
+            "infiltrator"
+          ]
+        },
+        {
+          "role": "Doubles Support",
+          "moves": [
+            "foulplay",
+            "helpinghand",
+            "icywind",
+            "willowisp"
+          ],
+          "abilities": [
+            "infiltrator"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "squawkabilly",
+      "sets": [
+        {
+          "role": "Choice Item user",
+          "moves": [
+            "bravebird",
+            "doubleedge",
+            "finalgambit",
+            "partingshot"
+          ],
+          "abilities": [
+            "intimidate"
+          ]
+        },
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "bravebird",
+            "doubleedge",
+            "partingshot",
+            "protect",
+            "tailwind"
+          ],
+          "abilities": [
+            "intimidate"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "staraptor",
+      "sets": [
+        {
+          "role": "Choice Item user",
+          "moves": [
+            "bravebird",
+            "closecombat",
+            "doubleedge",
+            "finalgambit",
+            "uturn"
+          ],
+          "abilities": [
+            "intimidate"
+          ]
+        },
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "bravebird",
+            "closecombat",
+            "protect",
+            "tailwind"
+          ],
+          "abilities": [
+            "intimidate"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "staraptormega",
+      "sets": [
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "bravebird",
+            "closecombat",
+            "protect",
+            "roost"
+          ],
+          "abilities": [
+            "intimidate"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "starmie",
+      "sets": [
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "hydropump",
+            "icebeam",
+            "protect",
+            "psychic",
+            "thunderbolt"
+          ],
+          "abilities": [
+            "naturalcure"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "starmiemega",
+      "sets": [
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "aquajet",
+            "flipturn",
+            "icespinner",
+            "liquidation",
+            "protect",
+            "zenheadbutt"
+          ],
+          "abilities": [
+            "naturalcure"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "steelix",
+      "sets": [
+        {
+          "role": "Doubles Bulky Setup",
+          "moves": [
+            "bodypress",
+            "heavyslam",
+            "irondefense",
+            "protect",
+            "rest"
+          ],
+          "abilities": [
+            "sturdy"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "steelixmega",
+      "sets": [
+        {
+          "role": "Doubles Bulky Setup",
+          "moves": [
+            "bodypress",
+            "heavyslam",
+            "irondefense",
+            "protect"
+          ],
+          "abilities": [
+            "sturdy"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "stunfisk",
+      "sets": [
+        {
+          "role": "Doubles Support",
+          "moves": [
+            "earthpower",
+            "electroweb",
+            "stealthrock",
+            "thunderbolt",
+            "yawn"
+          ],
+          "abilities": [
+            "static"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "stunfiskgalar",
+      "sets": [
+        {
+          "role": "Doubles Bulky Setup",
+          "moves": [
+            "earthpower",
+            "protect",
+            "snaptrap",
+            "thunderwave",
+            "yawn"
+          ],
+          "abilities": [
+            "mimicry"
+          ]
+        },
+        {
+          "role": "Doubles Support",
+          "moves": [
+            "earthpower",
+            "snaptrap",
+            "stealthrock",
+            "stoneedge",
+            "thunderwave"
+          ],
+          "abilities": [
+            "mimicry"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "swalot",
+      "sets": [
+        {
+          "role": "Doubles Bulky Attacker",
+          "moves": [
+            "encore",
+            "gunkshot",
+            "helpinghand",
+            "knockoff",
+            "thunderwave",
+            "toxicspikes"
+          ],
+          "abilities": [
+            "liquidooze"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "swampert",
+      "sets": [
+        {
+          "role": "Doubles Support",
+          "moves": [
+            "flipturn",
+            "highhorsepower",
+            "icywind",
+            "knockoff",
+            "stealthrock",
+            "wavecrash"
+          ],
+          "abilities": [
+            "torrent"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "swampertmega",
+      "sets": [
+        {
+          "role": "Doubles Setup Sweeper",
+          "moves": [
+            "highhorsepower",
+            "protect",
+            "raindance",
+            "wavecrash"
+          ],
+          "abilities": [
+            "damp"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "sylveon",
+      "sets": [
+        {
+          "role": "Doubles Bulky Attacker",
+          "moves": [
+            "hypervoice",
+            "mysticalfire",
+            "protect",
+            "quickattack"
+          ],
+          "abilities": [
+            "pixilate"
+          ]
+        },
+        {
+          "role": "Doubles Bulky Setup",
+          "moves": [
+            "calmmind",
+            "hypervoice",
+            "mysticalfire",
+            "protect"
+          ],
+          "abilities": [
+            "pixilate"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "talonflame",
+      "sets": [
+        {
+          "role": "Doubles Support",
+          "moves": [
+            "bravebird",
+            "overheat",
+            "protect",
+            "tailwind",
+            "taunt",
+            "willowisp"
+          ],
+          "abilities": [
+            "galewings"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "tauros",
+      "sets": [
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "closecombat",
+            "doubleedge",
+            "highhorsepower",
+            "protect",
+            "throatchop"
+          ],
+          "abilities": [
+            "intimidate"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "taurospaldeaaqua",
+      "sets": [
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "aquajet",
+            "closecombat",
+            "protect",
+            "wavecrash"
+          ],
+          "abilities": [
+            "intimidate"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "taurospaldeablaze",
+      "sets": [
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "closecombat",
+            "flareblitz",
+            "protect",
+            "willowisp"
+          ],
+          "abilities": [
+            "intimidate"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "taurospaldeacombat",
+      "sets": [
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "closecombat",
+            "ironhead",
+            "protect",
+            "rockslide",
+            "stoneedge",
+            "throatchop"
+          ],
+          "abilities": [
+            "intimidate"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "thievul",
+      "sets": [
+        {
+          "role": "Doubles Support",
+          "moves": [
+            "darkpulse",
+            "partingshot",
+            "snarl",
+            "taunt"
+          ],
+          "abilities": [
+            "stakeout"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "tinkaton",
+      "sets": [
+        {
+          "role": "Doubles Support",
+          "moves": [
+            "encore",
+            "fakeout",
+            "gigatonhammer",
+            "knockoff",
+            "playrough"
+          ],
+          "abilities": [
+            "owntempo"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "torkoal",
+      "sets": [
+        {
+          "role": "Doubles Bulky Attacker",
+          "moves": [
+            "bodypress",
+            "heatwave",
+            "protect",
+            "solarbeam",
+            "weatherball",
+            "willowisp"
+          ],
+          "abilities": [
+            "drought"
+          ]
+        },
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "heatwave",
+            "protect",
+            "solarbeam",
+            "weatherball"
+          ],
+          "abilities": [
+            "drought"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "torterra",
+      "sets": [
+        {
+          "role": "Doubles Setup Sweeper",
+          "moves": [
+            "headlongrush",
+            "protect",
+            "rockslide",
+            "shellsmash"
+          ],
+          "abilities": [
+            "shellarmor"
+          ]
+        },
+        {
+          "role": "Doubles Setup Sweeper",
+          "moves": [
+            "headlongrush",
+            "protect",
+            "shellsmash",
+            "woodhammer"
+          ],
+          "abilities": [
+            "overgrow"
+          ]
+        },
+        {
+          "role": "Doubles Setup Sweeper",
+          "moves": [
+            "headlongrush",
+            "rockslide",
+            "shellsmash",
+            "woodhammer"
+          ],
+          "abilities": [
+            "overgrow"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "toucannon",
+      "sets": [
+        {
+          "role": "Doubles Support",
+          "moves": [
+            "bravebird",
+            "bulletseed",
+            "knockoff",
+            "protect",
+            "tailwind"
+          ],
+          "abilities": [
+            "keeneye",
+            "skilllink"
+          ]
+        },
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "beakblast",
+            "bulletseed",
+            "knockoff",
+            "protect"
+          ],
+          "abilities": [
+            "skilllink"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "toxapex",
+      "sets": [
+        {
+          "role": "Doubles Bulky Setup",
+          "moves": [
+            "banefulbunker",
+            "infestation",
+            "recover",
+            "toxic"
+          ],
+          "abilities": [
+            "regenerator"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "toxicroak",
+      "sets": [
+        {
+          "role": "Doubles Fast Attacker",
+          "moves": [
+            "closecombat",
+            "fakeout",
+            "gunkshot",
+            "protect",
+            "suckerpunch"
+          ],
+          "abilities": [
+            "dryskin"
+          ]
+        },
+        {
+          "role": "Doubles Setup Sweeper",
+          "moves": [
+            "closecombat",
+            "gunkshot",
+            "protect",
+            "suckerpunch",
+            "swordsdance"
+          ],
+          "abilities": [
+            "dryskin"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "toxtricity",
+      "sets": [
+        {
+          "role": "Choice Item user",
+          "moves": [
+            "overdrive",
+            "psychicnoise",
+            "sludgebomb",
+            "voltswitch"
+          ],
+          "abilities": [
+            "punkrock"
+          ]
+        },
+        {
+          "role": "Choice Item user",
+          "moves": [
+            "overdrive",
+            "sludgebomb",
+            "snarl",
+            "voltswitch"
+          ],
+          "abilities": [
+            "punkrock"
+          ]
+        },
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "overdrive",
+            "protect",
+            "psychicnoise",
+            "sludgebomb",
+            "voltswitch"
+          ],
+          "abilities": [
+            "punkrock"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "trevenant",
+      "sets": [
+        {
+          "role": "Doubles Bulky Attacker",
+          "moves": [
+            "poltergeist",
+            "protect",
+            "trickroom",
+            "woodhammer"
+          ],
+          "abilities": [
+            "harvest"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "tsareena",
+      "sets": [
+        {
+          "role": "Choice Item user",
+          "moves": [
+            "highjumpkick",
+            "knockoff",
+            "powerwhip",
+            "tripleaxel",
+            "tropkick",
+            "uturn"
+          ],
+          "abilities": [
+            "queenlymajesty"
+          ]
+        },
+        {
+          "role": "Doubles Bulky Attacker",
+          "moves": [
+            "helpinghand",
+            "highjumpkick",
+            "knockoff",
+            "protect",
+            "rapidspin",
+            "tripleaxel",
+            "tropkick"
+          ],
+          "abilities": [
+            "queenlymajesty"
+          ]
+        },
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "highjumpkick",
+            "powerwhip",
+            "protect",
+            "tripleaxel"
+          ],
+          "abilities": [
+            "queenlymajesty"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "typhlosion",
+      "sets": [
+        {
+          "role": "Choice Item user",
+          "moves": [
+            "eruption",
+            "fireblast",
+            "heatwave",
+            "scorchingsands"
+          ],
+          "abilities": [
+            "flashfire"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "typhlosionhisui",
+      "sets": [
+        {
+          "role": "Choice Item user",
+          "moves": [
+            "eruption",
+            "fireblast",
+            "heatwave",
+            "shadowball"
+          ],
+          "abilities": [
+            "blaze"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "tyranitar",
+      "sets": [
+        {
+          "role": "Doubles Bulky Setup",
+          "moves": [
+            "dragondance",
+            "highhorsepower",
+            "knockoff",
+            "protect",
+            "rockslide"
+          ],
+          "abilities": [
+            "sandstream"
+          ]
+        },
+        {
+          "role": "Doubles Support",
+          "moves": [
+            "highhorsepower",
+            "icywind",
+            "knockoff",
+            "protect",
+            "rockslide",
+            "thunderwave"
+          ],
+          "abilities": [
+            "sandstream"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "tyranitarmega",
+      "sets": [
+        {
+          "role": "Doubles Setup Sweeper",
+          "moves": [
+            "dragondance",
+            "highhorsepower",
+            "knockoff",
+            "protect",
+            "rockslide"
+          ],
+          "abilities": [
+            "sandstream"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "tyrantrum",
+      "sets": [
+        {
+          "role": "Choice Item user",
+          "moves": [
+            "closecombat",
+            "dragonclaw",
+            "headsmash",
+            "rockslide"
+          ],
+          "abilities": [
+            "rockhead"
+          ]
+        },
+        {
+          "role": "Choice Item user",
+          "moves": [
+            "dragonclaw",
+            "headsmash",
+            "highhorsepower",
+            "rockslide"
+          ],
+          "abilities": [
+            "rockhead"
+          ]
+        },
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "closecombat",
+            "headsmash",
+            "protect",
+            "rockslide"
+          ],
+          "abilities": [
+            "rockhead"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "umbreon",
+      "sets": [
+        {
+          "role": "Doubles Bulky Setup",
+          "moves": [
+            "foulplay",
+            "helpinghand",
+            "moonlight",
+            "thunderwave"
+          ],
+          "abilities": [
+            "innerfocus"
+          ]
+        },
+        {
+          "role": "Doubles Bulky Setup",
+          "moves": [
+            "foulplay",
+            "moonlight",
+            "snarl",
+            "thunderwave"
+          ],
+          "abilities": [
+            "innerfocus"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "vanilluxe",
+      "sets": [
+        {
+          "role": "Choice Item user",
+          "moves": [
+            "auroraveil",
+            "blizzard",
+            "freezedry",
+            "icywind"
+          ],
+          "abilities": [
+            "snowwarning"
+          ]
+        },
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "auroraveil",
+            "blizzard",
+            "freezedry",
+            "icywind",
+            "protect"
+          ],
+          "abilities": [
+            "snowwarning"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "vaporeon",
+      "sets": [
+        {
+          "role": "Doubles Bulky Setup",
+          "moves": [
+            "icywind",
+            "protect",
+            "scald",
+            "wish"
+          ],
+          "abilities": [
+            "waterabsorb"
+          ]
+        },
+        {
+          "role": "Doubles Support",
+          "moves": [
+            "helpinghand",
+            "icywind",
+            "protect",
+            "scald",
+            "yawn"
+          ],
+          "abilities": [
+            "waterabsorb"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "venusaur",
+      "sets": [
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "earthpower",
+            "gigadrain",
+            "knockoff",
+            "leafstorm",
+            "protect",
+            "sludgebomb"
+          ],
+          "abilities": [
+            "chlorophyll",
+            "overgrow"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "venusaurmega",
+      "sets": [
+        {
+          "role": "Doubles Bulky Setup",
+          "moves": [
+            "earthpower",
+            "energyball",
+            "knockoff",
+            "sludgebomb",
+            "synthesis"
+          ],
+          "abilities": [
+            "chlorophyll"
+          ]
+        },
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "earthpower",
+            "gigadrain",
+            "knockoff",
+            "leechseed",
+            "protect",
+            "sludgebomb"
+          ],
+          "abilities": [
+            "chlorophyll"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "victreebel",
+      "sets": [
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "knockoff",
+            "powerwhip",
+            "protect",
+            "sludgebomb",
+            "suckerpunch"
+          ],
+          "abilities": [
+            "chlorophyll"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "victreebelmega",
+      "sets": [
+        {
+          "role": "Doubles Bulky Attacker",
+          "moves": [
+            "gigadrain",
+            "knockoff",
+            "sludgebomb",
+            "strengthsap",
+            "suckerpunch"
+          ],
+          "abilities": [
+            "chlorophyll"
+          ]
+        },
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "gigadrain",
+            "knockoff",
+            "protect",
+            "sludgebomb",
+            "suckerpunch"
+          ],
+          "abilities": [
+            "chlorophyll"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "vileplume",
+      "sets": [
+        {
+          "role": "Doubles Bulky Attacker",
+          "moves": [
+            "energyball",
+            "sludgebomb",
+            "strengthsap",
+            "stunspore"
+          ],
+          "abilities": [
+            "effectspore"
+          ]
+        },
+        {
+          "role": "Doubles Bulky Setup",
+          "moves": [
+            "leechseed",
+            "pollenpuff",
+            "protect",
+            "sludgebomb"
+          ],
+          "abilities": [
+            "effectspore"
+          ]
+        },
+        {
+          "role": "Doubles Support",
+          "moves": [
+            "pollenpuff",
+            "sludgebomb",
+            "strengthsap",
+            "stunspore"
+          ],
+          "abilities": [
+            "effectspore"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "vivillon",
+      "sets": [
+        {
+          "role": "Doubles Fast Attacker",
+          "moves": [
+            "hurricane",
+            "pollenpuff",
+            "protect",
+            "sleeppowder"
+          ],
+          "abilities": [
+            "compoundeyes"
+          ]
+        },
+        {
+          "role": "Doubles Fast Attacker",
+          "moves": [
+            "hurricane",
+            "protect",
+            "sleeppowder",
+            "tailwind"
+          ],
+          "abilities": [
+            "compoundeyes"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "volcarona",
+      "sets": [
+        {
+          "role": "Doubles Setup Sweeper",
+          "moves": [
+            "bugbuzz",
+            "heatwave",
+            "protect",
+            "quiverdance"
+          ],
+          "abilities": [
+            "flamebody"
+          ]
+        },
+        {
+          "role": "Doubles Support",
+          "moves": [
+            "heatwave",
+            "ragepowder",
+            "strugglebug",
+            "tailwind"
+          ],
+          "abilities": [
+            "flamebody"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "watchog",
+      "sets": [
+        {
+          "role": "Doubles Wallbreaker",
+          "moves": [
+            "crunch",
+            "doubleedge",
+            "protect",
+            "stompingtantrum"
+          ],
+          "abilities": [
+            "analytic"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "weavile",
+      "sets": [
+        {
+          "role": "Doubles Fast Attacker",
+          "moves": [
+            "fakeout",
+            "knockoff",
+            "protect",
+            "tripleaxel"
+          ],
+          "abilities": [
+            "pickpocket"
+          ]
+        },
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "iceshard",
+            "knockoff",
+            "lowkick",
+            "protect",
+            "tripleaxel"
+          ],
+          "abilities": [
+            "pickpocket"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "whimsicott",
+      "sets": [
+        {
+          "role": "Doubles Support",
+          "moves": [
+            "encore",
+            "energyball",
+            "moonblast",
+            "tailwind"
+          ],
+          "abilities": [
+            "prankster"
+          ]
+        },
+        {
+          "role": "Doubles Support",
+          "moves": [
+            "encore",
+            "moonblast",
+            "protect",
+            "tailwind"
+          ],
+          "abilities": [
+            "prankster"
+          ]
+        },
+        {
+          "role": "Doubles Support",
+          "moves": [
+            "encore",
+            "moonblast",
+            "tailwind",
+            "taunt"
+          ],
+          "abilities": [
+            "prankster"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "wigglytuff",
+      "sets": [
+        {
+          "role": "Doubles Support",
+          "moves": [
+            "dazzlinggleam",
+            "encore",
+            "fireblast",
+            "helpinghand",
+            "icywind",
+            "moonblast",
+            "thunderwave"
+          ],
+          "abilities": [
+            "competitive"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "wyrdeer",
+      "sets": [
+        {
+          "role": "Doubles Support",
+          "moves": [
+            "bodyslam",
+            "earthpower",
+            "megahorn",
+            "psyshieldbash",
+            "thunderwave"
+          ],
+          "abilities": [
+            "intimidate"
+          ]
+        },
+        {
+          "role": "Doubles Wallbreaker",
+          "moves": [
+            "doubleedge",
+            "earthpower",
+            "psychic",
+            "trickroom"
+          ],
+          "abilities": [
+            "intimidate"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "zoroark",
+      "sets": [
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "focusblast",
+            "nightdaze",
+            "protect",
+            "psychic",
+            "sludgebomb",
+            "snarl"
+          ],
+          "abilities": [
+            "illusion"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "zoroarkhisui",
+      "sets": [
+        {
+          "role": "Offensive Protect",
+          "moves": [
+            "bittermalice",
+            "flamethrower",
+            "focusblast",
+            "hypervoice",
+            "nastyplot",
+            "protect",
+            "willowisp"
+          ],
+          "abilities": [
+            "illusion"
+          ]
+        }
+      ]
+    }
+  ]
+}

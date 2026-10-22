@@ -1,0 +1,62 @@
+{
+  "schema_version": 1,
+  "showdown_commit": "7244fe8e28fa8bc4d0809ae30d183c608b62bb2b",
+  "format_id": "gen9championsvgc2026regmc",
+  "engine_data_hash": "33b42a81c85a29773d3a2da890f898b552179406a276925979d9e489aba971c0",
+  "vocabulary_hash": "48ec35e67d0f1454476648871d0388e2764d8f36f2096dede1f7ec7a9c7a0c56",
+  "source_path": "data/random-battles/champions/doubles-sets.json",
+  "source_sha256": "5555555555555555555555555555555555555555555555555555555555555555",
+  "species": [
+    {
+      "id": "absol",
+      "sets": [
+        {
+          "role": "Doubles Bulky Attacker",
+          "moves": [
+            "aerialace",
+            "airslash"
+          ],
+          "abilities": [
+            "justified"
+          ]
+        },
+        {
+          "role": "Doubles Support",
+          "moves": [
+            "aerialace"
+          ],
+          "abilities": [
+            "justified",
+            "pressure",
+            "superluck"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "abomasnow",
+      "sets": [
+        {
+          "role": "Doubles Bulky Attacker",
+          "moves": [
+            "auroraveil",
+            "avalanche"
+          ],
+          "abilities": [
+            "snowwarning"
+          ]
+        },
+        {
+          "role": "Doubles Support",
+          "moves": [
+            "auroraveil"
+          ],
+          "abilities": [
+            "snowwarning",
+            "soundproof"
+          ]
+        }
+      ]
+    }
+  ]
+}

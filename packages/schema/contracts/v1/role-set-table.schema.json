@@ -1,0 +1,130 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:areneon:schema:contracts:v1:role-set-table",
+  "title": "RoleSetTable",
+  "description": "The role sets the pinned engine ships for Champions doubles random battles (ADR-020 section 3), read from its data/random-battles/<mod>/doubles-sets.json: per roster species, a sorted list of sets, each a role name with its move pool and ability list as engine ids. The random-battle level, preferred types and Tera types are dropped. It names the engine-data table and the team vocabulary it was resolved against by hash, and the source file by path and SHA-256. Sorted and unique ids, and agreement with a team vocabulary (every species in the roster, every ability and move one the validator accepts on it), are enforced by the reader (the contract profile has no uniqueItems or cross references). Its RFC 8785 SHA-256 is the role-set table hash. No role logic is carried: nothing here turns a role into an item or a spread. Derived from the pinned Showdown data files (MIT licence, see fixtures/showdown/<format>/NOTICE-engine-data.txt).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "showdown_commit",
+    "format_id",
+    "engine_data_hash",
+    "vocabulary_hash",
+    "source_path",
+    "source_sha256",
+    "species"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "showdown_commit": {
+      "description": "The pinned engine commit the table was read from.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "format_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+$"
+    },
+    "engine_data_hash": {
+      "description": "The engine-data hash (ADR-010 section 3) of the table the names were mapped through.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "vocabulary_hash": {
+      "description": "The team vocabulary hash (ADR-013 section 2) the ids were checked against.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "source_path": {
+      "description": "The source file, relative to the engine checkout.",
+      "type": "string",
+      "pattern": "^data/random-battles/[a-z0-9]+/[a-z0-9-]+\\.json$"
+    },
+    "source_sha256": {
+      "description": "SHA-256 of the source file's bytes.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "species": {
+      "description": "The species the source lists, sorted by id.",
+      "type": "array",
+      "maxItems": 4096,
+      "items": {
+        "$ref": "#/$defs/SpeciesSets"
+      }
+    }
+  },
+  "$defs": {
+    "SpeciesSets": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "sets"
+      ],
+      "properties": {
+        "id": {
+          "description": "The species id, as in the engine-data table and the team vocabulary roster.",
+          "type": "string",
+          "pattern": "^[a-z0-9]+$",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "sets": {
+          "description": "The species' sets, sorted by role, then moves, then abilities; no set repeats.",
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "items": {
+            "$ref": "#/$defs/RoleSet"
+          }
+        }
+      }
+    },
+    "RoleSet": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "role",
+        "moves",
+        "abilities"
+      ],
+      "properties": {
+        "role": {
+          "description": "The role's name as the source writes it (a label, not an identifier).",
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9 '-]{0,63}$"
+        },
+        "moves": {
+          "description": "The role's move pool as move ids, sorted and unique.",
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "items": {
+            "description": "A move id.",
+            "type": "string",
+            "pattern": "^[a-z0-9]+$",
+            "minLength": 1,
+            "maxLength": 64
+          }
+        },
+        "abilities": {
+          "description": "The role's abilities as ability ids, sorted and unique.",
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 4,
+          "items": {
+            "description": "An ability id.",
+            "type": "string",
+            "pattern": "^[a-z0-9]+$",
+            "minLength": 1,
+            "maxLength": 64
+          }
+        }
+      }
+    }
+  }
+}

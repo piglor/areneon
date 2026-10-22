@@ -1,0 +1,14 @@
+{
+  "role_set_table_hash": "7671f9387b69fad932041302f68198c26a12ce8dab75a4d05e242d07bb2b1140",
+  "vocabulary_hash": "5fdd31126208dbb46948ddaca14dfc9c28b70c14b147318fc6ba74e50843cab2",
+  "engine_data_hash": "6f3d19f02b0e8464d813f4bbdced99c6f88140099818f5f225776ac43fa5590e",
+  "showdown_commit": "7244fe8e28fa8bc4d0809ae30d183c608b62bb2b",
+  "source_sha256": "45e02b5ed8475c178007c28185ed1604ab8bc98b544668dff8696340b5f71590",
+  "counts": {
+    "species": 342,
+    "sets": 495,
+    "roles": 8,
+    "set_moves": 2323,
+    "set_abilities": 505
+  }
+}

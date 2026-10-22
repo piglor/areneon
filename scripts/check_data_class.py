@@ -76,6 +76,11 @@ PokePaste guard does not see JSON teams, so this guard rejects a committed
   Only a public generation key may be committed; a sealed set's key lives in
   the isolated evaluation store, so any other key kind, and a missing key, is
   rejected.
+- holds a role-set table (ADR-020 §3: an object with a string ``source_path``,
+  a string ``source_sha256`` and a ``species`` list) that holds a ``paste`` or
+  any team-shaped object, or a ``paste`` or ``evs`` key, anywhere inside it,
+  ``fixtures/`` included. A table is engine data (role names, move and ability
+  ids), never a team; or
 - holds a sealed-set reveal or a sealed team (ADR-013 slice (g), protocol
   L3 and L5) anywhere but at an exact path in ``REVEAL_ALLOWED``. A reveal
   is a ``RetiredSealedManifest``: an object with a string ``set_id``, a
@@ -296,6 +301,7 @@ REVEAL = "holds a sealed-set reveal or a sealed team outside a reviewed path"
 UNLABELLED_REVEAL = (
     'holds a sealed-set reveal without "data_class": "synthetic" on the object itself'
 )
+ROLE_SET_TEAM = "holds a role-set table that holds a paste or a team-shaped object"
 UNKNOWN_KEY_KIND = 'holds a team dataset manifest whose key is not of kind "public"'
 
 
@@ -341,6 +347,20 @@ def _is_snapshot_manifest(obj: dict[str, object]) -> bool:
         and isinstance(obj.get("shards"), list)
         and isinstance(obj.get("cells"), list)
     )
+
+
+def _is_role_set_table(obj: dict[str, object]) -> bool:
+    return _is_str(obj, "source_path", "source_sha256") and isinstance(obj.get("species"), list)
+
+
+def _holds_team_text(table: dict[str, object]) -> bool:
+    return any(_is_team(obj) or "paste" in obj or "evs" in obj for obj in _walk(table))
+
+
+def _role_set_problems(objects: list[dict[str, object]]) -> list[str]:
+    if any(_is_role_set_table(obj) and _holds_team_text(obj) for obj in objects):
+        return [ROLE_SET_TEAM]
+    return []
 
 
 def _is_reveal(obj: dict[str, object]) -> bool:
@@ -446,6 +466,7 @@ def problems_in(  # noqa: PLR0913, PLR0917 - one flag per exact-path allowlist
         )
         if not synthetic_marker:
             found.append(SEALED)
+    found.extend(_role_set_problems(objects))
     if any(_is_reveal(obj) or _is_sealed_team(obj) for obj in objects) and not reveal_ok:
         found.append(REVEAL)
     if any(_is_reveal(obj) and obj.get("data_class") != "synthetic" for obj in objects):

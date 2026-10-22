@@ -299,6 +299,25 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     roster: vocabularyEntries.map((r) => ({ ...r, abilities: [...(vocabularyTable.species.find((x) => x.id === r.id)?.abilities as [string, ...string[]])].sort() as [string, ...string[]] })),
   };
   const vocabularyWith = (change: (v: Record<string, unknown>) => void) => mutated(vocabulary, change);
+  // Role sets (ADR-020 section 3) over the same slim vocabulary: each species gets two sets from its pool, so every reader rule has a sample.
+  const roleSets = {
+    schema_version: 1,
+    showdown_commit: vocabulary.showdown_commit,
+    format_id: vocabulary.format_id,
+    engine_data_hash: vocabulary.engine_data_hash,
+    vocabulary_hash: teamVocabularyHash(vocabulary as never),
+    source_path: "data/random-battles/champions/doubles-sets.json",
+    source_sha256: hexOf("5"),
+    species: vocabulary.roster.map((r) => ({
+      id: r.id,
+      sets: [
+        { role: "Doubles Bulky Attacker", moves: [...r.moves], abilities: [r.abilities[0]] },
+        { role: "Doubles Support", moves: [r.moves[0]], abilities: [...r.abilities] },
+      ],
+    })),
+  };
+  const roleSetsWith = (change: (t: Record<string, unknown>) => void) => mutated(roleSets, change);
+  const firstSets = (t: Record<string, unknown>) => (t.species as { sets: Record<string, unknown>[] }[])[0]?.sets as Record<string, unknown>[];
   const datasetManifest = {
     schema_version: 1,
     data_class: "synthetic",
@@ -452,6 +471,7 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
       r.league_opponents = [hexOf("2")];
     }),
     "team-vocabulary/golden": vocabulary,
+    "role-set-table/golden": roleSets,
     "team-record/golden": teamRecord,
     "team-label-set/golden": labelSet,
     "team-generator-config/golden": generatorConfig,
@@ -594,6 +614,14 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "policy-handshake/duplicate-contracts": helloWith((m) => (m.contracts = [contractsOf()[0], contractsOf()[0]])),
     "policy-handshake/unsorted-checkpoints": readyWith((m) => (m.checkpoints = [...checkpoints].reverse())),
     // Schema-valid, refused by the team readers (ADR-013 section 4): what the profile cannot compute or compare.
+    "role-set-table/unsorted-species": roleSetsWith((t) => (t.species = [...roleSets.species].reverse())),
+    "role-set-table/duplicate-sets": roleSetsWith((t) => (firstSets(t)[1] = firstSets(t)[0] as Record<string, unknown>)),
+    "role-set-table/unsorted-sets": roleSetsWith((t) => firstSets(t).reverse()),
+    "role-set-table/unsorted-moves": roleSetsWith((t) => (firstSets(t)[0] = { ...firstSets(t)[0], moves: [...((roleSets.species[0] as { sets: { moves: string[] }[] }).sets[0] as { moves: string[] }).moves].reverse() })),
+    "role-set-table/unknown-species": roleSetsWith((t) => ((t.species as { id: string }[])[0] as { id: string }).id = "aaaaaaaaa"),
+    "role-set-table/foreign-move": roleSetsWith((t) => (firstSets(t)[1] = { ...firstSets(t)[1], moves: ["zzzzzzzz"] })),
+    "role-set-table/foreign-ability": roleSetsWith((t) => (firstSets(t)[1] = { ...firstSets(t)[1], abilities: ["zzzzzzzz"] })),
+    "role-set-table/stale-vocabulary-hash": roleSetsWith((t) => (t.vocabulary_hash = hexOf("f"))),
     "team-vocabulary/unsorted-roster": vocabularyWith((v) => (v.roster = [...vocabulary.roster].reverse())),
     "team-vocabulary/duplicate-moves": vocabularyWith((v) => ((v.roster as { moves: string[] }[])[0] as { moves: string[] }).moves = [(vocabulary.roster[0] as { moves: string[] }).moves[0] as string, (vocabulary.roster[0] as { moves: string[] }).moves[0] as string]),
     "team-vocabulary/unsorted-natures": vocabularyWith((v) => (v.natures = [...vocabulary.natures].reverse())),
@@ -693,6 +721,15 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "engine-data/extra-field": { ...engineData, learnsets: [] },
     "engine-data/next-version": { ...engineData, schema_version: 2 },
     "engine-data/short-commit": { ...engineData, showdown_commit: "7244fe8" },
+    "role-set-table/no-species": roleSetsWith((t) => delete t.species),
+    "role-set-table/empty-sets": roleSetsWith((t) => ((t.species as { sets: unknown[] }[])[0] as { sets: unknown[] }).sets = []),
+    "role-set-table/empty-moves": roleSetsWith((t) => (firstSets(t)[0] = { ...firstSets(t)[0], moves: [] })),
+    "role-set-table/bad-role": roleSetsWith((t) => (firstSets(t)[0] = { ...firstSets(t)[0], role: "Support|Lead" })),
+    "role-set-table/level-field": roleSetsWith((t) => ((t.species as Record<string, unknown>[])[0] as Record<string, unknown>).level = 50),
+    "role-set-table/extra-field": roleSetsWith((t) => (t.learnsets = [])),
+    "role-set-table/next-version": roleSetsWith((t) => (t.schema_version = 2)),
+    "role-set-table/short-commit": roleSetsWith((t) => (t.showdown_commit = "7244fe8")),
+    "role-set-table/bad-source-path": roleSetsWith((t) => (t.source_path = "../private-data/sets.json")),
     "team-vocabulary/no-rules": vocabularyWith((v) => delete v.rules),
     "team-vocabulary/short-commit": vocabularyWith((v) => (v.showdown_commit = "7244fe8")),
     "team-vocabulary/extra-field": vocabularyWith((v) => (v.learnsets = [])),

@@ -244,6 +244,17 @@ export {
   readPrivateSnapshotManifest,
 } from "./private-snapshot.ts";
 export {
+  exportRoleSets,
+  ROLE_SETS_FILE,
+  ROLE_SETS_SUMMARY,
+  readRoleSetTable,
+  type RoleSetTable,
+  RoleSetError,
+  roleSetSourcePath,
+  roleSetSummary,
+  roleSetTableHash,
+} from "./role-sets.ts";
+export {
   exportTeamVocabulary,
   readTeamVocabulary,
   TEAM_VOCABULARY_FILE,
