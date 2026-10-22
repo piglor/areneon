@@ -15,6 +15,7 @@ import {
   mechanicsConfigHash,
   readMechanicsConfig,
 } from "../src/mechanics-config.ts";
+import { loadRulesSnapshot } from "../src/rules-load.ts";
 import { sha256Hex } from "../src/rules.ts";
 
 let engine: Engine;
@@ -23,6 +24,9 @@ beforeAll(() => {
   engine = loadEngine();
   config = loadMechanicsConfig(GOLDEN_FORMAT);
 });
+
+/** The `stats` entry of the scope. */
+const statsEntry = (c: MechanicsConfig): { gap_ids: string[] } => c.scope.query_kinds.find((entry) => entry.kind === "stats") as { gap_ids: string[] };
 
 const edited = (change: (copy: MechanicsConfig) => void): MechanicsConfig => {
   const copy = structuredClone(config);
@@ -33,7 +37,7 @@ const edited = (change: (copy: MechanicsConfig) => void): MechanicsConfig => {
 describe("the committed config", () => {
   it("reads, and its hash is the SHA-256 of its JCS bytes", () => {
     expect(mechanicsConfigHash(config)).toBe(sha256Hex(jcs(config as unknown as Json)));
-    expect(config.scope.query_kinds.map((entry) => entry.kind)).toEqual(["damage", "stats"]);
+    expect(config.scope.query_kinds.map((entry) => entry.kind)).toEqual(["damage", "speed_order", "stats"]);
   });
 
   it("passes the check against the pinned engine and the gap ledger, for every config in config/mechanics", () => {
@@ -56,10 +60,10 @@ describe("readMechanicsConfig", () => {
   it.each([
     ["scenario.removed_rules", (c: MechanicsConfig) => c.scenario.removed_rules.reverse()],
     ["scenario.removed_rule_keys", (c: MechanicsConfig) => void c.scenario.removed_rule_keys.push("dctimerbank")],
-    ["scope.query_kinds", (c: MechanicsConfig) => void c.scope.query_kinds.push({ kind: "stats", gap_ids: [] })],
+    ["scope.query_kinds", (c: MechanicsConfig) => void c.scope.query_kinds.reverse()],
     ["ko_blockers.abilities", (c: MechanicsConfig) => void (c.ko_blockers.abilities = ["sturdy", "disguise"])],
     ["ko_blockers.items", (c: MechanicsConfig) => void (c.ko_blockers.items = ["focussash", "focussash"])],
-    ["gap_ids of stats", (c: MechanicsConfig) => void ((c.scope.query_kinds[1] as { gap_ids: string[] }).gap_ids = ["stat-points", "level"])],
+    ["gap_ids of stats", (c: MechanicsConfig) => void (statsEntry(c).gap_ids = ["stat-points", "level"])],
   ] as [string, (c: MechanicsConfig) => void][])("refuses %s that is not sorted and unique", (name, change) => {
     expect(() => readMechanicsConfig(edited(change))).toThrow(`${name} must be sorted and unique`);
   });
@@ -82,7 +86,7 @@ describe("checkMechanicsConfig names every problem", () => {
     const problems = checkMechanicsConfig(
       engine,
       edited((c) => {
-        (c.scope.query_kinds[1] as { gap_ids: string[] }).gap_ids = ["no-such-gap"];
+        statsEntry(c).gap_ids = ["no-such-gap"];
         c.ko_blockers = { abilities: ["zzzability"], items: ["zzzitem"] };
         c.scenario.removed_rule_keys = c.scenario.removed_rule_keys.slice(1);
       }),
@@ -92,6 +96,12 @@ describe("checkMechanicsConfig names every problem", () => {
     expect(problems.join("\n")).toContain("ko_blockers: zzzitem is not an item");
     expect(problems.join("\n")).toContain("ko_blockers: zzzability is not an ability");
     expect(problems.join("\n")).toContain("the target's keys missing from the scenario");
+  });
+
+  it("a speed_order scope needs the Mega row in the ledger, which the probe names when a Mega is involved", () => {
+    const snapshot = structuredClone(loadRulesSnapshot(engine.commit));
+    delete snapshot.gaps["mega-evolution"];
+    expect(checkMechanicsConfig(engine, config, snapshot)).toContain("speed_order: gap mega-evolution is not in the gap ledger");
   });
 
   it("accepts engine ids as KO blockers", () => {

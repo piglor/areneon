@@ -1,24 +1,22 @@
 // The mechanics probe (ADR-016 section 1): Areneon computes no stat, Speed or
 // damage value. It builds a scenario battle from declared sets and reads the
-// pinned engine's own values. This probe answers the `stats` and `damage` kinds; the other
-// kinds are in the contract and stay `unsupported` until the mechanics config
-// lists them (slice 2). Decision order (ADR-016 figure 4): set check
+// pinned engine's own values. It answers the `stats`, `damage` and `speed_order` kinds. Decision order (ADR-016 figure 4): set check
 // (`refused`), scope check, scenario check (`unsupported`), then the probe.
 
 import type { Engine, PokemonSet } from "./engine.ts";
 import { resolveFormat } from "./formats.ts";
 import { DamageStateError, probeDamage } from "./mechanics-damage.ts";
+import { MechanicsProbeError } from "./mechanics-error.ts";
 import { checkScenario, ScenarioError, scenarioPokemon, startScenario } from "./mechanics-scenario.ts";
 import { type MechanicsConfig, mechanicsConfigHash } from "./mechanics-config.ts";
 import { declaredSets, mechanicsQueryHash, type ParsedMechanicsQuery } from "./mechanics-query.ts";
 import { buildResult, type MechanicsResult, type Outcome, type ResultIdentity } from "./mechanics-result.ts";
+import { MEGA_GAP_ID, megaInvolved, probeSpeedOrder } from "./mechanics-speed.ts";
 import { loadRulesSnapshot } from "./rules-load.ts";
 import type { RulesSnapshot } from "./rules.ts";
 import { importPaste } from "./teams.ts";
 
-export class MechanicsProbeError extends Error {
-  override name = "MechanicsProbeError";
-}
+export { MechanicsProbeError };
 
 export interface MechanicsContext {
   engine: Engine;
@@ -61,6 +59,14 @@ function statsOf(engine: Engine, scenarioId: string, set: PokemonSet): { hp: num
   return { hp: pokemon.maxhp, atk, def, spa, spd, spe };
 }
 
+/** The gap ledger rows a result of this query lists: the config's for the kind, and the Mega row when a speed order involves a Mega Evolution. */
+function gapIds(config: MechanicsConfig, query: ParsedMechanicsQuery): string[] {
+  const entry = config.scope.query_kinds.find((candidate) => candidate.kind === query.query.kind);
+  if (entry === undefined) return [];
+  const extra = query.query.kind === "speed_order" && megaInvolved(query.query) ? [MEGA_GAP_ID] : [];
+  return [...new Set([...entry.gap_ids, ...extra])].sort();
+}
+
 /**
  * Answer one query. A query that fails the contract schema never gets here
  * (`readMechanicsQuery` throws); a format the rules snapshot does not support,
@@ -76,7 +82,7 @@ export function probeMechanics(context: MechanicsContext, query: ParsedMechanics
     query_hash: mechanicsQueryHash(query),
     manifest,
     mechanics_config_hash: mechanicsConfigHash(config),
-    gap_ids: [...(config.scope.query_kinds.find((entry) => entry.kind === kind)?.gap_ids ?? [])],
+    gap_ids: gapIds(config, query),
   };
   const done = (outcome: Outcome, diagnostics: string[] = []): ProbeOutcome => ({ result: buildResult(identity, outcome), diagnostics });
 
@@ -102,6 +108,6 @@ export function probeMechanics(context: MechanicsContext, query: ParsedMechanics
       throw error;
     }
   }
-  if (kind !== "stats") throw new MechanicsProbeError(`the config lists ${kind}, which this probe cannot answer yet`);
+  if (query.query.kind === "speed_order") return done(probeSpeedOrder(engine, scenarioId, query.query, sets));
   return done({ kind: "computed", answer: { kind: "stats", stats: statsOf(engine, scenarioId, sets[0] as PokemonSet) } });
 }

@@ -36,6 +36,13 @@
         ]
       },
       {
+        "kind": "speed_order",
+        "gap_ids": [
+          "paralysis",
+          "trick-room"
+        ]
+      },
+      {
         "kind": "stats",
         "gap_ids": [
           "level",

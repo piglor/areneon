@@ -166,9 +166,9 @@ class ActionOrder(BaseModel):
     The engine's action order value (lower acts first).
     """
     priority: Annotated[StrictInt, Field(ge=-9999, le=9999)]
-    speed: Annotated[StrictInt, Field(ge=0, le=99999)]
+    speed: Annotated[StrictInt, Field(ge=-99999, le=99999)]
     """
-    The action speed the engine computes.
+    The action speed the engine computes: the Speed stat after boosts and modifiers, or its negative under Trick Room (the champions mod negates it, with no wrap).
     """
 
 
@@ -264,11 +264,11 @@ class SpeedOrderAnswer(BaseModel):
     """
     actions: Annotated[list[ActionOrder], Field(max_length=4, min_length=1)]
     """
-    The query's actions, in query order.
+    The query's actions, in query order. order, priority and speed are the action's own keys (a switch or a move) read after every Mega Evolution of the turn has run, so a Mega's new Speed counts; the Evolution's own order is only its place in groups.
     """
-    groups: Annotated[list[Group], Field(max_length=4, min_length=1)]
+    groups: Annotated[list[Group], Field(max_length=8, min_length=1)]
     """
-    Tie groups in execution order: each lists the indices into actions of the actions the engine orders exactly equally (their order among themselves is a draw and is never sampled). A Mega Evolution is its own group, before any move.
+    Tie groups in execution order: each lists the indices into actions of the actions the engine orders exactly equally (their order among themselves is a draw and is never sampled). A Mega Evolution is its own group, before any move (and after any switch), so up to four move or switch groups and four Evolution groups.
     """
 
 

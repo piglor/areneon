@@ -5,7 +5,7 @@ import type { Engine, SimFormat, SimRuleTable } from "../src/engine.ts";
 import { GOLDEN_FORMAT, TEAMS_DIR } from "../src/golden.ts";
 import { loadEngine, UnsupportedFormatError } from "../src/index.ts";
 import { loadMechanicsConfig, type MechanicsConfig } from "../src/mechanics-config.ts";
-import { MechanicsProbeError, probeMechanics } from "../src/mechanics-probe.ts";
+import { probeMechanics } from "../src/mechanics-probe.ts";
 import { readMechanicsQuery } from "../src/mechanics-query.ts";
 import { exportPaste, importPaste } from "../src/teams.ts";
 
@@ -63,8 +63,9 @@ describe("a refused set (ADR-016 figure 4: SetCheck)", () => {
 });
 
 describe("unsupported results (ADR-016 figure 4: ScopeCheck)", () => {
-  it("a speed_order query is unsupported until the config lists it: no approximation", () => {
-    const { result, diagnostics } = probeMechanics({ engine, config }, speedOrder(own, foe));
+  it.each(["speed_order", "damage"] as const)("a %s query is unsupported until the config lists it: no approximation", (kind) => {
+    const statsOnly: MechanicsConfig = { ...config, scope: { query_kinds: config.scope.query_kinds.filter((entry) => entry.kind === "stats") } };
+    const { result, diagnostics } = probeMechanics({ engine, config: statsOnly }, kind === "damage" ? damage(own, foe) : speedOrder(own, foe));
     expect(result).toMatchObject({ kind: "unsupported", reason: "query_kind", position: null, gap_ids: [] });
     expect(diagnostics).toEqual([]);
   });
@@ -72,11 +73,6 @@ describe("unsupported results (ADR-016 figure 4: ScopeCheck)", () => {
   it("a damage query the config does not list is unsupported too", () => {
     const stats: MechanicsConfig = { ...config, scope: { query_kinds: config.scope.query_kinds.filter((entry) => entry.kind === "stats") } };
     expect(probeMechanics({ engine, config: stats }, damage(own, foe)).result).toMatchObject({ kind: "unsupported", reason: "query_kind", position: null, gap_ids: [] });
-  });
-
-  it("listing a kind in the config never makes the probe handle it", () => {
-    const greedy: MechanicsConfig = { ...config, scope: { query_kinds: [...config.scope.query_kinds, { kind: "speed_order", gap_ids: [] }] } };
-    expect(() => probeMechanics({ engine, config: greedy }, speedOrder(own, foe))).toThrow(MechanicsProbeError);
   });
 });
 
