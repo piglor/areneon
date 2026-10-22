@@ -47,7 +47,10 @@ def committed_plan_seeds(run_dir: Path) -> set[str]:
 
 
 def check_not_training_seeds(run_dir: Path, run_key: str, games: int) -> None:
-    """Refuse when a progress seed of games 0..games-1 equals a seed a training game ran with."""
+    """Refuse when a progress seed of indices 0..games-1 equals a seed a training game ran with.
+
+    The index is the game (version 1) or the pair (version 2, one seed per pair).
+    """
     training = committed_plan_seeds(run_dir)
     for game in range(games):
         if progress_game_seed(run_key, game) in training:

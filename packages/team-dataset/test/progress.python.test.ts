@@ -13,8 +13,8 @@ import {
   omniscientLogHash,
   progressGameStreams,
   type ProgressGameRecord,
-  type ProgressEvaluationRecord,
-  readProgressEvaluationRecord,
+  type ProgressEvaluationRecordV2,
+  readProgressEvaluationRecordV2,
   readProgressGameRecord,
   readTrainingRunConfig,
   replayActor,
@@ -58,7 +58,7 @@ describe.skipIf(!existsSync(PYTHON) && process.env.ARENEON_REQUIRE_PYTHON_WORKER
   afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
   const progress = (progressDir: string, ...more: string[]): { generations: { generation: number; skipped: boolean; wall_ms?: Record<string, number>; matches: { match_id: string }[] }[]; progress_dir: string } =>
-    JSON.parse(loop("progress", "--run-dir", runDir, "--engine-data", DATA, "--games", "3", "--record-games", "2", "--progress-dir", progressDir, "--node", process.execPath, "--worker-python", PYTHON, ...more));
+    JSON.parse(loop("progress", "--run-dir", runDir, "--engine-data", DATA, "--games", "4", "--record-games", "2", "--anchor-games", "4", "--progress-dir", progressDir, "--node", process.execPath, "--worker-python", PYTHON, ...more));
 
   it("evaluates both committed generations, twice, with byte-identical records", () => {
     const a = join(dir, "a.progress");
@@ -83,6 +83,30 @@ describe.skipIf(!existsSync(PYTHON) && process.env.ARENEON_REQUIRE_PYTHON_WORKER
     expect(progress(a, "--generation", "1").generations.map((g) => g.skipped)).toEqual([true]);
   }, 600_000);
 
+  it("plays an anchor next to the previous generation, each pair from both seats on one seed", () => {
+    const c = join(dir, "c.progress");
+    const printed = progress(c, "--generation", "1", "--anchors", "0,1", "--anchor-games", "2", "--previous-matches");
+    expect(printed.generations[0]?.matches.map((m) => m.match_id)).toEqual(["actor-rule-argmax", "actor-rule-sample", "anchor-g0-argmax", "anchor-g0-sample", "previous-argmax", "previous-sample", "random-legal-argmax", "random-legal-sample"]);
+    const record = readProgressEvaluationRecordV2(json<ProgressEvaluationRecordV2>(c, gen(1), "progress.json"));
+    expect(record.plan).toMatchObject({ games_per_match: 4, anchor_games_per_match: 2 });
+    expect(record.teams.pairs_used).toBe(2);
+    const g0 = json<{ checkpoints: Record<string, string> }>(runDir, "generations", gen(0), "manifest.json").checkpoints;
+    for (const m of record.matches.filter((x) => x.opponent.kind === "anchor")) {
+      expect(m.opponent).toMatchObject({ kind: "anchor", generation: 0, checkpoints: g0 });
+      expect(m.games).toBe(2);
+    }
+    const rows = record.games.filter((r) => r.match_id === "anchor-g0-sample");
+    expect(rows.map((r) => [r.pair, r.candidate_seat])).toEqual([[0, "p1"], [0, "p2"]]);
+    // Pair 0 was played twice: the teams stay on their seats, the policies swap, the battle seed is the pair's.
+    const [a, b] = [0, 1].map((k) => readProgressGameRecord(json(c, gen(1), "games", `anchor-g0-sample-${k}.json`)));
+    const [first, second] = [a as ProgressGameRecord, b as ProgressGameRecord];
+    expect(first.teams).toEqual(second.teams);
+    expect(first.teams.p1.team_hash).not.toBe(first.teams.p2.team_hash);
+    expect(first.seed).toBe(second.seed);
+    expect(first.policies.p1).toBe(second.policies.p2); // the candidate's policy sits on p1 then p2
+    expect(first.policies.p2).toBe(second.policies.p1);
+  }, 600_000);
+
   it("plays validation teams only, never a team of the run's team-set, on seeds no training game used", () => {
     const a = join(dir, "a.progress");
     const run = readTrainingRunConfig(json(runDir, "run-config.json"));
@@ -91,8 +115,8 @@ describe.skipIf(!existsSync(PYTHON) && process.env.ARENEON_REQUIRE_PYTHON_WORKER
     const pool = datasetValidationPool(engine, run);
     const validation = new Set(pool.teams.map((t) => t.sets).map((sets) => jcs(sets as unknown as Json)));
     expect(trained.size).toBeGreaterThan(0);
-    const record = json<ProgressEvaluationRecord>(a, gen(1), "progress.json");
-    expect(readProgressEvaluationRecord(record).plan.games_per_match).toBe(3);
+    const record = json<ProgressEvaluationRecordV2>(a, gen(1), "progress.json");
+    expect(readProgressEvaluationRecordV2(record).plan.games_per_match).toBe(4);
     expect(record.generation_manifest_sha256).toMatch(/^[0-9a-f]{64}$/);
     const games = tree(join(a, gen(1), "games")).map((f) => readProgressGameRecord(json(a, gen(1), "games", f)));
     expect(games).toHaveLength(12);
@@ -101,14 +125,14 @@ describe.skipIf(!existsSync(PYTHON) && process.env.ARENEON_REQUIRE_PYTHON_WORKER
     const previous = record.matches.filter((m) => m.opponent.kind === "previous");
     expect(previous.map((m) => m.match_id)).toEqual(["previous-argmax", "previous-sample"]);
     for (const m of previous) expect(m.opponent).toMatchObject({ kind: "previous", checkpoints: g0 });
-    expect(json<ProgressEvaluationRecord>(a, gen(0), "progress.json").matches.some((m) => m.opponent.kind === "previous")).toBe(false);
+    expect(json<ProgressEvaluationRecordV2>(a, gen(0), "progress.json").matches.some((m) => m.opponent.kind === "previous")).toBe(false);
     for (const stored of games) {
       for (const seat of ["p1", "p2"] as const) {
         expect(trained.has(stored.teams[seat].team_hash)).toBe(false);
         expect(validation.has(jcs(stored.teams[seat].team as unknown as Json))).toBe(true);
       }
       expect(league.has(stored.seed)).toBe(false);
-      expect(stored.seed).toBe(progressGameStreams(run.seeds.run_key, stored.game).seed);
+      expect(stored.seed).toBe(progressGameStreams(run.seeds.run_key, stored.game >> 1).seed); // one seed per pair
     }
   });
 
@@ -167,7 +191,7 @@ describe.skipIf(!existsSync(PYTHON) && process.env.ARENEON_REQUIRE_PYTHON_WORKER
         "engine-data": DATA,
         "encoder-version": json<{ encoder_version: string }>(runDir, "generations", gen(1), "records", "battle.json").encoder_version,
         "worker-python": PYTHON,
-        games: "1",
+        games: "2",
         "record-games": "1",
         out,
         ...change,
@@ -187,7 +211,7 @@ describe.skipIf(!existsSync(PYTHON) && process.env.ARENEON_REQUIRE_PYTHON_WORKER
       const printed = JSON.parse(lines[0] as string) as { generation: number; matches: { games: number }[]; wall_ms: Record<string, number> };
       expect(lines[0]).toBe(jcs(printed as unknown as Json));
       expect(printed.generation).toBe(1);
-      expect(printed.matches.map((m) => m.games)).toEqual([1, 1, 1, 1]);
+      expect(printed.matches.map((m) => m.games)).toEqual([2, 2, 2, 2]);
       expect(Object.keys(printed.wall_ms)).toHaveLength(4);
       expect(tree(out)).toContain("progress.json");
     }, 120_000);
@@ -201,6 +225,31 @@ describe.skipIf(!existsSync(PYTHON) && process.env.ARENEON_REQUIRE_PYTHON_WORKER
       expect(printed.matches.map((m) => m.match_id)).toEqual(["actor-rule-argmax", "actor-rule-sample", "previous-argmax", "previous-sample", "random-legal-argmax", "random-legal-sample"]);
       await expect(run(join(dir, "half"), { "previous-preview": g0.preview as string })).rejects.toThrow(/go together/);
     }, 180_000);
+
+    it("plays an anchor when given, and refuses anchors without anchor games and a malformed anchor", async () => {
+      const g0 = json<{ checkpoints: Record<string, string> }>(runDir, "generations", gen(0), "manifest.json").checkpoints;
+      const spec = `0,${g0.preview},${g0.battle},policy:${"1".repeat(64)},policy:${"2".repeat(64)}`;
+      const lines: string[] = [];
+      const out = join(dir, "cli-anchor");
+      const code = await runProgressCli([...flags(out), "--anchor", spec, "--anchor-games", "2"], (l) => lines.push(l), datasetValidationPool);
+      expect(code).toBe(0);
+      const printed = JSON.parse(lines[0] as string) as { matches: { match_id: string; games: number }[] };
+      expect(printed.matches.map((m) => [m.match_id, m.games]).filter(([id]) => String(id).startsWith("anchor"))).toEqual([["anchor-g0-argmax", 2], ["anchor-g0-sample", 2]]);
+      await expect(runProgressCli([...flags(join(dir, "n1")), "--anchor", spec], () => undefined, datasetValidationPool)).rejects.toThrow(/go together/);
+      await expect(runProgressCli([...flags(join(dir, "n2")), "--anchor-games", "2"], () => undefined, datasetValidationPool)).rejects.toThrow(/go together/);
+      await expect(runProgressCli([...flags(join(dir, "n3")), "--anchor", "0,x", "--anchor-games", "2"], () => undefined, datasetValidationPool)).rejects.toThrow(/--anchor must be/);
+      await expect(runProgressCli([...flags(join(dir, "n4")), "--anchor", spec, "--anchor-games", "1"], () => undefined, datasetValidationPool)).rejects.toThrow(/at least 2/);
+      const original = console.error;
+      const said: string[] = [];
+      console.error = (m: unknown): void => void said.push(String(m));
+      try {
+        // A refusal of the evaluation (not a usage error): exit 1 with the reason.
+        expect(await runProgressCli([...flags(join(dir, "n5")), "--anchor", spec, "--anchor-games", "3"], () => undefined, datasetValidationPool)).toBe(1);
+      } finally {
+        console.error = original;
+      }
+      expect(said.join("\n")).toMatch(/anchor-games must be an even integer/);
+    }, 240_000);
 
     it("refuses a missing flag, an unknown flag and a bad integer as usage errors", async () => {
       await expect(runProgressCli(["--generation", "1"], () => undefined, datasetValidationPool)).rejects.toThrow(UsageError);

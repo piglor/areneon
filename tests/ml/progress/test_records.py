@@ -27,10 +27,15 @@ def corpus(contract: str, kind: str) -> list[Path]:
 
 
 EVALUATION = "progress-evaluation-record"
+EVALUATION2 = "progress-evaluation-record-2"
 GAME = "progress-game-record"
 
 
-@pytest.mark.parametrize("path", corpus(EVALUATION, "valid"), ids=lambda p: p.stem)
+@pytest.mark.parametrize(
+    "path",
+    corpus(EVALUATION, "valid") + corpus(EVALUATION2, "valid"),
+    ids=lambda p: p.parent.parent.name + "/" + p.stem,
+)
 def test_valid_evaluation_samples_are_read(path: Path) -> None:
     assert read_progress_record(json.loads(path.read_text()))["data_class"] == "synthetic"
 
@@ -42,8 +47,11 @@ def test_valid_game_samples_are_read(path: Path) -> None:
 
 @pytest.mark.parametrize(
     "path",
-    corpus(EVALUATION, "invalid") + corpus(EVALUATION, "reader-invalid"),
-    ids=lambda p: p.stem,
+    corpus(EVALUATION, "invalid")
+    + corpus(EVALUATION, "reader-invalid")
+    + corpus(EVALUATION2, "invalid")
+    + corpus(EVALUATION2, "reader-invalid"),
+    ids=lambda p: p.parent.parent.name + "/" + p.stem,
 )
 def test_every_refused_evaluation_sample_is_refused(path: Path) -> None:
     with pytest.raises(ProgressRecordError):
@@ -78,6 +86,37 @@ def test_each_evaluation_rule_has_its_own_message(name: str, message: str) -> No
         read_progress_record(raw)
 
 
+@pytest.mark.parametrize(
+    ("name", "message"),
+    [
+        ("counts-disagree", "wins + ties + losses must equal games"),
+        ("pair-is-game", "pair = game // 2"),
+        ("seat-wrong", "seats alternating"),
+        ("odd-games", "must be even"),
+        ("pairs-used-wrong", "pairs_used must be half"),
+        ("rows-incomplete", "one game row per game"),
+        ("anchor-games-missing", "present exactly when"),
+        ("anchor-plan-without-match", "present exactly when"),
+        ("anchor-games-odd", "must be even"),
+        ("anchor-not-earlier", "plays an earlier generation"),
+        ("anchor-misnamed", "is named anchor-g<generation>-<mode>"),
+    ],
+)
+def test_each_version_2_rule_has_its_own_message(name: str, message: str) -> None:
+    raw = json.loads((SAMPLES / EVALUATION2 / "reader-invalid" / f"{name}.json").read_text())
+    with pytest.raises(ProgressRecordError, match=re.escape(message)):
+        read_progress_record(raw)
+
+
+def test_a_version_1_record_still_reads_as_it_did_and_a_version_2_is_a_different_contract() -> None:
+    v1 = sample(f"{EVALUATION}/valid/baseline-match")
+    assert read_progress_record(v1)["schema_version"] == 1
+    v2 = sample(f"{EVALUATION2}/valid/baseline-match")
+    assert read_progress_record(v2)["schema_version"] == 2
+    with pytest.raises(ProgressRecordError):
+        read_progress_record({**v2, "schema_version": 3})
+
+
 def test_a_private_class_is_refused_by_the_schema() -> None:
     for name, contract, reader in (
         ("baseline-match", EVALUATION, read_progress_record),
@@ -95,6 +134,8 @@ def test_a_private_class_is_refused_by_the_schema() -> None:
         ("chosen-not-candidate", "not among its candidates"),
         ("log-hash-wrong", "omniscient_log_sha256"),
         ("seed-wrong", "progress-seed/1"),
+        ("pair-seed-wrong", "progress-seed/1"),
+        ("pair-wrong", "divided by two"),
         ("team-hash-wrong", "team hash of p1"),
     ],
 )
@@ -174,6 +215,22 @@ def test_the_record_is_tied_to_its_run_and_its_policy_ids() -> None:
     }
     with pytest.raises(ProgressRecordError, match="previous pair's policy_id"):
         read_progress_record(previous, config)
+
+
+def test_an_anchor_pairs_policy_id_must_be_its_checkpoints() -> None:
+    config = tiny_config()
+    raw = copy.deepcopy(sample(f"{EVALUATION2}/valid/anchor-match"))
+    raw["run_config_hash"] = config.hash
+    raw["plan"]["max_turns"] = config.generation.max_turns
+    raw["plan"]["latency_budget_ms"] = {"preview_ms": 30000, "battle_ms": 30000}
+    raw["matches"][0]["policy_id"] = record_policy(raw)
+    with pytest.raises(ProgressRecordError, match="anchor pair's policy_id"):
+        read_progress_record(raw, config)
+    opponent = raw["matches"][0]["opponent"]
+    opponent["policy_id"] = policy_id(
+        opponent["checkpoints"]["preview"], opponent["checkpoints"]["battle"], "sample"
+    )
+    assert read_progress_record(raw, config)["plan"]["anchor_games_per_match"] == 4
 
 
 def record_policy(raw: dict[str, Any]) -> str:

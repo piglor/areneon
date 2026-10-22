@@ -211,6 +211,10 @@ class ProgressGameRecord(BaseModel):
     generation: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
     match_id: Annotated[StrictStr, Field(pattern="^[a-z0-9][a-z0-9_-]{0,63}$")]
     game: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+    pair: Annotated[StrictInt | MISSING, Field(ge=0, le=9007199254740991)] = MISSING
+    """
+    Present in a game of a ProgressEvaluationRecordV2 (both seats per pair): the validation pair, equal to game / 2 rounded down. The seed is then progress-seed/1's for the pair, not for the game index.
+    """
     seed: Annotated[StrictStr, Field(pattern="^sodium,[0-9a-f]{32}$")]
     """
     The battle seed, in the engine's sodium,<32 hex> form.

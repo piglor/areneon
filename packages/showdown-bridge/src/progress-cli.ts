@@ -46,7 +46,11 @@ const FLAGS = {
   "previous-battle": { type: "string" },
   "previous-policy-id-sample": { type: "string" },
   "previous-policy-id-argmax": { type: "string" },
+  // Anchors (fixed earlier generations): each `--anchor <generation>,<preview>,<battle>,<policy-id-sample>,<policy-id-argmax>`.
+  anchor: { type: "string", multiple: true },
+  "anchor-games": { type: "string" },
 } as const;
+const OPTIONAL = new Set<string>(["previous-preview", "previous-battle", "previous-policy-id-sample", "previous-policy-id-argmax", "anchor", "anchor-games"]);
 const PREVIOUS = ["previous-preview", "previous-battle", "previous-policy-id-sample", "previous-policy-id-argmax"] as const;
 
 const integer = (name: string, text: string, least: number): number => {
@@ -75,14 +79,22 @@ export function committedPlanSeeds(runDir: string): Set<string> {
 
 /** Run one generation's progress evaluation; returns the process exit code and writes its one JSON line with `print`. */
 export async function runProgressCli(argv: readonly string[], print: (line: string) => void, poolSource: ProgressPoolSource): Promise<number> {
-  let values: Record<keyof typeof FLAGS, string | undefined>;
+  let values: Record<Exclude<keyof typeof FLAGS, "anchor">, string | undefined> & { anchor?: string[] };
   try {
     values = parseArgs({ args: [...argv], options: FLAGS, strict: true }).values as typeof values;
   } catch (error) {
     throw new UsageError((error as Error).message);
   }
-  const need = (name: keyof typeof FLAGS): string => values[name] ?? ((): never => { throw new UsageError(`--${name} is required`); })();
-  for (const name of Object.keys(FLAGS) as (keyof typeof FLAGS)[]) if (!(PREVIOUS as readonly string[]).includes(name)) need(name);
+  const need = (name: Exclude<keyof typeof FLAGS, "anchor">): string => values[name] ?? ((): never => { throw new UsageError(`--${name} is required`); })();
+  for (const name of Object.keys(FLAGS) as (keyof typeof FLAGS)[]) if (!OPTIONAL.has(name)) need(name as Exclude<keyof typeof FLAGS, "anchor">);
+  const anchorSpecs = (values.anchor ?? []).map((text) => {
+    const parts = text.split(",");
+    const [generation, preview, battle, sample, argmax] = parts;
+    if (parts.length !== 5 || generation === undefined || !/^\d+$/.test(generation)) throw new UsageError("--anchor must be <generation>,<preview>,<battle>,<policy-id-sample>,<policy-id-argmax>");
+    return { generation: Number(generation), checkpoints: { preview: preview as string, battle: battle as string }, policy_ids: { sample: sample as string, argmax: argmax as string } };
+  });
+  if ((anchorSpecs.length === 0) !== (values["anchor-games"] === undefined)) throw new UsageError("--anchor and --anchor-games go together");
+  const anchor_games = values["anchor-games"] === undefined ? undefined : integer("anchor-games", values["anchor-games"], 2);
   const given = PREVIOUS.filter((name) => values[name] !== undefined);
   if (given.length !== 0 && given.length !== PREVIOUS.length) throw new UsageError(`the previous-generation flags go together: ${PREVIOUS.map((n) => `--${n}`).join(", ")}`);
   const generation = integer("generation", need("generation"), 0);
@@ -122,11 +134,17 @@ export async function runProgressCli(argv: readonly string[], print: (line: stri
   const client = workerFor({ preview, battle });
   const previousPair = given.length === 0 ? undefined : { preview: need("previous-preview"), battle: need("previous-battle") };
   let previousClient: PolicyWorkerClient | undefined;
+  const anchorClients: PolicyWorkerClient[] = [];
   try {
     previousClient = previousPair === undefined ? undefined : workerFor(previousPair);
     const pool = poolSource(engine, config);
     await client.start();
     await previousClient?.start();
+    for (const spec of anchorSpecs) {
+      const anchorClient = workerFor(spec.checkpoints);
+      anchorClients.push(anchorClient); // closed in `finally` even if its start fails
+      await anchorClient.start();
+    }
     const policy_ids: Record<ProgressMode, string> = { sample: need("policy-id-sample"), argmax: need("policy-id-argmax") };
     const result = await playProgress({
       engine,
@@ -145,6 +163,7 @@ export async function runProgressCli(argv: readonly string[], print: (line: stri
               client: previousClient,
             },
           }),
+      ...(anchor_games === undefined ? {} : { anchors: anchorSpecs.map((spec, index) => ({ ...spec, client: anchorClients[index] as PolicyWorkerClient })), anchor_games }),
       pool,
       games,
       record_games,
@@ -172,7 +191,11 @@ export async function runProgressCli(argv: readonly string[], print: (line: stri
     try {
       await client.close();
     } finally {
-      await previousClient?.close(); // the second worker is closed even if closing the first throws
+      try {
+        await previousClient?.close(); // every worker is closed even if closing another throws
+      } finally {
+        await Promise.allSettled(anchorClients.map((anchorClient) => anchorClient.close()));
+      }
     }
   }
 }

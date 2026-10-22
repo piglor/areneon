@@ -374,9 +374,11 @@ export {
   omniscientLogHash,
   progressRecordHash,
   type ProgressEvaluationRecord,
+  type ProgressEvaluationRecordV2,
   type ProgressGameRecord,
   ProgressRecordError,
   readProgressEvaluationRecord,
+  readProgressEvaluationRecordV2,
   readProgressGameRecord,
 } from "./progress-records.ts";
 export {

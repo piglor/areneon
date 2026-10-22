@@ -16,7 +16,12 @@ from areneon_ml.loop.__main__ import EXIT_PLAY, EXIT_REFUSED, main
 from areneon_ml.loop.play import PlayError
 from areneon_ml.progress import run as run_module
 from areneon_ml.progress.looks import read_looks
-from areneon_ml.progress.run import NodeProgressPlayer, PreviousPair, ProgressRequest
+from areneon_ml.progress.run import (
+    AnchorPair,
+    NodeProgressPlayer,
+    PreviousPair,
+    ProgressRequest,
+)
 
 from tests.ml.model.support import FORMAT_DIR
 from tests.ml.progress.support import (
@@ -49,7 +54,17 @@ def fake_node(monkeypatch: pytest.MonkeyPatch, run: Path) -> list[dict[str, Any]
 
 
 def args(run: Path, *extra: str) -> list[str]:
-    return ["progress", "--run-dir", str(run), "--engine-data", str(DATA), *extra]
+    # The fixture dataset is small: anchor matches of 4 games (the default is 200).
+    return [
+        "progress",
+        "--run-dir",
+        str(run),
+        "--engine-data",
+        str(DATA),
+        "--anchor-games",
+        "4",
+        *extra,
+    ]
 
 
 def test_one_generation_prints_one_canonical_line_and_builds_the_player_from_its_flags(
@@ -248,6 +263,47 @@ def test_the_node_player_passes_the_whole_request_and_the_run_as_flags(tmp_path:
         "--previous-policy-id-sample": "policy:ps",
         "--previous-policy-id-argmax": "policy:pa",
     }
+
+    with_anchors = dataclasses.replace(
+        request,
+        anchors=(
+            AnchorPair(0, "a" * 64, "d" * 64, "policy:0s", "policy:0a"),
+            AnchorPair(10, "e" * 64, "f" * 64, "policy:1s", "policy:1a"),
+        ),
+        anchor_games=200,
+    )
+    player.progress(with_anchors)
+    argv = json.loads(out.read_text())
+    assert [argv[i + 1] for i, a in enumerate(argv) if a == "--anchor"] == [
+        f"0,{'a' * 64},{'d' * 64},policy:0s,policy:0a",
+        f"10,{'e' * 64},{'f' * 64},policy:1s,policy:1a",
+    ]
+    assert argv[argv.index("--anchor-games") + 1] == "200"
+
+
+def test_anchors_and_anchor_games_reach_the_evaluation(
+    run: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    fake_node(monkeypatch, run)
+    code = main(
+        args(
+            run,
+            *("--generation", "1", "--games", "2", "--record-games", "1"),
+            *("--anchors", "0,7", "--anchor-games", "4", "--progress-dir", str(tmp_path / "p")),
+        )
+    )
+    assert code == 0
+    printed = json.loads(capsys.readouterr().out)
+    (done,) = printed["generations"]
+    assert done["anchors"].startswith("played: g0; skipped")  # 7 is not earlier
+    ids = [m["match_id"] for m in done["matches"]]
+    assert "anchor-g0-sample" in ids
+    assert "anchor-g7-sample" not in ids
+
+
+def test_a_malformed_anchor_list_is_a_usage_error(run: Path) -> None:
+    with pytest.raises(SystemExit):
+        main(args(run, "--generation", "1", "--anchors", "0,x"))
 
 
 @pytest.mark.parametrize("printed", ["not json", "[1, 2]"])

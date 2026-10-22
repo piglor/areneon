@@ -11,7 +11,9 @@
 * ``report``: write the run dashboard (training curves and, with a progress root, the progress
   evaluation) as one offline HTML page.
 * ``progress``: the progress evaluation of a committed generation (ADR-017): its frozen pair
-  against the scripted baselines on the validation teams, written to ``<run-dir>.progress/``.
+  against the scripted baselines (and, from generation 1, the previous generation's pair and,
+  with ``--anchors``, fixed earlier generations) on the validation teams, written to
+  ``<run-dir>.progress/``.
   A progress view, never the Training gate; the run directory is only read.
 
 The learner runs in this process (``learner.device`` of the config: ``cpu``, or ``cuda``
@@ -48,6 +50,7 @@ from areneon_ml.model.gamedata import GameData
 from areneon_ml.progress.looks import Look, LookError, append_look, looks_path
 from areneon_ml.progress.records import ProgressRecordError
 from areneon_ml.progress.run import (
+    DEFAULT_ANCHOR_GAMES,
     DEFAULT_GAMES,
     DEFAULT_RECORD_GAMES,
     SCHEDULE_EVERY,
@@ -106,11 +109,30 @@ def _parser() -> argparse.ArgumentParser:
         help=f"every committed generation whose number is a multiple of {SCHEDULE_EVERY} "
         "(0 included)",
     )
-    progress.add_argument("--games", type=int, default=DEFAULT_GAMES, help="games per match")
+    progress.add_argument(
+        "--games",
+        type=int,
+        default=DEFAULT_GAMES,
+        help="games per match (even: every pair is played from both seats)",
+    )
     progress.add_argument(
         "--record-games",
         type=int,
         help=f"games stored per match (default {DEFAULT_RECORD_GAMES}, at most --games)",
+    )
+    progress.add_argument(
+        "--anchors",
+        type=_generation_list,
+        default=(),
+        help="comma-separated earlier generations to play as fixed anchors, e.g. 0,10,20 "
+        "(one that is not earlier than the evaluated generation is left out)",
+    )
+    progress.add_argument(
+        "--anchor-games",
+        type=int,
+        default=DEFAULT_ANCHOR_GAMES,
+        help=f"games per anchor match, even (default {DEFAULT_ANCHOR_GAMES}): "
+        "each validation pair from both seats",
     )
     progress.add_argument(
         "--previous-matches",
@@ -144,6 +166,14 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _generation_list(text: str) -> tuple[int, ...]:
+    """``0,10,20`` as generation numbers (argparse type)."""
+    try:
+        return tuple(int(part) for part in text.split(","))
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("--anchors takes comma-separated integers") from exc
+
+
 def _progress(args: argparse.Namespace) -> dict[str, object]:
     run_dir = args.run_dir.resolve()
     config = read_run_config(layout.read_json(run_dir / layout.CONFIG))
@@ -164,7 +194,15 @@ def _progress(args: argparse.Namespace) -> dict[str, object]:
     generations = scheduled_generations(run_dir) if args.all else [args.generation]
     done = [
         progress_generation(
-            run_dir, g, root, player, args.games, record_games, args.previous_matches
+            run_dir,
+            g,
+            root,
+            player,
+            args.games,
+            record_games,
+            args.anchors,
+            args.anchor_games,
+            args.previous_matches,
         )
         for g in generations
     ]

@@ -46,6 +46,12 @@
       "minimum": 0,
       "maximum": 9007199254740991
     },
+    "pair": {
+      "description": "Present in a game of a ProgressEvaluationRecordV2 (both seats per pair): the validation pair, equal to game / 2 rounded down. The seed is then progress-seed/1's for the pair, not for the game index.",
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
     "seed": {
       "description": "The battle seed, in the engine's sodium,<32 hex> form.",
       "type": "string",

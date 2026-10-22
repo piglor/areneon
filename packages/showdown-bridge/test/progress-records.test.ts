@@ -3,7 +3,8 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { jcs, type Json } from "../src/canonical-json.ts";
 import { EpisodeError, readEpisode } from "../src/episode-io.ts";
-import { omniscientLogHash, outcomeWinner, progressRecordHash, ProgressRecordError, readProgressEvaluationRecord, readProgressGameRecord } from "../src/progress-records.ts";
+import { omniscientLogHash, outcomeWinner, progressRecordHash, ProgressRecordError, readProgressEvaluationRecord,
+  readProgressEvaluationRecordV2, readProgressGameRecord } from "../src/progress-records.ts";
 import { SAMPLES_DIR } from "../src/samples.ts";
 import { loadTrainingSet, TrainingLoaderError } from "../src/training-loader.ts";
 
@@ -80,8 +81,68 @@ describe("ProgressEvaluationRecord", () => {
   });
 });
 
+describe("ProgressEvaluationRecordV2 (both seats, ADR-017 erratum E2)", () => {
+  const V2 = "progress-evaluation-record-2";
+  it.each(["baseline-match", "previous-match", "anchor-match"])("reads the valid sample %s and hashes its JCS bytes", (name) => {
+    const record = readProgressEvaluationRecordV2(sample(`${V2}/valid/${name}`));
+    expect(record.schema_version).toBe(2);
+    expect(progressRecordHash(record)).toMatch(/^[0-9a-f]{64}$/);
+    expect(JSON.parse(jcs(record as unknown as Json))).toEqual(record);
+  });
+
+  it.each([
+    ["counts-disagree", "wins + ties + losses must equal games"],
+    ["pair-is-game", "pair equal to the game divided by two"],
+    ["seat-wrong", "the candidate sits on p1 for an even game"],
+    ["odd-games", "must be even"],
+    ["pairs-used-wrong", "teams.pairs_used must be half the largest"],
+    ["rows-incomplete", "there must be one game row per game"],
+    ["anchor-games-missing", "present exactly when the record has anchor matches"],
+    ["anchor-plan-without-match", "present exactly when the record has anchor matches"],
+    ["anchor-games-odd", "must be even"],
+    ["anchor-not-earlier", "plays an earlier generation"],
+    ["anchor-misnamed", "is named anchor-g<generation>-<mode>"],
+  ])("refuses the reader-invalid sample %s", (name, message) => {
+    expect(() => readProgressEvaluationRecordV2(sample(`${V2}/reader-invalid/${name}`))).toThrow(ProgressRecordError);
+    expect(() => readProgressEvaluationRecordV2(sample(`${V2}/reader-invalid/${name}`))).toThrow(message);
+  });
+
+  it.each(["public-class", "schema-version-1", "fractional-wins", "anchor-no-generation"])("refuses the schema-invalid sample %s", (name) => {
+    expect(() => readProgressEvaluationRecordV2(sample(`${V2}/invalid/${name}`))).toThrow(/invalid ProgressEvaluationRecordV2/);
+  });
+
+  it("is a different version from v1: each reader refuses the other's record", () => {
+    expect(() => readProgressEvaluationRecord(sample(`${V2}/valid/baseline-match`))).toThrow(/invalid ProgressEvaluationRecord/);
+    expect(() => readProgressEvaluationRecordV2(sample(`${EVALUATION}/valid/baseline-match`))).toThrow(/invalid ProgressEvaluationRecordV2/);
+  });
+
+  it("refuses unknown matches, unordered rows and a recorded count above the games", () => {
+    const stray = sample(`${V2}/valid/baseline-match`);
+    stray.games[0].match_id = "zzz";
+    expect(() => readProgressEvaluationRecordV2(stray)).toThrow(/unknown match/);
+    const unordered = sample(`${V2}/valid/anchor-match`);
+    unordered.matches.push({ ...unordered.matches[0], match_id: "anchor-g0-argmax", mode: "argmax" });
+    unordered.games.push(...unordered.games.map((g: Record<string, unknown>) => ({ ...g, match_id: "anchor-g0-argmax" })));
+    unordered.games.reverse();
+    expect(() => readProgressEvaluationRecordV2(unordered)).toThrow();
+    const recorded = sample(`${V2}/valid/baseline-match`);
+    recorded.plan.recorded_games_per_match = 5;
+    expect(() => readProgressEvaluationRecordV2(recorded)).toThrow(/must not exceed/);
+    const sorted = sample(`${V2}/valid/baseline-match`);
+    sorted.matches.push({ ...sorted.matches[0], match_id: "a-first" });
+    expect(() => readProgressEvaluationRecordV2(sorted)).toThrow(/sorted by match_id/);
+    const hashes = sample(`${V2}/valid/baseline-match`);
+    hashes.matches[0].game_record_hashes = [];
+    expect(() => readProgressEvaluationRecordV2(hashes)).toThrow(/must number recorded_games_per_match/);
+    const unsorted = sample(`${V2}/valid/baseline-match`);
+    unsorted.plan.recorded_games_per_match = 2;
+    unsorted.matches[0].game_record_hashes = ["f".repeat(64), "1".repeat(64)];
+    expect(() => readProgressEvaluationRecordV2(unsorted)).toThrow(/sorted, each once/);
+  });
+});
+
 describe("ProgressGameRecord", () => {
-  it.each(["played", "forfeit"])("reads the valid sample %s", (name) => {
+  it.each(["played", "forfeit", "played-pair"])("reads the valid sample %s", (name) => {
     const record = readProgressGameRecord(sample(`${GAME}/valid/${name}`));
     expect(record.data_class).toBe("synthetic");
     expect(record.omniscient_log_sha256).toBe(omniscientLogHash(record.omniscient_log));
@@ -91,6 +152,8 @@ describe("ProgressGameRecord", () => {
     ["chosen-not-candidate", "is not among its candidates"],
     ["log-hash-wrong", "omniscient_log_sha256 does not recompute"],
     ["seed-wrong", "progress-seed/1"],
+    ["pair-seed-wrong", "progress-seed/1"],
+    ["pair-wrong", "pair must be the game index divided by two"],
     ["team-hash-wrong", "team hash of p1"],
   ])("refuses the reader-invalid sample %s", (name, message) => {
     expect(() => readProgressGameRecord(sample(`${GAME}/reader-invalid/${name}`))).toThrow(message);
