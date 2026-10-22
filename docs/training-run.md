@@ -247,7 +247,8 @@ the Training gate.
 
 - The record stores counts. A **score** counts a tie as half a win:
   `(wins + ties / 2) / games`. The command prints it, with its **Wilson 95%
-  interval** (version 1 records; a version 2 record has the pair-level interval above), in parts per million (`score_ppm`, `wilson_low_ppm`,
+  interval** (version 1 records;
+  a version 2 record has the pair-level interval above), in parts per million (`score_ppm`, `wilson_low_ppm`,
   `wilson_high_ppm`); the interval is derived, never stored. For a version 1
   record at 100 games a score of 0.5 has an interval of about 0.40 to 0.60.
 - Every interval is **conditional on the fixed validation plan**: it describes
