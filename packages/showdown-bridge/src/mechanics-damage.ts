@@ -82,7 +82,7 @@ interface DmgBattle {
   field: DmgField;
   actions: DmgActions;
   prng: RecordingRandom;
-  dex: { conditions: { get(id: string): { exists: boolean; effectType: string } }; moves: { get(id: string): { exists: boolean; category: string; multihit?: unknown; id: string } } };
+  dex: { conditions: { get(id: string): { exists: boolean; effectType: string } }; moves: { get(id: string): { exists: boolean; category: string; multihit?: unknown; id: string; damage?: unknown; damageCallback?: unknown; ohko?: unknown } } };
   toJSON(): object;
 }
 
@@ -168,6 +168,8 @@ interface Run {
   draws: RecordingRandom["draws"];
   /** The damage loop was reached for the defender. */
   hit: boolean;
+  /** The engine made the move multi-hit after `ModifyMove` (Parental Bond): one hit is not its damage. */
+  multi: boolean;
   /** An immunity or protection step of the engine removed the defender: the move deals nothing. */
   blocked: boolean;
   damage: number;
@@ -186,7 +188,7 @@ function run(engine: Engine, base: DmgBattle, moveId: string, roll: number, crit
   battle.prng = random;
   const attacker = battle.sides[0]?.pokemon[0] as DmgPokemon;
   const defender = battle.sides[1]?.pokemon[0] as DmgPokemon;
-  const seen: Run = { draws: random.draws, hit: false, blocked: false, damage: 0, crit: false };
+  const seen: Run = { draws: random.draws, hit: false, blocked: false, multi: false, damage: 0, crit: false };
   // Nothing is dealt and no accuracy is rolled: the step that deals damage reads it instead.
   battle.actions.hitStepAccuracy = (targets) => targets.map(() => true);
   // The engine's own steps that can remove the defender (an immunity, Protect, Volt Absorb) are kept; the run notes it.
@@ -200,6 +202,7 @@ function run(engine: Engine, base: DmgBattle, moveId: string, roll: number, crit
     };
   }
   battle.actions.hitStepMoveHitLoop = (targets, pokemon, move) => {
+    seen.multi = move.multihit !== undefined && move.multihit !== null && move.multihit !== false;
     if (targets.includes(defender)) {
       if (crit !== undefined) move.willCrit = crit;
       const damage = battle.actions.getDamage(pokemon, defender, move, true);
@@ -226,12 +229,13 @@ export function probeDamage(engine: Engine, scenarioId: string, query: DamageQue
   const move = base.dex.moves.get(query.move);
   if (!move.exists || move.id !== query.move) throw new DamageStateError("the move is not an engine move");
   // Outside the v1 scope (ADR-016 section 3): a move that deals no damage of its own, and a multi-hit move.
-  if (move.category === "Status" || move.multihit !== undefined) return { kind: "unsupported", reason: "query_kind", position: null };
+  // Also fixed and HP-based damage (`damage`, `damageCallback`, `ohko`): a number that is no roll vector.
+  if (move.category === "Status" || move.multihit !== undefined || move.damage !== undefined || move.damageCallback !== undefined || move.ohko !== undefined) return { kind: "unsupported", reason: "query_kind", position: null };
 
   // The move never reached the damage loop for a reason other than an engine immunity (a charge turn, a failed
-  // precondition, a self-targeting move): its damage is not this query's answer, so nothing is claimed.
+  // precondition, a self-targeting move) or that the engine made multi-hit (Parental Bond): its damage is not this query's answer, so nothing is claimed.
   const observed = run(engine, base, query.move, 0, undefined, true);
-  if (!observed.hit && !observed.blocked) return { kind: "unsupported", reason: "query_kind", position: null };
+  if ((!observed.hit && !observed.blocked) || observed.multi) return { kind: "unsupported", reason: "query_kind", position: null };
 
   const vectors = (crit: boolean): number[] | null => {
     const out: number[] = [];

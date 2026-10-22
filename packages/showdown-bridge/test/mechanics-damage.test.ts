@@ -96,7 +96,7 @@ const variant = (change: (query: typeof base.query) => void): unknown => {
 
 describe("moves and states outside what the probe answers exactly", () => {
   it("a move whose damage has a random base power is unsupported (random_effect): nothing is answered for the engine", () => {
-    for (const move of ["magnitude", "present", "psywave"]) {
+    for (const move of ["magnitude", "present"]) {
       expect(probe(variant((q) => (q.move = move))).result, move).toMatchObject({ kind: "unsupported", reason: "random_effect", position: null });
     }
   });
@@ -122,11 +122,20 @@ describe("moves and states outside what the probe answers exactly", () => {
     expect(answer.crit_chance).toEqual({ kind: "never" });
   });
 
-  it("a fixed-damage move returns the engine's value for every roll, and no crit", () => {
-    const answer = answerOf(variant((q) => (q.move = "seismictoss")));
-    expect(answer.no_crit).toEqual(new Array(16).fill(50));
-    expect(answer.crit).toEqual(new Array(16).fill(50));
-    expect(answer.crit_chance).toEqual({ kind: "never" });
+  it("fixed and HP-based damage (Seismic Toss, Super Fang, a one-hit KO move) is outside the v1 scope: query_kind", () => {
+    for (const move of ["seismictoss", "superfang", "fissure"]) {
+      expect(probe(variant((q) => (q.move = move))).result, move).toMatchObject({ kind: "unsupported", reason: "query_kind", position: null });
+    }
+  });
+
+  it("a move the engine makes multi-hit (Parental Bond) is unsupported, not answered as one hit", () => {
+    const kanga = "Kangaskhan @ Kangaskhanite\nAbility: Early Bird\nLevel: 50\nEVs: 32 HP / 32 Atk\nAdamant Nature\n- Body Slam\n- Protect\n";
+    const set = exportPaste(engine, importPaste(engine, kanga));
+    expect(probe(variant((q) => ((q.move = "bodyslam"), (q.attacker.set = set), (q.attacker.mega = true)))).result).toMatchObject({ kind: "unsupported", reason: "query_kind", position: null });
+  });
+
+  it("no ability or item of the pinned engine draws on the damage path, so the random_effect refusal is shown with random-base-power moves and the source's own tests", () => {
+    expect(probe(variant((q) => (q.move = "magnitude"))).result).toMatchObject({ kind: "unsupported", reason: "random_effect" });
   });
 
   it("the KO field is the placeholder until the KO slice: no count is given", () => {
@@ -152,9 +161,12 @@ describe("states the engine will not take throw, with no result", () => {
       q.state.terrain = "electricterrain";
       q.state.trick_room = true;
       q.state.sides[0].tailwind = true;
-      q.state.sides[1].aurora_veil = true;
     }));
-    expect(answer.no_crit).toHaveLength(16);
+    // None of them changes a damage roll: the vector is the plain case's.
+    expect(answer.no_crit).toEqual((fixture.cases[0] as Case).expected.no_crit);
+    // Aurora Veil on the defender's side does: the engine halves the roll to 2732/4096 in doubles.
+    const veil = answerOf(variant((q) => (q.state.sides[1].aurora_veil = true)));
+    expect((veil.no_crit[0] as number) < answer.no_crit[0]).toBe(true);
   });
 });
 
