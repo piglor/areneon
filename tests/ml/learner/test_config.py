@@ -103,3 +103,14 @@ def test_every_reader_invalid_sample_is_checked_above() -> None:
 def test_a_record_the_schema_refuses_is_refused(name: str) -> None:
     with pytest.raises(RunConfigError, match="training-run-config"):
         read_run_config(raw(f"invalid/{name}"))
+
+
+def test_the_kl_target_is_optional_and_divided_once() -> None:
+    assert read_run_config(raw()).ppo.target_kl is None
+    with_target = raw("valid/target-kl.json")
+    config = read_run_config(with_target)
+    assert with_target["ppo"]["target_kl_micro"] == 20000
+    assert config.ppo.target_kl == 0.02
+    assert config.hash != read_run_config(raw()).hash
+    with pytest.raises(RunConfigError):
+        read_run_config(raw("invalid/zero-target-kl.json"))

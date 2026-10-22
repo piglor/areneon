@@ -81,14 +81,22 @@ class RoleReport:
     entropy: float
     clip_fraction: float
     approx_kl: float
+    # Set only when the config has ``ppo.target_kl_micro`` (ADR-010 erratum A1): the epochs that
+    # ran, and whether an epoch's mean approximate KL exceeded the target (the stop fired). Both
+    # are left out of the stored report when absent, so a run without the field keeps its bytes.
+    epochs_run: int | None = None
+    kl_stopped: bool | None = None
 
 
 @dataclass(frozen=True)
 class TrainReport:
     roles: Mapping[str, RoleReport] = field(default_factory=dict)
 
-    def as_dict(self) -> dict[str, dict[str, float | int]]:
-        return {role: dataclasses.asdict(report) for role, report in sorted(self.roles.items())}
+    def as_dict(self) -> dict[str, dict[str, float | int | bool]]:
+        return {
+            role: {k: v for k, v in dataclasses.asdict(report).items() if v is not None}
+            for role, report in sorted(self.roles.items())
+        }
 
 
 @dataclass(frozen=True)
@@ -183,8 +191,12 @@ class Learner:
         weights = LossWeights(ppo.clip, ppo.value_coef, ppo.entropy_coef)
         sums = torch.zeros(5)
         optimiser_steps = 0
+        epochs_run = 0
+        kl_stopped = False
         network.train()
         for _ in range(ppo.epochs):
+            epoch_kl = 0.0
+            minibatches = 0
             order = torch.randperm(len(table.steps), generator=self.generator).tolist()
             for start in range(0, len(order), ppo.minibatch_size):
                 index = order[start : start + ppo.minibatch_size]
@@ -206,6 +218,8 @@ class Learner:
                 torch.nn.utils.clip_grad_norm_(network.parameters(), ppo.max_grad_norm)
                 optimiser.step()
                 optimiser_steps += 1
+                minibatches += 1
+                epoch_kl += float(loss.approx_kl.detach().cpu())
                 sums += torch.stack(
                     [
                         loss.policy.detach(),
@@ -215,5 +229,22 @@ class Learner:
                         loss.approx_kl.detach(),
                     ]
                 ).cpu()
-        mean = (sums / optimiser_steps).tolist()
-        return RoleReport(len(table.steps), optimiser_steps, *mean)
+            epochs_run += 1
+            # ADR-010 erratum A1: one check per complete epoch, on the mean of the epoch's
+            # per-minibatch approximate KL in minibatch order; never inside an epoch.
+            if ppo.target_kl is not None and epoch_kl / minibatches > ppo.target_kl:
+                kl_stopped = True
+                break
+        policy, value, entropy, clip_fraction, approx_kl = (sums / optimiser_steps).tolist()
+        stop = ppo.target_kl is not None
+        return RoleReport(
+            len(table.steps),
+            optimiser_steps,
+            policy,
+            value,
+            entropy,
+            clip_fraction,
+            approx_kl,
+            epochs_run if stop else None,
+            kl_stopped if stop else None,
+        )

@@ -427,6 +427,9 @@ def test_a_changed_file_is_refused_by_the_manifest(tmp_path: Path) -> None:
         (lambda r: r["battle"].update(entropy=True), "finite"),
         (lambda r: r["battle"].update(steps=-1), "integer"),
         (lambda r: r.pop("preview"), "lacks preview"),
+        (lambda r: r["battle"].update(epochs_run=1), "come together"),
+        (lambda r: r["battle"].update(epochs_run=1, kl_stopped=1), "come together"),
+        (lambda r: r["battle"].update(epochs_run=0, kl_stopped=True), "integer"),
     ],
 )
 def test_the_train_report_is_read_strictly(change: Any, message: str) -> None:
@@ -434,6 +437,15 @@ def test_the_train_report_is_read_strictly(change: Any, message: str) -> None:
     change(raw)
     with pytest.raises(InspectError, match=message):
         read_train_report(raw)
+
+
+def test_the_kl_stop_keys_are_optional_and_read_when_present() -> None:
+    assert read_train_report(json.loads(json.dumps(TRAIN_REPORT))).kl_stops == {}
+    raw = json.loads(json.dumps(TRAIN_REPORT))
+    raw["battle"].update(epochs_run=2, kl_stopped=True)
+    facts = read_train_report(raw)
+    assert facts.kl_stops == {"battle": (2, True)}
+    assert "epochs_run" not in facts.roles["battle"]
 
 
 def test_a_private_lineage_is_refused(tmp_path: Path) -> None:

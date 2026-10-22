@@ -28,6 +28,13 @@ describe("the TrainingRunConfig reader (ADR-010 §5)", () => {
     }
   });
 
+  it("reads the optional KL target and refuses zero (ADR-010 erratum A1)", () => {
+    expect(readTrainingRunConfig(sample("tiny")).ppo.target_kl_micro).toBeUndefined();
+    expect(readTrainingRunConfig(sample("target-kl")).ppo.target_kl_micro).toBe(20000);
+    const tiny = sample("tiny") as { ppo: Record<string, unknown> };
+    expect(() => readTrainingRunConfig({ ...tiny, ppo: { ...tiny.ppo, target_kl_micro: 0 } })).toThrow(TrainingRunConfigError);
+  });
+
   it("refuses a record the schema refuses, naming nothing it was not given", () => {
     expect(() => readTrainingRunConfig({ ...sample("tiny"), notes: "x" })).toThrow(TrainingRunConfigError);
     expect(() => readTrainingRunConfig(null)).toThrow(/invalid TrainingRunConfig/);

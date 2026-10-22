@@ -51,7 +51,8 @@ NOT_RECORDED = "not recorded"
 ROLES = ("battle", "preview")
 METRICS = ("policy_loss", "value_loss", "entropy", "approx_kl", "clip_fraction")
 STEPS_KEYS = ("steps", "optimiser_steps")
-TRAIN_ROLE_KEYS = (frozenset({*METRICS, *STEPS_KEYS}), frozenset[str]())
+KL_STOP_KEYS = ("epochs_run", "kl_stopped")  # only when ppo.target_kl_micro is set (ADR-010 A1)
+TRAIN_ROLE_KEYS = (frozenset({*METRICS, *STEPS_KEYS}), frozenset(KL_STOP_KEYS))
 TRAIN_KEYS = (frozenset(ROLES), frozenset[str]())
 _PROGRESS_DIR = re.compile(r"g(\d{6})")
 
@@ -85,6 +86,8 @@ class TrainFacts:
     """``train-report.json``: per role the diagnostics as stored."""
 
     roles: dict[str, dict[str, float]]
+    # per role, (epochs run, whether the KL stop fired); a role is absent when the run has no target
+    kl_stops: dict[str, tuple[int, bool]] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -163,12 +166,18 @@ def read_train_report(raw: object) -> TrainFacts:
     """``train-report.json`` with closed key sets: both roles, each with exactly the known keys."""
     body = closed(raw, TRAIN_KEYS, "train-report.json")
     roles: dict[str, dict[str, float]] = {}
+    stops: dict[str, tuple[int, bool]] = {}
     for role in ROLES:
         values = closed(body[role], TRAIN_ROLE_KEYS, f"train-report.json {role}")
         roles[role] = {m: _number(values[m], f"{role} {m}") for m in METRICS}
         for key in STEPS_KEYS:
             roles[role][key] = integer(values[key], f"{role} {key}")
-    return TrainFacts(roles)
+        if set(KL_STOP_KEYS) & set(values):
+            fired = values.get("kl_stopped")
+            if set(KL_STOP_KEYS) - set(values) or not isinstance(fired, bool):
+                raise ReportError(f"{role} epochs_run and kl_stopped come together, a boolean stop")
+            stops[role] = (integer(values["epochs_run"], f"{role} epochs_run", 1), fired)
+    return TrainFacts(roles, stops)
 
 
 def _tallies(
