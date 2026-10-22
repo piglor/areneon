@@ -63,6 +63,7 @@ class PPOSettings:
     adam_beta2: float
     adam_eps: float
     normalize_advantages: bool
+    target_kl: float | None
 
 
 @dataclass(frozen=True)
@@ -139,6 +140,7 @@ def read_run_config(raw: object) -> RunConfig:
             adam_beta2=ppo["adam_beta2_micro"] / MICRO,
             adam_eps=ppo["adam_eps_nano"] / NANO,
             normalize_advantages=ppo["normalize_advantages"],
+            target_kl=ppo["target_kl_micro"] / MICRO if "target_kl_micro" in ppo else None,
         ),
         device=raw["learner"]["device"],
         threads=raw["learner"]["threads"],

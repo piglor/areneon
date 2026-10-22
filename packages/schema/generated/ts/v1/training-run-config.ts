@@ -150,6 +150,10 @@ export interface TrainingRunConfig {
      * Normalise advantages to zero mean and unit deviation within each role's batch.
      */
     normalize_advantages: boolean;
+    /**
+     * Optional (a minor change within v1, ADR-010 erratum A1): after each complete epoch, if the arithmetic mean of that epoch's per-minibatch approximate KL (in minibatch order) is greater than this value in millionths, the role's remaining epochs of the generation are skipped. Absent means every configured epoch runs. A config that carries it is a new run.
+     */
+    target_kl_micro?: number;
   };
   /**
    * Optional (a minor change within v1): the generated team dataset the generation loop draws its teams from. Absent means the interim pool of committed fixture teams. The directory is read by the dataset reader, which trusts nothing; the pool takes the dev and training splits, never validation. The dataset hash pins the manifest and every record: a directory that hashes differently is refused.

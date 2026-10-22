@@ -451,6 +451,7 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "team-snapshot-manifest/extended": extendedSnapshot,
     "training-run-config/tiny": runConfig,
     "training-run-config/no-baselines": runConfigWith((c) => (runSection(c, "generation").baseline_games = [])),
+    "training-run-config/target-kl": runConfigWith((c) => (runSection(c, "ppo").target_kl_micro = 20000)),
     "training-run-config/team-dataset": runConfigWith((c) => (c.team_dataset = { path: ".tmp/datasets/train-v1", dataset_hash: hexOf("5") })),
     "league-run-record/tiny": leagueRun,
     "league-run-record/self-play-only": leagueRunWith((r) => {
@@ -632,6 +633,7 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "league-run-record/no-plan-hash": leagueRunWith((r) => delete r.plan_hash),
     "training-run-config/extra-field": runConfigWith((c) => (c.notes = "x")),
     "training-run-config/fractional-rate": runConfigWith((c) => (runSection(c, "ppo").learning_rate_micro = 0.5)),
+    "training-run-config/zero-target-kl": runConfigWith((c) => (runSection(c, "ppo").target_kl_micro = 0)),
     "training-run-config/zero-games": runConfigWith((c) => (runSection(c, "generation").games = 0)),
     "training-run-config/unknown-device": runConfigWith((c) => (runSection(c, "learner").device = "tpu")),
     "training-run-config/no-ppo": runConfigWith((c) => delete c.ppo),

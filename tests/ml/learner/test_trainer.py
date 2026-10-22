@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import dataclasses
 import math
 import os
 import random
@@ -246,3 +247,91 @@ def test_the_configured_loss_weights_reach_the_loss(monkeypatch: pytest.MonkeyPa
     learner(config).train(trajs(config))
     assert seen
     assert set(seen) == {LossWeights(clip=0.15, value_coef=0.7, entropy_coef=0.03)}
+
+
+# --- the KL early stop (ADR-010 erratum A1, item 1) ---
+
+
+def _scripted_kl(monkeypatch: pytest.MonkeyPatch, values: list[float]) -> None:
+    """Make the loss report these approximate KLs, one per minibatch, in order."""
+    real = ppo_loss
+    queue = iter(values)
+
+    def loss(*args: Any, **kwargs: Any) -> Any:
+        parts = real(*args, **kwargs)
+        return dataclasses.replace(parts, approx_kl=torch.tensor(next(queue)))
+
+    monkeypatch.setattr("areneon_ml.learner.trainer.ppo_loss", loss)
+
+
+def _battle_only(config: RunConfig) -> list[Trajectory]:
+    return [t for t in trajs(config) if t.role == "battle"]
+
+
+def test_the_stop_fires_after_the_epoch_whose_mean_kl_is_above_the_target(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = tiny_config(epochs=4, target_kl_micro=30000)
+    assert config.ppo.target_kl == 0.03
+    # 55 decisions in minibatches of 16: 4 per epoch. Means: 0.01, 0.04 (above 0.03), ...
+    _scripted_kl(monkeypatch, [0.01] * 4 + [0.05, 0.07, 0.01, 0.03] + [0.9] * 8)
+    report = learner(config).train(_battle_only(config)).roles["battle"]
+    assert (report.epochs_run, report.kl_stopped) == (2, True)
+    assert report.optimiser_steps == 8
+
+
+def test_a_mean_equal_to_the_target_does_not_stop_and_the_last_epoch_still_checks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = tiny_config(epochs=2, target_kl_micro=500000)
+    _scripted_kl(monkeypatch, [0.25, 0.75, 0.5, 0.5] * 2)
+    equal = learner(config).train(_battle_only(config)).roles["battle"]
+    assert (equal.epochs_run, equal.kl_stopped) == (2, False)
+    _scripted_kl(monkeypatch, [0.1] * 4 + [0.9] * 4)
+    last = learner(config).train(_battle_only(config)).roles["battle"]
+    assert (last.epochs_run, last.kl_stopped) == (2, True)
+
+
+def test_the_stop_is_reproducible_and_skips_the_later_shuffles() -> None:
+    config = tiny_config(epochs=4, target_kl_micro=1)
+    work = _battle_only(config)
+    first, second = learner(config), learner(config)
+    one, two = first.train(work), second.train(work)
+    assert one.as_dict() == two.as_dict()
+    assert weights_id(first) == weights_id(second)
+    report = one.roles["battle"]
+    assert (report.epochs_run, report.kl_stopped) == (1, True)
+    assert report.optimiser_steps == math.ceil(55 / 16)
+    full = learner(tiny_config(epochs=4))
+    full.train(work)
+    assert not first.generator.get_state().equal(full.generator.get_state())
+
+
+def test_a_target_never_reached_runs_every_epoch_and_reports_it() -> None:
+    config = tiny_config(target_kl_micro=1_000_000_000)
+    report = learner(config).train(trajs(config))
+    assert report.as_dict()["battle"]["epochs_run"] == 2
+    assert report.as_dict()["battle"]["kl_stopped"] is False
+    assert report.as_dict()["preview"]["epochs_run"] == 2
+
+
+def test_without_a_target_the_report_keys_are_omitted_and_the_weights_are_unchanged() -> None:
+    config = tiny_config()
+    assert config.ppo.target_kl is None
+    plain = learner(config)
+    report = plain.train(trajs(config))
+    for role in ROLES:
+        assert set(report.as_dict()[role]) == {
+            "steps",
+            "optimiser_steps",
+            "policy_loss",
+            "value_loss",
+            "entropy",
+            "clip_fraction",
+            "approx_kl",
+        }
+    # a target that never fires trains the same weights as no target
+    never = tiny_config(target_kl_micro=1_000_000_000)
+    other = learner(never)
+    other.train(trajs(never))
+    assert weights_id(other) == weights_id(plain)
