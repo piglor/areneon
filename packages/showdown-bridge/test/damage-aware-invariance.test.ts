@@ -100,6 +100,7 @@ const battles = corpus.slice(0, 3);
 describe("hidden-information invariance (ADR-018 section 3)", () => {
   it("makes the same choices at every request whose player channel is the same, whatever the opponent holds unrevealed", async () => {
     let compared = 0;
+    let moves = 0;
     for (const battle of battles) {
       const other = mutated(battle.teams.p2);
       // the pair really differs in what the opponent holds
@@ -110,10 +111,13 @@ describe("hidden-information invariance (ADR-018 section 3)", () => {
       const pairs = comparable(a.record, b.record);
       for (const { seq, first, second } of pairs) expect(second, `${battle.id} request ${seq}`).toBe(first);
       compared += pairs.length;
+      moves += pairs.filter((pair) => !pair.first.startsWith("team ")).length;
       // the baseline really scored these requests (not a vacuous equal)
       expect(a.report.counts.scored_decisions).toBeGreaterThan(0);
     }
     expect(compared).toBeGreaterThanOrEqual(6);
+    // not only Team Preview: scored battle requests with an equal channel
+    expect(moves).toBeGreaterThanOrEqual(3);
   }, 180_000);
 
   it("has teeth: a baseline given the opponent's real team makes different choices at such a request", async () => {

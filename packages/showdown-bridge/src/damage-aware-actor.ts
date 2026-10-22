@@ -1,6 +1,6 @@
 // The damage-aware scripted baseline `damage-aware@<commit>` (ADR-018 sections 1 to 5), an A1 `Actor`.
 //
-// At each Team Battle request it scores every candidate of the player's own legal choice set by the
+// At each battle request it scores every candidate of the player's own legal choice set by the
 // pinned engine's own damage and turn order, asked through the mechanics probe (ADR-016), and plays
 // the best non-pending one. It sees only what the player may see: the player's own channel (read by
 // the shared public-state reader), the player's own team from `ActorContext.team` and the request.
@@ -111,7 +111,11 @@ const text = (value: Json, what: string): string => {
 };
 
 /** Target types of a request's move, by what the scorer does with them (the engine's `MoveTarget` names; any other fails closed). */
+// The id strings below (target types, the four side conditions, Trick Room, the Terrain effect type, the Status
+// category, `fnt`) are the field names of the probe's `DamageState` contract and of the engine's own data, not
+// rules of this module. An id the engine's request carries that is in none of the target sets fails closed.
 const SINGLE = new Set(["normal", "any", "adjacentFoe"]);
+const RANDOM_FOE = new Set(["randomNormal"]);
 const EVERY_FOE = new Set(["allAdjacentFoes", "allAdjacent"]);
 const NO_FOE = new Set(["self", "adjacentAlly", "adjacentAllyOrSelf", "allySide", "allyTeam", "allies", "foeSide", "all", "scripted"]);
 /** The probe's refusal of an action it cannot order (`mechanics-speed.ts`): the one speed-order failure that is a known limit, not a defect. */
@@ -355,17 +359,18 @@ export function damageAwareActor(options: DamageAwareOptions): DamageAwareActor 
       const data = dex.moves.get(id);
       let value = 0;
       if (data.exists && data.category !== "Status") {
+        // A locked move (Recharge, the second turn of Dig) is sent with no target type: it is one fixed part of every candidate, so it scores 0.
         const type = typeof slotMove.target === "string" ? slotMove.target : undefined;
         let targets: Foe[] = [];
         if (type !== undefined && SINGLE.has(type)) {
           if (part.target === null) throw new DamageAwareError("a move that needs a target has none");
           targets = foesNow().filter((foe) => foe.loc === part.target);
         } else if (type !== undefined && EVERY_FOE.has(type)) targets = foesNow();
-        else if (type !== undefined && type === "randomNormal") targets = foesNow();
+        else if (type !== undefined && RANDOM_FOE.has(type)) targets = foesNow();
         else if (type !== undefined && !NO_FOE.has(type)) throw new DamageAwareError("a move target type the baseline does not know");
         // A spread move is the sum of its single-target values (v1); a random target is the mean over the foes.
         const sum = targets.reduce((total, foe) => total + against(slot, id, part.mega, foe), 0);
-        value = type === "randomNormal" && targets.length > 0 ? Math.floor(sum / targets.length) : sum;
+        value = type !== undefined && RANDOM_FOE.has(type) && targets.length > 0 ? Math.floor(sum / targets.length) : sum;
       }
       scores.set(key, value);
       return value;

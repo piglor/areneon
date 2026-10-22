@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { beforeAll, describe, expect, it } from "vitest";
 import { actorRule, NoCandidateError } from "../src/actor-rule.ts";
 import { parseJointChoice } from "../src/damage-aware-choice.ts";
@@ -312,6 +313,12 @@ describe("epsilon_ppm (ADR-018 section 5)", () => {
 
   it("needs the seat's seed when epsilon_ppm is above 0", () => {
     expect(() => newActor({ config: { ...config, epsilon_ppm: 1 } })).toThrow(DamageAwareError);
+  });
+});
+
+describe("coupling to the probe and the engine", () => {
+  it("names the probe's known speed-order limit as the probe words it", () => {
+    expect(readFileSync(new URL("../src/mechanics-speed.ts", import.meta.url), "utf8")).toContain("the action needs more than a move and a Mega Evolution");
   });
 });
 
