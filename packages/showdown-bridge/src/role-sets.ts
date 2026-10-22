@@ -4,9 +4,13 @@
 // (MIT). Each entry names a species and its sets: a role, a move pool and the
 // abilities the role plays, as display names. This module maps every name to an
 // engine id through the engine-data table and checks the result against the
-// team vocabulary: a species must be in the roster, and an ability and a move
-// must be ones the pinned validator accepts on that species (the roster lists
-// exactly those). Anything that does not resolve refuses the whole export; the
+// team vocabulary: a species must be in the roster, and a move must be one the
+// pinned validator accepts on that species (the roster lists exactly those).
+// An ability must be one the roster lists too, except for a forme that needs a
+// held item (a Mega forme): its sets name the abilities of the forme it comes
+// from, the form Team Preview shows, so a consumer plays such an entry as that
+// base forme plus the stone, never as a literal Mega forme with those abilities.
+// Limit: JSON.parse keeps the last of two equal species keys in the source. Anything that does not resolve refuses the whole export; the
 // table is never partial. The random-battle level, preferred types and Tera
 // types are dropped, and no role logic is ported: nothing turns a role into an
 // item or a spread. Every list is sorted, and the export is hashed
@@ -73,7 +77,8 @@ export function roleSetSourcePath(format: SimFormat): string {
 }
 
 /**
- * Export the role sets of `formatId` from the pinned engine checkout at `dir`.
+ * Export the role sets of `formatId` from the pinned engine checkout at `dir`
+ * (the checkout `engine` was loaded from; the default, and a doctored copy in a test).
  * `vocabulary` is the team vocabulary of the same format and `table` its
  * engine-data table (exported here when omitted). Refuses a missing or
  * malformed source, a name that does not resolve, a species outside the
@@ -109,7 +114,7 @@ export function exportRoleSets(engine: Engine, formatId: string, vocabulary: Tea
   /** A Mega forme's sets name the abilities of the forme it comes from (the form a player's Team Preview shows): the roster entries of the formes its stone changes into it. */
   const preMegaAbilities = (id: string, item: string): string[] => {
     const stone = dex.items.get(item).megaStone;
-    if (typeof stone !== "object" || stone === null || Array.isArray(stone)) return bad(`species ${id}: item ${item} names no Mega forme map`);
+    if (typeof stone !== "object" || stone === null || Array.isArray(stone)) return bad(`species ${id}: item ${item} names no Mega forme map (a roster entry with a required item must be a Mega forme)`);
     const mega = data.species.find((x) => x.id === id)?.name;
     return Object.entries(stone as Record<string, unknown>)
       .filter(([, to]) => to === mega)
