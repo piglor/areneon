@@ -28,6 +28,15 @@
   "scope": {
     "query_kinds": [
       {
+        "kind": "damage",
+        "gap_ids": [
+          "damage-formula",
+          "level",
+          "mega-evolution",
+          "stat-points"
+        ]
+      },
+      {
         "kind": "stats",
         "gap_ids": [
           "level",

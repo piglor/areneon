@@ -33,7 +33,7 @@ const edited = (change: (copy: MechanicsConfig) => void): MechanicsConfig => {
 describe("the committed config", () => {
   it("reads, and its hash is the SHA-256 of its JCS bytes", () => {
     expect(mechanicsConfigHash(config)).toBe(sha256Hex(jcs(config as unknown as Json)));
-    expect(config.scope.query_kinds.map((entry) => entry.kind)).toEqual(["stats"]);
+    expect(config.scope.query_kinds.map((entry) => entry.kind)).toEqual(["damage", "stats"]);
   });
 
   it("passes the check against the pinned engine and the gap ledger, for every config in config/mechanics", () => {
@@ -59,7 +59,7 @@ describe("readMechanicsConfig", () => {
     ["scope.query_kinds", (c: MechanicsConfig) => void c.scope.query_kinds.push({ kind: "stats", gap_ids: [] })],
     ["ko_blockers.abilities", (c: MechanicsConfig) => void (c.ko_blockers.abilities = ["sturdy", "disguise"])],
     ["ko_blockers.items", (c: MechanicsConfig) => void (c.ko_blockers.items = ["focussash", "focussash"])],
-    ["gap_ids of stats", (c: MechanicsConfig) => void ((c.scope.query_kinds[0] as { gap_ids: string[] }).gap_ids = ["stat-points", "level"])],
+    ["gap_ids of stats", (c: MechanicsConfig) => void ((c.scope.query_kinds[1] as { gap_ids: string[] }).gap_ids = ["stat-points", "level"])],
   ] as [string, (c: MechanicsConfig) => void][])("refuses %s that is not sorted and unique", (name, change) => {
     expect(() => readMechanicsConfig(edited(change))).toThrow(`${name} must be sorted and unique`);
   });
@@ -82,7 +82,7 @@ describe("checkMechanicsConfig names every problem", () => {
     const problems = checkMechanicsConfig(
       engine,
       edited((c) => {
-        (c.scope.query_kinds[0] as { gap_ids: string[] }).gap_ids = ["no-such-gap"];
+        (c.scope.query_kinds[1] as { gap_ids: string[] }).gap_ids = ["no-such-gap"];
         c.ko_blockers = { abilities: ["zzzability"], items: ["zzzitem"] };
         c.scenario.removed_rule_keys = c.scenario.removed_rule_keys.slice(1);
       }),

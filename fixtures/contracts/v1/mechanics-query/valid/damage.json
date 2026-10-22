@@ -5,7 +5,7 @@
   "query": {
     "kind": "damage",
     "attacker": {
-      "set": "Venusaur @ Leftovers  \nAbility: Overgrow  \nLevel: 50  \nEVs: 32 HP / 2 Def / 32 SpA  \nModest Nature  \n- Giga Drain  \n- Sludge Bomb  \n- Protect  \n- Sleep Powder  \n\n",
+      "set": "Garchomp  \nAbility: Rough Skin  \nLevel: 50  \nEVs: 32 HP / 32 Atk / 2 Spe  \nAdamant Nature  \n- Dragon Claw  \n- Rock Slide  \n- Slash  \n\n",
       "boosts": {
         "atk": 0,
         "def": 0,
@@ -18,7 +18,7 @@
       "mega": false
     },
     "defender": {
-      "set": "Tyranitar @ Smooth Rock  \nAbility: Sand Stream  \nLevel: 50  \nEVs: 32 HP / 32 Atk / 2 SpD  \nAdamant Nature  \n- Rock Slide  \n- Crunch  \n- Low Kick  \n- Stone Edge  \n\n",
+      "set": "Arcanine  \nAbility: Intimidate  \nLevel: 50  \nEVs: 32 HP / 32 SpA  \nModest Nature  \n- Heat Wave  \n- Protect  \n\n",
       "boosts": {
         "atk": 0,
         "def": 0,
@@ -30,7 +30,7 @@
       "hp": null,
       "mega": false
     },
-    "move": "protect",
+    "move": "dragonclaw",
     "state": {
       "weather": null,
       "terrain": null,
