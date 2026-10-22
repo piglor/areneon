@@ -49,6 +49,31 @@ class GenerationSettings:
 
 
 @dataclass(frozen=True)
+class LinearSchedule:
+    """``learning_rate_schedule`` of kind ``linear`` (ADR-010 erratum A1), in exact integers."""
+
+    start_micro: int
+    final_micro: int
+    generations: int
+
+    def rate_micro(self, update: int) -> int:
+        """The rate of learner update ``update`` (from 0) in millionths.
+
+        ``start + trunc((final - start) * min(t, generations) / generations)``: integer
+        arithmetic, truncation toward zero, exactly ``final`` from update ``generations`` on.
+        """
+        if update < 0:
+            raise RunConfigError("a learner update index counts from 0")
+        delta = (self.final_micro - self.start_micro) * min(update, self.generations)
+        step = abs(delta) // self.generations
+        return self.start_micro + (step if delta >= 0 else -step)
+
+    def rate(self, update: int) -> float:
+        """``rate_micro`` as the optimiser's float: the one division by 10^6 for the schedule."""
+        return self.rate_micro(update) / MICRO
+
+
+@dataclass(frozen=True)
 class PPOSettings:
     epochs: int
     minibatch_size: int
@@ -64,6 +89,8 @@ class PPOSettings:
     adam_eps: float
     normalize_advantages: bool
     target_kl: float | None
+    # None for an absent or ``constant`` schedule: the optimiser keeps ``learning_rate``
+    schedule: LinearSchedule | None
 
 
 @dataclass(frozen=True)
@@ -88,6 +115,13 @@ class RunConfig:
     team_dataset: bool
     raw: dict[str, Any]
     hash: str
+
+
+def _schedule(ppo: dict[str, Any]) -> LinearSchedule | None:
+    found = ppo.get("learning_rate_schedule")
+    if found is None or found["kind"] == "constant":
+        return None
+    return LinearSchedule(ppo["learning_rate_micro"], found["final_micro"], found["generations"])
 
 
 def read_run_config(raw: object) -> RunConfig:
@@ -141,6 +175,7 @@ def read_run_config(raw: object) -> RunConfig:
             adam_eps=ppo["adam_eps_nano"] / NANO,
             normalize_advantages=ppo["normalize_advantages"],
             target_kl=ppo["target_kl_micro"] / MICRO if "target_kl_micro" in ppo else None,
+            schedule=_schedule(ppo),
         ),
         device=raw["learner"]["device"],
         threads=raw["learner"]["threads"],

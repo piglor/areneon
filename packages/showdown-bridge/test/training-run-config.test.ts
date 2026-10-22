@@ -35,6 +35,20 @@ describe("the TrainingRunConfig reader (ADR-010 §5)", () => {
     expect(() => readTrainingRunConfig({ ...tiny, ppo: { ...tiny.ppo, target_kl_micro: 0 } })).toThrow(TrainingRunConfigError);
   });
 
+  it("reads the optional learning-rate schedule and refuses a malformed one (ADR-010 erratum A1)", () => {
+    expect(readTrainingRunConfig(sample("tiny")).ppo.learning_rate_schedule).toBeUndefined();
+    expect(readTrainingRunConfig(sample("constant-schedule")).ppo.learning_rate_schedule).toEqual({ kind: "constant" });
+    expect(readTrainingRunConfig(sample("linear-schedule")).ppo.learning_rate_schedule).toEqual({
+      kind: "linear",
+      final_micro: 100,
+      generations: 4,
+    });
+    const tiny = sample("tiny") as { ppo: Record<string, unknown> };
+    for (const bad of [{ kind: "linear", final_micro: 100, generations: 0 }, { kind: "linear", final_micro: 100 }, { kind: "cosine" }, { kind: "constant", generations: 1 }]) {
+      expect(() => readTrainingRunConfig({ ...tiny, ppo: { ...tiny.ppo, learning_rate_schedule: bad } })).toThrow(TrainingRunConfigError);
+    }
+  });
+
   it("refuses a record the schema refuses, naming nothing it was not given", () => {
     expect(() => readTrainingRunConfig({ ...sample("tiny"), notes: "x" })).toThrow(TrainingRunConfigError);
     expect(() => readTrainingRunConfig(null)).toThrow(/invalid TrainingRunConfig/);
