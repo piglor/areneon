@@ -73,6 +73,7 @@ export {
   type TrainingSet,
   type TrainingStream,
   trainingExample,
+  writeTrainingStream,
 } from "./training-loader.ts";
 export { interimPoolSource, type PoolSource, runGenerationCli, UsageError } from "./generation-cli.ts";
 export { GenerationError, type TrainingPool as GenerationTeamPool, playGeneration } from "./league-generation.ts";

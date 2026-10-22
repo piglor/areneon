@@ -304,8 +304,8 @@ class Loop:
             league = self._check_league_run(work, generation, pair, summary)
             if sha256_hex(jcs(training_set)) != summary.get("training_set_hash"):
                 raise LoopError("the TrainingSet differs from the hash the simulator side reported")
-            stream = (work / "stream.jsonl").read_text(encoding="utf-8")
-            found = trajectories(stream, training_set, self._encoders, pair)
+            # The stream goes in by path: a generation's is over a gigabyte (#998).
+            found = trajectories(work / "stream.jsonl", training_set, self._encoders, pair)
         if self.device.type == "cuda":
             torch.cuda.reset_peak_memory_stats(self.device)
         with timing.phase("train"):

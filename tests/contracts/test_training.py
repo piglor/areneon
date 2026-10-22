@@ -9,7 +9,12 @@ from typing import Any
 
 import pytest
 from areneon_contracts.contracts import ContractError, jcs, sha256_hex
-from areneon_contracts.training import TrainingStreamError, read_stream
+from areneon_contracts.training import (
+    TrainingStreamError,
+    check_stream_file,
+    read_stream,
+    stream_lines,
+)
 
 SAMPLES = Path(__file__).resolve().parents[2] / "fixtures/contracts/v1"
 
@@ -166,3 +171,60 @@ def test_the_corpus_examples_carry_candidates_and_an_outcome() -> None:
     for example in EXAMPLES:
         assert example["outcome"] in ("win", "loss", "tie")
         assert example["choice"] in [c["choice"] for c in example["candidates"]]
+
+
+# The file reader (#998): the same checks as read_stream, on a stream file read in chunks.
+
+
+def check_file(tmp_path: Path, stream: str, manifest: dict[str, Any]) -> None:
+    path = tmp_path / "stream.jsonl"
+    path.write_bytes(stream.encode("utf-8"))
+    check_stream_file(path, manifest)
+
+
+def test_the_file_reader_accepts_what_the_string_reader_accepts(tmp_path: Path) -> None:
+    check_file(tmp_path, STREAM, manifest_for(STREAM))
+    lines = list(stream_lines(tmp_path / "stream.jsonl"))
+    assert [json.loads(line) for line in lines] == EXAMPLES
+    assert "".join(lines) == STREAM
+
+
+def test_the_file_reader_reads_in_chunks(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("areneon_contracts.training.CHUNK_BYTES", 7)
+    check_file(tmp_path, STREAM, manifest_for(STREAM))
+
+
+def test_the_file_reader_refuses_what_the_string_reader_refuses(tmp_path: Path) -> None:
+    other = {**EXAMPLES[0], "episode_hash": "0" * 64}
+    foreign = stream_of(jcs(other).decode("utf-8"))
+    private = {
+        **EXAMPLES[0],
+        "observation": {**EXAMPLES[0]["observation"], "data_class": "private"},
+    }
+    private_stream = stream_of(jcs(private).decode("utf-8"))
+    cases: list[tuple[str, dict[str, Any], str]] = [
+        (STREAM + "\n", manifest_for(STREAM), "stream_sha256"),
+        (STREAM.rstrip("\n"), manifest_for(STREAM.rstrip("\n")), "newline"),
+        (STREAM, manifest_for(STREAM, examples=3), "2 lines, its TrainingSet says 3"),
+        (foreign, manifest_for(foreign), "line 1: its Episode is not in the TrainingSet"),
+        (stream_of("not json"), manifest_for(stream_of("not json")), "line 1"),
+        (
+            STREAM,
+            manifest_for(STREAM, episode_hashes=sorted([EXAMPLES[0]["episode_hash"], "f" * 64])),
+            f"no example of Episode {'f' * 64}",
+        ),
+        (private_stream, manifest_for(private_stream), "says synthetic, its examples are private"),
+        (STREAM, manifest_for(STREAM, episode_hashes=["b" * 64, "a" * 64]), "must be sorted"),
+    ]
+    for stream, manifest, message in cases:
+        with pytest.raises(TrainingStreamError, match=message):
+            check_file(tmp_path, stream, manifest)
+
+
+def test_the_file_reader_refuses_bytes_that_are_not_utf8(tmp_path: Path) -> None:
+    bad = b"\xff\xfe\n"
+    path = tmp_path / "stream.jsonl"
+    path.write_bytes(bad)
+    manifest = {**SET, "examples": 1, "stream_sha256": sha256_hex(bad)}
+    with pytest.raises(TrainingStreamError, match="not UTF-8"):
+        check_stream_file(path, manifest)

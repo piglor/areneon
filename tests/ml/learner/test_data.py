@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 import random
+from pathlib import Path
 
 import pytest
 from areneon_ml.learner.data import LearnerDataError, trajectories
@@ -94,3 +95,17 @@ def test_two_outcomes_in_one_episode_are_refused() -> None:
     text, manifest = stream_of(examples)
     with pytest.raises(LearnerDataError, match="two outcomes"):
         trajectories(text, manifest, encoders(), POLICY)
+
+
+def test_a_stream_file_gives_the_trajectories_of_its_text(tmp_path: Path) -> None:
+    text, manifest = make_stream([(0, "p1"), (0, "p2")])
+    path = tmp_path / "stream.jsonl"
+    path.write_text(text, encoding="utf-8")
+    from_text = trajectories(text, manifest, encoders(), POLICY)
+    from_file = trajectories(path, manifest, encoders(), POLICY)
+    assert [(t.role, t.score, len(t.steps)) for t in from_file] == [
+        (t.role, t.score, len(t.steps)) for t in from_text
+    ]
+    path.write_text(text + "\n", encoding="utf-8")
+    with pytest.raises(LearnerDataError, match="stream_sha256"):
+        trajectories(path, manifest, encoders(), POLICY)

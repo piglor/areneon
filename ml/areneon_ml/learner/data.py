@@ -16,10 +16,17 @@ steps, a refused pending choice among them, have zero immediate reward.
 from __future__ import annotations
 
 import json
+from collections.abc import Iterator
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
-from areneon_contracts.training import TrainingStreamError, read_stream
+from areneon_contracts.training import (
+    TrainingStreamError,
+    check_stream_file,
+    read_stream,
+    stream_lines,
+)
 
 from areneon_ml.learner.ppo import GAME_SCORE
 from areneon_ml.model.encoder import EncodedQuery, Encoder, EncoderSession
@@ -49,9 +56,16 @@ class Trajectory:
 
 
 def trajectories(
-    stream: str, manifest: dict[str, Any], encoders: dict[str, Encoder], behaviour_policy_id: str
+    stream: str | Path,
+    manifest: dict[str, Any],
+    encoders: dict[str, Encoder],
+    behaviour_policy_id: str,
 ) -> list[Trajectory]:
-    """The trajectories of a learner-ready stream played by ``behaviour_policy_id``."""
+    """The trajectories of a learner-ready stream played by ``behaviour_policy_id``.
+
+    ``stream`` is the text or, for a stream too large to hold as one string (#998), the path
+    of its file, which is checked and read line by line.
+    """
     if manifest.get("learner_ready") is not True:
         raise LearnerDataError("the TrainingSet is not learner_ready: the learner refuses it")
     if manifest.get("behaviour_policy_id") != behaviour_policy_id:
@@ -60,7 +74,10 @@ def trajectories(
             f"{manifest.get('behaviour_policy_id')!r}, not {behaviour_policy_id!r}"
         )
     try:
-        read_stream(stream, manifest)
+        if isinstance(stream, Path):
+            check_stream_file(stream, manifest)
+        else:
+            read_stream(stream, manifest)
     except TrainingStreamError as exc:
         raise LearnerDataError(str(exc)) from exc
     order: list[str] = []
@@ -70,7 +87,10 @@ def trajectories(
     # together, in request order, each log a prefix of the next. Anything else restarts.
     views: dict[tuple[str, str], tuple[IncrementalView, EncoderSession]] = {}
     current: str | None = None
-    for line in stream.split("\n")[:-1]:
+    lines: Iterator[str] = (
+        stream_lines(stream) if isinstance(stream, Path) else iter(stream.split("\n")[:-1])
+    )
+    for line in lines:
         example = json.loads(line)
         observation = example["observation"]
         role = observation["kind"]  # "preview" or "battle": the same words as the roles

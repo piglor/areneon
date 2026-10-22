@@ -14,6 +14,7 @@ import platform
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 import torch
@@ -54,7 +55,7 @@ def _synchronise(device: torch.device) -> None:
 class Recorded:
     """A TrainingSet stream and its manifest."""
 
-    stream: str
+    stream: str | Path
     manifest: dict[str, Any]
 
 

@@ -9,6 +9,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from areneon_contracts.contracts import sha256_hex
 from areneon_ml.loop import layout
 
 
@@ -236,3 +237,11 @@ def test_the_run_directory_and_its_entries_are_flushed_when_first_created(
     log.clear()
     layout.ensure_run_dirs(run_dir)  # nothing new to flush but the parents
     assert log == [str(run_dir), str(tmp_path)]
+
+
+def test_a_file_is_hashed_in_chunks_to_the_digest_of_its_bytes(tmp_path: Path) -> None:
+    data = bytes(range(256)) * 9000  # over one 1 MiB chunk
+    path = tmp_path / "big.bin"
+    path.write_bytes(data)
+    assert layout.sha256_file(path) == sha256_hex(data)
+    assert layout.hash_tree(tmp_path) == {"big.bin": sha256_hex(data)}

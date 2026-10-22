@@ -29,7 +29,8 @@ import { randomLegalActor } from "./random-legal.ts";
 import type { Actor, ForfeitCause, Player } from "./runner.ts";
 import { importPaste } from "./teams.ts";
 import { stampTeam, type SyntheticTeamHashes, teamHash } from "./team-class.ts";
-import { loadTrainingSet, type TrainingSet } from "./training-loader.ts";
+import { loadTrainingSet, type TrainingSet, writeTrainingStream } from "./training-loader.ts";
+import { type ChunkLimits } from "./chunked-file.ts";
 import type { TrainingRunConfig } from "./training-run-config.ts";
 import type { Episode } from "./episode.ts";
 
@@ -134,6 +135,15 @@ export interface GenerationOptions {
   /** The entries of the games of the other shards, played by other game processes. */
   others?: Promise<readonly PlayedEntry[]>;
   pool: TrainingPool;
+  /**
+   * Write the training stream to this file as the examples are made (in chunks; the stream
+   * is never one string: a generation of 800 games is over Node's string limit, #998), and
+   * keep none of it in the result. Without it the stream is built in memory, which is only
+   * for streams under the limit (tests). `writeGeneration` expects it at `<dir>/stream.jsonl`.
+   */
+  stream_path?: string;
+  /** Chunk size and the string-size limit (a test injects a small one). */
+  stream_limits?: ChunkLimits;
 }
 
 export interface GameRow {
@@ -162,7 +172,10 @@ export interface GenerationResult {
   episodes: Episode[];
   /** Episode hashes, in `episodes` order. */
   episode_hashes: string[];
-  stream: string;
+  /** The stream's bytes, only when it was built in memory (no `stream_path`); else null. */
+  stream: string | null;
+  /** The file the stream was written to (`GenerationOptions.stream_path`), else null. */
+  stream_path: string | null;
   set: TrainingSet;
   /** What the generation played, tied to the run config and the seed derivation (`league-run.json`). */
   run_record: LeagueRunRecord;
@@ -314,12 +327,15 @@ export async function playGeneration(options: GenerationOptions): Promise<Genera
   const episodes = entries.flatMap((entry) => entry.episodes);
   const own = episodes.filter((episode) => episode.provenance.behaviour_policy_id === policy_id);
   if (own.length === 0) throw new GenerationError("no Episode of the frozen pair: every game was forfeited");
-  const { stream, set } = await loadTrainingSet({
-    episodes: own,
-    evaluation_manifests: [],
-    known_synthetic: pool.known_synthetic,
-    behaviour_policy_id: policy_id,
-  });
+  const input = { episodes: own, evaluation_manifests: [], known_synthetic: pool.known_synthetic, behaviour_policy_id: policy_id };
+  const limits = options.stream_limits ?? {};
+  let stream: string | null = null;
+  let set: TrainingSet;
+  if (options.stream_path === undefined) {
+    ({ stream, set } = await loadTrainingSet(input, limits));
+  } else {
+    set = await writeTrainingStream(input, { ...limits, path: options.stream_path });
+  }
   const drawn = new Set<string>();
   for (const entry of plan) for (const player of ["p1", "p2"] as const) drawn.add(pool.hashes[entry.teams[player]] as string);
   return {
@@ -329,6 +345,7 @@ export async function playGeneration(options: GenerationOptions): Promise<Genera
     episodes,
     episode_hashes: await Promise.all(episodes.map((episode) => episodeHash(episode, nodeSha256))),
     stream,
+    stream_path: options.stream_path ?? null,
     set,
     run_record: await buildLeagueRunRecord({ config, generation, pair_policy_id: policy_id, plan, games: rows }),
     training_set_hash: await nodeSha256(new TextEncoder().encode(jcs(set as unknown as Json))),
@@ -340,7 +357,8 @@ export async function playGeneration(options: GenerationOptions): Promise<Genera
 /**
  * Write a generation's files under `dir` (created if needed), all canonical JSON
  * except the stream, which is the loader's own bytes:
- * `episodes/<episode hash>.json` (every played seat), `stream.jsonl`,
+ * `episodes/<episode hash>.json` (every played seat), `stream.jsonl` (already on disk when the
+ * generation was played with a `stream_path`, written in chunks),
  * `training-set.json`, `plan.json`, `league-run.json` (the LeagueRunRecord) and `generation.json` (the per-game rows and
  * the hashes the Python driver records). Nothing in them depends on the clock.
  */
@@ -349,7 +367,12 @@ export function writeGeneration(dir: string, result: GenerationResult): void {
   mkdirSync(episodes, { recursive: true });
   const put = (name: string, value: unknown): void => writeDurable(join(dir, name), `${jcs(value as Json)}\n`);
   result.episodes.forEach((episode, index) => put(`episodes/${result.episode_hashes[index]}.json`, episode));
-  writeDurable(join(dir, "stream.jsonl"), result.stream);
+  const streamPath = join(dir, "stream.jsonl");
+  if (result.stream_path === null) {
+    writeDurable(streamPath, result.stream as string);
+  } else if (result.stream_path !== streamPath) {
+    throw new GenerationError(`the stream was written to ${result.stream_path}, not to ${streamPath}`);
+  }
   put("training-set.json", result.set);
   put("plan.json", result.plan);
   put("league-run.json", result.run_record);

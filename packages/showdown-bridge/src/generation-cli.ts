@@ -6,7 +6,7 @@
 // usage or configuration error. Nothing is retried.
 
 import { spawn } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
@@ -15,6 +15,7 @@ import { loadEngine } from "./engine.ts";
 import type { Engine } from "./engine.ts";
 import { GenerationError, type PlayedEntry, playEntries, playGeneration, type Shard, type TrainingPool, trainingTeamPool, writeGeneration } from "./league-generation.ts";
 import { type Json, jcs } from "./canonical-json.ts";
+import { ChunkedFileWriter, readFileLines } from "./chunked-file.ts";
 import { resolveFormat } from "./formats.ts";
 import { PolicyWorkerClient } from "./policy-worker.ts";
 import { readTrainingRunConfig, runConfigHash, type TrainingRunConfig } from "./training-run-config.ts";
@@ -57,7 +58,7 @@ const FLAGS = {
   "policy-workers": { type: "string" },
   // Operational too: game processes, this one included, each with its own workers (default 1).
   "game-processes": { type: "string" },
-  // Internal: set on the game processes this one starts (`INDEX/COUNT`); such a process plays its slice and writes `shard.json`.
+  // Internal: set on the game processes this one starts (`INDEX/COUNT`); such a process plays its slice and writes `shard.jsonl`.
   shard: { type: "string" },
 } as const;
 
@@ -155,11 +156,13 @@ export async function runGenerationCli(
       // It plays the slice and leaves it for the process that started this one.
       const entries = await playEntries({ engine, config, generation, policy_id: need("policy-id"), client, peers, pool }, own);
       mkdirSync(need("out"), { recursive: true });
-      writeFileSync(join(need("out"), SHARD_FILE), `${jcs(entries as unknown as Json)}\n`);
+      writeShardFile(join(need("out"), SHARD_FILE), entries);
       return 0;
     }
     const others = Promise.all(children.map((child) => child.entries));
-    const result = await playGeneration({ engine, config, generation, policy_id: need("policy-id"), client, peers, pool, ...(own === undefined ? {} : { shard: own }), others: others.then((all) => all.flat()) });
+    // The stream goes straight to its file in chunks as the examples are made (#998).
+    mkdirSync(need("out"), { recursive: true });
+    const result = await playGeneration({ engine, config, generation, policy_id: need("policy-id"), client, peers, pool, stream_path: join(need("out"), "stream.jsonl"), ...(own === undefined ? {} : { shard: own }), others: others.then((all) => all.flat()) });
     writeGeneration(need("out"), result);
     print(jcs({ generation, run_config_hash: await runConfigHash(config), training_set_hash: result.training_set_hash, examples: result.set.examples }));
     return 0;
@@ -176,7 +179,26 @@ export async function runGenerationCli(
   }
 }
 
-const SHARD_FILE = "shard.json";
+/** The game process's result: one canonical JSON entry per line, so no string holds them all (#998). */
+const SHARD_FILE = "shard.jsonl";
+
+/** Write a game process's entries, one line each, flushed to disk. */
+export function writeShardFile(path: string, entries: readonly PlayedEntry[]): void {
+  const writer = new ChunkedFileWriter(path);
+  try {
+    for (const entry of entries) writer.write(`${jcs(entry as unknown as Json)}\n`);
+    writer.finish();
+  } finally {
+    writer.close();
+  }
+}
+
+/** Read a shard file back, a line at a time. */
+export function readShardFile(path: string): PlayedEntry[] {
+  const entries: PlayedEntry[] = [];
+  for (const line of readFileLines(path)) entries.push(JSON.parse(line) as PlayedEntry);
+  return entries;
+}
 
 /** A further game process: the entries it will have played, and a way to end it. */
 export interface ShardProcess {
@@ -198,7 +220,7 @@ export function startShard(script: string, args: readonly string[], out: string,
         return;
       }
       try {
-        resolve(JSON.parse(readFileSync(join(out, SHARD_FILE), "utf8")) as PlayedEntry[]);
+        resolve(readShardFile(join(out, SHARD_FILE)));
       } catch (error) {
         reject(new GenerationError(`game process ${index} left no readable result: ${(error as Error).message}`));
       }
