@@ -33,7 +33,11 @@ jobs:
             --publish 127.0.0.1:18080:8080 \
             --volume "$probe_dir:/www:ro" \
             busybox:1.37.0 httpd -f -p 8080 -h /www
-          result=$(curl --fail --silent --show-error --retry 10 \
-            --retry-connrefused --retry-delay 1 --max-time 2 \
-            http://127.0.0.1:18080/marker)
+          result=$(docker run --rm --network host busybox:1.37.0 \
+            wget --timeout=5 -qO- http://127.0.0.1:18080/marker)
           test "$result" = runner-docker-ok
+          printf 'runner-temp-ok\n' > "$RUNNER_TEMP/docker-marker"
+          result=$(docker run --rm \
+            --volume "$RUNNER_TEMP/docker-marker:/marker:ro" \
+            busybox:1.37.0 cat /marker)
+          test "$result" = runner-temp-ok
