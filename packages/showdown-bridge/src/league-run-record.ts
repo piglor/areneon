@@ -85,6 +85,10 @@ export const leagueRunRecordHash = (record: LeagueRunRecord): Promise<string> =>
 export async function checkLeagueRunRecord(record: LeagueRunRecord, config: TrainingRunConfig): Promise<void> {
   if (record.run_id !== config.seeds.run_key) throw new LeagueRunRecordError(`run_id ${record.run_id} is not the config's run key`);
   if (record.run_config_hash !== (await runConfigHash(config))) throw new LeagueRunRecordError("run_config_hash is not the config's hash");
+  // `baselines` exists exactly for the config's damage-aware entries, with the same policy ids and games.
+  const expected = config.generation.baseline_games.filter((baseline) => baseline.actor === "damage-aware" && baseline.games > 0).map((baseline) => `${baseline.policy_id}:${baseline.games}`).sort();
+  const actual = (record.baselines ?? []).map((entry) => `${entry.policy_id}:${entry.games}`).sort();
+  if (expected.join() !== actual.join()) throw new LeagueRunRecordError("baselines must list exactly the config's damage-aware baselines, with their games");
 }
 
 export interface LeagueRunFacts {

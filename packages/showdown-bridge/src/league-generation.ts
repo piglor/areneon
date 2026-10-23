@@ -228,7 +228,8 @@ interface BaselineSeat {
 function baselineActor(options: GenerationOptions, opponent: BaselineOpponent, plan: GamePlan, budget: LatencyBudget): BaselineSeat {
   const guarded = (actor: Actor): Actor => guardActor(actor, { role: "scripted", latency_budget: budget });
   if (opponent.actor !== "damage-aware") return { actor: guarded(opponent.actor === "actor-rule" ? firstLegal : randomLegalActor(plan.baseline_seed)) };
-  const setup = options.damage_aware as DamageAwareSetup;
+  const setup = options.damage_aware;
+  if (setup === undefined) throw new GenerationError("a damage-aware baseline game needs the baseline's records");
   // A fresh actor per game: it keeps the reader's state, the game's memo and counts. The seed is drawn from only when epsilon_ppm is above 0.
   const damage: DamageAwareActor = damageAwareActor({
     ...setup,

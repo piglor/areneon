@@ -78,6 +78,16 @@ def read_league_run_record(raw: object, config: RunConfig) -> LeagueRunRecord:
         raise LeagueRecordError(f"run_id {raw['run_id']} is not the config's run key")
     if raw["run_config_hash"] != config.hash:
         raise LeagueRecordError("run_config_hash is not the config's hash")
+    expected = sorted(
+        (b.policy_id, b.games)
+        for b in config.generation.baselines
+        if b.actor == "damage-aware" and b.games > 0
+    )
+    actual = sorted((e["policy_id"], e["games"]) for e in raw.get("baselines", []))
+    if expected != actual:
+        raise LeagueRecordError(
+            "baselines must list exactly the config's damage-aware baselines, with their games"
+        )
     return LeagueRunRecord(
         run_id=raw["run_id"],
         run_config_hash=raw["run_config_hash"],

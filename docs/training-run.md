@@ -70,8 +70,13 @@ another baseline) and the summed per-game counts (decisions, probe queries and
 runs, `unsupported` answers, reader and assumed-set fallbacks, `epsilon_plays`).
 A rising `unsupported_queries` or fallback count shows the baseline drifting
 towards `actor-rule`. Wall-clock time is not recorded in the run files (they stay
-byte-identical); the cost measured in ADR-018 slice 2 on a loaded shared
-machine was a median of about 170 ms per baseline decision (95th percentile
+byte-identical). The baseline reads the committed vocabulary of the one
+supported format (`gen9championsvgc2026regmc`) and refuses another. The record
+and the config must agree: `baselines` lists exactly the config's damage-aware
+entries; one identity hash per policy id per generation is enforced when the
+record is built (a record holds one hash per entry). The cost measured in
+ADR-018 slice 2 on a loaded shared machine (a pessimistic estimate, not a
+guarantee) was a median of about 170 ms per baseline decision (95th percentile
 about 350 ms, worst about 520 ms) and about 14 minutes for 200 games at 25
 decisions each, so size the share of games against it from that figure: a
 baseline game costs roughly 5 to 10 times a `random-legal` game in

@@ -82,6 +82,17 @@ describe("the LeagueRunRecord reader (ADR-009 §3)", () => {
     await expect(checkLeagueRunRecord({ ...record, run_id: "other" }, config())).rejects.toThrow(/run key/);
     await expect(checkLeagueRunRecord({ ...record, run_config_hash: "0".repeat(64) }, config())).rejects.toThrow(/config's hash/);
   });
+
+  it("ties baselines to the config's damage-aware entries, in both directions", async () => {
+    const damageConfig = readTrainingRunConfig(sample("training-run-config", "damage-aware"));
+    const withHash = { ...readLeagueRunRecord(sample("league-run-record", "damage-aware")), run_config_hash: await runConfigHash(damageConfig) };
+    const fitted = readLeagueRunRecord({ ...withHash, baselines: (withHash.baselines ?? []).map((entry) => ({ ...entry, games: 2 })), games: 8, played: 7, episodes: 14, opponents: withHash.opponents.map((o) => (o.games === 3 ? { ...o, games: 2 } : o)) });
+    await expect(checkLeagueRunRecord(fitted, damageConfig)).resolves.toBeUndefined();
+    const { baselines: _dropped, ...without } = fitted;
+    await expect(checkLeagueRunRecord(without, damageConfig)).rejects.toThrow(/exactly the config's damage-aware/);
+    const tiny = readLeagueRunRecord(sample("league-run-record", "tiny"));
+    await expect(checkLeagueRunRecord({ ...tiny, ...(fitted.baselines === undefined ? {} : { baselines: fitted.baselines }) }, config())).rejects.toThrow(/exactly the config's damage-aware/);
+  });
 });
 
 describe("buildLeagueRunRecord", () => {
