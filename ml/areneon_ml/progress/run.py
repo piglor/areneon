@@ -68,9 +68,9 @@ MIN_GAMES = 2
 SCHEDULE_EVERY = 5
 #: The working budget for one damage-aware match, in minutes (ADR-018 section 6).
 DEFAULT_DAMAGE_AWARE_BUDGET_MINUTES = 30
-#: The damage-aware baseline's match ids; its policy id is ``damage-aware@v1``.
 #: The baseline's policy id (the TS side derives it from ``damageAwarePolicyId("v1")``).
 DAMAGE_AWARE_POLICY = "damage-aware@v1"
+#: The damage-aware baseline's match ids.
 DAMAGE_AWARE_MATCHES = ("damage-aware-argmax", "damage-aware-sample")
 #: Says what a ``previous-*`` row is: the pair's own lineage, so it can cycle (ADR-017 section 2).
 SEEN_LABEL = "seen, same-lineage comparison: it can cycle"
