@@ -30,6 +30,9 @@ jobs:
 
   typescript:
     runs-on: [self-hosted, coolify]
+    env:
+      # The runner shares an 8 GB server with production services.
+      npm_config_workspace_concurrency: "1"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -79,7 +82,7 @@ jobs:
           echo "DUCKDB_BIN=$dir/duckdb" >> "$GITHUB_ENV"
       - run: pnpm lint
       - run: pnpm typecheck
-      - run: pnpm test
+      - run: pnpm test --maxWorkers=1
         env:
           # The real-worker test must run here, not be skipped.
           ARENEON_REQUIRE_PYTHON_WORKER: "1"
