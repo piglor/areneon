@@ -8,6 +8,7 @@ import {
   loadEngine,
   NoCandidateError,
   type RequestRecord,
+  randomBelow,
   randomLegal,
   randomLegalActor,
   RandomStateError,
@@ -188,5 +189,22 @@ describe("randomLegal in A1 battles", () => {
     expect(sha(a)).toBe(sha(b));
     const other = await play(() => randomLegalActor(23), () => randomLegalActor(22));
     expect(sha(other)).not.toBe(sha(a));
+  });
+});
+
+describe("randomBelow (the draw the damage-aware baseline's epsilon_ppm uses)", () => {
+  it("draws from the same Mulberry32 stream, uniformly in [0, n), pure and bounded", () => {
+    const first = randomBelow(10, 12345);
+    // the same stream as randomLegal: a 10-candidate set picks index first.value
+    expect(randomLegal(set(TEN), 12345).choice).toBe(String(first.value));
+    expect(randomBelow(10, 12345)).toEqual(first);
+    expect(first.value).toBeGreaterThanOrEqual(0);
+    expect(first.value).toBeLessThan(10);
+    expect(randomBelow(1, 5).value).toBe(0);
+    expect(randomBelow(2 ** 32, 5).value).toBeLessThan(2 ** 32);
+    expect(() => randomBelow(0, 1)).toThrow(RangeError);
+    expect(() => randomBelow(2 ** 32 + 1, 1)).toThrow(RangeError);
+    expect(() => randomBelow(1.5, 1)).toThrow(RangeError);
+    expect(() => randomBelow(10, -1)).toThrow(RandomStateError);
   });
 });

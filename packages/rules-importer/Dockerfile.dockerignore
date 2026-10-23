@@ -13,6 +13,8 @@
 !packages/rules-store/src
 !packages/showdown-bridge/package.json
 !packages/showdown-bridge/src
+!packages/public-state/package.json
+!packages/public-state/src
 !packages/schema/package.json
 !packages/schema/src
 !packages/schema/rules

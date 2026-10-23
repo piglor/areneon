@@ -1,5 +1,6 @@
 export { actorRule, NoCandidateError } from "./actor-rule.ts";
 export {
+  randomBelow,
   randomLegal,
   randomLegalActor,
   type RandomLegalState,
@@ -409,3 +410,20 @@ export {
   progressPairs,
   type ProgressStreams,
 } from "./progress-seed.ts";
+export { parseJointChoice, ChoiceParseError, type SlotPart } from "./damage-aware-choice.ts";
+export {
+  type DamageAwareActor,
+  type DamageAwareCounts,
+  DamageAwareError,
+  type DamageAwareOptions,
+  type DamageAwareReport,
+  damageAwareActor,
+} from "./damage-aware-actor.ts";
+export {
+  DAMAGE_AWARE_NAME,
+  type DamageAwareIdentity,
+  damageAwareIdentity,
+  damageAwareIdentityHash,
+  damageAwarePolicyId,
+} from "./damage-aware-identity.ts";
+export { actsBefore, canKnockOut, critChancePpm, damageValue, discounted, rollsValue } from "./damage-aware-score.ts";
