@@ -179,3 +179,12 @@ describe("a generated dataset directory with a training split", () => {
     expect(result.episodes.every((e) => e.data_class === "synthetic")).toBe(true);
   });
 });
+
+describe("a teacher run's pool request (no TrainingRunConfig)", () => {
+  it("gives the same pool as the run config that names the same dataset, and refuses another dataset hash", () => {
+    const config = configFor(SOURCE);
+    const request = { format_id: FORMAT, team_dataset: { path: SOURCE, dataset_hash: pinned(SOURCE) }, generation: { excluded_abilities: [] as string[] } };
+    expect(datasetTeamPool(engine, request).hashes).toEqual(datasetTeamPool(engine, config).hashes);
+    expect(() => datasetTeamPool(engine, { ...request, team_dataset: { path: SOURCE, dataset_hash: "0".repeat(64) } })).toThrow(GenerationError);
+  });
+});

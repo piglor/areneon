@@ -126,7 +126,7 @@ describe("choosing by damage (a stand-in probe with known answers)", () => {
     expect(unsupportedOrder.report().counts.unsupported_queries).toBeGreaterThan(0);
   });
 
-  it("counts a speed order the probe cannot queue as unsupported, and lets every other probe failure through", () => {
+  it("counts a speed order the probe cannot queue as unsupported, and falls back on any other probe refusal, and lets every other failure through", () => {
     const threatened = moveRequests().find((r) => foesAt(r).some((foe) => foe.mon.moves_revealed.some((m) => category(m) !== "Status"))) as Captured;
     const own = activeOf(threatened).flatMap((a) => a.moves.map((m) => m.id));
     const threat = foesAt(threatened).flatMap((foe) => foe.mon.moves_revealed).find((m) => category(m) !== "Status") as string;
@@ -135,9 +135,17 @@ describe("choosing by damage (a stand-in probe with known answers)", () => {
     const limit = newActor({ probe: stubProbe({ values, foeFirst: true, throwOn: { speed_order: new MechanicsProbeError("the action needs more than a move and a Mega Evolution") } }) });
     expect(run(threatened, limit)).toBe(plain);
     expect(limit.report().counts.unsupported_queries).toBeGreaterThan(0);
+    // a fractional priority (a Quick Claw holder) is the probe's other known limit
+    const fractional = newActor({ probe: stubProbe({ values, foeFirst: true, throwOn: { speed_order: new MechanicsProbeError("the action's priority is not a whole number") } }) });
+    expect(run(threatened, fractional)).toBe(plain);
+    expect(fractional.report().counts.unsupported_queries).toBeGreaterThan(0);
+    // Any other refusal of the probe no longer leaves the actor (it used to): the request falls back to actor-rule and is counted (#965 review of public-main-004).
     const other = newActor({ probe: stubProbe({ values, foeFirst: true, throwOn: { speed_order: new MechanicsProbeError("the Pokemon cannot Mega Evolve") } }) });
-    expect(() => run(threatened, other)).toThrow(MechanicsProbeError);
-    expect(() => run(threatened, newActor({ probe: stubProbe({ values, throwOn: { damage: new MechanicsProbeError("the action needs more than a move and a Mega Evolution") } }) }))).toThrow(MechanicsProbeError);
+    expect(run(threatened, other)).toBe(actorRule(threatened.request.legal as never));
+    expect(other.report().counts.probe_refusals).toBe(1);
+    const damage = newActor({ probe: stubProbe({ values, throwOn: { damage: new MechanicsProbeError("the action needs more than a move and a Mega Evolution") } }) });
+    expect(run(threatened, damage)).toBe(actorRule(threatened.request.legal as never));
+    expect(damage.report().counts.probe_refusals).toBe(1);
     expect(() => run(threatened, newActor({ probe: stubProbe({ values, foeFirst: true, throwOn: { speed_order: new Error("boom") } }) }))).toThrow("boom");
   });
 
@@ -319,6 +327,7 @@ describe("epsilon_ppm (ADR-018 section 5)", () => {
 describe("coupling to the probe and the engine", () => {
   it("names the probe's known speed-order limit as the probe words it", () => {
     expect(readFileSync(new URL("../src/mechanics-speed.ts", import.meta.url), "utf8")).toContain("the action needs more than a move and a Mega Evolution");
+    expect(readFileSync(new URL("../src/mechanics-speed.ts", import.meta.url), "utf8")).toContain("the action's priority is not a whole number");
   });
 });
 

@@ -13,12 +13,12 @@ import { parseArgs } from "node:util";
 import { engineDataHash, readEngineData } from "./engine-data.ts";
 import { loadEngine } from "./engine.ts";
 import type { Engine } from "./engine.ts";
-import { GenerationError, type PlayedEntry, playEntries, playGeneration, type Shard, type TrainingPool, trainingTeamPool, writeGeneration } from "./league-generation.ts";
+import { GenerationError, type PlayedEntry, type PoolRequest, playEntries, playGeneration, type Shard, type TrainingPool, trainingTeamPool, writeGeneration } from "./league-generation.ts";
 import { type Json, jcs } from "./canonical-json.ts";
 import { ChunkedFileWriter, readFileLines } from "./chunked-file.ts";
 import { resolveFormat } from "./formats.ts";
 import { PolicyWorkerClient } from "./policy-worker.ts";
-import { readTrainingRunConfig, runConfigHash, type TrainingRunConfig } from "./training-run-config.ts";
+import { readTrainingRunConfig, runConfigHash } from "./training-run-config.ts";
 
 /** An upper bound on `--policy-workers` and `--game-processes`: each is an operating system process. */
 const MAX_PARALLEL = 64;
@@ -28,7 +28,7 @@ export class UsageError extends Error {
 }
 
 /** Where a run's teams come from: the CLI asks for the pool once the config and the engine are read. */
-export type PoolSource = (engine: Engine, config: TrainingRunConfig) => TrainingPool;
+export type PoolSource = (engine: Engine, config: PoolRequest) => TrainingPool;
 
 /**
  * The pool of this package's own script: the interim fixture pool. A config

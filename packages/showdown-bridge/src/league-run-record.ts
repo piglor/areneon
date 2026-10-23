@@ -66,8 +66,8 @@ export function readLeagueRunRecord(value: unknown): LeagueRunRecord {
       const opponent = record.opponents.find((candidate) => candidate.opponent_policy_id === entry.policy_id);
       if (opponent === undefined || opponent.games !== entry.games) throw new LeagueRunRecordError("a baseline's games must equal its opponent entry's games");
       const { counts } = entry;
-      if (counts.probe_runs > counts.queries || counts.unsupported_queries > counts.queries) {
-        throw new LeagueRunRecordError("a baseline's probe runs and unsupported queries cannot exceed its queries");
+      if (counts.probe_runs > counts.queries || counts.unsupported_queries > counts.queries || (counts.probe_refusals ?? 0) > counts.queries) {
+        throw new LeagueRunRecordError("a baseline's probe runs, unsupported queries and probe refusals cannot exceed its queries");
       }
       if (counts.preview_decisions + counts.scored_decisions > counts.decisions) {
         throw new LeagueRunRecordError("a baseline's preview and scored decisions cannot exceed its decisions");
@@ -108,6 +108,7 @@ const COUNT_KEYS = ["decisions", "preview_decisions", "scored_decisions", "queri
 /** The baselines entries: per policy id, the games reported and the counts summed; one identity hash per policy id or the generation is refused. */
 function baselineEntries(reports: readonly BaselineGameReport[]): BaselineRecord[] {
   const byId = new Map<string, BaselineRecord>();
+  const refused = new Map<string, number>();
   for (const report of reports) {
     let entry = byId.get(report.policy_id);
     if (entry === undefined) {
@@ -117,7 +118,10 @@ function baselineEntries(reports: readonly BaselineGameReport[]): BaselineRecord
     if (entry.identity_hash !== report.identity_hash) throw new LeagueRunRecordError("one baseline policy id played with two identity hashes");
     entry.games += 1;
     for (const key of COUNT_KEYS) entry.counts[key] += report.counts[key];
+    refused.set(report.policy_id, (refused.get(report.policy_id) ?? 0) + (report.counts.probe_refusals ?? 0));
   }
+  // Written only above 0, so a run without refusals keeps the bytes it always had.
+  for (const [id, total] of refused) if (total > 0) (byId.get(id) as BaselineRecord).counts.probe_refusals = total;
   return [...byId.values()].sort((a, b) => (a.policy_id < b.policy_id ? -1 : 1));
 }
 

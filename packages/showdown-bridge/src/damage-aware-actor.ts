@@ -57,6 +57,8 @@ export interface DamageAwareCounts {
   assumed_set_fallbacks: number;
   /** Requests where `epsilon_ppm` made the baseline play a random candidate. */
   epsilon_plays: number;
+  /** Requests answered by the `actor-rule` candidate because the mechanics probe refused a query (a declared state the engine does not take). A high rate means the baseline plays like `actor-rule`. */
+  probe_refusals: number;
 }
 
 export interface DamageAwareReport {
@@ -120,6 +122,8 @@ const EVERY_FOE = new Set(["allAdjacentFoes", "allAdjacent"]);
 const NO_FOE = new Set(["self", "adjacentAlly", "adjacentAllyOrSelf", "allySide", "allyTeam", "allies", "foeSide", "all", "scripted"]);
 /** The probe's refusal of an action it cannot order (`mechanics-speed.ts`): the one speed-order failure that is a known limit, not a defect. */
 const UNQUEUEABLE = "the action needs more than a move and a Mega Evolution";
+/** The probe's other speed-order limit: a fractional priority (Quick Claw, Custap Berry and the like), which its integer contract cannot state. */
+const FRACTIONAL = "the action's priority is not a whole number";
 const CONDITION = /^(\d+)(?:\/(\d+))?(?: ([a-z]+))?$/;
 
 /** One Pokemon as a probe combatant, with the pieces a query needs. */
@@ -151,6 +155,13 @@ class ReaderGap extends Error {
 type DamageState = Extract<MechanicsQuery["query"], { kind: "damage" }>["state"];
 type Combatant = Extract<MechanicsQuery["query"], { kind: "damage" }>["attacker"];
 
+/** The probe raised a `MechanicsProbeError` for a query the baseline built: this request is answered by the `actor-rule` candidate. Never leaves the actor. */
+class ProbeRefusal extends Error {
+  override name = "ProbeRefusal";
+}
+/** The probe's words for a declared status the engine will not take; an unrevealed ability that blocks the status is then contradicted by it. */
+const STATUS_REFUSED = "the engine does not take that status";
+
 const PLAYERS: readonly Player[] = ["p1", "p2"];
 
 /**
@@ -173,7 +184,7 @@ export function damageAwareActor(options: DamageAwareOptions): DamageAwareActor 
   const dex = engine.sim.Dex.mod(engine.sim.Dex.formats.get(config.format_id).mod) as unknown as ScoreDex;
   const counts: DamageAwareCounts = {
     decisions: 0, preview_decisions: 0, scored_decisions: 0, queries: 0, probe_runs: 0,
-    unsupported_queries: 0, reader_fallbacks: 0, assumed_set_fallbacks: 0, epsilon_plays: 0,
+    unsupported_queries: 0, reader_fallbacks: 0, assumed_set_fallbacks: 0, epsilon_plays: 0, probe_refusals: 0,
   };
   const assume = options.assume ?? ((mon: PublicMon) => buildAssumedSet({ engine, vocabulary, config }, mon));
 
@@ -182,12 +193,12 @@ export function damageAwareActor(options: DamageAwareOptions): DamageAwareActor 
   let seat: Player | null = null;
   let fed = 0;
   // Probe results by query hash: a pure function of the query on a pin and config, so a memo changes no answer.
-  const memo = new Map<string, MechanicsResult | null>();
+  const memo = new Map<string, MechanicsResult | null | { refused: string }>();
 
   /**
    * One probe answer, or null for a speed order the probe cannot take as a query (an action that
-   * queues more than a move and a Mega Evolution, as Focus Punch does): counted as `unsupported`,
-   * so no discount is applied. Every other probe failure is a defect and propagates.
+   * queues more than a move and a Mega Evolution, as Focus Punch does, or one with a fractional priority): counted as `unsupported`,
+   * so no discount is applied. Any other `MechanicsProbeError` throws `ProbeRefusal` (the request falls back to `actor-rule`); every other failure is a defect and propagates.
    */
   function ask(value: MechanicsQuery): MechanicsResult | null {
     const query = readMechanicsQuery(value);
@@ -199,10 +210,16 @@ export function damageAwareActor(options: DamageAwareOptions): DamageAwareActor 
       try {
         result = probe({ engine, config: mechanics, snapshot }, query).result;
       } catch (error) {
-        if (!(error instanceof MechanicsProbeError) || query.query.kind !== "speed_order" || !error.message.startsWith(UNQUEUEABLE)) throw error;
-        memo.set(key, null);
-        counts.unsupported_queries += 1;
-        return null;
+        if (!(error instanceof MechanicsProbeError)) throw error;
+        if (query.query.kind === "speed_order" && [UNQUEUEABLE, FRACTIONAL].some((limit) => error.message.startsWith(limit))) {
+          // The probe's two known speed-order limits: no discount, counted as unsupported.
+          memo.set(key, null);
+          counts.unsupported_queries += 1;
+          return null;
+        }
+        // Any other refusal of a state the baseline declared: this request falls back to the actor-rule candidate.
+        memo.set(key, { refused: error.message });
+        throw new ProbeRefusal(error.message);
       }
       memo.set(key, result);
     }
@@ -210,6 +227,7 @@ export function damageAwareActor(options: DamageAwareOptions): DamageAwareActor 
       counts.unsupported_queries += 1;
       return null;
     }
+    if ("refused" in result) throw new ProbeRefusal(result.refused); // a memoised refusal (the query was asked again)
     if (result.kind === "refused") throw new DamageAwareError("the probe refused a set the baseline built");
     if (result.kind === "unsupported") counts.unsupported_queries += 1;
     return result;
@@ -282,6 +300,30 @@ export function damageAwareActor(options: DamageAwareOptions): DamageAwareActor 
     };
   }
 
+  /**
+   * The assumed set of an opponent's Pokemon, consistent with its public status: the status is a fact the
+   * player saw, so an unrevealed ability that blocks it (Limber on a paralysed Pokemon) cannot be the one
+   * the Pokemon has. Abilities are tried in the record's order and the engine, through a probe query that
+   * declares the status, says which one blocks it. Throws `AssumedSetError` when every ability does.
+   */
+  function assumedFor(mon: PublicMon, state: PublicState): AssumedSet {
+    let set = assume(mon);
+    if (mon.status === null || mon.ability !== null || options.assume !== undefined) return set;
+    const ruledOut: string[] = [];
+    for (;;) {
+      const fighter: Fighter = { paste: set.paste, hp: null, status: null, boosts: boostsOf(mon), mega: set.mega };
+      const move = dex.moves.get(set.set.moves[0] as string).id;
+      try {
+        damageOf(fighter, { ...fighter, status: mon.status }, move, state, false);
+        return set;
+      } catch (error) {
+        if (!(error instanceof ProbeRefusal) || !error.message.startsWith(STATUS_REFUSED)) return set; // another refusal is not about the ability: scoring meets it and falls back
+      }
+      ruledOut.push(set.set.ability);
+      set = buildAssumedSet({ engine, vocabulary, config }, mon, ruledOut);
+    }
+  }
+
   /** The opposing active Pokemon with their assumed sets, by choice location. Throws `AssumedSetError` when none can be built. */
   function foesOf(state: PublicState): Foe[] {
     const letters = Object.keys(state.opponent.slots).sort();
@@ -290,7 +332,7 @@ export function damageAwareActor(options: DamageAwareOptions): DamageAwareActor 
       const index = state.opponent.slots[letter];
       const mon = index === null || index === undefined ? undefined : state.opponent.roster[index];
       if (mon === undefined || mon.fainted) return;
-      const assumed = assume(mon);
+      const assumed = assumedFor(mon, state);
       const percent = assumed.shown_hp_percent;
       if (percent === null || percent === 0) return;
       const max = maxHpOf(assumed.paste);
@@ -438,6 +480,7 @@ export function damageAwareActor(options: DamageAwareOptions): DamageAwareActor 
     } catch (error) {
       if (error instanceof ReaderGap) counts.reader_fallbacks += 1;
       else if (error instanceof AssumedSetError) counts.assumed_set_fallbacks += 1;
+      else if (error instanceof ProbeRefusal) counts.probe_refusals += 1;
       else throw error;
       return actorRule(legal);
     }

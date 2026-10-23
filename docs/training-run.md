@@ -318,3 +318,75 @@ matches (600 games, from generation 1, `--previous-matches`) the same machine gi
 per generation: 48 games at generation 2 took 29 s (0.6 s per game) and a three-generation
 `--all` of 8 games per match took 2.5 minutes in all. The figure depends on the
 machine and on how long the games are.
+
+## 5. Teacher data for the cloning learner
+
+The cloning learner (ADR-019 track 1, `python -m areneon_ml.learner clone`) imitates
+the scripted baseline `damage-aware@v1` (ADR-018). `teacher-run.ts` plays that
+teacher and writes the one directory the learner needs: league Episodes of
+synthetic teams, a learner-ready `TrainingSet` whose behaviour policy is the
+teacher, and the teacher's identity. It is a teacher run of its own (its own
+`--run-key`), not a generation of a training run, and it needs no policy worker.
+
+```bash
+node packages/team-dataset/scripts/dataset-hash.ts --dir DATASET_DIR --format gen9championsvgc2026regmc   # the --dataset-hash value
+node packages/team-dataset/scripts/teacher-run.ts --run-key TEACHER-1 --format gen9championsvgc2026regmc \
+  --games 1500 --dataset DATASET_DIR --dataset-hash HEX64 --game-processes 8 --out .tmp/teacher/TEACHER-1
+```
+
+- **Who plays.** `--games N` are teacher-against-teacher games: both seats are the
+  teacher and both seats' Episodes train (2 Episodes per game). `--random-games` and
+  `--actor-rule-games` add games against `random-legal@v1` or `actor-rule@v1` for
+  diversity: the teacher takes one seat (it alternates), only its seat loads, and the
+  baseline seat's Episode is kept in `episodes/` but not loaded (the loader would refuse it); so "every Episode of the run" loads only in a run without baseline games. The other seat's policy
+  id is always in the Episode's collection record (`opponent_policy_id`).
+- **Teams.** From the dataset's dev and training records through the loop's own
+  `datasetTeamPool` (validation never; the dataset hash must match). Without
+  `--dataset` the interim fixture pool is used (tests, smoke runs).
+  `--excluded-abilities` defaults to `Illusion`, as the committed run configs do.
+- **Seeds.** `league-seed/1` generation 1 under the teacher run's key: the same key,
+  pool and commit give the same bytes, whatever `--game-processes` is (each process
+  plays the games `g` with `g mod N = i`). The battle seed is in `plan.json` and in each
+  Episode's `collection.seed` (the A1 Episode contract requires it); no
+  `TrainingExample` carries a seed or a draw.
+- **Exploration.** `--epsilon-ppm` (ADR-018 Q5, training use only; default 0) makes the
+  teacher play a random candidate with that chance. It is another baseline identity and
+  the policy id becomes `damage-aware@v1-eps<ppm>`.
+- **Budget.** `--battle-ms` and `--preview-ms` (default 30,000) are the teacher's
+  per-decision limit; an overrun, or any failure of the teacher, is a harness incident
+  and fails the run (exit 1, nothing is written under `--out`). The teacher's integer
+  counts (decisions, scored decisions, probe queries and runs, `unsupported_queries`,
+  `reader_fallbacks`, `assumed_set_fallbacks`, `epsilon_plays`, `probe_refusals`), per game and summed, are
+  in `teacher.json` with the baseline identity hash and the budget, so a teacher drifting
+  towards `actor-rule` is visible. A speed order the probe cannot state (an action that
+  queues more than a move, a fractional-priority item) is counted as `unsupported` and
+  scores no discount, as ADR-018 says. Any other refusal of the mechanics probe (a declared state the engine does not take) never ends a game: that request is answered by the `actor-rule` candidate and counted in `probe_refusals` (a high rate means the teacher plays like `actor-rule`; the same count is in a league run's `baselines` counts, written only when above 0). A public status contradicts an unrevealed assumed ability that would block it (Limber on a paralysed Pokemon), so the next ability of the record's order is assumed instead (found by public-main-004, game 604).
+
+The directory (built beside `--out` and renamed into place at the end):
+
+| File | Content |
+|---|---|
+| `episodes/<hash>.json` | every played seat's Episode (league collection, `run_id` the key) |
+| `stream.jsonl`, `training-set.json` | the teacher's examples and their `TrainingSet` (`learner_ready`, `synthetic`, `behaviour_policy_id` the teacher) |
+| `teacher.json` | (beside the plan; also `teacher_identity_hash` in `run.json`) policy id, baseline identity hash, epsilon, budget, counts |
+| `plan.json`, `run.json` | the plan (harness seeds, owner only) and the game rows, hashes and dataset hash |
+| `version-manifest.json` | `showdown_commit`, `format_id`, `regulation`, `ruleset_hash`, `format_rules_hash` |
+
+The printed line carries `training_set_hash` (SHA-256 of the TrainingSet's JCS bytes):
+that is `CloneRunConfig.teacher.training_set_hash`, with `teacher.behaviour_policy_id`
+the printed `teacher_policy_id`. Then:
+
+```bash
+.venv/bin/python -m areneon_ml.learner clone --config CLONE.json --stream-dir .tmp/teacher/TEACHER-1 \
+  --engine-data fixtures/showdown/gen9championsvgc2026regmc/engine-data.json \
+  --version-manifest .tmp/teacher/TEACHER-1/version-manifest.json --out .tmp/clone/CLONE-1
+```
+
+**Cost.** Measured on the shared development machine (CPU, one process, the fixtures
+dataset, while a validation evaluation ran): about 2.3 s per teacher-against-teacher
+game (5 to 12 turns, about 11 decisions per seat, so about 11 examples per Episode)
+and about 3 s of start-up. 12 games took 31 s in one process and 11 s with 4 game
+processes, byte-identical. So 1,500 games (3,000 Episodes, about 33,000 examples) take
+about 1 hour in one process and about 10 minutes with 8; the real dataset's pool load
+adds to the start-up. Memory grows with the number of Episodes held (the same as a
+generation of that many games).

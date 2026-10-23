@@ -89,12 +89,23 @@ describe("an engine draw is unsupported, never a guess", () => {
   });
 });
 
+// Hawlucha with Limber (the assumed set of public-main-004's game 604): its ability blocks paralysis.
+const LIMBER = "Hawlucha (F)  \nAbility: Limber  \nLevel: 50  \nEVs: 11 HP / 11 Atk / 11 Def / 11 SpA / 11 SpD / 11 Spe  \nHardy Nature  \n- Brick Break  \n\n";
+
+describe("a declared status is an observed fact", () => {
+  it("is taken whatever the type: Electric Pikachu declared paralysed (a Pokemon the type would shield) is computed", () => {
+    const speedCase = byId("choice-scarf-multiplies-by-1-5");
+    const { result } = probe({ ...speedCase, query: { ...speedCase.query, sides: [[{ set: "pikachu" }], speedCase.query.sides[1] as never] } }, (query) => (query.sides[0][0].status = "par"));
+    expect(result).toMatchObject({ kind: "computed" });
+  });
+});
+
 describe("a declared state or action the engine refuses is no result", () => {
   const refused: [string, string, (query: Record<string, any>) => void][] = [
     ["a weather that is not one", "not an engine weather", (query) => (query.state.weather = "tailwind")],
     ["a terrain that is not one", "not an engine terrain", (query) => (query.state.terrain = "sunnyday")],
     ["a status that is not one", "not an engine status", (query) => (query.sides[0][0].status = "sunnyday")],
-    ["a status the Pokemon cannot take", "refused the declared status", (query) => (query.sides[0][0].status = "par")],
+    ["a status the Pokemon's ability blocks", "refused the declared status", (query) => Object.assign(query.sides[0][0], { status: "par", set: LIMBER })],
     ["an HP above the maximum", "exceeds the maximum", (query) => (query.sides[0][0].hp = 9999)],
     ["a move the engine does not have", "does not have", (query) => (query.actions[0].move = "nosuchmove")],
     ["a switch that Mega Evolves", "cannot Mega Evolve", (query) => Object.assign(query.actions[0], { move: null, mega: true })],
