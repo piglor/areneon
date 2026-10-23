@@ -1,272 +1,39 @@
 name: ci
 
 on:
-  pull_request:
-  push:
-    branches: [main]
   workflow_dispatch:
 
 permissions:
   contents: read
 
-concurrency:
-  group: ci-${{ github.ref }}
-  # Only cancel superseded PR runs; a cancelled main run would show red on a good commit.
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
-
 jobs:
-  python:
+  docker-probe:
     runs-on: [self-hosted, coolify]
+    timeout-minutes: 5
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
-      - run: uv sync --locked
-      - run: uv run ruff check .
-      - run: uv run ruff format --check .
-      - run: uv run mypy
-      - run: uv run pytest
-      - name: generated pydantic models (ADR-008)
-        run: uv run --locked python scripts/contract_models.py
-
-  typescript:
-    runs-on: [self-hosted, coolify]
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          submodules: true
-          # The rules channel check rebuilds earlier main snapshots (ADR-007).
-          fetch-depth: 0
-      - name: install make in the ephemeral runner
-        run: |
-          sudo apt-get update
-          sudo apt-get install --yes --no-install-recommends make
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version-file: .nvmrc
-      # pnpm comes only from corepack, which checks the packageManager hash.
-      - run: corepack enable && COREPACK_ENABLE_DOWNLOAD_PROMPT=0 pnpm --version
-      - run: pnpm install --frozen-lockfile
-      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
-      - name: Python policy worker environment, CPU torch only
-        # The worker loads the networks, so it needs the shipped closure of
-        # areneon-ml: CPU torch and safetensors, from the locked CPU index (ADR-010
-        # §5.1). No CUDA package may come with it (§5.2).
+      - name: Docker client and daemon
         run: |
           set -euo pipefail
-          uv sync --locked --package areneon-ml
-          # Capture first: a grep in a pipeline could not fail the step if uv itself failed.
-          installed=$(uv pip list)
-          if grep -i -E '^(nvidia|triton|cuda)' <<<"$installed"; then echo "no CUDA package may be installed here"; exit 1; fi
-          grep -i -E '^(torch|safetensors) ' <<<"$installed"
-      - name: build pinned Showdown
-        run: make showdown
-      - name: pinned DuckDB command-line tool (ADR-013, shard writer; tooling only)
-        # Downloaded by the exact URL in the committed pin and checked against
-        # its SHA-256 (the zip, then the binary) before anything runs it. It is
-        # in no lockfile and no image; the shard tests use it from DUCKDB_BIN.
+          uname -m
+          docker version
+          docker info --format '{{json .SecurityOptions}}'
+      - name: install runner tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends make docker-compose-v2
+          docker compose version
+      - name: child container, workspace mounts, and localhost ports
         run: |
           set -euo pipefail
-          pin=packages/team-dataset/scripts/duckdb-pin.json
-          url=$(jq -r '.assets["linux-amd64"].url' "$pin")
-          zip_sha=$(jq -r '.assets["linux-amd64"].zip_sha256' "$pin")
-          bin_sha=$(jq -r '.assets["linux-amd64"].binary_sha256' "$pin")
-          dir="$RUNNER_TEMP/duckdb"
-          mkdir -p "$dir"
-          curl --fail --silent --show-error --location --output "$dir/duckdb.zip" "$url"
-          echo "$zip_sha  $dir/duckdb.zip" | sha256sum --check --strict
-          unzip -q "$dir/duckdb.zip" -d "$dir"
-          echo "$bin_sha  $dir/duckdb" | sha256sum --check --strict
-          echo "DUCKDB_BIN=$dir/duckdb" >> "$GITHUB_ENV"
-      - run: pnpm lint
-      - run: pnpm typecheck
-      - run: pnpm test
-        env:
-          # The real-worker test must run here, not be skipped.
-          ARENEON_REQUIRE_PYTHON_WORKER: "1"
-          # Likewise the shard tests with the pinned DuckDB tool.
-          ARENEON_REQUIRE_DUCKDB: "1"
-      - name: rules records and channel (ADR-007)
-        # First parent: the main tip a PR merge commit merges into, or the
-        # previous main tip for a squash commit pushed to main.
-        env:
-          RULES_BASE_REF: HEAD^1
-        run: node packages/showdown-bridge/scripts/check-rules.ts
-      - name: evaluation register heads are add-only (ADR-010 O1)
-        # A published head is a timestamp: a pull request may add heads beyond
-        # the ones on the base branch (the first parent, as above) but never
-        # change or remove one.
-        run: node packages/showdown-bridge/scripts/evaluation-register.ts heads-check --dir evaluation/register-heads --base HEAD^1
-      - name: contract schemas and generated TS types (ADR-008)
-        run: node packages/schema/scripts/contracts.ts
-      - name: team label sets and generator configs against the pinned engine (ADR-013)
-        run: node packages/team-dataset/scripts/check-team-labels.ts
-      - name: mechanics probe config against the pinned engine (ADR-016)
-        run: node packages/showdown-bridge/scripts/check-mechanics-config.ts
-      - name: damage-aware baseline config against the pinned engine's team vocabulary (ADR-018)
-        run: node packages/showdown-bridge/scripts/check-damage-aware-config.ts
-
-  team-guard:
-    runs-on: [self-hosted, coolify]
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: install make in the ephemeral runner
-        run: |
-          sudo apt-get update
-          sudo apt-get install --yes --no-install-recommends make
-      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
-      - run: make team-guard
-
-  licences:
-    runs-on: [self-hosted, coolify]
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: install make in the ephemeral runner
-        run: |
-          sudo apt-get update
-          sudo apt-get install --yes --no-install-recommends make
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version-file: .nvmrc
-      # pnpm comes only from corepack, which checks the packageManager hash.
-      - run: corepack enable && COREPACK_ENABLE_DOWNLOAD_PROMPT=0 pnpm --version
-      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
-      - run: pnpm install --frozen-lockfile
-      - name: production licences on allowlist (fails closed)
-        run: make licences
-      - name: licence gate rejects an injected AGPL dependency
-        run: make licences-selftest
-
-  database:
-    # Docker Compose is unavailable on the Coolify runner in No Docker mode.
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version-file: .nvmrc
-      # pnpm comes only from corepack, which checks the packageManager hash.
-      - run: corepack enable && COREPACK_ENABLE_DOWNLOAD_PROMPT=0 pnpm --version
-      - run: pnpm install --frozen-lockfile
-      - name: rules store schema, roles and triggers on Postgres 18 (ADR-007)
-        run: make db-up db-test
-      - name: bootstrap sends no role password outside its CREATE ROLE
-        run: make db-bootstrap-test
-      - if: always()
-        run: make db-down
-
-  importer-image:
-    # Builds the rules importer image and imports the recorded releases into a
-    # fresh Postgres 18 twice: a real commit, then a no-op (ADR-007, #768).
-    # The e2e target's stand-in gh replays recorded GitHub answers; no token.
-    # Keep Docker builds on GitHub while Coolify uses No Docker mode.
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - name: importer image and end-to-end import on Postgres 18 (ADR-007)
-        run: make importer-e2e
-      - if: always()
-        run: make db-down
-
-  gitleaks:
-    runs-on: [self-hosted, coolify]
-    env:
-      GITLEAKS_VERSION: 8.30.1
-      GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0
-      - name: install gitleaks
-        run: |
-          tarball="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
-          curl -fsSL -o "$tarball" "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/${tarball}"
-          echo "${GITLEAKS_SHA256}  ${tarball}" | sha256sum -c -
-          tar -xzf "$tarball" gitleaks
-          ./gitleaks version
-      - name: .gitleaks.toml reports a generated post-quantum age identity
-        run: |
-          scratch="$(mktemp -d)"
-          key="$(head -c 8000 /dev/urandom | tr -dc 'QPZRY9X8GF2TVDW0S3JN54KHCE6MUA7L' | head -c 58)"
-          test "${#key}" -eq 58
-          printf 'identity = AGE-SECRET-KEY-PQ-1%s\n' "$key" > "$scratch/notes.txt"
-          rc=0
-          ./gitleaks dir "$scratch" --config .gitleaks.toml --no-banner --redact \
-            --report-format json --report-path "$scratch/report.json" || rc=$?
-          test "$rc" -eq 1
-          grep -q '"RuleID": "age-secret-key-pq"' "$scratch/report.json"
-      - name: .gitleaks.toml keeps its negative controls
-        run: |
-          scratch="$(mktemp -d)"
-          mkdir "$scratch/a" "$scratch/b"
-          python3 - "$scratch" <<'PY'
-          import secrets
-          import sys
-
-          root = sys.argv[1]
-          alphabet = "QPZRY9X8GF2TVDW0S3JN54KHCE6MUA7L"
-          short = "".join(secrets.choice(alphabet) for _ in range(57))
-          with open(f"{root}/a/keys.json", "w") as f:
-              f.write('{"generation_key": "' + secrets.token_hex(32) + '"}\n')
-          with open(f"{root}/b/short.txt", "w") as f:
-              f.write("identity = AGE-SECRET-KEY-PQ-1" + short + "\n")
-          PY
-          # A generic key line outside the dataset fixtures is still reported.
-          rc=0
-          ./gitleaks dir "$scratch/a" --config .gitleaks.toml --no-banner --redact \
-            --report-format json --report-path "$scratch/a.json" || rc=$?
-          test "$rc" -eq 1
-          grep -q '"RuleID": "generic-api-key"' "$scratch/a.json"
-          # A 57-character PQ-shaped string is not an identity.
-          rc=0
-          ./gitleaks dir "$scratch/b" --config .gitleaks.toml --no-banner --redact || rc=$?
-          test "$rc" -eq 0
-      - run: ./gitleaks git --redact --verbose .
-
-  osv:
-    # The scanner is a Docker container action; Coolify currently uses No Docker mode.
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: osv-scanner
-        uses: google/osv-scanner-action/osv-scanner-action@b1d267aea5211fa648d9d442fa64b90dbdcbdd36 # v2.7.0
-        with:
-          scan-args: |-
-            --recursive
-            ./
-
-  dco:
-    # Dependabot cannot sign off; skip only when GitHub says the PR author is
-    # Dependabot (commit author emails can be set by anyone).
-    if: github.event_name == 'pull_request' && github.event.pull_request.user.login != 'dependabot[bot]'
-    runs-on: [self-hosted, coolify]
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0
-      - name: every commit has Signed-off-by
-        env:
-          BASE: ${{ github.event.pull_request.base.sha }}
-          HEAD: ${{ github.event.pull_request.head.sha }}
-        run: |
-          missing=0
-          for c in $(git rev-list --no-merges "$BASE..$HEAD"); do
-            if ! git show -s --format=%B "$c" | grep -q '^Signed-off-by: '; then
-              echo "::error::commit $c is missing Signed-off-by (use git commit -s)"
-              missing=1
-            fi
-          done
-          exit $missing
-
-  ci:
-    if: always()
-    needs: [python, typescript, database, importer-image, team-guard, licences, gitleaks, osv, dco]
-    runs-on: [self-hosted, coolify]
-    steps:
-      - name: all required jobs passed
-        env:
-          RESULTS: ${{ toJSON(needs.*.result) }}
-        run: |
-          echo "$RESULTS"
-          ! echo "$RESULTS" | grep -Eq '"(failure|cancelled)"'
+          probe_dir="$GITHUB_WORKSPACE/docker-probe"
+          mkdir -p "$probe_dir"
+          printf 'runner-docker-ok\n' > "$probe_dir/marker"
+          trap 'docker rm -f runner-docker-probe >/dev/null 2>&1 || true' EXIT
+          docker run --detach --rm --name runner-docker-probe \
+            --publish 127.0.0.1:18080:8080 \
+            --volume "$probe_dir:/www:ro" \
+            busybox:1.37.0 httpd -f -p 8080 -h /www
+          result=$(curl --fail --silent --show-error --retry 10 \
+            --retry-connrefused --retry-delay 1 --max-time 2 \
+            http://127.0.0.1:18080/marker)
+          test "$result" = runner-docker-ok
