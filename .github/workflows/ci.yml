@@ -6,14 +6,14 @@ on:
       check:
         type: choice
         default: licences
-        options: [docker, licences, resources, tests]
+        options: [docker, licences, resources, tests, tests-narrow, tests-no-coverage, tests-go-memory]
 
 permissions:
   contents: read
 
 jobs:
   typescript-probe:
-    if: inputs.check == 'tests'
+    if: startsWith(inputs.check, 'tests')
     runs-on: [self-hosted, coolify]
     timeout-minutes: 15
     env:
@@ -43,14 +43,38 @@ jobs:
             fi
           done
       - name: build pinned Showdown
+        if: inputs.check != 'tests-go-memory'
         run: make showdown
+      - name: build pinned Showdown with a Go heap budget
+        if: inputs.check == 'tests-go-memory'
+        env:
+          GOMEMLIMIT: 384MiB
+        run: make showdown
+      - name: resource counters after the build
+        if: always()
+        run: |
+          date -u
+          for file in cpu.stat memory.current memory.peak memory.events memory.pressure; do
+            if [ -f "/sys/fs/cgroup/$file" ]; then
+              printf '\n%s\n' "$file"
+              cat "/sys/fs/cgroup/$file"
+            fi
+          done
       - name: reproduce the failing corpus and schema tests with coverage
         # Diagnostic branch only: selected tests collect the same coverage;
         # full-suite coverage thresholds are enforced by PR #174's real CI.
+        env:
+          PROBE_CHECK: ${{ inputs.check }}
         run: |
-          /usr/bin/time -v pnpm exec vitest run --maxWorkers=1 --coverage \
-            --coverage.thresholds.lines=0 --coverage.thresholds.branches=0 \
-            --coverage.thresholds.functions=0 --coverage.thresholds.statements=0 \
+          args=(--maxWorkers=1)
+          if [ "$PROBE_CHECK" != tests ]; then
+            args+=(--testNamePattern 'whole committed corpus|repository.s checked-in generated types|is classified by Ajv')
+          fi
+          if [ "$PROBE_CHECK" != tests-no-coverage ]; then
+            args+=(--coverage --coverage.thresholds.lines=0 --coverage.thresholds.branches=0 \
+              --coverage.thresholds.functions=0 --coverage.thresholds.statements=0)
+          fi
+          /usr/bin/time -v pnpm exec vitest run "${args[@]}" \
             packages/public-state/test/lines.test.ts \
             packages/schema/test/contracts.test.ts \
             packages/showdown-bridge/test/samples.test.ts
