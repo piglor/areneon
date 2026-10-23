@@ -292,3 +292,13 @@ def test_probe_refusals_are_summed_and_bounded() -> None:
     over["matches"][0]["baseline"]["counts"]["probe_refusals"] = big
     with pytest.raises(ProgressRecordError, match="probe refusals cannot exceed queries"):
         read_progress_record(over)
+
+
+def test_the_policy_id_constant_is_the_one_the_corpus_and_the_game_samples_name() -> None:
+    from areneon_ml.progress.run import DAMAGE_AWARE_POLICY  # noqa: PLC0415
+
+    record = sample("progress-evaluation-record-2/valid/damage-aware-match")
+    assert record["matches"][0]["opponent"]["policy_id"] == DAMAGE_AWARE_POLICY
+    assert (
+        sample("progress-game-record/valid/damage-aware")["policies"]["p2"] == DAMAGE_AWARE_POLICY
+    )

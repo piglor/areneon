@@ -13,6 +13,8 @@ import {
   playGame,
   type PlayedGame,
   jcs,
+  MechanicsProbeError,
+  probeMechanics,
   type Actor,
   type PolicyClient,
   PolicyProtocolError,
@@ -205,6 +207,26 @@ describe("playProgress", () => {
       expect(versus.seed).toBe(baseline.seed);
       expect(versus.teams).toEqual(baseline.teams);
       expect(versus.pair).toBe(0);
+    }, 300_000);
+
+    it("carries a probe refusal of the baseline into the row, the match and the stored game, and omits the key at zero", async () => {
+      let asked = 0;
+      // The very first query of the run is refused by the probe; the actor answers that request with the actor-rule candidate.
+      const probe: NonNullable<typeof setup.probe> = (context, query) => {
+        asked += 1;
+        if (asked === 1) throw new MechanicsProbeError("a refused declared state");
+        return probeMechanics(context, query);
+      };
+      const result = await playProgress(options({ record_games: 2, damage_aware: damage({ setup: { ...setup, probe } }) }));
+      const match = result.record.matches.find((m) => m.match_id === "damage-aware-argmax") as (typeof result.record.matches)[number];
+      const rows = result.record.games.filter((row) => row.match_id === match.match_id);
+      const refused = rows.reduce((sum, row) => sum + (row.baseline_counts?.probe_refusals ?? 0), 0);
+      expect(refused).toBeGreaterThan(0);
+      expect(match.baseline?.counts.probe_refusals).toBe(refused);
+      const withKey = rows.findIndex((row) => row.baseline_counts?.probe_refusals !== undefined);
+      expect(rows.some((row) => row.baseline_counts !== undefined && row.baseline_counts.probe_refusals === undefined)).toBe(true);
+      if (withKey < 2) expect(result.game_records.get(`damage-aware-argmax-${withKey}.json`)?.baseline?.counts.probe_refusals).toBe(rows[withKey]?.baseline_counts?.probe_refusals);
+      expect(() => readProgressEvaluationRecordV2(JSON.parse(jcs(result.record as unknown as Json)))).not.toThrow();
     }, 300_000);
 
     it("replays to the same bytes, and the other matches are those of a run without the baseline", async () => {
