@@ -60,9 +60,13 @@ jobs:
       - run: corepack enable && COREPACK_ENABLE_DOWNLOAD_PROMPT=0 pnpm --version
       - run: pnpm install --frozen-lockfile
       - name: capture the injected dependency licence report
+        env:
+          TMPDIR: ${{ runner.temp }}
         run: |
           set -euo pipefail
           repo="$PWD"
+          printf 'workspace store: '
+          pnpm store path
           scratch=$(mktemp -d)
           trap 'rm -rf "$scratch"' EXIT
           while IFS= read -r -d '' file; do
@@ -73,6 +77,8 @@ jobs:
             'ml/**' scripts/__init__.py scripts/check_licenses.py scripts/python_licences.py \
             scripts/licence_exceptions.json scripts/check_cuda_separation.py)
           cd "$scratch"
+          printf 'scratch store: '
+          pnpm store path
           mkdir agpl-dep
           printf '{"name":"agpl-dep","version":"1.0.0","license":"AGPL-3.0-only"}\n' > agpl-dep/package.json
           pnpm --filter @areneon/showdown-bridge add --prefer-offline --ignore-scripts "file:$scratch/agpl-dep"
