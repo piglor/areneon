@@ -161,6 +161,8 @@ class ProbeRefusal extends Error {
 }
 /** The probe's words for a declared status the engine will not take; an unrevealed ability that blocks the status is then contradicted by it. */
 const STATUS_REFUSED = "the engine does not take that status";
+/** The probe's refusal of a query for a format its config is not for: a defect of the run, so it propagates. */
+const CONFIG_DEFECT = "the mechanics config is for another format";
 
 const PLAYERS: readonly Player[] = ["p1", "p2"];
 
@@ -210,7 +212,7 @@ export function damageAwareActor(options: DamageAwareOptions): DamageAwareActor 
       try {
         result = probe({ engine, config: mechanics, snapshot }, query).result;
       } catch (error) {
-        if (!(error instanceof MechanicsProbeError)) throw error;
+        if (!(error instanceof MechanicsProbeError) || error.message.startsWith(CONFIG_DEFECT)) throw error; // a wrong config is a defect of the run, not of a state
         if (query.query.kind === "speed_order" && [UNQUEUEABLE, FRACTIONAL].some((limit) => error.message.startsWith(limit))) {
           // The probe's two known speed-order limits: no discount, counted as unsupported.
           memo.set(key, null);
@@ -304,7 +306,10 @@ export function damageAwareActor(options: DamageAwareOptions): DamageAwareActor 
    * The assumed set of an opponent's Pokemon, consistent with its public status: the status is a fact the
    * player saw, so an unrevealed ability that blocks it (Limber on a paralysed Pokemon) cannot be the one
    * the Pokemon has. Abilities are tried in the record's order and the engine, through a probe query that
-   * declares the status, says which one blocks it. Throws `AssumedSetError` when every ability does.
+   * declares the status, says which one blocks it. Throws `AssumedSetError` when every ability does. The
+   * refusal can also come from an engine hook that is no ability (a clause, a side condition); then the
+   * next ability is refused alike and the request ends in the `assumed_set_fallbacks` count, never a crash.
+   * Its probe queries add to `queries` and `probe_runs` for every request with a statused foe.
    */
   function assumedFor(mon: PublicMon, state: PublicState): AssumedSet {
     let set = assume(mon);
