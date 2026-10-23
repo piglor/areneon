@@ -38,6 +38,7 @@ from areneon_ml.progress.records import (
     SCHEMA_V2,
     ProgressRecordError,
     check_game_baseline,
+    is_damage_aware,
     is_v2,
     read_game_record,
     read_progress_record,
@@ -68,6 +69,8 @@ SCHEDULE_EVERY = 5
 #: The working budget for one damage-aware match, in minutes (ADR-018 section 6).
 DEFAULT_DAMAGE_AWARE_BUDGET_MINUTES = 30
 #: The damage-aware baseline's match ids; its policy id is ``damage-aware@v1``.
+#: The baseline's policy id (the TS side derives it from ``damageAwarePolicyId("v1")``).
+DAMAGE_AWARE_POLICY = "damage-aware@v1"
 DAMAGE_AWARE_MATCHES = ("damage-aware-argmax", "damage-aware-sample")
 #: Says what a ``previous-*`` row is: the pair's own lineage, so it can cycle (ADR-017 section 2).
 SEEN_LABEL = "seen, same-lineage comparison: it can cycle"
@@ -360,8 +363,7 @@ def _check_damage_aware(record: dict[str, Any], asked: bool, *, legacy: bool) ->
     found = {
         m["match_id"]: m
         for m in record["matches"]
-        if m["opponent"]["kind"] == "baseline"
-        and m["opponent"]["policy_id"].startswith("damage-aware@")
+        if m["opponent"]["kind"] == "baseline" and is_damage_aware(m["opponent"]["policy_id"])
     }
     if not asked and not legacy:
         if found:
@@ -374,9 +376,9 @@ def _check_damage_aware(record: dict[str, Any], asked: bool, *, legacy: bool) ->
     for match in found.values():
         if match["match_id"] != f"damage-aware-{match['mode']}" or match["opponent"] != {
             "kind": "baseline",
-            "policy_id": "damage-aware@v1",
+            "policy_id": DAMAGE_AWARE_POLICY,
         }:
-            raise ProgressError(f"{match['match_id']}: the opponent is not damage-aware@v1")
+            raise ProgressError(f"{match['match_id']}: the opponent is not {DAMAGE_AWARE_POLICY}")
 
 
 def _damage_aware_status(record: dict[str, Any]) -> str:

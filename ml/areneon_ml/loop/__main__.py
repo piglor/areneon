@@ -166,8 +166,8 @@ def _parser() -> argparse.ArgumentParser:
         "--damage-aware",
         action="store_true",
         help="also play the damage-aware scripted baseline (damage-aware-sample, "
-        "damage-aware-argmax; ADR-018): a seen opponent, never held-out evidence, about 14 "
-        "minutes per 200-game match; off by default",
+        "damage-aware-argmax; ADR-018): a seen opponent, never held-out evidence, slower than "
+        "the other baselines (see docs/training-run.md for the cost); off by default",
     )
     progress.add_argument(
         "--damage-aware-budget-minutes",
@@ -237,7 +237,11 @@ def _progress(args: argparse.Namespace) -> dict[str, object]:
     if args.damage_aware_budget_minutes is not None and not args.damage_aware:
         raise ProgressError("--damage-aware-budget-minutes needs --damage-aware")
     damage_budget = (
-        (args.damage_aware_budget_minutes or DEFAULT_DAMAGE_AWARE_BUDGET_MINUTES)
+        (
+            DEFAULT_DAMAGE_AWARE_BUDGET_MINUTES
+            if args.damage_aware_budget_minutes is None
+            else args.damage_aware_budget_minutes
+        )
         if args.damage_aware
         else None
     )

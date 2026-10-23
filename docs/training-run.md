@@ -348,7 +348,11 @@ over 118 games per match (59 validation pairs, a stand-in candidate that plays t
 on average and 3.9 s at the slowest (about 115 ms per decision), against about 0.17 s
 for an `actor-rule` game. A 200-game damage-aware match is then about 5 minutes at the mean
 and about 13 minutes at the slowest game, inside the 30-minute working budget; a pair that
-plays longer games costs more in proportion. Both modes together add about twice that.
+plays longer games costs more in proportion. Both modes together add about twice that. The measurement used a stand-in candidate; a learned pair that plays
+longer games costs more. The budget is checked after every game, so a single game that hangs
+is bounded by the per-decision latency budget, not by the match budget. The readers check that
+the records agree on one identity hash; the evaluation recomputes it from the reviewed records
+and the pinned engine when it plays.
 
 ## 5. Teacher data for the cloning learner
 
