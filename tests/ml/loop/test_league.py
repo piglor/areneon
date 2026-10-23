@@ -9,6 +9,7 @@ from typing import Any
 
 import pytest
 from areneon_contracts.contracts import jcs, sha256_hex
+from areneon_ml.learner.config import read_run_config
 from areneon_ml.loop.league import (
     LeagueRecordError,
     check_generation_plan,
@@ -64,6 +65,45 @@ def test_the_valid_samples_are_read_and_the_hash_is_the_configs() -> None:
     assert mixed.forfeit_causes == (("crash", 1), ("latency_overrun", 2))
 
 
+def damage_config() -> Any:
+    return read_run_config(
+        json.loads((SAMPLES / "training-run-config/valid/damage-aware.json").read_text())
+    )
+
+
+def damage_record() -> dict[str, Any]:
+    """The damage-aware sample, tied to the damage-aware config sample (two baseline games)."""
+    record = raw("valid/damage-aware.json")
+    record["run_config_hash"] = damage_config().hash
+    record["baselines"][0]["games"] = 2
+    record["games"] = 8
+    record["played"] = 7
+    record["episodes"] = 14
+    record["opponents"][0]["games"] = 2
+    return record
+
+
+def test_a_damage_aware_baseline_entry_is_read_and_others_have_none() -> None:
+    record = read_league_run_record(damage_record(), damage_config())
+    (entry,) = record.raw["baselines"]
+    assert (entry["policy_id"], entry["games"], entry["counts"]["queries"]) == (
+        "damage-aware@v1",
+        2,
+        410,
+    )
+    assert "baselines" not in raw()
+
+
+def test_baselines_must_match_the_configs_damage_aware_entries() -> None:
+    missing = damage_record()
+    del missing["baselines"]
+    with pytest.raises(LeagueRecordError, match="exactly the config's damage-aware"):
+        read_league_run_record(missing, damage_config())
+    # The reverse: a record that carries baselines for a config that lists none.
+    with pytest.raises(LeagueRecordError, match="exactly the config's damage-aware"):
+        read_league_run_record(raw("valid/damage-aware.json"), tiny_config())
+
+
 @pytest.mark.parametrize(
     ("name", "message"),
     [
@@ -75,6 +115,13 @@ def test_the_valid_samples_are_read_and_the_hash_is_the_configs() -> None:
         ("causes-do-not-sum.json", "causes' counts must sum to forfeits"),
         ("unsorted-causes.json", "forfeit_causes must be sorted"),
         ("duplicate-cause.json", "forfeit_causes must be sorted"),
+        ("baselines-unsorted.json", "baselines must be sorted"),
+        ("baseline-duplicate.json", "baselines must be sorted"),
+        ("baseline-games-disagree.json", "baseline's games must equal"),
+        ("baseline-not-an-opponent.json", "baseline's games must equal"),
+        ("baseline-probe-runs-exceed-queries.json", "cannot exceed its queries"),
+        ("baseline-unsupported-exceed-queries.json", "cannot exceed its queries"),
+        ("baseline-decisions-exceed.json", "cannot exceed its decisions"),
     ],
 )
 def test_the_reader_rules_the_profile_cannot_say(name: str, message: str) -> None:
@@ -84,7 +131,7 @@ def test_the_reader_rules_the_profile_cannot_say(name: str, message: str) -> Non
 
 
 def test_every_reader_invalid_sample_is_checked_above() -> None:
-    assert len(list((RECORDS / "reader-invalid").iterdir())) == 8
+    assert len(list((RECORDS / "reader-invalid").iterdir())) == 15
 
 
 @pytest.mark.parametrize("name", sorted(p.name for p in (RECORDS / "invalid").iterdir()))

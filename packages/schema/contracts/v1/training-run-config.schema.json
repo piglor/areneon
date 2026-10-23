@@ -130,7 +130,7 @@
         "baseline_games": {
           "description": "Games against scripted baselines, at most one entry per actor (a reader rule).",
           "type": "array",
-          "maxItems": 2,
+          "maxItems": 3,
           "items": {
             "$ref": "#/$defs/Baseline"
           }
@@ -422,10 +422,11 @@
       ],
       "properties": {
         "actor": {
-          "description": "Which scripted baseline plays.",
+          "description": "Which scripted baseline plays. damage-aware was added within v1 (ADR-018 section 7, a minor change): a reader older than it rejects a config that names it.",
           "enum": [
             "actor-rule",
-            "random-legal"
+            "random-legal",
+            "damage-aware"
           ]
         },
         "policy_id": {

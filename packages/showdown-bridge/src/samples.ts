@@ -461,6 +461,18 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
       { opponent_policy_id: "random-legal@tiny", games: 2 },
     ],
   };
+  // A generation that also played the damage-aware baseline (ADR-018 sections 5, 7): its identity hash and the summed counts.
+  const damageId = "damage-aware@v1";
+  const baselineCounts = { decisions: 40, preview_decisions: 3, scored_decisions: 31, queries: 410, probe_runs: 300, unsupported_queries: 36, reader_fallbacks: 1, assumed_set_fallbacks: 0, epsilon_plays: 0 };
+  const damageEntry = { policy_id: damageId, identity_hash: "c".repeat(64), games: 3, counts: baselineCounts };
+  const damageOpponents = [
+    { opponent_policy_id: damageId, games: 3 },
+    { opponent_policy_id: pairId, games: 4 },
+    { opponent_policy_id: "random-legal@tiny", games: 2 },
+  ];
+  const damageRun = { ...leagueRun, games: 9, played: 8, episodes: 16, opponents: damageOpponents, baselines: [damageEntry] };
+  const damageRunWith = (change: (r: Record<string, unknown>) => void) => mutated(damageRun, change);
+  const damageEntryWith = (change: (e: Record<string, unknown>) => void) => damageRunWith((r) => (r.baselines = [mutated(damageEntry, change)]));
   // A RunMetrics record (ADR-010 erratum A1, item 3): one generation of the tiny run on a CPU learner.
   const runMetrics = {
     schema_version: 1,
@@ -511,6 +523,13 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
       (c) => (runSection(c, "ppo").learning_rate_schedule = { kind: "linear", final_micro: 100, generations: 4 }),
     ),
     "training-run-config/constant-schedule": runConfigWith((c) => (runSection(c, "ppo").learning_rate_schedule = { kind: "constant" })),
+    "training-run-config/damage-aware": runConfigWith((c) => {
+      runSection(c, "generation").baseline_games = [
+        { actor: "random-legal", policy_id: "random-legal@tiny", games: 2 },
+        { actor: "actor-rule", policy_id: "actor-rule@tiny", games: 2 },
+        { actor: "damage-aware", policy_id: "damage-aware@v1", games: 2 },
+      ];
+    }),
     "training-run-config/team-dataset": runConfigWith((c) => (c.team_dataset = { path: ".tmp/datasets/train-v1", dataset_hash: hexOf("5") })),
     "clone-run-config/tiny": cloneConfig,
     "clone-run-config/no-holdout": cloneWith((c) => (runSection(c, "clone").holdout = { key: "d".repeat(64), ppm: 0 })),
@@ -534,6 +553,7 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
       r.episodes = 8;
       r.opponents = [{ opponent_policy_id: pairId, games: 4 }];
     }),
+    "league-run-record/damage-aware": damageRun,
     "league-run-record/mixed-causes": leagueRunWith((r) => {
       r.games = 8;
       r.played = 5;
@@ -622,6 +642,13 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
       r.forfeit_causes = [{ cause: "crash", count: 1 }, { cause: "crash", count: 1 }];
       r.opponents = [{ opponent_policy_id: pairId, games: 5 }, { opponent_policy_id: "random-legal@tiny", games: 2 }];
     }),
+    "league-run-record/baselines-unsorted": damageRunWith((r) => (r.baselines = [{ ...damageEntry, policy_id: "random-legal@tiny", games: 2 }, damageEntry])),
+    "league-run-record/baseline-duplicate": damageRunWith((r) => (r.baselines = [damageEntry, damageEntry])),
+    "league-run-record/baseline-games-disagree": damageEntryWith((e) => (e.games = 2)),
+    "league-run-record/baseline-not-an-opponent": damageEntryWith((e) => (e.policy_id = "damage-aware@v2")),
+    "league-run-record/baseline-probe-runs-exceed-queries": damageEntryWith((e) => (e.counts = { ...baselineCounts, probe_runs: 411 })),
+    "league-run-record/baseline-unsupported-exceed-queries": damageEntryWith((e) => (e.counts = { ...baselineCounts, unsupported_queries: 411 })),
+    "league-run-record/baseline-decisions-exceed": damageEntryWith((e) => (e.counts = { ...baselineCounts, preview_decisions: 10 })),
     "league-run-record/opponents-do-not-sum": leagueRunWith((r) => (r.opponents = [{ opponent_policy_id: pairId, games: 4 }, { opponent_policy_id: "random-legal@tiny", games: 1 }])),
     "checkpoint-record/duplicate-training-sets": recordWith((r) => (r.training_set_hashes = [hexOf("5"), hexOf("5")])),
     "checkpoint-record/parent-is-self": recordWith((r) => (r.parent = r.checkpoint_id)),
@@ -749,6 +776,13 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "training-run-config/blank-run-name": runConfigWith((c) => (runSection(c, "seeds").run_key = "")),
     "training-run-config/unknown-baseline": runConfigWith((c) => {
       ((runSection(c, "generation").baseline_games as Record<string, unknown>[])[0] as Record<string, unknown>).actor = "heuristic";
+    }),
+    "league-run-record/baseline-no-identity": damageRunWith((r) => (r.baselines = [{ policy_id: damageId, games: 3, counts: baselineCounts }])),
+    "league-run-record/baseline-extra-count": damageEntryWith((e) => (e.counts = { ...baselineCounts, wall_clock_ms: 5 })),
+    "league-run-record/baseline-fractional-count": damageEntryWith((e) => (e.counts = { ...baselineCounts, queries: 410.5 })),
+    "league-run-record/empty-baselines": damageRunWith((r) => (r.baselines = [])),
+    "training-run-config/four-baselines": runConfigWith((c) => {
+      runSection(c, "generation").baseline_games = ["a", "b", "c", "d"].map((n) => ({ actor: "actor-rule", policy_id: `actor-rule@${n}`, games: 1 }));
     }),
     "training-run-config/dataset-short-hash": runConfigWith((c) => (c.team_dataset = { path: ".tmp/datasets/train-v1", dataset_hash: "abc" })),
     "training-run-config/dataset-no-path": runConfigWith((c) => (c.team_dataset = { dataset_hash: hexOf("5") })),

@@ -38,6 +38,24 @@ describe("the LeagueRunRecord reader (ADR-009 §3)", () => {
     expect(() => readLeagueRunRecord(readerInvalid("duplicate-cause"))).toThrow(/sorted by cause/);
   });
 
+  it("reads the damage-aware baseline entry and refuses the ones the profile cannot check", () => {
+    const record = readLeagueRunRecord(sample("league-run-record", "damage-aware"));
+    expect(record.baselines).toHaveLength(1);
+    expect(record.baselines?.[0]).toMatchObject({ policy_id: "damage-aware@v1", games: 3 });
+    expect(readLeagueRunRecord(sample("league-run-record", "tiny")).baselines).toBeUndefined();
+    for (const [name, message] of [
+      ["baselines-unsorted", /baselines must be sorted/],
+      ["baseline-duplicate", /baselines must be sorted/],
+      ["baseline-games-disagree", /games must equal/],
+      ["baseline-not-an-opponent", /games must equal/],
+      ["baseline-probe-runs-exceed-queries", /cannot exceed its queries/],
+      ["baseline-unsupported-exceed-queries", /cannot exceed its queries/],
+      ["baseline-decisions-exceed", /cannot exceed its decisions/],
+    ] as const) {
+      expect(() => readLeagueRunRecord(readerInvalid(name)), name).toThrow(message);
+    }
+  });
+
   it("keeps the schema's cause enum equal to the harness's ForfeitCause list", () => {
     const schema = JSON.parse(readFileSync(join(SAMPLES_DIR, "../../packages/schema/contracts/v1/league-run-record.schema.json"), "utf8")) as {
       $defs: { ForfeitCauseCount: { properties: { cause: { enum: string[] } } } };
@@ -64,10 +82,42 @@ describe("the LeagueRunRecord reader (ADR-009 §3)", () => {
     await expect(checkLeagueRunRecord({ ...record, run_id: "other" }, config())).rejects.toThrow(/run key/);
     await expect(checkLeagueRunRecord({ ...record, run_config_hash: "0".repeat(64) }, config())).rejects.toThrow(/config's hash/);
   });
+
+  it("ties baselines to the config's damage-aware entries, in both directions", async () => {
+    const damageConfig = readTrainingRunConfig(sample("training-run-config", "damage-aware"));
+    const withHash = { ...readLeagueRunRecord(sample("league-run-record", "damage-aware")), run_config_hash: await runConfigHash(damageConfig) };
+    const fitted = readLeagueRunRecord({ ...withHash, baselines: (withHash.baselines ?? []).map((entry) => ({ ...entry, games: 2 })), games: 8, played: 7, episodes: 14, opponents: withHash.opponents.map((o) => (o.games === 3 ? { ...o, games: 2 } : o)) });
+    await expect(checkLeagueRunRecord(fitted, damageConfig)).resolves.toBeUndefined();
+    const { baselines: _dropped, ...without } = fitted;
+    await expect(checkLeagueRunRecord(without, damageConfig)).rejects.toThrow(/exactly the config's damage-aware/);
+    const tiny = readLeagueRunRecord(sample("league-run-record", "tiny"));
+    await expect(checkLeagueRunRecord({ ...tiny, ...(fitted.baselines === undefined ? {} : { baselines: fitted.baselines }) }, config())).rejects.toThrow(/exactly the config's damage-aware/);
+  });
 });
 
 describe("buildLeagueRunRecord", () => {
   const pair = `policy:${"a".repeat(64)}`;
+  const counts = (queries: number) => ({ decisions: 10, preview_decisions: 1, scored_decisions: 8, queries, probe_runs: queries - 1, unsupported_queries: 2, reader_fallbacks: 0, assumed_set_fallbacks: 1, epsilon_plays: 0 });
+
+  it("sums a damage-aware baseline's per-game counts under its identity hash, and only then writes baselines", async () => {
+    const games = [
+      { opponent: "damage-aware@v1", outcome: "played" as const },
+      { opponent: "damage-aware@v1", outcome: "played" as const },
+      { opponent: pair, outcome: "played" as const },
+    ];
+    const reports = [
+      { policy_id: "damage-aware@v1", identity_hash: "c".repeat(64), counts: counts(5) },
+      { policy_id: "damage-aware@v1", identity_hash: "c".repeat(64), counts: counts(7) },
+    ];
+    const facts = { config: config(), generation: 1, pair_policy_id: pair, plan: [], games };
+    const record = await buildLeagueRunRecord({ ...facts, baseline_reports: reports });
+    expect(record.baselines).toEqual([{ policy_id: "damage-aware@v1", identity_hash: "c".repeat(64), games: 2, counts: { ...counts(12), decisions: 20, preview_decisions: 2, scored_decisions: 16, probe_runs: 10, unsupported_queries: 4, assumed_set_fallbacks: 2 } }]);
+    expect("baselines" in (await buildLeagueRunRecord(facts))).toBe(false);
+    expect("baselines" in (await buildLeagueRunRecord({ ...facts, baseline_reports: [] }))).toBe(false);
+    await expect(
+      buildLeagueRunRecord({ ...facts, baseline_reports: [reports[0] as (typeof reports)[0], { ...(reports[1] as (typeof reports)[0]), identity_hash: "d".repeat(64) }] }),
+    ).rejects.toThrow(/two identity hashes/);
+  });
 
   it("counts what a generation played and names the config, derivation and plan", async () => {
     const plan = [{ game: 0 }, { game: 1 }, { game: 2 }];

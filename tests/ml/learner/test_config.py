@@ -73,6 +73,16 @@ def test_the_committed_run_configs_are_valid() -> None:
         assert {b.actor for b in config.generation.baselines} == {"random-legal", "actor-rule"}
 
 
+def test_damage_aware_is_a_scripted_baseline_beside_the_others() -> None:
+    config = read_run_config(raw("valid/damage-aware.json"))
+    assert [b.actor for b in config.generation.baselines] == [
+        "random-legal",
+        "actor-rule",
+        "damage-aware",
+    ]
+    assert config.hash != read_run_config(raw()).hash
+
+
 def test_no_baselines_is_a_valid_run() -> None:
     assert read_run_config(raw("valid/no-baselines.json")).generation.baselines == ()
 

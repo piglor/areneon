@@ -14,12 +14,16 @@ import { closeSync, fsyncSync, mkdirSync, openSync, readFileSync, writeSync } fr
 import { join } from "node:path";
 import type { Engine, PokemonSet } from "./engine.ts";
 import { jcs, type Json } from "./canonical-json.ts";
-import { buildLeagueRunRecord, type LeagueRunRecord } from "./league-run-record.ts";
+import { type DamageAwareActor, type DamageAwareOptions, damageAwareActor } from "./damage-aware-actor.ts";
+import { loadDamageAwareConfig } from "./damage-aware-config.ts";
+import { type BaselineGameReport, buildLeagueRunRecord, type LeagueRunRecord } from "./league-run-record.ts";
+import { loadMechanicsConfig } from "./mechanics-config.ts";
+import { loadRulesSnapshot } from "./rules-load.ts";
 import { leagueGameStreams } from "./league-seed.ts";
 import { episodeFromRecord } from "./episode-io.ts";
 import { episodeHash } from "./episode.ts";
 import { guardActor, type LatencyBudget, type PlayedGame } from "./evaluation-harness.ts";
-import { firstLegal, syntheticTeam, TEAMS_DIR, teamFixtureManifest } from "./golden.ts";
+import { firstLegal, GOLDEN_FORMAT, goldenTeamVocabulary, syntheticTeam, TEAMS_DIR, teamFixtureManifest } from "./golden.ts";
 import { resolveFormat, type VersionManifest } from "./formats.ts";
 import { nodeSha256 } from "./player-channel.ts";
 import { type PolicyClient } from "./policy-worker.ts";
@@ -69,8 +73,26 @@ export function trainingTeamPool(engine: Engine, excludedAbilities: readonly str
 
 /** The scripted opponent of a baseline game; the policy takes the other seat. */
 export interface BaselineOpponent {
-  actor: "actor-rule" | "random-legal";
+  actor: "actor-rule" | "random-legal" | "damage-aware";
   policy_id: string;
+}
+
+/** What a damage-aware baseline seat is built from (everything of `DamageAwareOptions` but the engine and the per-game seed). */
+export type DamageAwareSetup = Omit<DamageAwareOptions, "engine" | "seed" | "commit" | "data_class">;
+
+/**
+ * The reviewed records a damage-aware baseline reads, against the golden team vocabulary (the committed
+ * export of the one supported format; another format is refused, never given another vocabulary).
+ */
+export function damageAwareSetup(engine: Engine, formatId: string): DamageAwareSetup {
+  if (formatId !== GOLDEN_FORMAT) throw new GenerationError(`the damage-aware baseline has a vocabulary for ${GOLDEN_FORMAT} only, not ${formatId}`);
+  const vocabulary = goldenTeamVocabulary();
+  return {
+    vocabulary,
+    config: loadDamageAwareConfig("v1", vocabulary),
+    mechanics: loadMechanicsConfig(formatId),
+    snapshot: loadRulesSnapshot(engine.commit),
+  };
 }
 
 export interface GamePlan {
@@ -82,7 +104,7 @@ export interface GamePlan {
   /** `self`: the pair plays both seats. Otherwise the pair takes `policy_seat` and a baseline the other. */
   opponent: "self" | BaselineOpponent;
   policy_seat: Player | "both";
-  /** Seeds the random-legal baseline's stream (an unsigned 32-bit integer). */
+  /** Seeds a baseline's stream: random-legal's, or damage-aware's epsilon draws (an unsigned 32-bit integer). */
   baseline_seed: number;
 }
 
@@ -135,6 +157,8 @@ export interface GenerationOptions {
   /** The entries of the games of the other shards, played by other game processes. */
   others?: Promise<readonly PlayedEntry[]>;
   pool: TrainingPool;
+  /** The damage-aware baseline's records; read from `config/` when a plan game needs them and this is absent (a test seam). */
+  damage_aware?: DamageAwareSetup;
   /**
    * Write the training stream to this file as the examples are made (in chunks; the stream
    * is never one string: a generation of 800 games is over Node's string limit, #998), and
@@ -195,23 +219,48 @@ type StampSets = Parameters<typeof stampTeam>[0];
 
 const rival = (player: Player): Player => (player === "p1" ? "p2" : "p1");
 
-function baselineActor(opponent: BaselineOpponent, plan: GamePlan, budget: LatencyBudget): Actor {
-  const actor = opponent.actor === "actor-rule" ? firstLegal : randomLegalActor(plan.baseline_seed);
-  return guardActor(actor, { role: "scripted", latency_budget: budget });
+interface BaselineSeat {
+  actor: Actor;
+  /** The damage-aware baseline's report once the game is over; absent for the other baselines. */
+  report?: () => BaselineGameReport;
 }
 
-async function playOne(options: GenerationOptions, plan: GamePlan, client: PolicyClient): Promise<PlayedGame> {
+function baselineActor(options: GenerationOptions, opponent: BaselineOpponent, plan: GamePlan, budget: LatencyBudget): BaselineSeat {
+  const guarded = (actor: Actor): Actor => guardActor(actor, { role: "scripted", latency_budget: budget });
+  if (opponent.actor !== "damage-aware") return { actor: guarded(opponent.actor === "actor-rule" ? firstLegal : randomLegalActor(plan.baseline_seed)) };
+  const setup = options.damage_aware;
+  if (setup === undefined) throw new GenerationError("a damage-aware baseline game needs the baseline's records");
+  // A fresh actor per game: it keeps the reader's state, the game's memo and counts. The seed is drawn from only when epsilon_ppm is above 0.
+  const damage: DamageAwareActor = damageAwareActor({
+    ...setup,
+    engine: options.engine,
+    data_class: "synthetic",
+    commit: opponent.policy_id.slice(opponent.policy_id.indexOf("@") + 1),
+    seed: plan.baseline_seed,
+  });
+  return {
+    actor: guarded(damage),
+    report: () => {
+      const { policy_id, identity_hash, counts } = damage.report();
+      if (policy_id !== opponent.policy_id) throw new GenerationError(`the config names the baseline ${opponent.policy_id}, which plays as ${policy_id}`);
+      return { policy_id, identity_hash, counts };
+    },
+  };
+}
+
+interface PlayedOne extends PlayedGame {
+  baseline?: BaselineGameReport;
+}
+
+async function playOne(options: GenerationOptions, plan: GamePlan, client: PolicyClient): Promise<PlayedOne> {
   const { engine, config, policy_id, pool } = options;
   const { generation: settings } = config;
   const budget = { preview_ms: settings.latency_budget_ms.preview_ms, battle_ms: settings.latency_budget_ms.battle_ms };
   const seat: PolicySeat = { client, policy_id, sampling: "sample" };
+  const baseline = plan.opponent === "self" ? undefined : baselineActor(options, plan.opponent, plan, budget);
   const seats: PolicyGameOptions["seats"] =
-    plan.opponent === "self"
-      ? { p1: seat, p2: seat }
-      : plan.policy_seat === "p1"
-        ? { p1: seat, p2: baselineActor(plan.opponent, plan, budget) }
-        : { p1: baselineActor(plan.opponent, plan, budget), p2: seat };
-  return policyGame({
+    baseline === undefined ? { p1: seat, p2: seat } : plan.policy_seat === "p1" ? { p1: seat, p2: baseline.actor } : { p1: baseline.actor, p2: seat };
+  const played = await policyGame({
     engine,
     formatId: config.format_id,
     seed: plan.seed,
@@ -222,6 +271,7 @@ async function playOne(options: GenerationOptions, plan: GamePlan, client: Polic
     latency_budget: budget,
     maxTurns: settings.max_turns,
   });
+  return baseline?.report === undefined ? played : { ...played, baseline: baseline.report() };
 }
 
 const idOf = (opponent: GamePlan["opponent"], policy_id: string): string => (opponent === "self" ? policy_id : opponent.policy_id);
@@ -237,6 +287,8 @@ export interface PlayedEntry {
   game: number;
   row: GameRow;
   episodes: Episode[];
+  /** Only a game against the damage-aware baseline: its identity hash and this game's counts (ADR-018 §5). */
+  baseline?: BaselineGameReport;
 }
 
 function checkShard(shard: Shard): void {
@@ -256,27 +308,33 @@ function checkShard(shard: Shard): void {
  */
 export async function playEntries(options: GenerationOptions, shard: Shard = { index: 0, of: 1 }): Promise<PlayedEntry[]> {
   checkShard(shard);
-  const { config, generation, policy_id, client, pool } = options;
+  const { config, generation, policy_id, client } = options;
+  const plan = planGeneration(config, generation, options.pool.teams.length);
+  // The damage-aware records are read once, and only when a game of this process needs them.
+  const needsDamage = config.generation.baseline_games.some((baseline) => baseline.actor === "damage-aware");
+  const withRecords: GenerationOptions = needsDamage && options.damage_aware === undefined ? { ...options, damage_aware: damageAwareSetup(options.engine, config.format_id) } : options;
+  const { pool } = withRecords;
   const workers = [client, ...(options.peers ?? [])];
-  const mine = planGeneration(config, generation, pool.teams.length).filter((entry) => entry.game % shard.of === shard.index);
+  const mine = plan.filter((entry) => entry.game % shard.of === shard.index);
   const entries: PlayedEntry[] = [];
   const waveSize = config.generation.n_parallel * workers.length;
   for (let start = 0; start < mine.length; start += waveSize) {
     await Promise.all(workers.map((worker) => worker.beginGame?.()));
     const wave = mine.slice(start, start + waveSize);
     // A game stays on one worker, chosen by its place in the wave.
-    const played = await Promise.all(wave.map((entry, place) => playOne(options, entry, workers[place % workers.length] as PolicyClient)));
+    const played = await Promise.all(wave.map((entry, place) => playOne(withRecords, entry, workers[place % workers.length] as PolicyClient)));
     for (const [index, game] of played.entries()) {
       const entry = wave[index] as GamePlan;
-      const { outcome, record } = game;
+      const { outcome, record, baseline } = game;
+      const reported = baseline === undefined ? {} : { baseline };
       if (outcome.kind === "incident") throw new GenerationError(`game ${entry.game} (${entry.seed}): ${outcome.incident}: ${outcome.message}`);
       const row = { game: entry.game, seed: entry.seed, opponent: idOf(entry.opponent, policy_id) };
       if (outcome.kind === "forfeit" || record === null) {
         if (outcome.kind !== "forfeit") {
-          entries.push({ game: entry.game, row: { ...row, outcome: "forfeit", winner: null, turns: 0 }, episodes: [] });
+          entries.push({ game: entry.game, row: { ...row, outcome: "forfeit", winner: null, turns: 0 }, episodes: [], ...reported });
         } else {
           const { loser, cause, request_seq, detail } = outcome;
-          entries.push({ game: entry.game, row: { ...row, outcome: "forfeit", winner: outcome.winner, turns: outcome.turns, forfeit: { loser, cause, request_seq, detail } }, episodes: [] });
+          entries.push({ game: entry.game, row: { ...row, outcome: "forfeit", winner: outcome.winner, turns: outcome.turns, forfeit: { loser, cause, request_seq, detail } }, episodes: [], ...reported });
         }
         continue;
       }
@@ -296,7 +354,7 @@ export async function playEntries(options: GenerationOptions, shard: Shard = { i
           }),
         );
       }
-      entries.push({ game: entry.game, row: { ...row, outcome: "played", winner: record.winner, turns: record.turns }, episodes });
+      entries.push({ game: entry.game, row: { ...row, outcome: "played", winner: record.winner, turns: record.turns }, episodes, ...reported });
     }
   }
   return entries;
@@ -347,7 +405,7 @@ export async function playGeneration(options: GenerationOptions): Promise<Genera
     stream,
     stream_path: options.stream_path ?? null,
     set,
-    run_record: await buildLeagueRunRecord({ config, generation, pair_policy_id: policy_id, plan, games: rows }),
+    run_record: await buildLeagueRunRecord({ config, generation, pair_policy_id: policy_id, plan, games: rows, baseline_reports: entries.flatMap((entry) => (entry.baseline === undefined ? [] : [entry.baseline])) }),
     training_set_hash: await nodeSha256(new TextEncoder().encode(jcs(set as unknown as Json))),
     manifest: resolveFormat(engine, config.format_id).manifest,
     team_hashes: [...drawn].sort(),
