@@ -19,6 +19,7 @@ import dataclasses
 import os
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
+from typing import Protocol
 
 import torch
 
@@ -41,7 +42,17 @@ class LearnerError(ValueError):
     """The learner cannot be built or run as asked."""
 
 
-def configure_learner(config: RunConfig) -> torch.device:
+class Placement(Protocol):
+    """What ``configure_learner`` reads of a TrainingRunConfig or a CloneRunConfig."""
+
+    @property
+    def device(self) -> str: ...
+
+    @property
+    def threads(self) -> int: ...
+
+
+def configure_learner(config: Placement) -> torch.device:
     """Set this process up for the learner and return its device; call once at start-up."""
     if config.device == "cuda":
         if not torch.cuda.is_available():
