@@ -6,12 +6,65 @@ on:
       check:
         type: choice
         default: licences
-        options: [docker, licences, resources]
+        options: [docker, licences, resources, tests]
 
 permissions:
   contents: read
 
 jobs:
+  typescript-probe:
+    if: inputs.check == 'tests'
+    runs-on: [self-hosted, coolify]
+    timeout-minutes: 15
+    env:
+      npm_config_workspace_concurrency: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: 4d498febbd29f5fec36b14a0c814a9708f7b6578
+          submodules: true
+      - name: install probe tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends make time
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version-file: .nvmrc
+      - run: corepack enable && COREPACK_ENABLE_DOWNLOAD_PROMPT=0 pnpm --version
+      - run: pnpm install --frozen-lockfile
+      - name: resource counters before reproduction
+        run: |
+          date -u
+          node -p 'JSON.stringify({constrainedMemory:process.constrainedMemory(),availableMemory:process.availableMemory(),parallelism:require("node:os").availableParallelism()})'
+          for file in cpu.max cpu.stat cpu.pressure memory.max memory.current memory.peak memory.events memory.pressure; do
+            if [ -f "/sys/fs/cgroup/$file" ]; then
+              printf '\n%s\n' "$file"
+              cat "/sys/fs/cgroup/$file"
+            fi
+          done
+      - name: build pinned Showdown
+        run: make showdown
+      - name: reproduce the failing corpus and schema tests with coverage
+        # Diagnostic branch only: selected tests collect the same coverage;
+        # full-suite coverage thresholds are enforced by PR #174's real CI.
+        run: |
+          /usr/bin/time -v pnpm exec vitest run --maxWorkers=1 --coverage \
+            --coverage.thresholds.lines=0 --coverage.thresholds.branches=0 \
+            --coverage.thresholds.functions=0 --coverage.thresholds.statements=0 \
+            packages/public-state/test/lines.test.ts \
+            packages/schema/test/contracts.test.ts \
+            packages/showdown-bridge/test/samples.test.ts
+      - name: resource counters after reproduction
+        if: always()
+        run: |
+          date -u
+          for file in cpu.stat cpu.pressure memory.current memory.peak memory.events memory.pressure; do
+            if [ -f "/sys/fs/cgroup/$file" ]; then
+              printf '\n%s\n' "$file"
+              cat "/sys/fs/cgroup/$file"
+            fi
+          done
+
   docker-probe:
     if: inputs.check == 'docker'
     runs-on: [self-hosted, coolify]
