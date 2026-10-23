@@ -101,6 +101,9 @@ jobs:
           set -euo pipefail
           printf 'CPU count: '
           getconf _NPROCESSORS_ONLN
+          cat /proc/self/cgroup
+          awk '/cgroup/ {print}' /proc/self/mountinfo
+          /home/runner/externals/node24/bin/node -p 'JSON.stringify({constrainedMemory:process.constrainedMemory(),availableMemory:process.availableMemory(),parallelism:require("node:os").availableParallelism()})'
           awk '/MemTotal|MemAvailable|SwapTotal|SwapFree/ {print}' /proc/meminfo
           for file in cpu.max memory.max memory.current; do
             if [ -f "/sys/fs/cgroup/$file" ]; then
