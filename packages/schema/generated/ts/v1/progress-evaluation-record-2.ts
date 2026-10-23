@@ -344,6 +344,10 @@ export interface BaselineCounts {
    * Requests where epsilon_ppm made the baseline play a random candidate.
    */
   epsilon_plays: number;
+  /**
+   * Optional (a minor change within v1; absent means 0 and is written only when above 0): requests answered by the actor-rule candidate because the mechanics probe refused a query the baseline built (a declared state the engine does not take). A high rate means the baseline plays like actor-rule; never more than queries.
+   */
+  probe_refusals?: number;
 }
 /**
  * One game's result: the per-game results table of protocol section 8.1.
@@ -434,4 +438,8 @@ export interface BaselineCounts1 {
    * Requests where epsilon_ppm made the baseline play a random candidate.
    */
   epsilon_plays: number;
+  /**
+   * Optional (a minor change within v1; absent means 0 and is written only when above 0): requests answered by the actor-rule candidate because the mechanics probe refused a query the baseline built (a declared state the engine does not take). A high rate means the baseline plays like actor-rule; never more than queries.
+   */
+  probe_refusals?: number;
 }

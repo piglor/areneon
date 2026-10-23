@@ -32,6 +32,9 @@ export const isDamageAware = (policyId: string): boolean => policyId.startsWith(
 export function sumBaselineCounts(list: readonly BaselineCounts[]): BaselineCounts {
   const total = Object.fromEntries(BASELINE_COUNT_KEYS.map((key) => [key, 0])) as unknown as BaselineCounts;
   for (const counts of list) for (const key of BASELINE_COUNT_KEYS) total[key] += counts[key];
+  // Written only above 0, so a run without refusals keeps the bytes it always had.
+  const refused = list.reduce((sum, counts) => sum + (counts.probe_refusals ?? 0), 0);
+  if (refused > 0) total.probe_refusals = refused;
   return total;
 }
 
@@ -81,7 +84,7 @@ export function tallyRows(rows: readonly Pick<Row, "outcome">[], maxTurns: numbe
 
 /** The rules the profile cannot say about one baseline count record (a game's, or a sum of games'). */
 function checkBaselineCounts(counts: BaselineCounts, what: string): void {
-  if (counts.probe_runs > counts.queries || counts.unsupported_queries > counts.queries) fail(`${what}: probe runs and unsupported queries cannot exceed queries`);
+  if (counts.probe_runs > counts.queries || counts.unsupported_queries > counts.queries || (counts.probe_refusals ?? 0) > counts.queries) fail(`${what}: probe runs, unsupported queries and probe refusals cannot exceed queries`);
   if (counts.preview_decisions + counts.scored_decisions > counts.decisions) fail(`${what}: preview and scored decisions cannot exceed decisions`);
 }
 

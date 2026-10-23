@@ -53,16 +53,17 @@ def is_damage_aware(policy: str) -> bool:
 
 def sum_baseline_counts(counts: list[dict[str, int]]) -> dict[str, int]:
     """The per-game baseline counts summed, key by key."""
-    return {key: sum(c[key] for c in counts) for key in BASELINE_COUNT_KEYS}
+    total = {key: sum(c[key] for c in counts) for key in BASELINE_COUNT_KEYS}
+    # Written only above 0, so a run without refusals keeps the bytes it always had.
+    refused = sum(c.get("probe_refusals", 0) for c in counts)
+    return total | ({"probe_refusals": refused} if refused else {})
 
 
 def _check_baseline_counts(counts: dict[str, int], what: str) -> None:
-    if (
-        counts["probe_runs"] > counts["queries"]
-        or counts["unsupported_queries"] > counts["queries"]
-    ):
+    refused = counts.get("probe_refusals", 0)
+    if max(counts["probe_runs"], counts["unsupported_queries"], refused) > counts["queries"]:
         raise ProgressRecordError(
-            f"{what}: probe runs and unsupported queries cannot exceed queries"
+            f"{what}: probe runs, unsupported queries and probe refusals cannot exceed queries"
         )
     if counts["preview_decisions"] + counts["scored_decisions"] > counts["decisions"]:
         raise ProgressRecordError(f"{what}: preview and scored decisions cannot exceed decisions")

@@ -186,6 +186,12 @@ class BaselineCounts(BaseModel):
     """
     Requests where epsilon_ppm made the baseline play a random candidate.
     """
+    probe_refusals: Annotated[StrictInt | MISSING, Field(ge=0, le=9007199254740991)] = (
+        MISSING
+    )
+    """
+    Optional (a minor change within v1; absent means 0 and is written only when above 0): requests answered by the actor-rule candidate because the mechanics probe refused a query the baseline built (a declared state the engine does not take). A high rate means the baseline plays like actor-rule; never more than queries.
+    """
 
 
 class Baseline(BaseModel):

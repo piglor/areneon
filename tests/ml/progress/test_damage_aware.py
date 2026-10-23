@@ -234,7 +234,10 @@ def test_the_reader_ties_a_game_to_its_row() -> None:
         ("baseline-counts-disagree", "baseline.counts must be the sum"),
         ("baseline-row-missing", "carries baseline counts in its summary"),
         ("baseline-on-other-match", "only a damage-aware match carries baseline counts"),
-        ("baseline-probe-runs-exceed-queries", "probe runs and unsupported queries"),
+        (
+            "baseline-probe-runs-exceed-queries",
+            "probe runs, unsupported queries and probe refusals",
+        ),
         ("baseline-identities-differ", "one baseline identity hash"),
     ],
 )
@@ -272,3 +275,20 @@ def test_the_valid_samples_read_and_a_forfeit_may_leave_one_request_unanswered()
     game["baseline"]["counts"]["preview_decisions"] = game["baseline"]["counts"]["decisions"]
     with pytest.raises(ProgressRecordError, match="preview and scored decisions"):
         read_game_record(game)
+
+
+def test_probe_refusals_are_summed_and_bounded() -> None:
+    record = copy.deepcopy(sample("progress-evaluation-record-2/valid/damage-aware-match"))
+    for row in record["games"]:
+        row["baseline_counts"]["probe_refusals"] = 1
+    record["matches"][0]["baseline"]["counts"]["probe_refusals"] = len(record["games"])
+    assert read_progress_record(record)
+    record["matches"][0]["baseline"]["counts"]["probe_refusals"] += 1
+    with pytest.raises(ProgressRecordError, match="must be the sum"):
+        read_progress_record(record)
+    over = copy.deepcopy(sample("progress-evaluation-record-2/valid/damage-aware-match"))
+    big = over["games"][0]["baseline_counts"]["queries"] + 1
+    over["games"][0]["baseline_counts"]["probe_refusals"] = big
+    over["matches"][0]["baseline"]["counts"]["probe_refusals"] = big
+    with pytest.raises(ProgressRecordError, match="probe refusals cannot exceed queries"):
+        read_progress_record(over)

@@ -203,7 +203,7 @@ describe("the damage-aware baseline's counts (ADR-018 sections 4 and 5)", () => 
     ["baseline-counts-disagree", "baseline.counts must be the sum"],
     ["baseline-row-missing", "carries baseline counts in its summary and in every game row"],
     ["baseline-on-other-match", "only a damage-aware match carries baseline counts"],
-    ["baseline-probe-runs-exceed-queries", "probe runs and unsupported queries cannot exceed queries"],
+    ["baseline-probe-runs-exceed-queries", "probe runs, unsupported queries and probe refusals cannot exceed queries"],
     ["baseline-identities-differ", "one baseline identity hash"],
   ])("refuses the evaluation sample %s", (name, message) => {
     expect(() => readProgressEvaluationRecordV2(sample(`${V2}/reader-invalid/${name}`))).toThrow(message);
@@ -223,7 +223,7 @@ describe("the damage-aware baseline's counts (ADR-018 sections 4 and 5)", () => 
     expect(() => readProgressGameRecord(game)).toThrow("preview and scored decisions cannot exceed decisions");
     const other = sample(`${GAME}/valid/damage-aware`);
     other.baseline.counts.unsupported_queries = other.baseline.counts.queries + 1;
-    expect(() => readProgressGameRecord(other)).toThrow("unsupported queries cannot exceed queries");
+    expect(() => readProgressGameRecord(other)).toThrow("unsupported queries and probe refusals cannot exceed queries");
   });
 
   it("allows one unanswered request when the game ended in a forfeit", () => {
@@ -231,5 +231,20 @@ describe("the damage-aware baseline's counts (ADR-018 sections 4 and 5)", () => 
     game.outcome = { kind: "forfeit", loser: "p1", cause: "crash", request_seq: 9, turns: 3 };
     game.baseline.counts.decisions += 1;
     expect(() => readProgressGameRecord(game)).not.toThrow();
+  });
+});
+
+describe("probe_refusals of the damage-aware counts (optional, written only above 0)", () => {
+  it("is summed from the rows into the match, and may not exceed the queries", () => {
+    const record = sample("progress-evaluation-record-2/valid/damage-aware-match");
+    for (const row of record.games) row.baseline_counts.probe_refusals = 1;
+    record.matches[0].baseline.counts.probe_refusals = record.games.length;
+    expect(() => readProgressEvaluationRecordV2(record)).not.toThrow();
+    record.matches[0].baseline.counts.probe_refusals += 1;
+    expect(() => readProgressEvaluationRecordV2(record)).toThrow("baseline.counts must be the sum");
+    const over = sample("progress-evaluation-record-2/valid/damage-aware-match");
+    over.games[0].baseline_counts.probe_refusals = over.games[0].baseline_counts.queries + 1;
+    over.matches[0].baseline.counts.probe_refusals = over.games[0].baseline_counts.probe_refusals;
+    expect(() => readProgressEvaluationRecordV2(over)).toThrow("probe refusals cannot exceed queries");
   });
 });

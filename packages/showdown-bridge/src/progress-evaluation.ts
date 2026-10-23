@@ -331,7 +331,9 @@ export async function playProgress(options: ProgressOptions): Promise<ProgressRe
             const { policy_id, identity_hash, counts } = actor.report();
             if (policy_id !== DAMAGE_AWARE_POLICY_ID) throw new ProgressError(`the baseline plays as ${policy_id}, not ${DAMAGE_AWARE_POLICY_ID}`);
             if (identity_hash !== identity) throw new ProgressError("a damage-aware game carries another baseline identity hash than its records give");
-            return { identity_hash, counts };
+            // probe_refusals is written only above 0, so a baseline without refusals keeps the record's bytes.
+            const { probe_refusals, ...rest } = counts;
+            return { identity_hash, counts: probe_refusals > 0 ? { ...rest, probe_refusals } : rest };
           },
         };
       },
