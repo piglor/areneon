@@ -49,22 +49,32 @@ def _parameter_names(learner: Learner, role: str) -> list[str]:
     return [name for name, _ in learner.networks[role].named_parameters()]
 
 
-def pack_state(learner: Learner) -> PackedState:
-    """The two files' bytes for the learner as it is now."""
+def gather_tensors(
+    networks: Mapping[str, torch.nn.Module],
+    optimisers: Mapping[str, torch.optim.Optimizer],
+    generator: torch.Generator,
+) -> tuple[dict[str, torch.Tensor], dict[str, dict[str, int]]]:
+    """The named tensors of a learner state (weights, Adam moments, generator) and step counts."""
     tensors: dict[str, torch.Tensor] = {}
     steps: dict[str, dict[str, int]] = {}
     for role in ROLES:
-        for name, tensor in learner.networks[role].state_dict().items():
+        for name, tensor in networks[role].state_dict().items():
             tensors[f"net.{role}.{name}"] = tensor
-        optimiser = learner.optimisers[role]
+        optimiser = optimisers[role]
         steps[role] = {}
-        for name, parameter in learner.networks[role].named_parameters():
+        for name, parameter in networks[role].named_parameters():
             found = optimiser.state.get(parameter)
             if found:
                 steps[role][name] = int(found["step"].item())
                 tensors[f"opt.{role}.exp_avg.{name}"] = found["exp_avg"]
                 tensors[f"opt.{role}.exp_avg_sq.{name}"] = found["exp_avg_sq"]
-    tensors["rng.learner"] = learner.generator.get_state()
+    tensors["rng.learner"] = generator.get_state()
+    return tensors, steps
+
+
+def pack_state(learner: Learner) -> PackedState:
+    """The two files' bytes for the learner as it is now."""
+    tensors, steps = gather_tensors(learner.networks, learner.optimisers, learner.generator)
     sidecar = {
         "schema_version": STATE_FORMAT,
         "generation": learner.generation,

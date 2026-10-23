@@ -421,6 +421,26 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     },
     learner: { device: "cpu", threads: 1 },
   };
+  // A CloneRunConfig (ADR-019 track 1): the tiny supervised cloning run, in the corpus so every language reads the same record.
+  const cloneConfig = {
+    schema_version: 1,
+    lineage_id: "tiny-clone",
+    format_id: GOLDEN_FORMAT,
+    seeds: { run_key: "tiny-clone-run", init_preview: 21, init_battle: 22, learner: 23 },
+    model: runConfig.model,
+    teacher: { behaviour_policy_id: "damage-aware@tiny", training_set_hash: "c".repeat(64) },
+    clone: {
+      epochs: 3,
+      minibatch_size: 16,
+      learning_rate_micro: 3000,
+      adam_beta1_micro: 900000,
+      adam_beta2_micro: 999000,
+      adam_eps_nano: 10,
+      max_grad_norm_micro: 1000000,
+      holdout: { key: "d".repeat(64), ppm: 200000 },
+    },
+    learner: { device: "cpu", threads: 1 },
+  };
   // A LeagueRunRecord (ADR-009 section 3): one generation of the tiny run, tied to that config by its hash.
   const pairId = `policy:${"a".repeat(64)}`;
   const leagueRun = {
@@ -457,6 +477,7 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
   const leagueRunWith = (change: (r: Record<string, unknown>) => void) => mutated(leagueRun, change);
   const runConfigWith = (change: (c: Record<string, unknown>) => void) => mutated(runConfig, change);
   const runSection = (c: Record<string, unknown>, name: string) => c[name] as Record<string, unknown>;
+  const cloneWith = (change: (c: Record<string, unknown>) => void) => mutated(cloneConfig, change);
 
   const valid: Record<string, unknown> = {
     "engine-data/golden": engineData,
@@ -491,6 +512,8 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     ),
     "training-run-config/constant-schedule": runConfigWith((c) => (runSection(c, "ppo").learning_rate_schedule = { kind: "constant" })),
     "training-run-config/team-dataset": runConfigWith((c) => (c.team_dataset = { path: ".tmp/datasets/train-v1", dataset_hash: hexOf("5") })),
+    "clone-run-config/tiny": cloneConfig,
+    "clone-run-config/no-holdout": cloneWith((c) => (runSection(c, "clone").holdout = { key: "d".repeat(64), ppm: 0 })),
     "run-metrics/cpu": runMetrics,
     "run-metrics/cuda": runMetricsWith((r) => {
       r.device = "cuda";
@@ -573,6 +596,13 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "training-run-config/duplicate-baseline": runConfigWith((c) => {
       const games = runSection(c, "generation");
       games.baseline_games = [...(games.baseline_games as unknown[]), ...(games.baseline_games as unknown[])];
+    }),
+    // Schema-valid, refused by the CloneRunConfig reader: the model rules the profile cannot say.
+    "clone-run-config/heads-do-not-divide-width": cloneWith((c) => (runSection(c, "model").n_heads = 3)),
+    "clone-run-config/picks-exceed-team": cloneWith((c) => {
+      const encoder = runSection(runSection(c, "model"), "encoder");
+      encoder.max_team = 3;
+      encoder.max_picks = 4;
     }),
     // Schema-valid, refused by the LeagueRunRecord reader: the counts agree, and the opponents are sorted and unique.
     "league-run-record/counts-disagree": leagueRunWith((r) => (r.forfeits = 2)),
@@ -696,6 +726,16 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "league-run-record/short-config-hash": leagueRunWith((r) => (r.run_config_hash = "abc")),
     "league-run-record/bare-pair-id": leagueRunWith((r) => (r.pair_policy_id = "a".repeat(64))),
     "league-run-record/no-plan-hash": leagueRunWith((r) => delete r.plan_hash),
+    "clone-run-config/extra-field": cloneWith((c) => (c.notes = "x")),
+    "clone-run-config/fractional-rate": cloneWith((c) => (runSection(c, "clone").learning_rate_micro = 0.5)),
+    "clone-run-config/zero-epochs": cloneWith((c) => (runSection(c, "clone").epochs = 0)),
+    "clone-run-config/holdout-over-half": cloneWith((c) => (runSection(c, "clone").holdout = { key: "d".repeat(64), ppm: 500001 })),
+    "clone-run-config/holdout-short-digest": cloneWith((c) => (runSection(c, "clone").holdout = { key: "d", ppm: 1 })),
+    "clone-run-config/learned-teacher": cloneWith((c) => (runSection(c, "teacher").behaviour_policy_id = `policy:${"a".repeat(64)}`)),
+    "clone-run-config/short-set-hash": cloneWith((c) => (runSection(c, "teacher").training_set_hash = "abc")),
+    "clone-run-config/no-teacher": cloneWith((c) => delete c.teacher),
+    "clone-run-config/unknown-device": cloneWith((c) => (runSection(c, "learner").device = "tpu")),
+    "clone-run-config/next-version": cloneWith((c) => (c.schema_version = 2)),
     "training-run-config/extra-field": runConfigWith((c) => (c.notes = "x")),
     "training-run-config/fractional-rate": runConfigWith((c) => (runSection(c, "ppo").learning_rate_micro = 0.5)),
     "training-run-config/zero-target-kl": runConfigWith((c) => (runSection(c, "ppo").target_kl_micro = 0)),
