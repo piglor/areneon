@@ -2,12 +2,18 @@ name: ci
 
 on:
   workflow_dispatch:
+    inputs:
+      check:
+        type: choice
+        default: licences
+        options: [docker, licences]
 
 permissions:
   contents: read
 
 jobs:
   docker-probe:
+    if: inputs.check == 'docker'
     runs-on: [self-hosted, coolify]
     timeout-minutes: 5
     steps:
@@ -41,3 +47,40 @@ jobs:
             --volume "$RUNNER_TEMP/docker-marker:/marker:ro" \
             busybox:1.37.0 cat /marker)
           test "$result" = runner-temp-ok
+
+  licences-probe:
+    if: inputs.check == 'licences'
+    runs-on: [self-hosted, coolify]
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version-file: .nvmrc
+      - run: corepack enable && COREPACK_ENABLE_DOWNLOAD_PROMPT=0 pnpm --version
+      - run: pnpm install --frozen-lockfile
+      - name: capture the injected dependency licence report
+        run: |
+          set -euo pipefail
+          repo="$PWD"
+          scratch=$(mktemp -d)
+          trap 'rm -rf "$scratch"' EXIT
+          while IFS= read -r -d '' file; do
+            mkdir -p "$scratch/$(dirname "$file")"
+            cp "$file" "$scratch/$file"
+          done < <(git ls-files -z Makefile package.json pnpm-lock.yaml pnpm-workspace.yaml \
+            'packages/*/package.json' pyproject.toml uv.lock .python-version 'packages/schema/python/**' \
+            'ml/**' scripts/__init__.py scripts/check_licenses.py scripts/python_licences.py \
+            scripts/licence_exceptions.json scripts/check_cuda_separation.py)
+          cd "$scratch"
+          mkdir agpl-dep
+          printf '{"name":"agpl-dep","version":"1.0.0","license":"AGPL-3.0-only"}\n' > agpl-dep/package.json
+          pnpm --filter @areneon/showdown-bridge add --prefer-offline --ignore-scripts "file:$scratch/agpl-dep"
+          status=0
+          pnpm -r licenses list --prod --json > "$RUNNER_TEMP/licences-report.json" 2> "$RUNNER_TEMP/licences-error.txt" || status=$?
+          printf 'pnpm report exit code: %s\n' "$status"
+          cat "$RUNNER_TEMP/licences-report.json" "$RUNNER_TEMP/licences-error.txt"
+          output=$(python3 "$repo/scripts/check_licenses.py" < "$RUNNER_TEMP/licences-report.json" 2>&1) || true
+          printf '%s\n' "$output"
+          test "$status" -eq 0
+          [[ "$output" == *agpl-dep@AGPL-3.0-only* ]]
