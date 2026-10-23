@@ -19,9 +19,11 @@ from areneon_ml.inspector.page import esc, link_id
 from areneon_ml.inspector.progress_replay import SEATS, ProgressGame
 from areneon_ml.inspector.replay import to_id
 from areneon_ml.inspector.replay_page import assets, dex_for_ids
+from areneon_ml.progress.records import DAMAGE_AWARE_LABEL
 
 PAGES = "progress-replays"
 SEEN = "seen, same-lineage comparison: it can cycle"
+
 WARNING = (
     "Omniscient view: both sides' hidden information. An evaluation artifact, never policy input; "
     "local use only. Do not share or commit this page."
@@ -61,6 +63,8 @@ def _opponent_words(game: ProgressGame) -> str:
         return "the previous generation's frozen pair"
     if game.opponent_kind == "anchor":
         return f"generation {game.opponent_generation}'s frozen pair, an anchor"
+    if game.baseline is not None:
+        return "the damage-aware scripted baseline"
     return "the scripted baseline"
 
 
@@ -122,6 +126,13 @@ def _context(game: ProgressGame) -> str:
     words = _opponent_words(game)
     if game.opponent_kind in ("previous", "anchor"):
         words += f" ({SEEN})"
+    if game.baseline is not None:
+        c = game.baseline["counts"]
+        words += (
+            f" ({DAMAGE_AWARE_LABEL}; this game, {game.baseline['seat']}: {c['decisions']} decisions, "
+            f"{c['queries']} probe queries of which {c['unsupported_queries']} unsupported, "
+            f"{c['reader_fallbacks']} reader and {c['assumed_set_fallbacks']} assumed-set fallbacks)"
+        )
     return f"{game.mode} mode against {words}. Pair {game.pair}, game {game.game % 2 + 1} of 2: each pair is played from both seats with the same teams and battle seed."
 
 
@@ -172,6 +183,8 @@ def dex_for(table: Mapping[str, Any], game: ProgressGame) -> dict[str, Any]:
 
 def _seen(match: str) -> str:
     """The label of a match that plays an earlier generation of the same lineage (by its id)."""
+    if match.startswith("damage-aware-"):
+        return f" ({esc(DAMAGE_AWARE_LABEL)})"
     return f" ({esc(SEEN)})" if match.startswith(("anchor-", "previous-")) else ""
 
 

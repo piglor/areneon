@@ -87,6 +87,31 @@
       "description": "SHA-256 of the JCS bytes of the omniscient_log array (the lines as a JSON array of strings).",
       "type": "string",
       "pattern": "^[0-9a-f]{64}$"
+    },
+    "baseline": {
+      "description": "Only a game with a damage-aware baseline seat (ADR-018 sections 4, 5): which seat it held, the baseline identity hash and that seat's integer counts for the game. Added within v1 (ADR-008 section 3): a reader older than the field rejects a record that carries it.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "seat",
+        "identity_hash",
+        "counts"
+      ],
+      "properties": {
+        "seat": {
+          "enum": [
+            "p1",
+            "p2"
+          ]
+        },
+        "identity_hash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "counts": {
+          "$ref": "#/$defs/BaselineCounts"
+        }
+      }
     }
   },
   "description": "One stored game of a progress evaluation (ADR-017 section 3): seed, both teams, both seats' decisions and the omniscient log, enough to replay the engine side exactly. It is not an Episode: the training loader refuses it. Reader rules: every chosen is among its candidates, both team hashes recompute, the log hash recomputes, the seed is the one progress-seed/1 gives the game index.",
@@ -430,6 +455,77 @@
       ],
       "discriminator": {
         "propertyName": "kind"
+      }
+    },
+    "BaselineCounts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "decisions",
+        "preview_decisions",
+        "scored_decisions",
+        "queries",
+        "probe_runs",
+        "unsupported_queries",
+        "reader_fallbacks",
+        "assumed_set_fallbacks",
+        "epsilon_plays"
+      ],
+      "properties": {
+        "decisions": {
+          "description": "Requests answered, Team Preview included.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "preview_decisions": {
+          "description": "Team Preview requests (the actor-rule candidate).",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "scored_decisions": {
+          "description": "Requests whose candidates were scored.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "queries": {
+          "description": "Probe queries asked.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "probe_runs": {
+          "description": "Probe runs actually made (queries not answered from a game's memo).",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "unsupported_queries": {
+          "description": "Queries the probe answered unsupported: scored 0, never approximated.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "reader_fallbacks": {
+          "description": "Requests answered by the actor-rule candidate because the state reader flagged a line.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "assumed_set_fallbacks": {
+          "description": "Requests answered by the actor-rule candidate because no legal assumed opponent set could be built.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "epsilon_plays": {
+          "description": "Requests where epsilon_ppm made the baseline play a random candidate.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
       }
     }
   }

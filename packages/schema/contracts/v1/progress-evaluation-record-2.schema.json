@@ -434,6 +434,9 @@
             "type": "string",
             "pattern": "^[0-9a-f]{64}$"
           }
+        },
+        "baseline": {
+          "$ref": "#/$defs/BaselineSummary"
         }
       }
     },
@@ -553,6 +556,10 @@
         },
         "outcome": {
           "$ref": "#/$defs/Outcome"
+        },
+        "baseline_counts": {
+          "description": "Only a game of a damage-aware match: the baseline seat's integer counts for this game (reader rules: probe_runs and unsupported_queries do not exceed queries; preview_decisions plus scored_decisions do not exceed decisions). The match's baseline.counts are the sums over its rows.",
+          "$ref": "#/$defs/BaselineCounts"
         }
       }
     },
@@ -625,6 +632,96 @@
         }
       },
       "description": "An earlier generation's learned Preview network."
+    },
+    "BaselineCounts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "decisions",
+        "preview_decisions",
+        "scored_decisions",
+        "queries",
+        "probe_runs",
+        "unsupported_queries",
+        "reader_fallbacks",
+        "assumed_set_fallbacks",
+        "epsilon_plays"
+      ],
+      "properties": {
+        "decisions": {
+          "description": "Requests answered, Team Preview included.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "preview_decisions": {
+          "description": "Team Preview requests (the actor-rule candidate).",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "scored_decisions": {
+          "description": "Requests whose candidates were scored.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "queries": {
+          "description": "Probe queries asked.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "probe_runs": {
+          "description": "Probe runs actually made (queries not answered from a game's memo).",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "unsupported_queries": {
+          "description": "Queries the probe answered unsupported: scored 0, never approximated.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "reader_fallbacks": {
+          "description": "Requests answered by the actor-rule candidate because the state reader flagged a line.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "assumed_set_fallbacks": {
+          "description": "Requests answered by the actor-rule candidate because no legal assumed opponent set could be built.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "epsilon_plays": {
+          "description": "Requests where epsilon_ppm made the baseline play a random candidate.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    "BaselineSummary": {
+      "description": "The damage-aware baseline of a match (ADR-018 sections 4, 5): its identity hash and the per-game counts summed over the match's games (all integers). Present exactly in the matches whose opponent is damage-aware. Added within v1 (ADR-008 section 3): a reader older than the field rejects a record that carries it.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "identity_hash",
+        "counts"
+      ],
+      "properties": {
+        "identity_hash": {
+          "description": "The baseline identity hash: SHA-256 of the JCS of {baseline_config_hash, mechanics_config_hash, adapter_format, reader_sha256, version_manifest}. Every game of every damage-aware match of a record carries the same one.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "counts": {
+          "$ref": "#/$defs/BaselineCounts"
+        }
+      }
     }
   }
 }

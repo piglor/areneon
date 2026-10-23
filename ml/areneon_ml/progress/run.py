@@ -33,9 +33,11 @@ from areneon_ml.loop.play import NodePlayer, PlayError
 from areneon_ml.loop.records import policy_id
 from areneon_ml.progress.ablation import ablation_summary, expected_ablation_matches
 from areneon_ml.progress.records import (
+    DAMAGE_AWARE_LABEL,
     RANDOM_PREVIEW_POLICY,
     SCHEMA_V2,
     ProgressRecordError,
+    check_game_baseline,
     is_v2,
     read_game_record,
     read_progress_record,
@@ -63,6 +65,10 @@ DEFAULT_ANCHOR_GAMES = 200
 MIN_GAMES = 2
 #: ``--all`` evaluates the committed generations whose number is a multiple of this, 0 included.
 SCHEDULE_EVERY = 5
+#: The working budget for one damage-aware match, in minutes (ADR-018 section 6).
+DEFAULT_DAMAGE_AWARE_BUDGET_MINUTES = 30
+#: The damage-aware baseline's match ids; its policy id is ``damage-aware@v1``.
+DAMAGE_AWARE_MATCHES = ("damage-aware-argmax", "damage-aware-sample")
 #: Says what a ``previous-*`` row is: the pair's own lineage, so it can cycle (ADR-017 section 2).
 SEEN_LABEL = "seen, same-lineage comparison: it can cycle"
 
@@ -125,6 +131,9 @@ class ProgressRequest:
     anchor_games: int = 0
     #: The Preview ablation, played instead of the usual matches (no previous, no anchors).
     ablation: AblationSpec | None = None
+    #: The most wall-clock milliseconds one damage-aware match may take; None plays no damage-aware
+    #: match (ADR-018 slice 4: opt-in, and a match over the budget fails the evaluation).
+    damage_aware_budget_ms: int | None = None
 
 
 class ProgressPlayer(Protocol):
@@ -164,6 +173,11 @@ class NodeProgressPlayer(NodePlayer):
                 *("--ablation-random-policy-id", request.ablation.random_policy_id),
             )
         )
+        damage = (
+            ()
+            if request.damage_aware_budget_ms is None
+            else ("--damage-aware-budget-ms", str(request.damage_aware_budget_ms))
+        )
         out = self._run(
             SCRIPT,
             *("--config", str(self.config_path)),
@@ -184,6 +198,7 @@ class NodeProgressPlayer(NodePlayer):
             *more,
             *anchors,
             *ablation,
+            *damage,
         )
         try:
             found = json.loads(out)
@@ -335,6 +350,57 @@ def _check_previous(record: dict[str, Any], previous: PreviousPair | None, *, le
             )
 
 
+def _check_damage_aware(record: dict[str, Any], asked: bool, *, legacy: bool) -> None:
+    """The damage-aware matches are exactly the two asked for (a fresh evaluation), each naming the
+    baseline's policy id ``damage-aware@v1``, and share one identity hash (the reader checks it).
+
+    ``legacy`` is a committed record, which may hold none (committed without them), never a wrong
+    or half set.
+    """
+    found = {
+        m["match_id"]: m
+        for m in record["matches"]
+        if m["opponent"]["kind"] == "baseline"
+        and m["opponent"]["policy_id"].startswith("damage-aware@")
+    }
+    if not asked and not legacy:
+        if found:
+            raise ProgressError("this evaluation asks for no damage-aware matches")
+        return
+    if not found and legacy:
+        return
+    if set(found) != set(DAMAGE_AWARE_MATCHES):
+        raise ProgressError("damage-aware matches are damage-aware-argmax and damage-aware-sample")
+    for match in found.values():
+        if match["match_id"] != f"damage-aware-{match['mode']}" or match["opponent"] != {
+            "kind": "baseline",
+            "policy_id": "damage-aware@v1",
+        }:
+            raise ProgressError(f"{match['match_id']}: the opponent is not damage-aware@v1")
+
+
+def _damage_aware_status(record: dict[str, Any]) -> str:
+    """Says what the record holds of the damage-aware matches, in words for the operator."""
+    if any(m.get("baseline") is not None for m in record["matches"]):
+        return "played"
+    return (
+        "none: damage-aware matches are opt-in (--damage-aware); a committed generation is never "
+        "rewritten, so evaluate into a new --progress-dir to add them"
+    )
+
+
+def _damage_budget_ms(minutes: int | None, preview_ablation: bool) -> int | None:
+    """The wall-clock budget of one damage-aware match in milliseconds, or None for no match."""
+    if minutes is None:
+        return None
+    if minutes < 1 or preview_ablation:
+        raise ProgressError(
+            "--damage-aware-budget-minutes must be a whole number of minutes of 1 or more, "
+            "and the Preview ablation plays no damage-aware match"
+        )
+    return minutes * 60_000
+
+
 def _previous_pair(run_dir: Path, config: RunConfig, generation: int) -> PreviousPair | None:
     """The frozen pair of generation ``generation - 1`` (verified), or None at generation 0."""
     if generation == 0:
@@ -401,6 +467,7 @@ def _verify_output(  # noqa: PLR0913, PLR0917
     run_dir: Path,
     anchor_games: int,
     ablation: AblationSpec | None = None,
+    damage_aware: bool = False,
 ) -> dict[str, Any]:
     """The simulator side's files are the record's: read both kinds, check every hash and name."""
     record = read_progress_record(layout.read_json(work / PROGRESS), config)
@@ -421,6 +488,8 @@ def _verify_output(  # noqa: PLR0913, PLR0917
     if plan.get("anchor_games_per_match", 0) != anchor_games:
         raise ProgressError("progress.json is not the record asked for")
     _check_ablation(record, ablation, run_dir, config, fresh=True)
+    _check_damage_aware(record, damage_aware, legacy=False)
+    rows = {(r["match_id"], r["game"]): r for r in record["games"]}
     expected = set()
     for match in record["matches"]:
         listed = []
@@ -437,6 +506,10 @@ def _verify_output(  # noqa: PLR0913, PLR0917
                 or stored["version_manifest"] != record["version_manifest"]
             ):
                 raise ProgressError(f"games/{name} is not the game it is named for")
+            try:
+                check_game_baseline(stored, match, rows[(match["match_id"], game)])
+            except ProgressRecordError as exc:
+                raise ProgressError(f"games/{name}: {exc}") from exc
             listed.append(record_hash(stored))
         if sorted(listed) != match["game_record_hashes"]:
             raise ProgressError(
@@ -517,6 +590,11 @@ def summary_of(record: dict[str, Any]) -> list[dict[str, Any]]:
                 if match["opponent"]["kind"] in ("previous", "anchor")
                 else {}
             )
+            | (
+                {"comparison": DAMAGE_AWARE_LABEL, "baseline": match["baseline"]}
+                if "baseline" in match
+                else {}
+            )
         )
     return out
 
@@ -560,17 +638,25 @@ def verify_progress_dir(
     _check_previous(record, _previous_pair(run_dir, config, generation), legacy=True)
     _check_anchors(record, None, run_dir, config)
     _check_ablation(record, None, run_dir, config, fresh=False)
+    # The damage-aware matches are optional (a record may hold them or not), never half a set.
+    _check_damage_aware(record, False, legacy=True)
+    rows = {(r["match_id"], r["game"]): r for r in record["games"]}
     for match in record["matches"]:
         for name in sorted(p.name for p in (target / GAMES).glob(f"{match['match_id']}-*.json")):
             stored = read_game_record(layout.read_json(target / GAMES / name))
             if is_v2(record) and stored.get("pair") != stored["game"] // 2:
                 raise ProgressError(f"games/{name}: a both-seats game must name its pair")
+            if is_v2(record):
+                try:
+                    check_game_baseline(stored, match, rows[(match["match_id"], stored["game"])])
+                except (ProgressRecordError, KeyError) as exc:
+                    raise ProgressError(f"games/{name}: {exc}") from exc
     if manifest.get("run_id") != config.run_key:
         raise ProgressError(f"{target.name}: its manifest names another run")
     return record
 
 
-def progress_generation(  # noqa: PLR0913, PLR0917
+def progress_generation(  # noqa: PLR0913, PLR0915, PLR0917
     run_dir: Path,
     generation: int,
     root: Path,
@@ -581,6 +667,7 @@ def progress_generation(  # noqa: PLR0913, PLR0917
     anchor_games: int = DEFAULT_ANCHOR_GAMES,
     previous_matches: bool = False,
     preview_ablation: bool = False,
+    damage_aware_budget_minutes: int | None = None,
 ) -> dict[str, Any]:
     """Evaluate one generation into ``root``; a committed directory is verified and kept.
 
@@ -613,6 +700,7 @@ def progress_generation(  # noqa: PLR0913, PLR0917
         )
     if preview_ablation:
         wanted, dropped = [], []
+    damage_budget_ms = _damage_budget_ms(damage_aware_budget_minutes, preview_ablation)
     config = _read_config(run_dir)
     with progress_lock(root):
         target = progress_dir_of(root, generation)
@@ -631,6 +719,7 @@ def progress_generation(  # noqa: PLR0913, PLR0917
                 "skipped": True,
                 "previous": _previous_status(record, generation),
                 "anchors": _anchor_status(record, wanted, dropped),
+                "damage_aware": _damage_aware_status(record),
                 "matches": summary_of(record),
             } | _ablation_part(record)
         source = _source(run_dir, config, generation)
@@ -673,6 +762,7 @@ def progress_generation(  # noqa: PLR0913, PLR0917
                     anchors=anchor_pairs,
                     anchor_games=played_anchor_games,
                     ablation=ablation,
+                    damage_aware_budget_ms=damage_budget_ms,
                 )
             )
             record = _verify_output(
@@ -686,6 +776,7 @@ def progress_generation(  # noqa: PLR0913, PLR0917
                 run_dir,
                 played_anchor_games,
                 ablation,
+                damage_aware_budget_minutes is not None,
             )
             layout.fsync_tree(work)
             layout.write_json(
@@ -708,7 +799,9 @@ def progress_generation(  # noqa: PLR0913, PLR0917
             "skipped": False,
             "previous": _previous_status(record, generation),
             "anchors": _anchor_status(record, wanted, dropped),
+            "damage_aware": _damage_aware_status(record),
             "wall_ms": facts.get("wall_ms", {}),
+            "game_ms": facts.get("game_ms", {}),
             "matches": summary_of(record),
         } | _ablation_part(record)
 
@@ -779,7 +872,9 @@ def scheduled_generations(run_dir: Path) -> list[int]:
 
 
 __all__ = [
+    "DAMAGE_AWARE_LABEL",
     "DEFAULT_ANCHOR_GAMES",
+    "DEFAULT_DAMAGE_AWARE_BUDGET_MINUTES",
     "SCHEDULE_EVERY",
     "AblationSpec",
     "AnchorPair",

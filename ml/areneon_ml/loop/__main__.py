@@ -51,6 +51,7 @@ from areneon_ml.progress.looks import Look, LookError, append_look, looks_path
 from areneon_ml.progress.records import ProgressRecordError
 from areneon_ml.progress.run import (
     DEFAULT_ANCHOR_GAMES,
+    DEFAULT_DAMAGE_AWARE_BUDGET_MINUTES,
     DEFAULT_GAMES,
     DEFAULT_RECORD_GAMES,
     SCHEDULE_EVERY,
@@ -162,6 +163,20 @@ def _parser() -> argparse.ArgumentParser:
         "a seen, same-lineage comparison that can cycle; off by default",
     )
     progress.add_argument(
+        "--damage-aware",
+        action="store_true",
+        help="also play the damage-aware scripted baseline (damage-aware-sample, "
+        "damage-aware-argmax; ADR-018): a seen opponent, never held-out evidence, about 14 "
+        "minutes per 200-game match; off by default",
+    )
+    progress.add_argument(
+        "--damage-aware-budget-minutes",
+        type=int,
+        help="with --damage-aware: the most wall-clock minutes one damage-aware match may take; "
+        f"past it the evaluation fails and commits nothing (default "
+        f"{DEFAULT_DAMAGE_AWARE_BUDGET_MINUTES})",
+    )
+    progress.add_argument(
         "--preview-ablation",
         action="store_true",
         help="instead of the usual matches (#940): the generation's Battle network "
@@ -219,6 +234,13 @@ def _progress(args: argparse.Namespace) -> dict[str, object]:
     )
     if args.preview_ablation and args.all:
         raise ProgressError("--preview-ablation needs --generation, not --all")
+    if args.damage_aware_budget_minutes is not None and not args.damage_aware:
+        raise ProgressError("--damage-aware-budget-minutes needs --damage-aware")
+    damage_budget = (
+        (args.damage_aware_budget_minutes or DEFAULT_DAMAGE_AWARE_BUDGET_MINUTES)
+        if args.damage_aware
+        else None
+    )
     root = progress_root(run_dir, args.progress_dir)
     record_games = (
         min(DEFAULT_RECORD_GAMES, args.games) if args.record_games is None else args.record_games
@@ -236,6 +258,7 @@ def _progress(args: argparse.Namespace) -> dict[str, object]:
             args.anchor_games,
             args.previous_matches,
             args.preview_ablation,
+            damage_budget,
         )
         for g in generations
     ]

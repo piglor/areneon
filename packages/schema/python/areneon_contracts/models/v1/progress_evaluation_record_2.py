@@ -186,30 +186,6 @@ class Outcome(RootModel[Played | Forfeit]):
     """
 
 
-class GameRow(BaseModel):
-    """
-    One game's result: the per-game results table of protocol section 8.1.
-    """
-
-    model_config = ConfigDict(
-        extra="forbid",
-    )
-    match_id: Annotated[StrictStr, Field(pattern="^[a-z0-9][a-z0-9_-]{0,63}$")]
-    game: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
-    """
-    Game index within the match; its pair is game / 2 and the pair's seed is progress-seed/1's for the pair index.
-    """
-    pair: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
-    """
-    The validation team pair the game used: the game index divided by two, rounded down. Both games of a pair share its battle seed; teams stay on their seats.
-    """
-    candidate_seat: Literal["p1", "p2"]
-    """
-    p1 for an even game, p2 for an odd one: the policies swap seats, the teams do not.
-    """
-    outcome: Outcome
-
-
 class LearnedPreview(BaseModel):
     """
     The generation's own learned Preview network.
@@ -251,6 +227,63 @@ class GenerationPreview(BaseModel):
     """
 
 
+class BaselineCounts(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    decisions: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+    """
+    Requests answered, Team Preview included.
+    """
+    preview_decisions: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+    """
+    Team Preview requests (the actor-rule candidate).
+    """
+    scored_decisions: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+    """
+    Requests whose candidates were scored.
+    """
+    queries: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+    """
+    Probe queries asked.
+    """
+    probe_runs: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+    """
+    Probe runs actually made (queries not answered from a game's memo).
+    """
+    unsupported_queries: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+    """
+    Queries the probe answered unsupported: scored 0, never approximated.
+    """
+    reader_fallbacks: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+    """
+    Requests answered by the actor-rule candidate because the state reader flagged a line.
+    """
+    assumed_set_fallbacks: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+    """
+    Requests answered by the actor-rule candidate because no legal assumed opponent set could be built.
+    """
+    epsilon_plays: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+    """
+    Requests where epsilon_ppm made the baseline play a random candidate.
+    """
+
+
+class BaselineSummary(BaseModel):
+    """
+    The damage-aware baseline of a match (ADR-018 sections 4, 5): its identity hash and the per-game counts summed over the match's games (all integers). Present exactly in the matches whose opponent is damage-aware. Added within v1 (ADR-008 section 3): a reader older than the field rejects a record that carries it.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    identity_hash: Annotated[StrictStr, Field(pattern="^[0-9a-f]{64}$")]
+    """
+    The baseline identity hash: SHA-256 of the JCS of {baseline_config_hash, mechanics_config_hash, adapter_format, reader_sha256, version_manifest}. Every game of every damage-aware match of a record carries the same one.
+    """
+    counts: BaselineCounts
+
+
 class Plan(BaseModel):
     """
     What every match played: derivations, sizes and caps.
@@ -289,6 +322,34 @@ class Opponent(RootModel[BaselineOpponent | PreviousOpponent | AnchorOpponent]):
     ]
     """
     Who the frozen pair played: a scripted baseline, the previous generation's frozen pair, or a fixed earlier generation's (an anchor).
+    """
+
+
+class GameRow(BaseModel):
+    """
+    One game's result: the per-game results table of protocol section 8.1.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    match_id: Annotated[StrictStr, Field(pattern="^[a-z0-9][a-z0-9_-]{0,63}$")]
+    game: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+    """
+    Game index within the match; its pair is game / 2 and the pair's seed is progress-seed/1's for the pair index.
+    """
+    pair: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+    """
+    The validation team pair the game used: the game index divided by two, rounded down. Both games of a pair share its battle seed; teams stay on their seats.
+    """
+    candidate_seat: Literal["p1", "p2"]
+    """
+    p1 for an even game, p2 for an odd one: the policies swap seats, the teams do not.
+    """
+    outcome: Outcome
+    baseline_counts: BaselineCounts | MISSING = MISSING
+    """
+    Only a game of a damage-aware match: the baseline seat's integer counts for this game (reader rules: probe_runs and unsupported_queries do not exceed queries; preview_decisions plus scored_decisions do not exceed decisions). The match's baseline.counts are the sums over its rows.
     """
 
 
@@ -345,6 +406,7 @@ class Match(BaseModel):
     """
     SHA-256 of the JCS bytes of each stored ProgressGameRecord of the match, sorted and unique; its length is plan.recorded_games_per_match.
     """
+    baseline: BaselineSummary | MISSING = MISSING
 
 
 class ProgressEvaluationRecordV2(BaseModel):

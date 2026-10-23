@@ -205,7 +205,7 @@ def _progress_section(model: ReportModel, tips: Tips) -> str:
                         )
             if pts:
                 series.append(Series(mode, slot, shape, tuple(pts)))
-        title = f"Score vs {stem}" + (f" ({SEEN})" if seen_label else "")
+        title = f"Score vs {stem}" + (f" ({seen_label})" if seen_label else "")
         charts.append(
             line_chart(
                 title,
@@ -231,7 +231,9 @@ def _progress_section(model: ReportModel, tips: Tips) -> str:
                 [
                     str(g),
                     esc(m.match_id)
-                    + (f' <span class="muted">({esc(SEEN)})</span>' if m.seen_label else ""),
+                    + (
+                        f' <span class="muted">({esc(m.seen_label)})</span>' if m.seen_label else ""
+                    ),
                     str(m.games),
                     f"{m.wins} / {m.ties} / {m.losses}",
                     pct(m.score_ppm),
@@ -265,6 +267,7 @@ def _progress_section(model: ReportModel, tips: Tips) -> str:
         ).replace('<td class="txt">', '<td class="txt">')
     )
     out.append(_anchor_section(model, done))
+    out.append(_damage_aware_section(model, done))
     out.append("<h3>Score by seat (diagnostic)</h3>")
     out.append(
         _table(
@@ -730,6 +733,51 @@ def signed_pct(ppm: int, *, up: bool = False, down: bool = False) -> str:
     tenths = ppm // 1000 if down else -((-ppm) // 1000) if up else (ppm + 500) // 1000
     sign = "-" if tenths < 0 else "+" if tenths > 0 else ""
     return f"{sign}{abs(tenths) // 10}.{abs(tenths) % 10}%"
+
+
+def _damage_aware_section(model: ReportModel, done: list[int]) -> str:
+    """The damage-aware baseline's counts per match (ADR-018 sections 4 and 5), summed over its
+    games and shown as the record states them: a baseline drifting towards actor-rule shows as
+    unsupported queries and fallbacks."""
+    rows = [
+        [
+            str(g),
+            esc(m.match_id),
+            str(m.games),
+            str(m.baseline["counts"]["decisions"]),
+            str(m.baseline["counts"]["scored_decisions"]),
+            str(m.baseline["counts"]["queries"]),
+            str(m.baseline["counts"]["probe_runs"]),
+            str(m.baseline["counts"]["unsupported_queries"]),
+            str(m.baseline["counts"]["reader_fallbacks"]),
+            str(m.baseline["counts"]["assumed_set_fallbacks"]),
+            f'<span class="m">{esc(m.baseline["identity_hash"][:16])}</span>',
+        ]
+        for g in done
+        for m in model.progress[g].matches
+        if m.baseline is not None
+    ]
+    if not rows:
+        return ""
+    return "<h3>Damage-aware baseline counts</h3>" + _table(
+        [
+            ("Generation", True),
+            ("Match", False),
+            ("Games", True),
+            ("Decisions", True),
+            ("Scored", True),
+            ("Queries", True),
+            ("Probe runs", True),
+            ("Unsupported", True),
+            ("Reader fallbacks", True),
+            ("Assumed-set fallbacks", True),
+            ("Identity (first 16 hex)", False),
+        ],
+        rows,
+        "Summed over each match's games, as the record states them. A seen scripted baseline: "
+        "its rows are never held-out evidence. Unsupported queries scored 0 and fallbacks "
+        "played the actor-rule candidate; games with another identity hash are another baseline.",
+    )
 
 
 def _anchor_section(model: ReportModel, done: list[int]) -> str:

@@ -150,6 +150,9 @@ class MatchFacts:
     #: The candidate's Team Preview variant of a Preview ablation match (``learned``, ``random``
     #: or ``g<N>``); None for every other match.
     variant: str | None = None
+    #: A damage-aware match (ADR-018): the baseline identity hash and the counts summed over its
+    #: games (integers, as the record states them); None for every other match.
+    baseline: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -360,6 +363,7 @@ def _progress_facts(record: dict[str, Any]) -> ProgressFacts:
                     if match.get("candidate_preview") is not None
                     else None
                 ),
+                match.get("baseline"),
             )
         )
     plan = record["plan"]

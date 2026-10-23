@@ -7,6 +7,8 @@ import {
   actorRule,
   buildProgressGameRecord,
   committedPlanSeeds,
+  DAMAGE_AWARE_POLICY_ID,
+  damageAwareSetup,
   guardActor,
   playGame,
   type PlayedGame,
@@ -160,6 +162,76 @@ describe("playProgress", () => {
       expect(JSON.parse(jcs(readProgressGameRecord(stored) as unknown as Json))).toEqual(stored);
     }
   }, 120_000);
+
+  describe("against the damage-aware baseline (ADR-018 slice 4)", () => {
+    const setup = damageAwareSetup(engine, FORMAT);
+    const damage = (change: Partial<NonNullable<ProgressOptions["damage_aware"]>> = {}): NonNullable<ProgressOptions["damage_aware"]> => ({ setup, match_budget_ms: 600_000, ...change });
+
+    it("adds damage-aware-argmax and damage-aware-sample on the baselines' plan, with identity, counts and times", async () => {
+      const client = actorClient();
+      const result = await playProgress(options({ client, record_games: 2, damage_aware: damage() }));
+      const { record } = result;
+      expect(record.matches.map((m) => m.match_id)).toEqual(["actor-rule-argmax", "actor-rule-sample", "damage-aware-argmax", "damage-aware-sample", "random-legal-argmax", "random-legal-sample"]);
+      const asked = client.asked;
+      for (const mode of PROGRESS_MODES) {
+        const match = record.matches.find((m) => m.match_id === `damage-aware-${mode}`) as (typeof record.matches)[number];
+        expect(match.opponent).toEqual({ kind: "baseline", policy_id: DAMAGE_AWARE_POLICY_ID });
+        expect(match.baseline?.identity_hash).toMatch(/^[0-9a-f]{64}$/);
+        const rows = record.games.filter((row) => row.match_id === match.match_id);
+        expect(rows.map((row) => [row.pair, row.candidate_seat])).toEqual([[0, "p1"], [0, "p2"]]);
+        expect(rows.every((row) => row.baseline_counts !== undefined)).toBe(true);
+        const decisions = rows.reduce((sum, row) => sum + (row.baseline_counts?.decisions ?? 0), 0);
+        expect(match.baseline?.counts.decisions).toBe(decisions);
+        expect(decisions).toBeGreaterThan(0);
+        // The stored games of the match hold the seat that played the baseline and its counts, equal to the row's.
+        for (const [index, row] of rows.entries()) {
+          const stored = result.game_records.get(`${match.match_id}-${index}.json`) as ProgressGameRecord;
+          const seat = row.candidate_seat === "p1" ? "p2" : "p1";
+          expect(stored.baseline).toEqual({ seat, identity_hash: match.baseline?.identity_hash, counts: row.baseline_counts });
+          expect(stored.policies[seat]).toBe(DAMAGE_AWARE_POLICY_ID);
+        }
+        expect(result.game_ms[match.match_id]?.max).toBeGreaterThanOrEqual(result.game_ms[match.match_id]?.mean ?? Infinity);
+      }
+      expect(record.matches.filter((m) => m.baseline !== undefined)).toHaveLength(2);
+      expect(new Set(record.matches.flatMap((m) => (m.baseline === undefined ? [] : [m.baseline.identity_hash]))).size).toBe(1);
+      // The baseline is scripted: the worker was asked only for the candidate's seats (the other four matches' too).
+      const without = actorClient();
+      await playProgress(options({ client: without, record_games: 2 }));
+      expect(asked).toBeGreaterThan(without.asked);
+      expect(() => readProgressEvaluationRecordV2(JSON.parse(jcs(record as unknown as Json)))).not.toThrow();
+      // The same plan, seeds and teams as the other baselines' games of the pair.
+      const baseline = result.game_records.get("actor-rule-sample-1.json") as ProgressGameRecord;
+      const versus = result.game_records.get("damage-aware-sample-1.json") as ProgressGameRecord;
+      expect(versus.seed).toBe(baseline.seed);
+      expect(versus.teams).toEqual(baseline.teams);
+      expect(versus.pair).toBe(0);
+    }, 300_000);
+
+    it("replays to the same bytes, and the other matches are those of a run without the baseline", async () => {
+      const [a, b, plain] = [await playProgress(options({ damage_aware: damage() })), await playProgress(options({ damage_aware: damage() })), await playProgress(options())];
+      expect(jcs(a.record as unknown as Json)).toBe(jcs(b.record as unknown as Json));
+      expect([...a.game_records].map(([k, v]) => [k, jcs(v as unknown as Json)])).toEqual([...b.game_records].map(([k, v]) => [k, jcs(v as unknown as Json)]));
+      const rest = (r: typeof a) => jcs(r.record.matches.filter((m) => m.baseline === undefined) as unknown as Json);
+      expect(rest(a)).toBe(rest(plain));
+    }, 300_000);
+
+    it("fails the evaluation closed when a match passes its wall-clock budget", async () => {
+      let now = 0;
+      // Each reading of the clock moves a minute on: the first game of the first damage-aware match is already past a 90 s budget.
+      const clock = () => (now += 60_000);
+      await expect(playProgress(options({ damage_aware: damage({ match_budget_ms: 90_000, clock }) }))).rejects.toThrow(/damage-aware-argmax passed its wall-clock budget of 90000 ms/);
+    }, 120_000);
+
+    it("refuses what it cannot evaluate: no budget, epsilon above 0, another format, the Preview ablation", async () => {
+      await expect(playProgress(options({ damage_aware: damage({ match_budget_ms: 0 }) }))).rejects.toThrow(/positive whole number/);
+      const noisy = { ...setup, config: { ...setup.config, epsilon_ppm: 1 } };
+      await expect(playProgress(options({ damage_aware: damage({ setup: noisy }) }))).rejects.toThrow(/epsilon_ppm 0/);
+      const other = { ...setup, config: { ...setup.config, format_id: "gen9other" } };
+      await expect(playProgress(options({ damage_aware: damage({ setup: other }) }))).rejects.toThrow(/another format/);
+      const ablation = { generation: { generation: 0, checkpoint: "5".repeat(64), policy_id: `policy:${"6".repeat(64)}`, client: actorClient() }, random_policy_id: `policy:${"7".repeat(64)}` };
+      await expect(playProgress(options({ ablation, damage_aware: damage() }))).rejects.toThrow(/ablation plays random-legal and actor-rule only/);
+    });
+  });
 
   describe("against the previous generation's frozen pair", () => {
     const previous = (client = actorClient()): NonNullable<ProgressOptions["previous"]> => ({

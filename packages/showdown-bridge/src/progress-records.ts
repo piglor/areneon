@@ -14,13 +14,26 @@ import evaluationSchemaV2 from "@areneon/schema/contracts/v1/progress-evaluation
 import gameSchema from "@areneon/schema/contracts/v1/progress-game-record.schema.json" with { type: "json" };
 import type { ProgressEvaluationRecord } from "@areneon/schema/types/v1/progress-evaluation-record.ts";
 import type { ProgressEvaluationRecordV2 } from "@areneon/schema/types/v1/progress-evaluation-record-2.ts";
-import type { ProgressGameRecord } from "@areneon/schema/types/v1/progress-game-record.ts";
+import type { BaselineCounts, ProgressGameRecord } from "@areneon/schema/types/v1/progress-game-record.ts";
 import { type Json, jcs } from "./canonical-json.ts";
 import { progressGameStreams } from "./progress-seed.ts";
 import { teamHash } from "./team-class.ts";
 import type { PokemonSet } from "./engine.ts";
 
-export type { ProgressEvaluationRecord, ProgressEvaluationRecordV2, ProgressGameRecord };
+export type { BaselineCounts, ProgressEvaluationRecord, ProgressEvaluationRecordV2, ProgressGameRecord };
+
+/** The counts a damage-aware baseline seat reports per game (ADR-018 section 4), in the record's order. */
+export const BASELINE_COUNT_KEYS = ["decisions", "preview_decisions", "scored_decisions", "queries", "probe_runs", "unsupported_queries", "reader_fallbacks", "assumed_set_fallbacks", "epsilon_plays"] as const;
+
+/** Whether a policy id names the damage-aware baseline (`damage-aware@<commit>`). */
+export const isDamageAware = (policyId: string): boolean => policyId.startsWith("damage-aware@");
+
+/** The sums of per-game baseline counts, key by key. */
+export function sumBaselineCounts(list: readonly BaselineCounts[]): BaselineCounts {
+  const total = Object.fromEntries(BASELINE_COUNT_KEYS.map((key) => [key, 0])) as unknown as BaselineCounts;
+  for (const counts of list) for (const key of BASELINE_COUNT_KEYS) total[key] += counts[key];
+  return total;
+}
 
 export class ProgressRecordError extends Error {
   override name = "ProgressRecordError";
@@ -64,6 +77,12 @@ export function tallyRows(rows: readonly Pick<Row, "outcome">[], maxTurns: numbe
     }
   }
   return { ...count, forfeits: [...forfeits.keys()].sort().map((key) => forfeits.get(key) as Match["forfeits"][number]) };
+}
+
+/** The rules the profile cannot say about one baseline count record (a game's, or a sum of games'). */
+function checkBaselineCounts(counts: BaselineCounts, what: string): void {
+  if (counts.probe_runs > counts.queries || counts.unsupported_queries > counts.queries) fail(`${what}: probe runs and unsupported queries cannot exceed queries`);
+  if (counts.preview_decisions + counts.scored_decisions > counts.decisions) fail(`${what}: preview and scored decisions cannot exceed decisions`);
 }
 
 /** A match's numbers against its rows. */
@@ -138,6 +157,7 @@ export function readProgressEvaluationRecordV2(value: unknown): ProgressEvaluati
   if (new Set(matches.map((match) => match.candidate_preview === undefined)).size > 1) fail("a Preview ablation record holds ablation matches only");
   const flat = ids.flatMap((id) => rowsOf.get(id) as RowV2[]);
   if (flat.some((row, index) => row !== games[index])) fail("game rows must be in match then game order");
+  const identities = new Set<string>();
   for (const match of matches) {
     const rows = rowsOf.get(match.match_id) as RowV2[];
     const preview = match.candidate_preview;
@@ -159,10 +179,32 @@ export function readProgressEvaluationRecordV2(value: unknown): ProgressEvaluati
       if (row.candidate_seat !== (index % 2 === 0 ? "p1" : "p2")) fail(`${match.match_id}: the candidate sits on p1 for an even game and p2 for an odd one`);
     });
     recount(match as unknown as Match, rows, plan.max_turns);
+    checkBaselineOfMatch(match, rows, identities);
     if (!strictlyAscending(match.game_record_hashes)) fail(`${match.match_id}: game_record_hashes must be sorted, each once`);
     if (match.game_record_hashes.length !== Math.min(plan.recorded_games_per_match, match.games)) fail(`${match.match_id}: game_record_hashes must number recorded_games_per_match`);
   }
+  if (identities.size > 1) fail("every damage-aware match of a record must carry one baseline identity hash");
   return record;
+}
+
+type MatchV2 = ProgressEvaluationRecordV2["matches"][number];
+
+/**
+ * ADR-018 sections 4 and 5: a match against the damage-aware baseline carries its identity hash and the sum of its
+ * rows' per-game counts; no other match carries either. The counts recompute from the rows.
+ */
+function checkBaselineOfMatch(match: MatchV2, rows: readonly RowV2[], identities: Set<string>): void {
+  const damage = match.opponent.kind === "baseline" && isDamageAware(match.opponent.policy_id);
+  if (!damage) {
+    if (match.baseline !== undefined || rows.some((row) => row.baseline_counts !== undefined)) fail(`${match.match_id}: only a damage-aware match carries baseline counts`);
+    return;
+  }
+  if (match.baseline === undefined || rows.some((row) => row.baseline_counts === undefined)) fail(`${match.match_id}: a damage-aware match carries baseline counts in its summary and in every game row`);
+  const found = match.baseline as NonNullable<MatchV2["baseline"]>;
+  identities.add(found.identity_hash);
+  const perGame = rows.map((row) => row.baseline_counts as BaselineCounts);
+  perGame.forEach((counts, index) => checkBaselineCounts(counts, `${match.match_id} game ${index}`));
+  if (jcs(found.counts as unknown as Json) !== jcs(sumBaselineCounts(perGame) as unknown as Json)) fail(`${match.match_id}: baseline.counts must be the sum of the game rows' counts`);
 }
 
 type Outcome = ProgressGameRecord["outcome"];
@@ -180,6 +222,16 @@ export function readProgressGameRecord(value: unknown): ProgressGameRecord {
     if (teamHash(record.teams[seat].team as unknown as PokemonSet[]) !== record.teams[seat].team_hash) fail(`the team hash of ${seat} does not recompute`);
   }
   if (omniscientLogHash(record.omniscient_log) !== record.omniscient_log_sha256) fail("omniscient_log_sha256 does not recompute");
+  const { baseline } = record;
+  if (baseline !== undefined) {
+    const other = baseline.seat === "p1" ? "p2" : "p1";
+    if (!isDamageAware(record.policies[baseline.seat]) || isDamageAware(record.policies[other])) fail("baseline.seat must be the one seat whose policy is damage-aware");
+    checkBaselineCounts(baseline.counts, "baseline");
+    // The actor counts every request it answered; a forfeit can stop it on one it never answered.
+    const answered = record.decisions.filter((decision) => decision.player === baseline.seat).length;
+    const forfeited = record.outcome.kind === "forfeit" ? 1 : 0;
+    if (baseline.counts.decisions < answered || baseline.counts.decisions > answered + forfeited) fail("baseline.counts.decisions must be the baseline seat's decisions");
+  } else if (isDamageAware(record.policies.p1) || isDamageAware(record.policies.p2)) fail("a game with a damage-aware seat must carry the baseline counts");
   // A game of a both-seats evaluation names its pair: both games of a pair share the pair's seed.
   if (record.pair !== undefined && record.pair !== record.game >> 1) fail("pair must be the game index divided by two");
   if (progressGameStreams(record.run_id, record.pair ?? record.game).seed !== record.seed) fail("the seed is not the one progress-seed/1 gives this game's pair (or game index)");

@@ -190,3 +190,46 @@ describe("ProgressGameRecord", () => {
     await expect(loadTrainingSet({ episodes: [game as never], evaluation_manifests: [], known_synthetic: new Set(), behaviour_policy_id: "policy:x" })).rejects.toThrow(TrainingLoaderError);
   });
 });
+
+describe("the damage-aware baseline's counts (ADR-018 sections 4 and 5)", () => {
+  const V2 = "progress-evaluation-record-2";
+  it("reads the valid samples and hashes them", () => {
+    const record = readProgressEvaluationRecordV2(sample(`${V2}/valid/damage-aware-match`));
+    expect(record.matches[0]?.baseline?.identity_hash).toMatch(/^[0-9a-f]{64}$/);
+    expect(readProgressGameRecord(sample(`${GAME}/valid/damage-aware`)).baseline?.seat).toBe("p2");
+  });
+
+  it.each([
+    ["baseline-counts-disagree", "baseline.counts must be the sum"],
+    ["baseline-row-missing", "carries baseline counts in its summary and in every game row"],
+    ["baseline-on-other-match", "only a damage-aware match carries baseline counts"],
+    ["baseline-probe-runs-exceed-queries", "probe runs and unsupported queries cannot exceed queries"],
+    ["baseline-identities-differ", "one baseline identity hash"],
+  ])("refuses the evaluation sample %s", (name, message) => {
+    expect(() => readProgressEvaluationRecordV2(sample(`${V2}/reader-invalid/${name}`))).toThrow(message);
+  });
+
+  it.each([
+    ["baseline-seat-wrong", "baseline.seat must be the one seat"],
+    ["baseline-missing", "must carry the baseline counts"],
+    ["baseline-decisions-differ", "baseline.counts.decisions must be the baseline seat's decisions"],
+  ])("refuses the game sample %s", (name, message) => {
+    expect(() => readProgressGameRecord(sample(`${GAME}/reader-invalid/${name}`))).toThrow(message);
+  });
+
+  it("refuses preview and scored decisions above the decisions, and unsupported queries above the queries", () => {
+    const game = sample(`${GAME}/valid/damage-aware`);
+    game.baseline.counts.preview_decisions = game.baseline.counts.decisions;
+    expect(() => readProgressGameRecord(game)).toThrow("preview and scored decisions cannot exceed decisions");
+    const other = sample(`${GAME}/valid/damage-aware`);
+    other.baseline.counts.unsupported_queries = other.baseline.counts.queries + 1;
+    expect(() => readProgressGameRecord(other)).toThrow("unsupported queries cannot exceed queries");
+  });
+
+  it("allows one unanswered request when the game ended in a forfeit", () => {
+    const game = sample(`${GAME}/valid/damage-aware`);
+    game.outcome = { kind: "forfeit", loser: "p1", cause: "crash", request_seq: 9, turns: 3 };
+    game.baseline.counts.decisions += 1;
+    expect(() => readProgressGameRecord(game)).not.toThrow();
+  });
+});
