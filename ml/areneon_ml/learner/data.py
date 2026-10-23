@@ -53,6 +53,8 @@ class Trajectory:
     role: str
     steps: tuple[Step, ...]
     score: float
+    # The Episode the steps came from (the cloning learner splits by it); PPO ignores it.
+    episode: str = ""
 
 
 def trajectories(
@@ -113,7 +115,7 @@ def trajectories(
         )
         steps.setdefault((episode, role), []).append(Step(query, chosen))
     return [
-        Trajectory(role, tuple(steps[(episode, role)]), scores[episode])
+        Trajectory(role, tuple(steps[(episode, role)]), scores[episode], episode)
         for episode in order
         for role in ROLES
         if (episode, role) in steps

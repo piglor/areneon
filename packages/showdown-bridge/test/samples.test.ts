@@ -4,7 +4,7 @@ import { ajvFor } from "@areneon/schema/ajv";
 import { beforeAll, describe, expect, it } from "vitest";
 import { syntheticFixtureHashes } from "../src/golden.ts";
 import { EngineDataError, readEngineData } from "../src/engine-data.ts";
-import { contractVersions, EpisodeError, readTeamDatasetManifest, readTeamGeneratorConfig, readTeamLabelSet, readTeamRecord, readTeamSnapshotManifest, readTeamVocabulary, readRoleSetTable, RoleSetError, TeamRecordError, TeamVocabularyError, loadEngine, PolicyProtocolError, readHandshake, readPolicyQuery, readPolicyReply, readEpisode, readTrainingRunConfig, readLeagueRunRecord, LeagueRunRecordError, TrainingRunConfigError, readEvaluationRunManifest, readTrainingExample, readTrainingSet, TrainingLoaderError } from "../src/index.ts";
+import { contractVersions, EpisodeError, readTeamDatasetManifest, readTeamGeneratorConfig, readTeamLabelSet, readTeamRecord, readTeamSnapshotManifest, readTeamVocabulary, readRoleSetTable, RoleSetError, TeamRecordError, TeamVocabularyError, loadEngine, PolicyProtocolError, readHandshake, readPolicyQuery, readPolicyReply, readEpisode, readTrainingRunConfig, readCloneRunConfig, CloneRunConfigError, readLeagueRunRecord, LeagueRunRecordError, TrainingRunConfigError, readEvaluationRunManifest, readTrainingExample, readTrainingSet, TrainingLoaderError } from "../src/index.ts";
 import { EvaluationConfigError, readEvaluationParameters, readEntry, RegisterError, readEvaluationPlan, readSealedSetCommitment, readTrainingGateRule, readEvaluationConfig, readSealedTeamSetManifest, readRetiredSealedManifest } from "../src/index.ts";
 import { contractSamples, SAMPLE_HASHES, SAMPLES_DIR } from "../src/samples.ts";
 import { exportEngineData } from "../src/engine-data.ts";
@@ -71,6 +71,8 @@ describe("the shared contract sample corpus (ADR-008 §2)", () => {
       "v1/checkpoint-record/reader-invalid/opponent-is-self.json",
       "v1/checkpoint-record/reader-invalid/parent-is-self.json",
       "v1/checkpoint-record/reader-invalid/unsorted-league-opponents.json",
+      "v1/clone-run-config/reader-invalid/heads-do-not-divide-width.json",
+      "v1/clone-run-config/reader-invalid/picks-exceed-team.json",
       "v1/damage-aware-config/reader-invalid/other-format.json",
       "v1/damage-aware-config/reader-invalid/stat-points-over-limit.json",
       "v1/damage-aware-config/reader-invalid/unknown-fixed-item.json",
@@ -260,6 +262,16 @@ describe("the shared contract sample corpus (ADR-008 §2)", () => {
     expect(Object.keys(fresh)).toContain(file);
     expect(() => readTrainingRunConfig(committed(file))).toThrow(TrainingRunConfigError);
     expect(() => readTrainingRunConfig(committed(file))).toThrow(message);
+  });
+
+  // ADR-019 track 1: the CloneRunConfig reader refuses what the profile cannot say.
+  it.each([
+    ["v1/clone-run-config/reader-invalid/heads-do-not-divide-width.json", "must be a multiple of n_heads"],
+    ["v1/clone-run-config/reader-invalid/picks-exceed-team.json", "cannot exceed max_team"],
+  ])("readCloneRunConfig refuses %s", (file, message) => {
+    expect(Object.keys(fresh)).toContain(file);
+    expect(() => readCloneRunConfig(committed(file))).toThrow(CloneRunConfigError);
+    expect(() => readCloneRunConfig(committed(file))).toThrow(message);
   });
 
   // ADR-009 section 3: the LeagueRunRecord reader refuses what the profile cannot say.
