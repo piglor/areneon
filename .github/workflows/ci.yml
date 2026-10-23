@@ -46,6 +46,7 @@ jobs:
         if: inputs.check != 'tests-go-memory'
         run: make showdown
       - name: build pinned Showdown with a Go heap budget
+        id: budgeted-build
         if: inputs.check == 'tests-go-memory'
         env:
           GOMEMLIMIT: 384MiB
@@ -83,6 +84,24 @@ jobs:
         run: |
           date -u
           for file in cpu.stat cpu.pressure memory.current memory.peak memory.events memory.pressure; do
+            if [ -f "/sys/fs/cgroup/$file" ]; then
+              printf '\n%s\n' "$file"
+              cat "/sys/fs/cgroup/$file"
+            fi
+          done
+
+      - name: compare the same four tests without coverage collection
+        if: always() && inputs.check == 'tests-go-memory' && steps.budgeted-build.outcome == 'success'
+        run: |
+          /usr/bin/time -v pnpm exec vitest run --maxWorkers=1 --coverage.enabled=false \
+            --testNamePattern 'whole committed corpus|repository.s checked-in generated types|is classified by Ajv' \
+            packages/public-state/test/lines.test.ts \
+            packages/schema/test/contracts.test.ts \
+            packages/showdown-bridge/test/samples.test.ts
+      - name: memory counters after the uncovered comparison
+        if: always() && inputs.check == 'tests-go-memory'
+        run: |
+          for file in memory.current memory.peak memory.events; do
             if [ -f "/sys/fs/cgroup/$file" ]; then
               printf '\n%s\n' "$file"
               cat "/sys/fs/cgroup/$file"
