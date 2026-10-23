@@ -62,6 +62,9 @@ jobs:
           if grep -i -E '^(nvidia|triton|cuda)' <<<"$installed"; then echo "no CUDA package may be installed here"; exit 1; fi
           grep -i -E '^(torch|safetensors) ' <<<"$installed"
       - name: build pinned Showdown
+        # Give esbuild's Go runtime a budget inside the 1500 MiB runner.
+        env:
+          GOMEMLIMIT: 384MiB
         run: make showdown
       - name: pinned DuckDB command-line tool (ADR-013, shard writer; tooling only)
         # Downloaded by the exact URL in the committed pin and checked against
