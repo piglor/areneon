@@ -72,7 +72,7 @@ function shownPercent(mon: PublicMon): number | null {
  * Build the assumed set of one opponent Pokemon of the player's own view. Throws `AssumedSetError`
  * when no legal set holds what was revealed (the validator's words are in the message).
  */
-export function buildAssumedSet(context: AssumedSetContext, mon: PublicMon): AssumedSet {
+export function buildAssumedSet(context: AssumedSetContext, mon: PublicMon, skip_abilities: readonly string[] = []): AssumedSet {
   const { engine, vocabulary, config } = context;
   if (mon.own) throw new AssumedSetError("an assumed set is for an opponent's Pokemon");
   const rule = config.assumed_set;
@@ -82,7 +82,9 @@ export function buildAssumedSet(context: AssumedSetContext, mon: PublicMon): Ass
   if (entry === undefined) throw new AssumedSetError("the species is not in the team vocabulary's roster");
   const dex = engine.sim.Dex.mod(engine.sim.Dex.formats.get(config.format_id).mod);
 
-  const ability = mon.ability !== null && entry.abilities.includes(mon.ability) ? mon.ability : pick(entry.abilities, rule.ability);
+  // An ability the caller has ruled out (public facts contradict it: the Pokemon holds a status that ability blocks) is never assumed.
+  const allowed = entry.abilities.filter((id) => !skip_abilities.includes(dex.abilities.get(id).name));
+  const ability = mon.ability !== null && entry.abilities.includes(mon.ability) ? mon.ability : pick(allowed, rule.ability);
   if (ability === undefined) throw new AssumedSetError("the species has no ability in the team vocabulary");
 
   let item: string;

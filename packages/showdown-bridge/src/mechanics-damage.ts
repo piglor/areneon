@@ -47,7 +47,7 @@ interface DmgPokemon {
   boosts: Record<string, number>;
   species: { name: string };
   item: string;
-  setStatus(status: string): unknown;
+  setStatus(status: string, source: null, sourceEffect: null, ignoreImmunities: boolean): unknown;
   getMoveHitData(move: DmgMove): HitData;
 }
 type HitStep = (targets: DmgPokemon[], pokemon: DmgPokemon, move: DmgMove) => (number | boolean | "" | undefined)[] | undefined;
@@ -125,7 +125,8 @@ function declare(battle: DmgBattle, side: number, combatant: Combatant): DmgPoke
   }
   if (combatant.status !== null) {
     requireCondition(battle, combatant.status, "Status");
-    pokemon.setStatus(combatant.status);
+    // The status is an observed fact, so type immunities do not apply (Corrosion poisons a Steel type, Burn Up removes the Fire type of a burned user); an ability or the engine's own hooks can still refuse it.
+    pokemon.setStatus(combatant.status, null, null, true);
     if (pokemon.status !== combatant.status) throw new DamageStateError("the engine does not take that status");
   }
   for (const key of STAT_KEYS) pokemon.boosts[key] = combatant.boosts[key];

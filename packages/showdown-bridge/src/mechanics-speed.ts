@@ -49,7 +49,7 @@ interface Mon {
   maxhp: number;
   canMegaEvo: string | null | false;
   faint(): unknown;
-  setStatus(status: string): unknown;
+  setStatus(status: string, source: null, sourceEffect: null, ignoreImmunities: boolean): unknown;
   sethp(hp: number): unknown;
 }
 interface Queued {
@@ -167,7 +167,7 @@ function declare(battle: ProbeBattle, query: SpeedOrderQuery, at: (position: num
       if (combatant.mega) need(battle.actions.runMegaEvo(pokemon), "the Pokemon cannot Mega Evolve");
       if (combatant.status !== null) {
         need(kindOf(combatant.status) === "Status", "the declared status is not an engine status");
-        pokemon.setStatus(combatant.status);
+        pokemon.setStatus(combatant.status, null, null, true); // observed fact: type immunities do not apply
         need(pokemon.status === combatant.status, "the engine refused the declared status");
       }
       if (combatant.hp !== null) {

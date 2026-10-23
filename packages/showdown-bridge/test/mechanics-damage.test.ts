@@ -94,6 +94,21 @@ const variant = (change: (query: typeof base.query) => void): unknown => {
   return copy;
 };
 
+describe("a declared status is an observed fact", () => {
+  const LIMBER = "Hawlucha (F)  \nAbility: Limber  \nLevel: 50  \nEVs: 11 HP / 11 Atk / 11 Def / 11 SpA / 11 SpD / 11 Spe  \nHardy Nature  \n- Brick Break  \n\n";
+  it("is taken whatever the type: a Steel Pokemon declared poisoned (Corrosion does it in play) is computed, not refused", () => {
+    const steel = exportPaste(engine, [importPaste(engine, "Empoleon\nAbility: Torrent\nLevel: 50\nEVs: 32 HP / 32 SpA / 2 Spe\nModest Nature\n- Icy Wind\n- Protect\n")[0] as PokemonSet]);
+    for (const status of ["psn", "tox", "brn"]) {
+      expect(probe(variant((q) => Object.assign(q.defender, { set: steel, status }))).result, status).toMatchObject({ kind: "computed" });
+    }
+  });
+
+  it("is still refused when the Pokemon's ability blocks it (the assumed ability then contradicts the fact)", () => {
+    expect(() => probe(variant((q) => Object.assign(q.defender, { set: LIMBER, status: "par" })))).toThrow("the engine does not take that status");
+    expect(probe(variant((q) => Object.assign(q.defender, { set: LIMBER, status: "brn" }))).result).toMatchObject({ kind: "computed" });
+  });
+});
+
 describe("moves and states outside what the probe answers exactly", () => {
   it("a move whose damage has a random base power is unsupported (random_effect): nothing is answered for the engine", () => {
     for (const move of ["magnitude", "present"]) {

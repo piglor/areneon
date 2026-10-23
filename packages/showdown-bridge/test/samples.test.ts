@@ -104,6 +104,7 @@ describe("the shared contract sample corpus (ADR-008 §2)", () => {
       "v1/league-run-record/reader-invalid/baseline-games-disagree.json",
       "v1/league-run-record/reader-invalid/baseline-not-an-opponent.json",
       "v1/league-run-record/reader-invalid/baseline-probe-runs-exceed-queries.json",
+      "v1/league-run-record/reader-invalid/baseline-refusals-exceed-queries.json",
       "v1/league-run-record/reader-invalid/baseline-unsupported-exceed-queries.json",
       "v1/league-run-record/reader-invalid/baselines-unsorted.json",
       "v1/league-run-record/reader-invalid/causes-do-not-sum.json",

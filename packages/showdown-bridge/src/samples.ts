@@ -554,6 +554,7 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
       r.opponents = [{ opponent_policy_id: pairId, games: 4 }];
     }),
     "league-run-record/damage-aware": damageRun,
+    "league-run-record/damage-aware-refusals": damageEntryWith((e) => (e.counts = { ...baselineCounts, probe_refusals: 4 })),
     "league-run-record/mixed-causes": leagueRunWith((r) => {
       r.games = 8;
       r.played = 5;
@@ -648,6 +649,7 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "league-run-record/baseline-not-an-opponent": damageEntryWith((e) => (e.policy_id = "damage-aware@v2")),
     "league-run-record/baseline-probe-runs-exceed-queries": damageEntryWith((e) => (e.counts = { ...baselineCounts, probe_runs: 411 })),
     "league-run-record/baseline-unsupported-exceed-queries": damageEntryWith((e) => (e.counts = { ...baselineCounts, unsupported_queries: 411 })),
+    "league-run-record/baseline-refusals-exceed-queries": damageEntryWith((e) => (e.counts = { ...baselineCounts, probe_refusals: 411 })),
     "league-run-record/baseline-decisions-exceed": damageEntryWith((e) => (e.counts = { ...baselineCounts, preview_decisions: 10 })),
     "league-run-record/opponents-do-not-sum": leagueRunWith((r) => (r.opponents = [{ opponent_policy_id: pairId, games: 4 }, { opponent_policy_id: "random-legal@tiny", games: 1 }])),
     "checkpoint-record/duplicate-training-sets": recordWith((r) => (r.training_set_hashes = [hexOf("5"), hexOf("5")])),

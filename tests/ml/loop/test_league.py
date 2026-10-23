@@ -121,6 +121,7 @@ def test_baselines_must_match_the_configs_damage_aware_entries() -> None:
         ("baseline-not-an-opponent.json", "baseline's games must equal"),
         ("baseline-probe-runs-exceed-queries.json", "cannot exceed its queries"),
         ("baseline-unsupported-exceed-queries.json", "cannot exceed its queries"),
+        ("baseline-refusals-exceed-queries.json", "cannot exceed its queries"),
         ("baseline-decisions-exceed.json", "cannot exceed its decisions"),
     ],
 )
@@ -131,7 +132,7 @@ def test_the_reader_rules_the_profile_cannot_say(name: str, message: str) -> Non
 
 
 def test_every_reader_invalid_sample_is_checked_above() -> None:
-    assert len(list((RECORDS / "reader-invalid").iterdir())) == 15
+    assert len(list((RECORDS / "reader-invalid").iterdir())) == 16
 
 
 @pytest.mark.parametrize("name", sorted(p.name for p in (RECORDS / "invalid").iterdir()))

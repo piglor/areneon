@@ -21,13 +21,13 @@ import {
   GenerationError,
   type GenerationTeamPool,
   importPaste,
+  type PoolRequest,
   type PoolSource,
   type PokemonSet,
   resolveFormat,
   syntheticTeamHashes,
   type TeamRecord,
   teamHash,
-  type TrainingRunConfig,
   validateTeam,
 } from "@areneon/showdown-bridge";
 import { datasetHash, drawTrainingTeam, readDataset, trainingPool } from "./dataset-reader.ts";
@@ -45,7 +45,7 @@ export interface DatasetPoolDetail {
 }
 
 /** The pool a run config's `team_dataset` names, sorted by team hash so an index names the same team everywhere. */
-export function datasetPoolDetail(engine: Engine, config: TrainingRunConfig): DatasetPoolDetail {
+export function datasetPoolDetail(engine: Engine, config: PoolRequest): DatasetPoolDetail {
   const named = config.team_dataset;
   if (named === undefined) throw new GenerationError("the run config names no team dataset");
   const dataset = readDataset(named.path, loadFixtureInputs(engine, config.format_id));
@@ -72,7 +72,7 @@ export function datasetPoolDetail(engine: Engine, config: TrainingRunConfig): Da
 }
 
 /** The pool a run config's `team_dataset` names, sorted by team hash so an index names the same team everywhere. */
-export const datasetTeamPool = (engine: Engine, config: TrainingRunConfig): GenerationTeamPool => datasetPoolDetail(engine, config).pool;
+export const datasetTeamPool = (engine: Engine, config: PoolRequest): GenerationTeamPool => datasetPoolDetail(engine, config).pool;
 
 /** The port for `runGenerationCli`: the dataset pool when the config names a dataset, else the interim pool. */
 export const datasetPoolSource =

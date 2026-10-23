@@ -50,6 +50,7 @@ describe("the LeagueRunRecord reader (ADR-009 §3)", () => {
       ["baseline-not-an-opponent", /games must equal/],
       ["baseline-probe-runs-exceed-queries", /cannot exceed its queries/],
       ["baseline-unsupported-exceed-queries", /cannot exceed its queries/],
+      ["baseline-refusals-exceed-queries", /cannot exceed its queries/],
       ["baseline-decisions-exceed", /cannot exceed its decisions/],
     ] as const) {
       expect(() => readLeagueRunRecord(readerInvalid(name)), name).toThrow(message);
@@ -112,6 +113,12 @@ describe("buildLeagueRunRecord", () => {
     const facts = { config: config(), generation: 1, pair_policy_id: pair, plan: [], games };
     const record = await buildLeagueRunRecord({ ...facts, baseline_reports: reports });
     expect(record.baselines).toEqual([{ policy_id: "damage-aware@v1", identity_hash: "c".repeat(64), games: 2, counts: { ...counts(12), decisions: 20, preview_decisions: 2, scored_decisions: 16, probe_runs: 10, unsupported_queries: 4, assumed_set_fallbacks: 2 } }]);
+    // probe_refusals is written only above 0 (the bytes of a run without refusals do not change), and summed when it is
+    const refused = await buildLeagueRunRecord({ ...facts, baseline_reports: [{ ...(reports[0] as (typeof reports)[0]), counts: { ...counts(5), probe_refusals: 2 } }, { ...(reports[1] as (typeof reports)[0]), counts: { ...counts(7), probe_refusals: 3 } }] });
+    expect(refused.baselines?.[0]?.counts.probe_refusals).toBe(5);
+    const zeros = await buildLeagueRunRecord({ ...facts, baseline_reports: reports.map((r) => ({ ...r, counts: { ...r.counts, probe_refusals: 0 } })) });
+    expect("probe_refusals" in (zeros.baselines?.[0]?.counts ?? {})).toBe(false);
+    expect(readLeagueRunRecord(sample("league-run-record", "damage-aware-refusals")).baselines?.[0]?.counts.probe_refusals).toBe(4);
     expect("baselines" in (await buildLeagueRunRecord(facts))).toBe(false);
     expect("baselines" in (await buildLeagueRunRecord({ ...facts, baseline_reports: [] }))).toBe(false);
     await expect(

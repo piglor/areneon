@@ -30,7 +30,7 @@ import { type PolicyClient } from "./policy-worker.ts";
 import { type PolicyGameOptions, policyGame, type PolicySeat } from "./policy-actor.ts";
 import { loadRandomCorpus } from "./random-corpus.ts";
 import { randomLegalActor } from "./random-legal.ts";
-import type { Actor, ForfeitCause, Player } from "./runner.ts";
+import type { Actor, BattleRecord, ForfeitCause, Player } from "./runner.ts";
 import { importPaste } from "./teams.ts";
 import { stampTeam, type SyntheticTeamHashes, teamHash } from "./team-class.ts";
 import { loadTrainingSet, type TrainingSet, writeTrainingStream } from "./training-loader.ts";
@@ -69,6 +69,13 @@ export function trainingTeamPool(engine: Engine, excludedAbilities: readonly str
   const hashes = [...byHash.keys()].filter((hash) => !(byHash.get(hash) as PokemonSet[]).some((set) => excluded.has(set.ability))).sort();
   if (hashes.length === 0) throw new GenerationError("the team pool is empty after the excluded abilities");
   return { teams: hashes.map((hash) => byHash.get(hash) as PokemonSet[]), hashes, known_synthetic: new Set(hashes) };
+}
+
+/** What a team pool is built from: the part of a run config (or a teacher run) that names the format, the dataset and the abilities left out. */
+export interface PoolRequest {
+  format_id: string;
+  team_dataset?: { path: string; dataset_hash: string };
+  generation: { excluded_abilities: readonly string[] };
 }
 
 /** The scripted opponent of a baseline game; the policy takes the other seat. */
@@ -115,16 +122,25 @@ export interface GamePlan {
  * is reproducible from the config alone. A baseline game alternates the policy's seat.
  */
 export function planGeneration(config: TrainingRunConfig, generation: number, poolSize: number): GamePlan[] {
-  if (!Number.isInteger(generation) || generation < 1) throw new RangeError("a generation is numbered from 1");
-  if (!Number.isInteger(poolSize) || poolSize < 1) throw new RangeError("the team pool is empty");
   const { games, baseline_games } = config.generation;
   const opponents: GamePlan["opponent"][] = [];
   for (let i = 0; i < games; i++) opponents.push("self");
   for (const baseline of baseline_games) {
     for (let i = 0; i < baseline.games; i++) opponents.push({ actor: baseline.actor, policy_id: baseline.policy_id });
   }
+  return planGames(config.seeds.run_key, generation, poolSize, opponents);
+}
+
+/**
+ * The plan of one run of games from its run key, a generation number and the opponent of each
+ * game, in game order (`league-seed/1`; a game's streams depend on those three alone). The pair
+ * takes seat p1 of an even game and p2 of an odd one when a baseline is the other seat.
+ */
+export function planGames(run_key: string, generation: number, poolSize: number, opponents: readonly GamePlan["opponent"][]): GamePlan[] {
+  if (!Number.isInteger(generation) || generation < 1) throw new RangeError("a generation is numbered from 1");
+  if (!Number.isInteger(poolSize) || poolSize < 1) throw new RangeError("the team pool is empty");
   return opponents.map((opponent, game) => {
-    const streams = leagueGameStreams(config.seeds.run_key, generation, game);
+    const streams = leagueGameStreams(run_key, generation, game);
     return {
       game,
       seed: streams.seed,
@@ -298,6 +314,26 @@ function checkShard(shard: Shard): void {
 }
 
 /**
+ * One Episode per seat of a played game (a league collection record: `run_id`, the seed the battle ran
+ * with and the other seat's policy id), each classified by both teams. `sides` names each seat's policy.
+ */
+export async function seatEpisodes(record: BattleRecord, teams: Record<Player, number>, pool: TrainingPool, run_id: string, sides: Record<Player, string>): Promise<Episode[]> {
+  const episodes: Episode[] = [];
+  for (const player of ["p1", "p2"] as const) {
+    episodes.push(
+      await episodeFromRecord(record, player, {
+        team: stampTeam(pool.teams[teams[player]] as StampSets, pool.known_synthetic),
+        opponent_team: stampTeam(pool.teams[teams[rival(player)]] as StampSets, pool.known_synthetic),
+        known_synthetic: pool.known_synthetic,
+        behaviour_policy_id: sides[player],
+        collection: { kind: "league", run_id, seed: record.seed, opponent_policy_id: sides[rival(player)] },
+      }),
+    );
+  }
+  return episodes;
+}
+
+/**
  * Play the games of `shard` (all of them without one) against `options.client` and
  * `options.peers` (started, with the frozen pair loaded) in waves, and write an
  * Episode for every played seat. A wave holds `n_parallel` games for each worker.
@@ -342,18 +378,7 @@ export async function playEntries(options: GenerationOptions, shard: Shard = { i
         p1: entry.opponent !== "self" && entry.policy_seat !== "p1" ? entry.opponent.policy_id : policy_id,
         p2: entry.opponent !== "self" && entry.policy_seat !== "p2" ? entry.opponent.policy_id : policy_id,
       };
-      const episodes: Episode[] = [];
-      for (const player of ["p1", "p2"] as const) {
-        episodes.push(
-          await episodeFromRecord(record, player, {
-            team: stampTeam(pool.teams[entry.teams[player]] as StampSets, pool.known_synthetic),
-            opponent_team: stampTeam(pool.teams[entry.teams[rival(player)]] as StampSets, pool.known_synthetic),
-            known_synthetic: pool.known_synthetic,
-            behaviour_policy_id: sides[player],
-            collection: { kind: "league", run_id: config.seeds.run_key, seed: record.seed, opponent_policy_id: sides[rival(player)] },
-          }),
-        );
-      }
+      const episodes = await seatEpisodes(record, entry.teams, pool, config.seeds.run_key, sides);
       entries.push({ game: entry.game, row: { ...row, outcome: "played", winner: record.winner, turns: record.turns }, episodes, ...reported });
     }
   }
@@ -453,7 +478,7 @@ export function writeGeneration(dir: string, result: GenerationResult): void {
 }
 
 /** Write a file and flush it to disk before returning. */
-function writeDurable(path: string, data: string): void {
+export function writeDurable(path: string, data: string): void {
   const descriptor = openSync(path, "w");
   try {
     writeSync(descriptor, data);
@@ -464,7 +489,7 @@ function writeDurable(path: string, data: string): void {
 }
 
 /** Flush a directory's entries to disk. */
-function syncDir(path: string): void {
+export function syncDir(path: string): void {
   const descriptor = openSync(path, "r");
   try {
     fsyncSync(descriptor);

@@ -118,9 +118,14 @@ def _check_baselines(raw: dict[str, Any]) -> None:
             raise LeagueRecordError("a baseline's games must equal its opponent entry's games")
         counts = entry["counts"]
         queries = counts["queries"]
-        if counts["probe_runs"] > queries or counts["unsupported_queries"] > queries:
+        if (
+            counts["probe_runs"] > queries
+            or counts["unsupported_queries"] > queries
+            or counts.get("probe_refusals", 0) > queries
+        ):
             raise LeagueRecordError(
-                "a baseline's probe runs and unsupported queries cannot exceed its queries"
+                "a baseline's probe runs, unsupported queries and probe refusals"
+                " cannot exceed its queries"
             )
         if counts["preview_decisions"] + counts["scored_decisions"] > counts["decisions"]:
             raise LeagueRecordError(
