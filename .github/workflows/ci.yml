@@ -134,6 +134,9 @@ jobs:
       - name: production licences on allowlist (fails closed)
         run: make licences
       - name: licence gate rejects an injected AGPL dependency
+        # Keep scratch workspaces on the same filesystem as the pnpm store.
+        env:
+          TMPDIR: ${{ runner.temp }}
         run: make licences-selftest
 
   database:
