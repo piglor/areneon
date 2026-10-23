@@ -137,10 +137,15 @@ jobs:
         run: make licences-selftest
 
   database:
-    # Docker Compose is unavailable on the Coolify runner in No Docker mode.
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, coolify]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: install Docker build tools in the ephemeral runner
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends make docker-compose-v2
+          docker version
+          docker compose version
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .nvmrc
@@ -148,7 +153,22 @@ jobs:
       - run: corepack enable && COREPACK_ENABLE_DOWNLOAD_PROMPT=0 pnpm --version
       - run: pnpm install --frozen-lockfile
       - name: rules store schema, roles and triggers on Postgres 18 (ADR-007)
-        run: make db-up db-test
+        run: |
+          make db-up
+          # The daemon's localhost is in its sidecar, not the runner container.
+          # Use the importer's pinned Node base to run the same test target there.
+          node_image=$(sed -n 's/^ARG NODE_IMAGE=//p' packages/rules-importer/Dockerfile)
+          test -n "$node_image"
+          docker run --rm --network host \
+            --env CI=true --env COREPACK_ENABLE_DOWNLOAD_PROMPT=0 \
+            --volume "$GITHUB_WORKSPACE:$GITHUB_WORKSPACE" \
+            --workdir "$GITHUB_WORKSPACE" \
+            "$node_image" sh -ec '
+              apt-get update
+              apt-get install --yes --no-install-recommends make
+              corepack enable
+              make db-test
+            '
       - name: bootstrap sends no role password outside its CREATE ROLE
         run: make db-bootstrap-test
       - if: always()
@@ -158,13 +178,21 @@ jobs:
     # Builds the rules importer image and imports the recorded releases into a
     # fresh Postgres 18 twice: a real commit, then a no-op (ADR-007, #768).
     # The e2e target's stand-in gh replays recorded GitHub answers; no token.
-    # Keep Docker builds on GitHub while Coolify uses No Docker mode.
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, coolify]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - name: install Docker build tools in the ephemeral runner
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends make docker-compose-v2
+          docker version
+          docker compose version
       - name: importer image and end-to-end import on Postgres 18 (ADR-007)
+        # Bind-mounted scratch files must live on the volume shared with Docker.
+        env:
+          TMPDIR: ${{ runner.temp }}
         run: make importer-e2e
       - if: always()
         run: make db-down
@@ -225,8 +253,7 @@ jobs:
       - run: ./gitleaks git --redact --verbose .
 
   osv:
-    # The scanner is a Docker container action; Coolify currently uses No Docker mode.
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, coolify]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: osv-scanner
