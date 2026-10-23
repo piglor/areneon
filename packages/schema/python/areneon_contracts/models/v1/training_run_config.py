@@ -147,9 +147,9 @@ class Baseline(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
     )
-    actor: Literal["actor-rule", "random-legal"]
+    actor: Literal["actor-rule", "random-legal", "damage-aware"]
     """
-    Which scripted baseline plays.
+    Which scripted baseline plays. damage-aware was added within v1 (ADR-018 section 7, a minor change): a reader older than it rejects a config that names it.
     """
     policy_id: Annotated[
         StrictStr, Field(pattern="^[a-z0-9][a-z0-9._-]*@[A-Za-z0-9._-]+$")
@@ -224,7 +224,7 @@ class Generation(BaseModel):
     """
     Self-play games per generation: the frozen pair against itself.
     """
-    baseline_games: Annotated[list[Baseline], Field(max_length=2)]
+    baseline_games: Annotated[list[Baseline], Field(max_length=3)]
     """
     Games against scripted baselines, at most one entry per actor (a reader rule).
     """

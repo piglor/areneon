@@ -73,6 +73,7 @@ def read_league_run_record(raw: object, config: RunConfig) -> LeagueRunRecord:
         raise LeagueRecordError("forfeit_causes must be sorted by cause, each once")
     if "forfeit_causes" in raw and sum(count for _, count in causes) != raw["forfeits"]:
         raise LeagueRecordError("the forfeit causes' counts must sum to forfeits")
+    _check_baselines(raw)
     if raw["run_id"] != config.run_key:
         raise LeagueRecordError(f"run_id {raw['run_id']} is not the config's run key")
     if raw["run_config_hash"] != config.hash:
@@ -91,6 +92,30 @@ def read_league_run_record(raw: object, config: RunConfig) -> LeagueRunRecord:
         forfeit_causes=causes,
         raw=raw,
     )
+
+
+def _check_baselines(raw: dict[str, Any]) -> None:
+    """The ``baselines`` rules (ADR-018): sorted, each id once, games and counts agree."""
+    baselines = raw.get("baselines")
+    if baselines is None:
+        return
+    ids = [b["policy_id"] for b in baselines]
+    if not all(a < b for a, b in itertools.pairwise(ids)):
+        raise LeagueRecordError("baselines must be sorted by policy_id, each once")
+    games_by_opponent = {o["opponent_policy_id"]: o["games"] for o in raw["opponents"]}
+    for entry in baselines:
+        if games_by_opponent.get(entry["policy_id"]) != entry["games"]:
+            raise LeagueRecordError("a baseline's games must equal its opponent entry's games")
+        counts = entry["counts"]
+        queries = counts["queries"]
+        if counts["probe_runs"] > queries or counts["unsupported_queries"] > queries:
+            raise LeagueRecordError(
+                "a baseline's probe runs and unsupported queries cannot exceed its queries"
+            )
+        if counts["preview_decisions"] + counts["scored_decisions"] > counts["decisions"]:
+            raise LeagueRecordError(
+                "a baseline's preview and scored decisions cannot exceed its decisions"
+            )
 
 
 def check_generation_plan(record: LeagueRunRecord, plan: object, config: RunConfig) -> None:

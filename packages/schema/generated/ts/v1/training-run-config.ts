@@ -77,7 +77,7 @@ export interface TrainingRunConfig {
     /**
      * Games against scripted baselines, at most one entry per actor (a reader rule).
      *
-     * @maxItems 2
+     * @maxItems 3
      */
     baseline_games: Baseline[];
     /**
@@ -237,9 +237,9 @@ export interface Encoder {
  */
 export interface Baseline {
   /**
-   * Which scripted baseline plays.
+   * Which scripted baseline plays. damage-aware was added within v1 (ADR-018 section 7, a minor change): a reader older than it rejects a config that names it.
    */
-  actor: "actor-rule" | "random-legal";
+  actor: "actor-rule" | "random-legal" | "damage-aware";
   /**
    * The baseline's policy id, <name>@<commit>, as its Episodes record it.
    */

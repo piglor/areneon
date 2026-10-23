@@ -55,6 +55,12 @@ export interface LeagueRunRecord {
    * Games per opponent policy id, sorted by opponent_policy_id, each id once; the counts sum to games.
    */
   opponents: Opponent[];
+  /**
+   * The damage-aware baseline's identity and counts for the generation (ADR-018 sections 4, 5, 7), one entry per policy id, sorted by policy_id, each once. Absent when no game was played against a damage-aware baseline, so other runs keep their record bytes. Added within v1 (ADR-008 section 3): a reader older than the field rejects a record that carries it.
+   *
+   * @minItems 1
+   */
+  baselines?: [BaselineRecord, ...BaselineRecord[]];
 }
 /**
  * This interface was referenced by `LeagueRunRecord`'s JSON-Schema
@@ -77,4 +83,67 @@ export interface Opponent {
    */
   opponent_policy_id: string;
   games: number;
+}
+/**
+ * One scripted baseline whose play depends on more than its policy id. games equals the opponent entry of the same policy id; counts are the sums over those games, all integers (reader rules: probe_runs and unsupported_queries do not exceed queries; preview_decisions plus scored_decisions do not exceed decisions).
+ *
+ * This interface was referenced by `LeagueRunRecord`'s JSON-Schema
+ * via the `definition` "BaselineRecord".
+ */
+export interface BaselineRecord {
+  /**
+   * The baseline's policy id, <name>@<commit>.
+   */
+  policy_id: string;
+  /**
+   * The baseline identity hash (ADR-018 section 5): SHA-256 of the JCS of {baseline_config_hash, mechanics_config_hash, adapter_format, reader_sha256, version_manifest}. Games with another hash are another baseline; every game of a generation carries the same one.
+   */
+  identity_hash: string;
+  /**
+   * Games the baseline played in the generation.
+   */
+  games: number;
+  counts: BaselineCounts;
+}
+/**
+ * This interface was referenced by `LeagueRunRecord`'s JSON-Schema
+ * via the `definition` "BaselineCounts".
+ */
+export interface BaselineCounts {
+  /**
+   * Requests answered, Team Preview included.
+   */
+  decisions: number;
+  /**
+   * Team Preview requests (the actor-rule candidate).
+   */
+  preview_decisions: number;
+  /**
+   * Requests whose candidates were scored.
+   */
+  scored_decisions: number;
+  /**
+   * Probe queries asked.
+   */
+  queries: number;
+  /**
+   * Probe runs actually made (queries not answered from a game's memo).
+   */
+  probe_runs: number;
+  /**
+   * Queries the probe answered unsupported: scored 0, never approximated.
+   */
+  unsupported_queries: number;
+  /**
+   * Requests answered by the actor-rule candidate because the state reader flagged a line.
+   */
+  reader_fallbacks: number;
+  /**
+   * Requests answered by the actor-rule candidate because no legal assumed opponent set could be built.
+   */
+  assumed_set_fallbacks: number;
+  /**
+   * Requests where epsilon_ppm made the baseline play a random candidate.
+   */
+  epsilon_plays: number;
 }

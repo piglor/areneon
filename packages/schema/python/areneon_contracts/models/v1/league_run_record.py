@@ -8,6 +8,48 @@ from typing import Annotated, Literal
 from pydantic import MISSING, BaseModel, ConfigDict, Field, StrictInt, StrictStr
 
 
+class BaselineCounts(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    decisions: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+    """
+    Requests answered, Team Preview included.
+    """
+    preview_decisions: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+    """
+    Team Preview requests (the actor-rule candidate).
+    """
+    scored_decisions: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+    """
+    Requests whose candidates were scored.
+    """
+    queries: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+    """
+    Probe queries asked.
+    """
+    probe_runs: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+    """
+    Probe runs actually made (queries not answered from a game's memo).
+    """
+    unsupported_queries: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+    """
+    Queries the probe answered unsupported: scored 0, never approximated.
+    """
+    reader_fallbacks: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+    """
+    Requests answered by the actor-rule candidate because the state reader flagged a line.
+    """
+    assumed_set_fallbacks: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+    """
+    Requests answered by the actor-rule candidate because no legal assumed opponent set could be built.
+    """
+    epsilon_plays: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+    """
+    Requests where epsilon_ppm made the baseline play a random candidate.
+    """
+
+
 class ForfeitCauseCount(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
@@ -31,6 +73,31 @@ class Opponent(BaseModel):
     The opponent's policy id as the Episodes' collection records name it: the frozen pair itself (self-play) or a scripted baseline, <name>@<commit>.
     """
     games: Annotated[StrictInt, Field(ge=1, le=9007199254740991)]
+
+
+class BaselineRecord(BaseModel):
+    """
+    One scripted baseline whose play depends on more than its policy id. games equals the opponent entry of the same policy id; counts are the sums over those games, all integers (reader rules: probe_runs and unsupported_queries do not exceed queries; preview_decisions plus scored_decisions do not exceed decisions).
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    policy_id: Annotated[
+        StrictStr, Field(pattern="^[a-z0-9][a-z0-9._-]*@[A-Za-z0-9._-]+$")
+    ]
+    """
+    The baseline's policy id, <name>@<commit>.
+    """
+    identity_hash: Annotated[StrictStr, Field(pattern="^[0-9a-f]{64}$")]
+    """
+    The baseline identity hash (ADR-018 section 5): SHA-256 of the JCS of {baseline_config_hash, mechanics_config_hash, adapter_format, reader_sha256, version_manifest}. Games with another hash are another baseline; every game of a generation carries the same one.
+    """
+    games: Annotated[StrictInt, Field(ge=1, le=9007199254740991)]
+    """
+    Games the baseline played in the generation.
+    """
+    counts: BaselineCounts
 
 
 class LeagueRunRecord(BaseModel):
@@ -91,4 +158,8 @@ class LeagueRunRecord(BaseModel):
     opponents: list[Opponent]
     """
     Games per opponent policy id, sorted by opponent_policy_id, each id once; the counts sum to games.
+    """
+    baselines: Annotated[list[BaselineRecord] | MISSING, Field(min_length=1)] = MISSING
+    """
+    The damage-aware baseline's identity and counts for the generation (ADR-018 sections 4, 5, 7), one entry per policy id, sorted by policy_id, each once. Absent when no game was played against a damage-aware baseline, so other runs keep their record bytes. Added within v1 (ADR-008 section 3): a reader older than the field rejects a record that carries it.
     """

@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "run_id": "tiny-run",
+  "run_config_hash": "853e9e39b7ed10ee57224d43d247e309da5819d713951cbbade42d0556aade16",
+  "generation": 1,
+  "seed_derivation": "league-seed/1",
+  "plan_hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "pair_policy_id": "policy:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "games": 9,
+  "played": 8,
+  "forfeits": 1,
+  "forfeit_causes": [
+    {
+      "cause": "crash",
+      "count": 1
+    }
+  ],
+  "episodes": 16,
+  "opponents": [
+    {
+      "opponent_policy_id": "damage-aware@v1",
+      "games": 3
+    },
+    {
+      "opponent_policy_id": "policy:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "games": 4
+    },
+    {
+      "opponent_policy_id": "random-legal@tiny",
+      "games": 2
+    }
+  ],
+  "baselines": [
+    {
+      "policy_id": "damage-aware@v2",
+      "identity_hash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "games": 3,
+      "counts": {
+        "decisions": 40,
+        "preview_decisions": 3,
+        "scored_decisions": 31,
+        "queries": 410,
+        "probe_runs": 300,
+        "unsupported_queries": 36,
+        "reader_fallbacks": 1,
+        "assumed_set_fallbacks": 0,
+        "epsilon_plays": 0
+      }
+    }
+  ]
+}

@@ -310,3 +310,36 @@ describe.skipIf(!existsSync(PYTHON) && process.env.ARENEON_REQUIRE_PYTHON_WORKER
     expect(readdirSync(tmpdir()).filter((n) => n.startsWith("areneon-shards-") && !scratchBefore.includes(n))).toEqual([]);
   });
 });
+
+// ADR-018 slice 3: the damage-aware baseline in the opponent mix, through the real driver and worker. The config is the
+// tiny sample with the baseline's two games in place of random-legal's, under its own run key.
+describe.skipIf(!existsSync(PYTHON) && process.env.ARENEON_REQUIRE_PYTHON_WORKER !== "1")("the training loop with the damage-aware baseline", () => {
+  let dir: string;
+  let summary: RunSummary;
+  beforeAll(() => {
+    dir = mkdtempSync(join(tmpdir(), "areneon-loop-damage-"));
+    const tiny = JSON.parse(readFileSync(TINY, "utf8")) as { seeds: { run_key: string }; generation: { baseline_games: unknown[] } };
+    tiny.seeds.run_key = "tiny-damage-run";
+    tiny.generation.baseline_games = [{ actor: "damage-aware", policy_id: "damage-aware@v1", games: 2 }];
+    writeFileSync(join(dir, "config.json"), JSON.stringify(tiny));
+    summary = run(join(dir, "config.json"), join(dir, "run"), 1);
+  }, 600_000);
+  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+
+  it("completes, records the baseline's identity and counts, and trains on the pair's seats only", () => {
+    expect(summary).toMatchObject({ generation: 1, played: [1] });
+    const record = json<{ opponents: { opponent_policy_id: string; games: number }[]; baselines: { policy_id: string; identity_hash: string; games: number; counts: { decisions: number } }[] }>(
+      join(dir, "run"), "generations", gen(1), "league-run.json",
+    );
+    expect(record.opponents.find((o) => o.opponent_policy_id === "damage-aware@v1")?.games).toBe(2);
+    expect(record.baselines).toHaveLength(1);
+    expect(record.baselines[0]).toMatchObject({ policy_id: "damage-aware@v1", games: 2 });
+    expect(record.baselines[0]?.identity_hash).toMatch(/^[0-9a-f]{64}$/);
+    expect(record.baselines[0]?.counts.decisions).toBeGreaterThan(0);
+    const set = json(join(dir, "run"), "generations", gen(1), "training-set.json");
+    const behaviour = (hash: string): string => json(join(dir, "run"), "generations", gen(1), "episodes", `${hash}.json`).provenance.behaviour_policy_id;
+    const all = json<{ episode_hashes: string[] }>(join(dir, "run"), "generations", gen(1), "generation.json").episode_hashes;
+    expect(all.filter((hash) => behaviour(hash) === "damage-aware@v1")).toHaveLength(2);
+    expect(set.episode_hashes).toEqual(all.filter((hash) => behaviour(hash) === set.behaviour_policy_id).sort());
+  });
+});

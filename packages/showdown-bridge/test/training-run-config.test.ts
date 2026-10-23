@@ -28,6 +28,14 @@ describe("the TrainingRunConfig reader (ADR-010 §5)", () => {
     }
   });
 
+  it("reads damage-aware as a scripted baseline and refuses a fourth entry (ADR-018 section 7)", () => {
+    const config = readTrainingRunConfig(sample("damage-aware"));
+    expect(config.generation.baseline_games.map((b) => b.actor)).toEqual(["random-legal", "actor-rule", "damage-aware"]);
+    const tiny = sample("tiny") as { generation: { baseline_games: unknown[] } };
+    const four = ["a", "b", "c", "d"].map((n) => ({ actor: "actor-rule", policy_id: `actor-rule@${n}`, games: 1 }));
+    expect(() => readTrainingRunConfig({ ...tiny, generation: { ...tiny.generation, baseline_games: four } })).toThrow(TrainingRunConfigError);
+  });
+
   it("reads the optional KL target and refuses zero (ADR-010 erratum A1)", () => {
     expect(readTrainingRunConfig(sample("tiny")).ppo.target_kl_micro).toBeUndefined();
     expect(readTrainingRunConfig(sample("target-kl")).ppo.target_kl_micro).toBe(20000);

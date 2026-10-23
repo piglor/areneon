@@ -6,6 +6,7 @@ import { actorRule } from "../src/actor-rule.ts";
 import { jcs, type Json } from "../src/canonical-json.ts";
 import { readTrainingRunConfig } from "../src/training-run-config.ts";
 import {
+  damageAwareSetup,
   forfeitCauses,
   GenerationError,
   type GenerationOptions,
@@ -20,7 +21,7 @@ import {
 import { checkLeagueRunRecord, LEAGUE_SEED_DERIVATION, leagueBattleSeed, loadEngine, readLeagueRunRecord } from "../src/index.ts";
 import { type PolicyClient, PolicyWorkerError } from "../src/index.ts";
 import { UnsupportedCandidateError } from "../src/evaluation-harness.ts";
-import { readTrainingSet } from "../src/training-loader.ts";
+import { loadTrainingSet, readTrainingSet, TrainingLoaderError } from "../src/training-loader.ts";
 import { SAMPLES_DIR } from "../src/samples.ts";
 import { teamHash } from "../src/team-class.ts";
 
@@ -399,4 +400,84 @@ describe("several workers and game processes (#957)", () => {
     await expect(playGeneration(opts({ others: Promise.resolve(all.slice(0, 1)) }))).rejects.toThrow(/each once/);
     await expect(playGeneration(opts({ shard: { index: 0, of: 2 }, others: Promise.reject(new GenerationError("game process 1 failed")) }))).rejects.toThrow(/game process 1 failed/);
   });
+});
+
+describe("the damage-aware baseline as a training opponent (ADR-018 section 7)", () => {
+  const damageConfig = (policyId = "damage-aware@v1") =>
+    readTrainingRunConfig({
+      ...(sample("tiny") as object),
+      generation: { ...config.generation, games: 2, baseline_games: [{ actor: "damage-aware", policy_id: policyId, games: 2 }] },
+    });
+  const play = (cfg = damageConfig(), client: PolicyClient & { beginGame?: () => Promise<void> } = actorClient()) =>
+    playGeneration({ engine, config: cfg, generation: 1, policy_id: POLICY, client, pool });
+  let first: GenerationResult;
+  const asked: { battle: string; policy: string }[] = [];
+  beforeAll(async () => {
+    const inner = actorClient();
+    first = await play(damageConfig(), {
+      beginGame: inner.beginGame,
+      ask: (battle, query) => {
+        asked.push({ battle, policy: query.policy_id });
+        return inner.ask(battle, query);
+      },
+    });
+  }, 120_000);
+
+  it("plans the baseline seat with the config's actor and a seed in bytes 24 to 27 of league-seed/1", () => {
+    const plan = planGeneration(damageConfig(), 1, pool.teams.length);
+    expect(plan.slice(2).map((g) => g.opponent)).toEqual(Array(2).fill({ actor: "damage-aware", policy_id: "damage-aware@v1" }));
+    expect(plan.slice(2).map((g) => g.baseline_seed)).toEqual(planGeneration(config, 1, pool.teams.length).slice(2, 4).map((g) => g.baseline_seed));
+  });
+
+  it("plays the games, records the identity hash and the summed counts, and ties them to the opponent entry", async () => {
+    expect(first.games.every((g) => g.outcome === "played")).toBe(true);
+    const record = readLeagueRunRecord(first.run_record);
+    expect(record.opponents).toEqual([
+      { opponent_policy_id: "damage-aware@v1", games: 2 },
+      { opponent_policy_id: POLICY, games: 2 },
+    ]);
+    expect(record.baselines).toHaveLength(1);
+    const entry = at(record.baselines ?? [], 0);
+    expect(entry).toMatchObject({ policy_id: "damage-aware@v1", games: 2 });
+    expect(entry.identity_hash).toMatch(/^[0-9a-f]{64}$/);
+    expect(entry.counts.decisions).toBeGreaterThan(0);
+    expect(entry.counts.preview_decisions).toBe(2);
+    expect(entry.counts.epsilon_plays).toBe(0);
+    await expect(checkLeagueRunRecord(record, damageConfig())).resolves.toBeUndefined();
+  });
+
+  it("never queries the worker for the baseline's seat, and never trains on its Episodes", async () => {
+    const seats = new Set(asked.map((q) => q.battle));
+    expect(seats.has("game-2-p1") && !seats.has("game-2-p2")).toBe(true);
+    expect(seats.has("game-3-p2") && !seats.has("game-3-p1")).toBe(true);
+    expect(new Set(asked.map((q) => q.policy))).toEqual(new Set([POLICY]));
+    const baseline = first.episodes.filter((e) => e.provenance.behaviour_policy_id === "damage-aware@v1");
+    expect(baseline).toHaveLength(2);
+    for (const [index, hash] of first.episode_hashes.entries()) {
+      if (at(first.episodes, index).provenance.behaviour_policy_id !== "damage-aware@v1") continue;
+      expect(first.set.episode_hashes).not.toContain(hash);
+      expect(memoryStream(first).includes(`"episode_hash":"${hash}"`)).toBe(false);
+    }
+    // The loader itself refuses the baseline's Episodes as the pair's training data.
+    await expect(
+      loadTrainingSet({ episodes: baseline, evaluation_manifests: [], known_synthetic: pool.known_synthetic, behaviour_policy_id: POLICY }),
+    ).rejects.toThrow(TrainingLoaderError);
+  });
+
+  it("is reproducible: a second run gives the same stream, hashes and run record", async () => {
+    const again = await play();
+    expect(again.stream).toBe(first.stream);
+    expect(again.episode_hashes).toEqual(first.episode_hashes);
+    expect(again.run_record).toEqual(first.run_record);
+  }, 120_000);
+
+  it("keeps a run without it unchanged: no baselines field, no baseline on an entry", async () => {
+    const plain = await playEntries({ engine, config, generation: 1, policy_id: POLICY, client: actorClient(), pool }, { index: 0, of: 3 });
+    expect(plain.every((entry) => !("baseline" in entry))).toBe(true);
+  });
+
+  it("refuses a config whose policy id is not the one the baseline plays as, and a format without a vocabulary", async () => {
+    await expect(play(damageConfig("damage-aware-x@v1"))).rejects.toThrow(/plays as damage-aware@v1/);
+    expect(() => damageAwareSetup(engine, "gen9other")).toThrow(/vocabulary for/);
+  }, 120_000);
 });
