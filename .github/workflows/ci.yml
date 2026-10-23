@@ -6,7 +6,7 @@ on:
       check:
         type: choice
         default: licences
-        options: [docker, licences]
+        options: [docker, licences, resources]
 
 permissions:
   contents: read
@@ -90,3 +90,21 @@ jobs:
           printf '%s\n' "$output"
           test "$status" -eq 0
           [[ "$output" == *agpl-dep@AGPL-3.0-only* ]]
+
+  runner-resources:
+    if: inputs.check == 'resources'
+    runs-on: [self-hosted, coolify]
+    timeout-minutes: 2
+    steps:
+      - name: inspect runner resource limits
+        run: |
+          set -euo pipefail
+          printf 'CPU count: '
+          getconf _NPROCESSORS_ONLN
+          awk '/MemTotal|MemAvailable|SwapTotal|SwapFree/ {print}' /proc/meminfo
+          for file in cpu.max memory.max memory.current; do
+            if [ -f "/sys/fs/cgroup/$file" ]; then
+              printf '%s: ' "$file"
+              cat "/sys/fs/cgroup/$file"
+            fi
+          done
