@@ -3,7 +3,8 @@
 * ``run``: continue the run in ``--run-dir`` until ``--generations`` generations are
   committed. A directory with committed generations is resumed from the last one; an
   unfinished generation is discarded and replayed. Prints one JCS JSON line.
-* ``inspect``: write the training-data inspector's static pages (teams and games) for a run.
+* ``inspect``: write the training-data inspector's static pages (teams and games) for a run; with
+  ``--resimulate G:K``, instead one engine re-simulation page of a played game (omniscient, local).
 * ``replay``: write graphical replay pages of training games (each game's two own channels), or
   with ``--progress-dir`` of stored progress games (the omniscient view, for local use).
 * ``provenance``: write the run's CheckpointRecords and its sources registry into a
@@ -38,6 +39,8 @@ from areneon_ml.inspector.command import inspect_run
 from areneon_ml.inspector.progress_replay_command import replay_progress
 from areneon_ml.inspector.readers import InspectError
 from areneon_ml.inspector.replay_command import Selection, parse_games, replay_games
+from areneon_ml.inspector.resimulate import node_runner
+from areneon_ml.inspector.resimulate_command import parse_target, resimulate_game
 from areneon_ml.learner.config import RunConfigError, read_run_config
 from areneon_ml.learner.data import LearnerDataError
 from areneon_ml.learner.state import LearnerStateError
@@ -114,6 +117,17 @@ def _parser() -> argparse.ArgumentParser:
         "--out", type=Path, help="default: <run-dir>.inspect/, beside the run directory"
     )
     inspect.add_argument("--node", default="node", help="the node executable")
+    inspect.add_argument(
+        "--resimulate",
+        metavar="G:K",
+        help="instead of the pages, re-run game K of generation G on the pinned engine and write "
+        "its omniscient page under <out>/resimulations/ if both recorded channels are reproduced",
+    )
+    inspect.add_argument(
+        "--engine-data",
+        type=Path,
+        help="with --resimulate: default is the committed export for the run's format",
+    )
     report = commands.add_parser("report", help="write the run dashboard (one offline HTML page)")
     report.add_argument("--run-dir", type=Path, required=True)
     report.add_argument("--progress-dir", type=Path, help="a progress root (optional)")
@@ -309,6 +323,15 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.command == "run":
             out = _run(args)
+        elif args.command == "inspect" and args.resimulate is not None:
+            out = resimulate_game(
+                args.run_dir,
+                args.out,
+                parse_target(args.resimulate),
+                repo=REPO,
+                runner=node_runner(REPO, args.node),
+                engine_data=args.engine_data,
+            )
         elif args.command == "inspect":
             out = inspect_run(args.run_dir, args.out, repo=REPO, node=args.node)
         elif args.command == "report":
