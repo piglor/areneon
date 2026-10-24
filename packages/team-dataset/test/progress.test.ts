@@ -376,6 +376,66 @@ describe("playProgress", () => {
     });
   });
 
+  describe("against another run's frozen pair (cross-run)", () => {
+    const versus = (client = actorClient(), run_id = "other-run"): NonNullable<ProgressOptions["versus"]> => ({
+      run_id,
+      run_config_hash: "e".repeat(64),
+      generation: 3,
+      checkpoints: { preview: "5".repeat(64), battle: "6".repeat(64) },
+      policy_ids: { sample: `policy:${"3".repeat(64)}`, argmax: `policy:${"4".repeat(64)}` },
+      client,
+    });
+
+    it("plays each pair from both seats against the other run's worker, on the baselines' pairs and seeds", async () => {
+      const other = actorClient();
+      const result = await playProgress(options({ versus: versus(other), run_games: 4, games: 2, record_games: 2 }));
+      const { record } = result;
+      expect(record.matches.map((m) => m.match_id)).toEqual(["actor-rule-argmax", "actor-rule-sample", "random-legal-argmax", "random-legal-sample", "run-argmax", "run-sample"]);
+      expect(record.plan).toMatchObject({ games_per_match: 2, run_games_per_match: 4 });
+      expect(record.teams.pairs_used).toBe(2);
+      const match = record.matches.find((m) => m.match_id === "run-sample") as (typeof record.matches)[number];
+      expect(match).toMatchObject({ games: 4, mode: "sample", opponent: { kind: "run", run_id: "other-run", run_config_hash: "e".repeat(64), generation: 3, policy_id: versus().policy_ids.sample, checkpoints: versus().checkpoints } });
+      const rows = record.games.filter((r) => r.match_id === "run-sample");
+      expect(rows.map((r) => [r.game, r.pair, r.candidate_seat])).toEqual([[0, 0, "p1"], [1, 0, "p2"], [2, 1, "p1"], [3, 1, "p2"]]);
+      const [a, b] = [0, 1].map((k) => result.game_records.get(`run-sample-${k}.json`) as ProgressGameRecord) as [ProgressGameRecord, ProgressGameRecord];
+      expect(a.seed).toBe(progressGameStreams(config.seeds.run_key, 0).seed);
+      expect(b.seed).toBe(a.seed);
+      expect(a.policies).toEqual({ p1: options().policy_ids.sample, p2: versus().policy_ids.sample });
+      expect(b.policies).toEqual({ p1: versus().policy_ids.sample, p2: options().policy_ids.sample });
+      expect(other.asked).toBeGreaterThan(0);
+      expect(other.modes).toEqual(new Set(["sample", "argmax"]));
+      expect(() => readProgressEvaluationRecordV2(JSON.parse(jcs(record as unknown as Json)))).not.toThrow();
+    }, 300_000);
+
+    it("is byte-identical when run twice", async () => {
+      const run = () => playProgress(options({ versus: versus(), run_games: 2 }));
+      const [a, b] = [await run(), await run()];
+      expect(jcs(a.record as unknown as Json)).toBe(jcs(b.record as unknown as Json));
+    }, 240_000);
+
+    it("refuses wrong arguments before any game", async () => {
+      const worker = actorClient();
+      const plain = (change: Partial<ProgressOptions>) => playProgress(options(change));
+      await expect(plain({ versus: versus(worker) })).rejects.toThrow(/at least 2 when another run/);
+      await expect(plain({ run_games: 2 })).rejects.toThrow(/needs another run/);
+      await expect(plain({ versus: versus(worker), run_games: 3 })).rejects.toThrow(/even integer/);
+      await expect(plain({ versus: versus(worker, config.seeds.run_key), run_games: 2 })).rejects.toThrow(/same run key/);
+      await expect(plain({ versus: versus(worker), run_games: 2 * pool.teams.length })).rejects.toThrow(/disjoint team pairs/);
+      expect(worker.asked).toBe(0);
+    });
+
+    it("is not played with the ablation", async () => {
+      const other = actorClient();
+      const ablation = { generation: { generation: 0, checkpoint: "7".repeat(64), policy_id: `policy:${"8".repeat(64)}`, client: other }, random_policy_id: `policy:${"9".repeat(64)}` };
+      await expect(playProgress(options({ generation: 2, ablation, versus: versus(other), run_games: 2 }))).rejects.toThrow(/played alone/);
+    });
+
+    it("checks the seeds against the plans it is given", async () => {
+      const seed = progressGameStreams(config.seeds.run_key, 1).seed;
+      await expect(playProgress(options({ versus: versus(), run_games: 4, league_seeds: new Set([seed]) }))).rejects.toThrow(/equals a seed of a committed plan/);
+    });
+  });
+
   describe("the Team Preview ablation", () => {
     const ablation = (generationClient = actorClient()): NonNullable<ProgressOptions["ablation"]> => ({
       generation: { generation: 0, checkpoint: "7".repeat(64), policy_id: `policy:${"8".repeat(64)}`, client: generationClient },

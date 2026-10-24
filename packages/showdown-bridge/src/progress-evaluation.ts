@@ -113,6 +113,21 @@ export interface ProgressOptions {
    */
   anchor_games?: number;
   /**
+   * Another run's frozen pair (a cross-run comparison), behind a worker of its own that loads that run's
+   * checkpoints. Played sample against sample and argmax against argmax as `run-<mode>`, every validation pair
+   * from both seats (see `run_games`). Its run key must differ from this run's.
+   */
+  versus?: {
+    run_id: string;
+    run_config_hash: string;
+    generation: number;
+    checkpoints: { preview: string; battle: string };
+    policy_ids: Record<ProgressMode, string>;
+    client: PolicyClient & { beginGame?: () => Promise<void> };
+  };
+  /** Games in every cross-run match: even, laid out as `games`. Required with `versus`. */
+  run_games?: number;
+  /**
    * The Team Preview ablation (ticket #940): instead of the usual matches, the generation's Battle network plays
    * `random-legal` and `actor-rule` (argmax) with (i) its own learned Preview, (ii) a uniformly random Preview and
    * (iii) an earlier generation's Preview (behind a worker of its own that holds that Preview and this Battle). Same
@@ -241,12 +256,14 @@ export function buildProgressGameRecord(facts: GameFacts): ProgressGameRecord {
  * The teams of each pair, from the pool, refusing a pool team that the run trained on
  * and more games than there are disjoint pairs.
  */
-export function progressPlan(options: Pick<ProgressOptions, "config" | "pool" | "games" | "training_teams" | "league_seeds"> & { anchor_games?: number }): { pairs: [ProgressTeam, ProgressTeam][]; seeds: string[] } {
+export function progressPlan(options: Pick<ProgressOptions, "config" | "pool" | "games" | "training_teams" | "league_seeds"> & { anchor_games?: number; run_games?: number }): { pairs: [ProgressTeam, ProgressTeam][]; seeds: string[] } {
   const { config, pool, games, training_teams, league_seeds } = options;
   const anchorGames = options.anchor_games ?? 0;
   if (!Number.isSafeInteger(games) || games < 2 || games % 2 !== 0) throw new ProgressError("--games must be an even integer of at least 2: every pair is played from both seats");
   if (!Number.isSafeInteger(anchorGames) || anchorGames < 0 || anchorGames % 2 !== 0) throw new ProgressError("--anchor-games must be an even integer");
-  const needed = Math.max(games, anchorGames) / 2;
+  const runGames = options.run_games ?? 0;
+  if (!Number.isSafeInteger(runGames) || runGames < 0 || runGames % 2 !== 0) throw new ProgressError("--run-games must be an even integer");
+  const needed = Math.max(games, anchorGames, runGames) / 2;
   const byCanonical = new Map(pool.teams.map((team) => [team.canonical_team_hash, team]));
   if (byCanonical.size !== pool.teams.length) throw new ProgressError("a team appears twice in the validation pool");
   for (const team of pool.teams) {
@@ -279,9 +296,13 @@ export async function playProgress(options: ProgressOptions): Promise<ProgressRe
   if (anchors.length === 0 && anchorGames !== 0) throw new ProgressError("--anchor-games needs at least one anchor");
   if (new Set(anchors.map((a) => a.generation)).size !== anchors.length) throw new ProgressError("an anchor generation may be given once");
   if (anchors.some((a) => !Number.isSafeInteger(a.generation) || a.generation < 0 || a.generation >= generation)) throw new ProgressError("an anchor must be an earlier generation than the one evaluated");
-  const { ablation } = options;
+  const { ablation, versus } = options;
+  const runGames = options.run_games ?? 0;
+  if (versus !== undefined && runGames < 2) throw new ProgressError("--run-games must be at least 2 when another run's pair is given");
+  if (versus === undefined && runGames !== 0) throw new ProgressError("--run-games needs another run's pair");
+  if (versus !== undefined && versus.run_id === config.seeds.run_key) throw new ProgressError("the other run has the same run key as the evaluated one");
   if (ablation !== undefined) {
-    if (anchors.length > 0 || options.previous !== undefined) throw new ProgressError("the Preview ablation is played alone: no anchors and no previous-generation matches");
+    if (anchors.length > 0 || options.previous !== undefined || versus !== undefined) throw new ProgressError("the Preview ablation is played alone: no anchors, no previous-generation matches and no other run");
     if (!Number.isSafeInteger(ablation.generation.generation) || ablation.generation.generation < 0 || ablation.generation.generation >= generation) throw new ProgressError("the ablation's Preview must come from an earlier generation");
   }
   const plan = progressPlan(options);
@@ -295,7 +316,7 @@ export async function playProgress(options: ProgressOptions): Promise<ProgressRe
   const game_ms: Record<string, { mean: number; max: number }> = {};
   const clock = options.damage_aware?.clock ?? (() => performance.now());
   type Seat = { seat: PolicySeat | Actor; report?: () => BaselineReport };
-  type Opponent = { id: string; anchored?: true; budget_ms?: number; opponent: (mode: ProgressMode) => Match["opponent"]; seat: (mode: ProgressMode, game: number) => Seat; policies: (mode: ProgressMode) => string; begin: () => Promise<void> };
+  type Opponent = { id: string; anchored?: true; cross?: true; budget_ms?: number; opponent: (mode: ProgressMode) => Match["opponent"]; seat: (mode: ProgressMode, game: number) => Seat; policies: (mode: ProgressMode) => string; begin: () => Promise<void> };
   const opponents: Opponent[] = PROGRESS_BASELINES.map((baseline) => ({
     id: baseline.actor,
     opponent: () => ({ kind: "baseline", policy_id: baseline.policy_id }),
@@ -383,10 +404,22 @@ export async function playProgress(options: ProgressOptions): Promise<ProgressRe
       },
     });
   }
+  if (versus !== undefined) {
+    opponents.push({
+      id: "run",
+      cross: true,
+      opponent: (mode) => ({ kind: "run", run_id: versus.run_id, run_config_hash: versus.run_config_hash, generation: versus.generation, policy_id: versus.policy_ids[mode], checkpoints: versus.checkpoints }),
+      seat: (mode) => ({ seat: { client: versus.client, policy_id: versus.policy_ids[mode], sampling: mode } }),
+      policies: (mode) => versus.policy_ids[mode],
+      begin: async () => {
+        await versus.client.beginGame?.();
+      },
+    });
+  }
   for (const candidateKind of candidates) {
     for (const baseline of opponents) {
     // Every match plays each pair from both seats (E2); an anchor match may be longer than the others.
-    const count = baseline.anchored === true ? anchorGames : games;
+    const count = baseline.cross === true ? runGames : baseline.anchored === true ? anchorGames : games;
     const recorded = Math.min(record_games, count);
     for (const mode of modes) {
       const match_id = `${candidateKind.prefix}${baseline.id}-${mode}`;
@@ -467,13 +500,14 @@ export async function playProgress(options: ProgressOptions): Promise<ProgressRe
     generation_manifest_sha256: options.generation_manifest_sha256,
     checkpoints: options.checkpoints,
     version_manifest: manifest,
-    teams: { dataset_hash: pool.dataset_hash, split: "validation", pairs_used: Math.max(games, anchorGames) / 2 },
+    teams: { dataset_hash: pool.dataset_hash, split: "validation", pairs_used: Math.max(games, anchorGames, runGames) / 2 },
     plan: {
       seed_derivation: PROGRESS_SEED_DERIVATION,
       pairing: PROGRESS_PAIRING,
       games_per_match: games,
       recorded_games_per_match: record_games,
       ...(anchors.length === 0 ? {} : { anchor_games_per_match: anchorGames }),
+      ...(versus === undefined ? {} : { run_games_per_match: runGames }),
       max_turns: config.generation.max_turns,
       latency_budget_ms: budget,
     },

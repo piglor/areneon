@@ -26,11 +26,14 @@ from typing import Any, Protocol
 
 from areneon_contracts.contracts import jcs, sha256_hex
 
-from areneon_ml.checkpoint.record import read_record
+from areneon_ml.checkpoint.provenance import ProvenanceGraph
+from areneon_ml.checkpoint.record import CheckpointRecord, read_record
 from areneon_ml.learner.config import RunConfig, read_run_config
 from areneon_ml.loop import layout
+from areneon_ml.loop.driver import sources_registry
 from areneon_ml.loop.play import NodePlayer, PlayError
 from areneon_ml.loop.records import policy_id
+from areneon_ml.model.network import ROLES
 from areneon_ml.progress.ablation import ablation_summary, expected_ablation_matches
 from areneon_ml.progress.records import (
     DAMAGE_AWARE_LABEL,
@@ -74,6 +77,10 @@ DAMAGE_AWARE_POLICY = "damage-aware@v1"
 DAMAGE_AWARE_MATCHES = ("damage-aware-argmax", "damage-aware-sample")
 #: Says what a ``previous-*`` row is: the pair's own lineage, so it can cycle (ADR-017 section 2).
 SEEN_LABEL = "seen, same-lineage comparison: it can cycle"
+#: Says what a ``run-*`` row is: another run's frozen pair (not held-out evidence, not a gate).
+CROSS_RUN_LABEL = "cross-run comparison"
+#: Games per cross-run match (even): each of this many / 2 validation pairs from both seats.
+DEFAULT_RUN_GAMES = 200
 
 
 class ProgressError(ValueError):
@@ -99,6 +106,34 @@ class AnchorPair:
     battle: str
     policy_id_sample: str
     policy_id_argmax: str
+
+
+@dataclass(frozen=True)
+class VersusSpec:
+    """Another run's committed generation to play against (named by its run directory)."""
+
+    run_dir: Path
+    generation: int
+    games: int
+    #: The other run's encoder version (from its own config): its worker is checked against it.
+    encoder_version: str
+
+
+@dataclass(frozen=True)
+class RunPair:
+    """Another run's frozen pair, verified, the opponent of the ``run-*`` matches."""
+
+    run_id: str
+    run_config_hash: str
+    generation: int
+    preview: str
+    battle: str
+    policy_id_sample: str
+    policy_id_argmax: str
+    run_dir: Path
+    team_set: Path
+    encoder_version: str
+    games: int
 
 
 @dataclass(frozen=True)
@@ -137,6 +172,8 @@ class ProgressRequest:
     #: The most wall-clock milliseconds one damage-aware match may take; None plays no damage-aware
     #: match (ADR-018 slice 4: opt-in, and a match over the budget fails the evaluation).
     damage_aware_budget_ms: int | None = None
+    #: Another run's frozen pair, played as ``run-sample`` and ``run-argmax``.
+    versus: RunPair | None = None
 
 
 class ProgressPlayer(Protocol):
@@ -181,6 +218,20 @@ class NodeProgressPlayer(NodePlayer):
             if request.damage_aware_budget_ms is None
             else ("--damage-aware-budget-ms", str(request.damage_aware_budget_ms))
         )
+        versus = request.versus
+        cross = (
+            ()
+            if versus is None
+            else (
+                "--versus",
+                f"{versus.run_id},{versus.run_config_hash},{versus.generation},{versus.preview},"
+                f"{versus.battle},{versus.policy_id_sample},{versus.policy_id_argmax}",
+                *("--versus-dir", str(versus.run_dir)),
+                *("--versus-encoder-version", versus.encoder_version),
+                *("--versus-team-set", str(versus.team_set)),
+                *("--run-games", str(versus.games)),
+            )
+        )
         out = self._run(
             SCRIPT,
             *("--config", str(self.config_path)),
@@ -202,6 +253,7 @@ class NodeProgressPlayer(NodePlayer):
             *anchors,
             *ablation,
             *damage,
+            *cross,
         )
         try:
             found = json.loads(out)
@@ -428,6 +480,113 @@ def _anchor_pair(run_dir: Path, config: RunConfig, generation: int) -> AnchorPai
     )
 
 
+def _dataset_of(config: RunConfig) -> dict[str, Any]:
+    found = config.raw.get("team_dataset")
+    if not isinstance(found, dict) or "dataset_hash" not in found:
+        raise ProgressError("the run config names no team dataset with a validation split")
+    return found
+
+
+def _versus_pair(run_dir: Path, config: RunConfig, spec: VersusSpec) -> RunPair:
+    """The other run's frozen pair, verified; refuses a run that cannot be compared.
+
+    Both runs must name the same format and the same team dataset (so the validation split
+    is one and the same), each must have committed the generation, the records must be
+    synthetic, and the run keys, run directories and checkpoints must differ. The other run
+    is only read (its lock is never taken).
+    """
+    other_dir = spec.run_dir.resolve()
+    if other_dir == run_dir.resolve():
+        raise ProgressError("the other run is the evaluated run itself")
+    other = _read_config(other_dir)
+    if other.run_key == config.run_key:
+        raise ProgressError("the other run has the same run key as the evaluated one")
+    if other.format_id != config.format_id:
+        raise ProgressError("the two runs name different formats")
+    if _dataset_of(other)["dataset_hash"] != _dataset_of(config)["dataset_hash"]:
+        raise ProgressError("the two runs name different team datasets: no common validation split")
+    found = _source(other_dir, other, spec.generation)
+    return RunPair(
+        other.run_key,
+        other.hash,
+        spec.generation,
+        found.preview,
+        found.battle,
+        policy_id(found.preview, found.battle, "sample"),
+        policy_id(found.preview, found.battle, "argmax"),
+        other_dir,
+        found.team_set,
+        spec.encoder_version,
+        spec.games,
+    )
+
+
+def _run_records(run_dir: Path) -> list[CheckpointRecord]:
+    newest = layout.latest_complete(run_dir)
+    if newest is None:
+        raise ProgressError(f"{run_dir} holds no committed generation")
+    return [
+        read_record(
+            layout.read_json(layout.generation_dir(run_dir, g) / "records" / f"{role}.json")
+        )
+        for g in range(newest.generation + 1)
+        for role in ROLES
+    ]
+
+
+def versus_relation(run_dir: Path, source: _Source, pair: RunPair) -> dict[str, str]:
+    """How the two lineages relate, from the C1/C6 checker given both runs' records.
+
+    ``independent lineage`` only when the two ancestries are disjoint (C6), else ``seen``.
+    Two runs that share a checkpoint are refused (a run is its own lineage). Every committed
+    generation of both runs is verified by ``sources_registry``.
+    """
+    mine, theirs = _run_records(run_dir), _run_records(pair.run_dir)
+    shared = {r.checkpoint_id for r in mine} & {r.checkpoint_id for r in theirs}
+    if shared:
+        raise ProgressError("the two runs share a checkpoint: they are not separate lineages")
+    registry: dict[str, list[str]] = {}
+    for part in (sources_registry(run_dir), sources_registry(pair.run_dir)):
+        for key, generators in part.items():
+            registry[key] = sorted({*registry.get(key, []), *generators})
+    graph = ProvenanceGraph([*mine, *theirs], registry)
+    candidate = [source.preview, source.battle]
+    opponent = [pair.preview, pair.battle]
+    verdict = graph.classify(candidate, opponent)
+    independence = graph.independent(candidate, opponent)
+    return {
+        "label": "independent lineage" if independence.independent else "seen",
+        "reason": verdict.reason,
+    }
+
+
+def _check_versus(record: dict[str, Any], versus: RunPair | None, *, legacy: bool) -> None:
+    """The ``run-*`` matches are exactly the other run's frozen pair in both modes (opt-in)."""
+    found = {m["match_id"]: m for m in record["matches"] if m["opponent"]["kind"] == "run"}
+    if versus is None:
+        if found and not legacy:
+            raise ProgressError("this evaluation asks for no cross-run matches")
+        return
+    if not found and legacy:
+        return
+    if set(found) != {"run-argmax", "run-sample"}:
+        raise ProgressError("cross-run matches are run-sample and run-argmax")
+    if record["plan"].get("run_games_per_match") != versus.games:
+        raise ProgressError("progress.json is not the record asked for")
+    ids = {"sample": versus.policy_id_sample, "argmax": versus.policy_id_argmax}
+    for match in found.values():
+        opponent = match["opponent"]
+        if opponent != {
+            "kind": "run",
+            "run_id": versus.run_id,
+            "run_config_hash": versus.run_config_hash,
+            "generation": versus.generation,
+            "policy_id": ids[match["mode"]],
+            "checkpoints": {"preview": versus.preview, "battle": versus.battle},
+        }:
+            raise ProgressError(f"{match['match_id']}: the opponent is not the other run's pair")
+
+
 def _check_anchors(
     record: dict[str, Any], anchors: Sequence[AnchorPair] | None, run_dir: Path, config: RunConfig
 ) -> None:
@@ -470,6 +629,7 @@ def _verify_output(  # noqa: PLR0913, PLR0917
     anchor_games: int,
     ablation: AblationSpec | None = None,
     damage_aware: bool = False,
+    versus: RunPair | None = None,
 ) -> dict[str, Any]:
     """The simulator side's files are the record's: read both kinds, check every hash and name."""
     record = read_progress_record(layout.read_json(work / PROGRESS), config)
@@ -491,6 +651,7 @@ def _verify_output(  # noqa: PLR0913, PLR0917
         raise ProgressError("progress.json is not the record asked for")
     _check_ablation(record, ablation, run_dir, config, fresh=True)
     _check_damage_aware(record, damage_aware, legacy=False)
+    _check_versus(record, versus, legacy=False)
     rows = {(r["match_id"], r["game"]): r for r in record["games"]}
     expected = set()
     for match in record["matches"]:
@@ -554,6 +715,8 @@ def _check_ablation(
 def summary_of(record: dict[str, Any]) -> list[dict[str, Any]]:
     """Per match: the counts and the derived score with its interval (never stored).
 
+    A cross-run match is labelled ``cross-run comparison``.
+
     A version 1 record (one game per pair) gets the per-game Wilson interval. A version 2 record
     plays every pair from both seats, so its games are not independent: it gets the pair-level
     percentile bootstrap of ADR-017 erratum E2 instead (``pairs``, ``interval_low_ppm``,
@@ -590,6 +753,8 @@ def summary_of(record: dict[str, Any]) -> list[dict[str, Any]]:
             | (
                 {"comparison": SEEN_LABEL}
                 if match["opponent"]["kind"] in ("previous", "anchor")
+                else {"comparison": CROSS_RUN_LABEL}
+                if match["opponent"]["kind"] == "run"
                 else {}
             )
             | (
@@ -614,7 +779,7 @@ def _pair_stats(record: dict[str, Any], match: dict[str, Any]) -> dict[str, Any]
         "interval_high_ppm": interval.high_ppm,
         "interval": PAIR_INTERVAL_LABEL,
     }
-    if match["opponent"]["kind"] in ("previous", "anchor"):
+    if match["opponent"]["kind"] in ("previous", "anchor", "run"):
         # pair score minus 1/2: the same resamples, shifted, so the bounds shift exactly
         out |= {
             "diff_mean_ppm": interval.mean_ppm - PPM // 2,
@@ -625,7 +790,11 @@ def _pair_stats(record: dict[str, Any], match: dict[str, Any]) -> dict[str, Any]
 
 
 def verify_progress_dir(
-    target: Path, config: RunConfig, run_dir: Path, generation: int
+    target: Path,
+    config: RunConfig,
+    run_dir: Path,
+    generation: int,
+    versus: RunPair | None = None,
 ) -> dict[str, Any]:
     """A committed progress directory, checked against its manifest and the run."""
     manifest = layout.verify_generation(target, generation)
@@ -642,6 +811,7 @@ def verify_progress_dir(
     _check_ablation(record, None, run_dir, config, fresh=False)
     # The damage-aware matches are optional (a record may hold them or not), never half a set.
     _check_damage_aware(record, False, legacy=True)
+    _check_versus(record, versus, legacy=True)
     rows = {(r["match_id"], r["game"]): r for r in record["games"]}
     for match in record["matches"]:
         for name in sorted(p.name for p in (target / GAMES).glob(f"{match['match_id']}-*.json")):
@@ -658,7 +828,38 @@ def verify_progress_dir(
     return record
 
 
-def progress_generation(  # noqa: PLR0913, PLR0915, PLR0917
+def _check_asked(
+    generation: int,
+    sizes: tuple[int, int, int],
+    asked: tuple[Sequence[int], bool, bool, VersusSpec | None],
+) -> tuple[list[int], list[int]]:
+    """Refuse a request that cannot be played; returns the anchors played and left out."""
+    games, record_games, anchor_games = sizes
+    anchors, previous_matches, preview_ablation, versus = asked
+    if games < MIN_GAMES or games % 2 or record_games < 0 or record_games > games:
+        raise ProgressError(
+            "--games must be an even number of at least 2 (every pair is played from both seats) "
+            "and --record-games between 0 and --games"
+        )
+    if any(a < 0 for a in anchors):
+        raise ProgressError("--anchors must be generation numbers of 0 or more")
+    wanted = sorted({a for a in anchors if a < generation})
+    dropped = sorted({a for a in anchors if a >= generation})
+    if wanted and (anchor_games < MIN_GAMES or anchor_games % 2):
+        raise ProgressError("--anchor-games must be an even number of at least 2")
+    if versus is not None and (versus.games < MIN_GAMES or versus.games % 2):
+        raise ProgressError("--run-games must be an even number of at least 2")
+    if versus is not None and preview_ablation:
+        raise ProgressError("the Preview ablation is played alone (no other run)")
+    if preview_ablation and (anchors or previous_matches or generation < 1):
+        raise ProgressError(
+            "the Preview ablation is played alone, for a generation of 1 or more: "
+            "no --anchors and no --previous-matches"
+        )
+    return ([], []) if preview_ablation else (wanted, dropped)
+
+
+def progress_generation(  # noqa: PLR0913, PLR0917
     run_dir: Path,
     generation: int,
     root: Path,
@@ -670,8 +871,15 @@ def progress_generation(  # noqa: PLR0913, PLR0915, PLR0917
     previous_matches: bool = False,
     preview_ablation: bool = False,
     damage_aware_budget_minutes: int | None = None,
+    versus: VersusSpec | None = None,
 ) -> dict[str, Any]:
     """Evaluate one generation into ``root``; a committed directory is verified and kept.
+
+    ``versus`` also plays another run's committed frozen pair (``run-sample``, ``run-argmax``,
+    ``versus.games`` games each, every pair from both seats; opt-in, off by default). The other
+    run is only read. The result then carries ``head_to_head``: its lineage relation to the
+    evaluated pair from the C1/C6 checker. Use a progress directory of its own: a committed
+    generation is never rewritten.
 
     ``preview_ablation`` plays the Team Preview ablation (#940) instead of the usual
     matches: this generation's Battle network with its own Preview, a random Preview and
@@ -684,60 +892,42 @@ def progress_generation(  # noqa: PLR0913, PLR0915, PLR0917
     The previous-generation matches are played only with ``previous_matches`` (and never at
     generation 0, which has no previous generation).
     """
-    if games < MIN_GAMES or games % 2 or record_games < 0 or record_games > games:
-        raise ProgressError(
-            "--games must be an even number of at least 2 (every pair is played from both seats) "
-            "and --record-games between 0 and --games"
-        )
-    if any(a < 0 for a in anchors):
-        raise ProgressError("--anchors must be generation numbers of 0 or more")
-    wanted = sorted({a for a in anchors if a < generation})
-    dropped = sorted({a for a in anchors if a >= generation})
-    if wanted and (anchor_games < MIN_GAMES or anchor_games % 2):
-        raise ProgressError("--anchor-games must be an even number of at least 2")
-    if preview_ablation and (anchors or previous_matches or generation < 1):
-        raise ProgressError(
-            "the Preview ablation is played alone, for a generation of 1 or more: "
-            "no --anchors and no --previous-matches"
-        )
-    if preview_ablation:
-        wanted, dropped = [], []
+    wanted, dropped = _check_asked(
+        generation,
+        (games, record_games, anchor_games),
+        (anchors, previous_matches, preview_ablation, versus),
+    )
     damage_budget_ms = _damage_budget_ms(damage_aware_budget_minutes, preview_ablation)
     config = _read_config(run_dir)
+    if versus is not None:
+        progress_root(versus.run_dir, root)  # the root is never inside or above the other run
     with progress_lock(root):
         target = progress_dir_of(root, generation)
         for stale in sorted(root.glob(".g*.partial")):
             shutil.rmtree(stale)
         if target.exists():
-            record = verify_progress_dir(target, config, run_dir, generation)
-            if preview_ablation != bool(ablation_summary(record)):
-                raise ProgressError(
-                    f"{target.name} already holds a "
-                    f"{'normal' if preview_ablation else 'Preview ablation'} record: "
-                    "use a progress directory of its own for the other kind"
-                )
-            return {
-                "generation": generation,
-                "skipped": True,
-                "previous": _previous_status(record, generation),
-                "anchors": _anchor_status(record, wanted, dropped),
-                "damage_aware": _damage_aware_status(record),
-                "matches": summary_of(record),
-            } | _ablation_part(record)
+            return _skipped(
+                target, run_dir, config, generation, (wanted, dropped), preview_ablation, versus
+            )
         source = _source(run_dir, config, generation)
         previous = _previous_pair(run_dir, config, generation) if previous_matches else None
         ablation = _ablation_spec(run_dir, config, source) if preview_ablation else None
         anchor_pairs = tuple(_anchor_pair(run_dir, config, a) for a in wanted)
         played_anchor_games = anchor_games if wanted else 0
-        needed = max(games, played_anchor_games) // 2
+        other_pair, relation = _open_versus(run_dir, config, source, versus)
+        played_run_games = 0 if versus is None else versus.games
+        needed = max(games, played_anchor_games, played_run_games) // 2
         limit = max_pairs(config)
         if needed > limit:
             raise ProgressError(
-                f"--games {games} / --anchor-games {played_anchor_games} need {needed} disjoint "
+                f"--games {games} / --anchor-games {played_anchor_games} / --run-games "
+                f"{played_run_games} need {needed} disjoint "
                 f"validation team pairs: the dataset gives at most {limit}"
             )
         try:
             check_not_training_seeds(run_dir, config.run_key, needed)
+            if other_pair is not None:
+                check_not_training_seeds(other_pair.run_dir, config.run_key, needed)
         except ValueError as exc:
             raise ProgressError(str(exc)) from exc
         teams = layout.read_json(source.team_set)
@@ -765,6 +955,7 @@ def progress_generation(  # noqa: PLR0913, PLR0915, PLR0917
                     anchor_games=played_anchor_games,
                     ablation=ablation,
                     damage_aware_budget_ms=damage_budget_ms,
+                    versus=other_pair,
                 )
             )
             record = _verify_output(
@@ -779,6 +970,7 @@ def progress_generation(  # noqa: PLR0913, PLR0915, PLR0917
                 played_anchor_games,
                 ablation,
                 damage_aware_budget_minutes is not None,
+                other_pair,
             )
             layout.fsync_tree(work)
             layout.write_json(
@@ -796,16 +988,71 @@ def progress_generation(  # noqa: PLR0913, PLR0915, PLR0917
         except BaseException:
             shutil.rmtree(work, ignore_errors=True)
             raise
-        return {
+        return (
+            {
+                "generation": generation,
+                "skipped": False,
+                "previous": _previous_status(record, generation),
+                "anchors": _anchor_status(record, wanted, dropped),
+                "damage_aware": _damage_aware_status(record),
+                "wall_ms": facts.get("wall_ms", {}),
+                "game_ms": facts.get("game_ms", {}),
+                "matches": summary_of(record),
+            }
+            | _ablation_part(record)
+            | _versus_part(record, relation)
+        )
+
+
+def _skipped(  # noqa: PLR0913, PLR0917
+    target: Path,
+    run_dir: Path,
+    config: RunConfig,
+    generation: int,
+    anchor_status: tuple[Sequence[int], Sequence[int]],
+    preview_ablation: bool,
+    versus: VersusSpec | None,
+) -> dict[str, Any]:
+    """A committed directory is verified and reported, never rewritten."""
+    pair = None if versus is None else _versus_pair(run_dir, config, versus)
+    record = verify_progress_dir(target, config, run_dir, generation, pair)
+    held = None
+    if pair is not None and any(m["opponent"]["kind"] == "run" for m in record["matches"]):
+        held = versus_relation(run_dir, _source(run_dir, config, generation), pair)
+    if preview_ablation != bool(ablation_summary(record)):
+        raise ProgressError(
+            f"{target.name} already holds a "
+            f"{'normal' if preview_ablation else 'Preview ablation'} record: "
+            "use a progress directory of its own for the other kind"
+        )
+    return (
+        {
             "generation": generation,
-            "skipped": False,
+            "skipped": True,
             "previous": _previous_status(record, generation),
-            "anchors": _anchor_status(record, wanted, dropped),
+            "anchors": _anchor_status(record, *anchor_status),
             "damage_aware": _damage_aware_status(record),
-            "wall_ms": facts.get("wall_ms", {}),
-            "game_ms": facts.get("game_ms", {}),
             "matches": summary_of(record),
-        } | _ablation_part(record)
+        }
+        | _ablation_part(record)
+        | _versus_part(record, held)
+    )
+
+
+def _open_versus(
+    run_dir: Path, config: RunConfig, source: _Source, versus: VersusSpec | None
+) -> tuple[RunPair | None, dict[str, str] | None]:
+    """The other run's pair and its lineage relation, with its team set checked; (None, None)
+    without ``versus``."""
+    if versus is None:
+        return None, None
+    pair = _versus_pair(run_dir, config, versus)
+    relation = versus_relation(run_dir, source, pair)
+    teams = layout.read_json(pair.team_set)
+    manifest = layout.read_json(pair.team_set.parent / layout.MANIFEST)
+    if sha256_hex(jcs(teams)) != manifest.get("team_set_manifest_hash"):
+        raise ProgressError("the other run's team-set.json differs from its manifest")
+    return pair, relation
 
 
 def _ablation_spec(run_dir: Path, config: RunConfig, source: _Source) -> AblationSpec:
@@ -817,6 +1064,23 @@ def _ablation_spec(run_dir: Path, config: RunConfig, source: _Source) -> Ablatio
         policy_id(first.preview, source.battle, "argmax"),
         policy_id(RANDOM_PREVIEW_POLICY, source.battle, "argmax"),
     )
+
+
+def _versus_part(record: dict[str, Any], relation: dict[str, str] | None = None) -> dict[str, Any]:
+    """The head-to-head header: the other run, the games, the label and the lineage relation."""
+    found = [m for m in record["matches"] if m["opponent"]["kind"] == "run"]
+    if not found:
+        return {}
+    opponent = found[0]["opponent"]
+    return {
+        "head_to_head": {
+            "label": CROSS_RUN_LABEL,
+            "run_id": opponent["run_id"],
+            "generation": opponent["generation"],
+            "games_per_match": record["plan"]["run_games_per_match"],
+            "lineage": relation,
+        }
+    }
 
 
 def _ablation_part(record: dict[str, Any]) -> dict[str, Any]:
@@ -874,9 +1138,11 @@ def scheduled_generations(run_dir: Path) -> list[int]:
 
 
 __all__ = [
+    "CROSS_RUN_LABEL",
     "DAMAGE_AWARE_LABEL",
     "DEFAULT_ANCHOR_GAMES",
     "DEFAULT_DAMAGE_AWARE_BUDGET_MINUTES",
+    "DEFAULT_RUN_GAMES",
     "SCHEDULE_EVERY",
     "AblationSpec",
     "AnchorPair",
@@ -885,10 +1151,13 @@ __all__ = [
     "ProgressPlayer",
     "ProgressRecordError",
     "ProgressRequest",
+    "RunPair",
+    "VersusSpec",
     "committed_generations",
     "progress_generation",
     "progress_root",
     "scheduled_generations",
     "summary_of",
     "verify_progress_dir",
+    "versus_relation",
 ]

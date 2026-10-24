@@ -60,11 +60,19 @@ def baseline_counts(stored: dict[str, Any], seat: str, game: int) -> dict[str, i
     }
 
 
-def dataset_config() -> RunConfig:
-    """The tiny config, naming a team dataset (the Node side reads it; Python only checks it)."""
+def dataset_config(
+    run_key: str | None = None, seeds: tuple[int, int] | None = None, dataset_hash: str = "5" * 64
+) -> RunConfig:
+    """The tiny config, naming a team dataset (the Node side reads it; Python only checks it).
+
+    ``run_key`` and ``seeds`` (the two initialisation seeds) make another run's config."""
 
     def edit(raw: dict[str, Any]) -> None:
-        raw["team_dataset"] = {"path": str(DATASET), "dataset_hash": "5" * 64}
+        raw["team_dataset"] = {"path": str(DATASET), "dataset_hash": dataset_hash}
+        if run_key is not None:
+            raw["seeds"]["run_key"] = run_key
+        if seeds is not None:
+            raw["seeds"]["init_preview"], raw["seeds"]["init_battle"] = seeds
 
     return edited_config(edit)
 
@@ -166,7 +174,7 @@ def add_ablation(  # noqa: PLR0913, PLR0917
             )
 
 
-def progress_files(  # noqa: PLR0912
+def progress_files(  # noqa: PLR0912, PLR0915
     config: RunConfig,
     request: ProgressRequest,
     manifest: dict[str, Any],
@@ -187,6 +195,8 @@ def progress_files(  # noqa: PLR0912
     anchors = {a.generation: a for a in request.anchors}
     for generation in sorted(anchors):
         opponents.append((f"anchor-g{generation}", "", {"anchor": generation}))
+    if request.versus is not None:
+        opponents.append(("run", "", {"run": True}))
     if request.ablation is not None:
         opponents = []
         add_ablation(config, request, games, matches, rows, stored)
@@ -197,7 +207,19 @@ def progress_files(  # noqa: PLR0912
             other = baseline
             opponent: dict[str, Any] = {"kind": "baseline", "policy_id": baseline}
             count = request.anchor_games if previous and "anchor" in previous else games
-            if previous is not None and "anchor" in previous:
+            if previous is not None and "run" in previous and request.versus is not None:
+                count = request.versus.games
+                versus = request.versus
+                other = versus.policy_id_sample if mode == "sample" else versus.policy_id_argmax
+                opponent = {
+                    "kind": "run",
+                    "run_id": versus.run_id,
+                    "run_config_hash": versus.run_config_hash,
+                    "generation": versus.generation,
+                    "policy_id": other,
+                    "checkpoints": {"preview": versus.preview, "battle": versus.battle},
+                }
+            elif previous is not None and "anchor" in previous:
                 found_anchor = anchors[previous["anchor"]]
                 other = policy_id(found_anchor.preview, found_anchor.battle, mode)
                 opponent = {
@@ -283,6 +305,7 @@ def progress_files(  # noqa: PLR0912
                     ),
                 }
             )
+    run_games = 0 if request.versus is None else request.versus.games
     record = {
         "schema_version": 2,
         "data_class": "synthetic",
@@ -295,7 +318,7 @@ def progress_files(  # noqa: PLR0912
         "teams": {
             "dataset_hash": "5" * 64,
             "split": "validation",
-            "pairs_used": max(games, request.anchor_games) // 2,
+            "pairs_used": max(games, request.anchor_games, run_games) // 2,
         },
         "plan": {
             "seed_derivation": "progress-seed/1",
@@ -303,6 +326,7 @@ def progress_files(  # noqa: PLR0912
             "games_per_match": games,
             "recorded_games_per_match": request.record_games,
             **({"anchor_games_per_match": request.anchor_games} if anchors else {}),
+            **({"run_games_per_match": run_games} if request.versus is not None else {}),
             "max_turns": config.generation.max_turns,
             "latency_budget_ms": {
                 "preview_ms": config.generation.preview_ms,

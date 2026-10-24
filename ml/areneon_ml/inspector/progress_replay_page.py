@@ -23,7 +23,7 @@ from areneon_ml.progress.records import DAMAGE_AWARE_LABEL
 
 PAGES = "progress-replays"
 SEEN = "seen, same-lineage comparison: it can cycle"
-
+CROSS_RUN = "cross-run comparison"
 WARNING = (
     "Omniscient view: both sides' hidden information. An evaluation artifact, never policy input; "
     "local use only. Do not share or commit this page."
@@ -65,6 +65,8 @@ def _opponent_words(game: ProgressGame) -> str:
         return f"generation {game.opponent_generation}'s frozen pair, an anchor"
     if game.baseline is not None:
         return "the damage-aware scripted baseline"
+    if game.opponent_kind == "run":
+        return "another run's frozen pair"
     return "the scripted baseline"
 
 
@@ -133,6 +135,8 @@ def _context(game: ProgressGame) -> str:
             f"{c['queries']} probe queries of which {c['unsupported_queries']} unsupported, "
             f"{c['reader_fallbacks']} reader and {c['assumed_set_fallbacks']} assumed-set fallbacks)"
         )
+    if game.opponent_kind == "run":
+        words += f" ({CROSS_RUN})"
     return f"{game.mode} mode against {words}. Pair {game.pair}, game {game.game % 2 + 1} of 2: each pair is played from both seats with the same teams and battle seed."
 
 
@@ -185,6 +189,8 @@ def _seen(match: str) -> str:
     """The label of a match that plays an earlier generation of the same lineage (by its id)."""
     if match.startswith("damage-aware-"):
         return f" ({esc(DAMAGE_AWARE_LABEL)})"
+    if match.startswith("run-"):
+        return f" ({esc(CROSS_RUN)})"
     return f" ({esc(SEEN)})" if match.startswith(("anchor-", "previous-")) else ""
 
 

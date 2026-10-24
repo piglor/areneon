@@ -14,7 +14,7 @@ from areneon_ml.inspector import progress_replay_command as command
 from areneon_ml.inspector import progress_replay_page as page_module
 from areneon_ml.inspector.readers import InspectError
 from areneon_ml.loop import layout
-from areneon_ml.progress.run import progress_generation
+from areneon_ml.progress.run import VersusSpec, progress_generation
 
 from tests.ml.inspector.test_progress_replay import (
     GAMES,
@@ -26,6 +26,7 @@ from tests.ml.inspector.test_progress_replay import (
 from tests.ml.progress.support import (
     FakeProgressPlayer,
     committed_manifest,
+    dataset_config,
     downgrade_to_v1,
     make_run,
 )
@@ -97,6 +98,26 @@ def test_an_anchor_game_names_the_anchor_and_the_label(built: Path) -> None:
     assert g.opponent_generation == 0
     # p2 is the anchor in game 0 (the candidate sits in p1)
     assert "p2: the opponent, generation 0's frozen pair, an anchor" in text
+
+
+def test_a_cross_run_game_names_the_other_run_and_the_label(tmp_path: Path) -> None:
+    run, other = tmp_path / "run", tmp_path / "other"
+    config = make_run(run, generations=2)
+    make_run(other, generations=2, config=dataset_config("other-run", (21, 22)))
+    root = tmp_path / "run.progress"
+    player = FakeProgressPlayer(config, committed_manifest(run, 0), make_consistent, previous=False)
+    progress_generation(
+        run, 1, root, player, GAMES, GAMES, (), 4, versus=VersusSpec(other, 1, 4, "enc-other")
+    )
+    (g, _twin) = games(root, 1, match="run-sample", games=[0])
+    text = page(g)
+    assert g.opponent_kind == "run"
+    assert "another run's frozen pair" in text
+    assert page_module.CROSS_RUN in text
+    assert page_module.SEEN not in text
+    index = tmp_path / "pages"
+    command.replay_progress(root, 1, index, repo=ROOT, match="run-sample", games=[0])
+    assert f"({page_module.CROSS_RUN})" in (index / "progress-replays" / "index.html").read_text()
 
 
 def test_an_ablation_game_names_the_candidates_preview(built: Path) -> None:
