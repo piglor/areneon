@@ -104,3 +104,52 @@ def test_a_node_that_cannot_start_is_a_play_error(tmp_path: Path) -> None:
 def test_a_manifest_that_is_not_an_object_is_refused(tmp_path: Path) -> None:
     with pytest.raises(PlayError, match="did not print an object"):
         player(tmp_path, "print('[1]')", "").manifest("f")
+
+
+def fake_node(tmp_path: Path, stdout: str = "") -> tuple[str, Path]:
+    """An executable "node" that records its whole command line and prints ``stdout``."""
+    record = tmp_path / "node-argv.txt"
+    exe = tmp_path / "fake-node"
+    exe.write_text(f"#!/bin/sh\nprintf '%s\\n' \"$@\" > {record}\ncat <<'EOF'\n{stdout}\nEOF\n")
+    exe.chmod(0o755)
+    return str(exe), record
+
+
+def test_the_node_heap_cap_goes_before_the_play_script_only(tmp_path: Path) -> None:
+    node, record = fake_node(tmp_path, "{}")
+    request = PlayRequest(3, "policy:abc", "p" * 64, "b" * 64, tmp_path / "work")
+    base = player(tmp_path, "", "", node=node)
+    NodePlayer(**{**base.__dict__, "node_heap_mb": 512}).play(request)
+    argv = record.read_text().splitlines()
+    assert argv[0] == "--max-old-space-size=512"
+    assert argv[1].endswith("play-generation.ts")
+    base.play(request)
+    assert not any(a.startswith("--max-old") for a in record.read_text().splitlines())
+    # The version manifest is not a game process and gets no cap.
+    NodePlayer(**{**base.__dict__, "node_heap_mb": 512}).manifest("gen9fmt")
+    assert not any(a.startswith("--max-old") for a in record.read_text().splitlines())
+
+
+def test_the_resident_sets_the_script_reports_are_kept_and_junk_is_ignored(tmp_path: Path) -> None:
+    lines = "\n".join(
+        [
+            '{"generation": 3}',
+            "not json",
+            '{"resource_usage": {"game_process_peak_rss_bytes": 11,'
+            ' "policy_worker_peak_rss_bytes": true, "other": 5}}',
+            '{"resource_usage": 4}',
+            "[1]",
+        ]
+    )
+    node, _ = fake_node(tmp_path, lines)
+    request = PlayRequest(3, "policy:abc", "p" * 64, "b" * 64, tmp_path / "work")
+    chosen = player(tmp_path, "", "", node=node)
+    chosen.play(request)
+    assert chosen.resource_usage == {"game_process": 11}
+    # A later call starts afresh.
+    quiet, _ = fake_node(tmp_path, "{}")
+    again = NodePlayer(
+        **{**chosen.__dict__, "node": quiet, "resource_usage": chosen.resource_usage}
+    )
+    again.play(request)
+    assert again.resource_usage == {}

@@ -36,6 +36,7 @@ describe("writeGeneration is durable", () => {
       run_record: { schema_version: 1 },
       games: [],
       episodes: [{ a: 1 }],
+      episodes_dir: null,
       episode_hashes: ["h1"],
       stream: "line\n",
       stream_path: null,

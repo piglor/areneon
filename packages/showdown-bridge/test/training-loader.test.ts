@@ -1,4 +1,7 @@
-import { beforeAll, describe, expect, it } from "vitest";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { jcs, type Json } from "../src/canonical-json.ts";
 import { goldenBattle, syntheticFixtureHashes, syntheticTeam } from "../src/golden.ts";
 import {
@@ -19,6 +22,8 @@ import {
   teamHash,
   trainingExample,
   type TrainingExample,
+  writeStoredTrainingStream,
+  writeTrainingStream,
   TrainingLoaderError,
 } from "../src/index.ts";
 import type { PrivateTeamSpec } from "@areneon/schema/types/v1/private-team-spec.ts";
@@ -326,5 +331,45 @@ describe("trainingExample", () => {
       r.side.pokemon = [...r.side.pokemon, ...r.side.pokemon.slice(0, 3)];
     });
     expect(() => trainingExample(input(wide))).toThrow(/invalid TrainingExample.*maxItems/);
+  });
+});
+
+describe("writeStoredTrainingStream (#1069)", () => {
+  let dir: string;
+  beforeAll(() => {
+    dir = mkdtempSync(join(tmpdir(), "areneon-stored-"));
+  });
+  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+  const store = async (episode: Episode, name?: string): Promise<{ hash: string; path: string }> => {
+    const hash = await episodeHash(episode, nodeSha256);
+    const path = join(dir, `${name ?? hash}.json`);
+    writeFileSync(path, `${jcs(episode as unknown as Json)}\n`);
+    return { hash, path };
+  };
+  const stored = (episodes: { hash: string; path: string }[], evaluation_manifests: unknown[] = []) => ({ episodes, evaluation_manifests, known_synthetic: KNOWN, behaviour_policy_id: POLICY });
+
+  it("writes the bytes and the TrainingSet of the in-memory writer, whatever order the Episodes are given in", async () => {
+    const [a, b] = [await store(p1), await store(p2)];
+    const reference = join(dir, "reference.jsonl");
+    const refSet = await writeTrainingStream({ episodes: [p1, p2], evaluation_manifests: [], known_synthetic: KNOWN, behaviour_policy_id: POLICY }, { path: reference });
+    for (const [name, order] of [["forward", [a, b]], ["backward", [b, a]]] as const) {
+      const out = join(dir, `${name}.jsonl`);
+      const set = await writeStoredTrainingStream(stored([...order]), { path: out });
+      expect(set).toEqual(refSet);
+      expect(readFileSync(out, "utf8")).toBe(readFileSync(reference, "utf8"));
+    }
+  });
+
+  it("refuses what the in-memory loader refuses: none, a repeat, a listed Episode, a bad Episode, and a file that is not the Episode its name says", async () => {
+    const a = await store(p1);
+    const out = join(dir, "refused.jsonl");
+    await refusal(writeStoredTrainingStream(stored([]), { path: out }), "no Episode to load");
+    await refusal(writeStoredTrainingStream(stored([a, a]), { path: out }), "is given twice");
+    await refusal(writeStoredTrainingStream(stored([a], [manifest([a.hash])]), { path: out }), "evaluation games never train");
+    const bad = await store(forged(mutate(p1, (c) => void delete (c.provenance as { collection?: unknown }).collection)) as Episode, "bad");
+    await refusal(writeStoredTrainingStream(stored([{ hash: a.hash, path: bad.path }]), { path: out }), /Episode 0 is refused|no collection record/);
+    await refusal(writeStoredTrainingStream(stored([{ hash: a.hash, path: join(dir, "missing.json") }]), { path: out }), /cannot be read from its file/);
+    const other = await store(p2);
+    await refusal(writeStoredTrainingStream(stored([{ hash: a.hash, path: other.path }]), { path: out }), "stored under a hash that is not its own");
   });
 });

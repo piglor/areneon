@@ -32,6 +32,7 @@ import argparse
 import json
 import sys
 from pathlib import Path
+from typing import Any
 
 from areneon_contracts.contracts import ContractError, jcs
 
@@ -85,8 +86,9 @@ def _positive(text: str) -> int:
 
 
 def _add_private_test_parser(
-    commands: argparse._SubParsersAction[argparse.ArgumentParser],
+    commands: Any,
 ) -> None:
+    """The ``private-test`` command (owner only)."""
     private = commands.add_parser(
         "private-test",
         help="OWNER ONLY: measure a frozen pair on your own teams (counts and scores only)",
@@ -122,9 +124,8 @@ def _add_private_test_parser(
     private.add_argument("--worker-python", default=sys.executable, help="CPU torch worker python")
 
 
-def _parser() -> argparse.ArgumentParser:  # noqa: PLR0915
-    parser = argparse.ArgumentParser(prog="areneon_ml.loop")
-    commands = parser.add_subparsers(dest="command", required=True)
+def _add_run(commands: Any) -> None:
+    """The ``run`` command and its operational flags."""
     run = commands.add_parser("run", help="play, train and freeze generations")
     run.add_argument("--config", type=Path, required=True, help="a TrainingRunConfig JSON file")
     run.add_argument("--run-dir", type=Path, required=True)
@@ -150,6 +151,33 @@ def _parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         help="Node processes sharing a generation's games, each with --policy-workers workers "
         "(operational: the generation's files are the same for any number)",
     )
+    run.add_argument(
+        "--load-processes",
+        type=_positive,
+        default=1,
+        help="worker processes that check and encode a generation's stream in the load phase "
+        "(operational: the trajectories and every hash are the same for any number; each worker "
+        "adds its piece's tensors to memory while it runs, see docs/training-run.md)",
+    )
+    run.add_argument(
+        "--load-memory-mb",
+        type=_positive,
+        help="cap the memory the load workers may add (about 400 MB each): fewer workers run "
+        "when --load-processes would not fit (operational)",
+    )
+    run.add_argument(
+        "--node-heap-mb",
+        type=_positive,
+        help="cap each Node game process's heap (--max-old-space-size, MB); 640 keeps a "
+        "game process near 0.6 GB (operational: the generation's files are the same; see "
+        "docs/training-run.md, sizing a run to a machine)",
+    )
+
+
+def _parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="areneon_ml.loop")
+    commands = parser.add_subparsers(dest="command", required=True)
+    _add_run(commands)
     provenance = commands.add_parser("provenance", help="export the records and sources registry")
     provenance.add_argument("--run-dir", type=Path, required=True)
     provenance.add_argument("--out", type=Path, required=True)
@@ -384,6 +412,7 @@ def _run(args: argparse.Namespace) -> dict[str, object]:
         encoder_version=encoder_version(game, config.model.encoder),
         policy_workers=args.policy_workers,
         game_processes=args.game_processes,
+        node_heap_mb=args.node_heap_mb,
         play_script=(
             "packages/team-dataset/scripts/play-generation.ts"
             if config.team_dataset
@@ -391,6 +420,8 @@ def _run(args: argparse.Namespace) -> dict[str, object]:
         ),
     )
     loop = Loop(config, args.run_dir.resolve(), game, player)
+    loop.load_processes = args.load_processes
+    loop.load_memory_mb = args.load_memory_mb
     result = loop.run(args.generations)
     return result.as_dict(loop.frozen)
 

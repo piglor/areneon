@@ -204,6 +204,19 @@ describe("one query per battle, at most n_parallel at once (ADR-010 section 2)",
   });
 });
 
+describe("peak memory (#1069)", () => {
+  it("reports the worker's high-water mark, and keeps it after the worker is closed or restarted", async () => {
+    const worker = await started("ok");
+    const live = worker.peakRssBytes();
+    if (process.platform === "linux") expect(live).toBeGreaterThan(10_000_000);
+    await worker.restart();
+    expect(worker.peakRssBytes() ?? 0).toBeGreaterThanOrEqual(live ?? 0);
+    await worker.close();
+    expect(worker.peakRssBytes() ?? 0).toBeGreaterThanOrEqual(live ?? 0);
+    expect(client("ok").peakRssBytes()).toBeNull(); // never started
+  });
+});
+
 describe("restart and close", () => {
   it("beginGame leaves a healthy worker running, and restarts one that has an abandoned query", async () => {
     const worker = await started("slow");

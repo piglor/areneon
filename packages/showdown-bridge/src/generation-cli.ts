@@ -6,7 +6,7 @@
 // usage or configuration error. Nothing is retried.
 
 import { spawn } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
@@ -18,6 +18,7 @@ import { type Json, jcs } from "./canonical-json.ts";
 import { ChunkedFileWriter, readFileLines } from "./chunked-file.ts";
 import { resolveFormat } from "./formats.ts";
 import { PolicyWorkerClient } from "./policy-worker.ts";
+import { largest, ownPeakRss } from "./process-usage.ts";
 import { readTrainingRunConfig, runConfigHash } from "./training-run-config.ts";
 
 /** An upper bound on `--policy-workers` and `--game-processes`: each is an operating system process. */
@@ -60,9 +61,30 @@ const FLAGS = {
   "game-processes": { type: "string" },
   // Internal: set on the game processes this one starts (`INDEX/COUNT`); such a process plays its slice and writes `shard.jsonl`.
   shard: { type: "string" },
+  // Internal: the directory the Episodes of the generation are written to as their games finish (the process that started this one gives it to the game processes; by default `<out>/episodes`).
+  "episodes-dir": { type: "string" },
 } as const;
 
-const OPTIONAL: readonly (keyof typeof FLAGS)[] = ["policy-workers", "game-processes", "shard"];
+const OPTIONAL: readonly (keyof typeof FLAGS)[] = ["policy-workers", "game-processes", "shard", "episodes-dir"];
+
+/** Peak memory of the processes of one generation's play (bytes), for the run-metrics record; any part may be missing. */
+export interface ResourceUsage {
+  game_process_peak_rss_bytes?: number;
+  policy_worker_peak_rss_bytes?: number;
+}
+
+const usageOf = (game: number | null, worker: number | null): ResourceUsage => ({
+  ...(game === null ? {} : { game_process_peak_rss_bytes: game }),
+  ...(worker === null ? {} : { policy_worker_peak_rss_bytes: worker }),
+});
+
+/** The largest peaks among several processes' usage. */
+export function combineUsage(parts: readonly ResourceUsage[]): ResourceUsage {
+  return usageOf(
+    largest(parts.map((part) => part.game_process_peak_rss_bytes ?? null)),
+    largest(parts.map((part) => part.policy_worker_peak_rss_bytes ?? null)),
+  );
+}
 
 /** Run one generation; returns the process exit code and writes its one JSON line with `print`. */
 export async function runGenerationCli(
@@ -132,6 +154,9 @@ export async function runGenerationCli(
     },
   });
   const clients = Array.from({ length: workerCount }, makeClient);
+  // The Episodes go to one directory as their games finish; a further game process writes into its starter's.
+  const episodesDir = values["episodes-dir"] ?? join(need("out"), "episodes");
+  mkdirSync(episodesDir, { recursive: true });
   const scratch = values.shard === undefined && processes > 1 ? mkdtempSync(join(tmpdir(), "areneon-shards-")) : undefined;
   const children: ShardProcess[] = [];
   try {
@@ -140,9 +165,9 @@ export async function runGenerationCli(
       for (let index = 1; index < processes; index++) {
         const out = join(scratch, String(index));
         const rest = Object.entries(values).flatMap(([name, value]) =>
-          value === undefined || ["out", "game-processes", "shard"].includes(name) ? [] : [`--${name}`, value],
+          value === undefined || ["out", "game-processes", "shard", "episodes-dir"].includes(name) ? [] : [`--${name}`, value],
         );
-        children.push(startShard(shardScript as string, [...rest, "--out", out, "--shard", `${index}/${processes}`], out, index));
+        children.push(startShard(shardScript as string, [...rest, "--out", out, "--shard", `${index}/${processes}`, "--episodes-dir", episodesDir], out, index));
       }
     }
     const pool = poolSource(engine, config);
@@ -154,17 +179,21 @@ export async function runGenerationCli(
       process.stdin.resume();
       (process.stdin as unknown as { unref?: () => void }).unref?.(); // an open pipe must not keep the finished process alive
       // It plays the slice and leaves it for the process that started this one.
-      const entries = await playEntries({ engine, config, generation, policy_id: need("policy-id"), client, peers, pool }, own);
+      const entries = await playEntries({ engine, config, generation, policy_id: need("policy-id"), client, peers, pool, episodes_dir: episodesDir }, own);
       mkdirSync(need("out"), { recursive: true });
       writeShardFile(join(need("out"), SHARD_FILE), entries);
+      writeFileSync(join(need("out"), USAGE_FILE), `${jcs(usageOf(ownPeakRss(), largest(clients.map((worker) => worker.peakRssBytes()))) as unknown as Json)}\n`);
       return 0;
     }
     const others = Promise.all(children.map((child) => child.entries));
     // The stream goes straight to its file in chunks as the examples are made (#998).
     mkdirSync(need("out"), { recursive: true });
-    const result = await playGeneration({ engine, config, generation, policy_id: need("policy-id"), client, peers, pool, stream_path: join(need("out"), "stream.jsonl"), ...(own === undefined ? {} : { shard: own }), others: others.then((all) => all.flat()) });
+    const result = await playGeneration({ engine, config, generation, policy_id: need("policy-id"), client, peers, pool, stream_path: join(need("out"), "stream.jsonl"), episodes_dir: episodesDir, ...(own === undefined ? {} : { shard: own }), others: others.then((all) => all.flat()) });
     writeGeneration(need("out"), result);
     print(jcs({ generation, run_config_hash: await runConfigHash(config), training_set_hash: result.training_set_hash, examples: result.set.examples }));
+    // After the summary line, so a reader of the first line is unchanged: the peak memory of this process, its workers and the further game processes.
+    const usage = combineUsage([usageOf(ownPeakRss(), largest(clients.map((worker) => worker.peakRssBytes()))), ...(await Promise.all(children.map((child) => child.usage)))]);
+    if (Object.keys(usage).length > 0) print(jcs({ resource_usage: usage } as unknown as Json));
     return 0;
   } catch (error) {
     if (error instanceof GenerationError) {
@@ -181,6 +210,8 @@ export async function runGenerationCli(
 
 /** The game process's result: one canonical JSON entry per line, so no string holds them all (#998). */
 const SHARD_FILE = "shard.jsonl";
+/** A game process's peak memory, beside its shard file. */
+const USAGE_FILE = "usage.json";
 
 /** Write a game process's entries, one line each, flushed to disk. */
 export function writeShardFile(path: string, entries: readonly PlayedEntry[]): void {
@@ -203,6 +234,8 @@ export function readShardFile(path: string): PlayedEntry[] {
 /** A further game process: the entries it will have played, and a way to end it. */
 export interface ShardProcess {
   entries: Promise<PlayedEntry[]>;
+  /** Its peak memory once it has ended (empty when it left none). */
+  usage: Promise<ResourceUsage>;
   stop: () => void;
 }
 
@@ -227,7 +260,15 @@ export function startShard(script: string, args: readonly string[], out: string,
     });
   });
   entries.catch(() => undefined); // reported where it is awaited
-  return { entries, stop: () => void child.kill("SIGKILL") };
+  const usage = entries.then((): ResourceUsage => {
+    try {
+      return JSON.parse(readFileSync(join(out, USAGE_FILE), "utf8")) as ResourceUsage;
+    } catch {
+      return {}; // diagnostics only: a missing file is no failure
+    }
+  });
+  usage.catch(() => undefined);
+  return { entries, usage, stop: () => void child.kill("SIGKILL") };
 }
 
 /** `scripts/format-manifest.ts --format <id>`: print the version manifest of a supported format as one canonical JSON line. */

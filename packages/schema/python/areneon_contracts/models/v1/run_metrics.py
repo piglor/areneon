@@ -5,7 +5,15 @@ from __future__ import annotations
 
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, RootModel, StrictInt, StrictStr
+from pydantic import (
+    MISSING,
+    BaseModel,
+    ConfigDict,
+    Field,
+    RootModel,
+    StrictInt,
+    StrictStr,
+)
 
 
 class Count(RootModel[StrictInt]):
@@ -53,9 +61,22 @@ class PerHour(BaseModel):
     optimiser_steps: Count
 
 
+class PeakRss(BaseModel):
+    """
+    Optional (#1069), diagnostics only, each key present only when it was measured (Linux). Peak resident set size in bytes. driver: the loop driver process's high-water mark so far (it holds the learner, so it includes the load and train phases of this and earlier generations; the operating system never lowers it). game_process: the largest Node game process of this generation's play. policy_worker: the largest policy worker of this generation's play.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    driver: Count | MISSING = MISSING
+    game_process: Count | MISSING = MISSING
+    policy_worker: Count | MISSING = MISSING
+
+
 class RunMetrics(BaseModel):
     """
-    What one generation of a training run cost in wall-clock time (ADR-010 erratum A1, item 3): milliseconds per phase of the loop driver, the counts and throughput that follow from them, the learner's peak accelerator memory and its device. Wall-clock values differ on every run, so the record lives in <run-dir>/metrics/g<NNNNNN>.json, written after the generation commits and outside every manifest and hash; the loop, the loader and the learner never read it, and a crash between the commit and the write loses it. Integers only: milliseconds, counts, bytes and per-hour rates (the rate is the count times 3,600,000 divided by the phase's milliseconds, truncated, and 0 when the phase took no time).
+    What one generation of a training run cost in wall-clock time (ADR-010 erratum A1, item 3): milliseconds per phase of the loop driver, the counts and throughput that follow from them, the learner's peak accelerator memory and its device, and optionally the peak reserved accelerator memory and the peak resident set of the driver, the game processes and the policy workers. Wall-clock values differ on every run, so the record lives in <run-dir>/metrics/g<NNNNNN>.json, written after the generation commits and outside every manifest and hash; the loop, the loader and the learner never read it, and a crash between the commit and the write loses it. Integers only: milliseconds, counts, bytes and per-hour rates (the rate is the count times 3,600,000 divided by the phase's milliseconds, truncated, and 0 when the phase took no time).
     """
 
     model_config = ConfigDict(
@@ -79,6 +100,13 @@ class RunMetrics(BaseModel):
     """
     The most memory the learner's accelerator held at once during the generation (torch.cuda.max_memory_allocated); null on a CPU learner.
     """
+    peak_accelerator_reserved_bytes: Annotated[
+        StrictInt | MISSING, Field(ge=0, le=9007199254740991)
+    ] = MISSING
+    """
+    Optional, written only for a CUDA learner by a driver that records it (#1069): the most memory the learner's allocator held from the device at once during the generation (torch.cuda.max_memory_reserved), cache included. peak_accelerator_memory_bytes is what tensors used; this is what the device had to give. The driver frees the cache after each training phase, so the next generation starts from a small reserve.
+    """
+    peak_rss_bytes: PeakRss | MISSING = MISSING
     device: Literal["cpu", "cuda"]
     """
     The learner's device, as the run config names it.
