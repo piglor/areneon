@@ -84,6 +84,44 @@ def _positive(text: str) -> int:
     return value
 
 
+def _add_private_test_parser(
+    commands: argparse._SubParsersAction[argparse.ArgumentParser],
+) -> None:
+    private = commands.add_parser(
+        "private-test",
+        help="OWNER ONLY: measure a frozen pair on your own teams (counts and scores only)",
+    )
+    private.add_argument("--run-dir", type=Path, required=True)
+    private.add_argument("--generation", type=int, required=True)
+    private.add_argument(
+        "--out-root",
+        type=Path,
+        required=True,
+        help="an existing 0700 directory with a private-data path segment: the record goes there",
+    )
+    private.add_argument("--engine-data", type=Path, required=True)
+    private.add_argument("--source", choices=("staging", "snapshot", "dataset"), required=True)
+    private.add_argument("--subset", choices=("all", "holdout"), default="all")
+    private.add_argument(
+        "--teams-dir", type=Path, default=REPO / "private-data" / "teams", help="source staging"
+    )
+    private.add_argument(
+        "--snapshots-dir",
+        type=Path,
+        default=REPO / "private-data" / "snapshots",
+        help="source snapshot: the verified local copies",
+    )
+    private.add_argument("--snapshot-hash", help="source snapshot: the pinned snapshot hash")
+    private.add_argument("--salt-file", help="a salt file of the out root, to repeat a test")
+    private.add_argument("--max-pairs", type=_positive, help="play only this many pairs")
+    private.add_argument("--damage-aware", action="store_true", help="also play damage-aware@v1")
+    private.add_argument("--damage-aware-budget-minutes", type=_positive, default=None)
+    private.add_argument("--opponent-run-dir", type=Path, help="another frozen pair as opponent")
+    private.add_argument("--opponent-generation", type=int)
+    private.add_argument("--node", default="node", help="the node executable")
+    private.add_argument("--worker-python", default=sys.executable, help="CPU torch worker python")
+
+
 def _parser() -> argparse.ArgumentParser:  # noqa: PLR0915
     parser = argparse.ArgumentParser(prog="areneon_ml.loop")
     commands = parser.add_subparsers(dest="command", required=True)
@@ -226,39 +264,7 @@ def _parser() -> argparse.ArgumentParser:  # noqa: PLR0915
     progress.add_argument("--engine-data", type=Path, required=True)
     progress.add_argument("--node", default="node", help="the node executable")
     progress.add_argument("--worker-python", default=sys.executable, help="CPU torch worker python")
-    private = commands.add_parser(
-        "private-test",
-        help="OWNER ONLY: measure a frozen pair on your own teams (counts and scores only)",
-    )
-    private.add_argument("--run-dir", type=Path, required=True)
-    private.add_argument("--generation", type=int, required=True)
-    private.add_argument(
-        "--out-root",
-        type=Path,
-        required=True,
-        help="an existing 0700 directory with a private-data path segment: the record goes there",
-    )
-    private.add_argument("--engine-data", type=Path, required=True)
-    private.add_argument("--source", choices=("staging", "snapshot", "dataset"), required=True)
-    private.add_argument("--subset", choices=("all", "holdout"), default="all")
-    private.add_argument(
-        "--teams-dir", type=Path, default=REPO / "private-data" / "teams", help="source staging"
-    )
-    private.add_argument(
-        "--snapshots-dir",
-        type=Path,
-        default=REPO / "private-data" / "snapshots",
-        help="source snapshot: the verified local copies",
-    )
-    private.add_argument("--snapshot-hash", help="source snapshot: the pinned snapshot hash")
-    private.add_argument("--salt-file", help="a salt file of the out root, to repeat a test")
-    private.add_argument("--max-pairs", type=_positive, help="play only this many pairs")
-    private.add_argument("--damage-aware", action="store_true", help="also play damage-aware@v1")
-    private.add_argument("--damage-aware-budget-minutes", type=_positive, default=None)
-    private.add_argument("--opponent-run-dir", type=Path, help="another frozen pair as opponent")
-    private.add_argument("--opponent-generation", type=int)
-    private.add_argument("--node", default="node", help="the node executable")
-    private.add_argument("--worker-python", default=sys.executable, help="CPU torch worker python")
+    _add_private_test_parser(commands)
     replay = commands.add_parser(
         "replay", help="write replay pages of training games under <out>/replays/"
     )
