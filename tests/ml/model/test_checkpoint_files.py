@@ -216,7 +216,7 @@ def _not_an_entry(header: dict[str, Any]) -> None:
         (_scalar_shape, "dtype or shape differs"),
         (_not_an_entry, "dtype or shape differs"),
         (
-            lambda h: h["__metadata__"].update({"areneon.format": "2"}),
+            lambda h: h["__metadata__"].update({"areneon.format": "3"}),
             "unsupported checkpoint format",
         ),
         (

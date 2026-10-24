@@ -20,7 +20,8 @@ from areneon_contracts.contracts import jcs
 from areneon_ml.checkpoint.files import checkpoint_bytes, write_checkpoint
 from areneon_ml.model.encoder import encoder_version
 from areneon_ml.model.network import init_network
-from areneon_ml.worker.__main__ import EXIT_CHECKPOINT, main
+from areneon_ml.model.options import REGISTRY, OptionSpec
+from areneon_ml.worker.__main__ import EXIT_CHECKPOINT, build, main
 from areneon_ml.worker.checkpoints import CheckpointError, CheckpointStore
 from areneon_ml.worker.protocol import QueryError, check
 from areneon_ml.worker.sampler import ScoreError
@@ -369,6 +370,23 @@ def test_main_refuses_a_missing_checkpoint(
     run_dir, preview, _ = make_run_dir(tmp_path)
     assert main(cli(run_dir, preview, "9" * 64)) == EXIT_CHECKPOINT
     assert "cannot be read" in capsys.readouterr().err
+
+
+def test_the_worker_checks_the_checkpoints_options_against_the_runs_config(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    run_dir, preview, battle = make_run_dir(tmp_path)
+    config = run_dir / "run-config.json"
+    config.write_text(json.dumps({"model": TINY_MODEL.as_dict()}))
+    assert build(cli(run_dir, preview, battle))  # the run's model, no options: loads
+    monkeypatch.setitem(REGISTRY["network"], "test_flag", OptionSpec("test_flag", lambda v: True))
+    optioned = {**TINY_MODEL.as_dict(), "options": {"test_flag": 1}}
+    config.write_text(json.dumps({"model": optioned}))
+    assert main(cli(run_dir, preview, battle)) == EXIT_CHECKPOINT
+    assert "other model options" in capsys.readouterr().err
+    config.write_text(json.dumps({"model": {}}))
+    assert main(cli(run_dir, preview, battle)) == EXIT_CHECKPOINT
+    assert "no usable model section" in capsys.readouterr().err
 
 
 def test_main_refuses_a_checkpoint_of_the_wrong_role(

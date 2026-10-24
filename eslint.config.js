@@ -11,6 +11,11 @@ export default tseslint.config(
     },
   },
   {
+    // Generated types: a closed object with no property yet (the `options` of the TrainingRunConfig, ADR-010 erratum A4) is emitted as `{}`.
+    files: ["packages/schema/generated/**/*.ts"],
+    rules: { "@typescript-eslint/no-empty-object-type": "off" },
+  },
+  {
     // Sealed-set code handles the key, the salt and the sealed teams: it must not print anything. Output goes through the injected `io` of the command.
     files: ["packages/team-dataset/src/sealed*.ts"],
     rules: { "no-console": "error" },
