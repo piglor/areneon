@@ -77,9 +77,9 @@ REFUSALS: Final[dict[str, str]] = {
     "record_exists": "a different record of that name already exists in the private root",
     "source_unreadable": "the team source cannot be read",
     "source_empty": "the team source holds no team",
-    "team_import_failed": "a team cannot be imported (position in the source's order)",
-    "team_invalid": "a team is not legal in the format (position in the source's order)",
-    "team_repeated": "a team repeats an earlier one (position in the source's order)",
+    "team_import_failed": "a team cannot be imported (position among the source's teams)",
+    "team_invalid": "a team is not legal in the format (position among the source's teams)",
+    "team_repeated": "a team repeats an earlier one (position among the source's teams)",
     "too_few_teams": "the test set needs at least two teams",
     "too_many_pairs": "more pairs asked for than the set gives",
     "snapshot_unverified": "the snapshot does not verify against the pinned engine and rules",
@@ -190,7 +190,7 @@ class NodePrivateTestPlayer:
                 text=True,
                 check=False,
                 stdin=subprocess.DEVNULL,
-                env=os.environ,
+                env=_child_env(),
             )
         except OSError:
             raise PrivateTestError("failed") from None
@@ -207,6 +207,14 @@ class NodePrivateTestPlayer:
         if not isinstance(out, dict):
             raise PrivateTestError("failed")
         return out
+
+
+#: The only variables the Node child sees: no token of the owner's shell reaches it.
+CHILD_ENV: Final = ("PATH", "HOME", "LANG", "TMPDIR", "SHOWDOWN_DIR", "CLAUDECODE", "AI_AGENT")
+
+
+def _child_env() -> dict[str, str]:
+    return {k: v for k, v in os.environ.items() if k in CHILD_ENV}
 
 
 def _check_request(r: PrivateTestRequest) -> None:

@@ -21,10 +21,10 @@ import { loadEngine } from "./engine.ts";
 import { resolveFormat } from "./formats.ts";
 import { damageAwareSetup } from "./league-generation.ts";
 import { assertGuardedChild, OwnerSessionError } from "./owner-session.ts";
-import { frozenPairClient } from "./progress-cli.ts";
+import { frozenPairClient, type FrozenPairClientOptions } from "./progress-cli.ts";
 import type { PolicyClient } from "./policy-worker.ts";
 import type { ProgressPool } from "./progress-evaluation.ts";
-import { type PrivateTestTeam, playPrivateTest } from "./private-test.ts";
+import { pairsAvailable, type PrivateTestTeam, playPrivateTest } from "./private-test.ts";
 import { PasteDirectorySource } from "./private-team-source.ts";
 import { privateTestAllowed } from "./private-test-record.ts";
 import { checkSalt } from "./private-test-seed.ts";
@@ -39,9 +39,9 @@ export const PRIVATE_TEST_REFUSALS = {
   salt_unreadable: "the salt file cannot be read or is not 64 hex digits",
   source_unreadable: "the team source cannot be read",
   source_empty: "the team source holds no team",
-  team_import_failed: "a team cannot be imported (position in the source's order)",
-  team_invalid: "a team is not legal in the format (position in the source's order)",
-  team_repeated: "a team repeats an earlier one (position in the source's order)",
+  team_import_failed: "a team cannot be imported (position among the source's teams)",
+  team_invalid: "a team is not legal in the format (position among the source's teams)",
+  team_repeated: "a team repeats an earlier one (position among the source's teams)",
   snapshot_unverified: "the snapshot does not verify against the pinned engine and rules",
   too_few_teams: "the test set needs at least two teams",
   private_pair_source: "a pair with private ancestry is tested on hold-out teams of a snapshot or on a public dataset only",
@@ -116,7 +116,7 @@ export interface PrivateTestSources {
 
 /** Test seams: the default starts the real policy worker. */
 export interface PrivateTestSeams {
-  clientFor?: (args: { pair: { preview: string; battle: string }; runDir: string; encoderVersion: string; python: string; engineDataFile: string; engineDataHash: string; max_line_bytes: number; handshake_timeout_ms: number }) => WorkerClient;
+  clientFor?: (args: FrozenPairClientOptions) => WorkerClient;
 }
 type WorkerClient = PolicyClient & { beginGame?: () => Promise<void>; start: () => Promise<unknown>; close: () => Promise<unknown> };
 
@@ -247,7 +247,7 @@ async function run(argv: readonly string[], print: (line: string) => void, sourc
     };
   }
   if (loaded.teams.length < 2) throw new PrivateTestRefusal("too_few_teams");
-  if (maxPairs !== undefined && maxPairs > Math.floor(loaded.teams.length / 2)) throw new PrivateTestRefusal("too_many_pairs");
+  if (maxPairs !== undefined && maxPairs > pairsAvailable(loaded.teams.length)) throw new PrivateTestRefusal("too_many_pairs");
 
   const dataFile = need("engine-data");
   const dataHash = engineDataHash(data);

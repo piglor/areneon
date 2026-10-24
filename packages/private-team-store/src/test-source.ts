@@ -15,6 +15,7 @@ import { readPrivateSnapshot } from "./snapshot-reader.ts";
 /** The records of one subset as teams, in `team_id` order (the reader's), from the local copy of `snapshotHash`. */
 export async function snapshotTeams(args: { engine: Engine; config: TrainingRunConfig; snapshotsDir: string; snapshotHash: string; subset: "all" | "holdout" }): Promise<TestTeams> {
   const { engine, config, snapshotsDir, snapshotHash, subset } = args;
+  if (!/^[0-9a-f]{64}$/.test(snapshotHash)) throw new PrivateTestRefusal("source_unreadable");
   let dir: string;
   let manifest: unknown;
   try {

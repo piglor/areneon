@@ -39,7 +39,7 @@ export interface PrivateTestStreams {
 /** HMAC-SHA256 under the salt over the JCS of `{pair, purpose: "private-test-seed/1"}`, cut into the two values above. */
 export function privateTestStreams(salt: string, pair: number): PrivateTestStreams {
   if (!Number.isSafeInteger(pair) || pair < 0) throw new RangeError("pair must be an integer of at least 0");
-  const digest = keyed(salt, { pair, purpose: "private-test-seed" });
+  const digest = keyed(salt, { pair, purpose: "private-test-seed/1" });
   return { seed: `sodium,${digest.subarray(0, 16).toString("hex")}`, baseline_seed: digest.readUInt32BE(16) };
 }
 
@@ -50,7 +50,7 @@ export function privateTestStreams(salt: string, pair: number): PrivateTestStrea
 export function privateTestPairs(salt: string, teams: readonly string[]): [string, string][] {
   if (new Set(teams).size !== teams.length) throw new RangeError("a team may appear once in the private test set");
   const ordered = teams
-    .map((team) => [keyed(salt, { canonical_team_hash: team, purpose: "private-test-pairing" }).toString("hex") + team, team] as const)
+    .map((team) => [keyed(salt, { canonical_team_hash: team, purpose: "private-test-pairing/1" }).toString("hex") + team, team] as const)
     .sort(([a], [b]) => (a < b ? -1 : 1))
     .map(([, team]) => team);
   const pairs: [string, string][] = [];

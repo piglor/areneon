@@ -496,8 +496,10 @@ mkdir -m 700 private-data/tests      # the output root: existing, mode 0700, a p
   (`private-test-pairing/1`) and cut into disjoint pairs; every pair is played from both seats
   with one battle seed (`private-test-seed/1`, keyed by the same salt, so no seed is shared with
   `league-seed/1` or `progress-seed/1`). All disjoint pairs are played unless `--max-pairs` limits
-  them; 108 teams give 54 pairs and 108 games per opponent and mode; the hold-out subset (about 22
-  teams) gives about 11 pairs, so its intervals are wide. The salt is written once to
+  them: N teams give N/2 pairs and N games per opponent and mode, so a small subset (the hold-out
+  one) has wide intervals. The teams stay on their seats and the policies swap between the two
+  games of a pair. The `all-pairs` plan of the ticket (every unordered pair, bootstrap over teams)
+  is not built. A run that fails after the salt was written leaves an unused salt file in the root. The salt is written once to
   `private-test-salt-<id>.key` (mode 0600) in the output root; repeat a test with
   `--salt-file private-test-salt-<id>.key` and the same inputs and you get the same record bytes.
   Another salt gives another commitment and another pairing. Delete the salt file only when you

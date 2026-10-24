@@ -2,7 +2,7 @@
 // one frozen pair on the owner's private test set, written only under a
 // private root. The schema checks the shape; the rules the contract profile
 // cannot say are checked here and again by the Python reader
-// (`areneon_ml.private.test_record`): the counts add up, the pair-score
+// (`areneon_ml.private.private_test_record`): the counts add up, the pair-score
 // histogram agrees with wins, ties and losses, matches are sorted and unique
 // and each is named for its opponent and mode, and the source fields agree
 // with the source kind. A message states a rule and never repeats a value.
