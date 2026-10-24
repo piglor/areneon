@@ -348,6 +348,64 @@ describe("a stream over the string limit (#998)", () => {
   });
 });
 
+describe("Episodes kept on disk as their games finish (#1069)", () => {
+  let dir: string;
+  beforeAll(() => {
+    dir = mkdtempSync(join(tmpdir(), "areneon-spill-"));
+  });
+  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+  const opts = (change: Partial<GenerationOptions> = {}): GenerationOptions => ({ engine, config, generation: 1, policy_id: POLICY, client: actorClient(), pool, ...change });
+  const names = ["stream.jsonl", "training-set.json", "plan.json", "league-run.json", "generation.json"];
+  const tree = (root: string): Record<string, string> =>
+    Object.fromEntries([...names.map((n) => `${n}`), ...readdirSync(join(root, "episodes")).map((n) => `episodes/${n}`)].map((n) => [n, readFileSync(join(root, n), "utf8")]));
+
+  it("writes the files of the in-memory path, byte for byte, and holds no Episode", async () => {
+    const reference = join(dir, "reference");
+    mkdirSync(reference, { recursive: true });
+    const inMemory = await playGeneration(opts({ stream_path: join(reference, "stream.jsonl") }));
+    writeGeneration(reference, inMemory);
+    const out = join(dir, "spilled");
+    mkdirSync(join(out, "episodes"), { recursive: true });
+    const spilled = await playGeneration(opts({ stream_path: join(out, "stream.jsonl"), episodes_dir: join(out, "episodes") }));
+    expect(spilled.episodes).toEqual([]);
+    expect(spilled.episodes_dir).toBe(join(out, "episodes"));
+    expect(spilled.episode_hashes).toEqual(inMemory.episode_hashes);
+    expect(spilled.set).toEqual(inMemory.set);
+    expect(spilled.run_record).toEqual(inMemory.run_record);
+    writeGeneration(out, spilled);
+    expect(tree(out)).toEqual(tree(reference));
+  });
+
+  it("gives the same files when game processes each play a slice into one directory", async () => {
+    const reference = join(dir, "ref2");
+    mkdirSync(reference, { recursive: true });
+    writeGeneration(reference, await playGeneration(opts({ stream_path: join(reference, "stream.jsonl") })));
+    const out = join(dir, "sliced");
+    const episodes = join(out, "episodes");
+    mkdirSync(episodes, { recursive: true });
+    const of = 2;
+    const there = playEntries(opts({ episodes_dir: episodes }), { index: 1, of });
+    const result = await playGeneration(opts({ stream_path: join(out, "stream.jsonl"), episodes_dir: episodes, shard: { index: 0, of }, others: there }));
+    writeGeneration(out, result);
+    expect(tree(out)).toEqual(tree(reference));
+    // An entry that went through a shard file keeps its references.
+    const entries = await there;
+    expect(JSON.parse(jcs(entries as unknown as Json))).toEqual(entries);
+    expect(entries.every((entry) => entry.episodes.length === 0 && (entry.stored ?? []).length > 0)).toBe(true);
+  });
+
+  it("refuses a directory the files are not in, a missing stream path and entries kept the other way", async () => {
+    const out = join(dir, "refusals");
+    const episodes = join(out, "episodes");
+    mkdirSync(episodes, { recursive: true });
+    await expect(playGeneration(opts({ episodes_dir: episodes }))).rejects.toThrow(/needs stream_path/);
+    const result = await playGeneration(opts({ stream_path: join(out, "stream.jsonl"), episodes_dir: episodes }));
+    expect(() => writeGeneration(join(dir, "elsewhere"), result)).toThrow(/not to/);
+    const kept = await playEntries(opts());
+    await expect(playGeneration(opts({ stream_path: join(out, "s2.jsonl"), episodes_dir: episodes, others: Promise.resolve(kept.filter((e) => e.game % 2 === 1)), shard: { index: 0, of: 2 } }))).rejects.toThrow(/kept the way/);
+  });
+});
+
 describe("several workers and game processes (#957)", () => {
   const opts = (change: Partial<GenerationOptions> = {}): GenerationOptions => ({ engine, config, generation: 1, policy_id: POLICY, client: actorClient(), pool, ...change });
   let single: GenerationResult;

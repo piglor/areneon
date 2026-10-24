@@ -551,12 +551,26 @@ def _memory(value: int | None) -> str:
     return f"{value // 2**20} MiB"
 
 
+def _reserved(m: dict[str, object]) -> str:
+    value = m.get("peak_accelerator_reserved_bytes")
+    return NOT_RECORDED if not isinstance(value, int) else _memory(value)
+
+
+def _resident(m: dict[str, object]) -> str:
+    """The driver, game process and policy worker peaks that were measured, in MiB."""
+    peaks = m.get("peak_rss_bytes")
+    if not isinstance(peaks, dict) or not peaks:
+        return NOT_RECORDED
+    names = (("driver", "driver"), ("game_process", "game process"), ("policy_worker", "worker"))
+    return ", ".join(f"{label} {peaks[key] // 2**20} MiB" for key, label in names if key in peaks)
+
+
 def _metrics_section(model: ReportModel) -> str:
     rows = []
     for g in model.generations:
         m = g.metrics
         if m is None:
-            rows.append([str(g.number), *[NOT_RECORDED] * 11])
+            rows.append([str(g.number), *[NOT_RECORDED] * 13])
             continue
         p, c, r = m["phase_ms"], m["counts"], m["per_hour"]
         rows.append(
@@ -568,6 +582,8 @@ def _metrics_section(model: ReportModel) -> str:
                 str(r["decisions"]),
                 str(r["optimiser_steps"]),
                 _memory(m["peak_accelerator_memory_bytes"]),
+                _reserved(m),
+                _resident(m),
                 f"{m['device']}, {m['threads']} thread{'s' if m['threads'] != 1 else ''}",
             ]
         )
@@ -578,6 +594,8 @@ def _metrics_section(model: ReportModel) -> str:
         "its SHA-256 is listed under Inputs. A generation whose file is missing (a crash between "
         "its commit and the write) says not recorded; no resume writes it again. Games per "
         "hour are over the play phase, decisions and optimiser steps per hour over the train phase. "
+        "Memory figures are the peaks of the generation (resident sets are Linux high-water marks; the "
+        "driver's covers the whole run so far); they are optional and say not recorded when absent. "
         "Timings differ on every run and say nothing about skill.</p>"
         + _table(
             [
@@ -592,6 +610,8 @@ def _metrics_section(model: ReportModel) -> str:
                 ("Decisions per hour", True),
                 ("Optimiser steps per hour", True),
                 ("Peak accelerator memory", True),
+                ("Peak reserved accelerator memory", True),
+                ("Peak resident set", False),
                 ("Learner", False),
             ],
             rows,

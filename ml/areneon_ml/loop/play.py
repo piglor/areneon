@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import json
 import subprocess
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -60,9 +60,19 @@ class NodePlayer:
     #: How many Node game processes share a generation's games (#957), each with its own
     #: ``policy_workers``. Operational too.
     game_processes: int = 1
+    #: Caps each Node game process's old-space heap (``--max-old-space-size``, in MB), which
+    #: makes V8 collect garbage before the process grows: a game process that loads a 20,000
+    #: team pool peaks at about 860 MB without it and about 540 MB with 512 (#1069). Operational:
+    #: the generation's files do not depend on it. ``None`` leaves Node's default.
+    node_heap_mb: int | None = None
+    #: The peak resident set (bytes) of the largest game process and of the largest policy
+    #: worker of the last ``play`` call, as the play script reported them; empty when it did not.
+    #: Diagnostics for the run-metrics record, never an input to a generation.
+    resource_usage: dict[str, int] = field(default_factory=dict, compare=False)
 
-    def _run(self, script: str, *args: str) -> str:
-        command = [self.node, str(self.repo / script), *args]
+    def _run(self, script: str, *args: str, heap_mb: int | None = None) -> str:
+        cap = () if heap_mb is None else (f"--max-old-space-size={heap_mb}",)
+        command = [self.node, *cap, str(self.repo / script), *args]
         try:
             done = subprocess.run(
                 command, capture_output=True, text=True, check=False, stdin=subprocess.DEVNULL
@@ -84,7 +94,8 @@ class NodePlayer:
         return found
 
     def play(self, request: PlayRequest) -> None:
-        self._run(
+        self.resource_usage.clear()
+        out = self._run(
             self.play_script,
             *("--config", str(self.config_path)),
             *("--generation", str(request.generation)),
@@ -99,4 +110,30 @@ class NodePlayer:
             # Absent at one worker, so the default command line is the one it always was.
             *(("--policy-workers", str(self.policy_workers)) if self.policy_workers != 1 else ()),
             *(("--game-processes", str(self.game_processes)) if self.game_processes != 1 else ()),
+            heap_mb=self.node_heap_mb,
         )
+        self.resource_usage.update(_resource_usage(out))
+
+
+_USAGE_KEYS = {
+    "game_process_peak_rss_bytes": "game_process",
+    "policy_worker_peak_rss_bytes": "policy_worker",
+}
+
+
+def _resource_usage(stdout: str) -> dict[str, int]:
+    """The ``resource_usage`` line of the play script's output; anything odd is ignored."""
+    found: dict[str, int] = {}
+    for line in stdout.splitlines():
+        try:
+            value = json.loads(line)
+        except ValueError:
+            continue
+        usage = value.get("resource_usage") if isinstance(value, dict) else None
+        if not isinstance(usage, dict):
+            continue
+        for key, name in _USAGE_KEYS.items():
+            number = usage.get(key)
+            if isinstance(number, int) and not isinstance(number, bool) and number >= 0:
+                found[name] = number
+    return found

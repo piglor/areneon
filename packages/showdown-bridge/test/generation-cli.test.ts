@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { jcs, type Json } from "../src/canonical-json.ts";
-import { interimPoolSource, readShardFile, runGenerationCli, runManifestCli, startShard, UsageError, writeShardFile } from "../src/generation-cli.ts";
+import { combineUsage, interimPoolSource, readShardFile, runGenerationCli, runManifestCli, startShard, UsageError, writeShardFile } from "../src/generation-cli.ts";
 import { GOLDEN_DIR, GOLDEN_FORMAT } from "../src/golden.ts";
 import { loadEngine, readTrainingRunConfig } from "../src/index.ts";
 import { type PlayedEntry, trainingTeamPool } from "../src/league-generation.ts";
@@ -117,6 +117,32 @@ describe("a further game process", () => {
     const out = join(dir, "shard-ok");
     const ok = script("ok.mjs", `import { mkdirSync, writeFileSync } from "node:fs"; mkdirSync(process.argv[2], { recursive: true }); writeFileSync(process.argv[2] + "/shard.jsonl", '{"game":1}\\n');`);
     await expect(startShard(ok, [out], out, 1).entries).resolves.toEqual([{ game: 1 }]);
+  });
+
+  it("hands back the peak memory it left, and none when it left none or garbage", async () => {
+    const out = join(dir, "shard-usage");
+    const body = (usage: string): string =>
+      `import { mkdirSync, writeFileSync } from "node:fs"; mkdirSync(process.argv[2], { recursive: true }); writeFileSync(process.argv[2] + "/shard.jsonl", '{"game":1}\\n'); ${usage}`;
+    const withUsage = script("usage.mjs", body(`writeFileSync(process.argv[2] + "/usage.json", '{"game_process_peak_rss_bytes":7}');`));
+    await expect(startShard(withUsage, [out], out, 1).usage).resolves.toEqual({ game_process_peak_rss_bytes: 7 });
+    const bare = script("bare.mjs", body(""));
+    const bareOut = join(dir, "shard-bare");
+    await expect(startShard(bare, [bareOut], bareOut, 1).usage).resolves.toEqual({});
+    const junk = script("junk.mjs", body(`writeFileSync(process.argv[2] + "/usage.json", 'not json');`));
+    const junkOut = join(dir, "shard-junk");
+    await expect(startShard(junk, [junkOut], junkOut, 1).usage).resolves.toEqual({});
+    // A process that fails has no usage to report either.
+    const failing = script("failing-usage.mjs", "process.exit(3);");
+    const failingChild = startShard(failing, [], join(dir, "shard-none"), 6);
+    await expect(failingChild.usage).rejects.toThrow(/game process 6 failed/);
+  });
+
+  it("combines several processes' peaks into the largest of each", () => {
+    expect(combineUsage([])).toEqual({});
+    expect(combineUsage([{ game_process_peak_rss_bytes: 5 }, { game_process_peak_rss_bytes: 9, policy_worker_peak_rss_bytes: 2 }, {}])).toEqual({
+      game_process_peak_rss_bytes: 9,
+      policy_worker_peak_rss_bytes: 2,
+    });
   });
 
   it("fails the generation when the process exits non-zero, leaves no result, or does not start", async () => {

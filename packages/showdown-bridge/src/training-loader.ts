@@ -9,6 +9,7 @@
 // checks against the stream.
 
 import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { ajvFor } from "@areneon/schema/ajv";
 import evaluationRunManifestSchema from "@areneon/schema/contracts/v1/evaluation-run-manifest.schema.json" with { type: "json" };
 import trainingExampleSchema from "@areneon/schema/contracts/v1/training-example.schema.json" with { type: "json" };
@@ -202,7 +203,7 @@ export async function loadTrainingSet(input: TrainingInput, limits: ChunkLimits 
   const examples: TrainingExample[] = [];
   const pieces: string[] = [];
   let chars = 0;
-  const set = await streamTraining(input, limits, (example, line) => {
+  const set = await streamTraining(input, memoryFeed(input), limits, (example, line) => {
     examples.push(example);
     pieces.push(line);
     chars += line.length;
@@ -225,7 +226,7 @@ export async function loadTrainingSet(input: TrainingInput, limits: ChunkLimits 
 export async function writeTrainingStream(input: TrainingInput, options: StreamOptions): Promise<TrainingSet> {
   const writer = new ChunkedFileWriter(options.path, options);
   try {
-    const set = await streamTraining(input, options, (_example, line) => writer.write(line));
+    const set = await streamTraining(input, memoryFeed(input), options, (_example, line) => writer.write(line));
     writer.finish();
     return set;
   } finally {
@@ -233,9 +234,77 @@ export async function writeTrainingStream(input: TrainingInput, options: StreamO
   }
 }
 
+/** An Episode stored as JSON under the hash it is addressed by (`episodes/<hash>.json` of a generation). */
+export interface StoredEpisode {
+  hash: string;
+  path: string;
+}
+
+/** `TrainingInput` for Episodes that are on disk: they are read one at a time and none is kept (#1069). */
+export interface StoredTrainingInput extends Omit<TrainingInput, "episodes"> {
+  /** In any order; the stream lists them by hash. */
+  episodes: readonly StoredEpisode[];
+}
+
+/**
+ * `writeTrainingStream` for Episodes stored as files: the same checks, the same stream bytes and
+ * the same TrainingSet as with the Episodes in memory, but only one Episode is held at a time, so
+ * a generation's memory does not grow with its size (#1069). Each file must hold the Episode its
+ * name addresses (its recomputed hash is compared), and a repeated hash is refused before any
+ * file is read. Episodes are checked as their turn comes in hash order, so a bad Episode is found
+ * after the stream is partly written, never before; the caller discards the file on a refusal.
+ */
+export async function writeStoredTrainingStream(input: StoredTrainingInput, options: StreamOptions): Promise<TrainingSet> {
+  const writer = new ChunkedFileWriter(options.path, options);
+  try {
+    const set = await streamTraining(input, fileFeed(input), options, (_example, line) => writer.write(line));
+    writer.finish();
+    return set;
+  } finally {
+    writer.close();
+  }
+}
+
+/** Every Episode as `[hash, Episode]`, validated, in the order the stream lists them (hash order). */
+type EpisodeFeed = (evaluated: ReadonlySet<string>) => AsyncGenerator<[string, Episode]>;
+
+function memoryFeed({ episodes, known_synthetic, behaviour_policy_id }: TrainingInput): EpisodeFeed {
+  return async function* (evaluated) {
+    const accepted = new Map<string, Episode>();
+    for (const [index, value] of episodes.entries()) {
+      const episode = await readTraining(value, index, known_synthetic, behaviour_policy_id);
+      const hash = await episodeHash(episode, nodeSha256);
+      if (evaluated.has(hash)) throw new TrainingLoaderError(`Episode ${index} (${hash}) is listed in an EvaluationRunManifest: evaluation games never train`);
+      if (accepted.has(hash)) throw new TrainingLoaderError(`Episode ${index} (${hash}) is given twice`);
+      accepted.set(hash, episode);
+    }
+    if (accepted.size === 0) throw new TrainingLoaderError("no Episode to load");
+    for (const hash of [...accepted.keys()].sort()) yield [hash, accepted.get(hash) as Episode];
+  };
+}
+
+function fileFeed({ episodes, known_synthetic, behaviour_policy_id }: StoredTrainingInput): EpisodeFeed {
+  return async function* (evaluated) {
+    const seen = new Set<string>();
+    for (const [index, { hash }] of episodes.entries()) {
+      if (evaluated.has(hash)) throw new TrainingLoaderError(`Episode ${index} (${hash}) is listed in an EvaluationRunManifest: evaluation games never train`);
+      if (seen.has(hash)) throw new TrainingLoaderError(`Episode ${index} (${hash}) is given twice`);
+      seen.add(hash);
+    }
+    if (seen.size === 0) throw new TrainingLoaderError("no Episode to load");
+    const order = episodes.map((stored, index) => ({ ...stored, index })).sort((a, b) => (a.hash < b.hash ? -1 : 1));
+    for (const { hash, path, index } of order) {
+      const episode = await readTraining(JSON.parse(readFileSync(path, "utf8")) as unknown, index, known_synthetic, behaviour_policy_id);
+      if ((await episodeHash(episode, nodeSha256)) !== hash) throw new TrainingLoaderError(`Episode ${index} is stored under a hash that is not its own`);
+      yield [hash, episode];
+    }
+  };
+}
+
 /** The checks, the examples in stream order and the TrainingSet; `each` gets every example and its line. */
 async function streamTraining(
-  { episodes, evaluation_manifests, known_synthetic, behaviour_policy_id }: TrainingInput,
+  { evaluation_manifests, behaviour_policy_id }: Pick<TrainingInput, "evaluation_manifests" | "behaviour_policy_id">,
+  feed: EpisodeFeed,
   limits: ChunkLimits,
   each: (example: TrainingExample, line: string) => void,
 ): Promise<TrainingSet> {
@@ -249,21 +318,12 @@ async function streamTraining(
     for (const listed of manifest.episode_hashes) evaluated.add(listed);
   }
 
-  const accepted = new Map<string, Episode>();
-  for (const [index, value] of episodes.entries()) {
-    const episode = await readTraining(value, index, known_synthetic, behaviour_policy_id);
-    const hash = await episodeHash(episode, nodeSha256);
-    if (evaluated.has(hash)) throw new TrainingLoaderError(`Episode ${index} (${hash}) is listed in an EvaluationRunManifest: evaluation games never train`);
-    if (accepted.has(hash)) throw new TrainingLoaderError(`Episode ${index} (${hash}) is given twice`);
-    accepted.set(hash, episode);
-  }
-  if (accepted.size === 0) throw new TrainingLoaderError("no Episode to load");
-
-  const hashes = [...accepted.keys()].sort();
+  const hashes: string[] = [];
   const digest = createHash("sha256");
   let count = 0;
-  for (const hash of hashes) {
-    for (const example of await examplesOf(accepted.get(hash) as Episode, hash)) {
+  for await (const [hash, episode] of feed(evaluated)) {
+    hashes.push(hash);
+    for (const example of await examplesOf(episode, hash)) {
       const line = `${jcs(example as unknown as Json)}\n`;
       checkStringLength(line, limits, "a stream line");
       digest.update(line, "utf8");

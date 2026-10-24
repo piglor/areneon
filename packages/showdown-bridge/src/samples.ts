@@ -542,6 +542,13 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
       r.device = "cuda";
       r.peak_accelerator_memory_bytes = 3_221_225_472;
     }),
+    "run-metrics/cuda-memory": runMetricsWith((r) => {
+      r.device = "cuda";
+      r.peak_accelerator_memory_bytes = 3_221_225_472;
+      r.peak_accelerator_reserved_bytes = 4_294_967_296;
+      r.peak_rss_bytes = { driver: 2_147_483_648, game_process: 629_145_600, policy_worker: 452_984_832 };
+    }),
+    "run-metrics/rss-only": runMetricsWith((r) => (r.peak_rss_bytes = { driver: 1_073_741_824 })),
     "run-metrics/seeded-pair": runMetricsWith((r) => {
       r.generation = 0;
       r.phase_ms = { play: 0, write: 95, load: 0, train: 0, seal: 60 };
@@ -743,6 +750,9 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "checkpoint-record/no-learner-state": recordWith((r) => delete r.learner_state_hash),
     "run-metrics/extra-field": runMetricsWith((r) => (r.notes = "x")),
     "run-metrics/fractional-ms": runMetricsWith((r) => (r.phase_ms = { ...runMetrics.phase_ms, play: 1.5 })),
+    "run-metrics/negative-reserved": runMetricsWith((r) => (r.peak_accelerator_reserved_bytes = -1)),
+    "run-metrics/unknown-rss-field": runMetricsWith((r) => (r.peak_rss_bytes = { driver: 1, kernel: 2 })),
+    "run-metrics/fractional-rss": runMetricsWith((r) => (r.peak_rss_bytes = { driver: 1.5 })),
     "run-metrics/negative-memory": runMetricsWith((r) => (r.peak_accelerator_memory_bytes = -1)),
     "run-metrics/missing-phase": runMetricsWith((r) => (r.phase_ms = { play: 1, write: 1, load: 1, train: 1 })),
     "run-metrics/unknown-device": runMetricsWith((r) => (r.device = "tpu")),

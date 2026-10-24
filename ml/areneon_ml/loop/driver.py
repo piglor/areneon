@@ -34,6 +34,7 @@ from areneon_ml.checkpoint.provenance import ProvenanceGraph
 from areneon_ml.checkpoint.record import CheckpointRecord, read_record
 from areneon_ml.learner.config import RunConfig
 from areneon_ml.learner.data import trajectories
+from areneon_ml.learner.parallel import fit_processes
 from areneon_ml.learner.state import pack_state, restore_state
 from areneon_ml.learner.trainer import Learner, configure_learner
 from areneon_ml.loop import layout
@@ -43,7 +44,13 @@ from areneon_ml.loop.league import (
     check_generation_plan,
     read_league_run_record,
 )
-from areneon_ml.loop.metrics import Counts, build_metrics, write_metrics
+from areneon_ml.loop.metrics import (
+    Counts,
+    Peaks,
+    build_metrics,
+    driver_peak_rss_bytes,
+    write_metrics,
+)
 from areneon_ml.loop.play import GenerationPlayer, PlayRequest
 from areneon_ml.loop.records import (
     RecordFacts,
@@ -118,6 +125,9 @@ class Timing:
         self.phase_ms: dict[str, int] = {}
         self.counts = Counts()
         self.peak_memory: int | None = None
+        self.peak_reserved: int | None = None
+        #: Peak resident set (bytes) of the play phase's processes, when the simulator side says.
+        self.play_rss: dict[str, int] = {}
 
     @contextmanager
     def phase(self, name: str) -> Iterator[None]:
@@ -148,9 +158,16 @@ class Loop:
         self.run_dir = run_dir
         self.game = game
         self.player = player
+        #: Worker processes that check and encode the generation's stream in the load phase
+        #: (#1069). Operational: the trajectories, and so every hash, are the same for any number.
+        self.load_processes = 1
+        #: A cap on the memory the load workers may add, in MB (``None``: no cap).
+        self.load_memory_mb: int | None = None
         self._on_stage = on_stage or (lambda _generation, _stage: None)
         #: Wall-clock source for the run-metrics record; a test replaces it.
         self.clock: Clock = time.monotonic
+        #: The driver's peak resident set in bytes, for the run-metrics record; a test replaces it.
+        self.rss_source: Callable[[], int] = driver_peak_rss_bytes
         self.device = configure_learner(config)
         self.encoder_version = encoder_version(game, config.model.encoder)
         self._encoders = {role: Encoder(game, config.model.encoder) for role in ROLES}
@@ -295,6 +312,7 @@ class Loop:
                     work,
                 )
             )
+        timing.play_rss = dict(getattr(self.player, "resource_usage", None) or {})
         self._on_stage(generation, "played")
         with timing.phase("load"):
             summary = layout.read_json(work / "generation.json")
@@ -305,13 +323,24 @@ class Loop:
             if sha256_hex(jcs(training_set)) != summary.get("training_set_hash"):
                 raise LoopError("the TrainingSet differs from the hash the simulator side reported")
             # The stream goes in by path: a generation's is over a gigabyte (#998).
-            found = trajectories(work / "stream.jsonl", training_set, self._encoders, pair)
+            found = trajectories(
+                work / "stream.jsonl",
+                training_set,
+                self._encoders,
+                pair,
+                fit_processes(self.load_processes, self.load_memory_mb),
+            )
         if self.device.type == "cuda":
             torch.cuda.reset_peak_memory_stats(self.device)
         with timing.phase("train"):
             report = learner.train(found)
         if self.device.type == "cuda":
             timing.peak_memory = int(torch.cuda.max_memory_allocated(self.device))
+            timing.peak_reserved = int(torch.cuda.max_memory_reserved(self.device))
+            # The tensors of a generation are on the CPU and only a minibatch is on the device:
+            # give the allocator's cache back, so the next phase and any other process on the
+            # device start from what is in use (#1069). It changes no value.
+            torch.cuda.empty_cache()
         roles = report.roles.values()
         timing.counts = Counts(
             league.games, sum(r.steps for r in roles), sum(r.optimiser_steps for r in roles)
@@ -400,7 +429,15 @@ class Loop:
         write_metrics(
             self.run_dir,
             build_metrics(
-                self.config, generation, timing.phase_ms, timing.counts, timing.peak_memory
+                self.config,
+                generation,
+                timing.phase_ms,
+                timing.counts,
+                Peaks(
+                    timing.peak_memory,
+                    timing.peak_reserved,
+                    {**timing.play_rss, "driver": self.rss_source()},
+                ),
             ),
         )
         return Frozen(

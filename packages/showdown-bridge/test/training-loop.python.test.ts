@@ -276,7 +276,10 @@ describe.skipIf(!existsSync(PYTHON) && process.env.ARENEON_REQUIRE_PYTHON_WORKER
       (line) => lines.push(line),
     );
     expect(code).toBe(0);
-    expect(lines).toHaveLength(1);
+    // The summary line, then (Linux) the peak memory of the processes, which differs on every run (#1069).
+    expect(lines.length).toBeGreaterThanOrEqual(1);
+    expect(lines.length).toBeLessThanOrEqual(2);
+    if (lines[1] !== undefined) expect(JSON.parse(lines[1]).resource_usage.game_process_peak_rss_bytes).toBeGreaterThan(10_000_000);
     const printed = JSON.parse(lines[0] as string) as { generation: number; run_config_hash: string; training_set_hash: string; examples: number };
     const summary = JSON.parse(readFileSync(join(out, "generation.json"), "utf8")) as { training_set_hash: string; examples: number; forfeits: number; games: unknown[] };
     expect(printed).toMatchObject({ generation: 1, training_set_hash: summary.training_set_hash, examples: summary.examples });
@@ -301,7 +304,8 @@ describe.skipIf(!existsSync(PYTHON) && process.env.ARENEON_REQUIRE_PYTHON_WORKER
       script,
     );
     expect(shardedCode).toBe(0);
-    expect(shardedLines).toEqual(lines);
+    expect(shardedLines[0]).toBe(lines[0]);
+    expect(shardedLines.length).toBe(lines.length);
     const names = (root: string): string[] => readdirSync(root, { recursive: true, encoding: "utf8" }).sort();
     expect(names(sharded)).toEqual(names(out));
     for (const name of names(out).filter((n) => n.endsWith(".json") || n.endsWith(".jsonl"))) {

@@ -10,6 +10,7 @@ import pytest
 from areneon_contracts.contracts import jcs
 from areneon_ml.loop import __main__ as module
 from areneon_ml.loop.__main__ import EXIT_PLAY, EXIT_REFUSED, main
+from areneon_ml.loop.driver import Loop
 from areneon_ml.loop.play import PlayError
 
 from tests.ml.learner.support import tiny_config
@@ -95,7 +96,53 @@ def test_worker_and_process_counts_are_flags_of_the_player_not_of_the_config(
     assert other[0]["policy_workers"] == 1
 
 
-@pytest.mark.parametrize("flag", ["--policy-workers", "--game-processes"])
+def test_the_node_heap_cap_is_a_flag_of_the_player_only(
+    tmp_path: Path, config_file: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    built = fake_node(monkeypatch)
+    assert main(run(config_file, tmp_path / "r", 1, "--node-heap-mb", "640")) == 0
+    assert built[0]["node_heap_mb"] == 640
+    other = fake_node(monkeypatch)
+    assert main(run(config_file, tmp_path / "s", 1)) == 0
+    assert other[0]["node_heap_mb"] is None
+
+
+def test_the_load_workers_are_a_flag_of_the_loop_only(
+    tmp_path: Path, config_file: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fake_node(monkeypatch)
+    seen: list[tuple[int, int | None]] = []
+    real = Loop
+
+    class Spy(real):  # type: ignore[valid-type, misc]
+        def run(self, generations: int) -> Any:
+            seen.append((self.load_processes, self.load_memory_mb))
+            return super().run(generations)
+
+    monkeypatch.setattr("areneon_ml.loop.__main__.Loop", Spy)
+    assert (
+        main(
+            run(config_file, tmp_path / "r", 1, "--load-processes", "3", "--load-memory-mb", "900")
+        )
+        == 0
+    )
+    assert main(run(config_file, tmp_path / "s", 1)) == 0
+    assert seen == [(3, 900), (1, None)]
+    assert (tmp_path / "r" / "run-config.json").read_bytes() == (
+        tmp_path / "s" / "run-config.json"
+    ).read_bytes()
+
+
+@pytest.mark.parametrize(
+    "flag",
+    [
+        "--policy-workers",
+        "--game-processes",
+        "--node-heap-mb",
+        "--load-processes",
+        "--load-memory-mb",
+    ],
+)
 @pytest.mark.parametrize("value", ["0", "-2"])
 def test_a_count_below_one_is_a_usage_error(
     tmp_path: Path, config_file: Path, monkeypatch: pytest.MonkeyPatch, flag: str, value: str
