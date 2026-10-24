@@ -124,3 +124,16 @@ def test_the_kl_target_is_optional_and_divided_once() -> None:
     assert config.hash != read_run_config(raw()).hash
     with pytest.raises(RunConfigError):
         read_run_config(raw("invalid/zero-target-kl.json"))
+
+
+def test_model_options_are_optional_and_none_is_defined_yet() -> None:
+    plain = read_run_config(raw())
+    assert plain.model.options == ()
+    assert plain.model.encoder.options == ()
+    config = read_run_config(raw("valid/empty-options.json"))
+    assert config.model.options == ()
+    assert config.model.encoder.options == ()
+    assert config.hash != plain.hash  # another record, another hash; the encoder is the same
+    for name in ("unknown-model-option", "unknown-encoder-option"):
+        with pytest.raises(RunConfigError):
+            read_run_config(raw(f"invalid/{name}.json"))

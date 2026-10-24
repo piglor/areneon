@@ -103,6 +103,12 @@
           "type": "integer",
           "minimum": 1,
           "maximum": 16384
+        },
+        "options": {
+          "description": "Optional network options (ADR-010 erratum A4 item 2). Absent keeps today's bytes, hashes and checkpoints. A named option is added by the ticket of the experiment arm that needs it; none is defined yet, so only an empty object passes.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {}
         }
       }
     },
@@ -385,6 +391,12 @@
           "type": "integer",
           "minimum": 1,
           "maximum": 1000000
+        },
+        "options": {
+          "description": "Optional encoder options (ADR-010 erratum A4 item 2). Absent keeps today's bytes, hashes and checkpoints. A named option is added by the ticket of the experiment arm that needs it; none is defined yet, so only an empty object passes.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {}
         }
       }
     },

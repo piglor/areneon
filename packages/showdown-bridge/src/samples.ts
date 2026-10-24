@@ -530,6 +530,10 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
         { actor: "damage-aware", policy_id: "damage-aware@v1", games: 2 },
       ];
     }),
+    "training-run-config/empty-options": runConfigWith((c) => {
+      runSection(c, "model").options = {};
+      runSection(runSection(c, "model"), "encoder").options = {};
+    }),
     "training-run-config/team-dataset": runConfigWith((c) => (c.team_dataset = { path: ".tmp/datasets/train-v1", dataset_hash: hexOf("5") })),
     "clone-run-config/tiny": cloneConfig,
     "clone-run-config/no-holdout": cloneWith((c) => (runSection(c, "clone").holdout = { key: "d".repeat(64), ppm: 0 })),
@@ -772,6 +776,8 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
       (c) => (runSection(c, "ppo").learning_rate_schedule = { kind: "linear", final_micro: 100, generations: 0 }),
     ),
     "training-run-config/schedule-unknown-kind": runConfigWith((c) => (runSection(c, "ppo").learning_rate_schedule = { kind: "cosine" })),
+    "training-run-config/unknown-model-option": runConfigWith((c) => (runSection(c, "model").options = { wide: 1 })),
+    "training-run-config/unknown-encoder-option": runConfigWith((c) => (runSection(runSection(c, "model"), "encoder").options = { wide: 1 })),
     "training-run-config/zero-games": runConfigWith((c) => (runSection(c, "generation").games = 0)),
     "training-run-config/unknown-device": runConfigWith((c) => (runSection(c, "learner").device = "tpu")),
     "training-run-config/no-ppo": runConfigWith((c) => delete c.ppo),

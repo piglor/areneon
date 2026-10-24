@@ -39,6 +39,7 @@ from areneon_ml.model.candidates import (
     parse_choice,
 )
 from areneon_ml.model.gamedata import NONE, UNKNOWN, GameData
+from areneon_ml.model.options import Options, with_options
 from areneon_ml.reducer import BattleState, ChannelReducer, PokemonState, SideState, reduce_channel
 from areneon_ml.reducer.state import STAT_KEYS
 
@@ -70,6 +71,7 @@ class EncoderConfig:
     max_picks: int  # Team Preview positions an order names
     stat_scale: float  # divisor of a Pokémon's exact stats
     turn_scale: float  # divisor of the turn counter
+    options: Options = ()  # optional encoder options (A4 item 2); empty keeps today's bytes
 
     def __post_init__(self) -> None:
         limits = {
@@ -88,15 +90,18 @@ class EncoderConfig:
             raise ValueError("max_picks cannot exceed max_team")
 
     def as_dict(self) -> dict[str, Any]:
-        return {
-            "volatile_buckets": self.volatile_buckets,
-            "condition_buckets": self.condition_buckets,
-            "max_moves": self.max_moves,
-            "max_team": self.max_team,
-            "max_picks": self.max_picks,
-            "stat_scale": self.stat_scale,
-            "turn_scale": self.turn_scale,
-        }
+        return with_options(
+            {
+                "volatile_buckets": self.volatile_buckets,
+                "condition_buckets": self.condition_buckets,
+                "max_moves": self.max_moves,
+                "max_team": self.max_team,
+                "max_picks": self.max_picks,
+                "stat_scale": self.stat_scale,
+                "turn_scale": self.turn_scale,
+            },
+            self.options,
+        )
 
 
 @dataclass(frozen=True)
