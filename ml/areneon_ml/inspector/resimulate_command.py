@@ -22,7 +22,7 @@ from areneon_ml.loop import layout
 
 def parse_target(spec: str) -> tuple[int, int]:
     """``--resimulate 3:5``: generation 3, game 5."""
-    found = re.fullmatch(r"(\d+):(\d+)", spec)
+    found = re.fullmatch(r"([0-9]+):([0-9]+)", spec)
     if found is None:
         raise InspectError(f"--resimulate is GENERATION:GAME, like 3:5, not {spec!r}")
     return int(found[1]), int(found[2])

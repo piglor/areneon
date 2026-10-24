@@ -69,7 +69,8 @@ def node_runner(repo: Path, node: str) -> Runner:
         except (OSError, subprocess.TimeoutExpired) as exc:
             raise InspectError(f"cannot run {SCRIPT} with {node}: {type(exc).__name__}") from exc
         if done.returncode != 0:
-            raise InspectError(f"{SCRIPT} failed (exit {done.returncode}): {done.stderr[-1000:]}")
+            first = (done.stderr.splitlines() or [""])[0][:200]  # one line: never a log fragment
+            raise InspectError(f"{SCRIPT} failed (exit {done.returncode}): {first}")
         return done.stdout
 
     return run
