@@ -137,7 +137,8 @@ type RowV2 = ProgressEvaluationRecordV2["games"][number];
 /**
  * Read a ProgressEvaluationRecordV2 (ADR-017 erratum E2): every pair is played twice, so a match of n pairs has 2n
  * games, game g is pair g >> 1 and the candidate sits on p1 for an even g and p2 for an odd one. Anchor matches
- * are named anchor-g<A>-<mode> and play an earlier generation.
+ * are named anchor-g<A>-<mode> and play an earlier generation; a cross-run match is named run-<mode> and plays
+ * another run's frozen pair (a different run key).
  */
 export function readProgressEvaluationRecordV2(value: unknown): ProgressEvaluationRecordV2 {
   if (!validEvaluationV2(value)) throw new ProgressRecordError(`invalid ProgressEvaluationRecordV2: ${JSON.stringify(validEvaluationV2.errors)}`);
@@ -146,8 +147,10 @@ export function readProgressEvaluationRecordV2(value: unknown): ProgressEvaluati
   const anchored = matches.some((match) => match.opponent.kind === "anchor");
   const anchorGames = plan.anchor_games_per_match;
   if (anchored !== (anchorGames !== undefined)) fail("plan.anchor_games_per_match is present exactly when the record has anchor matches");
-  if (plan.games_per_match % 2 !== 0 || (anchorGames ?? 0) % 2 !== 0) fail("games_per_match and anchor_games_per_match must be even: every pair is played from both seats");
-  if (record.teams.pairs_used !== Math.max(plan.games_per_match, anchorGames ?? 0) / 2) fail("teams.pairs_used must be half the largest games_per_match or anchor_games_per_match");
+  const runGames = plan.run_games_per_match;
+  if (matches.some((match) => match.opponent.kind === "run") !== (runGames !== undefined)) fail("plan.run_games_per_match is present exactly when the record has cross-run matches");
+  if (plan.games_per_match % 2 !== 0 || (anchorGames ?? 0) % 2 !== 0 || (runGames ?? 0) % 2 !== 0) fail("games_per_match, anchor_games_per_match and run_games_per_match must be even: every pair is played from both seats");
+  if (record.teams.pairs_used !== Math.max(plan.games_per_match, anchorGames ?? 0, runGames ?? 0) / 2) fail("teams.pairs_used must be half the largest games_per_match, anchor_games_per_match or run_games_per_match");
   if (plan.recorded_games_per_match > plan.games_per_match) fail("recorded_games_per_match must not exceed games_per_match");
   const ids = matches.map((match) => match.match_id);
   if (!strictlyAscending(ids)) fail("matches must be sorted by match_id, each once");
@@ -174,7 +177,10 @@ export function readProgressEvaluationRecordV2(value: unknown): ProgressEvaluati
     }
     const anchor = match.opponent.kind === "anchor" ? match.opponent : undefined;
     if (anchor !== undefined && (anchor.generation >= record.generation || match.match_id !== `anchor-g${anchor.generation}-${match.mode}`)) fail(`${match.match_id}: an anchor match is named anchor-g<generation>-<mode> and plays an earlier generation`);
-    if (match.games !== (anchor === undefined ? plan.games_per_match : (anchorGames as number))) fail(`${match.match_id}: games must equal ${anchor === undefined ? "plan.games_per_match" : "plan.anchor_games_per_match"}`);
+    const cross = match.opponent.kind === "run" ? match.opponent : undefined;
+    if (cross !== undefined && (cross.run_id === record.run_id || match.match_id !== `run-${match.mode}`)) fail(`${match.match_id}: a cross-run match is named run-<mode> and plays another run's pair`);
+    const expectedGames = cross !== undefined ? (runGames as number) : anchor !== undefined ? (anchorGames as number) : plan.games_per_match;
+    if (match.games !== expectedGames) fail(`${match.match_id}: games must equal ${cross !== undefined ? "plan.run_games_per_match" : anchor === undefined ? "plan.games_per_match" : "plan.anchor_games_per_match"}`);
     if (match.wins + match.ties + match.losses !== match.games) fail(`${match.match_id}: wins + ties + losses must equal games`);
     if (rows.length !== match.games) fail(`${match.match_id}: there must be one game row per game`);
     rows.forEach((row, index) => {

@@ -153,6 +153,8 @@ class MatchFacts:
     #: A damage-aware match (ADR-018): the baseline identity hash and the counts summed over its
     #: games (integers, as the record states them); None for every other match.
     baseline: dict[str, Any] | None = None
+    #: A cross-run match (``run-<mode>``): the other run's key and generation; None otherwise.
+    versus: tuple[str, int] | None = None
 
 
 @dataclass(frozen=True)
@@ -364,6 +366,11 @@ def _progress_facts(record: dict[str, Any]) -> ProgressFacts:
                     else None
                 ),
                 match.get("baseline"),
+                (
+                    (match["opponent"]["run_id"], match["opponent"]["generation"])
+                    if match["opponent"]["kind"] == "run"
+                    else None
+                ),
             )
         )
     plan = record["plan"]

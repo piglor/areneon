@@ -134,6 +134,39 @@ describe.skipIf(!existsSync(PYTHON) && process.env.ARENEON_REQUIRE_PYTHON_WORKER
     expect(refused.stderr).toMatch(/needs --damage-aware/);
   }, 900_000);
 
+  it("plays another run's frozen pair with the real workers: one worker per run, both seats, the other run untouched", () => {
+    const otherDir = join(dir, "other-run");
+    const tiny = json<{ seeds: Record<string, unknown> }>(ROOT, "fixtures/contracts/v1/training-run-config/valid/tiny.json");
+    const otherConfig = join(dir, "other-config.json");
+    writeFileSync(otherConfig, JSON.stringify({ ...tiny, seeds: { ...tiny.seeds, run_key: "other-run", init_preview: 21, init_battle: 22 }, team_dataset: { path: SOURCE, dataset_hash: verifiedDatasetHash(engine, SOURCE, FORMAT) } }));
+    loop("run", "--config", otherConfig, "--run-dir", otherDir, "--engine-data", DATA, "--generations", "1", "--node", process.execPath, "--worker-python", PYTHON);
+    const before = tree(otherDir).map((f) => [f, readFileSync(join(otherDir, f), "utf8")]);
+    const h = join(dir, "h.progress");
+    const printed = JSON.parse(loop("progress", "--run-dir", runDir, "--engine-data", DATA, "--games", "4", "--record-games", "2", "--generation", "1", "--versus-run-dir", otherDir, "--versus-generation", "1", "--run-games", "4", "--progress-dir", h, "--node", process.execPath, "--worker-python", PYTHON)) as {
+      generations: { head_to_head: { label: string; run_id: string; lineage: { label: string } }; matches: { match_id: string; interval_low_ppm?: number }[] }[];
+      looks: number;
+    };
+    const done = printed.generations[0] as (typeof printed.generations)[number];
+    expect(done.head_to_head).toMatchObject({ label: "cross-run comparison", run_id: "other-run", lineage: { label: "independent lineage" } });
+    expect(done.matches.map((m) => m.match_id)).toEqual(["actor-rule-argmax", "actor-rule-sample", "random-legal-argmax", "random-legal-sample", "run-argmax", "run-sample"]);
+    expect(printed.looks).toBe(1);
+    const record = readProgressEvaluationRecordV2(json<ProgressEvaluationRecordV2>(h, gen(1), "progress.json"));
+    expect(record.plan).toMatchObject({ games_per_match: 4, run_games_per_match: 4 });
+    const g1 = json<{ checkpoints: Record<string, string> }>(otherDir, "generations", gen(1), "manifest.json").checkpoints;
+    for (const m of record.matches.filter((x) => x.opponent.kind === "run")) expect(m.opponent).toMatchObject({ kind: "run", run_id: "other-run", generation: 1, checkpoints: g1 });
+    // Each pair was played twice on one seed with the policies swapped, the other run's policy among them.
+    const [a, b] = [0, 1].map((k) => readProgressGameRecord(json(h, gen(1), "games", `run-sample-${k}.json`)));
+    const [first, second] = [a as ProgressGameRecord, b as ProgressGameRecord];
+    expect(first.seed).toBe(second.seed);
+    expect(first.policies.p1).toBe(second.policies.p2);
+    expect(first.policies.p2).toBe(second.policies.p1);
+    // Same bytes again, in a fresh progress root, and nothing written into either run.
+    const again = join(dir, "h2.progress");
+    loop("progress", "--run-dir", runDir, "--engine-data", DATA, "--games", "4", "--record-games", "2", "--generation", "1", "--versus-run-dir", otherDir, "--versus-generation", "1", "--run-games", "4", "--progress-dir", again, "--node", process.execPath, "--worker-python", PYTHON);
+    for (const file of tree(join(h, gen(1)))) expect(readFileSync(join(h, gen(1), file), "utf8"), file).toBe(readFileSync(join(again, gen(1), file), "utf8"));
+    expect(tree(otherDir).map((f) => [f, readFileSync(join(otherDir, f), "utf8")])).toEqual(before);
+  }, 900_000);
+
   it("plays the Team Preview ablation with the real worker: three Previews, the random one never asked of the worker", () => {
     const f = join(dir, "f.progress");
     const printed = JSON.parse(loop("progress", "--run-dir", runDir, "--engine-data", DATA, "--games", "4", "--record-games", "4", "--generation", "1", "--preview-ablation", "--progress-dir", f, "--node", process.execPath, "--worker-python", PYTHON)) as { generations: { matches: { match_id: string }[]; ablation: { baselines: Record<string, Record<string, { pairs: number; score_ppm: number }>> } }[] };
@@ -324,6 +357,23 @@ describe.skipIf(!existsSync(PYTHON) && process.env.ARENEON_REQUIRE_PYTHON_WORKER
       }
       expect(said.join("\n")).toMatch(/anchor-games must be an even integer/);
     }, 240_000);
+
+    it("takes the cross-run flags together, well formed and alone", async () => {
+      const bad = join(dir, "bad-team-set.json");
+      writeFileSync(bad, JSON.stringify({ teams: ["nope"] }));
+      const good = join(dir, "good-team-set.json");
+      writeFileSync(good, JSON.stringify({ teams: [] }));
+      const h = "a".repeat(64);
+      const versus = `other,${h},1,${h},${h},policy:${h},policy:${h}`;
+      const all = (over: Record<string, string> = {}): string[] =>
+        Object.entries({ "--versus": versus, "--versus-dir": dir, "--versus-encoder-version": "enc", "--versus-team-set": good, "--run-games": "2", ...over }).flat();
+      const run = (name: string, extra: string[]) => runProgressCli([...flags(join(dir, name)), ...extra], () => undefined, datasetValidationPool);
+      await expect(run("v1", ["--versus", versus])).rejects.toThrow(/cross-run flags go together/);
+      await expect(run("v2", all({ "--versus": "other,x" }))).rejects.toThrow(/--versus must be/);
+      await expect(run("v3", all({ "--run-games": "1" }))).rejects.toThrow(/at least 2/);
+      await expect(run("v4", all({ "--versus-team-set": bad }))).rejects.toThrow(/SHA-256 hashes/);
+      await expect(run("v5", [...all(), "--ablation-preview", `0,${h},policy:${h}`, "--ablation-random-policy-id", `policy:${h}`])).rejects.toThrow(/played alone/);
+    }, 60_000);
 
     it("takes the ablation flags together and alone", async () => {
       const g0 = json<{ checkpoints: Record<string, string> }>(runDir, "generations", gen(0), "manifest.json").checkpoints;

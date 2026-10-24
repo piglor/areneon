@@ -118,6 +118,14 @@ export async function progressSamples(engine: Engine): Promise<ProgressSamples> 
       e.plan.anchor_games_per_match = 4;
       change?.(e);
     });
+  // A cross-run match: another run's frozen pair (a different run key), run-<mode>.
+  const v2Run = (change?: (e: Record<string, any>) => void) =>
+    withV2((e) => {
+      renameMatch(e, "run-sample");
+      Object.assign(e.matches[0], { mode: "sample", opponent: { kind: "run", run_id: "other-run", run_config_hash: hexOf("c"), generation: 3, policy_id: `policy:${hexOf("b")}`, checkpoints: { preview: hexOf("6"), battle: hexOf("7") } } });
+      e.plan.run_games_per_match = 4;
+      change?.(e);
+    });
   // The Preview ablation (#940): one Battle network with three Previews against one baseline, argmax.
   const v2Ablation = (change?: (e: Record<string, any>) => void) =>
     withV2((e) => {
@@ -184,6 +192,7 @@ export async function progressSamples(engine: Engine): Promise<ProgressSamples> 
       "progress-evaluation-record-2/baseline-match": v2,
       "progress-evaluation-record-2/previous-match": v2Previous,
       "progress-evaluation-record-2/anchor-match": v2Anchor(),
+      "progress-evaluation-record-2/run-match": v2Run(),
       "progress-evaluation-record-2/ablation-match": v2Ablation(),
       "progress-evaluation-record-2/damage-aware-match": v2Damage(),
       "progress-game-record/damage-aware": damageGame,
@@ -203,6 +212,7 @@ export async function progressSamples(engine: Engine): Promise<ProgressSamples> 
       "progress-evaluation-record-2/public-class": withV2((e) => (e.data_class = "public")),
       "progress-evaluation-record-2/schema-version-1": withV2((e) => (e.schema_version = 1)),
       "progress-evaluation-record-2/anchor-no-generation": v2Anchor((e) => delete e.matches[0].opponent.generation),
+      "progress-evaluation-record-2/run-no-run-id": v2Run((e) => delete e.matches[0].opponent.run_id),
       "progress-evaluation-record-2/ablation-no-checkpoint": v2Ablation((e) => delete e.matches[0].candidate_preview.checkpoint),
       "progress-evaluation-record-2/fractional-wins": withV2((e) => (e.matches[0].wins = 0.5)),
       "progress-evaluation-record-2/baseline-fractional-count": v2Damage((e) => (e.games[0].baseline_counts.queries = 0.5)),
@@ -236,6 +246,11 @@ export async function progressSamples(engine: Engine): Promise<ProgressSamples> 
       "progress-evaluation-record-2/anchor-games-odd": v2Anchor((e) => (e.plan.anchor_games_per_match = 3)),
       "progress-evaluation-record-2/anchor-not-earlier": v2Anchor((e) => ((e.matches[0].opponent.generation = 1), renameMatch(e, "anchor-g1-sample"))),
       "progress-evaluation-record-2/anchor-misnamed": v2Anchor((e) => renameMatch(e, "anchor-g5-sample")),
+      "progress-evaluation-record-2/run-games-missing": v2Run((e) => delete e.plan.run_games_per_match),
+      "progress-evaluation-record-2/run-games-odd": v2Run((e) => (e.plan.run_games_per_match = 3)),
+      "progress-evaluation-record-2/run-misnamed": v2Run((e) => renameMatch(e, "run-argmax")),
+      "progress-evaluation-record-2/run-same-run-id": v2Run((e) => (e.matches[0].opponent.run_id = e.run_id)),
+      "progress-evaluation-record-2/run-plan-without-match": withV2((e) => (e.plan.run_games_per_match = 4)),
       "progress-evaluation-record-2/anchor-plan-without-match": withV2((e) => (e.plan.anchor_games_per_match = 4)),
       "progress-evaluation-record-2/baseline-counts-disagree": v2Damage((e) => (e.matches[0].baseline.counts.queries += 1)),
       "progress-evaluation-record-2/baseline-row-missing": v2Damage((e) => delete e.games[0].baseline_counts),

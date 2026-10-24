@@ -134,6 +134,34 @@ class AnchorOpponent(BaseModel):
     checkpoints: Checkpoints
 
 
+class RunOpponent(BaseModel):
+    """
+    Another run's frozen pair (a cross-run comparison): a committed generation of a run with another run key, read from that run's directory.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    kind: Literal["run"]
+    run_id: Annotated[StrictStr, Field(pattern="^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")]
+    """
+    The other run's key; never the evaluated run's own.
+    """
+    run_config_hash: Annotated[StrictStr, Field(pattern="^[0-9a-f]{64}$")]
+    """
+    SHA-256 of the other run's TrainingRunConfig JCS bytes.
+    """
+    generation: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+    """
+    The other run's generation whose frozen pair played.
+    """
+    policy_id: Annotated[StrictStr, Field(pattern="^policy:[0-9a-f]{64}$")]
+    """
+    The other run's pair, in the mode the match played.
+    """
+    checkpoints: Checkpoints
+
+
 class ForfeitCount(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
@@ -314,6 +342,12 @@ class Plan(BaseModel):
     """
     Games in every anchor match (even), laid out as games_per_match. Present exactly when the record has anchor matches.
     """
+    run_games_per_match: Annotated[
+        StrictInt | MISSING, Field(ge=2, le=9007199254740991)
+    ] = MISSING
+    """
+    Games in every cross-run match (even), laid out as games_per_match. Present exactly when the record has cross-run matches.
+    """
     max_turns: Annotated[StrictInt, Field(ge=1, le=9007199254740991)]
     """
     The turn cap of the run's TrainingRunConfig.generation: a game still running past it is a tie.
@@ -321,13 +355,15 @@ class Plan(BaseModel):
     latency_budget_ms: LatencyBudget
 
 
-class Opponent(RootModel[BaselineOpponent | PreviousOpponent | AnchorOpponent]):
+class Opponent(
+    RootModel[BaselineOpponent | PreviousOpponent | AnchorOpponent | RunOpponent]
+):
     root: Annotated[
-        BaselineOpponent | PreviousOpponent | AnchorOpponent,
+        BaselineOpponent | PreviousOpponent | AnchorOpponent | RunOpponent,
         Field(discriminator="kind"),
     ]
     """
-    Who the frozen pair played: a scripted baseline, the previous generation's frozen pair, or a fixed earlier generation's (an anchor).
+    Who the frozen pair played: a scripted baseline, the previous generation's frozen pair, a fixed earlier generation's (an anchor) or another run's frozen pair.
     """
 
 
@@ -374,7 +410,7 @@ class Match(BaseModel):
     )
     match_id: Annotated[StrictStr, Field(pattern="^[a-z0-9][a-z0-9_-]{0,63}$")]
     """
-    Names the match: <opponent>-<mode>, e.g. random-legal-sample or anchor-g10-sample. Unique in the record; names the stored game files.
+    Names the match: <opponent>-<mode>, e.g. random-legal-sample or anchor-g10-sample; a cross-run match is run-<mode>. Unique in the record; names the stored game files.
     """
     policy_id: Annotated[StrictStr, Field(pattern="^policy:[0-9a-f]{64}$")]
     """
