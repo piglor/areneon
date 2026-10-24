@@ -50,6 +50,14 @@ const FLAGS = {
   // Anchors (fixed earlier generations): each `--anchor <generation>,<preview>,<battle>,<policy-id-sample>,<policy-id-argmax>`.
   anchor: { type: "string", multiple: true },
   "anchor-games": { type: "string" },
+  // Another run's frozen pair (a cross-run comparison): `--versus <run-id>,<run-config-hash>,<generation>,<preview>,<battle>,
+  // <policy-id-sample>,<policy-id-argmax>`, with that run's directory (read-only: its checkpoints are the worker's), its
+  // encoder version and its `team-set.json` (a validation team it trained on is refused) and the games per match.
+  versus: { type: "string" },
+  "versus-dir": { type: "string" },
+  "versus-encoder-version": { type: "string" },
+  "versus-team-set": { type: "string" },
+  "run-games": { type: "string" },
   // The Preview ablation (#940): `--ablation-preview <generation>,<preview-checkpoint>,<policy-id-argmax>` (this
   // Battle with an earlier generation's Preview) and `--ablation-random-policy-id` (this Battle with a random Preview).
   "ablation-preview": { type: "string" },
@@ -58,7 +66,8 @@ const FLAGS = {
   // each may take at most this many wall-clock milliseconds or the evaluation fails and commits nothing.
   "damage-aware-budget-ms": { type: "string" },
 } as const;
-const OPTIONAL = new Set<string>(["previous-preview", "previous-battle", "previous-policy-id-sample", "previous-policy-id-argmax", "anchor", "anchor-games", "ablation-preview", "ablation-random-policy-id", "damage-aware-budget-ms"]);
+const OPTIONAL = new Set<string>(["previous-preview", "previous-battle", "previous-policy-id-sample", "previous-policy-id-argmax", "anchor", "anchor-games", "versus", "versus-dir", "versus-encoder-version", "versus-team-set", "run-games", "ablation-preview", "ablation-random-policy-id", "damage-aware-budget-ms"]);
+const VERSUS = ["versus", "versus-dir", "versus-encoder-version", "versus-team-set", "run-games"] as const;
 const PREVIOUS = ["previous-preview", "previous-battle", "previous-policy-id-sample", "previous-policy-id-argmax"] as const;
 
 const integer = (name: string, text: string, least: number): number => {
@@ -85,6 +94,13 @@ export function committedPlanSeeds(runDir: string): Set<string> {
   return seeds;
 }
 
+/** The team hashes of a run's `team-set.json`; anything else is refused (this list is what keeps trained teams out of the pool). */
+function readTeamSet(path: string): string[] {
+  const teams = (JSON.parse(readFileSync(path, "utf8")) as { teams?: unknown }).teams;
+  if (!Array.isArray(teams) || teams.some((t) => typeof t !== "string" || !/^[0-9a-f]{64}$/.test(t))) throw new UsageError("--versus-team-set must hold a teams list of SHA-256 hashes");
+  return teams as string[];
+}
+
 /** Run one generation's progress evaluation; returns the process exit code and writes its one JSON line with `print`. */
 export async function runProgressCli(argv: readonly string[], print: (line: string) => void, poolSource: ProgressPoolSource): Promise<number> {
   let values: Record<Exclude<keyof typeof FLAGS, "anchor">, string | undefined> & { anchor?: string[] };
@@ -109,6 +125,12 @@ export async function runProgressCli(argv: readonly string[], print: (line: stri
   if (ablationParts !== undefined && (anchorSpecs.length > 0 || PREVIOUS.some((name) => values[name] !== undefined))) throw new UsageError("the Preview ablation is played alone: no anchors and no previous-generation flags");
   const damageBudget = values["damage-aware-budget-ms"] === undefined ? undefined : integer("damage-aware-budget-ms", values["damage-aware-budget-ms"], 1);
   if (damageBudget !== undefined && ablationParts !== undefined) throw new UsageError("the Preview ablation is played alone: no damage-aware matches");
+  const versusGiven = VERSUS.filter((name) => values[name] !== undefined);
+  if (versusGiven.length !== 0 && versusGiven.length !== VERSUS.length) throw new UsageError(`the cross-run flags go together: ${VERSUS.map((n) => `--${n}`).join(", ")}`);
+  const versusParts = values.versus?.split(",");
+  if (versusParts !== undefined && (versusParts.length !== 7 || !/^\d+$/.test(versusParts[2] as string))) throw new UsageError("--versus must be <run-id>,<run-config-hash>,<generation>,<preview>,<battle>,<policy-id-sample>,<policy-id-argmax>");
+  const run_games = values["run-games"] === undefined ? undefined : integer("run-games", values["run-games"], 2);
+  if (versusParts !== undefined && (ablationParts !== undefined)) throw new UsageError("the Preview ablation is played alone: no other run");
   const given = PREVIOUS.filter((name) => values[name] !== undefined);
   if (given.length !== 0 && given.length !== PREVIOUS.length) throw new UsageError(`the previous-generation flags go together: ${PREVIOUS.map((n) => `--${n}`).join(", ")}`);
   const generation = integer("generation", need("generation"), 0);
@@ -128,16 +150,16 @@ export async function runProgressCli(argv: readonly string[], print: (line: stri
   const preview = need("preview");
   const battle = need("battle");
   // One worker session holds one frozen pair, so the previous generation's pair gets a worker of its own.
-  const workerFor = (pair: { preview: string; battle: string }): PolicyWorkerClient =>
+  const workerFor = (pair: { preview: string; battle: string }, runDir: string = need("run-dir"), encoderVersion: string = need("encoder-version")): PolicyWorkerClient =>
     new PolicyWorkerClient({
       command: need("worker-python"),
-      args: ["-I", "-m", "areneon_ml.worker", "--run-dir", need("run-dir"), "--preview", pair.preview, "--battle", pair.battle, "--engine-data", dataFile, "--max-line-bytes", String(max_line_bytes)],
+      args: ["-I", "-m", "areneon_ml.worker", "--run-dir", runDir, "--preview", pair.preview, "--battle", pair.battle, "--engine-data", dataFile, "--max-line-bytes", String(max_line_bytes)],
       env: {},
       max_line_bytes,
       n_parallel: 1, // evaluation never batches (ADR-010 section 2)
       handshake_timeout_ms,
       expect: {
-        encoder_version: need("encoder-version"),
+        encoder_version: encoderVersion,
         engine_data_hash: dataHash,
         checkpoints: [
           { role: "battle", checkpoint_id: pair.battle },
@@ -151,12 +173,25 @@ export async function runProgressCli(argv: readonly string[], print: (line: stri
   // The ablation's third variant: this generation's Battle with an earlier generation's Preview, behind a worker of its own.
   const ablationClient = ablationParts === undefined ? undefined : workerFor({ preview: ablationParts[1] as string, battle });
   const anchorClients: PolicyWorkerClient[] = [];
+  const versus =
+    versusParts === undefined
+      ? undefined
+      : {
+          run_id: versusParts[0] as string,
+          run_config_hash: versusParts[1] as string,
+          generation: Number(versusParts[2]),
+          checkpoints: { preview: versusParts[3] as string, battle: versusParts[4] as string },
+          policy_ids: { sample: versusParts[5] as string, argmax: versusParts[6] as string },
+        };
+  const versusClient = versus === undefined ? undefined : workerFor(versus.checkpoints, need("versus-dir"), need("versus-encoder-version"));
+  const versusTeamSet = values["versus-team-set"] === undefined ? [] : readTeamSet(values["versus-team-set"]);
   try {
     previousClient = previousPair === undefined ? undefined : workerFor(previousPair);
     const pool = poolSource(engine, config);
     await client.start();
     await previousClient?.start();
     await ablationClient?.start();
+    await versusClient?.start();
     for (const spec of anchorSpecs) {
       const anchorClient = workerFor(spec.checkpoints);
       anchorClients.push(anchorClient); // closed in `finally` even if its start fails
@@ -181,6 +216,7 @@ export async function runProgressCli(argv: readonly string[], print: (line: stri
             },
           }),
       ...(anchor_games === undefined ? {} : { anchors: anchorSpecs.map((spec, index) => ({ ...spec, client: anchorClients[index] as PolicyWorkerClient })), anchor_games }),
+      ...(versus === undefined || versusClient === undefined || run_games === undefined ? {} : { versus: { ...versus, client: versusClient }, run_games }),
       ...(ablationParts === undefined || ablationClient === undefined
         ? {}
         : {
@@ -193,8 +229,8 @@ export async function runProgressCli(argv: readonly string[], print: (line: stri
       pool,
       games,
       record_games,
-      training_teams: new Set(teamSet.teams),
-      league_seeds: committedPlanSeeds(need("run-dir")),
+      training_teams: new Set([...teamSet.teams, ...versusTeamSet]),
+      league_seeds: new Set([...committedPlanSeeds(need("run-dir")), ...(values["versus-dir"] === undefined ? [] : committedPlanSeeds(values["versus-dir"]))]),
     });
     writeProgress(need("out"), result);
     print(
@@ -221,7 +257,7 @@ export async function runProgressCli(argv: readonly string[], print: (line: stri
       try {
         await previousClient?.close(); // every worker is closed even if closing another throws
       } finally {
-        await Promise.allSettled([...anchorClients, ...(ablationClient === undefined ? [] : [ablationClient])].map((c) => c.close()));
+        await Promise.allSettled([...anchorClients, ...(ablationClient === undefined ? [] : [ablationClient]), ...(versusClient === undefined ? [] : [versusClient])].map((c) => c.close()));
       }
     }
   }

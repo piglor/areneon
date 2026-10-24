@@ -67,6 +67,13 @@ ANCHOR_NOTE = (
     "pairs. Descriptive pair-level bootstrap intervals, conditional on the fixed validation plan, "
     "no multiplicity control across anchors and modes: none is a test or a claim."
 )
+VERSUS_NOTE = (
+    "A cross-run comparison: another run's frozen pair, played from both seats on this run's "
+    "validation pairs and seeds. The paired difference is the pair score minus one half; above "
+    "zero means this run's pair scored more than the other run's on these pairs. Descriptive "
+    "pair-level bootstrap intervals, conditional on the fixed validation plan: not held-out "
+    "evidence, not a gate result, not a test or a claim."
+)
 ABLATION_NOTE = (
     "Team Preview ablation: this generation's Battle network plays both scripted baselines "
     "(argmax) with three Previews: its own learned one, a uniformly random one and an earlier "
@@ -217,7 +224,7 @@ def _progress_section(model: ReportModel, tips: Tips) -> str:
                 y_label=lambda v: f"{round(v * 100)}%",
                 ref=0.5,
                 missing="not applicable"
-                if stem == "previous" or stem.startswith("anchor-")
+                if stem in ("previous", "run") or stem.startswith("anchor-")
                 else NOT_EVALUATED,
             )
         )
@@ -268,6 +275,7 @@ def _progress_section(model: ReportModel, tips: Tips) -> str:
     )
     out.append(_anchor_section(model, done))
     out.append(_damage_aware_section(model, done))
+    out.append(_versus_section(model, done))
     out.append("<h3>Score by seat (diagnostic)</h3>")
     out.append(
         _table(
@@ -811,6 +819,42 @@ def _anchor_section(model: ReportModel, done: list[int]) -> str:
         ],
         rows,
         ANCHOR_NOTE,
+    )
+
+
+def _versus_section(model: ReportModel, done: list[int]) -> str:
+    rows = [
+        [
+            str(g),
+            esc(m.match_id) + f' <span class="muted">({esc(m.seen_label or "")})</span>',
+            esc(f"{m.versus[0]} g{m.versus[1]}") if m.versus else "",
+            str(m.games),
+            str(m.pairs),
+            f"{m.wins} / {m.ties} / {m.losses}",
+            pct(m.score_ppm),
+            signed_pct(m.diff[0]),
+            f"{signed_pct(m.diff[1], down=True)} to {signed_pct(m.diff[2], up=True)}",
+        ]
+        for g in done
+        for m in model.progress[g].matches
+        if m.versus is not None and m.diff is not None
+    ]
+    if not rows:
+        return ""
+    return "<h3>Head to head against another run (cross-run comparison)</h3>" + _table(
+        [
+            ("Generation", True),
+            ("Match", False),
+            ("Other run", False),
+            ("Games", True),
+            ("Pairs", True),
+            ("Wins / ties / losses", True),
+            ("Pair score", True),
+            ("Difference to one half", True),
+            (f"{PAIRS}, conditional on the plan", True),
+        ],
+        rows,
+        VERSUS_NOTE,
     )
 
 

@@ -22,6 +22,7 @@ from areneon_ml.progress.run import (
     NodeProgressPlayer,
     PreviousPair,
     ProgressRequest,
+    RunPair,
 )
 
 from tests.ml.model.support import FORMAT_DIR
@@ -39,6 +40,14 @@ DATA = FORMAT_DIR / "engine-data.json"
 def run(tmp_path_factory: pytest.TempPathFactory) -> Path:
     run_dir = tmp_path_factory.mktemp("main") / "run"
     make_run(run_dir, generations=2)
+    return run_dir
+
+
+@pytest.fixture(scope="module")
+def other(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """A second committed run: another key, other initial weights, the same dataset."""
+    run_dir = tmp_path_factory.mktemp("other") / "run"
+    make_run(run_dir, generations=2, config=dataset_config("other-run", (21, 22)))
     return run_dir
 
 
@@ -308,6 +317,87 @@ def test_anchors_and_anchor_games_reach_the_evaluation(
     ids = [m["match_id"] for m in done["matches"]]
     assert "anchor-g0-sample" in ids
     assert "anchor-g7-sample" not in ids
+
+
+def test_the_head_to_head_flags_reach_the_evaluation_and_the_look_log(
+    run: Path,
+    other: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    fake_node(monkeypatch, run)
+    code = main(
+        args(
+            run,
+            *("--generation", "1", "--games", "2", "--record-games", "1"),
+            *("--versus-run-dir", str(other), "--versus-generation", "1", "--run-games", "4"),
+            *("--progress-dir", str(tmp_path / "p")),
+        )
+    )
+    assert code == 0
+    printed = json.loads(capsys.readouterr().out)
+    (done,) = printed["generations"]
+    assert done["head_to_head"]["label"] == "cross-run comparison"
+    assert done["head_to_head"]["lineage"]["label"] == "independent lineage"
+    assert {m["match_id"]: m["games"] for m in done["matches"]}["run-sample"] == 4
+    assert printed["looks"] == 1
+
+
+def test_the_head_to_head_flags_go_together_and_never_with_all(
+    run: Path, other: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    fake_node(monkeypatch, run)
+    assert main(args(run, "--generation", "1", "--versus-run-dir", str(other))) == EXIT_REFUSED
+    assert "go together" in capsys.readouterr().err
+    both = ("--versus-run-dir", str(other), "--versus-generation", "1")
+    assert main(args(run, "--all", *both)) == EXIT_REFUSED
+    assert "needs --generation" in capsys.readouterr().err
+
+
+def test_the_node_player_passes_the_other_run_as_flags(tmp_path: Path) -> None:
+    scripts = tmp_path / "packages" / "team-dataset" / "scripts"
+    scripts.mkdir(parents=True)
+    out = tmp_path / "args.json"
+    (scripts / "progress.ts").write_text(
+        f"import sys, json; open({str(out)!r}, 'w').write(json.dumps(sys.argv[1:]));"
+        "print(json.dumps({'wall_ms': {}}))"
+    )
+    player = NodeProgressPlayer(
+        repo=tmp_path,
+        node=sys.executable,
+        worker_python="/venv/python",
+        run_dir=tmp_path / "run",
+        config_path=tmp_path / "run" / "run-config.json",
+        engine_data=tmp_path / "data.json",
+        encoder_version="enc1:x",
+    )
+    pair = RunPair(
+        "other",
+        "c" * 64,
+        4,
+        "a" * 64,
+        "b" * 64,
+        "policy:s",
+        "policy:a",
+        tmp_path / "other",
+        tmp_path / "other" / "team-set.json",
+        "enc1:y",
+        200,
+    )
+    request = ProgressRequest(
+        0, "p", "b", "s", "a", "m", tmp_path / "ts.json", 2, 0, tmp_path / "w", versus=pair
+    )
+    player.progress(request)
+    argv = json.loads(out.read_text())
+    flags = dict(zip(argv[::2], argv[1::2], strict=True))
+    assert flags["--versus"] == f"other,{'c' * 64},4,{'a' * 64},{'b' * 64},policy:s,policy:a"
+    assert flags["--versus-dir"] == str(tmp_path / "other")
+    assert flags["--versus-encoder-version"] == "enc1:y"
+    assert flags["--versus-team-set"] == str(tmp_path / "other" / "team-set.json")
+    assert flags["--run-games"] == "200"
+    player.progress(dataclasses.replace(request, versus=None))
+    assert "--versus" not in json.loads(out.read_text())
 
 
 def test_the_preview_ablation_flag_reaches_the_evaluation_and_refuses_all(

@@ -198,6 +198,32 @@ a committed directory is verified. An `anchor-*` row is a **seen, same-lineage
 comparison** too, and a directory committed without the anchors it was asked for
 is kept and reported (`anchors: ... missing`).
 
+**Head to head against another run (ADR-010 erratum A4 item 6).**
+`--generation G --versus-run-dir OTHER --versus-generation H [--run-games 200]`
+adds `run-sample` and `run-argmax` matches: this run's generation-G pair against
+run OTHER's generation-H frozen pair (sample against sample, argmax against
+argmax), every validation pair of this run's plan from both seats on the same seeds,
+beside the usual `actor-rule@v1` and `random-legal@v1` matches. The other run is
+only read (no lock, nothing written into it); it gets a worker of its own that loads
+its checkpoints and is checked against its own encoder version, so the two runs need
+not share one. Refused before any game: the same run directory or run key, a
+different format or team dataset (so one validation split), a run without a team
+dataset, a generation the other run has not committed, a non-synthetic checkpoint
+record, a checkpoint the two runs share, a progress seed equal to a seed of either
+run's committed plans, a validation team in either run's `team-set.json`, and more
+games than disjoint pairs. The opponent variant of the record is
+`{kind: "run", run_id, run_config_hash, generation, policy_id, checkpoints}`
+(`plan.run_games_per_match` is present exactly when such matches are). The printed
+summary carries `head_to_head` (label "cross-run comparison", the other run,
+and `lineage`: the C1/C6 checker's verdict on both runs' records, "independent
+lineage" only when the ancestries are disjoint, else "seen"); the dashboard and the
+replay pages carry the same label, with the pair-level interval and the pair score
+minus 1/2. It is a progress view, never held-out evidence or a gate result, and the
+adopt rule is applied by the experiment, not here. Use a progress directory of its own
+(a committed generation is never rewritten). The actor-rule matches in the record are
+this run's, on the same pairs and seeds; the other run's actor-rule score on these
+pairs is not played.
+
 **Every pair is played from both seats (ADR-017 erratum E2).** Validation pair
 `k` is two games, `2k` and `2k+1`: the candidate on p1 holding team `a` against
 the opponent on p2 holding `b`, then the opponent on p1 holding `a` against the
@@ -222,8 +248,8 @@ gives is refused before the worker starts, naming the limit.
 (`schema_version` 2, contract `progress-evaluation-record-2` beside the
 unchanged version 1). Its games name their pair (`game >> 1`, also an optional
 `pair` field of the stored game record, a minor change within v1, whose seed is
-then the pair's). The opponent variants are `baseline`, `previous` and `anchor`
-(`{kind, generation, policy_id, checkpoints}`); `plan.anchor_games_per_match` is
+then the pair's). The opponent variants are `baseline`, `previous`, `anchor`
+(`{kind, generation, policy_id, checkpoints}`) and `run`; `plan.anchor_games_per_match` is
 present exactly when anchor matches are, and `teams.pairs_used` is half the
 largest games per match. A version 1 record (one game per pair, the candidate
 alternating seats) stays readable as it is and is never rewritten or upgraded.
