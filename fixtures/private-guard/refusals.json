@@ -1,0 +1,20 @@
+{
+  "owner_session": {
+    "agent_session": "refusing: an agent session is running this; use your own terminal",
+    "not_a_terminal": "refusing: stdin, stdout and stderr must all be a terminal; run it in an interactive terminal",
+    "no_controlling_terminal": "refusing: no controlling terminal to show the detail on"
+  },
+  "private_root": {
+    "not_absolute": "refusing: the private output root must be an absolute path",
+    "unreadable": "refusing: the private output root cannot be read",
+    "not_a_directory": "refusing: the private output root is not a real directory",
+    "symbolic_link": "refusing: the private output root is, or lies under, a symbolic link",
+    "wrong_owner": "refusing: the private output root is not owned by the invoking user",
+    "group_or_other_access": "refusing: the private output root must have mode 0700",
+    "unsafe_parent": "refusing: a parent of the private output root is writable by others or owned by another user",
+    "windows_mount": "refusing: the private output root is on a Windows drive mount",
+    "no_private_data_segment": "refusing: the private output root has no private-data path segment",
+    "bad_file_name": "refusing: not a plain file name for the private output root",
+    "exists": "refusing: the private output file already exists"
+  }
+}

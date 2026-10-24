@@ -266,22 +266,8 @@ export interface InventoryTerminal {
   openDetail(): DetailSink;
 }
 
-/**
- * Why a run must be refused, or null (ADR-014 X6). Accident prevention, not a
- * boundary: an agent that sets up a pty and clears its environment gets past it.
- */
-export function terminalRefusal(
-  env: Record<string, string | undefined>,
-  isTerminal: { stdin: boolean; stdout: boolean; stderr: boolean },
-): string | null {
-  if (env["CLAUDECODE"] || env["AI_AGENT"]) {
-    return "refusing: an agent session is running this; use your own terminal";
-  }
-  if (!isTerminal.stdin || !isTerminal.stdout || !isTerminal.stderr) {
-    return "refusing: stdin, stdout and stderr must all be a terminal; run it in an interactive terminal";
-  }
-  return null;
-}
+// `terminalRefusal` moved to the shared owner-session guard (`owner-session.ts`); same behaviour.
+export { terminalRefusal } from "./owner-session.ts";
 
 export interface InventorySummary {
   counts: InventoryCounts;

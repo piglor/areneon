@@ -441,3 +441,19 @@ export {
   writeTeacherRun,
 } from "./teacher-generation.ts";
 export { runTeacherCli } from "./teacher-cli.ts";
+export {
+  assertGuardedChild,
+  assertOwnerSession,
+  OWNER_SESSION_REFUSALS,
+  OwnerSessionError,
+  type OwnerSession,
+  type OwnerSessionCode,
+} from "./owner-session.ts";
+export {
+  assertPrivateRoot,
+  PRIVATE_ROOT_REFUSALS,
+  PrivateRootError,
+  privateRootFile,
+  type PrivateRootCode,
+  writePrivateFile,
+} from "./private-root.ts";
