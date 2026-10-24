@@ -14,7 +14,7 @@ dev = [
     "pyyaml==6.0.3",
     "hypothesis==6.170.1",
     "pre-commit>=4",
-    "datamodel-code-generator==0.85.0",
+    "datamodel-code-generator==0.86.0",
     "types-jsonschema==4.26.0.20261006",
     "areneon-contracts",
     "areneon-ml",
