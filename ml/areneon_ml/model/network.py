@@ -35,6 +35,13 @@ from areneon_ml.model.encoder import (
     Layout,
 )
 from areneon_ml.model.gamedata import GameData
+from areneon_ml.model.options import (
+    OptionError,
+    Options,
+    layout_changing,
+    read_options,
+    with_options,
+)
 
 ROLES = ("battle", "preview")
 ACTIONS = 3  # pass, move, switch
@@ -62,15 +69,20 @@ def _number_field(source: Mapping[str, Any], name: str) -> float:
 
 def encoder_config_from_dict(source: Mapping[str, Any]) -> EncoderConfig:
     """The inverse of ``EncoderConfig.as_dict``; unknown or missing keys are refused."""
-    expected = {f.name for f in fields(EncoderConfig)}
-    if set(source) != expected:
-        raise ConfigError(f"encoder config keys must be exactly {sorted(expected)}")
+    expected = {f.name for f in fields(EncoderConfig)} - {"options"}
+    if set(source) - {"options"} != expected:
+        raise ConfigError(f"encoder config keys must be exactly {sorted(expected)} (and options)")
+    try:
+        options = read_options("encoder", source["options"]) if "options" in source else ()
+    except OptionError as exc:
+        raise ConfigError(str(exc)) from exc
     ints = ("volatile_buckets", "condition_buckets", "max_moves", "max_team", "max_picks")
     try:
         return EncoderConfig(
             **{name: _int_field(source, name) for name in ints},
             stat_scale=_number_field(source, "stat_scale"),
             turn_scale=_number_field(source, "turn_scale"),
+            options=options,
         )
     except ValueError as exc:
         raise ConfigError(str(exc)) from exc
@@ -97,6 +109,7 @@ class ModelConfig:
     n_layers: int
     n_heads: int
     d_ff: int
+    options: Options = ()  # optional network options (A4 item 2); empty keeps today's bytes
 
     def __post_init__(self) -> None:
         bounds = {
@@ -112,24 +125,39 @@ class ModelConfig:
             raise ConfigError("d_model must be a multiple of n_heads")
 
     def as_dict(self) -> dict[str, Any]:
-        return {
-            "encoder": self.encoder.as_dict(),
-            "d_model": self.d_model,
-            "n_layers": self.n_layers,
-            "n_heads": self.n_heads,
-            "d_ff": self.d_ff,
-        }
+        return with_options(
+            {
+                "encoder": self.encoder.as_dict(),
+                "d_model": self.d_model,
+                "n_layers": self.n_layers,
+                "n_heads": self.n_heads,
+                "d_ff": self.d_ff,
+            },
+            self.options,
+        )
+
+    @property
+    def layout_changing(self) -> bool:
+        """Whether an option changes the checkpoint tensor layout (its format is bumped)."""
+        return layout_changing("network", self.options) or layout_changing(
+            "encoder", self.encoder.options
+        )
 
     @classmethod
     def from_dict(cls, source: Mapping[str, Any]) -> ModelConfig:
         keys = {"encoder", "d_model", "n_layers", "n_heads", "d_ff"}
-        if set(source) != keys:
-            raise ConfigError(f"model config keys must be exactly {sorted(keys)}")
+        if set(source) - {"options"} != keys:
+            raise ConfigError(f"model config keys must be exactly {sorted(keys)} (and options)")
+        try:
+            options = read_options("network", source["options"]) if "options" in source else ()
+        except OptionError as exc:
+            raise ConfigError(str(exc)) from exc
         encoder = source["encoder"]
         if not isinstance(encoder, Mapping):
             raise ConfigError("encoder must be an object")
         return cls(
             encoder=encoder_config_from_dict(encoder),
+            options=options,
             **{name: _int_field(source, name) for name in keys - {"encoder"}},
         )
 

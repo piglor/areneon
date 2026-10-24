@@ -65,6 +65,10 @@ export interface TrainingRunConfig {
      * Feed-forward width.
      */
     d_ff: number;
+    /**
+     * Optional network options (ADR-010 erratum A4 item 2). Absent keeps today's bytes, hashes and checkpoints. A named option is added by the ticket of the experiment arm that needs it; none is defined yet, so only an empty object passes.
+     */
+    options?: {};
   };
   /**
    * What one generation plays (ADR-010 section 1).
@@ -228,6 +232,10 @@ export interface Encoder {
    * Divisor of the turn counter.
    */
   turn_scale: number;
+  /**
+   * Optional encoder options (ADR-010 erratum A4 item 2). Absent keeps today's bytes, hashes and checkpoints. A named option is added by the ticket of the experiment arm that needs it; none is defined yet, so only an empty object passes.
+   */
+  options?: {};
 }
 /**
  * A share of the generation's games played against a scripted baseline (ADR-010 section 4). The baseline's seat never trains the policy.

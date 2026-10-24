@@ -37,6 +37,9 @@ from areneon_ml.model.gamedata import GameData
 from areneon_ml.model.network import ConfigError, ModelConfig, PolicyNetwork, init_network
 
 FORMAT = "1"
+# Written only for a model config with a layout-changing option (ADR-010 erratum A4 item 2);
+# a file without such an option keeps format 1, byte for byte.
+FORMAT_OPTIONS = "2"
 LENGTH_PREFIX = 8  # bytes of the little-endian header length
 PREFIX = "areneon."
 MAX_HEADER_BYTES = 1 << 20  # the JSON header of a checkpoint is a few kilobytes
@@ -46,6 +49,10 @@ _DTYPE = "F32"
 
 class CheckpointFileError(ValueError):
     """Bytes are not a checkpoint this build can load, or are not the one asked for."""
+
+
+class CheckpointOptionsError(CheckpointFileError):
+    """A checkpoint's model options are not the configured network's (A4 item 2)."""
 
 
 def checkpoint_id(data: bytes) -> str:
@@ -138,7 +145,7 @@ def checkpoint_bytes(network: PolicyNetwork, game: GameData) -> bytes:
     return pack_safetensors(
         state,
         {
-            f"{PREFIX}format": FORMAT,
+            f"{PREFIX}format": FORMAT_OPTIONS if network.config.layout_changing else FORMAT,
             f"{PREFIX}role": network.role,
             f"{PREFIX}model_config": jcs(network.config.as_dict()).decode("utf-8"),
             f"{PREFIX}encoder_version": encoder_version(game, network.config.encoder),
@@ -198,8 +205,22 @@ def write_checkpoint(run_dir: Path, data: bytes) -> str:
     return found
 
 
+def _check_options(format_: str, config: ModelConfig, configured: ModelConfig | None) -> None:
+    """The file's format must fit its options, and they must be the configured network's."""
+    if format_ != (FORMAT_OPTIONS if config.layout_changing else FORMAT):
+        raise CheckpointFileError("the checkpoint's format does not fit its model options")
+    if configured is not None and (
+        config.options != configured.options or config.encoder.options != configured.encoder.options
+    ):
+        raise CheckpointOptionsError("the checkpoint was made with other model options")
+
+
 def load_checkpoint(
-    data: bytes, game: GameData, expected_id: str, role: str | None = None
+    data: bytes,
+    game: GameData,
+    expected_id: str,
+    role: str | None = None,
+    configured: ModelConfig | None = None,
 ) -> PolicyNetwork:
     """Rebuild the network a checkpoint holds, refusing anything that does not fit.
 
@@ -211,6 +232,10 @@ def load_checkpoint(
     (when ``role`` is given) another role;
     another engine-data table or encoder version than ``game``'s; a configuration
     that is not valid; tensors whose names, dtype or shapes differ from the network's.
+    A format that does not fit the file's options (``FORMAT_OPTIONS`` exactly when an option
+    changes the layout) is refused. When ``configured`` (the model config the caller runs
+    under) is given, the file's network and encoder options must equal its: a
+    ``CheckpointOptionsError`` otherwise.
     """
     if not _ID.fullmatch(expected_id):
         raise CheckpointFileError("a checkpoint id is 64 lowercase hex digits")
@@ -218,7 +243,7 @@ def load_checkpoint(
         raise CheckpointFileError(f"checkpoint {expected_id}: its bytes hash to another id")
     header = read_header(data)
     meta = _metadata(header)
-    if meta[f"{PREFIX}format"] != FORMAT:
+    if meta[f"{PREFIX}format"] not in (FORMAT, FORMAT_OPTIONS):
         raise CheckpointFileError(f"unsupported checkpoint format {meta[f'{PREFIX}format']!r}")
     if role is not None and meta[f"{PREFIX}role"] != role:
         raise CheckpointFileError(
@@ -229,6 +254,7 @@ def load_checkpoint(
         network = init_network(meta[f"{PREFIX}role"], game, config, seed=0)
     except (json.JSONDecodeError, ConfigError, RuntimeError, MemoryError) as exc:
         raise CheckpointFileError(f"the checkpoint's configuration is not valid: {exc}") from exc
+    _check_options(meta[f"{PREFIX}format"], config, configured)
     if meta[f"{PREFIX}engine_data_hash"] != game.engine_data_hash:
         raise CheckpointFileError("the checkpoint was made for another engine-data table")
     if meta[f"{PREFIX}encoder_version"] != encoder_version(game, config.encoder):

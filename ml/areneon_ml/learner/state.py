@@ -23,7 +23,8 @@ from areneon_contracts.contracts import CanonicalError, jcs, sha256_hex
 
 from areneon_ml.checkpoint.files import CheckpointFileError, pack_safetensors, unpack_safetensors
 from areneon_ml.learner.trainer import Learner
-from areneon_ml.model.network import ROLES
+from areneon_ml.model.network import ROLES, ModelConfig
+from areneon_ml.model.options import options_dict
 
 STATE_FORMAT = 1
 _NAME = re.compile(r"[A-Za-z0-9_.]+")
@@ -72,6 +73,20 @@ def gather_tensors(
     return tensors, steps
 
 
+class LearnerOptionsError(LearnerStateError):
+    """A learner state was made under other model options than the learner's (A4 item 2)."""
+
+
+def model_options_of(model: ModelConfig) -> dict[str, Any]:
+    """The options a sidecar records: ``{}`` without any, else ``network`` and/or ``encoder``."""
+    out: dict[str, Any] = {}
+    if model.options:
+        out["network"] = options_dict(model.options)
+    if model.encoder.options:
+        out["encoder"] = options_dict(model.encoder.options)
+    return out
+
+
 def pack_state(learner: Learner) -> PackedState:
     """The two files' bytes for the learner as it is now."""
     tensors, steps = gather_tensors(learner.networks, learner.optimisers, learner.generator)
@@ -84,6 +99,9 @@ def pack_state(learner: Learner) -> PackedState:
         "optimizer_steps": steps,
         "rng": {"learner": "rng.learner"},
     }
+    model_options = model_options_of(learner.config.model)
+    if model_options:  # the key is omitted without options, so such a state keeps its bytes
+        sidecar["model_options"] = model_options
     if learner.last_rate_micro is not None:  # linear schedule only: the key is otherwise omitted
         sidecar["learning_rate_micro"] = learner.last_rate_micro
     data = pack_safetensors(tensors)
@@ -140,6 +158,8 @@ def _check_sidecar(described: Mapping[str, Any], learner: Learner) -> int:
         raise LearnerStateError(
             f"unsupported learner state format {described.get('schema_version')!r}"
         )
+    if described.get("model_options") != (model_options_of(learner.config.model) or None):
+        raise LearnerOptionsError("the learner state was made under other model options")
     if described.get("run_config_hash") != learner.config.hash:
         raise LearnerStateError("the learner state was made under another TrainingRunConfig")
     generation = described.get("generation")
