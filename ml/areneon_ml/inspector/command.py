@@ -29,7 +29,9 @@ PoolLoader = Callable[[Path, str, Path], Pool]
 REPLAYS = "replays"
 #: The directory the progress-game replay command fills (omniscient pages): kept the same way.
 PROGRESS_REPLAYS = "progress-replays"
-_KEPT = (REPLAYS, PROGRESS_REPLAYS)
+#: The directory of engine re-simulation pages (omniscient too): kept the same way.
+RESIMULATIONS = "resimulations"
+_KEPT = (REPLAYS, PROGRESS_REPLAYS, RESIMULATIONS)
 
 
 def existing_replays(out: Path) -> set[tuple[int, int]]:

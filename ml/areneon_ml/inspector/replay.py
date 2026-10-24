@@ -54,6 +54,8 @@ class Decision:
     choice: str
     request_seq: int
     policy: str
+    #: The engine's refusal of a pending choice (``[Unavailable choice] ...``), else None.
+    refused: str | None = None
 
 
 @dataclass(frozen=True)
@@ -104,7 +106,7 @@ def _decisions(episode: dict[str, Any], lines: tuple[str, ...], name: str) -> tu
         seq = item["identity"]["request_seq"]
         if not 1 <= seq <= requests:
             raise InspectError(f"episodes/{name}: a decision answers a request the channel lacks")
-        out.append(Decision(item["choice"], seq, item["source_policy_id"]))
+        out.append(Decision(item["choice"], seq, item["source_policy_id"], item.get("refused")))
     if len({d.request_seq for d in out}) != len(out):
         raise InspectError(f"episodes/{name}: two decisions answer one request")
     return tuple(out)
