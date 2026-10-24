@@ -11,6 +11,9 @@
   directory, ready for ``python -m areneon_ml.checkpoint classify|independent``.
 * ``report``: write the run dashboard (training curves and, with a progress root, the progress
   evaluation) as one offline HTML page.
+* ``private-test``: OWNER ONLY (refused in an agent session and on non-terminal stdio): one frozen
+  pair on the owner's own teams, from both seats, counts and scores only, written under a private
+  output root (ADR-015 erratum E1).
 * ``progress``: the progress evaluation of a committed generation (ADR-017): its frozen pair
   against the scripted baselines (and, from generation 1, the previous generation's pair and,
   with ``--anchors``, fixed earlier generations) on the validation teams, written to
@@ -50,6 +53,7 @@ from areneon_ml.loop.driver import Loop, LoopError, export_provenance
 from areneon_ml.loop.play import NodePlayer, PlayError
 from areneon_ml.model.encoder import encoder_version
 from areneon_ml.model.gamedata import GameData
+from areneon_ml.private.private_test import PrivateTestRequest, private_test_main
 from areneon_ml.progress.looks import Look, LookError, append_look, looks_path
 from areneon_ml.progress.records import ProgressRecordError
 from areneon_ml.progress.run import (
@@ -222,6 +226,39 @@ def _parser() -> argparse.ArgumentParser:  # noqa: PLR0915
     progress.add_argument("--engine-data", type=Path, required=True)
     progress.add_argument("--node", default="node", help="the node executable")
     progress.add_argument("--worker-python", default=sys.executable, help="CPU torch worker python")
+    private = commands.add_parser(
+        "private-test",
+        help="OWNER ONLY: measure a frozen pair on your own teams (counts and scores only)",
+    )
+    private.add_argument("--run-dir", type=Path, required=True)
+    private.add_argument("--generation", type=int, required=True)
+    private.add_argument(
+        "--out-root",
+        type=Path,
+        required=True,
+        help="an existing 0700 directory with a private-data path segment: the record goes there",
+    )
+    private.add_argument("--engine-data", type=Path, required=True)
+    private.add_argument("--source", choices=("staging", "snapshot", "dataset"), required=True)
+    private.add_argument("--subset", choices=("all", "holdout"), default="all")
+    private.add_argument(
+        "--teams-dir", type=Path, default=REPO / "private-data" / "teams", help="source staging"
+    )
+    private.add_argument(
+        "--snapshots-dir",
+        type=Path,
+        default=REPO / "private-data" / "snapshots",
+        help="source snapshot: the verified local copies",
+    )
+    private.add_argument("--snapshot-hash", help="source snapshot: the pinned snapshot hash")
+    private.add_argument("--salt-file", help="a salt file of the out root, to repeat a test")
+    private.add_argument("--max-pairs", type=_positive, help="play only this many pairs")
+    private.add_argument("--damage-aware", action="store_true", help="also play damage-aware@v1")
+    private.add_argument("--damage-aware-budget-minutes", type=_positive, default=None)
+    private.add_argument("--opponent-run-dir", type=Path, help="another frozen pair as opponent")
+    private.add_argument("--opponent-generation", type=int)
+    private.add_argument("--node", default="node", help="the node executable")
+    private.add_argument("--worker-python", default=sys.executable, help="CPU torch worker python")
     replay = commands.add_parser(
         "replay", help="write replay pages of training games under <out>/replays/"
     )
@@ -352,8 +389,45 @@ def _run(args: argparse.Namespace) -> dict[str, object]:
     return result.as_dict(loop.frozen)
 
 
+def _private_test(args: argparse.Namespace) -> int:
+    if args.damage_aware_budget_minutes is not None and not args.damage_aware:
+        _parser().error("--damage-aware-budget-minutes needs --damage-aware")
+    minutes = (
+        (
+            DEFAULT_DAMAGE_AWARE_BUDGET_MINUTES
+            if args.damage_aware_budget_minutes is None
+            else args.damage_aware_budget_minutes
+        )
+        if args.damage_aware
+        else None
+    )
+    request = PrivateTestRequest(
+        run_dir=args.run_dir,
+        generation=args.generation,
+        out_root=args.out_root,
+        engine_data=args.engine_data.resolve(),
+        source=args.source,
+        subset=args.subset,
+        teams_dir=args.teams_dir,
+        snapshots_dir=args.snapshots_dir,
+        snapshot_hash=args.snapshot_hash,
+        salt_file=args.salt_file,
+        max_pairs=args.max_pairs,
+        damage_aware_budget_ms=None if minutes is None else minutes * 60_000,
+        opponent_run_dir=args.opponent_run_dir,
+        opponent_generation=args.opponent_generation,
+        node=args.node,
+        worker_python=args.worker_python,
+        repo=REPO,
+    )
+    return private_test_main(request)
+
+
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(sys.argv[1:] if argv is None else argv)
+    if args.command == "private-test":
+        # Its own wrapper: the guard runs first and only fixed words are ever shown.
+        return _private_test(args)
     try:
         if args.command == "run":
             out = _run(args)

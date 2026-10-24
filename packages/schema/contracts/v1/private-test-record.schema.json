@@ -1,0 +1,373 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:areneon:schema:contracts:v1:private-test-record",
+  "title": "PrivateTestRecord",
+  "description": "ADR-015 erratum E1, item 2: the counts and scores of one frozen pair on the owner's private test set. Never committed or published (data_class private). It holds no team, species, hash of a team or file name: the test set is named by a salted commitment and a count.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "data_class",
+    "run_id",
+    "run_config_hash",
+    "generation",
+    "generation_manifest_sha256",
+    "checkpoints",
+    "candidate_data_class",
+    "version_manifest",
+    "test_set",
+    "plan",
+    "matches"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "data_class": {
+      "description": "Always private: the pair or an opponent may have private ancestry, and the teams may be the owner's.",
+      "const": "private"
+    },
+    "run_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+      "description": "The run key (TrainingRunConfig.seeds.run_key) of the pair under test."
+    },
+    "run_config_hash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "SHA-256 of the run's TrainingRunConfig JCS bytes."
+    },
+    "generation": {
+      "description": "The generation whose frozen pair was tested.",
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "generation_manifest_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "SHA-256 of generations/g<N>/manifest.json."
+    },
+    "checkpoints": {
+      "$ref": "#/$defs/Checkpoints"
+    },
+    "candidate_data_class": {
+      "description": "The data class of the pair's checkpoint records: private when either has private ancestry (then the source is a snapshot's hold-out or a public dataset).",
+      "enum": [
+        "synthetic",
+        "private"
+      ]
+    },
+    "version_manifest": {
+      "$ref": "#/$defs/VersionManifest"
+    },
+    "test_set": {
+      "$ref": "#/$defs/TestSet"
+    },
+    "plan": {
+      "$ref": "#/$defs/Plan"
+    },
+    "matches": {
+      "description": "Sorted by match_id, each once.",
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/Match"
+      }
+    }
+  },
+  "$defs": {
+    "VersionManifest": {
+      "description": "Replay identity of a battle (ADR-003, ADR-007): the pinned engine commit, the format, and the hashes of the engine ruleset and of Areneon's own format rules.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "showdown_commit",
+        "format_id",
+        "regulation",
+        "ruleset_hash",
+        "format_rules_hash"
+      ],
+      "properties": {
+        "showdown_commit": {
+          "description": "The pinned engine commit.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "format_id": {
+          "type": "string",
+          "pattern": "^[a-z0-9]+$"
+        },
+        "regulation": {
+          "type": "string",
+          "minLength": 1
+        },
+        "ruleset_hash": {
+          "description": "SHA-256 of the canonical engine ruleset.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "format_rules_hash": {
+          "description": "SHA-256 of Areneon's format rules record (ADR-007).",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "Checkpoints": {
+      "description": "A frozen pair, by the ids of its two checkpoints.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "preview",
+        "battle"
+      ],
+      "properties": {
+        "preview": {
+          "description": "Checkpoint id (SHA-256 of the file) of the Team Preview network.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "battle": {
+          "description": "Checkpoint id of the battle network.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "LatencyBudget": {
+      "description": "The per-decision latency budgets of the run's config.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "preview_ms",
+        "battle_ms"
+      ],
+      "properties": {
+        "preview_ms": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "battle_ms": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    "TestSet": {
+      "description": "The test set, named by a salted commitment and counts only.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "commitment",
+        "team_count",
+        "pairs",
+        "source_kind",
+        "subset"
+      ],
+      "properties": {
+        "commitment": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "SHA-256 of the JCS of {salt, sorted canonical team hashes}; the 256-bit salt stays in the private root."
+        },
+        "team_count": {
+          "description": "Teams in the set.",
+          "type": "integer",
+          "minimum": 2,
+          "maximum": 9007199254740991
+        },
+        "pairs": {
+          "description": "Disjoint team pairs played: at most half the teams.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "source_kind": {
+          "description": "Where the teams came from: the staged directory, a pinned snapshot's verified local copy or a public dataset's validation split.",
+          "enum": [
+            "staging",
+            "snapshot",
+            "dataset"
+          ]
+        },
+        "snapshot_hash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "The pinned snapshot; present exactly for source_kind snapshot."
+        },
+        "dataset_hash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "The public dataset; present exactly for source_kind dataset."
+        },
+        "subset": {
+          "description": "all: every active record; holdout: only the hold-out records (a snapshot only).",
+          "enum": [
+            "all",
+            "holdout"
+          ]
+        }
+      }
+    },
+    "Plan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "seed_derivation",
+        "pairing",
+        "games_per_match",
+        "max_turns",
+        "latency_budget_ms"
+      ],
+      "properties": {
+        "kind": {
+          "description": "Disjoint pairs, each played from both seats with one battle seed.",
+          "const": "disjoint-pairs"
+        },
+        "seed_derivation": {
+          "const": "private-test-seed/1"
+        },
+        "pairing": {
+          "const": "private-test-pairing/1"
+        },
+        "games_per_match": {
+          "description": "Twice the pairs.",
+          "type": "integer",
+          "minimum": 2,
+          "maximum": 9007199254740991
+        },
+        "max_turns": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "latency_budget_ms": {
+          "$ref": "#/$defs/LatencyBudget"
+        }
+      }
+    },
+    "ForfeitCount": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "side",
+        "cause",
+        "count"
+      ],
+      "properties": {
+        "side": {
+          "enum": [
+            "candidate",
+            "opponent"
+          ]
+        },
+        "cause": {
+          "type": "string",
+          "pattern": "^[a-z][a-z_]{0,31}$"
+        },
+        "count": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    "Match": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "match_id",
+        "policy_id",
+        "mode",
+        "opponent_policy_id",
+        "games",
+        "wins",
+        "ties",
+        "losses",
+        "turn_cap_ties",
+        "forfeits",
+        "pairs",
+        "pair_score_counts"
+      ],
+      "properties": {
+        "match_id": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$",
+          "description": "<opponent>-<mode>; the opponent is random-legal, actor-rule, damage-aware or pair."
+        },
+        "policy_id": {
+          "type": "string",
+          "pattern": "^policy:[0-9a-f]{64}$",
+          "description": "The pair's policy id in this match's mode."
+        },
+        "mode": {
+          "enum": [
+            "sample",
+            "argmax"
+          ]
+        },
+        "opponent_policy_id": {
+          "type": "string",
+          "pattern": "^(?:[a-z0-9][a-z0-9._-]*@[A-Za-z0-9._-]+|policy:[0-9a-f]{64})$",
+          "description": "A scripted baseline, <name>@<version>, or another frozen pair's policy id."
+        },
+        "opponent_checkpoints": {
+          "$ref": "#/$defs/Checkpoints"
+        },
+        "games": {
+          "type": "integer",
+          "minimum": 2,
+          "maximum": 9007199254740991
+        },
+        "wins": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "ties": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "losses": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "turn_cap_ties": {
+          "description": "Games among the ties that ended at the turn cap.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "forfeits": {
+          "description": "Sorted by side then cause, each pair once.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ForfeitCount"
+          }
+        },
+        "pairs": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "pair_score_counts": {
+          "description": "Pairs by the candidate's score over the pair's two games in half-games (win 2, tie 1, loss 0 per game): index k counts the pairs that scored k, k = 0..4.",
+          "type": "array",
+          "minItems": 5,
+          "maxItems": 5,
+          "items": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        }
+      }
+    }
+  }
+}

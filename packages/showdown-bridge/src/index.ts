@@ -457,3 +457,8 @@ export {
   type PrivateRootCode,
   writePrivateFile,
 } from "./private-root.ts";
+export { PRIVATE_TEST_REFUSALS, PrivateTestRefusal, type PrivateTestRefusalCode, type PrivateTestSeams, type PrivateTestSources, privateTestTeams, runPrivateTestCli, stagedTeams, type TestTeams } from "./private-test-cli.ts";
+export { opponentName, PRIVATE_TEST_LABEL, type PrivateTestMatch, type PrivateTestRecord, PrivateTestRecordError, privateTestAllowed, privateTestRecordHash, readPrivateTestRecord } from "./private-test-record.ts";
+export { checkSalt, PRIVATE_TEST_PAIRING, PRIVATE_TEST_SEED_DERIVATION, privateTestCommitment, privateTestPairs, privateTestStreams } from "./private-test-seed.ts";
+export { pairsAvailable, type PrivateTestOptions, type PrivateTestResult, type PrivateTestTeam, playPrivateTest } from "./private-test.ts";
+export { privateDataRoot } from "./private-team-source.ts";

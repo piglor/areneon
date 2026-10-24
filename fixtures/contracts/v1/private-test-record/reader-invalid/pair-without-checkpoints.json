@@ -1,0 +1,165 @@
+{
+  "schema_version": 1,
+  "data_class": "private",
+  "run_id": "tiny-run",
+  "run_config_hash": "1111111111111111111111111111111111111111111111111111111111111111",
+  "generation": 2,
+  "generation_manifest_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+  "checkpoints": {
+    "preview": "3333333333333333333333333333333333333333333333333333333333333333",
+    "battle": "4444444444444444444444444444444444444444444444444444444444444444"
+  },
+  "candidate_data_class": "private",
+  "version_manifest": {
+    "showdown_commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "format_id": "gen9championsvgc2026regmc",
+    "regulation": "M-C",
+    "ruleset_hash": "5555555555555555555555555555555555555555555555555555555555555555",
+    "format_rules_hash": "6666666666666666666666666666666666666666666666666666666666666666"
+  },
+  "test_set": {
+    "commitment": "7777777777777777777777777777777777777777777777777777777777777777",
+    "team_count": 7,
+    "pairs": 3,
+    "source_kind": "snapshot",
+    "snapshot_hash": "8888888888888888888888888888888888888888888888888888888888888888",
+    "subset": "holdout"
+  },
+  "plan": {
+    "kind": "disjoint-pairs",
+    "seed_derivation": "private-test-seed/1",
+    "pairing": "private-test-pairing/1",
+    "games_per_match": 6,
+    "max_turns": 100,
+    "latency_budget_ms": {
+      "preview_ms": 1000,
+      "battle_ms": 1000
+    }
+  },
+  "matches": [
+    {
+      "match_id": "actor-rule-argmax",
+      "policy_id": "policy:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "mode": "argmax",
+      "opponent_policy_id": "actor-rule@v1",
+      "games": 6,
+      "wins": 4,
+      "ties": 0,
+      "losses": 2,
+      "turn_cap_ties": 0,
+      "forfeits": [],
+      "pairs": 3,
+      "pair_score_counts": [
+        0,
+        0,
+        2,
+        0,
+        1
+      ]
+    },
+    {
+      "match_id": "actor-rule-sample",
+      "policy_id": "policy:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "mode": "sample",
+      "opponent_policy_id": "actor-rule@v1",
+      "games": 6,
+      "wins": 4,
+      "ties": 0,
+      "losses": 2,
+      "turn_cap_ties": 0,
+      "forfeits": [],
+      "pairs": 3,
+      "pair_score_counts": [
+        0,
+        0,
+        2,
+        0,
+        1
+      ]
+    },
+    {
+      "match_id": "pair-argmax",
+      "policy_id": "policy:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "mode": "argmax",
+      "opponent_policy_id": "policy:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "games": 6,
+      "wins": 4,
+      "ties": 0,
+      "losses": 2,
+      "turn_cap_ties": 0,
+      "forfeits": [],
+      "pairs": 3,
+      "pair_score_counts": [
+        0,
+        0,
+        2,
+        0,
+        1
+      ]
+    },
+    {
+      "match_id": "pair-sample",
+      "policy_id": "policy:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "mode": "sample",
+      "opponent_policy_id": "policy:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "opponent_checkpoints": {
+        "preview": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "battle": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+      },
+      "games": 6,
+      "wins": 4,
+      "ties": 0,
+      "losses": 2,
+      "turn_cap_ties": 0,
+      "forfeits": [],
+      "pairs": 3,
+      "pair_score_counts": [
+        0,
+        0,
+        2,
+        0,
+        1
+      ]
+    },
+    {
+      "match_id": "random-legal-argmax",
+      "policy_id": "policy:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "mode": "argmax",
+      "opponent_policy_id": "random-legal@v1",
+      "games": 6,
+      "wins": 4,
+      "ties": 0,
+      "losses": 2,
+      "turn_cap_ties": 0,
+      "forfeits": [],
+      "pairs": 3,
+      "pair_score_counts": [
+        0,
+        0,
+        2,
+        0,
+        1
+      ]
+    },
+    {
+      "match_id": "random-legal-sample",
+      "policy_id": "policy:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "mode": "sample",
+      "opponent_policy_id": "random-legal@v1",
+      "games": 6,
+      "wins": 4,
+      "ties": 0,
+      "losses": 2,
+      "turn_cap_ties": 0,
+      "forfeits": [],
+      "pairs": 3,
+      "pair_score_counts": [
+        0,
+        0,
+        2,
+        0,
+        1
+      ]
+    }
+  ]
+}

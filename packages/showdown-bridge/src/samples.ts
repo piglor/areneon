@@ -22,6 +22,7 @@ import { damageAwareSamples } from "./damage-aware-samples.ts";
 import { mechanicsSamples } from "./mechanics-samples.ts";
 import { observe, recordedChannel } from "./player-channel.ts";
 import { privateSamples, privateSnapshotSamples } from "./private-samples.ts";
+import { privateTestSamples } from "./private-test-samples.ts";
 import { progressSamples } from "./progress-samples.ts";
 import { contractVersions } from "./policy-protocol.ts";
 import { battleClass, stampTeam, teamHash } from "./team-class.ts";
@@ -937,7 +938,8 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
   const mechanicsOnes = mechanicsSamples(engine);
   const damageAwareOnes = damageAwareSamples();
   const privateManifests = privateSnapshotSamples({ manifest: record.manifest, vocabularyHash: teamVocabularyHash(vocabulary as never), labelSetHash });
-  for (const kind of ["valid", "invalid", "readerInvalid"] as const) Object.assign(privateOnes[kind], privateManifests[kind]);
+  const privateTests = privateTestSamples();
+  for (const kind of ["valid", "invalid", "readerInvalid"] as const) Object.assign(privateOnes[kind], privateManifests[kind], privateTests[kind]);
   for (const [kind, cases] of [["valid", { ...valid, ...evalSamples.valid, ...progressOnes.valid, ...mechanicsOnes.valid, ...damageAwareOnes.valid, ...privateOnes.valid }], ["invalid", { ...invalid, ...evalSamples.invalid, ...progressOnes.invalid, ...mechanicsOnes.invalid, ...damageAwareOnes.invalid, ...privateOnes.invalid }], ["reader-invalid", { ...readerInvalid, ...evalSamples.readerInvalid, ...progressOnes.readerInvalid, ...mechanicsOnes.readerInvalid, ...damageAwareOnes.readerInvalid, ...privateOnes.readerInvalid }]] as const) {
     for (const [key, value] of Object.entries(cases)) {
       const [contract, name] = key.split("/") as [string, string];

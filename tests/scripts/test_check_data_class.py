@@ -557,9 +557,15 @@ def test_the_private_markers_match_the_repo() -> None:
         docs = guard._documents(name, text)
         if any(obj.get("data_class") == "private" for doc in docs for obj in guard._walk(doc)):
             private.add(name)
-    every = set(guard.PRIVATE_SAMPLE_MARKERS) | set(guard.PRIVATE_MANIFEST_MARKERS)
+    every = (
+        set(guard.PRIVATE_SAMPLE_MARKERS)
+        | set(guard.PRIVATE_MANIFEST_MARKERS)
+        | set(guard.PRIVATE_TEST_RECORD_MARKERS)
+    )
     assert private == every
     assert not set(guard.PRIVATE_SAMPLE_MARKERS) & set(guard.PRIVATE_MANIFEST_MARKERS)
+    assert not set(guard.PRIVATE_TEST_RECORD_MARKERS) & set(guard.PRIVATE_MANIFEST_MARKERS)
+    assert not set(guard.PRIVATE_TEST_RECORD_MARKERS) & set(guard.PRIVATE_SAMPLE_MARKERS)
     assert all((ROOT / marker).is_file() for marker in every)
     assert all(marker.startswith("fixtures/") for marker in every)
 
@@ -1025,3 +1031,116 @@ def test_a_team_shaped_set_inside_a_species_entry_is_caught() -> None:
 def test_other_documents_are_not_role_set_tables() -> None:
     other = {"source_path": "x", "species": []}
     assert guard.ROLE_SET_TEAM not in guard.problems_in({**other, "paste": "x"}, True)
+
+
+# ADR-015 erratum E1: the strict shape of a private test record.
+TEST_MARKER = "fixtures/contracts/v1/private-test-record/valid/sample.json"
+TEST_SHAPE = guard.TEST_RECORD_SHAPE
+TEST_DIR = ROOT / "fixtures/contracts/v1/private-test-record"
+TEST_RECORD = json.loads((TEST_DIR / "valid/snapshot-holdout.json").read_text(encoding="utf-8"))
+
+
+@pytest.fixture
+def marked_record(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(guard, "PRIVATE_TEST_RECORD_MARKERS", frozenset({TEST_MARKER}))
+
+
+def record_reasons(repo: Path, document: object, name: str = TEST_MARKER) -> list[str]:
+    path = write(repo, name, json.dumps(document))
+    return [r.split(": ", 1)[1] for r in guard.violations([path])]
+
+
+def test_the_test_record_markers_are_exactly_the_private_labelled_corpus_samples() -> None:
+    labelled = {
+        str(p.relative_to(ROOT))
+        for kind in ("valid", "invalid", "reader-invalid")
+        for p in (TEST_DIR / kind).glob("*.json")
+        if json.loads(p.read_text(encoding="utf-8"))["data_class"] == "private"
+    }
+    assert labelled == set(guard.PRIVATE_TEST_RECORD_MARKERS)
+    assert guard.violations(sorted(guard.PRIVATE_TEST_RECORD_MARKERS)) == []
+    invalid = sorted(str(p.relative_to(ROOT)) for p in (TEST_DIR / "invalid").glob("*.json"))
+    assert invalid
+    assert guard.violations(invalid) == []
+
+
+def test_the_test_record_spec_follows_the_contract_schema() -> None:
+    schema = json.loads(
+        (ROOT / "packages/schema/contracts/v1/private-test-record.schema.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    required: Any
+    required, optional = guard.PRIVATE_TEST_RECORD_SPEC
+    assert set(required) == set(schema["required"])
+    assert set(required) | set(optional) == set(schema["properties"])
+    defs = schema["$defs"]
+    assert set(defs["TestSet"]["properties"]) == set(required["test_set"][0]) | set(
+        required["test_set"][1]
+    )
+    assert set(defs["Plan"]["properties"]) == set(required["plan"][0])
+    match = required["matches"][2]
+    assert set(defs["Match"]["properties"]) == set(match[0]) | set(match[1])
+    assert set(defs["ForfeitCount"]["properties"]) == set(match[0]["forfeits"][2][0])
+    assert (
+        defs["Match"]["properties"]["pair_score_counts"]["maxItems"]
+        == match[0]["pair_score_counts"][1]
+    )
+
+
+@pytest.mark.usefixtures("marked_record")
+def test_a_marked_test_record_is_accepted_only_in_its_strict_shape(repo: Path) -> None:
+    assert record_reasons(repo, TEST_RECORD) == []
+    extra = {**TEST_RECORD, "notes": "x"}
+    assert TEST_SHAPE in record_reasons(repo, extra)
+    pasted = json.loads(json.dumps(TEST_RECORD))
+    pasted["test_set"]["Garchomp @ Sitrus Berry"] = 1
+    assert TEST_SHAPE in record_reasons(repo, pasted)
+    teams = json.loads(json.dumps(TEST_RECORD))
+    teams["test_set"]["teams"] = ["a" * 64]
+    assert TEST_SHAPE in record_reasons(repo, teams)
+    free = json.loads(json.dumps(TEST_RECORD))
+    free["matches"][0]["forfeits"] = [{"side": "candidate", "cause": "Worker said x", "count": 1}]
+    assert TEST_SHAPE in record_reasons(repo, free)
+    assert TEST_SHAPE in record_reasons(repo, [TEST_RECORD])
+    for key in guard.PRIVATE_TEST_RECORD_SPEC[0]:
+        assert TEST_SHAPE in record_reasons(
+            repo, {k: v for k, v in TEST_RECORD.items() if k != key}
+        )
+    for path, value in (
+        (("generation",), -1),
+        (("test_set", "source_kind"), "bucket"),
+        (("matches", 0, "pair_score_counts"), [0, 0, 0, 0, 0, 0]),
+        (("matches", 0, "mode"), "greedy"),
+        (("matches", 0, "opponent_policy_id"), "Not A Policy"),
+        (("matches", 0, "match_id"), "Has Upper"),
+    ):
+        assert TEST_SHAPE in record_reasons(repo, record_with({"value": value}, *path))
+
+
+def record_with(patch: dict[str, object], *path: str | int) -> dict[str, Any]:
+    document = json.loads(json.dumps(TEST_RECORD))
+    cursor: Any = document
+    for step in path[:-1]:
+        cursor = cursor[step]
+    cursor[path[-1]] = patch["value"]
+    return document
+
+
+def test_a_test_record_is_refused_outside_its_marker(repo: Path) -> None:
+    assert PRIVATE in record_reasons(repo, TEST_RECORD, "fixtures/elsewhere.json")
+    assert PRIVATE in record_reasons(repo, TEST_RECORD, TEST_MARKER)  # not marked in this run
+
+
+@pytest.mark.usefixtures("marked_record")
+def test_a_marked_test_record_does_not_waive_a_sealed_marker_or_a_team(repo: Path) -> None:
+    sealed = {**TEST_RECORD, "provenance": {"collection": {"kind": "evaluation", "sealed": True}}}
+    reasons = record_reasons(repo, sealed)
+    assert SEALED in reasons
+    assert TEST_SHAPE in reasons
+
+
+def test_the_enum_leaf() -> None:
+    assert guard._leaf_ok(("enum", ("a", "b")), "a")
+    assert not guard._leaf_ok(("enum", ("a", "b")), "c")
+    assert not guard._leaf_ok(("enum", ("a", "b")), 1)

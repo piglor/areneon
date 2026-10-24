@@ -63,6 +63,14 @@ PokePaste guard does not see JSON teams, so this guard rejects a committed
   schema's range, and no ``paste``. No free text and no team content can ride in
   a manifest; the marker waives only the root's private label. The test files
   pin the keys, types and ranges to the schema; or
+- holds ``"data_class": "private"`` as the root of a PrivateTestRecord (ADR-015
+  erratum E1) outside a path in ``PRIVATE_TEST_RECORD_MARKERS``, or at such a path
+  with anything but the strict record shape (``PRIVATE_TEST_RECORD_SPEC``): the
+  schema's keys at every level and no others, every string a 64-hex hash, the
+  40-hex engine commit, a fixed word, an id token, a policy id, a match id or a
+  forfeit cause, and every number an integer in the schema's range. No team, no
+  paste and no free text can ride in a test record; the marker waives only the
+  root's private label; or
 - has a duplicate key in any JSON object (and, for JSONL, in any line): a
   reader keeps the last value while the earlier one stays in the committed
   bytes, so the guard refuses the file; or
@@ -141,6 +149,10 @@ MAX_LABELS = 64
 MAX_REVISION = 2**31 - 1
 MAX_SAFE = 2**53 - 1
 HEX40 = re.compile(r"[0-9a-f]{40}")
+POLICY_ID = re.compile(r"policy:[0-9a-f]{64}")
+OPPONENT_ID = re.compile(r"(?:[a-z0-9][a-z0-9._-]*@[A-Za-z0-9._-]+|policy:[0-9a-f]{64})")
+MATCH_ID = re.compile(r"[a-z0-9][a-z0-9_-]{0,63}")
+CAUSE = re.compile(r"[a-z][a-z_]{0,31}")
 FORMAT_ID = re.compile(r"[a-z0-9]+")
 VERSION = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:+-]{0,63}")
 # Exact files that may hold a synthetic sample of a PrivateSnapshotManifest
@@ -241,6 +253,107 @@ PRIVATE_MANIFEST_SPEC: Any = (
     },
     {"parent_snapshot_hash": "hex64", "first": ("const", True)},
 )
+# Exact files that may hold a synthetic sample of a PrivateTestRecord (ADR-015
+# erratum E1, item 2), each checked against the strict shape below.
+PRIVATE_TEST_RECORD_MARKERS = frozenset(
+    {
+        "fixtures/contracts/v1/private-test-record/reader-invalid/baseline-with-checkpoints.json",
+        "fixtures/contracts/v1/private-test-record/reader-invalid/counts-not-games.json",
+        "fixtures/contracts/v1/private-test-record/reader-invalid/dataset-hash-on-staging.json",
+        "fixtures/contracts/v1/private-test-record/reader-invalid/forfeits-over-losses.json",
+        "fixtures/contracts/v1/private-test-record/reader-invalid/forfeits-unsorted.json",
+        "fixtures/contracts/v1/private-test-record/reader-invalid/games-not-twice-pairs.json",
+        "fixtures/contracts/v1/private-test-record/reader-invalid/histogram-not-pairs.json",
+        "fixtures/contracts/v1/private-test-record/reader-invalid/histogram-not-score.json",
+        "fixtures/contracts/v1/private-test-record/reader-invalid/holdout-on-staging.json",
+        "fixtures/contracts/v1/private-test-record/reader-invalid/match-games-not-plan.json",
+        "fixtures/contracts/v1/private-test-record/reader-invalid/match-id-not-opponent-mode.json",
+        "fixtures/contracts/v1/private-test-record/reader-invalid/match-twice.json",
+        "fixtures/contracts/v1/private-test-record/reader-invalid/matches-unsorted.json",
+        "fixtures/contracts/v1/private-test-record/reader-invalid/pair-without-checkpoints.json",
+        "fixtures/contracts/v1/private-test-record/reader-invalid/pairs-over-half.json",
+        "fixtures/contracts/v1/private-test-record/reader-invalid/private-pair-on-staging.json",
+        "fixtures/contracts/v1/private-test-record/reader-invalid/private-pair-on-whole-snapshot.json",
+        "fixtures/contracts/v1/private-test-record/reader-invalid/snapshot-hash-on-staging.json",
+        "fixtures/contracts/v1/private-test-record/reader-invalid/snapshot-without-hash.json",
+        "fixtures/contracts/v1/private-test-record/reader-invalid/turn-cap-over-ties.json",
+        "fixtures/contracts/v1/private-test-record/reader-invalid/unknown-baseline.json",
+        "fixtures/contracts/v1/private-test-record/valid/dataset.json",
+        "fixtures/contracts/v1/private-test-record/valid/snapshot-holdout.json",
+        "fixtures/contracts/v1/private-test-record/valid/staging.json",
+    }
+)
+_COUNT: Any = ("int", 0, MAX_SAFE)
+_CHECKPOINTS: Any = ({"preview": "hex64", "battle": "hex64"}, {})
+_LATENCY: Any = (
+    {"preview_ms": ("int", 1, MAX_SAFE), "battle_ms": ("int", 1, MAX_SAFE)},
+    {},
+)
+_TEST_MATCH: Any = (
+    {
+        "match_id": "match_id",
+        "policy_id": "policy_id",
+        "mode": ("enum", ("sample", "argmax")),
+        "opponent_policy_id": "opponent_id",
+        "games": ("int", 2, MAX_SAFE),
+        "wins": _COUNT,
+        "ties": _COUNT,
+        "losses": _COUNT,
+        "turn_cap_ties": _COUNT,
+        "forfeits": (
+            "list",
+            1024,
+            (
+                {
+                    "side": ("enum", ("candidate", "opponent")),
+                    "cause": "cause",
+                    "count": ("int", 1, MAX_SAFE),
+                },
+                {},
+            ),
+        ),
+        "pairs": ("int", 1, MAX_SAFE),
+        "pair_score_counts": ("list", 5, _COUNT),
+    },
+    {"opponent_checkpoints": _CHECKPOINTS},
+)
+# The strict PrivateTestRecord shape (same spec language as PRIVATE_MANIFEST_SPEC).
+PRIVATE_TEST_RECORD_SPEC: Any = (
+    {
+        "schema_version": ("const", 1),
+        "data_class": ("const", "private"),
+        "run_id": "token",
+        "run_config_hash": "hex64",
+        "generation": _COUNT,
+        "generation_manifest_sha256": "hex64",
+        "checkpoints": _CHECKPOINTS,
+        "candidate_data_class": ("enum", ("synthetic", "private")),
+        "version_manifest": _VERSION_MANIFEST,
+        "test_set": (
+            {
+                "commitment": "hex64",
+                "team_count": ("int", 2, MAX_SAFE),
+                "pairs": ("int", 1, MAX_SAFE),
+                "source_kind": ("enum", ("staging", "snapshot", "dataset")),
+                "subset": ("enum", ("all", "holdout")),
+            },
+            {"snapshot_hash": "hex64", "dataset_hash": "hex64"},
+        ),
+        "plan": (
+            {
+                "kind": ("const", "disjoint-pairs"),
+                "seed_derivation": ("const", "private-test-seed/1"),
+                "pairing": ("const", "private-test-pairing/1"),
+                "games_per_match": ("int", 2, MAX_SAFE),
+                "max_turns": ("int", 1, MAX_SAFE),
+                "latency_budget_ms": _LATENCY,
+            },
+            {},
+        ),
+        "matches": ("list", 64, _TEST_MATCH),
+    },
+    {},
+)
 # The root keys of a PrivateTeamRecord (ADR-015 section 2). A marked sample has
 # exactly these keys, so team content cannot ride in others. A test pins this
 # set to the properties of private-team-record.schema.json.
@@ -288,6 +401,11 @@ PASTE_NOT_IN_CORPUS = (
 )
 MANIFEST_SHAPE = (
     "is a private manifest sample marker, but not exactly a PrivateSnapshotManifest: "
+    "other keys, strings that are not hashes, id tokens or fixed words, or numbers "
+    "out of range"
+)
+TEST_RECORD_SHAPE = (
+    "is a private test record sample marker, but not exactly a PrivateTestRecord: "
     "other keys, strings that are not hashes, id tokens or fixed words, or numbers "
     "out of range"
 )
@@ -401,6 +519,11 @@ def is_private_manifest_path(path: str) -> bool:
     return PurePosixPath(Path(path).as_posix()).as_posix() in PRIVATE_MANIFEST_MARKERS
 
 
+def is_private_test_record_path(path: str) -> bool:
+    """True for the exact paths where a synthetic private-test-record sample may live."""
+    return PurePosixPath(Path(path).as_posix()).as_posix() in PRIVATE_TEST_RECORD_MARKERS
+
+
 def team_corpus(root: Path | None = None) -> frozenset[str]:
     """Every paste string in the committed synthetic team corpus."""
     pastes: set[str] = set()
@@ -421,6 +544,20 @@ def is_reveal_path(path: str) -> bool:
     return PurePosixPath(Path(path).as_posix()).as_posix() in REVEAL_ALLOWED
 
 
+def _strict_marker_problems(
+    document: object, manifest_marker_ok: bool, test_record_marker_ok: bool
+) -> tuple[bool, list[str]]:
+    """Whether a marked manifest or test record is exactly its strict shape, and why not."""
+    manifest_ok = manifest_marker_ok and _spec_ok(PRIVATE_MANIFEST_SPEC, document)
+    test_record_ok = test_record_marker_ok and _spec_ok(PRIVATE_TEST_RECORD_SPEC, document)
+    found = []
+    if manifest_marker_ok and not manifest_ok:
+        found.append(MANIFEST_SHAPE)
+    if test_record_marker_ok and not test_record_ok:
+        found.append(TEST_RECORD_SHAPE)
+    return manifest_ok or test_record_ok, found
+
+
 def problems_in(  # noqa: PLR0913, PLR0917 - one flag per exact-path allowlist
     document: object,
     in_fixtures: bool,
@@ -429,6 +566,7 @@ def problems_in(  # noqa: PLR0913, PLR0917 - one flag per exact-path allowlist
     corpus: frozenset[str] | None = None,
     reveal_ok: bool = False,
     manifest_marker_ok: bool = False,
+    test_record_marker_ok: bool = False,
 ) -> list[str]:
     """Why one parsed JSON document must not be committed (empty if it may).
 
@@ -436,7 +574,9 @@ def problems_in(  # noqa: PLR0913, PLR0917 - one flag per exact-path allowlist
     ``private_marker_ok`` only for one at ``is_private_marker_path``, and then
     ``corpus`` is the set of pastes the marked file may hold; ``reveal_ok`` only
     for one at ``is_reveal_path``; ``manifest_marker_ok`` only for one at
-    ``is_private_manifest_path``, which must then be a strict PrivateSnapshotManifest.
+    ``is_private_manifest_path``, which must then be a strict PrivateSnapshotManifest;
+    ``test_record_marker_ok`` only for one at ``is_private_test_record_path``, which must
+    then be a strict PrivateTestRecord.
     """
     found: list[str] = []
     objects = list(_walk(document))
@@ -446,10 +586,11 @@ def problems_in(  # noqa: PLR0913, PLR0917 - one flag per exact-path allowlist
         and _marker_pastes_ok(objects, corpus)
     )
     shape_ok = _marker_shape_ok(document, objects)
-    manifest_ok = manifest_marker_ok and _spec_ok(PRIVATE_MANIFEST_SPEC, document)
-    waived = (private_marker_ok and record_ok and shape_ok) or manifest_ok
-    if manifest_marker_ok and not manifest_ok:
-        found.append(MANIFEST_SHAPE)
+    strict_ok, strict_problems = _strict_marker_problems(
+        document, manifest_marker_ok, test_record_marker_ok
+    )
+    waived = (private_marker_ok and record_ok and shape_ok) or strict_ok
+    found.extend(strict_problems)
     if private_marker_ok and not record_ok:
         found.append(PASTE_NOT_IN_CORPUS)
     if private_marker_ok and not shape_ok:
@@ -555,6 +696,8 @@ def _leaf_ok(kind: object, value: object) -> bool:
     if isinstance(kind, tuple):
         if kind[0] == "const":
             return type(value) is type(kind[1]) and value == kind[1]
+        if kind[0] == "enum":
+            return isinstance(value, str) and value in kind[1]
         return _is_int(value, kind[1], kind[2])
     patterns = {
         "hex64": HEX64,
@@ -562,6 +705,10 @@ def _leaf_ok(kind: object, value: object) -> bool:
         "format": FORMAT_ID,
         "token": LABEL_TOKEN,
         "version": VERSION,
+        "policy_id": POLICY_ID,
+        "opponent_id": OPPONENT_ID,
+        "match_id": MATCH_ID,
+        "cause": CAUSE,
     }
     return _is_match(patterns[str(kind)], value)
 
@@ -638,11 +785,19 @@ def violations(paths: Sequence[str]) -> list[str]:
         corpus = team_corpus() if private_ok else None
         reveal_ok = is_reveal_path(path)
         manifest_ok = is_private_manifest_path(path)
+        test_record_ok = is_private_test_record_path(path)
         reasons = {
             reason
             for doc in documents
             for reason in problems_in(
-                doc, in_fixtures, marker_ok, private_ok, corpus, reveal_ok, manifest_ok
+                doc,
+                in_fixtures,
+                marker_ok,
+                private_ok,
+                corpus,
+                reveal_ok,
+                manifest_ok,
+                test_record_ok,
             )
         }
         found.extend(f"{path}: {reason}" for reason in sorted(reasons))

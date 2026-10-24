@@ -61,7 +61,7 @@ export const PROGRESS_BASELINES = [
 export const DAMAGE_AWARE_POLICY_ID = damageAwarePolicyId("v1");
 
 /** What the damage-aware baseline seat reports of one game: its identity hash and counts. */
-interface BaselineReport {
+export interface BaselineReport {
   identity_hash: string;
   counts: BaselineCounts;
 }
@@ -180,7 +180,7 @@ type Match = ProgressEvaluationRecordV2["matches"][number];
 type Row = ProgressEvaluationRecordV2["games"][number];
 
 /** One game's row and (for a played or forfeited game) the data of its stored form. */
-function rowOf(match_id: string, game: number, pair: number, candidate: Player, played: PlayedGame): Row {
+export function rowOf(match_id: string, game: number, pair: number, candidate: Player, played: PlayedGame): Row {
   const { outcome } = played;
   if (outcome.kind === "incident") throw new ProgressError(`game ${game} of ${match_id}: ${outcome.incident}: ${outcome.message}`);
   const common = { match_id, game, pair, candidate_seat: candidate };
@@ -189,6 +189,43 @@ function rowOf(match_id: string, game: number, pair: number, candidate: Player, 
     return { ...common, outcome: { kind: "forfeit", loser: whose(candidate)[outcome.loser] as "candidate" | "opponent", cause, request_seq, turns } };
   }
   return { ...common, outcome: { kind: "played", winner: whose(candidate)[String(outcome.winner)] as "candidate" | "opponent" | "tie", turns: outcome.turns } };
+}
+
+/**
+ * The damage-aware baseline as a scripted seat (ADR-018): the identity hash its records give (computed from the
+ * records and the pinned engine, not from a game) and a maker of a fresh guarded actor per game, whose `report`
+ * checks the policy id and the identity before it hands back the game's counts. The progress evaluation and the
+ * private test play it the same way and differ only in the class they stamp on it.
+ */
+export function damageAwareBaseline(args: { engine: Engine; setup: DamageAwareSetup; manifest: ReturnType<typeof resolveFormat>["manifest"]; data_class: "synthetic" | "private"; budget: LatencyBudget }): {
+  identity: string;
+  seat: (baselineSeed: number) => { seat: Actor; report: () => BaselineReport };
+} {
+  const { engine, setup, manifest, data_class, budget } = args;
+  const identity = damageAwareIdentityHash(damageAwareIdentity({ config: setup.config, mechanics: setup.mechanics, manifest, reader_sha256: readerSha256() }));
+  return {
+    identity,
+    seat: (seed) => {
+      const actor: DamageAwareActor = damageAwareActor({
+        ...setup,
+        engine,
+        data_class,
+        commit: DAMAGE_AWARE_POLICY_ID.slice(DAMAGE_AWARE_POLICY_ID.indexOf("@") + 1),
+        seed,
+      });
+      return {
+        seat: guardActor(actor, { role: "scripted", latency_budget: budget }),
+        report: () => {
+          const { policy_id, identity_hash, counts } = actor.report();
+          if (policy_id !== DAMAGE_AWARE_POLICY_ID) throw new ProgressError(`the baseline plays as ${policy_id}, not ${DAMAGE_AWARE_POLICY_ID}`);
+          if (identity_hash !== identity) throw new ProgressError("a damage-aware game carries another baseline identity hash than its records give");
+          // probe_refusals is written only above 0, so a baseline without refusals keeps the record's bytes.
+          const { probe_refusals, ...rest } = counts;
+          return { identity_hash, counts: probe_refusals > 0 ? { ...rest, probe_refusals } : rest };
+        },
+      };
+    },
+  };
 }
 
 /** What a stored game is built from. */
@@ -325,39 +362,18 @@ export async function playProgress(options: ProgressOptions): Promise<ProgressRe
     begin: () => Promise.resolve(),
   }));
   const damage = options.damage_aware;
-  let identity: string | undefined;
   if (damage !== undefined) {
     if (ablation !== undefined) throw new ProgressError("the Preview ablation plays random-legal and actor-rule only: no damage-aware matches");
     if (!Number.isSafeInteger(damage.match_budget_ms) || damage.match_budget_ms < 1) throw new ProgressError("the damage-aware match budget must be a positive whole number of milliseconds");
     if (damage.setup.config.epsilon_ppm !== 0) throw new ProgressError("the damage-aware baseline plays an evaluation with epsilon_ppm 0: it draws nothing");
     if (damage.setup.config.format_id !== config.format_id) throw new ProgressError("the damage-aware baseline's records are for another format");
-    // The identity the records must carry, computed from the records and the pinned engine, not from a game.
-    identity = damageAwareIdentityHash(damageAwareIdentity({ config: damage.setup.config, mechanics: damage.setup.mechanics, manifest, reader_sha256: readerSha256() }));
+    const baseline = damageAwareBaseline({ engine, setup: damage.setup, manifest, data_class: "synthetic", budget });
     opponents.push({
       id: "damage-aware",
       budget_ms: damage.match_budget_ms,
       opponent: () => ({ kind: "baseline", policy_id: DAMAGE_AWARE_POLICY_ID }),
-      seat: (_mode, game) => {
-        // A fresh actor per game: it keeps the reader's state, the game's memo and its counts.
-        const actor: DamageAwareActor = damageAwareActor({
-          ...damage.setup,
-          engine,
-          data_class: "synthetic",
-          commit: DAMAGE_AWARE_POLICY_ID.slice(DAMAGE_AWARE_POLICY_ID.indexOf("@") + 1),
-          seed: progressGameStreams(config.seeds.run_key, game).baseline_seed,
-        });
-        return {
-          seat: guardActor(actor, { role: "scripted", latency_budget: budget }),
-          report: () => {
-            const { policy_id, identity_hash, counts } = actor.report();
-            if (policy_id !== DAMAGE_AWARE_POLICY_ID) throw new ProgressError(`the baseline plays as ${policy_id}, not ${DAMAGE_AWARE_POLICY_ID}`);
-            if (identity_hash !== identity) throw new ProgressError("a damage-aware game carries another baseline identity hash than its records give");
-            // probe_refusals is written only above 0, so a baseline without refusals keeps the record's bytes.
-            const { probe_refusals, ...rest } = counts;
-            return { identity_hash, counts: probe_refusals > 0 ? { ...rest, probe_refusals } : rest };
-          },
-        };
-      },
+      // A fresh actor per game: it keeps the reader's state, the game's memo and its counts.
+      seat: (_mode, game) => baseline.seat(progressGameStreams(config.seeds.run_key, game).baseline_seed),
       policies: () => DAMAGE_AWARE_POLICY_ID,
       begin: () => Promise.resolve(),
     });

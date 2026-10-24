@@ -101,6 +101,38 @@ function readTeamSet(path: string): string[] {
   return teams as string[];
 }
 
+/** What a frozen pair's worker needs: one worker session holds one pair, CPU torch, stdio only, one query at a time. */
+export interface FrozenPairClientOptions {
+  python: string;
+  runDir: string;
+  pair: { preview: string; battle: string };
+  encoderVersion: string;
+  engineDataFile: string;
+  engineDataHash: string;
+  max_line_bytes: number;
+  handshake_timeout_ms: number;
+}
+
+/** The policy worker client of one frozen pair, read-only from a run directory's checkpoint store. */
+export function frozenPairClient(o: FrozenPairClientOptions): PolicyWorkerClient {
+  return new PolicyWorkerClient({
+    command: o.python,
+    args: ["-I", "-m", "areneon_ml.worker", "--run-dir", o.runDir, "--preview", o.pair.preview, "--battle", o.pair.battle, "--engine-data", o.engineDataFile, "--max-line-bytes", String(o.max_line_bytes)],
+    env: {},
+    max_line_bytes: o.max_line_bytes,
+    n_parallel: 1, // evaluation never batches (ADR-010 section 2)
+    handshake_timeout_ms: o.handshake_timeout_ms,
+    expect: {
+      encoder_version: o.encoderVersion,
+      engine_data_hash: o.engineDataHash,
+      checkpoints: [
+        { role: "battle", checkpoint_id: o.pair.battle },
+        { role: "preview", checkpoint_id: o.pair.preview },
+      ],
+    },
+  });
+}
+
 /** Run one generation's progress evaluation; returns the process exit code and writes its one JSON line with `print`. */
 export async function runProgressCli(argv: readonly string[], print: (line: string) => void, poolSource: ProgressPoolSource): Promise<number> {
   let values: Record<Exclude<keyof typeof FLAGS, "anchor">, string | undefined> & { anchor?: string[] };
@@ -151,22 +183,7 @@ export async function runProgressCli(argv: readonly string[], print: (line: stri
   const battle = need("battle");
   // One worker session holds one frozen pair, so the previous generation's pair gets a worker of its own.
   const workerFor = (pair: { preview: string; battle: string }, runDir: string = need("run-dir"), encoderVersion: string = need("encoder-version")): PolicyWorkerClient =>
-    new PolicyWorkerClient({
-      command: need("worker-python"),
-      args: ["-I", "-m", "areneon_ml.worker", "--run-dir", runDir, "--preview", pair.preview, "--battle", pair.battle, "--engine-data", dataFile, "--max-line-bytes", String(max_line_bytes)],
-      env: {},
-      max_line_bytes,
-      n_parallel: 1, // evaluation never batches (ADR-010 section 2)
-      handshake_timeout_ms,
-      expect: {
-        encoder_version: encoderVersion,
-        engine_data_hash: dataHash,
-        checkpoints: [
-          { role: "battle", checkpoint_id: pair.battle },
-          { role: "preview", checkpoint_id: pair.preview },
-        ],
-      },
-    });
+    frozenPairClient({ python: need("worker-python"), runDir, pair, encoderVersion, engineDataFile: dataFile, engineDataHash: dataHash, max_line_bytes, handshake_timeout_ms });
   const client = workerFor({ preview, battle });
   const previousPair = given.length === 0 ? undefined : { preview: need("previous-preview"), battle: need("previous-battle") };
   let previousClient: PolicyWorkerClient | undefined;
