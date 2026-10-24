@@ -155,6 +155,28 @@ def test_a_cross_run_match_is_a_labelled_head_to_head_with_its_pair_interval(
     assert "Score vs run (cross-run comparison)" in text
 
 
+def test_a_record_with_damage_aware_and_cross_run_matches_shows_both_sections(
+    run: Path, tmp_path: Path
+) -> None:
+    other = tmp_path / "other"
+    make_run(other, generations=2, config=dataset_config("other-run", (21, 22)))
+    root = tmp_path / "progress"
+    played(
+        run, root, 1, versus=VersusSpec(other, 1, 4, "enc-other"), damage_aware_budget_minutes=30
+    )
+    model = read_report_model(run, root)
+    kinds = {
+        m.match_id: (m.baseline is not None, m.versus is not None)
+        for m in model.progress[1].matches
+    }
+    assert kinds["damage-aware-sample"] == (True, False)
+    assert kinds["run-sample"] == (False, True)
+    text = text_of(run, root)
+    assert "Head to head against another run (cross-run comparison)" in text
+    assert "damage-aware" in text
+    assert f'run-sample <span class="muted">({CROSS_RUN_LABEL})' in text
+
+
 def test_a_page_without_an_anchor_has_no_anchor_table(
     run: Path, mixed: Path, tmp_path: Path
 ) -> None:

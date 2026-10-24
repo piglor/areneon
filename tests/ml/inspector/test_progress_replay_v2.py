@@ -107,9 +107,21 @@ def test_a_cross_run_game_names_the_other_run_and_the_label(tmp_path: Path) -> N
     root = tmp_path / "run.progress"
     player = FakeProgressPlayer(config, committed_manifest(run, 0), make_consistent, previous=False)
     progress_generation(
-        run, 1, root, player, GAMES, GAMES, (), 4, versus=VersusSpec(other, 1, 4, "enc-other")
+        run,
+        1,
+        root,
+        player,
+        GAMES,
+        GAMES,
+        (),
+        4,
+        damage_aware_budget_minutes=30,
+        versus=VersusSpec(other, 1, 4, "enc-other"),
     )
     (g, _twin) = games(root, 1, match="run-sample", games=[0])
+    (dg, _dtwin) = games(root, 1, match="damage-aware-sample", games=[0])
+    assert page_module.DAMAGE_AWARE_LABEL in page(dg)
+    assert page_module.CROSS_RUN not in page(dg)
     text = page(g)
     assert g.opponent_kind == "run"
     assert "another run's frozen pair" in text
