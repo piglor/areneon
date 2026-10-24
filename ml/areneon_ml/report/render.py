@@ -72,7 +72,9 @@ VERSUS_NOTE = (
     "validation pairs and seeds. The paired difference is the pair score minus one half; above "
     "zero means this run's pair scored more than the other run's on these pairs. Descriptive "
     "pair-level bootstrap intervals, conditional on the fixed validation plan: not held-out "
-    "evidence, not a gate result, not a test or a claim."
+    "evidence, not a gate result, not a test or a claim. The two runs may share their seeded "
+    "start (equal initial seeds): the progress command prints the lineage relation, "
+    '"independent lineage" or "related lineage: shared start".'
 )
 ABLATION_NOTE = (
     "Team Preview ablation: this generation's Battle network plays both scripted baselines "

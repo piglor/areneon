@@ -23,7 +23,7 @@ from areneon_ml.progress.records import DAMAGE_AWARE_LABEL
 
 PAGES = "progress-replays"
 SEEN = "seen, same-lineage comparison: it can cycle"
-CROSS_RUN = "cross-run comparison"
+CROSS_RUN = "cross-run comparison; the runs may share their seeded start, see the progress summary"
 WARNING = (
     "Omniscient view: both sides' hidden information. An evaluation artifact, never policy input; "
     "local use only. Do not share or commit this page."

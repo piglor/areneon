@@ -209,14 +209,18 @@ its checkpoints and is checked against its own encoder version, so the two runs 
 not share one. Refused before any game: the same run directory or run key, a
 different format or team dataset (so one validation split), a run without a team
 dataset, a generation the other run has not committed, a non-synthetic checkpoint
-record, a checkpoint the two runs share, a progress seed equal to a seed of either
+record, a progress seed equal to a seed of either
 run's committed plans, a validation team in either run's `team-set.json`, and more
 games than disjoint pairs. The opponent variant of the record is
 `{kind: "run", run_id, run_config_hash, generation, policy_id, checkpoints}`
 (`plan.run_games_per_match` is present exactly when such matches are). The printed
 summary carries `head_to_head` (label "cross-run comparison", the other run,
 and `lineage`: the C1/C6 checker's verdict on both runs' records, "independent
-lineage" only when the ancestries are disjoint, else "seen"); the dashboard and the
+lineage" only when the ancestries are disjoint, else "related lineage: shared
+start"). Runs started from equal initial seeds share their seeded generation-0
+pair; that is a relation to label, not a refusal. The comparison is refused only
+when the two compared pairs share a checkpoint, or one of them is in the other's
+ancestry (a pair against its own past); the dashboard and the
 replay pages carry the same label, with the pair-level interval and the pair score
 minus 1/2. It is a progress view, never held-out evidence or a gate result, and the
 adopt rule is applied by the experiment, not here. Use a progress directory of its own
