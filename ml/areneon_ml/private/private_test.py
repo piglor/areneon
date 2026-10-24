@@ -5,9 +5,10 @@ on the owner's teams, from both seats, and writes ONE record of counts and score
 output root. It is the top-level command: the owner-session guard runs before anything is read
 (``assert_owner_session``: refused in an agent session and on non-terminal stdio, no override), the
 output root must pass the private root rule, and only then are the run directory, the pair and the
-team source touched. The teams are read by the Node child (``packages/private-team-store/scripts/
-private-test.ts``), which prints one JSON line of counts; Python never holds a team. Nothing but
-the record, the 0600 salt file and the private look log is written, and only under the private root:
+team source touched. The teams are read by the Node child (``scripts/private-test.ts`` of the
+package that owns the snapshot reader), which prints one JSON line of counts; Python never holds a
+team. Nothing but the record, the 0600 salt file and the private look log is written, and only
+under the private root:
 no game record, omniscient log, Episode, replay or dashboard page.
 
 Every failure is a fixed code (and, for a team, a 1-based position in the source's order). The
@@ -53,7 +54,9 @@ from areneon_ml.private.private_test_record import (
 from areneon_ml.progress.looks import Look, append_look
 from areneon_ml.progress.run import ProgressError, _source
 
-SCRIPT: Final = "packages/private-team-store/scripts/private-test.ts"
+#: The Node child, found by its file name: the one package that holds it owns the snapshot reader,
+#: and no code outside that package names it (a packaging rule).
+SCRIPT_GLOB: Final = "packages/*/scripts/private-test.ts"
 LOOKS_NAME: Final = "private-test.looks.jsonl"
 SOURCES: Final = ("staging", "snapshot", "dataset")
 SUBSETS: Final = ("all", "holdout")
@@ -183,9 +186,12 @@ class NodePrivateTestPlayer:
                 *("--opponent-run-dir", str(other_dir)),
                 *("--opponent-encoder-version", other_encoder),
             ]
+        scripts = sorted(self.repo.glob(SCRIPT_GLOB))
+        if len(scripts) != 1:
+            raise PrivateTestError("failed")
         try:
             done = subprocess.run(
-                [self.node, str(self.repo / SCRIPT), *args],
+                [self.node, str(scripts[0]), *args],
                 capture_output=True,
                 text=True,
                 check=False,
