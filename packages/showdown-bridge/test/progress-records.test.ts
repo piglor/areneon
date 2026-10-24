@@ -83,7 +83,7 @@ describe("ProgressEvaluationRecord", () => {
 
 describe("ProgressEvaluationRecordV2 (both seats, ADR-017 erratum E2)", () => {
   const V2 = "progress-evaluation-record-2";
-  it.each(["baseline-match", "previous-match", "anchor-match", "ablation-match"])("reads the valid sample %s and hashes its JCS bytes", (name) => {
+  it.each(["baseline-match", "previous-match", "anchor-match", "run-match", "ablation-match"])("reads the valid sample %s and hashes its JCS bytes", (name) => {
     const record = readProgressEvaluationRecordV2(sample(`${V2}/valid/${name}`));
     expect(record.schema_version).toBe(2);
     expect(progressRecordHash(record)).toMatch(/^[0-9a-f]{64}$/);
@@ -102,6 +102,11 @@ describe("ProgressEvaluationRecordV2 (both seats, ADR-017 erratum E2)", () => {
     ["anchor-games-odd", "must be even"],
     ["anchor-not-earlier", "plays an earlier generation"],
     ["anchor-misnamed", "is named anchor-g<generation>-<mode>"],
+    ["run-games-missing", "present exactly when the record has cross-run matches"],
+    ["run-plan-without-match", "present exactly when the record has cross-run matches"],
+    ["run-games-odd", "must be even"],
+    ["run-misnamed", "is named run-<mode>"],
+    ["run-same-run-id", "is named run-<mode>"],
     ["ablation-vs-anchor", "an ablation match plays a scripted baseline"],
     ["ablation-misnamed", "named preview-<variant>-<baseline>-<mode>"],
     ["ablation-not-earlier", "comes from an earlier generation"],
@@ -110,7 +115,7 @@ describe("ProgressEvaluationRecordV2 (both seats, ADR-017 erratum E2)", () => {
     expect(() => readProgressEvaluationRecordV2(sample(`${V2}/reader-invalid/${name}`))).toThrow(message);
   });
 
-  it.each(["public-class", "schema-version-1", "fractional-wins", "anchor-no-generation", "ablation-no-checkpoint"])("refuses the schema-invalid sample %s", (name) => {
+  it.each(["public-class", "schema-version-1", "fractional-wins", "anchor-no-generation", "run-no-run-id", "ablation-no-checkpoint"])("refuses the schema-invalid sample %s", (name) => {
     expect(() => readProgressEvaluationRecordV2(sample(`${V2}/invalid/${name}`))).toThrow(/invalid ProgressEvaluationRecordV2/);
   });
 

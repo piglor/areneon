@@ -197,6 +197,12 @@
           "minimum": 2,
           "maximum": 9007199254740991
         },
+        "run_games_per_match": {
+          "description": "Games in every cross-run match (even), laid out as games_per_match. Present exactly when the record has cross-run matches.",
+          "type": "integer",
+          "minimum": 2,
+          "maximum": 9007199254740991
+        },
         "max_turns": {
           "description": "The turn cap of the run's TrainingRunConfig.generation: a game still running past it is a tie.",
           "type": "integer",
@@ -230,7 +236,7 @@
       }
     },
     "Opponent": {
-      "description": "Who the frozen pair played: a scripted baseline, the previous generation's frozen pair, or a fixed earlier generation's (an anchor).",
+      "description": "Who the frozen pair played: a scripted baseline, the previous generation's frozen pair, a fixed earlier generation's (an anchor) or another run's frozen pair.",
       "type": "object",
       "oneOf": [
         {
@@ -241,6 +247,9 @@
         },
         {
           "$ref": "#/$defs/AnchorOpponent"
+        },
+        {
+          "$ref": "#/$defs/RunOpponent"
         }
       ],
       "discriminator": {
@@ -317,6 +326,48 @@
         }
       }
     },
+    "RunOpponent": {
+      "description": "Another run's frozen pair (a cross-run comparison): a committed generation of a run with another run key, read from that run's directory.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "run_id",
+        "run_config_hash",
+        "generation",
+        "policy_id",
+        "checkpoints"
+      ],
+      "properties": {
+        "kind": {
+          "const": "run"
+        },
+        "run_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+          "description": "The other run's key; never the evaluated run's own."
+        },
+        "run_config_hash": {
+          "description": "SHA-256 of the other run's TrainingRunConfig JCS bytes.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "generation": {
+          "description": "The other run's generation whose frozen pair played.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "policy_id": {
+          "type": "string",
+          "pattern": "^policy:[0-9a-f]{64}$",
+          "description": "The other run's pair, in the mode the match played."
+        },
+        "checkpoints": {
+          "$ref": "#/$defs/Checkpoints"
+        }
+      }
+    },
     "ForfeitCount": {
       "type": "object",
       "additionalProperties": false,
@@ -364,7 +415,7 @@
       ],
       "properties": {
         "match_id": {
-          "description": "Names the match: <opponent>-<mode>, e.g. random-legal-sample or anchor-g10-sample. Unique in the record; names the stored game files.",
+          "description": "Names the match: <opponent>-<mode>, e.g. random-legal-sample or anchor-g10-sample; a cross-run match is run-<mode>. Unique in the record; names the stored game files.",
           "type": "string",
           "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$"
         },

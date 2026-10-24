@@ -18,7 +18,7 @@ import pytest
 from areneon_ml.loop import layout
 from areneon_ml.progress import run as run_module
 from areneon_ml.progress.ablation import ablation_summary
-from areneon_ml.progress.run import summary_of
+from areneon_ml.progress.run import CROSS_RUN_LABEL, VersusSpec, summary_of
 from areneon_ml.progress.stats import PPM
 from areneon_ml.report.model import read_report_model
 from areneon_ml.report.render import (
@@ -29,11 +29,17 @@ from areneon_ml.report.render import (
     SEAT_CAPTION,
     SEAT_CAPTION_PAIRS,
     SEEN,
+    VERSUS_NOTE,
     build_report,
     signed_pct,
 )
 
-from tests.ml.progress.support import FakeProgressPlayer, committed_manifest, downgrade_to_v1
+from tests.ml.progress.support import (
+    FakeProgressPlayer,
+    committed_manifest,
+    dataset_config,
+    downgrade_to_v1,
+)
 from tests.ml.report.support import _config, make_run
 from tests.ml.report.test_report import HOSTILE, assert_inert
 
@@ -121,6 +127,56 @@ def test_anchor_numbers_equal_a_recomputation_from_the_files(run: Path, mixed: P
     assert text.count(f'anchor-g0-argmax <span class="muted">({SEEN})') == 2
 
 
+def test_a_cross_run_match_is_a_labelled_head_to_head_with_its_pair_interval(
+    run: Path, tmp_path: Path
+) -> None:
+    other = tmp_path / "other"
+    make_run(other, generations=2, config=dataset_config("other-run", (21, 22)))
+    root = tmp_path / "progress"
+    played(run, root, 1, versus=VersusSpec(other, 1, 4, "enc-other"))
+    model = read_report_model(run, root)
+    rec = record(root, 1)
+    by_id = {s["match_id"]: s for s in summary_of(rec)}
+    found = [m for m in model.progress[1].matches if m.versus is not None]
+    assert sorted(m.match_id for m in found) == ["run-argmax", "run-sample"]
+    for m in found:
+        stored = by_id[m.match_id]
+        assert m.versus == ("other-run", 1)
+        assert m.pairs == m.games // 2 == 2
+        assert m.seen_label == CROSS_RUN_LABEL
+        assert m.diff == (stored["diff_mean_ppm"], stored["diff_low_ppm"], stored["diff_high_ppm"])
+        assert (m.low_ppm, m.high_ppm) == (stored["interval_low_ppm"], stored["interval_high_ppm"])
+    text = text_of(run, root)
+    assert "Head to head against another run (cross-run comparison)" in text
+    assert VERSUS_NOTE in text
+    assert "other-run g1" in text
+    assert f'run-sample <span class="muted">({CROSS_RUN_LABEL})' in text
+    assert SEEN not in text.split("Head to head against another run")[1]
+    assert "Score vs run (cross-run comparison)" in text
+
+
+def test_a_record_with_damage_aware_and_cross_run_matches_shows_both_sections(
+    run: Path, tmp_path: Path
+) -> None:
+    other = tmp_path / "other"
+    make_run(other, generations=2, config=dataset_config("other-run", (21, 22)))
+    root = tmp_path / "progress"
+    played(
+        run, root, 1, versus=VersusSpec(other, 1, 4, "enc-other"), damage_aware_budget_minutes=30
+    )
+    model = read_report_model(run, root)
+    kinds = {
+        m.match_id: (m.baseline is not None, m.versus is not None)
+        for m in model.progress[1].matches
+    }
+    assert kinds["damage-aware-sample"] == (True, False)
+    assert kinds["run-sample"] == (False, True)
+    text = text_of(run, root)
+    assert "Head to head against another run (cross-run comparison)" in text
+    assert "damage-aware" in text
+    assert f'run-sample <span class="muted">({CROSS_RUN_LABEL})' in text
+
+
 def test_a_page_without_an_anchor_has_no_anchor_table(
     run: Path, mixed: Path, tmp_path: Path
 ) -> None:
@@ -165,7 +221,12 @@ def test_a_version_1_only_page_has_none_of_the_new_sections(run: Path, tmp_path:
     assert CONDITIONAL in text
     assert CONDITIONAL_PAIRS not in text
     assert SEAT_CAPTION in text
-    for absent in ("Anchor comparisons", "Team Preview ablation", "games per anchor match"):
+    for absent in (
+        "Anchor comparisons",
+        "Team Preview ablation",
+        "games per anchor match",
+        "Head to head",
+    ):
         assert absent not in text
 
 
