@@ -405,6 +405,7 @@ export async function playEntries(options: GenerationOptions, shard: Shard = { i
         const stored: StoredRef[] = [];
         for (const episode of episodes) {
           const hash = await episodeHash(episode, nodeSha256);
+          // Not renamed into place: the directory is the generation's partial one, discarded whole on a restart, and the loader checks each file against its name.
           writeDurable(join(options.episodes_dir, `${hash}.json`), `${jcs(episode as unknown as Json)}\n`);
           stored.push({ hash, behaviour_policy_id: episode.provenance.behaviour_policy_id });
         }

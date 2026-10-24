@@ -62,7 +62,7 @@ class NodePlayer:
     game_processes: int = 1
     #: Caps each Node game process's old-space heap (``--max-old-space-size``, in MB), which
     #: makes V8 collect garbage before the process grows: a game process that loads a 20,000
-    #: team pool peaks at about 860 MB without it and about 540 MB with 512 (#1069). Operational:
+    #: team pool peaks at about 860 MB without it and about 590 MB with 640 (#1069). Operational:
     #: the generation's files do not depend on it. ``None`` leaves Node's default.
     node_heap_mb: int | None = None
     #: The peak resident set (bytes) of the largest game process and of the largest policy

@@ -119,10 +119,10 @@ and lists the SHA-256 of each metrics file among its inputs.
 
 ### Sizing a run to a machine
 
-Four operational flags of the driver change how much memory and how many cores a generation
+Five operational flags of the driver change how much memory and how many cores a generation
 uses and nothing it writes: the plan, the seeds, every Episode, the stream, the tensors and the
-learner-state hashes are the same for any value (each flag has a test, and a full-size generation
-was compared byte for byte with and without them). None is in the run config.
+learner-state hashes are the same for any value (each flag has a test; the play flags were compared on a full-size generation with `diff -r`,
+the load flags by a digest over every tensor). None is in the run config.
 
 | flag | what it sets | default |
 | --- | --- | --- |
@@ -135,13 +135,14 @@ was compared byte for byte with and without them). None is in the run config.
 What a process holds, measured on the 28-core, 24 GB, 16 GB GPU machine with the 20,000 team
 `train-v1` pool, 768 games per generation (`S` = 4, `K` = 2):
 
-- A Node game process peaks near 0.86 GB while it loads the team pool and 1.1 GB over a
-  generation. It writes each Episode to the
+- A Node game process peaked at 1.1 GB over a generation before the change (about 0.86 GB of
+  it reached while loading the team pool). It writes each Episode to the
   generation's `episodes/` directory when its game ends and keeps none, so its memory no longer
   grows with the number of games (the stream is built by reading the files back one at a time).
   `--node-heap-mb 640` makes V8 collect before it grows: 0.59 GB for the largest game process
-  (0.57 GB at 448 and 230 s; below that the process only collects more often, so 512 to 768 is
-  a safe range) at the same wall time (219 s against 242 s without the change).
+  at the same wall time (219 s against 242 s without the change). At 448 it was 0.57 GB and 230 s;
+  nothing below 448 was tried, and a heap cap too small for the pool would fail the process, so
+  start near 640.
 - A policy worker is 0.42 GB (CPU torch and the two networks) and does not shrink.
 - The whole play tree peaked at 7.76 GB before, 7.56 GB with Episodes on disk and 5.70 GB
   with `--node-heap-mb 640`. A rule of thumb for the play phase:
@@ -158,8 +159,8 @@ What a process holds, measured on the 28-core, 24 GB, 16 GB GPU machine with the
   tensor transport, which sends every tensor through its own file descriptor and made the
   parallel load slower than the serial one.
 - On the GPU a 6-layer, 256-wide learner on that stream peaked at 4.5 GB allocated and 7.6 GB
-  reserved. The learner process used to keep the reserve between generations (the 15.5 GB of two
-  concurrent runs was mostly cache). The driver now calls `torch.cuda.empty_cache()` after each
+  reserved. The learner process used to keep the reserve between generations (the 15.5 GB seen with two
+  concurrent runs was the peak allocated, 4.9 GB each, plus cache). The driver now calls `torch.cuda.empty_cache()` after each
   train phase: the reserve drops to 1.0 GB (305 MB of it in use: weights and optimiser state)
   until the next phase. `run-metrics` records the peak reserved memory next to the peak
   allocated. From outside, `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True` in the learner's
@@ -168,12 +169,11 @@ What a process holds, measured on the 28-core, 24 GB, 16 GB GPU machine with the
 How many runs fit. On this machine host RAM is the limit, then the 6 GB swap: one run at
 `S` = 4, `K` = 2 with `--node-heap-mb 640` needs about 5.7 GB during play (and 1.5 GB in load and
 train), so two overlap in 24 GB with room to spare and three only if their play phases are
-staggered (play lasts 220 s of a 280 to 400 s generation) or `S` is lowered. Before this change
+staggered (play was about 220 s of a generation that took 280 to 400 s here) or `S` is lowered. Before this change
 two runs filled the swap and made workers miss their 30 s latency budget (a recorded
-`latency_overrun` forfeit): never let a machine swap during play. The GPU does not limit the
-number of runs: the learner is busy 5 to 10 percent of a generation and its reserve is now given
-back. On a larger machine scale `S` with the cores (one game process per 4 cores is a start) and
-the memory with the rule above; a rented GPU needs no change beyond `device: "cuda"`.
+`latency_overrun` forfeit): never let a machine swap during play. The GPU was not the limit: train took 20 to 36 s of each generation and its reserve is now given
+back. On a larger machine scale `S` with the cores (4 game processes on 28 cores were measured;
+the best ratio is not) and the memory with the rule above; a rented GPU needs no change beyond `device: "cuda"`.
 
 The run's `metrics/g<NNNNNN>.json` has the resident-set peaks of the driver, the largest game
 process and the largest policy worker (`peak_rss_bytes`, Linux, optional) and the peak reserved

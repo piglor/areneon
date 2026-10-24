@@ -5,7 +5,9 @@ from __future__ import annotations
 import copy
 import dataclasses
 import json
+import os
 import random
+import signal
 from pathlib import Path
 from typing import Any
 
@@ -298,8 +300,10 @@ def test_an_exception_comes_back_as_its_own_class_only_when_it_is_ours_and_uncha
     mine = parallel._raised("areneon_ml.reducer.errors.UnknownLineError", "no rule")
     assert isinstance(mine, UnknownLineError)
     assert str(mine) == "no rule"
+    assert type(parallel._raised("builtins.ValueError", "k")) is ValueError
     for kind in (
-        "builtins.ValueError",
+        "os.error",
+        "builtins.int",
         "areneon_ml.reducer.errors.Nothing",
         "a.B",
         "areneon_ml.x.Y",
@@ -312,3 +316,18 @@ def test_the_memory_cap_leaves_at_least_one_worker_and_never_more_than_asked() -
     assert parallel.fit_processes(6, 10 * parallel.WORKER_MB) == 6
     assert parallel.fit_processes(6, 2 * parallel.WORKER_MB + 1) == 2
     assert parallel.fit_processes(6, 1) == 1
+
+
+def killed(piece: tuple[int, int, int]) -> bytes:
+    os.kill(os.getpid(), signal.SIGKILL)
+    return b""
+
+
+def test_a_worker_the_system_kills_is_a_refusal_not_a_hang(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(parallel, "_run_piece", killed)
+    text, manifest = stream_of(examples_of())
+    path, manifest = write(tmp_path, text, manifest)
+    with pytest.raises(LearnerDataError, match="died"):
+        trajectories(path, manifest, encoders(), POLICY, processes=3)

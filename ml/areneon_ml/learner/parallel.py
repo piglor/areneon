@@ -26,6 +26,8 @@ import json
 import multiprocessing
 import os
 import sys
+from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures.process import BrokenProcessPool
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -212,7 +214,7 @@ def unpack_piece(blob: bytes) -> _Piece:
 def _raised(kind: str, message: str) -> Exception:
     """The exception a worker met, as its own class when that class is ours and says the same."""
     module, _, name = kind.rpartition(".")
-    if module.startswith("areneon_ml."):
+    if module.startswith("areneon_ml.") or module == "builtins":
         try:
             found = getattr(importlib.import_module(module), name)
             if isinstance(found, type) and issubclass(found, Exception):
@@ -246,8 +248,12 @@ def parallel_trajectories(
     _SHARED.update(manifest=manifest, encoders=encoders, path=str(path))
     try:
         context = multiprocessing.get_context("fork")
-        with context.Pool(min(workers, len(pieces))) as pool:
-            results = [unpack_piece(data) for data in pool.imap(_run_piece, pieces)]
+        # An executor, not a Pool: a worker the operating system kills (the out-of-memory
+        # killer) raises BrokenProcessPool here, where a Pool would wait for it forever.
+        with ProcessPoolExecutor(min(workers, len(pieces)), mp_context=context) as pool:
+            results = [unpack_piece(data) for data in pool.map(_run_piece, pieces)]
+    except BrokenProcessPool as exc:
+        raise LearnerDataError("a load worker died before it finished its piece") from exc
     finally:
         _SHARED.clear()
     return _join(results, manifest)
@@ -276,11 +282,11 @@ def _join(results: list[_Piece], manifest: dict[str, Any]) -> list[Trajectory] |
         whole.finish()
     except TrainingStreamError as exc:
         raise LearnerDataError(str(exc)) from exc
-    for piece in results:
-        if piece.encode_error is not None:
-            raise _raised(*piece.encode_error)
     joined = results[0].collected
     for piece in results[1:]:
         if not joined.absorb(piece.collected):
             return None  # an Episode in two pieces: the stream does not list its Episodes together
+    for piece in results:
+        if piece.encode_error is not None:
+            raise _raised(*piece.encode_error)
     return joined.trajectories()

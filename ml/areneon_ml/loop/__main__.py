@@ -125,7 +125,7 @@ def _add_run(commands: Any) -> None:
     run.add_argument(
         "--node-heap-mb",
         type=_positive,
-        help="cap each Node game process's heap (--max-old-space-size, MB); 512 to 768 keeps a "
+        help="cap each Node game process's heap (--max-old-space-size, MB); 640 keeps a "
         "game process near 0.6 GB (operational: the generation's files are the same; see "
         "docs/training-run.md, sizing a run to a machine)",
     )

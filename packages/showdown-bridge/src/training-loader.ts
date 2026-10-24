@@ -294,7 +294,13 @@ function fileFeed({ episodes, known_synthetic, behaviour_policy_id }: StoredTrai
     if (seen.size === 0) throw new TrainingLoaderError("no Episode to load");
     const order = episodes.map((stored, index) => ({ ...stored, index })).sort((a, b) => (a.hash < b.hash ? -1 : 1));
     for (const { hash, path, index } of order) {
-      const episode = await readTraining(JSON.parse(readFileSync(path, "utf8")) as unknown, index, known_synthetic, behaviour_policy_id);
+      let stored: unknown;
+      try {
+        stored = JSON.parse(readFileSync(path, "utf8")) as unknown;
+      } catch (error) {
+        throw new TrainingLoaderError(`Episode ${index} cannot be read from its file: ${(error as Error).name}`, { cause: error });
+      }
+      const episode = await readTraining(stored, index, known_synthetic, behaviour_policy_id);
       if ((await episodeHash(episode, nodeSha256)) !== hash) throw new TrainingLoaderError(`Episode ${index} is stored under a hash that is not its own`);
       yield [hash, episode];
     }

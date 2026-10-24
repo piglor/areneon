@@ -368,6 +368,7 @@ describe("writeStoredTrainingStream (#1069)", () => {
     await refusal(writeStoredTrainingStream(stored([a], [manifest([a.hash])]), { path: out }), "evaluation games never train");
     const bad = await store(forged(mutate(p1, (c) => void delete (c.provenance as { collection?: unknown }).collection)) as Episode, "bad");
     await refusal(writeStoredTrainingStream(stored([{ hash: a.hash, path: bad.path }]), { path: out }), /Episode 0 is refused|no collection record/);
+    await refusal(writeStoredTrainingStream(stored([{ hash: a.hash, path: join(dir, "missing.json") }]), { path: out }), /cannot be read from its file/);
     const other = await store(p2);
     await refusal(writeStoredTrainingStream(stored([{ hash: a.hash, path: other.path }]), { path: out }), "stored under a hash that is not its own");
   });
