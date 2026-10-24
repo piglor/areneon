@@ -37,6 +37,7 @@ from areneon_ml.inspector.readers import InspectError
 from areneon_ml.loop import layout
 from areneon_ml.progress.records import (
     ProgressRecordError,
+    check_game_baseline,
     is_v2,
     preview_variant,
     read_game_record,
@@ -71,6 +72,9 @@ class ProgressGame:
     #: an ablation match (``learned``, ``random``, ``g<N>``); None otherwise.
     opponent_generation: int | None = None
     preview_variant: str | None = None
+    #: A damage-aware game (ADR-018): the baseline seat, the match's identity hash and that seat's
+    #: counts as the record states them; None for every other game.
+    baseline: dict[str, Any] | None = None
 
 
 def _read(path: Path, what: str) -> Any:
@@ -234,6 +238,10 @@ def _check_game(
         raise InspectError(f"games/{name} is not listed by progress.json")
     if record["outcome"] != seat_outcome(row):
         raise InspectError(f"games/{name}: its outcome differs from progress.json's game row")
+    try:
+        check_game_baseline(record, match, row)
+    except ProgressRecordError as exc:
+        raise InspectError(f"games/{name}: {exc}") from exc
 
 
 def read_progress_games(
@@ -303,6 +311,7 @@ def read_progress_games(
                     if matches[found[1]].get("candidate_preview") is not None
                     else None
                 ),
+                record.get("baseline"),
             )
         )
     if both:

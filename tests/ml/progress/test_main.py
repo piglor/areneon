@@ -399,3 +399,20 @@ def test_a_tampered_look_log_stops_the_command_with_exit_3(
     assert (
         main(args(copy, "--generation", "0", "--games", "2", "--record-games", "0")) == EXIT_REFUSED
     )
+
+
+def test_the_damage_aware_flags_pass_a_budget_and_refuse_a_zero_or_a_lone_budget(
+    run: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    fake_node(monkeypatch, run)
+    base = ("--generation", "1", "--games", "2", "--record-games", "1")
+    code = main(args(run, *base, "--damage-aware", "--progress-dir", str(tmp_path / "a")))
+    printed = json.loads(capsys.readouterr().out)
+    assert code == 0
+    assert printed["generations"][0]["damage_aware"] == "played"
+    for extra in (
+        ("--damage-aware", "--damage-aware-budget-minutes", "0"),
+        ("--damage-aware-budget-minutes", "5"),
+    ):
+        assert main(args(run, *base, *extra, "--progress-dir", str(tmp_path / "b"))) == EXIT_REFUSED
+    capsys.readouterr()

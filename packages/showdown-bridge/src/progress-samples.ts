@@ -129,6 +129,41 @@ export async function progressSamples(engine: Engine): Promise<ProgressSamples> 
       e.games = e.matches.flatMap((m: any) => (["candidate", "opponent", "candidate", "tie"] as const).map((winner, index) => ({ match_id: m.match_id, game: index, pair: index >> 1, candidate_seat: index % 2 === 0 ? "p1" : "p2", outcome: { kind: "played", winner, turns } })));
       change?.(e);
     });
+  // The damage-aware baseline (ADR-018 slice 4): the seat that is p2 here plays it, with its integer counts.
+  const answeredByP2 = game.decisions.filter((d) => d.player === "p2").length;
+  const gameCounts = { decisions: answeredByP2, preview_decisions: 1, scored_decisions: answeredByP2 - 1, queries: 12, probe_runs: 9, unsupported_queries: 2, reader_fallbacks: 0, assumed_set_fallbacks: 0, epsilon_plays: 0 };
+  const identity = hexOf("9");
+  const damageGame = mutated(game, (g) => {
+    g.match_id = "damage-aware-argmax";
+    g.policies.p2 = "damage-aware@v1";
+    g.baseline = { seat: "p2", identity_hash: identity, counts: gameCounts };
+  }) as unknown as typeof game;
+  const damageHash = progressRecordHash(damageGame);
+  // A faulty damage-aware game keeps a few lines, like the other faulty games; its counts are those of the short game.
+  const shortDamage = (change: (g: Record<string, any>) => void) =>
+    mutated(damageGame, (g) => {
+      g.omniscient_log = g.omniscient_log.slice(0, 3);
+      g.omniscient_log_sha256 = omniscientLogHash(g.omniscient_log);
+      g.decisions = g.decisions.slice(0, 2);
+      g.baseline.counts.decisions = g.decisions.filter((d: any) => d.player === "p2").length;
+      g.baseline.counts.scored_decisions = 0;
+      change(g);
+    });
+  const v2Damage = (change?: (e: Record<string, any>) => void) =>
+    withV2((e) => {
+      renameMatch(e, "damage-aware-argmax");
+      Object.assign(e.matches[0], { opponent: { kind: "baseline", policy_id: "damage-aware@v1" }, game_record_hashes: [damageHash], baseline: { identity_hash: identity, counts: Object.fromEntries(Object.entries(gameCounts).map(([k, v]) => [k, v * 4])) } });
+      e.games.forEach((g: any) => (g.baseline_counts = { ...gameCounts }));
+      change?.(e);
+    });
+  // Both modes of the baseline in one record: the matches sort as damage-aware-argmax, damage-aware-sample.
+  const v2DamageBoth = (change?: (e: Record<string, any>) => void) =>
+    v2Damage((e) => {
+      const sample = structuredClone({ ...e.matches[0], match_id: "damage-aware-sample", mode: "sample" });
+      e.matches.push(sample);
+      e.games.push(...e.games.map((g: any) => ({ ...structuredClone(g), match_id: "damage-aware-sample" })));
+      change?.(e);
+    });
   const withEval = (change: (e: Record<string, any>) => void) => mutated(evaluation, change);
   const withGame = (change: (g: Record<string, any>) => void) => mutated(game, change);
   // A faulty sample whose fault does not depend on the log's length carries a few lines, so the corpus stays small.
@@ -150,6 +185,8 @@ export async function progressSamples(engine: Engine): Promise<ProgressSamples> 
       "progress-evaluation-record-2/previous-match": v2Previous,
       "progress-evaluation-record-2/anchor-match": v2Anchor(),
       "progress-evaluation-record-2/ablation-match": v2Ablation(),
+      "progress-evaluation-record-2/damage-aware-match": v2Damage(),
+      "progress-game-record/damage-aware": damageGame,
       "progress-game-record/played": game,
       "progress-game-record/played-pair": pairGame,
       "progress-game-record/forfeit": forfeitGame,
@@ -168,6 +205,8 @@ export async function progressSamples(engine: Engine): Promise<ProgressSamples> 
       "progress-evaluation-record-2/anchor-no-generation": v2Anchor((e) => delete e.matches[0].opponent.generation),
       "progress-evaluation-record-2/ablation-no-checkpoint": v2Ablation((e) => delete e.matches[0].candidate_preview.checkpoint),
       "progress-evaluation-record-2/fractional-wins": withV2((e) => (e.matches[0].wins = 0.5)),
+      "progress-evaluation-record-2/baseline-fractional-count": v2Damage((e) => (e.games[0].baseline_counts.queries = 0.5)),
+      "progress-game-record/baseline-no-identity": shortDamage((g) => delete g.baseline.identity_hash),
       "progress-game-record/public-class": withShortGame((g) => (g.data_class = "public")),
       "progress-game-record/extra-field": withShortGame((g) => (g.notes = "x")),
       "progress-game-record/bad-seed-form": withShortGame((g) => (g.seed = "1,2,3,4")),
@@ -198,6 +237,14 @@ export async function progressSamples(engine: Engine): Promise<ProgressSamples> 
       "progress-evaluation-record-2/anchor-not-earlier": v2Anchor((e) => ((e.matches[0].opponent.generation = 1), renameMatch(e, "anchor-g1-sample"))),
       "progress-evaluation-record-2/anchor-misnamed": v2Anchor((e) => renameMatch(e, "anchor-g5-sample")),
       "progress-evaluation-record-2/anchor-plan-without-match": withV2((e) => (e.plan.anchor_games_per_match = 4)),
+      "progress-evaluation-record-2/baseline-counts-disagree": v2Damage((e) => (e.matches[0].baseline.counts.queries += 1)),
+      "progress-evaluation-record-2/baseline-row-missing": v2Damage((e) => delete e.games[0].baseline_counts),
+      "progress-evaluation-record-2/baseline-on-other-match": withV2((e) => (e.matches[0].baseline = { identity_hash: identity, counts: gameCounts })),
+      "progress-evaluation-record-2/baseline-probe-runs-exceed-queries": v2Damage((e) => ((e.games[0].baseline_counts.probe_runs = 13), (e.matches[0].baseline.counts.probe_runs += 4))),
+      "progress-evaluation-record-2/baseline-identities-differ": v2DamageBoth((e) => (e.matches[1].baseline.identity_hash = hexOf("8"))),
+      "progress-game-record/baseline-seat-wrong": shortDamage((g) => (g.baseline.seat = "p1")),
+      "progress-game-record/baseline-missing": shortDamage((g) => delete g.baseline),
+      "progress-game-record/baseline-decisions-differ": shortDamage((g) => (g.baseline.counts.decisions += 5)),
       "progress-game-record/pair-wrong": withShortGame((g) => ((g.game = 3), (g.pair = 0))),
       "progress-game-record/pair-seed-wrong": withShortGame((g) => ((g.game = 1), (g.pair = 0), (g.seed = progressGameStreams(g.run_id, 1).seed))),
       "progress-game-record/chosen-not-candidate": withShortGame((g) => (g.decisions[0].chosen = "not a choice")),

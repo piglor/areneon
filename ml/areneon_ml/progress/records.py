@@ -28,6 +28,74 @@ class ProgressRecordError(ValueError):
     """A progress record breaks a rule."""
 
 
+#: The counts a damage-aware baseline seat reports per game (ADR-018 section 4), in order.
+BASELINE_COUNT_KEYS = (
+    "decisions",
+    "preview_decisions",
+    "scored_decisions",
+    "queries",
+    "probe_runs",
+    "unsupported_queries",
+    "reader_fallbacks",
+    "assumed_set_fallbacks",
+    "epsilon_plays",
+)
+
+
+#: Says what a ``damage-aware-*`` row is: a scripted opponent the lineage has trained against.
+DAMAGE_AWARE_LABEL = "seen scripted baseline: never held-out evidence"
+
+
+def is_damage_aware(policy: str) -> bool:
+    """Whether a policy id names the damage-aware baseline (``damage-aware@<commit>``)."""
+    return policy.startswith("damage-aware@")
+
+
+def sum_baseline_counts(counts: list[dict[str, int]]) -> dict[str, int]:
+    """The per-game baseline counts summed, key by key."""
+    total = {key: sum(c[key] for c in counts) for key in BASELINE_COUNT_KEYS}
+    # Written only above 0, so a run without refusals keeps the bytes it always had.
+    refused = sum(c.get("probe_refusals", 0) for c in counts)
+    return total | ({"probe_refusals": refused} if refused else {})
+
+
+def _check_baseline_counts(counts: dict[str, int], what: str) -> None:
+    refused = counts.get("probe_refusals", 0)
+    if max(counts["probe_runs"], counts["unsupported_queries"], refused) > counts["queries"]:
+        raise ProgressRecordError(
+            f"{what}: probe runs, unsupported queries and probe refusals cannot exceed queries"
+        )
+    if counts["preview_decisions"] + counts["scored_decisions"] > counts["decisions"]:
+        raise ProgressRecordError(f"{what}: preview and scored decisions cannot exceed decisions")
+
+
+def _check_baseline_of_match(
+    match: dict[str, Any], rows: list[dict[str, Any]], identities: set[str]
+) -> None:
+    """ADR-018 sections 4 and 5: a damage-aware match carries its identity hash and the sum of its
+    rows' per-game counts, and no other match carries either; the counts recompute from the rows."""
+    name = match["match_id"]
+    opponent = match["opponent"]
+    damage = opponent["kind"] == "baseline" and is_damage_aware(opponent["policy_id"])
+    if not damage:
+        if "baseline" in match or any("baseline_counts" in row for row in rows):
+            raise ProgressRecordError(f"{name}: only a damage-aware match carries baseline counts")
+        return
+    if "baseline" not in match or any("baseline_counts" not in row for row in rows):
+        raise ProgressRecordError(
+            f"{name}: a damage-aware match carries baseline counts in its summary "
+            "and in every game row"
+        )
+    identities.add(match["baseline"]["identity_hash"])
+    per_game = [row["baseline_counts"] for row in rows]
+    for index, counts in enumerate(per_game):
+        _check_baseline_counts(counts, f"{name} game {index}")
+    if match["baseline"]["counts"] != sum_baseline_counts(per_game):
+        raise ProgressRecordError(
+            f"{name}: baseline.counts must be the sum of the game rows' counts"
+        )
+
+
 def record_hash(record: object) -> str:
     """SHA-256 of a record's JCS bytes: the hash a record is named by."""
     return sha256_hex(jcs(record))
@@ -184,7 +252,11 @@ def _check_ablation_match(match: dict[str, Any], generation: int) -> None:
 
 
 def _check_match_v2(
-    match: dict[str, Any], rows: list[dict[str, Any]], plan: dict[str, Any], generation: int
+    match: dict[str, Any],
+    rows: list[dict[str, Any]],
+    plan: dict[str, Any],
+    generation: int,
+    identities: set[str],
 ) -> None:
     name = match["match_id"]
     opponent = match["opponent"]
@@ -213,12 +285,28 @@ def _check_match_v2(
                 f"{name}: game rows must run 0..games-1, pair = game // 2, seats alternating"
             )
     _recount(match, rows, plan["max_turns"])
+    _check_baseline_of_match(match, rows, identities)
     hashes = match["game_record_hashes"]
     if not _ascending(hashes) or len(hashes) != min(
         plan["recorded_games_per_match"], match["games"]
     ):
         raise ProgressRecordError(
             f"{name}: game_record_hashes must be sorted, unique, recorded_games_per_match long"
+        )
+
+
+def _check_matches_v2(
+    matches: list[dict[str, Any]],
+    by_match: dict[str, list[dict[str, Any]]],
+    plan: dict[str, Any],
+    generation: int,
+) -> None:
+    identities: set[str] = set()
+    for match in matches:
+        _check_match_v2(match, by_match[match["match_id"]], plan, generation, identities)
+    if len(identities) > 1:
+        raise ProgressRecordError(
+            "every damage-aware match of a record must carry one baseline identity hash"
         )
 
 
@@ -261,8 +349,7 @@ def _read_v2(raw: dict[str, Any], config: RunConfig | None) -> dict[str, Any]:
         by_match[row["match_id"]].append(row)
     if [row for i in ids for row in by_match[i]] != games:
         raise ProgressRecordError("game rows must be in match then game order")
-    for match in matches:
-        _check_match_v2(match, by_match[match["match_id"]], plan, raw["generation"])
+    _check_matches_v2(matches, by_match, plan, raw["generation"])
     if plan["seed_derivation"] != SEED_DERIVATION or plan["pairing"] != PAIRING:
         raise ProgressRecordError("the plan names another seed derivation or pairing")
     if config is not None:
@@ -302,6 +389,47 @@ def _check_run(raw: dict[str, Any], config: RunConfig) -> None:
             )
 
 
+def _check_game_baseline(raw: dict[str, Any]) -> None:
+    baseline = raw.get("baseline")
+    policies = raw["policies"]
+    if baseline is None:
+        if is_damage_aware(policies["p1"]) or is_damage_aware(policies["p2"]):
+            raise ProgressRecordError(
+                "a game with a damage-aware seat must carry the baseline counts"
+            )
+        return
+    seat = baseline["seat"]
+    other = "p2" if seat == "p1" else "p1"
+    if not is_damage_aware(policies[seat]) or is_damage_aware(policies[other]):
+        raise ProgressRecordError("baseline.seat must be the one seat whose policy is damage-aware")
+    _check_baseline_counts(baseline["counts"], "baseline")
+    # The actor counts every request it answered; a forfeit can stop it on one it never answered.
+    answered = sum(1 for d in raw["decisions"] if d["player"] == seat)
+    forfeited = 1 if raw["outcome"]["kind"] == "forfeit" else 0
+    if not answered <= baseline["counts"]["decisions"] <= answered + forfeited:
+        raise ProgressRecordError("baseline.counts.decisions must be the baseline seat's decisions")
+
+
+def check_game_baseline(stored: dict[str, Any], match: dict[str, Any], row: dict[str, Any]) -> None:
+    """A stored game's baseline fields are its match's and its row's: the seat the candidate does
+    not hold, the match's identity hash and the row's counts (none outside a damage-aware match)."""
+    found = stored.get("baseline")
+    if "baseline" not in match:
+        if found is not None:
+            raise ProgressRecordError("a game outside a damage-aware match carries no baseline")
+        return
+    seat = "p2" if row["candidate_seat"] == "p1" else "p1"
+    expected = {
+        "seat": seat,
+        "identity_hash": match["baseline"]["identity_hash"],
+        "counts": row["baseline_counts"],
+    }
+    if found != expected:
+        raise ProgressRecordError(
+            "the stored game's baseline is not its match's identity and its row's counts"
+        )
+
+
 def read_game_record(raw: object) -> dict[str, Any]:
     """Validate a ProgressGameRecord: choices among candidates; hashes and seed recompute."""
     try:
@@ -320,6 +448,7 @@ def read_game_record(raw: object) -> dict[str, Any]:
             raise ProgressRecordError(f"the team hash of {seat} does not recompute")
     if log_hash(raw["omniscient_log"]) != raw["omniscient_log_sha256"]:
         raise ProgressRecordError("omniscient_log_sha256 does not recompute")
+    _check_game_baseline(raw)
     # A game of a both-seats evaluation names its pair: both games of a pair share the pair's seed.
     pair = raw.get("pair")
     if pair is not None and pair != raw["game"] // 2:

@@ -185,6 +185,21 @@ describe("states the engine will not take throw, with no result", () => {
   });
 });
 
+describe("a declared status is a fact of the state, not a new infliction", () => {
+  const paste = (species: string, ability: string, moves: string): string => exportPaste(engine, importPaste(engine, `${species}\nAbility: ${ability}\nLevel: 50\nEVs: 32 HP / 32 Atk / 2 Spe\nAdamant Nature\n${moves}`));
+
+  it("takes a burn on a Fire-type attacker, which the engine would never inflict, and halves its physical damage", () => {
+    // Libero users take the type of their move, so a public burned Pokemon can be of a type that is immune to the burn
+    // when the state is read with its assumed typing and ability.
+    const cinderace = paste("Cinderace", "Blaze", "- Pyro Ball\n- Protect\n");
+    const plain = answerOf(variant((q) => ((q.attacker.set = cinderace), (q.move = "pyroball"))));
+    const burned = answerOf(variant((q) => ((q.attacker.set = cinderace), (q.move = "pyroball"), (q.attacker.status = "brn"))));
+    expect(burned.no_crit[0]).toBeLessThan(plain.no_crit[0] as number);
+    // An unknown status is still refused.
+    expect(() => probe(variant((q) => ((q.attacker.set = cinderace), (q.attacker.status = "zzz"))))).toThrow(MechanicsProbeError);
+  });
+});
+
 describe("declared state replaces what the switch-in effects set", () => {
   it("a weather set by a Pokemon's ability at battle start is cleared unless declared", () => {
     // Abomasnow's Snow Warning would otherwise set snow; the declared field has no weather.

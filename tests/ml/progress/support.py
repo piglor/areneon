@@ -19,7 +19,12 @@ from areneon_contracts.contracts import jcs
 from areneon_ml.learner.config import RunConfig
 from areneon_ml.loop import layout
 from areneon_ml.loop.records import policy_id
-from areneon_ml.progress.records import RANDOM_PREVIEW_POLICY, log_hash, record_hash
+from areneon_ml.progress.records import (
+    RANDOM_PREVIEW_POLICY,
+    log_hash,
+    record_hash,
+    sum_baseline_counts,
+)
 from areneon_ml.progress.run import ProgressRequest
 from areneon_ml.progress.seeds import progress_game_seed
 
@@ -33,6 +38,26 @@ DATASET = (
 SAMPLES = Path(__file__).resolve().parents[3] / "fixtures" / "contracts" / "v1"
 BASELINES = (("actor-rule", "actor-rule@v1"), ("random-legal", "random-legal@v1"))
 MODES = ("argmax", "sample")
+DAMAGE = ("damage-aware", "damage-aware@v1")
+#: The stand-in baseline identity hash of the damage-aware matches.
+IDENTITY = "9" * 64
+
+
+def baseline_counts(stored: dict[str, Any], seat: str, game: int) -> dict[str, int]:
+    """The stand-in per-game counts of a damage-aware seat: its decisions are the stored game's."""
+    answered = sum(1 for d in stored["decisions"] if d["player"] == seat)
+    preview = min(1, answered)
+    return {
+        "decisions": answered,
+        "preview_decisions": preview,
+        "scored_decisions": answered - preview,
+        "queries": 3 + game,
+        "probe_runs": 2,
+        "unsupported_queries": game % 2,
+        "reader_fallbacks": 0,
+        "assumed_set_fallbacks": 0,
+        "epsilon_plays": 0,
+    }
 
 
 def dataset_config() -> RunConfig:
@@ -141,7 +166,7 @@ def add_ablation(  # noqa: PLR0913, PLR0917
             )
 
 
-def progress_files(
+def progress_files(  # noqa: PLR0912
     config: RunConfig,
     request: ProgressRequest,
     manifest: dict[str, Any],
@@ -155,6 +180,8 @@ def progress_files(
     opponents: list[tuple[str, str, dict[str, Any] | None]] = [
         (actor, baseline, None) for actor, baseline in BASELINES
     ]
+    if request.damage_aware_budget_ms is not None:
+        opponents.append((*DAMAGE, None))
     if request.previous is not None:
         opponents.append(("previous", "", {}))
     anchors = {a.generation: a for a in request.anchors}
@@ -190,8 +217,26 @@ def progress_files(
                     },
                 }
             hashes = []
-            for game in range(min(request.record_games, count)):
+            damage = baseline == DAMAGE[1]
+            per_game: list[dict[str, int]] = []
+            for game in range(count):
+                seat = "p2" if game % 2 == 0 else "p1"
+                if damage:
+                    sampled = game_file(config, request, match_id, game, pair, other)
+                    per_game.append(baseline_counts(sampled, seat, game))
+                if game >= min(request.record_games, count):
+                    continue
                 found = game_file(config, request, match_id, game, pair, other)
+                if damage:
+                    # The baseline holds the seat the candidate does not.
+                    found["policies"] = (
+                        {"p1": other, "p2": pair} if seat == "p1" else found["policies"]
+                    )
+                    found["baseline"] = {
+                        "seat": seat,
+                        "identity_hash": IDENTITY,
+                        "counts": baseline_counts(found, seat, game),
+                    }
                 found["omniscient_log_sha256"] = log_hash(found["omniscient_log"])
                 stored[f"{match_id}-{game}.json"] = found
                 hashes.append(record_hash(found))
@@ -208,6 +253,7 @@ def progress_files(
                         "pair": game // 2,
                         "candidate_seat": "p1" if game % 2 == 0 else "p2",
                         "outcome": outcome,
+                        **({"baseline_counts": per_game[game]} if damage else {}),
                     }
                 )
             wins = (count + 1) // 2
@@ -225,6 +271,16 @@ def progress_files(
                     "turns_total": 5 * wins + 3 * (count - wins),
                     "forfeits": [],
                     "game_record_hashes": sorted(hashes),
+                    **(
+                        {
+                            "baseline": {
+                                "identity_hash": IDENTITY,
+                                "counts": sum_baseline_counts(per_game),
+                            }
+                        }
+                        if damage
+                        else {}
+                    ),
                 }
             )
     record = {

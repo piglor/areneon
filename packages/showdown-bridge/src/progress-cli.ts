@@ -15,6 +15,7 @@ import { engineDataHash, readEngineData } from "./engine-data.ts";
 import { loadEngine } from "./engine.ts";
 import type { Engine } from "./engine.ts";
 import { UsageError } from "./generation-cli.ts";
+import { damageAwareSetup } from "./league-generation.ts";
 import { PolicyWorkerClient } from "./policy-worker.ts";
 import { type ProgressMode, type ProgressPool, ProgressError, playProgress, writeProgress, PROGRESS_MODES } from "./progress-evaluation.ts";
 import { progressRecordHash } from "./progress-records.ts";
@@ -53,8 +54,11 @@ const FLAGS = {
   // Battle with an earlier generation's Preview) and `--ablation-random-policy-id` (this Battle with a random Preview).
   "ablation-preview": { type: "string" },
   "ablation-random-policy-id": { type: "string" },
+  // The damage-aware baseline as a third scripted opponent (ADR-018 slice 4): given, its two matches are played, and
+  // each may take at most this many wall-clock milliseconds or the evaluation fails and commits nothing.
+  "damage-aware-budget-ms": { type: "string" },
 } as const;
-const OPTIONAL = new Set<string>(["previous-preview", "previous-battle", "previous-policy-id-sample", "previous-policy-id-argmax", "anchor", "anchor-games", "ablation-preview", "ablation-random-policy-id"]);
+const OPTIONAL = new Set<string>(["previous-preview", "previous-battle", "previous-policy-id-sample", "previous-policy-id-argmax", "anchor", "anchor-games", "ablation-preview", "ablation-random-policy-id", "damage-aware-budget-ms"]);
 const PREVIOUS = ["previous-preview", "previous-battle", "previous-policy-id-sample", "previous-policy-id-argmax"] as const;
 
 const integer = (name: string, text: string, least: number): number => {
@@ -103,6 +107,8 @@ export async function runProgressCli(argv: readonly string[], print: (line: stri
   const ablationParts = values["ablation-preview"]?.split(",");
   if (ablationParts !== undefined && (ablationParts.length !== 3 || !/^\d+$/.test(ablationParts[0] as string))) throw new UsageError("--ablation-preview must be <generation>,<preview-checkpoint>,<policy-id-argmax>");
   if (ablationParts !== undefined && (anchorSpecs.length > 0 || PREVIOUS.some((name) => values[name] !== undefined))) throw new UsageError("the Preview ablation is played alone: no anchors and no previous-generation flags");
+  const damageBudget = values["damage-aware-budget-ms"] === undefined ? undefined : integer("damage-aware-budget-ms", values["damage-aware-budget-ms"], 1);
+  if (damageBudget !== undefined && ablationParts !== undefined) throw new UsageError("the Preview ablation is played alone: no damage-aware matches");
   const given = PREVIOUS.filter((name) => values[name] !== undefined);
   if (given.length !== 0 && given.length !== PREVIOUS.length) throw new UsageError(`the previous-generation flags go together: ${PREVIOUS.map((n) => `--${n}`).join(", ")}`);
   const generation = integer("generation", need("generation"), 0);
@@ -183,6 +189,7 @@ export async function runProgressCli(argv: readonly string[], print: (line: stri
               random_policy_id: need("ablation-random-policy-id"),
             },
           }),
+      ...(damageBudget === undefined ? {} : { damage_aware: { setup: damageAwareSetup(engine, config.format_id), match_budget_ms: damageBudget } }),
       pool,
       games,
       record_games,
@@ -196,6 +203,7 @@ export async function runProgressCli(argv: readonly string[], print: (line: stri
         record_hash: progressRecordHash(result.record),
         matches: result.record.matches.map((m) => ({ match_id: m.match_id, games: m.games, wins: m.wins, ties: m.ties, losses: m.losses })),
         wall_ms: result.wall_ms,
+        game_ms: result.game_ms,
         modes: [...PROGRESS_MODES],
       } as unknown as Json),
     );

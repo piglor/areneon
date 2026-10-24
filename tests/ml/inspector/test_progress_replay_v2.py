@@ -12,6 +12,7 @@ import pytest
 from areneon_ml.inspector import progress_replay as pr
 from areneon_ml.inspector import progress_replay_command as command
 from areneon_ml.inspector import progress_replay_page as page_module
+from areneon_ml.inspector.readers import InspectError
 from areneon_ml.loop import layout
 from areneon_ml.progress.run import progress_generation
 
@@ -146,3 +147,57 @@ def test_a_v2_page_stays_inside_the_page_security_rules(built: Path) -> None:
     (g, _twin) = games(built, 1, match="anchor-g0-argmax", games=[0])
     raw = page_module.replay_page(g, page_module.dex_for(table(), g))
     assert problems(raw) == []
+
+
+@pytest.fixture(scope="module")
+def damage_root(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """Generation 1 with the damage-aware matches (ADR-018 slice 4); every game stored."""
+    base = tmp_path_factory.mktemp("progress-damage")
+    run = base / "run"
+    config = make_run(run, generations=2)
+    root = base / "run.progress"
+    player = FakeProgressPlayer(config, committed_manifest(run, 0), make_consistent, previous=False)
+    progress_generation(run, 1, root, player, GAMES, GAMES, (), 4, damage_aware_budget_minutes=30)
+    return root
+
+
+def test_a_damage_aware_game_is_named_and_carries_its_counts_on_the_page(
+    damage_root: Path,
+) -> None:
+    found = games(damage_root, 1, match="damage-aware-sample", games=[0])
+    assert [g.baseline["seat"] for g in found if g.baseline] == ["p2", "p1"]
+    first, second = found
+    text = page(first)
+    assert "the damage-aware scripted baseline" in text
+    assert "seen scripted baseline: never held-out evidence" in text
+    counts = first.baseline["counts"]  # type: ignore[index]
+    assert f"{counts['decisions']} decisions, {counts['queries']} probe queries" in text
+    assert "damage-aware@v1" in text
+    assert "the damage-aware scripted baseline" in page(second)
+    other = games(damage_root, 1, match="actor-rule-sample", games=[0])[0]
+    assert other.baseline is None
+    assert "damage-aware" not in page(other)
+
+
+def test_the_index_labels_the_damage_aware_match(damage_root: Path, tmp_path: Path) -> None:
+    out = tmp_path / "out"
+    command.replay_progress(damage_root, 1, out, repo=ROOT, match="damage-aware-argmax")
+    index = html.unescape((out / "progress-replays" / "index.html").read_text())
+    assert "seen scripted baseline: never held-out evidence" in index
+
+
+def test_a_stored_game_that_disagrees_with_its_row_is_refused(
+    damage_root: Path, tmp_path: Path
+) -> None:
+    root = tmp_path / "run.progress"
+    shutil.copytree(damage_root, root)
+    target = root / "g000001"
+    name = target / "games" / "damage-aware-sample-0.json"
+    stored = layout.read_json(name)
+    stored["baseline"]["counts"]["queries"] += 1
+    layout.write_json(name, stored)
+    manifest = layout.read_json(target / layout.MANIFEST)
+    manifest["files"] = layout.hash_tree(target)
+    layout.write_json(target / layout.MANIFEST, manifest)
+    with pytest.raises(InspectError):
+        games(root, 1, match="damage-aware-sample")

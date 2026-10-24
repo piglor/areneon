@@ -77,7 +77,7 @@ export {
   writeTrainingStream,
 } from "./training-loader.ts";
 export { interimPoolSource, type PoolSource, runGenerationCli, UsageError } from "./generation-cli.ts";
-export { GenerationError, type PoolRequest, type TrainingPool as GenerationTeamPool, playGeneration } from "./league-generation.ts";
+export { type DamageAwareSetup, damageAwareSetup, GenerationError, type PoolRequest, type TrainingPool as GenerationTeamPool, playGeneration } from "./league-generation.ts";
 export { readTrainingRunConfig, runConfigHash, type TrainingRunConfig, TrainingRunConfigError } from "./training-run-config.ts";
 export { type CloneRunConfig, CloneRunConfigError, cloneRunConfigHash, readCloneRunConfig } from "./clone-run-config.ts";
 export { EpisodeError, episodeFromRecord, type EpisodeOptions, readEpisode } from "./episode-io.ts";
@@ -378,6 +378,7 @@ export {
   policyStreamLabel,
 } from "./league-seed.ts";
 export {
+  DAMAGE_AWARE_POLICY_ID,
   playProgress,
   PROGRESS_BASELINES,
   PROGRESS_MODES,

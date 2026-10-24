@@ -165,6 +165,30 @@ flag says; the output says so. The previous pair is served by a second worker.
 A committed generation is never rewritten, so the matches cannot be added to
 it: evaluate into a new `--progress-dir` (the command reports `previous: none`
 for a generation without them).
+`--damage-aware` adds, for any generation, `damage-aware-sample` and
+`damage-aware-argmax`: the pair against the damage-aware scripted baseline
+(ADR-018), which chooses by the pinned engine's own damage and turn order from
+its own channel and team only, on the same pairs, seeds and both seats as the
+other baselines. It is off by default because it is slower than the others
+(it asks the mechanics probe at every decision, see **Cost**). It is a **seen
+scripted baseline**: the lineage can have trained against it, so its rows are
+never held-out evidence and never a gate result. Each match row carries the
+baseline identity hash (SHA-256 of the JCS of its config hash, mechanics config
+hash, adapter format, state-reader hash and version manifest: games with another
+hash are another baseline, and one record holds one) and the integer counts
+summed over its games, and each game row and each stored game carry that game's
+counts: decisions, scored decisions, probe queries and runs, queries the probe
+answered `unsupported` (scored 0, never approximated), and fallbacks to the
+`actor-rule` candidate (a flagged line of the state reader, or no legal assumed
+opponent set). A baseline drifting towards `actor-rule` therefore shows as
+unsupported queries and fallbacks. The counts recompute on read: a match's are
+the sum of its rows', and a stored game's are its row's. Every damage-aware
+match has a wall-clock budget, `--damage-aware-budget-minutes` (default 30); a
+match that passes it fails the whole evaluation and commits nothing. A
+committed generation without the matches is kept, never rewritten (evaluate
+into a new `--progress-dir` to add them). The command prints the wall-clock
+milliseconds of every match and the mean and slowest game of each (`game_ms`); the
+records hold no time.
 `--anchors 0,10,20` adds, for each listed generation earlier than the one evaluated,
 an `anchor-g<A>-sample` and an `anchor-g<A>-argmax` match against generation A's
 frozen pair (`--anchor-games` games each, even, default 200, so 100 pairs), each
@@ -317,7 +341,18 @@ matches (600 games, from generation 1, `--previous-matches`) the same machine gi
 6.5 minutes
 per generation: 48 games at generation 2 took 29 s (0.6 s per game) and a three-generation
 `--all` of 8 games per match took 2.5 minutes in all. The figure depends on the
-machine and on how long the games are.
+machine and on how long the games are. The damage-aware baseline asks the mechanics probe at
+every scored decision: measured on the same shared machine (load average 3 to 8)
+over 118 games per match (59 validation pairs, a stand-in candidate that plays the
+`actor-rule` choice, games of 11 turns on average), a damage-aware game took about 1.5 s
+on average and 3.9 s at the slowest (about 115 ms per decision), against about 0.17 s
+for an `actor-rule` game. A 200-game damage-aware match is then about 5 minutes at the mean
+and about 13 minutes at the slowest game, inside the 30-minute working budget; a pair that
+plays longer games costs more in proportion. Both modes together add about twice that. The measurement used a stand-in candidate; a learned pair that plays
+longer games costs more. The budget is checked after every game, so a single game that hangs
+is bounded by the per-decision latency budget, not by the match budget. The readers check that
+the records agree on one identity hash; the evaluation recomputes it from the reviewed records
+and the pinned engine when it plays.
 
 ## 5. Teacher data for the cloning learner
 

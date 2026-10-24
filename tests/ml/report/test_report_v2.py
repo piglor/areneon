@@ -213,3 +213,30 @@ def test_the_v2_page_builds_with_sockets_blocked(
     monkeypatch.setattr(socket, "getaddrinfo", refuse)
     assert "Anchor comparisons" in text_of(run, mixed)
     assert layout.read_json(mixed / "g000001" / layout.MANIFEST)["files"]
+
+
+def test_the_damage_aware_baseline_is_shown_with_its_counts_and_label(
+    run: Path, tmp_path: Path
+) -> None:
+    root = tmp_path / "progress"
+    played(run, root, 1, damage_aware_budget_minutes=30)
+    model = read_report_model(run, root)
+    found = {m.match_id: m for m in model.progress[1].matches}
+    sums = {s["match_id"]: s for s in summary_of(record(root, 1))}
+    for mode in ("argmax", "sample"):
+        match = found[f"damage-aware-{mode}"]
+        assert match.baseline == sums[match.match_id]["baseline"]
+        assert match.seen_label == run_module.DAMAGE_AWARE_LABEL
+    assert found["actor-rule-sample"].baseline is None
+    text = text_of(run, root)
+    assert "Damage-aware baseline counts" in text
+    assert f"Score vs damage-aware ({run_module.DAMAGE_AWARE_LABEL})" in text
+    assert f'damage-aware-sample <span class="muted">({run_module.DAMAGE_AWARE_LABEL})' in text
+    counts = found["damage-aware-argmax"].baseline["counts"]  # type: ignore[index]
+    assert f'<td class="n">{counts["queries"]}</td>' in text
+
+
+def test_a_page_without_the_baseline_has_no_baseline_table(run: Path, tmp_path: Path) -> None:
+    root = tmp_path / "progress"
+    played(run, root, 1)
+    assert "Damage-aware baseline counts" not in text_of(run, root)

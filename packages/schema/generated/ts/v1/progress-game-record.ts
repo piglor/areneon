@@ -45,6 +45,14 @@ export interface ProgressGameRecord {
    * SHA-256 of the JCS bytes of the omniscient_log array (the lines as a JSON array of strings).
    */
   omniscient_log_sha256: string;
+  /**
+   * Only a game with a damage-aware baseline seat (ADR-018 sections 4, 5): which seat it held, the baseline identity hash and that seat's integer counts for the game. Added within v1 (ADR-008 section 3): a reader older than the field rejects a record that carries it.
+   */
+  baseline?: {
+    seat: "p1" | "p2";
+    identity_hash: string;
+    counts: BaselineCounts;
+  };
 }
 /**
  * Replay identity of a battle (ADR-003, ADR-007): the pinned engine commit, the format, and the hashes of the engine ruleset and of Areneon's own format rules.
@@ -207,4 +215,50 @@ export interface Forfeit {
   cause: string;
   request_seq: number;
   turns: number;
+}
+/**
+ * This interface was referenced by `ProgressGameRecord`'s JSON-Schema
+ * via the `definition` "BaselineCounts".
+ */
+export interface BaselineCounts {
+  /**
+   * Requests answered, Team Preview included.
+   */
+  decisions: number;
+  /**
+   * Team Preview requests (the actor-rule candidate).
+   */
+  preview_decisions: number;
+  /**
+   * Requests whose candidates were scored.
+   */
+  scored_decisions: number;
+  /**
+   * Probe queries asked.
+   */
+  queries: number;
+  /**
+   * Probe runs actually made (queries not answered from a game's memo).
+   */
+  probe_runs: number;
+  /**
+   * Queries the probe answered unsupported: scored 0, never approximated.
+   */
+  unsupported_queries: number;
+  /**
+   * Requests answered by the actor-rule candidate because the state reader flagged a line.
+   */
+  reader_fallbacks: number;
+  /**
+   * Requests answered by the actor-rule candidate because no legal assumed opponent set could be built.
+   */
+  assumed_set_fallbacks: number;
+  /**
+   * Requests where epsilon_ppm made the baseline play a random candidate.
+   */
+  epsilon_plays: number;
+  /**
+   * Optional (a minor change within v1; absent means 0 and is written only when above 0): requests answered by the actor-rule candidate because the mechanics probe refused a query the baseline built (a declared state the engine does not take). A high rate means the baseline plays like actor-rule; never more than queries.
+   */
+  probe_refusals?: number;
 }

@@ -197,6 +197,7 @@ export interface Match {
    * SHA-256 of the JCS bytes of each stored ProgressGameRecord of the match, sorted and unique; its length is plan.recorded_games_per_match.
    */
   game_record_hashes: string[];
+  baseline?: BaselineSummary;
 }
 /**
  * This interface was referenced by `ProgressEvaluationRecordV2`'s JSON-Schema
@@ -290,6 +291,65 @@ export interface ForfeitCount {
   count: number;
 }
 /**
+ * The damage-aware baseline of a match (ADR-018 sections 4, 5): its identity hash and the per-game counts summed over the match's games (all integers). Present exactly in the matches whose opponent is damage-aware. Added within v1 (ADR-008 section 3): a reader older than the field rejects a record that carries it.
+ *
+ * This interface was referenced by `ProgressEvaluationRecordV2`'s JSON-Schema
+ * via the `definition` "BaselineSummary".
+ */
+export interface BaselineSummary {
+  /**
+   * The baseline identity hash: SHA-256 of the JCS of {baseline_config_hash, mechanics_config_hash, adapter_format, reader_sha256, version_manifest}. Every game of every damage-aware match of a record carries the same one.
+   */
+  identity_hash: string;
+  counts: BaselineCounts;
+}
+/**
+ * This interface was referenced by `ProgressEvaluationRecordV2`'s JSON-Schema
+ * via the `definition` "BaselineCounts".
+ */
+export interface BaselineCounts {
+  /**
+   * Requests answered, Team Preview included.
+   */
+  decisions: number;
+  /**
+   * Team Preview requests (the actor-rule candidate).
+   */
+  preview_decisions: number;
+  /**
+   * Requests whose candidates were scored.
+   */
+  scored_decisions: number;
+  /**
+   * Probe queries asked.
+   */
+  queries: number;
+  /**
+   * Probe runs actually made (queries not answered from a game's memo).
+   */
+  probe_runs: number;
+  /**
+   * Queries the probe answered unsupported: scored 0, never approximated.
+   */
+  unsupported_queries: number;
+  /**
+   * Requests answered by the actor-rule candidate because the state reader flagged a line.
+   */
+  reader_fallbacks: number;
+  /**
+   * Requests answered by the actor-rule candidate because no legal assumed opponent set could be built.
+   */
+  assumed_set_fallbacks: number;
+  /**
+   * Requests where epsilon_ppm made the baseline play a random candidate.
+   */
+  epsilon_plays: number;
+  /**
+   * Optional (a minor change within v1; absent means 0 and is written only when above 0): requests answered by the actor-rule candidate because the mechanics probe refused a query the baseline built (a declared state the engine does not take). A high rate means the baseline plays like actor-rule; never more than queries.
+   */
+  probe_refusals?: number;
+}
+/**
  * One game's result: the per-game results table of protocol section 8.1.
  *
  * This interface was referenced by `ProgressEvaluationRecordV2`'s JSON-Schema
@@ -310,6 +370,7 @@ export interface GameRow {
    */
   candidate_seat: "p1" | "p2";
   outcome: Outcome;
+  baseline_counts?: BaselineCounts1;
 }
 /**
  * This interface was referenced by `ProgressEvaluationRecordV2`'s JSON-Schema
@@ -336,4 +397,49 @@ export interface Forfeit {
    */
   request_seq: number;
   turns: number;
+}
+/**
+ * Only a game of a damage-aware match: the baseline seat's integer counts for this game (reader rules: probe_runs and unsupported_queries do not exceed queries; preview_decisions plus scored_decisions do not exceed decisions). The match's baseline.counts are the sums over its rows.
+ */
+export interface BaselineCounts1 {
+  /**
+   * Requests answered, Team Preview included.
+   */
+  decisions: number;
+  /**
+   * Team Preview requests (the actor-rule candidate).
+   */
+  preview_decisions: number;
+  /**
+   * Requests whose candidates were scored.
+   */
+  scored_decisions: number;
+  /**
+   * Probe queries asked.
+   */
+  queries: number;
+  /**
+   * Probe runs actually made (queries not answered from a game's memo).
+   */
+  probe_runs: number;
+  /**
+   * Queries the probe answered unsupported: scored 0, never approximated.
+   */
+  unsupported_queries: number;
+  /**
+   * Requests answered by the actor-rule candidate because the state reader flagged a line.
+   */
+  reader_fallbacks: number;
+  /**
+   * Requests answered by the actor-rule candidate because no legal assumed opponent set could be built.
+   */
+  assumed_set_fallbacks: number;
+  /**
+   * Requests where epsilon_ppm made the baseline play a random candidate.
+   */
+  epsilon_plays: number;
+  /**
+   * Optional (a minor change within v1; absent means 0 and is written only when above 0): requests answered by the actor-rule candidate because the mechanics probe refused a query the baseline built (a declared state the engine does not take). A high rate means the baseline plays like actor-rule; never more than queries.
+   */
+  probe_refusals?: number;
 }

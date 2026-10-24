@@ -15,16 +15,20 @@
 
 import { closeSync, fsyncSync, mkdirSync, openSync, writeSync } from "node:fs";
 import { join } from "node:path";
+import { readerSha256 } from "@areneon/public-state";
 import { enumerateCandidates } from "./choices.ts";
 import { type Json, jcs } from "./canonical-json.ts";
+import { type DamageAwareActor, damageAwareActor } from "./damage-aware-actor.ts";
+import { damageAwareIdentity, damageAwareIdentityHash, damageAwarePolicyId } from "./damage-aware-identity.ts";
 import type { Engine, PokemonSet } from "./engine.ts";
 import { guardActor, type LatencyBudget, type PlayedGame } from "./evaluation-harness.ts";
 import { resolveFormat } from "./formats.ts";
 import { firstLegal } from "./golden.ts";
+import type { DamageAwareSetup } from "./league-generation.ts";
 import { type PolicyClient } from "./policy-worker.ts";
 import { policyGame, type PolicySeat } from "./policy-actor.ts";
 import { PROGRESS_PAIRING, PROGRESS_SEED_DERIVATION, progressGameStreams, progressPairs } from "./progress-seed.ts";
-import { omniscientLogHash, progressRecordHash, tallyRows, type ProgressEvaluationRecordV2, type ProgressGameRecord, readProgressEvaluationRecordV2, readProgressGameRecord } from "./progress-records.ts";
+import { type BaselineCounts, omniscientLogHash, progressRecordHash, sumBaselineCounts, tallyRows, type ProgressEvaluationRecordV2, type ProgressGameRecord, readProgressEvaluationRecordV2, readProgressGameRecord } from "./progress-records.ts";
 import { randomLegalActor } from "./random-legal.ts";
 import type { Actor, Player } from "./runner.ts";
 import type { SyntheticTeamHashes } from "./team-class.ts";
@@ -52,6 +56,15 @@ export const PROGRESS_BASELINES = [
   { actor: "actor-rule", policy_id: "actor-rule@v1" },
   { actor: "random-legal", policy_id: "random-legal@v1" },
 ] as const;
+
+/** The damage-aware baseline's policy id (ADR-018 section 5; the opt-in third baseline of the progress evaluation). */
+export const DAMAGE_AWARE_POLICY_ID = damageAwarePolicyId("v1");
+
+/** What the damage-aware baseline seat reports of one game: its identity hash and counts. */
+interface BaselineReport {
+  identity_hash: string;
+  counts: BaselineCounts;
+}
 
 export const PROGRESS_MODES = ["argmax", "sample"] as const;
 export type ProgressMode = (typeof PROGRESS_MODES)[number];
@@ -110,6 +123,18 @@ export interface ProgressOptions {
     /** The policy id of the learned Battle with a random Preview. */
     random_policy_id: string;
   };
+  /**
+   * The damage-aware baseline as a third scripted opponent (ADR-018 slice 4; opt-in): the reviewed records it
+   * reads and the wall-clock budget of one of its matches. A match whose elapsed time passes the budget fails
+   * the whole evaluation (nothing is committed). Its matches are `damage-aware-argmax` and `damage-aware-sample`.
+   */
+  damage_aware?: {
+    setup: DamageAwareSetup;
+    /** The most wall-clock milliseconds one damage-aware match may take. */
+    match_budget_ms: number;
+    /** The clock the budget is measured with (default `performance.now`); a test seam. */
+    clock?: () => number;
+  };
   pool: ProgressPool;
   /** Games per baseline and previous match: even, two per pair; refused above twice the number of disjoint pairs. */
   games: number;
@@ -127,6 +152,8 @@ export interface ProgressResult {
   game_records: Map<string, ProgressGameRecord>;
   /** Wall-clock milliseconds per match: a measurement for the operator, never stored in a record. */
   wall_ms: Record<string, number>;
+  /** Wall-clock milliseconds per game of each match (mean and slowest): a measurement for the operator, never stored. */
+  game_ms: Record<string, { mean: number; max: number }>;
 }
 
 const seatOf = (index: number): Player => (index % 2 === 0 ? "p1" : "p2");
@@ -161,6 +188,8 @@ export interface GameFacts {
   teams: Record<Player, PokemonSet[]>;
   policies: Record<Player, string>;
   played: PlayedGame;
+  /** Only a game with a damage-aware seat: that seat, the baseline identity hash and its counts. */
+  baseline?: { seat: Player; identity_hash: string; counts: BaselineCounts };
 }
 
 /** Build the ProgressGameRecord of a played or forfeited game, and read it back so a bad one cannot leave. */
@@ -204,6 +233,7 @@ export function buildProgressGameRecord(facts: GameFacts): ProgressGameRecord {
     outcome: seen,
     omniscient_log: lines,
     omniscient_log_sha256: omniscientLogHash(lines),
+    ...(facts.baseline === undefined ? {} : { baseline: facts.baseline }),
   });
 }
 
@@ -262,14 +292,55 @@ export async function playProgress(options: ProgressOptions): Promise<ProgressRe
   const rowsByMatch = new Map<string, Row[]>();
   const stored = new Map<string, ProgressGameRecord>();
   const wall_ms: Record<string, number> = {};
-  type Opponent = { id: string; anchored?: true; opponent: (mode: ProgressMode) => Match["opponent"]; seat: (mode: ProgressMode, game: number) => PolicySeat | Actor; policies: (mode: ProgressMode) => string; begin: () => Promise<void> };
+  const game_ms: Record<string, { mean: number; max: number }> = {};
+  const clock = options.damage_aware?.clock ?? (() => performance.now());
+  type Seat = { seat: PolicySeat | Actor; report?: () => BaselineReport };
+  type Opponent = { id: string; anchored?: true; budget_ms?: number; opponent: (mode: ProgressMode) => Match["opponent"]; seat: (mode: ProgressMode, game: number) => Seat; policies: (mode: ProgressMode) => string; begin: () => Promise<void> };
   const opponents: Opponent[] = PROGRESS_BASELINES.map((baseline) => ({
     id: baseline.actor,
     opponent: () => ({ kind: "baseline", policy_id: baseline.policy_id }),
-    seat: (_mode, game) => guardActor(baseline.actor === "actor-rule" ? firstLegal : randomLegalActor(progressGameStreams(config.seeds.run_key, game).baseline_seed), { role: "scripted", latency_budget: budget }),
+    seat: (_mode, game) => ({ seat: guardActor(baseline.actor === "actor-rule" ? firstLegal : randomLegalActor(progressGameStreams(config.seeds.run_key, game).baseline_seed), { role: "scripted", latency_budget: budget }) }),
     policies: () => baseline.policy_id,
     begin: () => Promise.resolve(),
   }));
+  const damage = options.damage_aware;
+  let identity: string | undefined;
+  if (damage !== undefined) {
+    if (ablation !== undefined) throw new ProgressError("the Preview ablation plays random-legal and actor-rule only: no damage-aware matches");
+    if (!Number.isSafeInteger(damage.match_budget_ms) || damage.match_budget_ms < 1) throw new ProgressError("the damage-aware match budget must be a positive whole number of milliseconds");
+    if (damage.setup.config.epsilon_ppm !== 0) throw new ProgressError("the damage-aware baseline plays an evaluation with epsilon_ppm 0: it draws nothing");
+    if (damage.setup.config.format_id !== config.format_id) throw new ProgressError("the damage-aware baseline's records are for another format");
+    // The identity the records must carry, computed from the records and the pinned engine, not from a game.
+    identity = damageAwareIdentityHash(damageAwareIdentity({ config: damage.setup.config, mechanics: damage.setup.mechanics, manifest, reader_sha256: readerSha256() }));
+    opponents.push({
+      id: "damage-aware",
+      budget_ms: damage.match_budget_ms,
+      opponent: () => ({ kind: "baseline", policy_id: DAMAGE_AWARE_POLICY_ID }),
+      seat: (_mode, game) => {
+        // A fresh actor per game: it keeps the reader's state, the game's memo and its counts.
+        const actor: DamageAwareActor = damageAwareActor({
+          ...damage.setup,
+          engine,
+          data_class: "synthetic",
+          commit: DAMAGE_AWARE_POLICY_ID.slice(DAMAGE_AWARE_POLICY_ID.indexOf("@") + 1),
+          seed: progressGameStreams(config.seeds.run_key, game).baseline_seed,
+        });
+        return {
+          seat: guardActor(actor, { role: "scripted", latency_budget: budget }),
+          report: () => {
+            const { policy_id, identity_hash, counts } = actor.report();
+            if (policy_id !== DAMAGE_AWARE_POLICY_ID) throw new ProgressError(`the baseline plays as ${policy_id}, not ${DAMAGE_AWARE_POLICY_ID}`);
+            if (identity_hash !== identity) throw new ProgressError("a damage-aware game carries another baseline identity hash than its records give");
+            // probe_refusals is written only above 0, so a baseline without refusals keeps the record's bytes.
+            const { probe_refusals, ...rest } = counts;
+            return { identity_hash, counts: probe_refusals > 0 ? { ...rest, probe_refusals } : rest };
+          },
+        };
+      },
+      policies: () => DAMAGE_AWARE_POLICY_ID,
+      begin: () => Promise.resolve(),
+    });
+  }
   const { previous } = options;
   // The candidates: the generation's own pair, or the three Previews of the ablation (argmax only, against the baselines).
   type Candidate = { prefix: string; client: PolicyClient & { beginGame?: () => Promise<void> }; policy_ids: Record<ProgressMode, string>; random_preview?: true; candidate_preview?: Match["candidate_preview"] };
@@ -293,7 +364,7 @@ export async function playProgress(options: ProgressOptions): Promise<ProgressRe
     opponents.push({
       id: "previous",
       opponent: (mode) => ({ kind: "previous", policy_id: previous.policy_ids[mode], checkpoints: previous.checkpoints }),
-      seat: (mode) => ({ client: previous.client, policy_id: previous.policy_ids[mode], sampling: mode }),
+      seat: (mode) => ({ seat: { client: previous.client, policy_id: previous.policy_ids[mode], sampling: mode } }),
       policies: (mode) => previous.policy_ids[mode],
       begin: async () => {
         await previous.client.beginGame?.();
@@ -305,7 +376,7 @@ export async function playProgress(options: ProgressOptions): Promise<ProgressRe
       id: `anchor-g${anchor.generation}`,
       anchored: true,
       opponent: (mode) => ({ kind: "anchor", generation: anchor.generation, policy_id: anchor.policy_ids[mode], checkpoints: anchor.checkpoints }),
-      seat: (mode) => ({ client: anchor.client, policy_id: anchor.policy_ids[mode], sampling: mode }),
+      seat: (mode) => ({ seat: { client: anchor.client, policy_id: anchor.policy_ids[mode], sampling: mode } }),
       policies: (mode) => anchor.policy_ids[mode],
       begin: async () => {
         await anchor.client.beginGame?.();
@@ -323,8 +394,11 @@ export async function playProgress(options: ProgressOptions): Promise<ProgressRe
       const opponent_policy = baseline.policies(mode);
       const matchRows: Row[] = [];
       const hashes: string[] = [];
-      const started = performance.now();
+      const reports: BaselineReport[] = [];
+      const gameMs: number[] = [];
+      const started = clock();
       for (let game = 0; game < count; game++) {
+        const gameStarted = clock();
         const candidate = seatOf(game);
         const pair = game >> 1;
         const [first, second] = plan.pairs[pair] as [ProgressTeam, ProgressTeam];
@@ -334,6 +408,7 @@ export async function playProgress(options: ProgressOptions): Promise<ProgressRe
         const seat: PolicySeat = { client: candidateKind.client, policy_id, sampling: mode, ...(candidateKind.random_preview === undefined ? {} : { random_preview: true }) };
         await candidateKind.client.beginGame?.();
         await baseline.begin();
+        const opposing = baseline.seat(mode, pair);
         const played = await policyGame({
           engine,
           formatId: config.format_id,
@@ -341,21 +416,42 @@ export async function playProgress(options: ProgressOptions): Promise<ProgressRe
           game: pair,
           teams,
           known_synthetic: pool.known_synthetic,
-          seats: { [candidate]: seat, [rival(candidate)]: baseline.seat(mode, pair) } as Record<Player, PolicySeat | Actor>,
+          seats: { [candidate]: seat, [rival(candidate)]: opposing.seat } as Record<Player, PolicySeat | Actor>,
           latency_budget: budget,
           maxTurns: config.generation.max_turns,
         });
-        matchRows.push(rowOf(match_id, game, pair, candidate, played));
+        // The baseline's own report of this game (an incident game throws in `rowOf` first, with its message).
+        const row = rowOf(match_id, game, pair, candidate, played);
+        const report = opposing.report?.();
+        if (report !== undefined) reports.push(report);
+        matchRows.push(report === undefined ? row : { ...row, baseline_counts: report.counts });
+        const now = clock();
+        gameMs.push(now - gameStarted);
+        // A match that outruns its budget fails the evaluation (fail closed): no partial record leaves.
+        if (baseline.budget_ms !== undefined && now - started > baseline.budget_ms) {
+          throw new ProgressError(`${match_id} passed its wall-clock budget of ${baseline.budget_ms} ms after ${game + 1} of ${count} games (${Math.round(now - started)} ms): nothing is committed`);
+        }
         if (game < recorded) {
           const policies = { [candidate]: policy_id, [rival(candidate)]: opponent_policy } as Record<Player, string>;
-          const stored_game = buildProgressGameRecord({ run_id: config.seeds.run_key, generation, match_id, game, pair, teams, policies, played });
+          const stored_game = buildProgressGameRecord({
+            run_id: config.seeds.run_key,
+            generation,
+            match_id,
+            game,
+            pair,
+            teams,
+            policies,
+            played,
+            ...(report === undefined ? {} : { baseline: { seat: rival(candidate), identity_hash: report.identity_hash, counts: report.counts } }),
+          });
           stored.set(`${match_id}-${game}.json`, stored_game);
           hashes.push(progressRecordHash(stored_game));
         }
       }
       rowsByMatch.set(match_id, matchRows);
-      wall_ms[match_id] = Math.round(performance.now() - started);
-      matches.push(summarise(match_id, policy_id, baseline.opponent(mode), mode, matchRows, hashes, config.generation.max_turns, candidateKind.candidate_preview));
+      wall_ms[match_id] = Math.round(clock() - started);
+      game_ms[match_id] = { mean: Math.round(gameMs.reduce((a, b) => a + b, 0) / gameMs.length), max: Math.round(Math.max(...gameMs)) };
+      matches.push(summarise(match_id, policy_id, baseline.opponent(mode), mode, matchRows, hashes, config.generation.max_turns, candidateKind.candidate_preview, reports));
     }
     }
   }
@@ -384,10 +480,10 @@ export async function playProgress(options: ProgressOptions): Promise<ProgressRe
     matches,
     games: rows,
   });
-  return { record, game_records: stored, wall_ms };
+  return { record, game_records: stored, wall_ms, game_ms };
 }
 
-function summarise(match_id: string, policy_id: string, opponent: Match["opponent"], mode: ProgressMode, rows: readonly Row[], hashes: string[], maxTurns: number, candidate_preview?: Match["candidate_preview"]): Match {
+function summarise(match_id: string, policy_id: string, opponent: Match["opponent"], mode: ProgressMode, rows: readonly Row[], hashes: string[], maxTurns: number, candidate_preview: Match["candidate_preview"] | undefined, reports: readonly BaselineReport[]): Match {
   return {
     match_id,
     policy_id,
@@ -397,6 +493,7 @@ function summarise(match_id: string, policy_id: string, opponent: Match["opponen
     games: rows.length,
     ...tallyRows(rows, maxTurns),
     game_record_hashes: hashes.sort(),
+    ...(reports.length === 0 ? {} : { baseline: { identity_hash: (reports[0] as BaselineReport).identity_hash, counts: sumBaselineCounts(reports.map((report) => report.counts)) } }),
   };
 }
 

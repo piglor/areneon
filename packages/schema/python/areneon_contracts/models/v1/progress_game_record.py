@@ -146,6 +146,67 @@ class Outcome(RootModel[Played | Forfeit]):
     """
 
 
+class BaselineCounts(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    decisions: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+    """
+    Requests answered, Team Preview included.
+    """
+    preview_decisions: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+    """
+    Team Preview requests (the actor-rule candidate).
+    """
+    scored_decisions: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+    """
+    Requests whose candidates were scored.
+    """
+    queries: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+    """
+    Probe queries asked.
+    """
+    probe_runs: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+    """
+    Probe runs actually made (queries not answered from a game's memo).
+    """
+    unsupported_queries: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+    """
+    Queries the probe answered unsupported: scored 0, never approximated.
+    """
+    reader_fallbacks: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+    """
+    Requests answered by the actor-rule candidate because the state reader flagged a line.
+    """
+    assumed_set_fallbacks: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+    """
+    Requests answered by the actor-rule candidate because no legal assumed opponent set could be built.
+    """
+    epsilon_plays: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+    """
+    Requests where epsilon_ppm made the baseline play a random candidate.
+    """
+    probe_refusals: Annotated[StrictInt | MISSING, Field(ge=0, le=9007199254740991)] = (
+        MISSING
+    )
+    """
+    Optional (a minor change within v1; absent means 0 and is written only when above 0): requests answered by the actor-rule candidate because the mechanics probe refused a query the baseline built (a declared state the engine does not take). A high rate means the baseline plays like actor-rule; never more than queries.
+    """
+
+
+class Baseline(BaseModel):
+    """
+    Only a game with a damage-aware baseline seat (ADR-018 sections 4, 5): which seat it held, the baseline identity hash and that seat's integer counts for the game. Added within v1 (ADR-008 section 3): a reader older than the field rejects a record that carries it.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    seat: Literal["p1", "p2"]
+    identity_hash: Annotated[StrictStr, Field(pattern="^[0-9a-f]{64}$")]
+    counts: BaselineCounts
+
+
 class PokemonSet(BaseModel):
     """
     One set, as the pinned engine's PokemonSet (sim/teams.ts) holds it. Legality is the engine validator's, not this schema's.
@@ -234,4 +295,8 @@ class ProgressGameRecord(BaseModel):
     omniscient_log_sha256: Annotated[StrictStr, Field(pattern="^[0-9a-f]{64}$")]
     """
     SHA-256 of the JCS bytes of the omniscient_log array (the lines as a JSON array of strings).
+    """
+    baseline: Baseline | MISSING = MISSING
+    """
+    Only a game with a damage-aware baseline seat (ADR-018 sections 4, 5): which seat it held, the baseline identity hash and that seat's integer counts for the game. Added within v1 (ADR-008 section 3): a reader older than the field rejects a record that carries it.
     """
