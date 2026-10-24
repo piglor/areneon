@@ -4,29 +4,26 @@
 // Reads private-data/teams/*.txt through a PasteDirectorySource. Stdout gets
 // counts only; the detail goes to /dev/tty. It writes no file, and it refuses
 // unless stdin, stdout and stderr are terminals and no agent variable is set.
-import { closeSync, openSync, writeSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { loadEngine } from "../src/engine.ts";
+import { currentSession, openControllingTerminal, OwnerSessionError, terminalRefusal } from "../src/owner-session.ts";
 import { PasteDirectorySource } from "../src/private-team-source.ts";
-import { InventoryError, parseInventoryArgs, runInventory, terminalRefusal, type InventoryTerminal } from "../src/team-inventory.ts";
+import { InventoryError, parseInventoryArgs, runInventory, type InventoryTerminal } from "../src/team-inventory.ts";
 
 const repoRoot = fileURLToPath(new URL("../../../", import.meta.url));
 
 const terminal: InventoryTerminal = {
-  refusal: () =>
-    terminalRefusal(process.env, {
-      stdin: Boolean(process.stdin.isTTY),
-      stdout: Boolean(process.stdout.isTTY),
-      stderr: Boolean(process.stderr.isTTY),
-    }),
+  refusal() {
+    const { env, isTerminal } = currentSession();
+    return terminalRefusal(env, isTerminal);
+  },
   openDetail() {
-    let fd: number;
     try {
-      fd = openSync("/dev/tty", "w");
-    } catch {
-      throw new InventoryError("refusing: no controlling terminal to show the detail on");
+      return openControllingTerminal();
+    } catch (error) {
+      // The shared guard's fixed words; the inventory reports them as its own refusal.
+      throw new InventoryError(error instanceof OwnerSessionError ? error.message : "refusing: no controlling terminal to show the detail on");
     }
-    return { write: (text) => void writeSync(fd, text), close: () => closeSync(fd) };
   },
 };
 
