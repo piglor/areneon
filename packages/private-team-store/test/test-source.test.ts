@@ -56,6 +56,7 @@ describe("snapshotTeams", () => {
     const copy = await localCopy();
     const ask = (over: Partial<Parameters<typeof snapshotTeams>[0]>) => snapshotTeams({ engine, config, snapshotsDir: copy.dir, snapshotHash: copy.hash, subset: "all", ...over });
     expect(await code(() => ask({ snapshotHash: "cd".repeat(32) }))).toBe("private-test: source_unreadable");
+    for (const bad of ["../escape", "AB".repeat(32), "ab".repeat(31), ""]) expect(await code(() => ask({ snapshotHash: bad }))).toBe("private-test: source_unreadable");
     const plain = mkdtempSync(join(tmpdir(), "plain-"));
     try {
       expect(await code(() => ask({ snapshotsDir: plain }))).toBe("private-test: source_unreadable");
