@@ -46,8 +46,16 @@ def open_controlling_terminal() -> None:
     os.close(fd)
 
 
+def _is_tty(stream: object) -> bool:
+    isatty = getattr(stream, "isatty", None)
+    try:
+        return bool(isatty()) if callable(isatty) else False
+    except ValueError:  # a closed stream
+        return False
+
+
 def _stdio_flags() -> tuple[bool, bool, bool]:
-    return (sys.stdin.isatty(), sys.stdout.isatty(), sys.stderr.isatty())
+    return (_is_tty(sys.stdin), _is_tty(sys.stdout), _is_tty(sys.stderr))
 
 
 @dataclass(frozen=True)

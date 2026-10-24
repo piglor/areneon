@@ -5,12 +5,11 @@
 // parent (a sticky bit, as on /tmp, is fine), every parent owned by the user
 // or root, not on a Windows drive mounted into WSL (DrvFs/9p keeps no real
 // owner or mode), and has a `private-data` path segment. These are the
-// `assertWorkDir` rules of `packages/private-team-store/src/work-dir.ts`
-// (which also admits tmpfs for snapshot intermediates; an output root does
-// not) with a fixed code each; the Python twin is
+// `assertWorkDir` rules of the snapshot writer (which also admits tmpfs for
+// intermediates; an output root does not) with a fixed code each; the Python twin is
 // `ml/areneon_ml/private/private_root.py`. A refusal carries a code and the
 // fixed words of `fixtures/private-guard/refusals.json`, never a path.
-// `probe.uid` is a seam for tests only. Node built-ins only.
+// `probe.uid` and `probe.parentUid` are seams for tests only. Node built-ins only.
 
 import { closeSync, lstatSync, openSync, realpathSync, writeSync } from "node:fs";
 import { dirname, isAbsolute, join, resolve, sep } from "node:path";

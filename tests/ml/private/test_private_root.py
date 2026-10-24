@@ -153,3 +153,17 @@ def test_a_failed_write_is_unreadable(tmp_path: Path) -> None:
         assert code_of(tmp_path, lambda: write_private_file(directory, "a", "x")) == "unreadable"
     finally:
         directory.chmod(0o700)
+
+
+def test_the_file_helpers_forward_the_parent_seam(tmp_path: Path) -> None:
+    directory = root(tmp_path)
+
+    def foreign(_parent: Path) -> int:
+        return ME + 1
+
+    assert code_of(tmp_path, lambda: private_root_file(directory, "a", parent_uid=foreign)) == (
+        "unsafe_parent"
+    )
+    assert code_of(
+        tmp_path, lambda: write_private_file(directory, "a", "x", parent_uid=foreign)
+    ) == ("unsafe_parent")

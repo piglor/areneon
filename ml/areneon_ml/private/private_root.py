@@ -94,19 +94,30 @@ def place_refusal(real: str) -> str | None:
     return None if "private-data" in PurePosixPath(real).parts else "no_private_data_segment"
 
 
-def private_root_file(root: str | os.PathLike[str], name: str, *, uid: int | None = None) -> Path:
+def private_root_file(
+    root: str | os.PathLike[str],
+    name: str,
+    *,
+    uid: int | None = None,
+    parent_uid: Callable[[Path], int] | None = None,
+) -> Path:
     """The path of a file in a checked private root; only a plain file name is accepted."""
-    real = assert_private_root(root, uid=uid)
+    real = assert_private_root(root, uid=uid, parent_uid=parent_uid)
     if not re.fullmatch(r"[^/\\\x00]+", name) or name in (".", ".."):
         raise PrivateRootError("bad_file_name")
     return real / name
 
 
 def write_private_file(
-    root: str | os.PathLike[str], name: str, data: bytes | str, *, uid: int | None = None
+    root: str | os.PathLike[str],
+    name: str,
+    data: bytes | str,
+    *,
+    uid: int | None = None,
+    parent_uid: Callable[[Path], int] | None = None,
 ) -> Path:
     """Write a new file (mode 0600) in the private root; an existing file is never overwritten."""
-    path = private_root_file(root, name, uid=uid)
+    path = private_root_file(root, name, uid=uid, parent_uid=parent_uid)
     payload = data.encode("utf-8") if isinstance(data, str) else data
     try:
         fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)

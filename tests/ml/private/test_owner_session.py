@@ -200,3 +200,18 @@ def test_open_controlling_terminal_closes_what_it_opened(monkeypatch: pytest.Mon
     open_controlling_terminal()
     with pytest.raises(OSError, match="Bad file descriptor"):
         os.fstat(seen[0])
+
+
+def test_a_missing_or_closed_stdio_stream_is_not_a_terminal(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class Closed:
+        def isatty(self) -> bool:
+            raise ValueError("I/O operation on closed file")
+
+    monkeypatch.delenv("CLAUDECODE", raising=False)
+    monkeypatch.delenv("AI_AGENT", raising=False)
+    monkeypatch.setattr(sys, "stdin", None)
+    assert code_of(assert_owner_session) == "not_a_terminal"
+    monkeypatch.setattr(sys, "stdin", Closed())
+    assert code_of(assert_owner_session) == "not_a_terminal"
