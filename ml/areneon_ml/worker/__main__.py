@@ -17,12 +17,30 @@ from pathlib import Path
 
 from areneon_ml.checkpoint.files import CheckpointFileError, load_checkpoint
 from areneon_ml.model.gamedata import GameData
+from areneon_ml.model.network import ConfigError, ModelConfig
 from areneon_ml.model.runtime import configure_cpu_inference
 from areneon_ml.model.scorer import NetworkScorer, ScorerError
 from areneon_ml.worker.checkpoints import CheckpointError, CheckpointStore
 from areneon_ml.worker.serve import Worker
 
 EXIT_CHECKPOINT = 4
+
+
+def _configured_model(run_dir: Path) -> ModelConfig | None:
+    """The model section of the run's ``run-config.json``, when the run directory has one.
+
+    A checkpoint made with other model options than the run's is refused (ADR-010 erratum A4
+    item 2). A directory without the record (a hand-made one) is checked by the checkpoint alone.
+    """
+    path = run_dir / "run-config.json"
+    if not path.is_file():
+        return None
+    try:
+        return ModelConfig.from_dict(json.loads(path.read_text(encoding="utf-8"))["model"])
+    except (OSError, ValueError, KeyError, TypeError, ConfigError) as exc:
+        raise CheckpointFileError(
+            f"the run's run-config.json has no usable model section: {exc}"
+        ) from exc
 
 
 def build(argv: list[str]) -> Worker:
@@ -38,8 +56,11 @@ def build(argv: list[str]) -> Worker:
     store = CheckpointStore(args.run_dir)
     game = GameData.from_table(json.loads(args.engine_data.read_text(encoding="utf-8")))
     configure_cpu_inference()
+    configured = _configured_model(args.run_dir)
     networks = {
-        role: load_checkpoint(store.load(checkpoint_id), game, checkpoint_id, role=role)
+        role: load_checkpoint(
+            store.load(checkpoint_id), game, checkpoint_id, role=role, configured=configured
+        )
         for role, checkpoint_id in (("preview", args.preview), ("battle", args.battle))
     }
     return Worker(
