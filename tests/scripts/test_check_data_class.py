@@ -1119,7 +1119,7 @@ def test_a_marked_test_record_is_accepted_only_in_its_strict_shape(repo: Path) -
 
 
 def record_with(patch: dict[str, object], *path: str | int) -> dict[str, Any]:
-    document = json.loads(json.dumps(TEST_RECORD))
+    document: dict[str, Any] = json.loads(json.dumps(TEST_RECORD))
     cursor: Any = document
     for step in path[:-1]:
         cursor = cursor[step]
