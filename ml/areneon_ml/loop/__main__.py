@@ -57,9 +57,11 @@ from areneon_ml.progress.run import (
     DEFAULT_DAMAGE_AWARE_BUDGET_MINUTES,
     DEFAULT_GAMES,
     DEFAULT_RECORD_GAMES,
+    DEFAULT_RUN_GAMES,
     SCHEDULE_EVERY,
     NodeProgressPlayer,
     ProgressError,
+    VersusSpec,
     progress_generation,
     progress_root,
     scheduled_generations,
@@ -78,7 +80,7 @@ def _positive(text: str) -> int:
     return value
 
 
-def _parser() -> argparse.ArgumentParser:
+def _parser() -> argparse.ArgumentParser:  # noqa: PLR0915
     parser = argparse.ArgumentParser(prog="areneon_ml.loop")
     commands = parser.add_subparsers(dest="command", required=True)
     run = commands.add_parser("run", help="play, train and freeze generations")
@@ -191,6 +193,23 @@ def _parser() -> argparse.ArgumentParser:
         f"{DEFAULT_DAMAGE_AWARE_BUDGET_MINUTES})",
     )
     progress.add_argument(
+        "--versus-run-dir",
+        type=Path,
+        help="head to head: another run's directory (read-only), whose frozen pair at "
+        "--versus-generation plays this generation's pair as run-sample and run-argmax, every "
+        "validation pair from both seats; both runs must name the same format and team "
+        "dataset. A cross-run comparison, never a gate result. Use its own --progress-dir",
+    )
+    progress.add_argument(
+        "--versus-generation", type=int, help="the other run's generation (with --versus-run-dir)"
+    )
+    progress.add_argument(
+        "--run-games",
+        type=int,
+        default=DEFAULT_RUN_GAMES,
+        help=f"games per cross-run match, even (default {DEFAULT_RUN_GAMES})",
+    )
+    progress.add_argument(
         "--preview-ablation",
         action="store_true",
         help="instead of the usual matches (#940): the generation's Battle network "
@@ -259,6 +278,20 @@ def _progress(args: argparse.Namespace) -> dict[str, object]:
         if args.damage_aware
         else None
     )
+    if (args.versus_run_dir is None) != (args.versus_generation is None):
+        raise ProgressError("--versus-run-dir and --versus-generation go together")
+    versus = None
+    if args.versus_run_dir is not None:
+        if args.all:
+            raise ProgressError("--versus-run-dir needs --generation, not --all")
+        other_dir = args.versus_run_dir.resolve()
+        other = read_run_config(layout.read_json(other_dir / layout.CONFIG))
+        versus = VersusSpec(
+            other_dir,
+            args.versus_generation,
+            args.run_games,
+            encoder_version(game, other.model.encoder),
+        )
     root = progress_root(run_dir, args.progress_dir)
     record_games = (
         min(DEFAULT_RECORD_GAMES, args.games) if args.record_games is None else args.record_games
@@ -277,6 +310,7 @@ def _progress(args: argparse.Namespace) -> dict[str, object]:
             args.previous_matches,
             args.preview_ablation,
             damage_budget,
+            versus,
         )
         for g in generations
     ]

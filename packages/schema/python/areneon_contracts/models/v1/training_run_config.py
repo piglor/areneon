@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import (
     MISSING,
@@ -119,6 +119,10 @@ class Encoder(BaseModel):
     """
     Divisor of the turn counter.
     """
+    options: Annotated[dict[str, Any] | MISSING, Field(max_length=0)] = MISSING
+    """
+    Optional encoder options (ADR-010 erratum A4 item 2). Absent keeps today's bytes, hashes and checkpoints. A named option is added by the ticket of the experiment arm that needs it; none is defined yet, so only an empty object passes.
+    """
 
 
 class Budget(BaseModel):
@@ -209,6 +213,10 @@ class Model(BaseModel):
     d_ff: Annotated[StrictInt, Field(ge=1, le=16384)]
     """
     Feed-forward width.
+    """
+    options: Annotated[dict[str, Any] | MISSING, Field(max_length=0)] = MISSING
+    """
+    Optional network options (ADR-010 erratum A4 item 2). Absent keeps today's bytes, hashes and checkpoints. A named option is added by the ticket of the experiment arm that needs it; none is defined yet, so only an empty object passes.
     """
 
 

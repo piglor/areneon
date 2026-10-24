@@ -101,6 +101,11 @@ def test_each_evaluation_rule_has_its_own_message(name: str, message: str) -> No
         ("anchor-games-odd", "must be even"),
         ("anchor-not-earlier", "plays an earlier generation"),
         ("anchor-misnamed", "is named anchor-g<generation>-<mode>"),
+        ("run-games-missing", "present exactly when"),
+        ("run-plan-without-match", "present exactly when"),
+        ("run-games-odd", "must be even"),
+        ("run-misnamed", "is named run-<mode>"),
+        ("run-same-run-id", "is named run-<mode>"),
         ("ablation-vs-anchor", "an ablation match plays a scripted baseline"),
         ("ablation-misnamed", "named preview-<variant>-<baseline>-<mode>"),
         ("ablation-not-earlier", "comes from an earlier generation"),
@@ -235,6 +240,31 @@ def test_an_anchor_pairs_policy_id_must_be_its_checkpoints() -> None:
         opponent["checkpoints"]["preview"], opponent["checkpoints"]["battle"], "sample"
     )
     assert read_progress_record(raw, config)["plan"]["anchor_games_per_match"] == 4
+
+
+def test_a_cross_run_pairs_policy_id_must_be_its_checkpoints() -> None:
+    config = tiny_config()
+    raw = copy.deepcopy(sample(f"{EVALUATION2}/valid/run-match"))
+    raw["run_id"] = config.run_key
+    raw["run_config_hash"] = config.hash
+    raw["plan"]["max_turns"] = config.generation.max_turns
+    raw["plan"]["latency_budget_ms"] = {"preview_ms": 30000, "battle_ms": 30000}
+    raw["matches"][0]["policy_id"] = record_policy(raw)
+    with pytest.raises(ProgressRecordError, match="run pair's policy_id"):
+        read_progress_record(raw, config)
+    opponent = raw["matches"][0]["opponent"]
+    opponent["policy_id"] = policy_id(
+        opponent["checkpoints"]["preview"], opponent["checkpoints"]["battle"], "sample"
+    )
+    assert read_progress_record(raw, config)["plan"]["run_games_per_match"] == 4
+
+
+def test_a_cross_run_match_has_the_run_games_of_the_plan() -> None:
+    raw = copy.deepcopy(sample(f"{EVALUATION2}/valid/run-match"))
+    raw["plan"]["run_games_per_match"] = 2
+    raw["teams"]["pairs_used"] = 2  # the baselines' 4 games are still 2 pairs
+    with pytest.raises(ProgressRecordError, match=r"plan\.run_games_per_match"):
+        read_progress_record(raw)
 
 
 def record_policy(raw: dict[str, Any]) -> str:

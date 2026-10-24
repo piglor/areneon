@@ -36,6 +36,18 @@ describe("the TrainingRunConfig reader (ADR-010 §5)", () => {
     expect(() => readTrainingRunConfig({ ...tiny, generation: { ...tiny.generation, baseline_games: four } })).toThrow(TrainingRunConfigError);
   });
 
+  it("reads empty model options, hashes them apart from absent ones and refuses any named option (ADR-010 erratum A4 item 2)", async () => {
+    const empty = readTrainingRunConfig(sample("empty-options"));
+    expect(empty.model.options).toEqual({});
+    expect(empty.model.encoder.options).toEqual({});
+    expect(await runConfigHash(empty)).not.toBe(await runConfigHash(readTrainingRunConfig(sample("tiny"))));
+    expect(readTrainingRunConfig(sample("tiny")).model).not.toHaveProperty("options");
+    for (const name of ["unknown-model-option", "unknown-encoder-option"]) {
+      const raw = JSON.parse(readFileSync(join(SAMPLES_DIR, `v1/training-run-config/invalid/${name}.json`), "utf8"));
+      expect(() => readTrainingRunConfig(raw)).toThrow(TrainingRunConfigError);
+    }
+  });
+
   it("reads the optional KL target and refuses zero (ADR-010 erratum A1)", () => {
     expect(readTrainingRunConfig(sample("tiny")).ppo.target_kl_micro).toBeUndefined();
     expect(readTrainingRunConfig(sample("target-kl")).ppo.target_kl_micro).toBe(20000);

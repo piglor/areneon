@@ -251,12 +251,13 @@ def _check_ablation_match(match: dict[str, Any], generation: int) -> None:
         )
 
 
-def _check_match_v2(
+def _check_match_v2(  # noqa: PLR0913, PLR0917
     match: dict[str, Any],
     rows: list[dict[str, Any]],
     plan: dict[str, Any],
     generation: int,
     identities: set[str],
+    run_id: str,
 ) -> None:
     name = match["match_id"]
     opponent = match["opponent"]
@@ -272,6 +273,13 @@ def _check_match_v2(
             )
         if match["games"] != plan["anchor_games_per_match"]:
             raise ProgressRecordError(f"{name}: games must equal plan.anchor_games_per_match")
+    elif opponent["kind"] == "run":
+        if opponent["run_id"] == run_id or name != f"run-{match['mode']}":
+            raise ProgressRecordError(
+                f"{name}: a cross-run match is named run-<mode> and plays another run's pair"
+            )
+        if match["games"] != plan["run_games_per_match"]:
+            raise ProgressRecordError(f"{name}: games must equal plan.run_games_per_match")
     elif match["games"] != plan["games_per_match"]:
         raise ProgressRecordError(f"{name}: games must equal plan.games_per_match")
     if match["wins"] + match["ties"] + match["losses"] != match["games"]:
@@ -300,10 +308,11 @@ def _check_matches_v2(
     by_match: dict[str, list[dict[str, Any]]],
     plan: dict[str, Any],
     generation: int,
+    run_id: str,
 ) -> None:
     identities: set[str] = set()
     for match in matches:
-        _check_match_v2(match, by_match[match["match_id"]], plan, generation, identities)
+        _check_match_v2(match, by_match[match["match_id"]], plan, generation, identities, run_id)
     if len(identities) > 1:
         raise ProgressRecordError(
             "every damage-aware match of a record must carry one baseline identity hash"
@@ -315,29 +324,44 @@ def _check_not_mixed(matches: list[dict[str, Any]]) -> None:
         raise ProgressRecordError("a Preview ablation record holds ablation matches only")
 
 
-def _read_v2(raw: dict[str, Any], config: RunConfig | None) -> dict[str, Any]:
-    try:
-        validate("progress-evaluation-record-2", raw)
-    except ContractError as exc:
-        raise ProgressRecordError(str(exc)) from exc
-    plan, matches, games = raw["plan"], raw["matches"], raw["games"]
+def _check_plan_v2(raw: dict[str, Any]) -> None:
+    """The plan's game counts agree with the matches the record holds, and are all even."""
+    plan, matches = raw["plan"], raw["matches"]
     anchor_games = plan.get("anchor_games_per_match")
     anchored = any(m["opponent"]["kind"] == "anchor" for m in matches)
     if anchored != (anchor_games is not None):
         raise ProgressRecordError(
             "plan.anchor_games_per_match is present exactly when the record has anchor matches"
         )
-    if plan["games_per_match"] % 2 or (anchor_games or 0) % 2:
+    run_games = plan.get("run_games_per_match")
+    if any(m["opponent"]["kind"] == "run" for m in matches) != (run_games is not None):
         raise ProgressRecordError(
-            "games_per_match and anchor_games_per_match must be even: "
+            "plan.run_games_per_match is present exactly when the record has cross-run matches"
+        )
+    if plan["games_per_match"] % 2 or (anchor_games or 0) % 2 or (run_games or 0) % 2:
+        raise ProgressRecordError(
+            "games_per_match, anchor_games_per_match and run_games_per_match must be even: "
             "every pair is played from both seats"
         )
-    if raw["teams"]["pairs_used"] != max(plan["games_per_match"], anchor_games or 0) // 2:
+    if (
+        raw["teams"]["pairs_used"]
+        != max(plan["games_per_match"], anchor_games or 0, run_games or 0) // 2
+    ):
         raise ProgressRecordError(
-            "teams.pairs_used must be half the largest games_per_match or anchor_games_per_match"
+            "teams.pairs_used must be half the largest games_per_match, "
+            "anchor_games_per_match or run_games_per_match"
         )
     if plan["recorded_games_per_match"] > plan["games_per_match"]:
         raise ProgressRecordError("recorded_games_per_match must not exceed games_per_match")
+
+
+def _read_v2(raw: dict[str, Any], config: RunConfig | None) -> dict[str, Any]:
+    try:
+        validate("progress-evaluation-record-2", raw)
+    except ContractError as exc:
+        raise ProgressRecordError(str(exc)) from exc
+    plan, matches, games = raw["plan"], raw["matches"], raw["games"]
+    _check_plan_v2(raw)
     ids = [m["match_id"] for m in matches]
     if not _ascending(ids):
         raise ProgressRecordError("matches must be sorted by match_id, each once")
@@ -349,7 +373,7 @@ def _read_v2(raw: dict[str, Any], config: RunConfig | None) -> dict[str, Any]:
         by_match[row["match_id"]].append(row)
     if [row for i in ids for row in by_match[i]] != games:
         raise ProgressRecordError("game rows must be in match then game order")
-    _check_matches_v2(matches, by_match, plan, raw["generation"])
+    _check_matches_v2(matches, by_match, plan, raw["generation"], raw["run_id"])
     if plan["seed_derivation"] != SEED_DERIVATION or plan["pairing"] != PAIRING:
         raise ProgressRecordError("the plan names another seed derivation or pairing")
     if config is not None:
@@ -380,7 +404,7 @@ def _check_run(raw: dict[str, Any], config: RunConfig) -> None:
                 f"{match['match_id']}: policy_id is not the frozen pair's in this mode"
             )
         opponent = match["opponent"]
-        if opponent["kind"] in ("previous", "anchor") and opponent["policy_id"] != policy_id(
+        if opponent["kind"] in ("previous", "anchor", "run") and opponent["policy_id"] != policy_id(
             opponent["checkpoints"]["preview"], opponent["checkpoints"]["battle"], match["mode"]
         ):
             raise ProgressRecordError(
