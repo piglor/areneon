@@ -534,28 +534,53 @@ def _run_records(run_dir: Path) -> list[CheckpointRecord]:
     ]
 
 
-def versus_relation(run_dir: Path, source: _Source, pair: RunPair) -> dict[str, str]:
-    """How the two lineages relate, from the C1/C6 checker given both runs' records.
+RELATED_LABEL = "related lineage: shared start"
 
-    ``independent lineage`` only when the two ancestries are disjoint (C6), else ``seen``.
-    Two runs that share a checkpoint are refused (a run is its own lineage). Every committed
-    generation of both runs is verified by ``sources_registry``.
+
+def _merged_records(
+    mine: list[CheckpointRecord], theirs: list[CheckpointRecord]
+) -> list[CheckpointRecord]:
+    """Both runs' records, one per checkpoint id: runs with equal initial seeds hold the same
+    seeded generation-0 checkpoint, which is one node of the graph. A shared id must have the
+    same parent in both runs (a shared start, never a shared later history)."""
+    found = {r.checkpoint_id: r for r in mine}
+    for record in theirs:
+        before = found.get(record.checkpoint_id)
+        if before is not None and before.parent != record.parent:
+            raise ProgressError("the two runs hold one checkpoint with different ancestry")
+        found.setdefault(record.checkpoint_id, record)
+    return list(found.values())
+
+
+def versus_relation(run_dir: Path, source: _Source, pair: RunPair) -> dict[str, str]:
+    """How the two compared pairs relate, from the C1/C6 checker given both runs' records.
+
+    The comparison is refused when the two frozen pairs share a checkpoint, or when one of
+    them is in the other's ancestry (that would be a pair against its own past: self-play).
+    A shared older ancestor (the seeded generation-0 pair of runs started from equal seeds, or
+    any earlier common generation) is a relation to label, not a refusal: ``independent
+    lineage`` when the ancestries are disjoint (C6), else ``related lineage: shared start``.
+    Every committed generation of both runs is verified by ``sources_registry``.
     """
-    mine, theirs = _run_records(run_dir), _run_records(pair.run_dir)
-    shared = {r.checkpoint_id for r in mine} & {r.checkpoint_id for r in theirs}
-    if shared:
-        raise ProgressError("the two runs share a checkpoint: they are not separate lineages")
+    candidate = [source.preview, source.battle]
+    opponent = [pair.preview, pair.battle]
+    if set(candidate) & set(opponent):
+        raise ProgressError("the two compared pairs share a checkpoint: not two different pairs")
     registry: dict[str, list[str]] = {}
     for part in (sources_registry(run_dir), sources_registry(pair.run_dir)):
         for key, generators in part.items():
             registry[key] = sorted({*registry.get(key, []), *generators})
-    graph = ProvenanceGraph([*mine, *theirs], registry)
-    candidate = [source.preview, source.battle]
-    opponent = [pair.preview, pair.battle]
+    graph = ProvenanceGraph(
+        _merged_records(_run_records(run_dir), _run_records(pair.run_dir)), registry
+    )
+    if set(opponent) & graph.ancestry(candidate).checkpoints or set(candidate) & (
+        graph.ancestry(opponent).checkpoints
+    ):
+        raise ProgressError("one compared pair is in the other's ancestry: a pair against its past")
     verdict = graph.classify(candidate, opponent)
     independence = graph.independent(candidate, opponent)
     return {
-        "label": "independent lineage" if independence.independent else "seen",
+        "label": "independent lineage" if independence.independent else RELATED_LABEL,
         "reason": verdict.reason,
     }
 
@@ -1143,6 +1168,7 @@ __all__ = [
     "DEFAULT_ANCHOR_GAMES",
     "DEFAULT_DAMAGE_AWARE_BUDGET_MINUTES",
     "DEFAULT_RUN_GAMES",
+    "RELATED_LABEL",
     "SCHEDULE_EVERY",
     "AblationSpec",
     "AnchorPair",

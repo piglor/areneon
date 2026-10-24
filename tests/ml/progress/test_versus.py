@@ -13,6 +13,7 @@ from areneon_ml.loop.records import policy_id
 from areneon_ml.progress import run as run_module
 from areneon_ml.progress.run import (
     CROSS_RUN_LABEL,
+    RELATED_LABEL,
     ProgressError,
     VersusSpec,
     summary_of,
@@ -269,14 +270,49 @@ def test_a_non_synthetic_record_of_the_other_run_is_refused(
         evaluate(a, 1, tmp_path / "p", fake_for(a), spec(copy, 2))
 
 
-def test_two_runs_that_share_a_checkpoint_are_refused(tmp_path: Path) -> None:
+def test_runs_that_share_their_seeded_start_compare_and_are_labelled_related(
+    tmp_path: Path,
+) -> None:
+    make_run(tmp_path / "a", generations=2)
+    # The same initial weights under another key: the generation-0 pair is one checkpoint.
+    make_run(tmp_path / "s", generations=2, config=dataset_config("twin-run", learner_seed=99))
+    fake = fake_for(tmp_path / "a")
+    done = evaluate(tmp_path / "a", 2, tmp_path / "p", fake, spec(tmp_path / "s", 2))
+    lineage = done["head_to_head"]["lineage"]
+    assert lineage["label"] == RELATED_LABEL == "related lineage: shared start"
+    assert lineage["reason"].startswith("a related lineage")
+
+
+def test_the_same_frozen_pair_twice_is_refused(tmp_path: Path) -> None:
     make_run(tmp_path / "a", generations=1)
-    # The same initial weights under another key: generation 0 is the same checkpoint.
     make_run(tmp_path / "s", generations=1, config=dataset_config("twin-run"))
-    with pytest.raises(ProgressError, match="share a checkpoint"):
+    # Generation 0 of both runs is the same checkpoint pair: nothing to compare.
+    with pytest.raises(ProgressError, match="compared pairs share a checkpoint"):
         evaluate(
             tmp_path / "a", 0, tmp_path / "p", fake_for(tmp_path / "a"), spec(tmp_path / "s", 0)
         )
+
+
+def test_a_pair_against_its_own_past_is_refused(tmp_path: Path) -> None:
+    make_run(tmp_path / "a", generations=2)
+    make_run(tmp_path / "s", generations=2, config=dataset_config("twin-run"))
+    # The twin's generation 0 is generation 2 of the other run's ancestry.
+    with pytest.raises(ProgressError, match="ancestry"):
+        evaluate(
+            tmp_path / "a", 2, tmp_path / "p", fake_for(tmp_path / "a"), spec(tmp_path / "s", 0)
+        )
+
+
+def test_a_shared_checkpoint_with_another_parent_is_refused() -> None:
+    from areneon_ml.progress.run import _merged_records  # noqa: PLC0415
+
+    class Rec:
+        def __init__(self, parent: str | None) -> None:
+            self.checkpoint_id = "c" * 64
+            self.parent = parent
+
+    with pytest.raises(ProgressError, match="different ancestry"):
+        _merged_records([Rec(None)], [Rec("d" * 64)])  # type: ignore[list-item]
 
 
 def test_the_other_runs_training_seeds_are_refused(runs: tuple[Path, Path], tmp_path: Path) -> None:

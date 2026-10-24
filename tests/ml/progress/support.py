@@ -61,7 +61,10 @@ def baseline_counts(stored: dict[str, Any], seat: str, game: int) -> dict[str, i
 
 
 def dataset_config(
-    run_key: str | None = None, seeds: tuple[int, int] | None = None, dataset_hash: str = "5" * 64
+    run_key: str | None = None,
+    seeds: tuple[int, int] | None = None,
+    dataset_hash: str = "5" * 64,
+    learner_seed: int | None = None,
 ) -> RunConfig:
     """The tiny config, naming a team dataset (the Node side reads it; Python only checks it).
 
@@ -73,6 +76,8 @@ def dataset_config(
             raw["seeds"]["run_key"] = run_key
         if seeds is not None:
             raw["seeds"]["init_preview"], raw["seeds"]["init_battle"] = seeds
+        if learner_seed is not None:
+            raw["seeds"]["learner"] = learner_seed
 
     return edited_config(edit)
 
