@@ -14,7 +14,9 @@ from areneon_ml.loop.driver import Loop
 from areneon_ml.loop.metrics import (
     Counts,
     MetricsError,
+    Peaks,
     build_metrics,
+    driver_peak_rss_bytes,
     metrics_path,
     per_hour,
     read_run_metrics,
@@ -120,8 +122,17 @@ def test_the_cuda_peak_is_read_around_the_train_phase(
         calls.append("peak")
         return 7
 
+    def reserved(device: object) -> int:
+        calls.append("reserved")
+        return 9
+
+    def release() -> None:
+        calls.append("empty_cache")
+
     monkeypatch.setattr(torch.cuda, "reset_peak_memory_stats", reset)
     monkeypatch.setattr(torch.cuda, "max_memory_allocated", peak)
+    monkeypatch.setattr(torch.cuda, "max_memory_reserved", reserved)
+    monkeypatch.setattr(torch.cuda, "empty_cache", release)
     loops: list[Loop] = []
 
     def to_cuda(generation: int, stage: str) -> None:
@@ -131,17 +142,18 @@ def test_the_cuda_peak_is_read_around_the_train_phase(
 
     loops.append(make_loop(tmp_path, on_stage=to_cuda))
     loops[0].run(1)
-    assert calls == ["reset", "peak"]
+    # The cache is given back after the peaks are read, once per trained generation (#1069).
+    assert calls == ["reset", "peak", "reserved", "empty_cache"]
 
 
 def test_build_metrics_on_a_cuda_config_keeps_the_peak() -> None:
     config = edited_config(lambda raw: raw["learner"].update(device="cuda", threads=2))
-    record = build_metrics(config, 3, {"train": 2000}, Counts(0, 10, 4), 5_000)
+    record = build_metrics(config, 3, {"train": 2000}, Counts(0, 10, 4), Peaks(5_000))
     assert record["peak_accelerator_memory_bytes"] == 5_000
     assert (record["device"], record["threads"]) == ("cuda", 2)
     assert record["per_hour"]["decisions"] == 18_000
     assert read_run_metrics(record, config, 3) == record
-    untrained = build_metrics(config, 0, {}, Counts(), None)
+    untrained = build_metrics(config, 0, {}, Counts(), Peaks())
     assert untrained["peak_accelerator_memory_bytes"] == 0
     assert read_run_metrics(untrained, config, 0) == untrained
 
@@ -153,7 +165,7 @@ def test_per_hour_truncates_and_is_zero_without_time() -> None:
 
 
 def test_writes_are_atomic_and_leave_no_partial(tmp_path: Path) -> None:
-    record = build_metrics(tiny_config(), 1, {}, Counts(), None)
+    record = build_metrics(tiny_config(), 1, {}, Counts(), Peaks())
     path = write_metrics(tmp_path, record)
     assert path == metrics_path(tmp_path, 1)
     assert sorted(p.name for p in path.parent.iterdir()) == ["g000001.json"]
@@ -162,7 +174,7 @@ def test_writes_are_atomic_and_leave_no_partial(tmp_path: Path) -> None:
 
 
 def _record() -> dict[str, Any]:
-    return build_metrics(tiny_config(), 1, {"play": 1000, "train": 500}, Counts(2, 30, 6), None)
+    return build_metrics(tiny_config(), 1, {"play": 1000, "train": 500}, Counts(2, 30, 6), Peaks())
 
 
 def _change(path: tuple[str, ...], value: Any) -> dict[str, Any]:
@@ -190,3 +202,55 @@ def _change(path: tuple[str, ...], value: Any) -> dict[str, Any]:
 def test_the_reader_refuses(raw: dict[str, Any], message: str) -> None:
     with pytest.raises(MetricsError, match=message):
         read_run_metrics(raw, tiny_config(), 1)
+
+
+def test_the_optional_keys_are_written_only_when_measured() -> None:
+    config = edited_config(lambda raw: raw["learner"].update(device="cuda", threads=2))
+    plain = build_metrics(config, 3, {"train": 2000}, Counts(0, 10, 4), Peaks(5_000))
+    assert "peak_accelerator_reserved_bytes" not in plain
+    assert "peak_rss_bytes" not in plain
+    full = build_metrics(
+        config,
+        3,
+        {"train": 2000},
+        Counts(0, 10, 4),
+        Peaks(5_000, 8_000, {"game_process": 3, "driver": 2}),
+    )
+    assert full["peak_accelerator_reserved_bytes"] == 8_000
+    assert list(full["peak_rss_bytes"]) == ["driver", "game_process"]
+    assert read_run_metrics(full, config, 3) == full
+    # A CPU learner has no accelerator figure, whatever it is given; the resident set stays.
+    cpu = build_metrics(tiny_config(), 1, {}, Counts(), Peaks(None, 8_000, {"driver": 1}))
+    assert "peak_accelerator_reserved_bytes" not in cpu
+    assert cpu["peak_rss_bytes"] == {"driver": 1}
+    assert read_run_metrics(cpu, tiny_config(), 1) == cpu
+
+
+def test_the_reader_refuses_reserved_memory_that_cannot_be() -> None:
+    config = edited_config(lambda raw: raw["learner"].update(device="cuda", threads=2))
+    record = build_metrics(config, 3, {}, Counts(), Peaks(5_000, 8_000))
+    with pytest.raises(MetricsError, match="reserved less"):
+        read_run_metrics({**record, "peak_accelerator_reserved_bytes": 4_999}, config, 3)
+    cpu = build_metrics(tiny_config(), 1, {}, Counts(), Peaks())
+    with pytest.raises(MetricsError, match="CUDA learner only"):
+        read_run_metrics({**cpu, "peak_accelerator_reserved_bytes": 1}, tiny_config(), 1)
+    with pytest.raises(MetricsError, match="run-metrics"):
+        read_run_metrics({**cpu, "peak_rss_bytes": {"driver": -1}}, tiny_config(), 1)
+    with pytest.raises(MetricsError, match="run-metrics"):
+        read_run_metrics({**cpu, "peak_rss_bytes": {"other": 1}}, tiny_config(), 1)
+
+
+def test_the_driver_records_the_resident_sets_the_simulator_side_reports(tmp_path: Path) -> None:
+    loop = timed_loop(tmp_path)
+    loop.rss_source = lambda: 123
+    loop.player.resource_usage = {"game_process": 7, "policy_worker": 5}  # type: ignore[attr-defined]
+    loop.run(2)
+    config = tiny_config()
+    # Generation 0 plays nothing; later ones carry what the play phase reported.
+    assert layout.read_json(metrics_path(tmp_path, 0))["peak_rss_bytes"] == {"driver": 123}
+    second = read_run_metrics(layout.read_json(metrics_path(tmp_path, 2)), config, 2)
+    assert second["peak_rss_bytes"] == {"driver": 123, "game_process": 7, "policy_worker": 5}
+
+
+def test_the_driver_peak_is_this_process_in_bytes() -> None:
+    assert driver_peak_rss_bytes() > 10_000_000

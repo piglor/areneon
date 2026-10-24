@@ -33,7 +33,7 @@ import { randomLegalActor } from "./random-legal.ts";
 import type { Actor, BattleRecord, ForfeitCause, Player } from "./runner.ts";
 import { importPaste } from "./teams.ts";
 import { stampTeam, type SyntheticTeamHashes, teamHash } from "./team-class.ts";
-import { loadTrainingSet, type TrainingSet, writeTrainingStream } from "./training-loader.ts";
+import { loadTrainingSet, type StoredEpisode, type TrainingSet, writeStoredTrainingStream, writeTrainingStream } from "./training-loader.ts";
 import { type ChunkLimits } from "./chunked-file.ts";
 import type { TrainingRunConfig } from "./training-run-config.ts";
 import type { Episode } from "./episode.ts";
@@ -184,6 +184,14 @@ export interface GenerationOptions {
   stream_path?: string;
   /** Chunk size and the string-size limit (a test injects a small one). */
   stream_limits?: ChunkLimits;
+  /**
+   * Write each Episode to `<episodes_dir>/<hash>.json` (flushed) as its game finishes and keep none of
+   * them, so a generation's memory does not grow with its games (#1069). The training loader then
+   * reads them back one at a time in hash order. The files and the stream are the bytes of the
+   * in-memory path; `writeGeneration` expects the directory to be `<dir>/episodes` and writes nothing
+   * more there. Needs `stream_path`.
+   */
+  episodes_dir?: string;
 }
 
 export interface GameRow {
@@ -208,8 +216,10 @@ export interface GenerationResult {
   generation: number;
   plan: GamePlan[];
   games: GameRow[];
-  /** The Episodes of every seat that was played (the league record), as stored. */
+  /** The Episodes of every seat that was played (the league record), as stored. Empty when they were written to `episodes_dir`. */
   episodes: Episode[];
+  /** The directory the Episodes were written to as their games finished (`GenerationOptions.episodes_dir`), else null. */
+  episodes_dir: string | null;
   /** Episode hashes, in `episodes` order. */
   episode_hashes: string[];
   /** The stream's bytes, only when it was built in memory (no `stream_path`); else null. */
@@ -303,8 +313,16 @@ export interface PlayedEntry {
   game: number;
   row: GameRow;
   episodes: Episode[];
+  /** With `episodes_dir`: the Episodes already written to it, in seat order, instead of `episodes`. */
+  stored?: StoredRef[];
   /** Only a game against the damage-aware baseline: its identity hash and this game's counts (ADR-018 §5). */
   baseline?: BaselineGameReport;
+}
+
+/** An Episode written to disk: the hash its file is named by and the policy that played the seat. */
+export interface StoredRef {
+  hash: string;
+  behaviour_policy_id: string;
 }
 
 function checkShard(shard: Shard): void {
@@ -379,7 +397,20 @@ export async function playEntries(options: GenerationOptions, shard: Shard = { i
         p2: entry.opponent !== "self" && entry.policy_seat !== "p2" ? entry.opponent.policy_id : policy_id,
       };
       const episodes = await seatEpisodes(record, entry.teams, pool, config.seeds.run_key, sides);
-      entries.push({ game: entry.game, row: { ...row, outcome: "played", winner: record.winner, turns: record.turns }, episodes, ...reported });
+      const base = { game: entry.game, row: { ...row, outcome: "played" as const, winner: record.winner, turns: record.turns }, ...reported };
+      if (options.episodes_dir === undefined) {
+        entries.push({ ...base, episodes });
+      } else {
+        // Written now and dropped: the next waves do not carry this game's Episodes (#1069).
+        const stored: StoredRef[] = [];
+        for (const episode of episodes) {
+          const hash = await episodeHash(episode, nodeSha256);
+          // Not renamed into place: the directory is the generation's partial one, discarded whole on a restart, and the loader checks each file against its name.
+          writeDurable(join(options.episodes_dir, `${hash}.json`), `${jcs(episode as unknown as Json)}\n`);
+          stored.push({ hash, behaviour_policy_id: episode.provenance.behaviour_policy_id });
+        }
+        entries.push({ ...base, episodes: [], stored });
+      }
     }
   }
   return entries;
@@ -407,17 +438,34 @@ export async function playGeneration(options: GenerationOptions): Promise<Genera
     throw new GenerationError("the played games are not the plan's games, each once");
   }
   const rows = entries.map((entry) => entry.row);
+  const spilled = options.episodes_dir !== undefined;
+  if (entries.some((entry) => (entry.stored !== undefined) !== spilled || (spilled && entry.episodes.length > 0))) {
+    throw new GenerationError("the played games are not all kept the way this generation keeps its Episodes");
+  }
   const episodes = entries.flatMap((entry) => entry.episodes);
-  const own = episodes.filter((episode) => episode.provenance.behaviour_policy_id === policy_id);
-  if (own.length === 0) throw new GenerationError("no Episode of the frozen pair: every game was forfeited");
-  const input = { episodes: own, evaluation_manifests: [], known_synthetic: pool.known_synthetic, behaviour_policy_id: policy_id };
+  const refs: StoredRef[] = entries.flatMap((entry) => entry.stored ?? []);
   const limits = options.stream_limits ?? {};
   let stream: string | null = null;
   let set: TrainingSet;
-  if (options.stream_path === undefined) {
-    ({ stream, set } = await loadTrainingSet(input, limits));
+  let episodeHashes: string[];
+  if (options.episodes_dir !== undefined) {
+    if (options.stream_path === undefined) throw new GenerationError("episodes_dir needs stream_path");
+    const dir = options.episodes_dir;
+    const ownRefs = refs.filter((ref) => ref.behaviour_policy_id === policy_id);
+    if (ownRefs.length === 0) throw new GenerationError("no Episode of the frozen pair: every game was forfeited");
+    const stored: StoredEpisode[] = ownRefs.map(({ hash }) => ({ hash, path: join(dir, `${hash}.json`) }));
+    set = await writeStoredTrainingStream({ episodes: stored, evaluation_manifests: [], known_synthetic: pool.known_synthetic, behaviour_policy_id: policy_id }, { ...limits, path: options.stream_path });
+    episodeHashes = refs.map((ref) => ref.hash);
   } else {
-    set = await writeTrainingStream(input, { ...limits, path: options.stream_path });
+    const own = episodes.filter((episode) => episode.provenance.behaviour_policy_id === policy_id);
+    if (own.length === 0) throw new GenerationError("no Episode of the frozen pair: every game was forfeited");
+    const input = { episodes: own, evaluation_manifests: [], known_synthetic: pool.known_synthetic, behaviour_policy_id: policy_id };
+    if (options.stream_path === undefined) {
+      ({ stream, set } = await loadTrainingSet(input, limits));
+    } else {
+      set = await writeTrainingStream(input, { ...limits, path: options.stream_path });
+    }
+    episodeHashes = await Promise.all(episodes.map((episode) => episodeHash(episode, nodeSha256)));
   }
   const drawn = new Set<string>();
   for (const entry of plan) for (const player of ["p1", "p2"] as const) drawn.add(pool.hashes[entry.teams[player]] as string);
@@ -426,7 +474,8 @@ export async function playGeneration(options: GenerationOptions): Promise<Genera
     plan,
     games: rows,
     episodes,
-    episode_hashes: await Promise.all(episodes.map((episode) => episodeHash(episode, nodeSha256))),
+    episodes_dir: options.episodes_dir ?? null,
+    episode_hashes: episodeHashes,
     stream,
     stream_path: options.stream_path ?? null,
     set,
@@ -449,7 +498,11 @@ export function writeGeneration(dir: string, result: GenerationResult): void {
   const episodes = join(dir, "episodes");
   mkdirSync(episodes, { recursive: true });
   const put = (name: string, value: unknown): void => writeDurable(join(dir, name), `${jcs(value as Json)}\n`);
-  result.episodes.forEach((episode, index) => put(`episodes/${result.episode_hashes[index]}.json`, episode));
+  if (result.episodes_dir === null) {
+    result.episodes.forEach((episode, index) => put(`episodes/${result.episode_hashes[index]}.json`, episode));
+  } else if (result.episodes_dir !== episodes) {
+    throw new GenerationError(`the Episodes were written to ${result.episodes_dir}, not to ${episodes}`);
+  }
   const streamPath = join(dir, "stream.jsonl");
   if (result.stream_path === null) {
     writeDurable(streamPath, result.stream as string);

@@ -25,6 +25,7 @@ import type { Recommendation } from "@areneon/schema/types/v1/recommendation.ts"
 import { type Json, jcs } from "./canonical-json.ts";
 import { PolicyWorkerError, UnsupportedCandidateError } from "./evaluation-harness.ts";
 import { answersRequest } from "./episode.ts";
+import { largest, peakRssOf } from "./process-usage.ts";
 import {
   contractVersions,
   encodeFrame,
@@ -101,6 +102,7 @@ export class PolicyWorkerClient implements PolicyClient {
   #child: ChildProcessWithoutNullStreams | undefined;
   #failure: Error | undefined;
   #closing = false;
+  #peakRss: number | null = null;
   #stderr = "";
   #rest: Buffer = Buffer.alloc(0);
   #onReady: ((line: unknown) => void) | undefined;
@@ -213,11 +215,18 @@ export class PolicyWorkerClient implements PolicyClient {
     const child = this.#child;
     if (child === undefined) return;
     this.#closing = true;
+    this.peakRssBytes(); // the worker's high-water mark, before it goes
     const exited = new Promise<void>((resolve) => child.once("close", () => resolve()));
     child.stdin.end();
     const kill = setTimeout(() => child.kill("SIGKILL"), 1000);
     await exited;
     clearTimeout(kill);
+  }
+
+  /** The largest resident set any worker of this client has had so far (Linux; null where it cannot be read). Diagnostics only. */
+  peakRssBytes(): number | null {
+    this.#peakRss = largest([this.#peakRss, peakRssOf(this.#child?.pid)]);
+    return this.#peakRss;
   }
 
   /**

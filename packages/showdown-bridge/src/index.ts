@@ -68,12 +68,15 @@ export {
   readEvaluationRunManifest,
   readTrainingExample,
   readTrainingSet,
+  type StoredEpisode,
+  type StoredTrainingInput,
   type TrainingExample,
   type TrainingInput,
   TrainingLoaderError,
   type TrainingSet,
   type TrainingStream,
   trainingExample,
+  writeStoredTrainingStream,
   writeTrainingStream,
 } from "./training-loader.ts";
 export { interimPoolSource, type PoolSource, runGenerationCli, UsageError } from "./generation-cli.ts";

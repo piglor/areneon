@@ -12,6 +12,7 @@ from areneon_contracts.contracts import jcs, sha256_hex
 from areneon_ml.checkpoint.files import checkpoint_bytes, checkpoint_id
 from areneon_ml.checkpoint.provenance import HELD_OUT, SEEN
 from areneon_ml.checkpoint.record import read_record
+from areneon_ml.learner import parallel
 from areneon_ml.learner.data import LearnerDataError
 from areneon_ml.learner.state import LearnerStateError
 from areneon_ml.loop import layout, records
@@ -167,6 +168,33 @@ def test_the_team_set_manifest_is_sorted_unique_and_hashed() -> None:
 def test_an_independent_run_gives_identical_generations(finished: Path, tmp_path: Path) -> None:
     make_loop(tmp_path).run(2)
     assert manifests(tmp_path) == manifests(finished)
+
+
+def test_load_workers_change_no_hash(
+    finished: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The fake streams are small: cut them anyway, so the load phase really is parallel (#1069).
+    monkeypatch.setattr(parallel, "MIN_PIECE_BYTES", 1)
+    calls: list[int] = []
+    real = parallel.parallel_trajectories
+
+    def spy(*args: Any, **kwargs: Any) -> Any:
+        found = real(*args, **kwargs)
+        calls.append(0 if found is None else len(found))
+        return found
+
+    monkeypatch.setattr(parallel, "parallel_trajectories", spy)
+    loop = make_loop(tmp_path)
+    loop.load_processes = 3
+    loop.run(2)
+    assert calls
+    assert all(calls)  # every generation's stream was read by the workers
+    assert manifests(tmp_path) == manifests(finished)
+    # The learner state is the same bytes, not only the same manifest.
+    state = "learner-2.safetensors"
+    assert (layout.generation_dir(tmp_path, 2) / state).read_bytes() == (
+        layout.generation_dir(finished, 2) / state
+    ).read_bytes()
 
 
 @pytest.mark.parametrize("generation", [1, 2])

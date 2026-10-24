@@ -110,11 +110,75 @@ forfeit, as at one worker). Progress evaluation never batches or shards.
 
 After each generation commits, the driver writes `<run-dir>/metrics/g<NNNNNN>.json`: wall
 clock per phase (play, load, train, write, seal), throughput, the learner's peak
-accelerator memory (null on a CPU learner), device and threads. The file is outside the
+accelerator memory (null on a CPU learner), device and threads, and optionally the peak
+reserved accelerator memory and the peak resident sets (see below). The file is outside the
 generation manifest and every hash, so reruns stay byte-identical. A crash between the
 commit and the write loses that generation's timings, and a resume does not write them
 again; the run dashboard (`python -m areneon_ml.loop report`) says `not recorded` for it
 and lists the SHA-256 of each metrics file among its inputs.
+
+### Sizing a run to a machine
+
+Five operational flags of the driver change how much memory and how many cores a generation
+uses and nothing it writes: the plan, the seeds, every Episode, the stream, the tensors and the
+learner-state hashes are the same for any value (each flag has a test; the play flags were compared on a full-size generation with `diff -r`,
+the load flags by a digest over every tensor). None is in the run config.
+
+| flag | what it sets | default |
+| --- | --- | --- |
+| `--game-processes S` | Node game processes that share a generation's games | 1 |
+| `--policy-workers K` | policy worker processes per game process | 1 |
+| `--node-heap-mb M` | `--max-old-space-size` of each Node game process | Node's own |
+| `--load-processes N` | worker processes that check and encode the stream in the load phase | 1 |
+| `--load-memory-mb M` | cap on what the load workers may add (about 400 MB each); fewer run if `N` does not fit | none |
+
+What a process holds, measured on the 28-core, 24 GB, 16 GB GPU machine with the 20,000 team
+`train-v1` pool, 768 games per generation (`S` = 4, `K` = 2):
+
+- A Node game process peaked at 1.1 GB over a generation before the change (about 0.86 GB of
+  it reached while loading the team pool). It writes each Episode to the
+  generation's `episodes/` directory when its game ends and keeps none, so its memory no longer
+  grows with the number of games (the stream is built by reading the files back one at a time).
+  `--node-heap-mb 640` makes V8 collect before it grows: 0.59 GB for the largest game process
+  at the same wall time (219 s against 242 s without the change). At 448 it was 0.57 GB and 230 s;
+  nothing below 448 was tried, and a heap cap too small for the pool would fail the process, so
+  start near 640.
+- A policy worker is 0.42 GB (CPU torch and the two networks) and does not shrink.
+- The whole play tree peaked at 7.76 GB before, 7.56 GB with Episodes on disk and 5.70 GB
+  with `--node-heap-mb 640`. A rule of thumb for the play phase:
+  `RAM = S x (0.6 + 0.43 x K) GB`, so `S` = 4, `K` = 2 is about 5.8 GB and `S` = 6, `K` = 3 about 11 GB.
+- The driver holds the learner and the generation's encoded steps (on the CPU; only the
+  current minibatches go to the GPU). Its resident set peaked at 0.78 GB in the load phase of a
+  1.2 GB stream (18,959 steps), 0.93 GB with `--load-processes 6`; a CUDA learner adds its
+  context, so plan 1.5 to 2 GB per run (measured on the CPU only). Each load worker peaked at 0.29
+  GB, most of it shared with the driver by fork, and `--load-memory-mb` limits them (400 MB each).
+- The load phase of that stream took 103 s in one process. The contract check no longer
+  re-checks the repeated log prefix (91 s), and `--load-processes 6` gives 23 s and 12 gives 16 s,
+  to the same tensors (a digest over every tensor of the 2,432 trajectories is equal before and
+  after). The workers' results are sent as one byte blob each, not through `multiprocessing`'s
+  tensor transport, which sends every tensor through its own file descriptor and made the
+  parallel load slower than the serial one.
+- On the GPU a 6-layer, 256-wide learner on that stream peaked at 4.5 GB allocated and 7.6 GB
+  reserved. The learner process used to keep the reserve between generations (the 15.5 GB seen with two
+  concurrent runs was the peak allocated, 4.9 GB each, plus cache). The driver now calls `torch.cuda.empty_cache()` after each
+  train phase: the reserve drops to 1.0 GB (305 MB of it in use: weights and optimiser state)
+  until the next phase. `run-metrics` records the peak reserved memory next to the peak
+  allocated. From outside, `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True` in the learner's
+  environment limits fragmentation further.
+
+How many runs fit. On this machine host RAM is the limit, then the 6 GB swap: one run at
+`S` = 4, `K` = 2 with `--node-heap-mb 640` needs about 5.7 GB during play (and 1.5 GB in load and
+train), so two overlap in 24 GB with room to spare and three only if their play phases are
+staggered (play was about 220 s of a generation that took 280 to 400 s here) or `S` is lowered. Before this change
+two runs filled the swap and made workers miss their 30 s latency budget (a recorded
+`latency_overrun` forfeit): never let a machine swap during play. The GPU was not the limit: train took 20 to 36 s of each generation and its reserve is now given
+back. On a larger machine scale `S` with the cores (4 game processes on 28 cores were measured;
+the best ratio is not) and the memory with the rule above; a rented GPU needs no change beyond `device: "cuda"`.
+
+The run's `metrics/g<NNNNNN>.json` has the resident-set peaks of the driver, the largest game
+process and the largest policy worker (`peak_rss_bytes`, Linux, optional) and the peak reserved
+accelerator memory (`peak_accelerator_reserved_bytes`, optional), so a run reports what it used.
+The driver's figure is the process's high-water mark so far, not the generation's.
 
 ## 4. Look at a generation: the progress evaluation
 

@@ -10,7 +10,7 @@ from typing import Any
 import pytest
 from areneon_ml.inspector.readers import InspectError
 from areneon_ml.loop import layout
-from areneon_ml.loop.metrics import Counts, build_metrics, metrics_path, write_metrics
+from areneon_ml.loop.metrics import Counts, Peaks, build_metrics, metrics_path, write_metrics
 from areneon_ml.report.model import NOT_RECORDED, ReportError, read_report_model
 from areneon_ml.report.render import build_report
 
@@ -141,6 +141,27 @@ def test_a_record_of_another_run_or_one_that_breaks_the_contract_is_refused(run:
 def test_build_metrics_default_record_is_readable_by_the_report(tmp_path: Path) -> None:
     other = tmp_path / "run"
     config = make_run(other, generations=1)
-    record = build_metrics(config, 1, {"play": 1}, Counts(1, 2, 3), None)
+    record = build_metrics(config, 1, {"play": 1}, Counts(1, 2, 3), Peaks())
     write_metrics(other, record)
     assert read_report_model(other, None).generations[1].metrics == record
+
+
+def test_the_optional_memory_figures_are_shown_when_recorded_and_absent_otherwise(
+    run: Path,
+) -> None:
+    rewrite(
+        run,
+        1,
+        lambda r: r.update(
+            peak_rss_bytes={
+                "driver": 2 * 2**30,
+                "game_process": 600 * 2**20,
+                "policy_worker": 430 * 2**20,
+            }
+        ),
+    )
+    page = build_report(read_report_model(run, None))
+    assert "driver 2048 MiB, game process 600 MiB, worker 430 MiB" in page
+    # The other generations recorded neither figure.
+    assert "Peak reserved accelerator memory" in page
+    assert page.count(f">{NOT_RECORDED}<") >= 4
