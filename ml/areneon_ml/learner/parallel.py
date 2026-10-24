@@ -195,9 +195,7 @@ def unpack_piece(blob: bytes) -> _Piece:
     for episode, role, coded in header["steps"]:
         steps[(episode, role)] = [
             Step(
-                EncodedQuery(
-                    **{k: tensor(v) if isinstance(v, dict) else v for k, v in fields.items()}
-                ),
+                EncodedQuery(**_decoded(fields, tensor)),
                 chosen,
             )
             for chosen, fields in coded
@@ -209,6 +207,11 @@ def unpack_piece(blob: bytes) -> _Piece:
         header["contract_error"],
         None if header["encode_error"] is None else tuple(header["encode_error"]),
     )
+
+
+def _decoded(fields: dict[str, Any], tensor: Any) -> dict[str, Any]:
+    """The constructor arguments of an ``EncodedQuery`` from its header entry."""
+    return {k: tensor(v) if isinstance(v, dict) else v for k, v in fields.items()}
 
 
 def _raised(kind: str, message: str) -> Exception:

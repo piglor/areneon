@@ -16,7 +16,14 @@ import torch
 from areneon_contracts.contracts import jcs, sha256_hex
 from areneon_contracts.training import stream_split_points
 from areneon_ml.learner import parallel
-from areneon_ml.learner.data import LearnerDataError, Trajectory, trajectories
+from areneon_ml.learner.data import (
+    Collected,
+    LearnerDataError,
+    Step,
+    Trajectory,
+    _Collector,
+    trajectories,
+)
 from areneon_ml.learner.parallel import _check_piece
 from areneon_ml.model.encoder import Encoder
 from areneon_ml.model.network import ROLES
@@ -271,26 +278,22 @@ def test_a_piece_travels_as_one_blob_and_comes_back_bit_for_bit(tmp_path: Path) 
     assert (got.contract_error, got.encode_error) == (None, None)
     same(sent.collected.trajectories(), got.collected.trajectories())
     # Errors travel too, and an empty tensor keeps its shape.
-    odd = parallel._Piece(
-        parallel.Collected([], {}, {}), set(), set(), "line 3: broken", ("a.B", "m")
-    )
+    odd = parallel._Piece(Collected([], {}, {}), set(), set(), "line 3: broken", ("a.B", "m"))
     again = parallel.unpack_piece(parallel.pack_piece(odd))
     assert (again.contract_error, again.encode_error) == ("line 3: broken", ("a.B", "m"))
 
 
 def test_a_worker_refuses_to_send_a_tensor_of_a_kind_the_loader_does_not_use() -> None:
     step = next(iter(_one_piece().collected.steps.values()))[0]
-    bad = parallel.Step(dataclasses.replace(step.query, pending=step.query.pending.double()), 0)
-    piece = parallel._Piece(
-        parallel.Collected(["e"], {"e": 0.0}, {("e", "battle"): [bad]}), set(), set()
-    )
+    bad = Step(dataclasses.replace(step.query, pending=step.query.pending.double()), 0)
+    piece = parallel._Piece(Collected(["e"], {"e": 0.0}, {("e", "battle"): [bad]}), set(), set())
     with pytest.raises(LearnerDataError, match="float64"):
         parallel.pack_piece(piece)
 
 
 def _one_piece() -> Any:
     examples = examples_of(episodes=[(0, "p1")])
-    collector = parallel._Collector(encoders())
+    collector = _Collector(encoders())
     for example in examples:
         collector.add(json.loads(jcs(example)))
     return parallel._Piece(collector.collected(), set(), set())
