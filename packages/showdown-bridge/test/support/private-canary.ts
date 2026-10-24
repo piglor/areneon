@@ -60,8 +60,12 @@ export function nickPaste(paste: string, nick: (index: number) => string): strin
 
 let counter = 0;
 
-/** Build a world of `count` stand-in teams. Distinct markers per world and team. */
-export function makeCanaryWorld(engine: Engine, count = 2): CanaryWorld {
+/**
+ * Build a world of `count` stand-in teams. Distinct markers per world and team. The default markers are long
+ * (the inventory reports a team as illegal for a nickname over 18 characters); `legal: true` makes them short
+ * enough for the team to stay legal, for a command that refuses an illegal team.
+ */
+export function makeCanaryWorld(engine: Engine, count = 2, options: { legal?: true } = {}): CanaryWorld {
   const base = mkdtempSync(join(tmpdir(), "canary-world-"));
   const id = `${process.pid}x${counter++}`;
   const parent = join(base, "private-data");
@@ -75,7 +79,7 @@ export function makeCanaryWorld(engine: Engine, count = 2): CanaryWorld {
   const markers: string[] = [];
   const teams: StandInTeam[] = pool.slice(0, count).map((source, t) => {
     const paste = nickPaste(source, (i) => {
-      const marker = `CanaryNick${id}t${t}p${i}`;
+      const marker = `${options.legal === true ? "Cn" : "CanaryNick"}${id}t${t}p${i}`;
       markers.push(marker);
       return marker;
     });

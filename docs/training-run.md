@@ -519,3 +519,70 @@ processes, byte-identical. So 1,500 games (3,000 Episodes, about 33,000 examples
 about 1 hour in one process and about 10 minutes with 8; the real dataset's pool load
 adds to the start-up. Memory grows with the number of Episodes held (the same as a
 generation of that many games).
+
+## 6. Your own teams as a test set: the private test (owner only)
+
+The private test (ADR-015 erratum E1, item 2) measures one frozen pair on your own teams, from
+both seats, with nothing trained and nothing but counts and scores written. Run it in your own
+terminal (a plain terminal or tmux). It refuses, with no override, when `CLAUDECODE` or
+`AI_AGENT` is set, unless stdin, stdout and stderr are terminals and `/dev/tty` opens: an
+agent session cannot run it, and an agent never runs it on real teams.
+
+```bash
+mkdir -m 700 private-data/tests      # the output root: existing, mode 0700, a private-data path segment
+.venv/bin/python -m areneon_ml.loop private-test \
+  --run-dir RUN_DIR --generation G --engine-data fixtures/showdown/gen9championsvgc2026regmc/engine-data.json \
+  --out-root private-data/tests --source staging --worker-python .venv/bin/python \
+  [--teams-dir private-data/teams] [--max-pairs N] [--damage-aware [--damage-aware-budget-minutes M]] \
+  [--opponent-run-dir OTHER_RUN --opponent-generation H] [--salt-file NAME]
+```
+
+- **Who plays.** The run's committed generation G (its manifest is verified, read-only, as the
+  progress evaluation reads it): the frozen pair in `sample` and in `argmax` mode against
+  `random-legal@v1` and `actor-rule@v1`, plus `damage-aware@v1` with `--damage-aware` (the same
+  wall-clock budget rule as the progress evaluation) and another committed pair with
+  `--opponent-run-dir` and `--opponent-generation` (sample against sample, argmax against argmax).
+  One policy query at a time, on CPU. A policy failure is a scored loss with its cause.
+- **Team source.** `--source staging` reads `--teams-dir` (default `private-data/teams`) through
+  `PasteDirectorySource`; it has no hold-out flag, so only a pair with no private ancestry may be
+  tested on it. `--source snapshot --snapshot-hash H [--snapshots-dir DIR] --subset all|holdout`
+  reads the pinned snapshot's verified local copy (`private-data/snapshots/H/`) through the one
+  snapshot check, and takes its active records (`all`) or only its hold-out records (`holdout`).
+  `--source dataset` plays the validation split of the run's public team dataset (the run config's
+  `team_dataset`; the record is still `private` when the pair or the opponent is). Each team goes
+  through `importPaste` and `validateTeam`; a refusal is a code and the 1-based position of the
+  team in the source's order (staging: file name order), never validator text.
+- **Pair with private ancestry.** If a checkpoint record of the pair (or of the opponent pair) is
+  `private`, the test is refused unless the source is a snapshot's `holdout` subset or the public
+  dataset. The staged directory and a snapshot's `all` are refused. (Producing a private-ancestry
+  checkpoint is a later ticket of Epic #1058; this is the rule it will meet.)
+- **Plan.** The teams are ordered by HMAC-SHA256 under a per-test 256-bit salt
+  (`private-test-pairing/1`) and cut into disjoint pairs; every pair is played from both seats
+  with one battle seed (`private-test-seed/1`, keyed by the same salt, so no seed is shared with
+  `league-seed/1` or `progress-seed/1`). All disjoint pairs are played unless `--max-pairs` limits
+  them: N teams give N/2 pairs and N games per opponent and mode, so a small subset (the hold-out
+  one) has wide intervals. The teams stay on their seats and the policies swap between the two
+  games of a pair. The `all-pairs` plan of the ticket (every unordered pair, bootstrap over teams)
+  is not built. A run that fails after the salt was written leaves an unused salt file in the root. The salt is written once to
+  `private-test-salt-<id>.key` (mode 0600) in the output root; repeat a test with
+  `--salt-file private-test-salt-<id>.key` and the same inputs and you get the same record bytes.
+  Another salt gives another commitment and another pairing. Delete the salt file only when you
+  do not need to repeat the test.
+- **What it prints and writes.** Standard output is one line: the label `private test set; not
+  the Training gate; not validation`, the record's file name and hash, the number of looks, the
+  test set's commitment (SHA-256 of `{salt, sorted canonical team hashes}`, so the set is named
+  without a team), the team and pair counts, and per match the games, wins, ties, losses, forfeits
+  by side and cause, the pair-score sum, the mean score and a 95% percentile bootstrap interval
+  over the pairs, in parts per million (derived from the record alone; descriptive, never a
+  test or a claim). Under the output root it writes exactly three kinds of file: the
+  `PrivateTestRecord` (`private-test-<hash>.json`, `data_class: private`, integers only: counts,
+  no team, species, team hash, file name or seed), the salt file, and the look log
+  `private-test.looks.jsonl` (a hash-chained line per look, as the validation look log). It
+  writes no game record, omniscient log, Episode, replay or dashboard page, and never overwrites a
+  file. A private record is never committed (the data-class guard refuses it) and is never an
+  input to a gate candidate choice, a registered plan or a public run.
+- **Failure.** Every failure shows one fixed line, `private-test: <code>` and, for a team, a
+  position (`usage`, `private_pair_source`, `team_import_failed 7`, `team_invalid 7`,
+  `snapshot_unverified`, `worker_failed`, `play_failed`, ...); exit 2 for usage, 3 for a
+  refusal of the guard, the root, the run or the record, 4 for a failure of the simulator side.
+  Nothing else is shown, so a team never reaches a terminal log.

@@ -333,11 +333,25 @@ class _Source:
     battle: str
     team_set: Path
     version_manifest: dict[str, Any]
+    #: ``private`` when either checkpoint record has private ancestry (only with ``allow_private``).
+    data_class: str = "synthetic"
 
 
-def _source(run_dir: Path, config: RunConfig, generation: int) -> _Source:
-    """Verify the committed generation and its records; refuse a non-synthetic run."""
-    if not config.team_dataset:
+def _source(
+    run_dir: Path,
+    config: RunConfig,
+    generation: int,
+    *,
+    allow_private: bool = False,
+    needs_dataset: bool = True,
+) -> _Source:
+    """Verify the committed generation and its records; refuse a non-synthetic run.
+
+    The private test (ADR-015 erratum E1) reads a pair with ``allow_private`` and, for a source
+    other than the public dataset, ``needs_dataset=False``; it learns the pair's class from
+    ``data_class`` and decides where that class may be tested.
+    """
+    if needs_dataset and not config.team_dataset:
         raise ProgressError(
             "the run config names no team dataset: the interim pool has no validation split"
         )
@@ -356,11 +370,16 @@ def _source(run_dir: Path, config: RunConfig, generation: int) -> _Source:
     if not isinstance(checkpoints, dict) or set(checkpoints) != {"preview", "battle"}:
         raise ProgressError("the generation's manifest names no frozen pair")
     version_manifest: dict[str, Any] = {}
+    data_class = "synthetic"
     for role in ("preview", "battle"):
         record = read_record(layout.read_json(path / "records" / f"{role}.json"))
         version_manifest = record.manifest
         if record.data_class != "synthetic":
-            raise ProgressError("a progress evaluation runs on synthetic, public-lineage runs only")
+            if not allow_private:
+                raise ProgressError(
+                    "a progress evaluation runs on synthetic, public-lineage runs only"
+                )
+            data_class = "private"
         if record.checkpoint_id != checkpoints[role] or record.role != role:
             raise ProgressError(f"records/{role}.json names another checkpoint than the manifest")
     team_set = newest.path / "team-set.json"
@@ -372,6 +391,7 @@ def _source(run_dir: Path, config: RunConfig, generation: int) -> _Source:
         checkpoints["battle"],
         team_set,
         version_manifest,
+        data_class,
     )
 
 
