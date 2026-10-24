@@ -14,6 +14,7 @@ from areneon_ml.inspector import progress_replay_command as command
 from areneon_ml.inspector import progress_replay_page as page_module
 from areneon_ml.inspector.readers import InspectError
 from areneon_ml.loop import layout
+from areneon_ml.progress.records import DAMAGE_AWARE_LABEL
 from areneon_ml.progress.run import VersusSpec, progress_generation
 
 from tests.ml.inspector.test_progress_replay import (
@@ -120,7 +121,7 @@ def test_a_cross_run_game_names_the_other_run_and_the_label(tmp_path: Path) -> N
     )
     (g, _twin) = games(root, 1, match="run-sample", games=[0])
     (dg, _dtwin) = games(root, 1, match="damage-aware-sample", games=[0])
-    assert page_module.DAMAGE_AWARE_LABEL in page(dg)
+    assert DAMAGE_AWARE_LABEL in page(dg)
     assert page_module.CROSS_RUN not in page(dg)
     text = page(g)
     assert g.opponent_kind == "run"
