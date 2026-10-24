@@ -31,7 +31,8 @@ export async function snapshotTeams(args: { engine: Engine; config: TrainingRunC
     const read = await readPrivateSnapshot({
       engine,
       manifest,
-      shard: (index) => readFileSync(join(dir, "shards", `${index}.parquet`)),
+      // A copy in a plain Uint8Array: the decode worker takes ownership of the buffer it is given.
+      shard: (index) => new Uint8Array(readFileSync(join(dir, "shards", `${index}.parquet`))),
       labelSet: inputs.labelSet,
       expectedSnapshotHash: snapshotHash,
       expected: { manifest: resolveFormat(engine, config.format_id).manifest, vocabularyHash: teamVocabularyHash(inputs.vocabulary) },
