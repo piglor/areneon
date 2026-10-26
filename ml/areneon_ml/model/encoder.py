@@ -487,7 +487,7 @@ class Encoder:
         """
         game = self.game
         places = [self._shown_species(self._foe_at(state, i)) for i in range(SLOTS)]
-        ally_slot = (slot + 1) % SLOTS
+        ally_slot = (slot + 1) % SLOTS  # the other active: doubles has SLOTS == 2
         ally = (
             state.own.roster[request.order[ally_slot]] if ally_slot < len(request.order) else None
         )

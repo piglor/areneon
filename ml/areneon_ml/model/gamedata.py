@@ -176,6 +176,7 @@ class GameData:
             ),
             move_type=(-1,) * RESERVED
             + tuple(types.lookup(m["type"]) - RESERVED for m in table["moves"]),
+            # "Status" is the export's own category name (the schema enum), not a rule value.
             move_status=(False,) * RESERVED
             + tuple(m["category"] == "Status" for m in table["moves"]),
         )
