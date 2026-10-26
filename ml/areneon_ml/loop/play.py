@@ -102,7 +102,10 @@ class NodePlayer:
             stdout, stderr = child.communicate(timeout=timeout_s)
         except subprocess.TimeoutExpired:
             _kill_group(child)
-            _, stderr = child.communicate()
+            try:
+                _, stderr = child.communicate(timeout=10)
+            except subprocess.TimeoutExpired:  # a descendant outside the group holds a pipe
+                stderr = ""
             raise PlayError(
                 f"{script} exceeded the generation time limit of {timeout_s:g} s and was killed "
                 f"(--generation-timeout-minutes): {stderr[-_STDERR_TAIL:]}"

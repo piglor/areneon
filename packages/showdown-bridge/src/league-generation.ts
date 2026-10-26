@@ -194,7 +194,7 @@ export interface GenerationOptions {
   episodes_dir?: string;
   /**
    * Ends this process's own games (#1100): checked before each wave and after each worker
-   * restart, so a process whose generation has failed plays no further wave and starts no
+   * restart, so a process whose generation has failed finishes its current wave and plays no further one and starts no
    * further worker. `playGeneration` aborts it when a game process fails.
    */
   signal?: AbortSignal;

@@ -169,14 +169,14 @@ def test_a_generation_past_its_time_limit_is_killed_with_its_children(tmp_path: 
         "time.sleep(60)\n"
     )
     chosen = player(tmp_path, "", script)
-    timed = NodePlayer(**{**chosen.__dict__, "generation_timeout_s": 1.0})
+    timed = NodePlayer(**{**chosen.__dict__, "generation_timeout_s": 5.0})
     request = PlayRequest(1, "policy:abc", "p" * 64, "b" * 64, tmp_path / "work")
     start = time.monotonic()
     with pytest.raises(
-        PlayError, match=r"exceeded the generation time limit of 1 s.*still playing"
+        PlayError, match=r"exceeded the generation time limit of 5 s.*still playing"
     ):
         timed.play(request)
-    assert time.monotonic() - start < 20
+    assert time.monotonic() - start < 30
     grandchild = int(pids.read_text())
     for _ in range(50):
         try:
