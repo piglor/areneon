@@ -107,6 +107,20 @@ def test_the_node_heap_cap_is_a_flag_of_the_player_only(
     assert other[0]["node_heap_mb"] is None
 
 
+def test_the_generation_time_limit_is_a_flag_of_the_player_only(
+    tmp_path: Path, config_file: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    built = fake_node(monkeypatch)
+    assert main(run(config_file, tmp_path / "r", 1)) == 0
+    assert built[0]["generation_timeout_s"] == 180 * 60.0
+    other = fake_node(monkeypatch)
+    assert main(run(config_file, tmp_path / "s", 1, "--generation-timeout-minutes", "5")) == 0
+    assert other[0]["generation_timeout_s"] == 300.0
+    assert (tmp_path / "r" / "run-config.json").read_bytes() == (
+        tmp_path / "s" / "run-config.json"
+    ).read_bytes()
+
+
 def test_the_load_workers_are_a_flag_of_the_loop_only(
     tmp_path: Path, config_file: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -139,6 +153,7 @@ def test_the_load_workers_are_a_flag_of_the_loop_only(
         "--policy-workers",
         "--game-processes",
         "--node-heap-mb",
+        "--generation-timeout-minutes",
         "--load-processes",
         "--load-memory-mb",
     ],

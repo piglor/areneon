@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -23,6 +23,7 @@ import { type PolicyClient, PolicyWorkerError } from "../src/index.ts";
 import { UnsupportedCandidateError } from "../src/evaluation-harness.ts";
 import { loadTrainingSet, readTrainingSet, TrainingLoaderError } from "../src/training-loader.ts";
 import { SAMPLES_DIR } from "../src/samples.ts";
+import { startShard } from "../src/generation-cli.ts";
 import { teamHash } from "../src/team-class.ts";
 
 const engine = loadEngine();
@@ -538,4 +539,68 @@ describe("the damage-aware baseline as a training opponent (ADR-018 section 7)",
     await expect(play(damageConfig("damage-aware-x@v1"))).rejects.toThrow(/plays as damage-aware@v1/);
     expect(() => damageAwareSetup(engine, "gen9other")).toThrow(/vocabulary for/);
   }, 120_000);
+});
+
+describe("a failing or vanished game process (#1100)", () => {
+  const serial = readTrainingRunConfig({ ...(sample("tiny") as object), generation: { ...(readTrainingRunConfig(sample("tiny")).generation as object), n_parallel: 1 } });
+  const slow = (waited: { count: number }, ms: number): PolicyClient & { beginGame: () => Promise<void> } => ({
+    ...actorClient(),
+    beginGame: async () => {
+      waited.count++;
+      await new Promise((resolve) => setTimeout(resolve, ms));
+    },
+  });
+  const opts = (change: Partial<GenerationOptions>): GenerationOptions => ({ engine, config: serial, generation: 1, policy_id: POLICY, client: actorClient(), pool, ...change });
+  const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+  const script = (name: string, body: string): string => {
+    const file = join(dir, name);
+    writeFileSync(file, body);
+    return file;
+  };
+  let dir: string;
+  beforeAll(() => {
+    dir = mkdtempSync(join(tmpdir(), "areneon-fail-"));
+  });
+  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+
+  it("stops this process's own games at once and reports the child's message", async () => {
+    const waves = Math.ceil(planGeneration(serial, 1, pool.teams.length).length / 2); // this process's share of two
+    expect(waves).toBeGreaterThan(2);
+    const waited = { count: 0 };
+    const child = startShard(script("fails.mjs", `await new Promise((r) => setTimeout(r, 100)); console.error("child said no"); process.exit(1);`), [], join(dir, "none"), 2);
+    const started = Date.now();
+    await expect(playGeneration(opts({ client: slow(waited, 150), shard: { index: 0, of: 2 }, others: child.entries }))).rejects.toThrow(/game process 2 failed \(exit 1\): child said no/);
+    expect(Date.now() - started).toBeLessThan(waves * 150); // not the whole share
+    const after = waited.count;
+    await sleep(400);
+    expect(waited.count).toBe(after); // no wave began after the failure
+    expect(after).toBeLessThan(waves);
+  });
+
+  it("is told of a child that failed although a grandchild keeps its stderr open", async () => {
+    const holder = script("holder.mjs", `import { spawn } from "node:child_process"; spawn(process.execPath, ["-e", "setTimeout(() => {}, 4000)"], { stdio: ["ignore", "ignore", "inherit"], detached: true }).unref(); console.error("left a grandchild"); process.exit(1);`);
+    const started = Date.now();
+    await expect(startShard(holder, [], join(dir, "none"), 3).entries).rejects.toThrow(/game process 3 failed \(exit 1\): left a grandchild/);
+    expect(Date.now() - started).toBeLessThan(2500);
+  });
+
+  it("waits normally when its own games finish while a child still runs", async () => {
+    const all = await playEntries(opts({}));
+    const late = sleep(300).then(() => all.filter((e) => e.game % 2 === 1));
+    const result = await playGeneration(opts({ shard: { index: 0, of: 2 }, others: late, live_children: () => 1, idle_grace_ms: 40 }));
+    expect(result.games).toHaveLength(all.length);
+  });
+
+  it("fails a generation that has no live game process and no game in flight but still awaits one", async () => {
+    const started = Date.now();
+    await expect(playGeneration(opts({ shard: { index: 0, of: 2 }, others: new Promise(() => undefined), live_children: () => 0, idle_grace_ms: 80 }))).rejects.toThrow(/generation is idle/);
+    expect(Date.now() - started).toBeLessThan(5000);
+  });
+
+  it("does not trip while this process's own games run", async () => {
+    const waited = { count: 0 };
+    const all = await playEntries(opts({}));
+    const others = sleep(200).then(() => all.filter((e) => e.game % 2 === 1));
+    await expect(playGeneration(opts({ client: slow(waited, 60), shard: { index: 0, of: 2 }, others, live_children: () => 0, idle_grace_ms: 150 }))).resolves.toBeDefined();
+  });
 });

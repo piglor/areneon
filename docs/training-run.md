@@ -119,7 +119,7 @@ and lists the SHA-256 of each metrics file among its inputs.
 
 ### Sizing a run to a machine
 
-Five operational flags of the driver change how much memory and how many cores a generation
+Six operational flags of the driver change how much memory and how many cores a generation
 uses and nothing it writes: the plan, the seeds, every Episode, the stream, the tensors and the
 learner-state hashes are the same for any value (each flag has a test; the play flags were compared on a full-size generation with `diff -r`,
 the load flags by a digest over every tensor). None is in the run config.
@@ -129,6 +129,7 @@ the load flags by a digest over every tensor). None is in the run config.
 | `--game-processes S` | Node game processes that share a generation's games | 1 |
 | `--policy-workers K` | policy worker processes per game process | 1 |
 | `--node-heap-mb M` | `--max-old-space-size` of each Node game process | Node's own |
+| `--generation-timeout-minutes M` | wall-clock limit of a generation's play phase; past it the driver kills the Node process group and the generation fails, nothing committed | 180 |
 | `--load-processes N` | worker processes that check and encode the stream in the load phase | 1 |
 | `--load-memory-mb M` | cap on what the load workers may add (about 400 MB each); fewer run if `N` does not fit | none |
 

@@ -185,10 +185,11 @@ export async function runGenerationCli(
       writeFileSync(join(need("out"), USAGE_FILE), `${jcs(usageOf(ownPeakRss(), largest(clients.map((worker) => worker.peakRssBytes()))) as unknown as Json)}\n`);
       return 0;
     }
+    // The first game process to fail fails this one at once: `Promise.all` rejects with its message, `playGeneration` stops this process's own games, and the `finally` below kills the others (#1100).
     const others = Promise.all(children.map((child) => child.entries));
     // The stream goes straight to its file in chunks as the examples are made (#998).
     mkdirSync(need("out"), { recursive: true });
-    const result = await playGeneration({ engine, config, generation, policy_id: need("policy-id"), client, peers, pool, stream_path: join(need("out"), "stream.jsonl"), episodes_dir: episodesDir, ...(own === undefined ? {} : { shard: own }), others: others.then((all) => all.flat()) });
+    const result = await playGeneration({ engine, config, generation, policy_id: need("policy-id"), client, peers, pool, stream_path: join(need("out"), "stream.jsonl"), episodes_dir: episodesDir, ...(own === undefined ? {} : { shard: own }), others: others.then((all) => all.flat()), live_children: () => children.filter((child) => child.alive()).length });
     writeGeneration(need("out"), result);
     print(jcs({ generation, run_config_hash: await runConfigHash(config), training_set_hash: result.training_set_hash, examples: result.set.examples }));
     // After the summary line, so a reader of the first line is unchanged: the peak memory of this process, its workers and the further game processes.
@@ -236,8 +237,13 @@ export interface ShardProcess {
   entries: Promise<PlayedEntry[]>;
   /** Its peak memory once it has ended (empty when it left none). */
   usage: Promise<ResourceUsage>;
+  /** Whether the process is still running. */
+  alive: () => boolean;
   stop: () => void;
 }
+
+/** How long a failed game process's stderr is awaited after it exits: a process that left a grandchild holding the pipe open must not delay the report (#1100). */
+const STDERR_GRACE_MS = 500;
 
 export function startShard(script: string, args: readonly string[], out: string, index: number, node: string = process.execPath): ShardProcess {
   const child = spawn(node, [...process.execArgv, script, ...args], { stdio: ["pipe", "ignore", "pipe"] }); // stdin stays open: the child ends when this process does
@@ -245,13 +251,28 @@ export function startShard(script: string, args: readonly string[], out: string,
   child.stderr.on("data", (chunk: Buffer) => {
     stderr = (stderr + chunk.toString("utf8")).slice(-2000);
   });
+  let running = true;
   const entries = new Promise<PlayedEntry[]>((resolve, reject) => {
-    child.once("error", (error) => reject(new GenerationError(`game process ${index} did not start: ${error.message}`)));
-    child.once("close", (code, signal) => {
+    const failed = (code: number | null, signal: NodeJS.Signals | null): void => reject(new GenerationError(`game process ${index} failed (${signal === null ? `exit ${code}` : `signal ${signal}`}): ${stderr.trim()}`));
+    child.once("error", (error) => {
+      running = false;
+      reject(new GenerationError(`game process ${index} did not start: ${error.message}`));
+    });
+    // `exit`, not `close`: `close` waits for every holder of the stderr pipe, so a game process that failed
+    // but left a grandchild behind was not reported until that one ended (#1100).
+    child.once("exit", (code, signal) => {
+      running = false;
       if (code !== 0) {
-        reject(new GenerationError(`game process ${index} failed (${signal === null ? `exit ${code}` : `signal ${signal}`}): ${stderr.trim()}`));
-        return;
+        const late = setTimeout(() => failed(code, signal), STDERR_GRACE_MS);
+        child.once("close", () => {
+          clearTimeout(late);
+          failed(code, signal);
+        });
       }
+    });
+    child.once("close", (code) => {
+      running = false;
+      if (code !== 0) return; // reported by the `exit` handler
       try {
         resolve(readShardFile(join(out, SHARD_FILE)));
       } catch (error) {
@@ -268,7 +289,7 @@ export function startShard(script: string, args: readonly string[], out: string,
     }
   });
   usage.catch(() => undefined);
-  return { entries, usage, stop: () => void child.kill("SIGKILL") };
+  return { entries, usage, alive: () => running, stop: () => void child.kill("SIGKILL") };
 }
 
 /** `scripts/format-manifest.ts --format <id>`: print the version manifest of a supported format as one canonical JSON line. */

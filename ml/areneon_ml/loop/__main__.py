@@ -152,6 +152,14 @@ def _add_run(commands: Any) -> None:
         "(operational: the generation's files are the same for any number)",
     )
     run.add_argument(
+        "--generation-timeout-minutes",
+        type=_positive,
+        default=180,
+        help="wall-clock limit of one generation's play phase: past it the Node process group "
+        "is killed and the generation fails, nothing committed (operational: the generation's "
+        "files are the same for any limit; default 180)",
+    )
+    run.add_argument(
         "--load-processes",
         type=_positive,
         default=1,
@@ -413,6 +421,7 @@ def _run(args: argparse.Namespace) -> dict[str, object]:
         policy_workers=args.policy_workers,
         game_processes=args.game_processes,
         node_heap_mb=args.node_heap_mb,
+        generation_timeout_s=args.generation_timeout_minutes * 60.0,
         play_script=(
             "packages/team-dataset/scripts/play-generation.ts"
             if config.team_dataset

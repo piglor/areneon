@@ -9,3 +9,5 @@ try {
   console.error(`play-generation: ${(error as Error).message}`);
   process.exitCode = error instanceof UsageError ? 2 : 1;
 }
+// A failed generation ends the process now: a game that was still running when it failed must not keep it (and its workers) alive (#1100).
+if (process.exitCode !== 0 && process.exitCode !== undefined) process.exit();
