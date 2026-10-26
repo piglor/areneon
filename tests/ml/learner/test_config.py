@@ -126,7 +126,7 @@ def test_the_kl_target_is_optional_and_divided_once() -> None:
         read_run_config(raw("invalid/zero-target-kl.json"))
 
 
-def test_model_options_are_optional_and_none_is_defined_yet() -> None:
+def test_model_options_are_optional() -> None:
     plain = read_run_config(raw())
     assert plain.model.options == ()
     assert plain.model.encoder.options == ()
@@ -137,3 +137,12 @@ def test_model_options_are_optional_and_none_is_defined_yet() -> None:
     for name in ("unknown-model-option", "unknown-encoder-option"):
         with pytest.raises(RunConfigError):
             read_run_config(raw(f"invalid/{name}.json"))
+
+
+def test_the_candidate_matchup_encoder_option_is_read_and_only_true_is_a_value() -> None:
+    config = read_run_config(raw("valid/candidate-matchup.json"))
+    assert config.model.encoder.options == (("candidate_matchup", True),)
+    assert config.model.layout_changing
+    assert config.hash != read_run_config(raw()).hash
+    with pytest.raises(RunConfigError):
+        read_run_config(raw("invalid/candidate-matchup-false.json"))

@@ -59,8 +59,9 @@ def test_without_options_today_s_bytes_and_hashes_are_unchanged() -> None:
     assert read_header(data)["__metadata__"]["areneon.format"] == FORMAT
 
 
-def test_no_option_exists_yet() -> None:
-    assert REGISTRY == {"encoder": {}, "network": {}}
+def test_only_the_registered_options_exist() -> None:
+    assert set(REGISTRY["encoder"]) == {"candidate_matchup"}
+    assert REGISTRY["network"] == {}
     with pytest.raises(OptionError, match="unknown network option 'x'"):
         read_options("network", {"x": 1})
     with pytest.raises(ConfigError, match="unknown encoder option"):

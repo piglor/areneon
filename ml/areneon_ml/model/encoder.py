@@ -38,8 +38,8 @@ from areneon_ml.model.candidates import (
     UnsupportedCandidate,
     parse_choice,
 )
-from areneon_ml.model.gamedata import NONE, UNKNOWN, GameData
-from areneon_ml.model.options import Options, with_options
+from areneon_ml.model.gamedata import NONE, RESERVED, UNKNOWN, GameData
+from areneon_ml.model.options import CANDIDATE_MATCHUP, Options, is_set, with_options
 from areneon_ml.reducer import BattleState, ChannelReducer, PokemonState, SideState, reduce_channel
 from areneon_ml.reducer.state import STAT_KEYS
 
@@ -50,6 +50,10 @@ REQUEST_KINDS = ("preview", "move", "forceSwitch")
 GENDERS = (None, "M", "F", "N")
 MAX_SLOT_LETTERS = 3  # triples is the widest gametype the reducer reads
 TARGET_OFFSET = 10
+MATCHUP_TYPES = 2  # types a position shows: a Pokémon has at most two
+BASE_CAND_COLUMNS = 5  # the candidate columns every layout has; option columns follow
+SAME_TYPE_NOT = RESERVED  # same_type categories: none, unknown, then these two
+SAME_TYPE_YES = RESERVED + 1
 TARGET_CODES = 20  # 0 untargeted, else TARGET_OFFSET + the engine's target location (-9..9)
 _REQUEST = "|request|"
 _SIDE = re.compile(r"^p[1-4]: ")
@@ -102,6 +106,21 @@ class EncoderConfig:
             },
             self.options,
         )
+
+
+def _matchup_columns(config: EncoderConfig) -> tuple[tuple[str, str], ...]:
+    """The ``candidate_matchup`` columns: per position the move's chart cell for each shown type.
+
+    Positions are the opposing slots (one per candidate slot) and the ally; the last column
+    is the same-type flag. Empty unless the option is set.
+    """
+    if not is_set(config.options, CANDIDATE_MATCHUP):
+        return ()
+    places = (*(f"foe_{i + 1}" for i in range(SLOTS)), "ally")
+    cells = tuple(
+        (f"matchup_{place}_{k + 1}", "matchup") for place in places for k in range(MATCHUP_TYPES)
+    )
+    return (*cells, ("same_type", "same_type"))
 
 
 @dataclass(frozen=True)
@@ -166,6 +185,7 @@ class Layout:
                 ("move_slot", "move_slot"),
                 ("target", "target"),
                 ("event", "event"),
+                *_matchup_columns(config),
             ),
         )
 
@@ -192,7 +212,7 @@ def encoder_version(game: GameData, config: EncoderConfig) -> str:
     ``tests/ml/model/test_encoder.py`` (a pinned version and a tensor digest of
     one fixed query) fails on such a change if nobody did.
     """
-    body = {
+    body: dict[str, Any] = {
         "encoder_format": ENCODER_FORMAT,
         "engine_data_hash": game.engine_data_hash,
         "attribute_digest": game.attribute_digest,
@@ -208,6 +228,15 @@ def encoder_version(game: GameData, config: EncoderConfig) -> str:
             "bucket": "sha256 first 4 bytes big-endian modulo buckets",
         },
     }
+    if is_set(config.options, CANDIDATE_MATCHUP):
+        # The cell categories are the engine's codes shifted by RESERVED: the count is data,
+        # the offsets and the same-type indices are index constants, so they are hashed.
+        body["constants"]["matchup"] = {
+            "types_shown": MATCHUP_TYPES,
+            "reserved": RESERVED,
+            "same_type": [SAME_TYPE_NOT, SAME_TYPE_YES],
+            "chart_codes": game.chart_codes,
+        }
     return f"enc{ENCODER_FORMAT}:{sha256_hex(jcs(body))}"
 
 
@@ -299,7 +328,7 @@ class Encoder:
                 f"a {observation['kind']} observation at a {state.request_kind} request"
             )
         request = self._request(state, last_request)
-        candidates = [self._candidate(c, request, wanted) for c in query["candidates"]]
+        candidates = [self._candidate(c, request, wanted, state) for c in query["candidates"]]
         return self._assemble(observation["kind"], state, field_features, candidates)
 
     # -- tokens --------------------------------------------------------------
@@ -432,8 +461,46 @@ class Encoder:
             raise UnsupportedCandidate("a candidate names a team position the request lacks")
         return request.order[position - 1]
 
+    def _shown_species(self, mon: PokemonState | None) -> int:
+        """The species index a position shows: NONE for an empty or fainted position.
+
+        A Pokémon in play has been shown by its switch-in (or its Transform copy), so its species
+        is public; the roster's base species is the public fallback.
+        """
+        if mon is None or mon.fainted:
+            return NONE
+        return self.game.species.lookup(mon.temp_species or mon.species or mon.base_species)
+
+    def _foe_at(self, state: BattleState, place: int) -> PokemonState | None:
+        letters = sorted(state.opponent.slots)
+        index = state.opponent.slots[letters[place]] if place < len(letters) else None
+        return None if index is None else state.opponent.roster[index]
+
+    def _matchup(
+        self, move: int, actor: int, request: _Request, slot: int, state: BattleState
+    ) -> list[int]:
+        """The ``candidate_matchup`` columns of one move slot action (see ``_matchup_columns``).
+
+        Only the species a position shows is read (ADR-022 tier B): never an unrevealed item,
+        ability or move, and a type change by a volatile is not tracked. A status move, an
+        unknown move and an empty position carry NONE.
+        """
+        game = self.game
+        places = [self._shown_species(self._foe_at(state, i)) for i in range(SLOTS)]
+        ally_slot = (slot + 1) % SLOTS
+        ally = (
+            state.own.roster[request.order[ally_slot]] if ally_slot < len(request.order) else None
+        )
+        places.append(self._shown_species(ally))
+        if move < RESERVED or game.move_status[move]:
+            return [NONE] * (MATCHUP_TYPES * len(places) + 1)
+        cells = [c for species in places for c in game.matchup_cells(move, species, MATCHUP_TYPES)]
+        user = self._shown_species(state.own.roster[actor])
+        same = SAME_TYPE_YES if game.move_type[move] in game.species_types[user] else SAME_TYPE_NOT
+        return [*cells, same]
+
     def _candidate(
-        self, candidate: Mapping[str, Any], request: _Request, kind: str
+        self, candidate: Mapping[str, Any], request: _Request, kind: str, state: BattleState
     ) -> tuple[list[list[int]], list[list[int]], list[int], float]:
         parsed: ParsedChoice = parse_choice(candidate["choice"])
         if (parsed.kind == "team") != (kind == "preview"):
@@ -464,6 +531,10 @@ class Encoder:
                 cat[slot][2] = action.index
                 cat[slot][3] = 0 if action.target is None else TARGET_OFFSET + action.target
                 cat[slot][4] = 0 if action.event is None else 1 + EVENTS.index(action.event)
+                if len(cat[slot]) > BASE_CAND_COLUMNS:
+                    cat[slot][BASE_CAND_COLUMNS:] = self._matchup(
+                        cat[slot][1], tok[slot][0], request, slot, state
+                    )
         return cat, tok, team, 1.0 if candidate["pending"] else 0.0
 
     # -- assembly ------------------------------------------------------------

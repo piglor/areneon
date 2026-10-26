@@ -103,6 +103,14 @@ class GameData:
     move_attributes: torch.Tensor
     item_attributes: torch.Tensor
     move_base_pp: tuple[int, ...]
+    # The engine's type chart as exported: ``type_chart[defender][attacker]`` is the code
+    # ``types[defender].damage_taken[attacker]`` (positions in ``types`` order, without the two
+    # reserved indices). The codes are categories; their meaning is never read here.
+    type_chart: tuple[tuple[int, ...], ...] = ()
+    chart_codes: int = 0  # the number of distinct codes the chart can hold: largest code + 1
+    species_types: tuple[tuple[int, ...], ...] = ()  # per species index: its type positions
+    move_type: tuple[int, ...] = ()  # per move index: its type position, -1 for the reserved rows
+    move_status: tuple[bool, ...] = ()  # per move index: the export's category is Status
 
     @property
     def attribute_digest(self) -> str:
@@ -160,4 +168,29 @@ class GameData:
             ),
             item_attributes=_scaled(item_rows, 2),
             move_base_pp=(0, 0, *(int(m["pp"]) for m in table["moves"])),
+            type_chart=tuple(tuple(int(c) for c in t["damage_taken"]) for t in table["types"]),
+            chart_codes=1 + max((c for t in table["types"] for c in t["damage_taken"]), default=-1),
+            species_types=((),) * RESERVED
+            + tuple(
+                tuple(types.lookup(t) - RESERVED for t in s["types"]) for s in table["species"]
+            ),
+            move_type=(-1,) * RESERVED
+            + tuple(types.lookup(m["type"]) - RESERVED for m in table["moves"]),
+            move_status=(False,) * RESERVED
+            + tuple(m["category"] == "Status" for m in table["moves"]),
         )
+
+    def matchup_cells(self, move: int, species: int, shown: int) -> list[int]:
+        """The chart cells of ``move`` against the first ``shown`` types of ``species``.
+
+        Each cell is ``RESERVED`` + the engine's code, as a category; a missing second type is
+        ``NONE``. A move with no type in the export (a reserved row) gives ``NONE`` throughout.
+        """
+        attacker = self.move_type[move]
+        types = self.species_types[species]
+        if len(types) > shown:
+            raise GameDataError(
+                f"{self.species.ids[species - RESERVED]!r} shows more than {shown} types"
+            )
+        cells = [RESERVED + self.type_chart[t][attacker] for t in types] if attacker >= 0 else []
+        return cells + [NONE] * (shown - len(cells))

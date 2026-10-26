@@ -7,9 +7,15 @@ is set, so ``encoder_version``, the checkpoint metadata and every existing hash 
 were. Present, an option is part of the config JSON, so it moves the run config hash, the
 ``encoder_version`` and the checkpoint metadata.
 
-This module is only the seam. No option is defined here: each experiment arm's ticket adds
-its own ``OptionSpec`` to ``REGISTRY`` (and to the contract's closed ``options`` object).
+This module is the seam and the registry: each experiment arm's ticket adds its own
+``OptionSpec`` to ``REGISTRY`` (and a property to the contract's closed ``options`` object).
 A name that is not registered is refused, never ignored.
+
+Defined so far:
+
+- ``candidate_matchup`` (encoder, layout changing; ADR-022 tier B): per move candidate, the
+  engine-data type-chart cells of the move's type against the shown types of each position, and
+  a same-type flag. Only ``true`` is a value: leave the key out to turn it off.
 """
 
 from __future__ import annotations
@@ -36,7 +42,14 @@ class OptionSpec:
     layout_changing: bool = False
 
 
-REGISTRY: dict[str, dict[str, OptionSpec]] = {scope: {} for scope in SCOPES}
+CANDIDATE_MATCHUP = "candidate_matchup"
+
+REGISTRY: dict[str, dict[str, OptionSpec]] = {
+    "encoder": {
+        CANDIDATE_MATCHUP: OptionSpec(CANDIDATE_MATCHUP, lambda value: value is True, True),
+    },
+    "network": {},
+}
 
 
 def read_options(scope: str, source: object) -> Options:
@@ -71,3 +84,8 @@ def with_options(body: dict[str, Any], options: Options) -> dict[str, Any]:
 def layout_changing(scope: str, options: Options) -> bool:
     """Whether any set option changes the tensor layout of a written checkpoint."""
     return any(REGISTRY[scope][name].layout_changing for name, _ in options)
+
+
+def is_set(options: Options, name: str) -> bool:
+    """Whether the option ``name`` is present (a boolean option is present only as ``true``)."""
+    return any(key == name and value for key, value in options)
