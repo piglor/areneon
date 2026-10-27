@@ -16,7 +16,7 @@ concurrency:
 
 jobs:
   python:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
@@ -29,7 +29,7 @@ jobs:
         run: uv run --locked python scripts/contract_models.py
 
   typescript:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -102,14 +102,14 @@ jobs:
         run: node packages/showdown-bridge/scripts/check-damage-aware-config.ts
 
   team-guard:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
       - run: make team-guard
 
   licences:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -125,7 +125,7 @@ jobs:
         run: make licences-selftest
 
   database:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -145,7 +145,7 @@ jobs:
     # Builds the rules importer image and imports the recorded releases into a
     # fresh Postgres 18 twice: a real commit, then a no-op (ADR-007, #768).
     # The e2e target's stand-in gh replays recorded GitHub answers; no token.
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -156,7 +156,7 @@ jobs:
         run: make db-down
 
   gitleaks:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     env:
       GITLEAKS_VERSION: 8.30.1
       GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
@@ -211,7 +211,7 @@ jobs:
       - run: ./gitleaks git --redact --verbose .
 
   osv:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: osv-scanner
@@ -225,7 +225,7 @@ jobs:
     # Dependabot cannot sign off; skip only when GitHub says the PR author is
     # Dependabot (commit author emails can be set by anyone).
     if: github.event_name == 'pull_request' && github.event.pull_request.user.login != 'dependabot[bot]'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -247,7 +247,7 @@ jobs:
   ci:
     if: always()
     needs: [python, typescript, database, importer-image, team-guard, licences, gitleaks, osv, dco]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: all required jobs passed
         env:
