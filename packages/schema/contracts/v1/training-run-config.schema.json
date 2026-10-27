@@ -301,6 +301,26 @@
               "maximum": 1000000
             }
           }
+        },
+        "anchor": {
+          "description": "Optional (a minor change within v1, ADR-019 section 4, ADR-010 erratum A2 item 3, #968): for a run that declares warm_start, a KL anchor to the warm-start pair. Per decision, beta * KL(pi_theta || pi_anchor) is added to the loss, with both policies the softmax over the real candidates and pi_anchor the frozen warm-start pair (the declared checkpoints of both roles), computed once per generation from its frozen weights with no gradient. beta, in millionths, is kl_micro for a constant schedule; for a linear one, with t the anchor update index from 0, beta(t) = kl_micro + trunc((final_micro - kl_micro) * min(t, generations) / generations) in exact integers, truncating toward zero (the rule of learning_rate_schedule). Both roles alike. With ppo.value_warmup the anchor is inactive (beta 0) while the policy is frozen and t counts from the first policy update, the update after the warm-up. Absent means no anchor. A config that carries it is a new run.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kl_micro",
+            "schedule"
+          ],
+          "properties": {
+            "kl_micro": {
+              "description": "beta at anchor update 0, in millionths.",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100000000
+            },
+            "schedule": {
+              "$ref": "#/$defs/AnchorSchedule"
+            }
+          }
         }
       }
     },
@@ -508,6 +528,46 @@
       ],
       "discriminator": {
         "propertyName": "kind"
+      }
+    },
+    "AnchorSchedule": {
+      "type": "object",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/ConstantSchedule"
+        },
+        {
+          "$ref": "#/$defs/AnchorLinearSchedule"
+        }
+      ],
+      "discriminator": {
+        "propertyName": "kind"
+      }
+    },
+    "AnchorLinearSchedule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "final_micro",
+        "generations"
+      ],
+      "properties": {
+        "kind": {
+          "const": "linear"
+        },
+        "final_micro": {
+          "description": "beta from anchor update `generations` on, in millionths; 0 releases the policy completely.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100000000
+        },
+        "generations": {
+          "description": "Anchor updates over which beta moves from kl_micro to final_micro.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000
+        }
       }
     },
     "ConstantSchedule": {

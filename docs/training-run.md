@@ -573,7 +573,46 @@ every later one is normal PPO.
 - **Resume:** the warm-up position is the learner generation counter, which a resume restores, so
   a run killed inside or after the warm-up reaches the same learner-state hashes.
 - **With the KL anchor (#968):** the anchor measures divergence from the cloned policy; during the
-  warm-up the policy does not move, so it is zero, and the anchor acts from update N + 1.
+  warm-up the policy does not move, so it is inactive, and it acts from update N + 1 (see the next
+  section).
+
+### Staying close to the cloned pair: the KL anchor (`ppo.anchor`)
+
+A warm-started run may add a penalty for drifting from the cloned pair early and let it fade:
+`"ppo": {..., "anchor": {"kl_micro": 100000, "schedule": {"kind": "linear", "final_micro": 0,
+"generations": 10}}}` (ADR-019 section 4, ADR-010 erratum A2 item 3, #968; the reader refuses it
+without `warm_start`; `kl_micro` 1 to 100,000,000, the schedule is `constant` or `linear` with
+`final_micro` 0 to 100,000,000 and `generations` at least 1). Choosing the values is the
+experiment's job, not this document's.
+
+- **Loss:** per decision, `beta * KL(pi_theta || pi_anchor)` is added to the PPO loss, both
+  policies being the softmax over the real candidates of that decision (padding masked), averaged
+  over the minibatch with the other terms. `pi_anchor` is the warm-start pair itself, loaded from
+  the run's checkpoint store (the declared ids, checked as at generation 0) and never trained; its
+  log-probabilities are computed once per generation per role from its frozen weights with no
+  gradient, like the behaviour policy's. Both roles alike.
+- **Beta:** `kl_micro` for a constant schedule; for a linear one, with `t` the anchor update index
+  from 0, `beta(t) = kl_micro + trunc((final_micro - kl_micro) * min(t, generations) / generations)`
+  in exact integers (the rule of `learning_rate_schedule`, truncating toward zero), so update
+  `generations` and every later one use exactly `final_micro` (0 releases the policy completely;
+  the KL is still reported).
+- **With `value_warmup` N:** the policy is frozen for updates 0 to N-1, so the anchor is inactive
+  there (beta 0, KL 0, no anchor pass). `t` counts from the first POLICY update: update `u` >= N
+  uses `beta(u - N)`, so the decay is not spent while nothing moves (the learning-rate schedule,
+  by contrast, counts the warm-up updates). Without a warm-up `t` is the update index.
+- **Records:** `train-report.json` gains, per role and only when the anchor is set,
+  `anchor_kl` (mean KL over the role's minibatches, the update's own, measured before each step)
+  and `anchor_beta_micro` (the beta that update used). The learner-state sidecar records
+  `anchor_beta_micro` (the newest update's beta) only when set, and a restore refuses a sidecar
+  whose beta is not the schedule's. The dashboard shows an "Anchor KL" chart beside entropy and
+  approximate KL when the reports carry it. A run without the field keeps every hash and file. It
+  is a new `run_key`.
+- **Resume:** nothing is stored beyond the counter; the anchor pair is loaded from the store again
+  at every start, so a run killed anywhere reaches the same learner-state hashes.
+- **Play temperature (ADR-023):** the amendment that computes the KL between the tempered trained
+  and tempered anchor policies applies to a run that declares `generation.play`; that field is not
+  in the run config yet, so this slice uses temperature 1 throughout, and the run that adds it
+  carries the combination.
 
 ## 6. Your own teams as a test set: the private test (owner only)
 

@@ -104,6 +104,8 @@ def pack_state(learner: Learner) -> PackedState:
         sidecar["model_options"] = model_options
     if learner.last_rate_micro is not None:  # linear schedule only: the key is otherwise omitted
         sidecar["learning_rate_micro"] = learner.last_rate_micro
+    if learner.last_anchor_beta_micro is not None:  # ppo.anchor only: otherwise the key is omitted
+        sidecar["anchor_beta_micro"] = learner.last_anchor_beta_micro
     data = pack_safetensors(tensors)
     return PackedState(data, jcs(sidecar), state_hash(data, sidecar))
 
@@ -176,11 +178,19 @@ def _check_sidecar(described: Mapping[str, Any], learner: Learner) -> int:
         expected_rate is None and "learning_rate_micro" in described
     ):
         raise LearnerStateError("the sidecar's learning rate is not the schedule's rate")
+    expected_beta = None if generation == 0 else learner.anchor_beta_micro(generation - 1)
+    if described.get("anchor_beta_micro") != expected_beta or (
+        expected_beta is None and "anchor_beta_micro" in described
+    ):
+        raise LearnerStateError("the sidecar's anchor weight is not the schedule's beta")
     return generation
 
 
 def _apply_schedule(learner: Learner) -> None:
-    """After a restore: the rate of the update just done, as an uninterrupted run holds it."""
+    """After a restore: the rate and beta of the update just done, as an uninterrupted run holds."""
+    learner.last_anchor_beta_micro = (
+        None if learner.generation == 0 else learner.anchor_beta_micro(learner.generation - 1)
+    )
     schedule = learner.config.ppo.schedule
     if schedule is None or learner.generation == 0:
         return

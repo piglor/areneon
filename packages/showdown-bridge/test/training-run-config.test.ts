@@ -54,6 +54,21 @@ describe("the TrainingRunConfig reader (ADR-010 §5)", () => {
     }
   });
 
+  it("reads a KL anchor only with a warm start and hashes it apart (ADR-019 section 4)", async () => {
+    const constant = readTrainingRunConfig(sample("anchor-constant"));
+    expect(constant.ppo.anchor).toEqual({ kl_micro: 100000, schedule: { kind: "constant" } });
+    const linear = readTrainingRunConfig(sample("anchor-linear"));
+    expect(linear.ppo.anchor?.schedule).toEqual({ kind: "linear", final_micro: 0, generations: 10 });
+    expect(readTrainingRunConfig(sample("warm-start")).ppo).not.toHaveProperty("anchor");
+    expect(await runConfigHash(constant)).not.toBe(await runConfigHash(readTrainingRunConfig(sample("warm-start"))));
+    const tiny = sample("tiny") as { ppo: Record<string, unknown> };
+    expect(() => readTrainingRunConfig({ ...tiny, ppo: { ...tiny.ppo, anchor: { kl_micro: 1, schedule: { kind: "constant" } } } })).toThrow(/needs warm_start/);
+    for (const name of ["zero-kl", "no-schedule", "linear-zero-generations", "extra-field"]) {
+      const raw = JSON.parse(readFileSync(join(SAMPLES_DIR, `v1/training-run-config/invalid/anchor-${name}.json`), "utf8"));
+      expect(() => readTrainingRunConfig(raw)).toThrow(TrainingRunConfigError);
+    }
+  });
+
   it("reads damage-aware as a scripted baseline and refuses a fourth entry (ADR-018 section 7)", () => {
     const config = readTrainingRunConfig(sample("damage-aware"));
     expect(config.generation.baseline_games.map((b) => b.actor)).toEqual(["random-legal", "actor-rule", "damage-aware"]);

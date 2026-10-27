@@ -68,6 +68,24 @@ def policy_terms(logits: torch.Tensor, mask: torch.Tensor, chosen: torch.Tensor)
     return PolicyTerms(log_probs.gather(1, chosen[:, None]).squeeze(1), entropy)
 
 
+def anchor_kl(
+    logits: torch.Tensor, mask: torch.Tensor, anchor_log_probs: torch.Tensor
+) -> torch.Tensor:
+    """``KL(pi_theta || pi_anchor)`` [B] over each decision's real candidates (ADR-019 section 4).
+
+    ``pi_theta`` is the softmax of ``logits`` over the candidates ``mask`` keeps (padding is masked
+    out) and ``anchor_log_probs`` [B, C] holds the frozen anchor's log-probabilities over the same
+    candidates (any finite value at padded places): ``sum_c p_c * (log p_c - log q_c)``. The
+    gradient flows through ``logits`` only.
+    """
+    floor = torch.finfo(logits.dtype).min
+    log_probs = torch.log_softmax(logits.masked_fill(~mask, floor), dim=-1)
+    probs = log_probs.exp()
+    return torch.where(mask, probs * (log_probs - anchor_log_probs), torch.zeros_like(probs)).sum(
+        -1
+    )
+
+
 @dataclass(frozen=True)
 class Targets:
     """What the update is measured against, per decision, from the frozen weights."""
