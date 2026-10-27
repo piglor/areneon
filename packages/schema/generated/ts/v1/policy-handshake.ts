@@ -67,6 +67,7 @@ export interface Ready {
    * @maxItems 2
    */
   checkpoints: [Checkpoint, ...Checkpoint[]];
+  feature_set?: FeatureSetStatement;
 }
 /**
  * A loaded checkpoint: its role and id (the SHA-256 of its safetensors file bytes).
@@ -77,4 +78,21 @@ export interface Ready {
 export interface Checkpoint {
   role: "battle" | "preview";
   checkpoint_id: string;
+}
+/**
+ * The candidate feature set the worker's checkpoints need (ADR-022 section 3): omitted when they need none. The client refuses the session if it cannot supply exactly this set, and attaches candidate_features to a query only for a worker that states one.
+ */
+export interface FeatureSetStatement {
+  feature_set: string;
+  feature_set_hash: string;
+}
+/**
+ * A candidate feature set by name and identity hash (CandidateFeatures.feature_set and feature_set_hash).
+ *
+ * This interface was referenced by `PolicyHandshake`'s JSON-Schema
+ * via the `definition` "FeatureSetStatement".
+ */
+export interface FeatureSetStatement1 {
+  feature_set: string;
+  feature_set_hash: string;
 }

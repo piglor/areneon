@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, StrictInt, StrictStr
+from pydantic import MISSING, BaseModel, ConfigDict, Field, StrictInt, StrictStr
 
 
 class ContractVersion(BaseModel):
@@ -34,6 +34,18 @@ class Checkpoint(BaseModel):
     )
     role: Literal["battle", "preview"]
     checkpoint_id: Annotated[StrictStr, Field(pattern="^[0-9a-f]{64}$")]
+
+
+class FeatureSetStatement(BaseModel):
+    """
+    A candidate feature set by name and identity hash (CandidateFeatures.feature_set and feature_set_hash).
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    feature_set: Annotated[StrictStr, Field(max_length=64, min_length=1)]
+    feature_set_hash: Annotated[StrictStr, Field(pattern="^[0-9a-f]{64}$")]
 
 
 class Hello(BaseModel):
@@ -75,6 +87,10 @@ class Ready(BaseModel):
     checkpoints: Annotated[list[Checkpoint], Field(max_length=2, min_length=1)]
     """
     Sorted by role, each role once (a reader rule).
+    """
+    feature_set: FeatureSetStatement | MISSING = MISSING
+    """
+    The candidate feature set the worker's checkpoints need (ADR-022 section 3): omitted when they need none. The client refuses the session if it cannot supply exactly this set, and attaches candidate_features to a query only for a worker that states one.
     """
 
 

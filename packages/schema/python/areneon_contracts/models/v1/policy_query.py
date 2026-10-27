@@ -117,6 +117,53 @@ class TimerRules(BaseModel):
     """
 
 
+class ComputedFeatureRow(BaseModel):
+    """
+    The probe's exact rolls for one row, as integers: mean_ppm is the mean over the 16 no-crit rolls of min(roll, hp) / hp, floored; max_ppm and min_ppm the largest and smallest roll clamped at hp, as a share of hp; ohko_rolls the probe's own count of the 16 no-crit rolls that reach hp, or null when the probe gives none.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    kind: Literal["computed"]
+    slot: Annotated[StrictInt, Field(ge=0, le=3)]
+    """
+    The acting active Pokemon's slot, 0-based.
+    """
+    move: Annotated[StrictInt, Field(ge=1, le=9)]
+    """
+    The move's position in the request, 1-based.
+    """
+    target: Annotated[StrictInt, Field(ge=1, le=9)]
+    """
+    The opposing target's location number in a choice (move 1 1).
+    """
+    mega: StrictBool
+    """
+    True when the move part also Mega Evolves.
+    """
+    mean_ppm: Annotated[StrictInt, Field(ge=0, le=1000000)]
+    max_ppm: Annotated[StrictInt, Field(ge=0, le=1000000)]
+    min_ppm: Annotated[StrictInt, Field(ge=0, le=1000000)]
+    ohko_rolls: Annotated[StrictInt | None, Field(ge=0, le=16)]
+
+
+class UnsupportedFeatureRow(BaseModel):
+    """
+    A row the probe could not answer exactly: its closed reason (the MechanicsResult unsupported reasons), never a guess.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    kind: Literal["unsupported"]
+    slot: Annotated[StrictInt, Field(ge=0, le=3)]
+    move: Annotated[StrictInt, Field(ge=1, le=9)]
+    target: Annotated[StrictInt, Field(ge=1, le=9)]
+    mega: StrictBool
+    reason: Literal["query_kind", "random_effect", "scenario_rule_table"]
+
+
 class Candidate(BaseModel):
     """
     One candidate joint choice (ADR-006): canonical engine syntax and whether its legality depends on information the engine hides from the player.
@@ -226,6 +273,28 @@ class DecisionContext(BaseModel):
     policy_budget_ms: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
     """
     The policy must answer within this; 0 means skip the policy and send the fallback.
+    """
+
+
+class Rows(RootModel[ComputedFeatureRow | UnsupportedFeatureRow]):
+    root: Annotated[
+        ComputedFeatureRow | UnsupportedFeatureRow, Field(discriminator="kind")
+    ]
+
+
+class CandidateFeatures(BaseModel):
+    """
+    The rows of one decision under one feature set. feature_set names the set (probe-damage/1); feature_set_hash is SHA-256 of the JCS of its identity (mechanics config, assumed-set config, adapter format, reader, version manifest), so a pin bump or a config change is another set. Rows are in canonical order: slot, move, target, then mega false before true.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    feature_set: Annotated[StrictStr, Field(max_length=64, min_length=1)]
+    feature_set_hash: Annotated[StrictStr, Field(pattern="^[0-9a-f]{64}$")]
+    rows: Annotated[list[Rows], Field(max_length=128)]
+    """
+    One row per distinct (slot, move, target, mega) that some candidate uses with a damaging move into an opposing active; empty when the request has none (Team Preview, a forced switch).
     """
 
 
@@ -370,6 +439,10 @@ class PolicyQuery(BaseModel):
     candidates: Annotated[list[Candidate], Field(max_length=1024, min_length=1)]
     """
     The candidate joint choices of the request, each with its pending flag, in the enumerator's canonical order (ADR-006); the choice is one of them. The same N_max as TrainingExample.candidates (ADR-010 §3). No CloneJudge verdict is ever part of it.
+    """
+    candidate_features: CandidateFeatures | MISSING = MISSING
+    """
+    Optional derived candidate features (ADR-022 section 3, tier A): the probe's damage rows for the damaging move parts of the candidates, computed on the Node side from the player's own channel, own team, the candidates and the configs feature_set_hash names. Absent unless the session or the run declared a feature set: a writer omits it (never null or empty), so every existing value keeps its bytes and hash (a minor change within v1, ADR-008 section 3). Reader rules: rows sorted and unique by (slot, move, target, mega); and, in a PolicyQuery, every damaging move part of every candidate has its row (the worker answers invalid_query otherwise) and feature_set_hash equals the one the session declared.
     """
     sampling: Annotated[ArgmaxSampling | SampleSampling, Field(discriminator="kind")]
     """

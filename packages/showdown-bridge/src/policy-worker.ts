@@ -20,7 +20,7 @@
 // its value (no duplicate keys, no spacing, no floats), or it is invalid.
 
 import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process";
-import type { Ready } from "@areneon/schema/types/v1/policy-handshake.ts";
+import type { FeatureSetStatement, Ready } from "@areneon/schema/types/v1/policy-handshake.ts";
 import type { Recommendation } from "@areneon/schema/types/v1/recommendation.ts";
 import { type Json, jcs } from "./canonical-json.ts";
 import { PolicyWorkerError, UnsupportedCandidateError } from "./evaluation-harness.ts";
@@ -39,6 +39,11 @@ import {
 
 /** What the actor needs from a worker: one query, one re-checked answer. */
 export interface PolicyClient {
+  /**
+   * The candidate feature set the worker stated at the handshake (ADR-022 section 3), or null/absent when its
+   * checkpoints need none. `policyActor` attaches `candidate_features` only for a client that states one.
+   */
+  readonly featureSet?: FeatureSetStatement | null;
   /**
    * Ask for one choice. `battle` names the game: a second query for a battle
    * that still has one outstanding is refused, so the worker never holds two.
@@ -69,6 +74,11 @@ export interface PolicyWorkerOptions {
   n_parallel: number;
   /** How long the worker may take to answer the hello. */
   handshake_timeout_ms: number;
+  /**
+   * The feature set this side can supply (ADR-022 section 3), when it can supply one. A worker that states another
+   * set, or any set when this is absent, is refused at the handshake; a worker that states none needs none.
+   */
+  features?: FeatureSetStatement;
   /** What the run expects the worker to have loaded. */
   expect: {
     encoder_version: string;
@@ -101,6 +111,7 @@ export class PolicyWorkerClient implements PolicyClient {
   readonly #options: PolicyWorkerOptions;
   #child: ChildProcessWithoutNullStreams | undefined;
   #failure: Error | undefined;
+  #featureSet: FeatureSetStatement | null = null;
   #closing = false;
   #peakRss: number | null = null;
   #stderr = "";
@@ -122,11 +133,17 @@ export class PolicyWorkerClient implements PolicyClient {
     this.#options = options;
   }
 
+  /** The feature set the worker stated at the last handshake, or null. */
+  get featureSet(): FeatureSetStatement | null {
+    return this.#featureSet;
+  }
+
   /** Spawn the worker and open the session; resolves once the handshake agrees. */
   async start(): Promise<void> {
     if (this.#child !== undefined) throw new Error("the policy worker is already started");
     const { command, args, cwd, env = {}, handshake_timeout_ms, max_line_bytes } = this.#options;
     this.#failure = undefined;
+    this.#featureSet = null;
     this.#closing = false;
     this.#stderr = "";
     this.#rest = Buffer.alloc(0);
@@ -170,7 +187,7 @@ export class PolicyWorkerClient implements PolicyClient {
   #check(line: unknown): void {
     const { message } = readHandshake(line);
     if (message.kind !== "ready") throw new PolicyHandshakeError("the worker did not answer the hello with ready");
-    const { expect } = this.#options;
+    const { expect, features: expect_features } = this.#options;
     const same = (a: unknown, b: unknown): boolean => jcs(a as Json) === jcs(b as Json);
     if (!same(message.contracts, contractVersions())) {
       throw new PolicyHandshakeError(`the worker speaks other contract versions: ${jcs(message.contracts as unknown as Json)}`);
@@ -184,6 +201,12 @@ export class PolicyWorkerClient implements PolicyClient {
     if (!same(message.checkpoints, expect.checkpoints)) {
       throw new PolicyHandshakeError(`the worker loaded other checkpoints: ${jcs(message.checkpoints as unknown as Json)}`);
     }
+    // A stated feature set must be exactly one this side supplies; no statement means the checkpoints need none.
+    const stated = message.feature_set;
+    if (stated !== undefined && (expect_features === undefined || !same(stated, expect_features))) {
+      throw new PolicyHandshakeError(`the worker needs the candidate feature set ${jcs(stated as unknown as Json)}, which this side cannot supply`);
+    }
+    this.#featureSet = stated ?? null;
   }
 
   async ask(battle: string, input: PolicyQueryInput): Promise<Recommendation> {
@@ -199,6 +222,7 @@ export class PolicyWorkerClient implements PolicyClient {
         if (this.#failure !== undefined) throw this.#failure;
       }
       const query = readPolicyQuery({ ...input, query_id: this.#nextId++ });
+      this.#checkFeatures(query);
       const frame = encodeFrame(query, this.#options.max_line_bytes);
       return await new Promise<Recommendation>((resolve, reject) => {
         this.#outstanding.set(query.query_id, { query, resolve, reject });
@@ -207,6 +231,19 @@ export class PolicyWorkerClient implements PolicyClient {
     } finally {
       this.#battles.delete(battle);
       this.#waiting.shift()?.();
+    }
+  }
+
+  /** `candidate_features` go to a worker that stated a feature set, and then must be that set; to no other. */
+  #checkFeatures(query: PolicyQuery): void {
+    const sent = query.candidate_features;
+    const stated = this.#featureSet;
+    if (stated === null) {
+      if (sent !== undefined) throw new PolicyProtocolError("the query carries candidate_features, but the worker stated no feature set");
+    } else if (sent === undefined) {
+      throw new PolicyProtocolError("the worker stated a feature set, but the query carries no candidate_features");
+    } else if (sent.feature_set !== stated.feature_set || sent.feature_set_hash !== stated.feature_set_hash) {
+      throw new PolicyProtocolError("the query's candidate_features are of another feature set than the worker stated");
     }
   }
 

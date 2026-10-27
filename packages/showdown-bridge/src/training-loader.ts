@@ -17,12 +17,15 @@ import trainingSetSchema from "@areneon/schema/contracts/v1/training-set.schema.
 import type { EvaluationRunManifest } from "@areneon/schema/types/v1/evaluation-run-manifest.ts";
 import type { TrainingExample } from "@areneon/schema/types/v1/training-example.ts";
 import type { TrainingSet } from "@areneon/schema/types/v1/training-set.ts";
+import { type FeatureConfigs, candidateFeatures, createFeatureMemo, FeatureBuildError } from "./candidate-features.ts";
 import { jcs, type Json } from "./canonical-json.ts";
+import type { Engine } from "./engine.ts";
+import { featureRowsProblem } from "./feature-rows.ts";
 import { type ChunkLimits, ChunkedFileWriter, checkStringLength } from "./chunked-file.ts";
 import { enumerateCandidates, EnumerationError } from "./choices.ts";
 import { type Episode, episodeHash } from "./episode.ts";
 import { decisionObservations, readEpisode } from "./episode-io.ts";
-import { nodeSha256 } from "./player-channel.ts";
+import { nodeSha256, playerChannel } from "./player-channel.ts";
 import { decodeRequest, RequestDecodeError } from "./request.ts";
 import type { SyntheticTeamHashes } from "./team-class.ts";
 
@@ -77,6 +80,10 @@ export function readTrainingSet(value: unknown): TrainingSet {
 export function readTrainingExample(value: unknown): TrainingExample {
   if (!validExample(value)) throw new TrainingLoaderError(`invalid TrainingExample: ${JSON.stringify(validExample.errors)}`);
   const example = structuredClone(value) as unknown as TrainingExample;
+  if (example.candidate_features !== undefined) {
+    const problem = featureRowsProblem(example.candidate_features);
+    if (problem !== null) throw new TrainingLoaderError(`${problem} (${example.episode_hash} #${example.observation.identity.request_seq})`);
+  }
   if (example.candidates !== undefined && !example.candidates.some((candidate) => candidate.choice === example.choice)) {
     throw new TrainingLoaderError(
       `the choice "${example.choice}" of ${example.episode_hash} #${example.observation.identity.request_seq} is not among its ${example.candidates.length} candidates`,
@@ -126,6 +133,14 @@ export interface TrainingInput {
    * the TrainingSet.
    */
   behaviour_policy_id: string;
+  /**
+   * The run's candidate feature set (ADR-022 section 3), when it names one: every example then carries
+   * `candidate_features` recomputed here with the same builder the play-time actor used, from the Episode's own
+   * channel prefix, its own team and the example's candidates (features are derived, never stored in an Episode).
+   * Absent, no example has the field and every byte of the stream is as before. A decision the builder cannot
+   * feature is a `TrainingLoaderError` (the game that played it forfeited, so no Episode should hold it).
+   */
+  features?: { engine: Engine; configs: FeatureConfigs };
 }
 
 export interface TrainingStream {
@@ -159,7 +174,7 @@ const outcomeOf = ({ player, result }: Episode): NonNullable<TrainingExample["ou
  * and an example the schema refuses (more candidates than N_max).
  */
 export function trainingExample(
-  { observation, choice, outcome, episode_hash }: Pick<TrainingExample, "observation" | "choice" | "episode_hash"> & { outcome: NonNullable<TrainingExample["outcome"]> },
+  { observation, choice, outcome, episode_hash, candidate_features }: Pick<TrainingExample, "observation" | "choice" | "episode_hash" | "candidate_features"> & { outcome: NonNullable<TrainingExample["outcome"]> },
 ): TrainingExample {
   const line = observation.log.at(-1) as string;
   let candidates;
@@ -169,16 +184,43 @@ export function trainingExample(
     if (!(error instanceof EnumerationError || error instanceof RequestDecodeError)) throw error;
     throw new TrainingLoaderError(`the request of ${episode_hash} #${observation.identity.request_seq} has no candidates: ${error.message}`, { cause: error });
   }
-  return readTrainingExample({ schema_version: 1, episode_hash, observation, choice, candidates, outcome });
+  return readTrainingExample({ schema_version: 1, episode_hash, observation, choice, candidates, ...(candidate_features === undefined ? {} : { candidate_features }), outcome });
 }
 
 /** The Episode's TrainingExamples, one per decision. */
-async function examplesOf(episode: Episode, hash: string): Promise<TrainingExample[]> {
+async function examplesOf(episode: Episode, hash: string, features: TrainingInput["features"]): Promise<TrainingExample[]> {
   const observations = await decisionObservations(episode);
   const outcome = outcomeOf(episode);
-  return episode.decisions.map(({ choice }, i) =>
-    trainingExample({ observation: observations[i] as TrainingExample["observation"], choice, outcome, episode_hash: hash }),
-  );
+  const memo = createFeatureMemo(); // one Episode is one game, as at play time; the memo never changes a byte
+  return episode.decisions.map(({ choice }, i) => {
+    const observation = observations[i] as TrainingExample["observation"];
+    return trainingExample({
+      observation,
+      choice,
+      outcome,
+      episode_hash: hash,
+      ...(features === undefined ? {} : { candidate_features: featuresOf(episode, observation, hash, features, memo) }),
+    });
+  });
+}
+
+/** The rows of one decision, recomputed from what the play-time actor had: the channel up to the request, the own team, the candidates. */
+function featuresOf(
+  episode: Episode,
+  observation: TrainingExample["observation"],
+  hash: string,
+  { engine, configs }: NonNullable<TrainingInput["features"]>,
+  memo: ReturnType<typeof createFeatureMemo>,
+): NonNullable<TrainingExample["candidate_features"]> {
+  const line = observation.log.at(-1) as string;
+  try {
+    const candidates = enumerateCandidates(decodeRequest(line.slice("|request|".length))).candidates;
+    const channel = playerChannel({ schema_version: 1, data_class: observation.data_class, player: observation.player, lines: observation.log });
+    return candidateFeatures(engine, configs, channel, episode.team.team, candidates, memo);
+  } catch (error) {
+    if (!(error instanceof FeatureBuildError || error instanceof EnumerationError || error instanceof RequestDecodeError)) throw error;
+    throw new TrainingLoaderError(`the candidate features of ${hash} #${observation.identity.request_seq} cannot be built: ${error.message}`, { cause: error });
+  }
 }
 
 /**
@@ -309,7 +351,7 @@ function fileFeed({ episodes, known_synthetic, behaviour_policy_id }: StoredTrai
 
 /** The checks, the examples in stream order and the TrainingSet; `each` gets every example and its line. */
 async function streamTraining(
-  { evaluation_manifests, behaviour_policy_id }: Pick<TrainingInput, "evaluation_manifests" | "behaviour_policy_id">,
+  { evaluation_manifests, behaviour_policy_id, features }: Pick<TrainingInput, "evaluation_manifests" | "behaviour_policy_id" | "features">,
   feed: EpisodeFeed,
   limits: ChunkLimits,
   each: (example: TrainingExample, line: string) => void,
@@ -329,7 +371,7 @@ async function streamTraining(
   let count = 0;
   for await (const [hash, episode] of feed(evaluated)) {
     hashes.push(hash);
-    for (const example of await examplesOf(episode, hash)) {
+    for (const example of await examplesOf(episode, hash, features)) {
       const line = `${jcs(example as unknown as Json)}\n`;
       checkStringLength(line, limits, "a stream line");
       digest.update(line, "utf8");

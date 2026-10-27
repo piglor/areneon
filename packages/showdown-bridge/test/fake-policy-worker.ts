@@ -18,6 +18,8 @@ const ready = {
     encoder_version: mode === "bad-encoder" ? "other-1" : ENCODER_VERSION,
     engine_data_hash: mode === "bad-engine" ? "0".repeat(64) : ENGINE_DATA_HASH,
     checkpoints: mode === "bad-checkpoints" ? [CHECKPOINTS[0]] : CHECKPOINTS,
+    // The feature set this worker's checkpoints need (ADR-022 section 3), when the test names one.
+    ...(process.env.FAKE_FEATURE_SET === undefined ? {} : { feature_set: JSON.parse(process.env.FAKE_FEATURE_SET) as unknown }),
   },
 };
 
