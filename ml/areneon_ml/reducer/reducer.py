@@ -161,6 +161,15 @@ class _Line:
 
 
 @dataclass
+class _Passed:
+    """What a Baton Pass or Shed Tail hands to the Pokemon that comes in."""
+
+    boosts: dict[str, int]
+    volatiles: set[str]
+    ability_suppressed: bool
+
+
+@dataclass
 class _Disguise:
     """A switch-in bound to the Pokemon it is shown as, until a `|replace|` or an own request
     says who it was."""
@@ -742,12 +751,21 @@ class _Reducer:
             disguise = _Disguise(self._index_of(side, mon), before)
         index = self._index_of(side, mon)
         previous = side.slots[letter]
-        # Baton Pass (`selfSwitch: copyvolatile`): the engine's `copyVolatileFrom` gives the
-        # incoming Pokemon the outgoing one's stat stages and prints no line for them; only the
-        # switch line says so (`[from] Baton Pass`). Shed Tail passes no stages.
-        passed = None
-        if previous is not None and to_id(line.tags.get("from") or "") == "batonpass":
-            passed = dict(side.roster[previous].boosts)
+        # Baton Pass (`selfSwitch: copyvolatile`) and Shed Tail: the engine's `copyVolatileFrom`
+        # gives the incoming Pokemon the outgoing one's stat stages (Baton Pass only) and its
+        # passable volatiles, and prints no line for them; only the switch line says so
+        # (`[from] Baton Pass` / `[from] Shed Tail`). Which volatiles pass is the engine's own
+        # rule, read from the committed `volatile-copy` table (#1102).
+        cause = to_id(line.tags.get("from") or "")
+        passed: _Passed | None = None
+        if previous is not None and cause in ("batonpass", "shedtail"):
+            out = side.roster[previous]
+            passed = _Passed(
+                dict(out.boosts) if cause == "batonpass" else zero_boosts(),
+                self.vocab.passed_volatiles(cause, out.volatiles),
+                out.ability_suppressed
+                and "gastroacid" in self.vocab.passed_volatiles(cause, {"gastroacid"}),
+            )
         if previous is not None:
             self._switch_out(side.roster[previous])
         side.slots[letter] = index
@@ -755,7 +773,11 @@ class _Reducer:
         self._disguise[key] = disguise
         self._switch_out(mon)
         if passed is not None:
-            mon.boosts = passed
+            mon.boosts, mon.volatiles, mon.ability_suppressed = (
+                passed.boosts,
+                passed.volatiles,
+                passed.ability_suppressed,
+            )
         mon.active_slot, mon.brought = letter, True
         mon.species, mon.level = details.species, details.level
         mon.gender, mon.shiny = details.gender or None, details.shiny

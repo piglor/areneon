@@ -45,6 +45,7 @@ BATTLES = [
     *sorted((FORMAT_DIR / "unavailable").glob("b*.json")),
     FORMAT_DIR / "illusion" / "battle.json",
     FORMAT_DIR / "baton-pass" / "battle.json",
+    FORMAT_DIR / "baton-pass-volatiles" / "battle.json",
     FORMAT_DIR / "fling" / "battle.json",
     FORMAT_DIR / "transform" / "battle.json",
 ]

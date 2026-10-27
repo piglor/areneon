@@ -31,7 +31,7 @@
  *   labels: Record<string, string>, omniscient?: boolean }} State
  * @typedef {{ raw: string, kind: string, args: string[], tags: Record<string, string> }} Line
  * @typedef {{ species?: Record<string, { name?: string, base: string, types: string[] }>,
- *   terrains?: string[] }} Dex
+ *   terrains?: string[], volatile_copy?: { not_copied: string[], shed_tail_copies: string[] } }} Dex
  * @typedef {{ index: number, line: string, kind: string, caption: string | null, flagged: string | null,
  *   request: number, state: State }} Frame
  */
@@ -174,6 +174,9 @@ var ArReplay = (function () {
     var dex = options.dex || {};
     var speciesTable = dex.species || {};
     var terrains = dex.terrains || [];
+    // The engine's volatile-copy rule (the committed `volatile-copy` table, #1102): a Baton Pass copies
+    // every volatile except `not_copied`, a Shed Tail only `shed_tail_copies`.
+    var volatileCopy = dex.volatile_copy;
     /** @type {State} */
     var state = {
       player: player, format_name: null, gametype: null, turn: 0, started: false, request_kind: null,
@@ -528,17 +531,29 @@ var ArReplay = (function () {
       }
       disguise[key] = { index: indexOf(side, m), before: before };
       var previous = side.slots[letter];
-      // Baton Pass copies the outgoing Pokemon's stat stages without a line of their own; only the
-      // switch line says so (`[from] Baton Pass`). Shed Tail passes none.
+      // Baton Pass and Shed Tail: the engine's `copyVolatileFrom` gives the incoming Pokemon the
+      // outgoing one's stat stages (Baton Pass only) and its passable volatiles without a line of
+      // their own; only the switch line says so (`[from] Baton Pass` / `[from] Shed Tail`).
       var passed = null;
-      if (previous !== undefined && previous !== null && toId(line.tags.from || "") === "batonpass") {
-        passed = clone(/** @type {Mon} */ (side.roster[previous])).boosts;
+      var cause = toId(line.tags.from || "");
+      if (previous !== undefined && previous !== null && (cause === "batonpass" || cause === "shedtail")) {
+        need(volatileCopy !== undefined, "no volatile-copy table for a Baton Pass or Shed Tail switch");
+        var out = /** @type {Mon} */ (side.roster[previous]);
+        var table = /** @type {{ not_copied: string[], shed_tail_copies: string[] }} */ (volatileCopy);
+        var keeps = function (/** @type {string} */ v) {
+          return cause === "shedtail" ? table.shed_tail_copies.indexOf(v) >= 0 : table.not_copied.indexOf(v) < 0;
+        };
+        passed = {
+          boosts: cause === "batonpass" ? clone(out).boosts : zeroBoosts(),
+          volatiles: out.volatiles.filter(keeps),
+          suppressed: out.ability_suppressed && keeps("gastroacid"),
+        };
       }
       if (previous !== undefined && previous !== null) { switchOut(/** @type {Mon} */ (side.roster[previous])); }
       side.slots[letter] = indexOf(side, m);
       shown[key] = r.name;
       switchOut(m);
-      if (passed !== null) { m.boosts = passed; }
+      if (passed !== null) { m.boosts = passed.boosts; m.volatiles = passed.volatiles; m.ability_suppressed = passed.suppressed; }
       m.active_slot = letter; m.brought = true;
       m.species = d.species; m.level = d.level;
       m.gender = d.gender || null; m.shiny = d.shiny;

@@ -5,7 +5,7 @@
 // nothing else: it takes no team, no omniscient log and no seed.
 import { createRequire } from "node:module";
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -86,9 +86,16 @@ export interface PublicFlag {
   reason: string;
 }
 
+export interface VolatileCopyDex {
+  not_copied: string[];
+  shed_tail_copies: string[];
+}
+
 export interface PublicDex {
   species?: Record<string, { name?: string; base: string; types: string[] }>;
   terrains?: string[];
+  /** The engine's volatile-copy rule for a Baton Pass or Shed Tail switch (the committed table, #1102). */
+  volatile_copy?: VolatileCopyDex;
 }
 
 export interface PublicRun {
@@ -114,15 +121,53 @@ export interface PublicStateApi {
 /** The reader's file: the page inlines these exact bytes, and the baseline identity (ADR-018 section 5) hashes them. */
 export const INTERPRETER_PATH = join(dirname(fileURLToPath(import.meta.url)), "interpreter.cjs");
 
+const COPY_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "ml", "areneon_ml", "reducer", "data");
+
+/** The committed volatile-copy table of a format, as the dex field the reader takes (null when none is committed). */
+export function volatileCopyDex(formatId: string, dir: string = COPY_DIR): VolatileCopyDex | null {
+  try {
+    const table = JSON.parse(readFileSync(join(dir, `volatile-copy.${formatId}.json`), "utf8")) as VolatileCopyDex;
+    return { not_copied: table.not_copied, shed_tail_copies: table.shed_tail_copies };
+  } catch {
+    return null;
+  }
+}
+
+/** The one committed table when exactly one format has one in `dir`, else null: the default of a reader given none. */
+export function onlyVolatileCopy(dir: string = COPY_DIR): VolatileCopyDex | null {
+  const formats = readdirSync(dir)
+    .map((f) => /^volatile-copy\.(.+)\.json$/.exec(f)?.[1])
+    .filter((f): f is string => f !== undefined);
+  return formats.length === 1 ? volatileCopyDex(formats[0] as string, dir) : null;
+}
+
+/** `dex` with the table added when it carries none (a dex that has one is returned as it is). */
+export function applyVolatileCopy(dex: PublicDex | undefined, table: VolatileCopyDex | null): PublicDex | undefined {
+  if (dex?.volatile_copy !== undefined || table === null) return dex;
+  return { ...dex, volatile_copy: table };
+}
+
+let committed: VolatileCopyDex | null | undefined;
+const withCopy = (dex?: PublicDex): PublicDex | undefined => {
+  committed ??= onlyVolatileCopy();
+  return applyVolatileCopy(dex, committed);
+};
+
+function withDex<T extends { dex?: PublicDex }>(options: T): T {
+  const dex = withCopy(options.dex);
+  return dex === undefined ? options : { ...options, dex };
+}
+
 const api = createRequire(import.meta.url)("./interpreter.cjs") as PublicStateApi;
 
 export const toId = api.toId;
 export const parseLine = api.parseLine;
-export const createInterpreter = api.createInterpreter;
+export const createInterpreter: PublicStateApi["createInterpreter"] = (options) =>
+  api.createInterpreter(withDex(options));
 
 /** The state after every line of one player's own channel (a flagged line is kept and listed in `flags`). */
 export function interpretChannel(player: string, lines: readonly string[], dex?: PublicDex): PublicRun {
-  return api.interpretChannel(player, lines, dex, false);
+  return api.interpretChannel(player, lines, withCopy(dex), false);
 }
 
 /** SHA-256 of the reader file's bytes: a change to the reader is a change to any baseline that uses it. */
