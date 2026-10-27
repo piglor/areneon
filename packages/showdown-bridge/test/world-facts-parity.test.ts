@@ -32,9 +32,17 @@ function stallMoves(): string[] {
   return out.sort();
 }
 
+/** The side conditions Court Change swaps, read from the pinned move's own list. */
+function swapConditions(): string[] {
+  const source = readFileSync(join(process.env.SHOWDOWN_DIR || DEFAULT_SHOWDOWN_DIR, "data", "moves.ts"), "utf8");
+  const block = /\n\tcourtchange: \{[\s\S]*?const sideConditions = \[([\s\S]*?)\];/.exec(source)?.[1] ?? "";
+  return [...block.matchAll(/'([a-z0-9]+)'/g)].map((m) => m[1] as string).sort();
+}
+
 let data: WorldFactsData;
 beforeAll(() => {
-  data = { stall_moves: stallMoves(), terrains: engineData.terrains.map((t) => t.id) };
+  data = { stall_moves: stallMoves(), terrains: engineData.terrains.map((t) => t.id), swap_side_conditions: swapConditions() };
+  expect(data.swap_side_conditions).toEqual(expect.arrayContaining(["reflect", "stealthrock", "spikes"]));
 });
 
 describe("the data the test passes", () => {
@@ -124,11 +132,11 @@ function oracle(omni: readonly string[], cut: number, viewer: "p1" | "p2"): Worl
       });
       let toxic_ticks: number | null = null;
       if (statusAt >= 0 && status === "tox") {
-        toxic_ticks = lines.slice(Math.max(statusAt, since) + 1).filter((l) => {
+        toxic_ticks = Math.min(15, lines.slice(Math.max(statusAt, since) + 1).filter((l) => {
           if (kind(l) === "-damage") return named(l, 0, name) && tag(l, "from") === "psn";
           if (kind(l) === "-heal") return named(l, 0, name) && tag(l, "from") === "ability: Poison Heal";
           return false;
-        }).length;
+        }).length);
       }
       active[letter] = { name, active_turns, last_move, protect_streak, toxic_ticks };
     }
@@ -141,12 +149,19 @@ function oracle(omni: readonly string[], cut: number, viewer: "p1" | "p2"): Worl
       if (kind(l) === "-sidestart" || kind(l) === "-sideend") events.push([kind(l), `${who(fields(l)[0] as string).side}|${toId((fields(l)[1] as string).replace(/^move: /, ""))}`, i]);
       if (kind(l) === "-swapsideconditions") events.push(["swap", "", i]);
     });
-    let mine = new Map<string, { started_turn: number; layers: number }>();
-    let theirs = new Map<string, { started_turn: number; layers: number }>();
+    const mine = new Map<string, { started_turn: number; layers: number }>();
+    const theirs = new Map<string, { started_turn: number; layers: number }>();
     const other = side === "p1" ? "p2" : "p1";
     for (const [k, key, i] of events) {
       if (k === "swap") {
-        [mine, theirs] = [theirs, mine];
+        for (const id of data.swap_side_conditions) {
+          const a = mine.get(id);
+          const b = theirs.get(id);
+          mine.delete(id);
+          theirs.delete(id);
+          if (b !== undefined) mine.set(id, b);
+          if (a !== undefined) theirs.set(id, a);
+        }
         continue;
       }
       const [s, id] = key.split("|") as [string, string];

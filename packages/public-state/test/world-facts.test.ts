@@ -18,6 +18,7 @@ import {
 const data: WorldFactsData = {
   stall_moves: ["protect", "detect", "endure", "quickguard", "spikyshield"],
   terrains: ["electricterrain", "grassyterrain"],
+  swap_side_conditions: ["reflect", "stealthrock", "tailwind"],
 };
 
 const HEAD = [
@@ -213,7 +214,9 @@ describe("conditions", () => {
       "|-sidestart|p1: Ann|move: Reflect",
       "|-sidestart|p2: Bob|move: Stealth Rock",
     ];
-    expect(run("p1", [...lines, "|-swapsideconditions"]).own.conditions).toHaveProperty("stealthrock");
+    const swapped = run("p1", [...lines, "|-sidestart|p1: Ann|Mystery", "|-swapsideconditions"]);
+    expect(Object.keys(swapped.own.conditions)).toEqual(["mystery", "stealthrock"]);
+    expect(Object.keys(swapped.opponent.conditions)).toEqual(["reflect"]);
     const ended = [...lines, "|-weather|none", "|-fieldend|move: Gravity", "|-fieldend|move: Electric Terrain", "|-sideend|p1: Ann|Reflect|[from] move: Defog"];
     const f = run("p1", ended);
     expect(f.weather).toBeNull();
@@ -242,6 +245,11 @@ describe("Toxic stage", () => {
     expect(run("p1", [...toxic, ...tick(2), ...tick(3)]).own.active.a?.toxic_ticks).toBe(2);
     expect(run("p1", [...toxic, ...tick(2)]).own.active.b?.toxic_ticks).toBeNull();
     expect(run("p1", [...HEAD, "|-status|p1a: Alpha|brn", "|-damage|p1a: Alpha|90/100|[from] brn"]).own.active.a?.toxic_ticks).toBeNull();
+  });
+
+  it("stops at stage 15, as the engine does", () => {
+    const many = Array.from({ length: 17 }, (_, i) => tick(i + 2)).flat();
+    expect(run("p1", [...toxic, ...many]).own.active.a?.toxic_ticks).toBe(15);
   });
 
   it("restarts on a switch-in and ends on a cure", () => {
