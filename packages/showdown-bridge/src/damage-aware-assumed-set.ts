@@ -129,3 +129,78 @@ export function buildAssumedSet(context: AssumedSetContext, mon: PublicMon, skip
     mega: mon.mega,
   };
 }
+
+/** A sampled world's set contradicts a public fact of the Pokemon it is meant for. The world is dropped, never repaired. */
+export class WorldMismatchError extends Error {
+  override name = "WorldMismatchError";
+}
+
+/** What the baseline reads of a sampled opponent set: the structural shape of the opponent model's `WorldSet`. */
+export interface WorldSetLike {
+  /** The preview species id. */
+  readonly species: string;
+  /** The Mega forme id for a Mega slot (its stone is the item); else the species or one of its formes. */
+  readonly forme: string;
+  readonly item: string | null;
+  readonly ability: string;
+  readonly nature: string;
+  readonly stat_points: Readonly<Record<"hp" | "atk" | "def" | "spa" | "spd" | "spe", number>>;
+  readonly moves: readonly string[];
+  readonly level: number;
+  readonly gender: string | null;
+}
+
+/**
+ * The assumed set of one opponent Pokemon from a sampled world's set (ADR-025 section 6): the same
+ * `AssumedSet` `buildAssumedSet` makes, with the fields the channel does not show taken from the world
+ * instead of the record's field rules. The Pokemon's public facts win over the world, as in v1: a shown
+ * item (or a lost one), a revealed ability, the Mega Evolution and its stone, the shown hit points. A world
+ * that cannot be that Pokemon (another species, a Mega Evolution its forme does not explain, a revealed move
+ * its set lacks) is a `WorldMismatchError`. A revealed move stays the only threat: `revealed_moves` is what
+ * the channel showed, never a move the world added. The target format's validator judges the result.
+ */
+export function buildWorldAssumedSet(context: Pick<AssumedSetContext, "engine" | "vocabulary"> & { format_id: string }, mon: PublicMon, world: WorldSetLike): AssumedSet {
+  const { engine, vocabulary, format_id } = context;
+  if (mon.own) throw new AssumedSetError("an assumed set is for an opponent's Pokemon");
+  if (world.species !== mon.base_species && world.species !== mon.species) throw new WorldMismatchError("a world's set is for another species than the Pokemon on the field");
+  const entry = vocabulary.roster.find((r) => r.id === world.species);
+  if (entry === undefined) throw new AssumedSetError("the species is not in the team vocabulary's roster");
+  const dex = engine.sim.Dex.mod(engine.sim.Dex.formats.get(format_id).mod);
+  const formeEntry = vocabulary.roster.find((r) => r.id === world.forme);
+  const worldMega = formeEntry?.required_item !== undefined && world.forme !== world.species;
+  if (mon.mega && !worldMega) throw new WorldMismatchError("the Pokemon has Mega Evolved and the world's forme is not a Mega forme");
+
+  const pool = new Set(entry.moves);
+  const revealed = mon.moves_revealed.filter((move) => pool.has(move));
+  const unplaceable = mon.moves_revealed.filter((move) => !pool.has(move));
+  if (!revealed.every((move) => world.moves.includes(move))) throw new WorldMismatchError("a revealed move is not in the world's set");
+
+  const worldAbility = entry.abilities.includes(world.ability) ? world.ability : (entry.abilities[0] as string);
+  const ability = mon.ability !== null && entry.abilities.includes(mon.ability) ? mon.ability : worldAbility;
+  let item: string;
+  if (mon.mega) item = mon.mega_stone ?? "";
+  else if (mon.item_known) item = mon.item ?? "";
+  else if (mon.item_lost) item = "";
+  else item = world.item ?? "";
+
+  const natureName = vocabulary.natures.find((n) => n.id === world.nature)?.name;
+  if (natureName === undefined) throw new AssumedSetError("the world's nature is not in the team vocabulary");
+  const set: PokemonSet = {
+    name: "",
+    species: dex.species.get(worldMega ? world.species : world.forme).name,
+    item: item === "" ? "" : dex.items.get(item).name,
+    ability: dex.abilities.get(ability).name,
+    moves: world.moves.map((move) => dex.moves.get(move).name),
+    nature: natureName,
+    gender: mon.gender ?? world.gender ?? "",
+    evs: { ...world.stat_points } as StatTable,
+    ivs: defaultIvs(),
+    level: mon.level ?? world.level,
+  };
+  const problems = engine.sim.TeamValidator.get(format_id).validateSet(structuredClone(set), {}) ?? [];
+  if (problems.length > 0) throw new AssumedSetError(`no legal set holds what was revealed: ${problems.join("; ")}`);
+  const paste = exportPaste(engine, [set]);
+  const back = importPaste(engine, paste);
+  if (back.length !== 1 || exportPaste(engine, back) !== paste) throw new AssumedSetError("the assumed set is not in the engine's canonical paste form");
+  return { set, paste, revealed_moves: revealed, filler_moves: [], unplaceable_moves: unplaceable, shown_hp_percent: shownPercent(mon), mega: mon.mega };
+}

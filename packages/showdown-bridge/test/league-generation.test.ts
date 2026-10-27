@@ -6,7 +6,9 @@ import { actorRule } from "../src/actor-rule.ts";
 import { jcs, type Json } from "../src/canonical-json.ts";
 import { readTrainingRunConfig } from "../src/training-run-config.ts";
 import {
+  DAMAGE_AWARE_V2_POLICY_ID,
   damageAwareSetup,
+  damageAwareSetupV2,
   forfeitCauses,
   GenerationError,
   type GenerationOptions,
@@ -25,6 +27,7 @@ import { loadTrainingSet, readTrainingSet, TrainingLoaderError } from "../src/tr
 import { SAMPLES_DIR } from "../src/samples.ts";
 import { startShard } from "../src/generation-cli.ts";
 import { teamHash } from "../src/team-class.ts";
+import { fakePort } from "./damage-aware-world-support.ts";
 
 const engine = loadEngine();
 const at = <T>(items: readonly T[], index: number): T => items[index] as T;
@@ -538,6 +541,61 @@ describe("the damage-aware baseline as a training opponent (ADR-018 section 7)",
   it("refuses a config whose policy id is not the one the baseline plays as, and a format without a vocabulary", async () => {
     await expect(play(damageConfig("damage-aware-x@v1"))).rejects.toThrow(/plays as damage-aware@v1/);
     expect(() => damageAwareSetup(engine, "gen9other")).toThrow(/vocabulary for/);
+  }, 120_000);
+});
+
+describe("damage-aware@v2 as a training opponent (ADR-025 section 6)", () => {
+  const v2Config = () =>
+    readTrainingRunConfig({
+      ...(sample("tiny") as object),
+      generation: { ...config.generation, games: 2, baseline_games: [{ actor: "damage-aware", policy_id: DAMAGE_AWARE_V2_POLICY_ID, games: 2 }] },
+    });
+  // the factory is the composition root's; this one builds the port from the record it is given
+  const factory = (context: { config: { assumed_set: { prior_hash: string } } }) => fakePort(undefined, { prior_hash: context.config.assumed_set.prior_hash });
+
+  it("builds the record's setup through the factory the composition root supplies, for the committed format only", () => {
+    const setup = damageAwareSetupV2(engine, "gen9championsvgc2026regmc", factory as never);
+    expect(setup.config.schema_version).toBe(2);
+    expect(setup.worlds?.identity_hash).toBe("b".repeat(64));
+    expect(() => damageAwareSetupV2(engine, "gen9other", factory as never)).toThrow(/vocabulary for/);
+  });
+
+  it("refuses a plan that names it when no belief port is supplied (the bridge does not import the opponent model)", async () => {
+    await expect(playEntries({ engine, config: v2Config(), generation: 1, policy_id: POLICY, client: actorClient(), pool })).rejects.toThrow(/belief port of the composition root/);
+  });
+
+  it("plays it as the baseline seat: its policy id and identity (with the belief) are recorded, and the pair is never queried for its seat", async () => {
+    const asked: string[] = [];
+    const inner = actorClient();
+    const result = await playGeneration({
+      engine,
+      config: v2Config(),
+      generation: 1,
+      policy_id: POLICY,
+      client: { beginGame: inner.beginGame, ask: (battle, query) => (asked.push(battle), inner.ask(battle, query)) },
+      pool,
+      belief_worlds: factory as never,
+    });
+    const record = readLeagueRunRecord(result.run_record);
+    expect(record.opponents).toEqual([
+      { opponent_policy_id: DAMAGE_AWARE_V2_POLICY_ID, games: 2 },
+      { opponent_policy_id: POLICY, games: 2 },
+    ]);
+    expect(record.baselines).toHaveLength(1);
+    expect(at(record.baselines ?? [], 0)).toMatchObject({ policy_id: DAMAGE_AWARE_V2_POLICY_ID, games: 2 });
+    // v1 and v2 are different baselines: the identity hash differs from v1's for the same pin
+    expect(at(record.baselines ?? [], 0).identity_hash).not.toBe("a6561ff56508dfd984758aad09a4390cfe4633fdbc1010d7b0fc87ddf7737816");
+    await expect(checkLeagueRunRecord(record, v2Config())).resolves.toBeUndefined();
+    // the learned pair's seat is the other one in each baseline game
+    const seats = new Set(asked);
+    expect(seats.has("game-2-p1") && !seats.has("game-2-p2")).toBe(true);
+    expect(seats.has("game-3-p2") && !seats.has("game-3-p1")).toBe(true);
+  }, 120_000);
+
+  it("refuses a config that names v2 when the records it is given are v1's: a v1 record never plays as damage-aware@v2", async () => {
+    await expect(
+      playEntries({ engine, config: v2Config(), generation: 1, policy_id: POLICY, client: actorClient(), pool, damage_aware_v2: damageAwareSetup(engine, "gen9championsvgc2026regmc") }),
+    ).rejects.toThrow(/another record version/);
   }, 120_000);
 });
 

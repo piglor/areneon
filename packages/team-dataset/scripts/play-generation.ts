@@ -3,10 +3,11 @@
 // interim pool exactly as packages/showdown-bridge/scripts/play-generation.ts.
 //   node packages/team-dataset/scripts/play-generation.ts --config … --generation N …
 import { interimPoolSource, runGenerationCli, UsageError } from "@areneon/showdown-bridge";
+import { beliefWorldsFactory } from "../src/damage-aware-worlds.ts";
 import { datasetPoolSource } from "../src/loop-pool.ts";
 
 try {
-  process.exitCode = await runGenerationCli(process.argv.slice(2), console.log, datasetPoolSource(interimPoolSource), process.argv[1]);
+  process.exitCode = await runGenerationCli(process.argv.slice(2), console.log, datasetPoolSource(interimPoolSource), process.argv[1], beliefWorldsFactory);
 } catch (error) {
   console.error(`play-generation: ${(error as Error).message}`);
   process.exitCode = error instanceof UsageError ? 2 : 1;
