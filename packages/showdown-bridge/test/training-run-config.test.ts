@@ -41,6 +41,19 @@ describe("the TrainingRunConfig reader (ADR-010 §5)", () => {
     }
   });
 
+  it("reads a value warm-up only with a warm start and hashes it apart (ADR-019 section 4)", async () => {
+    const warm = readTrainingRunConfig(sample("value-warmup"));
+    expect(warm.ppo.value_warmup).toEqual({ generations: 2 });
+    expect(readTrainingRunConfig(sample("warm-start")).ppo).not.toHaveProperty("value_warmup");
+    expect(await runConfigHash(warm)).not.toBe(await runConfigHash(readTrainingRunConfig(sample("warm-start"))));
+    const tiny = sample("tiny") as { ppo: Record<string, unknown> };
+    expect(() => readTrainingRunConfig({ ...tiny, ppo: { ...tiny.ppo, value_warmup: { generations: 2 } } })).toThrow(/needs warm_start/);
+    for (const name of ["zero", "extra-field", "fractional"]) {
+      const raw = JSON.parse(readFileSync(join(SAMPLES_DIR, `v1/training-run-config/invalid/value-warmup-${name}.json`), "utf8"));
+      expect(() => readTrainingRunConfig(raw)).toThrow(TrainingRunConfigError);
+    }
+  });
+
   it("reads damage-aware as a scripted baseline and refuses a fourth entry (ADR-018 section 7)", () => {
     const config = readTrainingRunConfig(sample("damage-aware"));
     expect(config.generation.baseline_games.map((b) => b.actor)).toEqual(["random-legal", "actor-rule", "damage-aware"]);

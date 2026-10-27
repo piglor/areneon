@@ -540,6 +540,10 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     }),
     "training-run-config/team-dataset": runConfigWith((c) => (c.team_dataset = { path: ".tmp/datasets/train-v1", dataset_hash: hexOf("5") })),
     "training-run-config/warm-start": runConfigWith((c) => (c.warm_start = { preview: hexOf("a"), battle: hexOf("b") })),
+    "training-run-config/value-warmup": runConfigWith((c) => {
+      c.warm_start = { preview: hexOf("a"), battle: hexOf("b") };
+      runSection(c, "ppo").value_warmup = { generations: 2 };
+    }),
     "clone-run-config/tiny": cloneConfig,
     "clone-run-config/no-holdout": cloneWith((c) => (runSection(c, "clone").holdout = { key: "d".repeat(64), ppm: 0 })),
     "run-metrics/cpu": runMetrics,
@@ -639,6 +643,7 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     }),
     "training-run-config/warm-start-same-id": runConfigWith((c) => (c.warm_start = { preview: hexOf("a"), battle: hexOf("a") })),
     // Schema-valid, refused by the CloneRunConfig reader: the model rules the profile cannot say.
+    "training-run-config/value-warmup-no-warm-start": runConfigWith((c) => (runSection(c, "ppo").value_warmup = { generations: 2 })),
     "clone-run-config/heads-do-not-divide-width": cloneWith((c) => (runSection(c, "model").n_heads = 3)),
     "clone-run-config/picks-exceed-team": cloneWith((c) => {
       const encoder = runSection(runSection(c, "model"), "encoder");
@@ -822,6 +827,18 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "training-run-config/warm-start-upper-case": runConfigWith((c) => (c.warm_start = { preview: "A".repeat(64), battle: hexOf("b") })),
     "training-run-config/warm-start-missing-battle": runConfigWith((c) => (c.warm_start = { preview: hexOf("a") })),
     "training-run-config/warm-start-extra-field": runConfigWith((c) => (c.warm_start = { preview: hexOf("a"), battle: hexOf("b"), anchor: hexOf("c") })),
+    "training-run-config/value-warmup-zero": runConfigWith((c) => {
+      c.warm_start = { preview: hexOf("a"), battle: hexOf("b") };
+      runSection(c, "ppo").value_warmup = { generations: 0 };
+    }),
+    "training-run-config/value-warmup-extra-field": runConfigWith((c) => {
+      c.warm_start = { preview: hexOf("a"), battle: hexOf("b") };
+      runSection(c, "ppo").value_warmup = { generations: 2, epochs: 1 };
+    }),
+    "training-run-config/value-warmup-fractional": runConfigWith((c) => {
+      c.warm_start = { preview: hexOf("a"), battle: hexOf("b") };
+      runSection(c, "ppo").value_warmup = { generations: 1.5 };
+    }),
     "training-run-config/next-version": runConfigWith((c) => (c.schema_version = 2)),
     "checkpoint-record/extra-field": recordWith((r) => (r.verdicts = [])),
     "checkpoint-record/bad-encoder-version": recordWith((r) => (r.encoder_version = "stub-1")),

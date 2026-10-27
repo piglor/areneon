@@ -1,11 +1,11 @@
 """The TrainingRunConfig reader (ADR-010 §5).
 
 The record is reviewed JSON, validated against the contract first and then
-against the four rules the profile cannot say (they are the TS reader's too):
+against the five rules the profile cannot say (they are the TS reader's too):
 the attention heads divide the token width, a Team Preview order cannot name
 more positions than a side holds (both checked by ``ModelConfig``), and each
-scripted baseline is listed once, and a warm start names two different
-checkpoints.
+scripted baseline is listed once, a warm start names two different
+checkpoints, and a value warm-up needs a warm start.
 Real-valued settings are stored as integers in millionths (``_micro``) or
 billionths (``_nano``); this module is the one place that turns them into
 floats, by one exact division. The record is named only by ``run_config_hash``,
@@ -94,6 +94,9 @@ class PPOSettings:
     target_kl: float | None
     # None for an absent or ``constant`` schedule: the optimiser keeps ``learning_rate``
     schedule: LinearSchedule | None
+    # ``ppo.value_warmup.generations`` (ADR-019 section 4): the learner updates, from the first,
+    # that train the value head only. None when absent (normal PPO throughout).
+    value_warmup: int | None = None
 
 
 @dataclass(frozen=True)
@@ -150,6 +153,11 @@ def read_run_config(raw: object) -> RunConfig:
             "training-run-config: warm_start names one checkpoint for both roles "
             "(a checkpoint holds one role's network)"
         )
+    if "value_warmup" in raw["ppo"] and warm is None:
+        raise RunConfigError(
+            "training-run-config: ppo.value_warmup needs warm_start "
+            "(only a cloned start has an untrained value head to warm up)"
+        )
     gen, ppo, seeds = raw["generation"], raw["ppo"], raw["seeds"]
     return RunConfig(
         lineage_id=raw["lineage_id"],
@@ -188,6 +196,7 @@ def read_run_config(raw: object) -> RunConfig:
             normalize_advantages=ppo["normalize_advantages"],
             target_kl=ppo["target_kl_micro"] / MICRO if "target_kl_micro" in ppo else None,
             schedule=_schedule(ppo),
+            value_warmup=ppo["value_warmup"]["generations"] if "value_warmup" in ppo else None,
         ),
         device=raw["learner"]["device"],
         threads=raw["learner"]["threads"],

@@ -285,6 +285,22 @@
         "learning_rate_schedule": {
           "description": "Optional (a minor change within v1, ADR-010 erratum A1): the Adam step size per learner update. Absent or constant means learning_rate_micro for every update. Linear: with t the update index from 0, rate(t) = learning_rate_micro + trunc((final_micro - learning_rate_micro) * min(t, generations) / generations) in exact integers, truncating toward zero, so update `generations` and every later one use exactly final_micro. Both roles alike. A config that carries it is a new run.",
           "$ref": "#/$defs/LearningRateSchedule"
+        },
+        "value_warmup": {
+          "description": "Optional (a minor change within v1, ADR-019 section 4, #1111): for a run that declares warm_start, the first `generations` learner updates (generation 1 up to generation `generations`) train the value head only, on the cloned pair's own rollouts, with every other parameter of both networks frozen (the policy heads and the shared trunk stay byte-identical); update `generations` + 1 and every later one is normal PPO. The learning-rate schedule's update index counts the warm-up updates too. Absent means normal PPO from generation 1. A config that carries it is a new run.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "generations"
+          ],
+          "properties": {
+            "generations": {
+              "description": "Number of learner updates, counted from generation 1, that train the value head only.",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000000
+            }
+          }
         }
       }
     },

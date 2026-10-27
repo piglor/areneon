@@ -169,6 +169,15 @@ export interface TrainingRunConfig {
      */
     target_kl_micro?: number;
     learning_rate_schedule?: LearningRateSchedule;
+    /**
+     * Optional (a minor change within v1, ADR-019 section 4, #1111): for a run that declares warm_start, the first `generations` learner updates (generation 1 up to generation `generations`) train the value head only, on the cloned pair's own rollouts, with every other parameter of both networks frozen (the policy heads and the shared trunk stay byte-identical); update `generations` + 1 and every later one is normal PPO. The learning-rate schedule's update index counts the warm-up updates too. Absent means normal PPO from generation 1. A config that carries it is a new run.
+     */
+    value_warmup?: {
+      /**
+       * Number of learner updates, counted from generation 1, that train the value head only.
+       */
+      generations: number;
+    };
   };
   /**
    * Optional (a minor change within v1): the generated team dataset the generation loop draws its teams from. Absent means the interim pool of committed fixture teams. The directory is read by the dataset reader, which trusts nothing; the pool takes the dev and training splits, never validation. The dataset hash pins the manifest and every record: a directory that hashes differently is refused.

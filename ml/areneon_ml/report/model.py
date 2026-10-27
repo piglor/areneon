@@ -61,7 +61,8 @@ ROLES = ("battle", "preview")
 METRICS = ("policy_loss", "value_loss", "entropy", "approx_kl", "clip_fraction")
 STEPS_KEYS = ("steps", "optimiser_steps")
 KL_STOP_KEYS = ("epochs_run", "kl_stopped")  # only when ppo.target_kl_micro is set (ADR-010 A1)
-TRAIN_ROLE_KEYS = (frozenset({*METRICS, *STEPS_KEYS}), frozenset(KL_STOP_KEYS))
+VALUE_WARMUP_KEY = "value_warmup"  # only on a value warm-up update (ADR-019 section 4)
+TRAIN_ROLE_KEYS = (frozenset({*METRICS, *STEPS_KEYS}), frozenset({*KL_STOP_KEYS, VALUE_WARMUP_KEY}))
 TRAIN_KEYS = (frozenset(ROLES), frozenset[str]())
 _PROGRESS_DIR = re.compile(r"g(\d{6})")
 _METRICS_FILE = re.compile(r"g(\d{6})\.json")
@@ -212,6 +213,8 @@ def read_train_report(raw: object) -> TrainFacts:
             if set(KL_STOP_KEYS) - set(values) or not isinstance(fired, bool):
                 raise ReportError(f"{role} epochs_run and kl_stopped come together, a boolean stop")
             stops[role] = (integer(values["epochs_run"], f"{role} epochs_run", 1), fired)
+        if VALUE_WARMUP_KEY in values and values[VALUE_WARMUP_KEY] is not True:
+            raise ReportError(f"{role} value_warmup is true when present (ADR-019 section 4)")
     return TrainFacts(roles, stops)
 
 

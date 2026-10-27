@@ -97,6 +97,9 @@ class RoleReport:
     # are left out of the stored report when absent, so a run without the field keeps its bytes.
     epochs_run: int | None = None
     kl_stopped: bool | None = None
+    # True only for a value warm-up update (``ppo.value_warmup``, ADR-019 section 4); left out of
+    # the stored report otherwise, so a run without the field keeps its bytes.
+    value_warmup: bool | None = None
 
 
 @dataclass(frozen=True)
@@ -118,6 +121,15 @@ class _Table:
     old_log_prob: torch.Tensor
     advantages: torch.Tensor
     returns: torch.Tensor
+
+
+VALUE_PREFIX = "value."
+
+
+def value_warmup_active(config: RunConfig, generation: int) -> bool:
+    """Whether the update that follows ``generation`` completed updates is a value warm-up one."""
+    warmup = config.ppo.value_warmup
+    return warmup is not None and generation < warmup
 
 
 class Learner:
@@ -161,10 +173,11 @@ class Learner:
             for optimiser in self.optimisers.values():
                 for group in optimiser.param_groups:
                     group["lr"] = schedule.rate(self.generation)
+        warm = value_warmup_active(self.config, self.generation)
         for role in ROLES:
             mine = [t for t in trajectories if t.role == role]
             if mine:
-                roles[role] = self._train_role(role, mine)
+                roles[role] = self._train_role(role, mine, warm)
         self.generation += 1
         return TrainReport(roles)
 
@@ -206,16 +219,36 @@ class Learner:
             adv = normalise(adv)
         return _Table(steps, old_log_prob, adv.to(self.device), torch.cat(returns).to(self.device))
 
-    def _train_role(self, role: str, trajectories: Sequence[Trajectory]) -> RoleReport:
-        ppo = self.config.ppo
+    def _train_role(
+        self, role: str, trajectories: Sequence[Trajectory], warm: bool = False
+    ) -> RoleReport:
+        """PPO epochs for one role; with ``warm`` only the value head learns (see below)."""
         table = self._table(role, trajectories)
+        network = self.networks[role]
+        network.train()
+        # Value warm-up: every parameter outside the value head is frozen, so the policy outputs
+        # stay byte-identical, no gradient reaches them and Adam (which skips a parameter with no
+        # gradient) leaves their moments absent. The loss is the value error alone (the PPO terms
+        # carry no gradient to the value head and the coefficient only rescales it).
+        frozen = [
+            p for n, p in network.named_parameters() if warm and not n.startswith(VALUE_PREFIX)
+        ]
+        for parameter in frozen:
+            parameter.requires_grad_(False)
+        try:
+            return self._epochs(role, table, warm)
+        finally:
+            for parameter in frozen:
+                parameter.requires_grad_(True)
+
+    def _epochs(self, role: str, table: _Table, warm: bool) -> RoleReport:
+        ppo = self.config.ppo
         network, optimiser = self.networks[role], self.optimisers[role]
         weights = LossWeights(ppo.clip, ppo.value_coef, ppo.entropy_coef)
         sums = torch.zeros(5)
         optimiser_steps = 0
         epochs_run = 0
         kl_stopped = False
-        network.train()
         for _ in range(ppo.epochs):
             epoch_kl = 0.0
             minibatches = 0
@@ -236,7 +269,7 @@ class Learner:
                     weights,
                 )
                 optimiser.zero_grad(set_to_none=True)
-                torch.autograd.backward(loss.total)
+                torch.autograd.backward(loss.value if warm else loss.total)
                 torch.nn.utils.clip_grad_norm_(network.parameters(), ppo.max_grad_norm)
                 optimiser.step()
                 optimiser_steps += 1
@@ -254,7 +287,7 @@ class Learner:
             epochs_run += 1
             # ADR-010 erratum A1: one check per complete epoch, on the mean of the epoch's
             # per-minibatch approximate KL in minibatch order; never inside an epoch.
-            if ppo.target_kl is not None and epoch_kl / minibatches > ppo.target_kl:
+            if not warm and ppo.target_kl is not None and epoch_kl / minibatches > ppo.target_kl:
                 kl_stopped = True
                 break
         policy, value, entropy, clip_fraction, approx_kl = (sums / optimiser_steps).tolist()
@@ -269,4 +302,5 @@ class Learner:
             approx_kl,
             epochs_run if stop else None,
             kl_stopped if stop else None,
+            True if warm else None,
         )

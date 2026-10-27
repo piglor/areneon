@@ -454,6 +454,8 @@ def test_a_changed_file_is_refused_by_the_manifest(tmp_path: Path) -> None:
         (lambda r: r["battle"].update(epochs_run=1), "come together"),
         (lambda r: r["battle"].update(epochs_run=1, kl_stopped=1), "come together"),
         (lambda r: r["battle"].update(epochs_run=0, kl_stopped=True), "integer"),
+        (lambda r: r["battle"].update(value_warmup=False), "value_warmup is true"),
+        (lambda r: r["battle"].update(value_warmup=1), "value_warmup is true"),
     ],
 )
 def test_the_train_report_is_read_strictly(change: Any, message: str) -> None:
@@ -470,6 +472,15 @@ def test_the_kl_stop_keys_are_optional_and_read_when_present() -> None:
     facts = read_train_report(raw)
     assert facts.kl_stops == {"battle": (2, True)}
     assert "epochs_run" not in facts.roles["battle"]
+
+
+def test_the_value_warmup_key_is_optional_and_read_when_present() -> None:
+    raw = json.loads(json.dumps(TRAIN_REPORT))
+    raw["battle"].update(value_warmup=True)
+    raw["preview"].update(value_warmup=True)
+    facts = read_train_report(raw)
+    assert "value_warmup" not in facts.roles["battle"]
+    assert facts.kl_stops == {}
 
 
 def test_a_private_lineage_is_refused(tmp_path: Path) -> None:
