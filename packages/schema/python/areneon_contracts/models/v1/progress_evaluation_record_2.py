@@ -70,6 +70,12 @@ class Teams(BaseModel):
     """
     The team dataset's hash, as the run config names it.
     """
+    evaluation_dataset_hash: Annotated[
+        StrictStr | MISSING, Field(pattern="^[0-9a-f]{64}$")
+    ] = MISSING
+    """
+    Present only when the validation teams came from another verified dataset than the run's own (the eval-dataset option, ADR-020 E-17.1): that dataset's hash. Absent: the teams are the validation split of the dataset dataset_hash names. Never equal to dataset_hash.
+    """
     split: Literal["validation"]
     pairs_used: Annotated[StrictInt, Field(ge=1, le=9007199254740991)]
     """

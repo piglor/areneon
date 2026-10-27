@@ -151,6 +151,7 @@ export function readProgressEvaluationRecordV2(value: unknown): ProgressEvaluati
   if (matches.some((match) => match.opponent.kind === "run") !== (runGames !== undefined)) fail("plan.run_games_per_match is present exactly when the record has cross-run matches");
   if (plan.games_per_match % 2 !== 0 || (anchorGames ?? 0) % 2 !== 0 || (runGames ?? 0) % 2 !== 0) fail("games_per_match, anchor_games_per_match and run_games_per_match must be even: every pair is played from both seats");
   if (record.teams.pairs_used !== Math.max(plan.games_per_match, anchorGames ?? 0, runGames ?? 0) / 2) fail("teams.pairs_used must be half the largest games_per_match, anchor_games_per_match or run_games_per_match");
+  if (record.teams.evaluation_dataset_hash === record.teams.dataset_hash) fail("teams.evaluation_dataset_hash must differ from teams.dataset_hash: absent means the run's own dataset");
   if (plan.recorded_games_per_match > plan.games_per_match) fail("recorded_games_per_match must not exceed games_per_match");
   const ids = matches.map((match) => match.match_id);
   if (!strictlyAscending(ids)) fail("matches must be sorted by match_id, each once");

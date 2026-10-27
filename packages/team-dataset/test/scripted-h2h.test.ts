@@ -166,13 +166,13 @@ describe("the command", () => {
     const err = console.error;
     console.error = () => undefined;
     try {
-      expect((await run([], join(scratch, "wrong-hash"), ["--dataset-dir", SOURCE, "--dataset-hash", "0".repeat(64)])).code).toBe(1);
+      expect((await run([], join(scratch, "wrong-hash"), ["--eval-dataset-dir", SOURCE, "--eval-dataset-hash", "0".repeat(64)])).code).toBe(1);
       expect((await run([], join(scratch, "too-many"), ["--pairs", "100000"])).code).toBe(1);
     } finally {
       console.error = err;
     }
     mkdirSync(join(scratch, "x"), { recursive: true });
-    await expect(run([], join(scratch, "x"), ["--dataset-dir", SOURCE])).rejects.toThrow(UsageError);
+    await expect(run([], join(scratch, "x"), ["--eval-dataset-dir", SOURCE])).rejects.toThrow(UsageError);
     await expect(run([], join(scratch, "y"), ["--pairs", "0"])).rejects.toThrow(UsageError);
     await expect(run([], join(scratch, "y"), ["--game-processes", "2"])).rejects.toThrow(/script to start again/);
     await expect(run([], join(scratch, "y"), ["--shard", "2/2"])).rejects.toThrow(/INDEX\/COUNT/);

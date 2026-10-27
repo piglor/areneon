@@ -61,6 +61,9 @@ from areneon_ml.model.encoder import encoder_version
 from areneon_ml.model.gamedata import GameData
 from areneon_ml.model.network import ROLES
 from areneon_ml.private.private_test import PrivateTestRequest, private_test_main
+from areneon_ml.progress.eval_dataset import EvalDatasetError
+from areneon_ml.progress.eval_dataset import add_arguments as eval_dataset_arguments
+from areneon_ml.progress.eval_dataset import from_values as eval_dataset_from
 from areneon_ml.progress.looks import Look, LookError, append_look, looks_path
 from areneon_ml.progress.records import ProgressRecordError
 from areneon_ml.progress.run import (
@@ -211,10 +214,7 @@ def _add_scripted_parser(commands: Any) -> None:
     scripted.add_argument(
         "--out", type=Path, required=True, help="a new directory; never overwritten"
     )
-    scripted.add_argument(
-        "--dataset-dir", type=Path, help="an evaluation-only dataset instead of the config's"
-    )
-    scripted.add_argument("--dataset-hash", help="its hash (with --dataset-dir)")
+    eval_dataset_arguments(scripted)
     scripted.add_argument(
         "--game-processes",
         type=_positive,
@@ -233,6 +233,7 @@ def _add_scripted_parser(commands: Any) -> None:
 
 
 def _add_owner_and_scripted_parsers(commands: Any) -> None:
+    eval_dataset_arguments(commands.choices["progress"])
     _add_private_test_parser(commands)
     _add_scripted_parser(commands)
 
@@ -438,6 +439,7 @@ def _progress(args: argparse.Namespace) -> dict[str, object]:
             args.run_games,
             encoder_version(game, other.model.encoder),
         )
+    eval_dataset = eval_dataset_from(args.eval_dataset_dir, args.eval_dataset_hash)
     root = progress_root(run_dir, args.progress_dir)
     record_games = (
         min(DEFAULT_RECORD_GAMES, args.games) if args.record_games is None else args.record_games
@@ -457,6 +459,7 @@ def _progress(args: argparse.Namespace) -> dict[str, object]:
             args.preview_ablation,
             damage_budget,
             versus,
+            eval_dataset,
         )
         for g in generations
     ]
@@ -557,8 +560,7 @@ def _scripted(args: argparse.Namespace) -> dict[str, object]:
             args.arm_b,
             args.pairs,
             args.out,
-            args.dataset_dir,
-            args.dataset_hash,
+            eval_dataset_from(args.eval_dataset_dir, args.eval_dataset_hash),
             args.game_processes,
             args.wall_time_cap_minutes,
             args.looks,
@@ -636,6 +638,7 @@ def main(argv: list[str] | None = None) -> int:
         ProgressError,
         ProgressRecordError,
         ScriptedError,
+        EvalDatasetError,
         LookError,
         OSError,
         json.JSONDecodeError,

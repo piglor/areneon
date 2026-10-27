@@ -143,6 +143,33 @@ def _stem(match: MatchFacts) -> str:
     return match.match_id.removesuffix("-" + match.mode)
 
 
+OTHER_DATASET_LABEL = (
+    "Not the run's own validation split: scores are comparable only with runs measured on the "
+    "same dataset."
+)
+
+
+def _evaluation_dataset_note(model: ReportModel) -> str:
+    """Which generations were measured on another dataset's validation teams (the eval-dataset option)."""
+    other = {
+        g: p.evaluation_dataset
+        for g, p in model.progress.items()
+        if p.evaluation_dataset is not None
+    }
+    if not other:
+        return ""
+    groups: dict[str, list[int]] = {}
+    for g, found in sorted(other.items()):
+        groups.setdefault(found, []).append(g)
+    listed = "; ".join(
+        f"generation {', '.join(map(str, gs))}: dataset {found}" for found, gs in groups.items()
+    )
+    return (
+        '<p class="note">Evaluation teams: the validation split of another verified dataset than '
+        f"the run's own ({esc(listed)}). {esc(OTHER_DATASET_LABEL)}</p>"
+    )
+
+
 def _looks_note(model: ReportModel) -> str:
     if model.looks is None:
         return ""
@@ -169,7 +196,7 @@ def _progress_section(model: ReportModel, tips: Tips) -> str:
         )
         return "".join(out)
     missing = [str(g) for g in xs if g not in model.progress]
-    out.append(_looks_note(model))
+    out.append(_looks_note(model) + _evaluation_dataset_note(model))
     kinds = {m.interval_kind for p in model.progress.values() for m in p.matches}
     notes = "".join(
         f'<p class="note">{esc(text)}</p>'

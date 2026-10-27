@@ -18,6 +18,7 @@ import pytest
 from areneon_ml.loop import layout
 from areneon_ml.progress import run as run_module
 from areneon_ml.progress.ablation import ablation_summary
+from areneon_ml.progress.eval_dataset import EvalDataset
 from areneon_ml.progress.run import CROSS_RUN_LABEL, VersusSpec, summary_of
 from areneon_ml.progress.stats import PPM
 from areneon_ml.report.model import read_report_model
@@ -26,6 +27,7 @@ from areneon_ml.report.render import (
     ANCHOR_NOTE,
     CONDITIONAL,
     CONDITIONAL_PAIRS,
+    OTHER_DATASET_LABEL,
     SEAT_CAPTION,
     SEAT_CAPTION_PAIRS,
     SEEN,
@@ -301,3 +303,21 @@ def test_a_page_without_the_baseline_has_no_baseline_table(run: Path, tmp_path: 
     root = tmp_path / "progress"
     played(run, root, 1)
     assert "Damage-aware baseline counts" not in text_of(run, root)
+
+
+def test_the_dashboard_labels_an_evaluation_dataset(run: Path, tmp_path: Path) -> None:
+    """The eval-dataset option (ADR-020 E-17.1): a generation on another dataset says so."""
+    other = tmp_path / "other"
+    other.mkdir()
+    (other / "manifest.json").write_text(
+        json.dumps({"splits": [{"split": "validation", "teams": 6}]})
+    )
+    plain, labelled = tmp_path / "plain", tmp_path / "labelled"
+    played(run, plain, 1)
+    played(run, labelled, 1, eval_dataset=EvalDataset(other, "7" * 64))
+    assert OTHER_DATASET_LABEL not in text_of(run, plain)
+    assert read_report_model(run, plain).progress[1].evaluation_dataset is None
+    page = text_of(run, labelled)
+    assert OTHER_DATASET_LABEL in page
+    assert f"generation 1: dataset {'7' * 64}" in page
+    assert read_report_model(run, labelled).progress[1].evaluation_dataset == "7" * 64

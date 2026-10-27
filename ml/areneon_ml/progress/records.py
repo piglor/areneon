@@ -351,6 +351,11 @@ def _check_plan_v2(raw: dict[str, Any]) -> None:
             "teams.pairs_used must be half the largest games_per_match, "
             "anchor_games_per_match or run_games_per_match"
         )
+    if raw["teams"].get("evaluation_dataset_hash") == raw["teams"]["dataset_hash"]:
+        raise ProgressRecordError(
+            "teams.evaluation_dataset_hash must differ from teams.dataset_hash: "
+            "absent means the run's own dataset"
+        )
     if plan["recorded_games_per_match"] > plan["games_per_match"]:
         raise ProgressRecordError("recorded_games_per_match must not exceed games_per_match")
 

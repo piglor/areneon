@@ -13,6 +13,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
 import { type Json, jcs } from "./canonical-json.ts";
+import { EVAL_DATASET_FLAGS, readEvalDataset, withEvalDataset } from "./eval-dataset.ts";
 import type { BeliefWorldsFactory } from "./damage-aware-worlds.ts";
 import { loadEngine } from "./engine.ts";
 import { startShard, UsageError, writeShardFile } from "./generation-cli.ts";
@@ -32,15 +33,14 @@ const FLAGS = {
   "arm-b": { type: "string" },
   pairs: { type: "string" },
   out: { type: "string" },
-  // Another team dataset's validation split (an evaluation-only dataset) instead of the config's: both flags, or none.
-  "dataset-dir": { type: "string" },
-  "dataset-hash": { type: "string" },
+  // Another team dataset's validation split instead of the config's (the eval-dataset option): both flags, or none.
+  ...EVAL_DATASET_FLAGS,
   "game-processes": { type: "string" },
   "wall-time-cap-ms": { type: "string" },
   // Internal: set on the game processes this one starts (`INDEX/COUNT`); such a process plays its slice and writes `shard.jsonl`.
   shard: { type: "string" },
 } as const;
-const OPTIONAL = new Set<string>(["dataset-dir", "dataset-hash", "game-processes", "wall-time-cap-ms", "shard"]);
+const OPTIONAL = new Set<string>(["eval-dataset-dir", "eval-dataset-hash", "game-processes", "wall-time-cap-ms", "shard"]);
 const MAX_PROCESSES = 64;
 /** The record the command writes into `--out`. */
 export const H2H_FILE = "head-to-head.json";
@@ -61,7 +61,7 @@ export async function runScriptedH2HCli(argv: readonly string[], print: (line: s
   }
   const need = (name: keyof typeof FLAGS): string => values[name] ?? ((): never => { throw new UsageError(`--${name} is required`); })();
   for (const name of Object.keys(FLAGS) as (keyof typeof FLAGS)[]) if (!OPTIONAL.has(name)) need(name);
-  if ((values["dataset-dir"] === undefined) !== (values["dataset-hash"] === undefined)) throw new UsageError("--dataset-dir and --dataset-hash go together");
+  const evalDataset = readEvalDataset(values);
   const pairs = integer("pairs", need("pairs"), 1);
   const processes = values["game-processes"] === undefined ? 1 : integer("game-processes", values["game-processes"], 1);
   if (processes > MAX_PROCESSES) throw new UsageError(`--game-processes is at most ${MAX_PROCESSES}`);
@@ -77,7 +77,7 @@ export async function runScriptedH2HCli(argv: readonly string[], print: (line: s
   }
   const read = readTrainingRunConfig(JSON.parse(readFileSync(need("config"), "utf8")));
   if (read.seeds.run_key.startsWith("CHANGE-ME")) throw new UsageError("seeds.run_key is still the CHANGE-ME placeholder: give the run its own name");
-  const config = values["dataset-dir"] === undefined ? read : { ...read, team_dataset: { path: values["dataset-dir"], dataset_hash: values["dataset-hash"] as string } };
+  const config = withEvalDataset(read, evalDataset);
   if (config.team_dataset === undefined) {
     console.error("scripted-h2h: the run config names no team dataset: a head-to-head needs the validation split of one");
     return 1;

@@ -17,6 +17,7 @@ import type { Engine } from "./engine.ts";
 import { UsageError } from "./generation-cli.ts";
 import { damageAwareSetup } from "./league-generation.ts";
 import { PolicyWorkerClient } from "./policy-worker.ts";
+import { EVAL_DATASET_FLAGS, readEvalDataset, withEvalDataset } from "./eval-dataset.ts";
 import { type ProgressMode, type ProgressPool, ProgressError, playProgress, writeProgress, PROGRESS_MODES } from "./progress-evaluation.ts";
 import { progressRecordHash } from "./progress-records.ts";
 import { readTrainingRunConfig, type TrainingRunConfig } from "./training-run-config.ts";
@@ -65,8 +66,10 @@ const FLAGS = {
   // The damage-aware baseline as a third scripted opponent (ADR-018 slice 4): given, its two matches are played, and
   // each may take at most this many wall-clock milliseconds or the evaluation fails and commits nothing.
   "damage-aware-budget-ms": { type: "string" },
+  // The validation split of another verified dataset instead of the run's own (ADR-020 E-17.1): both flags, or none.
+  ...EVAL_DATASET_FLAGS,
 } as const;
-const OPTIONAL = new Set<string>(["previous-preview", "previous-battle", "previous-policy-id-sample", "previous-policy-id-argmax", "anchor", "anchor-games", "versus", "versus-dir", "versus-encoder-version", "versus-team-set", "run-games", "ablation-preview", "ablation-random-policy-id", "damage-aware-budget-ms"]);
+const OPTIONAL = new Set<string>(["previous-preview", "previous-battle", "previous-policy-id-sample", "previous-policy-id-argmax", "anchor", "anchor-games", "versus", "versus-dir", "versus-encoder-version", "versus-team-set", "run-games", "ablation-preview", "ablation-random-policy-id", "damage-aware-budget-ms", "eval-dataset-dir", "eval-dataset-hash"]);
 const VERSUS = ["versus", "versus-dir", "versus-encoder-version", "versus-team-set", "run-games"] as const;
 const PREVIOUS = ["previous-preview", "previous-battle", "previous-policy-id-sample", "previous-policy-id-argmax"] as const;
 
@@ -174,6 +177,8 @@ export async function runProgressCli(argv: readonly string[], print: (line: stri
     console.error("progress: the run config names no team dataset: a progress evaluation needs the validation split of one");
     return 1;
   }
+  const evalDataset = readEvalDataset(values);
+  if (evalDataset !== undefined && evalDataset.dataset_hash === config.team_dataset.dataset_hash) throw new UsageError("--eval-dataset-hash is the run's own training dataset: leave the option out to evaluate on its validation split");
   const teamSet = JSON.parse(readFileSync(need("team-set"), "utf8")) as { teams: string[] };
   const engine = loadEngine(process.env.SHOWDOWN_DIR || undefined);
   const dataFile = need("engine-data");
@@ -204,7 +209,7 @@ export async function runProgressCli(argv: readonly string[], print: (line: stri
   const versusTeamSet = values["versus-team-set"] === undefined ? [] : readTeamSet(values["versus-team-set"]);
   try {
     previousClient = previousPair === undefined ? undefined : workerFor(previousPair);
-    const pool = poolSource(engine, config);
+    const pool = poolSource(engine, withEvalDataset(config, evalDataset)); // the evaluation dataset, hash-checked by the pool; `config` stays the run's own
     await client.start();
     await previousClient?.start();
     await ablationClient?.start();
