@@ -10,12 +10,12 @@ const dex = fullDex();
 const python = join(ROOT, ".venv", "bin", "python");
 const here = dirname(fileURLToPath(import.meta.url));
 
-/** The reducer's own fields, compared as they are. `hp_fraction` is derived and the page does not carry it. */
+/** The reducer's own fields, compared as they are. `hp_fraction` is derived and the page does not carry it; `item_received` and `ability_received` are the interpreter's (ADR-025), the reducer has no such field. */
 function reducerShape(state: any): any {
   const strip = (side: any) => ({
     ...side,
     roster: side.roster.map((mon: any) => {
-      const { hp_fraction: _fraction, own: _own, ...rest } = mon;
+      const { hp_fraction: _fraction, own: _own, item_received: _ir, ability_received: _ar, ...rest } = mon;
       return rest;
     }),
   });

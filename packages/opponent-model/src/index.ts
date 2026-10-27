@@ -12,7 +12,7 @@ export { EVIDENCE_FIELDS, IGNORED_FIELDS, slotEvidence, type SlotEvidence } from
 export { beliefDigest, beliefIdentityHash, worldsDigest, type BeliefIdentityParts } from "./identity.ts";
 export { solveItemClause, type ClauseResult, type ClauseWeights } from "./item-clause.ts";
 export { elementary, moveModel, type MoveModel } from "./moves.ts";
-export { STAT_IDS, createSampler, prepared, type OpponentWorld, type SampledWorld, type SampledWorlds, type SamplerPorts, type SetLegality, type ShownIdentifiers, type Sampler, type SpreadSampler, type StatPoints, type WorldSet, type WorldSlot } from "./sampler.ts";
+export { STAT_IDS, createSampler, type OpponentWorld, type SampledWorld, type SampledWorlds, type SamplerPorts, type SetLegality, type ShownIdentifiers, type Sampler, type SpreadSampler, type StatPoints, type WorldSet, type WorldSlot } from "./sampler.ts";
 export { type Ratio } from "./ratio.ts";
 export { topWorlds, type TopWorld } from "./top-worlds.ts";
 export { BELIEF_FORMAT, type BeliefInput, type BeliefVocabulary, type Cell, type DisguiseAssignment, type DisguiseMixture, type FormeBelief, type Marginal, type OpponentBelief, type SlotBelief, type SlotMarginal } from "./types.ts";

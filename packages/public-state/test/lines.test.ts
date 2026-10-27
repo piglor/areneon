@@ -184,6 +184,21 @@ describe("volatiles, items, abilities and formes", () => {
     expect(after("|-start|p2a: Venusaur|<b>x</b>").flags).toHaveLength(1);
     expect(after("|-end|p2a: Venusaur|" + "x".repeat(70)).flags).toHaveLength(1);
   });
+  it("an item or ability received from another Pokemon or effect is flagged, and the flag is sticky (ADR-025, N6)", () => {
+    let { state } = after("|-item|p2a: Venusaur|Leftovers");
+    expect(opp(state, "Venusaur")).toMatchObject({ item: "leftovers", item_received: false, ability_received: false });
+    ({ state } = after("|-item|p2a: Venusaur|Leftovers|[from] move: Trick"));
+    expect(opp(state, "Venusaur")).toMatchObject({ item: "leftovers", item_received: true });
+    ({ state } = after("|-item|p2a: Venusaur|Leftovers|[from] move: Trick", "|-enditem|p2a: Venusaur|Leftovers"));
+    expect(opp(state, "Venusaur")).toMatchObject({ item: null, item_lost: true, item_received: true });
+    ({ state } = after("|-item|p2a: Venusaur|Leftovers|[from] ability: Frisk|[of] p1a: Venusaur|[identify]"));
+    expect(opp(state, "Venusaur").item_received).toBe(false);
+    ({ state } = after("|-ability|p2a: Venusaur|Mummy|[from] ability: Mummy|[of] p2b: Charizard"));
+    expect(opp(state, "Venusaur")).toMatchObject({ ability: "mummy", ability_received: true });
+    expect(opp(state, "Charizard").ability_received).toBe(false);
+    ({ state } = after("|-ability|p2a: Venusaur|Intimidate|boost"));
+    expect(opp(state, "Venusaur").ability_received).toBe(false);
+  });
   it("items and abilities: revealed, changed and lost", () => {
     let { state } = after("|-item|p2a: Venusaur|Leftovers", "|-ability|p2b: Charizard|Intimidate|boost");
     expect(opp(state, "Venusaur")).toMatchObject({ item: "leftovers", item_known: true });

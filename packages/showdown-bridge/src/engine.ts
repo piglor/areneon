@@ -17,6 +17,15 @@ export const DEFAULT_SHOWDOWN_DIR = fileURLToPath(
 
 export type StatTable = Record<"hp" | "atk" | "def" | "spa" | "spd" | "spe", number>;
 
+/** The six stat ids in the engine's order. */
+export const STAT_IDS = ["hp", "atk", "def", "spa", "spd", "spe"] as const;
+
+/** Showdown's own default IV; the Champions mod ignores IVs (Stat Points replace EVs), so the value never changes a stat. */
+export const IV_DEFAULT = 31;
+
+/** A table of the default IV in every stat. */
+export const defaultIvs = (): StatTable => ({ hp: IV_DEFAULT, atk: IV_DEFAULT, def: IV_DEFAULT, spa: IV_DEFAULT, spd: IV_DEFAULT, spe: IV_DEFAULT });
+
 /** One set as Showdown's team validator and `Teams.pack` accept it. */
 export interface PokemonSet {
   name: string;
