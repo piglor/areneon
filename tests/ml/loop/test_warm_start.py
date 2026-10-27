@@ -15,7 +15,7 @@ from areneon_ml.checkpoint.files import checkpoint_bytes, checkpoint_id, write_c
 from areneon_ml.checkpoint.provenance import ProvenanceGraph
 from areneon_ml.checkpoint.record import CheckpointRecord, read_record
 from areneon_ml.learner.config import RunConfig
-from areneon_ml.loop import layout
+from areneon_ml.loop import layout, warm_start
 from areneon_ml.loop.__main__ import EXIT_REFUSED, main
 from areneon_ml.loop.driver import (
     LoopError,
@@ -514,3 +514,12 @@ def test_a_clone_record_of_the_other_role_is_refused(tmp_path: Path, clone_dir: 
     other = "preview" if record.role == "battle" else "battle"
     with pytest.raises(WarmStartError, match=r"is a (preview|battle) record"):
         check_clone_record(record, other)
+
+
+def test_a_checkpoint_that_does_not_re_serialise_as_itself_is_refused(
+    tmp_path: Path, clone_dir: Path, config: RunConfig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    run_dir = fresh_run_dir(tmp_path, clone_dir)
+    monkeypatch.setattr(warm_start, "checkpoint_bytes", lambda _network, _game: b"other")
+    with pytest.raises(LoopError, match="does not re-serialise as itself"):
+        warm_loop(run_dir, config).run(0)

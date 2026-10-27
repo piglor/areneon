@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import shutil
 import time
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -233,13 +233,14 @@ class Loop:
 
     def _initial(self) -> Frozen:
         records = None
-        if self.config.warm_start is None:
+        warm_ids = self.config.warm_start
+        if warm_ids is None:
             self._learner = self._new_learner()
         else:
             # The cloned pair as it is, no learner step. The optimiser moments and the generator
             # start fresh (generation 1 is the first update): a cloning run's Adam state is the
             # supervised phase's, not the policy-gradient phase's, and is not carried over.
-            warm = self._warm_pair()
+            warm = self._warm_pair(warm_ids)
             self._learner = self._new_learner(warm.networks)
             records = warm.records
         work = layout.partial_dir(self.run_dir, 0)
@@ -247,9 +248,11 @@ class Loop:
         manifest = self.player.manifest(self.config.format_id)
         return self._seal(0, work, Sealing(None, None, (), manifest, records), Timing(self.clock))
 
-    def _warm_pair(self) -> WarmPair:
+    def _warm_pair(self, warm_ids: Mapping[str, str]) -> WarmPair:
         try:
-            return load_warm_start(self.config, self.game, self.run_dir, self.encoder_version)
+            return load_warm_start(
+                self.config, warm_ids, self.game, self.run_dir, self.encoder_version
+            )
         except WarmStartError as exc:
             raise LoopError(f"warm_start: {exc}") from exc
 
@@ -274,11 +277,12 @@ class Loop:
         if learner.generation != newest.generation:
             raise LoopError("the learner state is of another generation than its directory")
         records = {role: self._read_record(newest.path, role) for role in ROLES}
-        warm_zero = newest.generation == 0 and self.config.warm_start is not None
-        if warm_zero:
+        warm_ids = self.config.warm_start
+        warm_zero = newest.generation == 0 and warm_ids is not None
+        if warm_ids is not None and warm_zero:
             # Generation 0 of a warm-started run: the records are the clone records, the pair
             # is the one the run's checkpoint store holds under the declared ids.
-            warm = self._warm_pair()
+            warm = self._warm_pair(warm_ids)
             if records != warm.records:
                 raise LoopError("generation 0: its records are not the warm-start clone records")
         for role in ROLES:

@@ -22,6 +22,7 @@ teacher set sits in the ancestry of every later generation (the C1/C6 checker's 
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -77,12 +78,9 @@ def check_clone_record(record: CheckpointRecord, role: str) -> None:
 
 
 def load_warm_start(
-    config: RunConfig, game: GameData, run_dir: Path, encoder_version: str
+    config: RunConfig, warm: Mapping[str, str], game: GameData, run_dir: Path, encoder_version: str
 ) -> WarmPair:
-    """Load and check the pair ``config.warm_start`` names from the run directory's stores."""
-    warm = config.warm_start
-    if warm is None:
-        raise WarmStartError("the run config declares no warm start")
+    """Load and check the pair ``warm`` (the config's ``warm_start`` ids) from the run's stores."""
     networks: dict[str, PolicyNetwork] = {}
     records: dict[str, CheckpointRecord] = {}
     for role in ROLES:
