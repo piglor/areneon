@@ -8,6 +8,7 @@ from typing import Any
 
 import pytest
 from areneon_ml.checkpoint.files import load_checkpoint
+from areneon_ml.learner.clone import clone
 from areneon_ml.learner.clone_config import read_clone_config
 from areneon_ml.learner.clone_run import write_clone
 from areneon_ml.loop import layout
@@ -16,14 +17,9 @@ from areneon_ml.loop.warm_start import import_clone
 from areneon_ml.model.encoder import encoder_version
 
 from tests.ml.learner.support import edited_config, tiny_config
-from tests.ml.learner.test_clone import (
-    VERSION,
-    clone,
-    config_for,
-    game,
-    teacher_stream,
-)
+from tests.ml.learner.test_clone import VERSION, config_for, teacher_stream
 from tests.ml.loop.support import FakePlayer, make_loop
+from tests.ml.model.support import game
 
 OPTION = {"candidate_matchup": True}
 
