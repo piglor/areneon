@@ -38,13 +38,20 @@ function independent(w: ClauseWeights): ClauseResult {
 /** The most slots the subset DP is built for (2^N states); the format has six. */
 export const MAX_CLAUSE_SLOTS = 10;
 
-export function solveItemClause(w: ClauseWeights, enforce: boolean): ClauseResult {
-  if (!enforce) return independent(w);
+/** The DP tables of one set of weights (the sampler walks `backward` to draw an assignment). */
+export interface ClauseTables {
+  readonly slots: number;
+  /** forward[k][mask]: the weight of giving items 0..k-1 to the slots of mask, one item each. */
+  readonly forward: readonly (readonly bigint[])[];
+  /** backward[k][open]: the weight of giving items k..m-1 to some of the open slots, the rest taking no item. */
+  readonly backward: readonly (readonly bigint[])[];
+}
+
+export function clauseTables(w: ClauseWeights): ClauseTables {
   const slots = w.none.length;
   if (slots > MAX_CLAUSE_SLOTS) throw new RangeError(`the Item Clause DP is built for at most ${MAX_CLAUSE_SLOTS} slots`);
   const m = (w.items[0] as readonly bigint[] | undefined)?.length ?? 0;
   const size = 1 << slots;
-  const full = size - 1;
   const at = (i: number, j: number): bigint => (w.items[i] as readonly bigint[])[j] as bigint;
 
   // forward[k][mask]: the weight of giving items 0..k-1 to the slots of mask, one item each.
@@ -72,6 +79,16 @@ export function solveItemClause(w: ClauseWeights, enforce: boolean): ClauseResul
     }
     backward[k] = row;
   }
+  return { slots, forward, backward };
+}
+
+export function solveItemClause(w: ClauseWeights, enforce: boolean): ClauseResult {
+  if (!enforce) return independent(w);
+  const { slots, forward, backward } = clauseTables(w);
+  const m = (w.items[0] as readonly bigint[] | undefined)?.length ?? 0;
+  const size = 1 << slots;
+  const full = size - 1;
+  const at = (i: number, j: number): bigint => (w.items[i] as readonly bigint[])[j] as bigint;
   const normaliser = (backward[0] as bigint[])[full] as bigint;
 
   const items = Array.from({ length: slots }, (_, i) =>

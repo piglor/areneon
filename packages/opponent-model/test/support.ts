@@ -20,7 +20,7 @@ export function vocabulary(rules: Partial<Rules> = {}): BeliefVocabulary {
   return {
     format_id: "testformat",
     engine_data_hash: HEX,
-    rules: { min_team_size: 6, max_team_size: 6, picked_team_size: 4, item_clause: 1, ...rules },
+    rules: { adjust_level: 50, min_team_size: 6, max_team_size: 6, picked_team_size: 4, item_clause: 1, ...rules },
     items: ["betite", "ix", "iy"],
     roster: [
       { id: "alpha", abilities: ["a1", "a2"], moves: [...MOVES] },

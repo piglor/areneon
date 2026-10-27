@@ -343,6 +343,7 @@ export {
   readLeagueRunRecord,
 } from "./league-run-record.ts";
 export { type AssumedSet, type AssumedSetContext, AssumedSetError, assumedHp, buildAssumedSet } from "./damage-aware-assumed-set.ts";
+export { type LegalityWorldSet, type SetLegalityPort, createSetLegality } from "./set-legality.ts";
 export {
   DAMAGE_AWARE_CONFIG_DIR,
   type DamageAwareConfig,

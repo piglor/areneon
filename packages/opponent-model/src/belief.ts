@@ -412,6 +412,7 @@ export function belief(input: BeliefInput): OpponentBelief {
     disguise: { hiding: hidingSlots, unsettled, positions: mixed ? shown : [], total },
     itemClause: { enforced: clause === 1 },
     brought: { picked, settled: certain, subsets: subsetCount(mons.length, picked, shown.length) },
+    sampling: { level: vocabulary.rules.adjust_level, max_legality_redraws: config.max_legality_redraws },
     constraints: [clause === 1 ? "item_clause:1" : "item_clause:absent", `brought:picked=${picked}`, ...(assignments.length > 1 ? [`disguise:assignments=${assignments.length}`] : [])],
   };
 }

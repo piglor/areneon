@@ -76,6 +76,16 @@ export const spreadKey = (s: Pick<SpreadInput, "nature" | "stat_points">): strin
   return `${s.nature}:${p.hp}-${p.atk}-${p.def}-${p.spa}-${p.spd}-${p.spe}`;
 };
 
+const STAT_ORDER = ["hp", "atk", "def", "spa", "spd", "spe"] as const;
+
+/** The nature and Stat Points a spread key spells, or null for a key that is not one (the "other" entry). */
+export function parseSpreadKey(key: string): { nature: string; stat_points: Record<(typeof STAT_ORDER)[number], number> } | null {
+  const m = /^([a-z0-9]+):(\d+)-(\d+)-(\d+)-(\d+)-(\d+)-(\d+)$/.exec(key);
+  if (m === null) return null;
+  const points = STAT_ORDER.map((_, k) => Number(m[k + 2]));
+  return { nature: m[1] as string, stat_points: Object.fromEntries(STAT_ORDER.map((stat, k) => [stat, points[k]])) as Record<(typeof STAT_ORDER)[number], number> };
+}
+
 /** The key of every spread the list does not name, taken as one entry (no evidence touches spreads in this slice). */
 export const OTHER_SPREAD = "other";
 
