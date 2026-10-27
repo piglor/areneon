@@ -55,6 +55,10 @@ export interface CloneRunConfig {
      * Feed-forward width.
      */
     d_ff: number;
+    /**
+     * Optional network options (ADR-010 erratum A4 item 2). Absent keeps today's bytes, hashes and checkpoints. A named option is added by the ticket of the experiment arm that needs it; none is defined yet, so only an empty object passes.
+     */
+    options?: {};
   };
   /**
    * The scripted policy to imitate and the one TrainingSet of its games (ADR-010 erratum A2).
@@ -164,4 +168,13 @@ export interface Encoder {
    * Divisor of the turn counter.
    */
   turn_scale: number;
+  /**
+   * Optional encoder options (ADR-010 erratum A4 item 2). Absent keeps today's bytes, hashes and checkpoints. A named option is added by the ticket of the experiment arm that needs it.
+   */
+  options?: {
+    /**
+     * ADR-022 tier B (ADR-010 erratum A5 item 1). Each move candidate also carries the engine-data type-chart cells of the move's type against the shown types of each opposing position and the ally, and a flag that the move's type is one of the user's shown types. Only true is a value (leave the key out for none). Layout changing: it changes the encoder version and the checkpoint format.
+     */
+    candidate_matchup?: true;
+  };
 }

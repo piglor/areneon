@@ -29,4 +29,16 @@ describe("the CloneRunConfig reader (ADR-019 track 1)", () => {
     const changed = readCloneRunConfig({ ...config, clone: { ...config.clone, epochs: config.clone.epochs + 1 } });
     expect(await cloneRunConfigHash(changed)).not.toBe(await cloneRunConfigHash(config));
   });
+
+  it("takes the model options as the TrainingRunConfig does: only candidate_matchup true, absent keeps the hash", async () => {
+    const plain = readCloneRunConfig(sample("tiny"));
+    const matchup = readCloneRunConfig(sample("candidate-matchup"));
+    expect(matchup.model.encoder.options).toEqual({ candidate_matchup: true });
+    expect(readCloneRunConfig(sample("empty-options")).model.options).toEqual({});
+    expect(await cloneRunConfigHash(matchup)).not.toBe(await cloneRunConfigHash(plain));
+    const wide = { ...plain.model, options: { wide: 1 } };
+    expect(() => readCloneRunConfig({ ...plain, model: wide })).toThrow(CloneRunConfigError);
+    const off = { ...plain.model, encoder: { ...plain.model.encoder, options: { candidate_matchup: false } } };
+    expect(() => readCloneRunConfig({ ...plain, model: off })).toThrow(CloneRunConfigError);
+  });
 });
