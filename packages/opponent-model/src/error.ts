@@ -11,6 +11,8 @@ export const BELIEF_ERROR_CODES = [
   "brought_exceeds_picked", // more settled Pokemon than the picked team size
   "disguise_assignments_exceeded", // more disguise assignments than BeliefConfig.max_disguise_assignments
   "evidence_has_no_support", // the evidence leaves no world with a positive weight
+  "legality_redraws_exhausted", // every redraw of a world held an illegal set (BeliefConfig.max_legality_redraws)
+  "spread_sampler_required", // a sampled spread is the prior's \"other spread\" entry and no SpreadSampler was given
   "empty_distribution", // a prior list with no mass at all (every weight unmapped)
 ] as const;
 

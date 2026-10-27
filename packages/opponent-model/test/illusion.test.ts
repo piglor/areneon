@@ -296,7 +296,7 @@ describe("the mixture as a whole", () => {
   });
 
   it("with the Item Clause absent the assignments still mix exactly", () => {
-    const open = { ...vocabulary(), rules: { min_team_size: 6, max_team_size: 6, picked_team_size: 4 } };
+    const open = { ...vocabulary(), rules: { adjust_level: 50, min_team_size: 6, max_team_size: 6, picked_team_size: 4 } };
     const b = run([alphaIn], { vocabulary: open });
     expect(b.assignments.map((a) => a.p)).toEqual([p(1n, 2n), p(1n, 2n)]);
   });

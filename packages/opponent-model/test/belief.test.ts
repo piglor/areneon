@@ -68,7 +68,7 @@ describe("the belief over an unseen team (Team Preview only)", () => {
 
   it("without an Item Clause in the rule table the slots are independent", () => {
     const rules = vocabulary();
-    const open = belief(input([], { vocabulary: { ...rules, rules: { min_team_size: 6, max_team_size: 6, picked_team_size: 4 } } }));
+    const open = belief(input([], { vocabulary: { ...rules, rules: { adjust_level: 50, min_team_size: 6, max_team_size: 6, picked_team_size: 4 } } }));
     expect(open.itemClause.enforced).toBe(false);
     expect(slot(open, "alpha").items).toEqual([{ id: null, p: p(3n, 10n) }, { id: "ix", p: p(1n, 2n) }, { id: "iy", p: p(1n, 5n) }]);
     expect(open.constraints[0]).toBe("item_clause:absent");
@@ -291,7 +291,7 @@ describe("top-K joint worlds (diagnostic)", () => {
   });
 
   it("without the clause equal items may repeat", () => {
-    const open = belief(input([], { vocabulary: { ...vocabulary(), rules: { min_team_size: 6, max_team_size: 6, picked_team_size: 4 } } }));
+    const open = belief(input([], { vocabulary: { ...vocabulary(), rules: { adjust_level: 50, min_team_size: 6, max_team_size: 6, picked_team_size: 4 } } }));
     expect(topWorlds(open, 1)[0]!.slots.map((s) => s.item)).toEqual(["ix", null, "iy", null, null, null]);
     expect(topWorlds(open, 0)).toEqual([]);
   });

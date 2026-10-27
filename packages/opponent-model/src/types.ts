@@ -15,7 +15,7 @@ import type { Dist } from "./fields.ts";
 import type { MoveModel } from "./moves.ts";
 
 /** Bumped when the filter changes how it computes a value (as `adapter_format` is for the probe). */
-export const BELIEF_FORMAT = "belief/2";
+export const BELIEF_FORMAT = "belief/3";
 
 /**
  * The part of the pinned engine's `TeamVocabulary` the filter reads. A `TeamVocabulary` is one;
@@ -24,7 +24,7 @@ export const BELIEF_FORMAT = "belief/2";
 export interface BeliefVocabulary {
   readonly format_id: TeamVocabulary["format_id"];
   readonly engine_data_hash: TeamVocabulary["engine_data_hash"];
-  readonly rules: Pick<TeamVocabulary["rules"], "min_team_size" | "max_team_size" | "picked_team_size"> & { readonly item_clause?: number };
+  readonly rules: Pick<TeamVocabulary["rules"], "adjust_level" | "min_team_size" | "max_team_size" | "picked_team_size"> & { readonly item_clause?: number };
   readonly items: TeamVocabulary["items"];
   readonly roster: readonly TeamVocabulary["roster"][number][];
 }
@@ -144,4 +144,11 @@ export interface OpponentBelief {
     readonly subsets: bigint;
   };
   readonly constraints: readonly string[];
+  /** What the sampler reads besides the slots: the format's level and the config's legality redraw bound. */
+  readonly sampling: {
+    /** The level of a world's set when the channel shows none (the rule table's adjustLevel). */
+    readonly level: number;
+    /** `BeliefConfig.max_legality_redraws`. */
+    readonly max_legality_redraws: number;
+  };
 }
