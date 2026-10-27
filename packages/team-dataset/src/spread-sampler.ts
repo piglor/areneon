@@ -6,8 +6,9 @@
 // the rule table's total and the config's per-stat maximum. No likelihood belongs to it: no evidence
 // touches spreads before slice 4.
 //
-// The port is declared structurally here: `packages/opponent-model` never imports this package and
-// this package does not import it. The composition root hands the object to `createSampler`.
+// The port is declared structurally here: `packages/opponent-model` never imports this package, and
+// only the composition root of `damage-aware@v2` (`damage-aware-worlds.ts`) imports both: it hands this
+// object to `createSampler`.
 
 import type { TeamGeneratorConfig, TeamVocabulary } from "@areneon/showdown-bridge";
 import { drawStatPoints, ProposalError } from "./proposal.ts";
