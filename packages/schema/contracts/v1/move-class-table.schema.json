@@ -1,0 +1,114 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:areneon:schema:contracts:v1:move-class-table",
+  "title": "MoveClassTable",
+  "description": "Which moves of the format fall in each move class of the move-use diagnostic (#1164), read from the pinned engine's move data for the format's mod and bound to the engine-data table by hash. A class is a rule over the engine's own fields, never a list written by hand: status is the Status category; lowers_target_stat is a move whose data always lowers a stat stage of its target (a boosts table with a negative stage on a move aimed at a foe, or a secondary with chance 100 that does); raises_own_stat is a move whose data always raises a stat stage of the user or an ally (boosts on a self or ally target, or a self boost with chance 100); side_condition is a move that sets a side condition; field_condition sets a weather, a terrain or a pseudo-weather; protection is the engine's stallingMove (the Protect family and Endure). A move may be in several classes. Effects an engine callback produces (onHit and the like) and secondaries with a chance below 100 are not read. Each list is sorted and unique and holds ids of the engine-data table; the reader enforces that and that the status list is exactly the Status moves. Its RFC 8785 SHA-256 is the move-class table hash. Derived from the pinned Showdown data files (MIT licence, see fixtures/showdown/<format>/NOTICE-engine-data.txt).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "showdown_commit",
+    "format_id",
+    "mod",
+    "engine_data_hash",
+    "classes"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "showdown_commit": {
+      "description": "The pinned engine commit the table was read from.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "format_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+$"
+    },
+    "mod": {
+      "description": "The engine mod the format plays with.",
+      "type": "string",
+      "pattern": "^[a-z0-9]+$"
+    },
+    "engine_data_hash": {
+      "description": "The engine-data hash (ADR-010 section 3) of the table whose move ids these are.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "classes": {
+      "$ref": "#/$defs/Classes"
+    }
+  },
+  "$defs": {
+    "EngineId": {
+      "description": "A move id of the engine-data table.",
+      "type": "string",
+      "pattern": "^[a-z0-9]+$",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "Classes": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "lowers_target_stat",
+        "raises_own_stat",
+        "side_condition",
+        "field_condition",
+        "protection"
+      ],
+      "properties": {
+        "status": {
+          "description": "Moves of the Status category, sorted and unique.",
+          "type": "array",
+          "maxItems": 4096,
+          "items": {
+            "$ref": "#/$defs/EngineId"
+          }
+        },
+        "lowers_target_stat": {
+          "description": "Moves whose data always lowers a stat stage of a foe target, sorted and unique.",
+          "type": "array",
+          "maxItems": 4096,
+          "items": {
+            "$ref": "#/$defs/EngineId"
+          }
+        },
+        "raises_own_stat": {
+          "description": "Moves whose data always raises a stat stage of the user or an ally, sorted and unique.",
+          "type": "array",
+          "maxItems": 4096,
+          "items": {
+            "$ref": "#/$defs/EngineId"
+          }
+        },
+        "side_condition": {
+          "description": "Moves that set a side condition, sorted and unique.",
+          "type": "array",
+          "maxItems": 4096,
+          "items": {
+            "$ref": "#/$defs/EngineId"
+          }
+        },
+        "field_condition": {
+          "description": "Moves that set a weather, a terrain or a pseudo-weather, sorted and unique.",
+          "type": "array",
+          "maxItems": 4096,
+          "items": {
+            "$ref": "#/$defs/EngineId"
+          }
+        },
+        "protection": {
+          "description": "Moves the engine marks as stalling moves, sorted and unique.",
+          "type": "array",
+          "maxItems": 4096,
+          "items": {
+            "$ref": "#/$defs/EngineId"
+          }
+        }
+      }
+    }
+  }
+}

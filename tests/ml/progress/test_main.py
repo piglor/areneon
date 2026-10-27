@@ -101,6 +101,10 @@ def test_one_generation_prints_one_canonical_line_and_builds_the_player_from_its
     assert out == jcs(printed).decode() + "\n"
     assert printed["progress_dir"] == str((tmp_path / "p").resolve())
     assert [g["generation"] for g in printed["generations"]] == [1]
+    # the move-use diagnostic (#1164) rides in the summary, over the stored games
+    used = printed["generations"][0]["move_use"]
+    assert used["label"] == "descriptive move-use diagnostic: not a strength measure"
+    assert used["stored_games"] == len(used["matches"]) > 0
     (kwargs,) = built
     assert kwargs["node"] == "/n/node"
     assert kwargs["worker_python"] == "/w/py"

@@ -24,6 +24,8 @@ from areneon_ml.report.model import (
     ReportModel,
     Tally,
 )
+from areneon_ml.report.move_use import CLASS_ORDER, share_ppm
+from areneon_ml.report.move_use import LABEL as MOVE_USE_LABEL
 from areneon_ml.report.page import document
 
 BANNER = "Progress view on validation teams. Not the Training gate. Loss is not skill."
@@ -319,6 +321,7 @@ def _progress_section(model: ReportModel, tips: Tips) -> str:
     else:
         out.append('<p class="muted">No forfeit in any evaluated match.</p>')
     out.append(_ablation_section(model, done))
+    out.append(_move_use_section(model, done))
     return "".join(out)
 
 
@@ -953,3 +956,99 @@ def _ablation_section(model: ReportModel, done: list[int]) -> str:
             )
         )
     return ("<h3>Team Preview ablation</h3>" + "".join(out)) if out else ""
+
+
+CLASS_NAMES = {
+    "status": "Status move",
+    "lowers_target_stat": "Lowers a foe's stat",
+    "raises_own_stat": "Raises own or ally stat",
+    "side_condition": "Side condition",
+    "field_condition": "Weather, terrain, field",
+    "protection": "Protect family",
+    "switch": "Switch",
+}
+MOVE_USE_NOTE = (
+    "Counted over the stored games only (the first games of each match), one count per slot "
+    "of a move request: a slot action is a move or a voluntary switch; a forced replacement is not "
+    "counted. A move may be in several classes. Classes come from the move-class table, a sibling "
+    "of the engine-data export bound to it by hash. Unresolved: slot actions whose move could not "
+    "be named from the log and the team (a locked, charging or recharging move, or a copied "
+    "move set); they are left out of every other count."
+)
+
+
+def _fraction(part: int, whole: int) -> str:
+    share = share_ppm(part, whole)
+    return f"{part} ({'-' if share is None else pct(share)})"
+
+
+def _move_use_section(model: ReportModel, done: list[int]) -> str:
+    """The move-use diagnostic per match and seat (#1164): descriptive counts, never a score."""
+    shown = [(g, used) for g in done if (used := model.progress[g].move_use) is not None]
+    if not shown:
+        return ""
+    heads = [(CLASS_NAMES[name], True) for name in CLASS_ORDER]
+    ident = [
+        ("Generation", True),
+        ("Match", False),
+        ("Seat", False),
+        ("Policy", False),
+        ("Slot actions", True),
+        ("Unresolved", True),
+    ]
+    chosen, passed = [], []
+    for g, used in shown:
+        for match in used["matches"]:
+            for role in ("candidate", "opponent"):
+                seat = match[role]
+                reference = role == "opponent" and match["reference"]
+                label = role + (" (damage-aware reference)" if reference else "")
+                prefix = [
+                    str(g),
+                    esc(match["match_id"]),
+                    esc(label),
+                    f'<span class="m">{esc(seat["policy_id"][:24])}</span>',
+                    str(seat["slot_actions"]),
+                    str(seat["unresolved"]),
+                ]
+                total = seat["slot_actions"]
+                chosen.append(
+                    [
+                        *prefix,
+                        *(_fraction(seat["classes"][c]["actions"], total) for c in CLASS_ORDER),
+                    ]
+                )
+                passed.append(
+                    [
+                        *prefix,
+                        *(
+                            f"{seat['classes'][c]['passed']} of {seat['classes'][c]['offered']}"
+                            + (
+                                ""
+                                if seat["classes"][c]["offered"] == 0
+                                else f" ({pct(seat['classes'][c]['passed'] * 1_000_000 // seat['classes'][c]['offered'])})"
+                            )
+                            for c in CLASS_ORDER
+                        ),
+                    ]
+                )
+    first = shown[0][1]
+    return (
+        "<h3>Move-use diagnostic</h3>"
+        f'<p class="banner">{esc(MOVE_USE_LABEL)}</p>'
+        f'<p class="note">Move-class table <code>{esc(first["class_table_sha256"])}</code> on engine-data '
+        f"<code>{esc(first['engine_data_hash'])}</code>. A seat that plays only for immediate damage "
+        "and one that also sets up, controls speed or protects differ here; neither is ranked.</p>"
+        + _table(
+            [*ident, *heads],
+            chosen,
+            "Slot actions in each class: count and share of the seat's resolved slot actions. "
+            + MOVE_USE_NOTE,
+        )
+        + _table(
+            [*ident, *heads],
+            passed,
+            "Slot decisions where a move of the class (or a switch) was among the candidates and was "
+            "not chosen: not chosen of offered. " + MOVE_USE_NOTE,
+        )
+    )
