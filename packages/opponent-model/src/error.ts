@@ -3,13 +3,13 @@
 
 export const BELIEF_ERROR_CODES = [
   "reader_flagged", // a line the shared reader could not take (its known limit is an Illusion twin)
-  "identity_hiding_species", // a previewed species that can hide its identity (the Illusion-aware belief is part 2)
   "format_mismatch", // the prior or config is for another format or engine data than the vocabulary
   "item_clause_unsupported", // a rule table value other than "absent" or 1
   "team_size", // the opponent roster is not a team of the format, or the picked size does not fit it
   "species_not_in_prior", // a previewed species the usage prior has no entry for
   "forme_not_in_prior", // a shown forme (or Mega Evolution) no forme of the species' prior entry explains
   "brought_exceeds_picked", // more settled Pokemon than the picked team size
+  "disguise_assignments_exceeded", // more disguise assignments than BeliefConfig.max_disguise_assignments
   "evidence_has_no_support", // the evidence leaves no world with a positive weight
   "empty_distribution", // a prior list with no mass at all (every weight unmapped)
 ] as const;

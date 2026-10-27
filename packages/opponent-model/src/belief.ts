@@ -11,12 +11,13 @@
 import type { PublicMon } from "@areneon/public-state";
 import type { UsagePrior } from "@areneon/schema/types/v1/usage-prior.ts";
 import { BeliefError } from "./error.ts";
+import { enumerate, hasMatching } from "./disguise.ts";
 import { type SlotEvidence, slotEvidence } from "./evidence.ts";
 import { type Dist, abilityDist, itemDist, only, spreadDist, uniformDist, weightOf } from "./fields.ts";
 import { solveItemClause } from "./item-clause.ts";
 import { moveModel } from "./moves.ts";
-import { type Ratio, ONE, ZERO, add, greater, integerise, isZero, mul, ratio } from "./ratio.ts";
-import { BELIEF_FORMAT, type BeliefInput, type BeliefVocabulary, type Cell, type FormeBelief, type Marginal, type OpponentBelief, type SlotBelief } from "./types.ts";
+import { type Ratio, ONE, ZERO, add, greater, integerise, isZero, lcm, mul, ratio } from "./ratio.ts";
+import { BELIEF_FORMAT, type BeliefInput, type BeliefVocabulary, type Cell, type DisguiseAssignment, type FormeBelief, type Marginal, type OpponentBelief, type SlotBelief, type SlotMarginal } from "./types.ts";
 
 type PriorSpecies = UsagePrior["species"][number];
 type PriorForme = PriorSpecies["formes"][number];
@@ -75,7 +76,7 @@ function consistentFormes(species: PriorSpecies, ev: SlotEvidence, ctx: Context,
 }
 
 /** The forme-and-item weights of one slot, after the ability, item and move evidence. */
-function slotWork(species: PriorSpecies, ev: SlotEvidence, ctx: Context, slot: number, notes: string[]): FormeWork[] {
+function slotWork(species: PriorSpecies, ev: SlotEvidence, ctx: Context, slot: number, notes: string[], known: ReadonlySet<string> | null): FormeWork[] {
   const formes = consistentFormes(species, ev, ctx, slot, notes);
   const entries = new Map(formes.map((f) => [f.id, entryOf(ctx, f.id, slot)]));
   const speciesEntry = entryOf(ctx, species.id, slot);
@@ -87,6 +88,10 @@ function slotWork(species: PriorSpecies, ev: SlotEvidence, ctx: Context, slot: n
   // Moves the Pokemon chose: a move no consistent forme can hold (Struggle, a copied move) adds no evidence.
   const poolOf = (id: string): ReadonlySet<string> => new Set((entries.get(id) as RosterEntry).moves);
   const placeable = ev.moves.filter((m) => formes.some((f) => poolOf(f.id).has(m)));
+  // Under a possible disguise a real move that no consistent forme can hold belongs to another member (Struggle, in no pool, still adds nothing).
+  if (known !== null && ev.moves.some((m) => !placeable.includes(m) && known.has(m))) {
+    throw new BeliefError("evidence_has_no_support", "a revealed move is in the vocabulary but no forme of the slot can hold it", slot);
+  }
   for (const m of ev.moves) notes.push(placeable.includes(m) ? `move:${m}` : `move_skipped:${m}`);
   if (ev.transformed) notes.push("moves_skipped:transform");
 
@@ -155,51 +160,65 @@ function marginalList<T extends string | null>(totals: ReadonlyMap<T, Ratio>): M
 
 const mode = <T extends string | null>(list: readonly Marginal<T>[]): T => list.reduce((best, m) => (greater(m.p, best.p) ? m : best)).id;
 
-export function belief(input: BeliefInput): OpponentBelief {
-  const { prior, vocabulary, config, opponent, flags } = input;
-  if (flags.length > 0) throw new BeliefError("reader_flagged", "the reader flagged a line of this channel");
-  if (prior.format_id !== vocabulary.format_id || prior.engine_data_hash !== vocabulary.engine_data_hash) {
-    throw new BeliefError("format_mismatch", "the usage prior is for another format or engine data than the vocabulary");
-  }
-  const clause = vocabulary.rules.item_clause;
-  if (clause !== undefined && clause !== 1) throw new BeliefError("item_clause_unsupported", "the rule table's Item Clause is neither absent nor 1");
-  const mons: readonly PublicMon[] = opponent.roster;
-  const picked = vocabulary.rules.picked_team_size;
-  if (mons.some((m) => m.phantom === true)) throw new BeliefError("reader_flagged", "the reader holds a phantom entry (an Illusion twin)");
-  if (mons.length < vocabulary.rules.min_team_size || mons.length > vocabulary.rules.max_team_size || picked < 1 || picked > mons.length) {
-    throw new BeliefError("team_size", "the opponent's preview is not a team of the format");
-  }
-  const ctx: Context = { vocabulary, roster: new Map(vocabulary.roster.map((r) => [r.id, r])), items: new Set(vocabulary.items) };
-  const hiding = new Set(config.identity_hiding_abilities);
-  const speciesById = new Map(prior.species.map((s) => [s.id, s]));
+interface Chosen {
+  readonly species: PriorSpecies;
+  readonly ev: SlotEvidence;
+  /** The species (or one of its formes) has an identity-hiding ability in the vocabulary. */
+  readonly hides: boolean;
+}
 
-  const chosen = mons.map((mon, slot) => {
-    const species = speciesById.get(mon.base_species) ?? (mon.species === null ? undefined : speciesById.get(mon.species));
-    if (species === undefined) throw new BeliefError("species_not_in_prior", "a previewed species has no entry in the usage prior", slot);
-    const ids = [species.id, ...species.formes.map((f) => f.id)];
-    if (ids.some((id) => ctx.roster.get(id)?.abilities.some((a) => hiding.has(a)))) {
-      throw new BeliefError("identity_hiding_species", "a previewed species can hide its identity (the Illusion-aware belief is a later slice)", slot);
+/** One slot's evidence work, or the refusal it led to, per (slot, evidence). */
+type Memo = Map<string, { readonly work: FormeWork[]; readonly notes: readonly string[] } | BeliefError>;
+
+interface Solved {
+  readonly slots: SlotBelief[];
+  /** The Item Clause DP total over the integer cells. */
+  readonly normaliser: bigint;
+  /** The product of the slots' integerising scales: the joint weight of the assignment is normaliser / scale. */
+  readonly scale: bigint;
+}
+
+/**
+ * The evidence of every slot when the shown positions `shown` are assigned to the slots `target`
+ * (aligned). The shown forme, level and gender stay with the position (they are the details of the
+ * Pokemon it is shown as); the moves, item, ability, Transform and Mega evidence go to the assigned slot.
+ */
+function attribute(own: readonly SlotEvidence[], shown: readonly number[], target: readonly number[]): { evs: SlotEvidence[]; notes: string[][] } {
+  const source = new Map(target.map((slot, k) => [slot, shown[k] as number]));
+  const notes: string[][] = own.map(() => []);
+  const evs = own.map((e, s): SlotEvidence => {
+    const from = source.get(s);
+    if (from === s) return e;
+    if (from !== undefined) {
+      const f = own[from] as SlotEvidence;
+      (notes[s] as string[]).push(`disguise_of:${from}`);
+      return { ...e, settled: true, item: f.item, ability: f.ability, moves: f.moves, transformed: f.transformed, mega: f.mega, megaStone: f.megaStone };
     }
-    return { species, ev: slotEvidence(mon) };
+    if (!e.settled) return e;
+    (notes[s] as string[]).push(`disguised_by:${target[shown.indexOf(s)] as number}`);
+    return { ...e, settled: false, item: null, ability: null, moves: [], transformed: false, mega: false, megaStone: null };
   });
+  return { evs, notes };
+}
 
-  const settled = chosen.flatMap((c, i) => (c.ev.settled ? [i] : []));
-  if (settled.length > picked) throw new BeliefError("brought_exceeds_picked", "more Pokemon have been in play than the picked team size");
-
-  const notes: string[][] = chosen.map(() => []);
-  const works = chosen.map((c, i) => slotWork(c.species, c.ev, ctx, i, notes[i] as string[]));
+function solve(ctx: Context, chosen: readonly Chosen[], memo: Memo, known: ReadonlySet<string> | null, evs: readonly SlotEvidence[], extra: readonly (readonly string[])[], required: ReadonlySet<number>, picked: number, clause: boolean): Solved | null {
+  const n = chosen.length;
+  const got = evs.map((ev, i) => workOf(chosen, ctx, memo, known, i, ev));
+  const works = got.map((g) => g.work);
 
   // Each slot's cells on one integer scale, then the Item Clause DP over all slots.
+  let scale = 1n;
   const cells = works.map((work) => {
     const raw = work.flatMap((w) => [...w.items].map(([item, p]) => ({ forme: w.id, item, p: mul(w.weight, p) }))).filter((c) => !isZero(c.p));
-    const { weights } = integerise(raw.map((c) => c.p));
-    return raw.map((c, k): Cell => ({ forme: c.forme, item: c.item, weight: weights[k] as bigint }));
+    const integers = integerise(raw.map((c) => c.p));
+    scale *= integers.scale;
+    return raw.map((c, k): Cell => ({ forme: c.forme, item: c.item, weight: integers.weights[k] as bigint }));
   });
   const itemIds = [...new Set(cells.flatMap((slot) => slot.flatMap((c) => (c.item === null ? [] : [c.item]))))].sort();
   const weight = (slot: readonly Cell[], item: string | null): bigint => slot.filter((c) => c.item === item).reduce((s, c) => s + c.weight, 0n);
-  const solved = solveItemClause({ items: cells.map((slot) => itemIds.map((id) => weight(slot, id))), none: cells.map((slot) => weight(slot, null)) }, clause === 1);
+  const solved = solveItemClause({ items: cells.map((slot) => itemIds.map((id) => weight(slot, id))), none: cells.map((slot) => weight(slot, null)) }, clause);
   const Z = solved.normaliser;
-  if (Z === 0n) throw new BeliefError("evidence_has_no_support", "the evidence and the Item Clause leave no world with a positive weight");
+  if (Z === 0n) return null;
 
   const slots: SlotBelief[] = works.map((work, i) => {
     const slotCells = cells[i] as Cell[];
@@ -222,31 +241,177 @@ export function belief(input: BeliefInput): OpponentBelief {
     const spreads = marginalList(mix((f) => share(f.spreads)));
     const moves = marginalList(mix((f) => new Map(f.moves.inclusion.map((m) => [m.id, m.p]))));
     const items = marginalList(itemP);
-    const formeMarginals = formes.map((f) => ({ id: f.id, p: f.p }));
-    const { ev, species } = chosen[i] as (typeof chosen)[number];
-    const isSettled = ev.settled;
+    const ev = evs[i] as SlotEvidence;
+    const species = (chosen[i] as Chosen).species;
+    const isSettled = required.has(i);
     return {
       index: i,
       species: species.id,
       shown: { name: ev.name, species: ev.shown, level: ev.level, gender: ev.gender },
       settled: isSettled,
-      p_brought: isSettled ? ONE : ratio(BigInt(picked - settled.length), BigInt(mons.length - settled.length)),
+      p_brought: isSettled ? ONE : ratio(BigInt(picked - required.size), BigInt(n - required.size)),
       formes,
       abilities,
       items,
       moves,
       spreads,
-      mode: { forme: mode(formeMarginals), ability: mode(abilities), item: mode(items) },
+      mode: { forme: mode(formes.map((f) => ({ id: f.id, p: f.p }))), ability: mode(abilities), item: mode(items) },
       cells: slotCells,
-      constraints: [`species:${species.id}`, ...(ev.shown === null ? [] : [`forme:${ev.shown}`]), ...(ev.level === null ? [] : [`level:${ev.level}`]), ...(ev.gender === null ? [] : [`gender:${ev.gender}`]), ...(ev.mega ? [`mega:${ev.megaStone ?? "unknown"}`] : []), ...(isSettled ? ["settled"] : []), ...(notes[i] as string[])],
+      constraints: [`species:${species.id}`, ...(ev.shown === null ? [] : [`forme:${ev.shown}`]), ...(ev.level === null ? [] : [`level:${ev.level}`]), ...(ev.gender === null ? [] : [`gender:${ev.gender}`]), ...(ev.mega ? [`mega:${ev.megaStone ?? "unknown"}`] : []), ...(isSettled ? ["settled"] : []), ...(extra[i] as readonly string[]), ...(got[i] as { notes: readonly string[] }).notes],
     };
   });
+  return { slots, normaliser: Z, scale };
+}
 
+function workOf(chosen: readonly Chosen[], ctx: Context, memo: Memo, known: ReadonlySet<string> | null, i: number, ev: SlotEvidence): { work: FormeWork[]; notes: readonly string[] } {
+  const key = `${i}|${JSON.stringify({ ...ev, settled: false })}`;
+  let hit = memo.get(key);
+  if (hit === undefined) {
+    const notes: string[] = [];
+    try {
+      hit = { work: slotWork((chosen[i] as Chosen).species, ev, ctx, i, notes, known), notes };
+    } catch (e) {
+      if (!(e instanceof BeliefError)) throw e;
+      hit = e;
+    }
+    memo.set(key, hit);
+  }
+  if (hit instanceof BeliefError) throw hit;
+  return hit;
+}
+
+/** The belief mixed over the assignments: each marginal is the sum of the assignments' marginals weighted by p. */
+function mixSlot(i: number, list: readonly DisguiseAssignment[]): SlotMarginal {
+  const slotsOf = list.map((a) => a.slots[i] as SlotBelief);
+  const first = slotsOf[0] as SlotBelief;
+  const fold = <K extends string | null>(pick: (s: SlotBelief) => readonly Marginal<K>[]): Marginal<K>[] => {
+    const out = new Map<K, Ratio>();
+    slotsOf.forEach((s, k) => {
+      for (const m of pick(s)) out.set(m.id, add(out.get(m.id) ?? ZERO, mul((list[k] as DisguiseAssignment).p, m.p)));
+    });
+    return marginalList(out);
+  };
+  const formeP = new Map<string, Ratio>();
+  const megaOf = new Map<string, boolean>();
+  slotsOf.forEach((s, k) => {
+    for (const f of s.formes) {
+      formeP.set(f.id, add(formeP.get(f.id) ?? ZERO, mul((list[k] as DisguiseAssignment).p, f.p)));
+      megaOf.set(f.id, f.mega);
+    }
+  });
+  const formes = [...formeP].map(([id, p]) => ({ id, mega: megaOf.get(id) as boolean, p })).sort((a, b) => compare(a.id, b.id));
+  const abilities = fold((s) => s.abilities);
+  const items = fold((s) => s.items);
+  const common = first.constraints.filter((c) => slotsOf.every((s) => s.constraints.includes(c)));
+  return {
+    index: i,
+    species: first.species,
+    shown: first.shown,
+    settled: slotsOf.every((s) => s.settled),
+    p_brought: slotsOf.reduce((sum, s, k) => add(sum, mul((list[k] as DisguiseAssignment).p, s.p_brought)), ZERO),
+    abilities,
+    items,
+    moves: fold((s) => s.moves),
+    spreads: fold((s) => s.spreads),
+    mode: { forme: mode(formes), ability: mode(abilities), item: mode(items) },
+    formes,
+    constraints: common,
+  };
+}
+
+export function belief(input: BeliefInput): OpponentBelief {
+  const { prior, vocabulary, config, opponent, flags } = input;
+  if (flags.length > 0) throw new BeliefError("reader_flagged", "the reader flagged a line of this channel");
+  if (prior.format_id !== vocabulary.format_id || prior.engine_data_hash !== vocabulary.engine_data_hash) {
+    throw new BeliefError("format_mismatch", "the usage prior is for another format or engine data than the vocabulary");
+  }
+  const clause = vocabulary.rules.item_clause;
+  if (clause !== undefined && clause !== 1) throw new BeliefError("item_clause_unsupported", "the rule table's Item Clause is neither absent nor 1");
+  const mons: readonly PublicMon[] = opponent.roster;
+  const picked = vocabulary.rules.picked_team_size;
+  if (mons.some((m) => m.phantom === true)) throw new BeliefError("reader_flagged", "the reader holds a phantom entry (an Illusion twin)");
+  if (mons.length < vocabulary.rules.min_team_size || mons.length > vocabulary.rules.max_team_size || picked < 1 || picked > mons.length) {
+    throw new BeliefError("team_size", "the opponent's preview is not a team of the format");
+  }
+  const ctx: Context = { vocabulary, roster: new Map(vocabulary.roster.map((r) => [r.id, r])), items: new Set(vocabulary.items) };
+  const hiding = new Set(config.identity_hiding_abilities);
+  const speciesById = new Map(prior.species.map((s) => [s.id, s]));
+
+  const chosen = mons.map((mon, slot): Chosen => {
+    const species = speciesById.get(mon.base_species) ?? (mon.species === null ? undefined : speciesById.get(mon.species));
+    if (species === undefined) throw new BeliefError("species_not_in_prior", "a previewed species has no entry in the usage prior", slot);
+    const ids = [species.id, ...species.formes.map((f) => f.id)];
+    return { species, ev: slotEvidence(mon), hides: ids.some((id) => ctx.roster.get(id)?.abilities.some((a) => hiding.has(a))) };
+  });
+
+  // The shown positions (in play, so in the brought set if they are what they seem) and the hiding members still unrevealed.
+  const own = chosen.map((c) => c.ev);
+  const shown = own.flatMap((e, i) => (e.settled ? [i] : []));
+  if (shown.length > picked) throw new BeliefError("brought_exceeds_picked", "more Pokemon have been in play than the picked team size");
+  const hidingSlots = chosen.flatMap((c, i) => (c.hides ? [i] : []));
+  const unsettled = hidingSlots.filter((i) => !(own[i] as SlotEvidence).settled);
+  const mixed = unsettled.length > 0 && shown.length > 0;
+
+  const memo: Memo = new Map();
+  const known = mixed ? new Set(vocabulary.roster.flatMap((r) => r.moves)) : null;
+
+  // Which slot each shown position may belong to: itself, or an unsettled hiding member, when the evidence can sit there.
+  let targets: number[][] = [shown];
+  if (mixed) {
+    const options = shown.map((p) => [p, ...unsettled].filter((s) => {
+      try {
+        const { evs } = attribute(own, [p], [s]);
+        workOf(chosen, ctx, memo, known, s, evs[s] as SlotEvidence);
+        return true;
+      } catch (e) {
+        if (!(e instanceof BeliefError)) throw e;
+        return false;
+      }
+    }));
+    if (!hasMatching(options)) throw new BeliefError("evidence_has_no_support", "no assignment of the shown Pokemon to the preview slots explains the evidence");
+    const list = enumerate(options, new Set(unsettled), config.max_disguise_assignments);
+    if (list === null) throw new BeliefError("disguise_assignments_exceeded", "more disguise assignments than the reviewed bound");
+    targets = list;
+  }
+
+  const solved: { target: readonly number[]; result: Solved; extra: readonly (readonly string[])[] }[] = [];
+  let firstError: BeliefError | null = null;
+  for (const target of targets) {
+    const { evs, notes } = attribute(own, shown, target);
+    try {
+      const result = solve(ctx, chosen, memo, known, evs, notes, new Set(target), picked, clause === 1);
+      if (result !== null) solved.push({ target, result, extra: notes });
+    } catch (e) {
+      // With one candidate the refusal is the belief's; among several, an assignment the evidence rules out is dropped.
+      if (!(e instanceof BeliefError) || !mixed) throw e;
+      firstError ??= e;
+    }
+  }
+  if (solved.length === 0) {
+    throw firstError ?? new BeliefError("evidence_has_no_support", "the evidence and the Item Clause leave no world with a positive weight");
+  }
+
+  // Integer weights on one scale: an assignment's joint weight is normaliser / scale, so multiply by lcm(scales) / scale.
+  const common = solved.reduce((l, s) => lcm(l, s.result.scale), 1n);
+  const weights = solved.map((s) => s.result.normaliser * (common / s.result.scale));
+  const total = weights.reduce((a, b) => a + b, 0n);
+  const assignments: DisguiseAssignment[] = solved.map((s, k) => ({
+    moved: shown.flatMap((position, j) => ((s.target[j] as number) === position ? [] : [{ position, slot: s.target[j] as number }])),
+    weight: weights[k] as bigint,
+    p: ratio(weights[k] as bigint, total),
+    normaliser: s.result.normaliser,
+    required: [...s.target].sort((a, b) => a - b),
+    slots: s.result.slots,
+  }));
+
+  const certain = assignments.reduce<number[]>((acc, a) => acc.filter((i) => a.required.includes(i)), assignments[0]?.required.slice() ?? []);
   return {
     format: BELIEF_FORMAT,
-    slots,
-    itemClause: { enforced: clause === 1, normaliser: Z },
-    brought: { picked, settled, subsets: subsetCount(mons.length, picked, settled.length) },
-    constraints: [clause === 1 ? "item_clause:1" : "item_clause:absent", `brought:picked=${picked}`],
+    slots: mons.map((_, i) => mixSlot(i, assignments)),
+    assignments,
+    disguise: { hiding: hidingSlots, unsettled, positions: mixed ? shown : [], total },
+    itemClause: { enforced: clause === 1 },
+    brought: { picked, settled: certain, subsets: subsetCount(mons.length, picked, shown.length) },
+    constraints: [clause === 1 ? "item_clause:1" : "item_clause:absent", `brought:picked=${picked}`, ...(assignments.length > 1 ? [`disguise:assignments=${assignments.length}`] : [])],
   };
 }

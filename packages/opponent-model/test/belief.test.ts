@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { BELIEF_FORMAT, BeliefError, type BeliefErrorCode, belief, topWorlds } from "../src/index.ts";
 import type { Marginal, OpponentBelief } from "../src/index.ts";
 import { ratio } from "../src/ratio.ts";
-import { alpha, betaFormes, gamma, hidingConfig, inert, input, prior, seen, text, vocabulary } from "./support.ts";
+import { alpha, betaFormes, gamma, inert, input, prior, seen, text, vocabulary } from "./support.ts";
 
 const p = (num: bigint, den = 1n) => ratio(num, den);
 const slot = (b: OpponentBelief, species: string) => b.slots.find((s) => s.species === species)!;
@@ -26,7 +26,10 @@ describe("the belief over an unseen team (Team Preview only)", () => {
   it("is tagged with the format and carries the worked-out Item Clause normaliser", () => {
     expect(b.format).toBe(BELIEF_FORMAT);
     // alpha 5/2/3 (ix, iy, none), gamma 1/2/1, beta 3 none + 1 stone, three inert slots: (10*4 - 5*1 - 2*2) * 4 = 31 * 4.
-    expect(b.itemClause).toEqual({ enforced: true, normaliser: 124n });
+    expect(b.itemClause).toEqual({ enforced: true });
+    expect(b.assignments).toHaveLength(1);
+    expect(b.assignments[0]).toMatchObject({ moved: [], weight: 124n, normaliser: 124n, p: p(1n) });
+    expect(b.disguise).toEqual({ hiding: [], unsettled: [], positions: [], total: 124n });
     expect(b.constraints).toEqual(["item_clause:1", "brought:picked=4"]);
   });
 
@@ -41,7 +44,7 @@ describe("the belief over an unseen team (Team Preview only)", () => {
     expect(a.abilities).toEqual([{ id: "a1", p: p(3n, 4n) }, { id: "a2", p: p(1n, 4n) }]);
     expect(a.moves).toEqual([{ id: "ma", p: p(1n) }, { id: "mb", p: p(1n, 2n) }, { id: "mc", p: p(1n, 2n) }, { id: "md", p: p(1n, 2n) }]);
     expect(a.mode).toEqual({ forme: "alpha", ability: "a1", item: "ix" });
-    expect(a.formes[0]?.moves.outcomes.map((o) => o.size)).toEqual([2, 3]);
+    expect(b.assignments[0]!.slots[a.index]!.formes[0]?.moves.outcomes.map((o) => o.size)).toEqual([2, 3]);
   });
 
   it("brought four: every previewed Pokemon is in the four with probability 4/6, over C(6,4) subsets", () => {
@@ -213,12 +216,6 @@ describe("refusals (typed, counted by the consumer)", () => {
     const s = seen();
     const phantom = { ...s.opponent, roster: [{ ...s.opponent.roster[0]!, phantom: true }, ...s.opponent.roster.slice(1)] };
     expect(refusal(() => belief(input([], { opponent: phantom })))).toBe("reader_flagged");
-  });
-
-  it("a species that can hide its identity, until the Illusion-aware belief exists", () => {
-    // The configured ability is on epsilon's roster entry; without it the same team has a belief.
-    expect(belief(input()).slots).toHaveLength(6);
-    expect(refusal(() => belief(input([], { config: hidingConfig })))).toBe("identity_hiding_species");
   });
 
   it("another format, an Item Clause the filter does not know, a team of another size, a species without usage data", () => {
