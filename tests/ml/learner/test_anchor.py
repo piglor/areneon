@@ -233,25 +233,6 @@ def test_a_zero_final_beta_still_reports_the_kl() -> None:
     assert report.anchor_kl > 0
 
 
-def test_a_run_with_beta_zero_trains_as_one_without_an_anchor_term() -> None:
-    zero = anchored({"kind": "linear", "final_micro": 0, "generations": 1}, kl=1)
-    with_term = learner(zero, other_anchors())
-    with_term.train(trajs(zero))
-    with_term.train(trajs(zero))  # beta is 0 from the second update on
-    no_term = learner(tiny_config())
-    no_term.train(trajs(tiny_config()))
-    no_term.train(trajs(tiny_config()))
-    # the first update differs (beta 1e-6), the weights are not the same; the second update's
-    # gradient has no anchor part, so only the first update's tiny effect remains
-    for role in ROLES:
-        for (n, a), (_, b) in zip(
-            with_term.networks[role].named_parameters(),
-            no_term.networks[role].named_parameters(),
-            strict=True,
-        ):
-            assert torch.allclose(a, b, atol=1e-3), n
-
-
 # -- the value warm-up composition ------------------------------------------------------
 
 

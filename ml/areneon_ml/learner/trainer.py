@@ -166,11 +166,11 @@ class Learner:
         # The frozen warm-start pair (ppo.anchor): evaluation mode, no gradient, never trained and
         # not part of the learner state (the loop loads it from the run's checkpoint store).
         self.anchors: dict[str, PolicyNetwork] = {}
-        for role in ROLES if anchors is not None else ():
-            assert anchors is not None
-            anchor = anchors[role].to(device).eval()
-            anchor.requires_grad_(False)
-            self.anchors[role] = anchor
+        if anchors is not None:
+            for role in ROLES:
+                anchor = anchors[role].to(device).eval()
+                anchor.requires_grad_(False)
+                self.anchors[role] = anchor
         ppo = config.ppo
         self.optimisers = {
             role: torch.optim.Adam(
