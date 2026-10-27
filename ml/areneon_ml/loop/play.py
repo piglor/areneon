@@ -10,6 +10,7 @@ pinned engine; tests give the driver a fake one.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import signal
@@ -87,14 +88,13 @@ class NodePlayer:
         cap = () if heap_mb is None else (f"--max-old-space-size={heap_mb}",)
         command = [self.node, *cap, str(self.repo / script), *args]
         try:
-            # Its own session, so a timeout can end the whole tree (game processes and workers).
+            # Same process group as the driver, so killing the driver's group still ends it.
             child = subprocess.Popen(
                 command,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
                 stdin=subprocess.DEVNULL,
-                start_new_session=True,
             )
         except OSError as exc:
             raise PlayError(f"cannot start {self.node}: {exc}") from exc
@@ -149,12 +149,35 @@ class NodePlayer:
         self.resource_usage.update(_resource_usage(out))
 
 
-def _kill_group(child: subprocess.Popen[str]) -> None:
-    """SIGKILL the child's whole process group (it leads its own session)."""
+def _descendants(pid: int) -> list[int]:
+    """The pids below ``pid`` (Linux ``/proc``; empty where it cannot be read)."""
+    parents: dict[int, int] = {}
     try:
-        os.killpg(child.pid, signal.SIGKILL)
-    except ProcessLookupError:
-        child.kill()
+        names = os.listdir("/proc")
+    except OSError:
+        return []
+    for name in names:
+        if not name.isdigit():
+            continue
+        try:
+            stat = Path(f"/proc/{name}/stat").read_text()
+            parents[int(name)] = int(stat.rsplit(")", 1)[1].split()[1])
+        except (OSError, ValueError, IndexError):
+            continue
+    found: list[int] = []
+    frontier = [pid]
+    while frontier:
+        below = [p for p, parent in parents.items() if parent in frontier]
+        found.extend(below)
+        frontier = below
+    return found
+
+
+def _kill_group(child: subprocess.Popen[str]) -> None:
+    """SIGKILL the child and everything below it (game processes and policy workers)."""
+    for pid in [*_descendants(child.pid), child.pid]:
+        with contextlib.suppress(ProcessLookupError):
+            os.kill(pid, signal.SIGKILL)
 
 
 _USAGE_KEYS = {

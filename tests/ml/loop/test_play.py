@@ -10,7 +10,7 @@ import time
 from pathlib import Path
 
 import pytest
-from areneon_ml.loop.play import NodePlayer, PlayError, PlayRequest
+from areneon_ml.loop.play import NodePlayer, PlayError, PlayRequest, _descendants
 
 # "node" here is Python and the "scripts" are small Python programs, so the arguments the
 # player builds can be seen without a Node install; the real scripts run in the end-to-end test.
@@ -208,3 +208,17 @@ def test_an_interrupt_ends_the_children_too(
     monkeypatch.setattr(subprocess.Popen, "communicate", interrupted)
     with pytest.raises(KeyboardInterrupt):
         chosen.play(PlayRequest(1, "policy:abc", "p" * 64, "b" * 64, tmp_path / "work"))
+
+
+def test_descendants_are_found_and_an_unreadable_proc_finds_none(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"])
+    try:
+        assert child.pid in _descendants(os.getpid())
+        assert _descendants(child.pid) == []
+        monkeypatch.setattr(os, "listdir", lambda _p: (_ for _ in ()).throw(OSError("no proc")))
+        assert _descendants(os.getpid()) == []
+    finally:
+        child.kill()
+        child.wait()
