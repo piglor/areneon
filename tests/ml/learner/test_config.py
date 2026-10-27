@@ -97,6 +97,7 @@ INVALID = sorted(p.name for p in (CONFIGS / "invalid").iterdir())
         ("heads-do-not-divide-width.json", "multiple of n_heads"),
         ("picks-exceed-team.json", "max_picks cannot exceed max_team"),
         ("duplicate-baseline.json", "may be listed once"),
+        ("warm-start-same-id.json", "one checkpoint for both roles"),
     ],
 )
 def test_the_reader_rules_the_profile_cannot_say(name: str, message: str) -> None:
@@ -106,13 +107,21 @@ def test_the_reader_rules_the_profile_cannot_say(name: str, message: str) -> Non
 
 
 def test_every_reader_invalid_sample_is_checked_above() -> None:
-    assert len(READER_INVALID) == 3
+    assert len(READER_INVALID) == 4
 
 
 @pytest.mark.parametrize("name", INVALID)
 def test_a_record_the_schema_refuses_is_refused(name: str) -> None:
     with pytest.raises(RunConfigError, match="training-run-config"):
         read_run_config(raw(f"invalid/{name}"))
+
+
+def test_a_warm_start_is_optional_two_ids_and_part_of_the_hash() -> None:
+    plain = read_run_config(raw())
+    assert plain.warm_start is None
+    warm = read_run_config(raw("valid/warm-start.json"))
+    assert dict(warm.warm_start or {}) == {"preview": "a" * 64, "battle": "b" * 64}
+    assert warm.hash != plain.hash
 
 
 def test_the_kl_target_is_optional_and_divided_once() -> None:

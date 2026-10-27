@@ -1,10 +1,10 @@
 """The TrainingRunConfig reader (ADR-010 §5).
 
 The record is reviewed JSON, validated against the contract first and then
-against the three rules the profile cannot say (they are the TS reader's too):
+against the four rules the profile cannot say (they are the TS reader's too):
 the attention heads divide the token width, a Team Preview order cannot name
 more positions than a side holds (both checked by ``ModelConfig``), and each
-scripted baseline is listed once.
+scripted baseline is listed once, and a warm start names two different checkpoints.
 Real-valued settings are stored as integers in millionths (``_micro``) or
 billionths (``_nano``); this module is the one place that turns them into
 floats, by one exact division. The record is named only by ``run_config_hash``,
@@ -13,7 +13,9 @@ the SHA-256 of its JCS bytes.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
+from types import MappingProxyType
 from typing import Any
 
 from areneon_contracts.contracts import ContractError, jcs, sha256_hex, validate
@@ -113,6 +115,9 @@ class RunConfig:
     device: str
     threads: int
     team_dataset: bool
+    #: ``warm_start`` (ADR-010 erratum A2): the cloned checkpoint id of each role, or ``None``
+    #: for the seeded initialisation. The loop checks the files; this reader checks the ids.
+    warm_start: Mapping[str, str] | None
     raw: dict[str, Any]
     hash: str
 
@@ -138,6 +143,12 @@ def read_run_config(raw: object) -> RunConfig:
     actors = [b["actor"] for b in raw["generation"]["baseline_games"]]
     if len(set(actors)) != len(actors):
         raise RunConfigError("training-run-config: a scripted baseline may be listed once")
+    warm = raw.get("warm_start")
+    if warm is not None and warm["preview"] == warm["battle"]:
+        raise RunConfigError(
+            "training-run-config: warm_start names one checkpoint for both roles "
+            "(a checkpoint holds one role's network)"
+        )
     gen, ppo, seeds = raw["generation"], raw["ppo"], raw["seeds"]
     return RunConfig(
         lineage_id=raw["lineage_id"],
@@ -180,6 +191,7 @@ def read_run_config(raw: object) -> RunConfig:
         device=raw["learner"]["device"],
         threads=raw["learner"]["threads"],
         team_dataset="team_dataset" in raw,
+        warm_start=None if warm is None else MappingProxyType(dict(warm)),
         raw=raw,
         hash=sha256_hex(jcs(raw)),
     )

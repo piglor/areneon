@@ -6,9 +6,11 @@ wrote for the pair's own seats, runs PPO epochs on it and freezes ``P_g``. Its
 files are built in a ``.partial`` directory and committed by one rename
 (``layout.py``); a run that was killed discards the partial generation on its
 next start and replays it from the plan, which is a pure function of the run
-config. Generation 0 is the seeded random initialisation (ADR-010 §4: no warm
-start). Resuming restores the learner from the last committed generation and
-refuses unless every hash agrees: the state's, the checkpoints', the records'.
+config. Generation 0 is the seeded random initialisation (ADR-010 §4) or, when the config
+declares ``warm_start``, the cloned pair it names, frozen as it is with no learner step
+(``warm_start.py``); the learner's Adam state then starts fresh from the cloned weights.
+Resuming restores the learner from the last committed generation and refuses unless every hash
+agrees: the state's, the checkpoints', the records'.
 
 Determinism: with the CPU learner, the same config on the same machine and
 software gives the same checkpoints, records and learner-state hashes, whether
@@ -59,6 +61,7 @@ from areneon_ml.loop.records import (
     team_set_hash,
     team_set_manifest,
 )
+from areneon_ml.loop.warm_start import WarmPair, WarmStartError, load_warm_start
 from areneon_ml.model.encoder import Encoder, encoder_version
 from areneon_ml.model.gamedata import GameData
 from areneon_ml.model.network import ROLES, PolicyNetwork, init_network
@@ -115,6 +118,8 @@ class Sealing:
     training_set_hash: str | None
     teams: tuple[str, ...]
     version_manifest: dict[str, Any]
+    #: Records to write as they are (a warm start's clone records) instead of building new ones.
+    records: dict[str, CheckpointRecord] | None = None
 
 
 class Timing:
@@ -227,11 +232,26 @@ class Loop:
     # -- generation 0 --------------------------------------------------------
 
     def _initial(self) -> Frozen:
-        self._learner = self._new_learner()
+        records = None
+        if self.config.warm_start is None:
+            self._learner = self._new_learner()
+        else:
+            # The cloned pair as it is, no learner step. The optimiser moments and the generator
+            # start fresh (generation 1 is the first update): a cloning run's Adam state is the
+            # supervised phase's, not the policy-gradient phase's, and is not carried over.
+            warm = self._warm_pair()
+            self._learner = self._new_learner(warm.networks)
+            records = warm.records
         work = layout.partial_dir(self.run_dir, 0)
         work.mkdir(parents=True)
         manifest = self.player.manifest(self.config.format_id)
-        return self._seal(0, work, Sealing(None, None, (), manifest), Timing(self.clock))
+        return self._seal(0, work, Sealing(None, None, (), manifest, records), Timing(self.clock))
+
+    def _warm_pair(self) -> WarmPair:
+        try:
+            return load_warm_start(self.config, self.game, self.run_dir, self.encoder_version)
+        except WarmStartError as exc:
+            raise LoopError(f"warm_start: {exc}") from exc
 
     # -- resume --------------------------------------------------------------
 
@@ -254,6 +274,13 @@ class Loop:
         if learner.generation != newest.generation:
             raise LoopError("the learner state is of another generation than its directory")
         records = {role: self._read_record(newest.path, role) for role in ROLES}
+        warm_zero = newest.generation == 0 and self.config.warm_start is not None
+        if warm_zero:
+            # Generation 0 of a warm-started run: the records are the clone records, the pair
+            # is the one the run's checkpoint store holds under the declared ids.
+            warm = self._warm_pair()
+            if records != warm.records:
+                raise LoopError("generation 0: its records are not the warm-start clone records")
         for role in ROLES:
             found = checkpoint_bytes(learner.networks[role], self.game)
             record = records[role]
@@ -265,6 +292,9 @@ class Loop:
                 raise LoopError(
                     f"generation {newest.generation}: the {role} record names another checkpoint"
                 )
+            if warm_zero:
+                write_checkpoint(self.run_dir, found)
+                continue
             if record.training_set_hashes != (() if ts_hash is None else (ts_hash,)):
                 raise LoopError(
                     f"generation {newest.generation}: the {role} record's training sets "
@@ -396,6 +426,11 @@ class Loop:
             manifest = team_set_manifest(sealing.teams)
             layout.write_json(work / "team-set.json", manifest)
             for role in ROLES:
+                if sealing.records is not None:
+                    layout.write_json(
+                        work / "records" / f"{role}.json", sealing.records[role].to_json()
+                    )
+                    continue
                 record = checkpoint_record(
                     self.config,
                     RecordFacts(
@@ -456,7 +491,16 @@ def sources_registry(run_dir: Path) -> dict[str, list[str]]:
         return registry
     previous: dict[str, str] | None = None
     for generation in range(newest.generation + 1):
-        facts = layout.verify_generation(layout.generation_dir(run_dir, generation), generation)
+        path = layout.generation_dir(run_dir, generation)
+        facts = layout.verify_generation(path, generation)
+        if generation == 0:
+            # A warm start's generation 0 holds the clone records: their training sets are
+            # outside behaviour-cloning sources (an empty list), the teacher in the ancestry.
+            for role in ROLES:
+                for held in read_record(
+                    layout.read_json(path / "records" / f"{role}.json")
+                ).training_set_hashes:
+                    registry[held] = []
         if facts["training_set_hash"] is not None:
             assert previous is not None  # generation 0 has no training set
             registry[facts["training_set_hash"]] = sorted(previous.values())

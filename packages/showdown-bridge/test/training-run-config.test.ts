@@ -28,6 +28,19 @@ describe("the TrainingRunConfig reader (ADR-010 §5)", () => {
     }
   });
 
+  it("reads a warm start, hashes it apart from none and refuses the same checkpoint for both roles (ADR-010 erratum A2)", async () => {
+    const warm = readTrainingRunConfig(sample("warm-start"));
+    expect(warm.warm_start).toEqual({ preview: "a".repeat(64), battle: "b".repeat(64) });
+    expect(readTrainingRunConfig(sample("tiny"))).not.toHaveProperty("warm_start");
+    expect(await runConfigHash(warm)).not.toBe(await runConfigHash(readTrainingRunConfig(sample("tiny"))));
+    const same = { ...sample("tiny"), warm_start: { preview: "a".repeat(64), battle: "a".repeat(64) } };
+    expect(() => readTrainingRunConfig(same)).toThrow(TrainingRunConfigError);
+    for (const name of ["short-id", "upper-case", "missing-battle", "extra-field"]) {
+      const raw = JSON.parse(readFileSync(join(SAMPLES_DIR, `v1/training-run-config/invalid/warm-start-${name}.json`), "utf8"));
+      expect(() => readTrainingRunConfig(raw)).toThrow(TrainingRunConfigError);
+    }
+  });
+
   it("reads damage-aware as a scripted baseline and refuses a fourth entry (ADR-018 section 7)", () => {
     const config = readTrainingRunConfig(sample("damage-aware"));
     expect(config.generation.baseline_games.map((b) => b.actor)).toEqual(["random-legal", "actor-rule", "damage-aware"]);

@@ -65,6 +65,24 @@ class TeamDataset(BaseModel):
     """
 
 
+class WarmStart(BaseModel):
+    """
+    Optional (a minor change within v1; ADR-010 erratum A2, ADR-019 section 4): generation 0 is this declared pair of cloned checkpoints instead of the seeded random pair. The ids name checkpoints already in the run's checkpoint store (copied in by an explicit import command, never fetched). At run start each must hash to its id, hold the network of its role, and match the run's encoder version, engine-data hash and model section, and its CheckpointRecord must be a clone record (non-empty training_set_hashes, no parent, synthetic); anything else refuses the run. Generation 0 freezes the pair with no learner step, and the learner state starts fresh from the cloned weights. Absent keeps the seeded initialisation and today's bytes and run_config_hash. An older reader refuses a config that has it.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    preview: Annotated[StrictStr, Field(pattern="^[0-9a-f]{64}$")]
+    """
+    Checkpoint id (SHA-256 of the safetensors file) of the cloned Team Preview network.
+    """
+    battle: Annotated[StrictStr, Field(pattern="^[0-9a-f]{64}$")]
+    """
+    Checkpoint id (SHA-256 of the safetensors file) of the cloned Battle network.
+    """
+
+
 class Learner(BaseModel):
     """
     Where the learner runs (ADR-010 section 4). A cuda run is not claimed to be bit-reproducible, and its hash differs from a cpu run's.
@@ -387,6 +405,10 @@ class TrainingRunConfig(BaseModel):
     team_dataset: TeamDataset | MISSING = MISSING
     """
     Optional (a minor change within v1): the generated team dataset the generation loop draws its teams from. Absent means the interim pool of committed fixture teams. The directory is read by the dataset reader, which trusts nothing; the pool takes the dev and training splits, never validation. The dataset hash pins the manifest and every record: a directory that hashes differently is refused.
+    """
+    warm_start: WarmStart | MISSING = MISSING
+    """
+    Optional (a minor change within v1; ADR-010 erratum A2, ADR-019 section 4): generation 0 is this declared pair of cloned checkpoints instead of the seeded random pair. The ids name checkpoints already in the run's checkpoint store (copied in by an explicit import command, never fetched). At run start each must hash to its id, hold the network of its role, and match the run's encoder version, engine-data hash and model section, and its CheckpointRecord must be a clone record (non-empty training_set_hashes, no parent, synthetic); anything else refuses the run. Generation 0 freezes the pair with no learner step, and the learner state starts fresh from the cloned weights. Absent keeps the seeded initialisation and today's bytes and run_config_hash. An older reader refuses a config that has it.
     """
     learner: Learner
     """
