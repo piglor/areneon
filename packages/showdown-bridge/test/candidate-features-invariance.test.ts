@@ -154,7 +154,7 @@ describe("hidden-information invariance of the tier A features (ADR-022 section 
         point.features({ probe });
         for (const mon of Object.values(point.state.opponent.roster)) {
           const mine = declared.filter((paste) => toId((paste.split("\n")[0] as string).split("@")[0] as string).includes(toId(mon.base_species)));
-          // b20 is the item case only: there the reader attributes Gourgeist's Frisk to the Pokemon whose item it shows, which the assumed set ignores (Gardevoir has no Frisk)
+          // b20 is the item case only: the reader marks Gardevoir's Telepathy as received (Trace), so it is no opponent evidence of its own
           if (mon.ability !== null && id !== "b20") {
             for (const paste of mine) expect(toId(/^Ability: (.+)$/m.exec(paste)?.[1] ?? ""), `${id} request ${point.seq}`).toBe(mon.ability);
             abilities += mine.length;

@@ -1294,6 +1294,11 @@ class _Reducer:
         _arity(line, 2, 2)
         mon = self._mon(line.args[0], line)
         mon.item, mon.item_known, mon.item_lost = self.vocab.item(line.args[1]), True, False
+        # Frisk (`|-item|TARGET|ITEM|[from] ability: Frisk|[of] SOURCE`): the item is the
+        # target's own, the ability is the SOURCE's, the Frisk holder (#1171).
+        source, holder = line.tags.get("from"), line.tags.get("of")
+        if source is not None and holder is not None and to_id(source) == "abilityfrisk":
+            self._mon(holder, line).ability = self.vocab.ability("Frisk")
 
     def _enditem(self, line: _Line) -> None:
         _arity(line, 2, 2)

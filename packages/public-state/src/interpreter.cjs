@@ -830,7 +830,11 @@ var ArReplay = (function () {
         // An item that came from elsewhere (Trick, Thief, Pickpocket, Recycle, ...) is not the Pokemon's own: a `[from]`
         // other than Frisk, which shows the target's own item. Sticky, as the Pokemon's own item is no longer known.
         var origin = line.tags.from;
-        if (origin !== undefined && toId(origin) !== "abilityfrisk") { m.item_received = true; }
+        var frisk = origin !== undefined && toId(origin) === "abilityfrisk";
+        if (origin !== undefined && !frisk) { m.item_received = true; }
+        // Frisk's line is `|-item|TARGET|ITEM|[from] ability: Frisk|[of] SOURCE`: the item is the target's own, and the
+        // ability is the SOURCE's (the Frisk holder), which the line shows (#1171).
+        if (frisk && line.tags.of !== undefined) { mon(line.tags.of, line).ability = "frisk"; }
       },
       "-enditem": function (line) {
         arity(line, 2, 2);

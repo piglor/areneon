@@ -439,6 +439,18 @@ def test_a_bounced_spread_move_carries_one_spread_tag_per_call() -> None:
         run("|move|p2b: Charizard|Sweet Scent|p1b: Charizard|[msg] a|[msg] b")
 
 
+def test_frisk_credits_the_item_to_the_target_and_the_ability_to_the_holder() -> None:
+    """Frisk: `|-item|TARGET|ITEM|[from] ability: Frisk|[of] SOURCE` (#1171)."""
+    state = run("|-item|p1a: Venusaur|Leftovers|[from] ability: Frisk|[of] p2b: Charizard")
+    assert opp(state, "Charizard").ability == "frisk"
+    assert opp(state, "Charizard").item is None
+    state = run(
+        "|-item|p2a: Venusaur|Leftovers|[from] ability: Frisk|[of] p1b: Charizard|[identify]"
+    )
+    assert opp(state, "Venusaur").item == "leftovers"
+    assert opp(state, "Venusaur").ability is None
+
+
 def test_ability_copies_and_skill_swap() -> None:
     state = run(
         "|-ability|p2a: Venusaur|Intimidate|Trace|[from] ability: Trace|[of] p1b: Charizard",
@@ -448,7 +460,9 @@ def test_ability_copies_and_skill_swap() -> None:
     assert opp(state, "Venusaur").ability == "intimidate"
     assert own(state, "Charizard").ability == "intimidate"
     assert opp(state, "Charizard").ability is None
-    assert own(state, "Venusaur").ability is None
+    assert (
+        own(state, "Venusaur").ability == "frisk"
+    )  # the Frisk holder (#1171); Skill Swap had left it unknown
     assert opp(state, "Charizard").item == "leftovers"
     state = run("|-ability|p2a: Venusaur|Static|[from] move: Role Play|[of] p1a: Venusaur")
     assert own(state, "Venusaur").ability == "static"

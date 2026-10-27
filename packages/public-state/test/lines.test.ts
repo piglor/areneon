@@ -199,6 +199,16 @@ describe("volatiles, items, abilities and formes", () => {
     ({ state } = after("|-ability|p2a: Venusaur|Intimidate|boost"));
     expect(opp(state, "Venusaur").ability_received).toBe(false);
   });
+  it("Frisk: the item is the target's own, the ability is the Frisk holder's (#1171)", () => {
+    // The pinned engine adds `|-item|TARGET|ITEM|[from] ability: Frisk|[of] SOURCE` (data/abilities.ts frisk, onStart).
+    let { state, flags } = after("|-item|p1a: Venusaur|Leftovers|[from] ability: Frisk|[of] p2b: Charizard");
+    expect(flags).toEqual([]);
+    expect(opp(state, "Charizard")).toMatchObject({ ability: "frisk", ability_received: false, item: null, item_known: false });
+    expect(own(state, "Venusaur")).toMatchObject({ item_received: false });
+    ({ state, flags } = after("|-item|p2a: Venusaur|Leftovers|[from] ability: Frisk|[of] p1b: Charizard|[identify]"));
+    expect(opp(state, "Venusaur")).toMatchObject({ item: "leftovers", item_known: true, item_received: false, ability: null, ability_received: false });
+    expect(flags).toEqual([]);
+  });
   it("items and abilities: revealed, changed and lost", () => {
     let { state } = after("|-item|p2a: Venusaur|Leftovers", "|-ability|p2b: Charizard|Intimidate|boost");
     expect(opp(state, "Venusaur")).toMatchObject({ item: "leftovers", item_known: true });

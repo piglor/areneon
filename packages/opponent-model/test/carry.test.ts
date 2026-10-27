@@ -50,6 +50,12 @@ describe("an item or ability a Pokemon received is not its own (the reader's fla
     expect(first(["|-item|p2a: Alp|Ix"]).item).toBe("ix");
   });
 
+  it("Frisk: the holder's ability is evidence, the target's is not (#1171)", () => {
+    const own = "|switch|p1a: Foe|Foe, L50, M|100/100";
+    expect(first([own, "|-item|p1a: Foe|Ix|[from] ability: Frisk|[of] p2a: Alp"]).ability).toBe("frisk");
+    expect(first(["|-item|p2a: Alp|Ix|[from] ability: Frisk|[of] p1a: Foe"]).ability).toBeNull();
+  });
+
   it("the taint is sticky: a later own-looking item reveal does not make the received item the Pokemon's own", () => {
     expect(first(["|-item|p2a: Alp|Ix|[from] move: Trick", "|-damage|p2a: Alp|90/100|[from] item: Ix"]).item).toBeNull();
   });
