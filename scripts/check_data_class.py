@@ -89,6 +89,11 @@ PokePaste guard does not see JSON teams, so this guard rejects a committed
   any team-shaped object, or a ``paste`` or ``evs`` key, anywhere inside it,
   ``fixtures/`` included. A table is engine data (role names, move and ability
   ids), never a team; or
+- holds a usage prior (ADR-025 §2: an object with a ``source`` object that has a
+  string ``kind``, a ``derivation`` object and a ``species`` list) that holds a
+  ``paste``, an ``evs`` key or any team-shaped object anywhere inside it,
+  ``fixtures/`` included. A prior is aggregate marginals (ids and integers),
+  never a team; or
 - holds a sealed-set reveal or a sealed team (ADR-013 slice (g), protocol
   L3 and L5) anywhere but at an exact path in ``REVEAL_ALLOWED``. A reveal
   is a ``RetiredSealedManifest``: an object with a string ``set_id``, a
@@ -420,6 +425,7 @@ UNLABELLED_REVEAL = (
     'holds a sealed-set reveal without "data_class": "synthetic" on the object itself'
 )
 ROLE_SET_TEAM = "holds a role-set table that holds a paste or a team-shaped object"
+USAGE_PRIOR_TEAM = "holds a usage prior that holds a paste, an evs key or a team-shaped object"
 UNKNOWN_KEY_KIND = 'holds a team dataset manifest whose key is not of kind "public"'
 
 
@@ -471,14 +477,28 @@ def _is_role_set_table(obj: dict[str, object]) -> bool:
     return _is_str(obj, "source_path", "source_sha256") and isinstance(obj.get("species"), list)
 
 
+def _is_usage_prior(obj: dict[str, object]) -> bool:
+    # ADR-025 section 2: a source with a kind, a derivation and a species list.
+    source = obj.get("source")
+    return (
+        isinstance(source, dict)
+        and isinstance(source.get("kind"), str)
+        and isinstance(obj.get("derivation"), dict)
+        and isinstance(obj.get("species"), list)
+    )
+
+
 def _holds_team_text(table: dict[str, object]) -> bool:
     return any(_is_team(obj) or "paste" in obj or "evs" in obj for obj in _walk(table))
 
 
 def _role_set_problems(objects: list[dict[str, object]]) -> list[str]:
+    found = []
     if any(_is_role_set_table(obj) and _holds_team_text(obj) for obj in objects):
-        return [ROLE_SET_TEAM]
-    return []
+        found.append(ROLE_SET_TEAM)
+    if any(_is_usage_prior(obj) and _holds_team_text(obj) for obj in objects):
+        found.append(USAGE_PRIOR_TEAM)
+    return found
 
 
 def _is_reveal(obj: dict[str, object]) -> bool:

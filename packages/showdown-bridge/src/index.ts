@@ -252,6 +252,8 @@ export {
   privateSnapshotHash,
   readPrivateSnapshotManifest,
 } from "./private-snapshot.ts";
+export { type UsagePrior, UsagePriorError, readUsagePrior, usagePriorHash } from "./usage-prior.ts";
+export { type BeliefConfig, BeliefConfigError, beliefConfigHash, readBeliefConfig } from "./belief-config.ts";
 export {
   exportRoleSets,
   ROLE_SETS_FILE,

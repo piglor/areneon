@@ -1,0 +1,9 @@
+{
+  "schema_version": 1,
+  "identity_hiding_abilities": [
+    "snowwarning"
+  ],
+  "max_legality_redraws": 32,
+  "max_disguise_assignments": 64,
+  "note": "x"
+}

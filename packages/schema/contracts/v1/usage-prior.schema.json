@@ -1,0 +1,566 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:areneon:schema:contracts:v1:usage-prior",
+  "title": "UsagePrior",
+  "description": "The opponent usage prior of ADR-025 section 2: per preview species, per forme, the marginal distributions of ability, item, nature and Stat Point spread and move inclusion that the belief filter draws an unrevealed opponent set from. Aggregate numbers only: no team, replay, player name or teammate data; the key evs is never used and no object is team-shaped, so the data-class guard treats it like the role-set table. Integers only, with the exact form fixed here (review finding N4): every list states its denominator, the exact integer total its weights are shares of, and a share is the fraction weight / denominator. The weights of a list, its residual (mapped mass the truncation dropped) and its unmapped mass sum exactly to the denominator; a move list sums to slots * denominator, because each set has that many slots and an empty slot is counted. The reader enforces sorted and unique ids, resolution against the team vocabulary, the sums and the truncation limits, which the profile cannot say. Its RFC 8785 SHA-256 is prior_hash, a part of the belief identity (ADR-025 section 5). A new month, source or limit is a new record, never an edit.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "format_id",
+    "engine_data_hash",
+    "vocabulary_hash",
+    "source",
+    "derivation",
+    "species"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "format_id": {
+      "description": "The format the prior is for; a request for another format is refused (ADR-025 N10).",
+      "type": "string",
+      "pattern": "^[a-z0-9]+$"
+    },
+    "engine_data_hash": {
+      "description": "The engine-data hash (ADR-010 section 3) the names were mapped through.",
+      "$ref": "#/$defs/Hash"
+    },
+    "vocabulary_hash": {
+      "description": "The team vocabulary hash (ADR-013 section 2) the ids were checked against; it carries item_clause and picked_team_size.",
+      "$ref": "#/$defs/Hash"
+    },
+    "source": {
+      "description": "Where the numbers come from.",
+      "type": "object",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/SmogonChaos"
+        },
+        {
+          "$ref": "#/$defs/RoleSets"
+        },
+        {
+          "$ref": "#/$defs/GeneratorMatched"
+        }
+      ],
+      "discriminator": {
+        "propertyName": "kind"
+      }
+    },
+    "derivation": {
+      "$ref": "#/$defs/Derivation"
+    },
+    "species": {
+      "description": "The preview species, sorted by id, no id twice.",
+      "type": "array",
+      "maxItems": 1024,
+      "items": {
+        "$ref": "#/$defs/Species"
+      },
+      "minItems": 1
+    }
+  },
+  "$defs": {
+    "Id": {
+      "description": "An engine id of the team vocabulary.",
+      "type": "string",
+      "pattern": "^[a-z0-9]+$",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "Hash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "Denominator": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 1000000000000
+    },
+    "Weight": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 1000000000000
+    },
+    "Mass": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 1000000000000
+    },
+    "StatPoints": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 255
+    },
+    "StatPointSpread": {
+      "description": "A Stat Point spread, one value per stat.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "hp",
+        "atk",
+        "def",
+        "spa",
+        "spd",
+        "spe"
+      ],
+      "properties": {
+        "hp": {
+          "$ref": "#/$defs/StatPoints"
+        },
+        "atk": {
+          "$ref": "#/$defs/StatPoints"
+        },
+        "def": {
+          "$ref": "#/$defs/StatPoints"
+        },
+        "spa": {
+          "$ref": "#/$defs/StatPoints"
+        },
+        "spd": {
+          "$ref": "#/$defs/StatPoints"
+        },
+        "spe": {
+          "$ref": "#/$defs/StatPoints"
+        }
+      }
+    },
+    "WeightedId": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "weight"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/Id"
+        },
+        "weight": {
+          "description": "The id's weight, an integer share of the list's denominator.",
+          "$ref": "#/$defs/Weight"
+        }
+      }
+    },
+    "AbilityList": {
+      "description": "The ability marginal of a forme. The weights of entries, residual and unmapped sum to the denominator (a reader rule).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "denominator",
+        "entries",
+        "residual",
+        "unmapped"
+      ],
+      "properties": {
+        "denominator": {
+          "description": "The list's denominator: the exact integer total that every weight in this list is a share of (the source holds rating weights, not counts, so this is the summed list weight and never the species' raw count). A share is the integer weight over this denominator, an exact fraction and never parts per million.",
+          "$ref": "#/$defs/Denominator"
+        },
+        "entries": {
+          "description": "The abilities the list names, sorted by id, no id twice.",
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/WeightedId"
+          }
+        },
+        "residual": {
+          "description": "Mapped mass the truncation dropped (options of the species or format that this list does not name), an integer of the same unit. A consumer spreads it equally over every option the vocabulary allows and the list does not name, so each such option has the exact share residual / (denominator * n) for the n options it derives from the vocabulary.",
+          "$ref": "#/$defs/Mass"
+        },
+        "unmapped": {
+          "description": "Mass of source names that map to no engine id, counted and never remapped or redistributed by the record (a consumer that needs a distribution uses denominator minus unmapped).",
+          "$ref": "#/$defs/Mass"
+        }
+      }
+    },
+    "ItemList": {
+      "description": "The item marginal of a forme. The weights of entries, no_item, residual and unmapped sum to the denominator (a reader rule).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "denominator",
+        "entries",
+        "no_item",
+        "residual",
+        "unmapped"
+      ],
+      "properties": {
+        "denominator": {
+          "description": "The list's denominator: the exact integer total that every weight in this list is a share of (the source holds rating weights, not counts, so this is the summed list weight and never the species' raw count). A share is the integer weight over this denominator, an exact fraction and never parts per million.",
+          "$ref": "#/$defs/Denominator"
+        },
+        "entries": {
+          "description": "The items the list names, sorted by id, no id twice, at most derivation.k_items.",
+          "type": "array",
+          "maxItems": 4096,
+          "items": {
+            "$ref": "#/$defs/WeightedId"
+          }
+        },
+        "no_item": {
+          "description": "Mass of sets that hold no item (the source key nothing): a legal option of its own, never unmapped mass and exempt from Item Clause.",
+          "$ref": "#/$defs/Mass"
+        },
+        "residual": {
+          "description": "Mapped mass the truncation dropped (options of the species or format that this list does not name), an integer of the same unit. A consumer spreads it equally over every option the vocabulary allows and the list does not name, so each such option has the exact share residual / (denominator * n) for the n options it derives from the vocabulary. Items are spread over the format's whole item list, since Item Clause tells items apart.",
+          "$ref": "#/$defs/Mass"
+        },
+        "unmapped": {
+          "description": "Mass of source names that map to no engine id, counted and never remapped or redistributed by the record (a consumer that needs a distribution uses denominator minus unmapped).",
+          "$ref": "#/$defs/Mass"
+        }
+      }
+    },
+    "Spread": {
+      "description": "One nature and Stat Point spread with its weight. The total of its Stat Points is at most the vocabulary's ev_limit (a reader rule). Not a team: it names no species, move or item.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "nature",
+        "stat_points",
+        "weight"
+      ],
+      "properties": {
+        "nature": {
+          "description": "An engine nature id of the team vocabulary.",
+          "$ref": "#/$defs/Id"
+        },
+        "stat_points": {
+          "$ref": "#/$defs/StatPointSpread"
+        },
+        "weight": {
+          "description": "The spread's weight, an integer share of the list's denominator.",
+          "$ref": "#/$defs/Weight"
+        }
+      }
+    },
+    "SpreadList": {
+      "description": "The nature and Stat Point spread marginal of a forme. The weights of entries, residual and unmapped sum to the denominator (a reader rule).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "denominator",
+        "entries",
+        "residual",
+        "unmapped"
+      ],
+      "properties": {
+        "denominator": {
+          "description": "The list's denominator: the exact integer total that every weight in this list is a share of (the source holds rating weights, not counts, so this is the summed list weight and never the species' raw count). A share is the integer weight over this denominator, an exact fraction and never parts per million.",
+          "$ref": "#/$defs/Denominator"
+        },
+        "entries": {
+          "description": "The spreads the list names, sorted by nature id, then by hp, atk, def, spa, spd, spe, no spread twice, at most derivation.k_spreads.",
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "$ref": "#/$defs/Spread"
+          }
+        },
+        "residual": {
+          "description": "Mass of every spread the list does not name, taken as one other-spread entry (no evidence touches spreads before slice 4 of ADR-025).",
+          "$ref": "#/$defs/Mass"
+        },
+        "unmapped": {
+          "description": "Mass of source names that map to no engine id, counted and never remapped or redistributed by the record (a consumer that needs a distribution uses denominator minus unmapped).",
+          "$ref": "#/$defs/Mass"
+        }
+      }
+    },
+    "MoveEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "inclusion"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/Id"
+        },
+        "inclusion": {
+          "description": "The move's inclusion: the integer numerator of its probability of being in a set, over the list's denominator (a reader rule: at most the denominator).",
+          "$ref": "#/$defs/Weight"
+        }
+      }
+    },
+    "MoveList": {
+      "description": "The move marginals of a forme. The inclusions of entries plus empty_slots, residual and unmapped sum to slots * denominator (a reader rule).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "denominator",
+        "slots",
+        "entries",
+        "empty_slots",
+        "residual",
+        "unmapped"
+      ],
+      "properties": {
+        "denominator": {
+          "description": "The number of sets, as an exact integer weight: the summed item weight of the forme, the value the empty-slot rule of ADR-025 section 3 divides by. Inclusions, the empty-slot mass and the other masses are numerators over it, so the inclusion of a move is the exact fraction inclusion / denominator, never parts per million.",
+          "$ref": "#/$defs/Denominator"
+        },
+        "slots": {
+          "description": "Move slots a set has (the source counts an empty slot under the key '').",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 8
+        },
+        "entries": {
+          "description": "The moves the list names, sorted by id, no id twice, at most derivation.k_moves. A move whose inclusion equals the denominator is forced.",
+          "type": "array",
+          "maxItems": 1024,
+          "items": {
+            "$ref": "#/$defs/MoveEntry"
+          }
+        },
+        "empty_slots": {
+          "description": "Mass of empty move slots (the source key ''), a numerator over the denominator: the mean number of empty slots per set is empty_slots / denominator. Never unmapped mass.",
+          "$ref": "#/$defs/Mass"
+        },
+        "residual": {
+          "description": "Mapped mass the truncation dropped (options of the species or format that this list does not name), an integer of the same unit. A consumer spreads it equally over every option the vocabulary allows and the list does not name, so each such option has the exact share residual / (denominator * n) for the n options it derives from the vocabulary.",
+          "$ref": "#/$defs/Mass"
+        },
+        "unmapped": {
+          "description": "Mass of source names that map to no engine id, counted and never remapped or redistributed by the record (a consumer that needs a distribution uses denominator minus unmapped).",
+          "$ref": "#/$defs/Mass"
+        }
+      }
+    },
+    "Forme": {
+      "description": "One forme of a preview species with its marginals. Fields are independent given the forme.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "weight",
+        "abilities",
+        "items",
+        "spreads",
+        "moves"
+      ],
+      "properties": {
+        "id": {
+          "description": "The forme's species id, a roster entry of the team vocabulary.",
+          "$ref": "#/$defs/Id"
+        },
+        "weight": {
+          "description": "The forme's weight, an integer share of the species' denominator. For a Mega forme it is the stone-holding share (ADR-025 section 2).",
+          "$ref": "#/$defs/Weight"
+        },
+        "abilities": {
+          "$ref": "#/$defs/AbilityList"
+        },
+        "items": {
+          "$ref": "#/$defs/ItemList"
+        },
+        "spreads": {
+          "$ref": "#/$defs/SpreadList"
+        },
+        "moves": {
+          "$ref": "#/$defs/MoveList"
+        }
+      }
+    },
+    "Species": {
+      "description": "One preview species.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "denominator",
+        "formes"
+      ],
+      "properties": {
+        "id": {
+          "description": "The preview species id, the form Team Preview shows.",
+          "$ref": "#/$defs/Id"
+        },
+        "denominator": {
+          "description": "The summed weight of the species' formes (a reader rule): a forme's share is weight / denominator.",
+          "$ref": "#/$defs/Denominator"
+        },
+        "formes": {
+          "description": "The species' formes, sorted by id, no id twice.",
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "items": {
+            "$ref": "#/$defs/Forme"
+          }
+        }
+      }
+    },
+    "SourceInput": {
+      "description": "One raw input file, recorded by id, URL, retrieval time, size and hash. The file itself is never committed.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source_id",
+        "url",
+        "retrieved_at",
+        "size",
+        "sha256"
+      ],
+      "properties": {
+        "source_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+        },
+        "url": {
+          "description": "Where the file was downloaded by hand.",
+          "type": "string",
+          "pattern": "^https://[^ ]+$",
+          "maxLength": 2048
+        },
+        "retrieved_at": {
+          "description": "UTC time of retrieval.",
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+        },
+        "size": {
+          "description": "Size of the file in bytes.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000000000
+        },
+        "sha256": {
+          "description": "SHA-256 of the file's bytes.",
+          "$ref": "#/$defs/Hash"
+        }
+      }
+    },
+    "SmogonChaos": {
+      "description": "Aggregate usage statistics of one monthly chaos file.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "month",
+        "cutoff",
+        "number_of_battles",
+        "inputs"
+      ],
+      "properties": {
+        "kind": {
+          "const": "smogon-chaos"
+        },
+        "month": {
+          "description": "The statistics month, YYYY-MM.",
+          "type": "string",
+          "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])$"
+        },
+        "cutoff": {
+          "description": "The rating cutoff of the file.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100000
+        },
+        "number_of_battles": {
+          "description": "The number of battles the file states.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000000000
+        },
+        "inputs": {
+          "description": "The input files, sorted by source_id, no id twice.",
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "items": {
+            "$ref": "#/$defs/SourceInput"
+          }
+        }
+      }
+    },
+    "RoleSets": {
+      "description": "The committed role-set table, uniform over roles, with a named fill prior.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "role_set_table_hash",
+        "fill_prior_hash"
+      ],
+      "properties": {
+        "kind": {
+          "const": "role-sets"
+        },
+        "role_set_table_hash": {
+          "description": "The RoleSetTable hash (ADR-020 section 3) the lists were built from.",
+          "$ref": "#/$defs/Hash"
+        },
+        "fill_prior_hash": {
+          "description": "The hash of the generator-matched prior that supplies the sampled item, nature and Stat Points.",
+          "$ref": "#/$defs/Hash"
+        }
+      }
+    },
+    "GeneratorMatched": {
+      "description": "The distribution the synthetic opponents are drawn from.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "generator_config_hash",
+        "generator_commit"
+      ],
+      "properties": {
+        "kind": {
+          "const": "generator-matched"
+        },
+        "generator_config_hash": {
+          "description": "The hash of the TeamGeneratorConfig whose draw rules the prior reproduces.",
+          "$ref": "#/$defs/Hash"
+        },
+        "generator_commit": {
+          "description": "The commit of the generator code whose draw rules the prior reproduces: a code change to the proposal changes the distribution without changing the config.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        }
+      }
+    },
+    "Derivation": {
+      "description": "The truncation limits and the script that applied them; they are inside the prior hash.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "script_version",
+        "k_items",
+        "k_moves",
+        "k_spreads"
+      ],
+      "properties": {
+        "script_version": {
+          "description": "The derivation script's version label.",
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+        },
+        "k_items": {
+          "description": "The most items a list names.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4096
+        },
+        "k_moves": {
+          "description": "The most moves a list names.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1024
+        },
+        "k_spreads": {
+          "description": "The most spreads a list names.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 256
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "identity_hiding_abilities": [
+    "superluck",
+    "soundproof",
+    "snowwarning",
+    "pressure",
+    "justified"
+  ],
+  "max_legality_redraws": 32,
+  "max_disguise_assignments": 64
+}
