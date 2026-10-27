@@ -107,8 +107,9 @@ export function loadParityInputs(config: MechanicsConfig, snapshot: RulesSnapsho
   return { config, snapshot, fixtures: readFixtures(dir), divergences: readDivergences(dir) };
 }
 
-/** One line of Markdown table text: no pipe or line break can end a cell. */
-const cell = (text: string): string => text.replace(/\|/g, "\\|").replace(/\s+/g, " ").trim();
+/** One line of Markdown table text: backslashes first, then pipes, are escaped, so no pipe or line break can end a cell. */
+const cell = (text: string): string =>
+  text.replace(/\\/g, "\\\\").replace(/\|/g, "\\|").replace(/\s+/g, " ").trim();
 
 /** Gap rows the results of the config depend on, with the query kinds that list each. */
 function dependencies(config: MechanicsConfig): Map<string, string[]> {

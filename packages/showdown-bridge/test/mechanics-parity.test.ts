@@ -105,6 +105,11 @@ describe("the calc divergence list", () => {
     expect(doc).toContain("1 listed divergence ");
   });
 
+  it("escapes a backslash before a pipe, so a reason cannot end its cell", () => {
+    const doc = render(write({ data_class: "synthetic", divergences: [{ case: "damage/reflect", reason: "ends with \\| here" }] }));
+    expect(doc).toContain("| `damage/reflect` | ends with \\\\\\| here |");
+  });
+
   it("an empty list says every case agrees", () => {
     const doc = render(write({ data_class: "synthetic", divergences: [] }));
     expect(doc).toContain("every fixture case agrees");
