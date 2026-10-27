@@ -16,14 +16,18 @@ import { GOLDEN_FORMAT } from "../src/golden.ts";
 const arg = (name: string): string | undefined => (process.argv.includes(`--${name}`) ? process.argv[process.argv.indexOf(`--${name}`) + 1] : undefined);
 const num = (name: string, fallback: number): number => {
   const value = arg(name);
-  return value === undefined ? fallback : Number(value);
+  if (value === undefined) return fallback;
+  if (!/^[0-9]+$/.test(value)) throw new Error(`--${name} needs a non-negative integer`);
+  return Number(value);
 };
+const json = (path: string): unknown => JSON.parse(readFileSync(path, "utf8"));
 const runDir = arg("run-dir");
 const generation = num("generation", -1);
 if (runDir === undefined || !Number.isInteger(generation) || generation < 0) throw new Error("--run-dir and --generation are required");
+const runConfig = json(join(runDir, "run-config.json")) as { generation: { max_turns: number } };
 const gen = `g${String(generation).padStart(6, "0")}`;
-const pools = (arg("pools") ?? "4,8").split(",").map(Number);
-const json = (path: string): unknown => JSON.parse(readFileSync(path, "utf8"));
+const pools = (arg("pools") ?? "4,8").split(",").filter((x) => x !== "").map((x) => (/^[1-9][0-9]*$/.test(x) ? Number(x) : Number.NaN));
+if (pools.some(Number.isNaN)) throw new Error("--pools needs a comma-separated list of positive integers");
 
 const engine = loadEngine(process.env.SHOWDOWN_DIR || undefined);
 const skipped: Skipped = { not_move: 0, unreplayable_games: 0 };
@@ -56,9 +60,9 @@ if (progressDir !== undefined) {
   for (let k = 0; k < wantedGames; k++) {
     const file = games[Math.floor((k * games.length) / wantedGames)] as string;
     const record = json(join(root, file)) as ProgressGame;
-    decisions.push(...(await progressDecisions(engine, GOLDEN_FORMAT, 100, record, file, (policy) => (policy.startsWith("policy:") ? "learned" : "baseline"), skippedProgress)));
+    decisions.push(...(await progressDecisions(engine, GOLDEN_FORMAT, runConfig.generation.max_turns, record, file, (policy) => (policy.startsWith("policy:") ? "learned" : "baseline"), skippedProgress)));
   }
-  report.progress = { games_sampled: wantedGames, games_stored: games.length, decisions: decisions.length, ...(await runBench(spec, decisions, [])) };
+  report.progress = { games_sampled: wantedGames, games_stored: games.length, decisions: decisions.length, ...(await runBench(spec, decisions, pools)) };
 }
 report.skipped = { episodes: skipped, progress: skippedProgress };
 
@@ -68,10 +72,16 @@ const single = (report.episodes as { single_thread: { decisions: number; total_b
 const allSeen = single.decisions + skipped.not_move;
 const meanAll = single.total_builder_ms / allSeen;
 report.generation_estimate = {
-  control: { run: "control lineage", generation, play_ms: metrics.phase_ms.play, load_ms: metrics.phase_ms.load, decisions: metrics.counts.decisions },
+  control: { run: "control run", generation, play_ms: metrics.phase_ms.play, load_ms: metrics.phase_ms.load, decisions: metrics.counts.decisions },
   sample_move_share_ppm: Math.floor((single.decisions * 1_000_000) / allSeen),
+  threads_note: "by_threads divides the builder time ideally; measured_speedup gives the pool speed-ups measured on this machine",
   ...estimateWallTime({ play_ms: metrics.phase_ms.play, load_ms: metrics.phase_ms.load, decisions: metrics.counts.decisions }, meanAll, [1, 4, 8, 16]),
 };
+const est = report.generation_estimate as { control_play_plus_load_ms: number; builder_cpu_ms: number };
+report.measured_speedup = (report.episodes as { pools: { size: number; speedup_x100: number }[] }).pools.map((p) => {
+  const total = est.control_play_plus_load_ms + Math.round((est.builder_cpu_ms * 100) / p.speedup_x100);
+  return { threads: p.size, speedup_x100: p.speedup_x100, total_ms: total, ratio_x100: Math.round((total * 100) / est.control_play_plus_load_ms) };
+});
 const text = JSON.stringify(report, null, 1);
 const out = arg("out");
 if (out === undefined) console.log(text);

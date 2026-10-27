@@ -64,12 +64,14 @@ function seatDecisions(game: string, seat: string, player: Player, channel: read
 
 /** The decisions of a stored Episode (parsed JSON of a file the loop wrote). `key` names the game and seat. */
 export function episodeDecisions(episode: unknown, key: string, seat: string, skipped: Skipped): BenchDecision[] {
+  if ((episode as { data_class?: unknown }).data_class !== "synthetic") throw new Error("the bench reads synthetic Episodes only");
   const e = episode as { player: Player; channel: string[]; team: { team: PokemonSet[] }; decisions: { choice: string; identity: { request_seq: number } }[] };
   return seatDecisions(key, seat, e.player, e.channel, e.team.team, e.decisions.map((d) => ({ request_seq: d.identity.request_seq, choice: d.choice })), skipped);
 }
 
 /** A stored progress game record (parsed JSON): the fields this reads. Its omniscient log is not read. */
 export interface ProgressGame {
+  data_class: string;
   seed: string;
   policies: Record<Player, string>;
   teams: Record<Player, { team: PokemonSet[] }>;
@@ -78,6 +80,7 @@ export interface ProgressGame {
 
 /** Replay the stored game through the runner (seed, teams, choices) and take each seat's own channel from the replay. */
 export async function progressDecisions(engine: Engine, formatId: string, maxTurns: number, record: ProgressGame, key: string, seatOf: (policy: string) => string, skipped: Skipped): Promise<BenchDecision[]> {
+  if (record.data_class !== "synthetic") throw new Error("the bench reads synthetic progress games only");
   let channels: Record<Player, string[]>;
   try {
     channels = (
@@ -208,6 +211,8 @@ export interface PoolRun {
   size: number;
   wall_ms: number;
   decisions_per_second_x100: number;
+  /** The single-thread builder time over this pool's wall time (x100): the measured speed-up, never above the thread count. */
+  speedup_x100: number;
   /** The rows equal the single-thread run's, byte for byte. */
   rows_equal_single: boolean;
 }
@@ -234,11 +239,12 @@ export async function runBench(spec: FeatureServiceSpec, decisions: readonly Ben
   for (const size of poolSizes) {
     const pool = new FeaturePool(size, spec);
     try {
-      await pool.run(tasks.slice(0, size)); // warm-up: every thread loads the engine before the clock starts
+      // Warm-up: one task of a distinct game per thread (the pool gives each to the least loaded thread), so every thread has loaded the engine before the clock starts.
+      await pool.run(Array.from({ length: size }, (_, k) => ({ ...(tasks[0] as FeatureTask), game: `warm-${k}`, final: true })));
       const started = performance.now();
       const rerun = await pool.run(tasks.map((t) => ({ ...t, game: `${t.game}#${size}` })));
       const wall = performance.now() - started;
-      pools.push({ size, wall_ms: Math.round(wall), decisions_per_second_x100: Math.round((tasks.length * 100_000) / wall), rows_equal_single: statsOf(rerun).rows_digest === stats.rows_digest });
+      pools.push({ size, wall_ms: Math.round(wall), decisions_per_second_x100: Math.round((tasks.length * 100_000) / wall), speedup_x100: Math.round((stats.total_builder_ms * 100) / wall), rows_equal_single: statsOf(rerun).rows_digest === stats.rows_digest });
     } finally {
       await pool.close();
     }

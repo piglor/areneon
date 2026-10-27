@@ -61,14 +61,14 @@ describe("recorded decisions", () => {
   it("reads an Episode's and a progress game's move decisions and runs them through single and pooled builders", async () => {
     const skipped: Skipped = { not_move: 0, unreplayable_games: 0 };
     const mine = record.choices.filter((c) => c.player === "p1");
-    const episode = { player: "p1", channel: record.channels.p1, team: { team: battle.teams.p1 }, decisions: mine.map((c) => ({ choice: c.choice, identity: { request_seq: c.request_seq } })) };
+    const episode = { data_class: "synthetic", player: "p1", channel: record.channels.p1, team: { team: battle.teams.p1 }, decisions: mine.map((c) => ({ choice: c.choice, identity: { request_seq: c.request_seq } })) };
     const fromEpisode = episodeDecisions(episode, "e", "episode", skipped);
     expect(fromEpisode.length).toBeGreaterThan(0);
     expect(skipped.not_move).toBeGreaterThan(0); // the Team Preview request
     expect(fromEpisode.at(-1)?.task.final).toBe(true);
     expect(episodeDecisions({ ...episode, decisions: [{ choice: "x", identity: { request_seq: 999 } }] }, "e", "episode", skipped)).toEqual([]);
 
-    const game = { seed: battle.seed, policies: { p1: "policy:aa", p2: "damage-aware@v1" }, teams: { p1: { team: battle.teams.p1 }, p2: { team: battle.teams.p2 } }, decisions: record.choices.map((c) => ({ player: c.player, request_seq: c.request_seq, chosen: c.choice })) } as never;
+    const game = { data_class: "synthetic", seed: battle.seed, policies: { p1: "policy:aa", p2: "damage-aware@v1" }, teams: { p1: { team: battle.teams.p1 }, p2: { team: battle.teams.p2 } }, decisions: record.choices.map((c) => ({ player: c.player, request_seq: c.request_seq, chosen: c.choice })) } as never;
     const progress = await progressDecisions(engine, GOLDEN_FORMAT, 4, game, "g", (p) => (p.startsWith("policy:") ? "learned" : "baseline"), skipped);
     expect(new Set(progress.map((d) => d.seat))).toEqual(new Set(["learned", "baseline"]));
     // The replay's own channel for p1 is the recorded one: the same decisions as the Episode's.
@@ -77,10 +77,14 @@ describe("recorded decisions", () => {
     expect(broken).toEqual([]);
     expect(skipped.unreplayable_games).toBe(1);
 
+    expect(() => episodeDecisions({ ...episode, data_class: "private" }, "e", "episode", skipped)).toThrow("synthetic");
+    await expect(progressDecisions(engine, GOLDEN_FORMAT, 4, { ...(game as object), data_class: "private" } as never, "g", () => "x", skipped)).rejects.toThrow("synthetic");
+
     const few: BenchDecision[] = fromEpisode.slice(0, 3);
     const report = await runBench({ format_id: GOLDEN_FORMAT, data_class: "synthetic" }, few, [2]);
     expect(report.single_thread.featured).toBe(few.length);
     expect(report.pools[0]).toMatchObject({ size: 2, rows_equal_single: true });
+    expect(report.pools[0]?.speedup_x100).toBeGreaterThan(0);
     expect(report.dominated.episode).toBeDefined();
   }, 240_000); // replays on the engine, real probe in the single run and in a two-thread pool
 });
