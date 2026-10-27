@@ -1,0 +1,319 @@
+{
+  "schema_version": 1,
+  "format_id": "gen9championsvgc2026regmc",
+  "scenario": {
+    "removed_rules": [
+      "Min Team Size",
+      "Open Team Sheets",
+      "Picked Team Size",
+      "Team Preview",
+      "VGC Timer"
+    ],
+    "removed_rule_keys": [
+      "dctimerbank",
+      "minteamsize",
+      "openteamsheets",
+      "pickedteamsize",
+      "teampreview",
+      "timeoutautochoose",
+      "timeraddperturn",
+      "timergrace",
+      "timermaxfirstturn",
+      "timermaxperturn",
+      "timerstarting",
+      "vgctimer"
+    ]
+  },
+  "scope": {
+    "query_kinds": [
+      {
+        "kind": "damage",
+        "gap_ids": [
+          "damage-formula",
+          "level",
+          "mega-evolution",
+          "stat-points"
+        ]
+      },
+      {
+        "kind": "speed_order",
+        "gap_ids": [
+          "paralysis",
+          "trick-room"
+        ]
+      },
+      {
+        "kind": "stats",
+        "gap_ids": [
+          "level",
+          "stat-points"
+        ]
+      }
+    ]
+  },
+  "ko_blockers": {
+    "abilities": [
+      "disguise",
+      "emergencyexit",
+      "flamebody",
+      "multiscale",
+      "mummy",
+      "pickpocket",
+      "sandspit",
+      "seedsower",
+      "spicyspray",
+      "stamina",
+      "sturdy",
+      "wanderingspirit",
+      "weakarmor"
+    ],
+    "items": [
+      "airballoon",
+      "babiriberry",
+      "chartiberry",
+      "chilanberry",
+      "chopleberry",
+      "cobaberry",
+      "colburberry",
+      "ejectbutton",
+      "focusband",
+      "focussash",
+      "habanberry",
+      "kasibberry",
+      "kebiaberry",
+      "occaberry",
+      "oranberry",
+      "passhoberry",
+      "payapaberry",
+      "redcard",
+      "rindoberry",
+      "roseliberry",
+      "shucaberry",
+      "sitrusberry",
+      "tangaberry",
+      "wacanberry",
+      "yacheberry"
+    ]
+  },
+  "ko_non_blockers": {
+    "abilities": [
+      {
+        "id": "aftermath",
+        "reason": "Acts only when the holder faints, after the knockout the count describes."
+      },
+      {
+        "id": "auraguard",
+        "reason": "A constant damage multiplier with no HP or use condition; it is already in the engine's roll vector. It applies to contact moves."
+      },
+      {
+        "id": "berserk",
+        "reason": "Raises the holder's Special Attack at half HP and gates berry healing; the holder's defence and HP are unchanged."
+      },
+      {
+        "id": "bulletproof",
+        "reason": "Immunity or absorb step of the hit (the probe's own hit steps give sixteen zeros); the holder's heal or boost leaves the damage inputs of a later hit unchanged."
+      },
+      {
+        "id": "cursedbody",
+        "reason": "Chance-based disable of the attacker's move; it only prevents a repeat and changes no damage input."
+      },
+      {
+        "id": "cutecharm",
+        "reason": "Chance-based infatuation of the attacker; it does not change the damage inputs of a later hit."
+      },
+      {
+        "id": "damp",
+        "reason": "Stops explosion moves and Aftermath; damage moves are untouched."
+      },
+      {
+        "id": "dryskin",
+        "reason": "Immunity or absorb step of the hit (the probe's own hit steps give sixteen zeros); the holder's heal or boost leaves the damage inputs of a later hit unchanged. Its Fire boost is a constant factor in the vector."
+      },
+      {
+        "id": "eartheater",
+        "reason": "Immunity or absorb step of the hit (the probe's own hit steps give sixteen zeros); the holder's heal or boost leaves the damage inputs of a later hit unchanged."
+      },
+      {
+        "id": "effectspore",
+        "reason": "Chance-based status of the attacker; it does not change the damage inputs of a later hit."
+      },
+      {
+        "id": "electromorphosis",
+        "reason": "Charges the holder's next Electric move; a later hit on it is unchanged."
+      },
+      {
+        "id": "filter",
+        "reason": "A constant damage multiplier with no HP or use condition; it is already in the engine's roll vector. It applies to super-effective hits."
+      },
+      {
+        "id": "flashfire",
+        "reason": "Immunity or absorb step of the hit (the probe's own hit steps give sixteen zeros); the holder's heal or boost leaves the damage inputs of a later hit unchanged."
+      },
+      {
+        "id": "fluffy",
+        "reason": "A constant damage multiplier with no HP or use condition; it is already in the engine's roll vector. Contact halves it and Fire doubles it."
+      },
+      {
+        "id": "friendguard",
+        "reason": "Reduces damage to the holder's allies only; the holder's own damage is untouched."
+      },
+      {
+        "id": "gluttony",
+        "reason": "Only lets the holder eat a berry earlier; no damage input changes."
+      },
+      {
+        "id": "goodasgold",
+        "reason": "Ignores status moves only; damage moves are untouched."
+      },
+      {
+        "id": "gooey",
+        "reason": "Lowers the attacker's Speed, which the damage formula does not read."
+      },
+      {
+        "id": "heatproof",
+        "reason": "Concerns indirect damage or recoil only; damage from a move is untouched. It halves burn damage."
+      },
+      {
+        "id": "illusion",
+        "reason": "Ends the disguise on a hit and changes no stat; the probe is given the real set."
+      },
+      {
+        "id": "innardsout",
+        "reason": "Acts only when the holder faints, after the knockout the count describes."
+      },
+      {
+        "id": "justified",
+        "reason": "Raises a stat of the holder that does not enter the damage it takes (Attack, Special Attack, Speed); a later hit is unchanged."
+      },
+      {
+        "id": "lightningrod",
+        "reason": "Immunity or absorb step of the hit (the probe's own hit steps give sixteen zeros); the holder's heal or boost leaves the damage inputs of a later hit unchanged."
+      },
+      {
+        "id": "magicbounce",
+        "reason": "Reflects status moves only; damage moves are untouched."
+      },
+      {
+        "id": "magicguard",
+        "reason": "Concerns indirect damage or recoil only; damage from a move is untouched."
+      },
+      {
+        "id": "motordrive",
+        "reason": "Immunity or absorb step of the hit (the probe's own hit steps give sixteen zeros); the holder's heal or boost leaves the damage inputs of a later hit unchanged."
+      },
+      {
+        "id": "oblivious",
+        "reason": "Immune to Attract, Captivate and Taunt only; damage moves are untouched."
+      },
+      {
+        "id": "overcoat",
+        "reason": "Powder-move immunity; damage moves are untouched."
+      },
+      {
+        "id": "poisonheal",
+        "reason": "Concerns indirect damage or recoil only; damage from a move is untouched."
+      },
+      {
+        "id": "poisonpoint",
+        "reason": "Chance-based poison of the attacker; it does not change the damage inputs of a later hit."
+      },
+      {
+        "id": "punkrock",
+        "reason": "A constant damage multiplier with no HP or use condition; it is already in the engine's roll vector. It applies to sound moves."
+      },
+      {
+        "id": "rattled",
+        "reason": "Raises a stat of the holder that does not enter the damage it takes (Attack, Special Attack, Speed); a later hit is unchanged."
+      },
+      {
+        "id": "ripen",
+        "reason": "Doubles berry effects; every berry that matters is itself in ko_blockers."
+      },
+      {
+        "id": "rockhead",
+        "reason": "Concerns indirect damage or recoil only; damage from a move is untouched."
+      },
+      {
+        "id": "roughskin",
+        "reason": "Acts on the attacker only (recoil, damage, stat drop, status or ability swap that leaves the damage inputs alone); the holder's HP and presence are unchanged."
+      },
+      {
+        "id": "sapsipper",
+        "reason": "Immunity or absorb step of the hit (the probe's own hit steps give sixteen zeros); the holder's heal or boost leaves the damage inputs of a later hit unchanged."
+      },
+      {
+        "id": "solidrock",
+        "reason": "A constant damage multiplier with no HP or use condition; it is already in the engine's roll vector. It applies to super-effective hits."
+      },
+      {
+        "id": "soundproof",
+        "reason": "Immunity or absorb step of the hit (the probe's own hit steps give sixteen zeros); the holder's heal or boost leaves the damage inputs of a later hit unchanged. Sound moves only."
+      },
+      {
+        "id": "static",
+        "reason": "Chance-based paralysis of the attacker; it does not change the damage inputs of a later hit."
+      },
+      {
+        "id": "telepathy",
+        "reason": "Ally-targeted damage is ignored; the holder's own damage inputs are untouched."
+      },
+      {
+        "id": "thermalexchange",
+        "reason": "Raises a stat of the holder that does not enter the damage it takes (Attack, Special Attack, Speed); a later hit is unchanged. Its Fire hit raises Attack."
+      },
+      {
+        "id": "toxicdebris",
+        "reason": "Sets Toxic Spikes on the attacker's side; hazards do not change damage."
+      },
+      {
+        "id": "voltabsorb",
+        "reason": "Immunity or absorb step of the hit (the probe's own hit steps give sixteen zeros); the holder's heal or boost leaves the damage inputs of a later hit unchanged."
+      },
+      {
+        "id": "waterabsorb",
+        "reason": "Immunity or absorb step of the hit (the probe's own hit steps give sixteen zeros); the holder's heal or boost leaves the damage inputs of a later hit unchanged."
+      }
+    ],
+    "items": [
+      {
+        "id": "aspearberry"
+      },
+      {
+        "id": "cheriberry",
+        "reason": "Cures a status of the holder; it changes neither the holder's HP nor any damage input of a later hit."
+      },
+      {
+        "id": "chestoberry",
+        "reason": "Cures a status of the holder; it changes neither the holder's HP nor any damage input of a later hit."
+      },
+      {
+        "id": "ironball",
+        "reason": "Grounds the holder, so a Ground move hits it; the type effectiveness is already in the engine roll vector and the item never changes after a hit."
+      },
+      {
+        "id": "leppaberry",
+        "reason": "Restores PP; no HP or damage input changes."
+      },
+      {
+        "id": "lumberry",
+        "reason": "Cures a status of the holder; it changes neither the holder's HP nor any damage input of a later hit."
+      },
+      {
+        "id": "pechaberry",
+        "reason": "Cures a status of the holder; it changes neither the holder's HP nor any damage input of a later hit."
+      },
+      {
+        "id": "persimberry",
+        "reason": "Cures a status of the holder; it changes neither the holder's HP nor any damage input of a later hit."
+      },
+      {
+        "id": "rawstberry",
+        "reason": "Cures a status of the holder; it changes neither the holder's HP nor any damage input of a later hit."
+      },
+      {
+        "id": "rockyhelmet",
+        "reason": "Acts on the attacker only (recoil, damage, stat drop, status or ability swap that leaves the damage inputs alone); the holder's HP and presence are unchanged."
+      }
+    ]
+  }
+}

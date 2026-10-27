@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:areneon:schema:contracts:v1:mechanics-config",
   "title": "MechanicsConfig",
-  "description": "The configuration of the mechanics probe for one format (ADR-016 section 3): reviewed data in config/mechanics/<format>.json, outside rules/ and outside the published rules snapshot, so it moves neither format_rules_hash nor rules_snapshot_hash. It names the rules removed from the target format to build the scenario format and the exact rule-table keys that removal takes away (the probe refuses to run unless the engine's tables differ by exactly those keys), the query kinds the probe supports with the gap ledger rows each depends on, and the items and abilities that stop KO counts. The config can only restrict the probe: a name in it never makes the probe handle more. Lists are sorted and unique (reader rule: the profile has no uniqueItems). Its RFC 8785 SHA-256 is mechanics_config_hash, carried by every MechanicsResult.",
+  "description": "The configuration of the mechanics probe for one format (ADR-016 section 3): reviewed data in config/mechanics/<format>.json, outside rules/ and outside the published rules snapshot, so it moves neither format_rules_hash nor rules_snapshot_hash. It names the rules removed from the target format to build the scenario format and the exact rule-table keys that removal takes away (the probe refuses to run unless the engine's tables differ by exactly those keys), the query kinds the probe supports with the gap ledger rows each depends on, the items and abilities that stop KO counts, and (optional, a minor change within v1) the roster-legal ones with a damage-time handler that were reviewed and do not stop them, each with a reason. The config can only restrict the probe: a name in it never makes the probe handle more. Lists are sorted and unique (reader rule: the profile has no uniqueItems). Its RFC 8785 SHA-256 is mechanics_config_hash, carried by every MechanicsResult.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -96,6 +96,33 @@
           }
         }
       }
+    },
+    "ko_non_blockers": {
+      "description": "Items and abilities whose engine handlers act when damage is dealt (the hook names `checkKoBlockers` reads from the engine data) that were reviewed and do NOT stop KO counts, each with the reason. Optional: absent means none were reviewed. `checkKoBlockers` fails when a roster-legal item or ability with such a handler is in neither this list nor `ko_blockers`, and when an id here is not such a candidate or is also a blocker. It never changes what the probe answers: only `ko_blockers` does.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "abilities",
+        "items"
+      ],
+      "properties": {
+        "abilities": {
+          "description": "Sorted by id, each once.",
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "$ref": "#/$defs/NonBlocker"
+          }
+        },
+        "items": {
+          "description": "Sorted by id, each once.",
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "$ref": "#/$defs/NonBlocker"
+          }
+        }
+      }
     }
   },
   "$defs": {
@@ -122,6 +149,27 @@
             "type": "string",
             "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$"
           }
+        }
+      }
+    },
+    "NonBlocker": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "reason"
+      ],
+      "properties": {
+        "id": {
+          "description": "Engine item or ability id.",
+          "type": "string",
+          "pattern": "^[a-z0-9]+$"
+        },
+        "reason": {
+          "description": "Why the handler leaves a KO count exact: one sentence, no secret.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 240
         }
       }
     }

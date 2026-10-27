@@ -95,10 +95,20 @@ describe("the damage probe's counts", () => {
     expect(answer.ko).toEqual(c.expected);
   });
 
-  it("every hand-worked damage case carries the counts counted from its vectors", () => {
+  it("every hand-worked damage case carries the counts counted outside the module under test", () => {
+    // Plain loops written here, not countKos/countPairKos: the expected values must not come from the code they check.
+    // tests/scripts/test_mechanics_ko_fixture.py recounts the same fixture in Python.
     for (const c of damage.cases) {
       const hp = (c.expected as unknown as { hp_current: number }).hp_current;
-      expect(c.expected.ko, c.id).toEqual({ kind: "counts", ohko_no_crit: countKos(c.expected.no_crit, hp), ohko_crit: countKos(c.expected.crit, hp), thko_no_crit: countPairKos(c.expected.no_crit, hp) });
+      let ohkoNoCrit = 0;
+      let ohkoCrit = 0;
+      let thko = 0;
+      for (const first of c.expected.no_crit) {
+        if (first >= hp) ohkoNoCrit += 1;
+        for (const second of c.expected.no_crit) if (first + second >= hp) thko += 1;
+      }
+      for (const roll of c.expected.crit) if (roll >= hp) ohkoCrit += 1;
+      expect(c.expected.ko, c.id).toEqual({ kind: "counts", ohko_no_crit: ohkoNoCrit, ohko_crit: ohkoCrit, thko_no_crit: thko });
     }
   });
 

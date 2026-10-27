@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, RootModel, StrictStr
+from pydantic import MISSING, BaseModel, ConfigDict, Field, RootModel, StrictStr
 
 
 class RemovedRule(RootModel[StrictStr]):
@@ -75,6 +75,20 @@ class SupportedKind(BaseModel):
     """
 
 
+class NonBlocker(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    id: Annotated[StrictStr, Field(pattern="^[a-z0-9]+$")]
+    """
+    Engine item or ability id.
+    """
+    reason: Annotated[StrictStr, Field(max_length=240, min_length=1)]
+    """
+    Why the handler leaves a KO count exact: one sentence, no secret.
+    """
+
+
 class Scope(BaseModel):
     """
     The query kinds the probe supports in this config. A kind not listed here is answered `unsupported`; listing one never makes the probe handle it.
@@ -89,9 +103,27 @@ class Scope(BaseModel):
     """
 
 
+class KoNonBlockers(BaseModel):
+    """
+    Items and abilities whose engine handlers act when damage is dealt (the hook names `checkKoBlockers` reads from the engine data) that were reviewed and do NOT stop KO counts, each with the reason. Optional: absent means none were reviewed. `checkKoBlockers` fails when a roster-legal item or ability with such a handler is in neither this list nor `ko_blockers`, and when an id here is not such a candidate or is also a blocker. It never changes what the probe answers: only `ko_blockers` does.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    abilities: Annotated[list[NonBlocker], Field(max_length=256)]
+    """
+    Sorted by id, each once.
+    """
+    items: Annotated[list[NonBlocker], Field(max_length=256)]
+    """
+    Sorted by id, each once.
+    """
+
+
 class MechanicsConfig(BaseModel):
     """
-    The configuration of the mechanics probe for one format (ADR-016 section 3): reviewed data in config/mechanics/<format>.json, outside rules/ and outside the published rules snapshot, so it moves neither format_rules_hash nor rules_snapshot_hash. It names the rules removed from the target format to build the scenario format and the exact rule-table keys that removal takes away (the probe refuses to run unless the engine's tables differ by exactly those keys), the query kinds the probe supports with the gap ledger rows each depends on, and the items and abilities that stop KO counts. The config can only restrict the probe: a name in it never makes the probe handle more. Lists are sorted and unique (reader rule: the profile has no uniqueItems). Its RFC 8785 SHA-256 is mechanics_config_hash, carried by every MechanicsResult.
+    The configuration of the mechanics probe for one format (ADR-016 section 3): reviewed data in config/mechanics/<format>.json, outside rules/ and outside the published rules snapshot, so it moves neither format_rules_hash nor rules_snapshot_hash. It names the rules removed from the target format to build the scenario format and the exact rule-table keys that removal takes away (the probe refuses to run unless the engine's tables differ by exactly those keys), the query kinds the probe supports with the gap ledger rows each depends on, the items and abilities that stop KO counts, and (optional, a minor change within v1) the roster-legal ones with a damage-time handler that were reviewed and do not stop them, each with a reason. The config can only restrict the probe: a name in it never makes the probe handle more. Lists are sorted and unique (reader rule: the profile has no uniqueItems). Its RFC 8785 SHA-256 is mechanics_config_hash, carried by every MechanicsResult.
     """
 
     model_config = ConfigDict(
@@ -113,4 +145,8 @@ class MechanicsConfig(BaseModel):
     ko_blockers: KoBlockers
     """
     Items and abilities that act when damage is dealt or change the second hit (Focus Sash, Sturdy, Disguise and the like): a defender holding one gets `unsupported` KO counts. Read by the damage probe only; each id is checked against the pinned engine's vocabulary by `checkMechanicsConfig`. A blocker withholds the KO counts (`ko_state_change`) and never the roll vectors.
+    """
+    ko_non_blockers: KoNonBlockers | MISSING = MISSING
+    """
+    Items and abilities whose engine handlers act when damage is dealt (the hook names `checkKoBlockers` reads from the engine data) that were reviewed and do NOT stop KO counts, each with the reason. Optional: absent means none were reviewed. `checkKoBlockers` fails when a roster-legal item or ability with such a handler is in neither this list nor `ko_blockers`, and when an id here is not such a candidate or is also a blocker. It never changes what the probe answers: only `ko_blockers` does.
     """

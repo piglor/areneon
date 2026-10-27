@@ -51,11 +51,11 @@ describe("the baseline identity with a belief (ADR-018 erratum E-18.3)", () => {
   const parts = { config, mechanics, manifest, reader_sha256: "a".repeat(64) };
   const belief = "c".repeat(64);
 
-  it("keeps v1's identity bytes exactly: no belief key, and the committed hash (made before the change) is the one it gives", () => {
+  it("keeps v1's identity bytes exactly: no belief key, and the pinned hash is the one it gives (it moved with mechanics_config_hash in #1166)", () => {
     const identity = damageAwareIdentity(parts);
     expect("belief_identity_hash" in identity).toBe(false);
     expect(damageAwareConfigHash(config)).toBe("1df63656d4747a06f3e8b47e18959c1f7763f83ac500d317e3ae0e4a5db9ec14");
-    expect(damageAwareIdentityHash(identity)).toBe("a6561ff56508dfd984758aad09a4390cfe4633fdbc1010d7b0fc87ddf7737816");
+    expect(damageAwareIdentityHash(identity)).toBe("ad979e7a48cee06ce8fd8c41acc3f2a1017ffe59ed3de9e5d32c801776ce309a");
   });
 
   it("gains belief_identity_hash only for a record that names a belief, and then changes with it", () => {

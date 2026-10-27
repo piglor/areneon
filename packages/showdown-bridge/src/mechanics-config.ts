@@ -41,6 +41,8 @@ export function readMechanicsConfig(value: unknown): MechanicsConfig {
     ["scope.query_kinds", config.scope.query_kinds.map((entry) => entry.kind)],
     ["ko_blockers.abilities", config.ko_blockers.abilities],
     ["ko_blockers.items", config.ko_blockers.items],
+    ["ko_non_blockers.abilities", (config.ko_non_blockers?.abilities ?? []).map((entry) => entry.id)],
+    ["ko_non_blockers.items", (config.ko_non_blockers?.items ?? []).map((entry) => entry.id)],
     ...config.scope.query_kinds.map((entry): [string, readonly string[]] => [`gap_ids of ${entry.kind}`, entry.gap_ids]),
   ];
   for (const [name, list] of lists) {
@@ -61,8 +63,8 @@ export function loadMechanicsConfig(formatId: string, dir: string = MECHANICS_CO
 
 /**
  * Check `config` against the pinned engine and the rules snapshot: the format
- * is a supported one, every gap id is a ledger row, every blocker is an engine
- * item or ability, and the scenario format's rule tables differ from the
+ * is a supported one, every gap id is a ledger row, every blocker and reviewed
+ * non-blocker is an engine item or ability, and the scenario format's rule tables differ from the
  * target's by exactly the listed keys. Returns the problems; none means ok.
  */
 export function checkMechanicsConfig(engine: Engine, config: MechanicsConfig, snapshot: RulesSnapshot = loadRulesSnapshot(engine.commit)): string[] {
@@ -82,6 +84,8 @@ export function checkMechanicsConfig(engine: Engine, config: MechanicsConfig, sn
   const dex = engine.sim.Dex.mod(engine.sim.Dex.formats.get(config.format_id).mod);
   for (const id of config.ko_blockers.items) if (!dex.items.get(id).exists) problems.push(`ko_blockers: ${id} is not an item`);
   for (const id of config.ko_blockers.abilities) if (!dex.abilities.get(id).exists) problems.push(`ko_blockers: ${id} is not an ability`);
+  for (const entry of config.ko_non_blockers?.items ?? []) if (!dex.items.get(entry.id).exists) problems.push(`ko_non_blockers: ${entry.id} is not an item`);
+  for (const entry of config.ko_non_blockers?.abilities ?? []) if (!dex.abilities.get(entry.id).exists) problems.push(`ko_non_blockers: ${entry.id} is not an ability`);
   try {
     checkScenario(engine, config);
   } catch (error) {

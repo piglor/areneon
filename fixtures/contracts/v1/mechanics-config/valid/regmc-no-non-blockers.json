@@ -1,0 +1,98 @@
+{
+  "schema_version": 1,
+  "format_id": "gen9championsvgc2026regmc",
+  "scenario": {
+    "removed_rules": [
+      "Min Team Size",
+      "Open Team Sheets",
+      "Picked Team Size",
+      "Team Preview",
+      "VGC Timer"
+    ],
+    "removed_rule_keys": [
+      "dctimerbank",
+      "minteamsize",
+      "openteamsheets",
+      "pickedteamsize",
+      "teampreview",
+      "timeoutautochoose",
+      "timeraddperturn",
+      "timergrace",
+      "timermaxfirstturn",
+      "timermaxperturn",
+      "timerstarting",
+      "vgctimer"
+    ]
+  },
+  "scope": {
+    "query_kinds": [
+      {
+        "kind": "damage",
+        "gap_ids": [
+          "damage-formula",
+          "level",
+          "mega-evolution",
+          "stat-points"
+        ]
+      },
+      {
+        "kind": "speed_order",
+        "gap_ids": [
+          "paralysis",
+          "trick-room"
+        ]
+      },
+      {
+        "kind": "stats",
+        "gap_ids": [
+          "level",
+          "stat-points"
+        ]
+      }
+    ]
+  },
+  "ko_blockers": {
+    "abilities": [
+      "disguise",
+      "emergencyexit",
+      "flamebody",
+      "multiscale",
+      "mummy",
+      "pickpocket",
+      "sandspit",
+      "seedsower",
+      "spicyspray",
+      "stamina",
+      "sturdy",
+      "wanderingspirit",
+      "weakarmor"
+    ],
+    "items": [
+      "airballoon",
+      "babiriberry",
+      "chartiberry",
+      "chilanberry",
+      "chopleberry",
+      "cobaberry",
+      "colburberry",
+      "ejectbutton",
+      "focusband",
+      "focussash",
+      "habanberry",
+      "kasibberry",
+      "kebiaberry",
+      "occaberry",
+      "oranberry",
+      "passhoberry",
+      "payapaberry",
+      "redcard",
+      "rindoberry",
+      "roseliberry",
+      "shucaberry",
+      "sitrusberry",
+      "tangaberry",
+      "wacanberry",
+      "yacheberry"
+    ]
+  }
+}
