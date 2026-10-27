@@ -699,3 +699,44 @@ mkdir -m 700 private-data/tests      # the output root: existing, mode 0700, a p
   `snapshot_unverified`, `worker_failed`, `play_failed`, ...); exit 2 for usage, 3 for a
   refusal of the guard, the root, the run or the record, 4 for a failure of the simulator side.
   Nothing else is shown, so a team never reaches a terminal log.
+
+## 7. Two scripted baselines against each other: the scripted head-to-head
+
+The scripted head-to-head (ADR-025 section 13) plays one scripted baseline against another on the
+validation pairs of a team dataset, each pair from both seats, with no learned policy and no worker.
+It is the harness of the `damage-aware@v2` against `damage-aware@v1` experiment; it is a progress
+view on validation teams, never the Training gate.
+
+```bash
+python -m areneon_ml.loop scripted-h2h --config RUN_CONFIG.json \
+  --arm-a damage-aware@v1 --arm-b damage-aware@v2 --pairs 400 --out H2H_DIR \
+  [--dataset-dir EVAL_DATASET --dataset-hash HEX64] [--game-processes 4] \
+  [--wall-time-cap-minutes 480] [--looks LOOKS.jsonl] [--node node]
+```
+
+- **Plan.** `--pairs N` plays `2 N` games on the first N disjoint pairs of the validation split
+  (`progress-pairing/1`), arm a on p1 for an even game and on p2 for an odd one, both games of a
+  pair on the pair's `progress-seed/1` battle seed. The run config gives the run key (so the seeds
+  and the pairing), the format, the turn cap and the latency budgets; `--dataset-dir` and
+  `--dataset-hash` replace its team dataset by an evaluation-only one. `damage-aware@v2` plays
+  teams of its prior's generator: teams outside the prior's support make the belief refuse and v2
+  play the `actor-rule` candidate, which is counted (expected 0 on dataset teams).
+- **Parallelism.** `--game-processes S` shares the games over `S` Node processes (process k plays
+  the games `g mod S = k`); the record is the same for every `S` and for a rerun. Measured on this
+  workstation under load (shared with two training runs): 4 pairs (8 games) of v1 against v2 took
+  97 s on one process and 51 s on two, so about 12 s per game on one process; 800 + 800 games is
+  roughly 5.4 CPU-hours, about 1.5 to 3 hours of wall time on four processes. These figures are
+  measurements of one machine at one time, not a claim that they repeat.
+- **Cap.** `--wall-time-cap-minutes` is checked after every game; passing it is a gate failure
+  (exit 4, nothing committed, no look logged).
+- **Output.** `H2H_DIR/head-to-head.json` (a `ScriptedHeadToHeadRecord`; new directory, never
+  overwritten) and one printed JSON line: the record hash, each arm's baseline identity hash (a
+  v2 arm also its belief identity, prior and belief-config hashes), the pair-level bootstrap
+  interval of each arm's pair score (`progress/stats.py`, descriptive, conditional on the fixed
+  validation plan), the pair-score histogram, wins, ties and forfeits by arm and cause, each
+  damage-aware arm's counts (including `reader_fallbacks`, `assumed_set_fallbacks` and
+  `probe_refusals`) and v2's belief counts (decisions, worlds, redraws, contradicted worlds,
+  requests with no consistent world, refusals by code).
+- **Look log.** Every run appends a `scripted-h2h` line to the validation look log before the
+  result is shown (`<H2H_DIR>.looks.jsonl`, or `--looks` to share one chain across a fixed run and
+  its replication). Validation is never quoted as held-out evidence.

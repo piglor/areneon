@@ -1,0 +1,275 @@
+{
+  "schema_version": 1,
+  "data_class": "synthetic",
+  "run_id": "tiny-run",
+  "version_manifest": {
+    "showdown_commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "format_id": "gen9championsvgc2026regmc",
+    "regulation": "M-C",
+    "ruleset_hash": "5555555555555555555555555555555555555555555555555555555555555555",
+    "format_rules_hash": "6666666666666666666666666666666666666666666666666666666666666666"
+  },
+  "teams": {
+    "dataset_hash": "9999999999999999999999999999999999999999999999999999999999999999",
+    "split": "validation",
+    "pairs_used": 2
+  },
+  "plan": {
+    "seed_derivation": "progress-seed/1",
+    "pairing": "progress-pairing/1",
+    "games": 4,
+    "max_turns": 100,
+    "latency_budget_ms": {
+      "preview_ms": 1000,
+      "battle_ms": 1000
+    },
+    "wall_time_cap_ms": 28800000
+  },
+  "arms": {
+    "a": {
+      "policy_id": "damage-aware@v1",
+      "identity_hash": "1111111111111111111111111111111111111111111111111111111111111111",
+      "counts": {
+        "decisions": 46,
+        "preview_decisions": 4,
+        "scored_decisions": 42,
+        "queries": 184,
+        "probe_runs": 138,
+        "unsupported_queries": 4,
+        "reader_fallbacks": 0,
+        "assumed_set_fallbacks": 0,
+        "epsilon_plays": 0
+      }
+    },
+    "b": {
+      "policy_id": "damage-aware@v2",
+      "identity_hash": "2222222222222222222222222222222222222222222222222222222222222222",
+      "counts": {
+        "decisions": 54,
+        "preview_decisions": 4,
+        "scored_decisions": 50,
+        "queries": 216,
+        "probe_runs": 162,
+        "unsupported_queries": 4,
+        "reader_fallbacks": 0,
+        "assumed_set_fallbacks": 1,
+        "epsilon_plays": 0
+      },
+      "belief": {
+        "identity_hash": "3333333333333333333333333333333333333333333333333333333333333333",
+        "prior_hash": "4444444444444444444444444444444444444444444444444444444444444444",
+        "belief_config_hash": "7777777777777777777777777777777777777777777777777777777777777777",
+        "worlds": 8,
+        "totals": {
+          "decisions": 46,
+          "worlds_sampled": 368,
+          "redraws": 8,
+          "contradicted_worlds": 4,
+          "no_consistent_world": 0,
+          "refusals": [
+            {
+              "code": "legality_redraws_exhausted",
+              "count": 1
+            },
+            {
+              "code": "reader_flagged",
+              "count": 3
+            }
+          ]
+        }
+      }
+    }
+  },
+  "result": {
+    "wins_a": 1,
+    "wins_b": 3,
+    "ties": 1,
+    "turn_cap_ties": 0,
+    "turns_total": 36,
+    "forfeits": [
+      {
+        "side": "a",
+        "cause": "latency_overrun",
+        "count": 1
+      }
+    ]
+  },
+  "games": [
+    {
+      "game": 0,
+      "pair": 0,
+      "a_seat": "p1",
+      "outcome": {
+        "kind": "played",
+        "winner": "b",
+        "turns": 9
+      },
+      "a_counts": {
+        "decisions": 10,
+        "preview_decisions": 1,
+        "scored_decisions": 9,
+        "queries": 40,
+        "probe_runs": 30,
+        "unsupported_queries": 1,
+        "reader_fallbacks": 0,
+        "assumed_set_fallbacks": 0,
+        "epsilon_plays": 0
+      },
+      "b_counts": {
+        "decisions": 12,
+        "preview_decisions": 1,
+        "scored_decisions": 11,
+        "queries": 48,
+        "probe_runs": 36,
+        "unsupported_queries": 1,
+        "reader_fallbacks": 0,
+        "assumed_set_fallbacks": 0,
+        "epsilon_plays": 0
+      },
+      "b_belief": {
+        "decisions": 10,
+        "worlds_sampled": 80,
+        "redraws": 2,
+        "contradicted_worlds": 1,
+        "no_consistent_world": 0,
+        "refusals": []
+      }
+    },
+    {
+      "game": 1,
+      "pair": 0,
+      "a_seat": "p2",
+      "outcome": {
+        "kind": "played",
+        "winner": "b",
+        "turns": 11
+      },
+      "a_counts": {
+        "decisions": 11,
+        "preview_decisions": 1,
+        "scored_decisions": 10,
+        "queries": 44,
+        "probe_runs": 33,
+        "unsupported_queries": 1,
+        "reader_fallbacks": 0,
+        "assumed_set_fallbacks": 0,
+        "epsilon_plays": 0
+      },
+      "b_counts": {
+        "decisions": 13,
+        "preview_decisions": 1,
+        "scored_decisions": 12,
+        "queries": 52,
+        "probe_runs": 39,
+        "unsupported_queries": 1,
+        "reader_fallbacks": 0,
+        "assumed_set_fallbacks": 0,
+        "epsilon_plays": 0
+      },
+      "b_belief": {
+        "decisions": 11,
+        "worlds_sampled": 88,
+        "redraws": 2,
+        "contradicted_worlds": 1,
+        "no_consistent_world": 0,
+        "refusals": []
+      }
+    },
+    {
+      "game": 2,
+      "pair": 1,
+      "a_seat": "p1",
+      "outcome": {
+        "kind": "played",
+        "winner": "a",
+        "turns": 14
+      },
+      "a_counts": {
+        "decisions": 12,
+        "preview_decisions": 1,
+        "scored_decisions": 11,
+        "queries": 48,
+        "probe_runs": 36,
+        "unsupported_queries": 1,
+        "reader_fallbacks": 0,
+        "assumed_set_fallbacks": 0,
+        "epsilon_plays": 0
+      },
+      "b_counts": {
+        "decisions": 14,
+        "preview_decisions": 1,
+        "scored_decisions": 13,
+        "queries": 56,
+        "probe_runs": 42,
+        "unsupported_queries": 1,
+        "reader_fallbacks": 0,
+        "assumed_set_fallbacks": 0,
+        "epsilon_plays": 0
+      },
+      "b_belief": {
+        "decisions": 12,
+        "worlds_sampled": 96,
+        "redraws": 2,
+        "contradicted_worlds": 1,
+        "no_consistent_world": 0,
+        "refusals": [
+          {
+            "code": "reader_flagged",
+            "count": 1
+          }
+        ]
+      }
+    },
+    {
+      "game": 3,
+      "pair": 1,
+      "a_seat": "p2",
+      "outcome": {
+        "kind": "forfeit",
+        "loser": "a",
+        "cause": "latency_overrun",
+        "request_seq": 3,
+        "turns": 2
+      },
+      "a_counts": {
+        "decisions": 13,
+        "preview_decisions": 1,
+        "scored_decisions": 12,
+        "queries": 52,
+        "probe_runs": 39,
+        "unsupported_queries": 1,
+        "reader_fallbacks": 0,
+        "assumed_set_fallbacks": 0,
+        "epsilon_plays": 0
+      },
+      "b_counts": {
+        "decisions": 15,
+        "preview_decisions": 1,
+        "scored_decisions": 14,
+        "queries": 60,
+        "probe_runs": 45,
+        "unsupported_queries": 1,
+        "reader_fallbacks": 0,
+        "assumed_set_fallbacks": 1,
+        "epsilon_plays": 0
+      },
+      "b_belief": {
+        "decisions": 13,
+        "worlds_sampled": 104,
+        "redraws": 2,
+        "contradicted_worlds": 1,
+        "no_consistent_world": 0,
+        "refusals": [
+          {
+            "code": "legality_redraws_exhausted",
+            "count": 1
+          },
+          {
+            "code": "reader_flagged",
+            "count": 2
+          }
+        ]
+      }
+    }
+  ]
+}

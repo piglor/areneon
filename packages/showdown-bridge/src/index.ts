@@ -420,6 +420,19 @@ export {
   writeProgress,
 } from "./progress-evaluation.ts";
 export { committedPlanSeeds, type ProgressPoolSource, runProgressCli } from "./progress-cli.ts";
+export { H2H_FILE, runScriptedH2HCli } from "./scripted-h2h-cli.ts";
+export {
+  type ScriptedGameRow,
+  type ScriptedHeadToHeadRecord,
+  ScriptedH2HRecordError,
+  scriptedH2HRecordHash,
+  SCRIPTED_H2H_LABEL,
+  playsOnBelief,
+  readScriptedH2HRecord,
+  sumBeliefCounts,
+  tallyScripted,
+} from "./scripted-h2h-record.ts";
+export { type ArmGameReport, buildScriptedRecord, playScriptedGames, SCRIPTED_POLICY_IDS, ScriptedH2HError, type ScriptedArm, scriptedArm, type ScriptedArmContext, type ScriptedPlayOptions } from "./scripted-h2h.ts";
 export {
   omniscientLogHash,
   progressRecordHash,

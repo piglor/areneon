@@ -77,6 +77,8 @@ from areneon_ml.progress.run import (
     progress_root,
     scheduled_generations,
 )
+from areneon_ml.progress.scripted import ARMS as SCRIPTED_ARMS
+from areneon_ml.progress.scripted import ScriptedError, ScriptedRequest, scripted_h2h
 from areneon_ml.report.command import report_run
 from areneon_ml.report.move_use import progress_move_use
 
@@ -187,6 +189,52 @@ def _add_run(commands: Any) -> None:
         "game process near 0.6 GB (operational: the generation's files are the same; see "
         "docs/training-run.md, sizing a run to a machine)",
     )
+
+
+def _add_scripted_parser(commands: Any) -> None:
+    """The ``scripted-h2h`` command (ADR-025 section 13): two scripted baselines."""
+    scripted = commands.add_parser(
+        "scripted-h2h",
+        help="two scripted baselines against each other on validation pairs, both seats",
+    )
+    scripted.add_argument(
+        "--config",
+        type=Path,
+        required=True,
+        help="a TrainingRunConfig: run key, format, caps, team dataset",
+    )
+    scripted.add_argument("--arm-a", choices=SCRIPTED_ARMS, required=True)
+    scripted.add_argument("--arm-b", choices=SCRIPTED_ARMS, required=True)
+    scripted.add_argument(
+        "--pairs", type=_positive, required=True, help="validation pairs; 2 x pairs games"
+    )
+    scripted.add_argument(
+        "--out", type=Path, required=True, help="a new directory; never overwritten"
+    )
+    scripted.add_argument(
+        "--dataset-dir", type=Path, help="an evaluation-only dataset instead of the config's"
+    )
+    scripted.add_argument("--dataset-hash", help="its hash (with --dataset-dir)")
+    scripted.add_argument(
+        "--game-processes",
+        type=_positive,
+        default=1,
+        help="parallel game processes; the result does not depend on it",
+    )
+    scripted.add_argument(
+        "--wall-time-cap-minutes",
+        type=_positive,
+        help="a run that passes it fails as a gate and commits nothing",
+    )
+    scripted.add_argument(
+        "--looks", type=Path, help="the validation look log (default <out>.looks.jsonl)"
+    )
+    scripted.add_argument("--node", default="node")
+
+
+def _add_owner_and_scripted_parsers(commands: Any) -> None:
+    _add_private_test_parser(commands)
+    _add_scripted_parser(commands)
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -319,7 +367,7 @@ def _parser() -> argparse.ArgumentParser:
     progress.add_argument("--engine-data", type=Path, required=True)
     progress.add_argument("--node", default="node", help="the node executable")
     progress.add_argument("--worker-python", default=sys.executable, help="CPU torch worker python")
-    _add_private_test_parser(commands)
+    _add_owner_and_scripted_parsers(commands)
     replay = commands.add_parser(
         "replay", help="write replay pages of training games under <out>/replays/"
     )
@@ -501,6 +549,28 @@ def _records(args: argparse.Namespace) -> dict[str, object]:
     return {"sources_hash": export_provenance(args.run_dir, args.out)}
 
 
+def _scripted(args: argparse.Namespace) -> dict[str, object]:
+    return scripted_h2h(
+        ScriptedRequest(
+            args.config,
+            args.arm_a,
+            args.arm_b,
+            args.pairs,
+            args.out,
+            args.dataset_dir,
+            args.dataset_hash,
+            args.game_processes,
+            args.wall_time_cap_minutes,
+            args.looks,
+        ),
+        repo=REPO,
+        node=args.node,
+    )
+
+
+_SIMPLE = {"progress": _progress, "scripted-h2h": _scripted}
+
+
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(sys.argv[1:] if argv is None else argv)
     if args.command == "private-test":
@@ -522,8 +592,8 @@ def main(argv: list[str] | None = None) -> int:
             out = inspect_run(args.run_dir, args.out, repo=REPO, node=args.node)
         elif args.command == "report":
             out = report_run(args.run_dir, args.progress_dir, args.out, args.inspect_dir)
-        elif args.command == "progress":
-            out = _progress(args)
+        elif args.command in _SIMPLE:
+            out = _SIMPLE[args.command](args)
         elif args.command == "replay" and args.progress_dir is not None:
             out = replay_progress(
                 args.progress_dir,
@@ -565,6 +635,7 @@ def main(argv: list[str] | None = None) -> int:
         InspectError,
         ProgressError,
         ProgressRecordError,
+        ScriptedError,
         LookError,
         OSError,
         json.JSONDecodeError,
