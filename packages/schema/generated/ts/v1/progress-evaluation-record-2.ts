@@ -109,6 +109,10 @@ export interface Teams {
    * The team dataset's hash, as the run config names it.
    */
   dataset_hash: string;
+  /**
+   * Present only when the validation teams came from another verified dataset than the run's own (the eval-dataset option, ADR-020 E-17.1): that dataset's hash. Absent: the teams are the validation split of the dataset dataset_hash names. Never equal to dataset_hash.
+   */
+  evaluation_dataset_hash?: string;
   split: "validation";
   /**
    * Disjoint ordered validation team pairs the record used: the most any match used (half of the largest games_per_match / anchor_games_per_match).

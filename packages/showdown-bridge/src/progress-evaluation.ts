@@ -342,6 +342,10 @@ export async function playProgress(options: ProgressOptions): Promise<ProgressRe
     if (anchors.length > 0 || options.previous !== undefined || versus !== undefined) throw new ProgressError("the Preview ablation is played alone: no anchors, no previous-generation matches and no other run");
     if (!Number.isSafeInteger(ablation.generation.generation) || ablation.generation.generation < 0 || ablation.generation.generation >= generation) throw new ProgressError("the ablation's Preview must come from an earlier generation");
   }
+  // The eval-dataset option (ADR-020 E-17.1): a pool of another dataset than the run's own is named in the record; the
+  // run's own dataset (when its config names one) stays `dataset_hash`, and the option never names the run's own.
+  const ownDataset = config.team_dataset?.dataset_hash;
+  const evaluationDataset = ownDataset !== undefined && pool.dataset_hash !== ownDataset ? pool.dataset_hash : undefined;
   const plan = progressPlan(options);
   const budget: LatencyBudget = { preview_ms: config.generation.latency_budget_ms.preview_ms, battle_ms: config.generation.latency_budget_ms.battle_ms };
   const manifest = resolveFormat(engine, config.format_id).manifest;
@@ -516,7 +520,12 @@ export async function playProgress(options: ProgressOptions): Promise<ProgressRe
     generation_manifest_sha256: options.generation_manifest_sha256,
     checkpoints: options.checkpoints,
     version_manifest: manifest,
-    teams: { dataset_hash: pool.dataset_hash, split: "validation", pairs_used: Math.max(games, anchorGames, runGames) / 2 },
+    teams: {
+      dataset_hash: ownDataset ?? pool.dataset_hash,
+      ...(evaluationDataset === undefined ? {} : { evaluation_dataset_hash: evaluationDataset }),
+      split: "validation",
+      pairs_used: Math.max(games, anchorGames, runGames) / 2,
+    },
     plan: {
       seed_derivation: PROGRESS_SEED_DERIVATION,
       pairing: PROGRESS_PAIRING,

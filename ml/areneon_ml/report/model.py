@@ -179,6 +179,9 @@ class ProgressFacts:
     #: The move-use diagnostic (#1164) over the generation's stored games, as ``move_use`` returns
     #: it; None when the generation stores no game or the repository has no move-class table.
     move_use: dict[str, Any] | None = None
+    #: The hash of the other verified dataset the validation teams came from (the eval-dataset
+    #: option, ADR-020 E-17.1); None: the validation split of the run's own dataset.
+    evaluation_dataset: str | None = None
 
 
 @dataclass(frozen=True)
@@ -404,6 +407,7 @@ def _progress_facts(record: dict[str, Any], move_use: dict[str, Any] | None) -> 
         plan.get("anchor_games_per_match"),
         ablation_summary(record),
         move_use,
+        record["teams"].get("evaluation_dataset_hash"),
     )
 
 

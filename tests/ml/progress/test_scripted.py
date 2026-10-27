@@ -20,6 +20,7 @@ from areneon_ml.loop import __main__ as module
 from areneon_ml.loop.__main__ import EXIT_PLAY, EXIT_REFUSED, main
 from areneon_ml.loop.play import PlayError
 from areneon_ml.progress import scripted
+from areneon_ml.progress.eval_dataset import EvalDataset
 from areneon_ml.progress.looks import LookError, read_looks, verify_looks
 from areneon_ml.progress.scripted import (
     ScriptedError,
@@ -204,7 +205,6 @@ def test_a_second_run_appends_to_the_same_log_and_never_overwrites(
         ({"arm_a": "learned@v1"}, "scripted baselines"),
         ({"arm_b": "damage-aware@v1"}, "different baselines"),
         ({"pairs": 0}, "at least 1"),
-        ({"dataset_dir": Path("/x")}, "go together"),
     ],
 )
 def test_it_refuses_a_bad_request_before_running(
@@ -266,7 +266,7 @@ def test_pairs_and_dataset_must_match_the_request(
     monkeypatch.setattr(scripted, "_run_node", FakeNode(record_for(req.config)))
     with pytest.raises(ScriptedError, match="pairs are not"):
         scripted_h2h(req, repo=REPO)
-    req = request(tmp_path, dataset_dir=tmp_path, dataset_hash="1" * 64)
+    req = request(tmp_path, eval_dataset=EvalDataset(tmp_path, "1" * 64))
     with pytest.raises(ScriptedError, match="dataset is not"):
         scripted_h2h(req, repo=REPO)
     assert not (tmp_path / "h2h.looks.jsonl").exists()

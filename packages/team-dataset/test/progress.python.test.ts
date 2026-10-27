@@ -26,7 +26,7 @@ import {
 } from "@areneon/showdown-bridge";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { verifiedDatasetHash } from "../src/dataset-hash.ts";
-import { DATASETS_DIR } from "../src/fixtures.ts";
+import { DATASETS_DIR, loadFixtureInputs, readFixtureRun, recordedPilot, regenerate, writeFixtures } from "../src/fixtures.ts";
 import { datasetValidationPool } from "../src/progress-pool.ts";
 import { engine, FORMAT } from "./support.ts";
 
@@ -132,6 +132,42 @@ describe.skipIf(!existsSync(PYTHON) && process.env.ARENEON_REQUIRE_PYTHON_WORKER
     const refused = spawnSync(PYTHON, ["-I", "-m", "areneon_ml.loop", "progress", "--run-dir", runDir, "--engine-data", DATA, "--generation", "1", "--damage-aware-budget-minutes", "5", "--progress-dir", join(dir, "dc.progress")], { encoding: "utf8", env, cwd: ROOT });
     expect(refused.status).toBe(3);
     expect(refused.stderr).toMatch(/needs --damage-aware/);
+  }, 900_000);
+
+  it("evaluates on a second dataset's validation split (the eval-dataset option): named in the record, byte-identical on rerun, refusals", () => {
+    const second = join(dir, "second-dataset");
+    const inputs = loadFixtureInputs(engine, FORMAT);
+    writeFixtures(second, regenerate(inputs, { ...readFixtureRun(SOURCE), dataset_id: "eval-v1", generation_key: "11".repeat(32), assignment_key: "22".repeat(32) }, recordedPilot(inputs, SOURCE)));
+    const secondHash = verifiedDatasetHash(engine, second, FORMAT);
+    const option = ["--eval-dataset-dir", second, "--eval-dataset-hash", secondHash];
+    const a = join(dir, "ea.progress");
+    const b = join(dir, "eb.progress");
+    const printed = progress(a, "--generation", "1", ...option) as unknown as { looks: number };
+    expect(printed.looks).toBe(1);
+    progress(b, "--generation", "1", ...option);
+    const record = readProgressEvaluationRecordV2(json<ProgressEvaluationRecordV2>(a, gen(1), "progress.json"));
+    expect(record.teams.evaluation_dataset_hash).toBe(secondHash);
+    expect(record.teams.dataset_hash).toBe(verifiedDatasetHash(engine, SOURCE, FORMAT));
+    // Every played team is one of the second dataset's validation teams.
+    const pool = datasetValidationPool(engine, readTrainingRunConfig({ ...json<Record<string, unknown>>(configFile), team_dataset: { path: second, dataset_hash: secondHash } }));
+    const mine = new Set(pool.teams.map((t) => teamHash(t.sets)));
+    const game = readProgressGameRecord(json(a, gen(1), "games", "actor-rule-sample-0.json"));
+    for (const seat of ["p1", "p2"] as const) expect(mine.has(game.teams[seat].team_hash)).toBe(true);
+    const files = tree(join(a, gen(1)));
+    expect(tree(join(b, gen(1)))).toEqual(files);
+    for (const file of files) expect(readFileSync(join(a, gen(1), file), "utf8"), file).toBe(readFileSync(join(b, gen(1), file), "utf8"));
+    // A committed directory is kept for the same dataset and refused for none or another.
+    expect(progress(a, "--generation", "1", ...option).generations.map((g) => g.skipped)).toEqual([true]);
+    const none = spawnSync(PYTHON, ["-I", "-m", "areneon_ml.loop", "progress", "--run-dir", runDir, "--engine-data", DATA, "--generation", "1", "--games", "4", "--record-games", "2", "--anchor-games", "4", "--progress-dir", a, "--node", process.execPath, "--worker-python", PYTHON], { encoding: "utf8", env, cwd: ROOT });
+    expect(none.status).toBe(3);
+    expect(none.stderr).toMatch(/another dataset's validation split/);
+    // The run's own dataset through the option is a refusal.
+    const own = spawnSync(PYTHON, ["-I", "-m", "areneon_ml.loop", "progress", "--run-dir", runDir, "--engine-data", DATA, "--generation", "1", "--progress-dir", join(dir, "ec.progress"), "--eval-dataset-dir", SOURCE, "--eval-dataset-hash", verifiedDatasetHash(engine, SOURCE, FORMAT)], { encoding: "utf8", env, cwd: ROOT });
+    expect(own.status).toBe(3);
+    expect(own.stderr).toMatch(/run's own training dataset/);
+    // A wrong hash for the directory is refused by the Node side, which reads the dataset.
+    const wrong = spawnSync(PYTHON, ["-I", "-m", "areneon_ml.loop", "progress", "--run-dir", runDir, "--engine-data", DATA, "--generation", "1", "--games", "4", "--record-games", "2", "--anchor-games", "4", "--progress-dir", join(dir, "ed.progress"), "--node", process.execPath, "--worker-python", PYTHON, "--eval-dataset-dir", second, "--eval-dataset-hash", "0".repeat(64)], { encoding: "utf8", env, cwd: ROOT });
+    expect(wrong.status).not.toBe(0);
   }, 900_000);
 
   it("plays another run's frozen pair with the real workers: one worker per run, both seats, the other run untouched", () => {

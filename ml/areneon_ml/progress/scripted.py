@@ -28,6 +28,7 @@ from areneon_contracts.contracts import jcs, sha256_hex, validate
 
 from areneon_ml.learner.config import RunConfigError, read_run_config
 from areneon_ml.loop.play import PlayError
+from areneon_ml.progress.eval_dataset import EvalDataset
 from areneon_ml.progress.looks import Look, append_look, looks_path
 from areneon_ml.progress.records import BASELINE_COUNT_KEYS, is_damage_aware, sum_baseline_counts
 from areneon_ml.progress.stats import PPM, bootstrap_stream_key, pair_interval
@@ -263,9 +264,8 @@ class ScriptedRequest:
     arm_b: str
     pairs: int
     out: Path
-    #: An evaluation-only dataset's directory and hash, instead of the config's team dataset.
-    dataset_dir: Path | None = None
-    dataset_hash: str | None = None
+    #: Another verified dataset (the eval-dataset option), instead of the config's team dataset.
+    eval_dataset: EvalDataset | None = None
     game_processes: int = 1
     wall_time_cap_minutes: int | None = None
     #: The look log; default the sibling ``<out>.looks.jsonl``.
@@ -305,8 +305,6 @@ def scripted_h2h(request: ScriptedRequest, *, repo: Path, node: str = "node") ->
         raise ScriptedError("the two arms must be different baselines")
     if request.pairs < 1:
         raise ScriptedError("--pairs must be at least 1")
-    if (request.dataset_dir is None) != (request.dataset_hash is None):
-        raise ScriptedError("--dataset-dir and --dataset-hash go together")
     config = read_run_config(json.loads(request.config.read_text(encoding="utf-8")))
     if config.run_key.startswith("CHANGE-ME"):
         raise RunConfigError(
@@ -330,11 +328,7 @@ def scripted_h2h(request: ScriptedRequest, *, repo: Path, node: str = "node") ->
         *("--arm-b", request.arm_b),
         *("--pairs", str(request.pairs)),
         *("--out", str(partial)),
-        *(
-            ("--dataset-dir", str(request.dataset_dir), "--dataset-hash", str(request.dataset_hash))
-            if request.dataset_dir is not None
-            else ()
-        ),
+        *(() if request.eval_dataset is None else request.eval_dataset.node_args()),
         *(("--game-processes", str(request.game_processes)) if request.game_processes != 1 else ()),
         *(("--wall-time-cap-ms", str(cap_ms)) if cap_ms is not None else ()),
     ]
@@ -390,7 +384,10 @@ def _tie(record: dict[str, Any], request: ScriptedRequest, config: Any, cap_ms: 
         raise ScriptedError("the record's turn cap and latency budgets are not the config's")
     if plan.get("wall_time_cap_ms") != cap_ms:
         raise ScriptedError("the record's wall-time cap is not the one asked for")
-    if request.dataset_hash is not None and record["teams"]["dataset_hash"] != request.dataset_hash:
+    if (
+        request.eval_dataset is not None
+        and record["teams"]["dataset_hash"] != request.eval_dataset.dataset_hash
+    ):
         raise ScriptedError("the record's dataset is not the one asked for")
 
 

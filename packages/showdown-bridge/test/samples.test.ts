@@ -194,6 +194,7 @@ describe("the shared contract sample corpus (ADR-008 §2)", () => {
       "v1/progress-evaluation-record-2/reader-invalid/baseline-probe-runs-exceed-queries.json",
       "v1/progress-evaluation-record-2/reader-invalid/baseline-row-missing.json",
       "v1/progress-evaluation-record-2/reader-invalid/counts-disagree.json",
+      "v1/progress-evaluation-record-2/reader-invalid/evaluation-dataset-is-own.json",
       "v1/progress-evaluation-record-2/reader-invalid/odd-games.json",
       "v1/progress-evaluation-record-2/reader-invalid/pair-is-game.json",
       "v1/progress-evaluation-record-2/reader-invalid/pairs-used-wrong.json",
