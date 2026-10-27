@@ -19,6 +19,12 @@
 //   spread   one "other spread" entry holding all the mass: the nature and Stat Points are drawn by the
 //            generator's own routine through the `SpreadSampler` port (packages/team-dataset).
 //
+//   holder   an unevolved Mega holder: the validator rewrites the Mega-forme set to the preview species
+//            holding the stone with that species' first listed ability, so the Mega forme's
+//            `holder_abilities` is what `megaHolderAbilities` reads from the validator (a point mass
+//            on a one-ability-after-rewrite result), while its `abilities` stay the Mega forme's own
+//            list (the ability after the Evolution);
+//
 // Not modelled, and measured by the slice's test instead: the stratum quotas and the validator's
 // rejections change the real team distribution a little. The builder is pure: the Mega-to-preview map
 // is an input (`megaPreviewSpecies` derives it from the pinned engine's stone data).
@@ -39,8 +45,8 @@ function bad(message: string): never {
   throw new GeneratorPriorError(message);
 }
 
-/** Bumped when the derivation changes how a number is computed. */
-export const GENERATOR_PRIOR_SCRIPT = "generator-prior.v1";
+/** Bumped when the derivation changes how a number is computed (v2: the Mega holders' pre-Evolution ability, #1167). */
+export const GENERATOR_PRIOR_SCRIPT = "generator-prior.v2";
 
 const MAX = 1_000_000_000_000;
 
@@ -81,6 +87,56 @@ export function megaPreviewSpecies(engine: Engine, vocabulary: TeamVocabulary, t
   return shows;
 }
 
+type RawValidator = { validateSet(set: unknown, teamHas: unknown): string[] | null };
+type RawSet = { species: string; ability: string; item: string };
+
+/**
+ * What the pinned validator makes of an unevolved Mega holder the generator proposes, per Mega roster
+ * entry: the proposal writes the Mega forme holding its stone with one of the forme's abilities; the
+ * validator rewrites the set to the preview species holding the stone with the preview species' first
+ * listed ability, whatever ability was proposed. Each entry's result is the weight of each ability
+ * the validator leaves, counted over the abilities the proposal draws (uniform over the entry's list),
+ * as ids with integer weights, and the species the set became (which must be the one it shows as).
+ * No species or ability is named here: the probe is the proposal's own set shape, judged by the engine
+ * (a neutral nature, one Stat Point and the first move of the pool, as the vocabulary export probes).
+ */
+export function megaHolderAbilities(engine: Engine, vocabulary: TeamVocabulary, shows_as: ReadonlyMap<string, string>): ReadonlyMap<string, ReadonlyMap<string, number>> {
+  const sim = engine.sim as unknown as { Dex: { formats: { get(id: string): { mod: string } }; mod(name: string): { species: { get(id: string): { name: string } }; items: { get(id: string): { name: string } }; abilities: { get(id: string): { name: string }; }; moves: { get(id: string): { name: string } }; natures: { all(): { name: string; plus?: string; minus?: string }[] } } }; TeamValidator: { get(id: string): RawValidator } };
+  const dex = sim.Dex.mod(sim.Dex.formats.get(vocabulary.format_id).mod);
+  const validator = sim.TeamValidator.get(vocabulary.format_id);
+  const nature = dex.natures.all().find((n) => n.plus === n.minus) ?? bad("the engine lists no neutral nature");
+  const out = new Map<string, Map<string, number>>();
+  for (const entry of vocabulary.roster) {
+    const preview = shows_as.get(entry.id);
+    if (preview === undefined) continue;
+    const stone = entry.required_item ?? bad(`${entry.id}: a Mega forme without a stone`);
+    const counts = new Map<string, number>();
+    for (const ability of [...new Set(entry.abilities)]) {
+      const set = {
+        name: "",
+        species: dex.species.get(entry.id).name,
+        item: dex.items.get(stone).name,
+        ability: dex.abilities.get(ability).name,
+        moves: [dex.moves.get(entry.moves[0]).name],
+        nature: nature.name,
+        gender: "",
+        evs: { hp: 1, atk: 0, def: 0, spa: 0, spd: 0, spe: 0 },
+      };
+      const problems = validator.validateSet(set, {});
+      if (problems !== null && problems.length > 0) bad(`${entry.id}: the validator refuses the probe set of ability ${ability}`);
+      const result = set as unknown as RawSet;
+      if (toId(result.species) !== preview) bad(`${entry.id}: the validator leaves the species ${result.species}, not ${preview}`);
+      if (toId(result.item) !== stone) bad(`${entry.id}: the validator changes the stone`);
+      const id = toId(result.ability);
+      counts.set(id, (counts.get(id) ?? 0) + 1);
+    }
+    out.set(entry.id, counts);
+  }
+  return out;
+}
+
+const toId = (text: string): string => text.toLowerCase().replace(/[^a-z0-9]/g, "");
+
 export interface GeneratorPriorInput {
   readonly vocabulary: TeamVocabulary;
   readonly config: TeamGeneratorConfig;
@@ -88,9 +144,11 @@ export interface GeneratorPriorInput {
   readonly generator_commit: string;
   /** `megaPreviewSpecies`: Mega roster entry to the preview species it shows as. */
   readonly shows_as: ReadonlyMap<string, string>;
+  /** `megaHolderAbilities`: Mega roster entry to the ability weights the validator leaves an unevolved holder with. */
+  readonly holder_abilities: ReadonlyMap<string, ReadonlyMap<string, number>>;
 }
 
-function forme(entry: RosterEntry, weights: ReadonlyMap<string, number>, slots: number): Forme {
+function forme(entry: RosterEntry, weights: ReadonlyMap<string, number>, slots: number, holder?: ReadonlyMap<string, number>): Forme {
   const abilities = [...new Set(entry.abilities)].sort(cmp);
   const pool = [...new Set(entry.moves)].sort(cmp);
   const n = pool.length;
@@ -110,6 +168,16 @@ function forme(entry: RosterEntry, weights: ReadonlyMap<string, number>, slots: 
     id: entry.id,
     weight: 1,
     abilities: { denominator: abilities.length, entries: abilities.map((id) => ({ id, weight: 1 })), residual: 0, unmapped: 0 },
+    ...(holder === undefined
+      ? {}
+      : {
+          holder_abilities: {
+            denominator: [...holder.values()].reduce((a, b) => a + b, 0),
+            entries: [...holder.keys()].sort(cmp).map((id) => ({ id, weight: holder.get(id) as number })),
+            residual: 0,
+            unmapped: 0,
+          },
+        }),
     items: { denominator, entries: named.map((e) => ({ id: e.id, weight: e.weight * scale })), no_item: sum === 0 ? scale : 0, residual: 0, unmapped: 0 },
     spreads: { denominator: 1, entries: [], residual: 1, unmapped: 0 },
     moves: { denominator, slots, entries: pool.map((id) => ({ id, inclusion: (denominator / n) * k })), empty_slots: (slots - k) * denominator, residual: 0, unmapped: 0 },
@@ -118,7 +186,7 @@ function forme(entry: RosterEntry, weights: ReadonlyMap<string, number>, slots: 
 
 /** Derive the `generator-matched` prior of `config` on `vocabulary`. */
 export function deriveGeneratorPrior(input: GeneratorPriorInput): UsagePrior {
-  const { vocabulary, config, generator_commit, shows_as } = input;
+  const { vocabulary, config, generator_commit, shows_as, holder_abilities } = input;
   if (!/^[0-9a-f]{40}$/.test(generator_commit)) bad("generator_commit is not 40 lower-case hex digits");
   const slots = config.moves_per_set ?? bad("the generator config has no moves_per_set");
   const roster = new Map(vocabulary.roster.map((r) => [r.id, r]));
@@ -136,7 +204,10 @@ export function deriveGeneratorPrior(input: GeneratorPriorInput): UsagePrior {
     groups.set(shown, [...(groups.get(shown) ?? []), entry]);
   }
   const species = [...groups.keys()].sort(cmp).map((id) => {
-    const formes = (groups.get(id) as RosterEntry[]).sort((a, b) => cmp(a.id, b.id)).map((e) => forme(e, weights, slots));
+    const formes = (groups.get(id) as RosterEntry[]).sort((a, b) => cmp(a.id, b.id)).map((e) => {
+      const holder = shows_as.has(e.id) ? (holder_abilities.get(e.id) ?? bad(`roster entry ${e.id} has no holder abilities`)) : undefined;
+      return forme(e, weights, slots, holder);
+    });
     return { id, denominator: formes.length, formes: formes as [Forme, ...Forme[]] };
   });
   const all = species.flatMap((s) => s.formes);

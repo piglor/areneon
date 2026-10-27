@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import { type Json, jcs } from "../src/canonical-json.ts";
 import { exportEngineData } from "../src/engine-data.ts";
 import { type Engine, loadEngine } from "../src/engine.ts";
-import { deriveGeneratorPrior, GENERATOR_PRIOR_SCRIPT, GeneratorPriorError, generatorConfigHash, megaPreviewSpecies } from "../src/generator-prior.ts";
+import { deriveGeneratorPrior, GENERATOR_PRIOR_SCRIPT, GeneratorPriorError, generatorConfigHash, megaHolderAbilities, megaPreviewSpecies } from "../src/generator-prior.ts";
 import { GOLDEN_DIR, GOLDEN_FORMAT } from "../src/golden.ts";
 import { readTeamGeneratorConfig } from "../src/team-records.ts";
 import { readTeamVocabulary, TEAM_VOCABULARY_FILE, type TeamVocabulary, teamVocabularyHash } from "../src/team-vocabulary.ts";
@@ -19,7 +19,8 @@ const config = readTeamGeneratorConfig(JSON.parse(readFileSync(join(ROOT, "confi
 const COMMIT = "b7cda7af2f1744ad4934d38fb379b1d3cfc3ffc2";
 const COMMITTED = join(ROOT, "config", "opponent-model", GOLDEN_FORMAT, `generator-matched.${config.config_id}.json`);
 const shows = megaPreviewSpecies(engine, vocabulary, table);
-const derive = (over: Partial<Parameters<typeof deriveGeneratorPrior>[0]> = {}) => deriveGeneratorPrior({ vocabulary, config, generator_commit: COMMIT, shows_as: shows, ...over });
+const holders = megaHolderAbilities(engine, vocabulary, shows);
+const derive = (over: Partial<Parameters<typeof deriveGeneratorPrior>[0]> = {}) => deriveGeneratorPrior({ vocabulary, config, generator_commit: COMMIT, shows_as: shows, holder_abilities: holders, ...over });
 const sha = (value: unknown): string => createHash("sha256").update(jcs(value as Json), "utf8").digest("hex");
 
 /** A small vocabulary: `roster` and `items` of the golden one are replaced (the builder reads nothing else). */
@@ -95,12 +96,63 @@ describe("the generator-matched prior of the committed config (ADR-025 section 1
   });
 });
 
+describe("the stone holders' pre-Evolution abilities (#1167)", () => {
+  const prior = derive();
+  const pick = (mega: boolean) => {
+    for (const s of prior.species) for (const f of s.formes) if ((f.id !== s.id) === mega) return { s, f: structuredClone(f), id: f.id };
+    throw new Error("none");
+  };
+
+  it("every Mega forme holds the single ability the pinned validator leaves its holder, the base forme none", () => {
+    const holders = megaHolderAbilities(engine, vocabulary, shows);
+    expect([...holders.keys()].sort()).toEqual([...shows.keys()].sort());
+    for (const s of prior.species) {
+      for (const f of s.formes) {
+        if (f.id === s.id) {
+          expect(f.holder_abilities, f.id).toBeUndefined();
+          continue;
+        }
+        const counts = holders.get(f.id) as ReadonlyMap<string, number>;
+        expect(f.holder_abilities?.entries, f.id).toEqual([...counts].sort(([a], [b]) => (a < b ? -1 : 1)).map(([id, weight]) => ({ id, weight })));
+        expect(f.holder_abilities?.denominator).toBe(entryAbilities(f.id));
+        // The post-Evolution list is the Mega forme's own; the holder ability is one the preview species lists.
+        expect(f.abilities.entries.map((e) => e.id)).toEqual([...new Set(vocabulary.roster.find((r) => r.id === f.id)?.abilities)].sort());
+        for (const e of f.holder_abilities?.entries ?? []) expect(vocabulary.roster.find((r) => r.id === s.id)?.abilities).toContain(e.id);
+      }
+    }
+    // Absol: the validator leaves the base forme's first listed ability whichever Mega ability was written.
+    expect(holders.get("absolmega")).toEqual(new Map([["pressure", 1]]));
+  });
+
+  const entryAbilities = (id: string): number => new Set(vocabulary.roster.find((r) => r.id === id)?.abilities).size;
+
+  it("the reader refuses a holder list on a forme that is not a Mega forme, an ability the species does not list and a bad sum", () => {
+    const withHolder = (mega: boolean, change: (h: NonNullable<ReturnType<typeof pick>["f"]["holder_abilities"]>) => void) => {
+      const target = pick(mega);
+      const p = structuredClone(prior);
+      const forme = p.species.find((s) => s.id === target.s.id)?.formes.find((f) => f.id === target.id) as (typeof target)["f"];
+      forme.holder_abilities = { denominator: 1, entries: [{ id: vocabulary.roster.find((r) => r.id === target.s.id)?.abilities[0] as string, weight: 1 }], residual: 0, unmapped: 0 };
+      change(forme.holder_abilities);
+      return p;
+    };
+    expect(() => readUsagePrior(withHolder(false, () => undefined), vocabulary)).toThrow(/not a Mega forme/);
+    expect(() => readUsagePrior(withHolder(true, (h) => (h.entries[0] = { id: "aaaaaaaaa", weight: 1 })), vocabulary)).toThrow(/holder ability aaaaaaaaa/);
+    expect(() => readUsagePrior(withHolder(true, (h) => (h.denominator = 2)), vocabulary)).toThrow(/holder abilities: the weights/);
+    expect(() => readUsagePrior(withHolder(true, () => undefined), vocabulary)).not.toThrow();
+  });
+
+  it("refuses a validator that moves the stone or the species, and a Mega forme with no result", () => {
+    expect(() => deriveGeneratorPrior({ vocabulary, config, generator_commit: COMMIT, shows_as: shows, holder_abilities: new Map() })).toThrow(/no holder abilities/);
+    expect(() => megaHolderAbilities(engine, vocabulary, new Map([["abomasnowmega", "snover"]]))).toThrow(/leaves the species/);
+  });
+});
+
 describe("the derivation on small vocabularies", () => {
   const cfg = (change: Record<string, unknown> = {}) => ({ ...config, item_weights: [], default_item_weight: 1, moves_per_set: 4, ...change }) as typeof config;
 
   it("scales unequal item weights and a short pool to integer inclusions", () => {
     const v = mini([entry("aaa", ["x"], ["m1", "m2", "m3"]), entry("bbb", ["x", "y"], ["m1", "m2", "m3", "m4", "m5", "m6", "m7"])], ["i1", "i2", "i3"]);
-    const prior = deriveGeneratorPrior({ vocabulary: v, config: cfg({ item_weights: [{ item: "i2", weight: 3 }, { item: "i3", weight: 0 }] }), generator_commit: COMMIT, shows_as: new Map() });
+    const prior = deriveGeneratorPrior({ vocabulary: v, config: cfg({ item_weights: [{ item: "i2", weight: 3 }, { item: "i3", weight: 0 }] }), generator_commit: COMMIT, shows_as: new Map(), holder_abilities: new Map() });
     const [a, b] = prior.species.map((s) => s.formes[0]);
     // aaa: 3 moves, 4 slots: a forced move each, one empty slot per set; items 1:3 over a pool of 3.
     expect(a?.items).toMatchObject({ denominator: 12, entries: [{ id: "i1", weight: 3 }, { id: "i2", weight: 9 }] });
@@ -114,14 +166,14 @@ describe("the derivation on small vocabularies", () => {
 
   it("gives all the mass to no item when every weight is zero", () => {
     const v = mini([entry("aaa", ["x"], ["m1", "m2"])], ["i1"]);
-    const prior = deriveGeneratorPrior({ vocabulary: v, config: cfg({ default_item_weight: 0 }), generator_commit: COMMIT, shows_as: new Map() });
+    const prior = deriveGeneratorPrior({ vocabulary: v, config: cfg({ default_item_weight: 0 }), generator_commit: COMMIT, shows_as: new Map(), holder_abilities: new Map() });
     expect(prior.species[0]?.formes[0]?.items).toEqual({ denominator: 2, entries: [], no_item: 2, residual: 0, unmapped: 0 });
     readUsagePrior(prior, v);
   });
 
   it("holds a Mega forme's stone and shows it as the pre-Mega species", () => {
     const v = mini([entry("aaa", ["x"], ["m1"]), entry("aaamega", ["z"], ["m1"], "i1")], ["i1", "i2"]);
-    const prior = deriveGeneratorPrior({ vocabulary: v, config: cfg({ item_weights: [{ item: "i1", weight: 0 }] }), generator_commit: COMMIT, shows_as: new Map([["aaamega", "aaa"]]) });
+    const prior = deriveGeneratorPrior({ vocabulary: v, config: cfg({ item_weights: [{ item: "i1", weight: 0 }] }), generator_commit: COMMIT, shows_as: new Map([["aaamega", "aaa"]]), holder_abilities: new Map([["aaamega", new Map([["x", 1]])]]) });
     expect(prior.species.map((s) => s.id)).toEqual(["aaa"]);
     const [base, mega] = (prior.species[0] as { formes: { items: { entries: unknown[] } }[] }).formes;
     expect(base?.items.entries).toEqual([{ id: "i2", weight: 1 }]);
@@ -131,7 +183,7 @@ describe("the derivation on small vocabularies", () => {
 
   it("refuses what it cannot derive", () => {
     const v = mini([entry("aaa", ["x"], ["m1"]), entry("aaamega", ["z"], ["m1"], "i1")], ["i1"]);
-    const base = { vocabulary: v, config: cfg(), generator_commit: COMMIT, shows_as: new Map<string, string>() };
+    const base = { vocabulary: v, config: cfg(), generator_commit: COMMIT, shows_as: new Map<string, string>(), holder_abilities: new Map<string, Map<string, number>>() };
     expect(() => deriveGeneratorPrior({ ...base, generator_commit: "abc" })).toThrow(GeneratorPriorError);
     const { moves_per_set: _, ...without } = cfg();
     expect(() => deriveGeneratorPrior({ ...base, config: without as never })).toThrow(/no moves_per_set/);

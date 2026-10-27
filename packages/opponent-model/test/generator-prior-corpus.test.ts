@@ -13,6 +13,7 @@ import type { UsagePrior } from "@areneon/schema/types/v1/usage-prior.ts";
 import { describe, expect, it } from "vitest";
 import { BeliefError, belief } from "../src/index.ts";
 import { admits, games, hiding, points } from "./corpus.ts";
+import { toId } from "@areneon/public-state";
 import { ROOT, realVocabulary } from "./real.ts";
 
 const prior = JSON.parse(readFileSync(join(ROOT, "config", "opponent-model", realVocabulary.format_id, "generator-matched.uniform-v1.json"), "utf8")) as UsagePrior;
@@ -25,9 +26,23 @@ const massless = (species: string, item: string): boolean => {
   return entry !== undefined && entry.formes.every((f) => !f.items.entries.some((e) => e.id === item && e.weight > 0) && f.items.residual === 0);
 };
 
+/**
+ * Whether the real set is a stone holder the prior gives no mass in its ability: the generator's teams go through the validator, which
+ * leaves a holder of its own species' stone the preview species' first ability (`holder_abilities`, #1167), and the corpus teams hold
+ * any ability the species lists. Such a Pokemon has no mass as the Mega forme once its ability is shown, and no world if its stone is.
+ */
+const holderGap = (set: { species: string; item: string; ability: string } | undefined): boolean => {
+  if (set === undefined) return false;
+  const item = idOf(set.item);
+  const entry = prior.species.find((s) => s.id === toId(set.species));
+  const holders = entry?.formes.filter((f) => f.holder_abilities !== undefined && f.items.entries.some((e) => e.id === item)) ?? [];
+  return holders.length > 0 && holders.every((f) => !(f.holder_abilities?.entries ?? []).some((e) => e.id === toId(set.ability) && e.weight > 0));
+};
+
 const run = () => {
-  const refused: { key: string; code: string; slot: number | null; item: string | null; species: string | null }[] = [];
+  const refused: { key: string; code: string; slot: number | null; item: string | null; species: string | null; gap: boolean }[] = [];
   const mismatches: string[] = [];
+  const holders = new Set<string>();
   let beliefs = 0;
   for (const g of games()) {
     for (const p of points(g)) {
@@ -39,7 +54,8 @@ const run = () => {
         for (const a of b.assignments.slice(0, 1)) {
           p.truth.team.forEach((set, i) => {
             const v = admits(a, i, set, p.state.opponent.roster[i]!.mega);
-            if (!v.forme || v.ability === false || !v.moves) mismatches.push(`${p.game} ${p.seat} ${p.request} slot ${i}: forme/ability/moves`);
+            if (holderGap(set) && v.moves) holders.add(`${p.game} ${p.seat} slot ${i}`);
+            else if (!v.forme || v.ability === false || !v.moves) mismatches.push(`${p.game} ${p.seat} ${p.request} slot ${i}: forme/ability/moves`);
             else if (!v.item) {
               const item = idOf(set.item);
               // the only item the belief may miss: another species' Mega Stone the prior gives no mass
@@ -51,11 +67,11 @@ const run = () => {
         if (!(e instanceof BeliefError)) throw e;
         const slot = e.slot;
         const mon = slot === null ? null : p.state.opponent.roster[slot]!;
-        refused.push({ key: `${p.game} ${p.seat} slot ${slot}`, code: e.code, slot, item: mon === null || !mon.item_known || mon.item_received ? null : mon.item, species: mon?.base_species ?? null });
+        refused.push({ key: `${p.game} ${p.seat} slot ${slot}`, code: e.code, slot, item: mon === null || !mon.item_known || mon.item_received ? null : mon.item, species: mon?.base_species ?? null, gap: slot !== null && holderGap(p.truth?.team[slot]) });
       }
     }
   }
-  return { refused, mismatches, beliefs };
+  return { refused, mismatches, beliefs, holders };
 };
 
 describe("the committed generator-matched prior on the committed corpora", () => {
@@ -69,12 +85,16 @@ describe("the committed generator-matched prior on the committed corpora", () =>
     const unsupported = result.refused.filter((r) => r.code === "evidence_has_no_support");
     // each is a revealed stone of a Pokemon that is not its holder, and the belief under a prior with a residual would have support
     for (const r of unsupported) {
+      if (r.gap) continue;
       expect(r.item, r.key).not.toBeNull();
       expect(stones.has(r.item as string), r.key).toBe(true);
       expect(massless(r.species as string, r.item as string), r.key).toBe(true);
     }
-    // the five slots of the cost run (games 8, 14, 15, 20 and 26 of the random corpus), over every request after the stone is shown
-    expect([...new Set(unsupported.map((r) => r.key))]).toEqual(["random/b08 p2 slot 5", "random/b14 p2 slot 5", "random/b15 p1 slot 1", "random/b20 p1 slot 2", "random/b26 p2 slot 0"]);
+    // the five slots of the cost run (games 8, 14, 15, 20 and 26 of the random corpus), over every request after the stone is shown, and
+    // one more since the prior knows what the validator leaves a stone holder (#1167): b14's Altaria holds its own stone with an ability
+    // the validator would not leave it, and shows it
+    expect([...new Set(unsupported.filter((r) => r.gap).map((r) => r.key))]).toEqual(["random/b14 p2 slot 2"]);
+    expect([...new Set(unsupported.map((r) => r.key))]).toEqual(["random/b08 p2 slot 5", "random/b14 p2 slot 2", "random/b14 p2 slot 5", "random/b15 p1 slot 1", "random/b20 p1 slot 2", "random/b26 p2 slot 0"]);
     // the reader's flag is the one Illusion twin of random/b39 (the whole game after the twin appears: its phantom roster entry stays)
     expect([...new Set(result.refused.filter((r) => r.code === "reader_flagged").map((r) => r.key.split(" slot")[0]))]).toEqual(["random/b39 p2"]);
   });
@@ -83,5 +103,7 @@ describe("the committed generator-matched prior on the committed corpora", () =>
     const result = lazy();
     expect(result.mismatches).toEqual([]);
     expect(result.beliefs).toBeGreaterThan(2000);
+    // the stone holders of the corpus teams whose ability the validator would not have left them: moves still possible, ability outside the prior's support
+    expect(result.holders.size).toBeGreaterThan(0);
   });
 });

@@ -110,7 +110,7 @@ describe("what it refuses to build", () => {
   };
 
   it("a usage prior other than the one the record names, and a belief config other than the one it names", () => {
-    const prior = copy("prior", (dir) => edit(dir, "generator-matched.uniform-v1.json", (v) => ((v.derivation as Record<string, unknown>).script_version = "generator-prior.v2")));
+    const prior = copy("prior", (dir) => edit(dir, "generator-matched.uniform-v1.json", (v) => ((v.derivation as Record<string, unknown>).script_version = "generator-prior.v0")));
     expect(() => createBeliefWorlds(context, prior)).toThrow("not the one the record names");
     const belief = copy("belief", (dir) => edit(dir, "belief.v1.json", (v) => (v.max_legality_redraws = 33)));
     expect(() => createBeliefWorlds(context, belief)).toThrow("belief config is not the one the record names");

@@ -4,7 +4,7 @@
 // and pass the pinned validator. `packages/opponent-model` is imported by path only: the package never
 // imports this one and this one does not depend on it.
 
-import { createSetLegality, deriveGeneratorPrior, megaPreviewSpecies, type PokemonSet } from "@areneon/showdown-bridge";
+import { createSetLegality, deriveGeneratorPrior, megaHolderAbilities, megaPreviewSpecies, type PokemonSet } from "@areneon/showdown-bridge";
 import { describe, expect, it } from "vitest";
 import { interpretChannel } from "../../public-state/src/index.ts";
 import { belief, createSampler, type OpponentBelief, type WorldSet } from "../../opponent-model/src/index.ts";
@@ -15,7 +15,7 @@ import { config, engine, KEY, table, vocabulary } from "./support.ts";
 import { teamVocabularyHash } from "@areneon/showdown-bridge";
 
 const COMMIT = "b7cda7af2f1744ad4934d38fb379b1d3cfc3ffc2";
-const prior = deriveGeneratorPrior({ vocabulary, config, generator_commit: COMMIT, shows_as: megaPreviewSpecies(engine, vocabulary, table) });
+const prior = deriveGeneratorPrior({ vocabulary, config, generator_commit: COMMIT, shows_as: megaPreviewSpecies(engine, vocabulary, table), holder_abilities: megaHolderAbilities(engine, vocabulary, megaPreviewSpecies(engine, vocabulary, table)) });
 const view = { ...vocabulary, vocabulary_hash: teamVocabularyHash(vocabulary) };
 const beliefConfig = { schema_version: 1 as const, identity_hiding_abilities: [], max_legality_redraws: 32, max_disguise_assignments: 64 };
 
@@ -39,6 +39,7 @@ const entryOf = (id: string) => vocabulary.roster.find((r) => r.id === id) as (t
 const weights = new Map(config.item_weights.map((w) => [w.item, w.weight]));
 const freeItems = vocabulary.items.filter((i) => (weights.get(i) ?? config.default_item_weight) > 0);
 const slots = config.moves_per_set as number;
+const shown = megaPreviewSpecies(engine, vocabulary, table);
 
 describe("sampled worlds have the generator's frequencies", () => {
   const spreads = generatorSpreadSampler(vocabulary, config);
@@ -67,10 +68,13 @@ describe("sampled worlds have the generator's frequencies", () => {
         within(mine.length, list.length, 1 / formes.length, `${forme} share of ${species}`);
         const n = mine.length;
         const k = Math.min(slots, entry.moves.length);
-        // An unevolved Mega forme shows the ability of the forme it comes from, which the belief draws from that forme's list (a known gap
-        // against the generator: the validator normalises a Mega-forme set to the base forme's first ability, see CLAUDE.md, opponent model).
-        const abilities = new Set(entry.required_item === undefined ? entry.abilities : entryOf(species).abilities);
-        for (const ability of abilities) within(mine.filter((s) => s.ability === ability).length, n, 1 / abilities.size, `${forme} ${ability}`);
+        // An unevolved Mega forme shows what the validator leaves a stone holder: the preview species' first ability (`holder_abilities`, #1167).
+        const holder = (prior.species.find((s) => s.id === species) as { formes: { id: string; holder_abilities?: { denominator: number; entries: { id: string; weight: number }[] } }[] }).formes.find((f) => f.id === forme)?.holder_abilities;
+        const abilities = new Map<string, number>(holder === undefined ? [...new Set(entry.abilities)].map((a) => [a, 1]) : holder.entries.map((e) => [e.id, e.weight]));
+        const total = [...abilities.values()].reduce((x, y) => x + y, 0);
+        if (holder === undefined) expect(entry.required_item, `${forme} has no holder abilities`).toBeUndefined();
+        for (const [ability, weight] of abilities) within(mine.filter((s) => s.ability === ability).length, n, weight / total, `${forme} ${ability}`);
+        expect(mine.every((s) => abilities.has(s.ability)), `${forme} shows only its holder abilities`).toBe(true);
         for (const nature of vocabulary.natures) within(mine.filter((s) => s.nature === nature.id).length, n, 1 / vocabulary.natures.length, `${forme} ${nature.id}`);
         for (const move of entry.moves) within(mine.filter((s) => s.moves.includes(move)).length, n, k / entry.moves.length, `${forme} ${move}`);
         expect(mine.every((s) => s.moves.length === k), `${forme} holds exactly ${k} moves`).toBe(true);
@@ -117,6 +121,29 @@ describe("sampled worlds have the generator's frequencies", () => {
     }
     expect(tests).toBeGreaterThan(10_000);
     expect(worst).toBeLessThanOrEqual(Z);
+  });
+
+  // The stone holders (#1167): the proposal writes the Mega forme with one of its own abilities; the pinned validator, as the pool runs it,
+  // leaves the preview species holding the stone with a single ability, which is exactly the prior's `holder_abilities`.
+  it("an unevolved stone holder of the proposal, after the validator, shows the prior's holder ability", () => {
+    const validator = (engine.sim as unknown as { TeamValidator: { get(id: string): { validateSet(set: unknown, teamHas: unknown): string[] | null } } }).TeamValidator.get(vocabulary.format_id);
+    const holders = generated.filter((g) => entryOf(g.species).required_item !== undefined).slice(0, 8000);
+    expect(holders).toHaveLength(8000);
+    const seen = new Set<string>();
+    let accepted = 0;
+    for (const { species, set } of holders) {
+      const copy = structuredClone(set);
+      // a set the validator refuses for another reason (a move combination) is a rejected draw, not a played team
+      if ((validator.validateSet(copy, {}) ?? []).length > 0) continue;
+      accepted += 1;
+      const shows = shown.get(species) as string;
+      expect(toId(copy.species), `${species} shows as ${shows}`).toBe(shows);
+      const holder = (prior.species.find((s) => s.id === shows) as { formes: { id: string; holder_abilities?: { entries: { id: string }[] } }[] }).formes.find((f) => f.id === species)?.holder_abilities;
+      expect(holder?.entries.map((e) => e.id), species).toEqual([toId(copy.ability)]);
+      seen.add(species);
+    }
+    expect(accepted).toBeGreaterThan(7000);
+    expect(seen.size).toBeGreaterThan(shown.size / 2);
   });
 
   it("the Stat Points of sampled worlds and of the proposal have the same per-stat distribution", () => {
