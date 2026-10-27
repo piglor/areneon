@@ -41,6 +41,18 @@ describe("the TrainingRunConfig reader (ADR-010 §5)", () => {
     }
   });
 
+  it("reads a Battle-only warm start with its warm-up and anchor, and keeps the both-role record as it was (#1165)", async () => {
+    const only = readTrainingRunConfig(sample("warm-start-battle-only"));
+    expect(only.warm_start).toEqual({ battle: "b".repeat(64) });
+    const both = readTrainingRunConfig(sample("warm-start"));
+    expect(await runConfigHash(only)).not.toBe(await runConfigHash(both));
+    const companions = readTrainingRunConfig(sample("battle-only-warmup-anchor"));
+    expect(companions.ppo.value_warmup).toEqual({ generations: 2 });
+    expect(companions.ppo.anchor).toBeDefined();
+    const preview = { ...sample("tiny"), warm_start: { preview: "a".repeat(64) } };
+    expect(() => readTrainingRunConfig(preview)).toThrow(TrainingRunConfigError);
+  });
+
   it("reads a value warm-up only with a warm start and hashes it apart (ADR-019 section 4)", async () => {
     const warm = readTrainingRunConfig(sample("value-warmup"));
     expect(warm.ppo.value_warmup).toEqual({ generations: 2 });

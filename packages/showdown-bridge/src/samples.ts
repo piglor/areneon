@@ -553,6 +553,12 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
       runSection(c, "ppo").value_warmup = { generations: 2 };
       runSection(c, "ppo").anchor = { kl_micro: 100000, schedule: { kind: "linear", final_micro: 0, generations: 10 } };
     }),
+    "training-run-config/warm-start-battle-only": runConfigWith((c) => (c.warm_start = { battle: hexOf("b") })),
+    "training-run-config/battle-only-warmup-anchor": runConfigWith((c) => {
+      c.warm_start = { battle: hexOf("b") };
+      runSection(c, "ppo").value_warmup = { generations: 2 };
+      runSection(c, "ppo").anchor = { kl_micro: 100000, schedule: { kind: "constant" } };
+    }),
     "clone-run-config/tiny": cloneConfig,
     "clone-run-config/no-holdout": cloneWith((c) => (runSection(c, "clone").holdout = { key: "d".repeat(64), ppm: 0 })),
     "run-metrics/cpu": runMetrics,

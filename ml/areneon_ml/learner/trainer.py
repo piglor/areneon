@@ -158,8 +158,13 @@ class Learner:
             raise LearnerError(
                 "the anchor networks are given exactly when the config has ppo.anchor"
             )
-        if anchors is not None and set(anchors) != set(ROLES):
-            raise LearnerError(f"one anchor network per role is needed: {sorted(ROLES)}")
+        # Value warm-up and the anchor act only on the warm-started roles (#1165): the others
+        # train as PPO from the first update.
+        self.warm_roles = frozenset(config.warm_start or ())
+        if anchors is not None and set(anchors) != self.warm_roles:
+            raise LearnerError(
+                f"one anchor network per warm-started role is needed: {sorted(self.warm_roles)}"
+            )
         self.config = config
         self.device = device
         self.networks = {role: networks[role].to(device) for role in ROLES}
@@ -167,7 +172,7 @@ class Learner:
         # not part of the learner state (the loop loads it from the run's checkpoint store).
         self.anchors: dict[str, PolicyNetwork] = {}
         if anchors is not None:
-            for role in ROLES:
+            for role in sorted(anchors):
                 anchor = anchors[role].to(device).eval()
                 anchor.requires_grad_(False)
                 self.anchors[role] = anchor
@@ -218,12 +223,12 @@ class Learner:
             for optimiser in self.optimisers.values():
                 for group in optimiser.param_groups:
                     group["lr"] = schedule.rate(self.generation)
-        warm = value_warmup_active(self.config, self.generation)
+        warmup = value_warmup_active(self.config, self.generation)
         self.last_anchor_beta_micro = self.anchor_beta_micro(self.generation)
         for role in ROLES:
             mine = [t for t in trajectories if t.role == role]
             if mine:
-                roles[role] = self._train_role(role, mine, warm)
+                roles[role] = self._train_role(role, mine, warmup and role in self.warm_roles)
         self.generation += 1
         return TrainReport(roles)
 
@@ -292,9 +297,7 @@ class Learner:
     ) -> RoleReport:
         """PPO epochs for one role; with ``warm`` only the value head learns (see below)."""
         # The anchor term is inactive while the policy is frozen (a value warm-up update).
-        table = self._table(
-            role, trajectories, anchor=self.config.ppo.anchor is not None and not warm
-        )
+        table = self._table(role, trajectories, anchor=role in self.anchors and not warm)
         network = self.networks[role]
         network.train()
         # Value warm-up: every parameter outside the value head is frozen, so the policy outputs
@@ -318,7 +321,7 @@ class Learner:
         weights = LossWeights(ppo.clip, ppo.value_coef, ppo.entropy_coef)
         sums = torch.zeros(5)
         kl_sum = torch.zeros(())
-        beta_micro = self.last_anchor_beta_micro
+        beta_micro = self.last_anchor_beta_micro if role in self.anchors else None
         beta = 0.0 if beta_micro is None else beta_micro / MICRO
         optimiser_steps = 0
         epochs_run = 0
