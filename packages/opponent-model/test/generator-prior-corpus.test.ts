@@ -26,7 +26,7 @@ const massless = (species: string, item: string): boolean => {
 };
 
 const run = () => {
-  const refused: { key: string; code: string; slot: number | null; item: string | null }[] = [];
+  const refused: { key: string; code: string; slot: number | null; item: string | null; species: string | null }[] = [];
   const mismatches: string[] = [];
   let beliefs = 0;
   for (const g of games()) {
@@ -35,7 +35,8 @@ const run = () => {
         const b = belief({ prior, vocabulary: realVocabulary, config: hiding, opponent: p.state.opponent, flags: p.flags });
         beliefs += 1;
         if (p.truth === null) continue;
-        for (const a of b.assignments.length > 0 ? [b.assignments[0]!] : []) {
+        if (b.assignments.length === 0) mismatches.push(`${p.game} ${p.seat} ${p.request}: no assignment`);
+        for (const a of b.assignments.slice(0, 1)) {
           p.truth.team.forEach((set, i) => {
             const v = admits(a, i, set, p.state.opponent.roster[i]!.mega);
             if (!v.forme || v.ability === false || !v.moves) mismatches.push(`${p.game} ${p.seat} ${p.request} slot ${i}: forme/ability/moves`);
@@ -50,7 +51,7 @@ const run = () => {
         if (!(e instanceof BeliefError)) throw e;
         const slot = e.slot;
         const mon = slot === null ? null : p.state.opponent.roster[slot]!;
-        refused.push({ key: `${p.game} ${p.seat} slot ${slot}`, code: e.code, slot, item: mon === null || !mon.item_known || mon.item_received ? null : mon.item });
+        refused.push({ key: `${p.game} ${p.seat} slot ${slot}`, code: e.code, slot, item: mon === null || !mon.item_known || mon.item_received ? null : mon.item, species: mon?.base_species ?? null });
       }
     }
   }
@@ -58,9 +59,11 @@ const run = () => {
 };
 
 describe("the committed generator-matched prior on the committed corpora", () => {
-  const result = run();
+  let memo: ReturnType<typeof run> | undefined;
+  const lazy = () => (memo ??= run());
 
   it("refuses only a Mega Stone on another species (no mass in the prior) and the Illusion twin of the reader", { timeout: 300_000 }, () => {
+    const result = lazy();
     const codes = new Set(result.refused.map((r) => r.code));
     expect([...codes].sort()).toEqual(["evidence_has_no_support", "reader_flagged"]);
     const unsupported = result.refused.filter((r) => r.code === "evidence_has_no_support");
@@ -68,6 +71,7 @@ describe("the committed generator-matched prior on the committed corpora", () =>
     for (const r of unsupported) {
       expect(r.item, r.key).not.toBeNull();
       expect(stones.has(r.item as string), r.key).toBe(true);
+      expect(massless(r.species as string, r.item as string), r.key).toBe(true);
     }
     // the five slots of the cost run (games 8, 14, 15, 20 and 26 of the random corpus), over every request after the stone is shown
     expect([...new Set(unsupported.map((r) => r.key))]).toEqual(["random/b08 p2 slot 5", "random/b14 p2 slot 5", "random/b15 p1 slot 1", "random/b20 p1 slot 2", "random/b26 p2 slot 0"]);
@@ -76,6 +80,7 @@ describe("the committed generator-matched prior on the committed corpora", () =>
   });
 
   it("holds the real forme, ability and moves possible at every other request, and the real item but for those stones", { timeout: 300_000 }, () => {
+    const result = lazy();
     expect(result.mismatches).toEqual([]);
     expect(result.beliefs).toBeGreaterThan(2000);
   });

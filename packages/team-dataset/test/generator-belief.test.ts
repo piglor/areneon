@@ -30,8 +30,9 @@ describe("the belief on generator teams", () => {
   it("exists at every request and holds the real team and brought set possible", { timeout: 300_000 }, async () => {
     const pool = datasetTeamPool(engine, config);
     let requests = 0;
-    for (let index = 0; index < 8; index++) {
-      const battle = await playSweepBattle(engine, FORMAT, pool, { run_key: "generator-belief", mix: "random-legal", index, max_turns: 100 });
+    for (let index = 0; index < 12; index++) {
+      const mix = index < 8 ? "random-legal" : "uniform-all";
+      const battle = await playSweepBattle(engine, FORMAT, pool, { run_key: "generator-belief", mix, index, max_turns: 100 });
       expect(battle.failure).toBeUndefined();
       const game: Game = { id: `g${index}`, teams: battle.teams as unknown as Record<"p1" | "p2", Set6[]>, channels: battle.channels };
       for (const point of points(game)) {
