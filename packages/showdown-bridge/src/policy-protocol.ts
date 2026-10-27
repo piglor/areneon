@@ -60,7 +60,48 @@ export function readPolicyQuery(value: unknown): PolicyQuery {
     if (seen.has(choice)) throw new PolicyProtocolError(`the candidate "${choice}" is listed twice`);
     seen.add(choice);
   }
+  if (query.sampling.kind === "sample" && query.sampling.temperature_ppm === FULL_TEMPERATURE_PPM) {
+    throw new PolicyProtocolError("temperature_ppm 1000000 is the default and must be omitted");
+  }
   return query;
+}
+
+/** Temperature 1 in millionths: the default, which a query never writes (ADR-023 §1). */
+export const FULL_TEMPERATURE_PPM = 1_000_000;
+
+/** How a sampled policy is played beyond temperature 1 (ADR-023 §1); both parts optional. */
+export interface PlaySettings {
+  /** 1 to 999,999; absent is temperature 1. */
+  temperature_ppm?: number;
+  truncation?: { kind: "threshold"; min_ppm: number };
+}
+
+/**
+ * The `policy:` id of a frozen pair played in `mode` (ADR-010 §2): SHA-256 of
+ * `JCS({preview, battle, mode, temperature, precision})`. Play settings enter the preimage only
+ * when set (`temperature_ppm` replaces `temperature`; `truncation` is added), so every earlier id
+ * is unchanged. The Python `areneon_ml.loop.records.policy_id` computes the same value.
+ */
+export function policyId(pair: { preview: string; battle: string }, mode: "sample" | "argmax", play: PlaySettings = {}): string {
+  const body: Record<string, Json> = { preview: pair.preview, battle: pair.battle, mode, temperature: 1, precision: "float32" };
+  if (play.temperature_ppm !== undefined || play.truncation !== undefined) {
+    if (mode !== "sample") throw new PolicyProtocolError("a temperature or a truncation applies to sample mode only");
+    if (play.temperature_ppm !== undefined) {
+      if (!Number.isInteger(play.temperature_ppm) || play.temperature_ppm < 1 || play.temperature_ppm >= FULL_TEMPERATURE_PPM) {
+        throw new PolicyProtocolError("temperature_ppm must be 1 to 999999; the default is omitted");
+      }
+      delete body.temperature;
+      body.temperature_ppm = play.temperature_ppm;
+    }
+    if (play.truncation !== undefined) {
+      const { kind, min_ppm } = play.truncation;
+      if (kind !== "threshold" || !Number.isInteger(min_ppm) || min_ppm < 1 || min_ppm > 999_999) {
+        throw new PolicyProtocolError("an unknown truncation, or min_ppm outside 1 to 999999");
+      }
+      body.truncation = { kind, min_ppm };
+    }
+  }
+  return `policy:${createHash("sha256").update(jcs(body)).digest("hex")}`;
 }
 
 /** `value` as a PolicyReply, or a `PolicyProtocolError`. */

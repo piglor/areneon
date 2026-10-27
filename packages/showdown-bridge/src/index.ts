@@ -197,10 +197,13 @@ export { type PolicyActorOptions, policyActor, type PolicyGameOptions, policyGam
 export {
   contractVersions,
   encodeFrame,
+  FULL_TEMPERATURE_PPM,
+  type PlaySettings,
   type PolicyHandshake,
   type PolicyQuery,
   type PolicyQueryInput,
   PolicyProtocolError,
+  policyId,
   type PolicyReply,
   readHandshake,
   readPolicyQuery,

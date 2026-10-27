@@ -551,7 +551,7 @@
       }
     },
     "SampleSampling": {
-      "description": "The first candidate, in order, whose cumulative probability exceeds u / 2^53 (probabilities at temperature 1, summed in float64).",
+      "description": "The first candidate, in order, whose cumulative probability exceeds u / 2^53 (the probabilities summed in float64; at temperature 1 and without a truncation unless the optional fields below say otherwise).",
       "type": "object",
       "additionalProperties": false,
       "required": [
@@ -567,6 +567,43 @@
           "type": "integer",
           "minimum": 0,
           "maximum": 9007199254740991
+        },
+        "temperature_ppm": {
+          "description": "Play temperature in millionths (ADR-023 §1): the probabilities are softmax(logits * 10^6 / temperature_ppm) over the real candidates, in float32. Absent means 1,000,000 (temperature 1). Writers omit it at the default: a reader rule refuses an explicit 1,000,000, so one rule has one encoding.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000
+        },
+        "truncation": {
+          "description": "An optional play-time truncation of the probabilities before the draw (ADR-023 §1). Absent means none.",
+          "type": "object",
+          "oneOf": [
+            {
+              "$ref": "#/$defs/ThresholdTruncation"
+            }
+          ],
+          "discriminator": {
+            "propertyName": "kind"
+          }
+        }
+      }
+    },
+    "ThresholdTruncation": {
+      "description": "Every candidate whose probability is below min_ppm / 10^6 gets probability 0, except that the first highest candidate is always kept; the rest are renormalised. Applied after the temperature, before the draw.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "min_ppm"
+      ],
+      "properties": {
+        "kind": {
+          "const": "threshold"
+        },
+        "min_ppm": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 999999
         }
       }
     }

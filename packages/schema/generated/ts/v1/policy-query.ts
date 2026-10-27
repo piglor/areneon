@@ -367,7 +367,7 @@ export interface ArgmaxSampling {
   kind: "argmax";
 }
 /**
- * The first candidate, in order, whose cumulative probability exceeds u / 2^53 (probabilities at temperature 1, summed in float64).
+ * The first candidate, in order, whose cumulative probability exceeds u / 2^53 (the probabilities summed in float64; at temperature 1 and without a truncation unless the optional fields below say otherwise).
  *
  * This interface was referenced by `PolicyQuery`'s JSON-Schema
  * via the `definition` "SampleSampling".
@@ -378,6 +378,24 @@ export interface SampleSampling {
    * The first 53 bits of SHA-256(JCS({seed, game, player, policy_id, request_seq})), computed by the client: the worker never receives the seed.
    */
   u: number;
+  /**
+   * Play temperature in millionths (ADR-023 §1): the probabilities are softmax(logits * 10^6 / temperature_ppm) over the real candidates, in float32. Absent means 1,000,000 (temperature 1). Writers omit it at the default: a reader rule refuses an explicit 1,000,000, so one rule has one encoding.
+   */
+  temperature_ppm?: number;
+  /**
+   * An optional play-time truncation of the probabilities before the draw (ADR-023 §1). Absent means none.
+   */
+  truncation?: ThresholdTruncation;
+}
+/**
+ * Every candidate whose probability is below min_ppm / 10^6 gets probability 0, except that the first highest candidate is always kept; the rest are renormalised. Applied after the temperature, before the draw.
+ *
+ * This interface was referenced by `PolicyQuery`'s JSON-Schema
+ * via the `definition` "ThresholdTruncation".
+ */
+export interface ThresholdTruncation {
+  kind: "threshold";
+  min_ppm: number;
 }
 /**
  * Which request a decision answers (ADR-008 §4). A consumer drops a recommendation unless request_seq and request_hash both match, and rqid too when both carry one.

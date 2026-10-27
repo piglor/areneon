@@ -209,6 +209,23 @@ def test_read_query_applies_the_reader_rules() -> None:
         read_query(sample("policy-query/reader-invalid/identity-differs.json"))
 
 
+def test_the_reader_invalid_sample_with_an_explicit_default_temperature_is_refused() -> None:
+    query = sample("policy-query/reader-invalid/temperature-explicit-default.json")
+    check("policy-query", query)  # schema-valid
+    with pytest.raises(QueryError, match="must be omitted"):
+        read_query(query)
+
+
+def test_read_query_refuses_an_explicit_default_temperature() -> None:
+    sampling = {"kind": "sample", "u": 5}
+    assert read_query(battle_query(sampling=sampling | {"temperature_ppm": 500_000}))
+    with pytest.raises(QueryError, match="must be omitted"):
+        read_query(battle_query(sampling=sampling | {"temperature_ppm": 1_000_000}))
+    for bad in ({"temperature_ppm": 0}, {"temperature_ppm": 1_000_001}):
+        with pytest.raises(QueryError, match="not a policy-query"):
+            read_query(battle_query(sampling=sampling | bad))
+
+
 def recommendation_of(frames: list[dict[str, Any]], index: int) -> dict[str, Any]:
     recommendation: dict[str, Any] = frames[index]["reply"]["recommendation"]
     return {k: v for k, v in recommendation.items() if k != "elapsed_ms"}
@@ -255,6 +272,44 @@ def test_the_draw_follows_u_and_argmax_does_not(tmp_path: Path) -> None:
     assert choices[3] == candidates[probabilities.index(max(probabilities))]
 
 
+def test_a_tempered_and_thresholded_draw_is_deterministic_and_keeps_the_top(
+    tmp_path: Path,
+) -> None:
+    worker = make_worker(tmp_path)
+    candidates = [c["choice"] for c in battle_query()["candidates"]]
+
+    def ask(query_id: int, sampling: dict[str, Any]) -> str:
+        _, frames = session(
+            worker, line(hello()), line(battle_query(query_id=query_id, sampling=sampling))
+        )
+        return str(frames[1]["reply"]["recommendation"]["choice"])
+
+    tempered = {"kind": "sample", "u": 2**52, "temperature_ppm": 250_000}
+    assert ask(1, tempered) == ask(1, tempered)
+    plain = worker._scorer.probabilities(encoder_input(battle_query()))
+    top = candidates[plain.index(max(plain))]
+    # A threshold no candidate can meet keeps only the first highest, whatever u is.
+    for u in (0, 2**52, 2**53 - 1):
+        sampling = {
+            "kind": "sample",
+            "u": u,
+            "truncation": {"kind": "threshold", "min_ppm": 999_999},
+        }
+        assert ask(2, sampling) == top
+    # The worker passes the temperature to the scorer only when the query carries one.
+    seen: list[Any] = []
+    real = worker._scorer.probabilities
+
+    def spy(view: dict[str, Any], **kwargs: Any) -> list[float]:
+        seen.append(kwargs)
+        return real(view, **kwargs)
+
+    worker._scorer.probabilities = spy  # type: ignore[method-assign]
+    ask(3, {"kind": "sample", "u": 1})
+    ask(4, tempered)
+    assert seen == [{}, {"temperature_ppm": 250_000}]
+
+
 def test_the_a1_and_a2_forms_get_the_same_probabilities_and_choice(tmp_path: Path) -> None:
     a1 = battle_query(query_id=1, sampling={"kind": "argmax"})
     a2 = sample("policy-query/valid/battle-a2.json")
@@ -268,7 +323,7 @@ class BrokenScorer:
     def __init__(self, result: list[float]) -> None:
         self._result = result
 
-    def probabilities(self, view: dict[str, Any]) -> list[float]:
+    def probabilities(self, view: dict[str, Any], temperature_ppm: int = 1_000_000) -> list[float]:
         return self._result
 
 

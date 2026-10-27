@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import copy
 import json
+import math
+import types
 from collections.abc import Iterator
 from dataclasses import replace
 from typing import Any
@@ -274,3 +276,60 @@ def test_a_forward_pass_builds_every_tensor_on_the_batch_device(role: str) -> No
     out = net(to_device(collate([query(role)]), meta))
     assert out.logits.device == meta
     assert out.value.device == meta
+
+
+def test_the_scorer_applies_the_play_temperature_to_the_logits(
+    cpu_inference: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # ADR-023 §1: softmax(logits * 10^6 / temperature_ppm) in float32, for logits (1, 0, -1).
+    scorer = NetworkScorer(game(), {"battle": network("battle"), "preview": network("preview")})
+    view = encoder_input(sample("policy-query/valid/battle.json"))
+    count = len(view["candidates"])
+    logits = torch.zeros(count)
+    logits[0], logits[1], logits[2] = 1.0, 0.0, -1.0
+
+    class Fixed:
+        role = "battle"
+        config = scorer._networks["battle"].config
+
+        def eval(self) -> None:
+            return None
+
+        def __call__(self, batch: object) -> Any:
+            return types.SimpleNamespace(logits=logits[None, :])
+
+    monkeypatch.setitem(scorer._networks, "battle", Fixed())
+    logits[3:] = -1e9
+    # T = 1: e^1, e^0, e^-1 over their sum 4.0861 -> 0.66524, 0.24473, 0.09003.
+    one = scorer.probabilities(view)
+    assert one[:3] == pytest.approx([0.665241, 0.244728, 0.090031], abs=1e-6)
+    # T = 0.5: logits 2, 0, -2: e^2 = 7.389056, e^0 = 1, e^-2 = 0.135335.
+    half = scorer.probabilities(view, temperature_ppm=500_000)
+    total = 7.389056 + 1.0 + 0.135335
+    assert half[:3] == pytest.approx([7.389056 / total, 1.0 / total, 0.135335 / total], abs=1e-6)
+    # T = 0.3: logits 3.33333, 0, -3.33333.
+    third = scorer.probabilities(view, temperature_ppm=300_000)
+    big, small = math.exp(10 / 3), math.exp(-10 / 3)
+    assert third[:3] == pytest.approx(
+        [big / (big + 1 + small), 1 / (big + 1 + small), small / (big + 1 + small)], abs=1e-6
+    )
+    # The default temperature passed explicitly is the untempered computation, bit for bit.
+    assert scorer.probabilities(view, temperature_ppm=1_000_000) == one
+    # Lower temperature sharpens: the top candidate gains mass.
+    assert half[0] > one[0]
+    assert third[0] > half[0]
+
+
+def test_a_tempered_query_answers_the_same_alone_and_after_others(cpu_inference: None) -> None:
+    scorer = NetworkScorer(game(), {"battle": network("battle"), "preview": network("preview")})
+    view = encoder_input(sample("policy-query/valid/battle.json"))
+    first = scorer.probabilities(view, temperature_ppm=400_000)
+    scorer.probabilities(
+        encoder_input(sample("policy-query/valid/preview.json")), temperature_ppm=700_000
+    )
+    scorer.probabilities(view)
+    assert scorer.probabilities(view, temperature_ppm=400_000) == first
+    # Tempered probabilities are proportional to the plain ones to the power 1 / T.
+    plain = scorer.probabilities(view)
+    powered = [p ** (1 / 0.4) for p in plain]
+    assert first == pytest.approx([p / sum(powered) for p in powered], abs=1e-5)

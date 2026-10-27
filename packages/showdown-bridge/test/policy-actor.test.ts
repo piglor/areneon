@@ -9,7 +9,7 @@ import { GOLDEN_FORMAT, GOLDEN_SEED, syntheticFixtureHashes, syntheticTeam } fro
 import { type Actor, type ActorContext, type BattleRecord, loadEngine, type Player, type RequestRecord, runBattle } from "../src/index.ts";
 import { recordedChannel } from "../src/player-channel.ts";
 import { type PolicyActorOptions, policyActor, policyGame, sampleU } from "../src/policy-actor.ts";
-import { PolicyProtocolError, type PolicyQueryInput } from "../src/policy-protocol.ts";
+import { PolicyProtocolError, type PolicyQueryInput, policyId, readPolicyQuery } from "../src/policy-protocol.ts";
 import { type PolicyClient, PolicyReplyError, PolicyWorkerClient } from "../src/policy-worker.ts";
 import { resolveFormat } from "../src/formats.ts";
 import { battleClass, stampTeam, teamHash } from "../src/team-class.ts";
@@ -97,6 +97,73 @@ describe("the sampler (ADR-010 section 2)", () => {
       expect(u).toBeGreaterThanOrEqual(0);
       expect(u).toBeLessThanOrEqual(2 ** 53 - 1);
     }
+  });
+});
+describe("play temperature and threshold (ADR-023 section 1)", () => {
+  const pair = { preview: "a".repeat(64), battle: "b".repeat(64) };
+  const threshold = { kind: "threshold" as const, min_ppm: 30_000 };
+
+  it("pins the policy ids, computed outside the code with Python hashlib over the JCS bytes", () => {
+    expect(policyId(pair, "sample")).toBe("policy:27d845e5bfc0f2d3abfec63197dd7c491189bf77578348114f087f3f532d31c2");
+    expect(policyId(pair, "argmax")).toBe("policy:7c52a4b5fa8e27c44409e440eb08520a75b987e5e6b27c948f4e6e21c093ec65");
+    expect(policyId(pair, "sample", { temperature_ppm: 500_000 })).toBe("policy:5103caa4cb0a3d108f6051d50c4747bdfea0825ab1a22c677ab70f3d7c016663");
+    expect(policyId(pair, "sample", { temperature_ppm: 300_000, truncation: threshold })).toBe(
+      "policy:88cd7d977c185606939de152102b371001b56d248325c7cba4bd95124bbdd61e",
+    );
+    expect(policyId(pair, "sample", { truncation: threshold })).toBe("policy:2c1f98904deffcc1b832e50579d99f42c104557b71a66163590d33613ab2fe7d");
+    // An empty settings object is the plain id.
+    expect(policyId(pair, "sample", {})).toBe(policyId(pair, "sample"));
+  });
+
+  it("refuses settings that cannot be encoded once", () => {
+    expect(() => policyId(pair, "argmax", { temperature_ppm: 500_000 })).toThrow(PolicyProtocolError);
+    expect(() => policyId(pair, "argmax", { truncation: threshold })).toThrow(PolicyProtocolError);
+    for (const temperature_ppm of [0, 1_000_000, 1_000_001, 0.5]) {
+      expect(() => policyId(pair, "sample", { temperature_ppm })).toThrow(/temperature_ppm/);
+    }
+    for (const min_ppm of [0, 1_000_000, 2.5]) {
+      expect(() => policyId(pair, "sample", { truncation: { kind: "threshold", min_ppm } })).toThrow(/truncation/);
+    }
+    expect(() => policyId(pair, "sample", { truncation: { kind: "top_p", min_ppm: 5 } as never })).toThrow(/truncation/);
+  });
+
+  it("puts the play settings in each sample query and nothing else changes", async () => {
+    const plain = recorder();
+    const tempered = recorder();
+    await play(both(plain));
+    await play(both(tempered, { play: { temperature_ppm: 500_000, truncation: threshold } }));
+    expect(plain.queries.length).toBeGreaterThan(4);
+    for (const { query } of plain.queries) expect(Object.keys(query.sampling).sort()).toEqual(["kind", "u"]);
+    for (const { query } of tempered.queries) {
+      expect(query.sampling).toMatchObject({ kind: "sample", temperature_ppm: 500_000, truncation: threshold });
+      expect(() => readPolicyQuery({ ...query, query_id: 1 })).not.toThrow();
+    }
+    // The temperature alone is one field; the draw u is the plain one (its label holds the policy id only).
+    const only = recorder();
+    await play(both(only, { play: { temperature_ppm: 250_000 } }));
+    for (const { query } of only.queries) expect(Object.keys(query.sampling).sort()).toEqual(["kind", "temperature_ppm", "u"]);
+    expect(only.queries.map((q) => (q.query.sampling as { u: number }).u)).toEqual(plain.queries.map((q) => (q.query.sampling as { u: number }).u));
+  });
+
+  it("refuses play settings on an argmax seat", () => {
+    expect(() => policyActor(optionsFor(recorder(), "p1", { sampling: "argmax", play: { temperature_ppm: 500_000 } }))).toThrow(PolicyProtocolError);
+    expect(() => policyActor(optionsFor(recorder(), "p1", { sampling: "argmax", play: {} }))).not.toThrow();
+  });
+
+  it("the reader refuses an explicit default temperature, zero, above one, and a truncation on argmax", () => {
+    const base = recorder();
+    const query = async () => {
+      await play(both(base));
+      return { ...(base.queries[0] as { query: PolicyQueryInput }).query, query_id: 1 };
+    };
+    return query().then((q) => {
+      const withSampling = (sampling: unknown) => ({ ...q, sampling });
+      expect(() => readPolicyQuery(withSampling({ kind: "sample", u: 1, temperature_ppm: 1_000_000 }))).toThrow(/must be omitted/);
+      for (const temperature_ppm of [0, 1_000_001]) expect(() => readPolicyQuery(withSampling({ kind: "sample", u: 1, temperature_ppm }))).toThrow(PolicyProtocolError);
+      expect(() => readPolicyQuery(withSampling({ kind: "argmax", truncation: threshold }))).toThrow(PolicyProtocolError);
+      expect(() => readPolicyQuery(withSampling({ kind: "sample", u: 1, truncation: { kind: "top_p", min_ppm: 5 } }))).toThrow(PolicyProtocolError);
+      expect(() => readPolicyQuery(withSampling({ kind: "sample", u: 1, temperature_ppm: 999_999 }))).not.toThrow();
+    });
   });
 });
 describe("the A1 online observation adapter", () => {

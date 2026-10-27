@@ -146,19 +146,16 @@ class ArgmaxSampling(BaseModel):
     kind: Literal["argmax"]
 
 
-class SampleSampling(BaseModel):
+class ThresholdTruncation(BaseModel):
     """
-    The first candidate, in order, whose cumulative probability exceeds u / 2^53 (probabilities at temperature 1, summed in float64).
+    Every candidate whose probability is below min_ppm / 10^6 gets probability 0, except that the first highest candidate is always kept; the rest are renormalised. Applied after the temperature, before the draw.
     """
 
     model_config = ConfigDict(
         extra="forbid",
     )
-    kind: Literal["sample"]
-    u: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
-    """
-    The first 53 bits of SHA-256(JCS({seed, game, player, policy_id, request_seq})), computed by the client: the worker never receives the seed.
-    """
+    kind: Literal["threshold"]
+    min_ppm: Annotated[StrictInt, Field(ge=1, le=999999)]
 
 
 class PokemonSet(BaseModel):
@@ -229,6 +226,31 @@ class DecisionContext(BaseModel):
     policy_budget_ms: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
     """
     The policy must answer within this; 0 means skip the policy and send the fallback.
+    """
+
+
+class SampleSampling(BaseModel):
+    """
+    The first candidate, in order, whose cumulative probability exceeds u / 2^53 (the probabilities summed in float64; at temperature 1 and without a truncation unless the optional fields below say otherwise).
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    kind: Literal["sample"]
+    u: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+    """
+    The first 53 bits of SHA-256(JCS({seed, game, player, policy_id, request_seq})), computed by the client: the worker never receives the seed.
+    """
+    temperature_ppm: Annotated[StrictInt | MISSING, Field(ge=1, le=1000000)] = MISSING
+    """
+    Play temperature in millionths (ADR-023 §1): the probabilities are softmax(logits * 10^6 / temperature_ppm) over the real candidates, in float32. Absent means 1,000,000 (temperature 1). Writers omit it at the default: a reader rule refuses an explicit 1,000,000, so one rule has one encoding.
+    """
+    truncation: Annotated[ThresholdTruncation | MISSING, Field(discriminator="kind")] = (
+        MISSING
+    )
+    """
+    An optional play-time truncation of the probabilities before the draw (ADR-023 §1). Absent means none.
     """
 
 

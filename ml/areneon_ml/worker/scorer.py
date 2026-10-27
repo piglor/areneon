@@ -20,4 +20,10 @@ class Scorer(Protocol):
 
     encoder_version: str
 
-    def probabilities(self, view: dict[str, Any]) -> list[float]: ...
+    def probabilities(self, view: dict[str, Any], temperature_ppm: int = ...) -> list[float]:
+        """``softmax(logits * 10^6 / temperature_ppm)`` in float32 (ADR-023 §1).
+
+        The worker passes ``temperature_ppm`` only when a query carries one; without it the
+        call is ``probabilities(view)``, temperature 1.
+        """
+        ...
