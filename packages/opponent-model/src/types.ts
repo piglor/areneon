@@ -15,7 +15,7 @@ import type { Dist } from "./fields.ts";
 import type { MoveModel } from "./moves.ts";
 
 /** Bumped when the filter changes how it computes a value (as `adapter_format` is for the probe). */
-export const BELIEF_FORMAT = "belief/1";
+export const BELIEF_FORMAT = "belief/2";
 
 /**
  * The part of the pinned engine's `TeamVocabulary` the filter reads. A `TeamVocabulary` is one;
@@ -68,13 +68,14 @@ export interface Cell {
   readonly weight: bigint;
 }
 
+/** One slot's belief inside ONE disguise assignment: the full per-forme models and the (forme, item) cells. */
 export interface SlotBelief {
   /** The 0-based position in the opponent's preview roster. */
   readonly index: number;
   /** The preview species id (the prior's species entry). */
   readonly species: string;
   readonly shown: { readonly name: string | null; readonly species: string | null; readonly level: number | null; readonly gender: string | null };
-  /** In the brought set for sure (it has been in play). */
+  /** In the brought set for sure under this assignment. */
   readonly settled: boolean;
   readonly p_brought: Ratio;
   readonly formes: readonly FormeBelief[];
@@ -90,20 +91,56 @@ export interface SlotBelief {
   readonly constraints: readonly string[];
 }
 
+/** One slot's belief mixed over the disguise assignments (with a single assignment, that assignment's own numbers). */
+export type SlotMarginal = Omit<SlotBelief, "formes" | "cells"> & {
+  readonly formes: readonly { readonly id: string; readonly mega: boolean; readonly p: Ratio }[];
+};
+
+/**
+ * One disguise assignment (ADR-025 section 3, N-B): where each shown position's evidence goes. A
+ * belief with no unsettled identity-hiding species has exactly one, the identity.
+ */
+export interface DisguiseAssignment {
+  /** The positions whose evidence is attributed to another slot: `position` is shown as itself, the evidence is `slot`'s. Empty for the identity. */
+  readonly moved: readonly { readonly position: number; readonly slot: number }[];
+  /** The assignment's integer weight: its Item Clause normaliser on the common scale of `DisguiseMixture.total`. */
+  readonly weight: bigint;
+  /** weight / total. */
+  readonly p: Ratio;
+  /** The Item Clause DP total of this assignment, the divisor of its cells' products. */
+  readonly normaliser: bigint;
+  /** Roster slots in the brought set under this assignment: the slots the shown positions are assigned to. */
+  readonly required: readonly number[];
+  readonly slots: readonly SlotBelief[];
+}
+
+export interface DisguiseMixture {
+  /** Preview slots whose species can hide its identity (from the config's abilities against the vocabulary). */
+  readonly hiding: readonly number[];
+  /** The hiding slots not yet settled: the members a shown position may really be. */
+  readonly unsettled: readonly number[];
+  /** The shown positions whose evidence is assigned (empty when nothing is shown or no hiding slot is unsettled). */
+  readonly positions: readonly number[];
+  /** The sum of the assignments' weights, the divisor of every `weight`. */
+  readonly total: bigint;
+}
+
 export interface OpponentBelief {
   readonly format: typeof BELIEF_FORMAT;
-  readonly slots: readonly SlotBelief[];
+  /** The marginal beliefs, mixed over `assignments`. */
+  readonly slots: readonly SlotMarginal[];
+  /** At least one; the identity first when it is possible. */
+  readonly assignments: readonly DisguiseAssignment[];
+  readonly disguise: DisguiseMixture;
   readonly itemClause: {
     /** False when the rule table has no Item Clause. */
     readonly enforced: boolean;
-    /** The sum of the joint (forme, item) weights, the divisor of every `Cell` product. */
-    readonly normaliser: bigint;
   };
   readonly brought: {
     readonly picked: number;
-    /** Roster positions settled in the brought set. */
+    /** Roster positions in the brought set under every assignment. */
     readonly settled: readonly number[];
-    /** The number of subsets of the roster of the picked size that hold every settled Pokemon. */
+    /** Per assignment: the number of subsets of the roster of the picked size that hold its required slots. */
     readonly subsets: bigint;
   };
   readonly constraints: readonly string[];
