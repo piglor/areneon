@@ -14,5 +14,8 @@
     "@areneon/public-state": "workspace:*",
     "@areneon/schema": "workspace:*",
     "ajv": "8.20.0"
+  },
+  "devDependencies": {
+    "@smogon/calc": "0.12.0"
   }
 }
