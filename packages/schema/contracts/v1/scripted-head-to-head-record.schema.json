@@ -1,0 +1,609 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:areneon:schema:contracts:v1:scripted-head-to-head-record",
+  "title": "ScriptedHeadToHeadRecord",
+  "description": "ADR-025 section 13: two scripted baselines played against each other on the ADR-017 E2 plan (validation pairs from both seats, progress-seed/1 seeds, the pair as the unit). No learned policy takes part. A progress view on validation teams, never the Training gate; the pair-level interval is derived on display from the games, never stored.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "data_class",
+    "run_id",
+    "version_manifest",
+    "teams",
+    "plan",
+    "arms",
+    "result",
+    "games"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "data_class": {
+      "description": "Always synthetic: a head-to-head runs on public, synthetic, CC0 teams only.",
+      "const": "synthetic"
+    },
+    "run_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+      "description": "The run key that seeds the pairing and the games (TrainingRunConfig.seeds.run_key)."
+    },
+    "version_manifest": {
+      "$ref": "#/$defs/VersionManifest"
+    },
+    "teams": {
+      "$ref": "#/$defs/Teams"
+    },
+    "plan": {
+      "$ref": "#/$defs/Plan"
+    },
+    "arms": {
+      "$ref": "#/$defs/Arms"
+    },
+    "result": {
+      "$ref": "#/$defs/Result"
+    },
+    "games": {
+      "description": "One row per game, in game order.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/GameRow"
+      }
+    }
+  },
+  "$defs": {
+    "VersionManifest": {
+      "description": "Replay identity of a battle (ADR-003, ADR-007): the pinned engine commit, the format, and the hashes of the engine ruleset and of Areneon's own format rules.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "showdown_commit",
+        "format_id",
+        "regulation",
+        "ruleset_hash",
+        "format_rules_hash"
+      ],
+      "properties": {
+        "showdown_commit": {
+          "description": "The pinned engine commit.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "format_id": {
+          "type": "string",
+          "pattern": "^[a-z0-9]+$"
+        },
+        "regulation": {
+          "type": "string",
+          "minLength": 1
+        },
+        "ruleset_hash": {
+          "description": "SHA-256 of the canonical engine ruleset.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "format_rules_hash": {
+          "description": "SHA-256 of Areneon's format rules record (ADR-007).",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "LatencyBudget": {
+      "description": "The per-decision latency budgets of the run's config.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "preview_ms",
+        "battle_ms"
+      ],
+      "properties": {
+        "preview_ms": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "battle_ms": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    "BaselineCounts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "decisions",
+        "preview_decisions",
+        "scored_decisions",
+        "queries",
+        "probe_runs",
+        "unsupported_queries",
+        "reader_fallbacks",
+        "assumed_set_fallbacks",
+        "epsilon_plays"
+      ],
+      "properties": {
+        "decisions": {
+          "description": "Requests answered, Team Preview included.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "preview_decisions": {
+          "description": "Team Preview requests (the actor-rule candidate).",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "scored_decisions": {
+          "description": "Requests whose candidates were scored.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "queries": {
+          "description": "Probe queries asked.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "probe_runs": {
+          "description": "Probe runs actually made (queries not answered from a game's memo).",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "unsupported_queries": {
+          "description": "Queries the probe answered unsupported: scored 0, never approximated.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "reader_fallbacks": {
+          "description": "Requests answered by the actor-rule candidate because the state reader flagged a line.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "assumed_set_fallbacks": {
+          "description": "Requests answered by the actor-rule candidate because no legal assumed opponent set could be built.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "epsilon_plays": {
+          "description": "Requests where epsilon_ppm made the baseline play a random candidate.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "probe_refusals": {
+          "description": "Optional (a minor change within v1; absent means 0 and is written only when above 0): requests answered by the actor-rule candidate because the mechanics probe refused a query the baseline built (a declared state the engine does not take). A high rate means the baseline plays like actor-rule; never more than queries.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    "Teams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "dataset_hash",
+        "split",
+        "pairs_used"
+      ],
+      "properties": {
+        "dataset_hash": {
+          "description": "The team dataset's hash (the run config's, or the evaluation dataset the command was given).",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "split": {
+          "const": "validation"
+        },
+        "pairs_used": {
+          "description": "Disjoint ordered validation team pairs played: games / 2.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    "Plan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "seed_derivation",
+        "pairing",
+        "games",
+        "max_turns",
+        "latency_budget_ms"
+      ],
+      "properties": {
+        "seed_derivation": {
+          "const": "progress-seed/1"
+        },
+        "pairing": {
+          "const": "progress-pairing/1"
+        },
+        "games": {
+          "description": "Games played (even): game g is pair g / 2 rounded down, played twice, arm a on p1 for an even g and on p2 for an odd g; teams stay on their seats.",
+          "type": "integer",
+          "minimum": 2,
+          "maximum": 9007199254740991
+        },
+        "max_turns": {
+          "description": "A game still running past this many turns is a tie.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "latency_budget_ms": {
+          "$ref": "#/$defs/LatencyBudget"
+        },
+        "wall_time_cap_ms": {
+          "description": "Optional: the declared wall-clock cap of the run in milliseconds. A run that passes it is a gate failure and writes no record; a record that carries it finished inside it.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    "RefusalCount": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "count"
+      ],
+      "properties": {
+        "code": {
+          "description": "The belief's refusal code (a fixed word of the opponent model).",
+          "type": "string",
+          "pattern": "^[a-z][a-z_]{0,63}$"
+        },
+        "count": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    "BeliefCounts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "decisions",
+        "worlds_sampled",
+        "redraws",
+        "contradicted_worlds",
+        "no_consistent_world",
+        "refusals"
+      ],
+      "properties": {
+        "decisions": {
+          "description": "Scored requests that asked the belief.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "worlds_sampled": {
+          "description": "Worlds sampled.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "redraws": {
+          "description": "Legality redraws of a world.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "contradicted_worlds": {
+          "description": "Worlds dropped because they contradict a public fact.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "no_consistent_world": {
+          "description": "Requests where every world was dropped: answered by the actor-rule candidate.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "refusals": {
+          "description": "Requests answered by the actor-rule candidate because the belief refused, by code: sorted, each code once.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/RefusalCount"
+          }
+        }
+      }
+    },
+    "ArmBelief": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "identity_hash",
+        "prior_hash",
+        "belief_config_hash",
+        "worlds",
+        "totals"
+      ],
+      "properties": {
+        "identity_hash": {
+          "description": "The belief identity hash (ADR-025 section 5).",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "prior_hash": {
+          "description": "The usage prior's hash.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "belief_config_hash": {
+          "description": "The belief config's hash.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "worlds": {
+          "description": "Worlds per scored request, the record's N.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "totals": {
+          "$ref": "#/$defs/BeliefCounts"
+        }
+      }
+    },
+    "Arm": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "policy_id"
+      ],
+      "properties": {
+        "policy_id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{0,31}@[A-Za-z0-9._-]{1,32}$"
+        },
+        "identity_hash": {
+          "description": "The baseline identity hash (ADR-018 section 5); present exactly for a damage-aware arm.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "counts": {
+          "description": "The arm's per-game counts summed over all games; present exactly for a damage-aware arm.",
+          "$ref": "#/$defs/BaselineCounts"
+        },
+        "belief": {
+          "description": "Present exactly for an arm that plays on belief worlds (damage-aware@v2).",
+          "$ref": "#/$defs/ArmBelief"
+        }
+      }
+    },
+    "Arms": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "a",
+        "b"
+      ],
+      "properties": {
+        "a": {
+          "$ref": "#/$defs/Arm"
+        },
+        "b": {
+          "$ref": "#/$defs/Arm"
+        }
+      }
+    },
+    "ForfeitCount": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "side",
+        "cause",
+        "count"
+      ],
+      "properties": {
+        "side": {
+          "description": "The arm whose policy failed.",
+          "enum": [
+            "a",
+            "b"
+          ]
+        },
+        "cause": {
+          "type": "string",
+          "pattern": "^[a-z][a-z_]{0,31}$"
+        },
+        "count": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    "Result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "wins_a",
+        "wins_b",
+        "ties",
+        "turn_cap_ties",
+        "turns_total",
+        "forfeits"
+      ],
+      "properties": {
+        "wins_a": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "wins_b": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "ties": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "turn_cap_ties": {
+          "description": "Ties that ran past max_turns.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "turns_total": {
+          "description": "Sum of the games' turns.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "forfeits": {
+          "description": "Forfeited games by failing arm then cause: sorted, each pair once. A forfeit is a scored loss for that arm.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ForfeitCount"
+          }
+        }
+      }
+    },
+    "Played": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "winner",
+        "turns"
+      ],
+      "properties": {
+        "kind": {
+          "const": "played"
+        },
+        "winner": {
+          "enum": [
+            "a",
+            "b",
+            "tie"
+          ]
+        },
+        "turns": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    "Forfeit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "loser",
+        "cause",
+        "request_seq",
+        "turns"
+      ],
+      "properties": {
+        "kind": {
+          "const": "forfeit"
+        },
+        "loser": {
+          "enum": [
+            "a",
+            "b"
+          ]
+        },
+        "cause": {
+          "type": "string",
+          "pattern": "^[a-z][a-z_]{0,31}$"
+        },
+        "request_seq": {
+          "description": "The failing arm's own request number.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "turns": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    "Outcome": {
+      "description": "How one game ended, seen from the two arms.",
+      "type": "object",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/Played"
+        },
+        {
+          "$ref": "#/$defs/Forfeit"
+        }
+      ],
+      "discriminator": {
+        "propertyName": "kind"
+      }
+    },
+    "GameRow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "game",
+        "pair",
+        "a_seat",
+        "outcome"
+      ],
+      "properties": {
+        "game": {
+          "description": "Game index: its pair is game / 2 rounded down.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "pair": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "a_seat": {
+          "description": "p1 for an even game, p2 for an odd one: the arms swap seats, the teams do not.",
+          "enum": [
+            "p1",
+            "p2"
+          ]
+        },
+        "outcome": {
+          "$ref": "#/$defs/Outcome"
+        },
+        "a_counts": {
+          "description": "Arm a's counts for this game; present exactly when arm a is damage-aware.",
+          "$ref": "#/$defs/BaselineCounts"
+        },
+        "b_counts": {
+          "description": "Arm b's counts for this game; present exactly when arm b is damage-aware.",
+          "$ref": "#/$defs/BaselineCounts"
+        },
+        "a_belief": {
+          "description": "Arm a's belief counts for this game; present exactly when arm a plays on belief worlds.",
+          "$ref": "#/$defs/BeliefCounts"
+        },
+        "b_belief": {
+          "description": "Arm b's belief counts for this game; present exactly when arm b plays on belief worlds.",
+          "$ref": "#/$defs/BeliefCounts"
+        }
+      }
+    }
+  }
+}
