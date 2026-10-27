@@ -23,28 +23,24 @@
 import { createInterpreter, type PublicFlag, type PublicInterpreter, type PublicMon, type PublicState, readerSha256 } from "@areneon/public-state";
 import { actorRule, NoCandidateError } from "./actor-rule.ts";
 import { parseJointChoice, type SlotPart } from "./damage-aware-choice.ts";
-import { type AssumedSet, AssumedSetError, assumedHp, buildAssumedSet, buildWorldAssumedSet, WorldMismatchError } from "./damage-aware-assumed-set.ts";
-import type { AnyDamageAwareConfig, DamageAwareConfig } from "./damage-aware-config.ts";
+import { type AssumedSet, AssumedSetError, buildWorldAssumedSet, WorldMismatchError } from "./damage-aware-assumed-set.ts";
+import type { AnyDamageAwareConfig } from "./damage-aware-config.ts";
 import { BELIEF_DEFECTS, type BeliefWorldsPort, refusalCode, type WorldLike, worldsStream } from "./damage-aware-worlds.ts";
 import { type DamageAwareIdentity, damageAwareIdentity, damageAwareIdentityHash, damageAwarePolicyId } from "./damage-aware-identity.ts";
-import { actsBefore, canKnockOut, type DamageAnswer, damageValue, discounted, PPM, type SpeedOrderAnswer } from "./damage-aware-score.ts";
+import { actsBefore, canKnockOut, damageValue, discounted, PPM, type SpeedOrderAnswer } from "./damage-aware-score.ts";
+import { array, DamageAwareError, damageView, type Foe, foesHit, isRandomFoe, object, type OwnSlot, ProbeRefusal, ReaderGap, text } from "./damage-aware-view.ts";
 import type { Engine, PokemonSet } from "./engine.ts";
 import { resolveFormat } from "./formats.ts";
 import { type MechanicsConfig } from "./mechanics-config.ts";
-import { type MechanicsContext, MechanicsProbeError, type ProbeOutcome, probeMechanics } from "./mechanics-probe.ts";
-import { type MechanicsQuery, mechanicsQueryHash, type ParsedMechanicsQuery, readMechanicsQuery } from "./mechanics-query.ts";
-import type { MechanicsResult } from "./mechanics-result.ts";
+import { type MechanicsContext, type ProbeOutcome, probeMechanics } from "./mechanics-probe.ts";
+import { type ParsedMechanicsQuery } from "./mechanics-query.ts";
 import { randomBelow, type RandomLegalState, randomLegal } from "./random-legal.ts";
 import { loadRulesSnapshot } from "./rules-load.ts";
 import type { RulesSnapshot } from "./rules.ts";
 import type { Actor, ActorContext, Player, RequestRecord } from "./runner.ts";
-import { exportPaste } from "./teams.ts";
 import type { TeamVocabulary } from "./team-vocabulary.ts";
 
-/** The actor was given something it cannot score: a missing context or team, an unknown request shape, a Pokemon that matches no set. It fails closed. */
-export class DamageAwareError extends Error {
-  override name = "DamageAwareError";
-}
+export { DamageAwareError };
 
 /** What the baseline counts per game (ADR-018 section 4: a baseline drifting towards `actor-rule` must be visible). All integers. */
 export interface DamageAwareCounts {
@@ -123,83 +119,10 @@ export interface DamageAwareOptions {
   assume?: (mon: PublicMon) => AssumedSet;
 }
 
-// What this module reads of the engine's data and of a request, narrowed locally.
-interface ScoreDex {
-  moves: { get(id: string): { exists: boolean; id: string; category: string } };
-  items: { get(id: string): { exists: boolean; name: string } };
-  species: { get(id: string): { exists: boolean; baseSpecies: string } };
-  conditions: { get(id: string): { exists: boolean; effectType: string } };
-}
-type Json = unknown;
-const object = (value: Json, what: string): Record<string, Json> => {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) throw new DamageAwareError(`${what} is not an object`);
-  return value as Record<string, Json>;
-};
-const array = (value: Json, what: string): Json[] => {
-  if (!Array.isArray(value)) throw new DamageAwareError(`${what} is not an array`);
-  return value;
-};
-const text = (value: Json, what: string): string => {
-  if (typeof value !== "string") throw new DamageAwareError(`${what} is not a string`);
-  return value;
-};
-
-/** Target types of a request's move, by what the scorer does with them (the engine's `MoveTarget` names; any other fails closed). */
-// The id strings below (target types, the four side conditions, Trick Room, the Terrain effect type, the Status
-// category, `fnt`) are the field names of the probe's `DamageState` contract and of the engine's own data, not
-// rules of this module. An id the engine's request carries that is in none of the target sets fails closed.
-const SINGLE = new Set(["normal", "any", "adjacentFoe"]);
-const RANDOM_FOE = new Set(["randomNormal"]);
-const EVERY_FOE = new Set(["allAdjacentFoes", "allAdjacent"]);
-const NO_FOE = new Set(["self", "adjacentAlly", "adjacentAllyOrSelf", "allySide", "allyTeam", "allies", "foeSide", "all", "scripted"]);
-/** The probe's refusal of an action it cannot order (`mechanics-speed.ts`): the one speed-order failure that is a known limit, not a defect. */
-const UNQUEUEABLE = "the action needs more than a move and a Mega Evolution";
-/** The probe's other speed-order limit: a fractional priority (Quick Claw, Custap Berry and the like), which its integer contract cannot state. */
-const FRACTIONAL = "the action's priority is not a whole number";
-const CONDITION = /^(\d+)(?:\/(\d+))?(?: ([a-z]+))?$/;
-
-/** One Pokemon as a probe combatant, with the pieces a query needs. */
-interface Fighter {
-  paste: string;
-  /** Current hit points, or null for full. */
-  hp: number | null;
-  status: string | null;
-  boosts: Record<"atk" | "def" | "spa" | "spd" | "spe", number>;
-  mega: boolean;
-}
-interface OwnSlot {
-  fighter: Fighter;
-  name: string;
-}
-interface Foe {
-  mon: PublicMon;
-  assumed: AssumedSet;
-  fighter: Fighter;
-  /** The foe's location number in a choice (`move 1 1`: 1 is the foe in the last active slot). */
-  loc: number;
-}
-
-/** The reader's state does not show an own Pokemon the request lists: the request plays the `actor-rule` candidate and is counted. */
-class ReaderGap extends Error {
-  override name = "ReaderGap";
-}
-
-type DamageState = Extract<MechanicsQuery["query"], { kind: "damage" }>["state"];
-type Combatant = Extract<MechanicsQuery["query"], { kind: "damage" }>["attacker"];
-
 /** A v2 request is answered by the `actor-rule` candidate; the cause is already in the belief counts. Never leaves the actor. */
 class BeliefFallback extends Error {
   override name = "BeliefFallback";
 }
-
-/** The probe raised a `MechanicsProbeError` for a query the baseline built: this request is answered by the `actor-rule` candidate. Never leaves the actor. */
-class ProbeRefusal extends Error {
-  override name = "ProbeRefusal";
-}
-/** The probe's words for a declared status the engine will not take; an unrevealed ability that blocks the status is then contradicted by it. */
-const STATUS_REFUSED = "the engine does not take that status";
-/** The probe's refusal of a query for a format its config is not for: a defect of the run, so it propagates. */
-const CONFIG_DEFECT = "the mechanics config is for another format";
 
 const PLAYERS: readonly Player[] = ["p1", "p2"];
 
@@ -235,14 +158,11 @@ export function damageAwareActor(options: DamageAwareOptions): DamageAwareActor 
   const policy_id = damageAwarePolicyId(commit);
   const identity = damageAwareIdentity({ config, mechanics, manifest, reader_sha256: readerSha256(), ...(worlds === undefined ? {} : { belief_identity_hash: worlds.identity_hash }) });
   const identity_hash = damageAwareIdentityHash(identity);
-  const dex = engine.sim.Dex.mod(engine.sim.Dex.formats.get(config.format_id).mod) as unknown as ScoreDex;
   const counts: DamageAwareCounts = {
     decisions: 0, preview_decisions: 0, scored_decisions: 0, queries: 0, probe_runs: 0,
     unsupported_queries: 0, reader_fallbacks: 0, assumed_set_fallbacks: 0, epsilon_plays: 0, probe_refusals: 0,
   };
   const belief: BeliefCounts | null = v2 === null ? null : { worlds: v2.assumed_set.worlds, decisions: 0, worlds_sampled: 0, redraws: 0, contradicted_worlds: 0, no_consistent_world: 0, refusals: {} };
-  const assume = options.assume ?? ((mon: PublicMon) => buildAssumedSet({ engine, vocabulary, config: v1 as DamageAwareConfig }, mon));
-
   // This game's reader, fed each request's new lines only.
   let reader: PublicInterpreter | null = null;
   let seat: Player | null = null;
@@ -250,170 +170,8 @@ export function damageAwareActor(options: DamageAwareOptions): DamageAwareActor 
   // Every line this game's reader flagged, in channel order (the belief refuses while any is on record).
   const flagList: PublicFlag[] = [];
   // Probe results by query hash: a pure function of the query on a pin and config, so a memo changes no answer.
-  const memo = new Map<string, MechanicsResult | null | { refused: string }>();
-
-  /**
-   * One probe answer, or null for a speed order the probe cannot take as a query (an action that
-   * queues more than a move and a Mega Evolution, as Focus Punch does, or one with a fractional priority): counted as `unsupported`,
-   * so no discount is applied. Any other `MechanicsProbeError` throws `ProbeRefusal` (the request falls back to `actor-rule`); every other failure is a defect and propagates.
-   */
-  function ask(value: MechanicsQuery): MechanicsResult | null {
-    const query = readMechanicsQuery(value);
-    const key = mechanicsQueryHash(query);
-    counts.queries += 1;
-    let result = memo.get(key);
-    if (result === undefined) {
-      counts.probe_runs += 1;
-      try {
-        result = probe({ engine, config: mechanics, snapshot }, query).result;
-      } catch (error) {
-        if (!(error instanceof MechanicsProbeError) || error.message.startsWith(CONFIG_DEFECT)) throw error; // a wrong config is a defect of the run, not of a state
-        if (query.query.kind === "speed_order" && [UNQUEUEABLE, FRACTIONAL].some((limit) => error.message.startsWith(limit))) {
-          // The probe's two known speed-order limits: no discount, counted as unsupported.
-          memo.set(key, null);
-          counts.unsupported_queries += 1;
-          return null;
-        }
-        // Any other refusal of a state the baseline declared: this request falls back to the actor-rule candidate.
-        memo.set(key, { refused: error.message });
-        throw new ProbeRefusal(error.message);
-      }
-      memo.set(key, result);
-    }
-    if (result === null) {
-      counts.unsupported_queries += 1;
-      return null;
-    }
-    if ("refused" in result) throw new ProbeRefusal(result.refused); // a memoised refusal (the query was asked again)
-    if (result.kind === "refused") throw new DamageAwareError("the probe refused a set the baseline built");
-    if (result.kind === "unsupported") counts.unsupported_queries += 1;
-    return result;
-  }
-  const query = (body: MechanicsQuery["query"]): MechanicsResult | null => ask({ schema_version: 1, data_class, format_id: config.format_id, query: body } as MechanicsQuery);
-
-  const damageOf = (attacker: Fighter, defender: Fighter, move: string, state: PublicState, attackerIsOwn: boolean): DamageAnswer | null => {
-    const result = query({ kind: "damage", attacker: combatant(attacker), defender: combatant(defender), move, state: field(state, attackerIsOwn) });
-    return result?.kind === "computed" && result.answer.kind === "damage" ? result.answer : null;
-  };
-  const maxHp = new Map<string, number>();
-  const maxHpOf = (paste: string): number => {
-    let hp = maxHp.get(paste);
-    if (hp === undefined) {
-      const result = query({ kind: "stats", set: paste });
-      if (result?.kind !== "computed" || result.answer.kind !== "stats") throw new DamageAwareError("the probe could not give an assumed set's maximum hit points");
-      hp = result.answer.stats.hp;
-      maxHp.set(paste, hp);
-    }
-    return hp;
-  };
-
-  function combatant(fighter: Fighter): Combatant {
-    return { set: fighter.paste, boosts: { ...fighter.boosts }, status: fighter.status, hp: fighter.hp, mega: fighter.mega };
-  }
-
-  /** The declared field, the attacker's side first (a query's `sides` are the attacker's, then the defender's). */
-  function field(state: PublicState, attackerIsOwn: boolean): DamageState {
-    const [first, second] = attackerIsOwn ? [state.own, state.opponent] : [state.opponent, state.own];
-    const sideOf = (side: PublicState["own"]): DamageState["sides"][number] => ({
-      aurora_veil: "auroraveil" in side.conditions,
-      light_screen: "lightscreen" in side.conditions,
-      reflect: "reflect" in side.conditions,
-      tailwind: "tailwind" in side.conditions,
-    });
-    const terrain = state.terrain ?? state.field_conditions.find((id) => dex.conditions.get(id).effectType === "Terrain") ?? null;
-    return {
-      weather: state.weather,
-      terrain,
-      trick_room: state.field_conditions.includes("trickroom"),
-      sides: [sideOf(first), sideOf(second)],
-    };
-  }
-
-  const boostsOf = (mon: PublicMon): Fighter["boosts"] => ({ atk: mon.boosts.atk ?? 0, def: mon.boosts.def ?? 0, spa: mon.boosts.spa ?? 0, spd: mon.boosts.spd ?? 0, spe: mon.boosts.spe ?? 0 });
-
-  /** The player's own active Pokemon in request slot `slot`, from its own request and own team. */
-  function ownSlot(side: Record<string, Json>, team: readonly Readonly<PokemonSet>[], state: PublicState, slot: number): OwnSlot {
-    const mon = object(array(side.pokemon, "side.pokemon")[slot], "an active Pokemon");
-    const ident = text(mon.ident, "ident");
-    const name = ident.slice(ident.indexOf(": ") + 2);
-    const matches = team.filter((set) => [set.name, set.name === "" ? set.species : "", dex.species.get(set.species).baseSpecies].includes(name));
-    if (matches.length !== 1) throw new DamageAwareError("an own Pokemon matches no set, or more than one, of the team as brought");
-    const shown = state.own.roster.find((candidate) => candidate.name === name);
-    if (shown === undefined) throw new ReaderGap("the reader does not show an own Pokemon the request lists");
-    const condition = CONDITION.exec(text(mon.condition, "condition"));
-    if (condition === null) throw new DamageAwareError("an own Pokemon's condition has a shape the baseline does not know");
-    const [, hp, max, status] = condition;
-    const item = text(mon.item, "item");
-    const set: PokemonSet = { ...structuredClone(matches[0] as PokemonSet), item: item === "" ? "" : dex.items.get(item).name };
-    return {
-      name,
-      fighter: {
-        paste: exportPaste(engine, [set]),
-        hp: max === undefined || Number(hp) === Number(max) ? null : Number(hp),
-        status: status === undefined || status === "fnt" ? null : status,
-        boosts: boostsOf(shown),
-        mega: shown.mega,
-      },
-    };
-  }
-
-  /**
-   * The assumed set of an opponent's Pokemon, consistent with its public status: the status is a fact the
-   * player saw, so an unrevealed ability that blocks it (Limber on a paralysed Pokemon) cannot be the one
-   * the Pokemon has. Abilities are tried in the record's order and the engine, through a probe query that
-   * declares the status, says which one blocks it. Throws `AssumedSetError` when every ability does. The
-   * refusal can also come from an engine hook that is no ability (a clause, a side condition); then the
-   * next ability is refused alike and the request ends in the `assumed_set_fallbacks` count, never a crash.
-   * Its probe queries add to `queries` and `probe_runs` for every request with a statused foe.
-   */
-  function assumedFor(mon: PublicMon, state: PublicState): AssumedSet {
-    let set = assume(mon);
-    if (mon.status === null || mon.ability !== null || options.assume !== undefined) return set;
-    const ruledOut: string[] = [];
-    while (statusBlocked(set, mon, state)) {
-      ruledOut.push(set.set.ability);
-      set = buildAssumedSet({ engine, vocabulary, config: v1 as DamageAwareConfig }, mon, ruledOut);
-    }
-    return set;
-  }
-
-  /**
-   * True when the engine refuses the Pokemon's public status on this assumed set (its ability blocks it): the
-   * status is a fact the player saw, so such a set cannot be the Pokemon. Any other refusal is not about the ability:
-   * scoring meets it and falls back.
-   */
-  function statusBlocked(set: AssumedSet, mon: PublicMon, state: PublicState): boolean {
-    const fighter: Fighter = { paste: set.paste, hp: null, status: null, boosts: boostsOf(mon), mega: set.mega };
-    const move = dex.moves.get(set.set.moves[0] as string).id;
-    try {
-      damageOf(fighter, { ...fighter, status: mon.status }, move, state, false);
-      return false;
-    } catch (error) {
-      return error instanceof ProbeRefusal && error.message.startsWith(STATUS_REFUSED);
-    }
-  }
-
-  /**
-   * The opposing active Pokemon with their assumed sets, by choice location. `assumedOf` gives the set of the
-   * Pokemon at a roster position: v1's field rules, or a sampled world's set. Throws `AssumedSetError` when none can be built.
-   */
-  function foesOf(state: PublicState, assumedOf: (mon: PublicMon, position: number) => AssumedSet): Foe[] {
-    const letters = Object.keys(state.opponent.slots).sort();
-    const out: Foe[] = [];
-    letters.forEach((letter, position) => {
-      const index = state.opponent.slots[letter];
-      const mon = index === null || index === undefined ? undefined : state.opponent.roster[index];
-      if (mon === undefined || mon.fainted) return;
-      const assumed = assumedOf(mon, index as number);
-      const percent = assumed.shown_hp_percent;
-      if (percent === null || percent === 0) return;
-      const max = maxHpOf(assumed.paste);
-      const hp = assumedHp(percent, max, config.hp_rounding);
-      const fighter: Fighter = { paste: assumed.paste, hp: hp === max ? null : hp, status: mon.status, boosts: boostsOf(mon), mega: assumed.mega };
-      out.push({ mon, assumed, fighter, loc: letters.length - position });
-    });
-    return out;
-  }
+  const view = damageView({ engine, vocabulary, config, v1, mechanics, snapshot, data_class, probe, counts, memo: new Map(), ...(options.assume === undefined ? {} : { assume: options.assume }) });
+  const { dex, query, damageOf, combatant, field, ownSlots, assumedFor, statusBlocked, foesOf } = view;
 
   /**
    * The score of every legal choice of one request, in the legal set's order, against the foes `foesNow`
@@ -474,16 +232,10 @@ export function damageAwareActor(options: DamageAwareOptions): DamageAwareActor 
       if (data.exists && data.category !== "Status") {
         // A locked move (Recharge, the second turn of Dig) is sent with no target type: it is one fixed part of every candidate, so it scores 0.
         const type = typeof slotMove.target === "string" ? slotMove.target : undefined;
-        let targets: Foe[] = [];
-        if (type !== undefined && SINGLE.has(type)) {
-          if (part.target === null) throw new DamageAwareError("a move that needs a target has none");
-          targets = foesNow().filter((foe) => foe.loc === part.target);
-        } else if (type !== undefined && EVERY_FOE.has(type)) targets = foesNow();
-        else if (type !== undefined && RANDOM_FOE.has(type)) targets = foesNow();
-        else if (type !== undefined && !NO_FOE.has(type)) throw new DamageAwareError("a move target type the baseline does not know");
+        const targets = foesHit(type, part.target, foesNow());
         // A spread move is the sum of its single-target values (v1); a random target is the mean over the foes.
         const sum = targets.reduce((total, foe) => total + against(slot, id, part.mega, foe), 0);
-        value = type !== undefined && RANDOM_FOE.has(type) && targets.length > 0 ? Math.floor(sum / targets.length) : sum;
+        value = isRandomFoe(type) && targets.length > 0 ? Math.floor(sum / targets.length) : sum;
       }
       scores.set(key, value);
       return value;
@@ -505,17 +257,11 @@ export function damageAwareActor(options: DamageAwareOptions): DamageAwareActor 
     return (request.legal as NonNullable<RequestRecord["legal"]>).choices[pick] as string;
   }
 
-  const ownSlots = (request: RequestRecord, state: PublicState, team: readonly Readonly<PokemonSet>[]): OwnSlot[] => {
-    const body = object(request.request, "request");
-    const side = object(body.side, "side");
-    return array(body.active, "active").map((_, slot) => ownSlot(side, team, state, slot));
-  };
-
   /** v1: score one request's candidates on the record's assumed sets. Throws `AssumedSetError` for the caller's fallback. */
   function score(request: RequestRecord, state: PublicState, team: readonly Readonly<PokemonSet>[]): string {
     let foes: Foe[] | null = null;
     const foesNow = (): Foe[] => (foes ??= foesOf(state, (mon) => assumedFor(mon, state)));
-    return best(request, scoreChoices(request, state, ownSlots(request, state, team), foesNow));
+    return best(request, scoreChoices(request, state, ownSlots(request.request, state, team), foesNow));
   }
 
   /**
@@ -526,7 +272,7 @@ export function damageAwareActor(options: DamageAwareOptions): DamageAwareActor 
   function scoreWorlds(request: RequestRecord, state: PublicState, team: readonly Readonly<PokemonSet>[], flags: readonly PublicFlag[]): string {
     const counted = belief as BeliefCounts;
     const port = worlds as BeliefWorldsPort;
-    const own = ownSlots(request, state, team);
+    const own = ownSlots(request.request, state, team);
     counted.decisions += 1;
     let sampled;
     try {
