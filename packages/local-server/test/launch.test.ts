@@ -20,6 +20,19 @@ import {
 } from "../src/index.ts";
 import { fakeCopy, freePort, tempDir } from "./helpers.ts";
 
+/**
+ * Budget of the tests that run a whole launcher in a child process. Before the
+ * signal is sent the test waits for two Node boots (the launcher with type
+ * stripping and its module graph, then the supervisor), a copy verification
+ * and the stand-in server's 150 ms start; all of that is CPU-bound, so on a
+ * busy 2-core runner it takes several times the ~1 s of an idle machine
+ * (about 3.5 s with 56 busy loops on 28 cores, and 5 s timeouts on CI). After
+ * the signal come two bounded polls of 10 s each. The wait that matters is
+ * event-driven (the launcher prints the server pid when it is ready); 30 s is
+ * start-up under load plus the shutdown, not a guess at a slow machine.
+ */
+const LAUNCHER_TEST_TIMEOUT_MS = 30_000;
+
 /** A pid no process has (above the default Linux pid_max). */
 const DEAD = 2 ** 22 + 7;
 
@@ -211,7 +224,7 @@ describe("launch with a stand-in server", () => {
     ["SIGINT to the launcher", "SIGINT", false],
     ["SIGKILL to the launcher", "SIGKILL", false],
     ["Ctrl-C: SIGINT to the launcher's process group", "SIGINT", true],
-  ] as const)("leaves no server and releases the lock after %s", async (_, signal, group) => {
+  ] as const)("leaves no server and releases the lock after %s", { timeout: LAUNCHER_TEST_TIMEOUT_MS }, async (_, signal, group) => {
     const copy = fakeCopy(fakeServer());
     const script = join(tempDir("launcher"), "launcher.ts");
     writeFileSync(

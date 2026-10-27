@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { chmodSync, mkdirSync, readdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, readdirSync, readFileSync, statfsSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { holdoutFlag, privateLogicalSnapshotHash, privateSnapshotHash, recordHash } from "@areneon/showdown-bridge";
 import { DuckdbWriter } from "@areneon/team-dataset";
@@ -12,6 +12,9 @@ import { at, engine, HOLDOUT_KEY, hex32, input, labelSet, plan, records, recordO
 
 // Each case decodes shard files in worker threads; a loaded CI machine needs more than the default 5 s.
 vi.setConfig({ testTimeout: 60_000 });
+
+/** statfs types the work-directory rule counts as memory: tmpfs and ramfs. */
+const MEMORY_FS_TYPES = [0x01021994, 0x858458f6];
 
 const code = async (run: () => unknown): Promise<string> => {
   try {
@@ -120,8 +123,10 @@ describe("writer refusals", () => {
       throw new Error("statfs");
     };
     expect(() => assertWorkDir(notPrivate, { fsType: failing })).toThrow(SnapshotIoError);
-    // The default probe asks the operating system: a directory in the test's scratch area is not tmpfs-checked as private-data.
-    expect(() => assertWorkDir(notPrivate)).toThrow(SnapshotIoError);
+    // The decision does not depend on the runner's /tmp: whatever file system the scratch area is on, a probe that says "disk" refuses, and the default probe agrees with what the operating system says about the directory.
+    const realIsMemory = MEMORY_FS_TYPES.includes(Number(statfsSync(notPrivate).type));
+    if (realIsMemory) expect(assertWorkDir(notPrivate)).toBe(notPrivate);
+    else expect(() => assertWorkDir(notPrivate)).toThrow(SnapshotIoError);
     // Parents: group- or world-writable without the sticky bit is refused, sticky is accepted, owners must be me or root.
     const openParent = join(scratchRoot, "open-parent");
     const inner = join(openParent, "private-data", "work");
@@ -256,8 +261,11 @@ describe("the working-directory seam", () => {
     const plain = join(scratchRoot, "seam");
     mkdirSync(plain, { recursive: true, mode: 0o700 });
     chmodSync(plain, 0o700);
-    const smuggled = { ...input({ records: records(2), workDir: plain }), probe: { fsType: () => 0x01021994 } };
-    expect(await code(() => writePrivateSnapshot(smuggled))).toBe("work_dir_unsafe");
+    // The scratch area may be disk (CI on 24.04) or tmpfs (26.04), so the test establishes which and smuggles the OPPOSITE answer: if the writer honoured a probe, the verdict would flip.
+    const realIsMemory = MEMORY_FS_TYPES.includes(Number(statfsSync(plain).type));
+    const smuggled = { ...input({ records: records(2), workDir: plain }), probe: { fsType: () => (realIsMemory ? 0xef53 : 0x01021994) } };
+    if (realIsMemory) expect((await writePrivateSnapshot(smuggled)).snapshotHash).toMatch(/^[0-9a-f]{64}$/);
+    else expect(await code(() => writePrivateSnapshot(smuggled))).toBe("work_dir_unsafe");
   });
 });
 
