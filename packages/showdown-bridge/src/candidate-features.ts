@@ -20,9 +20,9 @@
 // Not here: incoming threats and turn order (`probe-damage/2`), the belief-based sets (ADR-025 slice 5),
 // the transport field, the encoder and the worker pool.
 
-import { createInterpreter, type PublicFlag, readerSha256 } from "@areneon/public-state";
+import { createInterpreter, type PublicFlag, type PublicMon, readerSha256 } from "@areneon/public-state";
 import { type Json, jcs } from "./canonical-json.ts";
-import { AssumedSetError } from "./damage-aware-assumed-set.ts";
+import { type AssumedSet, AssumedSetError } from "./damage-aware-assumed-set.ts";
 import { parseJointChoice } from "./damage-aware-choice.ts";
 import { type DamageAwareConfig, damageAwareConfigHash } from "./damage-aware-config.ts";
 import { PPM, rollsValue } from "./damage-aware-score.ts";
@@ -74,6 +74,8 @@ export interface FeatureConfigs {
   data_class: "synthetic" | "private";
   /** Test seam: the probe (default `probeMechanics`). */
   probe?: (context: MechanicsContext, query: ParsedMechanicsQuery) => ProbeOutcome;
+  /** Test seam (the negative control of the invariance test): the assumed opponent set of a public Pokemon (default `buildAssumedSet`). */
+  assume?: (mon: PublicMon) => AssumedSet;
 }
 
 /** One row: a damaging move part of some candidate against one opposing target. */
@@ -161,6 +163,7 @@ export function candidateFeatures(
   const view = damageView({
     engine, vocabulary: configs.vocabulary, config: configs.config, v1: configs.config, mechanics: configs.mechanics, snapshot,
     data_class: configs.data_class, probe: configs.probe ?? probeMechanics, counts: memo.counts, memo: memo.results,
+    ...(configs.assume === undefined ? {} : { assume: configs.assume }),
   });
 
   // The reader, fed the whole channel; a line it could not take since the previous request makes the state untrustworthy (as for the baseline).
