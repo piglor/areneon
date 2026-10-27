@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { calculate, toID, Field, Generations, Move, Pokemon } from "@smogon/calc";
 import { beforeAll, describe, expect, it } from "vitest";
@@ -25,6 +25,8 @@ import { exportPaste, importPaste } from "../src/teams.ts";
 // (mechanics-stats.test.ts); a divergence is therefore the calc's, with the
 // reason it gives.
 
+// The field is always Doubles: the fixtures are doubles states (the spread modifier and
+// a screen's 2732/4096 apply there), as the probe's scenario battle is.
 const CALC_GEN = Generations.get(0);
 const dex = (): SimModdedDex => engine.sim.Dex.mod(engine.sim.Dex.formats.get(GOLDEN_FORMAT).mod);
 const FIXTURES = new URL("../../../fixtures/mechanics/gen9championsvgc2026regmc/", import.meta.url);
@@ -144,34 +146,34 @@ function calcDamage(c: DamageCase, crit: boolean): number[] {
   return rolls(calculate(CALC_GEN, attacker, defender, move, field).damage);
 }
 
-describe("damage fixtures: the probe's rolls against @smogon/calc generation 0", () => {
-  it.each(damageFixture.cases.map((c) => [c.id, c] as const))("%s", (_id, c) => {
-    const ascending = (list: number[]): number[] => [...list].sort((a, b) => a - b);
+function collectDamage(): void {
+  const ascending = (list: number[]): number[] => [...list].sort((a, b) => a - b);
+  for (const c of damageFixture.cases) {
     note(`damage:${c.id}:no_crit`, ascending(c.expected.no_crit), calcDamage(c, false));
     note(`damage:${c.id}:crit`, ascending(c.expected.crit), calcDamage(c, true));
-  });
-});
+  }
+}
 
 /** The probe's stats of a set and the calc's. */
 function statsPair(label: string, set: PokemonSet): void {
   const { result } = probeMechanics(context, readMechanicsQuery({ schema_version: 1, data_class: "synthetic", format_id: GOLDEN_FORMAT, query: { kind: "stats", set: exportPaste(engine, [set]) } }));
   if (result.kind !== "computed" || result.answer.kind !== "stats") throw new Error(`not computed: ${JSON.stringify(result)}`);
   const probe: StatTable = result.answer.stats;
-  let calc: StatTable | null = null;
-  try {
-    calc = calcPokemon(set).rawStats as StatTable;
-  } catch {
-    // The calc's Champions table has no such species: one case per set, with the probe's stats.
+  // A species the calc's Champions table lacks is one case per set; any other calc error surfaces.
+  if (CALC_GEN.species.get(toID(calcSpeciesName(set.species))) === undefined) {
+    note(`stats:${label}:species`, set.species, null);
+    return;
   }
-  if (calc === null) note(`stats:${label}:species`, set.species, null);
-  else for (const key of STAT_KEYS) note(`stats:${label}:${key}`, probe[key], calc[key]);
+  const calc = calcPokemon(set).rawStats as StatTable;
+  for (const key of STAT_KEYS) note(`stats:${label}:${key}`, probe[key], calc[key]);
 }
 
 const ZERO: StatTable = { hp: 0, atk: 0, def: 0, spa: 0, spd: 0, spe: 0 };
 const jsonl = (file: string): { paste: string }[] => readFileSync(file, "utf8").trim().split("\n").map((line) => JSON.parse(line) as { paste: string });
 
-describe("stats fixtures: the probe's six stats against @smogon/calc generation 0", () => {
-  it("covers the damage sets, the five reference cases and every committed fixture team", () => {
+/** Compare every stats fixture set; returns how many distinct sets were compared. */
+function collectStats(): number {
+  {
     let sets = 0;
     const seen = new Set<string>();
     const add = (label: string, set: PokemonSet): void => {
@@ -206,20 +208,36 @@ describe("stats fixtures: the probe's six stats against @smogon/calc generation 
       jsonl(join(TEAMS_DIR, "datasets", "fixtures-v1", file)).forEach((record, team) =>
         importPaste(engine, record.paste).forEach((set, index) => add(`${file}-${team}-${index}`, set)));
     }
-    expect(sets).toBeGreaterThan(200);
+    return sets;
+  }
+}
+
+// Both collections run once, whichever test asks first, so no test depends on another having run.
+let collected: number | null = null;
+const collect = (): number => {
+  if (collected === null) {
+    collectDamage();
+    collected = collectStats();
+  }
+  return collected;
+};
+
+describe("the probe against @smogon/calc generation 0", () => {
+  it("covers every damage case and the stats of the damage sets, the five reference cases and every committed fixture team", () => {
+    expect(collect()).toBeGreaterThan(200);
   });
 });
 
 describe("the divergence list is exact", () => {
   const path = new URL("calc-divergences.json", FIXTURES);
   const listed = (): Divergence[] => {
-    if (!existsSync(path)) return [];
     const json = JSON.parse(readFileSync(path, "utf8")) as { data_class: string; divergences: Divergence[] };
     expect(json.data_class).toBe("synthetic");
     return json.divergences;
   };
 
   it("lists every difference found, with its reason and the two values, and nothing else", () => {
+    collect();
     const entries = listed();
     expect(new Set(entries.map((e) => e.case)).size).toBe(entries.length);
     for (const entry of entries) expect(entry.reason.trim().length, entry.case).toBeGreaterThan(20);
