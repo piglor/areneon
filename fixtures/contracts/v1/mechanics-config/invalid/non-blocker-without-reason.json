@@ -115,11 +115,11 @@
       },
       {
         "id": "cursedbody",
-        "reason": "Chance-based disable of the attacker's move; it only prevents a repeat and changes no damage input."
+        "reason": "Chance-based effect on the attacker; failing to act by chance is outside the count, as a miss is, and no damage input of a repeat changes."
       },
       {
         "id": "cutecharm",
-        "reason": "Chance-based infatuation of the attacker; it does not change the damage inputs of a later hit."
+        "reason": "Chance-based effect on the attacker; failing to act by chance is outside the count, as a miss is, and no damage input of a repeat changes."
       },
       {
         "id": "damp",
@@ -135,7 +135,7 @@
       },
       {
         "id": "effectspore",
-        "reason": "Chance-based status of the attacker; it does not change the damage inputs of a later hit."
+        "reason": "Chance-based effect on the attacker; failing to act by chance is outside the count, as a miss is, and no damage input of a repeat changes."
       },
       {
         "id": "electromorphosis",
@@ -171,7 +171,7 @@
       },
       {
         "id": "heatproof",
-        "reason": "Concerns indirect damage or recoil only; damage from a move is untouched. It halves burn damage."
+        "reason": "Halves burn damage and Fire-move Attack and Special Attack against the holder; the Fire factor is already in the engine roll vector and the burn is indirect damage."
       },
       {
         "id": "illusion",
@@ -215,7 +215,7 @@
       },
       {
         "id": "poisonpoint",
-        "reason": "Chance-based poison of the attacker; it does not change the damage inputs of a later hit."
+        "reason": "Chance-based effect on the attacker; failing to act by chance is outside the count, as a miss is, and no damage input of a repeat changes."
       },
       {
         "id": "punkrock",
@@ -251,7 +251,7 @@
       },
       {
         "id": "static",
-        "reason": "Chance-based paralysis of the attacker; it does not change the damage inputs of a later hit."
+        "reason": "Chance-based effect on the attacker; failing to act by chance is outside the count, as a miss is, and no damage input of a repeat changes."
       },
       {
         "id": "telepathy",

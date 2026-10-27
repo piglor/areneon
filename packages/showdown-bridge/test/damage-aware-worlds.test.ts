@@ -55,7 +55,7 @@ describe("the baseline identity with a belief (ADR-018 erratum E-18.3)", () => {
     const identity = damageAwareIdentity(parts);
     expect("belief_identity_hash" in identity).toBe(false);
     expect(damageAwareConfigHash(config)).toBe("1df63656d4747a06f3e8b47e18959c1f7763f83ac500d317e3ae0e4a5db9ec14");
-    expect(damageAwareIdentityHash(identity)).toBe("ad979e7a48cee06ce8fd8c41acc3f2a1017ffe59ed3de9e5d32c801776ce309a");
+    expect(damageAwareIdentityHash(identity)).toBe("d3595137164c7e6bf31c17431fa61e9f7d837cd708ad9daf239f3043c2334596");
   });
 
   it("gains belief_identity_hash only for a record that names a belief, and then changes with it", () => {
