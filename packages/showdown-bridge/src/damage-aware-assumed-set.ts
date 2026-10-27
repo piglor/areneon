@@ -14,7 +14,7 @@
 
 import type { PublicMon } from "@areneon/public-state";
 import type { DamageAwareConfig } from "./damage-aware-config.ts";
-import type { Engine, PokemonSet, StatTable } from "./engine.ts";
+import { type Engine, type PokemonSet, type StatTable, defaultIvs } from "./engine.ts";
 import { exportPaste, importPaste } from "./teams.ts";
 import type { TeamVocabulary } from "./team-vocabulary.ts";
 
@@ -44,9 +44,6 @@ export interface AssumedSetContext {
   vocabulary: TeamVocabulary;
   config: DamageAwareConfig;
 }
-
-/** Showdown's own default IV; the Champions mod ignores IVs (Stat Points replace EVs), so the value never changes a stat. */
-const IV_DEFAULT = 31;
 
 const pick = <T>(list: readonly T[], rule: "first_in_vocabulary_order" | "last_in_vocabulary_order"): T | undefined =>
   rule === "first_in_vocabulary_order" ? list[0] : list[list.length - 1];
@@ -103,7 +100,7 @@ export function buildAssumedSet(context: AssumedSetContext, mon: PublicMon, skip
   const natureName = vocabulary.natures.find((n) => n.id === rule.nature)?.name;
   if (natureName === undefined) throw new AssumedSetError("the record's nature is not in the team vocabulary");
   const evs = { ...rule.stat_points } as StatTable;
-  const ivs: StatTable = { hp: IV_DEFAULT, atk: IV_DEFAULT, def: IV_DEFAULT, spa: IV_DEFAULT, spd: IV_DEFAULT, spe: IV_DEFAULT };
+  const ivs: StatTable = defaultIvs();
   const set: PokemonSet = {
     name: "",
     species: dex.species.get(entry.id).name,

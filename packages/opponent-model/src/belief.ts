@@ -325,6 +325,9 @@ export function belief(input: BeliefInput): OpponentBelief {
   if (prior.format_id !== vocabulary.format_id || prior.engine_data_hash !== vocabulary.engine_data_hash) {
     throw new BeliefError("format_mismatch", "the usage prior is for another format or engine data than the vocabulary");
   }
+  if (prior.vocabulary_hash !== vocabulary.vocabulary_hash) {
+    throw new BeliefError("format_mismatch", "the usage prior was derived against another team vocabulary than this one");
+  }
   const clause = vocabulary.rules.item_clause;
   if (clause !== undefined && clause !== 1) throw new BeliefError("item_clause_unsupported", "the rule table's Item Clause is neither absent nor 1");
   const mons: readonly PublicMon[] = opponent.roster;

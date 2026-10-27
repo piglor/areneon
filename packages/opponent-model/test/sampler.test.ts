@@ -5,7 +5,8 @@
 import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import type { UsagePrior } from "@areneon/schema/types/v1/usage-prior.ts";
-import { BeliefError, type BeliefErrorCode, type OpponentBelief, type OpponentWorld, type SetLegality, type WorldSet, belief, createSampler, prepared } from "../src/index.ts";
+import { BeliefError, type BeliefErrorCode, type OpponentBelief, type OpponentWorld, type SetLegality, type WorldSet, belief, createSampler } from "../src/index.ts";
+import { prepared } from "../src/sampler.ts";
 import { jcs } from "../src/canonical.ts";
 import { worldStream } from "../src/draw.ts";
 import { toHex } from "../src/sha256.ts";

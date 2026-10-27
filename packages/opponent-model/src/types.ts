@@ -24,6 +24,8 @@ export const BELIEF_FORMAT = "belief/3";
 export interface BeliefVocabulary {
   readonly format_id: TeamVocabulary["format_id"];
   readonly engine_data_hash: TeamVocabulary["engine_data_hash"];
+  /** `teamVocabularyHash` of the whole `TeamVocabulary` this is a view of (SHA-256 of its JCS bytes); the prior's `vocabulary_hash` must equal it. */
+  readonly vocabulary_hash: TeamVocabulary["engine_data_hash"];
   readonly rules: Pick<TeamVocabulary["rules"], "adjust_level" | "min_team_size" | "max_team_size" | "picked_team_size"> & { readonly item_clause?: number };
   readonly items: TeamVocabulary["items"];
   readonly roster: readonly TeamVocabulary["roster"][number][];

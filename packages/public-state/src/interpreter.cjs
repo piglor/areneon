@@ -20,7 +20,8 @@
  *   hp_num: number | null, hp_den: number | null, status: string | null, fainted: boolean,
  *   brought: boolean | null, active_slot: string | null, boosts: Record<string, number>,
  *   volatiles: string[], moves_revealed: string[], item: string | null, item_known: boolean,
- *   item_lost: boolean, ability: string | null, ability_suppressed: boolean, mega: boolean,
+ *   item_lost: boolean, item_received: boolean, ability: string | null, ability_received: boolean,
+ *   ability_suppressed: boolean, mega: boolean,
  *   mega_stone: string | null, stats: Record<string, number> | null, moves_own: string[] | null,
  *   pp: Record<string, number>, can_mega_evo: boolean, phantom?: boolean }} Mon
  * @typedef {{ player: string, username: string | null, teamsize: number | null, roster: Mon[],
@@ -123,7 +124,8 @@ var ArReplay = (function () {
       own: own, name: null, base_species: "", species: null, temp_species: null, level: null,
       gender: null, shiny: false, hp_num: null, hp_den: null, status: null, fainted: false,
       brought: null, active_slot: null, boosts: zeroBoosts(), volatiles: [], moves_revealed: [],
-      item: null, item_known: false, item_lost: false, ability: null, ability_suppressed: false,
+      item: null, item_known: false, item_lost: false, item_received: false, ability: null,
+      ability_received: false, ability_suppressed: false,
       mega: false, mega_stone: null, stats: null, moves_own: null, pp: {}, can_mega_evo: false,
     };
   }
@@ -433,10 +435,10 @@ var ArReplay = (function () {
     function carry(sh, before, real, letter) {
       real.hp_num = sh.hp_num; real.hp_den = sh.hp_den;
       real.status = sh.status; real.fainted = sh.fainted;
-      if (sh.item !== before.item || sh.item_known !== before.item_known || sh.item_lost !== before.item_lost) {
-        real.item = sh.item; real.item_known = sh.item_known; real.item_lost = sh.item_lost;
+      if (sh.item !== before.item || sh.item_known !== before.item_known || sh.item_lost !== before.item_lost || sh.item_received !== before.item_received) {
+        real.item = sh.item; real.item_known = sh.item_known; real.item_lost = sh.item_lost; real.item_received = sh.item_received;
       }
-      if (sh.ability !== before.ability) { real.ability = sh.ability; }
+      if (sh.ability !== before.ability || sh.ability_received !== before.ability_received) { real.ability = sh.ability; real.ability_received = sh.ability_received; }
       if (sh.mega !== before.mega) { real.mega = sh.mega; real.mega_stone = sh.mega_stone; }
       real.boosts = clone(sh.boosts); real.volatiles = sh.volatiles.slice();
       real.temp_species = sh.temp_species; real.ability_suppressed = sh.ability_suppressed;
@@ -825,6 +827,10 @@ var ArReplay = (function () {
         arity(line, 2, 2);
         var m = mon(arg(line, 0), line);
         m.item = named(arg(line, 1)); m.item_known = true; m.item_lost = false;
+        // An item that came from elsewhere (Trick, Thief, Pickpocket, Recycle, ...) is not the Pokemon's own: a `[from]`
+        // other than Frisk, which shows the target's own item. Sticky, as the Pokemon's own item is no longer known.
+        var origin = line.tags.from;
+        if (origin !== undefined && toId(origin) !== "abilityfrisk") { m.item_received = true; }
       },
       "-enditem": function (line) {
         arity(line, 2, 2);
@@ -838,6 +844,8 @@ var ArReplay = (function () {
         var m = mon(arg(line, 0), line);
         m.ability = named(arg(line, 1)); m.ability_suppressed = false;
         var from = line.tags.from;
+        // An ability a move or another ability gave or copied (Trace, Mummy, Skill Swap, Entrainment, ...) is not the Pokemon's own.
+        if (from !== undefined || line.tags.of !== undefined) { m.ability_received = true; }
         var holder = line.tags.of;
         if (from !== undefined && holder !== undefined && ABILITY_COPIES[/** @type {keyof typeof ABILITY_COPIES} */ (toId(from))]) {
           mon(holder, line).ability = m.ability;

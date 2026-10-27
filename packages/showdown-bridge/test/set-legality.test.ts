@@ -48,7 +48,7 @@ describe("the SetLegality port of the opponent sampler, with the pinned validato
     const port = createSetLegality({ engine, vocabulary });
     const mega = (ability: string) => venusaur({ forme: "venusaurmega", item: "venusaurite", ability });
     expect(port.legal(mega("chlorophyll"))).toBe(true); // not yet evolved: the preview form's ability
-    expect(port.legal(mega("thickfat"))).toBe(true); // evolved: the Mega ability, checked with the base form's first ability
+    expect(port.legal(mega("thickfat"))).toBe(true); // evolved: the Mega ability, judged with each ability the species lists
     expect(port.legal({ ...mega("thickfat"), moves: ["closecombat"] })).toBe(false);
     expect(port.legal({ ...mega("thickfat"), item: "leftovers" })).toBe(true); // the item is judged as given
   });
@@ -59,5 +59,22 @@ describe("the SetLegality port of the opponent sampler, with the pinned validato
     const copy = structuredClone(set);
     expect(port.legal(set)).toBe(port.legal(set));
     expect(set).toEqual(copy);
+  });
+
+  it("judges an evolved Mega's ability with every ability the species lists, not only the first", () => {
+    const calls: string[] = [];
+    const real = engine.sim.TeamValidator.get(vocabulary.format_id);
+    const spy = { ...engine, sim: { ...engine.sim, TeamValidator: { get: () => ({ validateSet: (set: { ability: string }, options: unknown) => { calls.push(set.ability); return set.ability === "Chlorophyll" ? [] : real.validateSet(set as never, options as never); } }) } } } as unknown as Engine;
+    const port = createSetLegality({ engine: spy, vocabulary });
+    // The validator refuses the first listed ability (Overgrow, here by the spy's order) and takes the second: legal.
+    const first = (vocabulary.roster.find((r) => r.id === "venusaur") as { abilities: string[] }).abilities;
+    expect(first.length).toBeGreaterThan(1);
+    expect(port.legal(venusaur({ forme: "venusaurmega", item: "venusaurite", ability: "thickfat" }))).toBe(true);
+    expect(calls.length).toBeGreaterThan(0);
+  });
+
+  it("a paste the engine's own import refuses is an illegal set, not an error", () => {
+    const refusing = { ...engine, sim: { ...engine.sim, Teams: { ...engine.sim.Teams, import: () => { throw new Error("not canonical"); } , export: engine.sim.Teams.export.bind(engine.sim.Teams) } } } as unknown as Engine;
+    expect(createSetLegality({ engine: refusing, vocabulary }).legal(venusaur())).toBe(false);
   });
 });
