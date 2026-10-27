@@ -190,6 +190,11 @@ describe("volatiles, items, abilities and formes", () => {
     expect(opp(state, "Charizard").ability).toBe("intimidate");
     ({ state } = after("|-item|p2a: Venusaur|Leftovers", "|-enditem|p2a: Venusaur|Leftovers"));
     expect(opp(state, "Venusaur")).toMatchObject({ item: null, item_lost: true });
+    // A Fling whose item was already gone names none (#1162); any other empty name is flagged.
+    ({ state } = after("|-item|p2a: Venusaur|Leftovers", "|-enditem|p2a: Venusaur||[from] move: Fling"));
+    expect(opp(state, "Venusaur")).toMatchObject({ item: null, item_lost: true });
+    expect(after("|-enditem|p2a: Venusaur|").flags).toHaveLength(1);
+    expect(after("|-enditem|p2a: Venusaur||[from] move: Knock Off").flags).toHaveLength(1);
     ({ state } = after("|-ability|p2a: Venusaur|Trace|[from] ability: Trace|[of] p2b: Charizard"));
     expect(opp(state, "Venusaur").ability).toBe("trace");
     ({ state } = after("|-ability|p2a: Venusaur|Intimidate|[from] ability: Trace|[of] p2b: Charizard"));

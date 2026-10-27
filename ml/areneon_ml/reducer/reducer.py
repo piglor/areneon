@@ -118,6 +118,8 @@ _VOLATILE = re.compile(r"^(?:(move|ability|item): )?([A-Za-z][A-Za-z0-9 '.-]*)$"
 _HP_COLOURS = {50: "gy", 20: "yr"}
 # `[from]` effects after which the `[of]` Pokemon holds the new ability too.
 _ABILITY_COPIES = frozenset({"abilitytrace", "moveroleplay"})
+# The `[from]` tag of a Fling that ends no item (`|-enditem|POKEMON||[from] move: Fling`, #1162).
+FLING_SOURCE = "move: Fling"
 _PREFIXED = re.compile(r"^(move|ability|item): (.+)$")
 HP_PERCENT = 100  # the denominator of every opponent HP
 MAX_BOOST = 6
@@ -1274,7 +1276,11 @@ class _Reducer:
     def _enditem(self, line: _Line) -> None:
         _arity(line, 2, 2)
         mon = self._mon(line.args[0], line)
-        self.vocab.item(line.args[1])
+        # An empty name is the engine's Fling: the thrown item was already gone when the move's
+        # `onUpdate` ran (a Grassy Seed eaten on the hit that started the terrain), so
+        # `getItem()` names nothing and the line says so. Any other empty name is refused.
+        if not (line.args[1] == "" and line.tags.get("from") == FLING_SOURCE):
+            self.vocab.item(line.args[1])
         mon.item, mon.item_known, mon.item_lost = None, True, True
 
     def _ability(self, line: _Line) -> None:
