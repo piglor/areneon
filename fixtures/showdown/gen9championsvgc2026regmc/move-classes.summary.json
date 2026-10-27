@@ -1,0 +1,13 @@
+{
+  "move_class_table_hash": "e1a55df623fea51bb2426954a4567246e829cba8596df487b8a03ee7e1e7e67f",
+  "engine_data_hash": "6f3d19f02b0e8464d813f4bbdced99c6f88140099818f5f225776ac43fa5590e",
+  "showdown_commit": "7244fe8e28fa8bc4d0809ae30d183c608b62bb2b",
+  "counts": {
+    "status": 180,
+    "lowers_target_stat": 41,
+    "raises_own_stat": 34,
+    "side_condition": 11,
+    "field_condition": 14,
+    "protection": 6
+  }
+}

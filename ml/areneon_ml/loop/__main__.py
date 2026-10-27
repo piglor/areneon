@@ -78,6 +78,7 @@ from areneon_ml.progress.run import (
     scheduled_generations,
 )
 from areneon_ml.report.command import report_run
+from areneon_ml.report.move_use import progress_move_use
 
 EXIT_REFUSED = 3
 EXIT_PLAY = 4
@@ -411,6 +412,8 @@ def _progress(args: argparse.Namespace) -> dict[str, object]:
         )
         for g in generations
     ]
+    for result in done:  # the move-use diagnostic (#1164): descriptive, over the stored games
+        result["move_use"] = progress_move_use(root, int(result["generation"]), config)
     # Everything above succeeded, so a validation result is about to be shown: log the look.
     looks = [
         Look(int(r["generation"]), str(m["match_id"]), int(m["games"]))

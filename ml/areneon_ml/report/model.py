@@ -55,6 +55,7 @@ from areneon_ml.progress.records import (
     read_progress_record,
 )
 from areneon_ml.progress.run import summary_of
+from areneon_ml.report.move_use import class_files, progress_move_use
 
 NOT_RECORDED = "not recorded"
 ROLES = ("battle", "preview")
@@ -175,6 +176,9 @@ class ProgressFacts:
     anchor_games: int | None = None
     #: The Preview ablation (``ablation_summary``: integers only); empty without ablation matches.
     ablation: dict[str, Any] = field(default_factory=dict)
+    #: The move-use diagnostic (#1164) over the generation's stored games, as ``move_use`` returns
+    #: it; None when the generation stores no game or the repository has no move-class table.
+    move_use: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -346,7 +350,7 @@ def _seat_counts(
     return tuple(out)
 
 
-def _progress_facts(record: dict[str, Any]) -> ProgressFacts:
+def _progress_facts(record: dict[str, Any], move_use: dict[str, Any] | None) -> ProgressFacts:
     by_id = {s["match_id"]: s for s in summary_of(record)}
     matches = []
     for match in record["matches"]:
@@ -399,6 +403,7 @@ def _progress_facts(record: dict[str, Any]) -> ProgressFacts:
         tuple(matches),
         plan.get("anchor_games_per_match"),
         ablation_summary(record),
+        move_use,
     )
 
 
@@ -427,7 +432,13 @@ def read_progress_root(
             raise ReportError(f"{path.name}: its record is not of the run's committed generation")
         for name in ("progress.json", layout.MANIFEST):
             inputs[f"progress/{path.name}/{name}"] = sha256_hex((path / name).read_bytes())
-        found[number] = _progress_facts(record)
+        used = progress_move_use(root, number, config, record)
+        if used is not None:
+            for file in class_files(config.format_id):
+                inputs[f"fixtures/showdown/{config.format_id}/{file.name}"] = sha256_hex(
+                    file.read_bytes()
+                )
+        found[number] = _progress_facts(record, used)
     return found
 
 

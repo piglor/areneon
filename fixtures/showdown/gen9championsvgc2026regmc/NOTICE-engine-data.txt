@@ -1,5 +1,6 @@
 engine-data.json, engine-data.summary.json, team-vocabulary.json,
-team-vocabulary.summary.json, role-sets.json and role-sets.summary.json are
+team-vocabulary.summary.json, role-sets.json, role-sets.summary.json,
+move-classes.json and move-classes.summary.json are
 derived from the data files (and, for the vocabulary, the team validator's
 verdicts; the role sets come from data/random-battles/champions/doubles-sets.json)
 of the pinned Pokemon Showdown checkout (commit 7244fe8e28fa8bc4d0809ae30d183c608b62bb2b,

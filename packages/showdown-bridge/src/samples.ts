@@ -18,6 +18,7 @@ import type { Engine } from "./engine.ts";
 import { episodeFromRecord } from "./episode-io.ts";
 import { GOLDEN_DIR, GOLDEN_FORMAT, goldenBattle, syntheticFixtureHashes, syntheticTeam } from "./golden.ts";
 import { LEAGUE_SEED_DERIVATION } from "./league-seed.ts";
+import { MOVE_CLASSES_FILE, type MoveClassTable } from "./move-classes.ts";
 import { damageAwareSamples } from "./damage-aware-samples.ts";
 import { usagePriorSamples } from "./usage-prior-samples.ts";
 import { mechanicsSamples } from "./mechanics-samples.ts";
@@ -320,6 +321,9 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     })),
   };
   const roleSetsWith = (change: (t: Record<string, unknown>) => void) => mutated(roleSets, change);
+  // The move classes (#1164): the golden file, read (move-classes.test.ts holds it equal to a fresh export); the complete table closes against `full`.
+  const moveClasses = JSON.parse(readFileSync(join(GOLDEN_DIR, MOVE_CLASSES_FILE), "utf8")) as MoveClassTable;
+  const moveClassesWith = (change: (t: Record<string, unknown>) => void) => mutated(moveClasses, change);
   const firstSets = (t: Record<string, unknown>) => (t.species as { sets: Record<string, unknown>[] }[])[0]?.sets as Record<string, unknown>[];
   const datasetManifest = {
     schema_version: 1,
@@ -508,6 +512,7 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     }),
     "team-vocabulary/golden": vocabulary,
     "role-set-table/golden": roleSets,
+    "move-class-table/golden": moveClasses,
     "team-record/golden": teamRecord,
     "team-label-set/golden": labelSet,
     "team-generator-config/golden": generatorConfig,
@@ -733,6 +738,11 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "role-set-table/foreign-move": roleSetsWith((t) => (firstSets(t)[1] = { ...firstSets(t)[1], moves: ["zzzzzzzz"] })),
     "role-set-table/foreign-ability": roleSetsWith((t) => (firstSets(t)[1] = { ...firstSets(t)[1], abilities: ["zzzzzzzz"] })),
     "role-set-table/stale-vocabulary-hash": roleSetsWith((t) => (t.vocabulary_hash = hexOf("f"))),
+    "move-class-table/unsorted-class": moveClassesWith((t) => ((t.classes as Record<string, string[]>).protection = [...moveClasses.classes.protection].reverse())),
+    "move-class-table/duplicate-id": moveClassesWith((t) => ((t.classes as Record<string, string[]>).protection = [moveClasses.classes.protection[0] as string, moveClasses.classes.protection[0] as string])),
+    "move-class-table/foreign-move": moveClassesWith((t) => ((t.classes as Record<string, string[]>).protection = [...moveClasses.classes.protection, "zzzzzzzz"])),
+    "move-class-table/status-incomplete": moveClassesWith((t) => ((t.classes as Record<string, string[]>).status = moveClasses.classes.status.slice(1))),
+    "move-class-table/stale-engine-data-hash": moveClassesWith((t) => (t.engine_data_hash = hexOf("f"))),
     "team-vocabulary/unsorted-roster": vocabularyWith((v) => (v.roster = [...vocabulary.roster].reverse())),
     "team-vocabulary/duplicate-moves": vocabularyWith((v) => ((v.roster as { moves: string[] }[])[0] as { moves: string[] }).moves = [(vocabulary.roster[0] as { moves: string[] }).moves[0] as string, (vocabulary.roster[0] as { moves: string[] }).moves[0] as string]),
     "team-vocabulary/unsorted-natures": vocabularyWith((v) => (v.natures = [...vocabulary.natures].reverse())),
@@ -894,6 +904,12 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "engine-data/extra-field": { ...engineData, learnsets: [] },
     "engine-data/next-version": { ...engineData, schema_version: 2 },
     "engine-data/short-commit": { ...engineData, showdown_commit: "7244fe8" },
+    "move-class-table/missing-class": moveClassesWith((t) => delete (t.classes as Record<string, unknown>).protection),
+    "move-class-table/extra-class": moveClassesWith((t) => ((t.classes as Record<string, unknown>).switches = [])),
+    "move-class-table/extra-field": moveClassesWith((t) => (t.learnsets = [])),
+    "move-class-table/next-version": moveClassesWith((t) => (t.schema_version = 2)),
+    "move-class-table/short-commit": moveClassesWith((t) => (t.showdown_commit = "7244fe8")),
+    "move-class-table/bad-move-id": moveClassesWith((t) => ((t.classes as Record<string, string[]>).protection = ["Protect"])),
     "role-set-table/no-species": roleSetsWith((t) => delete t.species),
     "role-set-table/empty-sets": roleSetsWith((t) => ((t.species as { sets: unknown[] }[])[0] as { sets: unknown[] }).sets = []),
     "role-set-table/empty-moves": roleSetsWith((t) => (firstSets(t)[0] = { ...firstSets(t)[0], moves: [] })),
