@@ -53,9 +53,10 @@ def test_the_unnamed_item_end_leaves_the_holder_without_its_item(player: str) ->
     assert (after.item, after.item_known, after.item_lost) == (None, True, True)
 
 
-def test_the_item_end_alone_is_taken_for_a_held_item_that_is_gone() -> None:
+def test_the_item_end_with_no_earlier_seed_end_leaves_no_item() -> None:
     lines = _lines("p1")
     at = lines.index(EMPTY)
+    # drop the seed's own item end and the boost it names, so the Fling end is the only one
     without_seed = [line for line in lines[:at] if line != "|-enditem|p1b: Dedenne|Grassy Seed"]
     without_seed = [line for line in without_seed if "[from] item: Grassy Seed" not in line]
     state = _reduce("p1", [*without_seed, EMPTY])

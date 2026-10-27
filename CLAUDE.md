@@ -53,6 +53,7 @@ node packages/showdown-bridge/scripts/export-role-sets.ts   # golden role-set ta
 node packages/showdown-bridge/scripts/capture-random-corpus.ts   # random-play channel corpus (needs a built engine); also after an engine-facing change
 node packages/showdown-bridge/scripts/capture-unavailable-corpus.ts   # channels with `|error|[Unavailable choice]` lines (pending-first play on the fixtures-v1 teams); then rewrite the reduced snapshots (tests/ml/reducer/test_unavailable.py)
 node packages/showdown-bridge/scripts/capture-illusion-battle.ts   # the Illusion battle (a Zoroark on both sides whose disguises break); then rewrite the reduced snapshots with `ARENEON_UPDATE_GOLDEN=1 uv run pytest tests/ml/reducer/test_illusion_battle.py --no-cov`
+node packages/showdown-bridge/scripts/capture-fling-battle.ts   # the Fling of an item already gone (`-enditem` with no name, #1162); then rewrite the reduced snapshots with `ARENEON_UPDATE_GOLDEN=1 uv run pytest tests/ml/reducer/test_fling.py --no-cov`
 node packages/showdown-bridge/scripts/capture-baton-pass-battle.ts   # the Baton Pass battle (stages passed on a `[from] Baton Pass` switch, #1099); then rewrite the reduced snapshots with `ARENEON_UPDATE_GOLDEN=1 uv run pytest tests/ml/reducer/test_baton_pass.py --no-cov`
 node packages/showdown-bridge/scripts/export-engine-data.ts # engine-data table + hash (ADR-010); after a pin bump
 ```
