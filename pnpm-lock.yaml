@@ -56,6 +56,15 @@ importers:
         specifier: workspace:*
         version: link:../bot-client
 
+  packages/opponent-model:
+    dependencies:
+      '@areneon/public-state':
+        specifier: workspace:*
+        version: link:../public-state
+      '@areneon/schema':
+        specifier: workspace:*
+        version: link:../schema
+
   packages/private-team-store:
     dependencies:
       '@areneon/showdown-bridge':
