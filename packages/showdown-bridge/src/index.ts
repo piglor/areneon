@@ -528,3 +528,21 @@ export { opponentName, PRIVATE_TEST_LABEL, type PrivateTestMatch, type PrivateTe
 export { checkSalt, PRIVATE_TEST_PAIRING, PRIVATE_TEST_SEED_DERIVATION, privateTestCommitment, privateTestPairs, privateTestStreams } from "./private-test-seed.ts";
 export { pairsAvailable, type PrivateTestOptions, type PrivateTestResult, type PrivateTestTeam, playPrivateTest } from "./private-test.ts";
 export { privateDataRoot } from "./private-team-source.ts";
+export {
+  createWorldBuilder,
+  type ScenarioWorld,
+  UNWRITTEN_KINDS,
+  type UnwrittenKind,
+  type WorldBuilder,
+  type WorldContext,
+  type WorldCounts,
+  type WorldInput,
+  type WorldOpponent,
+  type WorldOpponentMember,
+  type WorldPokemonRef,
+  type WorldRefusal,
+  WORLD_REFUSAL_CODES,
+  type WorldRefusalCode,
+  type WorldResult,
+  type WorldSources,
+} from "./world-builder.ts";
