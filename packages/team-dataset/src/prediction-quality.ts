@@ -123,7 +123,7 @@ export async function oracleGames(engine: Engine, formatId: string, start: numbe
 // ---- the primitives (hand-checked in the tests) ----
 
 /** The probability as a number in [0, 1], to 12 digits, from the exact ratio. */
-export const probability = (p: Ratio): number => Number((p.num * 1_000_000_000_000n) / p.den) / 1e12;
+export const probability = (p: Ratio): number => Math.max(Number((p.num * 1_000_000_000_000n) / p.den), 1) / 1e12;
 
 export interface Judged {
   /** The expected top-1 hit in ppm: 10^6 / k when the true value is among the k options tied for the highest probability, else 0. */
@@ -141,7 +141,7 @@ export function judge(options: readonly Option[], truth: string | null): Judged 
   const hit = mine !== undefined && mine.p.num > 0n && top.some((o) => o.id === truth);
   return {
     hit_ppm: hit ? Math.floor(1_000_000 / top.length) : 0,
-    loss_micro: mine === undefined || mine.p.num === 0n ? null : Math.round(-Math.log(probability(mine.p)) * 1_000_000),
+    loss_micro: mine === undefined || mine.p.num === 0n ? null : Math.round(-Math.log(probability(mine.p)) * 1_000_000) + 0,
   };
 }
 
@@ -236,11 +236,18 @@ interface Truth {
   readonly brought: ReadonlySet<number>;
 }
 
+/** The set's species id and its base species id, from the pinned engine's own data (no naming rule is written here). */
+let dexOf: ((name: string) => { name: string; baseSpecies: string }) | undefined;
+const formeIds = (set: PokemonSet): string[] => {
+  const species = (dexOf as NonNullable<typeof dexOf>)(set.species);
+  return [toId(species.name), toId(species.baseSpecies)];
+};
+
 const idOf = (value: string): string | null => (value === "" ? null : toId(value));
 
 /** The preview position of each roster entry in the real team, by species (a team holds a species once); null when it does not match one to one. */
 function positions(roster: readonly { base_species: string }[], team: readonly PokemonSet[]): number[] | null {
-  const at = roster.map((m) => team.findIndex((set) => toId(set.species) === m.base_species || toId(set.species.split("-")[0] ?? "") === m.base_species));
+  const at = roster.map((m) => team.findIndex((set) => formeIds(set).includes(m.base_species)));
   return at.some((i) => i < 0) || new Set(at).size !== at.length ? null : at;
 }
 
@@ -264,7 +271,7 @@ function pointsOf(game: OracleGame): Point[] {
     for (const m of final) {
       if (m.brought !== true) continue;
       const own = toId(m.name ?? "");
-      const i = team.findIndex((set) => toId(set.name === "" ? set.species : set.name) === own || m.base_species.startsWith(toId(set.species.split("-")[0] ?? "")));
+      const i = team.findIndex((set) => toId(set.name === "" ? set.species : set.name) === own || formeIds(set).includes(m.base_species));
       if (i >= 0) brought.add(i);
     }
     let request = 0;
@@ -276,7 +283,7 @@ function pointsOf(game: OracleGame): Point[] {
         seat,
         request,
         state: frame.state,
-        flags: run.flags,
+        flags: run.flags.filter((f) => f.index <= frame.index),
         truth: at === null ? null : { team: at.map((i) => team[i] as PokemonSet), brought: new Set(at.flatMap((i, p) => (brought.has(i) ? [p] : []))) },
       });
       request += 1;
@@ -336,7 +343,9 @@ export function scoreSlot(
 /** Score every request of both seats of one game. The real team is read here and nowhere else. */
 export function scoreGame(ctx: QualityContext, game: OracleGame, acc: Accumulator): void {
   acc.games += 1;
-  const priorAlone = new Map<Seat, OpponentBelief | null>();
+  const dex = ctx.engine.sim.Dex.mod(ctx.engine.sim.Dex.formats.get(ctx.v1.config.format_id).mod);
+  dexOf = (name) => dex.species.get(name);
+  const priorAlone = new Map<Seat, OpponentBelief>();
   for (const p of pointsOf(game)) {
     acc.requests += 1;
     const phase: Phase = p.request === 0 ? "preview" : "battle";
@@ -353,8 +362,8 @@ export function scoreGame(ctx: QualityContext, game: OracleGame, acc: Accumulato
       continue;
     }
     if (p.request === 0) priorAlone.set(p.seat, b);
-    const base = priorAlone.get(p.seat);
-    if (base === undefined || base === null) throw new Error("a seat's first request is its Team Preview: the prior alone is the belief there");
+    // flags only accumulate, so a seat whose Team Preview was refused is refused at every later request: the prior alone exists here
+    const base = priorAlone.get(p.seat) as OpponentBelief;
     acc.scored[phase] += 1;
     const roster = p.state.opponent.roster;
     roster.forEach((mon, i) => {
@@ -405,7 +414,7 @@ export interface Row {
   readonly field: Field;
   readonly method: Method;
   readonly n: number;
-  readonly top1_ppm: number | null;
+  readonly top1_ppm: number;
   /** Mean -ln(p) of the true value in micro-nats; null for v1 (a point prediction) or when nothing had mass. */
   readonly log_loss_micro: number | null;
   /** True values the distribution gave no mass (null for v1: a point prediction has no mass to give). */
@@ -442,7 +451,7 @@ export function report(acc: Accumulator): Report {
       for (const method of METHODS) {
         const c = acc.cells.get(`${phase}/${field}/${method}`);
         if (c === undefined) continue;
-        rows.push({ phase, field, method, n: c.n, top1_ppm: share(c.hit_ppm, c.n * 1_000_000) === null ? null : Math.floor(c.hit_ppm / c.n), log_loss_micro: method === "v1" || c.loss_n === 0 ? null : Math.round(c.loss_micro / c.loss_n), zero_mass: method === "v1" ? null : c.zero_mass });
+        rows.push({ phase, field, method, n: c.n, top1_ppm: Math.floor(c.hit_ppm / c.n), log_loss_micro: method === "v1" || c.loss_n === 0 ? null : Math.round(c.loss_micro / c.loss_n), zero_mass: method === "v1" ? null : c.zero_mass });
       }
     }
   }

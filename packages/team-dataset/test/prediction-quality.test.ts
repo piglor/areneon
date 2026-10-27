@@ -31,6 +31,8 @@ describe("the primitives, worked by hand", () => {
   it("turns an exact ratio into a probability", () => {
     expect(probability(r(1, 4))).toBe(0.25);
     expect(probability(r(1, 3))).toBeCloseTo(1 / 3, 11);
+    expect(probability(r(1, 10 ** 15))).toBe(1e-12); // a tiny positive ratio stays above zero, so -ln stays finite
+    expect(judge(opts(["a", 1, 1]), "a").loss_micro).toBe(0);
   });
 
   it("judges a distribution: top-1 is the expected hit under a uniform tie-break, log-loss is -ln p in micro-nats", () => {
@@ -192,10 +194,15 @@ describe("seeded games on the dev split", () => {
 
 describe("refusals and fallbacks are counted, not fixed", () => {
   it("counts a belief refusal by code and leaves those requests out of the rows", () => {
-    // a line the reader cannot take is flagged for the whole channel: the belief refuses every request of that seat
-    const flagged: OracleGame = { ...(played[0] as OracleGame), channels: { p1: [...(played[0] as OracleGame).channels.p1, "|zzunknownline|x"], p2: (played[0] as OracleGame).channels.p2 } };
+    // a line the reader cannot take, placed just after the Team Preview request: the belief then refuses the later requests of that seat
+    // (the flags are those raised up to each request, as the actor sees them) and answers the Team Preview itself
+    const game = played[0] as OracleGame;
+    const at = game.channels.p1.findIndex((l) => l.startsWith("|request|"));
+    const lines = [...game.channels.p1.slice(0, at + 1), "|zzunknownline|x", ...game.channels.p1.slice(at + 1)];
+    const flagged: OracleGame = { ...game, channels: { p1: lines, p2: game.channels.p2 } };
     const acc = run([flagged]);
     const out = report(acc);
+    expect(out.scored.preview).toBe(2);
     expect(out.refusals.reader_flagged).toBeGreaterThan(0);
     expect(out.scored.preview + out.scored.battle + Object.values(out.refusals).reduce((a, b) => a + b, 0) + out.no_truth).toBe(out.requests);
   });
