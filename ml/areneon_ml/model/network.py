@@ -27,6 +27,7 @@ from torch import nn
 from areneon_ml.model.batch import Batch
 from areneon_ml.model.candidates import EVENTS, SLOTS
 from areneon_ml.model.encoder import (
+    BASE_CAND_COLUMNS,
     GENDERS,
     MAX_SLOT_LETTERS,
     REQUEST_KINDS,
@@ -34,10 +35,12 @@ from areneon_ml.model.encoder import (
     EncoderConfig,
     Layout,
 )
-from areneon_ml.model.gamedata import GameData
+from areneon_ml.model.gamedata import RESERVED, GameData
 from areneon_ml.model.options import (
+    CANDIDATE_MATCHUP,
     OptionError,
     Options,
+    is_set,
     layout_changing,
     read_options,
     with_options,
@@ -255,6 +258,11 @@ class PolicyNetwork(nn.Module):
             "target": TARGET_CODES,
             "event": len(EVENTS) + 1,
         }
+        extra = len(self.layout.cand_cat) - BASE_CAND_COLUMNS  # option columns of a candidate
+        if role == "battle" and is_set(enc.options, CANDIDATE_MATCHUP):
+            # Cell categories: the reserved indices plus one per code of the export's chart.
+            sizes["matchup"] = RESERVED + game.chart_codes
+            sizes["same_type"] = RESERVED + 2
         self.embeddings = nn.ModuleDict(
             {kind: nn.Embedding(size, d) for kind, size in sizes.items()}
         )
@@ -277,7 +285,7 @@ class PolicyNetwork(nn.Module):
         self.blocks = nn.ModuleList([Block(config) for _ in range(config.n_layers)])
         self.final_norm = nn.LayerNorm(d)
         if role == "battle":
-            self.slot_parts = nn.ModuleList(nn.Linear(7 * d, d) for _ in range(SLOTS))
+            self.slot_parts = nn.ModuleList(nn.Linear((7 + extra) * d, d) for _ in range(SLOTS))
             self.candidate = nn.Linear(SLOTS * d, d)
         else:
             self.place = nn.Embedding(enc.max_picks, d)
@@ -309,6 +317,10 @@ class PolicyNetwork(nn.Module):
         slots = []
         for s in range(SLOTS):
             cat, tok = batch.cand_cat[:, :, s], batch.cand_tok[:, :, s]
+            extra = [
+                self.embed(kind, cat[..., BASE_CAND_COLUMNS + i])
+                for i, (_, kind) in enumerate(self.layout.cand_cat[BASE_CAND_COLUMNS:])
+            ]
             parts = [
                 self.embed("action", cat[..., 0]),
                 self.embed("move", cat[..., 1]),
@@ -317,6 +329,7 @@ class PolicyNetwork(nn.Module):
                 self.embed("event", cat[..., 4]),
                 _gather(mons, tok[..., 0]),
                 _gather(mons, tok[..., 1]),
+                *extra,
             ]
             slots.append(self.slot_parts[s](torch.cat(parts, -1)))
         out: torch.Tensor = self.candidate(torch.cat(slots, -1))
