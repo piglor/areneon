@@ -548,6 +548,33 @@ checkpoint has one record), so `loop provenance` lists them and maps the teacher
 `independent` then reports two warm-started runs that share a teacher set as not independent,
 and runs with different teacher sets, or none, as independent (ADR-019 section 6).
 
+### Warming up the value head first (`ppo.value_warmup`)
+
+A cloned pair has a trained policy and an untrained value head, so the first advantage estimates
+of a PPO update would be noise and the first updates could undo the clone. A warm-started run may
+declare `"ppo": {..., "value_warmup": {"generations": N}}` (integer, at least 1; ADR-019 section 4,
+#1111; the reader refuses it without `warm_start`). Learner updates 1 to N (generation 1 up to
+generation N) then train the value head only, on the cloned pair's own rollouts; update N + 1 and
+every later one is normal PPO.
+
+- **Frozen:** every parameter of both networks outside the value head (`value.*`), the shared
+  transformer trunk included. The cloned policy's outputs are therefore byte-identical through the
+  warm-up; the checkpoints of generations 1 to N differ from generation 0's in value-head tensors
+  only.
+- **Loss and optimiser:** the value error alone (`value_coef` only rescales it, so it is not
+  applied), minibatches and epochs as configured, `target_kl_micro` not applied (the policy does
+  not move). The same Adam optimiser steps, and it skips a parameter that has no gradient, so the
+  frozen parameters get no moments during the warm-up: their Adam state first appears at update
+  N + 1. The value head's moments carry on into PPO.
+- **Schedule:** `learning_rate_schedule` counts the warm-up updates in its update index.
+- **Records:** `train-report.json` marks each role `"value_warmup": true` on a warm-up update only,
+  and the learner-state sidecar's `ppo` block carries the setting (the sidecar of a run without it
+  is unchanged). A run without the field keeps every hash and file. It is a new `run_key`.
+- **Resume:** the warm-up position is the learner generation counter, which a resume restores, so
+  a run killed inside or after the warm-up reaches the same learner-state hashes.
+- **With the KL anchor (#968):** the anchor measures divergence from the cloned policy; during the
+  warm-up the policy does not move, so it is zero, and the anchor acts from update N + 1.
+
 ## 6. Your own teams as a test set: the private test (owner only)
 
 The private test (ADR-015 erratum E1, item 2) measures one frozen pair on your own teams, from

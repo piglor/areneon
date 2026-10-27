@@ -73,6 +73,12 @@ def test_the_committed_run_configs_are_valid() -> None:
         assert {b.actor for b in config.generation.baselines} == {"random-legal", "actor-rule"}
 
 
+def test_the_value_warm_up_sample_reads_and_hashes_apart() -> None:
+    config = read_run_config(raw("valid/value-warmup.json"))
+    assert config.ppo.value_warmup == 2
+    assert config.hash != read_run_config(raw("valid/warm-start.json")).hash
+
+
 def test_damage_aware_is_a_scripted_baseline_beside_the_others() -> None:
     config = read_run_config(raw("valid/damage-aware.json"))
     assert [b.actor for b in config.generation.baselines] == [
@@ -98,6 +104,7 @@ INVALID = sorted(p.name for p in (CONFIGS / "invalid").iterdir())
         ("picks-exceed-team.json", "max_picks cannot exceed max_team"),
         ("duplicate-baseline.json", "may be listed once"),
         ("warm-start-same-id.json", "one checkpoint for both roles"),
+        ("value-warmup-no-warm-start.json", "needs warm_start"),
     ],
 )
 def test_the_reader_rules_the_profile_cannot_say(name: str, message: str) -> None:
@@ -107,7 +114,7 @@ def test_the_reader_rules_the_profile_cannot_say(name: str, message: str) -> Non
 
 
 def test_every_reader_invalid_sample_is_checked_above() -> None:
-    assert len(READER_INVALID) == 4
+    assert len(READER_INVALID) == 5
 
 
 @pytest.mark.parametrize("name", INVALID)
