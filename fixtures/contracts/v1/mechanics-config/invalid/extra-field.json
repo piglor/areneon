@@ -53,7 +53,36 @@
     ]
   },
   "ko_blockers": {
-    "abilities": [],
-    "items": []
+    "abilities": [
+      "disguise",
+      "multiscale",
+      "stamina",
+      "sturdy",
+      "weakarmor"
+    ],
+    "items": [
+      "babiriberry",
+      "chartiberry",
+      "chilanberry",
+      "chopleberry",
+      "cobaberry",
+      "colburberry",
+      "focusband",
+      "focussash",
+      "habanberry",
+      "kasibberry",
+      "kebiaberry",
+      "occaberry",
+      "oranberry",
+      "passhoberry",
+      "payapaberry",
+      "rindoberry",
+      "roseliberry",
+      "shucaberry",
+      "sitrusberry",
+      "tangaberry",
+      "wacanberry",
+      "yacheberry"
+    ]
   }
 }

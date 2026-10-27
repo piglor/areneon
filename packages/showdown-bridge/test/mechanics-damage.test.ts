@@ -153,8 +153,8 @@ describe("moves and states outside what the probe answers exactly", () => {
     expect(probe(variant((q) => (q.move = "magnitude"))).result).toMatchObject({ kind: "unsupported", reason: "random_effect" });
   });
 
-  it("the KO field is the placeholder until the KO slice: no count is given", () => {
-    expect(answerOf(base).ko).toEqual({ kind: "unsupported", reason: "ko_state_change" });
+  it("the KO field holds the counts (the full KO fixtures are in mechanics-ko.test.ts)", () => {
+    expect(answerOf(base).ko).toMatchObject({ kind: "counts" });
   });
 });
 
