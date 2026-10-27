@@ -22,6 +22,7 @@ from areneon_ml.inspector import page
 from areneon_ml.inspector.page import esc, link_id
 from areneon_ml.inspector.readers import InspectError
 from areneon_ml.inspector.replay import GAME_NAME, GameReplay, SeatView, to_id
+from areneon_ml.reducer.vocab import read_volatile_copy
 
 #: The viewer's own files: plain JavaScript and CSS, read as they are (no bundler, no build step).
 ASSETS = Path(__file__).resolve().parents[3] / "packages" / "replay-view" / "web"
@@ -95,7 +96,14 @@ def dex_for_ids(table: Mapping[str, Any], ids: set[str]) -> dict[str, Any]:
         for row in table["species"]
         if row["id"] in ids
     }
-    return {"species": species, "terrains": [row["id"] for row in table["terrains"]]}
+    dex: dict[str, Any] = {"species": species, "terrains": [row["id"] for row in table["terrains"]]}
+    copy = read_volatile_copy(str(table.get("showdown_commit")), str(table.get("format_id")))
+    if copy is not None:  # the Baton Pass / Shed Tail rule of the pinned engine (#1102)
+        dex["volatile_copy"] = {
+            "not_copied": copy["not_copied"],
+            "shed_tail_copies": copy["shed_tail_copies"],
+        }
+    return dex
 
 
 def read_engine_data(path: Path, format_id: str) -> dict[str, Any]:

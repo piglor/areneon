@@ -50,13 +50,22 @@ export function readJson(path: string): any {
 }
 
 /** The species table the page embeds, for the whole engine-data export. */
-export function fullDex(): { species: Record<string, { name: string; base: string; types: string[] }>; terrains: string[] } {
+export function fullDex(): {
+  species: Record<string, { name: string; base: string; types: string[] }>;
+  terrains: string[];
+  volatile_copy: { not_copied: string[]; shed_tail_copies: string[] };
+} {
   const data = readJson(join(FORMAT_DIR, "engine-data.json"));
   const species: Record<string, { name: string; base: string; types: string[] }> = {};
   for (const row of data.species) {
     species[row.id] = { name: row.name, base: row.base_species, types: row.types };
   }
-  return { species, terrains: data.terrains.map((t: { id: string }) => t.id) };
+  const copy = readJson(join(ROOT, "ml", "areneon_ml", "reducer", "data", `volatile-copy.${data.format_id}.json`));
+  return {
+    species,
+    terrains: data.terrains.map((t: { id: string }) => t.id),
+    volatile_copy: { not_copied: copy.not_copied, shed_tail_copies: copy.shed_tail_copies },
+  };
 }
 
 export interface Fixture {
@@ -87,6 +96,7 @@ export function fixtures(): Fixture[] {
   battles("unavailable", list("unavailable"));
   battles("illusion", ["battle.json"]);
   battles("baton-pass", ["battle.json"]);
+  battles("baton-pass-volatiles", ["battle.json"]);
   battles("fling", ["battle.json"]);
   return out;
 }
