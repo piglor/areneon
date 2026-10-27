@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import json
+import os
+import subprocess
 import sys
+import time
 from pathlib import Path
 
 import pytest
-from areneon_ml.loop.play import NodePlayer, PlayError, PlayRequest
+from areneon_ml.loop.play import NodePlayer, PlayError, PlayRequest, _descendants
 
 # "node" here is Python and the "scripts" are small Python programs, so the arguments the
 # player builds can be seen without a Node install; the real scripts run in the end-to-end test.
@@ -153,3 +156,69 @@ def test_the_resident_sets_the_script_reports_are_kept_and_junk_is_ignored(tmp_p
     )
     again.play(request)
     assert again.resource_usage == {}
+
+
+def test_a_generation_past_its_time_limit_is_killed_with_its_children(tmp_path: Path) -> None:
+    pids = tmp_path / "pids.txt"
+    script = (
+        "import subprocess, sys, time, os\n"
+        f"child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'])\n"
+        f"open({str(pids)!r}, 'w').write(str(child.pid))\n"
+        "sys.stderr.write('still playing')\n"
+        "sys.stderr.flush()\n"
+        "time.sleep(60)\n"
+    )
+    chosen = player(tmp_path, "", script)
+    timed = NodePlayer(**{**chosen.__dict__, "generation_timeout_s": 5.0})
+    request = PlayRequest(1, "policy:abc", "p" * 64, "b" * 64, tmp_path / "work")
+    start = time.monotonic()
+    with pytest.raises(
+        PlayError, match=r"exceeded the generation time limit of 5 s.*still playing"
+    ):
+        timed.play(request)
+    assert time.monotonic() - start < 30
+    grandchild = int(pids.read_text())
+    for _ in range(50):
+        try:
+            os.kill(grandchild, 0)
+        except ProcessLookupError:
+            break
+        time.sleep(0.1)
+    else:
+        raise AssertionError("the grandchild outlived the limit")
+
+
+def test_a_game_that_ends_inside_its_limit_is_not_touched(tmp_path: Path) -> None:
+    node, _ = fake_node(tmp_path, "{}")
+    chosen = player(tmp_path, "", "", node=node)
+    NodePlayer(**{**chosen.__dict__, "generation_timeout_s": 60.0}).play(
+        PlayRequest(1, "policy:abc", "p" * 64, "b" * 64, tmp_path / "work")
+    )
+
+
+def test_an_interrupt_ends_the_children_too(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    script = "import time; time.sleep(60)"
+    chosen = player(tmp_path, "", script)
+
+    def interrupted(self: subprocess.Popen[str], timeout: float | None = None) -> object:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(subprocess.Popen, "communicate", interrupted)
+    with pytest.raises(KeyboardInterrupt):
+        chosen.play(PlayRequest(1, "policy:abc", "p" * 64, "b" * 64, tmp_path / "work"))
+
+
+def test_descendants_are_found_and_an_unreadable_proc_finds_none(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"])
+    try:
+        assert child.pid in _descendants(os.getpid())
+        assert _descendants(child.pid) == []
+        monkeypatch.setattr(os, "listdir", lambda _p: (_ for _ in ()).throw(OSError("no proc")))
+        assert _descendants(os.getpid()) == []
+    finally:
+        child.kill()
+        child.wait()

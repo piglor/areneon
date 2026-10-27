@@ -192,6 +192,18 @@ export interface GenerationOptions {
    * more there. Needs `stream_path`.
    */
   episodes_dir?: string;
+  /**
+   * Ends this process's own games (#1100): checked before each wave and after each worker
+   * restart, so a process whose generation has failed finishes its current wave and plays no further one and starts no
+   * further worker. `playGeneration` aborts it when a game process fails.
+   */
+  signal?: AbortSignal;
+  /** The number of waves (and worker restarts) in progress, for the idle watchdog (#1100). */
+  activity?: { busy: number };
+  /** How many further game processes are still running; `playGeneration`'s idle watchdog reads it. */
+  live_children?: () => number;
+  /** How long a generation may have no live game process and no game in flight before it fails (default 60 s; a test injects a short one). */
+  idle_grace_ms?: number;
 }
 
 export interface GameRow {
@@ -372,11 +384,24 @@ export async function playEntries(options: GenerationOptions, shard: Shard = { i
   const mine = plan.filter((entry) => entry.game % shard.of === shard.index);
   const entries: PlayedEntry[] = [];
   const waveSize = config.generation.n_parallel * workers.length;
+  const activity = options.activity ?? { busy: 0 };
+  const stopped = (): void => {
+    if (options.signal?.aborted === true) throw new GenerationError("the generation was stopped: this process plays no further game");
+  };
   for (let start = 0; start < mine.length; start += waveSize) {
-    await Promise.all(workers.map((worker) => worker.beginGame?.()));
+    stopped();
+    activity.busy++;
+    let played: PlayedOne[];
     const wave = mine.slice(start, start + waveSize);
-    // A game stays on one worker, chosen by its place in the wave.
-    const played = await Promise.all(wave.map((entry, place) => playOne(withRecords, entry, workers[place % workers.length] as PolicyClient)));
+    try {
+      await Promise.all(workers.map((worker) => worker.beginGame?.()));
+      stopped(); // a restart that began before the stop must not start games
+      // A game stays on one worker, chosen by its place in the wave.
+      played = await Promise.all(wave.map((entry, place) => playOne(withRecords, entry, workers[place % workers.length] as PolicyClient)));
+    } finally {
+      activity.busy--;
+    }
+    stopped();
     for (const [index, game] of played.entries()) {
       const entry = wave[index] as GamePlan;
       const { outcome, record, baseline } = game;
@@ -416,6 +441,37 @@ export async function playEntries(options: GenerationOptions, shard: Shard = { i
   return entries;
 }
 
+/** How long a generation may stand with no live game process and no game in flight (#1100). */
+const IDLE_GRACE_MS = 60_000;
+
+/**
+ * The idle watchdog (#1100): while the other game processes' entries are still awaited, a
+ * generation with none of them alive and none of this process's games or worker restarts in
+ * progress is not going to finish. `tripped` rejects after `graceMs` of that state; it never
+ * resolves. Without a `live` probe (one game process) there is nothing to watch.
+ */
+function watchIdle(live: (() => number) | undefined, activity: { busy: number }, graceMs: number, awaited: Promise<unknown>): { tripped: Promise<never>; stop: () => void } {
+  let timer: ReturnType<typeof setInterval> | undefined;
+  let settled = false;
+  awaited.then(() => (settled = true), () => (settled = true));
+  const tripped = new Promise<never>((_, reject) => {
+    if (live === undefined) return;
+    let since: number | undefined;
+    timer = setInterval(() => {
+      const idle = !settled && live() === 0 && activity.busy === 0;
+      if (!idle) {
+        since = undefined;
+        return;
+      }
+      since ??= Date.now();
+      if (Date.now() - since >= graceMs) reject(new GenerationError(`the generation is idle: no game process is running and no game is in flight for ${graceMs} ms, yet the other game processes' games have not been reported`));
+    }, Math.max(1, Math.min(1000, Math.floor(graceMs / 4))));
+    timer.unref();
+  });
+  tripped.catch(() => undefined);
+  return { tripped, stop: () => clearInterval(timer) };
+}
+
 /**
  * Play the generation's plan: `options.shard`'s games here, the rest through
  * `options.others` (entries played by other game processes), then write nothing
@@ -430,10 +486,22 @@ export async function playEntries(options: GenerationOptions, shard: Shard = { i
 export async function playGeneration(options: GenerationOptions): Promise<GenerationResult> {
   const { engine, config, generation, policy_id, pool } = options;
   const plan = planGeneration(config, generation, pool.teams.length);
-  const here = playEntries(options, options.shard);
+  const stop = new AbortController();
+  const activity = options.activity ?? { busy: 0 };
+  const here = playEntries({ ...options, signal: stop.signal, activity }, options.shard);
   const there = options.others ?? Promise.resolve([]);
-  there.catch(() => undefined); // a failure here is reported through the Promise.all below
-  const entries = (await Promise.all([here, there])).flat().sort((a, b) => a.game - b.game);
+  here.catch(() => stop.abort()); // a failure of either side ends the other's games at once (#1100)
+  there.catch(() => stop.abort());
+  let entries: PlayedEntry[];
+  const idle = watchIdle(options.live_children, activity, options.idle_grace_ms ?? IDLE_GRACE_MS, there);
+  try {
+    entries = (await Promise.race([Promise.all([here, there]), idle.tripped])).flat().sort((a, b) => a.game - b.game);
+  } catch (error) {
+    stop.abort();
+    throw error;
+  } finally {
+    idle.stop();
+  }
   if (entries.length !== plan.length || entries.some((entry, index) => entry.game !== index)) {
     throw new GenerationError("the played games are not the plan's games, each once");
   }

@@ -29,7 +29,7 @@ jobs:
   # here, without asking for the rules-dev approval.
   plan:
     if: github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
     outputs:
@@ -74,7 +74,7 @@ jobs:
   publish:
     needs: plan
     if: github.ref == 'refs/heads/main' && needs.plan.outputs.publish == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     environment: rules-dev
     permissions:
       contents: write
