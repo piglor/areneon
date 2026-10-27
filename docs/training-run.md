@@ -521,6 +521,33 @@ about 1 hour in one process and about 10 minutes with 8; the real dataset's pool
 adds to the start-up. Memory grows with the number of Episodes held (the same as a
 generation of that many games).
 
+### Starting a run from the cloned pair (`warm_start`)
+
+A run config may declare `"warm_start": {"preview": "<id>", "battle": "<id>"}` (the checkpoint
+ids the cloning run printed under `checkpoints`; ADR-010 erratum A2). Generation 0 is then that
+pair, frozen as it is with no learner step, instead of the seeded random pair; generation 1
+plays it. Bring the pair into the run directory first, from the local clone output (nothing is
+fetched):
+
+```bash
+.venv/bin/python -m areneon_ml.loop import-clone --clone-dir .tmp/clone/CLONE-1 --run-dir .tmp/runs/RUN-1
+```
+
+That copies the two checkpoints into `RUN-1/checkpoints/` and the two clone records into
+`RUN-1/warm-start/records/`; running it again is a no-op, and it never replaces a record with
+different bytes. `loop run` then checks, before generation 0, that each checkpoint hashes to its
+id, holds the network of its role and was made for the run's engine-data table, encoder version
+and `model` section (its bytes must re-serialise as themselves), and that its record is a
+clone record (a teacher training set, no parent, synthetic) for the run's format. Anything else
+stops the run with exit 3. The `model` section of the run config must be the one the cloning
+run used. The warm start is part of the run config hash, so it is a new `run_key`.
+
+The learner's Adam moments and generator start fresh at generation 1 (the supervised phase's
+optimiser state is not carried over). Generation 0 stores the clone records as they are (a
+checkpoint has one record), so `loop provenance` lists them and maps the teacher set to `[]`:
+`independent` then reports two warm-started runs that share a teacher set as not independent,
+and runs with different teacher sets, or none, as independent (ADR-019 section 6).
+
 ## 6. Your own teams as a test set: the private test (owner only)
 
 The private test (ADR-015 erratum E1, item 2) measures one frozen pair on your own teams, from

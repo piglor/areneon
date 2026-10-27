@@ -184,6 +184,19 @@ export interface TrainingRunConfig {
     dataset_hash: string;
   };
   /**
+   * Optional (a minor change within v1; ADR-010 erratum A2, ADR-019 section 4): generation 0 is this declared pair of cloned checkpoints instead of the seeded random pair. The ids name checkpoints already in the run's checkpoint store (copied in by an explicit import command, never fetched). At run start each must hash to its id, hold the network of its role, and match the run's encoder version, engine-data hash and model section, and its CheckpointRecord must be a clone record (non-empty training_set_hashes, no parent, synthetic); anything else refuses the run. Generation 0 freezes the pair with no learner step, and the learner state starts fresh from the cloned weights. Absent keeps the seeded initialisation and today's bytes and run_config_hash. An older reader refuses a config that has it.
+   */
+  warm_start?: {
+    /**
+     * Checkpoint id (SHA-256 of the safetensors file) of the cloned Team Preview network.
+     */
+    preview: string;
+    /**
+     * Checkpoint id (SHA-256 of the safetensors file) of the cloned Battle network.
+     */
+    battle: string;
+  };
+  /**
    * Where the learner runs (ADR-010 section 4). A cuda run is not claimed to be bit-reproducible, and its hash differs from a cpu run's.
    */
   learner: {

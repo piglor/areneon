@@ -7,6 +7,9 @@
   ``--resimulate G:K``, instead one engine re-simulation page of a played game (omniscient, local).
 * ``replay``: write graphical replay pages of training games (each game's two own channels), or
   with ``--progress-dir`` of stored progress games (the omniscient view, for local use).
+* ``import-clone``: copy a cloning run's checkpoints and records (``learner clone`` output) into a
+  run directory, so a run config with ``warm_start`` can start generation 0 from them (ADR-010
+  erratum A2). Never fetched: the clone directory is a local path. Prints the ids by role.
 * ``provenance``: write the run's CheckpointRecords and its sources registry into a
   directory, ready for ``python -m areneon_ml.checkpoint classify|independent``.
 * ``report``: write the run dashboard (training curves and, with a progress root, the progress
@@ -52,6 +55,7 @@ from areneon_ml.learner.trainer import LearnerError
 from areneon_ml.loop import layout
 from areneon_ml.loop.driver import Loop, LoopError, export_provenance
 from areneon_ml.loop.play import NodePlayer, PlayError
+from areneon_ml.loop.warm_start import WarmStartError, import_clone
 from areneon_ml.model.encoder import encoder_version
 from areneon_ml.model.gamedata import GameData
 from areneon_ml.private.private_test import PrivateTestRequest, private_test_main
@@ -189,6 +193,11 @@ def _parser() -> argparse.ArgumentParser:
     provenance = commands.add_parser("provenance", help="export the records and sources registry")
     provenance.add_argument("--run-dir", type=Path, required=True)
     provenance.add_argument("--out", type=Path, required=True)
+    imported = commands.add_parser(
+        "import-clone", help="copy a cloning run's checkpoints and records into a run directory"
+    )
+    imported.add_argument("--clone-dir", type=Path, required=True, help="a `learner clone` output")
+    imported.add_argument("--run-dir", type=Path, required=True)
     inspect = commands.add_parser(
         "inspect", help="write the training-data inspector's static pages"
     )
@@ -469,6 +478,13 @@ def _private_test(args: argparse.Namespace) -> int:
     return private_test_main(request)
 
 
+def _records(args: argparse.Namespace) -> dict[str, object]:
+    """``import-clone`` and ``provenance``: the commands that move records, not battles."""
+    if args.command == "import-clone":
+        return {"checkpoints": import_clone(args.clone_dir, args.run_dir)}
+    return {"sources_hash": export_provenance(args.run_dir, args.out)}
+
+
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(sys.argv[1:] if argv is None else argv)
     if args.command == "private-test":
@@ -514,13 +530,14 @@ def main(argv: list[str] | None = None) -> int:
                 engine_data=args.engine_data,
             )
         else:
-            out = {"sources_hash": export_provenance(args.run_dir, args.out)}
+            out = _records(args)
     except PlayError as exc:
         print(f"areneon_ml.loop: {exc}", file=sys.stderr)
         return EXIT_PLAY
     except (
         RunConfigError,
         LoopError,
+        WarmStartError,
         layout.RunDirError,
         LearnerError,
         LearnerStateError,
