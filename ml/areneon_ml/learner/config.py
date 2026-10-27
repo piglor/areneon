@@ -4,8 +4,8 @@ The record is reviewed JSON, validated against the contract first and then
 against the six rules the profile cannot say (they are the TS reader's too):
 the attention heads divide the token width, a Team Preview order cannot name
 more positions than a side holds (both checked by ``ModelConfig``), and each
-scripted baseline is listed once, a warm start names two different
-checkpoints, and a value warm-up and a KL anchor each need a warm start.
+scripted baseline is listed once, a warm start (both roles, or the Battle role alone)
+names different checkpoints, and a value warm-up and a KL anchor each need a warm start.
 Real-valued settings are stored as integers in millionths (``_micro``) or
 billionths (``_nano``); this module is the one place that turns them into
 floats, by one exact division. The record is named only by ``run_config_hash``,
@@ -142,8 +142,9 @@ class RunConfig:
     device: str
     threads: int
     team_dataset: bool
-    #: ``warm_start`` (ADR-010 erratum A2): the cloned checkpoint id of each role, or ``None``
-    #: for the seeded initialisation. The loop checks the files; this reader checks the ids.
+    #: ``warm_start`` (ADR-010 erratum A2): the cloned checkpoint id of each warm-started role
+    #: (both roles, or ``battle`` alone, #1165), or ``None`` for the seeded
+    #: initialisation. The loop checks the files; this reader checks the ids.
     warm_start: Mapping[str, str] | None
     raw: dict[str, Any]
     hash: str
@@ -184,7 +185,7 @@ def read_run_config(raw: object) -> RunConfig:
     if len(set(actors)) != len(actors):
         raise RunConfigError("training-run-config: a scripted baseline may be listed once")
     warm = raw.get("warm_start")
-    if warm is not None and warm["preview"] == warm["battle"]:
+    if warm is not None and warm.get("preview") == warm["battle"]:
         raise RunConfigError(
             "training-run-config: warm_start names one checkpoint for both roles "
             "(a checkpoint holds one role's network)"

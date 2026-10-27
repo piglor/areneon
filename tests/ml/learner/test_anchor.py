@@ -330,7 +330,7 @@ def test_the_learner_wants_anchor_networks_exactly_when_the_config_has_an_anchor
         Learner(config, networks(config), device)
     with pytest.raises(LearnerError, match="exactly when"):
         Learner(tiny_config(), networks(tiny_config()), device, networks(tiny_config()))
-    with pytest.raises(LearnerError, match="one anchor network per role"):
+    with pytest.raises(LearnerError, match="one anchor network per warm-started role"):
         Learner(config, networks(config), device, {"battle": networks(config)["battle"]})
 
 

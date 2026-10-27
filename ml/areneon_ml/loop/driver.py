@@ -118,7 +118,8 @@ class Sealing:
     training_set_hash: str | None
     teams: tuple[str, ...]
     version_manifest: dict[str, Any]
-    #: Records to write as they are (a warm start's clone records) instead of building new ones.
+    #: Records to write as they are (a warm start's clone records, for the warm-started roles
+    #: only) instead of building new ones.
     records: dict[str, CheckpointRecord] | None = None
 
 
@@ -193,8 +194,13 @@ class Loop:
 
     def _new_learner(self, networks: dict[str, PolicyNetwork] | None = None) -> Learner:
         seeds = {"preview": self.config.init_preview, "battle": self.config.init_battle}
-        built = networks or {
-            role: init_network(role, self.game, self.config.model, seeds[role]) for role in ROLES
+        # A role the warm start does not name starts from its seeded init, exactly as in a
+        # scratch run (#1165); `networks` holds the warm-started roles only.
+        built = {
+            role: networks[role]
+            if networks is not None and role in networks
+            else init_network(role, self.game, self.config.model, seeds[role])
+            for role in ROLES
         }
         anchors = None
         if self.config.ppo.anchor is not None:
@@ -285,11 +291,12 @@ class Loop:
         records = {role: self._read_record(newest.path, role) for role in ROLES}
         warm_ids = self.config.warm_start
         warm_zero = newest.generation == 0 and warm_ids is not None
+        warm_roles = frozenset(warm_ids or ()) if warm_zero else frozenset()
         if warm_ids is not None and warm_zero:
             # Generation 0 of a warm-started run: the records are the clone records, the pair
             # is the one the run's checkpoint store holds under the declared ids.
             warm = self._warm_pair(warm_ids)
-            if records != warm.records:
+            if {r: records[r] for r in warm_roles} != warm.records:
                 raise LoopError("generation 0: its records are not the warm-start clone records")
         for role in ROLES:
             found = checkpoint_bytes(learner.networks[role], self.game)
@@ -302,7 +309,7 @@ class Loop:
                 raise LoopError(
                     f"generation {newest.generation}: the {role} record names another checkpoint"
                 )
-            if warm_zero:
+            if role in warm_roles:
                 # The records are the clone run's: their training sets, state hash and run
                 # config hash are not this run's, and equality with the imported records above
                 # is the check.
@@ -439,7 +446,7 @@ class Loop:
             manifest = team_set_manifest(sealing.teams)
             layout.write_json(work / "team-set.json", manifest)
             for role in ROLES:
-                if sealing.records is not None:
+                if sealing.records is not None and role in sealing.records:
                     layout.write_json(
                         work / "records" / f"{role}.json", sealing.records[role].to_json()
                     )
