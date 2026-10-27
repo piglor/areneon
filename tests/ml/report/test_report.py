@@ -456,6 +456,11 @@ def test_a_changed_file_is_refused_by_the_manifest(tmp_path: Path) -> None:
         (lambda r: r["battle"].update(epochs_run=0, kl_stopped=True), "integer"),
         (lambda r: r["battle"].update(value_warmup=False), "value_warmup is true"),
         (lambda r: r["battle"].update(value_warmup=1), "value_warmup is true"),
+        (lambda r: r["battle"].update(anchor_kl=0.1), "come together"),
+        (lambda r: r["battle"].update(anchor_beta_micro=5), "come together"),
+        (lambda r: r["battle"].update(anchor_kl=-0.1, anchor_beta_micro=5), "cannot be negative"),
+        (lambda r: r["battle"].update(anchor_kl=True, anchor_beta_micro=5), "finite"),
+        (lambda r: r["battle"].update(anchor_kl=0.1, anchor_beta_micro=-5), "integer"),
     ],
 )
 def test_the_train_report_is_read_strictly(change: Any, message: str) -> None:
@@ -481,6 +486,35 @@ def test_the_value_warmup_key_is_optional_and_read_when_present() -> None:
     facts = read_train_report(raw)
     assert "value_warmup" not in facts.roles["battle"]
     assert facts.kl_stops == {}
+
+
+def test_the_anchor_keys_are_optional_and_read_when_present() -> None:
+    plain = read_train_report(json.loads(json.dumps(TRAIN_REPORT)))
+    assert plain.anchors == {}
+    raw = json.loads(json.dumps(TRAIN_REPORT))
+    raw["battle"].update(anchor_kl=0.125, anchor_beta_micro=50_000)
+    raw["preview"].update(anchor_kl=0.0, anchor_beta_micro=0)
+    facts = read_train_report(raw)
+    assert facts.anchors == {"battle": (0.125, 50_000), "preview": (0.0, 0)}
+    assert "anchor_kl" not in facts.roles["battle"]
+
+
+def test_the_dashboard_charts_the_anchor_kl_only_when_a_run_has_one(tmp_path: Path) -> None:
+    run_dir = fixture_copy(tmp_path, train=True)
+    assert "Anchor KL" not in build(run_dir)
+    for n in (1, 2):
+        path = layout.generation_dir(run_dir, n)
+        raw = json.loads(json.dumps(TRAIN_REPORT))
+        raw["battle"].update(anchor_kl=0.125 * n, anchor_beta_micro=100_000)
+        raw["preview"].update(anchor_kl=0.25 * n, anchor_beta_micro=100_000)
+        layout.write_json(path / "train-report.json", raw)
+        manifest = layout.read_json(path / layout.MANIFEST)
+        manifest["files"] = layout.hash_tree(path)
+        layout.write_json(path / layout.MANIFEST, manifest)
+    text = build(run_dir)
+    assert "Anchor KL" in text
+    assert "anchor KL: 0.25 (beta 0.1)" in text
+    assert text.index("Approximate KL") < text.index("Anchor KL")
 
 
 def test_a_private_lineage_is_refused(tmp_path: Path) -> None:

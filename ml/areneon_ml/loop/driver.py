@@ -196,7 +196,13 @@ class Loop:
         built = networks or {
             role: init_network(role, self.game, self.config.model, seeds[role]) for role in ROLES
         }
-        return Learner(self.config, built, self.device)
+        anchors = None
+        if self.config.ppo.anchor is not None:
+            # The frozen warm-start pair is the anchor, loaded afresh from the run's store (a
+            # second copy, never the learner's own networks) and checked as at generation 0.
+            assert self.config.warm_start is not None  # the reader requires warm_start
+            anchors = self._warm_pair(self.config.warm_start).networks
+        return Learner(self.config, built, self.device, anchors)
 
     # -- run -----------------------------------------------------------------
 

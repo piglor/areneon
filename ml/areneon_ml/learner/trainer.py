@@ -23,11 +23,12 @@ from typing import Protocol
 
 import torch
 
-from areneon_ml.learner.config import RunConfig
+from areneon_ml.learner.config import MICRO, RunConfig
 from areneon_ml.learner.data import Step, Trajectory
 from areneon_ml.learner.ppo import (
     LossWeights,
     Targets,
+    anchor_kl,
     gae,
     normalise,
     policy_terms,
@@ -100,6 +101,12 @@ class RoleReport:
     # True only for a value warm-up update (``ppo.value_warmup``, ADR-019 section 4); left out of
     # the stored report otherwise, so a run without the field keeps its bytes.
     value_warmup: bool | None = None
+    # Set only when the config has ``ppo.anchor`` (ADR-019 section 4): the mean KL(pi_theta ||
+    # pi_anchor) over the role's minibatches and the beta (millionths) the update used. Both are
+    # 0 on a value warm-up update (the policy is frozen and equals the anchor exactly). Left out
+    # of the stored report when absent, so a run without the field keeps its bytes.
+    anchor_kl: float | None = None
+    anchor_beta_micro: int | None = None
 
 
 @dataclass(frozen=True)
@@ -121,6 +128,9 @@ class _Table:
     old_log_prob: torch.Tensor
     advantages: torch.Tensor
     returns: torch.Tensor
+    #: Per step, the anchor's log-probabilities over that decision's real candidates (in
+    #: candidate order), from its frozen weights; ``None`` without an active anchor.
+    anchor_log_probs: list[torch.Tensor] | None = None
 
 
 VALUE_PREFIX = "value."
@@ -136,13 +146,31 @@ class Learner:
     """Both networks, their optimisers and the generator of one run."""
 
     def __init__(
-        self, config: RunConfig, networks: Mapping[str, PolicyNetwork], device: torch.device
+        self,
+        config: RunConfig,
+        networks: Mapping[str, PolicyNetwork],
+        device: torch.device,
+        anchors: Mapping[str, PolicyNetwork] | None = None,
     ) -> None:
         if set(networks) != set(ROLES):
             raise LearnerError(f"one network per role is needed: {sorted(ROLES)}")
+        if (anchors is None) != (config.ppo.anchor is None):
+            raise LearnerError(
+                "the anchor networks are given exactly when the config has ppo.anchor"
+            )
+        if anchors is not None and set(anchors) != set(ROLES):
+            raise LearnerError(f"one anchor network per role is needed: {sorted(ROLES)}")
         self.config = config
         self.device = device
         self.networks = {role: networks[role].to(device) for role in ROLES}
+        # The frozen warm-start pair (ppo.anchor): evaluation mode, no gradient, never trained and
+        # not part of the learner state (the loop loads it from the run's checkpoint store).
+        self.anchors: dict[str, PolicyNetwork] = {}
+        if anchors is not None:
+            for role in ROLES:
+                anchor = anchors[role].to(device).eval()
+                anchor.requires_grad_(False)
+                self.anchors[role] = anchor
         ppo = config.ppo
         self.optimisers = {
             role: torch.optim.Adam(
@@ -159,6 +187,23 @@ class Learner:
         # Millionths used by the newest update; set only under a linear schedule (it is stored in
         # the learner-state sidecar then, and nowhere otherwise).
         self.last_rate_micro: int | None = None
+        # Beta (millionths) of the newest update; set only with ``ppo.anchor`` (stored in the
+        # sidecar then, and nowhere otherwise).
+        self.last_anchor_beta_micro: int | None = None
+
+    def anchor_beta_micro(self, update: int) -> int | None:
+        """Beta of learner update ``update`` (from 0), or ``None`` without ``ppo.anchor``.
+
+        The anchor's schedule index counts from the first POLICY update: with a value warm-up of N
+        updates, updates 0 to N-1 have beta 0 (the policy is frozen) and update ``u`` >= N uses the
+        schedule's rate at ``u - N``, so the decay is not spent while nothing moves. Without a
+        warm-up the index is the update index, as for the learning-rate schedule.
+        """
+        anchor = self.config.ppo.anchor
+        if anchor is None:
+            return None
+        warmup = self.config.ppo.value_warmup or 0
+        return 0 if update < warmup else anchor.beta_micro(update - warmup)
 
     # -- one generation ------------------------------------------------------
 
@@ -174,6 +219,7 @@ class Learner:
                 for group in optimiser.param_groups:
                     group["lr"] = schedule.rate(self.generation)
         warm = value_warmup_active(self.config, self.generation)
+        self.last_anchor_beta_micro = self.anchor_beta_micro(self.generation)
         for role in ROLES:
             mine = [t for t in trajectories if t.role == role]
             if mine:
@@ -197,7 +243,23 @@ class Learner:
                 values.append(out.value)
         return torch.cat(log_probs), torch.cat(values)
 
-    def _table(self, role: str, trajectories: Sequence[Trajectory]) -> _Table:
+    def _anchor_scores(self, role: str, steps: Sequence[Step]) -> list[torch.Tensor]:
+        """The anchor's log-probabilities over each step's real candidates, no gradient."""
+        network = self.anchors[role]
+        size = self.config.ppo.minibatch_size
+        out: list[torch.Tensor] = []
+        with torch.no_grad():
+            for start in range(0, len(steps), size):
+                batch = to_device(
+                    collate([s.query for s in steps[start : start + size]]), self.device
+                )
+                floor = torch.finfo(torch.float32).min
+                logits = network(batch).logits
+                log_probs = torch.log_softmax(logits.masked_fill(~batch.cand_mask, floor), dim=-1)
+                out.extend(log_probs[i][batch.cand_mask[i]] for i in range(log_probs.shape[0]))
+        return out
+
+    def _table(self, role: str, trajectories: Sequence[Trajectory], anchor: bool = False) -> _Table:
         ppo = self.config.ppo
         steps = [s for t in trajectories for s in t.steps]
         old_log_prob, values = self._score(role, steps)
@@ -217,13 +279,22 @@ class Learner:
         adv = torch.cat(advantages)
         if ppo.normalize_advantages:
             adv = normalise(adv)
-        return _Table(steps, old_log_prob, adv.to(self.device), torch.cat(returns).to(self.device))
+        return _Table(
+            steps,
+            old_log_prob,
+            adv.to(self.device),
+            torch.cat(returns).to(self.device),
+            self._anchor_scores(role, steps) if anchor else None,
+        )
 
     def _train_role(
         self, role: str, trajectories: Sequence[Trajectory], warm: bool = False
     ) -> RoleReport:
         """PPO epochs for one role; with ``warm`` only the value head learns (see below)."""
-        table = self._table(role, trajectories)
+        # The anchor term is inactive while the policy is frozen (a value warm-up update).
+        table = self._table(
+            role, trajectories, anchor=self.config.ppo.anchor is not None and not warm
+        )
         network = self.networks[role]
         network.train()
         # Value warm-up: every parameter outside the value head is frozen, so the policy outputs
@@ -246,6 +317,9 @@ class Learner:
         network, optimiser = self.networks[role], self.optimisers[role]
         weights = LossWeights(ppo.clip, ppo.value_coef, ppo.entropy_coef)
         sums = torch.zeros(5)
+        kl_sum = torch.zeros(())
+        beta_micro = self.last_anchor_beta_micro
+        beta = 0.0 if beta_micro is None else beta_micro / MICRO
         optimiser_steps = 0
         epochs_run = 0
         kl_stopped = False
@@ -268,8 +342,16 @@ class Learner:
                     ),
                     weights,
                 )
+                total = loss.total
+                if table.anchor_log_probs is not None:
+                    dense = torch.zeros(batch.cand_mask.shape, device=self.device)
+                    for row, i in enumerate(index):
+                        dense[row, batch.cand_mask[row]] = table.anchor_log_probs[i]
+                    kl = anchor_kl(out.logits, batch.cand_mask, dense).mean()
+                    total = total + beta * kl
+                    kl_sum += kl.detach().cpu()
                 optimiser.zero_grad(set_to_none=True)
-                torch.autograd.backward(loss.value if warm else loss.total)
+                torch.autograd.backward(loss.value if warm else total)
                 torch.nn.utils.clip_grad_norm_(network.parameters(), ppo.max_grad_norm)
                 optimiser.step()
                 optimiser_steps += 1
@@ -303,4 +385,8 @@ class Learner:
             epochs_run if stop else None,
             kl_stopped if stop else None,
             True if warm else None,
+            (float(kl_sum) / optimiser_steps if table.anchor_log_probs is not None else 0.0)
+            if beta_micro is not None
+            else None,
+            beta_micro,
         )

@@ -213,6 +213,21 @@ class Baseline(BaseModel):
     """
 
 
+class AnchorLinearSchedule(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    kind: Literal["linear"]
+    final_micro: Annotated[StrictInt, Field(ge=0, le=100000000)]
+    """
+    beta from anchor update `generations` on, in millionths; 0 releases the policy completely.
+    """
+    generations: Annotated[StrictInt, Field(ge=1, le=1000000)]
+    """
+    Anchor updates over which beta moves from kl_micro to final_micro.
+    """
+
+
 class ConstantSchedule(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
@@ -309,6 +324,27 @@ class LearningRateSchedule(RootModel[ConstantSchedule | LinearSchedule]):
     root: Annotated[ConstantSchedule | LinearSchedule, Field(discriminator="kind")]
 
 
+class AnchorSchedule(RootModel[ConstantSchedule | AnchorLinearSchedule]):
+    root: Annotated[
+        ConstantSchedule | AnchorLinearSchedule, Field(discriminator="kind")
+    ]
+
+
+class Anchor(BaseModel):
+    """
+    Optional (a minor change within v1, ADR-019 section 4, ADR-010 erratum A2 item 3, #968): for a run that declares warm_start, a KL anchor to the warm-start pair. Per decision, beta * KL(pi_theta || pi_anchor) is added to the loss, with both policies the softmax over the real candidates and pi_anchor the frozen warm-start pair (the declared checkpoints of both roles), computed once per generation from its frozen weights with no gradient. beta, in millionths, is kl_micro for a constant schedule; for a linear one, with t the anchor update index from 0, beta(t) = kl_micro + trunc((final_micro - kl_micro) * min(t, generations) / generations) in exact integers, truncating toward zero (the rule of learning_rate_schedule). Both roles alike. With ppo.value_warmup the anchor is inactive (beta 0) while the policy is frozen and t counts from the first policy update, the update after the warm-up. Absent means no anchor. A config that carries it is a new run.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    kl_micro: Annotated[StrictInt, Field(ge=1, le=100000000)]
+    """
+    beta at anchor update 0, in millionths.
+    """
+    schedule: AnchorSchedule
+
+
 class Ppo(BaseModel):
     """
     PPO with GAE (ADR-010 section 1). Real-valued settings are integers in millionths (_micro) or billionths (_nano), because contracts carry no floating-point numbers.
@@ -382,6 +418,10 @@ class Ppo(BaseModel):
     value_warmup: ValueWarmup | MISSING = MISSING
     """
     Optional (a minor change within v1, ADR-019 section 4, #1111): for a run that declares warm_start, the first `generations` learner updates (generation 1 up to generation `generations`) train the value head only, on the cloned pair's own rollouts, with every other parameter of both networks frozen (the policy heads and the shared trunk stay byte-identical); update `generations` + 1 and every later one is normal PPO. The learning-rate schedule's update index counts the warm-up updates too. Absent means normal PPO from generation 1. A config that carries it is a new run.
+    """
+    anchor: Anchor | MISSING = MISSING
+    """
+    Optional (a minor change within v1, ADR-019 section 4, ADR-010 erratum A2 item 3, #968): for a run that declares warm_start, a KL anchor to the warm-start pair. Per decision, beta * KL(pi_theta || pi_anchor) is added to the loss, with both policies the softmax over the real candidates and pi_anchor the frozen warm-start pair (the declared checkpoints of both roles), computed once per generation from its frozen weights with no gradient. beta, in millionths, is kl_micro for a constant schedule; for a linear one, with t the anchor update index from 0, beta(t) = kl_micro + trunc((final_micro - kl_micro) * min(t, generations) / generations) in exact integers, truncating toward zero (the rule of learning_rate_schedule). Both roles alike. With ppo.value_warmup the anchor is inactive (beta 0) while the policy is frozen and t counts from the first policy update, the update after the warm-up. Absent means no anchor. A config that carries it is a new run.
     """
 
 

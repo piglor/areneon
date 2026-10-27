@@ -22,7 +22,7 @@ const validConfig = ajvFor("contract").compile(trainingRunConfigSchema);
  * Read a TrainingRunConfig: the schema, then the rules it cannot say: the
  * attention heads divide the token width, a Team Preview order does not name
  * more positions than a side holds, each scripted baseline appears once, and a warm start names two
- * different checkpoints (a checkpoint holds the network of one role), and a value warm-up needs a warm start.
+ * different checkpoints (a checkpoint holds the network of one role), a value warm-up needs a warm start, and so does a KL anchor.
  */
 export function readTrainingRunConfig(value: unknown): TrainingRunConfig {
   if (!validConfig(value)) throw new TrainingRunConfigError(`invalid TrainingRunConfig: ${JSON.stringify(validConfig.errors)}`);
@@ -41,6 +41,9 @@ export function readTrainingRunConfig(value: unknown): TrainingRunConfig {
   }
   if (config.ppo.value_warmup !== undefined && config.warm_start === undefined) {
     throw new TrainingRunConfigError("ppo.value_warmup needs warm_start: only a cloned start has an untrained value head to warm up");
+  }
+  if (config.ppo.anchor !== undefined && config.warm_start === undefined) {
+    throw new TrainingRunConfigError("ppo.anchor needs warm_start: the anchor is the warm-start pair");
   }
   return config;
 }
