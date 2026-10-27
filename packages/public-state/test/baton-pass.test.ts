@@ -91,6 +91,11 @@ describe("a Baton Pass or Shed Tail switch", () => {
     expect(receiver.ability_suppressed).toBe(false);
   });
 
+  it("volatiles printed under a derived name are blocked like their condition", () => {
+    const extra = ["|-start|p2a: Venusaur|stockpile2", "|-start|p2a: Venusaur|protosynthesisatk", "|-start|p2a: Venusaur|Substitute"];
+    expect(incomingMon("Baton Pass", dex, extra).receiver.volatiles).toEqual(["substitute"]);
+  });
+
   it("a plain switch passes nothing", () => {
     const { receiver } = incomingMon(null);
     expect(receiver.volatiles).toEqual([]);

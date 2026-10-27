@@ -63,6 +63,9 @@ var ArReplay = (function () {
   var ERROR_TEXT = /^\[(?:Unavailable|Invalid) choice\] \S[^\n\r]*$/;
   var ABILITY_COPIES = { abilitytrace: 1, moveroleplay: 1 };
   var ILLUSION = "illusion";
+  // Stockpile prints `stockpile1`..`3`, Protosynthesis and Quark Drive `protosynthesisatk` (the stat id
+  // appended): the engine's condition id is the name without that suffix (#1102).
+  var DERIVED_SUFFIX = /(?:\d+|atk|def|spa|spd|spe)$/;
 
   /** @param {string} text */
   function toId(text) {
@@ -541,7 +544,7 @@ var ArReplay = (function () {
         var out = /** @type {Mon} */ (side.roster[previous]);
         var table = /** @type {{ not_copied: string[], shed_tail_copies: string[] }} */ (volatileCopy);
         var keeps = function (/** @type {string} */ v) {
-          return cause === "shedtail" ? table.shed_tail_copies.indexOf(v) >= 0 : table.not_copied.indexOf(v) < 0;
+          return cause === "shedtail" ? table.shed_tail_copies.indexOf(v) >= 0 : table.not_copied.indexOf(v) < 0 && table.not_copied.indexOf(v.replace(DERIVED_SUFFIX, "")) < 0;
         };
         passed = {
           boosts: cause === "batonpass" ? clone(out).boosts : zeroBoosts(),

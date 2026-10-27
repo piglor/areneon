@@ -224,3 +224,14 @@ def test_the_replay_page_carries_the_table_for_its_interpreter() -> None:
         "shed_tail_copies": ["substitute"],
     }
     assert "volatile_copy" not in dex_for_ids({**table, "showdown_commit": "0" * 40}, set())
+
+
+@pytest.mark.parametrize(
+    "shown", ["stockpile1", "stockpile3", "protosynthesisatk", "quarkdrivespe"]
+)
+def test_a_derived_volatile_name_is_blocked_like_its_condition(shown: str) -> None:
+    assert VOCAB.passed_volatiles("batonpass", {shown, "substitute"}) == {"substitute"}
+    assert VOCAB.passed_volatiles("batonpass", {"attractx", "leechseed"}) == {
+        "attractx",
+        "leechseed",
+    }

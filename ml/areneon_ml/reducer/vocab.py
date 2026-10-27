@@ -19,6 +19,10 @@ from areneon_contracts.contracts import jcs, sha256_hex
 from .errors import VocabularyError
 
 DATA_DIR = Path(__file__).resolve().parent / "data"
+# Some conditions print their volatile under a derived name: Stockpile as `stockpile1`..`3`,
+# Protosynthesis and Quark Drive as `protosynthesisatk` (the boosted stat's id appended). The
+# engine's condition id is the name without that suffix.
+_DERIVED_SUFFIX = re.compile(r"(?:\d+|atk|def|spa|spd|spe)$")
 _COPY_KEYS = frozenset(
     {
         "format_id",
@@ -110,7 +114,11 @@ class Vocabulary:
             raise VocabularyError("no volatile-copy table for this engine and format")
         if cause == "shedtail":
             return {v for v in held if v in self.shed_tail_copies}
-        return {v for v in held if v not in self.not_copied}
+        return {
+            v
+            for v in held
+            if v not in self.not_copied and _DERIVED_SUFFIX.sub("", v) not in self.not_copied
+        }
 
     def _check(self, kind: str, name: str, known: Any) -> str:
         found = to_id(name)
