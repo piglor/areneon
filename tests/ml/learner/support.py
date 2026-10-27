@@ -60,9 +60,15 @@ def networks(config: RunConfig) -> dict[str, PolicyNetwork]:
     return {role: init_network(role, game(), config.model, seeds[role]) for role in ROLES}
 
 
-def learner(config: RunConfig | None = None) -> Learner:
+def learner(
+    config: RunConfig | None = None, anchors: dict[str, PolicyNetwork] | None = None
+) -> Learner:
+    """A learner on seeded networks; with ``ppo.anchor`` its anchor is ``anchors`` or, by default,
+    a second copy of the same seeded networks (so the anchor starts equal to the policy)."""
     config = config or tiny_config()
-    return Learner(config, networks(config), torch.device("cpu"))
+    if config.ppo.anchor is not None and anchors is None:
+        anchors = networks(config)
+    return Learner(config, networks(config), torch.device("cpu"), anchors)
 
 
 def episode_lines(

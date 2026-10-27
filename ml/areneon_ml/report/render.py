@@ -654,6 +654,34 @@ def _diagnostics_section(model: ReportModel, tips: Tips) -> str:
                 empty="No train-report.json was recorded.",
             )
         )
+    anchored = [g for g in played if g.train is not None and g.train.anchors]
+    if anchored:
+        series = []
+        for role, slot, shape in (("battle", 1, "circle"), ("preview", 2, "square")):
+            pts = [
+                Pt(
+                    g.number,
+                    g.train.anchors[role][0],
+                    f"Generation {g.number}, {role} anchor KL: {g.train.anchors[role][0]:.4g} "
+                    f"(beta {g.train.anchors[role][1] / 1_000_000:.4g})",
+                    f"{g.train.anchors[role][0]:.4g}",
+                )
+                for g in anchored
+                if g.train is not None and role in g.train.anchors
+            ]
+            if pts:
+                series.append(Series(role, slot, shape, tuple(pts)))
+        charts.append(
+            line_chart(
+                "Anchor KL",
+                "KL from the warm-start pair, per generation, from train-report.json; the "
+                "weight beta used is in each point's tip.",
+                xs,
+                series,
+                tips,
+                empty="No anchor was recorded.",
+            )
+        )
     out.append(f'<div class="charts">{"".join(charts)}</div>')
     return "".join(out)
 

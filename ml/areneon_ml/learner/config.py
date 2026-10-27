@@ -1,11 +1,11 @@
 """The TrainingRunConfig reader (ADR-010 §5).
 
 The record is reviewed JSON, validated against the contract first and then
-against the five rules the profile cannot say (they are the TS reader's too):
+against the six rules the profile cannot say (they are the TS reader's too):
 the attention heads divide the token width, a Team Preview order cannot name
 more positions than a side holds (both checked by ``ModelConfig``), and each
 scripted baseline is listed once, a warm start names two different
-checkpoints, and a value warm-up needs a warm start.
+checkpoints, and a value warm-up and a KL anchor each need a warm start.
 Real-valued settings are stored as integers in millionths (``_micro``) or
 billionths (``_nano``); this module is the one place that turns them into
 floats, by one exact division. The record is named only by ``run_config_hash``,
@@ -77,6 +77,27 @@ class LinearSchedule:
 
 
 @dataclass(frozen=True)
+class AnchorSettings:
+    """``ppo.anchor`` (ADR-019 section 4, ADR-010 erratum A2 item 3): the KL weight in millionths.
+
+    ``beta_micro(t)`` is ``kl_micro`` for a constant schedule and, for a linear one,
+    ``kl_micro + trunc((final - kl_micro) * min(t, generations) / generations)`` in exact integers
+    (the rule of ``LinearSchedule``, started from ``kl_micro``). ``t`` is the anchor update index
+    from 0; the trainer decides what it counts (see ``Learner.anchor_beta_micro``).
+    """
+
+    kl_micro: int
+    schedule: LinearSchedule | None
+
+    def beta_micro(self, t: int) -> int:
+        if self.schedule is None:
+            if t < 0:
+                raise RunConfigError("a learner update index counts from 0")
+            return self.kl_micro
+        return self.schedule.rate_micro(t)
+
+
+@dataclass(frozen=True)
 class PPOSettings:
     epochs: int
     minibatch_size: int
@@ -97,6 +118,8 @@ class PPOSettings:
     # ``ppo.value_warmup.generations`` (ADR-019 section 4): the learner updates, from the first,
     # that train the value head only. None when absent (normal PPO throughout).
     value_warmup: int | None = None
+    # ``ppo.anchor`` (ADR-019 section 4): None when absent (no anchor term).
+    anchor: AnchorSettings | None = None
 
 
 @dataclass(frozen=True)
@@ -133,6 +156,19 @@ def _schedule(ppo: dict[str, Any]) -> LinearSchedule | None:
     return LinearSchedule(ppo["learning_rate_micro"], found["final_micro"], found["generations"])
 
 
+def _anchor(ppo: dict[str, Any]) -> AnchorSettings | None:
+    found = ppo.get("anchor")
+    if found is None:
+        return None
+    schedule = found["schedule"]
+    if schedule["kind"] == "constant":
+        return AnchorSettings(found["kl_micro"], None)
+    return AnchorSettings(
+        found["kl_micro"],
+        LinearSchedule(found["kl_micro"], schedule["final_micro"], schedule["generations"]),
+    )
+
+
 def read_run_config(raw: object) -> RunConfig:
     """Validate ``raw`` against the contract and the reader rules; copy nothing mutable out."""
     try:
@@ -157,6 +193,10 @@ def read_run_config(raw: object) -> RunConfig:
         raise RunConfigError(
             "training-run-config: ppo.value_warmup needs warm_start "
             "(only a cloned start has an untrained value head to warm up)"
+        )
+    if "anchor" in raw["ppo"] and warm is None:
+        raise RunConfigError(
+            "training-run-config: ppo.anchor needs warm_start (the anchor is the warm-start pair)"
         )
     gen, ppo, seeds = raw["generation"], raw["ppo"], raw["seeds"]
     return RunConfig(
@@ -197,6 +237,7 @@ def read_run_config(raw: object) -> RunConfig:
             target_kl=ppo["target_kl_micro"] / MICRO if "target_kl_micro" in ppo else None,
             schedule=_schedule(ppo),
             value_warmup=ppo["value_warmup"]["generations"] if "value_warmup" in ppo else None,
+            anchor=_anchor(ppo),
         ),
         device=raw["learner"]["device"],
         threads=raw["learner"]["threads"],

@@ -6,6 +6,11 @@
 export type LearningRateSchedule = ConstantSchedule | LinearSchedule;
 /**
  * This interface was referenced by `TrainingRunConfig`'s JSON-Schema
+ * via the `definition` "AnchorSchedule".
+ */
+export type AnchorSchedule = ConstantSchedule | AnchorLinearSchedule;
+/**
+ * This interface was referenced by `TrainingRunConfig`'s JSON-Schema
  * via the `definition` "LearningRateSchedule".
  */
 export type LearningRateSchedule1 = ConstantSchedule | LinearSchedule;
@@ -178,6 +183,16 @@ export interface TrainingRunConfig {
        */
       generations: number;
     };
+    /**
+     * Optional (a minor change within v1, ADR-019 section 4, ADR-010 erratum A2 item 3, #968): for a run that declares warm_start, a KL anchor to the warm-start pair. Per decision, beta * KL(pi_theta || pi_anchor) is added to the loss, with both policies the softmax over the real candidates and pi_anchor the frozen warm-start pair (the declared checkpoints of both roles), computed once per generation from its frozen weights with no gradient. beta, in millionths, is kl_micro for a constant schedule; for a linear one, with t the anchor update index from 0, beta(t) = kl_micro + trunc((final_micro - kl_micro) * min(t, generations) / generations) in exact integers, truncating toward zero (the rule of learning_rate_schedule). Both roles alike. With ppo.value_warmup the anchor is inactive (beta 0) while the policy is frozen and t counts from the first policy update, the update after the warm-up. Absent means no anchor. A config that carries it is a new run.
+     */
+    anchor?: {
+      /**
+       * beta at anchor update 0, in millionths.
+       */
+      kl_micro: number;
+      schedule: AnchorSchedule;
+    };
   };
   /**
    * Optional (a minor change within v1): the generated team dataset the generation loop draws its teams from. Absent means the interim pool of committed fixture teams. The directory is read by the dataset reader, which trusts nothing; the pool takes the dev and training splits, never validation. The dataset hash pins the manifest and every record: a directory that hashes differently is refused.
@@ -319,6 +334,21 @@ export interface LinearSchedule {
   final_micro: number;
   /**
    * Updates over which the rate moves from learning_rate_micro to final_micro.
+   */
+  generations: number;
+}
+/**
+ * This interface was referenced by `TrainingRunConfig`'s JSON-Schema
+ * via the `definition` "AnchorLinearSchedule".
+ */
+export interface AnchorLinearSchedule {
+  kind: "linear";
+  /**
+   * beta from anchor update `generations` on, in millionths; 0 releases the policy completely.
+   */
+  final_micro: number;
+  /**
+   * Anchor updates over which beta moves from kl_micro to final_micro.
    */
   generations: number;
 }

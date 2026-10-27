@@ -62,7 +62,11 @@ METRICS = ("policy_loss", "value_loss", "entropy", "approx_kl", "clip_fraction")
 STEPS_KEYS = ("steps", "optimiser_steps")
 KL_STOP_KEYS = ("epochs_run", "kl_stopped")  # only when ppo.target_kl_micro is set (ADR-010 A1)
 VALUE_WARMUP_KEY = "value_warmup"  # only on a value warm-up update (ADR-019 section 4)
-TRAIN_ROLE_KEYS = (frozenset({*METRICS, *STEPS_KEYS}), frozenset({*KL_STOP_KEYS, VALUE_WARMUP_KEY}))
+ANCHOR_KEYS = ("anchor_kl", "anchor_beta_micro")  # only when ppo.anchor is set (ADR-019 section 4)
+TRAIN_ROLE_KEYS = (
+    frozenset({*METRICS, *STEPS_KEYS}),
+    frozenset({*KL_STOP_KEYS, VALUE_WARMUP_KEY, *ANCHOR_KEYS}),
+)
 TRAIN_KEYS = (frozenset(ROLES), frozenset[str]())
 _PROGRESS_DIR = re.compile(r"g(\d{6})")
 _METRICS_FILE = re.compile(r"g(\d{6})\.json")
@@ -99,6 +103,8 @@ class TrainFacts:
     roles: dict[str, dict[str, float]]
     # per role, (epochs run, whether the KL stop fired); a role is absent when the run has no target
     kl_stops: dict[str, tuple[int, bool]] = field(default_factory=dict)
+    # per role, (mean anchor KL, beta in millionths); a role is absent when the run has no anchor
+    anchors: dict[str, tuple[float, int]] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -203,6 +209,7 @@ def read_train_report(raw: object) -> TrainFacts:
     body = closed(raw, TRAIN_KEYS, "train-report.json")
     roles: dict[str, dict[str, float]] = {}
     stops: dict[str, tuple[int, bool]] = {}
+    anchors: dict[str, tuple[float, int]] = {}
     for role in ROLES:
         values = closed(body[role], TRAIN_ROLE_KEYS, f"train-report.json {role}")
         roles[role] = {m: _number(values[m], f"{role} {m}") for m in METRICS}
@@ -215,7 +222,14 @@ def read_train_report(raw: object) -> TrainFacts:
             stops[role] = (integer(values["epochs_run"], f"{role} epochs_run", 1), fired)
         if VALUE_WARMUP_KEY in values and values[VALUE_WARMUP_KEY] is not True:
             raise ReportError(f"{role} value_warmup is true when present (ADR-019 section 4)")
-    return TrainFacts(roles, stops)
+        if set(ANCHOR_KEYS) & set(values):
+            if set(ANCHOR_KEYS) - set(values):
+                raise ReportError(f"{role} anchor_kl and anchor_beta_micro come together")
+            kl = _number(values["anchor_kl"], f"{role} anchor_kl")
+            if kl < 0:
+                raise ReportError(f"{role} anchor_kl is a KL divergence and cannot be negative")
+            anchors[role] = (kl, integer(values["anchor_beta_micro"], f"{role} anchor_beta_micro"))
+    return TrainFacts(roles, stops, anchors)
 
 
 def _tallies(
