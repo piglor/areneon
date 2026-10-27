@@ -1,6 +1,6 @@
 // The belief port of `damage-aware@v2` (ADR-025 sections 4 to 6). The opponent model is a package of its
-// own (`packages/opponent-model`, engine-free) that the bridge does not import (adding it would change the
-// workspace dependencies the importer image copies); the composition root joins the two. This module is the
+// own (`packages/opponent-model`, engine-free) that the bridge does not import (ADR-025 section 1: the model
+// is engine-free and the engine stays in the bridge); the composition root joins the two. This module is the
 // structural shape the baseline needs of it: sample N worlds of the opponent from the reader's opponent
 // half, on a stream the baseline derives from the player's own request, or refuse with a coded error.
 //

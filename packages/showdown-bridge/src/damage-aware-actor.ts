@@ -80,7 +80,7 @@ export interface BeliefCounts {
   worlds_sampled: number;
   /** Redraws of a world with a set the target format's validator refused, summed. */
   redraws: number;
-  /** Worlds dropped because they contradict a public fact of a Pokemon on the field (another species, a revealed move missing, a status its ability blocks). */
+  /** Worlds dropped because they contradict a public fact of a Pokemon on the field (another species, a revealed move missing, a status its ability blocks) or hold a set the validator refuses once the public facts are applied. */
   contradicted_worlds: number;
   /** Requests where every world was dropped: answered by the `actor-rule` candidate. */
   no_consistent_world: number;
@@ -550,7 +550,8 @@ export function damageAwareActor(options: DamageAwareOptions): DamageAwareActor 
           return set;
         });
       } catch (error) {
-        if (!(error instanceof WorldMismatchError)) throw error;
+        // a world whose set the validator refuses once the public facts are applied is dropped like one that contradicts them: one bad world of eight is not a bad request
+        if (!(error instanceof WorldMismatchError || error instanceof AssumedSetError)) throw error;
         counted.contradicted_worlds += 1;
         continue;
       }

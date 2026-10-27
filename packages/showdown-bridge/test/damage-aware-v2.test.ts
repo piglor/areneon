@@ -218,13 +218,18 @@ describe("refusals and fallbacks are counted and play the actor-rule candidate",
     expect(actor.report().counts.probe_refusals).toBe(1);
   });
 
-  it("falls back, as v1 does, when a world's set is not a legal one", () => {
+  it("drops a world whose set is not a legal one, and falls back only when no world is left", () => {
     const c = request();
     const illegal = (opponent: Parameters<typeof worldOf>[0]) => ({ slots: worldOf(opponent).slots.map((slot) => ({ ...slot, set: slot.set === null ? null : { ...slot.set, stat_points: { ...slot.set.stat_points, hp: 200 } } })) });
-    const actor = newActorV2({ worlds: fakePort((_i, opponent) => illegal(opponent)), probe: stubProbe() });
-    expect(actor(c.request, c.context)).toBe(actorRule(legalOf(c)));
-    expect(actor.report().counts.assumed_set_fallbacks).toBe(1);
+    const some = newActorV2({ worlds: fakePort((index, opponent) => (index === 0 ? illegal(opponent) : worldOf(opponent))), probe: stubProbe() });
+    some(c.request, c.context);
+    expect(some.report().belief).toMatchObject({ contradicted_worlds: 1, no_consistent_world: 0 });
+    expect(some.report().counts).toMatchObject({ scored_decisions: 1, assumed_set_fallbacks: 0 });
+    const all = newActorV2({ worlds: fakePort((_i, opponent) => illegal(opponent)), probe: stubProbe() });
+    expect(all(c.request, c.context)).toBe(actorRule(legalOf(c)));
+    expect(all.report().belief).toMatchObject({ contradicted_worlds: 8, no_consistent_world: 1 });
   });
+
 });
 
 describe("a foe with a status", () => {
