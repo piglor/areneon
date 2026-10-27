@@ -8,10 +8,11 @@
 // to it, so the types below are the structural shape of its `WorldSet`. A Mega slot is built the way the
 // player's Team Preview shows it (and the team generator writes it): the preview species holding the stone.
 // A Mega Evolution that has happened fixes the Mega ability, which the base forme cannot hold; the set is
-// then checked with the species' first listed ability, so the validator still judges the item, moves,
-// nature, Stat Points and level (the belief already checked the Mega ability against the Mega forme's list).
+// then checked with each ability the species lists and is legal if the validator takes any of them, so it
+// still judges the item, moves, nature, Stat Points and level (the belief already checked the Mega ability
+// against the Mega forme's list).
 
-import type { Engine, PokemonSet, StatTable } from "./engine.ts";
+import { type Engine, type PokemonSet, type StatTable, defaultIvs } from "./engine.ts";
 import { exportPaste, importPaste } from "./teams.ts";
 import type { TeamVocabulary } from "./team-vocabulary.ts";
 
@@ -32,9 +33,6 @@ export interface SetLegalityPort {
   legal(set: LegalityWorldSet): boolean;
 }
 
-/** Showdown's own default IV; the Champions mod ignores IVs (Stat Points replace EVs). */
-const IV_DEFAULT = 31;
-
 export function createSetLegality(context: { readonly engine: Engine; readonly vocabulary: TeamVocabulary }): SetLegalityPort {
   const { engine, vocabulary } = context;
   const formatId = vocabulary.format_id;
@@ -43,18 +41,16 @@ export function createSetLegality(context: { readonly engine: Engine; readonly v
   const roster = new Map(vocabulary.roster.map((r) => [r.id, r]));
   const natures = new Map(vocabulary.natures.map((n) => [n.id, n.name]));
 
-  const build = (set: LegalityWorldSet): PokemonSet | null => {
+  const build = (set: LegalityWorldSet, abilityId: string): PokemonSet | null => {
     const entry = roster.get(set.species);
     const nature = natures.get(set.nature);
     if (entry === undefined || nature === undefined) return null;
-    const stone = roster.get(set.forme)?.required_item !== undefined && set.forme !== set.species;
-    const ability = stone && !entry.abilities.includes(set.ability) ? entry.abilities[0] : set.ability;
-    const ivs: StatTable = { hp: IV_DEFAULT, atk: IV_DEFAULT, def: IV_DEFAULT, spa: IV_DEFAULT, spd: IV_DEFAULT, spe: IV_DEFAULT };
+    const ivs: StatTable = defaultIvs();
     return {
       name: "",
       species: dex.species.get(set.species).name,
       item: set.item === null ? "" : dex.items.get(set.item).name,
-      ability: dex.abilities.get(ability as string).name,
+      ability: dex.abilities.get(abilityId).name,
       moves: set.moves.map((move) => dex.moves.get(move).name),
       nature,
       gender: set.gender ?? "",
@@ -64,17 +60,29 @@ export function createSetLegality(context: { readonly engine: Engine; readonly v
     };
   };
 
+  const judge = (built: PokemonSet): boolean => {
+    if ((validator.validateSet(structuredClone(built), {}) ?? []).length > 0) return false;
+    try {
+      const paste = exportPaste(engine, [built]);
+      return exportPaste(engine, importPaste(engine, paste)) === paste;
+    } catch {
+      // the engine's own import refuses a paste that is not its canonical form: not a legal set
+      return false;
+    }
+  };
+
   return {
     legal(set) {
-      const built = build(set);
-      if (built === null) return false;
-      if ((validator.validateSet(structuredClone(built), {}) ?? []).length > 0) return false;
-      try {
-        const paste = exportPaste(engine, [built]);
-        return exportPaste(engine, importPaste(engine, paste)) === paste;
-      } catch {
-        return false;
-      }
+      const entry = roster.get(set.species);
+      if (entry === undefined) return false;
+      const stone = roster.get(set.forme)?.required_item !== undefined && set.forme !== set.species;
+      // An evolved Mega's ability is not one the preview species can hold: the set is judged with each ability the species lists
+      // (the Pokemon held one of them before the Evolution), legal if the validator takes any of them.
+      const abilities = stone && !entry.abilities.includes(set.ability) ? entry.abilities : [set.ability];
+      return abilities.some((ability) => {
+        const built = build(set, ability);
+        return built !== null && judge(built);
+      });
     },
   };
 }

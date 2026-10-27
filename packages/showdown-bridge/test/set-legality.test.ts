@@ -48,7 +48,7 @@ describe("the SetLegality port of the opponent sampler, with the pinned validato
     const port = createSetLegality({ engine, vocabulary });
     const mega = (ability: string) => venusaur({ forme: "venusaurmega", item: "venusaurite", ability });
     expect(port.legal(mega("chlorophyll"))).toBe(true); // not yet evolved: the preview form's ability
-    expect(port.legal(mega("thickfat"))).toBe(true); // evolved: the Mega ability, checked with the base form's first ability
+    expect(port.legal(mega("thickfat"))).toBe(true); // evolved: the Mega ability, judged with each ability the species lists
     expect(port.legal({ ...mega("thickfat"), moves: ["closecombat"] })).toBe(false);
     expect(port.legal({ ...mega("thickfat"), item: "leftovers" })).toBe(true); // the item is judged as given
   });
@@ -59,5 +59,26 @@ describe("the SetLegality port of the opponent sampler, with the pinned validato
     const copy = structuredClone(set);
     expect(port.legal(set)).toBe(port.legal(set));
     expect(set).toEqual(copy);
+  });
+
+  it("judges an evolved Mega's ability with every ability the species lists, not only the first", () => {
+    const real = engine.sim.TeamValidator.get(vocabulary.format_id);
+    const listed = (vocabulary.roster.find((r) => r.id === "venusaur") as { abilities: string[] }).abilities;
+    expect(listed.length).toBeGreaterThan(1);
+    const name = (id: string) => (engine.sim.Dex.mod("champions").abilities.get(id) as { name: string }).name;
+    const only = (accepted: string[]) => {
+      const spy = { ...engine, sim: { ...engine.sim, TeamValidator: { get: () => ({ validateSet: (set: { ability: string }, options: unknown) => (accepted.map(name).includes(set.ability) ? real.validateSet({ ...(set as object), ability: name(listed[0] as string) } as never, options as never) : ["refused"]) }) } } } as unknown as Engine;
+      return createSetLegality({ engine: spy, vocabulary });
+    };
+    const evolved = venusaur({ forme: "venusaurmega", item: "venusaurite", ability: "thickfat" });
+    // the validator refuses the FIRST listed ability and takes only the last one: legal
+    expect(only([listed[listed.length - 1] as string]).legal(evolved)).toBe(true);
+    // it refuses every listed ability: illegal
+    expect(only([]).legal(evolved)).toBe(false);
+  });
+
+  it("a paste the engine's own import refuses is an illegal set, not an error", () => {
+    const refusing = { ...engine, sim: { ...engine.sim, Teams: { ...engine.sim.Teams, import: () => { throw new Error("not canonical"); } , export: engine.sim.Teams.export.bind(engine.sim.Teams) } } } as unknown as Engine;
+    expect(createSetLegality({ engine: refusing, vocabulary }).legal(venusaur())).toBe(false);
   });
 });

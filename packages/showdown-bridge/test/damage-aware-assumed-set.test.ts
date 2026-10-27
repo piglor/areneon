@@ -31,7 +31,7 @@ const mon = (change: (m: PublicMon) => void = () => {}): PublicMon => {
     own: false, name: "Foe", base_species: "venusaur", species: "venusaur", temp_species: null, level: 50, gender: "M", shiny: false,
     hp_num: 100, hp_den: 100, status: null, fainted: false, brought: true, active_slot: "a",
     boosts: { atk: 0, def: 0, spa: 0, spd: 0, spe: 0, accuracy: 0, evasion: 0 }, volatiles: [], moves_revealed: [], item: null,
-    item_known: false, item_lost: false, ability: null, ability_suppressed: false, mega: false, mega_stone: null, stats: null,
+    item_known: false, item_lost: false, item_received: false, ability: null, ability_received: false, ability_suppressed: false, mega: false, mega_stone: null, stats: null,
     moves_own: null, pp: {}, can_mega_evo: false,
   };
   change(base);

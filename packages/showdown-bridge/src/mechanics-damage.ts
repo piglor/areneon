@@ -10,6 +10,8 @@
 // read. The probe holds no crit table, no formula and no target rule.
 
 import type { Engine, PokemonSet, SimBattle } from "./engine.ts";
+import type { MechanicsConfig } from "./mechanics-config.ts";
+import { koBlocked, koCounts } from "./mechanics-ko.ts";
 import { acceptedDraws, critDraw, type RecordingRandom, recordingRandom } from "./mechanics-random.ts";
 import { scenarioPokemon, startScenario } from "./mechanics-scenario.ts";
 import type { MechanicsQuery } from "./mechanics-query.ts";
@@ -47,6 +49,7 @@ interface DmgPokemon {
   boosts: Record<string, number>;
   species: { name: string };
   item: string;
+  ability: string;
   setStatus(status: string, source: null, sourceEffect: null, ignoreImmunities: boolean): unknown;
   getMoveHitData(move: DmgMove): HitData;
 }
@@ -224,8 +227,9 @@ const ROLLS = Array.from({ length: 16 }, (_, index) => index);
 /**
  * Answer a `damage` query on the scenario `scenarioId`. `attackerSet` and
  * `defenderSet` are the engine-checked sets (the probe has validated them).
+ * `koBlockers` is the mechanics config's list (ADR-016 section 3).
  */
-export function probeDamage(engine: Engine, scenarioId: string, query: DamageQuery, attackerSet: PokemonSet, defenderSet: PokemonSet): DamageOutcome {
+export function probeDamage(engine: Engine, scenarioId: string, query: DamageQuery, attackerSet: PokemonSet, defenderSet: PokemonSet, koBlockers: MechanicsConfig["ko_blockers"]): DamageOutcome {
   const base = declaredBattle(engine, scenarioId, query, attackerSet, defenderSet);
   const move = base.dex.moves.get(query.move);
   if (!move.exists || move.id !== query.move) throw new DamageStateError("the move is not an engine move");
@@ -265,8 +269,8 @@ export function probeDamage(engine: Engine, scenarioId: string, query: DamageQue
       crit_chance,
       hp_current: defender.hp,
       hp_max: defender.maxhp,
-      // KO counts are slice 5 (ADR-016 section 7); until then no count is given.
-      ko: { kind: "unsupported", reason: "ko_state_change" },
+      // The defender as the engine holds it after the declared state (a Mega Evolution changes its ability): a blocker on the config's list withholds the counts, not the vectors.
+      ko: koCounts(noCrit, critVector, defender.hp, koBlocked(koBlockers, defender)),
     },
   };
 }

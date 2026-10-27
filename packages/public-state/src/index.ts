@@ -32,7 +32,11 @@ export interface PublicMon {
   item: string | null;
   item_known: boolean;
   item_lost: boolean;
+  /** The item came from another Pokemon or effect (`-item` with a `[from]` but Frisk's): not the Pokemon's own. Sticky. */
+  item_received: boolean;
   ability: string | null;
+  /** The ability was given or copied by a move or ability (`-ability` with `[from]` or `[of]`): not the Pokemon's own. Sticky. */
+  ability_received: boolean;
   ability_suppressed: boolean;
   mega: boolean;
   mega_stone: string | null;

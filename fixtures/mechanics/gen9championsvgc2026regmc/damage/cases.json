@@ -1,7 +1,7 @@
 {
   "data_class": "synthetic",
   "format_id": "gen9championsvgc2026regmc",
-  "source": "Hand-worked from the champions mod's modifyDamage steps (data/mods/champions/scripts.ts at the pinned commit) with Python integer arithmetic outside the probe: stats from base stat + Stat Points + 20 with the nature, then base damage floor(floor(floor(floor(2*50/5+2) * BP * A / D) / 50) + 2, spread 0.75, weather, crit x1.5, the 16 rolls floor(x*(100-r)/100), STAB 1.5, type steps, burn, screens 2732/4096 (not on a crit). The expected KO field is the slice-3 placeholder (KO counts are slice 5). The sets are synthetic and CC0.",
+  "source": "Hand-worked from the champions mod's modifyDamage steps (data/mods/champions/scripts.ts at the pinned commit) with Python integer arithmetic outside the probe: stats from base stat + Stat Points + 20 with the nature, then base damage floor(floor(floor(floor(2*50/5+2) * BP * A / D) / 50) + 2, spread 0.75, weather, crit x1.5, the 16 rolls floor(x*(100-r)/100), STAB 1.5, type steps, burn, screens 2732/4096 (not on a crit). The expected KO counts (slice 5) are counted from the expected vectors with Python outside the probe: rolls at or above the defender's HP, and ordered pairs of two rolls of the no-crit vector whose sum is at least that HP (see ../ko/cases.json). The sets are synthetic and CC0.",
   "cases": [
     {
       "id": "single-target",
@@ -118,8 +118,10 @@
         "hp_current": 197,
         "hp_max": 197,
         "ko": {
-          "kind": "unsupported",
-          "reason": "ko_state_change"
+          "kind": "counts",
+          "ohko_no_crit": 0,
+          "ohko_crit": 0,
+          "thko_no_crit": 143
         }
       }
     },
@@ -238,8 +240,10 @@
         "hp_current": 197,
         "hp_max": 197,
         "ko": {
-          "kind": "unsupported",
-          "reason": "ko_state_change"
+          "kind": "counts",
+          "ohko_no_crit": 0,
+          "ohko_crit": 0,
+          "thko_no_crit": 16
         }
       }
     },
@@ -358,8 +362,10 @@
         "hp_current": 191,
         "hp_max": 191,
         "ko": {
-          "kind": "unsupported",
-          "reason": "ko_state_change"
+          "kind": "counts",
+          "ohko_no_crit": 0,
+          "ohko_crit": 0,
+          "thko_no_crit": 0
         }
       }
     },
@@ -478,8 +484,10 @@
         "hp_current": 191,
         "hp_max": 191,
         "ko": {
-          "kind": "unsupported",
-          "reason": "ko_state_change"
+          "kind": "counts",
+          "ohko_no_crit": 0,
+          "ohko_crit": 0,
+          "thko_no_crit": 0
         }
       }
     },
@@ -603,8 +611,10 @@
         "hp_current": 197,
         "hp_max": 197,
         "ko": {
-          "kind": "unsupported",
-          "reason": "ko_state_change"
+          "kind": "counts",
+          "ohko_no_crit": 16,
+          "ohko_crit": 16,
+          "thko_no_crit": 256
         }
       }
     },
@@ -728,8 +738,10 @@
         "hp_current": 197,
         "hp_max": 197,
         "ko": {
-          "kind": "unsupported",
-          "reason": "ko_state_change"
+          "kind": "counts",
+          "ohko_no_crit": 0,
+          "ohko_crit": 0,
+          "thko_no_crit": 0
         }
       }
     },
@@ -848,8 +860,10 @@
         "hp_current": 191,
         "hp_max": 191,
         "ko": {
-          "kind": "unsupported",
-          "reason": "ko_state_change"
+          "kind": "counts",
+          "ohko_no_crit": 0,
+          "ohko_crit": 0,
+          "thko_no_crit": 24
         }
       }
     },
@@ -968,8 +982,10 @@
         "hp_current": 197,
         "hp_max": 197,
         "ko": {
-          "kind": "unsupported",
-          "reason": "ko_state_change"
+          "kind": "counts",
+          "ohko_no_crit": 0,
+          "ohko_crit": 0,
+          "thko_no_crit": 0
         }
       }
     },
@@ -1086,8 +1102,10 @@
         "hp_current": 215,
         "hp_max": 215,
         "ko": {
-          "kind": "unsupported",
-          "reason": "ko_state_change"
+          "kind": "counts",
+          "ohko_no_crit": 13,
+          "ohko_crit": 16,
+          "thko_no_crit": 256
         }
       }
     },
@@ -1204,8 +1222,10 @@
         "hp_current": 202,
         "hp_max": 202,
         "ko": {
-          "kind": "unsupported",
-          "reason": "ko_state_change"
+          "kind": "counts",
+          "ohko_no_crit": 0,
+          "ohko_crit": 0,
+          "thko_no_crit": 0
         }
       }
     },
@@ -1324,8 +1344,10 @@
         "hp_current": 197,
         "hp_max": 197,
         "ko": {
-          "kind": "unsupported",
-          "reason": "ko_state_change"
+          "kind": "counts",
+          "ohko_no_crit": 0,
+          "ohko_crit": 0,
+          "thko_no_crit": 0
         }
       }
     },
@@ -1444,8 +1466,10 @@
         "hp_current": 50,
         "hp_max": 197,
         "ko": {
-          "kind": "unsupported",
-          "reason": "ko_state_change"
+          "kind": "counts",
+          "ohko_no_crit": 16,
+          "ohko_crit": 16,
+          "thko_no_crit": 256
         }
       }
     }

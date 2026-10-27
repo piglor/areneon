@@ -7,7 +7,7 @@
 //   species, forme, level, gender   `|poke|` and the switch-in details
 //   brought                         the Pokemon has been in play, so it is in the brought set
 //   moves_revealed                  a `|move|` the Pokemon chose (no `[from]` call by another effect)
-//   ability, item                   an ability or item revealed on the Pokemon itself
+//   ability, item                   an ability or item revealed on the Pokemon itself (not one it received or copied)
 //   mega, mega_stone, species       a Mega Evolution (`detailschange`, `-mega`): forme and stone
 //
 // Everything else the reader tracks (hit points, status, boosts, volatiles, conditions) adds no
@@ -28,7 +28,9 @@ export const EVIDENCE_FIELDS = [
   "active_slot",
   "item",
   "item_known",
+  "item_received",
   "ability",
+  "ability_received",
   "moves_revealed",
   "volatiles",
   "mega",
@@ -82,8 +84,9 @@ export function slotEvidence(mon: PublicMon): SlotEvidence {
     level: mon.level,
     gender: mon.gender,
     settled: mon.brought === true || mon.fainted || mon.active_slot !== null,
-    item: mon.item_known && mon.item !== null ? mon.item : null,
-    ability: mon.ability,
+    // An item or ability the Pokemon received or copied (Trick, Trace, Mummy, ...) is not its own: no evidence about its set.
+    item: mon.item_known && mon.item !== null && !mon.item_received ? mon.item : null,
+    ability: mon.ability_received ? null : mon.ability,
     moves: transformed ? [] : [...mon.moves_revealed],
     transformed,
     mega: mon.mega,

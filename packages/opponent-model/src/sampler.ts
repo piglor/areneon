@@ -132,6 +132,8 @@ interface MoveTables {
   readonly rest: readonly { readonly id: string; readonly odds: bigint }[];
   /** suffix[j][m]: the sum over m-subsets of rest[j..] of the product of their odds. */
   readonly suffix: readonly (readonly bigint[])[];
+  /** The integer weights of the count's outcomes, on one scale. */
+  readonly counts: readonly bigint[];
 }
 
 const moveTables = new WeakMap<MoveModel, MoveTables>();
@@ -146,17 +148,16 @@ function movesOf(model: MoveModel): MoveTables {
     const after = suffix[0] as bigint[];
     suffix.unshift(after.map((value, m) => value + (m === 0 ? 0n : (rest[j] as { odds: bigint }).odds * (after[m - 1] as bigint))));
   }
-  const built = { rest, suffix };
+  const built = { rest, suffix, counts: integerise(model.outcomes.map((o) => o.weight)).weights };
   moveTables.set(model, built);
   return built;
 }
 
 /** The moves of one set: the count from the posterior, then the conditional Poisson design over the open candidates, sequentially and exactly. */
 function drawMoves(model: MoveModel, bits: BitStream): string[] {
-  const { weights } = integerise(model.outcomes.map((o) => o.weight));
-  const size = (model.outcomes[bits.choose(weights)] as { size: number }).size;
+  const { rest, suffix, counts } = movesOf(model);
+  const size = (model.outcomes[bits.choose(counts)] as { size: number }).size;
   let need = size - model.forced.length - model.revealed.length;
-  const { rest, suffix } = movesOf(model);
   const drawn: string[] = [];
   for (let j = 0; j < rest.length && need > 0; j += 1) {
     const total = (suffix[j] as bigint[])[need] as bigint;
