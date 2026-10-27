@@ -129,15 +129,15 @@ export interface DamageViewOptions {
 
 /**
  * The foes a move part hits, by the request's target type: one by location, every one, or (a random target) every one
- * for the caller to average. A locked move (Recharge, the second turn of Dig) has no target type: it scores 0.
+ * for the caller to average. `foes` is called only for those target types, so a request that needs no foe builds none (and asks the probe nothing). A locked move (Recharge, the second turn of Dig) has no target type: it scores 0.
  */
-export function foesHit(type: string | undefined, target: number | null, foes: readonly Foe[]): Foe[] {
+export function foesHit(type: string | undefined, target: number | null, foes: () => readonly Foe[]): Foe[] {
   if (type === undefined) return [];
   if (SINGLE.has(type)) {
     if (target === null) throw new DamageAwareError("a move that needs a target has none");
-    return foes.filter((foe) => foe.loc === target);
+    return foes().filter((foe) => foe.loc === target);
   }
-  if (EVERY_FOE.has(type) || RANDOM_FOE.has(type)) return [...foes];
+  if (EVERY_FOE.has(type) || RANDOM_FOE.has(type)) return [...foes()];
   if (!NO_FOE.has(type)) throw new DamageAwareError("a move target type the baseline does not know");
   return [];
 }

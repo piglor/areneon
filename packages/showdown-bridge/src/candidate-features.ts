@@ -6,6 +6,8 @@
 // the record; the real opponent team is never read) and asks the ADR-016 probe ONE `damage` query per
 // distinct row: (acting slot, move position, target position, Mega flag), never one per joint candidate.
 //
+// Pending candidates feed rows like any other: a row exists for every move part some candidate uses.
+//
 // Row content is integers only (ADR-008 profile). An `unsupported` probe answer is an `unsupported` row with
 // the probe's closed reason, never filled with a guess. `ohko_rolls` (ADR-022 section 3: "once ADR-016 slice
 // 5 exists") is the probe's own count of the 16 no-crit rolls that reach the target's hit points, or null when
@@ -151,6 +153,7 @@ export function candidateFeatures(
   const lines = channel.lines;
   const last = lines.length - 1;
   if (last < 0 || !(lines[last] as string).startsWith(REQUEST)) throw new FeatureBuildError("no_request");
+  // `playerChannel` has checked every `|request|` line, so this parses.
   const body = object(JSON.parse((lines[last] as string).slice(REQUEST.length)) as unknown, "request");
   // Only a move request has a damaging move to featurise; the others have no active entries to read.
   if (body.teamPreview !== undefined || body.active === undefined) return out([]);
@@ -189,7 +192,7 @@ export function candidateFeatures(
         const data = view.dex.moves.get(id);
         if (!data.exists || data.category === "Status") return;
         const type = typeof slotMove.target === "string" ? slotMove.target : undefined;
-        for (const foe of foesHit(type, part.target, foesNow())) {
+        for (const foe of foesHit(type, part.target, foesNow)) {
           const key = `${slot}/${part.index}/${foe.loc}/${part.mega}`;
           if (rows.has(key)) continue;
           const mine = (own[slot] as (typeof own)[number]).fighter;

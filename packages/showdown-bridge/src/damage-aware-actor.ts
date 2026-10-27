@@ -232,7 +232,7 @@ export function damageAwareActor(options: DamageAwareOptions): DamageAwareActor 
       if (data.exists && data.category !== "Status") {
         // A locked move (Recharge, the second turn of Dig) is sent with no target type: it is one fixed part of every candidate, so it scores 0.
         const type = typeof slotMove.target === "string" ? slotMove.target : undefined;
-        const targets = foesHit(type, part.target, foesNow());
+        const targets = foesHit(type, part.target, foesNow);
         // A spread move is the sum of its single-target values (v1); a random target is the mean over the foes.
         const sum = targets.reduce((total, foe) => total + against(slot, id, part.mega, foe), 0);
         value = isRandomFoe(type) && targets.length > 0 ? Math.floor(sum / targets.length) : sum;

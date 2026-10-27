@@ -3,6 +3,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { type CandidateFeatures, candidateFeatures, createFeatureMemo, FEATURE_SET, FeatureBuildError, type FeatureConfigs, type FeatureRow, featureSetHash, featureSetIdentity } from "../src/candidate-features.ts";
 import { parseJointChoice } from "../src/damage-aware-choice.ts";
 import { damageAwareConfigHash } from "../src/damage-aware-config.ts";
+import { foesHit } from "../src/damage-aware-view.ts";
 import { rollsValue } from "../src/damage-aware-score.ts";
 import { mechanicsConfigHash } from "../src/mechanics-config.ts";
 import { type ParsedMechanicsQuery } from "../src/mechanics-query.ts";
@@ -266,6 +267,18 @@ describe("feature_set_hash", () => {
       return featureSetHash(id);
     });
     expect(new Set(hashes).size).toBe(hashes.length);
+  });
+});
+
+describe("foesHit", () => {
+  it("builds the foes only for a target type that hits one", () => {
+    const boom = (): never => {
+      throw new Error("the foes were built");
+    };
+    for (const type of [undefined, "self", "adjacentAlly", "allySide", "all"]) expect(foesHit(type, null, boom)).toEqual([]);
+    expect(() => foesHit("normal", null, () => [])).toThrow(/needs a target/);
+    expect(() => foesHit("mystery", null, boom)).toThrow(/does not know/);
+    expect(() => foesHit("allAdjacentFoes", null, boom)).toThrow(/foes were built/);
   });
 });
 
