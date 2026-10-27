@@ -9,7 +9,8 @@ export { type CoverageReport, generate, type GenerateInput, GenerateError, type 
 export { cellCount, cellLabels, cellOf, LabelError, labelTeam, type LabelValue } from "./labeller.ts";
 export { type Pilot, PilotError, readPilot, runPilot } from "./pilot.ts";
 export { groupKey, manifestPlan, planQuotas, PlanError, type QuotaPlan, type Split, SPLITS, type SplitSizes, type Stratum } from "./plan.ts";
-export { Proposal, ProposalError } from "./proposal.ts";
+export { drawStatPoints, Proposal, ProposalError } from "./proposal.ts";
+export { type GeneratorSpreadSampler, generatorSpreadSampler, type StatPointSpread } from "./spread-sampler.ts";
 export { fillQuantile, provision, type Provision } from "./provision.ts";
 export { rangeSummary } from "./range.ts";
 export { RejectionLog } from "./rejection-log.ts";
