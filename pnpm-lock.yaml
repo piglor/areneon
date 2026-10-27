@@ -134,6 +134,9 @@ importers:
 
   packages/team-dataset:
     dependencies:
+      '@areneon/opponent-model':
+        specifier: workspace:*
+        version: link:../opponent-model
       '@areneon/schema':
         specifier: workspace:*
         version: link:../schema

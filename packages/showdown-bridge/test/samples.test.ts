@@ -76,6 +76,7 @@ describe("the shared contract sample corpus (ADR-008 §2)", () => {
       "v1/checkpoint-record/reader-invalid/unsorted-league-opponents.json",
       "v1/clone-run-config/reader-invalid/heads-do-not-divide-width.json",
       "v1/clone-run-config/reader-invalid/picks-exceed-team.json",
+      "v1/damage-aware-config-2/reader-invalid/other-format.json",
       "v1/damage-aware-config/reader-invalid/other-format.json",
       "v1/damage-aware-config/reader-invalid/stat-points-over-limit.json",
       "v1/damage-aware-config/reader-invalid/unknown-fixed-item.json",

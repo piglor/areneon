@@ -80,7 +80,7 @@ export {
   writeTrainingStream,
 } from "./training-loader.ts";
 export { interimPoolSource, type PoolSource, runGenerationCli, UsageError } from "./generation-cli.ts";
-export { type DamageAwareSetup, damageAwareSetup, GenerationError, type PoolRequest, type TrainingPool as GenerationTeamPool, playGeneration } from "./league-generation.ts";
+export { DAMAGE_AWARE_V2_POLICY_ID, type DamageAwareSetup, damageAwareSetup, damageAwareSetupV2, GenerationError, type PoolRequest, type TrainingPool as GenerationTeamPool, playGeneration } from "./league-generation.ts";
 export { readTrainingRunConfig, runConfigHash, type TrainingRunConfig, TrainingRunConfigError } from "./training-run-config.ts";
 export { type CloneRunConfig, CloneRunConfigError, cloneRunConfigHash, readCloneRunConfig } from "./clone-run-config.ts";
 export { EpisodeError, episodeFromRecord, type EpisodeOptions, readEpisode } from "./episode-io.ts";
@@ -343,15 +343,19 @@ export {
   leagueRunRecordHash,
   readLeagueRunRecord,
 } from "./league-run-record.ts";
-export { type AssumedSet, type AssumedSetContext, AssumedSetError, assumedHp, buildAssumedSet } from "./damage-aware-assumed-set.ts";
+export { type AssumedSet, type AssumedSetContext, AssumedSetError, assumedHp, buildAssumedSet, buildWorldAssumedSet, WorldMismatchError, type WorldSetLike } from "./damage-aware-assumed-set.ts";
 export { type LegalityWorldSet, type SetLegalityPort, createSetLegality } from "./set-legality.ts";
 export {
+  type AnyDamageAwareConfig,
   DAMAGE_AWARE_CONFIG_DIR,
   type DamageAwareConfig,
   DamageAwareConfigError,
+  type DamageAwareConfigV2,
   damageAwareConfigHash,
   loadDamageAwareConfig,
+  loadDamageAwareConfigV2,
   readDamageAwareConfig,
+  readDamageAwareConfigV2,
 } from "./damage-aware-config.ts";
 export {
   checkMechanicsConfig,
@@ -424,6 +428,19 @@ export {
 } from "./progress-seed.ts";
 export { parseJointChoice, ChoiceParseError, type SlotPart } from "./damage-aware-choice.ts";
 export {
+  BELIEF_DEFECTS,
+  type BeliefWorldsContext,
+  type BeliefWorldsFactory,
+  type BeliefWorldsPort,
+  refusalCode,
+  type SampledWorldsLike,
+  WORLDS_PURPOSE,
+  type WorldLike,
+  type WorldSlotLike,
+  worldsStream,
+} from "./damage-aware-worlds.ts";
+export {
+  type BeliefCounts,
   type DamageAwareActor,
   type DamageAwareCounts,
   DamageAwareError,

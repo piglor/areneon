@@ -1,0 +1,17 @@
+{
+  "schema_version": 2,
+  "format_id": "gen9championsvgc2026regmc",
+  "assumed_set": {
+    "source": "belief",
+    "prior_hash": "E636",
+    "belief_config_hash": "471eccd26126eed4f6f6fa160bcd414a62505cbccfa204e55e4ba1861b984a98",
+    "worlds": 8
+  },
+  "hp_rounding": "nearest",
+  "scoring": {
+    "ko_weight_ppm": 1000000,
+    "turn_order_discount_ppm": 500000,
+    "crit_weight_ppm": 1000000
+  },
+  "epsilon_ppm": 0
+}

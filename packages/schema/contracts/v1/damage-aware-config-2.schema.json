@@ -1,0 +1,101 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:areneon:schema:contracts:v1:damage-aware-config-2",
+  "title": "DamageAwareConfigV2",
+  "description": "The reviewed record of damage-aware@v2 (ADR-025 section 6 item 1, ADR-018 errata E-18.2 and E-18.3): the damage-aware baseline whose assumed opponent sets are sampled worlds of the opponent belief instead of v1's field rules. A new schema version beside DamageAwareConfig (ADR-008 section 3: the v1 record, its bytes and its baseline_config_hash are unchanged). assumed_set names the belief: the usage prior and the belief config by their hashes (the composition root loads them and the actor refuses any other) and the number of worlds whose v1 scores are averaged. The hit-point rounding, the scoring weights and the exploration rate are v1's, with the same meaning. Integers only. Its RFC 8785 SHA-256 is baseline_config_hash, a part of the baseline identity; the belief identity hash joins the identity preimage because the record names a belief. A change of any value is a new record version, never an edit.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "format_id",
+    "assumed_set",
+    "hp_rounding",
+    "scoring",
+    "epsilon_ppm"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 2
+    },
+    "format_id": {
+      "description": "The target format (a format of the rules snapshot) the assumed sets are built for.",
+      "type": "string",
+      "pattern": "^[a-z0-9]+$"
+    },
+    "assumed_set": {
+      "description": "Where every opponent field that is not revealed comes from: the belief. A revealed fact is used as revealed (a sampled world holds it by construction); a damage threat comes only from a revealed move, never a sampled one.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source",
+        "prior_hash",
+        "belief_config_hash",
+        "worlds"
+      ],
+      "properties": {
+        "source": {
+          "const": "belief"
+        },
+        "prior_hash": {
+          "description": "SHA-256 of the JCS bytes of the UsagePrior record (its prior_hash in the belief identity). The prior's format_id must be format_id: a prior of another format is refused, never used silently (review finding N10).",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "belief_config_hash": {
+          "description": "SHA-256 of the JCS bytes of the BeliefConfig record.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "worlds": {
+          "description": "The number of sampled worlds whose v1 scores a candidate averages (ADR-025 section 6: 8). A different number is a new record.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 64
+        }
+      }
+    },
+    "hp_rounding": {
+      "description": "How the shown hit-point percentage becomes a hit-point value of the assumed set's maximum hit points: nearest rounds half up. A shown percentage above 0 never becomes 0.",
+      "enum": [
+        "ceil",
+        "floor",
+        "nearest"
+      ]
+    },
+    "scoring": {
+      "description": "The scoring weights, parts per million (ADR-018 section 4).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ko_weight_ppm",
+        "turn_order_discount_ppm",
+        "crit_weight_ppm"
+      ],
+      "properties": {
+        "ko_weight_ppm": {
+          "description": "The weight of the share of damage rolls that reach the target's hit points.",
+          "$ref": "#/$defs/Ppm"
+        },
+        "turn_order_discount_ppm": {
+          "description": "The discount of an action whose actor is slower than a target that can knock it out with a revealed move.",
+          "$ref": "#/$defs/Ppm"
+        },
+        "crit_weight_ppm": {
+          "description": "The weight of the critical-hit damage vector, multiplied by the probe's exact crit chance; 0 leaves crits out.",
+          "$ref": "#/$defs/Ppm"
+        }
+      }
+    },
+    "epsilon_ppm": {
+      "description": "The probability, in parts per million, that the baseline plays a uniformly random non-pending candidate (training diversity). 0 for every evaluation use, where no random number is ever drawn; a non-zero value is a different baseline.",
+      "$ref": "#/$defs/Ppm"
+    }
+  },
+  "$defs": {
+    "Ppm": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 1000000
+    }
+  }
+}

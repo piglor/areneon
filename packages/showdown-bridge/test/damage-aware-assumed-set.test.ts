@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import { interpretChannel, type PublicMon, type PublicState } from "@areneon/public-state";
-import { type AssumedSet, AssumedSetError, assumedHp, buildAssumedSet } from "../src/damage-aware-assumed-set.ts";
+import { type AssumedSet, AssumedSetError, assumedHp, buildAssumedSet, buildWorldAssumedSet, WorldMismatchError, type WorldSetLike } from "../src/damage-aware-assumed-set.ts";
 import { type DamageAwareConfig, loadDamageAwareConfig } from "../src/damage-aware-config.ts";
 import type { Engine, PokemonSet } from "../src/engine.ts";
 import { GOLDEN_FORMAT, goldenTeamVocabulary } from "../src/golden.ts";
@@ -237,5 +237,92 @@ describe("assumedHp", () => {
     expect(() => assumedHp(101, 100, "ceil")).toThrow(AssumedSetError);
     expect(() => assumedHp(50.5, 100, "ceil")).toThrow("percentage");
     expect(() => assumedHp(50, 0, "ceil")).toThrow("maximum hit points");
+  });
+});
+
+describe("buildWorldAssumedSet (a sampled world's set for a Pokemon on the field, ADR-025 section 6)", () => {
+  const build = (m: PublicMon, world: WorldSetLike) => buildWorldAssumedSet({ engine, vocabulary, format_id: GOLDEN_FORMAT }, m, world);
+  const entry = () => venusaur();
+  const world = (change: Partial<WorldSetLike> = {}): WorldSetLike => ({
+    species: "venusaur",
+    forme: "venusaur",
+    item: null,
+    ability: entry().abilities[0] as string,
+    nature: "adamant",
+    stat_points: { hp: 10, atk: 12, def: 11, spa: 11, spd: 11, spe: 11 },
+    moves: [entry().moves[0] as string],
+    level: 50,
+    gender: null,
+    ...change,
+  });
+  const mega = () => vocabulary.roster.find((r) => r.id === "venusaurmega");
+
+  it("takes the unrevealed fields from the world: nature, Stat Points, item, ability, moves", () => {
+    const assumed = build(mon(), world({ item: vocabulary.items[0] as string }));
+    expect(assumed.set.nature).toBe("Adamant");
+    expect(assumed.set.evs).toEqual({ hp: 10, atk: 12, def: 11, spa: 11, spd: 11, spe: 11 });
+    expect(toId(assumed.set.item)).toBe(vocabulary.items[0]);
+    expect(assumed.set.moves.map(toId)).toEqual([entry().moves[0]]);
+    expect(assumed.revealed_moves).toEqual([]);
+    expect(assumed.filler_moves).toEqual([]);
+    expect(assumed.shown_hp_percent).toBe(100);
+    expect(assumed.mega).toBe(false);
+    // the engine's canonical paste, which the probe takes
+    expect(assumed.paste).toContain("Adamant Nature");
+  });
+
+  it("lets the public facts win over the world: shown item, lost item, revealed ability and level, and the shown hit points", () => {
+    const item = vocabulary.items[1] as string;
+    expect(toId(build(mon((m) => ((m.item_known = true), (m.item = item))), world({ item: vocabulary.items[0] as string })).set.item)).toBe(item);
+    expect(build(mon((m) => ((m.item_known = true), (m.item = null))), world({ item })).set.item).toBe("");
+    expect(build(mon((m) => (m.item_lost = true)), world({ item })).set.item).toBe("");
+    const other = entry().abilities[entry().abilities.length - 1] as string;
+    expect(toId(build(mon((m) => (m.ability = other)), world()).set.ability)).toBe(other);
+    // an ability outside the species' list (an evolved Mega's) is replaced by the first listed one, not carried
+    expect(toId(build(mon(), world({ ability: "notanability" })).set.ability)).toBe(entry().abilities[0]);
+    expect(build(mon((m) => (m.level = 40)), world()).set.level).toBe(40);
+    expect(build(mon((m) => ((m.hp_num = 37), (m.hp_den = 100))), world()).shown_hp_percent).toBe(37);
+  });
+
+  it("lists only revealed moves as threats, requires the world to hold them, and keeps the ones no set can hold apart", () => {
+    const [a, b] = entry().moves as [string, string];
+    const assumed = build(mon((m) => (m.moves_revealed = [b, "struggle"])), world({ moves: [a, b].sort() }));
+    expect(assumed.revealed_moves).toEqual([b]);
+    expect(assumed.unplaceable_moves).toEqual(["struggle"]);
+    expect(assumed.set.moves.map(toId).sort()).toEqual([a, b].sort());
+    expect(() => build(mon((m) => (m.moves_revealed = [b])), world({ moves: [a] }))).toThrow(WorldMismatchError);
+  });
+
+  it("builds a Mega Evolved Pokemon as its base forme holding the stone, declared Mega", () => {
+    const m = mega();
+    if (m === undefined) throw new Error("venusaurmega is not in the roster");
+    const stone = m.required_item as string;
+    const evolved = build(mon((x) => ((x.mega = true), (x.mega_stone = stone))), world({ forme: "venusaurmega", item: stone, ability: m.abilities[0] as string }));
+    expect(evolved.mega).toBe(true);
+    expect(toId(evolved.set.species)).toBe("venusaur");
+    expect(toId(evolved.set.item)).toBe(stone);
+    // not yet evolved: the same slot is the base forme holding the stone, not Mega
+    const waiting = build(mon(), world({ forme: "venusaurmega", item: stone }));
+    expect(waiting.mega).toBe(false);
+    expect(toId(waiting.set.item)).toBe(stone);
+    // a Pokemon that has evolved cannot be a world's non-Mega slot
+    expect(() => build(mon((x) => ((x.mega = true), (x.mega_stone = stone))), world())).toThrow(WorldMismatchError);
+  });
+
+  it("refuses a world that is another species, a species not in the roster, an unknown nature and a set the validator refuses", () => {
+    expect(() => build(mon(), world({ species: "charizard", forme: "charizard" }))).toThrow(WorldMismatchError);
+    expect(() => build(mon((m) => ((m.base_species = "notaspecies"), (m.species = "notaspecies"))), world({ species: "notaspecies", forme: "notaspecies" }))).toThrow("roster");
+    expect(() => build(mon(), world({ nature: "grumpy" }))).toThrow("nature");
+    expect(() => build(mon(), world({ stat_points: { hp: 200, atk: 0, def: 0, spa: 0, spd: 0, spe: 0 } }))).toThrow(AssumedSetError);
+    expect(() => build(mon((m) => (m.own = true)), world())).toThrow("opponent's Pokemon");
+  });
+
+  it("gives the same engine-canonical set the field-rule builder gives when the world carries the record's own values", () => {
+    const revealed = entry().moves[0] as string;
+    const rule = config.assumed_set;
+    const viaRules = buildAssumedSet(context(), mon((m) => (m.moves_revealed = [revealed])));
+    const viaWorld = build(mon((m) => (m.moves_revealed = [revealed])), world({ nature: rule.nature, stat_points: rule.stat_points, moves: [revealed], gender: "M" }));
+    expect(viaWorld.paste).toBe(viaRules.paste);
+    expect(viaWorld.revealed_moves).toEqual(viaRules.revealed_moves);
   });
 });
