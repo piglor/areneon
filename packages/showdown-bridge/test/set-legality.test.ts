@@ -62,15 +62,19 @@ describe("the SetLegality port of the opponent sampler, with the pinned validato
   });
 
   it("judges an evolved Mega's ability with every ability the species lists, not only the first", () => {
-    const calls: string[] = [];
     const real = engine.sim.TeamValidator.get(vocabulary.format_id);
-    const spy = { ...engine, sim: { ...engine.sim, TeamValidator: { get: () => ({ validateSet: (set: { ability: string }, options: unknown) => { calls.push(set.ability); return set.ability === "Chlorophyll" ? [] : real.validateSet(set as never, options as never); } }) } } } as unknown as Engine;
-    const port = createSetLegality({ engine: spy, vocabulary });
-    // The validator refuses the first listed ability (Overgrow, here by the spy's order) and takes the second: legal.
-    const first = (vocabulary.roster.find((r) => r.id === "venusaur") as { abilities: string[] }).abilities;
-    expect(first.length).toBeGreaterThan(1);
-    expect(port.legal(venusaur({ forme: "venusaurmega", item: "venusaurite", ability: "thickfat" }))).toBe(true);
-    expect(calls.length).toBeGreaterThan(0);
+    const listed = (vocabulary.roster.find((r) => r.id === "venusaur") as { abilities: string[] }).abilities;
+    expect(listed.length).toBeGreaterThan(1);
+    const name = (id: string) => (engine.sim.Dex.mod("champions").abilities.get(id) as { name: string }).name;
+    const only = (accepted: string[]) => {
+      const spy = { ...engine, sim: { ...engine.sim, TeamValidator: { get: () => ({ validateSet: (set: { ability: string }, options: unknown) => (accepted.map(name).includes(set.ability) ? real.validateSet({ ...(set as object), ability: name(listed[0] as string) } as never, options as never) : ["refused"]) }) } } } as unknown as Engine;
+      return createSetLegality({ engine: spy, vocabulary });
+    };
+    const evolved = venusaur({ forme: "venusaurmega", item: "venusaurite", ability: "thickfat" });
+    // the validator refuses the FIRST listed ability and takes only the last one: legal
+    expect(only([listed[listed.length - 1] as string]).legal(evolved)).toBe(true);
+    // it refuses every listed ability: illegal
+    expect(only([]).legal(evolved)).toBe(false);
   });
 
   it("a paste the engine's own import refuses is an illegal set, not an error", () => {

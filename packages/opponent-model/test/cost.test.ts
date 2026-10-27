@@ -34,7 +34,7 @@ describe("cost per decision and per world on the committed channels", () => {
   it.each([
     ["uniform", uniformPrior],
     ["skewed", skewedPrior],
-  ] as const)("is within the gate under the %s prior, and a world needs no legality redraw", (_name, prior) => {
+  ] as const)("is within the gate under the %s prior, and most worlds need no legality redraw", (_name, prior) => {
     const cost = measure(list, prior, sampler, { every: 3, perBelief: 3 });
     expect(cost.decision.n).toBeGreaterThan(40);
     expect(cost.worlds).toBeGreaterThan(20);
@@ -43,6 +43,6 @@ describe("cost per decision and per world on the committed channels", () => {
     expect(cost.later_world.p99_ms).toBeLessThan(GATE.world_p99_ms);
     expect(cost.later_world.n).toBeGreaterThan(0);
     expect(cost.redraw_ppm).toBeLessThan(500_000);
-    expect(cost.refused).toBeGreaterThanOrEqual(0);
+    expect(cost.refused).toBeLessThan(cost.decision.n);
   });
 });
