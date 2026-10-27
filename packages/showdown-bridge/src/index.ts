@@ -483,6 +483,19 @@ export {
 } from "./damage-aware-identity.ts";
 export { actsBefore, canKnockOut, critChancePpm, damageValue, discounted, rollsValue } from "./damage-aware-score.ts";
 export {
+  type CandidateFeatures,
+  candidateFeatures,
+  createFeatureMemo,
+  FEATURE_SET,
+  FeatureBuildError,
+  type FeatureConfigs,
+  type FeatureMemo,
+  type FeatureRow,
+  type FeatureSetIdentity,
+  featureSetHash,
+  featureSetIdentity,
+} from "./candidate-features.ts";
+export {
   checkTeacherSettings,
   planTeacher,
   playTeacherRun,

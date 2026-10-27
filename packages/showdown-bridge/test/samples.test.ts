@@ -10,6 +10,11 @@ import { contractSamples, SAMPLE_HASHES, SAMPLES_DIR } from "../src/samples.ts";
 import { exportEngineData } from "../src/engine-data.ts";
 import { GOLDEN_FORMAT } from "../src/golden.ts";
 
+// The Ajv classification below compiles every contract and checks every sample: CPU-bound work that
+// grows with each contract. About 1 s locally, 18.6 s on main's CI and over 30 s on a loaded runner
+// (PR #219), so the budget is explicit.
+const CORPUS_TEST_TIMEOUT_MS = 120_000;
+
 const SCHEMAS = new URL("../../schema/contracts/v1/", import.meta.url);
 const committed = (file: string): unknown => JSON.parse(readFileSync(join(SAMPLES_DIR, file), "utf8"));
 
@@ -47,7 +52,7 @@ describe("the shared contract sample corpus (ADR-008 §2)", () => {
       const profile = schema.$id.includes(":engine:") ? "engine-mirror" : "contract";
       expect(ajvFor(profile).validate(schema, content), file).toBe(kind !== "invalid");
     }
-  }, 30_000); // headroom only: about 1 s locally; the default 5 s was already main's and a loaded CI runner came close
+  }, CORPUS_TEST_TIMEOUT_MS);
 
   // ADR-009 section 4, test 2: schema-valid, yet readEpisode refuses each, for the named rule.
   it.each([
