@@ -77,9 +77,14 @@ def test_stages_pass_on_again_and_end_at_the_next_plain_switch(player: str) -> N
     passes = _passes(lines)
     last = _reduce(player, lines[: passes[2] + 1])
     assert _active(last, lines[passes[2]]).boosts["atk"] == 4
-    plain = next(i for i in range(passes[2], len(lines)) if lines[i].startswith("|switch|p1"))
-    if plain != passes[2]:
-        assert _active(_reduce(player, lines[: plain + 1]), lines[plain]).boosts["atk"] == 0
+    plain = [
+        i
+        for i in range(passes[2] + 1, len(lines))
+        if lines[i].startswith("|switch|") and "[from]" not in lines[i]
+    ]
+    assert plain, "the battle has no plain switch after the last pass"
+    state = _reduce(player, lines[: plain[0] + 1])
+    assert _active(state, lines[plain[0]]).boosts["atk"] == 0
 
 
 def test_a_raise_after_a_pass_is_taken_from_the_passed_stage() -> None:
