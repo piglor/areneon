@@ -44,4 +44,9 @@ export default tseslint.config(
       "@typescript-eslint/no-dynamic-delete": "off",
     },
   },
+  {
+    // The belief tests index into hand-made fixtures whose shape they have just built.
+    files: ["packages/opponent-model/test/**/*.ts"],
+    rules: { "@typescript-eslint/no-non-null-assertion": "off" },
+  },
 );
