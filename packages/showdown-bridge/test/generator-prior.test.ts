@@ -141,6 +141,40 @@ describe("the stone holders' pre-Evolution abilities (#1167)", () => {
     expect(() => readUsagePrior(withHolder(true, () => undefined), vocabulary)).not.toThrow();
   });
 
+  // A stand-in engine: only the calls `megaHolderAbilities` makes, with a validator whose verdict the test chooses.
+  const fake = (validate: (set: { species: string; item: string; ability: string }) => string[] | null, natures = [{ name: "Hardy" }]) =>
+    ({
+      sim: {
+        Dex: {
+          formats: { get: () => ({ mod: "m" }) },
+          mod: () => ({
+            species: { get: (id: string) => ({ name: id }) },
+            items: { get: (id: string) => ({ name: id }) },
+            abilities: { get: (id: string) => ({ name: id }) },
+            moves: { get: (id: string) => ({ name: id }) },
+            natures: { all: () => natures },
+          }),
+        },
+        TeamValidator: { get: () => ({ validateSet: (set: { species: string; item: string; ability: string }) => validate(set) }) },
+      },
+    }) as never;
+  const small = { ...vocabulary, roster: [entry("aaa", ["x", "y"], ["m1"]), entry("aaamega", ["z"], ["m1"], "i1")] } as TeamVocabulary;
+  const one = new Map([["aaamega", "aaa"]]);
+
+  it("derives the abilities the validator leaves, counted over the proposal's abilities, and refuses what it cannot judge", () => {
+    const rewrite = (ability: string) => (set: { species: string; item: string; ability: string }) => {
+      set.species = "aaa";
+      set.ability = ability;
+      return null;
+    };
+    expect(megaHolderAbilities(fake(rewrite("x")), small, one)).toEqual(new Map([["aaamega", new Map([["x", 1]])]]));
+    expect(() => megaHolderAbilities(fake(rewrite("x"), [{ name: "Adamant", plus: "atk", minus: "def" } as never]), small, one)).toThrow(/no neutral nature/);
+    expect(() => megaHolderAbilities(fake(() => ["bad"]), small, one)).toThrow(/refuses the probe set/);
+    expect(() => megaHolderAbilities(fake((s) => { rewrite("x")(s); s.item = "other"; return null; }), small, one)).toThrow(/changes the stone/);
+    const noStone = { ...small, roster: [entry("aaa", ["x"], ["m1"]), entry("aaamega", ["z"], ["m1"])] } as TeamVocabulary;
+    expect(() => megaHolderAbilities(fake(rewrite("x")), noStone, one)).toThrow(/without a stone/);
+  });
+
   it("refuses a validator that moves the stone or the species, and a Mega forme with no result", () => {
     expect(() => deriveGeneratorPrior({ vocabulary, config, generator_commit: COMMIT, shows_as: shows, holder_abilities: new Map() })).toThrow(/no holder abilities/);
     expect(() => megaHolderAbilities(engine, vocabulary, new Map([["abomasnowmega", "snover"]]))).toThrow(/leaves the species/);
