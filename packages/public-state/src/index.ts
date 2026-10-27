@@ -178,3 +178,13 @@ export function interpretChannel(player: string, lines: readonly string[], dex?:
 export function readerSha256(): string {
   return createHash("sha256").update(readFileSync(INTERPRETER_PATH)).digest("hex");
 }
+
+export * from "./world-facts.ts";
+
+/** The world-facts module's file path: its own file, so the reader's hash and the replay pages do not move with it. */
+export const WORLD_FACTS_PATH = join(dirname(fileURLToPath(import.meta.url)), "world-facts.ts");
+
+/** SHA-256 of the world-facts file's bytes (a part of the search identity beside `WORLD_FACTS_FORMAT`, ADR-026 section 5). */
+export function worldFactsSha256(): string {
+  return createHash("sha256").update(readFileSync(WORLD_FACTS_PATH)).digest("hex");
+}
