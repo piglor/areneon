@@ -66,6 +66,9 @@ describe("the shared contract sample corpus (ADR-008 §2)", () => {
   it("holds every reader-invalid sample under its contract's directory, and each is refused above", () => {
     const readerInvalid = Object.keys(fresh).filter((f) => f.includes("/reader-invalid/"));
     expect(readerInvalid.sort()).toEqual([
+      "v1/belief-config/reader-invalid/duplicate-ability.json",
+      "v1/belief-config/reader-invalid/unknown-ability.json",
+      "v1/belief-config/reader-invalid/unsorted-abilities.json",
       "v1/checkpoint-record/reader-invalid/duplicate-training-sets.json",
       "v1/checkpoint-record/reader-invalid/exploiter-of-self.json",
       "v1/checkpoint-record/reader-invalid/opponent-is-self.json",
@@ -275,6 +278,32 @@ describe("the shared contract sample corpus (ADR-008 §2)", () => {
       "v1/training-set/reader-invalid/duplicate-manifests.json",
       "v1/training-set/reader-invalid/learner-ready-no-policy.json",
       "v1/training-set/reader-invalid/unsorted-episodes.json",
+      "v1/usage-prior/reader-invalid/abilities-sum.json",
+      "v1/usage-prior/reader-invalid/duplicate-item.json",
+      "v1/usage-prior/reader-invalid/empty-slots-over.json",
+      "v1/usage-prior/reader-invalid/forme-weights-sum.json",
+      "v1/usage-prior/reader-invalid/inclusion-over-denominator.json",
+      "v1/usage-prior/reader-invalid/items-sum.json",
+      "v1/usage-prior/reader-invalid/moves-denominator.json",
+      "v1/usage-prior/reader-invalid/moves-sum.json",
+      "v1/usage-prior/reader-invalid/other-engine-data.json",
+      "v1/usage-prior/reader-invalid/other-format.json",
+      "v1/usage-prior/reader-invalid/spread-over-limit.json",
+      "v1/usage-prior/reader-invalid/spreads-sum.json",
+      "v1/usage-prior/reader-invalid/stale-vocabulary-hash.json",
+      "v1/usage-prior/reader-invalid/too-many-items.json",
+      "v1/usage-prior/reader-invalid/too-many-moves.json",
+      "v1/usage-prior/reader-invalid/too-many-spreads.json",
+      "v1/usage-prior/reader-invalid/unknown-ability.json",
+      "v1/usage-prior/reader-invalid/unknown-forme.json",
+      "v1/usage-prior/reader-invalid/unknown-item.json",
+      "v1/usage-prior/reader-invalid/unknown-move.json",
+      "v1/usage-prior/reader-invalid/unknown-nature.json",
+      "v1/usage-prior/reader-invalid/unknown-species.json",
+      "v1/usage-prior/reader-invalid/unsorted-inputs.json",
+      "v1/usage-prior/reader-invalid/unsorted-moves.json",
+      "v1/usage-prior/reader-invalid/unsorted-species.json",
+      "v1/usage-prior/reader-invalid/unsorted-spreads.json",
     ]);
   });
 

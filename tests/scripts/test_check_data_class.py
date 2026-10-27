@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import json
 import subprocess
 from collections.abc import Mapping
@@ -1031,6 +1032,55 @@ def test_a_team_shaped_set_inside_a_species_entry_is_caught() -> None:
 def test_other_documents_are_not_role_set_tables() -> None:
     other = {"source_path": "x", "species": []}
     assert guard.ROLE_SET_TEAM not in guard.problems_in({**other, "paste": "x"}, True)
+
+
+# ADR-025 section 2: a usage prior is aggregate marginals, never a team.
+USAGE_PRIOR: dict[str, object] = json.loads(
+    (ROOT / "fixtures/contracts/v1/usage-prior/valid/smogon-chaos.json").read_text(encoding="utf-8")
+)
+
+
+def _forme(prior: dict[str, object]) -> dict[str, object]:
+    species: list[dict[str, list[dict[str, object]]]] = prior["species"]  # type: ignore[assignment]
+    return species[0]["formes"][0]
+
+
+@pytest.mark.parametrize("in_fixtures", [True, False])
+def test_a_usage_prior_without_team_text_passes(in_fixtures: bool) -> None:
+    assert guard.problems_in(USAGE_PRIOR, in_fixtures) == []
+
+
+@pytest.mark.parametrize(
+    "intruder",
+    [
+        {"paste": "Venusaur @ Leftovers"},
+        {"paste": 7},
+        {"species": "Venusaur", "moves": ["Protect"], "evs": {"hp": 1}},
+        {"evs": {"hp": 1}},
+        {"species": "Venusaur", "moves": ["Protect"], "item": "leftovers", "evs": {}},
+    ],
+)
+@pytest.mark.parametrize("in_fixtures", [True, False])
+def test_a_usage_prior_may_not_hold_a_paste_an_evs_key_or_a_team(
+    intruder: dict[str, object], in_fixtures: bool
+) -> None:
+    prior = copy.deepcopy(USAGE_PRIOR)
+    _forme(prior)["sets"] = [intruder]
+    assert guard.USAGE_PRIOR_TEAM in guard.problems_in(prior, in_fixtures)
+    prior = copy.deepcopy(USAGE_PRIOR)
+    prior["note"] = intruder
+    assert guard.USAGE_PRIOR_TEAM in guard.problems_in(prior, in_fixtures)
+
+
+def test_a_usage_prior_of_every_source_kind_passes_the_guard_as_committed() -> None:
+    for kind in ("smogon-chaos", "role-sets", "generator-matched"):
+        path = ROOT / f"fixtures/contracts/v1/usage-prior/valid/{kind}.json"
+        assert guard.problems_in(json.loads(path.read_text(encoding="utf-8")), True) == []
+
+
+def test_other_documents_are_not_usage_priors() -> None:
+    other = {"source": {"kind": "x"}, "species": []}  # no derivation
+    assert guard.USAGE_PRIOR_TEAM not in guard.problems_in({**other, "paste": "x"}, True)
 
 
 # ADR-015 erratum E1: the strict shape of a private test record.

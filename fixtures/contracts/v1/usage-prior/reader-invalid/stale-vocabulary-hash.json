@@ -1,0 +1,211 @@
+{
+  "schema_version": 1,
+  "format_id": "gen9championsvgc2026regmc",
+  "engine_data_hash": "33b42a81c85a29773d3a2da890f898b552179406a276925979d9e489aba971c0",
+  "vocabulary_hash": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+  "source": {
+    "kind": "smogon-chaos",
+    "month": "2026-09",
+    "cutoff": 1630,
+    "number_of_battles": 1630000,
+    "inputs": [
+      {
+        "source_id": "chaos-2026-09-1630",
+        "url": "https://example.invalid/stats/2026-09/chaos/format-1630.json",
+        "retrieved_at": "2026-10-27T00:00:00Z",
+        "size": 1000,
+        "sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+      }
+    ]
+  },
+  "derivation": {
+    "script_version": "sample-1",
+    "k_items": 16,
+    "k_moves": 24,
+    "k_spreads": 32
+  },
+  "species": [
+    {
+      "id": "abomasnow",
+      "denominator": 100,
+      "formes": [
+        {
+          "id": "abomasnow",
+          "weight": 100,
+          "abilities": {
+            "denominator": 750,
+            "entries": [
+              {
+                "id": "snowwarning",
+                "weight": 300
+              },
+              {
+                "id": "soundproof",
+                "weight": 300
+              }
+            ],
+            "residual": 100,
+            "unmapped": 50
+          },
+          "items": {
+            "denominator": 900,
+            "entries": [
+              {
+                "id": "abomasite",
+                "weight": 400
+              },
+              {
+                "id": "absolite",
+                "weight": 200
+              }
+            ],
+            "no_item": 150,
+            "residual": 100,
+            "unmapped": 50
+          },
+          "spreads": {
+            "denominator": 1000,
+            "entries": [
+              {
+                "nature": "adamant",
+                "stat_points": {
+                  "hp": 0,
+                  "atk": 0,
+                  "def": 0,
+                  "spa": 0,
+                  "spd": 0,
+                  "spe": 1
+                },
+                "weight": 500
+              },
+              {
+                "nature": "bashful",
+                "stat_points": {
+                  "hp": 1,
+                  "atk": 0,
+                  "def": 0,
+                  "spa": 0,
+                  "spd": 0,
+                  "spe": 0
+                },
+                "weight": 300
+              }
+            ],
+            "residual": 150,
+            "unmapped": 50
+          },
+          "moves": {
+            "denominator": 900,
+            "slots": 4,
+            "entries": [
+              {
+                "id": "auroraveil",
+                "inclusion": 900
+              },
+              {
+                "id": "avalanche",
+                "inclusion": 450
+              }
+            ],
+            "empty_slots": 1800,
+            "residual": 300,
+            "unmapped": 150
+          }
+        }
+      ]
+    },
+    {
+      "id": "absol",
+      "denominator": 100,
+      "formes": [
+        {
+          "id": "absol",
+          "weight": 100,
+          "abilities": {
+            "denominator": 1050,
+            "entries": [
+              {
+                "id": "justified",
+                "weight": 300
+              },
+              {
+                "id": "pressure",
+                "weight": 300
+              },
+              {
+                "id": "superluck",
+                "weight": 300
+              }
+            ],
+            "residual": 100,
+            "unmapped": 50
+          },
+          "items": {
+            "denominator": 900,
+            "entries": [
+              {
+                "id": "abomasite",
+                "weight": 400
+              },
+              {
+                "id": "absolite",
+                "weight": 200
+              }
+            ],
+            "no_item": 150,
+            "residual": 100,
+            "unmapped": 50
+          },
+          "spreads": {
+            "denominator": 1000,
+            "entries": [
+              {
+                "nature": "adamant",
+                "stat_points": {
+                  "hp": 0,
+                  "atk": 0,
+                  "def": 0,
+                  "spa": 0,
+                  "spd": 0,
+                  "spe": 1
+                },
+                "weight": 500
+              },
+              {
+                "nature": "bashful",
+                "stat_points": {
+                  "hp": 1,
+                  "atk": 0,
+                  "def": 0,
+                  "spa": 0,
+                  "spd": 0,
+                  "spe": 0
+                },
+                "weight": 300
+              }
+            ],
+            "residual": 150,
+            "unmapped": 50
+          },
+          "moves": {
+            "denominator": 900,
+            "slots": 4,
+            "entries": [
+              {
+                "id": "aerialace",
+                "inclusion": 900
+              },
+              {
+                "id": "airslash",
+                "inclusion": 450
+              }
+            ],
+            "empty_slots": 1800,
+            "residual": 300,
+            "unmapped": 150
+          }
+        }
+      ]
+    }
+  ]
+}
