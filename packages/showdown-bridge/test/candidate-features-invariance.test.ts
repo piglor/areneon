@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 import type { PublicMon } from "@areneon/public-state";
+import { probeMechanics } from "../src/mechanics-probe.ts";
 import { type CandidateFeatures, candidateFeatures, type FeatureConfigs } from "../src/candidate-features.ts";
 import { jcs, type Json } from "../src/canonical-json.ts";
-import { type AssumedSet, buildAssumedSet } from "../src/damage-aware-assumed-set.ts";
+import { type AssumedSet } from "../src/damage-aware-assumed-set.ts";
 import type { PokemonSet } from "../src/engine.ts";
 import { firstLegal, GOLDEN_FORMAT } from "../src/golden.ts";
 import { type BattleRecord, type HiddenVerdicts, type OmniscientLog, type PlayerChannel } from "../src/index.ts";
@@ -81,19 +82,25 @@ function equalPoints(a: Point[], b: Point[]): { a: Point; b: Point }[] {
 
 // Pairs 1 and 2: nature, Stat Points, rotated items and moves 2 to 4 differ (abilities kept, so the ability the
 // opponent reveals is the same in both). Pairs 3 and 4: those plus every ability changed to the species' other one. The rest change only unrevealed moves, so the channels stay equal for longer.
-/** Only the moves 2 to 4 (and so nothing the opponent's stats or items would show in a damage number) differ: the channels stay equal for longer. */
+/** Only the moves 2 to 4 differ (nature, Stat Points and items are as brought), so the channels stay equal for longer and across a reveal of an item or ability. */
 const movesOnly = (team: PokemonSet[]): PokemonSet[] => mutated(team).map((set, index) => ({ ...set, nature: (team[index] as PokemonSet).nature, evs: (team[index] as PokemonSet).evs, item: (team[index] as PokemonSet).item }));
 
+// What p2 holds unrevealed differs in each pair: `mutated` (nature, Stat Points, rotated items, moves 2 to 4), `movesOnly`, and
+// either with every ability changed to the species' other one where it has two. The `reveal` pairs keep abilities and items as
+// brought, so a reveal of an ability (Pressure, Intimidate) or an item (Shuca Berry) is the same in both battles and the
+// channels stay equal after it.
 const PAIRS: { id: string; variant: (team: PokemonSet[]) => PokemonSet[] }[] = [
-  { id: "b06", variant: mutated }, // Cloud Nine is revealed at request 2
-  { id: "b12", variant: mutated }, // Intimidate is revealed at request 2
+  { id: "b06", variant: mutated },
+  { id: "b12", variant: mutated },
   { id: "b01", variant: (team) => otherAbilities(mutated(team)) },
   { id: "b02", variant: (team) => otherAbilities(mutated(team)) },
   { id: "b00", variant: (team) => otherAbilities(movesOnly(team)) },
   { id: "b03", variant: (team) => otherAbilities(movesOnly(team)) },
   { id: "b04", variant: movesOnly },
   { id: "b05", variant: movesOnly },
-  { id: "b06", variant: (team) => otherAbilities(movesOnly(team)) },
+  { id: "b14", variant: movesOnly }, // reveal: Kingambit's Pressure at request 2, not its vocabulary-first ability
+  { id: "b27", variant: movesOnly }, // reveal: Krookodile's Intimidate at request 2, not its vocabulary-first ability
+  { id: "b20", variant: movesOnly }, // reveal: Gourgeist's Shuca Berry at request 2
 ];
 
 /** What the real opponent holds: the negative control's assumed set, as a baseline that was handed the real team would build it. */
@@ -103,11 +110,12 @@ const cheating = (real: PokemonSet[]) => (mon: PublicMon): AssumedSet => {
 };
 
 describe("hidden-information invariance of the tier A features (ADR-022 section 3, R1)", () => {
-  // The real probe on ~25 request points of four seeded battle pairs, each built twice: tens of seconds on a loaded machine.
+  // The real probe on 20+ request points of eleven seeded battle pairs, each built twice: tens of seconds, minutes on a loaded machine.
   it("gives byte-identical rows and feature_set_hash at every request with an equal player channel", async () => {
     let total = 0;
     let withRows = 0;
     let pairsUsed = 0;
+    let afterReveal = 0;
     for (const { id, variant } of PAIRS) {
       const battle = byId(id);
       const other = variant(battle.teams.p2);
@@ -120,49 +128,65 @@ describe("hidden-information invariance of the tier A features (ADR-022 section 
         expect(right.feature_set_hash).toBe(left.feature_set_hash);
         total += 1;
         if (left.rows.length > 0) withRows += 1;
+        if (Object.values(a.state.opponent.roster).some((mon) => mon.ability !== null || mon.item !== null)) afterReveal += 1;
       }
     }
     expect(pairsUsed).toBeGreaterThanOrEqual(2);
     expect(total).toBeGreaterThanOrEqual(20);
     // not vacuous: the rows are really there
     expect(withRows).toBeGreaterThanOrEqual(15);
+    // and some of the equal points come after an ability or item reveal
+    expect(afterReveal).toBeGreaterThanOrEqual(3);
   }, 300_000);
 
-  it("uses a revealed ability as revealed, at a request after the reveal", async () => {
-    let checked = 0;
-    for (const id of ["b06", "b12"]) {
+  it("declares a revealed ability or item to the probe as revealed, not the vocabulary default", async () => {
+    let abilities = 0;
+    let notDefault = 0;
+    let items = 0;
+    for (const id of ["b14", "b27", "b20"]) {
       const battle = byId(id);
-      for (const point of await points(battle, mutated(battle.teams.p2))) {
-        const revealed = Object.values(point.state.opponent.roster).filter((m) => m.ability !== null && (m.hp_num ?? 0) > 0);
-        if (revealed.length === 0) continue;
-        const used: AssumedSet[] = [];
-        point.features({ assume: (mon) => { const set = buildAssumedSet({ engine, vocabulary, config }, mon); used.push(set); return set; } });
-        for (const mon of revealed) {
-          const set = used.find((s) => toId(s.set.species) === mon.species || toId(s.set.species) === mon.base_species);
-          if (set === undefined) continue; // not an active this request
-          expect(toId(set.set.ability), `${id} request ${point.seq}`).toBe(toId(mon.ability as string));
-          checked += 1;
+      for (const point of await points(battle, movesOnly(battle.teams.p2))) {
+        const declared: string[] = [];
+        const probe: NonNullable<FeatureConfigs["probe"]> = (context, query) => {
+          if (query.query.kind === "damage") declared.push(query.query.defender.set);
+          return probeMechanics(context, query);
+        };
+        point.features({ probe });
+        for (const mon of Object.values(point.state.opponent.roster)) {
+          const mine = declared.filter((paste) => toId((paste.split("\n")[0] as string).split("@")[0] as string).includes(toId(mon.base_species)));
+          // b20 is the item case only: there the reader attributes Gourgeist's Frisk to the Pokemon whose item it shows, which the assumed set ignores (Gardevoir has no Frisk)
+          if (mon.ability !== null && id !== "b20") {
+            for (const paste of mine) expect(toId(/^Ability: (.+)$/m.exec(paste)?.[1] ?? ""), `${id} request ${point.seq}`).toBe(mon.ability);
+            abilities += mine.length;
+            const first = vocabulary.roster.find((r) => r.id === mon.base_species)?.abilities[0];
+            if (mine.length > 0 && first !== mon.ability) notDefault += 1;
+          }
+          if (mon.item !== null) {
+            for (const paste of mine) expect(toId((paste.split("\n")[0] as string).split("@")[1] ?? ""), `${id} request ${point.seq}`).toBe(mon.item);
+            items += mine.length;
+          }
         }
       }
     }
-    expect(checked).toBeGreaterThanOrEqual(2);
+    expect(abilities).toBeGreaterThanOrEqual(2);
+    expect(notDefault).toBeGreaterThanOrEqual(1);
+    expect(items).toBeGreaterThanOrEqual(1);
   }, 300_000);
 
-  // Negative control. The same comparison with a builder handed the opponent's REAL team must FAIL; the failing
-  // output is what the PR records.
+  // Negative control: the invariance comparison, pair for pair, with a builder handed the opponent's REAL team must differ.
   it("has teeth: a builder handed the real opponent team gives different rows at such a request", async () => {
     let differing = 0;
     let compared = 0;
-    for (const id of ["b06", "b00", "b01", "b02", "b03", "b04"]) {
+    for (const { id, variant } of PAIRS) {
       const battle = byId(id);
-      const other = mutated(battle.teams.p2);
+      const other = variant(battle.teams.p2);
       for (const pair of equalPoints(await points(battle, battle.teams.p2), await points(battle, other))) {
         compared += 1;
         const [left, right] = [pair.a.features({ assume: cheating(battle.teams.p2) }), pair.b.features({ assume: cheating(other) })];
         if (bytes(left) !== bytes(right)) differing += 1;
       }
     }
-    expect(compared).toBeGreaterThanOrEqual(8);
+    expect(compared).toBeGreaterThanOrEqual(20);
     expect(differing).toBeGreaterThan(0);
   }, 300_000);
 });

@@ -162,7 +162,8 @@ export function candidateFeatures(
 
   const view = damageView({
     engine, vocabulary: configs.vocabulary, config: configs.config, v1: configs.config, mechanics: configs.mechanics, snapshot,
-    data_class: configs.data_class, probe: configs.probe ?? probeMechanics, ...(configs.assume === undefined ? {} : { assume: configs.assume }), counts: memo.counts, memo: memo.results,
+    data_class: configs.data_class, probe: configs.probe ?? probeMechanics, counts: memo.counts, memo: memo.results,
+    ...(configs.assume === undefined ? {} : { assume: configs.assume }),
   });
 
   // The reader, fed the whole channel; a line it could not take since the previous request makes the state untrustworthy (as for the baseline).
