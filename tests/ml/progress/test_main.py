@@ -510,3 +510,28 @@ def test_the_damage_aware_flags_pass_a_budget_and_refuse_a_zero_or_a_lone_budget
     ):
         assert main(args(run, *base, *extra, "--progress-dir", str(tmp_path / "b"))) == EXIT_REFUSED
     capsys.readouterr()
+
+
+def test_the_eval_dataset_option_reaches_the_record_and_is_logged_as_a_look(
+    run: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """ADR-020 E-17.1: the command passes the option on, the record names it, the look is logged."""
+    fake_node(monkeypatch, run)
+    other = tmp_path / "other-dataset"
+    other.mkdir()
+    (other / "manifest.json").write_text(
+        json.dumps({"splits": [{"split": "validation", "teams": 6}]})
+    )
+    option = ["--eval-dataset-dir", str(other), "--eval-dataset-hash", "7" * 64]
+    common = ["--generation", "1", "--games", "2", "--record-games", "0"]
+    root = tmp_path / "p"
+    assert main(args(run, *common, *option, "--progress-dir", str(root))) == 0
+    printed = json.loads(capsys.readouterr().out)
+    assert printed["looks"] == 1
+    record = json.loads((root / "g000001" / "progress.json").read_text())
+    assert record["teams"]["evaluation_dataset_hash"] == "7" * 64
+    assert read_looks(tmp_path / "p.looks.jsonl").count == 1
+    # one flag without the other, the run's own dataset and a malformed hash are refused: no look
+    for bad in (option[:2], option[2:], [*option[:3], "7" * 63], [*option[:3], "5" * 64]):
+        assert main(args(run, *common, *bad, "--progress-dir", str(tmp_path / "q"))) == EXIT_REFUSED
+    assert not (tmp_path / "q.looks.jsonl").exists()

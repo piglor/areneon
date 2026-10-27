@@ -322,6 +322,11 @@ def progress_files(  # noqa: PLR0912, PLR0915
         "version_manifest": manifest,
         "teams": {
             "dataset_hash": "5" * 64,
+            **(
+                {"evaluation_dataset_hash": request.eval_dataset.dataset_hash}
+                if request.eval_dataset is not None
+                else {}
+            ),
             "split": "validation",
             "pairs_used": max(games, request.anchor_games, run_games) // 2,
         },

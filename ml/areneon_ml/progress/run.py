@@ -35,6 +35,7 @@ from areneon_ml.loop.play import NodePlayer, PlayError
 from areneon_ml.loop.records import policy_id
 from areneon_ml.model.network import ROLES
 from areneon_ml.progress.ablation import ablation_summary, expected_ablation_matches
+from areneon_ml.progress.eval_dataset import EvalDataset, EvalDatasetError, validation_teams
 from areneon_ml.progress.records import (
     DAMAGE_AWARE_LABEL,
     RANDOM_PREVIEW_POLICY,
@@ -174,6 +175,8 @@ class ProgressRequest:
     damage_aware_budget_ms: int | None = None
     #: Another run's frozen pair, played as ``run-sample`` and ``run-argmax``.
     versus: RunPair | None = None
+    #: Another verified dataset whose validation split supplies the teams (ADR-020 E-17.1).
+    eval_dataset: EvalDataset | None = None
 
 
 class ProgressPlayer(Protocol):
@@ -254,6 +257,7 @@ class NodeProgressPlayer(NodePlayer):
             *ablation,
             *damage,
             *cross,
+            *(() if request.eval_dataset is None else request.eval_dataset.node_args()),
         )
         try:
             found = json.loads(out)
@@ -301,19 +305,18 @@ def progress_lock(root: Path) -> Iterator[None]:
         yield
 
 
-def max_pairs(config: RunConfig) -> int:
-    """The most disjoint validation pairs the run's dataset can give: half its validation teams.
+def max_pairs(config: RunConfig, eval_dataset: EvalDataset | None = None) -> int:
+    """The most disjoint validation pairs the dataset can give: half its validation teams.
 
-    Read from the dataset's manifest before anything starts. It is an upper bound (the Node side
-    also drops teams with an excluded ability and refuses exactly), so a refusal here is certain.
+    The dataset is the evaluation dataset when one is given, else the run's own. Read from the
+    dataset's manifest before anything starts. It is an upper bound (the Node side also drops
+    teams with an excluded ability and refuses exactly), so a refusal here is certain.
     """
-    path = Path(config.raw["team_dataset"]["path"]) / "manifest.json"
+    directory = eval_dataset.path if eval_dataset else Path(config.raw["team_dataset"]["path"])
     try:
-        manifest = json.loads(path.read_text(encoding="utf-8"))
-        teams = next(s["teams"] for s in manifest["splits"] if s["split"] == "validation")
-    except (OSError, ValueError, KeyError, StopIteration) as exc:
-        raise ProgressError(f"cannot read the validation split's size from {path}") from exc
-    return int(teams) // 2
+        return validation_teams(directory) // 2
+    except EvalDatasetError as exc:
+        raise ProgressError(str(exc)) from exc
 
 
 def _read_config(run_dir: Path) -> RunConfig:
@@ -675,6 +678,7 @@ def _verify_output(  # noqa: PLR0913, PLR0917
     ablation: AblationSpec | None = None,
     damage_aware: bool = False,
     versus: RunPair | None = None,
+    eval_dataset: EvalDataset | None = None,
 ) -> dict[str, Any]:
     """The simulator side's files are the record's: read both kinds, check every hash and name."""
     record = read_progress_record(layout.read_json(work / PROGRESS), config)
@@ -697,6 +701,7 @@ def _verify_output(  # noqa: PLR0913, PLR0917
     _check_ablation(record, ablation, run_dir, config, fresh=True)
     _check_damage_aware(record, damage_aware, legacy=False)
     _check_versus(record, versus, legacy=False)
+    _check_eval_dataset(record, eval_dataset, config, strict=True)
     rows = {(r["match_id"], r["game"]): r for r in record["games"]}
     expected = set()
     for match in record["matches"]:
@@ -727,6 +732,37 @@ def _verify_output(  # noqa: PLR0913, PLR0917
     if found != expected:
         raise ProgressError("games/ holds other files than the record lists")
     return record
+
+
+def _check_eval_dataset(
+    record: dict[str, Any],
+    eval_dataset: EvalDataset | None,
+    config: RunConfig,
+    *,
+    strict: bool,
+) -> None:
+    """The record names the evaluation dataset asked for (ADR-020 E-17.1), else the run's own.
+
+    ``strict`` also refuses a record measured on another dataset when none was asked for (a
+    committed directory is never rewritten, so the other kind needs a progress directory of its
+    own); a lenient check (reading a committed root) only ties a dataset that was asked for.
+    """
+    teams = record["teams"]
+    found = teams.get("evaluation_dataset_hash")
+    if eval_dataset is None:
+        if strict and found is not None:
+            raise ProgressError(
+                "the record was measured on another dataset's validation split: pass the same "
+                "--eval-dataset-dir and --eval-dataset-hash, or use a progress directory of its own"
+            )
+        return
+    if found != eval_dataset.dataset_hash:
+        raise ProgressError(
+            "the record's teams are not the evaluation dataset asked for: use a progress "
+            "directory of its own for another dataset"
+        )
+    if teams["dataset_hash"] != _dataset_of(config)["dataset_hash"]:
+        raise ProgressError("the record's dataset_hash is not the run's own dataset")
 
 
 def _check_ablation(
@@ -834,12 +870,15 @@ def _pair_stats(record: dict[str, Any], match: dict[str, Any]) -> dict[str, Any]
     return out
 
 
-def verify_progress_dir(
+def verify_progress_dir(  # noqa: PLR0913, PLR0917
     target: Path,
     config: RunConfig,
     run_dir: Path,
     generation: int,
     versus: RunPair | None = None,
+    eval_dataset: EvalDataset | None = None,
+    *,
+    strict_dataset: bool = False,
 ) -> dict[str, Any]:
     """A committed progress directory, checked against its manifest and the run."""
     manifest = layout.verify_generation(target, generation)
@@ -857,6 +896,7 @@ def verify_progress_dir(
     # The damage-aware matches are optional (a record may hold them or not), never half a set.
     _check_damage_aware(record, False, legacy=True)
     _check_versus(record, versus, legacy=True)
+    _check_eval_dataset(record, eval_dataset, config, strict=strict_dataset)
     rows = {(r["match_id"], r["game"]): r for r in record["games"]}
     for match in record["matches"]:
         for name in sorted(p.name for p in (target / GAMES).glob(f"{match['match_id']}-*.json")):
@@ -917,8 +957,14 @@ def progress_generation(  # noqa: PLR0913, PLR0917
     preview_ablation: bool = False,
     damage_aware_budget_minutes: int | None = None,
     versus: VersusSpec | None = None,
+    eval_dataset: EvalDataset | None = None,
 ) -> dict[str, Any]:
     """Evaluate one generation into ``root``; a committed directory is verified and kept.
+
+    ``eval_dataset`` measures on the validation split of another verified dataset than the run's
+    own (ADR-020 E-17.1; the same refusals, plus: the dataset is not the run's own training
+    dataset, and its hash is the one given). The record names it
+    (``teams.evaluation_dataset_hash``).
 
     ``versus`` also plays another run's committed frozen pair (``run-sample``, ``run-argmax``,
     ``versus.games`` games each, every pair from both seats; opt-in, off by default). The other
@@ -944,6 +990,15 @@ def progress_generation(  # noqa: PLR0913, PLR0917
     )
     damage_budget_ms = _damage_budget_ms(damage_aware_budget_minutes, preview_ablation)
     config = _read_config(run_dir)
+    if (
+        eval_dataset is not None
+        and config.team_dataset
+        and eval_dataset.dataset_hash == _dataset_of(config)["dataset_hash"]
+    ):
+        raise ProgressError(
+            "--eval-dataset-hash is the run's own training dataset: leave the option out "
+            "to evaluate on its validation split"
+        )
     if versus is not None:
         progress_root(versus.run_dir, root)  # the root is never inside or above the other run
     with progress_lock(root):
@@ -952,7 +1007,14 @@ def progress_generation(  # noqa: PLR0913, PLR0917
             shutil.rmtree(stale)
         if target.exists():
             return _skipped(
-                target, run_dir, config, generation, (wanted, dropped), preview_ablation, versus
+                target,
+                run_dir,
+                config,
+                generation,
+                (wanted, dropped),
+                preview_ablation,
+                versus,
+                eval_dataset,
             )
         source = _source(run_dir, config, generation)
         previous = _previous_pair(run_dir, config, generation) if previous_matches else None
@@ -962,7 +1024,7 @@ def progress_generation(  # noqa: PLR0913, PLR0917
         other_pair, relation = _open_versus(run_dir, config, source, versus)
         played_run_games = 0 if versus is None else versus.games
         needed = max(games, played_anchor_games, played_run_games) // 2
-        limit = max_pairs(config)
+        limit = max_pairs(config, eval_dataset)
         if needed > limit:
             raise ProgressError(
                 f"--games {games} / --anchor-games {played_anchor_games} / --run-games "
@@ -1001,6 +1063,7 @@ def progress_generation(  # noqa: PLR0913, PLR0917
                     ablation=ablation,
                     damage_aware_budget_ms=damage_budget_ms,
                     versus=other_pair,
+                    eval_dataset=eval_dataset,
                 )
             )
             record = _verify_output(
@@ -1016,6 +1079,7 @@ def progress_generation(  # noqa: PLR0913, PLR0917
                 ablation,
                 damage_aware_budget_minutes is not None,
                 other_pair,
+                eval_dataset,
             )
             layout.fsync_tree(work)
             layout.write_json(
@@ -1057,10 +1121,13 @@ def _skipped(  # noqa: PLR0913, PLR0917
     anchor_status: tuple[Sequence[int], Sequence[int]],
     preview_ablation: bool,
     versus: VersusSpec | None,
+    eval_dataset: EvalDataset | None,
 ) -> dict[str, Any]:
     """A committed directory is verified and reported, never rewritten."""
     pair = None if versus is None else _versus_pair(run_dir, config, versus)
-    record = verify_progress_dir(target, config, run_dir, generation, pair)
+    record = verify_progress_dir(
+        target, config, run_dir, generation, pair, eval_dataset, strict_dataset=True
+    )
     held = None
     if pair is not None and any(m["opponent"]["kind"] == "run" for m in record["matches"]):
         held = versus_relation(run_dir, _source(run_dir, config, generation), pair)

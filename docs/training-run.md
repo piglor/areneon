@@ -293,6 +293,33 @@ adopt rule is applied by the experiment, not here. Use a progress directory of i
 this run's, on the same pairs and seeds; the other run's actor-rule score on these
 pairs is not played.
 
+**Another dataset's validation split (ADR-020 E-17.1).**
+`--eval-dataset-dir DIR --eval-dataset-hash HEX64` (both, or neither; `scripted-h2h`
+takes the same two flags) measures the generation on the validation split of a
+verified dataset other than the run's own, so both arms of an experiment are
+scored on the same held-out teams. The directory is read exactly as the run's own
+is (`readDataset`: manifest against the config, label set and engine, every record
+round-tripped through the engine and the validator) and its `datasetHash`
+(`packages/team-dataset/scripts/dataset-hash.ts`) must be the one given. Pairs,
+seeds and seats are the plan's as always (`progress-pairing/1`, `progress-seed/1`,
+every pair from both seats). Refused before any game, as for the run's own
+split: a team whose played-form hash is in the run's newest `team-set.json`, a
+progress seed equal to a seed of a committed plan, and more games than the
+dataset's validation pairs; and in addition a hash that differs from the dataset's,
+and the run's own training dataset passed through the option (leave it out then).
+The version 2 record names it in `teams.evaluation_dataset_hash` (absent: the run's
+own dataset, so existing records keep their bytes; `teams.dataset_hash` stays the
+run's own and the two never agree). A committed generation is kept only for the same
+dataset: a directory made on the run's own split is refused with the option, and
+the other way round, so use a progress directory per dataset. The dashboard says
+"Evaluation teams: the validation split of another verified dataset than the run's
+own", and the look is logged in the validation look log like any other. Scores on
+different datasets are not comparable; a held-out set from slice 3 of ADR-020 is
+used through this same option (only the validation split is read today; the
+evaluation-only split comes with that slice). `scripted-h2h` takes the same flags (renamed
+from `--dataset-dir/--dataset-hash` on purpose) but has no run of its own, so its record
+puts the given hash in `teams.dataset_hash`.
+
 **Every pair is played from both seats (ADR-017 erratum E2).** Validation pair
 `k` is two games, `2k` and `2k+1`: the candidate on p1 holding team `a` against
 the opponent on p2 holding `b`, then the opponent on p1 holding `a` against the
@@ -710,15 +737,15 @@ view on validation teams, never the Training gate.
 ```bash
 python -m areneon_ml.loop scripted-h2h --config RUN_CONFIG.json \
   --arm-a damage-aware@v1 --arm-b damage-aware@v2 --pairs 400 --out H2H_DIR \
-  [--dataset-dir EVAL_DATASET --dataset-hash HEX64] [--game-processes 4] \
+  [--eval-dataset-dir EVAL_DATASET --eval-dataset-hash HEX64] [--game-processes 4] \
   [--wall-time-cap-minutes 480] [--looks LOOKS.jsonl] [--node node]
 ```
 
 - **Plan.** `--pairs N` plays `2 N` games on the first N disjoint pairs of the validation split
   (`progress-pairing/1`), arm a on p1 for an even game and on p2 for an odd one, both games of a
   pair on the pair's `progress-seed/1` battle seed. The run config gives the run key (so the seeds
-  and the pairing), the format, the turn cap and the latency budgets; `--dataset-dir` and
-  `--dataset-hash` replace its team dataset by an evaluation-only one. `damage-aware@v2` plays
+  and the pairing), the format, the turn cap and the latency budgets; `--eval-dataset-dir` and
+  `--eval-dataset-hash` replace its team dataset by another verified one (the same option as the progress evaluation). `damage-aware@v2` plays
   teams of its prior's generator: teams outside the prior's support make the belief refuse and v2
   play the `actor-rule` candidate, which is counted (expected 0 on dataset teams).
 - **Parallelism.** `--game-processes S` shares the games over `S` Node processes (process k plays
