@@ -5,7 +5,15 @@ from __future__ import annotations
 
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, RootModel, StrictInt, StrictStr
+from pydantic import (
+    MISSING,
+    BaseModel,
+    ConfigDict,
+    Field,
+    RootModel,
+    StrictInt,
+    StrictStr,
+)
 
 
 class Id(RootModel[StrictStr]):
@@ -227,6 +235,10 @@ class Forme(BaseModel):
     The forme's weight, an integer share of the species' denominator. For a Mega forme it is the stone-holding share (ADR-025 section 2).
     """
     abilities: AbilityList
+    holder_abilities: AbilityList | MISSING = MISSING
+    """
+    Optional, for a Mega forme only (a minor change within v1): the ability marginal of the Pokemon while it holds the stone and has not evolved, over the abilities of the preview species. Absent: a consumer takes the preview species' own forme's abilities. The generator-matched prior sets it from what the pinned validator makes of a Mega-forme set (the base forme holding the stone, with the base forme's first listed ability).
+    """
     items: ItemList
     spreads: SpreadList
     moves: MoveList

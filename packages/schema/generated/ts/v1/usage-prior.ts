@@ -213,6 +213,7 @@ export interface Forme {
    */
   weight: number;
   abilities: AbilityList;
+  holder_abilities?: AbilityList1;
   items: ItemList;
   spreads: SpreadList;
   moves: MoveList;
@@ -253,6 +254,29 @@ export interface WeightedId {
    * The id's weight, an integer share of the list's denominator.
    */
   weight: number;
+}
+/**
+ * The ability marginal of a forme. The weights of entries, residual and unmapped sum to the denominator (a reader rule).
+ */
+export interface AbilityList1 {
+  /**
+   * The list's denominator: the exact integer total that every weight in this list is a share of (the source holds rating weights, not counts, so this is the summed list weight and never the species' raw count). A share is the integer weight over this denominator, an exact fraction and never parts per million.
+   */
+  denominator: number;
+  /**
+   * The abilities the list names, sorted by id, no id twice.
+   *
+   * @maxItems 64
+   */
+  entries: WeightedId[];
+  /**
+   * Mapped mass the truncation dropped (options of the species or format that this list does not name), an integer of the same unit. A consumer spreads it equally over every option the vocabulary allows and the list does not name, so each such option has the exact share residual / (denominator * n) for the n options it derives from the vocabulary.
+   */
+  residual: number;
+  /**
+   * Mass of source names that map to no engine id, counted and never remapped or redistributed by the record (a consumer that needs a distribution uses denominator minus unmapped).
+   */
+  unmapped: number;
 }
 /**
  * The item marginal of a forme. The weights of entries, no_item, residual and unmapped sum to the denominator (a reader rule).
