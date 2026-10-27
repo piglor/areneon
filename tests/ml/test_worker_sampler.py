@@ -6,7 +6,16 @@ import struct
 from typing import Any
 
 import pytest
-from areneon_ml.worker.sampler import ScoreError, check_probabilities, select, to_float32
+from areneon_ml.model.scorer import FULL_TEMPERATURE_PPM as scorer_full_temperature
+from areneon_ml.worker.sampler import (
+    FULL_TEMPERATURE_PPM,
+    U_SCALE,
+    ScoreError,
+    check_probabilities,
+    select,
+    to_float32,
+    truncate,
+)
 from areneon_ml.worker.view import encoder_input, view_digest
 
 from tests.ml.helpers import battle_query, preview_query, sample
@@ -114,3 +123,43 @@ def test_the_view_holds_no_sampling_policy_or_query_id() -> None:
 def test_the_preview_view_is_built_the_same_way() -> None:
     view = encoder_input(preview_query())
     assert view["observation"]["kind"] == "preview"
+
+
+def threshold(min_ppm: int, u: int) -> dict[str, Any]:
+    return {"kind": "sample", "u": u, "truncation": {"kind": "threshold", "min_ppm": min_ppm}}
+
+
+def test_a_threshold_zeroes_the_small_candidates_and_renormalises_the_rest() -> None:
+    # 0.05 < 0.1 is dropped; 0.5, 0.3 and 0.15 keep their order and are divided by 0.95.
+    out = truncate([0.5, 0.3, 0.15, 0.05], 100_000)
+    assert out[3] == 0.0
+    assert out == [to_float32(p / 0.95) for p in (0.5, 0.3, 0.15)] + [0.0]
+    assert abs(sum(out) - 1.0) < 1e-6
+    # A candidate exactly at the threshold is kept (the rule is "below min_ppm").
+    assert truncate([0.75, 0.25], 250_000) == [0.75, 0.25]
+
+
+def test_a_threshold_that_would_drop_every_candidate_keeps_the_first_highest() -> None:
+    uniform = [to_float32(1 / 40)] * 40
+    assert truncate(uniform, 999_999) == [1.0] + [0.0] * 39
+    assert select(uniform, threshold(999_999, TOP)) == 0
+    # The first highest, not the last, when the top is tied.
+    assert truncate([0.1, 0.45, 0.45], 999_999) == [0.0, 1.0, 0.0]
+    # A top below the threshold is kept while a candidate above it cannot exist.
+    assert truncate([0.2, 0.3, 0.3, 0.2], 400_000) == [0.0, 1.0, 0.0, 0.0]
+
+
+def test_a_truncated_draw_never_lands_on_a_dropped_candidate() -> None:
+    probabilities = [0.6, 0.3, 0.1]
+    seen = {select(probabilities, threshold(200_000, u)) for u in (0, 2**52, 2**53 - 1)}
+    assert seen == {0, 1}
+    # u / 2^53 at the renormalised boundary 2/3: the sum 2/3 (float32) does not exceed it.
+    boundary = int(to_float32(0.6 / 0.9) * U_SCALE)
+    assert select(probabilities, threshold(200_000, boundary - 1)) == 0
+    assert select(probabilities, threshold(200_000, boundary + 2**30)) == 1
+
+
+def test_argmax_ignores_a_truncation_and_the_default_draw_is_unchanged() -> None:
+    assert select([0.2, 0.5, 0.3], {"kind": "argmax"}) == 1
+    assert select([0.25, 0.25, 0.5], sample_of(2**52)) == LAST
+    assert scorer_full_temperature == FULL_TEMPERATURE_PPM

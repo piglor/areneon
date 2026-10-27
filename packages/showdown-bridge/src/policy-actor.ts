@@ -19,7 +19,7 @@ import { policyStreamLabel } from "./league-seed.ts";
 import { assertOwnTeamStats, pinnedEngine } from "./own-team-stats.ts";
 import { observe, playerChannel } from "./player-channel.ts";
 import { type PolicyClient, PolicyReplyError } from "./policy-worker.ts";
-import { PolicyProtocolError } from "./policy-protocol.ts";
+import { PolicyProtocolError, type PlaySettings } from "./policy-protocol.ts";
 import { type Actor, ForfeitSignal, type Player } from "./runner.ts";
 import { battleClass, type DataClass, stampTeam, type SyntheticTeamHashes, teamHash } from "./team-class.ts";
 
@@ -77,6 +77,11 @@ export interface PolicyActorOptions {
   game: number;
   policy_id: string;
   sampling: "argmax" | "sample";
+  /**
+   * Temperature and truncation of a `sample` seat (ADR-023 §1), put in each query. The caller computes the matching
+   * `policy_id` with `policyId(pair, "sample", play)`; argmax takes none.
+   */
+  play?: PlaySettings;
   /** The engine that checks the team's stats against the Team Preview request (default: the pinned checkout). */
   engine?: Engine;
   /**
@@ -93,7 +98,10 @@ export interface PolicyActorOptions {
  * request the adapter cannot observe is a harness incident.
  */
 export function policyActor(options: PolicyActorOptions): Actor {
-  const { client, battle, player, team, manifest, channel_class, seed, game, policy_id, sampling, engine, preview_actor } = options;
+  const { client, battle, player, team, manifest, channel_class, seed, game, policy_id, sampling, play, engine, preview_actor } = options;
+  if (sampling === "argmax" && play !== undefined && (play.temperature_ppm !== undefined || play.truncation !== undefined)) {
+    throw new PolicyProtocolError("a temperature or a truncation applies to sample mode only");
+  }
   return async (request, context) => {
     if (context === undefined || context.player !== player) {
       throw new PolicyProtocolError(`the policy actor of ${player} needs its own player's channel`);
@@ -136,7 +144,12 @@ export function policyActor(options: PolicyActorOptions): Actor {
       sampling:
         sampling === "argmax"
           ? { kind: "argmax" }
-          : { kind: "sample", u: sampleU({ seed, game, player, policy_id, request_seq: identity.request_seq }) },
+          : {
+              kind: "sample",
+              u: sampleU({ seed, game, player, policy_id, request_seq: identity.request_seq }),
+              ...(play?.temperature_ppm === undefined ? {} : { temperature_ppm: play.temperature_ppm }),
+              ...(play?.truncation === undefined ? {} : { truncation: play.truncation }),
+            },
       policy_id,
     } as Omit<PolicyQuery, "query_id">;
     try {
@@ -153,6 +166,8 @@ export interface PolicySeat {
   client: PolicyClient;
   policy_id: string;
   sampling: "argmax" | "sample";
+  /** Temperature and truncation of a `sample` seat (ADR-023 §1); see `PolicyActorOptions.play`. */
+  play?: PlaySettings;
   /** Play the Team Preview uniformly at random among the legal Preview choices (the Preview ablation), seeded per seat. */
   random_preview?: true;
 }

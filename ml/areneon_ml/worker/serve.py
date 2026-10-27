@@ -25,7 +25,7 @@ from areneon_ml.worker.protocol import (
     encode_frame,
     read_frame,
 )
-from areneon_ml.worker.sampler import check_probabilities, select
+from areneon_ml.worker.sampler import FULL_TEMPERATURE_PPM, check_probabilities, select
 from areneon_ml.worker.scorer import Scorer
 from areneon_ml.worker.view import encoder_input
 
@@ -46,6 +46,8 @@ def read_query(frame: dict[str, Any]) -> dict[str, Any]:
     choices = [candidate["choice"] for candidate in frame["candidates"]]
     if len(set(choices)) != len(choices):
         raise QueryError("a candidate is listed twice")
+    if frame["sampling"].get("temperature_ppm") == FULL_TEMPERATURE_PPM:
+        raise QueryError("temperature_ppm 1000000 is the default and must be omitted")
     return frame
 
 
@@ -97,7 +99,13 @@ class Worker:
         except UnsupportedCandidate as exc:
             return self._error(query_id, "unsupported_candidate", str(exc))
         try:
-            probabilities = self._scorer.probabilities(encoder_input(query))
+            temperature_ppm = query["sampling"].get("temperature_ppm")
+            if temperature_ppm is None:
+                probabilities = self._scorer.probabilities(encoder_input(query))
+            else:
+                probabilities = self._scorer.probabilities(
+                    encoder_input(query), temperature_ppm=temperature_ppm
+                )
         except UnsupportedCandidate as exc:
             return self._error(query_id, "unsupported_candidate", str(exc))
         except ReducerError as exc:

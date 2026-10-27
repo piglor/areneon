@@ -156,6 +156,51 @@ def test_policy_id_is_the_hash_of_the_pair_and_the_inference_settings() -> None:
     assert policy_id("b" * 64, "a" * 64) != expected
 
 
+def test_policy_id_vectors_are_pinned_and_play_settings_enter_only_when_set() -> None:
+    # Computed outside the code with Python hashlib over the JCS bytes (ADR-023 §1).
+    a, b = "a" * 64, "b" * 64
+    assert (
+        policy_id(a, b) == "policy:27d845e5bfc0f2d3abfec63197dd7c491189bf77578348114f087f3f532d31c2"
+    )
+    assert (
+        policy_id(a, b, "argmax")
+        == "policy:7c52a4b5fa8e27c44409e440eb08520a75b987e5e6b27c948f4e6e21c093ec65"
+    )
+    assert (
+        policy_id(a, b, temperature_ppm=500_000)
+        == "policy:5103caa4cb0a3d108f6051d50c4747bdfea0825ab1a22c677ab70f3d7c016663"
+    )
+    threshold = {"kind": "threshold", "min_ppm": 30_000}
+    assert (
+        policy_id(a, b, temperature_ppm=300_000, truncation=threshold)
+        == "policy:88cd7d977c185606939de152102b371001b56d248325c7cba4bd95124bbdd61e"
+    )
+    assert (
+        policy_id(a, b, truncation=threshold)
+        == "policy:2c1f98904deffcc1b832e50579d99f42c104557b71a66163590d33613ab2fe7d"
+    )
+
+
+@pytest.mark.parametrize(
+    ("mode", "temperature_ppm", "truncation"),
+    [
+        ("argmax", 500_000, None),
+        ("argmax", None, {"kind": "threshold", "min_ppm": 1}),
+        ("sample", 0, None),
+        ("sample", 1_000_000, None),
+        ("sample", None, {"kind": "top_p", "min_ppm": 1}),
+        ("sample", None, {"kind": "threshold", "min_ppm": 0}),
+        ("sample", None, {"kind": "threshold", "min_ppm": 1_000_000}),
+        ("sample", None, {"kind": "threshold", "min_ppm": 5, "extra": 1}),
+    ],
+)
+def test_policy_id_refuses_play_settings_it_cannot_encode_once(
+    mode: str, temperature_ppm: int | None, truncation: dict[str, object] | None
+) -> None:
+    with pytest.raises(ValueError, match=r"sample mode only|temperature_ppm|truncation|min_ppm"):
+        policy_id("a" * 64, "b" * 64, mode, temperature_ppm, truncation)
+
+
 def test_the_team_set_manifest_is_sorted_unique_and_hashed() -> None:
     manifest = team_set_manifest(["b" * 64, "a" * 64, "b" * 64])
     assert manifest == {"schema_version": 1, "teams": ["a" * 64, "b" * 64]}

@@ -122,6 +122,7 @@ describe("the shared contract sample corpus (ADR-008 §2)", () => {
       "v1/policy-handshake/reader-invalid/unsorted-contracts.json",
       "v1/policy-query/reader-invalid/duplicate-candidate.json",
       "v1/policy-query/reader-invalid/identity-differs.json",
+      "v1/policy-query/reader-invalid/temperature-explicit-default.json",
       "v1/private-snapshot-manifest/reader-invalid/active-rows-over-rows.json",
       "v1/private-snapshot-manifest/reader-invalid/both-parent-and-first.json",
       "v1/private-snapshot-manifest/reader-invalid/cell-not-active-sum.json",
@@ -325,6 +326,7 @@ describe("the shared contract sample corpus (ADR-008 §2)", () => {
   // ADR-010 section 2: the worker protocol's readers refuse what the profile cannot say.
   it.each([
     ["v1/policy-query/reader-invalid/identity-differs.json", readPolicyQuery, "identity differs from its observation"],
+    ["v1/policy-query/reader-invalid/temperature-explicit-default.json", readPolicyQuery, "must be omitted"],
     ["v1/policy-query/reader-invalid/duplicate-candidate.json", readPolicyQuery, "is listed twice"],
     ["v1/policy-handshake/reader-invalid/unsorted-contracts.json", readHandshake, "sorted by name"],
     ["v1/policy-handshake/reader-invalid/duplicate-contracts.json", readHandshake, "sorted by name"],

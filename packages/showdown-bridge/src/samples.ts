@@ -599,6 +599,9 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "policy-query/battle": battleQuery,
     "policy-query/preview": previewQuery,
     "policy-query/battle-a2": battleQueryA2,
+    // ADR-023 §1: the optional play temperature and threshold truncation of a sample query.
+    "policy-query/battle-tempered": queryOf("battle", { ...sampleBy, temperature_ppm: 500000 }),
+    "policy-query/battle-threshold": queryOf("battle", { ...sampleBy, temperature_ppm: 300000, truncation: { kind: "threshold", min_ppm: 30000 } }),
     "policy-reply/recommendation": replyOf({ kind: "recommendation", recommendation }),
     "policy-reply/unsupported-candidate": replyOf({ kind: "error", error: "unsupported_candidate", detail: "a candidate has a shape the worker does not know" }),
     "policy-reply/invalid-query": replyOf({ kind: "error", error: "invalid_query", detail: "the query's identity differs from its observation's identity" }),
@@ -684,6 +687,8 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "training-example/choice-not-in-candidates": { ...exampleOf("battle"), choice: "not a candidate" },
     // Schema-valid, refused by the worker's and the client's readers: the profile cannot compare fields.
     "policy-query/identity-differs": mutated(battleQuery, (q) => (q.identity = { ...battleQuery.identity, request_seq: battleQuery.identity.request_seq + 1 })),
+    // The default temperature has one encoding: absent.
+    "policy-query/temperature-explicit-default": queryOf("battle", { ...sampleBy, temperature_ppm: 1000000 }),
     "policy-query/duplicate-candidate": mutated(battleQuery, (q) => ((q.candidates as unknown[])[1] = (battleQuery.candidates as unknown[])[0])),
     "policy-handshake/unsorted-contracts": helloWith((m) => (m.contracts = contractsOf().reverse())),
     "policy-handshake/duplicate-contracts": helloWith((m) => (m.contracts = [contractsOf()[0], contractsOf()[0]])),
@@ -895,6 +900,14 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "policy-query/seed": { ...battleQuery, seed: record.seed },
     "policy-query/candidate-verdict": mutated(battleQuery, (q) => ((q.candidates as Record<string, unknown>[])[0] as Record<string, unknown>).legal = true),
     "policy-query/unknown-sampling": { ...battleQuery, sampling: { kind: "temperature", t: 2 } },
+    "policy-query/temperature-zero": queryOf("battle", { ...sampleBy, temperature_ppm: 0 }),
+    "policy-query/temperature-above-default": queryOf("battle", { ...sampleBy, temperature_ppm: 1000001 }),
+    "policy-query/temperature-float": queryOf("battle", { ...sampleBy, temperature_ppm: 500000.5 }),
+    "policy-query/argmax-with-temperature": queryOf("battle", { kind: "argmax", temperature_ppm: 500000 }),
+    "policy-query/argmax-with-truncation": queryOf("battle", { kind: "argmax", truncation: { kind: "threshold", min_ppm: 30000 } }),
+    "policy-query/truncation-unknown-kind": queryOf("battle", { ...sampleBy, truncation: { kind: "top_p", min_ppm: 30000 } }),
+    "policy-query/threshold-zero": queryOf("battle", { ...sampleBy, truncation: { kind: "threshold", min_ppm: 0 } }),
+    "policy-query/threshold-one": queryOf("battle", { ...sampleBy, truncation: { kind: "threshold", min_ppm: 1000000 } }),
     "policy-query/u-negative": { ...battleQuery, sampling: { kind: "sample", u: -1 } },
     "policy-query/argmax-with-u": { ...battleQuery, sampling: { kind: "argmax", u: 1 } },
     "policy-query/no-policy-id": mutated(battleQuery, (q) => delete q.policy_id),

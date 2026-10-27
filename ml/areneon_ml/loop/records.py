@@ -17,21 +17,47 @@ from areneon_ml.learner.config import RunConfig
 MODE = "sample"
 TEMPERATURE = 1
 PRECISION = "float32"
+FULL_TEMPERATURE_PPM = 1_000_000  # temperature 1 in millionths: the default, never written
 
 
-def policy_id(preview: str, battle: str, mode: str = MODE) -> str:
+def policy_id(
+    preview: str,
+    battle: str,
+    mode: str = MODE,
+    temperature_ppm: int | None = None,
+    truncation: dict[str, Any] | None = None,
+) -> str:
     """``policy:`` + SHA-256 of ``JCS({preview, battle, mode, temperature, precision})``.
 
     The loop plays ``sample`` (the default); the progress evaluation also plays ``argmax``,
     which is a different policy with a different id.
+
+    Play settings (ADR-023 §1) enter the preimage only when set, so every earlier id is
+    unchanged: ``temperature_ppm`` (1 to 999,999; the default 1,000,000 is never written)
+    replaces ``temperature``, and ``truncation`` (``{"kind": "threshold", "min_ppm": n}``)
+    is added. They apply to ``sample`` only.
     """
-    body = {
+    body: dict[str, Any] = {
         "preview": preview,
         "battle": battle,
         "mode": mode,
         "temperature": TEMPERATURE,
         "precision": PRECISION,
     }
+    if temperature_ppm is not None or truncation is not None:
+        if mode != "sample":
+            raise ValueError("a temperature or a truncation applies to sample mode only")
+        if temperature_ppm is not None:
+            if not 1 <= temperature_ppm < FULL_TEMPERATURE_PPM:
+                raise ValueError("temperature_ppm must be 1 to 999999; the default is omitted")
+            del body["temperature"]
+            body["temperature_ppm"] = temperature_ppm
+        if truncation is not None:
+            if truncation.keys() != {"kind", "min_ppm"} or truncation["kind"] != "threshold":
+                raise ValueError("an unknown truncation")
+            if not 1 <= truncation["min_ppm"] < FULL_TEMPERATURE_PPM:
+                raise ValueError("min_ppm must be 1 to 999999")
+            body["truncation"] = dict(truncation)
     return "policy:" + sha256_hex(jcs(body))
 
 

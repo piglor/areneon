@@ -18,6 +18,9 @@ from areneon_ml.model.encoder import Encoder
 from areneon_ml.model.gamedata import GameData
 from areneon_ml.model.network import ROLES, PolicyNetwork
 
+# Temperature 1 in millionths (ADR-023 §1); the worker's sampler states the same constant.
+FULL_TEMPERATURE_PPM = 1_000_000
+
 
 class ScorerError(ValueError):
     """The loaded networks cannot serve one session together."""
@@ -43,11 +46,20 @@ class NetworkScorer:
         for network in self._networks.values():
             network.eval()
 
-    def probabilities(self, view: dict[str, Any]) -> list[float]:
-        """One probability per candidate, in the candidates' order (float32 values)."""
+    def probabilities(
+        self, view: dict[str, Any], temperature_ppm: int = FULL_TEMPERATURE_PPM
+    ) -> list[float]:
+        """One probability per candidate, in the candidates' order (float32 values).
+
+        ``softmax(logits * 10^6 / temperature_ppm)``: the scale is computed once in float64
+        and applied to the float32 logits (exactly 1 at the default, which skips the product,
+        so the default's bytes are those of the untempered scorer).
+        """
         role = view["observation"]["kind"]
         encoded = self._encoders[role].encode(view)
         with torch.inference_mode():
             logits = self._networks[role](collate([encoded])).logits[0]
+            if temperature_ppm != FULL_TEMPERATURE_PPM:
+                logits = logits * (1_000_000 / temperature_ppm)
             probabilities = torch.softmax(logits, dim=-1)
         return [float(p) for p in probabilities.tolist()]
