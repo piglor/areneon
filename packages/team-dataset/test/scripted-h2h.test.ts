@@ -23,6 +23,8 @@ import { DATASETS_DIR } from "../src/fixtures.ts";
 import { datasetValidationPool } from "../src/progress-pool.ts";
 import { engine, FORMAT } from "./support.ts";
 
+const SPLIT_TEST_TIMEOUT_MS = 240_000;
+
 const ROOT = new URL("../../..", import.meta.url).pathname;
 const SOURCE = join(DATASETS_DIR(FORMAT), "fixtures-v1");
 const tiny = JSON.parse(readFileSync(join(ROOT, "fixtures/contracts/v1/training-run-config/valid/tiny.json"), "utf8")) as Record<string, unknown>;
@@ -56,7 +58,10 @@ describe("a head-to-head of two scripted baselines", () => {
     expect(progressGameStreams(config.seeds.run_key, 0).seed).toMatch(/^sodium,/); // the plan's seeds are the progress evaluation's
   });
 
-  it("is byte-identical on rerun and for any split of the games over processes", async () => {
+  // Plays the same two pairs (four games of damage-aware@v1 with the real probe) whole, again, and
+  // split over three shards: CPU-bound work with no wait to make event-driven; it took 75 s on a
+  // loaded CI runner (PR #217) against the package's 60 s default, so the budget is explicit.
+  it("is byte-identical on rerun and for any split of the games over processes", { timeout: SPLIT_TEST_TIMEOUT_MS }, async () => {
     const pair = arms("random-legal@v1", "damage-aware@v1");
     const whole = JSON.stringify(await recordOf(2, pair));
     expect(JSON.stringify(await recordOf(2, pair))).toBe(whole);
