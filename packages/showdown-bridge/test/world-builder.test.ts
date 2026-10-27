@@ -30,6 +30,23 @@ const withState = (input: WorldInput, change: (state: PublicState) => void): Wor
   return { ...input, state };
 };
 
+/** The unwritten kinds the input really carries, read from the reader's state and the request alone (not from the builder). */
+function present(input: WorldInput): Set<string> {
+  const kinds = new Set<string>();
+  const { state, request } = input;
+  const roster = [...state.own.roster, ...state.opponent.roster];
+  if (roster.some((m) => m.volatiles.length > 0)) kinds.add("volatile");
+  if (roster.some((m) => m.status === "tox") || request.side.pokemon.some((p) => p.condition.endsWith(" tox"))) kinds.add("toxic");
+  if (state.opponent.roster.some((m) => m.item_lost || m.item_received)) kinds.add("item_changed");
+  const brought = new Map(input.team.map((s) => [toId(s.name === "" ? s.species : s.name), toId(s.item)]));
+  for (const p of request.side.pokemon) if (brought.get(toId(p.ident.slice(p.ident.indexOf(": ") + 2))) !== p.item) kinds.add("item_changed");
+  if (roster.some((m) => m.ability_received || m.ability_suppressed) || request.side.pokemon.some((p) => p.ability !== undefined && p.ability !== p.baseAbility)) kinds.add("ability_changed");
+  if ((request.active ?? []).some((a) => a.moves.some((m) => m.disabled !== undefined && m.disabled !== false && m.pp !== 0))) kinds.add("own_move_lock");
+  if (roster.some((m) => m.phantom === true)) kinds.add("illusion");
+  if (roster.some((m) => m.status !== null && m.active_slot === null) || request.side.pokemon.some((p, i) => i >= 2 && / (par|brn|psn|slp|frz)$/.test(p.condition))) kinds.add("bench_status");
+  return kinds;
+}
+
 describe("worlds at every move request of the committed channels", () => {
   it("build, pass V1, V3 and V5, and are refused only for state this part does not write", () => {
     const builder = createWorldBuilder(context);
@@ -44,10 +61,13 @@ describe("worlds at every move request of the committed channels", () => {
       times.push(performance.now() - before);
       if (result.kind === "world") builtTimes.push(times[times.length - 1] as number);
       if (result.kind === "refused") {
-        // An Illusion disguise that never broke is attributed to the Pokemon it was shown as (the reader's known limit): the true team contradicts what the log shows.
-        const disguised = result.refusal.code === "v1_revealed_fact" && input.opponent.members.some((member) => toId(member.set.ability) === "illusion");
-        if (result.refusal.code !== "state_unwritten" && result.refusal.code !== "reader_flagged" && !disguised) other.push(`${id}: ${result.refusal.code} ${result.refusal.detail}`);
-        else if (result.refusal.code === "state_unwritten") expect(UNWRITTEN_KINDS).toContain(result.refusal.unwritten);
+        // An Illusion disguise that never broke is attributed to the Pokemon it was shown as (the reader's known limit): the true team contradicts a revealed move.
+        const disguised = result.refusal.code === "v1_revealed_fact" && result.refusal.detail.includes("revealed move") && input.opponent.members.some((member) => toId(member.set.ability) === "illusion");
+        if (result.refusal.code === "state_unwritten") {
+          expect(UNWRITTEN_KINDS).toContain(result.refusal.unwritten);
+          // The refusal is justified: the input really carries state of that kind.
+          expect(present(input), `${id}: ${result.refusal.detail}`).toContain(result.refusal.unwritten);
+        } else if (result.refusal.code !== "reader_flagged" && !disguised) other.push(`${id}: ${result.refusal.code} ${result.refusal.detail}`);
       } else {
         expect(result.world.battle.turn).toBeGreaterThanOrEqual(1);
         expect(result.world.own_order.length).toBe(input.state.own.teamsize);
@@ -58,7 +78,8 @@ describe("worlds at every move request of the committed channels", () => {
     const counts = builder.counts();
     expect(counts.requests).toBe(all.length);
     expect(counts.built + counts.refused).toBe(all.length);
-    expect(counts.built).toBeGreaterThan(all.length / 4);
+    // Pinned: the committed channels build 640 of 1,378; a silent drop in what builds fails here.
+    expect(counts.built).toBeGreaterThanOrEqual(600);
     expect(Object.values(counts.refusals).reduce((a, b) => a + b, 0)).toBe(counts.refused);
     expect(Object.values(counts.unwritten).reduce((a, b) => a + b, 0)).toBe(counts.refusals.state_unwritten);
     const mean = times.reduce((a, b) => a + b, 0) / times.length;

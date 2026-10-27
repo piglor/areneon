@@ -118,7 +118,7 @@ export interface WorldContext {
   format_id: string;
   /** The scenario format id (`checkScenario`). */
   scenario_id: string;
-  /** How a shown percentage becomes hit points (ADR-018 `assumedHp`). The Champions display is `floor(100 * hp / max)`, which `ceil` inverts exactly. */
+  /** How a shown percentage becomes hit points (ADR-018 `assumedHp`). The Champions display is `floor(100 * hp / max)`, which `ceil` inverts for a maximum of 100 or more. */
   hp_rounding: DamageAwareConfig["hp_rounding"];
 }
 
@@ -267,9 +267,9 @@ export function createWorldBuilder(context: WorldContext): WorldBuilder {
   const itemClause = ruleTable.has("itemclause");
 
   /** V1 for one set (the shape part): the validator takes it and it is the engine's canonical paste. */
-  function checkSet(set: PokemonSet, code: "own_team_mismatch" | "opponent_team_mismatch"): void {
+  function checkSet(set: PokemonSet, own: boolean): void {
     const problems = validator.validateSet(structuredClone(set), {}) ?? [];
-    need(problems.length === 0, "v1_set_invalid", code === "own_team_mismatch" ? "an own set is refused by the validator" : "an opponent set is refused by the validator");
+    need(problems.length === 0, "v1_set_invalid", own ? "an own set is refused by the validator" : "an opponent set is refused by the validator");
     const paste = exportPaste(engine, [set]);
     const back = importPaste(engine, paste);
     need(back.length === 1 && exportPaste(engine, back) === paste, "v1_not_canonical", "a set is not in the engine's canonical paste form");
@@ -347,7 +347,8 @@ export function createWorldBuilder(context: WorldContext): WorldBuilder {
   function checkUnwritten(input: WorldInput, own: readonly OwnEntry[], foes: readonly { set: PokemonSet; mon: PublicMon }[]): void {
     const active = input.request.active ?? [];
     for (const [index, slot] of active.entries()) {
-      if (slot.moves.some((move) => move.disabled !== undefined && move.disabled !== false)) unwritten("own_move_lock", `own active ${index} has a disabled move`);
+      // A move with no PP left is marked disabled too; the world writes its PP, so that is not a lock.
+      if (slot.moves.some((move) => move.disabled !== undefined && move.disabled !== false && move.pp !== 0)) unwritten("own_move_lock", `own active ${index} has a disabled move`);
     }
     for (const [index, entry] of own.entries()) {
       const requested = input.request.side.pokemon[index];
@@ -463,11 +464,11 @@ export function createWorldBuilder(context: WorldContext): WorldBuilder {
     const requestActive = input.request.side.pokemon.map((entry) => entry.active);
     need(requestActive.every((active, index) => active === index < 2), "own_team_mismatch", "the request's active Pokemon are not the first two");
     // V1.
-    for (const entry of own) checkSet(entry.set, "own_team_mismatch");
+    for (const entry of own) checkSet(entry.set, true);
     for (const foe of foes) {
       foe.set.name = foe.mon.name ?? foe.set.name;
       keepsRevealed(foe.set, foe.mon);
-      checkSet(foe.set, "opponent_team_mismatch");
+      checkSet(foe.set, false);
     }
     if (itemClause) {
       const items = foes.map((foe) => toId(foe.set.item)).filter((item) => item !== "");
