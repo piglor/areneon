@@ -44,6 +44,7 @@ BATTLES = [
     *RANDOM,
     *sorted((FORMAT_DIR / "unavailable").glob("b*.json")),
     FORMAT_DIR / "illusion" / "battle.json",
+    FORMAT_DIR / "baton-pass" / "battle.json",
     FORMAT_DIR / "transform" / "battle.json",
 ]
 

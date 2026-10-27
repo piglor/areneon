@@ -528,10 +528,17 @@ var ArReplay = (function () {
       }
       disguise[key] = { index: indexOf(side, m), before: before };
       var previous = side.slots[letter];
+      // Baton Pass copies the outgoing Pokemon's stat stages without a line of their own; only the
+      // switch line says so (`[from] Baton Pass`). Shed Tail passes none.
+      var passed = null;
+      if (previous !== undefined && previous !== null && toId(line.tags.from || "") === "batonpass") {
+        passed = clone(/** @type {Mon} */ (side.roster[previous])).boosts;
+      }
       if (previous !== undefined && previous !== null) { switchOut(/** @type {Mon} */ (side.roster[previous])); }
       side.slots[letter] = indexOf(side, m);
       shown[key] = r.name;
       switchOut(m);
+      if (passed !== null) { m.boosts = passed; }
       m.active_slot = letter; m.brought = true;
       m.species = d.species; m.level = d.level;
       m.gender = d.gender || null; m.shiny = d.shiny;

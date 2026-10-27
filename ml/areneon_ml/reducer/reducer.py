@@ -740,12 +740,20 @@ class _Reducer:
             disguise = _Disguise(self._index_of(side, mon), before)
         index = self._index_of(side, mon)
         previous = side.slots[letter]
+        # Baton Pass (`selfSwitch: copyvolatile`): the engine's `copyVolatileFrom` gives the
+        # incoming Pokemon the outgoing one's stat stages and prints no line for them; only the
+        # switch line says so (`[from] Baton Pass`). Shed Tail passes no stages.
+        passed = None
+        if previous is not None and to_id(line.tags.get("from") or "") == "batonpass":
+            passed = dict(side.roster[previous].boosts)
         if previous is not None:
             self._switch_out(side.roster[previous])
         side.slots[letter] = index
         self._shown[key] = name
         self._disguise[key] = disguise
         self._switch_out(mon)
+        if passed is not None:
+            mon.boosts = passed
         mon.active_slot, mon.brought = letter, True
         mon.species, mon.level = details.species, details.level
         mon.gender, mon.shiny = details.gender or None, details.shiny

@@ -48,6 +48,8 @@ describe("the interpreter against the reducer's committed golden states", () => 
     ["unavailable/b01/p2", "unavailable-b01-p2.json"],
     ["illusion/battle/p1", "illusion-p1.json"],
     ["illusion/battle/p2", "illusion-p2.json"],
+    ["baton-pass/battle/p1", "baton-pass-p1.json"],
+    ["baton-pass/battle/p2", "baton-pass-p2.json"],
   ] as const) {
     it(`${id} ends in the reducer's state`, () => {
       const fixture = fixtures().find((f) => f.id === id)!;
