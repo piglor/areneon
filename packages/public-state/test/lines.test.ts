@@ -321,6 +321,12 @@ describe("what it will not take", () => {
   });
 });
 
+// Each test below interprets every committed channel (88+ channels, 15,000+ lines). The corpus grows
+// with every reader fixture, and a loaded CI runner has taken more than vitest's 5 s default for the
+// first test (5.4 s on PR #203); the work is CPU-bound and has no wait to make event-driven, so the
+// budget is explicit instead.
+const CORPUS_TEST_TIMEOUT_MS = 30_000;
+
 describe("the whole committed corpus", () => {
   it("interprets every line of every channel with no unexpected flag", () => {
     let lines = 0;
@@ -335,7 +341,7 @@ describe("the whole committed corpus", () => {
     }
     expect(channels).toBeGreaterThanOrEqual(88);
     expect(lines).toBeGreaterThan(15000);
-  });
+  }, CORPUS_TEST_TIMEOUT_MS);
   it("captions and tokens a frame for every line kind in the corpus", () => {
     const kinds = new Map<string, number>();
     for (const f of fixtures()) {
@@ -346,7 +352,7 @@ describe("the whole committed corpus", () => {
     expect(kinds.get("move")).toBeGreaterThan(100);
     expect(kinds.get("-damage")).toBeGreaterThan(100);
     expect(kinds.get("replace")).toBeGreaterThan(0);
-  });
+  }, CORPUS_TEST_TIMEOUT_MS);
 });
 
 describe("Illusion", () => {
