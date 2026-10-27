@@ -101,7 +101,7 @@ export function probeMechanics(context: MechanicsContext, query: ParsedMechanics
   }
   if (query.query.kind === "damage") {
     try {
-      const outcome = probeDamage(engine, scenarioId, query.query, sets[0] as PokemonSet, sets[1] as PokemonSet);
+      const outcome = probeDamage(engine, scenarioId, query.query, sets[0] as PokemonSet, sets[1] as PokemonSet, config.ko_blockers);
       return done(outcome);
     } catch (error) {
       if (error instanceof DamageStateError) throw new MechanicsProbeError(error.message);

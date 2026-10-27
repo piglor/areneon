@@ -38,7 +38,7 @@ export interface MechanicsConfig {
     query_kinds: SupportedKind[];
   };
   /**
-   * Items and abilities that act when damage is dealt or change the second hit (Focus Sash, Sturdy, Disguise and the like): a defender holding one gets `unsupported` KO counts. Read by the damage probe only; empty until the KO slice (ADR-016 slice 5) fills it, and no query kind that reads it is in scope before then.
+   * Items and abilities that act when damage is dealt or change the second hit (Focus Sash, Sturdy, Disguise and the like): a defender holding one gets `unsupported` KO counts. Read by the damage probe only; each id is checked against the pinned engine's vocabulary by `checkMechanicsConfig`. A blocker withholds the KO counts (`ko_state_change`) and never the roll vectors.
    */
   ko_blockers: {
     /**
