@@ -256,6 +256,17 @@ export { type UsagePrior, UsagePriorError, readUsagePrior, usagePriorHash } from
 export { deriveGeneratorPrior, GENERATOR_PRIOR_SCRIPT, GeneratorPriorError, type GeneratorPriorInput, generatorConfigHash, megaPreviewSpecies } from "./generator-prior.ts";
 export { type BeliefConfig, BeliefConfigError, beliefConfigHash, readBeliefConfig } from "./belief-config.ts";
 export {
+  exportMoveClasses,
+  MOVE_CLASS_NAMES,
+  MOVE_CLASSES_FILE,
+  MOVE_CLASSES_SUMMARY,
+  MoveClassError,
+  moveClassSummary,
+  moveClassTableHash,
+  readMoveClassTable,
+  type MoveClassTable,
+} from "./move-classes.ts";
+export {
   exportRoleSets,
   ROLE_SETS_FILE,
   ROLE_SETS_SUMMARY,

@@ -4,7 +4,7 @@ import { ajvFor } from "@areneon/schema/ajv";
 import { beforeAll, describe, expect, it } from "vitest";
 import { syntheticFixtureHashes } from "../src/golden.ts";
 import { EngineDataError, readEngineData } from "../src/engine-data.ts";
-import { contractVersions, EpisodeError, readTeamDatasetManifest, readTeamGeneratorConfig, readTeamLabelSet, readTeamRecord, readTeamSnapshotManifest, readTeamVocabulary, readRoleSetTable, RoleSetError, TeamRecordError, TeamVocabularyError, loadEngine, PolicyProtocolError, readHandshake, readPolicyQuery, readPolicyReply, readEpisode, readTrainingRunConfig, readCloneRunConfig, CloneRunConfigError, readLeagueRunRecord, LeagueRunRecordError, TrainingRunConfigError, readEvaluationRunManifest, readTrainingExample, readTrainingSet, TrainingLoaderError } from "../src/index.ts";
+import { contractVersions, EpisodeError, readTeamDatasetManifest, readTeamGeneratorConfig, readTeamLabelSet, readTeamRecord, readTeamSnapshotManifest, readTeamVocabulary, readRoleSetTable, RoleSetError, readMoveClassTable, MoveClassError, TeamRecordError, TeamVocabularyError, loadEngine, PolicyProtocolError, readHandshake, readPolicyQuery, readPolicyReply, readEpisode, readTrainingRunConfig, readCloneRunConfig, CloneRunConfigError, readLeagueRunRecord, LeagueRunRecordError, TrainingRunConfigError, readEvaluationRunManifest, readTrainingExample, readTrainingSet, TrainingLoaderError } from "../src/index.ts";
 import { EvaluationConfigError, readEvaluationParameters, readEntry, RegisterError, readEvaluationPlan, readSealedSetCommitment, readTrainingGateRule, readEvaluationConfig, readSealedTeamSetManifest, readRetiredSealedManifest } from "../src/index.ts";
 import { contractSamples, SAMPLE_HASHES, SAMPLES_DIR } from "../src/samples.ts";
 import { exportEngineData } from "../src/engine-data.ts";
@@ -121,6 +121,11 @@ describe("the shared contract sample corpus (ADR-008 §2)", () => {
       "v1/league-run-record/reader-invalid/unsorted-opponents.json",
       "v1/mechanics-config/reader-invalid/unsorted-removed-rule-ids.json",
       "v1/mechanics-result/reader-invalid/unsorted-gap-ids.json",
+      "v1/move-class-table/reader-invalid/duplicate-id.json",
+      "v1/move-class-table/reader-invalid/foreign-move.json",
+      "v1/move-class-table/reader-invalid/stale-engine-data-hash.json",
+      "v1/move-class-table/reader-invalid/status-incomplete.json",
+      "v1/move-class-table/reader-invalid/unsorted-class.json",
       "v1/policy-handshake/reader-invalid/duplicate-contracts.json",
       "v1/policy-handshake/reader-invalid/unsorted-checkpoints.json",
       "v1/policy-handshake/reader-invalid/unsorted-contracts.json",
@@ -462,6 +467,25 @@ describe("the shared contract sample corpus (ADR-008 §2)", () => {
       expect(Object.keys(fresh)).toContain(file);
       expect(() => readRoleSetTable(committed(file), vocabulary)).toThrow(RoleSetError);
       expect(() => readRoleSetTable(committed(file), vocabulary)).toThrow(message);
+    });
+
+    // #1164: the move-class reader refuses what the profile cannot say, against the complete engine-data table.
+    it.each([
+      ["unsorted-class", /repeated or out of order/],
+      ["duplicate-id", /repeated or out of order/],
+      ["foreign-move", /is not a move of the engine-data table/],
+      ["status-incomplete", /status class is not exactly the Status moves/],
+      ["stale-engine-data-hash", /another engine-data table/],
+    ])("readMoveClassTable refuses move-class-table/%s", (name, message) => {
+      const file = `v1/move-class-table/reader-invalid/${name}.json`;
+      expect(Object.keys(fresh)).toContain(file);
+      expect(() => readMoveClassTable(committed(file), table)).toThrow(MoveClassError);
+      expect(() => readMoveClassTable(committed(file), table)).toThrow(message);
+    });
+
+    it("accepts the valid move-class sample, with and without the engine-data table", () => {
+      expect(readMoveClassTable(committed("v1/move-class-table/valid/golden.json"), table).classes.protection).toContain("protect");
+      expect(readMoveClassTable(committed("v1/move-class-table/valid/golden.json")).classes.status.length).toBeGreaterThan(0);
     });
 
     it("accepts the valid role-set sample, with and without its vocabulary", () => {
