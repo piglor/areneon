@@ -86,6 +86,7 @@ describe("the true world keeps weight above zero on the committed Illusion battl
 
   it("a late replace: the disguised Pokemon uses a move shown as Pikachu for a turn before the replace", () => {
     // Seat p2's channel with the replace moved from after the first hit (line 37) to just before the faint (line 54). Zoroark
+    // (The committed battle shows no item; several turns and an item under a disguise are in illusion.test.ts.) Zoroark
     // flinches, is hit and uses Spite (a move Pikachu cannot have) under its disguise, all across the turn boundary.
     const lines = battle.channels.p2.lines;
     const moved = lines.flatMap((line, i): string[] => {

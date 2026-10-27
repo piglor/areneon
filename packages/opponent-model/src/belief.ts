@@ -383,7 +383,7 @@ export function belief(input: BeliefInput): OpponentBelief {
       if (result !== null) solved.push({ target, result, extra: notes });
     } catch (e) {
       // With one candidate the refusal is the belief's; among several, an assignment the evidence rules out is dropped.
-      if (!(e instanceof BeliefError) || !mixed) throw e;
+      if (!(e instanceof BeliefError) || !mixed || (e.code !== "evidence_has_no_support" && e.code !== "forme_not_in_prior")) throw e;
       firstError ??= e;
     }
   }

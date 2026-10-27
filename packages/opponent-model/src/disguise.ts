@@ -3,8 +3,8 @@
 // disguise assignment maps each shown position to the slot its evidence belongs to: the position's
 // own slot, or an unsettled identity-hiding slot, each hiding slot used by at most one position
 // (an injective map, a matching of positions into slots). Hall's condition decides whether any
-// assignment exists. This module is the combinatorics only: which assignments exist, and refusing
-// above the reviewed cap. The evidence per assignment is the belief's.
+// assignment exists. This module is the combinatorics only: which assignments exist, and reporting
+// (by null) that there are more than the reviewed cap; the refusal is the belief's. The evidence per assignment is the belief's.
 
 /** For each shown position (in order), the slots its evidence may be attributed to, own slot first. */
 export type Options = readonly (readonly number[])[];

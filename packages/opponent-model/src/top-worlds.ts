@@ -10,7 +10,7 @@ import type { OpponentBelief } from "./types.ts";
 export interface TopWorld {
   /** Per roster slot: the forme and the item (null: no item). */
   readonly slots: readonly { readonly forme: string; readonly item: string | null }[];
-  /** The probability of the (forme, item) combination within the belief (its disguise assignment's share included). */
+  /** The probability of the (forme, item) combination in this assignment within the belief (the assignment's share included); the same combination can appear once per assignment. */
   readonly p: Ratio;
   /** The index in `belief.assignments` of the disguise assignment the combination is in. */
   readonly assignment: number;
