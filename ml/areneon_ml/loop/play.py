@@ -10,7 +10,10 @@ pinned engine; tests give the driver a fake one.
 
 from __future__ import annotations
 
+import contextlib
 import json
+import os
+import signal
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -65,25 +68,55 @@ class NodePlayer:
     #: team pool peaks at about 860 MB without it and about 590 MB with 640 (#1069). Operational:
     #: the generation's files do not depend on it. ``None`` leaves Node's default.
     node_heap_mb: int | None = None
+    #: The wall-clock limit of one ``play`` call, in seconds (#1100). Past it the driver kills
+    #: the Node process group (the game processes and the policy workers with it) and the
+    #: generation fails with a ``PlayError``: nothing is committed. Operational: the
+    #: generation's files do not depend on it. ``None`` sets no limit.
+    generation_timeout_s: float | None = None
     #: The peak resident set (bytes) of the largest game process and of the largest policy
     #: worker of the last ``play`` call, as the play script reported them; empty when it did not.
     #: Diagnostics for the run-metrics record, never an input to a generation.
     resource_usage: dict[str, int] = field(default_factory=dict, compare=False)
 
-    def _run(self, script: str, *args: str, heap_mb: int | None = None) -> str:
+    def _run(
+        self,
+        script: str,
+        *args: str,
+        heap_mb: int | None = None,
+        timeout_s: float | None = None,
+    ) -> str:
         cap = () if heap_mb is None else (f"--max-old-space-size={heap_mb}",)
         command = [self.node, *cap, str(self.repo / script), *args]
         try:
-            done = subprocess.run(
-                command, capture_output=True, text=True, check=False, stdin=subprocess.DEVNULL
+            # Same process group as the driver, so killing the driver's group still ends it.
+            child = subprocess.Popen(
+                command,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                stdin=subprocess.DEVNULL,
             )
         except OSError as exc:
             raise PlayError(f"cannot start {self.node}: {exc}") from exc
-        if done.returncode != 0:
+        try:
+            stdout, stderr = child.communicate(timeout=timeout_s)
+        except subprocess.TimeoutExpired:
+            _kill_group(child)
+            try:
+                _, stderr = child.communicate(timeout=10)
+            except subprocess.TimeoutExpired:  # a descendant outside the group holds a pipe
+                stderr = ""
             raise PlayError(
-                f"{script} failed (exit {done.returncode}): {done.stderr[-_STDERR_TAIL:]}"
-            )
-        return done.stdout
+                f"{script} exceeded the generation time limit of {timeout_s:g} s and was killed "
+                f"(--generation-timeout-minutes): {stderr[-_STDERR_TAIL:]}"
+            ) from None
+        except BaseException:
+            _kill_group(child)
+            child.wait()
+            raise
+        if child.returncode != 0:
+            raise PlayError(f"{script} failed (exit {child.returncode}): {stderr[-_STDERR_TAIL:]}")
+        return stdout
 
     def manifest(self, format_id: str) -> dict[str, Any]:
         found = json.loads(
@@ -111,8 +144,40 @@ class NodePlayer:
             *(("--policy-workers", str(self.policy_workers)) if self.policy_workers != 1 else ()),
             *(("--game-processes", str(self.game_processes)) if self.game_processes != 1 else ()),
             heap_mb=self.node_heap_mb,
+            timeout_s=self.generation_timeout_s,
         )
         self.resource_usage.update(_resource_usage(out))
+
+
+def _descendants(pid: int) -> list[int]:
+    """The pids below ``pid`` (Linux ``/proc``; empty where it cannot be read)."""
+    parents: dict[int, int] = {}
+    try:
+        names = os.listdir("/proc")
+    except OSError:
+        return []
+    for name in names:
+        if not name.isdigit():
+            continue
+        try:
+            stat = Path(f"/proc/{name}/stat").read_text()
+            parents[int(name)] = int(stat.rsplit(")", 1)[1].split()[1])
+        except (OSError, ValueError, IndexError):
+            continue
+    found: list[int] = []
+    frontier = [pid]
+    while frontier:
+        below = [p for p, parent in parents.items() if parent in frontier]
+        found.extend(below)
+        frontier = below
+    return found
+
+
+def _kill_group(child: subprocess.Popen[str]) -> None:
+    """SIGKILL the child and everything below it (game processes and policy workers)."""
+    for pid in [*_descendants(child.pid), child.pid]:
+        with contextlib.suppress(ProcessLookupError):
+            os.kill(pid, signal.SIGKILL)
 
 
 _USAGE_KEYS = {
