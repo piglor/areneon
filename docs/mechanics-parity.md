@@ -13,7 +13,7 @@ The Wave 2 gate item "comparison with the game and independent tools" is met onl
 | Source | Status |
 |---|---|
 | Hand-worked values (fixtures below) | 44 cases in 3 files, worked outside the probe |
-| `@smogon/calc` differential | differential not built yet (#935); no divergence list exists, so no independent-tool comparison is claimed |
+| `@smogon/calc` differential | 1 listed divergence (below) |
 | In-game captures | not available: the game comparison waits for the owner's captures (#937, Wave 9); no gap row is `verified` by this work |
 
 ## Gap rows the results depend on
@@ -107,4 +107,6 @@ KO counts are integers, never a probability: `ohko_no_crit` and `ohko_crit` coun
 
 ## Calc divergences
 
-differential not built yet (#935). The divergence list is `fixtures/mechanics/gen9championsvgc2026regmc/calc-divergences.json`; this section is regenerated when it exists.
+| Case | Reason |
+|---|---|
+| `damage:always-crit:no_crit` | The fixture's no_crit vector for Frost Breath is the probe's forced non-crit run (willCrit set false to read the damage without the move's guaranteed critical hit); the calc ignores isCrit false for a move that always crits, so its no-crit list is the critical-hit list (the probe's crit vector for this case equals the calc's). Not a value error: a real Frost Breath always crits, and the hand-worked fixture decides (ADR-016 section 4). |

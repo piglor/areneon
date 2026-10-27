@@ -8,6 +8,9 @@ updates:
     # security-update PRs may still open, and the osv job still scans.
     ignore:
       - dependency-name: "aws4fetch"
+      # The calc differential's oracle (ADR-016 section 4): an exact devDependency,
+      # bumped by hand with the divergence list re-triaged.
+      - dependency-name: "@smogon/calc"
   - package-ecosystem: uv
     directory: /
     schedule: { interval: weekly }

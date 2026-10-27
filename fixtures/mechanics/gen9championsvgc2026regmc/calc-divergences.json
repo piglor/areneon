@@ -1,0 +1,45 @@
+{
+  "data_class": "synthetic",
+  "divergences": [
+    {
+      "case": "damage:always-crit:no_crit",
+      "reason": "The fixture's no_crit vector for Frost Breath is the probe's forced non-crit run (willCrit set false to read the damage without the move's guaranteed critical hit); the calc ignores isCrit false for a move that always crits, so its no-crit list is the critical-hit list (the probe's crit vector for this case equals the calc's). Not a value error: a real Frost Breath always crits, and the hand-worked fixture decides (ADR-016 section 4).",
+      "probe": [
+        204,
+        208,
+        208,
+        216,
+        216,
+        216,
+        220,
+        220,
+        228,
+        228,
+        228,
+        232,
+        232,
+        240,
+        240,
+        244
+      ],
+      "calc": [
+        304,
+        312,
+        316,
+        316,
+        324,
+        324,
+        328,
+        336,
+        336,
+        340,
+        340,
+        348,
+        352,
+        352,
+        360,
+        364
+      ]
+    }
+  ]
+}

@@ -55,10 +55,12 @@ describe("the committed report", () => {
     expect(doc).toContain(`${unverified.length} of ${used.size} rows below are unverified in-game`);
   });
 
-  it("says plainly that the game comparison waits for the captures and the differential is not built", () => {
+  it("says plainly that the game comparison waits for the captures, and reports the committed calc differential", () => {
     const doc = render();
     expect(doc).toContain("met only for hand-worked values");
-    expect(doc).toContain("differential not built yet (#935)");
+    expect(doc).toContain("1 listed divergence ");
+    expect(doc).toContain("`damage:always-crit:no_crit`");
+    expect(doc).not.toContain("differential not built yet");
     expect(doc).toContain("#937, Wave 9");
     expect(doc).toContain("no claim of parity");
   });
@@ -97,6 +99,11 @@ describe("drift", () => {
 
 describe("the calc divergence list", () => {
   const write = (body: unknown): string => withFixtures((dir) => writeFileSync(join(dir, "calc-divergences.json"), JSON.stringify(body)));
+
+  it("says the differential is not built when the divergence file is absent", () => {
+    const doc = render(withFixtures((dir) => rmSync(join(dir, "calc-divergences.json"))));
+    expect(doc).toContain("differential not built yet (#935)");
+  });
 
   it("is rendered when the differential has written one", () => {
     const doc = render(write({ data_class: "synthetic", divergences: [{ case: "damage/reflect", reason: "the calc | patch table lags" }] }));
