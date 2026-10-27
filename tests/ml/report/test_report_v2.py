@@ -21,6 +21,7 @@ from areneon_ml.progress.ablation import ablation_summary
 from areneon_ml.progress.eval_dataset import EvalDataset
 from areneon_ml.progress.run import CROSS_RUN_LABEL, VersusSpec, summary_of
 from areneon_ml.progress.stats import PPM
+from areneon_ml.report.command import report_run
 from areneon_ml.report.model import read_report_model
 from areneon_ml.report.render import (
     ABLATION_NOTE,
@@ -321,3 +322,21 @@ def test_the_dashboard_labels_an_evaluation_dataset(run: Path, tmp_path: Path) -
     assert OTHER_DATASET_LABEL in page
     assert f"generation 1: dataset {'7' * 64}" in page
     assert read_report_model(run, labelled).progress[1].evaluation_dataset == "7" * 64
+
+
+def test_the_dashboard_labels_an_evaluation_key(run: Path, tmp_path: Path) -> None:
+    """The evaluation-key option (#1177): a generation keyed by it says so."""
+    plain, keyed = tmp_path / "plain", tmp_path / "keyed"
+    played(run, plain, 1)
+    played(run, keyed, 1, evaluation_key="paired-eval-1")
+    assert "Evaluation key:" not in text_of(run, plain)
+    assert read_report_model(run, plain).progress[1].evaluation_key is None
+    page = text_of(run, keyed)
+    assert "Evaluation key:" in page
+    assert "generation 1: paired-eval-1" in page
+    assert read_report_model(run, keyed).progress[1].evaluation_key == "paired-eval-1"
+    # The report command logs a look that names the key, per match.
+    out = tmp_path / "report.html"
+    report_run(run, keyed, out)
+    first = json.loads((tmp_path / "keyed.looks.jsonl").read_text().splitlines()[0])
+    assert {m["evaluation_key"] for m in first["matches"]} == {"paired-eval-1"}

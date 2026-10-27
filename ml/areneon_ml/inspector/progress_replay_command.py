@@ -102,11 +102,12 @@ def replay_progress(  # noqa: PLR0913
     selected = read_progress_games(progress_dir, generation, match, games, run_dir)
     # The stored games are read and consistent, so a validation result is about to be shown.
     shown = Counter((g.generation, g.match_id) for g in selected)
+    keys = {(g.generation, g.match_id): g.record.get("evaluation_key") for g in selected}
     append_look(
         looks_path(progress_dir, run_dir),
         "replay",
         selected[0].run_id,
-        [Look(g, m, n) for (g, m), n in shown.items()],
+        [Look(g, m, n, keys[(g, m)]) for (g, m), n in shown.items()],
     )
     manifest = selected[0].record["version_manifest"]
     table = read_engine_data(

@@ -184,6 +184,7 @@ export async function progressSamples(engine: Engine): Promise<ProgressSamples> 
     });
   // A game of a both-seats evaluation: game 1 is pair 0 played again with the seats' policies swapped, on pair 0's seed.
   const pairGame = withGame((g) => ((g.game = 1), (g.pair = 0)));
+  const pairKeyGame = withShortGame((g) => ((g.game = 1), (g.pair = 0), (g.evaluation_key = "paired-key"), (g.seed = progressGameStreams("paired-key", 0).seed)));
   const forfeitGame = withGame((g) => (g.outcome = { kind: "forfeit", loser: "p2", cause: "invalid_reply", request_seq: 4, turns: 3 }));
   return {
     valid: {
@@ -191,6 +192,7 @@ export async function progressSamples(engine: Engine): Promise<ProgressSamples> 
       "progress-evaluation-record/previous-match": withPrevious,
       "progress-evaluation-record-2/baseline-match": v2,
       "progress-evaluation-record-2/evaluation-dataset": withV2((e) => (e.teams.evaluation_dataset_hash = hexOf("6"))),
+      "progress-evaluation-record-2/plan-label": withV2((e) => (e.plan.evaluation_key = "paired-key")),
       "progress-evaluation-record-2/previous-match": v2Previous,
       "progress-evaluation-record-2/anchor-match": v2Anchor(),
       "progress-evaluation-record-2/run-match": v2Run(),
@@ -199,6 +201,8 @@ export async function progressSamples(engine: Engine): Promise<ProgressSamples> 
       "progress-game-record/damage-aware": damageGame,
       "progress-game-record/played": game,
       "progress-game-record/played-pair": pairGame,
+      // Game 1 of pair 0 on a declared evaluation key: the seed is progress-seed/1's for the key, not for the run id.
+      "progress-game-record/plan-label": pairKeyGame,
       "progress-game-record/forfeit": forfeitGame,
     },
     invalid: {
@@ -216,6 +220,9 @@ export async function progressSamples(engine: Engine): Promise<ProgressSamples> 
       "progress-evaluation-record-2/anchor-no-generation": v2Anchor((e) => delete e.matches[0].opponent.generation),
       "progress-evaluation-record-2/run-no-run-id": v2Run((e) => delete e.matches[0].opponent.run_id),
       "progress-evaluation-record-2/ablation-no-checkpoint": v2Ablation((e) => delete e.matches[0].candidate_preview.checkpoint),
+      "progress-evaluation-record-2/plan-label-malformed": withV2((e) => (e.plan.evaluation_key = "not a token")),
+      "progress-evaluation-record/plan-label": withEval((e) => (e.plan.evaluation_key = "paired-key")),
+      "progress-game-record/plan-label-malformed": withShortGame((g) => ((g.game = 1), (g.pair = 0), (g.evaluation_key = ""))),
       "progress-evaluation-record-2/fractional-wins": withV2((e) => (e.matches[0].wins = 0.5)),
       "progress-evaluation-record-2/baseline-fractional-count": v2Damage((e) => (e.games[0].baseline_counts.queries = 0.5)),
       "progress-game-record/baseline-no-identity": shortDamage((g) => delete g.baseline.identity_hash),
@@ -235,6 +242,10 @@ export async function progressSamples(engine: Engine): Promise<ProgressSamples> 
       "progress-evaluation-record/hash-count-wrong": withEval((e) => (e.matches[0].game_record_hashes = [])),
       "progress-evaluation-record/seat-wrong": withEval((e) => (e.games[1].candidate_seat = "p1")),
       "progress-evaluation-record/pairs-used-wrong": withEval((e) => (e.teams.pairs_used = 3)),
+      "progress-evaluation-record-2/plan-label-is-run-id": withV2((e) => (e.plan.evaluation_key = e.run_id)),
+      "progress-game-record/plan-label-is-run-id": withShortGame((g) => ((g.game = 1), (g.pair = 0), (g.evaluation_key = g.run_id))),
+      "progress-game-record/plan-label-without-pair": withShortGame((g) => ((g.evaluation_key = "paired-key"), (g.seed = progressGameStreams("paired-key", 0).seed))),
+      "progress-game-record/plan-label-seed-from-run-id": withShortGame((g) => ((g.game = 1), (g.pair = 0), (g.evaluation_key = "paired-key"), (g.seed = progressGameStreams(g.run_id, 0).seed))),
       "progress-evaluation-record-2/evaluation-dataset-is-own": withV2((e) => (e.teams.evaluation_dataset_hash = e.teams.dataset_hash)),
       "progress-evaluation-record-2/ablation-vs-anchor": v2Ablation((e) => ((e.plan.anchor_games_per_match = 4), (e.matches[0].opponent = { kind: "anchor", generation: 0, policy_id: `policy:${hexOf("b")}`, checkpoints: { preview: hexOf("6"), battle: hexOf("7") } }))),
       "progress-evaluation-record-2/ablation-misnamed": v2Ablation((e) => ((e.matches[0].match_id = "preview-g0-random-legal-argmax"), e.games.slice(0, 4).forEach((g: any) => (g.match_id = "preview-g0-random-legal-argmax")))),

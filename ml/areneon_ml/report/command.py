@@ -91,7 +91,11 @@ def report_run(
             log,
             "report",
             model.run_key,
-            [Look(g, m.match_id, m.games) for g, p in model.progress.items() for m in p.matches],
+            [
+                Look(g, m.match_id, m.games, p.evaluation_key)
+                for g, p in model.progress.items()
+                for m in p.matches
+            ],
         )
         model = dataclasses.replace(
             model,

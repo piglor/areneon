@@ -37,6 +37,7 @@ _KEYS = frozenset(
     {"schema_version", "seq", "prev", "at", "command", "run_id", "generations", "matches", "games"}
 )
 _MATCH_KEYS = frozenset({"generation", "match_id", "games"})
+_MATCH_OPTIONAL = frozenset({"evaluation_key"})
 _HEX = re.compile(r"[0-9a-f]{64}")
 _TIME = re.compile(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ")
 _ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}")
@@ -53,6 +54,8 @@ class Look:
     generation: int
     match_id: str
     games: int
+    #: The evaluation key (#1177) that keyed this match's pairs and seeds; None: the run key did.
+    evaluation_key: str | None = None
 
 
 @dataclass(frozen=True)
@@ -105,6 +108,10 @@ def _check_entry(entry: object, index: int, prev: str, last_at: str, run_id: str
     _check_matches(entry, where)
 
 
+def _valid_key(value: object) -> bool:
+    return isinstance(value, str) and _ID.fullmatch(value) is not None
+
+
 def _check_matches(entry: dict[str, Any], where: str) -> None:
     matches = entry["matches"]
     if not isinstance(matches, list) or not matches:
@@ -113,11 +120,12 @@ def _check_matches(entry: dict[str, Any], where: str) -> None:
     for m in matches:
         if (
             not isinstance(m, dict)
-            or set(m) != _MATCH_KEYS
+            or not _MATCH_KEYS <= set(m) <= _MATCH_KEYS | _MATCH_OPTIONAL
             or not _int(m["generation"])
             or not isinstance(m["match_id"], str)
             or not _ID.fullmatch(m["match_id"])
             or not _int(m["games"])
+            or ("evaluation_key" in m and not _valid_key(m["evaluation_key"]))
         ):
             raise LookError(f"{where}: a match entry is malformed")
         keys.append((m["generation"], m["match_id"]))
@@ -170,7 +178,11 @@ def append_look(
 ) -> LookState:
     """Append one line under an exclusive lock, after verifying the log as it stands."""
     matches = sorted(
-        ({"generation": k.generation, "match_id": k.match_id, "games": k.games} for k in looks),
+        (
+            {"generation": k.generation, "match_id": k.match_id, "games": k.games}
+            | ({} if k.evaluation_key is None else {"evaluation_key": k.evaluation_key})
+            for k in looks
+        ),
         key=lambda m: (m["generation"], m["match_id"]),
     )
     created = not path.exists()

@@ -153,6 +153,7 @@ export function readProgressEvaluationRecordV2(value: unknown): ProgressEvaluati
   if (record.teams.pairs_used !== Math.max(plan.games_per_match, anchorGames ?? 0, runGames ?? 0) / 2) fail("teams.pairs_used must be half the largest games_per_match, anchor_games_per_match or run_games_per_match");
   if (record.teams.evaluation_dataset_hash === record.teams.dataset_hash) fail("teams.evaluation_dataset_hash must differ from teams.dataset_hash: absent means the run's own dataset");
   if (plan.recorded_games_per_match > plan.games_per_match) fail("recorded_games_per_match must not exceed games_per_match");
+  if (plan.evaluation_key === record.run_id) fail("plan.evaluation_key must differ from run_id: absent means the run key keys the plan");
   const ids = matches.map((match) => match.match_id);
   if (!strictlyAscending(ids)) fail("matches must be sorted by match_id, each once");
   const rowsOf = new Map<string, RowV2[]>(ids.map((id) => [id, []]));
@@ -244,7 +245,9 @@ export function readProgressGameRecord(value: unknown): ProgressGameRecord {
   } else if (isDamageAware(record.policies.p1) || isDamageAware(record.policies.p2)) fail("a game with a damage-aware seat must carry the baseline counts");
   // A game of a both-seats evaluation names its pair: both games of a pair share the pair's seed.
   if (record.pair !== undefined && record.pair !== record.game >> 1) fail("pair must be the game index divided by two");
-  if (progressGameStreams(record.run_id, record.pair ?? record.game).seed !== record.seed) fail("the seed is not the one progress-seed/1 gives this game's pair (or game index)");
+  // A declared evaluation key (#1177) replaces the run key in the seed; it belongs to a both-seats game and never equals the run key.
+  if (record.evaluation_key !== undefined && (record.pair === undefined || record.evaluation_key === record.run_id)) fail("evaluation_key belongs to a both-seats game and must differ from run_id");
+  if (progressGameStreams(record.evaluation_key ?? record.run_id, record.pair ?? record.game).seed !== record.seed) fail("the seed is not the one progress-seed/1 gives this game's pair (or game index)");
   return record;
 }
 

@@ -26,6 +26,10 @@ export interface ProgressGameRecord {
    */
   pair?: number;
   /**
+   * Present only in a game of an evaluation run on a declared evaluation key (#1177): the key progress-seed/1 used in place of run_id for this game's seed. Equal to the evaluation record's plan.evaluation_key; never equal to run_id.
+   */
+  evaluation_key?: string;
+  /**
    * The battle seed, in the engine's sodium,<32 hex> form.
    */
   seed: string;

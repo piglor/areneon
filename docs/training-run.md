@@ -293,6 +293,26 @@ adopt rule is applied by the experiment, not here. Use a progress directory of i
 this run's, on the same pairs and seeds; the other run's actor-rule score on these
 pairs is not played.
 
+**A declared evaluation key (#1177).**
+`progress --evaluation-key KEY` replaces the run key in `progress-pairing/1` and
+`progress-seed/1` for every match of the evaluation (baselines, damage-aware, anchors,
+previous, `run-*`, the Preview ablation), so the pairs, candidate seats, battle seeds and
+baseline streams are a function of (KEY, validation teams) alone. Two runs evaluated with
+the same KEY on the same validation teams therefore play the same games in the same
+order, and their scores per pair can be paired (`stats.paired_differences`,
+`stats.pair_interval`); without the flag each run's own key keys its plan and two runs'
+baseline matches are unpaired. KEY is an id token (`[A-Za-z0-9][A-Za-z0-9._:-]{0,127}`)
+and must differ from the evaluated run's own `run_key` (omit the flag to use it: one
+spelling per plan). Sampling labels are unchanged (seed, seat and policy id), and the
+bootstrap stream of the interval stays keyed by the run key. The same refusals apply,
+checked against the key's seeds: a progress seed equal to a seed of a committed plan of
+the run (and of the `--versus` run), a team in the newest `team-set.json`, more games
+than pairs. The record names the key in `plan.evaluation_key` and each stored game in
+`evaluation_key` (absent: the run key keyed the plan, so existing records keep their
+bytes); the readers recompute each seed from it. A committed generation is kept only for
+the same key (a lenient read for `report` and `replay`), the dashboard notes it, and the
+look log names it per match.
+
 **Another dataset's validation split (ADR-020 E-17.1).**
 `--eval-dataset-dir DIR --eval-dataset-hash HEX64` (both, or neither; `scripted-h2h`
 takes the same two flags) measures the generation on the validation split of a

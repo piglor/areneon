@@ -182,6 +182,9 @@ class ProgressFacts:
     #: The hash of the other verified dataset the validation teams came from (the eval-dataset
     #: option, ADR-020 E-17.1); None: the validation split of the run's own dataset.
     evaluation_dataset: str | None = None
+    #: The evaluation key (#1177) that keyed the pairs and seeds in place of the run key; None:
+    #: the run key did.
+    evaluation_key: str | None = None
 
 
 @dataclass(frozen=True)
@@ -408,6 +411,7 @@ def _progress_facts(record: dict[str, Any], move_use: dict[str, Any] | None) -> 
         ablation_summary(record),
         move_use,
         record["teams"].get("evaluation_dataset_hash"),
+        plan.get("evaluation_key"),
     )
 
 
