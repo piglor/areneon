@@ -293,6 +293,9 @@ class Loop:
                     f"generation {newest.generation}: the {role} record names another checkpoint"
                 )
             if warm_zero:
+                # The records are the clone run's: their training sets, state hash and run
+                # config hash are not this run's, and equality with the imported records above
+                # is the check.
                 write_checkpoint(self.run_dir, found)
                 continue
             if record.training_set_hashes != (() if ts_hash is None else (ts_hash,)):

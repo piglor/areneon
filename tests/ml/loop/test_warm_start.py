@@ -24,6 +24,7 @@ from areneon_ml.loop.driver import (
 )
 from areneon_ml.loop.warm_start import (
     WarmStartError,
+    check_clone_record,
     import_clone,
     record_path,
 )
@@ -506,3 +507,10 @@ def test_a_real_cloning_run_output_starts_a_run(tmp_path: Path) -> None:
     zero = layout.verify_generation(layout.generation_dir(run_dir, 0), 0)
     assert zero["checkpoints"] == ids
     assert sources_registry(run_dir)[report["teacher_set_hash"]] == []
+
+
+def test_a_clone_record_of_the_other_role_is_refused(tmp_path: Path, clone_dir: Path) -> None:
+    record = read_record(json.loads(next((clone_dir / "records").glob("*.json")).read_text()))
+    other = "preview" if record.role == "battle" else "battle"
+    with pytest.raises(WarmStartError, match=r"is a (preview|battle) record"):
+        check_clone_record(record, other)

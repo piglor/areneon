@@ -4,7 +4,8 @@ The record is reviewed JSON, validated against the contract first and then
 against the four rules the profile cannot say (they are the TS reader's too):
 the attention heads divide the token width, a Team Preview order cannot name
 more positions than a side holds (both checked by ``ModelConfig``), and each
-scripted baseline is listed once, and a warm start names two different checkpoints.
+scripted baseline is listed once, and a warm start names two different
+checkpoints.
 Real-valued settings are stored as integers in millionths (``_micro``) or
 billionths (``_nano``); this module is the one place that turns them into
 floats, by one exact division. The record is named only by ``run_config_hash``,
