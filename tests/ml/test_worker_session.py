@@ -274,6 +274,7 @@ def test_the_draw_follows_u_and_argmax_does_not(tmp_path: Path) -> None:
 
 def test_a_tempered_and_thresholded_draw_is_deterministic_and_keeps_the_top(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     worker = make_worker(tmp_path)
     candidates = [c["choice"] for c in battle_query()["candidates"]]
@@ -304,7 +305,7 @@ def test_a_tempered_and_thresholded_draw_is_deterministic_and_keeps_the_top(
         seen.append(kwargs)
         return real(view, **kwargs)
 
-    worker._scorer.probabilities = spy  # type: ignore[method-assign]
+    monkeypatch.setattr(worker._scorer, "probabilities", spy)
     ask(3, {"kind": "sample", "u": 1})
     ask(4, tempered)
     assert seen == [{}, {"temperature_ppm": 250_000}]
