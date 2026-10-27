@@ -548,6 +548,25 @@ checkpoint has one record), so `loop provenance` lists them and maps the teacher
 `independent` then reports two warm-started runs that share a teacher set as not independent,
 and runs with different teacher sets, or none, as independent (ADR-019 section 6).
 
+#### Battle-only warm start
+
+`"warm_start": {"battle": "<id>"}` warm-starts the Battle network alone (#1165). Use it when the
+teacher's Team Preview choice is a single fixed one (`damage-aware@v1` plays the `actor-rule`
+candidate there), so a cloned Preview would start almost deterministic and the KL anchor would
+hold it there. Import only the Battle half:
+
+```bash
+.venv/bin/python -m areneon_ml.loop import-clone --clone-dir .tmp/clone/CLONE-1 --run-dir .tmp/runs/RUN-1 --roles battle
+```
+
+Preview then starts from the seeded init of `seeds.init_preview`, the same weights as a scratch
+run's generation 0, and its generation 0 record is an ordinary one (no training set, no parent).
+`ppo.value_warmup` and `ppo.anchor` act on the Battle role only: Preview's first update is a
+plain PPO update, and `train-report.json` carries `value_warmup`, `anchor_kl` and
+`anchor_beta_micro` for `battle` alone. The Battle lineage names the clone; from generation 1 both
+roles descend from it through the games it played. A both-role or absent `warm_start` is read and
+hashed exactly as before.
+
 ### Warming up the value head first (`ppo.value_warmup`)
 
 A cloned pair has a trained policy and an untrained value head, so the first advantage estimates

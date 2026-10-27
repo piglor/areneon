@@ -208,13 +208,13 @@ export interface TrainingRunConfig {
     dataset_hash: string;
   };
   /**
-   * Optional (a minor change within v1; ADR-010 erratum A2, ADR-019 section 4): generation 0 is this declared pair of cloned checkpoints instead of the seeded random pair. The ids name checkpoints already in the run's checkpoint store (copied in by an explicit import command, never fetched). At run start each must hash to its id, hold the network of its role, and match the run's encoder version, engine-data hash and model section, and its CheckpointRecord must be a clone record (non-empty training_set_hashes, no parent, synthetic); anything else refuses the run. Generation 0 freezes the pair with no learner step, and the learner state starts fresh from the cloned weights. Absent keeps the seeded initialisation and today's bytes and run_config_hash. An older reader refuses a config that has it.
+   * Optional (a minor change within v1; ADR-010 erratum A2, ADR-019 section 4): generation 0 is this declared pair of cloned checkpoints instead of the seeded random pair. The ids name checkpoints already in the run's checkpoint store (copied in by an explicit import command, never fetched). At run start each must hash to its id, hold the network of its role, and match the run's encoder version, engine-data hash and model section, and its CheckpointRecord must be a clone record (non-empty training_set_hashes, no parent, synthetic); anything else refuses the run. Generation 0 freezes the pair with no learner step, and the learner state starts fresh from the cloned weights. Naming battle alone (#1165) warm-starts the Battle role only: ppo.value_warmup and ppo.anchor then act on the Battle role only, and Team Preview trains as PPO from the first update. Absent keeps the seeded initialisation and today's bytes and run_config_hash. An older reader refuses a config that has it.
    */
   warm_start?: {
     /**
-     * Checkpoint id (SHA-256 of the safetensors file) of the cloned Team Preview network.
+     * Optional (a minor change within v1; #1165). Checkpoint id (SHA-256 of the safetensors file) of the cloned Team Preview network. Absent: Team Preview starts from the seeded random initialisation of seeds.init_preview, exactly as a scratch run's generation 0.
      */
-    preview: string;
+    preview?: string;
     /**
      * Checkpoint id (SHA-256 of the safetensors file) of the cloned Battle network.
      */

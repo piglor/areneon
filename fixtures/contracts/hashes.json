@@ -25,6 +25,8 @@
   "v1/training-run-config/valid/value-warmup.json": "e75002d5dc5eaa727b49f6aac7f803449bd73853c18a3287bbb928627f674ef5",
   "v1/training-run-config/valid/anchor-constant.json": "4c159c4d6a1ec84b0018bfd2bdc2ac7f489fc65eab3e571b94f2b4175295051d",
   "v1/training-run-config/valid/anchor-linear.json": "55f879c2a5d62a0e6402cfe4fdb515d285d59c8e0a28330009af0810478c7674",
+  "v1/training-run-config/valid/warm-start-battle-only.json": "9cdaf5ab4a8fdbd6f20f65e8bf908d96a78277169405d8e83b98df4f23242954",
+  "v1/training-run-config/valid/battle-only-warmup-anchor.json": "063b8f830cb934b4033c3cf3c2f00daee572d5d6935b1769e552607b6aa71980",
   "v1/clone-run-config/valid/tiny.json": "51b9fded28188728225dbd1e31727b0f95c4b345a8a917afd9e6de653ee09af2",
   "v1/clone-run-config/valid/no-holdout.json": "5c1222757d950f524dd9a3cbe81721e07033736d4f995931fd535a88030a5a51",
   "v1/run-metrics/valid/cpu.json": "d815a0b53fd551a640c35a6115266c35e62574a1714acc8dbf517965de347a5d",

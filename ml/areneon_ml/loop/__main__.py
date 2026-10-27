@@ -10,6 +10,7 @@
 * ``import-clone``: copy a cloning run's checkpoints and records (``learner clone`` output) into a
   run directory, so a run config with ``warm_start`` can start generation 0 from them (ADR-010
   erratum A2). Never fetched: the clone directory is a local path. Prints the ids by role.
+  ``--roles battle`` imports the Battle checkpoint and record alone (a Battle-only warm start).
 * ``provenance``: write the run's CheckpointRecords and its sources registry into a
   directory, ready for ``python -m areneon_ml.checkpoint classify|independent``.
 * ``report``: write the run dashboard (training curves and, with a progress root, the progress
@@ -58,6 +59,7 @@ from areneon_ml.loop.play import NodePlayer, PlayError
 from areneon_ml.loop.warm_start import WarmStartError, import_clone
 from areneon_ml.model.encoder import encoder_version
 from areneon_ml.model.gamedata import GameData
+from areneon_ml.model.network import ROLES
 from areneon_ml.private.private_test import PrivateTestRequest, private_test_main
 from areneon_ml.progress.looks import Look, LookError, append_look, looks_path
 from areneon_ml.progress.records import ProgressRecordError
@@ -198,6 +200,13 @@ def _parser() -> argparse.ArgumentParser:
     )
     imported.add_argument("--clone-dir", type=Path, required=True, help="a `learner clone` output")
     imported.add_argument("--run-dir", type=Path, required=True)
+    imported.add_argument(
+        "--roles",
+        choices=("both", "battle"),
+        default="both",
+        help="`battle` imports only the Battle checkpoint and record, for a Battle-only "
+        "warm_start (default: both)",
+    )
     inspect = commands.add_parser(
         "inspect", help="write the training-data inspector's static pages"
     )
@@ -481,7 +490,11 @@ def _private_test(args: argparse.Namespace) -> int:
 def _records(args: argparse.Namespace) -> dict[str, object]:
     """``import-clone`` and ``provenance``: the commands that move records, not battles."""
     if args.command == "import-clone":
-        return {"checkpoints": import_clone(args.clone_dir, args.run_dir)}
+        return {
+            "checkpoints": import_clone(
+                args.clone_dir, args.run_dir, ("battle",) if args.roles == "battle" else ROLES
+            )
+        }
     return {"sources_hash": export_provenance(args.run_dir, args.out)}
 
 

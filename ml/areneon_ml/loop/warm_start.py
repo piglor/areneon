@@ -1,6 +1,7 @@
 """A warm start: generation 0 from a declared cloned pair (ADR-010 erratum A2, ADR-019 track 1).
 
-``TrainingRunConfig.warm_start`` names two checkpoint ids. They are never fetched: the explicit
+``TrainingRunConfig.warm_start`` names two checkpoint ids, or the Battle one alone (#1165). They
+are never fetched: the explicit
 command ``import_clone`` copies a cloning run's output (``learner/clone_run.py``: ``checkpoints/``,
 ``records/``, ``sources.json``) into the run directory, the checkpoints into the store the worker
 reads and the records into ``warm-start/records/<role>.json``. At the start of generation 0
@@ -84,6 +85,8 @@ def load_warm_start(
     networks: dict[str, PolicyNetwork] = {}
     records: dict[str, CheckpointRecord] = {}
     for role in ROLES:
+        if role not in warm:
+            continue  # a Battle-only warm start: this role starts from its seeded init (#1165)
         wanted = warm[role]
         store = run_dir / "checkpoints" / f"{wanted}.safetensors"
         try:
@@ -128,10 +131,12 @@ def _read_clone_record(
     return record
 
 
-def import_clone(clone_dir: Path, run_dir: Path) -> dict[str, str]:
+def import_clone(clone_dir: Path, run_dir: Path, roles: tuple[str, ...] = ROLES) -> dict[str, str]:
     """Copy a cloning run's checkpoints and records into ``run_dir``; return the ids by role.
 
-    The pair to start from is the output's own: one record per role. Only structure is checked
+    The pair to start from is the output's own: one record per role. With ``roles`` set to
+    ``("battle",)`` only the Battle checkpoint and record are imported (#1165; the output's other
+    role is neither read as a checkpoint nor copied). Only structure is checked
     here (a record reads, is a clone record, its checkpoint file hashes to its id, and the output's
     ``sources.json`` maps every teacher set to ``[]``); the checks against a run config are
     ``load_warm_start``'s, at the start of the run. Nothing is overwritten with different bytes.
@@ -140,6 +145,8 @@ def import_clone(clone_dir: Path, run_dir: Path) -> dict[str, str]:
     for path in sorted((clone_dir / "records").glob("*.json")):
         try:
             record = read_record(layout.read_json(path))
+            if record.role not in roles:
+                continue
             data = (clone_dir / "checkpoints" / f"{record.checkpoint_id}.safetensors").read_bytes()
         except (OSError, layout.RunDirError, RecordError, ValueError) as exc:
             raise WarmStartError(f"{path.name}: {exc}") from exc
@@ -151,8 +158,12 @@ def import_clone(clone_dir: Path, run_dir: Path) -> dict[str, str]:
         if record.role in found:
             raise WarmStartError(f"the clone output holds two {record.role} records")
         found[record.role] = (record, data, path.read_bytes())
-    if set(found) != set(ROLES):
-        raise WarmStartError("the clone output must hold exactly one preview and one battle record")
+    if set(found) != set(roles):
+        raise WarmStartError(
+            "the clone output must hold exactly one "
+            + " and one ".join(r for r in ("preview", "battle") if r in roles)
+            + " record"
+        )
     _check_sources(clone_dir, [r for r, _, _ in found.values()])
     with layout.run_lock(run_dir):
         layout.ensure_run_dirs(run_dir)
@@ -162,7 +173,7 @@ def import_clone(clone_dir: Path, run_dir: Path) -> dict[str, str]:
                 raise WarmStartError(f"{target.name}: the run already holds another {role} record")
             layout.write_atomic(target, text)
             write_checkpoint(run_dir, data)
-    return {role: found[role][0].checkpoint_id for role in ROLES}
+    return {role: found[role][0].checkpoint_id for role in roles}
 
 
 def _check_sources(clone_dir: Path, records: list[CheckpointRecord]) -> None:
