@@ -566,6 +566,13 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
       runSection(c, "ppo").anchor = { kl_micro: 100000, schedule: { kind: "constant" } };
     }),
     "clone-run-config/tiny": cloneConfig,
+    "clone-run-config/empty-options": cloneWith((c) => {
+      runSection(c, "model").options = {};
+      runSection(runSection(c, "model"), "encoder").options = {};
+    }),
+    "clone-run-config/candidate-matchup": cloneWith((c) => {
+      runSection(runSection(c, "model"), "encoder").options = { candidate_matchup: true };
+    }),
     "clone-run-config/no-holdout": cloneWith((c) => (runSection(c, "clone").holdout = { key: "d".repeat(64), ppm: 0 })),
     "run-metrics/cpu": runMetrics,
     "run-metrics/cuda": runMetricsWith((r) => {
@@ -812,6 +819,11 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "league-run-record/short-config-hash": leagueRunWith((r) => (r.run_config_hash = "abc")),
     "league-run-record/bare-pair-id": leagueRunWith((r) => (r.pair_policy_id = "a".repeat(64))),
     "league-run-record/no-plan-hash": leagueRunWith((r) => delete r.plan_hash),
+    "clone-run-config/unknown-model-option": cloneWith((c) => (runSection(c, "model").options = { wide: 1 })),
+    "clone-run-config/unknown-encoder-option": cloneWith((c) => (runSection(runSection(c, "model"), "encoder").options = { wide: 1 })),
+    "clone-run-config/candidate-matchup-false": cloneWith(
+      (c) => (runSection(runSection(c, "model"), "encoder").options = { candidate_matchup: false }),
+    ),
     "clone-run-config/extra-field": cloneWith((c) => (c.notes = "x")),
     "clone-run-config/fractional-rate": cloneWith((c) => (runSection(c, "clone").learning_rate_micro = 0.5)),
     "clone-run-config/zero-epochs": cloneWith((c) => (runSection(c, "clone").epochs = 0)),
