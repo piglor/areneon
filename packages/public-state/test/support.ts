@@ -66,7 +66,7 @@ export interface Fixture {
   team: unknown[];
 }
 
-/** Every committed own channel the replay is tested on: golden, random, unavailable, illusion, baton-pass. */
+/** Every committed own channel the replay is tested on: golden, random, unavailable, illusion, baton-pass, fling. */
 export function fixtures(): Fixture[] {
   const out: Fixture[] = [];
   const team = readJson(join(FORMAT_DIR, "synthetic-team.json"));
@@ -87,6 +87,7 @@ export function fixtures(): Fixture[] {
   battles("unavailable", list("unavailable"));
   battles("illusion", ["battle.json"]);
   battles("baton-pass", ["battle.json"]);
+  battles("fling", ["battle.json"]);
   return out;
 }
 

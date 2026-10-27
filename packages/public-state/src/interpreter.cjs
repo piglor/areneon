@@ -811,6 +811,8 @@ var ArReplay = (function () {
       "-enditem": function (line) {
         arity(line, 2, 2);
         var m = mon(arg(line, 0), line);
+        // An empty name is the engine's Fling after the thrown item was already gone (#1162); any other is refused.
+        need(arg(line, 1) !== "" || line.tags.from === "move: Fling", "an item end names no item");
         m.item = null; m.item_known = true; m.item_lost = true;
       },
       "-ability": function (line) {
