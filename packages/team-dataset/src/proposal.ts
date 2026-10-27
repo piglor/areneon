@@ -120,17 +120,28 @@ export class Proposal {
   }
 
   #statPoints(rng: Rng, total: number): StatTable {
-    const points: Record<string, number> = Object.fromEntries(STATS.map((s) => [s, 0]));
-    const cap = this.#config.stat_point_max_per_stat;
-    let left = total;
-    while (left > 0) {
-      const open = STATS.filter((s) => (points[s] as number) < cap);
-      const stat = open[rng.below(open.length)] as string;
-      const room = cap - (points[stat] as number);
-      const amount = 1 + rng.below(Math.min(room, left));
-      points[stat] = (points[stat] as number) + amount;
-      left -= amount;
-    }
-    return points as StatTable;
+    return drawStatPoints((n) => rng.below(n), total, this.#config.stat_point_max_per_stat);
   }
+}
+
+/**
+ * The generator's Stat Point routine: until the total is spent, pick a stat that still has room
+ * (uniformly among those below `cap`) and give it a uniform amount from one up to what room and total
+ * allow. `below(n)` is a uniform integer in [0, n). It is the one definition: the proposal calls it, and
+ * so does the opponent model's `SpreadSampler` (`spread-sampler.ts`), so a sampled "other spread" is
+ * drawn by the generator's own rule.
+ */
+export function drawStatPoints(below: (n: number) => number, total: number, cap: number): StatTable {
+  const points: Record<string, number> = Object.fromEntries(STATS.map((s) => [s, 0]));
+  let left = total;
+  while (left > 0) {
+    const open = STATS.filter((s) => (points[s] as number) < cap);
+    if (open.length === 0) throw new ProposalError(`${STATS.length} stats of at most ${cap} cannot hold ${total} Stat Points`);
+    const stat = open[below(open.length)] as string;
+    const room = cap - (points[stat] as number);
+    const amount = 1 + below(Math.min(room, left));
+    points[stat] = (points[stat] as number) + amount;
+    left -= amount;
+  }
+  return points as StatTable;
 }
