@@ -22,6 +22,7 @@ from tests.ml.loop.support import FakePlayer, make_loop
 from tests.ml.model.support import game
 
 OPTION = {"candidate_matchup": True}
+REFUSED = "another model section|other model options"
 
 
 def _clone_with(tmp_path: Path, name: str, options: dict[str, Any] | None) -> dict[str, Any]:
@@ -78,10 +79,10 @@ def test_a_clone_with_the_option_warm_starts_a_run_with_it(tmp_path: Path) -> No
 
 
 def test_a_clone_without_the_option_is_refused_by_a_run_with_it(tmp_path: Path) -> None:
-    with pytest.raises(LoopError, match="model"):
+    with pytest.raises(LoopError, match=REFUSED):
         _start(tmp_path, "plain", None, OPTION)
 
 
 def test_a_clone_with_the_option_is_refused_by_a_run_without_it(tmp_path: Path) -> None:
-    with pytest.raises(LoopError, match="model"):
+    with pytest.raises(LoopError, match=REFUSED):
         _start(tmp_path, "opt", OPTION, None)
