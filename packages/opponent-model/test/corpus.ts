@@ -157,12 +157,21 @@ export function skewedPrior(ids: readonly string[]): UsagePrior {
 const idOf = (value: string): string | null => (value === "" ? null : toId(value));
 const roster = new Map(realVocabulary.roster.map((r) => [r.id, r]));
 
-/** The forme a real set holds before any Evolution: the Mega forme for a stone holder, else the species. */
-function trueForme(set: Set6): string {
+/**
+ * The formes a real set may hold before any Evolution: the Mega forme for a stone holder, else the species. A species whose
+ * Mega carries a gender letter (meowstic: meowsticmmega and meowsticfmega, one stone) has two, and the set's gender is not
+ * kept by the roster ids, so both count.
+ */
+function trueFormes(set: Set6): string[] {
   const stone = idOf(set.item);
-  const mega = stone === null ? undefined : megasOf(toId(set.species)).find((r) => r.required_item === stone);
-  return mega?.id ?? toId(set.species);
+  const species = toId(set.species);
+  if (stone === null) return [species];
+  const found = megasOf(species).filter((r) => r.required_item === stone);
+  const lettered = found.length > 0 ? [] : realVocabulary.roster.filter((r) => r.required_item === stone && r.id.startsWith(species) && r.id.includes("mega"));
+  const all = [...found, ...lettered].map((r) => r.id);
+  return all.length > 0 ? all : [species];
 }
+const trueForme = (set: Set6): string => trueFormes(set)[0] as string;
 
 export interface FieldVerdict {
   readonly forme: boolean;
@@ -176,7 +185,7 @@ export function admits(assignment: DisguiseAssignment, i: number, set: Set6, evo
   const s = assignment.slots[i] as DisguiseAssignment["slots"][number];
   const item = idOf(set.item);
   return {
-    forme: s.formes.some((f) => f.id === trueForme(set)),
+    forme: s.formes.some((f) => trueFormes(set).includes(f.id)),
     ability: evolved ? null : s.abilities.some((m) => m.id === toId(set.ability)),
     item: s.items.some((m) => m.id === item),
     moves: set.moves.every((mv) => s.moves.some((m) => m.id === toId(mv))),
