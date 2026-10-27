@@ -186,7 +186,7 @@ class MoveList(BaseModel):
     )
     denominator: Denominator
     """
-    The number of sets, as an exact integer weight: the summed item weight of the forme, the value the empty-slot rule of ADR-025 section 3 divides by. Inclusions, the empty-slot mass and the other masses are numerators over it, so the inclusion of a move is the exact fraction inclusion / denominator, never parts per million.
+    The number of sets, as an exact integer weight: the summed item weight of the forme (a reader rule: equal to the items denominator), the value the empty-slot rule of ADR-025 section 3 divides by. Inclusions, the empty-slot mass and the other masses are numerators over it, so the inclusion of a move is the exact fraction inclusion / denominator, never parts per million.
     """
     slots: Annotated[StrictInt, Field(ge=1, le=8)]
     """
@@ -198,7 +198,7 @@ class MoveList(BaseModel):
     """
     empty_slots: Mass
     """
-    Mass of empty move slots (the source key ''), a numerator over the denominator: the mean number of empty slots per set is empty_slots / denominator. Never unmapped mass.
+    Mass of empty move slots (the source key ''), a numerator over the denominator: the mean number of empty slots per set is empty_slots / denominator and stays below slots (a reader rule). Never unmapped mass.
     """
     residual: Mass
     """

@@ -60,6 +60,8 @@ describe("readUsagePrior (ADR-025 section 2)", () => {
     ["abilities-sum", /abilities: the weights do not sum/],
     ["items-sum", /items: the weights do not sum/],
     ["spreads-sum", /spreads: the weights do not sum/],
+    ["moves-denominator", /the denominator is not the items denominator/],
+    ["empty-slots-over", /cannot average 4 or more empty slots/],
     ["moves-sum", /moves: the masses do not sum to slots times the denominator/],
     ["inclusion-over-denominator", /included more often than there are sets/],
     ["spread-over-limit", /more Stat Points than the format's limit/],

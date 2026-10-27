@@ -75,6 +75,8 @@ function checkForme(forme: UsagePrior["species"][number]["formes"][number], wher
     if (!entry.moves.includes(e.id)) bad(`${where}: move ${e.id} is not in the roster move pool of ${forme.id}`);
     if (e.inclusion > moves.denominator) bad(`${where}: move ${e.id} is included more often than there are sets`);
   }
+  if (moves.denominator !== items.denominator) bad(`${where} moves: the denominator is not the items denominator (the number of sets)`);
+  if (moves.empty_slots > (moves.slots - 1) * moves.denominator) bad(`${where} moves: a set cannot average ${moves.slots} or more empty slots`);
   if (total(moves.entries.map((e) => e.inclusion)) + moves.empty_slots + moves.residual + moves.unmapped !== moves.slots * moves.denominator) bad(`${where} moves: the masses do not sum to slots times the denominator`);
 }
 

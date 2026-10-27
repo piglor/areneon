@@ -97,6 +97,8 @@ def test_the_messages_name_the_rule() -> None:
         "other-format": "format_id",
         "other-engine-data": "engine_data_hash",
         "unknown-forme": "forme aaaaaaaaa is not in the vocabulary roster",
+        "moves-denominator": "items denominator",
+        "empty-slots-over": "empty slots",
         "unknown-species": "not in the vocabulary roster",
         "forme-weights-sum": "forme weights",
         "unsorted-inputs": "source inputs",

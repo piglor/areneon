@@ -91,6 +91,14 @@ def _check_spreads(
 
 def _check_moves(forme: dict[str, Any], where: str, k_moves: int, pool: list[str]) -> None:
     moves = forme["moves"]
+    if moves["denominator"] != forme["items"]["denominator"]:
+        raise UsagePriorError(
+            f"{where} moves: the denominator is not the items denominator (the number of sets)"
+        )
+    if moves["empty_slots"] > (moves["slots"] - 1) * moves["denominator"]:
+        raise UsagePriorError(
+            f"{where} moves: a set cannot average {moves['slots']} or more empty slots"
+        )
     _ordered([e["id"] for e in moves["entries"]], f"{where} moves")
     if len(moves["entries"]) > k_moves:
         raise UsagePriorError(f"{where} moves: more entries than k_moves")

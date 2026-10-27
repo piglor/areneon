@@ -111,6 +111,15 @@ export function usagePriorSamples(vocabulary: TeamVocabulary): { valid: Cases; i
       "usage-prior/abilities-sum": withPrior((p) => (first(p).abilities.unmapped += 1)),
       "usage-prior/items-sum": withPrior((p) => (first(p).items.denominator += 1)),
       "usage-prior/spreads-sum": withPrior((p) => (first(p).spreads.residual -= 1)),
+      "usage-prior/moves-denominator": withPrior((p) => {
+        first(p).moves.denominator = 901;
+        first(p).moves.residual += 4;
+      }),
+      "usage-prior/empty-slots-over": withPrior((p) => {
+        first(p).moves.entries = [];
+        first(p).moves.empty_slots = 2701;
+        first(p).moves.residual = 3600 - 2701 - 150;
+      }),
       "usage-prior/moves-sum": withPrior((p) => (first(p).moves.empty_slots += 1)),
       "usage-prior/inclusion-over-denominator": withPrior((p) => {
         first(p).moves.entries[0].inclusion = 901;

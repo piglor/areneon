@@ -644,6 +644,8 @@
   "v1/usage-prior/reader-invalid/abilities-sum.json": "7c7772fbc7c8f1dd8120d1ee68fd0cfcf25fd6f33add172d3a6d80e641795d69",
   "v1/usage-prior/reader-invalid/items-sum.json": "4e5656ed527c2ccc022cb93fe990432db167504dde1c919c3682029a3ee24f06",
   "v1/usage-prior/reader-invalid/spreads-sum.json": "59fb77d71ad7d37a5adcbc46ea3b27b2319be14298741f0bf20bb46743be10f2",
+  "v1/usage-prior/reader-invalid/moves-denominator.json": "5e6ab96bee0bb3dfb881d58d5bd2123ddf46ac4129816585184296e5f9c61c17",
+  "v1/usage-prior/reader-invalid/empty-slots-over.json": "5214f622a925df1eaa5707e21b18ad234a9ffaaf450fb7536d12f120a1a708e2",
   "v1/usage-prior/reader-invalid/moves-sum.json": "c6df3a9f592083b82c2ca15449e192924b6a332681ed1c9769c287aa24368136",
   "v1/usage-prior/reader-invalid/inclusion-over-denominator.json": "56c33d257d73b5f84b74d77375c2f43d2ae8259272679f65db136754caa881e8",
   "v1/usage-prior/reader-invalid/spread-over-limit.json": "98e07c6c9f9b9dd3a196531be62997757614094c029d3ccbfc7aba2a76f2ccd9",
