@@ -171,6 +171,23 @@ describe("the Mega test (B1)", () => {
     expect(slot(b, "beta").abilities.map((a) => a.id)).toEqual(["b1", "b2"]);
   });
 
+  it("a Mega forme's holder abilities replace the base forme's list for the stone holder before the Evolution (#1167)", () => {
+    const holder = (f: { holder_abilities?: unknown; id: string }, pr: ReturnType<typeof prior>) => {
+      const s = pr.species.find((x) => x.id === "beta") as { formes: { id: string; holder_abilities?: unknown }[] };
+      (s.formes.find((x) => x.id === f.id) as { holder_abilities?: unknown }).holder_abilities = f.holder_abilities;
+    };
+    const withHolder = (pr: ReturnType<typeof prior>) => holder({ id: "betamega", holder_abilities: { denominator: 1, entries: [{ id: "b2", weight: 1 }], residual: 0, unmapped: 0 } }, pr);
+    // 3/4 beta (b1 3/4, b2 1/4) and 1/4 betamega holding b2: b2 has 3/4 * 1/4 + 1/4 = 7/16.
+    const b = stoneHolder([], withHolder);
+    expect(slot(b, "beta").abilities).toEqual([{ id: "b1", p: p(9n, 16n) }, { id: "b2", p: p(7n, 16n) }]);
+    // A shown b1 excludes the Mega forme (the holder never has it), a shown b2 keeps both.
+    const shown = stoneHolder([SWITCH("a", "Bet", "Beta"), "|-ability|p2a: Bet|B1"], withHolder);
+    expect(slot(shown, "beta").formes.map((f) => f.id)).toEqual(["beta"]);
+    // After the Evolution the Mega forme's own list applies and the holder list is not read.
+    const evolved = stoneHolder([SWITCH("a", "Bet", "Beta"), "|detailschange|p2a: Bet|Beta-Mega, L50, M", "|-mega|p2a: Bet|Beta|Betite"], withHolder);
+    expect(slot(evolved, "beta").abilities).toEqual([{ id: "bmega", p: p(1n) }]);
+  });
+
   it("a revealed pre-Evolution ability fits both formes and leaves their odds alone", () => {
     const b = stoneHolder([SWITCH("a", "Bet", "Beta"), "|-ability|p2a: Bet|B2"]);
     expect(slot(b, "beta").abilities).toEqual([{ id: "b2", p: p(1n) }]);

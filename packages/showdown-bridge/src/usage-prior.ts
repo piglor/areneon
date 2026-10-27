@@ -46,7 +46,7 @@ function compareSpreads(a: Spread, b: Spread): number {
 const total = (values: readonly number[]): number => values.reduce((sum, v) => sum + v, 0);
 
 /** The sums and limits of one forme's four lists. */
-function checkForme(forme: UsagePrior["species"][number]["formes"][number], where: string, prior: UsagePrior, vocabulary: TeamVocabulary): void {
+function checkForme(forme: UsagePrior["species"][number]["formes"][number], species: string, where: string, prior: UsagePrior, vocabulary: TeamVocabulary): void {
   const entry = vocabulary.roster.find((r) => r.id === forme.id) ?? bad(`${where}: forme ${forme.id} is not in the vocabulary roster`);
   // A Mega forme's Abilities list is the post-Evolution ability, which the roster entry (the form Team Preview shows) may not list: accept any ability the roster lists.
   const abilityPool = entry.required_item === undefined ? new Set(entry.abilities) : new Set(vocabulary.roster.flatMap((r) => r.abilities));
@@ -55,6 +55,16 @@ function checkForme(forme: UsagePrior["species"][number]["formes"][number], wher
   ordered(abilities.entries.map((e) => e.id), `${where} abilities`);
   for (const e of abilities.entries) if (!abilityPool.has(e.id)) bad(`${where}: ability ${e.id} is not one the vocabulary lists for ${forme.id}`);
   if (total(abilities.entries.map((e) => e.weight)) + abilities.residual + abilities.unmapped !== abilities.denominator) bad(`${where} abilities: the weights do not sum to the denominator`);
+  const holder = forme.holder_abilities;
+  if (holder !== undefined) {
+    // Only a Mega forme has a state before the Evolution; its abilities are the preview species' (the form Team Preview shows).
+    const preview = entry.required_item !== undefined ? vocabulary.roster.find((r) => r.id === species) : undefined;
+    if (preview === undefined || species === forme.id) bad(`${where}: holder_abilities on a forme that is not a Mega forme`);
+    const pool = new Set(preview.abilities);
+    ordered(holder.entries.map((e) => e.id), `${where} holder abilities`);
+    for (const e of holder.entries) if (!pool.has(e.id)) bad(`${where}: holder ability ${e.id} is not one the vocabulary lists for ${species}`);
+    if (total(holder.entries.map((e) => e.weight)) + holder.residual + holder.unmapped !== holder.denominator) bad(`${where} holder abilities: the weights do not sum to the denominator`);
+  }
 
   ordered(items.entries.map((e) => e.id), `${where} items`);
   if (items.entries.length > prior.derivation.k_items) bad(`${where} items: more entries than k_items`);
@@ -97,7 +107,7 @@ export function readUsagePrior(value: unknown, vocabulary: TeamVocabulary): Usag
     if (!vocabulary.roster.some((r) => r.id === species.id)) bad(`species ${species.id} is not in the vocabulary roster`);
     ordered(species.formes.map((f) => f.id), `species ${species.id} formes`);
     if (total(species.formes.map((f) => f.weight)) !== species.denominator) bad(`species ${species.id}: the forme weights do not sum to the denominator`);
-    for (const forme of species.formes) checkForme(forme, `species ${species.id} forme ${forme.id}`, prior, vocabulary);
+    for (const forme of species.formes) checkForme(forme, species.id, `species ${species.id} forme ${forme.id}`, prior, vocabulary);
   }
   return prior;
 }

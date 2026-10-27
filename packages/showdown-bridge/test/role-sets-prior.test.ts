@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { type Json, jcs } from "../src/canonical-json.ts";
 import { exportEngineData } from "../src/engine-data.ts";
 import { loadEngine } from "../src/engine.ts";
-import { deriveGeneratorPrior, megaPreviewSpecies } from "../src/generator-prior.ts";
+import { deriveGeneratorPrior, megaHolderAbilities, megaPreviewSpecies } from "../src/generator-prior.ts";
 import { GOLDEN_DIR, GOLDEN_FORMAT } from "../src/golden.ts";
 import { deriveRoleSetsPrior, ROLE_SETS_PRIOR_SCRIPT, RoleSetsPriorError } from "../src/role-sets-prior.ts";
 import { readRoleSetTable, ROLE_SETS_FILE, roleSetTableHash, type RoleSetTable } from "../src/role-sets.ts";
@@ -119,7 +119,7 @@ describe("the role-sets prior of the committed table (ADR-025 section 2)", () =>
   it("changes its hash with the table, with the fill and with the vocabulary it names", () => {
     const base = usagePriorHash(prior);
     expect(usagePriorHash(derive())).toBe(base);
-    const other = deriveGeneratorPrior({ vocabulary, config: readTeamGeneratorConfig(JSON.parse(readFileSync(join(ROOT, "config", "teams", GOLDEN_FORMAT, "generator.json"), "utf8")), table), generator_commit: "0".repeat(40), shows_as: shows });
+    const other = deriveGeneratorPrior({ vocabulary, config: readTeamGeneratorConfig(JSON.parse(readFileSync(join(ROOT, "config", "teams", GOLDEN_FORMAT, "generator.json"), "utf8")), table), generator_commit: "0".repeat(40), shows_as: shows, holder_abilities: megaHolderAbilities(engine, vocabulary, shows) });
     const changed = derive({ fill: other });
     expect(changed.source).toMatchObject({ kind: "role-sets", fill_prior_hash: usagePriorHash(other) });
     expect(usagePriorHash(changed)).not.toBe(base);
@@ -133,7 +133,7 @@ describe("the derivation on small vocabularies", () => {
   const config = { ...readTeamGeneratorConfig(JSON.parse(readFileSync(join(ROOT, "config", "teams", GOLDEN_FORMAT, "generator.json"), "utf8")), table), item_weights: [], default_item_weight: 1, moves_per_set: 4 };
   const mini = (roster: TeamVocabulary["roster"], items: string[]) => {
     const v: TeamVocabulary = { ...vocabulary, roster, items };
-    const f = deriveGeneratorPrior({ vocabulary: v, config, generator_commit: "1".repeat(40), shows_as: new Map([["aaamega", "aaa"]]) });
+    const f = deriveGeneratorPrior({ vocabulary: v, config, generator_commit: "1".repeat(40), shows_as: new Map([["aaamega", "aaa"]]), holder_abilities: new Map([["aaamega", new Map([["x", 1]])]]) });
     const t = (species: RoleSetTable["species"]): RoleSetTable => ({ ...roleSets, vocabulary_hash: teamVocabularyHash(v), species });
     return { v, f, t };
   };

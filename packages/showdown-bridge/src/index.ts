@@ -253,8 +253,8 @@ export {
   readPrivateSnapshotManifest,
 } from "./private-snapshot.ts";
 export { type UsagePrior, UsagePriorError, readUsagePrior, usagePriorHash } from "./usage-prior.ts";
-export { deriveGeneratorPrior, GENERATOR_PRIOR_SCRIPT, GeneratorPriorError, type GeneratorPriorInput, generatorConfigHash, megaPreviewSpecies } from "./generator-prior.ts";
 export { deriveRoleSetsPrior, ROLE_SETS_PRIOR_SCRIPT, RoleSetsPriorError, type RoleSetsPriorInput } from "./role-sets-prior.ts";
+export { deriveGeneratorPrior, GENERATOR_PRIOR_SCRIPT, GeneratorPriorError, type GeneratorPriorInput, generatorConfigHash, megaHolderAbilities, megaPreviewSpecies } from "./generator-prior.ts";
 export { type BeliefConfig, BeliefConfigError, beliefConfigHash, readBeliefConfig } from "./belief-config.ts";
 export {
   exportMoveClasses,

@@ -357,6 +357,10 @@
         "abilities": {
           "$ref": "#/$defs/AbilityList"
         },
+        "holder_abilities": {
+          "description": "Optional, for a Mega forme only (a minor change within v1): the ability marginal of the Pokemon while it holds the stone and has not evolved, over the abilities of the preview species. Absent: a consumer takes the preview species' own forme's abilities. The generator-matched prior sets it from what the pinned validator makes of a Mega-forme set (the base forme holding the stone, with the base forme's first listed ability).",
+          "$ref": "#/$defs/AbilityList"
+        },
         "items": {
           "$ref": "#/$defs/ItemList"
         },

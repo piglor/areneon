@@ -100,7 +100,7 @@ function slotWork(species: PriorSpecies, ev: SlotEvidence, ctx: Context, slot: n
     const entry = entries.get(f.id) as RosterEntry;
     const mega = isMega(species, f, entry);
     const evolved = mega && (ev.mega || ev.shown === f.id);
-    const dist = mega && !evolved ? baseAbilities : abilityDist(f.abilities.entries, f.abilities.residual, entry.abilities);
+    const dist = mega && !evolved ? (f.holder_abilities === undefined ? baseAbilities : abilityDist(f.holder_abilities.entries, f.holder_abilities.residual, speciesEntry.abilities)) : abilityDist(f.abilities.entries, f.abilities.residual, entry.abilities);
     const verdict = ev.ability === null ? "free" : evolved && preAbilities.has(ev.ability) ? "ambiguous" : weightOf(dist, ev.ability) > 0n ? "fixed" : "excluded";
     return { f, mega, dist, verdict };
   });
