@@ -315,7 +315,10 @@ the other way round, so use a progress directory per dataset. The dashboard says
 "Evaluation teams: the validation split of another verified dataset than the run's
 own", and the look is logged in the validation look log like any other. Scores on
 different datasets are not comparable; a held-out set from slice 3 of ADR-020 is
-used through this same option.
+used through this same option (only the validation split is read today; the
+evaluation-only split comes with that slice). `scripted-h2h` takes the same flags (renamed
+from `--dataset-dir/--dataset-hash` on purpose) but has no run of its own, so its record
+puts the given hash in `teams.dataset_hash`.
 
 **Every pair is played from both seats (ADR-017 erratum E2).** Validation pair
 `k` is two games, `2k` and `2k+1`: the candidate on p1 holding team `a` against
