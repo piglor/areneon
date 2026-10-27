@@ -1,0 +1,85 @@
+{
+  "schema_version": 1,
+  "data_class": "synthetic",
+  "run_id": "tiny-run",
+  "version_manifest": {
+    "showdown_commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "format_id": "gen9championsvgc2026regmc",
+    "regulation": "M-C",
+    "ruleset_hash": "5555555555555555555555555555555555555555555555555555555555555555",
+    "format_rules_hash": "6666666666666666666666666666666666666666666666666666666666666666"
+  },
+  "teams": {
+    "dataset_hash": "9999999999999999999999999999999999999999999999999999999999999999",
+    "split": "validation",
+    "pairs_used": 2
+  },
+  "plan": {
+    "seed_derivation": "progress-seed/1",
+    "pairing": "progress-pairing/1",
+    "games": 4,
+    "max_turns": 100,
+    "latency_budget_ms": {
+      "preview_ms": 1000,
+      "battle_ms": 1000
+    }
+  },
+  "arms": {
+    "a": {
+      "policy_id": "actor-rule@v1"
+    },
+    "b": {
+      "policy_id": "random-legal@v1"
+    }
+  },
+  "result": {
+    "wins_a": 3,
+    "wins_b": 0,
+    "ties": 1,
+    "turn_cap_ties": 1,
+    "turns_total": 166,
+    "forfeits": []
+  },
+  "games": [
+    {
+      "game": 0,
+      "pair": 0,
+      "a_seat": "p1",
+      "outcome": {
+        "kind": "played",
+        "winner": "a",
+        "turns": 20
+      }
+    },
+    {
+      "game": 1,
+      "pair": 0,
+      "a_seat": "p2",
+      "outcome": {
+        "kind": "played",
+        "winner": "tie",
+        "turns": 101
+      }
+    },
+    {
+      "game": 2,
+      "pair": 1,
+      "a_seat": "p1",
+      "outcome": {
+        "kind": "played",
+        "winner": "a",
+        "turns": 22
+      }
+    },
+    {
+      "game": 3,
+      "pair": 1,
+      "a_seat": "p2",
+      "outcome": {
+        "kind": "played",
+        "winner": "a",
+        "turns": 23
+      }
+    }
+  ]
+}
