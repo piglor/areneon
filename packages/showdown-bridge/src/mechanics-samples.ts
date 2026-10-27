@@ -72,6 +72,8 @@ export function mechanicsSamples(engine: Engine): { valid: Cases; invalid: Cases
   return {
     valid: {
       "mechanics-config/regmc": config,
+      // a config written before ko_non_blockers existed (the field is optional)
+      "mechanics-config/regmc-no-non-blockers": mutated(config, (c) => delete c.ko_non_blockers),
       "mechanics-query/stats": stats,
       "mechanics-query/speed-order": speedOrder,
       "mechanics-query/damage": damage,
@@ -85,6 +87,7 @@ export function mechanicsSamples(engine: Engine): { valid: Cases; invalid: Cases
     invalid: {
       "mechanics-config/extra-field": mutated(config, (c) => (c.scenario.note = "x")),
       "mechanics-config/unknown-kind": mutated(config, (c) => (c.scope.query_kinds[0].kind = "heal")),
+      "mechanics-config/non-blocker-without-reason": mutated(config, (c) => delete c.ko_non_blockers.items[0].reason),
       "mechanics-query/extra-field": mutated(stats, (q) => (q.battle = {})),
       "mechanics-query/unknown-kind": mutated(stats, (q) => (q.query.kind = "heal")),
       "mechanics-query/boost-out-of-range": mutated(damage, (q) => (q.query.attacker.boosts.atk = 7)),
@@ -96,6 +99,7 @@ export function mechanicsSamples(engine: Engine): { valid: Cases; invalid: Cases
     },
     readerInvalid: {
       "mechanics-config/unsorted-removed-rule-ids": mutated(config, (c) => c.scenario.removed_rule_keys.reverse()),
+      "mechanics-config/unsorted-ko-non-blockers": mutated(config, (c) => c.ko_non_blockers.abilities.reverse()),
       "mechanics-result/unsorted-gap-ids": mutated(computed, (r) => (r.gap_ids = ["stat-points", "level"])),
     },
   };

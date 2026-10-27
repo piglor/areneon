@@ -98,6 +98,17 @@ describe("checkMechanicsConfig names every problem", () => {
     expect(problems.join("\n")).toContain("the target's keys missing from the scenario");
   });
 
+  it("checks the reviewed non-blockers exist too, and accepts a config without the list", () => {
+    const problems = checkMechanicsConfig(
+      engine,
+      edited((c) => {
+        c.ko_non_blockers = { abilities: [{ id: "zzzability", reason: "x" }], items: [{ id: "zzzitem", reason: "x" }] };
+      }),
+    );
+    expect(problems).toEqual(["ko_non_blockers: zzzitem is not an item", "ko_non_blockers: zzzability is not an ability"]);
+    expect(checkMechanicsConfig(engine, edited((c) => void delete c.ko_non_blockers))).toEqual([]);
+  });
+
   it("a speed_order scope needs the Mega row in the ledger, which the probe names when a Mega is involved", () => {
     const snapshot = structuredClone(loadRulesSnapshot(engine.commit));
     delete snapshot.gaps["mega-evolution"];

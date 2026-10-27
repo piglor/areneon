@@ -124,6 +124,7 @@ describe("the shared contract sample corpus (ADR-008 §2)", () => {
       "v1/league-run-record/reader-invalid/opponents-do-not-sum.json",
       "v1/league-run-record/reader-invalid/unsorted-causes.json",
       "v1/league-run-record/reader-invalid/unsorted-opponents.json",
+      "v1/mechanics-config/reader-invalid/unsorted-ko-non-blockers.json",
       "v1/mechanics-config/reader-invalid/unsorted-removed-rule-ids.json",
       "v1/mechanics-result/reader-invalid/unsorted-gap-ids.json",
       "v1/move-class-table/reader-invalid/duplicate-id.json",

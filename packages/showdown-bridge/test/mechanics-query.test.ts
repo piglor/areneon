@@ -139,8 +139,9 @@ describe("the mechanics corpus samples", () => {
   it.each(names("mechanics-config", "invalid"))("the config sample %s is refused", (name) => {
     expect(() => readMechanicsConfig(sample("mechanics-config", "invalid", name))).toThrow(MechanicsConfigError);
   });
-  it("the reader-invalid config sample passes the schema and not the reader", () => {
+  it("the reader-invalid config samples pass the schema and not the reader", () => {
     expect(() => readMechanicsConfig(sample("mechanics-config", "reader-invalid", "unsorted-removed-rule-ids"))).toThrow("sorted and unique");
+    expect(() => readMechanicsConfig(sample("mechanics-config", "reader-invalid", "unsorted-ko-non-blockers"))).toThrow("ko_non_blockers.abilities must be sorted and unique");
   });
 });
 
