@@ -363,7 +363,7 @@ describe("the checks and the typed, counted refusals", () => {
       expect(r.redraw).toBe(false);
       return r.item;
     };
-    expect(item((s) => { (s.opponent.roster[foe] as { volatiles: string[] }).volatiles = ["taunt"]; })).toBe("unadmitted_id");
+    expect(item((s) => { (s.opponent.roster[foe] as { volatiles: string[] }).volatiles = ["torment"]; })).toBe("unadmitted_id");
     expect(item((s) => { (s.opponent.roster[foe] as { volatiles: string[] }).volatiles = ["substitute"]; })).toBe("substitute");
     expect(item((s) => { (s.opponent.roster[foe] as { volatiles: string[] }).volatiles = ["futuresight"]; })).toBe("slot_conditions");
     expect(item((s) => { (s.opponent.roster[foe] as { volatiles: string[] }).volatiles = ["transform"]; })).toBe("illusion_transform");

@@ -26,17 +26,21 @@ describe("the closed lists", () => {
 });
 
 describe("the committed record (config/search/world-writers.v1.json)", () => {
-  it("reads against the pinned engine, with every item classified once and no id admitted yet", () => {
+  it("reads against the pinned engine, with every item classified once and the ids the fidelity oracle admits (slice F)", () => {
     const record = loadWorldWriters(engine, GOLDEN_FORMAT);
     expect(record.items.map((item) => item.id)).toEqual([...STATE_ITEM_IDS]);
-    // until the fidelity oracle admits ids (slice F) every generic id is R: nothing is listed
-    expect(record.admitted).toEqual([]);
+    // Every generic id the oracle report does not support is R: only these two have N_ex exercising turns, all equal
+    // (fidelity.test.ts holds the list equal to the committed report).
+    expect(record.admitted).toEqual([
+      { kind: "volatile", id: "encore", class: "W" },
+      { kind: "volatile", id: "taunt", class: "W" },
+    ]);
     const classes = Object.fromEntries(record.items.map((item) => [item.id, item.class]));
     expect(classes).toMatchObject({ toxic_stage: "W", bench_status: "W", sleep_counter: "X", confusion_duration: "X", per_turn_fields: "T", substitute: "R", unadmitted_id: "R" });
   });
 
   it("has a hash pinned from outside the code (Python's hashlib over the sorted-key bytes)", () => {
-    expect(worldWritersHash(loadWorldWriters(engine, GOLDEN_FORMAT))).toBe("89b4bb2e79d0a395332bcc0c4d56cbc01d3d45bce6f4eef31e5dbda7151612b6");
+    expect(worldWritersHash(loadWorldWriters(engine, GOLDEN_FORMAT))).toBe("89c031a000d3ff556a174849ca52064ad855ae03d30ff7488eae8850c34f5e93");
   });
 
   it("is refused for another format", () => {

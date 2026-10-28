@@ -9,6 +9,8 @@ stream (`PlayerChannelLog`); no omniscient log is stored.
 | `targets.json` | The reviewed input of the capture script: per target the moves and abilities a team must hold to be drawn for it, the public channel line patterns that count as one occurrence, and the minimum number of turns. `unreachable` lists what no legal team can hold (Download: no species of the format lists it). |
 | `b*.json` | One seeded A1 battle each: seed, both teams, the actor seeds and kinds (`random-legal` or `pending-first` per seat), where each team came from (`origin`), both players' channels. |
 | `manifest.json` | The battles (seed, turns, winner, actors) and the team sources. |
+| `oracle-sanity.json` | Hand-picked turns of the committed corpora (slice F's sanity gate): the fork oracle's world reproduces the real turn line for line on each, F1 and the F2 sample. Synthetic, counts and ids only. |
+| `fidelity-report.json`, `fidelity-report.md` | The full fork-oracle fidelity report (slice F, ADR-026 Evidence 1): F1 and F2 fidelity with X-class turns apart, the classification of every difference, and the exercised-turn table per writer and per candidate id (the admission rule N_ex = 20). Integers only, no line of any battle. Written by `node packages/showdown-bridge/test/fidelity/report-cli.ts --json fidelity-report.json > fidelity-report.md` (about 5 minutes); a test fails when its `inputs` (corpora bytes, pin, record) are stale. |
 | `summary.json` | The coverage summary: per target the turns in which it occurs, in how many battles and in which turns per battle, plus the corpus's total battle turns (the denominators of slice F). |
 
 Teams come from two sources: the dev split of `../../teams/<format>/datasets/fixtures-v1/`
