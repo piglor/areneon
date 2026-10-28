@@ -23,9 +23,9 @@ export interface PolicyQuery {
   candidates: [Candidate, ...Candidate[]];
   candidate_features?: CandidateFeatures;
   /**
-   * How the worker picks among the candidates (ADR-010 §2): argmax, or a draw from the policy's probabilities using u.
+   * How the worker picks among the candidates (ADR-010 §2): argmax, a draw from the policy's probabilities using u, or (ADR-026 §5) no pick at all: evaluate asks for the policy's prior over the candidates and its value of the state.
    */
-  sampling: ArgmaxSampling | SampleSampling;
+  sampling: ArgmaxSampling | SampleSampling | EvaluateSampling;
   /**
    * The inference identity that produced the choice (ADR-010 §2): echoed as the Recommendation's source_policy_id.
    */
@@ -453,6 +453,15 @@ export interface SampleSampling {
 export interface ThresholdTruncation {
   kind: "threshold";
   min_ppm: number;
+}
+/**
+ * No candidate is chosen: the worker answers with an EvaluationReply (not a PolicyReply recommendation) holding the policy's probability of each candidate (temperature 1, no truncation) and its value of the state, from one batch-1 forward pass. candidate_features are read as for any other query. The query is a decision-time search's question; policy_id names the policy asked.
+ *
+ * This interface was referenced by `PolicyQuery`'s JSON-Schema
+ * via the `definition` "EvaluateSampling".
+ */
+export interface EvaluateSampling {
+  kind: "evaluate";
 }
 /**
  * Which request a decision answers (ADR-008 §4). A consumer drops a recommendation unless request_seq and request_hash both match, and rqid too when both carry one.

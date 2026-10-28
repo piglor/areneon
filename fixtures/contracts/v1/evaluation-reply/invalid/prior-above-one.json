@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "query_id": 1,
+  "reply": {
+    "kind": "evaluation",
+    "evaluation": {
+      "identity": {
+        "request_seq": 2,
+        "request_hash": "e5b62f4038f7aa3cbdaa920efe8e0ac8da7feed1ec57ff96739364b16396e1bf"
+      },
+      "prior_ppm": [
+        1000001
+      ],
+      "value_ppm": 0
+    }
+  }
+}

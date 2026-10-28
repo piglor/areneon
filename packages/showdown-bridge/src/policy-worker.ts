@@ -28,10 +28,13 @@ import { answersRequest } from "./episode.ts";
 import { largest, peakRssOf } from "./process-usage.ts";
 import {
   contractVersions,
+  type EvaluateQueryInput,
+  type Evaluation,
   encodeFrame,
   PolicyProtocolError,
   type PolicyQuery,
   type PolicyQueryInput,
+  readEvaluationReply,
   readHandshake,
   readPolicyQuery,
   readPolicyReply,
@@ -49,6 +52,14 @@ export interface PolicyClient {
    * that still has one outstanding is refused, so the worker never holds two.
    */
   ask(battle: string, query: PolicyQueryInput): Promise<Recommendation>;
+}
+
+/**
+ * What a search needs from a worker (ADR-026 section 5): the policy's prior over a request's candidates and its value of the
+ * state, from one batch-1 forward pass, as an `EvaluationReply` the client has re-checked.
+ */
+export interface EvaluationClient {
+  evaluate(battle: string, query: EvaluateQueryInput): Promise<Evaluation>;
 }
 
 /** The worker's reply is invalid: schema-invalid, for another query, wrong identity, or a choice outside the candidates. A policy forfeit. */
@@ -89,7 +100,7 @@ export interface PolicyWorkerOptions {
 
 interface Outstanding {
   query: PolicyQuery;
-  resolve: (recommendation: Recommendation) => void;
+  resolve: (answer: Recommendation | Evaluation) => void;
   reject: (error: Error) => void;
 }
 
@@ -107,7 +118,7 @@ function errorClass(stderr: string): string {
 }
 
 /** A `PolicyClient` on a child process speaking the worker protocol. */
-export class PolicyWorkerClient implements PolicyClient {
+export class PolicyWorkerClient implements PolicyClient, EvaluationClient {
   readonly #options: PolicyWorkerOptions;
   #child: ChildProcessWithoutNullStreams | undefined;
   #failure: Error | undefined;
@@ -210,6 +221,20 @@ export class PolicyWorkerClient implements PolicyClient {
   }
 
   async ask(battle: string, input: PolicyQueryInput): Promise<Recommendation> {
+    if (input.sampling.kind === "evaluate") throw new PolicyProtocolError("an evaluate query is sent with evaluate(), not ask()");
+    return (await this.#send(battle, input)) as Recommendation;
+  }
+
+  /**
+   * Ask for the policy's prior and value (ADR-026 section 5): the same session rules as `ask` (one query per battle, at most
+   * `n_parallel`), the same classification of failures. The reply is re-checked against the query before it is returned.
+   */
+  async evaluate(battle: string, input: EvaluateQueryInput): Promise<Evaluation> {
+    if (input.sampling.kind !== "evaluate") throw new PolicyProtocolError("evaluate() takes a query whose sampling is evaluate");
+    return (await this.#send(battle, input)) as Evaluation;
+  }
+
+  async #send(battle: string, input: PolicyQueryInput): Promise<Recommendation | Evaluation> {
     if (this.#failure !== undefined) throw this.#failure;
     if (this.#child === undefined) throw new PolicyWorkerError("crash", "the policy worker is not started");
     if (this.#battles.has(battle)) {
@@ -224,7 +249,7 @@ export class PolicyWorkerClient implements PolicyClient {
       const query = readPolicyQuery({ ...input, query_id: this.#nextId++ });
       this.#checkFeatures(query);
       const frame = encodeFrame(query, this.#options.max_line_bytes);
-      return await new Promise<Recommendation>((resolve, reject) => {
+      return await new Promise<Recommendation | Evaluation>((resolve, reject) => {
         this.#outstanding.set(query.query_id, { query, resolve, reject });
         (this.#child as ChildProcessWithoutNullStreams).stdin.write(frame);
       });
@@ -331,7 +356,7 @@ export class PolicyWorkerClient implements PolicyClient {
     }
     this.#outstanding.delete(pending.query.query_id);
     try {
-      pending.resolve(this.#answer(pending.query, value));
+      pending.resolve(pending.query.sampling.kind === "evaluate" ? this.#evaluation(pending.query, value) : this.#answer(pending.query, value));
     } catch (error) {
       pending.reject(error as Error);
     }
@@ -360,6 +385,28 @@ export class PolicyWorkerClient implements PolicyClient {
       throw new PolicyReplyError(`the reply's choice "${recommendation.choice}" is not among the candidates`);
     }
     return recommendation;
+  }
+
+  /** The Evaluation of a reply, once it is of the query's request and has one prior entry per candidate, in the query's order. */
+  #evaluation(query: PolicyQuery, value: unknown): Evaluation {
+    let reply;
+    try {
+      reply = readEvaluationReply(value).reply;
+    } catch (error) {
+      throw new PolicyReplyError((error as Error).message);
+    }
+    if (reply.kind === "error") {
+      if (reply.error === "unsupported_candidate") throw new UnsupportedCandidateError(reply.detail);
+      throw new PolicyProtocolError(`the worker refused the query: ${reply.detail}`);
+    }
+    const { evaluation } = reply;
+    if (!answersRequest(evaluation, query.identity)) {
+      throw new PolicyReplyError("the reply answers another request than the query's");
+    }
+    if (evaluation.prior_ppm.length !== query.candidates.length) {
+      throw new PolicyReplyError(`the reply has ${evaluation.prior_ppm.length} prior entries for ${query.candidates.length} candidates`);
+    }
+    return evaluation;
   }
 
   #closed(code: number | null, signal: NodeJS.Signals | null): void {

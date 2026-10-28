@@ -38,6 +38,14 @@ const recommendation = (query: PolicyQuery, change: Record<string, unknown> = {}
   };
 };
 
+// An evaluation of an `evaluate` query (ADR-026 section 5): invented prior, one entry per candidate, in the query's order.
+const evaluation = (query: PolicyQuery, change: Record<string, unknown> = {}) => ({
+  identity: query.identity,
+  prior_ppm: query.candidates.map((_, i) => (i === 0 ? 1000000 - (query.candidates.length - 1) * 1000 : 1000)),
+  value_ppm: 500000,
+  ...change,
+});
+
 let handshaken = false;
 let inflight = 0;
 let peak = 0;
@@ -55,6 +63,18 @@ lines.on("line", (text) => {
   const reply = (body: unknown, extra: Record<string, unknown> = {}): void =>
     write({ schema_version: 1, query_id: query.query_id, reply: body, ...extra });
   const ok = (change: Record<string, unknown> = {}): void => reply({ kind: "recommendation", recommendation: recommendation(query, change) });
+  if (query.sampling.kind === "evaluate" && (mode.startsWith("eval-") || mode === "ok")) {
+    const bad = { ...evaluation(query), prior_ppm: [] };
+    const body =
+      mode === "eval-short" ? evaluation(query, { prior_ppm: evaluation(query).prior_ppm.slice(1) })
+      : mode === "eval-long" ? evaluation(query, { prior_ppm: [...evaluation(query).prior_ppm, 0] })
+      : mode === "eval-wrong-identity" ? evaluation(query, { identity: { ...query.identity, request_seq: query.identity.request_seq + 1 } })
+      : evaluation(query);
+    if (mode === "eval-bad-schema") reply({ kind: "evaluation", evaluation: bad });
+    else if (mode === "eval-recommendation") ok();
+    else reply({ kind: "evaluation", evaluation: body });
+    return;
+  }
   switch (mode) {
     case "crash":
       process.exit(3);
