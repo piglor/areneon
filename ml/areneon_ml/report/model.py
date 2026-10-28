@@ -67,9 +67,10 @@ STEPS_KEYS = ("steps", "optimiser_steps")
 KL_STOP_KEYS = ("epochs_run", "kl_stopped")  # only when ppo.target_kl_micro is set (ADR-010 A1)
 VALUE_WARMUP_KEY = "value_warmup"  # only on a value warm-up update (ADR-019 section 4)
 ANCHOR_KEYS = ("anchor_kl", "anchor_beta_micro")  # only when ppo.anchor is set (ADR-019 section 4)
+ENTROPY_SCHEDULE_KEY = "entropy_coef_micro"  # only under a linear ppo.entropy_schedule (ADR-023)
 TRAIN_ROLE_KEYS = (
     frozenset({*METRICS, *STEPS_KEYS}),
-    frozenset({*KL_STOP_KEYS, VALUE_WARMUP_KEY, *ANCHOR_KEYS}),
+    frozenset({*KL_STOP_KEYS, VALUE_WARMUP_KEY, *ANCHOR_KEYS, ENTROPY_SCHEDULE_KEY}),
 )
 TRAIN_KEYS = (frozenset(ROLES), frozenset[str]())
 _PROGRESS_DIR = re.compile(r"g(\d{6})")
@@ -253,6 +254,8 @@ def read_train_report(raw: object) -> TrainFacts:
             stops[role] = (integer(values["epochs_run"], f"{role} epochs_run", 1), fired)
         if VALUE_WARMUP_KEY in values and values[VALUE_WARMUP_KEY] is not True:
             raise ReportError(f"{role} value_warmup is true when present (ADR-019 section 4)")
+        if ENTROPY_SCHEDULE_KEY in values:
+            integer(values[ENTROPY_SCHEDULE_KEY], f"{role} {ENTROPY_SCHEDULE_KEY}")
         if set(ANCHOR_KEYS) & set(values):
             if set(ANCHOR_KEYS) - set(values):
                 raise ReportError(f"{role} anchor_kl and anchor_beta_micro come together")

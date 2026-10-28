@@ -229,6 +229,21 @@ class Baseline(BaseModel):
     """
 
 
+class EntropyLinearSchedule(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    kind: Literal["linear"]
+    final_micro: Annotated[StrictInt, Field(ge=0, le=10000000)]
+    """
+    The entropy weight from policy update `generations` on, in millionths; 0 switches the bonus off.
+    """
+    generations: Annotated[StrictInt, Field(ge=1, le=1000000)]
+    """
+    Policy updates over which the weight moves from entropy_coef_micro to final_micro.
+    """
+
+
 class AnchorLinearSchedule(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
@@ -340,6 +355,12 @@ class LearningRateSchedule(RootModel[ConstantSchedule | LinearSchedule]):
     root: Annotated[ConstantSchedule | LinearSchedule, Field(discriminator="kind")]
 
 
+class EntropySchedule(RootModel[ConstantSchedule | EntropyLinearSchedule]):
+    root: Annotated[
+        ConstantSchedule | EntropyLinearSchedule, Field(discriminator="kind")
+    ]
+
+
 class AnchorSchedule(RootModel[ConstantSchedule | AnchorLinearSchedule]):
     root: Annotated[
         ConstantSchedule | AnchorLinearSchedule, Field(discriminator="kind")
@@ -430,6 +451,10 @@ class Ppo(BaseModel):
     learning_rate_schedule: LearningRateSchedule | MISSING = MISSING
     """
     Optional (a minor change within v1, ADR-010 erratum A1): the Adam step size per learner update. Absent or constant means learning_rate_micro for every update. Linear: with t the update index from 0, rate(t) = learning_rate_micro + trunc((final_micro - learning_rate_micro) * min(t, generations) / generations) in exact integers, truncating toward zero, so update `generations` and every later one use exactly final_micro. Both roles alike. A config that carries it is a new run.
+    """
+    entropy_schedule: EntropySchedule | MISSING = MISSING
+    """
+    Optional (a minor change within v1, ADR-023 section 3, ADR-010 erratum A6 item 4, #1048): the entropy bonus weight per learner update. Absent or constant means entropy_coef_micro for every update. Linear: with t the policy update index from 0, coef(t) = entropy_coef_micro + trunc((final_micro - entropy_coef_micro) * min(t, generations) / generations) in exact integers, truncating toward zero, so policy update `generations` and every later one use exactly final_micro (the rule of learning_rate_schedule). Both roles alike. With ppo.value_warmup t counts from the first policy update (the update after the warm-up), as the anchor's does, and the warm-up updates report entropy_coef_micro (the policy is frozen and the entropy term does not enter the value-only loss). Absent means no schedule. A config that carries it is a new run.
     """
     value_warmup: ValueWarmup | MISSING = MISSING
     """

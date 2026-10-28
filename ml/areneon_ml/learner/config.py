@@ -120,6 +120,9 @@ class PPOSettings:
     value_warmup: int | None = None
     # ``ppo.anchor`` (ADR-019 section 4): None when absent (no anchor term).
     anchor: AnchorSettings | None = None
+    # ``ppo.entropy_schedule`` of kind ``linear`` (ADR-023 section 3, #1048), started from
+    # ``entropy_coef_micro``: None when absent or ``constant`` (``entropy_coef`` for every update).
+    entropy_schedule: LinearSchedule | None = None
 
 
 @dataclass(frozen=True)
@@ -155,6 +158,13 @@ def _schedule(ppo: dict[str, Any]) -> LinearSchedule | None:
     if found is None or found["kind"] == "constant":
         return None
     return LinearSchedule(ppo["learning_rate_micro"], found["final_micro"], found["generations"])
+
+
+def _entropy_schedule(ppo: dict[str, Any]) -> LinearSchedule | None:
+    found = ppo.get("entropy_schedule")
+    if found is None or found["kind"] == "constant":
+        return None
+    return LinearSchedule(ppo["entropy_coef_micro"], found["final_micro"], found["generations"])
 
 
 def _anchor(ppo: dict[str, Any]) -> AnchorSettings | None:
@@ -239,6 +249,7 @@ def read_run_config(raw: object) -> RunConfig:
             schedule=_schedule(ppo),
             value_warmup=ppo["value_warmup"]["generations"] if "value_warmup" in ppo else None,
             anchor=_anchor(ppo),
+            entropy_schedule=_entropy_schedule(ppo),
         ),
         device=raw["learner"]["device"],
         threads=raw["learner"]["threads"],
