@@ -107,7 +107,7 @@
     },
     {
       "id": "toxic_stage",
-      "class": "W"
+      "class": "R"
     },
     {
       "id": "truant_slow_start",
@@ -140,5 +140,16 @@
       "class": "W"
     }
   ],
-  "admitted": []
+  "admitted": [
+    {
+      "kind": "volatile",
+      "id": "encore",
+      "class": "W"
+    },
+    {
+      "kind": "volatile",
+      "id": "taunt",
+      "class": "W"
+    }
+  ]
 }
