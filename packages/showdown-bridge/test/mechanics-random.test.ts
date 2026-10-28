@@ -19,6 +19,16 @@ describe("recordingRandom", () => {
     expect(yes.draws).toEqual([{ kind: "randomChance", numerator: 1, denominator: 24 }]);
   });
 
+  it("changes its answers on request, for the next calls only", () => {
+    const source = recordingRandom({ roll: 1, chance: true });
+    expect(source.random(16)).toBe(1);
+    source.answer(9, false);
+    expect(source.random(16)).toBe(9);
+    expect(source.randomChance(1, 24)).toBe(false);
+    expect(source.draws).toHaveLength(3);
+    expect(() => source.answer(16, true)).toThrow(RangeError);
+  });
+
   it("records any other draw as unexpected instead of answering it with a guess", () => {
     const source = recordingRandom({ roll: 3, chance: true });
     expect(source.random(100)).toBe(0);

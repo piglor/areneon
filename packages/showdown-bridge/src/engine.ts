@@ -145,7 +145,7 @@ export interface ShowdownSim {
   Battle: {
     new (options: { formatid: string; seed: string }): SimBattle;
     /** Rebuild a battle from `toJSON()`; without `send` it emits nothing. */
-    fromJSON(state: object): SimBattle;
+    fromJSON(state: object | string): SimBattle;
   };
   /** `battle` is the in-process battle once `>start` has been written. */
   BattleStream: new () => { battle: SimBattle | null };

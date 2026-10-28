@@ -12,6 +12,7 @@ import { join } from "node:path";
 import { loadEngine } from "../src/engine.ts";
 import { type BenchDecision, episodeDecisions, estimateWallTime, progressDecisions, type ProgressGame, runBench, type Skipped } from "../src/feature-bench.ts";
 import { GOLDEN_FORMAT } from "../src/golden.ts";
+import { damagePathStats } from "../src/mechanics-damage.ts";
 
 const arg = (name: string): string | undefined => (process.argv.includes(`--${name}`) ? process.argv[process.argv.indexOf(`--${name}`) + 1] : undefined);
 const num = (name: string, fallback: number): number => {
@@ -64,6 +65,7 @@ if (progressDir !== undefined) {
   }
   report.progress = { games_sampled: wantedGames, games_stored: games.length, decisions: decisions.length, ...(await runBench(spec, decisions, pools)) };
 }
+report.damage_path_single_thread = { ...damagePathStats };
 report.skipped = { episodes: skipped, progress: skippedProgress };
 
 const metrics = json(join(runDir, "metrics", `${gen}.json`)) as { phase_ms: { play: number; load: number }; counts: { decisions: number }; threads: number };

@@ -26,6 +26,8 @@ export interface RecordingRandom {
   readonly draws: readonly Draw[];
   random(m?: number, n?: number): number;
   randomChance(numerator: number, denominator: number): boolean;
+  /** Change what the next calls answer (the one-clone path asks for each roll in turn on one battle). */
+  answer(roll: number, chance: boolean): void;
 }
 
 /**
@@ -34,18 +36,27 @@ export interface RecordingRandom {
  * with its arguments, as is every other member of the engine's PRNG.
  */
 export function recordingRandom(options: RecordingRandomOptions): RecordingRandom {
-  if (!Number.isInteger(options.roll) || options.roll < 0 || options.roll > 15) throw new RangeError("roll must be an integer from 0 to 15");
+  const check = (roll: number): void => {
+    if (!Number.isInteger(roll) || roll < 0 || roll > 15) throw new RangeError("roll must be an integer from 0 to 15");
+  };
+  check(options.roll);
+  const current = { roll: options.roll, chance: options.chance };
   const draws: Draw[] = [];
   const known: RecordingRandom = {
     draws,
     random(m?: number, n?: number): number {
       const args = [m, n].filter((value): value is number => value !== undefined);
       draws.push({ kind: "random", args });
-      return args.length === 1 && args[0] === 16 ? options.roll : 0;
+      return args.length === 1 && args[0] === 16 ? current.roll : 0;
     },
     randomChance(numerator: number, denominator: number): boolean {
       draws.push({ kind: "randomChance", numerator, denominator });
-      return options.chance;
+      return current.chance;
+    },
+    answer(roll: number, chance: boolean): void {
+      check(roll);
+      current.roll = roll;
+      current.chance = chance;
     },
   };
   // Any other member the engine reaches for is a draw it was not expected to make.
