@@ -30,9 +30,9 @@ describe("readUsagePrior (ADR-025 section 2)", () => {
   const forme = (prior: any) => prior.species[0].formes[0];
 
   it("reads the three source kinds and hashes them by their JCS bytes", () => {
-    for (const name of ["smogon-chaos", "role-sets", "generator-matched"]) {
+    for (const name of ["smogon-chaos", "smogon-chaos-fallback", "role-sets", "generator-matched"]) {
       const prior = readUsagePrior(valid(name), vocabulary);
-      expect(prior.source.kind).toBe(name);
+      expect(prior.source.kind).toBe(name.replace("-fallback", ""));
       expect(usagePriorHash(prior)).toBe(sha256Hex(jcs(valid(name) as Json)));
     }
     expect(usagePriorHash(valid("smogon-chaos"))).not.toBe(usagePriorHash(valid("role-sets")));
@@ -50,6 +50,8 @@ describe("readUsagePrior (ADR-025 section 2)", () => {
     ["unsorted-moves", /moves: .* repeated or out of order/],
     ["unsorted-spreads", /spread 1 is repeated or out of order/],
     ["unsorted-inputs", /source inputs: .* repeated or out of order/],
+    ["fallback-unsorted", /fallback species: .* repeated or out of order/],
+    ["fallback-unknown-species", /is not a species of the record/],
     ["unknown-species", /is not in the vocabulary roster/],
     ["unknown-forme", /forme aaaaaaaaa is not in the vocabulary roster/],
     ["unknown-item", /item aaaaaaaaa is not in the vocabulary/],

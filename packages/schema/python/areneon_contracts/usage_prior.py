@@ -157,6 +157,15 @@ def read_usage_prior(value: object, vocabulary: dict[str, Any]) -> dict[str, Any
 
     roster = {entry["id"] for entry in vocabulary["roster"]}
     _ordered([s["id"] for s in prior["species"]], "species")
+    # The species a usage source lacks, filled from another prior (#1209).
+    source = prior["source"]
+    fallback = source.get("fallback") if source["kind"] == "smogon-chaos" else None
+    if fallback is not None:
+        _ordered(fallback["species"], "fallback species")
+        have = {s["id"] for s in prior["species"]}
+        for fid in fallback["species"]:
+            if fid not in have:
+                raise UsagePriorError(f"fallback species {fid} is not a species of the record")
     for species in prior["species"]:
         if species["id"] not in roster:
             raise UsagePriorError(f"species {species['id']} is not in the vocabulary roster")

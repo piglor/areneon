@@ -298,33 +298,6 @@ class SourceInput(BaseModel):
     """
 
 
-class SmogonChaos(BaseModel):
-    """
-    Aggregate usage statistics of one monthly chaos file.
-    """
-
-    model_config = ConfigDict(
-        extra="forbid",
-    )
-    kind: Literal["smogon-chaos"]
-    month: Annotated[StrictStr, Field(pattern="^[0-9]{4}-(0[1-9]|1[0-2])$")]
-    """
-    The statistics month, YYYY-MM.
-    """
-    cutoff: Annotated[StrictInt, Field(ge=0, le=100000)]
-    """
-    The rating cutoff of the file.
-    """
-    number_of_battles: Annotated[StrictInt, Field(ge=0, le=1000000000000)]
-    """
-    The number of battles the file states.
-    """
-    inputs: Annotated[list[SourceInput], Field(max_length=8, min_length=1)]
-    """
-    The input files, sorted by source_id, no id twice.
-    """
-
-
 class RoleSets(BaseModel):
     """
     The committed role-set table, uniform over roles, with a named fill prior.
@@ -388,6 +361,59 @@ class Derivation(BaseModel):
     k_spreads: Annotated[StrictInt, Field(ge=1, le=256)]
     """
     The most spreads a list names.
+    """
+
+
+class SpeciesFallback(BaseModel):
+    """
+    The prior that fills the species a usage source lacks (ADR-025 section 2 fallback).
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    kind: Literal["generator-matched"]
+    """
+    The kind of the filling prior.
+    """
+    prior_hash: Hash
+    """
+    The prior_hash of the filling prior record (SHA-256 of its JCS bytes).
+    """
+    species: Annotated[list[Id], Field(max_length=1024, min_length=1)]
+    """
+    The preview species ids taken from it, sorted, no id twice, each a species of this record (reader rules).
+    """
+
+
+class SmogonChaos(BaseModel):
+    """
+    Aggregate usage statistics of one monthly chaos file.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    kind: Literal["smogon-chaos"]
+    month: Annotated[StrictStr, Field(pattern="^[0-9]{4}-(0[1-9]|1[0-2])$")]
+    """
+    The statistics month, YYYY-MM.
+    """
+    cutoff: Annotated[StrictInt, Field(ge=0, le=100000)]
+    """
+    The rating cutoff of the file.
+    """
+    number_of_battles: Annotated[StrictInt, Field(ge=0, le=1000000000000)]
+    """
+    The number of battles the file states.
+    """
+    inputs: Annotated[list[SourceInput], Field(max_length=8, min_length=1)]
+    """
+    The input files, sorted by source_id, no id twice.
+    """
+    fallback: SpeciesFallback | MISSING = MISSING
+    """
+    Optional (a minor change within v1): the species the source has no usage entry for, filled from another prior of the same vocabulary so that a roster holding one is not refused. Absent: every species is the source's own. When present, the listed species (sorted, unique, each a species of this record) are copied from the prior named by prior_hash, truncated to this record's limits with the dropped mass in residual, and nothing else is: they carry no usage information, only that prior's marginals, and a consumer must treat them as the named prior and not as Smogon data.
     """
 
 

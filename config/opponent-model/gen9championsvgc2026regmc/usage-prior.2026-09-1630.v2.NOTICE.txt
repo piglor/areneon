@@ -1,0 +1,35 @@
+usage-prior.2026-09-1630.v2.json: attribution and basis
+
+This file is a derived record of aggregate usage statistics published by Smogon University
+(https://www.smogon.com/stats/) for the format gen9championsvgc2026regmc, month 2026-09, rating
+cutoff 1630, 1,631,943 battles. The statistics are Smogon's and credit for them is theirs.
+The inputs are named in the record's source.inputs by URL, retrieval time, size and SHA-256:
+  chaos    https://www.smogon.com/stats/2026-09/chaos/gen9championsvgc2026regmc-1630.json
+  leads    https://www.smogon.com/stats/2026-09/leads/gen9championsvgc2026regmc-1630.txt
+  summary  https://www.smogon.com/stats/2026-09/gen9championsvgc2026regmc-1630.txt
+smogon-chaos.2026-09-1630.inputs.json keeps the same facts plus the SHA-256 of the robots.txt read in
+the same run (it holds no Disallow rule). The raw files are not in this repository; anyone can
+download them and re-derive this record byte for byte with scripts/derive_usage_prior.py --fallback.
+
+Approximation: a Mega forme's pre-Evolution ability is not in the data (the Mega entry lists the
+post-Evolution ability); a consumer takes it from the base forme's list, which is an approximation.
+
+Differences to usage-prior.2026-09-1630.json (same source files): names are mapped to engine ids also by the
+engine's own id normalisation (so Farfetch'd and Sirfetch'd map), and the 67 preview species that have no
+entry in the Smogon file are NOT Smogon data: their entries are copied from the committed generator-matched
+prior (config/opponent-model/<format>/generator-matched.uniform-v1.json, named by hash in source.fallback together
+with the list of those species), cut to this record's limits. They say nothing about how often anything is played.
+
+What the record holds: per preview species and forme, truncated and scaled marginal frequencies of
+ability, item, nature with Stat Points, and move inclusion, as integers. It holds no team, replay,
+log, player name or teammate data.
+
+Rights basis: Smogon publishes no licence or terms for these files (docs/research/data-sources-rights.md,
+D5). The project owner accepted the risk of using the aggregate statistics without a grant (ADR-009
+erratum 1), and ADR-025 erratum E-9.2 extends that to this opponent prior. This is a recorded risk,
+not a legal opinion, and no claim is made that the numbers are public domain. A written request to
+Smogon (ADR-025 open item O1) has not been made yet; if one is refused, this file is replaced by a record
+without this source.
+
+The raw chaos file is not committed (no clear licence allows it); the record's hashes let anyone
+re-derive it.
