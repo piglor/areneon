@@ -3,7 +3,7 @@
     "fidelity_format": 2,
     "showdown_commit": "7244fe8e28fa8bc4d0809ae30d183c608b62bb2b",
     "corpora_sha256": "484f55a30057c446972b0b036fdb51ea6045679c64d0d09ef489297047d43169",
-    "base_record_sha256": "89b4bb2e79d0a395332bcc0c4d56cbc01d3d45bce6f4eef31e5dbda7151612b6"
+    "base_record_sha256": "f058d1c0b8284e5c348cecb2d352cae740c124558fa079b815c0f584e64e48f4"
   },
   "n_ex": 20,
   "options": {
@@ -29,156 +29,99 @@
     }
   },
   "decisions": 5296,
-  "built": 2913,
+  "built": 2670,
   "refusals": {
     "state_unwritten:unadmitted_id": 914,
-    "state_unwritten:locked_moves": 336,
+    "state_unwritten:locked_moves": 514,
     "state_unwritten:substitute": 287,
-    "v2_request:-": 69,
+    "state_unwritten:trapping": 132,
     "state_unwritten:slot_conditions": 52,
     "state_unwritten:illusion_transform": 45,
     "facts_unavailable:-": 170,
     "state_unwritten:ability_changed": 222,
     "reader_flagged:-": 46,
     "state_unwritten:item_replaced": 131,
-    "state_unwritten:start_trigger_restore": 79,
+    "state_unwritten:start_trigger_restore": 70,
     "v2_request:choice_lock": 1,
+    "v2_request:-": 11,
     "engine_refused:-": 2,
     "v1_revealed_fact:-": 29
   },
   "f1": {
     "compared": {
-      "turns": 1415,
-      "equal": 1085,
+      "turns": 1264,
+      "equal": 1067,
       "by_kind": {
-        "outcome": 240,
-        "choice": 76,
+        "outcome": 183,
         "request": 14
       },
       "by_cause": {
-        "information": 330,
-        "unmodelled": 138,
-        "engine": 52
+        "engine": 41,
+        "information": 197,
+        "unmodelled": 5
       }
     },
     "x": {
-      "turns": 1498,
-      "equal": 1146,
+      "turns": 1406,
+      "equal": 1133,
       "by_kind": {
-        "outcome": 296,
-        "choice": 51,
-        "request": 5
+        "outcome": 267,
+        "request": 5,
+        "choice": 1
       },
       "by_cause": {
-        "information": 348,
-        "unmodelled": 128,
-        "engine": 168,
+        "information": 269,
+        "engine": 152,
+        "unmodelled": 52,
         "unclassified": 3
       }
     }
   },
   "f2": {
     "compared": {
-      "turns": 1415,
-      "equal": 848,
+      "turns": 1264,
+      "equal": 840,
       "by_kind": {
-        "outcome": 469,
-        "choice": 76,
+        "outcome": 402,
         "request": 20,
         "draw_order": 2
       },
       "by_cause": {
-        "information": 565,
-        "unmodelled": 151,
-        "engine": 76
+        "information": 422,
+        "engine": 64,
+        "unmodelled": 10
       }
     },
     "x": {
-      "turns": 1498,
-      "equal": 998,
+      "turns": 1406,
+      "equal": 993,
       "by_kind": {
-        "outcome": 444,
-        "choice": 52,
-        "request": 4
+        "outcome": 408,
+        "request": 3,
+        "choice": 2
       },
       "by_cause": {
-        "information": 493,
-        "unmodelled": 165,
-        "engine": 205,
+        "engine": 188,
+        "information": 406,
+        "unmodelled": 81,
         "unclassified": 6
       }
     }
   },
   "f2_pairs": {
-    "compared": 8442,
-    "equal": 6544,
-    "x": 8964,
-    "x_equal": 7088
+    "compared": 7584,
+    "equal": 6430,
+    "x": 8433,
+    "x_equal": 7008
   },
   "unmodelled": {
-    "mustrecharge": {
-      "f1": 64,
-      "f2": 357
-    },
-    "dig": {
-      "f1": 14,
-      "f2": 81
-    },
-    "twoturnmove": {
-      "f1": 47,
-      "f2": 251
-    },
-    "solarblade": {
-      "f1": 4,
-      "f2": 21
-    },
-    "phantomforce": {
-      "f1": 5,
-      "f2": 24
-    },
-    "bounce": {
-      "f1": 4,
-      "f2": 18
-    },
-    "fly": {
-      "f1": 6,
-      "f2": 30
-    },
-    "skyattack": {
-      "f1": 3,
-      "f2": 18
-    },
     "unburden": {
-      "f1": 4,
-      "f2": 22
-    },
-    "partiallytrapped": {
-      "f1": 27,
-      "f2": 150
+      "f1": 2,
+      "f2": 10
     },
     "allyswitch": {
-      "f1": 3,
-      "f2": 26
-    },
-    "trapped": {
-      "f1": 2,
-      "f2": 17
-    },
-    "trapper": {
-      "f1": 2,
-      "f2": 17
-    },
-    "dive": {
-      "f1": 2,
-      "f2": 12
-    },
-    "solarbeam": {
-      "f1": 6,
-      "f2": 29
-    },
-    "meteorbeam": {
-      "f1": 3,
-      "f2": 18
+      "f1": 1,
+      "f2": 16
     },
     "minimize": {
       "f1": 2,
@@ -186,31 +129,31 @@
     }
   },
   "information": {
-    "opponent_pp": {
-      "f1": 329,
-      "f2": 1887
-    },
     "opponent_hp": {
-      "f1": 240,
-      "f2": 1423
+      "f1": 163,
+      "f2": 986
+    },
+    "opponent_pp": {
+      "f1": 196,
+      "f2": 1143
     },
     "bench_pp": {
-      "f1": 27,
-      "f2": 148
+      "f1": 22,
+      "f2": 113
     }
   },
   "engine": {
     "opponent_active_slots": {
-      "f1": 46,
-      "f2": 196
+      "f1": 36,
+      "f2": 163
     },
     "opponent_status_state_frz": {
       "f1": 1,
       "f2": 9
     },
     "own_status_state_frz": {
-      "f1": 2,
-      "f2": 18
+      "f1": 1,
+      "f2": 12
     },
     "opponent_ability": {
       "f1": 3,
@@ -222,14 +165,14 @@
       "item": "active_turns",
       "class": "W",
       "f1": {
-        "exercised": 1415,
-        "equal": 1085,
+        "exercised": 1264,
+        "equal": 1067,
         "blamed": 0,
         "missed": 0
       },
       "f2": {
-        "exercised": 1415,
-        "equal": 848,
+        "exercised": 1264,
+        "equal": 840,
         "blamed": 0,
         "missed": 0
       },
@@ -239,14 +182,14 @@
       "item": "bench_status",
       "class": "W",
       "f1": {
-        "exercised": 55,
-        "equal": 47,
+        "exercised": 50,
+        "equal": 45,
         "blamed": 0,
         "missed": 0
       },
       "f2": {
-        "exercised": 55,
-        "equal": 26,
+        "exercised": 50,
+        "equal": 25,
         "blamed": 0,
         "missed": 0
       },
@@ -256,14 +199,14 @@
       "item": "choice_lock",
       "class": "W",
       "f1": {
-        "exercised": 103,
-        "equal": 77,
+        "exercised": 89,
+        "equal": 73,
         "blamed": 0,
         "missed": 0
       },
       "f2": {
-        "exercised": 103,
-        "equal": 58,
+        "exercised": 89,
+        "equal": 55,
         "blamed": 0,
         "missed": 0
       },
@@ -273,14 +216,14 @@
       "item": "condition_duration",
       "class": "W",
       "f1": {
-        "exercised": 535,
-        "equal": 398,
+        "exercised": 478,
+        "equal": 389,
         "blamed": 0,
         "missed": 0
       },
       "f2": {
-        "exercised": 535,
-        "equal": 330,
+        "exercised": 478,
+        "equal": 325,
         "blamed": 0,
         "missed": 0
       },
@@ -290,14 +233,14 @@
       "item": "fainted_last_turn",
       "class": "W",
       "f1": {
-        "exercised": 486,
-        "equal": 384,
+        "exercised": 437,
+        "equal": 377,
         "blamed": 0,
         "missed": 0
       },
       "f2": {
-        "exercised": 486,
-        "equal": 309,
+        "exercised": 437,
+        "equal": 305,
         "blamed": 0,
         "missed": 0
       },
@@ -307,14 +250,14 @@
       "item": "item_removed",
       "class": "W",
       "f1": {
-        "exercised": 421,
-        "equal": 319,
+        "exercised": 372,
+        "equal": 311,
         "blamed": 0,
         "missed": 0
       },
       "f2": {
-        "exercised": 421,
-        "equal": 241,
+        "exercised": 372,
+        "equal": 236,
         "blamed": 0,
         "missed": 0
       },
@@ -324,14 +267,14 @@
       "item": "last_move",
       "class": "W",
       "f1": {
-        "exercised": 1413,
-        "equal": 1083,
+        "exercised": 1262,
+        "equal": 1065,
         "blamed": 0,
         "missed": 0
       },
       "f2": {
-        "exercised": 1413,
-        "equal": 846,
+        "exercised": 1262,
+        "equal": 838,
         "blamed": 0,
         "missed": 0
       },
@@ -341,13 +284,13 @@
       "item": "protect_counter",
       "class": "W",
       "f1": {
-        "exercised": 102,
+        "exercised": 97,
         "equal": 83,
         "blamed": 0,
         "missed": 0
       },
       "f2": {
-        "exercised": 102,
+        "exercised": 97,
         "equal": 65,
         "blamed": 0,
         "missed": 0
@@ -358,14 +301,14 @@
       "item": "total_fainted",
       "class": "W",
       "f1": {
-        "exercised": 1002,
-        "equal": 771,
+        "exercised": 901,
+        "equal": 756,
         "blamed": 0,
         "missed": 0
       },
       "f2": {
-        "exercised": 1002,
-        "equal": 611,
+        "exercised": 901,
+        "equal": 604,
         "blamed": 0,
         "missed": 0
       },
@@ -375,13 +318,13 @@
       "item": "toxic_stage",
       "class": "R",
       "f1": {
-        "exercised": 26,
+        "exercised": 23,
         "equal": 17,
         "blamed": 0,
         "missed": 0
       },
       "f2": {
-        "exercised": 26,
+        "exercised": 23,
         "equal": 16,
         "blamed": 0,
         "missed": 0
@@ -392,14 +335,14 @@
       "item": "turn_number",
       "class": "W",
       "f1": {
-        "exercised": 1415,
-        "equal": 1085,
+        "exercised": 1264,
+        "equal": 1067,
         "blamed": 0,
         "missed": 0
       },
       "f2": {
-        "exercised": 1415,
-        "equal": 848,
+        "exercised": 1264,
+        "equal": 840,
         "blamed": 0,
         "missed": 0
       },
@@ -411,13 +354,13 @@
       "item": "trigger:whiteherb",
       "class": "W",
       "f1": {
-        "exercised": 6,
-        "equal": 4,
+        "exercised": 4,
+        "equal": 3,
         "blamed": 0,
         "missed": 0
       },
       "f2": {
-        "exercised": 6,
+        "exercised": 4,
         "equal": 2,
         "blamed": 0,
         "missed": 0
@@ -468,7 +411,7 @@
         "missed": 0
       },
       "f2": {
-        "exercised": 5,
+        "exercised": 4,
         "equal": 4,
         "blamed": 0,
         "missed": 0
@@ -479,13 +422,13 @@
       "item": "volatile:disable",
       "class": "W",
       "f1": {
-        "exercised": 18,
+        "exercised": 16,
         "equal": 15,
         "blamed": 1,
         "missed": 0
       },
       "f2": {
-        "exercised": 22,
+        "exercised": 20,
         "equal": 11,
         "blamed": 8,
         "missed": 0
@@ -496,13 +439,13 @@
       "item": "volatile:encore",
       "class": "W",
       "f1": {
-        "exercised": 45,
+        "exercised": 43,
         "equal": 35,
         "blamed": 0,
         "missed": 0
       },
       "f2": {
-        "exercised": 53,
+        "exercised": 50,
         "equal": 32,
         "blamed": 0,
         "missed": 0
@@ -513,13 +456,13 @@
       "item": "volatile:flashfire",
       "class": "E",
       "f1": {
-        "exercised": 17,
+        "exercised": 15,
         "equal": 14,
         "blamed": 0,
         "missed": 0
       },
       "f2": {
-        "exercised": 19,
+        "exercised": 17,
         "equal": 12,
         "blamed": 0,
         "missed": 0
@@ -547,14 +490,14 @@
       "item": "volatile:ingrain",
       "class": "E",
       "f1": {
-        "exercised": 3,
-        "equal": 2,
+        "exercised": 2,
+        "equal": 1,
         "blamed": 0,
         "missed": 0
       },
       "f2": {
-        "exercised": 3,
-        "equal": 2,
+        "exercised": 2,
+        "equal": 1,
         "blamed": 0,
         "missed": 0
       },
@@ -598,13 +541,13 @@
       "item": "volatile:taunt",
       "class": "W",
       "f1": {
-        "exercised": 24,
+        "exercised": 23,
         "equal": 20,
         "blamed": 0,
         "missed": 0
       },
       "f2": {
-        "exercised": 35,
+        "exercised": 33,
         "equal": 25,
         "blamed": 0,
         "missed": 0
@@ -632,13 +575,13 @@
       "item": "volatile:torment",
       "class": "E",
       "f1": {
-        "exercised": 8,
+        "exercised": 7,
         "equal": 7,
         "blamed": 0,
         "missed": 0
       },
       "f2": {
-        "exercised": 13,
+        "exercised": 12,
         "equal": 10,
         "blamed": 0,
         "missed": 0

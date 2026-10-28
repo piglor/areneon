@@ -60,6 +60,18 @@ function actionSources(): string[] {
   return out.sort();
 }
 
+/** The moves whose engine definition gives the target the `partiallytrapped` volatile, read from the pinned source, restricted to the format's moves. */
+function partialTrapMoves(): string[] {
+  const source = readFileSync(join(process.env.SHOWDOWN_DIR || DEFAULT_SHOWDOWN_DIR, "data", "moves.ts"), "utf8");
+  const ids = new Set(engineData.moves.map((m) => m.id));
+  const out: string[] = [];
+  for (const block of source.split(/\n\t(?=[a-z0-9]+: \{)/)) {
+    const id = /^([a-z0-9]+): \{/.exec(block)?.[1];
+    if (id !== undefined && ids.has(id) && /volatileStatus: 'partiallytrapped'/.test(block)) out.push(id);
+  }
+  return out.sort();
+}
+
 export function readWorldFactsData(): WorldFactsData {
-  return { stall_moves: stallMoves(), terrains: engineData.terrains.map((t) => t.id), swap_side_conditions: swapConditions(), toxic_stage_max: toxicStageMax(), action_sources: actionSources() };
+  return { stall_moves: stallMoves(), terrains: engineData.terrains.map((t) => t.id), swap_side_conditions: swapConditions(), toxic_stage_max: toxicStageMax(), action_sources: actionSources(), partial_trap_moves: partialTrapMoves() };
 }
