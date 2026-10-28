@@ -407,23 +407,42 @@ def read_stored_games(target: Path, record: dict[str, Any]) -> list[StoredGame]:
     return out
 
 
-def progress_move_use(
+def stored_games(
     progress_dir: Path, generation: int, config: RunConfig, record: dict[str, Any] | None = None
-) -> dict[str, Any] | None:
-    """The diagnostic of one committed progress generation, or None when there is nothing to read.
+) -> list[StoredGame]:
+    """The stored games of one committed progress generation, read once for every diagnostic.
 
-    None: the generation stores no game, or the repository holds no move-class table for the
-    run's format. The generation's manifest is verified and ``progress.json`` read first (or
-    ``record``, when the caller has already read it).
+    The generation's manifest is verified and ``progress.json`` read first (or ``record``, when
+    the caller has already read it). Empty when the generation stores no game.
     """
     target = progress_dir / layout.generation_name(generation)
-    classes = committed_move_classes(config.format_id)
-    if classes is None or not any((target / "games").glob("*.json")):
-        return None
+    if not any((target / "games").glob("*.json")):
+        return []
     try:
         layout.verify_generation(target, generation)
         if record is None:
             record = read_progress_record(layout.read_json(target / "progress.json"), config)
     except (layout.RunDirError, OSError, ValueError) as exc:
         raise MoveUseError(f"progress {target.name}: {exc}") from exc
-    return move_use(read_stored_games(target, record), classes)
+    return read_stored_games(target, record)
+
+
+def progress_move_use(
+    progress_dir: Path,
+    generation: int,
+    config: RunConfig,
+    record: dict[str, Any] | None = None,
+    games: Sequence[StoredGame] | None = None,
+) -> dict[str, Any] | None:
+    """The diagnostic of one committed progress generation, or None when there is nothing to read.
+
+    None: the generation stores no game, or the repository holds no move-class table for the
+    run's format. ``games`` are the generation's stored games when the caller has read them
+    (``stored_games``); otherwise they are read here.
+    """
+    classes = committed_move_classes(config.format_id)
+    if classes is None:
+        return None
+    if games is None:
+        games = stored_games(progress_dir, generation, config, record)
+    return move_use(games, classes) if games else None

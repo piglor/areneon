@@ -86,7 +86,8 @@ from areneon_ml.progress.run import (
 from areneon_ml.progress.scripted import ARMS as SCRIPTED_ARMS
 from areneon_ml.progress.scripted import ScriptedError, ScriptedRequest, scripted_h2h
 from areneon_ml.report.command import report_run
-from areneon_ml.report.move_use import progress_move_use
+from areneon_ml.report.dominated import progress_dominated
+from areneon_ml.report.move_use import progress_move_use, stored_games
 
 EXIT_REFUSED = 3
 EXIT_PLAY = 4
@@ -508,8 +509,11 @@ def _progress(args: argparse.Namespace) -> dict[str, object]:
         )
         for g in generations
     ]
-    for result in done:  # the move-use diagnostic (#1164): descriptive, over the stored games
-        result["move_use"] = progress_move_use(root, int(result["generation"]), config)
+    for result in done:  # the move-use (#1164) and dominated-move (#1025) diagnostics
+        number = int(result["generation"])
+        stored = stored_games(root, number, config)  # read once for both
+        result["move_use"] = progress_move_use(root, number, config, games=stored)
+        result["dominated"] = progress_dominated(root, number, config, games=stored)
     # Everything above succeeded, so a validation result is about to be shown: log the look.
     looks = [
         Look(int(r["generation"]), str(m["match_id"]), int(m["games"]), args.evaluation_key)

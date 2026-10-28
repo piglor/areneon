@@ -58,7 +58,8 @@ from areneon_ml.progress.records import (
     read_progress_record,
 )
 from areneon_ml.progress.run import summary_of
-from areneon_ml.report.move_use import class_files, progress_move_use
+from areneon_ml.report.dominated import config_file, progress_dominated
+from areneon_ml.report.move_use import class_files, progress_move_use, stored_games
 
 NOT_RECORDED = "not recorded"
 ROLES = ("battle", "preview")
@@ -205,6 +206,9 @@ class ProgressFacts:
     evaluation_key: str | None = None
     #: The play-mode gap (``play_mode_gap``: integers only, derived on display, never stored).
     play_mode_gap: dict[str, Any] = field(default_factory=dict)
+    #: The statically dominated damaging-move rate (#1025, ADR-022 M2), as ``dominated_rates``
+    #: returns it; None when the generation stores no game or the repository has no config.
+    dominated: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -380,7 +384,9 @@ def _seat_counts(
     return tuple(out)
 
 
-def _progress_facts(record: dict[str, Any], move_use: dict[str, Any] | None) -> ProgressFacts:
+def _progress_facts(
+    record: dict[str, Any], move_use: dict[str, Any] | None, dominated: dict[str, Any] | None
+) -> ProgressFacts:
     by_id = {s["match_id"]: s for s in summary_of(record)}
     matches = []
     for match in record["matches"]:
@@ -443,6 +449,7 @@ def _progress_facts(record: dict[str, Any], move_use: dict[str, Any] | None) -> 
         record["teams"].get("evaluation_dataset_hash"),
         plan.get("evaluation_key"),
         play_mode_gap(record),
+        dominated,
     )
 
 
@@ -471,13 +478,24 @@ def read_progress_root(
             raise ReportError(f"{path.name}: its record is not of the run's committed generation")
         for name in ("progress.json", layout.MANIFEST):
             inputs[f"progress/{path.name}/{name}"] = sha256_hex((path / name).read_bytes())
-        used = progress_move_use(root, number, config, record)
+        stored = stored_games(root, number, config, record)  # read once for both diagnostics
+        used = progress_move_use(root, number, config, record, stored)
         if used is not None:
             for file in class_files(config.format_id):
                 inputs[f"fixtures/showdown/{config.format_id}/{file.name}"] = sha256_hex(
                     file.read_bytes()
                 )
-        found[number] = _progress_facts(record, used)
+        rates = progress_dominated(root, number, config, record, stored)
+        if rates is not None:
+            record_file = config_file(config.format_id)
+            inputs[f"config/diagnostics/{config.format_id}/{record_file.name}"] = sha256_hex(
+                record_file.read_bytes()
+            )
+            engine_file = class_files(config.format_id)[1]
+            inputs[f"fixtures/showdown/{config.format_id}/{engine_file.name}"] = sha256_hex(
+                engine_file.read_bytes()
+            )
+        found[number] = _progress_facts(record, used, rates)
     return found
 
 

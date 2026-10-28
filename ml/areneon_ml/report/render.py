@@ -22,6 +22,8 @@ from areneon_ml.progress.records import (
     SEARCH_PRIOR_LABEL,
 )
 from areneon_ml.report.charts import Pt, Series, Stack, Tips, line_chart, stacked_chart
+from areneon_ml.report.dominated import INTERVAL_LABEL as DOMINATED_INTERVAL_LABEL
+from areneon_ml.report.dominated import LABEL as DOMINATED_LABEL
 from areneon_ml.report.model import (
     METRICS,
     NOT_RECORDED,
@@ -400,6 +402,7 @@ def _progress_section(model: ReportModel, tips: Tips) -> str:  # noqa: PLR0915
         out.append('<p class="muted">No forfeit in any evaluated match.</p>')
     out.append(_ablation_section(model, done))
     out.append(_move_use_section(model, done))
+    out.append(_dominated_section(model, done))
     return "".join(out)
 
 
@@ -1239,5 +1242,84 @@ def _move_use_section(model: ReportModel, done: list[int]) -> str:
             passed,
             "Slot decisions where a move of the class (or a switch) was among the candidates and was "
             "not chosen: not chosen of offered. " + MOVE_USE_NOTE,
+        )
+    )
+
+
+DOMINATED_NOTE = (
+    "Over the stored games only. Each damaging-move slot action gets a static score: base power "
+    "times the type-chart cell values for the target's shown types (and a same-type factor), a "
+    "spread move summed over the alive foes with a spread factor; it is dominated when below the "
+    "threshold share of the best score among the Pokemon's enabled damaging moves on any target, "
+    "and immune when its score is 0 while that best is positive (immune actions are also "
+    "dominated). The score ignores abilities, items, stats, boosts, weather, accuracy and "
+    "variable power. Scored: actions with a score; the rates divide by it. Left out of the rates: "
+    "status moves, moves aimed at the ally, moves with no base power, actions the table cannot "
+    "score, and unresolved slots."
+)
+
+
+def _rate(part: int, interval: dict[str, int] | None) -> str:
+    if interval is None:
+        return f"{part} (-)"
+    return (
+        f"{part} ({pct(interval['ppm'])}; {pct(interval['low_ppm'], down=True)} to "
+        f"{pct(interval['high_ppm'], up=True)})"
+    )
+
+
+def _dominated_section(model: ReportModel, done: list[int]) -> str:
+    """The statically dominated damaging-move rate (#1025): an approximate secondary diagnostic."""
+    shown = [(g, used) for g in done if (used := model.progress[g].dominated) is not None]
+    if not shown:
+        return ""
+    head = [
+        ("Generation", True),
+        ("Match", False),
+        ("Seat", False),
+        ("Policy", False),
+        ("Scored", True),
+        ("Dominated", True),
+        ("Immune target", True),
+        ("Status", True),
+        ("Ally target", True),
+        ("No base power", True),
+        ("Unscored", True),
+        ("Unresolved", True),
+    ]
+    rows = []
+    for g, used in shown:
+        for match in used["matches"]:
+            for role in ("candidate", "opponent"):
+                seat = match[role]
+                reference = role == "opponent" and match["reference"]
+                label = role + (" (damage-aware reference)" if reference else "")
+                rows.append(
+                    [
+                        str(g),
+                        esc(match["match_id"]),
+                        esc(label),
+                        f'<span class="m">{esc(seat["policy_id"][:24])}</span>',
+                        str(seat["scored"]),
+                        _rate(seat["dominated"], seat["dominated_interval"]),
+                        _rate(seat["immune"], seat["immune_interval"]),
+                        str(seat["status"]),
+                        str(seat["ally_target"]),
+                        str(seat["no_power"]),
+                        str(seat["unscored"]),
+                        str(seat["unresolved"]),
+                    ]
+                )
+    first = shown[0][1]
+    return (
+        "<h3>Statically dominated damaging moves</h3>"
+        f'<p class="banner">{esc(DOMINATED_LABEL)}</p>'
+        f'<p class="note">Config record <code>{esc(first["config_hash"])}</code> on engine-data '
+        f"<code>{esc(first['engine_data_hash'])}</code>. A secondary diagnostic that decides "
+        "nothing; compare a seat with another seat on the same games, not with zero.</p>"
+        + _table(
+            head,
+            rows,
+            f"Share of scored actions, with a {DOMINATED_INTERVAL_LABEL}. " + DOMINATED_NOTE,
         )
     )

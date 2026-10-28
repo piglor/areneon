@@ -105,6 +105,10 @@ def test_one_generation_prints_one_canonical_line_and_builds_the_player_from_its
     used = printed["generations"][0]["move_use"]
     assert used["label"] == "descriptive move-use diagnostic: not a strength measure"
     assert used["stored_games"] == len(used["matches"]) > 0
+    # the dominated-move rate (#1025) rides beside it, over the same stored games
+    rates = printed["generations"][0]["dominated"]
+    assert rates["label"].startswith("approximate static proxy: not a mechanics claim")
+    assert rates["stored_games"] == used["stored_games"]
     (kwargs,) = built
     assert kwargs["node"] == "/n/node"
     assert kwargs["worker_python"] == "/w/py"
