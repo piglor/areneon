@@ -28,7 +28,7 @@ from areneon_ml.worker.protocol import (
     encode_frame,
     read_frame,
 )
-from areneon_ml.worker.sampler import FULL_TEMPERATURE_PPM, check_probabilities, select
+from areneon_ml.worker.sampler import FULL_TEMPERATURE_PPM, check_probabilities, select, to_ppm
 from areneon_ml.worker.scorer import Scorer
 from areneon_ml.worker.view import encoder_input
 
@@ -137,9 +137,13 @@ class Worker:
             return self._error(query_id, "invalid_query", str(exc))
         except UnsupportedCandidate as exc:
             return self._error(query_id, "unsupported_candidate", str(exc))
+        evaluating = query["sampling"]["kind"] == "evaluate"
+        value = 0.0
         try:
             temperature_ppm = query["sampling"].get("temperature_ppm")
-            if temperature_ppm is None:
+            if evaluating:
+                probabilities, value = self._scorer.evaluate(encoder_input(query))
+            elif temperature_ppm is None:
                 probabilities = self._scorer.probabilities(encoder_input(query))
             else:
                 probabilities = self._scorer.probabilities(
@@ -153,6 +157,17 @@ class Worker:
         except EncodingError as exc:
             return self._error(query_id, "invalid_query", f"EncodingError: {exc}")
         check_probabilities(probabilities, len(query["candidates"]))
+        return (
+            self._evaluation(query, probabilities, value)
+            if evaluating
+            else self._recommendation(query, probabilities, started)
+        )
+
+    @staticmethod
+    def _recommendation(
+        query: dict[str, Any], probabilities: list[float], started: float
+    ) -> dict[str, Any]:
+        """The PolicyReply holding the candidate the query's sampling picks."""
         index = select(probabilities, query["sampling"])
         elapsed = int((time.perf_counter() - started) * 1000)
         reply = {
@@ -171,6 +186,26 @@ class Worker:
             },
         }
         check("policy-reply", reply)
+        return reply
+
+    @staticmethod
+    def _evaluation(
+        query: dict[str, Any], probabilities: list[float], value: float
+    ) -> dict[str, Any]:
+        """The EvaluationReply of an ``evaluate`` query: prior and value in ppm."""
+        reply = {
+            "schema_version": 1,
+            "query_id": query["query_id"],
+            "reply": {
+                "kind": "evaluation",
+                "evaluation": {
+                    "identity": query["identity"],
+                    "prior_ppm": [to_ppm(p) for p in probabilities],
+                    "value_ppm": to_ppm(value),
+                },
+            },
+        }
+        check("evaluation-reply", reply)
         return reply
 
     @staticmethod

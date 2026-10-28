@@ -1,0 +1,144 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:areneon:schema:contracts:v1:evaluation-reply",
+  "title": "EvaluationReply",
+  "description": "The policy worker's answer to a PolicyQuery whose sampling kind is evaluate (ADR-026 §5, ADR-010 §2): the policy's prior over the query's candidates and its value of the state, or a refusal (the same ErrorReply as a PolicyReply). Reader rules the profile cannot say, checked by the client: query_id and identity are the query's, and prior_ppm has one entry per candidate in the query's order. ROUNDING RULE (one, fixed): every number is the worker's float32 value widened exactly to float64 and then ppm = floor(x * 1000000 + 0.5) in IEEE 754 binary64 (round half up, toward positive infinity at a tie). The entries are rounded one by one and not renormalised, so prior_ppm sums to 1000000 only up to half a ppm per entry; a consumer must not assume the sum. value_ppm is the value head's output unclamped, so it may lie outside 0..1000000; a non-finite value, or one outside the integer range below, is a worker failure and never a reply.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "query_id",
+    "reply"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "query_id": {
+      "description": "The query_id of the PolicyQuery this answers.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "reply": {
+      "type": "object",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/EvaluationResult"
+        },
+        {
+          "$ref": "#/$defs/ErrorReply"
+        }
+      ],
+      "discriminator": {
+        "propertyName": "kind"
+      }
+    }
+  },
+  "$defs": {
+    "RequestIdentity": {
+      "description": "Which request a decision answers (ADR-008 §4). A consumer drops a recommendation unless request_seq and request_hash both match, and rqid too when both carry one.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "request_seq",
+        "request_hash"
+      ],
+      "properties": {
+        "request_seq": {
+          "description": "Areneon's 1-based count of the requests one player has received in this battle, including wait requests.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "request_hash": {
+          "description": "SHA-256 of the canonical request JSON without rqid (ADR-008 §4): lowercase hex.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "rqid": {
+          "description": "The Showdown server's request id; present only on the server path (A2), never hashed.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    "Evaluation": {
+      "description": "The policy's prior and value for one request, as integer millionths under the rounding rule of this contract.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "identity",
+        "prior_ppm",
+        "value_ppm"
+      ],
+      "properties": {
+        "identity": {
+          "description": "The request the query asked about.",
+          "$ref": "#/$defs/RequestIdentity"
+        },
+        "prior_ppm": {
+          "description": "The probability of each candidate at temperature 1 with no truncation, in the query's candidate order; one entry per candidate (reader rule).",
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 1024,
+          "items": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1000000
+          }
+        },
+        "value_ppm": {
+          "description": "The value head's output for the state.",
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    "EvaluationResult": {
+      "description": "The worker evaluated.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "evaluation"
+      ],
+      "properties": {
+        "kind": {
+          "const": "evaluation"
+        },
+        "evaluation": {
+          "$ref": "#/$defs/Evaluation"
+        }
+      }
+    },
+    "ErrorReply": {
+      "description": "The worker refused the query.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "error",
+        "detail"
+      ],
+      "properties": {
+        "kind": {
+          "const": "error"
+        },
+        "error": {
+          "enum": [
+            "unsupported_candidate",
+            "invalid_query"
+          ]
+        },
+        "detail": {
+          "description": "A short reason, never the query's content.",
+          "type": "string",
+          "maxLength": 1024
+        }
+      }
+    }
+  }
+}

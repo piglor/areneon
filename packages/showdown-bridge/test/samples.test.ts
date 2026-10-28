@@ -1,10 +1,11 @@
+import { readSearchConfig, SearchConfigError } from "../src/search-config.ts";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { ajvFor } from "@areneon/schema/ajv";
 import { beforeAll, describe, expect, it } from "vitest";
 import { syntheticFixtureHashes } from "../src/golden.ts";
 import { EngineDataError, readEngineData } from "../src/engine-data.ts";
-import { contractVersions, EpisodeError, readTeamDatasetManifest, readTeamGeneratorConfig, readTeamLabelSet, readTeamRecord, readTeamSnapshotManifest, readTeamVocabulary, readRoleSetTable, RoleSetError, readMoveClassTable, MoveClassError, TeamRecordError, TeamVocabularyError, loadEngine, PolicyProtocolError, readHandshake, readPolicyQuery, readPolicyReply, readEpisode, readTrainingRunConfig, readCloneRunConfig, CloneRunConfigError, readLeagueRunRecord, LeagueRunRecordError, TrainingRunConfigError, readEvaluationRunManifest, readTrainingExample, readTrainingSet, TrainingLoaderError } from "../src/index.ts";
+import { contractVersions, EpisodeError, readTeamDatasetManifest, readTeamGeneratorConfig, readTeamLabelSet, readTeamRecord, readTeamSnapshotManifest, readTeamVocabulary, readRoleSetTable, RoleSetError, readMoveClassTable, MoveClassError, TeamRecordError, TeamVocabularyError, loadEngine, PolicyProtocolError, readEvaluationReply, readHandshake, readPolicyQuery, readPolicyReply, readEpisode, readTrainingRunConfig, readCloneRunConfig, CloneRunConfigError, readLeagueRunRecord, LeagueRunRecordError, TrainingRunConfigError, readEvaluationRunManifest, readTrainingExample, readTrainingSet, TrainingLoaderError } from "../src/index.ts";
 import { EvaluationConfigError, readEvaluationParameters, readEntry, RegisterError, readEvaluationPlan, readSealedSetCommitment, readTrainingGateRule, readEvaluationConfig, readSealedTeamSetManifest, readRetiredSealedManifest } from "../src/index.ts";
 import { contractSamples, SAMPLE_HASHES, SAMPLES_DIR } from "../src/samples.ts";
 import { exportEngineData } from "../src/engine-data.ts";
@@ -136,6 +137,7 @@ describe("the shared contract sample corpus (ADR-008 §2)", () => {
       "v1/policy-handshake/reader-invalid/unsorted-checkpoints.json",
       "v1/policy-handshake/reader-invalid/unsorted-contracts.json",
       "v1/policy-query/reader-invalid/duplicate-candidate.json",
+      "v1/policy-query/reader-invalid/evaluate-duplicate-candidate.json",
       "v1/policy-query/reader-invalid/features-duplicate-row.json",
       "v1/policy-query/reader-invalid/features-missing-row.json",
       "v1/policy-query/reader-invalid/features-unsorted.json",
@@ -266,6 +268,9 @@ describe("the shared contract sample corpus (ADR-008 §2)", () => {
       "v1/sealed-set-commitment/reader-invalid/unsorted-strata.json",
       "v1/sealed-team-set-manifest/reader-invalid/quota-sum-mismatch.json",
       "v1/sealed-team-set-manifest/reader-invalid/unsorted-strata.json",
+      "v1/search-config/reader-invalid/inexact-uniform-share.json",
+      "v1/search-config/reader-invalid/min-worlds-over-n.json",
+      "v1/search-config/reader-invalid/no-uniform-without-full-weight.json",
       "v1/team-dataset-manifest/reader-invalid/merged-stratum-missing.json",
       "v1/team-dataset-manifest/reader-invalid/split-cell-is-a-member.json",
       "v1/team-dataset-manifest/reader-invalid/splits-out-of-order.json",
@@ -380,6 +385,17 @@ describe("the shared contract sample corpus (ADR-008 §2)", () => {
     expect(() => reader(committed(file))).toThrow(message);
   });
 
+  // ADR-026 section 5: the SearchConfig reader refuses what the profile cannot say.
+  it.each([
+    ["v1/search-config/reader-invalid/inexact-uniform-share.json", readSearchConfig, "exact millionths"],
+    ["v1/search-config/reader-invalid/min-worlds-over-n.json", readSearchConfig, "exceeds the worlds"],
+    ["v1/search-config/reader-invalid/no-uniform-without-full-weight.json", readSearchConfig, "whole weight"],
+  ])("the search config reader refuses %s", (file, reader, message) => {
+    expect(Object.keys(fresh)).toContain(file);
+    expect(() => reader(committed(file))).toThrow(SearchConfigError);
+    expect(() => reader(committed(file))).toThrow(message);
+  });
+
   // ADR-010 section 5: the TrainingRunConfig reader refuses what the profile cannot say.
   it.each([
     ["v1/training-run-config/reader-invalid/heads-do-not-divide-width.json", "must be a multiple of n_heads"],
@@ -422,6 +438,7 @@ describe("the shared contract sample corpus (ADR-008 §2)", () => {
     ["v1/policy-query/reader-invalid/identity-differs.json", readPolicyQuery, "identity differs from its observation"],
     ["v1/policy-query/reader-invalid/temperature-explicit-default.json", readPolicyQuery, "must be omitted"],
     ["v1/policy-query/reader-invalid/duplicate-candidate.json", readPolicyQuery, "is listed twice"],
+    ["v1/policy-query/reader-invalid/evaluate-duplicate-candidate.json", readPolicyQuery, "is listed twice"],
     ["v1/policy-query/reader-invalid/features-unsorted.json", readPolicyQuery, "sorted and unique"],
     ["v1/policy-query/reader-invalid/features-duplicate-row.json", readPolicyQuery, "sorted and unique"],
     ["v1/policy-handshake/reader-invalid/unsorted-contracts.json", readHandshake, "sorted by name"],
@@ -434,10 +451,14 @@ describe("the shared contract sample corpus (ADR-008 §2)", () => {
   });
 
   it("the policy readers accept the valid samples, and the hello lists this side's contracts", () => {
-    for (const name of ["battle", "preview", "battle-a2"]) expect(readPolicyQuery(committed(`v1/policy-query/valid/${name}.json`)).schema_version).toBe(1);
+    for (const name of ["battle", "preview", "battle-a2", "battle-evaluate", "preview-evaluate", "battle-features-evaluate"]) expect(readPolicyQuery(committed(`v1/policy-query/valid/${name}.json`)).schema_version).toBe(1);
     for (const name of ["recommendation", "unsupported-candidate", "invalid-query"]) {
       expect(readPolicyReply(committed(`v1/policy-reply/valid/${name}.json`)).query_id).toBe(1);
     }
+    for (const name of ["evaluation", "value-out-of-unit", "invalid-query"]) {
+      expect(readEvaluationReply(committed(`v1/evaluation-reply/valid/${name}.json`)).query_id).toBe(1);
+    }
+    expect(() => readEvaluationReply({})).toThrow(PolicyProtocolError);
     expect(readHandshake(committed("v1/policy-handshake/valid/hello.json")).message.contracts).toEqual(contractVersions());
     expect(readHandshake(committed("v1/policy-handshake/valid/ready.json")).message.kind).toBe("ready");
     expect(() => readPolicyReply({})).toThrow(PolicyProtocolError);

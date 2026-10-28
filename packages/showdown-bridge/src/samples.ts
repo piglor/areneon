@@ -23,6 +23,7 @@ import { MOVE_CLASSES_FILE, type MoveClassTable } from "./move-classes.ts";
 import { damageAwareSamples } from "./damage-aware-samples.ts";
 import { usagePriorSamples } from "./usage-prior-samples.ts";
 import { worldWritersSamples } from "./world-writers-samples.ts";
+import { searchConfigSamples } from "./search-config-samples.ts";
 import { mechanicsSamples } from "./mechanics-samples.ts";
 import { observe, recordedChannel } from "./player-channel.ts";
 import { privateSamples, privateSnapshotSamples } from "./private-samples.ts";
@@ -211,6 +212,18 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     deadline_outcome: "in_budget",
   };
   const replyOf = (reply: unknown) => ({ schema_version: 1, query_id: 1, reply });
+  // ADR-026 section 5: an evaluate query is answered by an EvaluationReply, one prior entry per candidate (invented numbers).
+  const evalQuery = queryOf("battle", { kind: "evaluate" });
+  const evaluationOf = (prior_ppm: number[], value_ppm: number) => ({
+    schema_version: 1,
+    query_id: 1,
+    reply: { kind: "evaluation", evaluation: { identity: battleQuery.identity, prior_ppm, value_ppm } },
+  });
+  const priorOf = (count: number): number[] => {
+    const prior = Array.from({ length: count }, (_, i) => Math.floor(1000000 / (2 ** (i + 1))));
+    prior[count - 1] = 1000000 - prior.slice(0, count - 1).reduce((a, b) => a + b, 0);
+    return prior;
+  };
   const hello = { schema_version: 1, message: { kind: "hello", contracts: contractVersions() } };
   const checkpoints = [
     { role: "battle", checkpoint_id: hashA },
@@ -676,6 +689,12 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "policy-query/battle-features": withFeatures(battleQuery, featureRows),
     "policy-query/preview-features": withFeatures(previewQuery, []),
     "training-example/battle-features": featuresOnExample(featureRows),
+    "policy-query/battle-evaluate": evalQuery,
+    "policy-query/preview-evaluate": queryOf("preview", { kind: "evaluate" }),
+    "policy-query/battle-features-evaluate": withFeatures(evalQuery, featureRows),
+    "evaluation-reply/evaluation": evaluationOf(priorOf(battleQuery.candidates.length), 620000),
+    "evaluation-reply/value-out-of-unit": evaluationOf(priorOf(battleQuery.candidates.length), -150000),
+    "evaluation-reply/invalid-query": replyOf({ kind: "error", error: "invalid_query", detail: "the query's identity differs from its observation's identity" }),
     "policy-reply/recommendation": replyOf({ kind: "recommendation", recommendation }),
     "policy-reply/unsupported-candidate": replyOf({ kind: "error", error: "unsupported_candidate", detail: "a candidate has a shape the worker does not know" }),
     "policy-reply/invalid-query": replyOf({ kind: "error", error: "invalid_query", detail: "the query's identity differs from its observation's identity" }),
@@ -772,6 +791,7 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "policy-query/identity-differs": mutated(battleQuery, (q) => (q.identity = { ...battleQuery.identity, request_seq: battleQuery.identity.request_seq + 1 })),
     // The default temperature has one encoding: absent.
     "policy-query/temperature-explicit-default": queryOf("battle", { ...sampleBy, temperature_ppm: 1000000 }),
+    "policy-query/evaluate-duplicate-candidate": mutated(evalQuery, (q) => ((q.candidates as unknown[])[1] = (evalQuery.candidates as unknown[])[0])),
     "policy-query/duplicate-candidate": mutated(battleQuery, (q) => ((q.candidates as unknown[])[1] = (battleQuery.candidates as unknown[])[0])),
     "policy-handshake/unsorted-contracts": helloWith((m) => (m.contracts = contractsOf().reverse())),
     "policy-handshake/duplicate-contracts": helloWith((m) => (m.contracts = [contractsOf()[0], contractsOf()[0]])),
@@ -1064,6 +1084,15 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "policy-query/no-policy-id": mutated(battleQuery, (q) => delete q.policy_id),
     "policy-query/no-query-id": mutated(battleQuery, (q) => delete q.query_id),
     "policy-query/omniscient-observation": mutated(battleQuery, (q) => ((q.observation as Record<string, unknown>).omniscient_log = ["|split|p2"])),
+    // The evaluate kind takes no u, no temperature and no truncation; a reply carries integers in the contract's ranges only.
+    "policy-query/evaluate-with-u": { ...battleQuery, sampling: { kind: "evaluate", u: 1 } },
+    "policy-query/evaluate-with-temperature": { ...battleQuery, sampling: { kind: "evaluate", temperature_ppm: 500000 } },
+    "evaluation-reply/float-value": evaluationOf([1000000], 0.5),
+    "evaluation-reply/prior-above-one": evaluationOf([1000001], 0),
+    "evaluation-reply/no-value": mutated(evaluationOf([1000000], 0), (r) => delete ((r.reply as Record<string, Record<string, unknown>>).evaluation as Record<string, unknown>).value_ppm),
+    "evaluation-reply/empty-prior": evaluationOf([], 0),
+    "evaluation-reply/recommendation": replyOf({ kind: "recommendation", recommendation }),
+    "evaluation-reply/extra-field": { ...evaluationOf([1000000], 0), probabilities: [1] },
     "policy-reply/unknown-error": replyOf({ kind: "error", error: "timeout", detail: "slow" }),
     "policy-reply/unknown-kind": replyOf({ kind: "retry" }),
     "policy-reply/extra-field": { ...replyOf({ kind: "recommendation", recommendation }), probabilities: [1] },
@@ -1119,11 +1148,12 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
   const damageAwareOnes = damageAwareSamples();
   const usagePriorOnes = usagePriorSamples(vocabulary as never);
   const worldWritersOnes = worldWritersSamples(engine, GOLDEN_FORMAT);
+  const searchConfigOnes = searchConfigSamples(GOLDEN_FORMAT);
   const privateManifests = privateSnapshotSamples({ manifest: record.manifest, vocabularyHash: teamVocabularyHash(vocabulary as never), labelSetHash });
   const privateTests = privateTestSamples();
   const scriptedOnes = scriptedH2HSamples();
   for (const kind of ["valid", "invalid", "readerInvalid"] as const) Object.assign(privateOnes[kind], privateManifests[kind], privateTests[kind]);
-  for (const [kind, cases] of [["valid", { ...valid, ...evalSamples.valid, ...progressOnes.valid, ...mechanicsOnes.valid, ...damageAwareOnes.valid, ...usagePriorOnes.valid, ...worldWritersOnes.valid, ...scriptedOnes.valid, ...privateOnes.valid }], ["invalid", { ...invalid, ...evalSamples.invalid, ...progressOnes.invalid, ...mechanicsOnes.invalid, ...damageAwareOnes.invalid, ...usagePriorOnes.invalid, ...worldWritersOnes.invalid, ...scriptedOnes.invalid, ...privateOnes.invalid }], ["reader-invalid", { ...readerInvalid, ...evalSamples.readerInvalid, ...progressOnes.readerInvalid, ...mechanicsOnes.readerInvalid, ...damageAwareOnes.readerInvalid, ...usagePriorOnes.readerInvalid, ...worldWritersOnes.readerInvalid, ...scriptedOnes.readerInvalid, ...privateOnes.readerInvalid }]] as const) {
+  for (const [kind, cases] of [["valid", { ...valid, ...evalSamples.valid, ...progressOnes.valid, ...mechanicsOnes.valid, ...damageAwareOnes.valid, ...usagePriorOnes.valid, ...worldWritersOnes.valid, ...searchConfigOnes.valid, ...scriptedOnes.valid, ...privateOnes.valid }], ["invalid", { ...invalid, ...evalSamples.invalid, ...progressOnes.invalid, ...mechanicsOnes.invalid, ...damageAwareOnes.invalid, ...usagePriorOnes.invalid, ...worldWritersOnes.invalid, ...searchConfigOnes.invalid, ...scriptedOnes.invalid, ...privateOnes.invalid }], ["reader-invalid", { ...readerInvalid, ...evalSamples.readerInvalid, ...progressOnes.readerInvalid, ...mechanicsOnes.readerInvalid, ...damageAwareOnes.readerInvalid, ...usagePriorOnes.readerInvalid, ...worldWritersOnes.readerInvalid, ...searchConfigOnes.readerInvalid, ...scriptedOnes.readerInvalid, ...privateOnes.readerInvalid }]] as const) {
     for (const [key, value] of Object.entries(cases)) {
       const [contract, name] = key.split("/") as [string, string];
       samples[`v1/${contract}/${kind}/${name}.json`] = value;

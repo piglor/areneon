@@ -196,6 +196,9 @@ export {
 export { type PolicyActorOptions, policyActor, type PolicyGameOptions, policyGame, type PolicySeat, RANDOM_PREVIEW_POLICY, randomPreviewSeed, type SamplerInput, sampleU } from "./policy-actor.ts";
 export {
   contractVersions,
+  type EvaluateQueryInput,
+  type Evaluation,
+  type EvaluationReply,
   encodeFrame,
   FULL_TEMPERATURE_PPM,
   type PlaySettings,
@@ -205,11 +208,13 @@ export {
   PolicyProtocolError,
   policyId,
   type PolicyReply,
+  readEvaluationReply,
   readHandshake,
   readPolicyQuery,
   readPolicyReply,
 } from "./policy-protocol.ts";
 export {
+  type EvaluationClient,
   type PolicyClient,
   PolicyHandshakeError,
   PolicyReplyError,
@@ -266,6 +271,7 @@ export {
   readWorldWriters,
   worldWritersHash,
 } from "./world-writers.ts";
+export { LEAF_FORMAT, loadSearchConfig, readSearchConfig, type SearchConfig, SearchConfigError, searchConfigHash, searchIdentity, searchIdentityHash, type SearchIdentityInputs, SEARCH_POLICY_LABEL } from "./search-config.ts";
 export { deriveRoleSetsPrior, ROLE_SETS_PRIOR_SCRIPT, RoleSetsPriorError, type RoleSetsPriorInput } from "./role-sets-prior.ts";
 export { deriveGeneratorPrior, GENERATOR_PRIOR_SCRIPT, GeneratorPriorError, type GeneratorPriorInput, generatorConfigHash, megaHolderAbilities, megaPreviewSpecies } from "./generator-prior.ts";
 export { type BeliefConfig, BeliefConfigError, beliefConfigHash, readBeliefConfig } from "./belief-config.ts";
@@ -554,6 +560,7 @@ export {
   type WorldOpponentMember,
   type WorldPokemonRef,
   type WorldRefusal,
+  WORLD_BUILDER_FORMAT,
   WORLD_CHECKS,
   WORLD_REFUSAL_CODES,
   type WorldRefusalCode,
@@ -561,3 +568,30 @@ export {
 } from "./world-builder.ts";
 export { type CheckFailure, type ConditionSnapshot, type Remainder, firstDifference, plainRequest, v2Candidates, v2Request, v4Conditions, v4Durations } from "./world-checks.ts";
 export { type RedrawCounts, type Redrawer, createRedrawer } from "./world-redraw.ts";
+export {
+  type DecisionWorlds,
+  EVIDENCE_CLASSES,
+  type EvidenceClass,
+  evidenceClass,
+  GENERATOR_MATCHED_LABEL,
+  mapWorld,
+  PRIOR_KINDS,
+  type PriorKind,
+  type RefusedWorld,
+  ROLE_SETS_LABEL,
+  SEARCH_HP_ROUNDING,
+  SEARCH_PURPOSE,
+  searchStream,
+  type ValidWorld,
+  createWorldSampler,
+  type WorldRequest,
+  type WorldSampler,
+  type WorldSamplerContext,
+  type WorldSamplerCounts,
+  type WorldSamplerSettings,
+  type WorldSamplePort,
+  type WorldSource,
+  type WorldSourceResult,
+  WorldMappingError,
+} from "./world-sampler.ts";
+export { REPLY_MODEL_FORMAT } from "./reply-model.ts";

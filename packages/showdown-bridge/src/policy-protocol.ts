@@ -6,21 +6,29 @@
 import { createHash } from "node:crypto";
 import { ajvFor } from "@areneon/schema/ajv";
 import battleSchema from "@areneon/schema/contracts/v1/battle-observation.schema.json" with { type: "json" };
+import evaluationReplySchema from "@areneon/schema/contracts/v1/evaluation-reply.schema.json" with { type: "json" };
 import handshakeSchema from "@areneon/schema/contracts/v1/policy-handshake.schema.json" with { type: "json" };
 import querySchema from "@areneon/schema/contracts/v1/policy-query.schema.json" with { type: "json" };
 import replySchema from "@areneon/schema/contracts/v1/policy-reply.schema.json" with { type: "json" };
 import previewSchema from "@areneon/schema/contracts/v1/preview-observation.schema.json" with { type: "json" };
 import recommendationSchema from "@areneon/schema/contracts/v1/recommendation.schema.json" with { type: "json" };
 import type { ContractVersion, PolicyHandshake } from "@areneon/schema/types/v1/policy-handshake.ts";
+import type { EvaluationReply } from "@areneon/schema/types/v1/evaluation-reply.ts";
 import type { PolicyQuery } from "@areneon/schema/types/v1/policy-query.ts";
 import type { PolicyReply } from "@areneon/schema/types/v1/policy-reply.ts";
 import { type Json, jcs } from "./canonical-json.ts";
 import { featureRowsProblem } from "./feature-rows.ts";
 
-export type { PolicyHandshake, PolicyQuery, PolicyReply };
+export type { EvaluationReply, PolicyHandshake, PolicyQuery, PolicyReply };
 
 /** A query as the actor builds it; the client assigns the `query_id`. */
 export type PolicyQueryInput = Omit<PolicyQuery, "query_id">;
+
+/** A query whose `sampling` is `evaluate` (ADR-026 section 5): answered by an `EvaluationReply`, never a choice. */
+export type EvaluateQueryInput = PolicyQueryInput & { sampling: { kind: "evaluate" } };
+
+/** The policy's prior and value for one request, in integer ppm (the rounding rule is the contract's). */
+export type Evaluation = Extract<EvaluationReply["reply"], { kind: "evaluation" }>["evaluation"];
 
 /** The message does not match its contract, or breaks one of its reader rules. */
 export class PolicyProtocolError extends Error {
@@ -30,6 +38,7 @@ export class PolicyProtocolError extends Error {
 const contract = ajvFor("contract");
 const validQuery = contract.compile(querySchema);
 const validReply = contract.compile(replySchema);
+const validEvaluationReply = contract.compile(evaluationReplySchema);
 const validHandshake = contract.compile(handshakeSchema);
 
 // The contracts both sides must agree on (the handshake schema's name enum).
@@ -86,11 +95,17 @@ export interface PlaySettings {
  * `JCS({preview, battle, mode, temperature, precision})`. Play settings enter the preimage only
  * when set (`temperature_ppm` replaces `temperature`; `truncation` is added), so every earlier id
  * is unchanged. A pair that reads a candidate feature set (ADR-022 section 6) adds `features: <feature_set_hash>`;
- * `features` is absent for every other pair, whose id is unchanged. The Python
+ * `features` is absent for every other pair, whose id is unchanged. A pair played with decision-time search
+ * (ADR-026 section 5) adds `search: <search identity hash>` (`searchIdentityHash`), with the play settings of its
+ * underlying mode as above; `search` is absent for every other policy, whose id is unchanged. The Python
  * `areneon_ml.loop.records.policy_id` computes the same value.
  */
-export function policyId(pair: { preview: string; battle: string }, mode: "sample" | "argmax", play: PlaySettings = {}, features?: string): string {
+export function policyId(pair: { preview: string; battle: string }, mode: "sample" | "argmax", play: PlaySettings = {}, features?: string, search?: string): string {
   const body: Record<string, Json> = { preview: pair.preview, battle: pair.battle, mode, temperature: 1, precision: "float32" };
+  if (search !== undefined) {
+    if (!/^[0-9a-f]{64}$/.test(search)) throw new PolicyProtocolError("search is a search identity hash: 64 lowercase hex digits");
+    body.search = search;
+  }
   if (features !== undefined) {
     if (!/^[0-9a-f]{64}$/.test(features)) throw new PolicyProtocolError("features is a feature_set_hash: 64 lowercase hex digits");
     body.features = features;
@@ -119,6 +134,12 @@ export function policyId(pair: { preview: string; battle: string }, mode: "sampl
 export function readPolicyReply(value: unknown): PolicyReply {
   if (!validReply(value)) throw new PolicyProtocolError(`not a PolicyReply: ${describe(validReply.errors)}`);
   return value as unknown as PolicyReply;
+}
+
+/** `value` as an EvaluationReply (the worker's answer to an `evaluate` query), or a `PolicyProtocolError`. */
+export function readEvaluationReply(value: unknown): EvaluationReply {
+  if (!validEvaluationReply(value)) throw new PolicyProtocolError(`not an EvaluationReply: ${describe(validEvaluationReply.errors)}`);
+  return value as unknown as EvaluationReply;
 }
 
 /** `value` as a PolicyHandshake message, or a `PolicyProtocolError`. */

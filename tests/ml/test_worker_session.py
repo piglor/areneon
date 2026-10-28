@@ -327,6 +327,9 @@ class BrokenScorer:
     def probabilities(self, view: dict[str, Any], temperature_ppm: int = 1_000_000) -> list[float]:
         return self._result
 
+    def evaluate(self, view: dict[str, Any]) -> tuple[list[float], float]:
+        return self._result, 0.0
+
 
 def test_a_scorer_that_returns_unusable_probabilities_crashes_the_worker(tmp_path: Path) -> None:
     worker = Worker(BrokenScorer([1.0]), ENGINE_DATA_HASH, [], MAX_LINE)
@@ -501,7 +504,9 @@ def test_the_worker_process_speaks_the_protocol_over_real_pipes(tmp_path: Path) 
     query = battle_query(sampling={"kind": "argmax"})
     done = subprocess.run(
         [sys.executable, "-I", "-m", "areneon_ml.worker", *cli(run_dir, preview, battle)],
-        input=line(hello()) + line(query),
+        input=line(hello())
+        + line(query)
+        + line({**query, "query_id": 2, "sampling": {"kind": "evaluate"}}),
         capture_output=True,
         timeout=60,
         check=False,
@@ -509,4 +514,5 @@ def test_the_worker_process_speaks_the_protocol_over_real_pipes(tmp_path: Path) 
     )
     assert done.returncode == EXIT_OK, done.stderr
     assert [jcs(json.loads(x)) for x in done.stdout.splitlines()] == done.stdout.splitlines()
-    assert len(done.stdout.splitlines()) == REPLIES
+    assert len(done.stdout.splitlines()) == REPLIES + 1
+    check("evaluation-reply", json.loads(done.stdout.splitlines()[-1]))

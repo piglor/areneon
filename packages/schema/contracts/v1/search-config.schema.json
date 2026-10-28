@@ -1,0 +1,182 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:areneon:schema:contracts:v1:search-config",
+  "title": "SearchConfig",
+  "description": "The reviewed configuration of decision-time search (ADR-026 section 5): reviewed data in config/search/, never code. Every value that changes what a search plays is here or in an input the search identity names. Integers only. Its RFC 8785 SHA-256 is search_config_hash, a part of the search identity. The values committed first are ADR-026's defaults; they are frozen only by the S0 freeze commit. A change of any value is a new record (a new file), never an edit.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "format_id",
+    "algorithm",
+    "top_k",
+    "top_k_rule",
+    "worlds",
+    "belief_identity_hash",
+    "replies",
+    "leaf",
+    "budget_ms",
+    "a2_clock_floor_ms",
+    "min_valid_worlds",
+    "seed_derivation"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "format_id": {
+      "description": "The target format the search is configured for.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "algorithm": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind"
+      ],
+      "properties": {
+        "kind": {
+          "description": "One-ply re-rank of the prior's top candidates.",
+          "const": "rerank-1"
+        }
+      }
+    },
+    "top_k": {
+      "description": "How many of the pair's non-pending candidates are searched (k).",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 64
+    },
+    "top_k_rule": {
+      "description": "prior-top-k takes the k highest, ties in canonical order; distinct-slot takes the next candidate only if it adds a slot action not yet covered.",
+      "enum": [
+        "prior-top-k",
+        "distinct-slot"
+      ]
+    },
+    "worlds": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "n",
+        "redraws",
+        "hp_rounding",
+        "prior"
+      ],
+      "properties": {
+        "kind": {
+          "const": "sampled"
+        },
+        "n": {
+          "description": "Worlds per decision (N).",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1024
+        },
+        "redraws": {
+          "description": "Sampler indices tried per world until it passes the world checks (R); attempt r of world i is sampler index i * R + r.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 64
+        },
+        "hp_rounding": {
+          "description": "How a shown opponent percentage becomes hit points in a world. It changes which worlds pass check V3 and so what is played, hence it is part of the identity. ceil inverts the Champions display for every maximum of 100 or more.",
+          "enum": [
+            "ceil",
+            "floor",
+            "nearest"
+          ]
+        },
+        "prior": {
+          "description": "The prior arm the worlds are drawn from and the label every result of the arm carries.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "label"
+          ],
+          "properties": {
+            "kind": {
+              "enum": [
+                "generator-matched",
+                "role-sets"
+              ]
+            },
+            "label": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            }
+          }
+        }
+      }
+    },
+    "belief_identity_hash": {
+      "description": "ADR-025's belief_identity_hash of the belief the worlds are drawn from: 64 lower-case hex digits. The search identity names the same value and the reader refuses a different one.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "replies": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "max_damage_ppm",
+        "uniform_draws"
+      ],
+      "properties": {
+        "max_damage_ppm": {
+          "description": "Weight of the probe max-damage reply in millionths; the uniform draws share the rest equally.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000
+        },
+        "uniform_draws": {
+          "description": "Uniform replies over the non-pending legal replies per world.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 16
+        }
+      }
+    },
+    "leaf": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "value-head",
+            "hp-ko-differential"
+          ]
+        }
+      }
+    },
+    "budget_ms": {
+      "description": "The per-decision guard in milliseconds that an overrun is a latency forfeit against (the existing 30 s battle budget); not a cut-off inside the search, whose work is fixed by k, N, M and R.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 3600000
+    },
+    "a2_clock_floor_ms": {
+      "description": "A2 only: below this remaining bank the search is skipped and the pair's own choice is played.",
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 3600000
+    },
+    "min_valid_worlds": {
+      "description": "W_min: a decision is searched only if at least this many worlds are valid.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 1024
+    },
+    "seed_derivation": {
+      "description": "The per-decision search stream: SHA-256 over the JCS of {seed, game, player, policy_id, request_seq, purpose: 'search/1'}.",
+      "const": "search/1"
+    }
+  }
+}

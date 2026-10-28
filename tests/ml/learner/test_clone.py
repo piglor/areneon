@@ -239,6 +239,21 @@ def test_the_loss_falls_and_the_cloned_policy_agrees_with_the_teacher_above_chan
     assert battle.optimiser_steps == 12 * math.ceil(battle.train.steps / 16)
 
 
+def test_a_clone_config_may_name_damage_aware_v3_and_its_set() -> None:
+    """The v3 teacher (#1182) is an ordinary named teacher: config and set are accepted."""
+    text, manifest = teacher_stream(policy="damage-aware@v3")
+    raw = raw_config()
+    raw["teacher"] = {
+        "behaviour_policy_id": "damage-aware@v3",
+        "training_set_hash": sha256_hex(jcs(manifest)),
+    }
+    raw["clone"]["epochs"] = 1
+    config = read_clone_config(raw)
+    assert config.teacher_policy_id == "damage-aware@v3"
+    cloned = clone(config, game(), text, manifest)
+    assert cloned.roles["battle"].train.steps > 0
+
+
 def test_agreement_equals_a_hand_count_and_the_split_follows_the_keyed_hash(
     stream: tuple[str, dict[str, Any]],
 ) -> None:
