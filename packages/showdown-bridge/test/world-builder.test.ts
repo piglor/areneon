@@ -490,6 +490,19 @@ describe("the checks and the typed, counted refusals", () => {
     expect(refusal({ ...base.input, request: { ...base.input.request, side: { ...base.input.request.side, id: base.input.request.side.id === "p1" ? "p2" : "p1" } } }).code).toBe("v5_mismatch");
   });
 
+  it("takes the number of active slots from the request and refuses a battle with another number", () => {
+    const one = structuredClone(base.input.request);
+    (one.active as unknown[]).length = 1;
+    (one.side.pokemon[1] as { active: boolean }).active = false;
+    const state = structuredClone(base.input.state);
+    for (const mon of state.opponent.roster) if (mon.active_slot === "b") mon.active_slot = null;
+    expect(refusal({ ...base.input, request: one, state })).toMatchObject({ code: "start_failed", detail: "the scenario battle has another number of active slots than the request" });
+    // and a request with more active entries than the teams place
+    const three = structuredClone(base.input.request);
+    (three.active as unknown[]).push((three.active as unknown[])[0]);
+    expect(refusal({ ...base.input, request: three }).code).toMatch(/team_mismatch/);
+  });
+
   it("refuses with start_failed when the scenario battle cannot start", () => {
     const bad: WorldContext = { ...context, scenario_id: "gen9championsvgc2026regmc@@@!Not A Rule" };
     expect(refusal(base.input, createWorldBuilder(bad)).code).toBe("start_failed");

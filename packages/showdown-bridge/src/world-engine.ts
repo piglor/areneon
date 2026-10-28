@@ -48,6 +48,7 @@ export interface WMon {
 export interface WSide {
   id: string;
   pokemon: WMon[];
+  active: unknown[];
   totalFainted: number;
   faintedThisTurn: WMon | null;
   faintedLastTurn: WMon | null;
@@ -91,6 +92,9 @@ export const conditionKind = (battle: WBattle, id: string): string => {
   const found = battle.dex.conditions.get(id);
   return found.exists ? found.effectType : "none";
 };
+
+/** The position letter of an active slot (`a`, `b`, ...), as the protocol names it. */
+export const slotLetter = (position: number): string => String.fromCharCode(97 + position);
 
 export const toId = (text: string): string => text.toLowerCase().replace(/[^a-z0-9]/g, "");
 export const STAGES = ["atk", "def", "spa", "spd", "spe", "accuracy", "evasion"] as const;

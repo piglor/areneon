@@ -13,6 +13,7 @@ import { checkScenario, startScenario } from "../src/mechanics-scenario.ts";
 import { decodeRequest } from "../src/request.ts";
 import { REPLY_MODEL_FORMAT, ReplyModelError, createReplyModel, newWorldMemo } from "../src/reply-model.ts";
 import { importPaste } from "../src/teams.ts";
+import { loadWorldWriters } from "../src/world-writers.ts";
 import { createWorldBuilder, type ScenarioWorld } from "../src/world-builder.ts";
 import { config, mechanics, snapshot, stubProbe, vocabulary } from "./damage-aware-support.ts";
 import { cases } from "./world-builder-support.ts";
@@ -38,7 +39,9 @@ const worldOf = (own = ownSets, foe = foeSets): ScenarioWorld => ({
   own_order: [],
   opponent_order: [],
   resampled: [],
+  written: [],
   defaulted_sources: 0,
+  remainders: [],
 });
 
 const model = (probe = stubProbe()) => createReplyModel({ engine, vocabulary, config, mechanics, snapshot, data_class: "synthetic", probe });
@@ -207,7 +210,7 @@ describe("hand-checked worlds (stub probe: every query's value is the test's rol
 
 describe("worlds built from the committed channels, with the real probe", () => {
   it("replies with a legal choice that never switches and never uses a status move, and measures the cost", () => {
-    const builder = createWorldBuilder({ engine, format_id: GOLDEN_FORMAT, scenario_id: scenarioId, hp_rounding: "ceil" });
+    const builder = createWorldBuilder({ engine, format_id: GOLDEN_FORMAT, scenario_id: scenarioId, hp_rounding: "ceil", writers: loadWorldWriters(engine, GOLDEN_FORMAT) });
     const worlds: { world: ScenarioWorld; id: string }[] = [];
     for (const { id, input } of cases()) {
       const built = builder.build(input);

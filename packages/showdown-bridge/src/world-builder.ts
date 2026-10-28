@@ -34,7 +34,7 @@ import type { Engine, PokemonSet, SimBattle } from "./engine.ts";
 import { startScenario } from "./mechanics-scenario.ts";
 import { exportPaste, importPaste } from "./teams.ts";
 import { type Remainder, v2Candidates, v2Request, v4Conditions, v4Durations } from "./world-checks.ts";
-import { type WBattle, type WMon, type WSide, STAGES, conditionKind, toId } from "./world-engine.ts";
+import { type WBattle, type WMon, type WSide, STAGES, conditionKind, slotLetter, toId } from "./world-engine.ts";
 import { Refuse, WORLD_CHECKS, WORLD_REFUSAL_CODES, type WorldCheck, type WorldRefusal, type WorldRefusalCode, need } from "./world-refusal.ts";
 import {
   type Classified,
@@ -153,8 +153,6 @@ export interface WorldCounts {
   defaulted_sources: number;
 }
 
-const SLOT_POSITION: Record<string, number> = { a: 0, b: 1 };
-const SLOT_LETTER = ["a", "b"] as const;
 const OWN_CONDITION = /^(\d+)\/(\d+)(?: ([a-z]+))?$/;
 const SHOWN_HEALTH = /^(\d+)\/100/;
 /** The permanent forme a Pokemon is shown in (its details), else the set's. */
@@ -258,10 +256,11 @@ export function createWorldBuilder(context: WorldContext): WorldBuilder {
       return { index: member.roster_index, set: structuredClone(member.set) as PokemonSet, mon: mon as PublicMon };
     });
     need(roster.every((mon, index) => mon.brought !== true || seen.has(index)), "opponent_team_mismatch", "a Pokemon seen in play is missing from the team");
-    const slots = placed.map((entry) => entry.mon.active_slot);
-    need(slots.every((slot) => slot === null || slot in SLOT_POSITION) && new Set(slots.filter((slot) => slot !== null)).size === slots.filter((slot) => slot !== null).length, "opponent_team_mismatch", "the active slots are not a, b or empty, or are repeated");
+    const letters = Array.from({ length: input.request.active?.length ?? 0 }, (_, position) => slotLetter(position));
+    const shownSlots = placed.map((entry) => entry.mon.active_slot);
+    need(shownSlots.every((slot) => slot === null || letters.includes(slot)) && new Set(shownSlots.filter((slot) => slot !== null)).size === shownSlots.filter((slot) => slot !== null).length, "opponent_team_mismatch", "the active slots are not the request's positions or empty, or are repeated");
     // The reader empties a slot when its Pokemon faints. The engine still holds that fainted Pokemon there, so a fainted member fills it (the player's view is the same whichever one does).
-    const bySlot = SLOT_LETTER.map((letter) => placed.find((entry) => entry.mon.active_slot === letter));
+    const bySlot = letters.map((letter) => placed.find((entry) => entry.mon.active_slot === letter));
     const spare = placed.filter((entry) => entry.mon.active_slot === null && entry.mon.fainted).sort((a, b) => a.index - b.index);
     const actives = bySlot.map((entry) => entry ?? spare.shift());
     need(actives.every((entry) => entry !== undefined), "opponent_team_mismatch", "an empty active slot has no fainted Pokemon to fill it");
@@ -358,7 +357,7 @@ export function createWorldBuilder(context: WorldContext): WorldBuilder {
   }
 
   /** The opponent Pokemon as the player would see it, rendered by the engine, against the reader's state (V3). */
-  function checkRendered(battle: WBattle, seat: number, foes: readonly { mon: PublicMon; set: PokemonSet }[]): void {
+  function checkRendered(battle: WBattle, seat: number, slots: number, foes: readonly { mon: PublicMon; set: PokemonSet }[]): void {
     const side = battle.sides[1 - seat] as WSide;
     for (const [position, foe] of foes.entries()) {
       const mon = side.pokemon[position] as WMon;
@@ -370,7 +369,7 @@ export function createWorldBuilder(context: WorldContext): WorldBuilder {
       need(mon.fainted === shown.fainted, "v3_mismatch", `${at}: fainted`);
       need((mon.status === "" ? null : mon.status) === shown.status, "v3_mismatch", `${at}: status`);
       // A fainted Pokemon may hold a slot the reader has already emptied.
-      need((position < SLOT_LETTER.length ? SLOT_LETTER[position] : null) === shown.active_slot || (shown.fainted && shown.active_slot === null), "v3_mismatch", `${at}: slot`);
+      need((position < slots ? slotLetter(position) : null) === shown.active_slot || (shown.fainted && shown.active_slot === null), "v3_mismatch", `${at}: slot`);
       need(STAGES.every((stage) => (mon.boosts[stage] ?? 0) === (shown.boosts[stage] ?? 0)), "v3_mismatch", `${at}: stat stages`);
       need((mon.species.isMega === true) === shown.mega, "v3_mismatch", `${at}: Mega Evolution`);
       if (shown.level !== null) need(mon.level === shown.level, "v3_mismatch", `${at}: level`);
@@ -399,10 +398,11 @@ export function createWorldBuilder(context: WorldContext): WorldBuilder {
     need(worldFacts.turn === state.turn && state.turn >= 1, "facts_mismatch", "the world facts are for another turn than the state");
     const seatIndex = SEATS.indexOf(state.player as "p1" | "p2");
     need(seatIndex >= 0, "v5_mismatch", "the state is for no seat of a two-player battle");
+    const slots = (input.request.active as unknown[]).length;
     const own = ownEntries(input);
     const foes: Foe[] = opponentOrder(input).map(({ index, set, mon }) => ({ index, set, mon }));
     const requestActive = input.request.side.pokemon.map((entry) => entry.active);
-    need(requestActive.every((active, index) => active === index < 2), "own_team_mismatch", "the request's active Pokemon are not the first two");
+    need(requestActive.every((active, index) => active === index < slots), "own_team_mismatch", "the request's active Pokemon are not the first ones");
     // V1.
     for (const entry of own) checkSet(entry.set, true);
     for (const foe of foes) {
@@ -430,6 +430,8 @@ export function createWorldBuilder(context: WorldContext): WorldBuilder {
     const ownSide = battle.sides[seatIndex] as WSide;
     const foeSide = battle.sides[1 - seatIndex] as WSide;
     need(ownSide.id === state.player && ownSide.pokemon.length === own.length && foeSide.pokemon.length === foes.length, "start_failed", "the scenario battle has other sides than declared");
+    // The slot count is the request's; the scenario battle must have the same (one count, never a literal).
+    need(ownSide.active.length === slots && foeSide.active.length === slots, "start_failed", "the scenario battle has another number of active slots than the request");
     const written = new Set<StateItemId>();
     const remainders: Remainder[] = [];
 
@@ -474,14 +476,14 @@ export function createWorldBuilder(context: WorldContext): WorldBuilder {
       for (const move of input.request.active?.[index]?.moves ?? []) if (move.pp !== undefined) pp.set(move.id, move.pp);
       writePP(mon, pp, `own Pokemon ${index}`);
       if (mon.fainted) continue;
-      writeMon(battle, mon, { hp: entry.hp, status: entry.status, boosts: entry.shown?.boosts ?? {}, active: index < 2 }, `own Pokemon ${index}`, written);
+      writeMon(battle, mon, { hp: entry.hp, status: entry.status, boosts: entry.shown?.boosts ?? {}, active: index < slots }, `own Pokemon ${index}`, written);
     }
     for (const [index, foe] of foes.entries()) {
       const mon = foeSide.pokemon[index] as WMon;
       if (mon.fainted) continue;
       const percent = foe.mon.hp_num;
       const hp = percent === null ? null : assumedHp(percent, mon.maxhp, context.hp_rounding);
-      writeMon(battle, mon, { hp, status: foe.mon.status, boosts: foe.mon.boosts, active: index < 2 }, `opponent Pokemon ${index}`, written);
+      writeMon(battle, mon, { hp, status: foe.mon.status, boosts: foe.mon.boosts, active: index < slots }, `opponent Pokemon ${index}`, written);
     }
 
     // Own stats against the request: the same set in the same place.
@@ -574,7 +576,7 @@ export function createWorldBuilder(context: WorldContext): WorldBuilder {
     // V5 and V3.
     need(own.every((entry, index) => (ownSide.pokemon[index] as WMon).name === entry.name), "v5_mismatch", "an own nickname differs from the request's");
     need(foes.every((foe, index) => foe.mon.name === null || (foeSide.pokemon[index] as WMon).name === foe.mon.name), "v5_mismatch", "an opponent nickname differs from the shown one");
-    checkRendered(battle, seatIndex, foes);
+    checkRendered(battle, seatIndex, slots, foes);
 
     // V4.
     const layersOf = (side: WSide): Record<string, number> => Object.fromEntries(Object.entries(side.sideConditions).filter(([, held]) => held !== undefined).map(([id, held]) => [id, held?.layers ?? 1]));

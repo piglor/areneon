@@ -9,7 +9,7 @@
 import type { ActiveFacts, PublicMon, WorldFacts } from "@areneon/public-state";
 import type { EngineRequest } from "@areneon/schema/types/v1/engine-request.ts";
 import type { PokemonSet } from "./engine.ts";
-import { type WBattle, type WMon, type WSide, toId } from "./world-engine.ts";
+import { type WBattle, type WMon, type WSide, slotLetter, toId } from "./world-engine.ts";
 import { Refuse, type WorldRefusalCode } from "./world-refusal.ts";
 import type { StateClass, StateItemId, WorldWriters } from "./world-writers.ts";
 
@@ -100,14 +100,13 @@ export interface Classified {
   resampled: Resample[];
 }
 
-const LETTERS = ["a", "b"] as const;
 
-function volatilePlans(plan: StatePlan, mon: PublicMon | undefined, facts: ActiveFacts | null, index: number, side: "own" | "opponent", resampled: Resample[]): MonPlan["volatiles"] {
+function volatilePlans(plan: StatePlan, slots: number, mon: PublicMon | undefined, facts: ActiveFacts | null, index: number, side: "own" | "opponent", resampled: Resample[]): MonPlan["volatiles"] {
   const out: MonPlan["volatiles"] = [];
   for (const id of mon?.volatiles ?? []) {
     const row = plan.rowOf(id);
     if (row !== undefined) refuseItem(plan, row, `${side} Pokemon ${index} has a volatile of a refused kind`);
-    if (index >= 2) refuseItem(plan, "unadmitted_id", `${side} Pokemon ${index} is on the bench with a volatile`);
+    if (index >= slots) refuseItem(plan, "unadmitted_id", `${side} Pokemon ${index} is on the bench with a volatile`);
     if (id === plan.conditionOf("confusion_duration")) {
       holds(plan, "confusion_duration", `${side} Pokemon ${index} is confused`);
       resampled.push({ side, position: index, item: "confusion_duration" });
@@ -140,30 +139,32 @@ export function classify(input: {
   plan: StatePlan;
 }): Classified {
   const { request, own, foes, facts, plan } = input;
+  /** The active slots a side has, as the request lists them. */
+  const slots = (request.active ?? []).length;
   const resampled: Resample[] = [];
   const mons = (side: "own" | "opponent", shown: readonly (PublicMon | undefined)[], statuses: readonly (string | null)[]): MonPlan[] =>
     shown.map((mon, index) => {
-      const letter = LETTERS[index];
+      const letter = index < slots ? slotLetter(index) : undefined;
       const factsOf = side === "own" ? facts.own : facts.opponent;
       const active = letter === undefined ? null : (factsOf.active[letter] ?? null);
       const living = mon?.fainted !== true && !(side === "own" && request.side.pokemon[index]?.condition === "0 fnt");
-      if (index < 2 && living) {
+      if (index < slots && living) {
         if (active === null || (mon?.name != null && active.name !== mon.name)) throw new Refuse("facts_mismatch", `${side} Pokemon ${index}: the world facts name another Pokemon in its position`);
       }
       const status = statuses[index] ?? null;
-      const volatiles = living ? volatilePlans(plan, mon, active, index, side, resampled) : [];
+      const volatiles = living ? volatilePlans(plan, slots, mon, active, index, side, resampled) : [];
       let toxic: number | null = null;
-      if (living && status === "tox" && index < 2) {
+      if (living && status === "tox" && index < slots) {
         holds(plan, "toxic_stage", `${side} Pokemon ${index} is badly poisoned`);
         if (active?.toxic_ticks == null) refuseItem(plan, "toxic_stage", `${side} Pokemon ${index}: the log shows no Toxic stage`);
         toxic = active?.toxic_ticks as number;
       }
-      if (living && status !== null && index >= 2) holds(plan, "bench_status", `${side} Pokemon ${index} is on the bench with a status`);
+      if (living && status !== null && index >= slots) holds(plan, "bench_status", `${side} Pokemon ${index} is on the bench with a status`);
       if (living && status === "slp") {
         holds(plan, "sleep_counter", `${side} Pokemon ${index} is asleep`);
         resampled.push({ side, position: index, item: "sleep_counter" });
       }
-      return { index, facts: active, volatiles, remove_item: false, toxic_stage: toxic, bench_status: living && status !== null && index >= 2, sleeping: living && status === "slp" };
+      return { index, facts: active, volatiles, remove_item: false, toxic_stage: toxic, bench_status: living && status !== null && index >= slots, sleeping: living && status === "slp" };
     });
 
   // A Pokemon that can hide as another (the record's ability ids) makes the names the channel shows unreliable: Illusion pairs are refused.
@@ -174,12 +175,12 @@ export function classify(input: {
     if (row === "truant_slow_start") refuseItem(plan, row, `${whose} Pokemon ${index} has a turn-parity ability`, redraw);
   };
   own.forEach((entry, index) => {
-    if (index < 2 && request.side.pokemon[index]?.condition !== "0 fnt") byAbility(request.side.pokemon[index]?.baseAbility ?? entry.set.ability, "own", index, false);
+    if (index < slots && request.side.pokemon[index]?.condition !== "0 fnt") byAbility(request.side.pokemon[index]?.baseAbility ?? entry.set.ability, "own", index, false);
   });
   // The opponent's real Pokemon in a disguise cannot be told from the bench, so every living member counts for a hiding ability; a turn-parity ability only matters in play.
   foes.forEach((foe, index) => {
     if (foe.mon.fainted) return;
-    if (index < 2 || plan.rowOf(toId(foe.set.ability)) === "illusion_transform") byAbility(foe.set.ability, "opponent", index, true);
+    if (index < slots || plan.rowOf(toId(foe.set.ability)) === "illusion_transform") byAbility(foe.set.ability, "opponent", index, true);
   });
 
   const ownPlans = mons("own", own.map((entry) => entry.shown), own.map((entry) => entry.status));
@@ -234,7 +235,7 @@ export function classify(input: {
       resampled.push({ side: "opponent", position: index, item: "opponent_pp" });
     }
   });
-  const unseen = foes.map((foe, index) => ({ foe, index })).filter(({ foe, index }) => index >= 2 && !foe.mon.fainted && foe.mon.brought !== true);
+  const unseen = foes.map((foe, index) => ({ foe, index })).filter(({ foe, index }) => index >= slots && !foe.mon.fainted && foe.mon.brought !== true);
   if (unseen.length >= 2) {
     holds(plan, "bench_order", "the opponent has two unseen Pokemon on its bench", true);
     resampled.push({ side: "opponent", position: (unseen[0] as { index: number }).index, item: "bench_order" });
