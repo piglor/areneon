@@ -362,14 +362,6 @@ def _source(
         raise ProgressError(
             "the run config names no team dataset: the interim pool has no validation split"
         )
-    if features_hash(config) is not None:
-        # The evaluation's seats build no candidate features and its policy ids carry no
-        # features member yet: a pair that reads them would be refused at the handshake, and
-        # its ids would be wrong. Refused up front rather than evaluated as another policy.
-        raise ProgressError(
-            "the run's pair reads candidate features (ADR-022); the progress evaluation "
-            "does not play such a pair yet"
-        )
     newest = layout.latest_complete(run_dir)
     if newest is None or not 0 <= generation <= newest.generation:
         raise ProgressError(f"generation {generation} is not committed in {run_dir}")
@@ -498,8 +490,8 @@ def _previous_pair(run_dir: Path, config: RunConfig, generation: int) -> Previou
     return PreviousPair(
         before.preview,
         before.battle,
-        policy_id(before.preview, before.battle, "sample"),
-        policy_id(before.preview, before.battle, "argmax"),
+        policy_id(before.preview, before.battle, "sample", features=features_hash(config)),
+        policy_id(before.preview, before.battle, "argmax", features=features_hash(config)),
     )
 
 
@@ -510,8 +502,8 @@ def _anchor_pair(run_dir: Path, config: RunConfig, generation: int) -> AnchorPai
         generation,
         found.preview,
         found.battle,
-        policy_id(found.preview, found.battle, "sample"),
-        policy_id(found.preview, found.battle, "argmax"),
+        policy_id(found.preview, found.battle, "sample", features=features_hash(config)),
+        policy_id(found.preview, found.battle, "argmax", features=features_hash(config)),
     )
 
 
@@ -547,8 +539,8 @@ def _versus_pair(run_dir: Path, config: RunConfig, spec: VersusSpec) -> RunPair:
         spec.generation,
         found.preview,
         found.battle,
-        policy_id(found.preview, found.battle, "sample"),
-        policy_id(found.preview, found.battle, "argmax"),
+        policy_id(found.preview, found.battle, "sample", features=features_hash(other)),
+        policy_id(found.preview, found.battle, "argmax", features=features_hash(other)),
         other_dir,
         found.team_set,
         spec.encoder_version,
@@ -1105,8 +1097,12 @@ def progress_generation(  # noqa: PLR0913, PLR0917
                     generation=generation,
                     preview=source.preview,
                     battle=source.battle,
-                    policy_id_sample=policy_id(source.preview, source.battle, "sample"),
-                    policy_id_argmax=policy_id(source.preview, source.battle, "argmax"),
+                    policy_id_sample=policy_id(
+                        source.preview, source.battle, "sample", features=features_hash(config)
+                    ),
+                    policy_id_argmax=policy_id(
+                        source.preview, source.battle, "argmax", features=features_hash(config)
+                    ),
                     manifest_sha256=source.manifest_sha256,
                     team_set=source.team_set,
                     games=games,
@@ -1238,8 +1234,8 @@ def _ablation_spec(run_dir: Path, config: RunConfig, source: _Source) -> Ablatio
     return AblationSpec(
         0,
         first.preview,
-        policy_id(first.preview, source.battle, "argmax"),
-        policy_id(RANDOM_PREVIEW_POLICY, source.battle, "argmax"),
+        policy_id(first.preview, source.battle, "argmax", features=features_hash(config)),
+        policy_id(RANDOM_PREVIEW_POLICY, source.battle, "argmax", features=features_hash(config)),
     )
 
 

@@ -4,7 +4,7 @@
 // and the real policy worker. It needs the project's Python environment (`make setup`, uv sync); without it the file
 // is skipped, unless ARENEON_REQUIRE_PYTHON_WORKER=1 (the typescript CI job sets it).
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -408,6 +408,16 @@ describe.skipIf(!existsSync(PYTHON) && process.env.ARENEON_REQUIRE_PYTHON_WORKER
       await expect(run("v2", all({ "--versus": "other,x" }))).rejects.toThrow(/--versus must be/);
       await expect(run("v3", all({ "--run-games": "1" }))).rejects.toThrow(/at least 2/);
       await expect(run("v4", all({ "--versus-team-set": bad }))).rejects.toThrow(/SHA-256 hashes/);
+      // The other run's config is read from its directory and must be the one the flag's hash names.
+      const bare = join(dir, "bare-run");
+      mkdirSync(bare, { recursive: true });
+      await expect(run("v6", all({ "--versus-dir": bare }))).rejects.toThrow(/no readable run-config\.json/);
+      await expect(run("v7", all({ "--versus-dir": runDir }))).rejects.toThrow(/another run config/);
+      // A run config that names a feature set this checkout does not compute is a usage error before any worker starts.
+      const wrong = join(dir, "wrong-features.json");
+      const own = json<{ model: { encoder: object } }>(runDir, "run-config.json");
+      writeFileSync(wrong, JSON.stringify({ ...own, model: { ...own.model, encoder: { ...own.model.encoder, options: { candidate_features: { feature_set: "probe-damage/1", feature_set_hash: "0".repeat(64) } } } } }));
+      await expect(run("v8", ["--config", wrong])).rejects.toThrow(/computes as/);
       await expect(run("v5", [...all(), "--ablation-preview", `0,${h},policy:${h}`, "--ablation-random-policy-id", `policy:${h}`])).rejects.toThrow(/played alone/);
     }, 60_000);
 

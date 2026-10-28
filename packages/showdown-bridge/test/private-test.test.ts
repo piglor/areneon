@@ -16,7 +16,8 @@ import { PRIVATE_TEST_REFUSALS, PrivateTestRefusal, privateTestTeams, runPrivate
 import { opponentName, PrivateTestRecordError, privateTestAllowed, privateTestRecordHash, readPrivateTestRecord } from "../src/private-test-record.ts";
 import { checkSalt, privateTestCommitment, privateTestPairs, privateTestStreams } from "../src/private-test-seed.ts";
 import { pairsAvailable, playPrivateTest, type PrivateTestOptions } from "../src/private-test.ts";
-import { damageAwareSetup } from "../src/league-generation.ts";
+import { damageAwareSetup, featureSetup } from "../src/league-generation.ts";
+import type { FrozenPairClientOptions } from "../src/progress-cli.ts";
 import { progressGameStreams } from "../src/progress-seed.ts";
 import { leagueGameStreams } from "../src/league-seed.ts";
 import { type CanaryWorld, expectNoLeak, findLeaks, makeCanaryWorld, observe } from "./support/private-canary.ts";
@@ -99,7 +100,7 @@ interface Run {
 }
 
 /** Run the CLI in a world; every line it prints is captured. */
-async function runCli(w: CanaryWorld, extra: string[] = [], options: { sources?: PrivateTestSources; client?: Client; salt?: string; skip?: string[] } = {}): Promise<Run> {
+async function runCli(w: CanaryWorld, extra: string[] = [], options: { sources?: PrivateTestSources; client?: Client; salt?: string; skip?: string[]; config?: string; onClient?: (asked: FrozenPairClientOptions) => void } = {}): Promise<Run> {
   const saltFile = join(w.root, "salt.key");
   try {
     writeFileSync(saltFile, `${options.salt ?? SALT_A}\n`, { flag: "wx", mode: 0o600 });
@@ -107,7 +108,7 @@ async function runCli(w: CanaryWorld, extra: string[] = [], options: { sources?:
     // the same world reused: the salt file is there (a test that changes the salt makes a new world)
   }
   const argv = [
-    ["--config", configFile()],
+    ["--config", options.config ?? configFile()],
     ["--generation", "2"],
     ["--preview", hex("1")],
     ["--battle", hex("2")],
@@ -127,7 +128,12 @@ async function runCli(w: CanaryWorld, extra: string[] = [], options: { sources?:
   const out: string[] = [];
   const err: string[] = [];
   const client = options.client ?? actorClient();
-  const code = await runPrivateTestCli([...argv, ...extra], (line) => out.push(line), options.sources ?? noSources, (line) => err.push(line), { clientFor: () => client });
+  const code = await runPrivateTestCli([...argv, ...extra], (line) => out.push(line), options.sources ?? noSources, (line) => err.push(line), {
+    clientFor: (asked) => {
+      options.onClient?.(asked);
+      return client;
+    },
+  });
   const line = out[0];
   return { code, out, err, record: line === undefined ? null : readPrivateTestRecord((JSON.parse(line) as { record: unknown }).record) };
 }
@@ -318,10 +324,39 @@ describe("the private test on stand-in teams", () => {
 
   it("plays the damage-aware baseline when asked, and another frozen pair", async () => {
     const w = world(2);
+    writeFileSync(join(w.outside, "run-config.json"), JSON.stringify(tiny)); // the other run's config: it names its own candidate features, here none
     const run = await runCli(w, ["--damage-aware-budget-ms", "600000", "--max-pairs", "1", "--opponent-pair", `${hex("5")},${hex("6")},policy:${hex("c")},policy:${hex("d")}`, "--opponent-run-dir", w.outside, "--opponent-encoder-version", "enc-test"], { client: actorClient() });
     expect(run.code).toBe(0);
     const ids = (run.record as NonNullable<Run["record"]>).matches.map((m) => m.match_id);
     expect(ids).toEqual(["actor-rule-argmax", "actor-rule-sample", "damage-aware-argmax", "damage-aware-sample", "pair-argmax", "pair-sample", "random-legal-argmax", "random-legal-sample"]);
+  }, 240_000);
+
+  it("gives a pair that reads candidate features its statement and its rows, and the opponent pair its own", async () => {
+    const w = world(2);
+    const named = (feature_set_hash: string): Record<string, unknown> => {
+      const model = tiny.model as { encoder: object };
+      return { ...tiny, generation: { ...(tiny.generation as object), max_turns: 100 }, model: { ...model, encoder: { ...model.encoder, options: { candidate_features: { feature_set: "probe-damage/1", feature_set_hash } } } } };
+    };
+    let hash = "";
+    try {
+      featureSetup(engine, readTrainingRunConfig(named("0".repeat(64))));
+    } catch (error) {
+      hash = /computes as ([0-9a-f]{64})/.exec((error as Error).message)?.[1] ?? "";
+    }
+    expect(hash).toMatch(/^[0-9a-f]{64}$/);
+    const dir = mkdtempSync(join(tmpdir(), "private-test-features-"));
+    scratch.push(dir);
+    const own = join(dir, "config.json");
+    writeFileSync(own, JSON.stringify(named(hash)));
+    writeFileSync(join(w.outside, "run-config.json"), JSON.stringify(tiny)); // the opponent pair reads none
+    const asked: FrozenPairClientOptions[] = [];
+    const run = await runCli(w, ["--max-pairs", "1", "--opponent-pair", `${hex("5")},${hex("6")},policy:${hex("c")},policy:${hex("d")}`, "--opponent-run-dir", w.outside, "--opponent-encoder-version", "enc-test"], { config: own, onClient: (o) => asked.push(o) });
+    expect(run.code).toBe(0);
+    expect(asked.map((o) => o.features)).toEqual([{ feature_set: "probe-damage/1", feature_set_hash: hash }, undefined]);
+    // A config naming a feature set this checkout does not compute is a fixed refusal, before any worker starts.
+    const wrong = join(dir, "wrong.json");
+    writeFileSync(wrong, JSON.stringify(named("0".repeat(64))));
+    expect((await runCli(w, ["--max-pairs", "1"], { config: wrong })).err).toEqual(["private-test: worker_failed"]);
   }, 240_000);
 
   it("refuses an options mistake before it plays", async () => {
