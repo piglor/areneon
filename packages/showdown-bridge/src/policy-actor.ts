@@ -10,6 +10,7 @@ import type { PolicyQuery } from "@areneon/schema/types/v1/policy-query.ts";
 import type { PrivateTeamSpec } from "@areneon/schema/types/v1/private-team-spec.ts";
 import { NoCandidateError } from "./actor-rule.ts";
 import { type Json, jcs } from "./canonical-json.ts";
+import { candidateFeatures, createFeatureMemo, type FeatureBuildCode, FeatureBuildError, type FeatureConfigs, type FeatureMemo } from "./candidate-features.ts";
 import { enumerateCandidates } from "./choices.ts";
 import { randomLegalActor } from "./random-legal.ts";
 import type { Engine, PokemonSet } from "./engine.ts";
@@ -59,6 +60,13 @@ export function sampleU(input: SamplerInput): number {
   return Number(digest.readBigUInt64BE(0) >> 11n);
 }
 
+/** What a seat needs to build candidate features (ADR-022 section 3). */
+export interface ActorFeatures {
+  configs: FeatureConfigs;
+  /** This game's memo of probe answers (default: a fresh one); never changes a byte. */
+  memo?: FeatureMemo;
+}
+
 export interface PolicyActorOptions {
   client: PolicyClient;
   /** Names this game to the client, which allows one outstanding query per battle. */
@@ -82,6 +90,16 @@ export interface PolicyActorOptions {
    * `policy_id` with `policyId(pair, "sample", play)`; argmax takes none.
    */
   play?: PlaySettings;
+  /**
+   * The reviewed records the candidate features (ADR-022 section 3) are built from. Rows are attached to a query only
+   * when the worker stated a feature set (`client.featureSet`), and then they must be that set. A request the builder
+   * cannot feature (`FeatureBuildError`) forfeits the game as `crash` with the build code in the detail, counted like
+   * any policy failure: the seat's decision stack could not answer, and no choice is invented for it (no rule
+   * fallback, which would make the played policy partly scripted, and no incident, which would let a reader limit
+   * stop a generation). Any other failure of the builder propagates to `guardActor`, which treats an unexpected
+   * error of a policy seat as a `crash` too (a defect shows in the detail, not in the cause).
+   */
+  features?: ActorFeatures;
   /** The engine that checks the team's stats against the Team Preview request (default: the pinned checkout). */
   engine?: Engine;
   /**
@@ -98,7 +116,8 @@ export interface PolicyActorOptions {
  * request the adapter cannot observe is a harness incident.
  */
 export function policyActor(options: PolicyActorOptions): Actor {
-  const { client, battle, player, team, manifest, channel_class, seed, game, policy_id, sampling, play, engine, preview_actor } = options;
+  const { client, battle, player, team, manifest, channel_class, seed, game, policy_id, sampling, play, engine, preview_actor, features } = options;
+  const memo = features?.memo ?? createFeatureMemo();
   if (sampling === "argmax" && play !== undefined && (play.temperature_ppm !== undefined || play.truncation !== undefined)) {
     throw new PolicyProtocolError("a temperature or a truncation applies to sample mode only");
   }
@@ -123,8 +142,9 @@ export function policyActor(options: PolicyActorOptions): Actor {
     }
     if (candidates.length === 0) throw new NoCandidateError("the request has no candidate");
     let observation;
+    let channel;
     try {
-      const channel = playerChannel({ schema_version: 1, data_class: channel_class, player, lines: context.channel });
+      channel = playerChannel({ schema_version: 1, data_class: channel_class, player, lines: context.channel });
       observation = await observe({ channel, team, manifest });
       // The team the observation records must give the stats the engine sent
       // this player at Team Preview (once per game: the first request).
@@ -136,11 +156,25 @@ export function policyActor(options: PolicyActorOptions): Actor {
     if (identity.request_seq !== request.request_seq || identity.request_hash !== request.request_hash) {
       throw new PolicyProtocolError("the observation is of another request than the one asked");
     }
+    const stated = client.featureSet ?? null;
+    let candidate_features;
+    if (features !== undefined && stated !== null) {
+      try {
+        candidate_features = candidateFeatures(engine ?? pinnedEngine(), features.configs, channel, team.team, candidates, memo);
+      } catch (error) {
+        if (error instanceof FeatureBuildError) throw new ForfeitSignal("crash", `no candidate features: ${error.code satisfies FeatureBuildCode}`);
+        throw error;
+      }
+      if (candidate_features.feature_set_hash !== stated.feature_set_hash || candidate_features.feature_set !== stated.feature_set) {
+        throw new PolicyProtocolError("the candidate features this side builds are of another feature set than the worker stated");
+      }
+    }
     const query = {
       schema_version: 1,
       identity,
       observation,
       candidates: candidates.map(({ choice, pending }) => ({ choice, pending })),
+      ...(candidate_features === undefined ? {} : { candidate_features }),
       sampling:
         sampling === "argmax"
           ? { kind: "argmax" }
@@ -168,6 +202,8 @@ export interface PolicySeat {
   sampling: "argmax" | "sample";
   /** Temperature and truncation of a `sample` seat (ADR-023 §1); see `PolicyActorOptions.play`. */
   play?: PlaySettings;
+  /** The candidate-feature records of this seat (see `PolicyActorOptions.features`); rows go only to a worker that stated a set. */
+  features?: ActorFeatures;
   /** Play the Team Preview uniformly at random among the legal Preview choices (the Preview ablation), seeded per seat. */
   random_preview?: true;
 }

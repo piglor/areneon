@@ -7,7 +7,8 @@ every line as a ``training-example``. What the contract profile cannot say
 (it has no if/then) is checked here: a ``learner_ready`` set names its
 ``behaviour_policy_id`` and every one of its examples carries ``candidates``
 and ``outcome`` (ADR-010 section 5), and an example's ``choice`` is among its
-candidates. A stream with no matching manifest is
+candidates. When examples carry ``candidate_features`` (ADR-022 §3) their rows are sorted and
+unique and the whole stream carries one feature set, or none. A stream with no matching manifest is
 not readable at all: there is no function that reads one alone.
 """
 
@@ -45,6 +46,25 @@ def _check_candidates(number: int, raw: dict[str, Any], ready: bool) -> None:
     candidates = raw.get("candidates")
     if candidates is not None and raw["choice"] not in [c["choice"] for c in candidates]:
         raise TrainingStreamError(f"line {number}: its choice is not among its candidates")
+
+
+def _check_features(number: int, raw: dict[str, Any]) -> None:
+    """The reader rule of ``candidate_features`` the profile cannot say: rows sorted and unique."""
+    features = raw.get("candidate_features")
+    if features is None:
+        return
+    keys = [(r["slot"], r["move"], r["target"], int(r["mega"])) for r in features["rows"]]
+    if not _strictly_ascending(keys):  # type: ignore[arg-type]
+        raise TrainingStreamError(
+            f"line {number}: the candidate_features rows must be sorted and unique"
+            " by (slot, move, target, mega)"
+        )
+
+
+# The feature set of an example (or none) is recorded in `StreamChecker.classes` under this
+# prefix, so the pieces of a stream checked apart (learner/parallel.py) bring it together with
+# the data classes.
+_FEATURES = "features:"
 
 
 def _check_manifest(manifest: object) -> bool:
@@ -156,10 +176,13 @@ class StreamChecker:
         except (json.JSONDecodeError, ContractError) as error:
             raise TrainingStreamError(f"line {number}: {error}") from error
         _check_candidates(number, raw, self.ready)
+        _check_features(number, raw)
         if raw["episode_hash"] not in self.known:
             raise TrainingStreamError(f"line {number}: its Episode is not in the TrainingSet")
         self.seen.add(raw["episode_hash"])
         self.classes.add(raw["observation"]["data_class"])
+        features = raw.get("candidate_features")
+        self.classes.add(_FEATURES + ("" if features is None else features["feature_set_hash"]))
         return raw, example
 
     def finish(self) -> None:
@@ -167,6 +190,10 @@ class StreamChecker:
         if self.seen != self.known:
             missing = sorted(self.known - self.seen)
             raise TrainingStreamError(f"the stream holds no example of Episode {missing[0]}")
+        if sum(1 for c in self.classes if c.startswith(_FEATURES)) > 1:
+            raise TrainingStreamError(
+                "the stream's examples must all carry the same candidate feature set, or none"
+            )
         highest = "private" if "private" in self.classes else "synthetic"
         if self.manifest["data_class"] != highest:
             raise TrainingStreamError(

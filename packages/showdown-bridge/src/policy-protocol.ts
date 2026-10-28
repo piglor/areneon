@@ -15,6 +15,7 @@ import type { ContractVersion, PolicyHandshake } from "@areneon/schema/types/v1/
 import type { PolicyQuery } from "@areneon/schema/types/v1/policy-query.ts";
 import type { PolicyReply } from "@areneon/schema/types/v1/policy-reply.ts";
 import { type Json, jcs } from "./canonical-json.ts";
+import { featureRowsProblem } from "./feature-rows.ts";
 
 export type { PolicyHandshake, PolicyQuery, PolicyReply };
 
@@ -62,6 +63,10 @@ export function readPolicyQuery(value: unknown): PolicyQuery {
   }
   if (query.sampling.kind === "sample" && query.sampling.temperature_ppm === FULL_TEMPERATURE_PPM) {
     throw new PolicyProtocolError("temperature_ppm 1000000 is the default and must be omitted");
+  }
+  if (query.candidate_features !== undefined) {
+    const problem = featureRowsProblem(query.candidate_features);
+    if (problem !== null) throw new PolicyProtocolError(problem);
   }
   return query;
 }

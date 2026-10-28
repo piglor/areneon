@@ -12,6 +12,7 @@ import { fileURLToPath } from "node:url";
 import type { PrivateTeamSpec } from "@areneon/schema/types/v1/private-team-spec.ts";
 import { jcs, type Json } from "./canonical-json.ts";
 import { legalChoiceSet } from "./choice-judge.ts";
+import { parseJointChoice } from "./damage-aware-choice.ts";
 import { evaluationSamples } from "./evaluation-samples.ts";
 import { type EngineData, engineDataHash, exportEngineData } from "./engine-data.ts";
 import type { Engine } from "./engine.ts";
@@ -161,6 +162,34 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
   const sampleBy = { kind: "sample", u: 4503599627370496 };
   const battleQuery = queryOf("battle", sampleBy);
   const previewQuery = queryOf("preview", { kind: "argmax" });
+  // ADR-022 section 3: candidate features. A shape sample, not a probe output: the rows are the golden turn
+  // request's damaging move parts (the engine's own categories, the candidates' own targets) with invented numbers.
+  const featureSetRef = { feature_set: "probe-damage/1", feature_set_hash: createHash("sha256").update("probe-damage/1 sample").digest("hex") };
+  const featureRows = (() => {
+    const dex = engine.sim.Dex.mod(engine.sim.Dex.formats.get(GOLDEN_FORMAT).mod) as unknown as { moves: { get(id: string): { category: string } } };
+    const active = (turn.request as unknown as { active: { moves: { id: string; target?: string }[] }[] }).active;
+    const keys = new Map<string, { slot: number; move: number; target: number; mega: boolean }>();
+    for (const { choice } of battleQuery.candidates) {
+      parseJointChoice(choice).forEach((part, slot) => {
+        if (part.kind !== "move") return;
+        const move = active[slot]?.moves[part.index - 1];
+        if (move === undefined || dex.moves.get(move.id).category === "Status") return;
+        const spread = move.target === "allAdjacentFoes" || move.target === "allAdjacent" || move.target === "randomNormal";
+        for (const target of spread ? [1, 2] : part.target !== null && part.target > 0 ? [part.target] : []) {
+          keys.set(`${slot}/${part.index}/${target}/${part.mega}`, { slot, move: part.index, target, mega: part.mega });
+        }
+      });
+    }
+    const sorted = [...keys.values()].sort((a, b) => a.slot - b.slot || a.move - b.move || a.target - b.target || Number(a.mega) - Number(b.mega));
+    return sorted.map((key, i) =>
+      i === 1
+        ? { kind: "unsupported", ...key, reason: "random_effect" }
+        : { kind: "computed", ...key, mean_ppm: 150000 + 12500 * i, max_ppm: 180000 + 12500 * i, min_ppm: 120000 + 12500 * i, ohko_rolls: i === 0 ? null : 0 },
+    );
+  })();
+  const withFeatures = (query: Record<string, unknown>, rows: unknown): unknown => ({ ...query, candidate_features: { ...featureSetRef, rows } });
+  const featuresOnExample = (rows: unknown): unknown => ({ ...exampleOf("battle"), candidate_features: { ...featureSetRef, rows } });
+  const rowAt = (index: number): Record<string, unknown> => featureRows[index] as Record<string, unknown>;
   const withRqid = (line: string): string =>
     line.startsWith("|request|") ? `|request|${JSON.stringify({ ...JSON.parse(line.slice("|request|".length)), rqid: 7 })}` : line;
   const battleQueryA2 = mutated(battleQuery, (q) => {
@@ -636,11 +665,16 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     // ADR-023 §1: the optional play temperature and threshold truncation of a sample query.
     "policy-query/battle-tempered": queryOf("battle", { ...sampleBy, temperature_ppm: 500000 }),
     "policy-query/battle-threshold": queryOf("battle", { ...sampleBy, temperature_ppm: 300000, truncation: { kind: "threshold", min_ppm: 30000 } }),
+    // ADR-022 section 3: the optional candidate_features (absent in every sample above, so their digests are unchanged).
+    "policy-query/battle-features": withFeatures(battleQuery, featureRows),
+    "policy-query/preview-features": withFeatures(previewQuery, []),
+    "training-example/battle-features": featuresOnExample(featureRows),
     "policy-reply/recommendation": replyOf({ kind: "recommendation", recommendation }),
     "policy-reply/unsupported-candidate": replyOf({ kind: "error", error: "unsupported_candidate", detail: "a candidate has a shape the worker does not know" }),
     "policy-reply/invalid-query": replyOf({ kind: "error", error: "invalid_query", detail: "the query's identity differs from its observation's identity" }),
     "policy-handshake/hello": hello,
     "policy-handshake/ready": ready,
+    "policy-handshake/ready-features": readyWith((m) => (m.feature_set = featureSetRef)),
     "recommendation/in-budget": {
       schema_version: 1,
       identity,
@@ -723,6 +757,11 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     // Schema-valid, refused by the stream check: choice must be among the candidates.
     "training-example/choice-not-in-candidates": { ...exampleOf("battle"), choice: "not a candidate" },
     // Schema-valid, refused by the worker's and the client's readers: the profile cannot compare fields.
+    // ADR-022 section 3: rows sorted and unique; and every damaging move part of every candidate has its row.
+    "policy-query/features-unsorted": withFeatures(battleQuery, [rowAt(1), rowAt(0), ...featureRows.slice(2)]),
+    "policy-query/features-duplicate-row": withFeatures(battleQuery, [rowAt(0), rowAt(0), ...featureRows.slice(1)]),
+    "policy-query/features-missing-row": withFeatures(battleQuery, featureRows.filter((r) => !(r.slot === rowAt(0).slot && r.move === rowAt(0).move && r.mega === rowAt(0).mega))),
+    "training-example/features-unsorted": featuresOnExample([rowAt(1), rowAt(0), ...featureRows.slice(2)]),
     "policy-query/identity-differs": mutated(battleQuery, (q) => (q.identity = { ...battleQuery.identity, request_seq: battleQuery.identity.request_seq + 1 })),
     // The default temperature has one encoding: absent.
     "policy-query/temperature-explicit-default": queryOf("battle", { ...sampleBy, temperature_ppm: 1000000 }),
@@ -980,6 +1019,14 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "evaluation-run-manifest/no-run-id": { schema_version: 1, sealed: true, episode_hashes: [] },
     "evaluation-run-manifest/uppercase-hash": { ...sealedManifest, episode_hashes: [hashA.toUpperCase()] },
     "evaluation-run-manifest/sealed-flag-string": { ...sealedManifest, sealed: "yes" },
+    "policy-query/features-extra-row-field": withFeatures(battleQuery, [{ ...rowAt(0), crit_ppm: 1 }, ...featureRows.slice(1)]),
+    "policy-query/features-float": withFeatures(battleQuery, [{ ...rowAt(0), mean_ppm: 150000.5 }, ...featureRows.slice(1)]),
+    "policy-query/features-unknown-kind": withFeatures(battleQuery, [{ ...rowAt(0), kind: "estimated" }, ...featureRows.slice(1)]),
+    "policy-query/features-unknown-reason": withFeatures(battleQuery, [rowAt(0), { ...rowAt(1), reason: "guess" }, ...featureRows.slice(2)]),
+    "policy-query/features-null": { ...battleQuery, candidate_features: null },
+    "policy-query/features-no-rows": { ...battleQuery, candidate_features: featureSetRef },
+    "training-example/features-float": featuresOnExample([{ ...rowAt(0), max_ppm: 1.5 }, ...featureRows.slice(1)]),
+    "policy-handshake/ready-short-feature-hash": readyWith((m) => (m.feature_set = { ...featureSetRef, feature_set_hash: "abc" })),
     "policy-query/no-candidates": { ...battleQuery, candidates: [] },
     "policy-query/too-many-candidates": { ...battleQuery, candidates: candidatesOf(1025) },
     "policy-query/seed": { ...battleQuery, seed: record.seed },

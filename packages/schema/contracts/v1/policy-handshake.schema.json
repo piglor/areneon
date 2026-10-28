@@ -81,6 +81,26 @@
         }
       }
     },
+    "FeatureSetStatement": {
+      "description": "A candidate feature set by name and identity hash (CandidateFeatures.feature_set and feature_set_hash).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "feature_set",
+        "feature_set_hash"
+      ],
+      "properties": {
+        "feature_set": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "feature_set_hash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
     "Hello": {
       "description": "Client to worker: the contracts the client speaks.",
       "type": "object",
@@ -147,6 +167,10 @@
           "items": {
             "$ref": "#/$defs/Checkpoint"
           }
+        },
+        "feature_set": {
+          "description": "The candidate feature set the worker's checkpoints need (ADR-022 section 3): omitted when they need none. The client refuses the session if it cannot supply exactly this set, and attaches candidate_features to a query only for a worker that states one.",
+          "$ref": "#/$defs/FeatureSetStatement"
         }
       }
     }

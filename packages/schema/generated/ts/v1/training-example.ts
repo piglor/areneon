@@ -24,6 +24,7 @@ export interface TrainingExample {
    * @maxItems 1024
    */
   candidates?: [Candidate, ...Candidate[]];
+  candidate_features?: CandidateFeatures;
   /**
    * How the game ended, from the player's view: win, loss or tie. Optional; required, with candidates, in every example of a learner_ready TrainingSet (a reader rule).
    */
@@ -340,6 +341,62 @@ export interface Candidate {
   pending: boolean;
 }
 /**
+ * Optional derived candidate features (ADR-022 section 3, tier A): the probe's damage rows for the damaging move parts of the candidates, computed on the Node side from the player's own channel, own team, the candidates and the configs feature_set_hash names. Absent unless the session or the run declared a feature set: a writer omits it (never null or empty), so every existing value keeps its bytes and hash (a minor change within v1, ADR-008 section 3). Reader rules: rows sorted and unique by (slot, move, target, mega); and, in a PolicyQuery, every damaging move part of every candidate has its row (the worker answers invalid_query otherwise) and feature_set_hash equals the one the session declared.
+ */
+export interface CandidateFeatures {
+  feature_set: string;
+  feature_set_hash: string;
+  /**
+   * One row per distinct (slot, move, target, mega) that some candidate uses with a damaging move into an opposing active; empty when the request has none (Team Preview, a forced switch).
+   *
+   * @maxItems 128
+   */
+  rows: (ComputedFeatureRow | UnsupportedFeatureRow)[];
+}
+/**
+ * The probe's exact rolls for one row, as integers: mean_ppm is the mean over the 16 no-crit rolls of min(roll, hp) / hp, floored; max_ppm and min_ppm the largest and smallest roll clamped at hp, as a share of hp; ohko_rolls the probe's own count of the 16 no-crit rolls that reach hp, or null when the probe gives none.
+ *
+ * This interface was referenced by `TrainingExample`'s JSON-Schema
+ * via the `definition` "ComputedFeatureRow".
+ */
+export interface ComputedFeatureRow {
+  kind: "computed";
+  /**
+   * The acting active Pokemon's slot, 0-based.
+   */
+  slot: number;
+  /**
+   * The move's position in the request, 1-based.
+   */
+  move: number;
+  /**
+   * The opposing target's location number in a choice (move 1 1).
+   */
+  target: number;
+  /**
+   * True when the move part also Mega Evolves.
+   */
+  mega: boolean;
+  mean_ppm: number;
+  max_ppm: number;
+  min_ppm: number;
+  ohko_rolls: number | null;
+}
+/**
+ * A row the probe could not answer exactly: its closed reason (the MechanicsResult unsupported reasons), never a guess.
+ *
+ * This interface was referenced by `TrainingExample`'s JSON-Schema
+ * via the `definition` "UnsupportedFeatureRow".
+ */
+export interface UnsupportedFeatureRow {
+  kind: "unsupported";
+  slot: number;
+  move: number;
+  target: number;
+  mega: boolean;
+  reason: "query_kind" | "random_effect" | "scenario_rule_table";
+}
+/**
  * Which request a decision answers (ADR-008 §4). A consumer drops a recommendation unless request_seq and request_hash both match, and rqid too when both carry one.
  *
  * This interface was referenced by `TrainingExample`'s JSON-Schema
@@ -416,4 +473,20 @@ export interface DecisionContext2 {
    * The policy must answer within this; 0 means skip the policy and send the fallback.
    */
   policy_budget_ms: number;
+}
+/**
+ * The rows of one decision under one feature set. feature_set names the set (probe-damage/1); feature_set_hash is SHA-256 of the JCS of its identity (mechanics config, assumed-set config, adapter format, reader, version manifest), so a pin bump or a config change is another set. Rows are in canonical order: slot, move, target, then mega false before true.
+ *
+ * This interface was referenced by `TrainingExample`'s JSON-Schema
+ * via the `definition` "CandidateFeatures".
+ */
+export interface CandidateFeatures1 {
+  feature_set: string;
+  feature_set_hash: string;
+  /**
+   * One row per distinct (slot, move, target, mega) that some candidate uses with a damaging move into an opposing active; empty when the request has none (Team Preview, a forced switch).
+   *
+   * @maxItems 128
+   */
+  rows: (ComputedFeatureRow | UnsupportedFeatureRow)[];
 }

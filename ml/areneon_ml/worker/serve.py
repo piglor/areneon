@@ -10,6 +10,8 @@ per pass, which is also what evaluation and sealed runs require.
 from __future__ import annotations
 
 import time
+from collections.abc import Callable
+from dataclasses import dataclass
 from typing import Any, BinaryIO
 
 from areneon_contracts.contracts import jcs
@@ -17,6 +19,7 @@ from areneon_contracts.contracts import jcs
 from areneon_ml.model.encoder import EncodingError
 from areneon_ml.reducer import ReducerError
 from areneon_ml.worker.candidates import UnsupportedCandidate, parse_choice
+from areneon_ml.worker.features import coverage_problem, rows_problem
 from areneon_ml.worker.protocol import (
     FrameError,
     QueryError,
@@ -38,9 +41,41 @@ class SessionRefused(RuntimeError):
     """The client's hello does not match what this worker speaks."""
 
 
-def read_query(frame: dict[str, Any]) -> dict[str, Any]:
-    """The frame as a PolicyQuery: the schema, then the rules the profile cannot say."""
+@dataclass(frozen=True)
+class FeatureSupport:
+    """The candidate feature set a worker states and the means to judge a query's rows (ADR-022 §3).
+
+    ``feature_set`` is ``{feature_set, feature_set_hash}``; ``damaging`` tells a damaging move from
+    a status move by its id (``features.damaging_moves`` builds it from the engine-data table).
+    """
+
+    feature_set: dict[str, str]
+    damaging: Callable[[str], bool]
+
+
+def read_query(frame: dict[str, Any], features: FeatureSupport | None = None) -> dict[str, Any]:
+    """The frame as a PolicyQuery: the schema, then the rules the profile cannot say.
+
+    A query carries ``candidate_features`` exactly when the worker stated a feature set, of that
+    set, with sorted and unique rows and a row for every damaging move part of every candidate.
+    """
     check("policy-query", frame)
+    sent = frame.get("candidate_features")
+    if features is None:
+        if sent is not None:
+            raise QueryError("the query carries candidate_features, but the worker stated no set")
+    else:
+        if sent is None:
+            raise QueryError("the worker stated a set, but the query has no candidate_features")
+        stated = features.feature_set
+        if (sent["feature_set"], sent["feature_set_hash"]) != (
+            stated["feature_set"],
+            stated["feature_set_hash"],
+        ):
+            raise QueryError("the query's candidate_features are of another set")
+        problem = rows_problem(sent) or coverage_problem(frame, sent, features.damaging)
+        if problem is not None:
+            raise QueryError(problem)
     if jcs(frame["identity"]) != jcs(frame["observation"]["identity"]):
         raise QueryError("the query's identity differs from its observation's identity")
     choices = [candidate["choice"] for candidate in frame["candidates"]]
@@ -58,7 +93,9 @@ class Worker:
         engine_data_hash: str,
         checkpoints: list[dict[str, str]],
         max_line_bytes: int,
+        features: FeatureSupport | None = None,
     ) -> None:
+        self._features = features
         self._scorer = scorer
         self._ready: dict[str, Any] = {
             "schema_version": 1,
@@ -70,6 +107,8 @@ class Worker:
                 "checkpoints": sorted(checkpoints, key=lambda c: c["role"]),
             },
         }
+        if features is not None:
+            self._ready["message"]["feature_set"] = dict(features.feature_set)
         self._max = max_line_bytes
 
     def handshake(self, stdin: BinaryIO, stdout: BinaryIO) -> None:
@@ -91,7 +130,7 @@ class Worker:
         started = time.perf_counter()
         query_id = frame.get("query_id")
         try:
-            query = read_query(frame)
+            query = read_query(frame, self._features)
             for candidate in query["candidates"]:
                 parse_choice(candidate["choice"])
         except QueryError as exc:

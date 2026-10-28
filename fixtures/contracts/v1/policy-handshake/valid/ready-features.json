@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "message": {
+    "kind": "ready",
+    "contracts": [
+      {
+        "name": "BattleObservation",
+        "schema_version": 1,
+        "schema_sha256": "91c8821e02392c77dde2908f810107ca2a8b5ad4eecf92b255d859cf35732dfe"
+      },
+      {
+        "name": "PolicyQuery",
+        "schema_version": 1,
+        "schema_sha256": "8c521bee52731721c641bc87f3ab907969e662412d41277634b9c2d731377bfb"
+      },
+      {
+        "name": "PolicyReply",
+        "schema_version": 1,
+        "schema_sha256": "479e0f5c0d09086b351582f5a186dcfbf0a8b26a5efac267c2c2009ddd29f670"
+      },
+      {
+        "name": "PreviewObservation",
+        "schema_version": 1,
+        "schema_sha256": "0140ea5fe86ec3e44e8a8599a716c5f4b9bd0cd4e57f5ba9f7f7f4119507b309"
+      },
+      {
+        "name": "Recommendation",
+        "schema_version": 1,
+        "schema_sha256": "e04b435e1b7a2fc6434fed68783c113f3c7de8eb74f957a626aea6e16558b827"
+      }
+    ],
+    "encoder_version": "stub-1",
+    "engine_data_hash": "6f3d19f02b0e8464d813f4bbdced99c6f88140099818f5f225776ac43fa5590e",
+    "checkpoints": [
+      {
+        "role": "battle",
+        "checkpoint_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      {
+        "role": "preview",
+        "checkpoint_id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      }
+    ],
+    "feature_set": {
+      "feature_set": "probe-damage/1",
+      "feature_set_hash": "c199c2d8de6bf179da847f6044a85d9d713d6c07d04e4a9db40da45dc9e04aaf"
+    }
+  }
+}

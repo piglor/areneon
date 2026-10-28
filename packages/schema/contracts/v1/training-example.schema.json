@@ -49,6 +49,10 @@
         "$ref": "#/$defs/Candidate"
       }
     },
+    "candidate_features": {
+      "description": "Optional derived candidate features (ADR-022 section 3, tier A): the probe's damage rows for the damaging move parts of the candidates, computed on the Node side from the player's own channel, own team, the candidates and the configs feature_set_hash names. Absent unless the session or the run declared a feature set: a writer omits it (never null or empty), so every existing value keeps its bytes and hash (a minor change within v1, ADR-008 section 3). Reader rules: rows sorted and unique by (slot, move, target, mega); and, in a PolicyQuery, every damaging move part of every candidate has its row (the worker answers invalid_query otherwise) and feature_set_hash equals the one the session declared.",
+      "$ref": "#/$defs/CandidateFeatures"
+    },
     "outcome": {
       "description": "How the game ended, from the player's view: win, loss or tie. Optional; required, with candidates, in every example of a learner_ready TrainingSet (a reader rule).",
       "enum": [
@@ -498,6 +502,155 @@
           "type": "integer",
           "minimum": 0,
           "maximum": 9007199254740991
+        }
+      }
+    },
+    "CandidateFeatures": {
+      "description": "The rows of one decision under one feature set. feature_set names the set (probe-damage/1); feature_set_hash is SHA-256 of the JCS of its identity (mechanics config, assumed-set config, adapter format, reader, version manifest), so a pin bump or a config change is another set. Rows are in canonical order: slot, move, target, then mega false before true.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "feature_set",
+        "feature_set_hash",
+        "rows"
+      ],
+      "properties": {
+        "feature_set": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "feature_set_hash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "rows": {
+          "description": "One row per distinct (slot, move, target, mega) that some candidate uses with a damaging move into an opposing active; empty when the request has none (Team Preview, a forced switch).",
+          "type": "array",
+          "maxItems": 128,
+          "items": {
+            "type": "object",
+            "oneOf": [
+              {
+                "$ref": "#/$defs/ComputedFeatureRow"
+              },
+              {
+                "$ref": "#/$defs/UnsupportedFeatureRow"
+              }
+            ],
+            "discriminator": {
+              "propertyName": "kind"
+            }
+          }
+        }
+      }
+    },
+    "ComputedFeatureRow": {
+      "description": "The probe's exact rolls for one row, as integers: mean_ppm is the mean over the 16 no-crit rolls of min(roll, hp) / hp, floored; max_ppm and min_ppm the largest and smallest roll clamped at hp, as a share of hp; ohko_rolls the probe's own count of the 16 no-crit rolls that reach hp, or null when the probe gives none.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "slot",
+        "move",
+        "target",
+        "mega",
+        "mean_ppm",
+        "max_ppm",
+        "min_ppm",
+        "ohko_rolls"
+      ],
+      "properties": {
+        "kind": {
+          "const": "computed"
+        },
+        "slot": {
+          "description": "The acting active Pokemon's slot, 0-based.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 3
+        },
+        "move": {
+          "description": "The move's position in the request, 1-based.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9
+        },
+        "target": {
+          "description": "The opposing target's location number in a choice (move 1 1).",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9
+        },
+        "mega": {
+          "description": "True when the move part also Mega Evolves.",
+          "type": "boolean"
+        },
+        "mean_ppm": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000
+        },
+        "max_ppm": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000
+        },
+        "min_ppm": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000
+        },
+        "ohko_rolls": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 16
+        }
+      }
+    },
+    "UnsupportedFeatureRow": {
+      "description": "A row the probe could not answer exactly: its closed reason (the MechanicsResult unsupported reasons), never a guess.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "slot",
+        "move",
+        "target",
+        "mega",
+        "reason"
+      ],
+      "properties": {
+        "kind": {
+          "const": "unsupported"
+        },
+        "slot": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 3
+        },
+        "move": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9
+        },
+        "target": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9
+        },
+        "mega": {
+          "type": "boolean"
+        },
+        "reason": {
+          "enum": [
+            "query_kind",
+            "random_effect",
+            "scenario_rule_table"
+          ]
         }
       }
     },
