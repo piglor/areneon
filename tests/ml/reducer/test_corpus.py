@@ -9,11 +9,13 @@ the canary runs over every request point of every channel.
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any
 
 import pytest
 from areneon_ml.reducer import ReducerError, reduce_channel
+from areneon_ml.reducer.vocab import to_id
 
 from .support import FORMAT_DIR, VOCAB, leaks, unattributed, unrevealed_ids
 
@@ -80,3 +82,39 @@ def test_reduction_is_deterministic(path: Path) -> None:
     first = reduce_channel("p1", battle["channels"]["p1"]["lines"], battle["teams"]["p1"], VOCAB)
     again = reduce_channel("p1", battle["channels"]["p1"]["lines"], battle["teams"]["p1"], VOCAB)
     assert first.to_dict() == again.to_dict()
+
+
+def _half(state: Any, player: str, side: str) -> Any:
+    return state.own if side == player else state.opponent
+
+
+def _mon(state: Any, player: str, side: str, name: str) -> Any:
+    return next(m for m in _half(state, player, side).roster if m.name == name)
+
+
+def test_frisk_credits_the_item_to_the_target_and_the_ability_to_the_frisker() -> None:
+    """#1171, on the committed channels: `|-item|TARGET|ITEM|[from] ability: Frisk|[of] FRISKER`."""
+    frisk = re.compile(
+        r"^\|-item\|(p[12])[ab]: ([^|]+)\|([^|]+)\|\[from\] ability: Frisk"
+        r"\|\[of\] (p[12])[ab]: ([^|]+)"
+    )
+    reveals = 0
+    for path in CORPUS:
+        battle = _load(path)
+        for player in ("p1", "p2"):
+            lines = battle["channels"][player]["lines"]
+            team = battle["teams"][player]
+            for index, line in enumerate(lines):
+                match = frisk.match(line)
+                if match is None:
+                    continue
+                reveals += 1
+                t_side, t_name, item, f_side, f_name = match.groups()
+                where = (path.name, player, line)
+                before = reduce_channel(player, lines[:index], team, VOCAB)
+                after = reduce_channel(player, lines[: index + 1], team, VOCAB)
+                target = _mon(after, player, t_side, t_name)
+                assert target.item == to_id(item), where
+                assert _mon(after, player, f_side, f_name).ability == "frisk", where
+                assert target.ability == _mon(before, player, t_side, t_name).ability, where
+    assert reveals > 10
