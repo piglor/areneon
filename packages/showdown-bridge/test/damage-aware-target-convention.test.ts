@@ -40,7 +40,7 @@ describe("the engine's convention (the reference the module is held to)", () => 
 
   it("a single-target `move N 2` played on the engine damages the foe in slot b, not the one in slot a", () => {
     const foes = (battle.sides[1] as LocBattle["sides"][number]).active as unknown as { hp: number; maxhp: number }[];
-    // p1 slot a (Garchomp) uses Dragon Claw at location 2; slot b (Arcanine) protects itself; p2 uses its spread and Protect-free moves.
+    // p1 slot a (Garchomp) uses Dragon Claw at location 2; slot b (Arcanine) protects itself; p2's moves (Heat Wave, Rock Slide) hit only p1's side, so they cannot damage the foes.
     expect(battle.choose("p1", "move 1 2, move 2")).toBe(true);
     expect(battle.choose("p2", "move 1, move 2")).toBe(true);
     const [a, b] = foes as [{ hp: number; maxhp: number }, { hp: number; maxhp: number }];
@@ -177,7 +177,7 @@ describe("damage-aware@v3 against v1 on the same requests", () => {
       };
       const play = (cfg: typeof v3 | typeof config, commit: string): string =>
         damageAwareActor({ engine, vocabulary, config: cfg, mechanics, snapshot, data_class: "synthetic", commit, ...standIns(c, cfg) })(c.request, c.context) as string;
-      // the actor sees the request only once its channel is fed: use a fresh actor per request after a preview-free call
+      // each `play` builds a new actor and answers this request from its own channel
       const pick3 = play(v3, "v3");
       const pick1 = play(config, "v1");
       expect(pick3).toBe(expected((loc) => loc - 1));

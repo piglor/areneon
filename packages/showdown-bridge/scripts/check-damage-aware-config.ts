@@ -2,6 +2,7 @@
 // (ADR-018 section 3). Part of `make ts`.
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { isDeepStrictEqual } from "node:util";
 import { beliefConfigHash, readBeliefConfig } from "../src/belief-config.ts";
 import { DAMAGE_AWARE_CONFIG_DIR, loadDamageAwareConfig, loadDamageAwareConfigV2 } from "../src/damage-aware-config.ts";
 import { loadEngine } from "../src/engine.ts";
@@ -26,7 +27,7 @@ for (const file of files) {
       const v3 = loadDamageAwareConfig(version, vocabulary);
       const { target_convention, ...rest } = v3;
       if (target_convention !== "engine") throw new Error("v3 must select the engine's target convention");
-      if (JSON.stringify(rest) !== JSON.stringify(v1)) throw new Error("v3 must equal v1 in every value but the target convention");
+      if (!isDeepStrictEqual(rest, v1)) throw new Error("v3 must equal v1 in every value but the target convention");
     }
     else if (version === "v2") {
       // The belief record names the prior and the belief config by hash: the committed files must be those.
