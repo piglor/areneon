@@ -53,8 +53,8 @@ describe("the committed targeted fidelity corpus", () => {
       const spec = { id, seed, actor_seeds, teams, actors, origin };
       expect(fidelityBattleFile(spec, await playFidelityBattle(engine, spec)), id).toEqual(committed);
     }
-    // Explicit budget: about 16 battles of at most 30 turns (a few seconds here; CI is slower).
-  }, 120_000);
+    // Explicit budget: 77 battles of at most 30 turns (a few tens of seconds here; CI is slower).
+  }, 300_000);
 
   it("holds only player-perspective channels and covers both actors on both seats", () => {
     for (const battle of corpus) {
@@ -192,12 +192,14 @@ describe("captureFidelityCorpus", () => {
         validateTeam(engine, format, team);
         return { team, origin: { dataset_id: "fixtures-v1", canonical_team_hash: record.canonical_team_hash } };
       });
+    const byId = (id: string) => (raw.targets as Record<string, unknown>[]).find((t) => t.id === id) as Record<string, unknown>;
     const small = readFidelityTargets({
       ...raw,
-      attempts_per_target: 4,
-      max_battles_per_target: 1,
+      attempts_per_target: 8,
+      max_battles: 4,
       targets: [
-        { ...(raw.targets as Record<string, unknown>[])[0], min_turns: 1 },
+        { ...byId("fake-out"), min_turns: 1 },
+        { ...byId("weather"), min_turns: 1 },
         { id: "none", description: "", moves: ["Hyperspace Fury"], abilities: [], occurs: ["^x"], min_turns: 1 },
       ],
     });
@@ -205,10 +207,22 @@ describe("captureFidelityCorpus", () => {
     const first = await captureFidelityCorpus(engine, pool, small, { seed_base: 0x7000, log: (l) => logs.push(l) });
     const again = await captureFidelityCorpus(engine, pool, small, { seed_base: 0x7000 });
     expect(again).toEqual(first);
-    expect(first.length).toBeLessThanOrEqual(1);
-    expect(logs.some((l) => l.startsWith("none: no team in the pool"))).toBe(true);
-    // A target already met by the kept battles starts no search of its own.
-    const met = await captureFidelityCorpus(engine, pool, { ...small, targets: [small.targets[0] as FidelityTarget, small.targets[0] as FidelityTarget].map((t, i) => ({ ...t, id: `${t.id}${i}` })) }, { seed_base: 0x7000 });
-    expect(met.length).toBeLessThanOrEqual(1);
+    expect(first.length).toBeGreaterThan(0);
+    expect(first.length).toBeLessThanOrEqual(4);
+    expect(first.map((b) => b.id)).toEqual(first.map((_, i) => `b${String(i).padStart(2, "0")}`));
+    const summary = fidelitySummary(first, small);
+    expect(summary.items.map((i) => [i.id, i.reached])).toEqual([["fake-out", true], ["weather", true], ["none", false]]);
+    expect(logs).toContain("none: no team in the pool holds it");
+    expect(logs).toContain("none: 0 of 1 turns reached");
+    // A shortfall is logged and never lowered; the greedy stops at max_battles.
+    const short: string[] = [];
+    const capped = await captureFidelityCorpus(
+      engine,
+      pool,
+      { ...small, max_battles: 1, targets: [{ ...(small.targets[0] as FidelityTarget), min_turns: 1000 }] },
+      { seed_base: 0x7000, log: (l) => short.push(l) },
+    );
+    expect(capped.length).toBe(1);
+    expect(short.some((l) => /^fake-out: \d+ of 1000 turns reached$/.test(l))).toBe(true);
   }, 120_000);
 });

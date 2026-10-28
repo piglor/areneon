@@ -57,7 +57,7 @@ export interface FidelityTargets {
   data_class: "synthetic";
   provenance: string;
   attempts_per_target: number;
-  max_battles_per_target: number;
+  max_battles: number;
   targets: FidelityTarget[];
   unreachable: UnreachableTarget[];
 }
@@ -145,7 +145,7 @@ export function readFidelityTargets(value: unknown): FidelityTargets {
     data_class: "synthetic",
     provenance: value.provenance,
     attempts_per_target: wholeAtLeast1(value.attempts_per_target, "attempts_per_target"),
-    max_battles_per_target: wholeAtLeast1(value.max_battles_per_target, "max_battles_per_target"),
+    max_battles: wholeAtLeast1(value.max_battles, "max_battles"),
     targets,
     unreachable,
   };
@@ -323,13 +323,17 @@ const ACTOR_MIXES: Record<Player, ActorKind>[] = [
 const pick = (j: number, salt: number, n: number): number => ((Math.imul(j + 1, 2654435761) >>> 0) + salt * 40503) % n;
 
 /**
- * Searches for the corpus: for each target in file order, while the kept battles
- * hold fewer than `min_turns` of its turns, plays `attempts_per_target` seeded
- * battles (the target's team on a seat that alternates, any team opposite, the
- * four actor mixes in turn) and keeps the best ones, at most
- * `max_battles_per_target`. A battle that fails to enumerate (Revival Blessing)
- * is skipped. Everything is a function of the pool, the targets and the
- * options, so a re-run gives the same corpus.
+ * Searches for the corpus in two phases. (1) For each target, plays
+ * `attempts_per_target` seeded battles (a team holding the target on a seat that
+ * alternates, any team opposite, the four actor mixes in turn) and pools those in
+ * which the target occurs; a battle that fails to enumerate (Revival Blessing) is
+ * skipped. (2) Greedy over the whole pool: while some target is short of its
+ * `min_turns`, keep the battle with the highest gain per turn played, the gain
+ * being the turns it adds to every short target (capped at the shortfall), the
+ * earlier attempt winning a tie; stop when no battle adds anything. At most
+ * `max_battles` are kept. A target left short is logged, never lowered. Everything
+ * is a function of the pool, the targets and the options, so a re-run gives the
+ * same corpus.
  */
 export async function captureFidelityCorpus(
   engine: Engine,
@@ -337,17 +341,14 @@ export async function captureFidelityCorpus(
   targets: FidelityTargets,
   options: { seed_base: number; log?: (line: string) => void } = { seed_base: 0x6000 },
 ): Promise<FidelityBattleFile[]> {
-  const kept: FidelityBattleFile[] = [];
+  const candidates: { file: FidelityBattleFile; turns: Map<string, number> }[] = [];
   let attempt = 0;
   for (const target of targets.targets) {
-    const have = () => fidelitySummary(kept, { ...targets, targets: [target] }).items[0]?.turns ?? 0;
-    if (have() >= target.min_turns) continue;
     const holders = pool.filter((p) => holdsTarget(p.team, target));
     if (holders.length === 0) {
       options.log?.(`${target.id}: no team in the pool holds it`);
       continue;
     }
-    const candidates: { file: FidelityBattleFile; hits: number }[] = [];
     for (let k = 0; k < targets.attempts_per_target; k++, attempt++) {
       const seat: Player = attempt % 2 === 0 ? "p1" : "p2";
       const other: Player = seat === "p1" ? "p2" : "p1";
@@ -368,18 +369,35 @@ export async function captureFidelityCorpus(
         options.log?.(`${target.id}: skipped attempt ${attempt}: ${(error as Error).message}`);
         continue;
       }
-      const hits = occurrenceTurns(file.channels.p1.lines, target).length;
-      if (hits > 0) candidates.push({ file, hits });
+      const turns = new Map(targets.targets.map((t) => [t.id, occurrenceTurns(file.channels.p1.lines, t).length]));
+      if ((turns.get(target.id) ?? 0) > 0) candidates.push({ file, turns });
     }
-    // Most occurrences first; the earlier attempt wins a tie (sort is stable).
-    candidates.sort((a, b) => b.hits - a.hits);
-    for (const { file, hits } of candidates.slice(0, targets.max_battles_per_target)) {
-      if (have() >= target.min_turns) break;
-      file.id = `b${String(kept.length).padStart(2, "0")}`;
-      kept.push(file);
-      options.log?.(`${target.id}: kept ${file.id} (seed ${file.seed}, ${hits} turns, ${file.turns} played)`);
-    }
-    if (have() < target.min_turns) options.log?.(`${target.id}: ${have()} of ${target.min_turns} turns reached`);
+  }
+  const have = new Map(targets.targets.map((t) => [t.id, 0]));
+  const kept: FidelityBattleFile[] = [];
+  while (kept.length < targets.max_battles) {
+    const deficit = (t: FidelityTarget): number => Math.max(0, t.min_turns - (have.get(t.id) ?? 0));
+    const gainOf = (c: { turns: Map<string, number> }): number =>
+      targets.targets.reduce((sum, t) => sum + Math.min(deficit(t), c.turns.get(t.id) ?? 0), 0);
+    let best = -1;
+    let bestScore = 0;
+    candidates.forEach((c, i) => {
+      const score = gainOf(c) / c.file.turns;
+      if (score > bestScore) {
+        best = i;
+        bestScore = score;
+      }
+    });
+    if (best < 0) break;
+    const [chosen] = candidates.splice(best, 1);
+    const { file, turns } = chosen as (typeof candidates)[number];
+    file.id = `b${String(kept.length).padStart(2, "0")}`;
+    kept.push(file);
+    for (const [id, n] of turns) have.set(id, (have.get(id) ?? 0) + n);
+    options.log?.(`kept ${file.id} (seed ${file.seed}, ${file.turns} turns played)`);
+  }
+  for (const t of targets.targets) {
+    if ((have.get(t.id) ?? 0) < t.min_turns) options.log?.(`${t.id}: ${have.get(t.id) ?? 0} of ${t.min_turns} turns reached`);
   }
   return kept;
 }
