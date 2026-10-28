@@ -5,7 +5,7 @@
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { PublicSide } from "@areneon/public-state";
+import type { PublicSide } from "../../public-state/src/index.ts";
 import { belief, createSampler, worldStream } from "@areneon/opponent-model";
 import {
   createWorldBuilder,
