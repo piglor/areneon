@@ -137,9 +137,36 @@ function declare(battle: DmgBattle, side: number, combatant: Combatant): DmgPoke
   return pokemon;
 }
 
+/** At most this many started scenarios are kept per engine; a table past it is emptied (a started scenario is a pure function of its key, so forgetting only costs time). */
+const STARTED_LIMIT = 256;
+const started = new WeakMap<Engine, Map<string, string>>();
+/** How many scenario starts were skipped by the table (diagnostics, like `damagePathStats`). */
+export const scenarioStartStats = { started: 0, reused: 0 };
+
+/**
+ * The started scenario battle of two sets, before any declared state. The engine starts it once per
+ * (scenario format, attacker set, defender set) and the serialised start is kept; every caller, the first included,
+ * gets its own battle from that serialisation, as a clone of the reference path does, so the result never depends on the table's contents.
+ */
+function startedScenario(engine: Engine, scenarioId: string, attackerSet: PokemonSet, defenderSet: PokemonSet): DmgBattle {
+  const table = started.get(engine) ?? new Map<string, string>();
+  started.set(engine, table);
+  const key = JSON.stringify([scenarioId, attackerSet, defenderSet]);
+  let json = table.get(key);
+  if (json === undefined) {
+    scenarioStartStats.started++;
+    const battle = startScenario(engine, scenarioId, { p1: [attackerSet, partnerOf(attackerSet)], p2: [defenderSet, partnerOf(defenderSet)] });
+    json = JSON.stringify(battle.toJSON());
+    if (table.size >= STARTED_LIMIT) table.clear();
+    table.set(key, json);
+  } else scenarioStartStats.reused++;
+  return asDmg(engine.sim.Battle.fromJSON(json));
+}
+
 /** The scenario battle with the whole declared state, ready to be cloned. */
-function declaredBattle(engine: Engine, scenarioId: string, query: DamageQuery, attackerSet: PokemonSet, defenderSet: PokemonSet): DmgBattle {
-  const battle = asDmg(startScenario(engine, scenarioId, { p1: [attackerSet, partnerOf(attackerSet)], p2: [defenderSet, partnerOf(defenderSet)] }));
+function declaredBattle(engine: Engine, scenarioId: string, query: DamageQuery, attackerSet: PokemonSet, defenderSet: PokemonSet, reference = false): DmgBattle {
+  // The reference path starts the scenario itself every time, so a test comparing the paths also compares the kept start with a fresh one.
+  const battle = reference ? asDmg(startScenario(engine, scenarioId, { p1: [attackerSet, partnerOf(attackerSet)], p2: [defenderSet, partnerOf(defenderSet)] })) : startedScenario(engine, scenarioId, attackerSet, defenderSet);
   const attacker = declare(battle, 0, query.attacker);
   declare(battle, 1, query.defender);
   const { state } = query;
@@ -429,13 +456,13 @@ export function probeDamage(
   koBlockers: MechanicsConfig["ko_blockers"],
   path: DamagePath = "one-clone",
 ): DamageOutcome {
-  const base = declaredBattle(engine, scenarioId, query, attackerSet, defenderSet);
+  const base = declaredBattle(engine, scenarioId, query, attackerSet, defenderSet, path === "per-roll");
   const move = base.dex.moves.get(query.move);
   if (!move.exists || move.id !== query.move) throw new DamageStateError("the move is not an engine move");
   // Outside the v1 scope (ADR-016 section 3): a move that deals no damage of its own, and a multi-hit move.
   // Also fixed and HP-based damage (`damage`, `damageCallback`, `ohko`): a number that is no roll vector.
   if (move.category === "Status" || move.multihit !== undefined || move.damage !== undefined || move.damageCallback !== undefined || move.ohko !== undefined) return { kind: "unsupported", reason: "query_kind", position: null };
-  const rebuild = (): DmgBattle => declaredBattle(engine, scenarioId, query, attackerSet, defenderSet);
+  const rebuild = (): DmgBattle => declaredBattle(engine, scenarioId, query, attackerSet, defenderSet, path === "per-roll");
   if (path === "one-clone") {
     const fast = oneClone(engine, base, rebuild, query.move, koBlockers);
     if (fast !== null) {
