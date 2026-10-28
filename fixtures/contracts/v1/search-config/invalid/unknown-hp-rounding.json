@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "format_id": "gen9championsvgc2026regmc",
+  "algorithm": {
+    "kind": "rerank-1"
+  },
+  "top_k": 4,
+  "top_k_rule": "prior-top-k",
+  "worlds": {
+    "kind": "sampled",
+    "n": 8,
+    "redraws": 4,
+    "hp_rounding": "round",
+    "prior": {
+      "kind": "generator-matched",
+      "label": "belief matched to the synthetic generator: an upper bound for this evaluation"
+    }
+  },
+  "belief_identity_hash": "4398a088729b32b4d159f6028d82949941680457e89274fee30978e0c2fb0f8d",
+  "replies": {
+    "max_damage_ppm": 500000,
+    "uniform_draws": 2
+  },
+  "leaf": {
+    "kind": "value-head"
+  },
+  "budget_ms": 30000,
+  "a2_clock_floor_ms": 30000,
+  "min_valid_worlds": 4,
+  "seed_derivation": "search/1"
+}
