@@ -1255,7 +1255,7 @@ DOMINATED_NOTE = (
     "dominated). The score ignores abilities, items, stats, boosts, weather, accuracy and "
     "variable power. Scored: actions with a score; the rates divide by it. Left out of the rates: "
     "status moves, moves aimed at the ally, moves with no base power, actions the table cannot "
-    "score, unresolved slots and decisions with no candidates."
+    "score, and unresolved slots."
 )
 
 
@@ -1286,7 +1286,6 @@ def _dominated_section(model: ReportModel, done: list[int]) -> str:
         ("No base power", True),
         ("Unscored", True),
         ("Unresolved", True),
-        ("No candidates", True),
     ]
     rows = []
     for g, used in shown:
@@ -1309,7 +1308,6 @@ def _dominated_section(model: ReportModel, done: list[int]) -> str:
                         str(seat["no_power"]),
                         str(seat["unscored"]),
                         str(seat["unresolved"]),
-                        str(seat["no_candidates"]),
                     ]
                 )
     first = shown[0][1]

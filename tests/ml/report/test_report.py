@@ -399,7 +399,7 @@ def test_the_page_lists_every_input_hash(run: Path, root: Path) -> None:
 
 
 def _where(run: Path, root: Path, rel: str) -> Path:
-    if rel.startswith("fixtures/"):  # the committed move-class table and engine-data table
+    if rel.startswith(("fixtures/", "config/")):  # the committed tables and config records
         return Path(__file__).resolve().parents[3] / rel
     return root / rel.removeprefix("progress/") if rel.startswith("progress/") else run / rel
 

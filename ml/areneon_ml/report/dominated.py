@@ -28,10 +28,11 @@ move is the mean over the alive foes. An action is *dominated* when its score is
 a spread move as its sum) and *immune* when its score is 0 while the best is positive (an immune
 action is also dominated). Counted apart and left out of the rates: status moves, an action aimed
 at the ally, a damaging move with no base power (variable power), an action the table cannot score
-(a species or target it does not know, a fainted target), a slot whose moves cannot be named from
-the log and the team (unresolved, as for the move-use diagnostic) and a decision with no
-candidates. The shown species is the one the log's ``|switch|``, ``|drag|``, ``|replace|`` and
-``|detailschange|`` lines state; a temporary type change is not tracked.
+(a species or target it does not know, a fainted target) and a slot whose moves cannot be named
+from the log and the team (unresolved, as for the move-use diagnostic). A decision without move
+candidates (an empty list) is no move request and is not read at all. The shown species is the one
+the log's ``|switch|``, ``|drag|``, ``|replace|`` and ``|detailschange|`` lines state; a
+temporary type change is not tracked.
 """
 
 from __future__ import annotations
@@ -245,7 +246,6 @@ class DominatedUse:
         self.no_power = 0  # damaging-category moves with no base power
         self.unscored = 0  # actions the table cannot score
         self.unresolved = 0  # slots whose moves cannot be named
-        self.no_candidates = 0  # decisions with an empty candidate list
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -258,7 +258,6 @@ class DominatedUse:
             "no_power": self.no_power,
             "unscored": self.unscored,
             "unresolved": self.unresolved,
-            "no_candidates": self.no_candidates,
             "dominated_interval": interval_of(self.dominated, self.scored),
             "immune_interval": interval_of(self.immune, self.scored),
         }
@@ -277,7 +276,6 @@ COUNTS = (
     "no_power",
     "unscored",
     "unresolved",
-    "no_candidates",
 )
 
 
@@ -347,7 +345,10 @@ def _count_slot(
         use.unresolved += 1
         return
     table = ctx.table
-    move = table.moves[ids[str(number)]]
+    move = table.moves.get(ids[str(number)])
+    if move is None:
+        use.unscored += 1
+        return
     if move.status:
         use.status += 1
         return
@@ -412,8 +413,8 @@ def _best_score(
         return None
     best: Fraction | None = None
     for move_id in sorted(enabled):
-        move = table.moves[move_id]
-        if move.status or move.base_power == 0:
+        move = table.moves.get(move_id)
+        if move is None or move.status or move.base_power == 0:
             continue
         if move.target not in table.single | table.spread_kinds | table.random:
             continue
@@ -438,9 +439,6 @@ def game_dominated(game: StoredGame, table: DominatedTable) -> dict[str, Dominat
         if point["kind"] != "move" or point["refused"] is not None:
             continue
         use = out[point["seat"]]
-        if not point["candidates"]:
-            use.no_candidates += 1
-            continue
         choices = [c["choice"].split(", ") for c in point["candidates"]]
         for slot, part in enumerate(point["chosen"].split(", ")):
             if part != "pass" and not part.startswith("switch"):
