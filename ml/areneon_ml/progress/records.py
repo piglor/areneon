@@ -415,19 +415,15 @@ def _check_run(raw: dict[str, Any], config: RunConfig) -> None:
                 f"{match['match_id']}: policy_id is not the frozen pair's in this mode"
             )
         opponent = match["opponent"]
-        if opponent["kind"] in ("previous", "anchor", "run") and opponent["policy_id"] not in {
-            policy_id(
-                opponent["checkpoints"]["preview"],
-                opponent["checkpoints"]["battle"],
-                match["mode"],
-                features=named,
-            )
-            # Another run's pair may read a feature set of its own that this record does not
-            # name (the run's config does not carry it): the evaluation checks it against that
-            # run's config (`_check_versus`); here a run pair's id is without features or with
-            # this run's feature set.
-            for named in ({None, own_features} if opponent["kind"] == "run" else {own_features})
-        }:
+        # The other run's pair (`run`) may read a feature set of its own, or none, that this record
+        # does not name (its config is not in the record): its id is checked against THAT run's
+        # config when the evaluation is made (`_check_versus`), not here.
+        if opponent["kind"] in ("previous", "anchor") and opponent["policy_id"] != policy_id(
+            opponent["checkpoints"]["preview"],
+            opponent["checkpoints"]["battle"],
+            match["mode"],
+            features=own_features,
+        ):
             raise ProgressRecordError(
                 f"{match['match_id']}: the {opponent['kind']} pair's policy_id "
                 "is not its checkpoints'"

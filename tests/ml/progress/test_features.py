@@ -17,7 +17,11 @@ import pytest
 from areneon_ml.learner.config import RunConfig, read_run_config
 from areneon_ml.loop.records import features_hash, policy_id
 from areneon_ml.progress import run as run_module
-from areneon_ml.progress.records import ProgressRecordError, read_progress_record
+from areneon_ml.progress.records import (
+    RANDOM_PREVIEW_POLICY,
+    ProgressRecordError,
+    read_progress_record,
+)
 from areneon_ml.progress.run import _Source
 
 from tests.ml.progress.support import (
@@ -72,7 +76,7 @@ def test_every_pair_of_a_features_run_gets_the_training_ids(
         before.preview, stub_source(1).battle, "argmax", features=FEATURES
     )
     assert ablation.random_policy_id == policy_id(
-        run_module.RANDOM_PREVIEW_POLICY, stub_source(1).battle, "argmax", features=FEATURES
+        RANDOM_PREVIEW_POLICY, stub_source(1).battle, "argmax", features=FEATURES
     )
     # The same run without the option keeps today's ids.
     plain = dataset_config()

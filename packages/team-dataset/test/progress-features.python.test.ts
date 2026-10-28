@@ -81,4 +81,17 @@ describe.skipIf(!existsSync(PYTHON) && process.env.ARENEON_REQUIRE_PYTHON_WORKER
     expect(tree(join(b, gen(1)))).toEqual(tree(join(a, gen(1))));
     for (const file of tree(join(a, gen(1)))) expect(readFileSync(join(a, gen(1), file), "utf8"), file).toBe(readFileSync(join(b, gen(1), file), "utf8"));
   }, 1_800_000); // twice: eight matches of four games, two of two, with the real probe in the features seats
+
+  it("evaluates a no-features pair against a features pair too (the other orientation of the control) and reads the record back", () => {
+    const out = join(dir, "reverse.progress");
+    loop("progress", "--run-dir", plainRun, "--engine-data", DATA, "--games", "2", "--record-games", "2", "--generation", "1", "--versus-run-dir", featuresRun, "--versus-generation", "1", "--run-games", "2", "--progress-dir", out, "--node", process.execPath, "--worker-python", PYTHON);
+    const record = readProgressEvaluationRecordV2(json<ProgressEvaluationRecordV2>(out, gen(1), "progress.json"));
+    const theirs = json<{ checkpoints: { preview: string; battle: string } }>(featuresRun, "generations", gen(1), "manifest.json").checkpoints;
+    const runs = record.matches.filter((m) => m.opponent.kind === "run");
+    expect(runs.map((m) => m.match_id)).toEqual(["run-argmax", "run-sample"]);
+    for (const m of runs) expect(m.opponent.kind === "run" && m.opponent.policy_id).toBe(policyId(theirs, m.mode, {}, hash));
+    expect(record.games.filter((r) => r.outcome.kind === "forfeit")).toEqual([]);
+    // Reading the root back (a second command verifies and keeps it) recomputes what it can.
+    loop("progress", "--run-dir", plainRun, "--engine-data", DATA, "--games", "2", "--record-games", "2", "--generation", "1", "--progress-dir", out, "--node", process.execPath, "--worker-python", PYTHON);
+  }, 900_000); // one pair twice per match with the features seat running the real probe
 });
