@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { PublicMon, PublicState } from "@areneon/public-state";
 import { type CandidateFeatures2, candidateFeatures2, FEATURE_SET_2 } from "../src/candidate-features-2.ts";
-import { type FeatureConfigs } from "../src/candidate-features.ts";
+import { FeatureBuildError, type FeatureConfigs } from "../src/candidate-features.ts";
 import { jcs, type Json } from "../src/canonical-json.ts";
 import { type AssumedSet } from "../src/damage-aware-assumed-set.ts";
 import { foeTargetKind } from "../src/damage-aware-view.ts";
@@ -168,6 +168,9 @@ const PAIRS: { id: string; prepare?: (team: PokemonSet[]) => PokemonSet[]; varia
   // Trick Room and Tailwind go up on turn 1 in both battles of the pair (both leads play them), so later requests have speed control up
   { id: "b00", prepare: lead("Tailwind", "Trick Room"), variant: compose(priorityMoves, damagingMoves) },
   { id: "b24", prepare: lead("Tailwind", "Tailwind"), variant: priorityStatus },
+  // Sableye, Klefki and Whimsicott have Prankster as their other ability: the priority-changing ability is really swapped in
+  { id: "b04", variant: compose(abilityKit, priorityStatus) },
+  { id: "b13", variant: compose(abilityKit, damagingMoves) },
   { id: "b31", prepare: lead("Tailwind", "Trick Room"), variant: compose(abilityKit, damagingMoves) },
 ];
 
@@ -206,6 +209,16 @@ async function allPairs(): Promise<typeof cache> {
   return cache;
 }
 
+/** The features, or null when the builder refuses the request (`FeatureBuildError`, e.g. a line the shared reader cannot take): a refusal is a function of the player's view too, so it must be the same in both battles of a pair. */
+function tryFeatures(point: Point, change?: Partial<FeatureConfigs>): CandidateFeatures2 | null {
+  try {
+    return point.features(change);
+  } catch (error) {
+    if (error instanceof FeatureBuildError) return null;
+    throw error;
+  }
+}
+
 /** The revealed moves of the opposing active in the foe location `loc` (the engine's choice location: slot letter order, 1 first). */
 function foeAt(state: PublicState, loc: number): PublicMon | undefined {
   const letter = Object.keys(state.opponent.slots).sort()[loc - 1];
@@ -218,13 +231,39 @@ const reaches = (id: string): boolean => {
 };
 
 describe("hidden-information invariance of the probe-damage/2 arrays (ADR-022 section 3, R1, E-22.3.5)", () => {
-  // The real probe on 20+ request points of fourteen seeded battle pairs, each built twice: tens of seconds, minutes on a loaded machine.
+  it("really changes what the pairs say they change (a legality fallback cannot silently drop a kind of difference)", async () => {
+    const held = (team: PokemonSet[]) => team.map((set) => toId(set.item));
+    const moveIds = (team: PokemonSet[]) => team.flatMap((set) => set.moves.map(toId));
+    const seen = { scarf: 0, claw: 0, nature: 0, speed: 0, priorityAbility: 0, priorityMove: 0, damagingMove: 0, statusPriority: 0 };
+    for (const { base, other } of await allPairs()) {
+      if (held(other).includes(toId(ITEMS.scarf)) && !held(base).includes(toId(ITEMS.scarf))) seen.scarf += 1;
+      if (held(other).includes(toId(ITEMS.claw)) && !held(base).includes(toId(ITEMS.claw))) seen.claw += 1;
+      other.forEach((set, i) => {
+        const before = base[i] as PokemonSet;
+        if (set.nature !== before.nature) seen.nature += 1;
+        if (set.evs.spe !== before.evs.spe) seen.speed += 1;
+        if (set.ability !== before.ability && dex.abilities.get(toId(set.ability)).onModifyPriority !== undefined) seen.priorityAbility += 1;
+      });
+      const added = moveIds(other).filter((id) => !moveIds(base).includes(id)).map((id) => dex.moves.get(id));
+      seen.priorityMove += added.filter((m) => m.priority > 0 && m.category !== "Status").length;
+      seen.statusPriority += added.filter((m) => m.priority > 0 && m.category === "Status").length;
+      seen.damagingMove += added.filter((m) => m.category !== "Status").length;
+    }
+    for (const [kind, count] of Object.entries(seen)) expect(count, `${kind} ${JSON.stringify(seen)}`).toBeGreaterThanOrEqual(1);
+  }, 600_000);
+
+  // The real probe on 20+ request points of seeded battle pairs, each built twice: tens of seconds, minutes on a loaded machine.
   it("gives byte-identical rows, threats, speeds, priorities and feature_set_hash at every request with an equal player channel", async () => {
-    const seen = { total: 0, pairs: 0, threats: 0, foePriorities: 0, speeds: 0, ownPriorities: 0, afterMoveReveal: 0, afterReveal: 0, forced: 0, speedControl: 0 };
+    const seen = { refused: 0, total: 0, pairs: 0, threats: 0, foePriorities: 0, speeds: 0, ownPriorities: 0, afterMoveReveal: 0, afterReveal: 0, forced: 0, speedControl: 0 };
     for (const { id, equal } of await allPairs()) {
       if (equal.length > 0) seen.pairs += 1;
       for (const { a, b } of equal) {
-        const [left, right] = [a.features(), b.features()];
+        const [left, right] = [tryFeatures(a), tryFeatures(b)];
+        expect(right === null, `${id} request ${a.seq}: a refusal is the same in both battles`).toBe(left === null);
+        if (left === null || right === null) {
+          seen.refused += 1;
+          continue;
+        }
         expect(left.feature_set).toBe(FEATURE_SET_2);
         expect(bytes(right), `${id} request ${a.seq}`).toBe(bytes(left));
         for (const key of ["rows", "threats", "speeds", "own_priorities", "foe_priorities"] as const) expect(part(right, key), `${id} request ${a.seq} ${key}`).toBe(part(left, key));
@@ -242,6 +281,7 @@ describe("hidden-information invariance of the probe-damage/2 arrays (ADR-022 se
       }
     }
     expect(seen.pairs).toBeGreaterThanOrEqual(2);
+    expect(seen.refused, JSON.stringify(seen)).toBeLessThanOrEqual(seen.total / 4);
     expect(seen.total).toBeGreaterThanOrEqual(20);
     // not vacuous: every array is really there, after a move reveal and after an item or ability reveal
     expect(seen.threats).toBeGreaterThanOrEqual(5);
@@ -261,7 +301,8 @@ describe("hidden-information invariance of the probe-damage/2 arrays (ADR-022 se
     let revealedUsed = 0;
     for (const { id, equal } of await allPairs()) {
       for (const { a } of equal) {
-        const features = a.features();
+        const features = tryFeatures(a);
+        if (features === null) continue;
         for (const row of features.threats) {
           const foe = foeAt(a.state, row.foe);
           expect(foe, `${id} request ${a.seq}: a threat row names a foe in play`).toBeDefined();
@@ -315,7 +356,7 @@ describe("hidden-information invariance of the probe-damage/2 arrays (ADR-022 se
           if (q.kind === "speed_order") for (const side of q.sides) for (const combatant of side) declared.push(combatant.set);
           return engineProbe(context, query);
         };
-        point.features({ probe });
+        tryFeatures(point, { probe });
         const ownSpecies = battle.teams.p1.map((set) => toId(set.species));
         for (const mon of Object.values(point.state.opponent.roster)) {
           if (ownSpecies.some((species) => species.includes(toId(mon.base_species)))) continue; // b20: both sides hold a Gourgeist, so a paste cannot be told apart by species
@@ -352,7 +393,8 @@ describe("hidden-information invariance of the probe-damage/2 arrays (ADR-022 se
     for (const { base, other, equal } of await allPairs()) {
       for (const pair of equal) {
         compared += 1;
-        const [left, right] = [pair.a.features({ assume: cheating(base) }), pair.b.features({ assume: cheating(other) })];
+        const [left, right] = [tryFeatures(pair.a, { assume: cheating(base) }), tryFeatures(pair.b, { assume: cheating(other) })];
+        if (left === null || right === null) continue;
         if (bytes(left) !== bytes(right)) differing.any += 1;
         for (const key of ["threats", "speeds", "foe_priorities"] as const) {
           if (part(left, key) !== part(right, key)) {
@@ -389,7 +431,8 @@ describe("canary (ADR-022 section 3, E-22.3.5)", () => {
       for (const [team, pick] of [[base, "a"], [other, "b"]] as const) {
         for (const pair of equal) {
           const point = pair[pick];
-          const features = point.features();
+          const features = tryFeatures(point);
+          if (features === null) continue;
           const { ids, names } = markers(team, point.channel.join("\n"));
           expect(ids.length).toBeGreaterThan(0);
           const strings = tokens(features).map(toId);
@@ -415,7 +458,8 @@ describe("canary (ADR-022 section 3, E-22.3.5)", () => {
     for (const { base, equal } of await allPairs()) {
       for (const pair of equal.slice(0, 2)) {
         const { ids } = markers(base, pair.a.channel.join("\n"));
-        const features = pair.a.features({ assume: cheating(base) });
+        const features = tryFeatures(pair.a, { assume: cheating(base) });
+        if (features === null) continue;
         if ([...features.threats, ...features.foe_priorities].some((row) => ids.includes(row.move))) leaked += 1;
       }
     }
