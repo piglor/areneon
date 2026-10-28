@@ -67,6 +67,7 @@ export interface Item {
     | "substitute"
     | "total_fainted"
     | "toxic_stage"
+    | "trapping"
     | "truant_slow_start"
     | "turn_number"
     | "unadmitted_id"

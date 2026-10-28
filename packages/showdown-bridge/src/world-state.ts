@@ -220,6 +220,12 @@ export function classify(input: {
   // Slot conditions and locked moves the log shows as the last move.
   for (const [side, plans] of [["own", ownPlans], ["opponent", foePlans]] as const) {
     for (const monPlan of plans) {
+      // A locked, charging or trapping state the engine keeps as a volatile and the reader never shows (world facts, #1186).
+      for (const lock of monPlan.facts?.locks ?? []) {
+        const lockRow = plan.rowOf(lock);
+        if (lockRow === undefined) refuseItem(plan, "unadmitted_id", `${side} Pokemon ${monPlan.index} is in a state the record does not name`);
+        refuseItem(plan, lockRow as StateItemId, `${side} Pokemon ${monPlan.index} is locked, charging or trapping`);
+      }
       const last = monPlan.facts?.last_move;
       if (last == null) continue;
       const row = plan.rowOf(last);

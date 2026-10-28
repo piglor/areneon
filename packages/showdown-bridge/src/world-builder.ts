@@ -30,7 +30,7 @@
  * Bumped when the builder changes what it places or checks for the same input (it enters the search identity as
  * `world_builder_format`, ADR-026 section 5).
  */
-export const WORLD_BUILDER_FORMAT = 1;
+export const WORLD_BUILDER_FORMAT = 2;
 
 import type { PublicFlag, PublicMon, PublicState, WorldFacts } from "@areneon/public-state";
 import type { EngineRequest } from "@areneon/schema/types/v1/engine-request.ts";

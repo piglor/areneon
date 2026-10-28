@@ -110,6 +110,15 @@
       "class": "R"
     },
     {
+      "id": "trapping",
+      "class": "R",
+      "ids": [
+        "partiallytrapped",
+        "trapped",
+        "trapper"
+      ]
+    },
+    {
       "id": "truant_slow_start",
       "class": "R",
       "ids": [
