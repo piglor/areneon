@@ -135,6 +135,31 @@ function declare(battle: ProbeBattle, query: SpeedOrderQuery, at: (position: num
   const { state } = query;
   const kindOf = (id: string): string => (battle.dex.conditions.get(id).exists ? battle.dex.conditions.get(id).effectType : "none");
   const lead = battle.sides[0]?.pokemon[0] as Mon;
+  const declareStatus = (pokemon: Mon, status: string): void => {
+    need(kindOf(status) === "Status", "the declared status is not an engine status");
+    pokemon.setStatus(status, null, null, true); // observed fact: type immunities do not apply
+    need(pokemon.status === status, "the engine refused the declared status");
+  };
+  // A status the player saw before the field changed is an observed fact too: Misty Terrain and Electric Terrain
+  // refuse it once they are up, so a Pokemon that does not Mega Evolve takes its status first. What the engine does
+  // meanwhile (a refusal, a random draw) is kept and raised at the place the old order raised it (after the field,
+  // at that Pokemon), so every query answered before is answered with the same bytes. A Pokemon that Mega
+  // Evolves keeps the old order (Evolution, then status): its new ability may change the field and the status.
+  const early = new Map<number, unknown>();
+  let numbered = 0;
+  stop: for (const [index, combatants] of query.sides.entries()) {
+    for (const [slot, combatant] of combatants.entries()) {
+      const place = numbered++;
+      if (combatant.status === null || combatant.mega) continue;
+      at(place);
+      try {
+        declareStatus(battle.sides[index]?.pokemon[slot] as Mon, combatant.status);
+      } catch (error) {
+        early.set(place, error);
+        break stop;
+      }
+    }
+  }
   at(0);
   if (state.weather === null) battle.field.clearWeather();
   else {
@@ -166,9 +191,8 @@ function declare(battle: ProbeBattle, query: SpeedOrderQuery, at: (position: num
       const pokemon = battle.sides[index]?.pokemon[slot] as Mon;
       if (combatant.mega) need(battle.actions.runMegaEvo(pokemon), "the Pokemon cannot Mega Evolve");
       if (combatant.status !== null) {
-        need(kindOf(combatant.status) === "Status", "the declared status is not an engine status");
-        pokemon.setStatus(combatant.status, null, null, true); // observed fact: type immunities do not apply
-        need(pokemon.status === combatant.status, "the engine refused the declared status");
+        if (early.has(position - 1)) throw early.get(position - 1);
+        if (combatant.mega) declareStatus(pokemon, combatant.status);
       }
       if (combatant.hp !== null) {
         need(combatant.hp <= pokemon.maxhp, "the declared HP exceeds the maximum");
