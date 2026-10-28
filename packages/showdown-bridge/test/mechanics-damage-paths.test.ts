@@ -131,6 +131,7 @@ describe("the one-clone path equals the per-roll path", () => {
   }, 600_000); // about 60 queries x 2 paths on the slow path's 33 clones
 });
 
+// Three seeded corpus battles (both seats of the first, second and fourth), as the builder's own tests use; the dataset sweep above stands in for the differential's stats sets, which are not damage queries.
 describe("the feature builder's requests", () => {
   let requests: Captured[] = [];
   beforeAll(async () => {

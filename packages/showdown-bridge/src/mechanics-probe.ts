@@ -127,7 +127,7 @@ export function probeMechanics(context: MechanicsContext, query: ParsedMechanics
   const identity: ResultIdentity = {
     data_class: query.data_class,
     query_hash: mechanicsQueryHash(query),
-    manifest: entry.manifest,
+    manifest: structuredClone(entry.manifest),
     mechanics_config_hash: entry.config_hash,
     gap_ids: gapIds(config, query),
   };

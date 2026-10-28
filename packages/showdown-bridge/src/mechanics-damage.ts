@@ -85,7 +85,7 @@ interface DmgBattle {
   sides: DmgSide[];
   field: DmgField;
   actions: DmgActions;
-  prng: RecordingRandom | object;
+  prng: unknown;
   dex: { conditions: { get(id: string): { exists: boolean; effectType: string } }; moves: { get(id: string): { exists: boolean; category: string; multihit?: unknown; id: string; damage?: unknown; damageCallback?: unknown; ohko?: unknown } } };
   toJSON(): object;
 }
@@ -182,7 +182,7 @@ interface Run {
 }
 
 /**
- * One run of the engine's move step on a clone. `crit` sets the active move's
+ * One run of the engine's move step on a clone of the serialised battle `json` (the caller serialises once). `crit` sets the active move's
  * `willCrit` just before `getDamage` (the engine's own field, read before any
  * crit draw); undefined leaves the move's own rule. `forceChance` is what the
  * engine's `randomChance` answers.
@@ -264,6 +264,7 @@ function assemble(defender: Facts, observed: { hit: boolean; crit: boolean; draw
  * The engine gives a field effect's state its `target` (the field) the first time an event reaches it, so a battle serialised before the
  * first `getDamage` differs from one serialised after it in that key alone; it is the same on every call, and the comparison leaves it out.
  */
+// The key names and the "[Field]" marker are the pinned engine's serialisation (sim/state.ts, sim/field.ts); a pin bump re-checks them.
 function withoutLazyTargets(state: { field: object }): object {
   const field = JSON.parse(JSON.stringify(state.field)) as Record<string, unknown>;
   const states = [field.weatherState, field.terrainState, ...Object.values((field.pseudoWeather ?? {}) as Record<string, unknown>)];
@@ -271,7 +272,7 @@ function withoutLazyTargets(state: { field: object }): object {
   return { ...state, field };
 }
 
-/** How often the one-clone path answered and how often it handed the query to the per-roll path (a call that changed the battle). */
+/** Process-global counters for diagnostics (the bench, tests); no result depends on them. How often the one-clone path answered and how often it handed the query to the per-roll path (a call that changed the battle). */
 export const damagePathStats = { one_clone: 0, fell_back: 0 };
 
 /** The reference path: 33 clones, each running the engine's whole move step for one roll. */
@@ -383,6 +384,7 @@ function oneClone(engine: Engine, battle: DmgBattle, rebuild: () => DmgBattle, m
   battle.actions.useMoveInner(moveId, attacker, { target: defender });
 
   if (seen.mutated) return null;
+  if (seen.multi) return { kind: "unsupported", reason: "query_kind", position: null };
   if (!seen.hit && seen.blocked) {
     // An engine immunity or protection stopped the move before the damage loop: every roll deals 0 and the draws are the move step's alone,
     // which one clone with the vectors' chance answer shows (the step's draws do not depend on the damage roll).
@@ -392,7 +394,8 @@ function oneClone(engine: Engine, battle: DmgBattle, rebuild: () => DmgBattle, m
   }
   if (!seen.hit) return { kind: "unsupported", reason: "query_kind", position: null };
   if (seen.multi) return { kind: "unsupported", reason: "query_kind", position: null };
-  // The draws before the loop and after it are the same in every call.
+  // The draws before the loop and after it are the same in every call. That a call's list equals its clone's relies on `acceptedDraws` being this strict:
+  // it refuses any draw but one `random(16)` (and the observation's one `randomChance`), so no branch that depends on an answer can change a verdict.
   const first = windows[0] as { start: number; end: number };
   const last = windows[windows.length - 1] as { start: number; end: number };
   const prefix = random.draws.slice(0, first.start);
