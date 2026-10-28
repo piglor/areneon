@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "query_id": 1,
+  "reply": {
+    "kind": "recommendation",
+    "recommendation": {
+      "schema_version": 1,
+      "identity": {
+        "request_seq": 2,
+        "request_hash": "e5b62f4038f7aa3cbdaa920efe8e0ac8da7feed1ec57ff96739364b16396e1bf"
+      },
+      "choice": "move 1 1, move 1 1",
+      "source_policy_id": "policy:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "elapsed_ms": 3,
+      "deadline_outcome": "in_budget"
+    }
+  }
+}

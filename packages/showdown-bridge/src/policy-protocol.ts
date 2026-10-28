@@ -6,21 +6,29 @@
 import { createHash } from "node:crypto";
 import { ajvFor } from "@areneon/schema/ajv";
 import battleSchema from "@areneon/schema/contracts/v1/battle-observation.schema.json" with { type: "json" };
+import evaluationReplySchema from "@areneon/schema/contracts/v1/evaluation-reply.schema.json" with { type: "json" };
 import handshakeSchema from "@areneon/schema/contracts/v1/policy-handshake.schema.json" with { type: "json" };
 import querySchema from "@areneon/schema/contracts/v1/policy-query.schema.json" with { type: "json" };
 import replySchema from "@areneon/schema/contracts/v1/policy-reply.schema.json" with { type: "json" };
 import previewSchema from "@areneon/schema/contracts/v1/preview-observation.schema.json" with { type: "json" };
 import recommendationSchema from "@areneon/schema/contracts/v1/recommendation.schema.json" with { type: "json" };
 import type { ContractVersion, PolicyHandshake } from "@areneon/schema/types/v1/policy-handshake.ts";
+import type { EvaluationReply } from "@areneon/schema/types/v1/evaluation-reply.ts";
 import type { PolicyQuery } from "@areneon/schema/types/v1/policy-query.ts";
 import type { PolicyReply } from "@areneon/schema/types/v1/policy-reply.ts";
 import { type Json, jcs } from "./canonical-json.ts";
 import { featureRowsProblem } from "./feature-rows.ts";
 
-export type { PolicyHandshake, PolicyQuery, PolicyReply };
+export type { EvaluationReply, PolicyHandshake, PolicyQuery, PolicyReply };
 
 /** A query as the actor builds it; the client assigns the `query_id`. */
 export type PolicyQueryInput = Omit<PolicyQuery, "query_id">;
+
+/** A query whose `sampling` is `evaluate` (ADR-026 section 5): answered by an `EvaluationReply`, never a choice. */
+export type EvaluateQueryInput = PolicyQueryInput & { sampling: { kind: "evaluate" } };
+
+/** The policy's prior and value for one request, in integer ppm (the rounding rule is the contract's). */
+export type Evaluation = Extract<EvaluationReply["reply"], { kind: "evaluation" }>["evaluation"];
 
 /** The message does not match its contract, or breaks one of its reader rules. */
 export class PolicyProtocolError extends Error {
@@ -30,6 +38,7 @@ export class PolicyProtocolError extends Error {
 const contract = ajvFor("contract");
 const validQuery = contract.compile(querySchema);
 const validReply = contract.compile(replySchema);
+const validEvaluationReply = contract.compile(evaluationReplySchema);
 const validHandshake = contract.compile(handshakeSchema);
 
 // The contracts both sides must agree on (the handshake schema's name enum).
@@ -119,6 +128,12 @@ export function policyId(pair: { preview: string; battle: string }, mode: "sampl
 export function readPolicyReply(value: unknown): PolicyReply {
   if (!validReply(value)) throw new PolicyProtocolError(`not a PolicyReply: ${describe(validReply.errors)}`);
   return value as unknown as PolicyReply;
+}
+
+/** `value` as an EvaluationReply (the worker's answer to an `evaluate` query), or a `PolicyProtocolError`. */
+export function readEvaluationReply(value: unknown): EvaluationReply {
+  if (!validEvaluationReply(value)) throw new PolicyProtocolError(`not an EvaluationReply: ${describe(validEvaluationReply.errors)}`);
+  return value as unknown as EvaluationReply;
 }
 
 /** `value` as a PolicyHandshake message, or a `PolicyProtocolError`. */

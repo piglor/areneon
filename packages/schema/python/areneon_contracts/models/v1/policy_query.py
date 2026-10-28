@@ -193,6 +193,17 @@ class ArgmaxSampling(BaseModel):
     kind: Literal["argmax"]
 
 
+class EvaluateSampling(BaseModel):
+    """
+    No candidate is chosen: the worker answers with an EvaluationReply (not a PolicyReply recommendation) holding the policy's probability of each candidate (temperature 1, no truncation) and its value of the state, from one batch-1 forward pass. candidate_features are read as for any other query. The query is a decision-time search's question; policy_id names the policy asked.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    kind: Literal["evaluate"]
+
+
 class ThresholdTruncation(BaseModel):
     """
     Every candidate whose probability is below min_ppm / 10^6 gets probability 0, except that the first highest candidate is always kept; the rest are renormalised. Applied after the temperature, before the draw.
@@ -444,9 +455,11 @@ class PolicyQuery(BaseModel):
     """
     Optional derived candidate features (ADR-022 section 3, tier A): the probe's damage rows for the damaging move parts of the candidates, computed on the Node side from the player's own channel, own team, the candidates and the configs feature_set_hash names. Absent unless the session or the run declared a feature set: a writer omits it (never null or empty), so every existing value keeps its bytes and hash (a minor change within v1, ADR-008 section 3). Reader rules: rows sorted and unique by (slot, move, target, mega); and, in a PolicyQuery, every damaging move part of every candidate has its row (the worker answers invalid_query otherwise) and feature_set_hash equals the one the session declared.
     """
-    sampling: Annotated[ArgmaxSampling | SampleSampling, Field(discriminator="kind")]
+    sampling: Annotated[
+        ArgmaxSampling | SampleSampling | EvaluateSampling, Field(discriminator="kind")
+    ]
     """
-    How the worker picks among the candidates (ADR-010 §2): argmax, or a draw from the policy's probabilities using u.
+    How the worker picks among the candidates (ADR-010 §2): argmax, a draw from the policy's probabilities using u, or (ADR-026 §5) no pick at all: evaluate asks for the policy's prior over the candidates and its value of the state.
     """
     policy_id: Annotated[StrictStr, Field(max_length=256, min_length=1)]
     """
