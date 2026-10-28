@@ -481,7 +481,7 @@ export {
   damageAwareIdentityHash,
   damageAwarePolicyId,
 } from "./damage-aware-identity.ts";
-export { actsBefore, canKnockOut, critChancePpm, damageValue, discounted, rollsValue } from "./damage-aware-score.ts";
+export { actsBefore, canKnockOut, critChancePpm, DAMAGE_VALUE_FORMAT, damageValue, discounted, rollsValue } from "./damage-aware-score.ts";
 export {
   type CandidateFeatures,
   candidateFeatures,

@@ -142,6 +142,16 @@ export function foesHit(type: string | undefined, target: number | null, foes: (
   return [];
 }
 
+/** What a move's request target type hits among the foes: one by location, a random one, every one, or none (the baseline's sets). */
+export function foeTargetKind(type: string | undefined): "single" | "random" | "every" | "none" {
+  if (type === undefined) return "none";
+  if (SINGLE.has(type)) return "single";
+  if (RANDOM_FOE.has(type)) return "random";
+  if (EVERY_FOE.has(type)) return "every";
+  if (!NO_FOE.has(type)) throw new DamageAwareError("a move target type the baseline does not know");
+  return "none";
+}
+
 /** True for a move whose target the engine draws (the baseline averages it over the foes). */
 export const isRandomFoe = (type: string | undefined): boolean => type !== undefined && RANDOM_FOE.has(type);
 
