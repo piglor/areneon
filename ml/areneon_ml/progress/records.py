@@ -13,15 +13,19 @@ from its pair's checkpoints and the match's mode); the TS reader has no policy-i
 from __future__ import annotations
 
 import itertools
+import re
 from typing import Any
 
 from areneon_contracts.contracts import ContractError, jcs, sha256_hex, validate
 
 from areneon_ml.learner.config import RunConfig
 from areneon_ml.loop.records import features_hash, policy_id
+from areneon_ml.progress.modes import match_extra
 from areneon_ml.progress.seeds import PAIRING, SEED_DERIVATION, progress_game_seed
 
 SCHEMA_V2 = 2
+#: A match id that names play settings (``...-sample-t500000``, ``...-sample-th30000``).
+_PLAY_NAMED = re.compile(r"-sample-(?:t|th)[0-9]+(?:-th[0-9]+)?$")
 
 
 class ProgressRecordError(ValueError):
@@ -406,6 +410,33 @@ def _check_ablation_match(match: dict[str, Any], generation: int) -> None:
         )
 
 
+def _check_play(match: dict[str, Any], name: str) -> str:
+    """An extra play mode (ADR-023 section 1, #1044): a sample at a declared temperature and/or
+    threshold against a scripted baseline or another run's pair (both sides in the mode), named
+    ``<opponent>-sample[-t<ppm>][-th<ppm>]``. Returns the name's play suffix ("" for none)."""
+    extra = match_extra(match)
+    if extra is None:
+        if _PLAY_NAMED.search(name):
+            raise ProgressRecordError(f"{name}: a match named for play settings carries them")
+        return ""
+    if match["mode"] != "sample":
+        raise ProgressRecordError(
+            f"{name}: a temperature or a truncation applies to a sample match only"
+        )
+    if match["opponent"]["kind"] not in ("baseline", "run"):
+        raise ProgressRecordError(
+            f"{name}: an extra play mode is played against a scripted baseline "
+            "or another run's pair"
+        )
+    if "search" in match or match.get("candidate_preview") is not None:
+        raise ProgressRecordError(f"{name}: an extra play mode is not a search or ablation match")
+    if not name.endswith(f"-sample{extra.suffix}"):
+        raise ProgressRecordError(
+            f"{name}: a match with play settings is named <opponent>-sample[-t<ppm>][-th<ppm>]"
+        )
+    return extra.suffix
+
+
 def _check_match_v2(  # noqa: PLR0913, PLR0917
     match: dict[str, Any],
     rows: list[dict[str, Any]],
@@ -420,6 +451,7 @@ def _check_match_v2(  # noqa: PLR0913, PLR0917
     # The usual opponent-and-mode name; a search candidate's match carries the prefix `search-`.
     name = match["match_id"].removeprefix(SEARCH_PREFIX) if "search" in match else match["match_id"]
     _check_ablation_match(match, generation)
+    suffix = _check_play(match, name)
     if opponent["kind"] == "anchor":
         if (
             opponent["generation"] >= generation
@@ -432,7 +464,7 @@ def _check_match_v2(  # noqa: PLR0913, PLR0917
         if match["games"] != plan["anchor_games_per_match"]:
             raise ProgressRecordError(f"{name}: games must equal plan.anchor_games_per_match")
     elif opponent["kind"] == "run":
-        if opponent["run_id"] == run_id or name != f"run-{match['mode']}":
+        if opponent["run_id"] == run_id or name != f"run-{match['mode']}{suffix}":
             raise ProgressRecordError(
                 f"{name}: a cross-run match is named run-<mode> and plays another run's pair"
             )
@@ -580,10 +612,13 @@ def _check_run(raw: dict[str, Any], config: RunConfig) -> None:
     pair = raw["checkpoints"]
     own_features = features_hash(config)
     for match in raw["matches"]:
+        extra = match_extra(match)
         if match["policy_id"] != policy_id(
             candidate_preview_id(match.get("candidate_preview"), pair["preview"]),
             pair["battle"],
             match["mode"],
+            temperature_ppm=None if extra is None else extra.temperature_ppm,
+            truncation=None if extra is None else extra.truncation,
             features=own_features,
             search=match["search"]["identity_hash"] if "search" in match else None,
         ):

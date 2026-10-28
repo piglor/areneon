@@ -15,6 +15,7 @@ from dataclasses import dataclass, field
 from functools import partial
 
 from areneon_ml.inspector.page import esc
+from areneon_ml.progress.gap import GAP_LABEL, SAME_MODE_NOTE
 from areneon_ml.progress.records import (
     SEARCH_EVIDENCE_NOTE,
     SEARCH_LABEL,
@@ -67,12 +68,14 @@ SEAT_CAPTION_PAIRS = (
     "Every pair is played from both seats: the candidate sits in p1 in even games and in p2 in odd "
     "games (a Wilson-only record alternates by game instead). Descriptive, no interval."
 )
+SAME_MODE_NOTE_SENTENCE = "Anchor and previous-generation rows: " + SAME_MODE_NOTE + "."
 ANCHOR_NOTE = (
     "An anchor is a fixed earlier generation's frozen pair, played "
     "from both seats on the same validation pairs and seeds. The paired difference is the pair "
     "score minus one half; above zero means the candidate scored more than the anchor on these "
     "pairs. Descriptive pair-level bootstrap intervals, conditional on the fixed validation plan, "
-    "no multiplicity control across anchors and modes: none is a test or a claim."
+    "no multiplicity control across anchors and modes: none is a test or a claim. "
+    + SAME_MODE_NOTE_SENTENCE
 )
 VERSUS_NOTE = (
     "A cross-run comparison: another run's frozen pair, played from both seats on this run's "
@@ -82,6 +85,14 @@ VERSUS_NOTE = (
     "evidence, not a gate result, not a test or a claim. The two runs may share their seeded "
     "start (equal initial seeds): the progress command prints the lineage relation, "
     '"independent lineage" or "related lineage: shared start".'
+)
+GAP_NOTE = (
+    "Each row is a scripted baseline or the cross-run head-to-head: argmax and the mode in the "
+    "row were played on the same validation pairs, seats and seeds. The gap is the mean over "
+    "pairs of the argmax pair score minus the mode's pair score; above zero means argmax scored "
+    "more. Derived on display, never stored: descriptive pair-level bootstrap intervals, "
+    "conditional on the fixed validation plan, no multiplicity control; not a test, a claim or a "
+    "gate. " + SAME_MODE_NOTE_SENTENCE
 )
 ABLATION_NOTE = (
     "Team Preview ablation: this generation's Battle network plays both scripted baselines "
@@ -145,7 +156,12 @@ def _table(head: list[tuple[str, bool]], rows: Iterable[list[str]], caption: str
 
 
 def _stem(match: MatchFacts) -> str:
-    return match.match_id.removesuffix("-" + match.mode)
+    return match.stem or match.match_id.removesuffix("-" + match.mode)
+
+
+def _mode(match: MatchFacts) -> str:
+    """What a score cell says of the play mode (``sample, T 0.5``, ``argmax``)."""
+    return match.mode_label or match.mode
 
 
 OTHER_DATASET_LABEL = (
@@ -234,7 +250,12 @@ def _progress_section(model: ReportModel, tips: Tips) -> str:  # noqa: PLR0915
     )
     xs = [x for x in xs if x <= done[-1]]
     stems = sorted(
-        {_stem(m) for p in model.progress.values() for m in p.matches if m.variant is None}
+        {
+            _stem(m)
+            for p in model.progress.values()
+            for m in p.matches
+            if m.variant is None and not m.extra_mode
+        }
     )
     charts = []
     for stem in stems:
@@ -244,7 +265,12 @@ def _progress_section(model: ReportModel, tips: Tips) -> str:  # noqa: PLR0915
             pts = []
             for g in done:
                 for m in model.progress[g].matches:
-                    if _stem(m) == stem and m.mode == mode and m.variant is None:
+                    if (
+                        _stem(m) == stem
+                        and m.mode == mode
+                        and m.variant is None
+                        and not m.extra_mode
+                    ):
                         seen_label = m.seen_label or seen_label
                         low, high = pct(m.low_ppm, down=True), pct(m.high_ppm, up=True)
                         text = (
@@ -292,6 +318,7 @@ def _progress_section(model: ReportModel, tips: Tips) -> str:  # noqa: PLR0915
                     esc(m.match_id)
                     + (f' <span class="muted">({esc(m.seen_label)})</span>' if m.seen_label else "")
                     + (f' <span class="muted">({esc(SEARCH_LABEL)})</span>' if m.search else ""),
+                    esc(_mode(m)),
                     str(m.games),
                     f"{m.wins} / {m.ties} / {m.losses}",
                     pct(m.score_ppm),
@@ -307,6 +334,7 @@ def _progress_section(model: ReportModel, tips: Tips) -> str:  # noqa: PLR0915
             [
                 ("Generation", True),
                 ("Match", False),
+                ("Mode", False),
                 ("Games", True),
                 ("Wins / ties / losses", True),
                 ("Score", True),
@@ -321,9 +349,11 @@ def _progress_section(model: ReportModel, tips: Tips) -> str:  # noqa: PLR0915
                 ("Turn-cap ties", True),
             ],
             rows,
-            "Each row: the frozen pair of that generation against the opponent, on the validation plan.",
+            "Each row: the frozen pair of that generation against the opponent, in the mode named, on the validation plan. "
+            + SAME_MODE_NOTE_SENTENCE,
         ).replace('<td class="txt">', '<td class="txt">')
     )
+    out.append(_gap_section(model, done))
     out.append(_anchor_section(model, done))
     out.append(_damage_aware_section(model, done))
     out.append(_search_section(model, done))
@@ -740,7 +770,7 @@ def _diagnostics_section(model: ReportModel, tips: Tips) -> str:
 def _score_cell(model: ReportModel, g: int) -> str:
     if g not in model.progress:
         return NOT_EVALUATED
-    parts = [f"{_stem(m)} {m.mode} {pct(m.score_ppm)}" for m in model.progress[g].matches]
+    parts = [f"{_stem(m)} {_mode(m)} {pct(m.score_ppm)}" for m in model.progress[g].matches]
     looks = "" if model.looks is None else f" (looks logged: {model.looks})"
     return esc("; ".join(parts) + looks)
 
@@ -951,6 +981,53 @@ def _search_section(model: ReportModel, done: list[int]) -> str:
             "never stored.",
         )
     )
+
+
+def _gap_section(model: ReportModel, done: list[int]) -> str:
+    """The play-mode gap (ADR-023 section 2, #1042): argmax minus each other mode on the same
+    pairs, per scripted baseline and for the cross-run head-to-head. Derived on display."""
+    rows = []
+    unavailable = []
+    for g in done:
+        gap = model.progress[g].play_mode_gap
+        if "status" in gap:
+            unavailable.append(f"generation {g}: {gap['status']}")
+        for r in gap.get("rows", []):
+            rows.append(
+                [
+                    str(g),
+                    esc(r["opponent"]),
+                    esc(r["mode"]),
+                    str(r["pairs"]),
+                    pct(r["argmax_ppm"]),
+                    pct(r["mode_ppm"]),
+                    _signed_cell(r["mean_ppm"], r["low_ppm"], r["high_ppm"]),
+                    f"{r['better']} / {r['equal']} / {r['worse']}",
+                ]
+            )
+    if not rows and not unavailable:
+        return ""
+    out = [f'<h3>Play-mode gap (argmax minus mode)</h3><p class="note">{esc(GAP_LABEL)}.</p>']
+    if rows:
+        out.append(
+            _table(
+                [
+                    ("Generation", True),
+                    ("Opponent", False),
+                    ("Mode", False),
+                    ("Pairs", True),
+                    ("Argmax score", True),
+                    ("Mode score", True),
+                    (f"Gap, argmax minus mode ({PAIRS})", True),
+                    ("Pairs argmax better / equal / worse", True),
+                ],
+                rows,
+                GAP_NOTE,
+            )
+        )
+    if unavailable:
+        out.append(f'<p class="muted">{esc("; ".join(unavailable))}.</p>')
+    return "".join(out)
 
 
 def _anchor_section(model: ReportModel, done: list[int]) -> str:

@@ -50,6 +50,8 @@ from areneon_ml.loop.league import (
 from areneon_ml.loop.metrics import METRICS_DIR, MetricsError, metrics_path, read_run_metrics
 from areneon_ml.loop.records import family_label
 from areneon_ml.progress.ablation import ablation_summary
+from areneon_ml.progress.gap import play_mode_gap
+from areneon_ml.progress.modes import match_extra, match_stem
 from areneon_ml.progress.records import (
     ProgressRecordError,
     preview_variant,
@@ -168,6 +170,16 @@ class MatchFacts:
     #: for a self-no-search match the control's; None for every other match.
     search: dict[str, Any] | None = None
     opponent_search: dict[str, Any] | None = None
+    #: The play mode in words (``mode_label``): ``argmax``, ``sample``, ``sample, T 0.5``,
+    #: ``sample, T 1, threshold 0.03``. Empty only in a hand-built fact.
+    mode_label: str = ""
+    #: An extra play mode (a declared temperature or threshold, #1044): the plain modes only are
+    #: charted by generation.
+    extra_mode: bool = False
+    #: The match id without its mode part (``random-legal`` for ``random-legal-sample-t500000``).
+    stem: str = ""
+    #: Anchor and previous-generation matches: the play-mode gap is not read from them.
+    gap_note: str | None = None
 
 
 @dataclass(frozen=True)
@@ -190,6 +202,8 @@ class ProgressFacts:
     #: The evaluation key (#1177) that keyed the pairs and seeds in place of the run key; None:
     #: the run key did.
     evaluation_key: str | None = None
+    #: The play-mode gap (``play_mode_gap``: integers only, derived on display, never stored).
+    play_mode_gap: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -407,6 +421,10 @@ def _progress_facts(record: dict[str, Any], move_use: dict[str, Any] | None) -> 
                 ),
                 match.get("search"),
                 match.get("opponent_search"),
+                summary["mode"],
+                match_extra(match) is not None,
+                match_stem(match),
+                summary.get("play_mode_gap"),
             )
         )
     plan = record["plan"]
@@ -421,6 +439,7 @@ def _progress_facts(record: dict[str, Any], move_use: dict[str, Any] | None) -> 
         move_use,
         record["teams"].get("evaluation_dataset_hash"),
         plan.get("evaluation_key"),
+        play_mode_gap(record),
     )
 
 

@@ -66,6 +66,7 @@ from areneon_ml.progress.eval_dataset import EvalDatasetError
 from areneon_ml.progress.eval_dataset import add_arguments as eval_dataset_arguments
 from areneon_ml.progress.eval_dataset import from_values as eval_dataset_from
 from areneon_ml.progress.looks import Look, LookError, append_look, looks_path
+from areneon_ml.progress.modes import ModeError, parse_modes
 from areneon_ml.progress.records import ProgressRecordError
 from areneon_ml.progress.run import (
     DAMAGE_AWARE_VERSIONS,
@@ -354,6 +355,18 @@ def _parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         "of its own",
     )
     progress.add_argument(
+        "--modes",
+        default=None,
+        help="extra play modes (ADR-023, #1044), comma separated: sample at a declared "
+        "temperature and/or probability threshold, sample:t<ppm>, sample:th<ppm> or "
+        "sample:t<ppm>:th<ppm> (ppm 1 to 999999; argmax and sample are always played and may be "
+        "listed). Played against every scripted baseline and, with --versus-run-dir, against the "
+        "other run's pair with both sides in the mode, on the same pairs, seats and seeds; "
+        "matches <opponent>-sample-t<ppm>[-th<ppm>]. Anchor and previous-generation matches keep "
+        "their two modes. Not with --preview-ablation or --search-mode; use a progress directory "
+        "of its own for a generation already committed",
+    )
+    progress.add_argument(
         "--damage-aware-budget-minutes",
         type=int,
         help="with --damage-aware: the most wall-clock minutes one damage-aware match may take; "
@@ -463,6 +476,10 @@ def _progress(args: argparse.Namespace) -> dict[str, object]:
             args.run_games,
             encoder_version(game, other.model.encoder),
         )
+    try:
+        modes = parse_modes(() if args.modes is None else args.modes.split(","))
+    except ModeError as exc:
+        raise ProgressError(f"--modes: {exc}") from exc
     eval_dataset = eval_dataset_from(args.eval_dataset_dir, args.eval_dataset_hash)
     root = progress_root(run_dir, args.progress_dir)
     record_games = (
@@ -487,6 +504,7 @@ def _progress(args: argparse.Namespace) -> dict[str, object]:
             args.evaluation_key,
             damage_aware_version=args.damage_aware_version or "v1",
             search_mode=args.search_mode,
+            modes=modes,
         )
         for g in generations
     ]
