@@ -240,11 +240,32 @@ function solve(ctx: Context, chosen: readonly Chosen[], memo: Memo, known: Reado
   const slots: SlotBelief[] = works.map((work, i) => {
     const slotCells = cells[i] as Cell[];
     const joint = (item: string | null): bigint => (item === null ? (solved.none[i] as bigint) : ((solved.items[i] as bigint[])[itemIds.indexOf(item)] as bigint));
-    const itemP = new Map<string | null, Ratio>([[null, ratio(joint(null), Z)], ...itemIds.map((id): [string, Ratio] => [id, ratio(joint(id), Z)])]);
+    // Items whose columns agree in every slot (the residual options) have equal joints: reduce each distinct joint once.
+    const reduced = new Map<bigint, Ratio>();
+    const overZ = (j: bigint): Ratio => {
+      let r = reduced.get(j);
+      if (r === undefined) reduced.set(j, (r = ratio(j, Z)));
+      return r;
+    };
+    const itemP = new Map<string | null, Ratio>([[null, overZ(joint(null))], ...itemIds.map((id): [string, Ratio] => [id, overZ(joint(id))])]);
+    // The weight of each item over the slot's cells: the cells of one item split its joint in proportion to their weights.
+    const itemWeight = new Map<string | null, bigint>();
+    for (const c of slotCells) itemWeight.set(c.item, (itemWeight.get(c.item) ?? 0n) + c.weight);
 
     const formes: FormeBelief[] = work.map((w) => {
       let p = ZERO;
-      for (const c of slotCells.filter((x) => x.forme === w.id)) p = add(p, ratio(joint(c.item) * c.weight, Z * weight(slotCells, c.item)));
+      // P(item) times the cell's share of the item's weight: the same fraction as joint * weight / (Z * item weight), in smaller gcds.
+      // Cells that agree in item probability, weight and item weight (the residual options) are one term counted n times.
+      const terms = new Map<string, { term: Ratio; n: bigint }>();
+      for (const c of slotCells) {
+        if (c.forme !== w.id) continue;
+        const total = itemWeight.get(c.item) as bigint;
+        const key = `${joint(c.item)}|${c.weight}|${total}`;
+        const seen = terms.get(key);
+        if (seen === undefined) terms.set(key, { term: mul(itemP.get(c.item) as Ratio, ratio(c.weight, total)), n: 1n });
+        else seen.n += 1n;
+      }
+      for (const { term, n } of terms.values()) p = add(p, n === 1n ? term : mul(term, { num: n, den: 1n }));
       return { id: w.id, mega: w.mega, p, abilities: w.abilities, spreads: w.spreads, moves: w.moves };
     }).filter((f) => !isZero(f.p));
 
