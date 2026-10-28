@@ -31,6 +31,8 @@ export const EVIDENCE_FIELDS = [
   "item_received",
   "ability",
   "ability_received",
+  "ability_suppressed",
+  "temp_species",
   "moves_revealed",
   "volatiles",
   "mega",
@@ -42,13 +44,11 @@ export const EVIDENCE_FIELDS = [
 export const IGNORED_FIELDS = [
   "own",
   "shiny",
-  "temp_species",
   "hp_num",
   "hp_den",
   "status",
   "boosts",
   "item_lost",
-  "ability_suppressed",
   "stats",
   "moves_own",
   "pp",
@@ -91,5 +91,23 @@ export function slotEvidence(mon: PublicMon): SlotEvidence {
     transformed,
     mega: mon.mega,
     megaStone: mon.mega ? mon.mega_stone : null,
+  };
+}
+
+/**
+ * What the trapping constraint reads of one opponent Pokemon: whether it is a foe of the own actives (in play
+ * and living), the species it is shown as (a temporary forme counts: the engine reads the current species'
+ * ability list), whether its ability is still its own (received, suppressed and Transformed abilities are not
+ * the species' list), and the vocabulary's ability list and stone for that species.
+ */
+export function trapEvidence(mon: PublicMon, roster: ReadonlyMap<string, { readonly abilities: readonly string[]; readonly required_item?: string }>, undisguised: boolean): { active: boolean; species: string | null; eligible: boolean; abilities: readonly string[] | null; item: string | null } {
+  const species = mon.temp_species ?? mon.species;
+  const entry = species === null ? undefined : roster.get(species);
+  return {
+    active: mon.active_slot !== null && !mon.fainted,
+    species,
+    eligible: undisguised && !mon.ability_received && !mon.ability_suppressed && !mon.volatiles.includes(TRANSFORM),
+    abilities: entry?.abilities ?? null,
+    item: entry?.required_item ?? null,
   };
 }

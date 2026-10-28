@@ -1,24 +1,32 @@
 {
   "description": "SHA-256 of the canonical JSON (bigints as decimal strings) of belief() and of sampleWorlds(belief, stream, 8) on the synthetic inputs of packages/opponent-model/test/support.ts (CC0, no team data). Rewrite with ARENEON_UPDATE_GOLDEN=1 only together with a BELIEF_FORMAT bump.",
-  "belief_format": "belief/3",
+  "belief_format": "belief/4",
   "stream": "fffaf5f0ebe6e1dcd7d2cdc8c3beb9b4afaaa5a09b96918c87827d78736e6964",
   "worlds": 8,
   "cases": {
     "preview-only": {
-      "belief_sha256": "a6acc715ec26ec296312dbb8e41d21d721f2760f9a51ea3310cacbd9d91489c9",
+      "belief_sha256": "86f645cecb1d15658620a1683d464a1d1291996037f46fcb99c95cc2a2d2f039",
       "worlds_sha256": "277f9854601346aaf612a368c208d9fbb65f755b79bac97110ac0d52e124cd4e"
     },
     "revealed-facts": {
-      "belief_sha256": "27533823897bce88f538182dcaa3b101231dd92754d25eb026d790eb4446d77b",
+      "belief_sha256": "c3f24450b32e3aa08d4e3ade4e473372cda24777c921c4e1c01173a8b8c97692",
       "worlds_sha256": "98a436b54321c9e349fd5259f0ab6bbaedd72c9a99bc2e8b8d256e5a74d26f9e"
     },
     "mega-evolved": {
-      "belief_sha256": "02171ee3315d23c999b8bac5d5b2b5ecd86b40d1086d12ca17aaa9a53df4f8bc",
+      "belief_sha256": "86959177b64e828e77da147aef22058c97da4e3b015c3099b4ca08dfa15039e7",
       "worlds_sha256": "64cd15d94896a3a6289546766200e2a1a8538939a7d2b9255026fe537d2ca95a"
     },
     "disguise-mixture": {
-      "belief_sha256": "83afe314a08c3f5eabc3f8bfbc945d219f9e505e401d1ebde210919ad729486f",
+      "belief_sha256": "541529cdcf759ef44abc187935a4758bb89b54b3f95072d6f907d2034313c52e",
       "worlds_sha256": "55826fe3c307ea8b3102767a4b7b9a4959bd0ac5e84127d7a1a57b1168c1ef5f"
+    },
+    "trapping-seen": {
+      "belief_sha256": "a6c3e91034da6cf2f5c8c41343c043482e0ffa2f2987064a0e70cef8b7024bfd",
+      "worlds_sha256": "a217e02c7fcf8b1c2e0ec69d23cf4e7de6f3f9771180765fc5a9707fb9d0da90"
+    },
+    "trapping-unseen": {
+      "belief_sha256": "03a154b1689c829b2841af7e251ee2cd76580580d63ab3bd02578a70f0ce36be",
+      "worlds_sha256": "1f5e48fc50accd54401fd8341d427a4a1c6bcbc0838d4b7353a0de1dca9b97e2"
     }
   }
 }
