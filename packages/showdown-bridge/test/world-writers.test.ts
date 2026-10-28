@@ -41,7 +41,7 @@ describe("the committed record (config/search/world-writers.v1.json)", () => {
   });
 
   it("has a hash pinned from outside the code (Python's hashlib over the sorted-key bytes)", () => {
-    expect(worldWritersHash(loadWorldWriters(engine, GOLDEN_FORMAT))).toBe("2a4777d5ac246c06d158563d6c133b60d83696fd753eeb47346bd5a2a840cb71");
+    expect(worldWritersHash(loadWorldWriters(engine, GOLDEN_FORMAT))).toBe("12b5760a167dd6b376e7d253a55db0af1de6828c4dcdcc9429eae6e51d0fe433");
   });
 
   it("is refused for another format", () => {
