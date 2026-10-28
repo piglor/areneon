@@ -19,6 +19,7 @@ const data: WorldFactsData = {
   stall_moves: ["protect", "detect", "endure", "quickguard", "spikyshield"],
   terrains: ["electricterrain", "grassyterrain"],
   swap_side_conditions: ["reflect", "stealthrock", "tailwind"],
+  toxic_stage_max: 15,
 };
 
 const HEAD = [
@@ -247,9 +248,11 @@ describe("Toxic stage", () => {
     expect(run("p1", [...HEAD, "|-status|p1a: Alpha|brn", "|-damage|p1a: Alpha|90/100|[from] brn"]).own.active.a?.toxic_ticks).toBeNull();
   });
 
-  it("stops at stage 15, as the engine does", () => {
+  it("stops at the data's stage maximum", () => {
     const many = Array.from({ length: 17 }, (_, i) => tick(i + 2)).flat();
     expect(run("p1", [...toxic, ...many]).own.active.a?.toxic_ticks).toBe(15);
+    const low = worldFacts({ channel: ownChannel("p1", [...toxic, ...many]), data: { ...data, toxic_stage_max: 3 } });
+    expect(low.own.active.a?.toxic_ticks).toBe(3);
   });
 
   it("restarts on a switch-in and ends on a cure", () => {

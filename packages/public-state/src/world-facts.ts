@@ -25,7 +25,7 @@
 // - `last_move`: the last `|move|` line of the Pokemon without a `[from] move/ability/item` tag (a called
 //   move or a reflected one is not what the Pokemon chose); `[from]lockedmove` is its own move.
 // - Toxic: the number of the status's residual damage (or Poison Heal) lines since the status or the
-//   switch-in, the stage the engine reaches (at most 15).
+//   switch-in, the stage the engine reaches (at most `toxic_stage_max`).
 // - Faints: `total_fainted` is the side's `|faint|` count, `fainted_this_turn` / `fainted_last_turn` say
 //   whether the side lost a Pokemon in the current / the previous turn (the engine's `faintedLastTurn`).
 //
@@ -46,6 +46,8 @@ export interface WorldFactsData {
   readonly terrains: readonly string[];
   /** Ids of the side conditions Court Change swaps (`-swapsideconditions` moves only these, the engine's own list). */
   readonly swap_side_conditions: readonly string[];
+  /** The highest Toxic stage the engine reaches (`data/conditions.ts` tox: the stage stops there). */
+  readonly toxic_stage_max: number;
 }
 
 declare const OWN: unique symbol;
@@ -189,6 +191,7 @@ export class WorldFactsReader {
   readonly #stall: ReadonlySet<string>;
   readonly #terrains: ReadonlySet<string>;
   readonly #swappable: ReadonlySet<string>;
+  readonly #toxicMax: number;
   readonly #sides: Record<FactsPlayer, SideState> = { p1: newSide(), p2: newSide() };
   readonly #mons = new Map<string, MonStatus>();
   #turn = 0;
@@ -205,6 +208,7 @@ export class WorldFactsReader {
     this.#stall = new Set(data.stall_moves);
     this.#terrains = new Set(data.terrains);
     this.#swappable = new Set(data.swap_side_conditions);
+    this.#toxicMax = data.toxic_stage_max;
   }
 
   /** Reads one line. Never throws: a refusal is kept for `facts()`. */
@@ -402,8 +406,7 @@ export class WorldFactsReader {
     const ref = this.#ident(line.args[0]);
     const status = this.#mons.get(`${ref.side}:${ref.name}`);
     if (status !== undefined && status.status === "tox") {
-      // the engine's stage stops at 15 (`data/conditions.ts` tox)
-      status.ticks = Math.min(15, status.ticks + 1);
+      status.ticks = Math.min(this.#toxicMax, status.ticks + 1);
       status.tick_at = this.#index;
     }
   }

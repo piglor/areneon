@@ -39,9 +39,17 @@ function swapConditions(): string[] {
   return [...block.matchAll(/'([a-z0-9]+)'/g)].map((m) => m[1] as string).sort();
 }
 
+/** The Toxic stage ceiling, read from the pinned `tox` condition's own cap. */
+function toxicStageMax(): number {
+  const source = readFileSync(join(process.env.SHOWDOWN_DIR || DEFAULT_SHOWDOWN_DIR, "data", "conditions.ts"), "utf8");
+  const block = /\n\ttox: \{[\s\S]*?stage < (\d+)/.exec(source)?.[1];
+  return Number(block);
+}
+
 let data: WorldFactsData;
 beforeAll(() => {
-  data = { stall_moves: stallMoves(), terrains: engineData.terrains.map((t) => t.id), swap_side_conditions: swapConditions() };
+  data = { stall_moves: stallMoves(), terrains: engineData.terrains.map((t) => t.id), swap_side_conditions: swapConditions(), toxic_stage_max: toxicStageMax() };
+  expect(data.toxic_stage_max, "the engine's Toxic stage cap").toBe(15);
   expect(data.swap_side_conditions).toEqual(expect.arrayContaining(["reflect", "stealthrock", "spikes"]));
 });
 
@@ -132,7 +140,7 @@ function oracle(omni: readonly string[], cut: number, viewer: "p1" | "p2"): Worl
       });
       let toxic_ticks: number | null = null;
       if (statusAt >= 0 && status === "tox") {
-        toxic_ticks = Math.min(15, lines.slice(Math.max(statusAt, since) + 1).filter((l) => {
+        toxic_ticks = Math.min(data.toxic_stage_max, lines.slice(Math.max(statusAt, since) + 1).filter((l) => {
           if (kind(l) === "-damage") return named(l, 0, name) && tag(l, "from") === "psn";
           if (kind(l) === "-heal") return named(l, 0, name) && tag(l, "from") === "ability: Poison Heal";
           return false;
