@@ -204,7 +204,7 @@ export async function runProgressCli(argv: readonly string[], print: (line: stri
   const extraModes: ExtraMode[] = (values["extra-mode"] ?? []).map((text) => {
     const parts = text.split(",");
     const [mode, candidate, other] = parts;
-    if (parts.length < 2 || parts.length > 3 || mode === undefined || candidate === undefined) throw new UsageError("--extra-mode must be <mode>,<candidate-policy-id>[,<versus-policy-id>]");
+    if (parts.length < 2 || parts.length > 3 || mode === undefined || candidate === undefined || candidate === "") throw new UsageError("--extra-mode must be <mode>,<candidate-policy-id>[,<versus-policy-id>]");
     let play;
     try {
       play = parseExtraMode(mode);

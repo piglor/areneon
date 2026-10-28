@@ -618,3 +618,17 @@ def test_extra_modes_are_not_played_with_the_ablation_or_the_search(
     with pytest.raises(ProgressError, match="listed once"):
         run_module.progress_generation(a, 1, tmp_path / "p", fake, 4, 1, (), 4, modes=(T5, T5))
     assert fake.requests == []
+
+
+def test_a_committed_generation_without_the_asked_modes_is_kept_and_says_so(
+    runs: tuple[Path, Path], tmp_path: Path
+) -> None:
+    a, _ = runs
+    evaluate(a, tmp_path / "p", ())
+    done, _ = evaluate(a, tmp_path / "p", (T5,))
+    assert done["skipped"] is True
+    assert "missing: sample:t500000" in done["modes"]
+    assert "t500000" not in "".join(m["match_id"] for m in done["matches"])
+    evaluate(a, tmp_path / "q", (T5,))
+    kept, _ = evaluate(a, tmp_path / "q", (T5,))
+    assert "modes" not in kept

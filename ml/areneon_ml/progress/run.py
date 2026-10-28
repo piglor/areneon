@@ -1332,6 +1332,7 @@ def progress_generation(  # noqa: PLR0913, PLR0915, PLR0917
                 eval_dataset,
                 evaluation_key,
                 search_mode,
+                modes,
             )
         source = _source(run_dir, config, generation)
         previous = _previous_pair(run_dir, config, generation) if previous_matches else None
@@ -1455,6 +1456,7 @@ def _skipped(  # noqa: PLR0913, PLR0917
     eval_dataset: EvalDataset | None,
     evaluation_key: str | None = None,
     search_mode: str | None = None,
+    modes: Sequence[ExtraMode] = (),
 ) -> dict[str, Any]:
     """A committed directory is verified and reported, never rewritten."""
     pair = None if versus is None else _versus_pair(run_dir, config, versus)
@@ -1495,6 +1497,7 @@ def _skipped(  # noqa: PLR0913, PLR0917
             "matches": summary_of(record),
         }
         | _gap_part(record)
+        | _modes_status(record, modes)
         | _ablation_part(record)
         | _versus_part(record, held)
     )
@@ -1564,6 +1567,18 @@ def _play_modes(
         )
         for m in modes
     )
+
+
+def _modes_status(record: dict[str, Any], asked: Sequence[ExtraMode]) -> dict[str, Any]:
+    """Says when a committed record lacks extra modes asked for (it is never rewritten)."""
+    held = {m for m in map(match_extra, record["matches"]) if m is not None}
+    missing = [m.name for m in asked if m not in held]
+    if not missing:
+        return {}
+    return {
+        "modes": "missing: " + ", ".join(missing) + " (committed without them; "
+        "evaluate into a new --progress-dir to add them)"
+    }
 
 
 def _gap_part(record: dict[str, Any]) -> dict[str, Any]:
