@@ -302,3 +302,89 @@ def test_the_policy_id_constant_is_the_one_the_corpus_and_the_game_samples_name(
     assert (
         sample("progress-game-record/valid/damage-aware")["policies"]["p2"] == DAMAGE_AWARE_POLICY
     )
+
+
+V3_MATCHES = ["damage-aware-v3-argmax", "damage-aware-v3-sample"]
+
+
+def test_v3_plays_its_own_match_ids_and_policy_id_beside_nothing_of_v1(
+    run: Path, tmp_path: Path
+) -> None:
+    fake = player(run)
+    done = evaluate(
+        run, tmp_path / "p", fake, damage_aware_budget_minutes=30, damage_aware_version="v3"
+    )
+    assert fake.requests[0].damage_aware_version == "v3"
+    ids = [m["match_id"] for m in done["matches"]]
+    assert [i for i in ids if i.startswith("damage-aware")] == V3_MATCHES
+    assert done["damage_aware"] == "played"
+    record = read_progress_record(layout.read_json(tmp_path / "p" / "g000001" / "progress.json"))
+    for match in (m for m in record["matches"] if m["match_id"] in V3_MATCHES):
+        assert match["opponent"] == {"kind": "baseline", "policy_id": "damage-aware@v3"}
+        assert match["baseline"]["identity_hash"] == IDENTITY
+        rows = [r for r in record["games"] if r["match_id"] == match["match_id"]]
+        assert match["baseline"]["counts"] == sum_baseline_counts(
+            [r["baseline_counts"] for r in rows]
+        )
+    stored = sorted((tmp_path / "p" / "g000001" / "games").glob("damage-aware-v3-*.json"))
+    assert stored
+    assert read_game_record(layout.read_json(stored[0]))["policies"]
+
+
+def test_v1_is_the_default_and_names_no_version_to_the_simulator_side(
+    run: Path, tmp_path: Path
+) -> None:
+    fake = player(run)
+    done = evaluate(run, tmp_path / "p", fake, damage_aware_budget_minutes=30)
+    assert fake.requests[0].damage_aware_version == "v1"
+    assert "damage-aware-argmax" in [m["match_id"] for m in done["matches"]]
+    assert not any("v3" in m["match_id"] for m in done["matches"])
+
+
+def test_a_committed_v3_root_is_verified_and_reported_played(run: Path, tmp_path: Path) -> None:
+    root = tmp_path / "p"
+    evaluate(run, root, player(run), damage_aware_budget_minutes=30, damage_aware_version="v3")
+    done = evaluate(run, root, player(run))
+    assert done["skipped"] is True
+    assert done["damage_aware"] == "played"
+    assert verify_progress_dir(root / "g000001", dataset_config(), run, 1)["matches"]
+
+
+def test_two_v3_runs_give_byte_identical_files(run: Path, tmp_path: Path) -> None:
+    for name in ("a", "b"):
+        evaluate(
+            run,
+            tmp_path / name,
+            player(run),
+            damage_aware_budget_minutes=30,
+            damage_aware_version="v3",
+        )
+    a, b = (sorted((tmp_path / n / "g000001").rglob("*.json")) for n in ("a", "b"))
+    assert all(x.read_bytes() == y.read_bytes() for x, y in zip(a, b, strict=True))
+
+
+def test_an_unknown_version_is_refused_before_any_work(run: Path, tmp_path: Path) -> None:
+    fake = player(run)
+    with pytest.raises(ProgressError, match="--damage-aware-version must be one of v1, v3"):
+        evaluate(
+            run, tmp_path / "p", fake, damage_aware_budget_minutes=30, damage_aware_version="v2"
+        )
+    assert fake.requests == []
+
+
+def test_a_record_that_mixes_a_match_id_and_a_policy_is_refused(run: Path, tmp_path: Path) -> None:
+    def swap_policy(raw: dict[str, Any]) -> None:
+        for match in raw["matches"]:
+            if match["match_id"].startswith("damage-aware-v3"):
+                match["opponent"]["policy_id"] = "damage-aware@v1"
+
+    refuse_in_record(
+        run,
+        tmp_path,
+        swap_policy,
+        "the opponent is not damage-aware@v3",
+        **{
+            "damage_aware_version": "v3",
+            "damage_aware_budget_minutes": 30,
+        },
+    )

@@ -58,7 +58,9 @@ The config is hashed as a whole, so a change is a new run.
 
 **The damage-aware baseline as a training opponent.** `generation.baseline_games`
 may list `{"actor": "damage-aware", "policy_id": "damage-aware@v1", "games": N}`
-beside `random-legal` and `actor-rule` (ADR-018). That seat is scripted: it
+beside `random-legal` and `actor-rule` (ADR-018); `"policy_id": "damage-aware@v3"` plays the corrected
+scorer of `config/baselines/damage-aware.v3.json` instead (#1183), with its own identity hash and counts in
+`baselines`. That seat is scripted: it
 chooses by the pinned engine's own damage and turn order, read through the
 mechanics probe, from its own view only, and it is never queried against the
 policy worker. Its Episodes are kept and the training loader refuses them; only
@@ -231,7 +233,8 @@ A committed generation is never rewritten, so the matches cannot be added to
 it: evaluate into a new `--progress-dir` (the command reports `previous: none`
 for a generation without them).
 `--damage-aware` adds, for any generation, `damage-aware-sample` and
-`damage-aware-argmax`: the pair against the damage-aware scripted baseline
+`damage-aware-argmax` (with `--damage-aware-version v3`, `damage-aware-v3-sample` and
+`damage-aware-v3-argmax` against `damage-aware@v3`; v1 is the default and its records are unchanged): the pair against the damage-aware scripted baseline
 (ADR-018), which chooses by the pinned engine's own damage and turn order from
 its own channel and team only, on the same pairs, seeds and both seats as the
 other baselines. It is off by default because it is slower than the others

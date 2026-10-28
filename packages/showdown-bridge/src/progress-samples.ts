@@ -147,6 +147,12 @@ export async function progressSamples(engine: Engine): Promise<ProgressSamples> 
     g.baseline = { seat: "p2", identity_hash: identity, counts: gameCounts };
   }) as unknown as typeof game;
   const damageHash = progressRecordHash(damageGame);
+  // The same game against damage-aware@v3 (#1183): another policy id, so another record hash, and its match id cannot collide with v1's.
+  const damageGameV3 = mutated(damageGame, (g) => {
+    g.match_id = "damage-aware-v3-argmax";
+    g.policies.p2 = "damage-aware@v3";
+  }) as unknown as typeof game;
+  const damageHashV3 = progressRecordHash(damageGameV3);
   // A faulty damage-aware game keeps a few lines, like the other faulty games; its counts are those of the short game.
   const shortDamage = (change: (g: Record<string, any>) => void) =>
     mutated(damageGame, (g) => {
@@ -163,6 +169,12 @@ export async function progressSamples(engine: Engine): Promise<ProgressSamples> 
       Object.assign(e.matches[0], { opponent: { kind: "baseline", policy_id: "damage-aware@v1" }, game_record_hashes: [damageHash], baseline: { identity_hash: identity, counts: Object.fromEntries(Object.entries(gameCounts).map(([k, v]) => [k, v * 4])) } });
       e.games.forEach((g: any) => (g.baseline_counts = { ...gameCounts }));
       change?.(e);
+    });
+  const v2DamageV3 = () =>
+    withV2((e) => {
+      renameMatch(e, "damage-aware-v3-argmax");
+      Object.assign(e.matches[0], { opponent: { kind: "baseline", policy_id: "damage-aware@v3" }, game_record_hashes: [damageHashV3], baseline: { identity_hash: identity, counts: Object.fromEntries(Object.entries(gameCounts).map(([k, v]) => [k, v * 4])) } });
+      e.games.forEach((g: any) => (g.baseline_counts = { ...gameCounts }));
     });
   // Both modes of the baseline in one record: the matches sort as damage-aware-argmax, damage-aware-sample.
   const v2DamageBoth = (change?: (e: Record<string, any>) => void) =>
@@ -198,7 +210,9 @@ export async function progressSamples(engine: Engine): Promise<ProgressSamples> 
       "progress-evaluation-record-2/run-match": v2Run(),
       "progress-evaluation-record-2/ablation-match": v2Ablation(),
       "progress-evaluation-record-2/damage-aware-match": v2Damage(),
+      "progress-evaluation-record-2/damage-aware-v3-match": v2DamageV3(),
       "progress-game-record/damage-aware": damageGame,
+      "progress-game-record/damage-aware-v3": damageGameV3,
       "progress-game-record/played": game,
       "progress-game-record/played-pair": pairGame,
       // Game 1 of pair 0 on a declared evaluation key: the seed is progress-seed/1's for the key, not for the run id.

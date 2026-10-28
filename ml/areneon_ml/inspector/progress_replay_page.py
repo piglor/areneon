@@ -64,7 +64,10 @@ def _opponent_words(game: ProgressGame) -> str:
     if game.opponent_kind == "anchor":
         return f"generation {game.opponent_generation}'s frozen pair, an anchor"
     if game.baseline is not None:
-        return "the damage-aware scripted baseline"
+        # v1's wording is the one its pages always had; another version is named (#1183).
+        policy = game.record["policies"][game.baseline["seat"]]
+        suffix = "" if policy == "damage-aware@v1" else f" ({esc(policy)})"
+        return f"the damage-aware scripted baseline{suffix}"
     if game.opponent_kind == "run":
         return "another run's frozen pair"
     return "the scripted baseline"
