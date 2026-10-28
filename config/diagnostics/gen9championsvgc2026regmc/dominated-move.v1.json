@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "kind": "dominated-move-config",
+  "format_id": "gen9championsvgc2026regmc",
+  "engine_data_hash": "6f3d19f02b0e8464d813f4bbdced99c6f88140099818f5f225776ac43fa5590e",
+  "effectiveness_ppm": [
+    1000000,
+    2000000,
+    500000,
+    0
+  ],
+  "same_type_ppm": 1500000,
+  "spread_ppm": 750000,
+  "threshold_ppm": 500000,
+  "target_kinds": {
+    "single": [
+      "any",
+      "normal"
+    ],
+    "spread": [
+      "allAdjacent",
+      "allAdjacentFoes"
+    ],
+    "random": [
+      "randomNormal"
+    ]
+  }
+}
