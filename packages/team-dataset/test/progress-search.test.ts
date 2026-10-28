@@ -139,3 +139,22 @@ describe("the command's search flags (usage errors come before any worker)", () 
     expect(asked).toEqual(["run_teams"]);
   });
 });
+
+describe("the composition root and the play settings", () => {
+  it("builds the committed setup for the committed format only", async () => {
+    const { progressSearchSetup } = await import("../src/progress-search-setup.ts");
+    const built = progressSearchSetup(engine, FORMAT);
+    expect(built.config.format_id).toBe(FORMAT);
+    expect(built.data_class).toBe("synthetic");
+    expect(() => progressSearchSetup(engine, "gen9other")).toThrow(/vocabulary for/);
+  });
+
+  it("plays a sampled search with a temperature: another policy id, the same counts shape, both seats", async () => {
+    const play = { temperature_ppm: 500_000 };
+    const { record } = await playProgress(options({ search: { setup: setupFor(), mode: "sample", play }, games: 2, record_games: 0 }));
+    const named = searchPolicy(setupFor(), manifest, checkpoints, "sample", play);
+    expect(record.matches.map((m) => m.match_id)).toEqual(["search-actor-rule-sample", "search-random-legal-sample", "search-self-no-search-sample"]);
+    expect(record.matches[0]?.policy_id).toBe(named.policy_id);
+    expect(record.matches[2]?.opponent_search?.counts.searched_decisions).toBe(0);
+  }, 600_000);
+});

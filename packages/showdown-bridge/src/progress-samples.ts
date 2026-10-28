@@ -375,15 +375,17 @@ export async function progressSamples(engine: Engine): Promise<ProgressSamples> 
       "progress-evaluation-record-2/search-row-missing": v2Search((e) => delete e.games[0].search),
       "progress-evaluation-record-2/search-misnamed": v2Search((e) => renameMatch(e, "actor-rule-argmax")),
       "progress-evaluation-record-2/search-on-plain-match": withV2((e) => (e.matches[0].search = { identity_hash: searchHash, counts: searchCountsOf(5) })),
+      // A plain match beside a search match: matches sort by id, so the plain one comes first.
       "progress-evaluation-record-2/search-mixed-with-plain": v2Search((e) => {
-        e.matches.push({ ...structuredClone(e.matches[0]), match_id: "search-random-legal-argmax", search: undefined });
-        delete e.matches[1].search;
-        e.games.push(...e.games.map((g: any) => ({ ...structuredClone(g), match_id: "search-random-legal-argmax" })));
-        e.games.slice(4).forEach((g: any) => delete g.search);
-        e.matches[1].match_id = "random-legal-argmax";
-        e.games.slice(4).forEach((g: any) => (g.match_id = "random-legal-argmax"));
-        e.matches.sort((a: any, b: any) => (a.match_id < b.match_id ? -1 : 1));
-        e.games = e.matches.flatMap((m: any) => e.games.filter((g: any) => g.match_id === m.match_id));
+        const plain = { ...structuredClone(e.matches[0]), match_id: "random-legal-argmax" };
+        delete plain.search;
+        const rows = e.games.map((g: any) => {
+          const row = { ...structuredClone(g), match_id: "random-legal-argmax" };
+          delete row.search;
+          return row;
+        });
+        e.matches = [plain, e.matches[0]];
+        e.games = [...rows, ...e.games];
       }),
       "progress-evaluation-record-2/search-more-fallbacks-than-decisions": v2Search((e) => {
         e.games[0].search.fallbacks.below_min_valid = 99;

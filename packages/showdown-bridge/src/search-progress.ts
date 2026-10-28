@@ -81,15 +81,11 @@ export interface ControlSeatOptions {
 
 type Structural = (typeof CONTROL_FALLBACK_KEYS)[number];
 
-/** Whether the search would not have searched this request for a structural reason; a request the enumerator refuses is left to the pair's own error. */
+/** Whether the search would not have searched this request for a structural reason (the enumerator's refusal is the pair's own error). */
 function structural(request: Parameters<Actor>[0]): Structural | null {
   if (request.phase === "preview") return "team_preview";
   if (request.phase === "forceSwitch") return "forced_switch";
-  try {
-    return enumerateCandidates(request).candidates.filter((candidate) => !candidate.pending).length < 2 ? "too_few_candidates" : null;
-  } catch {
-    return null;
-  }
+  return enumerateCandidates(request).candidates.filter((candidate) => !candidate.pending).length < 2 ? "too_few_candidates" : null;
 }
 
 /**
