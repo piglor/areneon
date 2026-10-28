@@ -5,6 +5,7 @@
 // Nothing here reads an opponent team, a verdict or a seed: a task holds the same inputs `candidateFeatures` takes.
 // The worker-thread pool (`feature-pool.ts`) runs one service per thread.
 import { type CandidateFeatures, candidateFeatures, createFeatureMemo, type FeatureBuildCode, FeatureBuildError, type FeatureConfigs, type FeatureMemo } from "./candidate-features.ts";
+import { type CandidateFeatures2, candidateFeatures2, type CostTrace, emptyTrace } from "./candidate-features-2.ts";
 import type { Candidate } from "./choices.ts";
 import { loadDamageAwareConfig } from "./damage-aware-config.ts";
 import { type ProbeCounts } from "./damage-aware-view.ts";
@@ -19,6 +20,8 @@ import type { Player } from "./runner.ts";
 export interface FeatureServiceSpec {
   format_id: string;
   data_class: "synthetic" | "private";
+  /** The feature set the service builds; default `probe-damage/1`. */
+  feature_set?: "probe-damage/1" | "probe-damage/2";
   /** Another built checkout than the default (the engine loader's argument). */
   showdown_dir?: string;
 }
@@ -34,7 +37,7 @@ export interface FeatureTask {
   final?: boolean;
 }
 
-export type FeatureOutcome = { kind: "features"; features: CandidateFeatures } | { kind: "error"; code: FeatureBuildCode };
+export type FeatureOutcome = { kind: "features"; features: CandidateFeatures | CandidateFeatures2 } | { kind: "error"; code: FeatureBuildCode };
 
 export interface FeatureResult {
   outcome: FeatureOutcome;
@@ -42,6 +45,8 @@ export interface FeatureResult {
   ms: number;
   /** The probe counts this task added to its game's memo. */
   counts: ProbeCounts;
+  /** Where a `probe-damage/2` build spent them, by part (absent for `probe-damage/1`). */
+  parts?: CostTrace;
 }
 
 export interface FeatureService {
@@ -67,9 +72,10 @@ export function createFeatureService(spec: FeatureServiceSpec, engineOverride?: 
       const before = { ...memo.counts };
       const started = performance.now();
       let outcome: FeatureOutcome;
+      const parts = spec.feature_set === "probe-damage/2" ? emptyTrace() : undefined;
       try {
         const channel = playerChannel({ schema_version: 1, data_class: spec.data_class, player: task.player, lines: task.lines });
-        outcome = { kind: "features", features: candidateFeatures(engine, configs, channel, task.team, task.candidates, memo) };
+        outcome = { kind: "features", features: parts === undefined ? candidateFeatures(engine, configs, channel, task.team, task.candidates, memo) : candidateFeatures2(engine, configs, channel, task.team, task.candidates, memo, parts) };
       } catch (error) {
         if (!(error instanceof FeatureBuildError)) throw error;
         outcome = { kind: "error", code: error.code };
@@ -77,7 +83,7 @@ export function createFeatureService(spec: FeatureServiceSpec, engineOverride?: 
       const ms = performance.now() - started;
       if (task.final === true) memos.delete(task.game);
       const counts = { queries: memo.counts.queries - before.queries, probe_runs: memo.counts.probe_runs - before.probe_runs, unsupported_queries: memo.counts.unsupported_queries - before.unsupported_queries };
-      return { outcome, ms, counts };
+      return { outcome, ms, counts, ...(parts === undefined ? {} : { parts }) };
     },
   };
 }

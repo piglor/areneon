@@ -120,7 +120,7 @@ export const emptyDominated = (): DominatedCount => ({ evaluable: 0, dominated: 
  * target's row for a single target, any foe's for a spread move; the chosen Mega flag) and the best row is the
  * largest `mean_ppm` among all computed rows of the slot; it is dominated when twice the chosen value is below it.
  */
-export function addDominated(into: DominatedCount, features: CandidateFeatures, chosen: string): void {
+export function addDominated(into: DominatedCount, features: Pick<CandidateFeatures, "rows">, chosen: string): void {
   parseJointChoice(chosen).forEach((part, slot) => {
     if (part.kind !== "move") {
       into.not_evaluable.switch_or_pass++;
@@ -166,10 +166,17 @@ export interface RunStats {
   latency: LatencySummary | null;
   rows: { total: number; per_decision_mean_x100: number; unsupported: Record<string, number>; computed: number };
   probe: { queries: number; probe_runs: number; memo_hit_ppm: number };
+  /** `probe-damage/2` only: the four new arrays, rows by kind. */
+  arrays?: Record<string, { rows: number; computed: number; unsupported: Record<string, number> }>;
+  /** `probe-damage/2` only: where the builder spent its probe queries and time, summed over the decisions (ms rounded). */
+  parts?: Record<string, { queries: number; probe_runs: number; ms: number }>;
   total_builder_ms: number;
   /** SHA-256 of the JSON of every outcome in decision order: equal for equal rows. */
   rows_digest: string;
 }
+
+/** The arrays `probe-damage/2` adds to `rows`. */
+const ARRAYS_2 = ["threats", "speeds", "own_priorities", "foe_priorities"] as const;
 
 export function statsOf(results: readonly FeatureResult[]): RunStats {
   const errors: Record<string, number> = {};
@@ -179,7 +186,15 @@ export function statsOf(results: readonly FeatureResult[]): RunStats {
   let featured = 0;
   let queries = 0;
   let runs = 0;
+  const arrays: NonNullable<RunStats["arrays"]> = {};
+  const parts: NonNullable<RunStats["parts"]> = {};
   for (const r of results) {
+    for (const [name, cost] of Object.entries(r.parts ?? {})) {
+      const sum = (parts[name] ??= { queries: 0, probe_runs: 0, ms: 0 });
+      sum.queries += cost.queries;
+      sum.probe_runs += cost.probe_runs;
+      sum.ms += cost.ms;
+    }
     queries += r.counts.queries;
     runs += r.counts.probe_runs;
     if (r.outcome.kind === "error") {
@@ -187,6 +202,16 @@ export function statsOf(results: readonly FeatureResult[]): RunStats {
       continue;
     }
     featured++;
+    for (const name of ARRAYS_2) {
+      const list = (r.outcome.features as unknown as Record<string, { kind: string; reason?: string }[] | undefined>)[name];
+      if (list === undefined) continue;
+      const entry = (arrays[name] ??= { rows: 0, computed: 0, unsupported: {} });
+      for (const row of list) {
+        entry.rows++;
+        if (row.kind === "computed") entry.computed++;
+        else entry.unsupported[row.reason as string] = (entry.unsupported[row.reason as string] ?? 0) + 1;
+      }
+    }
     for (const row of r.outcome.features.rows) {
       rows++;
       if (row.kind === "computed") computed++;
@@ -200,6 +225,8 @@ export function statsOf(results: readonly FeatureResult[]): RunStats {
     latency: summarise(results.map((r) => r.ms)),
     rows: { total: rows, per_decision_mean_x100: featured === 0 ? 0 : Math.round((rows * 100) / featured), unsupported, computed },
     probe: { queries, probe_runs: runs, memo_hit_ppm: queries === 0 ? 0 : Math.floor(((queries - runs) * 1_000_000) / queries) },
+    ...(Object.keys(arrays).length === 0 ? {} : { arrays }),
+    ...(Object.keys(parts).length === 0 ? {} : { parts: Object.fromEntries(Object.entries(parts).map(([name, sum]) => [name, { ...sum, ms: Math.round(sum.ms) }])) }),
     total_builder_ms: Math.round(results.reduce((a, r) => a + r.ms, 0)),
     rows_digest: sha256Hex(JSON.stringify(results.map((r) => r.outcome))),
   };
