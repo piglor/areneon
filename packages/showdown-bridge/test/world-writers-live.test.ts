@@ -17,11 +17,18 @@ import { inputAtLastRequest, toId } from "./world-builder-support.ts";
 // will fork it) and compares it with the world built from the player's own view and the opponent's TRUE
 // brought sets. Every W item the world writes must equal the live engine's value; X items are only counted.
 
+/** The committed record gives toxic_stage R (too few equal oracle turns); this live-state test is the evidence for the writer itself, so it compares with it as W. */
+const liveRecord = (record: WorldWriters): WorldWriters => {
+  const copy = structuredClone(record);
+  (copy.items.find((item) => item.id === "toxic_stage") as { class: string }).class = "W";
+  return copy;
+};
+
 let engine: Engine;
 let context: WorldContext;
 beforeAll(() => {
   engine = loadEngine();
-  context = { engine, format_id: GOLDEN_FORMAT, scenario_id: checkScenario(engine, loadMechanicsConfig(GOLDEN_FORMAT)), hp_rounding: "ceil", writers: loadWorldWriters(engine, GOLDEN_FORMAT) };
+  context = { engine, format_id: GOLDEN_FORMAT, scenario_id: checkScenario(engine, loadMechanicsConfig(GOLDEN_FORMAT)), hp_rounding: "ceil", writers: liveRecord(loadWorldWriters(engine, GOLDEN_FORMAT)) };
 });
 
 /** Which comparisons ran, by what they compared. */

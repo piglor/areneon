@@ -64,9 +64,11 @@ const FLAGS = {
   shard: { type: "string" },
   // Internal: the directory the Episodes of the generation are written to as their games finish (the process that started this one gives it to the game processes; by default `<out>/episodes`).
   "episodes-dir": { type: "string" },
+  // Internal: the scratch directory the game processes leave the recomputed candidate feature rows of their Episodes in (#1185; only with game processes and a candidate feature set).
+  "features-dir": { type: "string" },
 } as const;
 
-const OPTIONAL: readonly (keyof typeof FLAGS)[] = ["policy-workers", "game-processes", "shard", "episodes-dir"];
+const OPTIONAL: readonly (keyof typeof FLAGS)[] = ["policy-workers", "game-processes", "shard", "episodes-dir", "features-dir"];
 
 /** Peak memory of the processes of one generation's play (bytes), for the run-metrics record; any part may be missing. */
 export interface ResourceUsage {
@@ -171,6 +173,8 @@ export async function runGenerationCli(
   const episodesDir = values["episodes-dir"] ?? join(need("out"), "episodes");
   mkdirSync(episodesDir, { recursive: true });
   const scratch = values.shard === undefined && processes > 1 ? mkdtempSync(join(tmpdir(), "areneon-shards-")) : undefined;
+  // With game processes and a feature set, every process recomputes the rows of its own Episodes when its games are done (#1185).
+  const featuresDir = featuresDirOf(values["features-dir"], scratch, features !== undefined);
   const children: ShardProcess[] = [];
   try {
     // Start the further game processes first: each loads its own pool while this one does.
@@ -178,9 +182,9 @@ export async function runGenerationCli(
       for (let index = 1; index < processes; index++) {
         const out = join(scratch, String(index));
         const rest = Object.entries(values).flatMap(([name, value]) =>
-          value === undefined || ["out", "game-processes", "shard", "episodes-dir"].includes(name) ? [] : [`--${name}`, value],
+          value === undefined || ["out", "game-processes", "shard", "episodes-dir", "features-dir"].includes(name) ? [] : [`--${name}`, value],
         );
-        children.push(startShard(shardScript as string, [...rest, "--out", out, "--shard", `${index}/${processes}`, "--episodes-dir", episodesDir], out, index));
+        children.push(startShard(shardScript as string, [...rest, "--out", out, "--shard", `${index}/${processes}`, "--episodes-dir", episodesDir, ...optionalFlag("--features-dir", featuresDir)], out, index));
       }
     }
     const pool = poolSource(engine, config);
@@ -192,7 +196,7 @@ export async function runGenerationCli(
       process.stdin.resume();
       (process.stdin as unknown as { unref?: () => void }).unref?.(); // an open pipe must not keep the finished process alive
       // It plays the slice and leaves it for the process that started this one.
-      const entries = await playEntries({ engine, config, generation, policy_id: need("policy-id"), client, peers, pool, episodes_dir: episodesDir, belief_worlds: beliefWorlds, ...(features === undefined ? {} : { features: features.configs }) }, own);
+      const entries = await playEntries({ engine, config, generation, policy_id: need("policy-id"), client, peers, pool, episodes_dir: episodesDir, belief_worlds: beliefWorlds, ...(features === undefined ? {} : { features: features.configs }), features_dir: featuresDir }, own);
       mkdirSync(need("out"), { recursive: true });
       writeShardFile(join(need("out"), SHARD_FILE), entries);
       writeFileSync(join(need("out"), USAGE_FILE), `${jcs(usageOf(ownPeakRss(), largest(clients.map((worker) => worker.peakRssBytes()))) as unknown as Json)}\n`);
@@ -202,7 +206,7 @@ export async function runGenerationCli(
     const others = Promise.all(children.map((child) => child.entries));
     // The stream goes straight to its file in chunks as the examples are made (#998).
     mkdirSync(need("out"), { recursive: true });
-    const result = await playGeneration({ engine, config, generation, policy_id: need("policy-id"), client, peers, pool, stream_path: join(need("out"), "stream.jsonl"), episodes_dir: episodesDir, belief_worlds: beliefWorlds, ...(features === undefined ? {} : { features: features.configs }), ...(own === undefined ? {} : { shard: own }), others: others.then((all) => all.flat()), live_children: () => children.filter((child) => child.alive()).length });
+    const result = await playGeneration({ engine, config, generation, policy_id: need("policy-id"), client, peers, pool, stream_path: join(need("out"), "stream.jsonl"), episodes_dir: episodesDir, belief_worlds: beliefWorlds, ...(features === undefined ? {} : { features: features.configs }), features_dir: featuresDir, ...(own === undefined ? {} : { shard: own }), others: others.then((all) => all.flat()), live_children: () => children.filter((child) => child.alive()).length });
     writeGeneration(need("out"), result);
     print(jcs({ generation, run_config_hash: await runConfigHash(config), training_set_hash: result.training_set_hash, examples: result.set.examples }));
     // After the summary line, so a reader of the first line is unchanged: the peak memory of this process, its workers and the further game processes.
@@ -220,6 +224,16 @@ export async function runGenerationCli(
     await Promise.all(clients.map((client) => client.close()));
     if (scratch !== undefined) rmSync(scratch, { recursive: true, force: true });
   }
+}
+
+/** The directory the game processes leave feature rows in: the one this process was given, else a `features` directory of the shard scratch when there is one and the run reads a feature set (#1185). */
+export function featuresDirOf(given: string | undefined, scratch: string | undefined, hasFeatures: boolean): string | undefined {
+  return given ?? (scratch !== undefined && hasFeatures ? join(scratch, "features") : undefined);
+}
+
+/** `[name, value]` as arguments for a child process, or none when the value is absent. */
+export function optionalFlag(name: string, value: string | undefined): string[] {
+  return value === undefined ? [] : [name, value];
 }
 
 /** The game process's result: one canonical JSON entry per line, so no string holds them all (#998). */

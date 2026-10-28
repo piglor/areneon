@@ -23,9 +23,9 @@ interface Summary {
   learner_state_hash: string;
   checkpoints: Record<string, string>;
 }
-const run = (config: string, runDir: string, generations: number): Summary =>
+const run = (config: string, runDir: string, generations: number, ...extra: string[]): Summary =>
   JSON.parse(
-    execFileSync(PYTHON, ["-I", "-m", "areneon_ml.loop", "run", "--config", config, "--run-dir", runDir, "--engine-data", DATA, "--generations", String(generations), "--node", process.execPath, "--worker-python", PYTHON], { encoding: "utf8", env }),
+    execFileSync(PYTHON, ["-I", "-m", "areneon_ml.loop", "run", "--config", config, "--run-dir", runDir, "--engine-data", DATA, "--generations", String(generations), "--node", process.execPath, "--worker-python", PYTHON, ...extra], { encoding: "utf8", env }),
   ) as Summary;
 
 describe.skipIf(!existsSync(PYTHON) && process.env.ARENEON_REQUIRE_PYTHON_WORKER !== "1")("the training loop with candidate features, tiny and on CPU", () => {
@@ -52,5 +52,10 @@ describe.skipIf(!existsSync(PYTHON) && process.env.ARENEON_REQUIRE_PYTHON_WORKER
     expect(resumed.checkpoints).toEqual(whole.checkpoints);
     const stream = readFileSync(join(dir, "whole", "generations", "g000002", "stream.jsonl"), "utf8");
     expect(stream).toContain(`"feature_set_hash":"${hash}"`);
-  }, 900_000); // two generations of six games with the real probe, played twice
+    // Two game processes recompute the rows of their own Episodes (#1185): the same stream, state and checkpoints.
+    const sharded = run(config, join(dir, "sharded"), 2, "--game-processes", "2");
+    expect(sharded.learner_state_hash).toBe(whole.learner_state_hash);
+    expect(sharded.checkpoints).toEqual(whole.checkpoints);
+    expect(readFileSync(join(dir, "sharded", "generations", "g000002", "stream.jsonl"), "utf8")).toBe(stream);
+  }, 900_000); // two generations of six games with the real probe, played three times
 });

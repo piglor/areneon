@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { jcs, type Json } from "../src/canonical-json.ts";
-import { combineUsage, interimPoolSource, readShardFile, runGenerationCli, runManifestCli, startShard, UsageError, writeShardFile } from "../src/generation-cli.ts";
+import { combineUsage, featuresDirOf, interimPoolSource, optionalFlag, readShardFile, runGenerationCli, runManifestCli, startShard, UsageError, writeShardFile } from "../src/generation-cli.ts";
 import { GOLDEN_DIR, GOLDEN_FORMAT } from "../src/golden.ts";
 import { loadEngine, readTrainingRunConfig } from "../src/index.ts";
 import { type PlayedEntry, trainingTeamPool } from "../src/league-generation.ts";
@@ -171,6 +171,17 @@ describe("a further game process", () => {
     const child = startShard(script("slow.mjs", "setTimeout(() => {}, 60000);"), [], out, 5);
     child.stop();
     await expect(child.entries).rejects.toThrow(/game process 5 failed/);
+  });
+});
+
+describe("the directory the game processes leave feature rows in (#1185)", () => {
+  it("is the one given, else a directory of the scratch when the run reads a feature set, else none", () => {
+    expect(featuresDirOf("/given", "/scratch", true)).toBe("/given");
+    expect(featuresDirOf(undefined, "/scratch", true)).toBe("/scratch/features");
+    expect(featuresDirOf(undefined, "/scratch", false)).toBeUndefined();
+    expect(featuresDirOf(undefined, undefined, true)).toBeUndefined();
+    expect(optionalFlag("--features-dir", "/d")).toEqual(["--features-dir", "/d"]);
+    expect(optionalFlag("--features-dir", undefined)).toEqual([]);
   });
 });
 
