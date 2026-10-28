@@ -486,11 +486,13 @@ export async function playEntries(options: GenerationOptions, shard: Shard = { i
       if (outcome.kind === "incident") throw new GenerationError(`game ${entry.game} (${entry.seed}): ${outcome.incident}: ${outcome.message}`);
       const row = { game: entry.game, seed: entry.seed, opponent: idOf(entry.opponent, policy_id) };
       if (outcome.kind === "forfeit" || record === null) {
+        // A forfeit has no Episode, but it is kept the way its generation keeps them: an empty list of references on the spilled path (#1184).
+        const kept = options.episodes_dir === undefined ? {} : { stored: [] };
         if (outcome.kind !== "forfeit") {
-          entries.push({ game: entry.game, row: { ...row, outcome: "forfeit", winner: null, turns: 0 }, episodes: [], ...reported });
+          entries.push({ game: entry.game, row: { ...row, outcome: "forfeit", winner: null, turns: 0 }, episodes: [], ...kept, ...reported });
         } else {
           const { loser, cause, request_seq, detail } = outcome;
-          entries.push({ game: entry.game, row: { ...row, outcome: "forfeit", winner: outcome.winner, turns: outcome.turns, forfeit: { loser, cause, request_seq, detail } }, episodes: [], ...reported });
+          entries.push({ game: entry.game, row: { ...row, outcome: "forfeit", winner: outcome.winner, turns: outcome.turns, forfeit: { loser, cause, request_seq, detail } }, episodes: [], ...kept, ...reported });
         }
         continue;
       }

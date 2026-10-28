@@ -398,6 +398,38 @@ describe("Episodes kept on disk as their games finish (#1069)", () => {
     expect(entries.every((entry) => entry.episodes.length === 0 && (entry.stored ?? []).length > 0)).toBe(true);
   });
 
+  it("keeps a forfeited game like an in-memory one: the same files, the forfeit row and cause (#1184)", async () => {
+    // Game 1 is forfeited by its policy seat; a game's battle name is `game-<n>-<player>`.
+    const forfeiting = (): PolicyClient & { beginGame: () => Promise<void> } => {
+      const good = actorClient();
+      return { beginGame: good.beginGame, ask: (battle, query) => (battle.startsWith("game-1-") ? Promise.reject(new PolicyWorkerError("crash", "gone")) : good.ask(battle, query)) };
+    };
+    const reference = join(dir, "forfeit-ref");
+    mkdirSync(reference, { recursive: true });
+    const inMemory = await playGeneration(opts({ client: forfeiting(), stream_path: join(reference, "stream.jsonl") }));
+    writeGeneration(reference, inMemory);
+    expect(forfeitCauses(inMemory.games)).toEqual({ crash: 1 });
+    const out = join(dir, "forfeit-spilled");
+    mkdirSync(join(out, "episodes"), { recursive: true });
+    const spilled = await playGeneration(opts({ client: forfeiting(), stream_path: join(out, "stream.jsonl"), episodes_dir: join(out, "episodes") }));
+    expect(spilled.games).toEqual(inMemory.games);
+    expect(spilled.run_record).toEqual(inMemory.run_record);
+    writeGeneration(out, spilled);
+    expect(tree(out)).toEqual(tree(reference));
+    // The same with a second game process playing the odd games.
+    const sliced = join(dir, "forfeit-sliced");
+    const episodes = join(sliced, "episodes");
+    mkdirSync(episodes, { recursive: true });
+    const of = 2;
+    const there = playEntries(opts({ client: forfeiting(), episodes_dir: episodes }), { index: 1, of });
+    const result = await playGeneration(opts({ client: forfeiting(), stream_path: join(sliced, "stream.jsonl"), episodes_dir: episodes, shard: { index: 0, of }, others: there }));
+    writeGeneration(sliced, result);
+    expect(tree(sliced)).toEqual(tree(reference));
+    const forfeit = (await there).find((entry) => entry.game === 1);
+    expect(forfeit).toMatchObject({ episodes: [], stored: [] });
+    expect(JSON.parse(jcs((await there) as unknown as Json))).toEqual(await there);
+  });
+
   it("refuses a directory the files are not in, a missing stream path and entries kept the other way", async () => {
     const out = join(dir, "refusals");
     const episodes = join(out, "episodes");
