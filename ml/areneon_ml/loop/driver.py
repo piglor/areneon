@@ -57,6 +57,7 @@ from areneon_ml.loop.play import GenerationPlayer, PlayRequest
 from areneon_ml.loop.records import (
     RecordFacts,
     checkpoint_record,
+    features_hash,
     policy_id,
     team_set_hash,
     team_set_manifest,
@@ -83,10 +84,14 @@ class Frozen:
     learner_state_hash: str
     training_set_hash: str | None
     team_hashes: tuple[str, ...]
+    #: The run's candidate feature set hash (ADR-022): in the pair's policy id; None without one.
+    features: str | None = None
 
     @property
     def policy_id(self) -> str:
-        return policy_id(self.checkpoints["preview"], self.checkpoints["battle"])
+        return policy_id(
+            self.checkpoints["preview"], self.checkpoints["battle"], features=self.features
+        )
 
 
 @dataclass
@@ -334,7 +339,14 @@ class Loop:
         if team_set_hash(teams) != facts.get("team_set_manifest_hash"):
             raise LoopError(f"generation {newest.generation}: its team-set manifest differs")
         self._learner = learner
-        return Frozen(newest.generation, checkpoints, state_hash, ts_hash, tuple(teams["teams"]))
+        return Frozen(
+            newest.generation,
+            checkpoints,
+            state_hash,
+            ts_hash,
+            tuple(teams["teams"]),
+            features_hash(self.config),
+        )
 
     def _read_record(self, path: Path, role: str) -> CheckpointRecord:
         record = read_record(layout.read_json(path / "records" / f"{role}.json"))
@@ -350,7 +362,7 @@ class Loop:
         generation = previous.generation + 1
         work = layout.partial_dir(self.run_dir, generation)
         work.mkdir(parents=True)
-        pair = policy_id(previous.checkpoints["preview"], previous.checkpoints["battle"])
+        pair = previous.policy_id
         timing = Timing(self.clock)
         with timing.phase("play"):
             self.player.play(
@@ -496,7 +508,12 @@ class Loop:
             ),
         )
         return Frozen(
-            generation, checkpoints, packed.hash, sealing.training_set_hash, sealing.teams
+            generation,
+            checkpoints,
+            packed.hash,
+            sealing.training_set_hash,
+            sealing.teams,
+            features_hash(self.config),
         )
 
 

@@ -41,7 +41,7 @@ const VOLATILE_WRITER: Record<string, string> = { stall: "protect_counter", choi
 /** Classify one state-difference tag (`own:hp`, `opponent:volatile:mustrecharge`, `field:weather`). */
 export function blameOf(tag: string, admitted: ReadonlySet<string>): Blame {
   const parts = tag.split(":");
-  const field = parts[0] === "field" ? (parts[1] as string) : (parts[1] as string);
+  const field = parts[1] as string;
   const who = parts[0] as string;
   if (who === "field") return { cause: "writer", item: WRITER_OF_FIELD[field] ?? "condition_duration" };
   if (field === "volatile") {
@@ -119,11 +119,15 @@ export interface Report {
   ids: ItemRow[];
   /** The admitted ids (volatile and start-trigger) that pass. */
   admissions: { kind: "volatile" | "start_trigger"; id: string; class: "E" | "W" }[];
-  ms: number;
 }
 
-/** The admission rule: at least N_EX exercising turns in F1 and in F2, none blamed, no missed write. */
-export const passes = (f1: Stat, f2: Stat): boolean => f1.exercised >= N_EX && f2.exercised >= N_EX && f1.blamed === 0 && f2.blamed === 0 && f1.missed === 0 && f2.missed === 0;
+/**
+ * The admission rule: at least N_EX exercising turns in F1 and in F2 that are EQUAL (demonstrated reproductions), and
+ * no exercising turn with a difference classified against the item, no difference no state difference names, no missed write.
+ * The exercising turns that differ for another classified cause (the opponent's exact hit points, an unmodelled volatile) are
+ * counted in `exercised` and reported, but they are neither evidence for the item nor held against it: see the limits in the report.
+ */
+export const passes = (f1: Stat, f2: Stat): boolean => f1.equal >= N_EX && f2.equal >= N_EX && f1.exercised >= N_EX && f2.exercised >= N_EX && f1.blamed === 0 && f2.blamed === 0 && f1.missed === 0 && f2.missed === 0;
 
 const stat = (): Stat => ({ exercised: 0, equal: 0, blamed: 0, missed: 0 });
 const tally = (): Tally => ({ turns: 0, equal: 0, by_kind: {}, by_cause: {} });
@@ -165,7 +169,6 @@ export function buildReport(data: RunData, writers: WorldWriters, inputs: Inputs
     writers: [],
     ids: [],
     admissions: [],
-    ms: data.ms,
   };
   const rows = new Map<string, { f1: Stat; f2: Stat }>();
   const row = (key: string) => rows.get(key) ?? (rows.set(key, { f1: stat(), f2: stat() }), rows.get(key) as { f1: Stat; f2: Stat });
@@ -301,15 +304,20 @@ export function renderReport(report: Report): string {
     for (const r of rows) out(`| ${r.item} | ${r.class} | ${r.f1.exercised} | ${r.f1.equal} | ${r.f1.blamed} | ${r.f1.missed} | ${r.f2.exercised} | ${r.f2.equal} | ${r.f2.blamed} | ${r.f2.missed} | ${r.admitted ? "yes" : "no"} |`);
     out();
   };
-  table("Writers of the committed record", report.writers, `An item passes with at least ${report.n_ex} exercising turns in F1 and in F2 and no difference classified against it. "Exercised": the item is present in a non-X turn and some Pokemon acted (a \`|move|\` or \`|cant|\` line). "Blamed": a difference is classified against the item or no state difference names it. "Missed": a difference is classified against the item in a turn where the item was absent or nothing acted (the writer wrote nothing where its field differs). The F1 and F2 columns count turns; an item passes with none blamed and none missed.`);
+  table("Writers of the committed record", report.writers, `An item passes with at least ${report.n_ex} exercising turns in F1 and in F2 that are equal, and no difference classified against it. "Exercised": the item is present in a non-X turn and some Pokemon acted (a \`|move|\` or \`|cant|\` line). "Blamed": a difference is classified against the item or no state difference names it. "Missed": a difference is classified against the item in a turn where the item was absent or nothing acted (the writer wrote nothing where its field differs). The F1 and F2 columns count turns; an item passes with none blamed and none missed.`);
   table("Candidate ids (admitted one at a time into a copy of the record)", report.ids, `"Exercised" for \`volatile:<id>\`: the Pokemon that carries it acted in the turn. For \`trigger:<id>\`: the single admitted id covered a scenario-start restore.`);
   out("## Admissions this report supports");
   out();
   if (report.admissions.length === 0) out("None.");
   for (const a of report.admissions) out(`- ${a.kind} ${a.id} (class ${a.class})`);
   out();
-  out(`Run time ${Math.floor(report.ms / 1000)} s.`);
-  return lines.join("\n") + "\n";
+  out("## Limits of the classification");
+  out();
+  out("- A difference is attributed by the tags of the pre-turn state difference (`stateDelta`), not by a counterfactual run. Fields it does not compare (`slotConditions`, `abilityState`, `itemState`, `lastMoveUsed`, trapping flags, some per-turn fields) cannot be named: a turn that differs because of one of them AND carries an information tag (the opponent's hit points or PP differ in most differing turns) is classified `information`. For that reason an item passes only on its EQUAL exercising turns (at least N_ex of them in F1 and in F2), and the turns that differ for another cause are not evidence for it.");
+  out("- \"Exercised\" for a writer means it is present and some Pokemon acted: the writers that are written every turn (`active_turns`, `last_move`, `turn_number`) are exercised in every turn, so their rows say little beyond \"no difference is classified against them\".");
+  out("- F2 samples a fixed stride of the canonical candidate list, not a ranked top-k; a turn is one unit however many pairs it has.");
+  out("- The committed record is evaluated with `admitted` emptied, over the worlds it builds: refused decisions (the table at the top) are not compared.");
+  out();  return lines.join("\n") + "\n";
 }
 
 export type { TurnRecord };

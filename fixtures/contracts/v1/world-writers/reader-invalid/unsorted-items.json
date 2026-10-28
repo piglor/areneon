@@ -147,5 +147,16 @@
       "class": "R"
     }
   ],
-  "admitted": []
+  "admitted": [
+    {
+      "kind": "volatile",
+      "id": "encore",
+      "class": "W"
+    },
+    {
+      "kind": "volatile",
+      "id": "taunt",
+      "class": "W"
+    }
+  ]
 }

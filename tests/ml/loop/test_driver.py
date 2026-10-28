@@ -652,3 +652,22 @@ def test_a_run_directory_held_by_another_driver_is_refused(tmp_path: Path) -> No
 
 def test_the_pair_always_plays_by_sampling_and_the_policy_id_says_so() -> None:
     assert (records.MODE, records.TEMPERATURE, records.PRECISION) == ("sample", 1, "float32")
+
+
+def test_a_feature_set_enters_the_policy_id_only_for_a_pair_that_reads_one() -> None:
+    # Computed outside the code with Python hashlib over the JCS bytes (ADR-022 §6).
+    a, b = "a" * 64, "b" * 64
+    features = "c199c2d8de6bf179da847f6044a85d9d713d6c07d04e4a9db40da45dc9e04aaf"
+    assert (
+        policy_id(a, b, features=features)
+        == "policy:ab697d4b890e1ea4393147eb9fd3c0906dd22fe6630fe6c73472688712a25532"
+    )
+    assert (
+        policy_id(a, b, "argmax", features=features)
+        == "policy:de144adf6187ed15bd0270280aff008a55952ed6ca519e463cc8e866e7df444a"
+    )
+    assert (
+        policy_id(a, b) == "policy:27d845e5bfc0f2d3abfec63197dd7c491189bf77578348114f087f3f532d31c2"
+    )
+    with pytest.raises(ValueError, match="feature_set_hash"):
+        policy_id(a, b, features="C199")

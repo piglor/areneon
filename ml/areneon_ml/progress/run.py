@@ -32,7 +32,7 @@ from areneon_ml.learner.config import RunConfig, read_run_config
 from areneon_ml.loop import layout
 from areneon_ml.loop.driver import sources_registry
 from areneon_ml.loop.play import NodePlayer, PlayError
-from areneon_ml.loop.records import policy_id
+from areneon_ml.loop.records import features_hash, policy_id
 from areneon_ml.model.network import ROLES
 from areneon_ml.progress import evaluation_key as ekey
 from areneon_ml.progress.ablation import ablation_summary, expected_ablation_matches
@@ -361,6 +361,14 @@ def _source(
     if needs_dataset and not config.team_dataset:
         raise ProgressError(
             "the run config names no team dataset: the interim pool has no validation split"
+        )
+    if features_hash(config) is not None:
+        # The evaluation's seats build no candidate features and its policy ids carry no
+        # features member yet: a pair that reads them would be refused at the handshake, and
+        # its ids would be wrong. Refused up front rather than evaluated as another policy.
+        raise ProgressError(
+            "the run's pair reads candidate features (ADR-022); the progress evaluation "
+            "does not play such a pair yet"
         )
     newest = layout.latest_complete(run_dir)
     if newest is None or not 0 <= generation <= newest.generation:

@@ -1,6 +1,6 @@
 {
   "inputs": {
-    "fidelity_format": 1,
+    "fidelity_format": 2,
     "showdown_commit": "7244fe8e28fa8bc4d0809ae30d183c608b62bb2b",
     "corpora_sha256": "484f55a30057c446972b0b036fdb51ea6045679c64d0d09ef489297047d43169",
     "base_record_sha256": "89b4bb2e79d0a395332bcc0c4d56cbc01d3d45bce6f4eef31e5dbda7151612b6"
@@ -386,7 +386,7 @@
         "blamed": 0,
         "missed": 0
       },
-      "admitted": true
+      "admitted": false
     },
     {
       "item": "turn_number",
@@ -674,6 +674,5 @@
       "id": "taunt",
       "class": "W"
     }
-  ],
-  "ms": 290326
+  ]
 }

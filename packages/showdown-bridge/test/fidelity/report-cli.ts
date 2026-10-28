@@ -17,3 +17,4 @@ const report = buildReport(data, writers, reportInputs(engine, writers));
 const json = at("--json");
 if (json !== undefined) writeFileSync(json, JSON.stringify(report, null, 2) + "\n");
 process.stdout.write(renderReport(report));
+process.stderr.write(`fidelity report: ${Math.floor(data.ms / 1000)} s\n`);

@@ -16,16 +16,35 @@ Defined so far:
 - ``candidate_matchup`` (encoder, layout changing; ADR-022 tier B): per move candidate, the
   engine-data type-chart cells of the move's type against the shown types of each position, and
   a same-type flag. Only ``true`` is a value: leave the key out to turn it off.
+- ``candidate_features`` (encoder, layout changing; ADR-022 tier A): the value is the feature set
+  the run reads, ``{"feature_set": "probe-damage/1", "feature_set_hash": <64 hex>}``. Each damaging
+  move part of a battle candidate reads the engine's damage rows the Node side attaches to the
+  query (``model/features.py``). The hash enters the config, so the ``encoder_version`` and the
+  checkpoint metadata, and a pair with the option has a policy id with a ``features`` member.
 """
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any
 
 SCOPES = ("encoder", "network")
-OptionValue = bool | int
+
+
+@dataclass(frozen=True)
+class FeatureSetOption:
+    """The value of ``candidate_features``: a feature set id and its identity hash."""
+
+    feature_set: str
+    feature_set_hash: str
+
+    def as_dict(self) -> dict[str, str]:
+        return {"feature_set": self.feature_set, "feature_set_hash": self.feature_set_hash}
+
+
+OptionValue = bool | int | FeatureSetOption
 Options = tuple[tuple[str, OptionValue], ...]  # sorted by name; hashable, so configs stay frozen
 
 
@@ -38,15 +57,37 @@ class OptionSpec:
     """One option: its value check and whether it changes the network's tensor layout."""
 
     name: str
-    check: Callable[[OptionValue], bool]
+    check: Callable[[Any], bool] | None
     layout_changing: bool = False
+    #: For an option whose value is an object: reads it into a frozen value (``check`` is then
+    #: not used, and a boolean or an integer is refused).
+    parse: Callable[[Mapping[str, Any]], OptionValue] | None = None
 
 
 CANDIDATE_MATCHUP = "candidate_matchup"
+CANDIDATE_FEATURES = "candidate_features"
+#: The feature sets the encoder can read (ADR-022 §3; ``probe-damage/2`` is a later set).
+FEATURE_SETS = ("probe-damage/1",)
+_HASH = re.compile(r"[0-9a-f]{64}")
+
+
+def _parse_feature_set(source: Mapping[str, Any]) -> FeatureSetOption:
+    if set(source) != {"feature_set", "feature_set_hash"}:
+        raise OptionError("candidate_features must be exactly feature_set and feature_set_hash")
+    name, digest = source["feature_set"], source["feature_set_hash"]
+    if name not in FEATURE_SETS:
+        raise OptionError(
+            f"candidate_features names a feature set the encoder cannot read: {name!r}"
+        )
+    if not isinstance(digest, str) or not _HASH.fullmatch(digest):
+        raise OptionError("candidate_features.feature_set_hash must be 64 lowercase hex digits")
+    return FeatureSetOption(name, digest)
+
 
 REGISTRY: dict[str, dict[str, OptionSpec]] = {
     "encoder": {
         CANDIDATE_MATCHUP: OptionSpec(CANDIDATE_MATCHUP, lambda value: value is True, True),
+        CANDIDATE_FEATURES: OptionSpec(CANDIDATE_FEATURES, None, True, parse=_parse_feature_set),
     },
     "network": {},
 }
@@ -64,14 +105,23 @@ def read_options(scope: str, source: object) -> Options:
         if spec is None:
             raise OptionError(f"unknown {scope} option {name!r}")
         value = source[name]
-        if not isinstance(value, bool | int) or not spec.check(value):
+        if spec.parse is not None:
+            if not isinstance(value, Mapping):
+                raise OptionError(f"{scope} option {name!r} must be an object")
+            found.append((name, spec.parse(value)))
+            continue
+        if not isinstance(value, bool | int) or spec.check is None or not spec.check(value):
             raise OptionError(f"{scope} option {name!r} has an invalid value")
         found.append((name, value))
     return tuple(found)
 
 
-def options_dict(options: Options) -> dict[str, OptionValue]:
-    return dict(options)
+def options_dict(options: Options) -> dict[str, Any]:
+    """The JSON form of the options (an object value as its object)."""
+    return {
+        name: value.as_dict() if isinstance(value, FeatureSetOption) else value
+        for name, value in options
+    }
 
 
 def with_options(body: dict[str, Any], options: Options) -> dict[str, Any]:
@@ -89,3 +139,17 @@ def layout_changing(scope: str, options: Options) -> bool:
 def is_set(options: Options, name: str) -> bool:
     """Whether the option ``name`` is present (a boolean option is present only as ``true``)."""
     return any(key == name and value for key, value in options)
+
+
+def option_value(options: Options, name: str) -> OptionValue | None:
+    """The value of the option ``name``, or None when it is not set."""
+    for key, value in options:
+        if key == name:
+            return value
+    return None
+
+
+def feature_set(options: Options) -> FeatureSetOption | None:
+    """The ``candidate_features`` value of an encoder's options, or None."""
+    value = option_value(options, CANDIDATE_FEATURES)
+    return value if isinstance(value, FeatureSetOption) else None

@@ -35,6 +35,7 @@ from areneon_ml.model.encoder import (
     EncoderConfig,
     Layout,
 )
+from areneon_ml.model.features import KIND_CATEGORIES
 from areneon_ml.model.gamedata import RESERVED, GameData
 from areneon_ml.model.options import (
     CANDIDATE_MATCHUP,
@@ -263,6 +264,9 @@ class PolicyNetwork(nn.Module):
             # Cell categories: the reserved indices plus one per code of the export's chart.
             sizes["matchup"] = RESERVED + game.chart_codes
             sizes["same_type"] = RESERVED + 2
+        numbers = len(self.layout.cand_num) if role == "battle" else 0
+        if numbers:
+            sizes["feature_kind"] = KIND_CATEGORIES
         self.embeddings = nn.ModuleDict(
             {kind: nn.Embedding(size, d) for kind, size in sizes.items()}
         )
@@ -285,7 +289,10 @@ class PolicyNetwork(nn.Module):
         self.blocks = nn.ModuleList([Block(config) for _ in range(config.n_layers)])
         self.final_norm = nn.LayerNorm(d)
         if role == "battle":
-            self.slot_parts = nn.ModuleList(nn.Linear((7 + extra) * d, d) for _ in range(SLOTS))
+            # The damage rows' numbers are one more d-wide part of a slot (candidate_features).
+            self.cand_features = nn.Linear(numbers, d) if numbers else None
+            width = 7 + extra + (1 if numbers else 0)
+            self.slot_parts = nn.ModuleList(nn.Linear(width * d, d) for _ in range(SLOTS))
             self.candidate = nn.Linear(SLOTS * d, d)
         else:
             self.place = nn.Embedding(enc.max_picks, d)
@@ -314,6 +321,8 @@ class PolicyNetwork(nn.Module):
     # -- candidates ----------------------------------------------------------
 
     def _battle_candidates(self, batch: Batch, mons: torch.Tensor) -> torch.Tensor:
+        if batch.cand_cat.shape[-1] != len(self.layout.cand_cat):
+            raise ValueError("the batch's candidate columns are not this network's layout")
         slots = []
         for s in range(SLOTS):
             cat, tok = batch.cand_cat[:, :, s], batch.cand_tok[:, :, s]
@@ -331,6 +340,10 @@ class PolicyNetwork(nn.Module):
                 _gather(mons, tok[..., 1]),
                 *extra,
             ]
+            if self.cand_features is not None:
+                if batch.cand_num is None:
+                    raise ValueError("this network reads candidate features; the batch has none")
+                parts.append(self.cand_features(batch.cand_num[:, :, s]))
             slots.append(self.slot_parts[s](torch.cat(parts, -1)))
         out: torch.Tensor = self.candidate(torch.cat(slots, -1))
         return out

@@ -81,7 +81,7 @@ A turn can have several causes. `writer`: a state difference classified against 
 
 ## Writers of the committed record
 
-An item passes with at least 20 exercising turns in F1 and in F2 and no difference classified against it. "Exercised": the item is present in a non-X turn and some Pokemon acted (a `|move|` or `|cant|` line). "Blamed": a difference is classified against the item or no state difference names it. "Missed": a difference is classified against the item in a turn where the item was absent or nothing acted (the writer wrote nothing where its field differs). The F1 and F2 columns count turns; an item passes with none blamed and none missed.
+An item passes with at least 20 exercising turns in F1 and in F2 that are equal, and no difference classified against it. "Exercised": the item is present in a non-X turn and some Pokemon acted (a `|move|` or `|cant|` line). "Blamed": a difference is classified against the item or no state difference names it. "Missed": a difference is classified against the item in a turn where the item was absent or nothing acted (the writer wrote nothing where its field differs). The F1 and F2 columns count turns; an item passes with none blamed and none missed.
 
 | item | class | F1 exercised | F1 equal | F1 blamed | F1 missed | F2 exercised | F2 equal | F2 blamed | F2 missed | passes |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
@@ -94,7 +94,7 @@ An item passes with at least 20 exercising turns in F1 and in F2 and no differen
 | last_move | W | 1413 | 1083 | 0 | 0 | 1413 | 846 | 0 | 0 | yes |
 | protect_counter | W | 102 | 83 | 0 | 0 | 102 | 65 | 0 | 0 | yes |
 | total_fainted | W | 1002 | 771 | 0 | 0 | 1002 | 611 | 0 | 0 | yes |
-| toxic_stage | W | 26 | 17 | 0 | 0 | 26 | 16 | 0 | 0 | yes |
+| toxic_stage | W | 26 | 17 | 0 | 0 | 26 | 16 | 0 | 0 | no |
 | turn_number | W | 1415 | 1085 | 0 | 0 | 1415 | 848 | 0 | 0 | yes |
 
 ## Candidate ids (admitted one at a time into a copy of the record)
@@ -124,4 +124,10 @@ An item passes with at least 20 exercising turns in F1 and in F2 and no differen
 - volatile encore (class W)
 - volatile taunt (class W)
 
-Run time 290 s.
+## Limits of the classification
+
+- A difference is attributed by the tags of the pre-turn state difference (`stateDelta`), not by a counterfactual run. Fields it does not compare (`slotConditions`, `abilityState`, `itemState`, `lastMoveUsed`, trapping flags, some per-turn fields) cannot be named: a turn that differs because of one of them AND carries an information tag (the opponent's hit points or PP differ in most differing turns) is classified `information`. For that reason an item passes only on its EQUAL exercising turns (at least N_ex of them in F1 and in F2), and the turns that differ for another cause are not evidence for it.
+- "Exercised" for a writer means it is present and some Pokemon acted: the writers that are written every turn (`active_turns`, `last_move`, `turn_number`) are exercised in every turn, so their rows say little beyond "no difference is classified against them".
+- F2 samples a fixed stride of the canonical candidate list, not a ranked top-k; a turn is one unit however many pairs it has.
+- The committed record is evaluated with `admitted` emptied, over the worlds it builds: refused decisions (the table at the top) are not compared.
+

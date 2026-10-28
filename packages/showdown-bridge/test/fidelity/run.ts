@@ -176,13 +176,13 @@ export async function runFidelity(options: RunOptions, engine: Engine = loadEngi
     }
   }
   data.candidates = [...seen.values()].sort((a, b) => (a.kind < b.kind ? -1 : a.kind > b.kind ? 1 : a.id < b.id ? -1 : 1));
-  data.ms = Date.now() - t0;
+  data.ms = Date.now() - t0; // reported on stderr by the CLI, never stored in the report
   void loadFidelityTargets;
   return data;
 }
 
 /** The version of the oracle, its arms and its rules; bump it when a number the report holds would change meaning. */
-export const FIDELITY_FORMAT = 1;
+export const FIDELITY_FORMAT = 2;
 
 /** What the report depends on, so that a committed report can be checked for staleness without a run. */
 export function reportInputs(engine: Engine, writers: WorldWriters, corpora: readonly Corpus[] = CORPORA): Inputs {

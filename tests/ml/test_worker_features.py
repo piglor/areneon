@@ -4,11 +4,17 @@ from __future__ import annotations
 
 import copy
 import json
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
 import pytest
 from areneon_contracts.training import StreamChecker, TrainingStreamError
+from areneon_ml.checkpoint.files import checkpoint_id, write_checkpoint
+from areneon_ml.model.network import ModelConfig
+from areneon_ml.model.options import CANDIDATE_FEATURES, read_options
+from areneon_ml.model.scorer import ScorerError
+from areneon_ml.worker.__main__ import build
 from areneon_ml.worker.features import (
     FOE_SPREAD_TARGET_TYPES,
     coverage_problem,
@@ -18,7 +24,20 @@ from areneon_ml.worker.features import (
 from areneon_ml.worker.protocol import QueryError, check
 from areneon_ml.worker.serve import EXIT_OK, FeatureSupport, Worker, read_query
 
-from tests.ml.helpers import MAX_LINE, battle_query, game, hello, line, make_worker, sample, session
+from tests.ml.helpers import (
+    ENGINE_DATA,
+    MAX_LINE,
+    battle_query,
+    game,
+    hello,
+    line,
+    make_run_dir,
+    make_worker,
+    sample,
+    session,
+    tiny_checkpoint,
+)
+from tests.ml.model.support import TINY_ENCODER, TINY_MODEL
 
 DAMAGING = damaging_moves(game())
 
@@ -37,8 +56,16 @@ def support(query: dict[str, Any]) -> FeatureSupport:
     return FeatureSupport(stated(query), DAMAGING)
 
 
+def feature_model(feature_set: dict[str, str]) -> ModelConfig:
+    """The tiny model whose encoder reads the given feature set."""
+    options = read_options("encoder", {CANDIDATE_FEATURES: feature_set})
+    return replace(TINY_MODEL, encoder=replace(TINY_ENCODER, options=options))
+
+
 def feature_worker(tmp_path: Path, feature_set: dict[str, str] | None) -> Worker:
-    plain = make_worker(tmp_path)
+    plain = make_worker(
+        tmp_path, model=TINY_MODEL if feature_set is None else feature_model(feature_set)
+    )
     return Worker(
         plain._scorer,
         plain._ready["message"]["engine_data_hash"],
@@ -199,3 +226,41 @@ def test_a_stream_carries_one_feature_set_or_none() -> None:
     same.line(1, stream_line(with_rows))
     same.line(2, stream_line(with_rows))
     same.finish()
+
+
+# -- the statement comes from the checkpoints' own metadata ---------------------------------------
+
+
+def cli(run_dir: Path, preview: str, battle: str) -> list[str]:
+    return [
+        "--run-dir", str(run_dir), "--preview", preview, "--battle", battle,
+        "--engine-data", str(ENGINE_DATA), "--max-line-bytes", str(MAX_LINE),
+    ]  # fmt: skip
+
+
+def test_the_worker_states_the_feature_set_its_checkpoints_were_made_for(tmp_path: Path) -> None:
+    query = featured()
+    (tmp_path / "on").mkdir()
+    (tmp_path / "off").mkdir()
+    run_dir, preview, battle = make_run_dir(tmp_path / "on", feature_model(stated(query)))
+    worker = build(cli(run_dir, preview, battle))
+    assert worker._ready["message"]["feature_set"] == stated(query)
+    # ... and it answers the query that carries the rows, refusing one that does not.
+    code, frames = session(worker, line(hello()), line(query))
+    assert code == EXIT_OK
+    assert frames[0]["message"]["feature_set"] == stated(query)
+    assert frames[1]["reply"]["kind"] == "recommendation"
+    code, frames = session(worker, line(hello()), line(battle_query()))
+    assert frames[1]["reply"]["error"] == "invalid_query"
+    # A pair made without the option states nothing, and takes no rows.
+    run_dir, preview, battle = make_run_dir(tmp_path / "off")
+    assert "feature_set" not in build(cli(run_dir, preview, battle))._ready["message"]
+
+
+def test_a_pair_made_with_different_feature_sets_is_refused(tmp_path: Path) -> None:
+    query = featured()
+    run_dir, preview, _ = make_run_dir(tmp_path, TINY_MODEL)  # a Preview without the option
+    data = tiny_checkpoint("battle", feature_model(stated(query)))
+    write_checkpoint(run_dir, data)
+    with pytest.raises(ScorerError, match="different encoders"):
+        build(cli(run_dir, preview, checkpoint_id(data)))
