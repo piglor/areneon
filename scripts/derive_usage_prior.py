@@ -64,6 +64,7 @@ from scripts.usage_common import (
 )
 
 SCRIPT_VERSION = "usage-prior-chaos.v1"
+# Derivation parameters, not game rules: ADR-025 section 2 (truncation) and ADR-020 P1 (gate).
 K_ITEMS, K_MOVES, K_SPREADS = 16, 24, 32
 GATE_PPM = 950_000
 MAX_POINTS = 255  # the contract's bound of one Stat Point value

@@ -11,6 +11,9 @@ smogon-chaos.2026-09-1630.inputs.json keeps the same facts plus the SHA-256 of t
 the same run (it holds no Disallow rule). The raw files are not in this repository; anyone can
 download them and re-derive this record byte for byte with scripts/derive_usage_prior.py.
 
+Approximation: a Mega forme's pre-Evolution ability is not in the data (the Mega entry lists the
+post-Evolution ability); a consumer takes it from the base forme's list, which is an approximation.
+
 What the record holds: per preview species and forme, truncated and scaled marginal frequencies of
 ability, item, nature with Stat Points, and move inclusion, as integers. It holds no team, replay,
 log, player name or teammate data.
