@@ -164,6 +164,10 @@ class MatchFacts:
     baseline: dict[str, Any] | None = None
     #: A cross-run match (``run-<mode>``): the other run's key and generation; None otherwise.
     versus: tuple[str, int] | None = None
+    #: A search match (ADR-026): the search identity hash and the counts summed over its games, and
+    #: for a self-no-search match the control's; None for every other match.
+    search: dict[str, Any] | None = None
+    opponent_search: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -401,6 +405,8 @@ def _progress_facts(record: dict[str, Any], move_use: dict[str, Any] | None) -> 
                     if match["opponent"]["kind"] == "run"
                     else None
                 ),
+                match.get("search"),
+                match.get("opponent_search"),
             )
         )
     plan = record["plan"]

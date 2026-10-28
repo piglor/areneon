@@ -19,7 +19,13 @@ from areneon_ml.inspector.page import esc, link_id
 from areneon_ml.inspector.progress_replay import SEATS, ProgressGame
 from areneon_ml.inspector.replay import to_id
 from areneon_ml.inspector.replay_page import assets, dex_for_ids
-from areneon_ml.progress.records import DAMAGE_AWARE_LABEL
+from areneon_ml.progress.records import (
+    CONTROL_LABEL,
+    DAMAGE_AWARE_LABEL,
+    SEARCH_EVIDENCE_NOTE,
+    SEARCH_LABEL,
+    SEARCH_PRIOR_LABEL,
+)
 
 PAGES = "progress-replays"
 SEEN = "seen, same-lineage comparison: it can cycle"
@@ -63,6 +69,8 @@ def _opponent_words(game: ProgressGame) -> str:
         return "the previous generation's frozen pair"
     if game.opponent_kind == "anchor":
         return f"generation {game.opponent_generation}'s frozen pair, an anchor"
+    if game.opponent_kind == "self-no-search":
+        return "the same frozen pair without search"
     if game.baseline is not None:
         # v1's wording is the one its pages always had; another version is named (#1183).
         policy = game.record["policies"][game.baseline["seat"]]
@@ -140,7 +148,17 @@ def _context(game: ProgressGame) -> str:
         )
     if game.opponent_kind == "run":
         words += f" ({CROSS_RUN})"
-    return f"{game.mode} mode against {words}. Pair {game.pair}, game {game.game % 2 + 1} of 2: each pair is played from both seats with the same teams and battle seed."
+    if game.opponent_kind == "self-no-search":
+        words += f" ({CONTROL_LABEL})"
+    prefix = ""
+    if game.search is not None:
+        c = game.search["counts"]
+        prefix = (
+            f"{SEARCH_LABEL} ({SEARCH_PRIOR_LABEL}; {SEARCH_EVIDENCE_NOTE}; this game, "
+            f"{game.search['seat']}: {c['decisions']} decisions of which {c['searched_decisions']} "
+            f"searched, {c['worlds_built']} worlds built, {c['turns']} turns simulated), "
+        )
+    return f"{prefix}{game.mode} mode against {words}. Pair {game.pair}, game {game.game % 2 + 1} of 2: each pair is played from both seats with the same teams and battle seed."
 
 
 def _twin(game: ProgressGame) -> str:
@@ -190,6 +208,8 @@ def dex_for(table: Mapping[str, Any], game: ProgressGame) -> dict[str, Any]:
 
 def _seen(match: str) -> str:
     """The label of a match that plays an earlier generation of the same lineage (by its id)."""
+    if match.startswith("search-"):
+        return f" ({esc(SEARCH_LABEL)}; {esc(SEARCH_EVIDENCE_NOTE)})"
     if match.startswith("damage-aware-"):
         return f" ({esc(DAMAGE_AWARE_LABEL)})"
     if match.startswith("run-"):

@@ -14,7 +14,12 @@ from areneon_ml.inspector import progress_replay_command as command
 from areneon_ml.inspector import progress_replay_page as page_module
 from areneon_ml.inspector.readers import InspectError
 from areneon_ml.loop import layout
-from areneon_ml.progress.records import DAMAGE_AWARE_LABEL
+from areneon_ml.progress.records import (
+    CONTROL_LABEL,
+    DAMAGE_AWARE_LABEL,
+    SEARCH_LABEL,
+    SEARCH_PRIOR_LABEL,
+)
 from areneon_ml.progress.run import VersusSpec, progress_generation
 
 from tests.ml.inspector.test_progress_replay import (
@@ -271,3 +276,40 @@ def test_a_stored_game_that_disagrees_with_its_row_is_refused(
     layout.write_json(target / layout.MANIFEST, manifest)
     with pytest.raises(InspectError):
         games(root, 1, match="damage-aware-sample")
+
+
+@pytest.fixture(scope="module")
+def search_root(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """Generation 1 evaluated with the decision-time search as the candidate (ADR-026 slice P)."""
+    base = tmp_path_factory.mktemp("progress-search")
+    run = base / "run"
+    config = make_run(run, generations=2)
+    root = base / "run.progress"
+    player = FakeProgressPlayer(config, committed_manifest(run, 0), make_consistent, previous=False)
+    progress_generation(run, 1, root, player, GAMES, GAMES, (), 4, search_mode="argmax")
+    return root
+
+
+def test_a_search_game_says_what_it_is_and_the_control_game_names_its_opponent(
+    search_root: Path,
+) -> None:
+    found = games(search_root, 1, match="search-self-no-search-argmax", games=[0])
+    first = found[0]
+    text = page(first)
+    assert SEARCH_LABEL in text
+    assert SEARCH_PRIOR_LABEL in text
+    assert "search results are never held-out evidence" in text
+    assert "the same frozen pair without search" in text
+    assert CONTROL_LABEL in text
+    counts = first.search["counts"]  # type: ignore[index]
+    assert (
+        f"{counts['decisions']} decisions of which {counts['searched_decisions']} searched" in text
+    )
+    assert first.opponent_search is not None
+    other = games(search_root, 1, match="search-actor-rule-argmax", games=[0])[0]
+    assert other.opponent_search is None
+    assert "the scripted baseline" in page(other)
+    index = html.unescape(
+        page_module.index_page([(1, "search-actor-rule-argmax", 0)], both_seats=[1])
+    )
+    assert SEARCH_LABEL in index

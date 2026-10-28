@@ -15,6 +15,11 @@ from dataclasses import dataclass, field
 from functools import partial
 
 from areneon_ml.inspector.page import esc
+from areneon_ml.progress.records import (
+    SEARCH_EVIDENCE_NOTE,
+    SEARCH_LABEL,
+    SEARCH_PRIOR_LABEL,
+)
 from areneon_ml.report.charts import Pt, Series, Stack, Tips, line_chart, stacked_chart
 from areneon_ml.report.model import (
     METRICS,
@@ -196,7 +201,7 @@ def _looks_note(model: ReportModel) -> str:
     )
 
 
-def _progress_section(model: ReportModel, tips: Tips) -> str:
+def _progress_section(model: ReportModel, tips: Tips) -> str:  # noqa: PLR0915
     out = ["<h2>Progress evaluation</h2>", f'<p class="banner">{esc(BANNER)}</p>']
     if not model.progress_root:
         out.append(
@@ -285,9 +290,8 @@ def _progress_section(model: ReportModel, tips: Tips) -> str:
                 [
                     str(g),
                     esc(m.match_id)
-                    + (
-                        f' <span class="muted">({esc(m.seen_label)})</span>' if m.seen_label else ""
-                    ),
+                    + (f' <span class="muted">({esc(m.seen_label)})</span>' if m.seen_label else "")
+                    + (f' <span class="muted">({esc(SEARCH_LABEL)})</span>' if m.search else ""),
                     str(m.games),
                     f"{m.wins} / {m.ties} / {m.losses}",
                     pct(m.score_ppm),
@@ -322,6 +326,7 @@ def _progress_section(model: ReportModel, tips: Tips) -> str:
     )
     out.append(_anchor_section(model, done))
     out.append(_damage_aware_section(model, done))
+    out.append(_search_section(model, done))
     out.append(_versus_section(model, done))
     out.append("<h3>Score by seat (diagnostic)</h3>")
     out.append(
@@ -887,6 +892,64 @@ def _damage_aware_section(model: ReportModel, done: list[int]) -> str:
         "Summed over each match's games, as the record states them. A seen scripted baseline: "
         "its rows are never held-out evidence. Unsupported queries scored 0 and fallbacks "
         "played the actor-rule candidate; games with another identity hash are another baseline.",
+    )
+
+
+def _search_section(model: ReportModel, done: list[int]) -> str:
+    """The decision-time search's counts per match (ADR-026 section 5), summed over its games, and
+    the no-search control's beside them (searched decisions 0). Labelled, never held-out evidence;
+    wall time is not recorded."""
+    rows = []
+    for g in done:
+        for m in model.progress[g].matches:
+            for who, block in (("search", m.search), ("control", m.opponent_search)):
+                if block is None:
+                    continue
+                c = block["counts"]
+                rows.append(
+                    [
+                        str(g),
+                        esc(m.match_id),
+                        who,
+                        str(c["decisions"]),
+                        str(c["searched_decisions"]),
+                        str(sum(c["fallbacks"].values())),
+                        str(c["worlds_built"]),
+                        str(c["worlds_refused"]),
+                        str(c["worlds_scored"]),
+                        str(c["turns"]),
+                        str(c["leaf_queries"]),
+                        f'<span class="m">{esc(block["identity_hash"][:16])}</span>',
+                    ]
+                )
+    if not rows:
+        return ""
+    return (
+        f"<h3>Decision-time search counts</h3>"
+        f'<p class="note">{esc(SEARCH_LABEL)}. Prior: {esc(SEARCH_PRIOR_LABEL)}. '
+        f"{esc(SEARCH_EVIDENCE_NOTE.capitalize())}. The control row is the same frozen pair played "
+        "without search; its decisions and structural fallbacks are counted, nothing else.</p>"
+        + _table(
+            [
+                ("Generation", True),
+                ("Match", False),
+                ("Side", False),
+                ("Decisions", True),
+                ("Searched", True),
+                ("Fallbacks", True),
+                ("Worlds built", True),
+                ("Worlds refused", True),
+                ("Worlds scored", True),
+                ("Turns simulated", True),
+                ("Leaf queries", True),
+                ("Search identity (first 16 hex)", False),
+            ],
+            rows,
+            "Summed over each match's games, as the record states them. Fallbacks are decisions "
+            "the pair played itself (Team Preview, forced switches, fewer than two candidates, "
+            "too few valid worlds, a belief refusal); wall time is printed by the command, "
+            "never stored.",
+        )
     )
 
 
