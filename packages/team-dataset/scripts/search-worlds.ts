@@ -2,7 +2,9 @@
 // both prior arms through the same sampler, N worlds per move request with up to R sampler indices each, the
 // builder's checks V1 to V5, and the counts. A report of counts only (evaluation tooling, no gate):
 //
-//   node packages/team-dataset/scripts/search-worlds.ts [--worlds 8] [--attempts 4] [--min-valid 4] [--every 1] [--out FILE]
+//   node packages/team-dataset/scripts/search-worlds.ts [--worlds 8] [--attempts 4] [--min-valid 4] [--every 1] [--no-trapping] [--out FILE]
+//
+// The belief is conditioned on the trapping flags of the own request (ticket #1127) unless `--no-trapping`.
 //
 // The decisions are the own move requests of both seats of the committed corpus, with the opponent half of the
 // reader's state and its flags as the belief's only input; the real opponent teams are never read here. The
@@ -37,6 +39,7 @@ const flag = (name: string, fallback: number, least = 1): number => {
 };
 const settings = { worlds: flag("worlds", 8), attempts: flag("attempts", 4), min_valid: flag("min-valid", 4, 0) };
 const every = flag("every", 1);
+const trapping = !process.argv.includes("--no-trapping");
 const out = process.argv.indexOf("--out") >= 0 ? process.argv[process.argv.indexOf("--out") + 1] : undefined;
 
 const engine = loadEngine(process.env.SHOWDOWN_DIR || undefined);
@@ -48,7 +51,7 @@ const report: Record<string, unknown> = {};
 for (const arm of PRIOR_KINDS as readonly PriorKind[]) {
   const port = createSearchWorlds({ engine, vocabulary, reader_sha256: readerSha256(), manifest, arm });
   const builder = createWorldBuilder({ engine, format_id: GOLDEN_FORMAT, scenario_id: checkScenario(engine, loadMechanicsConfig(GOLDEN_FORMAT)), hp_rounding: SEARCH_HP_ROUNDING, writers: loadWorldWriters(engine, GOLDEN_FORMAT) });
-  const sampler = createWorldSampler({ engine, vocabulary, format_id: GOLDEN_FORMAT, port, builder, settings });
+  const sampler = createWorldSampler({ engine, vocabulary, format_id: GOLDEN_FORMAT, port, builder, settings, ...(trapping ? { trapping: { scenario_id: checkScenario(engine, loadMechanicsConfig(GOLDEN_FORMAT)) } } : {}) });
   const began = performance.now();
   decisions.forEach(({ id, input }, i) => {
     const { opponent: _opponent, ...request } = input;

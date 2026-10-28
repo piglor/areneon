@@ -48,7 +48,7 @@ export interface BeliefInput {
    * trapping evidence. It is the player's own information: it carries the levels the request showed and the
    * engine's verdict for a candidate foe, never a field of the own side or of the opponent's real team.
    */
-  readonly trapping?: TrappingCheck | null;
+  readonly trapping?: TrappingCheck | null | undefined;
 }
 
 export interface Marginal<T> {

@@ -11,6 +11,7 @@ import type { Engine, PokemonSet } from "../src/engine.ts";
 import { GOLDEN_FORMAT, goldenTeamVocabulary } from "../src/golden.ts";
 import { type BattleRecord, type HiddenVerdicts, loadEngine, type OmniscientLog, type PlayerChannel } from "../src/index.ts";
 import { loadMechanicsConfig } from "../src/mechanics-config.ts";
+import type { TrappingCheckPort } from "../src/trapping-check.ts";
 import { checkScenario } from "../src/mechanics-scenario.ts";
 import { createWorldBuilder, type WorldBuilder, type WorldContext, type WorldInput, type WorldRefusal } from "../src/world-builder.ts";
 import {
@@ -264,6 +265,33 @@ describe("the attempt rule: sampler index i * R + r", () => {
   });
 });
 
+describe("the trapping evidence of the own request (ticket #1127)", () => {
+  it("hands the port a check built from the request when asked, counts it, and hands none otherwise", () => {
+    const seen: (TrappingCheckPort | null | undefined)[] = [];
+    const opened = (input: { trapping?: TrappingCheckPort | null }): WorldSourceResult | null => {
+      seen.push(input.trapping);
+      return null;
+    };
+    const p = port({ draw: () => ({ world: trueWorld(good), redraws: 0 }) }, {}, opened);
+    const asked = createWorldSampler({ engine, vocabulary, format_id: GOLDEN_FORMAT, port: p, builder: createWorldBuilder(context), settings: { worlds: 1, attempts: 1, min_valid: 0 }, trapping: { scenario_id: context.scenario_id } });
+    asked.sample(request(good), STREAM);
+    expect(asked.counts()).toMatchObject({ trapping_checks: 1, trapping_seen: 0 });
+    expect(seen[0]?.observed.length).toBeGreaterThan(0);
+    const plain = make(p, { worlds: 1, attempts: 1, min_valid: 0 });
+    plain.sample(request(good), STREAM);
+    expect(seen[1]).toBeNull();
+    expect(plain.counts()).toMatchObject({ trapping_checks: 0, trapping_seen: 0 });
+  });
+
+  it("counts a decision whose request showed maybeTrapped", () => {
+    const flagged = { ...request(good), request: { ...good.input.request, active: good.input.request.active?.map((slot, k) => (k === 0 ? { ...slot, maybeTrapped: true } : slot)) } } as WorldRequest;
+    const p = port({ draw: () => ({ world: trueWorld(good), redraws: 0 }) });
+    const asked = createWorldSampler({ engine, vocabulary, format_id: GOLDEN_FORMAT, port: p, builder: createWorldBuilder(context), settings: { worlds: 1, attempts: 1, min_valid: 0 }, trapping: { scenario_id: context.scenario_id } });
+    asked.sample(flagged, STREAM);
+    expect(asked.counts().trapping_seen).toBe(1);
+  });
+});
+
 describe("a decision the belief refuses, and the settings", () => {
   it("is counted by the model's code and is not searched; a setup defect is thrown", () => {
     const refused = port({ draw: () => ({ throws: new Error("never") }) }, {}, () => ({ kind: "refused", code: "evidence_has_no_support" }));
@@ -327,7 +355,7 @@ describe("the privacy boundary of the sampler path", () => {
     };
     expect(neverRun).toBeTypeOf("function");
     expectTypeOf<keyof WorldRequest>().toEqualTypeOf<"request" | "team" | "state" | "flags" | "facts">();
-    expectTypeOf<Parameters<WorldSamplePort["open"]>[0]>().toEqualTypeOf<{ readonly opponent: PublicSide; readonly flags: readonly PublicFlag[] }>();
+    expectTypeOf<Parameters<WorldSamplePort["open"]>[0]>().toEqualTypeOf<{ readonly opponent: PublicSide; readonly flags: readonly PublicFlag[]; readonly trapping?: TrappingCheckPort | null }>();
     expectTypeOf<Parameters<WorldSource["draw"]>>().toEqualTypeOf<[stream: Uint8Array, index: number]>();
   });
 

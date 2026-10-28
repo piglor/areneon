@@ -1,34 +1,38 @@
 // Trapping evidence of the player's own request (ADR-025 section 3, ticket #1127; asked by ADR-026 N-I).
 //
 // The player's own move request carries `trapped` and `maybeTrapped` for its active Pokemon. Both are the
-// player's own information, and `maybeTrapped` is evidence about the opponent's abilities: the engine
-// raises it when a foe's species could hold a trapping ability that the foe does not hold. This module turns
+// player's own information, and they are evidence about the opponent's abilities: the engine raises
+// `maybeTrapped` for the last living active when a foe's species lists a trapping ability, and it shows
+// `trapped: true` on an earlier active whenever a trapping ability works on it (the hidden trap of a foe's
+// ability counts there; on the last active only a trap the foe's ability does not hide does). This module turns
 // the request flags into hard constraints on the abilities of the opponent actives, through an engine-backed
 // port (`TrappingCheck`) that the bridge implements with a scenario battle of the pinned engine. Nothing is
 // decided here: no ability, move, item or type list is written in this package, only the logic that joins the
 // engine's verdicts with the observed flags.
 //
-// What the port says. For each informative own active k (one whose request carried no `trapped: true`, so
-// the engine's own causes are known) the check gives `observed[k]` (0: no flag, 1: `maybeTrapped`) and, for a
-// candidate foe (the species it is shown as and an ability), `shows(candidate)[k]`: what that own active would
-// show with that foe in play. The engine raises the flag from each foe independently and the request shows
-// the highest, so the flag a pair of foes shows is the larger of their two levels. Two constraints follow, both
-// sound (the real world satisfies them):
+// What the port says. For each informative own active k the check gives `observed[k]` (0: no flag, 1:
+// `maybeTrapped`, 2: `trapped: true`) and, for a candidate foe (the species it is shown as and an ability),
+// `shows(candidate)[k]`: what that own active would show with that foe in play. The engine raises the flag
+// from each foe independently and the request shows the highest, so the flag a pair of foes shows is the
+// larger of their two levels. Two constraints follow, both sound (the real world satisfies them) as long as
+// the own active has no cause of its own that the check does not model (the bridge only passes actives with
+// no volatile whose request says no `trapped: true`, which an own lock or trap raises, so in practice the
+// observed level is 0 or 1; level 2 is part of the port for a check that models those causes):
 //
 //   Upper bound: every foe shows at most what was observed, so an ability whose level exceeds `observed[k]`
-//                is excluded. (With `observed[k] = 0` a foe whose species could trap and does not hold the
-//                trapping ability would have shown `maybeTrapped`.)
-//   Lower bound: where `observed[k] = 1` some foe shows 1. If exactly one active foe could show it (it has an
-//                ability not excluded that shows 1) that foe must; with two or more candidates the
-//                disjunction would couple the slots and is left out (the belief stays wider, never wrong),
-//                and with none the flag has another cause and adds nothing. The bound is also left out when
-//                an active foe is not eligible (its ability is known to have changed or be suppressed, or a
-//                disguise mixture is in play): such a foe's contribution is unknown.
+//                is excluded. (With `observed[k] = 0` a foe that holds a working trapping ability would have
+//                shown `trapped: true` on an earlier active.)
+//   Lower bound: where `observed[k]` is 1 or 2 some foe shows exactly that. If exactly one active foe could
+//                show it (it has an ability not excluded that shows it) that foe must; with two or more
+//                candidates the disjunction would couple the slots and is left out (the belief stays wider,
+//                never wrong), and with none the flag has another cause and adds nothing. The bound is also
+//                left out when an active foe is not eligible (its ability is known to have changed or be
+//                suppressed, or a disguise mixture is in play): such a foe's contribution is unknown.
 //
 // The belief applies the result as a zero weight on the excluded abilities of a slot's forme lists.
 
-/** What a own active shows of the trapping flags: 0 nothing (or a hidden trap), 1 `maybeTrapped`. */
-export type TrapLevel = 0 | 1;
+/** What an own active shows of the trapping flags: 0 nothing, 1 `maybeTrapped`, 2 `trapped: true`. */
+export type TrapLevel = 0 | 1 | 2;
 
 /** A candidate opponent active as the engine sees it: the species it is shown as, an ability, the item the forme requires (or null). */
 export interface TrapCandidate {
@@ -75,13 +79,15 @@ export class TrappingCheckError extends Error {
   override name = "TrappingCheckError";
 }
 
+const isLevel = (level: unknown): boolean => level === 0 || level === 1 || level === 2;
+
 export function trapExclusions(check: TrappingCheck, slots: readonly TrapSlot[]): TrapExclusions {
   const excluded = new Map<number, Set<string>>();
   const notes = new Map<number, string[]>();
   const none: TrapExclusions = { excluded, notes, constraints: [] };
   const K = check.observed.length;
   if (K === 0) return none;
-  if (check.observed.some((level) => level !== 0 && level !== 1)) throw new TrappingCheckError("an observed trapping level is neither 0 nor 1");
+  if (check.observed.some((level) => !isLevel(level))) throw new TrappingCheckError("an observed trapping level is not 0, 1 or 2");
 
   const levels = new Map<number, Map<string, readonly TrapLevel[]>>();
   for (const slot of slots) {
@@ -89,7 +95,7 @@ export function trapExclusions(check: TrappingCheck, slots: readonly TrapSlot[])
     const per = new Map<string, readonly TrapLevel[]>();
     for (const ability of slot.abilities) {
       const shown = check.shows({ species: slot.species, ability, item: slot.item });
-      if (shown.length !== K || shown.some((level) => level !== 0 && level !== 1)) throw new TrappingCheckError("the trapping check answered with another shape than its observation");
+      if (shown.length !== K || shown.some((level) => !isLevel(level))) throw new TrappingCheckError("the trapping check answered with another shape than its observation");
       per.set(ability, shown);
     }
     levels.set(slot.index, per);
@@ -111,11 +117,12 @@ export function trapExclusions(check: TrappingCheck, slots: readonly TrapSlot[])
   const constraints: string[] = ["trapping:upper"];
   if (known) {
     for (let k = 0; k < K; k += 1) {
-      if (check.observed[k] !== 1) continue;
-      const capable = [...levels].filter(([index, per]) => [...per].some(([ability, shown]) => shown[k] === 1 && !excluded.get(index)?.has(ability)));
+      const wanted = check.observed[k] as TrapLevel;
+      if (wanted === 0) continue;
+      const capable = [...levels].filter(([index, per]) => [...per].some(([ability, shown]) => shown[k] === wanted && !excluded.get(index)?.has(ability)));
       if (capable.length !== 1) continue;
       const [index, per] = capable[0] as [number, Map<string, readonly TrapLevel[]>];
-      for (const [ability, shown] of per) if (shown[k] !== 1) mark(index, ability, "required");
+      for (const [ability, shown] of per) if (shown[k] !== wanted) mark(index, ability, "required");
       constraints.push("trapping:lower");
     }
   }

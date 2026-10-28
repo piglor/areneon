@@ -79,6 +79,13 @@ describe("the own request's trapping flags as hard constraints (ticket #1127)", 
     expect(abilities(withTrap([A, "|-ability|p2a: Alp|A1"], check([1])), "alpha")).toEqual([{ id: "a1", p: ratio(1n, 1n) }]);
   });
 
+  it("a trapped: true level (a working trap on an earlier active) is excluded by a lower observation and required by a higher one", () => {
+    const hidden = (c: TrapCandidate): readonly TrapLevel[] => [c.species === "alpha" && c.ability === "a1" ? 2 : 0];
+    for (const observed of [0, 1] as const) expect(abilities(withTrap([A], check([observed], hidden)), "alpha")).toEqual([{ id: "a2", p: ratio(1n, 1n) }]);
+    expect(abilities(withTrap([A], check([2], hidden)), "alpha")).toEqual([{ id: "a1", p: ratio(1n, 1n) }]);
+    expect(abilities(withTrap([A], check([2], () => [0])), "alpha")).toEqual(belief(input([A])).slots.find((s) => s.species === "alpha")!.abilities);
+  });
+
   it("only Pokemon in play are asked, as the species they are shown as", () => {
     calls.length = 0;
     withTrap([A], check([0]));
@@ -108,8 +115,8 @@ describe("the own request's trapping flags as hard constraints (ticket #1127)", 
 
   it("an answer of another shape than the observation is a defect", () => {
     expect(() => withTrap([A], check([0], () => [0, 0]))).toThrow(TrappingCheckError);
-    expect(() => withTrap([A], check([0], () => [2 as TrapLevel]))).toThrow(TrappingCheckError);
-    expect(() => withTrap([A], check([2 as TrapLevel]))).toThrow(TrappingCheckError);
+    expect(() => withTrap([A], check([0], () => [3 as TrapLevel]))).toThrow(TrappingCheckError);
+    expect(() => withTrap([A], check([3 as TrapLevel]))).toThrow(TrappingCheckError);
   });
 
   it("slots the vocabulary cannot place are skipped and block the lower bound", () => {

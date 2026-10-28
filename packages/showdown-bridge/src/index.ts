@@ -595,3 +595,4 @@ export {
   WorldMappingError,
 } from "./world-sampler.ts";
 export { REPLY_MODEL_FORMAT } from "./reply-model.ts";
+export { TRAPPING_CHECK_FORMAT, createTrappingCheck, type TrapCandidate, type TrapLevel, type TrappingCheckContext, type TrappingCheckInput, type TrappingCheckPort } from "./trapping-check.ts";
