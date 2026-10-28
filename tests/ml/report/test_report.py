@@ -915,3 +915,15 @@ def test_a_pair_that_reads_a_feature_set_is_named_by_its_family() -> None:
     page = build_report(named)
     assert "Policy family: " + html.escape(FEATURES_FAMILY) in page
     assert "latency includes the probe" in page
+
+
+def test_the_entropy_weight_key_is_optional_and_an_integer_when_present() -> None:
+    plain = read_train_report(json.loads(json.dumps(TRAIN_REPORT)))
+    assert "entropy_coef_micro" not in plain.roles["battle"]
+    raw = json.loads(json.dumps(TRAIN_REPORT))
+    raw["battle"]["entropy_coef_micro"] = 5000
+    raw["preview"]["entropy_coef_micro"] = 5000
+    read_train_report(raw)
+    raw["battle"]["entropy_coef_micro"] = 0.5
+    with pytest.raises(InspectError, match="integer"):
+        read_train_report(raw)

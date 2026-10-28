@@ -573,6 +573,10 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "training-run-config/linear-schedule": runConfigWith(
       (c) => (runSection(c, "ppo").learning_rate_schedule = { kind: "linear", final_micro: 100, generations: 4 }),
     ),
+    "training-run-config/entropy-linear": runConfigWith(
+      (c) => (runSection(c, "ppo").entropy_schedule = { kind: "linear", final_micro: 0, generations: 4 }),
+    ),
+    "training-run-config/entropy-constant": runConfigWith((c) => (runSection(c, "ppo").entropy_schedule = { kind: "constant" })),
     "training-run-config/constant-schedule": runConfigWith((c) => (runSection(c, "ppo").learning_rate_schedule = { kind: "constant" })),
     "training-run-config/damage-aware": runConfigWith((c) => {
       runSection(c, "generation").baseline_games = [
@@ -910,6 +914,10 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "training-run-config/schedule-zero-generations": runConfigWith(
       (c) => (runSection(c, "ppo").learning_rate_schedule = { kind: "linear", final_micro: 100, generations: 0 }),
     ),
+    "training-run-config/entropy-zero-generations": runConfigWith(
+      (c) => (runSection(c, "ppo").entropy_schedule = { kind: "linear", final_micro: 0, generations: 0 }),
+    ),
+    "training-run-config/entropy-unknown-kind": runConfigWith((c) => (runSection(c, "ppo").entropy_schedule = { kind: "cosine" })),
     "training-run-config/schedule-unknown-kind": runConfigWith((c) => (runSection(c, "ppo").learning_rate_schedule = { kind: "cosine" })),
     "training-run-config/unknown-model-option": runConfigWith((c) => (runSection(c, "model").options = { wide: 1 })),
     "training-run-config/unknown-encoder-option": runConfigWith((c) => (runSection(runSection(c, "model"), "encoder").options = { wide: 1 })),

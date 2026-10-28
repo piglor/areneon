@@ -132,6 +132,16 @@ describe("the TrainingRunConfig reader (ADR-010 §5)", () => {
     }
   });
 
+  it("reads the optional entropy schedule, a final of 0 included, and refuses a malformed one (ADR-023 section 3)", () => {
+    expect(readTrainingRunConfig(sample("tiny")).ppo.entropy_schedule).toBeUndefined();
+    expect(readTrainingRunConfig(sample("entropy-constant")).ppo.entropy_schedule).toEqual({ kind: "constant" });
+    expect(readTrainingRunConfig(sample("entropy-linear")).ppo.entropy_schedule).toEqual({ kind: "linear", final_micro: 0, generations: 4 });
+    const tiny = sample("tiny") as { ppo: Record<string, unknown> };
+    for (const bad of [{ kind: "linear", final_micro: 0, generations: 0 }, { kind: "linear", final_micro: -1, generations: 2 }, { kind: "linear", final_micro: 0 }, { kind: "cosine" }, { kind: "constant", generations: 1 }]) {
+      expect(() => readTrainingRunConfig({ ...tiny, ppo: { ...tiny.ppo, entropy_schedule: bad } })).toThrow(TrainingRunConfigError);
+    }
+  });
+
   it("refuses a record the schema refuses, naming nothing it was not given", () => {
     expect(() => readTrainingRunConfig({ ...sample("tiny"), notes: "x" })).toThrow(TrainingRunConfigError);
     expect(() => readTrainingRunConfig(null)).toThrow(/invalid TrainingRunConfig/);

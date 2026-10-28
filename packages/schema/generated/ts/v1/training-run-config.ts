@@ -5,6 +5,10 @@
  */
 export type LearningRateSchedule = ConstantSchedule | LinearSchedule;
 /**
+ * Optional (a minor change within v1, ADR-023 section 3, ADR-010 erratum A6 item 4, #1048): the entropy bonus weight per learner update. Absent or constant means entropy_coef_micro for every update. Linear: with t the policy update index from 0, coef(t) = entropy_coef_micro + trunc((final_micro - entropy_coef_micro) * min(t, generations) / generations) in exact integers, truncating toward zero, so policy update `generations` and every later one use exactly final_micro (the rule of learning_rate_schedule). Both roles alike. With ppo.value_warmup t counts from the first policy update (the update after the warm-up), as the anchor's does, and the warm-up updates report entropy_coef_micro (the policy is frozen and the entropy term does not enter the value-only loss). Absent means no schedule. A config that carries it is a new run.
+ */
+export type EntropySchedule = ConstantSchedule | EntropyLinearSchedule;
+/**
  * This interface was referenced by `TrainingRunConfig`'s JSON-Schema
  * via the `definition` "AnchorSchedule".
  */
@@ -14,6 +18,11 @@ export type AnchorSchedule = ConstantSchedule | AnchorLinearSchedule;
  * via the `definition` "LearningRateSchedule".
  */
 export type LearningRateSchedule1 = ConstantSchedule | LinearSchedule;
+/**
+ * This interface was referenced by `TrainingRunConfig`'s JSON-Schema
+ * via the `definition` "EntropySchedule".
+ */
+export type EntropySchedule1 = ConstantSchedule | EntropyLinearSchedule;
 
 /**
  * The configuration record of one training run (ADR-010 section 5): seeds, generation size, model sizes, PPO settings and the worker's limits. Reviewed JSON in the repository, validated fail-closed and referenced only by the SHA-256 of its JCS bytes (CheckpointRecord.run_config_hash). Sizes and hyperparameters live here, never in code. League mixture and freeze-interval settings are added with the league scheduler (Wave 5).
@@ -174,6 +183,7 @@ export interface TrainingRunConfig {
      */
     target_kl_micro?: number;
     learning_rate_schedule?: LearningRateSchedule;
+    entropy_schedule?: EntropySchedule;
     /**
      * Optional (a minor change within v1, ADR-019 section 4, #1111): for a run that declares warm_start, the first `generations` learner updates (generation 1 up to generation `generations`) train the value head only, on the cloned pair's own rollouts, with every other parameter of both networks frozen (the policy heads and the shared trunk stay byte-identical); update `generations` + 1 and every later one is normal PPO. The learning-rate schedule's update index counts the warm-up updates too. Absent means normal PPO from generation 1. A config that carries it is a new run.
      */
@@ -341,6 +351,21 @@ export interface LinearSchedule {
   final_micro: number;
   /**
    * Updates over which the rate moves from learning_rate_micro to final_micro.
+   */
+  generations: number;
+}
+/**
+ * This interface was referenced by `TrainingRunConfig`'s JSON-Schema
+ * via the `definition` "EntropyLinearSchedule".
+ */
+export interface EntropyLinearSchedule {
+  kind: "linear";
+  /**
+   * The entropy weight from policy update `generations` on, in millionths; 0 switches the bonus off.
+   */
+  final_micro: number;
+  /**
+   * Policy updates over which the weight moves from entropy_coef_micro to final_micro.
    */
   generations: number;
 }

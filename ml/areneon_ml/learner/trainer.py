@@ -108,6 +108,9 @@ class RoleReport:
     # of the stored report when absent, so a run without the field keeps its bytes.
     anchor_kl: float | None = None
     anchor_beta_micro: int | None = None
+    # Set only under ``ppo.entropy_schedule`` of kind ``linear`` (ADR-023 section 3): the entropy
+    # weight (millionths) the update used. Left out of the stored report otherwise.
+    entropy_coef_micro: int | None = None
 
 
 @dataclass(frozen=True)
@@ -196,6 +199,25 @@ class Learner:
         # Beta (millionths) of the newest update; set only with ``ppo.anchor`` (stored in the
         # sidecar then, and nowhere otherwise).
         self.last_anchor_beta_micro: int | None = None
+        # Entropy weight (millionths) of the newest update; set only under a linear
+        # ``ppo.entropy_schedule`` (stored in the sidecar then, and nowhere otherwise).
+        self.last_entropy_coef_micro: int | None = None
+
+    def entropy_coef_micro(self, update: int) -> int | None:
+        """Entropy weight of learner update ``update`` (from 0), or ``None`` without a linear
+        ``ppo.entropy_schedule``.
+
+        The schedule's index counts POLICY updates, as the anchor's does: with a value warm-up of N
+        updates, updates 0 to N-1 report the starting weight (the policy is frozen and the entropy
+        term is not in the value-only loss) and update ``u`` >= N uses the schedule at ``u - N``.
+        The index is one value for the update, both roles alike (a role that a battle-only warm
+        start leaves unwarmed trains plain PPO during the warm-up and uses the starting weight).
+        """
+        schedule = self.config.ppo.entropy_schedule
+        if schedule is None:
+            return None
+        warmup = self.config.ppo.value_warmup or 0
+        return schedule.rate_micro(max(0, update - warmup))
 
     def anchor_beta_micro(self, update: int) -> int | None:
         """Beta of learner update ``update`` (from 0), or ``None`` without ``ppo.anchor``.
@@ -226,6 +248,7 @@ class Learner:
                     group["lr"] = schedule.rate(self.generation)
         warmup = value_warmup_active(self.config, self.generation)
         self.last_anchor_beta_micro = self.anchor_beta_micro(self.generation)
+        self.last_entropy_coef_micro = self.entropy_coef_micro(self.generation)
         for role in ROLES:
             mine = [t for t in trajectories if t.role == role]
             if mine:
@@ -319,7 +342,9 @@ class Learner:
     def _epochs(self, role: str, table: _Table, warm: bool) -> RoleReport:
         ppo = self.config.ppo
         network, optimiser = self.networks[role], self.optimisers[role]
-        weights = LossWeights(ppo.clip, ppo.value_coef, ppo.entropy_coef)
+        entropy_micro = self.last_entropy_coef_micro
+        entropy_coef = ppo.entropy_coef if entropy_micro is None else entropy_micro / MICRO
+        weights = LossWeights(ppo.clip, ppo.value_coef, entropy_coef)
         sums = torch.zeros(5)
         kl_sum = torch.zeros(())
         beta_micro = self.last_anchor_beta_micro if role in self.anchors else None
@@ -393,4 +418,5 @@ class Learner:
             if beta_micro is not None
             else None,
             beta_micro,
+            entropy_micro,
         )
