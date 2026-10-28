@@ -529,13 +529,15 @@ class Encoder:
             raise EncodingError(str(exc)) from exc
 
     def _foe_alive(self, state: BattleState, loc: int) -> bool:
-        """Whether choice location ``loc`` (1 is the last active slot) holds a foe the rows cover.
+        """Whether choice location ``loc`` holds a foe the rows cover.
+
+        The engine's numbering: location L is the foe in active slot L - 1.
 
         The builder gives a fainted, absent or empty-HP foe no row, so a candidate that aims
         there (the engine lists it) has none to find.
         """
         letters = sorted(state.opponent.slots)
-        place = len(letters) - loc
+        place = loc - 1
         if not 0 <= place < len(letters):
             return False
         index = state.opponent.slots[letters[place]]

@@ -229,7 +229,9 @@ def test_a_missing_row_is_refused() -> None:
 
 def test_a_candidate_aimed_at_a_fainted_foe_needs_no_row() -> None:
     fainted = query()
-    fainted["observation"]["log"].insert(-1, "|faint|p2b: Charizard")  # the foe at location 1
+    fainted["observation"]["log"].insert(
+        -1, "|faint|p2a: Venusaur"
+    )  # the foe at location 1 (active slot 0)
     fainted = rows_without(fainted, lambda r: r["target"] != 1)
     kinds, numbers = part(fainted, "move 1 1, move 1 2", 0)
     assert kinds == [NONE, NONE]
@@ -393,3 +395,16 @@ def test_the_reasons_are_the_probe_contract_s_in_its_order() -> None:
         tuple(schema["$defs"]["UnsupportedFeatureRow"]["properties"]["reason"]["enum"])
         == rows_of.REASONS
     )
+
+
+def test_the_fainted_foe_is_found_in_the_engine_s_numbering() -> None:
+    # Location L is the foe in active slot L - 1: with the second foe down, location 2 needs no
+    # row and location 1 still does.
+    down = query()
+    down["observation"]["log"].insert(-1, "|faint|p2b: Charizard")
+    no_second = rows_without(down, lambda r: r["target"] != 2)
+    kinds, _ = part(no_second, "move 1 2, move 1 1", 0)
+    assert kinds == [NONE, NONE]
+    no_first = rows_without(down, lambda r: r["target"] != 1)
+    with pytest.raises(EncodingError, match="no candidate_features row"):
+        ENCODE.encode(no_first)
