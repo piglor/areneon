@@ -253,6 +253,19 @@ export {
   readPrivateSnapshotManifest,
 } from "./private-snapshot.ts";
 export { type UsagePrior, UsagePriorError, readUsagePrior, usagePriorHash } from "./usage-prior.ts";
+export {
+  ADMITTED_KINDS,
+  STATE_CLASSES,
+  STATE_ITEMS,
+  STATE_ITEM_IDS,
+  type StateClass,
+  type StateItemId,
+  type WorldWriters,
+  WorldWritersError,
+  loadWorldWriters,
+  readWorldWriters,
+  worldWritersHash,
+} from "./world-writers.ts";
 export { deriveRoleSetsPrior, ROLE_SETS_PRIOR_SCRIPT, RoleSetsPriorError, type RoleSetsPriorInput } from "./role-sets-prior.ts";
 export { deriveGeneratorPrior, GENERATOR_PRIOR_SCRIPT, GeneratorPriorError, type GeneratorPriorInput, generatorConfigHash, megaHolderAbilities, megaPreviewSpecies } from "./generator-prior.ts";
 export { type BeliefConfig, BeliefConfigError, beliefConfigHash, readBeliefConfig } from "./belief-config.ts";
@@ -530,10 +543,10 @@ export { pairsAvailable, type PrivateTestOptions, type PrivateTestResult, type P
 export { privateDataRoot } from "./private-team-source.ts";
 export {
   createWorldBuilder,
+  type Resample,
   type ScenarioWorld,
-  UNWRITTEN_KINDS,
-  type UnwrittenKind,
   type WorldBuilder,
+  type WorldCheck,
   type WorldContext,
   type WorldCounts,
   type WorldInput,
@@ -541,8 +554,10 @@ export {
   type WorldOpponentMember,
   type WorldPokemonRef,
   type WorldRefusal,
+  WORLD_CHECKS,
   WORLD_REFUSAL_CODES,
   type WorldRefusalCode,
   type WorldResult,
-  type WorldSources,
 } from "./world-builder.ts";
+export { type CheckFailure, type ConditionSnapshot, type Remainder, firstDifference, plainRequest, v2Candidates, v2Request, v4Conditions, v4Durations } from "./world-checks.ts";
+export { type RedrawCounts, type Redrawer, createRedrawer } from "./world-redraw.ts";
