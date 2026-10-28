@@ -42,7 +42,7 @@ import {
   validateTeam,
 } from "@areneon/showdown-bridge";
 import { referencePoolHash, sortedUnique } from "./dedupe.ts";
-import { eachLine, endsWithNewline, recordsFile } from "./dataset-io.ts";
+import { REFERENCE_HASHES_FILE, eachLine, endsWithNewline, recordsFile } from "./dataset-io.ts";
 import { checkRecord } from "./generate.ts";
 import { cellOf } from "./labeller.ts";
 
@@ -86,7 +86,11 @@ export interface DatasetContext {
   labelSet: TeamLabelSet;
   /** The vocabulary the dataset was drawn from: its hash must be the manifest's `vocabulary_hash`. */
   vocabulary: TeamVocabulary;
-  /** The canonical hashes of the earlier datasets it deduplicated against (none for the first dataset): `reference_pool_hash` must be their hash. */
+  /**
+   * The canonical hashes of the earlier datasets it deduplicated against: `reference_pool_hash` must be their hash. When absent
+   * the reader uses the dataset's own `reference-hashes.txt` (written by `generate --reference`); the manifest's hash binds that
+   * file, so a changed list is refused. A dataset with no reference pool has neither.
+   */
   referenceHashes?: readonly string[];
 }
 
@@ -209,7 +213,9 @@ export function readDataset(dir: string, context: DatasetContext): VerifiedDatas
   }
   if (jcs(manifest.generator.manifest as never) !== jcs(context.format.manifest as never)) bad("the dataset was generated under another version manifest than the pinned engine's");
   if (manifest.generator.vocabulary_hash !== teamVocabularyHash(context.vocabulary)) bad("vocabulary_hash is not the hash of the given vocabulary");
-  if (manifest.reference_pool_hash !== referencePoolHash(sortedUnique([...(context.referenceHashes ?? [])]))) bad("reference_pool_hash is not the hash of the given reference hashes");
+  const referenceHashes = context.referenceHashes ?? readReferenceHashes(dir);
+  if (manifest.reference_pool_hash !== referencePoolHash(sortedUnique([...referenceHashes]))) bad("reference_pool_hash is not the hash of the given reference hashes");
+  const references = new Set(referenceHashes);
   const generated = existsSync(join(dir, recordsFile("dev")));
   const fileOf = (split: ReadSplit): string => (generated ? recordsFile(split) : teamsFile(split));
   const splits = { dev: readSplit(dir, "dev", fileOf("dev"), manifest, context), validation: readSplit(dir, "validation", fileOf("validation"), manifest, context) };
@@ -218,6 +224,7 @@ export function readDataset(dir: string, context: DatasetContext): VerifiedDatas
   const seen = new Map<string, string>();
   for (const [split, records] of [["dev", splits.dev], ["validation", splits.validation], ["training", training ?? []]] as const) {
     for (const record of records) {
+      if (references.has(record.canonical_team_hash)) bad(`team ${record.canonical_team_hash} in ${split} repeats a reference team`);
       const earlier = seen.get(record.canonical_team_hash);
       if (earlier !== undefined) bad(`team ${record.canonical_team_hash} is in ${earlier} and in ${split}`);
       seen.set(record.canonical_team_hash, split);
@@ -228,6 +235,19 @@ export function readDataset(dir: string, context: DatasetContext): VerifiedDatas
   const verified = { manifest, manifest_hash: hashes.manifest_hash, splits, training, hashes } as VerifiedDataset;
   verifiedDatasets.add(verified);
   return verified;
+}
+
+/** The dataset's own `reference-hashes.txt`: sorted, unique, 64-hex lines (an absent file is an empty pool). */
+function readReferenceHashes(dir: string): string[] {
+  const path = join(dir, REFERENCE_HASHES_FILE);
+  if (!existsSync(path)) return [];
+  const hashes: string[] = [];
+  eachLine(path, (line, n) => {
+    if (!/^[0-9a-f]{64}$/.test(line)) bad(`${REFERENCE_HASHES_FILE} line ${n + 1} is not a hash`);
+    if (n > 0 && !((hashes[n - 1] as string) < line)) bad(`${REFERENCE_HASHES_FILE} is not sorted and unique`);
+    hashes.push(line);
+  });
+  return hashes;
 }
 
 /** The index in `hashes.json`, which must equal the one recomputed from the records. */
