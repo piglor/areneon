@@ -318,6 +318,24 @@ describe("priorities", () => {
     }
   });
 
+  it("gives a pseudo-move the engine does not have (the recharge turn) an unsupported row and asks nobody about it", () => {
+    const { c } = foeCase(0);
+    const request = withMoves(["tackle", "tackle"]);
+    const channel = channelWith(c, {
+      request: (body) => {
+        request.request?.(body);
+        ((body.active as NonNullable<Body["active"]>)[0] as { moves: { move: string; id: string }[] }).moves[0] = { move: "Recharge", id: "recharge" };
+      },
+    });
+    const log: ParsedMechanicsQuery[] = [];
+    const features = build(c, { probe: orderProbe({ log }) }, undefined, playing(["recharge", "tackle"]), channel);
+    expect(features.own_priorities.filter((r) => r.slot === 0)).toEqual([
+      { slot: 0, move: 1, mega: false, kind: "unsupported", reason: "query_kind" },
+      { slot: 0, move: 2, mega: false, kind: "computed", priority: 0 },
+    ]);
+    expect(log.some((q) => q.query.kind === "speed_order" && q.query.actions.some((a) => a.move === "recharge"))).toBe(false);
+  });
+
   it("does not depend on how the queries are batched", () => {
     const { c, foe } = foeCase(2, hasMega, 2);
     const channel = channelWith(c, { before: revealing(c, foe, [poolMove(foe.species, damaging("normal"), foe.revealed), poolMove(foe.species, (m) => m.category === "Status", foe.revealed)]) });

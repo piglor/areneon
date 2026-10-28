@@ -272,18 +272,24 @@ function priorityRows(
   const none = { own_priorities: [], foe_priorities: [] };
   const active = Array.isArray(body.active) ? (body.active as unknown[]) : null;
   if (active === null) return none; // a forced switch asks no move
-  // Every distinct own move part of the candidates, by slot and Mega flag.
+  // Every distinct own move part of the candidates, by slot and Mega flag. A pseudo-move the request names that the engine's data does not
+  // have (`recharge`, the forced turn after a recharge move) cannot be queued: its row is `unsupported` (`query_kind`), asked of nobody.
   const parts = new Map<string, { slot: number; move: number; mega: boolean; id: string }>();
+  const ownRows: OwnPriorityRow[] = [];
   for (const list of parsed) {
     list.forEach((part, slot) => {
       if (part.kind !== "move") return;
       const key = `${slot}/${part.index}/${part.mega}`;
       if (parts.has(key)) return;
       const moves = array(object(active[slot], "an active entry").moves, "moves");
-      parts.set(key, { slot, move: part.index, mega: part.mega, id: text(object(moves[part.index - 1], "a move of the request").id, "a move id") });
+      const id = text(object(moves[part.index - 1], "a move of the request").id, "a move id");
+      if (view.dex.moves.get(id).exists) parts.set(key, { slot, move: part.index, mega: part.mega, id });
+      else {
+        ownRows.push({ slot, move: part.index, mega: part.mega, kind: "unsupported", reason: "query_kind" });
+        parts.set(key, { slot, move: part.index, mega: part.mega, id: "" }); // present for the key's uniqueness; filtered out of the queues below
+      }
     });
   }
-  const ownRows: OwnPriorityRow[] = [];
   const foeRows: FoePriorityRow[] = [];
   const actives = entries.filter((entry) => entry.slot !== null);
   if (actives.length === 0) return none;
@@ -301,7 +307,8 @@ function priorityRows(
   };
 
   // Rounds of the non-Mega variant: the k-th move of every own active and every foe.
-  const ownQueues = actives.map((entry) => [...parts.values()].filter((part) => part.slot === entry.slot && !part.mega).sort((a, b) => a.move - b.move));
+  const queued = [...parts.values()].filter((part) => part.id !== "");
+  const ownQueues = actives.map((entry) => queued.filter((part) => part.slot === entry.slot && !part.mega).sort((a, b) => a.move - b.move));
   const foeQueues = foes.map((foe) => [...new Set(foe.assumed.revealed_moves)].sort(compare));
   const rounds = Math.max(0, ...ownQueues.map((q) => q.length), ...foeQueues.map((q) => q.length));
   for (let k = 0; k < rounds; k++) {
@@ -320,7 +327,7 @@ function priorityRows(
   }
   // The Mega variant of a slot: its Pokemon alone, each move asked with the Mega Evolution this turn.
   for (const entry of actives) {
-    const queue = [...parts.values()].filter((part) => part.slot === entry.slot && part.mega).sort((a, b) => a.move - b.move);
+    const queue = queued.filter((part) => part.slot === entry.slot && part.mega).sort((a, b) => a.move - b.move);
     for (const part of queue) {
       resolve([entry.fighter], [{ action: { side: 0, position: 0, move: part.id, mega: true }, set: (value) => void ownRows.push({ slot: part.slot, move: part.move, mega: true, ...value }) }]);
     }
