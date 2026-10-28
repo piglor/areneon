@@ -1,0 +1,74 @@
+[
+  {
+    "preview": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "battle": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "mode": "sample",
+    "id": "policy:27d845e5bfc0f2d3abfec63197dd7c491189bf77578348114f087f3f532d31c2"
+  },
+  {
+    "preview": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "battle": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "mode": "argmax",
+    "id": "policy:7c52a4b5fa8e27c44409e440eb08520a75b987e5e6b27c948f4e6e21c093ec65"
+  },
+  {
+    "preview": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "battle": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "mode": "sample",
+    "id": "policy:62c4a122e7f8fb58263e5ec6c383fa2f2e03840fd86a679fe44f8da0b30cea21"
+  },
+  {
+    "preview": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "battle": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "mode": "sample",
+    "temperature_ppm": 700000,
+    "id": "policy:4ff98d26a1cc6d30e742e73caf657a78cb8d621031c9aed971f2285c1d6c2d73"
+  },
+  {
+    "preview": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "battle": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "mode": "sample",
+    "truncation": {
+      "kind": "threshold",
+      "min_ppm": 30000
+    },
+    "id": "policy:2c1f98904deffcc1b832e50579d99f42c104557b71a66163590d33613ab2fe7d"
+  },
+  {
+    "preview": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "battle": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "mode": "sample",
+    "temperature_ppm": 500000,
+    "truncation": {
+      "kind": "threshold",
+      "min_ppm": 1000
+    },
+    "id": "policy:4ec1500fd75612785a68087d01f2bf3282f4ac498eefffbff5907fce06541600"
+  },
+  {
+    "preview": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "battle": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "mode": "sample",
+    "features": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    "id": "policy:4bf6a3966ff16baa20cb745423f60de9478dd12c2e3e1e75200725346f8b535a"
+  },
+  {
+    "preview": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "battle": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "mode": "argmax",
+    "features": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    "id": "policy:302e94f9cf020220fda1234f2bc662eb8ece6a42bde55b3713e0652d74bd38c5"
+  },
+  {
+    "preview": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "battle": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "mode": "sample",
+    "temperature_ppm": 900000,
+    "truncation": {
+      "kind": "threshold",
+      "min_ppm": 999999
+    },
+    "features": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    "id": "policy:1ccaaeb858dec1e655daa105e0e42deec9d6b7673038c332e0b1a0b20a3ffc90"
+  }
+]

@@ -26,6 +26,12 @@
 // log. V5: same seat and nicknames. Every refusal is typed, carries the check and the state class, says
 // whether drawing the opponent's sets again can fix it, carries fixed words only and is counted.
 
+/**
+ * Bumped when the builder changes what it places or checks for the same input (it enters the search identity as
+ * `world_builder_format`, ADR-026 section 5).
+ */
+export const WORLD_BUILDER_FORMAT = 1;
+
 import type { PublicFlag, PublicMon, PublicState, WorldFacts } from "@areneon/public-state";
 import type { EngineRequest } from "@areneon/schema/types/v1/engine-request.ts";
 import { assumedHp } from "./damage-aware-assumed-set.ts";

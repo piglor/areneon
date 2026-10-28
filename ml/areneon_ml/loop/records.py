@@ -29,6 +29,7 @@ def policy_id(  # noqa: PLR0913, PLR0917
     temperature_ppm: int | None = None,
     truncation: dict[str, Any] | None = None,
     features: str | None = None,
+    search: str | None = None,
 ) -> str:
     """``policy:`` + SHA-256 of ``JCS({preview, battle, mode, temperature, precision})``.
 
@@ -37,6 +38,10 @@ def policy_id(  # noqa: PLR0913, PLR0917
 
     The loop plays ``sample`` (the default); the progress evaluation also plays ``argmax``,
     which is a different policy with a different id.
+
+    A pair played with decision-time search (ADR-026 §5) adds ``search: <search identity hash>``
+    (label "learned pair with decision-time search (one-ply re-rank)"); ``search`` is None for every
+    other policy, whose id is unchanged.
 
     Play settings (ADR-023 §1) enter the preimage only when set, so every earlier id is
     unchanged: ``temperature_ppm`` (1 to 999,999; the default 1,000,000 is never written)
@@ -50,6 +55,10 @@ def policy_id(  # noqa: PLR0913, PLR0917
         "temperature": TEMPERATURE,
         "precision": PRECISION,
     }
+    if search is not None:
+        if len(search) != DIGEST_CHARS or search.strip("0123456789abcdef"):
+            raise ValueError("search is a search identity hash: 64 lowercase hex digits")
+        body["search"] = search
     if features is not None:
         if len(features) != DIGEST_CHARS or features.strip("0123456789abcdef"):
             raise ValueError("features is a feature_set_hash: 64 lowercase hex digits")
@@ -69,6 +78,52 @@ def policy_id(  # noqa: PLR0913, PLR0917
                 raise ValueError("min_ppm must be 1 to 999999")
             body["truncation"] = dict(truncation)
     return "policy:" + sha256_hex(jcs(body))
+
+
+SEARCH_IDENTITY_KEYS = frozenset(
+    {
+        "search_config_hash",
+        "belief_identity_hash",
+        "mechanics_config_hash",
+        "damage_aware_config_hash",
+        "damage_value_format",
+        "world_writers_hash",
+        "world_builder_format",
+        "world_facts_format",
+        "reply_model_format",
+        "leaf_format",
+        "reader_sha256",
+        "version_manifest",
+    }
+)
+SEARCH_HASH_KEYS = (
+    "search_config_hash",
+    "belief_identity_hash",
+    "mechanics_config_hash",
+    "damage_aware_config_hash",
+    "world_writers_hash",
+    "reader_sha256",
+)
+
+
+def search_identity_hash(identity: dict[str, Any]) -> str:
+    """SHA-256 of the JCS of a search identity (ADR-026 §5), the ``search`` member of a policy id.
+
+    ``identity`` holds exactly the twelve inputs that change what a search plays
+    (``search_config_hash`` is the SHA-256 of the ``SearchConfig``'s JCS bytes); the TS
+    ``searchIdentityHash`` computes the same.
+    """
+    if identity.keys() != SEARCH_IDENTITY_KEYS:
+        raise ValueError("a search identity holds exactly its twelve inputs")
+    for key in SEARCH_HASH_KEYS:
+        value = identity[key]
+        if (
+            not isinstance(value, str)
+            or len(value) != DIGEST_CHARS
+            or value.strip("0123456789abcdef")
+        ):
+            raise ValueError(f"{key} is a SHA-256: 64 lowercase hex digits")
+    return sha256_hex(jcs(identity))
 
 
 def team_set_manifest(hashes: Iterable[str]) -> dict[str, Any]:

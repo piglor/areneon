@@ -95,11 +95,17 @@ export interface PlaySettings {
  * `JCS({preview, battle, mode, temperature, precision})`. Play settings enter the preimage only
  * when set (`temperature_ppm` replaces `temperature`; `truncation` is added), so every earlier id
  * is unchanged. A pair that reads a candidate feature set (ADR-022 section 6) adds `features: <feature_set_hash>`;
- * `features` is absent for every other pair, whose id is unchanged. The Python
+ * `features` is absent for every other pair, whose id is unchanged. A pair played with decision-time search
+ * (ADR-026 section 5) adds `search: <search identity hash>` (`searchIdentityHash`), with the play settings of its
+ * underlying mode as above; `search` is absent for every other policy, whose id is unchanged. The Python
  * `areneon_ml.loop.records.policy_id` computes the same value.
  */
-export function policyId(pair: { preview: string; battle: string }, mode: "sample" | "argmax", play: PlaySettings = {}, features?: string): string {
+export function policyId(pair: { preview: string; battle: string }, mode: "sample" | "argmax", play: PlaySettings = {}, features?: string, search?: string): string {
   const body: Record<string, Json> = { preview: pair.preview, battle: pair.battle, mode, temperature: 1, precision: "float32" };
+  if (search !== undefined) {
+    if (!/^[0-9a-f]{64}$/.test(search)) throw new PolicyProtocolError("search is a search identity hash: 64 lowercase hex digits");
+    body.search = search;
+  }
   if (features !== undefined) {
     if (!/^[0-9a-f]{64}$/.test(features)) throw new PolicyProtocolError("features is a feature_set_hash: 64 lowercase hex digits");
     body.features = features;
