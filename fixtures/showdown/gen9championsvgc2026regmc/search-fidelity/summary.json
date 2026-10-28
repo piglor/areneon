@@ -1,0 +1,391 @@
+{
+  "schema_version": 1,
+  "data_class": "synthetic",
+  "battles": 16,
+  "battle_turns": 339,
+  "items": [
+    {
+      "id": "fake-out",
+      "min_turns": 6,
+      "turns": 7,
+      "battles": 3,
+      "reached": true,
+      "by_battle": {
+        "b00": [
+          1,
+          22,
+          27
+        ],
+        "b01": [
+          1,
+          9
+        ],
+        "b02": [
+          1,
+          12
+        ]
+      }
+    },
+    {
+      "id": "protect-chain",
+      "min_turns": 6,
+      "turns": 6,
+      "battles": 4,
+      "reached": true,
+      "by_battle": {
+        "b03": [
+          5,
+          18,
+          19
+        ],
+        "b04": [
+          27
+        ],
+        "b05": [
+          18
+        ],
+        "b06": [
+          11
+        ]
+      }
+    },
+    {
+      "id": "encore",
+      "min_turns": 4,
+      "turns": 5,
+      "battles": 1,
+      "reached": true,
+      "by_battle": {
+        "b06": [
+          5,
+          6,
+          11,
+          15,
+          18
+        ]
+      }
+    },
+    {
+      "id": "disable",
+      "min_turns": 2,
+      "turns": 11,
+      "battles": 4,
+      "reached": true,
+      "by_battle": {
+        "b01": [
+          7,
+          8,
+          12
+        ],
+        "b04": [
+          7,
+          9,
+          14,
+          15,
+          19
+        ],
+        "b11": [
+          5,
+          10
+        ],
+        "b15": [
+          1
+        ]
+      }
+    },
+    {
+      "id": "last-respects",
+      "min_turns": 2,
+      "turns": 6,
+      "battles": 1,
+      "reached": true,
+      "by_battle": {
+        "b07": [
+          5,
+          6,
+          8,
+          18,
+          26,
+          27
+        ]
+      }
+    },
+    {
+      "id": "counter",
+      "min_turns": 4,
+      "turns": 6,
+      "battles": 2,
+      "reached": true,
+      "by_battle": {
+        "b08": [
+          4,
+          5,
+          6
+        ],
+        "b09": [
+          2,
+          3,
+          4
+        ]
+      }
+    },
+    {
+      "id": "mirror-coat",
+      "min_turns": 4,
+      "turns": 4,
+      "battles": 1,
+      "reached": true,
+      "by_battle": {
+        "b10": [
+          16,
+          21,
+          25,
+          27
+        ]
+      }
+    },
+    {
+      "id": "weather",
+      "min_turns": 10,
+      "turns": 41,
+      "battles": 4,
+      "reached": true,
+      "by_battle": {
+        "b00": [
+          9,
+          10,
+          11,
+          12,
+          13
+        ],
+        "b01": [
+          6,
+          7,
+          8,
+          9,
+          10
+        ],
+        "b07": [
+          9,
+          10,
+          11,
+          12,
+          13,
+          23,
+          24,
+          25,
+          26
+        ],
+        "b11": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          18,
+          19,
+          20,
+          21,
+          22,
+          23,
+          24,
+          25
+        ]
+      }
+    },
+    {
+      "id": "weather-expiry",
+      "min_turns": 3,
+      "turns": 5,
+      "battles": 4,
+      "reached": true,
+      "by_battle": {
+        "b00": [
+          13
+        ],
+        "b01": [
+          10
+        ],
+        "b07": [
+          13
+        ],
+        "b11": [
+          5,
+          25
+        ]
+      }
+    },
+    {
+      "id": "screen",
+      "min_turns": 4,
+      "turns": 4,
+      "battles": 3,
+      "reached": true,
+      "by_battle": {
+        "b11": [
+          16,
+          22
+        ],
+        "b12": [
+          6
+        ],
+        "b13": [
+          8
+        ]
+      }
+    },
+    {
+      "id": "screen-expiry",
+      "min_turns": 2,
+      "turns": 4,
+      "battles": 3,
+      "reached": true,
+      "by_battle": {
+        "b11": [
+          20,
+          26
+        ],
+        "b12": [
+          10
+        ],
+        "b13": [
+          8
+        ]
+      }
+    },
+    {
+      "id": "trick-room",
+      "min_turns": 3,
+      "turns": 4,
+      "battles": 2,
+      "reached": true,
+      "by_battle": {
+        "b05": [
+          12
+        ],
+        "b14": [
+          6,
+          13,
+          18
+        ]
+      }
+    },
+    {
+      "id": "trick-room-expiry",
+      "min_turns": 2,
+      "turns": 4,
+      "battles": 2,
+      "reached": true,
+      "by_battle": {
+        "b05": [
+          13
+        ],
+        "b14": [
+          10,
+          17,
+          20
+        ]
+      }
+    },
+    {
+      "id": "tailwind",
+      "min_turns": 3,
+      "turns": 5,
+      "battles": 3,
+      "reached": true,
+      "by_battle": {
+        "b00": [
+          9,
+          16,
+          20
+        ],
+        "b03": [
+          2
+        ],
+        "b08": [
+          8
+        ]
+      }
+    },
+    {
+      "id": "tailwind-expiry",
+      "min_turns": 2,
+      "turns": 5,
+      "battles": 3,
+      "reached": true,
+      "by_battle": {
+        "b00": [
+          12,
+          19,
+          23
+        ],
+        "b03": [
+          5
+        ],
+        "b08": [
+          11
+        ]
+      }
+    },
+    {
+      "id": "toxic",
+      "min_turns": 8,
+      "turns": 13,
+      "battles": 1,
+      "reached": true,
+      "by_battle": {
+        "b15": [
+          1,
+          2,
+          3,
+          4,
+          9,
+          10,
+          11,
+          12,
+          15,
+          16,
+          17,
+          18,
+          19
+        ]
+      }
+    },
+    {
+      "id": "intimidate",
+      "min_turns": 4,
+      "turns": 6,
+      "battles": 3,
+      "reached": true,
+      "by_battle": {
+        "b05": [
+          4,
+          6
+        ],
+        "b09": [
+          3
+        ],
+        "b13": [
+          1,
+          9,
+          14
+        ]
+      }
+    }
+  ],
+  "unreachable": [
+    {
+      "id": "download",
+      "reason": "no species of the format's roster lists the ability, so no legal team can hold it"
+    }
+  ]
+}

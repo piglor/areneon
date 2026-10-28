@@ -1,0 +1,243 @@
+{
+  "schema_version": 1,
+  "data_class": "synthetic",
+  "provenance": "Reviewed input of scripts/capture-search-fidelity-corpus.ts (ADR-026 Evidence 1, slice T). A target names the moves and abilities a team must hold to be drawn for it (as the reducer sweep's --only-move does) and the public channel lines that count as one occurrence. A turn counts once however many lines match in it; lines before the first |turn| are turn 0.",
+  "attempts_per_target": 60,
+  "max_battles_per_target": 3,
+  "targets": [
+    {
+      "id": "fake-out",
+      "description": "Fake Out used (first-turn flinch)",
+      "moves": [
+        "Fake Out"
+      ],
+      "abilities": [],
+      "occurs": [
+        "^\\|move\\|p[12][ab]: [^|]*\\|Fake Out\\|"
+      ],
+      "min_turns": 6
+    },
+    {
+      "id": "protect-chain",
+      "description": "the same Pokemon uses a protecting move on two turns running (the second may fail)",
+      "moves": [
+        "Protect",
+        "Detect",
+        "Spiky Shield",
+        "Wide Guard",
+        "Quick Guard"
+      ],
+      "abilities": [],
+      "occurs": [
+        "^\\|move\\|(p[12][ab]): [^|]*\\|(Protect|Detect|Spiky Shield|Wide Guard|Quick Guard)\\|"
+      ],
+      "consecutive": true,
+      "min_turns": 6
+    },
+    {
+      "id": "encore",
+      "description": "Encore applied",
+      "moves": [
+        "Encore"
+      ],
+      "abilities": [],
+      "occurs": [
+        "^\\|-start\\|p[12][ab]: [^|]*\\|Encore\\|?"
+      ],
+      "min_turns": 4
+    },
+    {
+      "id": "disable",
+      "description": "Disable applied",
+      "moves": [
+        "Disable"
+      ],
+      "abilities": [],
+      "occurs": [
+        "^\\|-start\\|p[12][ab]: [^|]*\\|Disable\\|"
+      ],
+      "min_turns": 2
+    },
+    {
+      "id": "last-respects",
+      "description": "Last Respects used (power depends on the allies fainted)",
+      "moves": [
+        "Last Respects"
+      ],
+      "abilities": [],
+      "occurs": [
+        "^\\|move\\|p[12][ab]: [^|]*\\|Last Respects\\|"
+      ],
+      "min_turns": 2
+    },
+    {
+      "id": "counter",
+      "description": "Counter used",
+      "moves": [
+        "Counter"
+      ],
+      "abilities": [],
+      "occurs": [
+        "^\\|move\\|p[12][ab]: [^|]*\\|Counter\\|"
+      ],
+      "min_turns": 4
+    },
+    {
+      "id": "mirror-coat",
+      "description": "Mirror Coat used",
+      "moves": [
+        "Mirror Coat"
+      ],
+      "abilities": [],
+      "occurs": [
+        "^\\|move\\|p[12][ab]: [^|]*\\|Mirror Coat\\|"
+      ],
+      "min_turns": 4
+    },
+    {
+      "id": "weather",
+      "description": "a weather is in force (start, upkeep and end lines)",
+      "moves": [
+        "Rain Dance",
+        "Sunny Day",
+        "Sandstorm",
+        "Snowscape"
+      ],
+      "abilities": [
+        "Sand Stream",
+        "Snow Warning"
+      ],
+      "occurs": [
+        "^\\|-weather\\|"
+      ],
+      "min_turns": 10
+    },
+    {
+      "id": "weather-expiry",
+      "description": "a weather ends",
+      "moves": [
+        "Rain Dance",
+        "Sunny Day",
+        "Sandstorm",
+        "Snowscape"
+      ],
+      "abilities": [],
+      "occurs": [
+        "^\\|-weather\\|none"
+      ],
+      "min_turns": 3
+    },
+    {
+      "id": "screen",
+      "description": "a screen is set",
+      "moves": [
+        "Reflect",
+        "Light Screen",
+        "Aurora Veil"
+      ],
+      "abilities": [],
+      "occurs": [
+        "^\\|-sidestart\\|p[12]: [^|]*\\|(Reflect|Light Screen|Aurora Veil)$"
+      ],
+      "min_turns": 4
+    },
+    {
+      "id": "screen-expiry",
+      "description": "a screen ends",
+      "moves": [
+        "Reflect",
+        "Light Screen",
+        "Aurora Veil"
+      ],
+      "abilities": [],
+      "occurs": [
+        "^\\|-sideend\\|p[12]: [^|]*\\|(Reflect|Light Screen|Aurora Veil)$"
+      ],
+      "min_turns": 2
+    },
+    {
+      "id": "trick-room",
+      "description": "Trick Room is set",
+      "moves": [
+        "Trick Room"
+      ],
+      "abilities": [],
+      "occurs": [
+        "^\\|-fieldstart\\|move: Trick Room"
+      ],
+      "min_turns": 3
+    },
+    {
+      "id": "trick-room-expiry",
+      "description": "Trick Room ends",
+      "moves": [
+        "Trick Room"
+      ],
+      "abilities": [],
+      "occurs": [
+        "^\\|-fieldend\\|move: Trick Room"
+      ],
+      "min_turns": 2
+    },
+    {
+      "id": "tailwind",
+      "description": "Tailwind is set",
+      "moves": [
+        "Tailwind"
+      ],
+      "abilities": [],
+      "occurs": [
+        "^\\|-sidestart\\|p[12]: [^|]*\\|move: Tailwind"
+      ],
+      "min_turns": 3
+    },
+    {
+      "id": "tailwind-expiry",
+      "description": "Tailwind ends",
+      "moves": [
+        "Tailwind"
+      ],
+      "abilities": [],
+      "occurs": [
+        "^\\|-sideend\\|p[12]: [^|]*\\|move: Tailwind"
+      ],
+      "min_turns": 2
+    },
+    {
+      "id": "toxic",
+      "description": "a Pokemon is badly poisoned (the status line and each tick)",
+      "moves": [
+        "Toxic"
+      ],
+      "abilities": [],
+      "occurs": [
+        "^\\|-status\\|p[12][ab]: [^|]*\\|tox",
+        "^\\|-damage\\|p[12][ab]: [^|]*\\|[^|]* tox\\|\\[from\\] psn"
+      ],
+      "min_turns": 8
+    },
+    {
+      "id": "intimidate",
+      "description": "Intimidate triggers on a switch-in",
+      "moves": [],
+      "abilities": [
+        "Intimidate"
+      ],
+      "occurs": [
+        "^\\|-ability\\|p[12][ab]: [^|]*\\|Intimidate\\|"
+      ],
+      "min_turns": 4
+    }
+  ],
+  "unreachable": [
+    {
+      "id": "download",
+      "description": "Download triggers on a switch-in",
+      "moves": [],
+      "abilities": [
+        "Download"
+      ],
+      "reason": "no species of the format's roster lists the ability, so no legal team can hold it"
+    }
+  ]
+}

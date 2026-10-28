@@ -1,0 +1,385 @@
+// The targeted fidelity corpus (ADR-026 Evidence 1, finding N-A, slice T): seeded
+// A1 battles built to reach the rare states a search world must reproduce (Fake
+// Out, Protect chains, Encore and Disable, Last Respects, Counter and Mirror
+// Coat, weather, screen, Trick Room and Tailwind expiry, Toxic, Intimidate).
+// Teams come from synthetic datasets and are filtered to hold the moves or
+// abilities a target names, in the manner of the reducer sweep's `--only-move`.
+// The targets are a reviewed input file (`targets.json`), not constants here.
+// CI replays each committed battle from its seed, teams and actor seeds; the
+// search below is run by `scripts/capture-search-fidelity-corpus.ts` only.
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import type { Engine, PokemonSet } from "./engine.ts";
+import { GOLDEN_DIR, GOLDEN_FORMAT } from "./golden.ts";
+import { pendingFirstActor, RANDOM_MAX_TURNS, type RandomBattleFile } from "./random-corpus.ts";
+import { randomLegalActor } from "./random-legal.ts";
+import { type Actor, type BattleRecord, type Player, runBattle } from "./runner.ts";
+
+export const FIDELITY_DIR = join(GOLDEN_DIR, "search-fidelity");
+export const FIDELITY_TARGETS = "targets.json";
+export const FIDELITY_SUMMARY = "summary.json";
+
+export const FIDELITY_PROVENANCE =
+  "synthetic: seeded A1 battles on synthetic generator teams filtered to hold the targeted moves or abilities (capture-search-fidelity-corpus.ts)";
+
+/** The two actors of the corpus (src/random-corpus.ts, src/random-legal.ts). */
+export const ACTOR_KINDS = ["random-legal", "pending-first"] as const;
+export type ActorKind = (typeof ACTOR_KINDS)[number];
+
+const ACTOR_FACTORIES: Record<ActorKind, (seed: number) => Actor> = {
+  "random-legal": randomLegalActor,
+  "pending-first": pendingFirstActor,
+};
+
+export interface FidelityTarget {
+  id: string;
+  description: string;
+  /** A team is drawn for the target when one of its sets holds one of these moves or abilities. */
+  moves: string[];
+  abilities: string[];
+  /** Regular expressions over the public channel lines; the first group, when `consecutive`, names the actor. */
+  occurs: string[];
+  /** A turn counts only if the same actor matched in the turn before as well. */
+  consecutive?: boolean;
+  min_turns: number;
+}
+
+export interface UnreachableTarget {
+  id: string;
+  description: string;
+  moves: string[];
+  abilities: string[];
+  reason: string;
+}
+
+export interface FidelityTargets {
+  schema_version: 1;
+  data_class: "synthetic";
+  provenance: string;
+  attempts_per_target: number;
+  max_battles_per_target: number;
+  targets: FidelityTarget[];
+  unreachable: UnreachableTarget[];
+}
+
+export class FidelityError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "FidelityError";
+  }
+}
+
+const idOf = (name: string): string => name.toLowerCase().replace(/[^a-z0-9]/g, "");
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+const strings = (value: unknown, what: string): string[] => {
+  if (!Array.isArray(value) || value.some((x) => typeof x !== "string" || x === "")) {
+    throw new FidelityError(`${what} is not a list of non-empty strings`);
+  }
+  return value as string[];
+};
+
+const wholeAtLeast1 = (value: unknown, what: string): number => {
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 1) {
+    throw new FidelityError(`${what} is not an integer of at least 1`);
+  }
+  return value;
+};
+
+/** Reads the reviewed target list; every shape it does not know is refused. */
+export function readFidelityTargets(value: unknown): FidelityTargets {
+  if (!isObject(value) || value.schema_version !== 1 || value.data_class !== "synthetic") {
+    throw new FidelityError("targets: not a synthetic version 1 record");
+  }
+  if (typeof value.provenance !== "string" || !Array.isArray(value.targets) || !Array.isArray(value.unreachable)) {
+    throw new FidelityError("targets: provenance, targets or unreachable is missing");
+  }
+  const ids = new Set<string>();
+  const claim = (id: unknown): string => {
+    if (typeof id !== "string" || !/^[a-z][a-z0-9-]*$/.test(id) || ids.has(id)) {
+      throw new FidelityError("targets: an id is not a unique lower-case token");
+    }
+    ids.add(id);
+    return id;
+  };
+  const targets = value.targets.map((raw): FidelityTarget => {
+    if (!isObject(raw)) throw new FidelityError("targets: a target is not an object");
+    const id = claim(raw.id);
+    const moves = strings(raw.moves, `${id}.moves`);
+    const abilities = strings(raw.abilities, `${id}.abilities`);
+    if (moves.length + abilities.length === 0) throw new FidelityError(`${id}: no move or ability to filter teams by`);
+    const occurs = strings(raw.occurs, `${id}.occurs`);
+    if (occurs.length === 0) throw new FidelityError(`${id}: no occurrence pattern`);
+    for (const pattern of occurs) new RegExp(pattern); // a bad pattern throws a SyntaxError here
+    if (raw.consecutive !== undefined && typeof raw.consecutive !== "boolean") {
+      throw new FidelityError(`${id}.consecutive is not a boolean`);
+    }
+    if (typeof raw.description !== "string") throw new FidelityError(`${id}.description is not a string`);
+    return {
+      id,
+      description: raw.description,
+      moves,
+      abilities,
+      occurs,
+      ...(raw.consecutive === true ? { consecutive: true } : {}),
+      min_turns: wholeAtLeast1(raw.min_turns, `${id}.min_turns`),
+    };
+  });
+  const unreachable = value.unreachable.map((raw): UnreachableTarget => {
+    if (!isObject(raw) || typeof raw.description !== "string" || typeof raw.reason !== "string") {
+      throw new FidelityError("targets: an unreachable entry is malformed");
+    }
+    return {
+      id: claim(raw.id),
+      description: raw.description,
+      moves: strings(raw.moves, "unreachable.moves"),
+      abilities: strings(raw.abilities, "unreachable.abilities"),
+      reason: raw.reason,
+    };
+  });
+  return {
+    schema_version: 1,
+    data_class: "synthetic",
+    provenance: value.provenance,
+    attempts_per_target: wholeAtLeast1(value.attempts_per_target, "attempts_per_target"),
+    max_battles_per_target: wholeAtLeast1(value.max_battles_per_target, "max_battles_per_target"),
+    targets,
+    unreachable,
+  };
+}
+
+export function loadFidelityTargets(dir: string = FIDELITY_DIR): FidelityTargets {
+  return readFidelityTargets(JSON.parse(readFileSync(join(dir, FIDELITY_TARGETS), "utf8")));
+}
+
+/** A target that the roster says no legal team can reach must be unreachable in fact, so a pin bump cannot hide a change. */
+export function checkUnreachable(
+  unreachable: readonly UnreachableTarget[],
+  roster: readonly { id: string; abilities: readonly string[]; moves: readonly string[] }[],
+): void {
+  for (const entry of unreachable) {
+    const wanted = new Set([...entry.moves, ...entry.abilities].map(idOf));
+    const holder = roster.find((r) => [...r.abilities, ...r.moves].some((x) => wanted.has(x)));
+    if (holder !== undefined) {
+      throw new FidelityError(`${entry.id} is marked unreachable but ${holder.id} of the roster can hold it: make it a target`);
+    }
+  }
+}
+
+/** Whether a team can be drawn for a target: one of its sets holds a named move or ability. */
+export function holdsTarget(team: readonly PokemonSet[], target: Pick<FidelityTarget, "moves" | "abilities">): boolean {
+  const moves = new Set(target.moves.map(idOf));
+  const abilities = new Set(target.abilities.map(idOf));
+  return team.some((set) => abilities.has(idOf(set.ability)) || set.moves.some((m) => moves.has(idOf(m))));
+}
+
+/** The turns of a public channel in which a target occurs, ascending. Lines before `|turn|1` are turn 0. */
+export function occurrenceTurns(lines: readonly string[], target: FidelityTarget): number[] {
+  const patterns = target.occurs.map((p) => new RegExp(p));
+  const byTurn = new Map<number, Set<string>>();
+  let turn = 0;
+  for (const line of lines) {
+    if (line.startsWith("|turn|")) {
+      turn = Number(line.slice("|turn|".length));
+      continue;
+    }
+    for (const pattern of patterns) {
+      const match = pattern.exec(line);
+      if (match === null) continue;
+      const actor = target.consecutive === true ? (match[1] ?? "") : "";
+      byTurn.set(turn, (byTurn.get(turn) ?? new Set()).add(actor));
+    }
+  }
+  const turns = [...byTurn.keys()].sort((a, b) => a - b);
+  if (target.consecutive !== true) return turns;
+  return turns.filter((t) => [...(byTurn.get(t) ?? [])].some((actor) => byTurn.get(t - 1)?.has(actor) === true));
+}
+
+/** What a battle needs to be replayed: the random corpus's spec plus the seats' actors and where the teams came from. */
+export interface FidelitySpec {
+  id: string;
+  seed: string;
+  actor_seeds: Record<Player, number>;
+  teams: Record<Player, PokemonSet[]>;
+  actors: Record<Player, ActorKind>;
+  origin: Record<Player, TeamOrigin>;
+}
+
+export interface TeamOrigin {
+  dataset_id: string;
+  canonical_team_hash: string;
+}
+
+export interface FidelityBattleFile extends Omit<RandomBattleFile, "teams" | "id" | "seed" | "actor_seeds"> {
+  id: string;
+  seed: string;
+  actor_seeds: Record<Player, number>;
+  teams: Record<Player, PokemonSet[]>;
+  actors: Record<Player, ActorKind>;
+  origin: Record<Player, TeamOrigin>;
+}
+
+export function playFidelityBattle(engine: Engine, spec: FidelitySpec): Promise<BattleRecord> {
+  return runBattle({
+    engine,
+    formatId: GOLDEN_FORMAT,
+    seed: spec.seed,
+    teams: spec.teams,
+    actors: {
+      p1: ACTOR_FACTORIES[spec.actors.p1](spec.actor_seeds.p1),
+      p2: ACTOR_FACTORIES[spec.actors.p2](spec.actor_seeds.p2),
+    },
+    maxTurns: RANDOM_MAX_TURNS,
+  });
+}
+
+/** The committed file of one played battle. Its teams are synthetic by construction. */
+export function fidelityBattleFile(spec: FidelitySpec, record: BattleRecord): FidelityBattleFile {
+  const channel = (player: Player) => ({
+    schema_version: 1 as const,
+    data_class: "synthetic" as const,
+    player,
+    lines: record.channels[player],
+  });
+  return {
+    schema_version: 1,
+    data_class: "synthetic",
+    provenance: FIDELITY_PROVENANCE,
+    ...spec,
+    winner: record.winner,
+    turns: record.turns,
+    channels: { p1: channel("p1"), p2: channel("p2") },
+  };
+}
+
+/** One team of a pool a battle can be drawn from. */
+export interface PoolTeam {
+  team: PokemonSet[];
+  origin: TeamOrigin;
+}
+
+export interface FidelityCoverageItem {
+  id: string;
+  min_turns: number;
+  /** Turns in which the target occurs, over the whole corpus. */
+  turns: number;
+  /** Battles in which it occurs at least once. */
+  battles: number;
+  reached: boolean;
+  /** Per battle id: the turns (sorted) of that battle in which it occurs. */
+  by_battle: Record<string, number[]>;
+}
+
+export interface FidelitySummary {
+  schema_version: 1;
+  data_class: "synthetic";
+  /** Battles in the corpus and the turns they play in all (the denominator slice F counts against). */
+  battles: number;
+  battle_turns: number;
+  items: FidelityCoverageItem[];
+  unreachable: { id: string; reason: string }[];
+}
+
+/** The coverage of a corpus: a pure function of the committed public channels and the target list. */
+export function fidelitySummary(battles: readonly FidelityBattleFile[], targets: FidelityTargets): FidelitySummary {
+  const items = targets.targets.map((target): FidelityCoverageItem => {
+    const by_battle: Record<string, number[]> = {};
+    let turns = 0;
+    for (const battle of battles) {
+      const hit = occurrenceTurns(battle.channels.p1.lines, target);
+      if (hit.length > 0) by_battle[battle.id] = hit;
+      turns += hit.length;
+    }
+    return {
+      id: target.id,
+      min_turns: target.min_turns,
+      turns,
+      battles: Object.keys(by_battle).length,
+      reached: turns >= target.min_turns,
+      by_battle,
+    };
+  });
+  return {
+    schema_version: 1,
+    data_class: "synthetic",
+    battles: battles.length,
+    battle_turns: battles.reduce((sum, b) => sum + b.turns, 0),
+    items,
+    unreachable: targets.unreachable.map(({ id, reason }) => ({ id, reason })),
+  };
+}
+
+const ACTOR_MIXES: Record<Player, ActorKind>[] = [
+  { p1: "random-legal", p2: "random-legal" },
+  { p1: "pending-first", p2: "random-legal" },
+  { p1: "random-legal", p2: "pending-first" },
+  { p1: "pending-first", p2: "pending-first" },
+];
+
+/** Mulberry-free deterministic spread: attempt `j` of a pool of `n` teams, a stride coprime-ish to typical sizes. */
+const pick = (j: number, salt: number, n: number): number => ((Math.imul(j + 1, 2654435761) >>> 0) + salt * 40503) % n;
+
+/**
+ * Searches for the corpus: for each target in file order, while the kept battles
+ * hold fewer than `min_turns` of its turns, plays `attempts_per_target` seeded
+ * battles (the target's team on a seat that alternates, any team opposite, the
+ * four actor mixes in turn) and keeps the best ones, at most
+ * `max_battles_per_target`. A battle that fails to enumerate (Revival Blessing)
+ * is skipped. Everything is a function of the pool, the targets and the
+ * options, so a re-run gives the same corpus.
+ */
+export async function captureFidelityCorpus(
+  engine: Engine,
+  pool: readonly PoolTeam[],
+  targets: FidelityTargets,
+  options: { seed_base: number; log?: (line: string) => void } = { seed_base: 0x6000 },
+): Promise<FidelityBattleFile[]> {
+  const kept: FidelityBattleFile[] = [];
+  let attempt = 0;
+  for (const target of targets.targets) {
+    const have = () => fidelitySummary(kept, { ...targets, targets: [target] }).items[0]?.turns ?? 0;
+    if (have() >= target.min_turns) continue;
+    const holders = pool.filter((p) => holdsTarget(p.team, target));
+    if (holders.length === 0) {
+      options.log?.(`${target.id}: no team in the pool holds it`);
+      continue;
+    }
+    const candidates: { file: FidelityBattleFile; hits: number }[] = [];
+    for (let k = 0; k < targets.attempts_per_target; k++, attempt++) {
+      const seat: Player = attempt % 2 === 0 ? "p1" : "p2";
+      const other: Player = seat === "p1" ? "p2" : "p1";
+      const focus = holders[pick(attempt, 1, holders.length)] as PoolTeam;
+      const rest = pool[pick(attempt, 2, pool.length)] as PoolTeam;
+      const spec: FidelitySpec = {
+        id: "",
+        seed: `sodium,${(options.seed_base + attempt).toString(16).padStart(32, "0")}`,
+        actor_seeds: { p1: (2 * attempt + 1) * 2654435761 >>> 0, p2: (2 * attempt + 2) * 2654435761 >>> 0 },
+        teams: { [seat]: focus.team, [other]: rest.team } as Record<Player, PokemonSet[]>,
+        actors: ACTOR_MIXES[attempt % ACTOR_MIXES.length] as Record<Player, ActorKind>,
+        origin: { [seat]: focus.origin, [other]: rest.origin } as Record<Player, TeamOrigin>,
+      };
+      let file: FidelityBattleFile;
+      try {
+        file = fidelityBattleFile(spec, await playFidelityBattle(engine, spec));
+      } catch (error) {
+        options.log?.(`${target.id}: skipped attempt ${attempt}: ${(error as Error).message}`);
+        continue;
+      }
+      const hits = occurrenceTurns(file.channels.p1.lines, target).length;
+      if (hits > 0) candidates.push({ file, hits });
+    }
+    // Most occurrences first; the earlier attempt wins a tie (sort is stable).
+    candidates.sort((a, b) => b.hits - a.hits);
+    for (const { file, hits } of candidates.slice(0, targets.max_battles_per_target)) {
+      if (have() >= target.min_turns) break;
+      file.id = `b${String(kept.length).padStart(2, "0")}`;
+      kept.push(file);
+      options.log?.(`${target.id}: kept ${file.id} (seed ${file.seed}, ${hits} turns, ${file.turns} played)`);
+    }
+    if (have() < target.min_turns) options.log?.(`${target.id}: ${have()} of ${target.min_turns} turns reached`);
+  }
+  return kept;
+}
