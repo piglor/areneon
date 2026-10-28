@@ -72,7 +72,7 @@ describe("the reader rules of candidate_features (ADR-022 section 3)", () => {
   });
 
   it("the spread target types are the Python reader's, word for word", () => {
-    const source = readFileSync(fileURLToPath(new URL("../../../ml/areneon_ml/worker/features.py", import.meta.url)), "utf8");
+    const source = readFileSync(fileURLToPath(new URL("../../../ml/areneon_ml/model/features.py", import.meta.url)), "utf8");
     const listed = /FOE_SPREAD_TARGET_TYPES = \(([^)]*)\)/.exec(source)?.[1] ?? "";
     expect([...listed.matchAll(/"([A-Za-z]+)"/g)].map((m) => m[1]).sort()).toEqual([...FOE_SPREAD_TARGET_TYPES].sort());
   });

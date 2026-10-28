@@ -88,7 +88,17 @@ class _Collector:
             self._views[(episode, role)] = (IncrementalView(), self._encoders[role].session())
         view, session = self._views[(episode, role)]
         query = session.encode(
-            view.encoder_input({"observation": observation, "candidates": candidates})
+            view.encoder_input(
+                {
+                    "observation": observation,
+                    "candidates": candidates,
+                    **(
+                        {"candidate_features": example["candidate_features"]}
+                        if "candidate_features" in example
+                        else {}
+                    ),
+                }
+            )
         )
         self.steps.setdefault((episode, role), []).append(Step(query, chosen))
 

@@ -27,11 +27,21 @@ def _without_rqid(line: str) -> str:
 
 
 def encoder_input(query: dict[str, Any]) -> dict[str, Any]:
-    """The observation and the candidates, minus ``decision_context`` and every ``rqid``."""
+    """The observation and the candidates, minus ``decision_context`` and every ``rqid``.
+
+    A query's ``candidate_features`` (ADR-022 §3) are part of the view when it carries them,
+    and the key is left out when it does not, so a view without them is what it always was.
+    """
     observation = {k: v for k, v in query["observation"].items() if k != "decision_context"}
     observation["identity"] = {k: v for k, v in observation["identity"].items() if k != "rqid"}
     observation["log"] = [_without_rqid(line) for line in observation["log"]]
-    return {"observation": observation, "candidates": query["candidates"]}
+    return _with_features({"observation": observation, "candidates": query["candidates"]}, query)
+
+
+def _with_features(view: dict[str, Any], query: dict[str, Any]) -> dict[str, Any]:
+    if query.get("candidate_features") is not None:
+        view["candidate_features"] = query["candidate_features"]
+    return view
 
 
 class IncrementalView:
@@ -56,7 +66,9 @@ class IncrementalView:
         self._raw.extend(new)
         self._clean.extend(_without_rqid(line) for line in new)
         observation["log"] = list(self._clean)
-        return {"observation": observation, "candidates": query["candidates"]}
+        return _with_features(
+            {"observation": observation, "candidates": query["candidates"]}, query
+        )
 
 
 def view_digest(query: dict[str, Any]) -> str:

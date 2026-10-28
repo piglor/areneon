@@ -11,7 +11,7 @@ from typing import Any
 from areneon_contracts.contracts import jcs
 from areneon_ml.checkpoint.files import checkpoint_bytes, checkpoint_id, load_checkpoint
 from areneon_ml.model.gamedata import GameData
-from areneon_ml.model.network import init_network
+from areneon_ml.model.network import ModelConfig, init_network
 from areneon_ml.model.scorer import NetworkScorer
 from areneon_ml.worker.checkpoints import CheckpointStore
 from areneon_ml.worker.serve import Worker
@@ -55,24 +55,26 @@ def game() -> GameData:
 
 
 @cache
-def tiny_checkpoint(role: str) -> bytes:
+def tiny_checkpoint(role: str, model: ModelConfig = TINY_MODEL) -> bytes:
     """An untrained tiny network of ``role``, seeded: the same bytes every time."""
-    return checkpoint_bytes(init_network(role, game(), TINY_MODEL, seed=len(role)), game())
+    return checkpoint_bytes(init_network(role, game(), model, seed=len(role)), game())
 
 
-def make_run_dir(root: Path) -> tuple[Path, str, str]:
+def make_run_dir(root: Path, model: ModelConfig = TINY_MODEL) -> tuple[Path, str, str]:
     """A run directory holding a Preview and a Battle checkpoint; their ids."""
     ids = []
     for role in ("preview", "battle"):
-        data = tiny_checkpoint(role)
+        data = tiny_checkpoint(role, model)
         (root / "checkpoints").mkdir(exist_ok=True)
         (root / "checkpoints" / f"{checkpoint_id(data)}.safetensors").write_bytes(data)
         ids.append(checkpoint_id(data))
     return root, ids[0], ids[1]
 
 
-def make_worker(root: Path, max_line_bytes: int = MAX_LINE) -> Worker:
-    run_dir, preview, battle = make_run_dir(root)
+def make_worker(
+    root: Path, max_line_bytes: int = MAX_LINE, model: ModelConfig = TINY_MODEL
+) -> Worker:
+    run_dir, preview, battle = make_run_dir(root, model)
     store = CheckpointStore(run_dir)
     networks = {
         role: load_checkpoint(store.load(found), game(), found, role=role)

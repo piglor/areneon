@@ -85,10 +85,16 @@ export interface PlaySettings {
  * The `policy:` id of a frozen pair played in `mode` (ADR-010 §2): SHA-256 of
  * `JCS({preview, battle, mode, temperature, precision})`. Play settings enter the preimage only
  * when set (`temperature_ppm` replaces `temperature`; `truncation` is added), so every earlier id
- * is unchanged. The Python `areneon_ml.loop.records.policy_id` computes the same value.
+ * is unchanged. A pair that reads a candidate feature set (ADR-022 section 6) adds `features: <feature_set_hash>`;
+ * `features` is absent for every other pair, whose id is unchanged. The Python
+ * `areneon_ml.loop.records.policy_id` computes the same value.
  */
-export function policyId(pair: { preview: string; battle: string }, mode: "sample" | "argmax", play: PlaySettings = {}): string {
+export function policyId(pair: { preview: string; battle: string }, mode: "sample" | "argmax", play: PlaySettings = {}, features?: string): string {
   const body: Record<string, Json> = { preview: pair.preview, battle: pair.battle, mode, temperature: 1, precision: "float32" };
+  if (features !== undefined) {
+    if (!/^[0-9a-f]{64}$/.test(features)) throw new PolicyProtocolError("features is a feature_set_hash: 64 lowercase hex digits");
+    body.features = features;
+  }
   if (play.temperature_ppm !== undefined || play.truncation !== undefined) {
     if (mode !== "sample") throw new PolicyProtocolError("a temperature or a truncation applies to sample mode only");
     if (play.temperature_ppm !== undefined) {

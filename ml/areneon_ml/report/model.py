@@ -48,6 +48,7 @@ from areneon_ml.loop.league import (
     read_league_run_record,
 )
 from areneon_ml.loop.metrics import METRICS_DIR, MetricsError, metrics_path, read_run_metrics
+from areneon_ml.loop.records import family_label
 from areneon_ml.progress.ablation import ablation_summary
 from areneon_ml.progress.records import (
     ProgressRecordError,
@@ -199,6 +200,8 @@ class ReportModel:
     inputs: dict[str, str] = field(default_factory=dict)
     #: The number of looks at validation results logged so far (None: no progress root given).
     looks: int | None = None
+    #: The family label of a pair that reads a candidate feature set (ADR-022 §6); None otherwise.
+    family: str | None = None
 
 
 def _json(path: Path) -> Any:
@@ -523,4 +526,5 @@ def read_report_model(run_dir: Path, progress_dir: Path | None) -> ReportModel:
         progress,
         progress_dir is not None,
         dict(sorted(inputs.items())),
+        family=family_label(config),
     )

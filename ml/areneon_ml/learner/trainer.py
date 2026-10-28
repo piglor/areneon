@@ -79,6 +79,7 @@ def to_device(batch: Batch, device: torch.device) -> Batch:
         cand_tok=batch.cand_tok.to(device),
         team_tok=batch.team_tok.to(device),
         pending=batch.pending.to(device),
+        cand_num=None if batch.cand_num is None else batch.cand_num.to(device),
     )
 
 

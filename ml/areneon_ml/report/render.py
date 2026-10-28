@@ -810,6 +810,12 @@ def build_report(model: ReportModel, links: Links | None = None) -> str:
         f'<div class="stat"><b>{esc(model.format_id)}</b>format</div>'
         f'<div class="stat"><b>{esc(model.lineage_id)}</b>lineage</div></div>'
         f'<p class="note">Run config hash <code>{esc(model.config_hash)}</code>. Synthetic, public-lineage runs only.</p>'
+        + (
+            ""
+            if model.family is None
+            else f'<p class="note">Policy family: {esc(model.family)}. Its decision latency includes the probe; '
+            "a comparison with damage-aware@v1 is between two users of the same probe.</p>"
+        )
     )
     body = "".join(
         [
