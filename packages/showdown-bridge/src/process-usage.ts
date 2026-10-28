@@ -25,7 +25,14 @@ export function largest(values: readonly (number | null)[]): number | null {
   return present.length === 0 ? null : Math.max(...present);
 }
 
-/** This process's own peak resident set in bytes (`process.resourceUsage().maxRSS` is in kB). */
-export function ownPeakRss(usage: () => { maxRSS: number } = () => process.resourceUsage()): number {
-  return usage().maxRSS * 1024;
+/**
+ * This process's own peak resident set in bytes. `/proc/self/status` `VmHWM` is the process's own address space; the kernel's
+ * `ru_maxrss` (`process.resourceUsage().maxRSS`, in kB) survives fork and exec, so a game process started by the Python driver
+ * reported the driver's peak (#1110). The rusage figure is only the fallback where `/proc` cannot be read.
+ */
+export function ownPeakRss(
+  usage: () => { maxRSS: number } = () => process.resourceUsage(),
+  read: (path: string) => string = (path) => readFileSync(path, "utf8"),
+): number {
+  return peakRssOf(process.pid, read) ?? usage().maxRSS * 1024;
 }
