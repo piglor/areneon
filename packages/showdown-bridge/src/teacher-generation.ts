@@ -63,6 +63,8 @@ export interface TeacherSettings {
   max_turns: number;
   /** ADR-018 Q5: the chance, in parts per million, that the teacher plays a random candidate. 0 is the committed baseline. */
   epsilon_ppm: number;
+  /** The committed `damage-aware` record the teacher plays (#1182): absent is `v1`, the byte-compatible default. */
+  teacher_version?: TeacherVersion;
   /** The per-decision limit; an overrun of the teacher is a harness incident that fails the run. */
   latency_budget_ms: LatencyBudget;
 }
@@ -71,16 +73,18 @@ export interface TeacherSettings {
 export const TEACHER_GENERATION = 1;
 
 /** The committed `damage-aware` config record the teacher plays (`config/baselines/damage-aware.<version>.json`). */
-export const TEACHER_CONFIG_VERSION = "v1";
+export type TeacherVersion = "v1" | "v3";
+export const TEACHER_VERSIONS: readonly TeacherVersion[] = ["v1", "v3"];
+export const TEACHER_CONFIG_VERSION: TeacherVersion = "v1";
 
 const RANDOM_OPPONENT: BaselineOpponent = { actor: "random-legal", policy_id: "random-legal@v1" };
 const ACTOR_RULE_OPPONENT: BaselineOpponent = { actor: "actor-rule", policy_id: "actor-rule@v1" };
 
 const PPM = 1_000_000;
 
-/** `damage-aware@v1`, or `damage-aware@v1-eps<ppm>` when the teacher explores (another baseline identity). */
-export const teacherPolicyId = (epsilon_ppm: number): string =>
-  damageAwarePolicyId(epsilon_ppm === 0 ? TEACHER_CONFIG_VERSION : `${TEACHER_CONFIG_VERSION}-eps${epsilon_ppm}`);
+/** `damage-aware@v1` (or `@v3`), or `damage-aware@v1-eps<ppm>` when the teacher explores (another baseline identity). */
+export const teacherPolicyId = (epsilon_ppm: number, version: TeacherVersion = TEACHER_CONFIG_VERSION): string =>
+  damageAwarePolicyId(epsilon_ppm === 0 ? version : `${version}-eps${epsilon_ppm}`);
 
 /** Refuse a settings record that would play nothing or play out of range. */
 export function checkTeacherSettings(settings: TeacherSettings): void {
@@ -92,6 +96,7 @@ export function checkTeacherSettings(settings: TeacherSettings): void {
   count("actor_rule_games", settings.actor_rule_games, 0);
   count("max_turns", settings.max_turns, 1);
   count("epsilon_ppm", settings.epsilon_ppm, 0);
+  if (settings.teacher_version !== undefined && !TEACHER_VERSIONS.includes(settings.teacher_version)) throw new RangeError("teacher_version is v1 or v3");
   if (settings.epsilon_ppm > PPM) throw new RangeError("epsilon_ppm is at most 1,000,000");
   if (settings.games + settings.random_games + settings.actor_rule_games < 1) throw new RangeError("a teacher run plays at least one game");
   if (settings.run_key === "" || settings.run_key.startsWith("CHANGE-ME")) throw new RangeError("run_key must name the run");
@@ -151,11 +156,11 @@ export function teacherContext(engine: Engine, settings: TeacherSettings): Teach
   // The committed team vocabulary is the golden format's; another format needs its own exported vocabulary first.
   if (settings.format_id !== GOLDEN_FORMAT) throw new GenerationError(`the teacher plays ${GOLDEN_FORMAT} only (no vocabulary for ${settings.format_id})`);
   const vocabulary = goldenTeamVocabulary();
-  const base = loadDamageAwareConfig(TEACHER_CONFIG_VERSION, vocabulary);
+  const base = loadDamageAwareConfig(settings.teacher_version ?? TEACHER_CONFIG_VERSION, vocabulary);
   const config: DamageAwareConfig = { ...base, epsilon_ppm: settings.epsilon_ppm };
   const mechanics = loadMechanicsConfig(settings.format_id);
   const snapshot = loadRulesSnapshot(engine.commit);
-  const policy_id = teacherPolicyId(settings.epsilon_ppm);
+  const policy_id = teacherPolicyId(settings.epsilon_ppm, settings.teacher_version);
   const commit = policy_id.slice(DAMAGE_AWARE_NAME.length + 1);
   return {
     config,
