@@ -194,6 +194,7 @@ export async function runProgressCli(argv: readonly string[], print: (line: stri
   const searchMode = values["search-mode"];
   if (searchMode !== undefined && searchMode !== "argmax" && searchMode !== "sample") throw new UsageError("--search-mode must be argmax or sample");
   if (searchMode !== undefined && ablationParts !== undefined) throw new UsageError("the search candidate is evaluated alone: no Preview ablation");
+  if (searchMode !== undefined && (anchorSpecs.length > 0 || PREVIOUS.some((name) => values[name] !== undefined))) throw new UsageError("the search candidate is evaluated alone: no anchors and no previous-generation flags");
   if (searchMode !== undefined && ports.search === undefined) throw new UsageError("this command has no search setup: --search-mode needs the team-dataset script");
   const damageBudget = values["damage-aware-budget-ms"] === undefined ? undefined : integer("damage-aware-budget-ms", values["damage-aware-budget-ms"], 1);
   const damageVersion = values["damage-aware-version"] ?? "v1";

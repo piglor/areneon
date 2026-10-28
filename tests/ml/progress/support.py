@@ -24,6 +24,7 @@ from areneon_ml.progress.records import (
     log_hash,
     record_hash,
     sum_baseline_counts,
+    sum_search_counts,
 )
 from areneon_ml.progress.run import ProgressRequest
 from areneon_ml.progress.seeds import progress_game_seed
@@ -57,6 +58,69 @@ def baseline_counts(stored: dict[str, Any], seat: str, game: int) -> dict[str, i
         "reader_fallbacks": 0,
         "assumed_set_fallbacks": 0,
         "epsilon_plays": 0,
+    }
+
+
+#: The stand-in search identity hash of the search matches.
+SEARCH_IDENTITY = "e" * 64
+
+
+def search_counts(decisions: int, *, control: bool = False) -> dict[str, Any]:
+    """Stand-in per-game search counts for a seat that answered ``decisions`` requests; the
+    control's searches nothing (all but decisions and the Team Preview fallback are 0)."""
+    zero = {
+        k: 0
+        for k in [
+            "worlds_asked",
+            "worlds_built",
+            "worlds_refused",
+            "redraws",
+            "legality_redraws",
+            "worlds_scored",
+            "turns",
+            "wait_continuations",
+            "leaf_queries",
+            "leaf_memo_hits",
+            "leaf_game_end",
+            "leaf_hp_ko",
+            "replies_max_damage",
+            "replies_all_zero",
+            "replies_uniform",
+        ]
+    }
+    fallbacks = dict.fromkeys(
+        (
+            "team_preview",
+            "forced_switch",
+            "too_few_candidates",
+            "clock_floor",
+            "belief_refused",
+            "below_min_valid",
+        ),
+        0,
+    )
+    fallbacks["team_preview"] = 1
+    base: dict[str, Any] = {
+        "decisions": decisions,
+        "searched_decisions": 0 if control else decisions - 1,
+        "fallbacks": fallbacks,
+        "worlds_dropped": {"reply_model": 0, "choice_refused": 0},
+        "refusals": [],
+        "refusal_check_class": [],
+        "belief_refusals": [],
+        "resampled": [],
+        **zero,
+    }
+    if control:
+        return base
+    return base | {
+        "worlds_asked": 16,
+        "worlds_built": 14,
+        "worlds_refused": 2,
+        "worlds_scored": 13,
+        "turns": 100,
+        "leaf_queries": 80,
+        "refusals": [{"key": "state_unwritten", "count": 2}],
     }
 
 
@@ -214,10 +278,24 @@ def progress_files(  # noqa: PLR0912, PLR0915
     if request.ablation is not None:
         opponents = []
         add_ablation(config, request, games, matches, rows, stored)
+    searching = request.search_mode is not None
+    if searching:
+        opponents.append(("self-no-search", "", {"control": True}))
     for _actor, baseline, previous in opponents:
-        for mode in MODES:
-            match_id = f"{_actor}-{mode}"
-            pair = policy_id(request.preview, request.battle, mode, features=features_hash(config))
+        for mode in (request.search_mode,) if request.search_mode is not None else MODES:
+            match_id = f"{'search-' if searching else ''}{_actor}-{mode}"
+            plain = policy_id(request.preview, request.battle, mode, features=features_hash(config))
+            pair = (
+                policy_id(
+                    request.preview,
+                    request.battle,
+                    mode,
+                    features=features_hash(config),
+                    search=SEARCH_IDENTITY,
+                )
+                if searching
+                else plain
+            )
             other = baseline
             opponent: dict[str, Any] = {"kind": "baseline", "policy_id": baseline}
             count = request.anchor_games if previous and "anchor" in previous else games
@@ -232,6 +310,14 @@ def progress_files(  # noqa: PLR0912, PLR0915
                     "generation": versus.generation,
                     "policy_id": other,
                     "checkpoints": {"preview": versus.preview, "battle": versus.battle},
+                }
+            elif previous is not None and "control" in previous:
+                other = plain
+                opponent = {
+                    "kind": "self-no-search",
+                    "policy_id": plain,
+                    "checkpoints": {"preview": request.preview, "battle": request.battle},
+                    "mode": mode,
                 }
             elif previous is not None and "anchor" in previous:
                 found_anchor = anchors[previous["anchor"]]
@@ -261,15 +347,41 @@ def progress_files(  # noqa: PLR0912, PLR0915
                 }
             hashes = []
             damage = baseline.startswith("damage-aware@")
+            control = previous is not None and "control" in previous
             per_game: list[dict[str, int]] = []
+            searched: list[dict[str, Any]] = []
+            controlled: list[dict[str, Any]] = []
             for game in range(count):
                 seat = "p2" if game % 2 == 0 else "p1"
                 if damage:
                     sampled = game_file(config, request, match_id, game, pair, other)
                     per_game.append(baseline_counts(sampled, seat, game))
+                if searching:
+                    sampled = game_file(config, request, match_id, game, pair, other)
+                    mine = "p1" if game % 2 == 0 else "p2"
+                    answered = sum(1 for d in sampled["decisions"] if d["player"] == mine)
+                    searched.append(search_counts(answered))
+                    if control:
+                        theirs = sum(1 for d in sampled["decisions"] if d["player"] == seat)
+                        controlled.append(search_counts(theirs, control=True))
                 if game >= min(request.record_games, count):
                     continue
                 found = game_file(config, request, match_id, game, pair, other)
+                if searching:
+                    mine = "p1" if game % 2 == 0 else "p2"
+                    found["policies"] = {mine: pair, seat: other}
+                    found["search"] = {
+                        "seat": mine,
+                        "identity_hash": SEARCH_IDENTITY,
+                        "counts": searched[game],
+                    }
+                    if control:
+                        # the control plays the pair's own id on the other seat
+                        found["opponent_search"] = {
+                            "seat": seat,
+                            "identity_hash": SEARCH_IDENTITY,
+                            "counts": controlled[game],
+                        }
                 if damage:
                     # The baseline holds the seat the candidate does not.
                     found["policies"] = (
@@ -297,6 +409,8 @@ def progress_files(  # noqa: PLR0912, PLR0915
                         "candidate_seat": "p1" if game % 2 == 0 else "p2",
                         "outcome": outcome,
                         **({"baseline_counts": per_game[game]} if damage else {}),
+                        **({"search": searched[game]} if searching else {}),
+                        **({"opponent_search": controlled[game]} if control else {}),
                     }
                 )
             wins = (count + 1) // 2
@@ -322,6 +436,26 @@ def progress_files(  # noqa: PLR0912, PLR0915
                             }
                         }
                         if damage
+                        else {}
+                    ),
+                    **(
+                        {
+                            "search": {
+                                "identity_hash": SEARCH_IDENTITY,
+                                "counts": sum_search_counts(searched),
+                            }
+                        }
+                        if searching
+                        else {}
+                    ),
+                    **(
+                        {
+                            "opponent_search": {
+                                "identity_hash": SEARCH_IDENTITY,
+                                "counts": sum_search_counts(controlled),
+                            }
+                        }
+                        if control
                         else {}
                     ),
                 }

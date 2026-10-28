@@ -46,6 +46,161 @@ BASELINE_COUNT_KEYS = (
 DAMAGE_AWARE_LABEL = "seen scripted baseline: never held-out evidence"
 
 
+#: What a search match is (ADR-026 section 5), printed on every summary, page and replay.
+SEARCH_LABEL = "learned pair with decision-time search (one-ply re-rank)"
+SEARCH_PRIOR_LABEL = "belief matched to the synthetic generator: an upper bound for this evaluation"
+SEARCH_EVIDENCE_NOTE = "search results are never held-out evidence"
+#: What the ``self-no-search`` opponent is: the same pair, no search, same mode.
+CONTROL_LABEL = "control: the same frozen pair played without search"
+
+#: The numeric counts of a search policy's game, in the record's order.
+SEARCH_COUNT_KEYS = (
+    "decisions",
+    "searched_decisions",
+    "worlds_asked",
+    "worlds_built",
+    "worlds_refused",
+    "redraws",
+    "legality_redraws",
+    "worlds_scored",
+    "turns",
+    "wait_continuations",
+    "leaf_queries",
+    "leaf_memo_hits",
+    "leaf_game_end",
+    "leaf_hp_ko",
+    "replies_max_damage",
+    "replies_all_zero",
+    "replies_uniform",
+)
+SEARCH_FALLBACK_KEYS = (
+    "team_preview",
+    "forced_switch",
+    "too_few_candidates",
+    "clock_floor",
+    "belief_refused",
+    "below_min_valid",
+)
+SEARCH_DROP_KEYS = ("reply_model", "choice_refused")
+SEARCH_TABLE_KEYS = ("refusals", "refusal_check_class", "belief_refusals", "resampled")
+#: The fallbacks the no-search control shares with the search (the others need a search).
+CONTROL_FALLBACK_KEYS = ("team_preview", "forced_switch", "too_few_candidates")
+SEARCH_PREFIX = "search-"
+
+
+def sum_search_counts(counts: list[dict[str, Any]]) -> dict[str, Any]:
+    """The per-game search counts summed, key by key (the keyed tables merged, sorted by key)."""
+    total: dict[str, Any] = {key: sum(c[key] for c in counts) for key in SEARCH_COUNT_KEYS}
+    total["fallbacks"] = {k: sum(c["fallbacks"][k] for c in counts) for k in SEARCH_FALLBACK_KEYS}
+    total["worlds_dropped"] = {
+        k: sum(c["worlds_dropped"][k] for c in counts) for k in SEARCH_DROP_KEYS
+    }
+    for table in SEARCH_TABLE_KEYS:
+        merged: dict[str, int] = {}
+        for c in counts:
+            for entry in c[table]:
+                merged[entry["key"]] = merged.get(entry["key"], 0) + entry["count"]
+        total[table] = [{"key": k, "count": merged[k]} for k in sorted(merged)]
+    return total
+
+
+def check_search_counts(counts: dict[str, Any], what: str) -> None:
+    """The rules the profile cannot say about one search count record (a game's, or a sum)."""
+    fell_back = sum(counts["fallbacks"].values())
+    if counts["searched_decisions"] + fell_back > counts["decisions"]:
+        raise ProgressRecordError(
+            f"{what}: searched and fallback decisions cannot exceed decisions"
+        )
+    if counts["worlds_built"] + counts["worlds_refused"] > counts["worlds_asked"]:
+        raise ProgressRecordError(f"{what}: built and refused worlds cannot exceed worlds asked")
+    if counts["worlds_scored"] > counts["worlds_built"]:
+        raise ProgressRecordError(f"{what}: scored worlds cannot exceed built worlds")
+    for table in SEARCH_TABLE_KEYS:
+        if not _ascending([entry["key"] for entry in counts[table]]):
+            raise ProgressRecordError(f"{what}: {table} must be sorted by key, each once")
+
+
+def _check_control_counts(counts: dict[str, Any], what: str) -> None:
+    """The no-search control searches nothing: every count but decisions and the structural
+    fallbacks is 0."""
+    check_search_counts(counts, what)
+    quiet = all(counts[k] == 0 for k in SEARCH_COUNT_KEYS if k != "decisions")
+    structural = all(
+        counts["fallbacks"][k] == 0 for k in SEARCH_FALLBACK_KEYS if k not in CONTROL_FALLBACK_KEYS
+    )
+    tables = all(not counts[k] for k in SEARCH_TABLE_KEYS) and not any(
+        counts["worlds_dropped"].values()
+    )
+    if not (quiet and structural and tables):
+        raise ProgressRecordError(
+            f"{what}: the no-search control searches nothing: "
+            "every count but decisions and the structural fallbacks is 0"
+        )
+
+
+def _check_search_of_match(  # noqa: PLR0912
+    match: dict[str, Any], rows: list[dict[str, Any]], identities: set[str]
+) -> None:
+    """ADR-026 section 5: a search match (``search-<opponent>-<mode>``) carries the search identity
+    hash and the sum of its rows' counts; against the self-no-search control, also the control's
+    (searched decisions 0). No other match carries either; the sums recompute from the rows."""
+    name = match["match_id"]
+    control = match["opponent"]["kind"] == "self-no-search"
+    searched = "search" in match
+    if searched != name.startswith(SEARCH_PREFIX):
+        raise ProgressRecordError(
+            f"{name}: a match is named search-<opponent>-<mode> exactly when it carries "
+            "search counts"
+        )
+    if not searched:
+        if (
+            control
+            or "opponent_search" in match
+            or any("search" in r or "opponent_search" in r for r in rows)
+        ):
+            raise ProgressRecordError(
+                f"{name}: only a search match carries search counts, "
+                "and the self-no-search control belongs to one"
+            )
+        return
+    if "candidate_preview" in match:
+        raise ProgressRecordError(f"{name}: a search match has no Preview variant")
+    if any("search" not in r for r in rows):
+        raise ProgressRecordError(
+            f"{name}: a search match carries search counts in its summary and in every game row"
+        )
+    identities.add(match["search"]["identity_hash"])
+    for index, row in enumerate(rows):
+        check_search_counts(row["search"], f"{name} game {index}")
+    if match["search"]["counts"] != sum_search_counts([r["search"] for r in rows]):
+        raise ProgressRecordError(f"{name}: search.counts must be the sum of the game rows' counts")
+    if not control:
+        if "opponent_search" in match or any("opponent_search" in r for r in rows):
+            raise ProgressRecordError(
+                f"{name}: only a self-no-search match carries the control's counts"
+            )
+        return
+    if match["opponent"]["mode"] != match["mode"]:
+        raise ProgressRecordError(f"{name}: the control plays the pair in the match's mode")
+    if "opponent_search" not in match or any("opponent_search" not in r for r in rows):
+        raise ProgressRecordError(
+            f"{name}: a self-no-search match carries the control's counts "
+            "in its summary and in every game row"
+        )
+    if match["opponent_search"]["identity_hash"] != match["search"]["identity_hash"]:
+        raise ProgressRecordError(
+            f"{name}: the control's identity hash is the search policy's it belongs to"
+        )
+    for index, row in enumerate(rows):
+        _check_control_counts(row["opponent_search"], f"{name} game {index} control")
+    if match["opponent_search"]["counts"] != sum_search_counts(
+        [r["opponent_search"] for r in rows]
+    ):
+        raise ProgressRecordError(
+            f"{name}: opponent_search.counts must be the sum of the game rows' counts"
+        )
+
+
 def is_damage_aware(policy: str) -> bool:
     """Whether a policy id names the damage-aware baseline (``damage-aware@<commit>``)."""
     return policy.startswith("damage-aware@")
@@ -258,9 +413,12 @@ def _check_match_v2(  # noqa: PLR0913, PLR0917
     generation: int,
     identities: set[str],
     run_id: str,
+    search_identities: set[str],
 ) -> None:
-    name = match["match_id"]
     opponent = match["opponent"]
+    _check_search_of_match(match, rows, search_identities)
+    # The usual opponent-and-mode name; a search candidate's match carries the prefix `search-`.
+    name = match["match_id"].removeprefix(SEARCH_PREFIX) if "search" in match else match["match_id"]
     _check_ablation_match(match, generation)
     if opponent["kind"] == "anchor":
         if (
@@ -311,17 +469,34 @@ def _check_matches_v2(
     run_id: str,
 ) -> None:
     identities: set[str] = set()
+    search_identities: set[str] = set()
     for match in matches:
-        _check_match_v2(match, by_match[match["match_id"]], plan, generation, identities, run_id)
+        _check_match_v2(
+            match,
+            by_match[match["match_id"]],
+            plan,
+            generation,
+            identities,
+            run_id,
+            search_identities,
+        )
     if len(identities) > 1:
         raise ProgressRecordError(
             "every damage-aware match of a record must carry one baseline identity hash"
+        )
+    if len(search_identities) > 1:
+        raise ProgressRecordError(
+            "every search match of a record must carry one search identity hash"
         )
 
 
 def _check_not_mixed(matches: list[dict[str, Any]]) -> None:
     if len({m.get("candidate_preview") is None for m in matches}) > 1:
         raise ProgressRecordError("a Preview ablation record holds ablation matches only")
+    if len({"search" not in m for m in matches}) > 1:
+        raise ProgressRecordError(
+            "a search record holds search matches only: the search candidate is evaluated alone"
+        )
 
 
 def _check_plan_v2(raw: dict[str, Any]) -> None:
@@ -410,11 +585,21 @@ def _check_run(raw: dict[str, Any], config: RunConfig) -> None:
             pair["battle"],
             match["mode"],
             features=own_features,
+            search=match["search"]["identity_hash"] if "search" in match else None,
         ):
             raise ProgressRecordError(
                 f"{match['match_id']}: policy_id is not the frozen pair's in this mode"
             )
         opponent = match["opponent"]
+        # The control is the very pair, in the match's mode, without search.
+        if opponent["kind"] == "self-no-search" and (
+            opponent["checkpoints"] != pair
+            or opponent["policy_id"]
+            != policy_id(pair["preview"], pair["battle"], match["mode"], features=own_features)
+        ):
+            raise ProgressRecordError(
+                f"{match['match_id']}: the self-no-search control is not the pair without search"
+            )
         # The other run's pair (`run`) may read a feature set of its own, or none, that this record
         # does not name (its config is not in the record): its id is checked against THAT run's
         # config when the evaluation is made (`_check_versus`), not here.
@@ -428,6 +613,39 @@ def _check_run(raw: dict[str, Any], config: RunConfig) -> None:
                 f"{match['match_id']}: the {opponent['kind']} pair's policy_id "
                 "is not its checkpoints'"
             )
+
+
+def _check_game_search(raw: dict[str, Any]) -> None:
+    """A stored game's search fields: the control belongs to a search; two seats, one identity;
+    each seat's decisions count is the seat's recorded decisions (a forfeit can stop it on one it
+    never answered)."""
+    search, control = raw.get("search"), raw.get("opponent_search")
+    if search is None:
+        if control is not None:
+            raise ProgressRecordError("opponent_search belongs to a game that carries search")
+        return
+    forfeited = 1 if raw["outcome"]["kind"] == "forfeit" else 0
+
+    def answered_ok(seat: str, counts: dict[str, Any]) -> bool:
+        answered = sum(1 for d in raw["decisions"] if d["player"] == seat)
+        return answered <= int(counts["decisions"]) <= answered + forfeited
+
+    check_search_counts(search["counts"], "search")
+    if not answered_ok(search["seat"], search["counts"]):
+        raise ProgressRecordError("search.counts.decisions must be the search seat's decisions")
+    if control is None:
+        return
+    if control["seat"] == search["seat"]:
+        raise ProgressRecordError("opponent_search.seat must be the seat the search does not hold")
+    if control["identity_hash"] != search["identity_hash"]:
+        raise ProgressRecordError(
+            "the control's identity hash is the search policy's it belongs to"
+        )
+    _check_control_counts(control["counts"], "opponent_search")
+    if not answered_ok(control["seat"], control["counts"]):
+        raise ProgressRecordError(
+            "opponent_search.counts.decisions must be the control seat's decisions"
+        )
 
 
 def _check_game_baseline(raw: dict[str, Any]) -> None:
@@ -449,6 +667,32 @@ def _check_game_baseline(raw: dict[str, Any]) -> None:
     forfeited = 1 if raw["outcome"]["kind"] == "forfeit" else 0
     if not answered <= baseline["counts"]["decisions"] <= answered + forfeited:
         raise ProgressRecordError("baseline.counts.decisions must be the baseline seat's decisions")
+
+
+def check_game_search(stored: dict[str, Any], match: dict[str, Any], row: dict[str, Any]) -> None:
+    """A stored game's search fields are its match's and its row's: the candidate's seat, the
+    search identity hash and the row's counts, and the control's on the other seat (none outside a
+    search match, and no control outside a self-no-search match)."""
+    seat = row["candidate_seat"]
+    other = "p2" if seat == "p1" else "p1"
+    expected: dict[str, Any] = {}
+    if "search" in match:
+        expected["search"] = {
+            "seat": seat,
+            "identity_hash": match["search"]["identity_hash"],
+            "counts": row["search"],
+        }
+    if "opponent_search" in match:
+        expected["opponent_search"] = {
+            "seat": other,
+            "identity_hash": match["opponent_search"]["identity_hash"],
+            "counts": row["opponent_search"],
+        }
+    found = {k: stored[k] for k in ("search", "opponent_search") if k in stored}
+    if found != expected:
+        raise ProgressRecordError(
+            "the stored game's search fields are not its match's identity and its row's counts"
+        )
 
 
 def check_game_baseline(stored: dict[str, Any], match: dict[str, Any], row: dict[str, Any]) -> None:
@@ -490,6 +734,7 @@ def read_game_record(raw: object) -> dict[str, Any]:
     if log_hash(raw["omniscient_log"]) != raw["omniscient_log_sha256"]:
         raise ProgressRecordError("omniscient_log_sha256 does not recompute")
     _check_game_baseline(raw)
+    _check_game_search(raw)
     # A game of a both-seats evaluation names its pair: both games of a pair share the pair's seed.
     pair = raw.get("pair")
     if pair is not None and pair != raw["game"] // 2:
