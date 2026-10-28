@@ -253,6 +253,50 @@ describe.skipIf(!existsSync(PYTHON) && process.env.ARENEON_REQUIRE_PYTHON_WORKER
     expect(tree(otherDir).map((f) => [f, readFileSync(join(otherDir, f), "utf8")])).toEqual(before);
   }, 900_000);
 
+  it("plays extra modes with the real workers (--modes): head to head in the mode on both sides, byte-identical on rerun, today's bytes without the flag (#1044)", () => {
+    const otherDir = join(dir, "other-run");
+    if (!existsSync(otherDir)) {
+      const tiny = json<{ seeds: Record<string, unknown> }>(ROOT, "fixtures/contracts/v1/training-run-config/valid/tiny.json");
+      const otherConfig = join(dir, "other-config.json");
+      writeFileSync(otherConfig, JSON.stringify({ ...tiny, seeds: { ...tiny.seeds, run_key: "other-run", init_preview: 21, init_battle: 22 }, team_dataset: { path: SOURCE, dataset_hash: verifiedDatasetHash(engine, SOURCE, FORMAT) } }));
+      loop("run", "--config", otherConfig, "--run-dir", otherDir, "--engine-data", DATA, "--generations", "1", "--node", process.execPath, "--worker-python", PYTHON);
+    }
+    const flags = ["--generation", "1", "--versus-run-dir", otherDir, "--versus-generation", "1", "--run-games", "4"];
+    const plain = join(dir, "m0.progress");
+    const first = join(dir, "m1.progress");
+    const second = join(dir, "m2.progress");
+    progress(plain, ...flags);
+    const printed = progress(first, ...flags, "--modes", "argmax,sample:t500000,sample:t500000:th30000") as unknown as { generations: { matches: { match_id: string; mode: string }[]; play_mode_gap: { rows: { match_id: string; mode: string; pairs: number }[] } }[] };
+    progress(second, ...flags, "--modes", "argmax,sample:t500000,sample:t500000:th30000");
+    const done = printed.generations[0] as (typeof printed.generations)[number];
+    expect(done.matches.map((m) => m.match_id)).toEqual(
+      ["actor-rule", "random-legal", "run"].flatMap((o) => ["argmax", "sample", "sample-t500000", "sample-t500000-th30000"].map((m) => `${o}-${m}`)),
+    );
+    expect(done.matches.find((m) => m.match_id === "run-sample-t500000-th30000")?.mode).toBe("sample, T 0.5, threshold 0.03");
+    expect(done.play_mode_gap.rows.map((r) => r.match_id)).toEqual(["actor-rule", "random-legal", "run"].flatMap((o) => ["sample", "sample-t500000", "sample-t500000-th30000"].map((m) => `${o}-${m}`)));
+    const files = tree(join(first, gen(1)));
+    expect(tree(join(second, gen(1)))).toEqual(files);
+    for (const file of files) expect(readFileSync(join(first, gen(1), file), "utf8"), file).toBe(readFileSync(join(second, gen(1), file), "utf8"));
+    // Both sides play the mode: the other run's pair carries its own temperature-0.5 policy id in the record.
+    const record = readProgressEvaluationRecordV2(json<ProgressEvaluationRecordV2>(first, gen(1), "progress.json"));
+    const run = record.matches.find((m) => m.match_id === "run-sample-t500000") as (typeof record.matches)[number];
+    const plainRun = record.matches.find((m) => m.match_id === "run-sample") as (typeof record.matches)[number];
+    expect(run).toMatchObject({ mode: "sample", temperature_ppm: 500_000 });
+    expect(run.opponent).toMatchObject({ kind: "run" });
+    expect((run.opponent as { policy_id: string }).policy_id).not.toBe((plainRun.opponent as { policy_id: string }).policy_id);
+    expect(run.policy_id).not.toBe(plainRun.policy_id);
+    // Without the flag the files are today's: the plain evaluation's matches equal the extended one's plain matches, byte for byte.
+    const base = readProgressEvaluationRecordV2(json<ProgressEvaluationRecordV2>(plain, gen(1), "progress.json"));
+    expect(base.matches.every((m) => m.temperature_ppm === undefined && m.truncation === undefined)).toBe(true);
+    const kept = record.matches.filter((m) => m.temperature_ppm === undefined && m.truncation === undefined);
+    expect(jcs(kept as unknown as Json)).toBe(jcs(base.matches as unknown as Json));
+    for (const file of tree(join(plain, gen(1), "games"))) expect(readFileSync(join(plain, gen(1), "games", file), "utf8"), file).toBe(readFileSync(join(first, gen(1), "games", file), "utf8"));
+    // A mode outside the grammar is a usage error (exit 3) before any work.
+    const refused = spawnSync(PYTHON, ["-I", "-m", "areneon_ml.loop", "progress", "--run-dir", runDir, "--engine-data", DATA, "--generation", "1", "--modes", "sample:t1000000", "--progress-dir", join(dir, "m3.progress")], { encoding: "utf8", env, cwd: ROOT });
+    expect(refused.status).toBe(3);
+    expect(refused.stderr).toMatch(/--modes/);
+  }, 1_200_000);
+
   it("plays the Team Preview ablation with the real worker: three Previews, the random one never asked of the worker", () => {
     const f = join(dir, "f.progress");
     const printed = JSON.parse(loop("progress", "--run-dir", runDir, "--engine-data", DATA, "--games", "4", "--record-games", "4", "--generation", "1", "--preview-ablation", "--progress-dir", f, "--node", process.execPath, "--worker-python", PYTHON)) as { generations: { matches: { match_id: string }[]; ablation: { baselines: Record<string, Record<string, { pairs: number; score_ppm: number }>> } }[] };

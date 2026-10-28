@@ -35,6 +35,7 @@ from areneon_contracts.contracts import ContractError
 from areneon_ml.inspector.model import read_run_dir_config, refuse_non_public
 from areneon_ml.inspector.readers import InspectError
 from areneon_ml.loop import layout
+from areneon_ml.progress.modes import mode_label
 from areneon_ml.progress.records import (
     ProgressRecordError,
     check_game_baseline,
@@ -60,6 +61,7 @@ class ProgressGame:
     generation: int
     match_id: str
     game: int
+    #: The play mode in words (``argmax``, ``sample``, ``sample, T 0.5``; ``mode_label``).
     mode: str
     opponent_kind: str
     candidate_seat: str
@@ -304,7 +306,7 @@ def read_progress_games(
                 generation,
                 record["match_id"],
                 record["game"],
-                matches[found[1]]["mode"],
+                mode_label(matches[found[1]]),
                 matches[found[1]]["opponent"]["kind"],
                 row["candidate_seat"],
                 record,

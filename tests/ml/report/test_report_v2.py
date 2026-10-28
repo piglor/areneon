@@ -10,6 +10,7 @@ from __future__ import annotations
 import dataclasses
 import html
 import json
+import re
 import socket
 from pathlib import Path
 from typing import Any
@@ -19,6 +20,8 @@ from areneon_ml.loop import layout
 from areneon_ml.progress import run as run_module
 from areneon_ml.progress.ablation import ablation_summary
 from areneon_ml.progress.eval_dataset import EvalDataset
+from areneon_ml.progress.gap import GAP_LABEL, SAME_MODE_NOTE, play_mode_gap
+from areneon_ml.progress.modes import ExtraMode
 from areneon_ml.progress.records import CONTROL_LABEL, SEARCH_LABEL, SEARCH_PRIOR_LABEL
 from areneon_ml.progress.run import CROSS_RUN_LABEL, VersusSpec, summary_of
 from areneon_ml.progress.stats import PPM
@@ -29,6 +32,7 @@ from areneon_ml.report.render import (
     ANCHOR_NOTE,
     CONDITIONAL,
     CONDITIONAL_PAIRS,
+    GAP_NOTE,
     OTHER_DATASET_LABEL,
     SEAT_CAPTION,
     SEAT_CAPTION_PAIRS,
@@ -374,3 +378,96 @@ def test_a_page_without_search_has_no_search_table(run: Path, tmp_path: Path) ->
     root = tmp_path / "progress"
     played(run, root, 1)
     assert "Decision-time search counts" not in text_of(run, root)
+
+
+# --- play modes and the play-mode gap (ADR-023 section 2, #1042; #1044) -----------------------
+
+
+@pytest.fixture(scope="module")
+def modal(run: Path, tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """One root: generation 0 a version 1 record, generation 1 version 2 with an anchor, extra
+    play modes and a head-to-head against another run (the gap rows of baselines and the run)."""
+    other = tmp_path_factory.mktemp("o2") / "other"
+    make_run(other, generations=2, config=dataset_config("other-run", (21, 22)))
+    root = tmp_path_factory.mktemp("p3") / "progress"
+    played(run, root, 0)
+    downgrade_to_v1(root / "g000000")
+    played(
+        run,
+        root,
+        1,
+        anchors=(0,),
+        versus=VersusSpec(other, 1, 4, "enc-other"),
+        modes=(ExtraMode(500_000, None), ExtraMode(500_000, 30_000)),
+    )
+    return root
+
+
+def test_the_gap_rows_equal_a_recomputation_from_the_records(run: Path, modal: Path) -> None:
+    model = read_report_model(run, modal)
+    gap = model.progress[1].play_mode_gap
+    assert gap == play_mode_gap(record(modal, 1))
+    opponents = sorted({r["opponent"] for r in gap["rows"]})
+    assert opponents == ["actor-rule", "random-legal", "run"]
+    text = text_of(run, modal)
+    assert "Play-mode gap (argmax minus mode)" in text
+    assert GAP_LABEL in text
+    assert GAP_NOTE in text
+    for r in gap["rows"]:
+        assert f"{signed_pct(r['mean_ppm'])} ({signed_pct(r['low_ppm'], down=True)} to " in text
+        assert f"{r['better']} / {r['equal']} / {r['worse']}" in text
+    # the stand-in wins one game in four in an extra mode and one in two otherwise
+    run_rows = {r["match_id"]: r for r in gap["rows"] if r["opponent"] == "run"}
+    assert sorted(run_rows) == ["run-sample", "run-sample-t500000", "run-sample-t500000-th30000"]
+    assert run_rows["run-sample"]["mean_ppm"] == 0
+    assert run_rows["run-sample-t500000"]["mean_ppm"] == 250_000
+    assert "not available: version 1 record" in text
+
+
+def test_every_score_cell_names_its_mode(run: Path, modal: Path) -> None:
+    model = read_report_model(run, modal)
+    labels = {m.match_id: m.mode_label for m in model.progress[1].matches}
+    assert labels["actor-rule-sample-t500000"] == "sample, T 0.5"
+    assert labels["actor-rule-sample-t500000-th30000"] == "sample, T 0.5, threshold 0.03"
+    assert labels["run-argmax"] == "argmax"
+    assert labels["anchor-g0-sample"] == "sample"
+    text = text_of(run, modal)
+    # the matches table has a Mode column and the generation table names the mode of every score;
+    # the charts keep the plain modes only
+    assert re.search(r"<th[^>]*>Mode</th>", text)
+    assert "actor-rule sample, T 0.5, threshold 0.03 " in text
+    assert "Score vs actor-rule-sample" not in text
+    assert "Score vs actor-rule" in text
+    # the anchor rows carry the same-mode note
+    assert SAME_MODE_NOTE in text
+
+
+def test_the_gap_section_keeps_hostile_strings_inert(run: Path, modal: Path) -> None:
+    model = read_report_model(run, modal)
+    facts = model.progress[1]
+    rows = [
+        {**r, "opponent": HOSTILE + r["opponent"], "mode": HOSTILE + r["mode"]}
+        for r in facts.play_mode_gap["rows"]
+    ]
+    matches = tuple(
+        dataclasses.replace(m, mode_label=HOSTILE + m.mode_label) for m in facts.matches
+    )
+    page = build_report(
+        dataclasses.replace(
+            model,
+            progress={
+                **model.progress,
+                1: dataclasses.replace(
+                    facts, matches=matches, play_mode_gap={**facts.play_mode_gap, "rows": rows}
+                ),
+            },
+        )
+    )
+    assert_inert(page, (HOSTILE,))
+    assert html.escape(HOSTILE) in page
+
+
+def test_a_page_without_a_comparison_has_no_gap_section(run: Path, tmp_path: Path) -> None:
+    root = tmp_path / "progress"
+    played(run, root, 2, games=4, preview_ablation=True)
+    assert "Play-mode gap" not in text_of(run, root)

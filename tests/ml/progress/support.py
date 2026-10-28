@@ -282,9 +282,26 @@ def progress_files(  # noqa: PLR0912, PLR0915
     if searching:
         opponents.append(("self-no-search", "", {"control": True}))
     for _actor, baseline, previous in opponents:
-        for mode in (request.search_mode,) if request.search_mode is not None else MODES:
-            match_id = f"{'search-' if searching else ''}{_actor}-{mode}"
-            plain = policy_id(request.preview, request.battle, mode, features=features_hash(config))
+        plain_modes = [(m, None) for m in (request.search_mode,) if m is not None] or [
+            (m, None) for m in MODES
+        ]
+        # The extra play modes (#1044) go against the baselines and the other run's pair only.
+        takes_extra = previous is None or "run" in previous
+        extras = [("sample", e) for e in request.extra_modes] if takes_extra else []
+        for mode, extra in [*plain_modes, *extras]:
+            suffix = "" if extra is None else extra.mode.suffix
+            match_id = f"{'search-' if searching else ''}{_actor}-{mode}{suffix}"
+            play = (
+                {}
+                if extra is None
+                else {
+                    "temperature_ppm": extra.mode.temperature_ppm,
+                    "truncation": extra.mode.truncation,
+                }
+            )
+            plain = policy_id(
+                request.preview, request.battle, mode, features=features_hash(config), **play
+            )
             pair = (
                 policy_id(
                     request.preview,
@@ -303,6 +320,8 @@ def progress_files(  # noqa: PLR0912, PLR0915
                 count = request.versus.games
                 versus = request.versus
                 other = versus.policy_id_sample if mode == "sample" else versus.policy_id_argmax
+                if extra is not None:
+                    other = str(extra.versus_policy_id)
                 opponent = {
                     "kind": "run",
                     "run_id": versus.run_id,
@@ -395,10 +414,13 @@ def progress_files(  # noqa: PLR0912, PLR0915
                 found["omniscient_log_sha256"] = log_hash(found["omniscient_log"])
                 stored[f"{match_id}-{game}.json"] = found
                 hashes.append(record_hash(found))
+            # An extra mode wins one game in four (so its gap to argmax is not zero).
+            period = 2 if extra is None else 4
+            won = [game % period == 0 for game in range(count)]
             for game in range(count):
                 outcome = (
                     {"kind": "played", "winner": "candidate", "turns": 5}
-                    if game % 2 == 0
+                    if won[game]
                     else {"kind": "played", "winner": "opponent", "turns": 3}
                 )
                 rows.append(
@@ -413,13 +435,14 @@ def progress_files(  # noqa: PLR0912, PLR0915
                         **({"opponent_search": controlled[game]} if control else {}),
                     }
                 )
-            wins = (count + 1) // 2
+            wins = sum(won)
             matches.append(
                 {
                     "match_id": match_id,
                     "policy_id": pair,
                     "opponent": opponent,
                     "mode": mode,
+                    **({} if extra is None else {k: v for k, v in play.items() if v is not None}),
                     "games": count,
                     "wins": wins,
                     "ties": 0,

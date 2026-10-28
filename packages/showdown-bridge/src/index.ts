@@ -426,6 +426,7 @@ export {
   DAMAGE_AWARE_POLICY_ID,
   DAMAGE_AWARE_VERSIONS,
   type DamageAwareVersion,
+  type ExtraMode,
   damageAwareMatchPrefix,
   damageAwareVersionPolicyId,
   playProgress,
@@ -442,6 +443,7 @@ export {
   type ProgressTeam,
   writeProgress,
 } from "./progress-evaluation.ts";
+export { type ExtraPlay, matchSuffix, modeName, parseExtraMode, parseModes, ProgressModeError } from "./progress-modes.ts";
 export { EVAL_DATASET_FLAGS, type EvalDataset, readEvalDataset, withEvalDataset } from "./eval-dataset.ts";
 export { committedPlanSeeds, type ProgressPoolSource, type ProgressPorts, runProgressCli } from "./progress-cli.ts";
 export { controlSeat, searchCountsRecord, searchSeat } from "./search-progress.ts";
