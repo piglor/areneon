@@ -577,3 +577,54 @@ def test_the_eval_dataset_option_reaches_the_record_and_is_logged_as_a_look(
     for bad in (option[:2], option[2:], [*option[:3], "7" * 63], [*option[:3], "5" * 64]):
         assert main(args(run, *common, *bad, "--progress-dir", str(tmp_path / "q"))) == EXIT_REFUSED
     assert not (tmp_path / "q.looks.jsonl").exists()
+
+
+def test_modes_add_extra_play_modes_and_the_gap_to_the_printed_line(
+    run: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    fake_node(monkeypatch, run)
+    code = main(
+        args(
+            run,
+            *("--generation", "1", "--games", "2", "--record-games", "0"),
+            *("--modes", "argmax,sample,sample:t500000,sample:th30000"),
+            *("--progress-dir", str(tmp_path / "m")),
+        )
+    )
+    assert code == 0
+    (done,) = json.loads(capsys.readouterr().out)["generations"]
+    ids = [m["match_id"] for m in done["matches"] if m["match_id"].startswith("actor-rule")]
+    assert ids == [
+        "actor-rule-argmax",
+        "actor-rule-sample",
+        "actor-rule-sample-t500000",
+        "actor-rule-sample-th30000",
+    ]
+    assert done["play_mode_gap"]["label"].startswith("diagnostic: play-mode gap")
+    assert {r["mode"] for r in done["play_mode_gap"]["rows"]} == {
+        "sample",
+        "sample, T 0.5",
+        "sample, T 1, threshold 0.03",
+    }
+
+
+@pytest.mark.parametrize(
+    "modes", ["sample:t1000000", "sample:t5,sample:t5", "temperature", "sample:th0", ""]
+)
+def test_a_mode_outside_the_grammar_is_refused_before_any_work(
+    run: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    modes: str,
+) -> None:
+    built = fake_node(monkeypatch, run)
+    code = main(
+        args(
+            run, *("--generation", "1", "--modes", modes), *("--progress-dir", str(tmp_path / "m"))
+        )
+    )
+    assert code == EXIT_REFUSED
+    assert "--modes" in capsys.readouterr().err
+    assert not (tmp_path / "m").exists() or not list((tmp_path / "m").glob("g*"))
+    assert len(built) <= 1

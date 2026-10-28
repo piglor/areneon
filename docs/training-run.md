@@ -307,6 +307,34 @@ adopt rule is applied by the experiment, not here. Use a progress directory of i
 this run's, on the same pairs and seeds; the other run's actor-rule score on these
 pairs is not played.
 
+**Extra play modes and the play-mode gap (ADR-023, #1044, #1042).** A progress result is
+read with its play mode: every match, score cell and replay page names it (`argmax`,
+`sample`, `sample, T 0.5`, `sample, T 1, threshold 0.03`). `progress --modes
+sample:t500000,sample:th30000,sample:t500000:th30000` adds extra modes to the usual two
+(`argmax` and `sample` are always played and may be listed; the grammar is closed, ppm
+1 to 999999, and an explicit temperature 1 is refused). Each extra mode is played against
+the three scripted baselines (`random-legal@v1`, `actor-rule@v1`, `damage-aware@v1/v3`)
+and, with `--versus-run-dir`, against the other run's pair with BOTH sides sampling at
+the same temperature and threshold, on the same pairs, seats and seeds. Anchor and
+previous-generation matches keep their two modes. The matches are
+`<opponent>-sample[-t<ppm>][-th<ppm>]` (for example `run-sample-t500000-th30000`) and carry
+the optional `temperature_ppm` and `truncation` of the version 2 match (a minor change within
+version 2; a record without them keeps its bytes and hash); the Python reader recomputes each
+candidate policy id from the pair, the mode and the settings (ADR-023 section 1) and the
+command checks the other run's id too, so a record whose id is not its mode's is refused. Not
+with `--preview-ablation` or `--search-mode`; use a progress directory of its own for a
+generation already committed. Without `--modes` the files are the bytes they were.
+
+The printed summary (`play_mode_gap`), the dashboard ("Play-mode gap (argmax minus mode)")
+and the head-to-head show, for each baseline and for the cross-run head-to-head, the gap of
+every other mode to argmax on the same pairs: the mean over pairs of the argmax pair score
+minus the mode's pair score, with the pair-level bootstrap interval on a stream labelled
+`gap:<opponent>:argmax:<mode>`. It is derived on display and never stored, labelled
+"diagnostic: play-mode gap, conditional on the fixed validation plan", and is no test, claim
+or gate. Anchor and previous-generation rows say "both sides play the same mode; the
+play-mode gap is not read from them"; a version 1 record says "not available: version 1
+record".
+
 **A declared evaluation key (#1177).**
 `progress --evaluation-key KEY` replaces the run key in `progress-pairing/1` and
 `progress-seed/1` for every match of the evaluation (baselines, damage-aware, anchors,

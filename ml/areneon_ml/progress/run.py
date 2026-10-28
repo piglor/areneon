@@ -22,7 +22,7 @@ from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, Protocol, cast
 
 from areneon_contracts.contracts import jcs, sha256_hex
 
@@ -37,6 +37,8 @@ from areneon_ml.model.network import ROLES
 from areneon_ml.progress import evaluation_key as ekey
 from areneon_ml.progress.ablation import ablation_summary, expected_ablation_matches
 from areneon_ml.progress.eval_dataset import EvalDataset, EvalDatasetError, validation_teams
+from areneon_ml.progress.gap import SAME_MODE_NOTE, play_mode_gap
+from areneon_ml.progress.modes import ExtraMode, match_extra, match_stem, mode_label
 from areneon_ml.progress.records import (
     CONTROL_LABEL,
     DAMAGE_AWARE_LABEL,
@@ -163,6 +165,19 @@ class RunPair:
     team_set: Path
     encoder_version: str
     games: int
+    #: The other run's candidate-features hash (None: its pair reads none), for its policy ids.
+    features: str | None = None
+
+
+@dataclass(frozen=True)
+class PlayMode:
+    """An extra play mode (ADR-023 section 1, #1044) with the policy ids it is played under: the
+    candidate's, and the other run's pair's when a head-to-head is played (both sides sample at the
+    same temperature and threshold)."""
+
+    mode: ExtraMode
+    policy_id: str
+    versus_policy_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -213,6 +228,9 @@ class ProgressRequest:
     #: (``argmax`` or ``sample``) with the committed ``rerank-1`` config, against the baselines and
     #: the control ``self-no-search``; its matches are ``search-<opponent>-<mode>``.
     search_mode: str | None = None
+    #: Extra play modes (#1044): samples at a declared temperature and/or threshold, played against
+    #: the baselines and the other run's pair beside argmax and sample; empty plays today's matches.
+    extra_modes: tuple[PlayMode, ...] = ()
 
 
 class ProgressPlayer(Protocol):
@@ -305,6 +323,20 @@ class NodeProgressPlayer(NodePlayer):
             *(() if request.eval_dataset is None else request.eval_dataset.node_args()),
             *ekey.node_args(request.evaluation_key),
             *(() if request.search_mode is None else ("--search-mode", request.search_mode)),
+            *(
+                arg
+                for extra in request.extra_modes
+                for arg in (
+                    "--extra-mode",
+                    ",".join(
+                        (
+                            extra.mode.name,
+                            extra.policy_id,
+                            *(() if extra.versus_policy_id is None else (extra.versus_policy_id,)),
+                        )
+                    ),
+                )
+            ),
         )
         try:
             found = json.loads(out)
@@ -529,7 +561,9 @@ def _check_damage_aware(record: dict[str, Any], asked: str | None, *, legacy: bo
     found = {
         _bare(m): m
         for m in record["matches"]
-        if m["opponent"]["kind"] == "baseline" and is_damage_aware(m["opponent"]["policy_id"])
+        if m["opponent"]["kind"] == "baseline"
+        and is_damage_aware(m["opponent"]["policy_id"])
+        and match_extra(m) is None
     }
     if asked is None and not legacy:
         if found:
@@ -644,6 +678,7 @@ def _versus_pair(run_dir: Path, config: RunConfig, spec: VersusSpec) -> RunPair:
         found.team_set,
         spec.encoder_version,
         spec.games,
+        features_hash(other),
     )
 
 
@@ -713,7 +748,11 @@ def versus_relation(run_dir: Path, source: _Source, pair: RunPair) -> dict[str, 
 
 def _check_versus(record: dict[str, Any], versus: RunPair | None, *, legacy: bool) -> None:
     """The ``run-*`` matches are exactly the other run's frozen pair in both modes (opt-in)."""
-    found = {_bare(m): m for m in record["matches"] if m["opponent"]["kind"] == "run"}
+    found = {
+        _bare(m): m
+        for m in record["matches"]
+        if m["opponent"]["kind"] == "run" and match_extra(m) is None
+    }
     if versus is None:
         if found and not legacy:
             raise ProgressError("this evaluation asks for no cross-run matches")
@@ -739,6 +778,65 @@ def _check_versus(record: dict[str, Any], versus: RunPair | None, *, legacy: boo
             "checkpoints": {"preview": versus.preview, "battle": versus.battle},
         }:
             raise ProgressError(f"{match['match_id']}: the opponent is not the other run's pair")
+
+
+def _extra_id(mode: ExtraMode, pair: RunPair, policy: str | None) -> str:
+    """The other run's pair's policy id in an extra mode (its own features, its own checkpoints)."""
+    return policy or policy_id(
+        pair.preview,
+        pair.battle,
+        "sample",
+        temperature_ppm=mode.temperature_ppm,
+        truncation=mode.truncation,
+        features=pair.features,
+    )
+
+
+def _check_extra_modes(
+    record: dict[str, Any],
+    asked: Sequence[PlayMode],
+    versus: RunPair | None,
+    *,
+    legacy: bool,
+) -> None:
+    """The extra play modes (#1044) are exactly those asked for, each against every opponent that
+    plays plain sample (the scripted baselines and the other run's pair), BOTH sides in the mode.
+
+    ``asked`` is empty for none: a fresh evaluation then holds no extra match; ``legacy`` (a
+    committed record) may hold any set, but each must still be well formed, its opponent being its
+    plain sample sibling's (the other run's pair: its policy id in the mode).
+    """
+    found = {m["match_id"]: m for m in record["matches"] if match_extra(m) is not None}
+    if not asked and not legacy and found:
+        raise ProgressError("this evaluation asks for no extra play modes")
+    siblings = {
+        match_stem(m): m
+        for m in record["matches"]
+        if m["mode"] == "sample"
+        and match_extra(m) is None
+        and m["opponent"]["kind"] in ("baseline", "run")
+        and "search" not in m
+        and m.get("candidate_preview") is None
+    }
+    for match in found.values():
+        extra = cast(ExtraMode, match_extra(match))
+        sibling = siblings.get(match_stem(match))
+        if sibling is None:
+            raise ProgressError(f"{match['match_id']}: its opponent also plays plain sample")
+        opponent = match["opponent"]
+        if opponent["kind"] == "run" and versus is not None:
+            mine = next((a.versus_policy_id for a in asked if a.mode == extra), None)
+            expected = sibling["opponent"] | {"policy_id": _extra_id(extra, versus, mine)}
+        elif opponent["kind"] == "run":
+            expected = opponent  # another run's pair, not asked for here: its id is not ours
+        else:
+            expected = sibling["opponent"]
+        if opponent != expected:
+            raise ProgressError(f"{match['match_id']}: the opponent does not play the same mode")
+    if asked:
+        wanted = {f"{stem}-sample{a.mode.suffix}" for stem in siblings for a in asked}
+        if set(found) != wanted:
+            raise ProgressError("the record's extra play modes are not the modes asked for")
 
 
 def _check_anchors(
@@ -787,6 +885,7 @@ def _verify_output(  # noqa: PLR0913, PLR0917
     eval_dataset: EvalDataset | None = None,
     evaluation_key: str | None = None,
     search_mode: str | None = None,
+    extra_modes: Sequence[PlayMode] = (),
 ) -> dict[str, Any]:
     """The simulator side's files are the record's: read both kinds, check every hash and name."""
     record = read_progress_record(layout.read_json(work / PROGRESS), config)
@@ -810,6 +909,7 @@ def _verify_output(  # noqa: PLR0913, PLR0917
     _check_search(record, search_mode, legacy=False)
     _check_damage_aware(record, damage_aware, legacy=False)
     _check_versus(record, versus, legacy=False)
+    _check_extra_modes(record, extra_modes, versus, legacy=False)
     _check_eval_dataset(record, eval_dataset, config, strict=True)
     _check_evaluation_key(record, evaluation_key, strict=True)
     rows = {(r["match_id"], r["game"]): r for r in record["games"]}
@@ -963,10 +1063,16 @@ def summary_of(record: dict[str, Any]) -> list[dict[str, Any]]:
             }
             | stats
             | {
+                "mode": mode_label(match),
                 "opponent": match["opponent"]["kind"],
                 "forfeits": sum(f["count"] for f in match["forfeits"]),
                 "turn_cap_ties": match["turn_cap_ties"],
             }
+            | (
+                {"play_mode_gap": SAME_MODE_NOTE}
+                if match["opponent"]["kind"] in ("previous", "anchor")
+                else {}
+            )
             | (
                 {"comparison": SEEN_LABEL}
                 if match["opponent"]["kind"] in ("previous", "anchor")
@@ -1052,6 +1158,7 @@ def verify_progress_dir(  # noqa: PLR0913, PLR0917
     # The damage-aware matches are optional (a record may hold them or not), never half a set.
     _check_damage_aware(record, None, legacy=True)
     _check_versus(record, versus, legacy=True)
+    _check_extra_modes(record, (), versus, legacy=True)
     _check_eval_dataset(record, eval_dataset, config, strict=strict_dataset)
     _check_evaluation_key(record, evaluation_key, strict=strict_dataset)
     rows = {(r["match_id"], r["game"]): r for r in record["games"]}
@@ -1078,6 +1185,7 @@ def _check_asked(
     sizes: tuple[int, int, int],
     asked: tuple[Sequence[int], bool, bool, VersusSpec | None],
     search_mode: str | None = None,
+    modes: Sequence[ExtraMode] = (),
 ) -> tuple[list[int], list[int]]:
     """Refuse a request that cannot be played; returns the anchors played and left out."""
     games, record_games, anchor_games = sizes
@@ -1101,6 +1209,13 @@ def _check_asked(
             "no --anchors and no --previous-matches (the baselines, the control and "
             "--versus-run-dir are played)"
         )
+    if modes and (preview_ablation or search_mode is not None):
+        raise ProgressError(
+            "--modes names extra play modes for the baselines and the head-to-head: "
+            "not with --preview-ablation or --search-mode"
+        )
+    if len(set(modes)) != len(modes):
+        raise ProgressError("an extra play mode is listed once")
     if versus is not None and (versus.games < MIN_GAMES or versus.games % 2):
         raise ProgressError("--run-games must be an even number of at least 2")
     if versus is not None and preview_ablation:
@@ -1113,7 +1228,7 @@ def _check_asked(
     return ([], []) if preview_ablation else (wanted, dropped)
 
 
-def progress_generation(  # noqa: PLR0913, PLR0917
+def progress_generation(  # noqa: PLR0913, PLR0915, PLR0917
     run_dir: Path,
     generation: int,
     root: Path,
@@ -1130,8 +1245,15 @@ def progress_generation(  # noqa: PLR0913, PLR0917
     evaluation_key: str | None = None,
     damage_aware_version: str = "v1",
     search_mode: str | None = None,
+    modes: Sequence[ExtraMode] = (),
 ) -> dict[str, Any]:
     """Evaluate one generation into ``root``; a committed directory is verified and kept.
+
+    ``modes`` (ADR-023 section 1, #1044) adds extra play modes, each a sample at a declared
+    temperature and/or threshold (``progress/modes.py``), played against every scripted baseline
+    and, with ``versus``, against the other run's pair with BOTH sides in the mode, on the same
+    pairs, seats and seeds. Anchor and previous-generation matches keep their two modes. The
+    matches are ``<opponent>-sample-t<ppm>[-th<ppm>]``; without ``modes`` the bytes are today's.
 
     ``search_mode`` (ADR-026 slice P) makes the candidate the frozen pair played with decision-time
     search (the committed ``rerank-1`` config, one play mode) instead of the pair itself: its
@@ -1173,6 +1295,7 @@ def progress_generation(  # noqa: PLR0913, PLR0917
         (games, record_games, anchor_games),
         (anchors, previous_matches, preview_ablation, versus),
         search_mode,
+        modes,
     )
     damage_budget_ms = _damage_budget_ms(
         damage_aware_budget_minutes, preview_ablation, damage_aware_version
@@ -1209,6 +1332,7 @@ def progress_generation(  # noqa: PLR0913, PLR0917
                 eval_dataset,
                 evaluation_key,
                 search_mode,
+                modes,
             )
         source = _source(run_dir, config, generation)
         previous = _previous_pair(run_dir, config, generation) if previous_matches else None
@@ -1217,6 +1341,7 @@ def progress_generation(  # noqa: PLR0913, PLR0917
         played_anchor_games = anchor_games if wanted else 0
         other_pair, relation = _open_versus(run_dir, config, source, versus)
         played_run_games = 0 if versus is None else versus.games
+        extra_modes = _play_modes(modes, source, config, other_pair)
         needed = max(games, played_anchor_games, played_run_games) // 2
         limit = max_pairs(config, eval_dataset)
         if needed > limit:
@@ -1266,6 +1391,7 @@ def progress_generation(  # noqa: PLR0913, PLR0917
                     eval_dataset=eval_dataset,
                     evaluation_key=evaluation_key,
                     search_mode=search_mode,
+                    extra_modes=extra_modes,
                 )
             )
             record = _verify_output(
@@ -1284,6 +1410,7 @@ def progress_generation(  # noqa: PLR0913, PLR0917
                 eval_dataset,
                 evaluation_key,
                 search_mode,
+                extra_modes,
             )
             layout.fsync_tree(work)
             layout.write_json(
@@ -1312,6 +1439,7 @@ def progress_generation(  # noqa: PLR0913, PLR0917
                 "game_ms": facts.get("game_ms", {}),
                 "matches": summary_of(record),
             }
+            | _gap_part(record)
             | _ablation_part(record)
             | _versus_part(record, relation)
         )
@@ -1328,6 +1456,7 @@ def _skipped(  # noqa: PLR0913, PLR0917
     eval_dataset: EvalDataset | None,
     evaluation_key: str | None = None,
     search_mode: str | None = None,
+    modes: Sequence[ExtraMode] = (),
 ) -> dict[str, Any]:
     """A committed directory is verified and reported, never rewritten."""
     pair = None if versus is None else _versus_pair(run_dir, config, versus)
@@ -1367,6 +1496,8 @@ def _skipped(  # noqa: PLR0913, PLR0917
             "damage_aware": _damage_aware_status(record),
             "matches": summary_of(record),
         }
+        | _gap_part(record)
+        | _modes_status(record, modes)
         | _ablation_part(record)
         | _versus_part(record, held)
     )
@@ -1414,6 +1545,47 @@ def _versus_part(record: dict[str, Any], relation: dict[str, str] | None = None)
             "lineage": relation,
         }
     }
+
+
+def _play_modes(
+    modes: Sequence[ExtraMode], source: _Source, config: RunConfig, other: RunPair | None
+) -> tuple[PlayMode, ...]:
+    """The extra modes with their policy ids: the candidate's pair and, head to head, the other
+    run's pair, each in the mode (the TS side checks nothing: it plays what it is given)."""
+    return tuple(
+        PlayMode(
+            m,
+            policy_id(
+                source.preview,
+                source.battle,
+                "sample",
+                temperature_ppm=m.temperature_ppm,
+                truncation=m.truncation,
+                features=features_hash(config),
+            ),
+            None if other is None else _extra_id(m, other, None),
+        )
+        for m in modes
+    )
+
+
+def _modes_status(record: dict[str, Any], asked: Sequence[ExtraMode]) -> dict[str, Any]:
+    """Says when a committed record lacks extra modes asked for (it is never rewritten)."""
+    held = {m for m in map(match_extra, record["matches"]) if m is not None}
+    missing = [m.name for m in asked if m not in held]
+    if not missing:
+        return {}
+    return {
+        "modes": "missing: " + ", ".join(missing) + " (committed without them; "
+        "evaluate into a new --progress-dir to add them)"
+    }
+
+
+def _gap_part(record: dict[str, Any]) -> dict[str, Any]:
+    """The play-mode gap rows (ticket #1042), derived: absent for a record with nothing to compare
+    (a Preview ablation or a search record plays one mode)."""
+    gap = play_mode_gap(record)
+    return {"play_mode_gap": gap} if gap.get("rows") or "status" in gap else {}
 
 
 def _ablation_part(record: dict[str, Any]) -> dict[str, Any]:

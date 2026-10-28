@@ -16,6 +16,8 @@ import {
   MechanicsProbeError,
   probeMechanics,
   type Actor,
+  type ExtraMode,
+  matchSuffix,
   type PolicyClient,
   PolicyProtocolError,
   PROGRESS_BASELINES,
@@ -55,7 +57,7 @@ afterAll(() => rmSync(scratch, { recursive: true, force: true }));
 
 const firstLegal: Actor = (request) => actorRule(request.legal as never);
 
-type Client = PolicyClient & { beginGame: () => Promise<void>; asked: number; modes: Set<string>; previews: number; kinds: Set<string> };
+type Client = PolicyClient & { beginGame: () => Promise<void>; asked: number; modes: Set<string>; previews: number; kinds: Set<string>; plays: Set<string> };
 /** An in-process worker: the shared actor rule over the query's own candidates. */
 function actorClient(fail?: (n: number) => Error | undefined): Client {
   const client: Client = {
@@ -63,10 +65,14 @@ function actorClient(fail?: (n: number) => Error | undefined): Client {
     previews: 0,
     kinds: new Set(),
     modes: new Set(),
+    plays: new Set(),
     beginGame: () => Promise.resolve(),
     ask(_battle, query) {
       client.asked++;
       client.modes.add(query.sampling.kind);
+      // the draw `u` differs per request: the kind and the play settings are what is compared
+      const { u: _u, ...play } = query.sampling as { kind: string; u?: number };
+      client.plays.add(JSON.stringify(play));
       client.kinds.add(query.observation.kind);
       if (query.observation.kind === "preview") client.previews++;
       const error = fail?.(client.asked);
@@ -593,6 +599,92 @@ describe("playProgress", () => {
     expect(readFileSync(join(dir, "progress.json"), "utf8")).toBe(`${jcs(result.record as unknown as Json)}\n`);
     expect(readdirSync(join(dir, "games"))).toHaveLength(4);
   }, 120_000);
+});
+
+describe("extra play modes (--modes, #1044)", () => {
+  const T5: ExtraMode = { play: { temperature_ppm: 500_000 }, policy_id: `policy:${"7".repeat(64)}` };
+  const BOTH: ExtraMode = { play: { temperature_ppm: 500_000, truncation: { kind: "threshold", min_ppm: 30_000 } }, policy_id: `policy:${"8".repeat(64)}` };
+  const TH: ExtraMode = { play: { truncation: { kind: "threshold", min_ppm: 30_000 } }, policy_id: `policy:${"9".repeat(64)}` };
+
+  it("plays each extra mode against both baselines on the same pairs and seeds, with the settings in every query", async () => {
+    const client = actorClient();
+    const result = await playProgress(options({ client, extra_modes: [T5, BOTH], games: 2, record_games: 2 }));
+    const { record } = result;
+    expect(record.matches.map((m) => m.match_id)).toEqual(
+      ["actor-rule", "random-legal"].flatMap((opponent) => ["argmax", "sample", "sample-t500000", "sample-t500000-th30000"].map((mode) => `${opponent}-${mode}`)),
+    );
+    const match = record.matches.find((m) => m.match_id === "actor-rule-sample-t500000-th30000") as (typeof record.matches)[number];
+    expect(match).toMatchObject({ mode: "sample", policy_id: BOTH.policy_id, temperature_ppm: 500_000, truncation: { kind: "threshold", min_ppm: 30_000 }, opponent: { kind: "baseline", policy_id: "actor-rule@v1" } });
+    const temperatureOnly = record.matches.find((m) => m.match_id === "actor-rule-sample-t500000") as (typeof record.matches)[number];
+    expect(temperatureOnly.temperature_ppm).toBe(500_000);
+    expect(temperatureOnly.truncation).toBeUndefined();
+    const plain = record.matches.find((m) => m.match_id === "actor-rule-sample") as (typeof record.matches)[number];
+    expect(plain.temperature_ppm).toBeUndefined();
+    // the queries carry the settings (and the plain modes' queries do not)
+    expect(client.plays.has('{"kind":"argmax"}')).toBe(true);
+    const sampled = [...client.plays].filter((p) => p.includes("sample"));
+    expect(sampled.some((p) => p.includes('"temperature_ppm":500000') && p.includes('"truncation":{"kind":"threshold","min_ppm":30000}'))).toBe(true);
+    expect(sampled.some((p) => p.includes('"temperature_ppm":500000') && !p.includes("truncation"))).toBe(true);
+    expect(sampled.some((p) => !p.includes("temperature_ppm") && !p.includes("truncation"))).toBe(true);
+    // same pairs, seats and seeds as the plain modes: the games share the pair's seed and teams
+    const [plainGame, extraGame] = ["actor-rule-sample-0.json", "actor-rule-sample-t500000-0.json"].map((name) => result.game_records.get(name) as ProgressGameRecord);
+    expect(extraGame?.seed).toBe(plainGame?.seed);
+    expect(extraGame?.teams).toEqual(plainGame?.teams);
+    expect(extraGame?.policies).toEqual({ p1: T5.policy_id, p2: "actor-rule@v1" });
+    expect(() => readProgressEvaluationRecordV2(JSON.parse(jcs(record as unknown as Json)))).not.toThrow();
+    expect(matchSuffix(BOTH.play)).toBe("-t500000-th30000");
+  }, 300_000);
+
+  it("is byte-identical when run twice, and without extra modes the record is today's", async () => {
+    const run = (extra: readonly ExtraMode[] | undefined) => playProgress(options({ ...(extra === undefined ? {} : { extra_modes: extra }) }));
+    const [a, b] = [await run([TH]), await run([TH])];
+    expect(jcs(a.record as unknown as Json)).toBe(jcs(b.record as unknown as Json));
+    const plain = await run(undefined);
+    const empty = await run([]);
+    expect(jcs(plain.record as unknown as Json)).toBe(jcs(empty.record as unknown as Json));
+    expect(plain.record.matches.every((m) => m.temperature_ppm === undefined && m.truncation === undefined)).toBe(true);
+    // the plain matches of an evaluation with an extra mode equal the plain evaluation's
+    const kept = a.record.matches.filter((m) => !m.match_id.includes("-th30000"));
+    expect(jcs(kept as unknown as Json)).toBe(jcs(plain.record.matches as unknown as Json));
+  }, 300_000);
+
+  describe("head to head", () => {
+    const other = (client = actorClient()): NonNullable<ProgressOptions["versus"]> => ({
+      run_id: "other-run",
+      run_config_hash: "e".repeat(64),
+      generation: 3,
+      checkpoints: { preview: "5".repeat(64), battle: "6".repeat(64) },
+      policy_ids: { sample: `policy:${"3".repeat(64)}`, argmax: `policy:${"4".repeat(64)}` },
+      client,
+    });
+    const theirs = `policy:${"5".repeat(64)}`;
+
+    it("plays both sides in the mode", async () => {
+      const mine = actorClient();
+      const worker = actorClient();
+      const result = await playProgress(options({ client: mine, versus: other(worker), run_games: 2, games: 2, record_games: 2, extra_modes: [{ ...T5, versus_policy_id: theirs }] }));
+      const match = result.record.matches.find((m) => m.match_id === "run-sample-t500000") as (typeof result.record.matches)[number];
+      expect(match).toMatchObject({ mode: "sample", temperature_ppm: 500_000, policy_id: T5.policy_id, opponent: { kind: "run", policy_id: theirs } });
+      // a test reads the queries: the other run's worker was asked at the same temperature, and so was this run's
+      expect([...worker.plays].filter((p) => p.includes("sample"))).toEqual(['{"kind":"sample"}', '{"kind":"sample","temperature_ppm":500000}']); // the plain run-sample match, then the extra mode
+      expect([...mine.plays].some((p) => p.includes('"temperature_ppm":500000'))).toBe(true);
+      const game = result.game_records.get("run-sample-t500000-0.json") as ProgressGameRecord;
+      expect(game.policies).toEqual({ p1: T5.policy_id, p2: theirs });
+      expect(result.game_records.get("run-sample-t500000-1.json")?.policies).toEqual({ p1: theirs, p2: T5.policy_id });
+      expect(() => readProgressEvaluationRecordV2(JSON.parse(jcs(result.record as unknown as Json)))).not.toThrow();
+    }, 300_000);
+
+    it("needs the other run's policy id exactly when another run is played", async () => {
+      await expect(playProgress(options({ versus: other(), run_games: 2, extra_modes: [T5] }))).rejects.toThrow(/other run's policy id/);
+      await expect(playProgress(options({ extra_modes: [{ ...T5, versus_policy_id: theirs }] }))).rejects.toThrow(/other run's policy id/);
+    });
+  });
+
+  it("refuses a mode with no settings, a mode twice and a mode beside the search", async () => {
+    await expect(playProgress(options({ extra_modes: [{ play: {}, policy_id: T5.policy_id }] }))).rejects.toThrow(/sets a temperature or a threshold/);
+    await expect(playProgress(options({ extra_modes: [T5, { ...T5, policy_id: BOTH.policy_id }] }))).rejects.toThrow(/given once/);
+    await expect(playProgress(options({ extra_modes: [T5], ablation: { generation: { generation: 0, checkpoint: "9".repeat(64), policy_id: `policy:${"b".repeat(64)}`, client: actorClient() }, random_policy_id: `policy:${"a".repeat(64)}` } }))).rejects.toThrow(/not played with the Preview ablation/);
+  });
 });
 
 describe("buildProgressGameRecord", () => {

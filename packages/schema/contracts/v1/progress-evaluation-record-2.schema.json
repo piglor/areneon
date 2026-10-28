@@ -441,11 +441,21 @@
           "$ref": "#/$defs/Opponent"
         },
         "mode": {
-          "description": "The candidate's choice rule: sample at temperature 1, or argmax.",
+          "description": "The candidate's choice rule: sample (at temperature 1 unless temperature_ppm or truncation says otherwise), or argmax.",
           "enum": [
             "sample",
             "argmax"
           ]
+        },
+        "temperature_ppm": {
+          "description": "Only a sample match played at a declared temperature (ADR-023 section 1, #1044): the temperature in millionths, 1 to 999,999 (the default 1,000,000 is never written; absent means temperature 1). The candidate's policy id is recomputed from it. A minor change within version 2: a reader older than the field rejects a record that carries it.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 999999
+        },
+        "truncation": {
+          "$ref": "#/$defs/Truncation",
+          "description": "Only a sample match played with a probability threshold (ADR-023 section 1, #1044). Absent: no truncation."
         },
         "candidate_preview": {
           "$ref": "#/$defs/CandidatePreview"
@@ -640,6 +650,25 @@
         "opponent_search": {
           "$ref": "#/$defs/SearchCounts",
           "description": "Only a game of a self-no-search match: the control's counts for this game."
+        }
+      }
+    },
+    "Truncation": {
+      "description": "A probability threshold: candidates below min_ppm of the probability are dropped (the first highest is always kept) and the rest renormalised.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "min_ppm"
+      ],
+      "properties": {
+        "kind": {
+          "const": "threshold"
+        },
+        "min_ppm": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 999999
         }
       }
     },

@@ -6,6 +6,9 @@
 //   coverage.json           the coverage report
 //   pilot.json              the recorded pilot
 //   rejections.jsonl        the rejection log (written during the run)
+//   reference-hashes.txt    the sorted canonical hashes the dataset deduplicated against, one per line
+//                           (only when `generate` was given `--reference`; the readers check them
+//                           against the manifest's `reference_pool_hash`)
 
 import { closeSync, fstatSync, openSync, readSync, writeFileSync, writeSync } from "node:fs";
 import { join } from "node:path";
@@ -101,6 +104,15 @@ export function writeDataset(dir: string, result: GenerateResult): string[] {
   writeFileSync(join(dir, "coverage.json"), pretty(result.coverage));
   writeFileSync(join(dir, "pilot.json"), pretty(result.pilot));
   return [...files, "manifest.json", "coverage.json", "pilot.json", "rejections.jsonl"];
+}
+
+export const REFERENCE_HASHES_FILE = "reference-hashes.txt";
+
+/** Write the reference pool's sorted hashes beside the dataset (nothing for an empty pool: such a dataset has no file). */
+export function writeReferenceHashes(dir: string, sorted: readonly string[]): string[] {
+  if (sorted.length === 0) return [];
+  writeLines(join(dir, REFERENCE_HASHES_FILE), sorted);
+  return [REFERENCE_HASHES_FILE];
 }
 
 /** The `canonical_team_hash` of every record of JSON Lines files: the hashes a later dataset dedupes against. */

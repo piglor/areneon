@@ -35,7 +35,7 @@ import {
   resolveFormat,
   teamVocabularyHash,
 } from "@areneon/showdown-bridge";
-import { recordHashes, writeDataset } from "./dataset-io.ts";
+import { recordHashes, writeDataset, writeReferenceHashes } from "./dataset-io.ts";
 import { FileStage, KnownHashes, referencePoolHash, sortedUnique } from "./dedupe.ts";
 import { Drawer } from "./draw.ts";
 import { type CoverageReport, generate, type ReferencePool } from "./generate.ts";
@@ -123,11 +123,11 @@ function inputs(values: Values, engine: Engine) {
   return { format: resolveFormat(engine, formatId), table, config, labelSet, vocabulary };
 }
 
-function referencePool(values: Values, scratch: string): { pool: ReferencePool; close: () => void } {
+function referencePool(values: Values, scratch: string): { pool: ReferencePool; sorted: string[]; close: () => void } {
   const sorted = sortedUnique(recordHashes(values.reference ?? []));
   const stage = values["reference-on-disk"] === true ? FileStage.write(join(scratch, "reference.bin"), sorted) : undefined;
   const known = new KnownHashes(sorted, stage);
-  return { pool: { hash: referencePoolHash(sorted), known }, close: () => known.close() };
+  return { pool: { hash: referencePoolHash(sorted), known }, sorted, close: () => known.close() };
 }
 
 function runGenerate(values: Values, io: CliIo, engine: Engine): number {
@@ -170,7 +170,7 @@ function runGenerate(values: Values, io: CliIo, engine: Engine): number {
       progressEvery: count(values["progress-every"], "progress-every") ?? 10_000,
       onProgress: ({ draws, open }) => io.err(`${draws} draws, ${open} bins open`),
     });
-    const files = writeDataset(out, result);
+    const files = [...writeDataset(out, result), ...writeReferenceHashes(out, reference.sorted)];
     const seconds = Math.max((Date.now() - started) / 1000, 0.001);
     const { stream } = result.coverage;
     for (const line of notices(result.coverage, config.d_max)) io.err(line);
