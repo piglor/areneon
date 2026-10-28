@@ -139,7 +139,7 @@ function declare(battle: DmgBattle, side: number, combatant: Combatant): DmgPoke
 
 /** At most this many started scenarios are kept per engine; a table past it is emptied (a started scenario is a pure function of its key, so forgetting only costs time). */
 const STARTED_LIMIT = 256;
-const started = new WeakMap<Engine, Map<string, string>>();
+const startedTables = new WeakMap<Engine, Map<string, string>>();
 /** How many scenario starts were skipped by the table (diagnostics, like `damagePathStats`). */
 export const scenarioStartStats = { started: 0, reused: 0 };
 
@@ -149,8 +149,9 @@ export const scenarioStartStats = { started: 0, reused: 0 };
  * gets its own battle from that serialisation, as a clone of the reference path does, so the result never depends on the table's contents.
  */
 function startedScenario(engine: Engine, scenarioId: string, attackerSet: PokemonSet, defenderSet: PokemonSet): DmgBattle {
-  const table = started.get(engine) ?? new Map<string, string>();
-  started.set(engine, table);
+  const table = startedTables.get(engine) ?? new Map<string, string>();
+  startedTables.set(engine, table);
+  // The sets are the validated, canonical ones, which serialise the same way every time; a different order of keys would only miss.
   const key = JSON.stringify([scenarioId, attackerSet, defenderSet]);
   let json = table.get(key);
   if (json === undefined) {

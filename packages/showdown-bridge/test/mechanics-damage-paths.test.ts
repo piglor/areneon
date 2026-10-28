@@ -53,6 +53,8 @@ const canonical = (paste: string): string => exportPaste(engine, importPaste(eng
 beforeAll(() => {
   damagePathStats.one_clone = 0;
   damagePathStats.fell_back = 0;
+  scenarioStartStats.started = 0;
+  scenarioStartStats.reused = 0;
 });
 
 describe("the one-clone path equals the per-roll path", () => {
