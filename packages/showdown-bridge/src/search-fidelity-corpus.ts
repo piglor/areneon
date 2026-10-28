@@ -37,11 +37,23 @@ export interface FidelityTarget {
   /** A team is drawn for the target when one of its sets holds one of these moves or abilities. */
   moves: string[];
   abilities: string[];
+  /** Held items that also draw a team for the target (a start-trigger item such as White Herb); absent means none. */
+  items?: string[];
   /** Regular expressions over the public channel lines; the first group, when `consecutive`, names the actor. */
   occurs: string[];
   /** A turn counts only if the same actor matched in the turn before as well. */
   consecutive?: boolean;
+  /** Occurrence turns the search keeps battles for (an occurrence floor, not the slice-F yield below). */
   min_turns: number;
+  /** The team opposite the target's team must hold one of these too (a state that needs both sides, such as an item an opposing ability triggers). */
+  against?: { moves: string[]; abilities: string[]; items: string[] };
+  /** Battles phase 1 plays for this target instead of the file's `attempts_per_target` (a rare state needs more). */
+  attempts?: number;
+  /**
+   * The slice-F sense (ADR-026 Evidence 1): the item of the fidelity report this target exists to feed and the number of
+   * EQUAL exercising turns it needs in F1 and in F2; `fidelity.test.ts` holds the committed report to it.
+   */
+  report?: { item: string; min_equal: number };
 }
 
 export interface UnreachableTarget {
@@ -110,7 +122,8 @@ export function readFidelityTargets(value: unknown): FidelityTargets {
     const id = claim(raw.id);
     const moves = strings(raw.moves, `${id}.moves`);
     const abilities = strings(raw.abilities, `${id}.abilities`);
-    if (moves.length + abilities.length === 0) throw new FidelityError(`${id}: no move or ability to filter teams by`);
+    const items = raw.items === undefined ? undefined : strings(raw.items, `${id}.items`);
+    if (moves.length + abilities.length + (items?.length ?? 0) === 0) throw new FidelityError(`${id}: no move or ability to filter teams by`);
     const occurs = strings(raw.occurs, `${id}.occurs`);
     if (occurs.length === 0) throw new FidelityError(`${id}: no occurrence pattern`);
     for (const pattern of occurs) new RegExp(pattern); // a bad pattern throws a SyntaxError here
@@ -118,14 +131,35 @@ export function readFidelityTargets(value: unknown): FidelityTargets {
       throw new FidelityError(`${id}.consecutive is not a boolean`);
     }
     if (typeof raw.description !== "string") throw new FidelityError(`${id}.description is not a string`);
+    let against: FidelityTarget["against"];
+    if (raw.against !== undefined) {
+      const a = raw.against;
+      if (!isObject(a)) throw new FidelityError(`${id}.against is malformed`);
+      against = {
+        moves: strings(a.moves, `${id}.against.moves`),
+        abilities: strings(a.abilities, `${id}.against.abilities`),
+        items: strings(a.items, `${id}.against.items`),
+      };
+      if (against.moves.length + against.abilities.length + against.items.length === 0) throw new FidelityError(`${id}.against names nothing`);
+    }
+    let report: FidelityTarget["report"];
+    if (raw.report !== undefined) {
+      const r = raw.report;
+      if (!isObject(r) || typeof r.item !== "string" || r.item === "") throw new FidelityError(`${id}.report is malformed`);
+      report = { item: r.item, min_equal: wholeAtLeast1(r.min_equal, `${id}.report.min_equal`) };
+    }
     return {
       id,
       description: raw.description,
       moves,
       abilities,
+      ...(items === undefined ? {} : { items }),
       occurs,
       ...(raw.consecutive === true ? { consecutive: true } : {}),
       min_turns: wholeAtLeast1(raw.min_turns, `${id}.min_turns`),
+      ...(against === undefined ? {} : { against }),
+      ...(raw.attempts === undefined ? {} : { attempts: wholeAtLeast1(raw.attempts, `${id}.attempts`) }),
+      ...(report === undefined ? {} : { report }),
     };
   });
   const unreachable = value.unreachable.map((raw): UnreachableTarget => {
@@ -170,10 +204,11 @@ export function checkUnreachable(
 }
 
 /** Whether a team can be drawn for a target: one of its sets holds a named move or ability. */
-export function holdsTarget(team: readonly PokemonSet[], target: Pick<FidelityTarget, "moves" | "abilities">): boolean {
+export function holdsTarget(team: readonly PokemonSet[], target: Pick<FidelityTarget, "moves" | "abilities" | "items">): boolean {
   const moves = new Set(target.moves.map(idOf));
   const abilities = new Set(target.abilities.map(idOf));
-  return team.some((set) => abilities.has(idOf(set.ability)) || set.moves.some((m) => moves.has(idOf(m))));
+  const items = new Set((target.items ?? []).map(idOf));
+  return team.some((set) => abilities.has(idOf(set.ability)) || items.has(idOf(set.item)) || set.moves.some((m) => moves.has(idOf(m))));
 }
 
 /** The turns of a public channel in which a target occurs, ascending. Lines before `|turn|1` are turn 0. */
@@ -339,21 +374,33 @@ export async function captureFidelityCorpus(
   engine: Engine,
   pool: readonly PoolTeam[],
   targets: FidelityTargets,
-  options: { seed_base: number; log?: (line: string) => void } = { seed_base: 0x6000 },
+  options: { seed_base: number; log?: (line: string) => void; existing?: readonly FidelityBattleFile[] } = { seed_base: 0x6000 },
 ): Promise<FidelityBattleFile[]> {
   const candidates: { file: FidelityBattleFile; turns: Map<string, number> }[] = [];
+  const existing = options.existing ?? [];
+  const have = new Map(targets.targets.map((t) => [t.id, 0]));
+  const kept: FidelityBattleFile[] = [...existing];
+  for (const file of existing) {
+    for (const t of targets.targets) have.set(t.id, (have.get(t.id) ?? 0) + occurrenceTurns(file.channels.p1.lines, t).length);
+  }
   let attempt = 0;
   for (const target of targets.targets) {
+    if (existing.length > 0 && (have.get(target.id) ?? 0) >= target.min_turns) continue;
     const holders = pool.filter((p) => holdsTarget(p.team, target));
     if (holders.length === 0) {
       options.log?.(`${target.id}: no team in the pool holds it`);
       continue;
     }
-    for (let k = 0; k < targets.attempts_per_target; k++, attempt++) {
+    const opposite = target.against === undefined ? pool : pool.filter((p) => holdsTarget(p.team, target.against as NonNullable<FidelityTarget["against"]>));
+    if (opposite.length === 0) {
+      options.log?.(`${target.id}: no team in the pool holds what the opposite team needs`);
+      continue;
+    }
+    for (let k = 0; k < (target.attempts ?? targets.attempts_per_target); k++, attempt++) {
       const seat: Player = attempt % 2 === 0 ? "p1" : "p2";
       const other: Player = seat === "p1" ? "p2" : "p1";
       const focus = holders[pick(attempt, 1, holders.length)] as PoolTeam;
-      const rest = pool[pick(attempt, 2, pool.length)] as PoolTeam;
+      const rest = opposite[pick(attempt, 2, opposite.length)] as PoolTeam;
       const spec: FidelitySpec = {
         id: "",
         seed: `sodium,${(options.seed_base + attempt).toString(16).padStart(32, "0")}`,
@@ -373,8 +420,6 @@ export async function captureFidelityCorpus(
       if ((turns.get(target.id) ?? 0) > 0) candidates.push({ file, turns });
     }
   }
-  const have = new Map(targets.targets.map((t) => [t.id, 0]));
-  const kept: FidelityBattleFile[] = [];
   while (kept.length < targets.max_battles) {
     const deficit = (t: FidelityTarget): number => Math.max(0, t.min_turns - (have.get(t.id) ?? 0));
     const gainOf = (c: { turns: Map<string, number> }): number =>

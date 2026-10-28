@@ -2,7 +2,7 @@
   "inputs": {
     "fidelity_format": 2,
     "showdown_commit": "7244fe8e28fa8bc4d0809ae30d183c608b62bb2b",
-    "corpora_sha256": "484f55a30057c446972b0b036fdb51ea6045679c64d0d09ef489297047d43169",
+    "corpora_sha256": "a4bec18ce25a92434173c73d2a416da2f7c44c5e967e05df6de7ab34a41ff1e9",
     "base_record_sha256": "f058d1c0b8284e5c348cecb2d352cae740c124558fa079b815c0f584e64e48f4"
   },
   "n_ex": 20,
@@ -24,100 +24,102 @@
       "decisions": 62
     },
     "search-fidelity": {
-      "battles": 77,
-      "decisions": 2466
+      "battles": 200,
+      "decisions": 5528
     }
   },
-  "decisions": 5296,
-  "built": 2670,
+  "decisions": 8358,
+  "built": 3776,
   "refusals": {
-    "state_unwritten:unadmitted_id": 914,
-    "state_unwritten:locked_moves": 514,
-    "state_unwritten:substitute": 287,
-    "state_unwritten:trapping": 132,
-    "state_unwritten:slot_conditions": 52,
-    "state_unwritten:illusion_transform": 45,
-    "facts_unavailable:-": 170,
-    "state_unwritten:ability_changed": 222,
-    "reader_flagged:-": 46,
-    "state_unwritten:item_replaced": 131,
-    "state_unwritten:start_trigger_restore": 70,
-    "v2_request:choice_lock": 1,
-    "v2_request:-": 11,
-    "engine_refused:-": 2,
-    "v1_revealed_fact:-": 29
+    "state_unwritten:unadmitted_id": 1760,
+    "state_unwritten:locked_moves": 747,
+    "state_unwritten:substitute": 351,
+    "state_unwritten:trapping": 171,
+    "state_unwritten:slot_conditions": 86,
+    "state_unwritten:illusion_transform": 131,
+    "facts_unavailable:-": 282,
+    "state_unwritten:ability_changed": 357,
+    "reader_flagged:-": 53,
+    "state_unwritten:item_replaced": 232,
+    "state_unwritten:start_trigger_restore": 244,
+    "v1_revealed_fact:-": 144,
+    "v2_request:choice_lock": 8,
+    "v2_request:-": 14,
+    "engine_refused:-": 2
   },
   "f1": {
     "compared": {
-      "turns": 1264,
-      "equal": 1067,
+      "turns": 1820,
+      "equal": 1535,
       "by_kind": {
-        "outcome": 183,
-        "request": 14
+        "outcome": 270,
+        "request": 15
       },
       "by_cause": {
-        "engine": 41,
-        "information": 197,
+        "engine": 50,
+        "information": 284,
         "unmodelled": 5
       }
     },
     "x": {
-      "turns": 1406,
-      "equal": 1133,
+      "turns": 1956,
+      "equal": 1582,
       "by_kind": {
-        "outcome": 267,
-        "request": 5,
+        "outcome": 365,
+        "request": 8,
         "choice": 1
       },
       "by_cause": {
-        "information": 269,
-        "engine": 152,
-        "unmodelled": 52,
-        "unclassified": 3
+        "information": 368,
+        "engine": 213,
+        "unmodelled": 63,
+        "unclassified": 5,
+        "writer": 2
       }
     }
   },
   "f2": {
     "compared": {
-      "turns": 1264,
-      "equal": 840,
+      "turns": 1820,
+      "equal": 1192,
       "by_kind": {
-        "outcome": 402,
-        "request": 20,
+        "outcome": 601,
+        "request": 25,
         "draw_order": 2
       },
       "by_cause": {
-        "information": 422,
-        "engine": 64,
-        "unmodelled": 10
+        "information": 626,
+        "engine": 80,
+        "unmodelled": 11
       }
     },
     "x": {
-      "turns": 1406,
-      "equal": 993,
+      "turns": 1956,
+      "equal": 1374,
       "by_kind": {
-        "outcome": 408,
-        "request": 3,
+        "outcome": 573,
+        "request": 7,
         "choice": 2
       },
       "by_cause": {
-        "engine": 188,
-        "information": 406,
-        "unmodelled": 81,
-        "unclassified": 6
+        "engine": 262,
+        "information": 570,
+        "unmodelled": 99,
+        "unclassified": 11,
+        "writer": 2
       }
     }
   },
   "f2_pairs": {
-    "compared": 7584,
-    "equal": 6430,
-    "x": 8433,
-    "x_equal": 7008
+    "compared": 10920,
+    "equal": 9208,
+    "x": 11733,
+    "x_equal": 9750
   },
   "unmodelled": {
     "unburden": {
       "f1": 2,
-      "f2": 10
+      "f2": 11
     },
     "allyswitch": {
       "f1": 1,
@@ -130,22 +132,22 @@
   },
   "information": {
     "opponent_hp": {
-      "f1": 163,
-      "f2": 986
+      "f1": 243,
+      "f2": 1503
     },
     "opponent_pp": {
-      "f1": 196,
-      "f2": 1143
+      "f1": 283,
+      "f2": 1699
     },
     "bench_pp": {
-      "f1": 22,
-      "f2": 113
+      "f1": 27,
+      "f2": 156
     }
   },
   "engine": {
     "opponent_active_slots": {
-      "f1": 36,
-      "f2": 163
+      "f1": 45,
+      "f2": 206
     },
     "opponent_status_state_frz": {
       "f1": 1,
@@ -153,7 +155,7 @@
     },
     "own_status_state_frz": {
       "f1": 1,
-      "f2": 12
+      "f2": 14
     },
     "opponent_ability": {
       "f1": 3,
@@ -165,14 +167,14 @@
       "item": "active_turns",
       "class": "W",
       "f1": {
-        "exercised": 1264,
-        "equal": 1067,
+        "exercised": 1820,
+        "equal": 1535,
         "blamed": 0,
         "missed": 0
       },
       "f2": {
-        "exercised": 1264,
-        "equal": 840,
+        "exercised": 1820,
+        "equal": 1192,
         "blamed": 0,
         "missed": 0
       },
@@ -182,14 +184,14 @@
       "item": "bench_status",
       "class": "W",
       "f1": {
-        "exercised": 50,
-        "equal": 45,
+        "exercised": 77,
+        "equal": 66,
         "blamed": 0,
         "missed": 0
       },
       "f2": {
-        "exercised": 50,
-        "equal": 25,
+        "exercised": 77,
+        "equal": 39,
         "blamed": 0,
         "missed": 0
       },
@@ -199,13 +201,13 @@
       "item": "choice_lock",
       "class": "W",
       "f1": {
-        "exercised": 89,
-        "equal": 73,
+        "exercised": 90,
+        "equal": 74,
         "blamed": 0,
         "missed": 0
       },
       "f2": {
-        "exercised": 89,
+        "exercised": 90,
         "equal": 55,
         "blamed": 0,
         "missed": 0
@@ -216,14 +218,14 @@
       "item": "condition_duration",
       "class": "W",
       "f1": {
-        "exercised": 478,
-        "equal": 389,
+        "exercised": 635,
+        "equal": 523,
         "blamed": 0,
         "missed": 0
       },
       "f2": {
-        "exercised": 478,
-        "equal": 325,
+        "exercised": 635,
+        "equal": 431,
         "blamed": 0,
         "missed": 0
       },
@@ -233,14 +235,14 @@
       "item": "fainted_last_turn",
       "class": "W",
       "f1": {
-        "exercised": 437,
-        "equal": 377,
+        "exercised": 692,
+        "equal": 590,
         "blamed": 0,
         "missed": 0
       },
       "f2": {
-        "exercised": 437,
-        "equal": 305,
+        "exercised": 692,
+        "equal": 475,
         "blamed": 0,
         "missed": 0
       },
@@ -250,14 +252,14 @@
       "item": "item_removed",
       "class": "W",
       "f1": {
-        "exercised": 372,
-        "equal": 311,
+        "exercised": 713,
+        "equal": 596,
         "blamed": 0,
         "missed": 0
       },
       "f2": {
-        "exercised": 372,
-        "equal": 236,
+        "exercised": 713,
+        "equal": 452,
         "blamed": 0,
         "missed": 0
       },
@@ -267,14 +269,14 @@
       "item": "last_move",
       "class": "W",
       "f1": {
-        "exercised": 1262,
-        "equal": 1065,
+        "exercised": 1816,
+        "equal": 1531,
         "blamed": 0,
         "missed": 0
       },
       "f2": {
-        "exercised": 1262,
-        "equal": 838,
+        "exercised": 1816,
+        "equal": 1189,
         "blamed": 0,
         "missed": 0
       },
@@ -284,14 +286,14 @@
       "item": "protect_counter",
       "class": "W",
       "f1": {
-        "exercised": 97,
-        "equal": 83,
+        "exercised": 129,
+        "equal": 108,
         "blamed": 0,
         "missed": 0
       },
       "f2": {
-        "exercised": 97,
-        "equal": 65,
+        "exercised": 129,
+        "equal": 86,
         "blamed": 0,
         "missed": 0
       },
@@ -301,14 +303,14 @@
       "item": "total_fainted",
       "class": "W",
       "f1": {
-        "exercised": 901,
-        "equal": 756,
+        "exercised": 1323,
+        "equal": 1108,
         "blamed": 0,
         "missed": 0
       },
       "f2": {
-        "exercised": 901,
-        "equal": 604,
+        "exercised": 1323,
+        "equal": 875,
         "blamed": 0,
         "missed": 0
       },
@@ -316,33 +318,33 @@
     },
     {
       "item": "toxic_stage",
-      "class": "R",
+      "class": "W",
       "f1": {
-        "exercised": 23,
-        "equal": 17,
+        "exercised": 44,
+        "equal": 31,
         "blamed": 0,
         "missed": 0
       },
       "f2": {
-        "exercised": 23,
-        "equal": 16,
+        "exercised": 44,
+        "equal": 28,
         "blamed": 0,
         "missed": 0
       },
-      "admitted": false
+      "admitted": true
     },
     {
       "item": "turn_number",
       "class": "W",
       "f1": {
-        "exercised": 1264,
-        "equal": 1067,
+        "exercised": 1820,
+        "equal": 1535,
         "blamed": 0,
         "missed": 0
       },
       "f2": {
-        "exercised": 1264,
-        "equal": 840,
+        "exercised": 1820,
+        "equal": 1192,
         "blamed": 0,
         "missed": 0
       },
@@ -354,18 +356,18 @@
       "item": "trigger:whiteherb",
       "class": "W",
       "f1": {
-        "exercised": 4,
-        "equal": 3,
+        "exercised": 60,
+        "equal": 49,
         "blamed": 0,
         "missed": 0
       },
       "f2": {
-        "exercised": 4,
-        "equal": 2,
+        "exercised": 60,
+        "equal": 32,
         "blamed": 0,
         "missed": 0
       },
-      "admitted": false
+      "admitted": true
     },
     {
       "item": "volatile:aquaring",
@@ -422,15 +424,15 @@
       "item": "volatile:disable",
       "class": "W",
       "f1": {
-        "exercised": 16,
-        "equal": 15,
-        "blamed": 1,
+        "exercised": 21,
+        "equal": 16,
+        "blamed": 4,
         "missed": 0
       },
       "f2": {
-        "exercised": 20,
-        "equal": 11,
-        "blamed": 8,
+        "exercised": 26,
+        "equal": 12,
+        "blamed": 11,
         "missed": 0
       },
       "admitted": false
@@ -439,14 +441,14 @@
       "item": "volatile:encore",
       "class": "W",
       "f1": {
-        "exercised": 43,
-        "equal": 35,
+        "exercised": 51,
+        "equal": 41,
         "blamed": 0,
         "missed": 0
       },
       "f2": {
-        "exercised": 50,
-        "equal": 32,
+        "exercised": 60,
+        "equal": 37,
         "blamed": 0,
         "missed": 0
       },
@@ -454,33 +456,67 @@
     },
     {
       "item": "volatile:flashfire",
-      "class": "E",
+      "class": "W",
       "f1": {
-        "exercised": 15,
-        "equal": 14,
+        "exercised": 32,
+        "equal": 28,
         "blamed": 0,
         "missed": 0
       },
       "f2": {
-        "exercised": 17,
-        "equal": 12,
+        "exercised": 34,
+        "equal": 24,
         "blamed": 0,
         "missed": 0
       },
-      "admitted": false
+      "admitted": true
     },
     {
       "item": "volatile:focusenergy",
       "class": "E",
       "f1": {
-        "exercised": 11,
-        "equal": 9,
+        "exercised": 46,
+        "equal": 38,
         "blamed": 0,
         "missed": 0
       },
       "f2": {
-        "exercised": 13,
-        "equal": 8,
+        "exercised": 65,
+        "equal": 47,
+        "blamed": 0,
+        "missed": 0
+      },
+      "admitted": true
+    },
+    {
+      "item": "volatile:healblock",
+      "class": "W",
+      "f1": {
+        "exercised": 2,
+        "equal": 2,
+        "blamed": 0,
+        "missed": 0
+      },
+      "f2": {
+        "exercised": 2,
+        "equal": 0,
+        "blamed": 2,
+        "missed": 0
+      },
+      "admitted": false
+    },
+    {
+      "item": "volatile:imprison",
+      "class": "E",
+      "f1": {
+        "exercised": 1,
+        "equal": 0,
+        "blamed": 0,
+        "missed": 0
+      },
+      "f2": {
+        "exercised": 0,
+        "equal": 0,
         "blamed": 0,
         "missed": 0
       },
@@ -513,7 +549,7 @@
         "missed": 0
       },
       "f2": {
-        "exercised": 4,
+        "exercised": 6,
         "equal": 0,
         "blamed": 0,
         "missed": 0
@@ -541,14 +577,14 @@
       "item": "volatile:taunt",
       "class": "W",
       "f1": {
-        "exercised": 23,
-        "equal": 20,
+        "exercised": 41,
+        "equal": 37,
         "blamed": 0,
         "missed": 0
       },
       "f2": {
-        "exercised": 33,
-        "equal": 25,
+        "exercised": 53,
+        "equal": 42,
         "blamed": 0,
         "missed": 0
       },
@@ -558,55 +594,60 @@
       "item": "volatile:throatchop",
       "class": "W",
       "f1": {
-        "exercised": 12,
-        "equal": 11,
+        "exercised": 43,
+        "equal": 38,
         "blamed": 0,
         "missed": 0
       },
       "f2": {
-        "exercised": 12,
-        "equal": 5,
+        "exercised": 48,
+        "equal": 28,
         "blamed": 0,
         "missed": 0
       },
-      "admitted": false
+      "admitted": true
     },
     {
       "item": "volatile:torment",
       "class": "E",
       "f1": {
-        "exercised": 7,
-        "equal": 7,
+        "exercised": 53,
+        "equal": 45,
         "blamed": 0,
         "missed": 0
       },
       "f2": {
-        "exercised": 12,
-        "equal": 10,
+        "exercised": 65,
+        "equal": 47,
         "blamed": 0,
         "missed": 0
       },
-      "admitted": false
+      "admitted": true
     },
     {
       "item": "volatile:yawn",
       "class": "W",
       "f1": {
-        "exercised": 4,
-        "equal": 3,
+        "exercised": 33,
+        "equal": 30,
         "blamed": 0,
         "missed": 0
       },
       "f2": {
-        "exercised": 6,
-        "equal": 2,
+        "exercised": 40,
+        "equal": 24,
         "blamed": 0,
         "missed": 0
       },
-      "admitted": false
+      "admitted": true
     }
   ],
   "admissions": [
+    {
+      "kind": "start_trigger",
+      "id": "whiteherb",
+      "class": "W"
+    },
     {
       "kind": "volatile",
       "id": "encore",
@@ -614,7 +655,32 @@
     },
     {
       "kind": "volatile",
+      "id": "flashfire",
+      "class": "E"
+    },
+    {
+      "kind": "volatile",
+      "id": "focusenergy",
+      "class": "E"
+    },
+    {
+      "kind": "volatile",
       "id": "taunt",
+      "class": "W"
+    },
+    {
+      "kind": "volatile",
+      "id": "throatchop",
+      "class": "W"
+    },
+    {
+      "kind": "volatile",
+      "id": "torment",
+      "class": "E"
+    },
+    {
+      "kind": "volatile",
+      "id": "yawn",
       "class": "W"
     }
   ]

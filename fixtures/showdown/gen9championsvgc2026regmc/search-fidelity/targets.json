@@ -1,9 +1,9 @@
 {
   "schema_version": 1,
   "data_class": "synthetic",
-  "provenance": "Reviewed input of scripts/capture-search-fidelity-corpus.ts (ADR-026 Evidence 1, slice T). A target names the moves and abilities a team must hold to be drawn for it (as the reducer sweep's --only-move does) and the public channel lines that count as one occurrence. Every reachable target needs min_turns of 24 (slice F admits a writer or id after 20 exercising turns, with a margin). A turn counts once however many lines match in it; lines before the first |turn| are turn 0. Phase 1 plays attempts_per_target battles per target; phase 2 keeps, greedily by gain per turn played, at most max_battles of them until every target has its min_turns.",
+  "provenance": "Reviewed input of scripts/capture-search-fidelity-corpus.ts (ADR-026 Evidence 1, slice T). A target names the moves and abilities a team must hold to be drawn for it (as the reducer sweep's --only-move does) and the public channel lines that count as one occurrence. Every reachable target needs its min_turns: 24 occurrence turns for the original targets (slice F admits a writer or id after 20 exercising turns, with a margin), and for the targets added with a `report` entry (#1187) an occurrence floor calibrated so that the fidelity report shows at least `report.min_equal` EQUAL exercising turns in F1 and in F2 for that item (fidelity.test.ts holds the committed report to it). A turn counts once however many lines match in it; lines before the first |turn| are turn 0. Phase 1 plays attempts_per_target battles per target; phase 2 keeps, greedily by gain per turn played, at most max_battles of them until every target has its min_turns.",
   "attempts_per_target": 100,
-  "max_battles": 80,
+  "max_battles": 200,
   "targets": [
     {
       "id": "last-respects",
@@ -105,7 +105,11 @@
         "^\\|-status\\|p[12][ab]: [^|]*\\|tox",
         "^\\|-damage\\|p[12][ab]: [^|]*\\|[^|]* tox\\|\\[from\\] psn"
       ],
-      "min_turns": 24
+      "min_turns": 60,
+      "report": {
+        "item": "toxic_stage",
+        "min_equal": 24
+      }
     },
     {
       "id": "intimidate",
@@ -227,6 +231,116 @@
         "^\\|-weather\\|none"
       ],
       "min_turns": 24
+    },
+    {
+      "id": "throat-chop",
+      "description": "Throat Chop lands (the volatile that bars sound moves starts)",
+      "moves": [
+        "Throat Chop"
+      ],
+      "abilities": [],
+      "occurs": [
+        "^\\|-start\\|p[12][ab]: [^|]*\\|Throat Chop"
+      ],
+      "min_turns": 80,
+      "report": {
+        "item": "volatile:throatchop",
+        "min_equal": 24
+      },
+      "attempts": 160
+    },
+    {
+      "id": "yawn",
+      "description": "Yawn applied (drowsy, then asleep)",
+      "moves": [
+        "Yawn"
+      ],
+      "abilities": [],
+      "occurs": [
+        "^\\|-start\\|p[12][ab]: [^|]*\\|move: Yawn"
+      ],
+      "min_turns": 100,
+      "report": {
+        "item": "volatile:yawn",
+        "min_equal": 24
+      },
+      "attempts": 200
+    },
+    {
+      "id": "torment",
+      "description": "Torment applied",
+      "moves": [
+        "Torment"
+      ],
+      "abilities": [],
+      "occurs": [
+        "^\\|-start\\|p[12][ab]: [^|]*\\|Torment"
+      ],
+      "min_turns": 55,
+      "report": {
+        "item": "volatile:torment",
+        "min_equal": 24
+      },
+      "attempts": 200
+    },
+    {
+      "id": "flash-fire",
+      "description": "Flash Fire absorbs a Fire move (the boost volatile starts)",
+      "moves": [],
+      "abilities": [
+        "Flash Fire"
+      ],
+      "occurs": [
+        "^\\|-start\\|p[12][ab]: [^|]*\\|ability: Flash Fire"
+      ],
+      "min_turns": 12,
+      "report": {
+        "item": "volatile:flashfire",
+        "min_equal": 24
+      },
+      "attempts": 200
+    },
+    {
+      "id": "focus-energy",
+      "description": "Focus Energy used (critical-hit stage volatile starts)",
+      "moves": [
+        "Focus Energy"
+      ],
+      "abilities": [],
+      "occurs": [
+        "^\\|-start\\|p[12][ab]: [^|]*\\|move: Focus Energy"
+      ],
+      "min_turns": 40,
+      "report": {
+        "item": "volatile:focusenergy",
+        "min_equal": 24
+      },
+      "attempts": 200
+    },
+    {
+      "id": "white-herb",
+      "description": "White Herb consumed (a start-trigger item an opposing Intimidate triggers at the scenario start)",
+      "moves": [],
+      "abilities": [],
+      "items": [
+        "White Herb"
+      ],
+      "occurs": [
+        "^\\|-enditem\\|p[12][ab]: [^|]*\\|White Herb"
+      ],
+      "min_turns": 55,
+      "report": {
+        "item": "trigger:whiteherb",
+        "min_equal": 24
+      },
+      "attempts": 600,
+      "against": {
+        "moves": [],
+        "abilities": [
+          "Intimidate"
+        ],
+        "items": []
+      }
     }
   ],
   "unreachable": [
