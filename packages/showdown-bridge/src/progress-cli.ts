@@ -19,7 +19,8 @@ import { damageAwareSetup, type FeatureSetup, featureSetup } from "./league-gene
 import { PolicyWorkerClient } from "./policy-worker.ts";
 import type { SearchSetup } from "./search-actor.ts";
 import { EVAL_DATASET_FLAGS, readEvalDataset, withEvalDataset } from "./eval-dataset.ts";
-import { type ProgressMode, type ProgressPool, ProgressError, playProgress, writeProgress, PROGRESS_MODES, DAMAGE_AWARE_VERSIONS, type DamageAwareVersion } from "./progress-evaluation.ts";
+import { type ExtraMode, type ProgressMode, type ProgressPool, ProgressError, playProgress, writeProgress, PROGRESS_MODES, DAMAGE_AWARE_VERSIONS, type DamageAwareVersion } from "./progress-evaluation.ts";
+import { ProgressModeError, parseExtraMode } from "./progress-modes.ts";
 import { progressRecordHash } from "./progress-records.ts";
 import { readTrainingRunConfig, runConfigHash, type TrainingRunConfig } from "./training-run-config.ts";
 
@@ -76,8 +77,12 @@ const FLAGS = {
   // The decision-time search as the candidate (ADR-026 slice P): the pair in this play mode with the committed `rerank-1` config,
   // against the baselines and the control `self-no-search` (the same pair in the same mode without search).
   "search-mode": { type: "string" },
+  // Extra play modes (ADR-023 section 1, #1044): each `--extra-mode <mode>,<candidate-policy-id>[,<versus-policy-id>]`, the mode in the
+  // closed grammar of `progress-modes.ts` (`sample:t500000`, `sample:th30000`, `sample:t500000:th30000`); the third part is the other
+  // run's pair's policy id in that mode, given exactly with `--versus`.
+  "extra-mode": { type: "string", multiple: true },
 } as const;
-const OPTIONAL = new Set<string>(["previous-preview", "previous-battle", "previous-policy-id-sample", "previous-policy-id-argmax", "anchor", "anchor-games", "versus", "versus-dir", "versus-encoder-version", "versus-team-set", "run-games", "ablation-preview", "ablation-random-policy-id", "damage-aware-budget-ms", "damage-aware-version", "eval-dataset-dir", "eval-dataset-hash", "evaluation-key", "search-mode"]);
+const OPTIONAL = new Set<string>(["extra-mode", "previous-preview", "previous-battle", "previous-policy-id-sample", "previous-policy-id-argmax", "anchor", "anchor-games", "versus", "versus-dir", "versus-encoder-version", "versus-team-set", "run-games", "ablation-preview", "ablation-random-policy-id", "damage-aware-budget-ms", "damage-aware-version", "eval-dataset-dir", "eval-dataset-hash", "evaluation-key", "search-mode"]);
 const VERSUS = ["versus", "versus-dir", "versus-encoder-version", "versus-team-set", "run-games"] as const;
 const PREVIOUS = ["previous-preview", "previous-battle", "previous-policy-id-sample", "previous-policy-id-argmax"] as const;
 
@@ -171,14 +176,14 @@ export function frozenPairClient(o: FrozenPairClientOptions): PolicyWorkerClient
 
 /** Run one generation's progress evaluation; returns the process exit code and writes its one JSON line with `print`. */
 export async function runProgressCli(argv: readonly string[], print: (line: string) => void, poolSource: ProgressPoolSource, ports: ProgressPorts = {}): Promise<number> {
-  let values: Record<Exclude<keyof typeof FLAGS, "anchor">, string | undefined> & { anchor?: string[] };
+  let values: Record<Exclude<keyof typeof FLAGS, "anchor" | "extra-mode">, string | undefined> & { anchor?: string[]; "extra-mode"?: string[] };
   try {
     values = parseArgs({ args: [...argv], options: FLAGS, strict: true }).values as typeof values;
   } catch (error) {
     throw new UsageError((error as Error).message);
   }
-  const need = (name: Exclude<keyof typeof FLAGS, "anchor">): string => values[name] ?? ((): never => { throw new UsageError(`--${name} is required`); })();
-  for (const name of Object.keys(FLAGS) as (keyof typeof FLAGS)[]) if (!OPTIONAL.has(name)) need(name as Exclude<keyof typeof FLAGS, "anchor">);
+  const need = (name: Exclude<keyof typeof FLAGS, "anchor" | "extra-mode">): string => values[name] ?? ((): never => { throw new UsageError(`--${name} is required`); })();
+  for (const name of Object.keys(FLAGS) as (keyof typeof FLAGS)[]) if (!OPTIONAL.has(name)) need(name as Exclude<keyof typeof FLAGS, "anchor" | "extra-mode">);
   const anchorSpecs = (values.anchor ?? []).map((text) => {
     const parts = text.split(",");
     const [generation, preview, battle, sample, argmax] = parts;
@@ -196,6 +201,22 @@ export async function runProgressCli(argv: readonly string[], print: (line: stri
   if (searchMode !== undefined && ablationParts !== undefined) throw new UsageError("the search candidate is evaluated alone: no Preview ablation");
   if (searchMode !== undefined && (anchorSpecs.length > 0 || PREVIOUS.some((name) => values[name] !== undefined))) throw new UsageError("the search candidate is evaluated alone: no anchors and no previous-generation flags");
   if (searchMode !== undefined && ports.search === undefined) throw new UsageError("this command has no search setup: --search-mode needs the team-dataset script");
+  const extraModes: ExtraMode[] = (values["extra-mode"] ?? []).map((text) => {
+    const parts = text.split(",");
+    const [mode, candidate, other] = parts;
+    if (parts.length < 2 || parts.length > 3 || mode === undefined || candidate === undefined) throw new UsageError("--extra-mode must be <mode>,<candidate-policy-id>[,<versus-policy-id>]");
+    let play;
+    try {
+      play = parseExtraMode(mode);
+    } catch (error) {
+      if (error instanceof ProgressModeError) throw new UsageError(`--extra-mode: ${error.message}`);
+      throw error;
+    }
+    if (play === null) throw new UsageError("--extra-mode names a sample with a temperature or a threshold: argmax and sample are always played");
+    if ((other === undefined) === (values.versus !== undefined)) throw new UsageError("--extra-mode names the other run's policy id exactly when --versus is given");
+    return { play, policy_id: candidate, ...(other === undefined ? {} : { versus_policy_id: other }) };
+  });
+  if (extraModes.length > 0 && (ablationParts !== undefined || searchMode !== undefined)) throw new UsageError("extra play modes are not played with the Preview ablation or the search candidate");
   const damageBudget = values["damage-aware-budget-ms"] === undefined ? undefined : integer("damage-aware-budget-ms", values["damage-aware-budget-ms"], 1);
   const damageVersion = values["damage-aware-version"] ?? "v1";
   if (!(DAMAGE_AWARE_VERSIONS as readonly string[]).includes(damageVersion)) throw new UsageError(`--damage-aware-version must be one of ${DAMAGE_AWARE_VERSIONS.join(", ")}`);
@@ -306,6 +327,7 @@ export async function runProgressCli(argv: readonly string[], print: (line: stri
           }),
       ...(damageBudget === undefined ? {} : { damage_aware: { setup: damageAwareSetup(engine, config.format_id, damageVersion as DamageAwareVersion), version: damageVersion as DamageAwareVersion, match_budget_ms: damageBudget } }),
       ...(values["evaluation-key"] === undefined ? {} : { evaluation_key: values["evaluation-key"] }),
+      ...(extraModes.length === 0 ? {} : { extra_modes: extraModes }),
       ...(searchMode === undefined || ports.search === undefined ? {} : { search: { setup: ports.search(engine, config.format_id), mode: searchMode } }),
       pool,
       games,

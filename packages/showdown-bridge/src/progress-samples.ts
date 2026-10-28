@@ -126,6 +126,13 @@ export async function progressSamples(engine: Engine): Promise<ProgressSamples> 
       e.plan.run_games_per_match = 4;
       change?.(e);
     });
+  // An extra play mode (ADR-023 section 1, #1044): a sample at a declared temperature and threshold, named <opponent>-sample-t<ppm>-th<ppm>.
+  const v2Extra = (change?: (e: Record<string, any>) => void) =>
+    withV2((e) => {
+      renameMatch(e, "actor-rule-sample-t500000-th30000");
+      Object.assign(e.matches[0], { mode: "sample", temperature_ppm: 500000, truncation: { kind: "threshold", min_ppm: 30000 } });
+      change?.(e);
+    });
   // The Preview ablation (#940): one Battle network with three Previews against one baseline, argmax.
   const v2Ablation = (change?: (e: Record<string, any>) => void) =>
     withV2((e) => {
@@ -287,6 +294,16 @@ export async function progressSamples(engine: Engine): Promise<ProgressSamples> 
       "progress-evaluation-record-2/anchor-match": v2Anchor(),
       "progress-evaluation-record-2/run-match": v2Run(),
       "progress-evaluation-record-2/ablation-match": v2Ablation(),
+      "progress-evaluation-record-2/extra-mode-match": v2Extra(),
+      "progress-evaluation-record-2/extra-mode-temperature-match": v2Extra((e) => {
+        renameMatch(e, "actor-rule-sample-t250000");
+        delete e.matches[0].truncation;
+        e.matches[0].temperature_ppm = 250000;
+      }),
+      "progress-evaluation-record-2/extra-mode-run-match": v2Run((e) => {
+        renameMatch(e, "run-sample-th30000");
+        e.matches[0].truncation = { kind: "threshold", min_ppm: 30000 };
+      }),
       "progress-evaluation-record-2/damage-aware-match": v2Damage(),
       "progress-evaluation-record-2/damage-aware-v3-match": v2DamageV3(),
       "progress-evaluation-record-2/search-match": v2Search(),
@@ -316,6 +333,11 @@ export async function progressSamples(engine: Engine): Promise<ProgressSamples> 
       "progress-evaluation-record-2/anchor-no-generation": v2Anchor((e) => delete e.matches[0].opponent.generation),
       "progress-evaluation-record-2/run-no-run-id": v2Run((e) => delete e.matches[0].opponent.run_id),
       "progress-evaluation-record-2/ablation-no-checkpoint": v2Ablation((e) => delete e.matches[0].candidate_preview.checkpoint),
+      "progress-evaluation-record-2/extra-mode-temperature-default": v2Extra((e) => (e.matches[0].temperature_ppm = 1000000)),
+      "progress-evaluation-record-2/extra-mode-temperature-zero": v2Extra((e) => (e.matches[0].temperature_ppm = 0)),
+      "progress-evaluation-record-2/extra-mode-temperature-fractional": v2Extra((e) => (e.matches[0].temperature_ppm = 0.5)),
+      "progress-evaluation-record-2/extra-mode-truncation-kind": v2Extra((e) => (e.matches[0].truncation.kind = "top-k")),
+      "progress-evaluation-record-2/extra-mode-truncation-no-threshold": v2Extra((e) => delete e.matches[0].truncation.min_ppm),
       "progress-evaluation-record-2/plan-label-malformed": withV2((e) => (e.plan.evaluation_key = "not a token")),
       "progress-evaluation-record/plan-label": withEval((e) => (e.plan.evaluation_key = "paired-key")),
       "progress-game-record/plan-label-malformed": withShortGame((g) => ((g.game = 1), (g.pair = 0), (g.evaluation_key = ""))),
@@ -349,6 +371,12 @@ export async function progressSamples(engine: Engine): Promise<ProgressSamples> 
       "progress-evaluation-record-2/evaluation-dataset-is-own": withV2((e) => (e.teams.evaluation_dataset_hash = e.teams.dataset_hash)),
       "progress-evaluation-record-2/ablation-vs-anchor": v2Ablation((e) => ((e.plan.anchor_games_per_match = 4), (e.matches[0].opponent = { kind: "anchor", generation: 0, policy_id: `policy:${hexOf("b")}`, checkpoints: { preview: hexOf("6"), battle: hexOf("7") } }))),
       "progress-evaluation-record-2/ablation-misnamed": v2Ablation((e) => ((e.matches[0].match_id = "preview-g0-random-legal-argmax"), e.games.slice(0, 4).forEach((g: any) => (g.match_id = "preview-g0-random-legal-argmax")))),
+      "progress-evaluation-record-2/extra-mode-on-argmax": v2Extra((e) => ((e.matches[0].mode = "argmax"), renameMatch(e, "actor-rule-argmax-t500000-th30000"))),
+      "progress-evaluation-record-2/extra-mode-on-anchor": v2Anchor((e) => ((e.matches[0].temperature_ppm = 500000), renameMatch(e, "anchor-g0-sample-t500000"))),
+      "progress-evaluation-record-2/extra-mode-on-previous": mutated(v2Previous, (e) => ((e.matches[0].temperature_ppm = 500000), renameMatch(e, "previous-sample-t500000"))),
+      "progress-evaluation-record-2/extra-mode-misnamed": v2Extra((e) => renameMatch(e, "actor-rule-sample-t250000-th30000")),
+      "progress-evaluation-record-2/extra-mode-name-without-settings": withV2((e) => (renameMatch(e, "actor-rule-sample-t500000"), (e.matches[0].mode = "sample"))),
+      "progress-evaluation-record-2/extra-mode-run-misnamed": v2Run((e) => ((e.matches[0].temperature_ppm = 500000), renameMatch(e, "run-sample"))),
       "progress-evaluation-record-2/ablation-not-earlier": v2Ablation((e) => (e.matches[0].candidate_preview.generation = 1)),
       "progress-evaluation-record-2/counts-disagree": withV2((e) => (e.matches[0].wins += 1)),
       "progress-evaluation-record-2/pair-is-game": withV2((e) => (e.games[2].pair = 2)),

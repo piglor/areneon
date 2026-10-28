@@ -220,6 +220,18 @@ class Outcome(RootModel[Played | Forfeit]):
     """
 
 
+class Truncation(BaseModel):
+    """
+    A probability threshold: candidates below min_ppm of the probability are dropped (the first highest is always kept) and the rest renormalised.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    kind: Literal["threshold"]
+    min_ppm: Annotated[StrictInt, Field(ge=1, le=999999)]
+
+
 class LearnedPreview(BaseModel):
     """
     The generation's own learned Preview network.
@@ -592,7 +604,15 @@ class Match(BaseModel):
     opponent: Opponent
     mode: Literal["sample", "argmax"]
     """
-    The candidate's choice rule: sample at temperature 1, or argmax.
+    The candidate's choice rule: sample (at temperature 1 unless temperature_ppm or truncation says otherwise), or argmax.
+    """
+    temperature_ppm: Annotated[StrictInt | MISSING, Field(ge=1, le=999999)] = MISSING
+    """
+    Only a sample match played at a declared temperature (ADR-023 section 1, #1044): the temperature in millionths, 1 to 999,999 (the default 1,000,000 is never written; absent means temperature 1). The candidate's policy id is recomputed from it. A minor change within version 2: a reader older than the field rejects a record that carries it.
+    """
+    truncation: Truncation | MISSING = MISSING
+    """
+    Only a sample match played with a probability threshold (ADR-023 section 1, #1044). Absent: no truncation.
     """
     candidate_preview: CandidatePreview | MISSING = MISSING
     games: Annotated[StrictInt, Field(ge=1, le=9007199254740991)]

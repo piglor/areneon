@@ -179,9 +179,14 @@ export interface Match {
   policy_id: string;
   opponent: Opponent;
   /**
-   * The candidate's choice rule: sample at temperature 1, or argmax.
+   * The candidate's choice rule: sample (at temperature 1 unless temperature_ppm or truncation says otherwise), or argmax.
    */
   mode: "sample" | "argmax";
+  /**
+   * Only a sample match played at a declared temperature (ADR-023 section 1, #1044): the temperature in millionths, 1 to 999,999 (the default 1,000,000 is never written; absent means temperature 1). The candidate's policy id is recomputed from it. A minor change within version 2: a reader older than the field rejects a record that carries it.
+   */
+  temperature_ppm?: number;
+  truncation?: Truncation;
   candidate_preview?: CandidatePreview;
   games: number;
   /**
@@ -297,6 +302,13 @@ export interface SelfNoSearchOpponent {
    * The pair's no-search play mode: the control's mode, the one the search policy falls back to.
    */
   mode: "sample" | "argmax";
+}
+/**
+ * Only a sample match played with a probability threshold (ADR-023 section 1, #1044). Absent: no truncation.
+ */
+export interface Truncation {
+  kind: "threshold";
+  min_ppm: number;
 }
 /**
  * The generation's own learned Preview network.
@@ -766,6 +778,16 @@ export interface SearchCounts2 {
   replies_max_damage: number;
   replies_all_zero: number;
   replies_uniform: number;
+}
+/**
+ * A probability threshold: candidates below min_ppm of the probability are dropped (the first highest is always kept) and the rest renormalised.
+ *
+ * This interface was referenced by `ProgressEvaluationRecordV2`'s JSON-Schema
+ * via the `definition` "Truncation".
+ */
+export interface Truncation1 {
+  kind: "threshold";
+  min_ppm: number;
 }
 /**
  * A search policy's identity hash and its per-game counts summed over the match's games (ADR-026 section 5). Added within v1 (ADR-008 section 3): a reader older than the field rejects a record that carries it.
