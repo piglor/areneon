@@ -11,6 +11,7 @@ export { type Pilot, PilotError, readPilot, runPilot } from "./pilot.ts";
 export { groupKey, manifestPlan, planQuotas, PlanError, type QuotaPlan, type Split, SPLITS, type SplitSizes, type Stratum } from "./plan.ts";
 export { drawStatPoints, Proposal, ProposalError } from "./proposal.ts";
 export { type BeliefWorldsFiles, BeliefWorldsError, beliefWorldsFactory, beliefWorldsFiles, createBeliefWorlds } from "./damage-aware-worlds.ts";
+export { createSearchWorlds, SearchWorldsError, type SearchWorldsContext, type SearchWorldsFiles, searchWorldsFiles } from "./search-worlds.ts";
 export { type GeneratorSpreadSampler, generatorSpreadSampler, type StatPointSpread } from "./spread-sampler.ts";
 export { fillQuantile, provision, type Provision } from "./provision.ts";
 export { rangeSummary } from "./range.ts";

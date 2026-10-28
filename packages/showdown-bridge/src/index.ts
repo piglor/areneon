@@ -561,3 +561,29 @@ export {
 } from "./world-builder.ts";
 export { type CheckFailure, type ConditionSnapshot, type Remainder, firstDifference, plainRequest, v2Candidates, v2Request, v4Conditions, v4Durations } from "./world-checks.ts";
 export { type RedrawCounts, type Redrawer, createRedrawer } from "./world-redraw.ts";
+export {
+  type DecisionWorlds,
+  EVIDENCE_CLASSES,
+  type EvidenceClass,
+  evidenceClass,
+  GENERATOR_MATCHED_LABEL,
+  mapWorld,
+  PRIOR_KINDS,
+  type PriorKind,
+  type RefusedWorld,
+  ROLE_SETS_LABEL,
+  SEARCH_HP_ROUNDING,
+  SEARCH_PURPOSE,
+  searchStream,
+  type ValidWorld,
+  createWorldSampler,
+  type WorldRequest,
+  type WorldSampler,
+  type WorldSamplerContext,
+  type WorldSamplerCounts,
+  type WorldSamplerSettings,
+  type WorldSamplePort,
+  type WorldSource,
+  type WorldSourceResult,
+  WorldMappingError,
+} from "./world-sampler.ts";
