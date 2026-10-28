@@ -68,12 +68,16 @@ describe("hand-checked worlds (stub probe: every query's value is the test's rol
   });
 
   it("takes a single-target move when it is worth more than the spread, at the target that takes the most", () => {
-    // Stone Edge: 80 into Venusaur (the foe at location 2) and 10 into Ember (location 1); Rock Slide would be 30 + 30.
+    // Stone Edge: 80 into Venusaur (the foe at location 1, the engine's active slot 0) and 10 into Ember (location 2); Rock Slide would be 30 + 30.
+    const w = worldOf();
+    const tyranitar = (w.battle.sides[1] as unknown as { active: { getAtLoc(loc: number): { name: string } }[] }).active[0];
+    expect(tyranitar?.getAtLoc(1).name).toBe("Venusaur"); // the engine's own location convention, which the model must follow
+    expect(tyranitar?.getAtLoc(2).name).toBe("Ember");
     const probe = rollsBy((id, defender) => (id === "stoneedge" ? (defender === "Venusaur" ? 80 : 10) : id === "rockslide" ? 30 : 0));
-    expect(model(probe).reply(worldOf()).choice.startsWith("move 4 2, ")).toBe(true);
-    // The other way round: location 1.
+    expect(model(probe).reply(worldOf()).choice.startsWith("move 4 1, ")).toBe(true);
+    // The other way round: location 2.
     const flipped = rollsBy((id, defender) => (id === "stoneedge" ? (defender === "Venusaur" ? 10 : 80) : id === "rockslide" ? 30 : 0));
-    expect(model(flipped).reply(worldOf()).choice.startsWith("move 4 1, ")).toBe(true);
+    expect(model(flipped).reply(worldOf()).choice.startsWith("move 4 2, ")).toBe(true);
   });
 
   it("breaks equal values by the canonical candidate order", () => {
@@ -142,6 +146,11 @@ describe("hand-checked worlds (stub probe: every query's value is the test's rol
     const result = reply(worldOf(ownSets, [rampage, foeSets[1] as PokemonSet, foeSets[2] as PokemonSet, foeSets[3] as PokemonSet]));
     expect(result).toMatchObject({ kind: "max_damage", value: 30 * PPM_PER_ROLL });
     expect(result.choice.startsWith("move 1, ")).toBe(true);
+  });
+
+  it("names ids the pinned engine has for the field it states", () => {
+    const dex = engine.sim.Dex.mod(engine.sim.Dex.formats.get(GOLDEN_FORMAT).mod) as unknown as { conditions: { get(id: string): { exists: boolean } } };
+    for (const id of ["auroraveil", "lightscreen", "reflect", "tailwind", "trickroom"]) expect(dex.conditions.get(id).exists, id).toBe(true);
   });
 
   it("reads the field from the world", () => {

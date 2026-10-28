@@ -219,10 +219,10 @@ export function createReplyModel(options: ReplyModelOptions): ReplyModel {
       }
     };
 
-    /** The foes (the player's living actives) a part hits: one by location (`loc` 1 is the last active slot), or every one. */
+    /** The foes (the player's living actives) a part hits: one by location (the engine's `getAtLoc`: `loc` 1 is the foe in active slot 0), or every one. */
     const hit = (aim: "single" | "random" | "every", target: number | null): RMon[] => {
       if (aim === "single") {
-        const found = defenders[defenders.length - (target as number)];
+        const found = defenders[(target as number) - 1];
         return found != null && !found.fainted && found.hp > 0 ? [found] : [];
       }
       return defenders.filter((mon): mon is RMon => mon !== null && !mon.fainted && mon.hp > 0);
@@ -255,7 +255,7 @@ export function createReplyModel(options: ReplyModelOptions): ReplyModel {
     const parsed = open.map((candidate) => ({ choice: candidate.choice, slots: parseJointChoice(candidate.choice) }));
     // A slot with no eligible part in any candidate is held to its first legal part in canonical order.
     const forced = new Map<number, string>();
-    for (let slot = 0; slot < 2; slot += 1) {
+    for (let slot = 0; slot < slots.length; slot += 1) {
       const texts = parsed.map((entry) => entry.choice.split(", ")[slot]).filter((text): text is string => text !== undefined);
       if (texts.length > 0 && !parsed.some((entry) => partOf(slot, entry.slots[slot] as SlotPart).eligible)) {
         forced.set(slot, texts[0] as string);
