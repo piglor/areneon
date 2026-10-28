@@ -594,4 +594,29 @@ export {
   type WorldSourceResult,
   WorldMappingError,
 } from "./world-sampler.ts";
-export { REPLY_MODEL_FORMAT } from "./reply-model.ts";
+export { createReplyModel, REPLY_MODEL_FORMAT, ReplyModelError, type ReplyModel } from "./reply-model.ts";
+export {
+  DROP_REASONS,
+  type DropReason,
+  engineSeed,
+  FALLBACK_REASONS,
+  replyIndex,
+  SearchError,
+  searchActor,
+  type SearchActor,
+  type SearchActorOptions,
+  type SearchCounts,
+  type SearchDecision,
+  type SearchInput,
+  searchPolicy,
+  type SearchReport,
+  searchSetup,
+  searchSkipReason,
+  type SearchSkipReason,
+  type SearchSetup,
+  type SearchSetupInput,
+} from "./search-actor.ts";
+export { hpKoDifferential, outcomeScore } from "./search-leaf.ts";
+export { playerView } from "./search-turn.ts";
+export { goldenWorldFactsData, readWorldFactsData, type FactsTable } from "./world-facts-data.ts";
+export { legalReplies } from "./reply-model.ts";

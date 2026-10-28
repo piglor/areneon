@@ -8,6 +8,8 @@ import {
   type PokemonSet,
   resolveFormat,
   type RulesSnapshot,
+  searchSkipReason,
+  type SearchSkipReason,
   type SyntheticTeamHashes,
   higherClass,
   classOfSets,
@@ -90,6 +92,13 @@ export interface A2BotOptions {
   /** Default `A2_BUDGET_CONFIG`. */
   budget?: BudgetConfig;
   /**
+   * The bot plays a search policy (ADR-026 section 6): the remaining bank (ms) below which it skips the search and plays the
+   * pair's own choice (`SearchConfig.a2_clock_floor_ms`). The session records `search_skipped` on every battle decision made
+   * below it, so a replay does not expect a search there. The session still answers with the actor rule (no policy is wired
+   * into A2 yet), and A2 results are never evaluation.
+   */
+  search?: { a2_clock_floor_ms: number };
+  /**
    * How long a request waits for the server's timer snapshot before it is
    * answered without one (the server skips it when the bank is 0 or only one
    * player has time left; see `watchdog.ts`). Default 1 s.
@@ -152,6 +161,11 @@ export interface DecisionRecord {
    */
   rejoin_without_snapshot?: true;
   remaining_decisions_estimate?: number;
+  /**
+   * Set when a search policy is configured (`A2BotOptions.search`) and the server's timer snapshot shows less bank than its
+   * floor: the search is skipped, the pair plays (ADR-026 section 6). Absent otherwise, and on a decision with no snapshot.
+   */
+  search_skipped?: SearchSkipReason;
   /** Local ms from the (original) request's receipt to the send. */
   elapsed_ms: number;
 }
@@ -260,6 +274,7 @@ interface Deadline {
   watchdog?: WatchdogReason;
   rejoin_without_snapshot?: true;
   remaining_decisions_estimate?: number;
+  search_skipped?: SearchSkipReason;
 }
 
 /** One battle room, across connections. */
@@ -822,11 +837,13 @@ class Session {
     const config = this.#options.budget ?? A2_BUDGET_CONFIG;
     if (pending.request.phase === "preview") return { timer, budget: previewBudget(timer, config), inherited: false };
     const remaining = estimateRemainingDecisions(this.#counts(battle, state, pending.request), config);
+    const skipped = this.#options.search === undefined ? null : searchSkipReason(timer.bank_seconds_left * 1000, this.#options.search.a2_clock_floor_ms);
     return {
       timer,
       budget: battleBudget(timer, remaining, config),
       inherited: false,
       remaining_decisions_estimate: remaining,
+      ...(skipped === null ? {} : { search_skipped: skipped }),
     };
   }
 
@@ -989,6 +1006,7 @@ class Session {
       ...(deadline.remaining_decisions_estimate === undefined
         ? {}
         : { remaining_decisions_estimate: deadline.remaining_decisions_estimate }),
+      ...(deadline.search_skipped === undefined ? {} : { search_skipped: deadline.search_skipped }),
       elapsed_ms: this.#clock() - received_at,
     };
     battle.answered.set(request.rqid, choice);

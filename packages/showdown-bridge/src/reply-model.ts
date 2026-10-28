@@ -133,6 +133,36 @@ interface MoveData {
 
 const emptyCounts = (): ReplyCounts => ({ replies: 0, max_damage: 0, all_zero: 0, forced_slots: 0, candidates: 0, queries: 0, probe_runs: 0, unsupported_queries: 0, probe_refusals: 0 });
 
+/** The opponent's request in a world, on a clone (the world is not changed): its legal set and its non-pending candidates in canonical order. */
+function foeRequest(engine: Engine, world: ScenarioWorld) {
+  const seat = world.battle.sides.findIndex((side) => side.id === world.seat);
+  if (seat < 0) throw new ReplyModelError("the world has no side for its seat");
+  const foeIndex = 1 - seat;
+  const foeId = world.battle.sides[foeIndex]?.id as string;
+
+  // A clone rebuilds every side's request from the state as written (the world's own requests are those of the start); the world is not changed.
+  const clone = engine.sim.Battle.fromJSON(world.battle.toJSON());
+  const request = (clone.sides[foeIndex] as { activeRequest: object | null }).activeRequest;
+  if (request === null) throw new ReplyModelError("the world's opponent has no request");
+  const decoded = decodeRequest(JSON.stringify(request));
+  if (decoded.phase !== "move") throw new ReplyModelError("the world's opponent request is not a move request");
+  const numbered = { ...decoded, request_seq: 1 };
+  const legal = legalChoiceSet({
+    request: numbered,
+    showdown_commit: engine.commit,
+    judge: new CloneJudge(engine, clone, foeId),
+  });
+  const { candidates } = enumerateCandidates(numbered);
+  const open = candidates.filter((candidate: Candidate) => !candidate.pending);
+  return { seat, foeIndex, clone, decoded, legal, open };
+}
+
+/**
+ * Every non-pending legal joint choice of the opponent in a world, in canonical order: the options the search's uniform
+ * replies are drawn from (ADR-026 section 2). The world is ours, so these verdicts reveal nothing.
+ */
+export const legalReplies = (engine: Engine, world: ScenarioWorld): string[] => foeRequest(engine, world).open.map((candidate) => candidate.choice);
+
 export function createReplyModel(options: ReplyModelOptions): ReplyModel {
   const { engine, vocabulary, config, mechanics, data_class } = options;
   const snapshot = options.snapshot ?? loadRulesSnapshot(engine.commit);
@@ -142,25 +172,7 @@ export function createReplyModel(options: ReplyModelOptions): ReplyModel {
   function reply(world: ScenarioWorld, memo: ProbeMemo = newWorldMemo()): Reply {
     const probeCounts = { queries: 0, probe_runs: 0, unsupported_queries: 0 };
     const view = damageView({ engine, vocabulary, config, v1: config, mechanics, snapshot, data_class, probe, counts: probeCounts, memo });
-    const seat = world.battle.sides.findIndex((side) => side.id === world.seat);
-    if (seat < 0) throw new ReplyModelError("the world has no side for its seat");
-    const foeIndex = 1 - seat;
-    const foeId = world.battle.sides[foeIndex]?.id as string;
-
-    // A clone rebuilds every side's request from the state as written (the world's own requests are those of the start); the world is not changed.
-    const clone = engine.sim.Battle.fromJSON(world.battle.toJSON());
-    const request = (clone.sides[foeIndex] as { activeRequest: object | null }).activeRequest;
-    if (request === null) throw new ReplyModelError("the world's opponent has no request");
-    const decoded = decodeRequest(JSON.stringify(request));
-    if (decoded.phase !== "move") throw new ReplyModelError("the world's opponent request is not a move request");
-    const numbered = { ...decoded, request_seq: 1 };
-    const legal = legalChoiceSet({
-      request: numbered,
-      showdown_commit: engine.commit,
-      judge: new CloneJudge(engine, clone, foeId),
-    });
-    const { candidates } = enumerateCandidates(numbered);
-    const open = candidates.filter((candidate: Candidate) => !candidate.pending);
+    const { seat, foeIndex, decoded, legal, open } = foeRequest(engine, world);
     counts.candidates += open.length;
 
     const battle = world.battle as unknown as RBattle;
