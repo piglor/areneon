@@ -2,7 +2,7 @@
 // (Python hashlib over the canonical JSON), the A2 clock rule, the reviewed engine data of the world facts, and the privacy boundary
 // of the decision as a type test.
 import { describe, expect, expectTypeOf, it } from "vitest";
-import { goldenWorldFactsData } from "../src/world-facts-data.ts";
+import { goldenWorldFactsData, required } from "../src/world-facts-data.ts";
 import {
   engineSeed,
   replyIndex,
@@ -53,6 +53,8 @@ describe("the world facts' engine data", () => {
     expect(data.toxic_stage_max).toBeGreaterThan(10);
     expect(data.swap_side_conditions).toContain("reflect");
     expect(data.action_sources).toContain("move: Round");
+    expect(required(1, "x")).toBe(1);
+    expect(() => required(undefined, "ceiling")).toThrow("has no ceiling");
   });
 });
 

@@ -16,6 +16,12 @@ export interface FactsTable {
   abilities: readonly { id: string; name: string }[];
 }
 
+/** A value read from the pinned engine's source: a source that no longer has the shape this reader expects is a typed failure, never NaN or an opaque TypeError. */
+export function required<T>(value: T | undefined, what: string): T {
+  if (value === undefined) throw new Error(`world-facts-data: the pinned engine's source has no ${what}`);
+  return value;
+}
+
 /** The moves whose engine definition adds the `stall` volatile, read from the pinned source, restricted to the format's moves. */
 function stallMoves(dir: string, table: FactsTable): string[] {
   const source = readFileSync(join(dir, "data", "moves.ts"), "utf8");
@@ -31,14 +37,15 @@ function stallMoves(dir: string, table: FactsTable): string[] {
 /** The side conditions Court Change swaps, read from the pinned move's own list. */
 function swapConditions(dir: string): string[] {
   const source = readFileSync(join(dir, "data", "moves.ts"), "utf8");
-  const block = /\n\tcourtchange: \{[\s\S]*?const sideConditions = \[([\s\S]*?)\];/.exec(source)?.[1] as string;
-  return [...block.matchAll(/'([a-z0-9]+)'/g)].map((m) => m[1] as string).sort();
+  const block = /\n\tcourtchange: \{[\s\S]*?const sideConditions = \[([\s\S]*?)\];/.exec(source)?.[1];
+  const list = required(block, "Court Change side-condition list");
+  return [...list.matchAll(/'([a-z0-9]+)'/g)].map((m) => m[1] as string).sort();
 }
 
 /** The Toxic stage ceiling, read from the pinned `tox` condition's own cap. */
 function toxicStageMax(dir: string): number {
   const source = readFileSync(join(dir, "data", "conditions.ts"), "utf8");
-  return Number(/\n\ttox: \{[\s\S]*?stage < (\d+)/.exec(source)?.[1]);
+  return Number(required(/\n\ttox: \{[\s\S]*?stage < (\d+)/.exec(source)?.[1], "Toxic stage ceiling"));
 }
 
 /**
