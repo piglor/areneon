@@ -260,6 +260,9 @@
         },
         {
           "$ref": "#/$defs/RunOpponent"
+        },
+        {
+          "$ref": "#/$defs/SelfNoSearchOpponent"
         }
       ],
       "discriminator": {
@@ -498,6 +501,14 @@
         },
         "baseline": {
           "$ref": "#/$defs/BaselineSummary"
+        },
+        "search": {
+          "$ref": "#/$defs/SearchSummary",
+          "description": "Only a match of a search candidate (match_id starts with search-): the candidate's identity hash and its game counts summed."
+        },
+        "opponent_search": {
+          "$ref": "#/$defs/SearchSummary",
+          "description": "Only a self-no-search match: the control's counts (searched_decisions 0) summed over the match's games."
         }
       }
     },
@@ -621,6 +632,14 @@
         "baseline_counts": {
           "description": "Only a game of a damage-aware match: the baseline seat's integer counts for this game (reader rules: probe_runs and unsupported_queries do not exceed queries; preview_decisions plus scored_decisions do not exceed decisions). The match's baseline.counts are the sums over its rows.",
           "$ref": "#/$defs/BaselineCounts"
+        },
+        "search": {
+          "$ref": "#/$defs/SearchCounts",
+          "description": "Only a game of a match with search: the candidate's counts for this game."
+        },
+        "opponent_search": {
+          "$ref": "#/$defs/SearchCounts",
+          "description": "Only a game of a self-no-search match: the control's counts for this game."
         }
       }
     },
@@ -787,6 +806,295 @@
         },
         "counts": {
           "$ref": "#/$defs/BaselineCounts"
+        }
+      }
+    },
+    "CountEntry": {
+      "description": "One named count of an open-keyed table (a refusal code, a check:class pair, a resampled item).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "key",
+        "count"
+      ],
+      "properties": {
+        "key": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "count": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    "SearchCounts": {
+      "description": "The integer counts of one game of a search policy (ADR-026 section 5), or the sums of several games'. Wall time is printed, never stored. Added within v1 (ADR-008 section 3): a reader older than the field rejects a record that carries it.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "decisions",
+        "searched_decisions",
+        "fallbacks",
+        "worlds_asked",
+        "worlds_built",
+        "worlds_refused",
+        "redraws",
+        "legality_redraws",
+        "refusals",
+        "refusal_check_class",
+        "belief_refusals",
+        "worlds_dropped",
+        "resampled",
+        "worlds_scored",
+        "turns",
+        "wait_continuations",
+        "leaf_queries",
+        "leaf_memo_hits",
+        "leaf_game_end",
+        "leaf_hp_ko",
+        "replies_max_damage",
+        "replies_all_zero",
+        "replies_uniform"
+      ],
+      "properties": {
+        "decisions": {
+          "description": "Requests answered, Team Preview included.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "searched_decisions": {
+          "description": "Decisions the search chose (0 for the self-no-search control).",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "fallbacks": {
+          "description": "Decisions the pair played itself, by reason (ADR-026 section 5). The control counts the structural reasons it shares with the search (team_preview, forced_switch, too_few_candidates) and 0 for the rest.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "team_preview",
+            "forced_switch",
+            "too_few_candidates",
+            "clock_floor",
+            "belief_refused",
+            "below_min_valid"
+          ],
+          "properties": {
+            "team_preview": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "forced_switch": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "too_few_candidates": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "clock_floor": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "belief_refused": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "below_min_valid": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          }
+        },
+        "worlds_asked": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "worlds_built": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "worlds_refused": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "redraws": {
+          "description": "The search's sampler attempts after the first.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "legality_redraws": {
+          "description": "ADR-025's legality redraws inside the draws, apart from redraws.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "refusals": {
+          "description": "Worlds refused, by the last refusal's code, sorted and unique by key.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CountEntry"
+          }
+        },
+        "refusal_check_class": {
+          "description": "Worlds refused, by check:class (- is none), sorted and unique by key.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CountEntry"
+          }
+        },
+        "belief_refusals": {
+          "description": "Belief refusals, by the opponent model's code, sorted and unique by key.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CountEntry"
+          }
+        },
+        "worlds_dropped": {
+          "description": "Built worlds dropped before scoring, by reason.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "reply_model",
+            "choice_refused"
+          ],
+          "properties": {
+            "reply_model": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "choice_refused": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          }
+        },
+        "resampled": {
+          "description": "Built worlds that resampled an X-class item, by item, sorted and unique by key.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CountEntry"
+          }
+        },
+        "worlds_scored": {
+          "description": "Worlds that took part in a choice.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "turns": {
+          "description": "Turns simulated.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "wait_continuations": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "leaf_queries": {
+          "description": "Leaves scored by the value head.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "leaf_memo_hits": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "leaf_game_end": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "leaf_hp_ko": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "replies_max_damage": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "replies_all_zero": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "replies_uniform": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    "SearchSummary": {
+      "description": "A search policy's identity hash and its per-game counts summed over the match's games (ADR-026 section 5). Added within v1 (ADR-008 section 3): a reader older than the field rejects a record that carries it.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "identity_hash",
+        "counts"
+      ],
+      "properties": {
+        "identity_hash": {
+          "description": "The search identity hash (ADR-026 section 5; the search: member of the candidate's policy id). On the opponent side of a self-no-search match it names the search policy the control belongs to.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "counts": {
+          "$ref": "#/$defs/SearchCounts"
+        }
+      }
+    },
+    "SelfNoSearchOpponent": {
+      "description": "The control opponent of a search policy (ADR-026 section 5, finding N-C): the very pair the search policy wraps, played without search. A minor change within v2: a reader older than it rejects a record that carries it.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "policy_id",
+        "checkpoints",
+        "mode"
+      ],
+      "properties": {
+        "kind": {
+          "const": "self-no-search"
+        },
+        "policy_id": {
+          "type": "string",
+          "pattern": "^policy:[0-9a-f]{64}$",
+          "description": "The same frozen pair played WITHOUT search, in the mode the match played (its ordinary policy id)."
+        },
+        "checkpoints": {
+          "$ref": "#/$defs/Checkpoints"
+        },
+        "mode": {
+          "enum": [
+            "sample",
+            "argmax"
+          ],
+          "description": "The pair's no-search play mode: the control's mode, the one the search policy falls back to."
         }
       }
     }

@@ -324,6 +324,153 @@ class BaselineSummary(BaseModel):
     counts: BaselineCounts
 
 
+class CountEntry(BaseModel):
+    """
+    One named count of an open-keyed table (a refusal code, a check:class pair, a resampled item).
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    key: Annotated[StrictStr, Field(max_length=128, min_length=1)]
+    count: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+
+
+class Fallbacks(BaseModel):
+    """
+    Decisions the pair played itself, by reason (ADR-026 section 5). The control counts the structural reasons it shares with the search (team_preview, forced_switch, too_few_candidates) and 0 for the rest.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    team_preview: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+    forced_switch: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+    too_few_candidates: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+    clock_floor: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+    belief_refused: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+    below_min_valid: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+
+
+class WorldsDropped(BaseModel):
+    """
+    Built worlds dropped before scoring, by reason.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    reply_model: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+    choice_refused: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+
+
+class SearchCounts(BaseModel):
+    """
+    The integer counts of one game of a search policy (ADR-026 section 5), or the sums of several games'. Wall time is printed, never stored. Added within v1 (ADR-008 section 3): a reader older than the field rejects a record that carries it.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    decisions: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+    """
+    Requests answered, Team Preview included.
+    """
+    searched_decisions: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+    """
+    Decisions the search chose (0 for the self-no-search control).
+    """
+    fallbacks: Fallbacks
+    """
+    Decisions the pair played itself, by reason (ADR-026 section 5). The control counts the structural reasons it shares with the search (team_preview, forced_switch, too_few_candidates) and 0 for the rest.
+    """
+    worlds_asked: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+    worlds_built: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+    worlds_refused: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+    redraws: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+    """
+    The search's sampler attempts after the first.
+    """
+    legality_redraws: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+    """
+    ADR-025's legality redraws inside the draws, apart from redraws.
+    """
+    refusals: list[CountEntry]
+    """
+    Worlds refused, by the last refusal's code, sorted and unique by key.
+    """
+    refusal_check_class: list[CountEntry]
+    """
+    Worlds refused, by check:class (- is none), sorted and unique by key.
+    """
+    belief_refusals: list[CountEntry]
+    """
+    Belief refusals, by the opponent model's code, sorted and unique by key.
+    """
+    worlds_dropped: WorldsDropped
+    """
+    Built worlds dropped before scoring, by reason.
+    """
+    resampled: list[CountEntry]
+    """
+    Built worlds that resampled an X-class item, by item, sorted and unique by key.
+    """
+    worlds_scored: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+    """
+    Worlds that took part in a choice.
+    """
+    turns: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+    """
+    Turns simulated.
+    """
+    wait_continuations: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+    leaf_queries: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+    """
+    Leaves scored by the value head.
+    """
+    leaf_memo_hits: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+    leaf_game_end: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+    leaf_hp_ko: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+    replies_max_damage: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+    replies_all_zero: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+    replies_uniform: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+
+
+class SearchSummary(BaseModel):
+    """
+    A search policy's identity hash and its per-game counts summed over the match's games (ADR-026 section 5). Added within v1 (ADR-008 section 3): a reader older than the field rejects a record that carries it.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    identity_hash: Annotated[StrictStr, Field(pattern="^[0-9a-f]{64}$")]
+    """
+    The search identity hash (ADR-026 section 5; the search: member of the candidate's policy id). On the opponent side of a self-no-search match it names the search policy the control belongs to.
+    """
+    counts: SearchCounts
+
+
+class SelfNoSearchOpponent(BaseModel):
+    """
+    The control opponent of a search policy (ADR-026 section 5, finding N-C): the very pair the search policy wraps, played without search. A minor change within v2: a reader older than it rejects a record that carries it.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    kind: Literal["self-no-search"]
+    policy_id: Annotated[StrictStr, Field(pattern="^policy:[0-9a-f]{64}$")]
+    """
+    The same frozen pair played WITHOUT search, in the mode the match played (its ordinary policy id).
+    """
+    checkpoints: Checkpoints
+    mode: Literal["sample", "argmax"]
+    """
+    The pair's no-search play mode: the control's mode, the one the search policy falls back to.
+    """
+
+
 class Plan(BaseModel):
     """
     What every match played: derivations, sizes and caps.
@@ -368,10 +515,16 @@ class Plan(BaseModel):
 
 
 class Opponent(
-    RootModel[BaselineOpponent | PreviousOpponent | AnchorOpponent | RunOpponent]
+    RootModel[
+        BaselineOpponent
+        | PreviousOpponent
+        | AnchorOpponent
+        | RunOpponent
+        | SelfNoSearchOpponent
+    ]
 ):
     root: Annotated[
-        BaselineOpponent | PreviousOpponent | AnchorOpponent | RunOpponent,
+        BaselineOpponent | PreviousOpponent | AnchorOpponent | RunOpponent | SelfNoSearchOpponent,
         Field(discriminator="kind"),
     ]
     """
@@ -404,6 +557,14 @@ class GameRow(BaseModel):
     baseline_counts: BaselineCounts | MISSING = MISSING
     """
     Only a game of a damage-aware match: the baseline seat's integer counts for this game (reader rules: probe_runs and unsupported_queries do not exceed queries; preview_decisions plus scored_decisions do not exceed decisions). The match's baseline.counts are the sums over its rows.
+    """
+    search: SearchCounts | MISSING = MISSING
+    """
+    Only a game of a match with search: the candidate's counts for this game.
+    """
+    opponent_search: SearchCounts | MISSING = MISSING
+    """
+    Only a game of a self-no-search match: the control's counts for this game.
     """
 
 
@@ -461,6 +622,14 @@ class Match(BaseModel):
     SHA-256 of the JCS bytes of each stored ProgressGameRecord of the match, sorted and unique; its length is plan.recorded_games_per_match.
     """
     baseline: BaselineSummary | MISSING = MISSING
+    search: SearchSummary | MISSING = MISSING
+    """
+    Only a match of a search candidate (match_id starts with search-): the candidate's identity hash and its game counts summed.
+    """
+    opponent_search: SearchSummary | MISSING = MISSING
+    """
+    Only a self-no-search match: the control's counts (searched_decisions 0) summed over the match's games.
+    """
 
 
 class ProgressEvaluationRecordV2(BaseModel):

@@ -57,6 +57,8 @@ export interface ProgressGameRecord {
     identity_hash: string;
     counts: BaselineCounts;
   };
+  search?: SearchSeat;
+  opponent_search?: SearchSeat1;
 }
 /**
  * Replay identity of a battle (ADR-003, ADR-007): the pinned engine commit, the format, and the hashes of the engine ruleset and of Areneon's own format rules.
@@ -265,4 +267,121 @@ export interface BaselineCounts {
    * Optional (a minor change within v1; absent means 0 and is written only when above 0): requests answered by the actor-rule candidate because the mechanics probe refused a query the baseline built (a declared state the engine does not take). A high rate means the baseline plays like actor-rule; never more than queries.
    */
   probe_refusals?: number;
+}
+/**
+ * Only a game of a search candidate.
+ */
+export interface SearchSeat {
+  seat: "p1" | "p2";
+  identity_hash: string;
+  counts: SearchCounts;
+}
+/**
+ * The integer counts of one game of a search policy (ADR-026 section 5), or the sums of several games'. Wall time is printed, never stored. Added within v1 (ADR-008 section 3): a reader older than the field rejects a record that carries it.
+ *
+ * This interface was referenced by `ProgressGameRecord`'s JSON-Schema
+ * via the `definition` "SearchCounts".
+ */
+export interface SearchCounts {
+  /**
+   * Requests answered, Team Preview included.
+   */
+  decisions: number;
+  /**
+   * Decisions the search chose (0 for the self-no-search control).
+   */
+  searched_decisions: number;
+  /**
+   * Decisions the pair played itself, by reason (ADR-026 section 5). The control counts the structural reasons it shares with the search (team_preview, forced_switch, too_few_candidates) and 0 for the rest.
+   */
+  fallbacks: {
+    team_preview: number;
+    forced_switch: number;
+    too_few_candidates: number;
+    clock_floor: number;
+    belief_refused: number;
+    below_min_valid: number;
+  };
+  worlds_asked: number;
+  worlds_built: number;
+  worlds_refused: number;
+  /**
+   * The search's sampler attempts after the first.
+   */
+  redraws: number;
+  /**
+   * ADR-025's legality redraws inside the draws, apart from redraws.
+   */
+  legality_redraws: number;
+  /**
+   * Worlds refused, by the last refusal's code, sorted and unique by key.
+   */
+  refusals: CountEntry[];
+  /**
+   * Worlds refused, by check:class (- is none), sorted and unique by key.
+   */
+  refusal_check_class: CountEntry[];
+  /**
+   * Belief refusals, by the opponent model's code, sorted and unique by key.
+   */
+  belief_refusals: CountEntry[];
+  /**
+   * Built worlds dropped before scoring, by reason.
+   */
+  worlds_dropped: {
+    reply_model: number;
+    choice_refused: number;
+  };
+  /**
+   * Built worlds that resampled an X-class item, by item, sorted and unique by key.
+   */
+  resampled: CountEntry[];
+  /**
+   * Worlds that took part in a choice.
+   */
+  worlds_scored: number;
+  /**
+   * Turns simulated.
+   */
+  turns: number;
+  wait_continuations: number;
+  /**
+   * Leaves scored by the value head.
+   */
+  leaf_queries: number;
+  leaf_memo_hits: number;
+  leaf_game_end: number;
+  leaf_hp_ko: number;
+  replies_max_damage: number;
+  replies_all_zero: number;
+  replies_uniform: number;
+}
+/**
+ * One named count of an open-keyed table (a refusal code, a check:class pair, a resampled item).
+ *
+ * This interface was referenced by `ProgressGameRecord`'s JSON-Schema
+ * via the `definition` "CountEntry".
+ */
+export interface CountEntry {
+  key: string;
+  count: number;
+}
+/**
+ * Only a game against the self-no-search control.
+ */
+export interface SearchSeat1 {
+  seat: "p1" | "p2";
+  identity_hash: string;
+  counts: SearchCounts;
+}
+/**
+ * The search policy's seat in this game, the search identity hash and that seat's integer counts (ADR-026 section 5); for the self-no-search control the seat of the pair played without search and the same identity hash, with searched_decisions 0. Added within v1 (ADR-008 section 3): a reader older than the field rejects a record that carries it.
+ *
+ * This interface was referenced by `ProgressGameRecord`'s JSON-Schema
+ * via the `definition` "SearchSeat".
+ */
+export interface SearchSeat2 {
+  seat: "p1" | "p2";
+  identity_hash: string;
+  counts: SearchCounts;
 }
