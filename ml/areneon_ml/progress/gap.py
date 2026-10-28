@@ -39,7 +39,7 @@ def _mode_name(match: dict[str, Any]) -> str:
 
 
 def _score_ppm(match: dict[str, Any]) -> int:
-    return (2 * match["wins"] + match["ties"]) * PPM // (2 * match["games"])
+    return int((2 * match["wins"] + match["ties"]) * PPM // (2 * match["games"]))
 
 
 def _gapped(match: dict[str, Any]) -> bool:

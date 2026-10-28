@@ -300,7 +300,12 @@ def progress_files(  # noqa: PLR0912, PLR0915
                 }
             )
             plain = policy_id(
-                request.preview, request.battle, mode, features=features_hash(config), **play
+                request.preview,
+                request.battle,
+                mode,
+                None if extra is None else extra.mode.temperature_ppm,
+                None if extra is None else extra.mode.truncation,
+                features_hash(config),
             )
             pair = (
                 policy_id(
