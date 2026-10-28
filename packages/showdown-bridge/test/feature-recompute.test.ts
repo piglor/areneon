@@ -43,7 +43,7 @@ describe("the stream's feature rows recomputed by the game processes (#1185)", (
   let configs: FeatureConfigs;
   let setHash: string;
   let pool: ReturnType<typeof trainingTeamPool>;
-  beforeAll(() => {
+  beforeAll(async () => {
     dir = mkdtempSync(join(tmpdir(), "areneon-recompute-"));
     try {
       featureSetup(engine, configWith("0".repeat(64)));
@@ -53,7 +53,13 @@ describe("the stream's feature rows recomputed by the game processes (#1185)", (
     config = configWith(setHash);
     configs = (featureSetup(engine, config) as NonNullable<ReturnType<typeof featureSetup>>).configs;
     pool = trainingTeamPool(engine, config.generation.excluded_abilities);
-  });
+    // The serial path is the reference: no rows directory, every row recomputed by the process that writes the stream.
+    const out = join(dir, "serial");
+    const result = await playGeneration(opts(out));
+    writeGeneration(out, result);
+    reference = files(out);
+    referenceSet = result.set;
+  }, 600_000); // a tiny generation with the real probe recomputing every row serially
   afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
   const opts = (out: string, change: Partial<GenerationOptions> = {}): GenerationOptions => {
@@ -67,14 +73,9 @@ describe("the stream's feature rows recomputed by the game processes (#1185)", (
   let reference: Record<string, string>;
   let referenceSet: unknown;
 
-  it("the serial path is the reference, and has rows in every example", async () => {
-    const out = join(dir, "serial");
-    const result = await playGeneration(opts(out));
-    writeGeneration(out, result);
-    reference = files(out);
-    referenceSet = result.set;
+  it("the serial path has rows in every example", () => {
     expect(reference["stream.jsonl"]).toContain('"candidate_features"');
-  }, 600_000); // a tiny generation with the real probe recomputing every row serially
+  });
 
   it("gives the same files when one process recomputes into a rows directory, and the stream writer uses them", async () => {
     const out = join(dir, "one");
@@ -116,25 +117,32 @@ describe("the stream's feature rows recomputed by the game processes (#1185)", (
 
   describe("a rows file that is missing, stale or damaged only costs time", () => {
     it("is not used unless it names the Episode and the feature set and holds one entry per decision", async () => {
-      const rows = join(dir, "damaged-rows");
       const out = join(dir, "damaged");
-      await playGeneration(opts(join(dir, "damaged-first"), { features_dir: rows }));
+      const rows = join(dir, "damaged-rows");
+      await playGeneration(opts(out, { features_dir: rows }));
       const names = readdirSync(rows).sort();
-      expect(names.length).toBeGreaterThan(3);
+      expect(names.length).toBeGreaterThan(5);
       const read = (name: string): { episode_hash: string; feature_set_hash: string; rows: unknown[] } => JSON.parse(readFileSync(join(rows, name), "utf8"));
-      writeFileSync(join(rows, names[0] as string), "{not json");
-      writeFileSync(join(rows, names[1] as string), JSON.stringify({ ...read(names[1] as string), feature_set_hash: "0".repeat(64) }));
-      writeFileSync(join(rows, names[2] as string), JSON.stringify({ ...read(names[2] as string), episode_hash: "0".repeat(64) }));
-      writeFileSync(join(rows, names[3] as string), JSON.stringify({ ...read(names[3] as string), rows: [] }));
-      const [other] = [names[4] as string];
-      writeFileSync(join(rows, other), JSON.stringify({ ...read(other), rows: read(other).rows.map((row) => ({ ...(row as object), feature_set_hash: "0".repeat(64) })) }));
-      const result = await playGeneration(opts(out, { features_dir: rows }));
-      writeGeneration(out, result);
-      expect(files(out)).toEqual(reference);
-    }, 600_000); // two generations over a tiny plan with the real probe
+      const put = (index: number, value: unknown): void => writeFileSync(join(rows, names[index] as string), typeof value === "string" ? value : JSON.stringify(value));
+      put(0, "{not json");
+      put(1, { ...read(names[1] as string), feature_set_hash: "0".repeat(64) });
+      put(2, { ...read(names[2] as string), episode_hash: "0".repeat(64) });
+      put(3, { ...read(names[3] as string), rows: [] });
+      put(4, { ...read(names[4] as string), rows: "not a list" });
+      put(5, { ...read(names[5] as string), rows: read(names[5] as string).rows.map((row) => ({ ...(row as object), feature_set_hash: "0".repeat(64) })) });
+      rmSync(join(rows, names[6] as string));
+      // The stream writer, given the damaged directory, writes the reference's bytes.
+      const own = readdirSync(join(out, "episodes")).map((name) => ({ hash: name.replace(".json", ""), path: join(out, "episodes", name) })).filter(({ path }) => (JSON.parse(readFileSync(path, "utf8")) as { provenance: { behaviour_policy_id: string } }).provenance.behaviour_policy_id === POLICY);
+      const again = join(dir, "damaged.jsonl");
+      await writeStoredTrainingStream(
+        { episodes: own, evaluation_manifests: [], known_synthetic: pool.known_synthetic, behaviour_policy_id: POLICY, features: { engine, configs, precomputed: readFeatureRows(engine, configs, rows) } },
+        { path: again },
+      );
+      expect(readFileSync(again, "utf8")).toBe(reference["stream.jsonl"]);
+    }, 600_000); // a tiny generation with the real probe, then the stream again
 
     it("is not written for an Episode that cannot be read back as its name says, and not after a stop", async () => {
-      const first = join(dir, "damaged-first");
+      const first = join(dir, "serial");
       const [name] = readdirSync(join(first, "episodes")).sort();
       const hash = (name as string).replace(".json", "");
       const rows = join(dir, "writer-rows");

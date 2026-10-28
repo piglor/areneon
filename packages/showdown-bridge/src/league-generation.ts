@@ -269,7 +269,7 @@ export interface GenerationOptions {
    * recomputed by every process in parallel instead of serially by the one that writes the stream. The files are
    * never part of the generation, and the stream's bytes do not depend on whether they exist.
    */
-  features_dir?: string;
+  features_dir?: string | undefined;
   /**
    * Ends this process's own games (#1100): checked before each wave and after each worker
    * restart, so a process whose generation has failed finishes its current wave and plays no further one and starts no
