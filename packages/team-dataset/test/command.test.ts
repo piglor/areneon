@@ -1,12 +1,14 @@
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { readTeamDatasetManifest, readTeamGeneratorConfig, recordHash, teamVocabularyHash, type TeamGeneratorConfig } from "@areneon/showdown-bridge";
 import { afterAll, describe, expect, it } from "vitest";
 import type { Engine } from "@areneon/showdown-bridge";
+import { DatasetReadError, readDataset } from "../src/dataset-reader.ts";
+import { referencePoolHash } from "../src/dedupe.ts";
 import { notices, runCli, type CliIo, trialDraws } from "../src/command.ts";
 import { type Pilot, runPilot } from "../src/pilot.ts";
-import { ASSIGNMENT_KEY, drawerFor, engine, FORMAT, KEY, light, small, table, VOCABULARY_FILE, vocabulary } from "./support.ts";
+import { ASSIGNMENT_KEY, drawerFor, engine, FORMAT, format, KEY, light, small, table, VOCABULARY_FILE, vocabulary } from "./support.ts";
 
 const scratch = mkdtempSync(join(tmpdir(), "command-"));
 afterAll(() => rmSync(scratch, { recursive: true, force: true }));
@@ -91,6 +93,63 @@ describe("the generate command", () => {
     expect(manifest.rejection_log.duplicates).toBeGreaterThan(0);
     expect(manifest.reference_pool_hash).not.toBe(JSON.parse(readFileSync(join(a, "manifest.json"), "utf8")).reference_pool_hash);
   }, 60_000);
+
+  // The readers of the evaluation paths pass no reference hashes: the dataset's own list is what they check (#1170).
+  describe("a dataset generated with --reference", () => {
+    const context = { engine, format, table, config: readTeamGeneratorConfig(cfg, table), labelSet: light, vocabulary };
+    const refused = (dir: string, extra: Partial<typeof context & { referenceHashes: string[] }> = {}): string => {
+      try {
+        readDataset(dir, { ...context, ...extra });
+      } catch (error) {
+        expect(error).toBeInstanceOf(DatasetReadError);
+        return (error as Error).message;
+      }
+      throw new Error("the dataset was accepted");
+    };
+    const listed = (dir: string): string[] => readFileSync(join(dir, "reference-hashes.txt"), "utf8").split("\n").filter(Boolean);
+    const copyOf = (name: string): string => {
+      const dir = join(scratch, name);
+      cpSync(join(scratch, "c"), dir, { recursive: true });
+      return dir;
+    };
+
+    it("is read from its own reference list, which the first dataset does not have", () => {
+      expect(readdirSync(join(scratch, "c"))).toContain("reference-hashes.txt");
+      expect(readdirSync(join(scratch, "a"))).not.toContain("reference-hashes.txt");
+      expect(readDataset(join(scratch, "c"), context).manifest.reference_pool_hash).toBe(referencePoolHash(listed(join(scratch, "c"))));
+      expect(readDataset(join(scratch, "a"), context).manifest.reference_pool_hash).toBe(referencePoolHash([]));
+      // a caller's own list still decides, and a wrong one is refused
+      expect(readDataset(join(scratch, "c"), { ...context, referenceHashes: listed(join(scratch, "c")) }).manifest.dataset_id).toBe("cli-1");
+      expect(refused(join(scratch, "c"), { referenceHashes: [] })).toMatch(/reference_pool_hash/);
+    });
+
+    it("refuses a doctored, shortened, unsorted or malformed reference list, and a missing one", () => {
+      const hashes = listed(join(scratch, "c"));
+      const put = (name: string, lines: string[] | null): string => {
+        const dir = copyOf(name);
+        if (lines === null) rmSync(join(dir, "reference-hashes.txt"));
+        else writeFileSync(join(dir, "reference-hashes.txt"), lines.map((l) => `${l}\n`).join(""));
+        return dir;
+      };
+      expect(refused(put("r-short", hashes.slice(1)))).toMatch(/reference_pool_hash/);
+      expect(refused(put("r-extra", [...hashes, "f".repeat(64)]))).toMatch(/reference_pool_hash/);
+      expect(refused(put("r-missing", null))).toMatch(/reference_pool_hash/);
+      expect(refused(put("r-order", [hashes[1] as string, hashes[0] as string, ...hashes.slice(2)]))).toMatch(/sorted and unique/);
+      expect(refused(put("r-dup", [hashes[0] as string, ...hashes]))).toMatch(/sorted and unique/);
+      expect(refused(put("r-bad", ["xyz", ...hashes]))).toMatch(/line 1 is not a hash/);
+    });
+
+    it("refuses a team that repeats a reference team, even when the manifest names that list", () => {
+      const dir = join(scratch, "r-repeat");
+      cpSync(join(scratch, "a"), dir, { recursive: true });
+      const own = (JSON.parse(readFileSync(join(dir, "records.dev.jsonl"), "utf8").split("\n")[0] as string) as { canonical_team_hash: string }).canonical_team_hash;
+      writeFileSync(join(dir, "reference-hashes.txt"), `${own}\n`);
+      const manifest = JSON.parse(readFileSync(join(dir, "manifest.json"), "utf8")) as { reference_pool_hash: string };
+      manifest.reference_pool_hash = referencePoolHash([own]);
+      writeFileSync(join(dir, "manifest.json"), JSON.stringify(manifest, null, 2));
+      expect(refused(dir)).toMatch(/repeats a reference team/);
+    });
+  });
 
   it("reports progress every N draws", () => {
     const run = cli(generate(join(scratch, "p"), ["--progress-every", "200"]));
