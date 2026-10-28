@@ -8,10 +8,11 @@ import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSy
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { featureSetup, policyId, readProgressEvaluationRecordV2, readTrainingRunConfig, type ProgressEvaluationRecordV2 } from "@areneon/showdown-bridge";
+import { featureSetup, policyId, readProgressEvaluationRecordV2, readTrainingRunConfig, runConfigHash, runProgressCli, type ProgressEvaluationRecordV2 } from "@areneon/showdown-bridge";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { verifiedDatasetHash } from "../src/dataset-hash.ts";
 import { DATASETS_DIR } from "../src/fixtures.ts";
+import { datasetValidationPool } from "../src/progress-pool.ts";
 import { engine, FORMAT } from "./support.ts";
 
 const ROOT = fileURLToPath(new URL("../../../", import.meta.url));
@@ -94,4 +95,27 @@ describe.skipIf(!existsSync(PYTHON) && process.env.ARENEON_REQUIRE_PYTHON_WORKER
     // Reading the root back (a second command verifies and keeps it) recomputes what it can.
     loop("progress", "--run-dir", plainRun, "--engine-data", DATA, "--games", "2", "--record-games", "2", "--generation", "1", "--progress-dir", out, "--node", process.execPath, "--worker-python", PYTHON);
   }, 900_000); // one pair twice per match with the features seat running the real probe
+
+  it("runs the Node command in process for both orientations, so the seat wiring of each run is exercised", async () => {
+    const cli = async (name: string, own: string, other: string, ownFeatures: boolean, otherFeatures: boolean): Promise<void> => {
+      const manifest = (run: string): { preview: string; battle: string } => json<{ checkpoints: { preview: string; battle: string } }>(run, "generations", gen(1), "manifest.json").checkpoints;
+      const [mine, theirs] = [manifest(own), manifest(other)];
+      const encoder = (run: string): string => json<{ encoder_version: string }>(run, "generations", gen(1), "records", "battle.json").encoder_version;
+      const config = readTrainingRunConfig(json(other, "run-config.json"));
+      const flags = [
+        ["config", join(own, "run-config.json")], ["generation", "1"], ["preview", mine.preview], ["battle", mine.battle],
+        ["policy-id-sample", policyId(mine, "sample", {}, ownFeatures ? hash : undefined)], ["policy-id-argmax", policyId(mine, "argmax", {}, ownFeatures ? hash : undefined)],
+        ["generation-manifest-sha256", "c".repeat(64)], ["team-set", join(own, "generations", gen(1), "team-set.json")], ["run-dir", own], ["engine-data", DATA],
+        ["encoder-version", encoder(own)], ["worker-python", PYTHON], ["games", "2"], ["record-games", "0"], ["out", join(dir, name)],
+        ["versus", `${config.seeds.run_key},${await runConfigHash(config)},1,${theirs.preview},${theirs.battle},${policyId(theirs, "sample", {}, otherFeatures ? hash : undefined)},${policyId(theirs, "argmax", {}, otherFeatures ? hash : undefined)}`],
+        ["versus-dir", other], ["versus-encoder-version", encoder(other)], ["versus-team-set", join(other, "generations", gen(1), "team-set.json")], ["run-games", "2"],
+      ].flatMap(([k, v]) => [`--${k}`, v as string]);
+      const lines: string[] = [];
+      expect(await runProgressCli(flags, (l) => lines.push(l), datasetValidationPool)).toBe(0);
+      const record = readProgressEvaluationRecordV2(json<ProgressEvaluationRecordV2>(join(dir, name), "progress.json"));
+      expect(record.games.filter((r) => r.outcome.kind === "forfeit")).toEqual([]);
+    };
+    await cli("inproc-features", featuresRun, plainRun, true, false);
+    await cli("inproc-plain", plainRun, featuresRun, false, true);
+  }, 900_000); // four short matches, the features seats running the real probe
 });
