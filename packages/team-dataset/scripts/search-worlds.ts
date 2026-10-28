@@ -2,8 +2,9 @@
 // both prior arms through the same sampler, N worlds per move request with up to R sampler indices each, the
 // builder's checks V1 to V5, and the counts. A report of counts only (evaluation tooling, no gate):
 //
-//   node packages/team-dataset/scripts/search-worlds.ts [--worlds 8] [--attempts 4] [--min-valid 4] [--every 1] [--no-trapping] [--out FILE]
+//   node packages/team-dataset/scripts/search-worlds.ts [--worlds 8] [--attempts 4] [--min-valid 4] [--every 1] [--no-trapping] [--extra] [--out FILE]
 //
+// `--extra` takes the committed `unavailable/` and `search-fidelity/` battles instead of the random-play corpus.
 // The belief is conditioned on the trapping flags of the own request (ticket #1127) unless `--no-trapping`.
 //
 // The decisions are the own move requests of both seats of the committed corpus, with the opponent half of the
@@ -26,7 +27,7 @@ import {
 } from "@areneon/showdown-bridge";
 import { GOLDEN_FORMAT, goldenTeamVocabulary } from "../../showdown-bridge/src/golden.ts";
 import { checkScenario } from "../../showdown-bridge/src/mechanics-scenario.ts";
-import { cases } from "../../showdown-bridge/test/world-builder-support.ts";
+import { cases, casesOf, extraBattles } from "../../showdown-bridge/test/world-builder-support.ts";
 import { readerSha256 } from "../../public-state/src/index.ts";
 import { createSearchWorlds } from "../src/search-worlds.ts";
 
@@ -46,7 +47,7 @@ const engine = loadEngine(process.env.SHOWDOWN_DIR || undefined);
 const vocabulary = goldenTeamVocabulary();
 const manifest = resolveFormat(engine, GOLDEN_FORMAT, loadRulesSnapshot(engine.commit)).manifest;
 const scenario_id = checkScenario(engine, loadMechanicsConfig(GOLDEN_FORMAT));
-const decisions = cases().filter((_, i) => i % every === 0);
+const decisions = (process.argv.includes("--extra") ? casesOf(extraBattles()) : cases()).filter((_, i) => i % every === 0);
 
 const report: Record<string, unknown> = {};
 for (const arm of PRIOR_KINDS as readonly PriorKind[]) {

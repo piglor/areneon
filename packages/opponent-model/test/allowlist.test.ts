@@ -52,4 +52,12 @@ describe("the evidence allowlist is pinned to the reader's line grammar", () => 
   it("a faint keeps the Pokemon in the brought set", () => {
     expect(first(["|faint|p2a: Alp"]).settled).toBe(true);
   });
+
+  it("the trapping input is the port and nothing else of the own side: the constraint reads only `observed` and `shows`", () => {
+    const source = readFileSync(join(SRC, "trapping.ts"), "utf8");
+    const read = new Set([...source.matchAll(/\bcheck\.([a-z_]+)\b/g)].map((m) => m[1]));
+    expect([...read].sort()).toEqual(["observed", "shows"]);
+    // and the only Pokemon fields it reads are the ones the allowlist names (evidence.ts: `trapEvidence`)
+    expect(source).not.toMatch(/\bmon\./);
+  });
 });

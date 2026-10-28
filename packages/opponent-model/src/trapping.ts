@@ -2,9 +2,11 @@
 //
 // The player's own move request carries `trapped` and `maybeTrapped` for its active Pokemon. Both are the
 // player's own information, and they are evidence about the opponent's abilities: the engine raises
-// `maybeTrapped` for the last living active when a foe's species lists a trapping ability, and it shows
-// `trapped: true` on an earlier active whenever a trapping ability works on it (the hidden trap of a foe's
-// ability counts there; on the last active only a trap the foe's ability does not hide does). This module turns
+// `maybeTrapped` for the last living active when a foe's species lists a trapping ability (the engine's loop
+// compares an ability's display name with the holder's ability id, so it never skips the held slot: the flag is
+// the species', whichever ability the foe holds), and it shows `trapped: true` on an earlier active whenever a
+// trapping ability works on it (the hidden trap of a foe's ability counts there; on the last active only a trap
+// that is not hidden does). The ability information is in the earlier active's `trapped: true` and in its absence. This module turns
 // the request flags into hard constraints on the abilities of the opponent actives, through an engine-backed
 // port (`TrappingCheck`) that the bridge implements with a scenario battle of the pinned engine. Nothing is
 // decided here: no ability, move, item or type list is written in this package, only the logic that joins the

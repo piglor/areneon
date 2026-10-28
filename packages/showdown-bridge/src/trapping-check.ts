@@ -3,9 +3,10 @@
 // The player's own move request carries `trapped` and `maybeTrapped` for its active Pokemon, and both are player
 // evidence about the opponent's abilities. What the engine shows (read from the pinned source, and decided by the
 // scenario below, never by a rule written here): for the last living active, `trapped: true` only for a trap that
-// is not hidden and `maybeTrapped` when a foe's species lists a trapping ability (the held slot is skipped, so a
-// foe that holds the trapping ability and one that does not differ there); for an earlier active, `trapped: true`
-// whenever any trap works on it, a foe's hidden trap included. This module is the port the belief reads
+// is not hidden and `maybeTrapped` when a foe's species lists a trapping ability (the engine's loop compares an
+// ability's display name with the holder's ability id, so it never skips the held slot and the flag is the species',
+// whichever ability the foe holds); for an earlier active, `trapped: true` whenever any trap works on it, a foe's
+// hidden trap included. This module is the port the belief reads
 // (`TrappingCheck` of `packages/opponent-model`, declared structurally here because the bridge does not import the
 // model): for a candidate foe (the species it is shown as and an ability) it starts a scenario battle of the pinned
 // engine in which the player's own side is the real one (the own team as brought, in the request's order, its items,
@@ -146,6 +147,8 @@ export function createTrappingCheck(context: TrappingCheckContext, input: Trappi
     const declared = [...ownSets, ...ownSets.map(() => foe)];
     const present = [...side.pokemon, ...(battle.sides[1 - seat] as WSide).pokemon];
     if (present.some((mon, k) => toId(mon.ability) !== toId((declared[k] as PokemonSet).ability) || toId(mon.item) !== toId((declared[k] as PokemonSet).item))) return null;
+    // A disguise on the own side: the scenario starts it fresh, so who is known by type differs from a broken one in the real battle.
+    if (side.pokemon.some((mon) => (mon as unknown as { illusion?: unknown }).illusion != null)) return null;
     // The own formes (a Mega Evolution that has happened) and the fainted Pokemon, as the request shows them.
     const down: WMon[] = [];
     for (const [index, entry] of request.side.pokemon.entries()) {

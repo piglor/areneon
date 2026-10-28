@@ -10,7 +10,7 @@ import { randomLegalActor } from "../src/random-legal.ts";
 import type { Actor } from "../src/runner.ts";
 import type { TeamVocabulary } from "../src/team-vocabulary.ts";
 import { createTrappingCheck, type TrapLevel, type TrappingCheckContext } from "../src/trapping-check.ts";
-import { cases, inputAtLastRequest, toId } from "./world-builder-support.ts";
+import { cases, casesOf, extraBattles, inputAtLastRequest, toId } from "./world-builder-support.ts";
 
 // The trapping check (ticket #1127) against the engine. The oracle is the LIVE battle: at every own move request of
 // the committed seeded battles the check is built from the player's own view only (request, own team, reader state)
@@ -92,9 +92,40 @@ describe("the check reproduces the engine's trapping flags on real states", () =
   }, 400_000);
 });
 
-// The format's roster has no species that lists a trapping ability beside the one it holds, so no committed battle
-// shows `maybeTrapped` (a Mega Gengar holds Shadow Tag, its only ability). The engine's rule is exercised with a species
-// outside the roster, added to a copy of the vocabulary: the engine decides which species and abilities these are.
+// `unavailable/` and `search-fidelity/` hold the committed requests that show maybeTrapped (a foe's Mega Gengar next
+// to a last active) and trapped: true raised by a foe's hidden trap on an earlier active. The real foes are the
+// case's true sets; a Mega Evolved foe holds its Mega forme's ability.
+describe("the check on the committed requests that show the flags", () => {
+  it("never asks for more than the request showed, and reproduces the last active's maybeTrapped", () => {
+    let flagged = 0;
+    let lastActiveSeen = 0;
+    for (const c of casesOf(extraBattles())) {
+      const check = createTrappingCheck(context, { request: c.input.request, team: c.input.team, state: c.input.state });
+      if (check === null) continue;
+      const foes = c.input.state.opponent.roster.filter((mon: PublicMon) => mon.active_slot !== null && !mon.fainted);
+      const levels = foes.map((mon: PublicMon) => {
+        const species = (mon.temp_species ?? mon.species) as string;
+        const entry = vocabulary.roster.find((r) => r.id === species);
+        const set = c.input.opponent.members.find((m) => m.roster_index === c.input.state.opponent.roster.indexOf(mon))?.set;
+        const ability = entry?.required_item !== undefined ? (entry.abilities[0] as string) : toId(set?.ability ?? "");
+        return check.shows({ species, ability, item: entry?.required_item ?? null });
+      });
+      levels.forEach((shown) => shown.forEach((level, k) => expect(level, `${c.id}: a real foe shows more than the request`).toBeLessThanOrEqual(check.observed[k] as number)));
+      if (check.observed.some((level) => level === 1)) {
+        flagged += 1;
+        const merged = check.observed.map((_, k) => Math.max(...levels.map((l) => l[k] as number)));
+        expect(merged, `${c.id}: the real foes show the maybeTrapped`).toEqual([...check.observed]);
+        lastActiveSeen += 1;
+      }
+    }
+    expect(flagged).toBeGreaterThan(0);
+    expect(lastActiveSeen).toBe(flagged);
+  }, 200_000);
+});
+
+// The only species of the format's roster that lists a trapping ability is Mega Gengar. The engine's rule is also
+// exercised with a species outside the roster, added to a copy of the vocabulary: the engine decides which species
+// and abilities these are.
 describe("the check reads the engine's maybeTrapped rule", () => {
   function trapperSpecies(): { species: string; trapper: string; plain: string[] } {
     const dex = engine.sim.Dex.mod(engine.sim.Dex.formats.get(GOLDEN_FORMAT).mod) as unknown as {
@@ -125,9 +156,7 @@ describe("the check reads the engine's maybeTrapped rule", () => {
       const noticed = candidate(plain[0] as string);
       if (!noticed.some((level) => level === 1)) continue;
       hits += 1;
-      // The engine skips the held ability slot (the held trapping ability traps without a flag), so the flag names the
-      // abilities a foe may hold: the one that traps hides, the others show.
-      // The held slot is not skipped by the maybe rule (the flag is the species'), but the held trap works: an earlier active shows trapped: true.
+      // The engine's trap loop compares an ability's display name with the holder's ability id, so it never skips the held slot: maybeTrapped is the species' flag whichever ability the foe holds. The held trap works, though: an earlier active shows trapped: true.
       const held = candidate(trapper);
       held.forEach((level, k) => expect(level, `${c.id}: holding the trapping ability shows at least what not holding it shows`).toBeGreaterThanOrEqual(noticed[k] as number));
       if (held.some((level) => level === 2)) trapped += 1;
