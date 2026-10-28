@@ -10,6 +10,7 @@ from areneon_contracts.contracts import jcs, sha256_hex
 
 from areneon_ml.checkpoint.record import CheckpointRecord, read_record
 from areneon_ml.learner.config import RunConfig
+from areneon_ml.model.options import feature_set
 
 # What the worker does with the pair when the loop plays it: sample at temperature 1 in float32
 # (ADR-010 §2). They are part of the policy's identity, so a worker that changed them would be
@@ -18,16 +19,21 @@ MODE = "sample"
 TEMPERATURE = 1
 PRECISION = "float32"
 FULL_TEMPERATURE_PPM = 1_000_000  # temperature 1 in millionths: the default, never written
+DIGEST_CHARS = 64  # a SHA-256 digest in lowercase hex
 
 
-def policy_id(
+def policy_id(  # noqa: PLR0913, PLR0917
     preview: str,
     battle: str,
     mode: str = MODE,
     temperature_ppm: int | None = None,
     truncation: dict[str, Any] | None = None,
+    features: str | None = None,
 ) -> str:
     """``policy:`` + SHA-256 of ``JCS({preview, battle, mode, temperature, precision})``.
+
+    A pair that reads a candidate feature set (ADR-022 §6) adds ``features: <feature_set_hash>``
+    to the preimage; ``features`` is None for every other pair, whose id is unchanged.
 
     The loop plays ``sample`` (the default); the progress evaluation also plays ``argmax``,
     which is a different policy with a different id.
@@ -44,6 +50,10 @@ def policy_id(
         "temperature": TEMPERATURE,
         "precision": PRECISION,
     }
+    if features is not None:
+        if len(features) != DIGEST_CHARS or features.strip("0123456789abcdef"):
+            raise ValueError("features is a feature_set_hash: 64 lowercase hex digits")
+        body["features"] = features
     if temperature_ppm is not None or truncation is not None:
         if mode != "sample":
             raise ValueError("a temperature or a truncation applies to sample mode only")
@@ -108,3 +118,23 @@ def checkpoint_record(config: RunConfig, facts: RecordFacts) -> CheckpointRecord
     if facts.parent is not None:
         raw["parent"] = facts.parent
     return read_record(raw)
+
+
+def features_hash(config: RunConfig) -> str | None:
+    """The run's ``candidate_features`` hash (the policy id's ``features``), or None."""
+    named = feature_set(config.model.encoder.options)
+    return None if named is None else named.feature_set_hash
+
+
+#: How reports and the dashboard name a pair that reads a candidate feature set (ADR-022 §6): its
+#: latency includes the probe, and a comparison with ``damage-aware@v1`` is between two users of
+#: the same probe.
+FEATURES_FAMILY = (
+    "learned policy that consults the engine's damage calculation on assumed opponent sets "
+    "at decision time"
+)
+
+
+def family_label(config: RunConfig) -> str | None:
+    """The family label of the run's pair, or None for a pair without a feature set."""
+    return None if features_hash(config) is None else FEATURES_FAMILY

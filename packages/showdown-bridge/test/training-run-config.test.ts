@@ -101,6 +101,16 @@ describe("the TrainingRunConfig reader (ADR-010 §5)", () => {
     }
   });
 
+  it("reads the candidate_features object, hashes it apart and refuses the other shapes (ADR-022 tier A)", async () => {
+    const featured = readTrainingRunConfig(sample("candidate-features"));
+    expect(featured.model.encoder.options).toEqual({ candidate_features: { feature_set: "probe-damage/1", feature_set_hash: "c".repeat(64) } });
+    expect(await runConfigHash(featured)).not.toBe(await runConfigHash(readTrainingRunConfig(sample("tiny"))));
+    for (const name of ["candidate-features-true", "candidate-features-short-hash", "candidate-features-unknown-set"]) {
+      const raw = JSON.parse(readFileSync(join(SAMPLES_DIR, `v1/training-run-config/invalid/${name}.json`), "utf8"));
+      expect(() => readTrainingRunConfig(raw)).toThrow(TrainingRunConfigError);
+    }
+  });
+
   it("reads the optional KL target and refuses zero (ADR-010 erratum A1)", () => {
     expect(readTrainingRunConfig(sample("tiny")).ppo.target_kl_micro).toBeUndefined();
     expect(readTrainingRunConfig(sample("target-kl")).ppo.target_kl_micro).toBe(20000);

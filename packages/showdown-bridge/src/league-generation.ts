@@ -15,6 +15,7 @@ import { join } from "node:path";
 import type { Engine, PokemonSet } from "./engine.ts";
 import { jcs, type Json } from "./canonical-json.ts";
 import { type DamageAwareActor, type DamageAwareOptions, damageAwareActor } from "./damage-aware-actor.ts";
+import { type FeatureConfigs, featureSetHash, featureSetIdentity } from "./candidate-features.ts";
 import { loadDamageAwareConfig, loadDamageAwareConfigV2 } from "./damage-aware-config.ts";
 import type { BeliefWorldsFactory } from "./damage-aware-worlds.ts";
 import { damageAwarePolicyId } from "./damage-aware-identity.ts";
@@ -104,6 +105,38 @@ export function damageAwareSetup(engine: Engine, formatId: string, version: "v1"
     mechanics: loadMechanicsConfig(formatId),
     snapshot: loadRulesSnapshot(engine.commit),
   };
+}
+
+/** The feature set a run reads and the records its rows are built from (ADR-022 section 3). */
+export interface FeatureSetup {
+  configs: FeatureConfigs;
+  /** What the policy worker is expected to state at the handshake (and the rows must be of). */
+  statement: { feature_set: string; feature_set_hash: string };
+}
+
+/**
+ * The candidate feature set a run config names (`model.encoder.options.candidate_features`), set up from the
+ * reviewed records of this checkout, or undefined when the config names none (then nothing about the run changes).
+ * Fails closed: the hash this checkout computes (pin, mechanics and assumed-set configs, probe adapter, reader) must be
+ * the one the config names, so a run never plays or trains on rows of another set than its checkpoints were made for.
+ */
+export function featureSetup(engine: Engine, config: TrainingRunConfig): FeatureSetup | undefined {
+  const named = config.model.encoder.options?.candidate_features;
+  if (named === undefined) return undefined;
+  if (config.format_id !== GOLDEN_FORMAT) throw new GenerationError(`the candidate features have a vocabulary for ${GOLDEN_FORMAT} only, not ${config.format_id}`);
+  const vocabulary = goldenTeamVocabulary();
+  const configs: FeatureConfigs = {
+    vocabulary,
+    config: loadDamageAwareConfig("v1", vocabulary),
+    mechanics: loadMechanicsConfig(config.format_id),
+    snapshot: loadRulesSnapshot(engine.commit),
+    data_class: "synthetic",
+  };
+  const found = featureSetHash(featureSetIdentity(engine, configs));
+  if (found !== named.feature_set_hash) {
+    throw new GenerationError(`the run config names the candidate feature set ${named.feature_set} ${named.feature_set_hash}, which this checkout computes as ${found}`);
+  }
+  return { configs, statement: { feature_set: named.feature_set, feature_set_hash: found } };
 }
 
 /** The policy id of `damage-aware@v2`, the baseline that plays on sampled belief worlds (ADR-025 section 6). */
@@ -205,6 +238,11 @@ export interface GenerationOptions {
   damage_aware?: DamageAwareSetup;
   /** `damage-aware@v2`'s records, likewise (built from `belief_worlds` when a plan game needs them and this is absent). */
   damage_aware_v2?: DamageAwareSetup;
+  /**
+   * The candidate features the run's pair reads (`featureSetup`): given to the pair's seats, which attach rows to a query
+   * only for a worker that stated the set, and to the training loader, which recomputes them for every example.
+   */
+  features?: FeatureConfigs;
   /** The belief port factory of the composition root (`packages/team-dataset`); without it a plan that names `damage-aware@v2` is refused. */
   belief_worlds?: BeliefWorldsFactory | undefined;
   /**
@@ -326,7 +364,7 @@ async function playOne(options: GenerationOptions, plan: GamePlan, client: Polic
   const { engine, config, policy_id, pool } = options;
   const { generation: settings } = config;
   const budget = { preview_ms: settings.latency_budget_ms.preview_ms, battle_ms: settings.latency_budget_ms.battle_ms };
-  const seat: PolicySeat = { client, policy_id, sampling: "sample" };
+  const seat: PolicySeat = { client, policy_id, sampling: "sample", ...(options.features === undefined ? {} : { features: { configs: options.features } }) };
   const baseline = plan.opponent === "self" ? undefined : baselineActor(options, plan.opponent, plan, budget);
   const seats: PolicyGameOptions["seats"] =
     baseline === undefined ? { p1: seat, p2: seat } : plan.policy_seat === "p1" ? { p1: seat, p2: baseline.actor } : { p1: baseline.actor, p2: seat };
@@ -561,12 +599,12 @@ export async function playGeneration(options: GenerationOptions): Promise<Genera
     const ownRefs = refs.filter((ref) => ref.behaviour_policy_id === policy_id);
     if (ownRefs.length === 0) throw new GenerationError("no Episode of the frozen pair: every game was forfeited");
     const stored: StoredEpisode[] = ownRefs.map(({ hash }) => ({ hash, path: join(dir, `${hash}.json`) }));
-    set = await writeStoredTrainingStream({ episodes: stored, evaluation_manifests: [], known_synthetic: pool.known_synthetic, behaviour_policy_id: policy_id }, { ...limits, path: options.stream_path });
+    set = await writeStoredTrainingStream({ episodes: stored, evaluation_manifests: [], known_synthetic: pool.known_synthetic, behaviour_policy_id: policy_id, ...(options.features === undefined ? {} : { features: { engine, configs: options.features } }) }, { ...limits, path: options.stream_path });
     episodeHashes = refs.map((ref) => ref.hash);
   } else {
     const own = episodes.filter((episode) => episode.provenance.behaviour_policy_id === policy_id);
     if (own.length === 0) throw new GenerationError("no Episode of the frozen pair: every game was forfeited");
-    const input = { episodes: own, evaluation_manifests: [], known_synthetic: pool.known_synthetic, behaviour_policy_id: policy_id };
+    const input = { episodes: own, evaluation_manifests: [], known_synthetic: pool.known_synthetic, behaviour_policy_id: policy_id, ...(options.features === undefined ? {} : { features: { engine, configs: options.features } }) };
     if (options.stream_path === undefined) {
       ({ stream, set } = await loadTrainingSet(input, limits));
     } else {

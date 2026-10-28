@@ -15,14 +15,15 @@ from collections.abc import Callable
 from typing import Any
 
 from areneon_ml.model.candidates import parse_choice
+from areneon_ml.model.features import FOE_SPREAD_TARGET_TYPES
 from areneon_ml.model.gamedata import GameData
 
-# Request target types that hit every foe or a random one; a damaging move part of such a type that
-# names no target location needs at least one row. A test holds this equal to
-# FOE_SPREAD_TARGET_TYPES in feature-rows.ts.
-FOE_SPREAD_TARGET_TYPES = ("allAdjacent", "allAdjacentFoes", "randomNormal")
+# Request target types that hit every foe or a random one (defined beside the encoder, which reads
+# the same rule); a test holds it equal to FOE_SPREAD_TARGET_TYPES in feature-rows.ts.
 
 _REQUEST = "|request|"
+
+__all__ = ["FOE_SPREAD_TARGET_TYPES", "coverage_problem", "damaging_moves", "rows_problem"]
 
 
 def damaging_moves(game: GameData) -> Callable[[str], bool]:

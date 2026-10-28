@@ -20,6 +20,7 @@ import pytest
 from areneon_ml.inspector.readers import InspectError
 from areneon_ml.loop import layout
 from areneon_ml.loop.__main__ import main
+from areneon_ml.loop.records import FEATURES_FAMILY
 from areneon_ml.progress.looks import LookError, looks_path, read_looks
 from areneon_ml.progress.stats import (
     bootstrap_stream_key,
@@ -31,6 +32,7 @@ from areneon_ml.report.command import inspector_links, report_run
 from areneon_ml.report.model import (
     GenerationFacts,
     ReportError,
+    ReportModel,
     Tally,
     read_report_model,
     read_train_report,
@@ -903,3 +905,13 @@ def test_a_tampered_log_stops_the_report_before_it_writes(run: Path, tmp_path: P
     with pytest.raises(LookError):
         report_run(run, root, out)
     assert not out.exists()
+
+
+def test_a_pair_that_reads_a_feature_set_is_named_by_its_family() -> None:
+    # ADR-022 §6: the dashboard says which family a pair is in; a pair without a set is unchanged.
+    plain = ReportModel("r", "l", "f", "0" * 64, (), {}, False)
+    named = ReportModel("r", "l", "f", "0" * 64, (), {}, False, family=FEATURES_FAMILY)
+    assert "Policy family" not in build_report(plain)
+    page = build_report(named)
+    assert "Policy family: " + html.escape(FEATURES_FAMILY) in page
+    assert "latency includes the probe" in page

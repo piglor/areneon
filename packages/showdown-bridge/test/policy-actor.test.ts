@@ -115,6 +115,15 @@ describe("play temperature and threshold (ADR-023 section 1)", () => {
     expect(policyId(pair, "sample", {})).toBe(policyId(pair, "sample"));
   });
 
+  it("adds the feature set hash to the preimage of a pair that reads one, and to no other (ADR-022 section 6)", () => {
+    const features = "c199c2d8de6bf179da847f6044a85d9d713d6c07d04e4a9db40da45dc9e04aaf";
+    // Computed with Python hashlib over the JCS bytes; the plain ids above are unchanged.
+    expect(policyId(pair, "sample", {}, features)).toBe("policy:ab697d4b890e1ea4393147eb9fd3c0906dd22fe6630fe6c73472688712a25532");
+    expect(policyId(pair, "argmax", {}, features)).toBe("policy:de144adf6187ed15bd0270280aff008a55952ed6ca519e463cc8e866e7df444a");
+    expect(policyId(pair, "sample", {}, features)).not.toBe(policyId(pair, "sample"));
+    expect(() => policyId(pair, "sample", {}, "C199")).toThrow(/feature_set_hash/);
+  });
+
   it("refuses settings that cannot be encoded once", () => {
     expect(() => policyId(pair, "argmax", { temperature_ppm: 500_000 })).toThrow(PolicyProtocolError);
     expect(() => policyId(pair, "argmax", { truncation: threshold })).toThrow(PolicyProtocolError);

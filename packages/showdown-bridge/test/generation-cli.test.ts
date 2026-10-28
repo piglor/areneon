@@ -106,6 +106,22 @@ describe("play-generation", () => {
   });
 });
 
+describe("a run config that names a candidate feature set (ADR-022)", () => {
+  it("fails with exit 1, before it starts the worker, when this checkout does not compute the named hash", async () => {
+    const raw = structuredClone(tiny) as { model: { encoder: { options?: unknown } } };
+    raw.model.encoder.options = { candidate_features: { feature_set: "probe-damage/1", feature_set_hash: "0".repeat(64) } };
+    const file = join(dir, "features.json");
+    writeFileSync(file, JSON.stringify(raw));
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      expect(await runGenerationCli(flags(file))).toBe(1);
+      expect(error.mock.calls.flat().join(" ")).toMatch(/names the candidate feature set probe-damage\/1 0{64}, which this checkout computes as [0-9a-f]{64}/);
+    } finally {
+      error.mockRestore();
+    }
+  });
+});
+
 describe("a further game process", () => {
   const script = (name: string, body: string): string => {
     const file = join(dir, name);

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import json
 import shutil
 from pathlib import Path
@@ -25,6 +26,7 @@ from areneon_ml.progress.run import (
     PreviousPair,
     ProgressError,
     ProgressRequest,
+    _source,
     committed_generations,
     max_pairs,
     progress_lock,
@@ -985,3 +987,14 @@ def test_a_head_to_head_summary_carries_the_pair_score_minus_one_half() -> None:
     )
     assert all("diff_mean_ppm" not in r for r in base)
     assert summary_of(record) == summary_of(json.loads(json.dumps(record)))  # a rerun is identical
+
+
+def test_a_run_whose_pair_reads_candidate_features_is_not_evaluated_yet(tmp_path: Path) -> None:
+    # ADR-022: the evaluation's seats build no rows and its policy ids carry no features member,
+    # so such a pair is refused up front, never evaluated as another policy.
+    raw = copy.deepcopy(tiny_config().raw)
+    raw["model"]["encoder"]["options"] = {
+        "candidate_features": {"feature_set": "probe-damage/1", "feature_set_hash": "c" * 64}
+    }
+    with pytest.raises(ProgressError, match="candidate features"):
+        _source(tmp_path, read_run_config(raw), 0, needs_dataset=False)

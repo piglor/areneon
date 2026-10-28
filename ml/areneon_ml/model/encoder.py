@@ -31,6 +31,7 @@ from typing import Any
 import torch
 from areneon_contracts.contracts import jcs, sha256_hex
 
+from areneon_ml.model import features as rows_of
 from areneon_ml.model.candidates import (
     EVENTS,
     SLOTS,
@@ -39,7 +40,13 @@ from areneon_ml.model.candidates import (
     parse_choice,
 )
 from areneon_ml.model.gamedata import NONE, RESERVED, UNKNOWN, GameData
-from areneon_ml.model.options import CANDIDATE_MATCHUP, Options, is_set, with_options
+from areneon_ml.model.options import (
+    CANDIDATE_MATCHUP,
+    Options,
+    feature_set,
+    is_set,
+    with_options,
+)
 from areneon_ml.reducer import BattleState, ChannelReducer, PokemonState, SideState, reduce_channel
 from areneon_ml.reducer.state import STAT_KEYS
 
@@ -123,6 +130,20 @@ def _matchup_columns(config: EncoderConfig) -> tuple[tuple[str, str], ...]:
     return (*cells, ("same_type", "same_type"))
 
 
+def _feature_columns(config: EncoderConfig) -> tuple[tuple[str, str], ...]:
+    """The ``candidate_features`` categories: one row category per foe location; none unless set."""
+    if feature_set(config.options) is None:
+        return ()
+    return tuple((f"feature_kind_{loc + 1}", "feature_kind") for loc in range(SLOTS))
+
+
+def _feature_numbers(config: EncoderConfig) -> tuple[str, ...]:
+    """The ``candidate_features`` numbers per move part: five per foe location. Empty unless set."""
+    if feature_set(config.options) is None:
+        return ()
+    return tuple(f"feature_{name}_{loc + 1}" for loc in range(SLOTS) for name in rows_of.NUMBERS)
+
+
 @dataclass(frozen=True)
 class Layout:
     """Names and kinds of every feature column, derived from the configuration."""
@@ -132,6 +153,7 @@ class Layout:
     field_cat: tuple[tuple[str, str], ...]
     field_num: tuple[str, ...]
     cand_cat: tuple[tuple[str, str], ...]
+    cand_num: tuple[str, ...] = ()  # numeric columns of a candidate part; only with features
 
     @classmethod
     def of(cls, config: EncoderConfig) -> Layout:
@@ -186,17 +208,22 @@ class Layout:
                 ("target", "target"),
                 ("event", "event"),
                 *_matchup_columns(config),
+                *_feature_columns(config),
             ),
+            cand_num=_feature_numbers(config),
         )
 
     def as_dict(self) -> dict[str, Any]:
-        return {
+        out: dict[str, Any] = {
             "mon_cat": [list(c) for c in self.mon_cat],
             "mon_num": list(self.mon_num),
             "field_cat": [list(c) for c in self.field_cat],
             "field_num": list(self.field_num),
             "cand_cat": [list(c) for c in self.cand_cat],
         }
+        if self.cand_num:  # absent without the option, so today's layout bytes stay
+            out["cand_num"] = list(self.cand_num)
+        return out
 
 
 def encoder_version(game: GameData, config: EncoderConfig) -> str:
@@ -237,6 +264,16 @@ def encoder_version(game: GameData, config: EncoderConfig) -> str:
             "same_type": [SAME_TYPE_NOT, SAME_TYPE_YES],
             "chart_codes": game.chart_codes,
         }
+    if feature_set(config.options) is not None:
+        # The set and its hash are in the config; these are the index constants and scales.
+        body["constants"]["features"] = {
+            "reserved": RESERVED,
+            "kinds": list(rows_of.KINDS),
+            "numbers": list(rows_of.NUMBERS),
+            "ppm": rows_of.PPM,
+            "ohko_rolls": rows_of.OHKO_ROLLS,
+            "foe_locations": SLOTS,
+        }
     return f"enc{ENCODER_FORMAT}:{sha256_hex(jcs(body))}"
 
 
@@ -263,9 +300,10 @@ class EncodedQuery:
     cand_tok: torch.Tensor  # int64 [N, SLOTS, 2]: acting Pokémon, switch-in
     team_tok: torch.Tensor  # int64 [N, max_picks]: picked Pokémon in order (Team Preview)
     pending: torch.Tensor  # float32 [N]
+    cand_num: torch.Tensor | None = None  # float32 [N, SLOTS, len(Layout.cand_num)]; with features
 
     def tensors(self) -> dict[str, torch.Tensor]:
-        return {
+        out = {
             "mon_cat": self.mon_cat,
             "mon_num": self.mon_num,
             "field_cat": self.field_cat,
@@ -275,6 +313,9 @@ class EncodedQuery:
             "team_tok": self.team_tok,
             "pending": self.pending,
         }
+        if self.cand_num is not None:  # absent without the option: today's tensors stay the same
+            out["cand_num"] = self.cand_num
+        return out
 
 
 def _last_request(log: Sequence[str]) -> str | None:
@@ -289,6 +330,7 @@ class _Request:
 
     order: list[int] = field(default_factory=list)  # own token of side.pokemon[0], [1], ...
     moves: list[list[int]] = field(default_factory=list)  # per active slot: engine move indices
+    targets: list[list[str | None]] = field(default_factory=list)  # per slot: request target types
 
 
 class Encoder:
@@ -328,7 +370,8 @@ class Encoder:
                 f"a {observation['kind']} observation at a {state.request_kind} request"
             )
         request = self._request(state, last_request)
-        candidates = [self._candidate(c, request, wanted, state) for c in query["candidates"]]
+        rows = self._rows(query)
+        candidates = [self._candidate(c, request, wanted, state, rows) for c in query["candidates"]]
         return self._assemble(observation["kind"], state, field_features, candidates)
 
     # -- tokens --------------------------------------------------------------
@@ -452,7 +495,89 @@ class Encoder:
             out.order.append(by_name[_SIDE.sub("", str(entry["ident"]), count=1)])
         for active in body.get("active", []):
             out.moves.append([self.game.moves.lookup_or_unknown(m["id"]) for m in active["moves"]])
+            out.targets.append([m.get("target") for m in active["moves"]])
         return out
+
+    # -- candidate features --------------------------------------------------
+
+    def _rows(self, query: Mapping[str, Any]) -> dict[rows_of.RowKey, rows_of.Row] | None:
+        """The query's ``candidate_features`` rows when the config reads a feature set, else None.
+
+        The query must carry exactly the set the config names (the set and its hash); a query
+        with rows under a config without the option, or without them under one with it, is
+        refused: nothing is read of rows the checkpoint was not trained with, and nothing is
+        filled in for rows it needs.
+        """
+        wanted = feature_set(self.config.options)
+        sent = query.get("candidate_features")
+        if wanted is None:
+            if sent is not None:
+                raise EncodingError(
+                    "the query carries candidate_features this encoder does not read"
+                )
+            return None
+        if sent is None:
+            raise EncodingError("the query has no candidate_features, which this encoder needs")
+        if (sent["feature_set"], sent["feature_set_hash"]) != (
+            wanted.feature_set,
+            wanted.feature_set_hash,
+        ):
+            raise EncodingError("the query's candidate_features are of another feature set")
+        try:
+            return rows_of.row_index(sent)
+        except ValueError as exc:
+            raise EncodingError(str(exc)) from exc
+
+    def _foe_alive(self, state: BattleState, loc: int) -> bool:
+        """Whether choice location ``loc`` (1 is the last active slot) holds a foe the rows cover.
+
+        The builder gives a fainted, absent or empty-HP foe no row, so a candidate that aims
+        there (the engine lists it) has none to find.
+        """
+        letters = sorted(state.opponent.slots)
+        place = len(letters) - loc
+        if not 0 <= place < len(letters):
+            return False
+        index = state.opponent.slots[letters[place]]
+        mon = None if index is None else state.opponent.roster[index]
+        return mon is not None and not mon.fainted and bool(mon.hp_fraction)
+
+    def _feature_part(
+        self,
+        rows: dict[rows_of.RowKey, rows_of.Row],
+        request: _Request,
+        slot: int,
+        action: Any,
+        state: BattleState,
+    ) -> tuple[list[int], list[float]]:
+        """The rows of one move part per foe location; a missing row of a live foe is refused."""
+        moves = request.moves[slot]
+        move = moves[action.index - 1]
+        # An unknown move counts as damaging (the rows are then asked for, never skipped).
+        if move >= RESERVED and self.game.move_status[move]:
+            return rows_of.no_columns()
+        mega = action.event == "mega"
+        if action.target is not None:
+            # A location past the format's foes names none, so it has no row to find.
+            locations = [action.target] if 0 < action.target <= SLOTS else []
+        else:
+            target_type = (
+                request.targets[slot][action.index - 1] if slot < len(request.targets) else None
+            )
+            locations = (
+                list(range(1, SLOTS + 1)) if target_type in rows_of.FOE_SPREAD_TARGET_TYPES else []
+            )
+        found: list[rows_of.Row | None] = [None] * SLOTS
+        for loc in locations:
+            found[loc - 1] = rows.get((slot, action.index, loc, mega))
+        missing = (
+            any(found[loc - 1] is None and self._foe_alive(state, loc) for loc in locations)
+            if action.target is not None
+            else bool(locations) and all(row is None for row in found)
+        )
+        if missing:
+            raise EncodingError("a damaging move part of a candidate has no candidate_features row")
+        return rows_of.part_columns(found)
 
     # -- candidates ----------------------------------------------------------
 
@@ -500,15 +625,22 @@ class Encoder:
         return [*cells, same]
 
     def _candidate(
-        self, candidate: Mapping[str, Any], request: _Request, kind: str, state: BattleState
-    ) -> tuple[list[list[int]], list[list[int]], list[int], float]:
+        self,
+        candidate: Mapping[str, Any],
+        request: _Request,
+        kind: str,
+        state: BattleState,
+        rows: dict[rows_of.RowKey, rows_of.Row] | None = None,
+    ) -> tuple[list[list[int]], list[list[int]], list[int], float, list[list[float]]]:
         parsed: ParsedChoice = parse_choice(candidate["choice"])
         if (parsed.kind == "team") != (kind == "preview"):
             raise EncodingError(f"a {parsed.kind} candidate in a {kind} query")
         config = self.config
         cat = [[0] * len(self.layout.cand_cat) for _ in range(SLOTS)]
         tok = [[-1, -1] for _ in range(SLOTS)]
+        num: list[list[float]] = [[0.0] * len(self.layout.cand_num) for _ in range(SLOTS)]
         team = [-1] * config.max_picks
+        matchup = len(_matchup_columns(config))
         if parsed.kind == "team":
             if len(parsed.team) > config.max_picks:
                 raise UnsupportedCandidate("a team order picks more Pokémon than max_picks")
@@ -531,11 +663,14 @@ class Encoder:
                 cat[slot][2] = action.index
                 cat[slot][3] = 0 if action.target is None else TARGET_OFFSET + action.target
                 cat[slot][4] = 0 if action.event is None else 1 + EVENTS.index(action.event)
-                if len(cat[slot]) > BASE_CAND_COLUMNS:
-                    cat[slot][BASE_CAND_COLUMNS:] = self._matchup(
+                if matchup:
+                    cat[slot][BASE_CAND_COLUMNS : BASE_CAND_COLUMNS + matchup] = self._matchup(
                         cat[slot][1], tok[slot][0], request, slot, state
                     )
-        return cat, tok, team, 1.0 if candidate["pending"] else 0.0
+                if rows is not None:
+                    kinds, num[slot] = self._feature_part(rows, request, slot, action, state)
+                    cat[slot][len(cat[slot]) - len(kinds) :] = kinds
+        return cat, tok, team, 1.0 if candidate["pending"] else 0.0, num
 
     # -- assembly ------------------------------------------------------------
 
@@ -544,7 +679,9 @@ class Encoder:
         kind: str,
         state: BattleState,
         field_features: tuple[list[int], list[float]],
-        candidates: list[tuple[list[list[int]], list[list[int]], list[int], float]],
+        candidates: list[
+            tuple[list[list[int]], list[list[int]], list[int], float, list[list[float]]]
+        ],
     ) -> EncodedQuery:
         own = [(state.own, mon) for mon in state.own.roster]
         opponent = [(state.opponent, mon) for mon in state.opponent.roster]
@@ -574,6 +711,13 @@ class Encoder:
                 n, self.config.max_picks
             ),
             pending=torch.tensor([c[3] for c in candidates], dtype=torch.float32),
+            cand_num=(
+                torch.tensor([c[4] for c in candidates], dtype=torch.float32).reshape(
+                    n, SLOTS, len(self.layout.cand_num)
+                )
+                if self.layout.cand_num
+                else None
+            ),
         )
 
 
