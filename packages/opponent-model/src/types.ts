@@ -13,9 +13,10 @@ import type { UsagePrior } from "@areneon/schema/types/v1/usage-prior.ts";
 import type { Ratio } from "./ratio.ts";
 import type { Dist } from "./fields.ts";
 import type { MoveModel } from "./moves.ts";
+import type { TrappingCheck } from "./trapping.ts";
 
 /** Bumped when the filter changes how it computes a value (as `adapter_format` is for the probe). */
-export const BELIEF_FORMAT = "belief/3";
+export const BELIEF_FORMAT = "belief/4";
 
 /**
  * The part of the pinned engine's `TeamVocabulary` the filter reads. A `TeamVocabulary` is one;
@@ -42,6 +43,12 @@ export interface BeliefInput {
    * (`reader_flagged`): the consumer decides which flags concern the request it asks about.
    */
   readonly flags: readonly PublicFlag[];
+  /**
+   * The player's own request's trapping flags as an engine-backed check (ticket #1127), or absent / null for no
+   * trapping evidence. It is the player's own information: it carries the levels the request showed and the
+   * engine's verdict for a candidate foe, never a field of the own side or of the opponent's real team.
+   */
+  readonly trapping?: TrappingCheck | null | undefined;
 }
 
 export interface Marginal<T> {

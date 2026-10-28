@@ -12,8 +12,8 @@ const parts: BeliefIdentityParts = {
 
 describe("belief_identity_hash (ADR-025 section 5)", () => {
   it("is the SHA-256 of the JCS of {prior_hash, belief_config_hash, belief_format, vocabulary_hash, reader_sha256, version_manifest} (a vector made with Python)", () => {
-    expect(BELIEF_FORMAT).toBe("belief/3");
-    expect(beliefIdentityHash(parts)).toBe("b53de751cbfc19677e617680e7aecd256f83e22dc614de63d91d886ade59de5d");
+    expect(BELIEF_FORMAT).toBe("belief/4");
+    expect(beliefIdentityHash(parts)).toBe("944f8257fa40730e6e76140c0ce0e8ca0c349a6d7b7d8142ef137e38bb5b3a03");
   });
 
   it("changes with every part: a new prior, config, vocabulary, reader or pin is a new identity", () => {

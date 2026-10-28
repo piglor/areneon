@@ -1,6 +1,9 @@
 import { interpretChannel, ownChannel, type PublicFlag, worldFactsAtRequests } from "@areneon/public-state";
 import type { EngineRequest } from "@areneon/schema/types/v1/engine-request.ts";
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import type { PokemonSet } from "../src/engine.ts";
+import { GOLDEN_DIR } from "../src/golden.ts";
 import { loadRandomCorpus } from "../src/random-corpus.ts";
 import { readWorldFactsData } from "./world-facts-data.ts";
 import type { WorldInput, WorldOpponentMember } from "../src/world-builder.ts";
@@ -17,9 +20,30 @@ export interface Case {
  * is the test's input (read from the opponent's own first move request): a sampled world would replace it.
  */
 export function cases(): Case[] {
+  return casesOf(loadRandomCorpus());
+}
+
+/** The committed single-run battles that hold the refusals and the trapping flags: `unavailable/` and `search-fidelity/`. */
+export function extraBattles(): BattleLike[] {
+  const root = join(GOLDEN_DIR);
+  return ["unavailable", "search-fidelity"].flatMap((dir) =>
+    readdirSync(join(root, dir)).filter((f) => /^b\d+\.json$/.test(f)).sort().map((f) => {
+      const file = JSON.parse(readFileSync(join(root, dir, f), "utf8")) as BattleLike;
+      return { id: `${dir}/${f.slice(0, -5)}`, teams: file.teams, channels: file.channels };
+    }),
+  );
+}
+
+export interface BattleLike {
+  id: string;
+  teams: Record<"p1" | "p2", PokemonSet[]>;
+  channels: Record<"p1" | "p2", { lines: string[] }>;
+}
+
+export function casesOf(battles: readonly BattleLike[]): Case[] {
   const out: Case[] = [];
   const factsData = readWorldFactsData();
-  for (const battle of loadRandomCorpus()) {
+  for (const battle of battles) {
     for (const player of ["p1", "p2"] as const) {
       const foe = player === "p1" ? "p2" : "p1";
       const foeRun = interpretChannel(foe, battle.channels[foe].lines, { terrains: [...factsData.terrains] });

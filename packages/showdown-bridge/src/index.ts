@@ -609,6 +609,7 @@ export {
   type WorldSourceResult,
   WorldMappingError,
 } from "./world-sampler.ts";
+export { TRAPPING_CHECK_FORMAT, createTrappingCheck, type TrapCandidate, type TrapLevel, type TrappingCheckContext, type TrappingCheckInput, type TrappingCheckPort } from "./trapping-check.ts";
 export { createReplyModel, REPLY_MODEL_FORMAT, ReplyModelError, type ReplyModel } from "./reply-model.ts";
 export {
   DROP_REASONS,
