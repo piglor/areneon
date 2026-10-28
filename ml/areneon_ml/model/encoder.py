@@ -669,7 +669,9 @@ class Encoder:
                     )
                 if rows is not None:
                     kinds, num[slot] = self._feature_part(rows, request, slot, action, state)
-                    cat[slot][len(cat[slot]) - len(kinds) :] = kinds
+                    cat[slot][BASE_CAND_COLUMNS + matchup :] = (
+                        kinds  # the feature columns come last
+                    )
         return cat, tok, team, 1.0 if candidate["pending"] else 0.0, num
 
     # -- assembly ------------------------------------------------------------

@@ -68,7 +68,7 @@ def build(argv: list[str]) -> Worker:
     # The feature set is stated from the checkpoints' own metadata (their model config). Both
     # networks share one encoder (the scorer refuses a pair that does not), so one statement.
     scorer = NetworkScorer(game, networks)  # refuses a pair made with different encoders
-    (stated,) = {feature_set(network.config.encoder.options) for network in networks.values()}
+    stated = feature_set(networks["battle"].config.encoder.options)
     return Worker(
         scorer=scorer,
         features=(

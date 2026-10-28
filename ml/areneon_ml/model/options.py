@@ -57,7 +57,7 @@ class OptionSpec:
     """One option: its value check and whether it changes the network's tensor layout."""
 
     name: str
-    check: Callable[[Any], bool]
+    check: Callable[[Any], bool] | None
     layout_changing: bool = False
     #: For an option whose value is an object: reads it into a frozen value (``check`` is then
     #: not used, and a boolean or an integer is refused).
@@ -87,9 +87,7 @@ def _parse_feature_set(source: Mapping[str, Any]) -> FeatureSetOption:
 REGISTRY: dict[str, dict[str, OptionSpec]] = {
     "encoder": {
         CANDIDATE_MATCHUP: OptionSpec(CANDIDATE_MATCHUP, lambda value: value is True, True),
-        CANDIDATE_FEATURES: OptionSpec(
-            CANDIDATE_FEATURES, lambda value: False, True, parse=_parse_feature_set
-        ),
+        CANDIDATE_FEATURES: OptionSpec(CANDIDATE_FEATURES, None, True, parse=_parse_feature_set),
     },
     "network": {},
 }
@@ -112,7 +110,7 @@ def read_options(scope: str, source: object) -> Options:
                 raise OptionError(f"{scope} option {name!r} must be an object")
             found.append((name, spec.parse(value)))
             continue
-        if not isinstance(value, bool | int) or not spec.check(value):
+        if not isinstance(value, bool | int) or spec.check is None or not spec.check(value):
             raise OptionError(f"{scope} option {name!r} has an invalid value")
         found.append((name, value))
     return tuple(found)

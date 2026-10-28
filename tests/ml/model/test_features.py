@@ -383,3 +383,13 @@ def test_a_location_beyond_the_foes_the_state_lists_holds_none() -> None:
     state = SimpleNamespace(opponent=SimpleNamespace(slots={"a": None}, roster=[]))
     assert not ENCODE._foe_alive(state, 2)  # type: ignore[arg-type]
     assert not ENCODE._foe_alive(state, 1)  # type: ignore[arg-type]  # the slot is empty
+
+
+def test_the_reasons_are_the_probe_contract_s_in_its_order() -> None:
+    schema = json.loads(
+        (SOURCES.parents[2] / "packages/schema/contracts/v1/policy-query.schema.json").read_text()
+    )
+    assert (
+        tuple(schema["$defs"]["UnsupportedFeatureRow"]["properties"]["reason"]["enum"])
+        == rows_of.REASONS
+    )

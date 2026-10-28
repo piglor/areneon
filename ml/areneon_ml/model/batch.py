@@ -71,11 +71,8 @@ def collate(queries: Sequence[EncodedQuery]) -> Batch:
     with_numbers = {q.cand_num is not None for q in queries}
     if len(with_numbers) != 1:
         raise ValueError("a batch holds queries of one candidate feature layout")
-    numbers = (
-        stack("cand_num", (count, slots, queries[0].cand_num.shape[2]), 0.0)  # type: ignore[union-attr]
-        if with_numbers == {True}
-        else None
-    )
+    first = queries[0].cand_num
+    numbers = stack("cand_num", (count, slots, first.shape[2]), 0.0) if first is not None else None
     return Batch(
         kind=queries[0].kind,
         token_mask=token_mask,
