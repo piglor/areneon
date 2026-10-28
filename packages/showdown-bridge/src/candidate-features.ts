@@ -163,6 +163,7 @@ export function candidateFeatures(
   const view = damageView({
     engine, vocabulary: configs.vocabulary, config: configs.config, v1: configs.config, mechanics: configs.mechanics, snapshot,
     data_class: configs.data_class, probe: configs.probe ?? probeMechanics, counts: memo.counts, memo: memo.results,
+    engine_targets: true, // the engine's choice-location convention (#1180), whatever the assumed-set record says
     ...(configs.assume === undefined ? {} : { assume: configs.assume }),
   });
 

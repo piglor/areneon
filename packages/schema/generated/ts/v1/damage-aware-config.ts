@@ -26,6 +26,10 @@ export interface DamageAwareConfig {
    */
   format_id: string;
   /**
+   * Which foe a choice location names (#1180). Absent: the legacy numbering that damage-aware@v1 played, location 1 being the foe in the LAST active slot (the reverse of the engine's; kept bug-for-bug so that record's behaviour and identity stand). "engine": the pinned engine's convention (Pokemon.getAtLoc: location L is the foe in active slot L - 1); a record that says so is damage-aware@v3. A minor change within v1: an older reader refuses such a record.
+   */
+  target_convention?: "engine";
+  /**
    * The rule for every opponent field that is not revealed. A revealed species, forme, level, gender, move, item, ability or Mega is used as revealed; an unrevealed move is never invented.
    */
   assumed_set: {

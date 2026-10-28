@@ -30,8 +30,8 @@ const edited = (change: (copy: DamageAwareConfig) => void): DamageAwareConfig =>
 };
 
 describe("the committed config", () => {
-  it("holds the v1 and v2 records in config/baselines, reads against the vocabulary and equals the corpus sample", () => {
-    expect(readdirSync(DAMAGE_AWARE_CONFIG_DIR)).toEqual(["damage-aware.v1.json", "damage-aware.v2.json"]);
+  it("holds the v1, v2 and v3 records in config/baselines, reads against the vocabulary and equals the corpus sample", () => {
+    expect(readdirSync(DAMAGE_AWARE_CONFIG_DIR)).toEqual(["damage-aware.v1.json", "damage-aware.v2.json", "damage-aware.v3.json"]);
     expect(config).toEqual(sample("valid", "v1"));
   });
 

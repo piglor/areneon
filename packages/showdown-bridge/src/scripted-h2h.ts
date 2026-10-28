@@ -32,7 +32,7 @@ import type { Actor, Player } from "./runner.ts";
 import type { TrainingRunConfig } from "./training-run-config.ts";
 
 /** The scripted baselines a head-to-head can play, by policy id. */
-export const SCRIPTED_POLICY_IDS = ["actor-rule@v1", "random-legal@v1", "damage-aware@v1", "damage-aware@v2"] as const;
+export const SCRIPTED_POLICY_IDS = ["actor-rule@v1", "random-legal@v1", "damage-aware@v1", "damage-aware@v2", "damage-aware@v3"] as const;
 
 /** A head-to-head that cannot be made: a refusal, a harness incident, or the wall-time gate. */
 export class ScriptedH2HError extends Error {
@@ -70,12 +70,12 @@ export function scriptedArm(policyId: string, context: ScriptedArmContext): Scri
   const guarded = (actor: Actor): Actor => guardActor(actor, { role: "scripted", latency_budget: budget });
   if (policyId === "actor-rule@v1") return { policy_id: policyId, seat: () => ({ actor: guarded(firstLegal) }) };
   if (policyId === "random-legal@v1") return { policy_id: policyId, seat: (seed) => ({ actor: guarded(randomLegalActor(seed)) }) };
-  if (policyId !== "damage-aware@v1" && policyId !== "damage-aware@v2") throw new ScriptedH2HError(`${policyId} is not a scripted baseline of the head-to-head (${SCRIPTED_POLICY_IDS.join(", ")})`);
+  if (policyId !== "damage-aware@v1" && policyId !== "damage-aware@v2" && policyId !== "damage-aware@v3") throw new ScriptedH2HError(`${policyId} is not a scripted baseline of the head-to-head (${SCRIPTED_POLICY_IDS.join(", ")})`);
   const v2 = policyId === "damage-aware@v2";
   if (v2 && context.beliefWorlds === undefined) throw new ScriptedH2HError("damage-aware@v2 needs the belief port of the composition root (packages/team-dataset)");
   let setup: DamageAwareSetup;
   try {
-    setup = v2 ? damageAwareSetupV2(engine, formatId, context.beliefWorlds as BeliefWorldsFactory) : damageAwareSetup(engine, formatId);
+    setup = v2 ? damageAwareSetupV2(engine, formatId, context.beliefWorlds as BeliefWorldsFactory) : damageAwareSetup(engine, formatId, policyId === "damage-aware@v3" ? "v3" : "v1");
   } catch (error) {
     throw new ScriptedH2HError(`${policyId}: ${(error as Error).message}`);
   }

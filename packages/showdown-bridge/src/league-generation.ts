@@ -93,13 +93,14 @@ export type DamageAwareSetup = Omit<DamageAwareOptions, "engine" | "seed" | "com
 /**
  * The reviewed records a damage-aware baseline reads, against the golden team vocabulary (the committed
  * export of the one supported format; another format is refused, never given another vocabulary).
+ * `version` "v3" is the v1 scorer with the engine's choice-location convention (#1180).
  */
-export function damageAwareSetup(engine: Engine, formatId: string): DamageAwareSetup {
+export function damageAwareSetup(engine: Engine, formatId: string, version: "v1" | "v3" = "v1"): DamageAwareSetup {
   if (formatId !== GOLDEN_FORMAT) throw new GenerationError(`the damage-aware baseline has a vocabulary for ${GOLDEN_FORMAT} only, not ${formatId}`);
   const vocabulary = goldenTeamVocabulary();
   return {
     vocabulary,
-    config: loadDamageAwareConfig("v1", vocabulary),
+    config: loadDamageAwareConfig(version, vocabulary),
     mechanics: loadMechanicsConfig(formatId),
     snapshot: loadRulesSnapshot(engine.commit),
   };
