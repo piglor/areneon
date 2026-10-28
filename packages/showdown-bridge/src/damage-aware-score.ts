@@ -7,6 +7,12 @@ import type { DamageAwareConfig } from "./damage-aware-config.ts";
 import type { MechanicsResult } from "./mechanics-result.ts";
 
 export const PPM = 1_000_000;
+/**
+ * The version of the shared value function (`rollsValue`, `critChancePpm`, `damageValue`) as the search identity names it
+ * (ADR-026 section 5). Bump it whenever any of them returns another number for the same input; `reply-model.test.ts` pins
+ * vectors computed outside the code, so a change that forgets to bump fails there.
+ */
+export const DAMAGE_VALUE_FORMAT = 1;
 const ROLLS = 16;
 
 export type DamageAnswer = Extract<Extract<MechanicsResult, { kind: "computed" }>["answer"], { kind: "damage" }>;
