@@ -114,7 +114,7 @@
     },
     {
       "id": "toxic_stage",
-      "class": "R"
+      "class": "W"
     },
     {
       "id": "trapping",
@@ -158,13 +158,43 @@
   ],
   "admitted": [
     {
+      "kind": "start_trigger",
+      "id": "whiteherb",
+      "class": "W"
+    },
+    {
       "kind": "volatile",
       "id": "encore",
       "class": "W"
     },
     {
       "kind": "volatile",
+      "id": "flashfire",
+      "class": "E"
+    },
+    {
+      "kind": "volatile",
+      "id": "focusenergy",
+      "class": "E"
+    },
+    {
+      "kind": "volatile",
       "id": "taunt",
+      "class": "W"
+    },
+    {
+      "kind": "volatile",
+      "id": "throatchop",
+      "class": "W"
+    },
+    {
+      "kind": "volatile",
+      "id": "torment",
+      "class": "E"
+    },
+    {
+      "kind": "volatile",
+      "id": "yawn",
       "class": "W"
     }
   ],

@@ -29,19 +29,25 @@ describe("the committed record (config/search/world-writers.v1.json)", () => {
   it("reads against the pinned engine, with every item classified once and the ids the fidelity oracle admits (slice F)", () => {
     const record = loadWorldWriters(engine, GOLDEN_FORMAT);
     expect(record.items.map((item) => item.id)).toEqual([...STATE_ITEM_IDS]);
-    // Every generic id the oracle report does not support is R: only these two have N_ex exercising turns, all equal
+    // Every generic id the oracle report does not support is R: only these have N_ex exercising turns, all equal
     // (fidelity.test.ts holds the list equal to the committed report).
     expect(record.admitted).toEqual([
+      { kind: "start_trigger", id: "whiteherb", class: "W" },
       { kind: "volatile", id: "encore", class: "W" },
+      { kind: "volatile", id: "flashfire", class: "E" },
+      { kind: "volatile", id: "focusenergy", class: "E" },
       { kind: "volatile", id: "taunt", class: "W" },
+      { kind: "volatile", id: "throatchop", class: "W" },
+      { kind: "volatile", id: "torment", class: "E" },
+      { kind: "volatile", id: "yawn", class: "W" },
     ]);
-    // toxic_stage is R: the oracle found 17 (F1) and 16 (F2) equal exercising turns against N_ex = 20 (fidelity-report.md).
+    // toxic_stage is W: with the extended corpus the oracle found at least 24 equal exercising turns in F1 and in F2 (fidelity-report.md).
     const classes = Object.fromEntries(record.items.map((item) => [item.id, item.class]));
-    expect(classes).toMatchObject({ toxic_stage: "R", bench_status: "W", sleep_counter: "X", confusion_duration: "X", per_turn_fields: "T", substitute: "R", unadmitted_id: "R" });
+    expect(classes).toMatchObject({ toxic_stage: "W", bench_status: "W", sleep_counter: "X", confusion_duration: "X", per_turn_fields: "T", substitute: "R", unadmitted_id: "R" });
   });
 
   it("has a hash pinned from outside the code (Python's hashlib over the sorted-key bytes)", () => {
-    expect(worldWritersHash(loadWorldWriters(engine, GOLDEN_FORMAT))).toBe("12b5760a167dd6b376e7d253a55db0af1de6828c4dcdcc9429eae6e51d0fe433");
+    expect(worldWritersHash(loadWorldWriters(engine, GOLDEN_FORMAT))).toBe("2fcd175dbb42e059a1bcc1d79086e6e1be32aaf59d0eb464c0a0841cf6aee22c");
   });
 
   it("is refused for another format", () => {

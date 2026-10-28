@@ -23,6 +23,8 @@ split holds no Last Respects or Mirror Coat team). It is rebuilt with
 - generation key `775cf690c68e8efce8deb29d548fc1da69c0612fb378e876a75798411ad80388` = SHA-256 of `areneon/search-fidelity/v1/generation`
 - assignment key `38198457df1773d2543f0be1cbadba1ea0e5a1fb3949e3a973023ecf4ec6a8cf` = SHA-256 of `areneon/search-fidelity/v1/assignment`
 
+The first 77 battles (`b00` to `b76`) are the original capture; `b77` onwards were added by `capture-search-fidelity-corpus.ts --extend` (#1187) so that the fidelity report has at least 24 equal exercising turns for `toxic_stage`, Throat Chop, Yawn, Torment, Flash Fire, Focus Energy and the White Herb trigger (the `report` entries of `targets.json`). The dataset was regenerated at a later commit with the same inputs; its dev teams are the same (every origin hash of the original battles is present), only the manifest's `generator_commit` differs.
+
 Only the teams of the kept battles are committed. Re-capture with
 `node packages/showdown-bridge/scripts/capture-search-fidelity-corpus.ts --dataset DIR`;
 CI replays the committed battles and never re-runs the search.

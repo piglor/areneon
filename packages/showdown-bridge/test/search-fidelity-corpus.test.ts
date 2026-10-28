@@ -53,7 +53,7 @@ describe("the committed targeted fidelity corpus", () => {
       const spec = { id, seed, actor_seeds, teams, actors, origin };
       expect(fidelityBattleFile(spec, await playFidelityBattle(engine, spec)), id).toEqual(committed);
     }
-    // Explicit budget: 77 battles of at most 30 turns (a few tens of seconds here; CI is slower).
+    // Explicit budget: about 170 battles of at most 30 turns (a few tens of seconds here; CI is slower).
   }, 300_000);
 
   it("holds only player-perspective channels and covers both actors on both seats", () => {
@@ -168,6 +168,12 @@ describe("readFidelityTargets", () => {
     ["a bad list", () => { const g = good(); g.targets[0].moves = [""]; return g; }],
     ["a bad unreachable entry", () => { const g = good(); g.unreachable[0].reason = 1; return g; }],
     ["a bad attempts count", () => ({ ...good(), attempts_per_target: 0 })],
+    ["a bad per-target attempts count", () => { const g = good(); g.targets[0].attempts = 0; return g; }],
+    ["a bad item list", () => { const g = good(); g.targets[0].items = [""]; return g; }],
+    ["a malformed opposite filter", () => { const g = good(); g.targets[0].against = 1; return g; }],
+    ["an opposite filter that names nothing", () => { const g = good(); g.targets[0].against = { moves: [], abilities: [], items: [] }; return g; }],
+    ["a malformed report entry", () => { const g = good(); g.targets[0].report = { item: "", min_equal: 24 }; return g; }],
+    ["a report entry without a minimum", () => { const g = good(); g.targets[0].report = { item: "toxic_stage", min_equal: 0 }; return g; }],
   ])("refuses %s", (_name, make) => {
     expect(() => readFidelityTargets(make())).toThrow(FidelityError);
   });
@@ -178,7 +184,74 @@ describe("readFidelityTargets", () => {
   });
 });
 
+describe("targets that need an item, the other side or more attempts", () => {
+  const byId = (id: string) => targets.targets.find((t) => t.id === id) as FidelityTarget;
+  const set = (over: Partial<{ item: string; ability: string; moves: string[] }>) => ({ item: "", ability: "", moves: [] as string[], ...over }) as never;
+
+  it("draws a team by a held item as well as by a move or ability", () => {
+    const herb = byId("white-herb");
+    expect(herb.items).toEqual(["White Herb"]);
+    expect(holdsTarget([set({ item: "White Herb" })], herb)).toBe(true);
+    expect(holdsTarget([set({ item: "Leftovers" })], herb)).toBe(false);
+  });
+
+  it("reads the optional fields and ties each reported target to a state item of the report", () => {
+    const herb = byId("white-herb");
+    expect(herb.against?.abilities).toEqual(["Intimidate"]);
+    expect(herb.attempts).toBeGreaterThan(0);
+    expect(herb.report).toEqual({ item: "trigger:whiteherb", min_equal: 24 });
+    const reported = targets.targets.filter((t) => t.report !== undefined).map((t) => t.report?.item);
+    expect(reported).toEqual(
+      ["toxic_stage", "volatile:throatchop", "volatile:yawn", "volatile:torment", "volatile:flashfire", "volatile:focusenergy", "trigger:whiteherb"],
+    );
+  });
+});
+
 describe("captureFidelityCorpus", () => {
+  it("extends a corpus: keeps the existing battles, plays only the targets still short, numbers on and uses the opposite filter", async () => {
+    const format = resolveFormat(engine, GOLDEN_FORMAT);
+    const source = join(GOLDEN_DIR, "../../teams", GOLDEN_FORMAT, "datasets/fixtures-v1/teams-dev.jsonl");
+    const pool: PoolTeam[] = readFileSync(source, "utf8")
+      .split("\n")
+      .filter((l) => l !== "")
+      .slice(0, 30)
+      .map((line) => {
+        const record = JSON.parse(line) as { paste: string; canonical_team_hash: string };
+        const team = importPaste(engine, record.paste);
+        validateTeam(engine, format, team);
+        return { team, origin: { dataset_id: "fixtures-v1", canonical_team_hash: record.canonical_team_hash } };
+      });
+    const base = (id: string) => (raw.targets as Record<string, unknown>[]).find((t) => t.id === id) as Record<string, unknown>;
+    const first = readFidelityTargets({ ...raw, attempts_per_target: 6, max_battles: 6, targets: [{ ...base("weather"), min_turns: 1 }] });
+    const existing = await captureFidelityCorpus(engine, pool, first, { seed_base: 0x7000 });
+    expect(existing.length).toBe(1);
+    // Weather is met by the existing battle, so only the new target is played, after it, with the other seat holding Intimidate.
+    const wider = readFidelityTargets({
+      ...raw,
+      attempts_per_target: 6,
+      max_battles: 6,
+      targets: [
+        { ...base("weather"), min_turns: 1 },
+        { ...base("fake-out"), min_turns: 1, against: { moves: [], abilities: ["Intimidate"], items: [] } },
+      ],
+    });
+    const logs: string[] = [];
+    const more = await captureFidelityCorpus(engine, pool, wider, { seed_base: 0x8000, log: (l) => logs.push(l), existing });
+    expect(more[0]).toBe(existing[0]);
+    expect(more.map((b) => b.id)).toEqual(more.map((_, i) => `b${String(i).padStart(2, "0")}`));
+    expect(more.length).toBeGreaterThan(1);
+    expect(more.slice(1).every((b) => !existing.some((e) => e.seed === b.seed))).toBe(true);
+    const intimidate = (team: readonly { ability: string }[]) => team.some((s) => s.ability === "Intimidate");
+    for (const added of more.slice(1)) {
+      const focus = added.teams.p1.some((s) => s.moves.includes("Fake Out")) ? "p1" : "p2";
+      expect(intimidate(added.teams[focus === "p1" ? "p2" : "p1"]), added.id).toBe(true);
+    }
+    const none = readFidelityTargets({ ...raw, attempts_per_target: 2, max_battles: 3, targets: [{ ...base("fake-out"), min_turns: 1, against: { moves: ["Hyperspace Fury"], abilities: [], items: [] } }] });
+    const nologs: string[] = [];
+    await captureFidelityCorpus(engine, pool, none, { seed_base: 0x7000, log: (l) => nologs.push(l) });
+    expect(nologs).toContain("fake-out: no team in the pool holds what the opposite team needs");
+  }, 120_000);
+
   it("is a pure function of its inputs: two runs on a small pool give the same battles", async () => {
     const format = resolveFormat(engine, GOLDEN_FORMAT);
     const source = join(GOLDEN_DIR, "../../teams", GOLDEN_FORMAT, "datasets/fixtures-v1/teams-dev.jsonl");

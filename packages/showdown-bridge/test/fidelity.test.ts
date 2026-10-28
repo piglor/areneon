@@ -7,7 +7,7 @@ import { GOLDEN_DIR, GOLDEN_FORMAT } from "../src/golden.ts";
 import { loadMechanicsConfig } from "../src/mechanics-config.ts";
 import { checkScenario } from "../src/mechanics-scenario.ts";
 import { loadRandomCorpus, UNAVAILABLE_DIR } from "../src/random-corpus.ts";
-import { FIDELITY_DIR } from "../src/search-fidelity-corpus.ts";
+import { FIDELITY_DIR, loadFidelityTargets } from "../src/search-fidelity-corpus.ts";
 import { type WorldContext, createWorldBuilder } from "../src/world-builder.ts";
 import { loadWorldWriters, type WorldWriters } from "../src/world-writers.ts";
 import { type Comparison, captureDecisions, compare, copyRandomState, type Decision, type OracleSpec, playerView, revive, stateDelta, stride, translateChoice } from "./fidelity/oracle.ts";
@@ -254,13 +254,27 @@ describe("the committed full report", () => {
     expect(committed.n_ex).toBe(N_EX);
   });
 
-  it("a writer is W in the record exactly when the report passes it: toxic_stage has too few equal turns and is R, with its worlds refused and counted", () => {
+  it("a writer is W in the record exactly when the report passes it (toxic_stage passes since #1187)", () => {
     const classOf = new Map(writers.items.map((i) => [i.id as string, i.class]));
     for (const row of committed.writers) expect(classOf.get(row.item) === "W", `${row.item}: W only with evidence`).toBe(row.admitted);
     const toxic = committed.writers.find((r) => r.item === "toxic_stage") as Report["writers"][number];
-    expect(toxic).toMatchObject({ admitted: false, f1: { blamed: 0, missed: 0 }, f2: { blamed: 0, missed: 0 } });
-    expect(toxic.f1.equal).toBeLessThan(N_EX);
-    expect(classOf.get("toxic_stage")).toBe("R");
+    expect(toxic).toMatchObject({ admitted: true, f1: { blamed: 0, missed: 0 }, f2: { blamed: 0, missed: 0 } });
+    expect(classOf.get("toxic_stage")).toBe("W");
+  });
+
+  it("holds each reported fidelity target to its yield: at least report.min_equal EQUAL exercising turns in F1 and in F2, none blamed or missed", () => {
+    const reported = loadFidelityTargets().targets.filter((t) => t.report !== undefined);
+    expect(reported.length).toBeGreaterThan(0);
+    for (const target of reported) {
+      const wanted = target.report as { item: string; min_equal: number };
+      const row = [...committed.writers, ...committed.ids].find((r) => r.item === wanted.item);
+      expect(row, `${target.id}: ${wanted.item} has a row`).toBeDefined();
+      const r = row as Report["writers"][number];
+      for (const mode of ["f1", "f2"] as const) {
+        expect(r[mode].equal, `${wanted.item} ${mode} equal`).toBeGreaterThanOrEqual(wanted.min_equal);
+        expect(r[mode].blamed + r[mode].missed, `${wanted.item} ${mode} blamed or missed`).toBe(0);
+      }
+    }
   });
 
   it("the markdown beside it is the report rendered", () => {

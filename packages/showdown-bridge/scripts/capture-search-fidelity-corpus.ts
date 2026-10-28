@@ -12,7 +12,7 @@ import { join } from "node:path";
 import { loadEngine } from "../src/engine.ts";
 import { resolveFormat } from "../src/formats.ts";
 import { GOLDEN_DIR, GOLDEN_FORMAT, goldenTeamVocabulary } from "../src/golden.ts";
-import { RANDOM_MANIFEST } from "../src/random-corpus.ts";
+import { loadRandomCorpus, RANDOM_MANIFEST } from "../src/random-corpus.ts";
 import {
   captureFidelityCorpus,
   checkUnreachable,
@@ -20,6 +20,7 @@ import {
   FIDELITY_SUMMARY,
   fidelitySummary,
   loadFidelityTargets,
+  type FidelityBattleFile,
   type PoolTeam,
 } from "../src/search-fidelity-corpus.ts";
 import { recordHash } from "../src/team-records.ts";
@@ -27,8 +28,10 @@ import { importPaste, validateTeam } from "../src/teams.ts";
 
 const extra: string[] = [];
 const args = process.argv.slice(2);
+const extend = args.includes("--extend");
+if (extend) args.splice(args.indexOf("--extend"), 1);
 for (let i = 0; i < args.length; i += 2) {
-  if (args[i] !== "--dataset" || args[i + 1] === undefined) throw new Error("usage: [--dataset DIR]...");
+  if (args[i] !== "--dataset" || args[i + 1] === undefined) throw new Error("usage: [--extend] [--dataset DIR]...");
   extra.push(args[i + 1] as string);
 }
 
@@ -74,7 +77,14 @@ for (const source of sources) {
   });
 }
 
-const files = await captureFidelityCorpus(engine, pool, targets, { seed_base: 0x6000, log: console.log });
+// --extend keeps the committed battles as they are and adds only what a target still lacks. The seeds start at 0x7000 plus
+// 0x1000 per committed battle, so an extension never repeats the seeds of an earlier capture or extension.
+const existing = extend ? (loadRandomCorpus(FIDELITY_DIR) as unknown as FidelityBattleFile[]) : [];
+const files = await captureFidelityCorpus(engine, pool, targets, {
+  seed_base: extend ? 0x7000 + existing.length * 0x1000 : 0x6000,
+  log: console.log,
+  existing,
+});
 // Only the generated files are replaced: targets.json (the reviewed input) and README.md stay as they are.
 mkdirSync(FIDELITY_DIR, { recursive: true });
 for (const name of readdirSync(FIDELITY_DIR)) {
