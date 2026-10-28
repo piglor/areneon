@@ -141,22 +141,25 @@ function declare(battle: ProbeBattle, query: SpeedOrderQuery, at: (position: num
     need(pokemon.status === status, "the engine refused the declared status");
   };
   // A status the player saw before the field changed is an observed fact too: Misty Terrain and Electric Terrain
-  // refuse it once they are up, so a Pokemon that does not Mega Evolve takes its status first. What the engine does
-  // meanwhile (a refusal, a random draw) is kept and raised at the place the old order raised it (after the field,
-  // at that Pokemon), so every query answered before is answered with the same bytes. A Pokemon that Mega
-  // Evolves keeps the old order (Evolution, then status): its new ability may change the field and the status.
-  const early = new Map<number, unknown>();
+  // refuse it once they are up, so a Pokemon that does not Mega Evolve first tries to take its status here, before
+  // the declared field. Anything but success changes nothing: a refusal leaves the Pokemon as it was and the old
+  // place below (after the field, after its Evolution) decides, so a switch-in field that blocks the status here
+  // cannot refuse a query the old order answered. A random draw is kept and raised at that old place, so the
+  // position it reports is unchanged. A Pokemon that Mega Evolves keeps the old order only: its new ability may
+  // change the field and the status.
+  const taken = new Set<number>();
+  let drawn: { place: number; error: unknown } | null = null;
   let numbered = 0;
-  stop: for (const [index, combatants] of query.sides.entries()) {
+  for (const [index, combatants] of query.sides.entries()) {
     for (const [slot, combatant] of combatants.entries()) {
       const place = numbered++;
-      if (combatant.status === null || combatant.mega) continue;
+      if (combatant.status === null || combatant.mega || drawn !== null) continue;
       at(place);
       try {
         declareStatus(battle.sides[index]?.pokemon[slot] as Mon, combatant.status);
+        taken.add(place);
       } catch (error) {
-        early.set(place, error);
-        break stop;
+        if (error instanceof RandomDraw) drawn = { place, error };
       }
     }
   }
@@ -187,12 +190,13 @@ function declare(battle: ProbeBattle, query: SpeedOrderQuery, at: (position: num
   let position = 0;
   for (const [index, combatants] of query.sides.entries()) {
     for (const [slot, combatant] of combatants.entries()) {
-      at(position++);
+      const place = position++;
+      at(place);
       const pokemon = battle.sides[index]?.pokemon[slot] as Mon;
       if (combatant.mega) need(battle.actions.runMegaEvo(pokemon), "the Pokemon cannot Mega Evolve");
       if (combatant.status !== null) {
-        if (early.has(position - 1)) throw early.get(position - 1);
-        if (combatant.mega) declareStatus(pokemon, combatant.status);
+        if (drawn?.place === place) throw drawn.error;
+        if (!taken.has(place)) declareStatus(pokemon, combatant.status);
       }
       if (combatant.hp !== null) {
         need(combatant.hp <= pokemon.maxhp, "the declared HP exceeds the maximum");

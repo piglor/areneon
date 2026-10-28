@@ -102,6 +102,8 @@ describe("a declared status is an observed fact", () => {
 
 // #1198: the player saw the status before the terrain started. Misty Terrain and Electric Terrain refuse a status
 // once they are up, so a Pokemon that does not Mega Evolve takes its declared status before the field.
+const PINCURCHIN = "Pincurchin  \nAbility: Electric Surge  \nLevel: 50  \nEVs: 32 HP / 32 Atk / 2 Def  \nSerious Nature  \n- Body Slam  \n\n";
+
 describe("a status seen before a terrain started is an observed fact", () => {
   const paralysed = byId("paralysis-halves-speed");
   const withTerrain = (terrain: string | null, change: (query: Record<string, any>) => void = () => undefined) => probe(paralysed, (query) => {
@@ -138,6 +140,14 @@ describe("a status seen before a terrain started is an observed fact", () => {
     expect(() => withTerrain("mistyterrain", (query) => Object.assign(query.sides[0][0], { status: "par", set: LIMBER }))).toThrow("refused the declared status");
     // two sleepers: the first draw ends the probe, at the first Pokemon
     expect(withTerrain("mistyterrain", (query) => Object.assign(query.sides[0][0], { status: "slp" }) && (query.sides[1][0].status = "slp"))).toMatchObject({ kind: "unsupported", position: 0 });
+  });
+
+  it("a switch-in terrain that the query does not declare is gone before the status: a sleep under a live Electric Surge is not a refusal", () => {
+    // Pincurchin's Electric Surge is up when the battle starts; terrain null clears it (the old order), so the sleep draws
+    const result = withTerrain(null, (query) => Object.assign(query.sides[0][0], { set: PINCURCHIN }) && (query.sides[1][0].status = "slp"));
+    expect(result).toMatchObject({ kind: "unsupported", reason: "random_effect", position: 1 });
+    // declared Electric Terrain with a surge holder on the field: the sleep is refused there, as before the change
+    expect(() => withTerrain("electricterrain", (query) => Object.assign(query.sides[0][0], { set: PINCURCHIN }) && (query.sides[1][0].status = "slp"))).toThrow("refused the declared status");
   });
 
   it("a Mega Evolution still to come does not matter: the status is declared before it", () => {
