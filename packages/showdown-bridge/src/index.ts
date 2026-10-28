@@ -266,6 +266,7 @@ export {
   readWorldWriters,
   worldWritersHash,
 } from "./world-writers.ts";
+export { LEAF_FORMAT, loadSearchConfig, readSearchConfig, type SearchConfig, SearchConfigError, searchConfigHash, searchIdentity, searchIdentityHash, type SearchIdentityInputs, SEARCH_POLICY_LABEL } from "./search-config.ts";
 export { deriveRoleSetsPrior, ROLE_SETS_PRIOR_SCRIPT, RoleSetsPriorError, type RoleSetsPriorInput } from "./role-sets-prior.ts";
 export { deriveGeneratorPrior, GENERATOR_PRIOR_SCRIPT, GeneratorPriorError, type GeneratorPriorInput, generatorConfigHash, megaHolderAbilities, megaPreviewSpecies } from "./generator-prior.ts";
 export { type BeliefConfig, BeliefConfigError, beliefConfigHash, readBeliefConfig } from "./belief-config.ts";
@@ -554,6 +555,7 @@ export {
   type WorldOpponentMember,
   type WorldPokemonRef,
   type WorldRefusal,
+  WORLD_BUILDER_FORMAT,
   WORLD_CHECKS,
   WORLD_REFUSAL_CODES,
   type WorldRefusalCode,
@@ -587,3 +589,4 @@ export {
   type WorldSourceResult,
   WorldMappingError,
 } from "./world-sampler.ts";
+export { REPLY_MODEL_FORMAT } from "./reply-model.ts";
