@@ -25,6 +25,8 @@ describe("peak memory of a process (#1069)", () => {
     expect(ownPeakRss(() => ({ maxRSS: 9_000_000 }), () => "VmHWM:\t5 kB")).toBe(5 * 1024);
     // Where /proc cannot be read, the rusage figure stands in.
     expect(ownPeakRss(() => ({ maxRSS: 3 }), () => { throw new Error("no /proc"); })).toBe(3072);
+    // The real rusage stands in by default.
+    expect(ownPeakRss(undefined, () => { throw new Error("no /proc"); })).toBeGreaterThan(10_000_000);
   });
 
   it("does not inherit the parent's peak across exec (#1110)", () => {
