@@ -57,6 +57,21 @@ export interface CandidateFeatures2 extends Omit<CandidateFeatures, "feature_set
   foe_priorities: FoePriorityRow[];
 }
 
+/** What building one part of a decision cost: probe queries asked (memo hits included), probe runs made and milliseconds. A measurement, never part of the rows. */
+export interface PartCost {
+  queries: number;
+  probe_runs: number;
+  ms: number;
+}
+/**
+ * The parts of a build, for the cost measurement (ADR-022 erratum E-22.3.4): `setup` (the foes' assumed sets: their
+ * maximum-HP and status-ability queries, asked once for the whole decision), then the four arrays, `priorities` being
+ * `own_priorities` and `foe_priorities` together (they share their queries).
+ */
+export type CostTrace = Record<"setup" | "rows" | "threats" | "speeds" | "priorities", PartCost>;
+export const emptyTrace = (): CostTrace => ({ setup: emptyCost(), rows: emptyCost(), threats: emptyCost(), speeds: emptyCost(), priorities: emptyCost() });
+const emptyCost = (): PartCost => ({ queries: 0, probe_runs: 0, ms: 0 });
+
 /** One own Pokemon the arrays are about: an active or a benched switch-in. */
 interface Entry {
   position: number;
@@ -87,6 +102,7 @@ export function candidateFeatures2(
   team: readonly Readonly<PokemonSet>[],
   candidates: readonly Pick<Candidate, "choice" | "pending">[],
   memo: FeatureMemo = createFeatureMemo(),
+  trace?: CostTrace,
 ): CandidateFeatures2 {
   const snapshot = configs.snapshot ?? loadRulesSnapshot(engine.commit);
   const identity = featureSetIdentity(engine, { ...configs, snapshot }, FEATURE_SET_2);
@@ -107,6 +123,21 @@ export function candidateFeatures2(
   if (!moveRequest && !forcedSwitch) return out();
   const { view, state } = openRequest(engine, configs, snapshot, channel, memo);
 
+  /** Run `part`, adding what it asked of the probe and how long it took to `trace` (when one is given). */
+  const measured = <T>(name: keyof CostTrace, part: () => T): T => {
+    if (trace === undefined) return part();
+    const before = { ...memo.counts };
+    const started = performance.now();
+    try {
+      return part();
+    } finally {
+      const cost = trace[name];
+      cost.queries += memo.counts.queries - before.queries;
+      cost.probe_runs += memo.counts.probe_runs - before.probe_runs;
+      cost.ms += performance.now() - started;
+    }
+  };
+
   return refusing(() => {
     const side = object(body.side, "side");
     const pokemon = array(side.pokemon, "side.pokemon").map((member) => object(member, "a side Pokemon"));
@@ -120,7 +151,8 @@ export function candidateFeatures2(
     let foes: Foe[] | null = null;
     const foesNow = (): Foe[] => (foes ??= view.foesOf(state, (mon) => view.assumedFor(mon, state)));
     const own: OwnSlot[] = moveRequest ? view.ownSlots(body, state, team) : [];
-    const rows: FeatureRow[] = moveRequest ? damageRows(view, state, body, own, foesNow, candidates) : [];
+    const living = measured("setup", foesNow); // every array but the rows needs the foes
+    const rows: FeatureRow[] = moveRequest ? measured("rows", () => damageRows(view, state, body, own, foesNow, candidates)) : [];
 
     // The own Pokemon the arrays are about: the living actives of a move request, and every benched Pokemon a `switch N` candidate names.
     const entries: Entry[] = [];
@@ -139,14 +171,13 @@ export function candidateFeatures2(
     const variants = (entry: Entry): boolean[] => (entry.slot !== null && megaSlots.has(entry.slot) ? [false, true] : [false]);
     const asMega = (entry: Entry, mega: boolean): Fighter => ({ ...entry.fighter, mega: entry.fighter.mega || mega });
 
-    const living = foesNow();
     return {
       feature_set: FEATURE_SET_2,
       feature_set_hash: featureSetHash(identity),
       rows,
-      threats: threatRows(view, state, entries, variants, asMega, living),
-      speeds: speedRows(view, state, entries, variants, living),
-      ...priorityRows(view, state, body, parsed, entries, living),
+      threats: measured("threats", () => threatRows(view, state, entries, variants, asMega, living)),
+      speeds: measured("speeds", () => speedRows(view, state, entries, variants, living)),
+      ...measured("priorities", () => priorityRows(view, state, body, parsed, entries, living)),
     } satisfies CandidateFeatures2;
   });
 }

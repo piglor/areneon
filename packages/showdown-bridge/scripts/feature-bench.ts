@@ -2,7 +2,7 @@
 // Episode and progress-game files for reading and writes only the JSON report to --out (or stdout).
 //
 //   node packages/showdown-bridge/scripts/feature-bench.ts --run-dir RUN --generation 50 [--episodes 40] [--progress-dir P --progress-games 20]
-//     [--pools 4,8] [--out FILE]
+//     [--pools 4,8] [--feature-set probe-damage/1|probe-damage/2] [--out FILE]
 //
 // The report is aggregate counts and milliseconds only. The machine (model, load, cores) and the engine pin are
 // recorded with the figures; a loaded machine makes them pessimistic.
@@ -33,7 +33,10 @@ if (pools.some(Number.isNaN)) throw new Error("--pools needs a comma-separated l
 const engine = loadEngine(process.env.SHOWDOWN_DIR || undefined);
 const skipped: Skipped = { not_move: 0, unreplayable_games: 0 };
 const skippedProgress: Skipped = { not_move: 0, unreplayable_games: 0 };
-const spec = { format_id: GOLDEN_FORMAT, data_class: "synthetic" as const, ...(process.env.SHOWDOWN_DIR ? { showdown_dir: process.env.SHOWDOWN_DIR } : {}) };
+const featureArg = arg("feature-set") ?? "probe-damage/1";
+if (featureArg !== "probe-damage/1" && featureArg !== "probe-damage/2") throw new Error("--feature-set is probe-damage/1 or probe-damage/2");
+const featureSet: "probe-damage/1" | "probe-damage/2" = featureArg;
+const spec = { format_id: GOLDEN_FORMAT, data_class: "synthetic" as const, feature_set: featureSet, ...(process.env.SHOWDOWN_DIR ? { showdown_dir: process.env.SHOWDOWN_DIR } : {}) };
 
 // Episodes: an evenly spaced sample of the generation's files, in name order.
 const episodeDir = join(runDir, "generations", gen, "episodes");
@@ -48,6 +51,7 @@ for (let k = 0; k < wanted; k++) {
 const report: Record<string, unknown> = {
   machine: { model: cpus()[0]?.model, logical_cpus: cpus().length, loadavg_at_start: loadavg().map((x) => Math.round(x * 100) / 100) },
   pin: engine.commit,
+  feature_set: featureSet,
   run: { generation, episodes_sampled: wanted, episodes_in_generation: files.length },
 };
 report.episodes = { decisions: episodes.length, ...(await runBench(spec, episodes, pools)) };

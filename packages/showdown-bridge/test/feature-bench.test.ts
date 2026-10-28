@@ -39,6 +39,20 @@ describe("statistics", () => {
     expect(statsOf([]).probe.memo_hit_ppm).toBe(0);
     expect(statsOf([]).rows.per_decision_mean_x100).toBe(0);
   });
+  it("counts the arrays of probe-damage/2 and sums the cost of its parts", () => {
+    const part = (queries: number) => ({ queries, probe_runs: queries - 1, ms: 10.4 });
+    const two = {
+      feature_set: "probe-damage/2",
+      feature_set_hash: "h",
+      rows: [],
+      threats: [{ own: 0, mega: false, foe: 1, move: "x", kind: "unsupported", reason: "query_kind" }, { own: 0, mega: false, foe: 2, move: "x", kind: "computed" }],
+      speeds: [],
+    };
+    const result: FeatureResult = { ms: 3, counts: { queries: 5, probe_runs: 2, unsupported_queries: 1 }, parts: { setup: part(1), rows: part(1), threats: part(1), speeds: part(1), priorities: part(1) }, outcome: { kind: "features", features: two as never } };
+    const stats = statsOf([result, result]);
+    expect(stats.arrays).toEqual({ threats: { rows: 4, computed: 2, unsupported: { query_kind: 2 } }, speeds: { rows: 0, computed: 0, unsupported: {} } });
+    expect(stats.parts?.threats).toEqual({ queries: 2, probe_runs: 0, ms: 21 });
+  });
   it("estimates the generation wall time against 1.5 times the control", () => {
     const e = estimateWallTime({ play_ms: 180_000, load_ms: 20_000, decisions: 10_000 }, 50, [1, 8]);
     expect(e.limit_ms).toBe(300_000);
@@ -86,5 +100,13 @@ describe("recorded decisions", () => {
     expect(report.pools[0]).toMatchObject({ size: 2, rows_equal_single: true });
     expect(report.pools[0]?.speedup_x100).toBeGreaterThan(0);
     expect(report.dominated.episode).toBeDefined();
+    expect(report.single_thread.arrays).toBeUndefined(); // probe-damage/1 holds rows alone
+
+    // probe-damage/2 through the same service and pool: the new arrays are counted, the cost is split by part, and pool and single rows agree
+    const two = await runBench({ format_id: GOLDEN_FORMAT, data_class: "synthetic", feature_set: "probe-damage/2" }, few, [2]);
+    expect(two.single_thread.featured).toBe(few.length);
+    expect(Object.keys(two.single_thread.arrays ?? {}).sort()).toEqual(["foe_priorities", "own_priorities", "speeds", "threats"]);
+    expect(Object.keys(two.single_thread.parts ?? {}).sort()).toEqual(["priorities", "rows", "setup", "speeds", "threats"]);
+    expect(two.pools[0]).toMatchObject({ size: 2, rows_equal_single: true });
   }, 240_000); // replays on the engine, real probe in the single run and in a two-thread pool
 });
