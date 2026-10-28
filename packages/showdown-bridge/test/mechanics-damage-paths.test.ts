@@ -5,7 +5,7 @@ import { type CandidateFeatures, candidateFeatures, type FeatureConfigs } from "
 import { jcs, type Json } from "../src/canonical-json.ts";
 import type { PokemonSet } from "../src/engine.ts";
 import { GOLDEN_FORMAT } from "../src/golden.ts";
-import { damagePathStats } from "../src/mechanics-damage.ts";
+import { damagePathStats, scenarioStartStats } from "../src/mechanics-damage.ts";
 import { type MechanicsContext, MechanicsProbeError, type ProbeOutcome, probeMechanics } from "../src/mechanics-probe.ts";
 import { type ParsedMechanicsQuery, readMechanicsQuery } from "../src/mechanics-query.ts";
 import { playerChannel } from "../src/player-channel.ts";
@@ -53,6 +53,8 @@ const canonical = (paste: string): string => exportPaste(engine, importPaste(eng
 beforeAll(() => {
   damagePathStats.one_clone = 0;
   damagePathStats.fell_back = 0;
+  scenarioStartStats.started = 0;
+  scenarioStartStats.reused = 0;
 });
 
 describe("the one-clone path equals the per-roll path", () => {
@@ -162,5 +164,7 @@ describe("the comparison was not vacuous", () => {
   it("compared many queries and answered most with the one-clone path", () => {
     expect(compared).toBeGreaterThan(100);
     expect(damagePathStats.one_clone).toBeGreaterThan(damagePathStats.fell_back);
+    // The one-clone path takes its scenario from the kept start; the per-roll reference starts its own, so the equality above covers both.
+    expect(scenarioStartStats.reused).toBeGreaterThan(scenarioStartStats.started);
   });
 });
