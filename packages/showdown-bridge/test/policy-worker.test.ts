@@ -2,13 +2,15 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { PolicyWorkerError, UnsupportedCandidateError } from "../src/evaluation-harness.ts";
-import { PolicyProtocolError, type PolicyQueryInput } from "../src/policy-protocol.ts";
+import { type EvaluateQueryInput, PolicyProtocolError, type PolicyQueryInput } from "../src/policy-protocol.ts";
 import { PolicyHandshakeError, PolicyReplyError, PolicyWorkerClient, type PolicyWorkerOptions } from "../src/policy-worker.ts";
 import { SAMPLES_DIR } from "../src/samples.ts";
 import { CHECKPOINTS, ENCODER_VERSION, ENGINE_DATA_HASH, MAX_LINE_BYTES } from "./policy-fake.ts";
 
 const FAKE = fileURLToPath(new URL("./fake-policy-worker.ts", import.meta.url));
 const { query_id: _id, ...INPUT } = JSON.parse(readFileSync(`${SAMPLES_DIR}/v1/policy-query/valid/battle.json`, "utf8")) as PolicyQueryInput & { query_id: number };
+
+const EVALUATE: EvaluateQueryInput = { ...INPUT, sampling: { kind: "evaluate" } };
 
 const opened: PolicyWorkerClient[] = [];
 afterEach(async () => {
@@ -165,6 +167,42 @@ describe("failures are classified for guardActor (ADR-010 section 2)", () => {
     await expect(worker.ask("g1", many)).rejects.toThrow(/not a PolicyQuery/);
     const small = await started("ok", { max_line_bytes: 3000 });
     await expect(small.ask("g1", INPUT)).rejects.toThrow(/exceeds the maximum line length 3000/);
+  });
+});
+
+describe("evaluate queries (ADR-026 section 5)", () => {
+  it("returns the prior and value of the worker, re-checked against the query", async () => {
+    const worker = await started("ok");
+    const evaluation = await worker.evaluate("g1", EVALUATE);
+    expect(evaluation.identity).toEqual(INPUT.identity);
+    expect(evaluation.prior_ppm).toHaveLength(INPUT.candidates.length);
+    expect(evaluation.value_ppm).toBe(500000);
+    // the same session still answers a choice query
+    expect(INPUT.candidates.map((c) => c.choice)).toContain((await worker.ask("g1", INPUT)).choice);
+  });
+
+  it("keeps the two entry points apart", async () => {
+    const worker = await started("ok");
+    await expect(worker.ask("g1", EVALUATE)).rejects.toThrow(/evaluate\(\)/);
+    await expect(worker.evaluate("g1", INPUT as unknown as EvaluateQueryInput)).rejects.toThrow(/sampling is evaluate/);
+  });
+
+  it.each([
+    ["eval-short", /1 prior entries for 2 candidates|prior entries for/],
+    ["eval-long", /prior entries for/],
+    ["eval-wrong-identity", /another request/],
+    ["eval-bad-schema", /not an EvaluationReply/],
+    ["eval-recommendation", /not an EvaluationReply/],
+  ])("an invalid evaluation (%s) is a PolicyReplyError", async (mode, message) => {
+    const worker = await started(mode);
+    const error = await worker.evaluate("g1", EVALUATE).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(PolicyReplyError);
+    expect((error as Error).message).toMatch(message);
+  });
+
+  it("classifies a refusal as for a recommendation", async () => {
+    await expect((await started("unsupported")).evaluate("g1", EVALUATE)).rejects.toThrow(UnsupportedCandidateError);
+    await expect((await started("invalid-query")).evaluate("g1", EVALUATE)).rejects.toThrow(PolicyProtocolError);
   });
 });
 

@@ -27,3 +27,11 @@ class Scorer(Protocol):
         call is ``probabilities(view)``, temperature 1.
         """
         ...
+
+    def evaluate(self, view: dict[str, Any]) -> tuple[list[float], float]:
+        """The probabilities (temperature 1) and the value head's output for one query (ADR-026 §5).
+
+        One forward pass, batch of one, so the pair is as independent of what was scored before as
+        ``probabilities`` is.
+        """
+        ...

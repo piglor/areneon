@@ -71,3 +71,20 @@ def select(probabilities: Sequence[float], sampling: dict[str, Any]) -> int:
             return index
     # The sum fell short of a threshold near 1: the last candidate that has any mass.
     return max(i for i, p in enumerate(probabilities) if p > 0.0)
+
+
+PPM_LIMIT = 2**53 - 1
+
+
+def to_ppm(value: float) -> int:
+    """``floor(value * 10^6 + 0.5)`` in float64: the EvaluationReply contract's rounding rule.
+
+    ``value`` is a float32 widened exactly; a non-finite number, or a result outside the contract's
+    integer range, raises ``ScoreError``.
+    """
+    if not math.isfinite(value):
+        raise ScoreError("a value to report is not finite")
+    scaled = math.floor(value * 1_000_000.0 + 0.5)
+    if abs(scaled) > PPM_LIMIT:
+        raise ScoreError("a value to report does not fit the contract's integer range")
+    return scaled

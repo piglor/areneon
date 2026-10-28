@@ -41,7 +41,7 @@ export const rightsFor = (dataClass: Episode["data_class"]): Episode["rights"] =
  * current request only if `request_seq` and `request_hash` both match, and
  * `rqid` too when both carry one. Anything else is dropped.
  */
-export function answersRequest(recommendation: Recommendation, current: RequestIdentity): boolean {
+export function answersRequest(recommendation: Pick<Recommendation, "identity">, current: RequestIdentity): boolean {
   const { identity } = recommendation;
   return (
     identity.request_seq === current.request_seq &&

@@ -16,7 +16,7 @@ import torch
 from areneon_ml.model.batch import collate
 from areneon_ml.model.encoder import Encoder
 from areneon_ml.model.gamedata import GameData
-from areneon_ml.model.network import ROLES, PolicyNetwork
+from areneon_ml.model.network import ROLES, PolicyNetwork, PolicyOutput
 
 # Temperature 1 in millionths (ADR-023 §1); the worker's sampler states the same constant.
 FULL_TEMPERATURE_PPM = 1_000_000
@@ -55,11 +55,26 @@ class NetworkScorer:
         and applied to the float32 logits (exactly 1 at the default, which skips the product,
         so the default's bytes are those of the untempered scorer).
         """
+        return self._forward(view, temperature_ppm)[0]
+
+    def evaluate(self, view: dict[str, Any]) -> tuple[list[float], float]:
+        """The probabilities (temperature 1) and the value head's output, one forward pass.
+
+        The probabilities are those ``probabilities(view)`` gives; the value is the float32
+        output for the state (ADR-026 §5).
+        """
+        probabilities, output = self._forward(view, FULL_TEMPERATURE_PPM)
+        return probabilities, float(output.value[0].item())
+
+    def _forward(
+        self, view: dict[str, Any], temperature_ppm: int
+    ) -> tuple[list[float], PolicyOutput]:
         role = view["observation"]["kind"]
         encoded = self._encoders[role].encode(view)
         with torch.inference_mode():
-            logits = self._networks[role](collate([encoded])).logits[0]
+            output = self._networks[role](collate([encoded]))
+            logits = output.logits[0]
             if temperature_ppm != FULL_TEMPERATURE_PPM:
                 logits = logits * (1_000_000 / temperature_ppm)
             probabilities = torch.softmax(logits, dim=-1)
-        return [float(p) for p in probabilities.tolist()]
+        return [float(p) for p in probabilities.tolist()], output

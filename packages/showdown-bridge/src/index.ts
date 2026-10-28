@@ -196,6 +196,9 @@ export {
 export { type PolicyActorOptions, policyActor, type PolicyGameOptions, policyGame, type PolicySeat, RANDOM_PREVIEW_POLICY, randomPreviewSeed, type SamplerInput, sampleU } from "./policy-actor.ts";
 export {
   contractVersions,
+  type EvaluateQueryInput,
+  type Evaluation,
+  type EvaluationReply,
   encodeFrame,
   FULL_TEMPERATURE_PPM,
   type PlaySettings,
@@ -205,11 +208,13 @@ export {
   PolicyProtocolError,
   policyId,
   type PolicyReply,
+  readEvaluationReply,
   readHandshake,
   readPolicyQuery,
   readPolicyReply,
 } from "./policy-protocol.ts";
 export {
+  type EvaluationClient,
   type PolicyClient,
   PolicyHandshakeError,
   PolicyReplyError,
