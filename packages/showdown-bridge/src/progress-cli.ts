@@ -15,7 +15,7 @@ import { engineDataHash, readEngineData } from "./engine-data.ts";
 import { loadEngine } from "./engine.ts";
 import type { Engine } from "./engine.ts";
 import { UsageError } from "./generation-cli.ts";
-import { damageAwareSetup, type FeatureSetup, featureSetup, GenerationError } from "./league-generation.ts";
+import { damageAwareSetup, type FeatureSetup, featureSetup } from "./league-generation.ts";
 import { PolicyWorkerClient } from "./policy-worker.ts";
 import { EVAL_DATASET_FLAGS, readEvalDataset, withEvalDataset } from "./eval-dataset.ts";
 import { type ProgressMode, type ProgressPool, ProgressError, playProgress, writeProgress, PROGRESS_MODES } from "./progress-evaluation.ts";
@@ -128,8 +128,7 @@ export function pairFeatureSetup(engine: Engine, config: TrainingRunConfig): Fea
   try {
     return featureSetup(engine, config);
   } catch (error) {
-    if (error instanceof GenerationError) throw new UsageError(error.message);
-    throw error;
+    throw new UsageError((error as Error).message);
   }
 }
 
