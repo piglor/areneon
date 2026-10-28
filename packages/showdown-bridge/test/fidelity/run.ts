@@ -49,6 +49,17 @@ export interface RunData {
   ms: number;
 }
 
+/**
+ * The record the arms start from: no id admitted, and every item the implementation offers as a writer (W) restored to W, so the
+ * evidence for a writer never depends on the class the committed record currently gives it (a writer without enough evidence is R there).
+ */
+export function evidenceRecord(record: WorldWriters): WorldWriters {
+  const copy = structuredClone(record);
+  copy.admitted = [];
+  for (const item of copy.items) if (item.class === "R" && (STATE_ITEMS[item.id as keyof typeof STATE_ITEMS].classes as readonly string[]).includes("W")) item.class = "W";
+  return copy;
+}
+
 const toId = (text: string): string => text.toLowerCase().replace(/[^a-z0-9]/g, "");
 
 /**
@@ -102,7 +113,7 @@ const withAdmitted = (base: WorldWriters, admitted: WorldWriters["admitted"]): W
 export async function runFidelity(options: RunOptions, engine: Engine = loadEngine()): Promise<RunData> {
   const t0 = Date.now();
   // The arms start from the committed record with no id admitted, so the evidence never depends on the admissions it supports.
-  const writers: WorldWriters = { ...structuredClone(loadWorldWriters(engine, GOLDEN_FORMAT)), admitted: [] };
+  const writers = evidenceRecord(loadWorldWriters(engine, GOLDEN_FORMAT));
   const context: WorldContext = { engine, format_id: GOLDEN_FORMAT, scenario_id: checkScenario(engine, loadMechanicsConfig(GOLDEN_FORMAT)), hp_rounding: "ceil", writers };
   const dex = engine.sim.Dex.mod(engine.sim.Dex.formats.get(GOLDEN_FORMAT).mod) as any;
   const refused = new Set(writers.items.flatMap((item) => item.ids ?? []));
@@ -112,7 +123,6 @@ export async function runFidelity(options: RunOptions, engine: Engine = loadEngi
     if (!c.exists || c.effectType !== "Condition" || refused.has(id) || id === confusion) return null;
     return c.duration !== undefined || c.durationCallback !== undefined ? "W" : "E";
   };
-  void STATE_ITEMS;
   const specs = options.corpora.flatMap((corpus) => specsOf(corpus, options.battles).map((spec) => ({ corpus, spec })));
   // Every ability and item id a brought set holds: the start-trigger probe admits them all at once.
   const triggerIds = new Set<string>();
@@ -191,7 +201,7 @@ export function reportInputs(engine: Engine, writers: WorldWriters, corpora: rea
     const dir = corpus === "random" || corpus === "random-choice-lock" ? RANDOM_DIR : corpus === "unavailable" ? UNAVAILABLE_DIR : FIDELITY_DIR;
     for (const name of readdirSync(dir).filter((n) => /^b\d+\.json$/.test(n)).sort()) hash.update(`${corpus}/${name}\n`).update(readFileSync(join(dir, name)));
   }
-  const record = { ...writers, admitted: [] };
+  const record = evidenceRecord(writers);
   return {
     fidelity_format: FIDELITY_FORMAT,
     showdown_commit: PINNED_SHOWDOWN_COMMIT,

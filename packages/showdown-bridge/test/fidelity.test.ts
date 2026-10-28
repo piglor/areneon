@@ -254,14 +254,13 @@ describe("the committed full report", () => {
     expect(committed.n_ex).toBe(N_EX);
   });
 
-  it("every writer the record lists as W passes the rule in the report, except the one named here", () => {
-    // toxic_stage has 17 (F1) and 16 (F2) equal exercising turns against N_EX = 20, none blamed or missed. It keeps W on #1140's
-    // independent evidence (world-writers-live.test.ts compares its stage with the LIVE battle: 24 comparisons, all equal);
-    // more Toxic turns in the targeted corpus, or a live-state admission rule, would remove the exception. The experiment ticket reads it.
+  it("a writer is W in the record exactly when the report passes it: toxic_stage has too few equal turns and is R, with its worlds refused and counted", () => {
     const classOf = new Map(writers.items.map((i) => [i.id as string, i.class]));
-    const failing = committed.writers.filter((row) => classOf.get(row.item) === "W" && !row.admitted).map((row) => row.item);
-    expect(failing).toEqual(["toxic_stage"]);
-    expect(committed.writers.find((r) => r.item === "toxic_stage")).toMatchObject({ f1: { blamed: 0, missed: 0 }, f2: { blamed: 0, missed: 0 } });
+    for (const row of committed.writers) expect(classOf.get(row.item) === "W", `${row.item}: W only with evidence`).toBe(row.admitted);
+    const toxic = committed.writers.find((r) => r.item === "toxic_stage") as Report["writers"][number];
+    expect(toxic).toMatchObject({ admitted: false, f1: { blamed: 0, missed: 0 }, f2: { blamed: 0, missed: 0 } });
+    expect(toxic.f1.equal).toBeLessThan(N_EX);
+    expect(classOf.get("toxic_stage")).toBe("R");
   });
 
   it("the markdown beside it is the report rendered", () => {

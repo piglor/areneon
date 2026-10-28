@@ -30,7 +30,8 @@ describe("the record indexes into a plan", () => {
     const writers = structuredClone(context.writers);
     writers.admitted = [{ kind: "start_trigger", id: "whiteherb", class: "W" }, { kind: "volatile", id: "taunt", class: "W" }];
     const plan = statePlan(readWorldWriters(writers, engine));
-    expect(plan.classOf("toxic_stage")).toBe("W");
+    expect(plan.classOf("toxic_stage")).toBe("R");
+    expect(plan.classOf("bench_status")).toBe("W");
     expect(plan.classOf("substitute")).toBe("R");
     expect(plan.conditionOf("protect_counter")).toBe("stall");
     expect(plan.rowOf("substitute")).toBe("substitute");

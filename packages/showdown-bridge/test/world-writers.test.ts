@@ -35,12 +35,13 @@ describe("the committed record (config/search/world-writers.v1.json)", () => {
       { kind: "volatile", id: "encore", class: "W" },
       { kind: "volatile", id: "taunt", class: "W" },
     ]);
+    // toxic_stage is R: the oracle found 17 (F1) and 16 (F2) equal exercising turns against N_ex = 20 (fidelity-report.md).
     const classes = Object.fromEntries(record.items.map((item) => [item.id, item.class]));
-    expect(classes).toMatchObject({ toxic_stage: "W", bench_status: "W", sleep_counter: "X", confusion_duration: "X", per_turn_fields: "T", substitute: "R", unadmitted_id: "R" });
+    expect(classes).toMatchObject({ toxic_stage: "R", bench_status: "W", sleep_counter: "X", confusion_duration: "X", per_turn_fields: "T", substitute: "R", unadmitted_id: "R" });
   });
 
   it("has a hash pinned from outside the code (Python's hashlib over the sorted-key bytes)", () => {
-    expect(worldWritersHash(loadWorldWriters(engine, GOLDEN_FORMAT))).toBe("89c031a000d3ff556a174849ca52064ad855ae03d30ff7488eae8850c34f5e93");
+    expect(worldWritersHash(loadWorldWriters(engine, GOLDEN_FORMAT))).toBe("2a4777d5ac246c06d158563d6c133b60d83696fd753eeb47346bd5a2a840cb71");
   });
 
   it("is refused for another format", () => {
