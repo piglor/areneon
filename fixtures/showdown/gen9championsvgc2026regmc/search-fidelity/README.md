@@ -16,7 +16,7 @@ and a larger generated dev split (`search-fidelity-src`, not committed: the comm
 split holds no Last Respects or Mirror Coat team). It is rebuilt with
 `generate` at the generator commit named in `manifest.json`, the config
 `config/teams/<format>/generator.json`, the committed `fixtures-v1/pilot.json`, `--dev 3000
---validation 50 --training 50` and these public keys (they derive from labels and protect nothing):
+--validation 50 --training 50` (3001 dev teams delivered) and these public keys (they derive from labels and protect nothing):
 
 - generation key `775cf690c68e8efce8deb29d548fc1da69c0612fb378e876a75798411ad80388` = SHA-256 of `areneon/search-fidelity/v1/generation`
 - assignment key `38198457df1773d2543f0be1cbadba1ea0e5a1fb3949e3a973023ecf4ec6a8cf` = SHA-256 of `areneon/search-fidelity/v1/assignment`

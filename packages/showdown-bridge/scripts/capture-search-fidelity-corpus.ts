@@ -7,7 +7,7 @@
 // holds no Last Respects or Mirror Coat team. Only the battles kept, with their teams,
 // are committed; CI replays them and never re-runs this search.
 // SHOWDOWN_DIR points at another built checkout (a worktree without its own).
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { loadEngine } from "../src/engine.ts";
 import { resolveFormat } from "../src/formats.ts";
@@ -75,9 +75,11 @@ for (const source of sources) {
 }
 
 const files = await captureFidelityCorpus(engine, pool, targets, { seed_base: 0x6000, log: console.log });
-rmSync(FIDELITY_DIR, { recursive: true, force: true });
+// Only the generated files are replaced: targets.json (the reviewed input) and README.md stay as they are.
 mkdirSync(FIDELITY_DIR, { recursive: true });
-writeFileSync(join(FIDELITY_DIR, "targets.json"), `${JSON.stringify(targets, null, 2)}\n`);
+for (const name of readdirSync(FIDELITY_DIR)) {
+  if (/^b\d+\.json$/.test(name)) rmSync(join(FIDELITY_DIR, name));
+}
 for (const file of files) writeFileSync(join(FIDELITY_DIR, `${file.id}.json`), `${JSON.stringify(file)}\n`);
 writeFileSync(
   join(FIDELITY_DIR, RANDOM_MANIFEST),
