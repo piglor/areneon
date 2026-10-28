@@ -27,7 +27,7 @@ export class DamageAwareError extends Error {
 
 /** What this module reads of the engine's data, narrowed locally. */
 export interface ScoreDex {
-  moves: { get(id: string): { exists: boolean; id: string; category: string } };
+  moves: { get(id: string): { exists: boolean; id: string; category: string; target: string } };
   items: { get(id: string): { exists: boolean; name: string } };
   species: { get(id: string): { exists: boolean; baseSpecies: string } };
   conditions: { get(id: string): { exists: boolean; effectType: string } };
@@ -101,8 +101,11 @@ const CONFIG_DEFECT = "the mechanics config is for another format";
 type DamageState = Extract<MechanicsQuery["query"], { kind: "damage" }>["state"];
 type Combatant = Extract<MechanicsQuery["query"], { kind: "damage" }>["attacker"];
 
-/** The probe's answer to a query, remembered by its hash: `null` is a speed order the probe cannot queue; `refused` a state the engine does not take. */
-export type ProbeMemo = Map<string, MechanicsResult | null | { refused: string }>;
+/** The probe's two speed-order limits (ADR-022 erratum E-22.3): an action it cannot queue, and one whose priority is not a whole number. */
+export type SpeedLimit = "unqueueable" | "fractional_priority";
+
+/** The probe's answer to a query, remembered by its hash: `limit` is a speed order the probe cannot take; `refused` a state the engine does not take. */
+export type ProbeMemo = Map<string, MechanicsResult | { limit: SpeedLimit } | { refused: string }>;
 
 /** The counts a view keeps (the baseline's report has more). */
 export interface ProbeCounts {
@@ -168,11 +171,11 @@ export function damageView(options: DamageViewOptions) {
   const dex = engine.sim.Dex.mod(engine.sim.Dex.formats.get(config.format_id).mod) as unknown as ScoreDex;
 
   /**
-   * One probe answer, or null for a speed order the probe cannot take as a query (an action that
-   * queues more than a move and a Mega Evolution, as Focus Punch does, or one with a fractional priority): counted as `unsupported`,
-   * so no discount is applied. Any other `MechanicsProbeError` throws `ProbeRefusal` (the request falls back); every other failure is a defect and propagates.
+   * One probe answer, or `{ limit }` for a speed order the probe cannot take as a query (an action that
+   * queues more than a move and a Mega Evolution, as Focus Punch does, or one with a fractional priority): counted as `unsupported`.
+   * Any other `MechanicsProbeError` throws `ProbeRefusal` (the request falls back); every other failure is a defect and propagates.
    */
-  function ask(value: MechanicsQuery): MechanicsResult | null {
+  function askLimited(value: MechanicsQuery): MechanicsResult | { limit: SpeedLimit } {
     const query = readMechanicsQuery(value);
     const key = mechanicsQueryHash(query);
     counts.queries += 1;
@@ -183,28 +186,34 @@ export function damageView(options: DamageViewOptions) {
         result = probe({ engine, config: mechanics, snapshot }, query).result;
       } catch (error) {
         if (!(error instanceof MechanicsProbeError) || error.message.startsWith(CONFIG_DEFECT)) throw error; // a wrong config is a defect of the run, not of a state
-        if (query.query.kind === "speed_order" && [UNQUEUEABLE, FRACTIONAL].some((limit) => error.message.startsWith(limit))) {
-          // The probe's two known speed-order limits: no discount, counted as unsupported.
-          memo.set(key, null);
-          counts.unsupported_queries += 1;
-          return null;
+        if (query.query.kind === "speed_order" && error.message.startsWith(UNQUEUEABLE)) result = { limit: "unqueueable" };
+        else if (query.query.kind === "speed_order" && error.message.startsWith(FRACTIONAL)) result = { limit: "fractional_priority" };
+        else {
+          // Any other refusal of a state the caller declared: this request falls back.
+          memo.set(key, { refused: error.message });
+          throw new ProbeRefusal(error.message);
         }
-        // Any other refusal of a state the caller declared: this request falls back.
-        memo.set(key, { refused: error.message });
-        throw new ProbeRefusal(error.message);
       }
       memo.set(key, result);
     }
-    if (result === null) {
+    if ("limit" in result) {
       counts.unsupported_queries += 1;
-      return null;
+      return result;
     }
     if ("refused" in result) throw new ProbeRefusal(result.refused); // a memoised refusal (the query was asked again)
     if (result.kind === "refused") throw new DamageAwareError("the probe refused a set the baseline built");
     if (result.kind === "unsupported") counts.unsupported_queries += 1;
     return result;
   }
-  const query = (body: MechanicsQuery["query"]): MechanicsResult | null => ask({ schema_version: 1, data_class, format_id: config.format_id, query: body } as MechanicsQuery);
+  /** `askLimited` with a speed-order limit as `null` (no discount is applied). */
+  function ask(value: MechanicsQuery): MechanicsResult | null {
+    const result = askLimited(value);
+    return "limit" in result ? null : result;
+  }
+  const wrap = (body: MechanicsQuery["query"]): MechanicsQuery => ({ schema_version: 1, data_class, format_id: config.format_id, query: body }) as MechanicsQuery;
+  const query = (body: MechanicsQuery["query"]): MechanicsResult | null => ask(wrap(body));
+  /** As `query`, with the probe's speed-order limit named instead of `null`. */
+  const queryLimited = (body: MechanicsQuery["query"]): MechanicsResult | { limit: SpeedLimit } => askLimited(wrap(body));
 
   /** The probe's whole answer to one damage query (a `computed` or `unsupported` result); a memoised refusal throws `ProbeRefusal`. */
   const damageResult = (attacker: Fighter, defender: Fighter, move: string, state: PublicState, attackerIsOwn: boolean): MechanicsResult | null =>
@@ -250,15 +259,19 @@ export function damageView(options: DamageViewOptions) {
 
   const boostsOf = (mon: PublicMon): Fighter["boosts"] => ({ atk: mon.boosts.atk ?? 0, def: mon.boosts.def ?? 0, spa: mon.boosts.spa ?? 0, spd: mon.boosts.spd ?? 0, spe: mon.boosts.spe ?? 0 });
 
-  /** The player's own active Pokemon in request slot `slot`, from its own request and own team. */
-  function ownSlot(side: Record<string, Json>, team: readonly Readonly<PokemonSet>[], state: PublicState, slot: number): OwnSlot {
+  /**
+   * The player's own Pokemon at index `slot` of the request's `side.pokemon`, from its own request and own team. A `bench`
+   * Pokemon (not in play) is read from the request and the team alone: stat stages 0, and Mega as the reader's roster shows it
+   * (not Mega when the reader has never seen it), so a Pokemon never yet in play is no `ReaderGap`.
+   */
+  function ownSlot(side: Record<string, Json>, team: readonly Readonly<PokemonSet>[], state: PublicState, slot: number, bench = false): OwnSlot {
     const mon = object(array(side.pokemon, "side.pokemon")[slot], "an active Pokemon");
     const ident = text(mon.ident, "ident");
     const name = ident.slice(ident.indexOf(": ") + 2);
     const matches = team.filter((set) => [set.name, set.name === "" ? set.species : "", dex.species.get(set.species).baseSpecies].includes(name));
     if (matches.length !== 1) throw new DamageAwareError("an own Pokemon matches no set, or more than one, of the team as brought");
     const shown = state.own.roster.find((candidate) => candidate.name === name);
-    if (shown === undefined) throw new ReaderGap("the reader does not show an own Pokemon the request lists");
+    if (shown === undefined && !bench) throw new ReaderGap("the reader does not show an own Pokemon the request lists");
     const condition = CONDITION.exec(text(mon.condition, "condition"));
     if (condition === null) throw new DamageAwareError("an own Pokemon's condition has a shape the baseline does not know");
     const [, hp, max, status] = condition;
@@ -270,11 +283,14 @@ export function damageView(options: DamageViewOptions) {
         paste: exportPaste(engine, [set]),
         hp: max === undefined || Number(hp) === Number(max) ? null : Number(hp),
         status: status === undefined || status === "fnt" ? null : status,
-        boosts: boostsOf(shown),
-        mega: shown.mega,
+        boosts: shown === undefined || bench ? { atk: 0, def: 0, spa: 0, spd: 0, spe: 0 } : boostsOf(shown),
+        mega: shown?.mega ?? false,
       },
     };
   }
+
+  /** A benched own Pokemon: the one at index `index` of the request's `side.pokemon`, read from the request and team only. */
+  const ownBench = (request: unknown, state: PublicState, team: readonly Readonly<PokemonSet>[], index: number): OwnSlot => ownSlot(object(object(request, "request").side, "side"), team, state, index, true);
 
   /** The player's own actives of one request, by request slot. */
   const ownSlots = (request: unknown, state: PublicState, team: readonly Readonly<PokemonSet>[]): OwnSlot[] => {
@@ -343,7 +359,7 @@ export function damageView(options: DamageViewOptions) {
     return out;
   }
 
-  return { dex, query, damageResult, damageOf, combatant, field, boostsOf, ownSlots, assumedFor, statusBlocked, foesOf };
+  return { dex, query, queryLimited, damageResult, damageOf, combatant, field, boostsOf, ownSlots, ownBench, assumedFor, statusBlocked, foesOf };
 }
 
 export type DamageView = ReturnType<typeof damageView>;

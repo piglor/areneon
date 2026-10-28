@@ -510,10 +510,21 @@ export {
   type FeatureConfigs,
   type FeatureMemo,
   type FeatureRow,
+  type FeatureSetId,
   type FeatureSetIdentity,
   featureSetHash,
   featureSetIdentity,
 } from "./candidate-features.ts";
+export {
+  type CandidateFeatures2,
+  candidateFeatures2,
+  FEATURE_SET_2,
+  type FoePriorityRow,
+  type OrderReason,
+  type OwnPriorityRow,
+  type SpeedRow,
+  type ThreatRow,
+} from "./candidate-features-2.ts";
 export {
   checkTeacherSettings,
   planTeacher,

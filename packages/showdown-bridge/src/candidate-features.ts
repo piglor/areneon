@@ -17,16 +17,16 @@
 // (the player's own checked stream, never an `OmniscientLog`), the player's own team and the candidate
 // strings. No opponent team, hidden verdict, `BattleRecord` or seed is a parameter of anything here.
 //
-// Not here: incoming threats and turn order (`probe-damage/2`), the belief-based sets (ADR-025 slice 5),
-// the transport field, the encoder and the worker pool.
+// Not here: incoming threats and turn order (`probe-damage/2`, `candidate-features-2.ts`, which reuses the
+// pieces exported below), the belief-based sets (ADR-025 slice 5), the transport field, the encoder and the worker pool.
 
-import { createInterpreter, type PublicFlag, type PublicMon, readerSha256 } from "@areneon/public-state";
+import { createInterpreter, type PublicFlag, type PublicMon, type PublicState, readerSha256 } from "@areneon/public-state";
 import { type Json, jcs } from "./canonical-json.ts";
 import { type AssumedSet, AssumedSetError } from "./damage-aware-assumed-set.ts";
 import { parseJointChoice } from "./damage-aware-choice.ts";
 import { type DamageAwareConfig, damageAwareConfigHash } from "./damage-aware-config.ts";
 import { PPM, rollsValue } from "./damage-aware-score.ts";
-import { array, DamageAwareError, damageView, foesHit, object, ProbeRefusal, type ProbeMemo, type ProbeCounts, ReaderGap, text } from "./damage-aware-view.ts";
+import { array, DamageAwareError, type DamageView, damageView, type Foe, foesHit, object, type OwnSlot, ProbeRefusal, type ProbeMemo, type ProbeCounts, ReaderGap, text } from "./damage-aware-view.ts";
 import type { Engine, PokemonSet } from "./engine.ts";
 import type { Candidate } from "./choices.ts";
 import { type VersionManifest, resolveFormat } from "./formats.ts";
@@ -42,6 +42,8 @@ import type { TeamVocabulary } from "./team-vocabulary.ts";
 
 /** The feature set this module builds (ADR-022 section 3). A change of what a row holds is a new id. */
 export const FEATURE_SET = "probe-damage/1";
+/** The ids a feature set identity can carry: `probe-damage/2` is built by `candidate-features-2.ts`. */
+export type FeatureSetId = typeof FEATURE_SET | "probe-damage/2";
 
 /** Why a request has no features: the caller decides what to do (ADR-022 section 3); nothing is guessed. */
 export type FeatureBuildCode = "reader_flagged" | "reader_gap" | "assumed_set" | "probe_refused" | "no_request";
@@ -100,7 +102,7 @@ export const createFeatureMemo = (): FeatureMemo => ({ results: new Map(), count
 
 /** The parts a feature row depends on besides the request (ADR-022 section 3). */
 export interface FeatureSetIdentity {
-  feature_set: typeof FEATURE_SET;
+  feature_set: FeatureSetId;
   mechanics_config_hash: string;
   assumed_set_config_hash: string;
   adapter_format: number;
@@ -108,10 +110,12 @@ export interface FeatureSetIdentity {
   version_manifest: VersionManifest;
 }
 
-export function featureSetIdentity(engine: Engine, configs: Pick<FeatureConfigs, "config" | "mechanics" | "snapshot">): FeatureSetIdentity {
+export function featureSetIdentity(engine: Engine, configs: Pick<FeatureConfigs, "config" | "mechanics" | "snapshot">, featureSet: FeatureSetId = FEATURE_SET): FeatureSetIdentity {
+  // `probe-damage/2` asks speed orders (ADR-022 erratum E-22.3.1): a config that does not list the kind would answer every such row `query_kind`.
+  if (featureSet === "probe-damage/2" && !configs.mechanics.scope.query_kinds.some((entry) => entry.kind === "speed_order")) throw new DamageAwareError("the mechanics config does not list speed_order in scope");
   const snapshot = configs.snapshot ?? loadRulesSnapshot(engine.commit);
   return {
-    feature_set: FEATURE_SET,
+    feature_set: featureSet,
     mechanics_config_hash: mechanicsConfigHash(configs.mechanics),
     assumed_set_config_hash: damageAwareConfigHash(configs.config),
     adapter_format: MECHANICS_ADAPTER_FORMAT,
@@ -134,6 +138,81 @@ const requestBefore = (lines: readonly string[], end: number): number => {
 /** Parts per million of `value` out of `hp`, floored. */
 const share = (value: number, hp: number): number => Math.floor((value * PPM) / hp);
 
+/** The body of the `|request|` the channel ends in. Throws `no_request` when it does not end in one. */
+export function lastRequest(channel: PlayerChannel): Record<string, unknown> {
+  const lines = channel.lines;
+  const last = lines.length - 1;
+  if (last < 0 || !(lines[last] as string).startsWith(REQUEST)) throw new FeatureBuildError("no_request");
+  // `playerChannel` has checked every `|request|` line, so this parses.
+  return object(JSON.parse((lines[last] as string).slice(REQUEST.length)) as unknown, "request");
+}
+
+/** The view of one request: the shared damage view (with this game's memo) and the reader's state, fed the whole channel. */
+export function openRequest(engine: Engine, configs: FeatureConfigs, snapshot: RulesSnapshot, channel: PlayerChannel, memo: FeatureMemo): { view: DamageView; state: PublicState } {
+  const view = damageView({
+    engine, vocabulary: configs.vocabulary, config: configs.config, v1: configs.config, mechanics: configs.mechanics, snapshot,
+    data_class: configs.data_class, probe: configs.probe ?? probeMechanics, counts: memo.counts, memo: memo.results,
+    // The engine's choice-location convention (#1180), whatever the assumed-set record says. This changes which foe a row's `target` names
+    // while `feature_set_hash` stays: ticket #1180 decided so because no run, checkpoint or stored record used the rows yet.
+    engine_targets: true,
+    ...(configs.assume === undefined ? {} : { assume: configs.assume }),
+  });
+
+  // The reader, fed the whole channel; a line it could not take since the previous request makes the state untrustworthy (as for the baseline).
+  const lines = channel.lines;
+  const reader = createInterpreter({ player: channel.player });
+  const since = requestBefore(lines, lines.length - 1);
+  const flags: PublicFlag[] = [];
+  lines.forEach((line, index) => {
+    const reason = reader.feed(line).flagged;
+    if (reason !== null && index > since) flags.push({ index, line, reason });
+  });
+  if (flags.length > 0) throw new FeatureBuildError("reader_flagged");
+  return { view, state: reader.snapshot() };
+}
+
+/** Run `build`, turning the baseline's fall-back signals into the builder's refusals (the caller decides what then). */
+export function refusing<T>(build: () => T): T {
+  try {
+    return build();
+  } catch (error) {
+    if (error instanceof ReaderGap) throw new FeatureBuildError("reader_gap");
+    if (error instanceof AssumedSetError) throw new FeatureBuildError("assumed_set");
+    if (error instanceof ProbeRefusal) throw new FeatureBuildError("probe_refused");
+    throw error;
+  }
+}
+
+/**
+ * The rows of one move request: one damage query per distinct (slot, move position, target position, Mega flag) that some
+ * candidate uses with a damaging move into an opposing active, in canonical order. `own` are the request's actives (`view.ownSlots`).
+ */
+export function damageRows(view: DamageView, state: PublicState, body: Record<string, unknown>, own: readonly OwnSlot[], foesNow: () => readonly Foe[], candidates: readonly Pick<Candidate, "choice" | "pending">[]): FeatureRow[] {
+  const active = array(body.active, "active");
+  const rows = new Map<string, FeatureRow>();
+  for (const { choice } of candidates) {
+    const parts = parseJointChoice(choice);
+    if (parts.length !== active.length) throw new DamageAwareError("a choice has a different number of parts than the request has active Pokemon");
+    parts.forEach((part, slot) => {
+      if (part.kind !== "move") return;
+      const moves = array(object(active[slot], "an active entry").moves, "moves");
+      const slotMove = object(moves[part.index - 1], "a move of the request");
+      const id = text(slotMove.id, "a move id");
+      const data = view.dex.moves.get(id);
+      if (!data.exists || data.category === "Status") return;
+      const type = typeof slotMove.target === "string" ? slotMove.target : undefined;
+      for (const foe of foesHit(type, part.target, foesNow)) {
+        const key = `${slot}/${part.index}/${foe.loc}/${part.mega}`;
+        if (rows.has(key)) continue;
+        const mine = (own[slot] as OwnSlot).fighter;
+        const result = view.damageResult({ ...mine, mega: mine.mega || part.mega }, foe.fighter, id, state, true);
+        rows.set(key, rowOf({ slot, move: part.index, target: foe.loc, mega: part.mega }, result));
+      }
+    });
+  }
+  return [...rows.values()].sort((a, b) => a.slot - b.slot || a.move - b.move || a.target - b.target || Number(a.mega) - Number(b.mega));
+}
+
 /**
  * The rows of one decision: one damage query per distinct (slot, move position, target position, Mega flag) that
  * some candidate uses with a damaging move into an opposing active. `memo` is this game's: with or without it the
@@ -152,81 +231,38 @@ export function candidateFeatures(
   const identity = featureSetIdentity(engine, { ...configs, snapshot });
   const out = (rows: FeatureRow[]): CandidateFeatures => ({ feature_set: FEATURE_SET, feature_set_hash: featureSetHash(identity), rows });
 
-  const lines = channel.lines;
-  const last = lines.length - 1;
-  if (last < 0 || !(lines[last] as string).startsWith(REQUEST)) throw new FeatureBuildError("no_request");
-  // `playerChannel` has checked every `|request|` line, so this parses.
-  const body = object(JSON.parse((lines[last] as string).slice(REQUEST.length)) as unknown, "request");
+  const body = lastRequest(channel);
   // Only a move request has a damaging move to featurise; the others have no active entries to read.
   if (body.teamPreview !== undefined || body.active === undefined) return out([]);
-
-  const view = damageView({
-    engine, vocabulary: configs.vocabulary, config: configs.config, v1: configs.config, mechanics: configs.mechanics, snapshot,
-    data_class: configs.data_class, probe: configs.probe ?? probeMechanics, counts: memo.counts, memo: memo.results,
-    // The engine's choice-location convention (#1180), whatever the assumed-set record says. This changes which foe a row's `target` names
-    // while `feature_set_hash` stays: ticket #1180 decided so because no run, checkpoint or stored record used the rows yet.
-    engine_targets: true,
-    ...(configs.assume === undefined ? {} : { assume: configs.assume }),
-  });
-
-  // The reader, fed the whole channel; a line it could not take since the previous request makes the state untrustworthy (as for the baseline).
-  const reader = createInterpreter({ player: channel.player });
-  const since = requestBefore(lines, last);
-  const flags: PublicFlag[] = [];
-  lines.forEach((line, index) => {
-    const reason = reader.feed(line).flagged;
-    if (reason !== null && index > since) flags.push({ index, line, reason });
-  });
-  if (flags.length > 0) throw new FeatureBuildError("reader_flagged");
-  const state = reader.snapshot();
-
-  try {
+  const { view, state } = openRequest(engine, configs, snapshot, channel, memo);
+  return refusing(() => {
     const own = view.ownSlots(body, state, team);
-    const active = array(body.active, "active");
-    let foes: ReturnType<typeof view.foesOf> | null = null;
-    const foesNow = (): ReturnType<typeof view.foesOf> => (foes ??= view.foesOf(state, (mon) => view.assumedFor(mon, state)));
-    const rows = new Map<string, FeatureRow>();
-
-    for (const { choice } of candidates) {
-      const parts = parseJointChoice(choice);
-      if (parts.length !== active.length) throw new DamageAwareError("a choice has a different number of parts than the request has active Pokemon");
-      parts.forEach((part, slot) => {
-        if (part.kind !== "move") return;
-        const moves = array(object(active[slot], "an active entry").moves, "moves");
-        const slotMove = object(moves[part.index - 1], "a move of the request");
-        const id = text(slotMove.id, "a move id");
-        const data = view.dex.moves.get(id);
-        if (!data.exists || data.category === "Status") return;
-        const type = typeof slotMove.target === "string" ? slotMove.target : undefined;
-        for (const foe of foesHit(type, part.target, foesNow)) {
-          const key = `${slot}/${part.index}/${foe.loc}/${part.mega}`;
-          if (rows.has(key)) continue;
-          const mine = (own[slot] as (typeof own)[number]).fighter;
-          const result = view.damageResult({ ...mine, mega: mine.mega || part.mega }, foe.fighter, id, state, true);
-          rows.set(key, rowOf({ slot, move: part.index, target: foe.loc, mega: part.mega }, result));
-        }
-      });
-    }
-    return out([...rows.values()].sort((a, b) => a.slot - b.slot || a.move - b.move || a.target - b.target || Number(a.mega) - Number(b.mega)));
-  } catch (error) {
-    if (error instanceof ReaderGap) throw new FeatureBuildError("reader_gap");
-    if (error instanceof AssumedSetError) throw new FeatureBuildError("assumed_set");
-    if (error instanceof ProbeRefusal) throw new FeatureBuildError("probe_refused");
-    throw error;
-  }
+    let foes: Foe[] | null = null;
+    const foesNow = (): Foe[] => (foes ??= view.foesOf(state, (mon) => view.assumedFor(mon, state)));
+    return out(damageRows(view, state, body, own, foesNow, candidates));
+  });
 }
 
-/** One row from the probe's answer: integers from the engine's rolls, or the probe's closed reason. */
-function rowOf(key: { slot: number; move: number; target: number; mega: boolean }, result: MechanicsResult | null): FeatureRow {
-  if (result?.kind === "unsupported") return { ...key, kind: "unsupported", reason: result.reason };
+/** The values of a computed damage answer or the probe's closed reason, the part of a row every damage-based array shares. */
+export type DamageValues =
+  | { kind: "computed"; mean_ppm: number; max_ppm: number; min_ppm: number; ohko_rolls: number | null }
+  | { kind: "unsupported"; reason: Extract<MechanicsResult, { kind: "unsupported" }>["reason"] };
+
+/** Integers from the engine's rolls, or the probe's closed reason. */
+export function damageValues(result: MechanicsResult | null): DamageValues {
+  if (result?.kind === "unsupported") return { kind: "unsupported", reason: result.reason };
   if (result?.kind !== "computed" || result.answer.kind !== "damage") throw new DamageAwareError("the probe gave no damage answer to a damage query");
   const { no_crit: rolls, hp_current: hp, ko } = result.answer;
   return {
-    ...key,
     kind: "computed",
     mean_ppm: rollsValue(rolls, hp, 0),
     max_ppm: share(Math.min(Math.max(...rolls), hp), hp),
     min_ppm: share(Math.min(Math.min(...rolls), hp), hp),
     ohko_rolls: ko.kind === "counts" ? ko.ohko_no_crit : null,
   };
+}
+
+/** One row from the probe's answer. */
+function rowOf(key: { slot: number; move: number; target: number; mega: boolean }, result: MechanicsResult | null): FeatureRow {
+  return { ...key, ...damageValues(result) };
 }
