@@ -147,8 +147,6 @@ export function createTrappingCheck(context: TrappingCheckContext, input: Trappi
     const declared = [...ownSets, ...ownSets.map(() => foe)];
     const present = [...side.pokemon, ...(battle.sides[1 - seat] as WSide).pokemon];
     if (present.some((mon, k) => toId(mon.ability) !== toId((declared[k] as PokemonSet).ability) || toId(mon.item) !== toId((declared[k] as PokemonSet).item))) return null;
-    // A disguise on the own side: the scenario starts it fresh, so who is known by type differs from a broken one in the real battle.
-    if (side.pokemon.some((mon) => (mon as unknown as { illusion?: unknown }).illusion != null)) return null;
     // The own formes (a Mega Evolution that has happened) and the fainted Pokemon, as the request shows them.
     const down: WMon[] = [];
     for (const [index, entry] of request.side.pokemon.entries()) {
