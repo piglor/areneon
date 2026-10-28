@@ -1,10 +1,11 @@
 // The search candidate of the progress evaluation (ADR-026 slice P) with the real engine, the real opponent model and a stand-in
 // worker (the real worker is driven by progress-search.python.test.ts): the matches, the counts of both sides, the control, the
 // stored games, byte-identical reruns and the refusals.
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { actorRule, jcs, type Json, type PolicyClient, playProgress, ProgressError, type ProgressOptions, readProgressGameRecord, readTrainingRunConfig, searchPolicy } from "@areneon/showdown-bridge";
-import { describe, expect, it } from "vitest";
+import { actorRule, jcs, type Json, type PolicyClient, playProgress, ProgressError, type ProgressOptions, readProgressGameRecord, readTrainingRunConfig, runProgressCli, searchPolicy } from "@areneon/showdown-bridge";
+import { afterAll, describe, expect, it } from "vitest";
 import { verifiedDatasetHash } from "../src/dataset-hash.ts";
 import { DATASETS_DIR } from "../src/fixtures.ts";
 import { datasetValidationPool } from "../src/progress-pool.ts";
@@ -103,5 +104,38 @@ describe("the run's own dev and training teams", () => {
     for (const team of pool.teams) expect(hashes.has(team.canonical_team_hash)).toBe(false);
     expect(() => datasetTrainingHashes(engine, { ...config, team_dataset: undefined } as never)).toThrow(/names no team dataset/);
     expect(() => datasetTrainingHashes(engine, { ...config, team_dataset: { path: SOURCE, dataset_hash: "0".repeat(64) } })).toThrow(/hash is not the one/);
+  });
+});
+
+describe("the command's search flags (usage errors come before any worker)", () => {
+  const dir = mkdtempSync(join(tmpdir(), "progress-search-cli-"));
+  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+  const configFile = join(dir, "config.json");
+  const teamSet = join(dir, "team-set.json");
+  writeFileSync(configFile, JSON.stringify({ ...tiny, team_dataset: { path: SOURCE, dataset_hash: verifiedDatasetHash(engine, SOURCE, FORMAT) } }));
+  writeFileSync(teamSet, JSON.stringify({ teams: [] }));
+  const flags = (...more: string[]): string[] => [
+    ...["--config", configFile, "--generation", "1", "--preview", "1".repeat(64), "--battle", "2".repeat(64)],
+    ...["--policy-id-sample", `policy:${"c".repeat(64)}`, "--policy-id-argmax", `policy:${"d".repeat(64)}`, "--generation-manifest-sha256", "a".repeat(64)],
+    ...["--team-set", teamSet, "--run-dir", dir, "--engine-data", join(dir, "none.json"), "--encoder-version", "enc", "--worker-python", "python", "--games", "2", "--record-games", "0", "--out", join(dir, "out")],
+    ...more,
+  ];
+  const run = (more: string[], ports = {}) => runProgressCli(flags(...more), () => undefined, datasetValidationPool, ports);
+
+  it("refuses an unknown mode, a search beside anchors, previous flags or the ablation, and a command with no search setup", async () => {
+    await expect(run(["--search-mode", "greedy"], { search: () => setupFor() })).rejects.toThrow(/argmax or sample/);
+    await expect(run(["--search-mode", "argmax", "--anchor", "0,a,b,c,d", "--anchor-games", "2"], { search: () => setupFor() })).rejects.toThrow(/evaluated alone/);
+    await expect(run(["--search-mode", "argmax", "--ablation-preview", "0,a,c", "--ablation-random-policy-id", "r"], { search: () => setupFor() })).rejects.toThrow(/evaluated alone/);
+    await expect(run(["--search-mode", "argmax"])).rejects.toThrow(/no search setup/);
+  });
+
+  it("needs the run's own teams to read an evaluation dataset, and asks for them", async () => {
+    const eval_dataset = ["--eval-dataset-dir", SOURCE, "--eval-dataset-hash", "0".repeat(64)];
+    await expect(run(eval_dataset)).rejects.toThrow(/own teams/);
+    const asked: string[] = [];
+    const ports = { run_teams: () => (asked.push("run_teams"), new Set<string>()) };
+    // The evaluation dataset is read after the ports are asked; the wrong hash then stops the command.
+    await expect(run(eval_dataset, ports)).rejects.toThrow();
+    expect(asked).toEqual(["run_teams"]);
   });
 });
