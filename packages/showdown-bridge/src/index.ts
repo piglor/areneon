@@ -515,10 +515,21 @@ export {
   type FeatureConfigs,
   type FeatureMemo,
   type FeatureRow,
+  type FeatureSetId,
   type FeatureSetIdentity,
   featureSetHash,
   featureSetIdentity,
 } from "./candidate-features.ts";
+export {
+  type CandidateFeatures2,
+  candidateFeatures2,
+  FEATURE_SET_2,
+  type FoePriorityRow,
+  type OrderReason,
+  type OwnPriorityRow,
+  type SpeedRow,
+  type ThreatRow,
+} from "./candidate-features-2.ts";
 export {
   checkTeacherSettings,
   planTeacher,
@@ -599,6 +610,7 @@ export {
   type WorldSourceResult,
   WorldMappingError,
 } from "./world-sampler.ts";
+export { TRAPPING_CHECK_FORMAT, createTrappingCheck, type TrapCandidate, type TrapLevel, type TrappingCheckContext, type TrappingCheckInput, type TrappingCheckPort } from "./trapping-check.ts";
 export { createReplyModel, REPLY_MODEL_FORMAT, ReplyModelError, type ReplyModel } from "./reply-model.ts";
 export {
   DROP_REASONS,
