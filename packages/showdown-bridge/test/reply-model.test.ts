@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { beforeAll, describe, expect, expectTypeOf, it } from "vitest";
 import { enumerateCandidates } from "../src/choices.ts";
+import { DamageAwareError, foeTargetKind } from "../src/damage-aware-view.ts";
 import { type DamageAnswer, DAMAGE_VALUE_FORMAT, damageValue } from "../src/damage-aware-score.ts";
 import type { Engine, PokemonSet } from "../src/engine.ts";
 import { GOLDEN_FORMAT, TEAMS_DIR } from "../src/golden.ts";
@@ -248,6 +249,16 @@ describe("worlds built from the committed channels, with the real probe", () => 
         `mean ${mean.toFixed(0)} ms, median ${(sorted[Math.floor(sorted.length / 2)] as number).toFixed(0)} ms, p95 ${(sorted[Math.floor(sorted.length * 0.95)] as number).toFixed(0)} ms, max ${(sorted[sorted.length - 1] as number).toFixed(0)} ms per world`,
     );
   }, 240_000); // 40 worlds with the real probe, a few hundred ms each on a shared machine
+});
+
+describe("foeTargetKind", () => {
+  it("sorts the request's target types by what they hit among the foes and refuses an unknown one", () => {
+    expect(["normal", "any", "adjacentFoe"].map(foeTargetKind)).toEqual(["single", "single", "single"]);
+    expect(foeTargetKind("randomNormal")).toBe("random");
+    expect(["allAdjacentFoes", "allAdjacent"].map(foeTargetKind)).toEqual(["every", "every"]);
+    expect(["self", "adjacentAlly", "foeSide", "all", undefined].map(foeTargetKind)).toEqual(["none", "none", "none", "none", "none"]);
+    expect(() => foeTargetKind("somethingNew")).toThrow(DamageAwareError);
+  });
 });
 
 describe("the formats the search identity names", () => {
