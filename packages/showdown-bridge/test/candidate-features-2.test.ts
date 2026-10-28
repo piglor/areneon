@@ -243,9 +243,6 @@ describe("priorities", () => {
     expect(features.own_priorities.map((r) => `${r.slot}/${r.move}/${r.mega}`).sort()).toEqual([...keys].sort());
     expect(features.own_priorities.some((r) => r.mega)).toBe(true);
     expect(features.foe_priorities.filter((r) => r.foe === foe.loc).map((r) => r.move).sort()).toEqual([...foe.revealed, ...reveal].sort());
-    const body = c.request.request as unknown as Body;
-    const status = (body.active as NonNullable<Body["active"]>).flatMap((a, slot) => a.moves.flatMap((m, k) => (dex.moves.get(m.id).category === "Status" ? [`${slot}/${k + 1}`] : [])));
-    for (const key of status) if ([...keys].some((k) => k.startsWith(`${key}/`))) expect(features.own_priorities.some((r) => `${r.slot}/${r.move}` === key)).toBe(true);
   });
 
   it("equals the probe's own key, for Protect, a terrain-dependent move and plain moves, on a real probe", () => {
@@ -407,9 +404,9 @@ describe("threats", () => {
     expect(features.threats.every((r) => r.own < 2 || switchIns.includes(r.own))).toBe(true);
   });
 
-  it("equals a direct probeMechanics damage query on the same sets, with the own Pokemon at its exact hit points", () => {
-    const { c, foe } = foeCase(1, hasMega);
-    const move = poolMove(foe.species, damaging("normal"), foe.revealed);
+  it.each(["normal", "allAdjacentFoes", "randomNormal"])("equals a direct probeMechanics damage query on the same sets, with the own Pokemon at its exact hit points: %s target", (target) => {
+    const { c, foe } = foeCase(1, hasMega, 1, (f) => vocabulary.roster.some((r) => r.id === f.species && r.moves.some((id) => damaging(target)(dex.moves.get(id)))));
+    const move = poolMove(foe.species, damaging(target), foe.revealed);
     const channel = channelWith(c, { before: revealing(c, foe, [move]), request: (body) => void ((body.side.pokemon[0] as { condition: string }).condition = "37/100 par") });
     const rowQueries: ParsedMechanicsQuery[] = [];
     candidateFeatures(engine, configs({ probe: stubProbe({ log: rowQueries }) }), channel, teamOf(c) as never, candidatesOf(c));
@@ -421,11 +418,13 @@ describe("threats", () => {
     expect(stand.threats.length).toBeGreaterThan(0);
     const real = candidateFeatures2(engine, configs({ probe: probeMechanics }), channel, teamOf(c) as never, candidatesOf(c));
     expect(real.threats.length).toBe(threatQueries.length);
-    for (const query of threatQueries) {
-      const defender = (query.query as { defender: { hp: number | null; status: string | null } }).defender;
-      const mine = stand.threats.length > 0 && defender.status === "par"; // the first active carries the edited condition
-      if (mine) expect(defender.hp).toBe(37);
-    }
+    // the first active carries the edited condition: its queries declare 37 hit points and paralysis; a Mega variant declares the defender Mega Evolved
+    const defenders = threatQueries.map((q) => (q.query as { defender: { hp: number | null; status: string | null; mega: boolean } }).defender);
+    const edited = defenders.filter((d) => d.status === "par");
+    expect(edited.length).toBeGreaterThan(0);
+    for (const d of edited) expect(d.hp).toBe(37);
+    expect(defenders.filter((d) => d.mega).length).toBe(stand.threats.filter((r) => r.mega).length);
+    expect(stand.threats.some((r) => r.mega)).toBe(true);
     // the rows are the real probe's own numbers: as multisets, the order of the queries being the order the builder asked in
     const direct = threatQueries.map((query) => probeMechanics({ engine, config: mechanics, snapshot }, query).result);
     const values = (row: (typeof real.threats)[number]) => (row.kind === "computed" ? [row.mean_ppm, row.max_ppm, row.min_ppm, row.ohko_rolls ?? -1].join("/") : row.reason);
@@ -437,6 +436,17 @@ describe("threats", () => {
     expect(real.threats.map(values).sort()).toEqual(expected.sort());
     expect(real.threats.some((row) => row.own === 0 && row.kind === "computed")).toBe(true);
   }, 240_000); // the real probe: 33 clones per damage query
+
+  it("gives a forced switch threats for exactly the Pokemon its switch candidates name", () => {
+    const c = forcedSwitches().find((candidate) => foesOf(candidate).some((f) => f.revealed.length <= 3)) as Captured;
+    const foe = foesOf(c).find((f) => f.revealed.length <= 3) as Foe;
+    const move = poolMove(foe.species, damaging("normal"), foe.revealed);
+    const features = build(c, {}, undefined, candidatesOf(c), channelWith(c, { before: revealing(c, foe, [move]) }));
+    const named = [...new Set(candidatesOf(c).flatMap((x) => parseJointChoice(x.choice).flatMap((p) => (p.kind === "switch" ? [p.to - 1] : []))))].sort((x, y) => x - y);
+    expect(named.length).toBeGreaterThan(0);
+    expect([...new Set(features.threats.filter((r) => r.move === move).map((r) => r.own))]).toEqual(named);
+    expect([...new Set(features.speeds.map((r) => r.own))]).toEqual(named);
+  });
 
   it("turns an unsupported damage answer into an unsupported row with the probe's reason", () => {
     const { c, foe } = foeCase(1);
@@ -493,7 +503,7 @@ describe("requests with nothing to feature", () => {
 });
 
 describe("the declared state: Trick Room, Tailwind, paralysis, a Mega's Speed and an exact tie equal a move-against-move query", () => {
-  /** Every computed speed row equals the real probe's order of the same two Pokemon with a priority-0 move each. */
+  /** Every computed speed row of the builder equals the real probe's order of the same two Pokemon with a priority-0 move each. */
   function crossCheck(c: Captured, channel: PlayerChannel, team: readonly PokemonSet[] = teamOf(c)): { rows: CandidateFeatures2["speeds"] } {
     const log: ParsedMechanicsQuery[] = [];
     const logging: Probe = (context, query) => {
@@ -502,33 +512,31 @@ describe("the declared state: Trick Room, Tailwind, paralysis, a Mega's Speed an
     };
     const features = candidateFeatures2(engine, configs({ probe: logging }), channel, team as never, candidatesOf(c));
     expect(features.speeds.length).toBeGreaterThan(0);
-    for (const row of features.speeds) {
-      if (row.kind !== "computed") continue;
-      const query = log.find((q) => q.query.kind === "speed_order" && q.query.sides[0].length >= 1) as ParsedMechanicsQuery;
-      void query;
-    }
-    // re-derive each row from the logged query that produced it (own combatant index within its query)
-    const asked = log.filter((q) => q.query.kind === "speed_order");
+    // The queries come in the builder's order: the non-Mega own Pokemon two at a time, in position order, then each Mega variant alone.
+    const positions = [...new Set(features.speeds.filter((r) => !r.mega).map((r) => r.own))].sort((x, y) => x - y);
+    const megaPositions = [...new Set(features.speeds.filter((r) => r.mega).map((r) => r.own))].sort((x, y) => x - y);
+    const chunks = Math.ceil(positions.length / 2);
+    expect(log.length).toBe(chunks + megaPositions.length);
+    const foeLocs = foesOf(c).map((f) => f.loc);
     let compared = 0;
-    for (const q of asked) {
+    log.forEach((q, k) => {
       const sq = q.query as SpeedQuery;
-      sq.sides[0].forEach((own, i) => {
+      const owns = k < chunks ? positions.slice(2 * k, 2 * k + 2) : [megaPositions[k - chunks] as number];
+      expect(sq.sides[0].length).toBe(owns.length);
+      owns.forEach((position, i) => {
         sq.sides[1].forEach((_, j) => {
-          const direct = probeMechanics({ engine, config: mechanics, snapshot }, {
-            ...q,
-            query: { ...sq, actions: [{ side: 0, position: i, move: "tackle", mega: false }, { side: 1, position: j, move: "tackle", mega: false }] },
-          } as ParsedMechanicsQuery).result;
-          const batch = probeMechanics({ engine, config: mechanics, snapshot }, q).result;
-          if (direct.kind !== "computed" || direct.answer.kind !== "speed_order" || batch.kind !== "computed" || batch.answer.kind !== "speed_order") throw new Error("the probe gave no order");
-          const groupOf = (answer: typeof direct.answer, action: number) => answer.groups.findIndex((g) => g.includes(action));
-          const moveRelation = Math.sign(groupOf(direct.answer, 1) - groupOf(direct.answer, 0));
-          const switchRelation = Math.sign(groupOf(batch.answer, sq.sides[0].length + j) - groupOf(batch.answer, i));
-          expect(switchRelation, `own ${i} against foe ${j}${own.mega ? " (Mega)" : ""}`).toBe(moveRelation);
+          const direct = probeMechanics({ engine, config: mechanics, snapshot }, { ...q, query: { ...sq, actions: [{ side: 0, position: i, move: "tackle", mega: false }, { side: 1, position: j, move: "tackle", mega: false }] } } as ParsedMechanicsQuery).result;
+          if (direct.kind !== "computed" || direct.answer.kind !== "speed_order") throw new Error("the probe gave no order");
+          const answer = direct.answer;
+          const group = (action: number) => answer.groups.findIndex((g) => g.includes(action));
+          const sign = Math.sign(group(1) - group(0));
+          const row = features.speeds.find((r) => r.own === position && r.mega === (k >= chunks) && r.foe === foeLocs[j]);
+          expect(row, `own ${position} against foe ${foeLocs[j]}`).toMatchObject({ kind: "computed", relation: sign > 0 ? "own_first" : sign === 0 ? "tie" : "foe_first" });
           compared += 1;
         });
       });
-    }
-    expect(compared).toBeGreaterThan(0);
+    });
+    expect(compared).toBe(features.speeds.length);
     return { rows: features.speeds };
   }
   const relations = (rows: CandidateFeatures2["speeds"]) => rows.map((r) => (r.kind === "computed" ? r.relation : r.reason));
@@ -544,6 +552,10 @@ describe("the declared state: Trick Room, Tailwind, paralysis, a Mega's Speed an
     // Trick Room reverses who is faster
     const flip = (r: string) => (r === "own_first" ? "foe_first" : r === "foe_first" ? "own_first" : r);
     expect(relations(room.rows)).toEqual(relations(plain.rows).map(flip));
+    // Tailwind on the own side and paralysis on a foe can only make the own Pokemon faster against it
+    const firsts = (rows: CandidateFeatures2["speeds"]) => relations(rows).filter((r) => r === "own_first").length;
+    expect(firsts(wind.rows)).toBeGreaterThanOrEqual(firsts(plain.rows));
+    expect(firsts(par.rows)).toBeGreaterThanOrEqual(firsts(plain.rows));
     expect(relations(wind.rows).length).toBe(plain.rows.length);
     expect(relations(par.rows).length).toBe(plain.rows.length);
   }, 180_000); // the real probe: a scenario battle per query

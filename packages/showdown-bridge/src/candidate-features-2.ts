@@ -190,7 +190,7 @@ function threatRows(view: DamageView, state: PublicState, entries: readonly Entr
   for (const entry of entries) {
     for (const mega of variants(entry)) {
       for (const foe of foes) {
-        for (const move of foe.assumed.revealed_moves) {
+        for (const move of new Set(foe.assumed.revealed_moves)) {
           const data = view.dex.moves.get(move);
           if (!data.exists || data.category === "Status" || foeTargetKind(data.target) === "none") continue;
           out.push({ own: entry.position, mega, foe: foe.loc, move, ...damageValues(view.damageResult(foe.fighter, asMega(entry, mega), move, state, false)) });
