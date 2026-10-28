@@ -14,7 +14,7 @@ import { loadEngine } from "./engine.ts";
 import { type Json, jcs } from "./canonical-json.ts";
 import { startShard, type ShardProcess, UsageError, writeShardFile, type PoolSource } from "./generation-cli.ts";
 import { GenerationError, type PoolRequest, type Shard, trainingTeamPool } from "./league-generation.ts";
-import { checkTeacherSettings, playTeacherEntries, playTeacherRun, teacherContext, type TeacherEntry, type TeacherSettings, writeTeacherRun } from "./teacher-generation.ts";
+import { checkTeacherSettings, TEACHER_VERSIONS, type TeacherVersion, playTeacherEntries, playTeacherRun, teacherContext, type TeacherEntry, type TeacherSettings, writeTeacherRun } from "./teacher-generation.ts";
 
 const MAX_PARALLEL = 64;
 const SHARD_FILE = "shard.jsonl";
@@ -27,6 +27,7 @@ const FLAGS = {
   "actor-rule-games": { type: "string" },
   "max-turns": { type: "string" },
   "epsilon-ppm": { type: "string" },
+  teacher: { type: "string" },
   "preview-ms": { type: "string" },
   "battle-ms": { type: "string" },
   "excluded-abilities": { type: "string" },
@@ -68,6 +69,10 @@ export async function runTeacherCli(
   }
   for (const name of ["run-key", "format", "out"] as const) if (values[name] === undefined) throw new UsageError(`--${name} is required`);
   if ((values.dataset === undefined) !== (values["dataset-hash"] === undefined)) throw new UsageError("--dataset and --dataset-hash go together");
+  // `--teacher damage-aware@v1|damage-aware@v3` (#1182); absent is v1 and leaves every byte of today's runs.
+  const teacher = values.teacher ?? "damage-aware@v1";
+  const teacher_version = TEACHER_VERSIONS.find((version) => `damage-aware@${version}` === teacher) as TeacherVersion | undefined;
+  if (teacher_version === undefined) throw new UsageError(`--teacher must be one of ${TEACHER_VERSIONS.map((version) => `damage-aware@${version}`).join(", ")}`);
   const settings: TeacherSettings = {
     run_key: values["run-key"] as string,
     format_id: values.format as string,
@@ -76,6 +81,7 @@ export async function runTeacherCli(
     actor_rule_games: integer(values, "actor-rule-games", "0"),
     max_turns: integer(values, "max-turns", "100"),
     epsilon_ppm: integer(values, "epsilon-ppm", "0"),
+    ...(teacher_version === "v1" ? {} : { teacher_version }),
     latency_budget_ms: { preview_ms: integer(values, "preview-ms", "30000"), battle_ms: integer(values, "battle-ms", "30000") },
   };
   try {

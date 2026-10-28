@@ -8,7 +8,11 @@ import { interimPoolSource, UsageError } from "../src/generation-cli.ts";
 import { GOLDEN_FORMAT, firstLegal } from "../src/golden.ts";
 import { GenerationError, trainingTeamPool, type TrainingPool } from "../src/league-generation.ts";
 import { loadEngine } from "../src/engine.ts";
-import { type BattleRecord, runBattle } from "../src/runner.ts";
+import { type Actor, type BattleRecord, runBattle } from "../src/runner.ts";
+import { damageAwareSetup } from "../src/league-generation.ts";
+import { damageAwareIdentity, damageAwareIdentityHash } from "../src/damage-aware-identity.ts";
+import { resolveFormat } from "../src/formats.ts";
+import { readerSha256 } from "@areneon/public-state";
 import { loadTrainingSet, TrainingLoaderError } from "../src/training-loader.ts";
 import { interimTeacherPool, runTeacherCli } from "../src/teacher-cli.ts";
 import {
@@ -224,6 +228,76 @@ describe("exploration", () => {
   }, 120_000);
 });
 
+describe("the damage-aware@v3 teacher (#1182)", () => {
+  const v3 = (change: Partial<TeacherSettings> = {}): TeacherSettings => settings({ teacher_version: "v3", games: 1, random_games: 0, ...change });
+  const cache: { run?: Awaited<ReturnType<typeof playTeacherRun>> } = {};
+  const run = async () => (cache.run ??= await playTeacherRun({ engine, settings: v3(), pool, stream_path: join(dir, "v3a", "stream.jsonl") }));
+
+  it("names the teacher damage-aware@v3 (and its exploring identity) and leaves the default v1", () => {
+    expect(teacherPolicyId(0, "v3")).toBe("damage-aware@v3");
+    expect(teacherPolicyId(50_000, "v3")).toBe("damage-aware@v3-eps50000");
+    expect(teacherPolicyId(0)).toBe("damage-aware@v1");
+    expect(() => checkTeacherSettings({ ...settings(), teacher_version: "v2" as never })).toThrow(/v1 or v3/);
+  });
+
+  it("writes a learner-ready synthetic set of v3, with v3's baseline identity; v1 cannot load it", async () => {
+    mkdirSync(join(dir, "v3a"), { recursive: true });
+    const result = await run();
+    expect(result.set).toMatchObject({ data_class: "synthetic", learner_ready: true, behaviour_policy_id: "damage-aware@v3" });
+    expect(result.teacher.policy_id).toBe("damage-aware@v3");
+    const ids = new Set(result.episodes.map((episode) => episode.provenance.behaviour_policy_id));
+    expect([...ids]).toEqual(["damage-aware@v3"]);
+    const setup = damageAwareSetup(engine, GOLDEN_FORMAT, "v3");
+    const manifest = resolveFormat(engine, GOLDEN_FORMAT, setup.snapshot).manifest;
+    const identity = damageAwareIdentityHash(damageAwareIdentity({ config: setup.config, mechanics: setup.mechanics, manifest, reader_sha256: readerSha256() }));
+    expect(result.teacher.identity_hash).toBe(identity);
+    const input = { episodes: result.episodes, evaluation_manifests: [], known_synthetic: pool.known_synthetic };
+    await expect(loadTrainingSet({ ...input, behaviour_policy_id: "damage-aware@v1" })).rejects.toThrow(TrainingLoaderError);
+  }, 120_000);
+
+  it("is byte-identical on a rerun and across game processes", async () => {
+    const result = await run();
+    mkdirSync(join(dir, "v3b"), { recursive: true });
+    mkdirSync(join(dir, "v3c"), { recursive: true });
+    writeTeacherRun(join(dir, "v3a"), result, null);
+    const two = v3({ games: 2 });
+    const b = await playTeacherRun({ engine, settings: two, pool, stream_path: join(dir, "v3b", "stream.jsonl") });
+    writeTeacherRun(join(dir, "v3b"), b, null);
+    const context = teacherContext(engine, two);
+    const halves = await Promise.all([0, 1].map((index) => playTeacherEntries({ engine, settings: two, pool }, context, { index, of: 2 })));
+    const c = await playTeacherRun({ engine, settings: two, pool, stream_path: join(dir, "v3c", "stream.jsonl"), shard: { index: 0, of: 2 }, others: Promise.resolve(halves[1] as TeacherEntry[]) });
+    writeTeacherRun(join(dir, "v3c"), c, null);
+    expect(digest(join(dir, "v3c"))).toEqual(digest(join(dir, "v3b")));
+    const again = await playTeacherRun({ engine, settings: two, pool });
+    expect(again.training_set_hash).toBe(b.training_set_hash);
+  }, 240_000);
+
+  it("plays differently from v1 on the same channel at some request (the version is in play)", async () => {
+    // One seat plays v3 while a v1 actor of the same seat is fed the same requests and contexts.
+    const c1 = teacherContext(engine, settings());
+    const c3 = teacherContext(engine, v3());
+    let differing = 0;
+    for (let g = 0; g < 4 && differing === 0; g++) {
+      const shadow = c1.makeActor("p1", 1);
+      const lead = c3.makeActor("p1", 1);
+      const actor: Actor = async (request, context) => {
+        const [a, b] = [await lead(request, context), await shadow(request, context)];
+        if (a !== b) differing++;
+        return a;
+      };
+      await runBattle({
+        engine,
+        formatId: GOLDEN_FORMAT,
+        seed: `sodium,${String(g).padStart(32, "0")}`,
+        teams: { p1: structuredClone(pool.teams[g] as TrainingPool["teams"][number]), p2: structuredClone(pool.teams[g + 4] as TrainingPool["teams"][number]) },
+        actors: { p1: actor, p2: firstLegal },
+        maxTurns: 12,
+      });
+    }
+    expect(differing).toBeGreaterThan(0);
+  }, 240_000);
+});
+
 describe("hidden information (ADR-018 section 3, reused on the teacher)", () => {
   /** The p1 choices a game recorded, by request number, for requests whose p1 channel prefix is `lines`. */
   const choiceAt = (record: BattleRecord, seq: number): string | undefined => record.choices.find((c) => c.player === "p1" && c.request_seq === seq)?.choice;
@@ -285,6 +359,16 @@ describe("teacher-run command", () => {
     expect(() => interimTeacherPool(engine, { format_id: GOLDEN_FORMAT, generation: { excluded_abilities: [] }, team_dataset: { path: "p", dataset_hash: "a".repeat(64) } })).toThrow(/team-dataset/);
     expect(interimPoolSource).toBeTypeOf("function");
   });
+
+  it("takes --teacher damage-aware@v1|v3 and refuses anything else as a usage error", async () => {
+    await expect(runTeacherCli([...flags("x"), "--teacher", "damage-aware@v2"], quiet)).rejects.toThrow(/--teacher must be one of damage-aware@v1, damage-aware@v3/);
+    await expect(runTeacherCli([...flags("x"), "--teacher", "v3"], quiet)).rejects.toThrow(UsageError);
+    const lines: string[] = [];
+    expect(await runTeacherCli(flags("v3one", ["--games", "1", "--random-games", "0", "--teacher", "damage-aware@v3"]), (line) => lines.push(line))).toBe(0);
+    const summary = JSON.parse(lines[0] as string) as Record<string, unknown>;
+    expect(summary.teacher_policy_id).toBe("damage-aware@v3");
+    expect(JSON.parse(readFileSync(join(out("v3one"), "training-set.json"), "utf8"))).toMatchObject({ behaviour_policy_id: "damage-aware@v3", learner_ready: true });
+  }, 240_000);
 
   it("exits 1 when the exclusions leave no team", async () => {
     const abilities = [...new Set(trainingTeamPool(engine).teams.flatMap((team) => team.map((set) => set.ability)))].join(",");
