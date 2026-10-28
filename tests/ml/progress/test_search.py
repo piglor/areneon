@@ -160,10 +160,14 @@ def test_the_stored_games_carry_both_seats_counts_and_a_tampered_one_is_refused(
     stored = layout.read_json(target / "games" / name)
     assert stored["search"]["seat"] == "p1"
     assert stored["opponent_search"]["seat"] == "p2"
-    for change, message in (
-        (lambda g: g["search"]["counts"].__setitem__("turns", 1), "match's identity"),
-        (lambda g: g.pop("opponent_search"), "match's identity"),
-    ):
+
+    def other_turns(g: dict[str, Any]) -> None:
+        g["search"]["counts"]["turns"] = 1
+
+    def no_control(g: dict[str, Any]) -> None:
+        g.pop("opponent_search")
+
+    for change, message in ((other_turns, "match's identity"), (no_control, "match's identity")):
         broken = copy.deepcopy(stored)
         change(broken)
         # the stored game's own rules pass; the tie to the row and match is the verify step's
