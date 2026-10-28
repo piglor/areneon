@@ -237,6 +237,38 @@ describe("playProgress", () => {
       expect(rest(a)).toBe(rest(plain));
     }, 300_000);
 
+    it("plays damage-aware@v3 under match ids that cannot collide with v1's, with its own identity hash (#1183)", async () => {
+      const v3 = damageAwareSetup(engine, FORMAT, "v3");
+      const client = actorClient();
+      const result = await playProgress(options({ client, record_games: 2, damage_aware: damage({ setup: v3, version: "v3" }) }));
+      const { record } = result;
+      expect(record.matches.map((m) => m.match_id)).toEqual(["actor-rule-argmax", "actor-rule-sample", "damage-aware-v3-argmax", "damage-aware-v3-sample", "random-legal-argmax", "random-legal-sample"]);
+      for (const mode of PROGRESS_MODES) {
+        const match = record.matches.find((m) => m.match_id === `damage-aware-v3-${mode}`) as (typeof record.matches)[number];
+        expect(match.opponent).toEqual({ kind: "baseline", policy_id: "damage-aware@v3" });
+        const rows = record.games.filter((row) => row.match_id === match.match_id);
+        expect(rows.every((row) => row.baseline_counts !== undefined)).toBe(true);
+        expect(match.baseline?.counts.decisions).toBe(rows.reduce((sum, row) => sum + (row.baseline_counts?.decisions ?? 0), 0));
+        for (const [index, row] of rows.entries()) {
+          const stored = result.game_records.get(`${match.match_id}-${index}.json`) as ProgressGameRecord;
+          const seat = row.candidate_seat === "p1" ? "p2" : "p1";
+          expect(stored.policies[seat]).toBe("damage-aware@v3");
+          expect(stored.baseline?.seat).toBe(seat);
+        }
+      }
+      const v1 = await playProgress(options({ record_games: 2, damage_aware: damage() }));
+      const identity = (r: typeof result) => r.record.matches.find((m) => m.baseline !== undefined)?.baseline?.identity_hash;
+      expect(identity(result)).toMatch(/^[0-9a-f]{64}$/);
+      expect(identity(result)).not.toBe(identity(v1));
+      // Same pairs, seeds and seats as v1: the other matches are identical, and a rerun is byte-identical.
+      const rest = (r: typeof result) => jcs(r.record.matches.filter((m) => m.baseline === undefined) as unknown as Json);
+      expect(rest(result)).toBe(rest(v1));
+      const again = await playProgress(options({ record_games: 2, damage_aware: damage({ setup: v3, version: "v3" }) }));
+      expect(jcs(again.record as unknown as Json)).toBe(jcs(result.record as unknown as Json));
+      // A record that is not v3's cannot play as v3 (the actor refuses the policy id).
+      await expect(playProgress(options({ damage_aware: damage({ version: "v3" }) }))).rejects.toThrow(/names another record version/);
+    }, 600_000);
+
     it("fails the evaluation closed when a match passes its wall-clock budget", async () => {
       let now = 0;
       // Each reading of the clock moves a minute on: the first game of the first damage-aware match is already past a 90 s budget.

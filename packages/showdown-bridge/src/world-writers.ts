@@ -50,6 +50,7 @@ export const STATE_ITEMS = {
   locked_moves: { classes: ["R"], needs: "ids" },
   slot_conditions: { classes: ["R"], needs: "ids" },
   substitute: { classes: ["R"], needs: "ids" },
+  trapping: { classes: ["R"], needs: "ids" },
   truant_slow_start: { classes: ["R"], needs: "ids" },
   unadmitted_id: { classes: ["R"] },
   unavailable_mechanics: { classes: ["R"], needs: "lines" },

@@ -60,6 +60,13 @@ export const PROGRESS_BASELINES = [
 
 /** The damage-aware baseline's policy id (ADR-018 section 5; the opt-in third baseline of the progress evaluation). */
 export const DAMAGE_AWARE_POLICY_ID = damageAwarePolicyId("v1");
+/** The versions of the baseline a progress evaluation can play (#1183): v1 is the default and keeps every record's bytes. */
+export const DAMAGE_AWARE_VERSIONS = ["v1", "v3"] as const;
+export type DamageAwareVersion = (typeof DAMAGE_AWARE_VERSIONS)[number];
+/** The baseline's policy id for a version: `damage-aware@v1` or `damage-aware@v3`. */
+export const damageAwareVersionPolicyId = (version: DamageAwareVersion): string => damageAwarePolicyId(version);
+/** The opponent id its matches are named by: `damage-aware` (v1, as always) or `damage-aware-v3`, so the ids cannot collide. */
+export const damageAwareMatchPrefix = (version: DamageAwareVersion): string => (version === "v1" ? "damage-aware" : `damage-aware-${version}`);
 
 /** What the damage-aware baseline seat reports of one game: its identity hash and counts. */
 export interface BaselineReport {
@@ -162,6 +169,8 @@ export interface ProgressOptions {
    */
   damage_aware?: {
     setup: DamageAwareSetup;
+    /** Which record the baseline plays (#1183); absent is `v1`, whose matches and bytes are unchanged. Its matches are `damage-aware-v3-argmax` and `-sample` for v3. */
+    version?: DamageAwareVersion;
     /** The most wall-clock milliseconds one damage-aware match may take. */
     match_budget_ms: number;
     /** The clock the budget is measured with (default `performance.now`); a test seam. */
@@ -214,11 +223,12 @@ export function rowOf(match_id: string, game: number, pair: number, candidate: P
  * checks the policy id and the identity before it hands back the game's counts. The progress evaluation and the
  * private test play it the same way and differ only in the class they stamp on it.
  */
-export function damageAwareBaseline(args: { engine: Engine; setup: DamageAwareSetup; manifest: ReturnType<typeof resolveFormat>["manifest"]; data_class: "synthetic" | "private"; budget: LatencyBudget }): {
+export function damageAwareBaseline(args: { engine: Engine; setup: DamageAwareSetup; manifest: ReturnType<typeof resolveFormat>["manifest"]; data_class: "synthetic" | "private"; budget: LatencyBudget; policy_id?: string }): {
   identity: string;
   seat: (baselineSeed: number) => { seat: Actor; report: () => BaselineReport };
 } {
   const { engine, setup, manifest, data_class, budget } = args;
+  const policyId = args.policy_id ?? DAMAGE_AWARE_POLICY_ID;
   const identity = damageAwareIdentityHash(damageAwareIdentity({ config: setup.config, mechanics: setup.mechanics, manifest, reader_sha256: readerSha256() }));
   return {
     identity,
@@ -227,14 +237,14 @@ export function damageAwareBaseline(args: { engine: Engine; setup: DamageAwareSe
         ...setup,
         engine,
         data_class,
-        commit: DAMAGE_AWARE_POLICY_ID.slice(DAMAGE_AWARE_POLICY_ID.indexOf("@") + 1),
+        commit: policyId.slice(policyId.indexOf("@") + 1),
         seed,
       });
       return {
         seat: guardActor(actor, { role: "scripted", latency_budget: budget }),
         report: () => {
           const { policy_id, identity_hash, counts } = actor.report();
-          if (policy_id !== DAMAGE_AWARE_POLICY_ID) throw new ProgressError(`the baseline plays as ${policy_id}, not ${DAMAGE_AWARE_POLICY_ID}`);
+          if (policy_id !== policyId) throw new ProgressError(`the baseline plays as ${policy_id}, not ${policyId}`);
           if (identity_hash !== identity) throw new ProgressError("a damage-aware game carries another baseline identity hash than its records give");
           // probe_refusals is written only above 0, so a baseline without refusals keeps the record's bytes.
           const { probe_refusals, ...rest } = counts;
@@ -396,14 +406,16 @@ export async function playProgress(options: ProgressOptions): Promise<ProgressRe
     if (!Number.isSafeInteger(damage.match_budget_ms) || damage.match_budget_ms < 1) throw new ProgressError("the damage-aware match budget must be a positive whole number of milliseconds");
     if (damage.setup.config.epsilon_ppm !== 0) throw new ProgressError("the damage-aware baseline plays an evaluation with epsilon_ppm 0: it draws nothing");
     if (damage.setup.config.format_id !== config.format_id) throw new ProgressError("the damage-aware baseline's records are for another format");
-    const baseline = damageAwareBaseline({ engine, setup: damage.setup, manifest, data_class: "synthetic", budget });
+    const damageVersion = damage.version ?? "v1";
+    const damagePolicy = damageAwareVersionPolicyId(damageVersion);
+    const baseline = damageAwareBaseline({ engine, setup: damage.setup, manifest, data_class: "synthetic", budget, policy_id: damagePolicy });
     opponents.push({
-      id: "damage-aware",
+      id: damageAwareMatchPrefix(damageVersion),
       budget_ms: damage.match_budget_ms,
-      opponent: () => ({ kind: "baseline", policy_id: DAMAGE_AWARE_POLICY_ID }),
+      opponent: () => ({ kind: "baseline", policy_id: damagePolicy }),
       // A fresh actor per game: it keeps the reader's state, the game's memo and its counts.
       seat: (_mode, game) => baseline.seat(progressGameStreams(planKey, game).baseline_seed),
-      policies: () => DAMAGE_AWARE_POLICY_ID,
+      policies: () => damagePolicy,
       begin: () => Promise.resolve(),
     });
   }

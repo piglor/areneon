@@ -21,6 +21,7 @@ const data: WorldFactsData = {
   swap_side_conditions: ["reflect", "stealthrock", "tailwind"],
   toxic_stage_max: 15,
   action_sources: ["move: Round", "ability: Dancer"],
+  partial_trap_moves: ["firespin", "wrap"],
 };
 
 const HEAD = [
@@ -46,7 +47,7 @@ const code = (fn: () => unknown): string => {
 
 describe("identity", () => {
   it("has a format id and a file hash of its own, and leaves the reader's bytes alone", () => {
-    expect(WORLD_FACTS_FORMAT).toBe("world-facts/2");
+    expect(WORLD_FACTS_FORMAT).toBe("world-facts/3");
     expect(worldFactsSha256()).toBe(createHash("sha256").update(readFileSync(WORLD_FACTS_PATH)).digest("hex"));
     expect(worldFactsSha256()).not.toBe(readerSha256());
     expect(readerSha256()).toBe(createHash("sha256").update(readFileSync(INTERPRETER_PATH)).digest("hex"));
@@ -358,6 +359,47 @@ describe("sources, volatiles and move uses (world-facts/2)", () => {
     ], );
     expect(f.opponent.move_uses).toEqual({ Delta: { protect: 1 }, Gamma: { tackle: 2 } });
     expect(f.own.move_uses).toEqual({ Alpha: { ember: 1 } });
+  });
+});
+
+describe("locks (world-facts/3)", () => {
+  const locks = (lines: string[], side: "own" | "opponent" = "opponent", letter = "a"): string[] => (run("p1", [...HEAD, ...lines])[side].active[letter]?.locks ?? []);
+
+  it("holds mustrecharge from -mustrecharge until the recharge turn's cant line", () => {
+    expect(locks(["|move|p2a: Gamma|Hyper Beam|p1a: Alpha", "|-mustrecharge|p2a: Gamma", "|turn|2"])).toEqual(["mustrecharge"]);
+    expect(locks(["|-mustrecharge|p2a: Gamma", "|turn|2", "|cant|p2a: Gamma|recharge", "|turn|3"])).toEqual([]);
+  });
+
+  it("holds twoturnmove from -prepare until the Pokemon's next move or cant line, and not for a premajor message", () => {
+    const first = ["|move|p2a: Gamma|Fly||[still]", "|-prepare|p2a: Gamma|Fly", "|turn|2"];
+    expect(locks(first)).toEqual(["twoturnmove"]);
+    expect(locks([...first, "|move|p2a: Gamma|Fly|p1a: Alpha|[from]lockedmove", "|turn|3"])).toEqual([]);
+    expect(locks([...first, "|cant|p2a: Gamma|flinch", "|turn|3"])).toEqual([]);
+    expect(locks([...first, "|move|p1a: Alpha|Tackle|p2a: Gamma", "|move|p2a: Gamma|Roost|p2a: Gamma|[from] move: Metronome"])).toEqual(["twoturnmove"]);
+    expect(locks(["|-prepare|p2a: Gamma|Chilly Reception|[premajor]"])).toEqual([]);
+    expect(locks([...first, "|switch|p2a: Epsilon|Epsilon, L50|100/100"])).toEqual([]);
+    expect(locks([...first, "|faint|p2a: Gamma"])).toEqual([]);
+  });
+
+  it("holds partiallytrapped on the target of a listed move until -end, and drops it when the trapper leaves", () => {
+    const trap = ["|move|p1a: Alpha|Fire Spin|p2a: Gamma", "|-activate|p2a: Gamma|move: Fire Spin|[of] p1a: Alpha"];
+    expect(locks(trap)).toEqual(["partiallytrapped"]);
+    expect(locks([...trap, "|-end|p2a: Gamma|Fire Spin|[partiallytrapped]"])).toEqual([]);
+    expect(locks([...trap, "|switch|p1a: Zeta|Zeta, L50|100/100"])).toEqual([]);
+    expect(locks(["|-activate|p2a: Gamma|move: Protect"])).toEqual([]);
+  });
+
+  it("holds trapped on the target and trapper on the Pokemon whose move did it", () => {
+    const block = ["|move|p1a: Alpha|Block|p2a: Gamma", "|-activate|p2a: Gamma|trapped"];
+    expect(locks(block)).toEqual(["trapped"]);
+    expect(locks(block, "own")).toEqual(["trapper"]);
+    expect(locks([...block, "|faint|p1a: Alpha"])).toEqual([]);
+    expect(locks([...block, "|move|p1b: Beta|Tackle|p2a: Gamma"], "own")).toEqual(["trapper"]);
+  });
+
+  it("refuses a trap whose trapper the channel does not show", () => {
+    expect(code(() => run("p1", [...HEAD, "|-activate|p2a: Gamma|move: Wrap|[of] p1c: Nobody"]))).toBe("unattributable_line");
+    expect(code(() => run("p1", [...HEAD, "|-activate|p2a: Gamma|trapped"]))).toBe("unattributable_line");
   });
 });
 

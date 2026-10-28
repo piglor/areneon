@@ -12,9 +12,11 @@ const ROOT = join(import.meta.dirname, "..", "..", "..");
 export const ORACLE_IDENTIFIERS = ["copyRandomState", "captureDecisions", "translateChoice", "stateDelta", "OracleSpec", "prng.clone("] as const;
 
 /** Files outside tests that may rebuild a battle from JSON: each forks a battle IT built (a scenario world or a probe clone), reviewed here. */
-export const FROM_JSON_ALLOWED = ["choice-judge.ts", "mechanics-damage.ts", "reply-model.ts"];
+export const FROM_JSON_ALLOWED = ["choice-judge.ts", "mechanics-damage.ts", "reply-model.ts", "search-turn.ts"];
 /** Files outside tests that may assign a battle's `prng`: the mechanics probes install their own recording source. */
-export const PRNG_ASSIGN_ALLOWED = ["mechanics-damage.ts", "mechanics-speed.ts"];
+export const PRNG_ASSIGN_ALLOWED = ["mechanics-damage.ts", "mechanics-speed.ts", "search-turn.ts"];
+// search-turn.ts (ADR-026 slice R): clones the search's OWN scenario world (a battle the world builder made, never the live battle) and installs
+// the declared per-world engine seed (`search-engine/1`, the harness's search stream) as its generator; it copies no random state from any battle.
 
 export interface Finding {
   file: string;

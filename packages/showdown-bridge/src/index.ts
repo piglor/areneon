@@ -80,7 +80,7 @@ export {
   writeTrainingStream,
 } from "./training-loader.ts";
 export { interimPoolSource, type PoolSource, runGenerationCli, UsageError } from "./generation-cli.ts";
-export { DAMAGE_AWARE_V2_POLICY_ID, type DamageAwareSetup, damageAwareSetup, damageAwareSetupV2, type FeatureSetup, featureSetup, GenerationError, type PoolRequest, type TrainingPool as GenerationTeamPool, playGeneration } from "./league-generation.ts";
+export { DAMAGE_AWARE_V2_POLICY_ID, DAMAGE_AWARE_V3_POLICY_ID, type DamageAwareSetup, damageAwareSetup, damageAwareSetupV2, type FeatureSetup, featureSetup, GenerationError, type PoolRequest, type TrainingPool as GenerationTeamPool, playGeneration } from "./league-generation.ts";
 export { readTrainingRunConfig, runConfigHash, type TrainingRunConfig, TrainingRunConfigError } from "./training-run-config.ts";
 export { type CloneRunConfig, CloneRunConfigError, cloneRunConfigHash, readCloneRunConfig } from "./clone-run-config.ts";
 export { EpisodeError, episodeFromRecord, type EpisodeOptions, readEpisode } from "./episode-io.ts";
@@ -424,6 +424,10 @@ export {
 } from "./league-seed.ts";
 export {
   DAMAGE_AWARE_POLICY_ID,
+  DAMAGE_AWARE_VERSIONS,
+  type DamageAwareVersion,
+  damageAwareMatchPrefix,
+  damageAwareVersionPolicyId,
   playProgress,
   PROGRESS_BASELINES,
   PROGRESS_MODES,
@@ -605,4 +609,29 @@ export {
   type WorldSourceResult,
   WorldMappingError,
 } from "./world-sampler.ts";
-export { REPLY_MODEL_FORMAT } from "./reply-model.ts";
+export { createReplyModel, REPLY_MODEL_FORMAT, ReplyModelError, type ReplyModel } from "./reply-model.ts";
+export {
+  DROP_REASONS,
+  type DropReason,
+  engineSeed,
+  FALLBACK_REASONS,
+  replyIndex,
+  SearchError,
+  searchActor,
+  type SearchActor,
+  type SearchActorOptions,
+  type SearchCounts,
+  type SearchDecision,
+  type SearchInput,
+  searchPolicy,
+  type SearchReport,
+  searchSetup,
+  searchSkipReason,
+  type SearchSkipReason,
+  type SearchSetup,
+  type SearchSetupInput,
+} from "./search-actor.ts";
+export { hpKoDifferential, outcomeScore } from "./search-leaf.ts";
+export { playerView } from "./search-turn.ts";
+export { goldenWorldFactsData, readWorldFactsData, type FactsTable } from "./world-facts-data.ts";
+export { legalReplies } from "./reply-model.ts";

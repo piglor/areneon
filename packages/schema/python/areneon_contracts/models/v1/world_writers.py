@@ -31,7 +31,7 @@ class Item(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
     )
-    id: Literal["ability_changed", "active_turns", "bench_order", "bench_status", "choice_lock", "condition_duration", "confusion_duration", "fainted_last_turn", "illusion_transform", "item_removed", "item_replaced", "last_move", "locked_moves", "opponent_pp", "per_turn_fields", "protect_counter", "sleep_counter", "slot_conditions", "start_trigger_restore", "substitute", "total_fainted", "toxic_stage", "truant_slow_start", "turn_number", "unadmitted_id", "unavailable_mechanics", "volatile_duration"]
+    id: Literal["ability_changed", "active_turns", "bench_order", "bench_status", "choice_lock", "condition_duration", "confusion_duration", "fainted_last_turn", "illusion_transform", "item_removed", "item_replaced", "last_move", "locked_moves", "opponent_pp", "per_turn_fields", "protect_counter", "sleep_counter", "slot_conditions", "start_trigger_restore", "substitute", "total_fainted", "toxic_stage", "trapping", "truant_slow_start", "turn_number", "unadmitted_id", "unavailable_mechanics", "volatile_duration"]
     """
     A state item of the closed list.
     """

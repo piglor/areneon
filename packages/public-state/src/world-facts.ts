@@ -52,12 +52,22 @@
 // - Move uses (format 2): per side and nickname, the `|move|` lines of the Pokemon's own choices by move id (no
 //   `[from] move/ability/item` tag), the count the opponent-PP approximation is declared against.
 //
+// - `locks` (format 3, #1186): the locked, charging and trapping states of a Pokemon in play that the engine keeps
+//   as volatiles and the shared reader never shows, named by the engine's own condition ids (the world builder's
+//   record maps each to a refusal row and the reader of that record checks the ids against the pinned engine):
+//   `mustrecharge` from `-mustrecharge` until the `|cant|…|recharge`; `twoturnmove` (a charge turn, the semi-invulnerable
+//   states of Fly, Dig, Dive, Bounce and Phantom Force included) from `-prepare` (not the `[premajor]` message of
+//   Chilly Reception) until the Pokemon's next `|move|` or `|cant|` line; `partiallytrapped` on the target of a
+//   `-activate|…|move: M|[of] …` where M is in `WorldFactsData.partial_trap_moves`, until `-end … [partiallytrapped]`;
+//   `trapped` (`-activate|…|trapped`) on the target and `trapper` on the Pokemon whose move did it. A trap also ends,
+//   silently, when either Pokemon leaves play, which the fact follows. A switch or a faint drops all of a Pokemon's locks.
+//
 // Fail closed: a line it cannot attribute, a Pokemon whose Toxic tick was not shown (Magic Guard, Poison
 // Heal at full health), a stall move whose outcome is not shown, and an Illusion `|replace|` make the
 // facts of that channel a typed `WorldFactsError`, from that line on. Facts from before are still read.
 
 /** The format of the derivation: bump when how a fact is computed from the lines changes (part of the search identity, ADR-026 section 5). */
-export const WORLD_FACTS_FORMAT = "world-facts/2";
+export const WORLD_FACTS_FORMAT = "world-facts/3";
 
 export type FactsPlayer = "p1" | "p2";
 
@@ -73,6 +83,8 @@ export interface WorldFactsData {
   readonly toxic_stage_max: number;
   /** The `[from]` texts (`move: Round`, `ability: Dancer`) of the move lines the engine ran as move actions of their own: the ones that count in `move_actions` though another effect named them. */
   readonly action_sources: readonly string[];
+  /** Ids of the moves whose engine definition gives the target the `partiallytrapped` volatile (Fire Spin, Wrap, Whirlpool, ...). */
+  readonly partial_trap_moves: readonly string[];
 }
 
 declare const OWN: unique symbol;
@@ -136,6 +148,8 @@ export interface ActiveFacts {
   toxic_ticks: number | null;
   /** The turn each volatile of this Pokemon began (`-start`), by id; forgotten at `-end`, a switch and a faint. */
   volatiles: Record<string, { started_turn: number; after_residual: boolean; moved_before: boolean }>;
+  /** The engine condition ids of the locked, charging and trapping states the Pokemon is in now (sorted; see the module comment). */
+  locks: string[];
 }
 
 export interface ConditionFacts {
@@ -177,6 +191,8 @@ interface Occupant {
   stall_count: number;
   stall_turn: number;
   volatiles: Map<string, { started_turn: number; after_residual: boolean; moved_before: boolean }>;
+  /** Lock id to the other Pokemon of each trap it holds (null when the state has none); a trap holds while one of them is in play. */
+  locks: Map<string, Occupant[] | null>;
   move_actions: number;
   /** The turn of its latest move action, -1 before the first. */
   acted_turn: number;
@@ -252,6 +268,7 @@ export class WorldFactsReader {
   readonly #swappable: ReadonlySet<string>;
   readonly #toxicMax: number;
   readonly #actionSources: ReadonlySet<string>;
+  readonly #partialTrap: ReadonlySet<string>;
   readonly #sides: Record<FactsPlayer, SideState> = { p1: newSide(), p2: newSide() };
   readonly #mons = new Map<string, MonStatus>();
   #turn = 0;
@@ -272,6 +289,7 @@ export class WorldFactsReader {
     this.#swappable = new Set(data.swap_side_conditions);
     this.#toxicMax = data.toxic_stage_max;
     this.#actionSources = new Set(data.action_sources.map(toId));
+    this.#partialTrap = new Set(data.partial_trap_moves);
   }
 
   /** Reads one line. Never throws: a refusal is kept for `facts()`. */
@@ -323,6 +341,7 @@ export class WorldFactsReader {
         protect_streak: occupant.stall_turn >= this.#turn - 1 ? occupant.stall_count : 0,
         toxic_ticks: status !== undefined && status.status === "tox" ? status.ticks : null,
         volatiles: Object.fromEntries([...occupant.volatiles].sort(byKey).map(([id, began]) => [id, { ...began }])),
+        locks: [...occupant.locks].filter(([, partners]) => partners === null || partners.some((partner) => this.#inPlay(partner))).map(([id]) => id).sort(),
       };
     }
     return {
@@ -384,9 +403,12 @@ export class WorldFactsReader {
       case "replace": throw new WorldFactsError("illusion_replace", this.#index);
       case "faint": this.#faint(a[0]); break;
       case "move": this.#move(line); break;
-      case "cant": this.#cant(a[0]); break;
+      case "cant": this.#cant(a[0]); this.#unlock(a[0], a[1] === "recharge" ? "mustrecharge" : "twoturnmove"); break;
+      case "-mustrecharge": this.#lock(a[0], "mustrecharge"); break;
+      case "-prepare": if (!line.tags.has("premajor")) this.#lock(a[0], "twoturnmove"); break;
+      case "-activate": this.#activate(line); break;
       case "-start": this.#volatileStart(a[0], a[1]); break;
-      case "-end": this.#volatileEnd(a[0], a[1]); break;
+      case "-end": this.#volatileEnd(a[0], a[1]); if (line.tags.has("partiallytrapped")) this.#unlock(a[0], "partiallytrapped"); break;
       case "-status": this.#status(a[0], a[1]); break;
       case "-curestatus": this.#cure(a[0]); break;
       case "-cureteam": this.#cureTeam(a[0]); break;
@@ -417,7 +439,7 @@ export class WorldFactsReader {
   #switchIn(text: string | undefined): void {
     const ref = this.#ident(text);
     if (ref.letter === null) throw new WorldFactsError("unattributable_line", this.#index);
-    this.#sides[ref.side].active.set(ref.letter, { name: ref.name, switch_turn: this.#turn, last_move: null, stall_count: 0, stall_turn: -1, volatiles: new Map(), move_actions: 0, acted_turn: -1 });
+    this.#sides[ref.side].active.set(ref.letter, { name: ref.name, switch_turn: this.#turn, last_move: null, stall_count: 0, stall_turn: -1, volatiles: new Map(), locks: new Map(), move_actions: 0, acted_turn: -1 });
     const status = this.#mons.get(`${ref.side}:${ref.name}`);
     if (status !== undefined && status.status === "tox") {
       status.ticks = 0;
@@ -453,6 +475,8 @@ export class WorldFactsReader {
     if (move === "") throw new WorldFactsError("malformed_line", this.#index);
     this.#mover = { side, name: occupant.name };
     const from = line.tags.get("from");
+    // The second turn of a charge move (or any later action) ends the charge; the first turn's own `|move|` line comes before its `-prepare`.
+    if (from === undefined || from === "lockedmove") occupant.locks.delete("twoturnmove");
     // A move another effect made the Pokemon use (called, reflected, copied) is not its own choice.
     if (from !== undefined && /^(move|ability|item):/.test(from)) {
       if (this.#actionSources.has(toId(from))) {
@@ -493,6 +517,42 @@ export class WorldFactsReader {
     if (of === undefined) return this.#mover;
     const match = IDENT.exec(of);
     return match === null ? this.#mover : { side: match[1] as FactsPlayer, name: match[3] as string };
+  }
+
+  /** Whether the Pokemon still holds a position (a trap ends silently when one of its two leaves). */
+  #inPlay(occupant: Occupant): boolean {
+    return [this.#sides.p1, this.#sides.p2].some((side) => [...side.active.values()].includes(occupant));
+  }
+
+  #lock(text: string | undefined, id: string): void {
+    const { occupant } = this.#occupant(text);
+    occupant.locks.set(id, null);
+  }
+
+  /** Records a trap on `holder` against `partner`: it holds while the partner stays in play (a Pokemon may hold several, from different partners). */
+  #trap(holder: Occupant, id: string, partner: Occupant): void {
+    holder.locks.set(id, [...(holder.locks.get(id) ?? []), partner]);
+  }
+
+  #unlock(text: string | undefined, id: string): void {
+    const ref = text === undefined ? null : IDENT.exec(text);
+    const occupant = ref === null || ref[2] === undefined ? null : this.#sides[ref[1] as FactsPlayer].active.get(ref[2]);
+    if (occupant !== null && occupant !== undefined) occupant.locks.delete(id);
+  }
+
+  /** `-activate`: the start of a partial trap (a listed move, `[of]` the trapper) or of `trapped` (the trapper is the latest mover). */
+  #activate(line: Line): void {
+    const effect = effectId(line.args[1] ?? "");
+    if (effect !== "trapped" && !(line.args[1]?.startsWith("move: ") === true && this.#partialTrap.has(effect))) return;
+    const { occupant } = this.#occupant(line.args[0]);
+    const of = line.tags.get("of");
+    const ref = of === undefined ? this.#mover : (() => { const match = IDENT.exec(of); return match === null ? null : { side: match[1] as FactsPlayer, name: match[3] as string }; })();
+    const trapper = ref === null ? undefined : [...this.#sides[ref.side].active.values()].find((o) => o !== null && o.name === ref.name);
+    if (trapper === undefined || trapper === null) throw new WorldFactsError("unattributable_line", this.#index);
+    if (effect === "trapped") {
+      this.#trap(occupant, "trapped", trapper);
+      this.#trap(trapper, "trapper", occupant);
+    } else this.#trap(occupant, "partiallytrapped", trapper);
   }
 
   #volatileStart(text: string | undefined, name: string | undefined): void {

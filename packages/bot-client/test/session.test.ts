@@ -337,6 +337,28 @@ describe("runA2Bot: a battle", () => {
     expect(run.decisions()).toHaveLength(2);
   });
 
+  it("records search_skipped on a battle decision whose bank is below the search floor, and on no other (ADR-026 section 6)", async () => {
+    const play = async (options: Partial<A2BotOptions>): Promise<DecisionRecord[]> => {
+      const run = await start(options);
+      const t = run.t();
+      login(t);
+      preview(t);
+      t.push(at(2));
+      t.push(at(3));
+      t.push(time(55, 400));
+      return run.decisions();
+    };
+    // The bank left is 400 s: a floor of 500 s skips the search, a floor of 300 s does not, no search policy records nothing.
+    const [skipped, searched, plain] = [await play({ search: { a2_clock_floor_ms: 500_000 } }), await play({ search: { a2_clock_floor_ms: 300_000 } }), await play({})];
+    expect(skipped[1]).toMatchObject({ phase: "move", search_skipped: "clock_floor" });
+    // Team Preview is never searched, so it carries no reason even below the floor.
+    expect(skipped[0]).not.toHaveProperty("search_skipped");
+    expect(searched[1]).not.toHaveProperty("search_skipped");
+    expect(plain[1]).not.toHaveProperty("search_skipped");
+    // Nothing else of the record changes: the choice and the budget are the same with and without a search policy.
+    expect({ ...skipped[1], search_skipped: undefined }).toEqual({ ...plain[1], search_skipped: undefined });
+  });
+
   it("sends nothing for a wait request", async () => {
     const run = await start();
     const t = run.t();

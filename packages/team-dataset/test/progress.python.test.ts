@@ -134,6 +134,28 @@ describe.skipIf(!existsSync(PYTHON) && process.env.ARENEON_REQUIRE_PYTHON_WORKER
     expect(refused.stderr).toMatch(/needs --damage-aware/);
   }, 900_000);
 
+  it("plays damage-aware@v3 through the Python command, twice with byte-identical files, and a lone version is a usage error (#1183)", () => {
+    const a = join(dir, "d3a.progress");
+    const b = join(dir, "d3b.progress");
+    const more = ["--generation", "1", "--damage-aware", "--damage-aware-version", "v3", "--damage-aware-budget-minutes", "30"];
+    const printed = progress(a, ...more) as unknown as { generations: { matches: { match_id: string }[]; damage_aware: string }[] };
+    const done = printed.generations[0] as (typeof printed.generations)[number];
+    expect(done.matches.map((m) => m.match_id)).toEqual(["actor-rule-argmax", "actor-rule-sample", "damage-aware-v3-argmax", "damage-aware-v3-sample", "random-legal-argmax", "random-legal-sample"]);
+    expect(done.damage_aware).toBe("played");
+    progress(b, ...more);
+    const files = tree(join(a, gen(1)));
+    expect(tree(join(b, gen(1)))).toEqual(files);
+    for (const file of files) expect(readFileSync(join(a, gen(1), file), "utf8"), file).toBe(readFileSync(join(b, gen(1), file), "utf8"));
+    const record = readProgressEvaluationRecordV2(json<ProgressEvaluationRecordV2>(a, gen(1), "progress.json"));
+    const match = record.matches.find((m) => m.match_id === "damage-aware-v3-sample") as (typeof record.matches)[number];
+    expect(match.opponent).toEqual({ kind: "baseline", policy_id: "damage-aware@v3" });
+    expect(readProgressGameRecord(json(a, gen(1), "games", "damage-aware-v3-sample-1.json")).policies.p1).toBe("damage-aware@v3");
+    expect(progress(a, "--generation", "1").generations.map((g) => g.skipped)).toEqual([true]);
+    const lone = spawnSync(PYTHON, ["-I", "-m", "areneon_ml.loop", "progress", "--run-dir", runDir, "--engine-data", DATA, "--generation", "1", "--damage-aware-version", "v3", "--progress-dir", join(dir, "d3c.progress")], { encoding: "utf8", env, cwd: ROOT });
+    expect(lone.status).toBe(3);
+    expect(lone.stderr).toMatch(/needs --damage-aware/);
+  }, 900_000);
+
   it("evaluates on a second dataset's validation split (the eval-dataset option): named in the record, byte-identical on rerun, refusals", () => {
     const second = join(dir, "second-dataset");
     const inputs = loadFixtureInputs(engine, FORMAT);
@@ -357,6 +379,16 @@ describe.skipIf(!existsSync(PYTHON) && process.env.ARENEON_REQUIRE_PYTHON_WORKER
       expect(refusal.join("\n")).toMatch(/damage-aware-argmax passed its wall-clock budget of 1 ms/);
       await expect(run(join(dir, "x"), { "damage-aware-budget-ms": "0" })).rejects.toThrow(UsageError);
       await expect(run(join(dir, "x"), { "damage-aware-budget-ms": "5", "ablation-preview": "0,1,2", "ablation-random-policy-id": "p" })).rejects.toThrow(UsageError);
+    }, 300_000);
+
+    it("plays damage-aware@v3 under --damage-aware-version, and refuses an unknown or a lone version (#1183)", async () => {
+      const out = join(dir, "cli-damage-v3");
+      const { code, lines } = await run(out, { "damage-aware-budget-ms": "600000", "damage-aware-version": "v3" });
+      expect(code).toBe(0);
+      const printed = JSON.parse(lines[0] as string) as { matches: { match_id: string }[] };
+      expect(printed.matches.map((m) => m.match_id)).toEqual(["actor-rule-argmax", "actor-rule-sample", "damage-aware-v3-argmax", "damage-aware-v3-sample", "random-legal-argmax", "random-legal-sample"]);
+      await expect(run(join(dir, "x"), { "damage-aware-budget-ms": "5", "damage-aware-version": "v2" })).rejects.toThrow(UsageError);
+      await expect(run(join(dir, "x"), { "damage-aware-version": "v3" })).rejects.toThrow(UsageError);
     }, 300_000);
 
     it("plays the previous generation's pair when given, and refuses half a set of previous flags", async () => {

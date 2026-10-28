@@ -143,6 +143,9 @@ export function featureSetup(engine: Engine, config: TrainingRunConfig): Feature
 /** The policy id of `damage-aware@v2`, the baseline that plays on sampled belief worlds (ADR-025 section 6). */
 export const DAMAGE_AWARE_V2_POLICY_ID = damageAwarePolicyId("v2");
 
+/** The policy id of `damage-aware@v3`, the v1 scorer with the engine's choice-location convention (#1180, #1183). */
+export const DAMAGE_AWARE_V3_POLICY_ID = damageAwarePolicyId("v3");
+
 /**
  * The records `damage-aware@v2` reads: its config (which names the usage prior and the belief config by hash) and
  * the belief port the composition root builds from them. The bridge does not import the opponent model, so the
@@ -237,6 +240,8 @@ export interface GenerationOptions {
   pool: TrainingPool;
   /** The damage-aware baseline's records; read from `config/` when a plan game needs them and this is absent (a test seam). */
   damage_aware?: DamageAwareSetup;
+  /** `damage-aware@v3`'s records, likewise (#1183). */
+  damage_aware_v3?: DamageAwareSetup;
   /** `damage-aware@v2`'s records, likewise (built from `belief_worlds` when a plan game needs them and this is absent). */
   damage_aware_v2?: DamageAwareSetup;
   /**
@@ -344,7 +349,7 @@ interface BaselineSeat {
 function baselineActor(options: GenerationOptions, opponent: BaselineOpponent, plan: GamePlan, budget: LatencyBudget): BaselineSeat {
   const guarded = (actor: Actor): Actor => guardActor(actor, { role: "scripted", latency_budget: budget });
   if (opponent.actor !== "damage-aware") return { actor: guarded(opponent.actor === "actor-rule" ? firstLegal : randomLegalActor(plan.baseline_seed)) };
-  const setup = opponent.policy_id === DAMAGE_AWARE_V2_POLICY_ID ? options.damage_aware_v2 : options.damage_aware;
+  const setup = opponent.policy_id === DAMAGE_AWARE_V2_POLICY_ID ? options.damage_aware_v2 : opponent.policy_id === DAMAGE_AWARE_V3_POLICY_ID ? options.damage_aware_v3 : options.damage_aware;
   if (setup === undefined) throw new GenerationError("a damage-aware baseline game needs the baseline's records");
   // A fresh actor per game: it keeps the reader's state, the game's memo and counts. The seed is drawn from only when epsilon_ppm is above 0.
   const damage: DamageAwareActor = damageAwareActor({
@@ -456,12 +461,14 @@ export async function playEntries(options: GenerationOptions, shard: Shard = { i
   const plan = planGeneration(config, generation, options.pool.teams.length);
   // The damage-aware records are read once, and only when a game of this process needs them.
   const named = config.generation.baseline_games.filter((baseline) => baseline.actor === "damage-aware");
-  const needsV1 = named.some((baseline) => baseline.policy_id !== DAMAGE_AWARE_V2_POLICY_ID);
+  const needsV1 = named.some((baseline) => baseline.policy_id !== DAMAGE_AWARE_V2_POLICY_ID && baseline.policy_id !== DAMAGE_AWARE_V3_POLICY_ID);
+  const needsV3 = named.some((baseline) => baseline.policy_id === DAMAGE_AWARE_V3_POLICY_ID);
   const needsV2 = named.some((baseline) => baseline.policy_id === DAMAGE_AWARE_V2_POLICY_ID);
   if (needsV2 && options.damage_aware_v2 === undefined && options.belief_worlds === undefined) throw new GenerationError(`the plan names ${DAMAGE_AWARE_V2_POLICY_ID}: its script needs the belief port of the composition root (packages/team-dataset)`);
   const withRecords: GenerationOptions = {
     ...options,
     ...(needsV1 && options.damage_aware === undefined ? { damage_aware: damageAwareSetup(options.engine, config.format_id) } : {}),
+    ...(needsV3 && options.damage_aware_v3 === undefined ? { damage_aware_v3: damageAwareSetup(options.engine, config.format_id, "v3") } : {}),
     ...(needsV2 && options.damage_aware_v2 === undefined ? { damage_aware_v2: damageAwareSetupV2(options.engine, config.format_id, options.belief_worlds as BeliefWorldsFactory) } : {}),
   };
   const { pool } = withRecords;
