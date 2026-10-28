@@ -272,7 +272,10 @@ function withoutLazyTargets(state: { field: object }): object {
   return { ...state, field };
 }
 
-/** Process-global counters for diagnostics (the bench, tests); no result depends on them. How often the one-clone path answered and how often it handed the query to the per-roll path (a call that changed the battle). */
+/**
+ * How often the one-clone path answered and how often it handed the query to the per-roll path (a call that changed the battle).
+ * Process-global counters for diagnostics (the bench, tests); no result depends on them.
+ */
 export const damagePathStats = { one_clone: 0, fell_back: 0 };
 
 /** The reference path: 33 clones, each running the engine's whole move step for one roll. */
@@ -393,7 +396,6 @@ function oneClone(engine: Engine, battle: DmgBattle, rebuild: () => DmgBattle, m
     return assemble(facts, { hit: false, crit: false, draws: random.draws }, new Array<number>(16).fill(0), new Array<number>(16).fill(0), koBlockers);
   }
   if (!seen.hit) return { kind: "unsupported", reason: "query_kind", position: null };
-  if (seen.multi) return { kind: "unsupported", reason: "query_kind", position: null };
   // The draws before the loop and after it are the same in every call. That a call's list equals its clone's relies on `acceptedDraws` being this strict:
   // it refuses any draw but one `random(16)` (and the observation's one `randomChance`), so no branch that depends on an answer can change a verdict.
   const first = windows[0] as { start: number; end: number };
