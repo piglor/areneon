@@ -108,10 +108,10 @@ export function createSearchWorlds(context: SearchWorldsContext, files: SearchWo
     prior_format_id: prior.format_id,
     prior_kind: arm,
     prior_label: arm === "generator-matched" ? GENERATOR_MATCHED_LABEL : ROLE_SETS_LABEL,
-    open({ opponent, flags }) {
+    open({ opponent, flags, trapping }) {
       let computed;
       try {
-        computed = belief({ prior, vocabulary: view, config: beliefConfig, opponent, flags });
+        computed = belief({ prior, vocabulary: view, config: beliefConfig, opponent, flags, trapping });
       } catch (error) {
         const code = refusalCode(error);
         if (code === null) throw error;

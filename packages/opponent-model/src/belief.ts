@@ -12,10 +12,11 @@ import type { PublicMon } from "@areneon/public-state";
 import type { UsagePrior } from "@areneon/schema/types/v1/usage-prior.ts";
 import { BeliefError } from "./error.ts";
 import { enumerate, hasMatching } from "./disguise.ts";
-import { type SlotEvidence, slotEvidence } from "./evidence.ts";
+import { type SlotEvidence, slotEvidence, trapEvidence } from "./evidence.ts";
 import { type Dist, abilityDist, itemDist, only, spreadDist, uniformDist, weightOf } from "./fields.ts";
 import { solveItemClause } from "./item-clause.ts";
 import { moveModel } from "./moves.ts";
+import { type TrapSlot, trapExclusions } from "./trapping.ts";
 import { type Ratio, ONE, ZERO, add, greater, integerise, isZero, lcm, mul, ratio } from "./ratio.ts";
 import { BELIEF_FORMAT, type BeliefInput, type BeliefVocabulary, type Cell, type DisguiseAssignment, type FormeBelief, type Marginal, type OpponentBelief, type SlotBelief, type SlotMarginal } from "./types.ts";
 
@@ -76,7 +77,7 @@ function consistentFormes(species: PriorSpecies, ev: SlotEvidence, ctx: Context,
 }
 
 /** The forme-and-item weights of one slot, after the ability, item and move evidence. */
-function slotWork(species: PriorSpecies, ev: SlotEvidence, ctx: Context, slot: number, notes: string[], known: ReadonlySet<string> | null): FormeWork[] {
+function slotWork(species: PriorSpecies, ev: SlotEvidence, ctx: Context, slot: number, notes: string[], known: ReadonlySet<string> | null, trap: ReadonlySet<string> | null): FormeWork[] {
   const formes = consistentFormes(species, ev, ctx, slot, notes);
   const entries = new Map(formes.map((f) => [f.id, entryOf(ctx, f.id, slot)]));
   const speciesEntry = entryOf(ctx, species.id, slot);
@@ -95,14 +96,19 @@ function slotWork(species: PriorSpecies, ev: SlotEvidence, ctx: Context, slot: n
   for (const m of ev.moves) notes.push(placeable.includes(m) ? `move:${m}` : `move_skipped:${m}`);
   if (ev.transformed) notes.push("moves_skipped:transform");
 
+  // An ability the Pokemon showed itself that the own request's flags rule out: the flags and the reveal cannot both hold.
+  if (trap !== null && ev.ability !== null && trap.has(ev.ability)) throw new BeliefError("evidence_has_no_support", "the revealed ability contradicts the own request's trapping flags", slot);
+
   // The ability list in force per forme, and what the revealed ability says about each.
   const abilityOf = formes.map((f) => {
     const entry = entries.get(f.id) as RosterEntry;
     const mega = isMega(species, f, entry);
     const evolved = mega && (ev.mega || ev.shown === f.id);
-    const dist = mega && !evolved ? (f.holder_abilities === undefined ? baseAbilities : abilityDist(f.holder_abilities.entries, f.holder_abilities.residual, speciesEntry.abilities)) : abilityDist(f.abilities.entries, f.abilities.residual, entry.abilities);
+    const listed = mega && !evolved ? (f.holder_abilities === undefined ? baseAbilities : abilityDist(f.holder_abilities.entries, f.holder_abilities.residual, speciesEntry.abilities)) : abilityDist(f.abilities.entries, f.abilities.residual, entry.abilities);
+    // The own request's trapping flags: abilities the engine says the shown foe cannot hold get weight 0 (the forme's weight is scaled by the share left).
+    const dist = trap === null ? listed : restrict(listed, trap);
     const verdict = ev.ability === null ? "free" : evolved && preAbilities.has(ev.ability) ? "ambiguous" : weightOf(dist, ev.ability) > 0n ? "fixed" : "excluded";
-    return { f, mega, dist, verdict };
+    return { f, mega, dist, verdict, share: dist.total === listed.total ? ONE : ratio(dist.total, listed.total) };
   });
   const usable = ev.ability !== null && abilityOf.some((a) => a.verdict !== "excluded");
   if (ev.ability !== null) {
@@ -113,9 +119,10 @@ function slotWork(species: PriorSpecies, ev: SlotEvidence, ctx: Context, slot: n
   if (ev.item !== null) notes.push(itemUsable ? `item:${ev.item}` : `item_skipped:${ev.item}`);
 
   const work: FormeWork[] = [];
-  for (const { f, mega, dist, verdict } of abilityOf) {
+  for (const { f, mega, dist, verdict, share } of abilityOf) {
     const entry = entries.get(f.id) as RosterEntry;
     const pool = poolOf(f.id);
+    if (dist.total === 0n) continue;
     if (placeable.some((m) => !pool.has(m))) continue;
     if (usable && verdict === "excluded") continue;
     const model = moveModel(f.moves, [...pool], placeable);
@@ -137,11 +144,17 @@ function slotWork(species: PriorSpecies, ev: SlotEvidence, ctx: Context, slot: n
     if (items.size === 0) continue;
 
     const spreads = spreadDist(f.spreads.entries, f.spreads.residual);
-    const weight = mul(mul(ratio(BigInt(f.weight), BigInt(species.denominator)), abilityLikelihood), model.likelihood);
+    const weight = mul(mul(mul(ratio(BigInt(f.weight), BigInt(species.denominator)), abilityLikelihood), share), model.likelihood);
     work.push({ id: f.id, mega, weight, abilities, spreads, moves: model.model, items });
   }
   if (work.length === 0) throw new BeliefError("evidence_has_no_support", "the evidence leaves no forme of the slot with a positive weight", slot);
   return work;
+}
+
+/** The options of a distribution that are not in `excluded`. */
+function restrict(dist: Dist<string>, excluded: ReadonlySet<string>): Dist<string> {
+  const options = dist.options.filter((o) => !excluded.has(o.id));
+  return options.length === dist.options.length ? dist : { total: options.reduce((sum, o) => sum + o.weight, 0n), options };
 }
 
 /** Subsets of `n` of the picked size that hold the `settled` Pokemon: C(n - settled, picked - settled). */
@@ -165,6 +178,10 @@ interface Chosen {
   readonly ev: SlotEvidence;
   /** The species (or one of its formes) has an identity-hiding ability in the vocabulary. */
   readonly hides: boolean;
+  /** Abilities the own request's trapping flags exclude for this slot, null when none. */
+  readonly trap: ReadonlySet<string> | null;
+  /** The fixed-word notes of those exclusions. */
+  readonly trapNotes: readonly string[];
 }
 
 /** One slot's evidence work, or the refusal it led to, per (slot, evidence). */
@@ -264,12 +281,14 @@ function solve(ctx: Context, chosen: readonly Chosen[], memo: Memo, known: Reado
 }
 
 function workOf(chosen: readonly Chosen[], ctx: Context, memo: Memo, known: ReadonlySet<string> | null, i: number, ev: SlotEvidence): { work: FormeWork[]; notes: readonly string[] } {
-  const key = `${i}|${JSON.stringify({ ...ev, settled: false })}`;
+  const trap = (chosen[i] as Chosen).trap;
+  const key = `${i}|${JSON.stringify({ ...ev, settled: false })}|${trap === null ? "" : [...trap].sort().join(",")}`;
   let hit = memo.get(key);
   if (hit === undefined) {
     const notes: string[] = [];
     try {
-      hit = { work: slotWork((chosen[i] as Chosen).species, ev, ctx, i, notes, known), notes };
+      notes.push(...(chosen[i] as Chosen).trapNotes);
+      hit = { work: slotWork((chosen[i] as Chosen).species, ev, ctx, i, notes, known, trap), notes };
     } catch (e) {
       if (!(e instanceof BeliefError)) throw e;
       hit = e;
@@ -320,7 +339,7 @@ function mixSlot(i: number, list: readonly DisguiseAssignment[]): SlotMarginal {
 }
 
 export function belief(input: BeliefInput): OpponentBelief {
-  const { prior, vocabulary, config, opponent, flags } = input;
+  const { prior, vocabulary, config, opponent, flags, trapping } = input;
   if (flags.length > 0) throw new BeliefError("reader_flagged", "the reader flagged a line of this channel");
   if (prior.format_id !== vocabulary.format_id || prior.engine_data_hash !== vocabulary.engine_data_hash) {
     throw new BeliefError("format_mismatch", "the usage prior is for another format or engine data than the vocabulary");
@@ -340,11 +359,11 @@ export function belief(input: BeliefInput): OpponentBelief {
   const hiding = new Set(config.identity_hiding_abilities);
   const speciesById = new Map(prior.species.map((s) => [s.id, s]));
 
-  const chosen = mons.map((mon, slot): Chosen => {
+  let chosen = mons.map((mon, slot): Chosen => {
     const species = speciesById.get(mon.base_species) ?? (mon.species === null ? undefined : speciesById.get(mon.species));
     if (species === undefined) throw new BeliefError("species_not_in_prior", "a previewed species has no entry in the usage prior", slot);
     const ids = [species.id, ...species.formes.map((f) => f.id)];
-    return { species, ev: slotEvidence(mon), hides: ids.some((id) => ctx.roster.get(id)?.abilities.some((a) => hiding.has(a))) };
+    return { species, ev: slotEvidence(mon), hides: ids.some((id) => ctx.roster.get(id)?.abilities.some((a) => hiding.has(a))), trap: null, trapNotes: [] };
   });
 
   // The shown positions (in play, so in the brought set if they are what they seem) and the hiding members still unrevealed.
@@ -354,6 +373,14 @@ export function belief(input: BeliefInput): OpponentBelief {
   const hidingSlots = chosen.flatMap((c, i) => (c.hides ? [i] : []));
   const unsettled = hidingSlots.filter((i) => !(own[i] as SlotEvidence).settled);
   const mixed = unsettled.length > 0 && shown.length > 0;
+
+  // The own request's trapping flags (ticket #1127). Not under a disguise mixture: the shown foe may be another member.
+  let trapConstraints: readonly string[] = [];
+  if (trapping != null && trapping.observed.length > 0) {
+    const found = trapExclusions(trapping, mons.map((mon, index): TrapSlot => ({ index, ...trapEvidence(mon, ctx.roster, !mixed) })));
+    trapConstraints = found.constraints;
+    chosen = chosen.map((c, i) => ({ ...c, trap: found.excluded.get(i) ?? null, trapNotes: found.notes.get(i) ?? [] }));
+  }
 
   const memo: Memo = new Map();
   const known = mixed ? new Set(vocabulary.roster.flatMap((r) => r.moves)) : null;
@@ -416,6 +443,6 @@ export function belief(input: BeliefInput): OpponentBelief {
     itemClause: { enforced: clause === 1 },
     brought: { picked, settled: certain, subsets: subsetCount(mons.length, picked, shown.length) },
     sampling: { level: vocabulary.rules.adjust_level, max_legality_redraws: config.max_legality_redraws },
-    constraints: [clause === 1 ? "item_clause:1" : "item_clause:absent", `brought:picked=${picked}`, ...(assignments.length > 1 ? [`disguise:assignments=${assignments.length}`] : [])],
+    constraints: [clause === 1 ? "item_clause:1" : "item_clause:absent", `brought:picked=${picked}`, ...trapConstraints, ...(assignments.length > 1 ? [`disguise:assignments=${assignments.length}`] : [])],
   };
 }

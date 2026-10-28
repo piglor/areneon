@@ -15,6 +15,9 @@ import { describe, expect, it } from "vitest";
 import { BELIEF_FORMAT, beliefDigest, belief, createSampler, worldsDigest } from "../src/index.ts";
 import { hidingConfig, input } from "./support.ts";
 
+// A stand-in for the bridge's engine check: Alpha with ability a1 would show maybeTrapped to the own active.
+const alphaTrap = (observed: 0 | 1) => ({ observed: [observed] as const, shows: (c: { species: string; ability: string }) => [c.species === "alpha" && c.ability === "a1" ? 1 : 0] as const });
+
 const FILE = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "fixtures", "opponent-model", "golden.json");
 const STREAM = Uint8Array.from({ length: 32 }, (_, i) => 255 - i * 5);
 const SW = (letter: "a" | "b", name: string, species: string) => `|switch|p2${letter}: ${name}|${species}, L50, M|100/100`;
@@ -24,6 +27,8 @@ const cases = {
   "revealed-facts": () => input([SW("a", "Alp", "Alpha"), "|move|p2a: Alp|Mb", "|-item|p2a: Alp|Ix", SW("b", "Gam", "Gamma")]),
   "mega-evolved": () => input([SW("a", "Bet", "Beta"), "|detailschange|p2a: Bet|Beta-Mega, L50, M", "|-mega|p2a: Bet|Beta|Betite"]),
   "disguise-mixture": () => input([SW("a", "Alp", "Alpha")], { config: hidingConfig }),
+  "trapping-seen": () => input([SW("a", "Alp", "Alpha")], { trapping: alphaTrap(1) }),
+  "trapping-unseen": () => input([SW("a", "Alp", "Alpha")], { trapping: alphaTrap(0) }),
 } as const;
 
 interface Golden {

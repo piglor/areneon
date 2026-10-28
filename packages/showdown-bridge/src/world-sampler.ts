@@ -24,6 +24,7 @@ import type { PublicFlag, PublicSide } from "@areneon/public-state";
 import { jcs } from "./canonical-json.ts";
 import { BELIEF_DEFECTS, refusalCode, type WorldLike } from "./damage-aware-worlds.ts";
 import type { WorldSetLike } from "./damage-aware-assumed-set.ts";
+import { createTrappingCheck, type TrappingCheckPort } from "./trapping-check.ts";
 import type { DamageAwareConfig } from "./damage-aware-config.ts";
 import type { Engine, PokemonSet, StatTable } from "./engine.ts";
 import { defaultIvs } from "./engine.ts";
@@ -77,7 +78,7 @@ export interface WorldSamplePort {
   readonly prior_kind: PriorKind;
   /** The label every result of this arm carries. */
   readonly prior_label: string;
-  open(input: { readonly opponent: PublicSide; readonly flags: readonly PublicFlag[] }): WorldSourceResult;
+  open(input: { readonly opponent: PublicSide; readonly flags: readonly PublicFlag[]; readonly trapping?: TrappingCheckPort | null }): WorldSourceResult;
 }
 
 /** The world input without the opponent: the player's own view. The sampler fills the opponent in. */
@@ -160,6 +161,11 @@ export interface WorldSamplerContext {
   readonly port: WorldSamplePort;
   readonly builder: WorldBuilder;
   readonly settings: WorldSamplerSettings;
+  /**
+   * Condition the belief on the trapping flags of the player's own request (ticket #1127): the scenario format id
+   * the engine check starts its battles in (`checkScenario`). Absent: no trapping evidence, as before.
+   */
+  readonly trapping?: { readonly scenario_id: string };
 }
 
 /** One valid world of a decision and the sampler index that produced it. */
@@ -206,6 +212,9 @@ export interface WorldSamplerCounts {
   below_min_valid: number;
   /** Decisions the belief refused (no world could be drawn), by the model's code. */
   belief_refusals: Record<string, number>;
+  /** Decisions whose own request gave the belief trapping evidence (an informative own active), and those among them that showed `maybeTrapped`. */
+  trapping_checks: number;
+  trapping_seen: number;
   /** Worlds asked for and valid worlds. */
   worlds_asked: number;
   worlds_valid: number;
@@ -255,6 +264,8 @@ export function createWorldSampler(context: WorldSamplerContext): WorldSampler {
     searched: 0,
     below_min_valid: 0,
     belief_refusals: {},
+    trapping_checks: 0,
+    trapping_seen: 0,
     worlds_asked: 0,
     worlds_valid: 0,
     worlds_refused: 0,
@@ -277,7 +288,12 @@ export function createWorldSampler(context: WorldSamplerContext): WorldSampler {
       const evidence = evidenceClass(request);
       const row = counts.by_evidence[evidence];
       row.decisions += 1;
-      const opened = port.open({ opponent: request.state.opponent, flags: request.flags });
+      const check = context.trapping === undefined ? null : createTrappingCheck({ engine, vocabulary, scenario_id: context.trapping.scenario_id }, { request: request.request, team: request.team, state: request.state });
+      if (check !== null) {
+        counts.trapping_checks += 1;
+        if (check.observed.some((level) => level === 1)) counts.trapping_seen += 1;
+      }
+      const opened = port.open({ opponent: request.state.opponent, flags: request.flags, trapping: check });
       if (opened.kind === "refused") {
         if (BELIEF_DEFECTS.has(opened.code)) throw new WorldMappingError(`the belief refused the setup: ${opened.code}`);
         bump(counts.belief_refusals, opened.code);
