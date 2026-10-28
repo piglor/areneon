@@ -68,6 +68,18 @@ function actionSources(dir: string, table: FactsTable): string[] {
   return out.sort();
 }
 
+/** The moves whose engine definition gives the target the `partiallytrapped` volatile, read from the pinned source, restricted to the format's moves. */
+function partialTrapMoves(dir: string, table: FactsTable): string[] {
+  const source = readFileSync(join(dir, "data", "moves.ts"), "utf8");
+  const ids = new Set(table.moves.map((m) => m.id));
+  const out: string[] = [];
+  for (const block of source.split(/\n\t(?=[a-z0-9]+: \{)/)) {
+    const id = /^([a-z0-9]+): \{/.exec(block)?.[1];
+    if (id !== undefined && ids.has(id) && /volatileStatus: 'partiallytrapped'/.test(block)) out.push(id);
+  }
+  return out.sort();
+}
+
 /** The world facts' data for an engine checkout and an engine-data table. */
 export function readWorldFactsData(table: FactsTable, engineDir: string = process.env.SHOWDOWN_DIR || DEFAULT_SHOWDOWN_DIR): WorldFactsData {
   return {
@@ -76,6 +88,7 @@ export function readWorldFactsData(table: FactsTable, engineDir: string = proces
     swap_side_conditions: swapConditions(engineDir),
     toxic_stage_max: toxicStageMax(engineDir),
     action_sources: actionSources(engineDir, table),
+    partial_trap_moves: partialTrapMoves(engineDir, table),
   };
 }
 

@@ -79,6 +79,63 @@ function oracle(omni: readonly string[], cut: number, viewer: "p1" | "p2"): Worl
     for (let j = i - 1; j >= 0; j--) if (kind(omni[j] as string) === "move") return seen(fields(omni[j] as string)[0] as string);
     return null;
   };
+  /** Stints: how many times each Pokemon (by side and name) has been sent in at line `i`, and whether it is in play there. */
+  const stintAt = (side: string, name: string, i: number): { stint: number; inPlay: boolean } => {
+    let stint = 0;
+    const positions = new Map<string, string | null>();
+    omni.slice(0, i).forEach((l) => {
+      const f = fields(l);
+      const w = f[0] !== undefined && /^p[12][a-c]?: /.test(f[0]) ? who(f[0]) : null;
+      if (w === null || w.letter === null) return;
+      if (kind(l) === "switch" || kind(l) === "drag") {
+        if (w.side === side && w.name === name) stint += 1;
+        positions.set(`${w.side}${w.letter}`, w.name);
+      } else if (kind(l) === "faint") positions.set(`${w.side}${w.letter}`, null);
+      else if (kind(l) === "swap") {
+        const to = `${w.side}${String.fromCharCode(97 + Number(f[1]))}`;
+        const held = positions.get(`${w.side}${w.letter}`) ?? null;
+        positions.set(`${w.side}${w.letter}`, positions.get(to) ?? null);
+        positions.set(to, held);
+      }
+    });
+    const inPlay = [...positions].some(([key, held]) => key.startsWith(side) && held === name);
+    return { stint, inPlay };
+  };
+  /** The locked, charging and trapping states of the Pokemon, from the switch-in `since` to the cut, derived from the log by its own scan. */
+  const locksOf = (name: string, side: string, since: number, after: readonly string[]): string[] => {
+    const out = new Set<string>();
+    const mine = (l: string): boolean => {
+      const f = fields(l)[0];
+      return f !== undefined && /^p[12][a-c]?: /.test(f) && who(f).side === side && who(f).name === name;
+    };
+    after.forEach((l) => {
+      if (kind(l) === "-mustrecharge" && mine(l)) out.add("mustrecharge");
+      if (kind(l) === "cant" && mine(l)) out.delete(fields(l)[1] === "recharge" ? "mustrecharge" : "twoturnmove");
+      if (kind(l) === "-prepare" && mine(l) && !fields(l).includes("[premajor]")) out.add("twoturnmove");
+      if (kind(l) === "move" && mine(l) && (tag(l, "from") === undefined || tag(l, "from") === "lockedmove")) out.delete("twoturnmove");
+    });
+    // Traps: an event holds while both Pokemon stay in play from its line to the cut (a trap ends silently when one leaves), a partial trap until its -end.
+    lines.forEach((l, at) => {
+      if (kind(l) !== "-activate") return;
+      const f = fields(l);
+      const effect = toId((f[1] as string).replace(/^[a-z ]+: /, ""));
+      const full = effect === "trapped";
+      if (!full && !(/^move: /.test(f[1] as string) && data.partial_trap_moves.includes(effect))) return;
+      const target = who(f[0] as string);
+      let trapper = tag(l, "of") !== undefined ? who(tag(l, "of") as string) : null;
+      for (let j = at - 1; trapper === null && j >= 0; j--) if (kind(lines[j] as string) === "move") trapper = who(fields(lines[j] as string)[0] as string);
+      const held = [target, trapper as { side: string; name: string }].every((w) => {
+        const then = stintAt(w.side, w.name, at);
+        const now = stintAt(w.side, w.name, cut);
+        return now.inPlay && now.stint === then.stint;
+      });
+      const ended = lines.slice(at + 1).some((e) => kind(e) === "-end" && fields(e).includes("[partiallytrapped]") && who(fields(e)[0] as string).side === target.side && who(fields(e)[0] as string).name === target.name);
+      if (!held || (!full && ended)) return;
+      if (target.side === side && target.name === name) out.add(full ? "trapped" : "partiallytrapped");
+      if (full && (trapper as { side: string; name: string }).side === side && (trapper as { name: string }).name === name) out.add("trapper");
+    });
+    return [...out].sort();
+  };
   const sideFacts = (side: "p1" | "p2") => {
     // who stands in each position: the last switch, drag, swap or faint that names it
     const slots = new Map<string, string | null>();
@@ -158,7 +215,7 @@ function oracle(omni: readonly string[], cut: number, viewer: "p1" | "p2"): Worl
         if (kind(l) === "-end") Reflect.deleteProperty(volatiles, id);
         else if (volatiles[id] === undefined) volatiles[id] = { started_turn: turnAt(omni, since + 1 + i), after_residual: afterResidual(since + 1 + i), moved_before: actedThisTurn(since + 1 + i, name) };
       });
-      active[letter] = { name, active_turns, move_actions, last_move, protect_streak, toxic_ticks, volatiles: Object.fromEntries(Object.entries(volatiles).sort((a, b) => (a[0] < b[0] ? -1 : 1))) };
+      active[letter] = { name, active_turns, move_actions, last_move, protect_streak, toxic_ticks, volatiles: Object.fromEntries(Object.entries(volatiles).sort((a, b) => (a[0] < b[0] ? -1 : 1))), locks: locksOf(name, side, since, after) };
     }
     const faints = lines.map((l, i) => ({ l, i })).filter(({ l }) => kind(l) === "faint" && who(fields(l)[0] as string).side === side);
     const fainted_in = (t: number): boolean => faints.some(({ i }) => turnAt(omni, i) === t);
@@ -231,7 +288,7 @@ function oracle(omni: readonly string[], cut: number, viewer: "p1" | "p2"): Worl
   });
   const opposing = viewer === "p1" ? "p2" : "p1";
   return {
-    world_facts_format: "world-facts/2",
+    world_facts_format: "world-facts/3",
     turn,
     weather,
     terrain,

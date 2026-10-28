@@ -16,7 +16,11 @@ EXISTING = json.loads((ROOT / "fixtures/policy-ids/existing.json").read_text())
 H = "a" * 64
 # Vectors shared with packages/showdown-bridge/test/search-config.test.ts.
 CONFIG_HASH = "3a0e4b7a4c853d40835831929e7659df2b688fbfd86352c0358ef7e5ae7d9615"
-SEARCH_HASH = "edd348bdf8b9f5069ada74afae22d3ba99e1b349e2748b245de73384c9d666b9"
+# Moved by #248's format bumps (WORLD_BUILDER_FORMAT 2, world-facts/3), which are identity inputs.
+SEARCH_HASH = "5fe6ebcd9697e5b99d710e07d645dec39a9d6d33e1a87fcdfadd962978ddee2f"
+# The policy-id vectors take a search hash as an opaque string and keep the one
+# they were computed with.
+ID_VECTOR_SEARCH = "edd348bdf8b9f5069ada74afae22d3ba99e1b349e2748b245de73384c9d666b9"
 
 
 def identity() -> dict[str, Any]:
@@ -27,8 +31,8 @@ def identity() -> dict[str, Any]:
         "damage_aware_config_hash": "2" * 64,
         "damage_value_format": 1,
         "world_writers_hash": "3" * 64,
-        "world_builder_format": 1,
-        "world_facts_format": "world-facts/2",
+        "world_builder_format": 2,
+        "world_facts_format": "world-facts/3",
         "reply_model_format": 1,
         "leaf_format": 1,
         "reader_sha256": "4" * 64,
@@ -60,7 +64,7 @@ def test_search_identity_moves_with_every_input() -> None:
         elif isinstance(value, dict):
             changed[key] = {**value, "regulation": "M-D"}
         elif key == "world_facts_format":
-            changed[key] = "world-facts/3"
+            changed[key] = "world-facts/4"
         else:
             changed[key] = "9" * 64
         assert search_identity_hash(changed) != base, key
@@ -81,7 +85,7 @@ def test_every_existing_policy_id_is_unchanged(case: dict[str, Any]) -> None:
 
 def test_policy_id_gains_search_only_when_present() -> None:
     assert (
-        policy_id(H, "b" * 64, "argmax", search=SEARCH_HASH)
+        policy_id(H, "b" * 64, "argmax", search=ID_VECTOR_SEARCH)
         == "policy:86611a1d2e6ce20f8e0a1a1f4b61cf3a88d27229bc18ef2a80ec4990b1797453"
     )
     full = policy_id(
@@ -91,7 +95,7 @@ def test_policy_id_gains_search_only_when_present() -> None:
         temperature_ppm=700000,
         truncation={"kind": "threshold", "min_ppm": 30000},
         features="f" * 64,
-        search=SEARCH_HASH,
+        search=ID_VECTOR_SEARCH,
     )
     assert full == "policy:7cbab00c7c5aac1f95f622fec925b0ddf5bf0097d0d05352911b6ceb6174fb26"
     assert policy_id(H, "b" * 64, "sample", search=SEARCH_HASH) != policy_id(H, "b" * 64, "sample")
