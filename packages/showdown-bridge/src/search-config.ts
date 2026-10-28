@@ -23,8 +23,8 @@ export const SEARCH_POLICY_LABEL = "learned pair with decision-time search (one-
 
 /**
  * Bumped when the hypothetical-channel construction for the value-head leaf, or the non-learned HP and
- * knock-out leaf, changes (ADR-026 section 5). Neither leaf exists yet (slice Q and part 2 build them), so the
- * constant starts at 1 and is the identity's `leaf_format`.
+ * knock-out leaf (`search-actor.ts`, `search-leaf.ts`), changes (ADR-026 section 5). The constant starts at 1 and is
+ * the identity's `leaf_format`.
  */
 export const LEAF_FORMAT = 1;
 
