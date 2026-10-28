@@ -17,6 +17,7 @@ import type { Engine } from "./engine.ts";
 import { UsageError } from "./generation-cli.ts";
 import { damageAwareSetup, type FeatureSetup, featureSetup } from "./league-generation.ts";
 import { PolicyWorkerClient } from "./policy-worker.ts";
+import type { SearchSetup } from "./search-actor.ts";
 import { EVAL_DATASET_FLAGS, readEvalDataset, withEvalDataset } from "./eval-dataset.ts";
 import { type ProgressMode, type ProgressPool, ProgressError, playProgress, writeProgress, PROGRESS_MODES, DAMAGE_AWARE_VERSIONS, type DamageAwareVersion } from "./progress-evaluation.ts";
 import { progressRecordHash } from "./progress-records.ts";
@@ -72,8 +73,11 @@ const FLAGS = {
   ...EVAL_DATASET_FLAGS,
   // Key the validation pairs and battle seeds by this id instead of the run key (#1177).
   "evaluation-key": { type: "string" },
+  // The decision-time search as the candidate (ADR-026 slice P): the pair in this play mode with the committed `rerank-1` config,
+  // against the baselines and the control `self-no-search` (the same pair in the same mode without search).
+  "search-mode": { type: "string" },
 } as const;
-const OPTIONAL = new Set<string>(["previous-preview", "previous-battle", "previous-policy-id-sample", "previous-policy-id-argmax", "anchor", "anchor-games", "versus", "versus-dir", "versus-encoder-version", "versus-team-set", "run-games", "ablation-preview", "ablation-random-policy-id", "damage-aware-budget-ms", "damage-aware-version", "eval-dataset-dir", "eval-dataset-hash", "evaluation-key"]);
+const OPTIONAL = new Set<string>(["previous-preview", "previous-battle", "previous-policy-id-sample", "previous-policy-id-argmax", "anchor", "anchor-games", "versus", "versus-dir", "versus-encoder-version", "versus-team-set", "run-games", "ablation-preview", "ablation-random-policy-id", "damage-aware-budget-ms", "damage-aware-version", "eval-dataset-dir", "eval-dataset-hash", "evaluation-key", "search-mode"]);
 const VERSUS = ["versus", "versus-dir", "versus-encoder-version", "versus-team-set", "run-games"] as const;
 const PREVIOUS = ["previous-preview", "previous-battle", "previous-policy-id-sample", "previous-policy-id-argmax"] as const;
 
@@ -106,6 +110,16 @@ function readTeamSet(path: string): string[] {
   const teams = (JSON.parse(readFileSync(path, "utf8")) as { teams?: unknown }).teams;
   if (!Array.isArray(teams) || teams.some((t) => typeof t !== "string" || !/^[0-9a-f]{64}$/.test(t))) throw new UsageError("--versus-team-set must hold a teams list of SHA-256 hashes");
   return teams as string[];
+}
+
+/**
+ * The ports a composition root fills for the options that need more than the bridge can import: the reviewed search records with
+ * the opponent model's worlds (`--search-mode`), and the canonical and played-form hashes of the RUN's own dev and training teams
+ * (read from its dataset), which an evaluation dataset (`--eval-dataset-dir`) must be disjoint from.
+ */
+export interface ProgressPorts {
+  search?: (engine: Engine, formatId: string) => SearchSetup;
+  run_teams?: (engine: Engine, config: TrainingRunConfig) => ReadonlySet<string>;
 }
 
 /** What a frozen pair's worker needs: one worker session holds one pair, CPU torch, stdio only, one query at a time. */
@@ -156,7 +170,7 @@ export function frozenPairClient(o: FrozenPairClientOptions): PolicyWorkerClient
 }
 
 /** Run one generation's progress evaluation; returns the process exit code and writes its one JSON line with `print`. */
-export async function runProgressCli(argv: readonly string[], print: (line: string) => void, poolSource: ProgressPoolSource): Promise<number> {
+export async function runProgressCli(argv: readonly string[], print: (line: string) => void, poolSource: ProgressPoolSource, ports: ProgressPorts = {}): Promise<number> {
   let values: Record<Exclude<keyof typeof FLAGS, "anchor">, string | undefined> & { anchor?: string[] };
   try {
     values = parseArgs({ args: [...argv], options: FLAGS, strict: true }).values as typeof values;
@@ -177,6 +191,10 @@ export async function runProgressCli(argv: readonly string[], print: (line: stri
   const ablationParts = values["ablation-preview"]?.split(",");
   if (ablationParts !== undefined && (ablationParts.length !== 3 || !/^\d+$/.test(ablationParts[0] as string))) throw new UsageError("--ablation-preview must be <generation>,<preview-checkpoint>,<policy-id-argmax>");
   if (ablationParts !== undefined && (anchorSpecs.length > 0 || PREVIOUS.some((name) => values[name] !== undefined))) throw new UsageError("the Preview ablation is played alone: no anchors and no previous-generation flags");
+  const searchMode = values["search-mode"];
+  if (searchMode !== undefined && searchMode !== "argmax" && searchMode !== "sample") throw new UsageError("--search-mode must be argmax or sample");
+  if (searchMode !== undefined && ablationParts !== undefined) throw new UsageError("the search candidate is evaluated alone: no Preview ablation");
+  if (searchMode !== undefined && ports.search === undefined) throw new UsageError("this command has no search setup: --search-mode needs the team-dataset script");
   const damageBudget = values["damage-aware-budget-ms"] === undefined ? undefined : integer("damage-aware-budget-ms", values["damage-aware-budget-ms"], 1);
   const damageVersion = values["damage-aware-version"] ?? "v1";
   if (!(DAMAGE_AWARE_VERSIONS as readonly string[]).includes(damageVersion)) throw new UsageError(`--damage-aware-version must be one of ${DAMAGE_AWARE_VERSIONS.join(", ")}`);
@@ -203,6 +221,8 @@ export async function runProgressCli(argv: readonly string[], print: (line: stri
   if (evalDataset !== undefined && evalDataset.dataset_hash === config.team_dataset.dataset_hash) throw new UsageError("--eval-dataset-hash is the run's own training dataset: leave the option out to evaluate on its validation split");
   const teamSet = JSON.parse(readFileSync(need("team-set"), "utf8")) as { teams: string[] };
   const engine = loadEngine(process.env.SHOWDOWN_DIR || undefined);
+  // An evaluation dataset must hold none of the run's own dev or training teams (not only those it drew into team-set.json).
+  const runTeams = evalDataset === undefined ? new Set<string>() : (ports.run_teams ?? ((): never => { throw new UsageError("this command cannot read the run's own teams: --eval-dataset-dir needs the team-dataset script"); }))(engine, config);
   const dataFile = need("engine-data");
   const dataHash = engineDataHash(readEngineData(JSON.parse(readFileSync(dataFile, "utf8"))));
   const { max_line_bytes, handshake_timeout_ms } = config.generation;
@@ -285,10 +305,11 @@ export async function runProgressCli(argv: readonly string[], print: (line: stri
           }),
       ...(damageBudget === undefined ? {} : { damage_aware: { setup: damageAwareSetup(engine, config.format_id, damageVersion as DamageAwareVersion), version: damageVersion as DamageAwareVersion, match_budget_ms: damageBudget } }),
       ...(values["evaluation-key"] === undefined ? {} : { evaluation_key: values["evaluation-key"] }),
+      ...(searchMode === undefined || ports.search === undefined ? {} : { search: { setup: ports.search(engine, config.format_id), mode: searchMode } }),
       pool,
       games,
       record_games,
-      training_teams: new Set([...teamSet.teams, ...versusTeamSet]),
+      training_teams: new Set([...teamSet.teams, ...versusTeamSet, ...runTeams]),
       league_seeds: new Set([...committedPlanSeeds(need("run-dir")), ...(values["versus-dir"] === undefined ? [] : committedPlanSeeds(values["versus-dir"]))]),
     });
     writeProgress(need("out"), result);

@@ -206,6 +206,12 @@ export interface PolicySeat {
   features?: ActorFeatures;
   /** Play the Team Preview uniformly at random among the legal Preview choices (the Preview ablation), seeded per seat. */
   random_preview?: true;
+  /**
+   * Build the seat's actor from the options `policyGame` would give `policyActor` (the same battle name, team, class, seed and game),
+   * for a policy that wraps the pair: the decision-time search and its no-search control (ADR-026). The result is guarded as role
+   * `policy` like any seat; the seat's `client`, `policy_id` and `sampling` stay the pair's own.
+   */
+  make?: (options: PolicyActorOptions) => Actor;
 }
 
 export interface PolicyGameOptions {
@@ -235,8 +241,9 @@ export async function policyGame(options: PolicyGameOptions): Promise<PlayedGame
   const actorOf = (player: Player): Actor => {
     const seat = seats[player];
     if (typeof seat === "function") return seat;
-    const { random_preview, ...asked } = seat;
-    const actor = policyActor({
+    const { random_preview, make, ...asked } = seat;
+    const build = make ?? policyActor;
+    const actor = build({
       ...asked,
       ...(random_preview === undefined ? {} : { preview_actor: randomLegalActor(randomPreviewSeed(seed, game, player)) }),
       battle: `game-${game}-${player}`,

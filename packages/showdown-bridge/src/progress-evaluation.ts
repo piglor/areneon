@@ -26,12 +26,15 @@ import { guardActor, type LatencyBudget, type PlayedGame } from "./evaluation-ha
 import { resolveFormat } from "./formats.ts";
 import { firstLegal } from "./golden.ts";
 import type { DamageAwareSetup } from "./league-generation.ts";
+import type { PlaySettings } from "./policy-protocol.ts";
 import { type PolicyClient } from "./policy-worker.ts";
 import { type ActorFeatures, policyGame, type PolicySeat } from "./policy-actor.ts";
 import { PROGRESS_PAIRING, PROGRESS_SEED_DERIVATION, progressGameStreams, progressPairs } from "./progress-seed.ts";
-import { type BaselineCounts, omniscientLogHash, progressRecordHash, sumBaselineCounts, tallyRows, type ProgressEvaluationRecordV2, type ProgressGameRecord, readProgressEvaluationRecordV2, readProgressGameRecord } from "./progress-records.ts";
+import { type BaselineCounts, omniscientLogHash, type SearchCounts, sumSearchCounts, progressRecordHash, sumBaselineCounts, tallyRows, type ProgressEvaluationRecordV2, type ProgressGameRecord, readProgressEvaluationRecordV2, readProgressGameRecord } from "./progress-records.ts";
 import { randomLegalActor } from "./random-legal.ts";
 import type { Actor, Player } from "./runner.ts";
+import { searchPolicy, type SearchActor, type SearchSetup } from "./search-actor.ts";
+import { controlSeat, searchCountsRecord, searchSeat, type ControlTally } from "./search-progress.ts";
 import type { SyntheticTeamHashes } from "./team-class.ts";
 import { teamHash } from "./team-class.ts";
 import { runConfigHash, type TrainingRunConfig } from "./training-run-config.ts";
@@ -176,6 +179,17 @@ export interface ProgressOptions {
     /** The clock the budget is measured with (default `performance.now`); a test seam. */
     clock?: () => number;
   };
+  /**
+   * The decision-time search as the candidate (ADR-026 section 5, slice P): the evaluated generation's frozen pair in ONE play
+   * `mode`, wrapped by `searchActor` with the reviewed records of `setup`. The search candidate is evaluated alone (no ablation;
+   * its matches are `search-<opponent>-<mode>`), against the same baselines and pairs as the pair itself, and head to head against
+   * the control `self-no-search`: the same pair in the same mode without search. A pair that reads candidate features is refused.
+   */
+  search?: {
+    setup: SearchSetup;
+    mode: ProgressMode;
+    play?: PlaySettings;
+  };
   pool: ProgressPool;
   /** Games per baseline and previous match: even, two per pair; refused above twice the number of disjoint pairs. */
   games: number;
@@ -271,6 +285,9 @@ export interface GameFacts {
   played: PlayedGame;
   /** Only a game with a damage-aware seat: that seat, the baseline identity hash and its counts. */
   baseline?: { seat: Player; identity_hash: string; counts: BaselineCounts };
+  /** Only a game of a search candidate: its seat, the search identity hash and its counts; and the self-no-search control's, if it played. */
+  search?: { seat: Player; identity_hash: string; counts: SearchCounts };
+  opponent_search?: { seat: Player; identity_hash: string; counts: SearchCounts };
 }
 
 /** Build the ProgressGameRecord of a played or forfeited game, and read it back so a bad one cannot leave. */
@@ -316,6 +333,8 @@ export function buildProgressGameRecord(facts: GameFacts): ProgressGameRecord {
     omniscient_log: lines,
     omniscient_log_sha256: omniscientLogHash(lines),
     ...(facts.baseline === undefined ? {} : { baseline: facts.baseline }),
+    ...(facts.search === undefined ? {} : { search: facts.search }),
+    ...(facts.opponent_search === undefined ? {} : { opponent_search: facts.opponent_search }),
   });
 }
 
@@ -334,6 +353,7 @@ export function progressPlan(options: Pick<ProgressOptions, "config" | "pool" | 
   const byCanonical = new Map(pool.teams.map((team) => [team.canonical_team_hash, team]));
   if (byCanonical.size !== pool.teams.length) throw new ProgressError("a team appears twice in the validation pool");
   for (const team of pool.teams) {
+    if (training_teams.has(team.canonical_team_hash)) throw new ProgressError("a validation team is a dev or training team of the run's own dataset");
     if (training_teams.has(teamHash(team.sets))) throw new ProgressError("a validation team is in the run's team-set.json: the run trained on it");
     if (!pool.known_synthetic.has(teamHash(team.sets))) throw new ProgressError("a validation team is not proven synthetic");
   }
@@ -391,7 +411,7 @@ export async function playProgress(options: ProgressOptions): Promise<ProgressRe
   const wall_ms: Record<string, number> = {};
   const game_ms: Record<string, { mean: number; max: number }> = {};
   const clock = options.damage_aware?.clock ?? (() => performance.now());
-  type Seat = { seat: PolicySeat | Actor; report?: () => BaselineReport };
+  type Seat = { seat: PolicySeat | Actor; report?: () => BaselineReport; control?: () => SearchCounts };
   type Opponent = { id: string; anchored?: true; cross?: true; budget_ms?: number; opponent: (mode: ProgressMode) => Match["opponent"]; seat: (mode: ProgressMode, game: number) => Seat; policies: (mode: ProgressMode) => string; begin: () => Promise<void> };
   const opponents: Opponent[] = PROGRESS_BASELINES.map((baseline) => ({
     id: baseline.actor,
@@ -419,13 +439,36 @@ export async function playProgress(options: ProgressOptions): Promise<ProgressRe
       begin: () => Promise.resolve(),
     });
   }
-  const { previous } = options;
+  const { previous, search } = options;
+  if (search !== undefined) {
+    if (ablation !== undefined) throw new ProgressError("the search candidate is evaluated alone: no Preview ablation");
+    if (options.features !== undefined) throw new ProgressError("a pair that reads candidate features is not searched: the search refuses it");
+    if (!PROGRESS_MODES.includes(search.mode)) throw new ProgressError("the search mode is argmax or sample");
+    opponents.push({
+      id: "self-no-search",
+      opponent: (mode) => ({ kind: "self-no-search", policy_id: options.policy_ids[mode], checkpoints: options.checkpoints, mode }),
+      seat: (mode) => {
+        let tally: ControlTally | undefined;
+        const seat = controlSeat({ client, policy_id: options.policy_ids[mode], mode, ...(search.play === undefined ? {} : { play: search.play }), onTally: (made) => (tally = made) });
+        return { seat, control: () => (tally as ControlTally).counts() };
+      },
+      policies: (mode) => options.policy_ids[mode],
+      begin: () => Promise.resolve(),
+    });
+  }
   // Rows are built per seat from the seat's own run config; a seat of a pair without the option carries none.
   const ownFeatures: { features?: ActorFeatures } = options.features === undefined ? {} : { features: { configs: options.features } };
   // The candidates: the generation's own pair, or the three Previews of the ablation (argmax only, against the baselines).
-  type Candidate = { prefix: string; client: PolicyClient & { beginGame?: () => Promise<void> }; policy_ids: Record<ProgressMode, string>; random_preview?: true; candidate_preview?: Match["candidate_preview"] };
+  type Candidate = { prefix: string; client: PolicyClient & { beginGame?: () => Promise<void> }; policy_ids: Record<ProgressMode, string>; random_preview?: true; candidate_preview?: Match["candidate_preview"]; search?: { identity_hash: string } };
   const candidates: Candidate[] = [{ prefix: "", client, policy_ids: options.policy_ids }];
   let modes: readonly ProgressMode[] = PROGRESS_MODES;
+  if (search !== undefined) {
+    // The search policy's id carries the search identity (ADR-026 section 5); the control keeps the pair's own id.
+    const named = searchPolicy(search.setup, manifest, options.checkpoints, search.mode, search.play ?? {});
+    modes = [search.mode];
+    candidates.length = 0;
+    candidates.push({ prefix: "search-", client, policy_ids: { ...options.policy_ids, [search.mode]: named.policy_id }, search: { identity_hash: named.identity_hash } });
+  }
   if (ablation !== undefined) {
     modes = ["argmax"];
     candidates.length = 0;
@@ -487,6 +530,8 @@ export async function playProgress(options: ProgressOptions): Promise<ProgressRe
       const matchRows: Row[] = [];
       const hashes: string[] = [];
       const reports: BaselineReport[] = [];
+      const searches: SearchCounts[] = [];
+      const controls: SearchCounts[] = [];
       const gameMs: number[] = [];
       const started = clock();
       for (let game = 0; game < count; game++) {
@@ -497,7 +542,11 @@ export async function playProgress(options: ProgressOptions): Promise<ProgressRe
         // Teams stay on their seats; the policies swap. Both games of a pair share the pair's battle seed.
         const teams: Record<Player, PokemonSet[]> = { p1: first.sets, p2: second.sets };
         const streams = progressGameStreams(planKey, pair);
-        const seat: PolicySeat = { client: candidateKind.client, policy_id, sampling: mode, ...ownFeatures, ...(candidateKind.random_preview === undefined ? {} : { random_preview: true }) };
+        let searcher: SearchActor | undefined;
+        const seat: PolicySeat =
+          candidateKind.search !== undefined && search !== undefined
+            ? searchSeat({ setup: search.setup, client: candidateKind.client as PolicyClient & Parameters<typeof searchSeat>[0]["client"], policy_id, identity_hash: candidateKind.search.identity_hash, mode, ...(search.play === undefined ? {} : { play: search.play }), onActor: (made) => (searcher = made) })
+            : { client: candidateKind.client, policy_id, sampling: mode, ...ownFeatures, ...(candidateKind.random_preview === undefined ? {} : { random_preview: true }) };
         await candidateKind.client.beginGame?.();
         await baseline.begin();
         const opposing = baseline.seat(mode, pair);
@@ -516,7 +565,16 @@ export async function playProgress(options: ProgressOptions): Promise<ProgressRe
         const row = rowOf(match_id, game, pair, candidate, played);
         const report = opposing.report?.();
         if (report !== undefined) reports.push(report);
-        matchRows.push(report === undefined ? row : { ...row, baseline_counts: report.counts });
+        let searched: SearchCounts | undefined;
+        if (candidateKind.search !== undefined) {
+          const made = (searcher as SearchActor | undefined)?.report();
+          if (made === undefined || made.policy_id !== policy_id || made.identity_hash !== candidateKind.search.identity_hash) throw new ProgressError("a search game carries another policy id or search identity than the evaluation names");
+          searched = searchCountsRecord(made.counts);
+        }
+        const controlled = opposing.control?.();
+        controls.push(...(controlled === undefined ? [] : [controlled]));
+        if (searched !== undefined) searches.push(searched);
+        matchRows.push({ ...row, ...(report === undefined ? {} : { baseline_counts: report.counts }), ...(searched === undefined ? {} : { search: searched }), ...(controlled === undefined ? {} : { opponent_search: controlled }) });
         const now = clock();
         gameMs.push(now - gameStarted);
         // A match that outruns its budget fails the evaluation (fail closed): no partial record leaves.
@@ -536,6 +594,8 @@ export async function playProgress(options: ProgressOptions): Promise<ProgressRe
             policies,
             played,
             ...(report === undefined ? {} : { baseline: { seat: rival(candidate), identity_hash: report.identity_hash, counts: report.counts } }),
+            ...(searched === undefined || candidateKind.search === undefined ? {} : { search: { seat: candidate, identity_hash: candidateKind.search.identity_hash, counts: searched } }),
+            ...(controlled === undefined || candidateKind.search === undefined ? {} : { opponent_search: { seat: rival(candidate), identity_hash: candidateKind.search.identity_hash, counts: controlled } }),
           });
           stored.set(`${match_id}-${game}.json`, stored_game);
           hashes.push(progressRecordHash(stored_game));
@@ -544,7 +604,7 @@ export async function playProgress(options: ProgressOptions): Promise<ProgressRe
       rowsByMatch.set(match_id, matchRows);
       wall_ms[match_id] = Math.round(clock() - started);
       game_ms[match_id] = { mean: Math.round(gameMs.reduce((a, b) => a + b, 0) / gameMs.length), max: Math.round(Math.max(...gameMs)) };
-      matches.push(summarise(match_id, policy_id, baseline.opponent(mode), mode, matchRows, hashes, config.generation.max_turns, candidateKind.candidate_preview, reports));
+      matches.push(summarise(match_id, policy_id, baseline.opponent(mode), mode, matchRows, hashes, config.generation.max_turns, candidateKind.candidate_preview, reports, candidateKind.search === undefined ? undefined : { identity_hash: candidateKind.search.identity_hash, searches, controls }));
     }
     }
   }
@@ -583,7 +643,7 @@ export async function playProgress(options: ProgressOptions): Promise<ProgressRe
   return { record, game_records: stored, wall_ms, game_ms };
 }
 
-function summarise(match_id: string, policy_id: string, opponent: Match["opponent"], mode: ProgressMode, rows: readonly Row[], hashes: string[], maxTurns: number, candidate_preview: Match["candidate_preview"] | undefined, reports: readonly BaselineReport[]): Match {
+function summarise(match_id: string, policy_id: string, opponent: Match["opponent"], mode: ProgressMode, rows: readonly Row[], hashes: string[], maxTurns: number, candidate_preview: Match["candidate_preview"] | undefined, reports: readonly BaselineReport[], search?: { identity_hash: string; searches: readonly SearchCounts[]; controls: readonly SearchCounts[] }): Match {
   return {
     match_id,
     policy_id,
@@ -594,6 +654,8 @@ function summarise(match_id: string, policy_id: string, opponent: Match["opponen
     ...tallyRows(rows, maxTurns),
     game_record_hashes: hashes.sort(),
     ...(reports.length === 0 ? {} : { baseline: { identity_hash: (reports[0] as BaselineReport).identity_hash, counts: sumBaselineCounts(reports.map((report) => report.counts)) } }),
+    ...(search === undefined ? {} : { search: { identity_hash: search.identity_hash, counts: sumSearchCounts(search.searches) } }),
+    ...(search === undefined || search.controls.length === 0 ? {} : { opponent_search: { identity_hash: search.identity_hash, counts: sumSearchCounts(search.controls) } }),
   };
 }
 
