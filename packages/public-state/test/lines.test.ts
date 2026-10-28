@@ -193,6 +193,12 @@ describe("volatiles, items, abilities and formes", () => {
     expect(opp(state, "Venusaur")).toMatchObject({ item: null, item_lost: true, item_received: true });
     ({ state } = after("|-item|p2a: Venusaur|Leftovers|[from] ability: Frisk|[of] p1a: Venusaur|[identify]"));
     expect(opp(state, "Venusaur").item_received).toBe(false);
+    ({ state } = after("|-item|p2a: Venusaur|Leftovers|[from] ability: Frisk|[of] p1b: Charizard|[identify]"));
+    expect(opp(state, "Venusaur")).toMatchObject({ item: "leftovers", ability: null, ability_received: false });
+    expect(own(state, "Charizard").ability).toBe("frisk");
+    ({ state } = after("|-item|p1a: Venusaur|Leftovers|[from] ability: Frisk|[of] p2b: Charizard|[identify]"));
+    expect(opp(state, "Charizard")).toMatchObject({ ability: "frisk", item: null, ability_received: false });
+    expect(own(state, "Venusaur").ability).not.toBe("frisk");
     ({ state } = after("|-ability|p2a: Venusaur|Mummy|[from] ability: Mummy|[of] p2b: Charizard"));
     expect(opp(state, "Venusaur")).toMatchObject({ ability: "mummy", ability_received: true });
     expect(opp(state, "Charizard").ability_received).toBe(false);
@@ -367,6 +373,32 @@ describe("the whole committed corpus", () => {
     expect(kinds.get("move")).toBeGreaterThan(100);
     expect(kinds.get("-damage")).toBeGreaterThan(100);
     expect(kinds.get("replace")).toBeGreaterThan(0);
+  }, CORPUS_TEST_TIMEOUT_MS);
+});
+
+describe("Frisk in the committed corpus (#1171)", () => {
+  it("credits the item to the target and the ability to the Frisk holder at every reveal", () => {
+    const FRISK = /^\|-item\|(p[12])[ab]: ([^|]+)\|([^|]+)\|\[from\] ability: Frisk\|\[of\] (p[12])[ab]: ([^|]+)/;
+    let reveals = 0;
+    for (const f of fixtures()) {
+      const run = api.interpretChannel(f.player, f.lines, dex);
+      f.lines.forEach((line, i) => {
+        const m = FRISK.exec(line);
+        if (!m) return;
+        reveals += 1;
+        const side = (id: string) => (id === f.player ? "own" : "opponent");
+        const find = (state: any, id: string, name: string) => state[side(id)].roster.find((x: any) => x.name === name);
+        const before = run.frames[i]!.state;
+        const after = run.frames[i + 1]!.state;
+        const target = find(after, m[1]!, m[2]!);
+        const frisker = find(after, m[4]!, m[5]!);
+        expect(target.item, `${f.id} ${line}`).toBe(m[3]!.toLowerCase().replace(/[^a-z0-9]/g, ""));
+        expect(frisker.ability, `${f.id} ${line}`).toBe("frisk");
+        // The target's ability is not touched by the line.
+        expect(target.ability, `${f.id} ${line}`).toEqual(find(before, m[1]!, m[2]!).ability);
+      });
+    }
+    expect(reveals).toBeGreaterThan(10);
   }, CORPUS_TEST_TIMEOUT_MS);
 });
 

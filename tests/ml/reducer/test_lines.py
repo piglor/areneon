@@ -131,6 +131,18 @@ def test_item_is_revealed_by_its_own_effect_only_without_of() -> None:
     assert opp(state, "Charizard").item_known
 
 
+def test_frisk_credits_the_item_to_the_target_and_the_ability_to_the_frisker() -> None:
+    reveal = "|-item|{}a: Venusaur|Leftovers|[from] ability: Frisk|[of] {}b: Charizard|[identify]"
+    state = run(reveal.format("p2", "p1"))
+    assert opp(state, "Venusaur").item == "leftovers"
+    assert opp(state, "Venusaur").ability is None
+    assert own(state, "Charizard").ability == "frisk"
+    state = run(reveal.format("p1", "p2"))
+    assert opp(state, "Charizard").ability == "frisk"
+    assert own(state, "Venusaur").ability != "frisk"
+    assert opp(state, "Charizard").item is None
+
+
 def test_item_ability_lines() -> None:
     state = run(
         "|-item|p2a: Venusaur|Sitrus Berry|[from] move: Trick|[of] p1a: Venusaur",
@@ -448,7 +460,8 @@ def test_ability_copies_and_skill_swap() -> None:
     assert opp(state, "Venusaur").ability == "intimidate"
     assert own(state, "Charizard").ability == "intimidate"
     assert opp(state, "Charizard").ability is None
-    assert own(state, "Venusaur").ability is None
+    # Frisk (#1171): the item is the target's, the ability the `[of]` Pokemon's.
+    assert own(state, "Venusaur").ability == "frisk"
     assert opp(state, "Charizard").item == "leftovers"
     state = run("|-ability|p2a: Venusaur|Static|[from] move: Role Play|[of] p1a: Venusaur")
     assert own(state, "Venusaur").ability == "static"
