@@ -50,6 +50,8 @@ function present(input: WorldInput, rows: Record<string, readonly string[]>): Se
       else if (id !== "confusion") items.add("unadmitted_id");
     }
   }
+  // toxic_stage is R in the committed record: a badly poisoned living Pokemon in play is refused for it.
+  if (roster.some((m) => m.status === "tox" && !m.fainted && m.active_slot !== null)) items.add("toxic_stage");
   const brought = new Map(input.team.map((s) => [toId(s.name === "" ? s.species : s.name), toId(s.item)]));
   if (state.opponent.roster.some((m) => m.item_received)) items.add("item_replaced");
   for (const p of request.side.pokemon) {

@@ -94,7 +94,7 @@ An item passes with at least 20 exercising turns in F1 and in F2 that are equal,
 | last_move | W | 1413 | 1083 | 0 | 0 | 1413 | 846 | 0 | 0 | yes |
 | protect_counter | W | 102 | 83 | 0 | 0 | 102 | 65 | 0 | 0 | yes |
 | total_fainted | W | 1002 | 771 | 0 | 0 | 1002 | 611 | 0 | 0 | yes |
-| toxic_stage | W | 26 | 17 | 0 | 0 | 26 | 16 | 0 | 0 | no |
+| toxic_stage | R | 26 | 17 | 0 | 0 | 26 | 16 | 0 | 0 | no |
 | turn_number | W | 1415 | 1085 | 0 | 0 | 1415 | 848 | 0 | 0 | yes |
 
 ## Candidate ids (admitted one at a time into a copy of the record)
