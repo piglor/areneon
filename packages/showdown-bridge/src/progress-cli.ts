@@ -68,8 +68,10 @@ const FLAGS = {
   "damage-aware-budget-ms": { type: "string" },
   // The validation split of another verified dataset instead of the run's own (ADR-020 E-17.1): both flags, or none.
   ...EVAL_DATASET_FLAGS,
+  // Key the validation pairs and battle seeds by this id instead of the run key (#1177).
+  "evaluation-key": { type: "string" },
 } as const;
-const OPTIONAL = new Set<string>(["previous-preview", "previous-battle", "previous-policy-id-sample", "previous-policy-id-argmax", "anchor", "anchor-games", "versus", "versus-dir", "versus-encoder-version", "versus-team-set", "run-games", "ablation-preview", "ablation-random-policy-id", "damage-aware-budget-ms", "eval-dataset-dir", "eval-dataset-hash"]);
+const OPTIONAL = new Set<string>(["previous-preview", "previous-battle", "previous-policy-id-sample", "previous-policy-id-argmax", "anchor", "anchor-games", "versus", "versus-dir", "versus-encoder-version", "versus-team-set", "run-games", "ablation-preview", "ablation-random-policy-id", "damage-aware-budget-ms", "eval-dataset-dir", "eval-dataset-hash", "evaluation-key"]);
 const VERSUS = ["versus", "versus-dir", "versus-encoder-version", "versus-team-set", "run-games"] as const;
 const PREVIOUS = ["previous-preview", "previous-battle", "previous-policy-id-sample", "previous-policy-id-argmax"] as const;
 
@@ -248,6 +250,7 @@ export async function runProgressCli(argv: readonly string[], print: (line: stri
             },
           }),
       ...(damageBudget === undefined ? {} : { damage_aware: { setup: damageAwareSetup(engine, config.format_id), match_budget_ms: damageBudget } }),
+      ...(values["evaluation-key"] === undefined ? {} : { evaluation_key: values["evaluation-key"] }),
       pool,
       games,
       record_games,

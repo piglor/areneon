@@ -52,6 +52,11 @@
       "minimum": 0,
       "maximum": 9007199254740991
     },
+    "evaluation_key": {
+      "description": "Present only in a game of an evaluation run on a declared evaluation key (#1177): the key progress-seed/1 used in place of run_id for this game's seed. Equal to the evaluation record's plan.evaluation_key; never equal to run_id.",
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+    },
     "seed": {
       "description": "The battle seed, in the engine's sodium,<32 hex> form.",
       "type": "string",

@@ -170,6 +170,22 @@ def _evaluation_dataset_note(model: ReportModel) -> str:
     )
 
 
+def _evaluation_key_note(model: ReportModel) -> str:
+    """Which generations keyed their pairs and seeds by an evaluation key (#1177)."""
+    groups: dict[str, list[int]] = {}
+    for g, p in sorted(model.progress.items()):
+        if p.evaluation_key is not None:
+            groups.setdefault(p.evaluation_key, []).append(g)
+    if not groups:
+        return ""
+    listed = "; ".join(f"generation {', '.join(map(str, gs))}: {k}" for k, gs in groups.items())
+    return (
+        '<p class="note">Evaluation key: the validation pairs, seats and battle seeds are keyed '
+        f"by it instead of the run key ({esc(listed)}). Runs evaluated with the same key play "
+        "the same pairs and seeds.</p>"
+    )
+
+
 def _looks_note(model: ReportModel) -> str:
     if model.looks is None:
         return ""
@@ -196,7 +212,7 @@ def _progress_section(model: ReportModel, tips: Tips) -> str:
         )
         return "".join(out)
     missing = [str(g) for g in xs if g not in model.progress]
-    out.append(_looks_note(model) + _evaluation_dataset_note(model))
+    out.append(_looks_note(model) + _evaluation_dataset_note(model) + _evaluation_key_note(model))
     kinds = {m.interval_kind for p in model.progress.values() for m in p.matches}
     notes = "".join(
         f'<p class="note">{esc(text)}</p>'

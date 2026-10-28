@@ -104,7 +104,9 @@ def game_file(  # noqa: PLR0913, PLR0917
     stored["match_id"] = match_id
     stored["game"] = game
     stored["pair"] = game // 2  # every pair is played from both seats (version 2)
-    stored["seed"] = progress_game_seed(config.run_key, game // 2)
+    stored["seed"] = progress_game_seed(request.evaluation_key or config.run_key, game // 2)
+    if request.evaluation_key is not None:
+        stored["evaluation_key"] = request.evaluation_key
     stored["policies"] = {"p1": pair, "p2": opponent}
     return stored
 
@@ -337,6 +339,11 @@ def progress_files(  # noqa: PLR0912, PLR0915
             "recorded_games_per_match": request.record_games,
             **({"anchor_games_per_match": request.anchor_games} if anchors else {}),
             **({"run_games_per_match": run_games} if request.versus is not None else {}),
+            **(
+                {"evaluation_key": request.evaluation_key}
+                if request.evaluation_key is not None
+                else {}
+            ),
             "max_turns": config.generation.max_turns,
             "latency_budget_ms": {
                 "preview_ms": config.generation.preview_ms,

@@ -61,6 +61,7 @@ from areneon_ml.model.encoder import encoder_version
 from areneon_ml.model.gamedata import GameData
 from areneon_ml.model.network import ROLES
 from areneon_ml.private.private_test import PrivateTestRequest, private_test_main
+from areneon_ml.progress import evaluation_key as evaluation_key_option
 from areneon_ml.progress.eval_dataset import EvalDatasetError
 from areneon_ml.progress.eval_dataset import add_arguments as eval_dataset_arguments
 from areneon_ml.progress.eval_dataset import from_values as eval_dataset_from
@@ -234,6 +235,7 @@ def _add_scripted_parser(commands: Any) -> None:
 
 def _add_owner_and_scripted_parsers(commands: Any) -> None:
     eval_dataset_arguments(commands.choices["progress"])
+    evaluation_key_option.add_argument(commands.choices["progress"])
     _add_private_test_parser(commands)
     _add_scripted_parser(commands)
 
@@ -460,6 +462,7 @@ def _progress(args: argparse.Namespace) -> dict[str, object]:
             damage_budget,
             versus,
             eval_dataset,
+            args.evaluation_key,
         )
         for g in generations
     ]
@@ -467,7 +470,7 @@ def _progress(args: argparse.Namespace) -> dict[str, object]:
         result["move_use"] = progress_move_use(root, int(result["generation"]), config)
     # Everything above succeeded, so a validation result is about to be shown: log the look.
     looks = [
-        Look(int(r["generation"]), str(m["match_id"]), int(m["games"]))
+        Look(int(r["generation"]), str(m["match_id"]), int(m["games"]), args.evaluation_key)
         for r in done
         for m in r["matches"]
     ]

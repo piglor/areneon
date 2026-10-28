@@ -348,6 +348,12 @@ class Plan(BaseModel):
     """
     Games in every anchor match (even), laid out as games_per_match. Present exactly when the record has anchor matches.
     """
+    evaluation_key: Annotated[
+        StrictStr | MISSING, Field(pattern="^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
+    ] = MISSING
+    """
+    Present only when the evaluation was run on a declared evaluation key (--evaluation-key, #1177): the key that replaces the run key in progress-pairing/1 and progress-seed/1 for every match, so another run evaluated with the same key plays the same pairs, seats and seeds. Absent: the run key (run_id) keys them. Never equal to run_id.
+    """
     run_games_per_match: Annotated[
         StrictInt | MISSING, Field(ge=2, le=9007199254740991)
     ] = MISSING

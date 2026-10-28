@@ -356,6 +356,10 @@ def _check_plan_v2(raw: dict[str, Any]) -> None:
             "teams.evaluation_dataset_hash must differ from teams.dataset_hash: "
             "absent means the run's own dataset"
         )
+    if plan.get("evaluation_key") == raw["run_id"]:
+        raise ProgressRecordError(
+            "plan.evaluation_key must differ from run_id: absent means the run key keys the plan"
+        )
     if plan["recorded_games_per_match"] > plan["games_per_match"]:
         raise ProgressRecordError("recorded_games_per_match must not exceed games_per_match")
 
@@ -482,7 +486,16 @@ def read_game_record(raw: object) -> dict[str, Any]:
     pair = raw.get("pair")
     if pair is not None and pair != raw["game"] // 2:
         raise ProgressRecordError("pair must be the game index divided by two")
-    if progress_game_seed(raw["run_id"], raw["game"] if pair is None else pair) != raw["seed"]:
+    # A declared evaluation key (#1177) replaces the run key in the seed.
+    key = raw.get("evaluation_key")
+    if key is not None and (pair is None or key == raw["run_id"]):
+        raise ProgressRecordError(
+            "evaluation_key belongs to a both-seats game and must differ from run_id"
+        )
+    if (
+        progress_game_seed(key or raw["run_id"], raw["game"] if pair is None else pair)
+        != raw["seed"]
+    ):
         raise ProgressRecordError(
             "the seed is not the one progress-seed/1 gives this game's pair (or game index)"
         )

@@ -276,6 +276,12 @@ class ProgressGameRecord(BaseModel):
     """
     Present in a game of a ProgressEvaluationRecordV2 (both seats per pair): the validation pair, equal to game / 2 rounded down. The seed is then progress-seed/1's for the pair, not for the game index.
     """
+    evaluation_key: Annotated[
+        StrictStr | MISSING, Field(pattern="^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
+    ] = MISSING
+    """
+    Present only in a game of an evaluation run on a declared evaluation key (#1177): the key progress-seed/1 used in place of run_id for this game's seed. Equal to the evaluation record's plan.evaluation_key; never equal to run_id.
+    """
     seed: Annotated[StrictStr, Field(pattern="^sodium,[0-9a-f]{32}$")]
     """
     The battle seed, in the engine's sodium,<32 hex> form.

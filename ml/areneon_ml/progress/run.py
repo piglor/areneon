@@ -34,6 +34,7 @@ from areneon_ml.loop.driver import sources_registry
 from areneon_ml.loop.play import NodePlayer, PlayError
 from areneon_ml.loop.records import policy_id
 from areneon_ml.model.network import ROLES
+from areneon_ml.progress import evaluation_key as ekey
 from areneon_ml.progress.ablation import ablation_summary, expected_ablation_matches
 from areneon_ml.progress.eval_dataset import EvalDataset, EvalDatasetError, validation_teams
 from areneon_ml.progress.records import (
@@ -177,6 +178,8 @@ class ProgressRequest:
     versus: RunPair | None = None
     #: Another verified dataset whose validation split supplies the teams (ADR-020 E-17.1).
     eval_dataset: EvalDataset | None = None
+    #: Replaces the run key in ``progress-pairing/1`` and ``progress-seed/1`` (#1177).
+    evaluation_key: str | None = None
 
 
 class ProgressPlayer(Protocol):
@@ -258,6 +261,7 @@ class NodeProgressPlayer(NodePlayer):
             *damage,
             *cross,
             *(() if request.eval_dataset is None else request.eval_dataset.node_args()),
+            *ekey.node_args(request.evaluation_key),
         )
         try:
             found = json.loads(out)
@@ -679,6 +683,7 @@ def _verify_output(  # noqa: PLR0913, PLR0917
     damage_aware: bool = False,
     versus: RunPair | None = None,
     eval_dataset: EvalDataset | None = None,
+    evaluation_key: str | None = None,
 ) -> dict[str, Any]:
     """The simulator side's files are the record's: read both kinds, check every hash and name."""
     record = read_progress_record(layout.read_json(work / PROGRESS), config)
@@ -702,6 +707,7 @@ def _verify_output(  # noqa: PLR0913, PLR0917
     _check_damage_aware(record, damage_aware, legacy=False)
     _check_versus(record, versus, legacy=False)
     _check_eval_dataset(record, eval_dataset, config, strict=True)
+    _check_evaluation_key(record, evaluation_key, strict=True)
     rows = {(r["match_id"], r["game"]): r for r in record["games"]}
     expected = set()
     for match in record["matches"]:
@@ -716,6 +722,7 @@ def _verify_output(  # noqa: PLR0913, PLR0917
                 or stored["match_id"] != match["match_id"]
                 or stored["game"] != game
                 or stored.get("pair") != game // 2
+                or stored.get("evaluation_key") != evaluation_key
                 or stored["version_manifest"] != record["version_manifest"]
             ):
                 raise ProgressError(f"games/{name} is not the game it is named for")
@@ -763,6 +770,30 @@ def _check_eval_dataset(
         )
     if teams["dataset_hash"] != _dataset_of(config)["dataset_hash"]:
         raise ProgressError("the record's dataset_hash is not the run's own dataset")
+
+
+def _check_evaluation_key(
+    record: dict[str, Any], evaluation_key: str | None, *, strict: bool
+) -> None:
+    """The record names the evaluation key asked for (#1177), else keys by its run key.
+
+    ``strict`` also refuses a record keyed by an evaluation key when none was asked for (a
+    committed directory is never rewritten, so another key needs a progress directory of its
+    own); a lenient check (reading a committed root) only ties a key that was asked for.
+    """
+    found = record["plan"].get("evaluation_key")
+    if evaluation_key is None:
+        if strict and found is not None:
+            raise ProgressError(
+                "the record was keyed by an evaluation key: pass the same --evaluation-key, "
+                "or use a progress directory of its own"
+            )
+        return
+    if found != evaluation_key:
+        raise ProgressError(
+            "the record's plan is not keyed by the evaluation key asked for: use a progress "
+            "directory of its own for another key"
+        )
 
 
 def _check_ablation(
@@ -879,6 +910,7 @@ def verify_progress_dir(  # noqa: PLR0913, PLR0917
     eval_dataset: EvalDataset | None = None,
     *,
     strict_dataset: bool = False,
+    evaluation_key: str | None = None,
 ) -> dict[str, Any]:
     """A committed progress directory, checked against its manifest and the run."""
     manifest = layout.verify_generation(target, generation)
@@ -897,10 +929,13 @@ def verify_progress_dir(  # noqa: PLR0913, PLR0917
     _check_damage_aware(record, False, legacy=True)
     _check_versus(record, versus, legacy=True)
     _check_eval_dataset(record, eval_dataset, config, strict=strict_dataset)
+    _check_evaluation_key(record, evaluation_key, strict=strict_dataset)
     rows = {(r["match_id"], r["game"]): r for r in record["games"]}
     for match in record["matches"]:
         for name in sorted(p.name for p in (target / GAMES).glob(f"{match['match_id']}-*.json")):
             stored = read_game_record(layout.read_json(target / GAMES / name))
+            if stored.get("evaluation_key") != record["plan"].get("evaluation_key"):
+                raise ProgressError(f"games/{name}: its evaluation key is not the record's")
             if is_v2(record) and stored.get("pair") != stored["game"] // 2:
                 raise ProgressError(f"games/{name}: a both-seats game must name its pair")
             if is_v2(record):
@@ -958,6 +993,7 @@ def progress_generation(  # noqa: PLR0913, PLR0917
     damage_aware_budget_minutes: int | None = None,
     versus: VersusSpec | None = None,
     eval_dataset: EvalDataset | None = None,
+    evaluation_key: str | None = None,
 ) -> dict[str, Any]:
     """Evaluate one generation into ``root``; a committed directory is verified and kept.
 
@@ -965,6 +1001,11 @@ def progress_generation(  # noqa: PLR0913, PLR0917
     own (ADR-020 E-17.1; the same refusals, plus: the dataset is not the run's own training
     dataset, and its hash is the one given). The record names it
     (``teams.evaluation_dataset_hash``).
+
+    ``evaluation_key`` replaces the run key in ``progress-pairing/1`` and ``progress-seed/1`` for
+    every match (#1177), so another run evaluated with the same key plays the same pairs, seats,
+    seeds and baseline streams. The record names it (``plan.evaluation_key``); a key equal to
+    the run's own key is refused (omit it), and the committed-plan seed check applies to it.
 
     ``versus`` also plays another run's committed frozen pair (``run-sample``, ``run-argmax``,
     ``versus.games`` games each, every pair from both seats; opt-in, off by default). The other
@@ -990,6 +1031,10 @@ def progress_generation(  # noqa: PLR0913, PLR0917
     )
     damage_budget_ms = _damage_budget_ms(damage_aware_budget_minutes, preview_ablation)
     config = _read_config(run_dir)
+    try:
+        evaluation_key = ekey.check(evaluation_key, config.run_key)
+    except ekey.EvaluationKeyError as exc:
+        raise ProgressError(str(exc)) from exc
     if (
         eval_dataset is not None
         and config.team_dataset
@@ -1015,6 +1060,7 @@ def progress_generation(  # noqa: PLR0913, PLR0917
                 preview_ablation,
                 versus,
                 eval_dataset,
+                evaluation_key,
             )
         source = _source(run_dir, config, generation)
         previous = _previous_pair(run_dir, config, generation) if previous_matches else None
@@ -1032,9 +1078,10 @@ def progress_generation(  # noqa: PLR0913, PLR0917
                 f"validation team pairs: the dataset gives at most {limit}"
             )
         try:
-            check_not_training_seeds(run_dir, config.run_key, needed)
+            plan_key = evaluation_key or config.run_key
+            check_not_training_seeds(run_dir, plan_key, needed)
             if other_pair is not None:
-                check_not_training_seeds(other_pair.run_dir, config.run_key, needed)
+                check_not_training_seeds(other_pair.run_dir, plan_key, needed)
         except ValueError as exc:
             raise ProgressError(str(exc)) from exc
         teams = layout.read_json(source.team_set)
@@ -1064,6 +1111,7 @@ def progress_generation(  # noqa: PLR0913, PLR0917
                     damage_aware_budget_ms=damage_budget_ms,
                     versus=other_pair,
                     eval_dataset=eval_dataset,
+                    evaluation_key=evaluation_key,
                 )
             )
             record = _verify_output(
@@ -1080,6 +1128,7 @@ def progress_generation(  # noqa: PLR0913, PLR0917
                 damage_aware_budget_minutes is not None,
                 other_pair,
                 eval_dataset,
+                evaluation_key,
             )
             layout.fsync_tree(work)
             layout.write_json(
@@ -1122,11 +1171,19 @@ def _skipped(  # noqa: PLR0913, PLR0917
     preview_ablation: bool,
     versus: VersusSpec | None,
     eval_dataset: EvalDataset | None,
+    evaluation_key: str | None = None,
 ) -> dict[str, Any]:
     """A committed directory is verified and reported, never rewritten."""
     pair = None if versus is None else _versus_pair(run_dir, config, versus)
     record = verify_progress_dir(
-        target, config, run_dir, generation, pair, eval_dataset, strict_dataset=True
+        target,
+        config,
+        run_dir,
+        generation,
+        pair,
+        eval_dataset,
+        strict_dataset=True,
+        evaluation_key=evaluation_key,
     )
     held = None
     if pair is not None and any(m["opponent"]["kind"] == "run" for m in record["matches"]):
