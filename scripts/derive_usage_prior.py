@@ -12,7 +12,7 @@ hash differs is refused. Only aggregate numbers are read and written (the keys `
         --inputs config/opponent-model/<format>/smogon-chaos.<month>-<cutoff>.inputs.json \\
         --raw-dir .tmp/chaos \\
         --out config/opponent-model/<format>/usage-prior.<month>-<cutoff>.json \\
-        [--report REPORT.json]
+        [--report REPORT.json] [--fallback]
 
 Rules (ADR-025 section 2; each is tested on a hand-computed toy file):
 
@@ -34,6 +34,15 @@ Rules (ADR-025 section 2; each is tested on a hand-computed toy file):
 * A move list has ``slots`` = the ratio of its summed weight to the item weight (4, refused if not
   an integer within 10^-6), each move's inclusion is its share of ``slots * denominator``, and the
   empty-slot mass is the ``''`` weight.
+* Names are mapped by exact id, exact name, or the engine's own ``toID`` of the name (so
+  ``Farfetch'd`` finds the engine's ``farfetchd``); no spelling is listed or guessed.
+* Fallback (``--fallback``, #1209): a vocabulary preview species with no chaos entry (it was never
+  seen at the cutoff) would make the belief refuse any roster holding it. With the flag its entry is
+  copied from the preview-species map, the committed ``generator-matched`` prior of the same
+  vocabulary, truncated to this record's limits (the dropped weights go to ``residual``, which the
+  belief expands equally over the options not named, exactly the map's equal weights for moves and
+  within the vocabulary's items for items), and the record's ``source.fallback`` names the prior by
+  hash and lists the species taken from it. Those species carry no usage information.
 * Gate (ADR-020 P1): at least 95% of each list kind's mass maps, else no record is written.
 """
 
@@ -63,7 +72,7 @@ from scripts.usage_common import (
     top_k,
 )
 
-SCRIPT_VERSION = "usage-prior-chaos.v1"
+SCRIPT_VERSION = "usage-prior-chaos.v2"
 # Derivation parameters, not game rules: ADR-025 section 2 (truncation) and ADR-020 P1 (gate).
 K_ITEMS, K_MOVES, K_SPREADS = 16, 24, 32
 GATE_PPM = 950_000
@@ -347,12 +356,37 @@ def _sum(raw: Mapping[str, Any]) -> Fraction:
     return sum((fraction(v) for v in raw.values()), Fraction(0))
 
 
-def derive(
+def _truncated(entries: Sequence[Mapping[str, Any]], key: str, limit: int) -> tuple[list[Any], int]:
+    """The ``limit`` heaviest entries (ties by id), sorted by id, and the weight dropped."""
+    kept = sorted(entries, key=lambda e: (-e[key], e["id"]))[:limit]
+    ids = {e["id"] for e in kept}
+    dropped = sum(e[key] for e in entries if e["id"] not in ids)
+    return sorted(kept, key=lambda e: e["id"]), dropped
+
+
+def fallback_species(species: Mapping[str, Any]) -> dict[str, Any]:
+    """One species of the fallback prior as an entry of this record: lists cut to the limits."""
+    out = json.loads(json.dumps(species))
+    for forme in out["formes"]:
+        forme["items"]["entries"], dropped = _truncated(
+            forme["items"]["entries"], "weight", K_ITEMS
+        )
+        forme["items"]["residual"] += dropped
+        moves = forme["moves"]
+        moves["entries"], dropped = _truncated(moves["entries"], "inclusion", K_MOVES)
+        moves["residual"] += dropped
+        if len(forme["spreads"]["entries"]) > K_SPREADS:
+            raise DerivationError("a fallback forme names more spreads than the record allows")
+    return out  # type: ignore[no-any-return]
+
+
+def derive(  # noqa: PLR0913, PLR0917 - the five inputs of the derivation and the optional fallback
     chaos: Mapping[str, Any],
     inputs: Mapping[str, Any],
     vocabulary: Mapping[str, Any],
     engine_data: Mapping[str, Any],
     shows_as: Mapping[str, str],
+    fallback: Mapping[str, Any] | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     """The record and the report of one derivation (pure; the gate is the caller's)."""
     info = chaos["info"]
@@ -370,7 +404,16 @@ def derive(
         species.append(
             {"id": sid, "denominator": sum(f["weight"] for f in formes), "formes": formes}
         )
-    record = {
+    filled: list[str] = []
+    if fallback is not None:
+        have = {s["id"] for s in species}
+        for entry in fallback["species"]:
+            if entry["id"] not in have:
+                species.append(fallback_species(entry))
+                filled.append(entry["id"])
+        species.sort(key=lambda s: s["id"])
+        filled.sort()
+    record: dict[str, Any] = {
         "schema_version": 1,
         "format_id": vocabulary["format_id"],
         "engine_data_hash": vocabulary["engine_data_hash"],
@@ -396,6 +439,12 @@ def derive(
         },
         "species": species,
     }
+    if fallback is not None:
+        record["source"]["fallback"] = {
+            "kind": fallback["source"]["kind"],
+            "prior_hash": sha256_hex(jcs(fallback)),
+            "species": filled,
+        }
     return record, report_of(chaos, deriver, record)
 
 
@@ -423,6 +472,7 @@ def report_of(
         "script_version": SCRIPT_VERSION,
         "source_entries": len(data),
         "species_in_record": len(record["species"]),
+        "fallback_species": len(record["source"].get("fallback", {}).get("species", [])),
         "formes_in_record": sum(len(s["formes"]) for s in record["species"]),
         "mapping_share_ppm": shares,
         "mapping_detail_ppm": {
@@ -473,7 +523,14 @@ def verified_files(inputs: Mapping[str, Any], raw_dir: Path) -> dict[str, bytes]
     return out
 
 
-def run(inputs_path: Path, raw_dir: Path, root: Path, out: Path, report_path: Path | None) -> int:
+def run(  # noqa: PLR0913, PLR0917 - the command's paths and its one flag
+    inputs_path: Path,
+    raw_dir: Path,
+    root: Path,
+    out: Path,
+    report_path: Path | None,
+    use_fallback: bool = False,
+) -> int:
     inputs = json.loads(inputs_path.read_text())
     fmt = inputs["format_id"]
     fixtures = root / "fixtures" / "showdown" / fmt
@@ -491,7 +548,9 @@ def run(inputs_path: Path, raw_dir: Path, root: Path, out: Path, report_path: Pa
     chaos = parse_source(files["chaos"].decode())
     if summary_battles(files["summary"].decode()) != chaos["info"]["number of battles"]:
         raise DerivationError("the summary and the chaos file state different battle counts")
-    record, report = derive(chaos, inputs, vocabulary, engine_data, shows_as)
+    record, report = derive(
+        chaos, inputs, vocabulary, engine_data, shows_as, preview if use_fallback else None
+    )
     deriver = Deriver(vocabulary, engine_data, shows_as)
     report["leads"] = leads_report(files["leads"].decode(), deriver)
     validate("usage-prior", record)
@@ -513,10 +572,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--raw-dir", type=Path, required=True)
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--report", type=Path)
+    parser.add_argument(
+        "--fallback",
+        action="store_true",
+        help="fill the species the source lacks from the preview-species map (generator-matched)",
+    )
     parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[1])
     args = parser.parse_args(argv)
     try:
-        return run(args.inputs, args.raw_dir, args.root, args.out, args.report)
+        return run(args.inputs, args.raw_dir, args.root, args.out, args.report, args.fallback)
     except DerivationError as exc:
         print(f"derive_usage_prior: {exc}", file=sys.stderr)
         return 2

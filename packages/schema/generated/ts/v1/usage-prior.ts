@@ -90,6 +90,7 @@ export interface SmogonChaos {
    * @maxItems 8
    */
   inputs: [SourceInput, ...SourceInput[]];
+  fallback?: SpeciesFallback;
 }
 /**
  * One raw input file, recorded by id, URL, retrieval time, size and hash. The file itself is never committed.
@@ -115,6 +116,26 @@ export interface SourceInput {
    * SHA-256 of the file's bytes.
    */
   sha256: string;
+}
+/**
+ * Optional (a minor change within v1): the species the source has no usage entry for, filled from another prior of the same vocabulary so that a roster holding one is not refused. Absent: every species is the source's own. When present, the listed species (sorted, unique, each a species of this record) are copied from the prior named by prior_hash, truncated to this record's limits with the dropped mass in residual, and nothing else is: they carry no usage information, only that prior's marginals, and a consumer must treat them as the named prior and not as Smogon data.
+ */
+export interface SpeciesFallback {
+  /**
+   * The kind of the filling prior.
+   */
+  kind: "generator-matched";
+  /**
+   * The prior_hash of the filling prior record (SHA-256 of its JCS bytes).
+   */
+  prior_hash: string;
+  /**
+   * The preview species ids taken from it, sorted, no id twice, each a species of this record (reader rules).
+   *
+   * @minItems 1
+   * @maxItems 1024
+   */
+  species: [Id, ...Id[]];
 }
 /**
  * The committed role-set table, uniform over roles, with a named fill prior.
@@ -182,7 +203,7 @@ export interface Derivation {
  */
 export interface Species {
   /**
-   * The preview species id, the form Team Preview shows.
+   * An engine id of the team vocabulary.
    */
   id: string;
   /**
@@ -205,7 +226,7 @@ export interface Species {
  */
 export interface Forme {
   /**
-   * The forme's species id, a roster entry of the team vocabulary.
+   * An engine id of the team vocabulary.
    */
   id: string;
   /**
@@ -409,4 +430,27 @@ export interface MoveEntry {
    * The move's inclusion: the integer numerator of its probability of being in a set, over the list's denominator (a reader rule: at most the denominator).
    */
   inclusion: number;
+}
+/**
+ * The prior that fills the species a usage source lacks (ADR-025 section 2 fallback).
+ *
+ * This interface was referenced by `UsagePrior`'s JSON-Schema
+ * via the `definition` "SpeciesFallback".
+ */
+export interface SpeciesFallback1 {
+  /**
+   * The kind of the filling prior.
+   */
+  kind: "generator-matched";
+  /**
+   * The prior_hash of the filling prior record (SHA-256 of its JCS bytes).
+   */
+  prior_hash: string;
+  /**
+   * The preview species ids taken from it, sorted, no id twice, each a species of this record (reader rules).
+   *
+   * @minItems 1
+   * @maxItems 1024
+   */
+  species: [Id, ...Id[]];
 }

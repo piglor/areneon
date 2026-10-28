@@ -206,8 +206,9 @@ def test_unmapped_species_and_the_report(small_limits: None) -> None:
     assert [s["id"] for s in record["species"]] == [
         "rillaboom",
         "salamence",
-    ]  # sorted, no Farfetch'd
+    ]  # sorted; Farfetch'd has an engine id (toID) but is no preview species of this map
     assert report["unmapped_species"] == ["Farfetch'd"]
+    assert report["fallback_species"] == 0
     assert report["source_entries"] == 4
     assert report["species_in_record"] == 2
     assert report["formes_in_record"] == 3
@@ -238,7 +239,7 @@ def test_the_toy_record_passes_the_reader_and_is_byte_stable() -> None:
     assert first["vocabulary_hash"] == sha256_hex(jcs(VOCABULARY))
     assert [i["source_id"] for i in first["source"]["inputs"]] == ["chaos", "summary"]
     assert first["derivation"] == {
-        "script_version": "usage-prior-chaos.v1",
+        "script_version": "usage-prior-chaos.v2",
         "k_items": 16,
         "k_moves": 24,
         "k_spreads": 32,
@@ -248,7 +249,7 @@ def test_the_toy_record_passes_the_reader_and_is_byte_stable() -> None:
 def test_limits_are_inside_the_hash(small_limits: None) -> None:
     truncated, _ = toy()
     assert truncated["derivation"] == {
-        "script_version": "usage-prior-chaos.v1",
+        "script_version": "usage-prior-chaos.v2",
         "k_items": 2,
         "k_moves": 3,
         "k_spreads": 3,
@@ -334,7 +335,7 @@ def test_run_writes_the_record_and_the_report(
     assert run(inputs, tmp_path, ROOT, out, report) == 0
     record = json.loads(out.read_text())
     assert out.read_bytes() == jcs(record) + b"\n"
-    assert json.loads(report.read_text())["leads"] == {"names": 2, "unmapped": ["Sirfetch'd"]}
+    assert json.loads(report.read_text())["leads"] == {"names": 2, "unmapped": []}
     assert json.loads(report.read_text())["prior_hash"] == sha256_hex(jcs(record))
     assert "prior_hash" in capsys.readouterr().out
     out2 = tmp_path / "prior2.json"
@@ -434,3 +435,96 @@ def test_names_with_no_id_or_outside_the_forme_are_unmapped_never_remapped() -> 
     assert r["spreads"]["unmapped"] > 0
     assert report["mapping_detail_ppm"]["abilities"]["outside_vocabulary"] > 0
     assert report["mapping_detail_ppm"]["spreads"]["no_engine_id"] > 0
+
+
+# -- the engine's id for a name, and the fallback (#1209) -------------------------------------------
+
+PREVIEW = json.loads(
+    (ROOT / "config" / "opponent-model" / FORMAT / "generator-matched.uniform-v1.json").read_text()
+)
+FULL_SHOWS_AS = {f["id"]: s["id"] for s in PREVIEW["species"] for f in s["formes"]}
+
+
+def test_a_plain_apostrophe_name_maps_through_the_engines_own_id() -> None:
+    record, report = derive(
+        parse_source(CHAOS_TEXT), INPUTS, VOCABULARY, ENGINE_DATA, FULL_SHOWS_AS
+    )
+    assert "farfetchd" in [s["id"] for s in record["species"]]
+    assert report["unmapped_species"] == []
+    farfetchd = forme(record, "farfetchd", "farfetchd")
+    assert [e["id"] for e in farfetchd["abilities"]["entries"]] == ["keeneye"]
+    assert farfetchd["items"]["no_item"] > 0
+    read_usage_prior(record, VOCABULARY)
+
+
+def test_fallback_fills_only_the_species_the_source_lacks_and_labels_them() -> None:
+    record, report = derive(
+        parse_source(CHAOS_TEXT), INPUTS, VOCABULARY, ENGINE_DATA, FULL_SHOWS_AS, PREVIEW
+    )
+    read_usage_prior(record, VOCABULARY)
+    ids = [s["id"] for s in record["species"]]
+    assert ids == sorted(ids)
+    assert len(ids) == len(PREVIEW["species"])  # every preview species now has an entry
+    label = record["source"]["fallback"]
+    assert label["kind"] == "generator-matched"
+    assert label["prior_hash"] == sha256_hex(jcs(PREVIEW))
+    assert label["species"] == sorted(set(ids) - {"farfetchd", "rillaboom", "salamence"})
+    assert report["fallback_species"] == len(label["species"])
+    # the source's own species are untouched by the fallback
+    plain, _ = derive(parse_source(CHAOS_TEXT), INPUTS, VOCABULARY, ENGINE_DATA, FULL_SHOWS_AS)
+    for sid in ("rillaboom", "salamence", "farfetchd"):
+        assert next(s for s in record["species"] if s["id"] == sid) == next(
+            s for s in plain["species"] if s["id"] == sid
+        )
+
+
+def test_a_fallback_species_is_the_maps_entry_cut_to_the_limits() -> None:
+    record, _ = derive(
+        parse_source(CHAOS_TEXT), INPUTS, VOCABULARY, ENGINE_DATA, FULL_SHOWS_AS, PREVIEW
+    )
+    taken = next(s for s in PREVIEW["species"] if s["id"] == "abomasnow")  # not in the toy
+    made = next(s for s in record["species"] if s["id"] == "abomasnow")
+    assert made["denominator"] == taken["denominator"]
+    for new, old in zip(made["formes"], taken["formes"], strict=True):
+        assert new["weight"] == old["weight"]
+        assert new["abilities"] == old["abilities"]
+        assert new.get("holder_abilities") == old.get("holder_abilities")
+        assert new["spreads"] == old["spreads"]
+        assert len(new["items"]["entries"]) <= 16
+        assert len(new["moves"]["entries"]) <= 24
+        # the dropped weight moved to the residual, so no mass is lost
+        assert new["items"]["denominator"] == old["items"]["denominator"]
+        assert new["items"]["residual"] == old["items"]["residual"] + sum(
+            e["weight"] for e in old["items"]["entries"]
+        ) - sum(e["weight"] for e in new["items"]["entries"])
+        assert new["moves"]["residual"] == old["moves"]["residual"] + sum(
+            e["inclusion"] for e in old["moves"]["entries"]
+        ) - sum(e["inclusion"] for e in new["moves"]["entries"])
+        # the kept entries are the heaviest, ties by id
+        assert new["moves"]["entries"] == sorted(
+            sorted(old["moves"]["entries"], key=lambda e: (-e["inclusion"], e["id"]))[:24],
+            key=lambda e: e["id"],
+        )
+
+
+def test_a_fallback_forme_with_too_many_spreads_is_refused() -> None:
+    wide = copy.deepcopy(PREVIEW)
+    entry = wide["species"][0]["formes"][0]["spreads"]
+    entry["entries"] = [
+        {"nature": "adamant", "stat_points": {"hp": k, "atk": 0, "def": 0, "spa": 0, "spd": 0, "spe": 0}, "weight": 1}
+        for k in range(40)
+    ]  # fmt: skip
+    with pytest.raises(DerivationError, match="more spreads"):
+        derive(parse_source(CHAOS_TEXT), INPUTS, VOCABULARY, ENGINE_DATA, FULL_SHOWS_AS, wide)
+
+
+def test_run_with_the_fallback_writes_a_record_every_species_of_which_is_answered(
+    tmp_path: Path,
+) -> None:
+    inputs = make_inputs(tmp_path)
+    out = tmp_path / "prior.json"
+    assert run(inputs, tmp_path, ROOT, out, None, True) == 0
+    record = json.loads(out.read_text())
+    read_usage_prior(record, VOCABULARY)
+    assert [s["id"] for s in record["species"]] == [s["id"] for s in PREVIEW["species"]]
+    assert record["source"]["fallback"]["prior_hash"] == sha256_hex(jcs(PREVIEW))

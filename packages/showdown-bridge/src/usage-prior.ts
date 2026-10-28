@@ -103,6 +103,11 @@ export function readUsagePrior(value: unknown, vocabulary: TeamVocabulary): Usag
   if (prior.source.kind === "smogon-chaos") ordered(prior.source.inputs.map((i) => i.source_id), "source inputs");
 
   ordered(prior.species.map((s) => s.id), "species");
+  // The species a usage source lacks, filled from another prior (#1209): sorted, unique, every one a species of this record.
+  if (prior.source.kind === "smogon-chaos" && prior.source.fallback !== undefined) {
+    ordered(prior.source.fallback.species, "fallback species");
+    for (const id of prior.source.fallback.species) if (!prior.species.some((s) => s.id === id)) bad(`fallback species ${id} is not a species of the record`);
+  }
   for (const species of prior.species) {
     if (!vocabulary.roster.some((r) => r.id === species.id)) bad(`species ${species.id} is not in the vocabulary roster`);
     ordered(species.formes.map((f) => f.id), `species ${species.id} formes`);

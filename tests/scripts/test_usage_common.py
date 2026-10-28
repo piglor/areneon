@@ -46,7 +46,7 @@ def test_to_units_rounds_half_to_even() -> None:
     assert to_units(Fraction(1, 3 * 10**6)) == 0
 
 
-def test_name_table_finds_exact_id_or_exact_name_only() -> None:
+def test_name_table_finds_an_exact_id_an_exact_name_or_the_engine_id_of_a_name() -> None:
     table = NameTable(
         [
             {"id": "farfetchd", "name": "Farfetch\N{RIGHT SINGLE QUOTATION MARK}d"},
@@ -56,7 +56,11 @@ def test_name_table_finds_exact_id_or_exact_name_only() -> None:
     assert table.resolve("rillaboom") == "rillaboom"
     assert table.resolve("Rillaboom") == "rillaboom"
     assert table.resolve("Farfetch\N{RIGHT SINGLE QUOTATION MARK}d") == "farfetchd"
-    assert table.resolve("Farfetch'd") is None  # never guessed
+    assert table.resolve("Farfetch'd") == "farfetchd"  # the engine's toID of the source's name
+    assert table.resolve("FARFETCH-D") == "farfetchd"
+    assert table.resolve("Farfetch'dd") is None  # an id the table lacks is never guessed
+    assert table.resolve("Rilla boom") == "rillaboom"
+    assert table.resolve("''") is None
     assert table.resolve("rillabo") is None
 
 

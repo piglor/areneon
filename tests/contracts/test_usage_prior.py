@@ -39,10 +39,10 @@ def names(contract: str, kind: str) -> list[str]:
 
 
 def test_the_three_source_kinds_read_and_hash_as_the_ts_side_does() -> None:
-    for kind in ("smogon-chaos", "role-sets", "generator-matched"):
+    for kind in ("smogon-chaos", "smogon-chaos-fallback", "role-sets", "generator-matched"):
         path = f"v1/usage-prior/valid/{kind}.json"
         prior = read_usage_prior(load(path), VOCABULARY)
-        assert prior["source"]["kind"] == kind
+        assert prior["source"]["kind"] == kind.removesuffix("-fallback")
         assert usage_prior_hash(prior) == HASHES[path]
 
 
@@ -102,6 +102,8 @@ def test_the_messages_name_the_rule() -> None:
         "unknown-species": "not in the vocabulary roster",
         "forme-weights-sum": "forme weights",
         "unsorted-inputs": "source inputs",
+        "fallback-unsorted": "fallback species: .* repeated or out of order",
+        "fallback-unknown-species": "not a species of the record",
         "unknown-nature": "nature",
         "unknown-item": "item aaaaaaaaa",
         "unknown-move": "move aaaaaaaaa",

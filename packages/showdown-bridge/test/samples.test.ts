@@ -352,6 +352,8 @@ describe("the shared contract sample corpus (ADR-008 §2)", () => {
       "v1/usage-prior/reader-invalid/abilities-sum.json",
       "v1/usage-prior/reader-invalid/duplicate-item.json",
       "v1/usage-prior/reader-invalid/empty-slots-over.json",
+      "v1/usage-prior/reader-invalid/fallback-unknown-species.json",
+      "v1/usage-prior/reader-invalid/fallback-unsorted.json",
       "v1/usage-prior/reader-invalid/forme-weights-sum.json",
       "v1/usage-prior/reader-invalid/inclusion-over-denominator.json",
       "v1/usage-prior/reader-invalid/items-sum.json",

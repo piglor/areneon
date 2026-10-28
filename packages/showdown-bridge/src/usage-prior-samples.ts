@@ -70,6 +70,7 @@ export function usagePriorSamples(vocabulary: TeamVocabulary): { valid: Cases; i
   return {
     valid: {
       "usage-prior/smogon-chaos": base,
+      "usage-prior/smogon-chaos-fallback": withPrior((p) => (p.source.fallback = { kind: "generator-matched", prior_hash: hex("6"), species: [p.species[0].id] })),
       "usage-prior/role-sets": withPrior((p) => (p.source = { kind: "role-sets", role_set_table_hash: hex("3"), fill_prior_hash: hex("4") })),
       "usage-prior/generator-matched": withPrior((p) => (p.source = { kind: "generator-matched", generator_config_hash: hex("5"), generator_commit: "a".repeat(40) })),
       "belief-config/v1": config,
@@ -87,6 +88,7 @@ export function usagePriorSamples(vocabulary: TeamVocabulary): { valid: Cases; i
       "usage-prior/chaos-no-inputs": withPrior((p) => (p.source.inputs = [])),
       "usage-prior/bad-month": withPrior((p) => (p.source.month = "2026-13")),
       "usage-prior/missing-spread-point": withPrior((p) => delete first(p).spreads.entries[0].stat_points.spe),
+      "usage-prior/fallback-no-species": withPrior((p) => (p.source.fallback = { kind: "generator-matched", prior_hash: hex("6"), species: [] })),
       "usage-prior/no-species": withPrior((p) => (p.species = [])),
       "usage-prior/no-formes": withPrior((p) => (p.species[0].formes = [])),
       "usage-prior/next-version": withPrior((p) => (p.schema_version = 2)),
@@ -100,6 +102,8 @@ export function usagePriorSamples(vocabulary: TeamVocabulary): { valid: Cases; i
       "usage-prior/duplicate-item": withPrior((p) => (first(p).items.entries[1].id = first(p).items.entries[0].id)),
       "usage-prior/unsorted-moves": withPrior((p) => first(p).moves.entries.reverse()),
       "usage-prior/unsorted-spreads": withPrior((p) => first(p).spreads.entries.reverse()),
+      "usage-prior/fallback-unsorted": withPrior((p) => (p.source.fallback = { kind: "generator-matched", prior_hash: hex("6"), species: [p.species[1].id, p.species[0].id] })),
+      "usage-prior/fallback-unknown-species": withPrior((p) => (p.source.fallback = { kind: "generator-matched", prior_hash: hex("6"), species: ["aaaaaaaaa"] })),
       "usage-prior/unsorted-inputs": withPrior((p) => (p.source.inputs = [second, ...p.source.inputs])),
       "usage-prior/unknown-species": withPrior((p) => (p.species[0].id = "aaaaaaaaa")),
       "usage-prior/unknown-forme": withPrior((p) => (first(p).id = "aaaaaaaaa")),

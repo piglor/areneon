@@ -480,6 +480,10 @@
           "items": {
             "$ref": "#/$defs/SourceInput"
           }
+        },
+        "fallback": {
+          "description": "Optional (a minor change within v1): the species the source has no usage entry for, filled from another prior of the same vocabulary so that a roster holding one is not refused. Absent: every species is the source's own. When present, the listed species (sorted, unique, each a species of this record) are copied from the prior named by prior_hash, truncated to this record's limits with the dropped mass in residual, and nothing else is: they carry no usage information, only that prior's marginals, and a consumer must treat them as the named prior and not as Smogon data.",
+          "$ref": "#/$defs/SpeciesFallback"
         }
       }
     },
@@ -563,6 +567,35 @@
           "type": "integer",
           "minimum": 1,
           "maximum": 256
+        }
+      }
+    },
+    "SpeciesFallback": {
+      "description": "The prior that fills the species a usage source lacks (ADR-025 section 2 fallback).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "prior_hash",
+        "species"
+      ],
+      "properties": {
+        "kind": {
+          "description": "The kind of the filling prior.",
+          "const": "generator-matched"
+        },
+        "prior_hash": {
+          "description": "The prior_hash of the filling prior record (SHA-256 of its JCS bytes).",
+          "$ref": "#/$defs/Hash"
+        },
+        "species": {
+          "description": "The preview species ids taken from it, sorted, no id twice, each a species of this record (reader rules).",
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 1024,
+          "items": {
+            "$ref": "#/$defs/Id"
+          }
         }
       }
     }

@@ -14,6 +14,7 @@ of a list add up to the denominator exactly and no binary float is ever read.
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Callable, Mapping, Sequence
 from decimal import Decimal
 from fractions import Fraction
@@ -63,17 +64,31 @@ def to_units(total: Fraction) -> int:
     return round(total * UNIT)
 
 
+def to_id(text: str) -> str:
+    """The engine's own id normalisation (``toID``): lower case, every non-alphanumeric dropped."""
+    return re.sub(r"[^a-z0-9]+", "", text.lower())
+
+
 class NameTable:
-    """Engine ids of one vocabulary, found by exact id or exact name; anything else is unmapped."""
+    """Engine ids of one vocabulary: found by exact id, exact name or the ``toID`` of a name.
+
+    The third rule is what makes a name spelled with a plain apostrophe (``Farfetch'd``) find the id
+    of the engine's typographic one: no spelling is listed or guessed here, the engine's own
+    normalisation of the source's name is looked up among the ids. Anything else is unmapped.
+    """
 
     def __init__(self, entries: Sequence[Mapping[str, Any]]) -> None:
-        self.ids = {e["id"] for e in entries}
-        self.by_name = {e["name"]: e["id"] for e in entries}
+        self.ids: set[str] = {e["id"] for e in entries}
+        self.by_name: dict[str, str] = {e["name"]: e["id"] for e in entries}
 
     def resolve(self, key: str) -> str | None:
         if key in self.ids:
             return key
-        return self.by_name.get(key)
+        by_name = self.by_name.get(key)
+        if by_name is not None:
+            return by_name
+        normal = to_id(key)
+        return normal if normal in self.ids else None
 
 
 def top_k(weights: Mapping[str, Fraction], k: int) -> list[str]:
