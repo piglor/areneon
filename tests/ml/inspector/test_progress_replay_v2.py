@@ -213,6 +213,42 @@ def test_a_damage_aware_game_is_named_and_carries_its_counts_on_the_page(
     assert "damage-aware" not in page(other)
 
 
+@pytest.fixture(scope="module")
+def damage_v3_root(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """Generation 1 with the damage-aware@v3 matches (#1183)."""
+    base = tmp_path_factory.mktemp("progress-damage-v3")
+    run = base / "run"
+    config = make_run(run, generations=2)
+    root = base / "run.progress"
+    player = FakeProgressPlayer(config, committed_manifest(run, 0), make_consistent, previous=False)
+    progress_generation(
+        run,
+        1,
+        root,
+        player,
+        GAMES,
+        GAMES,
+        (),
+        4,
+        damage_aware_budget_minutes=30,
+        damage_aware_version="v3",
+    )
+    return root
+
+
+def test_a_v3_game_names_its_version_and_keeps_the_seen_label(
+    damage_v3_root: Path, tmp_path: Path
+) -> None:
+    first = games(damage_v3_root, 1, match="damage-aware-v3-sample", games=[0])[0]
+    text = page(first)
+    assert "the damage-aware scripted baseline (damage-aware@v3)" in text
+    assert "seen scripted baseline: never held-out evidence" in text
+    out = tmp_path / "out"
+    command.replay_progress(damage_v3_root, 1, out, repo=ROOT, match="damage-aware-v3-argmax")
+    index = html.unescape((out / "progress-replays" / "index.html").read_text())
+    assert "seen scripted baseline: never held-out evidence" in index
+
+
 def test_the_index_labels_the_damage_aware_match(damage_root: Path, tmp_path: Path) -> None:
     out = tmp_path / "out"
     command.replay_progress(damage_root, 1, out, repo=ROOT, match="damage-aware-argmax")

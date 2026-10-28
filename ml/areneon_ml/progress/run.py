@@ -75,8 +75,29 @@ SCHEDULE_EVERY = 5
 DEFAULT_DAMAGE_AWARE_BUDGET_MINUTES = 30
 #: The baseline's policy id (the TS side derives it from ``damageAwarePolicyId("v1")``).
 DAMAGE_AWARE_POLICY = "damage-aware@v1"
+#: The versions of the baseline an evaluation can play (#1183); v1 is the default and keeps every
+#: record's bytes.
+DAMAGE_AWARE_VERSIONS = ("v1", "v3")
 #: The damage-aware baseline's match ids.
 DAMAGE_AWARE_MATCHES = ("damage-aware-argmax", "damage-aware-sample")
+
+
+def damage_aware_policy(version: str) -> str:
+    """The policy id of the baseline version (the TS side: ``damageAwarePolicyId(version)``)."""
+    if version not in DAMAGE_AWARE_VERSIONS:
+        raise ProgressError(
+            f"--damage-aware-version must be one of {', '.join(DAMAGE_AWARE_VERSIONS)}"
+        )
+    return f"damage-aware@{version}"
+
+
+def damage_aware_matches(version: str) -> tuple[str, str]:
+    """The match ids of a version: v1's are the original ones, v3's carry the version, so they
+    cannot collide (TS ``damageAwareMatchPrefix``)."""
+    prefix = "damage-aware" if version == "v1" else f"damage-aware-{version}"
+    return (f"{prefix}-argmax", f"{prefix}-sample")
+
+
 #: Says what a ``previous-*`` row is: the pair's own lineage, so it can cycle (ADR-017 section 2).
 SEEN_LABEL = "seen, same-lineage comparison: it can cycle"
 #: Says what a ``run-*`` row is: another run's frozen pair (not held-out evidence, not a gate).
@@ -174,6 +195,8 @@ class ProgressRequest:
     #: The most wall-clock milliseconds one damage-aware match may take; None plays no damage-aware
     #: match (ADR-018 slice 4: opt-in, and a match over the budget fails the evaluation).
     damage_aware_budget_ms: int | None = None
+    #: Which baseline record plays in those matches (``v1`` or ``v3``, #1183).
+    damage_aware_version: str = "v1"
     #: Another run's frozen pair, played as ``run-sample`` and ``run-argmax``.
     versus: RunPair | None = None
     #: Another verified dataset whose validation split supplies the teams (ADR-020 E-17.1).
@@ -222,7 +245,16 @@ class NodeProgressPlayer(NodePlayer):
         damage = (
             ()
             if request.damage_aware_budget_ms is None
-            else ("--damage-aware-budget-ms", str(request.damage_aware_budget_ms))
+            else (
+                "--damage-aware-budget-ms",
+                str(request.damage_aware_budget_ms),
+                # v1 passes nothing, so a v1 evaluation runs the command it always did.
+                *(
+                    ()
+                    if request.damage_aware_version == "v1"
+                    else ("--damage-aware-version", request.damage_aware_version)
+                ),
+            )
         )
         versus = request.versus
         cross = (
@@ -432,32 +464,40 @@ def _check_previous(record: dict[str, Any], previous: PreviousPair | None, *, le
             )
 
 
-def _check_damage_aware(record: dict[str, Any], asked: bool, *, legacy: bool) -> None:
+def _check_damage_aware(record: dict[str, Any], asked: str | None, *, legacy: bool) -> None:
     """The damage-aware matches are exactly the two asked for (a fresh evaluation), each naming the
-    baseline's policy id ``damage-aware@v1``, and share one identity hash (the reader checks it).
+    asked version's policy id (``damage-aware@v1`` or ``@v3``), and share one identity hash (the
+    reader checks it).
 
-    ``legacy`` is a committed record, which may hold none (committed without them), never a wrong
-    or half set.
+    ``asked`` is the version, or None for none. ``legacy`` is a committed record, which may hold
+    none (committed without them) or one version's two matches, never a wrong or half set.
     """
     found = {
         m["match_id"]: m
         for m in record["matches"]
         if m["opponent"]["kind"] == "baseline" and is_damage_aware(m["opponent"]["policy_id"])
     }
-    if not asked and not legacy:
+    if asked is None and not legacy:
         if found:
             raise ProgressError("this evaluation asks for no damage-aware matches")
         return
     if not found and legacy:
         return
-    if set(found) != set(DAMAGE_AWARE_MATCHES):
-        raise ProgressError("damage-aware matches are damage-aware-argmax and damage-aware-sample")
+    version = asked
+    if version is None:
+        ids = {m["opponent"]["policy_id"] for m in found.values()}
+        version = next((v for v in DAMAGE_AWARE_VERSIONS if {damage_aware_policy(v)} == ids), None)
+        if version is None:
+            raise ProgressError("damage-aware matches of a record name one known baseline version")
+    policy = damage_aware_policy(version)
+    wanted = damage_aware_matches(version)
+    if set(found) != set(wanted):
+        raise ProgressError(f"damage-aware matches are {wanted[0]} and {wanted[1]}")
     for match in found.values():
-        if match["match_id"] != f"damage-aware-{match['mode']}" or match["opponent"] != {
-            "kind": "baseline",
-            "policy_id": DAMAGE_AWARE_POLICY,
-        }:
-            raise ProgressError(f"{match['match_id']}: the opponent is not {DAMAGE_AWARE_POLICY}")
+        if match["match_id"] != f"{wanted[0].rsplit('-', 1)[0]}-{match['mode']}" or match[
+            "opponent"
+        ] != {"kind": "baseline", "policy_id": policy}:
+            raise ProgressError(f"{match['match_id']}: the opponent is not {policy}")
 
 
 def _damage_aware_status(record: dict[str, Any]) -> str:
@@ -470,8 +510,12 @@ def _damage_aware_status(record: dict[str, Any]) -> str:
     )
 
 
-def _damage_budget_ms(minutes: int | None, preview_ablation: bool) -> int | None:
-    """The wall-clock budget of one damage-aware match in milliseconds, or None for no match."""
+def _damage_budget_ms(minutes: int | None, preview_ablation: bool, version: str) -> int | None:
+    """The wall-clock budget of one damage-aware match in milliseconds, or None for no match.
+
+    An unknown baseline version is refused here, before any work.
+    """
+    damage_aware_policy(version)
     if minutes is None:
         return None
     if minutes < 1 or preview_ablation:
@@ -680,7 +724,7 @@ def _verify_output(  # noqa: PLR0913, PLR0917
     run_dir: Path,
     anchor_games: int,
     ablation: AblationSpec | None = None,
-    damage_aware: bool = False,
+    damage_aware: str | None = None,
     versus: RunPair | None = None,
     eval_dataset: EvalDataset | None = None,
     evaluation_key: str | None = None,
@@ -926,7 +970,7 @@ def verify_progress_dir(  # noqa: PLR0913, PLR0917
     _check_anchors(record, None, run_dir, config)
     _check_ablation(record, None, run_dir, config, fresh=False)
     # The damage-aware matches are optional (a record may hold them or not), never half a set.
-    _check_damage_aware(record, False, legacy=True)
+    _check_damage_aware(record, None, legacy=True)
     _check_versus(record, versus, legacy=True)
     _check_eval_dataset(record, eval_dataset, config, strict=strict_dataset)
     _check_evaluation_key(record, evaluation_key, strict=strict_dataset)
@@ -994,6 +1038,7 @@ def progress_generation(  # noqa: PLR0913, PLR0917
     versus: VersusSpec | None = None,
     eval_dataset: EvalDataset | None = None,
     evaluation_key: str | None = None,
+    damage_aware_version: str = "v1",
 ) -> dict[str, Any]:
     """Evaluate one generation into ``root``; a committed directory is verified and kept.
 
@@ -1029,7 +1074,9 @@ def progress_generation(  # noqa: PLR0913, PLR0917
         (games, record_games, anchor_games),
         (anchors, previous_matches, preview_ablation, versus),
     )
-    damage_budget_ms = _damage_budget_ms(damage_aware_budget_minutes, preview_ablation)
+    damage_budget_ms = _damage_budget_ms(
+        damage_aware_budget_minutes, preview_ablation, damage_aware_version
+    )
     config = _read_config(run_dir)
     try:
         evaluation_key = ekey.check(evaluation_key, config.run_key)
@@ -1113,6 +1160,7 @@ def progress_generation(  # noqa: PLR0913, PLR0917
                     anchor_games=played_anchor_games,
                     ablation=ablation,
                     damage_aware_budget_ms=damage_budget_ms,
+                    damage_aware_version=damage_aware_version,
                     versus=other_pair,
                     eval_dataset=eval_dataset,
                     evaluation_key=evaluation_key,
@@ -1129,7 +1177,7 @@ def progress_generation(  # noqa: PLR0913, PLR0917
                 run_dir,
                 played_anchor_games,
                 ablation,
-                damage_aware_budget_minutes is not None,
+                damage_aware_version if damage_aware_budget_minutes is not None else None,
                 other_pair,
                 eval_dataset,
                 evaluation_key,
@@ -1313,6 +1361,7 @@ def scheduled_generations(run_dir: Path) -> list[int]:
 __all__ = [
     "CROSS_RUN_LABEL",
     "DAMAGE_AWARE_LABEL",
+    "DAMAGE_AWARE_VERSIONS",
     "DEFAULT_ANCHOR_GAMES",
     "DEFAULT_DAMAGE_AWARE_BUDGET_MINUTES",
     "DEFAULT_RUN_GAMES",

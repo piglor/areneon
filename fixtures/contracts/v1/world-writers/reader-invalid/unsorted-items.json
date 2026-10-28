@@ -33,6 +33,15 @@
       ]
     },
     {
+      "id": "trapping",
+      "class": "R",
+      "ids": [
+        "partiallytrapped",
+        "trapped",
+        "trapper"
+      ]
+    },
+    {
       "id": "toxic_stage",
       "class": "R"
     },

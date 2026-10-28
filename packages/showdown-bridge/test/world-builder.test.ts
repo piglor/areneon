@@ -65,6 +65,10 @@ function present(input: WorldInput, rows: Record<string, readonly string[]>): Se
     for (const active of Object.values(side?.active ?? {})) {
       const named = active?.last_move == null ? undefined : row(active.last_move);
       if (named === "slot_conditions" || named === "locked_moves") items.add(named);
+      for (const lock of active?.locks ?? []) {
+        const lockRow = row(lock);
+        if (lockRow !== undefined) items.add(lockRow);
+      }
     }
   }
   for (const p of request.side.pokemon.slice(0, 2)) {
@@ -421,6 +425,24 @@ describe("the checks and the typed, counted refusals", () => {
     expect(refusal(rampage)).toMatchObject({ code: "state_unwritten", item: "locked_moves" });
     expect(refusal({ ...base.input, flags: [{ index: 1, line: "|-terastallize|p1a: X|Fire", reason: "r" }] })).toMatchObject({ code: "state_unwritten", item: "unavailable_mechanics" });
     expect(refusal({ ...base.input, flags: [{ index: 1, line: "|-terastallize|p1a: X|Fire", reason: "r" }, { index: 2, line: "|x|", reason: "r" }] }).code).toBe("reader_flagged");
+  });
+
+  it("refuses a locked, charging or trapping state the facts show and the reader does not, on either side (#1186)", () => {
+    const lock = (side: "own" | "opponent", ids: string[]) => withWorld(base.input, (_s, facts) => {
+      (facts[side].active.a as { locks: string[] }).locks = ids;
+    });
+    for (const side of ["own", "opponent"] as const) {
+      expect(refusal(lock(side, ["mustrecharge"]))).toMatchObject({ code: "state_unwritten", item: "locked_moves", state_class: "R", redraw: false });
+      expect(refusal(lock(side, ["twoturnmove"]))).toMatchObject({ code: "state_unwritten", item: "locked_moves", state_class: "R" });
+      for (const id of ["partiallytrapped", "trapped", "trapper"]) expect(refusal(lock(side, [id]))).toMatchObject({ code: "state_unwritten", item: "trapping", state_class: "R" });
+    }
+    // An id the record does not name is refused as unadmitted, never ignored.
+    expect(refusal(lock("opponent", ["notastate"]))).toMatchObject({ code: "state_unwritten", item: "unadmitted_id" });
+    // Counted under the typed item.
+    const builder = createWorldBuilder(context);
+    builder.build(lock("own", ["trapped"]));
+    expect(builder.counts().unwritten.trapping).toBe(1);
+    expect(builder.counts().check_class["-:R"]).toBe(1);
   });
 
   it("refuses when the world facts are missing, for another turn, or name another Pokemon", () => {

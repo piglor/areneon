@@ -204,6 +204,15 @@ describe("the damage-aware baseline's counts (ADR-018 sections 4 and 5)", () => 
     expect(readProgressGameRecord(sample(`${GAME}/valid/damage-aware`)).baseline?.seat).toBe("p2");
   });
 
+  it("reads the damage-aware@v3 samples under their own match id (#1183)", () => {
+    const record = readProgressEvaluationRecordV2(sample(`${V2}/valid/damage-aware-v3-match`));
+    expect(record.matches[0]).toMatchObject({ match_id: "damage-aware-v3-argmax", opponent: { kind: "baseline", policy_id: "damage-aware@v3" } });
+    expect(record.matches[0]?.baseline?.identity_hash).toMatch(/^[0-9a-f]{64}$/);
+    const game = readProgressGameRecord(sample(`${GAME}/valid/damage-aware-v3`));
+    expect(game).toMatchObject({ match_id: "damage-aware-v3-argmax", baseline: { seat: "p2" } });
+    expect(game.policies.p2).toBe("damage-aware@v3");
+  });
+
   it.each([
     ["baseline-counts-disagree", "baseline.counts must be the sum"],
     ["baseline-row-missing", "carries baseline counts in its summary and in every game row"],

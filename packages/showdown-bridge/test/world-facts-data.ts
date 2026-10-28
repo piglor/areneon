@@ -2,64 +2,14 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { WorldFactsData } from "@areneon/public-state";
 import { GOLDEN_DIR } from "../src/golden.ts";
-import { DEFAULT_SHOWDOWN_DIR } from "../src/engine.ts";
+import { type FactsTable, readWorldFactsData as read } from "../src/world-facts-data.ts";
 
 // The reviewed engine data the world facts take (`WorldFactsData`), read from the pinned engine's own source
-// files and the committed engine-data table. Shared by the world-facts parity test and the world builder tests.
+// files and the committed engine-data table (`src/world-facts-data.ts`). Shared by the world-facts parity test and the world builder tests.
 
 export const FORMAT_DIR = GOLDEN_DIR;
-export const engineData = JSON.parse(readFileSync(join(FORMAT_DIR, "engine-data.json"), "utf8")) as { terrains: { id: string }[]; moves: { id: string }[] };
-
-/** The moves whose engine definition adds the `stall` volatile, read from the pinned source, restricted to the format's moves. */
-function stallMoves(): string[] {
-  const source = readFileSync(join(process.env.SHOWDOWN_DIR || DEFAULT_SHOWDOWN_DIR, "data", "moves.ts"), "utf8");
-  const ids = new Set(engineData.moves.map((m) => m.id));
-  const out: string[] = [];
-  for (const block of source.split(/\n\t(?=[a-z0-9]+: \{)/)) {
-    const id = /^([a-z0-9]+): \{/.exec(block)?.[1];
-    if (id !== undefined && ids.has(id) && /addVolatile\('stall'\)/.test(block)) out.push(id);
-  }
-  return out.sort();
-}
-
-/** The side conditions Court Change swaps, read from the pinned move's own list. */
-function swapConditions(): string[] {
-  const source = readFileSync(join(process.env.SHOWDOWN_DIR || DEFAULT_SHOWDOWN_DIR, "data", "moves.ts"), "utf8");
-  const block = /\n\tcourtchange: \{[\s\S]*?const sideConditions = \[([\s\S]*?)\];/.exec(source)?.[1] ?? "";
-  return [...block.matchAll(/'([a-z0-9]+)'/g)].map((m) => m[1] as string).sort();
-}
-
-/** The Toxic stage ceiling, read from the pinned `tox` condition's own cap. */
-function toxicStageMax(): number {
-  const source = readFileSync(join(process.env.SHOWDOWN_DIR || DEFAULT_SHOWDOWN_DIR, "data", "conditions.ts"), "utf8");
-  const block = /\n\ttox: \{[\s\S]*?stage < (\d+)/.exec(source)?.[1];
-  return Number(block);
-}
-
-
-/**
- * The `[from]` texts of the move lines the engine runs as move actions of their own (`runMove`, which counts
- * `activeMoveActions`): a move block that hands a queued action to `prioritizeAction` with itself as the source effect (Round, Instruct) or calls
- * `runMove` (Pursuit), and the ability whose `runMove` call sits in `battle-actions.ts` (Dancer). Read from the
- * pinned engine's own source, as the stall moves are.
- */
-function actionSources(): string[] {
-  const dir = process.env.SHOWDOWN_DIR || DEFAULT_SHOWDOWN_DIR;
-  const source = readFileSync(join(dir, "data", "moves.ts"), "utf8");
-  const names = new Map(JSON.parse(readFileSync(join(FORMAT_DIR, "engine-data.json"), "utf8")).moves.map((m: { id: string; name: string }) => [m.id, m.name]) as [string, string][]);
-  const out: string[] = [];
-  for (const block of source.split(/\n\t(?=[a-z0-9]+: \{)/)) {
-    const id = /^([a-z0-9]+): \{/.exec(block)?.[1];
-    if (id !== undefined && names.has(id) && /(prioritizeAction\([^;]*,\s*move\)|actions\.runMove\()/.test(block)) out.push(`move: ${names.get(id)}`);
-  }
-  const actions = readFileSync(join(dir, "sim", "battle-actions.ts"), "utf8");
-  for (const match of actions.matchAll(/this\.runMove\([^)]*sourceEffect: this\.dex\.abilities\.get\('([a-z0-9]+)'\)/g)) {
-    const ability = JSON.parse(readFileSync(join(FORMAT_DIR, "engine-data.json"), "utf8")).abilities.find((a: { id: string }) => a.id === match[1]);
-    if (ability !== undefined) out.push(`ability: ${ability.name}`);
-  }
-  return out.sort();
-}
+export const engineData = JSON.parse(readFileSync(join(FORMAT_DIR, "engine-data.json"), "utf8")) as FactsTable;
 
 export function readWorldFactsData(): WorldFactsData {
-  return { stall_moves: stallMoves(), terrains: engineData.terrains.map((t) => t.id), swap_side_conditions: swapConditions(), toxic_stage_max: toxicStageMax(), action_sources: actionSources() };
+  return read(engineData);
 }

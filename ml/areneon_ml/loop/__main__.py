@@ -68,6 +68,7 @@ from areneon_ml.progress.eval_dataset import from_values as eval_dataset_from
 from areneon_ml.progress.looks import Look, LookError, append_look, looks_path
 from areneon_ml.progress.records import ProgressRecordError
 from areneon_ml.progress.run import (
+    DAMAGE_AWARE_VERSIONS,
     DEFAULT_ANCHOR_GAMES,
     DEFAULT_DAMAGE_AWARE_BUDGET_MINUTES,
     DEFAULT_GAMES,
@@ -240,7 +241,7 @@ def _add_owner_and_scripted_parsers(commands: Any) -> None:
     _add_scripted_parser(commands)
 
 
-def _parser() -> argparse.ArgumentParser:
+def _parser() -> argparse.ArgumentParser:  # noqa: PLR0915
     parser = argparse.ArgumentParser(prog="areneon_ml.loop")
     commands = parser.add_subparsers(dest="command", required=True)
     _add_run(commands)
@@ -334,6 +335,13 @@ def _parser() -> argparse.ArgumentParser:
         "the other baselines (see docs/training-run.md for the cost); off by default",
     )
     progress.add_argument(
+        "--damage-aware-version",
+        choices=DAMAGE_AWARE_VERSIONS,
+        default=None,
+        help="with --damage-aware: which baseline record plays, v1 (default; matches "
+        "damage-aware-<mode>) or v3 (the corrected scorer, #1180; matches damage-aware-v3-<mode>)",
+    )
+    progress.add_argument(
         "--damage-aware-budget-minutes",
         type=int,
         help="with --damage-aware: the most wall-clock minutes one damage-aware match may take; "
@@ -418,6 +426,8 @@ def _progress(args: argparse.Namespace) -> dict[str, object]:
         raise ProgressError("--preview-ablation needs --generation, not --all")
     if args.damage_aware_budget_minutes is not None and not args.damage_aware:
         raise ProgressError("--damage-aware-budget-minutes needs --damage-aware")
+    if args.damage_aware_version is not None and not args.damage_aware:
+        raise ProgressError("--damage-aware-version needs --damage-aware")
     damage_budget = (
         (
             DEFAULT_DAMAGE_AWARE_BUDGET_MINUTES
@@ -463,6 +473,7 @@ def _progress(args: argparse.Namespace) -> dict[str, object]:
             versus,
             eval_dataset,
             args.evaluation_key,
+            damage_aware_version=args.damage_aware_version or "v1",
         )
         for g in generations
     ]

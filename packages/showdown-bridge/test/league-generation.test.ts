@@ -9,6 +9,7 @@ import {
   DAMAGE_AWARE_V2_POLICY_ID,
   damageAwareSetup,
   damageAwareSetupV2,
+  DAMAGE_AWARE_V3_POLICY_ID,
   forfeitCauses,
   GenerationError,
   type GenerationOptions,
@@ -573,6 +574,39 @@ describe("the damage-aware baseline as a training opponent (ADR-018 section 7)",
   it("refuses a config whose policy id is not the one the baseline plays as, and a format without a vocabulary", async () => {
     await expect(play(damageConfig("damage-aware-x@v1"))).rejects.toThrow(/plays as damage-aware@v1/);
     expect(() => damageAwareSetup(engine, "gen9other")).toThrow(/vocabulary for/);
+  }, 120_000);
+});
+
+describe("damage-aware@v3 as a training opponent (#1183)", () => {
+  const v3Config = () =>
+    readTrainingRunConfig({
+      ...(sample("tiny") as object),
+      generation: { ...config.generation, games: 2, baseline_games: [{ actor: "damage-aware", policy_id: DAMAGE_AWARE_V3_POLICY_ID, games: 2 }] },
+    });
+  const play = (cfg = v3Config(), extra: Partial<Parameters<typeof playGeneration>[0]> = {}) =>
+    playGeneration({ engine, config: cfg, generation: 1, policy_id: POLICY, client: actorClient(), pool, ...extra });
+
+  it("plays the v3 record: the opponent entry, the identity and the counts as for v1, byte-identical on a rerun", async () => {
+    const first = await play();
+    const again = await play();
+    expect(again.stream).toBe(first.stream);
+    expect(again.run_record).toEqual(first.run_record);
+    const record = readLeagueRunRecord(first.run_record);
+    expect(record.opponents).toEqual([
+      { opponent_policy_id: DAMAGE_AWARE_V3_POLICY_ID, games: 2 },
+      { opponent_policy_id: POLICY, games: 2 },
+    ]);
+    const entry = at(record.baselines ?? [], 0);
+    expect(entry).toMatchObject({ policy_id: DAMAGE_AWARE_V3_POLICY_ID, games: 2 });
+    expect(entry.counts.decisions).toBeGreaterThan(0);
+    await expect(checkLeagueRunRecord(record, v3Config())).resolves.toBeUndefined();
+    // Its identity is not v1's: another record (the engine's choice-location convention) gives another baseline identity.
+    const v1 = await play(readTrainingRunConfig({ ...(sample("tiny") as object), generation: { ...config.generation, games: 2, baseline_games: [{ actor: "damage-aware", policy_id: "damage-aware@v1", games: 2 }] } }));
+    expect(entry.identity_hash).not.toBe(at(readLeagueRunRecord(v1.run_record).baselines ?? [], 0).identity_hash);
+  }, 300_000);
+
+  it("never hands a v1 record to a config that names v3", async () => {
+    await expect(play(v3Config(), { damage_aware_v3: damageAwareSetup(engine, "gen9championsvgc2026regmc") })).rejects.toThrow(/names another record version/);
   }, 120_000);
 });
 
