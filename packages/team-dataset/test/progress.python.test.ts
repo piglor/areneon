@@ -156,6 +156,34 @@ describe.skipIf(!existsSync(PYTHON) && process.env.ARENEON_REQUIRE_PYTHON_WORKER
     expect(lone.stderr).toMatch(/needs --damage-aware/);
   }, 900_000);
 
+  it("evaluates the pair with decision-time search (ADR-026 slice P): both sides' counts, the control, byte-identical on rerun, refusals", () => {
+    const a = join(dir, "sa.progress");
+    const b = join(dir, "sb.progress");
+    const more = ["--generation", "1", "--search-mode", "argmax"];
+    const printed = progress(a, ...more);
+    expect(printed.generations[0]?.matches.map((m) => m.match_id)).toEqual(["search-actor-rule-argmax", "search-random-legal-argmax", "search-self-no-search-argmax"]);
+    progress(b, ...more);
+    const files = tree(join(a, gen(1)));
+    expect(tree(join(b, gen(1)))).toEqual(files);
+    for (const file of files) expect(readFileSync(join(a, gen(1), file), "utf8"), file).toBe(readFileSync(join(b, gen(1), file), "utf8"));
+    const record = readProgressEvaluationRecordV2(json<ProgressEvaluationRecordV2>(a, gen(1), "progress.json"));
+    const control = record.matches.find((m) => m.match_id === "search-self-no-search-argmax") as (typeof record.matches)[number];
+    expect(control.opponent.kind).toBe("self-no-search");
+    expect(control.search?.counts.decisions).toBeGreaterThan(0);
+    expect(control.opponent_search?.counts.searched_decisions).toBe(0);
+    const stored = readProgressGameRecord(json(a, gen(1), "games", "search-self-no-search-argmax-1.json"));
+    expect(stored.search?.identity_hash).toBe(control.search?.identity_hash);
+    expect(stored.opponent_search?.seat).not.toBe(stored.search?.seat);
+    expect(progress(a, ...more).generations.map((g) => g.skipped)).toEqual([true]);
+    // A search record is its own kind; the search is evaluated alone.
+    const mixed = spawnSync(PYTHON, ["-I", "-m", "areneon_ml.loop", "progress", "--run-dir", runDir, "--engine-data", DATA, "--generation", "1", "--games", "4", "--record-games", "2", "--progress-dir", a, "--node", process.execPath, "--worker-python", PYTHON], { encoding: "utf8", env, cwd: ROOT });
+    expect(mixed.status).toBe(3);
+    expect(mixed.stderr).toMatch(/search record of another kind/);
+    const alone = spawnSync(PYTHON, ["-I", "-m", "areneon_ml.loop", "progress", "--run-dir", runDir, "--engine-data", DATA, "--generation", "1", "--search-mode", "argmax", "--anchors", "0", "--progress-dir", join(dir, "sc.progress")], { encoding: "utf8", env, cwd: ROOT });
+    expect(alone.status).toBe(3);
+    expect(alone.stderr).toMatch(/evaluated alone/);
+  }, 900_000);
+
   it("evaluates on a second dataset's validation split (the eval-dataset option): named in the record, byte-identical on rerun, refusals", () => {
     const second = join(dir, "second-dataset");
     const inputs = loadFixtureInputs(engine, FORMAT);

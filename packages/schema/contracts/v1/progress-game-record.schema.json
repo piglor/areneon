@@ -117,6 +117,14 @@
           "$ref": "#/$defs/BaselineCounts"
         }
       }
+    },
+    "search": {
+      "$ref": "#/$defs/SearchSeat",
+      "description": "Only a game of a search candidate."
+    },
+    "opponent_search": {
+      "$ref": "#/$defs/SearchSeat",
+      "description": "Only a game against the self-no-search control."
     }
   },
   "description": "One stored game of a progress evaluation (ADR-017 section 3): seed, both teams, both seats' decisions and the omniscient log, enough to replay the engine side exactly. It is not an Episode: the training loader refuses it. Reader rules: every chosen is among its candidates, both team hashes recompute, the log hash recomputes, the seed is the one progress-seed/1 gives the game index.",
@@ -536,6 +544,270 @@
           "type": "integer",
           "minimum": 0,
           "maximum": 9007199254740991
+        }
+      }
+    },
+    "CountEntry": {
+      "description": "One named count of an open-keyed table (a refusal code, a check:class pair, a resampled item).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "key",
+        "count"
+      ],
+      "properties": {
+        "key": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "count": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    "SearchCounts": {
+      "description": "The integer counts of one game of a search policy (ADR-026 section 5), or the sums of several games'. Wall time is printed, never stored. Added within v1 (ADR-008 section 3): a reader older than the field rejects a record that carries it.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "decisions",
+        "searched_decisions",
+        "fallbacks",
+        "worlds_asked",
+        "worlds_built",
+        "worlds_refused",
+        "redraws",
+        "legality_redraws",
+        "refusals",
+        "refusal_check_class",
+        "belief_refusals",
+        "worlds_dropped",
+        "resampled",
+        "worlds_scored",
+        "turns",
+        "wait_continuations",
+        "leaf_queries",
+        "leaf_memo_hits",
+        "leaf_game_end",
+        "leaf_hp_ko",
+        "replies_max_damage",
+        "replies_all_zero",
+        "replies_uniform"
+      ],
+      "properties": {
+        "decisions": {
+          "description": "Requests answered, Team Preview included.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "searched_decisions": {
+          "description": "Decisions the search chose (0 for the self-no-search control).",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "fallbacks": {
+          "description": "Decisions the pair played itself, by reason (ADR-026 section 5). The control counts the structural reasons it shares with the search (team_preview, forced_switch, too_few_candidates) and 0 for the rest.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "team_preview",
+            "forced_switch",
+            "too_few_candidates",
+            "clock_floor",
+            "belief_refused",
+            "below_min_valid"
+          ],
+          "properties": {
+            "team_preview": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "forced_switch": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "too_few_candidates": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "clock_floor": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "belief_refused": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "below_min_valid": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          }
+        },
+        "worlds_asked": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "worlds_built": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "worlds_refused": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "redraws": {
+          "description": "The search's sampler attempts after the first.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "legality_redraws": {
+          "description": "ADR-025's legality redraws inside the draws, apart from redraws.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "refusals": {
+          "description": "Worlds refused, by the last refusal's code, sorted and unique by key.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CountEntry"
+          }
+        },
+        "refusal_check_class": {
+          "description": "Worlds refused, by check:class (- is none), sorted and unique by key.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CountEntry"
+          }
+        },
+        "belief_refusals": {
+          "description": "Belief refusals, by the opponent model's code, sorted and unique by key.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CountEntry"
+          }
+        },
+        "worlds_dropped": {
+          "description": "Built worlds dropped before scoring, by reason.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "reply_model",
+            "choice_refused"
+          ],
+          "properties": {
+            "reply_model": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "choice_refused": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          }
+        },
+        "resampled": {
+          "description": "Built worlds that resampled an X-class item, by item, sorted and unique by key.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CountEntry"
+          }
+        },
+        "worlds_scored": {
+          "description": "Worlds that took part in a choice.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "turns": {
+          "description": "Turns simulated.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "wait_continuations": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "leaf_queries": {
+          "description": "Leaves scored by the value head.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "leaf_memo_hits": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "leaf_game_end": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "leaf_hp_ko": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "replies_max_damage": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "replies_all_zero": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "replies_uniform": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    "SearchSeat": {
+      "description": "The search policy's seat in this game, the search identity hash and that seat's integer counts (ADR-026 section 5); for the self-no-search control the seat of the pair played without search and the same identity hash, with searched_decisions 0. Added within v1 (ADR-008 section 3): a reader older than the field rejects a record that carries it.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "seat",
+        "identity_hash",
+        "counts"
+      ],
+      "properties": {
+        "seat": {
+          "enum": [
+            "p1",
+            "p2"
+          ]
+        },
+        "identity_hash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "counts": {
+          "$ref": "#/$defs/SearchCounts"
         }
       }
     }

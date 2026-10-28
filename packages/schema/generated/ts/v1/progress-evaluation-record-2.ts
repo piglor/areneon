@@ -6,7 +6,7 @@
  * This interface was referenced by `ProgressEvaluationRecordV2`'s JSON-Schema
  * via the `definition` "Opponent".
  */
-export type Opponent = BaselineOpponent | PreviousOpponent | AnchorOpponent | RunOpponent;
+export type Opponent = BaselineOpponent | PreviousOpponent | AnchorOpponent | RunOpponent | SelfNoSearchOpponent;
 /**
  * Which Team Preview the candidate's Battle network played with in an ablation match (ADR-017 erratum E1). Absent: the candidate's own learned Preview, as in every other match.
  *
@@ -210,6 +210,8 @@ export interface Match {
    */
   game_record_hashes: string[];
   baseline?: BaselineSummary;
+  search?: SearchSummary;
+  opponent_search?: SearchSummary1;
 }
 /**
  * This interface was referenced by `ProgressEvaluationRecordV2`'s JSON-Schema
@@ -277,6 +279,24 @@ export interface RunOpponent {
    */
   policy_id: string;
   checkpoints: Checkpoints;
+}
+/**
+ * The control opponent of a search policy (ADR-026 section 5, finding N-C): the very pair the search policy wraps, played without search. A minor change within v2: a reader older than it rejects a record that carries it.
+ *
+ * This interface was referenced by `ProgressEvaluationRecordV2`'s JSON-Schema
+ * via the `definition` "SelfNoSearchOpponent".
+ */
+export interface SelfNoSearchOpponent {
+  kind: "self-no-search";
+  /**
+   * The same frozen pair played WITHOUT search, in the mode the match played (its ordinary policy id).
+   */
+  policy_id: string;
+  checkpoints: Checkpoints;
+  /**
+   * The pair's no-search play mode: the control's mode, the one the search policy falls back to.
+   */
+  mode: "sample" | "argmax";
 }
 /**
  * The generation's own learned Preview network.
@@ -388,6 +408,116 @@ export interface BaselineCounts {
   probe_refusals?: number;
 }
 /**
+ * Only a match of a search candidate (match_id starts with search-): the candidate's identity hash and its game counts summed.
+ */
+export interface SearchSummary {
+  /**
+   * The search identity hash (ADR-026 section 5; the search: member of the candidate's policy id). On the opponent side of a self-no-search match it names the search policy the control belongs to.
+   */
+  identity_hash: string;
+  counts: SearchCounts;
+}
+/**
+ * The integer counts of one game of a search policy (ADR-026 section 5), or the sums of several games'. Wall time is printed, never stored. Added within v1 (ADR-008 section 3): a reader older than the field rejects a record that carries it.
+ *
+ * This interface was referenced by `ProgressEvaluationRecordV2`'s JSON-Schema
+ * via the `definition` "SearchCounts".
+ */
+export interface SearchCounts {
+  /**
+   * Requests answered, Team Preview included.
+   */
+  decisions: number;
+  /**
+   * Decisions the search chose (0 for the self-no-search control).
+   */
+  searched_decisions: number;
+  /**
+   * Decisions the pair played itself, by reason (ADR-026 section 5). The control counts the structural reasons it shares with the search (team_preview, forced_switch, too_few_candidates) and 0 for the rest.
+   */
+  fallbacks: {
+    team_preview: number;
+    forced_switch: number;
+    too_few_candidates: number;
+    clock_floor: number;
+    belief_refused: number;
+    below_min_valid: number;
+  };
+  worlds_asked: number;
+  worlds_built: number;
+  worlds_refused: number;
+  /**
+   * The search's sampler attempts after the first.
+   */
+  redraws: number;
+  /**
+   * ADR-025's legality redraws inside the draws, apart from redraws.
+   */
+  legality_redraws: number;
+  /**
+   * Worlds refused, by the last refusal's code, sorted and unique by key.
+   */
+  refusals: CountEntry[];
+  /**
+   * Worlds refused, by check:class (- is none), sorted and unique by key.
+   */
+  refusal_check_class: CountEntry[];
+  /**
+   * Belief refusals, by the opponent model's code, sorted and unique by key.
+   */
+  belief_refusals: CountEntry[];
+  /**
+   * Built worlds dropped before scoring, by reason.
+   */
+  worlds_dropped: {
+    reply_model: number;
+    choice_refused: number;
+  };
+  /**
+   * Built worlds that resampled an X-class item, by item, sorted and unique by key.
+   */
+  resampled: CountEntry[];
+  /**
+   * Worlds that took part in a choice.
+   */
+  worlds_scored: number;
+  /**
+   * Turns simulated.
+   */
+  turns: number;
+  wait_continuations: number;
+  /**
+   * Leaves scored by the value head.
+   */
+  leaf_queries: number;
+  leaf_memo_hits: number;
+  leaf_game_end: number;
+  leaf_hp_ko: number;
+  replies_max_damage: number;
+  replies_all_zero: number;
+  replies_uniform: number;
+}
+/**
+ * One named count of an open-keyed table (a refusal code, a check:class pair, a resampled item).
+ *
+ * This interface was referenced by `ProgressEvaluationRecordV2`'s JSON-Schema
+ * via the `definition` "CountEntry".
+ */
+export interface CountEntry {
+  key: string;
+  count: number;
+}
+/**
+ * Only a self-no-search match: the control's counts (searched_decisions 0) summed over the match's games.
+ */
+export interface SearchSummary1 {
+  /**
+   * The search identity hash (ADR-026 section 5; the search: member of the candidate's policy id). On the opponent side of a self-no-search match it names the search policy the control belongs to.
+   */
+  identity_hash: string;
+  counts: SearchCounts;
+}
+/**
  * One game's result: the per-game results table of protocol section 8.1.
  *
  * This interface was referenced by `ProgressEvaluationRecordV2`'s JSON-Schema
@@ -409,6 +539,8 @@ export interface GameRow {
   candidate_seat: "p1" | "p2";
   outcome: Outcome;
   baseline_counts?: BaselineCounts1;
+  search?: SearchCounts1;
+  opponent_search?: SearchCounts2;
 }
 /**
  * This interface was referenced by `ProgressEvaluationRecordV2`'s JSON-Schema
@@ -480,4 +612,171 @@ export interface BaselineCounts1 {
    * Optional (a minor change within v1; absent means 0 and is written only when above 0): requests answered by the actor-rule candidate because the mechanics probe refused a query the baseline built (a declared state the engine does not take). A high rate means the baseline plays like actor-rule; never more than queries.
    */
   probe_refusals?: number;
+}
+/**
+ * The integer counts of one game of a search policy (ADR-026 section 5), or the sums of several games'. Wall time is printed, never stored. Added within v1 (ADR-008 section 3): a reader older than the field rejects a record that carries it.
+ */
+export interface SearchCounts1 {
+  /**
+   * Requests answered, Team Preview included.
+   */
+  decisions: number;
+  /**
+   * Decisions the search chose (0 for the self-no-search control).
+   */
+  searched_decisions: number;
+  /**
+   * Decisions the pair played itself, by reason (ADR-026 section 5). The control counts the structural reasons it shares with the search (team_preview, forced_switch, too_few_candidates) and 0 for the rest.
+   */
+  fallbacks: {
+    team_preview: number;
+    forced_switch: number;
+    too_few_candidates: number;
+    clock_floor: number;
+    belief_refused: number;
+    below_min_valid: number;
+  };
+  worlds_asked: number;
+  worlds_built: number;
+  worlds_refused: number;
+  /**
+   * The search's sampler attempts after the first.
+   */
+  redraws: number;
+  /**
+   * ADR-025's legality redraws inside the draws, apart from redraws.
+   */
+  legality_redraws: number;
+  /**
+   * Worlds refused, by the last refusal's code, sorted and unique by key.
+   */
+  refusals: CountEntry[];
+  /**
+   * Worlds refused, by check:class (- is none), sorted and unique by key.
+   */
+  refusal_check_class: CountEntry[];
+  /**
+   * Belief refusals, by the opponent model's code, sorted and unique by key.
+   */
+  belief_refusals: CountEntry[];
+  /**
+   * Built worlds dropped before scoring, by reason.
+   */
+  worlds_dropped: {
+    reply_model: number;
+    choice_refused: number;
+  };
+  /**
+   * Built worlds that resampled an X-class item, by item, sorted and unique by key.
+   */
+  resampled: CountEntry[];
+  /**
+   * Worlds that took part in a choice.
+   */
+  worlds_scored: number;
+  /**
+   * Turns simulated.
+   */
+  turns: number;
+  wait_continuations: number;
+  /**
+   * Leaves scored by the value head.
+   */
+  leaf_queries: number;
+  leaf_memo_hits: number;
+  leaf_game_end: number;
+  leaf_hp_ko: number;
+  replies_max_damage: number;
+  replies_all_zero: number;
+  replies_uniform: number;
+}
+/**
+ * The integer counts of one game of a search policy (ADR-026 section 5), or the sums of several games'. Wall time is printed, never stored. Added within v1 (ADR-008 section 3): a reader older than the field rejects a record that carries it.
+ */
+export interface SearchCounts2 {
+  /**
+   * Requests answered, Team Preview included.
+   */
+  decisions: number;
+  /**
+   * Decisions the search chose (0 for the self-no-search control).
+   */
+  searched_decisions: number;
+  /**
+   * Decisions the pair played itself, by reason (ADR-026 section 5). The control counts the structural reasons it shares with the search (team_preview, forced_switch, too_few_candidates) and 0 for the rest.
+   */
+  fallbacks: {
+    team_preview: number;
+    forced_switch: number;
+    too_few_candidates: number;
+    clock_floor: number;
+    belief_refused: number;
+    below_min_valid: number;
+  };
+  worlds_asked: number;
+  worlds_built: number;
+  worlds_refused: number;
+  /**
+   * The search's sampler attempts after the first.
+   */
+  redraws: number;
+  /**
+   * ADR-025's legality redraws inside the draws, apart from redraws.
+   */
+  legality_redraws: number;
+  /**
+   * Worlds refused, by the last refusal's code, sorted and unique by key.
+   */
+  refusals: CountEntry[];
+  /**
+   * Worlds refused, by check:class (- is none), sorted and unique by key.
+   */
+  refusal_check_class: CountEntry[];
+  /**
+   * Belief refusals, by the opponent model's code, sorted and unique by key.
+   */
+  belief_refusals: CountEntry[];
+  /**
+   * Built worlds dropped before scoring, by reason.
+   */
+  worlds_dropped: {
+    reply_model: number;
+    choice_refused: number;
+  };
+  /**
+   * Built worlds that resampled an X-class item, by item, sorted and unique by key.
+   */
+  resampled: CountEntry[];
+  /**
+   * Worlds that took part in a choice.
+   */
+  worlds_scored: number;
+  /**
+   * Turns simulated.
+   */
+  turns: number;
+  wait_continuations: number;
+  /**
+   * Leaves scored by the value head.
+   */
+  leaf_queries: number;
+  leaf_memo_hits: number;
+  leaf_game_end: number;
+  leaf_hp_ko: number;
+  replies_max_damage: number;
+  replies_all_zero: number;
+  replies_uniform: number;
+}
+/**
+ * A search policy's identity hash and its per-game counts summed over the match's games (ADR-026 section 5). Added within v1 (ADR-008 section 3): a reader older than the field rejects a record that carries it.
+ *
+ * This interface was referenced by `ProgressEvaluationRecordV2`'s JSON-Schema
+ * via the `definition` "SearchSummary".
+ */
+export interface SearchSummary2 {
+  /**
+   * The search identity hash (ADR-026 section 5; the search: member of the candidate's policy id). On the opponent side of a self-no-search match it names the search policy the control belongs to.
+   */
+  identity_hash: string;
+  counts: SearchCounts;
 }

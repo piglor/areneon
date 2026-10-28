@@ -14,13 +14,13 @@ import evaluationSchemaV2 from "@areneon/schema/contracts/v1/progress-evaluation
 import gameSchema from "@areneon/schema/contracts/v1/progress-game-record.schema.json" with { type: "json" };
 import type { ProgressEvaluationRecord } from "@areneon/schema/types/v1/progress-evaluation-record.ts";
 import type { ProgressEvaluationRecordV2 } from "@areneon/schema/types/v1/progress-evaluation-record-2.ts";
-import type { BaselineCounts, ProgressGameRecord } from "@areneon/schema/types/v1/progress-game-record.ts";
+import type { BaselineCounts, ProgressGameRecord, SearchCounts } from "@areneon/schema/types/v1/progress-game-record.ts";
 import { type Json, jcs } from "./canonical-json.ts";
 import { progressGameStreams } from "./progress-seed.ts";
 import { teamHash } from "./team-class.ts";
 import type { PokemonSet } from "./engine.ts";
 
-export type { BaselineCounts, ProgressEvaluationRecord, ProgressEvaluationRecordV2, ProgressGameRecord };
+export type { BaselineCounts, ProgressEvaluationRecord, ProgressEvaluationRecordV2, ProgressGameRecord, SearchCounts };
 
 /** The counts a damage-aware baseline seat reports per game (ADR-018 section 4), in the record's order. */
 export const BASELINE_COUNT_KEYS = ["decisions", "preview_decisions", "scored_decisions", "queries", "probe_runs", "unsupported_queries", "reader_fallbacks", "assumed_set_fallbacks", "epsilon_plays"] as const;
@@ -36,6 +36,70 @@ export function sumBaselineCounts(list: readonly BaselineCounts[]): BaselineCoun
   const refused = list.reduce((sum, counts) => sum + (counts.probe_refusals ?? 0), 0);
   if (refused > 0) total.probe_refusals = refused;
   return total;
+}
+
+/** The numeric counts of a search policy's game, in the record's order (the keyed tables and `fallbacks`/`worlds_dropped` are apart). */
+export const SEARCH_COUNT_KEYS = [
+  "decisions",
+  "searched_decisions",
+  "worlds_asked",
+  "worlds_built",
+  "worlds_refused",
+  "redraws",
+  "legality_redraws",
+  "worlds_scored",
+  "turns",
+  "wait_continuations",
+  "leaf_queries",
+  "leaf_memo_hits",
+  "leaf_game_end",
+  "leaf_hp_ko",
+  "replies_max_damage",
+  "replies_all_zero",
+  "replies_uniform",
+] as const;
+/** Why a search decision was played by the pair, and the drops (the keys of the two closed sub-tables). */
+export const SEARCH_FALLBACK_KEYS = ["team_preview", "forced_switch", "too_few_candidates", "clock_floor", "belief_refused", "below_min_valid"] as const;
+export const SEARCH_DROP_KEYS = ["reply_model", "choice_refused"] as const;
+/** The open-keyed tables of the counts, each a sorted list of `{key, count}`. */
+export const SEARCH_TABLE_KEYS = ["refusals", "refusal_check_class", "belief_refusals", "resampled"] as const;
+/** The fallback reasons the no-search control shares with the search (the others need a search to happen). */
+export const CONTROL_FALLBACK_KEYS = ["team_preview", "forced_switch", "too_few_candidates"] as const;
+
+type Entries = SearchCounts["refusals"];
+
+function sumEntries(lists: readonly Entries[]): Entries {
+  const total = new Map<string, number>();
+  for (const list of lists) for (const { key, count } of list) total.set(key, (total.get(key) ?? 0) + count);
+  return [...total.keys()].sort().map((key) => ({ key, count: total.get(key) as number }));
+}
+
+/** The sums of per-game search counts, key by key (the keyed tables merged, sorted by key). */
+export function sumSearchCounts(list: readonly SearchCounts[]): SearchCounts {
+  const total: Record<string, unknown> = {};
+  for (const key of SEARCH_COUNT_KEYS) total[key] = list.reduce((sum, counts) => sum + counts[key], 0);
+  total.fallbacks = Object.fromEntries(SEARCH_FALLBACK_KEYS.map((key) => [key, list.reduce((sum, counts) => sum + counts.fallbacks[key], 0)]));
+  total.worlds_dropped = Object.fromEntries(SEARCH_DROP_KEYS.map((key) => [key, list.reduce((sum, counts) => sum + counts.worlds_dropped[key], 0)]));
+  for (const key of SEARCH_TABLE_KEYS) total[key] = sumEntries(list.map((counts) => counts[key]));
+  return total as unknown as SearchCounts;
+}
+
+/** The rules the profile cannot say about one search count record (a game's, or a sum of games'). */
+export function checkSearchCounts(counts: SearchCounts, what: string): void {
+  const fellBack = SEARCH_FALLBACK_KEYS.reduce((sum, key) => sum + counts.fallbacks[key], 0);
+  if (counts.searched_decisions + fellBack > counts.decisions) fail(`${what}: searched and fallback decisions cannot exceed decisions`);
+  if (counts.worlds_built + counts.worlds_refused > counts.worlds_asked) fail(`${what}: built and refused worlds cannot exceed worlds asked`);
+  if (counts.worlds_scored > counts.worlds_built) fail(`${what}: scored worlds cannot exceed built worlds`);
+  for (const key of SEARCH_TABLE_KEYS) if (!strictlyAscending(counts[key].map((entry) => entry.key))) fail(`${what}: ${key} must be sorted by key, each once`);
+}
+
+/** The no-search control searches nothing: no searched decision, no world, no turn, no leaf, and only the structural fallbacks. */
+function checkControlCounts(counts: SearchCounts, what: string): void {
+  checkSearchCounts(counts, what);
+  const quiet = SEARCH_COUNT_KEYS.filter((key) => key !== "decisions").every((key) => counts[key] === 0);
+  const fallbacksOnlyStructural = SEARCH_FALLBACK_KEYS.filter((key) => !(CONTROL_FALLBACK_KEYS as readonly string[]).includes(key)).every((key) => counts.fallbacks[key] === 0);
+  const tablesEmpty = SEARCH_TABLE_KEYS.every((key) => counts[key].length === 0) && SEARCH_DROP_KEYS.every((key) => counts.worlds_dropped[key] === 0);
+  if (!quiet || !fallbacksOnlyStructural || !tablesEmpty) fail(`${what}: the no-search control searches nothing: every count but decisions and the structural fallbacks is 0`);
 }
 
 export class ProgressRecordError extends Error {
@@ -163,11 +227,18 @@ export function readProgressEvaluationRecordV2(value: unknown): ProgressEvaluati
     rows.push(row);
   }
   if (new Set(matches.map((match) => match.candidate_preview === undefined)).size > 1) fail("a Preview ablation record holds ablation matches only");
+  if (new Set(matches.map((match) => match.search === undefined)).size > 1) fail("a search record holds search matches only: the search candidate is evaluated alone");
   const flat = ids.flatMap((id) => rowsOf.get(id) as RowV2[]);
   if (flat.some((row, index) => row !== games[index])) fail("game rows must be in match then game order");
   const identities = new Set<string>();
+  const searchIdentities = new Set<string>();
   for (const match of matches) {
     const rows = rowsOf.get(match.match_id) as RowV2[];
+    const searched = match.search !== undefined;
+    // A search candidate's matches carry the prefix `search-`; the rest of the id is the usual opponent-and-mode name.
+    const name = searched ? match.match_id.slice("search-".length) : match.match_id;
+    if (searched !== match.match_id.startsWith("search-")) fail(`${match.match_id}: a match is named search-<opponent>-<mode> exactly when it carries search counts`);
+    checkSearchOfMatch(match, rows, searchIdentities);
     const preview = match.candidate_preview;
     if (preview !== undefined) {
       // A Preview ablation match (ticket #940): a baseline opponent, named preview-<variant>-<baseline>-<mode>.
@@ -178,9 +249,9 @@ export function readProgressEvaluationRecordV2(value: unknown): ProgressEvaluati
       if (match.match_id !== `preview-${variant}-${match.opponent.policy_id.split("@")[0] as string}-${match.mode}`) fail(`${match.match_id}: an ablation match is named preview-<variant>-<baseline>-<mode>`);
     }
     const anchor = match.opponent.kind === "anchor" ? match.opponent : undefined;
-    if (anchor !== undefined && (anchor.generation >= record.generation || match.match_id !== `anchor-g${anchor.generation}-${match.mode}`)) fail(`${match.match_id}: an anchor match is named anchor-g<generation>-<mode> and plays an earlier generation`);
+    if (anchor !== undefined && (anchor.generation >= record.generation || name !== `anchor-g${anchor.generation}-${match.mode}`)) fail(`${match.match_id}: an anchor match is named anchor-g<generation>-<mode> and plays an earlier generation`);
     const cross = match.opponent.kind === "run" ? match.opponent : undefined;
-    if (cross !== undefined && (cross.run_id === record.run_id || match.match_id !== `run-${match.mode}`)) fail(`${match.match_id}: a cross-run match is named run-<mode> and plays another run's pair`);
+    if (cross !== undefined && (cross.run_id === record.run_id || name !== `run-${match.mode}`)) fail(`${match.match_id}: a cross-run match is named run-<mode> and plays another run's pair`);
     const expectedGames = cross !== undefined ? (runGames as number) : anchor !== undefined ? (anchorGames as number) : plan.games_per_match;
     if (match.games !== expectedGames) fail(`${match.match_id}: games must equal ${cross !== undefined ? "plan.run_games_per_match" : anchor === undefined ? "plan.games_per_match" : "plan.anchor_games_per_match"}`);
     if (match.wins + match.ties + match.losses !== match.games) fail(`${match.match_id}: wins + ties + losses must equal games`);
@@ -195,6 +266,7 @@ export function readProgressEvaluationRecordV2(value: unknown): ProgressEvaluati
     if (match.game_record_hashes.length !== Math.min(plan.recorded_games_per_match, match.games)) fail(`${match.match_id}: game_record_hashes must number recorded_games_per_match`);
   }
   if (identities.size > 1) fail("every damage-aware match of a record must carry one baseline identity hash");
+  if (searchIdentities.size > 1) fail("every search match of a record must carry one search identity hash");
   return record;
 }
 
@@ -216,6 +288,37 @@ function checkBaselineOfMatch(match: MatchV2, rows: readonly RowV2[], identities
   const perGame = rows.map((row) => row.baseline_counts as BaselineCounts);
   perGame.forEach((counts, index) => checkBaselineCounts(counts, `${match.match_id} game ${index}`));
   if (jcs(found.counts as unknown as Json) !== jcs(sumBaselineCounts(perGame) as unknown as Json)) fail(`${match.match_id}: baseline.counts must be the sum of the game rows' counts`);
+}
+
+/**
+ * ADR-026 section 5: a match of a search candidate (`search-<opponent>-<mode>`) carries the search identity hash and the sum of
+ * its rows' per-game counts; against the self-no-search control, which is the same pair without search, the control's counts too
+ * (searched decisions 0). No other match carries either; the sums recompute from the rows.
+ */
+function checkSearchOfMatch(match: MatchV2, rows: readonly RowV2[], identities: Set<string>): void {
+  const control = match.opponent.kind === "self-no-search";
+  if (match.search === undefined) {
+    if (control || match.opponent_search !== undefined || rows.some((row) => row.search !== undefined || row.opponent_search !== undefined)) fail(`${match.match_id}: only a search match carries search counts, and the self-no-search control belongs to one`);
+    return;
+  }
+  if (match.candidate_preview !== undefined) fail(`${match.match_id}: a search match has no Preview variant`);
+  if (rows.some((row) => row.search === undefined)) fail(`${match.match_id}: a search match carries search counts in its summary and in every game row`);
+  identities.add(match.search.identity_hash);
+  const perGame = rows.map((row) => row.search as SearchCounts);
+  perGame.forEach((counts, index) => checkSearchCounts(counts, `${match.match_id} game ${index}`));
+  if (jcs(match.search.counts as unknown as Json) !== jcs(sumSearchCounts(perGame) as unknown as Json)) fail(`${match.match_id}: search.counts must be the sum of the game rows' counts`);
+  if (!control) {
+    if (match.opponent_search !== undefined || rows.some((row) => row.opponent_search !== undefined)) fail(`${match.match_id}: only a self-no-search match carries the control's counts`);
+    return;
+  }
+  const opponent = match.opponent as Extract<MatchV2["opponent"], { kind: "self-no-search" }>;
+  if (opponent.mode !== match.mode) fail(`${match.match_id}: the control plays the pair in the match's mode`);
+  if (match.opponent_search === undefined || rows.some((row) => row.opponent_search === undefined)) fail(`${match.match_id}: a self-no-search match carries the control's counts in its summary and in every game row`);
+  const found = match.opponent_search as NonNullable<MatchV2["opponent_search"]>;
+  if (found.identity_hash !== match.search.identity_hash) fail(`${match.match_id}: the control's identity hash is the search policy's it belongs to`);
+  const control_per_game = rows.map((row) => row.opponent_search as SearchCounts);
+  control_per_game.forEach((counts, index) => checkControlCounts(counts, `${match.match_id} game ${index} control`));
+  if (jcs(found.counts as unknown as Json) !== jcs(sumSearchCounts(control_per_game) as unknown as Json)) fail(`${match.match_id}: opponent_search.counts must be the sum of the game rows' counts`);
 }
 
 type Outcome = ProgressGameRecord["outcome"];
@@ -243,12 +346,36 @@ export function readProgressGameRecord(value: unknown): ProgressGameRecord {
     const forfeited = record.outcome.kind === "forfeit" ? 1 : 0;
     if (baseline.counts.decisions < answered || baseline.counts.decisions > answered + forfeited) fail("baseline.counts.decisions must be the baseline seat's decisions");
   } else if (isDamageAware(record.policies.p1) || isDamageAware(record.policies.p2)) fail("a game with a damage-aware seat must carry the baseline counts");
+  checkSearchOfGame(record);
   // A game of a both-seats evaluation names its pair: both games of a pair share the pair's seed.
   if (record.pair !== undefined && record.pair !== record.game >> 1) fail("pair must be the game index divided by two");
   // A declared evaluation key (#1177) replaces the run key in the seed; it belongs to a both-seats game and never equals the run key.
   if (record.evaluation_key !== undefined && (record.pair === undefined || record.evaluation_key === record.run_id)) fail("evaluation_key belongs to a both-seats game and must differ from run_id");
   if (progressGameStreams(record.evaluation_key ?? record.run_id, record.pair ?? record.game).seed !== record.seed) fail("the seed is not the one progress-seed/1 gives this game's pair (or game index)");
   return record;
+}
+
+/**
+ * A stored game's search fields (ADR-026 section 5): the search seat and the control seat are two seats with one identity hash;
+ * the search seat's policy id carries the `search` member (not checkable here: the id is a hash), the control's counts are the
+ * control's; the decisions count is the seat's recorded decisions (a forfeit can stop it on one it never answered).
+ */
+function checkSearchOfGame(record: ProgressGameRecord): void {
+  const { search, opponent_search: control } = record;
+  if (search === undefined) {
+    if (control !== undefined) fail("opponent_search belongs to a game that carries search");
+    return;
+  }
+  const forfeited = record.outcome.kind === "forfeit" ? 1 : 0;
+  const answered = (seat: "p1" | "p2"): number => record.decisions.filter((decision) => decision.player === seat).length;
+  const decisionsOk = (seat: "p1" | "p2", counts: SearchCounts): boolean => counts.decisions >= answered(seat) && counts.decisions <= answered(seat) + forfeited;
+  checkSearchCounts(search.counts, "search");
+  if (!decisionsOk(search.seat, search.counts)) fail("search.counts.decisions must be the search seat's decisions");
+  if (control === undefined) return;
+  if (control.seat === search.seat) fail("opponent_search.seat must be the seat the search does not hold");
+  if (control.identity_hash !== search.identity_hash) fail("the control's identity hash is the search policy's it belongs to");
+  checkControlCounts(control.counts, "opponent_search");
+  if (!decisionsOk(control.seat, control.counts)) fail("opponent_search.counts.decisions must be the control seat's decisions");
 }
 
 /** The two seats of a game record's outcome as the engine's winner field: `p1`, `p2` or `null` for a tie. */

@@ -38,11 +38,17 @@ from areneon_ml.progress import evaluation_key as ekey
 from areneon_ml.progress.ablation import ablation_summary, expected_ablation_matches
 from areneon_ml.progress.eval_dataset import EvalDataset, EvalDatasetError, validation_teams
 from areneon_ml.progress.records import (
+    CONTROL_LABEL,
     DAMAGE_AWARE_LABEL,
     RANDOM_PREVIEW_POLICY,
     SCHEMA_V2,
+    SEARCH_EVIDENCE_NOTE,
+    SEARCH_LABEL,
+    SEARCH_PREFIX,
+    SEARCH_PRIOR_LABEL,
     ProgressRecordError,
     check_game_baseline,
+    check_game_search,
     is_damage_aware,
     is_v2,
     read_game_record,
@@ -203,6 +209,10 @@ class ProgressRequest:
     eval_dataset: EvalDataset | None = None
     #: Replaces the run key in ``progress-pairing/1`` and ``progress-seed/1`` (#1177).
     evaluation_key: str | None = None
+    #: The decision-time search as the candidate (ADR-026): the pair in this one play mode
+    #: (``argmax`` or ``sample``) with the committed ``rerank-1`` config, against the baselines and
+    #: the control ``self-no-search``; its matches are ``search-<opponent>-<mode>``.
+    search_mode: str | None = None
 
 
 class ProgressPlayer(Protocol):
@@ -294,6 +304,7 @@ class NodeProgressPlayer(NodePlayer):
             *cross,
             *(() if request.eval_dataset is None else request.eval_dataset.node_args()),
             *ekey.node_args(request.evaluation_key),
+            *(() if request.search_mode is None else ("--search-mode", request.search_mode)),
         )
         try:
             found = json.loads(out)
@@ -464,6 +475,49 @@ def _check_previous(record: dict[str, Any], previous: PreviousPair | None, *, le
             )
 
 
+def _is_search(record: dict[str, Any]) -> bool:
+    """Whether the record is a search record: the search candidate's matches, alone."""
+    return any("search" in m for m in record["matches"])
+
+
+def _bare(match: dict[str, Any]) -> str:
+    """The match id without the search candidate's ``search-`` prefix."""
+    name: str = match["match_id"]
+    return name.removeprefix(SEARCH_PREFIX) if "search" in match else name
+
+
+def _modes(record: dict[str, Any]) -> set[str]:
+    """The modes a record's matches are played in: the one search mode, else both."""
+    return {m["mode"] for m in record["matches"]} if _is_search(record) else {"argmax", "sample"}
+
+
+def _check_search(record: dict[str, Any], asked: str | None, *, legacy: bool) -> None:
+    """A search record (ADR-026 slice P) holds the search candidate's matches alone, in the one
+    mode asked for, with the control ``search-self-no-search-<mode>`` (the policy ids and the
+    control's pair are tied to the run by the record reader).
+
+    ``asked`` is the mode, or None for no search; ``legacy`` is a committed record (any one mode).
+    """
+    searched = _is_search(record)
+    if asked is None and not legacy:
+        if searched:
+            raise ProgressError("this evaluation asks for no search")
+        return
+    if not searched:
+        if asked is not None:
+            raise ProgressError("the record holds no search matches")
+        return
+    modes = {m["mode"] for m in record["matches"]}
+    if len(modes) != 1 or (asked is not None and modes != {asked}):
+        raise ProgressError("a search record plays the one mode asked for")
+    mode = next(iter(modes))
+    controls = [
+        m["match_id"] for m in record["matches"] if m["opponent"]["kind"] == "self-no-search"
+    ]
+    if controls != [f"{SEARCH_PREFIX}self-no-search-{mode}"]:
+        raise ProgressError(f"a search record holds the control match search-self-no-search-{mode}")
+
+
 def _check_damage_aware(record: dict[str, Any], asked: str | None, *, legacy: bool) -> None:
     """The damage-aware matches are exactly the two asked for (a fresh evaluation), each naming the
     asked version's policy id (``damage-aware@v1`` or ``@v3``), and share one identity hash (the
@@ -473,7 +527,7 @@ def _check_damage_aware(record: dict[str, Any], asked: str | None, *, legacy: bo
     none (committed without them) or one version's two matches, never a wrong or half set.
     """
     found = {
-        m["match_id"]: m
+        _bare(m): m
         for m in record["matches"]
         if m["opponent"]["kind"] == "baseline" and is_damage_aware(m["opponent"]["policy_id"])
     }
@@ -490,11 +544,12 @@ def _check_damage_aware(record: dict[str, Any], asked: str | None, *, legacy: bo
         if version is None:
             raise ProgressError("damage-aware matches of a record name one known baseline version")
     policy = damage_aware_policy(version)
-    wanted = damage_aware_matches(version)
+    modes = _modes(record)
+    wanted = [w for w in damage_aware_matches(version) if w.rsplit("-", 1)[1] in modes]
     if set(found) != set(wanted):
-        raise ProgressError(f"damage-aware matches are {wanted[0]} and {wanted[1]}")
+        raise ProgressError(f"damage-aware matches are {' and '.join(wanted)}")
     for match in found.values():
-        if match["match_id"] != f"{wanted[0].rsplit('-', 1)[0]}-{match['mode']}" or match[
+        if _bare(match) != f"{wanted[0].rsplit('-', 1)[0]}-{match['mode']}" or match[
             "opponent"
         ] != {"kind": "baseline", "policy_id": policy}:
             raise ProgressError(f"{match['match_id']}: the opponent is not {policy}")
@@ -658,15 +713,18 @@ def versus_relation(run_dir: Path, source: _Source, pair: RunPair) -> dict[str, 
 
 def _check_versus(record: dict[str, Any], versus: RunPair | None, *, legacy: bool) -> None:
     """The ``run-*`` matches are exactly the other run's frozen pair in both modes (opt-in)."""
-    found = {m["match_id"]: m for m in record["matches"] if m["opponent"]["kind"] == "run"}
+    found = {_bare(m): m for m in record["matches"] if m["opponent"]["kind"] == "run"}
     if versus is None:
         if found and not legacy:
             raise ProgressError("this evaluation asks for no cross-run matches")
         return
     if not found and legacy:
         return
-    if set(found) != {"run-argmax", "run-sample"}:
-        raise ProgressError("cross-run matches are run-sample and run-argmax")
+    wanted_runs = {f"run-{mode}" for mode in _modes(record)}
+    if set(found) != wanted_runs:
+        raise ProgressError(
+            f"cross-run matches are {' and '.join(sorted(wanted_runs, reverse=True))}"
+        )
     if record["plan"].get("run_games_per_match") != versus.games:
         raise ProgressError("progress.json is not the record asked for")
     ids = {"sample": versus.policy_id_sample, "argmax": versus.policy_id_argmax}
@@ -728,6 +786,7 @@ def _verify_output(  # noqa: PLR0913, PLR0917
     versus: RunPair | None = None,
     eval_dataset: EvalDataset | None = None,
     evaluation_key: str | None = None,
+    search_mode: str | None = None,
 ) -> dict[str, Any]:
     """The simulator side's files are the record's: read both kinds, check every hash and name."""
     record = read_progress_record(layout.read_json(work / PROGRESS), config)
@@ -748,6 +807,7 @@ def _verify_output(  # noqa: PLR0913, PLR0917
     if plan.get("anchor_games_per_match", 0) != anchor_games:
         raise ProgressError("progress.json is not the record asked for")
     _check_ablation(record, ablation, run_dir, config, fresh=True)
+    _check_search(record, search_mode, legacy=False)
     _check_damage_aware(record, damage_aware, legacy=False)
     _check_versus(record, versus, legacy=False)
     _check_eval_dataset(record, eval_dataset, config, strict=True)
@@ -772,6 +832,7 @@ def _verify_output(  # noqa: PLR0913, PLR0917
                 raise ProgressError(f"games/{name} is not the game it is named for")
             try:
                 check_game_baseline(stored, match, rows[(match["match_id"], game)])
+                check_game_search(stored, match, rows[(match["match_id"], game)])
             except ProgressRecordError as exc:
                 raise ProgressError(f"games/{name}: {exc}") from exc
             listed.append(record_hash(stored))
@@ -918,6 +979,24 @@ def summary_of(record: dict[str, Any]) -> list[dict[str, Any]]:
                 if "baseline" in match
                 else {}
             )
+            | (
+                {"comparison": CONTROL_LABEL, "opponent_search": match["opponent_search"]}
+                if match["opponent"]["kind"] == "self-no-search"
+                else {}
+            )
+            | (
+                {
+                    "search": {
+                        "label": SEARCH_LABEL,
+                        "prior_label": SEARCH_PRIOR_LABEL,
+                        "note": SEARCH_EVIDENCE_NOTE,
+                        "identity_hash": match["search"]["identity_hash"],
+                        "counts": match["search"]["counts"],
+                    }
+                }
+                if "search" in match
+                else {}
+            )
         )
     return out
 
@@ -935,7 +1014,7 @@ def _pair_stats(record: dict[str, Any], match: dict[str, Any]) -> dict[str, Any]
         "interval_high_ppm": interval.high_ppm,
         "interval": PAIR_INTERVAL_LABEL,
     }
-    if match["opponent"]["kind"] in ("previous", "anchor", "run"):
+    if match["opponent"]["kind"] in ("previous", "anchor", "run", "self-no-search"):
         # pair score minus 1/2: the same resamples, shifted, so the bounds shift exactly
         out |= {
             "diff_mean_ppm": interval.mean_ppm - PPM // 2,
@@ -969,6 +1048,7 @@ def verify_progress_dir(  # noqa: PLR0913, PLR0917
     _check_previous(record, _previous_pair(run_dir, config, generation), legacy=True)
     _check_anchors(record, None, run_dir, config)
     _check_ablation(record, None, run_dir, config, fresh=False)
+    _check_search(record, None, legacy=True)
     # The damage-aware matches are optional (a record may hold them or not), never half a set.
     _check_damage_aware(record, None, legacy=True)
     _check_versus(record, versus, legacy=True)
@@ -985,6 +1065,7 @@ def verify_progress_dir(  # noqa: PLR0913, PLR0917
             if is_v2(record):
                 try:
                     check_game_baseline(stored, match, rows[(match["match_id"], stored["game"])])
+                    check_game_search(stored, match, rows[(match["match_id"], stored["game"])])
                 except (ProgressRecordError, KeyError) as exc:
                     raise ProgressError(f"games/{name}: {exc}") from exc
     if manifest.get("run_id") != config.run_key:
@@ -996,6 +1077,7 @@ def _check_asked(
     generation: int,
     sizes: tuple[int, int, int],
     asked: tuple[Sequence[int], bool, bool, VersusSpec | None],
+    search_mode: str | None = None,
 ) -> tuple[list[int], list[int]]:
     """Refuse a request that cannot be played; returns the anchors played and left out."""
     games, record_games, anchor_games = sizes
@@ -1011,6 +1093,14 @@ def _check_asked(
     dropped = sorted({a for a in anchors if a >= generation})
     if wanted and (anchor_games < MIN_GAMES or anchor_games % 2):
         raise ProgressError("--anchor-games must be an even number of at least 2")
+    if search_mode is not None and search_mode not in ("argmax", "sample"):
+        raise ProgressError("--search-mode must be argmax or sample")
+    if search_mode is not None and (preview_ablation or anchors or previous_matches):
+        raise ProgressError(
+            "the search candidate is evaluated alone, in one mode: no --preview-ablation, "
+            "no --anchors and no --previous-matches (the baselines, the control and "
+            "--versus-run-dir are played)"
+        )
     if versus is not None and (versus.games < MIN_GAMES or versus.games % 2):
         raise ProgressError("--run-games must be an even number of at least 2")
     if versus is not None and preview_ablation:
@@ -1039,8 +1129,17 @@ def progress_generation(  # noqa: PLR0913, PLR0917
     eval_dataset: EvalDataset | None = None,
     evaluation_key: str | None = None,
     damage_aware_version: str = "v1",
+    search_mode: str | None = None,
 ) -> dict[str, Any]:
     """Evaluate one generation into ``root``; a committed directory is verified and kept.
+
+    ``search_mode`` (ADR-026 slice P) makes the candidate the frozen pair played with decision-time
+    search (the committed ``rerank-1`` config, one play mode) instead of the pair itself: its
+    matches are ``search-<opponent>-<mode>`` against the baselines, ``--versus`` and the control
+    ``self-no-search`` (the same pair, same mode, no search). The record is a search record and
+    holds nothing else (use a progress directory of its own); each match carries the search
+    identity hash and counts. Labelled "learned pair with decision-time search (one-ply re-rank)";
+    search results are never held-out evidence.
 
     ``eval_dataset`` measures on the validation split of another verified dataset than the run's
     own (ADR-020 E-17.1; the same refusals, plus: the dataset is not the run's own training
@@ -1073,6 +1172,7 @@ def progress_generation(  # noqa: PLR0913, PLR0917
         generation,
         (games, record_games, anchor_games),
         (anchors, previous_matches, preview_ablation, versus),
+        search_mode,
     )
     damage_budget_ms = _damage_budget_ms(
         damage_aware_budget_minutes, preview_ablation, damage_aware_version
@@ -1108,6 +1208,7 @@ def progress_generation(  # noqa: PLR0913, PLR0917
                 versus,
                 eval_dataset,
                 evaluation_key,
+                search_mode,
             )
         source = _source(run_dir, config, generation)
         previous = _previous_pair(run_dir, config, generation) if previous_matches else None
@@ -1164,6 +1265,7 @@ def progress_generation(  # noqa: PLR0913, PLR0917
                     versus=other_pair,
                     eval_dataset=eval_dataset,
                     evaluation_key=evaluation_key,
+                    search_mode=search_mode,
                 )
             )
             record = _verify_output(
@@ -1181,6 +1283,7 @@ def progress_generation(  # noqa: PLR0913, PLR0917
                 other_pair,
                 eval_dataset,
                 evaluation_key,
+                search_mode,
             )
             layout.fsync_tree(work)
             layout.write_json(
@@ -1224,6 +1327,7 @@ def _skipped(  # noqa: PLR0913, PLR0917
     versus: VersusSpec | None,
     eval_dataset: EvalDataset | None,
     evaluation_key: str | None = None,
+    search_mode: str | None = None,
 ) -> dict[str, Any]:
     """A committed directory is verified and reported, never rewritten."""
     pair = None if versus is None else _versus_pair(run_dir, config, versus)
@@ -1240,6 +1344,14 @@ def _skipped(  # noqa: PLR0913, PLR0917
     held = None
     if pair is not None and any(m["opponent"]["kind"] == "run" for m in record["matches"]):
         held = versus_relation(run_dir, _source(run_dir, config, generation), pair)
+    if (search_mode is not None) != _is_search(record) or (
+        search_mode is not None and {m["mode"] for m in record["matches"]} != {search_mode}
+    ):
+        raise ProgressError(
+            f"{target.name} already holds "
+            f"{'a search record of another kind' if _is_search(record) else 'a normal record'}: "
+            "use a progress directory of its own for the other kind"
+        )
     if preview_ablation != bool(ablation_summary(record)):
         raise ProgressError(
             f"{target.name} already holds a "

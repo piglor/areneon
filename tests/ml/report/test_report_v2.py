@@ -19,6 +19,7 @@ from areneon_ml.loop import layout
 from areneon_ml.progress import run as run_module
 from areneon_ml.progress.ablation import ablation_summary
 from areneon_ml.progress.eval_dataset import EvalDataset
+from areneon_ml.progress.records import CONTROL_LABEL, SEARCH_LABEL, SEARCH_PRIOR_LABEL
 from areneon_ml.progress.run import CROSS_RUN_LABEL, VersusSpec, summary_of
 from areneon_ml.progress.stats import PPM
 from areneon_ml.report.command import report_run
@@ -340,3 +341,36 @@ def test_the_dashboard_labels_an_evaluation_key(run: Path, tmp_path: Path) -> No
     report_run(run, keyed, out)
     first = json.loads((tmp_path / "keyed.looks.jsonl").read_text().splitlines()[0])
     assert {m["evaluation_key"] for m in first["matches"]} == {"paired-eval-1"}
+
+
+def test_the_decision_time_search_is_labelled_and_its_counts_and_the_controls_are_shown(
+    run: Path, tmp_path: Path
+) -> None:
+    """ADR-026 slice P: the search matches say what they are, never held-out evidence, and the
+    control's counts (searched decisions 0) sit beside the search's."""
+    root = tmp_path / "progress"
+    played(run, root, 1, search_mode="argmax")
+    model = read_report_model(run, root)
+    found = {m.match_id: m for m in model.progress[1].matches}
+    assert sorted(found) == [
+        "search-actor-rule-argmax",
+        "search-random-legal-argmax",
+        "search-self-no-search-argmax",
+    ]
+    control = found["search-self-no-search-argmax"]
+    assert control.opponent_search is not None
+    assert control.opponent_search["counts"]["searched_decisions"] == 0
+    assert found["search-actor-rule-argmax"].opponent_search is None
+    text = text_of(run, root)
+    assert "Decision-time search counts" in text
+    assert SEARCH_LABEL in text
+    assert SEARCH_PRIOR_LABEL in text
+    assert "Search results are never held-out evidence" in text
+    assert f'<td class="n">{control.search["counts"]["leaf_queries"]}</td>' in text  # type: ignore[index]
+    assert CONTROL_LABEL in text
+
+
+def test_a_page_without_search_has_no_search_table(run: Path, tmp_path: Path) -> None:
+    root = tmp_path / "progress"
+    played(run, root, 1)
+    assert "Decision-time search counts" not in text_of(run, root)

@@ -39,7 +39,8 @@ export {
   type VerifiedDataset,
 } from "./dataset-reader.ts";
 export { datasetPoolDetail, datasetPoolSource, datasetTeamPool } from "./loop-pool.ts";
-export { datasetValidationPool } from "./progress-pool.ts";
+export { datasetTrainingHashes, datasetValidationPool } from "./progress-pool.ts";
+export { progressSearchSetup } from "./progress-search-setup.ts";
 export {
   committedDatasetHashes,
   differing,

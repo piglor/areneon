@@ -232,6 +232,17 @@ flag says; the output says so. The previous pair is served by a second worker.
 A committed generation is never rewritten, so the matches cannot be added to
 it: evaluate into a new `--progress-dir` (the command reports `previous: none`
 for a generation without them).
+`--search-mode argmax|sample` (ADR-026 slice P) evaluates the generation's pair played with
+decision-time search (the committed `rerank-1` config; learned pair with decision-time search
+(one-ply re-rank), the belief matched to the synthetic generator: an upper bound for this
+evaluation) in that one play mode, alone, into a progress directory of its own: matches
+`search-<opponent>-<mode>` against the baselines, `--versus-run-dir` and the control
+`search-self-no-search-<mode>` (the same pair, same mode, no search). Each match records the
+search identity and integer counts of both sides (the control searches nothing). A search is
+slow (seconds per searched decision): use few pairs for a first look. Search results are never
+held-out evidence. For a run whose validation split is too small, `--eval-dataset-dir` and
+`--eval-dataset-hash` measure on a larger evaluation-only dataset, which must hold none of the
+run's own dev or training teams.
 `--damage-aware` adds, for any generation, `damage-aware-sample` and
 `damage-aware-argmax` (with `--damage-aware-version v3`, `damage-aware-v3-sample` and
 `damage-aware-v3-argmax` against `damage-aware@v3`; v1 is the default and its records are unchanged): the pair against the damage-aware scripted baseline

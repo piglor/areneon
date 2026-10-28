@@ -48,3 +48,25 @@ export function datasetValidationPool(engine: Engine, config: TrainingRunConfig)
     known_synthetic: syntheticTeamHashes(hashes),
   };
 }
+
+/**
+ * The hashes of every dev and training team of the run's own dataset (the splits its loop draws from, whether or not a team was
+ * drawn): the canonical hash of each record and the played-form `teamHash` of its sets, in one set. An evaluation dataset
+ * (ADR-020 E-17.1) must hold none of them, so a larger evaluation-only dataset cannot lend the run a team it trained on.
+ * The validation split is left out: it is the run's own evaluation split, not training data.
+ */
+export function datasetTrainingHashes(engine: Engine, config: TrainingRunConfig): Set<string> {
+  const named = config.team_dataset;
+  if (named === undefined) throw new ProgressError("the run config names no team dataset");
+  const dataset = readDataset(named.path, loadFixtureInputs(engine, config.format_id));
+  if (datasetHash(dataset) !== named.dataset_hash) throw new ProgressError("the dataset's hash is not the one the run config names");
+  const format = resolveFormat(engine, config.format_id);
+  const hashes = new Set<string>();
+  for (const record of [...dataset.splits.dev, ...(dataset.training ?? [])]) {
+    hashes.add(record.canonical_team_hash);
+    const played = importPaste(engine, record.paste);
+    validateTeam(engine, format, played); // normalises in place, as the loop's pool does
+    hashes.add(teamHash(played));
+  }
+  return hashes;
+}

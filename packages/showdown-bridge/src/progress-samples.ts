@@ -12,7 +12,7 @@ import type { Engine } from "./engine.ts";
 import { playGame } from "./evaluation-harness.ts";
 import { firstLegal, GOLDEN_FORMAT, syntheticTeam } from "./golden.ts";
 import { buildProgressGameRecord } from "./progress-evaluation.ts";
-import { omniscientLogHash, progressRecordHash } from "./progress-records.ts";
+import { omniscientLogHash, progressRecordHash, type SearchCounts, sumSearchCounts } from "./progress-records.ts";
 import { progressGameStreams } from "./progress-seed.ts";
 
 const hexOf = (c: string): string => c.repeat(64);
@@ -184,6 +184,84 @@ export async function progressSamples(engine: Engine): Promise<ProgressSamples> 
       e.games.push(...e.games.map((g: any) => ({ ...structuredClone(g), match_id: "damage-aware-sample" })));
       change?.(e);
     });
+  // The decision-time search (ADR-026 slice P): the candidate's match against a baseline, and against the self-no-search control.
+  const searchHash = hexOf("e");
+  const answered = (seat: "p1" | "p2") => game.decisions.filter((d) => d.player === seat).length;
+  const searchCountsOf = (decisions: number): SearchCounts => ({
+    decisions,
+    searched_decisions: decisions - 1,
+    fallbacks: { team_preview: 1, forced_switch: 0, too_few_candidates: 0, clock_floor: 0, belief_refused: 0, below_min_valid: 0 },
+    worlds_asked: 16,
+    worlds_built: 14,
+    worlds_refused: 2,
+    redraws: 3,
+    legality_redraws: 0,
+    refusals: [{ key: "state_unwritten", count: 2 }],
+    refusal_check_class: [{ key: "V3:locked", count: 2 }],
+    belief_refusals: [],
+    worlds_dropped: { reply_model: 0, choice_refused: 1 },
+    resampled: [{ key: "bench_order", count: 7 }],
+    worlds_scored: 13,
+    turns: 130,
+    wait_continuations: 1,
+    leaf_queries: 90,
+    leaf_memo_hits: 20,
+    leaf_game_end: 3,
+    leaf_hp_ko: 0,
+    replies_max_damage: 13,
+    replies_all_zero: 0,
+    replies_uniform: 26,
+  });
+  const controlCountsOf = (decisions: number): SearchCounts => ({
+    ...searchCountsOf(decisions),
+    searched_decisions: 0,
+    worlds_asked: 0, worlds_built: 0, worlds_refused: 0, redraws: 0, legality_redraws: 0, worlds_scored: 0, turns: 0, wait_continuations: 0, leaf_queries: 0, leaf_memo_hits: 0, leaf_game_end: 0, leaf_hp_ko: 0, replies_max_damage: 0, replies_all_zero: 0, replies_uniform: 0,
+    refusals: [], refusal_check_class: [], resampled: [], worlds_dropped: { reply_model: 0, choice_refused: 0 },
+  });
+  const searchPolicyId = `policy:${hexOf("a")}`;
+  // The candidate's match against `actor-rule`: the search counts of its four games and their sum.
+  const v2Search = (change?: (e: Record<string, any>) => void) =>
+    withV2((e) => {
+      renameMatch(e, "search-actor-rule-argmax");
+      const per = searchCountsOf(answered("p1"));
+      Object.assign(e.matches[0], { policy_id: searchPolicyId, search: { identity_hash: searchHash, counts: sumSearchCounts([per, per, per, per]) } });
+      e.games.forEach((g: any) => (g.search = structuredClone(per)));
+      change?.(e);
+    });
+  // The same pair without search is the opponent: both sides' counts, the control's with no searched decision.
+  const v2SearchControl = (change?: (e: Record<string, any>) => void) =>
+    withV2((e) => {
+      renameMatch(e, "search-self-no-search-argmax");
+      const per = searchCountsOf(answered("p1"));
+      const control = controlCountsOf(answered("p2"));
+      Object.assign(e.matches[0], {
+        policy_id: searchPolicyId,
+        opponent: { kind: "self-no-search", policy_id: `policy:${hexOf("b")}`, checkpoints, mode: "argmax" },
+        search: { identity_hash: searchHash, counts: sumSearchCounts([per, per, per, per]) },
+        opponent_search: { identity_hash: searchHash, counts: sumSearchCounts([control, control, control, control]) },
+      });
+      e.games.forEach((g: any) => Object.assign(g, { search: structuredClone(per), opponent_search: structuredClone(control) }));
+      change?.(e);
+    });
+  const searchGame = mutated(game, (g) => {
+    g.match_id = "search-actor-rule-argmax";
+    g.policies.p1 = searchPolicyId;
+    g.search = { seat: "p1", identity_hash: searchHash, counts: searchCountsOf(answered("p1")) };
+  }) as unknown as typeof game;
+  const searchControlGame = mutated(searchGame, (g) => {
+    g.match_id = "search-self-no-search-argmax";
+    g.policies.p2 = `policy:${hexOf("b")}`;
+    g.opponent_search = { seat: "p2", identity_hash: searchHash, counts: controlCountsOf(answered("p2")) };
+  }) as unknown as typeof game;
+  const shortSearch = (change: (g: Record<string, any>) => void) =>
+    mutated(searchControlGame, (g) => {
+      g.omniscient_log = g.omniscient_log.slice(0, 3);
+      g.omniscient_log_sha256 = omniscientLogHash(g.omniscient_log);
+      g.decisions = g.decisions.slice(0, 2);
+      g.search.counts = searchCountsOf(g.decisions.filter((d: any) => d.player === "p1").length);
+      g.opponent_search.counts = controlCountsOf(g.decisions.filter((d: any) => d.player === "p2").length);
+      change(g);
+    });
   const withEval = (change: (e: Record<string, any>) => void) => mutated(evaluation, change);
   const withGame = (change: (g: Record<string, any>) => void) => mutated(game, change);
   // A faulty sample whose fault does not depend on the log's length carries a few lines, so the corpus stays small.
@@ -211,6 +289,10 @@ export async function progressSamples(engine: Engine): Promise<ProgressSamples> 
       "progress-evaluation-record-2/ablation-match": v2Ablation(),
       "progress-evaluation-record-2/damage-aware-match": v2Damage(),
       "progress-evaluation-record-2/damage-aware-v3-match": v2DamageV3(),
+      "progress-evaluation-record-2/search-match": v2Search(),
+      "progress-evaluation-record-2/search-self-no-search-match": v2SearchControl(),
+      "progress-game-record/search": searchGame,
+      "progress-game-record/search-control": searchControlGame,
       "progress-game-record/damage-aware": damageGame,
       "progress-game-record/damage-aware-v3": damageGameV3,
       "progress-game-record/played": game,
@@ -239,6 +321,10 @@ export async function progressSamples(engine: Engine): Promise<ProgressSamples> 
       "progress-game-record/plan-label-malformed": withShortGame((g) => ((g.game = 1), (g.pair = 0), (g.evaluation_key = ""))),
       "progress-evaluation-record-2/fractional-wins": withV2((e) => (e.matches[0].wins = 0.5)),
       "progress-evaluation-record-2/baseline-fractional-count": v2Damage((e) => (e.games[0].baseline_counts.queries = 0.5)),
+      "progress-evaluation-record-2/search-fractional-count": v2Search((e) => (e.games[0].search.turns = 0.5)),
+      "progress-evaluation-record-2/search-no-fallbacks": v2Search((e) => delete e.games[0].search.fallbacks),
+      "progress-evaluation-record-2/self-no-search-no-mode": v2SearchControl((e) => delete e.matches[0].opponent.mode),
+      "progress-game-record/search-no-identity": shortSearch((g) => delete g.search.identity_hash),
       "progress-game-record/baseline-no-identity": shortDamage((g) => delete g.baseline.identity_hash),
       "progress-game-record/public-class": withShortGame((g) => (g.data_class = "public")),
       "progress-game-record/extra-field": withShortGame((g) => (g.notes = "x")),
@@ -285,6 +371,46 @@ export async function progressSamples(engine: Engine): Promise<ProgressSamples> 
       "progress-evaluation-record-2/baseline-on-other-match": withV2((e) => (e.matches[0].baseline = { identity_hash: identity, counts: gameCounts })),
       "progress-evaluation-record-2/baseline-probe-runs-exceed-queries": v2Damage((e) => ((e.games[0].baseline_counts.probe_runs = 13), (e.matches[0].baseline.counts.probe_runs += 4))),
       "progress-evaluation-record-2/baseline-identities-differ": v2DamageBoth((e) => (e.matches[1].baseline.identity_hash = hexOf("8"))),
+      "progress-evaluation-record-2/search-counts-disagree": v2Search((e) => (e.matches[0].search.counts.turns += 1)),
+      "progress-evaluation-record-2/search-row-missing": v2Search((e) => delete e.games[0].search),
+      "progress-evaluation-record-2/search-misnamed": v2Search((e) => renameMatch(e, "actor-rule-argmax")),
+      "progress-evaluation-record-2/search-on-plain-match": withV2((e) => (e.matches[0].search = { identity_hash: searchHash, counts: searchCountsOf(5) })),
+      // A plain match beside a search match: matches sort by id, so the plain one comes first.
+      "progress-evaluation-record-2/search-mixed-with-plain": v2Search((e) => {
+        const plain = { ...structuredClone(e.matches[0]), match_id: "random-legal-argmax" };
+        delete plain.search;
+        const rows = e.games.map((g: any) => {
+          const row = { ...structuredClone(g), match_id: "random-legal-argmax" };
+          delete row.search;
+          return row;
+        });
+        e.matches = [plain, e.matches[0]];
+        e.games = [...rows, ...e.games];
+      }),
+      "progress-evaluation-record-2/search-more-fallbacks-than-decisions": v2Search((e) => {
+        e.games[0].search.fallbacks.below_min_valid = 99;
+        e.matches[0].search.counts.fallbacks.below_min_valid += 99;
+      }),
+      "progress-evaluation-record-2/search-unsorted-table": v2Search((e) => {
+        for (const c of [e.games[0].search, e.matches[0].search.counts]) c.refusals = [{ key: "b", count: 1 }, { key: "a", count: 1 }];
+      }),
+      "progress-evaluation-record-2/control-without-search": v2SearchControl((e) => {
+        e.matches[0].match_id = "self-no-search-argmax";
+        delete e.matches[0].search;
+        e.games.forEach((g: any) => ((g.match_id = "self-no-search-argmax"), delete g.search));
+      }),
+      "progress-evaluation-record-2/control-row-missing": v2SearchControl((e) => delete e.games[0].opponent_search),
+      "progress-evaluation-record-2/control-searches": v2SearchControl((e) => {
+        e.games[0].opponent_search.searched_decisions = 1;
+        e.matches[0].opponent_search.counts.searched_decisions += 1;
+      }),
+      "progress-evaluation-record-2/control-other-identity": v2SearchControl((e) => (e.matches[0].opponent_search.identity_hash = hexOf("d"))),
+      "progress-evaluation-record-2/control-mode-differs": v2SearchControl((e) => (e.matches[0].opponent.mode = "sample")),
+      "progress-evaluation-record-2/control-counts-on-baseline": v2Search((e) => (e.matches[0].opponent_search = { identity_hash: searchHash, counts: e.matches[0].search.counts })),
+      "progress-game-record/search-decisions-differ": shortSearch((g) => (g.search.counts.decisions += 5)),
+      "progress-game-record/search-control-same-seat": shortSearch((g) => (g.opponent_search.seat = "p1")),
+      "progress-game-record/search-control-other-identity": shortSearch((g) => (g.opponent_search.identity_hash = hexOf("d"))),
+      "progress-game-record/search-control-without-search": shortSearch((g) => delete g.search),
       "progress-game-record/baseline-seat-wrong": shortDamage((g) => (g.baseline.seat = "p1")),
       "progress-game-record/baseline-missing": shortDamage((g) => delete g.baseline),
       "progress-game-record/baseline-decisions-differ": shortDamage((g) => (g.baseline.counts.decisions += 5)),

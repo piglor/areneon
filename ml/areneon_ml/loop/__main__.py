@@ -342,6 +342,18 @@ def _parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         "damage-aware-<mode>) or v3 (the corrected scorer, #1180; matches damage-aware-v3-<mode>)",
     )
     progress.add_argument(
+        "--search-mode",
+        choices=("argmax", "sample"),
+        default=None,
+        help="evaluate the pair played with decision-time search (ADR-026, the committed rerank-1 "
+        "config) in this play mode, instead of the pair itself: matches search-<opponent>-<mode> "
+        "against the baselines, --versus-run-dir and the control self-no-search (the same pair, "
+        "same mode, no search); learned pair with decision-time search (one-ply re-rank), the "
+        "belief matched to the synthetic generator: search results are never held-out evidence. "
+        "Alone: no --anchors, --previous-matches or --preview-ablation; use a progress directory "
+        "of its own",
+    )
+    progress.add_argument(
         "--damage-aware-budget-minutes",
         type=int,
         help="with --damage-aware: the most wall-clock minutes one damage-aware match may take; "
@@ -474,6 +486,7 @@ def _progress(args: argparse.Namespace) -> dict[str, object]:
             eval_dataset,
             args.evaluation_key,
             damage_aware_version=args.damage_aware_version or "v1",
+            search_mode=args.search_mode,
         )
         for g in generations
     ]

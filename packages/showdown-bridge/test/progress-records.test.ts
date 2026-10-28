@@ -262,3 +262,59 @@ describe("probe_refusals of the damage-aware counts (optional, written only abov
     expect(() => readProgressEvaluationRecordV2(over)).toThrow("probe refusals cannot exceed queries");
   });
 });
+
+describe("the search candidate's counts and the self-no-search control (ADR-026 section 5)", () => {
+  const V2 = "progress-evaluation-record-2";
+  it("reads the valid samples, the control's with its own counts", () => {
+    const against = readProgressEvaluationRecordV2(sample(`${V2}/valid/search-match`));
+    expect(against.matches[0]).toMatchObject({ match_id: "search-actor-rule-argmax", search: { identity_hash: "e".repeat(64) } });
+    const control = readProgressEvaluationRecordV2(sample(`${V2}/valid/search-self-no-search-match`));
+    expect(control.matches[0]?.opponent).toMatchObject({ kind: "self-no-search", mode: "argmax" });
+    expect(control.matches[0]?.opponent_search?.counts.searched_decisions).toBe(0);
+    expect(readProgressGameRecord(sample(`${GAME}/valid/search`)).search?.seat).toBe("p1");
+    expect(readProgressGameRecord(sample(`${GAME}/valid/search-control`)).opponent_search?.seat).toBe("p2");
+  });
+
+  it.each([
+    ["search-counts-disagree", "search.counts must be the sum"],
+    ["search-row-missing", "carries search counts in its summary and in every game row"],
+    ["search-misnamed", "named search-<opponent>-<mode> exactly when"],
+    ["search-on-plain-match", "named search-<opponent>-<mode> exactly when"],
+    ["search-mixed-with-plain", "search matches only"],
+    ["search-more-fallbacks-than-decisions", "cannot exceed decisions"],
+    ["search-unsorted-table", "refusals must be sorted by key"],
+    ["control-without-search", "only a search match carries search counts"],
+    ["control-row-missing", "carries the control's counts in its summary and in every game row"],
+    ["control-searches", "the no-search control searches nothing"],
+    ["control-other-identity", "the control's identity hash"],
+    ["control-mode-differs", "plays the pair in the match's mode"],
+    ["control-counts-on-baseline", "only a self-no-search match carries the control's counts"],
+  ])("refuses the reader-invalid sample %s", (name, message) => {
+    expect(() => readProgressEvaluationRecordV2(sample(`${V2}/reader-invalid/${name}`))).toThrow(message);
+  });
+
+  it.each(["search-fractional-count", "search-no-fallbacks", "self-no-search-no-mode"])("refuses the schema-invalid sample %s", (name) => {
+    expect(() => readProgressEvaluationRecordV2(sample(`${V2}/invalid/${name}`))).toThrow(/invalid ProgressEvaluationRecordV2/);
+  });
+
+  it.each([
+    ["search-decisions-differ", "search seat's decisions"],
+    ["search-control-same-seat", "seat the search does not hold"],
+    ["search-control-other-identity", "the control's identity hash"],
+    ["search-control-without-search", "belongs to a game that carries search"],
+  ])("refuses the stored game %s", (name, message) => {
+    expect(() => readProgressGameRecord(sample(`${GAME}/reader-invalid/${name}`))).toThrow(message);
+  });
+
+  it("refuses a search-less game's control, a bad schema field and a search match with a Preview variant or two identities", () => {
+    expect(() => readProgressGameRecord(sample(`${GAME}/invalid/search-no-identity`))).toThrow(/invalid ProgressGameRecord/);
+    const preview = sample(`${V2}/valid/search-match`);
+    preview.matches[0].candidate_preview = { kind: "random" };
+    expect(() => readProgressEvaluationRecordV2(preview)).toThrow(/no Preview variant/);
+    const two = sample(`${V2}/valid/search-match`);
+    two.matches.push({ ...structuredClone(two.matches[0]), match_id: "search-random-legal-argmax", search: { ...two.matches[0].search, identity_hash: "d".repeat(64) } });
+    two.games.push(...two.games.map((g: Record<string, unknown>) => ({ ...structuredClone(g), match_id: "search-random-legal-argmax" })));
+    two.matches[1].game_record_hashes = two.matches[0].game_record_hashes;
+    expect(() => readProgressEvaluationRecordV2(two)).toThrow(/one search identity hash/);
+  });
+});
