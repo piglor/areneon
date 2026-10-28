@@ -20,6 +20,7 @@ const data: WorldFactsData = {
   terrains: ["electricterrain", "grassyterrain"],
   swap_side_conditions: ["reflect", "stealthrock", "tailwind"],
   toxic_stage_max: 15,
+  action_sources: ["move: Round", "ability: Dancer"],
 };
 
 const HEAD = [
@@ -45,7 +46,7 @@ const code = (fn: () => unknown): string => {
 
 describe("identity", () => {
   it("has a format id and a file hash of its own, and leaves the reader's bytes alone", () => {
-    expect(WORLD_FACTS_FORMAT).toBe("world-facts/1");
+    expect(WORLD_FACTS_FORMAT).toBe("world-facts/2");
     expect(worldFactsSha256()).toBe(createHash("sha256").update(readFileSync(WORLD_FACTS_PATH)).digest("hex"));
     expect(worldFactsSha256()).not.toBe(readerSha256());
     expect(readerSha256()).toBe(createHash("sha256").update(readFileSync(INTERPRETER_PATH)).digest("hex"));
@@ -198,11 +199,11 @@ describe("conditions", () => {
       "|turn|3",
     ];
     const f = run("p1", lines);
-    expect(f.weather).toEqual({ id: "sunnyday", started_turn: 0 });
-    expect(f.terrain).toEqual({ id: "electricterrain", started_turn: 1 });
-    expect(f.field_conditions).toEqual({ trickroom: { started_turn: 1 } });
-    expect(f.opponent.conditions).toEqual({ spikes: { started_turn: 1, layers: 2 } });
-    expect(f.own.conditions).toEqual({ tailwind: { started_turn: 2, layers: 1 } });
+    expect(f.weather).toEqual({ id: "sunnyday", started_turn: 0, after_residual: true, source: { side: "opponent", name: "Gamma" } });
+    expect(f.terrain).toEqual({ id: "electricterrain", started_turn: 1, after_residual: false, source: null });
+    expect(f.field_conditions).toEqual({ trickroom: { started_turn: 1, after_residual: false, source: { side: "own", name: "Alpha" } } });
+    expect(f.opponent.conditions).toEqual({ spikes: { started_turn: 1, after_residual: false, source: null, layers: 2 } });
+    expect(f.own.conditions).toEqual({ tailwind: { started_turn: 2, after_residual: false, source: null, layers: 1 } });
     expect(f.world_facts_format).toBe(WORLD_FACTS_FORMAT);
   });
 
@@ -221,7 +222,7 @@ describe("conditions", () => {
     const ended = [...lines, "|-weather|none", "|-fieldend|move: Gravity", "|-fieldend|move: Electric Terrain", "|-sideend|p1: Ann|Reflect|[from] move: Defog"];
     const f = run("p1", ended);
     expect(f.weather).toBeNull();
-    expect(f.terrain).toEqual({ id: "grassyterrain", started_turn: 0 });
+    expect(f.terrain).toEqual({ id: "grassyterrain", started_turn: 0, after_residual: true, source: null });
     expect(f.field_conditions).toEqual({});
     expect(f.own.conditions).toEqual({});
     expect(run("p1", [...ended, "|-fieldend|move: Grassy Terrain"]).terrain).toBeNull();
@@ -234,6 +235,129 @@ describe("conditions", () => {
     expect(code(() => run("p1", [...HEAD, "|-sideend|p3: Ann|Spikes"]))).toBe("unattributable_line");
     expect(code(() => run("p1", [...HEAD, "|turn|x"]))).toBe("malformed_line");
     expect(code(() => run("p1", [...HEAD, "|turn|2", "|turn|1"]))).toBe("malformed_line");
+  });
+});
+
+describe("sources, volatiles and move uses (world-facts/2)", () => {
+  it("names the Pokemon whose move or ability began a condition: [of] first, else the latest mover", () => {
+    const f = run("p1", [
+      ...HEAD,
+      "|turn|1",
+      "|move|p2b: Delta|Rain Dance|p2b: Delta",
+      "|-weather|RainDance",
+      "|move|p1a: Alpha|Reflect|p1a: Alpha",
+      "|-sidestart|p1: Ann|move: Reflect",
+      "|move|p1b: Beta|Grassy Terrain|p1b: Beta|[from] move: Copycat",
+      "|-fieldstart|move: Grassy Terrain",
+      "|-fieldstart|move: Gravity|[of] p2a: Gamma",
+      "|-sidestart|p2: Bob|move: Spikes|[of] garbage",
+    ]);
+    expect(f.weather?.source).toEqual({ side: "opponent", name: "Delta" });
+    expect(f.own.conditions.reflect?.source).toEqual({ side: "own", name: "Alpha" });
+    expect(f.terrain?.source).toEqual({ side: "own", name: "Beta" });
+    expect(f.field_conditions.gravity?.source).toEqual({ side: "opponent", name: "Gamma" });
+    expect(f.opponent.conditions.spikes?.source).toEqual({ side: "own", name: "Beta" });
+    expect(run("p2", [...HEAD, "|move|p1a: Alpha|Reflect|p1a: Alpha", "|-sidestart|p1: Ann|move: Reflect"]).opponent.conditions.reflect?.source).toEqual({ side: "opponent", name: "Alpha" });
+  });
+
+  it("dates each volatile of a Pokemon in play and forgets it at -end, a switch and a faint", () => {
+    const lines = [
+      ...HEAD,
+      "|turn|1",
+      "|-start|p2a: Gamma|move: Taunt",
+      "|-start|p2a: Gamma|confusion",
+      "|turn|2",
+      "|-start|p2a: Gamma|move: Taunt",
+      "|-start|p1: Ann|bench",
+      "|-start|p2b: Delta|ability: Flash Fire",
+      "|-end|p2a: Gamma|confusion",
+      "|-end|p2b: Gamma|nothing",
+      "|turn|3",
+    ];
+    const f = run("p1", lines);
+    expect(f.opponent.active.a?.volatiles).toEqual({ taunt: { started_turn: 1, after_residual: false, moved_before: false } });
+    expect(f.opponent.active.b?.volatiles).toEqual({ flashfire: { started_turn: 2, after_residual: false, moved_before: false } });
+    expect(code(() => run("p1", [...lines, "|-start|p2a: Gamma|"]))).toBe("malformed_line");
+    expect(run("p1", [...lines, "|switch|p2a: Zeta|Zeta, L50|100/100"]).opponent.active.a?.volatiles).toEqual({});
+    expect(run("p1", [...lines, "|faint|p2a: Gamma"]).opponent.active.a).toBeNull();
+    expect(run("p1", [...lines, "|-start|p2a: Gamma|typechange|Water"]).opponent.active.a?.volatiles).toHaveProperty("typechange");
+  });
+
+  it("marks what began after the residual of its turn: a replacement sets a weather that is still full when the next turn begins", () => {
+    const f = run("p1", [
+      ...HEAD,
+      "|turn|1",
+      "|move|p1a: Alpha|Tackle|p2a: Gamma",
+      "|faint|p2a: Gamma",
+      "|",
+      "|upkeep",
+      "|switch|p2a: Zeta|Zeta, L50|100/100",
+      "|-weather|RainDance|[from] ability: Drizzle|[of] p2a: Zeta",
+      "|-start|p2a: Zeta|move: Taunt",
+      "|turn|2",
+      "|move|p2a: Zeta|Reflect|p2a: Zeta",
+      "|-sidestart|p2: Bob|move: Reflect",
+    ]);
+    expect(f.weather).toMatchObject({ started_turn: 1, after_residual: true });
+    expect(f.opponent.active.a?.volatiles.taunt).toEqual({ started_turn: 1, after_residual: true, moved_before: false });
+    expect(f.opponent.conditions.reflect).toMatchObject({ started_turn: 2, after_residual: false });
+  });
+
+  it("says whether the Pokemon had moved in the turn a volatile began", () => {
+    const f = run("p1", [
+      ...HEAD,
+      "|turn|1",
+      "|move|p2a: Gamma|Tackle|p1a: Alpha",
+      "|-start|p2a: Gamma|move: Taunt",
+      "|-start|p2b: Delta|move: Taunt",
+      "|turn|2",
+      "|-start|p2a: Gamma|confusion",
+    ]);
+    expect(f.opponent.active.a?.volatiles.taunt?.moved_before).toBe(true);
+    expect(f.opponent.active.b?.volatiles.taunt?.moved_before).toBe(false);
+    expect(f.opponent.active.a?.volatiles.confusion?.moved_before).toBe(false);
+  });
+
+  it("counts the move actions since the switch-in: own choices and cant lines, not called moves", () => {
+    const lines = [
+      ...HEAD,
+      "|turn|1",
+      "|move|p2a: Gamma|Tackle|p1a: Alpha",
+      "|cant|p2b: Delta|par",
+      "|move|p1a: Alpha|Ember|p2a: Gamma|[from]lockedmove",
+      "|move|p1b: Beta|Metronome|p1b: Beta",
+      "|move|p1b: Beta|Tackle|p2a: Gamma|[from] move: Metronome",
+      "|move|p1b: Beta|Round|p2a: Gamma|[from] move: Round",
+      "|cant|p1: Ann|par",
+      "|turn|2",
+      "|move|p2a: Gamma|Tackle|p1a: Alpha",
+      "|-activate|p2b: Delta|confusion",
+      "|-damage|p2b: Delta|50/100|[from] confusion",
+      "|-activate|p1a: Alpha|confusion",
+      "|move|p1a: Alpha|Tackle|p2a: Gamma",
+    ];
+    const f = run("p1", lines);
+    expect(f.opponent.active.a?.move_actions).toBe(2);
+    expect(f.opponent.active.b?.move_actions).toBe(2);
+    expect(f.own.active.a?.move_actions).toBe(2);
+    expect(f.own.active.b?.move_actions).toBe(2);
+    expect(run("p1", [...lines, "|switch|p2a: Zeta|Zeta, L50|100/100"]).opponent.active.a?.move_actions).toBe(0);
+  });
+
+  it("counts the uses of each move by nickname, own choices only", () => {
+    const f = run("p1", [
+      ...HEAD,
+      "|turn|1",
+      "|move|p2a: Gamma|Tackle|p1a: Alpha",
+      "|move|p2a: Gamma|Tackle|p1a: Alpha|[from] move: Copycat",
+      "|move|p2b: Delta|Protect|p2b: Delta",
+      "|-singleturn|p2b: Delta|Protect",
+      "|turn|2",
+      "|move|p2a: Gamma|Tackle|p1a: Alpha",
+      "|move|p1a: Alpha|Ember|p2a: Gamma",
+    ], );
+    expect(f.opponent.move_uses).toEqual({ Delta: { protect: 1 }, Gamma: { tackle: 2 } });
+    expect(f.own.move_uses).toEqual({ Alpha: { ember: 1 } });
   });
 });
 

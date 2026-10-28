@@ -1,0 +1,152 @@
+{
+  "schema_version": 1,
+  "format_id": "gen9championsvgc2026regmc",
+  "items": [
+    {
+      "id": "ability_changed",
+      "class": "R"
+    },
+    {
+      "id": "active_turns",
+      "class": "W"
+    },
+    {
+      "id": "bench_order",
+      "class": "X"
+    },
+    {
+      "id": "bench_status",
+      "class": "W"
+    },
+    {
+      "id": "choice_lock",
+      "class": "W",
+      "condition": "choicelock"
+    },
+    {
+      "id": "condition_duration",
+      "class": "W"
+    },
+    {
+      "id": "confusion_duration",
+      "class": "X",
+      "condition": "confusion"
+    },
+    {
+      "id": "fainted_last_turn",
+      "class": "W"
+    },
+    {
+      "id": "illusion_transform",
+      "class": "R",
+      "ids": [
+        "illusion",
+        "transform"
+      ]
+    },
+    {
+      "id": "item_removed",
+      "class": "W"
+    },
+    {
+      "id": "item_replaced",
+      "class": "R"
+    },
+    {
+      "id": "last_move",
+      "class": "W"
+    },
+    {
+      "id": "locked_moves",
+      "class": "R",
+      "ids": [
+        "iceball",
+        "lockedmove",
+        "mustrecharge",
+        "outrage",
+        "petaldance",
+        "rollout",
+        "thrash",
+        "twoturnmove",
+        "uproar"
+      ]
+    },
+    {
+      "id": "opponent_pp",
+      "class": "X"
+    },
+    {
+      "id": "per_turn_fields",
+      "class": "T"
+    },
+    {
+      "id": "protect_counter",
+      "class": "W",
+      "condition": "stall"
+    },
+    {
+      "id": "sleep_counter",
+      "class": "X"
+    },
+    {
+      "id": "slot_conditions",
+      "class": "R",
+      "ids": [
+        "doomdesire",
+        "futuresight",
+        "wish"
+      ]
+    },
+    {
+      "id": "start_trigger_restore",
+      "class": "W"
+    },
+    {
+      "id": "substitute",
+      "class": "R",
+      "ids": [
+        "substitute"
+      ]
+    },
+    {
+      "id": "total_fainted",
+      "class": "W"
+    },
+    {
+      "id": "toxic_stage",
+      "class": "W"
+    },
+    {
+      "id": "truant_slow_start",
+      "class": "R",
+      "ids": [
+        "slowstart",
+        "truant"
+      ]
+    },
+    {
+      "id": "turn_number",
+      "class": "W"
+    },
+    {
+      "id": "unadmitted_id",
+      "class": "R"
+    },
+    {
+      "id": "unavailable_mechanics",
+      "class": "R",
+      "ids": [
+        "-burst",
+        "-candynamax",
+        "-terastallize",
+        "-zpower"
+      ]
+    },
+    {
+      "id": "volatile_duration",
+      "class": "W"
+    }
+  ],
+  "admitted": [],
+  "note": "x"
+}

@@ -5,7 +5,7 @@ import { interpretChannel, ownChannel, toId, worldFactsAtRequests, type WorldFac
 import { GOLDEN_DIR, goldenBattle } from "../src/golden.ts";
 import { type Engine, loadEngine } from "../src/index.ts";
 import { loadRandomCorpus, pendingFirstActor, playRandomBattle, type RandomBattleFile, UNAVAILABLE_DIR } from "../src/random-corpus.ts";
-import { DEFAULT_SHOWDOWN_DIR } from "../src/engine.ts";
+import { readWorldFactsData } from "./world-facts-data.ts";
 
 // ADR-026 slice L, Done-when: every committed channel, both seats, every request: each world fact equals a
 // value recomputed here from the OMNISCIENT log's turn structure (the test oracle), or the module refuses
@@ -18,37 +18,10 @@ beforeAll(() => {
 });
 
 const FORMAT_DIR = GOLDEN_DIR;
-const engineData = JSON.parse(readFileSync(join(FORMAT_DIR, "engine-data.json"), "utf8")) as { terrains: { id: string }[]; moves: { id: string }[] };
-
-/** The moves whose engine definition adds the `stall` volatile, read from the pinned source, restricted to the format's moves. */
-function stallMoves(): string[] {
-  const source = readFileSync(join(process.env.SHOWDOWN_DIR || DEFAULT_SHOWDOWN_DIR, "data", "moves.ts"), "utf8");
-  const ids = new Set(engineData.moves.map((m) => m.id));
-  const out: string[] = [];
-  for (const block of source.split(/\n\t(?=[a-z0-9]+: \{)/)) {
-    const id = /^([a-z0-9]+): \{/.exec(block)?.[1];
-    if (id !== undefined && ids.has(id) && /addVolatile\('stall'\)/.test(block)) out.push(id);
-  }
-  return out.sort();
-}
-
-/** The side conditions Court Change swaps, read from the pinned move's own list. */
-function swapConditions(): string[] {
-  const source = readFileSync(join(process.env.SHOWDOWN_DIR || DEFAULT_SHOWDOWN_DIR, "data", "moves.ts"), "utf8");
-  const block = /\n\tcourtchange: \{[\s\S]*?const sideConditions = \[([\s\S]*?)\];/.exec(source)?.[1] ?? "";
-  return [...block.matchAll(/'([a-z0-9]+)'/g)].map((m) => m[1] as string).sort();
-}
-
-/** The Toxic stage ceiling, read from the pinned `tox` condition's own cap. */
-function toxicStageMax(): number {
-  const source = readFileSync(join(process.env.SHOWDOWN_DIR || DEFAULT_SHOWDOWN_DIR, "data", "conditions.ts"), "utf8");
-  const block = /\n\ttox: \{[\s\S]*?stage < (\d+)/.exec(source)?.[1];
-  return Number(block);
-}
 
 let data: WorldFactsData;
 beforeAll(() => {
-  data = { stall_moves: stallMoves(), terrains: engineData.terrains.map((t) => t.id), swap_side_conditions: swapConditions(), toxic_stage_max: toxicStageMax() };
+  data = readWorldFactsData();
   expect(data.toxic_stage_max, "the engine's Toxic stage cap").toBe(15);
   expect(data.swap_side_conditions).toEqual(expect.arrayContaining(["reflect", "stealthrock", "spikes"]));
 });
@@ -72,10 +45,40 @@ const who = (ident: string): { side: string; letter: string | null; name: string
 };
 const turnAt = (omni: readonly string[], index: number): number => omni.slice(0, index).filter((l) => kind(l) === "turn").length === 0 ? 0 : Number(fields(omni.slice(0, index).filter((l) => kind(l) === "turn").at(-1) as string)[0]);
 const isOwnChoice = (line: string): boolean => !/^(move|ability|item):/.test(tag(line, "from") ?? "");
+/** A move line the engine ran as a move action of its own though a tag names an effect: Round, Instruct, Dancer. */
+const isRunAction = (line: string): boolean => data.action_sources.map(toId).includes(toId(tag(line, "from") ?? ""));
 
 function oracle(omni: readonly string[], cut: number, viewer: "p1" | "p2"): WorldFacts {
   const lines = omni.slice(0, cut);
   const turn = turnAt(omni, cut);
+  /** Whether the residual of the turn at line `i` had run (or no turn had begun): nothing begun there has been counted down. */
+  const afterResidual = (i: number): boolean => {
+    let j = i - 1;
+    while (j >= 0 && kind(omni[j] as string) !== "turn" && kind(omni[j] as string) !== "upkeep") j--;
+    return j < 0 || kind(omni[j] as string) === "upkeep";
+  };
+  /** Whether the Pokemon had run a move action (as `move_actions` counts them) in the turn of line `i`, before it. */
+  const actedThisTurn = (i: number, name: string): boolean => {
+    let j = i - 1;
+    while (j >= 0 && kind(omni[j] as string) !== "turn") {
+      const l = omni[j] as string;
+      const mine = fields(l)[0] !== undefined && /^p[12][a-c]?: /.test(fields(l)[0] as string) && who(fields(l)[0] as string).name === name;
+      if (mine && ((kind(l) === "move" && (isOwnChoice(l) || isRunAction(l))) || kind(l) === "cant" || (kind(l) === "-damage" && tag(l, "from") === "confusion"))) return true;
+      j--;
+    }
+    return false;
+  };
+  /** Who began a condition at line `i`: the `[of]` Pokemon of the line, else the actor of the latest `move` line before it (any tag). */
+  const sourceAt = (i: number): { side: "own" | "opponent"; name: string } | null => {
+    const seen = (ident: string) => {
+      const w = who(ident);
+      return { side: w.side === viewer ? ("own" as const) : ("opponent" as const), name: w.name };
+    };
+    const of = tag(omni[i] as string, "of");
+    if (of !== undefined && /^p[12][a-c]?: /.test(of)) return seen(of);
+    for (let j = i - 1; j >= 0; j--) if (kind(omni[j] as string) === "move") return seen(fields(omni[j] as string)[0] as string);
+    return null;
+  };
   const sideFacts = (side: "p1" | "p2") => {
     // who stands in each position: the last switch, drag, swap or faint that names it
     const slots = new Map<string, string | null>();
@@ -113,9 +116,10 @@ function oracle(omni: readonly string[], cut: number, viewer: "p1" | "p2"): Worl
       });
       const after = lines.slice(since + 1);
       const active_turns = after.filter((l) => kind(l) === "turn").length;
+      const move_actions = after.filter((l) => (kind(l) === "move" && named(l, 0, name) && (isOwnChoice(l) || isRunAction(l))) || (kind(l) === "cant" && named(l, 0, name)) || (kind(l) === "-damage" && tag(l, "from") === "confusion" && named(l, 0, name))).length;
       let last_move: string | null = null;
       after.forEach((l) => {
-        if (kind(l) === "move" && named(l, 0, name) && isOwnChoice(l)) last_move = toId(fields(l)[1] as string);
+        if (kind(l) === "move" && named(l, 0, name) && (isOwnChoice(l) || isRunAction(l))) last_move = toId(fields(l)[1] as string);
       });
       // successes of stall moves in turn order, a failure forgetting all before it
       let run: number[] = [];
@@ -146,7 +150,15 @@ function oracle(omni: readonly string[], cut: number, viewer: "p1" | "p2"): Worl
           return false;
         }).length);
       }
-      active[letter] = { name, active_turns, last_move, protect_streak, toxic_ticks };
+      // volatiles: dated at their first -start since the switch-in, forgotten at -end
+      const volatiles: Record<string, { started_turn: number; after_residual: boolean; moved_before: boolean }> = {};
+      after.forEach((l, i) => {
+        if ((kind(l) !== "-start" && kind(l) !== "-end") || !named(l, 0, name) || !/^p[12][a-c]: /.test(fields(l)[0] as string)) return;
+        const id = toId((fields(l)[1] as string).replace(/^[a-z ]+: /, ""));
+        if (kind(l) === "-end") Reflect.deleteProperty(volatiles, id);
+        else if (volatiles[id] === undefined) volatiles[id] = { started_turn: turnAt(omni, since + 1 + i), after_residual: afterResidual(since + 1 + i), moved_before: actedThisTurn(since + 1 + i, name) };
+      });
+      active[letter] = { name, active_turns, move_actions, last_move, protect_streak, toxic_ticks, volatiles: Object.fromEntries(Object.entries(volatiles).sort((a, b) => (a[0] < b[0] ? -1 : 1))) };
     }
     const faints = lines.map((l, i) => ({ l, i })).filter(({ l }) => kind(l) === "faint" && who(fields(l)[0] as string).side === side);
     const fainted_in = (t: number): boolean => faints.some(({ i }) => turnAt(omni, i) === t);
@@ -157,8 +169,9 @@ function oracle(omni: readonly string[], cut: number, viewer: "p1" | "p2"): Worl
       if (kind(l) === "-sidestart" || kind(l) === "-sideend") events.push([kind(l), `${who(fields(l)[0] as string).side}|${toId((fields(l)[1] as string).replace(/^move: /, ""))}`, i]);
       if (kind(l) === "-swapsideconditions") events.push(["swap", "", i]);
     });
-    const mine = new Map<string, { started_turn: number; layers: number }>();
-    const theirs = new Map<string, { started_turn: number; layers: number }>();
+    type Cond = { started_turn: number; after_residual: boolean; source: { side: "own" | "opponent"; name: string } | null; layers: number };
+    const mine = new Map<string, Cond>();
+    const theirs = new Map<string, Cond>();
     const other = side === "p1" ? "p2" : "p1";
     for (const [k, key, i] of events) {
       if (k === "swap") {
@@ -176,7 +189,7 @@ function oracle(omni: readonly string[], cut: number, viewer: "p1" | "p2"): Worl
       const target = s === side ? mine : theirs;
       void other;
       if (k === "-sideend") target.delete(id);
-      else target.set(id, { started_turn: target.get(id)?.started_turn ?? turnAt(omni, i), layers: (target.get(id)?.layers ?? 0) + 1 });
+      else target.set(id, { started_turn: target.get(id)?.started_turn ?? turnAt(omni, i), after_residual: target.get(id)?.after_residual ?? afterResidual(i), source: target.get(id) === undefined ? sourceAt(i) : (target.get(id) as Cond).source, layers: (target.get(id)?.layers ?? 0) + 1 });
     }
     for (const [id, c] of [...mine].sort((a, b) => (a[0] < b[0] ? -1 : 1))) conditions[id] = c;
     return {
@@ -185,27 +198,40 @@ function oracle(omni: readonly string[], cut: number, viewer: "p1" | "p2"): Worl
       fainted_last_turn: fainted_in(turn - 1),
       active,
       conditions,
+      move_uses: moveUses(side),
     };
+  };
+  const moveUses = (side: "p1" | "p2"): WorldFacts["own"]["move_uses"] => {
+    const uses: Record<string, Record<string, number>> = {};
+    for (const l of lines) {
+      if (kind(l) !== "move" || !isOwnChoice(l)) continue;
+      const w = who(fields(l)[0] as string);
+      if (w.side !== side) continue;
+      const move = toId(fields(l)[1] as string);
+      const mine = (uses[w.name] ??= {});
+      mine[move] = (mine[move] ?? 0) + 1;
+    }
+    return Object.fromEntries(Object.entries(uses).sort((a, b) => (a[0] < b[0] ? -1 : 1)).map(([n, m]) => [n, Object.fromEntries(Object.entries(m).sort((a, b) => (a[0] < b[0] ? -1 : 1)))]));
   };
   // field: the latest event of each id
   let weather: WorldFacts["weather"] = null;
   let terrain: WorldFacts["terrain"] = null;
-  const pseudo = new Map<string, { started_turn: number }>();
+  const pseudo = new Map<string, { started_turn: number; after_residual: boolean; source: { side: "own" | "opponent"; name: string } | null }>();
   lines.forEach((l, i) => {
     if (kind(l) === "-weather" && !l.includes("|[upkeep]")) {
       const id = toId(fields(l)[0] as string);
-      weather = id === "none" ? null : { id, started_turn: turnAt(omni, i) };
+      weather = id === "none" ? null : { id, started_turn: turnAt(omni, i), after_residual: afterResidual(i), source: sourceAt(i) };
     } else if (kind(l) === "-fieldstart" || kind(l) === "-fieldend") {
       const id = toId((fields(l)[0] as string).replace(/^move: /, ""));
       const start = kind(l) === "-fieldstart";
-      if (data.terrains.includes(id)) terrain = start ? { id, started_turn: turnAt(omni, i) } : terrain?.id === id ? null : terrain;
-      else if (start) pseudo.set(id, { started_turn: turnAt(omni, i) });
+      if (data.terrains.includes(id)) terrain = start ? { id, started_turn: turnAt(omni, i), after_residual: afterResidual(i), source: sourceAt(i) } : terrain?.id === id ? null : terrain;
+      else if (start) pseudo.set(id, { started_turn: turnAt(omni, i), after_residual: afterResidual(i), source: sourceAt(i) });
       else pseudo.delete(id);
     }
   });
   const opposing = viewer === "p1" ? "p2" : "p1";
   return {
-    world_facts_format: "world-facts/1",
+    world_facts_format: "world-facts/2",
     turn,
     weather,
     terrain,
@@ -262,9 +288,11 @@ function sweep(played: Played, using: WorldFactsData = data): void {
         for (const a of Object.values(side.active)) {
           hit("active_turns >= 3", (a?.active_turns ?? 0) >= 3);
           hit("last_move", a?.last_move != null);
+          hit("move_actions >= 3", (a?.move_actions ?? 0) >= 3);
           hit("protect_streak >= 1", (a?.protect_streak ?? 0) >= 1);
           hit("protect_streak >= 2", (a?.protect_streak ?? 0) >= 2);
           hit("toxic_ticks >= 1", (a?.toxic_ticks ?? 0) >= 1);
+          hit("volatile", Object.keys(a?.volatiles ?? {}).length > 0);
         }
         hit("fainted_last_turn", side.fainted_last_turn);
         hit("fainted_this_turn", side.fainted_this_turn);
@@ -272,8 +300,13 @@ function sweep(played: Played, using: WorldFactsData = data): void {
         hit("side condition", Object.keys(side.conditions).length > 0);
         hit("layers >= 2", Object.values(side.conditions).some((c) => c.layers >= 2));
         hit("position emptied", Object.values(side.active).some((a) => a === null));
+        hit("move used 3 times", Object.values(side.move_uses).some((moves) => Object.values(moves).some((n) => n >= 3)));
+        hit("condition source", Object.values(side.conditions).some((c) => c.source !== null));
       }
       hit("weather", r.facts.weather !== null);
+      hit("weather source", r.facts.weather?.source != null);
+      hit("weather after residual", r.facts.weather?.after_residual === true && r.facts.weather.started_turn > 0);
+      hit("field source", Object.values(r.facts.field_conditions).some((c) => c.source !== null));
       hit("terrain", r.facts.terrain !== null);
       hit("field condition", Object.keys(r.facts.field_conditions).length > 0);
       expect(r.facts, `${played.id} ${player} request at line ${r.line}`).toEqual(oracle(played.omni, cutFor(channel, played.omni, r.line), player));
@@ -335,7 +368,7 @@ describe("world facts against the omniscient log, on every committed channel", (
     console.log(`world-facts parity: ${factsChecked} of ${requestsChecked} requests compared; refusals ${JSON.stringify([...tally])}; exercised ${JSON.stringify([...exercised])}`);
     expect([...tally.keys()].filter((code) => code !== "illusion_replace")).toEqual([]);
     // the corpus reaches the states the facts exist for (hazard stacking is hand-written in the public-state tests)
-    for (const what of ["active_turns >= 3", "last_move", "protect_streak >= 2", "toxic_ticks >= 1", "fainted_last_turn", "fainted_this_turn", "side condition", "weather", "terrain", "field condition", "position emptied"]) {
+    for (const what of ["active_turns >= 3", "last_move", "protect_streak >= 2", "toxic_ticks >= 1", "fainted_last_turn", "fainted_this_turn", "side condition", "weather", "terrain", "field condition", "position emptied", "volatile", "move_actions >= 3", "move used 3 times", "condition source", "weather source"]) {
       expect(exercised.get(what) ?? 0, what).toBeGreaterThan(0);
     }
   });

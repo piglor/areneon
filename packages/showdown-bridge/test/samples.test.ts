@@ -343,6 +343,21 @@ describe("the shared contract sample corpus (ADR-008 §2)", () => {
       "v1/usage-prior/reader-invalid/unsorted-moves.json",
       "v1/usage-prior/reader-invalid/unsorted-species.json",
       "v1/usage-prior/reader-invalid/unsorted-spreads.json",
+      "v1/world-writers/reader-invalid/admitted-class.json",
+      "v1/world-writers/reader-invalid/admitted-confusion.json",
+      "v1/world-writers/reader-invalid/admitted-refusal-id.json",
+      "v1/world-writers/reader-invalid/admitted-unknown-id.json",
+      "v1/world-writers/reader-invalid/bad-line-kind.json",
+      "v1/world-writers/reader-invalid/class-not-offered.json",
+      "v1/world-writers/reader-invalid/condition-on-wrong-item.json",
+      "v1/world-writers/reader-invalid/duplicate-admitted.json",
+      "v1/world-writers/reader-invalid/id-under-two-rows.json",
+      "v1/world-writers/reader-invalid/missing-item.json",
+      "v1/world-writers/reader-invalid/unknown-condition.json",
+      "v1/world-writers/reader-invalid/unknown-engine-id.json",
+      "v1/world-writers/reader-invalid/unsorted-admitted.json",
+      "v1/world-writers/reader-invalid/unsorted-ids.json",
+      "v1/world-writers/reader-invalid/unsorted-items.json",
     ]);
   });
 

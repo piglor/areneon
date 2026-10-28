@@ -1,7 +1,8 @@
-import { interpretChannel, type PublicFlag } from "@areneon/public-state";
+import { interpretChannel, ownChannel, type PublicFlag, worldFactsAtRequests } from "@areneon/public-state";
 import type { EngineRequest } from "@areneon/schema/types/v1/engine-request.ts";
 import type { PokemonSet } from "../src/engine.ts";
 import { loadRandomCorpus } from "../src/random-corpus.ts";
+import { readWorldFactsData } from "./world-facts-data.ts";
 import type { WorldInput, WorldOpponentMember } from "../src/world-builder.ts";
 
 export const toId = (text: string): string => text.toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -17,14 +18,16 @@ export interface Case {
  */
 export function cases(): Case[] {
   const out: Case[] = [];
+  const factsData = readWorldFactsData();
   for (const battle of loadRandomCorpus()) {
     for (const player of ["p1", "p2"] as const) {
       const foe = player === "p1" ? "p2" : "p1";
-      const foeRun = interpretChannel(foe, battle.channels[foe].lines);
+      const foeRun = interpretChannel(foe, battle.channels[foe].lines, { terrains: [...factsData.terrains] });
       const foeFirst = foeRun.requests.find((r) => (r as EngineRequest).active !== undefined) as EngineRequest;
       const brought = foeFirst.side.pokemon.map((entry) => entry.ident.slice(entry.ident.indexOf(": ") + 2));
       const trueSets = brought.map((name) => (battle.teams[foe] as PokemonSet[]).find((set) => (set.name === "" ? set.species : set.name) === name) as PokemonSet);
-      const run = interpretChannel(player, battle.channels[player].lines);
+      const run = interpretChannel(player, battle.channels[player].lines, { terrains: [...factsData.terrains] });
+      const facts = new Map(worldFactsAtRequests({ channel: ownChannel(player, battle.channels[player].lines), data: factsData }).map((r) => [r.line, r.facts]));
       for (const frame of run.frames) {
         if (frame.kind !== "request") continue;
         const request = run.requests[frame.request - 1] as EngineRequest;
@@ -35,7 +38,7 @@ export function cases(): Case[] {
         });
         out.push({
           id: `${battle.id}/${player}/${frame.index}`,
-          input: { request, team: battle.teams[player] as PokemonSet[], state: frame.state, flags: run.flags.filter((flag: PublicFlag) => flag.index <= frame.index), opponent: { members } },
+          input: { request, team: battle.teams[player] as PokemonSet[], state: frame.state, flags: run.flags.filter((flag: PublicFlag) => flag.index <= frame.index), facts: facts.get(frame.index) ?? null, opponent: { members } },
         });
       }
     }
@@ -43,3 +46,22 @@ export function cases(): Case[] {
   return out;
 }
 
+
+/**
+ * The world input at the LAST request of an own channel (the lines `runBattle` hands an actor), with the
+ * opponent's true brought sets as the test's input. Null when the last line is no move request.
+ */
+export function inputAtLastRequest(player: "p1" | "p2", lines: readonly string[], team: readonly PokemonSet[], foeSets: readonly PokemonSet[]): WorldInput | null {
+  const factsData = readWorldFactsData();
+  const run = interpretChannel(player, lines, { terrains: [...factsData.terrains] });
+  const frame = run.frames.at(-1);
+  if (frame === undefined || frame.kind !== "request") return null;
+  const request = run.requests[frame.request - 1] as EngineRequest;
+  if (request.active === undefined || request.forceSwitch !== undefined) return null;
+  const facts = worldFactsAtRequests({ channel: ownChannel(player, lines), data: factsData }).find((r) => r.line === frame.index)?.facts ?? null;
+  const members: WorldOpponentMember[] = foeSets.map((set) => ({
+    roster_index: frame.state.opponent.roster.findIndex((mon) => mon.base_species === toId(set.species) || mon.species === toId(set.species)),
+    set,
+  }));
+  return { request, team, state: frame.state, flags: run.flags.filter((flag: PublicFlag) => flag.index <= frame.index), facts, opponent: { members } };
+}
