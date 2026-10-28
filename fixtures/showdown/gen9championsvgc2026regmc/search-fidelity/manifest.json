@@ -1,0 +1,802 @@
+{
+  "provenance": "synthetic: see b*.json; found by capture-search-fidelity-corpus.ts from the sources below",
+  "format": "gen9championsvgc2026regmc",
+  "sources": [
+    {
+      "dataset_id": "fixtures-v1",
+      "teams": 120,
+      "note": "committed: fixtures/teams/<format>/datasets/fixtures-v1 (dev split)"
+    },
+    {
+      "dataset_id": "search-fidelity-src",
+      "teams": 3001,
+      "manifest_hash": "d2a344f26e457262d607f7c505b7d1b0f46f788f985341df728a355c4f6b2ee6",
+      "generator": {
+        "config_hash": "de2f06b2547de57401fb4072b172386f906f2988f73cf2d12a929b27b8c80def",
+        "generator_commit": "cda81aa64f04a6a25df0af668a345974a48cb022",
+        "label_set_hash": "78008091053b6398add3a3e15d67711082dd7627ea81d98b07adae9c3f5f26db",
+        "manifest": {
+          "format_id": "gen9championsvgc2026regmc",
+          "format_rules_hash": "549cd2aa97324be093c567324676d46a5eff19d6b0c9d8491c483dab746d5dcc",
+          "regulation": "M-C",
+          "ruleset_hash": "4dd1f039bbcc6156e08c434972beae2370dc5fe8c9c6a263da7383c3247b68f3",
+          "showdown_commit": "7244fe8e28fa8bc4d0809ae30d183c608b62bb2b"
+        },
+        "vocabulary_hash": "5fdd31126208dbb46948ddaca14dfc9c28b70c14b147318fc6ba74e50843cab2"
+      },
+      "note": "generated with `generate` (split dev; public keys in the README), not committed; only the teams of the kept battles are"
+    }
+  ],
+  "battles": [
+    {
+      "id": "b00",
+      "seed": "sodium,0000000000000000000000000000628c",
+      "turns": 12,
+      "winner": "p2",
+      "actors": {
+        "p1": "random-legal",
+        "p2": "random-legal"
+      }
+    },
+    {
+      "id": "b01",
+      "seed": "sodium,00000000000000000000000000006385",
+      "turns": 7,
+      "winner": "p1",
+      "actors": {
+        "p1": "pending-first",
+        "p2": "random-legal"
+      }
+    },
+    {
+      "id": "b02",
+      "seed": "sodium,00000000000000000000000000006351",
+      "turns": 8,
+      "winner": "p1",
+      "actors": {
+        "p1": "pending-first",
+        "p2": "random-legal"
+      }
+    },
+    {
+      "id": "b03",
+      "seed": "sodium,00000000000000000000000000006005",
+      "turns": 10,
+      "winner": "p1",
+      "actors": {
+        "p1": "pending-first",
+        "p2": "random-legal"
+      }
+    },
+    {
+      "id": "b04",
+      "seed": "sodium,00000000000000000000000000006356",
+      "turns": 7,
+      "winner": "p2",
+      "actors": {
+        "p1": "random-legal",
+        "p2": "pending-first"
+      }
+    },
+    {
+      "id": "b05",
+      "seed": "sodium,00000000000000000000000000006382",
+      "turns": 13,
+      "winner": "p2",
+      "actors": {
+        "p1": "random-legal",
+        "p2": "pending-first"
+      }
+    },
+    {
+      "id": "b06",
+      "seed": "sodium,0000000000000000000000000000634f",
+      "turns": 14,
+      "winner": "p2",
+      "actors": {
+        "p1": "pending-first",
+        "p2": "pending-first"
+      }
+    },
+    {
+      "id": "b07",
+      "seed": "sodium,000000000000000000000000000064fd",
+      "turns": 14,
+      "winner": "p2",
+      "actors": {
+        "p1": "pending-first",
+        "p2": "random-legal"
+      }
+    },
+    {
+      "id": "b08",
+      "seed": "sodium,00000000000000000000000000006379",
+      "turns": 12,
+      "winner": "p1",
+      "actors": {
+        "p1": "pending-first",
+        "p2": "random-legal"
+      }
+    },
+    {
+      "id": "b09",
+      "seed": "sodium,000000000000000000000000000061b0",
+      "turns": 10,
+      "winner": "p1",
+      "actors": {
+        "p1": "random-legal",
+        "p2": "random-legal"
+      }
+    },
+    {
+      "id": "b10",
+      "seed": "sodium,000000000000000000000000000063fd",
+      "turns": 31,
+      "winner": null,
+      "actors": {
+        "p1": "pending-first",
+        "p2": "random-legal"
+      }
+    },
+    {
+      "id": "b11",
+      "seed": "sodium,00000000000000000000000000006025",
+      "turns": 7,
+      "winner": "p2",
+      "actors": {
+        "p1": "pending-first",
+        "p2": "random-legal"
+      }
+    },
+    {
+      "id": "b12",
+      "seed": "sodium,00000000000000000000000000006317",
+      "turns": 10,
+      "winner": "p2",
+      "actors": {
+        "p1": "pending-first",
+        "p2": "pending-first"
+      }
+    },
+    {
+      "id": "b13",
+      "seed": "sodium,0000000000000000000000000000661b",
+      "turns": 31,
+      "winner": null,
+      "actors": {
+        "p1": "pending-first",
+        "p2": "pending-first"
+      }
+    },
+    {
+      "id": "b14",
+      "seed": "sodium,0000000000000000000000000000640c",
+      "turns": 23,
+      "winner": "p2",
+      "actors": {
+        "p1": "random-legal",
+        "p2": "random-legal"
+      }
+    },
+    {
+      "id": "b15",
+      "seed": "sodium,000000000000000000000000000064db",
+      "turns": 23,
+      "winner": "p1",
+      "actors": {
+        "p1": "pending-first",
+        "p2": "pending-first"
+      }
+    },
+    {
+      "id": "b16",
+      "seed": "sodium,00000000000000000000000000006435",
+      "turns": 14,
+      "winner": "p1",
+      "actors": {
+        "p1": "pending-first",
+        "p2": "random-legal"
+      }
+    },
+    {
+      "id": "b17",
+      "seed": "sodium,000000000000000000000000000065ad",
+      "turns": 14,
+      "winner": "p2",
+      "actors": {
+        "p1": "pending-first",
+        "p2": "random-legal"
+      }
+    },
+    {
+      "id": "b18",
+      "seed": "sodium,000000000000000000000000000064bd",
+      "turns": 24,
+      "winner": "p1",
+      "actors": {
+        "p1": "pending-first",
+        "p2": "random-legal"
+      }
+    },
+    {
+      "id": "b19",
+      "seed": "sodium,000000000000000000000000000064be",
+      "turns": 17,
+      "winner": "p2",
+      "actors": {
+        "p1": "random-legal",
+        "p2": "pending-first"
+      }
+    },
+    {
+      "id": "b20",
+      "seed": "sodium,000000000000000000000000000064d8",
+      "turns": 10,
+      "winner": "p2",
+      "actors": {
+        "p1": "random-legal",
+        "p2": "random-legal"
+      }
+    },
+    {
+      "id": "b21",
+      "seed": "sodium,00000000000000000000000000006474",
+      "turns": 18,
+      "winner": "p2",
+      "actors": {
+        "p1": "random-legal",
+        "p2": "random-legal"
+      }
+    },
+    {
+      "id": "b22",
+      "seed": "sodium,00000000000000000000000000006484",
+      "turns": 18,
+      "winner": "p2",
+      "actors": {
+        "p1": "random-legal",
+        "p2": "random-legal"
+      }
+    },
+    {
+      "id": "b23",
+      "seed": "sodium,00000000000000000000000000006093",
+      "turns": 13,
+      "winner": "p2",
+      "actors": {
+        "p1": "pending-first",
+        "p2": "pending-first"
+      }
+    },
+    {
+      "id": "b24",
+      "seed": "sodium,00000000000000000000000000006432",
+      "turns": 13,
+      "winner": "p1",
+      "actors": {
+        "p1": "random-legal",
+        "p2": "pending-first"
+      }
+    },
+    {
+      "id": "b25",
+      "seed": "sodium,00000000000000000000000000006007",
+      "turns": 16,
+      "winner": "p2",
+      "actors": {
+        "p1": "pending-first",
+        "p2": "pending-first"
+      }
+    },
+    {
+      "id": "b26",
+      "seed": "sodium,00000000000000000000000000006446",
+      "turns": 16,
+      "winner": "p1",
+      "actors": {
+        "p1": "random-legal",
+        "p2": "pending-first"
+      }
+    },
+    {
+      "id": "b27",
+      "seed": "sodium,0000000000000000000000000000657e",
+      "turns": 20,
+      "winner": "p2",
+      "actors": {
+        "p1": "random-legal",
+        "p2": "pending-first"
+      }
+    },
+    {
+      "id": "b28",
+      "seed": "sodium,00000000000000000000000000006027",
+      "turns": 15,
+      "winner": "p1",
+      "actors": {
+        "p1": "pending-first",
+        "p2": "pending-first"
+      }
+    },
+    {
+      "id": "b29",
+      "seed": "sodium,0000000000000000000000000000602a",
+      "turns": 12,
+      "winner": "p1",
+      "actors": {
+        "p1": "random-legal",
+        "p2": "pending-first"
+      }
+    },
+    {
+      "id": "b30",
+      "seed": "sodium,00000000000000000000000000006399",
+      "turns": 12,
+      "winner": "p1",
+      "actors": {
+        "p1": "pending-first",
+        "p2": "random-legal"
+      }
+    },
+    {
+      "id": "b31",
+      "seed": "sodium,000000000000000000000000000060ec",
+      "turns": 19,
+      "winner": "p1",
+      "actors": {
+        "p1": "random-legal",
+        "p2": "random-legal"
+      }
+    },
+    {
+      "id": "b32",
+      "seed": "sodium,00000000000000000000000000006256",
+      "turns": 16,
+      "winner": "p2",
+      "actors": {
+        "p1": "random-legal",
+        "p2": "pending-first"
+      }
+    },
+    {
+      "id": "b33",
+      "seed": "sodium,00000000000000000000000000006582",
+      "turns": 16,
+      "winner": "p1",
+      "actors": {
+        "p1": "random-legal",
+        "p2": "pending-first"
+      }
+    },
+    {
+      "id": "b34",
+      "seed": "sodium,0000000000000000000000000000621f",
+      "turns": 13,
+      "winner": "p2",
+      "actors": {
+        "p1": "pending-first",
+        "p2": "pending-first"
+      }
+    },
+    {
+      "id": "b35",
+      "seed": "sodium,0000000000000000000000000000640b",
+      "turns": 23,
+      "winner": "p2",
+      "actors": {
+        "p1": "pending-first",
+        "p2": "pending-first"
+      }
+    },
+    {
+      "id": "b36",
+      "seed": "sodium,0000000000000000000000000000601c",
+      "turns": 10,
+      "winner": "p1",
+      "actors": {
+        "p1": "random-legal",
+        "p2": "random-legal"
+      }
+    },
+    {
+      "id": "b37",
+      "seed": "sodium,0000000000000000000000000000605b",
+      "turns": 10,
+      "winner": "p1",
+      "actors": {
+        "p1": "pending-first",
+        "p2": "pending-first"
+      }
+    },
+    {
+      "id": "b38",
+      "seed": "sodium,000000000000000000000000000063d6",
+      "turns": 20,
+      "winner": "p1",
+      "actors": {
+        "p1": "random-legal",
+        "p2": "pending-first"
+      }
+    },
+    {
+      "id": "b39",
+      "seed": "sodium,000000000000000000000000000064bf",
+      "turns": 10,
+      "winner": "p1",
+      "actors": {
+        "p1": "pending-first",
+        "p2": "pending-first"
+      }
+    },
+    {
+      "id": "b40",
+      "seed": "sodium,000000000000000000000000000064c4",
+      "turns": 17,
+      "winner": "p1",
+      "actors": {
+        "p1": "random-legal",
+        "p2": "random-legal"
+      }
+    },
+    {
+      "id": "b41",
+      "seed": "sodium,00000000000000000000000000006522",
+      "turns": 17,
+      "winner": "p2",
+      "actors": {
+        "p1": "random-legal",
+        "p2": "pending-first"
+      }
+    },
+    {
+      "id": "b42",
+      "seed": "sodium,00000000000000000000000000006250",
+      "turns": 24,
+      "winner": "p1",
+      "actors": {
+        "p1": "random-legal",
+        "p2": "random-legal"
+      }
+    },
+    {
+      "id": "b43",
+      "seed": "sodium,0000000000000000000000000000607d",
+      "turns": 31,
+      "winner": null,
+      "actors": {
+        "p1": "pending-first",
+        "p2": "random-legal"
+      }
+    },
+    {
+      "id": "b44",
+      "seed": "sodium,00000000000000000000000000006089",
+      "turns": 16,
+      "winner": "p1",
+      "actors": {
+        "p1": "pending-first",
+        "p2": "random-legal"
+      }
+    },
+    {
+      "id": "b45",
+      "seed": "sodium,00000000000000000000000000006101",
+      "turns": 8,
+      "winner": "p1",
+      "actors": {
+        "p1": "pending-first",
+        "p2": "random-legal"
+      }
+    },
+    {
+      "id": "b46",
+      "seed": "sodium,0000000000000000000000000000652a",
+      "turns": 20,
+      "winner": "p1",
+      "actors": {
+        "p1": "random-legal",
+        "p2": "pending-first"
+      }
+    },
+    {
+      "id": "b47",
+      "seed": "sodium,00000000000000000000000000006565",
+      "turns": 21,
+      "winner": "p2",
+      "actors": {
+        "p1": "pending-first",
+        "p2": "random-legal"
+      }
+    },
+    {
+      "id": "b48",
+      "seed": "sodium,00000000000000000000000000006008",
+      "turns": 17,
+      "winner": "p1",
+      "actors": {
+        "p1": "random-legal",
+        "p2": "random-legal"
+      }
+    },
+    {
+      "id": "b49",
+      "seed": "sodium,000000000000000000000000000060ed",
+      "turns": 13,
+      "winner": "p2",
+      "actors": {
+        "p1": "pending-first",
+        "p2": "random-legal"
+      }
+    },
+    {
+      "id": "b50",
+      "seed": "sodium,000000000000000000000000000060fd",
+      "turns": 13,
+      "winner": "p2",
+      "actors": {
+        "p1": "pending-first",
+        "p2": "random-legal"
+      }
+    },
+    {
+      "id": "b51",
+      "seed": "sodium,000000000000000000000000000060de",
+      "turns": 9,
+      "winner": "p2",
+      "actors": {
+        "p1": "random-legal",
+        "p2": "pending-first"
+      }
+    },
+    {
+      "id": "b52",
+      "seed": "sodium,0000000000000000000000000000634b",
+      "turns": 14,
+      "winner": "p2",
+      "actors": {
+        "p1": "pending-first",
+        "p2": "pending-first"
+      }
+    },
+    {
+      "id": "b53",
+      "seed": "sodium,00000000000000000000000000006176",
+      "turns": 15,
+      "winner": "p1",
+      "actors": {
+        "p1": "random-legal",
+        "p2": "pending-first"
+      }
+    },
+    {
+      "id": "b54",
+      "seed": "sodium,00000000000000000000000000006606",
+      "turns": 15,
+      "winner": "p2",
+      "actors": {
+        "p1": "random-legal",
+        "p2": "pending-first"
+      }
+    },
+    {
+      "id": "b55",
+      "seed": "sodium,000000000000000000000000000060b5",
+      "turns": 31,
+      "winner": null,
+      "actors": {
+        "p1": "pending-first",
+        "p2": "random-legal"
+      }
+    },
+    {
+      "id": "b56",
+      "seed": "sodium,000000000000000000000000000060f8",
+      "turns": 21,
+      "winner": "p2",
+      "actors": {
+        "p1": "random-legal",
+        "p2": "random-legal"
+      }
+    },
+    {
+      "id": "b57",
+      "seed": "sodium,0000000000000000000000000000607a",
+      "turns": 18,
+      "winner": "p2",
+      "actors": {
+        "p1": "random-legal",
+        "p2": "pending-first"
+      }
+    },
+    {
+      "id": "b58",
+      "seed": "sodium,0000000000000000000000000000620d",
+      "turns": 19,
+      "winner": "p1",
+      "actors": {
+        "p1": "pending-first",
+        "p2": "random-legal"
+      }
+    },
+    {
+      "id": "b59",
+      "seed": "sodium,0000000000000000000000000000629c",
+      "turns": 13,
+      "winner": "p2",
+      "actors": {
+        "p1": "random-legal",
+        "p2": "random-legal"
+      }
+    },
+    {
+      "id": "b60",
+      "seed": "sodium,000000000000000000000000000065fc",
+      "turns": 13,
+      "winner": "p2",
+      "actors": {
+        "p1": "random-legal",
+        "p2": "random-legal"
+      }
+    },
+    {
+      "id": "b61",
+      "seed": "sodium,00000000000000000000000000006001",
+      "turns": 7,
+      "winner": "p2",
+      "actors": {
+        "p1": "pending-first",
+        "p2": "random-legal"
+      }
+    },
+    {
+      "id": "b62",
+      "seed": "sodium,000000000000000000000000000065ab",
+      "turns": 22,
+      "winner": "p1",
+      "actors": {
+        "p1": "pending-first",
+        "p2": "pending-first"
+      }
+    },
+    {
+      "id": "b63",
+      "seed": "sodium,0000000000000000000000000000644f",
+      "turns": 31,
+      "winner": null,
+      "actors": {
+        "p1": "pending-first",
+        "p2": "pending-first"
+      }
+    },
+    {
+      "id": "b64",
+      "seed": "sodium,00000000000000000000000000006653",
+      "turns": 31,
+      "winner": null,
+      "actors": {
+        "p1": "pending-first",
+        "p2": "pending-first"
+      }
+    },
+    {
+      "id": "b65",
+      "seed": "sodium,00000000000000000000000000006266",
+      "turns": 26,
+      "winner": "p2",
+      "actors": {
+        "p1": "random-legal",
+        "p2": "pending-first"
+      }
+    },
+    {
+      "id": "b66",
+      "seed": "sodium,00000000000000000000000000006239",
+      "turns": 9,
+      "winner": "p1",
+      "actors": {
+        "p1": "pending-first",
+        "p2": "random-legal"
+      }
+    },
+    {
+      "id": "b67",
+      "seed": "sodium,00000000000000000000000000006246",
+      "turns": 18,
+      "winner": "p2",
+      "actors": {
+        "p1": "random-legal",
+        "p2": "pending-first"
+      }
+    },
+    {
+      "id": "b68",
+      "seed": "sodium,00000000000000000000000000006354",
+      "turns": 9,
+      "winner": "p1",
+      "actors": {
+        "p1": "random-legal",
+        "p2": "random-legal"
+      }
+    },
+    {
+      "id": "b69",
+      "seed": "sodium,00000000000000000000000000006648",
+      "turns": 9,
+      "winner": "p2",
+      "actors": {
+        "p1": "random-legal",
+        "p2": "random-legal"
+      }
+    },
+    {
+      "id": "b70",
+      "seed": "sodium,00000000000000000000000000006121",
+      "turns": 11,
+      "winner": "p1",
+      "actors": {
+        "p1": "pending-first",
+        "p2": "random-legal"
+      }
+    },
+    {
+      "id": "b71",
+      "seed": "sodium,00000000000000000000000000006249",
+      "turns": 23,
+      "winner": "p2",
+      "actors": {
+        "p1": "pending-first",
+        "p2": "random-legal"
+      }
+    },
+    {
+      "id": "b72",
+      "seed": "sodium,00000000000000000000000000006213",
+      "turns": 12,
+      "winner": "p1",
+      "actors": {
+        "p1": "pending-first",
+        "p2": "pending-first"
+      }
+    },
+    {
+      "id": "b73",
+      "seed": "sodium,000000000000000000000000000060a2",
+      "turns": 13,
+      "winner": "p2",
+      "actors": {
+        "p1": "random-legal",
+        "p2": "pending-first"
+      }
+    },
+    {
+      "id": "b74",
+      "seed": "sodium,0000000000000000000000000000620c",
+      "turns": 26,
+      "winner": "p1",
+      "actors": {
+        "p1": "random-legal",
+        "p2": "random-legal"
+      }
+    },
+    {
+      "id": "b75",
+      "seed": "sodium,00000000000000000000000000006241",
+      "turns": 13,
+      "winner": "p1",
+      "actors": {
+        "p1": "pending-first",
+        "p2": "random-legal"
+      }
+    },
+    {
+      "id": "b76",
+      "seed": "sodium,00000000000000000000000000006253",
+      "turns": 13,
+      "winner": "p2",
+      "actors": {
+        "p1": "pending-first",
+        "p2": "pending-first"
+      }
+    }
+  ]
+}
