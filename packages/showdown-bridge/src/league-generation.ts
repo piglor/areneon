@@ -39,6 +39,7 @@ import { importPaste } from "./teams.ts";
 import { stampTeam, type SyntheticTeamHashes, teamHash } from "./team-class.ts";
 import { loadTrainingSet, type StoredEpisode, type TrainingSet, writeStoredTrainingStream, writeTrainingStream } from "./training-loader.ts";
 import { type ChunkLimits } from "./chunked-file.ts";
+import { readFeatureRows, writeFeatureRows } from "./feature-recompute.ts";
 import type { TrainingRunConfig } from "./training-run-config.ts";
 import type { Episode } from "./episode.ts";
 
@@ -263,6 +264,13 @@ export interface GenerationOptions {
    */
   episodes_dir?: string;
   /**
+   * With `episodes_dir` and `features`: a scratch directory the game processes leave the recomputed candidate feature
+   * rows of their Episodes in once their games are done (`feature-recompute.ts`, #1185), so the rows of the stream are
+   * recomputed by every process in parallel instead of serially by the one that writes the stream. The files are
+   * never part of the generation, and the stream's bytes do not depend on whether they exist.
+   */
+  features_dir?: string | undefined;
+  /**
    * Ends this process's own games (#1100): checked before each wave and after each worker
    * restart, so a process whose generation has failed finishes its current wave and plays no further one and starts no
    * further worker. `playGeneration` aborts it when a game process fails.
@@ -486,11 +494,13 @@ export async function playEntries(options: GenerationOptions, shard: Shard = { i
       if (outcome.kind === "incident") throw new GenerationError(`game ${entry.game} (${entry.seed}): ${outcome.incident}: ${outcome.message}`);
       const row = { game: entry.game, seed: entry.seed, opponent: idOf(entry.opponent, policy_id) };
       if (outcome.kind === "forfeit" || record === null) {
+        // A forfeit has no Episode, but it is kept the way its generation keeps them: an empty list of references on the spilled path (#1184).
+        const kept = options.episodes_dir === undefined ? {} : { stored: [] };
         if (outcome.kind !== "forfeit") {
-          entries.push({ game: entry.game, row: { ...row, outcome: "forfeit", winner: null, turns: 0 }, episodes: [], ...reported });
+          entries.push({ game: entry.game, row: { ...row, outcome: "forfeit", winner: null, turns: 0 }, episodes: [], ...kept, ...reported });
         } else {
           const { loser, cause, request_seq, detail } = outcome;
-          entries.push({ game: entry.game, row: { ...row, outcome: "forfeit", winner: outcome.winner, turns: outcome.turns, forfeit: { loser, cause, request_seq, detail } }, episodes: [], ...reported });
+          entries.push({ game: entry.game, row: { ...row, outcome: "forfeit", winner: outcome.winner, turns: outcome.turns, forfeit: { loser, cause, request_seq, detail } }, episodes: [], ...kept, ...reported });
         }
         continue;
       }
@@ -514,6 +524,11 @@ export async function playEntries(options: GenerationOptions, shard: Shard = { i
         entries.push({ ...base, episodes: [], stored });
       }
     }
+  }
+  if (options.features_dir !== undefined && options.features !== undefined && options.episodes_dir !== undefined) {
+    const dir = options.episodes_dir;
+    const own = entries.flatMap((entry) => entry.stored ?? []).filter((ref) => ref.behaviour_policy_id === policy_id);
+    await writeFeatureRows({ engine: options.engine, configs: options.features, known_synthetic: pool.known_synthetic }, own.map(({ hash }) => ({ hash, path: join(dir, `${hash}.json`) })), options.features_dir, () => options.signal?.aborted === true);
   }
   return entries;
 }
@@ -599,7 +614,7 @@ export async function playGeneration(options: GenerationOptions): Promise<Genera
     const ownRefs = refs.filter((ref) => ref.behaviour_policy_id === policy_id);
     if (ownRefs.length === 0) throw new GenerationError("no Episode of the frozen pair: every game was forfeited");
     const stored: StoredEpisode[] = ownRefs.map(({ hash }) => ({ hash, path: join(dir, `${hash}.json`) }));
-    set = await writeStoredTrainingStream({ episodes: stored, evaluation_manifests: [], known_synthetic: pool.known_synthetic, behaviour_policy_id: policy_id, ...(options.features === undefined ? {} : { features: { engine, configs: options.features } }) }, { ...limits, path: options.stream_path });
+    set = await writeStoredTrainingStream({ episodes: stored, evaluation_manifests: [], known_synthetic: pool.known_synthetic, behaviour_policy_id: policy_id, ...(options.features === undefined ? {} : { features: { engine, configs: options.features, ...(options.features_dir === undefined ? {} : { precomputed: readFeatureRows(engine, options.features, options.features_dir) }) } }) }, { ...limits, path: options.stream_path });
     episodeHashes = refs.map((ref) => ref.hash);
   } else {
     const own = episodes.filter((episode) => episode.provenance.behaviour_policy_id === policy_id);

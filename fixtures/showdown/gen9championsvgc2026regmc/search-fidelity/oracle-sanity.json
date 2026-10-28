@@ -1,0 +1,97 @@
+{
+  "schema_version": 1,
+  "data_class": "synthetic",
+  "description": "Hand-picked turns of the committed corpora on which the fork oracle's world reproduces the real turn line for line: a world built by the committed record with no X item and only the bookkeeping items written (turn number, active turns, last move, faint totals), the recorded joint choices (F1) and a fixed sample of own candidates against opponent replies (F2) all equal.",
+  "picks": [
+    {
+      "corpus": "random",
+      "battle": "b02",
+      "player": "p2",
+      "turn": 6
+    },
+    {
+      "corpus": "random",
+      "battle": "b04",
+      "player": "p2",
+      "turn": 4
+    },
+    {
+      "corpus": "random",
+      "battle": "b05",
+      "player": "p2",
+      "turn": 10
+    },
+    {
+      "corpus": "random",
+      "battle": "b08",
+      "player": "p2",
+      "turn": 3
+    },
+    {
+      "corpus": "random",
+      "battle": "b10",
+      "player": "p1",
+      "turn": 3
+    },
+    {
+      "corpus": "random",
+      "battle": "b11",
+      "player": "p2",
+      "turn": 12
+    },
+    {
+      "corpus": "unavailable",
+      "battle": "b00",
+      "player": "p1",
+      "turn": 2
+    },
+    {
+      "corpus": "unavailable",
+      "battle": "b00",
+      "player": "p2",
+      "turn": 10
+    },
+    {
+      "corpus": "unavailable",
+      "battle": "b00",
+      "player": "p1",
+      "turn": 10
+    },
+    {
+      "corpus": "search-fidelity",
+      "battle": "b11",
+      "player": "p1",
+      "turn": 6
+    },
+    {
+      "corpus": "search-fidelity",
+      "battle": "b14",
+      "player": "p2",
+      "turn": 6
+    },
+    {
+      "corpus": "search-fidelity",
+      "battle": "b16",
+      "player": "p2",
+      "turn": 3
+    },
+    {
+      "corpus": "search-fidelity",
+      "battle": "b18",
+      "player": "p2",
+      "turn": 2
+    },
+    {
+      "corpus": "search-fidelity",
+      "battle": "b19",
+      "player": "p1",
+      "turn": 3
+    },
+    {
+      "corpus": "search-fidelity",
+      "battle": "b20",
+      "player": "p2",
+      "turn": 2
+    }
+  ]
+}

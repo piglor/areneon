@@ -32,7 +32,7 @@ from areneon_contracts.contracts import jcs
 
 from areneon_ml.learner.config import RunConfig, read_run_config
 from areneon_ml.loop import layout
-from areneon_ml.loop.records import policy_id
+from areneon_ml.loop.records import features_hash, policy_id
 from areneon_ml.model.encoder import encoder_version
 from areneon_ml.model.gamedata import GameData
 from areneon_ml.private.owner_session import OwnerSession, OwnerSessionError, assert_owner_session
@@ -142,6 +142,8 @@ class ChildRequest:
     candidate_data_class: str
     salt_path: Path
     opponent: tuple[str, str, str, str, Path, str] | None = None
+    #: The run's candidate feature set hash (ADR-022), in the pair's policy ids; None without one.
+    features: str | None = None
 
 
 @dataclass(frozen=True)
@@ -159,8 +161,14 @@ class NodePrivateTestPlayer:
             *("--generation", str(r.generation)),
             *("--preview", child.preview),
             *("--battle", child.battle),
-            *("--policy-id-sample", policy_id(child.preview, child.battle, "sample")),
-            *("--policy-id-argmax", policy_id(child.preview, child.battle, "argmax")),
+            *(
+                "--policy-id-sample",
+                policy_id(child.preview, child.battle, "sample", features=child.features),
+            ),
+            *(
+                "--policy-id-argmax",
+                policy_id(child.preview, child.battle, "argmax", features=child.features),
+            ),
             *("--generation-manifest-sha256", child.generation_manifest_sha256),
             *("--candidate-data-class", child.candidate_data_class),
             *("--run-dir", str(r.run_dir)),
@@ -265,6 +273,7 @@ def _tie(  # noqa: PLR0913, PLR0917
     pair: Any,
     opponent: Any,
     candidate_class: str,
+    opponent_features: str | None = None,
 ) -> None:
     """The record is about this run, generation, pair, source and opponents, and nothing else."""
     test_set, plan = record["test_set"], record["plan"]
@@ -294,13 +303,20 @@ def _tie(  # noqa: PLR0913, PLR0917
     ok = ok and [m["match_id"] for m in record["matches"]] == want
     for match in record["matches"]:
         mode = match["mode"]
-        ok = ok and match["policy_id"] == policy_id(pair.preview, pair.battle, mode)
+        ok = ok and match["policy_id"] == policy_id(
+            pair.preview, pair.battle, mode, features=features_hash(config)
+        )
         if "opponent_checkpoints" in match:
             ok = (
                 ok
                 and opponent is not None
                 and match["opponent_policy_id"]
-                == policy_id(opponent.preview, opponent.battle, mode)
+                == policy_id(
+                    opponent.preview,
+                    opponent.battle,
+                    mode,
+                    features=opponent_features,
+                )
                 and match["opponent_checkpoints"]
                 == {"preview": opponent.preview, "battle": opponent.battle}
             )
@@ -356,6 +372,7 @@ def run_private_test(
         raise PrivateTestError("run_unverified")
     opponent = None
     opponent_arg = None
+    opponent_features = None
     if request.opponent_run_dir is not None and request.opponent_generation is not None:
         other_dir = request.opponent_run_dir.resolve()
         try:
@@ -372,11 +389,16 @@ def run_private_test(
                 request.generation,
             ):
                 raise PrivateTestError("opponent_unverified")
+            opponent_features = features_hash(other)
             opponent_arg = (
                 opponent.preview,
                 opponent.battle,
-                policy_id(opponent.preview, opponent.battle, "sample"),
-                policy_id(opponent.preview, opponent.battle, "argmax"),
+                policy_id(
+                    opponent.preview, opponent.battle, "sample", features=features_hash(other)
+                ),
+                policy_id(
+                    opponent.preview, opponent.battle, "argmax", features=features_hash(other)
+                ),
                 other_dir,
                 _encoder_version(request.engine_data, other),
             )
@@ -403,13 +425,14 @@ def run_private_test(
             candidate_class,
             salt_path,
             opponent_arg,
+            features_hash(config),
         )
     )
     try:
         record = read_private_test_record(found.get("record"))
     except PrivateTestRecordError:
         raise PrivateTestError("record_mismatch") from None
-    _tie(record, request, config, pair, opponent, candidate_class)
+    _tie(record, request, config, pair, opponent, candidate_class, opponent_features)
     name, digest = _write_record(root, record)
     # The result is verified and kept: log the look, then show it.
     looks_file = root / LOOKS_NAME

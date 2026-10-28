@@ -34,7 +34,7 @@
     },
     {
       "id": "toxic_stage",
-      "class": "W"
+      "class": "R"
     },
     {
       "id": "total_fainted",
@@ -147,5 +147,16 @@
       "class": "R"
     }
   ],
-  "admitted": []
+  "admitted": [
+    {
+      "kind": "volatile",
+      "id": "encore",
+      "class": "W"
+    },
+    {
+      "kind": "volatile",
+      "id": "taunt",
+      "class": "W"
+    }
+  ]
 }

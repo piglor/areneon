@@ -30,7 +30,8 @@ describe("the record indexes into a plan", () => {
     const writers = structuredClone(context.writers);
     writers.admitted = [{ kind: "start_trigger", id: "whiteherb", class: "W" }, { kind: "volatile", id: "taunt", class: "W" }];
     const plan = statePlan(readWorldWriters(writers, engine));
-    expect(plan.classOf("toxic_stage")).toBe("W");
+    expect(plan.classOf("toxic_stage")).toBe("R");
+    expect(plan.classOf("bench_status")).toBe("W");
     expect(plan.classOf("substitute")).toBe("R");
     expect(plan.conditionOf("protect_counter")).toBe("stall");
     expect(plan.rowOf("substitute")).toBe("substitute");
@@ -106,13 +107,15 @@ describe("the X items are counted, not written", () => {
 });
 
 describe("a scenario-start trigger", () => {
+  // The committed record admits two volatiles since slice F: these cases are chosen and refused as under a record that admits no id.
+  const bare = (): WorldContext => ({ ...context, writers: { ...structuredClone(context.writers), admitted: [] } as WorldWriters });
   // An own active holding White Herb against a foe active with Intimidate: the start consumes the herb.
   const trigger = (): WorldInput | null => {
     for (const { input } of all) {
       const foeActive = input.opponent.members.filter((m) => input.state.opponent.roster[m.roster_index]?.active_slot !== null && !input.state.opponent.roster[m.roster_index]?.fainted);
       if (!foeActive.some((m) => toId(m.set.ability) === "intimidate")) continue;
       // The case itself must build: the herb is the only thing the start changes.
-      if (createWorldBuilder(context).build(input).kind !== "world") continue;
+      if (createWorldBuilder(bare()).build(input).kind !== "world") continue;
       const request = structuredClone(input.request);
       const team = input.team.map((set) => structuredClone(set) as PokemonSet);
       if (team.some((set) => toId(set.item) === "whiteherb")) continue;
@@ -130,7 +133,7 @@ describe("a scenario-start trigger", () => {
   it("is refused while no trigger is admitted, and restored once one is", () => {
     const input = trigger();
     expect(input, "a corpus case with an Intimidate foe").not.toBeNull();
-    const refused = createWorldBuilder(context).build(input as WorldInput);
+    const refused = createWorldBuilder(bare()).build(input as WorldInput);
     expect(refused).toMatchObject({ kind: "refused", refusal: { code: "state_unwritten", item: "start_trigger_restore", state_class: "W" } });
     const writers = structuredClone(context.writers);
     writers.admitted = [{ kind: "start_trigger", id: "whiteherb", class: "W" }];
@@ -147,7 +150,7 @@ describe("a scenario-start trigger", () => {
     const input = trigger() as WorldInput;
     const off = createWorldBuilder({ ...context, writers: withClass("start_trigger_restore", "R") }).build(input);
     expect(off).toMatchObject({ kind: "refused", refusal: { item: "start_trigger_restore", state_class: "R" } });
-    const writers = structuredClone(context.writers);
+    const writers = structuredClone(bare().writers);
     writers.admitted = [{ kind: "start_trigger", id: "trace", class: "W" }];
     expect(createWorldBuilder({ ...context, writers }).build(input)).toMatchObject({ kind: "refused", refusal: { item: "start_trigger_restore" } });
   });

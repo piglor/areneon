@@ -242,7 +242,7 @@ def test_an_anchor_pairs_policy_id_must_be_its_checkpoints() -> None:
     assert read_progress_record(raw, config)["plan"]["anchor_games_per_match"] == 4
 
 
-def test_a_cross_run_pairs_policy_id_must_be_its_checkpoints() -> None:
+def test_a_cross_run_pairs_policy_id_is_left_to_the_evaluation() -> None:
     config = tiny_config()
     raw = copy.deepcopy(sample(f"{EVALUATION2}/valid/run-match"))
     raw["run_id"] = config.run_key
@@ -250,13 +250,17 @@ def test_a_cross_run_pairs_policy_id_must_be_its_checkpoints() -> None:
     raw["plan"]["max_turns"] = config.generation.max_turns
     raw["plan"]["latency_budget_ms"] = {"preview_ms": 30000, "battle_ms": 30000}
     raw["matches"][0]["policy_id"] = record_policy(raw)
-    with pytest.raises(ProgressRecordError, match="run pair's policy_id"):
-        read_progress_record(raw, config)
+    # The other run's config is not in the record (it may read a feature set of its own), so the
+    # reader does not recompute its id; the evaluation checks it (`_check_versus`).
     opponent = raw["matches"][0]["opponent"]
-    opponent["policy_id"] = policy_id(
-        opponent["checkpoints"]["preview"], opponent["checkpoints"]["battle"], "sample"
-    )
-    assert read_progress_record(raw, config)["plan"]["run_games_per_match"] == 4
+    for features in (None, "d" * 64):
+        opponent["policy_id"] = policy_id(
+            opponent["checkpoints"]["preview"],
+            opponent["checkpoints"]["battle"],
+            "sample",
+            features=features,
+        )
+        assert read_progress_record(raw, config)["plan"]["run_games_per_match"] == 4
 
 
 def test_a_cross_run_match_has_the_run_games_of_the_plan() -> None:

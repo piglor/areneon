@@ -140,7 +140,16 @@ export interface TrainingInput {
    * Absent, no example has the field and every byte of the stream is as before. A decision the builder cannot
    * feature is a `TrainingLoaderError` (the game that played it forfeited, so no Episode should hold it).
    */
-  features?: { engine: Engine; configs: FeatureConfigs };
+  features?: {
+    engine: Engine;
+    configs: FeatureConfigs;
+    /**
+     * The rows another process already recomputed for an Episode, by its hash (#1185; see `feature-recompute.ts`): used
+     * only when they are one entry per decision, otherwise the rows are recomputed here. They are the same function
+     * of the same Episode, so the stream's bytes do not depend on whether this is given or what it returns.
+     */
+    precomputed?: (hash: string) => readonly NonNullable<TrainingExample["candidate_features"]>[] | undefined;
+  };
 }
 
 export interface TrainingStream {
@@ -192,6 +201,8 @@ async function examplesOf(episode: Episode, hash: string, features: TrainingInpu
   const observations = await decisionObservations(episode);
   const outcome = outcomeOf(episode);
   const memo = createFeatureMemo(); // one Episode is one game, as at play time; the memo never changes a byte
+  const given = features?.precomputed?.(hash);
+  const rows = given?.length === episode.decisions.length ? given : undefined;
   return episode.decisions.map(({ choice }, i) => {
     const observation = observations[i] as TrainingExample["observation"];
     return trainingExample({
@@ -199,9 +210,16 @@ async function examplesOf(episode: Episode, hash: string, features: TrainingInpu
       choice,
       outcome,
       episode_hash: hash,
-      ...(features === undefined ? {} : { candidate_features: featuresOf(episode, observation, hash, features, memo) }),
+      ...(features === undefined ? {} : { candidate_features: rows?.[i] ?? featuresOf(episode, observation, hash, features, memo) }),
     });
   });
+}
+
+/** The recomputed rows of every decision of an Episode, in decision order: what the stream carries, computed on their own (#1185). */
+export async function episodeFeatureRows(episode: Episode, hash: string, features: NonNullable<TrainingInput["features"]>): Promise<NonNullable<TrainingExample["candidate_features"]>[]> {
+  const observations = await decisionObservations(episode);
+  const memo = createFeatureMemo();
+  return observations.map((observation) => featuresOf(episode, observation, hash, features, memo));
 }
 
 /** The rows of one decision, recomputed from what the play-time actor had: the channel up to the request, the own team, the candidates. */

@@ -50,6 +50,8 @@ function present(input: WorldInput, rows: Record<string, readonly string[]>): Se
       else if (id !== "confusion") items.add("unadmitted_id");
     }
   }
+  // toxic_stage is R in the committed record: a badly poisoned living Pokemon in play is refused for it.
+  if (roster.some((m) => m.status === "tox" && !m.fainted && m.active_slot !== null)) items.add("toxic_stage");
   const brought = new Map(input.team.map((s) => [toId(s.name === "" ? s.species : s.name), toId(s.item)]));
   if (state.opponent.roster.some((m) => m.item_received)) items.add("item_replaced");
   for (const p of request.side.pokemon) {
@@ -363,7 +365,7 @@ describe("the checks and the typed, counted refusals", () => {
       expect(r.redraw).toBe(false);
       return r.item;
     };
-    expect(item((s) => { (s.opponent.roster[foe] as { volatiles: string[] }).volatiles = ["taunt"]; })).toBe("unadmitted_id");
+    expect(item((s) => { (s.opponent.roster[foe] as { volatiles: string[] }).volatiles = ["torment"]; })).toBe("unadmitted_id");
     expect(item((s) => { (s.opponent.roster[foe] as { volatiles: string[] }).volatiles = ["substitute"]; })).toBe("substitute");
     expect(item((s) => { (s.opponent.roster[foe] as { volatiles: string[] }).volatiles = ["futuresight"]; })).toBe("slot_conditions");
     expect(item((s) => { (s.opponent.roster[foe] as { volatiles: string[] }).volatiles = ["transform"]; })).toBe("illusion_transform");

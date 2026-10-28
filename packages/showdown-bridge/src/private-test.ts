@@ -16,6 +16,7 @@ import { resolveFormat } from "./formats.ts";
 import { firstLegal } from "./golden.ts";
 import type { DamageAwareSetup } from "./league-generation.ts";
 import { type PolicyClient } from "./policy-worker.ts";
+import type { FeatureConfigs } from "./candidate-features.ts";
 import { policyGame, type PolicySeat } from "./policy-actor.ts";
 import { DAMAGE_AWARE_POLICY_ID, damageAwareBaseline, PROGRESS_BASELINES, PROGRESS_MODES, type ProgressMode, ProgressError, rowOf, type BaselineReport } from "./progress-evaluation.ts";
 import { tallyRows } from "./progress-records.ts";
@@ -46,8 +47,10 @@ export interface PrivateTestOptions {
   candidate_data_class: "synthetic" | "private";
   /** A started worker client with the pair loaded; one query at a time. */
   client: PairClient;
+  /** The candidate features the pair reads (`featureSetup(...).configs`; absent: none); its policy ids then carry the `features` member. */
+  features?: FeatureConfigs;
   /** Another frozen pair as an opponent, behind a worker of its own: sample against sample, argmax against argmax. */
-  opponent_pair?: { checkpoints: { preview: string; battle: string }; policy_ids: Record<ProgressMode, string>; client: PairClient };
+  opponent_pair?: { checkpoints: { preview: string; battle: string }; policy_ids: Record<ProgressMode, string>; client: PairClient; /** The other pair's own features, from its own run config. */ features?: FeatureConfigs };
   /** The damage-aware baseline as a scripted opponent (opt-in; a match over its wall-clock budget fails the test). */
   damage_aware?: { setup: DamageAwareSetup; match_budget_ms: number; clock?: () => number };
   /** The teams of the set, each once. */
@@ -129,7 +132,7 @@ export async function playPrivateTest(options: PrivateTestOptions): Promise<Priv
       id: "pair",
       policy_id: (mode) => other.policy_ids[mode],
       checkpoints: other.checkpoints,
-      seat: (mode) => ({ seat: { client: other.client, policy_id: other.policy_ids[mode], sampling: mode } }),
+      seat: (mode) => ({ seat: { client: other.client, policy_id: other.policy_ids[mode], sampling: mode, ...(other.features === undefined ? {} : { features: { configs: other.features } }) } }),
       begin: async () => {
         await other.client.beginGame?.();
       },
@@ -153,7 +156,7 @@ export async function playPrivateTest(options: PrivateTestOptions): Promise<Priv
         // Both games of a pair: the teams stay on their seats, the policies swap, one battle seed.
         for (let leg = 0; leg < 2; leg++) {
           const candidate = seatOf(leg);
-          const seat: PolicySeat = { client, policy_id, sampling: mode };
+          const seat: PolicySeat = { client, policy_id, sampling: mode, ...(options.features === undefined ? {} : { features: { configs: options.features } }) };
           await client.beginGame?.();
           await opponent.begin();
           const opposing = opponent.seat(mode, index);
