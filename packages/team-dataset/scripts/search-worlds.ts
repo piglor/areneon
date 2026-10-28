@@ -45,13 +45,14 @@ const out = process.argv.indexOf("--out") >= 0 ? process.argv[process.argv.index
 const engine = loadEngine(process.env.SHOWDOWN_DIR || undefined);
 const vocabulary = goldenTeamVocabulary();
 const manifest = resolveFormat(engine, GOLDEN_FORMAT, loadRulesSnapshot(engine.commit)).manifest;
+const scenario_id = checkScenario(engine, loadMechanicsConfig(GOLDEN_FORMAT));
 const decisions = cases().filter((_, i) => i % every === 0);
 
 const report: Record<string, unknown> = {};
 for (const arm of PRIOR_KINDS as readonly PriorKind[]) {
   const port = createSearchWorlds({ engine, vocabulary, reader_sha256: readerSha256(), manifest, arm });
-  const builder = createWorldBuilder({ engine, format_id: GOLDEN_FORMAT, scenario_id: checkScenario(engine, loadMechanicsConfig(GOLDEN_FORMAT)), hp_rounding: SEARCH_HP_ROUNDING, writers: loadWorldWriters(engine, GOLDEN_FORMAT) });
-  const sampler = createWorldSampler({ engine, vocabulary, format_id: GOLDEN_FORMAT, port, builder, settings, ...(trapping ? { trapping: { scenario_id: checkScenario(engine, loadMechanicsConfig(GOLDEN_FORMAT)) } } : {}) });
+  const builder = createWorldBuilder({ engine, format_id: GOLDEN_FORMAT, scenario_id, hp_rounding: SEARCH_HP_ROUNDING, writers: loadWorldWriters(engine, GOLDEN_FORMAT) });
+  const sampler = createWorldSampler({ engine, vocabulary, format_id: GOLDEN_FORMAT, port, builder, settings, ...(trapping ? { trapping: { scenario_id } } : {}) });
   const began = performance.now();
   decisions.forEach(({ id, input }, i) => {
     const { opponent: _opponent, ...request } = input;

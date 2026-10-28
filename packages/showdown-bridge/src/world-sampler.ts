@@ -212,10 +212,10 @@ export interface WorldSamplerCounts {
   below_min_valid: number;
   /** Decisions the belief refused (no world could be drawn), by the model's code. */
   belief_refusals: Record<string, number>;
-  /** Worlds asked for and valid worlds. */
   /** Decisions whose own request gave the belief trapping evidence (an informative own active), and those among them that showed `maybeTrapped`. */
   trapping_checks: number;
   trapping_seen: number;
+  /** Worlds asked for and valid worlds. */
   worlds_asked: number;
   worlds_valid: number;
   /** Worlds no attempt made valid. */
