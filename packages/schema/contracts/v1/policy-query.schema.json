@@ -57,7 +57,7 @@
       "$ref": "#/$defs/CandidateFeatures"
     },
     "sampling": {
-      "description": "How the worker picks among the candidates (ADR-010 §2): argmax, or a draw from the policy's probabilities using u.",
+      "description": "How the worker picks among the candidates (ADR-010 §2): argmax, a draw from the policy's probabilities using u, or (ADR-026 §5) no pick at all: evaluate asks for the policy's prior over the candidates and its value of the state.",
       "type": "object",
       "oneOf": [
         {
@@ -65,6 +65,9 @@
         },
         {
           "$ref": "#/$defs/SampleSampling"
+        },
+        {
+          "$ref": "#/$defs/EvaluateSampling"
         }
       ],
       "discriminator": {
@@ -738,6 +741,19 @@
           "discriminator": {
             "propertyName": "kind"
           }
+        }
+      }
+    },
+    "EvaluateSampling": {
+      "description": "No candidate is chosen: the worker answers with an EvaluationReply (not a PolicyReply recommendation) holding the policy's probability of each candidate (temperature 1, no truncation) and its value of the state, from one batch-1 forward pass. candidate_features are read as for any other query. The query is a decision-time search's question; policy_id names the policy asked.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind"
+      ],
+      "properties": {
+        "kind": {
+          "const": "evaluate"
         }
       }
     },

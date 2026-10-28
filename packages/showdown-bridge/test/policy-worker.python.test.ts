@@ -12,6 +12,8 @@ import { engineDataHash, readEngineData } from "../src/engine-data.ts";
 import { GOLDEN_DIR, GOLDEN_FORMAT, GOLDEN_SEED, syntheticFixtureHashes, syntheticTeam } from "../src/golden.ts";
 import { type BattleRecord, loadEngine } from "../src/index.ts";
 import { policyGame } from "../src/policy-actor.ts";
+import { SAMPLES_DIR } from "../src/samples.ts";
+import type { EvaluateQueryInput, PolicyQueryInput } from "../src/policy-protocol.ts";
 import { PolicyHandshakeError, PolicyWorkerClient, type PolicyWorkerOptions } from "../src/policy-worker.ts";
 
 const ROOT = fileURLToPath(new URL("../../../", import.meta.url));
@@ -96,6 +98,31 @@ describe.skipIf(!existsSync(PYTHON) && process.env.ARENEON_REQUIRE_PYTHON_WORKER
       expect(first.outcome.kind).toBe("played");
       expect((again.record as BattleRecord).omniscient_log).toEqual((first.record as BattleRecord).omniscient_log);
       expect((other.record as BattleRecord).choices).not.toEqual((first.record as BattleRecord).choices);
+    } finally {
+      await client.close();
+    }
+  }, 120_000);
+
+  // ADR-026 section 5: evaluate answers a prior and a value from a batch-1 CPU pass, the same integers however often and after whatever.
+  it("answers evaluate queries with bit-identical integers, alone, repeated and after other queries, for the A1 and A2 forms", async () => {
+    const load = (name: string): PolicyQueryInput & { query_id: number } => JSON.parse(readFileSync(`${SAMPLES_DIR}/v1/policy-query/valid/${name}.json`, "utf8"));
+    const { query_id: _a, ...a1 } = load("battle-evaluate");
+    const { query_id: _b, ...a2 } = load("battle-a2");
+    const evaluateA2 = { ...a2, sampling: { kind: "evaluate" as const } };
+    const evaluateA1 = a1 as EvaluateQueryInput;
+    const client = new PolicyWorkerClient(options());
+    await client.start();
+    try {
+      const alone = await client.evaluate("g1", evaluateA1);
+      await client.ask("g1", { ...a1, sampling: { kind: "argmax" } });
+      const { query_id: _c, ...preview } = load("preview-evaluate");
+      await client.evaluate("g1", preview as EvaluateQueryInput);
+      const again = await client.evaluate("g1", evaluateA1);
+      const other = await client.evaluate("g1", evaluateA2);
+      expect(again).toEqual(alone);
+      expect(alone.prior_ppm).toHaveLength(a1.candidates.length);
+      expect(other.prior_ppm).toEqual(alone.prior_ppm);
+      expect(other.value_ppm).toBe(alone.value_ppm);
     } finally {
       await client.close();
     }
