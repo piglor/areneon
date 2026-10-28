@@ -204,9 +204,6 @@ export async function runProgressCli(argv: readonly string[], print: (line: stri
   const { max_line_bytes, handshake_timeout_ms } = config.generation;
   // The candidate features of the run's pair (none: nothing below changes) and, for another run's pair, of ITS config.
   const features = pairFeatureSetup(engine, config);
-  const versusConfig = values["versus-dir"] === undefined ? undefined : readTrainingRunConfig(JSON.parse(readFileSync(join(values["versus-dir"], "run-config.json"), "utf8")));
-  if (versusConfig !== undefined && versusParts !== undefined && (await runConfigHash(versusConfig)) !== versusParts[1]) throw new UsageError("--versus-dir holds another run config than the --versus run config hash names");
-  const versusFeatures = versusConfig === undefined ? undefined : pairFeatureSetup(engine, versusConfig);
   const preview = need("preview");
   const battle = need("battle");
   // One worker session holds one frozen pair, so the previous generation's pair gets a worker of its own.
@@ -228,8 +225,12 @@ export async function runProgressCli(argv: readonly string[], print: (line: stri
           checkpoints: { preview: versusParts[3] as string, battle: versusParts[4] as string },
           policy_ids: { sample: versusParts[5] as string, argmax: versusParts[6] as string },
         };
-  const versusClient = versus === undefined ? undefined : workerFor(versus.checkpoints, need("versus-dir"), need("versus-encoder-version"), versusFeatures ?? null);
+  // The other run's pair is set up from its own config (its team set is read first: a malformed flag is a usage error before any file of the run).
   const versusTeamSet = values["versus-team-set"] === undefined ? [] : readTeamSet(values["versus-team-set"]);
+  const versusConfig = values["versus-dir"] === undefined ? undefined : readTrainingRunConfig(JSON.parse(readFileSync(join(values["versus-dir"], "run-config.json"), "utf8")));
+  if (versusConfig !== undefined && versusParts !== undefined && (await runConfigHash(versusConfig)) !== versusParts[1]) throw new UsageError("--versus-dir holds another run config than the --versus run config hash names");
+  const versusFeatures = versusConfig === undefined ? undefined : pairFeatureSetup(engine, versusConfig);
+  const versusClient = versus === undefined ? undefined : workerFor(versus.checkpoints, need("versus-dir"), need("versus-encoder-version"), versusFeatures ?? null);
   try {
     previousClient = previousPair === undefined ? undefined : workerFor(previousPair);
     const pool = poolSource(engine, withEvalDataset(config, evalDataset)); // the evaluation dataset, hash-checked by the pool; `config` stays the run's own
