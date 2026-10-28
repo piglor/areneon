@@ -122,7 +122,6 @@ function volatilePlans(plan: StatePlan, mon: PublicMon | undefined, facts: Activ
       if (began === undefined) refuseItem(plan, "volatile_duration", `${side} Pokemon ${index}: the log does not date a volatile`);
       out.push({ id, class: "W", began: began as { started_turn: number; after_residual: boolean; moved_before: boolean } });
     } else out.push({ id, class: admitted as StateClass, began: null });
-    if (admitted === "X") resampled.push({ side, position: index, item: "confusion_duration" });
   }
   return out;
 }

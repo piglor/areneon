@@ -160,7 +160,7 @@ describe("every W writer equals the live engine's state at the decision", () => 
     }
     console.log(`world writers live: ${built} worlds compared with the live battle, ${refused} refused; compared ${JSON.stringify([...compared])}`);
     expect(built).toBeGreaterThan(300);
-    for (const what of ["Toxic stage", "status on the bench", "activeTurns >= 3", "lastMove", "stall", "side faint counters", "faintedLastTurn", "item gone", "weather duration", "side condition duration"]) {
+    for (const what of ["Toxic stage", "status on the bench", "activeTurns >= 3", "lastMove", "stall", "side faint counters", "faintedLastTurn", "item gone", "weather duration", "side condition duration", "stall counter > 3"]) {
       expect(compared.get(what) ?? 0, what).toBeGreaterThan(0);
     }
   }, 600_000);
