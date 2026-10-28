@@ -1,0 +1,34 @@
+{
+  "basis": "owner-accepted-risk: ADR-009 erratum 1, extended to the opponent prior by ADR-025 erratum E-9.2; aggregate statistics only",
+  "cutoff": 1630,
+  "files": [
+    {
+      "file": "chaos.json",
+      "retrieved_at": "2026-10-28T11:12:52Z",
+      "sha256": "9c1daf8f3258b124db4b06f94fcee49e6e2308c0db9f2520896139c45791e73b",
+      "size": 16728978,
+      "source_id": "chaos",
+      "url": "https://www.smogon.com/stats/2026-09/chaos/gen9championsvgc2026regmc-1630.json"
+    },
+    {
+      "file": "leads.txt",
+      "retrieved_at": "2026-10-28T11:16:44Z",
+      "sha256": "0bb4227251d6b1b02941242a8afa1dd22e30b7174079a4d486cd541011ae9350",
+      "size": 20947,
+      "source_id": "leads",
+      "url": "https://www.smogon.com/stats/2026-09/leads/gen9championsvgc2026regmc-1630.txt"
+    },
+    {
+      "file": "summary.txt",
+      "retrieved_at": "2026-10-28T11:12:58Z",
+      "sha256": "8a99f0b30b91b2989093ddab5a125c7df61dc28cc366cd4133646f56c2f73d85",
+      "size": 27652,
+      "source_id": "summary",
+      "url": "https://www.smogon.com/stats/2026-09/gen9championsvgc2026regmc-1630.txt"
+    }
+  ],
+  "format_id": "gen9championsvgc2026regmc",
+  "month": "2026-09",
+  "preview_map": "generator-matched.uniform-v1.json",
+  "robots_sha256": "db5047bc8ea2ba29e082d8b0d5a5181dade2686aef251302ff5559cb125c1d97"
+}
