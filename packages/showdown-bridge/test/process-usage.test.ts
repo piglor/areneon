@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { largest, ownPeakRss, parsePeakRss, peakRssOf } from "../src/process-usage.ts";
 
@@ -28,12 +29,14 @@ describe("peak memory of a process (#1069)", () => {
 
   it("does not inherit the parent's peak across exec (#1110)", () => {
     if (process.platform !== "linux") return;
-    const probe = "const{readFileSync}=require('fs');const m=/VmHWM:\\s+(\\d+)/.exec(readFileSync('/proc/self/status','utf8'));console.log(m[1]*1024)";
-    // This process holds far more than a fresh node does; a child's own peak must not be this process's.
+    // The parent holds a large resident set; a child's own peak, read by the production function, must not be the parent's.
     const ballast = Buffer.alloc(300 * 1024 * 1024, 1);
-    const child = Number(execFileSync(process.execPath, ["-e", probe], { encoding: "utf8" }));
-    expect(ballast.length).toBeGreaterThan(0);
-    expect(child).toBeLessThan(ownPeakRss());
+    const module = fileURLToPath(new URL("../src/process-usage.ts", import.meta.url));
+    const script = `import(${JSON.stringify(module)}).then((m) => console.log(m.ownPeakRss()))`;
+    const child = Number(execFileSync(process.execPath, ["-e", script], { encoding: "utf8" }));
+    void ballast;
+    expect(child).toBeGreaterThan(10_000_000);
+    expect(child).toBeLessThan(ballast.length);
   });
 
   it("takes the largest figure that is present", () => {
