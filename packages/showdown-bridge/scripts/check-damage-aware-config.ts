@@ -2,6 +2,7 @@
 // (ADR-018 section 3). Part of `make ts`.
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { isDeepStrictEqual } from "node:util";
 import { beliefConfigHash, readBeliefConfig } from "../src/belief-config.ts";
 import { DAMAGE_AWARE_CONFIG_DIR, loadDamageAwareConfig, loadDamageAwareConfigV2 } from "../src/damage-aware-config.ts";
 import { loadEngine } from "../src/engine.ts";
@@ -17,7 +18,17 @@ if (vocabulary.showdown_commit !== engine.commit) console.error("the committed t
 for (const file of files) {
   try {
     const version = file.replace(/^damage-aware\.(v\d+)\.json$/, "$1");
-    if (version === "v1") loadDamageAwareConfig(version, vocabulary);
+    if (version === "v1") {
+      // v1 plays the legacy (reversed) choice-location numbering: it never says `target_convention`.
+      if (loadDamageAwareConfig(version, vocabulary).target_convention !== undefined) throw new Error("v1 must not select a target convention (it is kept bug-for-bug)");
+    } else if (version === "v3") {
+      // v3 is v1's values with the engine's target convention (#1180); nothing else may differ.
+      const v1 = loadDamageAwareConfig("v1", vocabulary);
+      const v3 = loadDamageAwareConfig(version, vocabulary);
+      const { target_convention, ...rest } = v3;
+      if (target_convention !== "engine") throw new Error("v3 must select the engine's target convention");
+      if (!isDeepStrictEqual(rest, v1)) throw new Error("v3 must equal v1 in every value but the target convention");
+    }
     else if (version === "v2") {
       // The belief record names the prior and the belief config by hash: the committed files must be those.
       const record = loadDamageAwareConfigV2(vocabulary);

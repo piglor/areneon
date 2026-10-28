@@ -38,7 +38,7 @@ SCRIPT = "packages/team-dataset/scripts/scripted-h2h.ts"
 RECORD = "head-to-head.json"
 LABEL = "scripted head-to-head on validation teams; not the Training gate; no learned policy"
 #: The scripted baselines a head-to-head can play (the TS side checks the same list).
-ARMS = ("actor-rule@v1", "random-legal@v1", "damage-aware@v1", "damage-aware@v2")
+ARMS = ("actor-rule@v1", "random-legal@v1", "damage-aware@v1", "damage-aware@v2", "damage-aware@v3")
 #: How long past the declared wall-time cap the child is given before it is killed (the cap itself
 #: is checked by the Node side between games; a game in flight is bounded by the battle budget).
 _KILL_SLACK_S = 600.0

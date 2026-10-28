@@ -39,9 +39,10 @@ const moveRequests = (): Captured[] => captured.filter((c) => c.request.phase ==
 function expectedKeys(c: Captured, candidates = candidatesOf(c)): string[] {
   const state = stateOf(c);
   const letters = Object.keys(state.opponent.slots).sort();
+  // The engine's convention (Pokemon.getAtLoc): location L is the foe in active slot L - 1.
   const alive = letters.flatMap((letter, position) => {
     const mon = state.opponent.roster[state.opponent.slots[letter] as number];
-    return mon === undefined || mon.fainted || mon.hp_num === 0 ? [] : [letters.length - position];
+    return mon === undefined || mon.fainted || mon.hp_num === 0 ? [] : [position + 1];
   });
   const keys = new Set<string>();
   for (const { choice } of candidates) {
@@ -157,12 +158,13 @@ describe("the declared state is the request's and the reader's", () => {
   });
 
   it("leaves a fainted opposing active without rows", () => {
-    const c = moveRequests().find((candidate) => Object.keys(stateOf(candidate).opponent.slots).length === 2 && build(candidate).rows.some((row) => row.target === 2)) as Captured;
+    // slot a is location 1 (the engine's numbering): fainting it removes the rows keyed target 1
+    const c = moveRequests().find((candidate) => Object.keys(stateOf(candidate).opponent.slots).length === 2 && build(candidate).rows.some((row) => row.target === 1)) as Captured;
     const state = stateOf(c);
     const mon = state.opponent.roster[state.opponent.slots[Object.keys(state.opponent.slots).sort()[0] as string] as number] as { name: string };
     const channel = withRequest(c, () => undefined, [`|faint|p${c.context.player === "p1" ? 2 : 1}a: ${mon.name}`]);
     const features = candidateFeatures(engine, configs(), channel, c.context.team as never, candidatesOf(c));
-    expect(features.rows.some((row) => row.target === 2)).toBe(false);
+    expect(features.rows.some((row) => row.target === 1)).toBe(false);
     expect(features.rows.length).toBeLessThan(build(c).rows.length);
   });
 

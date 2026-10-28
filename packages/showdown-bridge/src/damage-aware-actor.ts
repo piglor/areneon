@@ -152,9 +152,11 @@ export function damageAwareActor(options: DamageAwareOptions): DamageAwareActor 
   const snapshot = options.snapshot ?? loadRulesSnapshot(engine.commit);
   const manifest = resolveFormat(engine, config.format_id, snapshot).manifest;
   // A policy id that names a record version (`v1`, `v2-x`) must be the version of the record the actor plays: a v1 record never plays as damage-aware@v2.
-  const commit = options.commit ?? (v2 === null ? "v1" : "v2");
+  // A v1-shaped record that selects the engine's target convention (`target_convention: "engine"`) is `damage-aware@v3` (#1180); one without it is `v1`.
+  const recordVersion = v1?.target_convention === "engine" ? "3" : String(config.schema_version);
+  const commit = options.commit ?? `v${recordVersion}`;
   const named = /^v(\d+)(?:-|$)/.exec(commit);
-  if (named !== null ? named[1] !== String(config.schema_version) : v2 !== null) throw new DamageAwareError("the policy id names another record version than the record the actor plays");
+  if (named !== null ? named[1] !== recordVersion : v2 !== null) throw new DamageAwareError("the policy id names another record version than the record the actor plays");
   const policy_id = damageAwarePolicyId(commit);
   const identity = damageAwareIdentity({ config, mechanics, manifest, reader_sha256: readerSha256(), ...(worlds === undefined ? {} : { belief_identity_hash: worlds.identity_hash }) });
   const identity_hash = damageAwareIdentityHash(identity);
@@ -170,7 +172,7 @@ export function damageAwareActor(options: DamageAwareOptions): DamageAwareActor 
   // Every line this game's reader flagged, in channel order (the belief refuses while any is on record).
   const flagList: PublicFlag[] = [];
   // Probe results by query hash: a pure function of the query on a pin and config, so a memo changes no answer.
-  const view = damageView({ engine, vocabulary, config, v1, mechanics, snapshot, data_class, probe, counts, memo: new Map(), ...(options.assume === undefined ? {} : { assume: options.assume }) });
+  const view = damageView({ engine, vocabulary, config, v1, mechanics, snapshot, data_class, probe, counts, memo: new Map(), engine_targets: v1?.target_convention === "engine", ...(options.assume === undefined ? {} : { assume: options.assume }) });
   const { dex, query, damageOf, combatant, field, ownSlots, assumedFor, statusBlocked, foesOf } = view;
 
   /**

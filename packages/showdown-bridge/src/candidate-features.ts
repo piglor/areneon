@@ -163,6 +163,9 @@ export function candidateFeatures(
   const view = damageView({
     engine, vocabulary: configs.vocabulary, config: configs.config, v1: configs.config, mechanics: configs.mechanics, snapshot,
     data_class: configs.data_class, probe: configs.probe ?? probeMechanics, counts: memo.counts, memo: memo.results,
+    // The engine's choice-location convention (#1180), whatever the assumed-set record says. This changes which foe a row's `target` names
+    // while `feature_set_hash` stays: ticket #1180 decided so because no run, checkpoint or stored record used the rows yet.
+    engine_targets: true,
     ...(configs.assume === undefined ? {} : { assume: configs.assume }),
   });
 

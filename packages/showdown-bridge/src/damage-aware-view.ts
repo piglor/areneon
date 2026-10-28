@@ -77,7 +77,10 @@ export interface Foe {
   mon: PublicMon;
   assumed: AssumedSet;
   fighter: Fighter;
-  /** The foe's location number in a choice (`move 1 1`: 1 is the foe in the last active slot). */
+  /**
+   * The foe's location number in a choice (`move 1 1`). Engine convention (`Pokemon.getAtLoc`): location L is the foe in
+   * active slot L - 1 (location 1 is slot `a`). Legacy convention (`damage-aware@v1` and `@v2`, bug-for-bug, #1180): the reverse.
+   */
   loc: number;
 }
 
@@ -121,6 +124,11 @@ export interface DamageViewOptions {
   snapshot: RulesSnapshot;
   data_class: "synthetic" | "private";
   probe: (context: MechanicsContext, query: ParsedMechanicsQuery) => ProbeOutcome;
+  /**
+   * Which foe a choice location names: true is the pinned engine's convention (`getAtLoc`: location L is the foe in
+   * active slot L - 1); absent or false keeps the legacy reversed numbering that `damage-aware@v1` and `@v2` played (#1180).
+   */
+  engine_targets?: boolean;
   /** Test seam (v1 only): the assumed opponent set of a public Pokemon (default `buildAssumedSet`). */
   assume?: (mon: PublicMon) => AssumedSet;
   counts: ProbeCounts;
@@ -330,7 +338,7 @@ export function damageView(options: DamageViewOptions) {
       const max = maxHpOf(assumed.paste);
       const hp = assumedHp(percent, max, config.hp_rounding);
       const fighter: Fighter = { paste: assumed.paste, hp: hp === max ? null : hp, status: mon.status, boosts: boostsOf(mon), mega: assumed.mega };
-      out.push({ mon, assumed, fighter, loc: letters.length - position });
+      out.push({ mon, assumed, fighter, loc: options.engine_targets === true ? position + 1 : letters.length - position });
     });
     return out;
   }

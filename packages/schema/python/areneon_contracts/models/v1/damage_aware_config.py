@@ -5,7 +5,15 @@ from __future__ import annotations
 
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, RootModel, StrictInt, StrictStr
+from pydantic import (
+    MISSING,
+    BaseModel,
+    ConfigDict,
+    Field,
+    RootModel,
+    StrictInt,
+    StrictStr,
+)
 
 
 class VocabularyOrderRule(
@@ -120,6 +128,10 @@ class DamageAwareConfig(BaseModel):
     format_id: Annotated[StrictStr, Field(pattern="^[a-z0-9]+$")]
     """
     The target format (a format of the rules snapshot) the assumed sets are built for.
+    """
+    target_convention: Literal["engine"] | MISSING = MISSING
+    """
+    Which foe a choice location names (#1180). Absent: the legacy numbering that damage-aware@v1 played, location 1 being the foe in the LAST active slot (the reverse of the engine's; kept bug-for-bug so that record's behaviour and identity stand). "engine": the pinned engine's convention (Pokemon.getAtLoc: location L is the foe in active slot L - 1); a record that says so is damage-aware@v3. A minor change within v1: an older reader refuses such a record.
     """
     assumed_set: AssumedSet
     """
