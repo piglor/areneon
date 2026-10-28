@@ -196,7 +196,14 @@ def progress_files(  # noqa: PLR0912, PLR0915
         (actor, baseline, None) for actor, baseline in BASELINES
     ]
     if request.damage_aware_budget_ms is not None:
-        opponents.append((*DAMAGE, None))
+        version = request.damage_aware_version
+        opponents.append(
+            (
+                "damage-aware" if version == "v1" else f"damage-aware-{version}",
+                f"damage-aware@{version}",
+                None,
+            )
+        )
     if request.previous is not None:
         opponents.append(("previous", "", {}))
     anchors = {a.generation: a for a in request.anchors}
@@ -253,7 +260,7 @@ def progress_files(  # noqa: PLR0912, PLR0915
                     },
                 }
             hashes = []
-            damage = baseline == DAMAGE[1]
+            damage = baseline.startswith("damage-aware@")
             per_game: list[dict[str, int]] = []
             for game in range(count):
                 seat = "p2" if game % 2 == 0 else "p1"

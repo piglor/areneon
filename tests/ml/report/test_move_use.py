@@ -231,15 +231,18 @@ def test_an_unnamed_occupant_is_unresolved() -> None:
     assert used["p1"].unresolved == 2  # slot a unnamed, slot b empty
 
 
-def test_matches_split_candidate_and_opponent_and_mark_the_damage_aware_reference() -> None:
+@pytest.mark.parametrize("baseline", ["damage-aware@v1", "damage-aware@v3"])
+def test_matches_split_candidate_and_opponent_and_mark_the_damage_aware_reference(
+    baseline: str,
+) -> None:
     options = slot_options(A_OPTIONS, B_OPTIONS)
     pick = decision("p1", 2, options, "move 2, move 1")
     other = decision("p2", 2, slot_options(P2_OPTIONS, P2_OPTIONS), "move 1 1, move 1 1")
-    a = game(TURN_1, [*PREVIEW, pick, other], policies=("policy:" + "a" * 64, "damage-aware@v1"))
+    a = game(TURN_1, [*PREVIEW, pick, other], policies=("policy:" + "a" * 64, baseline))
     b = game(
         TURN_1,
         [*PREVIEW, pick, other],
-        policies=("damage-aware@v1", "policy:" + "a" * 64),
+        policies=(baseline, "policy:" + "a" * 64),
         candidate="p2",
         number=1,
     )
@@ -250,7 +253,7 @@ def test_matches_split_candidate_and_opponent_and_mark_the_damage_aware_referenc
     assert match["games"] == 2
     assert match["reference"] is True
     assert match["candidate"]["policy_id"] == "policy:" + "a" * 64
-    assert match["opponent"]["policy_id"] == "damage-aware@v1"
+    assert match["opponent"]["policy_id"] == baseline
     # game 0 (candidate p1) gave the candidate the picks, game 1 (candidate p2) gave them to the
     # opponent: each side has one Protect and one plain move in its two games
     assert counts(match["candidate"], "protection") == (1, 1, 0)

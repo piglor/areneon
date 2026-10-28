@@ -18,7 +18,7 @@ import { UsageError } from "./generation-cli.ts";
 import { damageAwareSetup, type FeatureSetup, featureSetup } from "./league-generation.ts";
 import { PolicyWorkerClient } from "./policy-worker.ts";
 import { EVAL_DATASET_FLAGS, readEvalDataset, withEvalDataset } from "./eval-dataset.ts";
-import { type ProgressMode, type ProgressPool, ProgressError, playProgress, writeProgress, PROGRESS_MODES } from "./progress-evaluation.ts";
+import { type ProgressMode, type ProgressPool, ProgressError, playProgress, writeProgress, PROGRESS_MODES, DAMAGE_AWARE_VERSIONS, type DamageAwareVersion } from "./progress-evaluation.ts";
 import { progressRecordHash } from "./progress-records.ts";
 import { readTrainingRunConfig, runConfigHash, type TrainingRunConfig } from "./training-run-config.ts";
 
@@ -66,12 +66,14 @@ const FLAGS = {
   // The damage-aware baseline as a third scripted opponent (ADR-018 slice 4): given, its two matches are played, and
   // each may take at most this many wall-clock milliseconds or the evaluation fails and commits nothing.
   "damage-aware-budget-ms": { type: "string" },
+  // Which record that baseline plays (#1183): v1 (the default) or v3; v3's matches are damage-aware-v3-<mode>.
+  "damage-aware-version": { type: "string" },
   // The validation split of another verified dataset instead of the run's own (ADR-020 E-17.1): both flags, or none.
   ...EVAL_DATASET_FLAGS,
   // Key the validation pairs and battle seeds by this id instead of the run key (#1177).
   "evaluation-key": { type: "string" },
 } as const;
-const OPTIONAL = new Set<string>(["previous-preview", "previous-battle", "previous-policy-id-sample", "previous-policy-id-argmax", "anchor", "anchor-games", "versus", "versus-dir", "versus-encoder-version", "versus-team-set", "run-games", "ablation-preview", "ablation-random-policy-id", "damage-aware-budget-ms", "eval-dataset-dir", "eval-dataset-hash", "evaluation-key"]);
+const OPTIONAL = new Set<string>(["previous-preview", "previous-battle", "previous-policy-id-sample", "previous-policy-id-argmax", "anchor", "anchor-games", "versus", "versus-dir", "versus-encoder-version", "versus-team-set", "run-games", "ablation-preview", "ablation-random-policy-id", "damage-aware-budget-ms", "damage-aware-version", "eval-dataset-dir", "eval-dataset-hash", "evaluation-key"]);
 const VERSUS = ["versus", "versus-dir", "versus-encoder-version", "versus-team-set", "run-games"] as const;
 const PREVIOUS = ["previous-preview", "previous-battle", "previous-policy-id-sample", "previous-policy-id-argmax"] as const;
 
@@ -176,6 +178,9 @@ export async function runProgressCli(argv: readonly string[], print: (line: stri
   if (ablationParts !== undefined && (ablationParts.length !== 3 || !/^\d+$/.test(ablationParts[0] as string))) throw new UsageError("--ablation-preview must be <generation>,<preview-checkpoint>,<policy-id-argmax>");
   if (ablationParts !== undefined && (anchorSpecs.length > 0 || PREVIOUS.some((name) => values[name] !== undefined))) throw new UsageError("the Preview ablation is played alone: no anchors and no previous-generation flags");
   const damageBudget = values["damage-aware-budget-ms"] === undefined ? undefined : integer("damage-aware-budget-ms", values["damage-aware-budget-ms"], 1);
+  const damageVersion = values["damage-aware-version"] ?? "v1";
+  if (!(DAMAGE_AWARE_VERSIONS as readonly string[]).includes(damageVersion)) throw new UsageError(`--damage-aware-version must be one of ${DAMAGE_AWARE_VERSIONS.join(", ")}`);
+  if (values["damage-aware-version"] !== undefined && damageBudget === undefined) throw new UsageError("--damage-aware-version needs --damage-aware-budget-ms");
   if (damageBudget !== undefined && ablationParts !== undefined) throw new UsageError("the Preview ablation is played alone: no damage-aware matches");
   const versusGiven = VERSUS.filter((name) => values[name] !== undefined);
   if (versusGiven.length !== 0 && versusGiven.length !== VERSUS.length) throw new UsageError(`the cross-run flags go together: ${VERSUS.map((n) => `--${n}`).join(", ")}`);
@@ -278,7 +283,7 @@ export async function runProgressCli(argv: readonly string[], print: (line: stri
               random_policy_id: need("ablation-random-policy-id"),
             },
           }),
-      ...(damageBudget === undefined ? {} : { damage_aware: { setup: damageAwareSetup(engine, config.format_id), match_budget_ms: damageBudget } }),
+      ...(damageBudget === undefined ? {} : { damage_aware: { setup: damageAwareSetup(engine, config.format_id, damageVersion as DamageAwareVersion), version: damageVersion as DamageAwareVersion, match_budget_ms: damageBudget } }),
       ...(values["evaluation-key"] === undefined ? {} : { evaluation_key: values["evaluation-key"] }),
       pool,
       games,

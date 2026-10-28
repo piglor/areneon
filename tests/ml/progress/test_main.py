@@ -512,6 +512,48 @@ def test_the_damage_aware_flags_pass_a_budget_and_refuse_a_zero_or_a_lone_budget
     capsys.readouterr()
 
 
+def test_the_damage_aware_version_flag_plays_v3_and_refuses_a_lone_or_unknown_version(
+    run: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    fake_node(monkeypatch, run)
+    base = ("--generation", "1", "--games", "2", "--record-games", "1")
+    code = main(
+        args(
+            run,
+            *base,
+            "--damage-aware",
+            "--damage-aware-version",
+            "v3",
+            "--progress-dir",
+            str(tmp_path / "a"),
+        )
+    )
+    printed = json.loads(capsys.readouterr().out)
+    assert code == 0
+    assert printed["generations"][0]["damage_aware"] == "played"
+    assert (tmp_path / "a" / "g000001" / "games" / "damage-aware-v3-argmax-0.json").is_file()
+    assert (
+        main(
+            args(run, *base, "--damage-aware-version", "v3", "--progress-dir", str(tmp_path / "b"))
+        )
+        == EXIT_REFUSED
+    )
+    capsys.readouterr()
+    with pytest.raises(SystemExit):
+        main(
+            args(
+                run,
+                *base,
+                "--damage-aware",
+                "--damage-aware-version",
+                "v2",
+                "--progress-dir",
+                str(tmp_path / "c"),
+            )
+        )
+    capsys.readouterr()
+
+
 def test_the_eval_dataset_option_reaches_the_record_and_is_logged_as_a_look(
     run: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
