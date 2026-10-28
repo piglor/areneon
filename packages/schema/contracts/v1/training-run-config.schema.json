@@ -286,6 +286,10 @@
           "description": "Optional (a minor change within v1, ADR-010 erratum A1): the Adam step size per learner update. Absent or constant means learning_rate_micro for every update. Linear: with t the update index from 0, rate(t) = learning_rate_micro + trunc((final_micro - learning_rate_micro) * min(t, generations) / generations) in exact integers, truncating toward zero, so update `generations` and every later one use exactly final_micro. Both roles alike. A config that carries it is a new run.",
           "$ref": "#/$defs/LearningRateSchedule"
         },
+        "entropy_schedule": {
+          "description": "Optional (a minor change within v1, ADR-023 section 3, ADR-010 erratum A6 item 4, #1048): the entropy bonus weight per learner update. Absent or constant means entropy_coef_micro for every update. Linear: with t the policy update index from 0, coef(t) = entropy_coef_micro + trunc((final_micro - entropy_coef_micro) * min(t, generations) / generations) in exact integers, truncating toward zero, so policy update `generations` and every later one use exactly final_micro (the rule of learning_rate_schedule). Both roles alike. With ppo.value_warmup t counts from the first policy update (the update after the warm-up), as the anchor's does, and the warm-up updates report entropy_coef_micro (the policy is frozen and the entropy term does not enter the value-only loss). Absent means no schedule. A config that carries it is a new run.",
+          "$ref": "#/$defs/EntropySchedule"
+        },
         "value_warmup": {
           "description": "Optional (a minor change within v1, ADR-019 section 4, #1111): for a run that declares warm_start, the first `generations` learner updates (generation 1 up to generation `generations`) train the value head only, on the cloned pair's own rollouts, with every other parameter of both networks frozen (the policy heads and the shared trunk stay byte-identical); update `generations` + 1 and every later one is normal PPO. The learning-rate schedule's update index counts the warm-up updates too. Absent means normal PPO from generation 1. A config that carries it is a new run.",
           "type": "object",
@@ -547,6 +551,46 @@
       ],
       "discriminator": {
         "propertyName": "kind"
+      }
+    },
+    "EntropySchedule": {
+      "type": "object",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/ConstantSchedule"
+        },
+        {
+          "$ref": "#/$defs/EntropyLinearSchedule"
+        }
+      ],
+      "discriminator": {
+        "propertyName": "kind"
+      }
+    },
+    "EntropyLinearSchedule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "final_micro",
+        "generations"
+      ],
+      "properties": {
+        "kind": {
+          "const": "linear"
+        },
+        "final_micro": {
+          "description": "The entropy weight from policy update `generations` on, in millionths; 0 switches the bonus off.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10000000
+        },
+        "generations": {
+          "description": "Policy updates over which the weight moves from entropy_coef_micro to final_micro.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000
+        }
       }
     },
     "AnchorSchedule": {
