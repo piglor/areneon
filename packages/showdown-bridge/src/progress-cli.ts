@@ -15,12 +15,12 @@ import { engineDataHash, readEngineData } from "./engine-data.ts";
 import { loadEngine } from "./engine.ts";
 import type { Engine } from "./engine.ts";
 import { UsageError } from "./generation-cli.ts";
-import { damageAwareSetup } from "./league-generation.ts";
+import { damageAwareSetup, type FeatureSetup, featureSetup, GenerationError } from "./league-generation.ts";
 import { PolicyWorkerClient } from "./policy-worker.ts";
 import { EVAL_DATASET_FLAGS, readEvalDataset, withEvalDataset } from "./eval-dataset.ts";
 import { type ProgressMode, type ProgressPool, ProgressError, playProgress, writeProgress, PROGRESS_MODES } from "./progress-evaluation.ts";
 import { progressRecordHash } from "./progress-records.ts";
-import { readTrainingRunConfig, type TrainingRunConfig } from "./training-run-config.ts";
+import { readTrainingRunConfig, runConfigHash, type TrainingRunConfig } from "./training-run-config.ts";
 
 export { UsageError };
 
@@ -116,6 +116,21 @@ export interface FrozenPairClientOptions {
   engineDataHash: string;
   max_line_bytes: number;
   handshake_timeout_ms: number;
+  /** The feature set the pair's checkpoints read (`featureSetup(...).statement`; absent: none): the worker may state exactly this. */
+  features?: FeatureSetup["statement"];
+}
+
+/**
+ * The candidate feature setup of one run config (absent: the pair reads none), failing as a usage error when this
+ * checkout does not compute the hash the config names. Each run's seats are set up from that run's own config.
+ */
+export function pairFeatureSetup(engine: Engine, config: TrainingRunConfig): FeatureSetup | undefined {
+  try {
+    return featureSetup(engine, config);
+  } catch (error) {
+    if (error instanceof GenerationError) throw new UsageError(error.message);
+    throw error;
+  }
 }
 
 /** The policy worker client of one frozen pair, read-only from a run directory's checkpoint store. */
@@ -127,6 +142,7 @@ export function frozenPairClient(o: FrozenPairClientOptions): PolicyWorkerClient
     max_line_bytes: o.max_line_bytes,
     n_parallel: 1, // evaluation never batches (ADR-010 section 2)
     handshake_timeout_ms: o.handshake_timeout_ms,
+    ...(o.features === undefined ? {} : { features: o.features }),
     expect: {
       encoder_version: o.encoderVersion,
       engine_data_hash: o.engineDataHash,
@@ -186,11 +202,16 @@ export async function runProgressCli(argv: readonly string[], print: (line: stri
   const dataFile = need("engine-data");
   const dataHash = engineDataHash(readEngineData(JSON.parse(readFileSync(dataFile, "utf8"))));
   const { max_line_bytes, handshake_timeout_ms } = config.generation;
+  // The candidate features of the run's pair (none: nothing below changes) and, for another run's pair, of ITS config.
+  const features = pairFeatureSetup(engine, config);
+  const versusConfig = values["versus-dir"] === undefined ? undefined : readTrainingRunConfig(JSON.parse(readFileSync(join(values["versus-dir"], "run-config.json"), "utf8")));
+  if (versusConfig !== undefined && versusParts !== undefined && (await runConfigHash(versusConfig)) !== versusParts[1]) throw new UsageError("--versus-dir holds another run config than the --versus run config hash names");
+  const versusFeatures = versusConfig === undefined ? undefined : pairFeatureSetup(engine, versusConfig);
   const preview = need("preview");
   const battle = need("battle");
   // One worker session holds one frozen pair, so the previous generation's pair gets a worker of its own.
-  const workerFor = (pair: { preview: string; battle: string }, runDir: string = need("run-dir"), encoderVersion: string = need("encoder-version")): PolicyWorkerClient =>
-    frozenPairClient({ python: need("worker-python"), runDir, pair, encoderVersion, engineDataFile: dataFile, engineDataHash: dataHash, max_line_bytes, handshake_timeout_ms });
+  const workerFor = (pair: { preview: string; battle: string }, runDir: string = need("run-dir"), encoderVersion: string = need("encoder-version"), setup: FeatureSetup | null = features ?? null): PolicyWorkerClient =>
+    frozenPairClient({ python: need("worker-python"), runDir, pair, encoderVersion, engineDataFile: dataFile, engineDataHash: dataHash, max_line_bytes, handshake_timeout_ms, ...(setup === null ? {} : { features: setup.statement }) });
   const client = workerFor({ preview, battle });
   const previousPair = given.length === 0 ? undefined : { preview: need("previous-preview"), battle: need("previous-battle") };
   let previousClient: PolicyWorkerClient | undefined;
@@ -207,7 +228,7 @@ export async function runProgressCli(argv: readonly string[], print: (line: stri
           checkpoints: { preview: versusParts[3] as string, battle: versusParts[4] as string },
           policy_ids: { sample: versusParts[5] as string, argmax: versusParts[6] as string },
         };
-  const versusClient = versus === undefined ? undefined : workerFor(versus.checkpoints, need("versus-dir"), need("versus-encoder-version"));
+  const versusClient = versus === undefined ? undefined : workerFor(versus.checkpoints, need("versus-dir"), need("versus-encoder-version"), versusFeatures ?? null);
   const versusTeamSet = values["versus-team-set"] === undefined ? [] : readTeamSet(values["versus-team-set"]);
   try {
     previousClient = previousPair === undefined ? undefined : workerFor(previousPair);
@@ -230,6 +251,7 @@ export async function runProgressCli(argv: readonly string[], print: (line: stri
       checkpoints: { preview, battle },
       policy_ids,
       client,
+      ...(features === undefined ? {} : { features: features.configs }),
       ...(previousPair === undefined || previousClient === undefined
         ? {}
         : {
@@ -240,7 +262,7 @@ export async function runProgressCli(argv: readonly string[], print: (line: stri
             },
           }),
       ...(anchor_games === undefined ? {} : { anchors: anchorSpecs.map((spec, index) => ({ ...spec, client: anchorClients[index] as PolicyWorkerClient })), anchor_games }),
-      ...(versus === undefined || versusClient === undefined || run_games === undefined ? {} : { versus: { ...versus, client: versusClient }, run_games }),
+      ...(versus === undefined || versusClient === undefined || run_games === undefined ? {} : { versus: { ...versus, client: versusClient, ...(versusFeatures === undefined ? {} : { features: versusFeatures.configs }) }, run_games }),
       ...(ablationParts === undefined || ablationClient === undefined
         ? {}
         : {

@@ -13,6 +13,7 @@
 // Exit 0 ok, 1 a refusal or failure, 2 a usage error.
 
 import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { parseArgs } from "node:util";
 import { type Json, jcs } from "./canonical-json.ts";
 import { engineDataHash, readEngineData } from "./engine-data.ts";
@@ -21,7 +22,7 @@ import { loadEngine } from "./engine.ts";
 import { resolveFormat } from "./formats.ts";
 import { damageAwareSetup } from "./league-generation.ts";
 import { assertGuardedChild, OwnerSessionError } from "./owner-session.ts";
-import { frozenPairClient, type FrozenPairClientOptions } from "./progress-cli.ts";
+import { frozenPairClient, type FrozenPairClientOptions, pairFeatureSetup } from "./progress-cli.ts";
 import type { PolicyClient } from "./policy-worker.ts";
 import type { ProgressPool } from "./progress-evaluation.ts";
 import { pairsAvailable, type PrivateTestTeam, playPrivateTest } from "./private-test.ts";
@@ -252,14 +253,23 @@ async function run(argv: readonly string[], print: (line: string) => void, sourc
   const dataFile = need("engine-data");
   const dataHash = engineDataHash(data);
   const { max_line_bytes, handshake_timeout_ms } = config.generation;
-  const clientFor = (pair: { preview: string; battle: string }, runDir: string, encoderVersion: string): WorkerClient => {
-    const asked = { python: need("worker-python"), runDir, pair, encoderVersion, engineDataFile: dataFile, engineDataHash: dataHash, max_line_bytes, handshake_timeout_ms };
+  // The candidate features of the pair (and of the opponent pair, from its own run config); none: nothing changes.
+  let features: ReturnType<typeof pairFeatureSetup>;
+  let opponentFeatures: ReturnType<typeof pairFeatureSetup>;
+  try {
+    features = pairFeatureSetup(engine, config);
+    if (pairParts !== undefined) opponentFeatures = pairFeatureSetup(engine, readTrainingRunConfig(JSON.parse(readFileSync(join(need("opponent-run-dir"), "run-config.json"), "utf8"))));
+  } catch {
+    throw new PrivateTestRefusal("worker_failed");
+  }
+  const clientFor = (pair: { preview: string; battle: string }, runDir: string, encoderVersion: string, setup: NonNullable<typeof features> | null = features ?? null): WorkerClient => {
+    const asked = { python: need("worker-python"), runDir, pair, encoderVersion, engineDataFile: dataFile, engineDataHash: dataHash, max_line_bytes, handshake_timeout_ms, ...(setup === null ? {} : { features: setup.statement }) };
     return seams.clientFor === undefined ? frozenPairClient(asked) : seams.clientFor(asked);
   };
   const checkpoints = { preview: need("preview"), battle: need("battle") };
   const client = clientFor(checkpoints, need("run-dir"), need("encoder-version"));
   const opponentCheckpoints = pairParts === undefined ? undefined : { preview: pairParts[0] as string, battle: pairParts[1] as string };
-  const opponentClient = opponentCheckpoints === undefined ? undefined : clientFor(opponentCheckpoints, need("opponent-run-dir"), need("opponent-encoder-version"));
+  const opponentClient = opponentCheckpoints === undefined ? undefined : clientFor(opponentCheckpoints, need("opponent-run-dir"), need("opponent-encoder-version"), opponentFeatures ?? null);
   try {
     try {
       await client.start();
@@ -278,9 +288,10 @@ async function run(argv: readonly string[], print: (line: string) => void, sourc
         policy_ids: { sample: need("policy-id-sample"), argmax: need("policy-id-argmax") },
         candidate_data_class: candidateClass,
         client,
+        ...(features === undefined ? {} : { features: features.configs }),
         ...(opponentClient === undefined || opponentCheckpoints === undefined || pairParts === undefined
           ? {}
-          : { opponent_pair: { checkpoints: opponentCheckpoints, policy_ids: { sample: pairParts[2] as string, argmax: pairParts[3] as string }, client: opponentClient } }),
+          : { opponent_pair: { checkpoints: opponentCheckpoints, policy_ids: { sample: pairParts[2] as string, argmax: pairParts[3] as string }, client: opponentClient, ...(opponentFeatures === undefined ? {} : { features: opponentFeatures.configs }) } }),
         ...(damageBudget === undefined ? {} : { damage_aware: { setup: damageAwareSetup(engine, config.format_id), match_budget_ms: damageBudget } }),
         teams: loaded.teams,
         source: loaded.source,

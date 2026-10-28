@@ -18,7 +18,7 @@ from typing import Any
 from areneon_contracts.contracts import ContractError, jcs, sha256_hex, validate
 
 from areneon_ml.learner.config import RunConfig
-from areneon_ml.loop.records import policy_id
+from areneon_ml.loop.records import features_hash, policy_id
 from areneon_ml.progress.seeds import PAIRING, SEED_DERIVATION, progress_game_seed
 
 SCHEMA_V2 = 2
@@ -403,19 +403,31 @@ def _check_run(raw: dict[str, Any], config: RunConfig) -> None:
             "the plan's turn cap or latency budgets differ from the run config's"
         )
     pair = raw["checkpoints"]
+    own_features = features_hash(config)
     for match in raw["matches"]:
         if match["policy_id"] != policy_id(
             candidate_preview_id(match.get("candidate_preview"), pair["preview"]),
             pair["battle"],
             match["mode"],
+            features=own_features,
         ):
             raise ProgressRecordError(
                 f"{match['match_id']}: policy_id is not the frozen pair's in this mode"
             )
         opponent = match["opponent"]
-        if opponent["kind"] in ("previous", "anchor", "run") and opponent["policy_id"] != policy_id(
-            opponent["checkpoints"]["preview"], opponent["checkpoints"]["battle"], match["mode"]
-        ):
+        if opponent["kind"] in ("previous", "anchor", "run") and opponent["policy_id"] not in {
+            policy_id(
+                opponent["checkpoints"]["preview"],
+                opponent["checkpoints"]["battle"],
+                match["mode"],
+                features=named,
+            )
+            # Another run's pair may read a feature set of its own that this record does not
+            # name (the run's config does not carry it): the evaluation checks it against that
+            # run's config (`_check_versus`); here a run pair's id is without features or with
+            # this run's feature set.
+            for named in ({None, own_features} if opponent["kind"] == "run" else {own_features})
+        }:
             raise ProgressRecordError(
                 f"{match['match_id']}: the {opponent['kind']} pair's policy_id "
                 "is not its checkpoints'"

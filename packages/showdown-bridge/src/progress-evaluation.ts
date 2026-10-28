@@ -18,6 +18,7 @@ import { join } from "node:path";
 import { readerSha256 } from "@areneon/public-state";
 import { enumerateCandidates } from "./choices.ts";
 import { type Json, jcs } from "./canonical-json.ts";
+import type { FeatureConfigs } from "./candidate-features.ts";
 import { type DamageAwareActor, damageAwareActor } from "./damage-aware-actor.ts";
 import { damageAwareIdentity, damageAwareIdentityHash, damageAwarePolicyId } from "./damage-aware-identity.ts";
 import type { Engine, PokemonSet } from "./engine.ts";
@@ -26,7 +27,7 @@ import { resolveFormat } from "./formats.ts";
 import { firstLegal } from "./golden.ts";
 import type { DamageAwareSetup } from "./league-generation.ts";
 import { type PolicyClient } from "./policy-worker.ts";
-import { policyGame, type PolicySeat } from "./policy-actor.ts";
+import { type ActorFeatures, policyGame, type PolicySeat } from "./policy-actor.ts";
 import { PROGRESS_PAIRING, PROGRESS_SEED_DERIVATION, progressGameStreams, progressPairs } from "./progress-seed.ts";
 import { type BaselineCounts, omniscientLogHash, progressRecordHash, sumBaselineCounts, tallyRows, type ProgressEvaluationRecordV2, type ProgressGameRecord, readProgressEvaluationRecordV2, readProgressGameRecord } from "./progress-records.ts";
 import { randomLegalActor } from "./random-legal.ts";
@@ -87,6 +88,13 @@ export interface ProgressOptions {
   /** A started worker client with the pair loaded; one query at a time. */
   client: PolicyClient & { beginGame?: () => Promise<void> };
   /**
+   * The candidate features the run's pair reads (`featureSetup(engine, config).configs`; absent: the pair reads none).
+   * The run's own seats (the candidate, the previous generation, the anchors and the ablation's Previews, all made under
+   * this run config) build the rows with the builder `policyActor` uses in training, for a worker that stated the set.
+   * The `policy_ids` must then be the ones with the `features` member (the Python side derives them).
+   */
+  features?: FeatureConfigs;
+  /**
    * The previous generation's frozen pair (G >= 1; absent at G = 0), behind a worker of its own
    * (a worker session holds one pair). Its matches are played sample against sample and argmax
    * against argmax, on the same plan as the baselines'.
@@ -124,6 +132,8 @@ export interface ProgressOptions {
     checkpoints: { preview: string; battle: string };
     policy_ids: Record<ProgressMode, string>;
     client: PolicyClient & { beginGame?: () => Promise<void> };
+    /** The other run's own candidate features (from ITS run config; absent: its pair reads none): each run's seat has its own statement. */
+    features?: FeatureConfigs;
   };
   /** Games in every cross-run match: even, laid out as `games`. Required with `versus`. */
   run_games?: number;
@@ -398,6 +408,8 @@ export async function playProgress(options: ProgressOptions): Promise<ProgressRe
     });
   }
   const { previous } = options;
+  // Rows are built per seat from the seat's own run config; a seat of a pair without the option carries none.
+  const ownFeatures: { features?: ActorFeatures } = options.features === undefined ? {} : { features: { configs: options.features } };
   // The candidates: the generation's own pair, or the three Previews of the ablation (argmax only, against the baselines).
   type Candidate = { prefix: string; client: PolicyClient & { beginGame?: () => Promise<void> }; policy_ids: Record<ProgressMode, string>; random_preview?: true; candidate_preview?: Match["candidate_preview"] };
   const candidates: Candidate[] = [{ prefix: "", client, policy_ids: options.policy_ids }];
@@ -420,7 +432,7 @@ export async function playProgress(options: ProgressOptions): Promise<ProgressRe
     opponents.push({
       id: "previous",
       opponent: (mode) => ({ kind: "previous", policy_id: previous.policy_ids[mode], checkpoints: previous.checkpoints }),
-      seat: (mode) => ({ seat: { client: previous.client, policy_id: previous.policy_ids[mode], sampling: mode } }),
+      seat: (mode) => ({ seat: { client: previous.client, policy_id: previous.policy_ids[mode], sampling: mode, ...ownFeatures } }),
       policies: (mode) => previous.policy_ids[mode],
       begin: async () => {
         await previous.client.beginGame?.();
@@ -432,7 +444,7 @@ export async function playProgress(options: ProgressOptions): Promise<ProgressRe
       id: `anchor-g${anchor.generation}`,
       anchored: true,
       opponent: (mode) => ({ kind: "anchor", generation: anchor.generation, policy_id: anchor.policy_ids[mode], checkpoints: anchor.checkpoints }),
-      seat: (mode) => ({ seat: { client: anchor.client, policy_id: anchor.policy_ids[mode], sampling: mode } }),
+      seat: (mode) => ({ seat: { client: anchor.client, policy_id: anchor.policy_ids[mode], sampling: mode, ...ownFeatures } }),
       policies: (mode) => anchor.policy_ids[mode],
       begin: async () => {
         await anchor.client.beginGame?.();
@@ -444,7 +456,7 @@ export async function playProgress(options: ProgressOptions): Promise<ProgressRe
       id: "run",
       cross: true,
       opponent: (mode) => ({ kind: "run", run_id: versus.run_id, run_config_hash: versus.run_config_hash, generation: versus.generation, policy_id: versus.policy_ids[mode], checkpoints: versus.checkpoints }),
-      seat: (mode) => ({ seat: { client: versus.client, policy_id: versus.policy_ids[mode], sampling: mode } }),
+      seat: (mode) => ({ seat: { client: versus.client, policy_id: versus.policy_ids[mode], sampling: mode, ...(versus.features === undefined ? {} : { features: { configs: versus.features } }) } }),
       policies: (mode) => versus.policy_ids[mode],
       begin: async () => {
         await versus.client.beginGame?.();
@@ -473,7 +485,7 @@ export async function playProgress(options: ProgressOptions): Promise<ProgressRe
         // Teams stay on their seats; the policies swap. Both games of a pair share the pair's battle seed.
         const teams: Record<Player, PokemonSet[]> = { p1: first.sets, p2: second.sets };
         const streams = progressGameStreams(planKey, pair);
-        const seat: PolicySeat = { client: candidateKind.client, policy_id, sampling: mode, ...(candidateKind.random_preview === undefined ? {} : { random_preview: true }) };
+        const seat: PolicySeat = { client: candidateKind.client, policy_id, sampling: mode, ...ownFeatures, ...(candidateKind.random_preview === undefined ? {} : { random_preview: true }) };
         await candidateKind.client.beginGame?.();
         await baseline.begin();
         const opposing = baseline.seat(mode, pair);

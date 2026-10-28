@@ -18,7 +18,7 @@ from typing import Any
 from areneon_contracts.contracts import jcs
 from areneon_ml.learner.config import RunConfig
 from areneon_ml.loop import layout
-from areneon_ml.loop.records import policy_id
+from areneon_ml.loop.records import features_hash, policy_id
 from areneon_ml.progress.records import (
     RANDOM_PREVIEW_POLICY,
     log_hash,
@@ -140,7 +140,7 @@ def add_ablation(  # noqa: PLR0913, PLR0917
         ),
     }
     for variant, (preview_id, candidate_preview) in previews.items():
-        mine = policy_id(preview_id, request.battle, "argmax")
+        mine = policy_id(preview_id, request.battle, "argmax", features=features_hash(config))
         for actor, baseline in BASELINES:
             match_id = f"preview-{variant}-{actor}-argmax"
             hashes = []
@@ -210,7 +210,7 @@ def progress_files(  # noqa: PLR0912, PLR0915
     for _actor, baseline, previous in opponents:
         for mode in MODES:
             match_id = f"{_actor}-{mode}"
-            pair = policy_id(request.preview, request.battle, mode)
+            pair = policy_id(request.preview, request.battle, mode, features=features_hash(config))
             other = baseline
             opponent: dict[str, Any] = {"kind": "baseline", "policy_id": baseline}
             count = request.anchor_games if previous and "anchor" in previous else games
@@ -228,7 +228,9 @@ def progress_files(  # noqa: PLR0912, PLR0915
                 }
             elif previous is not None and "anchor" in previous:
                 found_anchor = anchors[previous["anchor"]]
-                other = policy_id(found_anchor.preview, found_anchor.battle, mode)
+                other = policy_id(
+                    found_anchor.preview, found_anchor.battle, mode, features=features_hash(config)
+                )
                 opponent = {
                     "kind": "anchor",
                     "generation": found_anchor.generation,
@@ -236,7 +238,12 @@ def progress_files(  # noqa: PLR0912, PLR0915
                     "checkpoints": {"preview": found_anchor.preview, "battle": found_anchor.battle},
                 }
             elif previous is not None and request.previous is not None:
-                other = policy_id(request.previous.preview, request.previous.battle, mode)
+                other = policy_id(
+                    request.previous.preview,
+                    request.previous.battle,
+                    mode,
+                    features=features_hash(config),
+                )
                 opponent = {
                     "kind": "previous",
                     "policy_id": other,
