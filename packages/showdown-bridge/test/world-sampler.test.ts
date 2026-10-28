@@ -75,7 +75,7 @@ interface Plan {
   /** What the draw of index j does: a world, a refusal code thrown like the model's, or an error. */
   draw: (j: number) => { world: WorldLike; redraws: number } | { throws: unknown };
 }
-const port = (plan: Plan, extra: Partial<WorldSamplePort> = {}, opened: (input: { opponent: PublicSide; flags: readonly PublicFlag[] }) => WorldSourceResult | null = () => null): WorldSamplePort & { drawn: number[] } => {
+const port = (plan: Plan, extra: Partial<WorldSamplePort> = {}, opened: (input: { opponent: PublicSide; flags: readonly PublicFlag[]; trapping?: TrappingCheckPort | null }) => WorldSourceResult | null = () => null): WorldSamplePort & { drawn: number[] } => {
   const drawn: number[] = [];
   const source: WorldSource = {
     draw(_stream, index) {
