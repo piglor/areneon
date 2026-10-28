@@ -831,6 +831,11 @@ var ArReplay = (function () {
         // other than Frisk, which shows the target's own item. Sticky, as the Pokemon's own item is no longer known.
         var origin = line.tags.from;
         if (origin !== undefined && toId(origin) !== "abilityfrisk") { m.item_received = true; }
+        // Frisk (#1171): `|-item|TARGET|ITEM|[from] ability: Frisk|[of] FRISKER`. The item is the target's; the ability is the
+        // Frisk holder's, who is named by `[of]` (the engine's `this.add('-item', target, ..., '[of] ' + pokemon)`).
+        if (origin !== undefined && toId(origin) === "abilityfrisk" && line.tags.of !== undefined) {
+          mon(line.tags.of, line).ability = "frisk";
+        }
       },
       "-enditem": function (line) {
         arity(line, 2, 2);

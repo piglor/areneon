@@ -16,7 +16,7 @@
       "label": "belief matched to the synthetic generator: an upper bound for this evaluation"
     }
   },
-  "belief_identity_hash": "1af5ea2a6e6641ee43a2ba8d42c02ce1cc70e8cb955c546b4f1625e579153a19",
+  "belief_identity_hash": "0588f5ecfae52083d7c81a68f5981933f761a3817c6434bb0a87bde388d3158f",
   "leaf": {
     "kind": "value-head"
   },

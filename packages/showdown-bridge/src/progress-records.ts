@@ -16,6 +16,7 @@ import type { ProgressEvaluationRecord } from "@areneon/schema/types/v1/progress
 import type { ProgressEvaluationRecordV2 } from "@areneon/schema/types/v1/progress-evaluation-record-2.ts";
 import type { BaselineCounts, ProgressGameRecord, SearchCounts } from "@areneon/schema/types/v1/progress-game-record.ts";
 import { type Json, jcs } from "./canonical-json.ts";
+import { matchSuffix } from "./progress-modes.ts";
 import { progressGameStreams } from "./progress-seed.ts";
 import { teamHash } from "./team-class.ts";
 import type { PokemonSet } from "./engine.ts";
@@ -239,6 +240,16 @@ export function readProgressEvaluationRecordV2(value: unknown): ProgressEvaluati
     const name = searched ? match.match_id.slice("search-".length) : match.match_id;
     if (searched !== match.match_id.startsWith("search-")) fail(`${match.match_id}: a match is named search-<opponent>-<mode> exactly when it carries search counts`);
     checkSearchOfMatch(match, rows, searchIdentities);
+    // An extra play mode (ADR-023 section 1, #1044): a sample at a declared temperature and/or threshold, against a scripted
+    // baseline or another run's pair (both sides in the mode), named <opponent>-sample[-t<ppm>][-th<ppm>].
+    const declared = match.temperature_ppm !== undefined || match.truncation !== undefined;
+    const suffix = matchSuffix({ ...(match.temperature_ppm === undefined ? {} : { temperature_ppm: match.temperature_ppm }), ...(match.truncation === undefined ? {} : { truncation: match.truncation }) });
+    if (declared) {
+      if (match.mode !== "sample") fail(`${match.match_id}: a temperature or a truncation applies to a sample match only`);
+      if (match.opponent.kind !== "baseline" && match.opponent.kind !== "run") fail(`${match.match_id}: an extra play mode is played against a scripted baseline or another run's pair`);
+      if (searched || match.candidate_preview !== undefined) fail(`${match.match_id}: an extra play mode is not a search or ablation match`);
+      if (!name.endsWith(`-sample${suffix}`)) fail(`${match.match_id}: a match with play settings is named <opponent>-sample[-t<ppm>][-th<ppm>]`);
+    } else if (/-sample-(?:t|th)\d+(?:-th\d+)?$/.test(name)) fail(`${match.match_id}: a match named for play settings carries them`);
     const preview = match.candidate_preview;
     if (preview !== undefined) {
       // A Preview ablation match (ticket #940): a baseline opponent, named preview-<variant>-<baseline>-<mode>.
@@ -251,7 +262,7 @@ export function readProgressEvaluationRecordV2(value: unknown): ProgressEvaluati
     const anchor = match.opponent.kind === "anchor" ? match.opponent : undefined;
     if (anchor !== undefined && (anchor.generation >= record.generation || name !== `anchor-g${anchor.generation}-${match.mode}`)) fail(`${match.match_id}: an anchor match is named anchor-g<generation>-<mode> and plays an earlier generation`);
     const cross = match.opponent.kind === "run" ? match.opponent : undefined;
-    if (cross !== undefined && (cross.run_id === record.run_id || name !== `run-${match.mode}`)) fail(`${match.match_id}: a cross-run match is named run-<mode> and plays another run's pair`);
+    if (cross !== undefined && (cross.run_id === record.run_id || name !== `run-${match.mode}${suffix}`)) fail(`${match.match_id}: a cross-run match is named run-<mode> and plays another run's pair`);
     const expectedGames = cross !== undefined ? (runGames as number) : anchor !== undefined ? (anchorGames as number) : plan.games_per_match;
     if (match.games !== expectedGames) fail(`${match.match_id}: games must equal ${cross !== undefined ? "plan.run_games_per_match" : anchor === undefined ? "plan.games_per_match" : "plan.anchor_games_per_match"}`);
     if (match.wins + match.ties + match.losses !== match.games) fail(`${match.match_id}: wins + ties + losses must equal games`);

@@ -29,6 +29,7 @@ import type { DamageAwareSetup } from "./league-generation.ts";
 import type { PlaySettings } from "./policy-protocol.ts";
 import { type PolicyClient } from "./policy-worker.ts";
 import { type ActorFeatures, policyGame, type PolicySeat } from "./policy-actor.ts";
+import { type ExtraPlay, matchSuffix } from "./progress-modes.ts";
 import { PROGRESS_PAIRING, PROGRESS_SEED_DERIVATION, progressGameStreams, progressPairs } from "./progress-seed.ts";
 import { type BaselineCounts, omniscientLogHash, type SearchCounts, sumSearchCounts, progressRecordHash, sumBaselineCounts, tallyRows, type ProgressEvaluationRecordV2, type ProgressGameRecord, readProgressEvaluationRecordV2, readProgressGameRecord } from "./progress-records.ts";
 import { randomLegalActor } from "./random-legal.ts";
@@ -79,6 +80,19 @@ export interface BaselineReport {
 
 export const PROGRESS_MODES = ["argmax", "sample"] as const;
 export type ProgressMode = (typeof PROGRESS_MODES)[number];
+
+/**
+ * An extra play mode (ADR-023 section 1, #1044): a sample at a declared temperature and/or probability threshold, played beside
+ * argmax and plain sample against the scripted baselines and, head to head, another run's pair, BOTH SIDES in the mode. The
+ * policy ids are the Python side's (a hash over the pair, the mode and the settings).
+ */
+export interface ExtraMode {
+  play: ExtraPlay;
+  /** The candidate's policy id in this mode. */
+  policy_id: string;
+  /** The other run's pair's policy id in this mode; given exactly when `versus` is. */
+  versus_policy_id?: string;
+}
 
 /** A progress evaluation that cannot be made: a refusal, or a harness incident. */
 export class ProgressError extends Error {
@@ -147,6 +161,12 @@ export interface ProgressOptions {
   };
   /** Games in every cross-run match: even, laid out as `games`. Required with `versus`. */
   run_games?: number;
+  /**
+   * Extra play modes (#1044), each once: matches `<opponent>-sample-t<ppm>[-th<ppm>]` against every scripted baseline and, with
+   * `versus`, `run-sample-t<ppm>[-th<ppm>]` with both sides in the mode. Anchor and previous-generation matches keep their two modes;
+   * refused with the search candidate and the Preview ablation. Absent: today's matches and bytes.
+   */
+  extra_modes?: readonly ExtraMode[];
   /**
    * A declared evaluation key (#1177): replaces `config.seeds.run_key` in `progress-pairing/1` and `progress-seed/1`
    * (pairs, battle seeds, baseline streams) for every match, so another run evaluated with the same key plays the
@@ -412,14 +432,33 @@ export async function playProgress(options: ProgressOptions): Promise<ProgressRe
   const game_ms: Record<string, { mean: number; max: number }> = {};
   const clock = options.damage_aware?.clock ?? (() => performance.now());
   type Seat = { seat: PolicySeat | Actor; report?: () => BaselineReport; control?: () => SearchCounts };
-  type Opponent = { id: string; anchored?: true; cross?: true; budget_ms?: number; opponent: (mode: ProgressMode) => Match["opponent"]; seat: (mode: ProgressMode, game: number) => Seat; policies: (mode: ProgressMode) => string; begin: () => Promise<void> };
+  type Opponent = {
+    id: string;
+    anchored?: true;
+    cross?: true;
+    /** Played in the extra modes too (the scripted baselines and another run's pair). */
+    extras?: true;
+    budget_ms?: number;
+    opponent: (mode: ProgressMode, extra?: ExtraMode) => Match["opponent"];
+    seat: (mode: ProgressMode, game: number, extra?: ExtraMode) => Seat;
+    policies: (mode: ProgressMode, extra?: ExtraMode) => string;
+    begin: () => Promise<void>;
+  };
   const opponents: Opponent[] = PROGRESS_BASELINES.map((baseline) => ({
     id: baseline.actor,
+    extras: true,
     opponent: () => ({ kind: "baseline", policy_id: baseline.policy_id }),
     seat: (_mode, game) => ({ seat: guardActor(baseline.actor === "actor-rule" ? firstLegal : randomLegalActor(progressGameStreams(planKey, game).baseline_seed), { role: "scripted", latency_budget: budget }) }),
     policies: () => baseline.policy_id,
     begin: () => Promise.resolve(),
   }));
+  const extraModes = options.extra_modes ?? [];
+  if (extraModes.length > 0) {
+    if (ablation !== undefined || options.search !== undefined) throw new ProgressError("extra play modes are not played with the Preview ablation or the search candidate");
+    const names = extraModes.map((extra) => matchSuffix(extra.play));
+    if (names.some((name) => name === "") || new Set(names).size !== names.length) throw new ProgressError("an extra play mode sets a temperature or a threshold, and is given once");
+    if (extraModes.some((extra) => (extra.versus_policy_id === undefined) === (versus !== undefined))) throw new ProgressError("an extra mode names the other run's policy id exactly when another run's pair is played");
+  }
   const damage = options.damage_aware;
   if (damage !== undefined) {
     if (ablation !== undefined) throw new ProgressError("the Preview ablation plays random-legal and actor-rule only: no damage-aware matches");
@@ -431,6 +470,7 @@ export async function playProgress(options: ProgressOptions): Promise<ProgressRe
     const baseline = damageAwareBaseline({ engine, setup: damage.setup, manifest, data_class: "synthetic", budget, policy_id: damagePolicy });
     opponents.push({
       id: damageAwareMatchPrefix(damageVersion),
+      extras: true,
       budget_ms: damage.match_budget_ms,
       opponent: () => ({ kind: "baseline", policy_id: damagePolicy }),
       // A fresh actor per game: it keeps the reader's state, the game's memo and its counts.
@@ -507,12 +547,15 @@ export async function playProgress(options: ProgressOptions): Promise<ProgressRe
     });
   }
   if (versus !== undefined) {
+    const versusId = (mode: ProgressMode, extra?: ExtraMode): string => (extra === undefined ? versus.policy_ids[mode] : (extra.versus_policy_id as string));
     opponents.push({
       id: "run",
       cross: true,
-      opponent: (mode) => ({ kind: "run", run_id: versus.run_id, run_config_hash: versus.run_config_hash, generation: versus.generation, policy_id: versus.policy_ids[mode], checkpoints: versus.checkpoints }),
-      seat: (mode) => ({ seat: { client: versus.client, policy_id: versus.policy_ids[mode], sampling: mode, ...(versus.features === undefined ? {} : { features: { configs: versus.features } }) } }),
-      policies: (mode) => versus.policy_ids[mode],
+      extras: true,
+      opponent: (mode, extra) => ({ kind: "run", run_id: versus.run_id, run_config_hash: versus.run_config_hash, generation: versus.generation, policy_id: versusId(mode, extra), checkpoints: versus.checkpoints }),
+      // Both sides play the extra mode: the other run's pair samples at the same temperature and threshold.
+      seat: (mode, _game, extra) => ({ seat: { client: versus.client, policy_id: versusId(mode, extra), sampling: mode, ...(extra === undefined ? {} : { play: extra.play }), ...(versus.features === undefined ? {} : { features: { configs: versus.features } }) } }),
+      policies: (mode, extra) => versusId(mode, extra),
       begin: async () => {
         await versus.client.beginGame?.();
       },
@@ -523,10 +566,12 @@ export async function playProgress(options: ProgressOptions): Promise<ProgressRe
     // Every match plays each pair from both seats (E2); an anchor match may be longer than the others.
     const count = baseline.cross === true ? runGames : baseline.anchored === true ? anchorGames : games;
     const recorded = Math.min(record_games, count);
-    for (const mode of modes) {
-      const match_id = `${candidateKind.prefix}${baseline.id}-${mode}`;
-      const policy_id = candidateKind.policy_ids[mode];
-      const opponent_policy = baseline.policies(mode);
+    // The plain modes, then (against the opponents that take them) each extra mode: a sample with declared play settings.
+    const runs: { mode: ProgressMode; extra?: ExtraMode }[] = [...modes.map((mode) => ({ mode })), ...(baseline.extras === true ? extraModes.map((extra) => ({ mode: "sample" as const, extra })) : [])];
+    for (const { mode, extra } of runs) {
+      const match_id = `${candidateKind.prefix}${baseline.id}-${mode}${extra === undefined ? "" : matchSuffix(extra.play)}`;
+      const policy_id = extra?.policy_id ?? candidateKind.policy_ids[mode];
+      const opponent_policy = baseline.policies(mode, extra);
       const matchRows: Row[] = [];
       const hashes: string[] = [];
       const reports: BaselineReport[] = [];
@@ -546,10 +591,10 @@ export async function playProgress(options: ProgressOptions): Promise<ProgressRe
         const seat: PolicySeat =
           candidateKind.search !== undefined && search !== undefined
             ? searchSeat({ setup: search.setup, client: candidateKind.client as PolicyClient & Parameters<typeof searchSeat>[0]["client"], policy_id, identity_hash: candidateKind.search.identity_hash, mode, ...(search.play === undefined ? {} : { play: search.play }), onActor: (made) => (searcher = made) })
-            : { client: candidateKind.client, policy_id, sampling: mode, ...ownFeatures, ...(candidateKind.random_preview === undefined ? {} : { random_preview: true }) };
+            : { client: candidateKind.client, policy_id, sampling: mode, ...(extra === undefined ? {} : { play: extra.play }), ...ownFeatures, ...(candidateKind.random_preview === undefined ? {} : { random_preview: true }) };
         await candidateKind.client.beginGame?.();
         await baseline.begin();
-        const opposing = baseline.seat(mode, pair);
+        const opposing = baseline.seat(mode, pair, extra);
         const played = await policyGame({
           engine,
           formatId: config.format_id,
@@ -604,7 +649,7 @@ export async function playProgress(options: ProgressOptions): Promise<ProgressRe
       rowsByMatch.set(match_id, matchRows);
       wall_ms[match_id] = Math.round(clock() - started);
       game_ms[match_id] = { mean: Math.round(gameMs.reduce((a, b) => a + b, 0) / gameMs.length), max: Math.round(Math.max(...gameMs)) };
-      matches.push(summarise(match_id, policy_id, baseline.opponent(mode), mode, matchRows, hashes, config.generation.max_turns, candidateKind.candidate_preview, reports, candidateKind.search === undefined ? undefined : { identity_hash: candidateKind.search.identity_hash, searches, controls }));
+      matches.push(summarise(match_id, policy_id, baseline.opponent(mode, extra), mode, matchRows, hashes, config.generation.max_turns, candidateKind.candidate_preview, reports, candidateKind.search === undefined ? undefined : { identity_hash: candidateKind.search.identity_hash, searches, controls }, extra?.play));
     }
     }
   }
@@ -643,12 +688,14 @@ export async function playProgress(options: ProgressOptions): Promise<ProgressRe
   return { record, game_records: stored, wall_ms, game_ms };
 }
 
-function summarise(match_id: string, policy_id: string, opponent: Match["opponent"], mode: ProgressMode, rows: readonly Row[], hashes: string[], maxTurns: number, candidate_preview: Match["candidate_preview"] | undefined, reports: readonly BaselineReport[], search?: { identity_hash: string; searches: readonly SearchCounts[]; controls: readonly SearchCounts[] }): Match {
+function summarise(match_id: string, policy_id: string, opponent: Match["opponent"], mode: ProgressMode, rows: readonly Row[], hashes: string[], maxTurns: number, candidate_preview: Match["candidate_preview"] | undefined, reports: readonly BaselineReport[], search?: { identity_hash: string; searches: readonly SearchCounts[]; controls: readonly SearchCounts[] }, play?: ExtraPlay): Match {
   return {
     match_id,
     policy_id,
     opponent,
     mode,
+    ...(play?.temperature_ppm === undefined ? {} : { temperature_ppm: play.temperature_ppm }),
+    ...(play?.truncation === undefined ? {} : { truncation: play.truncation }),
     ...(candidate_preview === undefined ? {} : { candidate_preview }),
     games: rows.length,
     ...tallyRows(rows, maxTurns),
