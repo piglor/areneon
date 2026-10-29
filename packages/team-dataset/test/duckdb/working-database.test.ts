@@ -158,6 +158,8 @@ describe("the teams command line, other paths", () => {
     expect(await runTeamsCli([...common, "--out", out], quiet({ DUCKDB_BIN: fakeBinary }, runner))).toBe(0);
     expect(await runTeamsCli([...common, "--out", join(dir(), "pinned.duckdb"), "--require-pinned"], quiet({ DUCKDB_BIN: fakeBinary }, runner))).toBe(1);
     expect(await runTeamsCli([...common, "--out", join(dir(), "rows.duckdb"), "--shard-rows", "0"], quiet({ DUCKDB_BIN: fakeBinary }, runner))).toBe(2);
+    // a snapshot.json beside its shards, no --shards, no --dataset: the merged strata of the fixtures cannot be verified without the manifest
+    expect(await runTeamsCli(["duckdb", "--snapshot", join(snapshotDir, "snapshot.json"), "--out", join(dir(), "nodataset.duckdb"), "--shard-rows", "50"], quiet({ DUCKDB_BIN: fakeBinary }, runner))).toBe(1);
     const broken = dir();
     mkdirSync(broken, { recursive: true });
     writeFileSync(join(broken, "snapshot.json"), "{");

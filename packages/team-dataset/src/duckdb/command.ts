@@ -80,6 +80,10 @@ async function duckdb(values: Values, io: TeamsIo): Promise<void> {
   io.out(JSON.stringify({ database: result.database, teams: result.teams, sets: result.sets, moves: result.moves }));
 }
 
+/** Errors that mean the inputs are wrong: exit 2. */
+const INPUT_ERRORS = new Set(["UsageError", "SyntaxError", "TeamRecordError", "EngineError"]);
+const INPUT_CODES = new Set(["ENOENT", "ENOTDIR"]);
+
 /** Run the command line; returns the exit code. */
 export async function runTeamsCli(argv: readonly string[], io: TeamsIo): Promise<number> {
   try {
@@ -93,9 +97,9 @@ export async function runTeamsCli(argv: readonly string[], io: TeamsIo): Promise
       io.err(`refused: ${error.message}`);
       return 1;
     }
-    const code = (error as { code?: unknown }).code;
-    const input = error instanceof UsageError || error instanceof SyntaxError || (typeof code === "string" && (code === "ENOENT" || code === "ENOTDIR" || code.startsWith("ERR_PARSE_ARGS")));
-    if (!input && !(error instanceof Error && /^(TeamRecordError|EngineError)$/.test(error.name))) throw error;
+    const code = String((error as { code?: unknown }).code);
+    const input = INPUT_ERRORS.has((error as Error).name) || INPUT_CODES.has(code) || code.startsWith("ERR_PARSE_ARGS");
+    if (!input) throw error;
     io.err(`${error instanceof UsageError ? "usage" : "error"}: ${(error as Error).message}`);
     return 2;
   }
