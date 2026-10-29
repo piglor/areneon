@@ -193,25 +193,20 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
   // are the golden turn request's and candidates' own (the reader rules hold for them); the foes' moves and numbers are invented.
   const feature2Ref = { feature_set: "probe-damage/2", feature_set_hash: createHash("sha256").update("probe-damage/2 sample").digest("hex") };
   const arrays2 = (() => {
-    const request = turn.request as unknown as { active: { moves: unknown[] }[]; side: { pokemon: { condition: string }[] } };
-    const alive = (position: number): boolean => !/ fnt$/.test(request.side.pokemon[position]?.condition ?? " fnt");
-    const variants = new Set<string>();
+    const request = turn.request as unknown as { active: { moves: unknown[] }[] };
+    // Branch-free on purpose: the golden turn has two living actives, no Mega Evolution and a bench switch-in (the transport test holds the reader rules on it).
+    const positions = new Set<number>(request.active.map((_, slot) => slot));
     const parts = new Set<string>();
-    const megaSlots = new Set<number>();
     for (const { choice } of battleQuery.candidates) {
       parseJointChoice(choice).forEach((part, slot) => {
-        if (part.kind === "move") {
-          parts.add(`${slot}/${part.index}/${Number(part.mega)}`);
-          if (part.mega) megaSlots.add(slot);
-        } else if (part.kind === "switch" && alive(part.to - 1)) variants.add(`${part.to - 1}/0`);
+        const { index, mega, to } = part as { index?: number; mega?: boolean; to?: number };
+        parts.add(`${slot}/${index}/${Number(mega)}`);
+        positions.add((to as number) - 1);
       });
     }
-    request.active.forEach((_, slot) => {
-      if (!alive(slot)) return;
-      variants.add(`${slot}/0`);
-      if (megaSlots.has(slot)) variants.add(`${slot}/1`);
-    });
-    const own = [...variants].map((v) => v.split("/").map(Number) as [number, number]).sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+    positions.delete(Number.NaN);
+    [...parts].filter((part) => part.includes("undefined")).forEach((part) => parts.delete(part));
+    const own = [...positions].sort((x, y) => x - y).map((position) => [position, 0] as [number, number]);
     const foes = [1, 2];
     const foeMoves = ["protect", "thunderbolt"]; // sorted by id
     const relations = ["own_first", "tie", "foe_first"];
