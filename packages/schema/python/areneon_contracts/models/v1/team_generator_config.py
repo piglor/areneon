@@ -5,7 +5,15 @@ from __future__ import annotations
 
 from typing import Annotated, Literal
 
-from pydantic import MISSING, BaseModel, ConfigDict, Field, StrictInt, StrictStr
+from pydantic import (
+    MISSING,
+    BaseModel,
+    ConfigDict,
+    Field,
+    RootModel,
+    StrictInt,
+    StrictStr,
+)
 
 
 class ItemWeight(BaseModel):
@@ -26,6 +34,56 @@ class ItemWeight(BaseModel):
     """
     The weight.
     """
+
+
+class UniformComponent(BaseModel):
+    """
+    The uniform proposal (ADR-013 section 2).
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    kind: Literal["uniform"]
+    share_permille: Annotated[StrictInt, Field(ge=1, le=1000)]
+    """
+    The component's share of the draws, in thousandths.
+    """
+
+
+class RoleSetsComponent(BaseModel):
+    """
+    Teams from the engine's role sets (ADR-020 section 3): a species uniform over the table's entries, a role uniform among its sets, moves from the role's pool, an ability from the role's list.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    kind: Literal["role_sets"]
+    share_permille: Annotated[StrictInt, Field(ge=1, le=1000)]
+    """
+    The component's share of the draws, in thousandths.
+    """
+    role_set_table_hash: Annotated[StrictStr, Field(pattern="^[0-9a-f]{64}$")]
+    """
+    The role-set table hash the draws read.
+    """
+
+
+class Components(RootModel[UniformComponent | RoleSetsComponent]):
+    root: Annotated[UniformComponent | RoleSetsComponent, Field(discriminator="kind")]
+
+
+class Proposal(BaseModel):
+    """
+    Optional (a minor change within v1): the proposal is a mixture of components, each drawn with its share (ADR-020 section 2). Absent means the uniform proposal alone, with every byte and hash as before. Components are sorted by kind and unique, the shares are integers in thousandths and sum to 1000, and a role_sets component names the role-set table by hash; the reader enforces the order, the sum and uniqueness. A usage component is not part of this version of the record.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    kind: Literal["mixture"]
+    components: Annotated[list[Components], Field(max_length=2, min_length=1)]
 
 
 class TeamGeneratorConfig(BaseModel):
@@ -114,4 +172,8 @@ class TeamGeneratorConfig(BaseModel):
     sampled_ranges: Annotated[StrictInt, Field(ge=1, le=4096)]
     """
     Above the bound, the second platform recomputes this many ranges.
+    """
+    proposal: Proposal | MISSING = MISSING
+    """
+    Optional (a minor change within v1): the proposal is a mixture of components, each drawn with its share (ADR-020 section 2). Absent means the uniform proposal alone, with every byte and hash as before. Components are sorted by kind and unique, the shares are integers in thousandths and sum to 1000, and a role_sets component names the role-set table by hash; the reader enforces the order, the sum and uniqueness. A usage component is not part of this version of the record.
     """

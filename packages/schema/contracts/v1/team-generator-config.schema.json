@@ -167,6 +167,87 @@
       "type": "integer",
       "minimum": 1,
       "maximum": 4096
+    },
+    "proposal": {
+      "description": "Optional (a minor change within v1): the proposal is a mixture of components, each drawn with its share (ADR-020 section 2). Absent means the uniform proposal alone, with every byte and hash as before. Components are sorted by kind and unique, the shares are integers in thousandths and sum to 1000, and a role_sets component names the role-set table by hash; the reader enforces the order, the sum and uniqueness. A usage component is not part of this version of the record.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "components"
+      ],
+      "properties": {
+        "kind": {
+          "const": "mixture"
+        },
+        "components": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 2,
+          "items": {
+            "type": "object",
+            "oneOf": [
+              {
+                "$ref": "#/$defs/UniformComponent"
+              },
+              {
+                "$ref": "#/$defs/RoleSetsComponent"
+              }
+            ],
+            "discriminator": {
+              "propertyName": "kind"
+            }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "UniformComponent": {
+      "description": "The uniform proposal (ADR-013 section 2).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "share_permille"
+      ],
+      "properties": {
+        "kind": {
+          "const": "uniform"
+        },
+        "share_permille": {
+          "description": "The component's share of the draws, in thousandths.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000
+        }
+      }
+    },
+    "RoleSetsComponent": {
+      "description": "Teams from the engine's role sets (ADR-020 section 3): a species uniform over the table's entries, a role uniform among its sets, moves from the role's pool, an ability from the role's list.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "share_permille",
+        "role_set_table_hash"
+      ],
+      "properties": {
+        "kind": {
+          "const": "role_sets"
+        },
+        "share_permille": {
+          "description": "The component's share of the draws, in thousandths.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000
+        },
+        "role_set_table_hash": {
+          "description": "The role-set table hash the draws read.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
     }
   }
 }

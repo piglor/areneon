@@ -57,6 +57,30 @@ describe("check-team-labels (ADR-013 section 3)", () => {
   });
 });
 
+describe("a role_sets component is checked against the committed role-set table", () => {
+  const mixture = JSON.parse(readFileSync(join(CONFIG_DIR, "generator.mixture-r.json"), "utf8")) as { proposal: { components: { role_set_table_hash?: string }[] } };
+  const rootWith = (name: string, changed: unknown): string => {
+    const root = join(scratch, name);
+    mkdirSync(join(root, FORMAT), { recursive: true });
+    cpSync(join(CONFIG_DIR, "labels.json"), join(root, FORMAT, "labels.json"));
+    cpSync(join(CONFIG_DIR, "generator.json"), join(root, FORMAT, "generator.json"));
+    writeFileSync(join(root, FORMAT, "generator.mixture-r.json"), JSON.stringify(changed));
+    return root;
+  };
+
+  it("names a hash that is not the committed table's", () => {
+    const wrong = structuredClone(mixture);
+    (wrong.proposal.components[0] as { role_set_table_hash: string }).role_set_table_hash = "0".repeat(64);
+    expect(checkTeamConfigs(engine, rootWith("wrong-hash", wrong), golden).join()).toMatch(/generator.mixture-r.json: role_sets component: role_set_table_hash is not the committed table's/);
+  });
+
+  it("finds no table to name when the format has none", () => {
+    // a format directory that has no golden role-set table beside its engine fixtures
+    const root = rootWith("no-table", mixture);
+    expect(checkTeamConfigs(engine, root, golden, join(scratch, "no-fixtures"))).toEqual([`${FORMAT}/generator.mixture-r.json: the role-set table ${FORMAT}/role-sets.json is missing`]);
+  });
+});
+
 describe("the Mega Stones of the committed data (a pin bump that adds a stone fails here)", () => {
   const stones = [...new Set(vocabulary.roster.flatMap((r) => (r.required_item === undefined ? [] : [r.required_item])))].sort();
 
