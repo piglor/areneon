@@ -42,6 +42,7 @@ from areneon_ml.model.candidates import (
 from areneon_ml.model.gamedata import NONE, RESERVED, UNKNOWN, GameData
 from areneon_ml.model.options import (
     CANDIDATE_MATCHUP,
+    CANDIDATE_TARGET,
     Options,
     feature_set,
     is_set,
@@ -58,6 +59,9 @@ GENDERS = (None, "M", "F", "N")
 MAX_SLOT_LETTERS = 3  # triples is the widest gametype the reducer reads
 TARGET_OFFSET = 10
 MATCHUP_TYPES = 2  # types a position shows: a Pokémon has at most two
+BASE_CAND_TOKENS = (
+    2  # the candidate token columns every layout has (actor, switch-in); the target follows
+)
 BASE_CAND_COLUMNS = 5  # the candidate columns every layout has; option columns follow
 SAME_TYPE_NOT = RESERVED  # same_type categories: none, unknown, then these two
 SAME_TYPE_YES = RESERVED + 1
@@ -154,6 +158,7 @@ class Layout:
     field_num: tuple[str, ...]
     cand_cat: tuple[tuple[str, str], ...]
     cand_num: tuple[str, ...] = ()  # numeric columns of a candidate part; only with features
+    cand_tok: tuple[str, ...] = ("actor", "switch_in")  # token columns; candidate_target adds one
 
     @classmethod
     def of(cls, config: EncoderConfig) -> Layout:
@@ -211,6 +216,11 @@ class Layout:
                 *_feature_columns(config),
             ),
             cand_num=_feature_numbers(config),
+            cand_tok=(
+                ("actor", "switch_in", "target")
+                if is_set(config.options, CANDIDATE_TARGET)
+                else ("actor", "switch_in")
+            ),
         )
 
     def as_dict(self) -> dict[str, Any]:
@@ -223,6 +233,10 @@ class Layout:
         }
         if self.cand_num:  # absent without the option, so today's layout bytes stay
             out["cand_num"] = list(self.cand_num)
+        if (
+            len(self.cand_tok) != BASE_CAND_TOKENS
+        ):  # likewise: only candidate_target adds the target column
+            out["cand_tok"] = list(self.cand_tok)
         return out
 
 
@@ -264,6 +278,11 @@ def encoder_version(game: GameData, config: EncoderConfig) -> str:
             "same_type": [SAME_TYPE_NOT, SAME_TYPE_YES],
             "chart_codes": game.chart_codes,
         }
+    if is_set(config.options, CANDIDATE_TARGET):
+        # The token column is in the layout; the location convention is an index constant.
+        body["constants"]["target"] = {
+            "location": "foe in active slot L-1 for L>0; own active slot -L-1 for L<0",
+        }
     if feature_set(config.options) is not None:
         # The set and its hash are in the config; these are the index constants and scales.
         body["constants"]["features"] = {
@@ -297,7 +316,7 @@ class EncodedQuery:
     field_cat: torch.Tensor  # int64 [len(Layout.field_cat)]
     field_num: torch.Tensor  # float32 [len(Layout.field_num)]
     cand_cat: torch.Tensor  # int64 [N, SLOTS, len(Layout.cand_cat)]
-    cand_tok: torch.Tensor  # int64 [N, SLOTS, 2]: acting Pokémon, switch-in
+    cand_tok: torch.Tensor  # int64 [N, SLOTS, len(Layout.cand_tok)]: actor, switch-in, target
     team_tok: torch.Tensor  # int64 [N, max_picks]: picked Pokémon in order (Team Preview)
     pending: torch.Tensor  # float32 [N]
     cand_num: torch.Tensor | None = None  # float32 [N, SLOTS, len(Layout.cand_num)]; with features
@@ -626,6 +645,29 @@ class Encoder:
         same = SAME_TYPE_YES if game.move_type[move] in game.species_types[user] else SAME_TYPE_NOT
         return [*cells, same]
 
+    def _target_token(
+        self, target: int | None, request: _Request, slot: int, state: BattleState
+    ) -> int:
+        """The token of the Pokémon a move's target location names, or -1 for none.
+
+        The engine's ``getAtLoc``: a positive location L is the foe in active slot L - 1, a
+        negative one the own active slot -L - 1 (the user itself, an empty or a fainted slot is
+        none). Untargeted and spread moves carry no location, so they have none.
+        """
+        if target is None:
+            return -1
+        if target > 0:
+            letters = sorted(state.opponent.slots)
+            index = state.opponent.slots[letters[target - 1]] if target <= len(letters) else None
+            if index is None or state.opponent.roster[index].fainted:
+                return -1
+            return len(state.own.roster) + index
+        ally = -target - 1
+        if ally == slot or ally >= len(request.order):
+            return -1
+        token = request.order[ally]
+        return -1 if state.own.roster[token].fainted else token
+
     def _candidate(
         self,
         candidate: Mapping[str, Any],
@@ -639,7 +681,8 @@ class Encoder:
             raise EncodingError(f"a {parsed.kind} candidate in a {kind} query")
         config = self.config
         cat = [[0] * len(self.layout.cand_cat) for _ in range(SLOTS)]
-        tok = [[-1, -1] for _ in range(SLOTS)]
+        tok = [[-1] * len(self.layout.cand_tok) for _ in range(SLOTS)]
+        targeted = len(self.layout.cand_tok) > BASE_CAND_TOKENS
         num: list[list[float]] = [[0.0] * len(self.layout.cand_num) for _ in range(SLOTS)]
         team = [-1] * config.max_picks
         matchup = len(_matchup_columns(config))
@@ -665,6 +708,10 @@ class Encoder:
                 cat[slot][2] = action.index
                 cat[slot][3] = 0 if action.target is None else TARGET_OFFSET + action.target
                 cat[slot][4] = 0 if action.event is None else 1 + EVENTS.index(action.event)
+                if targeted:
+                    tok[slot][BASE_CAND_TOKENS] = self._target_token(
+                        action.target, request, slot, state
+                    )
                 if matchup:
                     cat[slot][BASE_CAND_COLUMNS : BASE_CAND_COLUMNS + matchup] = self._matchup(
                         cat[slot][1], tok[slot][0], request, slot, state
@@ -709,7 +756,7 @@ class Encoder:
                 n, SLOTS, len(self.layout.cand_cat)
             ),
             cand_tok=torch.tensor([c[1] for c in candidates], dtype=torch.int64).reshape(
-                n, SLOTS, 2
+                n, SLOTS, len(self.layout.cand_tok)
             ),
             team_tok=torch.tensor([c[2] for c in candidates], dtype=torch.int64).reshape(
                 n, self.config.max_picks
