@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from dataclasses import replace
-from typing import Any
+from typing import Any, cast
 
 import pytest
 import torch
@@ -52,7 +52,8 @@ def preview_query() -> Any:
 
 def test_only_true_is_a_value_and_the_option_is_a_network_option() -> None:
     assert read_options("network", {FACTORED_PREVIEW: True})
-    for bad in (False, 0, 1, {}):
+    bad_values: list[Any] = [False, 0, 1, {}]
+    for bad in bad_values:
         with pytest.raises(OptionError, match="invalid value"):
             read_options("network", {FACTORED_PREVIEW: bad})
     with pytest.raises(OptionError, match="unknown encoder option"):
@@ -118,7 +119,8 @@ def test_zeroed_terms_leave_exactly_the_other_one() -> None:
         for module in net.place_score:
             if isinstance(module, torch.nn.Linear):
                 module.weight.zero_()
-        net.place_score[2].bias.fill_(0.5)
+        last = cast(torch.nn.Linear, net.place_score[2])
+        last.bias.fill_(0.5)
     encoded = preview_query()
     logits = net(collate([encoded])).logits[0]
     assert torch.allclose(logits, torch.full_like(logits, 0.5 * TINY_ENCODER.max_picks))
