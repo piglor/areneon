@@ -202,6 +202,12 @@ function declare(battle: ProbeBattle, query: SpeedOrderQuery, at: (position: num
         need(combatant.hp <= pokemon.maxhp, "the declared HP exceeds the maximum");
         pokemon.sethp(combatant.hp);
       }
+    }
+  }
+  // The stages are written after every Evolution: a Mega's ability can change the other combatants' stages (Intimidate), and the declared stages are absolute (#1243).
+  for (const [index, combatants] of query.sides.entries()) {
+    for (const [slot, combatant] of combatants.entries()) {
+      const pokemon = battle.sides[index]?.pokemon[slot] as Mon;
       for (const stage of STAGES) pokemon.boosts[stage] = combatant.boosts[stage] as number;
     }
   }

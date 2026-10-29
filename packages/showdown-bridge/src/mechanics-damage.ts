@@ -169,7 +169,9 @@ function declaredBattle(engine: Engine, scenarioId: string, query: DamageQuery, 
   // The reference path starts the scenario itself every time, so a test comparing the paths also compares the kept start with a fresh one.
   const battle = reference ? asDmg(startScenario(engine, scenarioId, { p1: [attackerSet, partnerOf(attackerSet)], p2: [defenderSet, partnerOf(defenderSet)] })) : startedScenario(engine, scenarioId, attackerSet, defenderSet);
   const attacker = declare(battle, 0, query.attacker);
-  declare(battle, 1, query.defender);
+  const defender = declare(battle, 1, query.defender);
+  // A Mega Evolution can start an ability on the other combatant (Intimidate) after that one's stages were written, so the declared stages are written again, absolute (#1243).
+  for (const [pokemon, declared] of [[attacker, query.attacker], [defender, query.defender]] as const) for (const key of STAT_KEYS) pokemon.boosts[key] = declared.boosts[key];
   const { state } = query;
   // The field is exactly the declared one: a weather or terrain a switch-in set is cleared first.
   battle.field.clearWeather();

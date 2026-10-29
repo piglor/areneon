@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "adapter_format": 1,
+  "adapter_format": 2,
   "data_class": "synthetic",
   "query_hash": "9b41c699cea053865cce425adcaac10d4c61928ee09d6fb851d0f9e5d09e1543",
   "manifest": {

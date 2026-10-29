@@ -208,6 +208,26 @@ describe("declared state replaces what the switch-in effects set", () => {
   });
 });
 
+describe("a declared Mega Evolution leaves the other combatant's declared stages alone (#1243)", () => {
+  const MANECTRIC = "Manectric @ Manectite  \nAbility: Static  \nLevel: 50  \nEVs: 32 HP / 32 SpA / 2 Spe  \nTimid Nature  \n- Thunderbolt  \n- Protect  \n\n";
+  const stagesOf = (attackerAtk: number): { atk: number; ability: string } => {
+    const query = variant((q) => {
+      q.attacker.boosts = { atk: attackerAtk, def: 0, spa: 0, spd: 0, spe: 0 };
+      q.defender.set = MANECTRIC;
+      q.defender.mega = true;
+    });
+    const parsed = readMechanicsQuery(query).query;
+    if (parsed.kind !== "damage") throw new Error("not a damage query");
+    const scenarioId = checkScenario(engine, config);
+    const battle = declaredDamageScenario(engine, scenarioId, parsed, importPaste(engine, parsed.attacker.set)[0] as PokemonSet, importPaste(engine, parsed.defender.set)[0] as PokemonSet) as unknown as { sides: { pokemon: { boosts: { atk: number }; ability: string }[] }[] };
+    return { atk: (battle.sides[0]?.pokemon[0] as { boosts: { atk: number } }).boosts.atk, ability: (battle.sides[1]?.pokemon[0] as { ability: string }).ability };
+  };
+  it("the attacker keeps the declared Attack stage although the evolved defender's ability is Intimidate", () => {
+    expect(stagesOf(0)).toEqual({ atk: 0, ability: "intimidate" });
+    expect(stagesOf(2).atk).toBe(2);
+  });
+});
+
 describe("damage equals HP lost (ADR-016 section 7, slice 3)", () => {
   // The same declared state played as a real, seeded battle: the attacker uses
   // the move, everything else protects or harms only the attacker; the HP the
