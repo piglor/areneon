@@ -8,6 +8,7 @@ import threading
 from collections.abc import Iterator
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -62,9 +63,9 @@ def server() -> Iterator[tuple[Fake, str]]:
     httpd.server_close()
 
 
-def run(base: str, tmp: Path, **kw: object) -> dict[str, object]:
+def run(base: str, tmp: Path, **kw: Any) -> dict[str, object]:
     sleeps: list[float] = []
-    return fetch.ingest(  # type: ignore[arg-type]
+    return fetch.ingest(
         base=base,
         month="2026-09",
         cutoff=1630,
