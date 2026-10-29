@@ -71,6 +71,12 @@ ANCHOR_KEYS = ("anchor_kl", "anchor_beta_micro")  # only when ppo.anchor is set 
 ENTROPY_SCHEDULE_KEY = "entropy_coef_micro"  # only under a linear ppo.entropy_schedule (ADR-023)
 PREVIEW_BOOTSTRAP_KEY = "preview_bootstrap_micro"  # Preview only, when set (A4)
 TEMPERATURE_KEY = "temperature_ppm"  # only for a run that declares generation.play (ADR-023)
+#: Optional keys that are plain integers, with their minimum.
+OPTIONAL_INTEGER_KEYS = (
+    (PREVIEW_BOOTSTRAP_KEY, 0),
+    (ENTROPY_SCHEDULE_KEY, 0),
+    (TEMPERATURE_KEY, 1),
+)
 VALUE_KEYS = ("explained_variance", "value_calibration")  # value-head diagnostics (ADR-010 A4)
 CALIBRATION_BINS = 10
 CALIBRATION_KEYS = (frozenset({"count", "mean_value", "mean_score"}), frozenset[str]())
@@ -296,12 +302,9 @@ def read_train_report(raw: object) -> TrainFacts:
             stops[role] = (integer(values["epochs_run"], f"{role} epochs_run", 1), fired)
         if VALUE_WARMUP_KEY in values and values[VALUE_WARMUP_KEY] is not True:
             raise ReportError(f"{role} value_warmup is true when present (ADR-019 section 4)")
-        if PREVIEW_BOOTSTRAP_KEY in values:
-            integer(values[PREVIEW_BOOTSTRAP_KEY], f"{role} {PREVIEW_BOOTSTRAP_KEY}")
-        if ENTROPY_SCHEDULE_KEY in values:
-            integer(values[ENTROPY_SCHEDULE_KEY], f"{role} {ENTROPY_SCHEDULE_KEY}")
-        if TEMPERATURE_KEY in values:
-            integer(values[TEMPERATURE_KEY], f"{role} {TEMPERATURE_KEY}", 1)
+        for key, minimum in OPTIONAL_INTEGER_KEYS:
+            if key in values:
+                integer(values[key], f"{role} {key}", minimum)
         if set(VALUE_KEYS) & set(values):
             if set(VALUE_KEYS) - set(values):
                 raise ReportError(f"{role} explained_variance and value_calibration come together")
