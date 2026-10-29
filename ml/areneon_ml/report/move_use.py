@@ -26,7 +26,7 @@ from __future__ import annotations
 
 import json
 import re
-from collections.abc import Sequence
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -318,14 +318,19 @@ def game_use(game: StoredGame, classes: MoveClasses) -> dict[str, SeatUse]:
 # -- a progress generation ----------------------------------------------------------------------
 
 
-def move_use(games: Sequence[StoredGame], classes: MoveClasses) -> dict[str, Any]:
-    """Per match, the candidate's and the opponent's tallies over the stored games."""
-    matches: dict[str, dict[str, Any]] = {}
-    for game in sorted(games, key=lambda g: (g.match_id, g.game)):
-        used = game_use(game, classes)
+class MoveUseTally:
+    """The move-use tallies, summed one stored game at a time (no game is kept)."""
+
+    def __init__(self, classes: MoveClasses) -> None:
+        self.classes = classes
+        self.games = 0
+        self._matches: dict[str, dict[str, Any]] = {}
+
+    def add(self, game: StoredGame) -> None:
+        used = game_use(game, self.classes)
         mine = game.candidate_seat
         other = "p2" if mine == "p1" else "p1"
-        found = matches.setdefault(
+        found = self._matches.setdefault(
             game.match_id,
             {
                 "match_id": game.match_id,
@@ -336,28 +341,40 @@ def move_use(games: Sequence[StoredGame], classes: MoveClasses) -> dict[str, Any
             },
         )
         found["games"] += 1
+        self.games += 1
         for role, seat in (("candidate", mine), ("opponent", other)):
             _add(found[role], used[seat])
-    out = []
-    for found in matches.values():
-        opponent = found["opponent"]
-        out.append(
-            {
-                "match_id": found["match_id"],
-                "games": found["games"],
-                "opponent_kind": found["opponent_kind"],
-                "reference": opponent.policy_id.startswith("damage-aware@"),
-                "candidate": found["candidate"].as_dict(),
-                "opponent": opponent.as_dict(),
-            }
-        )
-    return {
-        "label": LABEL,
-        "class_table_sha256": classes.table_sha256,
-        "engine_data_hash": classes.engine_data_hash,
-        "stored_games": len(games),
-        "matches": out,
-    }
+
+    def result(self) -> dict[str, Any]:
+        out = []
+        for match_id in sorted(self._matches):  # the sums do not depend on the order of the games
+            found = self._matches[match_id]
+            opponent = found["opponent"]
+            out.append(
+                {
+                    "match_id": found["match_id"],
+                    "games": found["games"],
+                    "opponent_kind": found["opponent_kind"],
+                    "reference": opponent.policy_id.startswith("damage-aware@"),
+                    "candidate": found["candidate"].as_dict(),
+                    "opponent": opponent.as_dict(),
+                }
+            )
+        return {
+            "label": LABEL,
+            "class_table_sha256": self.classes.table_sha256,
+            "engine_data_hash": self.classes.engine_data_hash,
+            "stored_games": self.games,
+            "matches": out,
+        }
+
+
+def move_use(games: Iterable[StoredGame], classes: MoveClasses) -> dict[str, Any]:
+    """Per match, the candidate's and the opponent's tallies over the stored games."""
+    tally = MoveUseTally(classes)
+    for game in games:
+        tally.add(game)
+    return tally.result()
 
 
 def _add(total: SeatUse, part: SeatUse) -> None:
@@ -374,17 +391,18 @@ def share_ppm(part: int, whole: int) -> int | None:
     return None if whole == 0 else part * 1_000_000 // whole
 
 
-def read_stored_games(target: Path, record: dict[str, Any]) -> list[StoredGame]:
+def read_stored_games(target: Path, record: dict[str, Any]) -> Iterator[StoredGame]:
     """The stored games of one committed progress generation, tied to its ``progress.json``.
 
     Each file goes through the game record reader (schema, choices among candidates, hashes and
     seed recomputed), must be listed by its match, and must have a game row that names the
     candidate's seat. The replay pages' stricter checks (outcome, the log's end) are not repeated:
-    the counts here need only the decisions, the teams and the log.
+    the counts here need only the decisions, the teams and the log. A generator: one parsed game
+    is alive at a time (a generation stores thousands, each holding its whole log), so a caller
+    folds a game into its tallies and drops it.
     """
     matches = {m["match_id"]: m for m in record["matches"]}
     rows = {(r["match_id"], r["game"]): r for r in record["games"]}
-    out = []
     for path in sorted((target / "games").glob("*.json")):
         try:
             game = read_game_record(layout.read_json(path))
@@ -394,30 +412,28 @@ def read_stored_games(target: Path, record: dict[str, Any]) -> list[StoredGame]:
         row = rows.get((game["match_id"], game["game"]))
         if match is None or row is None or record_hash(game) not in match["game_record_hashes"]:
             raise MoveUseError(f"games/{path.name} is not a game progress.json lists")
-        out.append(
-            StoredGame(
-                game["match_id"],
-                game["game"],
-                row["candidate_seat"],
-                match["opponent"]["kind"],
-                game,
-                decision_points(game),
-            )
+        yield StoredGame(
+            game["match_id"],
+            game["game"],
+            row["candidate_seat"],
+            match["opponent"]["kind"],
+            game,
+            decision_points(game),
         )
-    return out
 
 
 def stored_games(
     progress_dir: Path, generation: int, config: RunConfig, record: dict[str, Any] | None = None
-) -> list[StoredGame]:
-    """The stored games of one committed progress generation, read once for every diagnostic.
+) -> Iterator[StoredGame]:
+    """The stored games of one committed progress generation, one at a time.
 
     The generation's manifest is verified and ``progress.json`` read first (or ``record``, when
-    the caller has already read it). Empty when the generation stores no game.
+    the caller has already read it). Empty when the generation stores no game. The checks run
+    when the iteration starts, before the first game is yielded.
     """
     target = progress_dir / layout.generation_name(generation)
     if not any((target / "games").glob("*.json")):
-        return []
+        return iter(())
     try:
         layout.verify_generation(target, generation)
         if record is None:
@@ -432,17 +448,18 @@ def progress_move_use(
     generation: int,
     config: RunConfig,
     record: dict[str, Any] | None = None,
-    games: Sequence[StoredGame] | None = None,
+    games: Iterable[StoredGame] | None = None,
 ) -> dict[str, Any] | None:
     """The diagnostic of one committed progress generation, or None when there is nothing to read.
 
     None: the generation stores no game, or the repository holds no move-class table for the
-    run's format. ``games`` are the generation's stored games when the caller has read them
-    (``stored_games``); otherwise they are read here.
+    run's format. ``games`` are the generation's stored games when the caller has them
+    (``stored_games``; consumed once); otherwise they are read here, one at a time.
     """
     classes = committed_move_classes(config.format_id)
     if classes is None:
         return None
     if games is None:
         games = stored_games(progress_dir, generation, config, record)
-    return move_use(games, classes) if games else None
+    found = move_use(games, classes)
+    return found if found["stored_games"] else None

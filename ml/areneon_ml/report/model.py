@@ -58,8 +58,8 @@ from areneon_ml.progress.records import (
     read_progress_record,
 )
 from areneon_ml.progress.run import summary_of
-from areneon_ml.report.dominated import config_file, progress_dominated
-from areneon_ml.report.move_use import class_files, progress_move_use, stored_games
+from areneon_ml.report.dominated import config_file, progress_diagnostics
+from areneon_ml.report.move_use import class_files
 
 NOT_RECORDED = "not recorded"
 ROLES = ("battle", "preview")
@@ -530,14 +530,12 @@ def read_progress_root(
             raise ReportError(f"{path.name}: its record is not of the run's committed generation")
         for name in ("progress.json", layout.MANIFEST):
             inputs[f"progress/{path.name}/{name}"] = sha256_hex((path / name).read_bytes())
-        stored = stored_games(root, number, config, record)  # read once for both diagnostics
-        used = progress_move_use(root, number, config, record, stored)
+        used, rates = progress_diagnostics(root, number, config, record)  # one pass, both
         if used is not None:
             for file in class_files(config.format_id):
                 inputs[f"fixtures/showdown/{config.format_id}/{file.name}"] = sha256_hex(
                     file.read_bytes()
                 )
-        rates = progress_dominated(root, number, config, record, stored)
         if rates is not None:
             record_file = config_file(config.format_id)
             inputs[f"config/diagnostics/{config.format_id}/{record_file.name}"] = sha256_hex(

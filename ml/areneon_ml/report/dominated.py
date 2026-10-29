@@ -38,7 +38,7 @@ temporary type change is not tracked.
 from __future__ import annotations
 
 import json
-from collections.abc import Sequence
+from collections.abc import Iterable
 from dataclasses import dataclass
 from fractions import Fraction
 from pathlib import Path
@@ -55,6 +55,7 @@ from areneon_ml.report.move_use import (
     REPO,
     SEATS,
     MoveUseError,
+    MoveUseTally,
     StoredGame,
     _Board,
     _explained,
@@ -62,6 +63,7 @@ from areneon_ml.report.move_use import (
     _Seat,
     _slot_moves,
     class_files,
+    committed_move_classes,
     stored_games,
     to_id,
 )
@@ -450,14 +452,19 @@ def game_dominated(game: StoredGame, table: DominatedTable) -> dict[str, Dominat
 # -- a progress generation --------------------------------------------------------------------
 
 
-def dominated_rates(games: Sequence[StoredGame], table: DominatedTable) -> dict[str, Any]:
-    """Per match, the candidate's and the opponent's tallies over the stored games."""
-    matches: dict[str, dict[str, Any]] = {}
-    for game in sorted(games, key=lambda g: (g.match_id, g.game)):
-        used = game_dominated(game, table)
+class DominatedTally:
+    """The dominated-move tallies, summed one stored game at a time (no game is kept)."""
+
+    def __init__(self, table: DominatedTable) -> None:
+        self.table = table
+        self.games = 0
+        self._matches: dict[str, dict[str, Any]] = {}
+
+    def add(self, game: StoredGame) -> None:
+        used = game_dominated(game, self.table)
         mine = game.candidate_seat
         other = "p2" if mine == "p1" else "p1"
-        found = matches.setdefault(
+        found = self._matches.setdefault(
             game.match_id,
             {
                 "games": 0,
@@ -467,26 +474,37 @@ def dominated_rates(games: Sequence[StoredGame], table: DominatedTable) -> dict[
             },
         )
         found["games"] += 1
+        self.games += 1
         found["candidate"].add(used[mine])
         found["opponent"].add(used[other])
-    return {
-        "label": LABEL,
-        "interval_label": INTERVAL_LABEL,
-        "config_hash": table.config_hash,
-        "engine_data_hash": table.engine_data_hash,
-        "stored_games": len(games),
-        "matches": [
-            {
-                "match_id": match_id,
-                "games": found["games"],
-                "opponent_kind": found["opponent_kind"],
-                "reference": found["opponent"].policy_id.startswith("damage-aware@"),
-                "candidate": found["candidate"].as_dict(),
-                "opponent": found["opponent"].as_dict(),
-            }
-            for match_id, found in matches.items()
-        ],
-    }
+
+    def result(self) -> dict[str, Any]:
+        return {
+            "label": LABEL,
+            "interval_label": INTERVAL_LABEL,
+            "config_hash": self.table.config_hash,
+            "engine_data_hash": self.table.engine_data_hash,
+            "stored_games": self.games,
+            "matches": [
+                {
+                    "match_id": match_id,
+                    "games": found["games"],
+                    "opponent_kind": found["opponent_kind"],
+                    "reference": found["opponent"].policy_id.startswith("damage-aware@"),
+                    "candidate": found["candidate"].as_dict(),
+                    "opponent": found["opponent"].as_dict(),
+                }
+                for match_id, found in sorted(self._matches.items())
+            ],
+        }
+
+
+def dominated_rates(games: Iterable[StoredGame], table: DominatedTable) -> dict[str, Any]:
+    """Per match, the candidate's and the opponent's tallies over the stored games."""
+    tally = DominatedTally(table)
+    for game in games:
+        tally.add(game)
+    return tally.result()
 
 
 def progress_dominated(
@@ -494,16 +512,44 @@ def progress_dominated(
     generation: int,
     config: RunConfig,
     record: dict[str, Any] | None = None,
-    games: Sequence[StoredGame] | None = None,
+    games: Iterable[StoredGame] | None = None,
 ) -> dict[str, Any] | None:
     """The dominated-move rates of one committed progress generation, or None with nothing to read.
 
     None: the generation stores no game, or the repository holds no config record for the run's
-    format. ``games`` are the stored games when the caller has read them (``stored_games``).
+    format. ``games`` are the stored games when the caller has them (``stored_games``; consumed
+    once); otherwise they are read here, one at a time.
     """
     table = committed_dominated_table(config.format_id)
     if table is None:
         return None
     if games is None:
         games = stored_games(progress_dir, generation, config, record)
-    return dominated_rates(games, table) if games else None
+    found = dominated_rates(games, table)
+    return found if found["stored_games"] else None
+
+
+def progress_diagnostics(
+    progress_dir: Path, generation: int, config: RunConfig, record: dict[str, Any] | None = None
+) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+    """The move-use and dominated-move diagnostics of one generation from ONE pass over its games.
+
+    Each stored game is parsed once, folded into both tallies and dropped, so memory does not
+    grow with the number of stored games. Either result is None as in ``progress_move_use`` and
+    ``progress_dominated``; the bytes equal those of the two separate calls.
+    """
+    classes = committed_move_classes(config.format_id)
+    table = committed_dominated_table(config.format_id)
+    if classes is None and table is None:
+        return None, None
+    use = None if classes is None else MoveUseTally(classes)
+    rates = None if table is None else DominatedTally(table)
+    for game in stored_games(progress_dir, generation, config, record):
+        if use is not None:
+            use.add(game)
+        if rates is not None:
+            rates.add(game)
+    return (
+        use.result() if use is not None and use.games else None,
+        rates.result() if rates is not None and rates.games else None,
+    )

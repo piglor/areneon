@@ -632,3 +632,47 @@ def test_a_committed_generation_without_the_asked_modes_is_kept_and_says_so(
     evaluate(a, tmp_path / "q", (T5,))
     kept, _ = evaluate(a, tmp_path / "q", (T5,))
     assert "modes" not in kept
+
+
+def test_a_root_with_stored_games_of_plain_and_extra_modes_re_verifies(
+    runs: tuple[Path, Path], tmp_path: Path
+) -> None:
+    """A match's stored games are its `<match_id>-<k>.json` files, not every file it prefixes."""
+    a, _ = runs
+    root = tmp_path / "p"
+    evaluate(a, root, (T5, TH3, BOTH))
+    target = root / "g000001"
+    names = {p.name for p in (target / "games").glob("*.json")}
+    # `actor-rule-sample-0.json` is a prefix of every extra mode's games: the old glob took them
+    assert {"actor-rule-sample-0.json", "actor-rule-sample-t500000-0.json"} <= names
+    assert {"actor-rule-sample-th30000-0.json", "actor-rule-sample-t500000-th30000-0.json"} <= names
+    config = dataset_config()
+    assert run_module.verify_progress_dir(target, config, a, 1)["generation"] == 1
+
+    # a game filed under another match's name is still refused
+    plain = layout.read_json(target / "games" / "actor-rule-sample-0.json")
+    extra_path = target / "games" / "actor-rule-sample-t500000-0.json"
+    extra = layout.read_json(extra_path)
+    layout.write_json(extra_path, plain)
+    manifest = layout.read_json(target / layout.MANIFEST)
+    manifest["files"] = layout.hash_tree(target)
+    layout.write_json(target / layout.MANIFEST, manifest)
+    with pytest.raises(ProgressError):
+        run_module.verify_progress_dir(target, config, a, 1)
+    layout.write_json(extra_path, extra)
+
+
+def test_a_stored_game_that_belongs_to_no_match_is_refused(
+    runs: tuple[Path, Path], tmp_path: Path
+) -> None:
+    a, _ = runs
+    root = tmp_path / "p"
+    evaluate(a, root, (T5,))
+    target = root / "g000001"
+    source = target / "games" / "actor-rule-sample-0.json"
+    (target / "games" / "actor-rule-sample-t999999-0.json").write_bytes(source.read_bytes())
+    manifest = layout.read_json(target / layout.MANIFEST)
+    manifest["files"] = layout.hash_tree(target)
+    layout.write_json(target / layout.MANIFEST, manifest)
+    with pytest.raises(ProgressError, match="belongs to no match"):
+        run_module.verify_progress_dir(target, dataset_config(), a, 1)
