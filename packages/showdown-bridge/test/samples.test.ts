@@ -72,6 +72,10 @@ describe("the shared contract sample corpus (ADR-008 §2)", () => {
   it("holds every reader-invalid sample under its contract's directory, and each is refused above", () => {
     const readerInvalid = Object.keys(fresh).filter((f) => f.includes("/reader-invalid/"));
     expect(readerInvalid.sort()).toEqual([
+      "v1/belief-config/reader-invalid/damage-unknown-item.json",
+      "v1/belief-config/reader-invalid/damage-unknown-lasting-move.json",
+      "v1/belief-config/reader-invalid/damage-unknown-move.json",
+      "v1/belief-config/reader-invalid/damage-unsorted-moves.json",
       "v1/belief-config/reader-invalid/duplicate-ability.json",
       "v1/belief-config/reader-invalid/unknown-ability.json",
       "v1/belief-config/reader-invalid/unsorted-abilities.json",

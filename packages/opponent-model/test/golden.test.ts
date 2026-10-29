@@ -13,7 +13,15 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { BELIEF_FORMAT, beliefDigest, belief, createSampler, worldsDigest } from "../src/index.ts";
-import { hidingConfig, input } from "./support.ts";
+import { alpha, config, hidingConfig, input, prior } from "./support.ts";
+
+// A stand-in for the bridge's damage probe (ticket #1132): Alpha's candidate with ability a1, item ix and the spread "bold" fails.
+const damageConfig = { ...config, damage_evidence: { max_checked: 100, shown_hp_rounding: "floor" as const, non_isolating: { abilities: [], lasting_moves: [], moves: [], targets: [] }, unmodelled: { abilities: [], items: [] } } };
+const twoSpreads = () => prior((p) => {
+  const spread = (nature: string, weight: number) => ({ nature, stat_points: { hp: 0, atk: 0, def: 0, spa: 0, spd: 0, spe: 0 }, weight });
+  p.species[0] = { id: "alpha", denominator: 1, formes: [alpha((f) => { f.spreads = { denominator: 10, entries: [spread("hardy", 6), spread("bold", 4)], residual: 0, unmapped: 0 }; })] };
+});
+const alphaHit = (all: boolean) => ({ events: [{ id: "h1", slot: 0, role: "defender" as const }], check: (_: unknown, c: { ability: string; item: string | null; nature: string }) => (all ? false : !(c.ability === "a1" && c.item === "ix" && c.nature === "bold")) });
 
 // A stand-in for the bridge's engine check: Alpha with ability a1 would show maybeTrapped to the own active.
 const alphaTrap = (observed: 0 | 1) => ({ observed: [observed] as const, shows: (c: { species: string; ability: string }) => [c.species === "alpha" && c.ability === "a1" ? 1 : 0] as const });
@@ -29,6 +37,8 @@ const cases = {
   "disguise-mixture": () => input([SW("a", "Alp", "Alpha")], { config: hidingConfig }),
   "trapping-seen": () => input([SW("a", "Alp", "Alpha")], { trapping: alphaTrap(1) }),
   "trapping-unseen": () => input([SW("a", "Alp", "Alpha")], { trapping: alphaTrap(0) }),
+  "damage-applied": () => input([SW("a", "Alp", "Alpha")], { prior: twoSpreads(), config: damageConfig, damage: alphaHit(false) }),
+  "damage-contradiction": () => input([SW("a", "Alp", "Alpha")], { prior: twoSpreads(), config: damageConfig, damage: alphaHit(true) }),
 } as const;
 
 interface Golden {

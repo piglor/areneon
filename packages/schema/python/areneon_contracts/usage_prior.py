@@ -196,6 +196,23 @@ def read_belief_config(value: object, vocabulary: dict[str, Any]) -> dict[str, A
     for ability in abilities:
         if ability not in known:
             raise UsagePriorError(f"ability {ability} is not in the team vocabulary")
+    damage = config.get("damage_evidence")
+    if damage is not None:
+        moves = {m for entry in vocabulary["roster"] for m in entry["moves"]}
+        items = set(vocabulary["items"])
+        isolating, unmodelled = damage["non_isolating"], damage["unmodelled"]
+        for what, ids, universe, noun in (
+            ("non_isolating.abilities", isolating["abilities"], known, "ability"),
+            ("non_isolating.lasting_moves", isolating["lasting_moves"], moves, "move"),
+            ("non_isolating.moves", isolating["moves"], moves, "move"),
+            ("non_isolating.targets", isolating["targets"], None, "target"),
+            ("unmodelled.abilities", unmodelled["abilities"], known, "ability"),
+            ("unmodelled.items", unmodelled["items"], items, "item"),
+        ):
+            _ordered(ids, f"damage_evidence.{what}")
+            for entry in ids:
+                if universe is not None and entry not in universe:
+                    raise UsagePriorError(f"{noun} {entry} is not in the team vocabulary")
     return config
 
 
