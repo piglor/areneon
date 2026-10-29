@@ -929,6 +929,19 @@ def test_the_entropy_weight_key_is_optional_and_an_integer_when_present() -> Non
         read_train_report(raw)
 
 
+def test_the_temperature_key_is_optional_and_a_positive_integer_when_present() -> None:
+    plain = read_train_report(json.loads(json.dumps(TRAIN_REPORT)))
+    assert "temperature_ppm" not in plain.roles["battle"]
+    raw = json.loads(json.dumps(TRAIN_REPORT))
+    raw["battle"]["temperature_ppm"] = 500_000
+    raw["preview"]["temperature_ppm"] = 500_000
+    read_train_report(raw)
+    for bad in (0.5, True, 0):
+        raw["battle"]["temperature_ppm"] = bad
+        with pytest.raises(InspectError, match="integer"):
+            read_train_report(raw)
+
+
 BINS = [{"count": 0, "mean_value": 0.0, "mean_score": 0.0} for _ in range(10)]
 
 

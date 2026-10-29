@@ -60,7 +60,11 @@ def test_without_options_today_s_bytes_and_hashes_are_unchanged() -> None:
 
 
 def test_only_the_registered_options_exist() -> None:
-    assert set(REGISTRY["encoder"]) == {"candidate_matchup", "candidate_features"}
+    assert set(REGISTRY["encoder"]) == {
+        "candidate_matchup",
+        "candidate_features",
+        "candidate_target",
+    }
     assert REGISTRY["network"] == {}
     with pytest.raises(OptionError, match="unknown network option 'x'"):
         read_options("network", {"x": 1})

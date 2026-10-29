@@ -51,6 +51,17 @@ def normalise(advantages: torch.Tensor) -> torch.Tensor:
     return centred / (centred.pow(2).mean().sqrt() + _STD_FLOOR)
 
 
+def temper(logits: torch.Tensor, temperature_ppm: int | None) -> torch.Tensor:
+    """``logits * 10^6 / temperature_ppm``: the scores of the policy played at that temperature.
+
+    The scale is computed once in float64 and applied to the float32 logits, as the worker's
+    scorer does for a tempered query (``NetworkScorer.probabilities``), so the learner's
+    softmax is the very policy the pair sampled from. ``None`` is temperature 1: the logits
+    come back as they are (no product), so every untempered value keeps its bytes.
+    """
+    return logits if temperature_ppm is None else logits * (1_000_000 / temperature_ppm)
+
+
 @dataclass(frozen=True)
 class PolicyTerms:
     """Per decision: the chosen candidate's log-probability and the policy's entropy."""
@@ -59,27 +70,41 @@ class PolicyTerms:
     entropy: torch.Tensor
 
 
-def policy_terms(logits: torch.Tensor, mask: torch.Tensor, chosen: torch.Tensor) -> PolicyTerms:
-    """Log-probability of ``chosen`` [B] in a softmax over the real candidates of ``logits``."""
+def policy_terms(
+    logits: torch.Tensor,
+    mask: torch.Tensor,
+    chosen: torch.Tensor,
+    temperature_ppm: int | None = None,
+) -> PolicyTerms:
+    """Log-probability of ``chosen`` [B] in a softmax over the real candidates of ``logits``.
+
+    With ``temperature_ppm`` (ADR-023 section 1) the softmax is over ``logits / tau``: the
+    log-probability and the entropy are those of the policy the pair played.
+    """
     floor = torch.finfo(logits.dtype).min
-    log_probs = torch.log_softmax(logits.masked_fill(~mask, floor), dim=-1)
+    log_probs = torch.log_softmax(temper(logits, temperature_ppm).masked_fill(~mask, floor), dim=-1)
     probs = log_probs.exp()
     entropy = -torch.where(mask, probs * log_probs, torch.zeros_like(probs)).sum(-1)
     return PolicyTerms(log_probs.gather(1, chosen[:, None]).squeeze(1), entropy)
 
 
 def anchor_kl(
-    logits: torch.Tensor, mask: torch.Tensor, anchor_log_probs: torch.Tensor
+    logits: torch.Tensor,
+    mask: torch.Tensor,
+    anchor_log_probs: torch.Tensor,
+    temperature_ppm: int | None = None,
 ) -> torch.Tensor:
     """``KL(pi_theta || pi_anchor)`` [B] over each decision's real candidates (ADR-019 section 4).
 
     ``pi_theta`` is the softmax of ``logits`` over the candidates ``mask`` keeps (padding is masked
     out) and ``anchor_log_probs`` [B, C] holds the frozen anchor's log-probabilities over the same
     candidates (any finite value at padded places): ``sum_c p_c * (log p_c - log q_c)``. The
-    gradient flows through ``logits`` only.
+    gradient flows through ``logits`` only. With ``temperature_ppm`` both policies are the
+    tempered ones (ADR-019 section 4 as amended by ADR-023): ``pi_theta`` is the softmax of
+    ``logits / tau`` and the caller gives ``anchor_log_probs`` of the anchor at the same ``tau``.
     """
     floor = torch.finfo(logits.dtype).min
-    log_probs = torch.log_softmax(logits.masked_fill(~mask, floor), dim=-1)
+    log_probs = torch.log_softmax(temper(logits, temperature_ppm).masked_fill(~mask, floor), dim=-1)
     probs = log_probs.exp()
     return torch.where(mask, probs * (log_probs - anchor_log_probs), torch.zeros_like(probs)).sum(
         -1

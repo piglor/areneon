@@ -112,6 +112,9 @@ _REF = re.compile(r"^(p[1-4])([a-d])?: (.+)$")
 _SIDE = re.compile(r"^(p[1-4]): ")
 _LEVEL = re.compile(r"^L(\d{1,3})$")
 _HP = re.compile(r"^(\d+)(?:/(\d+)([gyr])?)?$")
+# The engine's marker for a Pokemon with no type left (`pokemon.ts`; Burn Up removes Fire); it is
+# not an entry of the types vocabulary.
+TYPELESS = "???"
 MAX_VOLATILE_LENGTH = 64  # an opaque volatile id is short; a longer one is not an id
 _VOLATILE = re.compile(r"^(?:(move|ability|item): )?([A-Za-z][A-Za-z0-9 '.-]*)$")
 # Colour class the champions mod appends to a shared HP at exactly 50% or 20%.
@@ -466,9 +469,10 @@ class _Reducer:
         raise VocabularyError(f"unknown condition {text!r}", line.raw)
 
     def _volatile(self, text: str, line: _Line) -> tuple[str, str]:
-        """A volatile's id. The engine-data export has no volatile table (engine-data v2
-        would), so its shape is checked and the id kept as an opaque public string; only
-        `ability:` names are looked up, because they also reveal the holder's ability."""
+        """A volatile's id. Its shape is checked; against an engine-data version 2 table the id
+        must also resolve (`Vocabulary.volatile`), against version 1 (no condition list) it is
+        kept as an opaque public string. `ability:` names are always looked up, because they also
+        reveal the holder's ability."""
         match = _VOLATILE.match(text)
         if match is None or len(text) > MAX_VOLATILE_LENGTH:
             raise MalformedLineError(f"{text!r} is not a volatile id", line.raw)
@@ -476,6 +480,7 @@ class _Reducer:
         found = to_id(name)
         if kind == "ability":
             return kind, self.vocab.ability(name)
+        self.vocab.volatile(found, kind)
         return kind or "volatile", found
 
     def _reveal_from(self, mon: PokemonState, line: _Line) -> None:
@@ -787,6 +792,7 @@ class _Reducer:
         mon.active_slot = None
         mon.boosts = zero_boosts()
         mon.volatiles = set()
+        mon.types = None
         mon.temp_species = None
         mon.ability_suppressed = False
         if mon.moves_base is not None:  # Transform ends with the stay on the field
@@ -798,6 +804,7 @@ class _Reducer:
         details = self._details(line.args[1], line)
         mon.species, mon.level = details.species, details.level
         mon.gender, mon.shiny = details.gender or None, details.shiny
+        mon.types = None  # the engine's `setSpecies` puts the new species' own types back
         hp = _optional(line, 2)
         if hp is not None:
             self._set_hp(mon, hp, line)
@@ -806,6 +813,7 @@ class _Reducer:
         _arity(line, 2, 3)
         mon = self._mon(line.args[0], line)
         mon.temp_species = self.vocab.species(line.args[1])
+        mon.types = None  # `formeChange` runs `setSpecies`, which resets the types
 
     def _swap(self, line: _Line) -> None:
         _arity(line, 2, 2)
@@ -1014,6 +1022,7 @@ class _Reducer:
         if shown.mega != before.mega:
             real.mega, real.mega_stone = shown.mega, shown.mega_stone
         real.boosts, real.volatiles = dict(shown.boosts), set(shown.volatiles)
+        real.types = None if shown.types is None else list(shown.types)
         real.temp_species, real.ability_suppressed = shown.temp_species, shown.ability_suppressed
         real.moves_revealed = real.moves_revealed + [
             move
@@ -1283,12 +1292,28 @@ class _Reducer:
         if kind == "ability":
             mon.ability = found
         mon.volatiles.add(found)
+        if found == "typechange":
+            mon.types = self._type_change(line)
+
+    def _type_change(self, line: _Line) -> list[str]:
+        """The Pokemon's types after `-start|POKEMON|typechange|TYPE[/TYPE]`: type ids of the
+        vocabulary, or the engine's own typeless marker `???` (Burn Up). A copy
+        (`[from] move: Reflect Type`) carries no type argument: the types changed to ones the
+        channel does not say, an empty list. Any other type is refused."""
+        given = line.args[2:]
+        if not given:
+            return []
+        return [
+            TYPELESS if part == TYPELESS else self.vocab.type_(part) for part in given[0].split("/")
+        ]
 
     def _volatile_end(self, line: _Line) -> None:
         _arity(line, 2, 3)
         mon = self._mon(line.args[0], line)
         _, found = self._volatile(line.args[1], line)
         mon.volatiles.discard(found)
+        if found == "typechange":  # Mimicry: `-end|POKEMON|typechange|[silent]`
+            mon.types = None
 
     def _item(self, line: _Line) -> None:
         _arity(line, 2, 2)

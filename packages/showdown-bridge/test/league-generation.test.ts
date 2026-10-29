@@ -195,6 +195,29 @@ describe("playGeneration", () => {
     expect(hashesInStream).toEqual(new Set(run2.set.episode_hashes));
   });
 
+  it("samples at the declared play temperature at the pair's own seats, and at temperature 1 without one (ADR-023 section 1)", async () => {
+    const queries = async (cfg: typeof config) => {
+      const inner = actorClient();
+      const found: { temperature_ppm?: number }[] = [];
+      const spying: PolicyClient & { beginGame: () => Promise<void> } = {
+        beginGame: inner.beginGame,
+        ask: (battle, query) => {
+          found.push(query.sampling as { temperature_ppm?: number });
+          return inner.ask(battle, query);
+        },
+      };
+      await run({ client: spying, config: cfg });
+      return found;
+    };
+    const plain = await queries(config);
+    expect(plain.length).toBeGreaterThan(0);
+    expect(plain.every((q) => q.temperature_ppm === undefined)).toBe(true);
+    const tempered = readTrainingRunConfig({ ...(sample("tiny") as Record<string, unknown>), generation: { ...config.generation, play: { temperature_ppm: 500000 } } });
+    const found = await queries(tempered);
+    expect(found.length).toBeGreaterThan(0);
+    expect(found.every((q) => q.temperature_ppm === 500000)).toBe(true);
+  });
+
   it("is reproducible: the same plan, policy and worker give the same stream, hash and teams", async () => {
     const again = await run();
     expect(again.stream).toBe(result.stream);

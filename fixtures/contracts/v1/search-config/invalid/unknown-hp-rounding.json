@@ -16,7 +16,7 @@
       "label": "belief matched to the synthetic generator: an upper bound for this evaluation"
     }
   },
-  "belief_identity_hash": "0588f5ecfae52083d7c81a68f5981933f761a3817c6434bb0a87bde388d3158f",
+  "belief_identity_hash": "e773c870b0ee550a76da6b0ce836605bab2e1a0e76d47dbe5b79bfbeacf772a0",
   "replies": {
     "max_damage_ppm": 500000,
     "uniform_draws": 2

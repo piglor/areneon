@@ -37,6 +37,9 @@ class PokemonState:
     active_slot: str | None = None
     boosts: dict[str, int] = field(default_factory=zero_boosts)
     volatiles: set[str] = field(default_factory=set)
+    # The types a `typechange` gave the Pokemon (type ids, `???` for none; empty when the channel
+    # does not say which), None while its species' own. Ends on switching out.
+    types: list[str] | None = None
     moves_revealed: list[str] = field(default_factory=list)
     # The move list the Pokemon returns to on switching out: set when Transform replaces the
     # current one (not part of `to_dict`: it is bookkeeping, not an observation).
@@ -95,6 +98,8 @@ class PokemonState:
             "pp": dict(sorted(self.pp.items())),
             "can_mega_evo": self.can_mega_evo,
         }
+        if self.types is not None:  # only a typechange says so: every other state keeps its keys
+            document["types"] = list(self.types)
         if self.phantom:  # only an added entry says so: every other state keeps its keys
             document["phantom"] = True
         return document

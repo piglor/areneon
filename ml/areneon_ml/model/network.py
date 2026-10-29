@@ -28,6 +28,7 @@ from areneon_ml.model.batch import Batch
 from areneon_ml.model.candidates import EVENTS, SLOTS
 from areneon_ml.model.encoder import (
     BASE_CAND_COLUMNS,
+    BASE_CAND_TOKENS,
     GENDERS,
     MAX_SLOT_LETTERS,
     REQUEST_KINDS,
@@ -265,8 +266,10 @@ class PolicyNetwork(nn.Module):
             sizes["matchup"] = RESERVED + game.chart_codes
             sizes["same_type"] = RESERVED + 2
         numbers = len(self.layout.cand_num) if role == "battle" else 0
+        targeted = role == "battle" and len(self.layout.cand_tok) > BASE_CAND_TOKENS
         if numbers:
             sizes["feature_kind"] = KIND_CATEGORIES
+        self.targeted = targeted
         self.embeddings = nn.ModuleDict(
             {kind: nn.Embedding(size, d) for kind, size in sizes.items()}
         )
@@ -291,7 +294,7 @@ class PolicyNetwork(nn.Module):
         if role == "battle":
             # The damage rows' numbers are one more d-wide part of a slot (candidate_features).
             self.cand_features = nn.Linear(numbers, d) if numbers else None
-            width = 7 + extra + (1 if numbers else 0)
+            width = 7 + extra + (1 if numbers else 0) + (1 if targeted else 0)
             self.slot_parts = nn.ModuleList(nn.Linear(width * d, d) for _ in range(SLOTS))
             self.candidate = nn.Linear(SLOTS * d, d)
         else:
@@ -321,6 +324,8 @@ class PolicyNetwork(nn.Module):
     # -- candidates ----------------------------------------------------------
 
     def _battle_candidates(self, batch: Batch, mons: torch.Tensor) -> torch.Tensor:
+        if batch.cand_tok.shape[-1] != len(self.layout.cand_tok):
+            raise ValueError("the batch's candidate tokens are not this network's layout")
         if batch.cand_cat.shape[-1] != len(self.layout.cand_cat):
             raise ValueError("the batch's candidate columns are not this network's layout")
         slots = []
@@ -340,6 +345,8 @@ class PolicyNetwork(nn.Module):
                 _gather(mons, tok[..., 1]),
                 *extra,
             ]
+            if self.targeted:
+                parts.append(_gather(mons, tok[..., BASE_CAND_TOKENS]))
             if self.cand_features is not None:
                 if batch.cand_num is None:
                     raise ValueError("this network reads candidate features; the batch has none")

@@ -18,11 +18,18 @@ from areneon_contracts.contracts import jcs, sha256_hex
 
 from .errors import VocabularyError
 
+# The engine-data schema_version that adds the condition list (version 1 has none).
+WITH_CONDITIONS = 2
 DATA_DIR = Path(__file__).resolve().parent / "data"
 # Some conditions print their volatile under a derived name: Stockpile as `stockpile1`..`3`,
 # Protosynthesis and Quark Drive as `protosynthesisatk` (the boosted stat's id appended). The
 # engine's condition id is the name without that suffix.
 _DERIVED_SUFFIX = re.compile(r"(?:\d+|atk|def|spa|spd|spe)$")
+# `-start` / `-end` words the engine prints that are no condition id and no name of a move,
+# ability or item: the two type messages and Supreme Overlord's count (`fallen1`..`fallen5`, the
+# ability's own message) and Perish Song's countdown (`perish3`..`perish0`). They are protocol
+# text read from the engine's source, not game rules.
+PROTOCOL_VOLATILES = frozenset({"typechange", "typeadd", "fallen", "perish"})
 _COPY_KEYS = frozenset(
     {
         "format_id",
@@ -80,6 +87,10 @@ class Vocabulary:
     statuses: frozenset[str]
     weathers: frozenset[str]
     terrains: frozenset[str]
+    types: frozenset[str]
+    # The engine's condition ids (engine-data version 2 only; None for a version 1 table, whose
+    # volatile ids are then kept as opaque public strings).
+    conditions: frozenset[str] | None
     # The volatile-copy rule of the pinned engine (`data/volatile-copy.<format>.json`, exported by
     # `export-volatile-copy.ts`): a Baton Pass copies every volatile except `not_copied`, a Shed
     # Tail only `shed_tail_copies`. None when no file matches this export (a switch that needs it
@@ -89,7 +100,7 @@ class Vocabulary:
 
     @classmethod
     def from_engine_data(cls, data: Mapping[str, Any]) -> Vocabulary:
-        if data.get("schema_version") != 1:
+        if data.get("schema_version") not in (1, 2):
             raise VocabularyError(
                 f"unsupported engine-data schema_version {data.get('schema_version')!r}"
             )
@@ -106,6 +117,10 @@ class Vocabulary:
             statuses=_ids(data, "statuses"),
             weathers=_ids(data, "weathers"),
             terrains=_ids(data, "terrains"),
+            types=_ids(data, "types"),
+            conditions=_ids(data, "conditions")
+            if data["schema_version"] == WITH_CONDITIONS
+            else None,
         )
 
     def passed_volatiles(self, cause: str, held: frozenset[str] | set[str]) -> set[str]:
@@ -140,6 +155,32 @@ class Vocabulary:
 
     def ability(self, name: str) -> str:
         return self._check("ability", name, self.abilities)
+
+    def type_(self, name: str) -> str:
+        return self._check("type", name, self.types)
+
+    def volatile(self, found: str, kind: str | None = None) -> None:
+        """Check a volatile id against the engine's condition ids (version 2 tables only).
+
+        The engine prints a volatile under its condition id, under a derived name (Stockpile as
+        `stockpile1`; the condition id without the number or stat suffix) or under the name of the
+        move, ability or item that started it (`Fire Spin`, `Illusion`), or is one of the
+        `PROTOCOL_VOLATILES`: any of these resolves. A name given with its kind (`move: Taunt`)
+        resolves only against that kind's vocabulary or the conditions."""
+        if self.conditions is None:
+            return
+        stripped = _DERIVED_SUFFIX.sub("", found)
+        sources = {"move": self.moves, "ability": self.abilities, "item": self.items}
+        searched = [sources[kind]] if kind in sources else list(sources.values())
+        known = (
+            found in self.conditions
+            or stripped in self.conditions
+            or found in PROTOCOL_VOLATILES
+            or stripped in PROTOCOL_VOLATILES
+            or any(found in vocabulary for vocabulary in searched)
+        )
+        if not known:
+            raise VocabularyError(f"unknown volatile {found!r}")
 
     def status(self, name: str) -> str:
         return self._check("status", name, self.statuses)

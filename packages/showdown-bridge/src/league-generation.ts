@@ -379,7 +379,8 @@ async function playOne(options: GenerationOptions, plan: GamePlan, client: Polic
   const { engine, config, policy_id, pool } = options;
   const { generation: settings } = config;
   const budget = { preview_ms: settings.latency_budget_ms.preview_ms, battle_ms: settings.latency_budget_ms.battle_ms };
-  const seat: PolicySeat = { client, policy_id, sampling: "sample", ...(options.features === undefined ? {} : { features: { configs: options.features } }) };
+  const play = settings.play?.temperature_ppm === undefined ? undefined : { temperature_ppm: settings.play.temperature_ppm };
+  const seat: PolicySeat = { client, policy_id, sampling: "sample", ...(play === undefined ? {} : { play }), ...(options.features === undefined ? {} : { features: { configs: options.features } }) };
   const baseline = plan.opponent === "self" ? undefined : baselineActor(options, plan.opponent, plan, budget);
   const seats: PolicyGameOptions["seats"] =
     baseline === undefined ? { p1: seat, p2: seat } : plan.policy_seat === "p1" ? { p1: seat, p2: baseline.actor } : { p1: baseline.actor, p2: seat };

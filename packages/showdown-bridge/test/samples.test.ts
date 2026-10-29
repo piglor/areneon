@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { ajvFor } from "@areneon/schema/ajv";
 import { beforeAll, describe, expect, it } from "vitest";
 import { syntheticFixtureHashes } from "../src/golden.ts";
-import { EngineDataError, readEngineData } from "../src/engine-data.ts";
+import { EngineDataError, readEngineData, readEngineDataV2 } from "../src/engine-data.ts";
 import { contractVersions, EpisodeError, readTeamDatasetManifest, readTeamGeneratorConfig, readTeamLabelSet, readTeamRecord, readTeamSnapshotManifest, readTeamVocabulary, readRoleSetTable, RoleSetError, readMoveClassTable, MoveClassError, TeamRecordError, TeamVocabularyError, loadEngine, PolicyProtocolError, readEvaluationReply, readHandshake, readPolicyQuery, readPolicyReply, readEpisode, readTrainingRunConfig, readCloneRunConfig, CloneRunConfigError, readLeagueRunRecord, LeagueRunRecordError, TrainingRunConfigError, readEvaluationRunManifest, readTrainingExample, readTrainingSet, TrainingLoaderError } from "../src/index.ts";
 import { EvaluationConfigError, readEvaluationParameters, readEntry, RegisterError, readEvaluationPlan, readSealedSetCommitment, readTrainingGateRule, readEvaluationConfig, readSealedTeamSetManifest, readRetiredSealedManifest } from "../src/index.ts";
 import { contractSamples, SAMPLE_HASHES, SAMPLES_DIR } from "../src/samples.ts";
@@ -72,6 +72,10 @@ describe("the shared contract sample corpus (ADR-008 §2)", () => {
   it("holds every reader-invalid sample under its contract's directory, and each is refused above", () => {
     const readerInvalid = Object.keys(fresh).filter((f) => f.includes("/reader-invalid/"));
     expect(readerInvalid.sort()).toEqual([
+      "v1/belief-config/reader-invalid/damage-unknown-item.json",
+      "v1/belief-config/reader-invalid/damage-unknown-lasting-move.json",
+      "v1/belief-config/reader-invalid/damage-unknown-move.json",
+      "v1/belief-config/reader-invalid/damage-unsorted-moves.json",
       "v1/belief-config/reader-invalid/duplicate-ability.json",
       "v1/belief-config/reader-invalid/unknown-ability.json",
       "v1/belief-config/reader-invalid/unsorted-abilities.json",
@@ -87,6 +91,8 @@ describe("the shared contract sample corpus (ADR-008 §2)", () => {
       "v1/damage-aware-config/reader-invalid/stat-points-over-limit.json",
       "v1/damage-aware-config/reader-invalid/unknown-fixed-item.json",
       "v1/damage-aware-config/reader-invalid/unknown-nature.json",
+      "v1/engine-data-2/reader-invalid/duplicate-condition.json",
+      "v1/engine-data-2/reader-invalid/unsorted-conditions.json",
       "v1/engine-data/reader-invalid/dangling-type.json",
       "v1/engine-data/reader-invalid/duplicate-species.json",
       "v1/engine-data/reader-invalid/short-damage-row.json",
@@ -360,6 +366,7 @@ describe("the shared contract sample corpus (ADR-008 §2)", () => {
       "v1/training-run-config/reader-invalid/duplicate-baseline.json",
       "v1/training-run-config/reader-invalid/heads-do-not-divide-width.json",
       "v1/training-run-config/reader-invalid/picks-exceed-team.json",
+      "v1/training-run-config/reader-invalid/play-temperature-default.json",
       "v1/training-run-config/reader-invalid/value-warmup-no-warm-start.json",
       "v1/training-run-config/reader-invalid/warm-start-same-id.json",
       "v1/training-set/reader-invalid/duplicate-manifests.json",
@@ -448,6 +455,7 @@ describe("the shared contract sample corpus (ADR-008 §2)", () => {
     ["v1/training-run-config/reader-invalid/warm-start-same-id.json", "one checkpoint for both roles"],
     ["v1/training-run-config/reader-invalid/value-warmup-no-warm-start.json", "needs warm_start"],
     ["v1/training-run-config/reader-invalid/anchor-no-warm-start.json", "ppo.anchor needs warm_start"],
+    ["v1/training-run-config/reader-invalid/play-temperature-default.json", "is the default"],
   ])("readTrainingRunConfig refuses %s", (file, message) => {
     expect(Object.keys(fresh)).toContain(file);
     expect(() => readTrainingRunConfig(committed(file))).toThrow(TrainingRunConfigError);
@@ -524,6 +532,15 @@ describe("the shared contract sample corpus (ADR-008 §2)", () => {
     expect(Object.keys(fresh)).toContain(file);
     expect(() => readEngineData(committed(file))).toThrow(EngineDataError);
     expect(() => readEngineData(committed(file))).toThrow(message);
+  });
+
+  it.each([
+    ["v1/engine-data-2/reader-invalid/unsorted-conditions.json", /conditions: .* repeated or out of order/],
+    ["v1/engine-data-2/reader-invalid/duplicate-condition.json", /conditions: .* repeated or out of order/],
+  ])("readEngineDataV2 refuses %s", (file, message) => {
+    expect(Object.keys(fresh)).toContain(file);
+    expect(() => readEngineDataV2(committed(file))).toThrow(EngineDataError);
+    expect(() => readEngineDataV2(committed(file))).toThrow(message);
   });
 
   it("holds a valid engine-data sample the reader accepts", () => {

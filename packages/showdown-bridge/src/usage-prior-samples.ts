@@ -65,6 +65,10 @@ export function usagePriorSamples(vocabulary: TeamVocabulary): { valid: Cases; i
   const first = (p: any) => p.species[0].formes[0];
   const config = { schema_version: 1, identity_hiding_abilities: [vocabulary.roster[0]?.abilities[0] as string], max_legality_redraws: 32, max_disguise_assignments: 64 };
   const configWith = (change: (c: any) => void) => mutated(config, change);
+  const ability = vocabulary.roster[0]?.abilities[0] as string;
+  const moves = [...new Set(vocabulary.roster.flatMap((r) => r.moves))].sort();
+  const damage = { max_checked: 32, shown_hp_rounding: "floor", non_isolating: { abilities: [ability], lasting_moves: [moves[0] as string], moves: [moves[0] as string], targets: ["allAdjacentFoes"] }, unmodelled: { abilities: [ability], items: [vocabulary.items[0] as string] } };
+  const withDamage = (change: (d: any) => void = () => undefined) => configWith((c) => { c.damage_evidence = structuredClone(damage); change(c.damage_evidence); });
   const second = { source_id: "chaos-2026-09-extra", url: "https://example.invalid/stats/2026-09/extra.json", retrieved_at: "2026-10-27T00:00:00Z", size: 1, sha256: hex("2") };
 
   return {
@@ -74,6 +78,7 @@ export function usagePriorSamples(vocabulary: TeamVocabulary): { valid: Cases; i
       "usage-prior/role-sets": withPrior((p) => (p.source = { kind: "role-sets", role_set_table_hash: hex("3"), fill_prior_hash: hex("4") })),
       "usage-prior/generator-matched": withPrior((p) => (p.source = { kind: "generator-matched", generator_config_hash: hex("5"), generator_commit: "a".repeat(40) })),
       "belief-config/v1": config,
+      "belief-config/damage-evidence": withDamage(),
     },
     invalid: {
       "usage-prior/extra-field": withPrior((p) => (p.note = "x")),
@@ -96,6 +101,10 @@ export function usagePriorSamples(vocabulary: TeamVocabulary): { valid: Cases; i
       "belief-config/fractional-bound": configWith((c) => (c.max_legality_redraws = 0.5)),
       "belief-config/zero-assignments": configWith((c) => (c.max_disguise_assignments = 0)),
       "belief-config/missing-abilities": configWith((c) => delete c.identity_hiding_abilities),
+      "belief-config/damage-bad-rounding": withDamage((d) => (d.shown_hp_rounding = "up")),
+      "belief-config/damage-missing-unmodelled": withDamage((d) => delete d.unmodelled),
+      "belief-config/damage-zero-checked": withDamage((d) => (d.max_checked = 0)),
+      "belief-config/damage-extra-field": withDamage((d) => (d.tolerance = 1)),
     },
     readerInvalid: {
       "usage-prior/unsorted-species": withPrior((p) => p.species.reverse()),
@@ -138,6 +147,10 @@ export function usagePriorSamples(vocabulary: TeamVocabulary): { valid: Cases; i
       "usage-prior/other-engine-data": withPrior((p) => (p.engine_data_hash = hex("e"))),
       "belief-config/unknown-ability": configWith((c) => (c.identity_hiding_abilities = ["aaaaaaaaa"])),
       "belief-config/unsorted-abilities": configWith((c) => (c.identity_hiding_abilities = [...vocabulary.roster.flatMap((r) => r.abilities)].sort().reverse().filter((a, k, all) => all.indexOf(a) === k))),
+      "belief-config/damage-unknown-move": withDamage((d) => (d.non_isolating.moves = ["aaaaaaaaa"])),
+      "belief-config/damage-unsorted-moves": withDamage((d) => (d.non_isolating.moves = [moves[1] as string, moves[0] as string])),
+      "belief-config/damage-unknown-lasting-move": withDamage((d) => (d.non_isolating.lasting_moves = ["aaaaaaaaa"])),
+      "belief-config/damage-unknown-item": withDamage((d) => (d.unmodelled.items = ["aaaaaaaaa"])),
       "belief-config/duplicate-ability": configWith((c) => (c.identity_hiding_abilities = [c.identity_hiding_abilities[0], c.identity_hiding_abilities[0]])),
     },
   };

@@ -86,11 +86,17 @@ class Frozen:
     team_hashes: tuple[str, ...]
     #: The run's candidate feature set hash (ADR-022): in the pair's policy id; None without one.
     features: str | None = None
+    #: The run's ``generation.play.temperature_ppm`` (ADR-023 section 1): the pair's policy id is
+    #: the tempered one (sample mode); None is temperature 1 and today's id.
+    temperature_ppm: int | None = None
 
     @property
     def policy_id(self) -> str:
         return policy_id(
-            self.checkpoints["preview"], self.checkpoints["battle"], features=self.features
+            self.checkpoints["preview"],
+            self.checkpoints["battle"],
+            temperature_ppm=self.temperature_ppm,
+            features=self.features,
         )
 
 
@@ -346,6 +352,7 @@ class Loop:
             ts_hash,
             tuple(teams["teams"]),
             features_hash(self.config),
+            self.config.generation.temperature_ppm,
         )
 
     def _read_record(self, path: Path, role: str) -> CheckpointRecord:
@@ -514,6 +521,7 @@ class Loop:
             sealing.training_set_hash,
             sealing.teams,
             features_hash(self.config),
+            self.config.generation.temperature_ppm,
         )
 
 

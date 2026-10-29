@@ -1331,6 +1331,7 @@ def progress_generation(  # noqa: PLR0913, PLR0915, PLR0917
         damage_aware_budget_minutes, preview_ablation, damage_aware_version
     )
     config = _read_config(run_dir)
+    modes = _with_run_mode(config, modes, preview_ablation or search_mode is not None)
     try:
         evaluation_key = ekey.check(evaluation_key, config.run_key)
     except ekey.EvaluationKeyError as exc:
@@ -1579,6 +1580,23 @@ def _versus_part(record: dict[str, Any], relation: dict[str, str] | None = None)
             "lineage": relation,
         }
     }
+
+
+def _with_run_mode(
+    config: RunConfig, modes: Sequence[ExtraMode], alone: bool
+) -> tuple[ExtraMode, ...]:
+    """``modes`` plus the mode the run trains in (ADR-023 section 1, Evaluation).
+
+    A run that declares ``generation.play`` adds the sample at that temperature to argmax and
+    sample (temperature 1), with no ``--modes`` flag, unless the evaluation is played alone
+    (the Preview ablation and the search candidate take one mode, so none is added) or the
+    flag already names it. A run without the field gets exactly the modes asked for.
+    """
+    tau = config.generation.temperature_ppm
+    if tau is None or alone:
+        return tuple(modes)
+    declared = ExtraMode(temperature_ppm=tau)
+    return tuple(modes) if declared in modes else (*modes, declared)
 
 
 def _play_modes(

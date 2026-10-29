@@ -14,7 +14,7 @@ import { jcs, type Json } from "./canonical-json.ts";
 import { legalChoiceSet } from "./choice-judge.ts";
 import { parseJointChoice } from "./damage-aware-choice.ts";
 import { evaluationSamples } from "./evaluation-samples.ts";
-import { type EngineData, engineDataHash, exportEngineData } from "./engine-data.ts";
+import { type EngineData, engineDataHash, exportEngineData, exportEngineDataV2 } from "./engine-data.ts";
 import type { Engine } from "./engine.ts";
 import { episodeFromRecord } from "./episode-io.ts";
 import { GOLDEN_DIR, GOLDEN_FORMAT, goldenBattle, syntheticFixtureHashes, syntheticTeam } from "./golden.ts";
@@ -143,6 +143,9 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     move_targets: [...new Set(moves.map((m) => m.target))].sort(),
     move_flags: [...new Set(moves.flatMap((m) => m.flags))].sort(),
   };
+  // Version 2 beside it: the same slim table with the condition list (a short one).
+  const full2 = exportEngineDataV2(engine, GOLDEN_FORMAT);
+  const engineData2 = { ...engineData, schema_version: 2, conditions: full2.conditions.slice(0, 3) };
   const [speciesA, speciesB] = engineData.species as [(typeof species)[number], (typeof species)[number]];
 
   // The policy worker's contracts (ADR-010 section 2). A query is the
@@ -596,6 +599,7 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
 
   const valid: Record<string, unknown> = {
     "engine-data/golden": engineData,
+    "engine-data-2/golden": engineData2,
     "checkpoint-record/battle": checkpointRecord,
     "checkpoint-record/preview-fresh": recordWith((r) => {
       r.role = "preview";
@@ -636,6 +640,7 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "training-run-config/preview-bootstrap-zero": runConfigWith((c) => (runSection(c, "ppo").preview_bootstrap_micro = 0)),
     "training-run-config/entropy-constant": runConfigWith((c) => (runSection(c, "ppo").entropy_schedule = { kind: "constant" })),
     "training-run-config/constant-schedule": runConfigWith((c) => (runSection(c, "ppo").learning_rate_schedule = { kind: "constant" })),
+    "training-run-config/play-temperature": runConfigWith((c) => (runSection(c, "generation").play = { temperature_ppm: 500000 })),
     "training-run-config/damage-aware": runConfigWith((c) => {
       runSection(c, "generation").baseline_games = [
         { actor: "random-legal", policy_id: "random-legal@tiny", games: 2 },
@@ -649,6 +654,9 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     }),
     "training-run-config/candidate-matchup": runConfigWith((c) => {
       runSection(runSection(c, "model"), "encoder").options = { candidate_matchup: true };
+    }),
+    "training-run-config/candidate-target": runConfigWith((c) => {
+      runSection(runSection(c, "model"), "encoder").options = { candidate_target: true };
     }),
     "training-run-config/candidate-features": runConfigWith((c) => {
       runSection(runSection(c, "model"), "encoder").options = { candidate_features: { feature_set: "probe-damage/1", feature_set_hash: hexOf("c") } };
@@ -681,6 +689,9 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     }),
     "clone-run-config/candidate-matchup": cloneWith((c) => {
       runSection(runSection(c, "model"), "encoder").options = { candidate_matchup: true };
+    }),
+    "clone-run-config/candidate-target": cloneWith((c) => {
+      runSection(runSection(c, "model"), "encoder").options = { candidate_target: true };
     }),
     "clone-run-config/candidate-features": cloneWith((c) => {
       runSection(runSection(c, "model"), "encoder").options = { candidate_features: { feature_set: "probe-damage/1", feature_set_hash: hexOf("c") } };
@@ -801,6 +812,7 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     // Schema-valid, refused by the CloneRunConfig reader: the model rules the profile cannot say.
     "training-run-config/value-warmup-no-warm-start": runConfigWith((c) => (runSection(c, "ppo").value_warmup = { generations: 2 })),
     "training-run-config/anchor-no-warm-start": runConfigWith((c) => (runSection(c, "ppo").anchor = { kl_micro: 100000, schedule: { kind: "constant" } })),
+    "training-run-config/play-temperature-default": runConfigWith((c) => (runSection(c, "generation").play = { temperature_ppm: 1000000 })),
     "clone-run-config/heads-do-not-divide-width": cloneWith((c) => (runSection(c, "model").n_heads = 3)),
     "clone-run-config/picks-exceed-team": cloneWith((c) => {
       const encoder = runSection(runSection(c, "model"), "encoder");
@@ -840,6 +852,8 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "checkpoint-record/exploiter-of-self": recordWith((r) => (r.exploiter_target = r.checkpoint_id)),
     "engine-data/unsorted-species": { ...engineData, species: [speciesB, speciesA] },
     "engine-data/duplicate-species": { ...engineData, species: [speciesA, speciesA] },
+    "engine-data-2/unsorted-conditions": mutated(engineData2, (t) => (t.conditions as unknown[]).reverse()),
+    "engine-data-2/duplicate-condition": mutated(engineData2, (t) => (t.conditions as unknown[]).splice(1, 0, (t.conditions as unknown[])[0])),
     "engine-data/dangling-type": mutated(engineData, (t) => ((t.species as { types: string[] }[])[0] as { types: string[] }).types = ["nosuchtype"]),
     "engine-data/short-damage-row": mutated(engineData, (t) => ((t.types as { damage_taken: number[] }[])[0] as { damage_taken: number[] }).damage_taken.pop()),
     // Schema-valid, refused by the readers: the hashes must be sorted and unique.
@@ -975,6 +989,9 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "clone-run-config/candidate-matchup-false": cloneWith(
       (c) => (runSection(runSection(c, "model"), "encoder").options = { candidate_matchup: false }),
     ),
+    "clone-run-config/candidate-target-false": cloneWith(
+      (c) => (runSection(runSection(c, "model"), "encoder").options = { candidate_target: false }),
+    ),
     "clone-run-config/candidate-features-unknown-set": cloneWith((c) => {
       runSection(runSection(c, "model"), "encoder").options = { candidate_features: { feature_set: "probe-damage/2", feature_set_hash: hexOf("c") } };
     }),
@@ -989,6 +1006,10 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "clone-run-config/unknown-device": cloneWith((c) => (runSection(c, "learner").device = "tpu")),
     "clone-run-config/next-version": cloneWith((c) => (c.schema_version = 2)),
     "training-run-config/extra-field": runConfigWith((c) => (c.notes = "x")),
+    "training-run-config/play-temperature-zero": runConfigWith((c) => (runSection(c, "generation").play = { temperature_ppm: 0 })),
+    "training-run-config/play-temperature-fractional": runConfigWith((c) => (runSection(c, "generation").play = { temperature_ppm: 0.5 })),
+    "training-run-config/play-extra-field": runConfigWith((c) => (runSection(c, "generation").play = { temperature_ppm: 500000, truncation: 1 })),
+    "training-run-config/play-empty": runConfigWith((c) => (runSection(c, "generation").play = {})),
     "training-run-config/fractional-rate": runConfigWith((c) => (runSection(c, "ppo").learning_rate_micro = 0.5)),
     "training-run-config/zero-target-kl": runConfigWith((c) => (runSection(c, "ppo").target_kl_micro = 0)),
     "training-run-config/schedule-zero-generations": runConfigWith(
@@ -1005,6 +1026,9 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "training-run-config/unknown-encoder-option": runConfigWith((c) => (runSection(runSection(c, "model"), "encoder").options = { wide: 1 })),
     "training-run-config/candidate-matchup-false": runConfigWith(
       (c) => (runSection(runSection(c, "model"), "encoder").options = { candidate_matchup: false }),
+    ),
+    "training-run-config/candidate-target-false": runConfigWith(
+      (c) => (runSection(runSection(c, "model"), "encoder").options = { candidate_target: false }),
     ),
     "training-run-config/candidate-features-true": runConfigWith(
       (c) => (runSection(runSection(c, "model"), "encoder").options = { candidate_features: true }),
@@ -1072,6 +1096,10 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "engine-data/unknown-category": mutated(engineData, (t) => ((t.moves as { category: string }[])[0] as { category: string }).category = "Typeless"),
     "engine-data/extra-field": { ...engineData, learnsets: [] },
     "engine-data/next-version": { ...engineData, schema_version: 2 },
+    "engine-data-2/no-conditions": mutated(engineData2, (t) => delete t.conditions),
+    "engine-data-2/extra-field": { ...engineData2, learnsets: [] },
+    "engine-data-2/version-1": { ...engineData2, schema_version: 1 },
+    "engine-data-2/condition-without-name": mutated(engineData2, (t) => delete ((t.conditions as Record<string, unknown>[])[0] as Record<string, unknown>).name),
     "engine-data/short-commit": { ...engineData, showdown_commit: "7244fe8" },
     "move-class-table/missing-class": moveClassesWith((t) => delete (t.classes as Record<string, unknown>).protection),
     "move-class-table/extra-class": moveClassesWith((t) => ((t.classes as Record<string, unknown>).switches = [])),

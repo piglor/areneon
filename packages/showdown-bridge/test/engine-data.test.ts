@@ -4,6 +4,8 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { jcs, type Json } from "../src/canonical-json.ts";
 import {
+  ENGINE_DATA_2_FILE,
+  ENGINE_DATA_2_SUMMARY,
   ENGINE_DATA_FILE,
   ENGINE_DATA_SUMMARY,
   type EngineData,
@@ -11,7 +13,9 @@ import {
   engineDataHash,
   engineDataSummary,
   exportEngineData,
+  exportEngineDataV2,
   readEngineData,
+  readEngineDataV2,
 } from "../src/engine-data.ts";
 import { type Engine, EngineError, loadEngine } from "../src/engine.ts";
 import { GOLDEN_DIR, GOLDEN_FORMAT } from "../src/golden.ts";
@@ -169,5 +173,66 @@ describe("readEngineData", () => {
     const value = _label === "not an object" ? null : mutated(change as (t: EngineData) => void);
     expect(() => readEngineData(value)).toThrow(message);
     expect(() => readEngineData(value)).toThrow(EngineDataError);
+  });
+});
+
+describe("engine data version 2 (ADR-010 erratum A4 item 7)", () => {
+  const fresh2 = exportEngineDataV2(engine, GOLDEN_FORMAT);
+  const bytes = (value: unknown) => `${JSON.stringify(value, null, 2)}\n`;
+
+  it("is reproducible from the pin: a fresh export equals the committed table and summary, byte for byte", () => {
+    expect(readFileSync(join(GOLDEN_DIR, ENGINE_DATA_2_FILE), "utf8")).toBe(bytes(fresh2));
+    expect(readFileSync(join(GOLDEN_DIR, ENGINE_DATA_2_SUMMARY), "utf8")).toBe(bytes(engineDataSummary(fresh2)));
+    expect(readEngineDataV2(golden(ENGINE_DATA_2_FILE))).toEqual(fresh2);
+  });
+
+  it("leaves version 1 as it was: the same lists, and the committed hash", () => {
+    const { schema_version: _v, conditions: _c, ...rest } = fresh2;
+    const { schema_version: _w, ...v1 } = fresh;
+    expect(rest).toEqual(v1);
+    expect(engineDataHash(fresh)).toBe((golden(ENGINE_DATA_SUMMARY) as { engine_data_hash: string }).engine_data_hash);
+    expect(engineDataHash(fresh2)).not.toBe(engineDataHash(fresh));
+  });
+
+  it("lists the engine's conditions, sorted, read from its data and none of the statuses, weathers or terrains", () => {
+    const ids = fresh2.conditions.map((c) => c.id);
+    expect(ids).toEqual([...ids].sort());
+    expect(ids).toEqual(expect.arrayContaining(["confusion", "taunt", "substitute", "uproar", "throatchop"]));
+    for (const other of [...fresh2.statuses, ...fresh2.weathers, ...fresh2.terrains]) expect(ids).not.toContain(other.id);
+    expect(engineDataSummary(fresh2).counts.conditions).toBe(ids.length);
+  });
+
+  it("is refused by the version 1 reader and the reverse", () => {
+    expect(() => readEngineData(fresh2)).toThrow(EngineDataError);
+    expect(() => readEngineDataV2(fresh)).toThrow(EngineDataError);
+  });
+
+  it("refuses a condition list out of order, a repeat and a condition the engine does not define", () => {
+    const reversed = structuredClone(fresh2);
+    reversed.conditions.reverse();
+    expect(() => readEngineDataV2(reversed)).toThrow(/conditions: .* repeated or out of order/);
+    const repeated = structuredClone(fresh2);
+    repeated.conditions.splice(1, 0, repeated.conditions[0] as never);
+    expect(() => readEngineDataV2(repeated)).toThrow(/conditions: .* repeated or out of order/);
+    expect(() => readEngineDataV2(null)).toThrow(/invalid engine data/);
+  });
+
+  it("refuses a condition the engine lists but does not define", () => {
+    const dex = engine.sim.Dex as unknown as { formats: unknown; mod(name: string): Record<string, unknown> & { conditions: { get(id: string): unknown } } };
+    const wrapped = {
+      commit: engine.commit,
+      sim: {
+        Dex: {
+          formats: dex.formats,
+          mod(name: string) {
+            const real = dex.mod(name);
+            return new Proxy(real, {
+              get: (target, key) => (key === "conditions" ? { get: (id: string) => (id === "taunt" ? { id, exists: false } : target.conditions.get(id)) } : target[key as string]),
+            });
+          },
+        },
+      },
+    } as unknown as Engine;
+    expect(() => exportEngineDataV2(wrapped, GOLDEN_FORMAT)).toThrow(/no such condition/);
   });
 });

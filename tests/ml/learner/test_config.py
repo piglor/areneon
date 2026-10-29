@@ -119,6 +119,7 @@ INVALID = sorted(p.name for p in (CONFIGS / "invalid").iterdir())
         ("warm-start-same-id.json", "one checkpoint for both roles"),
         ("value-warmup-no-warm-start.json", "needs warm_start"),
         ("anchor-no-warm-start.json", "ppo.anchor needs warm_start"),
+        ("play-temperature-default.json", "is the default"),
     ],
 )
 def test_the_reader_rules_the_profile_cannot_say(name: str, message: str) -> None:
@@ -128,7 +129,7 @@ def test_the_reader_rules_the_profile_cannot_say(name: str, message: str) -> Non
 
 
 def test_every_reader_invalid_sample_is_checked_above() -> None:
-    assert len(READER_INVALID) == 6
+    assert len(READER_INVALID) == 7
 
 
 @pytest.mark.parametrize("name", INVALID)
