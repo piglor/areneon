@@ -10,6 +10,7 @@ from fractions import Fraction
 from pathlib import Path
 from typing import Any
 
+import areneon_ml.report.dominated as module
 import pytest
 from areneon_ml.learner.config import read_run_config
 from areneon_ml.loop import layout
@@ -412,3 +413,17 @@ def test_the_one_pass_diagnostics_equal_the_diagnostics_of_the_held_list(
     assert json.dumps(expected, sort_keys=True) == json.dumps(
         progress_diagnostics(root, 1, config), sort_keys=True
     )
+
+
+def test_with_neither_record_the_diagnostics_are_none_and_nothing_is_read(
+    run: Path, root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """No move-class table and no dominated config: no game is opened, not even the manifest."""
+
+    def unread(*_args: Any, **_kwargs: Any) -> Any:
+        raise AssertionError("a stored game was read")
+
+    monkeypatch.setattr(module, "committed_move_classes", lambda _format: None)
+    monkeypatch.setattr(module, "committed_dominated_table", lambda _format: None)
+    monkeypatch.setattr(module, "stored_games", unread)
+    assert progress_diagnostics(root, 1, config_of(run)) == (None, None)

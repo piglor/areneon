@@ -660,3 +660,19 @@ def test_a_root_with_stored_games_of_plain_and_extra_modes_re_verifies(
     with pytest.raises(ProgressError):
         run_module.verify_progress_dir(target, config, a, 1)
     layout.write_json(extra_path, extra)
+
+
+def test_a_stored_game_that_belongs_to_no_match_is_refused(
+    runs: tuple[Path, Path], tmp_path: Path
+) -> None:
+    a, _ = runs
+    root = tmp_path / "p"
+    evaluate(a, root, (T5,))
+    target = root / "g000001"
+    source = target / "games" / "actor-rule-sample-0.json"
+    (target / "games" / "actor-rule-sample-t999999-0.json").write_bytes(source.read_bytes())
+    manifest = layout.read_json(target / layout.MANIFEST)
+    manifest["files"] = layout.hash_tree(target)
+    layout.write_json(target / layout.MANIFEST, manifest)
+    with pytest.raises(ProgressError, match="belongs to no match"):
+        run_module.verify_progress_dir(target, dataset_config(), a, 1)
