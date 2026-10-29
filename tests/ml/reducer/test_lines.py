@@ -68,6 +68,7 @@ def test_move_reveals_the_move_once_unless_called_by_another_effect() -> None:
         "|move|p2b: Charizard|Flamethrower|p1a: Venusaur",
         "|move|p2b: Charizard|Flamethrower|p1a: Venusaur|[spread] p1a,p1b",
         "|move|p2a: Venusaur|Protect|p2a: Venusaur|[still]",
+        "|-singleturn|p2a: Venusaur|Protect",
         "|move|p2a: Venusaur|Giga Drain||[from] lockedmove",
         "|move|p2a: Venusaur|Sludge Bomb|",
     )
@@ -492,8 +493,12 @@ def test_a_choice_refusal_to_the_player_changes_no_state(line: str) -> None:
     # taken; a new request may follow. Nothing about either side changes.
     assert run(line).to_dict() == run().to_dict()
     assert (
-        run("|move|p2a: Venusaur|Protect|p2a: Venusaur", line).to_dict()
-        == run("|move|p2a: Venusaur|Protect|p2a: Venusaur").to_dict()
+        run(
+            "|move|p2a: Venusaur|Protect|p2a: Venusaur", "|-singleturn|p2a: Venusaur|Protect", line
+        ).to_dict()
+        == run(
+            "|move|p2a: Venusaur|Protect|p2a: Venusaur", "|-singleturn|p2a: Venusaur|Protect"
+        ).to_dict()
     )
 
 

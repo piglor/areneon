@@ -11,9 +11,13 @@ from __future__ import annotations
 
 import copy
 import json
+from pathlib import Path
+from typing import Any
 
 import pytest
-from areneon_ml.reducer import reduce_channel
+from areneon_contracts.contracts import jcs, sha256_hex
+from areneon_ml.reducer import MalformedLineError, VocabularyError, reduce_channel
+from areneon_ml.reducer import vocab as vocab_module
 from areneon_ml.reducer.state import STATE_SCHEMA_VERSION
 
 from .support import HEADER, PERCENT, TEAM, VOCAB, leaks, opp, own, run
@@ -168,10 +172,21 @@ def test_the_streak_ignores_a_called_stalling_move_and_other_pokemon() -> None:
     assert own(state, "Venusaur").recent.protect_streak == 0
 
 
-def test_a_stalling_move_with_no_stated_outcome_leaves_the_streak_alone() -> None:
-    state = run("|move|p1a: Venusaur|Protect|p1a: Venusaur", "|turn|2")
-    assert own(state, "Venusaur").recent.protect_streak == 0
-    assert own(state, "Venusaur").recent.last_move == "protect"
+@pytest.mark.parametrize(
+    "after",
+    [
+        "|turn|2",
+        "|move|p2a: Venusaur|Recover|p2a: Venusaur",
+        "|cant|p2a: Venusaur|par",
+        "|switch|p1a: Blastoise|Blastoise, L50, F|100/100",
+        "|tie",
+        "|win|Alice",
+    ],
+)
+def test_a_stalling_move_with_no_outcome_fails_closed(after: str) -> None:
+    # The engine prints `-singleturn` or `-fail` right after every stalling move.
+    with pytest.raises(MalformedLineError):
+        run("|move|p1a: Venusaur|Protect|p1a: Venusaur", after)
 
 
 def test_weather_terrain_and_field_conditions_count_turns_since_they_began() -> None:
@@ -253,3 +268,52 @@ def test_negative_control_an_exact_opponent_hp_in_the_history_is_caught() -> Non
     side["roster"][0]["recent"]["last_move"] = "gigadrain"
     side["roster"][0]["moves_revealed"] = ["gigadrain"]
     assert "secret gigadrain" in leaks(side, {"gigadrain"})
+
+
+TABLE = vocab_module.DATA_DIR / f"stall-moves.{VOCAB.format_id}.json"
+
+
+def _table() -> dict[str, Any]:
+    return json.loads(TABLE.read_text())
+
+
+def _seal(table: dict[str, Any]) -> dict[str, Any]:
+    body = {k: v for k, v in table.items() if k != "stall_moves_hash"}
+    return {**body, "stall_moves_hash": sha256_hex(jcs(body))}
+
+
+def _read(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, table: dict[str, Any] | None) -> Any:
+    if table is not None:
+        (tmp_path / TABLE.name).write_text(json.dumps(table))
+    monkeypatch.setattr(vocab_module, "DATA_DIR", tmp_path)
+    return vocab_module.read_stall_moves(VOCAB.showdown_commit, VOCAB.format_id)
+
+
+def test_the_committed_stall_table_is_sealed_and_loaded() -> None:
+    table = _table()
+    assert _seal(table) == table
+    assert VOCAB.stall_moves == frozenset(table["stall_moves"])
+    assert {"protect", "endure"} <= VOCAB.stall_moves
+
+
+def test_a_table_for_another_pin_or_none_gives_no_stall_moves(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    assert _read(monkeypatch, tmp_path, _seal({**_table(), "showdown_commit": "0" * 40})) is None
+    assert _read(monkeypatch, tmp_path / "none", None) is None
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        lambda t: {**t, "extra": 1},
+        lambda t: _seal({**t, "schema_version": 2}),
+        lambda t: {**t, "stall_moves": ["protect"]},  # the hash no longer matches
+        lambda t: _seal({**t, "format_id": "gen9other"}),
+    ],
+)
+def test_a_malformed_stall_table_is_refused(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, change: Any
+) -> None:
+    with pytest.raises(VocabularyError):
+        _read(monkeypatch, tmp_path, change(_table()))

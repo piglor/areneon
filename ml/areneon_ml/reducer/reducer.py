@@ -67,9 +67,9 @@ _REPEATABLE_TAGS = frozenset({"spread"})
 # Lines whose text may hold `[` or `|`-free prose: no tag parsing.
 _FREE_TEXT = frozenset({"uhtml", "uhtmlchange", "-message", "-hint", "rule", "tier", "error"})
 
-# Lines that change no state, with the number of positional fields they carry.
-# The no-state lines that feed the recent history (`_observe`).
+# The no-state lines below that still feed the recent history (`_observe`).
 _OBSERVED = frozenset({"cant", "upkeep", "-singleturn", "-fail"})
+# Lines that change no state, with the number of positional fields they carry.
 _NO_STATE: dict[str, tuple[int, int | None]] = {
     "": (0, 0),
     "gen": (1, 1),
@@ -584,7 +584,7 @@ class _Reducer:
 
     def _turn(self, line: _Line) -> None:
         _arity(line, 1, 1)
-        self._no_pending_stall(line)
+        self._require_stall_outcome(line)
         self.state.turn = _integer(line.args[0], line)
         self._actions, self._actor = 0, None
         for side in (self.state.own, self.state.opponent):
@@ -598,19 +598,22 @@ class _Reducer:
                 if recent.stall_turn is not None and recent.stall_turn < self.state.turn - 1:
                     recent.protect_streak, recent.stall_turn = 0, None
 
-    def _end_action(self) -> None:
-        self._stalling, self._actor = None, None
+    def _require_stall_outcome(self, line: _Line) -> None:
+        """The engine prints `-singleturn` (success) or `-fail` right after every stalling move,
+        so another action, the turn's end or the game's end with neither is a log the reducer
+        cannot read (the world facts' `stall_unresolved`)."""
+        if self._stalling is not None:
+            raise MalformedLineError("a stalling move with no -singleturn or -fail", line.raw)
 
-    def _no_pending_stall(self, line: _Line) -> None:
-        # The engine prints `-singleturn` or `-fail` right after a stalling move; a log that goes
-        # on without either (hand-written, or a line the engine did not print) leaves the streak
-        # as it was, because neither a success nor a failure is stated.
-        self._stalling = None
+    def _end_move_action(self, line: _Line) -> None:
+        """A switch ends the running move: no stalling move may be waiting, no damage is its."""
+        self._require_stall_outcome(line)
+        self._actor = None
 
     def _observe(self, line: _Line) -> None:
         """Lines that carry no state of their own but feed the recent history."""
         if line.kind == "cant":
-            self._no_pending_stall(line)
+            self._require_stall_outcome(line)
             self._acted(self._mon(line.args[0], line))
         elif line.kind == "upkeep":
             self._actor = None
@@ -633,6 +636,7 @@ class _Reducer:
 
     def _win(self, line: _Line) -> None:
         _arity(line, 1, 1)
+        self._require_stall_outcome(line)
         for label, side in (("own", self.state.own), ("opponent", self.state.opponent)):
             if side.username is not None and side.username == line.args[0]:
                 self.state.winner = label
@@ -641,6 +645,7 @@ class _Reducer:
 
     def _tie(self, line: _Line) -> None:
         _arity(line, 0, 0)
+        self._require_stall_outcome(line)
         self.state.winner = "tie"
 
     # -- requests ------------------------------------------------------------
@@ -767,7 +772,7 @@ class _Reducer:
         details = self._details(line.args[1], line)
         located = self._locate(side, name, details)
         before = None if located is None else copy.deepcopy(side.roster[located])
-        self._end_action()
+        self._end_move_action(line)
         mon = self._bind(side, name, details, line)
         key = (side.player, letter)
         if mon.fainted and not mon.own:
@@ -1183,7 +1188,7 @@ class _Reducer:
             side, letter, _ = self._ref(target, line)
             if letter is not None:
                 shown = f"{'own' if side is self.state.own else 'opponent'}:{letter}"
-        self._no_pending_stall(line)
+        self._require_stall_outcome(line)
         self._actor = mon  # a called move (`[from]`) is still its user's
         if "from" not in line.tags and move not in mon.moves_revealed:
             mon.moves_revealed.append(move)

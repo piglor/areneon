@@ -50,7 +50,9 @@ def test_negative_control_the_own_half_of_the_same_state_trips_the_detector(play
 
 
 def test_negative_control_a_contaminated_opponent_half_is_caught() -> None:
-    state = run("|move|p2a: Venusaur|Protect|p2a: Venusaur").to_dict()
+    state = run(
+        "|move|p2a: Venusaur|Protect|p2a: Venusaur", "|-singleturn|p2a: Venusaur|Protect"
+    ).to_dict()
     secrets = {"leftovers", "gigadrain"}
     assert leaks(state["opponent"], secrets) == []
     contaminated = json.loads(json.dumps(state["opponent"]))
