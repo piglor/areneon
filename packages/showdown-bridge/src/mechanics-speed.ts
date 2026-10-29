@@ -53,7 +53,7 @@ interface Mon {
   sethp(hp: number): unknown;
   item: string;
   set: { item: string };
-  setItem(item: string): unknown;
+  itemState: unknown;
 }
 interface Queued {
   choice: string;
@@ -81,6 +81,7 @@ interface ProbeBattle {
   };
   queue: { resolveAction(action: object): Queued[] };
   actions: { runMegaEvo(pokemon: Mon): boolean };
+  initEffectState(state: { id: string; target: Mon }): unknown;
   dex: { items: { get(name: string): { id: string } }; moves: { get(id: string): { exists: boolean } }; conditions: { get(id: string): Condition } };
   faintMessages(): unknown;
   getRandomTarget(...args: unknown[]): unknown;
@@ -229,7 +230,12 @@ function declare(battle: ProbeBattle, query: SpeedOrderQuery, at: (position: num
     for (const [slot, combatant] of combatants.entries()) {
       const pokemon = battle.sides[index]?.pokemon[slot] as Mon;
       // An Evolution's stage drop can consume the declared item (White Herb): it is put back (#1243).
-      if (pokemon.item !== battle.dex.items.get(pokemon.set.item).id) pokemon.setItem(pokemon.set.item);
+      // Put back silently, not through `setItem`: its Start event would fire a Seed item again under the declared terrain.
+      const itemId = battle.dex.items.get(pokemon.set.item).id;
+      if (pokemon.item !== itemId) {
+        pokemon.item = itemId;
+        pokemon.itemState = battle.initEffectState({ id: itemId, target: pokemon });
+      }
       for (const stage of STAGES) pokemon.boosts[stage] = combatant.boosts[stage] as number;
     }
   }

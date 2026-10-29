@@ -51,7 +51,7 @@ interface DmgPokemon {
   species: { name: string };
   item: string;
   set: { item: string };
-  setItem(item: string): unknown;
+  itemState: unknown;
   ability: string;
   setStatus(status: string, source: null, sourceEffect: null, ignoreImmunities: boolean): unknown;
   getMoveHitData(move: DmgMove): HitData;
@@ -88,6 +88,7 @@ interface DmgBattle {
   field: DmgField;
   actions: DmgActions;
   prng: unknown;
+  initEffectState(state: { id: string; target: DmgPokemon }): unknown;
   dex: { items: { get(name: string): { id: string } }; conditions: { get(id: string): { exists: boolean; effectType: string } }; moves: { get(id: string): { exists: boolean; category: string; multihit?: unknown; id: string; damage?: unknown; damageCallback?: unknown; ohko?: unknown } } };
   toJSON(): object;
 }
@@ -141,7 +142,12 @@ function declare(battle: DmgBattle, side: number, combatant: Combatant): DmgPoke
 
 /** An Evolution's ability can change the other combatant's stages (Intimidate) and consume its item (White Herb): put back what was declared. */
 function restoreStagesAndItem(battle: DmgBattle, pokemon: DmgPokemon, declared: Combatant): void {
-  if (pokemon.item !== battle.dex.items.get(pokemon.set.item).id) pokemon.setItem(pokemon.set.item);
+  const id = battle.dex.items.get(pokemon.set.item).id;
+  // Put back silently, not through `setItem`: its Start event would fire a Seed item again under the declared terrain.
+  if (pokemon.item !== id) {
+    pokemon.item = id;
+    pokemon.itemState = battle.initEffectState({ id, target: pokemon });
+  }
   for (const key of STAT_KEYS) pokemon.boosts[key] = declared.boosts[key];
 }
 
@@ -178,9 +184,6 @@ function declaredBattle(engine: Engine, scenarioId: string, query: DamageQuery, 
   const battle = reference ? asDmg(startScenario(engine, scenarioId, { p1: [attackerSet, partnerOf(attackerSet)], p2: [defenderSet, partnerOf(defenderSet)] })) : startedScenario(engine, scenarioId, attackerSet, defenderSet);
   const attacker = declare(battle, 0, query.attacker);
   const defender = declare(battle, 1, query.defender);
-  // A Mega Evolution can start an ability on the other combatant (Intimidate) after that one's state was written: the declared stages and item are written again, absolute (#1243).
-  restoreStagesAndItem(battle, attacker, query.attacker);
-  restoreStagesAndItem(battle, defender, query.defender);
   const { state } = query;
   // The field is exactly the declared one: a weather or terrain a switch-in set is cleared first.
   battle.field.clearWeather();
@@ -204,6 +207,9 @@ function declaredBattle(engine: Engine, scenarioId: string, query: DamageQuery, 
       if (!(id in side.sideConditions)) throw new DamageStateError(`the engine does not take ${id}`);
     }
   });
+  // A Mega Evolution's ability (Intimidate) or the declared field (a Seed item) can change a stage or consume an item after the state was written: the declared stages and item are written last, absolute (#1243).
+  restoreStagesAndItem(battle, attacker, query.attacker);
+  restoreStagesAndItem(battle, defender, query.defender);
   return battle;
 }
 

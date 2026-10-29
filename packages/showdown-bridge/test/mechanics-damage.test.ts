@@ -229,6 +229,18 @@ describe("a declared Mega Evolution leaves the other combatant's declared stages
     expect(stagesOf(2).atk).toBe(2);
   });
 
+  it("keeps a Seed item and the declared stages under a declared terrain that would fire it", () => {
+    const query = variant((q) => {
+      q.defender.set = q.defender.set.replace("Arcanine  ", "Arcanine @ Electric Seed  ");
+      q.state.terrain = "electricterrain";
+    });
+    const parsed = readMechanicsQuery(query).query;
+    if (parsed.kind !== "damage") throw new Error("not a damage query");
+    const scenarioId = checkScenario(engine, config);
+    const battle = declaredDamageScenario(engine, scenarioId, parsed, importPaste(engine, parsed.attacker.set)[0] as PokemonSet, importPaste(engine, parsed.defender.set)[0] as PokemonSet) as unknown as { sides: { pokemon: { boosts: { def: number }; item: string }[] }[] };
+    expect(battle.sides[1]?.pokemon[0]).toMatchObject({ item: "electricseed", boosts: { def: 0 } });
+  });
+
   it("keeps the attacker's White Herb, which the stage drop would have consumed", () => {
     expect(stagesOf(0, "White Herb")).toMatchObject({ atk: 0, item: "whiteherb" });
   });
