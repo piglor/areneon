@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
-import { eachLine, endsWithNewline, recordHashes, writeLines } from "../src/dataset-io.ts";
+import { eachLine, endsWithNewline, recordHashes, recordPastes, writeLines } from "../src/dataset-io.ts";
 import { sortedUnique } from "../src/dedupe.ts";
 
 const dir = mkdtempSync(join(tmpdir(), "dataset-io-"));
@@ -81,5 +81,18 @@ describe("streamed JSON Lines I/O (#883)", () => {
     expect(sortedUnique([h("b"), h("a"), h("b"), h("a"), h("c")])).toEqual([h("a"), h("b"), h("c")]);
     expect(sortedUnique([])).toEqual([]);
     expect(() => sortedUnique(["nope"])).toThrow(/not a 64-digit/);
+  });
+});
+
+describe("recordPastes", () => {
+  it("reads the paste of each record and skips blank lines", () => {
+    const path = join(dir, "pastes.jsonl");
+    writeFileSync(path, `${JSON.stringify({ paste: "one" })}\n\n${JSON.stringify({ paste: "two" })}\n`);
+    expect(recordPastes([path])).toEqual(["one", "two"]);
+  });
+  it("refuses a record with no paste, naming the line", () => {
+    const path = join(dir, "nopaste.jsonl");
+    writeFileSync(path, `${JSON.stringify({ paste: "one" })}\n${JSON.stringify({ other: 1 })}\n`);
+    expect(() => recordPastes([path])).toThrow(/line 2 has no paste/);
   });
 });
