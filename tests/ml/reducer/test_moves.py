@@ -27,7 +27,7 @@ TRANSFORM = (
     "|-transform|p2a: Venusaur|p1b: Charizard",
 )
 SWEET_KISS = "|move|p2a: Venusaur|Sweet Kiss|p1a: Venusaur"
-PROTECT = "|move|p2a: Venusaur|Protect|p2a: Venusaur"
+PROTECT = ("|move|p2a: Venusaur|Protect|p2a: Venusaur", "|-singleturn|p2a: Venusaur|Protect")
 SWITCH_IN = "|switch|p2a: Venusaur|Venusaur, L50, M|100/100"
 SWITCH_OUT = "|switch|p2a: Blastoise|Blastoise, L50, M|100/100"
 
@@ -37,24 +37,24 @@ def _moves(*lines: str) -> list[str]:
 
 
 def test_transform_replaces_the_moves_shown_so_far() -> None:
-    assert _moves(PROTECT, *TRANSFORM, SWEET_KISS) == ["sweetkiss"]
+    assert _moves(*PROTECT, *TRANSFORM, SWEET_KISS) == ["sweetkiss"]
 
 
 def test_the_moves_come_back_when_the_pokemon_switches_out() -> None:
-    assert _moves(PROTECT, *TRANSFORM, SWEET_KISS, SWITCH_OUT) == ["protect", "transform"]
+    assert _moves(*PROTECT, *TRANSFORM, SWEET_KISS, SWITCH_OUT) == ["protect", "transform"]
 
 
 def test_a_pokemon_that_faints_while_transformed_gets_its_moves_back() -> None:
-    assert _moves(PROTECT, *TRANSFORM, "|faint|p2a: Venusaur") == ["protect", "transform"]
+    assert _moves(*PROTECT, *TRANSFORM, "|faint|p2a: Venusaur") == ["protect", "transform"]
 
 
 def test_the_copy_starts_empty_on_every_stay() -> None:
     again = [*TRANSFORM, SWEET_KISS, SWITCH_OUT, SWITCH_IN, *TRANSFORM]
-    assert _moves(PROTECT, *again) == []
+    assert _moves(*PROTECT, *again) == []
 
 
 def test_a_move_list_stays_within_four_slots_and_struggle() -> None:
-    lines = [PROTECT]
+    lines = [*PROTECT]
     for _ in range(3):
         lines += [
             *TRANSFORM,
@@ -65,7 +65,7 @@ def test_a_move_list_stays_within_four_slots_and_struggle() -> None:
         ]
     lines += [
         *TRANSFORM,
-        "|move|p2a: Venusaur|Protect|p2a: Venusaur",
+        *PROTECT,
         "|move|p2a: Venusaur|Roost|p2a: Venusaur",
         "|move|p2a: Venusaur|Tailwind|p2a: Venusaur",
         "|move|p2a: Venusaur|Baton Pass||[still]",

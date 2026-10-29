@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "showdown_commit": "7244fe8e28fa8bc4d0809ae30d183c608b62bb2b",
+  "format_id": "gen9championsvgc2026regmc",
+  "source_path": "data/moves.ts",
+  "source_sha256": "8bf68a2f0032ca21fc1de78a5bbcfcf1c5a704991eea912c9c546ff193743837",
+  "stall_moves": [
+    "banefulbunker",
+    "detect",
+    "endure",
+    "kingsshield",
+    "protect",
+    "quickguard",
+    "spikyshield",
+    "wideguard"
+  ],
+  "stall_moves_hash": "230b721ed4c3042c6b1121e5ace27cc1914ec2a0a3449a6cd3423b64bfd35337"
+}

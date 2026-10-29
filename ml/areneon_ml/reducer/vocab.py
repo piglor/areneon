@@ -74,6 +74,39 @@ def read_volatile_copy(commit: str, format_id: str) -> dict[str, Any] | None:
     return data
 
 
+_STALL_KEYS = frozenset(
+    {
+        "format_id",
+        "schema_version",
+        "showdown_commit",
+        "source_path",
+        "source_sha256",
+        "stall_moves",
+        "stall_moves_hash",
+    }
+)
+
+
+def read_stall_moves(commit: str, format_id: str) -> frozenset[str] | None:
+    """The committed stalling moves (Protect family, Endure, Quick/Wide Guard) for this engine and
+    format (`data/stall-moves.<format>.json`, exported by `export-stall-moves.ts`), or None when
+    there is none for this pin. A malformed file or a hash mismatch is refused."""
+    path = DATA_DIR / f"stall-moves.{format_id}.json"
+    if not path.is_file():
+        return None
+    data = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(data, dict) or set(data) != _STALL_KEYS or data["schema_version"] != 1:
+        raise VocabularyError(f"{path.name} is not a stall-moves table")
+    body = {k: v for k, v in data.items() if k != "stall_moves_hash"}
+    if sha256_hex(jcs(body)) != data["stall_moves_hash"]:
+        raise VocabularyError(f"{path.name} does not match its hash")
+    if data["format_id"] != format_id:
+        raise VocabularyError(f"{path.name} is for another format")
+    if data["showdown_commit"] != commit:
+        return None  # built for another pin: the Protect streak then fails closed
+    return frozenset(data["stall_moves"])
+
+
 @dataclass(frozen=True)
 class Vocabulary:
     """Id sets of one engine-data export; lookups raise `VocabularyError`."""
@@ -97,6 +130,10 @@ class Vocabulary:
     # then raises `VocabularyError`).
     not_copied: frozenset[str] | None = None
     shed_tail_copies: frozenset[str] | None = None
+    # The ids of the moves that add the engine's `stall` volatile
+    # (`data/stall-moves.<format>.json`), which the Protect streak counts. None when no file
+    # matches this export: a move line then raises `VocabularyError`, never a guess.
+    stall_moves: frozenset[str] | None = None
 
     @classmethod
     def from_engine_data(cls, data: Mapping[str, Any]) -> Vocabulary:
@@ -106,6 +143,7 @@ class Vocabulary:
             )
         copy = read_volatile_copy(str(data["showdown_commit"]), str(data["format_id"]))
         return cls(
+            stall_moves=read_stall_moves(str(data["showdown_commit"]), str(data["format_id"])),
             not_copied=None if copy is None else frozenset(copy["not_copied"]),
             shed_tail_copies=None if copy is None else frozenset(copy["shed_tail_copies"]),
             showdown_commit=str(data["showdown_commit"]),
