@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { ajvFor } from "@areneon/schema/ajv";
 import { beforeAll, describe, expect, it } from "vitest";
 import { syntheticFixtureHashes } from "../src/golden.ts";
-import { EngineDataError, readEngineData } from "../src/engine-data.ts";
+import { EngineDataError, readEngineData, readEngineDataV2 } from "../src/engine-data.ts";
 import { contractVersions, EpisodeError, readTeamDatasetManifest, readTeamGeneratorConfig, readTeamLabelSet, readTeamRecord, readTeamSnapshotManifest, readTeamVocabulary, readRoleSetTable, RoleSetError, readMoveClassTable, MoveClassError, TeamRecordError, TeamVocabularyError, loadEngine, PolicyProtocolError, readEvaluationReply, readHandshake, readPolicyQuery, readPolicyReply, readEpisode, readTrainingRunConfig, readCloneRunConfig, CloneRunConfigError, readLeagueRunRecord, LeagueRunRecordError, TrainingRunConfigError, readEvaluationRunManifest, readTrainingExample, readTrainingSet, TrainingLoaderError } from "../src/index.ts";
 import { EvaluationConfigError, readEvaluationParameters, readEntry, RegisterError, readEvaluationPlan, readSealedSetCommitment, readTrainingGateRule, readEvaluationConfig, readSealedTeamSetManifest, readRetiredSealedManifest } from "../src/index.ts";
 import { contractSamples, SAMPLE_HASHES, SAMPLES_DIR } from "../src/samples.ts";
@@ -87,6 +87,8 @@ describe("the shared contract sample corpus (ADR-008 §2)", () => {
       "v1/damage-aware-config/reader-invalid/stat-points-over-limit.json",
       "v1/damage-aware-config/reader-invalid/unknown-fixed-item.json",
       "v1/damage-aware-config/reader-invalid/unknown-nature.json",
+      "v1/engine-data-2/reader-invalid/duplicate-condition.json",
+      "v1/engine-data-2/reader-invalid/unsorted-conditions.json",
       "v1/engine-data/reader-invalid/dangling-type.json",
       "v1/engine-data/reader-invalid/duplicate-species.json",
       "v1/engine-data/reader-invalid/short-damage-row.json",
@@ -499,6 +501,15 @@ describe("the shared contract sample corpus (ADR-008 §2)", () => {
     expect(Object.keys(fresh)).toContain(file);
     expect(() => readEngineData(committed(file))).toThrow(EngineDataError);
     expect(() => readEngineData(committed(file))).toThrow(message);
+  });
+
+  it.each([
+    ["v1/engine-data-2/reader-invalid/unsorted-conditions.json", /conditions: .* repeated or out of order/],
+    ["v1/engine-data-2/reader-invalid/duplicate-condition.json", /conditions: .* repeated or out of order/],
+  ])("readEngineDataV2 refuses %s", (file, message) => {
+    expect(Object.keys(fresh)).toContain(file);
+    expect(() => readEngineDataV2(committed(file))).toThrow(EngineDataError);
+    expect(() => readEngineDataV2(committed(file))).toThrow(message);
   });
 
   it("holds a valid engine-data sample the reader accepts", () => {

@@ -83,3 +83,22 @@ def test_a_table_that_breaks_its_contract_is_refused() -> None:
     broken["species"][0]["types"] = ["a", "b", "c"]
     with pytest.raises(ContractError):
         GameData.from_table(broken)
+
+
+def test_a_version_2_table_loads_beside_version_1_and_changes_nothing_else() -> None:
+    """ADR-010 erratum A4 item 7: `conditions` is the only addition to what version 1 gives."""
+    v2 = json.loads((FORMAT_DIR / "engine-data-2.json").read_text())
+    summary = json.loads((FORMAT_DIR / "engine-data-2.summary.json").read_text())
+    loaded, v1 = GameData.from_table(v2), game()
+    assert loaded.engine_data_hash == summary["engine_data_hash"] != v1.engine_data_hash
+    assert loaded.conditions is not None
+    assert v1.conditions is None
+    assert len(loaded.conditions) == summary["counts"]["conditions"] + RESERVED
+    assert loaded.attribute_digest == v1.attribute_digest
+    assert loaded.species.ids == v1.species.ids
+    assert loaded.moves.ids == v1.moves.ids
+    assert loaded.type_chart == v1.type_chart
+    with pytest.raises(ContractError):  # version 2 must carry its condition list
+        GameData.from_table({k: v for k, v in v2.items() if k != "conditions"})
+    with pytest.raises(ContractError):  # and version 1 must not
+        GameData.from_table({**table(), "conditions": []})

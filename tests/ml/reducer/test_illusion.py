@@ -35,6 +35,12 @@ def _entry(state: BattleState, species: str) -> PokemonState:
 # -- the opponent's Illusion user --------------------------------------------------------
 
 
+def test_a_type_change_seen_under_the_disguise_moves_to_the_real_pokemon() -> None:
+    state = run(SHOWN_AS_BLASTOISE, "|-start|p2a: Blastoise|typechange|Fire", *REPLACE)
+    assert _entry(state, "gengar").types == ["fire"]
+    assert _entry(state, "blastoise").types is None
+
+
 def test_what_was_seen_under_the_disguise_moves_to_the_real_pokemon() -> None:
     shown = [
         SHOWN_AS_BLASTOISE,
