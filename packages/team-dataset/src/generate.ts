@@ -34,11 +34,13 @@ import {
 } from "@areneon/showdown-bridge";
 import { assignSplits } from "./assign-splits.ts";
 import { Binner } from "./binner.ts";
+import { crossSplitNear, type NearDuplicates, type NearIndex } from "./near-index.ts";
+import { type DeliveredComponent, populationOf, proposalCoverage, type ProposalCoverage } from "./pilot-gates.ts";
 import type { KnownHashes } from "./dedupe.ts";
 import { Drawer } from "./draw.ts";
 import { cellCount, cellLabels, cellOf, labelTeam, radices } from "./labeller.ts";
 import { type Pilot, runPilot } from "./pilot.ts";
-import { groupKey, manifestPlan, planQuotas, type QuotaPlan, type Split, type SplitSizes } from "./plan.ts";
+import { groupKey, manifestPlan, planQuotas, type QuotaPlan, SPLITS, type Split, type SplitSizes } from "./plan.ts";
 import { Proposal } from "./proposal.ts";
 import type { RoleSetsSource } from "./role-set-proposal.ts";
 import { provision, type Provision } from "./provision.ts";
@@ -75,6 +77,19 @@ export interface GenerateInput {
   reference: ReferencePool;
   /** A recorded pilot; without one, `config.pilot_draws` pilot draws are run. */
   pilot?: Pilot | undefined;
+  /**
+   * A pilot of the uniform config (this config without `proposal`) at the same `d_max`: the reference plan of gate P4
+   * (ADR-020 section 6). Without it a mixture's P4 is reported as not evaluated.
+   */
+  uniformPilot?: Pilot | undefined;
+  /** `d_team` for the cross-split near-duplicate counts of `coverage.json` (counts only); without it none are reported. */
+  dTeam?: number | undefined;
+  /**
+   * An evaluation-only dataset (ADR-020 section 7): the config must be a pure component, and every accepted team
+   * within `d_team` differing fields of a team in `index` (built from the reference datasets' teams) is dropped and
+   * logged as `near_reference`. The manifest marks the dataset evaluation-only.
+   */
+  exclude?: { d_team: number; index: NearIndex } | undefined;
   /** Where the rejection log is written. */
   logDir: string;
   /** Called every `progressEvery` draws. */
@@ -125,12 +140,19 @@ export interface CoverageReport {
   provisioning: Provision;
   attempts: Attempt[];
   dedupe: { reference_hashes: number; prefix_bytes: number; prefix_misses: number; exact_checks: number };
+  /** E-13.6, only with a mixture proposal or an evaluation-only run (an ordinary uniform dataset keeps its bytes). */
+  population?: string;
+  /** Pilot gates P1 to P4 and the per-component counts; only with a mixture proposal. */
+  proposal?: ProposalCoverage;
+  /** Only when `dTeam` was given. */
+  near_duplicates?: NearDuplicates;
 }
 
 export function generate(input: GenerateInput): GenerateResult {
   const { engine, format, table, vocabulary, labelSet, config } = input;
   const generationKey = checkKey(input.generationKey, "the generation key");
   const assignmentKey = checkKey(input.assignmentKey, "the assignment key");
+  if (input.exclude !== undefined && (config.proposal?.components.length ?? 1) !== 1) throw new GenerateError("an evaluation-only dataset needs a pure component config (one component)");
   const configHash = recordHash(config);
   const labelSetHash = recordHash(labelSet);
   const vocabularyHash = teamVocabularyHash(vocabulary);
@@ -141,6 +163,19 @@ export function generate(input: GenerateInput): GenerateResult {
   if (pilot.draws !== config.pilot_draws) throw new GenerateError(`the pilot has ${pilot.draws} draws, the config says ${config.pilot_draws}`);
   if (pilot.config_hash !== configHash || pilot.label_set_hash !== labelSetHash || pilot.vocabulary_hash !== vocabularyHash) {
     throw new GenerateError("the pilot was recorded for another config, label set or vocabulary");
+  }
+  if (config.proposal !== undefined && pilot.components === undefined) throw new GenerateError("the pilot has no per-component counts; record it again with this config");
+  const uniformPilot = input.uniformPilot;
+  if (uniformPilot !== undefined) {
+    const plain = structuredClone(config);
+    delete plain.proposal;
+    if (config.proposal === undefined) throw new GenerateError("a uniform reference pilot is for a config with a proposal");
+    if (uniformPilot.config_hash !== recordHash(plain) || uniformPilot.label_set_hash !== labelSetHash || uniformPilot.vocabulary_hash !== vocabularyHash || uniformPilot.draws !== config.pilot_draws) {
+      throw new GenerateError("the uniform reference pilot was not recorded for this config without its proposal, label set and vocabulary");
+    }
+  }
+  if (pilot.components !== undefined && pilot.components.map((c) => c.kind).join() !== (config.proposal?.components.map((c) => c.kind) ?? []).join()) {
+    throw new GenerateError("the pilot's component kinds are not the config's");
   }
   const dims = radices(labelSet);
   const known = input.reference.known;
@@ -163,7 +198,8 @@ export function generate(input: GenerateInput): GenerateResult {
     });
     const quotas = new Map(plan.strata.map((s) => [s.stratum, s.total]));
     const lookups = { misses: known.prefixMisses, checks: known.exactChecks };
-    const binner = new Binner(quotas, known);
+    const exclude = input.exclude;
+    const binner = new Binner(quotas, known, exclude === undefined ? undefined : (draw) => exclude.index.near(importPaste(engine, draw.paste)));
     const logPath = join(input.logDir, "rejections.jsonl");
     const log = new RejectionLog(logPath);
     const stream = { config_hash: configHash, plan_id: planId };
@@ -214,6 +250,7 @@ export function generate(input: GenerateInput): GenerateResult {
         pilot_draws: pilot.draws,
         ...manifestPlan(plan),
         reference_pool_hash: input.reference.hash,
+        ...(input.exclude === undefined ? {} : { evaluation_only: { d_team: input.exclude.d_team, near_references: summary.near_references } }),
         rejection_log: { log_sha256: summary.log_sha256, draws, rejections: summary.rejections, duplicates: summary.duplicates, overflows: summary.overflows },
       },
       { config, labelSet },
@@ -265,8 +302,49 @@ export function generate(input: GenerateInput): GenerateResult {
         exact_checks: known.exactChecks - lookups.checks,
       },
     };
+    if (config.proposal !== undefined || input.exclude !== undefined) {
+      coverage.population = populationOf(config, input.exclude === undefined ? undefined : `evaluation-only: teams within ${input.exclude.d_team} differing fields of a reference team were dropped`);
+    }
+    if (input.dTeam !== undefined) {
+      const teams = Object.fromEntries(plan.splits.map((split) => [split, (records[split] as TeamRecord[]).map((r) => importPaste(engine, r.paste))]));
+      coverage.near_duplicates = crossSplitNear(teams, input.dTeam);
+    }
+    if (config.proposal !== undefined) {
+      const delivered = new Map<string, DeliveredComponent>(config.proposal.components.map((c) => [c.kind, { cells: new Array<number>(cellCount(labelSet)).fill(0), splits: {} }]));
+      for (const split of SPLITS) {
+        for (const r of records[split] ?? []) {
+          const part = delivered.get(drawer.component(stream, r.origin.draw_counter)) as DeliveredComponent;
+          const cell = cellOf(labelSet, r.labels);
+          part.cells[cell] = (part.cells[cell] as number) + 1;
+          part.splits[split] = (part.splits[split] ?? 0) + 1;
+        }
+      }
+      coverage.proposal = proposalCoverage({
+        config,
+        vocabulary,
+        roleSets: input.roleSets,
+        pilot,
+        plan,
+        referenceStrata: uniformPilot === undefined ? null : referenceStrata(uniformPilot, config, dims, input.sizes),
+        delivered,
+      });
+    }
     return { manifest, records, plan, pilot, pilotDrawsRun, coverage, planId, datasetId, logPath, attempts };
   }
+}
+
+/** The strata of the uniform config's plan at the same `d_max` and sizes: the reference of P4. */
+function referenceStrata(pilot: Pilot, config: TeamGeneratorConfig, dims: number[], sizes: SplitSizes): number {
+  return planQuotas({
+    cellHits: pilot.cell_hits,
+    radices: dims,
+    pilotDraws: pilot.draws,
+    pilotMinHits: config.pilot_min_hits,
+    dMax: config.d_max,
+    nStratumMin: config.n_stratum_min,
+    sizes,
+    forced: new Set(),
+  }).strata.length;
 }
 
 interface FillInput {

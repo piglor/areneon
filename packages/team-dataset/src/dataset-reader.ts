@@ -313,6 +313,7 @@ export function trainingPool(datasets: readonly VerifiedDataset[], engine: Engin
   if (datasets.length === 0) refuse("the training pool has no dataset");
   const canonical = (record: TeamRecord): string => canonicalTeamHash(importPaste(engine, record.paste));
   for (const dataset of datasets) if (!verifiedDatasets.has(dataset)) refuse("a dataset that readDataset did not return is not trusted");
+  for (const dataset of datasets) if (dataset.manifest.evaluation_only !== undefined) refuse("an evaluation-only dataset is not training data");
   const blocked = new Set(datasets.flatMap((d) => d.splits.validation.map(canonical)));
   const records: TeamRecord[] = [];
   const seen = new Set<string>();

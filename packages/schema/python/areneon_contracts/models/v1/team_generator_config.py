@@ -36,6 +36,28 @@ class ItemWeight(BaseModel):
     """
 
 
+class Gates(BaseModel):
+    """
+    Optional: the pilot gate thresholds of ADR-020 section 6, all integers. A dataset report evaluates P1 to P4 against them; a publishing run fails when one is not met. P1 (mapping) is 100% for the role_sets component and carries no field here; the usage component's P1 threshold arrives with that component. Absent: the numbers are reported with no verdict.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    p2_min_accept_permille: Annotated[StrictInt, Field(ge=1, le=1000)]
+    """
+    P2: the fewest of a component's pilot draws the validator accepts, in thousandths (proposed 500).
+    """
+    p3_min_bits: Annotated[StrictInt, Field(ge=1, le=1000)]
+    """
+    P3: the integer upper bound on the probability of the most likely team under a component must be at most 2 to the minus this (proposed 40).
+    """
+    p4_min_strata_permille: Annotated[StrictInt, Field(ge=1, le=1000)]
+    """
+    P4: the unmerged strata of the plan, as a share of the uniform config's plan at the same d_max, in thousandths (proposed 750: a drop of more than a quarter fails).
+    """
+
+
 class UniformComponent(BaseModel):
     """
     The uniform proposal (ADR-013 section 2).
@@ -84,6 +106,10 @@ class Proposal(BaseModel):
     )
     kind: Literal["mixture"]
     components: Annotated[list[Components], Field(max_length=2, min_length=1)]
+    gates: Gates | MISSING = MISSING
+    """
+    Optional: the pilot gate thresholds of ADR-020 section 6, all integers. A dataset report evaluates P1 to P4 against them; a publishing run fails when one is not met. P1 (mapping) is 100% for the role_sets component and carries no field here; the usage component's P1 threshold arrives with that component. Absent: the numbers are reported with no verdict.
+    """
 
 
 class TeamGeneratorConfig(BaseModel):
