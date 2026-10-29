@@ -47,6 +47,20 @@ class ExcludedAbility(RootModel[StrictStr]):
     root: Annotated[StrictStr, Field(max_length=64, min_length=1)]
 
 
+class Play(BaseModel):
+    """
+    Optional (a minor change within v1, ADR-023 section 1, ADR-010 erratum A6 item 3, #1046): the play settings of the frozen pair's own seats. temperature_ppm is the sampling temperature in millionths: the pair samples softmax(logits * 10^6 / temperature_ppm) over the real candidates in self-play and baseline games, its behaviour_policy_id is the tempered pair's id, and the learner computes the old and new log-probabilities, the entropy, the approximate KL, the KL early stop and the anchor's KL (both policies) on the same tempered policy, so PPO stays on-policy. Absent means temperature 1 and today's bytes and run_config_hash; an explicit 1,000,000 is refused by the readers (one rule has one encoding, as in the policy query). The progress evaluation of a run that declares it adds this mode to argmax and temperature 1. A config that carries it is a new run from generation 0.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    temperature_ppm: Annotated[StrictInt, Field(ge=1, le=1000000)]
+    """
+    Play temperature in millionths, 1 to 999,999 (a reader rule refuses 1,000,000, the default).
+    """
+
+
 class ValueWarmup(BaseModel):
     """
     Optional (a minor change within v1, ADR-019 section 4, #1111): for a run that declares warm_start, the first `generations` learner updates (generation 1 up to generation `generations`) train the value head only, on the cloned pair's own rollouts, with every other parameter of both networks frozen (the policy heads and the shared trunk stay byte-identical); update `generations` + 1 and every later one is normal PPO. The learning-rate schedule's update index counts the warm-up updates too. Absent means normal PPO from generation 1. A config that carries it is a new run.
@@ -348,6 +362,10 @@ class Generation(BaseModel):
     max_line_bytes: Annotated[StrictInt, Field(ge=1, le=1073741824)]
     """
     Longest line of the worker protocol.
+    """
+    play: Play | MISSING = MISSING
+    """
+    Optional (a minor change within v1, ADR-023 section 1, ADR-010 erratum A6 item 3, #1046): the play settings of the frozen pair's own seats. temperature_ppm is the sampling temperature in millionths: the pair samples softmax(logits * 10^6 / temperature_ppm) over the real candidates in self-play and baseline games, its behaviour_policy_id is the tempered pair's id, and the learner computes the old and new log-probabilities, the entropy, the approximate KL, the KL early stop and the anchor's KL (both policies) on the same tempered policy, so PPO stays on-policy. Absent means temperature 1 and today's bytes and run_config_hash; an explicit 1,000,000 is refused by the readers (one rule has one encoding, as in the policy query). The progress evaluation of a run that declares it adds this mode to argmax and temperature 1. A config that carries it is a new run from generation 0.
     """
 
 

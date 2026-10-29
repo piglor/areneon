@@ -347,6 +347,7 @@ describe("the shared contract sample corpus (ADR-008 §2)", () => {
       "v1/training-run-config/reader-invalid/duplicate-baseline.json",
       "v1/training-run-config/reader-invalid/heads-do-not-divide-width.json",
       "v1/training-run-config/reader-invalid/picks-exceed-team.json",
+      "v1/training-run-config/reader-invalid/play-temperature-default.json",
       "v1/training-run-config/reader-invalid/value-warmup-no-warm-start.json",
       "v1/training-run-config/reader-invalid/warm-start-same-id.json",
       "v1/training-set/reader-invalid/duplicate-manifests.json",
@@ -432,6 +433,7 @@ describe("the shared contract sample corpus (ADR-008 §2)", () => {
     ["v1/training-run-config/reader-invalid/warm-start-same-id.json", "one checkpoint for both roles"],
     ["v1/training-run-config/reader-invalid/value-warmup-no-warm-start.json", "needs warm_start"],
     ["v1/training-run-config/reader-invalid/anchor-no-warm-start.json", "ppo.anchor needs warm_start"],
+    ["v1/training-run-config/reader-invalid/play-temperature-default.json", "is the default"],
   ])("readTrainingRunConfig refuses %s", (file, message) => {
     expect(Object.keys(fresh)).toContain(file);
     expect(() => readTrainingRunConfig(committed(file))).toThrow(TrainingRunConfigError);
