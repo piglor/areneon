@@ -383,6 +383,7 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
   const mixtureRoleSets = { kind: "role_sets", role_set_table_hash: hexOf("b"), share_permille: 700 };
   const mixtureUniform = { kind: "uniform", share_permille: 300 };
   const mixture = (components: unknown[] = [mixtureRoleSets, mixtureUniform]) => ({ kind: "mixture", components });
+  const gates = (change: Record<string, unknown> = {}) => ({ p2_min_accept_permille: 500, p3_min_bits: 40, p4_min_strata_permille: 750, ...change });
   // The golden vocabulary is read, not exported: the export takes seconds, and team-vocabulary.test.ts holds the file equal to a fresh one.
   const fullVocabulary = readTeamVocabulary(JSON.parse(readFileSync(join(GOLDEN_DIR, TEAM_VOCABULARY_FILE), "utf8")), full);
   const vocabularyEntries = fullVocabulary.roster.filter((r) =>
@@ -618,7 +619,9 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "team-label-set/golden": labelSet,
     "team-generator-config/golden": generatorConfig,
     "team-generator-config/mixture": configWith((c) => (c.proposal = mixture())),
+    "team-generator-config/mixture-gates": configWith((c) => (c.proposal = { ...mixture(), gates: gates() })),
     "team-dataset-manifest/golden": datasetManifest,
+    "team-dataset-manifest/evaluation-only": datasetWith((d) => (d.evaluation_only = { d_team: 6, near_references: 2 })),
     "team-dataset-manifest/merged": datasetWith((d) => {
       d.merged_cells = [{ stratum: 7, cells: [7, 9] }];
       d.splits = [datasetManifest.splits[0], { split: "validation", teams: 3, cells: [{ stratum: 0, pilot_hits: 21_000, quota: 2 }, { stratum: 7, pilot_hits: 40, quota: 1 }] }];
@@ -634,6 +637,8 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "training-run-config/entropy-linear": runConfigWith(
       (c) => (runSection(c, "ppo").entropy_schedule = { kind: "linear", final_micro: 0, generations: 4 }),
     ),
+    "training-run-config/preview-bootstrap": runConfigWith((c) => (runSection(c, "ppo").preview_bootstrap_micro = 500000)),
+    "training-run-config/preview-bootstrap-zero": runConfigWith((c) => (runSection(c, "ppo").preview_bootstrap_micro = 0)),
     "training-run-config/entropy-constant": runConfigWith((c) => (runSection(c, "ppo").entropy_schedule = { kind: "constant" })),
     "training-run-config/constant-schedule": runConfigWith((c) => (runSection(c, "ppo").learning_rate_schedule = { kind: "constant" })),
     "training-run-config/damage-aware": runConfigWith((c) => {
@@ -918,6 +923,7 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "team-generator-config/components-unsorted": configWith((c) => (c.proposal = mixture([mixtureUniform, mixtureRoleSets]))),
     "team-generator-config/duplicate-kind": configWith((c) => (c.proposal = mixture([{ ...mixtureUniform, share_permille: 500 }, { ...mixtureUniform, share_permille: 500 }]))),
     "team-generator-config/unknown-item": configWith((c) => (c.item_weights = [{ item: "nosuchitem", weight: 1 }])),
+    "team-dataset-manifest/evaluation-only-near-over-draws": datasetWith((d) => (d.evaluation_only = { d_team: 6, near_references: 10 ** 9 })),
     "team-dataset-manifest/splits-out-of-order": datasetWith((d) => (d.splits = [...datasetManifest.splits].reverse())),
     "team-dataset-manifest/stratum-not-lowest-member": datasetWith((d) => (d.merged_cells = [{ stratum: 7, cells: [8, 9] }])),
     "team-dataset-manifest/split-cell-is-a-member": datasetWith((d) => (d.merged_cells = [{ stratum: 0, cells: [0, 7] }])),
@@ -996,6 +1002,8 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "training-run-config/entropy-zero-generations": runConfigWith(
       (c) => (runSection(c, "ppo").entropy_schedule = { kind: "linear", final_micro: 0, generations: 0 }),
     ),
+    "training-run-config/preview-bootstrap-above-one": runConfigWith((c) => (runSection(c, "ppo").preview_bootstrap_micro = 1000001)),
+    "training-run-config/preview-bootstrap-fractional": runConfigWith((c) => (runSection(c, "ppo").preview_bootstrap_micro = 0.5)),
     "training-run-config/entropy-unknown-kind": runConfigWith((c) => (runSection(c, "ppo").entropy_schedule = { kind: "cosine" })),
     "training-run-config/schedule-unknown-kind": runConfigWith((c) => (runSection(c, "ppo").learning_rate_schedule = { kind: "cosine" })),
     "training-run-config/unknown-model-option": runConfigWith((c) => (runSection(c, "model").options = { wide: 1 })),
@@ -1108,6 +1116,9 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "team-label-set/extra-field": mutated(labelSet, (l) => (l.scores = [])),
     "team-generator-config/usage-component": configWith((c) => (c.proposal = mixture([{ kind: "usage", share_permille: 500 }, mixtureUniform]))),
     "team-generator-config/float-share": configWith((c) => (c.proposal = mixture([mixtureRoleSets, { ...mixtureUniform, share_permille: 300.5 }]))),
+    "team-generator-config/gates-float": configWith((c) => (c.proposal = { ...mixture(), gates: gates({ p3_min_bits: 40.5 }) })),
+    "team-generator-config/gates-zero-threshold": configWith((c) => (c.proposal = { ...mixture(), gates: gates({ p2_min_accept_permille: 0 }) })),
+    "team-dataset-manifest/evaluation-only-no-count": datasetWith((d) => (d.evaluation_only = { d_team: 6 })),
     "team-generator-config/float-weight": configWith((c) => (c.default_item_weight = 0.5)),
     "team-generator-config/iv-over-31": configWith((c) => (c.iv = 32)),
     "team-generator-config/pilot-below-40000": configWith((c) => (c.pilot_draws = 39_999)),

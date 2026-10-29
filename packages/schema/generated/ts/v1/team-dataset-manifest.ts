@@ -106,6 +106,19 @@ export interface TeamDatasetManifest {
      */
     overflows: number;
   };
+  /**
+   * Optional (a minor change within v1): the dataset is for evaluation only (ADR-020 section 7). It was generated from a pure component config, with every team within d_team differing fields of a reference team dropped and logged as near_reference; trainingPool and the loop's team pool refuse it, evaluation readers accept it. Absent: an ordinary dataset, with every byte as before.
+   */
+  evaluation_only?: {
+    /**
+     * The distance bound of the exclusion: a team within this many differing fields of a reference team was dropped.
+     */
+    d_team: number;
+    /**
+     * Candidates dropped for being within d_team of a reference team (the rejection log lists each).
+     */
+    near_references: number;
+  };
 }
 /**
  * Replay identity of a battle (ADR-003, ADR-007): the pinned engine commit, the format, and the hashes of the engine ruleset and of Areneon's own format rules.

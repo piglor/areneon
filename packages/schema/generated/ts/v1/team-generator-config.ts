@@ -104,6 +104,23 @@ export interface TeamGeneratorConfig {
      * @maxItems 2
      */
     components: [UniformComponent | RoleSetsComponent, ...(UniformComponent | RoleSetsComponent)[]];
+    /**
+     * Optional: the pilot gate thresholds of ADR-020 section 6, all integers. A dataset report evaluates P1 to P4 against them; a publishing run fails when one is not met. P1 (mapping) is 100% for the role_sets component and carries no field here; the usage component's P1 threshold arrives with that component. Absent: the numbers are reported with no verdict.
+     */
+    gates?: {
+      /**
+       * P2: the fewest of a component's pilot draws the validator accepts, in thousandths (proposed 500).
+       */
+      p2_min_accept_permille: number;
+      /**
+       * P3: the integer upper bound on the probability of the most likely team under a component must be at most 2 to the minus this (proposed 40).
+       */
+      p3_min_bits: number;
+      /**
+       * P4: the unmerged strata of the plan, as a share of the uniform config's plan at the same d_max, in thousandths (proposed 750: a drop of more than a quarter fails).
+       */
+      p4_min_strata_permille: number;
+    };
   };
 }
 /**

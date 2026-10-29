@@ -48,8 +48,9 @@ export interface DatasetPoolDetail {
 export function datasetPoolDetail(engine: Engine, config: PoolRequest): DatasetPoolDetail {
   const named = config.team_dataset;
   if (named === undefined) throw new GenerationError("the run config names no team dataset");
-  const dataset = readDataset(named.path, loadFixtureInputs(engine, config.format_id));
+  const dataset = readDataset(named.path, loadFixtureInputs(engine, config.format_id, named.path));
   if (datasetHash(dataset) !== named.dataset_hash) throw new GenerationError("the dataset's hash is not the one the run config names");
+  if (dataset.manifest.evaluation_only !== undefined) throw new GenerationError("the dataset is evaluation-only (ADR-020 section 7) and cannot supply a training pool");
   const pool = trainingPool([dataset], engine);
   const format = resolveFormat(engine, config.format_id);
   const excluded = new Set(config.generation.excluded_abilities);
