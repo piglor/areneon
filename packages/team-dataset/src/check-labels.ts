@@ -72,10 +72,10 @@ export function labelProblems(set: TeamLabelSet, vocabulary: TeamVocabulary): st
 }
 
 /** A `role_sets` component must name the golden role-set table, which must read against the vocabulary. */
-function roleSetProblems(config: TeamGeneratorConfig, format: string, vocabulary: TeamVocabulary): string[] {
+function roleSetProblems(config: TeamGeneratorConfig, format: string, vocabulary: TeamVocabulary, fixtures: string): string[] {
   const named = config.proposal?.components.find((c) => c.kind === "role_sets");
   if (named === undefined) return [];
-  const file = join(GOLDEN_FIXTURES_DIR, format, ROLE_SETS_FILE);
+  const file = join(fixtures, format, ROLE_SETS_FILE);
   if (!existsSync(file)) return [`the role-set table ${format}/${ROLE_SETS_FILE} is missing`];
   const table = readRoleSetTable(JSON.parse(readFileSync(file, "utf8")), vocabulary);
   return roleSetTableHash(table) === named.role_set_table_hash ? [] : [`role_sets component: role_set_table_hash is not the committed table's (${roleSetTableHash(table)})`];
@@ -86,6 +86,7 @@ export function checkTeamConfigs(
   engine: Engine,
   root: string = TEAMS_CONFIG_DIR,
   vocabularyOf: (engine: Engine, format: string, table: EngineData) => TeamVocabulary = exportTeamVocabulary,
+  fixtures: string = GOLDEN_FIXTURES_DIR,
 ): string[] {
   const problems: string[] = [];
   for (const format of readdirSync(root).sort()) {
@@ -98,7 +99,7 @@ export function checkTeamConfigs(
     for (const [name, check] of [
       ["labels.json", (v: unknown) => labelProblems(readTeamLabelSet(v, table), vocabulary)],
       ...(generators.includes("generator.json") ? [] : [["generator.json", () => []] as const]),
-      ...generators.map((g) => [g, (v: unknown) => roleSetProblems(readTeamGeneratorConfig(v, table), format, vocabulary)] as const),
+      ...generators.map((g) => [g, (v: unknown) => roleSetProblems(readTeamGeneratorConfig(v, table), format, vocabulary, fixtures)] as const),
     ] as const) {
       if (!existsSync(join(dir, name))) {
         problems.push(`${format}/${name} is missing`);

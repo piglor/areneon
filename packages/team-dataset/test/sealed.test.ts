@@ -2,7 +2,7 @@
 import { readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { inspect } from "node:util";
-import { canonicalTeamHash, checkCommitment, exportPaste, importPaste, jcs, keyCommitment, readEvaluationConfig, readSealedSetCommitment, readSealedTeamSetManifest, setCommitment, stratumLabel, syntheticTeamHashes, teamHash } from "@areneon/showdown-bridge";
+import { canonicalTeamHash, checkCommitment, exportPaste, importPaste, jcs, keyCommitment, readEvaluationConfig, readSealedSetCommitment, readSealedTeamSetManifest, recordHash, type TeamGeneratorConfig, setCommitment, stratumLabel, syntheticTeamHashes, teamHash } from "@areneon/showdown-bridge";
 import { afterAll, describe, expect, it, vi } from "vitest";
 import {
   fillSealed,
@@ -260,6 +260,10 @@ describe("generating a sealed set in the store", () => {
 
   it("refuses a bad set id, generation or attempt count", () => {
     expect(() => generateSealedSet(input({ setId: "Set A" }))).toThrow(/set id must be/);
+    // a config with a role_sets component is refused (the sealed generator takes no role-set table)
+    const mixture: TeamGeneratorConfig = { ...cfg, proposal: { kind: "mixture", components: [{ kind: "role_sets", role_set_table_hash: "a".repeat(64), share_permille: 500 }, { kind: "uniform", share_permille: 500 }] } };
+    const manifest = { ...publicManifest, generator: { ...publicManifest.generator, config_hash: recordHash(mixture) } };
+    expect(() => generateSealedSet(input({ config: mixture, publicManifest: manifest, setId: "set-mix" }))).toThrow(/no role-set table/);
     expect(() => generateSealedSet(input({ generation: 0 }))).toThrow(/generation must be/);
     expect(() => generateSealedSet(input({ maxAttempts: 0 }))).toThrow(/max attempts/);
   });

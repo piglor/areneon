@@ -236,7 +236,7 @@ export function runCli(argv: readonly string[], io: CliIo): number {
 }
 
 /** Errors that mean the inputs are wrong: exit 2. */
-const INPUT_ERRORS = new Set(["UsageError", "SyntaxError", "TeamRecordError", "StreamError", "PilotError", "TeamVocabularyError", "EngineDataError", "UnsupportedFormatError", "EngineError"]);
+const INPUT_ERRORS = new Set(["UsageError", "SyntaxError", "TeamRecordError", "StreamError", "PilotError", "TeamVocabularyError", "EngineDataError", "UnsupportedFormatError", "EngineError", "RoleSetError"]);
 /** Node errors for data beyond what one string or one Set can hold: this slice builds its indexes in memory (the shard slice needs a binary builder). */
 const OVERSIZE = new Set(["ERR_STRING_TOO_LONG"]);
 /** Errors that mean the plan or the run cannot be completed: exit 1. */

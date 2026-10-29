@@ -10,7 +10,7 @@ import { afterAll, describe, expect, it } from "vitest";
 import { KnownHashes, referencePoolHash } from "../src/dedupe.ts";
 import { generate } from "../src/generate.ts";
 import { Proposal, ProposalError } from "../src/proposal.ts";
-import { type RoleSetsSource, roleSetsSource } from "../src/role-set-proposal.ts";
+import { drawRolePicks, RoleSetProposalError, type RoleSetsSource, roleSetsSource } from "../src/role-set-proposal.ts";
 import { drawSeed, engineRng } from "../src/stream.ts";
 import { ASSIGNMENT_KEY, engine, format, FORMAT, KEY, light, small, table, vocabulary } from "./support.ts";
 
@@ -125,6 +125,29 @@ describe("refusals of the proposal", () => {
 
   it("refuses a table that does not read against the vocabulary", () => {
     expect(() => roleSetsSource(engine, vocabulary, table, { ...roleTable, vocabulary_hash: "0".repeat(64) })).toThrow(/vocabulary_hash/);
+  });
+});
+
+describe("refusals that a hand-built config or table reaches", () => {
+  it("refuses shares that do not add up (a config that did not pass the reader)", () => {
+    const bad = small({ proposal: { kind: "mixture", components: [{ kind: "uniform", share_permille: 500 }] } });
+    expect(() => new Proposal(vocabulary, table, bad).propose(engineRng(engine, drawSeed(KEY, stream, 0)))).toThrow(/do not add up to 1000/);
+  });
+
+  it("refuses a table with fewer species than a team holds", () => {
+    const few: RoleSetsSource = { ...source, table: { ...source.table, species: source.table.species.slice(0, 2) } };
+    const proposal = new Proposal(vocabulary, table, mixed(1000), few);
+    expect(() => drawRolePicks(engineRng(engine, drawSeed(KEY, stream, 0)), few, vocabulary.rules.max_team_size)).toThrow(RoleSetProposalError);
+    expect(() => proposal.propose(engineRng(engine, drawSeed(KEY, stream, 0)))).toThrow(/fewer species/);
+  });
+
+  it("refuses a per-stat maximum that cannot hold the Stat Point total", () => {
+    expect(() => new Proposal(vocabulary, table, small({ stat_point_max_per_stat: 1 }))).toThrow(/cannot hold/);
+  });
+
+  it("refuses a role-set species the roster does not have", () => {
+    const foreign: RoleSetsSource = { ...source, table: { ...source.table, species: [{ ...(source.table.species[0] as (typeof source.table.species)[number]), id: "nosuchmon" }] } };
+    expect(() => new Proposal(vocabulary, table, mixed(700), foreign)).toThrow(/not in the roster/);
   });
 });
 
