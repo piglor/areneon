@@ -264,3 +264,181 @@ def test_a_pair_made_with_different_feature_sets_is_refused(tmp_path: Path) -> N
     write_checkpoint(run_dir, data)
     with pytest.raises(ScorerError, match="different encoders"):
         build(cli(run_dir, preview, checkpoint_id(data)))
+
+
+# ---- probe-damage/2 (ADR-022 erratum E-22.3.2)
+
+
+def featured_two() -> dict[str, Any]:
+    return sample("policy-query/valid/battle-features-2.json")
+
+
+ARRAYS = ("threats", "speeds", "own_priorities", "foe_priorities")
+
+
+def test_the_valid_probe_damage_2_samples_are_accepted_under_their_set() -> None:
+    query = featured_two()
+    assert all(query["candidate_features"][name] for name in ARRAYS)
+    assert read_query(query, support(query)) == query
+    preview = sample("policy-query/valid/preview-features-2.json")
+    assert read_query(preview, support(preview))["candidate_features"]["speeds"] == []
+    check("policy-handshake", sample("policy-handshake/valid/ready-features-2.json"))
+    check("training-example", sample("training-example/valid/battle-features-2.json"))
+    # the two limits only the order arrays carry
+    shown = json.dumps([query["candidate_features"][n] for n in ("speeds", "own_priorities")])
+    assert "unqueueable" in shown
+    assert "fractional_priority" in shown
+
+
+@pytest.mark.parametrize(
+    ("name", "message"),
+    [
+        ("array-under-1", "present exactly under probe-damage/2"),
+        ("missing-array", "present exactly under probe-damage/2"),
+        ("threats-unsorted", "threats must be sorted and unique"),
+        ("speeds-duplicate", "speeds must be sorted and unique"),
+        ("priorities-unsorted", "own_priorities must be sorted and unique"),
+        ("foe-priorities-unsorted", "foe_priorities must be sorted and unique"),
+    ],
+)
+def test_probe_damage_2_structure_is_a_reader_rule(name: str, message: str) -> None:
+    query = sample(f"policy-query/reader-invalid/features-2-{name}.json")
+    check("policy-query", query)  # schema-valid
+    assert rows_problem(query["candidate_features"]) is not None
+    with pytest.raises(QueryError, match=message):
+        read_query(query, support(query))
+
+
+@pytest.mark.parametrize(
+    ("name", "message"),
+    [
+        ("missing-speed-row", "speeds must hold exactly one row"),
+        ("missing-own-priority", "own_priorities must hold one row"),
+        ("foreign-own", "threats name an own Pokemon"),
+    ],
+)
+def test_probe_damage_2_arrays_are_judged_against_the_request(name: str, message: str) -> None:
+    query = sample(f"policy-query/reader-invalid/features-2-{name}.json")
+    check("policy-query", query)
+    assert rows_problem(query["candidate_features"]) is None
+    with pytest.raises(QueryError, match=message):
+        read_query(query, support(query))
+
+
+def test_a_missing_probe_damage_2_row_is_an_invalid_query_reply(tmp_path: Path) -> None:
+    # No encoder reads /2 yet, so no checkpoint states it: the statement is given directly.
+    query = sample("policy-query/reader-invalid/features-2-missing-speed-row.json")
+    plain = make_worker(tmp_path)
+    worker = Worker(
+        plain._scorer,
+        plain._ready["message"]["engine_data_hash"],
+        plain._ready["message"]["checkpoints"],
+        MAX_LINE,
+        support(query),
+    )
+    code, frames = session(worker, line(hello()), line(query))
+    assert code == EXIT_OK
+    assert frames[0]["message"]["feature_set"] == stated(query)
+    assert frames[1]["reply"]["error"] == "invalid_query"
+    assert "speeds must hold exactly one row" in frames[1]["reply"]["detail"]
+
+
+def test_the_probe_damage_2_coverage_rule_is_the_typescript_one() -> None:
+    side = {"pokemon": [{"condition": c} for c in ("100/100", "100/100", "100/100", "0 fnt")]}
+    protect = {"id": "protect", "target": "self"}
+
+    def features(**given: list[dict[str, Any]]) -> dict[str, Any]:
+        empty: dict[str, list[dict[str, Any]]] = {name: [] for name in ARRAYS}
+        return {"feature_set": "probe-damage/2", "rows": [], **empty, **given}
+
+    def speed(own: int, mega: bool, foe: int) -> dict[str, Any]:
+        return {"kind": "computed", "own": own, "mega": mega, "foe": foe, "relation": "tie"}
+
+    def prio(slot: int, move: int, mega: bool) -> dict[str, Any]:
+        return {"kind": "computed", "slot": slot, "move": move, "mega": mega, "priority": 0}
+
+    def problem(request: dict[str, Any], choices: list[str], given: dict[str, Any]) -> str | None:
+        query = {
+            "observation": {"log": ["|request|" + json.dumps(request)]},
+            "candidates": [{"choice": c} for c in choices],
+        }
+        return coverage_problem(query, given, DAMAGING)
+
+    move_request = {"active": [{"moves": [protect]}, {"moves": [protect]}], "side": side}
+    both = [prio(0, 1, False), prio(1, 1, False)]
+    base = [speed(0, False, 1), speed(1, False, 1)]
+    plain = ["move 1, move 1"]
+    assert problem(move_request, plain, features(speeds=base, own_priorities=both)) is None
+    with_bench = ["move 1, move 1", "switch 3, move 1"]
+    bench = [*base, speed(2, False, 1)]
+    assert problem(move_request, with_bench, features(speeds=bench, own_priorities=both)) is None
+    assert "speeds must hold" in (
+        problem(move_request, plain, features(speeds=bench, own_priorities=both)) or ""
+    )
+    # a fainted bench Pokemon has no row; one the request does not list is refused
+    fainted = features(speeds=base, own_priorities=[prio(1, 1, False)])
+    assert problem(move_request, ["switch 4, move 1"], fainted) is None
+    assert "does not list" in (
+        problem(move_request, ["switch 7, move 1"], features(speeds=base, own_priorities=both))
+        or ""
+    )
+    # the Mega variant
+    mega_speeds = [speed(0, False, 1), speed(0, True, 1), speed(1, False, 1)]
+    mega = ["move 1 mega, move 1"]
+    good = features(speeds=mega_speeds, own_priorities=[prio(0, 1, True), prio(1, 1, False)])
+    assert problem(move_request, mega, good) is None
+    extra = features(
+        speeds=mega_speeds, own_priorities=[prio(0, 1, False), *good["own_priorities"]]
+    )
+    assert "own_priorities must hold" in (problem(move_request, mega, extra) or "")
+    assert "speeds must hold" in (
+        problem(move_request, plain, features(speeds=mega_speeds, own_priorities=both)) or ""
+    )
+    # a forced switch and Team Preview
+    forced = {"forceSwitch": [True, False], "side": side}
+    assert problem(forced, ["switch 3, pass"], features(speeds=[speed(2, False, 1)])) is None
+    foe = {"kind": "computed", "foe": 1, "move": "protect", "priority": 4}
+    assert "foe_priorities are empty" in (
+        problem(
+            forced, ["switch 3, pass"], features(speeds=[speed(2, False, 1)], foe_priorities=[foe])
+        )
+        or ""
+    )
+    preview = {"teamPreview": True, "side": side}
+    assert problem(preview, ["team 1234"], features()) is None
+    assert "speeds must hold" in (
+        problem(preview, ["team 1234"], features(speeds=[speed(0, False, 1)])) or ""
+    )
+    threat = {
+        "kind": "computed", "own": 2, "mega": False, "foe": 2, "move": "tackle",
+        "mean_ppm": 1, "max_ppm": 1, "min_ppm": 1, "ohko_rolls": 0,
+    }  # fmt: skip
+    only = features(speeds=[speed(2, False, 1)], threats=[threat])
+    assert "speeds must hold" in (problem(forced, ["switch 3, pass"], only) or "")
+
+
+def test_the_stream_reader_validates_probe_damage_2_arrays() -> None:
+    example = sample("training-example/valid/battle-features-2.json")
+    raw, _ = checker_for(example).line(1, stream_line(example))
+    assert raw["candidate_features"]["speeds"]
+    for name, message in (
+        ("array-under-1", "present exactly under probe-damage/2"),
+        ("missing-array", "present exactly under probe-damage/2"),
+        ("speeds-unsorted", "speeds must be sorted and unique"),
+    ):
+        bad = sample(f"training-example/reader-invalid/features-2-{name}.json")
+        with pytest.raises(TrainingStreamError, match=message):
+            checker_for(bad).line(1, stream_line(bad))
+    # unsorted arrays of the other three kinds
+    for array in ("threats", "own_priorities", "foe_priorities"):
+        broken = copy.deepcopy(example)
+        broken["candidate_features"][array].reverse()
+        with pytest.raises(TrainingStreamError, match=f"{array} must be sorted and unique"):
+            checker_for(broken).line(1, stream_line(broken))
+    # a /2 and a /1 example in one stream are two feature sets
+    other = copy.deepcopy(sample("training-example/valid/battle-features.json"))
+    checker = checker_for(example)
+    checker.line(1, stream_line(example))
+    checker.line(2, stream_line(other))
+    with pytest.raises(TrainingStreamError, match="same candidate feature set"):
+        checker.finish()
