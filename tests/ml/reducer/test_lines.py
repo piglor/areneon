@@ -331,8 +331,6 @@ def test_turn_and_results() -> None:
         "|rule|Species Clause: Limit one of each Pokemon",
         "|uhtml|otsrequest|<button>x</button>",
         "|uhtmlchange|otsrequest|",
-        "|cant|p2a: Venusaur|par",
-        "|cant|p2a: Venusaur|Disable|Flamethrower",
         "|-crit|p1a: Venusaur",
         "|-supereffective|p1a: Venusaur|1",
         "|-resisted|p1a: Venusaur",
@@ -362,6 +360,17 @@ def test_turn_and_results() -> None:
 )
 def test_lines_without_state_effect_leave_the_state_alone(line: str) -> None:
     assert run(line).to_dict() == run().to_dict()
+
+
+@pytest.mark.parametrize(
+    "line", ["|cant|p2a: Venusaur|par", "|cant|p2a: Venusaur|Disable|Flamethrower"]
+)
+def test_a_cant_line_changes_only_the_recent_history(line: str) -> None:
+    state = run(line).to_dict()
+    pokemon = state["opponent"]["roster"][0]
+    assert pokemon["recent"]["last_action_order"] == 1
+    pokemon["recent"].update(last_action_turn=None, last_action_order=None)
+    assert state == run().to_dict()
 
 
 def test_bench_style_ids_and_shiny_and_zero_hp_forms() -> None:
