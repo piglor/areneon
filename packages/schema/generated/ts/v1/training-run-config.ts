@@ -307,6 +307,10 @@ export interface Encoder {
      * ADR-022 tier B (ADR-010 erratum A5 item 1). Each move candidate also carries the engine-data type-chart cells of the move's type against the shown types of each opposing position and the ally, and a flag that the move's type is one of the user's shown types. Only true is a value (leave the key out for none). Layout changing: it changes the encoder version and the checkpoint format.
      */
     candidate_matchup?: true;
+    /**
+     * ADR-010 erratum A4 item 7. Each move candidate also carries the token of the Pokemon in the targeted active slot (the engine's target location read through the player's own request and the reduced slots; none for an untargeted or spread move, the user itself, or an empty or fainted slot), which the Battle network gathers into the slot part. Only true is a value (leave the key out for none). Layout changing: it changes the encoder version and the checkpoint format.
+     */
+    candidate_target?: true;
   };
 }
 /**

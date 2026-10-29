@@ -1,0 +1,1156 @@
+{
+  "schema_version": 1,
+  "query_id": 1,
+  "identity": {
+    "request_seq": 2,
+    "request_hash": "e5b62f4038f7aa3cbdaa920efe8e0ac8da7feed1ec57ff96739364b16396e1bf"
+  },
+  "observation": {
+    "schema_version": 1,
+    "data_class": "synthetic",
+    "player": "p1",
+    "manifest": {
+      "showdown_commit": "7244fe8e28fa8bc4d0809ae30d183c608b62bb2b",
+      "format_id": "gen9championsvgc2026regmc",
+      "regulation": "M-C",
+      "ruleset_hash": "4dd1f039bbcc6156e08c434972beae2370dc5fe8c9c6a263da7383c3247b68f3",
+      "format_rules_hash": "549cd2aa97324be093c567324676d46a5eff19d6b0c9d8491c483dab746d5dcc"
+    },
+    "identity": {
+      "request_seq": 2,
+      "request_hash": "e5b62f4038f7aa3cbdaa920efe8e0ac8da7feed1ec57ff96739364b16396e1bf"
+    },
+    "log": [
+      "|gametype|doubles",
+      "|player|p1|p1||",
+      "|player|p2|p2||",
+      "|gen|9",
+      "|tier|[Gen 9 Champions] VGC 2026 Reg M-C",
+      "|rule|Species Clause: Limit one of each Pokémon",
+      "|rule|Item Clause: Limit 1 of each item",
+      "|clearpoke",
+      "|poke|p1|Venusaur, L50, F|",
+      "|poke|p1|Charizard, L50, F|",
+      "|poke|p1|Blastoise, L50, M|",
+      "|poke|p1|Pikachu, L50, F|",
+      "|poke|p1|Snorlax, L50, F|",
+      "|poke|p1|Gengar, L50, M|",
+      "|poke|p2|Venusaur, L50, M|",
+      "|poke|p2|Charizard, L50, F|",
+      "|poke|p2|Blastoise, L50, M|",
+      "|poke|p2|Pikachu, L50, M|",
+      "|poke|p2|Snorlax, L50, M|",
+      "|poke|p2|Gengar, L50, M|",
+      "|teampreview|4",
+      "|uhtml|otsrequest|<button name=\"send\" value=\"/acceptopenteamsheets\" class=\"button\" style=\"margin-right: 10px;\"><strong>Accept Open Team Sheets</strong></button><button name=\"send\" value=\"/rejectopenteamsheets\" class=\"button\" style=\"margin-top: 10px\"><strong>Deny Open Team Sheets</strong></button>",
+      "|request|{\"teamPreview\":true,\"maxChosenTeamSize\":4,\"side\":{\"name\":\"p1\",\"id\":\"p1\",\"pokemon\":[{\"ident\":\"p1: Venusaur\",\"details\":\"Venusaur, L50, F\",\"condition\":\"159/159\",\"active\":true,\"stats\":{\"atk\":102,\"def\":103,\"spa\":120,\"spd\":120,\"spe\":104},\"moves\":[\"gigadrain\",\"sludgebomb\",\"protect\",\"sleeppowder\"],\"baseAbility\":\"overgrow\",\"item\":\"leftovers\",\"pokeball\":\"pokeball\",\"ability\":\"overgrow\",\"commanding\":false,\"reviving\":false},{\"ident\":\"p1: Charizard\",\"details\":\"Charizard, L50, F\",\"condition\":\"157/157\",\"active\":true,\"stats\":{\"atk\":104,\"def\":98,\"spa\":129,\"spd\":105,\"spe\":124},\"moves\":[\"flamethrower\",\"airslash\",\"protect\",\"heatwave\"],\"baseAbility\":\"blaze\",\"item\":\"charcoal\",\"pokeball\":\"pokeball\",\"ability\":\"blaze\",\"commanding\":false,\"reviving\":false},{\"ident\":\"p1: Blastoise\",\"details\":\"Blastoise, L50, M\",\"condition\":\"158/158\",\"active\":false,\"stats\":{\"atk\":103,\"def\":120,\"spa\":105,\"spd\":125,\"spe\":102},\"moves\":[\"surf\",\"icebeam\",\"protect\",\"fakeout\"],\"baseAbility\":\"torrent\",\"item\":\"mysticwater\",\"pokeball\":\"pokeball\",\"ability\":\"torrent\",\"commanding\":false,\"reviving\":false},{\"ident\":\"p1: Pikachu\",\"details\":\"Pikachu, L50, F\",\"condition\":\"114/114\",\"active\":false,\"stats\":{\"atk\":75,\"def\":60,\"spa\":70,\"spd\":70,\"spe\":114},\"moves\":[\"thunderbolt\",\"fakeout\",\"protect\",\"voltswitch\"],\"baseAbility\":\"static\",\"item\":\"lightball\",\"pokeball\":\"pokeball\",\"ability\":\"static\",\"commanding\":false,\"reviving\":false},{\"ident\":\"p1: Snorlax\",\"details\":\"Snorlax, L50, F\",\"condition\":\"239/239\",\"active\":false,\"stats\":{\"atk\":130,\"def\":85,\"spa\":85,\"spd\":130,\"spe\":54},\"moves\":[\"bodyslam\",\"protect\",\"curse\",\"rest\"],\"baseAbility\":\"thickfat\",\"item\":\"sitrusberry\",\"pokeball\":\"pokeball\",\"ability\":\"thickfat\",\"commanding\":false,\"reviving\":false},{\"ident\":\"p1: Gengar\",\"details\":\"Gengar, L50, M\",\"condition\":\"139/139\",\"active\":false,\"stats\":{\"atk\":85,\"def\":80,\"spa\":150,\"spd\":95,\"spe\":134},\"moves\":[\"shadowball\",\"sludgebomb\",\"protect\",\"icywind\"],\"baseAbility\":\"cursedbody\",\"item\":\"focussash\",\"pokeball\":\"pokeball\",\"ability\":\"cursedbody\",\"commanding\":false,\"reviving\":false}]}}",
+      "|",
+      "|teamsize|p1|4",
+      "|teamsize|p2|4",
+      "|start",
+      "|uhtmlchange|otsrequest|",
+      "|switch|p1a: Venusaur|Venusaur, L50, F|159/159",
+      "|switch|p1b: Charizard|Charizard, L50, F|157/157",
+      "|switch|p2a: Venusaur|Venusaur, L50, M|100/100",
+      "|switch|p2b: Charizard|Charizard, L50, F|100/100",
+      "|turn|1",
+      "|request|{\"active\":[{\"moves\":[{\"move\":\"Giga Drain\",\"id\":\"gigadrain\",\"pp\":12,\"maxpp\":12,\"target\":\"normal\",\"disabled\":false},{\"move\":\"Sludge Bomb\",\"id\":\"sludgebomb\",\"pp\":12,\"maxpp\":12,\"target\":\"normal\",\"disabled\":false},{\"move\":\"Protect\",\"id\":\"protect\",\"pp\":8,\"maxpp\":8,\"target\":\"self\",\"disabled\":false},{\"move\":\"Sleep Powder\",\"id\":\"sleeppowder\",\"pp\":16,\"maxpp\":16,\"target\":\"normal\",\"disabled\":false}]},{\"moves\":[{\"move\":\"Flamethrower\",\"id\":\"flamethrower\",\"pp\":16,\"maxpp\":16,\"target\":\"normal\",\"disabled\":false},{\"move\":\"Air Slash\",\"id\":\"airslash\",\"pp\":16,\"maxpp\":16,\"target\":\"any\",\"disabled\":false},{\"move\":\"Protect\",\"id\":\"protect\",\"pp\":8,\"maxpp\":8,\"target\":\"self\",\"disabled\":false},{\"move\":\"Heat Wave\",\"id\":\"heatwave\",\"pp\":12,\"maxpp\":12,\"target\":\"allAdjacentFoes\",\"disabled\":false}]}],\"side\":{\"name\":\"p1\",\"id\":\"p1\",\"pokemon\":[{\"ident\":\"p1: Venusaur\",\"details\":\"Venusaur, L50, F\",\"condition\":\"159/159\",\"active\":true,\"stats\":{\"atk\":102,\"def\":103,\"spa\":120,\"spd\":120,\"spe\":104},\"moves\":[\"gigadrain\",\"sludgebomb\",\"protect\",\"sleeppowder\"],\"baseAbility\":\"overgrow\",\"item\":\"leftovers\",\"pokeball\":\"pokeball\",\"ability\":\"overgrow\",\"commanding\":false,\"reviving\":false},{\"ident\":\"p1: Charizard\",\"details\":\"Charizard, L50, F\",\"condition\":\"157/157\",\"active\":true,\"stats\":{\"atk\":104,\"def\":98,\"spa\":129,\"spd\":105,\"spe\":124},\"moves\":[\"flamethrower\",\"airslash\",\"protect\",\"heatwave\"],\"baseAbility\":\"blaze\",\"item\":\"charcoal\",\"pokeball\":\"pokeball\",\"ability\":\"blaze\",\"commanding\":false,\"reviving\":false},{\"ident\":\"p1: Blastoise\",\"details\":\"Blastoise, L50, M\",\"condition\":\"158/158\",\"active\":false,\"stats\":{\"atk\":103,\"def\":120,\"spa\":105,\"spd\":125,\"spe\":102},\"moves\":[\"surf\",\"icebeam\",\"protect\",\"fakeout\"],\"baseAbility\":\"torrent\",\"item\":\"mysticwater\",\"pokeball\":\"pokeball\",\"ability\":\"torrent\",\"commanding\":false,\"reviving\":false},{\"ident\":\"p1: Pikachu\",\"details\":\"Pikachu, L50, F\",\"condition\":\"114/114\",\"active\":false,\"stats\":{\"atk\":75,\"def\":60,\"spa\":70,\"spd\":70,\"spe\":114},\"moves\":[\"thunderbolt\",\"fakeout\",\"protect\",\"voltswitch\"],\"baseAbility\":\"static\",\"item\":\"lightball\",\"pokeball\":\"pokeball\",\"ability\":\"static\",\"commanding\":false,\"reviving\":false}]}}"
+    ],
+    "team": {
+      "schema_version": 1,
+      "data_class": "synthetic",
+      "team": [
+        {
+          "name": "",
+          "species": "Venusaur",
+          "item": "Leftovers",
+          "ability": "Overgrow",
+          "moves": [
+            "Giga Drain",
+            "Sludge Bomb",
+            "Protect",
+            "Sleep Powder"
+          ],
+          "nature": "Serious",
+          "gender": "",
+          "evs": {
+            "hp": 4,
+            "atk": 0,
+            "def": 0,
+            "spa": 0,
+            "spd": 0,
+            "spe": 4
+          },
+          "ivs": {
+            "hp": 31,
+            "atk": 31,
+            "def": 31,
+            "spa": 31,
+            "spd": 31,
+            "spe": 31
+          },
+          "level": 50
+        },
+        {
+          "name": "",
+          "species": "Charizard",
+          "item": "Charcoal",
+          "ability": "Blaze",
+          "moves": [
+            "Flamethrower",
+            "Air Slash",
+            "Protect",
+            "Heat Wave"
+          ],
+          "nature": "Serious",
+          "gender": "",
+          "evs": {
+            "hp": 4,
+            "atk": 0,
+            "def": 0,
+            "spa": 0,
+            "spd": 0,
+            "spe": 4
+          },
+          "ivs": {
+            "hp": 31,
+            "atk": 31,
+            "def": 31,
+            "spa": 31,
+            "spd": 31,
+            "spe": 31
+          },
+          "level": 50
+        },
+        {
+          "name": "",
+          "species": "Blastoise",
+          "item": "Mystic Water",
+          "ability": "Torrent",
+          "moves": [
+            "Surf",
+            "Ice Beam",
+            "Protect",
+            "Fake Out"
+          ],
+          "nature": "Serious",
+          "gender": "",
+          "evs": {
+            "hp": 4,
+            "atk": 0,
+            "def": 0,
+            "spa": 0,
+            "spd": 0,
+            "spe": 4
+          },
+          "ivs": {
+            "hp": 31,
+            "atk": 31,
+            "def": 31,
+            "spa": 31,
+            "spd": 31,
+            "spe": 31
+          },
+          "level": 50
+        },
+        {
+          "name": "",
+          "species": "Pikachu",
+          "item": "Light Ball",
+          "ability": "Static",
+          "moves": [
+            "Thunderbolt",
+            "Fake Out",
+            "Protect",
+            "Volt Switch"
+          ],
+          "nature": "Serious",
+          "gender": "",
+          "evs": {
+            "hp": 4,
+            "atk": 0,
+            "def": 0,
+            "spa": 0,
+            "spd": 0,
+            "spe": 4
+          },
+          "ivs": {
+            "hp": 31,
+            "atk": 31,
+            "def": 31,
+            "spa": 31,
+            "spd": 31,
+            "spe": 31
+          },
+          "level": 50
+        },
+        {
+          "name": "",
+          "species": "Snorlax",
+          "item": "Sitrus Berry",
+          "ability": "Thick Fat",
+          "moves": [
+            "Body Slam",
+            "Protect",
+            "Curse",
+            "Rest"
+          ],
+          "nature": "Serious",
+          "gender": "",
+          "evs": {
+            "hp": 4,
+            "atk": 0,
+            "def": 0,
+            "spa": 0,
+            "spd": 0,
+            "spe": 4
+          },
+          "ivs": {
+            "hp": 31,
+            "atk": 31,
+            "def": 31,
+            "spa": 31,
+            "spd": 31,
+            "spe": 31
+          },
+          "level": 50
+        },
+        {
+          "name": "",
+          "species": "Gengar",
+          "item": "Focus Sash",
+          "ability": "Cursed Body",
+          "moves": [
+            "Shadow Ball",
+            "Sludge Bomb",
+            "Protect",
+            "Icy Wind"
+          ],
+          "nature": "Serious",
+          "gender": "",
+          "evs": {
+            "hp": 4,
+            "atk": 0,
+            "def": 0,
+            "spa": 0,
+            "spd": 0,
+            "spe": 4
+          },
+          "ivs": {
+            "hp": 31,
+            "atk": 31,
+            "def": 31,
+            "spa": 31,
+            "spd": 31,
+            "spe": 31
+          },
+          "level": 50
+        }
+      ]
+    },
+    "kind": "battle"
+  },
+  "candidates": [
+    {
+      "choice": "move 1 1, move 1 1",
+      "pending": false
+    },
+    {
+      "choice": "move 1 1, move 1 2",
+      "pending": false
+    },
+    {
+      "choice": "move 1 1, move 1 -1",
+      "pending": false
+    },
+    {
+      "choice": "move 1 1, move 2 1",
+      "pending": false
+    },
+    {
+      "choice": "move 1 1, move 2 2",
+      "pending": false
+    },
+    {
+      "choice": "move 1 1, move 2 -1",
+      "pending": false
+    },
+    {
+      "choice": "move 1 1, move 3",
+      "pending": false
+    },
+    {
+      "choice": "move 1 1, move 4",
+      "pending": false
+    },
+    {
+      "choice": "move 1 1, switch 3",
+      "pending": false
+    },
+    {
+      "choice": "move 1 1, switch 4",
+      "pending": false
+    },
+    {
+      "choice": "move 1 2, move 1 1",
+      "pending": false
+    },
+    {
+      "choice": "move 1 2, move 1 2",
+      "pending": false
+    },
+    {
+      "choice": "move 1 2, move 1 -1",
+      "pending": false
+    },
+    {
+      "choice": "move 1 2, move 2 1",
+      "pending": false
+    },
+    {
+      "choice": "move 1 2, move 2 2",
+      "pending": false
+    },
+    {
+      "choice": "move 1 2, move 2 -1",
+      "pending": false
+    },
+    {
+      "choice": "move 1 2, move 3",
+      "pending": false
+    },
+    {
+      "choice": "move 1 2, move 4",
+      "pending": false
+    },
+    {
+      "choice": "move 1 2, switch 3",
+      "pending": false
+    },
+    {
+      "choice": "move 1 2, switch 4",
+      "pending": false
+    },
+    {
+      "choice": "move 1 -2, move 1 1",
+      "pending": false
+    },
+    {
+      "choice": "move 1 -2, move 1 2",
+      "pending": false
+    },
+    {
+      "choice": "move 1 -2, move 1 -1",
+      "pending": false
+    },
+    {
+      "choice": "move 1 -2, move 2 1",
+      "pending": false
+    },
+    {
+      "choice": "move 1 -2, move 2 2",
+      "pending": false
+    },
+    {
+      "choice": "move 1 -2, move 2 -1",
+      "pending": false
+    },
+    {
+      "choice": "move 1 -2, move 3",
+      "pending": false
+    },
+    {
+      "choice": "move 1 -2, move 4",
+      "pending": false
+    },
+    {
+      "choice": "move 1 -2, switch 3",
+      "pending": false
+    },
+    {
+      "choice": "move 1 -2, switch 4",
+      "pending": false
+    },
+    {
+      "choice": "move 2 1, move 1 1",
+      "pending": false
+    },
+    {
+      "choice": "move 2 1, move 1 2",
+      "pending": false
+    },
+    {
+      "choice": "move 2 1, move 1 -1",
+      "pending": false
+    },
+    {
+      "choice": "move 2 1, move 2 1",
+      "pending": false
+    },
+    {
+      "choice": "move 2 1, move 2 2",
+      "pending": false
+    },
+    {
+      "choice": "move 2 1, move 2 -1",
+      "pending": false
+    },
+    {
+      "choice": "move 2 1, move 3",
+      "pending": false
+    },
+    {
+      "choice": "move 2 1, move 4",
+      "pending": false
+    },
+    {
+      "choice": "move 2 1, switch 3",
+      "pending": false
+    },
+    {
+      "choice": "move 2 1, switch 4",
+      "pending": false
+    },
+    {
+      "choice": "move 2 2, move 1 1",
+      "pending": false
+    },
+    {
+      "choice": "move 2 2, move 1 2",
+      "pending": false
+    },
+    {
+      "choice": "move 2 2, move 1 -1",
+      "pending": false
+    },
+    {
+      "choice": "move 2 2, move 2 1",
+      "pending": false
+    },
+    {
+      "choice": "move 2 2, move 2 2",
+      "pending": false
+    },
+    {
+      "choice": "move 2 2, move 2 -1",
+      "pending": false
+    },
+    {
+      "choice": "move 2 2, move 3",
+      "pending": false
+    },
+    {
+      "choice": "move 2 2, move 4",
+      "pending": false
+    },
+    {
+      "choice": "move 2 2, switch 3",
+      "pending": false
+    },
+    {
+      "choice": "move 2 2, switch 4",
+      "pending": false
+    },
+    {
+      "choice": "move 2 -2, move 1 1",
+      "pending": false
+    },
+    {
+      "choice": "move 2 -2, move 1 2",
+      "pending": false
+    },
+    {
+      "choice": "move 2 -2, move 1 -1",
+      "pending": false
+    },
+    {
+      "choice": "move 2 -2, move 2 1",
+      "pending": false
+    },
+    {
+      "choice": "move 2 -2, move 2 2",
+      "pending": false
+    },
+    {
+      "choice": "move 2 -2, move 2 -1",
+      "pending": false
+    },
+    {
+      "choice": "move 2 -2, move 3",
+      "pending": false
+    },
+    {
+      "choice": "move 2 -2, move 4",
+      "pending": false
+    },
+    {
+      "choice": "move 2 -2, switch 3",
+      "pending": false
+    },
+    {
+      "choice": "move 2 -2, switch 4",
+      "pending": false
+    },
+    {
+      "choice": "move 3, move 1 1",
+      "pending": false
+    },
+    {
+      "choice": "move 3, move 1 2",
+      "pending": false
+    },
+    {
+      "choice": "move 3, move 1 -1",
+      "pending": false
+    },
+    {
+      "choice": "move 3, move 2 1",
+      "pending": false
+    },
+    {
+      "choice": "move 3, move 2 2",
+      "pending": false
+    },
+    {
+      "choice": "move 3, move 2 -1",
+      "pending": false
+    },
+    {
+      "choice": "move 3, move 3",
+      "pending": false
+    },
+    {
+      "choice": "move 3, move 4",
+      "pending": false
+    },
+    {
+      "choice": "move 3, switch 3",
+      "pending": false
+    },
+    {
+      "choice": "move 3, switch 4",
+      "pending": false
+    },
+    {
+      "choice": "move 4 1, move 1 1",
+      "pending": false
+    },
+    {
+      "choice": "move 4 1, move 1 2",
+      "pending": false
+    },
+    {
+      "choice": "move 4 1, move 1 -1",
+      "pending": false
+    },
+    {
+      "choice": "move 4 1, move 2 1",
+      "pending": false
+    },
+    {
+      "choice": "move 4 1, move 2 2",
+      "pending": false
+    },
+    {
+      "choice": "move 4 1, move 2 -1",
+      "pending": false
+    },
+    {
+      "choice": "move 4 1, move 3",
+      "pending": false
+    },
+    {
+      "choice": "move 4 1, move 4",
+      "pending": false
+    },
+    {
+      "choice": "move 4 1, switch 3",
+      "pending": false
+    },
+    {
+      "choice": "move 4 1, switch 4",
+      "pending": false
+    },
+    {
+      "choice": "move 4 2, move 1 1",
+      "pending": false
+    },
+    {
+      "choice": "move 4 2, move 1 2",
+      "pending": false
+    },
+    {
+      "choice": "move 4 2, move 1 -1",
+      "pending": false
+    },
+    {
+      "choice": "move 4 2, move 2 1",
+      "pending": false
+    },
+    {
+      "choice": "move 4 2, move 2 2",
+      "pending": false
+    },
+    {
+      "choice": "move 4 2, move 2 -1",
+      "pending": false
+    },
+    {
+      "choice": "move 4 2, move 3",
+      "pending": false
+    },
+    {
+      "choice": "move 4 2, move 4",
+      "pending": false
+    },
+    {
+      "choice": "move 4 2, switch 3",
+      "pending": false
+    },
+    {
+      "choice": "move 4 2, switch 4",
+      "pending": false
+    },
+    {
+      "choice": "move 4 -2, move 1 1",
+      "pending": false
+    },
+    {
+      "choice": "move 4 -2, move 1 2",
+      "pending": false
+    },
+    {
+      "choice": "move 4 -2, move 1 -1",
+      "pending": false
+    },
+    {
+      "choice": "move 4 -2, move 2 1",
+      "pending": false
+    },
+    {
+      "choice": "move 4 -2, move 2 2",
+      "pending": false
+    },
+    {
+      "choice": "move 4 -2, move 2 -1",
+      "pending": false
+    },
+    {
+      "choice": "move 4 -2, move 3",
+      "pending": false
+    },
+    {
+      "choice": "move 4 -2, move 4",
+      "pending": false
+    },
+    {
+      "choice": "move 4 -2, switch 3",
+      "pending": false
+    },
+    {
+      "choice": "move 4 -2, switch 4",
+      "pending": false
+    },
+    {
+      "choice": "switch 3, move 1 1",
+      "pending": false
+    },
+    {
+      "choice": "switch 3, move 1 2",
+      "pending": false
+    },
+    {
+      "choice": "switch 3, move 1 -1",
+      "pending": false
+    },
+    {
+      "choice": "switch 3, move 2 1",
+      "pending": false
+    },
+    {
+      "choice": "switch 3, move 2 2",
+      "pending": false
+    },
+    {
+      "choice": "switch 3, move 2 -1",
+      "pending": false
+    },
+    {
+      "choice": "switch 3, move 3",
+      "pending": false
+    },
+    {
+      "choice": "switch 3, move 4",
+      "pending": false
+    },
+    {
+      "choice": "switch 3, switch 4",
+      "pending": false
+    },
+    {
+      "choice": "switch 4, move 1 1",
+      "pending": false
+    },
+    {
+      "choice": "switch 4, move 1 2",
+      "pending": false
+    },
+    {
+      "choice": "switch 4, move 1 -1",
+      "pending": false
+    },
+    {
+      "choice": "switch 4, move 2 1",
+      "pending": false
+    },
+    {
+      "choice": "switch 4, move 2 2",
+      "pending": false
+    },
+    {
+      "choice": "switch 4, move 2 -1",
+      "pending": false
+    },
+    {
+      "choice": "switch 4, move 3",
+      "pending": false
+    },
+    {
+      "choice": "switch 4, move 4",
+      "pending": false
+    },
+    {
+      "choice": "switch 4, switch 3",
+      "pending": false
+    }
+  ],
+  "sampling": {
+    "kind": "sample",
+    "u": 4503599627370496
+  },
+  "policy_id": "policy:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "candidate_features": {
+    "feature_set": "probe-damage/2",
+    "feature_set_hash": "284e2b155f9362e05f5d2475dda9603c25eca1003a0e754af5d93c69923260c9",
+    "rows": [
+      {
+        "kind": "computed",
+        "slot": 0,
+        "move": 1,
+        "target": 1,
+        "mega": false,
+        "mean_ppm": 150000,
+        "max_ppm": 180000,
+        "min_ppm": 120000,
+        "ohko_rolls": null
+      },
+      {
+        "kind": "unsupported",
+        "slot": 0,
+        "move": 1,
+        "target": 2,
+        "mega": false,
+        "reason": "random_effect"
+      },
+      {
+        "kind": "computed",
+        "slot": 0,
+        "move": 2,
+        "target": 1,
+        "mega": false,
+        "mean_ppm": 175000,
+        "max_ppm": 205000,
+        "min_ppm": 145000,
+        "ohko_rolls": 0
+      },
+      {
+        "kind": "computed",
+        "slot": 0,
+        "move": 2,
+        "target": 2,
+        "mega": false,
+        "mean_ppm": 187500,
+        "max_ppm": 217500,
+        "min_ppm": 157500,
+        "ohko_rolls": 0
+      },
+      {
+        "kind": "computed",
+        "slot": 1,
+        "move": 1,
+        "target": 1,
+        "mega": false,
+        "mean_ppm": 200000,
+        "max_ppm": 230000,
+        "min_ppm": 170000,
+        "ohko_rolls": 0
+      },
+      {
+        "kind": "computed",
+        "slot": 1,
+        "move": 1,
+        "target": 2,
+        "mega": false,
+        "mean_ppm": 212500,
+        "max_ppm": 242500,
+        "min_ppm": 182500,
+        "ohko_rolls": 0
+      },
+      {
+        "kind": "computed",
+        "slot": 1,
+        "move": 2,
+        "target": 1,
+        "mega": false,
+        "mean_ppm": 225000,
+        "max_ppm": 255000,
+        "min_ppm": 195000,
+        "ohko_rolls": 0
+      },
+      {
+        "kind": "computed",
+        "slot": 1,
+        "move": 2,
+        "target": 2,
+        "mega": false,
+        "mean_ppm": 237500,
+        "max_ppm": 267500,
+        "min_ppm": 207500,
+        "ohko_rolls": 0
+      },
+      {
+        "kind": "computed",
+        "slot": 1,
+        "move": 4,
+        "target": 1,
+        "mega": false,
+        "mean_ppm": 250000,
+        "max_ppm": 280000,
+        "min_ppm": 220000,
+        "ohko_rolls": 0
+      },
+      {
+        "kind": "computed",
+        "slot": 1,
+        "move": 4,
+        "target": 2,
+        "mega": false,
+        "mean_ppm": 262500,
+        "max_ppm": 292500,
+        "min_ppm": 232500,
+        "ohko_rolls": 0
+      }
+    ],
+    "threats": [
+      {
+        "kind": "computed",
+        "own": 0,
+        "mega": false,
+        "foe": 1,
+        "move": "protect",
+        "mean_ppm": 90000,
+        "max_ppm": 110000,
+        "min_ppm": 70000,
+        "ohko_rolls": 0
+      },
+      {
+        "kind": "computed",
+        "own": 0,
+        "mega": false,
+        "foe": 1,
+        "move": "thunderbolt",
+        "mean_ppm": 97000,
+        "max_ppm": 117000,
+        "min_ppm": 77000,
+        "ohko_rolls": 0
+      },
+      {
+        "kind": "computed",
+        "own": 0,
+        "mega": false,
+        "foe": 2,
+        "move": "protect",
+        "mean_ppm": 90000,
+        "max_ppm": 110000,
+        "min_ppm": 70000,
+        "ohko_rolls": 0
+      },
+      {
+        "kind": "computed",
+        "own": 0,
+        "mega": false,
+        "foe": 2,
+        "move": "thunderbolt",
+        "mean_ppm": 97000,
+        "max_ppm": 117000,
+        "min_ppm": 77000,
+        "ohko_rolls": 0
+      },
+      {
+        "kind": "computed",
+        "own": 1,
+        "mega": false,
+        "foe": 1,
+        "move": "protect",
+        "mean_ppm": 97000,
+        "max_ppm": 117000,
+        "min_ppm": 77000,
+        "ohko_rolls": 0
+      },
+      {
+        "kind": "computed",
+        "own": 1,
+        "mega": false,
+        "foe": 1,
+        "move": "thunderbolt",
+        "mean_ppm": 104000,
+        "max_ppm": 124000,
+        "min_ppm": 84000,
+        "ohko_rolls": 0
+      },
+      {
+        "kind": "computed",
+        "own": 1,
+        "mega": false,
+        "foe": 2,
+        "move": "protect",
+        "mean_ppm": 97000,
+        "max_ppm": 117000,
+        "min_ppm": 77000,
+        "ohko_rolls": 0
+      },
+      {
+        "kind": "computed",
+        "own": 1,
+        "mega": false,
+        "foe": 2,
+        "move": "thunderbolt",
+        "mean_ppm": 104000,
+        "max_ppm": 124000,
+        "min_ppm": 84000,
+        "ohko_rolls": 0
+      },
+      {
+        "kind": "computed",
+        "own": 2,
+        "mega": false,
+        "foe": 1,
+        "move": "protect",
+        "mean_ppm": 104000,
+        "max_ppm": 124000,
+        "min_ppm": 84000,
+        "ohko_rolls": 0
+      },
+      {
+        "kind": "computed",
+        "own": 2,
+        "mega": false,
+        "foe": 1,
+        "move": "thunderbolt",
+        "mean_ppm": 111000,
+        "max_ppm": 131000,
+        "min_ppm": 91000,
+        "ohko_rolls": 0
+      },
+      {
+        "kind": "computed",
+        "own": 2,
+        "mega": false,
+        "foe": 2,
+        "move": "protect",
+        "mean_ppm": 104000,
+        "max_ppm": 124000,
+        "min_ppm": 84000,
+        "ohko_rolls": 0
+      },
+      {
+        "kind": "unsupported",
+        "own": 2,
+        "mega": false,
+        "foe": 2,
+        "move": "thunderbolt",
+        "reason": "random_effect"
+      },
+      {
+        "kind": "computed",
+        "own": 3,
+        "mega": false,
+        "foe": 1,
+        "move": "protect",
+        "mean_ppm": 111000,
+        "max_ppm": 131000,
+        "min_ppm": 91000,
+        "ohko_rolls": 0
+      },
+      {
+        "kind": "unsupported",
+        "own": 3,
+        "mega": false,
+        "foe": 1,
+        "move": "thunderbolt",
+        "reason": "random_effect"
+      },
+      {
+        "kind": "unsupported",
+        "own": 3,
+        "mega": false,
+        "foe": 2,
+        "move": "protect",
+        "reason": "random_effect"
+      },
+      {
+        "kind": "computed",
+        "own": 3,
+        "mega": false,
+        "foe": 2,
+        "move": "thunderbolt",
+        "mean_ppm": 118000,
+        "max_ppm": 138000,
+        "min_ppm": 98000,
+        "ohko_rolls": 0
+      }
+    ],
+    "speeds": [
+      {
+        "kind": "computed",
+        "own": 0,
+        "mega": false,
+        "foe": 1,
+        "relation": "faster"
+      },
+      {
+        "kind": "computed",
+        "own": 0,
+        "mega": false,
+        "foe": 2,
+        "relation": "foe_first"
+      },
+      {
+        "kind": "computed",
+        "own": 1,
+        "mega": false,
+        "foe": 1,
+        "relation": "foe_first"
+      },
+      {
+        "kind": "unsupported",
+        "own": 1,
+        "mega": false,
+        "foe": 2,
+        "reason": "unqueueable"
+      },
+      {
+        "kind": "computed",
+        "own": 2,
+        "mega": false,
+        "foe": 1,
+        "relation": "own_first"
+      },
+      {
+        "kind": "computed",
+        "own": 2,
+        "mega": false,
+        "foe": 2,
+        "relation": "tie"
+      },
+      {
+        "kind": "computed",
+        "own": 3,
+        "mega": false,
+        "foe": 1,
+        "relation": "tie"
+      },
+      {
+        "kind": "computed",
+        "own": 3,
+        "mega": false,
+        "foe": 2,
+        "relation": "foe_first"
+      }
+    ],
+    "own_priorities": [
+      {
+        "kind": "computed",
+        "slot": 0,
+        "move": 1,
+        "mega": false,
+        "priority": 0
+      },
+      {
+        "kind": "unsupported",
+        "slot": 0,
+        "move": 2,
+        "mega": false,
+        "reason": "fractional_priority"
+      },
+      {
+        "kind": "computed",
+        "slot": 0,
+        "move": 3,
+        "mega": false,
+        "priority": 1
+      },
+      {
+        "kind": "computed",
+        "slot": 0,
+        "move": 4,
+        "mega": false,
+        "priority": 1
+      },
+      {
+        "kind": "computed",
+        "slot": 1,
+        "move": 1,
+        "mega": false,
+        "priority": 1
+      },
+      {
+        "kind": "computed",
+        "slot": 1,
+        "move": 2,
+        "mega": false,
+        "priority": 1
+      },
+      {
+        "kind": "computed",
+        "slot": 1,
+        "move": 3,
+        "mega": false,
+        "priority": 1
+      },
+      {
+        "kind": "computed",
+        "slot": 1,
+        "move": 4,
+        "mega": false,
+        "priority": 1
+      }
+    ],
+    "foe_priorities": [
+      {
+        "kind": "computed",
+        "foe": 1,
+        "move": "protect",
+        "priority": 4
+      },
+      {
+        "kind": "computed",
+        "foe": 1,
+        "move": "thunderbolt",
+        "priority": 0
+      },
+      {
+        "kind": "computed",
+        "foe": 2,
+        "move": "protect",
+        "priority": 4
+      },
+      {
+        "kind": "computed",
+        "foe": 2,
+        "move": "thunderbolt",
+        "priority": 0
+      }
+    ]
+  }
+}

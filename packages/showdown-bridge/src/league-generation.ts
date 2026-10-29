@@ -15,7 +15,8 @@ import { join } from "node:path";
 import type { Engine, PokemonSet } from "./engine.ts";
 import { jcs, type Json } from "./canonical-json.ts";
 import { type DamageAwareActor, type DamageAwareOptions, damageAwareActor } from "./damage-aware-actor.ts";
-import { type FeatureConfigs, featureSetHash, featureSetIdentity } from "./candidate-features.ts";
+import type { FeatureConfigs } from "./candidate-features.ts";
+import { configuredSetHash } from "./feature-build.ts";
 import { loadDamageAwareConfig, loadDamageAwareConfigV2 } from "./damage-aware-config.ts";
 import type { BeliefWorldsFactory } from "./damage-aware-worlds.ts";
 import { damageAwarePolicyId } from "./damage-aware-identity.ts";
@@ -132,8 +133,9 @@ export function featureSetup(engine: Engine, config: TrainingRunConfig): Feature
     mechanics: loadMechanicsConfig(config.format_id),
     snapshot: loadRulesSnapshot(engine.commit),
     data_class: "synthetic",
+    feature_set: named.feature_set,
   };
-  const found = featureSetHash(featureSetIdentity(engine, configs));
+  const found = configuredSetHash(engine, configs);
   if (found !== named.feature_set_hash) {
     throw new GenerationError(`the run config names the candidate feature set ${named.feature_set} ${named.feature_set_hash}, which this checkout computes as ${found}`);
   }

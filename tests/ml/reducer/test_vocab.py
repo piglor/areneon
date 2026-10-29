@@ -29,7 +29,7 @@ def test_unknown_names_raise(kind: str) -> None:
 
 def test_an_unsupported_export_version_is_refused() -> None:
     with pytest.raises(VocabularyError, match="schema_version"):
-        Vocabulary.from_engine_data({"schema_version": 2})
+        Vocabulary.from_engine_data({"schema_version": 3})
 
 
 def test_the_vocabulary_knows_its_engine() -> None:

@@ -53,6 +53,13 @@ def test_the_belief_config_reads_and_hashes_as_the_ts_side_does() -> None:
     assert belief_config_hash(config) == HASHES[path] == sha256_hex(jcs(load(path)))
 
 
+def test_the_belief_config_with_damage_evidence_reads_and_hashes_as_the_ts_side_does() -> None:
+    path = "v1/belief-config/valid/damage-evidence.json"
+    config = read_belief_config(load(path), VOCABULARY)
+    assert config["damage_evidence"]["max_checked"] == 32
+    assert belief_config_hash(config) == HASHES[path] == sha256_hex(jcs(load(path)))
+
+
 @pytest.mark.parametrize("name", names("usage-prior", "reader-invalid"))
 def test_the_prior_reader_refuses_each_reader_invalid_sample(name: str) -> None:
     with pytest.raises(UsagePriorError):

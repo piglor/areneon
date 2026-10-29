@@ -37,6 +37,8 @@ for (const file of files) {
       const belief = readBeliefConfig(JSON.parse(readFileSync(join(dir, "belief.v1.json"), "utf8")), vocabulary);
       if (usagePriorHash(prior) !== record.assumed_set.prior_hash) throw new Error("the committed usage prior is not the one the record names");
       if (beliefConfigHash(belief) !== record.assumed_set.belief_config_hash) throw new Error("the committed belief config is not the one the record names");
+      // The belief config with damage evidence (ticket #1132) is read against the vocabulary too; no record names it yet.
+      if (readBeliefConfig(JSON.parse(readFileSync(join(dir, "belief.damage-v1.json"), "utf8")), vocabulary).damage_evidence === undefined) throw new Error("belief.damage-v1.json must carry damage_evidence");
     } else throw new Error("no reader for this record version");
   } catch (error) {
     console.error(`${file}: ${(error as Error).message}`);

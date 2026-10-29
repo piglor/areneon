@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { ajvFor } from "@areneon/schema/ajv";
 import { beforeAll, describe, expect, it } from "vitest";
 import { syntheticFixtureHashes } from "../src/golden.ts";
-import { EngineDataError, readEngineData } from "../src/engine-data.ts";
+import { EngineDataError, readEngineData, readEngineDataV2 } from "../src/engine-data.ts";
 import { contractVersions, EpisodeError, readTeamDatasetManifest, readTeamGeneratorConfig, readTeamLabelSet, readTeamRecord, readTeamSnapshotManifest, readTeamVocabulary, readRoleSetTable, RoleSetError, readMoveClassTable, MoveClassError, TeamRecordError, TeamVocabularyError, loadEngine, PolicyProtocolError, readEvaluationReply, readHandshake, readPolicyQuery, readPolicyReply, readEpisode, readTrainingRunConfig, readCloneRunConfig, CloneRunConfigError, readLeagueRunRecord, LeagueRunRecordError, TrainingRunConfigError, readEvaluationRunManifest, readTrainingExample, readTrainingSet, TrainingLoaderError } from "../src/index.ts";
 import { EvaluationConfigError, readEvaluationParameters, readEntry, RegisterError, readEvaluationPlan, readSealedSetCommitment, readTrainingGateRule, readEvaluationConfig, readSealedTeamSetManifest, readRetiredSealedManifest } from "../src/index.ts";
 import { contractSamples, SAMPLE_HASHES, SAMPLES_DIR } from "../src/samples.ts";
@@ -72,6 +72,10 @@ describe("the shared contract sample corpus (ADR-008 §2)", () => {
   it("holds every reader-invalid sample under its contract's directory, and each is refused above", () => {
     const readerInvalid = Object.keys(fresh).filter((f) => f.includes("/reader-invalid/"));
     expect(readerInvalid.sort()).toEqual([
+      "v1/belief-config/reader-invalid/damage-unknown-item.json",
+      "v1/belief-config/reader-invalid/damage-unknown-lasting-move.json",
+      "v1/belief-config/reader-invalid/damage-unknown-move.json",
+      "v1/belief-config/reader-invalid/damage-unsorted-moves.json",
       "v1/belief-config/reader-invalid/duplicate-ability.json",
       "v1/belief-config/reader-invalid/unknown-ability.json",
       "v1/belief-config/reader-invalid/unsorted-abilities.json",
@@ -87,6 +91,8 @@ describe("the shared contract sample corpus (ADR-008 §2)", () => {
       "v1/damage-aware-config/reader-invalid/stat-points-over-limit.json",
       "v1/damage-aware-config/reader-invalid/unknown-fixed-item.json",
       "v1/damage-aware-config/reader-invalid/unknown-nature.json",
+      "v1/engine-data-2/reader-invalid/duplicate-condition.json",
+      "v1/engine-data-2/reader-invalid/unsorted-conditions.json",
       "v1/engine-data/reader-invalid/dangling-type.json",
       "v1/engine-data/reader-invalid/duplicate-species.json",
       "v1/engine-data/reader-invalid/short-damage-row.json",
@@ -138,6 +144,15 @@ describe("the shared contract sample corpus (ADR-008 §2)", () => {
       "v1/policy-handshake/reader-invalid/unsorted-contracts.json",
       "v1/policy-query/reader-invalid/duplicate-candidate.json",
       "v1/policy-query/reader-invalid/evaluate-duplicate-candidate.json",
+      "v1/policy-query/reader-invalid/features-2-array-under-1.json",
+      "v1/policy-query/reader-invalid/features-2-foe-priorities-unsorted.json",
+      "v1/policy-query/reader-invalid/features-2-foreign-own.json",
+      "v1/policy-query/reader-invalid/features-2-missing-array.json",
+      "v1/policy-query/reader-invalid/features-2-missing-own-priority.json",
+      "v1/policy-query/reader-invalid/features-2-missing-speed-row.json",
+      "v1/policy-query/reader-invalid/features-2-priorities-unsorted.json",
+      "v1/policy-query/reader-invalid/features-2-speeds-duplicate.json",
+      "v1/policy-query/reader-invalid/features-2-threats-unsorted.json",
       "v1/policy-query/reader-invalid/features-duplicate-row.json",
       "v1/policy-query/reader-invalid/features-missing-row.json",
       "v1/policy-query/reader-invalid/features-unsorted.json",
@@ -341,6 +356,9 @@ describe("the shared contract sample corpus (ADR-008 §2)", () => {
       "v1/team-vocabulary/reader-invalid/unsorted-natures.json",
       "v1/team-vocabulary/reader-invalid/unsorted-roster.json",
       "v1/training-example/reader-invalid/choice-not-in-candidates.json",
+      "v1/training-example/reader-invalid/features-2-array-under-1.json",
+      "v1/training-example/reader-invalid/features-2-missing-array.json",
+      "v1/training-example/reader-invalid/features-2-speeds-unsorted.json",
       "v1/training-example/reader-invalid/features-unsorted.json",
       "v1/training-gate-rule/reader-invalid/alternative-below-null.json",
       "v1/training-gate-rule/reader-invalid/unsorted-claims.json",
@@ -407,6 +425,9 @@ describe("the shared contract sample corpus (ADR-008 §2)", () => {
     ["v1/training-set/reader-invalid/unsorted-episodes.json", readTrainingSet, "episode_hashes must be sorted and unique"],
     ["v1/training-example/reader-invalid/choice-not-in-candidates.json", readTrainingExample, "is not among its"],
     ["v1/training-example/reader-invalid/features-unsorted.json", readTrainingExample, "sorted and unique"],
+    ["v1/training-example/reader-invalid/features-2-array-under-1.json", readTrainingExample, "present exactly under probe-damage/2"],
+    ["v1/training-example/reader-invalid/features-2-missing-array.json", readTrainingExample, "present exactly under probe-damage/2"],
+    ["v1/training-example/reader-invalid/features-2-speeds-unsorted.json", readTrainingExample, "speeds must be sorted and unique"],
     ["v1/training-set/reader-invalid/learner-ready-no-policy.json", readTrainingSet, "must name its behaviour_policy_id"],
     ["v1/training-set/reader-invalid/duplicate-manifests.json", readTrainingSet, "evaluation_manifest_hashes must be sorted and unique"],
   ])("the reader refuses %s", (file, reader, message) => {
@@ -472,6 +493,12 @@ describe("the shared contract sample corpus (ADR-008 §2)", () => {
     ["v1/policy-query/reader-invalid/evaluate-duplicate-candidate.json", readPolicyQuery, "is listed twice"],
     ["v1/policy-query/reader-invalid/features-unsorted.json", readPolicyQuery, "sorted and unique"],
     ["v1/policy-query/reader-invalid/features-duplicate-row.json", readPolicyQuery, "sorted and unique"],
+    ["v1/policy-query/reader-invalid/features-2-array-under-1.json", readPolicyQuery, "present exactly under probe-damage/2"],
+    ["v1/policy-query/reader-invalid/features-2-missing-array.json", readPolicyQuery, "present exactly under probe-damage/2"],
+    ["v1/policy-query/reader-invalid/features-2-threats-unsorted.json", readPolicyQuery, "threats must be sorted and unique"],
+    ["v1/policy-query/reader-invalid/features-2-speeds-duplicate.json", readPolicyQuery, "speeds must be sorted and unique"],
+    ["v1/policy-query/reader-invalid/features-2-priorities-unsorted.json", readPolicyQuery, "own_priorities must be sorted and unique"],
+    ["v1/policy-query/reader-invalid/features-2-foe-priorities-unsorted.json", readPolicyQuery, "foe_priorities must be sorted and unique"],
     ["v1/policy-handshake/reader-invalid/unsorted-contracts.json", readHandshake, "sorted by name"],
     ["v1/policy-handshake/reader-invalid/duplicate-contracts.json", readHandshake, "sorted by name"],
     ["v1/policy-handshake/reader-invalid/unsorted-checkpoints.json", readHandshake, "sorted by role"],
@@ -505,6 +532,15 @@ describe("the shared contract sample corpus (ADR-008 §2)", () => {
     expect(Object.keys(fresh)).toContain(file);
     expect(() => readEngineData(committed(file))).toThrow(EngineDataError);
     expect(() => readEngineData(committed(file))).toThrow(message);
+  });
+
+  it.each([
+    ["v1/engine-data-2/reader-invalid/unsorted-conditions.json", /conditions: .* repeated or out of order/],
+    ["v1/engine-data-2/reader-invalid/duplicate-condition.json", /conditions: .* repeated or out of order/],
+  ])("readEngineDataV2 refuses %s", (file, message) => {
+    expect(Object.keys(fresh)).toContain(file);
+    expect(() => readEngineDataV2(committed(file))).toThrow(EngineDataError);
+    expect(() => readEngineDataV2(committed(file))).toThrow(message);
   });
 
   it("holds a valid engine-data sample the reader accepts", () => {

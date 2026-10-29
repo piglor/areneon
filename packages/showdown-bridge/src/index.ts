@@ -533,6 +533,7 @@ export {
   type SpeedRow,
   type ThreatRow,
 } from "./candidate-features-2.ts";
+export { type AnyCandidateFeatures, buildFeatures, configuredSetHash, featureSetOf, isFeatureSetId } from "./feature-build.ts";
 export {
   checkTeacherSettings,
   planTeacher,
