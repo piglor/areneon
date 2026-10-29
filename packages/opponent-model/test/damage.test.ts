@@ -128,6 +128,17 @@ describe("what the evidence cannot do", () => {
     expect(b.damage.events).toBe(1);
   });
 
+  it("a forme that none of the failures touches keeps its numbers", () => {
+    // beta (slot 1) has the formes beta and betamega; only beta's candidates with the ability b1 fail.
+    const without = run({});
+    const b = run({ damage: port([hit("h1", 1)], (c) => !(c.forme === "beta" && c.ability === "b1")) });
+    const slot = (x: typeof b) => x.assignments[0]?.slots[1];
+    expect(slot(b)?.formes.map((f) => f.id)).toEqual(["beta", "betamega"]);
+    expect(text(slot(b)?.formes.find((f) => f.id === "betamega")?.abilities)).toBe(text(slot(without)?.formes.find((f) => f.id === "betamega")?.abilities));
+    expect(slot(b)?.abilities.map((m) => m.id)).toContain("b2");
+    expect(b.damage.applied).toBe(1);
+  });
+
   it("two events on a slot apply one after the other", () => {
     const first = run({ damage: port([hit("h1")], (c) => c.item !== "ix") });
     const both = run({ damage: port([hit("h1"), hit("h2")], (c, e) => (e.id === "h1" ? c.item !== "ix" : c.nature !== "bold")) });

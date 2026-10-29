@@ -7,7 +7,7 @@ import { interpretChannel } from "@areneon/public-state";
 import { beforeAll, describe, expect, it } from "vitest";
 import { loadDamageAwareConfig } from "../../showdown-bridge/src/damage-aware-config.ts";
 import { readBeliefConfig } from "../../showdown-bridge/src/belief-config.ts";
-import { createDamageCheck } from "../../showdown-bridge/src/damage-check.ts";
+import { createDamageCheck, newDamageCheckCache } from "../../showdown-bridge/src/damage-check.ts";
 import { GOLDEN_FORMAT } from "../../showdown-bridge/src/golden.ts";
 import { loadEngine } from "../../showdown-bridge/src/index.ts";
 import type { Engine, PokemonSet } from "../../showdown-bridge/src/engine.ts";
@@ -190,6 +190,27 @@ describe("the belief with the real check", () => {
     expect(total.applied).toBeGreaterThan(10);
     expect(total.rejected).toBeGreaterThan(100);
   }, 900_000);
+});
+
+describe("a game's ports share the probe's answers", () => {
+  it("a later request of the same game and seat asks the probe only about what is new, and gives the same beliefs", () => {
+    const game = games({ random: 0 })[0] as Game;
+    const seat = "p2" as const;
+    const pts = points(game).filter((p) => p.seat === seat && p.truth !== null);
+    const point = pts.at(-1) as Point & { truth: NonNullable<Point["truth"]> };
+    const earlier = upTo(game, seat, point.request - 3);
+    const later = upTo(game, seat, point.request);
+    const team = game.teams[seat] as unknown as PokemonSet[];
+    const cache = newDamageCheckCache();
+    const input = { prior: decoyPrior(point), vocabulary: realVocabulary, config: beliefConfig, opponent: point.state.opponent, flags: point.flags };
+    belief({ ...input, damage: createDamageCheck({ ...context(), cache }, { player: seat, ...earlier, team }) });
+    const warm = createDamageCheck({ ...context(), cache }, { player: seat, ...later, team }) as NonNullable<ReturnType<typeof createDamageCheck>>;
+    const cold = createDamageCheck(context(), { player: seat, ...later, team }) as NonNullable<ReturnType<typeof createDamageCheck>>;
+    const a = belief({ ...input, damage: warm });
+    const b = belief({ ...input, damage: cold });
+    expect(text(a)).toBe(text(b));
+    expect(warm.counts().probe_runs).toBeLessThan(cold.counts().probe_runs);
+  }, 300_000);
 });
 
 describe("a non-isolated hit adds nothing (a real turn with the modifier put in)", () => {

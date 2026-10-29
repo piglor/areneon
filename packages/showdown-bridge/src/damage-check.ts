@@ -72,6 +72,18 @@ export interface DamageCheckCounts {
   probe_runs: number;
 }
 
+/**
+ * What a game's ports may share: the probe's answers by query hash (a pure function of the query) and the verdicts by event and
+ * candidate (an event's id is its move line's frame index, which a longer prefix of the same channel keeps). One cache per game
+ * and seat; a port made without one has its own.
+ */
+export interface DamageCheckCache {
+  readonly memo: ProbeMemo;
+  readonly answers: Map<string, boolean | null>;
+}
+
+export const newDamageCheckCache = (): DamageCheckCache => ({ memo: new Map(), answers: new Map() });
+
 export interface DamageCheckContext {
   readonly engine: Engine;
   readonly vocabulary: TeamVocabulary;
@@ -82,6 +94,8 @@ export interface DamageCheckContext {
   readonly belief: BeliefConfig;
   readonly snapshot?: RulesSnapshot;
   readonly data_class: "synthetic" | "private";
+  /** The game's shared cache (one per game and seat), else the port keeps its own. */
+  readonly cache?: DamageCheckCache;
   /** Test seam: told the probe's rolls and the two hit-point ranges of every judged candidate. */
   readonly observe?: (event: DamageEventPort, rolls: readonly number[], before: HpRange, after: HpRange) => void;
   /** Test seam: the probe (default `probeMechanics`). */
@@ -117,7 +131,8 @@ export function createDamageCheck(context: DamageCheckContext, input: DamageChec
   if (run.flags.length > 0 || run.frames.length === 0) return null;
   const roster = new Map(vocabulary.roster.map((r) => [r.id, r]));
   const probeCounts = { queries: 0, probe_runs: 0, unsupported_queries: 0 };
-  const memo: ProbeMemo = new Map();
+  const cache = context.cache ?? newDamageCheckCache();
+  const memo = cache.memo;
   const view = damageView({ engine, vocabulary, config, v1: config, mechanics, snapshot, data_class, probe, counts: probeCounts, memo });
   const dex = view.dex;
   const names = dex as unknown as Record<"species" | "abilities" | "moves" | "items", { get(id: string): { name: string; baseSpecies: string } }>;
@@ -129,15 +144,12 @@ export function createDamageCheck(context: DamageCheckContext, input: DamageChec
   // The abilities a Pokemon in play may hold: an own Pokemon's from its latest request, an opponent's revealed one, else its species' list.
   const ownAbility = new Map<string, string>();
   const latest = requests[requests.length - 1];
-  for (const entry of latest?.side.pokemon ?? []) ownAbility.set(entry.ident.slice(entry.ident.indexOf(": ") + 2), toId(entry.ability ?? entry.baseAbility ?? ""));
+  for (const entry of latest?.side.pokemon ?? []) ownAbility.set(entry.ident.slice(entry.ident.indexOf(": ") + 2), toId(String(entry.ability)));
   const abilitiesOf = (mon: PublicMon): readonly string[] => {
-    if (mon.own) {
-      const ability = ownAbility.get(mon.name ?? "");
-      return ability === undefined || ability === "" ? rules.non_isolating.abilities : [ability];
-    }
+    if (mon.own) return [ownAbility.get(String(mon.name)) as string];
     if (mon.ability !== null && !mon.ability_received) return [mon.ability];
-    const entry = roster.get(mon.temp_species ?? mon.species ?? mon.base_species) ?? roster.get(mon.base_species);
-    return entry === undefined ? rules.non_isolating.abilities : entry.abilities;
+    // A species the roster does not list could hold any listed ability: the conservative answer.
+    return roster.get(mon.temp_species ?? mon.species ?? mon.base_species)?.abilities ?? rules.non_isolating.abilities;
   };
   const hits = extractHits(run.frames, {
     rules: rules.non_isolating,
@@ -169,7 +181,7 @@ export function createDamageCheck(context: DamageCheckContext, input: DamageChec
   counts.events = events.length;
 
   const natureName = (id: string): string | undefined => vocabulary.natures.find((n) => n.id === id)?.name;
-  const answers = new Map<string, boolean | null>();
+  const answers = cache.answers;
 
   /**
    * The own Pokemon of a hit as a probe fighter, or null when the probe cannot state it: its set is its team set with the
@@ -188,13 +200,13 @@ export function createDamageCheck(context: DamageCheckContext, input: DamageChec
     const matches = input.team.filter((set) => [set.name, set.name === "" ? set.species : "", names.species.get(set.species).baseSpecies].includes(name));
     if (matches.length !== 1) throw new DamageAwareError("an own Pokemon matches no set, or more than one, of the team as brought");
     const set: PokemonSet = structuredClone(matches[0] as PokemonSet);
-    const shownForme = toId(entry.details.split(",")[0] ?? "");
+    const shownForme = toId(entry.details.split(",")[0] as string);
     // A Mega Evolution declared to the probe can start an ability that changes the other combatant (Intimidate): not stated.
     if (mon.mega || shownForme !== toId(set.species)) return null;
     const gender = SHOWN_GENDER.exec(entry.details)?.[1];
     if (gender !== undefined) set.gender = gender;
     set.item = entry.item === "" ? "" : names.items.get(entry.item).name;
-    if (!mon.mega) set.ability = names.abilities.get(entry.ability ?? entry.baseAbility ?? set.ability).name;
+    set.ability = names.abilities.get(entry.ability as string).name;
     const hp = mon.hp_num === null || mon.hp_den === null || mon.hp_num === mon.hp_den ? null : Math.max(1, mon.hp_num);
     return { paste: exportPaste(engine, [set]), hp, status: mon.status, boosts: view.boostsOf(mon), mega: mon.mega };
   }
@@ -233,7 +245,7 @@ export function createDamageCheck(context: DamageCheckContext, input: DamageChec
       const max = stats.answer.stats.hp;
       // The foe's shown hit points are a range of hit-point values; its fighter is declared at the lowest.
       const range = (percent: number): HpRange | null => hpRange(percent, max, rules.shown_hp_rounding);
-      const foeNow = foeMon.hp_num;
+      const foeNow = foeMon.hp_num as number;
       const own = ownFighter(hit, event.role === "defender" ? hit.attacker : hit.defender);
       if (own === null) return null;
       let before: HpRange | null;
@@ -247,7 +259,7 @@ export function createDamageCheck(context: DamageCheckContext, input: DamageChec
         attacker = own;
         defender = { paste, hp: hit.before.num === 100 ? null : Math.max(1, before.lo), status: foeMon.status, boosts: view.boostsOf(foeMon), mega: false };
       } else {
-        const hpNow = foeNow === null ? null : range(foeNow);
+        const hpNow = range(foeNow);
         if (hpNow === null) return null;
         before = { lo: hit.before.num, hi: hit.before.num };
         after = { lo: hit.after.num, hi: hit.after.num };

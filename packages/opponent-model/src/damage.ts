@@ -210,11 +210,8 @@ export function applyDamage<F extends DamageForme>(formes: readonly F[], species
       if (abilities.length === 0 || spreads.length === 0 || items.size === 0) continue;
       next.push({ ...forme, abilities: distOf(abilities), spreads: distOf(spreads), items });
     }
-    if (next.length === 0) {
-      counts.contradictions += 1;
-      notes.push(`damage_contradiction:${event.role}`);
-      continue;
-    }
+    // `next` is never empty here: a forme is dropped only when a field loses every option, which needs all of the forme's
+    // candidates to have failed (all enumerated, none unsupported), and all formes in that state is the contradiction above.
     counts.applied += 1;
     notes.push(`damage_applied:${event.role}`);
     current = next;
