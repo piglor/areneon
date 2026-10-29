@@ -69,9 +69,12 @@ KL_STOP_KEYS = ("epochs_run", "kl_stopped")  # only when ppo.target_kl_micro is 
 VALUE_WARMUP_KEY = "value_warmup"  # only on a value warm-up update (ADR-019 section 4)
 ANCHOR_KEYS = ("anchor_kl", "anchor_beta_micro")  # only when ppo.anchor is set (ADR-019 section 4)
 ENTROPY_SCHEDULE_KEY = "entropy_coef_micro"  # only under a linear ppo.entropy_schedule (ADR-023)
+VALUE_KEYS = ("explained_variance", "value_calibration")  # value-head diagnostics (ADR-010 A4)
+CALIBRATION_BINS = 10
+CALIBRATION_KEYS = (frozenset({"count", "mean_value", "mean_score"}), frozenset[str]())
 TRAIN_ROLE_KEYS = (
     frozenset({*METRICS, *STEPS_KEYS}),
-    frozenset({*KL_STOP_KEYS, VALUE_WARMUP_KEY, *ANCHOR_KEYS, ENTROPY_SCHEDULE_KEY}),
+    frozenset({*KL_STOP_KEYS, VALUE_WARMUP_KEY, *ANCHOR_KEYS, ENTROPY_SCHEDULE_KEY, *VALUE_KEYS}),
 )
 TRAIN_KEYS = (frozenset(ROLES), frozenset[str]())
 _PROGRESS_DIR = re.compile(r"g(\d{6})")
@@ -111,6 +114,11 @@ class TrainFacts:
     kl_stops: dict[str, tuple[int, bool]] = field(default_factory=dict)
     # per role, (mean anchor KL, beta in millionths); a role is absent when the run has no anchor
     anchors: dict[str, tuple[float, int]] = field(default_factory=dict)
+    # per role, (explained variance, ten (count, mean value, mean score) bins); absent in a report
+    # written before the diagnostics existed
+    value_heads: dict[str, tuple[float, tuple[tuple[int, float, float], ...]]] = field(
+        default_factory=dict
+    )
 
 
 @dataclass(frozen=True)
@@ -240,12 +248,30 @@ def _number(value: object, what: str) -> float:
     return float(value)
 
 
+def _calibration(raw: object, role: str) -> tuple[tuple[int, float, float], ...]:
+    if not isinstance(raw, list) or len(raw) != CALIBRATION_BINS:
+        raise ReportError(f"{role} value_calibration is not {CALIBRATION_BINS} bins")
+    bins = []
+    for i, entry in enumerate(raw):
+        what = f"{role} value_calibration bin {i}"
+        body = closed(entry, CALIBRATION_KEYS, what)
+        bins.append(
+            (
+                integer(body["count"], f"{what} count"),
+                _number(body["mean_value"], f"{what} mean_value"),
+                _number(body["mean_score"], f"{what} mean_score"),
+            )
+        )
+    return tuple(bins)
+
+
 def read_train_report(raw: object) -> TrainFacts:
     """``train-report.json`` with closed key sets: both roles, each with exactly the known keys."""
     body = closed(raw, TRAIN_KEYS, "train-report.json")
     roles: dict[str, dict[str, float]] = {}
     stops: dict[str, tuple[int, bool]] = {}
     anchors: dict[str, tuple[float, int]] = {}
+    value_heads: dict[str, tuple[float, tuple[tuple[int, float, float], ...]]] = {}
     for role in ROLES:
         values = closed(body[role], TRAIN_ROLE_KEYS, f"train-report.json {role}")
         roles[role] = {m: _number(values[m], f"{role} {m}") for m in METRICS}
@@ -260,6 +286,13 @@ def read_train_report(raw: object) -> TrainFacts:
             raise ReportError(f"{role} value_warmup is true when present (ADR-019 section 4)")
         if ENTROPY_SCHEDULE_KEY in values:
             integer(values[ENTROPY_SCHEDULE_KEY], f"{role} {ENTROPY_SCHEDULE_KEY}")
+        if set(VALUE_KEYS) & set(values):
+            if set(VALUE_KEYS) - set(values):
+                raise ReportError(f"{role} explained_variance and value_calibration come together")
+            value_heads[role] = (
+                _number(values["explained_variance"], f"{role} explained_variance"),
+                _calibration(values["value_calibration"], role),
+            )
         if set(ANCHOR_KEYS) & set(values):
             if set(ANCHOR_KEYS) - set(values):
                 raise ReportError(f"{role} anchor_kl and anchor_beta_micro come together")
@@ -267,7 +300,7 @@ def read_train_report(raw: object) -> TrainFacts:
             if kl < 0:
                 raise ReportError(f"{role} anchor_kl is a KL divergence and cannot be negative")
             anchors[role] = (kl, integer(values["anchor_beta_micro"], f"{role} anchor_beta_micro"))
-    return TrainFacts(roles, stops, anchors)
+    return TrainFacts(roles, stops, anchors, value_heads)
 
 
 def _tallies(

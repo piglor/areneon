@@ -64,7 +64,11 @@ def test_a_generation_changes_both_networks_and_counts_itself() -> None:
     # 55 battle decisions and 3 preview decisions; 2 epochs of minibatches of 16
     assert (battle.steps, battle.optimiser_steps) == (55, 2 * math.ceil(55 / 16))
     assert (preview.steps, preview.optimiser_steps) == (3, 2)
-    assert all(math.isfinite(v) for v in report.as_dict()["battle"].values())
+    stored = report.as_dict()["battle"]
+    assert all(math.isfinite(v) for k, v in stored.items() if k != "value_calibration")
+    assert math.isfinite(stored["explained_variance"])
+    # every decision falls in exactly one calibration bin
+    assert sum(b["count"] for b in stored["value_calibration"]) == 55
 
 
 def test_the_same_inputs_give_the_same_weights_and_another_seed_does_not() -> None:
@@ -329,6 +333,8 @@ def test_without_a_target_the_report_keys_are_omitted_and_the_weights_are_unchan
             "entropy",
             "clip_fraction",
             "approx_kl",
+            "explained_variance",
+            "value_calibration",
         }
     # a target that never fires trains the same weights as no target
     never = tiny_config(target_kl_micro=1_000_000_000)
