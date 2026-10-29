@@ -17,6 +17,7 @@ from __future__ import annotations
 import fcntl
 import json
 import os
+import re
 import shutil
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
@@ -1163,8 +1164,18 @@ def verify_progress_dir(  # noqa: PLR0913, PLR0917
     _check_evaluation_key(record, evaluation_key, strict=strict_dataset)
     rows = {(r["match_id"], r["game"]): r for r in record["games"]}
     for match in record["matches"]:
-        for name in sorted(p.name for p in (target / GAMES).glob(f"{match['match_id']}-*.json")):
+        # Exactly `<match_id>-<k>.json`: a prefix glob also takes the games of `x-sample-t300000`
+        # for `x-sample` (#1245).
+        own = re.compile(re.escape(match["match_id"]) + r"-\d+\.json")
+        for name in sorted(
+            p.name for p in (target / GAMES).glob("*.json") if own.fullmatch(p.name)
+        ):
             stored = read_game_record(layout.read_json(target / GAMES / name))
+            if (
+                stored["match_id"] != match["match_id"]
+                or name != f"{match['match_id']}-{stored['game']}.json"
+            ):
+                raise ProgressError(f"games/{name} is not the game it is named for")
             if stored.get("evaluation_key") != record["plan"].get("evaluation_key"):
                 raise ProgressError(f"games/{name}: its evaluation key is not the record's")
             if is_v2(record) and stored.get("pair") != stored["game"] // 2:

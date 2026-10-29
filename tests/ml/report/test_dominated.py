@@ -5,6 +5,7 @@ from __future__ import annotations
 import copy
 import dataclasses
 import json
+from collections.abc import Iterator
 from fractions import Fraction
 from pathlib import Path
 from typing import Any
@@ -22,11 +23,19 @@ from areneon_ml.report.dominated import (
     dominated_rates,
     game_dominated,
     interval_of,
+    progress_diagnostics,
     progress_dominated,
     read_dominated_table,
 )
 from areneon_ml.report.model import read_report_model
-from areneon_ml.report.move_use import StoredGame, class_files
+from areneon_ml.report.move_use import (
+    StoredGame,
+    class_files,
+    committed_move_classes,
+    move_use,
+    progress_move_use,
+    stored_games,
+)
 from areneon_ml.report.render import build_report
 
 from tests.ml.report.support import make_run, progress_root
@@ -380,3 +389,26 @@ def test_hostile_strings_in_the_table_are_inert(run: Path, root: Path) -> None:
     changed = dataclasses.replace(facts, dominated=rates)
     text = build_report(dataclasses.replace(model, progress={**model.progress, 1: changed}))
     assert_inert(text, (HOSTILE,))
+
+
+def test_the_one_pass_diagnostics_equal_the_diagnostics_of_the_held_list(
+    run: Path, root: Path
+) -> None:
+    """Streaming the stored games changes no byte (#1245): same output as folding a held list."""
+    config = config_of(run)
+    streamed = stored_games(root, 1, config)
+    assert isinstance(streamed, Iterator)  # one parsed game at a time, not a list
+    held = list(streamed)
+    assert held
+    classes = committed_move_classes(config.format_id)
+    table = committed_dominated_table(config.format_id)
+    assert classes is not None
+    assert table is not None
+    reordered = list(reversed(held))  # the sums do not depend on the order of the games
+    expected = (move_use(reordered, classes), dominated_rates(reordered, table))
+    assert progress_diagnostics(root, 1, config) == expected
+    assert progress_diagnostics(root, 1, config, None)[0] == progress_move_use(root, 1, config)
+    assert progress_dominated(root, 1, config) == expected[1]
+    assert json.dumps(expected, sort_keys=True) == json.dumps(
+        progress_diagnostics(root, 1, config), sort_keys=True
+    )
