@@ -1,7 +1,7 @@
 // The eval-dataset option of the progress evaluation (ADR-020 E-17.1): the validation split of another verified
 // dataset, a second tiny one generated here from the committed pilot and other keys. In-process stand-in worker; the
 // Python command and the real worker are driven by tests/ml/progress/test_eval_dataset.py.
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -17,6 +17,7 @@ import {
   readEvalDataset,
   readProgressEvaluationRecordV2,
   readTrainingRunConfig,
+  runConfigHash,
   runProgressCli,
   teamHash,
   UsageError,
@@ -130,5 +131,42 @@ describe("the progress command's flags", () => {
     await expect(run(["--eval-dataset-hash", secondHash])).rejects.toThrow(/go together/);
     await expect(run(["--eval-dataset-dir", SECOND, "--eval-dataset-hash", "xyz"])).rejects.toThrow(/lower-case/);
     await expect(run(["--eval-dataset-dir", OWN, "--eval-dataset-hash", config.team_dataset?.dataset_hash as string])).rejects.toThrow(/run's own training dataset/);
+  });
+
+  // The other run of a head to head trained on a third dataset: the evaluation dataset must be clear of ITS dev and training teams too.
+  describe("with another run", () => {
+    const THIRD = join(scratch, "third");
+    writeFixtures(THIRD, regenerate(inputs, { ...readFixtureRun(OWN), dataset_id: "other-v1", generation_key: "33".repeat(32), assignment_key: "44".repeat(32) }, recordedPilot(inputs, OWN)));
+    const thirdHash = verifiedDatasetHash(engine, THIRD, FORMAT);
+    const versusFlags = async (dataset: { path: string; dataset_hash: string }): Promise<{ flags: string[]; config: ReturnType<typeof readTrainingRunConfig> }> => {
+      const other = readTrainingRunConfig({ ...raw, seeds: { ...(tiny.seeds as object), run_key: "other-run" }, team_dataset: dataset });
+      const dir = join(scratch, `versus-${dataset.dataset_hash.slice(0, 8)}`);
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(join(dir, "run-config.json"), JSON.stringify({ ...raw, seeds: { ...(tiny.seeds as object), run_key: "other-run" }, team_dataset: dataset }));
+      const teamSet = join(scratch, "other-team-set.json");
+      writeFileSync(teamSet, JSON.stringify({ teams: [] }));
+      const h = "a".repeat(64);
+      const versus = `other-run,${await runConfigHash(other)},1,${h},${h},policy:s,policy:a`;
+      return { flags: ["--engine-data", join(ROOT, "fixtures/showdown", FORMAT, "engine-data.json"), "--versus", versus, "--versus-dir", dir, "--versus-encoder-version", "enc", "--versus-team-set", teamSet, "--run-games", "2", "--eval-dataset-dir", SECOND, "--eval-dataset-hash", secondHash], config: other };
+    };
+
+    it("asks for the other run's teams too, and refuses an evaluation dataset that is its training dataset", async () => {
+      const asked: string[] = [];
+      const ports = { run_teams: (_e: unknown, c: { seeds: { run_key: string } }) => (asked.push(c.seeds.run_key), new Set<string>()) };
+      const ok = await versusFlags({ path: THIRD, dataset_hash: thirdHash });
+      // The worker does not exist here: the command stops at its start, after both runs' teams were read.
+      await expect(runProgressCli([...files().flags, ...ok.flags], () => undefined, datasetValidationPool, ports as never)).rejects.toThrow();
+      expect(asked).toEqual([config.seeds.run_key, "other-run"]);
+      const same = await versusFlags({ path: SECOND, dataset_hash: secondHash });
+      asked.length = 0;
+      await expect(runProgressCli([...files().flags, ...same.flags], () => undefined, datasetValidationPool, ports as never)).rejects.toThrow(/other run's own training dataset/);
+      expect(asked).toEqual([config.seeds.run_key]);
+    }, 120_000);
+
+    it("refuses a validation team that is in the other run's dev or training split", () => {
+      const pool = datasetValidationPool(engine, evalConfig);
+      const trained = new Set(pool.teams.map((t) => teamHash(t.sets)));
+      expect(() => progressPlan({ config, pool, games: 2, training_teams: new Set(["f".repeat(64), ...trained]), league_seeds: new Set<string>() })).toThrow(/run trained on it/);
+    });
   });
 });
