@@ -8,6 +8,7 @@
 //   reveal-hash  --store DIR --set-id ID
 //   retire       --store DIR --set-id ID --out DIR --register FILE
 //                --parameters FILE --rule FILE   (repeat the pair for a register that spans versions)
+//                --heads DIR [--heads-ref REF]   (the published chain heads, checked before anything is written)
 //   verify       --dir DIR --public-manifest FILE --register FILE --parameters FILE --rule FILE
 //                --heads DIR [--heads-ref REF]   (the published chain heads; use --heads-ref origin/main)
 //                --config FILE --labels FILE --format ID
@@ -189,13 +190,23 @@ function runRevealHash(values: Values, io: SealedCliIo): number {
   return 0;
 }
 
+/** Register authenticity is enforced in code, not only by the runbook: the chain must verify and match every published head (no rollback, no fork). Used before anything is written or read from a bundle. */
+function checkPublishedHeads(values: Values, registerText: string, configs: ReturnType<typeof evaluationConfigs>): void {
+  const heads = readPublishedHeads(need(values, "heads"), values["heads-ref"], process.cwd(), { requireHeads: true });
+  checkHeads(verifyRegister(registerText, configs), heads);
+}
+
 function runRetire(values: Values, io: SealedCliIo): number {
+  const registerText = readFileSync(need(values, "register"), "utf8");
+  const configs = evaluationConfigs(values);
+  // Before the store is touched: a rolled-back or forked register must not unlock a reveal bundle.
+  checkPublishedHeads(values, registerText, configs);
   const hash = retireSealedSet({
     storeDir: need(values, "store"),
     setId: need(values, "set-id"),
     outDir: need(values, "out"),
-    registerText: readFileSync(need(values, "register"), "utf8"),
-    configs: evaluationConfigs(values),
+    registerText,
+    configs,
   });
   io.out(JSON.stringify({ set_id: need(values, "set-id"), reveal_hash: hash, out: need(values, "out") }));
   return 0;
@@ -209,9 +220,7 @@ function runVerify(values: Values, io: SealedCliIo, engine: Engine): number {
   const bundle = readRevealDir(need(values, "dir"));
   const publicManifest = readTeamDatasetManifest(json(need(values, "public-manifest")), { config: inputs.config, labelSet: inputs.labelSet });
   const registerText = readFileSync(need(values, "register"), "utf8");
-  // Register authenticity is enforced here, not only by the runbook: the chain must verify and match every published head (no rollback, no fork).
-  const heads = readPublishedHeads(need(values, "heads"), values["heads-ref"], process.cwd(), { requireHeads: true });
-  checkHeads(verifyRegister(registerText, configs), heads);
+  checkPublishedHeads(values, registerText, configs);
   const report = verifyRetiredSealed({ engine, ...inputs, evaluation, bundle, publicManifest, registerText, known: knownTeams(values.known ?? []) });
   io.out(JSON.stringify({ verified: true, ...report }));
   return 0;
