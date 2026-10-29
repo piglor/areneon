@@ -682,3 +682,38 @@ def test_the_first_set_keeps_its_version_and_checkpoint_ids() -> None:
         checkpoint_id(checkpoint_bytes(init_network("preview", game(), model, 1), game()))
         == "4cba4e313bbf62673467b5b90c56a502a80163f79a13639f958244289653806c"
     )
+
+
+def test_the_target_option_composes_with_the_arrays() -> None:
+    # candidate_target (ADR-010 A4 item 7) adds a token column to a candidate part; the arrays add
+    # categories, a number and the Mega summary: both reach the slot part and nothing collides.
+    options = pytest.importorskip("areneon_ml.model.options")
+    if not hasattr(options, "CANDIDATE_TARGET"):
+        pytest.skip("candidate_target is not on this branch yet")
+    both = replace(
+        TINY_ENCODER,
+        options=read_options("encoder", {CANDIDATE_FEATURES: SET, options.CANDIDATE_TARGET: True}),
+    )
+    encoder_both = Encoder(game(), both)
+    q = mega_query()
+    encoded = encoder_both.encode(q)
+    plain = ENCODE.encode(q)
+    assert encoded.cand_tok.shape[-1] == plain.cand_tok.shape[-1] + 1
+    assert torch.equal(encoded.cand_cat, plain.cand_cat)
+    assert torch.equal(encoded.cand_num, plain.cand_num)
+    assert torch.equal(encoded.thr_idx, plain.thr_idx)
+    model = init_network("battle", game(), replace(TINY_MODEL, encoder=both), seed=1)
+    alone = model(collate([encoded])).logits
+    assert alone.shape == (1, len(q["candidates"]))
+    model(collate([encoder_both.encode(SAMPLE)]))
+    assert torch.equal(alone, model(collate([encoded])).logits)
+    assert encoder_both.version != ENCODE.version
+    mega = candidate(q, "move 1 1 mega, move 1 1")
+    changed = copy.deepcopy(q)
+    for row in changed["candidate_features"]["threats"]:
+        if row["mega"]:
+            row["mean_ppm"] = 700000
+    out = model(collate([encoder_both.encode(changed)])).logits[0]
+    others = [i for i in range(alone.shape[1]) if i != mega]
+    assert out[mega] != alone[0, mega]
+    assert torch.equal(out[others], alone[0, others])
