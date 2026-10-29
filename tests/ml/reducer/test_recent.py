@@ -274,7 +274,8 @@ TABLE = vocab_module.DATA_DIR / f"stall-moves.{VOCAB.format_id}.json"
 
 
 def _table() -> dict[str, Any]:
-    return json.loads(TABLE.read_text())
+    table: dict[str, Any] = json.loads(TABLE.read_text())
+    return table
 
 
 def _seal(table: dict[str, Any]) -> dict[str, Any]:
