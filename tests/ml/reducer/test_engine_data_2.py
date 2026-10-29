@@ -105,3 +105,30 @@ def test_typeadd_is_a_protocol_word_that_keeps_no_type() -> None:
 def test_a_malformed_volatile_is_still_refused() -> None:
     with pytest.raises(MalformedLineError):
         run(f"{START}###")
+
+
+def test_mimicry_ends_the_type_change() -> None:
+    state = run(
+        f"{START}typechange|Water|[from] ability: Mimicry",
+        f"{START.replace('start', 'end')}typechange|[silent]",
+    )
+    mon = opp(state, "Venusaur")
+    assert mon.types is None
+    assert "typechange" not in mon.volatiles
+
+
+def test_a_forme_change_puts_the_species_types_back() -> None:
+    change = f"{START}typechange|Water"
+    assert (
+        opp(run(change, "|detailschange|p2a: Venusaur|Venusaur-Mega, L50, M"), "Venusaur").types
+        is None
+    )
+    assert opp(run(change, "|-formechange|p2a: Venusaur|Charizard"), "Venusaur").types is None
+
+
+def test_a_name_with_its_kind_resolves_only_in_that_vocabulary() -> None:
+    assert VOCAB_2.volatile("taunt", "move") is None
+    with pytest.raises(VocabularyError, match="unknown volatile"):
+        VOCAB_2.volatile("illusion", "move")  # an ability, not a move
+    VOCAB_2.volatile("illusion", "ability")
+    VOCAB_2.volatile("illusion")  # unprefixed: any of the three

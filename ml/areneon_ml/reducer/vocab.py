@@ -27,8 +27,9 @@ DATA_DIR = Path(__file__).resolve().parent / "data"
 _DERIVED_SUFFIX = re.compile(r"(?:\d+|atk|def|spa|spd|spe)$")
 # `-start` / `-end` words the engine prints that are no condition id and no name of a move,
 # ability or item: the two type messages and Supreme Overlord's count (`fallen1`..`fallen5`, the
-# ability's own message). They are protocol text read from the engine's source, not game rules.
-PROTOCOL_VOLATILES = frozenset({"typechange", "typeadd", "fallen"})
+# ability's own message) and Perish Song's countdown (`perish3`..`perish0`). They are protocol
+# text read from the engine's source, not game rules.
+PROTOCOL_VOLATILES = frozenset({"typechange", "typeadd", "fallen", "perish"})
 _COPY_KEYS = frozenset(
     {
         "format_id",
@@ -158,24 +159,25 @@ class Vocabulary:
     def type_(self, name: str) -> str:
         return self._check("type", name, self.types)
 
-    def volatile(self, found: str) -> None:
+    def volatile(self, found: str, kind: str | None = None) -> None:
         """Check a volatile id against the engine's condition ids (version 2 tables only).
 
         The engine prints a volatile under its condition id, under a derived name (Stockpile as
         `stockpile1`; the condition id without the number or stat suffix) or under the name of the
         move, ability or item that started it (`Fire Spin`, `Illusion`), or is one of the
-        `PROTOCOL_VOLATILES`: any of these resolves."""
+        `PROTOCOL_VOLATILES`: any of these resolves. A name given with its kind (`move: Taunt`)
+        resolves only against that kind's vocabulary or the conditions."""
         if self.conditions is None:
             return
         stripped = _DERIVED_SUFFIX.sub("", found)
+        sources = {"move": self.moves, "ability": self.abilities, "item": self.items}
+        searched = [sources[kind]] if kind in sources else list(sources.values())
         known = (
             found in self.conditions
             or stripped in self.conditions
             or found in PROTOCOL_VOLATILES
             or stripped in PROTOCOL_VOLATILES
-            or found in self.moves
-            or found in self.abilities
-            or found in self.items
+            or any(found in vocabulary for vocabulary in searched)
         )
         if not known:
             raise VocabularyError(f"unknown volatile {found!r}")

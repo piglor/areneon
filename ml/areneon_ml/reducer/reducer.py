@@ -480,7 +480,7 @@ class _Reducer:
         found = to_id(name)
         if kind == "ability":
             return kind, self.vocab.ability(name)
-        self.vocab.volatile(found)
+        self.vocab.volatile(found, kind)
         return kind or "volatile", found
 
     def _reveal_from(self, mon: PokemonState, line: _Line) -> None:
@@ -804,6 +804,7 @@ class _Reducer:
         details = self._details(line.args[1], line)
         mon.species, mon.level = details.species, details.level
         mon.gender, mon.shiny = details.gender or None, details.shiny
+        mon.types = None  # the engine's `setSpecies` puts the new species' own types back
         hp = _optional(line, 2)
         if hp is not None:
             self._set_hp(mon, hp, line)
@@ -812,6 +813,7 @@ class _Reducer:
         _arity(line, 2, 3)
         mon = self._mon(line.args[0], line)
         mon.temp_species = self.vocab.species(line.args[1])
+        mon.types = None  # `formeChange` runs `setSpecies`, which resets the types
 
     def _swap(self, line: _Line) -> None:
         _arity(line, 2, 2)
@@ -1310,6 +1312,8 @@ class _Reducer:
         mon = self._mon(line.args[0], line)
         _, found = self._volatile(line.args[1], line)
         mon.volatiles.discard(found)
+        if found == "typechange":  # Mimicry: `-end|POKEMON|typechange|[silent]`
+            mon.types = None
 
     def _item(self, line: _Line) -> None:
         _arity(line, 2, 2)
