@@ -300,7 +300,10 @@ describe("the shared contract sample corpus (ADR-008 §2)", () => {
       "v1/team-dataset-manifest/reader-invalid/stratum-not-lowest-member.json",
       "v1/team-dataset-manifest/reader-invalid/teams-not-quota-sum.json",
       "v1/team-dataset-manifest/reader-invalid/unsorted-cells.json",
+      "v1/team-generator-config/reader-invalid/components-unsorted.json",
       "v1/team-generator-config/reader-invalid/duplicate-item-weights.json",
+      "v1/team-generator-config/reader-invalid/duplicate-kind.json",
+      "v1/team-generator-config/reader-invalid/shares-not-1000.json",
       "v1/team-generator-config/reader-invalid/unknown-item.json",
       "v1/team-generator-config/reader-invalid/unsorted-item-weights.json",
       "v1/team-label-set/reader-invalid/default-is-a-value.json",
@@ -628,6 +631,9 @@ describe("the shared contract sample corpus (ADR-008 §2)", () => {
       ["unsorted-item-weights", /item_weights: .* repeated or out of order/],
       ["duplicate-item-weights", /item_weights: .* repeated or out of order/],
       ["unknown-item", /nosuchitem is not in the engine-data table/],
+      ["shares-not-1000", /shares add up to 900, not 1000/],
+      ["components-unsorted", /proposal components: .* repeated or out of order/],
+      ["duplicate-kind", /proposal components: .* repeated or out of order/],
     ])("readTeamGeneratorConfig refuses team-generator-config/%s", (name, message) => {
       const file = `v1/team-generator-config/reader-invalid/${name}.json`;
       expect(Object.keys(fresh)).toContain(file);

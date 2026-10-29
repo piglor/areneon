@@ -40,6 +40,7 @@ import { cellCount, cellLabels, cellOf, labelTeam, radices } from "./labeller.ts
 import { type Pilot, runPilot } from "./pilot.ts";
 import { groupKey, manifestPlan, planQuotas, type QuotaPlan, type Split, type SplitSizes } from "./plan.ts";
 import { Proposal } from "./proposal.ts";
+import type { RoleSetsSource } from "./role-set-proposal.ts";
 import { provision, type Provision } from "./provision.ts";
 import { RejectionLog } from "./rejection-log.ts";
 import { checkKey } from "./stream.ts";
@@ -62,6 +63,8 @@ export interface GenerateInput {
   vocabulary: TeamVocabulary;
   labelSet: TeamLabelSet;
   config: TeamGeneratorConfig;
+  /** The role-set table a `role_sets` component of `config.proposal` reads (its hash must be the one the config names). */
+  roleSets?: RoleSetsSource | undefined;
   /** HMAC keys, 64 hex digits each. Public for a public dataset. */
   generationKey: string;
   assignmentKey: string;
@@ -131,7 +134,7 @@ export function generate(input: GenerateInput): GenerateResult {
   const configHash = recordHash(config);
   const labelSetHash = recordHash(labelSet);
   const vocabularyHash = teamVocabularyHash(vocabulary);
-  const drawer = new Drawer({ engine, format, proposal: new Proposal(vocabulary, table, config), labelSet, generationKey });
+  const drawer = new Drawer({ engine, format, proposal: new Proposal(vocabulary, table, config, input.roleSets), labelSet, generationKey });
   const identity = { config_hash: configHash, label_set_hash: labelSetHash, vocabulary_hash: vocabularyHash };
   const pilotDrawsRun = input.pilot === undefined ? config.pilot_draws : 0;
   const pilot = input.pilot ?? runPilot(drawer, identity, labelSet, config.pilot_draws);

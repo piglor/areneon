@@ -22,6 +22,7 @@ import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import {
   type Engine,
@@ -34,6 +35,7 @@ import {
   recordHash,
   resolveFormat,
   teamVocabularyHash,
+  ROLE_SETS_FILE,
 } from "@areneon/showdown-bridge";
 import { recordHashes, writeDataset, writeReferenceHashes } from "./dataset-io.ts";
 import { FileStage, KnownHashes, referencePoolHash, sortedUnique } from "./dedupe.ts";
@@ -42,6 +44,7 @@ import { type CoverageReport, generate, type ReferencePool } from "./generate.ts
 import { type Pilot, readPilot, runPilot } from "./pilot.ts";
 import { SPLITS, type SplitSizes } from "./plan.ts";
 import { Proposal } from "./proposal.ts";
+import { roleSetsSource } from "./role-set-proposal.ts";
 import { checkKey } from "./stream.ts";
 
 export interface CliIo {
@@ -71,6 +74,7 @@ const OPTIONS = {
   "reference-on-disk": { type: "boolean" },
   pilot: { type: "string" },
   vocabulary: { type: "string" },
+  "role-sets": { type: "string" },
   draws: { type: "string" },
   "progress-every": { type: "string" },
   "generator-commit": { type: "string" },
@@ -120,7 +124,11 @@ function inputs(values: Values, engine: Engine) {
   const config = readTeamGeneratorConfig(json(need(values, "config")), table);
   const labelSet = readTeamLabelSet(json(need(values, "labels")), table);
   const vocabulary = values.vocabulary === undefined ? exportTeamVocabulary(engine, formatId, table) : readTeamVocabulary(json(values.vocabulary), table);
-  return { format: resolveFormat(engine, formatId), table, config, labelSet, vocabulary };
+  // The role-set table is read only when the config's mixture has a role_sets component; the default is the golden export.
+  const roleSets = config.proposal?.components.some((c) => c.kind === "role_sets")
+    ? roleSetsSource(engine, vocabulary, table, json(values["role-sets"] ?? join(fileURLToPath(new URL("../../../fixtures/showdown", import.meta.url)), formatId, ROLE_SETS_FILE)))
+    : undefined;
+  return { format: resolveFormat(engine, formatId), table, config, labelSet, vocabulary, roleSets };
 }
 
 function referencePool(values: Values, scratch: string): { pool: ReferencePool; sorted: string[]; close: () => void } {
@@ -141,7 +149,7 @@ function runGenerate(values: Values, io: CliIo, engine: Engine): number {
   const assignmentKey = checkKey(need(values, "assignment-key"), "--assignment-key");
   const datasetId = need(values, "dataset-id");
   const generatorCommit = commit(values);
-  const { format, table, config, labelSet, vocabulary } = inputs(values, engine);
+  const { format, table, config, labelSet, vocabulary, roleSets } = inputs(values, engine);
   let pilot: Pilot | undefined;
   if (values.pilot !== undefined) {
     pilot = readPilot(json(values.pilot), { config_hash: recordHash(config), label_set_hash: recordHash(labelSet), vocabulary_hash: teamVocabularyHash(vocabulary) }, labelSet);
@@ -158,6 +166,7 @@ function runGenerate(values: Values, io: CliIo, engine: Engine): number {
       vocabulary,
       labelSet,
       config,
+      roleSets,
       generationKey,
       assignmentKey,
       datasetId,
@@ -197,9 +206,9 @@ function runGenerate(values: Values, io: CliIo, engine: Engine): number {
 function runPilotCommand(values: Values, io: CliIo, engine: Engine): number {
   const out = need(values, "out");
   const generationKey = checkKey(need(values, "generation-key"), "--generation-key");
-  const { format, table, config, labelSet, vocabulary } = inputs(values, engine);
+  const { format, table, config, labelSet, vocabulary, roleSets } = inputs(values, engine);
   const identity = { config_hash: recordHash(config), label_set_hash: recordHash(labelSet), vocabulary_hash: teamVocabularyHash(vocabulary) };
-  const drawer = new Drawer({ engine, format, proposal: new Proposal(vocabulary, table, config), labelSet, generationKey });
+  const drawer = new Drawer({ engine, format, proposal: new Proposal(vocabulary, table, config, roleSets), labelSet, generationKey });
   const started = Date.now();
   const pilot = runPilot(drawer, identity, labelSet, trialDraws(values.draws, config));
   writeFileSync(out, `${JSON.stringify(pilot, null, 2)}\n`);
