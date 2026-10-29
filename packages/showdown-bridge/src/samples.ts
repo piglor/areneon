@@ -580,6 +580,8 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "training-run-config/entropy-linear": runConfigWith(
       (c) => (runSection(c, "ppo").entropy_schedule = { kind: "linear", final_micro: 0, generations: 4 }),
     ),
+    "training-run-config/preview-bootstrap": runConfigWith((c) => (runSection(c, "ppo").preview_bootstrap_micro = 500000)),
+    "training-run-config/preview-bootstrap-zero": runConfigWith((c) => (runSection(c, "ppo").preview_bootstrap_micro = 0)),
     "training-run-config/entropy-constant": runConfigWith((c) => (runSection(c, "ppo").entropy_schedule = { kind: "constant" })),
     "training-run-config/constant-schedule": runConfigWith((c) => (runSection(c, "ppo").learning_rate_schedule = { kind: "constant" })),
     "training-run-config/damage-aware": runConfigWith((c) => {
@@ -924,6 +926,8 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "training-run-config/entropy-zero-generations": runConfigWith(
       (c) => (runSection(c, "ppo").entropy_schedule = { kind: "linear", final_micro: 0, generations: 0 }),
     ),
+    "training-run-config/preview-bootstrap-above-one": runConfigWith((c) => (runSection(c, "ppo").preview_bootstrap_micro = 1000001)),
+    "training-run-config/preview-bootstrap-fractional": runConfigWith((c) => (runSection(c, "ppo").preview_bootstrap_micro = 0.5)),
     "training-run-config/entropy-unknown-kind": runConfigWith((c) => (runSection(c, "ppo").entropy_schedule = { kind: "cosine" })),
     "training-run-config/schedule-unknown-kind": runConfigWith((c) => (runSection(c, "ppo").learning_rate_schedule = { kind: "cosine" })),
     "training-run-config/unknown-model-option": runConfigWith((c) => (runSection(c, "model").options = { wide: 1 })),

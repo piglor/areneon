@@ -123,6 +123,10 @@ class PPOSettings:
     # ``ppo.entropy_schedule`` of kind ``linear`` (ADR-023 section 3, #1048), started from
     # ``entropy_coef_micro``: None when absent or ``constant`` (``entropy_coef`` for every update).
     entropy_schedule: LinearSchedule | None = None
+    # ``ppo.preview_bootstrap_micro`` (ADR-010 erratum A4 item 3, #1005): the weight, in
+    # millionths, of the frozen Battle value in the Preview return. None when absent; 0 is
+    # today's rule (the trainer divides by ``MICRO`` where it uses it, as for the anchor's beta).
+    preview_bootstrap_micro: int | None = None
 
 
 @dataclass(frozen=True)
@@ -250,6 +254,7 @@ def read_run_config(raw: object) -> RunConfig:
             value_warmup=ppo["value_warmup"]["generations"] if "value_warmup" in ppo else None,
             anchor=_anchor(ppo),
             entropy_schedule=_entropy_schedule(ppo),
+            preview_bootstrap_micro=ppo.get("preview_bootstrap_micro"),
         ),
         device=raw["learner"]["device"],
         threads=raw["learner"]["threads"],

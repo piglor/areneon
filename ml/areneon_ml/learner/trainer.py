@@ -24,7 +24,7 @@ from typing import Any, Protocol
 import torch
 
 from areneon_ml.learner.config import MICRO, RunConfig
-from areneon_ml.learner.data import Step, Trajectory
+from areneon_ml.learner.data import LearnerDataError, Step, Trajectory
 from areneon_ml.learner.diagnostics import CalibrationBin, calibration, explained_variance
 from areneon_ml.learner.ppo import (
     LossWeights,
@@ -117,6 +117,10 @@ class RoleReport:
     # Diagnostic only; always written for a role that trained, absent in older reports.
     explained_variance: float | None = None
     value_calibration: tuple[CalibrationBin, ...] | None = None
+    # Set only on the Preview role under ``ppo.preview_bootstrap_micro`` (ADR-010 erratum A4 item
+    # 3): the weight (millionths) of the frozen Battle value in the Preview return. Left out of
+    # the stored report otherwise.
+    preview_bootstrap_micro: int | None = None
 
 
 @dataclass(frozen=True)
@@ -144,6 +148,15 @@ class _Table:
     #: Per step, the anchor's log-probabilities over that decision's real candidates (in
     #: candidate order), from its frozen weights; ``None`` without an active anchor.
     anchor_log_probs: list[torch.Tensor] | None = None
+
+
+@dataclass(frozen=True)
+class _FrozenBattle:
+    """The Battle role's pre-update scores: per step, and the first value of each Episode."""
+
+    log_probs: torch.Tensor | None
+    values: torch.Tensor | None
+    first: Mapping[str, float]
 
 
 VALUE_PREFIX = "value."
@@ -258,10 +271,16 @@ class Learner:
         warmup = value_warmup_active(self.config, self.generation)
         self.last_anchor_beta_micro = self.anchor_beta_micro(self.generation)
         self.last_entropy_coef_micro = self.entropy_coef_micro(self.generation)
+        # Under ``ppo.preview_bootstrap_micro`` (> 0) both roles' targets are fixed from the
+        # frozen (pre-update) weights BEFORE either role is updated: the Battle network is trained
+        # first, so its values are read here, once, and the Preview return is built from them.
+        frozen = self._frozen_battle(trajectories)
         for role in ROLES:
             mine = [t for t in trajectories if t.role == role]
             if mine:
-                roles[role] = self._train_role(role, mine, warmup and role in self.warm_roles)
+                roles[role] = self._train_role(
+                    role, mine, warmup and role in self.warm_roles, frozen
+                )
         self.generation += 1
         return TrainReport(roles)
 
@@ -281,6 +300,33 @@ class Learner:
                 values.append(out.value)
         return torch.cat(log_probs), torch.cat(values)
 
+    def _frozen_battle(self, trajectories: Sequence[Trajectory]) -> _FrozenBattle | None:
+        """The Battle network's frozen log-probabilities and values, and its first value per
+        Episode, or ``None`` unless ``ppo.preview_bootstrap_micro`` is above 0.
+
+        Every Preview trajectory must have a Battle trajectory of the same Episode (its first
+        decision is the position the Preview step led to); otherwise it is refused.
+        """
+        weight = self.config.ppo.preview_bootstrap_micro
+        if not weight:
+            return None
+        battle = [t for t in trajectories if t.role == "battle"]
+        steps = [s for t in battle for s in t.steps]
+        log_probs, values = self._score("battle", steps) if steps else (None, None)
+        first: dict[str, float] = {}
+        start = 0
+        for t in battle:
+            assert values is not None  # a Battle trajectory holds steps
+            first[t.episode] = float(values[start])
+            start += len(t.steps)
+        for t in trajectories:
+            if t.role == "preview" and t.episode not in first:
+                raise LearnerDataError(
+                    f"Episode {t.episode!r} has a Preview step and no Battle decision: "
+                    "ppo.preview_bootstrap_micro needs the Battle value of its first position"
+                )
+        return _FrozenBattle(log_probs, values, first)
+
     def _anchor_scores(self, role: str, steps: Sequence[Step]) -> list[torch.Tensor]:
         """The anchor's log-probabilities over each step's real candidates, no gradient."""
         network = self.anchors[role]
@@ -297,18 +343,39 @@ class Learner:
                 out.extend(log_probs[i][batch.cand_mask[i]] for i in range(log_probs.shape[0]))
         return out
 
-    def _table(self, role: str, trajectories: Sequence[Trajectory], anchor: bool = False) -> _Table:
+    def _table(
+        self,
+        role: str,
+        trajectories: Sequence[Trajectory],
+        anchor: bool = False,
+        frozen: _FrozenBattle | None = None,
+    ) -> _Table:
         ppo = self.config.ppo
         steps = [s for t in trajectories for s in t.steps]
-        old_log_prob, values = self._score(role, steps)
+        if role == "battle" and frozen is not None and frozen.values is not None:
+            # The same frozen pass the Preview returns were read from (no second forward pass).
+            assert frozen.log_probs is not None
+            old_log_prob, values = frozen.log_probs, frozen.values
+        else:
+            old_log_prob, values = self._score(role, steps)
         values = values.cpu()
+        # Preview return under ppo.preview_bootstrap_micro: the terminal reward is
+        # (1 - w) * score + w * V_battle(first Battle decision of the Episode), the Battle value
+        # frozen before any update. The calibration below still compares values to the score.
+        weight = (self.config.ppo.preview_bootstrap_micro or 0) / MICRO
+        bootstrap = role == "preview" and frozen is not None
         advantages, returns, start = [], [], 0
         scores: list[float] = []
         for t in trajectories:
             scores.extend([t.score] * len(t.steps))
             end = start + len(t.steps)
+            target = (
+                (1 - weight) * t.score + weight * frozen.first[t.episode]
+                if bootstrap and frozen is not None
+                else t.score
+            )
             a, r = gae(
-                terminal_rewards(len(t.steps), t.score),
+                terminal_rewards(len(t.steps), target),
                 values[start:end],
                 ppo.discount,
                 ppo.gae_lambda,
@@ -333,11 +400,15 @@ class Learner:
         )
 
     def _train_role(
-        self, role: str, trajectories: Sequence[Trajectory], warm: bool = False
+        self,
+        role: str,
+        trajectories: Sequence[Trajectory],
+        warm: bool = False,
+        battle_frozen: _FrozenBattle | None = None,
     ) -> RoleReport:
         """PPO epochs for one role; with ``warm`` only the value head learns (see below)."""
         # The anchor term is inactive while the policy is frozen (a value warm-up update).
-        table = self._table(role, trajectories, anchor=role in self.anchors and not warm)
+        table = self._table(role, trajectories, role in self.anchors and not warm, battle_frozen)
         network = self.networks[role]
         network.train()
         # Value warm-up: every parameter outside the value head is frozen, so the policy outputs
@@ -437,4 +508,5 @@ class Learner:
             entropy_micro,
             table.explained_variance,
             table.value_calibration,
+            self.config.ppo.preview_bootstrap_micro if role == "preview" else None,
         )
