@@ -9,7 +9,7 @@
 // generated (it is part of the plan: the pool is assigned once) but is not
 // returned, so it is never written.
 
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -63,10 +63,25 @@ export function readFixtureRun(dir: string): FixtureRun {
   return run;
 }
 
-/** The committed inputs of a format, read against the pinned engine. */
-export function loadFixtureInputs(engine: Engine, formatId: string) {
+/**
+ * The committed generator config a dataset directory was generated with: the `generator*.json` of the format whose
+ * hash is the manifest's `config_hash` (a mixture or role-set dataset names its own file), else `generator.json`.
+ */
+function configFileOf(formatId: string, datasetDir: string | undefined): string {
+  const dir = join(REPO_ROOT, "config/teams", formatId);
+  const default_ = join(dir, "generator.json");
+  if (datasetDir === undefined || !existsSync(join(datasetDir, MANIFEST_FILE))) return default_;
+  const named = (json(join(datasetDir, MANIFEST_FILE)) as { generator?: { config_hash?: unknown } }).generator?.config_hash;
+  for (const name of readdirSync(dir).filter((f) => /^generator.*\.json$/.test(f)).sort()) {
+    if (recordHash(json(join(dir, name)) as never) === named) return join(dir, name);
+  }
+  return default_;
+}
+
+/** The committed inputs of a format, read against the pinned engine. With a dataset directory, the config it names is used. */
+export function loadFixtureInputs(engine: Engine, formatId: string, datasetDir?: string) {
   const table = exportEngineData(engine, formatId);
-  const config = readTeamGeneratorConfig(json(join(REPO_ROOT, "config/teams", formatId, "generator.json")), table);
+  const config = readTeamGeneratorConfig(json(configFileOf(formatId, datasetDir)), table);
   const labelSet = readTeamLabelSet(json(join(REPO_ROOT, "config/teams", formatId, "labels.json")), table);
   const vocabulary = readTeamVocabulary(json(join(REPO_ROOT, "fixtures/showdown", formatId, "team-vocabulary.json")), table);
   const format = resolveFormat(engine, formatId);

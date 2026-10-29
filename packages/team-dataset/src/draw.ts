@@ -84,6 +84,21 @@ export class Drawer {
     return this.#judge(k, pilotSeed(this.#input.generationKey, configHash, k));
   }
 
+  /** The component draw `k` of `stream` takes (recomputed from its seed alone; "uniform" with no mixture). */
+  component(stream: StreamIdentity, k: number): string {
+    return this.#input.proposal.component(engineRng(this.#input.engine, drawSeed(this.#input.generationKey, stream, k)));
+  }
+
+  /** The component pilot draw `k` takes. */
+  pilotComponent(configHash: string, k: number): string {
+    return this.#input.proposal.component(engineRng(this.#input.engine, pilotSeed(this.#input.generationKey, configHash, k)));
+  }
+
+  /** The configured components, in config order; undefined with no mixture. */
+  get components(): readonly string[] | undefined {
+    return this.#input.proposal.componentKinds();
+  }
+
   #judge(k: number, seed: string): Draw {
     const { engine, format, proposal, labelSet } = this.#input;
     const proposed = canonicalOrder(proposal.propose(engineRng(engine, seed)));

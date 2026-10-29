@@ -38,6 +38,8 @@ describe("the committed example config", () => {
       { kind: "role_sets", role_set_table_hash: source.hash, share_permille: 700 },
       { kind: "uniform", share_permille: 300 },
     ]);
+    // The ADR's proposed gate thresholds (section 6).
+    expect(committed.proposal?.gates).toEqual({ p2_min_accept_permille: 500, p3_min_bits: 40, p4_min_strata_permille: 750 });
   });
 });
 

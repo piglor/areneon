@@ -4,9 +4,17 @@
 //             --dataset-id ID [--plan-id ID] --generation-key HEX --assignment-key HEX
 //             [--dev N] [--validation N] [--training N]
 //             [--reference FILE]... [--reference-on-disk] [--pilot FILE]
+//             [--uniform-pilot FILE] [--d-team N] [--evaluation-only] [--publish]
 //             [--vocabulary FILE] [--generator-commit SHA] [--progress-every DRAWS]
-//   pilot     --config FILE --labels FILE --format ID --out FILE --generation-key HEX [--vocabulary FILE] [--draws N]
+//   pilot     --config FILE --labels FILE --format ID --out FILE --generation-key HEX [--vocabulary FILE] [--draws N] [--without-proposal]
 //             (--draws runs a shorter trial pilot; `generate` refuses a pilot whose draws are not the config's)
+//
+// Mixture datasets (ADR-020): `--uniform-pilot` is the pilot of the same config without its `proposal` (made with
+// `pilot --without-proposal`), the reference plan of gate P4; `--d-team N` adds the cross-split near-duplicate counts
+// to coverage.json; `--evaluation-only` (needs `--d-team` and a `--reference`) drops every team within N differing
+// fields of a reference team, logs each as `near_reference` and marks the manifest evaluation-only. A PUBLISHING run
+// is one given `--publish`: if any pilot gate (P1 to P4) fails or cannot be evaluated, the files are still written
+// and the exit code is 1. Without `--publish` the gates are reported on stderr and in coverage.json only.
 //
 // `--config` is a TeamGeneratorConfig and `--labels` a TeamLabelSet (data
 // records, read through the bridge's readers against the pinned engine).
@@ -28,8 +36,10 @@ import {
   type Engine,
   exportEngineData,
   exportTeamVocabulary,
+  importPaste,
   loadEngine,
   readTeamGeneratorConfig,
+  type TeamGeneratorConfig,
   readTeamLabelSet,
   readTeamVocabulary,
   recordHash,
@@ -37,9 +47,10 @@ import {
   teamVocabularyHash,
   ROLE_SETS_FILE,
 } from "@areneon/showdown-bridge";
-import { recordHashes, writeDataset, writeReferenceHashes } from "./dataset-io.ts";
+import { recordHashes, recordPastes, writeDataset, writeReferenceHashes } from "./dataset-io.ts";
 import { FileStage, KnownHashes, referencePoolHash, sortedUnique } from "./dedupe.ts";
 import { Drawer } from "./draw.ts";
+import { NearIndex } from "./near-index.ts";
 import { type CoverageReport, generate, type ReferencePool } from "./generate.ts";
 import { type Pilot, readPilot, runPilot } from "./pilot.ts";
 import { SPLITS, type SplitSizes } from "./plan.ts";
@@ -75,6 +86,11 @@ const OPTIONS = {
   pilot: { type: "string" },
   vocabulary: { type: "string" },
   "role-sets": { type: "string" },
+  "uniform-pilot": { type: "string" },
+  "d-team": { type: "string" },
+  "evaluation-only": { type: "boolean" },
+  publish: { type: "boolean" },
+  "without-proposal": { type: "boolean" },
   draws: { type: "string" },
   "progress-every": { type: "string" },
   "generator-commit": { type: "string" },
@@ -97,12 +113,13 @@ function count(text: string | undefined, name: string): number | undefined {
 }
 
 /** What the operator should know about a finished run, one line each. */
-export function notices(coverage: Pick<CoverageReport, "provisioning" | "replan" | "splits">, dMax: number): string[] {
+export function notices(coverage: Pick<CoverageReport, "provisioning" | "replan" | "splits" | "proposal">, dMax: number): string[] {
   const lines: string[] = [];
   const { provisioning } = coverage;
   if (provisioning.exceeds_d_max) lines.push(`warning: the ${provisioning.planned_draws}-draw fill quantile is beyond d_max ${dMax}; a bin may fall short and re-plan`);
   if (coverage.replan > 0) lines.push(`re-planned ${coverage.replan} time(s) after a shortfall: see coverage.json`);
   for (const s of coverage.splits) if (s.teams !== s.requested) lines.push(`${s.split}: ${s.requested} requested, ${s.teams} delivered (proportional quotas with a floor of n_stratum_min per stratum)`);
+  if (coverage.proposal !== undefined && coverage.proposal.failed.length > 0) lines.push(`pilot gates not met or not evaluated: ${coverage.proposal.failed.join(", ")} (see coverage.json)`);
   return lines;
 }
 
@@ -154,6 +171,17 @@ function runGenerate(values: Values, io: CliIo, engine: Engine): number {
   if (values.pilot !== undefined) {
     pilot = readPilot(json(values.pilot), { config_hash: recordHash(config), label_set_hash: recordHash(labelSet), vocabulary_hash: teamVocabularyHash(vocabulary) }, labelSet);
   }
+  let uniformPilot: Pilot | undefined;
+  if (values["uniform-pilot"] !== undefined) {
+    uniformPilot = readPilot(json(values["uniform-pilot"]), { config_hash: recordHash(withoutProposal(config)), label_set_hash: recordHash(labelSet), vocabulary_hash: teamVocabularyHash(vocabulary) }, labelSet);
+  }
+  const dTeam = count(values["d-team"], "d-team");
+  const evaluationOnly = values["evaluation-only"] === true;
+  if (evaluationOnly && (dTeam === undefined || (values.reference ?? []).length === 0)) throw new UsageError("--evaluation-only needs --d-team and at least one --reference");
+  const exclude =
+    evaluationOnly && dTeam !== undefined
+      ? { d_team: dTeam, index: new NearIndex(recordPastes(values.reference ?? []).map((paste) => importPaste(engine, paste)), dTeam) }
+      : undefined;
   mkdirSync(out, { recursive: true });
   const scratch = mkdtempSync(join(tmpdir(), "team-dataset-"));
   const reference = referencePool(values, scratch);
@@ -175,6 +203,9 @@ function runGenerate(values: Values, io: CliIo, engine: Engine): number {
       generatorCommit,
       reference: reference.pool,
       pilot,
+      uniformPilot,
+      dTeam,
+      exclude,
       logDir: out,
       progressEvery: count(values["progress-every"], "progress-every") ?? 10_000,
       onProgress: ({ draws, open }) => io.err(`${draws} draws, ${open} bins open`),
@@ -185,6 +216,7 @@ function runGenerate(values: Values, io: CliIo, engine: Engine): number {
     for (const line of notices(result.coverage, config.d_max)) io.err(line);
     const total = stream.draws + result.pilotDrawsRun;
     io.err(`${total} draws (${result.pilotDrawsRun} of them the pilot) in ${seconds.toFixed(1)} s: ${Math.round(total / seconds)} draws/s`);
+    const gates = result.coverage.proposal;
     io.out(
       JSON.stringify({
         dataset_id: result.datasetId,
@@ -194,8 +226,13 @@ function runGenerate(values: Values, io: CliIo, engine: Engine): number {
         strata: result.plan.strata.length,
         attempts: result.attempts.length,
         files,
+        ...(gates === undefined ? {} : { gates: { publishable: gates.publishable, failed: gates.failed } }),
       }),
     );
+    if (values.publish === true && gates !== undefined && !gates.publishable) {
+      io.err(`not publishable: ${gates.failed.join(", ")}`);
+      return 1;
+    }
     return 0;
   } finally {
     reference.close();
@@ -203,10 +240,21 @@ function runGenerate(values: Values, io: CliIo, engine: Engine): number {
   }
 }
 
+/** The config without its `proposal`: the uniform config a mixture is compared with (gate P4). */
+function withoutProposal(config: TeamGeneratorConfig): TeamGeneratorConfig {
+  const plain = structuredClone(config);
+  delete plain.proposal;
+  return plain;
+}
+
 function runPilotCommand(values: Values, io: CliIo, engine: Engine): number {
   const out = need(values, "out");
   const generationKey = checkKey(need(values, "generation-key"), "--generation-key");
-  const { format, table, config, labelSet, vocabulary, roleSets } = inputs(values, engine);
+  const inputsOf = inputs(values, engine);
+  const { format, table, labelSet, vocabulary } = inputsOf;
+  // The uniform reference pilot (gate P4) is the pilot of the same config without its proposal.
+  const config = values["without-proposal"] === true ? withoutProposal(inputsOf.config) : inputsOf.config;
+  const roleSets = values["without-proposal"] === true ? undefined : inputsOf.roleSets;
   const identity = { config_hash: recordHash(config), label_set_hash: recordHash(labelSet), vocabulary_hash: teamVocabularyHash(vocabulary) };
   const drawer = new Drawer({ engine, format, proposal: new Proposal(vocabulary, table, config, roleSets), labelSet, generationKey });
   const started = Date.now();

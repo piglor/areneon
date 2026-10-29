@@ -88,6 +88,11 @@ export class Proposal {
     throw new ProposalError("the component shares do not add up to 1000");
   }
 
+  /** The kinds of the configured components, in config order; undefined when no mixture is configured. */
+  componentKinds(): ("uniform" | "role_sets")[] | undefined {
+    return this.#config.proposal?.components.map((c) => c.kind);
+  }
+
   /** One proposed team, in the order the species were drawn. */
   propose(rng: Rng): PokemonSet[] {
     if (this.component(rng) === "role_sets") return this.#proposeRoleSets(rng);
