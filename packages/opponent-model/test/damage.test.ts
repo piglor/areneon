@@ -4,6 +4,7 @@
 import type { BeliefConfig } from "@areneon/schema/types/v1/belief-config.ts";
 import { describe, expect, it } from "vitest";
 import { type DamageCandidate, type DamageCheck, type DamageEvent, belief } from "../src/index.ts";
+import { nonEmpty } from "../src/damage.ts";
 import { type Ratio } from "../src/ratio.ts";
 import { alpha, config, input, prior, text } from "./support.ts";
 
@@ -89,6 +90,11 @@ describe("an isolated hit reweighs the fields it passes through", () => {
 });
 
 describe("what the evidence cannot do", () => {
+  it("never hands back a slot with no forme (a defect, not a belief)", () => {
+    expect(nonEmpty([1])).toEqual([1]);
+    expect(() => nonEmpty([])).toThrow(RangeError);
+  });
+
   it("an event whose checked candidates are all ruled out is dropped and counted, never emptying the belief", () => {
     const without = run({});
     const b = run({ damage: port([hit()], () => false) });

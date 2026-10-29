@@ -130,6 +130,12 @@ function distOf(list: readonly { id: string; p: Ratio }[]): Dist<string> {
   return { total: weights.reduce((s, w) => s + w, 0n), options: list.map((o, k) => ({ id: o.id, weight: weights[k] as bigint })) };
 }
 
+/** The formes of a slot after the evidence; an empty list is a defect of this module (the argument is in `applyDamage`), never a belief. */
+export function nonEmpty<F>(formes: readonly F[]): F[] {
+  if (formes.length === 0) throw new RangeError("the damage evidence left a slot with no forme");
+  return [...formes];
+}
+
 /**
  * Apply the events of one slot to its formes. Returns the rewritten formes (those with every field still possible)
  * and fixed-word notes; `counts` is added to. The input formes are not changed.
@@ -216,5 +222,5 @@ export function applyDamage<F extends DamageForme>(formes: readonly F[], species
     notes.push(`damage_applied:${event.role}`);
     current = next;
   }
-  return { formes: current, notes };
+  return { formes: nonEmpty(current), notes };
 }

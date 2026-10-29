@@ -8,7 +8,7 @@ import { describe, expect, it } from "vitest";
 import { readBeliefConfig } from "../src/belief-config.ts";
 import { loadDamageAwareConfig } from "../src/damage-aware-config.ts";
 import { DamageAwareError, ProbeRefusal } from "../src/damage-aware-view.ts";
-import { type DamageCandidatePort, type DamageCheckContext, createDamageCheck, newDamageCheckCache } from "../src/damage-check.ts";
+import { type DamageCandidatePort, type DamageCheckContext, type DamageCheckInput, createDamageCheck, newDamageCheckCache } from "../src/damage-check.ts";
 import type { PokemonSet } from "../src/engine.ts";
 import { GOLDEN_FORMAT } from "../src/golden.ts";
 import { loadEngine } from "../src/index.ts";
@@ -100,6 +100,50 @@ describe("check", () => {
     expect(port.check(first(port), candidate())).toBeNull();
   });
 
+  it("an attacker whose damage depends on where in its shown hit-point range it stands gets no constraint, whatever the move", () => {
+    // A stand-in probe that reads the attacker's declared hit points, as Eruption, Water Spout or Reversal do. The golden battle's
+    // Flamethrower took 36 of the second player's Blastoise's hit points from a Charizard shown at 33%.
+    const rolling = (rolls: (hp: number | null) => number) => (c: MechanicsContext, q: ParsedMechanicsQuery) => {
+      const outcome = probeMechanics(c, q);
+      if (q.query.kind !== "damage" || outcome.result.kind !== "computed" || outcome.result.answer.kind !== "damage") return outcome;
+      const fill = Array.from({ length: 16 }, () => rolls(q.query.kind === "damage" ? q.query.attacker.hp : null));
+      return { ...outcome, result: { ...outcome.result, answer: { ...outcome.result.answer, no_crit: fill, crit: fill } } } as never;
+    };
+    const verdict = (rolls: (hp: number | null) => number) => {
+      const port = make({ probe: rolling(rolls) }) as NonNullable<ReturnType<typeof make>>;
+      const hit = port.hits.find((h) => h.move === "flamethrower" && h.reason === null && h.after.num === 88) as (typeof port.hits)[number];
+      return port.check({ id: `hit${hit.frame}`, slot: hit.attacker.index, role: "attacker" }, candidate());
+    };
+    expect(verdict((hp) => (hp === null || hp % 2 === 0 ? 36 : 10))).toBeNull();
+    // negative controls: the same answers at both ends are used (true when they match the 36, false when they do not)
+    expect(verdict(() => 36)).toBe(true);
+    expect(verdict(() => 10)).toBe(false);
+  });
+
+  it("judges a defender-role event: some roll of the real probe takes the foe from its shown percentage to the next", () => {
+    const port = make() as NonNullable<ReturnType<typeof make>>;
+    const event = port.events.find((e) => e.role === "defender") as (typeof port.events)[number];
+    expect(typeof port.check(event, candidate())).toBe("boolean");
+  });
+
+  it("is null when the probe cannot say a candidate's maximum hit points or its damage (defender role too)", () => {
+    const unsupported = (kinds: string[]) => (c: MechanicsContext, q: ParsedMechanicsQuery) => {
+      const outcome = probeMechanics(c, q);
+      return kinds.includes(q.query.kind) ? ({ ...outcome, result: { ...outcome.result, kind: "unsupported", reason: "query_kind", position: null } } as never) : outcome;
+    };
+    for (const kinds of [["stats"], ["damage"]]) {
+      const port = make({ probe: unsupported(kinds) }) as NonNullable<ReturnType<typeof make>>;
+      for (const role of ["attacker", "defender"] as const) {
+        const event = port.events.find((e) => e.role === role) as (typeof port.events)[number];
+        expect(port.check(event, candidate({ forme: role === "attacker" ? "charizard" : "charizard" }))).toBeNull();
+      }
+    }
+  });
+
+  it("has nothing to say about a channel with no request", () => {
+    expect(createDamageCheck(context(), { player: "p2", lines: lines.slice(0, 12), team })).toBeNull();
+  });
+
   it("tells the observer the rolls and the two ranges it judged", () => {
     const seen: unknown[] = [];
     const port = make({ observe: (_e, rolls, before, after) => seen.push([rolls.length, before.lo <= before.hi, after.lo <= after.hi]) }) as NonNullable<ReturnType<typeof make>>;
@@ -107,9 +151,37 @@ describe("check", () => {
     expect(seen).toEqual([[16, true, true]]);
   });
 
-  it("fails closed on an own Pokemon the team does not hold", () => {
-    const other = createDamageCheck(context(), { player: "p2", lines, team: [] }) as NonNullable<ReturnType<typeof make>>;
-    const event = other.events.find((e) => e.role === "attacker" && e.slot === 1) as (typeof other.events)[number];
-    expect(() => other.check(event, candidate())).toThrow(DamageAwareError);
+  it("gives no constraint, and counts it, for an own Pokemon the team does not name once or names twice", () => {
+    for (const given of [[], [...team, ...team]]) {
+      const other = createDamageCheck(context(), { player: "p2", lines, team: given }) as NonNullable<ReturnType<typeof make>>;
+      const event = other.events.find((e) => e.role === "attacker" && e.slot === 1) as (typeof other.events)[number];
+      expect(other.check(event, candidate())).toBeNull();
+      expect(other.counts().own_unstated).toBe(1);
+    }
+  });
+
+  it("a cache belongs to one seat", () => {
+    const cache = newDamageCheckCache();
+    make({ cache });
+    expect(() => createDamageCheck(context({ cache }), { player: "p1", lines, team })).toThrow(DamageAwareError);
+  });
+
+  it("takes nothing of the opponent's team, an omniscient log, hidden verdicts or the seed (type test)", () => {
+    const ok = { player: "p2", lines, team };
+    // @ts-expect-error: the opponent's real team is not an input
+    const a: DamageCheckInput = { ...ok, opponent_team: [] };
+    // @ts-expect-error: nor the omniscient log
+    const b: DamageCheckInput = { ...ok, omniscient_log: [] };
+    // @ts-expect-error: nor the hidden verdicts of the clone judge
+    const c: DamageCheckInput = { ...ok, hidden_verdicts: [] };
+    // @ts-expect-error: nor the seed
+    const d: DamageCheckInput = { ...ok, seed: "sodium,0" };
+    // @ts-expect-error: nor a battle record
+    const e: DamageCheckInput = { ...ok, record: {} };
+    expect([a, b, c, d, e]).toHaveLength(5);
+    // a smuggled field is never read: the port is the same
+    expect(createDamageCheck(context(), { ...ok, opponent_team: team, seed: "sodium,0" } as DamageCheckInput)?.events).toEqual(make()?.events);
+    const keys: (keyof DamageCheckInput)[] = ["player", "lines", "team", "run"];
+    expect(keys).toHaveLength(4);
   });
 });

@@ -67,6 +67,8 @@ export interface DamageCheckCounts {
   not_isolated: Record<string, number>;
   /** `check` calls (a repeated call counts each time). */
   calls: number;
+  /** Own Pokemon of a hit that the request and the team could not name: the check answered `null` (no constraint) for them. */
+  own_unstated: number;
   /** Probe damage queries asked. */
   queries: number;
   probe_runs: number;
@@ -80,9 +82,11 @@ export interface DamageCheckCounts {
 export interface DamageCheckCache {
   readonly memo: ProbeMemo;
   readonly answers: Map<string, boolean | null>;
+  /** The seat the cache belongs to, set by the first port that uses it; a port of another seat refuses it. */
+  player: string | null;
 }
 
-export const newDamageCheckCache = (): DamageCheckCache => ({ memo: new Map(), answers: new Map() });
+export const newDamageCheckCache = (): DamageCheckCache => ({ memo: new Map(), answers: new Map(), player: null });
 
 export interface DamageCheckContext {
   readonly engine: Engine;
@@ -125,13 +129,15 @@ export function createDamageCheck(context: DamageCheckContext, input: DamageChec
   const { engine, vocabulary, config, mechanics, belief, data_class } = context;
   if (belief.damage_evidence === undefined) return null;
   const rules: DamageEvidenceRules = belief.damage_evidence;
+  const cache = context.cache ?? newDamageCheckCache();
+  if ((cache.player ??= input.player) !== input.player) throw new DamageAwareError("a damage-check cache belongs to one seat of one game");
   const snapshot = context.snapshot ?? loadRulesSnapshot(engine.commit);
   const probe = context.probe ?? probeMechanics;
   const run = input.run ?? interpretChannel(input.player, input.lines);
-  if (run.flags.length > 0 || run.frames.length === 0) return null;
+  // A channel the reader flagged, or one with no request yet, has nothing to say.
+  if (run.flags.length > 0 || run.requests.length === 0) return null;
   const roster = new Map(vocabulary.roster.map((r) => [r.id, r]));
   const probeCounts = { queries: 0, probe_runs: 0, unsupported_queries: 0 };
-  const cache = context.cache ?? newDamageCheckCache();
   const memo = cache.memo;
   const view = damageView({ engine, vocabulary, config, v1: config, mechanics, snapshot, data_class, probe, counts: probeCounts, memo });
   const dex = view.dex;
@@ -141,15 +147,14 @@ export function createDamageCheck(context: DamageCheckContext, input: DamageChec
   const targets = new Set((dex as unknown as { moves: { all(): { target: string }[] } }).moves.all().map((m) => m.target));
   for (const target of rules.non_isolating.targets) if (!targets.has(target)) throw new DamageAwareError("a reviewed non-isolating target type is not a move target of the engine");
 
-  // The abilities a Pokemon in play may hold: an own Pokemon's from its latest request, an opponent's revealed one, else its species' list.
+  // The abilities a Pokemon in play may hold: an own Pokemon's from its latest request, an opponent's revealed one (a received ability is the one it holds now), else its species' list.
   const ownAbility = new Map<string, string>();
-  const latest = requests[requests.length - 1];
-  for (const entry of latest?.side.pokemon ?? []) ownAbility.set(entry.ident.slice(entry.ident.indexOf(": ") + 2), toId(String(entry.ability)));
+  for (const entry of (requests[requests.length - 1] as EngineRequest).side.pokemon) ownAbility.set(entry.ident.slice(entry.ident.indexOf(": ") + 2), toId(String(entry.ability)));
   const abilitiesOf = (mon: PublicMon): readonly string[] => {
     if (mon.own) return [ownAbility.get(String(mon.name)) as string];
-    if (mon.ability !== null && !mon.ability_received) return [mon.ability];
+    if (mon.ability !== null) return [mon.ability];
     // A species the roster does not list could hold any listed ability: the conservative answer.
-    return roster.get(mon.temp_species ?? mon.species ?? mon.base_species)?.abilities ?? rules.non_isolating.abilities;
+    return roster.get(String(mon.species ?? mon.base_species))?.abilities ?? rules.non_isolating.abilities;
   };
   const hits = extractHits(run.frames, {
     rules: rules.non_isolating,
@@ -162,7 +167,7 @@ export function createDamageCheck(context: DamageCheckContext, input: DamageChec
     declarable: (state: PublicState) => state.field_conditions.every((id) => id === "trickroom" || id === state.terrain || dex.conditions.get(id).effectType === "Terrain"),
   });
 
-  const counts: DamageCheckCounts = { hits: hits.length, events: 0, not_isolated: {}, calls: 0, queries: 0, probe_runs: 0 };
+  const counts: DamageCheckCounts = { hits: hits.length, events: 0, not_isolated: {}, calls: 0, own_unstated: 0, queries: 0, probe_runs: 0 };
   const events: DamageEventPort[] = [];
   const byEvent = new Map<string, Hit>();
   for (const hit of hits) {
@@ -193,12 +198,14 @@ export function createDamageCheck(context: DamageCheckContext, input: DamageChec
     const frame = run.frames[hit.frame] as PublicFrame;
     const mon = hit.state.own.roster[side.index] as PublicMon;
     const request = requests[frame.request - 1];
-    if (request === undefined) throw new DamageAwareError("the channel has no request before a hit");
-    const entry = request.side.pokemon.find((p) => p.ident.slice(p.ident.indexOf(": ") + 2) === mon.name);
-    if (entry === undefined) throw new DamageAwareError("an own Pokemon is not in the request in force");
+    const entry = request?.side.pokemon.find((p) => p.ident.slice(p.ident.indexOf(": ") + 2) === mon.name);
     const name = mon.name as string;
     const matches = input.team.filter((set) => [set.name, set.name === "" ? set.species : "", names.species.get(set.species).baseSpecies].includes(name));
-    if (matches.length !== 1) throw new DamageAwareError("an own Pokemon matches no set, or more than one, of the team as brought");
+    // No request in force, no entry for the Pokemon, or a team that matches it 0 or 2+ times: the probe cannot be told what it is, so no constraint (counted).
+    if (entry === undefined || matches.length !== 1) {
+      counts.own_unstated += 1;
+      return null;
+    }
     const set: PokemonSet = structuredClone(matches[0] as PokemonSet);
     const shownForme = toId(entry.details.split(",")[0] as string);
     // A Mega Evolution declared to the probe can start an ability that changes the other combatant (Intimidate): not stated.
@@ -233,44 +240,40 @@ export function createDamageCheck(context: DamageCheckContext, input: DamageChec
       ivs: defaultIvs(),
       level: foeMon.level ?? vocabulary.rules.adjust_level,
     };
-    let paste: string;
-    try {
-      paste = exportPaste(engine, [set]);
-    } catch {
-      return null;
-    }
+    const paste = exportPaste(engine, [set]);
     try {
       const stats = view.query({ kind: "stats", set: paste });
       if (stats?.kind !== "computed" || stats.answer.kind !== "stats") return null;
       const max = stats.answer.stats.hp;
-      // The foe's shown hit points are a range of hit-point values; its fighter is declared at the lowest.
+      // A shown percentage is a range of hit-point values; a defender is declared at the lowest, an attacker at both ends.
       const range = (percent: number): HpRange | null => hpRange(percent, max, rules.shown_hp_rounding);
       const foeNow = foeMon.hp_num as number;
       const own = ownFighter(hit, event.role === "defender" ? hit.attacker : hit.defender);
       if (own === null) return null;
-      let before: HpRange | null;
-      let after: HpRange | null;
-      let attacker: Fighter;
-      let defender: Fighter;
+      const answer = (attacker: Fighter, defender: Fighter) => {
+        const result = view.damageResult(attacker, defender, hit.move, hit.state, event.role === "defender");
+        return result?.kind === "computed" && result.answer.kind === "damage" ? (hit.crit ? result.answer.crit : result.answer.no_crit) : null;
+      };
       if (event.role === "defender") {
-        before = range(hit.before.num);
-        after = range(hit.after.num);
-        if (before === null || after === null) return null;
-        attacker = own;
-        defender = { paste, hp: hit.before.num === 100 ? null : Math.max(1, before.lo), status: foeMon.status, boosts: view.boostsOf(foeMon), mega: false };
-      } else {
-        const hpNow = range(foeNow);
-        if (hpNow === null) return null;
-        before = { lo: hit.before.num, hi: hit.before.num };
-        after = { lo: hit.after.num, hi: hit.after.num };
-        attacker = { paste, hp: foeNow === 100 ? null : Math.max(1, hpNow.lo), status: foeMon.status, boosts: view.boostsOf(foeMon), mega: false };
-        defender = own;
+        const [before, after] = [range(hit.before.num), range(hit.after.num)];
+        // No hit-point value of this candidate shows the observed percentage: it cannot have been the one.
+        if (before === null || after === null) return false;
+        const rolls = answer(own, { paste, hp: hit.before.num === 100 ? null : Math.max(1, before.lo), status: foeMon.status, boosts: view.boostsOf(foeMon), mega: false });
+        if (rolls === null) return null;
+        context.observe?.(event, rolls, before, after);
+        return rollsReach(rolls, before, after);
       }
-      const result = view.damageResult(attacker, defender, hit.move, hit.state, event.role === "defender");
-      if (result?.kind !== "computed" || result.answer.kind !== "damage") return null;
-      const rolls = hit.crit ? result.answer.crit : result.answer.no_crit;
-      context.observe?.(event, rolls, before, after);
-      return rollsReach(rolls, before, after);
+      const hpNow = range(foeNow);
+      if (hpNow === null) return false;
+      // The attacker's own shown hit points are a range, and a move or ability may read them (Eruption, Water Spout, Reversal,
+      // Blaze): it is declared at both ends, and if the two answers' rolls differ the range decides the damage and the candidate
+      // gets no constraint. No move or ability is named here.
+      const at = (hp: number): Fighter => ({ paste, hp: hp === max ? null : Math.max(1, hp), status: foeMon.status, boosts: view.boostsOf(foeMon), mega: false });
+      const [low, high] = [answer(at(hpNow.lo), own), answer(at(hpNow.hi), own)];
+      if (low === null || high === null || low.some((roll, k) => roll !== high[k])) return null;
+      const [before, after] = [{ lo: hit.before.num, hi: hit.before.num }, { lo: hit.after.num, hi: hit.after.num }];
+      context.observe?.(event, low, before, after);
+      return rollsReach(low, before, after);
     } catch (error) {
       if (error instanceof ProbeRefusal || (error instanceof DamageAwareError && error.message.startsWith("the probe refused"))) return null;
       throw error;
