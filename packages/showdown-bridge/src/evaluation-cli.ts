@@ -138,16 +138,23 @@ function headsAtRef(ref: string, dir: string, cwd: string): Map<string, string> 
   return files;
 }
 
+/**
+ * The published chain heads: the head files of `dir` in the working tree, or, with `ref`, as that git ref holds them (the copy a merge made).
+ * Checked add-only against nothing (a well-formed, correctly named set); the caller joins them with `checkHeads`.
+ */
+export function readPublishedHeads(dir: string, ref: string | undefined, cwd: string): unknown[] {
+  const files = ref === undefined ? headsInTree(resolve(cwd, dir)) : headsAtRef(ref, dir, cwd);
+  checkHeadsAddOnly(new Map(), files);
+  return [...files.values()].map((text) => JSON.parse(text) as unknown);
+}
+
 function headsOf(options: Options, cwd: string): unknown[] | null {
   const dir = options.get("heads")?.[0];
   if (dir === undefined) {
     if (options.has("heads-ref")) throw new UsageError("--heads-ref needs --heads (the directory)");
     return null;
   }
-  const ref = options.get("heads-ref")?.[0];
-  const files = ref === undefined ? headsInTree(resolve(cwd, dir)) : headsAtRef(ref, dir, cwd);
-  checkHeadsAddOnly(new Map(), files);
-  return [...files.values()].map((text) => JSON.parse(text) as unknown);
+  return readPublishedHeads(dir, options.get("heads-ref")?.[0], cwd);
 }
 
 /** A run starts or is recorded only for a plan whose own entry a published head covers (I2). */
