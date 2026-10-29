@@ -11,8 +11,6 @@ from __future__ import annotations
 import copy
 import json
 import re
-import shutil
-import subprocess
 from dataclasses import replace
 from functools import cache
 from pathlib import Path
@@ -76,12 +74,12 @@ def targets(encoded: Any, index: int) -> list[int]:
 
 @cache
 def channels() -> dict[str, Any]:
-    """Each corpus case's player channel, replayed on the pinned engine by the Node tooling."""
-    script = ROOT / "packages" / "showdown-bridge" / "scripts" / "choice-channels.ts"
-    if shutil.which("node") is None or not (ROOT / "vendor/pokemon-showdown/dist/sim").exists():
-        pytest.skip("needs node and the built pinned engine")
-    done = subprocess.run(["node", str(script)], capture_output=True, check=True, text=True)
-    loaded: dict[str, Any] = json.loads(done.stdout)
+    """Each corpus case's player channel (a Node test holds the file against the engine)."""
+    loaded: dict[str, Any] = json.loads(
+        (
+            ROOT / "fixtures/showdown/gen9championsvgc2026regmc/choice-channels/channels.json"
+        ).read_text()
+    )
     return loaded
 
 
@@ -152,10 +150,8 @@ def test_ally_targets_map_to_the_ally_and_the_user_is_none() -> None:
     # The user itself is none: slot a at -1.
     extra = copy.deepcopy(query)
     extra["candidates"].append({"choice": "move 4 -1, move 1 1", "pending": False})
-    assert targets(ENCODE.encode(extra), len(extra["candidates"]) - 1) == [
-        -1,
-        ENCODE.encode(extra).n_own,
-    ]
+    encoded_extra = ENCODE.encode(extra)
+    assert targets(encoded_extra, len(extra["candidates"]) - 1) == [-1, encoded_extra.n_own]
 
 
 def test_untargeted_switch_and_pass_parts_have_no_target() -> None:
@@ -359,7 +355,7 @@ def test_the_network_gathers_the_target_token_and_a_training_step_reaches_it() -
     out = network(batch)
     assert torch.isfinite(out.logits[batch.cand_mask]).all()
     changed = replace(batch, cand_tok=batch.cand_tok.clone())
-    changed.cand_tok[:, :, 0, 2] = 1 - 0 if changed.cand_tok[0, 0, 0, 2] != 1 else 0
+    changed.cand_tok[:, :, 0, 2] = 1 if changed.cand_tok[0, 0, 0, 2] != 1 else 0
     assert not torch.equal(network(changed).logits, out.logits)
     loss: Any = -torch.log_softmax(out.logits.masked_fill(~batch.cand_mask, -1e9), -1)[:, 0].mean()
     loss.backward()
