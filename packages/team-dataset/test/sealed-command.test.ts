@@ -36,6 +36,8 @@ function cli(args: string[], extra: Partial<SealedCliIo> = {}): { code: number; 
   return { code, out, err };
 }
 
+const writeHead = (dir: string, head: { seq: number; entry_hash: string }): void => writeFileSync(join(dir, `${String(head.seq).padStart(10, "0")}.json`), JSON.stringify(head));
+
 const store = (): string => {
   const s = freshStore();
   stores.push(s);
@@ -70,7 +72,7 @@ describe("the sealed command line", () => {
     const teams = readFileSync(join(setDir, "teams.jsonl"), "utf8");
     for (const line of teams.split("\n").filter(Boolean)) expect(printed.includes((JSON.parse(line) as { paste: string }).paste)).toBe(false);
     expect(readFileSync(join(setDir, "key"), "utf8").trim()).toBe(key);
-    for (const file of readdirSync(scratch)) {
+    for (const file of readdirSync(scratch, { withFileTypes: true }).filter((d) => d.isFile()).map((d) => d.name)) {
       const text = readFileSync(join(scratch, file), "utf8");
       expect(text.includes(key) || text.includes(salt), file).toBe(false);
     }
@@ -84,14 +86,18 @@ describe("the sealed command line", () => {
     const at = { recorded_at: "2026-11-01T10:00:00Z", operator: "owner" };
     let text = appendEntry("", { kind: "set_commitment", commitment, ...at } as never, [evaluation]).text;
     text = appendEntry(text, { kind: "incident", set_id: "set-c", cause: "sealed_artifact_read", description: "A test incident.", affected_candidates: [], ...at } as never, [evaluation]).text;
-    text = appendEntry(text, { kind: "set_retirement", set_id: "set-c", reason: "contaminated", reveal_hash: hash, ...at } as never, [evaluation]).text;
+    const last = appendEntry(text, { kind: "set_retirement", set_id: "set-c", reason: "contaminated", reveal_hash: hash, ...at } as never, [evaluation]);
+    text = last.text;
     const registerFile = join(scratch, "register.jsonl");
     writeFileSync(registerFile, text);
+    const headsDir = join(scratch, "heads");
+    mkdirSync(headsDir);
+    writeHead(headsDir, last.head);
     const out = join(scratch, "bundle");
     const retired = cli(["retire", "--store", storeDir, "--set-id", "set-c", "--out", out, "--register", registerFile, "--parameters", files.parameters, "--rule", files.rule]);
     expect(retired.code).toBe(0);
     expect(JSON.parse(retired.out[0] as string)).toMatchObject({ set_id: "set-c", reveal_hash: hash });
-    const verified = cli(["verify", "--dir", out, "--public-manifest", files.manifest, "--register", registerFile, "--parameters", files.parameters, "--rule", files.rule, "--config", files.config, "--labels", files.labels, "--format", FORMAT, "--vocabulary", VOCABULARY_FILE, "--known", files.known]);
+    const verified = cli(["verify", "--dir", out, "--public-manifest", files.manifest, "--register", registerFile, "--heads", headsDir, "--parameters", files.parameters, "--rule", files.rule, "--config", files.config, "--labels", files.labels, "--format", FORMAT, "--vocabulary", VOCABULARY_FILE, "--known", files.known]);
     expect(verified.code).toBe(0);
     expect(JSON.parse(verified.out[0] as string)).toMatchObject({ verified: true, set_id: "set-c", teams: 24 });
     // a tampered reveal exits 1 and the message does not quote the file
@@ -99,7 +105,7 @@ describe("the sealed command line", () => {
     mkdirSync(bad);
     for (const f of readdirSync(out)) writeFileSync(join(bad, f), readFileSync(join(out, f), "utf8"));
     writeFileSync(join(bad, "teams.jsonl"), `${readFileSync(join(out, "teams.jsonl"), "utf8")}\n`);
-    const refused = cli(["verify", "--dir", bad, "--public-manifest", files.manifest, "--register", registerFile, "--parameters", files.parameters, "--rule", files.rule, "--config", files.config, "--labels", files.labels, "--format", FORMAT, "--vocabulary", VOCABULARY_FILE, "--known", files.known]);
+    const refused = cli(["verify", "--dir", bad, "--public-manifest", files.manifest, "--register", registerFile, "--heads", headsDir, "--parameters", files.parameters, "--rule", files.rule, "--config", files.config, "--labels", files.labels, "--format", FORMAT, "--vocabulary", VOCABULARY_FILE, "--known", files.known]);
     expect(refused.code).toBe(1);
     expect(refused.err.join()).toMatch(/SealedVerifyError: teams.jsonl is not the file the reveal names/);
   });
@@ -180,5 +186,155 @@ describe("the sealed command line refuses", () => {
     const code = runSealedCli(["verify", "--dir", join(scratch, "missing"), "--parameters", files.parameters, "--rule", files.rule, "--config", files.config, "--labels", files.labels, "--format", FORMAT, "--vocabulary", VOCABULARY_FILE], { out: (l) => out.push(l), err: (l) => err.push(l) });
     expect(code).toBe(2);
     expect(err.join()).toMatch(/ENOENT/);
+  });
+});
+
+describe("verify enforces the published chain heads", () => {
+  const storeDir = store();
+  cli(generateArgs(storeDir), { secret: counterSecret("heads") });
+  const setDir = join(storeDir, "sealed", "set-c");
+  const hash = (JSON.parse(cli(["reveal-hash", "--store", storeDir, "--set-id", "set-c"]).out[0] as string) as { reveal_hash: string }).reveal_hash;
+  const commitment = JSON.parse(readFileSync(join(setDir, "commitment.json"), "utf8"));
+  const at = { recorded_at: "2026-11-01T10:00:00Z", operator: "owner" };
+  const first = appendEntry("", { kind: "set_commitment", commitment, ...at } as never, [evaluation]);
+  const second = appendEntry(first.text, { kind: "incident", set_id: "set-c", cause: "sealed_artifact_read", description: "A test incident.", affected_candidates: [], ...at } as never, [evaluation]);
+  const third = appendEntry(second.text, { kind: "set_retirement", set_id: "set-c", reason: "contaminated", reveal_hash: hash, ...at } as never, [evaluation]);
+  const registerFile = join(scratch, "heads-register.jsonl");
+  writeFileSync(registerFile, third.text);
+  const bundle = join(scratch, "heads-bundle");
+  const retired = cli(["retire", "--store", storeDir, "--set-id", "set-c", "--out", bundle, "--register", registerFile, "--parameters", files.parameters, "--rule", files.rule]);
+  const verifyArgs = (heads: string[]): string[] => ["verify", "--dir", bundle, "--public-manifest", files.manifest, "--register", registerFile, ...heads, "--parameters", files.parameters, "--rule", files.rule, "--config", files.config, "--labels", files.labels, "--format", FORMAT, "--vocabulary", VOCABULARY_FILE, "--known", files.known];
+  const headsIn = (...heads: { seq: number; entry_hash: string }[]): string => {
+    const dir = mkdtempSync(join(scratch, "h-"));
+    heads.forEach((h) => writeHead(dir, h));
+    return dir;
+  };
+
+  it("passes with the heads of the register", () => {
+    expect(retired.code).toBe(0);
+    expect(cli(verifyArgs(["--heads", headsIn(first.head, third.head)])).code).toBe(0);
+  });
+
+  it("fails closed with exit 2 when no head is published: an absent or empty directory, or a ref with none", () => {
+    const empty = mkdtempSync(join(scratch, "h-empty-"));
+    for (const dir of [join(scratch, "no-such-heads-dir"), empty]) {
+      const run = cli(verifyArgs(["--heads", dir]));
+      expect(run.code).toBe(2);
+      expect(run.err.join()).toMatch(/EvaluationConfigError: no published chain head was found/);
+    }
+    // a real ref (HEAD) that holds no head files at that path
+    const ref = cli(verifyArgs(["--heads", "no/such/heads/path", "--heads-ref", "HEAD"]));
+    expect(ref.code).toBe(2);
+    expect(ref.err.join()).toMatch(/no published chain head was found/);
+  });
+
+  it("a malformed head file is a fixed-message config error (exit 2) that does not quote the text", () => {
+    const dir = mkdtempSync(join(scratch, "h-bad-"));
+    writeFileSync(join(dir, "0000000001.json"), '{"seq": MARKER-884-HEAD oops');
+    const run = cli(verifyArgs(["--heads", dir]));
+    expect(run.code).toBe(2);
+    expect(run.err.join()).toMatch(/a published head file is not valid JSON/);
+    expect(run.err.join()).not.toContain("MARKER-884-HEAD");
+  });
+
+  it("refuses without --heads (exit 2) and --heads-ref without --heads", () => {
+    const missing = cli(verifyArgs([]));
+    expect(missing.code).toBe(2);
+    expect(missing.err.join()).toMatch(/--heads is required/);
+    expect(cli(verifyArgs(["--heads-ref", "origin/main"])).code).toBe(2);
+  });
+
+  it("refuses a rollback (a head beyond the register) and a fork (another hash at a position), exit 1", () => {
+    const rollback = cli(verifyArgs(["--heads", headsIn({ ...third.head, seq: 4 })]));
+    expect(rollback.code).toBe(1);
+    expect(rollback.err.join()).toMatch(/RegisterError: rollback/);
+    const fork = cli(verifyArgs(["--heads", headsIn({ ...second.head, entry_hash: "f".repeat(64) })]));
+    expect(fork.code).toBe(1);
+    expect(fork.err.join()).toMatch(/RegisterError: fork or rewrite/);
+  });
+
+  it("reads the heads from a git ref when --heads-ref is given (an unknown ref is refused)", () => {
+    const run = cli(verifyArgs(["--heads", "evaluation/register-heads", "--heads-ref", "no-such-ref-884"]));
+    expect(run.code).toBe(2);
+    expect(run.err.join()).toMatch(/git ls-tree no-such-ref-884 failed/);
+  });
+});
+
+describe("no JSON read of the command quotes its input", () => {
+  const MARKER = "MARKER-884-SECRET";
+  const bad = (name: string, text: string): string => {
+    const path = join(scratch, name);
+    writeFileSync(path, text);
+    return path;
+  };
+
+  it("a malformed config, parameters or labels file is a usage error that names the file, not the text", () => {
+    for (const option of ["config", "labels", "public-manifest", "parameters", "rule"] as const) {
+      const args = generateArgs(store());
+      args[args.indexOf(`--${option}`) + 1] = bad(`bad-${option}.json`, `{"key": "${MARKER}" oops`);
+      const run = cli(args);
+      expect(run.code, option).toBe(2);
+      expect(run.err.join(), option).toMatch(/is not valid JSON/);
+      expect([...run.out, ...run.err].join("\n"), option).not.toContain(MARKER);
+    }
+  });
+
+  it("a malformed --known line is a usage error that names the line, not the text", () => {
+    const run = cli(generateArgs(store(), ["--known", bad("bad-known.jsonl", `{"paste": "${MARKER}" oops\n`)]));
+    expect(run.code).toBe(2);
+    expect(run.err.join()).toMatch(/line 1 is not valid JSON/);
+    expect(run.err.join()).not.toContain(MARKER);
+  });
+
+  it("a literal null known line is a missing paste, not a crash", () => {
+    const run = cli(generateArgs(store(), ["--known", bad("null-known.jsonl", "null\n")]));
+    expect(run.code).toBe(2);
+    expect(run.err.join()).toMatch(/line 1 has no paste/);
+  });
+});
+
+describe("retire and verify print no key, salt, paste or team content", () => {
+  const storeDir = store();
+  const secrets: string[] = [];
+  const next = counterSecret("canary");
+  cli(generateArgs(storeDir), { secret: () => (secrets.push(next()), secrets.at(-1) as string) });
+  const setDir = join(storeDir, "sealed", "set-c");
+  const pastes = readFileSync(join(setDir, "teams.jsonl"), "utf8").split("\n").filter(Boolean).map((l) => (JSON.parse(l) as { paste: string }).paste);
+  const hash = (JSON.parse(cli(["reveal-hash", "--store", storeDir, "--set-id", "set-c"]).out[0] as string) as { reveal_hash: string }).reveal_hash;
+  const commitment = JSON.parse(readFileSync(join(setDir, "commitment.json"), "utf8"));
+  const at = { recorded_at: "2026-11-01T10:00:00Z", operator: "owner" };
+  const committed = appendEntry("", { kind: "set_commitment", commitment, ...at } as never, [evaluation]);
+  const incident = appendEntry(committed.text, { kind: "incident", set_id: "set-c", cause: "sealed_artifact_read", description: "A test incident.", affected_candidates: [], ...at } as never, [evaluation]);
+  const withRetirement = appendEntry(incident.text, { kind: "set_retirement", set_id: "set-c", reason: "contaminated", reveal_hash: hash, ...at } as never, [evaluation]);
+  const registerFile = join(scratch, "canary-register.jsonl");
+  writeFileSync(registerFile, withRetirement.text);
+  const headsDir = join(scratch, "canary-heads");
+  mkdirSync(headsDir);
+  writeHead(headsDir, withRetirement.head);
+  const out = join(scratch, "canary-bundle");
+  const retire = cli(["retire", "--store", storeDir, "--set-id", "set-c", "--out", out, "--register", registerFile, "--parameters", files.parameters, "--rule", files.rule]);
+  const verifyArgs = (dir: string): string[] => ["verify", "--dir", dir, "--public-manifest", files.manifest, "--register", registerFile, "--heads", headsDir, "--parameters", files.parameters, "--rule", files.rule, "--config", files.config, "--labels", files.labels, "--format", FORMAT, "--vocabulary", VOCABULARY_FILE, "--known", files.known];
+  const verify = cli(verifyArgs(out));
+  const tampered = join(scratch, "canary-bundle-tampered");
+  mkdirSync(tampered);
+  for (const f of readdirSync(out)) writeFileSync(join(tampered, f), readFileSync(join(out, f), "utf8"));
+  writeFileSync(join(tampered, "teams.jsonl"), `${readFileSync(join(out, "teams.jsonl"), "utf8")}\n`);
+  const refused = cli(verifyArgs(tampered));
+  const leaks = (text: string): boolean => secrets.some((x) => text.includes(x)) || pastes.some((p) => text.includes(p) || text.includes(p.split("\n")[0] as string));
+  const streams = (run: { out: string[]; err: string[] }): string => [...run.out, ...run.err].join("\n");
+
+  it("neither command, in success or refusal, prints the key, the salt or a team", () => {
+    expect(retire.code).toBe(0);
+    expect(verify.code).toBe(0);
+    expect(refused.code).toBe(1);
+    for (const run of [retire, verify, refused]) expect(leaks(streams(run))).toBe(false);
+  });
+
+  it("negative control: the scan does flag output that carries a key or a paste", () => {
+    expect(leaks(`${streams(verify)} ${secrets[0]}`)).toBe(true);
+    expect(leaks(`${streams(verify)} ${pastes[0]}`)).toBe(true);
+    // and the bundle on disk does hold them, so the control is not vacuous
+    expect(leaks(readFileSync(join(out, "teams.jsonl"), "utf8"))).toBe(true);
+    expect(leaks(readFileSync(join(out, "retired-manifest.json"), "utf8"))).toBe(true);
   });
 });

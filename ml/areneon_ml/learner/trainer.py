@@ -19,12 +19,13 @@ import dataclasses
 import os
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Protocol
+from typing import Any, Protocol
 
 import torch
 
 from areneon_ml.learner.config import MICRO, RunConfig
 from areneon_ml.learner.data import Step, Trajectory
+from areneon_ml.learner.diagnostics import CalibrationBin, calibration, explained_variance
 from areneon_ml.learner.ppo import (
     LossWeights,
     Targets,
@@ -111,13 +112,18 @@ class RoleReport:
     # Set only under ``ppo.entropy_schedule`` of kind ``linear`` (ADR-023 section 3): the entropy
     # weight (millionths) the update used. Left out of the stored report otherwise.
     entropy_coef_micro: int | None = None
+    # Value-head diagnostics (ADR-010 erratum A4 item 1): explained variance of the returns by the
+    # frozen-weight values, and ten fixed bins of predicted value against the final game score.
+    # Diagnostic only; always written for a role that trained, absent in older reports.
+    explained_variance: float | None = None
+    value_calibration: tuple[CalibrationBin, ...] | None = None
 
 
 @dataclass(frozen=True)
 class TrainReport:
     roles: Mapping[str, RoleReport] = field(default_factory=dict)
 
-    def as_dict(self) -> dict[str, dict[str, float | int | bool]]:
+    def as_dict(self) -> dict[str, dict[str, Any]]:
         return {
             role: {k: v for k, v in dataclasses.asdict(report).items() if v is not None}
             for role, report in sorted(self.roles.items())
@@ -132,6 +138,9 @@ class _Table:
     old_log_prob: torch.Tensor
     advantages: torch.Tensor
     returns: torch.Tensor
+    #: Value-head diagnostics from the frozen-weight values (see ``diagnostics``).
+    explained_variance: float
+    value_calibration: tuple[CalibrationBin, ...]
     #: Per step, the anchor's log-probabilities over that decision's real candidates (in
     #: candidate order), from its frozen weights; ``None`` without an active anchor.
     anchor_log_probs: list[torch.Tensor] | None = None
@@ -294,7 +303,9 @@ class Learner:
         old_log_prob, values = self._score(role, steps)
         values = values.cpu()
         advantages, returns, start = [], [], 0
+        scores: list[float] = []
         for t in trajectories:
+            scores.extend([t.score] * len(t.steps))
             end = start + len(t.steps)
             a, r = gae(
                 terminal_rewards(len(t.steps), t.score),
@@ -308,11 +319,16 @@ class Learner:
         adv = torch.cat(advantages)
         if ppo.normalize_advantages:
             adv = normalise(adv)
+        all_returns = torch.cat(returns)
+        # float32 tensors widened exactly to float64 for the diagnostics.
+        value_list = values.double().tolist()
         return _Table(
             steps,
             old_log_prob,
             adv.to(self.device),
-            torch.cat(returns).to(self.device),
+            all_returns.to(self.device),
+            explained_variance(all_returns.double().tolist(), value_list),
+            calibration(value_list, scores),
             self._anchor_scores(role, steps) if anchor else None,
         )
 
@@ -419,4 +435,6 @@ class Learner:
             else None,
             beta_micro,
             entropy_micro,
+            table.explained_variance,
+            table.value_calibration,
         )
