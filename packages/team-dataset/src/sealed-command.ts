@@ -25,6 +25,7 @@ import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { parseArgs } from "node:util";
 import {
+  assertRetirementPublished,
   checkHeads,
   commitmentHash,
   type Engine,
@@ -191,16 +192,18 @@ function runRevealHash(values: Values, io: SealedCliIo): number {
 }
 
 /** Register authenticity is enforced in code, not only by the runbook: the chain must verify and match every published head (no rollback, no fork). Used before anything is written or read from a bundle. */
-function checkPublishedHeads(values: Values, registerText: string, configs: ReturnType<typeof evaluationConfigs>): void {
+function checkPublishedHeads(values: Values, registerText: string, configs: ReturnType<typeof evaluationConfigs>, retiringSet?: string): void {
   const heads = readPublishedHeads(need(values, "heads"), values["heads-ref"], process.cwd(), { requireHeads: true });
-  checkHeads(verifyRegister(registerText, configs), heads);
+  const state = verifyRegister(registerText, configs);
+  const check = checkHeads(state, heads);
+  if (retiringSet !== undefined) assertRetirementPublished(state, check, retiringSet);
 }
 
 function runRetire(values: Values, io: SealedCliIo): number {
   const registerText = readFileSync(need(values, "register"), "utf8");
   const configs = evaluationConfigs(values);
   // Before the store is touched: a rolled-back or forked register must not unlock a reveal bundle.
-  checkPublishedHeads(values, registerText, configs);
+  checkPublishedHeads(values, registerText, configs, need(values, "set-id"));
   const hash = retireSealedSet({
     storeDir: need(values, "store"),
     setId: need(values, "set-id"),

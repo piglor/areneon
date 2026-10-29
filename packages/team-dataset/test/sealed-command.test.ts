@@ -275,6 +275,16 @@ describe("retire and verify enforce the published chain heads", () => {
       noWrite(b);
     });
 
+    it("refuses (exit 1) when the retirement entry is not yet covered by a published head, and writes nothing", () => {
+      for (const [name, heads] of [["retire-unpublished", [first.head]], ["retire-unpublished-2", [first.head, second.head]]] as const) {
+        const out = refusedOut(name);
+        const run = cli(retireArgs(out, ["--heads", headsIn(...heads)]));
+        expect(run.code).toBe(1);
+        expect(run.err.join()).toMatch(/RegisterError: the retirement is at position 3 but the published heads reach/);
+        noWrite(out);
+      }
+    });
+
     it("fails closed (exit 2) on absent or empty heads, a malformed head file, a missing --heads and an unknown ref; no file is written", () => {
       const empty = mkdtempSync(join(scratch, "h-empty-r-"));
       const bad = mkdtempSync(join(scratch, "h-bad-r-"));

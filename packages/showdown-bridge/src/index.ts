@@ -353,6 +353,7 @@ export {
 export {
   appendEntry,
   assertPlanPublished,
+  assertRetirementPublished,
   checkHeads,
   type EvaluationRegisterEntry,
   type EvaluationRegisterHead,
