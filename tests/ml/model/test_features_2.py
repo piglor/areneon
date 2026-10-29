@@ -709,7 +709,11 @@ def test_the_target_option_composes_with_the_arrays() -> None:
     plain = ENCODE.encode(q)
     assert encoded.cand_tok.shape[-1] == plain.cand_tok.shape[-1] + 1
     assert torch.equal(encoded.cand_cat, plain.cand_cat)
+    assert encoded.cand_num is not None
+    assert plain.cand_num is not None
     assert torch.equal(encoded.cand_num, plain.cand_num)
+    assert encoded.thr_idx is not None
+    assert plain.thr_idx is not None
     assert torch.equal(encoded.thr_idx, plain.thr_idx)
     model = init_network("battle", game(), replace(TINY_MODEL, encoder=both), seed=1)
     alone = model(collate([encoded])).logits
