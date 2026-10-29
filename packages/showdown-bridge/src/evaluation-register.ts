@@ -302,6 +302,16 @@ export function assertPlanPublished(state: RegisterState, check: HeadCheck, hash
   throw new RegisterError(`plan ${hash} is not in the register`);
 }
 
+/** L5: a set's reveal may be written only when the entry that retires it is covered by a published head. */
+export function assertRetirementPublished(state: RegisterState, check: HeadCheck, setId: string): number {
+  const index = state.entries.findIndex((e) => e.kind === "set_retirement" && e.set_id === setId);
+  if (index < 0) throw new RegisterError("the set has no retirement in the register");
+  if (index + 1 > check.published_through) {
+    throw new RegisterError(`the retirement is at position ${index + 1} but the published heads reach ${check.published_through}: merge the chain head first`);
+  }
+  return index + 1;
+}
+
 /** The file a head at `seq` is kept in, under the heads directory. */
 export const headFileName = (seq: number): string => `${String(seq).padStart(10, "0")}.json`;
 

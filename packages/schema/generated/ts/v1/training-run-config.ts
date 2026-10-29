@@ -185,6 +185,10 @@ export interface TrainingRunConfig {
     learning_rate_schedule?: LearningRateSchedule;
     entropy_schedule?: EntropySchedule;
     /**
+     * Optional (a minor change within v1, ADR-010 erratum A4 item 3, #1005): the weight w, in millionths, of the Battle network's value in the Team Preview step's return. The Preview return of an Episode is (1 - w) * game score + w * V_battle(first Battle decision of the same Episode), with V_battle the value the Battle network had BEFORE this update (both roles' frozen values are computed before either role is updated, so the Battle update cannot change the Preview targets); the Preview advantage is that return minus the Preview value. An Episode that has a Preview step and no Battle decision is refused. Absent or 0 means the game score alone (today's rule). Under ppo.value_warmup a warm Preview role trains its value head toward the same bootstrapped return. The Battle role is unchanged. A config that carries it is a new run.
+     */
+    preview_bootstrap_micro?: number;
+    /**
      * Optional (a minor change within v1, ADR-019 section 4, #1111): for a run that declares warm_start, the first `generations` learner updates (generation 1 up to generation `generations`) train the value head only, on the cloned pair's own rollouts, with every other parameter of both networks frozen (the policy heads and the shared trunk stay byte-identical); update `generations` + 1 and every later one is normal PPO. The learning-rate schedule's update index counts the warm-up updates too. Absent means normal PPO from generation 1. A config that carries it is a new run.
      */
     value_warmup?: {

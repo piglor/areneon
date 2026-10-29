@@ -1,4 +1,4 @@
-import { chmodSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { appendEntry } from "@areneon/showdown-bridge";
@@ -94,7 +94,7 @@ describe("the sealed command line", () => {
     mkdirSync(headsDir);
     writeHead(headsDir, last.head);
     const out = join(scratch, "bundle");
-    const retired = cli(["retire", "--store", storeDir, "--set-id", "set-c", "--out", out, "--register", registerFile, "--parameters", files.parameters, "--rule", files.rule]);
+    const retired = cli(["retire", "--store", storeDir, "--set-id", "set-c", "--out", out, "--register", registerFile, "--heads", headsDir, "--parameters", files.parameters, "--rule", files.rule]);
     expect(retired.code).toBe(0);
     expect(JSON.parse(retired.out[0] as string)).toMatchObject({ set_id: "set-c", reveal_hash: hash });
     const verified = cli(["verify", "--dir", out, "--public-manifest", files.manifest, "--register", registerFile, "--heads", headsDir, "--parameters", files.parameters, "--rule", files.rule, "--config", files.config, "--labels", files.labels, "--format", FORMAT, "--vocabulary", VOCABULARY_FILE, "--known", files.known]);
@@ -189,7 +189,7 @@ describe("the sealed command line refuses", () => {
   });
 });
 
-describe("verify enforces the published chain heads", () => {
+describe("retire and verify enforce the published chain heads", () => {
   const storeDir = store();
   cli(generateArgs(storeDir), { secret: counterSecret("heads") });
   const setDir = join(storeDir, "sealed", "set-c");
@@ -202,14 +202,14 @@ describe("verify enforces the published chain heads", () => {
   const registerFile = join(scratch, "heads-register.jsonl");
   writeFileSync(registerFile, third.text);
   const bundle = join(scratch, "heads-bundle");
-  const retired = cli(["retire", "--store", storeDir, "--set-id", "set-c", "--out", bundle, "--register", registerFile, "--parameters", files.parameters, "--rule", files.rule]);
-  const verifyArgs = (heads: string[]): string[] => ["verify", "--dir", bundle, "--public-manifest", files.manifest, "--register", registerFile, ...heads, "--parameters", files.parameters, "--rule", files.rule, "--config", files.config, "--labels", files.labels, "--format", FORMAT, "--vocabulary", VOCABULARY_FILE, "--known", files.known];
+  const retireArgs = (out: string, heads: string[]): string[] => ["retire", "--store", storeDir, "--set-id", "set-c", "--out", out, "--register", registerFile, ...heads, "--parameters", files.parameters, "--rule", files.rule];
   const headsIn = (...heads: { seq: number; entry_hash: string }[]): string => {
     const dir = mkdtempSync(join(scratch, "h-"));
     heads.forEach((h) => writeHead(dir, h));
     return dir;
   };
-
+  const retired = cli(retireArgs(bundle, ["--heads", headsIn(first.head, third.head)]));
+  const verifyArgs = (heads: string[]): string[] => ["verify", "--dir", bundle, "--public-manifest", files.manifest, "--register", registerFile, ...heads, "--parameters", files.parameters, "--rule", files.rule, "--config", files.config, "--labels", files.labels, "--format", FORMAT, "--vocabulary", VOCABULARY_FILE, "--known", files.known];
   it("passes with the heads of the register", () => {
     expect(retired.code).toBe(0);
     expect(cli(verifyArgs(["--heads", headsIn(first.head, third.head)])).code).toBe(0);
@@ -251,6 +251,60 @@ describe("verify enforces the published chain heads", () => {
     const fork = cli(verifyArgs(["--heads", headsIn({ ...second.head, entry_hash: "f".repeat(64) })]));
     expect(fork.code).toBe(1);
     expect(fork.err.join()).toMatch(/RegisterError: fork or rewrite/);
+  });
+
+  describe("retire checks the heads before it writes anything", () => {
+    const refusedOut = (name: string): string => join(scratch, name);
+    const noWrite = (out: string): void => expect(existsSync(out)).toBe(false);
+
+    it("passes with the heads of the register and writes the bundle", () => {
+      expect(retired.code).toBe(0);
+      expect(existsSync(join(bundle, "retired-manifest.json"))).toBe(true);
+    });
+
+    it("refuses a rollback (exit 1) and a fork (exit 1) and writes no file", () => {
+      const a = refusedOut("retire-rollback");
+      const rollback = cli(retireArgs(a, ["--heads", headsIn({ ...third.head, seq: 4 })]));
+      expect(rollback.code).toBe(1);
+      expect(rollback.err.join()).toMatch(/RegisterError: rollback/);
+      noWrite(a);
+      const b = refusedOut("retire-fork");
+      const fork = cli(retireArgs(b, ["--heads", headsIn({ ...second.head, entry_hash: "f".repeat(64) })]));
+      expect(fork.code).toBe(1);
+      expect(fork.err.join()).toMatch(/RegisterError: fork or rewrite/);
+      noWrite(b);
+    });
+
+    it("refuses (exit 1) when the retirement entry is not yet covered by a published head, and writes nothing", () => {
+      for (const [name, heads] of [["retire-unpublished", [first.head]], ["retire-unpublished-2", [first.head, second.head]]] as const) {
+        const out = refusedOut(name);
+        const run = cli(retireArgs(out, ["--heads", headsIn(...heads)]));
+        expect(run.code).toBe(1);
+        expect(run.err.join()).toMatch(/RegisterError: the retirement is at position 3 but the published heads reach/);
+        noWrite(out);
+      }
+    });
+
+    it("fails closed (exit 2) on absent or empty heads, a malformed head file, a missing --heads and an unknown ref; no file is written", () => {
+      const empty = mkdtempSync(join(scratch, "h-empty-r-"));
+      const bad = mkdtempSync(join(scratch, "h-bad-r-"));
+      writeFileSync(join(bad, "0000000001.json"), '{"seq": MARKER-1242-HEAD oops');
+      const cases: [string, string[], RegExp][] = [
+        ["retire-absent", ["--heads", join(scratch, "no-such-heads-dir")], /no published chain head was found/],
+        ["retire-empty", ["--heads", empty], /no published chain head was found/],
+        ["retire-bad", ["--heads", bad], /a published head file is not valid JSON/],
+        ["retire-missing", [], /--heads is required/],
+        ["retire-ref", ["--heads", "evaluation/register-heads", "--heads-ref", "no-such-ref-1242"], /git ls-tree no-such-ref-1242 failed/],
+      ];
+      for (const [name, heads, message] of cases) {
+        const out = refusedOut(name);
+        const run = cli(retireArgs(out, heads));
+        expect(run.code).toBe(2);
+        expect(run.err.join()).toMatch(message);
+        expect(run.err.join()).not.toContain("MARKER-1242-HEAD");
+        noWrite(out);
+      }
+    });
   });
 
   it("reads the heads from a git ref when --heads-ref is given (an unknown ref is refused)", () => {
@@ -312,7 +366,7 @@ describe("retire and verify print no key, salt, paste or team content", () => {
   mkdirSync(headsDir);
   writeHead(headsDir, withRetirement.head);
   const out = join(scratch, "canary-bundle");
-  const retire = cli(["retire", "--store", storeDir, "--set-id", "set-c", "--out", out, "--register", registerFile, "--parameters", files.parameters, "--rule", files.rule]);
+  const retire = cli(["retire", "--store", storeDir, "--set-id", "set-c", "--out", out, "--register", registerFile, "--heads", headsDir, "--parameters", files.parameters, "--rule", files.rule]);
   const verifyArgs = (dir: string): string[] => ["verify", "--dir", dir, "--public-manifest", files.manifest, "--register", registerFile, "--heads", headsDir, "--parameters", files.parameters, "--rule", files.rule, "--config", files.config, "--labels", files.labels, "--format", FORMAT, "--vocabulary", VOCABULARY_FILE, "--known", files.known];
   const verify = cli(verifyArgs(out));
   const tampered = join(scratch, "canary-bundle-tampered");
