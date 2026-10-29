@@ -66,6 +66,8 @@ export interface SearchIdentityInputs {
   /** ADR-025's `belief_identity_hash` of the belief in use; must equal the config's. */
   belief_identity_hash: string;
   mechanics_config_hash: string;
+  /** The probe's `MECHANICS_ADAPTER_FORMAT`: a probe answer read differently is another search. */
+  mechanics_adapter_format: number;
   /** The reviewed weights `damageValue` uses (ADR-018). */
   damage_aware_config_hash: string;
   damage_value_format: number;
@@ -86,7 +88,7 @@ const HASH_FIELDS = ["belief_identity_hash", "mechanics_config_hash", "damage_aw
 export function searchIdentity(config: SearchConfig, inputs: SearchIdentityInputs): Record<string, Json> {
   for (const field of HASH_FIELDS) if (!HEX64.test(inputs[field])) throw new SearchConfigError(`${field} is a SHA-256: 64 lowercase hex digits`);
   if (inputs.belief_identity_hash !== config.belief_identity_hash) throw new SearchConfigError("the belief identity is not the one the config names");
-  for (const field of ["damage_value_format", "world_builder_format", "reply_model_format", "leaf_format"] as const) {
+  for (const field of ["mechanics_adapter_format", "damage_value_format", "world_builder_format", "reply_model_format", "leaf_format"] as const) {
     if (!Number.isInteger(inputs[field]) || inputs[field] < 1) throw new SearchConfigError(`${field} is a positive integer`);
   }
   if (typeof inputs.world_facts_format !== "string" || inputs.world_facts_format === "") throw new SearchConfigError("world_facts_format is a non-empty string");
@@ -94,6 +96,7 @@ export function searchIdentity(config: SearchConfig, inputs: SearchIdentityInput
     search_config_hash: searchConfigHash(config),
     belief_identity_hash: inputs.belief_identity_hash,
     mechanics_config_hash: inputs.mechanics_config_hash,
+    mechanics_adapter_format: inputs.mechanics_adapter_format,
     damage_aware_config_hash: inputs.damage_aware_config_hash,
     damage_value_format: inputs.damage_value_format,
     world_writers_hash: inputs.world_writers_hash,

@@ -50,6 +50,8 @@ interface DmgPokemon {
   boosts: Record<string, number>;
   species: { name: string };
   item: string;
+  set: { item: string };
+  setItem(item: string): unknown;
   ability: string;
   setStatus(status: string, source: null, sourceEffect: null, ignoreImmunities: boolean): unknown;
   getMoveHitData(move: DmgMove): HitData;
@@ -86,7 +88,7 @@ interface DmgBattle {
   field: DmgField;
   actions: DmgActions;
   prng: unknown;
-  dex: { conditions: { get(id: string): { exists: boolean; effectType: string } }; moves: { get(id: string): { exists: boolean; category: string; multihit?: unknown; id: string; damage?: unknown; damageCallback?: unknown; ohko?: unknown } } };
+  dex: { items: { get(name: string): { id: string } }; conditions: { get(id: string): { exists: boolean; effectType: string } }; moves: { get(id: string): { exists: boolean; category: string; multihit?: unknown; id: string; damage?: unknown; damageCallback?: unknown; ohko?: unknown } } };
   toJSON(): object;
 }
 
@@ -137,6 +139,12 @@ function declare(battle: DmgBattle, side: number, combatant: Combatant): DmgPoke
   return pokemon;
 }
 
+/** An Evolution's ability can change the other combatant's stages (Intimidate) and consume its item (White Herb): put back what was declared. */
+function restoreStagesAndItem(battle: DmgBattle, pokemon: DmgPokemon, declared: Combatant): void {
+  if (pokemon.item !== battle.dex.items.get(pokemon.set.item).id) pokemon.setItem(pokemon.set.item);
+  for (const key of STAT_KEYS) pokemon.boosts[key] = declared.boosts[key];
+}
+
 /** At most this many started scenarios are kept per engine; a table past it is emptied (a started scenario is a pure function of its key, so forgetting only costs time). */
 const STARTED_LIMIT = 256;
 const startedTables = new WeakMap<Engine, Map<string, string>>();
@@ -170,8 +178,9 @@ function declaredBattle(engine: Engine, scenarioId: string, query: DamageQuery, 
   const battle = reference ? asDmg(startScenario(engine, scenarioId, { p1: [attackerSet, partnerOf(attackerSet)], p2: [defenderSet, partnerOf(defenderSet)] })) : startedScenario(engine, scenarioId, attackerSet, defenderSet);
   const attacker = declare(battle, 0, query.attacker);
   const defender = declare(battle, 1, query.defender);
-  // A Mega Evolution can start an ability on the other combatant (Intimidate) after that one's stages were written, so the declared stages are written again, absolute (#1243).
-  for (const [pokemon, declared] of [[attacker, query.attacker], [defender, query.defender]] as const) for (const key of STAT_KEYS) pokemon.boosts[key] = declared.boosts[key];
+  // A Mega Evolution can start an ability on the other combatant (Intimidate) after that one's state was written: the declared stages and item are written again, absolute (#1243).
+  restoreStagesAndItem(battle, attacker, query.attacker);
+  restoreStagesAndItem(battle, defender, query.defender);
   const { state } = query;
   // The field is exactly the declared one: a weather or terrain a switch-in set is cleared first.
   battle.field.clearWeather();

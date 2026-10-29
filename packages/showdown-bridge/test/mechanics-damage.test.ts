@@ -210,21 +210,27 @@ describe("declared state replaces what the switch-in effects set", () => {
 
 describe("a declared Mega Evolution leaves the other combatant's declared stages alone (#1243)", () => {
   const MANECTRIC = "Manectric @ Manectite  \nAbility: Static  \nLevel: 50  \nEVs: 32 HP / 32 SpA / 2 Spe  \nTimid Nature  \n- Thunderbolt  \n- Protect  \n\n";
-  const stagesOf = (attackerAtk: number): { atk: number; ability: string } => {
+  const stagesOf = (attackerAtk: number, attackerItem?: string): { atk: number; ability: string; item: string } => {
     const query = variant((q) => {
       q.attacker.boosts = { atk: attackerAtk, def: 0, spa: 0, spd: 0, spe: 0 };
+      if (attackerItem !== undefined) q.attacker.set = q.attacker.set.replace("Garchomp  ", `Garchomp @ ${attackerItem}  `);
       q.defender.set = MANECTRIC;
       q.defender.mega = true;
     });
     const parsed = readMechanicsQuery(query).query;
     if (parsed.kind !== "damage") throw new Error("not a damage query");
     const scenarioId = checkScenario(engine, config);
-    const battle = declaredDamageScenario(engine, scenarioId, parsed, importPaste(engine, parsed.attacker.set)[0] as PokemonSet, importPaste(engine, parsed.defender.set)[0] as PokemonSet) as unknown as { sides: { pokemon: { boosts: { atk: number }; ability: string }[] }[] };
-    return { atk: (battle.sides[0]?.pokemon[0] as { boosts: { atk: number } }).boosts.atk, ability: (battle.sides[1]?.pokemon[0] as { ability: string }).ability };
+    const battle = declaredDamageScenario(engine, scenarioId, parsed, importPaste(engine, parsed.attacker.set)[0] as PokemonSet, importPaste(engine, parsed.defender.set)[0] as PokemonSet) as unknown as { sides: { pokemon: { boosts: { atk: number }; ability: string; item: string }[] }[] };
+    const own = battle.sides[0]?.pokemon[0] as { boosts: { atk: number }; item: string };
+    return { atk: own.boosts.atk, ability: (battle.sides[1]?.pokemon[0] as { ability: string }).ability, item: own.item };
   };
   it("the attacker keeps the declared Attack stage although the evolved defender's ability is Intimidate", () => {
-    expect(stagesOf(0)).toEqual({ atk: 0, ability: "intimidate" });
+    expect(stagesOf(0)).toMatchObject({ atk: 0, ability: "intimidate" });
     expect(stagesOf(2).atk).toBe(2);
+  });
+
+  it("keeps the attacker's White Herb, which the stage drop would have consumed", () => {
+    expect(stagesOf(0, "White Herb")).toMatchObject({ atk: 0, item: "whiteherb" });
   });
 });
 
