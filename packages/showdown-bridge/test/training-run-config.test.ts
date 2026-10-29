@@ -105,6 +105,9 @@ describe("the TrainingRunConfig reader (ADR-010 §5)", () => {
     const featured = readTrainingRunConfig(sample("candidate-features"));
     expect(featured.model.encoder.options).toEqual({ candidate_features: { feature_set: "probe-damage/1", feature_set_hash: "c".repeat(64) } });
     expect(await runConfigHash(featured)).not.toBe(await runConfigHash(readTrainingRunConfig(sample("tiny"))));
+    const second = readTrainingRunConfig(sample("candidate-features-2"));
+    expect(second.model.encoder.options).toEqual({ candidate_features: { feature_set: "probe-damage/2", feature_set_hash: "c".repeat(64) } });
+    expect(await runConfigHash(second)).not.toBe(await runConfigHash(featured));
     for (const name of ["candidate-features-true", "candidate-features-short-hash", "candidate-features-unknown-set"]) {
       const raw = JSON.parse(readFileSync(join(SAMPLES_DIR, `v1/training-run-config/invalid/${name}.json`), "utf8"));
       expect(() => readTrainingRunConfig(raw)).toThrow(TrainingRunConfigError);

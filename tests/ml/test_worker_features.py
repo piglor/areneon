@@ -442,3 +442,25 @@ def test_the_stream_reader_validates_probe_damage_2_arrays() -> None:
     checker.line(2, stream_line(other))
     with pytest.raises(TrainingStreamError, match="same candidate feature set"):
         checker.finish()
+
+
+def test_the_worker_states_the_second_set_and_answers_a_query_with_its_arrays(
+    tmp_path: Path,
+) -> None:
+    query = sample("policy-query/valid/battle-features-2.json")
+    run_dir, preview, battle = make_run_dir(tmp_path, feature_model(stated(query)))
+    worker = build(cli(run_dir, preview, battle))
+    assert worker._ready["message"]["feature_set"] == stated(query)
+    code, frames = session(worker, line(hello()), line(query))
+    assert code == EXIT_OK
+    assert frames[1]["reply"]["kind"] == "recommendation"
+    # a query missing an array its checkpoint needs is an invalid query, not a guess
+    short = copy.deepcopy(query)
+    del short["candidate_features"]["speeds"]
+    _, frames = session(worker, line(hello()), line(short))
+    assert frames[1]["reply"]["error"] == "invalid_query"
+    # and one that lacks a row the arrays must cover is refused by the encoder as invalid too
+    thin = copy.deepcopy(query)
+    thin["candidate_features"]["own_priorities"] = thin["candidate_features"]["own_priorities"][1:]
+    _, frames = session(worker, line(hello()), line(thin))
+    assert frames[1]["reply"]["error"] == "invalid_query"

@@ -190,6 +190,16 @@ FEATURES_FAMILY = (
 )
 
 
+#: The same for ``probe-damage/2``, whose arrays also carry the engine's turn order (E-22.3).
+FEATURES_2_FAMILY = (
+    "learned policy that consults the engine's damage calculation and turn order on assumed "
+    "opponent sets at decision time"
+)
+
+
 def family_label(config: RunConfig) -> str | None:
     """The family label of the run's pair, or None for a pair without a feature set."""
-    return None if features_hash(config) is None else FEATURES_FAMILY
+    named = feature_set(config.model.encoder.options)
+    if named is None:
+        return None
+    return FEATURES_2_FAMILY if named.feature_set == "probe-damage/2" else FEATURES_FAMILY

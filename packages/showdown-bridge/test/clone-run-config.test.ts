@@ -47,6 +47,9 @@ describe("the CloneRunConfig reader (ADR-019 track 1)", () => {
     const featured = readCloneRunConfig(sample("candidate-features"));
     expect(featured.model.encoder.options).toEqual({ candidate_features: { feature_set: "probe-damage/1", feature_set_hash: "c".repeat(64) } });
     expect(await cloneRunConfigHash(featured)).not.toBe(await cloneRunConfigHash(plain));
+    const second = readCloneRunConfig(sample("candidate-features-2"));
+    expect(second.model.encoder.options).toEqual({ candidate_features: { feature_set: "probe-damage/2", feature_set_hash: "c".repeat(64) } });
+    expect(await cloneRunConfigHash(second)).not.toBe(await cloneRunConfigHash(featured));
     const unknown = JSON.parse(readFileSync(join(SAMPLES_DIR, "v1/clone-run-config/invalid/candidate-features-unknown-set.json"), "utf8"));
     expect(() => readCloneRunConfig(unknown)).toThrow(CloneRunConfigError);
   });

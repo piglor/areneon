@@ -17,7 +17,8 @@ Defined so far:
   engine-data type-chart cells of the move's type against the shown types of each position, and
   a same-type flag. Only ``true`` is a value: leave the key out to turn it off.
 - ``candidate_features`` (encoder, layout changing; ADR-022 tier A): the value is the feature set
-  the run reads, ``{"feature_set": "probe-damage/1", "feature_set_hash": <64 hex>}``. Each damaging
+  the run reads, ``{"feature_set": "probe-damage/1" or "probe-damage/2", "feature_set_hash":
+  <64 hex>}``. Each damaging
   move part of a battle candidate reads the engine's damage rows the Node side attaches to the
   query (``model/features.py``). The hash enters the config, so the ``encoder_version`` and the
   checkpoint metadata, and a pair with the option has a policy id with a ``features`` member.
@@ -66,8 +67,9 @@ class OptionSpec:
 
 CANDIDATE_MATCHUP = "candidate_matchup"
 CANDIDATE_FEATURES = "candidate_features"
-#: The feature sets the encoder can read (ADR-022 §3; ``probe-damage/2`` is a later set).
-FEATURE_SETS = ("probe-damage/1",)
+#: The feature sets the encoder can read (ADR-022 §3, erratum E-22.3: ``/2`` also carries the
+#: threat, speed and priority arrays, which the encoder attaches to the own and foe tokens).
+FEATURE_SETS = ("probe-damage/1", "probe-damage/2")
 _HASH = re.compile(r"[0-9a-f]{64}")
 
 

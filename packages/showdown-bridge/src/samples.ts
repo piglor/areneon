@@ -653,6 +653,9 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "training-run-config/candidate-features": runConfigWith((c) => {
       runSection(runSection(c, "model"), "encoder").options = { candidate_features: { feature_set: "probe-damage/1", feature_set_hash: hexOf("c") } };
     }),
+    "training-run-config/candidate-features-2": runConfigWith((c) => {
+      runSection(runSection(c, "model"), "encoder").options = { candidate_features: { feature_set: "probe-damage/2", feature_set_hash: hexOf("c") } };
+    }),
     "training-run-config/team-dataset": runConfigWith((c) => (c.team_dataset = { path: ".tmp/datasets/train-v1", dataset_hash: hexOf("5") })),
     "training-run-config/warm-start": runConfigWith((c) => (c.warm_start = { preview: hexOf("a"), battle: hexOf("b") })),
     "training-run-config/value-warmup": runConfigWith((c) => {
@@ -684,6 +687,9 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     }),
     "clone-run-config/candidate-features": cloneWith((c) => {
       runSection(runSection(c, "model"), "encoder").options = { candidate_features: { feature_set: "probe-damage/1", feature_set_hash: hexOf("c") } };
+    }),
+    "clone-run-config/candidate-features-2": cloneWith((c) => {
+      runSection(runSection(c, "model"), "encoder").options = { candidate_features: { feature_set: "probe-damage/2", feature_set_hash: hexOf("c") } };
     }),
     "clone-run-config/no-holdout": cloneWith((c) => (runSection(c, "clone").holdout = { key: "d".repeat(64), ppm: 0 })),
     "run-metrics/cpu": runMetrics,
@@ -976,7 +982,7 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
       (c) => (runSection(runSection(c, "model"), "encoder").options = { candidate_matchup: false }),
     ),
     "clone-run-config/candidate-features-unknown-set": cloneWith((c) => {
-      runSection(runSection(c, "model"), "encoder").options = { candidate_features: { feature_set: "probe-damage/2", feature_set_hash: hexOf("c") } };
+      runSection(runSection(c, "model"), "encoder").options = { candidate_features: { feature_set: "probe-damage/3", feature_set_hash: hexOf("c") } };
     }),
     "clone-run-config/extra-field": cloneWith((c) => (c.notes = "x")),
     "clone-run-config/fractional-rate": cloneWith((c) => (runSection(c, "clone").learning_rate_micro = 0.5)),
@@ -1013,7 +1019,7 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
       runSection(runSection(c, "model"), "encoder").options = { candidate_features: { feature_set: "probe-damage/1", feature_set_hash: "abc" } };
     }),
     "training-run-config/candidate-features-unknown-set": runConfigWith((c) => {
-      runSection(runSection(c, "model"), "encoder").options = { candidate_features: { feature_set: "probe-damage/2", feature_set_hash: hexOf("c") } };
+      runSection(runSection(c, "model"), "encoder").options = { candidate_features: { feature_set: "probe-damage/3", feature_set_hash: hexOf("c") } };
     }),
     "training-run-config/zero-games": runConfigWith((c) => (runSection(c, "generation").games = 0)),
     "training-run-config/unknown-device": runConfigWith((c) => (runSection(c, "learner").device = "tpu")),
