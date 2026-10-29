@@ -25,6 +25,9 @@ Defined so far:
 - ``candidate_target`` (encoder, layout changing; ADR-010 erratum A4 item 7): per move candidate,
   the token of the Pokémon in the targeted active slot, which the Battle network gathers into the
   slot part. Only ``true`` is a value: leave the key out to turn it off.
+- ``recent_history`` (encoder, layout changing; ADR-010 erratum A4 item 7): the reducer's recent
+  history (``Recent``, ``elapsed``, ``condition_turns``) on the Pokémon and field features. Only
+  ``true`` is a value: leave the key out to turn it off.
 """
 
 from __future__ import annotations
@@ -71,6 +74,7 @@ class OptionSpec:
 CANDIDATE_MATCHUP = "candidate_matchup"
 CANDIDATE_FEATURES = "candidate_features"
 CANDIDATE_TARGET = "candidate_target"
+RECENT_HISTORY = "recent_history"
 #: The feature sets the encoder can read (ADR-022 §3, erratum E-22.3: ``/2`` also carries the
 #: threat, speed and priority arrays, which the encoder attaches to the own and foe tokens).
 FEATURE_SETS = ("probe-damage/1", "probe-damage/2")
@@ -95,6 +99,7 @@ REGISTRY: dict[str, dict[str, OptionSpec]] = {
         CANDIDATE_MATCHUP: OptionSpec(CANDIDATE_MATCHUP, lambda value: value is True, True),
         CANDIDATE_FEATURES: OptionSpec(CANDIDATE_FEATURES, None, True, parse=_parse_feature_set),
         CANDIDATE_TARGET: OptionSpec(CANDIDATE_TARGET, lambda value: value is True, True),
+        RECENT_HISTORY: OptionSpec(RECENT_HISTORY, lambda value: value is True, True),
     },
     "network": {},
 }
