@@ -3,10 +3,18 @@
   "provenance": "synthetic: reduced state of unavailable/b01.json p2, battles of fixtures-v1 teams, pending-first play",
   "schema_version": 1,
   "state": {
+    "elapsed": {
+      "field_conditions": {},
+      "terrain": null,
+      "weather": null
+    },
     "field_conditions": [],
     "format_name": "[Gen 9 Champions] VGC 2026 Reg M-C",
     "gametype": "doubles",
     "opponent": {
+      "condition_turns": {
+        "toxicspikes": 4
+      },
       "conditions": {
         "toxicspikes": 1
       },
@@ -47,6 +55,19 @@
           ],
           "name": "Aerodactyl",
           "pp": {},
+          "recent": {
+            "active_turns": 0,
+            "hp_dealt_last_turn": 0,
+            "hp_dealt_this_turn": 0,
+            "hp_taken_last_turn": 0,
+            "hp_taken_this_turn": 0,
+            "last_action_order": null,
+            "last_action_turn": null,
+            "last_move": null,
+            "last_move_turn": null,
+            "last_target": null,
+            "protect_streak": 0
+          },
           "shiny": false,
           "species": "aerodactylmega",
           "stats": null,
@@ -87,6 +108,19 @@
           ],
           "name": "Aurorus",
           "pp": {},
+          "recent": {
+            "active_turns": 0,
+            "hp_dealt_last_turn": 0,
+            "hp_dealt_this_turn": 0,
+            "hp_taken_last_turn": 0,
+            "hp_taken_this_turn": 0,
+            "last_action_order": null,
+            "last_action_turn": null,
+            "last_move": null,
+            "last_move_turn": null,
+            "last_target": null,
+            "protect_streak": 0
+          },
           "shiny": false,
           "species": "aurorus",
           "stats": null,
@@ -125,6 +159,19 @@
           "moves_revealed": [],
           "name": null,
           "pp": {},
+          "recent": {
+            "active_turns": 0,
+            "hp_dealt_last_turn": 0,
+            "hp_dealt_this_turn": 0,
+            "hp_taken_last_turn": 0,
+            "hp_taken_this_turn": 0,
+            "last_action_order": null,
+            "last_action_turn": null,
+            "last_move": null,
+            "last_move_turn": null,
+            "last_target": null,
+            "protect_streak": 0
+          },
           "shiny": false,
           "species": "basculegionf",
           "stats": null,
@@ -168,6 +215,19 @@
           ],
           "name": "Castform",
           "pp": {},
+          "recent": {
+            "active_turns": 0,
+            "hp_dealt_last_turn": 0,
+            "hp_dealt_this_turn": 0,
+            "hp_taken_last_turn": 0,
+            "hp_taken_this_turn": 0,
+            "last_action_order": null,
+            "last_action_turn": null,
+            "last_move": null,
+            "last_move_turn": null,
+            "last_target": null,
+            "protect_streak": 0
+          },
           "shiny": false,
           "species": "castform",
           "stats": null,
@@ -211,6 +271,19 @@
           ],
           "name": "Lopunny",
           "pp": {},
+          "recent": {
+            "active_turns": 0,
+            "hp_dealt_last_turn": 0,
+            "hp_dealt_this_turn": 0,
+            "hp_taken_last_turn": 0,
+            "hp_taken_this_turn": 0,
+            "last_action_order": null,
+            "last_action_turn": null,
+            "last_move": null,
+            "last_move_turn": null,
+            "last_target": null,
+            "protect_streak": 0
+          },
           "shiny": false,
           "species": "lopunny",
           "stats": null,
@@ -249,6 +322,19 @@
           "moves_revealed": [],
           "name": null,
           "pp": {},
+          "recent": {
+            "active_turns": 0,
+            "hp_dealt_last_turn": 0,
+            "hp_dealt_this_turn": 0,
+            "hp_taken_last_turn": 0,
+            "hp_taken_this_turn": 0,
+            "last_action_order": null,
+            "last_action_turn": null,
+            "last_move": null,
+            "last_move_turn": null,
+            "last_target": null,
+            "protect_streak": 0
+          },
           "shiny": false,
           "species": "raichualola",
           "stats": null,
@@ -265,6 +351,7 @@
       "username": "p1"
     },
     "own": {
+      "condition_turns": {},
       "conditions": {},
       "player": "p2",
       "roster": [
@@ -312,6 +399,19 @@
             "raindance": 8,
             "rest": 7,
             "trailblaze": 18
+          },
+          "recent": {
+            "active_turns": 0,
+            "hp_dealt_last_turn": 0,
+            "hp_dealt_this_turn": 0,
+            "hp_taken_last_turn": 0,
+            "hp_taken_this_turn": 0,
+            "last_action_order": null,
+            "last_action_turn": null,
+            "last_move": null,
+            "last_move_turn": null,
+            "last_target": null,
+            "protect_streak": 0
           },
           "shiny": false,
           "species": "abomasnow",
@@ -372,6 +472,19 @@
             "focusblast": 7,
             "toxicspikes": 19
           },
+          "recent": {
+            "active_turns": 5,
+            "hp_dealt_last_turn": 14,
+            "hp_dealt_this_turn": 7,
+            "hp_taken_last_turn": 0,
+            "hp_taken_this_turn": 0,
+            "last_action_order": 1,
+            "last_action_turn": 19,
+            "last_move": "drainpunch",
+            "last_move_turn": 19,
+            "last_target": "opponent:a",
+            "protect_streak": 0
+          },
           "shiny": false,
           "species": "gengarmega",
           "stats": {
@@ -430,6 +543,19 @@
             "rest": 8,
             "upperhand": 12
           },
+          "recent": {
+            "active_turns": 5,
+            "hp_dealt_last_turn": 0,
+            "hp_dealt_this_turn": 0,
+            "hp_taken_last_turn": 14,
+            "hp_taken_this_turn": 0,
+            "last_action_order": 2,
+            "last_action_turn": 18,
+            "last_move": "fling",
+            "last_move_turn": 18,
+            "last_target": null,
+            "protect_streak": 0
+          },
           "shiny": false,
           "species": "heracross",
           "stats": {
@@ -479,6 +605,19 @@
           "moves_revealed": [],
           "name": "Toucannon",
           "pp": {},
+          "recent": {
+            "active_turns": 0,
+            "hp_dealt_last_turn": 0,
+            "hp_dealt_this_turn": 0,
+            "hp_taken_last_turn": 0,
+            "hp_taken_this_turn": 0,
+            "last_action_order": null,
+            "last_action_turn": null,
+            "last_move": null,
+            "last_move_turn": null,
+            "last_target": null,
+            "protect_streak": 0
+          },
           "shiny": false,
           "species": "toucannon",
           "stats": {
@@ -536,6 +675,19 @@
             "waterpulse": 18,
             "yawn": 9
           },
+          "recent": {
+            "active_turns": 0,
+            "hp_dealt_last_turn": 0,
+            "hp_dealt_this_turn": 0,
+            "hp_taken_last_turn": 0,
+            "hp_taken_this_turn": 0,
+            "last_action_order": null,
+            "last_action_turn": null,
+            "last_move": null,
+            "last_move_turn": null,
+            "last_target": null,
+            "protect_streak": 0
+          },
           "shiny": false,
           "species": "vaporeon",
           "stats": {
@@ -585,6 +737,19 @@
           "moves_revealed": [],
           "name": "Vivillon",
           "pp": {},
+          "recent": {
+            "active_turns": 0,
+            "hp_dealt_last_turn": 0,
+            "hp_dealt_this_turn": 0,
+            "hp_taken_last_turn": 0,
+            "hp_taken_this_turn": 0,
+            "last_action_order": null,
+            "last_action_turn": null,
+            "last_move": null,
+            "last_move_turn": null,
+            "last_target": null,
+            "protect_streak": 0
+          },
           "shiny": false,
           "species": "vivillonsun",
           "stats": {
@@ -608,7 +773,7 @@
     },
     "player": "p2",
     "request_kind": "move",
-    "schema_version": 1,
+    "schema_version": 2,
     "started": true,
     "terrain": null,
     "turn": 19,

@@ -48,6 +48,7 @@ def test_what_was_seen_under_the_disguise_moves_to_the_real_pokemon() -> None:
         "|-boost|p2a: Blastoise|atk|2",
         "|-status|p2a: Blastoise|par",
         "|move|p2a: Blastoise|Protect|p2a: Blastoise",
+        "|-singleturn|p2a: Blastoise|Protect",
         "|-enditem|p2a: Blastoise|Sitrus Berry",
         "|-endability|p2a: Blastoise",
         "|-mega|p2a: Blastoise|Blastoise|Blastoisinite",
@@ -80,7 +81,11 @@ def test_what_was_seen_under_the_disguise_moves_to_the_real_pokemon() -> None:
     assert blastoise.status is None
     # Later lines name the real Pokemon.
     later = run(
-        *shown, *REPLACE, "|-damage|p2a: Gengar|30/100", "|move|p2a: Gengar|Protect|p2a: Gengar"
+        *shown,
+        *REPLACE,
+        "|-damage|p2a: Gengar|30/100",
+        "|move|p2a: Gengar|Protect|p2a: Gengar",
+        "|-singleturn|p2a: Gengar|Protect",
     )
     assert opp(later, "Gengar").hp_num == 30
 
@@ -90,6 +95,7 @@ def test_nothing_of_the_real_pokemon_is_in_the_state_before_the_replace() -> Non
         SHOWN_AS_BLASTOISE,
         "|-damage|p2a: Blastoise|60/100",
         "|move|p2a: Blastoise|Protect|p2a: Blastoise",
+        "|-singleturn|p2a: Blastoise|Protect",
     ]
     before = run(*lines)
     gengar = _entry(before, "gengar")
@@ -124,6 +130,7 @@ def test_the_pokemon_it_was_shown_as_keeps_what_was_seen_before_the_disguise() -
         "|switch|p2a: Blastoise|Blastoise, L50, M|90/100",
         "|-boost|p2a: Blastoise|spa|1",
         "|move|p2a: Blastoise|Protect|p2a: Blastoise",
+        "|-singleturn|p2a: Blastoise|Protect",
         *REPLACE,
     )
     blastoise, gengar = _entry(state, "blastoise"), _entry(state, "gengar")
@@ -424,6 +431,7 @@ OWN_SHOWN = (
     "|switch|p1a: Blastoise|Blastoise, L50, F|120/150",
     "|-boost|p1a: Blastoise|atk|1",
     "|move|p1a: Blastoise|Protect|p1a: Blastoise",
+    "|-singleturn|p1a: Blastoise|Protect",
 )
 
 
@@ -591,6 +599,7 @@ def test_an_own_illusion_user_that_left_play_is_found_by_the_pair_and_the_team()
         "|switch|p1a: Blastoise|Blastoise, L50, F|82/144",  # Gengar, shown as Blastoise
         "|-boost|p1a: Blastoise|atk|2",
         "|move|p1a: Blastoise|Protect|p1a: Blastoise",
+        "|-singleturn|p1a: Blastoise|Protect",
         "|switch|p1b: Blastoise|Blastoise, L50, F|150/150",  # the real one, next to it
         "|-boost|p1b: Blastoise|def|1",
         "|switch|p1a: Pikachu|Pikachu, L50, F|120/120",  # the first one leaves
