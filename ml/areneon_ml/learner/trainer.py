@@ -34,6 +34,7 @@ from areneon_ml.learner.ppo import (
     normalise,
     policy_terms,
     ppo_loss,
+    temper,
     terminal_rewards,
 )
 from areneon_ml.model.batch import Batch, collate
@@ -117,6 +118,10 @@ class RoleReport:
     # Set only under ``ppo.entropy_schedule`` of kind ``linear`` (ADR-023 section 3): the entropy
     # weight (millionths) the update used. Left out of the stored report otherwise.
     entropy_coef_micro: int | None = None
+    # Set only when the config has ``generation.play`` (ADR-023 section 1): the temperature
+    # (millionths) every policy term of the update is computed at. Left out of the stored report
+    # otherwise.
+    temperature_ppm: int | None = None
     # Value-head diagnostics (ADR-010 erratum A4 item 1): explained variance of the returns by the
     # frozen-weight values, and ten fixed bins of predicted value against the final game score.
     # Diagnostic only; always written for a role that trained, absent in older reports.
@@ -293,6 +298,7 @@ class Learner:
         """Log-probability of the chosen candidate and the value of each step, no gradient."""
         network = self.networks[role]
         size = self.config.ppo.minibatch_size
+        tau = self.config.generation.temperature_ppm
         log_probs, values = [], []
         network.eval()
         with torch.no_grad():
@@ -301,7 +307,7 @@ class Learner:
                 batch = to_device(collate([s.query for s in chunk]), self.device)
                 out = network(batch)
                 chosen = torch.tensor([s.chosen for s in chunk], device=self.device)
-                log_probs.append(policy_terms(out.logits, batch.cand_mask, chosen).log_prob)
+                log_probs.append(policy_terms(out.logits, batch.cand_mask, chosen, tau).log_prob)
                 values.append(out.value)
         return torch.cat(log_probs), torch.cat(values)
 
@@ -336,6 +342,7 @@ class Learner:
         """The anchor's log-probabilities over each step's real candidates, no gradient."""
         network = self.anchors[role]
         size = self.config.ppo.minibatch_size
+        tau = self.config.generation.temperature_ppm
         out: list[torch.Tensor] = []
         with torch.no_grad():
             for start in range(0, len(steps), size):
@@ -343,7 +350,7 @@ class Learner:
                     collate([s.query for s in steps[start : start + size]]), self.device
                 )
                 floor = torch.finfo(torch.float32).min
-                logits = network(batch).logits
+                logits = temper(network(batch).logits, tau)
                 log_probs = torch.log_softmax(logits.masked_fill(~batch.cand_mask, floor), dim=-1)
                 out.extend(log_probs[i][batch.cand_mask[i]] for i in range(log_probs.shape[0]))
         return out
@@ -434,6 +441,7 @@ class Learner:
     def _epochs(self, role: str, table: _Table, warm: bool) -> RoleReport:
         ppo = self.config.ppo
         network, optimiser = self.networks[role], self.optimisers[role]
+        tau = self.config.generation.temperature_ppm
         entropy_micro = self.last_entropy_coef_micro
         entropy_coef = ppo.entropy_coef if entropy_micro is None else entropy_micro / MICRO
         weights = LossWeights(ppo.clip, ppo.value_coef, entropy_coef)
@@ -456,7 +464,7 @@ class Learner:
                 # `policy_terms` masks padding again although the network already pushes padded
                 # logits to the dtype minimum: defence in depth, so a loss never depends on it.
                 loss = ppo_loss(
-                    policy_terms(out.logits, batch.cand_mask, chosen),
+                    policy_terms(out.logits, batch.cand_mask, chosen, tau),
                     out.value,
                     Targets(
                         table.old_log_prob[index], table.advantages[index], table.returns[index]
@@ -468,7 +476,7 @@ class Learner:
                     dense = torch.zeros(batch.cand_mask.shape, device=self.device)
                     for row, i in enumerate(index):
                         dense[row, batch.cand_mask[row]] = table.anchor_log_probs[i]
-                    kl = anchor_kl(out.logits, batch.cand_mask, dense).mean()
+                    kl = anchor_kl(out.logits, batch.cand_mask, dense, tau).mean()
                     total = total + beta * kl
                     kl_sum += kl.detach().cpu()
                 optimiser.zero_grad(set_to_none=True)
@@ -511,6 +519,7 @@ class Learner:
             else None,
             beta_micro,
             entropy_micro,
+            tau,
             table.explained_variance,
             table.value_calibration,
             self.config.ppo.preview_bootstrap_micro if role == "preview" else None,

@@ -22,7 +22,7 @@ const validConfig = ajvFor("contract").compile(trainingRunConfigSchema);
  * Read a TrainingRunConfig: the schema, then the rules it cannot say: the
  * attention heads divide the token width, a Team Preview order does not name
  * more positions than a side holds, each scripted baseline appears once, and a warm start names different
- * checkpoints (a checkpoint holds the network of one role; the Battle role alone is allowed), a value warm-up needs a warm start, and so does a KL anchor.
+ * checkpoints (a checkpoint holds the network of one role; the Battle role alone is allowed), a value warm-up needs a warm start, and so does a KL anchor, and an explicit play temperature of 1,000,000 is refused (the default is omitted).
  */
 export function readTrainingRunConfig(value: unknown): TrainingRunConfig {
   if (!validConfig(value)) throw new TrainingRunConfigError(`invalid TrainingRunConfig: ${JSON.stringify(validConfig.errors)}`);
@@ -44,6 +44,9 @@ export function readTrainingRunConfig(value: unknown): TrainingRunConfig {
   }
   if (config.ppo.anchor !== undefined && config.warm_start === undefined) {
     throw new TrainingRunConfigError("ppo.anchor needs warm_start: the anchor is the warm-start pair");
+  }
+  if (generation.play?.temperature_ppm === 1_000_000) {
+    throw new TrainingRunConfigError("generation.play.temperature_ppm 1000000 is the default: omit generation.play (one rule, one encoding)");
   }
   return config;
 }

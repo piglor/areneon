@@ -46,6 +46,19 @@ interface RawDex {
     Items: Record<string, { condition?: unknown }>;
   };
 }
+
+const cmp = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
+
+/** The ids of every condition the mod defines: its condition table and the `condition` of its moves, abilities and items. Sorted. */
+export function conditionIds(dex: Pick<RawDex, "data">): string[] {
+  const ids = new Set<string>([
+    ...Object.keys(dex.data.Conditions),
+    ...Object.entries(dex.data.Moves).filter(([, e]) => e.condition !== undefined).map(([id]) => id),
+    ...Object.entries(dex.data.Abilities).filter(([, e]) => e.condition !== undefined).map(([id]) => id),
+    ...Object.entries(dex.data.Items).filter(([, e]) => e.condition !== undefined).map(([id]) => id),
+  ]);
+  return [...ids].sort(cmp);
+}
 interface RawSim {
   Dex: { formats: { get(id: string): { exists: boolean; mod: string } }; mod(name: string): RawDex };
 }
@@ -54,7 +67,6 @@ const SOURCE_PATH = "sim/pokemon.ts";
 const SHED_TAIL_TEXT = "if (switchCause === 'shedtail' && i !== 'substitute') continue;";
 const NO_COPY_TEXT = "if (this.battle.dex.conditions.getByID(i as ID).noCopy) continue;";
 
-const cmp = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
 const sha256 = (text: string): string => createHash("sha256").update(text).digest("hex");
 
 export function volatileCopyHash(copy: Omit<VolatileCopy, "volatile_copy_hash">): string {
@@ -71,13 +83,7 @@ export function exportVolatileCopy(engine: Engine, formatId: string, dir: string
     throw new VolatileCopyError("the engine's copyVolatileFrom no longer reads as the rule this export records");
   }
   const dex = sim.Dex.mod(format.mod);
-  const ids = new Set<string>([
-    ...Object.keys(dex.data.Conditions),
-    ...Object.entries(dex.data.Moves).filter(([, e]) => e.condition !== undefined).map(([id]) => id),
-    ...Object.entries(dex.data.Abilities).filter(([, e]) => e.condition !== undefined).map(([id]) => id),
-    ...Object.entries(dex.data.Items).filter(([, e]) => e.condition !== undefined).map(([id]) => id),
-  ]);
-  const notCopied = [...ids]
+  const notCopied = conditionIds(dex)
     .filter((id) => (dex.conditions.get(id) as { noCopy?: unknown }).noCopy === true)
     .sort(cmp);
   const body = {

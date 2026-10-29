@@ -58,8 +58,8 @@ from areneon_ml.progress.records import (
     read_progress_record,
 )
 from areneon_ml.progress.run import summary_of
-from areneon_ml.report.dominated import config_file, progress_dominated
-from areneon_ml.report.move_use import class_files, progress_move_use, stored_games
+from areneon_ml.report.dominated import config_file, progress_diagnostics
+from areneon_ml.report.move_use import class_files
 
 NOT_RECORDED = "not recorded"
 ROLES = ("battle", "preview")
@@ -70,6 +70,13 @@ VALUE_WARMUP_KEY = "value_warmup"  # only on a value warm-up update (ADR-019 sec
 ANCHOR_KEYS = ("anchor_kl", "anchor_beta_micro")  # only when ppo.anchor is set (ADR-019 section 4)
 ENTROPY_SCHEDULE_KEY = "entropy_coef_micro"  # only under a linear ppo.entropy_schedule (ADR-023)
 PREVIEW_BOOTSTRAP_KEY = "preview_bootstrap_micro"  # Preview only, when set (A4)
+TEMPERATURE_KEY = "temperature_ppm"  # only for a run that declares generation.play (ADR-023)
+#: Optional keys that are plain integers, with their minimum.
+OPTIONAL_INTEGER_KEYS = (
+    (PREVIEW_BOOTSTRAP_KEY, 0),
+    (ENTROPY_SCHEDULE_KEY, 0),
+    (TEMPERATURE_KEY, 1),
+)
 VALUE_KEYS = ("explained_variance", "value_calibration")  # value-head diagnostics (ADR-010 A4)
 CALIBRATION_BINS = 10
 CALIBRATION_KEYS = (frozenset({"count", "mean_value", "mean_score"}), frozenset[str]())
@@ -82,6 +89,7 @@ TRAIN_ROLE_KEYS = (
             *ANCHOR_KEYS,
             ENTROPY_SCHEDULE_KEY,
             PREVIEW_BOOTSTRAP_KEY,
+            TEMPERATURE_KEY,
             *VALUE_KEYS,
         }
     ),
@@ -294,10 +302,9 @@ def read_train_report(raw: object) -> TrainFacts:
             stops[role] = (integer(values["epochs_run"], f"{role} epochs_run", 1), fired)
         if VALUE_WARMUP_KEY in values and values[VALUE_WARMUP_KEY] is not True:
             raise ReportError(f"{role} value_warmup is true when present (ADR-019 section 4)")
-        if PREVIEW_BOOTSTRAP_KEY in values:
-            integer(values[PREVIEW_BOOTSTRAP_KEY], f"{role} {PREVIEW_BOOTSTRAP_KEY}")
-        if ENTROPY_SCHEDULE_KEY in values:
-            integer(values[ENTROPY_SCHEDULE_KEY], f"{role} {ENTROPY_SCHEDULE_KEY}")
+        for key, minimum in OPTIONAL_INTEGER_KEYS:
+            if key in values:
+                integer(values[key], f"{role} {key}", minimum)
         if set(VALUE_KEYS) & set(values):
             if set(VALUE_KEYS) - set(values):
                 raise ReportError(f"{role} explained_variance and value_calibration come together")
@@ -523,14 +530,12 @@ def read_progress_root(
             raise ReportError(f"{path.name}: its record is not of the run's committed generation")
         for name in ("progress.json", layout.MANIFEST):
             inputs[f"progress/{path.name}/{name}"] = sha256_hex((path / name).read_bytes())
-        stored = stored_games(root, number, config, record)  # read once for both diagnostics
-        used = progress_move_use(root, number, config, record, stored)
+        used, rates = progress_diagnostics(root, number, config, record)  # one pass, both
         if used is not None:
             for file in class_files(config.format_id):
                 inputs[f"fixtures/showdown/{config.format_id}/{file.name}"] = sha256_hex(
                     file.read_bytes()
                 )
-        rates = progress_dominated(root, number, config, record, stored)
         if rates is not None:
             record_file = config_file(config.format_id)
             inputs[f"config/diagnostics/{config.format_id}/{record_file.name}"] = sha256_hex(

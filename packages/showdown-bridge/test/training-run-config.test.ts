@@ -114,6 +114,19 @@ describe("the TrainingRunConfig reader (ADR-010 §5)", () => {
     }
   });
 
+  it("reads generation.play, hashes it apart and refuses the other shapes and the explicit default (ADR-023 section 1)", async () => {
+    expect(readTrainingRunConfig(sample("tiny")).generation).not.toHaveProperty("play");
+    const tempered = readTrainingRunConfig(sample("play-temperature"));
+    expect(tempered.generation.play).toEqual({ temperature_ppm: 500000 });
+    expect(await runConfigHash(tempered)).not.toBe(await runConfigHash(readTrainingRunConfig(sample("tiny"))));
+    for (const name of ["play-temperature-zero", "play-temperature-fractional", "play-extra-field", "play-empty"]) {
+      const raw = JSON.parse(readFileSync(join(SAMPLES_DIR, `v1/training-run-config/invalid/${name}.json`), "utf8"));
+      expect(() => readTrainingRunConfig(raw)).toThrow(TrainingRunConfigError);
+    }
+    const generation = sample("tiny").generation as Record<string, unknown>;
+    expect(() => readTrainingRunConfig({ ...sample("tiny"), generation: { ...generation, play: { temperature_ppm: 1000000 } } })).toThrow("is the default");
+  });
+
   it("reads the optional KL target and refuses zero (ADR-010 erratum A1)", () => {
     expect(readTrainingRunConfig(sample("tiny")).ppo.target_kl_micro).toBeUndefined();
     expect(readTrainingRunConfig(sample("target-kl")).ppo.target_kl_micro).toBe(20000);

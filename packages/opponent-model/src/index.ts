@@ -6,6 +6,7 @@
 
 export { belief } from "./belief.ts";
 export { enumerate as enumerateAssignments, hasMatching, type Options as AssignmentOptions } from "./disguise.ts";
+export { applyDamage, emptyDamageCounts, type DamageCandidate, type DamageCheck, type DamageCounts, type DamageEvent, type DamageForme, type DamageRules } from "./damage.ts";
 export { BitStream, INDEX_PURPOSE, STREAM_BYTES, WORLD_PURPOSE, blocksOf, worldStream, type BlockSource } from "./draw.ts";
 export { BELIEF_ERROR_CODES, BeliefError, type BeliefErrorCode } from "./error.ts";
 export { EVIDENCE_FIELDS, IGNORED_FIELDS, slotEvidence, trapEvidence, type SlotEvidence } from "./evidence.ts";

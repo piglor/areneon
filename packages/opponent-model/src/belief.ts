@@ -12,6 +12,7 @@ import type { PublicMon } from "@areneon/public-state";
 import type { UsagePrior } from "@areneon/schema/types/v1/usage-prior.ts";
 import { BeliefError } from "./error.ts";
 import { enumerate, hasMatching } from "./disguise.ts";
+import { type DamageCounts, type DamageEvent, type DamageCheck, type DamageRules, applyDamage, emptyDamageCounts } from "./damage.ts";
 import { type SlotEvidence, slotEvidence, trapEvidence } from "./evidence.ts";
 import { type Dist, abilityDist, itemDist, only, spreadDist, uniformDist, weightOf } from "./fields.ts";
 import { solveItemClause } from "./item-clause.ts";
@@ -77,7 +78,7 @@ function consistentFormes(species: PriorSpecies, ev: SlotEvidence, ctx: Context,
 }
 
 /** The forme-and-item weights of one slot, after the ability, item and move evidence. */
-function slotWork(species: PriorSpecies, ev: SlotEvidence, ctx: Context, slot: number, notes: string[], known: ReadonlySet<string> | null, trap: ReadonlySet<string> | null): FormeWork[] {
+function slotWork(species: PriorSpecies, ev: SlotEvidence, ctx: Context, slot: number, notes: string[], known: ReadonlySet<string> | null, trap: ReadonlySet<string> | null, damage: SlotDamage | null): FormeWork[] {
   const formes = consistentFormes(species, ev, ctx, slot, notes);
   const entries = new Map(formes.map((f) => [f.id, entryOf(ctx, f.id, slot)]));
   const speciesEntry = entryOf(ctx, species.id, slot);
@@ -148,7 +149,11 @@ function slotWork(species: PriorSpecies, ev: SlotEvidence, ctx: Context, slot: n
     work.push({ id: f.id, mega, weight, abilities, spreads, moves: model.model, items });
   }
   if (work.length === 0) throw new BeliefError("evidence_has_no_support", "the evidence leaves no forme of the slot with a positive weight", slot);
-  return work;
+  if (damage === null || damage.events.length === 0) return work;
+  // The damage of isolated hits (ticket #1132): after every other evidence, so the candidates are the ones still possible.
+  const applied = applyDamage(work, species.id, damage.events, damage.check, damage.rules, damage.counts);
+  notes.push(...applied.notes);
+  return applied.formes;
 }
 
 /** The options of a distribution that are not in `excluded`. */
@@ -182,6 +187,16 @@ interface Chosen {
   readonly trap: ReadonlySet<string> | null;
   /** The fixed-word notes of those exclusions. */
   readonly trapNotes: readonly string[];
+  /** The damage events about this slot and the check that answers them, null when the evidence is off. */
+  readonly damage: SlotDamage | null;
+}
+
+/** The damage evidence of one slot: its events, the port, the reviewed rules and the counts the work adds to. */
+interface SlotDamage {
+  readonly events: readonly DamageEvent[];
+  readonly check: DamageCheck;
+  readonly rules: DamageRules;
+  readonly counts: DamageCounts;
 }
 
 /** One slot's evidence work, or the refusal it led to, per (slot, evidence). */
@@ -303,13 +318,13 @@ function solve(ctx: Context, chosen: readonly Chosen[], memo: Memo, known: Reado
 
 function workOf(chosen: readonly Chosen[], ctx: Context, memo: Memo, known: ReadonlySet<string> | null, i: number, ev: SlotEvidence): { work: FormeWork[]; notes: readonly string[] } {
   const trap = (chosen[i] as Chosen).trap;
-  const key = `${i}|${JSON.stringify({ ...ev, settled: false })}|${trap === null ? "" : [...trap].sort().join(",")}`;
+  const key = `${i}|${JSON.stringify({ ...ev, settled: false })}|${trap === null ? "" : [...trap].sort().join(",")}|${(chosen[i] as Chosen).damage?.events.map((e) => e.id).join(",") ?? ""}`;
   let hit = memo.get(key);
   if (hit === undefined) {
     const notes: string[] = [];
     try {
       notes.push(...(chosen[i] as Chosen).trapNotes);
-      hit = { work: slotWork((chosen[i] as Chosen).species, ev, ctx, i, notes, known, trap), notes };
+      hit = { work: slotWork((chosen[i] as Chosen).species, ev, ctx, i, notes, known, trap, (chosen[i] as Chosen).damage), notes };
     } catch (e) {
       if (!(e instanceof BeliefError)) throw e;
       hit = e;
@@ -360,7 +375,7 @@ function mixSlot(i: number, list: readonly DisguiseAssignment[]): SlotMarginal {
 }
 
 export function belief(input: BeliefInput): OpponentBelief {
-  const { prior, vocabulary, config, opponent, flags, trapping } = input;
+  const { prior, vocabulary, config, opponent, flags, trapping, damage } = input;
   if (flags.length > 0) throw new BeliefError("reader_flagged", "the reader flagged a line of this channel");
   if (prior.format_id !== vocabulary.format_id || prior.engine_data_hash !== vocabulary.engine_data_hash) {
     throw new BeliefError("format_mismatch", "the usage prior is for another format or engine data than the vocabulary");
@@ -384,7 +399,7 @@ export function belief(input: BeliefInput): OpponentBelief {
     const species = speciesById.get(mon.base_species) ?? (mon.species === null ? undefined : speciesById.get(mon.species));
     if (species === undefined) throw new BeliefError("species_not_in_prior", "a previewed species has no entry in the usage prior", slot);
     const ids = [species.id, ...species.formes.map((f) => f.id)];
-    return { species, ev: slotEvidence(mon), hides: ids.some((id) => ctx.roster.get(id)?.abilities.some((a) => hiding.has(a))), trap: null, trapNotes: [] };
+    return { species, ev: slotEvidence(mon), hides: ids.some((id) => ctx.roster.get(id)?.abilities.some((a) => hiding.has(a))), trap: null, trapNotes: [], damage: null };
   });
 
   // The shown positions (in play, so in the brought set if they are what they seem) and the hiding members still unrevealed.
@@ -401,6 +416,16 @@ export function belief(input: BeliefInput): OpponentBelief {
     const found = trapExclusions(trapping, mons.map((mon, index): TrapSlot => ({ index, ...trapEvidence(mon, ctx.roster, !mixed) })));
     trapConstraints = found.constraints;
     chosen = chosen.map((c, i) => ({ ...c, trap: found.excluded.get(i) ?? null, trapNotes: found.notes.get(i) ?? [] }));
+  }
+
+  // The isolated hits (ticket #1132). Not under a disguise mixture: the evidence of a shown position may belong to another member.
+  const rules = config.damage_evidence;
+  const counts = emptyDamageCounts();
+  if (damage != null && rules !== undefined && !mixed) {
+    chosen = chosen.map((c, i) => {
+      const events = damage.events.filter((e) => e.slot === i);
+      return events.length === 0 ? c : { ...c, damage: { events, check: damage, rules, counts } };
+    });
   }
 
   const memo: Memo = new Map();
@@ -464,6 +489,7 @@ export function belief(input: BeliefInput): OpponentBelief {
     itemClause: { enforced: clause === 1 },
     brought: { picked, settled: certain, subsets: subsetCount(mons.length, picked, shown.length) },
     sampling: { level: vocabulary.rules.adjust_level, max_legality_redraws: config.max_legality_redraws },
+    damage: { enabled: damage != null && rules !== undefined && !mixed, ...counts },
     constraints: [clause === 1 ? "item_clause:1" : "item_clause:absent", `brought:picked=${picked}`, ...trapConstraints, ...(assignments.length > 1 ? [`disguise:assignments=${assignments.length}`] : [])],
   };
 }
