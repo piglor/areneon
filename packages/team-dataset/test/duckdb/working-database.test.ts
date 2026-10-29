@@ -1,7 +1,7 @@
 import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { importPaste, recordHash, type TeamRecord } from "@areneon/showdown-bridge";
 import { afterAll, describe, expect, it } from "vitest";
 import { buildWorkingDatabase, DUCKDB_SCHEMA_VERSION, runTeamsCli, SQL_SCRIPT, TABLE_FILES } from "../../src/duckdb/index.ts";
@@ -229,7 +229,8 @@ describe.skipIf(binary === undefined)("the working database with the real DuckDB
   it("is a derived file the guards would refuse", async () => {
     await build();
     expect(readFileSync(database).subarray(8, 12).toString("latin1")).toBe("DUCK");
-    expect(spawnSync("git", ["check-ignore", "-q", database], { cwd: REPO }).status).toBe(0);
+    // the file lives in a temp directory; the same name inside the repository is ignored
+    expect(spawnSync("git", ["check-ignore", "-q", basename(database)], { cwd: REPO }).status).toBe(0);
   });
 
   it("refuses to build over an existing file", async () => {
