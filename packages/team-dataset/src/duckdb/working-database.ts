@@ -14,9 +14,9 @@
 // user-installed DuckDB command-line tool runs; DuckDB is never imported.
 // Private teams are out of scope (ADR-015's workflow has its own tooling).
 
-import { closeSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, renameSync, rmSync, writeSync } from "node:fs";
+import { closeSync, existsSync, linkSync, mkdirSync, mkdtempSync, openSync, readFileSync, rmSync, writeSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { basename, dirname, join } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { type Engine, importPaste, readTeamSnapshotManifest, recordHash, snapshotHash, type TeamDatasetManifest, type TeamLabelSet } from "@areneon/showdown-bridge";
 import { cellOf } from "../labeller.ts";
 import { type LabelEntry, refuse, type RowPlan } from "../shards/columns.ts";
@@ -27,6 +27,9 @@ import { datasetPlan, eachSnapshotShard, shardsInDirectory } from "../shards/sna
 /** The version of the table layout in `sql/working-db.v1.sql`; it is the `duckdb_schema_version` column of the `snapshot` table. */
 export const DUCKDB_SCHEMA_VERSION = 1;
 export const SQL_SCRIPT = new URL("../../sql/working-db.v1.sql", import.meta.url);
+
+/** What runs before the script: the tool may not fetch or load extensions (as on the private path). */
+export const SCRIPT_PRELUDE = "SET autoinstall_known_extensions = false;\nSET autoload_known_extensions = false;\n";
 
 /** The tables the script loads, one JSON Lines file each. */
 export const TABLE_FILES = ["snapshot", "shards", "teams", "labels", "sets", "moves"] as const;
@@ -92,9 +95,12 @@ export async function buildWorkingDatabase(options: WorkingDatabaseOptions): Pro
   const scratch = mkdtempSync(join(tmpdir(), "team-working-db-"));
   const files = Object.fromEntries(TABLE_FILES.map((name) => [name, new Lines(join(scratch, `${name}.jsonl`))])) as Record<(typeof TABLE_FILES)[number], Lines>;
   const counts = { teams: 0, sets: 0, moves: 0 };
-  const dir = dirname(options.outFile);
+  // Absolute, so the tool never reads the path as an option, whatever the name starts with.
+  const target = resolve(options.outFile);
+  const dir = dirname(target);
   mkdirSync(dir, { recursive: true });
-  const partial = join(dir, `.${basename(options.outFile)}.partial`);
+  const partial = join(dir, `.${basename(target)}.partial`);
+  for (const stale of [partial, `${partial}.wal`]) rmSync(stale, { force: true });
   try {
     for await (const { entry, read } of eachSnapshotShard(snapshot, shardsInDirectory(options.shardsDir), planFor(options.labelSet, options.datasetManifest), options.shardRows ?? SHARD_ROWS)) {
       files.shards.add({ split: entry.split, object_key: entry.object_key, file_sha256: entry.file_sha256, bytes: entry.bytes, logical_hash: entry.logical_hash, rows: entry.rows });
@@ -155,8 +161,17 @@ export async function buildWorkingDatabase(options: WorkingDatabaseOptions): Pro
       teams: counts.teams,
     });
     for (const file of Object.values(files)) file.close();
-    options.writer.runScript(readFileSync(SQL_SCRIPT, "utf8"), partial, scratch);
-    renameSync(partial, options.outFile);
+    options.writer.runScript(SCRIPT_PRELUDE + readFileSync(SQL_SCRIPT, "utf8"), partial, scratch);
+    // A hard link fails with EEXIST if a file appeared meanwhile, where a rename would replace it.
+    for (const suffix of ["", ".wal"]) {
+      if (!existsSync(partial + suffix)) continue;
+      try {
+        linkSync(partial + suffix, target + suffix);
+      } catch (error) {
+        if ((error as { code?: string }).code === "EEXIST") return refuse(`${target + suffix} appeared while the database was built; nothing was replaced`);
+        throw error;
+      }
+    }
   } finally {
     for (const file of Object.values(files)) file.close();
     rmSync(scratch, { recursive: true, force: true });

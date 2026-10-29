@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { importPaste, recordHash, type TeamRecord } from "@areneon/showdown-bridge";
 import { afterAll, describe, expect, it } from "vitest";
-import { buildWorkingDatabase, DUCKDB_SCHEMA_VERSION, runTeamsCli, SQL_SCRIPT, TABLE_FILES } from "../../src/duckdb/index.ts";
+import { buildWorkingDatabase, DUCKDB_SCHEMA_VERSION, runTeamsCli, SCRIPT_PRELUDE, SQL_SCRIPT, TABLE_FILES } from "../../src/duckdb/index.ts";
 import { ShardError } from "../../src/shards/columns.ts";
 import { convertDataset } from "../../src/shards/convert.ts";
 import { DuckdbWriter, locateDuckdb, readPin, type Runner } from "../../src/shards/duckdb.ts";
@@ -53,7 +53,9 @@ describe("buildWorkingDatabase (stand-in tool: the files the SQL script loads)",
     const out = join(dir(), "teams.duckdb");
     const result = await buildWorkingDatabase({ snapshotFile: join(snapshotDir, "snapshot.json"), shardsDir: snapshotDir, labelSet, datasetManifest: manifest, engine, writer, outFile: out, shardRows: 50 });
     expect(existsSync(out)).toBe(true);
-    expect(script).toBe(readFileSync(SQL_SCRIPT, "utf8"));
+    expect(script).toBe(SCRIPT_PRELUDE + readFileSync(SQL_SCRIPT, "utf8"));
+    expect(SCRIPT_PRELUDE).toContain("autoinstall_known_extensions = false");
+    expect(SCRIPT_PRELUDE).toContain("autoload_known_extensions = false");
     expect(result).toMatchObject({ teams: 240, sets: 240 * 6 });
     expect(seen.teams).toHaveLength(240);
     expect(seen.shards).toHaveLength(snapshot.shards.length);
@@ -117,6 +119,57 @@ describe("DuckdbWriter.runScript", () => {
   });
 });
 
+describe("buildWorkingDatabase, the output file", () => {
+  const build = async (writer: DuckdbWriter, snapshotDir: string, outFile: string) =>
+    buildWorkingDatabase({ snapshotFile: join(snapshotDir, "snapshot.json"), shardsDir: snapshotDir, labelSet, datasetManifest: manifest, engine, writer, outFile, shardRows: 50 });
+  it("removes a stale partial first, hands the tool an absolute path, and leaves no partial", async () => {
+    const snapshotDir = dir();
+    await snapshotWith(DuckdbWriter.open(fakeBinary, standInRunner()), snapshotDir);
+    const outDir = dir();
+    mkdirSync(outDir, { recursive: true });
+    writeFileSync(join(outDir, ".t.duckdb.partial"), "stale");
+    writeFileSync(join(outDir, ".t.duckdb.partial.wal"), "stale");
+    const seen: string[] = [];
+    const writer = DuckdbWriter.open(fakeBinary, scriptRunner((_cwd, _sql, database) => seen.push(database)));
+    await build(writer, snapshotDir, join(outDir, "t.duckdb"));
+    expect(readFileSync(join(outDir, "t.duckdb"), "utf8")).toBe("database\n");
+    expect(readdirSync(outDir)).toEqual(["t.duckdb"]);
+    expect(seen[0]?.startsWith("/")).toBe(true);
+  });
+  it("never replaces a file that appeared while it ran, and carries a wal over", async () => {
+    const snapshotDir = dir();
+    await snapshotWith(DuckdbWriter.open(fakeBinary, standInRunner()), snapshotDir);
+    const outDir = dir();
+    mkdirSync(outDir, { recursive: true });
+    const out = join(outDir, "r.duckdb");
+    const racing = DuckdbWriter.open(fakeBinary, scriptRunner(() => writeFileSync(out, "theirs")));
+    await expect(build(racing, snapshotDir, out)).rejects.toThrow(/appeared while/);
+    expect(readFileSync(out, "utf8")).toBe("theirs");
+    expect(readdirSync(outDir)).toEqual(["r.duckdb"]);
+    const withWal = DuckdbWriter.open(fakeBinary, scriptRunner((_c, _s, database) => writeFileSync(`${database}.wal`, "wal")));
+    const out2 = join(outDir, "w.duckdb");
+    await build(withWal, snapshotDir, out2);
+    expect(readFileSync(`${out2}.wal`, "utf8")).toBe("wal");
+  });
+  it("accepts an output name that starts with a dash", async () => {
+    const snapshotDir = dir();
+    await snapshotWith(DuckdbWriter.open(fakeBinary, standInRunner()), snapshotDir);
+    const seen: string[] = [];
+    const writer = DuckdbWriter.open(fakeBinary, scriptRunner((_c, _s, database) => seen.push(database)));
+    const previous = process.cwd();
+    const outDir = dir();
+    mkdirSync(outDir, { recursive: true });
+    process.chdir(outDir);
+    try {
+      await build(writer, snapshotDir, "-odd.duckdb");
+    } finally {
+      process.chdir(previous);
+    }
+    expect(seen[0]?.startsWith("/")).toBe(true);
+    expect(existsSync(join(outDir, "-odd.duckdb"))).toBe(true);
+  });
+});
+
 describe("the teams command line", () => {
   const io = () => {
     const lines: { out: string[]; err: string[] } = { out: [], err: [] };
@@ -160,6 +213,12 @@ describe("the teams command line, other paths", () => {
     expect(await runTeamsCli([...common, "--out", join(dir(), "rows.duckdb"), "--shard-rows", "0"], quiet({ DUCKDB_BIN: fakeBinary }, runner))).toBe(2);
     // a snapshot.json beside its shards, no --shards, no --dataset: the merged strata of the fixtures cannot be verified without the manifest
     expect(await runTeamsCli(["duckdb", "--snapshot", join(snapshotDir, "snapshot.json"), "--out", join(dir(), "nodataset.duckdb"), "--shard-rows", "50"], quiet({ DUCKDB_BIN: fakeBinary }, runner))).toBe(1);
+    // a private snapshot manifest is not a public snapshot: refused as bad input
+    const priv = dir();
+    mkdirSync(priv, { recursive: true });
+    const manifestJson = JSON.parse(readFileSync(join(snapshotDir, "snapshot.json"), "utf8")) as Record<string, unknown>;
+    writeFileSync(join(priv, "snapshot.json"), JSON.stringify({ ...manifestJson, data_class: "private" }));
+    expect(await runTeamsCli(["duckdb", "--snapshot", priv, "--out", join(dir(), "private.duckdb")], quiet({ DUCKDB_BIN: fakeBinary }, runner))).toBe(2);
     const broken = dir();
     mkdirSync(broken, { recursive: true });
     writeFileSync(join(broken, "snapshot.json"), "{");
