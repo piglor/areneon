@@ -927,3 +927,62 @@ def test_the_entropy_weight_key_is_optional_and_an_integer_when_present() -> Non
     raw["battle"]["entropy_coef_micro"] = 0.5
     with pytest.raises(InspectError, match="integer"):
         read_train_report(raw)
+
+
+BINS = [{"count": 0, "mean_value": 0.0, "mean_score": 0.0} for _ in range(10)]
+
+
+def _with_value_heads(raw: dict[str, Any]) -> dict[str, Any]:
+    for role_report in raw.values():
+        role_report["explained_variance"] = 0.25
+        bins = json.loads(json.dumps(BINS))
+        bins[3] = {"count": 4, "mean_value": 0.35, "mean_score": 0.5}
+        role_report["value_calibration"] = bins
+    return raw
+
+
+def test_the_value_diagnostic_keys_are_optional_and_read_when_present() -> None:
+    plain = read_train_report(json.loads(json.dumps(TRAIN_REPORT)))
+    assert plain.value_heads == {}
+    facts = read_train_report(_with_value_heads(json.loads(json.dumps(TRAIN_REPORT))))
+    assert facts.value_heads["battle"][0] == 0.25
+    assert facts.value_heads["battle"][1][3] == (4, 0.35, 0.5)
+    assert "explained_variance" not in facts.roles["battle"]
+
+
+@pytest.mark.parametrize(
+    ("change", "message"),
+    [
+        (lambda r: r["battle"].pop("value_calibration"), "come together"),
+        (lambda r: r["battle"].pop("explained_variance"), "come together"),
+        (lambda r: r["battle"].update(explained_variance=True), "finite"),
+        (lambda r: r["battle"].update(value_calibration=BINS[:9]), "10 bins"),
+        (lambda r: r["battle"]["value_calibration"][0].update(extra=1), "does not know"),
+        (lambda r: r["battle"]["value_calibration"][0].pop("count"), "lacks"),
+        (lambda r: r["battle"]["value_calibration"][0].update(count=-1), "integer"),
+        (lambda r: r["battle"]["value_calibration"][0].update(mean_score="x"), "finite"),
+    ],
+)
+def test_the_value_diagnostics_are_read_strictly(change: Any, message: str) -> None:
+    raw = _with_value_heads(json.loads(json.dumps(TRAIN_REPORT)))
+    change(raw)
+    with pytest.raises(InspectError, match=message):
+        read_train_report(raw)
+
+
+def test_the_dashboard_shows_explained_variance_and_the_last_calibration(tmp_path: Path) -> None:
+    run_dir = fixture_copy(tmp_path, train=True)
+    assert "Explained variance" not in build(run_dir)
+    for n in (1, 2):
+        path = layout.generation_dir(run_dir, n)
+        raw = _with_value_heads(json.loads(json.dumps(TRAIN_REPORT)))
+        layout.write_json(path / "train-report.json", raw)
+        manifest = layout.read_json(path / layout.MANIFEST)
+        manifest["files"] = layout.hash_tree(path)
+        layout.write_json(path / layout.MANIFEST, manifest)
+    text = build(run_dir)
+    assert "Explained variance of the value head" in text
+    assert "Value calibration, battle, generation 2" in text
+    assert "0.3 to 0.4" in text
+    assert "0.3500" in text
+    assert "Diagnostic, not skill" in text
