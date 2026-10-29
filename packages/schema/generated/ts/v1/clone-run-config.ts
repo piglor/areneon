@@ -56,9 +56,14 @@ export interface CloneRunConfig {
      */
     d_ff: number;
     /**
-     * Optional network options (ADR-010 erratum A4 item 2). Absent keeps today's bytes, hashes and checkpoints. A named option is added by the ticket of the experiment arm that needs it; none is defined yet, so only an empty object passes.
+     * Optional network options (ADR-010 erratum A4 item 2). Absent keeps today's bytes, hashes and checkpoints. A named option is added by the ticket of the experiment arm that needs it.
      */
-    options?: {};
+    options?: {
+      /**
+       * ADR-010 erratum A4 item 4. The Team Preview network scores an order as the sum over places of u(place, Pokemon token) plus v(lead pair) from the tokens at places 1 and 2, and does not use the cross-attention and interaction scorer for Preview. The candidate set, its order and the softmax over the real candidates are unchanged; the Battle network ignores it. Only true is a value (leave the key out for none). Layout changing: it changes the checkpoint tensor names and the checkpoint format.
+       */
+      factored_preview?: true;
+    };
   };
   /**
    * The scripted policy to imitate and the one TrainingSet of its games (ADR-010 erratum A2).

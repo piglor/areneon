@@ -655,6 +655,9 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "training-run-config/candidate-matchup": runConfigWith((c) => {
       runSection(runSection(c, "model"), "encoder").options = { candidate_matchup: true };
     }),
+    "training-run-config/factored-preview": runConfigWith((c) => {
+      runSection(c, "model").options = { factored_preview: true };
+    }),
     "training-run-config/candidate-target": runConfigWith((c) => {
       runSection(runSection(c, "model"), "encoder").options = { candidate_target: true };
     }),
@@ -692,6 +695,9 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     }),
     "clone-run-config/candidate-matchup": cloneWith((c) => {
       runSection(runSection(c, "model"), "encoder").options = { candidate_matchup: true };
+    }),
+    "clone-run-config/factored-preview": cloneWith((c) => {
+      runSection(c, "model").options = { factored_preview: true };
     }),
     "clone-run-config/candidate-target": cloneWith((c) => {
       runSection(runSection(c, "model"), "encoder").options = { candidate_target: true };
@@ -996,6 +1002,9 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "clone-run-config/candidate-matchup-false": cloneWith(
       (c) => (runSection(runSection(c, "model"), "encoder").options = { candidate_matchup: false }),
     ),
+    "clone-run-config/factored-preview-false": cloneWith(
+      (c) => (runSection(c, "model").options = { factored_preview: false }),
+    ),
     "clone-run-config/candidate-target-false": cloneWith(
       (c) => (runSection(runSection(c, "model"), "encoder").options = { candidate_target: false }),
     ),
@@ -1033,6 +1042,9 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "training-run-config/unknown-encoder-option": runConfigWith((c) => (runSection(runSection(c, "model"), "encoder").options = { wide: 1 })),
     "training-run-config/candidate-matchup-false": runConfigWith(
       (c) => (runSection(runSection(c, "model"), "encoder").options = { candidate_matchup: false }),
+    ),
+    "training-run-config/factored-preview-false": runConfigWith(
+      (c) => (runSection(c, "model").options = { factored_preview: false }),
     ),
     "training-run-config/candidate-target-false": runConfigWith(
       (c) => (runSection(runSection(c, "model"), "encoder").options = { candidate_target: false }),
