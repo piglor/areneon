@@ -6,4 +6,4 @@ import type { Engine } from "@areneon/showdown-bridge";
 import { datasetHash, readDataset } from "./dataset-reader.ts";
 import { loadFixtureInputs } from "./fixtures.ts";
 
-export const verifiedDatasetHash = (engine: Engine, dir: string, formatId: string): string => datasetHash(readDataset(dir, loadFixtureInputs(engine, formatId)));
+export const verifiedDatasetHash = (engine: Engine, dir: string, formatId: string): string => datasetHash(readDataset(dir, loadFixtureInputs(engine, formatId, dir)));

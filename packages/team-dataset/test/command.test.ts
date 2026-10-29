@@ -8,6 +8,9 @@ import { DatasetReadError, readDataset } from "../src/dataset-reader.ts";
 import { referencePoolHash } from "../src/dedupe.ts";
 import { fileURLToPath } from "node:url";
 import { notices, runCli, type CliIo, trialDraws } from "../src/command.ts";
+import { Drawer } from "../src/draw.ts";
+import { Proposal } from "../src/proposal.ts";
+import { roleSetsSource } from "../src/role-set-proposal.ts";
 import { type Pilot, runPilot } from "../src/pilot.ts";
 import { ASSIGNMENT_KEY, drawerFor, engine, FORMAT, format, KEY, light, small, table, VOCABULARY_FILE, vocabulary } from "./support.ts";
 
@@ -214,6 +217,118 @@ describe("a mixture config with a role_sets component", () => {
     expect(run.code).toBe(1);
     expect(run.err.join()).toMatch(/hash mismatch/);
   }, 120_000);
+});
+
+describe("a mixture dataset from the command line (ADR-020 gates and the evaluation-only option)", () => {
+  const tableFile = join(ROOT, "fixtures", "showdown", FORMAT, "role-sets.json");
+  const sourceTable = roleSetsSource(engine, vocabulary, table, JSON.parse(readFileSync(tableFile, "utf8")));
+  const loose = { p2_min_accept_permille: 1, p3_min_bits: 1, p4_min_strata_permille: 1 };
+  const mixtureOf = (proposal: object): TeamGeneratorConfig => ({ ...cfg, config_id: "cli-mixture", proposal } as TeamGeneratorConfig);
+  const scale = (pilot: Pilot): Pilot => ({
+    ...pilot,
+    draws: 40_000,
+    rejected: pilot.rejected * 50,
+    cell_hits: pilot.cell_hits.map((h) => h * 50),
+    ...(pilot.components === undefined ? {} : { components: pilot.components.map((c) => ({ ...c, draws: c.draws * 50, rejected: c.rejected * 50, cell_hits: c.cell_hits.map((h) => h * 50) })) }),
+  });
+  const pilotFor = (config: TeamGeneratorConfig): Pilot => {
+    const ident = { config_hash: recordHash(config), label_set_hash: recordHash(light), vocabulary_hash: teamVocabularyHash(vocabulary) };
+    return scale(runPilot(new Drawer({ engine, format, proposal: new Proposal(vocabulary, table, config, config.proposal === undefined ? undefined : sourceTable), labelSet: light, generationKey: KEY }), ident, light, 800));
+  };
+  const write = (name: string, value: unknown): string => {
+    const path = join(scratch, name);
+    writeFileSync(path, JSON.stringify(value));
+    return path;
+  };
+  const mixed = (gates?: object): TeamGeneratorConfig =>
+    mixtureOf({ kind: "mixture", components: [{ kind: "role_sets", role_set_table_hash: sourceTable.hash, share_permille: 700 }, { kind: "uniform", share_permille: 300 }], ...(gates === undefined ? {} : { gates }) });
+  const plainConfig = (config: TeamGeneratorConfig): TeamGeneratorConfig => {
+    const copy = structuredClone(config);
+    delete copy.proposal;
+    return copy;
+  };
+  const args = (out: string, config: string, pilot: string, more: string[]): string[] =>
+    generate(out).map((a, k, all) => (all[k - 1] === "--config" ? config : all[k - 1] === "--pilot" ? pilot : a)).concat(more);
+  const stdout = (run: ReturnType<typeof cli>) => JSON.parse(run.out.join("")) as { gates?: { publishable: boolean; failed: string[] }; files: string[] };
+
+  it("a publishing run with no gates configured writes the files and exits 1", () => {
+    const config = mixed();
+    const out = join(scratch, "pub-1");
+    const run = cli(args(out, write("mix-nogates.json", config), write("mix-nogates-pilot.json", pilotFor(config)), ["--publish"]));
+    expect(run.code).toBe(1);
+    expect(run.err.join("\n")).toMatch(/not publishable: gates:not_configured/);
+    expect(stdout(run).gates?.publishable).toBe(false);
+    expect(stdout(run).gates?.failed).toContain("gates:not_configured");
+    expect(readdirSync(out)).toContain("coverage.json");
+    // The same run is not an error without --publish.
+    const plain = cli(args(join(scratch, "pub-1b"), write("mix-nogates.json", config), join(scratch, "mix-nogates-pilot.json"), []));
+    expect(plain.code).toBe(0);
+    expect(plain.err.join("\n")).toMatch(/pilot gates not met or not evaluated/);
+  }, 300_000);
+
+  it("a publishing run whose gates are met exits 0 and the report carries the counts", () => {
+    const config = mixed(loose);
+    const out = join(scratch, "pub-2");
+    const run = cli(args(out, write("mix-gates.json", config), write("mix-gates-pilot.json", pilotFor(config)), ["--publish", "--d-team", "2", "--uniform-pilot", write("mix-uniform-pilot.json", pilotFor(plainConfig(config)))]));
+    expect(run.err.join("\n")).not.toMatch(/not publishable/);
+    expect(run.code).toBe(0);
+    const coverage = JSON.parse(readFileSync(join(out, "coverage.json"), "utf8")) as { proposal: { publishable: boolean; p4: { reference_strata: number } }; near_duplicates: { d_team: number }; population: string };
+    expect(coverage.proposal.publishable).toBe(true);
+    expect(coverage.proposal.p4.reference_strata).toBeGreaterThan(0);
+    expect(coverage.near_duplicates.d_team).toBe(2);
+    expect(coverage.population).toMatch(/^proposal mixture cli-mixture/);
+  }, 300_000);
+
+  it("--evaluation-only drops teams near a --reference dataset and marks the manifest", () => {
+    const config = mixtureOf({ kind: "mixture", components: [{ kind: "role_sets", role_set_table_hash: sourceTable.hash, share_permille: 1000 }] });
+    const out = join(scratch, "eval-1");
+    const configFile = write("pure-r.json", config);
+    const pilotFile = write("pure-r-pilot.json", pilotFor(config));
+    // The reference is the same stream's own dev split: its teams are identical to the first candidates of the run.
+    const first = cli(args(join(scratch, "eval-0"), configFile, pilotFile, []));
+    expect(first.code).toBe(0);
+    // ... with one nature changed and a made-up canonical hash, so L1 does not see them and only the distance can.
+    const nudgedLines = readFileSync(join(scratch, "eval-0", "records.dev.jsonl"), "utf8")
+      .split("\n")
+      .filter((l) => l !== "")
+      .map((l) => {
+        const record = JSON.parse(l) as { paste: string; canonical_team_hash: string };
+        const paste = record.paste.replace(/(\w+) Nature/, (_m, nature: string) => `${nature === "Quirky" ? "Hardy" : "Quirky"} Nature`);
+        return JSON.stringify({ ...record, paste, canonical_team_hash: "0".repeat(64) });
+      });
+    const reference = write("reference.jsonl", "");
+    writeFileSync(reference, `${nudgedLines.join("\n")}\n`);
+    const run = cli(args(out, configFile, pilotFile, ["--evaluation-only", "--d-team", "1", "--reference", reference]));
+    expect(run.err.join("\n")).not.toMatch(/Error/);
+    expect(run.code).toBe(0);
+    const manifest = JSON.parse(readFileSync(join(out, "manifest.json"), "utf8")) as { evaluation_only: { d_team: number; near_references: number } };
+    expect(manifest.evaluation_only.d_team).toBe(1);
+    expect(manifest.evaluation_only.near_references).toBeGreaterThan(0);
+    const log = readFileSync(join(out, "rejections.jsonl"), "utf8").split("\n").filter((l) => l.includes('"near_reference"'));
+    expect(log).toHaveLength(manifest.evaluation_only.near_references);
+    const again = cli(args(join(scratch, "eval-2"), configFile, pilotFile, ["--evaluation-only", "--d-team", "1"]));
+    expect(again.code).toBe(2);
+    expect(again.err.join()).toMatch(/--evaluation-only needs --d-team and at least one --reference/);
+  }, 300_000);
+
+  it("--publish on a config with no proposal prints a notice and keeps the exit code", () => {
+    const run = cli(generate(join(scratch, "pub-uniform"), ["--publish"]));
+    expect(run.code).toBe(0);
+    expect(run.err.join("\n")).toMatch(/--publish: the config has no proposal/);
+  }, 300_000);
+
+  it("the pilot command records the uniform reference with --without-proposal", () => {
+    const config = mixed(loose);
+    const out = join(scratch, "ref-pilot.json");
+    const run = cli(["pilot", "--config", write("mix-ref.json", config), "--labels", files.labels, "--format", FORMAT, "--out", out, "--generation-key", KEY, "--draws", "20", "--vocabulary", VOCABULARY_FILE, "--without-proposal"]);
+    expect(run.code).toBe(0);
+    const pilot = JSON.parse(readFileSync(out, "utf8")) as Pilot;
+    expect(pilot.config_hash).toBe(recordHash(plainConfig(config)));
+    expect(pilot.components).toBeUndefined();
+    const withProposal = join(scratch, "mixed-pilot.json");
+    expect(cli(["pilot", "--config", join(scratch, "mix-ref.json"), "--labels", files.labels, "--format", FORMAT, "--out", withProposal, "--generation-key", KEY, "--draws", "20", "--vocabulary", VOCABULARY_FILE]).code).toBe(0);
+    expect((JSON.parse(readFileSync(withProposal, "utf8")) as Pilot).components?.map((c) => c.kind)).toEqual(["role_sets", "uniform"]);
+  }, 300_000);
 });
 
 describe("the command line refuses", () => {

@@ -294,6 +294,7 @@ describe("the shared contract sample corpus (ADR-008 §2)", () => {
       "v1/search-config/reader-invalid/inexact-uniform-share.json",
       "v1/search-config/reader-invalid/min-worlds-over-n.json",
       "v1/search-config/reader-invalid/no-uniform-without-full-weight.json",
+      "v1/team-dataset-manifest/reader-invalid/evaluation-only-near-over-draws.json",
       "v1/team-dataset-manifest/reader-invalid/merged-stratum-missing.json",
       "v1/team-dataset-manifest/reader-invalid/split-cell-is-a-member.json",
       "v1/team-dataset-manifest/reader-invalid/splits-out-of-order.json",
@@ -649,6 +650,7 @@ describe("the shared contract sample corpus (ADR-008 §2)", () => {
       ["stratum-not-lowest-member", /is not its lowest member/],
       ["split-cell-is-a-member", /is a member of merged stratum 0/],
       ["teams-not-quota-sum", /is not the sum of its quotas/],
+      ["evaluation-only-near-over-draws", /more near-reference drops than draws/],
       ["unsorted-cells", /cell .* is repeated or out of order/],
     ])("readTeamDatasetManifest refuses team-dataset-manifest/%s", (name, message) => {
       const file = `v1/team-dataset-manifest/reader-invalid/${name}.json`;

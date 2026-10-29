@@ -356,6 +356,11 @@
         "kind": "uniform",
         "share_permille": 300
       }
-    ]
+    ],
+    "gates": {
+      "p2_min_accept_permille": 500,
+      "p3_min_bits": 40,
+      "p4_min_strata_permille": 750
+    }
   }
 }
