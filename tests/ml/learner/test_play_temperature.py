@@ -208,3 +208,38 @@ def test_a_tempered_anchored_update_trains_and_reports_the_kl() -> None:
     report = learner(config, other_anchors()).train(trajs(config)).as_dict()
     assert report["battle"]["temperature_ppm"] == TAU
     assert report["battle"]["anchor_kl"] > 0
+
+
+# -- on-policy: the learner's policy is the policy the worker samples from -------------------
+
+
+def test_the_learner_tempered_policy_is_the_scorers_for_the_same_query_bit_for_bit() -> None:
+    from areneon_ml.model.encoder import Encoder  # noqa: PLC0415
+    from areneon_ml.model.runtime import configure_cpu_inference  # noqa: PLC0415
+    from areneon_ml.model.scorer import NetworkScorer  # noqa: PLC0415
+    from areneon_ml.worker.view import encoder_input  # noqa: PLC0415
+
+    from tests.ml.learner.support import networks  # noqa: PLC0415
+    from tests.ml.model.support import game, sample  # noqa: PLC0415
+
+    configure_cpu_inference()
+    tau = 300_000  # 10^6 / tau is not a power of two: the scale is rounded, so the rule matters
+    config = tiny_config()
+    nets = networks(config)
+    scorer = NetworkScorer(game(), nets)
+    view = encoder_input(sample("policy-query/valid/battle.json"))
+    expected = scorer.probabilities(view, temperature_ppm=tau)
+    encoder = Encoder(game(), config.model.encoder)
+    batch = collate([encoder.encode(view)])
+    net = nets["battle"]
+    net.eval()
+    with torch.inference_mode():
+        logits = net(batch).logits[0]
+        mask = batch.cand_mask[0]
+        learner_probs = torch.softmax(temper(logits, tau), dim=-1)[mask].tolist()
+        untempered = torch.softmax(logits, dim=-1)[mask].tolist()
+        # the learner's own terms (log-softmax over the masked row) agree to rounding
+        terms = policy_terms(logits[None], batch.cand_mask, torch.tensor([0]), tau)
+    assert learner_probs == expected  # bit for bit
+    assert untempered != expected  # negative control: temperature 1 is another policy
+    assert float(terms.log_prob) == pytest.approx(math.log(expected[0]), abs=1e-5)
