@@ -5,7 +5,15 @@ from __future__ import annotations
 
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, RootModel, StrictInt, StrictStr
+from pydantic import (
+    MISSING,
+    BaseModel,
+    ConfigDict,
+    Field,
+    RootModel,
+    StrictInt,
+    StrictStr,
+)
 
 
 class IdentityHidingAbility(RootModel[StrictStr]):
@@ -14,6 +22,106 @@ class IdentityHidingAbility(RootModel[StrictStr]):
     ]
     """
     An ability id of the team vocabulary.
+    """
+
+
+class Ability(RootModel[StrictStr]):
+    root: Annotated[
+        StrictStr, Field(max_length=64, min_length=1, pattern="^[a-z0-9]+$")
+    ]
+
+
+class LastingMove(RootModel[StrictStr]):
+    root: Annotated[
+        StrictStr, Field(max_length=64, min_length=1, pattern="^[a-z0-9]+$")
+    ]
+
+
+class Move(RootModel[StrictStr]):
+    root: Annotated[
+        StrictStr, Field(max_length=64, min_length=1, pattern="^[a-z0-9]+$")
+    ]
+
+
+class Target(RootModel[StrictStr]):
+    root: Annotated[
+        StrictStr, Field(max_length=32, min_length=1, pattern="^[A-Za-z]+$")
+    ]
+
+
+class NonIsolating(BaseModel):
+    """
+    What makes a hit non-isolated (no evidence): a hit of one of these moves, or one of them used earlier in the same turn (Helping Hand); one of these moves used earlier in the channel by anyone, for a lasting effect on stats the reader does not show (Guard Split); one of these abilities held, or possibly held (a roster ability of an unrevealed Pokemon), by a Pokemon in play other than the attacker and the defender (Friend Guard); a move whose target type is one of these (spread reduction).
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    abilities: Annotated[list[Ability], Field(max_length=64)]
+    """
+    Ability ids of the team vocabulary, sorted and unique.
+    """
+    lasting_moves: Annotated[list[LastingMove], Field(max_length=64)]
+    """
+    Move ids of the team vocabulary, sorted and unique.
+    """
+    moves: Annotated[list[Move], Field(max_length=64)]
+    """
+    Move ids of the team vocabulary, sorted and unique.
+    """
+    targets: Annotated[list[Target], Field(max_length=16)]
+    """
+    Engine move target types, sorted and unique.
+    """
+
+
+class Item(RootModel[StrictStr]):
+    root: Annotated[
+        StrictStr, Field(max_length=64, min_length=1, pattern="^[a-z0-9]+$")
+    ]
+
+
+class Unmodelled(BaseModel):
+    """
+    Candidate items and abilities whose damage effect depends on state the probe does not declare (turn order, a counter): a candidate that holds one is not checked, it constrains nothing.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    abilities: Annotated[list[Ability], Field(max_length=64)]
+    """
+    Ability ids of the team vocabulary, sorted and unique.
+    """
+    items: Annotated[list[Item], Field(max_length=64)]
+    """
+    Item ids of the team vocabulary, sorted and unique.
+    """
+
+
+class DamageEvidence(BaseModel):
+    """
+    Optional (a minor change within v1; absent keeps every byte and hash of the config, and the belief then reads no damage). The reviewed rules of the damage evidence of slice 4 (ADR-025 section 7, finding N9): how many candidate sets are checked per event, how the engine's display rounds hit points to the shown percentage, which modifiers make a hit non-isolated (and so no evidence) and which candidate items and abilities the probe does not model. Every id is checked against the team vocabulary by the reader; no damage or modifier rule is written in code.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    max_checked: Annotated[StrictInt, Field(ge=1, le=4096)]
+    """
+    The most candidate sets (ability, item and named spread) checked per forme and event, most likely first; the rest stay unchecked and constrain nothing.
+    """
+    shown_hp_rounding: Literal["floor", "ceil", "nearest"]
+    """
+    How the pinned engine's display turns hit points into the shown percentage of an opponent's Pokemon (the forward direction; ADR-018's assumedHp rounding is the inverse, and a bridge test ties the two): a shown percentage above 0 is never 0 while hit points remain.
+    """
+    non_isolating: NonIsolating
+    """
+    What makes a hit non-isolated (no evidence): a hit of one of these moves, or one of them used earlier in the same turn (Helping Hand); one of these moves used earlier in the channel by anyone, for a lasting effect on stats the reader does not show (Guard Split); one of these abilities held, or possibly held (a roster ability of an unrevealed Pokemon), by a Pokemon in play other than the attacker and the defender (Friend Guard); a move whose target type is one of these (spread reduction).
+    """
+    unmodelled: Unmodelled
+    """
+    Candidate items and abilities whose damage effect depends on state the probe does not declare (turn order, a counter): a candidate that holds one is not checked, it constrains nothing.
     """
 
 
@@ -39,4 +147,8 @@ class BeliefConfig(BaseModel):
     max_disguise_assignments: Annotated[StrictInt, Field(ge=1, le=1000000)]
     """
     The most disguise assignments the belief enumerates before it refuses (disguise_assignments_exceeded).
+    """
+    damage_evidence: DamageEvidence | MISSING = MISSING
+    """
+    Optional (a minor change within v1; absent keeps every byte and hash of the config, and the belief then reads no damage). The reviewed rules of the damage evidence of slice 4 (ADR-025 section 7, finding N9): how many candidate sets are checked per event, how the engine's display rounds hit points to the shown percentage, which modifiers make a hit non-isolated (and so no evidence) and which candidate items and abilities the probe does not model. Every id is checked against the team vocabulary by the reader; no damage or modifier rule is written in code.
     """
