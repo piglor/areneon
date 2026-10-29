@@ -9,10 +9,11 @@
 // the stream's bytes are the same with or without them (the stream writer still reads and checks every Episode).
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
-import { featureSetHash, featureSetIdentity, type CandidateFeatures, type FeatureConfigs } from "./candidate-features.ts";
+import type { FeatureConfigs } from "./candidate-features.ts";
 import { type Json, jcs } from "./canonical-json.ts";
 import type { Engine } from "./engine.ts";
 import { episodeHash } from "./episode.ts";
+import { type AnyCandidateFeatures, configuredSetHash } from "./feature-build.ts";
 import { readEpisode } from "./episode-io.ts";
 import { nodeSha256 } from "./player-channel.ts";
 import type { SyntheticTeamHashes } from "./team-class.ts";
@@ -39,7 +40,7 @@ export async function writeFeatureRows(
   stopped: () => boolean = () => false,
 ): Promise<number> {
   mkdirSync(dir, { recursive: true });
-  const setHash = featureSetHash(featureSetIdentity(engine, configs));
+  const setHash = configuredSetHash(engine, configs);
   let written = 0;
   for (const { hash, path } of episodes) {
     if (stopped()) break;
@@ -61,13 +62,13 @@ export async function writeFeatureRows(
  * when there is no file, it is not for this Episode and this feature set, or it does not parse (then the rows are
  * recomputed, so a stale or damaged file can cost time but never change a byte).
  */
-export function readFeatureRows(engine: Engine, configs: FeatureConfigs, dir: string): (hash: string) => CandidateFeatures[] | undefined {
-  const setHash = featureSetHash(featureSetIdentity(engine, configs));
+export function readFeatureRows(engine: Engine, configs: FeatureConfigs, dir: string): (hash: string) => AnyCandidateFeatures[] | undefined {
+  const setHash = configuredSetHash(engine, configs);
   return (hash) => {
     try {
       const found = JSON.parse(readFileSync(rowsFile(dir, hash), "utf8")) as { episode_hash?: unknown; feature_set_hash?: unknown; rows?: unknown };
       if (found.episode_hash !== hash || found.feature_set_hash !== setHash || !Array.isArray(found.rows)) return undefined;
-      const rows = found.rows as CandidateFeatures[];
+      const rows = found.rows as AnyCandidateFeatures[];
       return rows.every((row) => row.feature_set_hash === setHash) ? rows : undefined;
     } catch {
       return undefined;

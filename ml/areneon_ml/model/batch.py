@@ -27,7 +27,7 @@ class Batch:
     field_num: torch.Tensor  # float32 [B, G]
     cand_mask: torch.Tensor  # bool [B, N]: a real candidate
     cand_cat: torch.Tensor  # int64 [B, N, S, A]
-    cand_tok: torch.Tensor  # int64 [B, N, S, 2], -1 for none
+    cand_tok: torch.Tensor  # int64 [B, N, S, 2 or 3], -1 for none; third: targeted Pokémon
     team_tok: torch.Tensor  # int64 [B, N, P], -1 for none
     pending: torch.Tensor  # float32 [B, N]
     cand_num: torch.Tensor | None = None  # float32 [B, N, S, W]; only under candidate_features
@@ -71,6 +71,9 @@ def collate(queries: Sequence[EncodedQuery]) -> Batch:
     with_numbers = {q.cand_num is not None for q in queries}
     if len(with_numbers) != 1:
         raise ValueError("a batch holds queries of one candidate feature layout")
+    tok_width = queries[0].cand_tok.shape[2]
+    if {q.cand_tok.shape[2] for q in queries} != {tok_width}:
+        raise ValueError("a batch holds queries of one candidate token layout")
     first = queries[0].cand_num
     numbers = stack("cand_num", (count, slots, first.shape[2]), 0.0) if first is not None else None
     return Batch(
@@ -83,7 +86,7 @@ def collate(queries: Sequence[EncodedQuery]) -> Batch:
         field_num=torch.stack([q.field_num for q in queries]),
         cand_mask=cand_mask,
         cand_cat=stack("cand_cat", (count, slots, parts), 0),
-        cand_tok=stack("cand_tok", (count, slots, 2), -1),
+        cand_tok=stack("cand_tok", (count, slots, tok_width), -1),
         team_tok=stack("team_tok", (count, picks), -1),
         pending=stack("pending", (count,), 0.0),
         cand_num=numbers,

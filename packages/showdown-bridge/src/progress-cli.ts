@@ -243,8 +243,9 @@ export async function runProgressCli(argv: readonly string[], print: (line: stri
   if (evalDataset !== undefined && evalDataset.dataset_hash === config.team_dataset.dataset_hash) throw new UsageError("--eval-dataset-hash is the run's own training dataset: leave the option out to evaluate on its validation split");
   const teamSet = JSON.parse(readFileSync(need("team-set"), "utf8")) as { teams: string[] };
   const engine = loadEngine(process.env.SHOWDOWN_DIR || undefined);
+  const readRunTeams = ports.run_teams ?? ((): never => { throw new UsageError("this command cannot read the run's own teams: --eval-dataset-dir needs the team-dataset script"); });
   // An evaluation dataset must hold none of the run's own dev or training teams (not only those it drew into team-set.json).
-  const runTeams = evalDataset === undefined ? new Set<string>() : (ports.run_teams ?? ((): never => { throw new UsageError("this command cannot read the run's own teams: --eval-dataset-dir needs the team-dataset script"); }))(engine, config);
+  const runTeams = evalDataset === undefined ? new Set<string>() : readRunTeams(engine, config);
   const dataFile = need("engine-data");
   const dataHash = engineDataHash(readEngineData(JSON.parse(readFileSync(dataFile, "utf8"))));
   const { max_line_bytes, handshake_timeout_ms } = config.generation;
@@ -282,6 +283,12 @@ export async function runProgressCli(argv: readonly string[], print: (line: stri
     }
   }
   if (versusConfig !== undefined && versusParts !== undefined && (await runConfigHash(versusConfig)) !== versusParts[1]) throw new UsageError("--versus-dir holds another run config than the --versus run config hash names");
+  // The evaluation dataset must also hold none of the OTHER run's dev or training teams, and may not be its training dataset.
+  let versusRunTeams: ReadonlySet<string> = new Set<string>();
+  if (evalDataset !== undefined && versusConfig?.team_dataset !== undefined) {
+    if (evalDataset.dataset_hash === versusConfig.team_dataset.dataset_hash) throw new UsageError("--eval-dataset-hash is the other run's own training dataset: leave the option out or name another dataset");
+    versusRunTeams = readRunTeams(engine, versusConfig);
+  }
   const versusFeatures = versusConfig === undefined ? undefined : pairFeatureSetup(engine, versusConfig);
   const versusClient = versus === undefined ? undefined : workerFor(versus.checkpoints, need("versus-dir"), need("versus-encoder-version"), versusFeatures ?? null);
   try {
@@ -332,7 +339,7 @@ export async function runProgressCli(argv: readonly string[], print: (line: stri
       pool,
       games,
       record_games,
-      training_teams: new Set([...teamSet.teams, ...versusTeamSet, ...runTeams]),
+      training_teams: new Set([...teamSet.teams, ...versusTeamSet, ...runTeams, ...versusRunTeams]),
       league_seeds: new Set([...committedPlanSeeds(need("run-dir")), ...(values["versus-dir"] === undefined ? [] : committedPlanSeeds(values["versus-dir"]))]),
     });
     writeProgress(need("out"), result);

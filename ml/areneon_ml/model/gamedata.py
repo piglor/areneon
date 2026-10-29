@@ -83,6 +83,10 @@ def _tensor_digest(*tensors: torch.Tensor) -> str:
     return digest.hexdigest()
 
 
+# The engine-data schema_version that adds the condition list (version 1 has none).
+WITH_CONDITIONS = 2
+
+
 @dataclass(frozen=True)
 class GameData:
     """Vocabularies and attribute tables of one engine-data export."""
@@ -111,6 +115,8 @@ class GameData:
     species_types: tuple[tuple[int, ...], ...] = ()  # per species index: its type positions
     move_type: tuple[int, ...] = ()  # per move index: its type position, -1 for the reserved rows
     move_status: tuple[bool, ...] = ()  # per move index: the export's category is Status
+    # The engine's condition ids (a version 2 table only; nothing in the encoder reads them yet).
+    conditions: IdVocab | None = None
 
     @property
     def attribute_digest(self) -> str:
@@ -119,8 +125,15 @@ class GameData:
 
     @classmethod
     def from_table(cls, table: Mapping[str, Any]) -> GameData:
-        """Validate the export against its contract, then index it."""
-        validate("engine-data", table)
+        """Validate the export against its contract (version 1 or 2), then index it.
+
+        A version 2 table adds `conditions` and changes nothing else: every other field is what a
+        version 1 table of the same lists produces (the engine-data hash differs, being the hash of
+        the table that was read)."""
+        validate(
+            "engine-data-2" if table.get("schema_version") == WITH_CONDITIONS else "engine-data",
+            table,
+        )
         types = IdVocab.of("type", [t["id"] for t in table["types"]])
         targets: list[str] = table["move_targets"]
         flags: list[str] = table["move_flags"]
@@ -179,6 +192,11 @@ class GameData:
             # "Status" is the export's own category name (the schema enum), not a rule value.
             move_status=(False,) * RESERVED
             + tuple(m["category"] == "Status" for m in table["moves"]),
+            conditions=(
+                IdVocab.of("condition", [c["id"] for c in table["conditions"]])
+                if table["schema_version"] == WITH_CONDITIONS
+                else None
+            ),
         )
 
     def matchup_cells(self, move: int, species: int, shown: int) -> list[int]:

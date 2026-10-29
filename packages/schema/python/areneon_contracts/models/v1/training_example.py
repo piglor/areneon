@@ -182,6 +182,194 @@ class Candidate(BaseModel):
     """
 
 
+class ComputedThreatRow(BaseModel):
+    """
+    What the foe's revealed damaging move does to the own Pokemon (the foe's assumed set as attacker, the own Pokemon at its exact current HP): the values of a ComputedFeatureRow, as integers.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    kind: Literal["computed"]
+    own: Annotated[StrictInt, Field(ge=0, le=5)]
+    """
+    The own Pokemon's position in the request's side.pokemon, 0-based.
+    """
+    mega: StrictBool
+    """
+    True for the variant of the own Pokemon that Mega Evolves this turn.
+    """
+    foe: Annotated[StrictInt, Field(ge=1, le=9)]
+    """
+    The opposing active's location number in a choice (move 1 1).
+    """
+    move: Annotated[
+        StrictStr, Field(max_length=64, min_length=1, pattern="^[a-z0-9]+$")
+    ]
+    mean_ppm: Annotated[StrictInt, Field(ge=0, le=1000000)]
+    max_ppm: Annotated[StrictInt, Field(ge=0, le=1000000)]
+    min_ppm: Annotated[StrictInt, Field(ge=0, le=1000000)]
+    ohko_rolls: Annotated[StrictInt | None, Field(ge=0, le=16)]
+
+
+class UnsupportedThreatRow(BaseModel):
+    """
+    A threat the probe could not answer exactly: its closed reason, never a guess.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    kind: Literal["unsupported"]
+    own: Annotated[StrictInt, Field(ge=0, le=5)]
+    """
+    The own Pokemon's position in the request's side.pokemon, 0-based.
+    """
+    mega: StrictBool
+    """
+    True for the variant of the own Pokemon that Mega Evolves this turn.
+    """
+    foe: Annotated[StrictInt, Field(ge=1, le=9)]
+    """
+    The opposing active's location number in a choice (move 1 1).
+    """
+    move: Annotated[
+        StrictStr, Field(max_length=64, min_length=1, pattern="^[a-z0-9]+$")
+    ]
+    reason: Literal["query_kind", "random_effect", "scenario_rule_table"]
+
+
+class ComputedSpeedRow(BaseModel):
+    """
+    Who acts first between the own Pokemon (and variant) and the opposing active, as the engine orders their action speed.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    kind: Literal["computed"]
+    own: Annotated[StrictInt, Field(ge=0, le=5)]
+    """
+    The own Pokemon's position in the request's side.pokemon, 0-based.
+    """
+    mega: StrictBool
+    """
+    True for the variant of the own Pokemon that Mega Evolves this turn.
+    """
+    foe: Annotated[StrictInt, Field(ge=1, le=9)]
+    """
+    The opposing active's location number in a choice (move 1 1).
+    """
+    relation: Literal["own_first", "tie", "foe_first"]
+
+
+class UnsupportedSpeedRow(BaseModel):
+    """
+    A speed relation the probe could not answer: the probe's closed reasons, or unqueueable / fractional_priority.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    kind: Literal["unsupported"]
+    own: Annotated[StrictInt, Field(ge=0, le=5)]
+    """
+    The own Pokemon's position in the request's side.pokemon, 0-based.
+    """
+    mega: StrictBool
+    """
+    True for the variant of the own Pokemon that Mega Evolves this turn.
+    """
+    foe: Annotated[StrictInt, Field(ge=1, le=9)]
+    """
+    The opposing active's location number in a choice (move 1 1).
+    """
+    reason: Literal["query_kind", "random_effect", "scenario_rule_table", "unqueueable", "fractional_priority"]
+
+
+class ComputedOwnPriorityRow(BaseModel):
+    """
+    The engine's priority key of one own move part of the candidates.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    kind: Literal["computed"]
+    slot: Annotated[StrictInt, Field(ge=0, le=3)]
+    """
+    The acting active Pokemon's slot, 0-based.
+    """
+    move: Annotated[StrictInt, Field(ge=1, le=9)]
+    """
+    The move's position in the request, 1-based.
+    """
+    mega: StrictBool
+    """
+    True when the move part also Mega Evolves.
+    """
+    priority: Annotated[StrictInt, Field(ge=-9999, le=9999)]
+    """
+    The engine's priority key of the move, as the probe's ActionOrder.priority.
+    """
+
+
+class UnsupportedOwnPriorityRow(BaseModel):
+    """
+    An own priority the probe could not answer: the probe's closed reasons, or unqueueable / fractional_priority (a pseudo-move such as recharge is query_kind).
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    kind: Literal["unsupported"]
+    slot: Annotated[StrictInt, Field(ge=0, le=3)]
+    move: Annotated[StrictInt, Field(ge=1, le=9)]
+    mega: StrictBool
+    reason: Literal["query_kind", "random_effect", "scenario_rule_table", "unqueueable", "fractional_priority"]
+
+
+class ComputedFoePriorityRow(BaseModel):
+    """
+    The engine's priority key of one revealed move of an opposing active.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    kind: Literal["computed"]
+    foe: Annotated[StrictInt, Field(ge=1, le=9)]
+    """
+    The opposing active's location number in a choice (move 1 1).
+    """
+    move: Annotated[
+        StrictStr, Field(max_length=64, min_length=1, pattern="^[a-z0-9]+$")
+    ]
+    priority: Annotated[StrictInt, Field(ge=-9999, le=9999)]
+    """
+    The engine's priority key of the move, as the probe's ActionOrder.priority.
+    """
+
+
+class UnsupportedFoePriorityRow(BaseModel):
+    """
+    A foe priority the probe could not answer: the probe's closed reasons, or unqueueable / fractional_priority.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    kind: Literal["unsupported"]
+    foe: Annotated[StrictInt, Field(ge=1, le=9)]
+    """
+    The opposing active's location number in a choice (move 1 1).
+    """
+    move: Annotated[
+        StrictStr, Field(max_length=64, min_length=1, pattern="^[a-z0-9]+$")
+    ]
+    reason: Literal["query_kind", "random_effect", "scenario_rule_table", "unqueueable", "fractional_priority"]
+
+
 class PokemonSet(BaseModel):
     """
     One set, as the pinned engine's PokemonSet (sim/teams.ts) holds it. Legality is the engine validator's, not this schema's.
@@ -259,9 +447,31 @@ class Rows(RootModel[ComputedFeatureRow | UnsupportedFeatureRow]):
     ]
 
 
+class Threats(RootModel[ComputedThreatRow | UnsupportedThreatRow]):
+    root: Annotated[
+        ComputedThreatRow | UnsupportedThreatRow, Field(discriminator="kind")
+    ]
+
+
+class Speeds(RootModel[ComputedSpeedRow | UnsupportedSpeedRow]):
+    root: Annotated[ComputedSpeedRow | UnsupportedSpeedRow, Field(discriminator="kind")]
+
+
+class OwnPriorities(RootModel[ComputedOwnPriorityRow | UnsupportedOwnPriorityRow]):
+    root: Annotated[
+        ComputedOwnPriorityRow | UnsupportedOwnPriorityRow, Field(discriminator="kind")
+    ]
+
+
+class FoePriorities(RootModel[ComputedFoePriorityRow | UnsupportedFoePriorityRow]):
+    root: Annotated[
+        ComputedFoePriorityRow | UnsupportedFoePriorityRow, Field(discriminator="kind")
+    ]
+
+
 class CandidateFeatures(BaseModel):
     """
-    The rows of one decision under one feature set. feature_set names the set (probe-damage/1); feature_set_hash is SHA-256 of the JCS of its identity (mechanics config, assumed-set config, adapter format, reader, version manifest), so a pin bump or a config change is another set. Rows are in canonical order: slot, move, target, then mega false before true.
+    The rows of one decision under one feature set. feature_set names the set (probe-damage/1 or probe-damage/2); feature_set_hash is SHA-256 of the JCS of its identity (mechanics config, assumed-set config, adapter format, reader, version manifest), so a pin bump or a config change is another set. Rows are in canonical order: slot, move, target, then mega false before true. Under probe-damage/2 the four arrays threats, speeds, own_priorities and foe_priorities are all present; under any other set none is (a reader rule: the profile has no if/then).
     """
 
     model_config = ConfigDict(
@@ -272,6 +482,26 @@ class CandidateFeatures(BaseModel):
     rows: Annotated[list[Rows], Field(max_length=128)]
     """
     One row per distinct (slot, move, target, mega) that some candidate uses with a damaging move into an opposing active; empty when the request has none (Team Preview, a forced switch).
+    """
+    threats: Annotated[list[Threats] | MISSING, Field(max_length=512)] = MISSING
+    """
+    probe-damage/2 only: one row per (own Pokemon and variant, opposing active, revealed damaging move of that foe), sorted by (own, mega false first, foe, move id). Values on the assumed opponent set, not facts about the real opponent.
+    """
+    speeds: Annotated[list[Speeds] | MISSING, Field(max_length=128)] = MISSING
+    """
+    probe-damage/2 only: exactly one row per (own position, own Mega flag, foe location), for every own active and every switch-in a candidate names, sorted by (own, mega false first, foe).
+    """
+    own_priorities: Annotated[list[OwnPriorities] | MISSING, Field(max_length=128)] = (
+        MISSING
+    )
+    """
+    probe-damage/2 only: one row per own move part of the candidates, sorted by (slot, move, mega false first).
+    """
+    foe_priorities: Annotated[list[FoePriorities] | MISSING, Field(max_length=128)] = (
+        MISSING
+    )
+    """
+    probe-damage/2 only: one row per revealed move of each opposing active, sorted by (foe, move id).
     """
 
 
