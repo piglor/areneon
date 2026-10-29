@@ -6,6 +6,7 @@ import { afterAll, describe, expect, it } from "vitest";
 import type { Engine } from "@areneon/showdown-bridge";
 import { DatasetReadError, readDataset } from "../src/dataset-reader.ts";
 import { referencePoolHash } from "../src/dedupe.ts";
+import { fileURLToPath } from "node:url";
 import { notices, runCli, type CliIo, trialDraws } from "../src/command.ts";
 import { type Pilot, runPilot } from "../src/pilot.ts";
 import { ASSIGNMENT_KEY, drawerFor, engine, FORMAT, format, KEY, light, small, table, VOCABULARY_FILE, vocabulary } from "./support.ts";
@@ -20,6 +21,7 @@ const identity = { config_hash: recordHash(cfg), label_set_hash: recordHash(ligh
 const trial = runPilot(drawerFor(cfg, KEY, light), identity, light, 800);
 const scaled: Pilot = { ...trial, draws: 40_000, rejected: trial.rejected * 50, cell_hits: trial.cell_hits.map((h) => h * 50) };
 
+const ROOT = fileURLToPath(new URL("../../..", import.meta.url));
 const files = {
   config: join(scratch, "config.json"),
   labels: join(scratch, "labels.json"),
@@ -187,6 +189,31 @@ describe("the pilot command", () => {
     expect(refused.code).toBe(1);
     expect(refused.err.join()).toMatch(/the pilot has 40 draws, the config says 40000/);
   }, 180_000);
+});
+
+describe("a mixture config with a role_sets component", () => {
+  const tableFile = join(ROOT, "fixtures", "showdown", FORMAT, "role-sets.json");
+  const mixture = join(scratch, "mixture.json");
+  writeFileSync(mixture, readFileSync(join(ROOT, "config", "teams", FORMAT, "generator.mixture-r.json"), "utf8"));
+  const pilot = (out: string, more: string[]): ReturnType<typeof cli> => cli(["pilot", "--config", mixture, "--labels", files.labels, "--format", FORMAT, "--out", out, "--generation-key", KEY, "--draws", "20", "--vocabulary", VOCABULARY_FILE, ...more]);
+
+  it("reads the golden table by default and the one --role-sets names", () => {
+    expect(pilot(join(scratch, "m1.json"), []).code).toBe(0);
+    expect(pilot(join(scratch, "m2.json"), ["--role-sets", tableFile]).code).toBe(0);
+  }, 120_000);
+
+  it("refuses a table that is not the vocabulary's (exit 2) or not the one the config names (exit 1)", () => {
+    const doctored = join(scratch, "table-doctored.json");
+    writeFileSync(doctored, JSON.stringify({ ...JSON.parse(readFileSync(tableFile, "utf8")), vocabulary_hash: "0".repeat(64) }));
+    expect(pilot(join(scratch, "m3.json"), ["--role-sets", doctored]).code).toBe(2);
+    const other = JSON.parse(readFileSync(mixture, "utf8")) as { proposal: { components: { role_set_table_hash?: string }[] } };
+    (other.proposal.components[0] as { role_set_table_hash: string }).role_set_table_hash = "0".repeat(64);
+    const wrong = join(scratch, "mixture-wrong.json");
+    writeFileSync(wrong, JSON.stringify(other));
+    const run = cli(["pilot", "--config", wrong, "--labels", files.labels, "--format", FORMAT, "--out", join(scratch, "m4.json"), "--generation-key", KEY, "--draws", "20", "--vocabulary", VOCABULARY_FILE]);
+    expect(run.code).toBe(1);
+    expect(run.err.join()).toMatch(/hash mismatch/);
+  }, 120_000);
 });
 
 describe("the command line refuses", () => {

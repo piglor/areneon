@@ -326,6 +326,9 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     sampled_ranges: 16,
   };
   const configWith = (change: (c: Record<string, unknown>) => void) => mutated(generatorConfig, change);
+  const mixtureRoleSets = { kind: "role_sets", role_set_table_hash: hexOf("b"), share_permille: 700 };
+  const mixtureUniform = { kind: "uniform", share_permille: 300 };
+  const mixture = (components: unknown[] = [mixtureRoleSets, mixtureUniform]) => ({ kind: "mixture", components });
   // The golden vocabulary is read, not exported: the export takes seconds, and team-vocabulary.test.ts holds the file equal to a fresh one.
   const fullVocabulary = readTeamVocabulary(JSON.parse(readFileSync(join(GOLDEN_DIR, TEAM_VOCABULARY_FILE), "utf8")), full);
   const vocabularyEntries = fullVocabulary.roster.filter((r) =>
@@ -560,6 +563,7 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "team-record/golden": teamRecord,
     "team-label-set/golden": labelSet,
     "team-generator-config/golden": generatorConfig,
+    "team-generator-config/mixture": configWith((c) => (c.proposal = mixture())),
     "team-dataset-manifest/golden": datasetManifest,
     "team-dataset-manifest/merged": datasetWith((d) => {
       d.merged_cells = [{ stratum: 7, cells: [7, 9] }];
@@ -576,6 +580,8 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "training-run-config/entropy-linear": runConfigWith(
       (c) => (runSection(c, "ppo").entropy_schedule = { kind: "linear", final_micro: 0, generations: 4 }),
     ),
+    "training-run-config/preview-bootstrap": runConfigWith((c) => (runSection(c, "ppo").preview_bootstrap_micro = 500000)),
+    "training-run-config/preview-bootstrap-zero": runConfigWith((c) => (runSection(c, "ppo").preview_bootstrap_micro = 0)),
     "training-run-config/entropy-constant": runConfigWith((c) => (runSection(c, "ppo").entropy_schedule = { kind: "constant" })),
     "training-run-config/constant-schedule": runConfigWith((c) => (runSection(c, "ppo").learning_rate_schedule = { kind: "constant" })),
     "training-run-config/damage-aware": runConfigWith((c) => {
@@ -838,6 +844,9 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "team-label-set/unknown-engine-id": mutated(labelSet, (l) => ((l.labels as { values: { when: { moves: string[] } }[] }[])[0] as { values: { when: { moves: string[] } }[] }).values = [{ value: "ghost", when: { kind: "has_move", moves: ["nosuchmove"] } } as never]),
     "team-generator-config/unsorted-item-weights": configWith((c) => (c.item_weights = [...generatorConfig.item_weights].reverse())),
     "team-generator-config/duplicate-item-weights": configWith((c) => (c.item_weights = [generatorConfig.item_weights[0], generatorConfig.item_weights[0]])),
+    "team-generator-config/shares-not-1000": configWith((c) => (c.proposal = mixture([mixtureRoleSets, { ...mixtureUniform, share_permille: 200 }]))),
+    "team-generator-config/components-unsorted": configWith((c) => (c.proposal = mixture([mixtureUniform, mixtureRoleSets]))),
+    "team-generator-config/duplicate-kind": configWith((c) => (c.proposal = mixture([{ ...mixtureUniform, share_permille: 500 }, { ...mixtureUniform, share_permille: 500 }]))),
     "team-generator-config/unknown-item": configWith((c) => (c.item_weights = [{ item: "nosuchitem", weight: 1 }])),
     "team-dataset-manifest/splits-out-of-order": datasetWith((d) => (d.splits = [...datasetManifest.splits].reverse())),
     "team-dataset-manifest/stratum-not-lowest-member": datasetWith((d) => (d.merged_cells = [{ stratum: 7, cells: [8, 9] }])),
@@ -917,6 +926,8 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "training-run-config/entropy-zero-generations": runConfigWith(
       (c) => (runSection(c, "ppo").entropy_schedule = { kind: "linear", final_micro: 0, generations: 0 }),
     ),
+    "training-run-config/preview-bootstrap-above-one": runConfigWith((c) => (runSection(c, "ppo").preview_bootstrap_micro = 1000001)),
+    "training-run-config/preview-bootstrap-fractional": runConfigWith((c) => (runSection(c, "ppo").preview_bootstrap_micro = 0.5)),
     "training-run-config/entropy-unknown-kind": runConfigWith((c) => (runSection(c, "ppo").entropy_schedule = { kind: "cosine" })),
     "training-run-config/schedule-unknown-kind": runConfigWith((c) => (runSection(c, "ppo").learning_rate_schedule = { kind: "cosine" })),
     "training-run-config/unknown-model-option": runConfigWith((c) => (runSection(c, "model").options = { wide: 1 })),
@@ -1027,6 +1038,8 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "team-label-set/nested-all-of": mutated(labelSet, (l) => ((l.labels as { values: unknown[] }[])[0] as { values: unknown[] }).values = [{ value: "x", when: { kind: "all_of", of: [{ kind: "all_of", of: [] }] } }]),
     "team-label-set/empty-ids": mutated(labelSet, (l) => ((l.labels as { values: unknown[] }[])[0] as { values: unknown[] }).values = [{ value: "x", when: { kind: "has_move", moves: [] } }]),
     "team-label-set/extra-field": mutated(labelSet, (l) => (l.scores = [])),
+    "team-generator-config/usage-component": configWith((c) => (c.proposal = mixture([{ kind: "usage", share_permille: 500 }, mixtureUniform]))),
+    "team-generator-config/float-share": configWith((c) => (c.proposal = mixture([mixtureRoleSets, { ...mixtureUniform, share_permille: 300.5 }]))),
     "team-generator-config/float-weight": configWith((c) => (c.default_item_weight = 0.5)),
     "team-generator-config/iv-over-31": configWith((c) => (c.iv = 32)),
     "team-generator-config/pilot-below-40000": configWith((c) => (c.pilot_draws = 39_999)),

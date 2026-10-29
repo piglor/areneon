@@ -2,7 +2,7 @@
 import { readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { inspect } from "node:util";
-import { canonicalTeamHash, checkCommitment, exportPaste, importPaste, jcs, keyCommitment, readEvaluationConfig, readSealedSetCommitment, readSealedTeamSetManifest, setCommitment, stratumLabel, syntheticTeamHashes, teamHash } from "@areneon/showdown-bridge";
+import { canonicalTeamHash, checkCommitment, exportPaste, importPaste, jcs, keyCommitment, readEvaluationConfig, readSealedSetCommitment, readSealedTeamSetManifest, recordHash, type TeamGeneratorConfig, setCommitment, stratumLabel, syntheticTeamHashes, teamHash } from "@areneon/showdown-bridge";
 import { afterAll, describe, expect, it, vi } from "vitest";
 import {
   fillSealed,
@@ -260,6 +260,10 @@ describe("generating a sealed set in the store", () => {
 
   it("refuses a bad set id, generation or attempt count", () => {
     expect(() => generateSealedSet(input({ setId: "Set A" }))).toThrow(/set id must be/);
+    // a config with a role_sets component is refused (the sealed generator takes no role-set table)
+    const mixture: TeamGeneratorConfig = { ...cfg, proposal: { kind: "mixture", components: [{ kind: "role_sets", role_set_table_hash: "a".repeat(64), share_permille: 500 }, { kind: "uniform", share_permille: 500 }] } };
+    const manifest = { ...publicManifest, generator: { ...publicManifest.generator, config_hash: recordHash(mixture) } };
+    expect(() => generateSealedSet(input({ config: mixture, publicManifest: manifest, setId: "set-mix" }))).toThrow(/no role-set table/);
     expect(() => generateSealedSet(input({ generation: 0 }))).toThrow(/generation must be/);
     expect(() => generateSealedSet(input({ maxAttempts: 0 }))).toThrow(/max attempts/);
   });
@@ -511,6 +515,21 @@ describe("SealedTeamHashes accepts only a set read from the store", () => {
     const run = generateSealedSet(input({ setId: "set-b" }));
     const real = readStoredSet(dirOfStore(run.dir), "set-b");
     expect(() => SealedTeamHashes.fromVerified(engine, { ...real })).toThrow(/did not return is not trusted/);
+    expect(SealedTeamHashes.fromVerified(engine, real).size).toBe(24);
+  });
+
+  it("a set read from the store cannot be mutated to change what it trusts", () => {
+    const run = generateSealedSet(input({ setId: "set-f" }));
+    const real = readStoredSet(dirOfStore(run.dir), "set-f");
+    const paste = real.teams[0]?.paste;
+    expect(Object.isFrozen(real)).toBe(true);
+    expect(Object.isFrozen(real.teams)).toBe(true);
+    expect(real.teams.every((t) => Object.isFrozen(t))).toBe(true);
+    // sloppy-mode writes would be silent no-ops; these modules are strict, so each mutation throws
+    expect(() => (real.teams as unknown as unknown[]).push({ k: 99, paste: "x", stratum: 0 })).toThrow(TypeError);
+    expect(() => ((real.teams[0] as { paste: string }).paste = "x")).toThrow(TypeError);
+    expect(() => ((real as { teams: unknown }).teams = [])).toThrow(TypeError);
+    expect(real.teams[0]?.paste).toBe(paste);
     expect(SealedTeamHashes.fromVerified(engine, real).size).toBe(24);
   });
 });

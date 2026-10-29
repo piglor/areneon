@@ -36,7 +36,7 @@ import {
   type SealedSetCommitment,
   setCommitment,
 } from "../src/evaluation-plan.ts";
-import { appendEntry, assertPlanPublished, checkHeads, checkHeadsAddOnly, entryHash, GENESIS, readEntry, readHead, RegisterError, verifyRegister } from "../src/evaluation-register.ts";
+import { appendEntry, assertPlanPublished, assertRetirementPublished, checkHeads, checkHeadsAddOnly, entryHash, GENESIS, readEntry, readHead, RegisterError, verifyRegister } from "../src/evaluation-register.ts";
 import { evaluationFixtures, PARAMETERS_FILE, RULE_FILE } from "../src/evaluation-samples.ts";
 
 const fx = evaluationFixtures();
@@ -479,6 +479,10 @@ describe("published chain heads (O1)", () => {
     expect(() => assertPlanPublished(state, checkHeads(state, []), hash)).toThrow(/merge the chain head first/);
     expect(assertPlanPublished(state, checkHeads(state, [head(2)]), hash)).toBe(2);
     expect(() => assertPlanPublished(state, checkHeads(state, [head(2)]), hex("1"))).toThrow(/not in the register/);
+  });
+
+  it("a reveal needs a retirement in the register (L5)", () => {
+    expect(() => assertRetirementPublished(state, checkHeads(state, [head(2)]), "no-such-set")).toThrow(/no retirement in the register/);
   });
 
   it("readHead refuses a head with extra fields", () => {
