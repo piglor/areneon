@@ -650,6 +650,9 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "training-run-config/candidate-matchup": runConfigWith((c) => {
       runSection(runSection(c, "model"), "encoder").options = { candidate_matchup: true };
     }),
+    "training-run-config/candidate-target": runConfigWith((c) => {
+      runSection(runSection(c, "model"), "encoder").options = { candidate_target: true };
+    }),
     "training-run-config/candidate-features": runConfigWith((c) => {
       runSection(runSection(c, "model"), "encoder").options = { candidate_features: { feature_set: "probe-damage/1", feature_set_hash: hexOf("c") } };
     }),
@@ -684,6 +687,9 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     }),
     "clone-run-config/candidate-matchup": cloneWith((c) => {
       runSection(runSection(c, "model"), "encoder").options = { candidate_matchup: true };
+    }),
+    "clone-run-config/candidate-target": cloneWith((c) => {
+      runSection(runSection(c, "model"), "encoder").options = { candidate_target: true };
     }),
     "clone-run-config/candidate-features": cloneWith((c) => {
       runSection(runSection(c, "model"), "encoder").options = { candidate_features: { feature_set: "probe-damage/1", feature_set_hash: hexOf("c") } };
@@ -982,6 +988,9 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "clone-run-config/candidate-matchup-false": cloneWith(
       (c) => (runSection(runSection(c, "model"), "encoder").options = { candidate_matchup: false }),
     ),
+    "clone-run-config/candidate-target-false": cloneWith(
+      (c) => (runSection(runSection(c, "model"), "encoder").options = { candidate_target: false }),
+    ),
     "clone-run-config/candidate-features-unknown-set": cloneWith((c) => {
       runSection(runSection(c, "model"), "encoder").options = { candidate_features: { feature_set: "probe-damage/3", feature_set_hash: hexOf("c") } };
     }),
@@ -1012,6 +1021,9 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "training-run-config/unknown-encoder-option": runConfigWith((c) => (runSection(runSection(c, "model"), "encoder").options = { wide: 1 })),
     "training-run-config/candidate-matchup-false": runConfigWith(
       (c) => (runSection(runSection(c, "model"), "encoder").options = { candidate_matchup: false }),
+    ),
+    "training-run-config/candidate-target-false": runConfigWith(
+      (c) => (runSection(runSection(c, "model"), "encoder").options = { candidate_target: false }),
     ),
     "training-run-config/candidate-features-true": runConfigWith(
       (c) => (runSection(runSection(c, "model"), "encoder").options = { candidate_features: true }),

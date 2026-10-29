@@ -39,6 +39,7 @@ from areneon_ml.model.network import init_network
 from areneon_ml.model.options import (
     CANDIDATE_FEATURES,
     CANDIDATE_MATCHUP,
+    CANDIDATE_TARGET,
     OptionError,
     read_options,
 )
@@ -698,12 +699,9 @@ def test_the_first_set_keeps_its_version_and_checkpoint_ids() -> None:
 def test_the_target_option_composes_with_the_arrays() -> None:
     # candidate_target (ADR-010 A4 item 7) adds a token column to a candidate part; the arrays add
     # categories, a number and the Mega summary: both reach the slot part and nothing collides.
-    options = pytest.importorskip("areneon_ml.model.options")
-    if not hasattr(options, "CANDIDATE_TARGET"):
-        pytest.skip("candidate_target is not on this branch yet")
     both = replace(
         TINY_ENCODER,
-        options=read_options("encoder", {CANDIDATE_FEATURES: SET, options.CANDIDATE_TARGET: True}),
+        options=read_options("encoder", {CANDIDATE_FEATURES: SET, CANDIDATE_TARGET: True}),
     )
     encoder_both = Encoder(game(), both)
     q = mega_query()
