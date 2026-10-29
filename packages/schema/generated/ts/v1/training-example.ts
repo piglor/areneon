@@ -352,6 +352,30 @@ export interface CandidateFeatures {
    * @maxItems 128
    */
   rows: (ComputedFeatureRow | UnsupportedFeatureRow)[];
+  /**
+   * probe-damage/2 only: one row per (own Pokemon and variant, opposing active, revealed damaging move of that foe), sorted by (own, mega false first, foe, move id). Values on the assumed opponent set, not facts about the real opponent.
+   *
+   * @maxItems 512
+   */
+  threats?: (ComputedThreatRow | UnsupportedThreatRow)[];
+  /**
+   * probe-damage/2 only: exactly one row per (own position, own Mega flag, foe location), for every own active and every switch-in a candidate names, sorted by (own, mega false first, foe).
+   *
+   * @maxItems 128
+   */
+  speeds?: (ComputedSpeedRow | UnsupportedSpeedRow)[];
+  /**
+   * probe-damage/2 only: one row per own move part of the candidates, sorted by (slot, move, mega false first).
+   *
+   * @maxItems 128
+   */
+  own_priorities?: (ComputedOwnPriorityRow | UnsupportedOwnPriorityRow)[];
+  /**
+   * probe-damage/2 only: one row per revealed move of each opposing active, sorted by (foe, move id).
+   *
+   * @maxItems 128
+   */
+  foe_priorities?: (ComputedFoePriorityRow | UnsupportedFoePriorityRow)[];
 }
 /**
  * The probe's exact rolls for one row, as integers: mean_ppm is the mean over the 16 no-crit rolls of min(roll, hp) / hp, floored; max_ppm and min_ppm the largest and smallest roll clamped at hp, as a share of hp; ohko_rolls the probe's own count of the 16 no-crit rolls that reach hp, or null when the probe gives none.
@@ -395,6 +419,170 @@ export interface UnsupportedFeatureRow {
   target: number;
   mega: boolean;
   reason: "query_kind" | "random_effect" | "scenario_rule_table";
+}
+/**
+ * What the foe's revealed damaging move does to the own Pokemon (the foe's assumed set as attacker, the own Pokemon at its exact current HP): the values of a ComputedFeatureRow, as integers.
+ *
+ * This interface was referenced by `TrainingExample`'s JSON-Schema
+ * via the `definition` "ComputedThreatRow".
+ */
+export interface ComputedThreatRow {
+  kind: "computed";
+  /**
+   * The own Pokemon's position in the request's side.pokemon, 0-based.
+   */
+  own: number;
+  /**
+   * True for the variant of the own Pokemon that Mega Evolves this turn.
+   */
+  mega: boolean;
+  /**
+   * The opposing active's location number in a choice (move 1 1).
+   */
+  foe: number;
+  move: string;
+  mean_ppm: number;
+  max_ppm: number;
+  min_ppm: number;
+  ohko_rolls: number | null;
+}
+/**
+ * A threat the probe could not answer exactly: its closed reason, never a guess.
+ *
+ * This interface was referenced by `TrainingExample`'s JSON-Schema
+ * via the `definition` "UnsupportedThreatRow".
+ */
+export interface UnsupportedThreatRow {
+  kind: "unsupported";
+  /**
+   * The own Pokemon's position in the request's side.pokemon, 0-based.
+   */
+  own: number;
+  /**
+   * True for the variant of the own Pokemon that Mega Evolves this turn.
+   */
+  mega: boolean;
+  /**
+   * The opposing active's location number in a choice (move 1 1).
+   */
+  foe: number;
+  move: string;
+  reason: "query_kind" | "random_effect" | "scenario_rule_table";
+}
+/**
+ * Who acts first between the own Pokemon (and variant) and the opposing active, as the engine orders their action speed.
+ *
+ * This interface was referenced by `TrainingExample`'s JSON-Schema
+ * via the `definition` "ComputedSpeedRow".
+ */
+export interface ComputedSpeedRow {
+  kind: "computed";
+  /**
+   * The own Pokemon's position in the request's side.pokemon, 0-based.
+   */
+  own: number;
+  /**
+   * True for the variant of the own Pokemon that Mega Evolves this turn.
+   */
+  mega: boolean;
+  /**
+   * The opposing active's location number in a choice (move 1 1).
+   */
+  foe: number;
+  relation: "own_first" | "tie" | "foe_first";
+}
+/**
+ * A speed relation the probe could not answer: the probe's closed reasons, or unqueueable / fractional_priority.
+ *
+ * This interface was referenced by `TrainingExample`'s JSON-Schema
+ * via the `definition` "UnsupportedSpeedRow".
+ */
+export interface UnsupportedSpeedRow {
+  kind: "unsupported";
+  /**
+   * The own Pokemon's position in the request's side.pokemon, 0-based.
+   */
+  own: number;
+  /**
+   * True for the variant of the own Pokemon that Mega Evolves this turn.
+   */
+  mega: boolean;
+  /**
+   * The opposing active's location number in a choice (move 1 1).
+   */
+  foe: number;
+  reason: "query_kind" | "random_effect" | "scenario_rule_table" | "unqueueable" | "fractional_priority";
+}
+/**
+ * The engine's priority key of one own move part of the candidates.
+ *
+ * This interface was referenced by `TrainingExample`'s JSON-Schema
+ * via the `definition` "ComputedOwnPriorityRow".
+ */
+export interface ComputedOwnPriorityRow {
+  kind: "computed";
+  /**
+   * The acting active Pokemon's slot, 0-based.
+   */
+  slot: number;
+  /**
+   * The move's position in the request, 1-based.
+   */
+  move: number;
+  /**
+   * True when the move part also Mega Evolves.
+   */
+  mega: boolean;
+  /**
+   * The engine's priority key of the move, as the probe's ActionOrder.priority.
+   */
+  priority: number;
+}
+/**
+ * An own priority the probe could not answer: the probe's closed reasons, or unqueueable / fractional_priority (a pseudo-move such as recharge is query_kind).
+ *
+ * This interface was referenced by `TrainingExample`'s JSON-Schema
+ * via the `definition` "UnsupportedOwnPriorityRow".
+ */
+export interface UnsupportedOwnPriorityRow {
+  kind: "unsupported";
+  slot: number;
+  move: number;
+  mega: boolean;
+  reason: "query_kind" | "random_effect" | "scenario_rule_table" | "unqueueable" | "fractional_priority";
+}
+/**
+ * The engine's priority key of one revealed move of an opposing active.
+ *
+ * This interface was referenced by `TrainingExample`'s JSON-Schema
+ * via the `definition` "ComputedFoePriorityRow".
+ */
+export interface ComputedFoePriorityRow {
+  kind: "computed";
+  /**
+   * The opposing active's location number in a choice (move 1 1).
+   */
+  foe: number;
+  move: string;
+  /**
+   * The engine's priority key of the move, as the probe's ActionOrder.priority.
+   */
+  priority: number;
+}
+/**
+ * A foe priority the probe could not answer: the probe's closed reasons, or unqueueable / fractional_priority.
+ *
+ * This interface was referenced by `TrainingExample`'s JSON-Schema
+ * via the `definition` "UnsupportedFoePriorityRow".
+ */
+export interface UnsupportedFoePriorityRow {
+  kind: "unsupported";
+  /**
+   * The opposing active's location number in a choice (move 1 1).
+   */
+  foe: number;
+  move: string;
+  reason: "query_kind" | "random_effect" | "scenario_rule_table" | "unqueueable" | "fractional_priority";
 }
 /**
  * Which request a decision answers (ADR-008 §4). A consumer drops a recommendation unless request_seq and request_hash both match, and rqid too when both carry one.
@@ -475,7 +663,7 @@ export interface DecisionContext2 {
   policy_budget_ms: number;
 }
 /**
- * The rows of one decision under one feature set. feature_set names the set (probe-damage/1); feature_set_hash is SHA-256 of the JCS of its identity (mechanics config, assumed-set config, adapter format, reader, version manifest), so a pin bump or a config change is another set. Rows are in canonical order: slot, move, target, then mega false before true.
+ * The rows of one decision under one feature set. feature_set names the set (probe-damage/1 or probe-damage/2); feature_set_hash is SHA-256 of the JCS of its identity (mechanics config, assumed-set config, adapter format, reader, version manifest), so a pin bump or a config change is another set. Rows are in canonical order: slot, move, target, then mega false before true. Under probe-damage/2 the four arrays threats, speeds, own_priorities and foe_priorities are all present; under any other set none is (a reader rule: the profile has no if/then).
  *
  * This interface was referenced by `TrainingExample`'s JSON-Schema
  * via the `definition` "CandidateFeatures".
@@ -489,4 +677,28 @@ export interface CandidateFeatures1 {
    * @maxItems 128
    */
   rows: (ComputedFeatureRow | UnsupportedFeatureRow)[];
+  /**
+   * probe-damage/2 only: one row per (own Pokemon and variant, opposing active, revealed damaging move of that foe), sorted by (own, mega false first, foe, move id). Values on the assumed opponent set, not facts about the real opponent.
+   *
+   * @maxItems 512
+   */
+  threats?: (ComputedThreatRow | UnsupportedThreatRow)[];
+  /**
+   * probe-damage/2 only: exactly one row per (own position, own Mega flag, foe location), for every own active and every switch-in a candidate names, sorted by (own, mega false first, foe).
+   *
+   * @maxItems 128
+   */
+  speeds?: (ComputedSpeedRow | UnsupportedSpeedRow)[];
+  /**
+   * probe-damage/2 only: one row per own move part of the candidates, sorted by (slot, move, mega false first).
+   *
+   * @maxItems 128
+   */
+  own_priorities?: (ComputedOwnPriorityRow | UnsupportedOwnPriorityRow)[];
+  /**
+   * probe-damage/2 only: one row per revealed move of each opposing active, sorted by (foe, move id).
+   *
+   * @maxItems 128
+   */
+  foe_priorities?: (ComputedFoePriorityRow | UnsupportedFoePriorityRow)[];
 }

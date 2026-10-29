@@ -74,6 +74,8 @@ export interface FeatureConfigs {
   snapshot?: RulesSnapshot;
   /** The class the probe queries carry (they are never stored). */
   data_class: "synthetic" | "private";
+  /** The set a run reads (ADR-022 erratum E-22.3); absent is `probe-damage/1`. Read by `feature-build.ts` only; the builders themselves ignore it. */
+  feature_set?: FeatureSetId;
   /** Test seam: the probe (default `probeMechanics`). */
   probe?: (context: MechanicsContext, query: ParsedMechanicsQuery) => ProbeOutcome;
   /** Test seam (the negative control of the invariance test): the assumed opponent set of a public Pokemon (default `buildAssumedSet`). */
