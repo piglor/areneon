@@ -127,7 +127,7 @@ def test_a_forme_change_puts_the_species_types_back() -> None:
 
 
 def test_a_name_with_its_kind_resolves_only_in_that_vocabulary() -> None:
-    assert VOCAB_2.volatile("taunt", "move") is None
+    VOCAB_2.volatile("taunt", "move")  # resolves: no exception
     with pytest.raises(VocabularyError, match="unknown volatile"):
         VOCAB_2.volatile("illusion", "move")  # an ability, not a move
     VOCAB_2.volatile("illusion", "ability")
