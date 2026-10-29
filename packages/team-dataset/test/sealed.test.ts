@@ -513,4 +513,19 @@ describe("SealedTeamHashes accepts only a set read from the store", () => {
     expect(() => SealedTeamHashes.fromVerified(engine, { ...real })).toThrow(/did not return is not trusted/);
     expect(SealedTeamHashes.fromVerified(engine, real).size).toBe(24);
   });
+
+  it("a set read from the store cannot be mutated to change what it trusts", () => {
+    const run = generateSealedSet(input({ setId: "set-f" }));
+    const real = readStoredSet(dirOfStore(run.dir), "set-f");
+    const paste = real.teams[0]?.paste;
+    expect(Object.isFrozen(real)).toBe(true);
+    expect(Object.isFrozen(real.teams)).toBe(true);
+    expect(real.teams.every((t) => Object.isFrozen(t))).toBe(true);
+    // sloppy-mode writes would be silent no-ops; these modules are strict, so each mutation throws
+    expect(() => (real.teams as unknown as unknown[]).push({ k: 99, paste: "x", stratum: 0 })).toThrow(TypeError);
+    expect(() => ((real.teams[0] as { paste: string }).paste = "x")).toThrow(TypeError);
+    expect(() => ((real as { teams: unknown }).teams = [])).toThrow(TypeError);
+    expect(real.teams[0]?.paste).toBe(paste);
+    expect(SealedTeamHashes.fromVerified(engine, real).size).toBe(24);
+  });
 });

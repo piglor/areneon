@@ -16,8 +16,8 @@ export default tseslint.config(
     rules: { "@typescript-eslint/no-empty-object-type": "off" },
   },
   {
-    // Sealed-set code handles the key, the salt and the sealed teams: it must not print anything. Output goes through the injected `io` of the command.
-    files: ["packages/team-dataset/src/sealed*.ts"],
+    // Sealed-set code (and the generator pieces it shares: rejection log, draw, dedupe, binner) handles the key, the salt and the sealed teams: it must not print anything. Output goes through the injected `io` of the command.
+    files: ["packages/team-dataset/src/sealed*.ts", "packages/team-dataset/src/{rejection-log,draw,dedupe,binner}.ts"],
     rules: { "no-console": "error" },
   },
   {

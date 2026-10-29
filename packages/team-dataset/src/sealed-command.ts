@@ -9,6 +9,7 @@
 //   retire       --store DIR --set-id ID --out DIR --register FILE
 //                --parameters FILE --rule FILE   (repeat the pair for a register that spans versions)
 //   verify       --dir DIR --public-manifest FILE --register FILE --parameters FILE --rule FILE
+//                --heads DIR [--heads-ref REF]   (the published chain heads; use --heads-ref origin/main)
 //                --config FILE --labels FILE --format ID
 //                [--vocabulary FILE] [--known FILE]...
 //
@@ -23,20 +24,24 @@ import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { parseArgs } from "node:util";
 import {
+  checkHeads,
   commitmentHash,
   type Engine,
   exportEngineData,
   exportTeamVocabulary,
   loadEngine,
   readEvaluationConfig,
+  readPublishedHeads,
   readTeamDatasetManifest,
   readTeamGeneratorConfig,
   readTeamLabelSet,
   readTeamVocabulary,
   resolveFormat,
   sealedManifestHash,
+  verifyRegister,
 } from "@areneon/showdown-bridge";
 import { generateSealedSet, type KnownTeam } from "./sealed.ts";
+import { parseSecretJson } from "./sealed-store.ts";
 import { readRevealDir, retireSealedSet, revealHash, verifyRetiredSealed } from "./sealed-retire.ts";
 
 export interface SealedCliIo {
@@ -71,6 +76,8 @@ const OPTIONS = {
   out: { type: "string" },
   register: { type: "string" },
   dir: { type: "string" },
+  heads: { type: "string" },
+  "heads-ref": { type: "string" },
 } as const;
 
 type Values = ReturnType<typeof parseArgs<{ options: typeof OPTIONS; allowPositionals: true }>>["values"];
@@ -81,7 +88,17 @@ const need = (values: Values, name: keyof Values & string): string => {
   return value;
 };
 
-const json = (path: string): unknown => JSON.parse(readFileSync(path, "utf8"));
+/** `parseSecretJson` with a usage error: it refuses without quoting the text, which may hold a key, a salt or a paste (a `SyntaxError` message can quote it). */
+function parseInput(text: string, what: string): unknown {
+  try {
+    return parseSecretJson(text, what);
+  } catch (error) {
+    throw new UsageError((error as Error).message);
+  }
+}
+
+/** Every JSON file the command reads goes through `parseInput`. */
+const json = (path: string): unknown => parseInput(readFileSync(path, "utf8"), path);
 
 function count(text: string | undefined, name: string, fallback?: number): number {
   if (text === undefined) {
@@ -107,7 +124,7 @@ function knownTeams(paths: readonly string[]): KnownTeam[] {
       .split("\n")
       .filter((line) => line !== "")
       .map((line, n) => {
-        const paste = (JSON.parse(line) as { paste?: unknown }).paste;
+        const paste = (parseInput(line, `${path} line ${n + 1}`) as { paste?: unknown } | null)?.paste;
         if (typeof paste !== "string") throw new UsageError(`${path} line ${n + 1} has no paste`);
         return { paste };
       }),
@@ -192,6 +209,9 @@ function runVerify(values: Values, io: SealedCliIo, engine: Engine): number {
   const bundle = readRevealDir(need(values, "dir"));
   const publicManifest = readTeamDatasetManifest(json(need(values, "public-manifest")), { config: inputs.config, labelSet: inputs.labelSet });
   const registerText = readFileSync(need(values, "register"), "utf8");
+  // Register authenticity is enforced here, not only by the runbook: the chain must verify and match every published head (no rollback, no fork).
+  const heads = readPublishedHeads(need(values, "heads"), values["heads-ref"], process.cwd(), { requireHeads: true });
+  checkHeads(verifyRegister(registerText, configs), heads);
   const report = verifyRetiredSealed({ engine, ...inputs, evaluation, bundle, publicManifest, registerText, known: knownTeams(values.known ?? []) });
   io.out(JSON.stringify({ verified: true, ...report }));
   return 0;
