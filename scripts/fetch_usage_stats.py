@@ -2,9 +2,12 @@
 
 Run by hand, never in CI. Standard library only. One sequential client with a User-Agent that
 names Areneon and its repository; ``robots.txt`` is read first, in the same run, and every URL
-must be allowed for the agent before anything is downloaded; errors that can pass (HTTP 429, 5xx,
-a dropped connection) are retried with exponential back-off up to a limit, any other non-200
-answer (a redirect included) stops the run; no credentials; nothing else is requested.
+must be allowed for the agent before anything is downloaded (a robots.txt with wildcard rules
+for the agent is refused, since urllib.robotparser does not implement RFC 9309 wildcards, and
+any robots.txt answer other than 200 stops the run: conservative, RFC 9309 would allow a 4xx);
+errors that can pass (HTTP 429, 5xx, a dropped connection) are retried with exponential
+back-off up to a limit, any other non-200 answer (a redirect included) stops the run; no
+credentials; nothing else is requested.
 
     PYTHONPATH=.:packages/schema/python python -m scripts.fetch_usage_stats \\
         --month 2026-09 --cutoff 1630 [--format gen9championsvgc2026regmc] [--out-dir .tmp/chaos]
@@ -15,7 +18,9 @@ month needs its own directory). The input record is the one #1120 committed, rea
 (month, cutoff, format_id, basis, ``robots_sha256`` of the robots.txt read in this run, and one
 entry per file with its name, source id, URL, retrieval time in UTC, size and SHA-256), written as
 RFC 8785 bytes and never over an existing record. Nothing is written unless every file was
-fetched. Basis: owner-accepted risk, ADR-009 erratum 1 (Smogon states no licence).
+fetched and checked (chaos is strict JSON, the summary starts with a battle count, leads has the
+table header); files are staged beside their places and linked in, and removed again on failure.
+Basis: owner-accepted risk, ADR-009 erratum 1 (Smogon states no licence).
 """
 
 from __future__ import annotations
@@ -23,7 +28,9 @@ from __future__ import annotations
 import argparse
 import hashlib
 import os
+import re
 import sys
+import tempfile
 import time
 import urllib.error
 import urllib.request
@@ -37,6 +44,8 @@ from urllib.robotparser import RobotFileParser
 
 from areneon_contracts.contracts import jcs
 
+from scripts.usage_common import DerivationError, parse_source
+
 AGENT = "Areneon-usage-ingest"
 USER_AGENT = f"{AGENT}/1 (+https://github.com/piglor/areneon)"
 BASIS = (
@@ -48,6 +57,10 @@ DEFAULT_PREVIEW_MAP = "generator-matched.uniform-v1.json"
 BASE_URL = "https://www.smogon.com"
 RETRYABLE = frozenset({429, 500, 502, 503, 504})
 MAX_RETRY_AFTER_S = 120.0
+MAX_BYTES = 64 * 1024 * 1024
+MONTH = re.compile(r"^[0-9]{4}-(0[1-9]|1[0-2])$")
+FORMAT = re.compile(r"^[a-z0-9]{1,64}$")
+LEADS_HEADER = re.compile(rb"\|\s*Rank\s*\|\s*Pokemon\s*\|")
 # (source id, local file name, path under /stats/<month>/ with {stem} = "<format>-<cutoff>")
 FILES = (
     ("chaos", "chaos.json", "chaos/{stem}.json"),
@@ -84,7 +97,10 @@ def get(
             with opener.open(request, timeout=timeout_s) as response:
                 if response.status != HTTPStatus.OK:
                     raise IngestError(f"{url} answered HTTP {response.status}")
-                return bytes(response.read())
+                body = bytes(response.read(MAX_BYTES + 1))
+                if len(body) > MAX_BYTES:
+                    raise IngestError(f"{urlsplit(url).path} is larger than {MAX_BYTES} bytes")
+                return body
         except urllib.error.HTTPError as exc:
             if exc.code not in RETRYABLE:
                 raise IngestError(f"{url} answered HTTP {exc.code}") from None
@@ -100,15 +116,68 @@ def get(
     raise AssertionError("unreachable")  # pragma: no cover
 
 
+def wildcard_rules(robots: str) -> bool:
+    """True if a group that applies to the agent has an Allow/Disallow path with ``*`` or ``$``.
+
+    ``urllib.robotparser`` does not implement RFC 9309 wildcards, so such a file cannot be
+    honoured by it and the run refuses it. The agent's own group applies if there is one,
+    else the ``*`` groups.
+    """
+    groups: list[tuple[set[str], list[str]]] = []
+    agents: set[str] = set()
+    paths: list[str] = []
+    in_rules = False
+    for raw in robots.splitlines():
+        line = raw.split("#", 1)[0].strip()
+        key, sep, value = line.partition(":")
+        key, value = key.strip().lower(), value.strip()
+        if not sep:
+            continue
+        if key == "user-agent":
+            if in_rules:
+                groups.append((agents, paths))
+                agents, paths, in_rules = set(), [], False
+            agents.add(value.lower())
+        elif key in ("allow", "disallow"):
+            in_rules = True
+            paths.append(value)
+    groups.append((agents, paths))
+    specific = [g for g in groups if any(a != "*" and AGENT.lower().startswith(a) for a in g[0])]
+    applicable = specific or [g for g in groups if "*" in g[0]]
+    return any("*" in p or "$" in p for _, ps in applicable for p in ps)
+
+
 def check_robots(base: str, urls: Sequence[str], **net: Any) -> str:
     """Read robots.txt, require every URL allowed for the agent, return its SHA-256."""
     body = get(f"{base}/robots.txt", **net)
+    text = body.decode("utf-8", errors="replace")
+    if wildcard_rules(text):
+        raise IngestError("robots.txt has wildcard rules, which this client cannot honour")
     parser = RobotFileParser()
-    parser.parse(body.decode("utf-8", errors="replace").splitlines())
+    parser.parse(text.splitlines())
     for url in urls:
         if not parser.can_fetch(AGENT, url):
             raise IngestError(f"robots.txt disallows {urlsplit(url).path} for {AGENT}")
     return hashlib.sha256(body).hexdigest()
+
+
+def check_content(files: dict[str, bytes]) -> None:
+    """Refuse a body that is not the kind of file it was asked for."""
+    try:
+        parse_source(files["chaos"].decode("utf-8"))
+    except (DerivationError, ValueError):
+        raise IngestError("the chaos file is not strict JSON") from None
+    if not files["summary"].startswith(b"Total battles: "):
+        raise IngestError("the summary file does not start with a battle count")
+    if LEADS_HEADER.search(files["leads"]) is None:
+        raise IngestError("the leads file does not look like the leads table")
+
+
+def place(staged: Path, final: Path, placed: list[Path]) -> None:
+    """Move a staged file into place without replacing anything."""
+    final.parent.mkdir(parents=True, exist_ok=True)
+    os.link(staged, final)
+    placed.append(final)
 
 
 def utc_now() -> str:
@@ -131,6 +200,8 @@ def ingest(  # noqa: PLR0913 - the run's inputs, all keyword
     sleep: Callable[[float], None] = time.sleep,
     now: Callable[[], str] = utc_now,
 ) -> dict[str, Any]:
+    if not MONTH.match(month) or cutoff < 0 or not FORMAT.match(format_id):
+        raise IngestError("month, cutoff or format is malformed")
     stem = f"{format_id}-{cutoff}"
     targets = [
         (sid, name, f"{base}/stats/{month}/{path.format(stem=stem)}") for sid, name, path in FILES
@@ -148,18 +219,11 @@ def ingest(  # noqa: PLR0913 - the run's inputs, all keyword
     }
     robots_sha256 = check_robots(base, [url for _, _, url in targets], **net)
     fetched = []
-    for index, (sid, name, url) in enumerate(targets):
-        if index:
-            sleep(delay_s)
+    for sid, name, url in targets:
+        sleep(delay_s)
         body = get(url, **net)
         fetched.append((sid, name, url, now(), body))
-    summary = next(body for sid, _, _, _, body in fetched if sid == "summary")
-    if not summary.startswith(b"Total battles: "):
-        raise IngestError("the summary file does not start with a battle count")
-    out_dir.mkdir(parents=True, exist_ok=True)
-    for _, name, _, _, body in fetched:
-        with (out_dir / name).open("xb") as handle:
-            handle.write(body)
+    check_content({sid: body for sid, _, _, _, body in fetched})
     record = {
         "basis": BASIS,
         "cutoff": cutoff,
@@ -179,9 +243,26 @@ def ingest(  # noqa: PLR0913 - the run's inputs, all keyword
         "preview_map": preview_map,
         "robots_sha256": robots_sha256,
     }
+    # Stage everything beside the final places, then link each file in; a failure removes what
+    # was linked, so a failed run leaves nothing that blocks a rerun.
+    out_dir.parent.mkdir(parents=True, exist_ok=True)
     record_path.parent.mkdir(parents=True, exist_ok=True)
-    with record_path.open("xb") as handle:
-        handle.write(jcs(record) + b"\n")
+    placed: list[Path] = []
+    with (
+        tempfile.TemporaryDirectory(dir=out_dir.parent, prefix=".fetch-raw-") as raw_stage,
+        tempfile.TemporaryDirectory(dir=record_path.parent, prefix=".fetch-rec-") as rec_stage,
+    ):
+        for _, name, _, _, body in fetched:
+            (Path(raw_stage) / name).write_bytes(body)
+        (Path(rec_stage) / "record").write_bytes(jcs(record) + b"\n")
+        try:
+            for _, name, _, _, _ in fetched:
+                place(Path(raw_stage) / name, out_dir / name, placed)
+            place(Path(rec_stage) / "record", record_path, placed)
+        except OSError:
+            for path in placed:
+                path.unlink(missing_ok=True)
+            raise IngestError("a file could not be put in place; nothing was kept") from None
     return record
 
 

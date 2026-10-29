@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import threading
 from collections.abc import Iterator
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -18,7 +19,7 @@ FMT = "gen9championsvgc2026regmc"
 BODIES = {
     f"/stats/2026-09/chaos/{FMT}-1630.json": b'{"info": {}, "data": {}}',
     f"/stats/2026-09/{FMT}-1630.txt": b"Total battles: 12\n rest\n",
-    f"/stats/2026-09/leads/{FMT}-1630.txt": b"leads\n",
+    f"/stats/2026-09/leads/{FMT}-1630.txt": b" | Rank | Pokemon | Usage % |\n",
 }
 ROBOTS_OK = b"User-agent: *\nDisallow: /private/\n"
 
@@ -186,3 +187,93 @@ def test_main_prints_and_returns_codes(
     assert "chaos:" in capsys.readouterr().out
     assert fetch.main(args) == 2
     assert "record exists" in capsys.readouterr().err
+
+
+def test_wildcard_robots_is_refused(server: tuple[Fake, str], tmp_path: Path) -> None:
+    fake, base = server
+    fake.robots = b"User-agent: *\nDisallow: /a*b\n"
+    with pytest.raises(fetch.IngestError, match="wildcard"):
+        run(base, tmp_path)
+    assert fake.hits == ["/robots.txt"]
+    fake.robots = b"User-agent: *\nDisallow: /a*b\n\nUser-agent: Areneon\nDisallow: /x/\n"
+    run(base, tmp_path)  # the agent's own group has no wildcard
+
+
+def test_wildcard_detection() -> None:
+    assert fetch.wildcard_rules("User-agent: *\nAllow: /x$ # c\n")
+    assert not fetch.wildcard_rules("User-agent: other\nDisallow: /a*\n")
+    assert not fetch.wildcard_rules("# nothing\n")
+
+
+@pytest.mark.parametrize(
+    ("key", "body", "message"),
+    [
+        (f"/stats/2026-09/chaos/{FMT}-1630.json", b"not json", "strict JSON"),
+        (f"/stats/2026-09/chaos/{FMT}-1630.json", b'{"a": 1, "a": 2}', "strict JSON"),
+        (f"/stats/2026-09/leads/{FMT}-1630.txt", b"hello", "leads table"),
+        (f"/stats/2026-09/{FMT}-1630.txt", b"not a summary", "battle count"),
+    ],
+)
+def test_content_checks(  # noqa: PLR0913, PLR0917 - fixtures plus the parametrised case
+    server: tuple[Fake, str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    key: str,
+    body: bytes,
+    message: str,
+) -> None:
+    _, base = server
+    monkeypatch.setitem(BODIES, key, body)
+    with pytest.raises(fetch.IngestError, match=message):
+        run(base, tmp_path)
+    assert not (tmp_path / "raw").exists()
+
+
+def test_response_size_is_capped(
+    server: tuple[Fake, str], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _, base = server
+    monkeypatch.setattr(fetch, "MAX_BYTES", 10)
+    with pytest.raises(fetch.IngestError, match="larger than"):
+        run(base, tmp_path)
+
+
+def test_failed_placement_leaves_nothing(
+    server: tuple[Fake, str], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _, base = server
+    real = os.link
+
+    def link(src: str | Path, dst: str | Path) -> None:
+        if Path(dst).name == "inputs.json":
+            raise OSError("boom")
+        real(src, dst)
+
+    monkeypatch.setattr(os, "link", link)
+    with pytest.raises(fetch.IngestError, match="nothing was kept"):
+        run(base, tmp_path)
+    assert list((tmp_path / "raw").iterdir()) == []
+    monkeypatch.setattr(os, "link", real)
+    run(base, tmp_path)  # a rerun is not blocked
+
+
+def test_delay_follows_robots_and_each_file(server: tuple[Fake, str], tmp_path: Path) -> None:
+    _, base = server
+    sleeps: list[float] = []
+    fetch.ingest(
+        base=base, month="2026-09", cutoff=1630, format_id=FMT, out_dir=tmp_path / "r",
+        record_path=tmp_path / "x.json", preview_map="m", delay_s=7.0, sleep=sleeps.append,
+    )  # fmt: skip
+    assert sleeps == [7.0, 7.0, 7.0]
+
+
+@pytest.mark.parametrize(
+    ("month", "cutoff", "fmt"),
+    [("2026-13", 1630, FMT), ("../x", 1630, FMT), ("2026-09", -1, FMT), ("2026-09", 1630, "a/b")],
+)
+def test_arguments_are_validated(tmp_path: Path, month: str, cutoff: int, fmt: str) -> None:
+    with pytest.raises(fetch.IngestError, match="malformed"):
+        fetch.ingest(
+            base="http://127.0.0.1:1", month=month, cutoff=cutoff, format_id=fmt,
+            out_dir=tmp_path / "r", record_path=tmp_path / "x.json", preview_map="m",
+        )  # fmt: skip
