@@ -189,3 +189,24 @@ def test_the_checkpoint_is_format_two_and_loads_only_under_the_option() -> None:
     assert read_header(plain)["__metadata__"]["areneon.format"] == FORMAT
     with pytest.raises(CheckpointOptionsError, match="other model options"):
         load_checkpoint(plain, game(), checkpoint_id(plain), "preview", configured=ON_MODEL)
+
+
+def test_a_padded_batch_matches_each_query_alone_and_short_picks_are_handled() -> None:
+    raw = sample("policy-query/valid/preview.json")
+    queries = [
+        preview_query(),
+        encoder().encode({**raw, "candidates": raw["candidates"][:3]}),
+        encoder().encode({**raw, "candidates": raw["candidates"][::-1]}),
+    ]
+    net = preview()
+    batch = collate(queries)
+    out = net(batch)
+    for i, query in enumerate(queries):
+        alone = net(collate([query])).logits[0]
+        n = query.pending.shape[0]
+        assert torch.allclose(out.logits[i, :n], alone, atol=1e-5)
+    # A short pick (index -1 after the leads) scores through the zero token, finitely.
+    picks = queries[0].team_tok.clone()
+    picks[:, -1] = -1
+    short = replace(queries[0], team_tok=picks)
+    assert torch.isfinite(net(collate([short])).logits[0]).all()
