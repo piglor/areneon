@@ -100,7 +100,7 @@ def test_the_option_reads_an_object_with_a_supported_set_and_a_hash() -> None:
         1,
         {"feature_set": "probe-damage/1"},
         {**SET, "extra": 1},
-        {**SET, "feature_set": "probe-damage/2"},
+        {**SET, "feature_set": "probe-damage/3"},
         {**SET, "feature_set_hash": "A" * 64},
         {**SET, "feature_set_hash": "0" * 63},
     ):

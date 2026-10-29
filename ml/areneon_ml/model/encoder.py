@@ -148,6 +148,29 @@ def _feature_numbers(config: EncoderConfig) -> tuple[str, ...]:
     return tuple(f"feature_{name}_{loc + 1}" for loc in range(SLOTS) for name in rows_of.NUMBERS)
 
 
+def _reads_arrays(config: EncoderConfig) -> bool:
+    """Whether the config reads ``probe-damage/2`` (the set with threat, speed, priority arrays)."""
+    named = feature_set(config.options)
+    return named is not None and rows_of.reads_arrays(named.feature_set)
+
+
+def _speed_columns(config: EncoderConfig) -> tuple[tuple[str, str], ...]:
+    """Per own token, its speed relation to each foe location (``/2``; none for a foe token)."""
+    if not _reads_arrays(config):
+        return ()
+    return tuple((f"speed_{loc + 1}", "speed_relation") for loc in range(SLOTS))
+
+
+def _priority_columns(config: EncoderConfig) -> tuple[tuple[str, str], ...]:
+    """A move part's own priority category and a Mega part's Mega-variant speed relations."""
+    if not _reads_arrays(config):
+        return ()
+    return (
+        ("own_priority_kind", "probe_kind"),
+        *((f"speed_mega_{loc + 1}", "speed_relation") for loc in range(SLOTS)),
+    )
+
+
 @dataclass(frozen=True)
 class Layout:
     """Names and kinds of every feature column, derived from the configuration."""
@@ -158,12 +181,20 @@ class Layout:
     field_num: tuple[str, ...]
     cand_cat: tuple[tuple[str, str], ...]
     cand_num: tuple[str, ...] = ()  # numeric columns of a candidate part; only with features
+    # The rows of ``probe-damage/2`` (variable count per query, so not part of a token or a part):
+    # a threat row is (own token, foe token, Mega flag) with its move and kinds and its numbers;
+    # a foe priority row is (foe token) with its move and kind and its number.
+    thr_cat: tuple[tuple[str, str], ...] = ()
+    thr_num: tuple[str, ...] = ()
+    foe_cat: tuple[tuple[str, str], ...] = ()
+    foe_num: tuple[str, ...] = ()
     cand_tok: tuple[str, ...] = ("actor", "switch_in")  # token columns; candidate_target adds one
 
     @classmethod
     def of(cls, config: EncoderConfig) -> Layout:
         moves = tuple((f"move_{i + 1}", "move") for i in range(config.max_moves))
         buckets = config.condition_buckets
+        arrays = _reads_arrays(config)
         return cls(
             mon_cat=(
                 ("base_species", "species"),
@@ -176,6 +207,7 @@ class Layout:
                 ("gender", "gender"),
                 ("active_slot", "slot"),
                 *moves,
+                *_speed_columns(config),
             ),
             mon_num=(
                 "own",
@@ -214,8 +246,17 @@ class Layout:
                 ("event", "event"),
                 *_matchup_columns(config),
                 *_feature_columns(config),
+                *_priority_columns(config),
             ),
-            cand_num=_feature_numbers(config),
+            cand_num=(*_feature_numbers(config), *(rows_of.OWN_NUMBERS if arrays else ())),
+            thr_cat=(
+                (("move", "move"), ("kind", "probe_kind"), ("foe_priority_kind", "probe_kind"))
+                if arrays
+                else ()
+            ),
+            thr_num=rows_of.THREAT_NUMBERS if arrays else (),
+            foe_cat=(("move", "move"), ("kind", "probe_kind")) if arrays else (),
+            foe_num=rows_of.FOE_NUMBERS if arrays else (),
             cand_tok=(
                 ("actor", "switch_in", "target")
                 if is_set(config.options, CANDIDATE_TARGET)
@@ -233,6 +274,11 @@ class Layout:
         }
         if self.cand_num:  # absent without the option, so today's layout bytes stay
             out["cand_num"] = list(self.cand_num)
+        if self.thr_num:  # likewise: only probe-damage/2 has these rows
+            out["thr_cat"] = [list(c) for c in self.thr_cat]
+            out["thr_num"] = list(self.thr_num)
+            out["foe_cat"] = [list(c) for c in self.foe_cat]
+            out["foe_num"] = list(self.foe_num)
         if (
             len(self.cand_tok) != BASE_CAND_TOKENS
         ):  # likewise: only candidate_target adds the target column
@@ -293,6 +339,12 @@ def encoder_version(game: GameData, config: EncoderConfig) -> str:
             "ohko_rolls": rows_of.OHKO_ROLLS,
             "foe_locations": SLOTS,
         }
+        if _reads_arrays(config):
+            body["constants"]["features"]["arrays"] = {
+                "probe_kinds": list(rows_of.PROBE_KINDS),
+                "speed_kinds": list(rows_of.SPEED_KINDS),
+                "priority_scale": rows_of.PRIORITY_SCALE,
+            }
     return f"enc{ENCODER_FORMAT}:{sha256_hex(jcs(body))}"
 
 
@@ -320,6 +372,14 @@ class EncodedQuery:
     team_tok: torch.Tensor  # int64 [N, max_picks]: picked Pokémon in order (Team Preview)
     pending: torch.Tensor  # float32 [N]
     cand_num: torch.Tensor | None = None  # float32 [N, SLOTS, len(Layout.cand_num)]; with features
+    # probe-damage/2 only: R threat rows (own token, foe token, Mega flag; move, kinds; numbers)
+    # and P foe priority rows (foe token; move, kind; number). R and P vary per query.
+    thr_idx: torch.Tensor | None = None  # int64 [R, 3]
+    thr_cat: torch.Tensor | None = None  # int64 [R, len(Layout.thr_cat)]
+    thr_num: torch.Tensor | None = None  # float32 [R, len(Layout.thr_num)]
+    foe_idx: torch.Tensor | None = None  # int64 [P, 1]
+    foe_cat: torch.Tensor | None = None  # int64 [P, len(Layout.foe_cat)]
+    foe_num: torch.Tensor | None = None  # float32 [P, len(Layout.foe_num)]
 
     def tensors(self) -> dict[str, torch.Tensor]:
         out = {
@@ -334,6 +394,9 @@ class EncodedQuery:
         }
         if self.cand_num is not None:  # absent without the option: today's tensors stay the same
             out["cand_num"] = self.cand_num
+        for name in ("thr_idx", "thr_cat", "thr_num", "foe_idx", "foe_cat", "foe_num"):
+            if (value := getattr(self, name)) is not None:
+                out[name] = value
         return out
 
 
@@ -350,6 +413,16 @@ class _Request:
     order: list[int] = field(default_factory=list)  # own token of side.pokemon[0], [1], ...
     moves: list[list[int]] = field(default_factory=list)  # per active slot: engine move indices
     targets: list[list[str | None]] = field(default_factory=list)  # per slot: request target types
+
+
+@dataclass
+class _Probe:
+    """The ``probe-damage/2`` arrays of one query, placed on the tokens they belong to."""
+
+    arrays: rows_of.Arrays
+    speed_cols: dict[int, list[int]] = field(default_factory=dict)  # token -> category per foe
+    threats: list[tuple[list[int], list[int], list[float]]] = field(default_factory=list)
+    foes: list[tuple[list[int], list[int], list[float]]] = field(default_factory=list)
 
 
 class Encoder:
@@ -390,8 +463,11 @@ class Encoder:
             )
         request = self._request(state, last_request)
         rows = self._rows(query)
-        candidates = [self._candidate(c, request, wanted, state, rows) for c in query["candidates"]]
-        return self._assemble(observation["kind"], state, field_features, candidates)
+        probe = self._probe(query, request, state) if _reads_arrays(self.config) else None
+        candidates = [
+            self._candidate(c, request, wanted, state, rows, probe) for c in query["candidates"]
+        ]
+        return self._assemble(observation["kind"], state, field_features, candidates, probe)
 
     # -- tokens --------------------------------------------------------------
 
@@ -542,10 +618,88 @@ class Encoder:
             wanted.feature_set_hash,
         ):
             raise EncodingError("the query's candidate_features are of another feature set")
+        if not _reads_arrays(self.config) and any(name in sent for name in rows_of.ARRAY_NAMES):
+            raise EncodingError("the query carries arrays this feature set does not read")
         try:
             return rows_of.row_index(sent)
         except ValueError as exc:
             raise EncodingError(str(exc)) from exc
+
+    def _own_token(self, request: _Request, position: int) -> int:
+        """The token of the own Pokémon at ``position`` of the request's ``side.pokemon``."""
+        if not 0 <= position < len(request.order):
+            raise EncodingError("a candidate_features row names an own Pokémon the request lacks")
+        return request.order[position]
+
+    def _foe_token(self, state: BattleState, loc: int) -> int:
+        """The token of the foe at choice location ``loc`` (the engine's numbering)."""
+        letters = sorted(state.opponent.slots)
+        if not 1 <= loc <= len(letters):
+            raise EncodingError("a candidate_features row names a foe location the state lacks")
+        index = state.opponent.slots[letters[loc - 1]]
+        if index is None:
+            raise EncodingError("a candidate_features row names a foe location with no Pokémon")
+        return len(state.own.roster) + index
+
+    def _probe(self, query: Mapping[str, Any], request: _Request, state: BattleState) -> _Probe:
+        """The arrays of a ``probe-damage/2`` query: each row on the token it belongs to.
+
+        Threat rows of an own Pokémon (Mega flag false) and the foe priority rows are pooled onto
+        the tokens by the network; a Mega variant's threats and speeds go to the Mega candidate's
+        slot part. A threat whose move has no foe priority row, a row for a Pokémon or foe the
+        state lacks, or a location past the format's foes is refused; nothing is filled in.
+        """
+        try:
+            arrays = rows_of.Arrays.of(query["candidate_features"])
+        except ValueError as exc:
+            raise EncodingError(str(exc)) from exc
+        game = self.game
+        probe = _Probe(arrays)
+        for (own, mega, foe), row in arrays.speeds.items():
+            token = self._own_token(request, own)
+            if not 1 <= foe <= SLOTS:
+                raise EncodingError(
+                    "a candidate_features row aims at a foe location the format lacks"
+                )
+            if not mega:
+                cols = probe.speed_cols.setdefault(token, [NONE] * SLOTS)
+                cols[foe - 1] = rows_of.speed_category(row)
+        for row in arrays.threats:
+            foe_row = arrays.foe_priorities.get((row["foe"], row["move"]))
+            if foe_row is None and request.moves:
+                # A move request prices every threat's foe move; a forced switch asks no move, so
+                # its threats carry the NONE priority kind and a zero number.
+                raise EncodingError("a threat row has no foe priority row for its move")
+            probe.threats.append(
+                (
+                    [
+                        self._own_token(request, row["own"]),
+                        self._foe_token(state, row["foe"]),
+                        int(row["mega"]),
+                    ],
+                    [
+                        game.moves.lookup(row["move"]),
+                        rows_of.probe_category(row),
+                        NONE if foe_row is None else rows_of.probe_category(foe_row),
+                    ],
+                    rows_of.threat_numbers(row, foe_row),
+                )
+            )
+        for row in arrays.foe_priorities.values():
+            probe.foes.append(
+                (
+                    [self._foe_token(state, row["foe"])],
+                    [game.moves.lookup(row["move"]), rows_of.probe_category(row)],
+                    [rows_of.priority_number(row)],
+                )
+            )
+        return probe
+
+    def _need_speeds(self, probe: _Probe, own: int, mega: bool) -> None:
+        """Every foe location the arrays name has a speed row for the own variant, else refused."""
+        for loc in probe.arrays.locations:
+            if (own, mega, loc) not in probe.arrays.speeds:
+                raise EncodingError("a candidate has no candidate_features speed row")
 
     def _foe_alive(self, state: BattleState, loc: int) -> bool:
         """Whether choice location ``loc`` holds a foe the rows cover.
@@ -668,13 +822,14 @@ class Encoder:
         token = request.order[ally]
         return -1 if state.own.roster[token].fainted else token
 
-    def _candidate(
+    def _candidate(  # noqa: PLR0912, PLR0913, PLR0917
         self,
         candidate: Mapping[str, Any],
         request: _Request,
         kind: str,
         state: BattleState,
         rows: dict[rows_of.RowKey, rows_of.Row] | None = None,
+        probe: _Probe | None = None,
     ) -> tuple[list[list[int]], list[list[int]], list[int], float, list[list[float]]]:
         parsed: ParsedChoice = parse_choice(candidate["choice"])
         if (parsed.kind == "team") != (kind == "preview"):
@@ -700,6 +855,8 @@ class Encoder:
                 assert action.index is not None  # a move or switch always has its index
                 if action.kind == "switch":
                     tok[slot][1] = self._token(request, action.index)
+                    if probe is not None:  # the switch-in's token holds its threats and speeds
+                        self._need_speeds(probe, action.index - 1, False)
                     continue
                 moves = request.moves[slot] if slot < len(request.moves) else []
                 if action.index > min(len(moves), config.max_moves):
@@ -718,10 +875,26 @@ class Encoder:
                     )
                 if rows is not None:
                     kinds, num[slot] = self._feature_part(rows, request, slot, action, state)
-                    cat[slot][BASE_CAND_COLUMNS + matchup :] = (
-                        kinds  # the feature columns come last
-                    )
+                    start = BASE_CAND_COLUMNS + matchup
+                    cat[slot][start : start + SLOTS] = kinds
+                    if probe is not None:
+                        self._probe_part(probe, slot, action, cat[slot], num[slot], start + SLOTS)
         return cat, tok, team, 1.0 if candidate["pending"] else 0.0, num
+
+    def _probe_part(  # noqa: PLR0913, PLR0917
+        self, probe: _Probe, slot: int, action: Any, cat: list[int], num: list[float], at: int
+    ) -> None:
+        """A move part's own priority and, for a Mega part, its Mega variant's speed relations."""
+        mega = action.event == "mega"
+        row = probe.arrays.own_priorities.get((slot, action.index, mega))
+        if row is None:
+            raise EncodingError("a move part of a candidate has no candidate_features priority row")
+        self._need_speeds(probe, slot, mega)
+        cat[at] = rows_of.probe_category(row)
+        num.append(rows_of.priority_number(row))
+        if mega:
+            for loc in probe.arrays.locations:  # _need_speeds found a row for each
+                cat[at + loc] = rows_of.speed_category(probe.arrays.speeds[(slot, True, loc)])
 
     # -- assembly ------------------------------------------------------------
 
@@ -733,6 +906,7 @@ class Encoder:
         candidates: list[
             tuple[list[list[int]], list[list[int]], list[int], float, list[list[float]]]
         ],
+        probe: _Probe | None = None,
     ) -> EncodedQuery:
         own = [(state.own, mon) for mon in state.own.roster]
         opponent = [(state.opponent, mon) for mon in state.opponent.roster]
@@ -744,11 +918,18 @@ class Encoder:
             raise EncodingError("a side has more Pokémon than max_team")
         field_cat, field_num = field_features
         rows = [*own, *opponent]
+        none = [NONE] * SLOTS  # a token with no speed row (a foe, or no foe at that location)
         n = len(candidates)
         return EncodedQuery(
             kind=kind,
             n_own=len(own),
-            mon_cat=torch.tensor([self._mon_cat(s, m) for s, m in rows], dtype=torch.int64),
+            mon_cat=torch.tensor(
+                [
+                    [*self._mon_cat(s, m), *(probe.speed_cols.get(i, none) if probe else [])]
+                    for i, (s, m) in enumerate(rows)
+                ],
+                dtype=torch.int64,
+            ),
             mon_num=torch.tensor([self._mon_num(m) for _, m in rows], dtype=torch.float32),
             field_cat=torch.tensor(field_cat, dtype=torch.int64),
             field_num=torch.tensor(field_num, dtype=torch.float32),
@@ -769,7 +950,28 @@ class Encoder:
                 if self.layout.cand_num
                 else None
             ),
+            **(self._probe_tensors(probe) if probe is not None else {}),
         )
+
+    def _probe_tensors(self, probe: _Probe) -> dict[str, torch.Tensor]:
+        layout = self.layout
+        threats, foes = probe.threats, probe.foes
+        return {
+            "thr_idx": torch.tensor([t[0] for t in threats], dtype=torch.int64).reshape(-1, 3),
+            "thr_cat": torch.tensor([t[1] for t in threats], dtype=torch.int64).reshape(
+                -1, len(layout.thr_cat)
+            ),
+            "thr_num": torch.tensor([t[2] for t in threats], dtype=torch.float32).reshape(
+                -1, len(layout.thr_num)
+            ),
+            "foe_idx": torch.tensor([f[0] for f in foes], dtype=torch.int64).reshape(-1, 1),
+            "foe_cat": torch.tensor([f[1] for f in foes], dtype=torch.int64).reshape(
+                -1, len(layout.foe_cat)
+            ),
+            "foe_num": torch.tensor([f[2] for f in foes], dtype=torch.float32).reshape(
+                -1, len(layout.foe_num)
+            ),
+        }
 
 
 class EncoderSession:

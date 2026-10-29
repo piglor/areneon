@@ -176,5 +176,10 @@ function arrayCoverageProblem(request: RequestBody, candidates: readonly { choic
     return fixed("own_priorities must hold exactly one row per own move part of the candidates");
   }
   if (request.active === undefined && foes.length > 0) return fixed("foe_priorities are empty when the request has no move to score");
+  if (request.active !== undefined) {
+    // A move request: the builder asks the priority of every revealed foe move, so each threat's foe move has its row.
+    const priced = new Set(foes.map((r) => `${r.foe}/${r.move}`));
+    if (threats.some((r) => !priced.has(`${r.foe}/${r.move}`))) return fixed("foe_priorities must hold a row for the foe move of every threat in a move request");
+  }
   return null;
 }

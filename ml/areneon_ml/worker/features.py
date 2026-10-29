@@ -170,7 +170,7 @@ def _implied(
     return variants, (parts if active is not None else set())
 
 
-def _array_problem(
+def _array_problem(  # noqa: PLR0911
     request: dict[str, Any], candidates: list[dict[str, Any]], features: dict[str, Any]
 ) -> str | None:
     """The ``probe-damage/2`` rules that need the request (as in feature-rows.ts).
@@ -202,4 +202,10 @@ def _array_problem(
         return _fixed("own_priorities must hold one row per own move part of the candidates")
     if request.get("active") is None and foes:
         return _fixed("foe_priorities are empty when the request has no move to score")
+    if request.get("active") is not None:
+        priced = {(r["foe"], r["move"]) for r in foes}
+        if any((r["foe"], r["move"]) not in priced for r in threats):
+            return _fixed(
+                "foe_priorities must hold a row for the foe move of every threat in a move request"
+            )
     return None

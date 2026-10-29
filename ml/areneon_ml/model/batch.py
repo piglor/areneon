@@ -6,8 +6,9 @@ so a batch of one has no padding and the same tensors as the query itself.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
+from typing import Any
 
 import torch
 
@@ -31,6 +32,14 @@ class Batch:
     team_tok: torch.Tensor  # int64 [B, N, P], -1 for none
     pending: torch.Tensor  # float32 [B, N]
     cand_num: torch.Tensor | None = None  # float32 [B, N, S, W]; only under candidate_features
+    # probe-damage/2 only: the threat rows [B, R, .] and foe priority rows [B, P, .], padded; a
+    # padded row has token index -1 (and zero categories and numbers)
+    thr_idx: torch.Tensor | None = None  # int64 [B, R, 3]
+    thr_cat: torch.Tensor | None = None  # int64 [B, R, X]
+    thr_num: torch.Tensor | None = None  # float32 [B, R, Y]
+    foe_idx: torch.Tensor | None = None  # int64 [B, P, 1]
+    foe_cat: torch.Tensor | None = None  # int64 [B, P, Z]
+    foe_num: torch.Tensor | None = None  # float32 [B, P, V]
 
     @property
     def size(self) -> int:
@@ -71,6 +80,9 @@ def collate(queries: Sequence[EncodedQuery]) -> Batch:
     with_numbers = {q.cand_num is not None for q in queries}
     if len(with_numbers) != 1:
         raise ValueError("a batch holds queries of one candidate feature layout")
+    with_rows = {q.thr_idx is not None for q in queries}
+    if len(with_rows) != 1:
+        raise ValueError("a batch holds queries of one candidate feature layout")
     tok_width = queries[0].cand_tok.shape[2]
     if {q.cand_tok.shape[2] for q in queries} != {tok_width}:
         raise ValueError("a batch holds queries of one candidate token layout")
@@ -90,4 +102,21 @@ def collate(queries: Sequence[EncodedQuery]) -> Batch:
         team_tok=stack("team_tok", (count, picks), -1),
         pending=stack("pending", (count,), 0.0),
         cand_num=numbers,
+        **(_rows(queries, stack) if with_rows == {True} else {}),
     )
+
+
+def _rows(queries: Sequence[EncodedQuery], stack: Callable[..., torch.Tensor]) -> dict[str, Any]:
+    """The padded threat and foe priority rows of ``probe-damage/2`` queries."""
+    out: dict[str, Any] = {}
+    for prefix in ("thr", "foe"):
+        # The rows' fields are all set together (the encoder makes them so); the type says optional.
+        parts = {
+            name: [getattr(q, f"{prefix}_{name}") for q in queries]
+            for name in ("idx", "cat", "num")
+        }
+        count = max(t.shape[0] for t in parts["idx"])
+        for name, fill in (("idx", -1), ("cat", 0), ("num", 0.0)):
+            width = parts[name][0].shape[1]
+            out[f"{prefix}_{name}"] = stack(f"{prefix}_{name}", (count, width), fill)
+    return out

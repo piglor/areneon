@@ -69,6 +69,7 @@ describe("the reader rules of the probe-damage/2 arrays", () => {
   it.each([
     ["missing-speed-row", /speeds must hold exactly one row/],
     ["missing-own-priority", /own_priorities must hold exactly one row/],
+    ["missing-foe-priority", /foe_priorities must hold a row for the foe move of every threat/],
     ["foreign-own", /threats name an own Pokemon/],
   ])("%s passes the structure and is refused against the request", (name, message) => {
     const query = sample(`policy-query/reader-invalid/features-2-${name}`);
@@ -112,6 +113,10 @@ describe("the reader rules of the probe-damage/2 arrays", () => {
 
   it("a forced switch has speeds for the switch-ins and no priority row; Team Preview has nothing", () => {
     const forced = { forceSwitch: [true, false], side };
+    // the builder emits threats for the switch-ins and no foe priorities on a forced switch: accepted
+    const threat = { kind: "computed", own: 2, mega: false, foe: 1, move: "protect", mean_ppm: 1, max_ppm: 1, min_ppm: 1, ohko_rolls: 0 };
+    const priced = withLog(forced, ["switch 3, pass"], { speeds: [speed(2, false, 1)], threats: [threat] });
+    expect(coverage(Object.assign(priced[0], { candidate_features: priced[1] }) as Sample)).toBeNull();
     const ok = withLog(forced, ["switch 3, pass"], { speeds: [speed(2, false, 1)], threats: [] });
     expect(coverage(Object.assign(ok[0], { candidate_features: ok[1] }) as Sample)).toBeNull();
     const foe = withLog(forced, ["switch 3, pass"], { speeds: [speed(2, false, 1)], foe_priorities: [{ kind: "computed", foe: 1, move: "protect", priority: 4 }] });

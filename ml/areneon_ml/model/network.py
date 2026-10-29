@@ -36,7 +36,11 @@ from areneon_ml.model.encoder import (
     EncoderConfig,
     Layout,
 )
-from areneon_ml.model.features import KIND_CATEGORIES
+from areneon_ml.model.features import (
+    KIND_CATEGORIES,
+    PROBE_KIND_CATEGORIES,
+    SPEED_CATEGORIES,
+)
 from areneon_ml.model.gamedata import RESERVED, GameData
 from areneon_ml.model.options import (
     CANDIDATE_MATCHUP,
@@ -224,6 +228,27 @@ class Block(nn.Module):
         return out
 
 
+def _pool(
+    rows: torch.Tensor, index: torch.Tensor, keep: torch.Tensor, size: int
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """The masked sum and max of ``rows`` [B, R, d] per token ``index`` [B, R] in 0..size-1.
+
+    ``keep`` [B, R] drops a row (padding, or the other Mega flag). A token with no row gets
+    zeros; the second result [B, size] says which tokens have any. Returns [B, size, 2d].
+    """
+    if rows.shape[1] == 0:  # no row at all in the batch: nothing to pool (amax needs one)
+        none = torch.zeros(rows.shape[0], size, 1, dtype=torch.bool, device=rows.device)
+        return torch.zeros(rows.shape[0], size, 2 * rows.shape[2], device=rows.device), none
+    tokens = torch.arange(size, device=rows.device)
+    mask = (index[:, None, :] == tokens[None, :, None]) & keep[:, None, :]  # [B, size, R]
+    held = mask[..., None]
+    total = (rows[:, None] * held).sum(2)
+    peak = rows[:, None].masked_fill(~held, torch.finfo(rows.dtype).min).amax(2)
+    some = mask.any(2)[..., None]
+    peak = torch.where(some, peak, torch.zeros_like(peak))
+    return torch.cat([total, peak], -1), some
+
+
 def _gather(tokens: torch.Tensor, index: torch.Tensor) -> torch.Tensor:
     """Rows of ``tokens`` [B, M, d] at ``index`` [B, ...]; index -1 gives a zero vector."""
     b = tokens.shape[0]
@@ -235,7 +260,7 @@ def _gather(tokens: torch.Tensor, index: torch.Tensor) -> torch.Tensor:
 class PolicyNetwork(nn.Module):
     """One role's network. Build with ``GameData`` (vocabulary sizes and attribute tables)."""
 
-    def __init__(self, role: str, game: GameData, config: ModelConfig) -> None:
+    def __init__(self, role: str, game: GameData, config: ModelConfig) -> None:  # noqa: PLR0915
         super().__init__()
         if role not in ROLES:
             raise ConfigError(f"role must be one of {ROLES}")
@@ -269,6 +294,10 @@ class PolicyNetwork(nn.Module):
         targeted = role == "battle" and len(self.layout.cand_tok) > BASE_CAND_TOKENS
         if numbers:
             sizes["feature_kind"] = KIND_CATEGORIES
+        if self.layout.thr_num:  # probe-damage/2: every token has speed columns, the Battle rest
+            sizes["speed_relation"] = SPEED_CATEGORIES
+            if role == "battle":
+                sizes["probe_kind"] = PROBE_KIND_CATEGORIES
         self.targeted = targeted
         self.embeddings = nn.ModuleDict(
             {kind: nn.Embedding(size, d) for kind, size in sizes.items()}
@@ -291,12 +320,26 @@ class PolicyNetwork(nn.Module):
         self.aggregate = nn.Parameter(torch.zeros(d))
         self.blocks = nn.ModuleList([Block(config) for _ in range(config.n_layers)])
         self.final_norm = nn.LayerNorm(d)
+        self.probing = role == "battle" and bool(self.layout.thr_num)  # probe-damage/2 rows
         if role == "battle":
             # The damage rows' numbers are one more d-wide part of a slot (candidate_features).
             self.cand_features = nn.Linear(numbers, d) if numbers else None
-            width = 7 + extra + (1 if numbers else 0) + (1 if targeted else 0)
+            width = (
+                7
+                + extra
+                + (1 if numbers else 0)
+                + (1 if self.probing else 0)
+                + (1 if targeted else 0)
+            )
             self.slot_parts = nn.ModuleList(nn.Linear(width * d, d) for _ in range(SLOTS))
             self.candidate = nn.Linear(SLOTS * d, d)
+            if self.probing:
+                self.threat_num = nn.Linear(len(self.layout.thr_num), d)
+                self.threat_row = nn.Linear(5 * d, d)
+                self.threat_pool = nn.Linear(2 * d, d)
+                self.foe_num = nn.Linear(len(self.layout.foe_num), d)
+                self.foe_row = nn.Linear(3 * d, d)
+                self.foe_pool = nn.Linear(2 * d, d)
         else:
             self.place = nn.Embedding(enc.max_picks, d)
             self.candidate = nn.Linear(enc.max_picks * 2 * d, d)
@@ -323,7 +366,64 @@ class PolicyNetwork(nn.Module):
 
     # -- candidates ----------------------------------------------------------
 
-    def _battle_candidates(self, batch: Batch, mons: torch.Tensor) -> torch.Tensor:
+    def _probe_summaries(
+        self, batch: Batch, base: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """The ``probe-damage/2`` rows pooled per token: [B, M, d] to add to a token, and [B, M, d]
+        per own token for its Mega variant (used by a Mega candidate's slot part).
+
+        A threat row is the attacking foe's token (``base``, the token before any summary), its
+        move, its kind and its numbers, with the kind of the foe move's priority row; the rows into
+        one Pokémon are pooled by masked sum and max. A foe's priority rows are pooled onto the foe.
+        """
+        if (
+            batch.thr_idx is None
+            or batch.thr_cat is None
+            or batch.thr_num is None
+            or batch.foe_idx is None
+            or batch.foe_cat is None
+            or batch.foe_num is None
+        ):
+            raise ValueError("this network reads probe-damage/2 rows; the batch has none")
+        if batch.thr_cat.shape[-1] != len(self.layout.thr_cat) or batch.foe_cat.shape[-1] != len(
+            self.layout.foe_cat
+        ):
+            raise ValueError("the batch's probe rows are not this network's layout")
+        size = base.shape[1]
+        threat = torch.cat(
+            [
+                _gather(base, batch.thr_idx[..., 1]),
+                self.embed("move", batch.thr_cat[..., 0]),
+                self.embed("probe_kind", batch.thr_cat[..., 1]),
+                self.embed("probe_kind", batch.thr_cat[..., 2]),
+                self.threat_num(batch.thr_num),
+            ],
+            -1,
+        )
+        threat = torch.nn.functional.gelu(self.threat_row(threat))
+        real = batch.thr_idx[..., 0] >= 0
+        mega = batch.thr_idx[..., 2] == 1
+        plain, some = _pool(threat, batch.thr_idx[..., 0], real & ~mega, size)
+        flipped, some_mega = _pool(threat, batch.thr_idx[..., 0], real & mega, size)
+        foe = torch.cat(
+            [
+                self.embed("move", batch.foe_cat[..., 0]),
+                self.embed("probe_kind", batch.foe_cat[..., 1]),
+                self.foe_num(batch.foe_num),
+            ],
+            -1,
+        )
+        foe = torch.nn.functional.gelu(self.foe_row(foe))
+        pooled, some_foe = _pool(foe, batch.foe_idx[..., 0], batch.foe_idx[..., 0] >= 0, size)
+        zero = torch.zeros_like(base)
+        added = torch.where(some, self.threat_pool(plain), zero) + torch.where(
+            some_foe, self.foe_pool(pooled), zero
+        )
+        return added, torch.where(some_mega, self.threat_pool(flipped), zero)
+
+    def _battle_candidates(
+        self, batch: Batch, mons: torch.Tensor, mega: torch.Tensor | None = None
+    ) -> torch.Tensor:
         if batch.cand_tok.shape[-1] != len(self.layout.cand_tok):
             raise ValueError("the batch's candidate tokens are not this network's layout")
         if batch.cand_cat.shape[-1] != len(self.layout.cand_cat):
@@ -351,11 +451,16 @@ class PolicyNetwork(nn.Module):
                 if batch.cand_num is None:
                     raise ValueError("this network reads candidate features; the batch has none")
                 parts.append(self.cand_features(batch.cand_num[:, :, s]))
+            if mega is not None:  # a Mega part sees how the Evolution changes what comes in
+                evolves = cat[..., 4] == 1 + EVENTS.index("mega")
+                parts.append(_gather(mega, tok[..., 0]) * evolves[..., None])
             slots.append(self.slot_parts[s](torch.cat(parts, -1)))
         out: torch.Tensor = self.candidate(torch.cat(slots, -1))
         return out
 
-    def _preview_candidates(self, batch: Batch, mons: torch.Tensor) -> torch.Tensor:
+    def _preview_candidates(
+        self, batch: Batch, mons: torch.Tensor, mega: torch.Tensor | None = None
+    ) -> torch.Tensor:
         picked = _gather(mons, batch.team_tok)  # [B, N, P, d]
         places = self.place.weight.expand_as(picked)
         out: torch.Tensor = self.candidate(torch.cat([places, picked], -1).flatten(2))
@@ -371,6 +476,10 @@ class PolicyNetwork(nn.Module):
         side = self.side((~batch.own_mask).long())
         mons = self.mon_cat(self._columns(self.layout.mon_cat, batch.mon_cat))
         mons = mons + self.mon_num(batch.mon_num) + side
+        mega = None
+        if self.probing:
+            added, mega = self._probe_summaries(batch, mons)
+            mons = mons + added
         field_token = self.field_cat(self._columns(self.layout.field_cat, batch.field_cat))
         field_token = field_token + self.field_num(batch.field_num)
         aggregate = self.aggregate.expand(b, d)
@@ -382,7 +491,7 @@ class PolicyNetwork(nn.Module):
         x = self.final_norm(x)
         state, mons = x[:, 0], x[:, 2:]
         build = self._battle_candidates if self.role == "battle" else self._preview_candidates
-        c = build(batch, mons) + self.pending(batch.pending[..., None])
+        c = build(batch, mons, mega) + self.pending(batch.pending[..., None])
         c = c + self.cross(self.norm_candidate(c), self.norm_memory(x), mask)
         agg = state[:, None].expand_as(c)
         logits = self.score(torch.cat([c, agg, c * agg], -1)).squeeze(-1)

@@ -14,7 +14,8 @@ type.
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass
 from typing import Any
 
 from areneon_ml.model.candidates import SLOTS
@@ -85,3 +86,98 @@ def part_columns(rows: Sequence[Row | None]) -> tuple[list[int], list[float]]:
 def no_columns() -> tuple[list[int], list[float]]:
     """The columns of a part with no row (a pass, a switch, a status move, an ally target)."""
     return part_columns([None] * SLOTS)
+
+
+# -- probe-damage/2 (ADR-022 erratum E-22.3.3) ---------------------------------------------------
+#
+# The four arrays beside ``rows`` are facts about the state, so the encoder attaches them to the
+# own and foe tokens (threats, speed relations, foe priorities) and to the slot parts (own
+# priorities, the Mega variant's speed relations and threats). The categories below are the
+# contract's closed enums in their order; an unsupported row is its category with zero numbers,
+# never a guess.
+
+FEATURE_SET_ARRAYS = "probe-damage/2"  # the set whose object carries the four arrays
+ARRAY_NAMES = ("threats", "speeds", "own_priorities", "foe_priorities")
+RELATIONS = ("own_first", "tie", "foe_first")
+# The reasons of an unsupported row of any array: `/1`'s three, then the two that only speeds and
+# priorities carry (the contract's enum order).
+ALL_REASONS = (*REASONS, "unqueueable", "fractional_priority")
+PROBE_KINDS = ("computed", *(f"unsupported:{reason}" for reason in ALL_REASONS))
+PROBE_KIND_CATEGORIES = RESERVED + len(PROBE_KINDS)
+SPEED_KINDS = (*RELATIONS, *(f"unsupported:{reason}" for reason in ALL_REASONS))
+SPEED_CATEGORIES = RESERVED + len(SPEED_KINDS)
+PRIORITY_SCALE = 8.0  # a priority is read as priority / 8 (the engine's keys run -7 to +5)
+THREAT_NUMBERS = (*NUMBERS, "foe_priority")  # a threat row's numbers; the last is its move's key
+FOE_NUMBERS = ("priority",)
+OWN_NUMBERS = ("own_priority",)
+
+ThreatKey = tuple[int, bool, int, str]  # own position, own Mega flag, foe location, foe move id
+SpeedKey = tuple[int, bool, int]  # own position, own Mega flag, foe location
+
+
+def reads_arrays(feature_set: str | None) -> bool:
+    """Whether the feature set is the one that carries the four arrays."""
+    return feature_set == FEATURE_SET_ARRAYS
+
+
+def probe_category(row: Row) -> int:
+    """The learned category of a threat or priority row: computed or its closed reason."""
+    if row["kind"] == "computed":
+        return RESERVED
+    return RESERVED + 1 + ALL_REASONS.index(row["reason"])
+
+
+def speed_category(row: Row) -> int:
+    """The learned category of a speed row: one of the relations or its closed reason."""
+    if row["kind"] == "computed":
+        return RESERVED + RELATIONS.index(row["relation"])
+    return RESERVED + len(RELATIONS) + ALL_REASONS.index(row["reason"])
+
+
+def priority_number(row: Row) -> float:
+    """A priority row's number: its key over ``PRIORITY_SCALE``; zero when unsupported."""
+    if row["kind"] != "computed":
+        return 0.0
+    return float(row["priority"]) / PRIORITY_SCALE
+
+
+@dataclass(frozen=True)
+class Arrays:
+    """The four arrays of a ``probe-damage/2`` query, indexed; a key twice is refused."""
+
+    threats: list[Row]
+    speeds: dict[SpeedKey, Row]
+    own_priorities: dict[tuple[int, int, bool], Row]
+    foe_priorities: dict[tuple[int, str], Row]
+    locations: frozenset[int]  # the foe locations any array or row names (the reader's rule)
+
+    @classmethod
+    def of(cls, features: Mapping[str, Any]) -> Arrays:
+        missing = [name for name in ARRAY_NAMES if name not in features]
+        if missing:
+            raise ValueError(f"a {FEATURE_SET_ARRAYS} query lacks the array {missing[0]}")
+        speeds = _unique(features["speeds"], lambda r: (r["own"], r["mega"], r["foe"]))
+        own = _unique(features["own_priorities"], lambda r: (r["slot"], r["move"], r["mega"]))
+        foes = _unique(features["foe_priorities"], lambda r: (r["foe"], r["move"]))
+        _unique(features["threats"], lambda r: (r["own"], r["mega"], r["foe"], r["move"]))
+        where = (
+            {r["target"] for r in features["rows"]}
+            | {r["foe"] for r in features["threats"]}
+            | {r["foe"] for r in features["speeds"]}
+            | {r["foe"] for r in features["foe_priorities"]}
+        )
+        return cls(list(features["threats"]), speeds, own, foes, frozenset(where))
+
+
+def _unique(rows: Sequence[Row], key: Callable[[Row], Any]) -> dict[Any, Row]:
+    found: dict[Any, Row] = {}
+    for row in rows:
+        if key(row) in found:
+            raise ValueError("a candidate_features array lists a row twice")
+        found[key(row)] = row
+    return found
+
+
+def threat_numbers(row: Row, foe: Row | None) -> list[float]:
+    """A threat row's numbers (as a damage row's) and its foe move's priority."""
+    return [*numbers(row), 0.0 if foe is None else priority_number(foe)]

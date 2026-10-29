@@ -82,6 +82,11 @@ def to_device(batch: Batch, device: torch.device) -> Batch:
         team_tok=batch.team_tok.to(device),
         pending=batch.pending.to(device),
         cand_num=None if batch.cand_num is None else batch.cand_num.to(device),
+        **{
+            name: value.to(device)
+            for name in ("thr_idx", "thr_cat", "thr_num", "foe_idx", "foe_cat", "foe_num")
+            if (value := getattr(batch, name)) is not None
+        },
     )
 
 
