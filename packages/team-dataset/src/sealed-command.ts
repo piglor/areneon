@@ -8,7 +8,9 @@
 //   reveal-hash  --store DIR --set-id ID
 //   retire       --store DIR --set-id ID --out DIR --register FILE
 //                --parameters FILE --rule FILE   (repeat the pair for a register that spans versions)
+//                --heads DIR [--heads-ref REF]   (the published chain heads, checked before anything is written)
 //   verify       --dir DIR --public-manifest FILE --register FILE --parameters FILE --rule FILE
+//                --heads DIR [--heads-ref REF]   (the published chain heads; use --heads-ref origin/main)
 //                --config FILE --labels FILE --format ID
 //                [--vocabulary FILE] [--known FILE]...
 //
@@ -23,20 +25,25 @@ import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { parseArgs } from "node:util";
 import {
+  assertRetirementPublished,
+  checkHeads,
   commitmentHash,
   type Engine,
   exportEngineData,
   exportTeamVocabulary,
   loadEngine,
   readEvaluationConfig,
+  readPublishedHeads,
   readTeamDatasetManifest,
   readTeamGeneratorConfig,
   readTeamLabelSet,
   readTeamVocabulary,
   resolveFormat,
   sealedManifestHash,
+  verifyRegister,
 } from "@areneon/showdown-bridge";
 import { generateSealedSet, type KnownTeam } from "./sealed.ts";
+import { parseSecretJson } from "./sealed-store.ts";
 import { readRevealDir, retireSealedSet, revealHash, verifyRetiredSealed } from "./sealed-retire.ts";
 
 export interface SealedCliIo {
@@ -71,6 +78,8 @@ const OPTIONS = {
   out: { type: "string" },
   register: { type: "string" },
   dir: { type: "string" },
+  heads: { type: "string" },
+  "heads-ref": { type: "string" },
 } as const;
 
 type Values = ReturnType<typeof parseArgs<{ options: typeof OPTIONS; allowPositionals: true }>>["values"];
@@ -81,7 +90,17 @@ const need = (values: Values, name: keyof Values & string): string => {
   return value;
 };
 
-const json = (path: string): unknown => JSON.parse(readFileSync(path, "utf8"));
+/** `parseSecretJson` with a usage error: it refuses without quoting the text, which may hold a key, a salt or a paste (a `SyntaxError` message can quote it). */
+function parseInput(text: string, what: string): unknown {
+  try {
+    return parseSecretJson(text, what);
+  } catch (error) {
+    throw new UsageError((error as Error).message);
+  }
+}
+
+/** Every JSON file the command reads goes through `parseInput`. */
+const json = (path: string): unknown => parseInput(readFileSync(path, "utf8"), path);
 
 function count(text: string | undefined, name: string, fallback?: number): number {
   if (text === undefined) {
@@ -107,7 +126,7 @@ function knownTeams(paths: readonly string[]): KnownTeam[] {
       .split("\n")
       .filter((line) => line !== "")
       .map((line, n) => {
-        const paste = (JSON.parse(line) as { paste?: unknown }).paste;
+        const paste = (parseInput(line, `${path} line ${n + 1}`) as { paste?: unknown } | null)?.paste;
         if (typeof paste !== "string") throw new UsageError(`${path} line ${n + 1} has no paste`);
         return { paste };
       }),
@@ -172,13 +191,25 @@ function runRevealHash(values: Values, io: SealedCliIo): number {
   return 0;
 }
 
+/** Register authenticity is enforced in code, not only by the runbook: the chain must verify and match every published head (no rollback, no fork). Used before anything is written or read from a bundle. */
+function checkPublishedHeads(values: Values, registerText: string, configs: ReturnType<typeof evaluationConfigs>, retiringSet?: string): void {
+  const heads = readPublishedHeads(need(values, "heads"), values["heads-ref"], process.cwd(), { requireHeads: true });
+  const state = verifyRegister(registerText, configs);
+  const check = checkHeads(state, heads);
+  if (retiringSet !== undefined) assertRetirementPublished(state, check, retiringSet);
+}
+
 function runRetire(values: Values, io: SealedCliIo): number {
+  const registerText = readFileSync(need(values, "register"), "utf8");
+  const configs = evaluationConfigs(values);
+  // Before the store is touched: a rolled-back or forked register must not unlock a reveal bundle.
+  checkPublishedHeads(values, registerText, configs, need(values, "set-id"));
   const hash = retireSealedSet({
     storeDir: need(values, "store"),
     setId: need(values, "set-id"),
     outDir: need(values, "out"),
-    registerText: readFileSync(need(values, "register"), "utf8"),
-    configs: evaluationConfigs(values),
+    registerText,
+    configs,
   });
   io.out(JSON.stringify({ set_id: need(values, "set-id"), reveal_hash: hash, out: need(values, "out") }));
   return 0;
@@ -192,6 +223,7 @@ function runVerify(values: Values, io: SealedCliIo, engine: Engine): number {
   const bundle = readRevealDir(need(values, "dir"));
   const publicManifest = readTeamDatasetManifest(json(need(values, "public-manifest")), { config: inputs.config, labelSet: inputs.labelSet });
   const registerText = readFileSync(need(values, "register"), "utf8");
+  checkPublishedHeads(values, registerText, configs);
   const report = verifyRetiredSealed({ engine, ...inputs, evaluation, bundle, publicManifest, registerText, known: knownTeams(values.known ?? []) });
   io.out(JSON.stringify({ verified: true, ...report }));
   return 0;

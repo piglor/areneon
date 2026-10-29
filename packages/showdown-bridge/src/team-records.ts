@@ -184,6 +184,13 @@ export function readTeamLabelSet(value: unknown, table?: EngineData): TeamLabelS
 export function readTeamGeneratorConfig(value: unknown, table?: EngineData): TeamGeneratorConfig {
   const config = parsed<TeamGeneratorConfig>(validators.config, value, "team generator config");
   ordered(config.item_weights.map((w) => w.item), "item_weights");
+  if (config.proposal !== undefined) {
+    // The profile cannot say: components sorted by kind and unique, and shares that add up to the 1000 draws of the component pick.
+    const { components } = config.proposal;
+    ordered(components.map((c) => c.kind), "proposal components");
+    const total = components.reduce((sum, c) => sum + c.share_permille, 0);
+    if (total !== 1000) bad(`proposal components: the shares add up to ${total}, not 1000`);
+  }
   if (table !== undefined) {
     const items = new Set(table.items.map((i) => i.id));
     for (const { item } of config.item_weights) if (!items.has(item)) bad(`item_weights: ${item} is not in the engine-data table`);

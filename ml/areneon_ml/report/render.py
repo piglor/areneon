@@ -766,7 +766,71 @@ def _diagnostics_section(model: ReportModel, tips: Tips) -> str:
                 empty="No anchor was recorded.",
             )
         )
+    valued = [g for g in played if g.train is not None and g.train.value_heads]
+    if valued:
+        series = []
+        for role, slot, shape in (("battle", 1, "circle"), ("preview", 2, "square")):
+            pts = [
+                Pt(
+                    g.number,
+                    g.train.value_heads[role][0],
+                    f"Generation {g.number}, {role} explained variance: "
+                    f"{g.train.value_heads[role][0]:.4g}",
+                    f"{g.train.value_heads[role][0]:.4g}",
+                )
+                for g in valued
+                if g.train is not None and role in g.train.value_heads
+            ]
+            if pts:
+                series.append(Series(role, slot, shape, tuple(pts)))
+        charts.append(
+            line_chart(
+                "Explained variance of the value head",
+                "1 - Var(return - V) / Var(return) over the returns the learner trains on, from "
+                "train-report.json; 0 is a constant predictor and a return with no variance. "
+                "A diagnostic, not skill.",
+                xs,
+                series,
+                tips,
+                empty="No value diagnostics were recorded.",
+            )
+        )
     out.append(f'<div class="charts">{"".join(charts)}</div>')
+    if valued:
+        out.append(_calibration_tables(valued[-1]))
+    return "".join(out)
+
+
+def _calibration_tables(g: GenerationFacts) -> str:
+    assert g.train is not None
+    out = []
+    for role in ("battle", "preview"):
+        if role not in g.train.value_heads:
+            continue
+        rows = [
+            [
+                f"{i / 10:.1f} to {(i + 1) / 10:.1f}",
+                str(count),
+                f"{mean_value:.4f}" if count else "-",
+                f"{mean_score:.4f}" if count else "-",
+            ]
+            for i, (count, mean_value, mean_score) in enumerate(g.train.value_heads[role][1])
+        ]
+        out.append(
+            f"<h3>Value calibration, {esc(role)}, generation {g.number}</h3>"
+            + _table(
+                [
+                    ("Predicted value", False),
+                    ("Decisions", True),
+                    ("Mean predicted value", True),
+                    ("Mean final score", True),
+                ],
+                rows,
+                "Diagnostic, not skill: the frozen-weight value of each decision against the "
+                "final game score (win 1, tie 0.5, loss 0). The first and last bins also hold "
+                "values below 0 and above 1.",
+            )
+        )
     return "".join(out)
 
 

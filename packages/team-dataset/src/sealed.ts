@@ -597,7 +597,7 @@ function commitSet(a: CommitArgs): SealedGenerateResult {
 export interface StoredSet {
   manifest: SealedTeamSetManifest;
   commitment: SealedSetCommitment;
-  teams: SealedTeam[];
+  teams: readonly Readonly<SealedTeam>[];
   key: string;
   salt: string;
   /** The exact bytes of the three logs and the teams file, for the reveal. */
@@ -633,7 +633,10 @@ export function readStoredSet(storeDir: string, setId: string): StoredSet {
   if (manifest.set_id !== setId || commitment.set_id !== setId) fail(`the records in ${dir} are not set ${setId}`);
   if (setCommitment(salt, teams as never) !== commitment.set_commitment || commitment.set_commitment !== manifest.set_commitment) fail("the stored salt and teams do not open the set commitment");
   if (keyCommitment(key) !== commitment.key_commitment || commitment.key_commitment !== manifest.key_commitment) fail("the stored key does not open the key commitment");
-  const stored: StoredSet = { manifest, commitment, teams, key, salt, texts: { teams: teamsText, rejections: text(SEALED_FILES.rejections), discards: text(SEALED_FILES.discards) } };
+  // Frozen deeply: the WeakSet gate below trusts the teams it saw verified, so a caller must not be able to swap one afterwards.
+  for (const team of teams) Object.freeze(team);
+  Object.freeze(teams);
+  const stored: StoredSet = Object.freeze({ manifest, commitment, teams, key, salt, texts: Object.freeze({ teams: teamsText, rejections: text(SEALED_FILES.rejections), discards: text(SEALED_FILES.discards) }) });
   verifiedSets.add(stored);
   return stored;
 }
