@@ -7,6 +7,7 @@ honest both ways: a pin bump that prints a new such word fails, and so does a st
 from __future__ import annotations
 
 import json
+import os
 import re
 from pathlib import Path
 
@@ -22,7 +23,17 @@ MOD = "champions"
 CALL = re.compile(r"""add\('-(?:start|end)',\s*[^,()]+(?:\([^)]*\))?,\s*(['`])([^'`]*)\1""")
 KIND = re.compile(r"^(?:move|ability|item): ")
 
-pytestmark = pytest.mark.skipif(not ENGINE.joinpath("sim").is_dir(), reason="no engine checkout")
+HAVE_ENGINE = ENGINE.joinpath("sim").is_dir()
+pytestmark = pytest.mark.skipif(
+    not HAVE_ENGINE and not os.environ.get("CI"), reason="no engine checkout"
+)
+
+
+@pytest.fixture(autouse=True)
+def _engine_in_ci() -> None:
+    """Under CI the checkout must be there: a drift test that always skips guards nothing."""
+    if os.environ.get("CI") and not HAVE_ENGINE:
+        pytest.fail("the engine source is missing under CI: check out the submodule")
 
 
 def _files() -> list[Path]:
