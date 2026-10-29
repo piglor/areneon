@@ -210,10 +210,31 @@ describe("verify enforces the published chain heads", () => {
     return dir;
   };
 
-  it("passes with the heads of the register, and with no head published yet", () => {
+  it("passes with the heads of the register", () => {
     expect(retired.code).toBe(0);
     expect(cli(verifyArgs(["--heads", headsIn(first.head, third.head)])).code).toBe(0);
-    expect(cli(verifyArgs(["--heads", join(scratch, "no-such-heads-dir")])).code).toBe(0);
+  });
+
+  it("fails closed with exit 2 when no head is published: an absent or empty directory, or a ref with none", () => {
+    const empty = mkdtempSync(join(scratch, "h-empty-"));
+    for (const dir of [join(scratch, "no-such-heads-dir"), empty]) {
+      const run = cli(verifyArgs(["--heads", dir]));
+      expect(run.code).toBe(2);
+      expect(run.err.join()).toMatch(/EvaluationConfigError: no published chain head was found/);
+    }
+    // a real ref (HEAD) that holds no head files at that path
+    const ref = cli(verifyArgs(["--heads", "no/such/heads/path", "--heads-ref", "HEAD"]));
+    expect(ref.code).toBe(2);
+    expect(ref.err.join()).toMatch(/no published chain head was found/);
+  });
+
+  it("a malformed head file is a fixed-message config error (exit 2) that does not quote the text", () => {
+    const dir = mkdtempSync(join(scratch, "h-bad-"));
+    writeFileSync(join(dir, "0000000001.json"), '{"seq": MARKER-884-HEAD oops');
+    const run = cli(verifyArgs(["--heads", dir]));
+    expect(run.code).toBe(2);
+    expect(run.err.join()).toMatch(/a published head file is not valid JSON/);
+    expect(run.err.join()).not.toContain("MARKER-884-HEAD");
   });
 
   it("refuses without --heads (exit 2) and --heads-ref without --heads", () => {

@@ -142,10 +142,20 @@ function headsAtRef(ref: string, dir: string, cwd: string): Map<string, string> 
  * The published chain heads: the head files of `dir` in the working tree, or, with `ref`, as that git ref holds them (the copy a merge made).
  * Checked add-only against nothing (a well-formed, correctly named set); the caller joins them with `checkHeads`.
  */
-export function readPublishedHeads(dir: string, ref: string | undefined, cwd: string): unknown[] {
+export function readPublishedHeads(dir: string, ref: string | undefined, cwd: string, options: { requireHeads?: boolean } = {}): unknown[] {
   const files = ref === undefined ? headsInTree(resolve(cwd, dir)) : headsAtRef(ref, dir, cwd);
+  // Fail closed where a published head must exist: with none, rollback detection would be silently off.
+  if (options.requireHeads === true && files.size === 0) throw new EvaluationConfigError("no published chain head was found: the heads directory is absent or empty");
+  // Parsed first: the add-only check would wrap a SyntaxError message, which quotes the text.
+  const parsed = [...files.values()].map((text) => {
+    try {
+      return JSON.parse(text) as unknown;
+    } catch {
+      throw new EvaluationConfigError("a published head file is not valid JSON");
+    }
+  });
   checkHeadsAddOnly(new Map(), files);
-  return [...files.values()].map((text) => JSON.parse(text) as unknown);
+  return parsed;
 }
 
 function headsOf(options: Options, cwd: string): unknown[] | null {

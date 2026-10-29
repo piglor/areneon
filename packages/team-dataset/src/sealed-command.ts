@@ -210,7 +210,7 @@ function runVerify(values: Values, io: SealedCliIo, engine: Engine): number {
   const publicManifest = readTeamDatasetManifest(json(need(values, "public-manifest")), { config: inputs.config, labelSet: inputs.labelSet });
   const registerText = readFileSync(need(values, "register"), "utf8");
   // Register authenticity is enforced here, not only by the runbook: the chain must verify and match every published head (no rollback, no fork).
-  const heads = readPublishedHeads(need(values, "heads"), values["heads-ref"], process.cwd());
+  const heads = readPublishedHeads(need(values, "heads"), values["heads-ref"], process.cwd(), { requireHeads: true });
   checkHeads(verifyRegister(registerText, configs), heads);
   const report = verifyRetiredSealed({ engine, ...inputs, evaluation, bundle, publicManifest, registerText, known: knownTeams(values.known ?? []) });
   io.out(JSON.stringify({ verified: true, ...report }));
