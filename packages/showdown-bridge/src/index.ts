@@ -353,6 +353,7 @@ export {
 export {
   appendEntry,
   assertPlanPublished,
+  assertRetirementPublished,
   checkHeads,
   type EvaluationRegisterEntry,
   type EvaluationRegisterHead,
@@ -364,7 +365,7 @@ export {
   type RegisterState,
   verifyRegister,
 } from "./evaluation-register.ts";
-export { runEvaluationCli } from "./evaluation-cli.ts";
+export { readPublishedHeads, runEvaluationCli } from "./evaluation-cli.ts";
 export {
   buildLeagueRunRecord,
   checkLeagueRunRecord,

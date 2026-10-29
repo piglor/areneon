@@ -94,4 +94,45 @@ export interface TeamGeneratorConfig {
    * Above the bound, the second platform recomputes this many ranges.
    */
   sampled_ranges: number;
+  /**
+   * Optional (a minor change within v1): the proposal is a mixture of components, each drawn with its share (ADR-020 section 2). Absent means the uniform proposal alone, with every byte and hash as before. Components are sorted by kind and unique, the shares are integers in thousandths and sum to 1000, and a role_sets component names the role-set table by hash; the reader enforces the order, the sum and uniqueness. A usage component is not part of this version of the record.
+   */
+  proposal?: {
+    kind: "mixture";
+    /**
+     * @minItems 1
+     * @maxItems 2
+     */
+    components: [UniformComponent | RoleSetsComponent, ...(UniformComponent | RoleSetsComponent)[]];
+  };
+}
+/**
+ * The uniform proposal (ADR-013 section 2).
+ *
+ * This interface was referenced by `TeamGeneratorConfig`'s JSON-Schema
+ * via the `definition` "UniformComponent".
+ */
+export interface UniformComponent {
+  kind: "uniform";
+  /**
+   * The component's share of the draws, in thousandths.
+   */
+  share_permille: number;
+}
+/**
+ * Teams from the engine's role sets (ADR-020 section 3): a species uniform over the table's entries, a role uniform among its sets, moves from the role's pool, an ability from the role's list.
+ *
+ * This interface was referenced by `TeamGeneratorConfig`'s JSON-Schema
+ * via the `definition` "RoleSetsComponent".
+ */
+export interface RoleSetsComponent {
+  kind: "role_sets";
+  /**
+   * The component's share of the draws, in thousandths.
+   */
+  share_permille: number;
+  /**
+   * The role-set table hash the draws read.
+   */
+  role_set_table_hash: string;
 }

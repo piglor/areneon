@@ -18,6 +18,7 @@
 //      and give it a uniform amount from one up to what room and total allow.
 
 import type { EngineData, PokemonSet, StatTable, TeamGeneratorConfig, TeamVocabulary } from "@areneon/showdown-bridge";
+import { drawRolePicks, type RoleSetsSource } from "./role-set-proposal.ts";
 import type { Rng } from "./stream.ts";
 
 export class ProposalError extends Error {
@@ -35,8 +36,15 @@ export class Proposal {
   readonly #weights: number[];
   readonly #teamSize: number;
   readonly #movesPerSet: number;
+  readonly #roleSets: RoleSetsSource | undefined;
+  readonly #roster: Map<string, RosterEntry>;
 
-  constructor(vocabulary: TeamVocabulary, table: EngineData, config: TeamGeneratorConfig) {
+  /**
+   * With `config.proposal` (ADR-020), every draw first picks its component by `rng.below(1000)`; a
+   * `role_sets` component needs `roleSets`, whose hash must be the one the config names. Without
+   * `proposal` nothing below changes: no extra draw, the uniform path alone.
+   */
+  constructor(vocabulary: TeamVocabulary, table: EngineData, config: TeamGeneratorConfig, roleSets?: RoleSetsSource) {
     this.#vocabulary = vocabulary;
     this.#config = config;
     const names = (entries: readonly { id: string; name: string }[]): Map<string, string> => new Map(entries.map((e) => [e.id, e.name]));
@@ -57,10 +65,32 @@ export class Proposal {
     for (const entry of vocabulary.roster) {
       if (!this.#names.species.has(entry.id)) throw new ProposalError(`species ${entry.id} has no name in the engine-data table`);
     }
+    this.#roster = new Map(vocabulary.roster.map((e) => [e.id, e]));
+    const named = config.proposal?.components.find((c) => c.kind === "role_sets");
+    if (named !== undefined) {
+      if (roleSets === undefined) throw new ProposalError("the config has a role_sets component and no role-set table was given");
+      if (roleSets.hash !== named.role_set_table_hash) throw new ProposalError("the role-set table is not the one the config names (hash mismatch)");
+      for (const species of roleSets.table.species) if (!this.#roster.has(species.id) || !this.#names.species.has(roleSets.shows_as.get(species.id) ?? species.id)) throw new ProposalError(`role-set species ${species.id} is not in the roster`);
+    }
+    this.#roleSets = roleSets;
+  }
+
+  /** The component a draw takes, read from its first `rng.below(1000)`; "uniform" when no mixture is configured (nothing is drawn). */
+  component(rng: Rng): "uniform" | "role_sets" {
+    const components = this.#config.proposal?.components;
+    if (components === undefined) return "uniform";
+    const u = rng.below(1000);
+    let edge = 0;
+    for (const c of components) {
+      edge += c.share_permille;
+      if (u < edge) return c.kind;
+    }
+    throw new ProposalError("the component shares do not add up to 1000");
   }
 
   /** One proposed team, in the order the species were drawn. */
   propose(rng: Rng): PokemonSet[] {
+    if (this.component(rng) === "role_sets") return this.#proposeRoleSets(rng);
     const roster = this.#vocabulary.roster;
     const chosen: RosterEntry[] = [];
     const used = new Set<number>();
@@ -75,7 +105,21 @@ export class Proposal {
     return chosen.map((entry) => {
       const item = entry.required_item ?? this.#drawItem(rng, holders);
       if (entry.required_item === undefined && item !== "") holders.set(item, (holders.get(item) ?? 0) + 1);
-      return this.#set(rng, entry, item);
+      return this.#set(rng, item, entry.id, entry.abilities, entry.moves);
+    });
+  }
+
+  /** Component R: the members come from the role sets; item, nature and Stat Points are the uniform draws. */
+  #proposeRoleSets(rng: Rng): PokemonSet[] {
+    const picks = drawRolePicks(rng, this.#roleSets as RoleSetsSource, this.#teamSize);
+    const entries = picks.map((pick) => this.#roster.get(pick.entry) as RosterEntry);
+    const holders = new Map<string, number>();
+    for (const entry of entries) if (entry.required_item !== undefined) holders.set(entry.required_item, (holders.get(entry.required_item) ?? 0) + 1);
+    return picks.map((pick, k) => {
+      const entry = entries[k] as RosterEntry;
+      const item = entry.required_item ?? this.#drawItem(rng, holders);
+      if (entry.required_item === undefined && item !== "") holders.set(item, (holders.get(item) ?? 0) + 1);
+      return this.#set(rng, item, pick.species, pick.abilities, pick.moves);
     });
   }
 
@@ -93,10 +137,10 @@ export class Proposal {
     return items[cumulative.findIndex((c) => u < c)] as string;
   }
 
-  #set(rng: Rng, entry: RosterEntry, item: string): PokemonSet {
+  #set(rng: Rng, item: string, speciesId: string, abilities: readonly string[], moves: readonly string[]): PokemonSet {
     const { natures, rules } = this.#vocabulary;
-    const ability = entry.abilities[rng.below(entry.abilities.length)] as string;
-    const pool = [...entry.moves];
+    const ability = abilities[rng.below(abilities.length)] as string;
+    const pool = [...moves];
     const count = Math.min(this.#movesPerSet, pool.length);
     for (let k = 0; k < count; k++) {
       const swap = k + rng.below(pool.length - k);
@@ -104,7 +148,7 @@ export class Proposal {
     }
     const nature = natures[rng.below(natures.length)] as TeamVocabulary["natures"][number];
     const gender = this.#config.gender_policy === "random" ? (rng.below(2) === 0 ? "M" : "F") : "";
-    const species = this.#names.species.get(entry.id) as string;
+    const species = this.#names.species.get(speciesId) as string;
     return {
       name: this.#config.nickname_policy === "species" ? species : "",
       species,
