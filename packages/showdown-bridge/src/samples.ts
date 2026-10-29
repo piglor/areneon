@@ -192,6 +192,55 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
         : { kind: "computed", ...key, mean_ppm: 150000 + 12500 * i, max_ppm: 180000 + 12500 * i, min_ppm: 120000 + 12500 * i, ohko_rolls: i === 0 ? null : 0 },
     );
   })();
+  // ADR-022 erratum E-22.3.2: the four arrays of `probe-damage/2`, a shape sample as well. The positions, Mega flags and keys
+  // are the golden turn request's and candidates' own (the reader rules hold for them); the foes' moves and numbers are invented.
+  const feature2Ref = { feature_set: "probe-damage/2", feature_set_hash: createHash("sha256").update("probe-damage/2 sample").digest("hex") };
+  const arrays2 = (() => {
+    const request = turn.request as unknown as { active: { moves: unknown[] }[] };
+    // Branch-free on purpose: the golden turn has two living actives, no Mega Evolution and a bench switch-in (the transport test holds the reader rules on it).
+    const positions = new Set<number>(request.active.map((_, slot) => slot));
+    const parts = new Set<string>();
+    for (const { choice } of battleQuery.candidates) {
+      parseJointChoice(choice).forEach((part, slot) => {
+        const { index, mega, to } = part as { index?: number; mega?: boolean; to?: number };
+        parts.add(`${slot}/${index}/${Number(mega)}`);
+        positions.add((to as number) - 1);
+      });
+    }
+    positions.delete(Number.NaN);
+    [...parts].filter((part) => part.includes("undefined")).forEach((part) => parts.delete(part));
+    const own = [...positions].sort((x, y) => x - y).map((position) => [position, 0] as [number, number]);
+    const foes = [1, 2];
+    const foeMoves = ["protect", "thunderbolt"]; // sorted by id
+    const relations = ["own_first", "tie", "foe_first"];
+    return {
+      threats: own.flatMap(([position, mega], i) =>
+        foes.flatMap((foe) =>
+          foeMoves.map((move, j) =>
+            (i + foe + j) % 5 === 0
+              ? { kind: "unsupported", own: position, mega: mega === 1, foe, move, reason: "random_effect" }
+              : { kind: "computed", own: position, mega: mega === 1, foe, move, mean_ppm: 90000 + 7000 * (i + j), max_ppm: 110000 + 7000 * (i + j), min_ppm: 70000 + 7000 * (i + j), ohko_rolls: 0 },
+          ),
+        ),
+      ),
+      speeds: own.flatMap(([position, mega], i) =>
+        foes.map((foe) =>
+          i === 1 && foe === 2
+            ? { kind: "unsupported", own: position, mega: mega === 1, foe, reason: "unqueueable" }
+            : { kind: "computed", own: position, mega: mega === 1, foe, relation: relations[(i + foe) % 3] },
+        ),
+      ),
+      own_priorities: [...parts]
+        .map((part) => part.split("/").map(Number) as [number, number, number])
+        .sort((a, b) => a[0] - b[0] || a[1] - b[1] || a[2] - b[2])
+        .map(([slot, move, mega], i) => (i === 1 ? { kind: "unsupported", slot, move, mega: mega === 1, reason: "fractional_priority" } : { kind: "computed", slot, move, mega: mega === 1, priority: i === 0 ? 0 : 1 })),
+      foe_priorities: foes.flatMap((foe) => foeMoves.map((move) => ({ kind: "computed", foe, move, priority: move === "protect" ? 4 : 0 }))),
+    };
+  })();
+  const with2 = (query: Record<string, unknown>, parts: Record<string, unknown> = {}, rows: unknown = featureRows): unknown => ({ ...query, candidate_features: { ...feature2Ref, rows, ...arrays2, ...parts } });
+  const dropArray = (value: unknown, name: keyof typeof arrays2): unknown => mutated(value as Record<string, unknown>, (v) => (v.candidate_features = Object.fromEntries(Object.entries(v.candidate_features as Record<string, unknown>).filter(([key]) => key !== name))));
+  const example2 = (parts: Record<string, unknown> = {}): unknown => ({ ...exampleOf("battle"), candidate_features: { ...feature2Ref, rows: featureRows, ...arrays2, ...parts } });
+  const reversed = (list: unknown[]): unknown[] => [...list].reverse();
   const withFeatures = (query: Record<string, unknown>, rows: unknown): unknown => ({ ...query, candidate_features: { ...featureSetRef, rows } });
   const featuresOnExample = (rows: unknown): unknown => ({ ...exampleOf("battle"), candidate_features: { ...featureSetRef, rows } });
   const rowAt = (index: number): Record<string, unknown> => featureRows[index] as Record<string, unknown>;
@@ -605,6 +654,9 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "training-run-config/candidate-matchup": runConfigWith((c) => {
       runSection(runSection(c, "model"), "encoder").options = { candidate_matchup: true };
     }),
+    "training-run-config/candidate-target": runConfigWith((c) => {
+      runSection(runSection(c, "model"), "encoder").options = { candidate_target: true };
+    }),
     "training-run-config/candidate-features": runConfigWith((c) => {
       runSection(runSection(c, "model"), "encoder").options = { candidate_features: { feature_set: "probe-damage/1", feature_set_hash: hexOf("c") } };
     }),
@@ -636,6 +688,9 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     }),
     "clone-run-config/candidate-matchup": cloneWith((c) => {
       runSection(runSection(c, "model"), "encoder").options = { candidate_matchup: true };
+    }),
+    "clone-run-config/candidate-target": cloneWith((c) => {
+      runSection(runSection(c, "model"), "encoder").options = { candidate_target: true };
     }),
     "clone-run-config/candidate-features": cloneWith((c) => {
       runSection(runSection(c, "model"), "encoder").options = { candidate_features: { feature_set: "probe-damage/1", feature_set_hash: hexOf("c") } };
@@ -705,6 +760,10 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     // ADR-022 section 3: the optional candidate_features (absent in every sample above, so their digests are unchanged).
     "policy-query/battle-features": withFeatures(battleQuery, featureRows),
     "policy-query/preview-features": withFeatures(previewQuery, []),
+    // ADR-022 erratum E-22.3.2: probe-damage/2 adds the four arrays (a /1 value keeps its bytes).
+    "policy-query/battle-features-2": with2(battleQuery),
+    "policy-query/preview-features-2": { ...previewQuery, candidate_features: { ...feature2Ref, rows: [], threats: [], speeds: [], own_priorities: [], foe_priorities: [] } },
+    "training-example/battle-features-2": example2(),
     "training-example/battle-features": featuresOnExample(featureRows),
     "policy-query/battle-evaluate": evalQuery,
     "policy-query/preview-evaluate": queryOf("preview", { kind: "evaluate" }),
@@ -718,6 +777,7 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "policy-handshake/hello": hello,
     "policy-handshake/ready": ready,
     "policy-handshake/ready-features": readyWith((m) => (m.feature_set = featureSetRef)),
+    "policy-handshake/ready-features-2": readyWith((m) => (m.feature_set = feature2Ref)),
     "recommendation/in-budget": {
       schema_version: 1,
       identity,
@@ -807,6 +867,19 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "policy-query/features-duplicate-row": withFeatures(battleQuery, [rowAt(0), rowAt(0), ...featureRows.slice(1)]),
     "policy-query/features-missing-row": withFeatures(battleQuery, featureRows.filter((r) => !(r.slot === rowAt(0).slot && r.move === rowAt(0).move && r.mega === rowAt(0).mega))),
     "training-example/features-unsorted": featuresOnExample([rowAt(1), rowAt(0), ...featureRows.slice(2)]),
+    // probe-damage/2 (erratum E-22.3.2): the arrays present exactly under /2, each sorted and unique by its key, and covering the request.
+    "policy-query/features-2-array-under-1": { ...(withFeatures(battleQuery, featureRows) as Record<string, unknown>), candidate_features: { ...featureSetRef, rows: featureRows, speeds: arrays2.speeds } },
+    "policy-query/features-2-missing-array": dropArray(with2(battleQuery), "foe_priorities"),
+    "policy-query/features-2-threats-unsorted": with2(battleQuery, { threats: reversed(arrays2.threats) }),
+    "policy-query/features-2-speeds-duplicate": with2(battleQuery, { speeds: [arrays2.speeds[0], ...arrays2.speeds] }),
+    "policy-query/features-2-priorities-unsorted": with2(battleQuery, { own_priorities: reversed(arrays2.own_priorities) }),
+    "policy-query/features-2-foe-priorities-unsorted": with2(battleQuery, { foe_priorities: reversed(arrays2.foe_priorities) }),
+    "policy-query/features-2-missing-speed-row": with2(battleQuery, { speeds: arrays2.speeds.slice(1) }),
+    "policy-query/features-2-missing-own-priority": with2(battleQuery, { own_priorities: arrays2.own_priorities.slice(1) }),
+    "policy-query/features-2-foreign-own": with2(battleQuery, { threats: [...arrays2.threats, { ...(arrays2.threats[0] as Record<string, unknown>), own: 5 }] }),
+    "training-example/features-2-array-under-1": { ...exampleOf("battle"), candidate_features: { ...featureSetRef, rows: featureRows, threats: arrays2.threats } },
+    "training-example/features-2-missing-array": dropArray(example2(), "speeds"),
+    "training-example/features-2-speeds-unsorted": example2({ speeds: reversed(arrays2.speeds) }),
     "policy-query/identity-differs": mutated(battleQuery, (q) => (q.identity = { ...battleQuery.identity, request_seq: battleQuery.identity.request_seq + 1 })),
     // The default temperature has one encoding: absent.
     "policy-query/temperature-explicit-default": queryOf("battle", { ...sampleBy, temperature_ppm: 1000000 }),
@@ -914,6 +987,9 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "clone-run-config/candidate-matchup-false": cloneWith(
       (c) => (runSection(runSection(c, "model"), "encoder").options = { candidate_matchup: false }),
     ),
+    "clone-run-config/candidate-target-false": cloneWith(
+      (c) => (runSection(runSection(c, "model"), "encoder").options = { candidate_target: false }),
+    ),
     "clone-run-config/candidate-features-unknown-set": cloneWith((c) => {
       runSection(runSection(c, "model"), "encoder").options = { candidate_features: { feature_set: "probe-damage/2", feature_set_hash: hexOf("c") } };
     }),
@@ -944,6 +1020,9 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "training-run-config/unknown-encoder-option": runConfigWith((c) => (runSection(runSection(c, "model"), "encoder").options = { wide: 1 })),
     "training-run-config/candidate-matchup-false": runConfigWith(
       (c) => (runSection(runSection(c, "model"), "encoder").options = { candidate_matchup: false }),
+    ),
+    "training-run-config/candidate-target-false": runConfigWith(
+      (c) => (runSection(runSection(c, "model"), "encoder").options = { candidate_target: false }),
     ),
     "training-run-config/candidate-features-true": runConfigWith(
       (c) => (runSection(runSection(c, "model"), "encoder").options = { candidate_features: true }),
@@ -1102,6 +1181,15 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "policy-query/features-unknown-reason": withFeatures(battleQuery, [rowAt(0), { ...rowAt(1), reason: "guess" }, ...featureRows.slice(2)]),
     "policy-query/features-null": { ...battleQuery, candidate_features: null },
     "policy-query/features-no-rows": { ...battleQuery, candidate_features: featureSetRef },
+    // probe-damage/2: the arrays are closed and integer-only, their enums closed.
+    "policy-query/features-2-unknown-relation": with2(battleQuery, { speeds: [{ ...(arrays2.speeds[0] as Record<string, unknown>), kind: "computed", relation: "faster" }, ...arrays2.speeds.slice(1)] }),
+    "policy-query/features-2-float": with2(battleQuery, { threats: [{ ...(arrays2.threats[0] as Record<string, unknown>), kind: "computed", mean_ppm: 90000.5, max_ppm: 1, min_ppm: 1, ohko_rolls: 0 }, ...arrays2.threats.slice(1)] }),
+    "policy-query/features-2-unknown-reason": with2(battleQuery, { own_priorities: [{ kind: "unsupported", slot: 0, move: 1, mega: false, reason: "guess" }, ...arrays2.own_priorities.slice(1)] }),
+    "policy-query/features-2-threat-limit-reason": with2(battleQuery, { threats: [{ kind: "unsupported", own: 0, mega: false, foe: 1, move: "thunderbolt", reason: "unqueueable" }, ...arrays2.threats.slice(1)] }),
+    "policy-query/features-2-priority-out-of-range": with2(battleQuery, { foe_priorities: [{ kind: "computed", foe: 1, move: "protect", priority: 10000 }, ...arrays2.foe_priorities.slice(1)] }),
+    "policy-query/features-2-extra-array-field": with2(battleQuery, { speeds: [{ ...(arrays2.speeds[0] as Record<string, unknown>), crit_ppm: 1 }, ...arrays2.speeds.slice(1)] }),
+    "policy-query/features-2-bad-move-id": with2(battleQuery, { foe_priorities: [{ kind: "computed", foe: 1, move: "Thunder Bolt", priority: 0 }, ...arrays2.foe_priorities.slice(1)] }),
+    "training-example/features-2-float": example2({ own_priorities: [{ kind: "computed", slot: 0, move: 1, mega: false, priority: 0.5 }, ...arrays2.own_priorities.slice(1)] }),
     "training-example/features-float": featuresOnExample([{ ...rowAt(0), max_ppm: 1.5 }, ...featureRows.slice(1)]),
     "policy-handshake/ready-short-feature-hash": readyWith((m) => (m.feature_set = { ...featureSetRef, feature_set_hash: "abc" })),
     "policy-query/no-candidates": { ...battleQuery, candidates: [] },

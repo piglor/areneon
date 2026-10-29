@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import shutil
 from pathlib import Path
 from typing import Any
@@ -11,6 +12,7 @@ from areneon_ml.learner.config import RunConfig, read_run_config
 from areneon_ml.loop import layout
 from areneon_ml.loop.records import policy_id
 from areneon_ml.progress import run as run_module
+from areneon_ml.progress.eval_dataset import EvalDataset
 from areneon_ml.progress.run import (
     CROSS_RUN_LABEL,
     RELATED_LABEL,
@@ -211,6 +213,64 @@ def test_another_team_dataset_is_refused(tmp_path: Path) -> None:
     fake = fake_for(tmp_path / "a")
     with pytest.raises(ProgressError, match="different team datasets"):
         evaluate(tmp_path / "a", 0, tmp_path / "p", fake, spec(tmp_path / "c", 0))
+    assert fake.requests == []
+
+
+def eval_dataset(tmp_path: Path, dataset_hash: str = "8" * 64) -> EvalDataset:
+    directory = tmp_path / "eval-dataset"
+    directory.mkdir(exist_ok=True)
+    (directory / "manifest.json").write_text(
+        json.dumps({"splits": [{"split": "dev", "teams": 8}, {"split": "validation", "teams": 6}]})
+    )
+    return EvalDataset(directory, dataset_hash)
+
+
+def test_an_eval_dataset_is_the_common_split_of_runs_on_different_datasets(
+    tmp_path: Path,
+) -> None:
+    make_run(tmp_path / "a", generations=1)
+    make_run(
+        tmp_path / "c",
+        generations=1,
+        config=dataset_config("third-run", (31, 32), dataset_hash="6" * 64),
+    )
+    ev = eval_dataset(tmp_path)
+    fake = fake_for(tmp_path / "a")
+    found = evaluate(
+        tmp_path / "a", 0, tmp_path / "p", fake, spec(tmp_path / "c", 0), eval_dataset=ev
+    )
+    assert found["head_to_head"]["lineage"]
+    record = layout.read_json(tmp_path / "p" / "g000000" / "progress.json")
+    assert record["teams"]["evaluation_dataset_hash"] == ev.dataset_hash
+    assert {m["match_id"] for m in record["matches"]} >= {"run-sample", "run-argmax"}
+    # the committed directory is verified again with the option, still without refusal
+    evaluate(
+        tmp_path / "a",
+        0,
+        tmp_path / "p",
+        fake_for(tmp_path / "a"),
+        spec(tmp_path / "c", 0),
+        eval_dataset=ev,
+    )
+
+
+def test_the_other_runs_own_dataset_as_eval_dataset_is_refused(tmp_path: Path) -> None:
+    make_run(tmp_path / "a", generations=1)
+    make_run(
+        tmp_path / "c",
+        generations=1,
+        config=dataset_config("third-run", (31, 32), dataset_hash="6" * 64),
+    )
+    fake = fake_for(tmp_path / "a")
+    with pytest.raises(ProgressError, match="other run's own training dataset"):
+        evaluate(
+            tmp_path / "a",
+            0,
+            tmp_path / "p",
+            fake,
+            spec(tmp_path / "c", 0),
+            eval_dataset=eval_dataset(tmp_path, "6" * 64),
+        )
     assert fake.requests == []
 
 

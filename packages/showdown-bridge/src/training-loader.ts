@@ -17,7 +17,8 @@ import trainingSetSchema from "@areneon/schema/contracts/v1/training-set.schema.
 import type { EvaluationRunManifest } from "@areneon/schema/types/v1/evaluation-run-manifest.ts";
 import type { TrainingExample } from "@areneon/schema/types/v1/training-example.ts";
 import type { TrainingSet } from "@areneon/schema/types/v1/training-set.ts";
-import { type FeatureConfigs, candidateFeatures, createFeatureMemo, FeatureBuildError } from "./candidate-features.ts";
+import { type FeatureConfigs, createFeatureMemo, FeatureBuildError } from "./candidate-features.ts";
+import { buildFeatures } from "./feature-build.ts";
 import { jcs, type Json } from "./canonical-json.ts";
 import type { Engine } from "./engine.ts";
 import { featureRowsProblem } from "./feature-rows.ts";
@@ -234,7 +235,7 @@ function featuresOf(
   try {
     const candidates = enumerateCandidates(decodeRequest(line.slice("|request|".length))).candidates;
     const channel = playerChannel({ schema_version: 1, data_class: observation.data_class, player: observation.player, lines: observation.log });
-    return candidateFeatures(engine, configs, channel, episode.team.team, candidates, memo);
+    return buildFeatures(engine, configs, channel, episode.team.team, candidates, memo);
   } catch (error) {
     if (!(error instanceof FeatureBuildError || error instanceof EnumerationError || error instanceof RequestDecodeError)) throw error;
     throw new TrainingLoaderError(`the candidate features of ${hash} #${observation.identity.request_seq} cannot be built: ${error.message}`, { cause: error });

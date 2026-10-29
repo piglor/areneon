@@ -525,7 +525,7 @@
       }
     },
     "CandidateFeatures": {
-      "description": "The rows of one decision under one feature set. feature_set names the set (probe-damage/1); feature_set_hash is SHA-256 of the JCS of its identity (mechanics config, assumed-set config, adapter format, reader, version manifest), so a pin bump or a config change is another set. Rows are in canonical order: slot, move, target, then mega false before true.",
+      "description": "The rows of one decision under one feature set. feature_set names the set (probe-damage/1 or probe-damage/2); feature_set_hash is SHA-256 of the JCS of its identity (mechanics config, assumed-set config, adapter format, reader, version manifest), so a pin bump or a config change is another set. Rows are in canonical order: slot, move, target, then mega false before true. Under probe-damage/2 the four arrays threats, speeds, own_priorities and foe_priorities are all present; under any other set none is (a reader rule: the profile has no if/then).",
       "type": "object",
       "additionalProperties": false,
       "required": [
@@ -555,6 +555,82 @@
               },
               {
                 "$ref": "#/$defs/UnsupportedFeatureRow"
+              }
+            ],
+            "discriminator": {
+              "propertyName": "kind"
+            }
+          }
+        },
+        "threats": {
+          "description": "probe-damage/2 only: one row per (own Pokemon and variant, opposing active, revealed damaging move of that foe), sorted by (own, mega false first, foe, move id). Values on the assumed opponent set, not facts about the real opponent.",
+          "type": "array",
+          "maxItems": 512,
+          "items": {
+            "type": "object",
+            "oneOf": [
+              {
+                "$ref": "#/$defs/ComputedThreatRow"
+              },
+              {
+                "$ref": "#/$defs/UnsupportedThreatRow"
+              }
+            ],
+            "discriminator": {
+              "propertyName": "kind"
+            }
+          }
+        },
+        "speeds": {
+          "description": "probe-damage/2 only: exactly one row per (own position, own Mega flag, foe location), for every own active and every switch-in a candidate names, sorted by (own, mega false first, foe).",
+          "type": "array",
+          "maxItems": 128,
+          "items": {
+            "type": "object",
+            "oneOf": [
+              {
+                "$ref": "#/$defs/ComputedSpeedRow"
+              },
+              {
+                "$ref": "#/$defs/UnsupportedSpeedRow"
+              }
+            ],
+            "discriminator": {
+              "propertyName": "kind"
+            }
+          }
+        },
+        "own_priorities": {
+          "description": "probe-damage/2 only: one row per own move part of the candidates, sorted by (slot, move, mega false first).",
+          "type": "array",
+          "maxItems": 128,
+          "items": {
+            "type": "object",
+            "oneOf": [
+              {
+                "$ref": "#/$defs/ComputedOwnPriorityRow"
+              },
+              {
+                "$ref": "#/$defs/UnsupportedOwnPriorityRow"
+              }
+            ],
+            "discriminator": {
+              "propertyName": "kind"
+            }
+          }
+        },
+        "foe_priorities": {
+          "description": "probe-damage/2 only: one row per revealed move of each opposing active, sorted by (foe, move id).",
+          "type": "array",
+          "maxItems": 128,
+          "items": {
+            "type": "object",
+            "oneOf": [
+              {
+                "$ref": "#/$defs/ComputedFoePriorityRow"
+              },
+              {
+                "$ref": "#/$defs/UnsupportedFoePriorityRow"
               }
             ],
             "discriminator": {
@@ -773,6 +849,350 @@
           "type": "integer",
           "minimum": 1,
           "maximum": 999999
+        }
+      }
+    },
+    "ComputedThreatRow": {
+      "description": "What the foe's revealed damaging move does to the own Pokemon (the foe's assumed set as attacker, the own Pokemon at its exact current HP): the values of a ComputedFeatureRow, as integers.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "own",
+        "mega",
+        "foe",
+        "move",
+        "mean_ppm",
+        "max_ppm",
+        "min_ppm",
+        "ohko_rolls"
+      ],
+      "properties": {
+        "kind": {
+          "const": "computed"
+        },
+        "own": {
+          "description": "The own Pokemon's position in the request's side.pokemon, 0-based.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 5
+        },
+        "mega": {
+          "type": "boolean",
+          "description": "True for the variant of the own Pokemon that Mega Evolves this turn."
+        },
+        "foe": {
+          "description": "The opposing active's location number in a choice (move 1 1).",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9
+        },
+        "move": {
+          "type": "string",
+          "pattern": "^[a-z0-9]+$",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "mean_ppm": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000
+        },
+        "max_ppm": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000
+        },
+        "min_ppm": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000
+        },
+        "ohko_rolls": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 16
+        }
+      }
+    },
+    "UnsupportedThreatRow": {
+      "description": "A threat the probe could not answer exactly: its closed reason, never a guess.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "own",
+        "mega",
+        "foe",
+        "move",
+        "reason"
+      ],
+      "properties": {
+        "kind": {
+          "const": "unsupported"
+        },
+        "own": {
+          "description": "The own Pokemon's position in the request's side.pokemon, 0-based.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 5
+        },
+        "mega": {
+          "type": "boolean",
+          "description": "True for the variant of the own Pokemon that Mega Evolves this turn."
+        },
+        "foe": {
+          "description": "The opposing active's location number in a choice (move 1 1).",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9
+        },
+        "move": {
+          "type": "string",
+          "pattern": "^[a-z0-9]+$",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "reason": {
+          "enum": [
+            "query_kind",
+            "random_effect",
+            "scenario_rule_table"
+          ]
+        }
+      }
+    },
+    "ComputedSpeedRow": {
+      "description": "Who acts first between the own Pokemon (and variant) and the opposing active, as the engine orders their action speed.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "own",
+        "mega",
+        "foe",
+        "relation"
+      ],
+      "properties": {
+        "kind": {
+          "const": "computed"
+        },
+        "own": {
+          "description": "The own Pokemon's position in the request's side.pokemon, 0-based.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 5
+        },
+        "mega": {
+          "type": "boolean",
+          "description": "True for the variant of the own Pokemon that Mega Evolves this turn."
+        },
+        "foe": {
+          "description": "The opposing active's location number in a choice (move 1 1).",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9
+        },
+        "relation": {
+          "enum": [
+            "own_first",
+            "tie",
+            "foe_first"
+          ]
+        }
+      }
+    },
+    "UnsupportedSpeedRow": {
+      "description": "A speed relation the probe could not answer: the probe's closed reasons, or unqueueable / fractional_priority.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "own",
+        "mega",
+        "foe",
+        "reason"
+      ],
+      "properties": {
+        "kind": {
+          "const": "unsupported"
+        },
+        "own": {
+          "description": "The own Pokemon's position in the request's side.pokemon, 0-based.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 5
+        },
+        "mega": {
+          "type": "boolean",
+          "description": "True for the variant of the own Pokemon that Mega Evolves this turn."
+        },
+        "foe": {
+          "description": "The opposing active's location number in a choice (move 1 1).",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9
+        },
+        "reason": {
+          "enum": [
+            "query_kind",
+            "random_effect",
+            "scenario_rule_table",
+            "unqueueable",
+            "fractional_priority"
+          ]
+        }
+      }
+    },
+    "ComputedOwnPriorityRow": {
+      "description": "The engine's priority key of one own move part of the candidates.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "slot",
+        "move",
+        "mega",
+        "priority"
+      ],
+      "properties": {
+        "kind": {
+          "const": "computed"
+        },
+        "slot": {
+          "description": "The acting active Pokemon's slot, 0-based.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 3
+        },
+        "move": {
+          "description": "The move's position in the request, 1-based.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9
+        },
+        "mega": {
+          "type": "boolean",
+          "description": "True when the move part also Mega Evolves."
+        },
+        "priority": {
+          "description": "The engine's priority key of the move, as the probe's ActionOrder.priority.",
+          "type": "integer",
+          "minimum": -9999,
+          "maximum": 9999
+        }
+      }
+    },
+    "UnsupportedOwnPriorityRow": {
+      "description": "An own priority the probe could not answer: the probe's closed reasons, or unqueueable / fractional_priority (a pseudo-move such as recharge is query_kind).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "slot",
+        "move",
+        "mega",
+        "reason"
+      ],
+      "properties": {
+        "kind": {
+          "const": "unsupported"
+        },
+        "slot": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 3
+        },
+        "move": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9
+        },
+        "mega": {
+          "type": "boolean"
+        },
+        "reason": {
+          "enum": [
+            "query_kind",
+            "random_effect",
+            "scenario_rule_table",
+            "unqueueable",
+            "fractional_priority"
+          ]
+        }
+      }
+    },
+    "ComputedFoePriorityRow": {
+      "description": "The engine's priority key of one revealed move of an opposing active.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "foe",
+        "move",
+        "priority"
+      ],
+      "properties": {
+        "kind": {
+          "const": "computed"
+        },
+        "foe": {
+          "description": "The opposing active's location number in a choice (move 1 1).",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9
+        },
+        "move": {
+          "type": "string",
+          "pattern": "^[a-z0-9]+$",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "priority": {
+          "description": "The engine's priority key of the move, as the probe's ActionOrder.priority.",
+          "type": "integer",
+          "minimum": -9999,
+          "maximum": 9999
+        }
+      }
+    },
+    "UnsupportedFoePriorityRow": {
+      "description": "A foe priority the probe could not answer: the probe's closed reasons, or unqueueable / fractional_priority.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "foe",
+        "move",
+        "reason"
+      ],
+      "properties": {
+        "kind": {
+          "const": "unsupported"
+        },
+        "foe": {
+          "description": "The opposing active's location number in a choice (move 1 1).",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9
+        },
+        "move": {
+          "type": "string",
+          "pattern": "^[a-z0-9]+$",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "reason": {
+          "enum": [
+            "query_kind",
+            "random_effect",
+            "scenario_rule_table",
+            "unqueueable",
+            "fractional_priority"
+          ]
         }
       }
     }
