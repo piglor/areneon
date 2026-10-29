@@ -667,6 +667,7 @@
   "v1/policy-query/reader-invalid/features-2-priorities-unsorted.json": "17a430ccf28a138ab57e4a3c38199feab0a91f9d4284046b0afc6255ee7eee9f",
   "v1/policy-query/reader-invalid/features-2-foe-priorities-unsorted.json": "3740a989d9e5cc4219166f12d543abd8c7f6d8791330b0c79107f5d3ea37d579",
   "v1/policy-query/reader-invalid/features-2-missing-speed-row.json": "56cbc7a94c28674afec0abe199e7c34e5ee54265efe8904e3d5e09ac1eb99f79",
+  "v1/policy-query/reader-invalid/features-2-missing-foe-priority.json": "a298ad3a7f2e68aa617ca51eb27814570793d3a112885a829f5836eded8e298b",
   "v1/policy-query/reader-invalid/features-2-missing-own-priority.json": "f01e6a0dbbcddd93cb5db244eaa540373f41af6a43a15e48b436a5e10e260971",
   "v1/policy-query/reader-invalid/features-2-foreign-own.json": "2796d982b991fed2721361b2fe49dd3d6f17eef816f40f53b2e991e7e51086b4",
   "v1/training-example/reader-invalid/features-2-array-under-1.json": "a0360b1113f8a0e3db766b499ccab127dd373bf1a55b4019b20e520e5b4235eb",

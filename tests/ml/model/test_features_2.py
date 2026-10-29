@@ -42,9 +42,20 @@ from areneon_ml.model.options import (
     OptionError,
     read_options,
 )
+from areneon_ml.worker.features import coverage_problem, damaging_moves
 from areneon_ml.worker.view import encoder_input, view_digest
 
-from .support import TINY_ENCODER, TINY_MODEL, encoder, game, sample
+from .support import (
+    RANDOM,
+    TINY_ENCODER,
+    TINY_MODEL,
+    candidates_for,
+    encoder,
+    game,
+    observation,
+    request_points,
+    sample,
+)
 from .test_features import SAMPLE as ONE_SAMPLE
 from .test_features import SOURCES
 from .test_options import TODAY_ENCODER_VERSION
@@ -717,3 +728,87 @@ def test_the_target_option_composes_with_the_arrays() -> None:
     others = [i for i in range(alone.shape[1]) if i != mega]
     assert out[mega] != alone[0, mega]
     assert torch.equal(out[others], alone[0, others])
+
+
+def forced_switch_query() -> dict[str, Any]:
+    """A forced-switch query in the builder's shape: switch-in threats and no foe priorities."""
+    for path in RANDOM:
+        raw = json.loads(path.read_text())
+        channel = raw["p1"] if "p1" in raw else raw["channels"]["p1"]
+        lines = channel["lines"] if isinstance(channel, dict) else channel
+        for index, body in request_points(lines):
+            if "forceSwitch" not in body:
+                continue
+            log = lines[: index + 1]
+            if not any(line.startswith("|switch|p2a") for line in log):
+                continue
+            cands = [c for c in candidates_for(body) if "switch" in c["choice"]]
+            if not cands:
+                continue
+            slots = sorted(
+                {
+                    int(part.split()[1]) - 1
+                    for c in cands
+                    for part in c["choice"].split(", ")
+                    if part.startswith("switch")
+                }
+            )
+            q = {
+                "observation": observation("p1", log, raw["teams"]["p1"], "battle"),
+                "candidates": cands,
+                "candidate_features": {
+                    **SET,
+                    "rows": [],
+                    "threats": [
+                        {
+                            "kind": "computed",
+                            "own": own,
+                            "mega": False,
+                            "foe": 1,
+                            "move": "thunderbolt",
+                            "mean_ppm": 1,
+                            "max_ppm": 2,
+                            "min_ppm": 1,
+                            "ohko_rolls": 0,
+                        }
+                        for own in slots
+                    ],
+                    "speeds": [
+                        {"kind": "computed", "own": o, "mega": False, "foe": 1, "relation": "tie"}
+                        for o in slots
+                    ],
+                    "own_priorities": [],
+                    "foe_priorities": [],
+                },
+            }
+            try:
+                ENCODE.encode(q)
+            except EncodingError as exc:
+                if "foe priority" in str(exc):
+                    raise
+                continue
+            return q
+    raise AssertionError("no forced switch with a shown foe in the corpus")
+
+
+def test_a_forced_switch_threat_needs_no_foe_priority_row() -> None:
+    q = forced_switch_query()
+    encoded = ENCODE.encode(q)
+    assert encoded.thr_cat is not None
+    assert encoded.thr_num is not None
+    assert encoded.thr_cat.shape[0] == len(q["candidate_features"]["threats"])
+    assert encoded.thr_cat[:, 2].eq(NONE).all()  # the NONE priority kind
+    assert not encoded.thr_num[:, 5].any()  # and a zero priority
+    assert encoded.foe_idx is not None
+    assert encoded.foe_idx.shape[0] == 0
+    out = net()(collate([encoded]))
+    assert out.logits.shape == (1, len(q["candidates"]))
+
+
+def test_a_move_request_threat_without_its_foe_priority_row_is_refused() -> None:
+    with pytest.raises(EncodingError, match="no foe priority row"):
+        ENCODE.encode(edited(lambda f: f.update(foe_priorities=f["foe_priorities"][1:])))
+    gone = edited(lambda f: f.update(foe_priorities=f["foe_priorities"][1:]))
+    problem = coverage_problem(gone, gone["candidate_features"], damaging_moves(game()))
+    assert problem is not None
+    assert "foe_priorities must hold a row" in problem

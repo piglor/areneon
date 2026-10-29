@@ -370,6 +370,9 @@ describe("threats", () => {
     expect(own.size).toBeGreaterThanOrEqual(2);
     for (const move of [single, spread, random]) expect(features.threats.filter((r) => r.move === move && r.foe === foe.loc).length).toBe(own.size);
     expect(features.foe_priorities.filter((r) => [single, spread, random].includes(r.move)).length).toBe(3);
+    // The readers (and the encoder) require a foe priority row for the move of every threat in a move request.
+    const priced = new Set(features.foe_priorities.map((r) => `${r.foe}/${r.move}`));
+    for (const row of features.threats) expect(priced.has(`${row.foe}/${row.move}`)).toBe(true);
   });
 
   it("has none for a foe with only status moves or no revealed move", () => {

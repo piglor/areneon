@@ -178,6 +178,6 @@ def _unique(rows: Sequence[Row], key: Callable[[Row], Any]) -> dict[Any, Row]:
     return found
 
 
-def threat_numbers(row: Row, foe: Row) -> list[float]:
+def threat_numbers(row: Row, foe: Row | None) -> list[float]:
     """A threat row's numbers (as a damage row's) and its foe move's priority."""
-    return [*numbers(row), priority_number(foe)]
+    return [*numbers(row), 0.0 if foe is None else priority_number(foe)]

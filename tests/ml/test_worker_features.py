@@ -314,6 +314,7 @@ def test_probe_damage_2_structure_is_a_reader_rule(name: str, message: str) -> N
     [
         ("missing-speed-row", "speeds must hold exactly one row"),
         ("missing-own-priority", "own_priorities must hold one row"),
+        ("missing-foe-priority", "foe_priorities must hold a row for the foe move"),
         ("foreign-own", "threats name an own Pokemon"),
     ],
 )
@@ -397,6 +398,15 @@ def test_the_probe_damage_2_coverage_rule_is_the_typescript_one() -> None:
     # a forced switch and Team Preview
     forced = {"forceSwitch": [True, False], "side": side}
     assert problem(forced, ["switch 3, pass"], features(speeds=[speed(2, False, 1)])) is None
+    threat = {
+        "kind": "computed", "own": 2, "mega": False, "foe": 1, "move": "protect",
+        "mean_ppm": 1, "max_ppm": 1, "min_ppm": 1, "ohko_rolls": 0,
+    }  # fmt: skip
+    # the builder's forced-switch shape: threats for the switch-in, no foe priorities
+    assert (
+        problem(forced, ["switch 3, pass"], features(speeds=[speed(2, False, 1)], threats=[threat]))
+        is None
+    )
     foe = {"kind": "computed", "foe": 1, "move": "protect", "priority": 4}
     assert "foe_priorities are empty" in (
         problem(

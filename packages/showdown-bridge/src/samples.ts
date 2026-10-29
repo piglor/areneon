@@ -869,6 +869,7 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "policy-query/features-2-priorities-unsorted": with2(battleQuery, { own_priorities: reversed(arrays2.own_priorities) }),
     "policy-query/features-2-foe-priorities-unsorted": with2(battleQuery, { foe_priorities: reversed(arrays2.foe_priorities) }),
     "policy-query/features-2-missing-speed-row": with2(battleQuery, { speeds: arrays2.speeds.slice(1) }),
+    "policy-query/features-2-missing-foe-priority": with2(battleQuery, { foe_priorities: arrays2.foe_priorities.slice(1) }),
     "policy-query/features-2-missing-own-priority": with2(battleQuery, { own_priorities: arrays2.own_priorities.slice(1) }),
     "policy-query/features-2-foreign-own": with2(battleQuery, { threats: [...arrays2.threats, { ...(arrays2.threats[0] as Record<string, unknown>), own: 5 }] }),
     "training-example/features-2-array-under-1": { ...exampleOf("battle"), candidate_features: { ...featureSetRef, rows: featureRows, threats: arrays2.threats } },

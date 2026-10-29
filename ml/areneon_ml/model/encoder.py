@@ -647,7 +647,9 @@ class Encoder:
                 cols[foe - 1] = rows_of.speed_category(row)
         for row in arrays.threats:
             foe_row = arrays.foe_priorities.get((row["foe"], row["move"]))
-            if foe_row is None:
+            if foe_row is None and request.moves:
+                # A move request prices every threat's foe move; a forced switch asks no move, so
+                # its threats carry the NONE priority kind and a zero number.
                 raise EncodingError("a threat row has no foe priority row for its move")
             probe.threats.append(
                 (
@@ -659,7 +661,7 @@ class Encoder:
                     [
                         game.moves.lookup(row["move"]),
                         rows_of.probe_category(row),
-                        rows_of.probe_category(foe_row),
+                        NONE if foe_row is None else rows_of.probe_category(foe_row),
                     ],
                     rows_of.threat_numbers(row, foe_row),
                 )

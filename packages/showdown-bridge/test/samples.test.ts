@@ -142,6 +142,7 @@ describe("the shared contract sample corpus (ADR-008 §2)", () => {
       "v1/policy-query/reader-invalid/features-2-foe-priorities-unsorted.json",
       "v1/policy-query/reader-invalid/features-2-foreign-own.json",
       "v1/policy-query/reader-invalid/features-2-missing-array.json",
+      "v1/policy-query/reader-invalid/features-2-missing-foe-priority.json",
       "v1/policy-query/reader-invalid/features-2-missing-own-priority.json",
       "v1/policy-query/reader-invalid/features-2-missing-speed-row.json",
       "v1/policy-query/reader-invalid/features-2-priorities-unsorted.json",
