@@ -49,6 +49,10 @@ class GenerationSettings:
     battle_ms: int
     handshake_timeout_ms: int
     max_line_bytes: int
+    #: ``generation.play.temperature_ppm`` (ADR-023 section 1): the frozen pair samples, and the
+    #: learner scores every policy term, at this temperature (1 to 999,999 millionths); ``None``
+    #: is temperature 1 (the field absent), which leaves every value as it was.
+    temperature_ppm: int | None = None
 
 
 @dataclass(frozen=True)
@@ -214,6 +218,12 @@ def read_run_config(raw: object) -> RunConfig:
             "training-run-config: ppo.anchor needs warm_start (the anchor is the warm-start pair)"
         )
     gen, ppo, seeds = raw["generation"], raw["ppo"], raw["seeds"]
+    play = gen.get("play")
+    if play is not None and play["temperature_ppm"] >= MICRO:
+        raise RunConfigError(
+            "training-run-config: generation.play.temperature_ppm 1000000 is the default: "
+            "omit generation.play (one rule, one encoding)"
+        )
     return RunConfig(
         lineage_id=raw["lineage_id"],
         format_id=raw["format_id"],
@@ -234,6 +244,7 @@ def read_run_config(raw: object) -> RunConfig:
             battle_ms=gen["latency_budget_ms"]["battle_ms"],
             handshake_timeout_ms=gen["handshake_timeout_ms"],
             max_line_bytes=gen["max_line_bytes"],
+            temperature_ppm=None if play is None else play["temperature_ppm"],
         ),
         ppo=PPOSettings(
             epochs=ppo["epochs"],

@@ -640,6 +640,7 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "training-run-config/preview-bootstrap-zero": runConfigWith((c) => (runSection(c, "ppo").preview_bootstrap_micro = 0)),
     "training-run-config/entropy-constant": runConfigWith((c) => (runSection(c, "ppo").entropy_schedule = { kind: "constant" })),
     "training-run-config/constant-schedule": runConfigWith((c) => (runSection(c, "ppo").learning_rate_schedule = { kind: "constant" })),
+    "training-run-config/play-temperature": runConfigWith((c) => (runSection(c, "generation").play = { temperature_ppm: 500000 })),
     "training-run-config/damage-aware": runConfigWith((c) => {
       runSection(c, "generation").baseline_games = [
         { actor: "random-legal", policy_id: "random-legal@tiny", games: 2 },
@@ -811,6 +812,7 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     // Schema-valid, refused by the CloneRunConfig reader: the model rules the profile cannot say.
     "training-run-config/value-warmup-no-warm-start": runConfigWith((c) => (runSection(c, "ppo").value_warmup = { generations: 2 })),
     "training-run-config/anchor-no-warm-start": runConfigWith((c) => (runSection(c, "ppo").anchor = { kl_micro: 100000, schedule: { kind: "constant" } })),
+    "training-run-config/play-temperature-default": runConfigWith((c) => (runSection(c, "generation").play = { temperature_ppm: 1000000 })),
     "clone-run-config/heads-do-not-divide-width": cloneWith((c) => (runSection(c, "model").n_heads = 3)),
     "clone-run-config/picks-exceed-team": cloneWith((c) => {
       const encoder = runSection(runSection(c, "model"), "encoder");
@@ -1004,6 +1006,10 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "clone-run-config/unknown-device": cloneWith((c) => (runSection(c, "learner").device = "tpu")),
     "clone-run-config/next-version": cloneWith((c) => (c.schema_version = 2)),
     "training-run-config/extra-field": runConfigWith((c) => (c.notes = "x")),
+    "training-run-config/play-temperature-zero": runConfigWith((c) => (runSection(c, "generation").play = { temperature_ppm: 0 })),
+    "training-run-config/play-temperature-fractional": runConfigWith((c) => (runSection(c, "generation").play = { temperature_ppm: 0.5 })),
+    "training-run-config/play-extra-field": runConfigWith((c) => (runSection(c, "generation").play = { temperature_ppm: 500000, truncation: 1 })),
+    "training-run-config/play-empty": runConfigWith((c) => (runSection(c, "generation").play = {})),
     "training-run-config/fractional-rate": runConfigWith((c) => (runSection(c, "ppo").learning_rate_micro = 0.5)),
     "training-run-config/zero-target-kl": runConfigWith((c) => (runSection(c, "ppo").target_kl_micro = 0)),
     "training-run-config/schedule-zero-generations": runConfigWith(
