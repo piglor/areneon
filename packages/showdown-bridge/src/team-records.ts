@@ -255,8 +255,13 @@ export function readTeamDatasetManifest(value: unknown, context: DatasetManifest
     const total = plan.cells.reduce((sum, c) => sum + c.quota, 0);
     if (total !== plan.teams) bad(`split ${plan.split}: teams ${plan.teams} is not the sum of its quotas ${total}`);
   }
+  if (manifest.evaluation_only !== undefined) {
+    // The profile cannot say: the drops are draws of the run.
+    if (manifest.evaluation_only.near_references > manifest.rejection_log.draws) bad("evaluation_only: more near-reference drops than draws");
+  }
   const { config, labelSet } = context;
   if (config !== undefined) {
+    if (manifest.evaluation_only !== undefined && (config.proposal?.components.length ?? 1) !== 1) bad("evaluation_only: the config is not a pure component (one component only)");
     if (manifest.d_max !== config.d_max) bad(`d_max ${manifest.d_max} differs from the config's ${config.d_max}`);
     if (manifest.pilot_draws !== config.pilot_draws) bad(`pilot_draws ${manifest.pilot_draws} differs from the config's ${config.pilot_draws}`);
     if (manifest.generator.config_hash !== recordHash(config)) bad("config_hash is not the hash of the given config");

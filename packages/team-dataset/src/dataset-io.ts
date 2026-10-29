@@ -128,3 +128,17 @@ export function recordHashes(paths: readonly string[]): string[] {
   }
   return hashes;
 }
+
+/** The `paste` of every record of JSON Lines files (the teams an evaluation-only dataset keeps its distance from). */
+export function recordPastes(paths: readonly string[]): string[] {
+  const pastes: string[] = [];
+  for (const path of paths) {
+    eachLine(path, (line, n) => {
+      if (line === "") return;
+      const paste = (JSON.parse(line) as { paste?: unknown }).paste;
+      if (typeof paste !== "string") throw new Error(`${path} line ${n + 1} has no paste`);
+      pastes.push(paste);
+    });
+  }
+  return pastes;
+}

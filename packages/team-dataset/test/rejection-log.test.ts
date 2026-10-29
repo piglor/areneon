@@ -19,8 +19,9 @@ describe("the rejection log (ADR-013 section 2)", () => {
     log.write({ k: 3, reason: "overflow", canonical_team_hash: hash(4), stratum: 4 });
     log.write({ k: 4, reason: "overflow", canonical_team_hash: hash(5), stratum: 5 });
     log.write({ k: 5, reason: "near_duplicate", canonical_team_hash: hash(6), stratum: 5 });
+    log.write({ k: 6, reason: "near_reference", canonical_team_hash: hash(7), stratum: 5 });
     const summary = log.close();
-    expect(summary).toMatchObject({ rejections: 2, duplicates: 1, near_duplicates: 1, overflows: 2 });
+    expect(summary).toMatchObject({ rejections: 2, duplicates: 1, near_duplicates: 1, near_references: 1, overflows: 2 });
     const text = readFileSync(path, "utf8");
     expect(summary.log_sha256).toBe(createHash("sha256").update(text).digest("hex"));
     expect(text.split("\n")[0]).toBe(`{"canonical_team_hash":"${hash(1)}","detail":"Species Clause","k":0,"reason":"invalid"}`);
@@ -41,7 +42,7 @@ describe("the rejection log (ADR-013 section 2)", () => {
 
   it("is an empty file with the hash of nothing when nothing was logged", () => {
     const path = join(dir, "empty.jsonl");
-    expect(new RejectionLog(path).close()).toEqual({ log_sha256: createHash("sha256").update("").digest("hex"), rejections: 0, duplicates: 0, near_duplicates: 0, overflows: 0 });
+    expect(new RejectionLog(path).close()).toEqual({ log_sha256: createHash("sha256").update("").digest("hex"), rejections: 0, duplicates: 0, near_duplicates: 0, near_references: 0, overflows: 0 });
     expect(readFileSync(path, "utf8")).toBe("");
   });
 });

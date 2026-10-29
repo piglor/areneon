@@ -30,7 +30,7 @@ import { loadFixtureInputs } from "./fixtures.ts";
 export function datasetValidationPool(engine: Engine, config: TrainingRunConfig): ProgressPool {
   const named = config.team_dataset;
   if (named === undefined) throw new ProgressError("the run config names no team dataset");
-  const dataset = readDataset(named.path, loadFixtureInputs(engine, config.format_id));
+  const dataset = readDataset(named.path, loadFixtureInputs(engine, config.format_id, named.path));
   if (datasetHash(dataset) !== named.dataset_hash) throw new ProgressError("the dataset's hash is not the one the run config names");
   const format = resolveFormat(engine, config.format_id);
   const excluded = new Set(config.generation.excluded_abilities);
@@ -58,7 +58,7 @@ export function datasetValidationPool(engine: Engine, config: TrainingRunConfig)
 export function datasetTrainingHashes(engine: Engine, config: TrainingRunConfig): Set<string> {
   const named = config.team_dataset;
   if (named === undefined) throw new ProgressError("the run config names no team dataset");
-  const dataset = readDataset(named.path, loadFixtureInputs(engine, config.format_id));
+  const dataset = readDataset(named.path, loadFixtureInputs(engine, config.format_id, named.path));
   if (datasetHash(dataset) !== named.dataset_hash) throw new ProgressError("the dataset's hash is not the one the run config names");
   const format = resolveFormat(engine, config.format_id);
   const hashes = new Set<string>();
