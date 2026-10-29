@@ -229,6 +229,7 @@ function runGenerate(values: Values, io: CliIo, engine: Engine): number {
         ...(gates === undefined ? {} : { gates: { publishable: gates.publishable, failed: gates.failed } }),
       }),
     );
+    if (values.publish === true && gates === undefined) io.err("--publish: the config has no proposal, so there are no pilot gates to check");
     if (values.publish === true && gates !== undefined && !gates.publishable) {
       io.err(`not publishable: ${gates.failed.join(", ")}`);
       return 1;

@@ -112,6 +112,65 @@ describe("P3, the bound on the most likely team, against a toy worked by hand", 
   });
 });
 
+describe("P3 is sound: it bounds the true maximum probability of a brute-forced toy", () => {
+  // Three entries, teams of two. Enumerate every ordered pair of entries, every ability, every move subset (ordered draw, then collapsed to
+  // the unordered set) and every item the clause allows, with the generator's own probabilities; the largest team probability must not exceed the bound.
+  it("uniform", () => {
+    const rows = [{ id: "a", abilities: 1, moves: 3 }, { id: "b", abilities: 2, moves: 2 }, { id: "c", abilities: 2, moves: 3, required: "i1" }];
+    const roster = toyRoster(rows);
+    const k = 2;
+    const natures = 2;
+    const weights = [2, 1, 1]; // items i1..i3 (i4 absent)
+    const items = ["i1", "i2", "i3"];
+    const voc = { roster, items, natures: Array.from({ length: natures }, () => ({ name: "n" })), rules: { max_team_size: 2, item_clause: 1 } } as never;
+    const config: Parameters<typeof uniformBound>[1] = { item_weights: items.map((item, i) => ({ item, weight: weights[i] as number })), default_item_weight: 0, gender_policy: "unset", moves_per_set: k };
+    // member outcome: [entry, ability, move subset, item, nature] -> probability given the items already held
+    const prob = new Map<string, number>();
+    const choose = (n: number): string[][] => {
+      const out: string[][] = [];
+      for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) out.push([`m${i}`, `m${j}`]);
+      return out;
+    };
+    for (let first = 0; first < 3; first++) {
+      for (let second = 0; second < 3; second++) {
+        if (first === second) continue;
+        const order = [rows[first], rows[second]] as typeof rows;
+        const draws = (held: string[]) => (row: (typeof rows)[number]): { item: string; p: number }[] => {
+          if ((row as { required?: string }).required !== undefined) return [{ item: (row as { required: string }).required as string, p: 1 }];
+          const open = items.map((it, i) => ({ it, w: weights[i] as number })).filter((x) => !held.includes(x.it));
+          const total = open.reduce((a, x) => a + x.w, 0);
+          return open.map((x) => ({ item: x.it, p: x.w / total }));
+        };
+        for (const i1 of draws([])(order[0] as never)) {
+          const held = [i1.item];
+          for (const i2 of draws(held)(order[1] as never)) {
+            for (let a1 = 0; a1 < (order[0] as { abilities: number }).abilities; a1++) {
+              for (let a2 = 0; a2 < (order[1] as { abilities: number }).abilities; a2++) {
+                for (const m1 of choose((order[0] as { moves: number }).moves)) {
+                  for (const m2 of choose((order[1] as { moves: number }).moves)) {
+                    for (let n1 = 0; n1 < natures; n1++) {
+                      for (let n2 = 0; n2 < natures; n2++) {
+                        const members = [`${order[0]?.id}|a${a1}|${m1}|${i1.item}|n${n1}`, `${order[1]?.id}|a${a2}|${m2}|${i2.item}|n${n2}`].sort().join("/");
+                        const pm = (r: (typeof rows)[number], n: number) => 1 / (r.abilities * (r.moves * (r.moves - 1)) / 2) / n;
+                        const p = (1 / 6) * i1.p * i2.p * pm(order[0] as never, natures) * pm(order[1] as never, natures);
+                        prob.set(members, (prob.get(members) ?? 0) + p);
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+    const max = Math.max(...prob.values());
+    const bound = uniformBound(voc, config);
+    expect(Number(bound.num) / Number(bound.den)).toBeGreaterThanOrEqual(max);
+    expect(bitsOf(bound)).toBeLessThanOrEqual(Math.floor(-Math.log2(max)));
+  });
+});
+
 describe("P1 for the role-set component", () => {
   it("counts the table's ids that resolve in the vocabulary", () => {
     const real = roleSetsMapping(vocabulary, source.table);
@@ -284,6 +343,12 @@ describe("a small mixture generation", () => {
     expect(() => proposalCoverage({ ...base, roleSets: undefined, config: mixed(loose), pilot })).toThrow(/no role-set table/);
     expect(roleSetsMapping(vocabulary, { species: [] })).toEqual({ mapped: 0, total: 0 });
     expect(proposalCoverage({ ...base, config: mixed(loose), pilot, roleSets: { table: { species: [] } } }).components[0]?.p1).toMatchObject({ value: 0, pass: false });
+  });
+
+  it("refuses a recorded pilot whose component kinds are not the config's", () => {
+    const extra = { ...pilot, components: [...(pilot.components as NonNullable<Pilot["components"]>), { kind: "usage", draws: 0, rejected: 0, cell_hits: new Array<number>(light.labels.length).fill(0) }] };
+    expect(() => run(cfg, { pilot: extra })).toThrow(/component kinds/);
+    expect(() => run(cfg, { pilot: { ...pilot, components: (pilot.components as NonNullable<Pilot["components"]>).slice(0, 1) } })).toThrow(/component kinds|add up/);
   });
 
   it("a uniform dataset's coverage has none of the new fields", () => {

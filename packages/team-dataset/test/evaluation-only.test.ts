@@ -1,11 +1,14 @@
 // The evaluation-only dataset (ADR-020 section 7): teams within d_team of a reference team are dropped and logged,
 // the manifest marks the dataset, evaluation readers accept it and the training pool and the loop's team pool refuse it.
 
-import { mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { importPaste, readTrainingRunConfig, readTeamDatasetManifest, type PokemonSet } from "@areneon/showdown-bridge";
+import { importPaste, readTeamGeneratorConfig, readTrainingRunConfig, readTeamDatasetManifest, recordHash, teamVocabularyHash, type PokemonSet } from "@areneon/showdown-bridge";
 import { afterAll, describe, expect, it } from "vitest";
+import { Drawer } from "../src/draw.ts";
+import { Proposal } from "../src/proposal.ts";
+import { type Pilot, runPilot } from "../src/pilot.ts";
 import { Binner } from "../src/binner.ts";
 import { recordPastes, writeDataset } from "../src/dataset-io.ts";
 import { readDataset, TrainingDrawError, trainingPool } from "../src/dataset-reader.ts";
@@ -113,6 +116,53 @@ describe("an evaluation-only generation from the committed config", () => {
     expect(verifiedDatasetHash(engine, dir, FORMAT)).not.toBe(verifiedDatasetHash(engine, SOURCE, FORMAT));
   });
 }, 600_000); // a 300-team generation through the pinned validator, with an engine import per candidate
+
+describe("a pure role_sets evaluation-only dataset (EXP-M1's V_M*) from the committed config", () => {
+  const configFile = join(ROOT, "config", "teams", FORMAT, "generator.role-sets-eval.json");
+  const roleSets = roleSetsSource(engine, inputs.vocabulary, inputs.table, JSON.parse(readFileSync(join(ROOT, "fixtures", "showdown", FORMAT, "role-sets.json"), "utf8")));
+  const config = readTeamGeneratorConfig(JSON.parse(readFileSync(configFile, "utf8")), inputs.table);
+  const dir = join(scratch, "role-sets-eval");
+  mkdirSync(dir);
+  const ident = { config_hash: recordHash(config), label_set_hash: recordHash(inputs.labelSet), vocabulary_hash: teamVocabularyHash(inputs.vocabulary) };
+  // A real 800-draw pilot scaled to the config's 40,000 draws: the rates are real, the run stays small.
+  const trial = runPilot(new Drawer({ engine, format: inputs.format, proposal: new Proposal(inputs.vocabulary, inputs.table, config, roleSets), labelSet: inputs.labelSet, generationKey: "11".repeat(32) }), ident, inputs.labelSet, 800);
+  const scaled = (n: number[]): number[] => n.map((h) => h * 50);
+  const pilot: Pilot = { ...trial, draws: config.pilot_draws, rejected: trial.rejected * 50, cell_hits: scaled(trial.cell_hits), components: (trial.components ?? []).map((c) => ({ ...c, draws: c.draws * 50, rejected: c.rejected * 50, cell_hits: scaled(c.cell_hits) })) };
+  const reference = refPasteSets();
+  const result = generate({
+    engine, format: inputs.format, table: inputs.table, vocabulary: inputs.vocabulary, labelSet: inputs.labelSet, config, roleSets,
+    generationKey: "11".repeat(32), assignmentKey: "22".repeat(32), datasetId: "role-sets-eval-1", planId: "role-sets-eval-1", sizes: { dev: 1, validation: 20, training: 1 },
+    generatorCommit: "a".repeat(40), reference: { hash: referencePoolHash([]), known: new KnownHashes([]) }, pilot, logDir: dir, dTeam: 2,
+    exclude: { d_team: 2, index: new NearIndex(reference, 2) },
+  });
+  writeDataset(dir, result);
+
+  it("is read back through the evaluation readers with its own committed config", () => {
+    expect(loadFixtureInputs(engine, FORMAT, dir).config.config_id).toBe("role-sets-eval-v1");
+    const run = readTrainingRunConfig({ ...structuredClone(tiny), team_dataset: { path: dir, dataset_hash: verifiedDatasetHash(engine, dir, FORMAT) } });
+    const pool = datasetValidationPool(engine, run);
+    expect(pool.teams.length).toBeGreaterThanOrEqual(20);
+    expect(result.manifest.evaluation_only?.d_team).toBe(2);
+    expect(result.coverage.proposal?.components.map((c) => c.kind)).toEqual(["role_sets"]);
+    expect(() => datasetTeamPool(engine, run)).toThrow(/evaluation-only/);
+  });
+
+  it("picks the committed mixture config for a mixture manifest, and refuses a manifest that is not an object", () => {
+    const mixDir = join(scratch, "mix-manifest");
+    mkdirSync(mixDir);
+    const mix = JSON.parse(readFileSync(join(ROOT, "config", "teams", FORMAT, "generator.mixture-r.json"), "utf8"));
+    writeFileSync(join(mixDir, "manifest.json"), JSON.stringify({ generator: { config_hash: recordHash(mix) } }));
+    expect(loadFixtureInputs(engine, FORMAT, mixDir).config.config_id).toBe("mixture-r-v1");
+    writeFileSync(join(mixDir, "manifest.json"), "null");
+    expect(() => loadFixtureInputs(engine, FORMAT, mixDir)).toThrow(/not an object/);
+    writeFileSync(join(mixDir, "manifest.json"), JSON.stringify({ generator: { config_hash: "0".repeat(64) } }));
+    expect(loadFixtureInputs(engine, FORMAT, mixDir).config.config_id).toBe(inputs.config.config_id);
+  });
+}, 600_000); // a 40,000-draw-config run over 64 cells through the pinned validator
+
+function refPasteSets(): PokemonSet[][] {
+  return recordPastes([join(SOURCE, "teams-dev.jsonl")]).map((paste) => importPaste(engine, paste));
+}
 
 describe("the refusals of an evaluation-only run", () => {
   const index = new NearIndex([], 1);

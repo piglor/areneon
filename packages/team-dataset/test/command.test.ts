@@ -311,6 +311,12 @@ describe("a mixture dataset from the command line (ADR-020 gates and the evaluat
     expect(again.err.join()).toMatch(/--evaluation-only needs --d-team and at least one --reference/);
   }, 300_000);
 
+  it("--publish on a config with no proposal prints a notice and keeps the exit code", () => {
+    const run = cli(generate(join(scratch, "pub-uniform"), ["--publish"]));
+    expect(run.code).toBe(0);
+    expect(run.err.join("\n")).toMatch(/--publish: the config has no proposal/);
+  }, 300_000);
+
   it("the pilot command records the uniform reference with --without-proposal", () => {
     const config = mixed(loose);
     const out = join(scratch, "ref-pilot.json");

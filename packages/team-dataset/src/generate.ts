@@ -174,6 +174,9 @@ export function generate(input: GenerateInput): GenerateResult {
       throw new GenerateError("the uniform reference pilot was not recorded for this config without its proposal, label set and vocabulary");
     }
   }
+  if (pilot.components !== undefined && pilot.components.map((c) => c.kind).join() !== (config.proposal?.components.map((c) => c.kind) ?? []).join()) {
+    throw new GenerateError("the pilot's component kinds are not the config's");
+  }
   const dims = radices(labelSet);
   const known = input.reference.known;
   const attempts: Attempt[] = [];

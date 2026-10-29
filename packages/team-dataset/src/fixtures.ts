@@ -71,7 +71,9 @@ function configFileOf(formatId: string, datasetDir: string | undefined): string 
   const dir = join(REPO_ROOT, "config/teams", formatId);
   const default_ = join(dir, "generator.json");
   if (datasetDir === undefined || !existsSync(join(datasetDir, MANIFEST_FILE))) return default_;
-  const named = (json(join(datasetDir, MANIFEST_FILE)) as { generator?: { config_hash?: unknown } }).generator?.config_hash;
+  const manifest = json(join(datasetDir, MANIFEST_FILE)) as { generator?: { config_hash?: unknown } } | null;
+  if (typeof manifest !== "object" || manifest === null) throw new FixtureError(`${MANIFEST_FILE} is not an object`);
+  const named = manifest.generator?.config_hash;
   for (const name of readdirSync(dir).filter((f) => /^generator.*\.json$/.test(f)).sort()) {
     if (recordHash(json(join(dir, name)) as never) === named) return join(dir, name);
   }
