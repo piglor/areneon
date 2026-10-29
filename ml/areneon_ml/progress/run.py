@@ -647,11 +647,18 @@ def _dataset_of(config: RunConfig) -> dict[str, Any]:
     return found
 
 
-def _versus_pair(run_dir: Path, config: RunConfig, spec: VersusSpec) -> RunPair:
+def _versus_pair(
+    run_dir: Path,
+    config: RunConfig,
+    spec: VersusSpec,
+    eval_dataset: EvalDataset | None = None,
+) -> RunPair:
     """The other run's frozen pair, verified; refuses a run that cannot be compared.
 
     Both runs must name the same format and the same team dataset (so the validation split
-    is one and the same), each must have committed the generation, the records must be
+    is one and the same) unless ``eval_dataset`` supplies the common validation split (the two
+    runs may then be trained on different datasets, but the evaluation dataset must not be
+    either run's own training dataset), each must have committed the generation, the records must be
     synthetic, and the run keys, run directories and checkpoints must differ. The other run
     is only read (its lock is never taken).
     """
@@ -663,8 +670,16 @@ def _versus_pair(run_dir: Path, config: RunConfig, spec: VersusSpec) -> RunPair:
         raise ProgressError("the other run has the same run key as the evaluated one")
     if other.format_id != config.format_id:
         raise ProgressError("the two runs name different formats")
-    if _dataset_of(other)["dataset_hash"] != _dataset_of(config)["dataset_hash"]:
-        raise ProgressError("the two runs name different team datasets: no common validation split")
+    if eval_dataset is None:
+        if _dataset_of(other)["dataset_hash"] != _dataset_of(config)["dataset_hash"]:
+            raise ProgressError(
+                "the two runs name different team datasets: no common validation split"
+            )
+    elif eval_dataset.dataset_hash == _dataset_of(other)["dataset_hash"]:
+        raise ProgressError(
+            "--eval-dataset-hash is the other run's own training dataset: its teams are not "
+            "held out from that run"
+        )
     found = _source(other_dir, other, spec.generation)
     return RunPair(
         other.run_key,
@@ -1339,7 +1354,7 @@ def progress_generation(  # noqa: PLR0913, PLR0915, PLR0917
         ablation = _ablation_spec(run_dir, config, source) if preview_ablation else None
         anchor_pairs = tuple(_anchor_pair(run_dir, config, a) for a in wanted)
         played_anchor_games = anchor_games if wanted else 0
-        other_pair, relation = _open_versus(run_dir, config, source, versus)
+        other_pair, relation = _open_versus(run_dir, config, source, versus, eval_dataset)
         played_run_games = 0 if versus is None else versus.games
         extra_modes = _play_modes(modes, source, config, other_pair)
         needed = max(games, played_anchor_games, played_run_games) // 2
@@ -1459,7 +1474,7 @@ def _skipped(  # noqa: PLR0913, PLR0917
     modes: Sequence[ExtraMode] = (),
 ) -> dict[str, Any]:
     """A committed directory is verified and reported, never rewritten."""
-    pair = None if versus is None else _versus_pair(run_dir, config, versus)
+    pair = None if versus is None else _versus_pair(run_dir, config, versus, eval_dataset)
     record = verify_progress_dir(
         target,
         config,
@@ -1504,13 +1519,17 @@ def _skipped(  # noqa: PLR0913, PLR0917
 
 
 def _open_versus(
-    run_dir: Path, config: RunConfig, source: _Source, versus: VersusSpec | None
+    run_dir: Path,
+    config: RunConfig,
+    source: _Source,
+    versus: VersusSpec | None,
+    eval_dataset: EvalDataset | None = None,
 ) -> tuple[RunPair | None, dict[str, str] | None]:
     """The other run's pair and its lineage relation, with its team set checked; (None, None)
     without ``versus``."""
     if versus is None:
         return None, None
-    pair = _versus_pair(run_dir, config, versus)
+    pair = _versus_pair(run_dir, config, versus, eval_dataset)
     relation = versus_relation(run_dir, source, pair)
     teams = layout.read_json(pair.team_set)
     manifest = layout.read_json(pair.team_set.parent / layout.MANIFEST)
