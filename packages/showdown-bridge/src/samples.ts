@@ -14,7 +14,7 @@ import { jcs, type Json } from "./canonical-json.ts";
 import { legalChoiceSet } from "./choice-judge.ts";
 import { parseJointChoice } from "./damage-aware-choice.ts";
 import { evaluationSamples } from "./evaluation-samples.ts";
-import { type EngineData, engineDataHash, exportEngineData } from "./engine-data.ts";
+import { type EngineData, engineDataHash, exportEngineData, exportEngineDataV2 } from "./engine-data.ts";
 import type { Engine } from "./engine.ts";
 import { episodeFromRecord } from "./episode-io.ts";
 import { GOLDEN_DIR, GOLDEN_FORMAT, goldenBattle, syntheticFixtureHashes, syntheticTeam } from "./golden.ts";
@@ -143,6 +143,9 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     move_targets: [...new Set(moves.map((m) => m.target))].sort(),
     move_flags: [...new Set(moves.flatMap((m) => m.flags))].sort(),
   };
+  // Version 2 beside it: the same slim table with the condition list (a short one).
+  const full2 = exportEngineDataV2(engine, GOLDEN_FORMAT);
+  const engineData2 = { ...engineData, schema_version: 2, conditions: full2.conditions.slice(0, 3) };
   const [speciesA, speciesB] = engineData.species as [(typeof species)[number], (typeof species)[number]];
 
   // The policy worker's contracts (ADR-010 section 2). A query is the
@@ -596,6 +599,7 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
 
   const valid: Record<string, unknown> = {
     "engine-data/golden": engineData,
+    "engine-data-2/golden": engineData2,
     "checkpoint-record/battle": checkpointRecord,
     "checkpoint-record/preview-fresh": recordWith((r) => {
       r.role = "preview";
@@ -846,6 +850,8 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "checkpoint-record/exploiter-of-self": recordWith((r) => (r.exploiter_target = r.checkpoint_id)),
     "engine-data/unsorted-species": { ...engineData, species: [speciesB, speciesA] },
     "engine-data/duplicate-species": { ...engineData, species: [speciesA, speciesA] },
+    "engine-data-2/unsorted-conditions": mutated(engineData2, (t) => (t.conditions as unknown[]).reverse()),
+    "engine-data-2/duplicate-condition": mutated(engineData2, (t) => (t.conditions as unknown[]).splice(1, 0, (t.conditions as unknown[])[0])),
     "engine-data/dangling-type": mutated(engineData, (t) => ((t.species as { types: string[] }[])[0] as { types: string[] }).types = ["nosuchtype"]),
     "engine-data/short-damage-row": mutated(engineData, (t) => ((t.types as { damage_taken: number[] }[])[0] as { damage_taken: number[] }).damage_taken.pop()),
     // Schema-valid, refused by the readers: the hashes must be sorted and unique.
@@ -1084,6 +1090,10 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "engine-data/unknown-category": mutated(engineData, (t) => ((t.moves as { category: string }[])[0] as { category: string }).category = "Typeless"),
     "engine-data/extra-field": { ...engineData, learnsets: [] },
     "engine-data/next-version": { ...engineData, schema_version: 2 },
+    "engine-data-2/no-conditions": mutated(engineData2, (t) => delete t.conditions),
+    "engine-data-2/extra-field": { ...engineData2, learnsets: [] },
+    "engine-data-2/version-1": { ...engineData2, schema_version: 1 },
+    "engine-data-2/condition-without-name": mutated(engineData2, (t) => delete ((t.conditions as Record<string, unknown>[])[0] as Record<string, unknown>).name),
     "engine-data/short-commit": { ...engineData, showdown_commit: "7244fe8" },
     "move-class-table/missing-class": moveClassesWith((t) => delete (t.classes as Record<string, unknown>).protection),
     "move-class-table/extra-class": moveClassesWith((t) => ((t.classes as Record<string, unknown>).switches = [])),

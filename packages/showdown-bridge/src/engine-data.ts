@@ -18,15 +18,22 @@
 import { createHash } from "node:crypto";
 import { ajvFor } from "@areneon/schema/ajv";
 import engineDataSchema from "@areneon/schema/contracts/v1/engine-data.schema.json" with { type: "json" };
+import engineData2Schema from "@areneon/schema/contracts/v1/engine-data-2.schema.json" with { type: "json" };
 import type { EngineData } from "@areneon/schema/types/v1/engine-data.ts";
+import type { EngineDataV2 } from "@areneon/schema/types/v1/engine-data-2.ts";
 import { jcs, type Json } from "./canonical-json.ts";
 import { type Engine, EngineError } from "./engine.ts";
+import { conditionIds } from "./volatile-copy.ts";
 
-export type { EngineData };
+export type { EngineData, EngineDataV2 };
 
 export class EngineDataError extends Error {
   override name = "EngineDataError";
 }
+
+/** Version 2 of the table (ADR-010 erratum A4 item 7): version 1 plus the engine's condition ids. */
+export const ENGINE_DATA_2_FILE = "engine-data-2.json";
+export const ENGINE_DATA_2_SUMMARY = "engine-data-2.summary.json";
 
 /** The golden export, beside the other pinned-engine fixtures. */
 export const ENGINE_DATA_FILE = "engine-data.json";
@@ -34,6 +41,7 @@ export const ENGINE_DATA_FILE = "engine-data.json";
 export const ENGINE_DATA_SUMMARY = "engine-data.summary.json";
 
 const validTable = ajvFor("contract").compile(engineDataSchema);
+const validTable2 = ajvFor("contract").compile(engineData2Schema);
 
 type Raw = Record<string, unknown>;
 
@@ -45,7 +53,12 @@ interface RawDex {
   abilities: { all(): unknown[] };
   types: { all(): unknown[] };
   conditions: { get(id: string): unknown };
-  data: { Conditions: Record<string, unknown> };
+  data: {
+    Conditions: Record<string, unknown>;
+    Moves: Record<string, { condition?: unknown }>;
+    Abilities: Record<string, { condition?: unknown }>;
+    Items: Record<string, { condition?: unknown }>;
+  };
 }
 
 interface RawSim {
@@ -100,6 +113,11 @@ const SLOTS = ["0", "1", "H", "S"];
  * table whose references do not close.
  */
 export function exportEngineData(engine: Engine, formatId: string): EngineData {
+  return readEngineData(collectTable(engine, formatId).table);
+}
+
+/** The pieces both versions share: the version 1 table (unvalidated) and the mod's dex. */
+function collectTable(engine: Engine, formatId: string): { table: Record<string, unknown>; dex: RawDex } {
   const sim = engine.sim as unknown as RawSim;
   const format = sim.Dex.formats.get(formatId);
   if (!format.exists) throw new EngineError(`unknown format ${formatId}`);
@@ -204,7 +222,7 @@ export function exportEngineData(engine: Engine, formatId: string): EngineData {
       return condition.exists === true ? named(condition, "terrain") : bad(`terrain ${id}: the engine has no such condition`);
     });
 
-  return readEngineData({
+  const table = {
     schema_version: 1,
     showdown_commit: engine.commit,
     format_id: formatId,
@@ -219,7 +237,31 @@ export function exportEngineData(engine: Engine, formatId: string): EngineData {
     statuses: ofKind("Status"),
     weathers: ofKind("Weather"),
     terrains,
-  });
+  };
+  return { table, dex };
+}
+
+/**
+ * Export version 2: the version 1 table with `schema_version` 2 and `conditions`, every
+ * condition of effect type Condition that the mod, its moves, abilities and items define
+ * (statuses, weathers and terrains stay in their lists). Nothing is written by hand.
+ */
+export function exportEngineDataV2(engine: Engine, formatId: string): EngineDataV2 {
+  const { table, dex } = collectTable(engine, formatId);
+  const conditions = conditionIds(dex)
+    .map((id) => rec(dex.conditions.get(id), "condition"))
+    .map((c) => (c.exists === true ? c : bad(`condition ${String(c.id)}: the engine has no such condition`)))
+    .filter((c) => c.effectType === "Condition")
+    .map((c) => named(c, "condition"))
+    .sort(byId);
+  const keys = Object.keys(table);
+  const at = keys.indexOf("statuses");
+  const ordered2: Record<string, unknown> = {};
+  for (const [k, key] of keys.entries()) {
+    if (k === at) ordered2.conditions = conditions;
+    ordered2[key] = key === "schema_version" ? 2 : table[key];
+  }
+  return readEngineDataV2(ordered2);
 }
 
 /** Strictly ascending ids: sorted by code unit, no repeat. */
@@ -236,6 +278,21 @@ function ordered(ids: string[], what: string): void {
 export function readEngineData(value: unknown): EngineData {
   if (!validTable(value)) return bad(`invalid engine data: ${JSON.stringify(validTable.errors)}`);
   const table = value as unknown as EngineData;
+  checkTable(table);
+  return table;
+}
+
+/** Parse a stored version 2 table: the schema, the version 1 rules and sorted, unique condition ids. */
+export function readEngineDataV2(value: unknown): EngineDataV2 {
+  if (!validTable2(value)) return bad(`invalid engine data: ${JSON.stringify(validTable2.errors)}`);
+  const table = value as unknown as EngineDataV2;
+  checkTable(table);
+  ordered(table.conditions.map((e) => e.id), "conditions");
+  return table;
+}
+
+/** What the contract profile cannot say, for both versions. */
+function checkTable(table: EngineData | EngineDataV2): void {
   for (const key of ["types", "species", "moves", "items", "abilities", "statuses", "weathers", "terrains"] as const) {
     ordered(table[key].map((e) => e.id), key);
   }
@@ -260,16 +317,15 @@ export function readEngineData(value: unknown): EngineData {
     ordered(m.flags, `move ${m.id} flags`);
     check(m.flags.every((f) => table.move_flags.includes(f)), `move ${m.id}: unknown flag`);
   }
-  return table;
 }
 
 /** SHA-256 of the table's JCS bytes: the engine-data hash of the encoder version. */
-export function engineDataHash(table: EngineData): string {
+export function engineDataHash(table: EngineData | EngineDataV2): string {
   return createHash("sha256").update(jcs(table as unknown as Json), "utf8").digest("hex");
 }
 
 /** The reviewable summary committed beside the golden table. */
-export function engineDataSummary(table: EngineData): {
+export function engineDataSummary(table: EngineData | EngineDataV2): {
   engine_data_hash: string;
   showdown_commit: string;
   counts: Record<string, number>;
@@ -278,5 +334,6 @@ export function engineDataSummary(table: EngineData): {
   for (const key of ["types", "species", "moves", "items", "abilities", "statuses", "weathers", "terrains"] as const) {
     counts[key] = table[key].length;
   }
+  if ("conditions" in table) counts.conditions = table.conditions.length;
   return { engine_data_hash: engineDataHash(table), showdown_commit: table.showdown_commit, counts };
 }

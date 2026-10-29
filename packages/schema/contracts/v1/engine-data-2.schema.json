@@ -1,0 +1,417 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:areneon:schema:contracts:v1:engine-data-2",
+  "title": "EngineDataV2",
+  "description": "Version 2 of the engine-data table (ADR-010 erratum A4 item 7), beside the unchanged version 1: every list of version 1 plus `conditions`, the ids of the volatile and other conditions (effect type Condition) the pinned engine defines for the format's mod, so a reader can resolve a volatile id instead of hashing it into a bucket. Everything else (sorting, the position as the vocabulary index, the reader rules, the hash as the encoder-version input, the notice) is as in version 1; the version 1 table stays producible, and a run keeps the engine-data hash of the version it names. Sorted and unique ids and references that resolve are enforced by the reader. Natures, learnsets and other attributes stay out of scope. Derived from the pinned Showdown data files (MIT licence, see fixtures/showdown/<format>/NOTICE-engine-data.txt).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "showdown_commit",
+    "format_id",
+    "mod",
+    "types",
+    "move_targets",
+    "move_flags",
+    "species",
+    "moves",
+    "items",
+    "abilities",
+    "conditions",
+    "statuses",
+    "weathers",
+    "terrains"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 2
+    },
+    "showdown_commit": {
+      "description": "The pinned engine commit the table was exported from.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "format_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+$"
+    },
+    "mod": {
+      "description": "The engine data mod the format plays on.",
+      "type": "string",
+      "minLength": 1
+    },
+    "types": {
+      "description": "Type vocabulary, sorted by id; the position is the type's index.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/TypeEntry"
+      }
+    },
+    "move_targets": {
+      "description": "Move target kinds, sorted, unique.",
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "move_flags": {
+      "description": "Move flags, sorted, unique.",
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "species": {
+      "description": "Species vocabulary (formes included), sorted by id; the position is the species' index.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/SpeciesEntry"
+      }
+    },
+    "moves": {
+      "description": "Move vocabulary, sorted by id.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/MoveEntry"
+      }
+    },
+    "items": {
+      "description": "Item vocabulary, sorted by id.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/ItemEntry"
+      }
+    },
+    "abilities": {
+      "description": "Ability vocabulary, sorted by id.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/AbilityEntry"
+      }
+    },
+    "conditions": {
+      "description": "Volatile and other conditions of the effect type Condition (confusion, taunt, a side or slot condition, ...), sorted by id; statuses, weathers and terrains are listed apart. The ids the engine defines for the mod: its conditions and those of its moves, abilities and items.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/NamedEntry"
+      }
+    },
+    "statuses": {
+      "description": "Major status conditions, sorted by id.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/NamedEntry"
+      }
+    },
+    "weathers": {
+      "description": "Weather conditions, sorted by id.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/NamedEntry"
+      }
+    },
+    "terrains": {
+      "description": "Terrain conditions, sorted by id.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/NamedEntry"
+      }
+    }
+  },
+  "$defs": {
+    "EngineId": {
+      "description": "An engine id: lower case letters and digits.",
+      "type": "string",
+      "pattern": "^[a-z0-9]+$"
+    },
+    "NamedEntry": {
+      "description": "A vocabulary entry that has no attributes.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/EngineId"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "TypeEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name",
+        "damage_taken"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/EngineId"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "damage_taken": {
+          "description": "How this type takes damage from each attacking type, in `types` order, as the engine codes it: 0 normal, 1 super effective, 2 resisted, 3 immune.",
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 3
+          }
+        }
+      }
+    },
+    "SpeciesEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name",
+        "num",
+        "base_species",
+        "types",
+        "base_stats",
+        "weight_hg",
+        "abilities"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/EngineId"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "num": {
+          "type": "integer",
+          "minimum": -1000000,
+          "maximum": 1000000
+        },
+        "base_species": {
+          "description": "The id of the species this is a forme of (itself for a base species).",
+          "$ref": "#/$defs/EngineId"
+        },
+        "types": {
+          "description": "Type ids, in the engine's order.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/EngineId"
+          },
+          "minItems": 1,
+          "maxItems": 2
+        },
+        "base_stats": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "hp",
+            "atk",
+            "def",
+            "spa",
+            "spd",
+            "spe"
+          ],
+          "properties": {
+            "hp": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 255
+            },
+            "atk": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 255
+            },
+            "def": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 255
+            },
+            "spa": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 255
+            },
+            "spd": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 255
+            },
+            "spe": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 255
+            }
+          }
+        },
+        "weight_hg": {
+          "description": "Weight in hectograms (the engine's weighthg).",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000
+        },
+        "abilities": {
+          "description": "Ability ids in the engine's slot order (0, 1, H, S).",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/EngineId"
+          },
+          "minItems": 1,
+          "maxItems": 4
+        }
+      }
+    },
+    "MoveEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name",
+        "num",
+        "type",
+        "category",
+        "base_power",
+        "accuracy",
+        "always_hits",
+        "priority",
+        "pp",
+        "crit_ratio",
+        "target",
+        "flags"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/EngineId"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "num": {
+          "type": "integer",
+          "minimum": -1000000,
+          "maximum": 1000000
+        },
+        "type": {
+          "$ref": "#/$defs/EngineId"
+        },
+        "category": {
+          "enum": [
+            "Physical",
+            "Special",
+            "Status"
+          ]
+        },
+        "base_power": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000
+        },
+        "accuracy": {
+          "description": "Percent; 0 when `always_hits`.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "always_hits": {
+          "type": "boolean"
+        },
+        "priority": {
+          "type": "integer",
+          "minimum": -8,
+          "maximum": 8
+        },
+        "pp": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "crit_ratio": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10
+        },
+        "target": {
+          "description": "One of `move_targets`.",
+          "type": "string",
+          "minLength": 1
+        },
+        "flags": {
+          "description": "Sorted members of `move_flags`.",
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "ItemEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name",
+        "num",
+        "is_berry",
+        "fling_power"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/EngineId"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "num": {
+          "type": "integer",
+          "minimum": -1000000,
+          "maximum": 1000000
+        },
+        "is_berry": {
+          "type": "boolean"
+        },
+        "fling_power": {
+          "description": "0 when the item cannot be flung.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000
+        }
+      }
+    },
+    "AbilityEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name",
+        "num"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/EngineId"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "num": {
+          "type": "integer",
+          "minimum": -1000000,
+          "maximum": 1000000
+        }
+      }
+    }
+  }
+}
