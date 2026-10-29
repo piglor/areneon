@@ -10,7 +10,8 @@ import type { PolicyQuery } from "@areneon/schema/types/v1/policy-query.ts";
 import type { PrivateTeamSpec } from "@areneon/schema/types/v1/private-team-spec.ts";
 import { NoCandidateError } from "./actor-rule.ts";
 import { type Json, jcs } from "./canonical-json.ts";
-import { candidateFeatures, createFeatureMemo, type FeatureBuildCode, FeatureBuildError, type FeatureConfigs, type FeatureMemo } from "./candidate-features.ts";
+import { buildFeatures, isFeatureSetId } from "./feature-build.ts";
+import { createFeatureMemo, type FeatureBuildCode, FeatureBuildError, type FeatureConfigs, type FeatureMemo } from "./candidate-features.ts";
 import { enumerateCandidates } from "./choices.ts";
 import { randomLegalActor } from "./random-legal.ts";
 import type { Engine, PokemonSet } from "./engine.ts";
@@ -160,7 +161,8 @@ export function policyActor(options: PolicyActorOptions): Actor {
     let candidate_features;
     if (features !== undefined && stated !== null) {
       try {
-        candidate_features = candidateFeatures(engine ?? pinnedEngine(), features.configs, channel, team.team, candidates, memo);
+        if (!isFeatureSetId(stated.feature_set)) throw new PolicyProtocolError("the worker stated a candidate feature set this side cannot build");
+        candidate_features = buildFeatures(engine ?? pinnedEngine(), features.configs, channel, team.team, candidates, memo, stated.feature_set);
       } catch (error) {
         if (error instanceof FeatureBuildError) throw new ForfeitSignal("crash", `no candidate features: ${error.code satisfies FeatureBuildCode}`);
         throw error;

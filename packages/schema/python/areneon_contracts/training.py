@@ -18,7 +18,7 @@ import hashlib
 import itertools
 import json
 import re
-from collections.abc import Iterable, Iterator, Sequence
+from collections.abc import Callable, Iterable, Iterator, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -31,7 +31,7 @@ class TrainingStreamError(ValueError):
     """A stream does not match its TrainingSet manifest."""
 
 
-def _strictly_ascending(hashes: list[str]) -> bool:
+def _strictly_ascending(hashes: Sequence[Any]) -> bool:
     return all(a < b for a, b in itertools.pairwise(hashes))
 
 
@@ -48,17 +48,45 @@ def _check_candidates(number: int, raw: dict[str, Any], ready: bool) -> None:
         raise TrainingStreamError(f"line {number}: its choice is not among its candidates")
 
 
+#: The arrays of the `probe-damage/2` feature set and the sort key of each array's rows.
+_FEATURE_SET_WITH_ARRAYS = "probe-damage/2"
+_ARRAY_KEYS: dict[str, Callable[[dict[str, Any]], tuple[Any, ...]]] = {
+    "threats": lambda r: (r["own"], int(r["mega"]), r["foe"], r["move"]),
+    "speeds": lambda r: (r["own"], int(r["mega"]), r["foe"]),
+    "own_priorities": lambda r: (r["slot"], r["move"], int(r["mega"])),
+    "foe_priorities": lambda r: (r["foe"], r["move"]),
+}
+
+
 def _check_features(number: int, raw: dict[str, Any]) -> None:
-    """The reader rule of ``candidate_features`` the profile cannot say: rows sorted and unique."""
+    """The reader rules of ``candidate_features`` the profile cannot say.
+
+    Rows sorted and unique; under ``probe-damage/2`` the four arrays present, under any other set
+    absent, and each sorted and unique by its key (ADR-022 erratum E-22.3.2). What needs the request
+    (positions, Mega flags, coverage of the candidates) is the worker's, as for the rows.
+    """
     features = raw.get("candidate_features")
     if features is None:
         return
     keys = [(r["slot"], r["move"], r["target"], int(r["mega"])) for r in features["rows"]]
-    if not _strictly_ascending(keys):  # type: ignore[arg-type]
+    if not _strictly_ascending(keys):
         raise TrainingStreamError(
             f"line {number}: the candidate_features rows must be sorted and unique"
             " by (slot, move, target, mega)"
         )
+    present = [name for name in _ARRAY_KEYS if name in features]
+    wanted = len(_ARRAY_KEYS) if features["feature_set"] == _FEATURE_SET_WITH_ARRAYS else 0
+    if len(present) != wanted:
+        raise TrainingStreamError(
+            f"line {number}: the candidate_features arrays are present exactly under"
+            f" {_FEATURE_SET_WITH_ARRAYS}"
+        )
+    for name in present:
+        if not _strictly_ascending([_ARRAY_KEYS[name](r) for r in features[name]]):
+            raise TrainingStreamError(
+                f"line {number}: the candidate_features {name} must be sorted and unique"
+                " by their key"
+            )
 
 
 # The feature set of an example (or none) is recorded in `StreamChecker.classes` under this
