@@ -22,7 +22,7 @@ const validConfig = ajvFor("contract").compile(trainingRunConfigSchema);
  * Read a TrainingRunConfig: the schema, then the rules it cannot say: the
  * attention heads divide the token width, a Team Preview order does not name
  * more positions than a side holds, each scripted baseline appears once, and a warm start names different
- * checkpoints (a checkpoint holds the network of one role; the Battle role alone is allowed), a value warm-up needs a warm start, and so does a KL anchor, and an explicit play temperature of 1,000,000 is refused (the default is omitted).
+ * checkpoints (a checkpoint holds the network of one role; the Battle role alone is allowed), a value warm-up needs a warm start, and so does a KL anchor, a shared trunk excludes a two-role warm start (a Battle-only one is allowed), and an explicit play temperature of 1,000,000 is refused (the default is omitted).
  */
 export function readTrainingRunConfig(value: unknown): TrainingRunConfig {
   if (!validConfig(value)) throw new TrainingRunConfigError(`invalid TrainingRunConfig: ${JSON.stringify(validConfig.errors)}`);
@@ -38,6 +38,9 @@ export function readTrainingRunConfig(value: unknown): TrainingRunConfig {
   if (new Set(actors).size !== actors.length) throw new TrainingRunConfigError("a scripted baseline may be listed once");
   if (config.warm_start?.preview !== undefined && config.warm_start.preview === config.warm_start.battle) {
     throw new TrainingRunConfigError("warm_start names one checkpoint for both roles: a checkpoint holds one role's network");
+  }
+  if (config.warm_start?.preview !== undefined && config.model.options?.shared_trunk !== undefined) {
+    throw new TrainingRunConfigError("model.options.shared_trunk cannot be combined with a warm_start that names the preview role: two cloned trunks conflict (use a Battle-only warm start)");
   }
   if (config.ppo.value_warmup !== undefined && config.warm_start === undefined) {
     throw new TrainingRunConfigError("ppo.value_warmup needs warm_start: only a cloned start has an untrained value head to warm up");

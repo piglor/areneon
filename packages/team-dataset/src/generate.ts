@@ -43,6 +43,7 @@ import { type Pilot, runPilot } from "./pilot.ts";
 import { groupKey, manifestPlan, planQuotas, type QuotaPlan, SPLITS, type Split, type SplitSizes } from "./plan.ts";
 import { Proposal } from "./proposal.ts";
 import type { RoleSetsSource } from "./role-set-proposal.ts";
+import type { UsageSource } from "./usage-proposal.ts";
 import { provision, type Provision } from "./provision.ts";
 import { RejectionLog } from "./rejection-log.ts";
 import { checkKey } from "./stream.ts";
@@ -67,6 +68,8 @@ export interface GenerateInput {
   config: TeamGeneratorConfig;
   /** The role-set table a `role_sets` component of `config.proposal` reads (its hash must be the one the config names). */
   roleSets?: RoleSetsSource | undefined;
+  /** The usage weight table a `usage` component of `config.proposal` reads (its hash must be the one the config names). */
+  usage?: UsageSource | undefined;
   /** HMAC keys, 64 hex digits each. Public for a public dataset. */
   generationKey: string;
   assignmentKey: string;
@@ -156,7 +159,7 @@ export function generate(input: GenerateInput): GenerateResult {
   const configHash = recordHash(config);
   const labelSetHash = recordHash(labelSet);
   const vocabularyHash = teamVocabularyHash(vocabulary);
-  const drawer = new Drawer({ engine, format, proposal: new Proposal(vocabulary, table, config, input.roleSets), labelSet, generationKey });
+  const drawer = new Drawer({ engine, format, proposal: new Proposal(vocabulary, table, config, input.roleSets, input.usage), labelSet, generationKey });
   const identity = { config_hash: configHash, label_set_hash: labelSetHash, vocabulary_hash: vocabularyHash };
   const pilotDrawsRun = input.pilot === undefined ? config.pilot_draws : 0;
   const pilot = input.pilot ?? runPilot(drawer, identity, labelSet, config.pilot_draws);
@@ -323,6 +326,7 @@ export function generate(input: GenerateInput): GenerateResult {
         config,
         vocabulary,
         roleSets: input.roleSets,
+        usage: input.usage,
         pilot,
         plan,
         referenceStrata: uniformPilot === undefined ? null : referenceStrata(uniformPilot, config, dims, input.sizes),

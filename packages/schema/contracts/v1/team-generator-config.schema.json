@@ -169,7 +169,7 @@
       "maximum": 4096
     },
     "proposal": {
-      "description": "Optional (a minor change within v1): the proposal is a mixture of components, each drawn with its share (ADR-020 section 2). Absent means the uniform proposal alone, with every byte and hash as before. Components are sorted by kind and unique, the shares are integers in thousandths and sum to 1000, and a role_sets component names the role-set table by hash; the reader enforces the order, the sum and uniqueness. A usage component is not part of this version of the record.",
+      "description": "Optional (a minor change within v1): the proposal is a mixture of components, each drawn with its share (ADR-020 section 2). Absent means the uniform proposal alone, with every byte and hash as before. Components are sorted by kind and unique, the shares are integers in thousandths and sum to 1000, and a role_sets component names the role-set table by hash; the reader enforces the order, the sum and uniqueness. A usage component (ADR-020 section 4) names the UsageWeightTable by hash with its roots and per-slot floor; the reader checks the table against it at generation time.",
       "type": "object",
       "additionalProperties": false,
       "required": [
@@ -183,7 +183,7 @@
         "components": {
           "type": "array",
           "minItems": 1,
-          "maxItems": 2,
+          "maxItems": 3,
           "items": {
             "type": "object",
             "oneOf": [
@@ -192,6 +192,9 @@
               },
               {
                 "$ref": "#/$defs/RoleSetsComponent"
+              },
+              {
+                "$ref": "#/$defs/UsageComponent"
               }
             ],
             "discriminator": {
@@ -200,7 +203,7 @@
           }
         },
         "gates": {
-          "description": "Optional: the pilot gate thresholds of ADR-020 section 6, all integers. A dataset report evaluates P1 to P4 against them; a publishing run fails when one is not met. P1 (mapping) is 100% for the role_sets component and carries no field here; the usage component's P1 threshold arrives with that component. Absent: the numbers are reported with no verdict.",
+          "description": "Optional: the pilot gate thresholds of ADR-020 section 6, all integers. A dataset report evaluates P1 to P4 against them; a publishing run fails when one is not met. P1 (mapping) is 100% for the role_sets component and carries no field here. The usage component has two optional thresholds of its own: p1_min_usage_permille (P1 for usage, the smallest mapped share over its six list kinds) and p3_min_bits_usage (P3 for usage, which falls back to p3_min_bits when absent). Absent: the numbers are reported with no verdict.",
           "type": "object",
           "additionalProperties": false,
           "required": [
@@ -223,6 +226,18 @@
             },
             "p4_min_strata_permille": {
               "description": "P4: the unmerged strata of the plan, as a share of the uniform config's plan at the same d_max, in thousandths (proposed 750: a drop of more than a quarter fails).",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000
+            },
+            "p1_min_usage_permille": {
+              "description": "P1 for the usage component: the smallest, over the table's six list kinds, share of a kind's mass whose ids mapped, in thousandths (proposed 950). Optional: absent, the number is reported with no verdict.",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000
+            },
+            "p3_min_bits_usage": {
+              "description": "P3 for the usage component alone, when its sound bound cannot meet p3_min_bits: the same bound (the probability of the most likely team is at most 2 to the minus this). Optional: absent, p3_min_bits applies to every component.",
               "type": "integer",
               "minimum": 1,
               "maximum": 1000
@@ -276,6 +291,53 @@
           "description": "The role-set table hash the draws read.",
           "type": "string",
           "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "UsageComponent": {
+      "description": "Teams from the usage weight table (ADR-020 section 4): species with teammate correlation, then per member item, ability, moves and spread by weight, each categorical draw uniform with probability floor_permille.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "share_permille",
+        "usage_table_hash",
+        "species_root",
+        "set_root",
+        "floor_permille"
+      ],
+      "properties": {
+        "kind": {
+          "const": "usage"
+        },
+        "share_permille": {
+          "description": "The component's share of the draws, in thousandths.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000
+        },
+        "usage_table_hash": {
+          "description": "The usage weight table hash (usageTableHash) the draws read.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "species_root": {
+          "description": "The integer root of w_species; the table's own derivation.species_root (a reader rule at generation time).",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 8
+        },
+        "set_root": {
+          "description": "The integer root applied to the item, ability, move and spread weights when drawing: floor((ppm * 10^(6 (r - 1)))^(1/r)); 1 leaves the ppm.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 8
+        },
+        "floor_permille": {
+          "description": "The chance, in thousandths, that one categorical draw is uniform over the vocabulary instead of weighted.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000
         }
       }
     }

@@ -49,6 +49,7 @@ from areneon_ml.model.options import (
     SEPARATE_VALUE,
     SEPARATE_VALUE_DETACHED,
     SEPARATE_VALUE_NETWORK,
+    SHARED_TRUNK,
     OptionError,
     Options,
     is_set,
@@ -393,6 +394,30 @@ class PolicyNetwork(nn.Module):
                 for head in heads:
                     cast(nn.Linear, head[-1]).weight.mul_(scale / PPM)
 
+    # -- shared trunk --------------------------------------------------------
+
+    def trunk_kinds(self) -> tuple[str, ...]:
+        """The vocabulary kinds the token and field columns read (their embeddings are trunk)."""
+        used = {kind for _, kind in self.layout.mon_cat + self.layout.field_cat}
+        return tuple(sorted(used))
+
+    def trunk_keys(self) -> tuple[str, ...]:
+        """The ``state_dict`` keys of the trunk ``shared_trunk`` shares between the two roles:
+        the embeddings (and attribute projections) of the kinds the token and field columns
+        read, the token, side and field layers, the aggregation token, the transformer blocks and
+        the final norm. The candidate parts, the probe layers, the heads and a separate value
+        network (``value_net.*``) are role-specific and never in it."""
+        kinds = self.trunk_kinds()
+        prefixes = [f"embeddings.{kind}." for kind in kinds]
+        prefixes += [f"attribute_projections.{kind}." for kind in kinds]
+        prefixes += ["mon_cat.", "mon_num.", "side.", "field_cat.", "field_num.", "blocks."]
+        prefixes.append("final_norm.")
+        return tuple(
+            key
+            for key in self.state_dict()
+            if key == "aggregate" or key.startswith(tuple(prefixes))
+        )
+
     def _probe_layers(self, d: int) -> None:
         self.threat_num = nn.Linear(len(self.layout.thr_num), d)
         self.threat_row = nn.Linear(5 * d, d)
@@ -581,6 +606,46 @@ class PolicyNetwork(nn.Module):
         logits = self.score(torch.cat([c, agg, c * agg], -1)).squeeze(-1)
         logits = logits.masked_fill(~batch.cand_mask, torch.finfo(logits.dtype).min)
         return PolicyOutput(logits=logits, value=value)
+
+
+class TrunkError(ValueError):
+    """The Preview and Battle networks of a ``shared_trunk`` pair do not share a trunk."""
+
+
+def shared_trunk_of(config: ModelConfig) -> bool:
+    return is_set(config.options, SHARED_TRUNK)
+
+
+def tie_trunk(shared: PolicyNetwork, other: PolicyNetwork) -> None:
+    """Make ``other`` use ``shared``'s trunk modules (the very same parameters), so one optimiser
+    step on either network moves both. ``other``'s own freshly initialised trunk is dropped."""
+    if shared.config != other.config:
+        raise TrunkError("a shared trunk needs the same model config on both networks")
+    kinds = shared.trunk_kinds()
+    for kind in kinds:
+        other.embeddings[kind] = shared.embeddings[kind]
+        if kind in shared.attribute_projections:
+            other.attribute_projections[kind] = shared.attribute_projections[kind]
+    for name in ("mon_cat", "mon_num", "side", "field_cat", "field_num", "blocks", "final_norm"):
+        setattr(other, name, getattr(shared, name))
+    other.aggregate = shared.aggregate
+
+
+def check_shared_trunk(networks: Mapping[str, PolicyNetwork]) -> None:
+    """Refuse a pair that does not agree on ``shared_trunk``, or whose trunk tensors differ.
+
+    A pair made without the option is not looked at. Called wherever a pair is loaded (the worker's
+    scorer) or restored (the learner state)."""
+    flags = {role: shared_trunk_of(net.config) for role, net in networks.items()}
+    if len(set(flags.values())) > 1:
+        raise TrunkError("only one of the two networks was made with shared_trunk")
+    if not all(flags.values()):
+        return
+    battle, preview = networks["battle"], networks["preview"]
+    battle_state, preview_state = battle.state_dict(), preview.state_dict()
+    for key in battle.trunk_keys():
+        if not torch.equal(battle_state[key], preview_state[key]):
+            raise TrunkError("the shared trunk tensors of the two networks differ")
 
 
 def init_network(role: str, game: GameData, config: ModelConfig, seed: int) -> PolicyNetwork:

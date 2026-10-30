@@ -381,6 +381,7 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
   const configWith = (change: (c: Record<string, unknown>) => void) => mutated(generatorConfig, change);
   const mixtureRoleSets = { kind: "role_sets", role_set_table_hash: hexOf("b"), share_permille: 700 };
   const mixtureUniform = { kind: "uniform", share_permille: 300 };
+  const mixtureUsage = { kind: "usage", share_permille: 500, usage_table_hash: hexOf("c"), species_root: 2, set_root: 1, floor_permille: 100 };
   const mixture = (components: unknown[] = [mixtureRoleSets, mixtureUniform]) => ({ kind: "mixture", components });
   const gates = (change: Record<string, unknown> = {}) => ({ p2_min_accept_permille: 500, p3_min_bits: 40, p4_min_strata_permille: 750, ...change });
   // The golden vocabulary is read, not exported: the export takes seconds, and team-vocabulary.test.ts holds the file equal to a fresh one.
@@ -619,6 +620,7 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "team-label-set/golden": labelSet,
     "team-generator-config/golden": generatorConfig,
     "team-generator-config/mixture": configWith((c) => (c.proposal = mixture())),
+    "team-generator-config/mixture-usage": configWith((c) => (c.proposal = { ...mixture([{ ...mixtureRoleSets, share_permille: 200 }, mixtureUniform, mixtureUsage]), gates: gates({ p1_min_usage_permille: 950, p3_min_bits_usage: 16 }) })),
     "team-generator-config/mixture-gates": configWith((c) => (c.proposal = { ...mixture(), gates: gates() })),
     "team-dataset-manifest/golden": datasetManifest,
     "team-dataset-manifest/evaluation-only": datasetWith((d) => (d.evaluation_only = { d_team: 6, near_references: 2 })),
@@ -658,6 +660,13 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     }),
     "training-run-config/factored-preview": runConfigWith((c) => {
       runSection(c, "model").options = { factored_preview: true };
+    }),
+    "training-run-config/shared-trunk-warm-start-battle-only": runConfigWith((c) => {
+      runSection(c, "model").options = { shared_trunk: true };
+      c.warm_start = { battle: hexOf("b") };
+    }),
+    "training-run-config/shared-trunk": runConfigWith((c) => {
+      runSection(c, "model").options = { shared_trunk: true };
     }),
     "training-run-config/separate-value": runConfigWith((c) => {
       runSection(c, "model").options = { separate_value: "network" };
@@ -711,6 +720,9 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     }),
     "clone-run-config/factored-preview": cloneWith((c) => {
       runSection(c, "model").options = { factored_preview: true };
+    }),
+    "clone-run-config/shared-trunk": cloneWith((c) => {
+      runSection(c, "model").options = { shared_trunk: true };
     }),
     "clone-run-config/separate-value": cloneWith((c) => {
       runSection(c, "model").options = { separate_value: "network" };
@@ -847,6 +859,10 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     }),
     "training-run-config/warm-start-same-id": runConfigWith((c) => (c.warm_start = { preview: hexOf("a"), battle: hexOf("a") })),
     // Schema-valid, refused by the CloneRunConfig reader: the model rules the profile cannot say.
+    "training-run-config/shared-trunk-warm-start": runConfigWith((c) => {
+      runSection(c, "model").options = { shared_trunk: true };
+      c.warm_start = { preview: hexOf("a"), battle: hexOf("b") };
+    }),
     "training-run-config/value-warmup-no-warm-start": runConfigWith((c) => (runSection(c, "ppo").value_warmup = { generations: 2 })),
     "training-run-config/anchor-no-warm-start": runConfigWith((c) => (runSection(c, "ppo").anchor = { kl_micro: 100000, schedule: { kind: "constant" } })),
     "training-run-config/play-temperature-default": runConfigWith((c) => (runSection(c, "generation").play = { temperature_ppm: 1000000 })),
@@ -1030,6 +1046,9 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "clone-run-config/factored-preview-false": cloneWith(
       (c) => (runSection(c, "model").options = { factored_preview: false }),
     ),
+    "clone-run-config/shared-trunk-false": cloneWith(
+      (c) => (runSection(c, "model").options = { shared_trunk: false }),
+    ),
     "clone-run-config/separate-value-unknown": cloneWith(
       (c) => (runSection(c, "model").options = { separate_value: "shared" }),
     ),
@@ -1082,6 +1101,9 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     ),
     "training-run-config/factored-preview-false": runConfigWith(
       (c) => (runSection(c, "model").options = { factored_preview: false }),
+    ),
+    "training-run-config/shared-trunk-false": runConfigWith(
+      (c) => (runSection(c, "model").options = { shared_trunk: false }),
     ),
     "training-run-config/separate-value-unknown": runConfigWith(
       (c) => (runSection(c, "model").options = { separate_value: "shared" }),
@@ -1206,6 +1228,8 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "team-label-set/empty-ids": mutated(labelSet, (l) => ((l.labels as { values: unknown[] }[])[0] as { values: unknown[] }).values = [{ value: "x", when: { kind: "has_move", moves: [] } }]),
     "team-label-set/extra-field": mutated(labelSet, (l) => (l.scores = [])),
     "team-generator-config/usage-component": configWith((c) => (c.proposal = mixture([{ kind: "usage", share_permille: 500 }, mixtureUniform]))),
+    "team-generator-config/usage-without-floor": configWith((c) => (c.proposal = mixture([mixtureUniform, { kind: "usage", share_permille: 700, usage_table_hash: hexOf("c"), species_root: 2, set_root: 1 }]))),
+    "team-generator-config/usage-floor-over-1000": configWith((c) => (c.proposal = mixture([mixtureUniform, { ...mixtureUsage, share_permille: 700, floor_permille: 1001 }]))),
     "team-generator-config/float-share": configWith((c) => (c.proposal = mixture([mixtureRoleSets, { ...mixtureUniform, share_permille: 300.5 }]))),
     "team-generator-config/gates-float": configWith((c) => (c.proposal = { ...mixture(), gates: gates({ p3_min_bits: 40.5 }) })),
     "team-generator-config/gates-zero-threshold": configWith((c) => (c.proposal = { ...mixture(), gates: gates({ p2_min_accept_permille: 0 }) })),

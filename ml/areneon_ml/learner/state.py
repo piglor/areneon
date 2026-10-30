@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import json
 import re
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -47,13 +47,16 @@ def state_hash(tensors: bytes, sidecar: Mapping[str, Any]) -> str:
 
 
 def _parameter_names(learner: Learner, role: str) -> list[str]:
-    return [name for name, _ in learner.networks[role].named_parameters()]
+    """The parameters whose optimiser state the role stores (under ``shared_trunk`` the Preview
+    role stores only its own: the trunk's Adam state lives under the Battle role)."""
+    return [name for name, _ in learner.entries[role]]
 
 
 def gather_tensors(
     networks: Mapping[str, torch.nn.Module],
     optimisers: Mapping[str, torch.optim.Optimizer],
     generator: torch.Generator,
+    owned: Mapping[str, Sequence[str]] | None = None,
 ) -> tuple[dict[str, torch.Tensor], dict[str, dict[str, int]]]:
     """The named tensors of a learner state (weights, Adam moments, generator) and step counts."""
     tensors: dict[str, torch.Tensor] = {}
@@ -64,6 +67,8 @@ def gather_tensors(
         optimiser = optimisers[role]
         steps[role] = {}
         for name, parameter in networks[role].named_parameters():
+            if owned is not None and name not in owned[role]:
+                continue  # shared_trunk: this parameter's state is stored under the other role
             found = optimiser.state.get(parameter)
             if found:
                 steps[role][name] = int(found["step"].item())
@@ -89,7 +94,12 @@ def model_options_of(model: ModelConfig) -> dict[str, Any]:
 
 def pack_state(learner: Learner) -> PackedState:
     """The two files' bytes for the learner as it is now."""
-    tensors, steps = gather_tensors(learner.networks, learner.optimisers, learner.generator)
+    tensors, steps = gather_tensors(
+        learner.networks,
+        learner.optimisers,
+        learner.generator,
+        {role: _parameter_names(learner, role) for role in ROLES} if learner.shared_trunk else None,
+    )
     sidecar = {
         "schema_version": STATE_FORMAT,
         "generation": learner.generation,
@@ -210,6 +220,15 @@ def _apply_schedule(learner: Learner) -> None:
             group["lr"] = schedule.rate(learner.generation - 1)
 
 
+def _check_trunk(learner: Learner, loaded: Mapping[str, torch.Tensor]) -> None:
+    """Under ``shared_trunk`` both roles' copies of the trunk in the file must be equal."""
+    if learner.shared_trunk and any(
+        not torch.equal(loaded[f"net.battle.{key}"], loaded[f"net.preview.{key}"])
+        for key in learner.networks["battle"].trunk_keys()
+    ):
+        raise LearnerStateError("the learner state's shared trunk tensors differ")
+
+
 def restore_state(learner: Learner, tensors: bytes, sidecar: bytes, expected_hash: str) -> None:
     """Load a learner state into ``learner``, which must be built from the same config.
 
@@ -231,7 +250,7 @@ def restore_state(learner: Learner, tensors: bytes, sidecar: bytes, expected_has
         network = learner.networks[role]
         for name, tensor in network.state_dict().items():
             expected[f"net.{role}.{name}"] = (torch.float32, tuple(tensor.shape))
-        for name, parameter in network.named_parameters():
+        for name, parameter in learner.entries[role]:
             if name in steps[role]:
                 for moment in ("exp_avg", "exp_avg_sq"):
                     expected[f"opt.{role}.{moment}.{name}"] = (
@@ -242,8 +261,9 @@ def restore_state(learner: Learner, tensors: bytes, sidecar: bytes, expected_has
         loaded = unpack_safetensors(tensors, expected)
     except CheckpointFileError as exc:
         raise LearnerStateError(str(exc)) from exc
+    _check_trunk(learner, loaded)
     for role in ROLES:
-        network, optimiser = learner.networks[role], learner.optimisers[role]
+        network = learner.networks[role]
         prefix = f"net.{role}."
         network.load_state_dict(
             {
@@ -253,8 +273,9 @@ def restore_state(learner: Learner, tensors: bytes, sidecar: bytes, expected_has
             },
             strict=True,
         )
+    for optimiser, entries in learner.optimiser_groups():
         state: dict[int, dict[str, torch.Tensor]] = {}
-        for index, (name, parameter) in enumerate(network.named_parameters()):
+        for index, (role, name, parameter) in enumerate(entries):
             if name in steps[role]:
                 state[index] = {
                     "step": torch.tensor(float(steps[role][name])),
