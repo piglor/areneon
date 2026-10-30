@@ -136,6 +136,40 @@ export function nonEmpty<F>(formes: readonly F[]): F[] {
   return [...formes];
 }
 
+/** What is left of one forme's fields when the `failed` candidates are ruled out (mean field); null when a field loses every option. */
+function shares(forme: DamageForme, failed: readonly Candidate[]) {
+  const itemTotal = [...forme.items.values()].reduce(add, ZERO);
+  const pa = new Map(forme.abilities.options.map((o) => [o.id, ratio(o.weight, forme.abilities.total)]));
+  const ps = new Map(forme.spreads.options.map((o) => [o.id, ratio(o.weight, forme.spreads.total)]));
+  const pn = (item: string | null): Ratio => mul(forme.items.get(item) as Ratio, ratio(itemTotal.den, itemTotal.num));
+  const byAbility = new Map<string, Ratio>();
+  const bySpread = new Map<string, Ratio>();
+  const byItem = new Map<string | null, Ratio>();
+  for (const c of failed) {
+    const a = pa.get(c.ability) as Ratio;
+    const s = ps.get(c.spread) as Ratio;
+    const i = pn(c.item);
+    byAbility.set(c.ability, add(byAbility.get(c.ability) ?? ZERO, mul(i, s)));
+    bySpread.set(c.spread, add(bySpread.get(c.spread) ?? ZERO, mul(a, i)));
+    byItem.set(c.item, add(byItem.get(c.item) ?? ZERO, mul(a, s)));
+  }
+  const abilities = reweigh([...pa].map(([id, share]) => ({ id, share })), byAbility);
+  const spreads = reweigh([...ps].map(([id, share]) => ({ id, share })), bySpread);
+  const items = new Map<string | null, Ratio>();
+  for (const [id, mass] of forme.items) {
+    const left = mul(mass, complement(byItem.get(id) ?? ZERO));
+    if (!isZero(left)) items.set(id, left);
+  }
+  return abilities.length === 0 || spreads.length === 0 || items.size === 0 ? null : { abilities, spreads, items };
+}
+
+/** The forme with the `failed` candidates ruled out; null when it has no possible set left. */
+function rewrite<F extends DamageForme>(forme: F, failed: readonly Candidate[]): F | null {
+  const left = shares(forme, failed);
+  return left === null ? null : { ...forme, abilities: distOf(left.abilities), spreads: distOf(left.spreads), items: left.items };
+}
+
+
 /** An event of either evidence (damage: the role in a hit; speed: whether the slot's Pokemon acted first or second). */
 export interface EvidenceEvent {
   readonly id: string;
@@ -153,14 +187,6 @@ export interface EvidenceCheck<E extends EvidenceEvent> {
  * and fixed-word notes; `counts` is added to. The input formes are not changed.
  */
 export function applyDamage<F extends DamageForme>(formes: readonly F[], species: string, events: readonly DamageEvent[], check: DamageCheck, rules: DamageRules, counts: DamageCounts): { formes: F[]; notes: string[] } {
-  return applyEvidence("damage", formes, species, events, check, rules, counts);
-}
-
-/**
- * The one implementation of the indicator evidence: `kind` only names the notes (`damage_applied:<role>`, `speed_applied:<role>`).
- * Speed-order evidence (ticket #1133) reads the same candidate space and reweighs it the same way.
- */
-export function applyEvidence<F extends DamageForme, E extends EvidenceEvent>(kind: "damage" | "speed", formes: readonly F[], species: string, events: readonly E[], check: EvidenceCheck<E>, rules: DamageRules, counts: DamageCounts): { formes: F[]; notes: string[] } {
   let current: F[] = [...formes];
   const notes: string[] = [];
   const unmodelledAbilities = new Set(rules.unmodelled.abilities);
@@ -194,13 +220,13 @@ export function applyEvidence<F extends DamageForme, E extends EvidenceEvent>(ki
     counts.unsupported += unsupported;
     if (checked + unsupported === 0) {
       counts.unchecked += 1;
-      notes.push(`${kind}_unchecked:${event.role}`);
+      notes.push(`damage_unchecked:${event.role}`);
       continue;
     }
     if (rejected === 0) continue;
     if (rejected === checked && unsupported === 0) {
       counts.contradictions += 1;
-      notes.push(`${kind}_contradiction:${event.role}`);
+      notes.push(`damage_contradiction:${event.role}`);
       continue;
     }
 
@@ -211,36 +237,95 @@ export function applyEvidence<F extends DamageForme, E extends EvidenceEvent>(ki
         next.push(forme);
         continue;
       }
-      const itemTotal = [...forme.items.values()].reduce(add, ZERO);
-      const pa = new Map(forme.abilities.options.map((o) => [o.id, ratio(o.weight, forme.abilities.total)]));
-      const ps = new Map(forme.spreads.options.map((o) => [o.id, ratio(o.weight, forme.spreads.total)]));
-      const pn = (item: string | null): Ratio => mul(forme.items.get(item) as Ratio, ratio(itemTotal.den, itemTotal.num));
-      const byAbility = new Map<string, Ratio>();
-      const bySpread = new Map<string, Ratio>();
-      const byItem = new Map<string | null, Ratio>();
-      for (const c of failed) {
-        const a = pa.get(c.ability) as Ratio;
-        const s = ps.get(c.spread) as Ratio;
-        const i = pn(c.item);
-        byAbility.set(c.ability, add(byAbility.get(c.ability) ?? ZERO, mul(i, s)));
-        bySpread.set(c.spread, add(bySpread.get(c.spread) ?? ZERO, mul(a, i)));
-        byItem.set(c.item, add(byItem.get(c.item) ?? ZERO, mul(a, s)));
-      }
-      const abilities = reweigh([...pa].map(([id, share]) => ({ id, share })), byAbility);
-      const spreads = reweigh([...ps].map(([id, share]) => ({ id, share })), bySpread);
-      const items = new Map<string | null, Ratio>();
-      for (const [id, mass] of forme.items) {
-        const left = mul(mass, complement(byItem.get(id) ?? ZERO));
-        if (!isZero(left)) items.set(id, left);
-      }
-      if (abilities.length === 0 || spreads.length === 0 || items.size === 0) continue;
-      next.push({ ...forme, abilities: distOf(abilities), spreads: distOf(spreads), items });
+      const rewritten = rewrite(forme, failed);
+      if (rewritten !== null) next.push(rewritten);
     }
     // `next` is never empty here: a forme is dropped only when a field loses every option, which needs all of the forme's
     // candidates to have failed (all enumerated, none unsupported), and all formes in that state is the contradiction above.
     counts.applied += 1;
-    notes.push(`${kind}_applied:${event.role}`);
+    notes.push(`damage_applied:${event.role}`);
     current = next;
   }
   return { formes: nonEmpty(current), notes };
+}
+
+/**
+ * The joint form of the indicator evidence, for the speed evidence, which arrives as many events about one slot (up to four orders a
+ * turn); its notes are `speed_applied:<role>` and the like. The events are judged against the same candidates, and the marginals are those of the exact posterior under ALL of their
+ * indicators at once (a candidate fails if it fails any event), reweighed once. Applied one after the other, each application
+ * would re-impose independence and multiply the size of every number the next one reads (twelve events took the belief from
+ * under a second to half a minute). An event that would rule out every candidate together with the events before it is dropped
+ * and counted as a contradiction, as an event that rules out every checked candidate alone is.
+ */
+export function applyJoint<F extends DamageForme, E extends EvidenceEvent>(formes: readonly F[], species: string, events: readonly E[], check: EvidenceCheck<E>, rules: DamageRules, counts: DamageCounts): { formes: F[]; notes: string[] } {
+  const notes: string[] = [];
+  const unmodelledAbilities = new Set(rules.unmodelled.abilities);
+  const unmodelledItems = new Set(rules.unmodelled.items);
+  const asked = formes.map((forme) => ({ forme, candidates: top(forme, rules.max_checked) }));
+  const keyOf3 = (c: Candidate): string => JSON.stringify([c.ability, c.item, c.spread]);
+  let union = new Map<string, Map<string, Candidate>>();
+  const survives = (failed: ReadonlyMap<string, ReadonlyMap<string, Candidate>>): boolean =>
+    asked.some(({ forme }) => {
+      const list = [...(failed.get(forme.id)?.values() ?? [])];
+      return list.length === 0 || shares(forme, list) !== null;
+    });
+  for (const event of events) {
+    counts.events += 1;
+    let checked = 0;
+    let unsupported = 0;
+    const failures = new Map<string, Candidate[]>();
+    for (const { forme, candidates } of asked) {
+      const failed: Candidate[] = [];
+      for (const c of candidates) {
+        const spread = parseSpreadKey(c.spread);
+        if (spread === null) continue;
+        if (unmodelledAbilities.has(c.ability) || (c.item !== null && unmodelledItems.has(c.item))) {
+          unsupported += 1;
+          continue;
+        }
+        const verdict = check.check(event, { species, forme: forme.id, mega: forme.mega, ability: c.ability, item: c.item, nature: spread.nature, stat_points: spread.stat_points });
+        if (verdict === null) unsupported += 1;
+        else {
+          checked += 1;
+          if (!verdict) failed.push(c);
+        }
+      }
+      failures.set(forme.id, failed);
+    }
+    const rejected = [...failures.values()].reduce((s, f) => s + f.length, 0);
+    counts.checked += checked;
+    counts.rejected += rejected;
+    counts.unsupported += unsupported;
+    if (checked + unsupported === 0) {
+      counts.unchecked += 1;
+      notes.push(`speed_unchecked:${event.role}`);
+      continue;
+    }
+    if (rejected === 0) continue;
+    const merged = new Map([...union].map(([id, list]) => [id, new Map(list)]));
+    for (const [id, failed] of failures) {
+      const list = merged.get(id) ?? new Map<string, Candidate>();
+      for (const c of failed) list.set(keyOf3(c), c);
+      merged.set(id, list);
+    }
+    if ((rejected === checked && unsupported === 0) || !survives(merged)) {
+      counts.contradictions += 1;
+      notes.push(`speed_contradiction:${event.role}`);
+      continue;
+    }
+    counts.applied += 1;
+    notes.push(`speed_applied:${event.role}`);
+    union = merged;
+  }
+  // `survives` held after every accepted event, so some forme keeps a possible set.
+  const next: F[] = [];
+  for (const forme of formes) {
+    const failed = [...(union.get(forme.id)?.values() ?? [])];
+    if (failed.length === 0) next.push(forme);
+    else {
+      const rewritten = rewrite(forme, failed);
+      if (rewritten !== null) next.push(rewritten);
+    }
+  }
+  return { formes: nonEmpty(next), notes };
 }

@@ -80,6 +80,34 @@ describe("an observed order reweighs the fields it passes through", () => {
   });
 });
 
+describe("several orders of one slot apply jointly", () => {
+  it("a candidate fails if it fails any order, and the marginals come from one reweighing", () => {
+    const b = run({ speed: port([order("s1"), order("s2", 0, "second")], (c, e) => (e.id === "s1" ? c.item !== "ix" : c.nature !== "bold")) });
+    expect(b.speed).toMatchObject({ events: 2, applied: 2, contradictions: 0 });
+    expect(b.slots[0]?.spreads.map((m) => m.id)).toEqual(["hardy:0-0-0-0-0-0"]);
+    expect(b.slots[0]?.items.map((m) => m.id)).toEqual([null, "iy"]);
+    // hardy keeps the share of the (ability, item) mass that passes the first order alone: 1/2 of 6/10; the items' ratio iy : none stays 2 : 3
+    const w = new Map((b.assignments[0]?.slots[0]?.cells ?? []).map((c) => [c.item, c.weight]));
+    expect((w.get(null) as bigint) * 2n).toBe((w.get("iy") as bigint) * 3n);
+  });
+
+  it("an order that would rule out every candidate together with the orders before it is dropped, as a contradiction", () => {
+    // s1 rules out bold, s2 would rule out hardy: together nothing is left
+    const b = run({ speed: port([order("s1"), order("s2")], (c, e) => (e.id === "s1" ? c.nature !== "bold" : c.nature !== "hardy")) });
+    expect(b.speed).toMatchObject({ events: 2, applied: 1, contradictions: 1 });
+    expect(b.slots[0]?.spreads.map((m) => m.id)).toEqual(["hardy:0-0-0-0-0-0"]);
+    expect(b.slots[0]?.constraints).toEqual(expect.arrayContaining(["speed_applied:first", "speed_contradiction:first"]));
+  });
+
+  it("twelve orders on one slot stay cheap (the sequential form took half a minute)", () => {
+    const events = Array.from({ length: 12 }, (_, k) => order(`s${k}`, 0, k % 2 === 0 ? "first" : "second"));
+    const started = performance.now();
+    const b = run({ speed: port(events, (c, e) => (Number(e.id.slice(1)) % 3 === 0 ? c.item !== "ix" : c.nature !== "bold" || Number(e.id.slice(1)) % 2 === 0)) });
+    expect(performance.now() - started).toBeLessThan(5000);
+    expect(b.speed.events).toBe(12);
+  });
+});
+
 describe("the damage and the speed evidence together", () => {
   const both = (): BeliefConfig => ({ ...evidence(), damage_evidence: { max_checked: 100, shown_hp_rounding: "floor", non_isolating: { abilities: [], lasting_moves: [], moves: [], targets: [] }, unmodelled: { abilities: [], items: [] } } });
 

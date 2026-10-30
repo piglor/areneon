@@ -5,13 +5,15 @@
 // bridge implements over the pinned engine (this package stays engine-free): for a candidate set the port says whether the
 // probe's order, with the engine's own tie groups, can give the order that was observed.
 //
-// It is the same indicator as the damage evidence and shares its implementation (`applyEvidence`): a candidate that passes,
+// It is the same indicator as the damage evidence and shares its candidate space and reweighing (`damage.ts`): a candidate that passes,
 // or that is not checked (beyond the bound, an "other spread" that names no nature or Stat Points, an unmodelled candidate,
 // a probe answer `unsupported` such as a random draw), keeps its weight; a failing candidate gets weight 0; the marginals
-// are those of the exact posterior over the candidate space with every unchecked candidate passing (mean field); an event
-// that rules out every checked candidate is dropped and counted. No Speed formula, priority rule or tie rule is written here.
+// are those of the exact posterior over the candidate space with every unchecked candidate passing (mean field), under all of
+// a slot's orders at once (`applyJoint`: a turn can show up to four, and applying them one after the other multiplies the size
+// of every number the belief then reads); an event that rules out every checked candidate, alone or with the events before it,
+// is dropped and counted. No Speed formula, priority rule or tie rule is written here.
 
-import { type DamageCandidate, type DamageCounts, type DamageForme, type DamageRules, type EvidenceCheck, type EvidenceEvent, applyEvidence, emptyDamageCounts } from "./damage.ts";
+import { type DamageCandidate, type DamageCounts, type DamageForme, type DamageRules, type EvidenceCheck, type EvidenceEvent, applyJoint, emptyDamageCounts } from "./damage.ts";
 
 /** One observed order that concerns one opponent slot: the slot's Pokemon acted `first` or `second` relative to one of the player's own. */
 export interface SpeedEvent extends EvidenceEvent {
@@ -33,7 +35,7 @@ export const emptySpeedCounts = emptyDamageCounts;
 
 export type { DamageCandidate as SpeedCandidate };
 
-/** Apply the speed events of one slot to its formes; see `applyEvidence`. The input formes are not changed. */
+/** Apply the speed events of one slot to its formes; see `applyJoint`. The input formes are not changed. */
 export function applySpeed<F extends DamageForme>(formes: readonly F[], species: string, events: readonly SpeedEvent[], check: SpeedCheck, rules: SpeedRules, counts: SpeedCounts): { formes: F[]; notes: string[] } {
-  return applyEvidence("speed", formes, species, events, check, rules, counts);
+  return applyJoint(formes, species, events, check, rules, counts);
 }
