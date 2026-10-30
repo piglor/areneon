@@ -66,6 +66,8 @@ export interface SpeedPair {
   readonly first: "own" | "foe";
   /** The state just before the later action: the field and stages the order was decided under (equal to the turn's start in every field the pair reads). */
   readonly state: PublicState;
+  /** The state at the turn's start: priority is fixed there, so the hit points a priority bonus reads (Gale Wings at full health) are this state's. */
+  readonly start: PublicState;
   /** Null for an isolated pair, else the first reason it is not. */
   readonly reason: NotPaired | null;
 }
@@ -157,7 +159,7 @@ export function extractPairs(frames: readonly PublicFrame[], ctx: PairContext): 
           return null;
         };
         const side = (a: Action): PairSide => ({ frame: a.frame, index: a.index, letter: a.letter, move: a.move });
-        out.push({ turn: state.turn, own: side(own), foe: side(foe), first: own.frame < foe.frame ? "own" : "foe", state, reason: fail() });
+        out.push({ turn: state.turn, own: side(own), foe: side(foe), first: own.frame < foe.frame ? "own" : "foe", state, start: startState, reason: fail() });
       }
     }
   });

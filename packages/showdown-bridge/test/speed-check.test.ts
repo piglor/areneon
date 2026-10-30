@@ -114,6 +114,27 @@ describe("check", () => {
     expect(pairs.some(([s, f]) => s !== f)).toBe(true);
   });
 
+  it("declares both actors' hit points as they were at the turn's start: an earlier hit does not take a full-health priority bonus away (Fake Out, then Gale Wings)", () => {
+    const declared: (number | null)[][] = [];
+    const spy = (c: MechanicsContext, q: ParsedMechanicsQuery) => {
+      if (q.query.kind === "speed_order") declared.push([q.query.sides[0][0]?.hp ?? null, q.query.sides[1][0]?.hp ?? null]);
+      return probeMechanics(c, q);
+    };
+    // Turn 2: the own Blastoise (p2a) moves after the foe's Charizard (p1b); both are hit before the later action.
+    const at = lines.findIndex((l) => l.startsWith("|move|p2a: Blastoise|Surf"));
+    const hit = ["|-damage|p1b: Charizard|50/100", "|-damage|p2a: Blastoise|100/158"];
+    const copy = [...lines];
+    copy.splice(at, 0, ...hit);
+    const port = createSpeedCheck(context({ probe: spy }), { player: "p2", lines: copy, team }) as NonNullable<ReturnType<typeof createSpeedCheck>>;
+    const pair = port.pairs.find((p) => p.turn === 2 && p.own.letter === "a" && p.foe.letter === "b" && p.reason === null) as (typeof port.pairs)[number];
+    expect(pair.state.opponent.roster[pair.foe.index]?.hp_num).toBe(50);
+    expect(pair.start.opponent.roster[pair.foe.index]?.hp_num).toBe(100);
+    const event = port.events.find((e) => e.id === `speed${pair.own.frame}-${pair.foe.frame}`) as (typeof port.events)[number];
+    port.check(event, candidate());
+    // full at the start: declared full (null) for both, though the state just before the later action shows them hit
+    expect(declared.at(-1)).toEqual([null, null]);
+  });
+
   it("is null for what it does not state: a Mega forme, an unknown forme or nature, a move outside the forme's pool", () => {
     const port = make();
     const event = eventOf(port, "second");

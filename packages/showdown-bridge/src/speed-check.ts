@@ -5,8 +5,9 @@
 // `speed_order` probe gives the order the player saw.
 //
 // Only the probe computes. The opponent side is the candidate set (declared at the shown status and stages, and, if its hit
-// points are shown below full, at one hit point: the engine reads hit points for no order key but a full-health priority
-// bonus); the own side is the player's own Pokemon from the request in force at the move line and the own team. Both
+// points were shown below full at the turn's start, at one hit point: the engine reads hit points for no order key but a
+// full-health priority bonus, and priority is fixed at the start of the turn, so both actors' hit points are the turn-start
+// frame's, not those just before the later action); the own side is the player's own Pokemon from the request in force at the move line and the own team. Both
 // actions are the moves that were used. A candidate set whose probe answer puts the observed first Pokemon in an earlier
 // group passes, and so does an exact tie (its order is a draw, never sampled); a candidate the probe cannot answer
 // (`unsupported`, for instance a random Quick Claw draw, a fractional priority, a set the validator refuses, a Mega forme)
@@ -175,6 +176,8 @@ export function createSpeedCheck(context: SpeedCheckContext, input: SpeedCheckIn
   function ownFighter(pair: SpeedPair): Fighter | null {
     const frame = run.frames[pair.own.frame] as PublicFrame;
     const mon = pair.state.own.roster[pair.own.index] as PublicMon;
+    // Priority is fixed at the turn's start: hit points are the start state's (an earlier hit this turn does not take Gale Wings away).
+    const atStart = pair.start.own.roster[pair.own.index] as PublicMon;
     const request = requests[frame.request - 1];
     const entry = request?.side.pokemon.find((p) => p.ident.slice(p.ident.indexOf(": ") + 2) === mon.name);
     const name = mon.name as string;
@@ -189,7 +192,7 @@ export function createSpeedCheck(context: SpeedCheckContext, input: SpeedCheckIn
     if (gender !== undefined) set.gender = gender;
     set.item = entry.item === "" ? "" : names.items.get(entry.item).name;
     set.ability = names.abilities.get(entry.ability as string).name;
-    const hp = mon.hp_num === null || mon.hp_den === null || mon.hp_num === mon.hp_den ? null : Math.max(1, mon.hp_num);
+    const hp = atStart.hp_num === null || atStart.hp_den === null || atStart.hp_num === atStart.hp_den ? null : Math.max(1, atStart.hp_num);
     return { paste: exportPaste(engine, [set]), hp, status: mon.status, boosts: view.boostsOf(mon), mega: mon.mega };
   }
 
@@ -200,6 +203,7 @@ export function createSpeedCheck(context: SpeedCheckContext, input: SpeedCheckIn
     const nature = natureName(candidate.nature);
     if (entry === undefined || nature === undefined || !entry.moves.includes(pair.foe.move)) return null;
     const foeMon = pair.state.opponent.roster[pair.foe.index] as PublicMon;
+    const foeAtStart = pair.start.opponent.roster[pair.foe.index] as PublicMon;
     // Only what the order reads: the Speed Stat Points (one point elsewhere when there is none, so the validator's "0 Stat Points" check stays quiet).
     const speed = candidate.stat_points.spe;
     const set: PokemonSet = {
@@ -218,8 +222,8 @@ export function createSpeedCheck(context: SpeedCheckContext, input: SpeedCheckIn
     try {
       const own = ownFighter(pair);
       if (own === null) return null;
-      // A shown 100 is full hit points; below it the Pokemon is declared at one (only a full-health bonus reads hit points).
-      const foe: Fighter = { paste, hp: foeMon.hp_num === foeMon.hp_den ? null : 1, status: foeMon.status, boosts: view.boostsOf(foeMon), mega: false };
+      // A shown 100 at the turn's start is full hit points; below it the Pokemon is declared at one (only a full-health bonus reads hit points).
+      const foe: Fighter = { paste, hp: foeAtStart.hp_num === foeAtStart.hp_den ? null : 1, status: foeMon.status, boosts: view.boostsOf(foeMon), mega: false };
       const result = view.queryLimited({
         kind: "speed_order",
         sides: [[view.combatant(own)], [view.combatant(foe)]],
