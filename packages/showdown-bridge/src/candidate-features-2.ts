@@ -22,11 +22,11 @@
 // Excluded by construction, as in `candidate-features.ts`: the input is a `PlayerChannel`, the player's own team and the
 // candidate strings; no opponent team, hidden verdict, `BattleRecord` or seed is a parameter of anything here.
 import type { PublicState } from "@areneon/public-state";
-import { type CandidateFeatures, createFeatureMemo, damageRows, damageValues, type DamageValues, type FeatureConfigs, type FeatureMemo, type FeatureRow, featureSetHash, featureSetIdentity, lastRequest, openRequest, refusing } from "./candidate-features.ts";
+import { type CandidateFeatures, createFeatureMemo, damageRows, damageValuesOf, type DamageValues, type FeatureConfigs, type FeatureMemo, type FeatureRow, featureSetHash, featureSetIdentity, lastRequest, openRequest, refusing } from "./candidate-features.ts";
 import type { Candidate } from "./choices.ts";
 import { parseJointChoice, type SlotPart } from "./damage-aware-choice.ts";
 import type { SpeedOrderAnswer } from "./damage-aware-score.ts";
-import { array, DamageAwareError, type DamageView, type Fighter, type Foe, foeTargetKind, object, type OwnSlot, type SpeedLimit, text } from "./damage-aware-view.ts";
+import { array, DamageAwareError, type DamageView, type Fighter, type Foe, foeTargetKind, object, type OwnSlot, ProbeRefusal, type SpeedLimit, text } from "./damage-aware-view.ts";
 import type { Engine, PokemonSet } from "./engine.ts";
 import type { MechanicsQuery } from "./mechanics-query.ts";
 import type { MechanicsResult } from "./mechanics-result.ts";
@@ -193,7 +193,7 @@ function threatRows(view: DamageView, state: PublicState, entries: readonly Entr
         for (const move of new Set(foe.assumed.revealed_moves)) {
           const data = view.dex.moves.get(move);
           if (!data.exists || data.category === "Status" || foeTargetKind(data.target) === "none") continue;
-          out.push({ own: entry.position, mega, foe: foe.loc, move, ...damageValues(view.damageResult(foe.fighter, asMega(entry, mega), move, state, false)) });
+          out.push({ own: entry.position, mega, foe: foe.loc, move, ...damageValuesOf(() => view.damageResult(foe.fighter, asMega(entry, mega), move, state, false)) });
         }
       }
     }
@@ -206,7 +206,13 @@ function threatRows(view: DamageView, state: PublicState, entries: readonly Entr
 /** One `speed_order` query: `own` and `foes` declared, the given actions asked, the field declared with the own side first. */
 function ask(view: DamageView, state: PublicState, own: readonly Fighter[], foes: readonly Fighter[], actions: OrderAction[]): Asked {
   const sides = [own.map((f) => view.combatant(f)), foes.map((f) => view.combatant(f))] as unknown as Sides;
-  const result = view.queryLimited({ kind: "speed_order", sides, actions, state: view.field(state, true) } as SpeedOrderQuery);
+  let result: ReturnType<DamageView["queryLimited"]>;
+  try {
+    result = view.queryLimited({ kind: "speed_order", sides, actions, state: view.field(state, true) } as SpeedOrderQuery);
+  } catch (error) {
+    if (error instanceof ProbeRefusal) return { kind: "unsupported", reason: "query_kind" }; // #1246: a refused declared state makes these rows unsupported, not the request
+    throw error;
+  }
   if ("limit" in result) return { kind: "unsupported", reason: result.limit };
   if (result.kind === "unsupported") return { kind: "unsupported", reason: result.reason };
   if (result.kind !== "computed" || result.answer.kind !== "speed_order") throw new DamageAwareError("the probe gave no speed order to a speed-order query");

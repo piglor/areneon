@@ -625,10 +625,12 @@ describe("determinism", () => {
       if (query.query.kind === "speed_order") throw new MechanicsProbeError("the declared HP exceeds the maximum");
       return probe(context, query);
     };
-    expect(() => build(c, { probe: refusing }, memo)).toThrow(FeatureBuildError);
+    const first = build(c, { probe: refusing }, memo);
     const runs = memo.counts.probe_runs;
-    expect(() => build(c, { probe: refusing }, memo)).toThrow(FeatureBuildError);
+    expect(bytes(build(c, { probe: refusing }, memo))).toBe(bytes(first));
     expect(memo.counts.probe_runs).toBe(runs); // the refusal was remembered
+    expect(first.speeds.length).toBeGreaterThan(0);
+    expect(first.speeds.every((row) => row.kind === "unsupported" && row.reason === "query_kind")).toBe(true); // #1246: rows, not a forfeit
   });
 
   it("remembers a speed-order limit in the memo", () => {
@@ -677,7 +679,7 @@ describe("feature_set_hash", () => {
   });
 });
 
-describe("refusals: the five /1 codes, unchanged", () => {
+describe("refusals: the five /1 codes", () => {
   const first = (): Captured => moveRequests()[0] as Captured;
   const code = (run: () => unknown): string | undefined => {
     try {
@@ -694,8 +696,10 @@ describe("refusals: the five /1 codes, unchanged", () => {
     expect(code(() => build(c, {}, undefined, candidatesOf(c), channelWith(c, { before: ["|-notarealline|p1a: X|y"] })))).toBe("reader_flagged");
     expect(code(() => refusing(() => void (() => { throw new ReaderGap("the reader does not show an own Pokemon the request lists"); })()))).toBe("reader_gap");
     expect(code(() => build(c, { vocabulary: { ...vocabulary, roster: [] } as never }))).toBe("assumed_set");
-    expect(code(() => build(c, { probe: stubProbe({ throwOn: { damage: new MechanicsProbeError("the engine does not take that boost") } }) }))).toBe("probe_refused");
-    expect(code(() => build(c, { probe: stubProbe({ throwOn: { speed_order: new MechanicsProbeError("the declared HP exceeds the maximum") } }) }))).toBe("probe_refused");
+    expect(code(() => build(c, { probe: stubProbe({ throwOn: { stats: new MechanicsProbeError("the engine does not take that boost") } }) }))).toBe("probe_refused");
+    // A refused damage or speed-order query is a row, not a refusal of the request (#1246).
+    expect(code(() => build(c, { probe: stubProbe({ throwOn: { damage: new MechanicsProbeError("the engine does not take that boost") } }) }))).toBeUndefined();
+    expect(code(() => build(c, { probe: stubProbe({ throwOn: { speed_order: new MechanicsProbeError("the declared HP exceeds the maximum") } }) }))).toBeUndefined();
   });
   it("lets a defect propagate: a choice of the wrong shape", () => {
     const c = first();
