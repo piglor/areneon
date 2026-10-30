@@ -1,0 +1,504 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:areneon:schema:contracts:v1:usage-weight-table",
+  "title": "UsageWeightTable",
+  "description": "The usage weight table of ADR-020 section 4: per species (a roster entry of the team vocabulary) integer weights of items, abilities, moves, Stat Point spreads and teammates, derived offline from one recorded monthly Smogon chaos file and committed as reviewed data. Aggregate numbers only: no team, replay or player name; the key evs is never used and no object is team-shaped, so the data-class guard treats it like the usage prior. Integers only. Every list is in parts per million of the species' own total for that list: its entries, its truncated mass (mapped mass the top-K cut dropped) and its unmapped mass (plus no_item for items and empty for moves) sum to exactly 1,000,000, and the species' usage_ppm values plus unmapped_species_ppm sum to 1,000,000. w_species and a teammate's weight are the exact integer root floor((ppm * 10^(6 * (r - 1)))^(1/r)) of the ppm with the table's species_root / teammate_root r, computed in the derivation, so r = 1 leaves the ppm. The reader enforces sorted and unique ids, the sums, the roots, the top-K limits and that every id resolves in the engine-data table and team vocabulary the table names by hash, which the profile cannot say. usageTableHash is the SHA-256 of the RFC 8785 bytes. A new month, cutoff or limit is a new table, never an edit.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "format_id",
+    "engine_data_hash",
+    "vocabulary_hash",
+    "month",
+    "cutoff",
+    "number_of_battles",
+    "derivation",
+    "sources",
+    "unmapped_species_ppm",
+    "species"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "format_id": {
+      "description": "The format the table is for.",
+      "type": "string",
+      "pattern": "^[a-z0-9]+$"
+    },
+    "engine_data_hash": {
+      "description": "The engine-data hash (ADR-010 section 3) the names were mapped through.",
+      "$ref": "#/$defs/Hash"
+    },
+    "vocabulary_hash": {
+      "description": "The team vocabulary hash (ADR-013 section 2) the ids were checked against.",
+      "$ref": "#/$defs/Hash"
+    },
+    "month": {
+      "description": "The statistics month, YYYY-MM.",
+      "type": "string",
+      "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])$"
+    },
+    "cutoff": {
+      "description": "The rating cutoff of the file.",
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 100000
+    },
+    "number_of_battles": {
+      "description": "The number of battles the file states.",
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 1000000000000
+    },
+    "derivation": {
+      "description": "The limits and roots the script applied; they are inside the table hash.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "script_version",
+        "k_items",
+        "k_moves",
+        "k_spreads",
+        "k_teammates",
+        "species_root",
+        "teammate_root"
+      ],
+      "properties": {
+        "script_version": {
+          "description": "The derivation script's version label.",
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+        },
+        "k_items": {
+          "description": "The most items a list names.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4096
+        },
+        "k_moves": {
+          "description": "The most moves a list names.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1024
+        },
+        "k_spreads": {
+          "description": "The most spreads a list names.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 256
+        },
+        "k_teammates": {
+          "description": "The most teammates a list names.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1024
+        },
+        "species_root": {
+          "description": "The integer root r of w_species.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 8
+        },
+        "teammate_root": {
+          "description": "The integer root r of a teammate's weight.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 8
+        }
+      }
+    },
+    "sources": {
+      "description": "The input files, sorted by source_id, no id twice; every file the derivation verified.",
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 8,
+      "items": {
+        "$ref": "#/$defs/Source"
+      }
+    },
+    "unmapped_species_ppm": {
+      "description": "Share of the summed species usage whose chaos entry maps to no roster species, in parts per million; counted, never remapped.",
+      "$ref": "#/$defs/Mass"
+    },
+    "species": {
+      "description": "The species, sorted by id, no id twice.",
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 1024,
+      "items": {
+        "$ref": "#/$defs/Species"
+      }
+    }
+  },
+  "$defs": {
+    "Id": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+$",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "Hash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "Ppm": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 1000000
+    },
+    "Mass": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 1000000
+    },
+    "Weight": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 1000000000000
+    },
+    "StatPoints": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 255
+    },
+    "Source": {
+      "description": "One raw input file, recorded by id, URL, retrieval time, size and hash, with its attribution and the basis of its use. The file itself is never committed.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source_id",
+        "url",
+        "retrieved_at",
+        "size",
+        "sha256",
+        "attribution",
+        "basis",
+        "basis_reference"
+      ],
+      "properties": {
+        "source_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+        },
+        "url": {
+          "description": "Where the file was downloaded.",
+          "type": "string",
+          "pattern": "^https://[^ ]+$",
+          "maxLength": 2048
+        },
+        "retrieved_at": {
+          "description": "UTC time of retrieval.",
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+        },
+        "size": {
+          "description": "Size of the file in bytes.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000000000
+        },
+        "sha256": {
+          "description": "SHA-256 of the file's bytes.",
+          "$ref": "#/$defs/Hash"
+        },
+        "attribution": {
+          "description": "The attribution text for the file.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        },
+        "basis": {
+          "description": "Why the file may be used: the owner's accepted risk.",
+          "const": "owner-accepted-risk"
+        },
+        "basis_reference": {
+          "description": "The record of that decision.",
+          "const": "ADR-009 erratum 1"
+        }
+      }
+    },
+    "IdEntry": {
+      "description": "One id and its share.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "ppm"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/Id"
+        },
+        "ppm": {
+          "description": "The entry's share of the list in parts per million, at least 1.",
+          "$ref": "#/$defs/Ppm"
+        }
+      }
+    },
+    "TeammateEntry": {
+      "description": "One teammate: its share and the weight the draw rule sums.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "ppm",
+        "weight"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/Id"
+        },
+        "ppm": {
+          "description": "The teammate's share of the list in parts per million, at least 1.",
+          "$ref": "#/$defs/Ppm"
+        },
+        "weight": {
+          "description": "The integer root of ppm with the table's teammate_root (a reader rule).",
+          "$ref": "#/$defs/Weight"
+        }
+      }
+    },
+    "SpreadEntry": {
+      "description": "One spread and its share.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "nature",
+        "stat_points",
+        "ppm"
+      ],
+      "properties": {
+        "nature": {
+          "$ref": "#/$defs/Id"
+        },
+        "stat_points": {
+          "description": "A Stat Point spread, one value per stat.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "hp",
+            "atk",
+            "def",
+            "spa",
+            "spd",
+            "spe"
+          ],
+          "properties": {
+            "hp": {
+              "$ref": "#/$defs/StatPoints"
+            },
+            "atk": {
+              "$ref": "#/$defs/StatPoints"
+            },
+            "def": {
+              "$ref": "#/$defs/StatPoints"
+            },
+            "spa": {
+              "$ref": "#/$defs/StatPoints"
+            },
+            "spd": {
+              "$ref": "#/$defs/StatPoints"
+            },
+            "spe": {
+              "$ref": "#/$defs/StatPoints"
+            }
+          }
+        },
+        "ppm": {
+          "description": "The entry's share of the list in parts per million, at least 1.",
+          "$ref": "#/$defs/Ppm"
+        }
+      }
+    },
+    "AbilityList": {
+      "description": "Abilities of a species, in ppm of the list total; no truncation.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "entries",
+        "unmapped_ppm"
+      ],
+      "properties": {
+        "entries": {
+          "description": "The named entries, sorted (ids ascending; spreads by nature then the six points), no entry twice.",
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/IdEntry"
+          }
+        },
+        "unmapped_ppm": {
+          "description": "Mass whose name maps to no engine id or to an id the vocabulary does not allow here; counted, never remapped or redistributed.",
+          "$ref": "#/$defs/Mass"
+        }
+      }
+    },
+    "ItemList": {
+      "description": "Items of a species, in ppm of the list total; top k_items.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "entries",
+        "truncated_ppm",
+        "unmapped_ppm",
+        "no_item_ppm"
+      ],
+      "properties": {
+        "entries": {
+          "description": "The named entries, sorted (ids ascending; spreads by nature then the six points), no entry twice.",
+          "type": "array",
+          "maxItems": 4096,
+          "items": {
+            "$ref": "#/$defs/IdEntry"
+          }
+        },
+        "truncated_ppm": {
+          "description": "Mapped mass the top-K truncation dropped, in parts per million of the list.",
+          "$ref": "#/$defs/Mass"
+        },
+        "unmapped_ppm": {
+          "description": "Mass whose name maps to no engine id or to an id the vocabulary does not allow here; counted, never remapped or redistributed.",
+          "$ref": "#/$defs/Mass"
+        },
+        "no_item_ppm": {
+          "description": "The source's nothing key: a legal option, not unmapped mass.",
+          "$ref": "#/$defs/Mass"
+        }
+      }
+    },
+    "MoveList": {
+      "description": "Moves of a species, in ppm of the list total (the sum of its move weights, empty slots included); top k_moves.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "entries",
+        "truncated_ppm",
+        "unmapped_ppm",
+        "empty_ppm"
+      ],
+      "properties": {
+        "entries": {
+          "description": "The named entries, sorted (ids ascending; spreads by nature then the six points), no entry twice.",
+          "type": "array",
+          "maxItems": 1024,
+          "items": {
+            "$ref": "#/$defs/IdEntry"
+          }
+        },
+        "truncated_ppm": {
+          "description": "Mapped mass the top-K truncation dropped, in parts per million of the list.",
+          "$ref": "#/$defs/Mass"
+        },
+        "unmapped_ppm": {
+          "description": "Mass whose name maps to no engine id or to an id the vocabulary does not allow here; counted, never remapped or redistributed.",
+          "$ref": "#/$defs/Mass"
+        },
+        "empty_ppm": {
+          "description": "The source's empty-move key: an empty move slot, not unmapped mass.",
+          "$ref": "#/$defs/Mass"
+        }
+      }
+    },
+    "SpreadList": {
+      "description": "Spreads of a species, in ppm of the list total; top k_spreads.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "entries",
+        "truncated_ppm",
+        "unmapped_ppm"
+      ],
+      "properties": {
+        "entries": {
+          "description": "The named entries, sorted (ids ascending; spreads by nature then the six points), no entry twice.",
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "$ref": "#/$defs/SpreadEntry"
+          }
+        },
+        "truncated_ppm": {
+          "description": "Mapped mass the top-K truncation dropped, in parts per million of the list.",
+          "$ref": "#/$defs/Mass"
+        },
+        "unmapped_ppm": {
+          "description": "Mass whose name maps to no engine id or to an id the vocabulary does not allow here; counted, never remapped or redistributed.",
+          "$ref": "#/$defs/Mass"
+        }
+      }
+    },
+    "TeammateList": {
+      "description": "Teammates of a species among the roster, in ppm of the positive teammate weight; top k_teammates. A species with no positive teammate weight has an empty list with every mass 0, the one list that may sum to 0 instead of 1,000,000.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "entries",
+        "truncated_ppm",
+        "unmapped_ppm"
+      ],
+      "properties": {
+        "entries": {
+          "description": "The named entries, sorted (ids ascending; spreads by nature then the six points), no entry twice.",
+          "type": "array",
+          "maxItems": 1024,
+          "items": {
+            "$ref": "#/$defs/TeammateEntry"
+          }
+        },
+        "truncated_ppm": {
+          "description": "Mapped mass the top-K truncation dropped, in parts per million of the list.",
+          "$ref": "#/$defs/Mass"
+        },
+        "unmapped_ppm": {
+          "description": "Mass whose name maps to no engine id or to an id the vocabulary does not allow here; counted, never remapped or redistributed.",
+          "$ref": "#/$defs/Mass"
+        }
+      }
+    },
+    "Species": {
+      "description": "One species (a roster entry) with its weights.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "usage_ppm",
+        "w_species",
+        "items",
+        "abilities",
+        "moves",
+        "spreads",
+        "teammates"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/Id"
+        },
+        "usage_ppm": {
+          "description": "The species' share of the summed species usage in parts per million, at least 1.",
+          "$ref": "#/$defs/Ppm"
+        },
+        "w_species": {
+          "description": "The integer root of usage_ppm with the table's species_root (a reader rule).",
+          "$ref": "#/$defs/Weight"
+        },
+        "items": {
+          "$ref": "#/$defs/ItemList"
+        },
+        "abilities": {
+          "$ref": "#/$defs/AbilityList"
+        },
+        "moves": {
+          "$ref": "#/$defs/MoveList"
+        },
+        "spreads": {
+          "$ref": "#/$defs/SpreadList"
+        },
+        "teammates": {
+          "$ref": "#/$defs/TeammateList"
+        }
+      }
+    }
+  }
+}

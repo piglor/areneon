@@ -22,6 +22,7 @@ import { LEAGUE_SEED_DERIVATION } from "./league-seed.ts";
 import { MOVE_CLASSES_FILE, type MoveClassTable } from "./move-classes.ts";
 import { damageAwareSamples } from "./damage-aware-samples.ts";
 import { usagePriorSamples } from "./usage-prior-samples.ts";
+import { usageWeightTableSamples } from "./usage-weight-table-samples.ts";
 import { worldWritersSamples } from "./world-writers-samples.ts";
 import { searchConfigSamples } from "./search-config-samples.ts";
 import { mechanicsSamples } from "./mechanics-samples.ts";
@@ -1298,13 +1299,14 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
   const mechanicsOnes = mechanicsSamples(engine);
   const damageAwareOnes = damageAwareSamples();
   const usagePriorOnes = usagePriorSamples(vocabulary as never);
+  const usageWeightOnes = usageWeightTableSamples(vocabulary as never);
   const worldWritersOnes = worldWritersSamples(engine, GOLDEN_FORMAT);
   const searchConfigOnes = searchConfigSamples(GOLDEN_FORMAT);
   const privateManifests = privateSnapshotSamples({ manifest: record.manifest, vocabularyHash: teamVocabularyHash(vocabulary as never), labelSetHash });
   const privateTests = privateTestSamples();
   const scriptedOnes = scriptedH2HSamples();
   for (const kind of ["valid", "invalid", "readerInvalid"] as const) Object.assign(privateOnes[kind], privateManifests[kind], privateTests[kind]);
-  for (const [kind, cases] of [["valid", { ...valid, ...evalSamples.valid, ...progressOnes.valid, ...mechanicsOnes.valid, ...damageAwareOnes.valid, ...usagePriorOnes.valid, ...worldWritersOnes.valid, ...searchConfigOnes.valid, ...scriptedOnes.valid, ...privateOnes.valid }], ["invalid", { ...invalid, ...evalSamples.invalid, ...progressOnes.invalid, ...mechanicsOnes.invalid, ...damageAwareOnes.invalid, ...usagePriorOnes.invalid, ...worldWritersOnes.invalid, ...searchConfigOnes.invalid, ...scriptedOnes.invalid, ...privateOnes.invalid }], ["reader-invalid", { ...readerInvalid, ...evalSamples.readerInvalid, ...progressOnes.readerInvalid, ...mechanicsOnes.readerInvalid, ...damageAwareOnes.readerInvalid, ...usagePriorOnes.readerInvalid, ...worldWritersOnes.readerInvalid, ...searchConfigOnes.readerInvalid, ...scriptedOnes.readerInvalid, ...privateOnes.readerInvalid }]] as const) {
+  for (const [kind, cases] of [["valid", { ...valid, ...evalSamples.valid, ...progressOnes.valid, ...mechanicsOnes.valid, ...damageAwareOnes.valid, ...usagePriorOnes.valid, ...usageWeightOnes.valid, ...worldWritersOnes.valid, ...searchConfigOnes.valid, ...scriptedOnes.valid, ...privateOnes.valid }], ["invalid", { ...invalid, ...evalSamples.invalid, ...progressOnes.invalid, ...mechanicsOnes.invalid, ...damageAwareOnes.invalid, ...usagePriorOnes.invalid, ...usageWeightOnes.invalid, ...worldWritersOnes.invalid, ...searchConfigOnes.invalid, ...scriptedOnes.invalid, ...privateOnes.invalid }], ["reader-invalid", { ...readerInvalid, ...evalSamples.readerInvalid, ...progressOnes.readerInvalid, ...mechanicsOnes.readerInvalid, ...damageAwareOnes.readerInvalid, ...usagePriorOnes.readerInvalid, ...usageWeightOnes.readerInvalid, ...worldWritersOnes.readerInvalid, ...searchConfigOnes.readerInvalid, ...scriptedOnes.readerInvalid, ...privateOnes.readerInvalid }]] as const) {
     for (const [key, value] of Object.entries(cases)) {
       const [contract, name] = key.split("/") as [string, string];
       samples[`v1/${contract}/${kind}/${name}.json`] = value;

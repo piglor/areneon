@@ -1,0 +1,224 @@
+{
+  "schema_version": 1,
+  "format_id": "gen9championsvgc2026regmc",
+  "engine_data_hash": "33b42a81c85a29773d3a2da890f898b552179406a276925979d9e489aba971c0",
+  "vocabulary_hash": "48ec35e67d0f1454476648871d0388e2764d8f36f2096dede1f7ec7a9c7a0c56",
+  "month": "2026-09",
+  "cutoff": 1630,
+  "number_of_battles": 1630000,
+  "derivation": {
+    "script_version": "sample-1",
+    "k_items": 16,
+    "k_moves": 32,
+    "k_spreads": 32,
+    "k_teammates": 48,
+    "species_root": 2,
+    "teammate_root": 2
+  },
+  "sources": [
+    {
+      "source_id": "chaos",
+      "url": "https://example.invalid/stats/2026-09/chaos.json",
+      "retrieved_at": "2026-10-27T00:00:00Z",
+      "size": 1000,
+      "sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+      "attribution": "Sample attribution for chaos.json; invented for the corpus",
+      "basis": "owner-accepted-risk",
+      "basis_reference": "ADR-009 erratum 1"
+    },
+    {
+      "source_id": "summary",
+      "url": "https://example.invalid/stats/2026-09/summary.txt",
+      "retrieved_at": "2026-10-27T00:00:00Z",
+      "size": 1000,
+      "sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+      "attribution": "Sample attribution for summary.txt; invented for the corpus",
+      "basis": "owner-accepted-risk",
+      "basis_reference": "ADR-009 erratum 1"
+    }
+  ],
+  "unmapped_species_ppm": 50000,
+  "species": [
+    {
+      "id": "abomasnow",
+      "usage_ppm": 500000,
+      "w_species": 707106,
+      "items": {
+        "entries": [
+          {
+            "id": "abomasite",
+            "ppm": 350000
+          },
+          {
+            "id": "absolite",
+            "ppm": 350000
+          }
+        ],
+        "truncated_ppm": 100000,
+        "unmapped_ppm": 50000,
+        "no_item_ppm": 150000
+      },
+      "abilities": {
+        "entries": [
+          {
+            "id": "snowwarning",
+            "ppm": 450000
+          },
+          {
+            "id": "soundproof",
+            "ppm": 450000
+          }
+        ],
+        "unmapped_ppm": 100000
+      },
+      "moves": {
+        "entries": [
+          {
+            "id": "auroraveil",
+            "ppm": 300000
+          },
+          {
+            "id": "avalanche",
+            "ppm": 300000
+          }
+        ],
+        "truncated_ppm": 150000,
+        "unmapped_ppm": 50000,
+        "empty_ppm": 200000
+      },
+      "spreads": {
+        "entries": [
+          {
+            "nature": "adamant",
+            "stat_points": {
+              "hp": 0,
+              "atk": 0,
+              "def": 0,
+              "spa": 0,
+              "spd": 0,
+              "spe": 1
+            },
+            "ppm": 500000
+          },
+          {
+            "nature": "bashful",
+            "stat_points": {
+              "hp": 1,
+              "atk": 0,
+              "def": 0,
+              "spa": 0,
+              "spd": 0,
+              "spe": 0
+            },
+            "ppm": 300000
+          }
+        ],
+        "truncated_ppm": 150000,
+        "unmapped_ppm": 50000
+      },
+      "teammates": {
+        "entries": [
+          {
+            "id": "absol",
+            "ppm": 600000
+          }
+        ],
+        "truncated_ppm": 300000,
+        "unmapped_ppm": 100000
+      }
+    },
+    {
+      "id": "absol",
+      "usage_ppm": 450000,
+      "w_species": 670820,
+      "items": {
+        "entries": [
+          {
+            "id": "abomasite",
+            "ppm": 350000
+          },
+          {
+            "id": "absolite",
+            "ppm": 350000
+          }
+        ],
+        "truncated_ppm": 100000,
+        "unmapped_ppm": 50000,
+        "no_item_ppm": 150000
+      },
+      "abilities": {
+        "entries": [
+          {
+            "id": "justified",
+            "ppm": 300000
+          },
+          {
+            "id": "pressure",
+            "ppm": 300000
+          },
+          {
+            "id": "superluck",
+            "ppm": 300000
+          }
+        ],
+        "unmapped_ppm": 100000
+      },
+      "moves": {
+        "entries": [
+          {
+            "id": "aerialace",
+            "ppm": 300000
+          },
+          {
+            "id": "airslash",
+            "ppm": 300000
+          }
+        ],
+        "truncated_ppm": 150000,
+        "unmapped_ppm": 50000,
+        "empty_ppm": 200000
+      },
+      "spreads": {
+        "entries": [
+          {
+            "nature": "adamant",
+            "stat_points": {
+              "hp": 0,
+              "atk": 0,
+              "def": 0,
+              "spa": 0,
+              "spd": 0,
+              "spe": 1
+            },
+            "ppm": 500000
+          },
+          {
+            "nature": "bashful",
+            "stat_points": {
+              "hp": 1,
+              "atk": 0,
+              "def": 0,
+              "spa": 0,
+              "spd": 0,
+              "spe": 0
+            },
+            "ppm": 300000
+          }
+        ],
+        "truncated_ppm": 150000,
+        "unmapped_ppm": 50000
+      },
+      "teammates": {
+        "entries": [
+          {
+            "id": "abomasnow",
+            "ppm": 600000,
+            "weight": 774596
+          }
+        ],
+        "truncated_ppm": 300000,
+        "unmapped_ppm": 100000
+      }
+    }
+  ]
+}
