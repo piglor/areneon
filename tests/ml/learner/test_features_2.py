@@ -11,11 +11,17 @@ import torch
 from areneon_ml.learner import parallel
 from areneon_ml.learner.data import _Collector, trajectories
 from areneon_ml.learner.trainer import to_device
-from areneon_ml.loop.records import FEATURES_2_FAMILY, FEATURES_FAMILY, family_label
+from areneon_ml.loop.records import (
+    FEATURES_2_FAMILY,
+    FEATURES_BELIEF_FAMILY,
+    FEATURES_FAMILY,
+    family_label,
+)
 from areneon_ml.model.batch import collate
 from areneon_ml.model.encoder import Encoder
+from areneon_ml.model.features import reads_arrays
 from areneon_ml.model.network import ROLES, init_network
-from areneon_ml.model.options import CANDIDATE_FEATURES, read_options
+from areneon_ml.model.options import CANDIDATE_FEATURES, FEATURE_SETS, read_options
 
 from tests.ml.learner.support import POLICY, edited_config, stream_of
 from tests.ml.model.support import SAMPLES, TINY_ENCODER, TINY_MODEL, game
@@ -120,3 +126,18 @@ def test_the_family_label_names_the_turn_order_for_the_second_set() -> None:
     assert family_label(config("probe-damage/1")) == FEATURES_FAMILY
     assert family_label(config("probe-damage/2")) == FEATURES_2_FAMILY
     assert "damage calculation and turn order on assumed opponent sets" in FEATURES_2_FAMILY
+
+
+def test_the_belief_set_is_a_registered_set_read_like_the_first_and_labelled_as_such() -> None:
+    name = "probe-damage-belief/1"
+    assert name in FEATURE_SETS
+    # its rows have probe-damage/1's shape: no arrays for the encoder to read
+    assert not reads_arrays(name)
+
+    def edit(raw: dict[str, Any]) -> None:
+        raw["model"]["encoder"]["options"] = {
+            CANDIDATE_FEATURES: {"feature_set": name, "feature_set_hash": SET["feature_set_hash"]}
+        }
+
+    assert family_label(edited_config(edit)) == FEATURES_BELIEF_FAMILY
+    assert "sampled opponent worlds" in FEATURES_BELIEF_FAMILY

@@ -7,7 +7,9 @@ import { describe, expect, it } from "vitest";
 import { actorRule } from "../src/actor-rule.ts";
 import { type Json, jcs } from "../src/canonical-json.ts";
 import { loadEngine } from "../src/engine.ts";
-import { featureSetHash, featureSetIdentity } from "../src/candidate-features.ts";
+import { FEATURE_SET_BELIEF, featureSetHash, featureSetIdentity } from "../src/candidate-features.ts";
+import type { BeliefWorldsFactory } from "../src/damage-aware-worlds.ts";
+import { configV2, fakePort } from "./damage-aware-world-support.ts";
 import { featureSetup, GenerationError, playGeneration, trainingTeamPool } from "../src/league-generation.ts";
 import type { PolicyClient } from "../src/policy-worker.ts";
 import type { PolicyQueryInput } from "../src/policy-protocol.ts";
@@ -51,6 +53,30 @@ describe("featureSetup", () => {
     expect(setup.statement).toEqual({ feature_set: "probe-damage/1", feature_set_hash: hash });
     expect(featureSetHash(featureSetIdentity(engine, setup.configs))).toBe(hash);
     expect(setup.configs.data_class).toBe("synthetic");
+  });
+
+  it("builds probe-damage-belief/1 from the committed v2 record through the composition root's factory, and fails closed without one", () => {
+    const calls: unknown[] = [];
+    const factory: BeliefWorldsFactory = (context) => {
+      calls.push(context.config.schema_version);
+      return fakePort();
+    };
+    const attempt = (): string => {
+      try {
+        featureSetup(engine, withFeatures("0".repeat(64), FEATURE_SET_BELIEF), factory);
+      } catch (error) {
+        return /computes as ([0-9a-f]{64})/.exec((error as Error).message)?.[1] ?? "";
+      }
+      return "";
+    };
+    const hash = attempt();
+    expect(hash).toMatch(/^[0-9a-f]{64}$/);
+    expect(calls).toEqual([2]);
+    const setup = featureSetup(engine, withFeatures(hash, FEATURE_SET_BELIEF), factory) as NonNullable<ReturnType<typeof featureSetup>>;
+    expect(setup.statement).toEqual({ feature_set: FEATURE_SET_BELIEF, feature_set_hash: hash });
+    expect(setup.configs.belief?.worlds).toBe(configV2.assumed_set.worlds);
+    expect(hash).not.toBe(hashOf());
+    expect(() => featureSetup(engine, withFeatures(hash, FEATURE_SET_BELIEF))).toThrow(/belief port of the composition root/);
   });
 
   it("refuses a format whose vocabulary it does not hold", () => {
