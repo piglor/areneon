@@ -10,16 +10,17 @@ const dex = fullDex();
 const python = join(ROOT, ".venv", "bin", "python");
 const here = dirname(fileURLToPath(import.meta.url));
 
-/** The reducer's own fields, compared as they are. `hp_fraction` is derived and the page does not carry it; `item_received` and `ability_received` are the interpreter's (ADR-025), the reducer has no such field; `types` (the type a `typechange` gave, ADR-010 erratum A4 item 7) is the reducer's, the interpreter keeps the volatile alone. */
+/** The reducer's own fields, compared as they are. `hp_fraction` is derived and the page does not carry it; `item_received` and `ability_received` are the interpreter's (ADR-025), the reducer has no such field; `types` (the type a `typechange` gave, ADR-010 erratum A4 item 7) is the reducer's, the interpreter keeps the volatile alone; so are `recent` (per Pokemon), `condition_turns` (per side) and `elapsed` (the field), the recent-history fields of #1013 (state schema 2), which the interpreter does not carry (the world facts hold its own `active_turns`, `last_move`, `protect_streak` and condition start turns). */
 function reducerShape(state: any): any {
   const strip = (side: any) => ({
     ...side,
+    condition_turns: undefined,
     roster: side.roster.map((mon: any) => {
-      const { hp_fraction: _fraction, own: _own, item_received: _ir, ability_received: _ar, types: _types, ...rest } = mon;
+      const { hp_fraction: _fraction, own: _own, item_received: _ir, ability_received: _ar, types: _types, recent: _recent, ...rest } = mon;
       return rest;
     }),
   });
-  const { schema_version: _version, labels: _labels, ...rest } = state;
+  const { schema_version: _version, labels: _labels, elapsed: _elapsed, ...rest } = state;
   return { ...rest, own: strip(state.own), opponent: strip(state.opponent) };
 }
 

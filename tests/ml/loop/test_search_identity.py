@@ -18,7 +18,7 @@ H = "a" * 64
 CONFIG_HASH = "0b124bb3e0621f73713821df74478cc10c3be56b0edd23e45598dbc0812171da"
 # Moved by #248's format bumps (WORLD_BUILDER_FORMAT 2, world-facts/3), which are identity
 # inputs, and by belief/5 through the belief identity hash named in the config.
-SEARCH_HASH = "7f1f9111bf979bbd1fe9bfbc569a9288b16b895892220aa380b72ab9241fae5b"
+SEARCH_HASH = "015d8f40b910e0842c5f8f706b9cc42f451d9247a395182a09b8d1c61df4a4b0"
 # The policy-id vectors take a search hash as an opaque string and keep the one
 # they were computed with.
 ID_VECTOR_SEARCH = "edd348bdf8b9f5069ada74afae22d3ba99e1b349e2748b245de73384c9d666b9"
@@ -29,6 +29,7 @@ def identity() -> dict[str, Any]:
         "search_config_hash": CONFIG_HASH,
         "belief_identity_hash": CONFIG["belief_identity_hash"],
         "mechanics_config_hash": "1" * 64,
+        "mechanics_adapter_format": 2,
         "damage_aware_config_hash": "2" * 64,
         "damage_value_format": 1,
         "world_writers_hash": "3" * 64,
@@ -72,7 +73,7 @@ def test_search_identity_moves_with_every_input() -> None:
 
 
 def test_search_identity_refuses_a_wrong_shape() -> None:
-    with pytest.raises(ValueError, match="twelve"):
+    with pytest.raises(ValueError, match="thirteen"):
         search_identity_hash({**identity(), "extra": 1})
     with pytest.raises(ValueError, match="SHA-256"):
         search_identity_hash({**identity(), "reader_sha256": "abc"})

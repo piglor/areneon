@@ -11,12 +11,55 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-STATE_SCHEMA_VERSION = 1
+# 2: `recent` per Pokemon, `condition_turns` per side, `elapsed` on the field (#1013).
+STATE_SCHEMA_VERSION = 2
 STAT_KEYS = ("atk", "def", "spa", "spd", "spe", "accuracy", "evasion")
 
 
 def zero_boosts() -> dict[str, int]:
     return {stat: 0 for stat in STAT_KEYS}
+
+
+@dataclass
+class Recent:
+    """What happened lately, read from the player's own channel (ADR-010 erratum A4 item 7, #1013).
+
+    A turn is the span from one `|turn|` line to the next. `active_turns` is the number of `|turn|`
+    lines since the switch-in (the same count as the world facts' `active_turns`). HP amounts are
+    the sum of the Pokemon's `-damage` decreases in the units its side shows: exact hit points for
+    an own Pokemon, points of 100 for an opponent's (damage it dealt is in the units of the Pokemon
+    that took it). Everything resets on switching out or fainting."""
+
+    active_turns: int = 0
+    last_move: str | None = None
+    last_target: str | None = (
+        None  # `own:a` / `opponent:b` as the position was shown; None: no target
+    )
+    last_move_turn: int | None = None
+    # The place among the turn's actions (moves and `|cant|` lines, from 1) of its latest action.
+    last_action_turn: int | None = None
+    last_action_order: int | None = None
+    hp_taken: int = 0  # this turn so far
+    hp_dealt: int = 0
+    hp_taken_last_turn: int = 0  # the turn before the current one
+    hp_dealt_last_turn: int = 0
+    protect_streak: int = 0
+    stall_turn: int | None = None  # the turn of the latest successful stalling move
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "active_turns": self.active_turns,
+            "last_move": self.last_move,
+            "last_target": self.last_target,
+            "last_move_turn": self.last_move_turn,
+            "last_action_turn": self.last_action_turn,
+            "last_action_order": self.last_action_order,
+            "hp_taken_last_turn": self.hp_taken_last_turn,
+            "hp_dealt_last_turn": self.hp_dealt_last_turn,
+            "hp_taken_this_turn": self.hp_taken,
+            "hp_dealt_this_turn": self.hp_dealt,
+            "protect_streak": self.protect_streak,
+        }
 
 
 @dataclass
@@ -59,6 +102,7 @@ class PokemonState:
     # An entry the channel forced the reducer to add (Illusion): the same Pokemon shown twice
     # (one is an Illusion user), or a Pokemon that fainted shown as another. See `reducer.py`.
     phantom: bool = False
+    recent: Recent = field(default_factory=Recent)
 
     @property
     def hp_fraction(self) -> float | None:
@@ -97,6 +141,7 @@ class PokemonState:
             "moves_own": None if self.moves_own is None else list(self.moves_own),
             "pp": dict(sorted(self.pp.items())),
             "can_mega_evo": self.can_mega_evo,
+            "recent": self.recent.to_dict(),
         }
         if self.types is not None:  # only a typechange says so: every other state keeps its keys
             document["types"] = list(self.types)
@@ -113,9 +158,11 @@ class SideState:
     roster: list[PokemonState] = field(default_factory=list)
     slots: dict[str, int | None] = field(default_factory=dict)
     conditions: dict[str, int] = field(default_factory=dict)
+    # The turn each condition began (the first layer's), for `condition_turns`.
+    condition_started: dict[str, int] = field(default_factory=dict)
 
-    def to_dict(self) -> dict[str, Any]:
-        return {
+    def to_dict(self, turn: int | None = None) -> dict[str, Any]:
+        document = {
             "player": self.player,
             "username": self.username,
             "teamsize": self.teamsize,
@@ -123,6 +170,11 @@ class SideState:
             "slots": dict(sorted(self.slots.items())),
             "conditions": dict(sorted(self.conditions.items())),
         }
+        if turn is not None:  # turns elapsed since each condition began (0: this turn)
+            document["condition_turns"] = {
+                name: turn - began for name, began in sorted(self.condition_started.items())
+            }
+        return document
 
 
 @dataclass
@@ -136,6 +188,10 @@ class BattleState:
     weather: str | None = None
     terrain: str | None = None
     field_conditions: set[str] = field(default_factory=set)
+    # The turn the weather, the terrain and each field condition began, for `elapsed`.
+    weather_started: int | None = None
+    terrain_started: int | None = None
+    field_started: dict[str, int] = field(default_factory=dict)
     winner: str | None = None
     own: SideState = field(default_factory=lambda: SideState(player=""))
     opponent: SideState = field(default_factory=lambda: SideState(player=""))
@@ -153,6 +209,17 @@ class BattleState:
             "terrain": self.terrain,
             "field_conditions": sorted(self.field_conditions),
             "winner": self.winner,
-            "own": self.own.to_dict(),
-            "opponent": self.opponent.to_dict(),
+            "elapsed": {
+                "weather": None
+                if self.weather_started is None
+                else self.turn - self.weather_started,
+                "terrain": None
+                if self.terrain_started is None
+                else self.turn - self.terrain_started,
+                "field_conditions": {
+                    name: self.turn - began for name, began in sorted(self.field_started.items())
+                },
+            },
+            "own": self.own.to_dict(self.turn),
+            "opponent": self.opponent.to_dict(self.turn),
         }

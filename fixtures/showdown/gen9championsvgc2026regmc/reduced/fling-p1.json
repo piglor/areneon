@@ -3,10 +3,16 @@
   "provenance": "synthetic: reduced state of fling/battle.json p1, Fling of a consumed item",
   "schema_version": 1,
   "state": {
+    "elapsed": {
+      "field_conditions": {},
+      "terrain": 1,
+      "weather": null
+    },
     "field_conditions": [],
     "format_name": "[Gen 9 Champions] VGC 2026 Reg M-C",
     "gametype": "doubles",
     "opponent": {
+      "condition_turns": {},
       "conditions": {},
       "player": "p2",
       "roster": [
@@ -45,6 +51,19 @@
           ],
           "name": "Arboliva",
           "pp": {},
+          "recent": {
+            "active_turns": 1,
+            "hp_dealt_last_turn": 0,
+            "hp_dealt_this_turn": 0,
+            "hp_taken_last_turn": 3,
+            "hp_taken_this_turn": 0,
+            "last_action_order": 1,
+            "last_action_turn": 12,
+            "last_move": "protect",
+            "last_move_turn": 12,
+            "last_target": "opponent:b",
+            "protect_streak": 1
+          },
           "shiny": false,
           "species": "arboliva",
           "stats": null,
@@ -87,6 +106,19 @@
           ],
           "name": "Venusaur",
           "pp": {},
+          "recent": {
+            "active_turns": 1,
+            "hp_dealt_last_turn": 0,
+            "hp_dealt_this_turn": 0,
+            "hp_taken_last_turn": 0,
+            "hp_taken_this_turn": 0,
+            "last_action_order": 2,
+            "last_action_turn": 12,
+            "last_move": "sleeppowder",
+            "last_move_turn": 12,
+            "last_target": "own:a",
+            "protect_streak": 0
+          },
           "shiny": false,
           "species": "venusaur",
           "stats": null,
@@ -129,6 +161,19 @@
           ],
           "name": "Charizard",
           "pp": {},
+          "recent": {
+            "active_turns": 0,
+            "hp_dealt_last_turn": 0,
+            "hp_dealt_this_turn": 0,
+            "hp_taken_last_turn": 0,
+            "hp_taken_this_turn": 0,
+            "last_action_order": null,
+            "last_action_turn": null,
+            "last_move": null,
+            "last_move_turn": null,
+            "last_target": null,
+            "protect_streak": 0
+          },
           "shiny": false,
           "species": "charizard",
           "stats": null,
@@ -167,6 +212,19 @@
           "moves_revealed": [],
           "name": null,
           "pp": {},
+          "recent": {
+            "active_turns": 0,
+            "hp_dealt_last_turn": 0,
+            "hp_dealt_this_turn": 0,
+            "hp_taken_last_turn": 0,
+            "hp_taken_this_turn": 0,
+            "last_action_order": null,
+            "last_action_turn": null,
+            "last_move": null,
+            "last_move_turn": null,
+            "last_target": null,
+            "protect_streak": 0
+          },
           "shiny": false,
           "species": "blastoise",
           "stats": null,
@@ -207,6 +265,19 @@
           ],
           "name": "Pikachu",
           "pp": {},
+          "recent": {
+            "active_turns": 0,
+            "hp_dealt_last_turn": 0,
+            "hp_dealt_this_turn": 0,
+            "hp_taken_last_turn": 0,
+            "hp_taken_this_turn": 0,
+            "last_action_order": null,
+            "last_action_turn": null,
+            "last_move": null,
+            "last_move_turn": null,
+            "last_target": null,
+            "protect_streak": 0
+          },
           "shiny": false,
           "species": "pikachu",
           "stats": null,
@@ -245,6 +316,19 @@
           "moves_revealed": [],
           "name": null,
           "pp": {},
+          "recent": {
+            "active_turns": 0,
+            "hp_dealt_last_turn": 0,
+            "hp_dealt_this_turn": 0,
+            "hp_taken_last_turn": 0,
+            "hp_taken_this_turn": 0,
+            "last_action_order": null,
+            "last_action_turn": null,
+            "last_move": null,
+            "last_move_turn": null,
+            "last_target": null,
+            "protect_streak": 0
+          },
           "shiny": false,
           "species": "snorlax",
           "stats": null,
@@ -261,6 +345,7 @@
       "username": "p2"
     },
     "own": {
+      "condition_turns": {},
       "conditions": {},
       "player": "p1",
       "roster": [
@@ -307,6 +392,19 @@
             "dazzlinggleam": 12,
             "fling": 11,
             "lightscreen": 20
+          },
+          "recent": {
+            "active_turns": 0,
+            "hp_dealt_last_turn": 0,
+            "hp_dealt_this_turn": 0,
+            "hp_taken_last_turn": 0,
+            "hp_taken_this_turn": 0,
+            "last_action_order": null,
+            "last_action_turn": null,
+            "last_move": null,
+            "last_move_turn": null,
+            "last_target": null,
+            "protect_streak": 0
           },
           "shiny": false,
           "species": "dedenne",
@@ -364,6 +462,19 @@
             "sleeppowder": 16,
             "sludgebomb": 11
           },
+          "recent": {
+            "active_turns": 0,
+            "hp_dealt_last_turn": 0,
+            "hp_dealt_this_turn": 0,
+            "hp_taken_last_turn": 0,
+            "hp_taken_this_turn": 0,
+            "last_action_order": null,
+            "last_action_turn": null,
+            "last_move": null,
+            "last_move_turn": null,
+            "last_target": null,
+            "protect_streak": 0
+          },
           "shiny": false,
           "species": "venusaur",
           "stats": {
@@ -413,6 +524,19 @@
           "moves_revealed": [],
           "name": "Charizard",
           "pp": {},
+          "recent": {
+            "active_turns": 0,
+            "hp_dealt_last_turn": 0,
+            "hp_dealt_this_turn": 0,
+            "hp_taken_last_turn": 0,
+            "hp_taken_this_turn": 0,
+            "last_action_order": null,
+            "last_action_turn": null,
+            "last_move": null,
+            "last_move_turn": null,
+            "last_target": null,
+            "protect_streak": 0
+          },
           "shiny": false,
           "species": "charizard",
           "stats": {
@@ -462,6 +586,19 @@
           "moves_revealed": [],
           "name": "Blastoise",
           "pp": {},
+          "recent": {
+            "active_turns": 0,
+            "hp_dealt_last_turn": 0,
+            "hp_dealt_this_turn": 0,
+            "hp_taken_last_turn": 0,
+            "hp_taken_this_turn": 0,
+            "last_action_order": null,
+            "last_action_turn": null,
+            "last_move": null,
+            "last_move_turn": null,
+            "last_target": null,
+            "protect_streak": 0
+          },
           "shiny": false,
           "species": "blastoise",
           "stats": {
@@ -518,6 +655,19 @@
             "protect": 8,
             "thunderbolt": 15,
             "voltswitch": 18
+          },
+          "recent": {
+            "active_turns": 0,
+            "hp_dealt_last_turn": 0,
+            "hp_dealt_this_turn": 0,
+            "hp_taken_last_turn": 0,
+            "hp_taken_this_turn": 0,
+            "last_action_order": null,
+            "last_action_turn": null,
+            "last_move": null,
+            "last_move_turn": null,
+            "last_target": null,
+            "protect_streak": 0
           },
           "shiny": false,
           "species": "pikachu",
@@ -577,6 +727,19 @@
             "protect": 8,
             "rest": 6
           },
+          "recent": {
+            "active_turns": 0,
+            "hp_dealt_last_turn": 0,
+            "hp_dealt_this_turn": 0,
+            "hp_taken_last_turn": 0,
+            "hp_taken_this_turn": 0,
+            "last_action_order": null,
+            "last_action_turn": null,
+            "last_move": null,
+            "last_move_turn": null,
+            "last_target": null,
+            "protect_streak": 0
+          },
           "shiny": false,
           "species": "snorlax",
           "stats": {
@@ -600,7 +763,7 @@
     },
     "player": "p1",
     "request_kind": "move",
-    "schema_version": 1,
+    "schema_version": 2,
     "started": true,
     "terrain": "grassyterrain",
     "turn": 12,
