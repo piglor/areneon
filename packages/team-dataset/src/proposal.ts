@@ -20,6 +20,7 @@
 import type { EngineData, PokemonSet, StatTable, TeamGeneratorConfig, TeamVocabulary } from "@areneon/showdown-bridge";
 import { drawRolePicks, type RoleSetsSource } from "./role-set-proposal.ts";
 import type { Rng } from "./stream.ts";
+import { type SpreadChoice, type UniformDraws, UsageSampler, type UsageSource } from "./usage-proposal.ts";
 
 export class ProposalError extends Error {
   override name = "ProposalError";
@@ -38,13 +39,14 @@ export class Proposal {
   readonly #movesPerSet: number;
   readonly #roleSets: RoleSetsSource | undefined;
   readonly #roster: Map<string, RosterEntry>;
+  readonly #usage: UsageSampler | undefined;
 
   /**
    * With `config.proposal` (ADR-020), every draw first picks its component by `rng.below(1000)`; a
    * `role_sets` component needs `roleSets`, whose hash must be the one the config names. Without
    * `proposal` nothing below changes: no extra draw, the uniform path alone.
    */
-  constructor(vocabulary: TeamVocabulary, table: EngineData, config: TeamGeneratorConfig, roleSets?: RoleSetsSource) {
+  constructor(vocabulary: TeamVocabulary, table: EngineData, config: TeamGeneratorConfig, roleSets?: RoleSetsSource, usage?: UsageSource) {
     this.#vocabulary = vocabulary;
     this.#config = config;
     const names = (entries: readonly { id: string; name: string }[]): Map<string, string> => new Map(entries.map((e) => [e.id, e.name]));
@@ -73,10 +75,17 @@ export class Proposal {
       for (const species of roleSets.table.species) if (!this.#roster.has(species.id) || !this.#names.species.has(roleSets.shows_as.get(species.id) ?? species.id)) throw new ProposalError(`role-set species ${species.id} is not in the roster`);
     }
     this.#roleSets = roleSets;
+    const used = config.proposal?.components.find((c) => c.kind === "usage");
+    if (used !== undefined) {
+      if (usage === undefined) throw new ProposalError("the config has a usage component and no usage weight table was given");
+      if (usage.hash !== used.usage_table_hash) throw new ProposalError("the usage weight table is not the one the config names (hash mismatch)");
+      if (usage.table.derivation.species_root !== used.species_root) throw new ProposalError("the usage component's species_root is not the table's own species_root");
+      this.#usage = new UsageSampler(vocabulary, usage, used.set_root, used.floor_permille, this.#movesPerSet);
+    }
   }
 
   /** The component a draw takes, read from its first `rng.below(1000)`; "uniform" when no mixture is configured (nothing is drawn). */
-  component(rng: Rng): "uniform" | "role_sets" {
+  component(rng: Rng): "uniform" | "role_sets" | "usage" {
     const components = this.#config.proposal?.components;
     if (components === undefined) return "uniform";
     const u = rng.below(1000);
@@ -89,13 +98,15 @@ export class Proposal {
   }
 
   /** The kinds of the configured components, in config order; undefined when no mixture is configured. */
-  componentKinds(): ("uniform" | "role_sets")[] | undefined {
+  componentKinds(): ("uniform" | "role_sets" | "usage")[] | undefined {
     return this.#config.proposal?.components.map((c) => c.kind);
   }
 
   /** One proposed team, in the order the species were drawn. */
   propose(rng: Rng): PokemonSet[] {
-    if (this.component(rng) === "role_sets") return this.#proposeRoleSets(rng);
+    const component = this.component(rng);
+    if (component === "role_sets") return this.#proposeRoleSets(rng);
+    if (component === "usage") return this.#proposeUsage(rng);
     const roster = this.#vocabulary.roster;
     const chosen: RosterEntry[] = [];
     const used = new Set<number>();
@@ -125,6 +136,25 @@ export class Proposal {
       const item = entry.required_item ?? this.#drawItem(rng, holders);
       if (entry.required_item === undefined && item !== "") holders.set(item, (holders.get(item) ?? 0) + 1);
       return this.#set(rng, item, pick.species, pick.abilities, pick.moves);
+    });
+  }
+
+  /** Component U: species with teammate correlation, then item, ability, moves and spread by the usage table's weights (usage-proposal.ts). */
+  #proposeUsage(rng: Rng): PokemonSet[] {
+    const usage = this.#usage as UsageSampler;
+    const entries = usage.species(rng);
+    const uniform: UniformDraws = {
+      item: (holders) => this.#drawItem(rng, holders),
+      spread: (): SpreadChoice => ({ nature: this.#vocabulary.natures[rng.below(this.#vocabulary.natures.length)]?.id as string, stat_points: this.#statPoints(rng, this.#vocabulary.rules.ev_limit) }),
+    };
+    const holders = new Map<string, number>();
+    for (const entry of entries) if (entry.required_item !== undefined) holders.set(entry.required_item, (holders.get(entry.required_item) ?? 0) + 1);
+    return entries.map((entry) => {
+      const item = usage.item(rng, entry, holders, uniform);
+      if (entry.required_item === undefined && item !== "") holders.set(item, (holders.get(item) ?? 0) + 1);
+      const { ability, moves, spread } = usage.details(rng, entry, uniform);
+      const nature = this.#vocabulary.natures.find((n) => n.id === spread.nature) as TeamVocabulary["natures"][number];
+      return this.#build(rng, item, entry.id, ability, moves, nature, spread.stat_points);
     });
   }
 
@@ -165,6 +195,24 @@ export class Proposal {
       evs: this.#statPoints(rng, rules.ev_limit),
       ivs: Object.fromEntries(STATS.map((s) => [s, this.#config.iv])) as StatTable,
       level: rules.adjust_level,
+    };
+  }
+
+  /** A set from drawn fields (component U); the gender draw and the fixed fields are #set's. */
+  #build(rng: Rng, item: string, speciesId: string, ability: string, moves: readonly string[], nature: TeamVocabulary["natures"][number], evs: StatTable): PokemonSet {
+    const gender = this.#config.gender_policy === "random" ? (rng.below(2) === 0 ? "M" : "F") : "";
+    const species = this.#names.species.get(speciesId) as string;
+    return {
+      name: this.#config.nickname_policy === "species" ? species : "",
+      species,
+      item: item === "" ? "" : (this.#names.items.get(item) as string),
+      ability: this.#names.abilities.get(ability) as string,
+      moves: moves.map((m) => this.#names.moves.get(m) as string),
+      nature: nature.name,
+      gender,
+      evs,
+      ivs: Object.fromEntries(STATS.map((s) => [s, this.#config.iv])) as StatTable,
+      level: this.#vocabulary.rules.adjust_level,
     };
   }
 

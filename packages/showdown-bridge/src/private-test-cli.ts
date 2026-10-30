@@ -16,7 +16,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
 import { type Json, jcs } from "./canonical-json.ts";
-import { engineDataHash, readEngineData } from "./engine-data.ts";
+import { engineDataHash, readEngineDataAny } from "./engine-data.ts";
 import type { Engine } from "./engine.ts";
 import { loadEngine } from "./engine.ts";
 import { resolveFormat } from "./formats.ts";
@@ -214,11 +214,11 @@ async function run(argv: readonly string[], print: (line: string) => void, sourc
 
   let config: TrainingRunConfig;
   let engine: Engine;
-  let data: ReturnType<typeof readEngineData>;
+  let data: ReturnType<typeof readEngineDataAny>;
   try {
     config = readTrainingRunConfig(JSON.parse(readFileSync(need("config"), "utf8")));
     engine = loadEngine(process.env.SHOWDOWN_DIR || undefined);
-    data = readEngineData(JSON.parse(readFileSync(need("engine-data"), "utf8")));
+    data = readEngineDataAny(JSON.parse(readFileSync(need("engine-data"), "utf8")));
   } catch {
     throw new PrivateTestRefusal("usage");
   }

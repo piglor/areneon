@@ -17,6 +17,8 @@ export const FROM_JSON_ALLOWED = ["choice-judge.ts", "mechanics-damage.ts", "rep
 export const PRNG_ASSIGN_ALLOWED = ["mechanics-damage.ts", "mechanics-speed.ts", "search-turn.ts"];
 // search-turn.ts (ADR-026 slice R): clones the search's OWN scenario world (a battle the world builder made, never the live battle) and installs
 // the declared per-world engine seed (`search-engine/1`, the harness's search stream) as its generator; it copies no random state from any battle.
+// hypothetical-preview.ts (ADR-029) forks no battle itself: it builds a Team Preview battle of its own and clones it only through search-turn.ts's `cloneWorld`,
+// so it needs no entry here; a direct `fromJSON` call there would be flagged by this scan.
 
 export interface Finding {
   file: string;

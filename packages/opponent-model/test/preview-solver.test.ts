@@ -48,7 +48,8 @@ describe("preview solver vectors (computed in Python)", () => {
     // Hart and Mas-Colell (2000), Econometrica 68(5), and the standard regret-matching bound: after T
     // iterations the summed exploitability of the average strategies is at most 2 * D * sqrt(max(n, m)) / sqrt(T),
     // D the payoff range (10^6 ppm). In ppm squared that is E <= 2 * 10^12 * sqrt(max(n, m) / T); compared
-    // exactly in integers as E^2 * T <= 4 * 10^24 * max(n, m), no float.
+    // exactly in integers as E^2 * T <= 4 * 10^24 * max(n, m), no float. The bound is about exact averages; the
+    // largest-remainder rounding moves E by at most about n * 10^6, far below the bound, so it can only fail spuriously.
     for (const c of vectors.curves) {
       const size = BigInt(Math.max(c.matrix.length, (c.matrix[0] as number[]).length));
       for (const [i, t] of c.iterations.entries()) {

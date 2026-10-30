@@ -19,7 +19,7 @@ from __future__ import annotations
 import math
 from collections.abc import Mapping
 from dataclasses import dataclass, fields
-from typing import Any
+from typing import Any, cast
 
 import torch
 from torch import nn
@@ -45,16 +45,23 @@ from areneon_ml.model.gamedata import RESERVED, GameData
 from areneon_ml.model.options import (
     CANDIDATE_MATCHUP,
     FACTORED_PREVIEW,
+    POLICY_OUTPUT_SCALE_PPM,
+    SEPARATE_VALUE,
+    SEPARATE_VALUE_DETACHED,
+    SEPARATE_VALUE_NETWORK,
+    SHARED_TRUNK,
     OptionError,
     Options,
     is_set,
     layout_changing,
+    option_value,
     read_options,
     with_options,
 )
 
 ROLES = ("battle", "preview")
 ACTIONS = 3  # pass, move, switch
+PPM = 1_000_000
 LEAD_PAIR = 2  # the picks at places 1 and 2 are the leads (factored_preview)
 # Vocabulary kinds that carry a numeric attribute table from the engine data.
 _ATTRIBUTE_KINDS = ("species", "move", "item")
@@ -262,13 +269,17 @@ def _gather(tokens: torch.Tensor, index: torch.Tensor) -> torch.Tensor:
 class PolicyNetwork(nn.Module):
     """One role's network. Build with ``GameData`` (vocabulary sizes and attribute tables)."""
 
-    def __init__(self, role: str, game: GameData, config: ModelConfig) -> None:  # noqa: PLR0912, PLR0915
+    def __init__(  # noqa: PLR0912, PLR0915
+        self, role: str, game: GameData, config: ModelConfig, *, value_only: bool = False
+    ) -> None:
+        """``value_only`` (internal) builds just the trunk and the value head: the separate value
+        network of ``separate_value``, which shares no layer with the policy network."""
         super().__init__()
         if role not in ROLES:
             raise ConfigError(f"role must be one of {ROLES}")
         self.role = role
         self.config = config
-        self.layout = Layout.of(config.encoder)
+        self.layout = Layout.of(config.encoder, game)
         d = config.d_model
         enc = config.encoder
         sizes = {
@@ -302,9 +313,16 @@ class PolicyNetwork(nn.Module):
                 sizes["probe_kind"] = PROBE_KIND_CATEGORIES
         self.targeted = targeted
         # factored_preview: only the Preview network is factored; the Battle network ignores it.
-        self.factored = role == "preview" and is_set(config.options, FACTORED_PREVIEW)
+        self.factored = (
+            not value_only and role == "preview" and is_set(config.options, FACTORED_PREVIEW)
+        )
         if self.factored and enc.max_picks < LEAD_PAIR:
             raise ConfigError("factored_preview needs max_picks of at least 2 (the lead pair)")
+        probing = role == "battle" and bool(self.layout.thr_num)  # probe-damage/2 rows
+        if value_only:  # the trunk reads the token and field columns (and the probe rows' kinds)
+            used = {kind for _, kind in self.layout.mon_cat + self.layout.field_cat}
+            used |= {"move", "probe_kind"} if probing else set()
+            sizes = {kind: size for kind, size in sizes.items() if kind in used}
         self.embeddings = nn.ModuleDict(
             {kind: nn.Embedding(size, d) for kind, size in sizes.items()}
         )
@@ -313,10 +331,11 @@ class PolicyNetwork(nn.Module):
             "move": game.move_attributes,
             "item": game.item_attributes,
         }
+        kinds = [kind for kind in _ATTRIBUTE_KINDS if kind in sizes]
         self.attribute_projections = nn.ModuleDict(
-            {kind: nn.Linear(tables[kind].shape[1], d) for kind in _ATTRIBUTE_KINDS}
+            {kind: nn.Linear(tables[kind].shape[1], d) for kind in kinds}
         )
-        for kind in _ATTRIBUTE_KINDS:  # derived from the engine data: not part of a checkpoint
+        for kind in kinds:  # derived from the engine data: not part of a checkpoint
             self.register_buffer(f"attributes_{kind}", tables[kind], persistent=False)
         self.mon_cat = nn.Linear(len(self.layout.mon_cat) * d, d)
         self.mon_num = nn.Linear(len(self.layout.mon_num), d)
@@ -326,7 +345,13 @@ class PolicyNetwork(nn.Module):
         self.aggregate = nn.Parameter(torch.zeros(d))
         self.blocks = nn.ModuleList([Block(config) for _ in range(config.n_layers)])
         self.final_norm = nn.LayerNorm(d)
-        self.probing = role == "battle" and bool(self.layout.thr_num)  # probe-damage/2 rows
+        self.probing = probing
+        self.value_net: PolicyNetwork | None = None
+        if value_only:
+            if probing:
+                self._probe_layers(d)
+            self.value = nn.Sequential(nn.Linear(d, d), nn.GELU(), nn.Linear(d, 1))
+            return
         if role == "battle":
             # The damage rows' numbers are one more d-wide part of a slot (candidate_features).
             self.cand_features = nn.Linear(numbers, d) if numbers else None
@@ -340,12 +365,7 @@ class PolicyNetwork(nn.Module):
             self.slot_parts = nn.ModuleList(nn.Linear(width * d, d) for _ in range(SLOTS))
             self.candidate = nn.Linear(SLOTS * d, d)
             if self.probing:
-                self.threat_num = nn.Linear(len(self.layout.thr_num), d)
-                self.threat_row = nn.Linear(5 * d, d)
-                self.threat_pool = nn.Linear(2 * d, d)
-                self.foe_num = nn.Linear(len(self.layout.foe_num), d)
-                self.foe_row = nn.Linear(3 * d, d)
-                self.foe_pool = nn.Linear(2 * d, d)
+                self._probe_layers(d)
         else:
             self.place = nn.Embedding(enc.max_picks, d)
             if self.factored:
@@ -360,7 +380,51 @@ class PolicyNetwork(nn.Module):
             self.norm_memory = nn.LayerNorm(d)
             self.cross = Attention(d, config.n_heads)
             self.score = nn.Sequential(nn.Linear(3 * d, d), nn.GELU(), nn.Linear(d, 1))
-        self.value = nn.Sequential(nn.Linear(d, d), nn.GELU(), nn.Linear(d, 1))
+        # separate_value: "network" builds a second trunk and value head that share no layer with
+        # this one; "detached" keeps the head here but reads the trunk's output without gradient.
+        self.value_mode = option_value(config.options, SEPARATE_VALUE)
+        if self.value_mode == SEPARATE_VALUE_NETWORK:
+            self.value_net = PolicyNetwork(role, game, config, value_only=True)
+        else:
+            self.value = nn.Sequential(nn.Linear(d, d), nn.GELU(), nn.Linear(d, 1))
+        scale = option_value(config.options, POLICY_OUTPUT_SCALE_PPM)
+        if isinstance(scale, int):  # the scorer's last layer starts at scale / 10^6 of its init
+            heads = [self.place_score, self.lead_score] if self.factored else [self.score]
+            with torch.no_grad():
+                for head in heads:
+                    cast(nn.Linear, head[-1]).weight.mul_(scale / PPM)
+
+    # -- shared trunk --------------------------------------------------------
+
+    def trunk_kinds(self) -> tuple[str, ...]:
+        """The vocabulary kinds the token and field columns read (their embeddings are trunk)."""
+        used = {kind for _, kind in self.layout.mon_cat + self.layout.field_cat}
+        return tuple(sorted(used))
+
+    def trunk_keys(self) -> tuple[str, ...]:
+        """The ``state_dict`` keys of the trunk ``shared_trunk`` shares between the two roles:
+        the embeddings (and attribute projections) of the kinds the token and field columns
+        read, the token, side and field layers, the aggregation token, the transformer blocks and
+        the final norm. The candidate parts, the probe layers, the heads and a separate value
+        network (``value_net.*``) are role-specific and never in it."""
+        kinds = self.trunk_kinds()
+        prefixes = [f"embeddings.{kind}." for kind in kinds]
+        prefixes += [f"attribute_projections.{kind}." for kind in kinds]
+        prefixes += ["mon_cat.", "mon_num.", "side.", "field_cat.", "field_num.", "blocks."]
+        prefixes.append("final_norm.")
+        return tuple(
+            key
+            for key in self.state_dict()
+            if key == "aggregate" or key.startswith(tuple(prefixes))
+        )
+
+    def _probe_layers(self, d: int) -> None:
+        self.threat_num = nn.Linear(len(self.layout.thr_num), d)
+        self.threat_row = nn.Linear(5 * d, d)
+        self.threat_pool = nn.Linear(2 * d, d)
+        self.foe_num = nn.Linear(len(self.layout.foe_num), d)
+        self.foe_row = nn.Linear(3 * d, d)
+        self.foe_pool = nn.Linear(2 * d, d)
 
     # -- embeddings ----------------------------------------------------------
 
@@ -489,7 +553,10 @@ class PolicyNetwork(nn.Module):
 
     # -- forward -------------------------------------------------------------
 
-    def forward(self, batch: Batch) -> PolicyOutput:
+    def _trunk(
+        self, batch: Batch
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor | None]:
+        """The shared transformer: (x, mask, state, mons, mega), x [B, 2 + M, d]."""
         if batch.kind != self.role:
             raise ValueError(f"a {self.role} network cannot score a {batch.kind} batch")
         b = batch.size
@@ -510,18 +577,75 @@ class PolicyNetwork(nn.Module):
         for block in self.blocks:
             x = block(x, mask)
         x = self.final_norm(x)
-        state, mons = x[:, 0], x[:, 2:]
+        return x, mask, x[:, 0], x[:, 2:], mega
+
+    def _value(self, batch: Batch, state: torch.Tensor) -> torch.Tensor:
+        if self.value_net is not None:  # separate_value "network": its own trunk, same inputs
+            return self.value_net.value_of(batch)
+        if self.value_mode == SEPARATE_VALUE_DETACHED:  # no value gradient reaches the trunk
+            state = state.detach()
+        value: torch.Tensor = self.value(state).squeeze(-1)
+        return value
+
+    def value_of(self, batch: Batch) -> torch.Tensor:
+        """The value head alone, for the separate value network (``value_only``)."""
+        value: torch.Tensor = self.value(self._trunk(batch)[2]).squeeze(-1)
+        return value
+
+    def forward(self, batch: Batch) -> PolicyOutput:
+        x, mask, state, mons, mega = self._trunk(batch)
+        value = self._value(batch, state)
         if self.factored:
             logits = self._factored_logits(batch, mons)
             logits = logits.masked_fill(~batch.cand_mask, torch.finfo(logits.dtype).min)
-            return PolicyOutput(logits=logits, value=self.value(state).squeeze(-1))
+            return PolicyOutput(logits=logits, value=value)
         build = self._battle_candidates if self.role == "battle" else self._preview_candidates
         c = build(batch, mons, mega) + self.pending(batch.pending[..., None])
         c = c + self.cross(self.norm_candidate(c), self.norm_memory(x), mask)
         agg = state[:, None].expand_as(c)
         logits = self.score(torch.cat([c, agg, c * agg], -1)).squeeze(-1)
         logits = logits.masked_fill(~batch.cand_mask, torch.finfo(logits.dtype).min)
-        return PolicyOutput(logits=logits, value=self.value(state).squeeze(-1))
+        return PolicyOutput(logits=logits, value=value)
+
+
+class TrunkError(ValueError):
+    """The Preview and Battle networks of a ``shared_trunk`` pair do not share a trunk."""
+
+
+def shared_trunk_of(config: ModelConfig) -> bool:
+    return is_set(config.options, SHARED_TRUNK)
+
+
+def tie_trunk(shared: PolicyNetwork, other: PolicyNetwork) -> None:
+    """Make ``other`` use ``shared``'s trunk modules (the very same parameters), so one optimiser
+    step on either network moves both. ``other``'s own freshly initialised trunk is dropped."""
+    if shared.config != other.config:
+        raise TrunkError("a shared trunk needs the same model config on both networks")
+    kinds = shared.trunk_kinds()
+    for kind in kinds:
+        other.embeddings[kind] = shared.embeddings[kind]
+        if kind in shared.attribute_projections:
+            other.attribute_projections[kind] = shared.attribute_projections[kind]
+    for name in ("mon_cat", "mon_num", "side", "field_cat", "field_num", "blocks", "final_norm"):
+        setattr(other, name, getattr(shared, name))
+    other.aggregate = shared.aggregate
+
+
+def check_shared_trunk(networks: Mapping[str, PolicyNetwork]) -> None:
+    """Refuse a pair that does not agree on ``shared_trunk``, or whose trunk tensors differ.
+
+    A pair made without the option is not looked at. Called wherever a pair is loaded (the worker's
+    scorer) or restored (the learner state)."""
+    flags = {role: shared_trunk_of(net.config) for role, net in networks.items()}
+    if len(set(flags.values())) > 1:
+        raise TrunkError("only one of the two networks was made with shared_trunk")
+    if not all(flags.values()):
+        return
+    battle, preview = networks["battle"], networks["preview"]
+    battle_state, preview_state = battle.state_dict(), preview.state_dict()
+    for key in battle.trunk_keys():
+        if not torch.equal(battle_state[key], preview_state[key]):
+            raise TrunkError("the shared trunk tensors of the two networks differ")
 
 
 def init_network(role: str, game: GameData, config: ModelConfig, seed: int) -> PolicyNetwork:

@@ -77,6 +77,9 @@ describe("the shared contract sample corpus (ADR-008 §2)", () => {
       "v1/belief-config/reader-invalid/damage-unknown-move.json",
       "v1/belief-config/reader-invalid/damage-unsorted-moves.json",
       "v1/belief-config/reader-invalid/duplicate-ability.json",
+      "v1/belief-config/reader-invalid/speed-unknown-item.json",
+      "v1/belief-config/reader-invalid/speed-unknown-move.json",
+      "v1/belief-config/reader-invalid/speed-unsorted-moves.json",
       "v1/belief-config/reader-invalid/unknown-ability.json",
       "v1/belief-config/reader-invalid/unsorted-abilities.json",
       "v1/checkpoint-record/reader-invalid/duplicate-training-sets.json",
@@ -368,6 +371,7 @@ describe("the shared contract sample corpus (ADR-008 §2)", () => {
       "v1/training-run-config/reader-invalid/heads-do-not-divide-width.json",
       "v1/training-run-config/reader-invalid/picks-exceed-team.json",
       "v1/training-run-config/reader-invalid/play-temperature-default.json",
+      "v1/training-run-config/reader-invalid/shared-trunk-warm-start.json",
       "v1/training-run-config/reader-invalid/value-warmup-no-warm-start.json",
       "v1/training-run-config/reader-invalid/warm-start-same-id.json",
       "v1/training-set/reader-invalid/duplicate-manifests.json",
@@ -485,6 +489,7 @@ describe("the shared contract sample corpus (ADR-008 §2)", () => {
     ["v1/training-run-config/reader-invalid/value-warmup-no-warm-start.json", "needs warm_start"],
     ["v1/training-run-config/reader-invalid/anchor-no-warm-start.json", "ppo.anchor needs warm_start"],
     ["v1/training-run-config/reader-invalid/play-temperature-default.json", "is the default"],
+    ["v1/training-run-config/reader-invalid/shared-trunk-warm-start.json", "shared_trunk cannot be combined"],
   ])("readTrainingRunConfig refuses %s", (file, message) => {
     expect(Object.keys(fresh)).toContain(file);
     expect(() => readTrainingRunConfig(committed(file))).toThrow(TrainingRunConfigError);

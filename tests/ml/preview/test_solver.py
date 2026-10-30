@@ -36,7 +36,8 @@ def test_within_the_regret_matching_bound() -> None:
     # iterations the summed exploitability of the average strategies is at most
     # 2 * D * sqrt(max(n, m)) / sqrt(T), D the payoff range (10^6 ppm). In ppm squared that is
     # E <= 2 * 10^12 * sqrt(max(n, m) / T), compared exactly in integers as
-    # E^2 * T <= 4 * 10^24 * max(n, m).
+    # E^2 * T <= 4 * 10^24 * max(n, m). The bound is about exact averages; the largest-remainder
+    # rounding moves E by at most about n * 10^6, far below the bound: it can only fail spuriously.
     for c in json.loads(VECTORS.read_text())["curves"]:
         size = max(len(c["matrix"]), len(c["matrix"][0]))
         for t, e in zip(c["iterations"], c["exploitability"], strict=True):

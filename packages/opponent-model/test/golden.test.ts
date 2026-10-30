@@ -26,6 +26,10 @@ const alphaHit = (all: boolean) => ({ events: [{ id: "h1", slot: 0, role: "defen
 // A stand-in for the bridge's engine check: Alpha with ability a1 would show maybeTrapped to the own active.
 const alphaTrap = (observed: 0 | 1) => ({ observed: [observed] as const, shows: (c: { species: string; ability: string }) => [c.species === "alpha" && c.ability === "a1" ? 1 : 0] as const });
 
+// A stand-in for the bridge's speed-order probe (ticket #1133): the same candidate fails, for an opponent that acted `second`.
+const speedConfig = { ...config, speed_evidence: { max_checked: 100, non_isolating: { abilities: [], lasting_moves: [], moves: [] }, unmodelled: { abilities: [], items: [] } } };
+const alphaOrder = (all: boolean) => ({ events: [{ id: "s1", slot: 0, role: "second" as const }], check: (_: unknown, c: { ability: string; item: string | null; nature: string }) => (all ? false : !(c.ability === "a1" && c.item === "ix" && c.nature === "bold")) });
+
 const FILE = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "fixtures", "opponent-model", "golden.json");
 const STREAM = Uint8Array.from({ length: 32 }, (_, i) => 255 - i * 5);
 const SW = (letter: "a" | "b", name: string, species: string) => `|switch|p2${letter}: ${name}|${species}, L50, M|100/100`;
@@ -39,6 +43,8 @@ const cases = {
   "trapping-unseen": () => input([SW("a", "Alp", "Alpha")], { trapping: alphaTrap(0) }),
   "damage-applied": () => input([SW("a", "Alp", "Alpha")], { prior: twoSpreads(), config: damageConfig, damage: alphaHit(false) }),
   "damage-contradiction": () => input([SW("a", "Alp", "Alpha")], { prior: twoSpreads(), config: damageConfig, damage: alphaHit(true) }),
+  "speed-applied": () => input([SW("a", "Alp", "Alpha")], { prior: twoSpreads(), config: speedConfig, speed: alphaOrder(false) }),
+  "speed-contradiction": () => input([SW("a", "Alp", "Alpha")], { prior: twoSpreads(), config: speedConfig, speed: alphaOrder(true) }),
 } as const;
 
 interface Golden {

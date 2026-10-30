@@ -24,8 +24,10 @@ import {
   readRoleSetTable,
   readTeamGeneratorConfig,
   readTeamLabelSet,
+  readUsageWeightTable,
   ROLE_SETS_FILE,
   roleSetTableHash,
+  usageTableHash,
   type TeamGeneratorConfig,
   type TeamLabelSet,
   type TeamVocabulary,
@@ -81,6 +83,20 @@ function roleSetProblems(config: TeamGeneratorConfig, format: string, vocabulary
   return roleSetTableHash(table) === named.role_set_table_hash ? [] : [`role_sets component: role_set_table_hash is not the committed table's (${roleSetTableHash(table)})`];
 }
 
+/** A `usage` component must name a table committed under `usage/` that reads against the vocabulary, with the table's own species_root. */
+function usageProblems(config: TeamGeneratorConfig, dir: string, vocabulary: TeamVocabulary): string[] {
+  const named = config.proposal?.components.find((c) => c.kind === "usage");
+  if (named === undefined) return [];
+  const usageDir = join(dir, "usage");
+  const files = existsSync(usageDir) ? readdirSync(usageDir).filter((f) => f.endsWith(".json")).sort() : [];
+  for (const file of files) {
+    const table = readUsageWeightTable(JSON.parse(readFileSync(join(usageDir, file), "utf8")), vocabulary);
+    if (usageTableHash(table) !== named.usage_table_hash) continue;
+    return table.derivation.species_root === named.species_root ? [] : [`usage component: species_root is not the table's own (${table.derivation.species_root})`];
+  }
+  return ["usage component: no table committed under usage/ has the hash it names"];
+}
+
 /** Check every format directory under `root`; returns the problems, one line each. */
 export function checkTeamConfigs(
   engine: Engine,
@@ -94,12 +110,15 @@ export function checkTeamConfigs(
     const table = exportEngineData(engine, format);
     const vocabulary = vocabularyOf(engine, format, table);
     const read = (name: string): unknown => JSON.parse(readFileSync(join(dir, name), "utf8"));
-    // Every generator*.json is a TeamGeneratorConfig; a role_sets component must name the committed role-set table.
+    // Every generator*.json is a TeamGeneratorConfig; a role_sets component must name the committed role-set table and a usage component a committed usage table.
     const generators = readdirSync(dir).filter((f) => /^generator(\..+)?\.json$/.test(f)).sort();
     for (const [name, check] of [
       ["labels.json", (v: unknown) => labelProblems(readTeamLabelSet(v, table), vocabulary)],
       ...(generators.includes("generator.json") ? [] : [["generator.json", () => []] as const]),
-      ...generators.map((g) => [g, (v: unknown) => roleSetProblems(readTeamGeneratorConfig(v, table), format, vocabulary, fixtures)] as const),
+      ...generators.map((g) => [g, (v: unknown) => {
+          const config = readTeamGeneratorConfig(v, table);
+          return [...roleSetProblems(config, format, vocabulary, fixtures), ...usageProblems(config, dir, vocabulary)];
+        }] as const),
     ] as const) {
       if (!existsSync(join(dir, name))) {
         problems.push(`${format}/${name} is missing`);

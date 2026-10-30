@@ -14,6 +14,9 @@ import { sha256, toHex, utf8 } from "./sha256.ts";
 
 export const WORLD_PURPOSE = "opponent-world/1";
 export const INDEX_PURPOSE = "opponent-world-index/1";
+/** The purposes of full-team draws (`sampleTeam`, ADR-025 erratum E-25.1): apart from the world's, so no world's bytes can move. */
+export const TEAM_PURPOSE = "opponent-team/1";
+export const TEAM_INDEX_PURPOSE = "opponent-team-index/1";
 export const STREAM_BYTES = 32;
 const BLOCK_BITS = 256n;
 export const EXTRA_BITS = 64n;
@@ -26,10 +29,10 @@ export function checkStream(stream: Uint8Array): void {
 }
 
 /** The block source of a stream under the purpose of the world draws. */
-export function blocksOf(stream: Uint8Array): BlockSource {
+export function blocksOf(stream: Uint8Array, purpose: string = WORLD_PURPOSE): BlockSource {
   checkStream(stream);
   const hex = toHex(stream);
-  return (counter) => BigInt(`0x${toHex(sha256(utf8(jcs({ counter, purpose: WORLD_PURPOSE, stream: hex }))))}`);
+  return (counter) => BigInt(`0x${toHex(sha256(utf8(jcs({ counter, purpose, stream: hex }))))}`);
 }
 
 /** The stream of world `index` of a consumer's stream: SHA-256 of the JCS of {stream, index, purpose}. */
@@ -37,6 +40,13 @@ export function worldStream(stream: Uint8Array, index: number): Uint8Array {
   checkStream(stream);
   if (!Number.isSafeInteger(index) || index < 0) throw new RangeError("a world index is a non-negative integer");
   return sha256(utf8(jcs({ index, purpose: INDEX_PURPOSE, stream: toHex(stream) })));
+}
+
+/** The stream of team `index` of a consumer's stream, under the team index purpose. */
+export function teamStream(stream: Uint8Array, index: number): Uint8Array {
+  checkStream(stream);
+  if (!Number.isSafeInteger(index) || index < 0) throw new RangeError("a team index is a non-negative integer");
+  return sha256(utf8(jcs({ index, purpose: TEAM_INDEX_PURPOSE, stream: toHex(stream) })));
 }
 
 const bitLength = (value: bigint): bigint => BigInt(value.toString(2).length);

@@ -8,7 +8,7 @@ import type { UsagePrior } from "@areneon/schema/types/v1/usage-prior.ts";
 import { BeliefError, type BeliefErrorCode, type OpponentBelief, type OpponentWorld, type SetLegality, type WorldSet, belief, createSampler } from "../src/index.ts";
 import { prepared } from "../src/sampler.ts";
 import { jcs } from "../src/canonical.ts";
-import { worldStream } from "../src/draw.ts";
+import { teamStream, worldStream } from "../src/draw.ts";
 import { toHex } from "../src/sha256.ts";
 import { alpha, betaFormes, hidingConfig, inert, input, prior, seen, config, vocabulary } from "./support.ts";
 
@@ -347,5 +347,117 @@ describe("the type test: sample takes a belief and a stream, nothing else", () =
     expect(opponent.roster).toHaveLength(6);
     const keys = Object.keys(sampler.sample(big(), STREAM));
     expect(keys.sort()).toEqual(["redraws", "world"]);
+  });
+});
+
+// --- sampleTeam: a set for all six preview slots (ADR-025 erratum E-25.1) -------------------------------
+
+describe("sampleTeam: a set for every preview slot", () => {
+  const b = big();
+  const N = 6000;
+  const teams = Array.from({ length: N }, (_, i) => sampler.sampleTeam(b, streamOf(i)).team);
+
+  it("has a set for each of the six slots, in preview order, and no item twice across all six", () => {
+    for (const t of teams) {
+      expect(t.sets).toHaveLength(6);
+      t.sets.forEach((s, i) => expect(s.species).toBe(b.slots[i]!.species));
+      const held = t.sets.flatMap((s) => (s.item === null ? [] : [s.item]));
+      expect(new Set(held).size).toBe(held.length);
+    }
+  });
+
+  it("slot marginals (items, abilities, spreads, formes, moves) follow the belief's, for every slot", () => {
+    for (const s of b.slots) {
+      const sets = teams.map((t) => t.sets[s.index]!);
+      for (const m of s.items) near(sets.filter((x) => x.item === m.id).length / N, value(m.p), N);
+      for (const m of s.abilities) near(sets.filter((x) => x.ability === m.id).length / N, value(m.p), N);
+      for (const m of s.spreads) near(sets.filter((x) => `${x.nature}:${Object.values(x.stat_points).join("-")}` === m.id).length / N, value(m.p), N);
+      for (const m of s.formes) near(sets.filter((x) => x.forme === m.id).length / N, value(m.p), N);
+      for (const m of s.moves) near(sets.filter((x) => x.moves.includes(m.id)).length / N, value(m.p), N);
+    }
+  });
+
+  it("the joint of two slots matches the DP over all six slots (the brute-force normaliser of the cells)", () => {
+    const joint = teams.filter((t) => t.sets[0]!.item === "ix" && t.sets[2]!.item === "iy").length / N;
+    const a = b.assignments[0]!;
+    const w = (i: number, item: string | null) => a.slots[i]!.cells.filter((c) => c.item === item).reduce((t, c) => t + c.weight, 0n);
+    const itemsOf = ["betite", "ix", "iy", null] as const;
+    let total = 0n;
+    let hit = 0n;
+    const walk = (i: number, held: (string | null)[], weight: bigint): void => {
+      if (i === 6) {
+        total += weight;
+        if (held[0] === "ix" && held[2] === "iy") hit += weight;
+        return;
+      }
+      for (const item of itemsOf) {
+        if (item !== null && held.includes(item)) continue;
+        walk(i + 1, [...held, item], weight * w(i, item));
+      }
+    };
+    walk(0, [], 1n);
+    expect(total).toBe(a.normaliser);
+    near(joint, Number((hit * 1_000_000_000n) / total) / 1e9, N);
+  });
+
+  it("is deterministic: the same belief and stream give the same team; another stream another team", () => {
+    const first = sampler.sampleTeam(b, STREAM);
+    expect(sampler.sampleTeam(big(), STREAM)).toEqual(first);
+    expect(createSampler({ legality: accept }).sampleTeam(b, STREAM)).toEqual(first);
+    expect(JSON.stringify(sampler.sampleTeam(b, streamOf(5)))).not.toBe(JSON.stringify(first));
+  });
+
+  it("uses its own purpose: team i of a stream is not world i, and sample() bytes are untouched by sampleTeam", () => {
+    const world = sampler.sample(b, STREAM);
+    sampler.sampleTeam(b, STREAM);
+    expect(sampler.sample(b, STREAM)).toEqual(world);
+    const asWorld = sampler.sampleTeam(b, STREAM).team.sets.map((s) => JSON.stringify(s));
+    const fromWorld = world.world.slots.flatMap((s) => (s.set === null ? [] : [JSON.stringify(s.set)]));
+    expect(asWorld.filter((s) => fromWorld.includes(s)).length).toBeLessThan(6);
+  });
+
+  it("sampleTeams(belief, stream, n) is team i = sampleTeam(belief, SHA-256(JCS({stream, index: i, purpose}))), each weighing 1/n", () => {
+    const out = sampler.sampleTeams(b, STREAM, 5);
+    out.teams.forEach((t, i) => {
+      const own = createHash("sha256").update(jcs({ stream: toHex(STREAM), index: i, purpose: "opponent-team-index/1" })).digest();
+      expect(t.index).toBe(i);
+      expect(t.weight).toEqual({ num: 1n, den: 5n });
+      expect({ team: t.team, redraws: t.redraws }).toEqual(sampler.sampleTeam(b, Uint8Array.from(own)));
+    });
+    for (const n of [0, -1, 1.5, Number.NaN]) expect(() => sampler.sampleTeams(b, STREAM, n)).toThrow(RangeError);
+    for (const index of [-1, 1.5, Number.NaN]) expect(() => teamStream(STREAM, index)).toThrow(RangeError);
+    expect(() => teamStream(new Uint8Array(31), 0)).toThrow(RangeError);
+    expect(() => sampler.sampleTeam(b, new Uint8Array(31))).toThrow(RangeError);
+  });
+
+  it("redraws on an illegal set as sample does, and gives up after max_legality_redraws", () => {
+    let calls = 0;
+    const flaky = createSampler({ legality: { legal: () => (calls += 1) > 2 } });
+    const out = flaky.sampleTeams(b, STREAM, 3);
+    expect(out.redraws).toBeGreaterThan(0);
+    const never = createSampler({ legality: { legal: () => false } });
+    const limited: OpponentBelief = belief(input([], { prior: bigPrior(), config: { ...config, max_legality_redraws: 2 } }));
+    expect(refusal(() => never.sampleTeam(limited, STREAM))).toBe("legality_redraws_exhausted");
+  });
+
+  it("takes a belief and a stream, nothing else (type test), and returns sets and redraws only", () => {
+    // @ts-expect-error: the opponent's real team is not an input
+    sampler.sampleTeam(b, STREAM, { team: [] });
+    // @ts-expect-error: nor a seed
+    sampler.sampleTeam(b, STREAM, "sodium,0");
+    // @ts-expect-error: the stream is bytes
+    expect(() => sampler.sampleTeam(b, "sodium,0")).toThrow();
+    expect(Object.keys(sampler.sampleTeam(b, STREAM)).sort()).toEqual(["redraws", "team"]);
+    expect(Object.keys(sampler.sampleTeam(b, STREAM).team)).toEqual(["sets"]);
+  });
+
+  it("honours revealed facts of the shown Pokemon exactly as a world does", () => {
+    const seenB = big([SW("a", "Alp", "Alpha"), "|move|p2a: Alp|Mb", "|-item|p2a: Alp|Ix"]);
+    for (let i = 0; i < 100; i += 1) {
+      const t = sampler.sampleTeam(seenB, streamOf(i)).team;
+      expect(t.sets[0]).toMatchObject({ item: "ix", shown: { name: "Alp" } });
+      expect(t.sets[0]!.moves).toContain("mb");
+      expect(t.sets.slice(1).every((s) => s.item !== "ix")).toBe(true);
+    }
   });
 });

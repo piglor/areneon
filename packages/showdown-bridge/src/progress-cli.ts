@@ -11,7 +11,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
 import { type Json, jcs } from "./canonical-json.ts";
-import { engineDataHash, readEngineData } from "./engine-data.ts";
+import { engineDataHash, readEngineDataAny } from "./engine-data.ts";
 import { loadEngine } from "./engine.ts";
 import type { Engine } from "./engine.ts";
 import { UsageError } from "./generation-cli.ts";
@@ -247,7 +247,7 @@ export async function runProgressCli(argv: readonly string[], print: (line: stri
   // An evaluation dataset must hold none of the run's own dev or training teams (not only those it drew into team-set.json).
   const runTeams = evalDataset === undefined ? new Set<string>() : readRunTeams(engine, config);
   const dataFile = need("engine-data");
-  const dataHash = engineDataHash(readEngineData(JSON.parse(readFileSync(dataFile, "utf8"))));
+  const dataHash = engineDataHash(readEngineDataAny(JSON.parse(readFileSync(dataFile, "utf8"))));
   const { max_line_bytes, handshake_timeout_ms } = config.generation;
   // The candidate features of the run's pair (none: nothing below changes) and, for another run's pair, of ITS config.
   const features = pairFeatureSetup(engine, config);

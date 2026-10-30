@@ -16,6 +16,7 @@
 import type { RoleSetTable, TeamGeneratorConfig, TeamVocabulary } from "@areneon/showdown-bridge";
 import type { QuotaPlan, Split } from "./plan.ts";
 import type { Pilot } from "./pilot.ts";
+import { type UsageSource, usageMembers, type UsageMember } from "./usage-proposal.ts";
 
 export type Gates = NonNullable<NonNullable<TeamGeneratorConfig["proposal"]>["gates"]>;
 
@@ -142,6 +143,152 @@ export function roleSetsMapping(vocabulary: Pick<TeamVocabulary, "roster">, tabl
   return { mapped, total };
 }
 
+export type UsageComponentConfig = Extract<NonNullable<TeamGeneratorConfig["proposal"]>["components"][number], { kind: "usage" }>;
+
+/** P1 for component U: the aggregate mapped mass and, per list kind, the mapped share in permille (ADR-020 section 6 asks 95% per kind). */
+export interface UsageMappingResult {
+  mapped: number;
+  total: number;
+  /** Mapped share per list kind in permille, floored. */
+  kinds: Record<(typeof USAGE_LIST_KINDS)[number], number>;
+}
+
+export const USAGE_LIST_KINDS = ["species", "abilities", "items", "moves", "spreads", "teammates"] as const;
+
+/**
+ * P1 for component U. Each of the six list kinds (species usage, abilities, items, moves, spreads, teammates) has a total of
+ * 10^12 units; a kind's unmapped mass counts per species weighted by its usage, and a species the roster lacks
+ * (unmapped_species_ppm) is unmapped in all six. `mapped` and `total` are the aggregate over the six kinds; `kinds` is
+ * each kind's mapped share in permille, which the gate takes the minimum of.
+ */
+export function usageMapping(table: UsageSource["table"]): UsageMappingResult {
+  const unit = 1_000_000;
+  const per = unit * unit;
+  const unmapped = { species: table.unmapped_species_ppm * unit, abilities: 0, items: 0, moves: 0, spreads: 0, teammates: 0 };
+  for (const kind of USAGE_LIST_KINDS) if (kind !== "species") unmapped[kind] = table.unmapped_species_ppm * unit;
+  for (const s of table.species) {
+    unmapped.abilities += s.usage_ppm * s.abilities.unmapped_ppm;
+    unmapped.items += s.usage_ppm * s.items.unmapped_ppm;
+    unmapped.moves += s.usage_ppm * s.moves.unmapped_ppm;
+    unmapped.spreads += s.usage_ppm * s.spreads.unmapped_ppm;
+    unmapped.teammates += s.usage_ppm * s.teammates.unmapped_ppm;
+  }
+  const kinds = Object.fromEntries(USAGE_LIST_KINDS.map((k) => [k, Math.floor(((per - unmapped[k]) * 1000) / per)])) as UsageMappingResult["kinds"];
+  const total = USAGE_LIST_KINDS.length * per;
+  return { mapped: total - USAGE_LIST_KINDS.reduce((sum, k) => sum + unmapped[k], 0), total, kinds };
+}
+
+const maxOf = (weights: readonly number[]): number => weights.reduce((a, b) => Math.max(a, b), 0);
+const sumOf = (weights: readonly number[]): number => weights.reduce((a, b) => a + b, 0);
+const largest = (weights: readonly number[], count: number): number => sumOf([...weights].sort((a, b) => b - a).slice(0, count));
+const atMostOne = (f: Fraction): Fraction => (f.num > f.den ? frac(1n, 1n) : f);
+const fractionMax = (a: Fraction, b: Fraction): Fraction => (a.num * b.den >= b.num * a.den ? a : b);
+
+/** (1 - floor) of the weighted bound plus floor of the uniform bound: the bound on one draw that may be taken uniformly. */
+const mixed = (floor: number, weightedP: Fraction, uniformP: Fraction): Fraction => add(mul(frac(BigInt(1000 - floor), 1000n), weightedP), mul(frac(BigInt(floor), 1000n), uniformP));
+
+/**
+ * The upper bound for component U: the number of orderings of a team's members times the product of the largest
+ * conditional species probabilities (a teammate step is bounded by the mediant inequality: the best single chosen
+ * species' top teammate weight over what that species leaves after removing its largest other-teammate weights), times
+ * the product of the six largest member bounds (item under the Item Clause, ability, ordered moves times their
+ * orderings, spread, gender), each draw mixed with the uniform bound at the per-slot floor, times 2 for each Mega roster
+ * entry a team can hold (a canonical team is reached by two routes when the validator rewrites a Mega entry to its base
+ * forme plus stone), with the last-resort uniform species and item picks bounded by their own probability.
+ */
+export function usageBound(vocabulary: BoundVocabulary, config: BoundConfig, component: UsageComponentConfig, source: UsageSource): Fraction {
+  return usageBounds(vocabulary, config, component, source).set;
+}
+
+/**
+ * Both P3 figures for component U. `set` is the bound above, on the probability of a team as a SET of members (the gate's
+ * figure). `sequence` is the ADR-020 section 6 wording: the product of the largest conditional weights along ONE draw route
+ * (the first pick, the later picks, each member's set draws as an ordered sequence), with no ordering factors, so it bounds
+ * the probability of one particular draw order and is smaller by up to 6! x (4!)^6. `set` covers every route to a canonical
+ * team (the 2^m factor for Mega entries and the last-resort uniform species and item picks); `sequence` is one route's
+ * figure: it omits the orderings and the 2^m factor.
+ */
+export function usageBounds(vocabulary: BoundVocabulary, config: BoundConfig, component: UsageComponentConfig, source: UsageSource): { set: Fraction; sequence: Fraction } {
+  const { itemFree } = commonFactor(vocabulary, config);
+  const floor = component.floor_permille;
+  const k = config.moves_per_set ?? 4;
+  const size = vocabulary.rules.max_team_size;
+  const n = vocabulary.roster.length;
+  const members = usageMembers(source.table, component.set_root);
+  const natures = BigInt(vocabulary.natures.length);
+  const gender = config.gender_policy === "random" ? 2n : 1n;
+  const limit = vocabulary.rules.item_clause;
+  const removable = limit === undefined || limit < 1 ? 0 : Math.floor((size - 1) / limit);
+
+  // Species steps. The first pick is at most the largest w_species share. A later pick of species j, whatever was chosen,
+  // is at most R(j): by the mediant inequality its teammate share is at most the best single chosen species' tw_c[j] over
+  // what c leaves of its list after removing its largest (size - 1) other weights; when no chosen species names an
+  // unchosen one the pick falls back to w_species, at most w_j over the total less the largest (size - 1) weights. The
+  // size - 1 later picks are distinct species, so their product is at most the product of the size - 1 largest R.
+  const usageWeights = vocabulary.roster.map((e) => members.get(e.id)?.w_species ?? 0);
+  const totalUsage = sumOf(usageWeights);
+  const firstP = totalUsage > 0 ? frac(BigInt(maxOf(usageWeights)), BigInt(totalUsage)) : frac(1n, 1n);
+  const first = mixed(floor, firstP, frac(1n, BigInt(n)));
+  const fallbackRest = totalUsage - largest(usageWeights, size - 1);
+  const reach = new Map<string, Fraction>(vocabulary.roster.map((e) => [e.id, fallbackRest > 0 ? atMostOne(frac(BigInt(members.get(e.id)?.w_species ?? 0), BigInt(fallbackRest))) : frac(1n, 1n)]));
+  for (const m of members.values()) {
+    const weights = [...m.teammates.values()];
+    const rest = sumOf(weights) - largest(weights, size - 1);
+    for (const [id, w] of m.teammates) reach.set(id, fractionMax(reach.get(id) ?? frac(0n, 1n), rest > 0 ? atMostOne(frac(BigInt(w), BigInt(rest))) : frac(1n, 1n)));
+  }
+  // The last-resort uniform pick (no listed weight left among the unchosen) has probability 1 / (unchosen) <= 1 / (n - size + 1).
+  const lastResort = frac(1n, BigInt(n - size + 1));
+  const laterSteps = [...reach.values()].map((r) => fractionMax(mixed(floor, r, lastResort), lastResort));
+  laterSteps.sort((a, b) => (a.num * b.den < b.num * a.den ? 1 : a.num * b.den > b.num * a.den ? -1 : 0));
+  const steps = laterSteps.slice(0, size - 1).reduce((product, f) => mul(product, f), first);
+  let factorial = 1n;
+  for (let i = 2; i <= size; i++) factorial *= BigInt(i);
+
+  // Member factors, one per roster entry.
+  const entries = vocabulary.roster.map((e) => {
+    const m: UsageMember | undefined = members.get(e.id);
+    const itemP = e.required_item !== undefined ? frac(1n, 1n) : m === undefined || m.items.weights.length === 0 ? itemFree : fractionMax(mixed(floor, itemShare(m.items.weights, removable), itemFree), itemFree);
+    const abilityU = frac(1n, BigInt(e.abilities.length));
+    const abilityP = m === undefined || m.abilities.weights.length === 0 ? abilityU : mixed(floor, frac(BigInt(maxOf(m.abilities.weights)), BigInt(sumOf(m.abilities.weights))), abilityU);
+    const count = Math.min(k, e.moves.length);
+    // An unordered subset of `count` moves: count! orderings, each at most the product of the count largest weights
+    // over the product of (total - the j largest) for pick j (the picks so far weigh at most the j largest).
+    const weights = [...(m?.moves.weights ?? [])].sort((x, y) => y - x);
+    // With a floor each pick is a sum of a weighted and a uniform part, so the largest weight bounds every position;
+    // with none, the j-th largest weight bounds the j-th position of the product.
+    const totalMoves = sumOf(weights);
+    let moveP = frac(1n, 1n);
+    for (let j = 0; j < count; j++) {
+      const uniformP = frac(1n, BigInt(e.moves.length - j));
+      const rest = totalMoves - largest(weights, j);
+      const w = floor === 0 ? weights[j] : weights[0];
+      moveP = mul(moveP, j >= weights.length || w === undefined || rest <= 0 ? mixed(floor, floor === 0 && j >= weights.length ? uniformP : frac(1n, 1n), uniformP) : mixed(floor, atMostOne(frac(BigInt(w), BigInt(rest))), uniformP));
+    }
+    const moveSequence = moveP;
+    for (let j = 2; j <= count; j++) moveP = mul(moveP, frac(BigInt(j), 1n));
+    moveP = atMostOne(moveP);
+    const spreadU = frac(1n, natures);
+    const spreadP = m === undefined || m.spreads.weights.length === 0 ? spreadU : mixed(floor, frac(BigInt(maxOf(m.spreads.weights)), BigInt(sumOf(m.spreads.weights))), spreadU);
+    const rest = mul(mul(mul(itemP, abilityP), spreadP), frac(1n, gender));
+    return { set: mul(rest, moveP), sequence: mul(rest, moveSequence) };
+  });
+  // A Mega roster entry is rewritten by the validator to its base forme holding the stone, which the base entry can also
+  // reach (its own item list), so a canonical team can be reached by two routes for each Mega member: at most 2^m for the
+  // m <= size Mega entries a team can hold.
+  // The factor is 2 per Mega member only while every Mega entry has one ability; with several the routes multiply, so refuse.
+  const megaEntries = vocabulary.roster.filter((e) => e.required_item !== undefined);
+  if (megaEntries.some((e) => e.abilities.length > 1)) throw new GateError("a roster entry with a required item lists more than one ability: the usage bound's Mega route factor assumes one");
+  const megas = Math.min(size, megaEntries.length);
+  return { set: mul(mul(mul(frac(factorial, 1n), frac(2n ** BigInt(megas), 1n)), steps), topProduct(entries.map((e) => e.set), size)), sequence: mul(steps, topProduct(entries.map((e) => e.sequence), size)) };
+}
+
+/** The largest item share when the Item Clause may have taken the `removable` heaviest items out of reach. */
+function itemShare(weights: readonly number[], removable: number): Fraction {
+  const total = sumOf(weights);
+  const rest = total - largest(weights, removable);
+  return rest <= 0 ? frac(1n, 1n) : atMostOne(frac(BigInt(maxOf(weights)), BigInt(rest)));
+}
+
 /** A gate: the measured value, the config's threshold (null when none) and the verdict (null when there is nothing to compare). */
 export interface GateResult {
   value: number;
@@ -155,10 +302,12 @@ const gate = (value: number, threshold: number | undefined, passes: (v: number, 
 export interface ComponentCoverage {
   kind: string;
   share_permille: number;
-  pilot: { draws: number; rejected: number; accepted: number };
-  p1: (GateResult & { mapped: number; total: number }) | null;
+  pilot: { draws: number; rejected: number; accepted: number; /** usage only: see PilotComponent.max_team_count */ max_team_count?: number };
+  p1: (GateResult & { mapped: number; total: number; kinds?: Record<string, number> }) | null;
   p2: GateResult;
   p3: GateResult;
+  /** Usage only: the ADR-literal ordered-sequence P3 figure in bits, reported beside the set-level one the gate uses (never gated). */
+  p3_sequence_bits?: number;
   /** Accepted pilot draws per base cell. */
   pilot_cell_hits: number[];
   /** Delivered teams of the dataset per base cell, over all splits. */
@@ -187,6 +336,8 @@ export interface GateInput {
   config: TeamGeneratorConfig;
   vocabulary: BoundVocabulary & Pick<TeamVocabulary, "roster">;
   roleSets?: { table: Pick<RoleSetTable, "species"> } | undefined;
+  /** The usage weight table a `usage` component reads. */
+  usage?: UsageSource | undefined;
   pilot: Pilot;
   plan: Pick<QuotaPlan, "strata">;
   /** The number of strata of the uniform config's plan at the same d_max; null when no uniform reference pilot was given. */
@@ -217,17 +368,35 @@ export function proposalCoverage(input: GateInput): ProposalCoverage {
     const part = pilot.components?.find((p) => p.kind === component.kind);
     if (part === undefined) throw new GateError(`the pilot has no counts for component ${component.kind}`);
     const accepted = part.draws - part.rejected;
-    const bound = component.kind === "role_sets" ? roleSetsBound(input.vocabulary, config, (input.roleSets ?? fail("no role-set table was given")).table) : uniformBound(input.vocabulary, config);
+    const usageBoundsOf = component.kind === "usage" ? usageBounds(input.vocabulary, config, component, input.usage ?? fail("no usage weight table was given")) : undefined;
+    const bound =
+      usageBoundsOf !== undefined
+        ? usageBoundsOf.set
+        : component.kind === "role_sets"
+          ? roleSetsBound(input.vocabulary, config, (input.roleSets ?? fail("no role-set table was given")).table)
+          : uniformBound(input.vocabulary, config);
     bounds.push({ share_permille: component.share_permille, bound });
-    const mapping = component.kind === "role_sets" ? roleSetsMapping(input.vocabulary, (input.roleSets as { table: Pick<RoleSetTable, "species"> }).table) : undefined;
+    const usageMap = component.kind === "usage" ? usageMapping((input.usage as UsageSource).table) : undefined;
+    const mapping = component.kind === "role_sets" ? roleSetsMapping(input.vocabulary, (input.roleSets as { table: Pick<RoleSetTable, "species"> }).table) : usageMap;
+    const p1Threshold = component.kind === "usage" ? gates?.p1_min_usage_permille : 1000;
     const delivered = input.delivered.get(component.kind);
     return {
       kind: component.kind,
       share_permille: component.share_permille,
-      pilot: { draws: part.draws, rejected: part.rejected, accepted },
-      p1: mapping === undefined ? null : { ...gate(mapping.total === 0 ? 0 : Math.floor((mapping.mapped * 1000) / mapping.total), 1000, (v, t) => v >= t), mapped: mapping.mapped, total: mapping.total },
+      pilot: { draws: part.draws, rejected: part.rejected, accepted, ...(part.max_team_count === undefined ? {} : { max_team_count: part.max_team_count }) },
+      // Usage: the gate takes the minimum over the six list kinds (ADR-020 section 6: per kind); the aggregate is reported beside it.
+      p1:
+        mapping === undefined
+          ? null
+          : {
+              ...gate(usageMap !== undefined ? Math.min(...Object.values(usageMap.kinds)) : mapping.total === 0 ? 0 : Math.floor((mapping.mapped * 1000) / mapping.total), p1Threshold, (v, t) => v >= t),
+              mapped: mapping.mapped,
+              total: mapping.total,
+              ...(usageMap === undefined ? {} : { kinds: usageMap.kinds }),
+            },
       p2: gate(part.draws === 0 ? 0 : Math.floor((accepted * 1000) / part.draws), gates?.p2_min_accept_permille, (v, t) => v >= t),
-      p3: gate(bitsOf(bound), gates?.p3_min_bits, (v, t) => v >= t),
+      p3: gate(bitsOf(bound), component.kind === "usage" ? (gates?.p3_min_bits_usage ?? gates?.p3_min_bits) : gates?.p3_min_bits, (v, t) => v >= t),
+      ...(usageBoundsOf === undefined ? {} : { p3_sequence_bits: bitsOf(usageBoundsOf.sequence) }),
       pilot_cell_hits: part.cell_hits,
       delivered_cells: delivered?.cells ?? new Array<number>(part.cell_hits.length).fill(0),
       delivered: delivered?.splits ?? {},

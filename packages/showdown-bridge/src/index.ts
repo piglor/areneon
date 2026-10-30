@@ -34,6 +34,7 @@ export {
   engineDataSummary,
   exportEngineData,
   readEngineData,
+  readEngineDataAny,
 } from "./engine-data.ts";
 export {
   DEFAULT_SHOWDOWN_DIR,
@@ -258,7 +259,7 @@ export {
   readPrivateSnapshotManifest,
 } from "./private-snapshot.ts";
 export { type UsagePrior, UsagePriorError, readUsagePrior, usagePriorHash } from "./usage-prior.ts";
-export { type UsageWeightTable, UsageWeightTableError, readUsageWeightTable, usageTableHash } from "./usage-weight-table.ts";
+export { type UsageWeightTable, UsageWeightTableError, readUsageWeightTable, rootedWeight, usageTableHash } from "./usage-weight-table.ts";
 export {
   ADMITTED_KINDS,
   STATE_CLASSES,
@@ -276,6 +277,7 @@ export { LEAF_FORMAT, loadSearchConfig, readSearchConfig, type SearchConfig, Sea
 export { deriveRoleSetsPrior, ROLE_SETS_PRIOR_SCRIPT, RoleSetsPriorError, type RoleSetsPriorInput } from "./role-sets-prior.ts";
 export { deriveGeneratorPrior, GENERATOR_PRIOR_SCRIPT, GeneratorPriorError, type GeneratorPriorInput, generatorConfigHash, megaHolderAbilities, megaPreviewSpecies } from "./generator-prior.ts";
 export { DAMAGE_CHECK_FORMAT } from "./damage-check.ts";
+export { SPEED_CHECK_FORMAT, evidenceCheckFormats } from "./speed-check.ts";
 export { type BeliefConfig, BeliefConfigError, beliefConfigHash, readBeliefConfig } from "./belief-config.ts";
 export {
   exportMoveClasses,
@@ -643,3 +645,21 @@ export { hpKoDifferential, outcomeScore } from "./search-leaf.ts";
 export { playerView } from "./search-turn.ts";
 export { goldenWorldFactsData, readWorldFactsData, type FactsTable } from "./world-facts-data.ts";
 export { legalReplies } from "./reply-model.ts";
+export {
+  evaluateHypothetical,
+  HYPOTHETICAL_BATTLE_FORMAT,
+  HYPOTHETICAL_ENGINE_PURPOSE,
+  HypotheticalError,
+  hypotheticalCandidates,
+  hypotheticalEngineSeed,
+  hypotheticalRequest,
+  type HypotheticalCandidate,
+  type HypotheticalRequest,
+  startHypothetical,
+  type HypotheticalChannel,
+  type HypotheticalObservation,
+  type HypotheticalPreview,
+  type HypotheticalStartInput,
+  type HypotheticalTurn,
+  type PreviewSolveInput,
+} from "./hypothetical-preview.ts";

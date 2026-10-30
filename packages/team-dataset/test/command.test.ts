@@ -219,6 +219,34 @@ describe("a mixture config with a role_sets component", () => {
   }, 120_000);
 });
 
+describe("a mixture config with a usage component", () => {
+  const mixture = join(scratch, "mixture-u.json");
+  writeFileSync(mixture, readFileSync(join(ROOT, "config", "teams", FORMAT, "generator.mixture-u.json"), "utf8"));
+  const tableFile = join(ROOT, "config", "teams", FORMAT, "usage", "2026-09-1630.json");
+  const pilot = (out: string, more: string[], config = mixture): ReturnType<typeof cli> => cli(["pilot", "--config", config, "--labels", files.labels, "--format", FORMAT, "--out", out, "--generation-key", KEY, "--draws", "20", "--vocabulary", VOCABULARY_FILE, ...more]);
+
+  it("finds the committed table by the hash the config names, or takes the one --usage-table names", () => {
+    expect(pilot(join(scratch, "u1.json"), []).code).toBe(0);
+    expect(pilot(join(scratch, "u2.json"), ["--usage-table", tableFile]).code).toBe(0);
+  }, 120_000);
+
+  it("refuses a table that is not the named one, and a hash no committed table has", () => {
+    const other = join(scratch, "usage-other.json");
+    const doctored = { ...JSON.parse(readFileSync(tableFile, "utf8")), number_of_battles: 1 };
+    writeFileSync(other, JSON.stringify(doctored));
+    const wrongTable = pilot(join(scratch, "u3.json"), ["--usage-table", other]);
+    expect(wrongTable.code).toBe(2);
+    expect(wrongTable.err.join()).toMatch(/hash mismatch/);
+    const changed = JSON.parse(readFileSync(mixture, "utf8")) as { proposal: { components: { kind: string; usage_table_hash?: string }[] } };
+    (changed.proposal.components.find((c) => c.kind === "usage") as { usage_table_hash: string }).usage_table_hash = "0".repeat(64);
+    const wrong = join(scratch, "mixture-u-wrong.json");
+    writeFileSync(wrong, JSON.stringify(changed));
+    const run = pilot(join(scratch, "u4.json"), [], wrong);
+    expect(run.code).toBe(2);
+    expect(run.err.join()).toMatch(/no usage weight table with the hash/);
+  }, 120_000);
+});
+
 describe("a mixture dataset from the command line (ADR-020 gates and the evaluation-only option)", () => {
   const tableFile = join(ROOT, "fixtures", "showdown", FORMAT, "role-sets.json");
   const sourceTable = roleSetsSource(engine, vocabulary, table, JSON.parse(readFileSync(tableFile, "utf8")));

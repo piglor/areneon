@@ -112,6 +112,21 @@
             "factored_preview": {
               "description": "ADR-010 erratum A4 item 4. The Team Preview network scores an order as the sum over places of u(place, Pokemon token) plus v(lead pair) from the tokens at places 1 and 2, and does not use the cross-attention and interaction scorer for Preview. The candidate set, its order and the softmax over the real candidates are unchanged; the Battle network ignores it. Only true is a value (leave the key out for none). Layout changing: it changes the checkpoint tensor names and the checkpoint format.",
               "const": true
+            },
+            "shared_trunk": {
+              "description": "ADR-010 erratum A4 item 5. The Preview and Battle networks share one embedding and transformer trunk (role-specific candidate and value heads), trained by one optimiser over both networks' parameters. Each role's checkpoint is still a complete network and the two files hold equal trunk tensors. Only true is a value (leave the key out for none). Not combined with a warm_start that names the preview role (a Battle-only warm start gives its cloned trunk to both roles). Layout changing: it is part of the config and the checkpoint format.",
+              "const": true
+            },
+            "separate_value": {
+              "description": "ADR-010 erratum A4 item 7. The value no longer shares gradient with the policy trunk. network: a second trunk and value head with no layer shared with the policy network (same encoder inputs and sizes, its own parameters). detached: the value head stays on the policy trunk but reads its output with the gradient cut. Layout changing: network adds tensors and both change the checkpoint format.",
+              "type": "string",
+              "enum": ["network", "detached"]
+            },
+            "policy_output_scale_ppm": {
+              "description": "ADR-010 erratum A4 item 7. The scorer's last layer(s) start at this many millionths of their default initial weights (10000 is 1/100), so the initial policy is near uniform. Initial weights only: no tensor name changes, but it is part of the config and the checkpoint format. 1,000,000 is the default and is not a value (leave the key out).",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 999999
             }
           }
         }
@@ -337,6 +352,10 @@
             },
             "recent_history": {
               "description": "ADR-010 erratum A4 item 7. The Pokemon and field features also carry the reducer's recent history from the player's own channel: per Pokemon the turns since its switch-in, its last move (through the move vocabulary) and target, the age and place of its latest action, the hit points it took and dealt this and last turn and its protect streak; on the field the turns since the weather, the terrain and each field and side condition began. Counts are scaled by the encoder's turn and stat scales and fixed divisors hashed into the encoder version. Only true is a value (leave the key out for none). Layout changing: it changes the encoder version and the checkpoint format.",
+              "const": true
+            },
+            "exact_volatiles": {
+              "description": "ADR-010 erratum A4 item 7. Volatiles and field and side conditions are exact vocabulary ids (one column per id of the engine data: its conditions, moves, abilities and items) instead of SHA-256 buckets, and a Pokemon token also carries the types a typechange set. Needs a version 2 engine-data table; an id the vocabulary does not resolve fails closed. Only true is a value (leave the key out for none). Layout changing: it changes the encoder version and the checkpoint format.",
               "const": true
             }
           }

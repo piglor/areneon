@@ -15,7 +15,7 @@
 // bound by `generator_commit` in a generator-matched prior) draws one from the same stream.
 
 import { BeliefError } from "./error.ts";
-import { type BlockSource, BitStream, blocksOf, worldStream } from "./draw.ts";
+import { type BlockSource, BitStream, TEAM_PURPOSE, blocksOf, teamStream, worldStream } from "./draw.ts";
 import { parseSpreadKey } from "./fields.ts";
 import { type ClauseTables, clauseTables } from "./item-clause.ts";
 import type { MoveModel } from "./moves.ts";
@@ -93,9 +93,33 @@ export interface SampledWorlds {
   readonly redraws: number;
 }
 
+/** A whole hypothetical opponent team: a set for every preview slot, brought or not (ADR-025 erratum E-25.1). */
+export interface OpponentTeam {
+  /** One set per preview slot, in preview order. */
+  readonly sets: readonly WorldSet[];
+}
+
+export interface SampledTeam {
+  readonly team: OpponentTeam;
+  /** How many times the team was redrawn because a set was illegal. */
+  readonly redraws: number;
+}
+
+export interface SampledTeams {
+  /** Team i is `sampleTeam(belief, teamStream(stream, i))`; each weighs 1/n. */
+  readonly teams: readonly (SampledTeam & { readonly index: number; readonly weight: Ratio })[];
+  readonly redraws: number;
+}
+
 export interface Sampler {
   sample(belief: OpponentBelief, stream: Uint8Array): SampledWorld;
   sampleWorlds(belief: OpponentBelief, stream: Uint8Array, n: number): SampledWorlds;
+  /**
+   * Draws a set for ALL preview slots from the belief: the same per-slot model, Item Clause pass, legality
+   * port and redraw rule as `sample`, no brought draw, under the purpose `opponent-team/1`.
+   */
+  sampleTeam(belief: OpponentBelief, stream: Uint8Array): SampledTeam;
+  sampleTeams(belief: OpponentBelief, stream: Uint8Array, n: number): SampledTeams;
 }
 
 interface PreparedAssignment {
@@ -172,7 +196,7 @@ function drawMoves(model: MoveModel, bits: BitStream): string[] {
 
 const pickOption = <T>(options: readonly { readonly id: T; readonly weight: bigint }[], bits: BitStream): T => (options[bits.choose(options.map((o) => o.weight))] as { id: T }).id;
 
-function draw(b: OpponentBelief, tables: Prepared, ports: SamplerPorts, bits: BitStream): OpponentWorld {
+function draw(b: OpponentBelief, tables: Prepared, ports: SamplerPorts, bits: BitStream, whole: boolean): OpponentWorld {
   // 1. The disguise assignment.
   const which = bits.choose(b.assignments.map((a) => a.weight));
   const a = b.assignments[which] as OpponentBelief["assignments"][number];
@@ -180,9 +204,10 @@ function draw(b: OpponentBelief, tables: Prepared, ports: SamplerPorts, bits: Bi
 
   // 2. The brought set: the slots every consistent world holds, then a uniform draw of the rest.
   const n = a.slots.length;
-  const brought = new Set(a.required);
+  //    A whole team (`sampleTeam`) brings every slot and draws nothing here.
+  const brought = new Set(whole ? a.slots.map((_, i) => i) : a.required);
   const free = a.slots.map((_, i) => i).filter((i) => !brought.has(i));
-  for (let need = b.brought.picked - brought.size; need > 0; need -= 1) {
+  for (let need = whole ? 0 : b.brought.picked - brought.size; need > 0; need -= 1) {
     const [pick] = free.splice(Number(bits.below(BigInt(free.length))), 1);
     brought.add(pick as number);
   }
@@ -244,11 +269,11 @@ function draw(b: OpponentBelief, tables: Prepared, ports: SamplerPorts, bits: Bi
   return { slots };
 }
 
-function run(b: OpponentBelief, source: BlockSource, ports: SamplerPorts): SampledWorld {
+function run(b: OpponentBelief, source: BlockSource, ports: SamplerPorts, whole = false): SampledWorld {
   const tables = prepared(b);
   const bits = new BitStream(source);
   for (let redraws = 0; ; redraws += 1) {
-    const world = draw(b, tables, ports, bits);
+    const world = draw(b, tables, ports, bits, whole);
     if (world.slots.every((s) => s.set === null || ports.legality.legal(s.set))) return { world, redraws };
     if (redraws >= b.sampling.max_legality_redraws) throw new BeliefError("legality_redraws_exhausted", "every redraw of the world held a set the target format's validator refuses");
     bits.restart();
@@ -258,8 +283,18 @@ function run(b: OpponentBelief, source: BlockSource, ports: SamplerPorts): Sampl
 /** A sampler bound to the legality port (and, for priors with an "other spread" entry, the spread port). */
 export function createSampler(ports: SamplerPorts): Sampler {
   const sample = (belief: OpponentBelief, stream: Uint8Array): SampledWorld => run(belief, blocksOf(stream), ports);
+  const sampleTeam = (belief: OpponentBelief, stream: Uint8Array): SampledTeam => {
+    const { world, redraws } = run(belief, blocksOf(stream, TEAM_PURPOSE), ports, true);
+    return { team: { sets: world.slots.map((s) => s.set as WorldSet) }, redraws };
+  };
   return {
     sample,
+    sampleTeam,
+    sampleTeams(belief, stream, n) {
+      if (!Number.isSafeInteger(n) || n < 1) throw new RangeError("the number of teams is a positive integer");
+      const teams = Array.from({ length: n }, (_, index) => ({ index, weight: ratio(1n, BigInt(n)), ...sampleTeam(belief, teamStream(stream, index)) }));
+      return { teams, redraws: teams.reduce((t, w) => t + w.redraws, 0) };
+    },
     sampleWorlds(belief, stream, n) {
       if (!Number.isSafeInteger(n) || n < 1) throw new RangeError("the number of worlds is a positive integer");
       const worlds = Array.from({ length: n }, (_, index) => ({ index, weight: ratio(1n, BigInt(n)), ...sample(belief, worldStream(stream, index)) }));

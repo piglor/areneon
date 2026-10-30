@@ -44,6 +44,22 @@ export function readBeliefConfig(value: unknown, vocabulary: TeamVocabulary): Be
     check("unmodelled.abilities", damage.unmodelled.abilities, abilities, "ability");
     check("unmodelled.items", damage.unmodelled.items, items, "item");
   }
+  const speed = config.speed_evidence;
+  if (speed !== undefined) {
+    const abilities = new Set(vocabulary.roster.flatMap((r) => r.abilities));
+    const moves = new Set(vocabulary.roster.flatMap((r) => r.moves));
+    const items = new Set(vocabulary.items);
+    const check = (what: string, list: readonly string[], known: ReadonlySet<string>, noun: string): void =>
+      list.forEach((id, k) => {
+        if (k > 0 && !((list[k - 1] as string) < id)) throw new BeliefConfigError(`speed_evidence.${what}: ${id} is repeated or out of order`);
+        if (!known.has(id)) throw new BeliefConfigError(`${noun} ${id} is not in the team vocabulary`);
+      });
+    check("non_isolating.abilities", speed.non_isolating.abilities, abilities, "ability");
+    check("non_isolating.lasting_moves", speed.non_isolating.lasting_moves, moves, "move");
+    check("non_isolating.moves", speed.non_isolating.moves, moves, "move");
+    check("unmodelled.abilities", speed.unmodelled.abilities, abilities, "ability");
+    check("unmodelled.items", speed.unmodelled.items, items, "item");
+  }
   return config;
 }
 
