@@ -12,7 +12,7 @@ import { KnownHashes, referencePoolHash } from "../src/dedupe.ts";
 import { Drawer } from "../src/draw.ts";
 import { generate } from "../src/generate.ts";
 import { PilotError, readPilot, runPilot } from "../src/pilot.ts";
-import { bitsOf, usageBound, usageBounds, usageMapping } from "../src/pilot-gates.ts";
+import { bitsOf, GateError, usageBound, usageBounds, usageMapping } from "../src/pilot-gates.ts";
 import { Proposal } from "../src/proposal.ts";
 import { roleSetsSource } from "../src/role-set-proposal.ts";
 import { drawSeed, engineRng } from "../src/stream.ts";
@@ -522,6 +522,22 @@ describe("the pilot's largest canonical-team count (usage only)", () => {
     expect(() => readPilot(withPart({ kind: "uniform" }), identity, light)).toThrow(PilotError);
     expect(() => readPilot(withPart({ max_team_count: 11 }), identity, light)).toThrow(PilotError);
     expect(() => readPilot(withPart({ max_team_count: 1.5 }), identity, light)).toThrow(PilotError);
+  });
+});
+
+describe("the Mega route factor's single-ability assumption", () => {
+  it("passes on the committed vocabulary, where every Mega entry has one ability", () => {
+    expect(vocabulary.roster.filter((e) => e.required_item !== undefined).every((e) => e.abilities.length === 1)).toBe(true);
+    expect(() => usageBounds(vocabulary, small(), usageComponent(committed, 1000, 100, 3), committed)).not.toThrow();
+  });
+  it("is refused, with a fixed message, when a Mega entry lists several abilities", () => {
+    const index = vocabulary.roster.findIndex((e) => e.required_item !== undefined);
+    const doctored = structuredClone(vocabulary);
+    const entry = doctored.roster[index] as (typeof doctored.roster)[number];
+    entry.abilities = [entry.abilities[0] as string, "extraability"] as typeof entry.abilities;
+    const run = () => usageBounds(doctored, small(), usageComponent(committed, 1000, 100, 3), committed);
+    expect(run).toThrow(GateError);
+    expect(run).toThrow(/^a roster entry with a required item lists more than one ability: the usage bound's Mega route factor assumes one$/);
   });
 });
 

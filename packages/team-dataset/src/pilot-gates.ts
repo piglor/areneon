@@ -275,7 +275,10 @@ export function usageBounds(vocabulary: BoundVocabulary, config: BoundConfig, co
   // A Mega roster entry is rewritten by the validator to its base forme holding the stone, which the base entry can also
   // reach (its own item list), so a canonical team can be reached by two routes for each Mega member: at most 2^m for the
   // m <= size Mega entries a team can hold.
-  const megas = Math.min(size, vocabulary.roster.filter((e) => e.required_item !== undefined).length);
+  // The factor is 2 per Mega member only while every Mega entry has one ability; with several the routes multiply, so refuse.
+  const megaEntries = vocabulary.roster.filter((e) => e.required_item !== undefined);
+  if (megaEntries.some((e) => e.abilities.length > 1)) throw new GateError("a roster entry with a required item lists more than one ability: the usage bound's Mega route factor assumes one");
+  const megas = Math.min(size, megaEntries.length);
   return { set: mul(mul(mul(frac(factorial, 1n), frac(2n ** BigInt(megas), 1n)), steps), topProduct(entries.map((e) => e.set), size)), sequence: mul(steps, topProduct(entries.map((e) => e.sequence), size)) };
 }
 
