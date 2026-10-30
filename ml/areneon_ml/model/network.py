@@ -44,6 +44,7 @@ from areneon_ml.model.features import (
 from areneon_ml.model.gamedata import RESERVED, GameData
 from areneon_ml.model.options import (
     CANDIDATE_MATCHUP,
+    FACTORED_PREVIEW,
     OptionError,
     Options,
     is_set,
@@ -54,6 +55,7 @@ from areneon_ml.model.options import (
 
 ROLES = ("battle", "preview")
 ACTIONS = 3  # pass, move, switch
+LEAD_PAIR = 2  # the picks at places 1 and 2 are the leads (factored_preview)
 # Vocabulary kinds that carry a numeric attribute table from the engine data.
 _ATTRIBUTE_KINDS = ("species", "move", "item")
 
@@ -260,7 +262,7 @@ def _gather(tokens: torch.Tensor, index: torch.Tensor) -> torch.Tensor:
 class PolicyNetwork(nn.Module):
     """One role's network. Build with ``GameData`` (vocabulary sizes and attribute tables)."""
 
-    def __init__(self, role: str, game: GameData, config: ModelConfig) -> None:  # noqa: PLR0915
+    def __init__(self, role: str, game: GameData, config: ModelConfig) -> None:  # noqa: PLR0912, PLR0915
         super().__init__()
         if role not in ROLES:
             raise ConfigError(f"role must be one of {ROLES}")
@@ -299,6 +301,10 @@ class PolicyNetwork(nn.Module):
             if role == "battle":
                 sizes["probe_kind"] = PROBE_KIND_CATEGORIES
         self.targeted = targeted
+        # factored_preview: only the Preview network is factored; the Battle network ignores it.
+        self.factored = role == "preview" and is_set(config.options, FACTORED_PREVIEW)
+        if self.factored and enc.max_picks < LEAD_PAIR:
+            raise ConfigError("factored_preview needs max_picks of at least 2 (the lead pair)")
         self.embeddings = nn.ModuleDict(
             {kind: nn.Embedding(size, d) for kind, size in sizes.items()}
         )
@@ -342,12 +348,18 @@ class PolicyNetwork(nn.Module):
                 self.foe_pool = nn.Linear(2 * d, d)
         else:
             self.place = nn.Embedding(enc.max_picks, d)
-            self.candidate = nn.Linear(enc.max_picks * 2 * d, d)
-        self.pending = nn.Linear(1, d)
-        self.norm_candidate = nn.LayerNorm(d)
-        self.norm_memory = nn.LayerNorm(d)
-        self.cross = Attention(d, config.n_heads)
-        self.score = nn.Sequential(nn.Linear(3 * d, d), nn.GELU(), nn.Linear(d, 1))
+            if self.factored:
+                # u(place, token) and v(lead pair): the whole Preview score, no cross-attention.
+                self.place_score = nn.Sequential(nn.Linear(2 * d, d), nn.GELU(), nn.Linear(d, 1))
+                self.lead_score = nn.Sequential(nn.Linear(2 * d, d), nn.GELU(), nn.Linear(d, 1))
+            else:
+                self.candidate = nn.Linear(enc.max_picks * 2 * d, d)
+        if not self.factored:
+            self.pending = nn.Linear(1, d)
+            self.norm_candidate = nn.LayerNorm(d)
+            self.norm_memory = nn.LayerNorm(d)
+            self.cross = Attention(d, config.n_heads)
+            self.score = nn.Sequential(nn.Linear(3 * d, d), nn.GELU(), nn.Linear(d, 1))
         self.value = nn.Sequential(nn.Linear(d, d), nn.GELU(), nn.Linear(d, 1))
 
     # -- embeddings ----------------------------------------------------------
@@ -466,6 +478,15 @@ class PolicyNetwork(nn.Module):
         out: torch.Tensor = self.candidate(torch.cat([places, picked], -1).flatten(2))
         return out
 
+    def _factored_logits(self, batch: Batch, mons: torch.Tensor) -> torch.Tensor:
+        """sum over places p of u(place p, token p) + v(tokens at places 1 and 2); [B, N]."""
+        picked = _gather(mons, batch.team_tok)  # [B, N, P, d]
+        places = self.place.weight.expand_as(picked)
+        places_total = self.place_score(torch.cat([places, picked], -1)).squeeze(-1).sum(-1)
+        lead = self.lead_score(torch.cat([picked[:, :, 0], picked[:, :, 1]], -1)).squeeze(-1)
+        total: torch.Tensor = places_total + lead
+        return total
+
     # -- forward -------------------------------------------------------------
 
     def forward(self, batch: Batch) -> PolicyOutput:
@@ -490,6 +511,10 @@ class PolicyNetwork(nn.Module):
             x = block(x, mask)
         x = self.final_norm(x)
         state, mons = x[:, 0], x[:, 2:]
+        if self.factored:
+            logits = self._factored_logits(batch, mons)
+            logits = logits.masked_fill(~batch.cand_mask, torch.finfo(logits.dtype).min)
+            return PolicyOutput(logits=logits, value=self.value(state).squeeze(-1))
         build = self._battle_candidates if self.role == "battle" else self._preview_candidates
         c = build(batch, mons, mega) + self.pending(batch.pending[..., None])
         c = c + self.cross(self.norm_candidate(c), self.norm_memory(x), mask)

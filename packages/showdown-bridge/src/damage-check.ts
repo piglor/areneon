@@ -191,8 +191,9 @@ export function createDamageCheck(context: DamageCheckContext, input: DamageChec
   /**
    * The own Pokemon of a hit as a probe fighter, or null when the probe cannot state it: its set is its team set with the
    * item, ability and gender the request in force at the move line shows, and its state is the reader's. A Pokemon that has
-   * Mega Evolved (the declared Evolution can start an ability that changes the other combatant, Intimidate) or whose forme
-   * is not the one of its set (Palafin's Hero forme) is not stated.
+   * Mega Evolved or whose forme is not the one of its set (Palafin's Hero forme; a Mega's shown forme is not its set's species either)
+   * is not stated. The probe's Intimidate artifact of a declared Evolution is fixed (#1243); stating an evolved own Pokemon needs
+   * the forme match for Megas and its own coverage, a follow-up.
    */
   function ownFighter(hit: Hit, side: { letter: string; index: number }): Fighter | null {
     const frame = run.frames[hit.frame] as PublicFrame;
@@ -208,7 +209,7 @@ export function createDamageCheck(context: DamageCheckContext, input: DamageChec
     }
     const set: PokemonSet = structuredClone(matches[0] as PokemonSet);
     const shownForme = toId(entry.details.split(",")[0] as string);
-    // A Mega Evolution declared to the probe can start an ability that changes the other combatant (Intimidate): not stated.
+    // An evolved Pokemon shows its Mega forme, which is not its set's species: not stated (see above).
     if (mon.mega || shownForme !== toId(set.species)) return null;
     const gender = SHOWN_GENDER.exec(entry.details)?.[1];
     if (gender !== undefined) set.gender = gender;

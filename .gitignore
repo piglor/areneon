@@ -16,6 +16,8 @@ dist/
 # Binary team data and databases (ADR-013): published to object storage, never committed.
 *.duckdb
 *.duckdb.wal
+.*.duckdb.partial
+.*.duckdb.partial.wal
 *.parquet
 *.age
 # ADR-014: a synthetic Parquet fixture may live under fixtures/ (the binary-file

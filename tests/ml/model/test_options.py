@@ -66,7 +66,7 @@ def test_only_the_registered_options_exist() -> None:
         "candidate_target",
         "recent_history",
     }
-    assert REGISTRY["network"] == {}
+    assert set(REGISTRY["network"]) == {"factored_preview"}
     with pytest.raises(OptionError, match="unknown network option 'x'"):
         read_options("network", {"x": 1})
     with pytest.raises(ConfigError, match="unknown encoder option"):

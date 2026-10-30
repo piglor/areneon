@@ -158,6 +158,22 @@ export class DuckdbWriter {
     if (this.identity.binary_sha256 !== asset.binary_sha256) refuse(`the DuckDB binary's SHA-256 ${this.identity.binary_sha256} is not the pinned ${asset.binary_sha256}`);
   }
 
+  /**
+   * Run a SQL script against a database file (created when absent). Relative
+   * paths in the script resolve against `cwd`. The tool gets a scratch HOME
+   * (no `~/.duckdbrc`, no extension directory) and an empty PATH. Public data
+   * only: on failure the tool's own text is forwarded, which can quote rows.
+   */
+  runScript(sql: string, database: string, cwd: string): void {
+    const home = mkdtempSync(join(tmpdir(), "duckdb-home-"));
+    try {
+      const result = this.#runner(this.#binary, ["-bail", "-batch", database], sql, { PATH: "", HOME: home }, cwd);
+      if (result.status !== 0) refuse(`DuckDB failed (${result.status}): ${result.stderr.trim()}`);
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  }
+
   /** Convert a JSON Lines file of rows (keys = column names) into one Parquet file, keeping the row order. */
   writeShard(rowsFile: string, out: string, columns: readonly Column[], options: WriteOptions = {}): void {
     const types = {
