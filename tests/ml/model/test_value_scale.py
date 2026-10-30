@@ -3,6 +3,7 @@ item 7): the value stops pulling the policy trunk, and the initial policy is nea
 
 from __future__ import annotations
 
+import math
 from dataclasses import replace
 from typing import Any
 
@@ -17,16 +18,23 @@ from areneon_ml.checkpoint.files import (
     read_header,
 )
 from areneon_ml.model.batch import Batch, collate
+from areneon_ml.model.encoder import Encoder
 from areneon_ml.model.network import ModelConfig, PolicyNetwork, init_network
 from areneon_ml.model.options import (
+    CANDIDATE_FEATURES,
+    CANDIDATE_MATCHUP,
     FACTORED_PREVIEW,
     POLICY_OUTPUT_SCALE_PPM,
+    RECENT_HISTORY,
     SEPARATE_VALUE,
     OptionError,
     read_options,
 )
+from areneon_ml.model.scorer import NetworkScorer
+from areneon_ml.worker.sampler import to_ppm
+from areneon_ml.worker.view import encoder_input
 
-from .support import TINY_MODEL, encoder, game, sample
+from .support import TINY_ENCODER, TINY_MODEL, encoder, game, sample
 
 
 def model(**options: Any) -> ModelConfig:
@@ -223,3 +231,68 @@ def test_the_checkpoint_is_format_two_and_loads_only_under_the_same_options(
             continue
         with pytest.raises(CheckpointOptionsError, match="other model options"):
             load_checkpoint(data, game(), checkpoint_id(data), "battle", configured=other)
+
+
+@pytest.mark.parametrize("mode", ["network", "detached"])
+def test_a_separate_value_reads_the_probe_rows_and_option_columns_of_a_rich_encoder(
+    mode: str,
+) -> None:
+    """probe-damage/2 rows, recent history and candidate matchup: the value network builds the
+    probe layers and only the embeddings its trunk reads, and the gradients stay apart."""
+    raw = sample("policy-query/valid/battle-features-2.json")
+    feature_set = {
+        key: raw["candidate_features"][key] for key in ("feature_set", "feature_set_hash")
+    }
+    rich = replace(
+        TINY_ENCODER,
+        options=read_options(
+            "encoder",
+            {
+                CANDIDATE_FEATURES: feature_set,
+                CANDIDATE_MATCHUP: True,
+                RECENT_HISTORY: True,
+            },
+        ),
+    )
+    config = replace(
+        TINY_MODEL, encoder=rich, options=read_options("network", {SEPARATE_VALUE: mode})
+    )
+    rich_batch = collate([Encoder(game(), rich).encode(raw)])
+    net = init_network("battle", game(), config, 3)
+    assert net.probing
+    out = net(rich_batch)
+    assert torch.isfinite(out.value).all()
+    names = set(net.state_dict())
+    if mode == "network":
+        value_net = net.value_net
+        assert value_net is not None
+        assert value_net.probing
+        assert {"value_net.threat_row.weight", "value_net.foe_pool.weight"} <= names
+        assert not any(n.startswith(("value_net.slot_parts", "value_net.score")) for n in names)
+        # only the kinds its trunk reads are embedded
+        kinds = {n.split(".")[2] for n in names if n.startswith("value_net.embeddings.")}
+        assert {"move", "probe_kind"} <= kinds
+        assert "target" not in kinds
+    live = out.logits[rich_batch.cand_mask]
+    live.log_softmax(-1)[0].backward(retain_graph=True)
+    assert not any(n.startswith(("value.", "value_net.")) for n in grads(net))
+    net.zero_grad(set_to_none=True)
+    out.value.sum().backward()
+    value_grads = grads(net)
+    assert value_grads
+    assert all(n.startswith(("value.", "value_net.")) for n in value_grads)
+    if mode == "network":
+        assert any(n.startswith("value_net.threat_row") for n in value_grads)
+
+
+def test_the_scorer_evaluates_a_finite_value_under_a_separate_value_network() -> None:
+    config = model(separate_value="network", policy_output_scale_ppm=10000)
+    nets = {role: build(role, config, seed=2) for role in ("battle", "preview")}
+    scorer = NetworkScorer(game(), nets)
+    for name in ("battle", "preview"):
+        view = encoder_input(sample(f"policy-query/valid/{name}.json"))
+        probabilities, value = scorer.evaluate(view)
+        assert math.isfinite(value)
+        assert isinstance(to_ppm(value), int)
+        assert abs(sum(probabilities) - 1) < 1e-4
+        assert max(probabilities) - min(probabilities) < 0.05  # near uniform at 1/100 scale

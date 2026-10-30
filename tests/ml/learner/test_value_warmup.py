@@ -159,3 +159,20 @@ def test_a_separate_value_network_is_what_the_warm_up_trains() -> None:
         moved = changed(before[role], snapshot(student, role))
         assert moved
         assert all(name.startswith("value_net.") for name in moved)
+
+
+def test_a_detached_value_head_is_what_the_warm_up_trains_and_the_trunk_stays() -> None:
+    def edit(config: dict[str, Any]) -> None:
+        config["warm_start"] = {"preview": "a" * 64, "battle": "b" * 64}
+        config["ppo"]["value_warmup"] = {"generations": 1}
+        config["model"]["options"] = {"separate_value": "detached"}
+
+    config = edited_config(edit)
+    student = learner(config)
+    before = {role: snapshot(student, role) for role in ROLES}
+    student.train(trajs(config))
+    for role in ROLES:
+        moved = changed(before[role], snapshot(student, role))
+        assert moved
+        assert all(name.startswith("value.") for name in moved)
+        assert not any(name.startswith("blocks.") for name in moved)
