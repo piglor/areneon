@@ -213,6 +213,22 @@ def read_belief_config(value: object, vocabulary: dict[str, Any]) -> dict[str, A
             for entry in ids:
                 if universe is not None and entry not in universe:
                     raise UsagePriorError(f"{noun} {entry} is not in the team vocabulary")
+    speed = config.get("speed_evidence")
+    if speed is not None:
+        moves = {m for entry in vocabulary["roster"] for m in entry["moves"]}
+        items = set(vocabulary["items"])
+        isolating, unmodelled = speed["non_isolating"], speed["unmodelled"]
+        for what, ids, universe, noun in (
+            ("non_isolating.abilities", isolating["abilities"], known, "ability"),
+            ("non_isolating.lasting_moves", isolating["lasting_moves"], moves, "move"),
+            ("non_isolating.moves", isolating["moves"], moves, "move"),
+            ("unmodelled.abilities", unmodelled["abilities"], known, "ability"),
+            ("unmodelled.items", unmodelled["items"], items, "item"),
+        ):
+            _ordered(ids, f"speed_evidence.{what}")
+            for entry in ids:
+                if entry not in universe:
+                    raise UsagePriorError(f"{noun} {entry} is not in the team vocabulary")
     return config
 
 

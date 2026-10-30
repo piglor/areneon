@@ -33,6 +33,11 @@ export interface BeliefIdentityParts {
    * engine-backed damage check). Absent keeps today's preimage and every pinned identity.
    */
   readonly damage_check_format?: number;
+  /**
+   * The bridge's `SPEED_CHECK_FORMAT`, given only when the belief config enables `speed_evidence` (ticket #1133). Absent keeps
+   * today's preimage and every pinned identity.
+   */
+  readonly speed_check_format?: number;
 }
 
 const HEX64 = /^[0-9a-f]{64}$/;
@@ -49,6 +54,7 @@ export function beliefIdentityHash(parts: BeliefIdentityParts): string {
     reader_sha256: parts.reader_sha256,
     version_manifest: parts.version_manifest,
     ...(parts.damage_check_format === undefined ? {} : { damage_check_format: parts.damage_check_format }),
+    ...(parts.speed_check_format === undefined ? {} : { speed_check_format: parts.speed_check_format }),
   });
 }
 

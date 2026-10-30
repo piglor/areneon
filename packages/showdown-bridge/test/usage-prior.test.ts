@@ -107,6 +107,10 @@ describe("readUsagePrior (ADR-025 section 2)", () => {
     expect(readBeliefConfig(committed("v1/belief-config/valid/damage-evidence.json"), vocabulary).damage_evidence?.max_checked).toBe(32);
   });
 
+  it("reads the speed-evidence sample", () => {
+    expect(readBeliefConfig(committed("v1/belief-config/valid/speed-evidence.json"), vocabulary).speed_evidence?.max_checked).toBe(32);
+  });
+
   it("refuses every schema-invalid sample", () => {
     for (const name of ["fractional-weight", "negative-residual", "zero-denominator", "zero-weight", "missing-unmapped", "missing-no-item", "ppm-share", "unknown-source-kind", "chaos-no-inputs", "bad-month", "missing-spread-point", "no-species", "no-formes", "next-version", "extra-field"]) {
       expect(() => readUsagePrior(committed(`v1/usage-prior/invalid/${name}.json`), vocabulary), name).toThrow(UsagePriorError);
@@ -143,6 +147,9 @@ describe("readBeliefConfig (ADR-025 section 5)", () => {
     ["damage-unknown-lasting-move", /move aaaaaaaaa is not in the team vocabulary/],
     ["damage-unsorted-moves", /damage_evidence.non_isolating.moves: .* repeated or out of order/],
     ["damage-unknown-item", /item aaaaaaaaa is not in the team vocabulary/],
+    ["speed-unknown-move", /move aaaaaaaaa is not in the team vocabulary/],
+    ["speed-unsorted-moves", /speed_evidence.non_isolating.moves: .* repeated or out of order/],
+    ["speed-unknown-item", /item aaaaaaaaa is not in the team vocabulary/],
   ])("refuses the reader-invalid sample %s", (name, message) => {
     const value = committed(`v1/belief-config/reader-invalid/${name}.json`);
     expect(() => readBeliefConfig(value, vocabulary)).toThrow(BeliefConfigError);
@@ -150,7 +157,7 @@ describe("readBeliefConfig (ADR-025 section 5)", () => {
   });
 
   it("refuses every schema-invalid sample", () => {
-    for (const name of ["extra-field", "fractional-bound", "zero-assignments", "missing-abilities", "damage-bad-rounding", "damage-missing-unmodelled", "damage-zero-checked", "damage-extra-field"]) {
+    for (const name of ["extra-field", "fractional-bound", "zero-assignments", "missing-abilities", "damage-bad-rounding", "damage-missing-unmodelled", "damage-zero-checked", "damage-extra-field", "speed-missing-unmodelled", "speed-zero-checked", "speed-extra-field"]) {
       expect(() => readBeliefConfig(committed(`v1/belief-config/invalid/${name}.json`), vocabulary), name).toThrow(BeliefConfigError);
     }
   });

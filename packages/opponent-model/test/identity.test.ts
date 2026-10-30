@@ -12,13 +12,18 @@ const parts: BeliefIdentityParts = {
 
 describe("belief_identity_hash (ADR-025 section 5)", () => {
   it("is the SHA-256 of the JCS of {prior_hash, belief_config_hash, belief_format, vocabulary_hash, reader_sha256, version_manifest} (a vector made with Python)", () => {
-    expect(BELIEF_FORMAT).toBe("belief/5");
-    expect(beliefIdentityHash(parts)).toBe("72381ea33fb8d0a2a520297a4b321365def0f6d88f3cb4273fea92aa2b622918");
+    expect(BELIEF_FORMAT).toBe("belief/6");
+    expect(beliefIdentityHash(parts)).toBe("f2c532bc495506ef8be9888c9c7e9f1f8d522cc8d896b36e7efafe058ccc7d30");
   });
 
   it("adds damage_check_format to the preimage only when it is given (a vector made with Python); absent keeps the vector above", () => {
-    expect(beliefIdentityHash({ ...parts, damage_check_format: 2 })).toBe("c5798e2a75c0686f2e9c32a90e25d04c834d9e9f47b5721a6a3c9ecc07067c06");
+    expect(beliefIdentityHash({ ...parts, damage_check_format: 2 })).toBe("301e7abd5a790eab64b704688537c5aaa71655372219257fe22b9dd1c0379a86");
     expect(beliefIdentityHash({ ...parts, damage_check_format: 3 })).not.toBe(beliefIdentityHash({ ...parts, damage_check_format: 2 }));
+  });
+
+  it("adds speed_check_format likewise (a vector made with Python)", () => {
+    expect(beliefIdentityHash({ ...parts, speed_check_format: 1 })).toBe("5463fda5166caadba1d2259229c771b6518677aa389e2fa5ca5168c77ceb0f9e");
+    expect(beliefIdentityHash({ ...parts, speed_check_format: 2 })).not.toBe(beliefIdentityHash({ ...parts, speed_check_format: 1 }));
   });
 
   it("changes with every part: a new prior, config, vocabulary, reader or pin is a new identity", () => {
