@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from typing import Annotated, Any, Literal
+from typing import Annotated, Literal
 
 from pydantic import MISSING, BaseModel, ConfigDict, Field, StrictInt, StrictStr
 
@@ -31,6 +31,20 @@ class Seeds(BaseModel):
     learner: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
     """
     Seed of the learner's own generator (minibatch order).
+    """
+
+
+class Options(BaseModel):
+    """
+    Optional network options (ADR-010 erratum A4 item 2). Absent keeps today's bytes, hashes and checkpoints. A named option is added by the ticket of the experiment arm that needs it.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    factored_preview: Literal[True] | MISSING = MISSING
+    """
+    ADR-010 erratum A4 item 4. The Team Preview network scores an order as the sum over places of u(place, Pokemon token) plus v(lead pair) from the tokens at places 1 and 2, and does not use the cross-attention and interaction scorer for Preview. The candidate set, its order and the softmax over the real candidates are unchanged; the Battle network ignores it. Only true is a value (leave the key out for none). Layout changing: it changes the checkpoint tensor names and the checkpoint format.
     """
 
 
@@ -144,7 +158,7 @@ class CandidateFeatures(BaseModel):
     feature_set_hash: Annotated[StrictStr, Field(pattern="^[0-9a-f]{64}$")]
 
 
-class Options(BaseModel):
+class Options1(BaseModel):
     """
     Optional encoder options (ADR-010 erratum A4 item 2). Absent keeps today's bytes, hashes and checkpoints. A named option is added by the ticket of the experiment arm that needs it.
     """
@@ -202,7 +216,7 @@ class Encoder(BaseModel):
     """
     Divisor of the turn counter.
     """
-    options: Options | MISSING = MISSING
+    options: Options1 | MISSING = MISSING
     """
     Optional encoder options (ADR-010 erratum A4 item 2). Absent keeps today's bytes, hashes and checkpoints. A named option is added by the ticket of the experiment arm that needs it.
     """
@@ -233,9 +247,9 @@ class Model(BaseModel):
     """
     Feed-forward width.
     """
-    options: Annotated[dict[str, Any] | MISSING, Field(max_length=0)] = MISSING
+    options: Options | MISSING = MISSING
     """
-    Optional network options (ADR-010 erratum A4 item 2). Absent keeps today's bytes, hashes and checkpoints. A named option is added by the ticket of the experiment arm that needs it; none is defined yet, so only an empty object passes.
+    Optional network options (ADR-010 erratum A4 item 2). Absent keeps today's bytes, hashes and checkpoints. A named option is added by the ticket of the experiment arm that needs it.
     """
 
 

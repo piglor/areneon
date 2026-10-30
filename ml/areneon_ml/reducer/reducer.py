@@ -43,7 +43,7 @@ from .errors import (
     UnknownLineError,
     VocabularyError,
 )
-from .state import STAT_KEYS, BattleState, PokemonState, SideState, zero_boosts
+from .state import STAT_KEYS, BattleState, PokemonState, Recent, SideState, zero_boosts
 from .vocab import Vocabulary, to_id
 
 # Display-only tags of the wire protocol: accepted, but only `from` and `of`
@@ -67,6 +67,8 @@ _REPEATABLE_TAGS = frozenset({"spread"})
 # Lines whose text may hold `[` or `|`-free prose: no tag parsing.
 _FREE_TEXT = frozenset({"uhtml", "uhtmlchange", "-message", "-hint", "rule", "tier", "error"})
 
+# The no-state lines below that still feed the recent history (`_observe`).
+_OBSERVED = frozenset({"cant", "upkeep", "-singleturn", "-fail"})
 # Lines that change no state, with the number of positional fields they carry.
 _NO_STATE: dict[str, tuple[int, int | None]] = {
     "": (0, 0),
@@ -260,6 +262,12 @@ class _Reducer:
         self._shown: dict[tuple[str, str], str] = {}
         self._disguise: dict[tuple[str, str], _Disguise] = {}
         self._pairs: dict[tuple[str, int], _Pair] = {}  # by (player, added entry)
+        # Recent history (#1013): the place of the next action of the turn, the Pokemon whose move
+        # is running (damage lines without a `[from]` tag are its), and a stalling move whose
+        # `-singleturn` or `-fail` has not come yet.
+        self._actions = 0
+        self._actor: PokemonState | None = None
+        self._stalling: PokemonState | None = None
         for pokemon_set in team:
             self.state.own.roster.append(self._own_mon(pokemon_set))
         names = [mon.name for mon in self.state.own.roster]
@@ -355,6 +363,8 @@ class _Reducer:
             line = _parse_line(raw)
             if line.kind in _NO_STATE:
                 _arity(line, *_NO_STATE[line.kind])
+                if line.kind in _OBSERVED:
+                    self._observe(line)
                 return
             handler = self._handlers.get(line.kind)
             if handler is None:
@@ -574,10 +584,59 @@ class _Reducer:
 
     def _turn(self, line: _Line) -> None:
         _arity(line, 1, 1)
+        self._require_stall_outcome(line)
         self.state.turn = _integer(line.args[0], line)
+        self._actions, self._actor = 0, None
+        for side in (self.state.own, self.state.opponent):
+            for mon in side.roster:
+                recent = mon.recent
+                recent.hp_taken_last_turn, recent.hp_taken = recent.hp_taken, 0
+                recent.hp_dealt_last_turn, recent.hp_dealt = recent.hp_dealt, 0
+                if mon.active_slot is not None:
+                    recent.active_turns += 1
+                # A use two turns back no longer counts: the `stall` volatile ends after one.
+                if recent.stall_turn is not None and recent.stall_turn < self.state.turn - 1:
+                    recent.protect_streak, recent.stall_turn = 0, None
+
+    def _require_stall_outcome(self, line: _Line) -> None:
+        """The engine prints `-singleturn` (success) or `-fail` right after every stalling move,
+        so another action, the turn's end or the game's end with neither is a log the reducer
+        cannot read (the world facts' `stall_unresolved`)."""
+        if self._stalling is not None:
+            raise MalformedLineError("a stalling move with no -singleturn or -fail", line.raw)
+
+    def _end_move_action(self, line: _Line) -> None:
+        """A switch ends the running move: no stalling move may be waiting, no damage is its."""
+        self._require_stall_outcome(line)
+        self._actor = None
+
+    def _observe(self, line: _Line) -> None:
+        """Lines that carry no state of their own but feed the recent history."""
+        if line.kind == "cant":
+            self._require_stall_outcome(line)
+            self._acted(self._mon(line.args[0], line))
+        elif line.kind == "upkeep":
+            self._actor = None
+        elif self._stalling is not None and line.args:  # -singleturn, -fail
+            if self._mon(line.args[0], line) is self._stalling:
+                recent = self._stalling.recent
+                if line.kind == "-fail":
+                    recent.protect_streak, recent.stall_turn = 0, None
+                else:
+                    kept = (
+                        recent.stall_turn is not None and recent.stall_turn >= self.state.turn - 1
+                    )
+                    recent.protect_streak = recent.protect_streak + 1 if kept else 1
+                    recent.stall_turn = self.state.turn
+                self._stalling = None
+
+    def _acted(self, mon: PokemonState) -> None:
+        self._actions += 1
+        mon.recent.last_action_turn, mon.recent.last_action_order = self.state.turn, self._actions
 
     def _win(self, line: _Line) -> None:
         _arity(line, 1, 1)
+        self._require_stall_outcome(line)
         for label, side in (("own", self.state.own), ("opponent", self.state.opponent)):
             if side.username is not None and side.username == line.args[0]:
                 self.state.winner = label
@@ -586,6 +645,7 @@ class _Reducer:
 
     def _tie(self, line: _Line) -> None:
         _arity(line, 0, 0)
+        self._require_stall_outcome(line)
         self.state.winner = "tie"
 
     # -- requests ------------------------------------------------------------
@@ -712,6 +772,7 @@ class _Reducer:
         details = self._details(line.args[1], line)
         located = self._locate(side, name, details)
         before = None if located is None else copy.deepcopy(side.roster[located])
+        self._end_move_action(line)
         mon = self._bind(side, name, details, line)
         key = (side.player, letter)
         if mon.fainted and not mon.own:
@@ -790,6 +851,7 @@ class _Reducer:
 
     def _switch_out(self, mon: PokemonState) -> None:
         mon.active_slot = None
+        mon.recent = Recent()
         mon.boosts = zero_boosts()
         mon.volatiles = set()
         mon.types = None
@@ -1029,6 +1091,7 @@ class _Reducer:
             for move in shown.moves_revealed
             if move not in real.moves_revealed and move not in before.moves_revealed
         ]
+        real.recent = copy.deepcopy(shown.recent)
         real.active_slot, real.brought = letter, True
 
     def _settle_own(self, entries: Sequence[Mapping[str, Any]], line: _Line) -> None:
@@ -1120,10 +1183,24 @@ class _Reducer:
         mon = self._mon(line.args[0], line)
         move = self.vocab.move(line.args[1])
         target = _optional(line, 2)
+        shown: str | None = None
         if target and target != "null":  # "null": a move with no target ([notarget])
-            self._ref(target, line)
+            side, letter, _ = self._ref(target, line)
+            if letter is not None:
+                shown = f"{'own' if side is self.state.own else 'opponent'}:{letter}"
+        self._require_stall_outcome(line)
+        self._actor = mon  # a called move (`[from]`) is still its user's
         if "from" not in line.tags and move not in mon.moves_revealed:
             mon.moves_revealed.append(move)
+        if "from" in line.tags and line.tags["from"] != "lockedmove":
+            return  # not the Pokemon's own action: a called, reflected or copied move
+        if self.vocab.stall_moves is None:
+            raise VocabularyError("no stall-moves table for this engine and format")
+        recent = mon.recent
+        recent.last_move, recent.last_target, recent.last_move_turn = move, shown, self.state.turn
+        self._acted(mon)
+        if move in self.vocab.stall_moves:
+            self._stalling = mon
 
     def _faint(self, line: _Line) -> None:
         _arity(line, 1, 1)
@@ -1139,8 +1216,15 @@ class _Reducer:
     def _hp_line(self, line: _Line) -> None:
         _arity(line, 2, 2)
         mon = self._mon(line.args[0], line)
+        before, units = mon.hp_num, mon.hp_den
         self._set_hp(mon, line.args[1], line)
         self._reveal_from(mon, line)
+        if line.kind == "-damage" and before is not None and mon.hp_den == units:
+            lost = before - (mon.hp_num or 0)
+            if lost > 0:
+                mon.recent.hp_taken += lost
+                if self._actor is not None and "from" not in line.tags:
+                    self._actor.recent.hp_dealt += lost
 
     def _sethp(self, line: _Line) -> None:
         _arity(line, 2, 2)
@@ -1236,7 +1320,10 @@ class _Reducer:
 
     def _weather(self, line: _Line) -> None:
         _arity(line, 1, 1)
-        self.state.weather = None if line.args[0] == "none" else self.vocab.weather(line.args[0])
+        found = None if line.args[0] == "none" else self.vocab.weather(line.args[0])
+        if found != self.state.weather:  # `[upkeep]` repeats the weather that is already up
+            self.state.weather_started = None if found is None else self.state.turn
+        self.state.weather = found
 
     def _field_effect(self, line: _Line) -> tuple[str, str]:
         _arity(line, 1, 1)
@@ -1248,17 +1335,21 @@ class _Reducer:
     def _fieldstart(self, line: _Line) -> None:
         _, found = self._field_effect(line)
         if found in self.vocab.terrains:
+            if self.state.terrain != found:
+                self.state.terrain_started = self.state.turn
             self.state.terrain = found
         else:
             self.state.field_conditions.add(found)
+            self.state.field_started.setdefault(found, self.state.turn)
 
     def _fieldend(self, line: _Line) -> None:
         _, found = self._field_effect(line)
         if found in self.vocab.terrains:
             if self.state.terrain == found:
-                self.state.terrain = None
+                self.state.terrain, self.state.terrain_started = None, None
         else:
             self.state.field_conditions.discard(found)
+            self.state.field_started.pop(found, None)
 
     def _side_condition(self, line: _Line) -> tuple[SideState, str]:
         _arity(line, 2, 2)
@@ -1272,16 +1363,22 @@ class _Reducer:
 
     def _sidestart(self, line: _Line) -> None:
         side, found = self._side_condition(line)
+        side.condition_started.setdefault(found, self.state.turn)
         side.conditions[found] = side.conditions.get(found, 0) + 1
 
     def _sideend(self, line: _Line) -> None:
         side, found = self._side_condition(line)
         side.conditions.pop(found, None)
+        side.condition_started.pop(found, None)
 
     def _swapsideconditions(self, line: _Line) -> None:
         _arity(line, 0, 0)
         own, opponent = self.state.own, self.state.opponent
         own.conditions, opponent.conditions = opponent.conditions, own.conditions
+        own.condition_started, opponent.condition_started = (
+            opponent.condition_started,
+            own.condition_started,
+        )
 
     # -- volatile statuses, items, abilities ---------------------------------
 

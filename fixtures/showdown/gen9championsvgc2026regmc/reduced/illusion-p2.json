@@ -3,10 +3,16 @@
   "provenance": "synthetic: reduced state of illusion/battle.json p2, golden team with a Zoroark",
   "schema_version": 1,
   "state": {
+    "elapsed": {
+      "field_conditions": {},
+      "terrain": null,
+      "weather": null
+    },
     "field_conditions": [],
     "format_name": "[Gen 9 Champions] VGC 2026 Reg M-C",
     "gametype": "doubles",
     "opponent": {
+      "condition_turns": {},
       "conditions": {},
       "player": "p1",
       "roster": [
@@ -41,6 +47,19 @@
           "moves_revealed": [],
           "name": null,
           "pp": {},
+          "recent": {
+            "active_turns": 0,
+            "hp_dealt_last_turn": 0,
+            "hp_dealt_this_turn": 0,
+            "hp_taken_last_turn": 0,
+            "hp_taken_this_turn": 0,
+            "last_action_order": null,
+            "last_action_turn": null,
+            "last_move": null,
+            "last_move_turn": null,
+            "last_target": null,
+            "protect_streak": 0
+          },
           "shiny": false,
           "species": "venusaur",
           "stats": null,
@@ -84,6 +103,19 @@
           ],
           "name": "Charizard",
           "pp": {},
+          "recent": {
+            "active_turns": 8,
+            "hp_dealt_last_turn": 0,
+            "hp_dealt_this_turn": 15,
+            "hp_taken_last_turn": 0,
+            "hp_taken_this_turn": 33,
+            "last_action_order": 1,
+            "last_action_turn": 13,
+            "last_move": "flamethrower",
+            "last_move_turn": 13,
+            "last_target": "opponent:b",
+            "protect_streak": 1
+          },
           "shiny": false,
           "species": "charizard",
           "stats": null,
@@ -122,6 +154,19 @@
           "moves_revealed": [],
           "name": null,
           "pp": {},
+          "recent": {
+            "active_turns": 0,
+            "hp_dealt_last_turn": 0,
+            "hp_dealt_this_turn": 0,
+            "hp_taken_last_turn": 0,
+            "hp_taken_this_turn": 0,
+            "last_action_order": null,
+            "last_action_turn": null,
+            "last_move": null,
+            "last_move_turn": null,
+            "last_target": null,
+            "protect_streak": 0
+          },
           "shiny": false,
           "species": "blastoise",
           "stats": null,
@@ -162,6 +207,19 @@
           ],
           "name": "Pikachu",
           "pp": {},
+          "recent": {
+            "active_turns": 0,
+            "hp_dealt_last_turn": 0,
+            "hp_dealt_this_turn": 0,
+            "hp_taken_last_turn": 0,
+            "hp_taken_this_turn": 0,
+            "last_action_order": null,
+            "last_action_turn": null,
+            "last_move": null,
+            "last_move_turn": null,
+            "last_target": null,
+            "protect_streak": 0
+          },
           "shiny": false,
           "species": "pikachu",
           "stats": null,
@@ -204,6 +262,19 @@
           ],
           "name": "Snorlax",
           "pp": {},
+          "recent": {
+            "active_turns": 13,
+            "hp_dealt_last_turn": 0,
+            "hp_dealt_this_turn": 54,
+            "hp_taken_last_turn": 10,
+            "hp_taken_this_turn": 15,
+            "last_action_order": 3,
+            "last_action_turn": 13,
+            "last_move": "bodyslam",
+            "last_move_turn": 13,
+            "last_target": "own:a",
+            "protect_streak": 0
+          },
           "shiny": false,
           "species": "snorlax",
           "stats": null,
@@ -244,6 +315,19 @@
           ],
           "name": "Zoroark",
           "pp": {},
+          "recent": {
+            "active_turns": 0,
+            "hp_dealt_last_turn": 0,
+            "hp_dealt_this_turn": 0,
+            "hp_taken_last_turn": 0,
+            "hp_taken_this_turn": 0,
+            "last_action_order": null,
+            "last_action_turn": null,
+            "last_move": null,
+            "last_move_turn": null,
+            "last_target": null,
+            "protect_streak": 0
+          },
           "shiny": false,
           "species": "zoroark",
           "stats": null,
@@ -260,6 +344,7 @@
       "username": "p1"
     },
     "own": {
+      "condition_turns": {},
       "conditions": {},
       "player": "p2",
       "roster": [
@@ -299,6 +384,19 @@
           "moves_revealed": [],
           "name": "Venusaur",
           "pp": {},
+          "recent": {
+            "active_turns": 0,
+            "hp_dealt_last_turn": 0,
+            "hp_dealt_this_turn": 0,
+            "hp_taken_last_turn": 0,
+            "hp_taken_this_turn": 0,
+            "last_action_order": null,
+            "last_action_turn": null,
+            "last_move": null,
+            "last_move_turn": null,
+            "last_target": null,
+            "protect_streak": 0
+          },
           "shiny": false,
           "species": "venusaur",
           "stats": {
@@ -358,6 +456,19 @@
             "heatwave": 10,
             "protect": 7
           },
+          "recent": {
+            "active_turns": 0,
+            "hp_dealt_last_turn": 0,
+            "hp_dealt_this_turn": 0,
+            "hp_taken_last_turn": 0,
+            "hp_taken_this_turn": 0,
+            "last_action_order": null,
+            "last_action_turn": null,
+            "last_move": null,
+            "last_move_turn": null,
+            "last_target": null,
+            "protect_streak": 0
+          },
           "shiny": false,
           "species": "charizard",
           "stats": {
@@ -415,6 +526,19 @@
             "protect": 8,
             "surf": 16
           },
+          "recent": {
+            "active_turns": 0,
+            "hp_dealt_last_turn": 0,
+            "hp_dealt_this_turn": 0,
+            "hp_taken_last_turn": 0,
+            "hp_taken_this_turn": 0,
+            "last_action_order": null,
+            "last_action_turn": null,
+            "last_move": null,
+            "last_move_turn": null,
+            "last_target": null,
+            "protect_streak": 0
+          },
           "shiny": false,
           "species": "blastoise",
           "stats": {
@@ -471,6 +595,19 @@
             "thunderbolt": 16,
             "voltswitch": 19
           },
+          "recent": {
+            "active_turns": 0,
+            "hp_dealt_last_turn": 0,
+            "hp_dealt_this_turn": 0,
+            "hp_taken_last_turn": 0,
+            "hp_taken_this_turn": 0,
+            "last_action_order": null,
+            "last_action_turn": null,
+            "last_move": null,
+            "last_move_turn": null,
+            "last_target": null,
+            "protect_streak": 0
+          },
           "shiny": false,
           "species": "pikachu",
           "stats": {
@@ -520,6 +657,19 @@
           "moves_revealed": [],
           "name": "Snorlax",
           "pp": {},
+          "recent": {
+            "active_turns": 0,
+            "hp_dealt_last_turn": 0,
+            "hp_dealt_this_turn": 0,
+            "hp_taken_last_turn": 0,
+            "hp_taken_this_turn": 0,
+            "last_action_order": null,
+            "last_action_turn": null,
+            "last_move": null,
+            "last_move_turn": null,
+            "last_target": null,
+            "protect_streak": 0
+          },
           "shiny": false,
           "species": "snorlax",
           "stats": {
@@ -576,6 +726,19 @@
             "shadowclaw": 16,
             "spite": 12
           },
+          "recent": {
+            "active_turns": 0,
+            "hp_dealt_last_turn": 0,
+            "hp_dealt_this_turn": 0,
+            "hp_taken_last_turn": 0,
+            "hp_taken_this_turn": 0,
+            "last_action_order": null,
+            "last_action_turn": null,
+            "last_move": null,
+            "last_move_turn": null,
+            "last_target": null,
+            "protect_streak": 0
+          },
           "shiny": false,
           "species": "zoroark",
           "stats": {
@@ -599,7 +762,7 @@
     },
     "player": "p2",
     "request_kind": "move",
-    "schema_version": 1,
+    "schema_version": 2,
     "started": true,
     "terrain": null,
     "turn": 13,

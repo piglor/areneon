@@ -3,10 +3,16 @@
   "provenance": "synthetic: reduced state of baton-pass/battle.json p1, Baton Pass users",
   "schema_version": 1,
   "state": {
+    "elapsed": {
+      "field_conditions": {},
+      "terrain": null,
+      "weather": null
+    },
     "field_conditions": [],
     "format_name": "[Gen 9 Champions] VGC 2026 Reg M-C",
     "gametype": "doubles",
     "opponent": {
+      "condition_turns": {},
       "conditions": {},
       "player": "p2",
       "roster": [
@@ -45,6 +51,19 @@
           ],
           "name": "Venusaur",
           "pp": {},
+          "recent": {
+            "active_turns": 9,
+            "hp_dealt_last_turn": 0,
+            "hp_dealt_this_turn": 144,
+            "hp_taken_last_turn": 0,
+            "hp_taken_this_turn": 0,
+            "last_action_order": 2,
+            "last_action_turn": 12,
+            "last_move": "sludgebomb",
+            "last_move_turn": 12,
+            "last_target": "own:a",
+            "protect_streak": 0
+          },
           "shiny": false,
           "species": "venusaur",
           "stats": null,
@@ -86,6 +105,19 @@
           ],
           "name": "Charizard",
           "pp": {},
+          "recent": {
+            "active_turns": 0,
+            "hp_dealt_last_turn": 0,
+            "hp_dealt_this_turn": 0,
+            "hp_taken_last_turn": 0,
+            "hp_taken_this_turn": 0,
+            "last_action_order": null,
+            "last_action_turn": null,
+            "last_move": null,
+            "last_move_turn": null,
+            "last_target": null,
+            "protect_streak": 0
+          },
           "shiny": false,
           "species": "charizard",
           "stats": null,
@@ -128,6 +160,19 @@
           ],
           "name": "Blastoise",
           "pp": {},
+          "recent": {
+            "active_turns": 4,
+            "hp_dealt_last_turn": 0,
+            "hp_dealt_this_turn": 0,
+            "hp_taken_last_turn": 0,
+            "hp_taken_this_turn": 0,
+            "last_action_order": 3,
+            "last_action_turn": 11,
+            "last_move": "surf",
+            "last_move_turn": 10,
+            "last_target": "own:a",
+            "protect_streak": 0
+          },
           "shiny": false,
           "species": "blastoise",
           "stats": null,
@@ -166,6 +211,19 @@
           "moves_revealed": [],
           "name": "Leafeon",
           "pp": {},
+          "recent": {
+            "active_turns": 0,
+            "hp_dealt_last_turn": 0,
+            "hp_dealt_this_turn": 0,
+            "hp_taken_last_turn": 0,
+            "hp_taken_this_turn": 0,
+            "last_action_order": null,
+            "last_action_turn": null,
+            "last_move": null,
+            "last_move_turn": null,
+            "last_target": null,
+            "protect_streak": 0
+          },
           "shiny": false,
           "species": "leafeon",
           "stats": null,
@@ -204,6 +262,19 @@
           "moves_revealed": [],
           "name": null,
           "pp": {},
+          "recent": {
+            "active_turns": 0,
+            "hp_dealt_last_turn": 0,
+            "hp_dealt_this_turn": 0,
+            "hp_taken_last_turn": 0,
+            "hp_taken_this_turn": 0,
+            "last_action_order": null,
+            "last_action_turn": null,
+            "last_move": null,
+            "last_move_turn": null,
+            "last_target": null,
+            "protect_streak": 0
+          },
           "shiny": false,
           "species": "gliscor",
           "stats": null,
@@ -242,6 +313,19 @@
           "moves_revealed": [],
           "name": null,
           "pp": {},
+          "recent": {
+            "active_turns": 0,
+            "hp_dealt_last_turn": 0,
+            "hp_dealt_this_turn": 0,
+            "hp_taken_last_turn": 0,
+            "hp_taken_this_turn": 0,
+            "last_action_order": null,
+            "last_action_turn": null,
+            "last_move": null,
+            "last_move_turn": null,
+            "last_target": null,
+            "protect_streak": 0
+          },
           "shiny": false,
           "species": "hawlucha",
           "stats": null,
@@ -258,6 +342,7 @@
       "username": "p2"
     },
     "own": {
+      "condition_turns": {},
       "conditions": {},
       "player": "p1",
       "roster": [
@@ -297,6 +382,19 @@
           "moves_revealed": [],
           "name": "Venusaur",
           "pp": {},
+          "recent": {
+            "active_turns": 0,
+            "hp_dealt_last_turn": 0,
+            "hp_dealt_this_turn": 0,
+            "hp_taken_last_turn": 0,
+            "hp_taken_this_turn": 0,
+            "last_action_order": null,
+            "last_action_turn": null,
+            "last_move": null,
+            "last_move_turn": null,
+            "last_target": null,
+            "protect_streak": 0
+          },
           "shiny": false,
           "species": "venusaur",
           "stats": {
@@ -346,6 +444,19 @@
           "moves_revealed": [],
           "name": "Charizard",
           "pp": {},
+          "recent": {
+            "active_turns": 0,
+            "hp_dealt_last_turn": 0,
+            "hp_dealt_this_turn": 0,
+            "hp_taken_last_turn": 0,
+            "hp_taken_this_turn": 0,
+            "last_action_order": null,
+            "last_action_turn": null,
+            "last_move": null,
+            "last_move_turn": null,
+            "last_target": null,
+            "protect_streak": 0
+          },
           "shiny": false,
           "species": "charizard",
           "stats": {
@@ -401,6 +512,19 @@
             "icebeam": 10,
             "protect": 8,
             "surf": 16
+          },
+          "recent": {
+            "active_turns": 0,
+            "hp_dealt_last_turn": 0,
+            "hp_dealt_this_turn": 0,
+            "hp_taken_last_turn": 0,
+            "hp_taken_this_turn": 0,
+            "last_action_order": null,
+            "last_action_turn": null,
+            "last_move": null,
+            "last_move_turn": null,
+            "last_target": null,
+            "protect_streak": 0
           },
           "shiny": false,
           "species": "blastoise",
@@ -461,6 +585,19 @@
             "protect": 7,
             "swordsdance": 20
           },
+          "recent": {
+            "active_turns": 0,
+            "hp_dealt_last_turn": 0,
+            "hp_dealt_this_turn": 0,
+            "hp_taken_last_turn": 0,
+            "hp_taken_this_turn": 0,
+            "last_action_order": null,
+            "last_action_turn": null,
+            "last_move": null,
+            "last_move_turn": null,
+            "last_target": null,
+            "protect_streak": 0
+          },
           "shiny": false,
           "species": "leafeon",
           "stats": {
@@ -520,6 +657,19 @@
             "protect": 6,
             "swordsdance": 18
           },
+          "recent": {
+            "active_turns": 0,
+            "hp_dealt_last_turn": 0,
+            "hp_dealt_this_turn": 0,
+            "hp_taken_last_turn": 0,
+            "hp_taken_this_turn": 0,
+            "last_action_order": null,
+            "last_action_turn": null,
+            "last_move": null,
+            "last_move_turn": null,
+            "last_target": null,
+            "protect_streak": 0
+          },
           "shiny": false,
           "species": "gliscor",
           "stats": {
@@ -577,6 +727,19 @@
             "protect": 6,
             "swordsdance": 20
           },
+          "recent": {
+            "active_turns": 0,
+            "hp_dealt_last_turn": 0,
+            "hp_dealt_this_turn": 0,
+            "hp_taken_last_turn": 0,
+            "hp_taken_this_turn": 0,
+            "last_action_order": null,
+            "last_action_turn": null,
+            "last_move": null,
+            "last_move_turn": null,
+            "last_target": null,
+            "protect_streak": 0
+          },
           "shiny": false,
           "species": "hawlucha",
           "stats": {
@@ -600,7 +763,7 @@
     },
     "player": "p1",
     "request_kind": "move",
-    "schema_version": 1,
+    "schema_version": 2,
     "started": true,
     "terrain": null,
     "turn": 12,
