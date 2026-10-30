@@ -671,6 +671,9 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "training-run-config/recent-history": runConfigWith((c) => {
       runSection(runSection(c, "model"), "encoder").options = { recent_history: true };
     }),
+    "training-run-config/exact-volatiles": runConfigWith((c) => {
+      runSection(runSection(c, "model"), "encoder").options = { exact_volatiles: true };
+    }),
     "training-run-config/candidate-features": runConfigWith((c) => {
       runSection(runSection(c, "model"), "encoder").options = { candidate_features: { feature_set: "probe-damage/1", feature_set_hash: hexOf("c") } };
     }),
@@ -720,6 +723,9 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     }),
     "clone-run-config/recent-history": cloneWith((c) => {
       runSection(runSection(c, "model"), "encoder").options = { recent_history: true };
+    }),
+    "clone-run-config/exact-volatiles": cloneWith((c) => {
+      runSection(runSection(c, "model"), "encoder").options = { exact_volatiles: true };
     }),
     "clone-run-config/candidate-features": cloneWith((c) => {
       runSection(runSection(c, "model"), "encoder").options = { candidate_features: { feature_set: "probe-damage/1", feature_set_hash: hexOf("c") } };
@@ -1036,6 +1042,9 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "clone-run-config/recent-history-false": cloneWith(
       (c) => (runSection(runSection(c, "model"), "encoder").options = { recent_history: false }),
     ),
+    "clone-run-config/exact-volatiles-false": cloneWith(
+      (c) => (runSection(runSection(c, "model"), "encoder").options = { exact_volatiles: false }),
+    ),
     "clone-run-config/candidate-features-unknown-set": cloneWith((c) => {
       runSection(runSection(c, "model"), "encoder").options = { candidate_features: { feature_set: "probe-damage/3", feature_set_hash: hexOf("c") } };
     }),
@@ -1085,6 +1094,9 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     ),
     "training-run-config/recent-history-false": runConfigWith(
       (c) => (runSection(runSection(c, "model"), "encoder").options = { recent_history: false }),
+    ),
+    "training-run-config/exact-volatiles-false": runConfigWith(
+      (c) => (runSection(runSection(c, "model"), "encoder").options = { exact_volatiles: false }),
     ),
     "training-run-config/candidate-features-true": runConfigWith(
       (c) => (runSection(runSection(c, "model"), "encoder").options = { candidate_features: true }),

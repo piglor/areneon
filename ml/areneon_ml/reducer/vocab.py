@@ -205,20 +205,24 @@ class Vocabulary:
         move, ability or item that started it (`Fire Spin`, `Illusion`), or is one of the
         `PROTOCOL_VOLATILES`: any of these resolves. A name given with its kind (`move: Taunt`)
         resolves only against that kind's vocabulary or the conditions."""
+        if self.conditions is not None:
+            self.resolve_volatile(found, kind)
+
+    def resolve_volatile(self, found: str, kind: str | None = None) -> str:
+        """The vocabulary id a volatile resolves to (see `volatile`): the id itself, or the id
+        without its derived number or stat suffix. Version 2 tables only."""
         if self.conditions is None:
-            return
+            raise VocabularyError(f"cannot resolve volatile {found!r} without a condition list")
         stripped = _DERIVED_SUFFIX.sub("", found)
         sources = {"move": self.moves, "ability": self.abilities, "item": self.items}
         searched = [sources[kind]] if kind in sources else list(sources.values())
-        known = (
-            found in self.conditions
-            or stripped in self.conditions
-            or found in PROTOCOL_VOLATILES
-            or stripped in PROTOCOL_VOLATILES
-            or any(found in vocabulary for vocabulary in searched)
-        )
-        if not known:
-            raise VocabularyError(f"unknown volatile {found!r}")
+        if found in self.conditions or found in PROTOCOL_VOLATILES:
+            return found
+        if stripped in self.conditions or stripped in PROTOCOL_VOLATILES:
+            return stripped
+        if any(found in vocabulary for vocabulary in searched):
+            return found
+        raise VocabularyError(f"unknown volatile {found!r}")
 
     def status(self, name: str) -> str:
         return self._check("status", name, self.statuses)

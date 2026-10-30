@@ -15,6 +15,7 @@ import {
   exportEngineData,
   exportEngineDataV2,
   readEngineData,
+  readEngineDataAny,
   readEngineDataV2,
 } from "../src/engine-data.ts";
 import { type Engine, EngineError, loadEngine } from "../src/engine.ts";
@@ -205,6 +206,14 @@ describe("engine data version 2 (ADR-010 erratum A4 item 7)", () => {
   it("is refused by the version 1 reader and the reverse", () => {
     expect(() => readEngineData(fresh2)).toThrow(EngineDataError);
     expect(() => readEngineDataV2(fresh)).toThrow(EngineDataError);
+  });
+
+  it("reads either version by its schema_version and refuses any other", () => {
+    expect(readEngineDataAny(fresh)).toEqual(fresh);
+    expect(readEngineDataAny(fresh2)).toEqual(fresh2);
+    expect(engineDataHash(readEngineDataAny(fresh2))).toBe(engineDataHash(fresh2));
+    expect(() => readEngineDataAny({ ...fresh, schema_version: 3 })).toThrow(EngineDataError);
+    expect(() => readEngineDataAny(null)).toThrow(EngineDataError);
   });
 
   it("refuses a condition list out of order, a repeat and a condition the engine does not define", () => {

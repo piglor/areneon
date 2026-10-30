@@ -204,5 +204,9 @@ export interface Encoder {
      * ADR-010 erratum A4 item 7. The Pokemon and field features also carry the reducer's recent history from the player's own channel: per Pokemon the turns since its switch-in, its last move (through the move vocabulary) and target, the age and place of its latest action, the hit points it took and dealt this and last turn and its protect streak; on the field the turns since the weather, the terrain and each field and side condition began. Counts are scaled by the encoder's turn and stat scales and fixed divisors hashed into the encoder version. Only true is a value (leave the key out for none). Layout changing: it changes the encoder version and the checkpoint format.
      */
     recent_history?: true;
+    /**
+     * ADR-010 erratum A4 item 7. Volatiles and field and side conditions are exact vocabulary ids (one column per id of the engine data: its conditions, moves, abilities and items) instead of SHA-256 buckets, and a Pokemon token also carries the types a typechange set. Needs a version 2 engine-data table; an id the vocabulary does not resolve fails closed. Only true is a value (leave the key out for none). Layout changing: it changes the encoder version and the checkpoint format.
+     */
+    exact_volatiles?: true;
   };
 }

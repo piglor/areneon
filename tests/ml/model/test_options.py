@@ -65,6 +65,7 @@ def test_only_the_registered_options_exist() -> None:
         "candidate_features",
         "candidate_target",
         "recent_history",
+        "exact_volatiles",
     }
     assert set(REGISTRY["network"]) == {
         "factored_preview",
