@@ -51,6 +51,9 @@ interface Mon {
   faint(): unknown;
   setStatus(status: string, source: null, sourceEffect: null, ignoreImmunities: boolean): unknown;
   sethp(hp: number): unknown;
+  item: string;
+  set: { item: string };
+  itemState: unknown;
 }
 interface Queued {
   choice: string;
@@ -64,7 +67,7 @@ interface Condition {
 }
 interface ProbeBattle {
   prng: object;
-  sides: { pokemon: Mon[]; addSideCondition(id: string, source: Mon): unknown; getSideCondition(id: string): unknown }[];
+  sides: { pokemon: Mon[]; addSideCondition(id: string, source: Mon): unknown; getSideCondition(id: string): unknown; removeSideCondition(id: string): unknown }[];
   field: {
     weather: string;
     terrain: string;
@@ -74,10 +77,12 @@ interface ProbeBattle {
     clearTerrain(): unknown;
     addPseudoWeather(id: string, source: Mon): unknown;
     getPseudoWeather(id: string): unknown;
+    removePseudoWeather(id: string): unknown;
   };
   queue: { resolveAction(action: object): Queued[] };
   actions: { runMegaEvo(pokemon: Mon): boolean };
-  dex: { moves: { get(id: string): { exists: boolean } }; conditions: { get(id: string): Condition } };
+  initEffectState(state: { id: string; target: Mon }): unknown;
+  dex: { items: { get(name: string): { id: string } }; moves: { get(id: string): { exists: boolean } }; conditions: { get(id: string): Condition } };
   faintMessages(): unknown;
   getRandomTarget(...args: unknown[]): unknown;
   getActionSpeed(action: Queued): void;
@@ -130,9 +135,42 @@ function retireCopies(battle: ProbeBattle, query: SpeedOrderQuery): void {
   battle.faintMessages();
 }
 
+/**
+ * The declared field, absolute: every weather, terrain, Trick Room and side condition is cleared first and then set as declared.
+ * It runs once before the Evolutions and again after them, because a Mega's ability (Drought, Electric Surge) replaces the field.
+ */
+function declareField(battle: ProbeBattle, query: SpeedOrderQuery, lead: Mon): void {
+  const { state } = query;
+  const kindOf = (id: string): string => (battle.dex.conditions.get(id).exists ? battle.dex.conditions.get(id).effectType : "none");
+  battle.field.removePseudoWeather(TRICK_ROOM);
+  for (const side of battle.sides) for (const [, id] of SIDE_CONDITIONS) side.removeSideCondition(id);
+  if (state.weather === null) battle.field.clearWeather();
+  else {
+    need(kindOf(state.weather) === "Weather", "the declared weather is not an engine weather");
+    battle.field.setWeather(state.weather, lead);
+    need(battle.field.weather === state.weather, "the engine refused the declared weather");
+  }
+  if (state.terrain === null) battle.field.clearTerrain();
+  else {
+    need(kindOf(state.terrain) === "Terrain", "the declared terrain is not an engine terrain");
+    battle.field.setTerrain(state.terrain, lead);
+    need(battle.field.terrain === state.terrain, "the engine refused the declared terrain");
+  }
+  if (state.trick_room) {
+    battle.field.addPseudoWeather(TRICK_ROOM, lead);
+    need(Boolean(battle.field.getPseudoWeather(TRICK_ROOM)), "the engine refused Trick Room");
+  }
+  for (const [index, side] of battle.sides.entries()) {
+    for (const [name, id] of SIDE_CONDITIONS) {
+      if (!state.sides[index]?.[name]) continue;
+      side.addSideCondition(id, side.pokemon[0] as Mon);
+      need(Boolean(side.getSideCondition(id)), `the engine refused ${id}`);
+    }
+  }
+}
+
 /** Put the declared state on the battle. Every value is absolute: what a switch-in effect set is replaced. */
 function declare(battle: ProbeBattle, query: SpeedOrderQuery, at: (position: number) => void): void {
-  const { state } = query;
   const kindOf = (id: string): string => (battle.dex.conditions.get(id).exists ? battle.dex.conditions.get(id).effectType : "none");
   const lead = battle.sides[0]?.pokemon[0] as Mon;
   const declareStatus = (pokemon: Mon, status: string): void => {
@@ -164,29 +202,7 @@ function declare(battle: ProbeBattle, query: SpeedOrderQuery, at: (position: num
     }
   }
   at(0);
-  if (state.weather === null) battle.field.clearWeather();
-  else {
-    need(kindOf(state.weather) === "Weather", "the declared weather is not an engine weather");
-    battle.field.setWeather(state.weather, lead);
-    need(battle.field.weather === state.weather, "the engine refused the declared weather");
-  }
-  if (state.terrain === null) battle.field.clearTerrain();
-  else {
-    need(kindOf(state.terrain) === "Terrain", "the declared terrain is not an engine terrain");
-    battle.field.setTerrain(state.terrain, lead);
-    need(battle.field.terrain === state.terrain, "the engine refused the declared terrain");
-  }
-  if (state.trick_room) {
-    battle.field.addPseudoWeather(TRICK_ROOM, lead);
-    need(Boolean(battle.field.getPseudoWeather(TRICK_ROOM)), "the engine refused Trick Room");
-  }
-  for (const [index, side] of battle.sides.entries()) {
-    for (const [name, id] of SIDE_CONDITIONS) {
-      if (!state.sides[index]?.[name]) continue;
-      side.addSideCondition(id, side.pokemon[0] as Mon);
-      need(Boolean(side.getSideCondition(id)), `the engine refused ${id}`);
-    }
-  }
+  declareField(battle, query, lead);
   let position = 0;
   for (const [index, combatants] of query.sides.entries()) {
     for (const [slot, combatant] of combatants.entries()) {
@@ -201,6 +217,24 @@ function declare(battle: ProbeBattle, query: SpeedOrderQuery, at: (position: num
       if (combatant.hp !== null) {
         need(combatant.hp <= pokemon.maxhp, "the declared HP exceeds the maximum");
         pokemon.sethp(combatant.hp);
+      }
+    }
+  }
+  // A Mega's ability can replace the declared field: it is declared again, absolute (#1243).
+  if (query.sides.some((combatants) => combatants.some((combatant) => combatant.mega))) {
+    at(0);
+    declareField(battle, query, lead);
+  }
+  // The stages are written after every Evolution: a Mega's ability can change the other combatants' stages (Intimidate), and the declared stages are absolute (#1243).
+  for (const [index, combatants] of query.sides.entries()) {
+    for (const [slot, combatant] of combatants.entries()) {
+      const pokemon = battle.sides[index]?.pokemon[slot] as Mon;
+      // An Evolution's stage drop can consume the declared item (White Herb): it is put back (#1243).
+      // Put back silently, not through `setItem`: its Start event would fire a Seed item again under the declared terrain.
+      const itemId = battle.dex.items.get(pokemon.set.item).id;
+      if (pokemon.item !== itemId) {
+        pokemon.item = itemId;
+        pokemon.itemState = battle.initEffectState({ id: itemId, target: pokemon });
       }
       for (const stage of STAGES) pokemon.boosts[stage] = combatant.boosts[stage] as number;
     }

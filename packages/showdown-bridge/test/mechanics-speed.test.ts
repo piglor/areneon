@@ -6,7 +6,7 @@ import { GOLDEN_FORMAT } from "../src/golden.ts";
 import { loadEngine } from "../src/index.ts";
 import { loadMechanicsConfig, type MechanicsConfig, mechanicsConfigHash } from "../src/mechanics-config.ts";
 import { MechanicsProbeError, probeMechanics } from "../src/mechanics-probe.ts";
-import { MechanicsQueryError } from "../src/mechanics-query.ts";
+import { MechanicsQueryError, readMechanicsQuery } from "../src/mechanics-query.ts";
 import { readMechanicsResult } from "../src/mechanics-result.ts";
 import { fullSpeedQuery, SPEED_FIXTURE, type SpeedCase } from "./mechanics-speed-cases.ts";
 
@@ -206,5 +206,54 @@ describe("the reader rules of a speed_order query", () => {
   ])("refuses %s", (_name, change, words) => {
     expect(() => read(change)).toThrow(MechanicsQueryError);
     expect(() => read(change)).toThrow(words);
+  });
+});
+
+describe("a declared Mega Evolution leaves the rest of the declared state alone (#1243)", () => {
+  const MANECTRIC = "Manectric @ Manectite  \nAbility: Static  \nLevel: 50  \nEVs: 32 HP / 32 SpA / 2 Spe  \nTimid Nature  \n- Thunderbolt  \n- Protect  \n\n";
+  const CHARIZARD = "Charizard @ Charizardite Y  \nAbility: Blaze  \nLevel: 50  \nEVs: 32 HP / 32 SpA / 2 Spe  \nTimid Nature  \n- Heat Wave  \n- Protect  \n\n";
+  const SWIFT_SWIM = "Basculegion @ Choice Scarf  \nAbility: Swift Swim  \nLevel: 50  \nEVs: 32 HP / 32 Atk / 2 Spe  \nAdamant Nature  \n- Aqua Jet  \n- Protect  \n\n";
+  const zero = { atk: 0, def: 0, spa: 0, spd: 0, spe: 0 };
+  const noSide = { aurora_veil: false, light_screen: false, reflect: false, tailwind: false };
+  const query = (own: string, foe: string, weather: string | null) =>
+    readMechanicsQuery({
+      schema_version: 1,
+      data_class: "synthetic",
+      format_id: GOLDEN_FORMAT,
+      query: {
+        kind: "speed_order",
+        sides: [[{ set: own, boosts: zero, status: null, hp: null, mega: true }], [{ set: foe, boosts: zero, status: null, hp: null, mega: false }]],
+        actions: [{ side: 0, position: 0, move: "protect", mega: false }, { side: 1, position: 0, move: "protect", mega: false }],
+        state: { weather, terrain: null, trick_room: false, sides: [noSide, noSide] },
+      },
+    });
+  const speeds = (own: string, foe: string, weather: string | null): number[] => {
+    const { result } = probeMechanics({ engine, config }, query(own, foe, weather));
+    if (result.kind !== "computed" || result.answer.kind !== "speed_order") throw new Error("not computed");
+    return result.answer.actions.map((action) => action.speed);
+  };
+
+  it("keeps the declared rain although the evolved Pokemon's ability is Drought (a Swift Swim foe doubles)", () => {
+    const [, rain] = speeds(CHARIZARD, SWIFT_SWIM, "raindance") as [number, number];
+    const [, none] = speeds(CHARIZARD, SWIFT_SWIM, null) as [number, number];
+    expect(rain).toBe(none * 2);
+  });
+
+  it("keeps the other combatant's declared stages and item although the evolved Pokemon's ability is Intimidate", () => {
+    const seen: { atk: number; item: string }[] = [];
+    const proto = (engine.sim.Battle as unknown as { prototype: { getActionSpeed: (this: { sides: { pokemon: { boosts: { atk: number }; item: string }[] }[] }, action: unknown) => unknown } }).prototype;
+    const real = proto.getActionSpeed;
+    proto.getActionSpeed = function (this, action) {
+      const foe = this.sides[1]?.pokemon[0] as { boosts: { atk: number }; item: string };
+      seen.push({ atk: foe.boosts.atk, item: foe.item });
+      return real.call(this, action);
+    };
+    try {
+      speeds(MANECTRIC, SWIFT_SWIM.replace("Choice Scarf", "White Herb"), null);
+    } finally {
+      proto.getActionSpeed = real;
+    }
+    expect(seen.length).toBeGreaterThan(0);
+    for (const state of seen) expect(state).toEqual({ atk: 0, item: "whiteherb" });
   });
 });

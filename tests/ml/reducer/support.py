@@ -117,5 +117,11 @@ def leaks(opponent: dict[str, Any], secret_ids: set[str]) -> list[str]:
             found.append(f"exact own-side fields on {mon['name']}")
         known = {mon["item"], mon["ability"], *mon["moves_revealed"], *mon["volatiles"]}
         found.extend(f"secret {name}" for name in known & secret_ids)
-    found.extend(f"integer {n}" for n in integers(opponent) if n > PERCENT)
+    # `recent.hp_dealt_*` of an opponent Pokemon is damage to an OWN Pokemon, in the player's own
+    # exact units (known to the player), so it is not scanned; its `hp_taken_*` is.
+    scanned = json.loads(json.dumps(opponent))
+    for mon in scanned["roster"]:
+        for key in [k for k in mon.get("recent", {}) if k.startswith("hp_dealt")]:
+            del mon["recent"][key]
+    found.extend(f"integer {n}" for n in integers(scanned) if n > PERCENT)
     return found

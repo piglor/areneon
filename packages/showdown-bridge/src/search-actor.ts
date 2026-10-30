@@ -47,6 +47,7 @@ import { createReplyModel, legalReplies, REPLY_MODEL_FORMAT, ReplyModelError, ty
 import { sha256Hex } from "./rules.ts";
 import type { RulesSnapshot } from "./rules.ts";
 import type { Actor, Player } from "./runner.ts";
+import { MECHANICS_ADAPTER_FORMAT } from "./mechanics-result.ts";
 import { LEAF_FORMAT, loadSearchConfig, type SearchConfig, searchIdentity, searchIdentityHash } from "./search-config.ts";
 import { hpKoDifferential, outcomeScore } from "./search-leaf.ts";
 import { cloneWorld, foeSwitchChoice, playChoices, type TurnResult } from "./search-turn.ts";
@@ -218,6 +219,7 @@ export function searchPolicy(setup: SearchSetup, manifest: VersionManifest, pair
   const inputs = {
     belief_identity_hash: setup.port.identity_hash,
     mechanics_config_hash: mechanicsConfigHash(setup.mechanics),
+    mechanics_adapter_format: MECHANICS_ADAPTER_FORMAT,
     damage_aware_config_hash: damageAwareConfigHash(setup.damage_config),
     damage_value_format: DAMAGE_VALUE_FORMAT,
     world_writers_hash: worldWritersHash(setup.writers),

@@ -23,7 +23,7 @@ export function required<T>(value: T | undefined, what: string): T {
 }
 
 /** The moves whose engine definition adds the `stall` volatile, read from the pinned source, restricted to the format's moves. */
-function stallMoves(dir: string, table: FactsTable): string[] {
+export function stallMoves(dir: string, table: FactsTable): string[] {
   const source = readFileSync(join(dir, "data", "moves.ts"), "utf8");
   const ids = new Set(table.moves.map((m) => m.id));
   const out: string[] = [];
