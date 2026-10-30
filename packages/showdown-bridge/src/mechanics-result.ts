@@ -15,7 +15,7 @@ export type { MechanicsResult };
  * `ENCODER_FORMAT` is for the encoder: the same pin and config do not give
  * the same result across a change of reading.
  */
-export const MECHANICS_ADAPTER_FORMAT = 1;
+export const MECHANICS_ADAPTER_FORMAT = 2;
 
 export class MechanicsResultError extends Error {
   override name = "MechanicsResultError";

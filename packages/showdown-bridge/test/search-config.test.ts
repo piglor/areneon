@@ -21,6 +21,7 @@ const config = loadSearchConfig(FORMAT);
 const inputs: SearchIdentityInputs = {
   belief_identity_hash: config.belief_identity_hash,
   mechanics_config_hash: h("1"),
+  mechanics_adapter_format: 2,
   damage_aware_config_hash: h("2"),
   damage_value_format: 1,
   world_writers_hash: h("3"),
@@ -35,7 +36,7 @@ const inputs: SearchIdentityInputs = {
 const CONFIG_HASH = "0b124bb3e0621f73713821df74478cc10c3be56b0edd23e45598dbc0812171da";
 // Moved by #248's format bumps (WORLD_BUILDER_FORMAT 1 -> 2, world-facts/2 -> 3), which are identity inputs; recomputed with Python's hashlib over the
 // canonical JSON (the old inputs still give edd348bd...). The policy-id vectors below take a search hash as an opaque string, so they keep that one.
-const SEARCH_HASH = "7f1f9111bf979bbd1fe9bfbc569a9288b16b895892220aa380b72ab9241fae5b";
+const SEARCH_HASH = "015d8f40b910e0842c5f8f706b9cc42f451d9247a395182a09b8d1c61df4a4b0";
 const ID_VECTOR_SEARCH = "edd348bdf8b9f5069ada74afae22d3ba99e1b349e2748b245de73384c9d666b9";
 
 describe("the committed SearchConfig", () => {
@@ -74,7 +75,7 @@ describe("the committed SearchConfig", () => {
 describe("the search identity", () => {
   it("is the hash the Python twin computes", () => {
     expect(searchIdentityHash(config, inputs)).toBe(SEARCH_HASH);
-    expect(Object.keys(searchIdentity(config, inputs)).length).toBe(12);
+    expect(Object.keys(searchIdentity(config, inputs)).length).toBe(13);
   });
 
   it("moves with every input and with every config value", () => {
@@ -82,6 +83,7 @@ describe("the search identity", () => {
     const seen = new Set([base]);
     const changes: [string, Partial<SearchIdentityInputs>][] = [
       ["mechanics", { mechanics_config_hash: h("9") }],
+      ["adapter format", { mechanics_adapter_format: 3 }],
       ["damage-aware config", { damage_aware_config_hash: h("9") }],
       ["damage value", { damage_value_format: 2 }],
       ["writers", { world_writers_hash: h("9") }],

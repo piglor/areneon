@@ -673,7 +673,7 @@ describe("damage-aware@v2 as a training opponent (ADR-025 section 6)", () => {
     expect(record.baselines).toHaveLength(1);
     expect(at(record.baselines ?? [], 0)).toMatchObject({ policy_id: DAMAGE_AWARE_V2_POLICY_ID, games: 2 });
     // v1 and v2 are different baselines: the identity hash differs from v1's for the same pin
-    expect(at(record.baselines ?? [], 0).identity_hash).not.toBe("d3595137164c7e6bf31c17431fa61e9f7d837cd708ad9daf239f3043c2334596");
+    expect(at(record.baselines ?? [], 0).identity_hash).not.toBe("dd8d8687374dd9f0bfd01b21ce8dbd3a05e2a3584235b9fdff78dbbf6a087a79");
     await expect(checkLeagueRunRecord(record, v2Config())).resolves.toBeUndefined();
     // the learned pair's seat is the other one in each baseline game
     const seats = new Set(asked);

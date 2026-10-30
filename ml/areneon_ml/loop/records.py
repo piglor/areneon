@@ -85,6 +85,7 @@ SEARCH_IDENTITY_KEYS = frozenset(
         "search_config_hash",
         "belief_identity_hash",
         "mechanics_config_hash",
+        "mechanics_adapter_format",
         "damage_aware_config_hash",
         "damage_value_format",
         "world_writers_hash",
@@ -109,12 +110,12 @@ SEARCH_HASH_KEYS = (
 def search_identity_hash(identity: dict[str, Any]) -> str:
     """SHA-256 of the JCS of a search identity (ADR-026 §5), the ``search`` member of a policy id.
 
-    ``identity`` holds exactly the twelve inputs that change what a search plays
+    ``identity`` holds exactly the thirteen inputs that change what a search plays
     (``search_config_hash`` is the SHA-256 of the ``SearchConfig``'s JCS bytes); the TS
     ``searchIdentityHash`` computes the same.
     """
     if identity.keys() != SEARCH_IDENTITY_KEYS:
-        raise ValueError("a search identity holds exactly its twelve inputs")
+        raise ValueError("a search identity holds exactly its thirteen inputs")
     for key in SEARCH_HASH_KEYS:
         value = identity[key]
         if (
