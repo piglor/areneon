@@ -659,11 +659,20 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "training-run-config/factored-preview": runConfigWith((c) => {
       runSection(c, "model").options = { factored_preview: true };
     }),
+    "training-run-config/separate-value": runConfigWith((c) => {
+      runSection(c, "model").options = { separate_value: "network" };
+    }),
+    "training-run-config/policy-output-scale": runConfigWith((c) => {
+      runSection(c, "model").options = { policy_output_scale_ppm: 10000 };
+    }),
     "training-run-config/candidate-target": runConfigWith((c) => {
       runSection(runSection(c, "model"), "encoder").options = { candidate_target: true };
     }),
     "training-run-config/recent-history": runConfigWith((c) => {
       runSection(runSection(c, "model"), "encoder").options = { recent_history: true };
+    }),
+    "training-run-config/exact-volatiles": runConfigWith((c) => {
+      runSection(runSection(c, "model"), "encoder").options = { exact_volatiles: true };
     }),
     "training-run-config/candidate-features": runConfigWith((c) => {
       runSection(runSection(c, "model"), "encoder").options = { candidate_features: { feature_set: "probe-damage/1", feature_set_hash: hexOf("c") } };
@@ -703,11 +712,20 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "clone-run-config/factored-preview": cloneWith((c) => {
       runSection(c, "model").options = { factored_preview: true };
     }),
+    "clone-run-config/separate-value": cloneWith((c) => {
+      runSection(c, "model").options = { separate_value: "network" };
+    }),
+    "clone-run-config/policy-output-scale": cloneWith((c) => {
+      runSection(c, "model").options = { policy_output_scale_ppm: 10000 };
+    }),
     "clone-run-config/candidate-target": cloneWith((c) => {
       runSection(runSection(c, "model"), "encoder").options = { candidate_target: true };
     }),
     "clone-run-config/recent-history": cloneWith((c) => {
       runSection(runSection(c, "model"), "encoder").options = { recent_history: true };
+    }),
+    "clone-run-config/exact-volatiles": cloneWith((c) => {
+      runSection(runSection(c, "model"), "encoder").options = { exact_volatiles: true };
     }),
     "clone-run-config/candidate-features": cloneWith((c) => {
       runSection(runSection(c, "model"), "encoder").options = { candidate_features: { feature_set: "probe-damage/1", feature_set_hash: hexOf("c") } };
@@ -1012,11 +1030,20 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "clone-run-config/factored-preview-false": cloneWith(
       (c) => (runSection(c, "model").options = { factored_preview: false }),
     ),
+    "clone-run-config/separate-value-unknown": cloneWith(
+      (c) => (runSection(c, "model").options = { separate_value: "shared" }),
+    ),
+    "clone-run-config/policy-output-scale-default": cloneWith(
+      (c) => (runSection(c, "model").options = { policy_output_scale_ppm: 1000000 }),
+    ),
     "clone-run-config/candidate-target-false": cloneWith(
       (c) => (runSection(runSection(c, "model"), "encoder").options = { candidate_target: false }),
     ),
     "clone-run-config/recent-history-false": cloneWith(
       (c) => (runSection(runSection(c, "model"), "encoder").options = { recent_history: false }),
+    ),
+    "clone-run-config/exact-volatiles-false": cloneWith(
+      (c) => (runSection(runSection(c, "model"), "encoder").options = { exact_volatiles: false }),
     ),
     "clone-run-config/candidate-features-unknown-set": cloneWith((c) => {
       runSection(runSection(c, "model"), "encoder").options = { candidate_features: { feature_set: "probe-damage/3", feature_set_hash: hexOf("c") } };
@@ -1056,11 +1083,20 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "training-run-config/factored-preview-false": runConfigWith(
       (c) => (runSection(c, "model").options = { factored_preview: false }),
     ),
+    "training-run-config/separate-value-unknown": runConfigWith(
+      (c) => (runSection(c, "model").options = { separate_value: "shared" }),
+    ),
+    "training-run-config/policy-output-scale-default": runConfigWith(
+      (c) => (runSection(c, "model").options = { policy_output_scale_ppm: 1000000 }),
+    ),
     "training-run-config/candidate-target-false": runConfigWith(
       (c) => (runSection(runSection(c, "model"), "encoder").options = { candidate_target: false }),
     ),
     "training-run-config/recent-history-false": runConfigWith(
       (c) => (runSection(runSection(c, "model"), "encoder").options = { recent_history: false }),
+    ),
+    "training-run-config/exact-volatiles-false": runConfigWith(
+      (c) => (runSection(runSection(c, "model"), "encoder").options = { exact_volatiles: false }),
     ),
     "training-run-config/candidate-features-true": runConfigWith(
       (c) => (runSection(runSection(c, "model"), "encoder").options = { candidate_features: true }),

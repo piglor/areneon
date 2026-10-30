@@ -34,6 +34,7 @@ export {
   engineDataSummary,
   exportEngineData,
   readEngineData,
+  readEngineDataAny,
 } from "./engine-data.ts";
 export {
   DEFAULT_SHOWDOWN_DIR,

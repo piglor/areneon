@@ -27,7 +27,7 @@ import {
   PolicyWorkerClient,
   type Player,
   randomLegalActor,
-  readEngineData,
+  readEngineDataAny,
   readTrainingRunConfig,
   resolveFormat,
   runBattle,
@@ -107,7 +107,7 @@ try {
     handshake_timeout_ms: 120_000,
     expect: {
       encoder_version: preview.encoder_version,
-      engine_data_hash: engineDataHash(readEngineData(JSON.parse(readFileSync(dataFile, "utf8")))),
+      engine_data_hash: engineDataHash(readEngineDataAny(JSON.parse(readFileSync(dataFile, "utf8")))),
       checkpoints: [{ role: "battle", checkpoint_id: battle.checkpoint_id }, { role: "preview", checkpoint_id: preview.checkpoint_id }],
     },
   });
