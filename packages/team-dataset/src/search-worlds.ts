@@ -14,7 +14,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { belief, beliefIdentityHash, createSampler, worldStream } from "@areneon/opponent-model";
+import { belief, beliefIdentityHash, createSampler, type SetLegality, worldStream } from "@areneon/opponent-model";
 import {
   beliefConfigHash,
   evidenceCheckFormats,
@@ -82,7 +82,18 @@ export interface SearchWorldsContext {
 
 const json = (file: string): unknown => JSON.parse(readFileSync(file, "utf8")) as unknown;
 
-export function createSearchWorlds(context: SearchWorldsContext, files: SearchWorldsFiles = searchWorldsFiles(context.vocabulary.format_id)): WorldSamplePort {
+/** What an arm is built from, shared by the world port and the full-team port (`opponent-teams.ts`). */
+export interface ArmParts {
+  readonly prior: ReturnType<typeof readUsagePrior>;
+  readonly view: TeamVocabulary & { readonly vocabulary_hash: string };
+  readonly beliefConfig: ReturnType<typeof readBeliefConfig>;
+  readonly sampler: ReturnType<typeof createSampler>;
+  readonly prior_hash: string;
+  readonly belief_config_hash: string;
+  readonly identity_hash: string;
+}
+
+export function armParts(context: SearchWorldsContext, files: SearchWorldsFiles = searchWorldsFiles(context.vocabulary.format_id), legality?: SetLegality): ArmParts {
   const { engine, vocabulary, reader_sha256, manifest, arm } = context;
   const generator = readTeamGeneratorConfig(json(files.generator_file), readEngineData(json(files.engine_data_file)));
   const matched = readUsagePrior(json(files.generator_prior_file), vocabulary);
@@ -101,9 +112,15 @@ export function createSearchWorlds(context: SearchWorldsContext, files: SearchWo
   const belief_config_hash = beliefConfigHash(beliefConfig);
   const vocabulary_hash = teamVocabularyHash(vocabulary);
   const view = { ...vocabulary, vocabulary_hash };
-  const sampler = createSampler({ legality: createSetLegality({ engine, vocabulary }), spreads: generatorSpreadSampler(vocabulary, generator) });
+  const sampler = createSampler({ legality: legality ?? createSetLegality({ engine, vocabulary }), spreads: generatorSpreadSampler(vocabulary, generator) });
+  return { prior, view, beliefConfig, sampler, prior_hash, belief_config_hash, identity_hash: beliefIdentityHash({ prior_hash, belief_config_hash, vocabulary_hash, reader_sha256, version_manifest: manifest, ...evidenceCheckFormats(beliefConfig) }) };
+}
+
+export function createSearchWorlds(context: SearchWorldsContext, files: SearchWorldsFiles = searchWorldsFiles(context.vocabulary.format_id)): WorldSamplePort {
+  const { arm } = context;
+  const { prior, view, beliefConfig, sampler, prior_hash, belief_config_hash, identity_hash } = armParts(context, files);
   return {
-    identity_hash: beliefIdentityHash({ prior_hash, belief_config_hash, vocabulary_hash, reader_sha256, version_manifest: manifest, ...evidenceCheckFormats(beliefConfig) }),
+    identity_hash,
     prior_hash,
     belief_config_hash,
     prior_format_id: prior.format_id,
