@@ -143,7 +143,8 @@ export interface SimModdedDex {
 /** The slice of Showdown's `sim` module Areneon depends on. */
 export interface ShowdownSim {
   Battle: {
-    new (options: { formatid: string; seed: string }): SimBattle;
+    /** `send` is the engine's output callback (`update` and `sideupdate` chunks), as the `BattleStream` gives it. */
+    new (options: { formatid: string; seed: string; send?: (type: string, data: string | string[]) => void }): SimBattle;
     /** Rebuild a battle from `toJSON()`; without `send` it emits nothing. */
     fromJSON(state: object | string): SimBattle;
   };
