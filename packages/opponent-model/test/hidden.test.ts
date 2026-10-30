@@ -19,6 +19,7 @@ import { join } from "node:path";
 import { readBeliefConfig } from "../../showdown-bridge/src/belief-config.ts";
 import { loadDamageAwareConfig } from "../../showdown-bridge/src/damage-aware-config.ts";
 import { createDamageCheck } from "../../showdown-bridge/src/damage-check.ts";
+import { createSpeedCheck } from "../../showdown-bridge/src/speed-check.ts";
 import { loadMechanicsConfig } from "../../showdown-bridge/src/mechanics-config.ts";
 import { beliefAt, hiding, skewedPrior } from "./corpus.ts";
 import { ROOT, realVocabulary } from "./real.ts";
@@ -230,6 +231,69 @@ describe("invariance with the damage evidence on", () => {
       for (const [mine, yours] of equalPrefixes(a, b)) {
         // The leak: the verdict is any function of the real item (here a residue of its name's character codes).
         const leaking = (team: PokemonSet[]) => (events: { id: string; slot: number; role: "attacker" | "defender" }[]) => ({
+          events,
+          check: (_e: never, c: { species: string; item: string | null }) => {
+            const set = team.find((t) => toId(t.species) === c.species);
+            const code = (x: string): number => [...x].reduce((n, ch) => n + ch.charCodeAt(0), 0) % 3;
+            return set === undefined ? null : code(c.item ?? "") === code(toId(set.item));
+          },
+        });
+        const left = at(mine, withGenders(battle.teams.p1), leaking(theirs) as never);
+        const right = at(yours, withGenders(battle.teams.p1), leaking(other) as never);
+        if (beliefDigest(left) !== beliefDigest(right)) differing += 1;
+      }
+    }
+    expect(differing).toBeGreaterThan(0);
+  }, 240_000);
+});
+
+describe("invariance with the speed evidence on (ticket #1133)", () => {
+  const speedConfig = readBeliefConfig(JSON.parse(readFileSync(join(ROOT, "config", "opponent-model", FORMAT, "belief.speed-v1.json"), "utf8")), realVocabulary);
+  const config = { ...hiding, speed_evidence: speedConfig.speed_evidence! };
+  type Event = { id: string; slot: number; role: "first" | "second" };
+
+  /** The belief of p1 at a request with the speed port built from p1's own lines and team, or from a port the caller supplies. */
+  function at(lines: string[], team: PokemonSet[], port?: (events: Event[]) => { events: Event[]; check: (e: never, c: never) => boolean | null }) {
+    const run = interpretChannel("p1", lines);
+    const state = run.frames[run.frames.length - 1]!.state;
+    const real = createSpeedCheck({ engine, vocabulary: realVocabulary, config: loadDamageAwareConfig("v1", realVocabulary), mechanics: loadMechanicsConfig(FORMAT), belief: speedConfig, data_class: "synthetic" }, { player: "p1", lines, team, run });
+    const speed = port === undefined ? real : real === null ? null : port([...real.events] as Event[]);
+    return beliefAt({ state, flags: run.flags, game: "", seat: "p1", request: 0, truth: null }, skewedPrior(state.opponent.roster.map((m) => m.base_species)), { config, speed: speed as never });
+  }
+
+  it("beliefs and worlds are byte-identical at every request with an equal player channel, with events asked of the real probe", async () => {
+    const sampler = createSampler({ legality: createSetLegality({ engine, vocabulary: realVocabulary }), spreads });
+    let compared = 0;
+    let events = 0;
+    for (const [n, battle] of battles.entries()) {
+      const theirs = withGenders(battle.teams.p2);
+      const other = mutated(theirs);
+      const a = await play(battle, theirs, "keep");
+      const b = await play(battle, other, "other-back");
+      for (const [mine, yours] of equalPrefixes(a, b)) {
+        const one = at(mine, withGenders(battle.teams.p1));
+        const two = at(yours, withGenders(battle.teams.p1));
+        expect(beliefDigest(two)).toBe(beliefDigest(one));
+        const s = stream(compared + n);
+        expect(worldsDigest(sampler.sampleWorlds(two, s, 3))).toBe(worldsDigest(sampler.sampleWorlds(one, s, 3)));
+        events += one.speed.events;
+        compared += 1;
+      }
+    }
+    expect(compared).toBeGreaterThanOrEqual(6);
+    expect(events).toBeGreaterThan(0);
+  }, 240_000);
+
+  it("has teeth: a port that consults the real opponent team gives different beliefs for the two teams", async () => {
+    let differing = 0;
+    for (const battle of battles) {
+      const theirs = withGenders(battle.teams.p2);
+      const other = mutated(theirs);
+      const a = await play(battle, theirs, "keep");
+      const b = await play(battle, other, "other-back");
+      for (const [mine, yours] of equalPrefixes(a, b)) {
+        // The leak: the verdict is any function of the real item (here a residue of its name's character codes).
+        const leaking = (team: PokemonSet[]) => (events: Event[]) => ({
           events,
           check: (_e: never, c: { species: string; item: string | null }) => {
             const set = team.find((t) => toId(t.species) === c.species);

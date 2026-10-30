@@ -14,15 +14,15 @@ import { ROOT, realVocabulary } from "./real.ts";
 const prior = JSON.parse(readFileSync(join(ROOT, "config", "opponent-model", realVocabulary.format_id, "usage-prior.2026-09-1630.v2.json"), "utf8")) as UsagePrior;
 
 /**
- * game, seat, request, belief digest. The digests of the cost change were taken before it; belief/5 (#1132) moved them by the
- * format string and the new `damage` block alone: the belief with those two put back (`format` belief/4, no `damage`) digests to the
+ * game, seat, request, belief digest. The digests of the cost change were taken before it; belief/5 (#1132) and belief/6 (#1133) moved them by the
+ * format string and the new `damage` and `speed` blocks alone: the belief with those put back (`format` belief/4, no `damage`, no `speed`) digests to the
  * old values (d025959a..., 9fe9ac4f..., 53533000..., b4038298...).
  */
 const CASES: readonly (readonly [string, "p1" | "p2", number, string])[] = [
-  ["random/b00", "p1", 18, "ef221a47dc560d49862e3cb7299f2a0966572783c6b8d72917c522b330bfbcaa"],
-  ["baton-pass-volatiles", "p2", 14, "4bc10d82231dde3cddd39c1031eb5721a21d4e696c14bdd79776f2aebdb01ab2"],
-  ["transform", "p2", 23, "aac9c819da130b135cffad68f389aab631f80a53b7614c6f3b35f7b698ee9b1b"],
-  ["revival", "p1", 18, "1beefd91c0db38c4eeeb2a9da2824589232ef08a5dc83cd0fd28af0cb5558a61"],
+  ["random/b00", "p1", 18, "d9c7c7567ee7e51bfa377810eb14ee09783ee1f6865ec778edb1c7172156981c"],
+  ["baton-pass-volatiles", "p2", 14, "adb4d7aecf1995edda642cfd109e61a7627a8393da12a9e7e66d11ffd6cbdff0"],
+  ["transform", "p2", 23, "d8d7b9d12d19e490457bc10233c8a9b3184e8475c371ab751f75e82fdc8d90ea"],
+  ["revival", "p1", 18, "fbf38a6260fbc2032785f0567dec33789d1556564a40fcb4f8a633130bd91e3f"],
 ];
 
 describe("the belief under the usage prior on its slowest committed requests", () => {

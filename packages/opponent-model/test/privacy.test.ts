@@ -4,7 +4,7 @@ import { belief } from "../src/index.ts";
 import { input } from "./support.ts";
 
 type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false;
-const same: Equal<keyof BeliefInput, "prior" | "vocabulary" | "config" | "opponent" | "flags" | "trapping" | "damage"> = true;
+const same: Equal<keyof BeliefInput, "prior" | "vocabulary" | "config" | "opponent" | "flags" | "trapping" | "damage" | "speed"> = true;
 
 describe("the type test (ADR-025 section 8)", () => {
   it("the input has no field for the opponent's team, the omniscient log, hidden verdicts, a battle record or the seed", () => {

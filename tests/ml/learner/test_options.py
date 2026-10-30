@@ -16,6 +16,7 @@ from areneon_ml.learner.state import (
     restore_state,
     state_hash,
 )
+from areneon_ml.model.network import ModelConfig
 from areneon_ml.model.options import REGISTRY, OptionSpec
 
 from tests.ml.learner.support import learner, tiny_config
@@ -83,3 +84,29 @@ def test_a_sidecar_that_names_empty_options_is_refused() -> None:
     sidecar["model_options"] = {}
     with pytest.raises(LearnerOptionsError):
         restore_state(learner(), packed.tensors, jcs(sidecar), state_hash(packed.tensors, sidecar))
+
+
+@pytest.mark.parametrize(
+    ("made", "restored"),
+    [
+        ({}, {"separate_value": "network"}),
+        ({"separate_value": "network"}, {}),
+        ({}, {"separate_value": "detached"}),
+        ({"separate_value": "network"}, {"separate_value": "detached"}),
+        ({}, {"policy_output_scale_ppm": 10000}),
+        ({"policy_output_scale_ppm": 10000}, {"policy_output_scale_ppm": 20000}),
+    ],
+)
+def test_a_state_across_the_value_options_is_refused_in_both_directions(
+    made: dict[str, int | str], restored: dict[str, int | str]
+) -> None:
+    def config(options: dict[str, int | str]) -> RunConfig:
+        model = ModelConfig.from_dict({**tiny_config().model.as_dict(), "options": options})
+        return dataclasses.replace(tiny_config(), model=model)
+
+    packed = pack_state(learner(config(made)))
+    target = learner(config(restored))
+    before = pack_state(target)
+    with pytest.raises(LearnerOptionsError, match="other model options"):
+        restore_state(target, packed.tensors, packed.sidecar, packed.hash)
+    assert pack_state(target) == before

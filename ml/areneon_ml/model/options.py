@@ -28,9 +28,21 @@ Defined so far:
 - ``recent_history`` (encoder, layout changing; ADR-010 erratum A4 item 7): the reducer's recent
   history (``Recent``, ``elapsed``, ``condition_turns``) on the Pokémon and field features. Only
   ``true`` is a value: leave the key out to turn it off.
+- ``exact_volatiles`` (encoder, layout changing; ADR-010 erratum A4 item 7): volatiles and field and
+  side conditions as exact vocabulary ids (a multi-hot over the engine-data ids) instead of
+  SHA-256 buckets, plus the types a ``typechange`` set. Needs a version 2 engine-data table. Only
+  ``true`` is a value: leave the key out to turn it off.
 - ``factored_preview`` (network, layout changing; ADR-010 erratum A4 item 4): the Preview network
   scores an order as a sum over places of ``u(place, Pokemon token)`` plus ``v(lead pair)``
   (``network.py``); the Battle network ignores it. Only ``true`` is a value.
+- ``separate_value`` (network, layout changing; ADR-010 erratum A4 item 7): the value no longer
+  shares gradient with the policy trunk. ``"network"``: a second trunk and value head
+  (``value_net.*``) with no layer shared with the policy network, same encoder inputs and sizes;
+  ``"detached"``: the value head reads the trunk's output with the gradient cut.
+- ``policy_output_scale_ppm`` (network, layout changing; ADR-010 erratum A4 item 7): the scorer's
+  last layer(s) start at ``value / 10^6`` of their default initial weights (10000 is 1/100), so
+  the initial policy is near uniform. An integer from 1 to 999999 (1,000,000 is the default and is
+  refused); it changes initial weights only, so the checkpoint records it in the config.
 """
 
 from __future__ import annotations
@@ -54,7 +66,7 @@ class FeatureSetOption:
         return {"feature_set": self.feature_set, "feature_set_hash": self.feature_set_hash}
 
 
-OptionValue = bool | int | FeatureSetOption
+OptionValue = bool | int | str | FeatureSetOption
 Options = tuple[tuple[str, OptionValue], ...]  # sorted by name; hashable, so configs stay frozen
 
 
@@ -78,7 +90,13 @@ CANDIDATE_MATCHUP = "candidate_matchup"
 CANDIDATE_FEATURES = "candidate_features"
 CANDIDATE_TARGET = "candidate_target"
 RECENT_HISTORY = "recent_history"
+EXACT_VOLATILES = "exact_volatiles"
 FACTORED_PREVIEW = "factored_preview"
+SEPARATE_VALUE = "separate_value"
+SEPARATE_VALUE_NETWORK = "network"
+SEPARATE_VALUE_DETACHED = "detached"
+POLICY_OUTPUT_SCALE_PPM = "policy_output_scale_ppm"
+MAX_OUTPUT_SCALE_PPM = 999_999  # 1,000,000 is the default: leave the option out
 #: The feature sets the encoder can read (ADR-022 §3, erratum E-22.3: ``/2`` also carries the
 #: threat, speed and priority arrays, which the encoder attaches to the own and foe tokens).
 FEATURE_SETS = ("probe-damage/1", "probe-damage/2")
@@ -104,9 +122,18 @@ REGISTRY: dict[str, dict[str, OptionSpec]] = {
         CANDIDATE_FEATURES: OptionSpec(CANDIDATE_FEATURES, None, True, parse=_parse_feature_set),
         CANDIDATE_TARGET: OptionSpec(CANDIDATE_TARGET, lambda value: value is True, True),
         RECENT_HISTORY: OptionSpec(RECENT_HISTORY, lambda value: value is True, True),
+        EXACT_VOLATILES: OptionSpec(EXACT_VOLATILES, lambda value: value is True, True),
     },
     "network": {
         FACTORED_PREVIEW: OptionSpec(FACTORED_PREVIEW, lambda value: value is True, True),
+        SEPARATE_VALUE: OptionSpec(
+            SEPARATE_VALUE, lambda v: v in (SEPARATE_VALUE_NETWORK, SEPARATE_VALUE_DETACHED), True
+        ),
+        POLICY_OUTPUT_SCALE_PPM: OptionSpec(
+            POLICY_OUTPUT_SCALE_PPM,
+            lambda v: type(v) is int and 1 <= v <= MAX_OUTPUT_SCALE_PPM,
+            True,
+        ),
     },
 }
 
@@ -128,7 +155,7 @@ def read_options(scope: str, source: object) -> Options:
                 raise OptionError(f"{scope} option {name!r} must be an object")
             found.append((name, spec.parse(value)))
             continue
-        if not isinstance(value, bool | int) or spec.check is None or not spec.check(value):
+        if not isinstance(value, bool | int | str) or spec.check is None or not spec.check(value):
             raise OptionError(f"{scope} option {name!r} has an invalid value")
         found.append((name, value))
     return tuple(found)
