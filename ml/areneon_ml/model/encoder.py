@@ -86,6 +86,10 @@ PERCENT_SCALE = 100.0  # an opponent's hit points are points of 100
 ACTION_ORDER_SCALE = 8.0  # the place among a turn's actions (moves and `|cant|` lines)
 STREAK_SCALE = 4.0  # consecutive stalling uses
 SIDES = ("own", "opponent")
+# exact_volatiles: a volatile the engine prints with a number (`stockpile2`, `perish3`, `fallen4`)
+# has the value 1 + number / DERIVED_SCALE in its id's column; one printed with a stat
+# (`protosynthesisatk`) has 1 and sets that stat's flag. Hashed into ``encoder_version``.
+DERIVED_SCALE = 8.0
 
 
 class EncodingError(ValueError):
@@ -253,13 +257,19 @@ def _widths(config: EncoderConfig, game: GameData | None) -> tuple[int, int]:
 
 
 def _typechange_num(config: EncoderConfig, game: GameData | None) -> tuple[str, ...]:
-    """The ``exact_volatiles`` columns of a Pokémon token for a ``typechange``: whether it set
-    the types, the typeless marker and one flag per type of the engine data. Empty unless set."""
+    """The ``exact_volatiles`` columns of a Pokémon token: whether a ``typechange`` set the types,
+    the typeless marker and one flag per type of the engine data, then one flag per stat for the
+    stat a Protosynthesis or Quark Drive boosts. Empty unless set."""
     if not _exact(config):
         return ()
     if game is None:
         raise EncodingError("exact_volatiles needs the game data to lay out its columns")
-    return ("types_known", "types_typeless", *(f"type_{name}" for name in game.types.ids))
+    return (
+        "types_known",
+        "types_typeless",
+        *(f"type_{name}" for name in game.types.ids),
+        *(f"boosted_stat_{name}" for name in STAT_NAMES),
+    )
 
 
 def _recent_field_num(config: EncoderConfig, game: GameData | None) -> tuple[str, ...]:
@@ -448,7 +458,10 @@ def encoder_version(game: GameData, config: EncoderConfig) -> str:
             "ids_sha256": sha256_hex(jcs(list(exact_ids(game)))),
             "protocol_volatiles": sorted(PROTOCOL_VOLATILES),
             "typeless": TYPELESS,
-            "volatile": "1 per id; a derived number or stat suffix resolves to its condition id",
+            "volatile": "1 per id; the latest derived number n gives 1 + n / derived_scale in the "
+            "id's column, a derived stat suffix sets that stat's boosted_stat flag",
+            "derived_scale": DERIVED_SCALE,
+            "stats": list(STAT_NAMES),
             "condition": "layers per id on a side, 1 on the field",
         }
     if _recent(config):
@@ -719,7 +732,13 @@ class Encoder:
         hp_stat = float(mon.hp_den) if mon.own and mon.hp_den else 0.0
         volatiles = [0.0] * self._volatile_width
         for name in sorted(mon.volatiles):
-            volatiles[self._volatile_column(name)] += 1.0
+            column = self._volatile_column(name)
+            if not self._is_derived(name):  # a numbered or stat-suffixed id is read from `derived`
+                volatiles[column] += 1.0
+        for base, suffix in sorted(mon.derived.items()) if _exact(config) else ():
+            volatiles[self._volatile_column(base)] = (
+                1.0 + int(suffix) / DERIVED_SCALE if suffix.isdigit() else 1.0
+            )
         known_moves = mon.moves_own if mon.moves_own is not None else []
         pp = []
         for i in range(config.max_moves):
@@ -778,10 +797,23 @@ class Encoder:
             raise EncodingError(f"condition {name!r} is not in the exact vocabulary")
         return found
 
+    def _is_derived(self, name: str) -> bool:
+        """Whether ``name`` is a raw numbered or stat-suffixed id (exact_volatiles only). The
+        reducer keeps such ids in the set after the engine ended them (`-end|Stockpile`) or
+        counted on (`perish3`, `perish2`), so ``PokemonState.derived`` holds the truth."""
+        return _exact(self.config) and self.game.vocabulary.resolve_volatile(name) != name
+
     def _typechange(self, mon: PokemonState) -> list[float]:
-        """The ``exact_volatiles`` numbers of a Pokémon: the types a ``typechange`` set (see
-        ``_typechange_num``). All zero while the types are the species' own."""
-        out = [0.0] * (2 + len(self.game.types.ids))
+        """The ``exact_volatiles`` numbers of a Pokémon: the types a ``typechange`` set and the
+        stat a Protosynthesis or Quark Drive boosts (see ``_typechange_num``). All zero while the
+        types are the species' own and no such ability is active."""
+        out = [0.0] * (2 + len(self.game.types.ids) + len(STAT_NAMES))
+        for suffix in mon.derived.values():
+            if suffix.isdigit():
+                continue
+            if suffix not in STAT_NAMES:
+                raise EncodingError(f"derived suffix {suffix!r} is neither a number nor a stat")
+            out[2 + len(self.game.types.ids) + STAT_NAMES.index(suffix)] = 1.0
         if mon.types is None:
             return out
         out[0] = 1.0

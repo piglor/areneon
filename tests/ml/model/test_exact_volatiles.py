@@ -32,6 +32,7 @@ from areneon_ml.model.encoder import (
     Encoder,
     EncodingError,
     Layout,
+    _typechange_num,
     bucket,
     encoder_version,
     exact_ids,
@@ -46,6 +47,7 @@ from areneon_ml.model.options import (
     RECENT_HISTORY,
     read_options,
 )
+from areneon_ml.reducer import VocabularyError
 from areneon_ml.reducer.state import PokemonState
 from areneon_ml.reducer.vocab import PROTOCOL_VOLATILES
 
@@ -108,7 +110,7 @@ def test_with_the_option_absent_everything_is_today_s() -> None:
 def test_the_option_changes_the_version_and_the_layout_only() -> None:
     assert ENCODE.version != PLAIN.version
     assert ON.as_dict()["options"] == {EXACT_VOLATILES: True}
-    assert len(LAYOUT.mon_num) - len(BASE.mon_num) == len(IDS) - 4 + 2 + len(game2().types.ids)
+    assert len(LAYOUT.mon_num) - len(BASE.mon_num) == len(IDS) - 4 + 2 + len(game2().types.ids) + 5
     assert len(LAYOUT.field_num) - len(BASE.field_num) == 3 * (len(IDS) - 4)
     assert LAYOUT.mon_num[:FIRST] == BASE.mon_num[:FIRST]
     assert LAYOUT.mon_cat == BASE.mon_cat
@@ -189,10 +191,61 @@ def test_the_volatile_columns_hold_one_per_exact_id() -> None:
         "firespin",
         "typechange",
     }
-    assert block.sum().item() == 4.0
+    assert block[COLUMN["stockpile"]].item() == pytest.approx(1 + 2 / 8)  # layer 2
+    assert block.sum().item() == pytest.approx(4.25)
     # Nothing shared with another id: with four buckets these would have collided.
     assert len({volatile_col(name) for name in IDS}) == len(IDS)
     assert encoded.mon_num[0, FIRST : FIRST + len(IDS)].sum().item() == 0.0
+
+
+def foe_block(*lines: str) -> torch.Tensor:
+    encoded = ENCODE.encode(played(list(lines)))
+    return encoded.mon_num[encoded.n_own]
+
+
+def test_the_derived_number_is_the_latest_one_the_engine_printed() -> None:
+    """Stockpile counts up with no `-end` between layers, Perish Song down with none at all,
+    and `-end|Stockpile` names the bare condition: the value follows the engine's sequence."""
+    foe = "p2a: Venusaur"
+    column = FIRST + COLUMN["stockpile"]
+    one = foe_block(f"|-start|{foe}|stockpile1")[column]
+    three = foe_block(
+        f"|-start|{foe}|stockpile1", f"|-start|{foe}|stockpile2", f"|-start|{foe}|stockpile3"
+    )[column]
+    assert (one.item(), three.item()) == (pytest.approx(1 + 1 / 8), pytest.approx(1 + 3 / 8))
+    assert foe_block(f"|-start|{foe}|stockpile3", f"|-end|{foe}|Stockpile")[column].item() == 0.0
+    perish = FIRST + COLUMN["perish"]
+    three_left = foe_block(f"|-start|{foe}|perish3")[perish]
+    none_left = foe_block(*(f"|-start|{foe}|perish{n}" for n in (3, 2, 1, 0)))[perish]
+    assert (three_left.item(), none_left.item()) == (pytest.approx(1 + 3 / 8), 1.0)
+    fallen = FIRST + COLUMN["fallen"]
+    assert foe_block(f"|-start|{foe}|fallen4|[silent]")[fallen].item() == pytest.approx(1.5)
+    assert (
+        foe_block(f"|-start|{foe}|fallen4|[silent]", f"|-end|{foe}|fallen4|[silent]")[fallen].item()
+        == 0.0
+    )
+
+
+def test_the_boosted_stat_of_protosynthesis_is_a_flag_per_stat() -> None:
+    foe = "p2a: Venusaur"
+    flags = LAYOUT.mon_num.index("boosted_stat_atk")
+    atk = foe_block(f"|-start|{foe}|protosynthesisatk")
+    spe = foe_block(f"|-start|{foe}|protosynthesisspe")
+    assert atk[flags : flags + 5].tolist() == [1.0, 0.0, 0.0, 0.0, 0.0]
+    assert spe[flags : flags + 5].tolist() == [0.0, 0.0, 0.0, 0.0, 1.0]
+    column = FIRST + COLUMN["protosynthesis"]
+    assert atk[column].item() == spe[column].item() == 1.0
+    assert not torch.equal(atk, spe)
+    ended = foe_block(f"|-start|{foe}|protosynthesisatk", f"|-end|{foe}|Protosynthesis")
+    assert ended[flags : flags + 5].sum().item() == 0.0
+    quark = foe_block(f"|-start|{foe}|quarkdrivespd")
+    assert quark[flags + 3].item() == 1.0
+
+
+def test_a_derived_suffix_that_is_neither_a_number_nor_a_stat_is_refused() -> None:
+    mon = PokemonState(own=False, derived={"stockpile": "x"})
+    with pytest.raises(EncodingError, match="neither a number nor a stat"):
+        ENCODE._typechange(mon)
 
 
 def test_a_typechange_sets_the_types_it_names() -> None:
@@ -212,6 +265,13 @@ def test_a_typechange_sets_the_types_it_names() -> None:
     assert charizard[:2] == [1.0, 1.0]
     assert sum(charizard[2:]) == 0.0
     assert read(0) == [0.0] * width  # its own types stay the species'
+
+
+def test_the_guards_of_a_layout_without_game_data() -> None:
+    with pytest.raises(EncodingError, match="needs the game data"):
+        _typechange_num(ON, None)
+    with pytest.raises(VocabularyError, match="without a condition list"):
+        game1().vocabulary.resolve_volatile("confusion")
 
 
 def test_the_copy_form_of_a_typechange_knows_only_that_it_changed() -> None:
@@ -375,9 +435,9 @@ def test_the_checkpoint_is_format_two_and_loads_only_under_the_option() -> None:
 
 # -- golden values -----------------------------------------------------------------------
 # Pinned like the encoder's: if one fails, the features changed. Review the diff, then re-pin.
-GOLDEN_VERSION = "enc1:73f498ad5f195ded176cdaf2bb0eecc246515b98ea02e0a1097536871267b543"
-GOLDEN_BATTLE = "00ab9f1a1f4c6200eaece177bb914c5abdaf50ea2a768cbdc2e4b0d57c769f67"
-GOLDEN_PLAYED = "b3eaebbc873de662cdcbc576a3ee4b74ace7585ef2f065124303077ded1763a3"
+GOLDEN_VERSION = "enc1:66db9179a27480ddf292c85ed7fa541a6ded2c49b61eef4a4b213ed6b74d635b"
+GOLDEN_BATTLE = "be483c282c527158899575414a27852ab2114451b6c9b7be2af9cceff756153a"
+GOLDEN_PLAYED = "a43bdd3b68f2b21f3f8dd48068e55c3979df39322890947f65cb769e721bde03"
 
 
 def tensor_digest(encoded: EncodedQuery) -> str:
