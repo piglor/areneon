@@ -12,7 +12,7 @@ import { KnownHashes, referencePoolHash } from "../src/dedupe.ts";
 import { Drawer } from "../src/draw.ts";
 import { generate } from "../src/generate.ts";
 import { runPilot } from "../src/pilot.ts";
-import { bitsOf, usageBound, usageMapping } from "../src/pilot-gates.ts";
+import { bitsOf, usageBound, usageBounds, usageMapping } from "../src/pilot-gates.ts";
 import { Proposal } from "../src/proposal.ts";
 import { roleSetsSource } from "../src/role-set-proposal.ts";
 import { drawSeed, engineRng } from "../src/stream.ts";
@@ -221,6 +221,46 @@ describe("the per-slot floor", () => {
   });
 });
 
+describe("the floor and the Item Clause, statistically", () => {
+  const N = 20_000;
+  const entry = entryOf(toyIds[0] as string);
+  const member = toy.table.species[0] as (typeof toy.table.species)[number];
+  const rngAt = (k: number) => engineRng(engine, drawSeed(KEY, stream, k));
+
+  it("takes the item and the spread uniformly with probability floor_permille (counted at the uniform routes, 300 per mille)", () => {
+    const floor = new UsageSampler(vocabulary, toy, 1, 300, 4);
+    let uniformItems = 0;
+    let uniformSpreads = 0;
+    const counting = {
+      item: () => (uniformItems++, ""),
+      spread: () => (uniformSpreads++, { nature: natureIds[0] as string, stat_points: { hp: 0, atk: 0, def: 0, spa: 0, spd: 0, spe: 0 } }),
+    };
+    for (let k = 0; k < N; k++) {
+      const rng = rngAt(k);
+      floor.item(rng, entry, new Map(), counting);
+      floor.details(rng, entry, counting);
+    }
+    // The toy member has one spread and lists for every field, so each uniform route is taken exactly when its floor coin says so.
+    expect(within(uniformItems, N, 0.3), `item floor ${uniformItems}`).toBe(true);
+    expect(within(uniformSpreads, N, 0.3), `spread floor ${uniformSpreads}`).toBe(true);
+  }, 120_000);
+
+  it("draws the items the Item Clause still allows in proportion to their weights", () => {
+    const sampler = new UsageSampler(vocabulary, toy, 1, 0, 4);
+    const [held, other] = member.items.entries as [(typeof member.items.entries)[number], (typeof member.items.entries)[number]];
+    const counts = new Map<string, number>();
+    for (let k = 0; k < N; k++) {
+      const item = sampler.item(rngAt(k), entry, new Map([[held.id, vocabulary.rules.item_clause]]), toyUniform);
+      counts.set(item, (counts.get(item) ?? 0) + 1);
+    }
+    expect(counts.get(held.id)).toBeUndefined();
+    // Allowed: the other listed item and "no item"; the held item's weight is out of the total, not redistributed by anything else.
+    const total = other.ppm + member.items.no_item_ppm;
+    expect(within(counts.get(other.id) ?? 0, N, other.ppm / total), other.id).toBe(true);
+    expect(within(counts.get("") ?? 0, N, member.items.no_item_ppm / total)).toBe(true);
+  }, 120_000);
+});
+
 describe("pickWeighted", () => {
   it("is one integer pick over a positive total and refuses a zero total", () => {
     expect(pickWeighted({ below: () => 0 }, [1, 2])).toBe(0);
@@ -297,8 +337,11 @@ describe("P3 for component U", () => {
     // The bound is loose by construction (it multiplies the largest conditional probabilities and the orderings of a
     // team); it is a bound on the generator, not the probability of any real team. The figure is pinned so a change of
     // the bound or of the table is seen.
-    const bound = usageBound(vocabulary, small(), usageComponent(committed), committed);
+    const both = usageBounds(vocabulary, small(), usageComponent(committed), committed);
+    const bound = both.set;
+    process.stderr.write(`usage P3 on the committed table: set-level ${bitsOf(both.set)} bits, ordered-sequence ${bitsOf(both.sequence)} bits\n`);
     expect(bitsOf(bound)).toBe(18);
+    expect(bitsOf(both.sequence)).toBeGreaterThan(bitsOf(both.set));
     const cfg = JSON.parse(readFileSync(join(ROOT, "config", "teams", FORMAT, "generator.mixture-u.json"), "utf8")) as TeamGeneratorConfig;
     expect(cfg.proposal?.gates?.p3_min_bits_usage).toBeLessThanOrEqual(bitsOf(bound));
   });
@@ -333,18 +376,113 @@ describe("P3 on degenerate tables", () => {
   });
 });
 
+describe("P3 against an exhaustive enumeration of a tiny table", () => {
+  // Four roster entries, teams of two, Item Clause 2 (never binding for two members), two natures, two abilities, four moves
+  // with two per set, items i1..i4. Every team is enumerated exactly with bigint rationals by a separate reading of the draw
+  // rule, and the bound must be at least the probability of the most likely canonical set.
+  type Q = { n: bigint; d: bigint };
+  const q = (n: number | bigint, d: number | bigint = 1): Q => ({ n: BigInt(n), d: BigInt(d) });
+  const add = (a: Q, b: Q): Q => q(a.n * b.d + b.n * a.d, a.d * b.d);
+  const mul = (a: Q, b: Q): Q => q(a.n * b.n, a.d * b.d);
+  const ge = (a: Q, b: Q): boolean => a.n * b.d >= b.n * a.d;
+  const zero = q(0);
+  const ids = ["a", "b", "c", "d"];
+  const wSpecies = [4, 3, 2, 1];
+  const teammate: Record<string, Record<string, number>> = { a: { b: 5, c: 1, d: 1 }, b: { a: 4, c: 4, d: 1 }, c: { a: 1, b: 1, d: 6 }, d: { a: 2, b: 2, c: 2 } };
+  const itemList = [["i1", 600_000], ["i2", 300_000], ["", 100_000]] as const;
+  const abilityList = [["x", 700_000], ["y", 300_000]] as const;
+  const moveList = [["m0", 500_000], ["m1", 300_000], ["m2", 200_000]] as const;
+  const spreadList = [["n1", 800_000], ["n2", 200_000]] as const;
+  const members = ids.map((id, k) => ({
+    id,
+    w_species: wSpecies[k],
+    abilities: { entries: abilityList.map(([i, ppm]) => ({ id: i, ppm })), unmapped_ppm: 0 },
+    items: { entries: itemList.filter(([i]) => i !== "").map(([i, ppm]) => ({ id: i, ppm })), no_item_ppm: 100_000, truncated_ppm: 0, unmapped_ppm: 0 },
+    moves: { entries: moveList.map(([i, ppm]) => ({ id: i, ppm })) },
+    spreads: { entries: spreadList.map(([i, ppm]) => ({ nature: i, stat_points: {}, ppm })) },
+    teammates: { entries: Object.entries(teammate[id] as Record<string, number>).map(([t, weight]) => ({ id: t, ppm: 1, weight })) },
+  }));
+  const source = { table: { species: members }, hash: "x" } as never;
+  const vocab = { roster: ids.map((id) => ({ id, abilities: ["x", "y"], moves: ["m0", "m1", "m2", "m3"] })), items: ["i1", "i2", "i3", "i4"], natures: [{}, {}], rules: { max_team_size: 2, item_clause: 2 } } as never;
+  const cfg = { item_weights: [], default_item_weight: 1, gender_policy: "unset", moves_per_set: 2 } as never;
+
+  /** P(one specific pick) = (1 - f) * weighted + f * uniform. */
+  const mixP = (f: number, weighted: Q, uniform: Q): Q => add(mul(q(1000 - f, 1000), weighted), mul(q(f, 1000), uniform));
+
+  /** The most likely single member (item, ability, move pair, spread) of a species: enumerated, not a formula. */
+  function bestMember(f: number): Q {
+    const list = <T,>(entries: readonly (readonly [T, number])[]): Map<T, Q> => new Map(entries.map(([k, ppm]) => [k, q(ppm, entries.reduce((s, e) => s + e[1], 0))]));
+    const items = list(itemList);
+    const abilities = list(abilityList);
+    const spreads = list(spreadList);
+    const best = (options: Q[]): Q => options.reduce((a, b) => (ge(a, b) ? a : b));
+    const itemP = [...items.entries()].map(([, w]) => mixP(f, w, q(1, 4)));
+    const abilityP = [...abilities.entries()].map(([, w]) => mixP(f, w, q(1, 2)));
+    const spreadP = [...spreads.entries()].map(([, w]) => mixP(f, w, q(1, 2)));
+    // An unordered pair of the four pool moves: both orders, the second pick from what the list still holds (uniform once it holds nothing).
+    const pool = ["m0", "m1", "m2", "m3"];
+    const weight = new Map<string, number>(moveList.map(([m, ppm]) => [m, ppm]));
+    const pick = (taken: string[], m: string): Q => {
+      const left = [...weight.entries()].filter(([k]) => !taken.includes(k));
+      const total = left.reduce((s, [, w]) => s + w, 0);
+      const uniform = q(1, pool.length - taken.length);
+      return left.length === 0 ? uniform : mixP(f, q(weight.get(m) ?? 0, total), uniform);
+    };
+    const moveP: Q[] = [];
+    for (let i = 0; i < pool.length; i++) for (let j = i + 1; j < pool.length; j++) moveP.push(add(mul(pick([], pool[i] as string), pick([pool[i] as string], pool[j] as string)), mul(pick([], pool[j] as string), pick([pool[j] as string], pool[i] as string))));
+    return mul(mul(best(itemP), best(abilityP)), mul(best(moveP), best(spreadP)));
+  }
+
+  /** P(species a then b) under the teammate rule with the floor (all four species are listed). */
+  function sequence(f: number, a: number, b: number): Q {
+    const total = wSpecies.reduce((s, w) => s + w, 0);
+    const first = mixP(f, q(wSpecies[a] as number, total), q(1, 4));
+    const tm = teammate[ids[a] as string] as Record<string, number>;
+    const sum = Object.values(tm).reduce((s, w) => s + w, 0);
+    return mul(first, mixP(f, q(tm[ids[b] as string] as number, sum), q(1, 3)));
+  }
+
+  for (const f of [0, 300, 1000]) {
+    it(`bounds the exact probability of the most likely team (floor ${f})`, () => {
+      const member = bestMember(f);
+      let exact = zero;
+      for (let a = 0; a < 4; a++) {
+        for (let b = a + 1; b < 4; b++) {
+          const set = add(sequence(f, a, b), sequence(f, b, a));
+          const p = mul(set, mul(member, member));
+          if (ge(p, exact)) exact = p;
+        }
+      }
+      const both = usageBounds(vocab, cfg, usageComponent(source, 1000, f), source);
+      expect(ge(q(both.set.num, both.set.den), exact), `bound ${both.set.num}/${both.set.den} vs exact ${exact.n}/${exact.d}`).toBe(true);
+      // The ordered-sequence figure bounds one draw order of the most likely team, which is the exact set probability only up to its orderings.
+      expect(ge(q(both.sequence.num, both.sequence.den), q(0))).toBe(true);
+      expect(ge(q(both.set.num, both.set.den), q(both.sequence.num, both.sequence.den))).toBe(true);
+    });
+  }
+});
+
 describe("P1 for component U", () => {
-  it("counts the table's unmapped mass, usage-weighted, over six lists", () => {
-    const t = toyRaw;
-    expect(usageMapping(t)).toEqual({ mapped: 6e12, total: 6e12 });
-    const lossy = structuredClone(t);
-    const withUnmapped = { ...lossy, species: lossy.species.map((s, k) => (k === 0 ? { ...s, teammates: { ...s.teammates, unmapped_ppm: 1000 } } : s)) } as UsageWeightTable;
+  const all1000 = { species: 1000, abilities: 1000, items: 1000, moves: 1000, spreads: 1000, teammates: 1000 };
+  it("counts the table's unmapped mass, usage-weighted, per list kind and in aggregate", () => {
+    expect(usageMapping(toyRaw)).toEqual({ mapped: 6e12, total: 6e12, kinds: all1000 });
+    const lossy = structuredClone(toyRaw);
+    (lossy.species[0] as (typeof lossy.species)[number]).teammates.unmapped_ppm = 1000;
     const loss = (lossy.species[0] as (typeof lossy.species)[number]).usage_ppm * 1000;
-    expect(usageMapping(withUnmapped)).toEqual({ mapped: 6e12 - loss, total: 6e12 });
+    const result = usageMapping(lossy);
+    expect(result).toMatchObject({ mapped: 6e12 - loss, total: 6e12 });
+    expect(result.kinds.teammates).toBe(Math.floor(((1e12 - loss) * 1000) / 1e12));
+    expect({ ...result.kinds, teammates: 1000 }).toEqual(all1000);
   });
-  it("is at least 950 per mille on the committed table", () => {
+  it("counts an unmapped species in all six kinds", () => {
+    const t = structuredClone(toyRaw);
+    t.unmapped_species_ppm = 100_000;
+    expect(Object.values(usageMapping(t).kinds)).toEqual([900, 900, 900, 900, 900, 900]);
+  });
+  it("is at least 950 per mille in every kind on the committed table", () => {
     const m = usageMapping(committed.table);
-    expect(Math.floor((m.mapped * 1000) / m.total)).toBeGreaterThanOrEqual(950);
+    process.stderr.write(`usage P1 per kind (permille): ${JSON.stringify(m.kinds)}; aggregate ${Math.floor((m.mapped * 1000) / m.total)}\n`);
+    for (const v of Object.values(m.kinds)) expect(v).toBeGreaterThanOrEqual(950);
   });
 });
 
@@ -374,6 +512,10 @@ describe("a small target-share generation", () => {
     expect(usage?.p1?.pass).toBe(true);
     expect(usage?.p2.value).toBeGreaterThan(0);
     expect(usage?.p3.pass).toBe(true);
+    expect(Object.keys(usage?.p1?.kinds ?? {})).toEqual(["species", "abilities", "items", "moves", "spreads", "teammates"]);
+    expect(usage?.p1?.value).toBe(Math.min(...Object.values(usage?.p1?.kinds ?? {})));
+    expect(usage?.p3_sequence_bits).toBe(49);
+    expect(a.coverage.proposal?.components.filter((c) => c.kind !== "usage").every((c) => c.p3_sequence_bits === undefined)).toBe(true);
     expect(a.coverage.proposal?.components.map((c) => c.kind)).toEqual(["role_sets", "uniform", "usage"]);
   }, 300_000); // each run draws a few hundred teams through the pinned validator
 

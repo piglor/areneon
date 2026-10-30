@@ -145,20 +145,37 @@ export function roleSetsMapping(vocabulary: Pick<TeamVocabulary, "roster">, tabl
 
 export type UsageComponentConfig = Extract<NonNullable<TeamGeneratorConfig["proposal"]>["components"][number], { kind: "usage" }>;
 
+/** P1 for component U: the aggregate mapped mass and, per list kind, the mapped share in permille (ADR-020 section 6 asks 95% per kind). */
+export interface UsageMappingResult {
+  mapped: number;
+  total: number;
+  /** Mapped share per list kind in permille, floored. */
+  kinds: Record<(typeof USAGE_LIST_KINDS)[number], number>;
+}
+
+export const USAGE_LIST_KINDS = ["species", "abilities", "items", "moves", "spreads", "teammates"] as const;
+
 /**
- * P1 for component U: how much of the table's mass mapped, in units of 10^-12 of six lists (species usage, then
- * abilities, items, moves, spreads and teammates). Each list's unmapped mass counts per species weighted by its usage,
- * and a species the roster lacks (unmapped_species_ppm) is unmapped in all six.
+ * P1 for component U. Each of the six list kinds (species usage, abilities, items, moves, spreads, teammates) has a total of
+ * 10^12 units; a kind's unmapped mass counts per species weighted by its usage, and a species the roster lacks
+ * (unmapped_species_ppm) is unmapped in all six. `mapped` and `total` are the aggregate over the six kinds; `kinds` is
+ * each kind's mapped share in permille, which the gate takes the minimum of.
  */
-export function usageMapping(table: UsageSource["table"]): { mapped: number; total: number } {
+export function usageMapping(table: UsageSource["table"]): UsageMappingResult {
   const unit = 1_000_000;
-  const lists = 6;
-  let unmapped = table.unmapped_species_ppm * unit * lists;
+  const per = unit * unit;
+  const unmapped = { species: table.unmapped_species_ppm * unit, abilities: 0, items: 0, moves: 0, spreads: 0, teammates: 0 };
+  for (const kind of USAGE_LIST_KINDS) if (kind !== "species") unmapped[kind] = table.unmapped_species_ppm * unit;
   for (const s of table.species) {
-    unmapped += s.usage_ppm * (s.abilities.unmapped_ppm + s.items.unmapped_ppm + s.moves.unmapped_ppm + s.spreads.unmapped_ppm + s.teammates.unmapped_ppm);
+    unmapped.abilities += s.usage_ppm * s.abilities.unmapped_ppm;
+    unmapped.items += s.usage_ppm * s.items.unmapped_ppm;
+    unmapped.moves += s.usage_ppm * s.moves.unmapped_ppm;
+    unmapped.spreads += s.usage_ppm * s.spreads.unmapped_ppm;
+    unmapped.teammates += s.usage_ppm * s.teammates.unmapped_ppm;
   }
-  const total = lists * unit * unit;
-  return { mapped: total - unmapped, total };
+  const kinds = Object.fromEntries(USAGE_LIST_KINDS.map((k) => [k, Math.floor(((per - unmapped[k]) * 1000) / per)])) as UsageMappingResult["kinds"];
+  const total = USAGE_LIST_KINDS.length * per;
+  return { mapped: total - USAGE_LIST_KINDS.reduce((sum, k) => sum + unmapped[k], 0), total, kinds };
 }
 
 const maxOf = (weights: readonly number[]): number => weights.reduce((a, b) => Math.max(a, b), 0);
@@ -178,6 +195,18 @@ const mixed = (floor: number, weightedP: Fraction, uniformP: Fraction): Fraction
  * orderings, spread, gender), each draw mixed with the uniform bound at the per-slot floor.
  */
 export function usageBound(vocabulary: BoundVocabulary, config: BoundConfig, component: UsageComponentConfig, source: UsageSource): Fraction {
+  return usageBounds(vocabulary, config, component, source).set;
+}
+
+/**
+ * Both P3 figures for component U. `set` is the bound above, on the probability of a team as a SET of members (the gate's
+ * figure). `sequence` is the ADR-020 section 6 wording: the product of the largest conditional weights along ONE draw route
+ * (the first pick, the later picks, each member's set draws as an ordered sequence), with no ordering factors, so it bounds
+ * the probability of one particular draw order and is smaller by up to 6! x (4!)^6. Neither counts a canonical team reached
+ * by two routes (a Mega entry is rewritten to its base forme holding the stone, up to a factor of 2 for each such member)
+ * or the last-resort uniform fallback (an empty list), where the bound mixes the uniform part in as if it were a list.
+ */
+export function usageBounds(vocabulary: BoundVocabulary, config: BoundConfig, component: UsageComponentConfig, source: UsageSource): { set: Fraction; sequence: Fraction } {
   const { itemFree } = commonFactor(vocabulary, config);
   const floor = component.floor_permille;
   const k = config.moves_per_set ?? 4;
@@ -231,13 +260,15 @@ export function usageBound(vocabulary: BoundVocabulary, config: BoundConfig, com
       const w = floor === 0 ? weights[j] : weights[0];
       moveP = mul(moveP, j >= weights.length || w === undefined || rest <= 0 ? mixed(floor, floor === 0 && j >= weights.length ? uniformP : frac(1n, 1n), uniformP) : mixed(floor, atMostOne(frac(BigInt(w), BigInt(rest))), uniformP));
     }
+    const moveSequence = moveP;
     for (let j = 2; j <= count; j++) moveP = mul(moveP, frac(BigInt(j), 1n));
     moveP = atMostOne(moveP);
     const spreadU = frac(1n, natures);
     const spreadP = m === undefined || m.spreads.weights.length === 0 ? spreadU : mixed(floor, frac(BigInt(maxOf(m.spreads.weights)), BigInt(sumOf(m.spreads.weights))), spreadU);
-    return mul(mul(mul(mul(itemP, abilityP), moveP), spreadP), frac(1n, gender));
+    const rest = mul(mul(mul(itemP, abilityP), spreadP), frac(1n, gender));
+    return { set: mul(rest, moveP), sequence: mul(rest, moveSequence) };
   });
-  return mul(mul(frac(factorial, 1n), steps), topProduct(entries, size));
+  return { set: mul(mul(frac(factorial, 1n), steps), topProduct(entries.map((e) => e.set), size)), sequence: mul(steps, topProduct(entries.map((e) => e.sequence), size)) };
 }
 
 /** The largest item share when the Item Clause may have taken the `removable` heaviest items out of reach. */
@@ -261,9 +292,11 @@ export interface ComponentCoverage {
   kind: string;
   share_permille: number;
   pilot: { draws: number; rejected: number; accepted: number };
-  p1: (GateResult & { mapped: number; total: number }) | null;
+  p1: (GateResult & { mapped: number; total: number; kinds?: Record<string, number> }) | null;
   p2: GateResult;
   p3: GateResult;
+  /** Usage only: the ADR-literal ordered-sequence P3 figure in bits, reported beside the set-level one the gate uses (never gated). */
+  p3_sequence_bits?: number;
   /** Accepted pilot draws per base cell. */
   pilot_cell_hits: number[];
   /** Delivered teams of the dataset per base cell, over all splits. */
@@ -324,28 +357,35 @@ export function proposalCoverage(input: GateInput): ProposalCoverage {
     const part = pilot.components?.find((p) => p.kind === component.kind);
     if (part === undefined) throw new GateError(`the pilot has no counts for component ${component.kind}`);
     const accepted = part.draws - part.rejected;
+    const usageBoundsOf = component.kind === "usage" ? usageBounds(input.vocabulary, config, component, input.usage ?? fail("no usage weight table was given")) : undefined;
     const bound =
-      component.kind === "role_sets"
-        ? roleSetsBound(input.vocabulary, config, (input.roleSets ?? fail("no role-set table was given")).table)
-        : component.kind === "usage"
-          ? usageBound(input.vocabulary, config, component, input.usage ?? fail("no usage weight table was given"))
+      usageBoundsOf !== undefined
+        ? usageBoundsOf.set
+        : component.kind === "role_sets"
+          ? roleSetsBound(input.vocabulary, config, (input.roleSets ?? fail("no role-set table was given")).table)
           : uniformBound(input.vocabulary, config);
     bounds.push({ share_permille: component.share_permille, bound });
-    const mapping =
-      component.kind === "role_sets"
-        ? roleSetsMapping(input.vocabulary, (input.roleSets as { table: Pick<RoleSetTable, "species"> }).table)
-        : component.kind === "usage"
-          ? usageMapping((input.usage as UsageSource).table)
-          : undefined;
+    const usageMap = component.kind === "usage" ? usageMapping((input.usage as UsageSource).table) : undefined;
+    const mapping = component.kind === "role_sets" ? roleSetsMapping(input.vocabulary, (input.roleSets as { table: Pick<RoleSetTable, "species"> }).table) : usageMap;
     const p1Threshold = component.kind === "usage" ? gates?.p1_min_usage_permille : 1000;
     const delivered = input.delivered.get(component.kind);
     return {
       kind: component.kind,
       share_permille: component.share_permille,
       pilot: { draws: part.draws, rejected: part.rejected, accepted },
-      p1: mapping === undefined ? null : { ...gate(mapping.total === 0 ? 0 : Math.floor((mapping.mapped * 1000) / mapping.total), p1Threshold, (v, t) => v >= t), mapped: mapping.mapped, total: mapping.total },
+      // Usage: the gate takes the minimum over the six list kinds (ADR-020 section 6: per kind); the aggregate is reported beside it.
+      p1:
+        mapping === undefined
+          ? null
+          : {
+              ...gate(usageMap !== undefined ? Math.min(...Object.values(usageMap.kinds)) : mapping.total === 0 ? 0 : Math.floor((mapping.mapped * 1000) / mapping.total), p1Threshold, (v, t) => v >= t),
+              mapped: mapping.mapped,
+              total: mapping.total,
+              ...(usageMap === undefined ? {} : { kinds: usageMap.kinds }),
+            },
       p2: gate(part.draws === 0 ? 0 : Math.floor((accepted * 1000) / part.draws), gates?.p2_min_accept_permille, (v, t) => v >= t),
       p3: gate(bitsOf(bound), component.kind === "usage" ? (gates?.p3_min_bits_usage ?? gates?.p3_min_bits) : gates?.p3_min_bits, (v, t) => v >= t),
+      ...(usageBoundsOf === undefined ? {} : { p3_sequence_bits: bitsOf(usageBoundsOf.sequence) }),
       pilot_cell_hits: part.cell_hits,
       delivered_cells: delivered?.cells ?? new Array<number>(part.cell_hits.length).fill(0),
       delivered: delivered?.splits ?? {},

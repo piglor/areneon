@@ -8,7 +8,7 @@ export { type Accepted, canonicalOrder, type Draw, Drawer, type Rejected } from 
 export { type CoverageReport, generate, type GenerateInput, GenerateError, type GenerateResult, type ReferencePool } from "./generate.ts";
 export { cellCount, cellLabels, cellOf, LabelError, labelTeam, type LabelValue } from "./labeller.ts";
 export { crossSplitNear, type NearDuplicates } from "./near-index.ts";
-export { bitsOf, GateError, populationOf, proposalCoverage, roleSetsBound, roleSetsMapping, type ProposalCoverage, uniformBound, usageBound, usageMapping } from "./pilot-gates.ts";
+export { bitsOf, GateError, populationOf, proposalCoverage, roleSetsBound, roleSetsMapping, type ProposalCoverage, uniformBound, usageBound, usageBounds, usageMapping } from "./pilot-gates.ts";
 export { type Pilot, PilotError, readPilot, runPilot } from "./pilot.ts";
 export { groupKey, manifestPlan, planQuotas, PlanError, type QuotaPlan, type Split, SPLITS, type SplitSizes, type Stratum } from "./plan.ts";
 export { drawStatPoints, Proposal, ProposalError } from "./proposal.ts";

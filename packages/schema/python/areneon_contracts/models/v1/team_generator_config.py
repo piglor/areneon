@@ -60,7 +60,7 @@ class Gates(BaseModel):
         MISSING
     )
     """
-    P1 for the usage component: the share of the table's mass whose ids mapped, in thousandths (proposed 950). Optional: absent, the number is reported with no verdict.
+    P1 for the usage component: the smallest, over the table's six list kinds, share of a kind's mass whose ids mapped, in thousandths (proposed 950). Optional: absent, the number is reported with no verdict.
     """
     p3_min_bits_usage: Annotated[StrictInt | MISSING, Field(ge=1, le=1000)] = MISSING
     """
