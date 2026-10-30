@@ -16,7 +16,8 @@ import { loadMechanicsConfig } from "../src/mechanics-config.ts";
 import { MechanicsProbeError } from "../src/mechanics-error.ts";
 import { type MechanicsContext, probeMechanics } from "../src/mechanics-probe.ts";
 import type { ParsedMechanicsQuery } from "../src/mechanics-query.ts";
-import { type SpeedCheckContext, createSpeedCheck } from "../src/speed-check.ts";
+import { DAMAGE_CHECK_FORMAT } from "../src/damage-check.ts";
+import { SPEED_CHECK_FORMAT, type SpeedCheckContext, createSpeedCheck, evidenceCheckFormats } from "../src/speed-check.ts";
 import type { DamageCandidatePort } from "../src/damage-check.ts";
 import type { TeamVocabulary } from "../src/team-vocabulary.ts";
 
@@ -160,5 +161,19 @@ describe("check", () => {
     };
     const port = make({ probe: unsupported });
     expect(port.check(eventOf(port, "second"), candidate())).toBeNull();
+  });
+});
+
+describe("evidenceCheckFormats", () => {
+  it("names the check format of each evidence the belief config enables, and nothing for a config with neither", () => {
+    const { speed_evidence: speed, ...damageOnly } = belief;
+    const { damage_evidence: damage, ...speedOnly } = belief;
+    expect(speed).toBeDefined();
+    expect(damage).toBeDefined();
+    expect(evidenceCheckFormats(belief)).toEqual({ damage_check_format: DAMAGE_CHECK_FORMAT, speed_check_format: SPEED_CHECK_FORMAT });
+    expect(evidenceCheckFormats(damageOnly)).toEqual({ damage_check_format: DAMAGE_CHECK_FORMAT });
+    expect(evidenceCheckFormats(speedOnly)).toEqual({ speed_check_format: SPEED_CHECK_FORMAT });
+    const { damage_evidence: _d, ...neither } = damageOnly;
+    expect(evidenceCheckFormats(neither)).toEqual({});
   });
 });

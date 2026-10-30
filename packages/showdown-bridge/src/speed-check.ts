@@ -18,7 +18,7 @@ import { type PublicFrame, type PublicMon, type PublicRun, type PublicState, int
 import type { BeliefConfig } from "@areneon/schema/types/v1/belief-config.ts";
 import type { EngineRequest } from "@areneon/schema/types/v1/engine-request.ts";
 import type { DamageCheckCache, DamageCandidatePort } from "./damage-check.ts";
-import { newDamageCheckCache } from "./damage-check.ts";
+import { DAMAGE_CHECK_FORMAT, newDamageCheckCache } from "./damage-check.ts";
 import { DamageAwareError, type Fighter, ProbeRefusal, damageView } from "./damage-aware-view.ts";
 import type { DamageAwareConfig } from "./damage-aware-config.ts";
 import { type Engine, type PokemonSet, defaultIvs } from "./engine.ts";
@@ -33,6 +33,12 @@ import type { TeamVocabulary } from "./team-vocabulary.ts";
 
 /** Bumped when the check declares a pair to the probe or judges its order differently. */
 export const SPEED_CHECK_FORMAT = 1;
+
+/** The check formats a belief config puts in the belief identity: one for each evidence it enables (a config with neither adds nothing). */
+export const evidenceCheckFormats = (belief: BeliefConfig): { damage_check_format?: number; speed_check_format?: number } => ({
+  ...(belief.damage_evidence === undefined ? {} : { damage_check_format: DAMAGE_CHECK_FORMAT }),
+  ...(belief.speed_evidence === undefined ? {} : { speed_check_format: SPEED_CHECK_FORMAT }),
+});
 
 export type SpeedEvidenceRules = NonNullable<BeliefConfig["speed_evidence"]>;
 
