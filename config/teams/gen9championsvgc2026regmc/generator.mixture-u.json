@@ -1,0 +1,376 @@
+{
+  "schema_version": 1,
+  "config_id": "mixture-u-v1",
+  "iv": 31,
+  "stat_point_max_per_stat": 32,
+  "moves_per_set": 4,
+  "gender_policy": "unset",
+  "nickname_policy": "none",
+  "default_item_weight": 1,
+  "item_weights": [
+    {
+      "item": "abomasite",
+      "weight": 0
+    },
+    {
+      "item": "absolite",
+      "weight": 0
+    },
+    {
+      "item": "absolitez",
+      "weight": 0
+    },
+    {
+      "item": "aerodactylite",
+      "weight": 0
+    },
+    {
+      "item": "aggronite",
+      "weight": 0
+    },
+    {
+      "item": "alakazite",
+      "weight": 0
+    },
+    {
+      "item": "altarianite",
+      "weight": 0
+    },
+    {
+      "item": "ampharosite",
+      "weight": 0
+    },
+    {
+      "item": "audinite",
+      "weight": 0
+    },
+    {
+      "item": "banettite",
+      "weight": 0
+    },
+    {
+      "item": "barbaracite",
+      "weight": 0
+    },
+    {
+      "item": "baxcalibrite",
+      "weight": 0
+    },
+    {
+      "item": "beedrillite",
+      "weight": 0
+    },
+    {
+      "item": "blastoisinite",
+      "weight": 0
+    },
+    {
+      "item": "blazikenite",
+      "weight": 0
+    },
+    {
+      "item": "cameruptite",
+      "weight": 0
+    },
+    {
+      "item": "chandelurite",
+      "weight": 0
+    },
+    {
+      "item": "charizarditex",
+      "weight": 0
+    },
+    {
+      "item": "charizarditey",
+      "weight": 0
+    },
+    {
+      "item": "chesnaughtite",
+      "weight": 0
+    },
+    {
+      "item": "chimechite",
+      "weight": 0
+    },
+    {
+      "item": "clefablite",
+      "weight": 0
+    },
+    {
+      "item": "crabominite",
+      "weight": 0
+    },
+    {
+      "item": "delphoxite",
+      "weight": 0
+    },
+    {
+      "item": "dragalgite",
+      "weight": 0
+    },
+    {
+      "item": "dragoninite",
+      "weight": 0
+    },
+    {
+      "item": "drampanite",
+      "weight": 0
+    },
+    {
+      "item": "eelektrossite",
+      "weight": 0
+    },
+    {
+      "item": "emboarite",
+      "weight": 0
+    },
+    {
+      "item": "excadrite",
+      "weight": 0
+    },
+    {
+      "item": "falinksite",
+      "weight": 0
+    },
+    {
+      "item": "feraligite",
+      "weight": 0
+    },
+    {
+      "item": "floettite",
+      "weight": 0
+    },
+    {
+      "item": "froslassite",
+      "weight": 0
+    },
+    {
+      "item": "galladite",
+      "weight": 0
+    },
+    {
+      "item": "garchompite",
+      "weight": 0
+    },
+    {
+      "item": "garchompitez",
+      "weight": 0
+    },
+    {
+      "item": "gardevoirite",
+      "weight": 0
+    },
+    {
+      "item": "gengarite",
+      "weight": 0
+    },
+    {
+      "item": "glalitite",
+      "weight": 0
+    },
+    {
+      "item": "glimmoranite",
+      "weight": 0
+    },
+    {
+      "item": "golisopite",
+      "weight": 0
+    },
+    {
+      "item": "golurkite",
+      "weight": 0
+    },
+    {
+      "item": "greninjite",
+      "weight": 0
+    },
+    {
+      "item": "gyaradosite",
+      "weight": 0
+    },
+    {
+      "item": "hawluchanite",
+      "weight": 0
+    },
+    {
+      "item": "heracronite",
+      "weight": 0
+    },
+    {
+      "item": "houndoominite",
+      "weight": 0
+    },
+    {
+      "item": "kangaskhanite",
+      "weight": 0
+    },
+    {
+      "item": "lopunnite",
+      "weight": 0
+    },
+    {
+      "item": "lucarionite",
+      "weight": 0
+    },
+    {
+      "item": "lucarionitez",
+      "weight": 0
+    },
+    {
+      "item": "malamarite",
+      "weight": 0
+    },
+    {
+      "item": "manectite",
+      "weight": 0
+    },
+    {
+      "item": "mawilite",
+      "weight": 0
+    },
+    {
+      "item": "medichamite",
+      "weight": 0
+    },
+    {
+      "item": "meganiumite",
+      "weight": 0
+    },
+    {
+      "item": "meowsticite",
+      "weight": 0
+    },
+    {
+      "item": "metagrossite",
+      "weight": 0
+    },
+    {
+      "item": "pidgeotite",
+      "weight": 0
+    },
+    {
+      "item": "pinsirite",
+      "weight": 0
+    },
+    {
+      "item": "pyroarite",
+      "weight": 0
+    },
+    {
+      "item": "raichunitex",
+      "weight": 0
+    },
+    {
+      "item": "raichunitey",
+      "weight": 0
+    },
+    {
+      "item": "sablenite",
+      "weight": 0
+    },
+    {
+      "item": "salamencite",
+      "weight": 0
+    },
+    {
+      "item": "sceptilite",
+      "weight": 0
+    },
+    {
+      "item": "scizorite",
+      "weight": 0
+    },
+    {
+      "item": "scolipite",
+      "weight": 0
+    },
+    {
+      "item": "scovillainite",
+      "weight": 0
+    },
+    {
+      "item": "scraftinite",
+      "weight": 0
+    },
+    {
+      "item": "sharpedonite",
+      "weight": 0
+    },
+    {
+      "item": "skarmorite",
+      "weight": 0
+    },
+    {
+      "item": "slowbronite",
+      "weight": 0
+    },
+    {
+      "item": "staraptite",
+      "weight": 0
+    },
+    {
+      "item": "starminite",
+      "weight": 0
+    },
+    {
+      "item": "steelixite",
+      "weight": 0
+    },
+    {
+      "item": "swampertite",
+      "weight": 0
+    },
+    {
+      "item": "tyranitarite",
+      "weight": 0
+    },
+    {
+      "item": "venusaurite",
+      "weight": 0
+    },
+    {
+      "item": "victreebelite",
+      "weight": 0
+    }
+  ],
+  "d_max": 4000000,
+  "pilot_draws": 40000,
+  "pilot_min_hits": 20,
+  "n_stratum_min": 2,
+  "fill_quantile_permille": 990,
+  "sealed_margin_permille": 200,
+  "range_draws_log2": 20,
+  "range_margin_permille": 100,
+  "shard_rows_log2": 18,
+  "two_platform_bound": 1000000,
+  "sampled_ranges": 16,
+  "proposal": {
+    "kind": "mixture",
+    "components": [
+      {
+        "kind": "role_sets",
+        "role_set_table_hash": "7671f9387b69fad932041302f68198c26a12ce8dab75a4d05e242d07bb2b1140",
+        "share_permille": 200
+      },
+      {
+        "kind": "uniform",
+        "share_permille": 300
+      },
+      {
+        "kind": "usage",
+        "share_permille": 500,
+        "usage_table_hash": "f42f3dbacd5913229bfabf874ed1f6cbc8a94488966b8643bf96c64c94b6a13b",
+        "species_root": 2,
+        "set_root": 1,
+        "floor_permille": 100
+      }
+    ],
+    "gates": {
+      "p2_min_accept_permille": 500,
+      "p3_min_bits": 40,
+      "p4_min_strata_permille": 750,
+      "p1_min_usage_permille": 950,
+      "p3_min_bits_usage": 16
+    }
+  }
+}

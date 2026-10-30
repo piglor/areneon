@@ -81,6 +81,38 @@ describe("a role_sets component is checked against the committed role-set table"
   });
 });
 
+describe("a usage component is checked against the committed usage tables", () => {
+  const mixture = JSON.parse(readFileSync(join(CONFIG_DIR, "generator.mixture-u.json"), "utf8")) as { proposal: { components: { kind: string; usage_table_hash?: string; species_root?: number }[] } };
+  const usage = (): { kind: string; usage_table_hash?: string; species_root?: number } => mixture.proposal.components.find((c) => c.kind === "usage") as never;
+  const rootWith = (name: string, changed: unknown, withTable: boolean): string => {
+    const root = join(scratch, name);
+    mkdirSync(join(root, FORMAT, "usage"), { recursive: true });
+    cpSync(join(CONFIG_DIR, "labels.json"), join(root, FORMAT, "labels.json"));
+    cpSync(join(CONFIG_DIR, "generator.json"), join(root, FORMAT, "generator.json"));
+    if (withTable) cpSync(join(CONFIG_DIR, "usage", "2026-09-1630.json"), join(root, FORMAT, "usage", "2026-09-1630.json"));
+    writeFileSync(join(root, FORMAT, "generator.mixture-u.json"), JSON.stringify(changed));
+    return root;
+  };
+  const roleFixtures = join(scratch, "role-fixtures");
+  mkdirSync(join(roleFixtures, FORMAT), { recursive: true });
+  cpSync(join(TEAMS_CONFIG_DIR, "..", "..", "fixtures", "showdown", FORMAT, "role-sets.json"), join(roleFixtures, FORMAT, "role-sets.json"));
+
+  it("accepts the committed example", () => {
+    expect(checkTeamConfigs(engine, rootWith("u-ok", mixture, true), golden, roleFixtures)).toEqual([]);
+  });
+
+  it("names a hash no committed table has, no table at all, and a species_root that is not the table's", () => {
+    const wrong = structuredClone(mixture);
+    (wrong.proposal.components.find((c) => c.kind === "usage") as { usage_table_hash: string }).usage_table_hash = "0".repeat(64);
+    expect(checkTeamConfigs(engine, rootWith("u-hash", wrong, true), golden, roleFixtures).join()).toMatch(/usage component: no table committed under usage\/ has the hash it names/);
+    expect(checkTeamConfigs(engine, rootWith("u-none", mixture, false), golden, roleFixtures).join()).toMatch(/no table committed under usage\//);
+    const root = structuredClone(mixture);
+    (root.proposal.components.find((c) => c.kind === "usage") as { species_root: number }).species_root = 3;
+    expect(checkTeamConfigs(engine, rootWith("u-root", root, true), golden, roleFixtures).join()).toMatch(/species_root is not the table's own \(2\)/);
+    expect(usage().kind).toBe("usage");
+  });
+});
+
 describe("the Mega Stones of the committed data (a pin bump that adds a stone fails here)", () => {
   const stones = [...new Set(vocabulary.roster.flatMap((r) => (r.required_item === undefined ? [] : [r.required_item])))].sort();
 

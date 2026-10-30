@@ -95,17 +95,20 @@ export interface TeamGeneratorConfig {
    */
   sampled_ranges: number;
   /**
-   * Optional (a minor change within v1): the proposal is a mixture of components, each drawn with its share (ADR-020 section 2). Absent means the uniform proposal alone, with every byte and hash as before. Components are sorted by kind and unique, the shares are integers in thousandths and sum to 1000, and a role_sets component names the role-set table by hash; the reader enforces the order, the sum and uniqueness. A usage component is not part of this version of the record.
+   * Optional (a minor change within v1): the proposal is a mixture of components, each drawn with its share (ADR-020 section 2). Absent means the uniform proposal alone, with every byte and hash as before. Components are sorted by kind and unique, the shares are integers in thousandths and sum to 1000, and a role_sets component names the role-set table by hash; the reader enforces the order, the sum and uniqueness. A usage component (ADR-020 section 4) names the UsageWeightTable by hash with its roots and per-slot floor; the reader checks the table against it at generation time.
    */
   proposal?: {
     kind: "mixture";
     /**
      * @minItems 1
-     * @maxItems 2
+     * @maxItems 3
      */
-    components: [UniformComponent | RoleSetsComponent, ...(UniformComponent | RoleSetsComponent)[]];
+    components: [
+      UniformComponent | RoleSetsComponent | UsageComponent,
+      ...(UniformComponent | RoleSetsComponent | UsageComponent)[]
+    ];
     /**
-     * Optional: the pilot gate thresholds of ADR-020 section 6, all integers. A dataset report evaluates P1 to P4 against them; a publishing run fails when one is not met. P1 (mapping) is 100% for the role_sets component and carries no field here; the usage component's P1 threshold arrives with that component. Absent: the numbers are reported with no verdict.
+     * Optional: the pilot gate thresholds of ADR-020 section 6, all integers. A dataset report evaluates P1 to P4 against them; a publishing run fails when one is not met. P1 (mapping) is 100% for the role_sets component and carries no field here; the usage component's P1 threshold is p1_min_usage_permille. Absent: the numbers are reported with no verdict.
      */
     gates?: {
       /**
@@ -120,6 +123,14 @@ export interface TeamGeneratorConfig {
        * P4: the unmerged strata of the plan, as a share of the uniform config's plan at the same d_max, in thousandths (proposed 750: a drop of more than a quarter fails).
        */
       p4_min_strata_permille: number;
+      /**
+       * P1 for the usage component: the share of the table's mass whose ids mapped, in thousandths (proposed 950). Optional: absent, the number is reported with no verdict.
+       */
+      p1_min_usage_permille?: number;
+      /**
+       * P3 for the usage component alone, when its sound bound cannot meet p3_min_bits: the same bound (the probability of the most likely team is at most 2 to the minus this). Optional: absent, p3_min_bits applies to every component.
+       */
+      p3_min_bits_usage?: number;
     };
   };
 }
@@ -152,4 +163,33 @@ export interface RoleSetsComponent {
    * The role-set table hash the draws read.
    */
   role_set_table_hash: string;
+}
+/**
+ * Teams from the usage weight table (ADR-020 section 4): species with teammate correlation, then per member item, ability, moves and spread by weight, each categorical draw uniform with probability floor_permille.
+ *
+ * This interface was referenced by `TeamGeneratorConfig`'s JSON-Schema
+ * via the `definition` "UsageComponent".
+ */
+export interface UsageComponent {
+  kind: "usage";
+  /**
+   * The component's share of the draws, in thousandths.
+   */
+  share_permille: number;
+  /**
+   * The usage weight table hash (usageTableHash) the draws read.
+   */
+  usage_table_hash: string;
+  /**
+   * The integer root of w_species; the table's own derivation.species_root (a reader rule at generation time).
+   */
+  species_root: number;
+  /**
+   * The integer root applied to the item, ability, move and spread weights when drawing: floor((ppm * 10^(6 (r - 1)))^(1/r)); 1 leaves the ppm.
+   */
+  set_root: number;
+  /**
+   * The chance, in thousandths, that one categorical draw is uniform over the vocabulary instead of weighted.
+   */
+  floor_permille: number;
 }
