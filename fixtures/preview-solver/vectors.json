@@ -1,0 +1,4692 @@
+{
+ "format": "preview-solver/1",
+ "cases": [
+  {
+   "id": "matching-pennies/regret-matching/1",
+   "kind": "regret-matching",
+   "iterations": 1,
+   "matrix": [
+    [
+     1000000,
+     0
+    ],
+    [
+     0,
+     1000000
+    ]
+   ],
+   "row": [
+    500000,
+    500000
+   ],
+   "col": [
+    500000,
+    500000
+   ],
+   "exploitability": 0
+  },
+  {
+   "id": "matching-pennies/regret-matching/2",
+   "kind": "regret-matching",
+   "iterations": 2,
+   "matrix": [
+    [
+     1000000,
+     0
+    ],
+    [
+     0,
+     1000000
+    ]
+   ],
+   "row": [
+    500000,
+    500000
+   ],
+   "col": [
+    500000,
+    500000
+   ],
+   "exploitability": 0
+  },
+  {
+   "id": "matching-pennies/regret-matching/16",
+   "kind": "regret-matching",
+   "iterations": 16,
+   "matrix": [
+    [
+     1000000,
+     0
+    ],
+    [
+     0,
+     1000000
+    ]
+   ],
+   "row": [
+    500000,
+    500000
+   ],
+   "col": [
+    500000,
+    500000
+   ],
+   "exploitability": 0
+  },
+  {
+   "id": "matching-pennies/regret-matching/256",
+   "kind": "regret-matching",
+   "iterations": 256,
+   "matrix": [
+    [
+     1000000,
+     0
+    ],
+    [
+     0,
+     1000000
+    ]
+   ],
+   "row": [
+    500000,
+    500000
+   ],
+   "col": [
+    500000,
+    500000
+   ],
+   "exploitability": 0
+  },
+  {
+   "id": "matching-pennies/regret-matching-plus/1",
+   "kind": "regret-matching-plus",
+   "iterations": 1,
+   "matrix": [
+    [
+     1000000,
+     0
+    ],
+    [
+     0,
+     1000000
+    ]
+   ],
+   "row": [
+    500000,
+    500000
+   ],
+   "col": [
+    500000,
+    500000
+   ],
+   "exploitability": 0
+  },
+  {
+   "id": "matching-pennies/regret-matching-plus/2",
+   "kind": "regret-matching-plus",
+   "iterations": 2,
+   "matrix": [
+    [
+     1000000,
+     0
+    ],
+    [
+     0,
+     1000000
+    ]
+   ],
+   "row": [
+    500000,
+    500000
+   ],
+   "col": [
+    500000,
+    500000
+   ],
+   "exploitability": 0
+  },
+  {
+   "id": "matching-pennies/regret-matching-plus/16",
+   "kind": "regret-matching-plus",
+   "iterations": 16,
+   "matrix": [
+    [
+     1000000,
+     0
+    ],
+    [
+     0,
+     1000000
+    ]
+   ],
+   "row": [
+    500000,
+    500000
+   ],
+   "col": [
+    500000,
+    500000
+   ],
+   "exploitability": 0
+  },
+  {
+   "id": "matching-pennies/regret-matching-plus/256",
+   "kind": "regret-matching-plus",
+   "iterations": 256,
+   "matrix": [
+    [
+     1000000,
+     0
+    ],
+    [
+     0,
+     1000000
+    ]
+   ],
+   "row": [
+    500000,
+    500000
+   ],
+   "col": [
+    500000,
+    500000
+   ],
+   "exploitability": 0
+  },
+  {
+   "id": "rock-paper-scissors/regret-matching/1",
+   "kind": "regret-matching",
+   "iterations": 1,
+   "matrix": [
+    [
+     500000,
+     0,
+     1000000
+    ],
+    [
+     1000000,
+     500000,
+     0
+    ],
+    [
+     0,
+     1000000,
+     500000
+    ]
+   ],
+   "row": [
+    333334,
+    333333,
+    333333
+   ],
+   "col": [
+    333334,
+    333333,
+    333333
+   ],
+   "exploitability": 1000000
+  },
+  {
+   "id": "rock-paper-scissors/regret-matching/2",
+   "kind": "regret-matching",
+   "iterations": 2,
+   "matrix": [
+    [
+     500000,
+     0,
+     1000000
+    ],
+    [
+     1000000,
+     500000,
+     0
+    ],
+    [
+     0,
+     1000000,
+     500000
+    ]
+   ],
+   "row": [
+    166667,
+    666667,
+    166666
+   ],
+   "col": [
+    166667,
+    666667,
+    166666
+   ],
+   "exploitability": 500000000000
+  },
+  {
+   "id": "rock-paper-scissors/regret-matching/16",
+   "kind": "regret-matching",
+   "iterations": 16,
+   "matrix": [
+    [
+     500000,
+     0,
+     1000000
+    ],
+    [
+     1000000,
+     500000,
+     0
+    ],
+    [
+     0,
+     1000000,
+     500000
+    ]
+   ],
+   "row": [
+    340258,
+    447412,
+    212330
+   ],
+   "col": [
+    340258,
+    447412,
+    212330
+   ],
+   "exploitability": 127928000000
+  },
+  {
+   "id": "rock-paper-scissors/regret-matching/256",
+   "kind": "regret-matching",
+   "iterations": 256,
+   "matrix": [
+    [
+     500000,
+     0,
+     1000000
+    ],
+    [
+     1000000,
+     500000,
+     0
+    ],
+    [
+     0,
+     1000000,
+     500000
+    ]
+   ],
+   "row": [
+    322639,
+    362492,
+    314869
+   ],
+   "col": [
+    322639,
+    362492,
+    314869
+   ],
+   "exploitability": 39853000000
+  },
+  {
+   "id": "rock-paper-scissors/regret-matching-plus/1",
+   "kind": "regret-matching-plus",
+   "iterations": 1,
+   "matrix": [
+    [
+     500000,
+     0,
+     1000000
+    ],
+    [
+     1000000,
+     500000,
+     0
+    ],
+    [
+     0,
+     1000000,
+     500000
+    ]
+   ],
+   "row": [
+    333334,
+    333333,
+    333333
+   ],
+   "col": [
+    333334,
+    333333,
+    333333
+   ],
+   "exploitability": 1000000
+  },
+  {
+   "id": "rock-paper-scissors/regret-matching-plus/2",
+   "kind": "regret-matching-plus",
+   "iterations": 2,
+   "matrix": [
+    [
+     500000,
+     0,
+     1000000
+    ],
+    [
+     1000000,
+     500000,
+     0
+    ],
+    [
+     0,
+     1000000,
+     500000
+    ]
+   ],
+   "row": [
+    166667,
+    666667,
+    166666
+   ],
+   "col": [
+    166667,
+    666667,
+    166666
+   ],
+   "exploitability": 500000000000
+  },
+  {
+   "id": "rock-paper-scissors/regret-matching-plus/16",
+   "kind": "regret-matching-plus",
+   "iterations": 16,
+   "matrix": [
+    [
+     500000,
+     0,
+     1000000
+    ],
+    [
+     1000000,
+     500000,
+     0
+    ],
+    [
+     0,
+     1000000,
+     500000
+    ]
+   ],
+   "row": [
+    275703,
+    339648,
+    384649
+   ],
+   "col": [
+    275703,
+    339648,
+    384649
+   ],
+   "exploitability": 63945000000
+  },
+  {
+   "id": "rock-paper-scissors/regret-matching-plus/256",
+   "kind": "regret-matching-plus",
+   "iterations": 256,
+   "matrix": [
+    [
+     500000,
+     0,
+     1000000
+    ],
+    [
+     1000000,
+     500000,
+     0
+    ],
+    [
+     0,
+     1000000,
+     500000
+    ]
+   ],
+   "row": [
+    332606,
+    322917,
+    344477
+   ],
+   "col": [
+    332606,
+    322917,
+    344477
+   ],
+   "exploitability": 21560000000
+  },
+  {
+   "id": "biased-rps/regret-matching/1",
+   "kind": "regret-matching",
+   "iterations": 1,
+   "matrix": [
+    [
+     500000,
+     0,
+     800000
+    ],
+    [
+     1000000,
+     500000,
+     0
+    ],
+    [
+     200000,
+     1000000,
+     500000
+    ]
+   ],
+   "row": [
+    333334,
+    333333,
+    333333
+   ],
+   "col": [
+    333334,
+    333333,
+    333333
+   ],
+   "exploitability": 133332600000
+  },
+  {
+   "id": "biased-rps/regret-matching/2",
+   "kind": "regret-matching",
+   "iterations": 2,
+   "matrix": [
+    [
+     500000,
+     0,
+     800000
+    ],
+    [
+     1000000,
+     500000,
+     0
+    ],
+    [
+     200000,
+     1000000,
+     500000
+    ]
+   ],
+   "row": [
+    166667,
+    166670,
+    666663
+   ],
+   "col": [
+    166667,
+    166670,
+    666663
+   ],
+   "exploitability": 233327800000
+  },
+  {
+   "id": "biased-rps/regret-matching/16",
+   "kind": "regret-matching",
+   "iterations": 16,
+   "matrix": [
+    [
+     500000,
+     0,
+     800000
+    ],
+    [
+     1000000,
+     500000,
+     0
+    ],
+    [
+     200000,
+     1000000,
+     500000
+    ]
+   ],
+   "row": [
+    241797,
+    216831,
+    541372
+   ],
+   "col": [
+    241797,
+    216831,
+    541372
+   ],
+   "exploitability": 107992200000
+  },
+  {
+   "id": "biased-rps/regret-matching/256",
+   "kind": "regret-matching",
+   "iterations": 256,
+   "matrix": [
+    [
+     500000,
+     0,
+     800000
+    ],
+    [
+     1000000,
+     500000,
+     0
+    ],
+    [
+     200000,
+     1000000,
+     500000
+    ]
+   ],
+   "row": [
+    345976,
+    229291,
+    424733
+   ],
+   "col": [
+    345976,
+    229291,
+    424733
+   ],
+   "exploitability": 25548800000
+  },
+  {
+   "id": "biased-rps/regret-matching-plus/1",
+   "kind": "regret-matching-plus",
+   "iterations": 1,
+   "matrix": [
+    [
+     500000,
+     0,
+     800000
+    ],
+    [
+     1000000,
+     500000,
+     0
+    ],
+    [
+     200000,
+     1000000,
+     500000
+    ]
+   ],
+   "row": [
+    333334,
+    333333,
+    333333
+   ],
+   "col": [
+    333334,
+    333333,
+    333333
+   ],
+   "exploitability": 133332600000
+  },
+  {
+   "id": "biased-rps/regret-matching-plus/2",
+   "kind": "regret-matching-plus",
+   "iterations": 2,
+   "matrix": [
+    [
+     500000,
+     0,
+     800000
+    ],
+    [
+     1000000,
+     500000,
+     0
+    ],
+    [
+     200000,
+     1000000,
+     500000
+    ]
+   ],
+   "row": [
+    166667,
+    166670,
+    666663
+   ],
+   "col": [
+    166667,
+    166670,
+    666663
+   ],
+   "exploitability": 233327800000
+  },
+  {
+   "id": "biased-rps/regret-matching-plus/16",
+   "kind": "regret-matching-plus",
+   "iterations": 16,
+   "matrix": [
+    [
+     500000,
+     0,
+     800000
+    ],
+    [
+     1000000,
+     500000,
+     0
+    ],
+    [
+     200000,
+     1000000,
+     500000
+    ]
+   ],
+   "row": [
+    365707,
+    219891,
+    414402
+   ],
+   "col": [
+    365707,
+    219891,
+    414402
+   ],
+   "exploitability": 28750200000
+  },
+  {
+   "id": "biased-rps/regret-matching-plus/256",
+   "kind": "regret-matching-plus",
+   "iterations": 256,
+   "matrix": [
+    [
+     500000,
+     0,
+     800000
+    ],
+    [
+     1000000,
+     500000,
+     0
+    ],
+    [
+     200000,
+     1000000,
+     500000
+    ]
+   ],
+   "row": [
+    363946,
+    225125,
+    410929
+   ],
+   "col": [
+    363946,
+    225125,
+    410929
+   ],
+   "exploitability": 21432400000
+  },
+  {
+   "id": "pure-saddle/regret-matching/1",
+   "kind": "regret-matching",
+   "iterations": 1,
+   "matrix": [
+    [
+     600000,
+     700000
+    ],
+    [
+     400000,
+     300000
+    ]
+   ],
+   "row": [
+    500000,
+    500000
+   ],
+   "col": [
+    500000,
+    500000
+   ],
+   "exploitability": 150000000000
+  },
+  {
+   "id": "pure-saddle/regret-matching/2",
+   "kind": "regret-matching",
+   "iterations": 2,
+   "matrix": [
+    [
+     600000,
+     700000
+    ],
+    [
+     400000,
+     300000
+    ]
+   ],
+   "row": [
+    750000,
+    250000
+   ],
+   "col": [
+    500000,
+    500000
+   ],
+   "exploitability": 100000000000
+  },
+  {
+   "id": "pure-saddle/regret-matching/16",
+   "kind": "regret-matching",
+   "iterations": 16,
+   "matrix": [
+    [
+     600000,
+     700000
+    ],
+    [
+     400000,
+     300000
+    ]
+   ],
+   "row": [
+    968750,
+    31250
+   ],
+   "col": [
+    937500,
+    62500
+   ],
+   "exploitability": 12500000000
+  },
+  {
+   "id": "pure-saddle/regret-matching/256",
+   "kind": "regret-matching",
+   "iterations": 256,
+   "matrix": [
+    [
+     600000,
+     700000
+    ],
+    [
+     400000,
+     300000
+    ]
+   ],
+   "row": [
+    998047,
+    1953
+   ],
+   "col": [
+    996094,
+    3906
+   ],
+   "exploitability": 781200000
+  },
+  {
+   "id": "pure-saddle/regret-matching-plus/1",
+   "kind": "regret-matching-plus",
+   "iterations": 1,
+   "matrix": [
+    [
+     600000,
+     700000
+    ],
+    [
+     400000,
+     300000
+    ]
+   ],
+   "row": [
+    500000,
+    500000
+   ],
+   "col": [
+    500000,
+    500000
+   ],
+   "exploitability": 150000000000
+  },
+  {
+   "id": "pure-saddle/regret-matching-plus/2",
+   "kind": "regret-matching-plus",
+   "iterations": 2,
+   "matrix": [
+    [
+     600000,
+     700000
+    ],
+    [
+     400000,
+     300000
+    ]
+   ],
+   "row": [
+    750000,
+    250000
+   ],
+   "col": [
+    500000,
+    500000
+   ],
+   "exploitability": 100000000000
+  },
+  {
+   "id": "pure-saddle/regret-matching-plus/16",
+   "kind": "regret-matching-plus",
+   "iterations": 16,
+   "matrix": [
+    [
+     600000,
+     700000
+    ],
+    [
+     400000,
+     300000
+    ]
+   ],
+   "row": [
+    968750,
+    31250
+   ],
+   "col": [
+    937500,
+    62500
+   ],
+   "exploitability": 12500000000
+  },
+  {
+   "id": "pure-saddle/regret-matching-plus/256",
+   "kind": "regret-matching-plus",
+   "iterations": 256,
+   "matrix": [
+    [
+     600000,
+     700000
+    ],
+    [
+     400000,
+     300000
+    ]
+   ],
+   "row": [
+    998047,
+    1953
+   ],
+   "col": [
+    996094,
+    3906
+   ],
+   "exploitability": 781200000
+  },
+  {
+   "id": "dominated-row/regret-matching/1",
+   "kind": "regret-matching",
+   "iterations": 1,
+   "matrix": [
+    [
+     1000000,
+     0
+    ],
+    [
+     0,
+     1000000
+    ],
+    [
+     100000,
+     200000
+    ]
+   ],
+   "row": [
+    333334,
+    333333,
+    333333
+   ],
+   "col": [
+    500000,
+    500000
+   ],
+   "exploitability": 133332700000
+  },
+  {
+   "id": "dominated-row/regret-matching/2",
+   "kind": "regret-matching",
+   "iterations": 2,
+   "matrix": [
+    [
+     1000000,
+     0
+    ],
+    [
+     0,
+     1000000
+    ],
+    [
+     100000,
+     200000
+    ]
+   ],
+   "row": [
+    416667,
+    416667,
+    166666
+   ],
+   "col": [
+    750000,
+    250000
+   ],
+   "exploitability": 316666400000
+  },
+  {
+   "id": "dominated-row/regret-matching/16",
+   "kind": "regret-matching",
+   "iterations": 16,
+   "matrix": [
+    [
+     1000000,
+     0
+    ],
+    [
+     0,
+     1000000
+    ],
+    [
+     100000,
+     200000
+    ]
+   ],
+   "row": [
+    333781,
+    645386,
+    20833
+   ],
+   "col": [
+    541665,
+    458335
+   ],
+   "exploitability": 205800700000
+  },
+  {
+   "id": "dominated-row/regret-matching/256",
+   "kind": "regret-matching",
+   "iterations": 256,
+   "matrix": [
+    [
+     1000000,
+     0
+    ],
+    [
+     0,
+     1000000
+    ],
+    [
+     100000,
+     200000
+    ]
+   ],
+   "row": [
+    477285,
+    521413,
+    1302
+   ],
+   "col": [
+    472862,
+    527138
+   ],
+   "exploitability": 49722800000
+  },
+  {
+   "id": "dominated-row/regret-matching-plus/1",
+   "kind": "regret-matching-plus",
+   "iterations": 1,
+   "matrix": [
+    [
+     1000000,
+     0
+    ],
+    [
+     0,
+     1000000
+    ],
+    [
+     100000,
+     200000
+    ]
+   ],
+   "row": [
+    333334,
+    333333,
+    333333
+   ],
+   "col": [
+    500000,
+    500000
+   ],
+   "exploitability": 133332700000
+  },
+  {
+   "id": "dominated-row/regret-matching-plus/2",
+   "kind": "regret-matching-plus",
+   "iterations": 2,
+   "matrix": [
+    [
+     1000000,
+     0
+    ],
+    [
+     0,
+     1000000
+    ],
+    [
+     100000,
+     200000
+    ]
+   ],
+   "row": [
+    416667,
+    416667,
+    166666
+   ],
+   "col": [
+    750000,
+    250000
+   ],
+   "exploitability": 316666400000
+  },
+  {
+   "id": "dominated-row/regret-matching-plus/16",
+   "kind": "regret-matching-plus",
+   "iterations": 16,
+   "matrix": [
+    [
+     1000000,
+     0
+    ],
+    [
+     0,
+     1000000
+    ],
+    [
+     100000,
+     200000
+    ]
+   ],
+   "row": [
+    583962,
+    388764,
+    27274
+   ],
+   "col": [
+    531827,
+    468173
+   ],
+   "exploitability": 137608200000
+  },
+  {
+   "id": "dominated-row/regret-matching-plus/256",
+   "kind": "regret-matching-plus",
+   "iterations": 256,
+   "matrix": [
+    [
+     1000000,
+     0
+    ],
+    [
+     0,
+     1000000
+    ],
+    [
+     100000,
+     200000
+    ]
+   ],
+   "row": [
+    484355,
+    513940,
+    1705
+   ],
+   "col": [
+    495255,
+    504745
+   ],
+   "exploitability": 20219500000
+  },
+  {
+   "id": "all-equal/regret-matching/1",
+   "kind": "regret-matching",
+   "iterations": 1,
+   "matrix": [
+    [
+     500000,
+     500000,
+     500000
+    ],
+    [
+     500000,
+     500000,
+     500000
+    ],
+    [
+     500000,
+     500000,
+     500000
+    ]
+   ],
+   "row": [
+    333334,
+    333333,
+    333333
+   ],
+   "col": [
+    333334,
+    333333,
+    333333
+   ],
+   "exploitability": 0
+  },
+  {
+   "id": "all-equal/regret-matching/2",
+   "kind": "regret-matching",
+   "iterations": 2,
+   "matrix": [
+    [
+     500000,
+     500000,
+     500000
+    ],
+    [
+     500000,
+     500000,
+     500000
+    ],
+    [
+     500000,
+     500000,
+     500000
+    ]
+   ],
+   "row": [
+    333334,
+    333333,
+    333333
+   ],
+   "col": [
+    333334,
+    333333,
+    333333
+   ],
+   "exploitability": 0
+  },
+  {
+   "id": "all-equal/regret-matching/16",
+   "kind": "regret-matching",
+   "iterations": 16,
+   "matrix": [
+    [
+     500000,
+     500000,
+     500000
+    ],
+    [
+     500000,
+     500000,
+     500000
+    ],
+    [
+     500000,
+     500000,
+     500000
+    ]
+   ],
+   "row": [
+    333334,
+    333333,
+    333333
+   ],
+   "col": [
+    333334,
+    333333,
+    333333
+   ],
+   "exploitability": 0
+  },
+  {
+   "id": "all-equal/regret-matching/256",
+   "kind": "regret-matching",
+   "iterations": 256,
+   "matrix": [
+    [
+     500000,
+     500000,
+     500000
+    ],
+    [
+     500000,
+     500000,
+     500000
+    ],
+    [
+     500000,
+     500000,
+     500000
+    ]
+   ],
+   "row": [
+    333334,
+    333333,
+    333333
+   ],
+   "col": [
+    333334,
+    333333,
+    333333
+   ],
+   "exploitability": 0
+  },
+  {
+   "id": "all-equal/regret-matching-plus/1",
+   "kind": "regret-matching-plus",
+   "iterations": 1,
+   "matrix": [
+    [
+     500000,
+     500000,
+     500000
+    ],
+    [
+     500000,
+     500000,
+     500000
+    ],
+    [
+     500000,
+     500000,
+     500000
+    ]
+   ],
+   "row": [
+    333334,
+    333333,
+    333333
+   ],
+   "col": [
+    333334,
+    333333,
+    333333
+   ],
+   "exploitability": 0
+  },
+  {
+   "id": "all-equal/regret-matching-plus/2",
+   "kind": "regret-matching-plus",
+   "iterations": 2,
+   "matrix": [
+    [
+     500000,
+     500000,
+     500000
+    ],
+    [
+     500000,
+     500000,
+     500000
+    ],
+    [
+     500000,
+     500000,
+     500000
+    ]
+   ],
+   "row": [
+    333334,
+    333333,
+    333333
+   ],
+   "col": [
+    333334,
+    333333,
+    333333
+   ],
+   "exploitability": 0
+  },
+  {
+   "id": "all-equal/regret-matching-plus/16",
+   "kind": "regret-matching-plus",
+   "iterations": 16,
+   "matrix": [
+    [
+     500000,
+     500000,
+     500000
+    ],
+    [
+     500000,
+     500000,
+     500000
+    ],
+    [
+     500000,
+     500000,
+     500000
+    ]
+   ],
+   "row": [
+    333334,
+    333333,
+    333333
+   ],
+   "col": [
+    333334,
+    333333,
+    333333
+   ],
+   "exploitability": 0
+  },
+  {
+   "id": "all-equal/regret-matching-plus/256",
+   "kind": "regret-matching-plus",
+   "iterations": 256,
+   "matrix": [
+    [
+     500000,
+     500000,
+     500000
+    ],
+    [
+     500000,
+     500000,
+     500000
+    ],
+    [
+     500000,
+     500000,
+     500000
+    ]
+   ],
+   "row": [
+    333334,
+    333333,
+    333333
+   ],
+   "col": [
+    333334,
+    333333,
+    333333
+   ],
+   "exploitability": 0
+  },
+  {
+   "id": "all-zero/regret-matching/1",
+   "kind": "regret-matching",
+   "iterations": 1,
+   "matrix": [
+    [
+     0,
+     0
+    ],
+    [
+     0,
+     0
+    ]
+   ],
+   "row": [
+    500000,
+    500000
+   ],
+   "col": [
+    500000,
+    500000
+   ],
+   "exploitability": 0
+  },
+  {
+   "id": "all-zero/regret-matching/2",
+   "kind": "regret-matching",
+   "iterations": 2,
+   "matrix": [
+    [
+     0,
+     0
+    ],
+    [
+     0,
+     0
+    ]
+   ],
+   "row": [
+    500000,
+    500000
+   ],
+   "col": [
+    500000,
+    500000
+   ],
+   "exploitability": 0
+  },
+  {
+   "id": "all-zero/regret-matching/16",
+   "kind": "regret-matching",
+   "iterations": 16,
+   "matrix": [
+    [
+     0,
+     0
+    ],
+    [
+     0,
+     0
+    ]
+   ],
+   "row": [
+    500000,
+    500000
+   ],
+   "col": [
+    500000,
+    500000
+   ],
+   "exploitability": 0
+  },
+  {
+   "id": "all-zero/regret-matching/256",
+   "kind": "regret-matching",
+   "iterations": 256,
+   "matrix": [
+    [
+     0,
+     0
+    ],
+    [
+     0,
+     0
+    ]
+   ],
+   "row": [
+    500000,
+    500000
+   ],
+   "col": [
+    500000,
+    500000
+   ],
+   "exploitability": 0
+  },
+  {
+   "id": "all-zero/regret-matching-plus/1",
+   "kind": "regret-matching-plus",
+   "iterations": 1,
+   "matrix": [
+    [
+     0,
+     0
+    ],
+    [
+     0,
+     0
+    ]
+   ],
+   "row": [
+    500000,
+    500000
+   ],
+   "col": [
+    500000,
+    500000
+   ],
+   "exploitability": 0
+  },
+  {
+   "id": "all-zero/regret-matching-plus/2",
+   "kind": "regret-matching-plus",
+   "iterations": 2,
+   "matrix": [
+    [
+     0,
+     0
+    ],
+    [
+     0,
+     0
+    ]
+   ],
+   "row": [
+    500000,
+    500000
+   ],
+   "col": [
+    500000,
+    500000
+   ],
+   "exploitability": 0
+  },
+  {
+   "id": "all-zero/regret-matching-plus/16",
+   "kind": "regret-matching-plus",
+   "iterations": 16,
+   "matrix": [
+    [
+     0,
+     0
+    ],
+    [
+     0,
+     0
+    ]
+   ],
+   "row": [
+    500000,
+    500000
+   ],
+   "col": [
+    500000,
+    500000
+   ],
+   "exploitability": 0
+  },
+  {
+   "id": "all-zero/regret-matching-plus/256",
+   "kind": "regret-matching-plus",
+   "iterations": 256,
+   "matrix": [
+    [
+     0,
+     0
+    ],
+    [
+     0,
+     0
+    ]
+   ],
+   "row": [
+    500000,
+    500000
+   ],
+   "col": [
+    500000,
+    500000
+   ],
+   "exploitability": 0
+  },
+  {
+   "id": "all-max/regret-matching/1",
+   "kind": "regret-matching",
+   "iterations": 1,
+   "matrix": [
+    [
+     1000000,
+     1000000
+    ],
+    [
+     1000000,
+     1000000
+    ]
+   ],
+   "row": [
+    500000,
+    500000
+   ],
+   "col": [
+    500000,
+    500000
+   ],
+   "exploitability": 0
+  },
+  {
+   "id": "all-max/regret-matching/2",
+   "kind": "regret-matching",
+   "iterations": 2,
+   "matrix": [
+    [
+     1000000,
+     1000000
+    ],
+    [
+     1000000,
+     1000000
+    ]
+   ],
+   "row": [
+    500000,
+    500000
+   ],
+   "col": [
+    500000,
+    500000
+   ],
+   "exploitability": 0
+  },
+  {
+   "id": "all-max/regret-matching/16",
+   "kind": "regret-matching",
+   "iterations": 16,
+   "matrix": [
+    [
+     1000000,
+     1000000
+    ],
+    [
+     1000000,
+     1000000
+    ]
+   ],
+   "row": [
+    500000,
+    500000
+   ],
+   "col": [
+    500000,
+    500000
+   ],
+   "exploitability": 0
+  },
+  {
+   "id": "all-max/regret-matching/256",
+   "kind": "regret-matching",
+   "iterations": 256,
+   "matrix": [
+    [
+     1000000,
+     1000000
+    ],
+    [
+     1000000,
+     1000000
+    ]
+   ],
+   "row": [
+    500000,
+    500000
+   ],
+   "col": [
+    500000,
+    500000
+   ],
+   "exploitability": 0
+  },
+  {
+   "id": "all-max/regret-matching-plus/1",
+   "kind": "regret-matching-plus",
+   "iterations": 1,
+   "matrix": [
+    [
+     1000000,
+     1000000
+    ],
+    [
+     1000000,
+     1000000
+    ]
+   ],
+   "row": [
+    500000,
+    500000
+   ],
+   "col": [
+    500000,
+    500000
+   ],
+   "exploitability": 0
+  },
+  {
+   "id": "all-max/regret-matching-plus/2",
+   "kind": "regret-matching-plus",
+   "iterations": 2,
+   "matrix": [
+    [
+     1000000,
+     1000000
+    ],
+    [
+     1000000,
+     1000000
+    ]
+   ],
+   "row": [
+    500000,
+    500000
+   ],
+   "col": [
+    500000,
+    500000
+   ],
+   "exploitability": 0
+  },
+  {
+   "id": "all-max/regret-matching-plus/16",
+   "kind": "regret-matching-plus",
+   "iterations": 16,
+   "matrix": [
+    [
+     1000000,
+     1000000
+    ],
+    [
+     1000000,
+     1000000
+    ]
+   ],
+   "row": [
+    500000,
+    500000
+   ],
+   "col": [
+    500000,
+    500000
+   ],
+   "exploitability": 0
+  },
+  {
+   "id": "all-max/regret-matching-plus/256",
+   "kind": "regret-matching-plus",
+   "iterations": 256,
+   "matrix": [
+    [
+     1000000,
+     1000000
+    ],
+    [
+     1000000,
+     1000000
+    ]
+   ],
+   "row": [
+    500000,
+    500000
+   ],
+   "col": [
+    500000,
+    500000
+   ],
+   "exploitability": 0
+  },
+  {
+   "id": "one-by-n/regret-matching/1",
+   "kind": "regret-matching",
+   "iterations": 1,
+   "matrix": [
+    [
+     100000,
+     900000,
+     400000,
+     900000
+    ]
+   ],
+   "row": [
+    1000000
+   ],
+   "col": [
+    250000,
+    250000,
+    250000,
+    250000
+   ],
+   "exploitability": 475000000000
+  },
+  {
+   "id": "one-by-n/regret-matching/2",
+   "kind": "regret-matching",
+   "iterations": 2,
+   "matrix": [
+    [
+     100000,
+     900000,
+     400000,
+     900000
+    ]
+   ],
+   "row": [
+    1000000
+   ],
+   "col": [
+    490385,
+    125000,
+    259615,
+    125000
+   ],
+   "exploitability": 277884500000
+  },
+  {
+   "id": "one-by-n/regret-matching/16",
+   "kind": "regret-matching",
+   "iterations": 16,
+   "matrix": [
+    [
+     100000,
+     900000,
+     400000,
+     900000
+    ]
+   ],
+   "row": [
+    1000000
+   ],
+   "col": [
+    936298,
+    15625,
+    32452,
+    15625
+   ],
+   "exploitability": 34735600000
+  },
+  {
+   "id": "one-by-n/regret-matching/256",
+   "kind": "regret-matching",
+   "iterations": 256,
+   "matrix": [
+    [
+     100000,
+     900000,
+     400000,
+     900000
+    ]
+   ],
+   "row": [
+    1000000
+   ],
+   "col": [
+    996019,
+    977,
+    2028,
+    976
+   ],
+   "exploitability": 2170800000
+  },
+  {
+   "id": "one-by-n/regret-matching-plus/1",
+   "kind": "regret-matching-plus",
+   "iterations": 1,
+   "matrix": [
+    [
+     100000,
+     900000,
+     400000,
+     900000
+    ]
+   ],
+   "row": [
+    1000000
+   ],
+   "col": [
+    250000,
+    250000,
+    250000,
+    250000
+   ],
+   "exploitability": 475000000000
+  },
+  {
+   "id": "one-by-n/regret-matching-plus/2",
+   "kind": "regret-matching-plus",
+   "iterations": 2,
+   "matrix": [
+    [
+     100000,
+     900000,
+     400000,
+     900000
+    ]
+   ],
+   "row": [
+    1000000
+   ],
+   "col": [
+    490385,
+    125000,
+    259615,
+    125000
+   ],
+   "exploitability": 277884500000
+  },
+  {
+   "id": "one-by-n/regret-matching-plus/16",
+   "kind": "regret-matching-plus",
+   "iterations": 16,
+   "matrix": [
+    [
+     100000,
+     900000,
+     400000,
+     900000
+    ]
+   ],
+   "row": [
+    1000000
+   ],
+   "col": [
+    936298,
+    15625,
+    32452,
+    15625
+   ],
+   "exploitability": 34735600000
+  },
+  {
+   "id": "one-by-n/regret-matching-plus/256",
+   "kind": "regret-matching-plus",
+   "iterations": 256,
+   "matrix": [
+    [
+     100000,
+     900000,
+     400000,
+     900000
+    ]
+   ],
+   "row": [
+    1000000
+   ],
+   "col": [
+    996019,
+    977,
+    2028,
+    976
+   ],
+   "exploitability": 2170800000
+  },
+  {
+   "id": "n-by-one/regret-matching/1",
+   "kind": "regret-matching",
+   "iterations": 1,
+   "matrix": [
+    [
+     300000
+    ],
+    [
+     800000
+    ],
+    [
+     800000
+    ],
+    [
+     0
+    ]
+   ],
+   "row": [
+    250000,
+    250000,
+    250000,
+    250000
+   ],
+   "col": [
+    1000000
+   ],
+   "exploitability": 325000000000
+  },
+  {
+   "id": "n-by-one/regret-matching/2",
+   "kind": "regret-matching",
+   "iterations": 2,
+   "matrix": [
+    [
+     300000
+    ],
+    [
+     800000
+    ],
+    [
+     800000
+    ],
+    [
+     0
+    ]
+   ],
+   "row": [
+    125000,
+    375000,
+    375000,
+    125000
+   ],
+   "col": [
+    1000000
+   ],
+   "exploitability": 162500000000
+  },
+  {
+   "id": "n-by-one/regret-matching/16",
+   "kind": "regret-matching",
+   "iterations": 16,
+   "matrix": [
+    [
+     300000
+    ],
+    [
+     800000
+    ],
+    [
+     800000
+    ],
+    [
+     0
+    ]
+   ],
+   "row": [
+    15625,
+    484375,
+    484375,
+    15625
+   ],
+   "col": [
+    1000000
+   ],
+   "exploitability": 20312500000
+  },
+  {
+   "id": "n-by-one/regret-matching/256",
+   "kind": "regret-matching",
+   "iterations": 256,
+   "matrix": [
+    [
+     300000
+    ],
+    [
+     800000
+    ],
+    [
+     800000
+    ],
+    [
+     0
+    ]
+   ],
+   "row": [
+    977,
+    499023,
+    499023,
+    977
+   ],
+   "col": [
+    1000000
+   ],
+   "exploitability": 1270100000
+  },
+  {
+   "id": "n-by-one/regret-matching-plus/1",
+   "kind": "regret-matching-plus",
+   "iterations": 1,
+   "matrix": [
+    [
+     300000
+    ],
+    [
+     800000
+    ],
+    [
+     800000
+    ],
+    [
+     0
+    ]
+   ],
+   "row": [
+    250000,
+    250000,
+    250000,
+    250000
+   ],
+   "col": [
+    1000000
+   ],
+   "exploitability": 325000000000
+  },
+  {
+   "id": "n-by-one/regret-matching-plus/2",
+   "kind": "regret-matching-plus",
+   "iterations": 2,
+   "matrix": [
+    [
+     300000
+    ],
+    [
+     800000
+    ],
+    [
+     800000
+    ],
+    [
+     0
+    ]
+   ],
+   "row": [
+    125000,
+    375000,
+    375000,
+    125000
+   ],
+   "col": [
+    1000000
+   ],
+   "exploitability": 162500000000
+  },
+  {
+   "id": "n-by-one/regret-matching-plus/16",
+   "kind": "regret-matching-plus",
+   "iterations": 16,
+   "matrix": [
+    [
+     300000
+    ],
+    [
+     800000
+    ],
+    [
+     800000
+    ],
+    [
+     0
+    ]
+   ],
+   "row": [
+    15625,
+    484375,
+    484375,
+    15625
+   ],
+   "col": [
+    1000000
+   ],
+   "exploitability": 20312500000
+  },
+  {
+   "id": "n-by-one/regret-matching-plus/256",
+   "kind": "regret-matching-plus",
+   "iterations": 256,
+   "matrix": [
+    [
+     300000
+    ],
+    [
+     800000
+    ],
+    [
+     800000
+    ],
+    [
+     0
+    ]
+   ],
+   "row": [
+    977,
+    499023,
+    499023,
+    977
+   ],
+   "col": [
+    1000000
+   ],
+   "exploitability": 1270100000
+  },
+  {
+   "id": "one-by-one/regret-matching/1",
+   "kind": "regret-matching",
+   "iterations": 1,
+   "matrix": [
+    [
+     1000000
+    ]
+   ],
+   "row": [
+    1000000
+   ],
+   "col": [
+    1000000
+   ],
+   "exploitability": 0
+  },
+  {
+   "id": "one-by-one/regret-matching/2",
+   "kind": "regret-matching",
+   "iterations": 2,
+   "matrix": [
+    [
+     1000000
+    ]
+   ],
+   "row": [
+    1000000
+   ],
+   "col": [
+    1000000
+   ],
+   "exploitability": 0
+  },
+  {
+   "id": "one-by-one/regret-matching/16",
+   "kind": "regret-matching",
+   "iterations": 16,
+   "matrix": [
+    [
+     1000000
+    ]
+   ],
+   "row": [
+    1000000
+   ],
+   "col": [
+    1000000
+   ],
+   "exploitability": 0
+  },
+  {
+   "id": "one-by-one/regret-matching/256",
+   "kind": "regret-matching",
+   "iterations": 256,
+   "matrix": [
+    [
+     1000000
+    ]
+   ],
+   "row": [
+    1000000
+   ],
+   "col": [
+    1000000
+   ],
+   "exploitability": 0
+  },
+  {
+   "id": "one-by-one/regret-matching-plus/1",
+   "kind": "regret-matching-plus",
+   "iterations": 1,
+   "matrix": [
+    [
+     1000000
+    ]
+   ],
+   "row": [
+    1000000
+   ],
+   "col": [
+    1000000
+   ],
+   "exploitability": 0
+  },
+  {
+   "id": "one-by-one/regret-matching-plus/2",
+   "kind": "regret-matching-plus",
+   "iterations": 2,
+   "matrix": [
+    [
+     1000000
+    ]
+   ],
+   "row": [
+    1000000
+   ],
+   "col": [
+    1000000
+   ],
+   "exploitability": 0
+  },
+  {
+   "id": "one-by-one/regret-matching-plus/16",
+   "kind": "regret-matching-plus",
+   "iterations": 16,
+   "matrix": [
+    [
+     1000000
+    ]
+   ],
+   "row": [
+    1000000
+   ],
+   "col": [
+    1000000
+   ],
+   "exploitability": 0
+  },
+  {
+   "id": "one-by-one/regret-matching-plus/256",
+   "kind": "regret-matching-plus",
+   "iterations": 256,
+   "matrix": [
+    [
+     1000000
+    ]
+   ],
+   "row": [
+    1000000
+   ],
+   "col": [
+    1000000
+   ],
+   "exploitability": 0
+  },
+  {
+   "id": "tied-best-rows/regret-matching/1",
+   "kind": "regret-matching",
+   "iterations": 1,
+   "matrix": [
+    [
+     700000,
+     300000
+    ],
+    [
+     700000,
+     300000
+    ],
+    [
+     300000,
+     700000
+    ]
+   ],
+   "row": [
+    333334,
+    333333,
+    333333
+   ],
+   "col": [
+    500000,
+    500000
+   ],
+   "exploitability": 66666800000
+  },
+  {
+   "id": "tied-best-rows/regret-matching/2",
+   "kind": "regret-matching",
+   "iterations": 2,
+   "matrix": [
+    [
+     700000,
+     300000
+    ],
+    [
+     700000,
+     300000
+    ],
+    [
+     300000,
+     700000
+    ]
+   ],
+   "row": [
+    333334,
+    333333,
+    333333
+   ],
+   "col": [
+    250000,
+    750000
+   ],
+   "exploitability": 166666800000
+  },
+  {
+   "id": "tied-best-rows/regret-matching/16",
+   "kind": "regret-matching",
+   "iterations": 16,
+   "matrix": [
+    [
+     700000,
+     300000
+    ],
+    [
+     700000,
+     300000
+    ],
+    [
+     300000,
+     700000
+    ]
+   ],
+   "row": [
+    326344,
+    326343,
+    347313
+   ],
+   "col": [
+    432292,
+    567708
+   ],
+   "exploitability": 88158000000
+  },
+  {
+   "id": "tied-best-rows/regret-matching/256",
+   "kind": "regret-matching",
+   "iterations": 256,
+   "matrix": [
+    [
+     700000,
+     300000
+    ],
+    [
+     700000,
+     300000
+    ],
+    [
+     300000,
+     700000
+    ]
+   ],
+   "row": [
+    261968,
+    261968,
+    476064
+   ],
+   "col": [
+    521592,
+    478408
+   ],
+   "exploitability": 18211200000
+  },
+  {
+   "id": "tied-best-rows/regret-matching-plus/1",
+   "kind": "regret-matching-plus",
+   "iterations": 1,
+   "matrix": [
+    [
+     700000,
+     300000
+    ],
+    [
+     700000,
+     300000
+    ],
+    [
+     300000,
+     700000
+    ]
+   ],
+   "row": [
+    333334,
+    333333,
+    333333
+   ],
+   "col": [
+    500000,
+    500000
+   ],
+   "exploitability": 66666800000
+  },
+  {
+   "id": "tied-best-rows/regret-matching-plus/2",
+   "kind": "regret-matching-plus",
+   "iterations": 2,
+   "matrix": [
+    [
+     700000,
+     300000
+    ],
+    [
+     700000,
+     300000
+    ],
+    [
+     300000,
+     700000
+    ]
+   ],
+   "row": [
+    333334,
+    333333,
+    333333
+   ],
+   "col": [
+    250000,
+    750000
+   ],
+   "exploitability": 166666800000
+  },
+  {
+   "id": "tied-best-rows/regret-matching-plus/16",
+   "kind": "regret-matching-plus",
+   "iterations": 16,
+   "matrix": [
+    [
+     700000,
+     300000
+    ],
+    [
+     700000,
+     300000
+    ],
+    [
+     300000,
+     700000
+    ]
+   ],
+   "row": [
+    221640,
+    221640,
+    556720
+   ],
+   "col": [
+    437352,
+    562648
+   ],
+   "exploitability": 47747200000
+  },
+  {
+   "id": "tied-best-rows/regret-matching-plus/256",
+   "kind": "regret-matching-plus",
+   "iterations": 256,
+   "matrix": [
+    [
+     700000,
+     300000
+    ],
+    [
+     700000,
+     300000
+    ],
+    [
+     300000,
+     700000
+    ]
+   ],
+   "row": [
+    262148,
+    262147,
+    475705
+   ],
+   "col": [
+    467184,
+    532816
+   ],
+   "exploitability": 22844400000
+  },
+  {
+   "id": "extremes/regret-matching/1",
+   "kind": "regret-matching",
+   "iterations": 1,
+   "matrix": [
+    [
+     0,
+     1000000,
+     0
+    ],
+    [
+     1000000,
+     0,
+     1000000
+    ],
+    [
+     0,
+     0,
+     1000000
+    ]
+   ],
+   "row": [
+    333334,
+    333333,
+    333333
+   ],
+   "col": [
+    333334,
+    333333,
+    333333
+   ],
+   "exploitability": 333334000000
+  },
+  {
+   "id": "extremes/regret-matching/2",
+   "kind": "regret-matching",
+   "iterations": 2,
+   "matrix": [
+    [
+     0,
+     1000000,
+     0
+    ],
+    [
+     1000000,
+     0,
+     1000000
+    ],
+    [
+     0,
+     0,
+     1000000
+    ]
+   ],
+   "row": [
+    166667,
+    666667,
+    166666
+   ],
+   "col": [
+    416668,
+    416666,
+    166666
+   ],
+   "exploitability": 416667000000
+  },
+  {
+   "id": "extremes/regret-matching/16",
+   "kind": "regret-matching",
+   "iterations": 16,
+   "matrix": [
+    [
+     0,
+     1000000,
+     0
+    ],
+    [
+     1000000,
+     0,
+     1000000
+    ],
+    [
+     0,
+     0,
+     1000000
+    ]
+   ],
+   "row": [
+    452537,
+    526630,
+    20833
+   ],
+   "col": [
+    408630,
+    332438,
+    258932
+   ],
+   "exploitability": 215025000000
+  },
+  {
+   "id": "extremes/regret-matching/256",
+   "kind": "regret-matching",
+   "iterations": 256,
+   "matrix": [
+    [
+     0,
+     1000000,
+     0
+    ],
+    [
+     1000000,
+     0,
+     1000000
+    ],
+    [
+     0,
+     0,
+     1000000
+    ]
+   ],
+   "row": [
+    525267,
+    473431,
+    1302
+   ],
+   "col": [
+    278443,
+    480178,
+    241379
+   ],
+   "exploitability": 46391000000
+  },
+  {
+   "id": "extremes/regret-matching-plus/1",
+   "kind": "regret-matching-plus",
+   "iterations": 1,
+   "matrix": [
+    [
+     0,
+     1000000,
+     0
+    ],
+    [
+     1000000,
+     0,
+     1000000
+    ],
+    [
+     0,
+     0,
+     1000000
+    ]
+   ],
+   "row": [
+    333334,
+    333333,
+    333333
+   ],
+   "col": [
+    333334,
+    333333,
+    333333
+   ],
+   "exploitability": 333334000000
+  },
+  {
+   "id": "extremes/regret-matching-plus/2",
+   "kind": "regret-matching-plus",
+   "iterations": 2,
+   "matrix": [
+    [
+     0,
+     1000000,
+     0
+    ],
+    [
+     1000000,
+     0,
+     1000000
+    ],
+    [
+     0,
+     0,
+     1000000
+    ]
+   ],
+   "row": [
+    166667,
+    666667,
+    166666
+   ],
+   "col": [
+    416668,
+    416666,
+    166666
+   ],
+   "exploitability": 416667000000
+  },
+  {
+   "id": "extremes/regret-matching-plus/16",
+   "kind": "regret-matching-plus",
+   "iterations": 16,
+   "matrix": [
+    [
+     0,
+     1000000,
+     0
+    ],
+    [
+     1000000,
+     0,
+     1000000
+    ],
+    [
+     0,
+     0,
+     1000000
+    ]
+   ],
+   "row": [
+    428971,
+    535363,
+    35666
+   ],
+   "col": [
+    241459,
+    570793,
+    187748
+   ],
+   "exploitability": 141822000000
+  },
+  {
+   "id": "extremes/regret-matching-plus/256",
+   "kind": "regret-matching-plus",
+   "iterations": 256,
+   "matrix": [
+    [
+     0,
+     1000000,
+     0
+    ],
+    [
+     1000000,
+     0,
+     1000000
+    ],
+    [
+     0,
+     0,
+     1000000
+    ]
+   ],
+   "row": [
+    461387,
+    532902,
+    5711
+   ],
+   "col": [
+    264353,
+    480118,
+    255529
+   ],
+   "exploitability": 58495000000
+  },
+  {
+   "id": "random-4x4-a/regret-matching/1",
+   "kind": "regret-matching",
+   "iterations": 1,
+   "matrix": [
+    [
+     833866,
+     943060,
+     339804,
+     192048
+    ],
+    [
+     209326,
+     838721,
+     565941,
+     486762
+    ],
+    [
+     296286,
+     146320,
+     518522,
+     529652
+    ],
+    [
+     945770,
+     857720,
+     86511,
+     443202
+    ]
+   ],
+   "row": [
+    250000,
+    250000,
+    250000,
+    250000
+   ],
+   "col": [
+    250000,
+    250000,
+    250000,
+    250000
+   ],
+   "exploitability": 205606250000
+  },
+  {
+   "id": "random-4x4-a/regret-matching/2",
+   "kind": "regret-matching",
+   "iterations": 2,
+   "matrix": [
+    [
+     833866,
+     943060,
+     339804,
+     192048
+    ],
+    [
+     209326,
+     838721,
+     565941,
+     486762
+    ],
+    [
+     296286,
+     146320,
+     518522,
+     529652
+    ],
+    [
+     945770,
+     857720,
+     86511,
+     443202
+    ]
+   ],
+   "row": [
+    345579,
+    162326,
+    125000,
+    367095
+   ],
+   "col": [
+    125000,
+    125000,
+    411908,
+    338092
+   ],
+   "exploitability": 222822767705
+  },
+  {
+   "id": "random-4x4-a/regret-matching/16",
+   "kind": "regret-matching",
+   "iterations": 16,
+   "matrix": [
+    [
+     833866,
+     943060,
+     339804,
+     192048
+    ],
+    [
+     209326,
+     838721,
+     565941,
+     486762
+    ],
+    [
+     296286,
+     146320,
+     518522,
+     529652
+    ],
+    [
+     945770,
+     857720,
+     86511,
+     443202
+    ]
+   ],
+   "row": [
+    255125,
+    302628,
+    155895,
+    286352
+   ],
+   "col": [
+    286957,
+    15625,
+    438287,
+    259131
+   ],
+   "exploitability": 89146590788
+  },
+  {
+   "id": "random-4x4-a/regret-matching/256",
+   "kind": "regret-matching",
+   "iterations": 256,
+   "matrix": [
+    [
+     833866,
+     943060,
+     339804,
+     192048
+    ],
+    [
+     209326,
+     838721,
+     565941,
+     486762
+    ],
+    [
+     296286,
+     146320,
+     518522,
+     529652
+    ],
+    [
+     945770,
+     857720,
+     86511,
+     443202
+    ]
+   ],
+   "row": [
+    212887,
+    193021,
+    508609,
+    85483
+   ],
+   "col": [
+    255539,
+    976,
+    376599,
+    366886
+   ],
+   "exploitability": 23340385612
+  },
+  {
+   "id": "random-4x4-a/regret-matching-plus/1",
+   "kind": "regret-matching-plus",
+   "iterations": 1,
+   "matrix": [
+    [
+     833866,
+     943060,
+     339804,
+     192048
+    ],
+    [
+     209326,
+     838721,
+     565941,
+     486762
+    ],
+    [
+     296286,
+     146320,
+     518522,
+     529652
+    ],
+    [
+     945770,
+     857720,
+     86511,
+     443202
+    ]
+   ],
+   "row": [
+    250000,
+    250000,
+    250000,
+    250000
+   ],
+   "col": [
+    250000,
+    250000,
+    250000,
+    250000
+   ],
+   "exploitability": 205606250000
+  },
+  {
+   "id": "random-4x4-a/regret-matching-plus/2",
+   "kind": "regret-matching-plus",
+   "iterations": 2,
+   "matrix": [
+    [
+     833866,
+     943060,
+     339804,
+     192048
+    ],
+    [
+     209326,
+     838721,
+     565941,
+     486762
+    ],
+    [
+     296286,
+     146320,
+     518522,
+     529652
+    ],
+    [
+     945770,
+     857720,
+     86511,
+     443202
+    ]
+   ],
+   "row": [
+    345579,
+    162326,
+    125000,
+    367095
+   ],
+   "col": [
+    125000,
+    125000,
+    411908,
+    338092
+   ],
+   "exploitability": 222822767705
+  },
+  {
+   "id": "random-4x4-a/regret-matching-plus/16",
+   "kind": "regret-matching-plus",
+   "iterations": 16,
+   "matrix": [
+    [
+     833866,
+     943060,
+     339804,
+     192048
+    ],
+    [
+     209326,
+     838721,
+     565941,
+     486762
+    ],
+    [
+     296286,
+     146320,
+     518522,
+     529652
+    ],
+    [
+     945770,
+     857720,
+     86511,
+     443202
+    ]
+   ],
+   "row": [
+    204594,
+    310995,
+    279022,
+    205389
+   ],
+   "col": [
+    234478,
+    15625,
+    508695,
+    241202
+   ],
+   "exploitability": 59512548238
+  },
+  {
+   "id": "random-4x4-a/regret-matching-plus/256",
+   "kind": "regret-matching-plus",
+   "iterations": 256,
+   "matrix": [
+    [
+     833866,
+     943060,
+     339804,
+     192048
+    ],
+    [
+     209326,
+     838721,
+     565941,
+     486762
+    ],
+    [
+     296286,
+     146320,
+     518522,
+     529652
+    ],
+    [
+     945770,
+     857720,
+     86511,
+     443202
+    ]
+   ],
+   "row": [
+    189421,
+    254522,
+    422134,
+    133923
+   ],
+   "col": [
+    277531,
+    7628,
+    493463,
+    221378
+   ],
+   "exploitability": 17587373681
+  },
+  {
+   "id": "random-4x4-b/regret-matching/1",
+   "kind": "regret-matching",
+   "iterations": 1,
+   "matrix": [
+    [
+     716091,
+     489913,
+     758972,
+     779722
+    ],
+    [
+     107850,
+     241754,
+     762367,
+     995815
+    ],
+    [
+     320843,
+     756962,
+     30900,
+     813606
+    ],
+    [
+     956761,
+     752002,
+     923504,
+     840306
+    ]
+   ],
+   "row": [
+    250000,
+    250000,
+    250000,
+    250000
+   ],
+   "col": [
+    250000,
+    250000,
+    250000,
+    250000
+   ],
+   "exploitability": 342757000000
+  },
+  {
+   "id": "random-4x4-b/regret-matching/2",
+   "kind": "regret-matching",
+   "iterations": 2,
+   "matrix": [
+    [
+     716091,
+     489913,
+     758972,
+     779722
+    ],
+    [
+     107850,
+     241754,
+     762367,
+     995815
+    ],
+    [
+     320843,
+     756962,
+     30900,
+     813606
+    ],
+    [
+     956761,
+     752002,
+     923504,
+     840306
+    ]
+   ],
+   "row": [
+    208604,
+    125000,
+    125000,
+    541396
+   ],
+   "col": [
+    390268,
+    310114,
+    174618,
+    125000
+   ],
+   "exploitability": 238730035404
+  },
+  {
+   "id": "random-4x4-b/regret-matching/16",
+   "kind": "regret-matching",
+   "iterations": 16,
+   "matrix": [
+    [
+     716091,
+     489913,
+     758972,
+     779722
+    ],
+    [
+     107850,
+     241754,
+     762367,
+     995815
+    ],
+    [
+     320843,
+     756962,
+     30900,
+     813606
+    ],
+    [
+     956761,
+     752002,
+     923504,
+     840306
+    ]
+   ],
+   "row": [
+    26076,
+    15625,
+    15625,
+    942674
+   ],
+   "col": [
+    57929,
+    904619,
+    21827,
+    15625
+   ],
+   "exploitability": 31713966029
+  },
+  {
+   "id": "random-4x4-b/regret-matching/256",
+   "kind": "regret-matching",
+   "iterations": 256,
+   "matrix": [
+    [
+     716091,
+     489913,
+     758972,
+     779722
+    ],
+    [
+     107850,
+     241754,
+     762367,
+     995815
+    ],
+    [
+     320843,
+     756962,
+     30900,
+     813606
+    ],
+    [
+     956761,
+     752002,
+     923504,
+     840306
+    ]
+   ],
+   "row": [
+    1630,
+    976,
+    174808,
+    822586
+   ],
+   "col": [
+    3620,
+    970723,
+    24680,
+    977
+   ],
+   "exploitability": 5118329386
+  },
+  {
+   "id": "random-4x4-b/regret-matching-plus/1",
+   "kind": "regret-matching-plus",
+   "iterations": 1,
+   "matrix": [
+    [
+     716091,
+     489913,
+     758972,
+     779722
+    ],
+    [
+     107850,
+     241754,
+     762367,
+     995815
+    ],
+    [
+     320843,
+     756962,
+     30900,
+     813606
+    ],
+    [
+     956761,
+     752002,
+     923504,
+     840306
+    ]
+   ],
+   "row": [
+    250000,
+    250000,
+    250000,
+    250000
+   ],
+   "col": [
+    250000,
+    250000,
+    250000,
+    250000
+   ],
+   "exploitability": 342757000000
+  },
+  {
+   "id": "random-4x4-b/regret-matching-plus/2",
+   "kind": "regret-matching-plus",
+   "iterations": 2,
+   "matrix": [
+    [
+     716091,
+     489913,
+     758972,
+     779722
+    ],
+    [
+     107850,
+     241754,
+     762367,
+     995815
+    ],
+    [
+     320843,
+     756962,
+     30900,
+     813606
+    ],
+    [
+     956761,
+     752002,
+     923504,
+     840306
+    ]
+   ],
+   "row": [
+    208604,
+    125000,
+    125000,
+    541396
+   ],
+   "col": [
+    390268,
+    310114,
+    174618,
+    125000
+   ],
+   "exploitability": 238730035404
+  },
+  {
+   "id": "random-4x4-b/regret-matching-plus/16",
+   "kind": "regret-matching-plus",
+   "iterations": 16,
+   "matrix": [
+    [
+     716091,
+     489913,
+     758972,
+     779722
+    ],
+    [
+     107850,
+     241754,
+     762367,
+     995815
+    ],
+    [
+     320843,
+     756962,
+     30900,
+     813606
+    ],
+    [
+     956761,
+     752002,
+     923504,
+     840306
+    ]
+   ],
+   "row": [
+    26075,
+    15625,
+    90681,
+    867619
+   ],
+   "col": [
+    57669,
+    903104,
+    21827,
+    17400
+   ],
+   "exploitability": 31444928440
+  },
+  {
+   "id": "random-4x4-b/regret-matching-plus/256",
+   "kind": "regret-matching-plus",
+   "iterations": 256,
+   "matrix": [
+    [
+     716091,
+     489913,
+     758972,
+     779722
+    ],
+    [
+     107850,
+     241754,
+     762367,
+     995815
+    ],
+    [
+     320843,
+     756962,
+     30900,
+     813606
+    ],
+    [
+     956761,
+     752002,
+     923504,
+     840306
+    ]
+   ],
+   "row": [
+    1630,
+    976,
+    114634,
+    882760
+   ],
+   "col": [
+    3604,
+    988142,
+    7166,
+    1088
+   ],
+   "exploitability": 2419631998
+  },
+  {
+   "id": "random-3x5/regret-matching/1",
+   "kind": "regret-matching",
+   "iterations": 1,
+   "matrix": [
+    [
+     116816,
+     555266,
+     178138,
+     367395,
+     487875
+    ],
+    [
+     644788,
+     440294,
+     23365,
+     826901,
+     886102
+    ],
+    [
+     543279,
+     97559,
+     967752,
+     646285,
+     760496
+    ]
+   ],
+   "row": [
+    333334,
+    333333,
+    333333
+   ],
+   "col": [
+    200000,
+    200000,
+    200000,
+    200000,
+    200000
+   ],
+   "exploitability": 238701009107
+  },
+  {
+   "id": "random-3x5/regret-matching/2",
+   "kind": "regret-matching",
+   "iterations": 2,
+   "matrix": [
+    [
+     116816,
+     555266,
+     178138,
+     367395,
+     487875
+    ],
+    [
+     644788,
+     440294,
+     23365,
+     826901,
+     886102
+    ],
+    [
+     543279,
+     97559,
+     967752,
+     646285,
+     760496
+    ]
+   ],
+   "row": [
+    166667,
+    356712,
+    476621
+   ],
+   "col": [
+    206238,
+    316747,
+    277015,
+    100000,
+    100000
+   ],
+   "exploitability": 255604875366
+  },
+  {
+   "id": "random-3x5/regret-matching/16",
+   "kind": "regret-matching",
+   "iterations": 16,
+   "matrix": [
+    [
+     116816,
+     555266,
+     178138,
+     367395,
+     487875
+    ],
+    [
+     644788,
+     440294,
+     23365,
+     826901,
+     886102
+    ],
+    [
+     543279,
+     97559,
+     967752,
+     646285,
+     760496
+    ]
+   ],
+   "row": [
+    393405,
+    172297,
+    434298
+   ],
+   "col": [
+    179042,
+    482865,
+    313093,
+    12500,
+    12500
+   ],
+   "exploitability": 128283290059
+  },
+  {
+   "id": "random-3x5/regret-matching/256",
+   "kind": "regret-matching",
+   "iterations": 256,
+   "matrix": [
+    [
+     116816,
+     555266,
+     178138,
+     367395,
+     487875
+    ],
+    [
+     644788,
+     440294,
+     23365,
+     826901,
+     886102
+    ],
+    [
+     543279,
+     97559,
+     967752,
+     646285,
+     760496
+    ]
+   ],
+   "row": [
+    379392,
+    272743,
+    347865
+   ],
+   "col": [
+    173215,
+    612816,
+    212407,
+    781,
+    781
+   ],
+   "exploitability": 34327950283
+  },
+  {
+   "id": "random-3x5/regret-matching-plus/1",
+   "kind": "regret-matching-plus",
+   "iterations": 1,
+   "matrix": [
+    [
+     116816,
+     555266,
+     178138,
+     367395,
+     487875
+    ],
+    [
+     644788,
+     440294,
+     23365,
+     826901,
+     886102
+    ],
+    [
+     543279,
+     97559,
+     967752,
+     646285,
+     760496
+    ]
+   ],
+   "row": [
+    333334,
+    333333,
+    333333
+   ],
+   "col": [
+    200000,
+    200000,
+    200000,
+    200000,
+    200000
+   ],
+   "exploitability": 238701009107
+  },
+  {
+   "id": "random-3x5/regret-matching-plus/2",
+   "kind": "regret-matching-plus",
+   "iterations": 2,
+   "matrix": [
+    [
+     116816,
+     555266,
+     178138,
+     367395,
+     487875
+    ],
+    [
+     644788,
+     440294,
+     23365,
+     826901,
+     886102
+    ],
+    [
+     543279,
+     97559,
+     967752,
+     646285,
+     760496
+    ]
+   ],
+   "row": [
+    166667,
+    356712,
+    476621
+   ],
+   "col": [
+    206238,
+    316747,
+    277015,
+    100000,
+    100000
+   ],
+   "exploitability": 255604875366
+  },
+  {
+   "id": "random-3x5/regret-matching-plus/16",
+   "kind": "regret-matching-plus",
+   "iterations": 16,
+   "matrix": [
+    [
+     116816,
+     555266,
+     178138,
+     367395,
+     487875
+    ],
+    [
+     644788,
+     440294,
+     23365,
+     826901,
+     886102
+    ],
+    [
+     543279,
+     97559,
+     967752,
+     646285,
+     760496
+    ]
+   ],
+   "row": [
+    315611,
+    230592,
+    453797
+   ],
+   "col": [
+    103386,
+    636025,
+    230822,
+    17267,
+    12500
+   ],
+   "exploitability": 97752299930
+  },
+  {
+   "id": "random-3x5/regret-matching-plus/256",
+   "kind": "regret-matching-plus",
+   "iterations": 256,
+   "matrix": [
+    [
+     116816,
+     555266,
+     178138,
+     367395,
+     487875
+    ],
+    [
+     644788,
+     440294,
+     23365,
+     826901,
+     886102
+    ],
+    [
+     543279,
+     97559,
+     967752,
+     646285,
+     760496
+    ]
+   ],
+   "row": [
+    430276,
+    209644,
+    360080
+   ],
+   "col": [
+    182534,
+    579493,
+    236113,
+    1079,
+    781
+   ],
+   "exploitability": 19582125584
+  },
+  {
+   "id": "random-6x6/regret-matching/1",
+   "kind": "regret-matching",
+   "iterations": 1,
+   "matrix": [
+    [
+     999043,
+     102119,
+     597305,
+     955068,
+     386399,
+     47821
+    ],
+    [
+     118220,
+     50917,
+     332959,
+     15241,
+     574157,
+     900013
+    ],
+    [
+     460243,
+     540568,
+     115986,
+     116014,
+     316984,
+     681915
+    ],
+    [
+     300059,
+     950410,
+     886572,
+     126134,
+     744027,
+     275606
+    ],
+    [
+     253634,
+     806313,
+     269065,
+     298767,
+     953151,
+     448198
+    ],
+    [
+     225626,
+     980667,
+     945879,
+     894001,
+     119218,
+     727590
+    ]
+   ],
+   "row": [
+    166667,
+    166667,
+    166667,
+    166667,
+    166666,
+    166666
+   ],
+   "col": [
+    166667,
+    166667,
+    166667,
+    166667,
+    166666,
+    166666
+   ],
+   "exploitability": 256026144504
+  },
+  {
+   "id": "random-6x6/regret-matching/2",
+   "kind": "regret-matching",
+   "iterations": 2,
+   "matrix": [
+    [
+     999043,
+     102119,
+     597305,
+     955068,
+     386399,
+     47821
+    ],
+    [
+     118220,
+     50917,
+     332959,
+     15241,
+     574157,
+     900013
+    ],
+    [
+     460243,
+     540568,
+     115986,
+     116014,
+     316984,
+     681915
+    ],
+    [
+     300059,
+     950410,
+     886572,
+     126134,
+     744027,
+     275606
+    ],
+    [
+     253634,
+     806313,
+     269065,
+     298767,
+     953151,
+     448198
+    ],
+    [
+     225626,
+     980667,
+     945879,
+     894001,
+     119218,
+     727590
+    ]
+   ],
+   "row": [
+    135470,
+    83334,
+    83334,
+    195841,
+    117321,
+    384700
+   ],
+   "col": [
+    344572,
+    83334,
+    83333,
+    322095,
+    83333,
+    83333
+   ],
+   "exploitability": 387470167442
+  },
+  {
+   "id": "random-6x6/regret-matching/16",
+   "kind": "regret-matching",
+   "iterations": 16,
+   "matrix": [
+    [
+     999043,
+     102119,
+     597305,
+     955068,
+     386399,
+     47821
+    ],
+    [
+     118220,
+     50917,
+     332959,
+     15241,
+     574157,
+     900013
+    ],
+    [
+     460243,
+     540568,
+     115986,
+     116014,
+     316984,
+     681915
+    ],
+    [
+     300059,
+     950410,
+     886572,
+     126134,
+     744027,
+     275606
+    ],
+    [
+     253634,
+     806313,
+     269065,
+     298767,
+     953151,
+     448198
+    ],
+    [
+     225626,
+     980667,
+     945879,
+     894001,
+     119218,
+     727590
+    ]
+   ],
+   "row": [
+    232070,
+    238937,
+    78367,
+    32696,
+    180974,
+    236956
+   ],
+   "col": [
+    210562,
+    120505,
+    10417,
+    40262,
+    235289,
+    382965
+   ],
+   "exploitability": 155974102774
+  },
+  {
+   "id": "random-6x6/regret-matching/256",
+   "kind": "regret-matching",
+   "iterations": 256,
+   "matrix": [
+    [
+     999043,
+     102119,
+     597305,
+     955068,
+     386399,
+     47821
+    ],
+    [
+     118220,
+     50917,
+     332959,
+     15241,
+     574157,
+     900013
+    ],
+    [
+     460243,
+     540568,
+     115986,
+     116014,
+     316984,
+     681915
+    ],
+    [
+     300059,
+     950410,
+     886572,
+     126134,
+     744027,
+     275606
+    ],
+    [
+     253634,
+     806313,
+     269065,
+     298767,
+     953151,
+     448198
+    ],
+    [
+     225626,
+     980667,
+     945879,
+     894001,
+     119218,
+     727590
+    ]
+   ],
+   "row": [
+    334360,
+    143027,
+    127730,
+    17644,
+    201204,
+    176035
+   ],
+   "col": [
+    338359,
+    87354,
+    89157,
+    2517,
+    179980,
+    302633
+   ],
+   "exploitability": 35299387315
+  },
+  {
+   "id": "random-6x6/regret-matching-plus/1",
+   "kind": "regret-matching-plus",
+   "iterations": 1,
+   "matrix": [
+    [
+     999043,
+     102119,
+     597305,
+     955068,
+     386399,
+     47821
+    ],
+    [
+     118220,
+     50917,
+     332959,
+     15241,
+     574157,
+     900013
+    ],
+    [
+     460243,
+     540568,
+     115986,
+     116014,
+     316984,
+     681915
+    ],
+    [
+     300059,
+     950410,
+     886572,
+     126134,
+     744027,
+     275606
+    ],
+    [
+     253634,
+     806313,
+     269065,
+     298767,
+     953151,
+     448198
+    ],
+    [
+     225626,
+     980667,
+     945879,
+     894001,
+     119218,
+     727590
+    ]
+   ],
+   "row": [
+    166667,
+    166667,
+    166667,
+    166667,
+    166666,
+    166666
+   ],
+   "col": [
+    166667,
+    166667,
+    166667,
+    166667,
+    166666,
+    166666
+   ],
+   "exploitability": 256026144504
+  },
+  {
+   "id": "random-6x6/regret-matching-plus/2",
+   "kind": "regret-matching-plus",
+   "iterations": 2,
+   "matrix": [
+    [
+     999043,
+     102119,
+     597305,
+     955068,
+     386399,
+     47821
+    ],
+    [
+     118220,
+     50917,
+     332959,
+     15241,
+     574157,
+     900013
+    ],
+    [
+     460243,
+     540568,
+     115986,
+     116014,
+     316984,
+     681915
+    ],
+    [
+     300059,
+     950410,
+     886572,
+     126134,
+     744027,
+     275606
+    ],
+    [
+     253634,
+     806313,
+     269065,
+     298767,
+     953151,
+     448198
+    ],
+    [
+     225626,
+     980667,
+     945879,
+     894001,
+     119218,
+     727590
+    ]
+   ],
+   "row": [
+    135470,
+    83334,
+    83334,
+    195841,
+    117321,
+    384700
+   ],
+   "col": [
+    344572,
+    83334,
+    83333,
+    322095,
+    83333,
+    83333
+   ],
+   "exploitability": 387470167442
+  },
+  {
+   "id": "random-6x6/regret-matching-plus/16",
+   "kind": "regret-matching-plus",
+   "iterations": 16,
+   "matrix": [
+    [
+     999043,
+     102119,
+     597305,
+     955068,
+     386399,
+     47821
+    ],
+    [
+     118220,
+     50917,
+     332959,
+     15241,
+     574157,
+     900013
+    ],
+    [
+     460243,
+     540568,
+     115986,
+     116014,
+     316984,
+     681915
+    ],
+    [
+     300059,
+     950410,
+     886572,
+     126134,
+     744027,
+     275606
+    ],
+    [
+     253634,
+     806313,
+     269065,
+     298767,
+     953151,
+     448198
+    ],
+    [
+     225626,
+     980667,
+     945879,
+     894001,
+     119218,
+     727590
+    ]
+   ],
+   "row": [
+    356212,
+    63154,
+    70706,
+    80661,
+    151999,
+    277268
+   ],
+   "col": [
+    328065,
+    87676,
+    12213,
+    116172,
+    176244,
+    279630
+   ],
+   "exploitability": 122241119954
+  },
+  {
+   "id": "random-6x6/regret-matching-plus/256",
+   "kind": "regret-matching-plus",
+   "iterations": 256,
+   "matrix": [
+    [
+     999043,
+     102119,
+     597305,
+     955068,
+     386399,
+     47821
+    ],
+    [
+     118220,
+     50917,
+     332959,
+     15241,
+     574157,
+     900013
+    ],
+    [
+     460243,
+     540568,
+     115986,
+     116014,
+     316984,
+     681915
+    ],
+    [
+     300059,
+     950410,
+     886572,
+     126134,
+     744027,
+     275606
+    ],
+    [
+     253634,
+     806313,
+     269065,
+     298767,
+     953151,
+     448198
+    ],
+    [
+     225626,
+     980667,
+     945879,
+     894001,
+     119218,
+     727590
+    ]
+   ],
+   "row": [
+    300546,
+    123471,
+    111013,
+    12651,
+    229371,
+    222948
+   ],
+   "col": [
+    309547,
+    60681,
+    26359,
+    64371,
+    190251,
+    348791
+   ],
+   "exploitability": 21724701794
+  }
+ ],
+ "curves": [
+  {
+   "id": "rock-paper-scissors",
+   "matrix": [
+    [
+     500000,
+     0,
+     1000000
+    ],
+    [
+     1000000,
+     500000,
+     0
+    ],
+    [
+     0,
+     1000000,
+     500000
+    ]
+   ],
+   "iterations": [
+    16,
+    256,
+    4096
+   ],
+   "exploitability": [
+    127928000000,
+    39853000000,
+    9062000000
+   ]
+  },
+  {
+   "id": "biased-rps",
+   "matrix": [
+    [
+     500000,
+     0,
+     800000
+    ],
+    [
+     1000000,
+     500000,
+     0
+    ],
+    [
+     200000,
+     1000000,
+     500000
+    ]
+   ],
+   "iterations": [
+    16,
+    256,
+    4096
+   ],
+   "exploitability": [
+    107992200000,
+    25548800000,
+    7964400000
+   ]
+  },
+  {
+   "id": "random-4x4-a",
+   "matrix": [
+    [
+     833866,
+     943060,
+     339804,
+     192048
+    ],
+    [
+     209326,
+     838721,
+     565941,
+     486762
+    ],
+    [
+     296286,
+     146320,
+     518522,
+     529652
+    ],
+    [
+     945770,
+     857720,
+     86511,
+     443202
+    ]
+   ],
+   "iterations": [
+    16,
+    256,
+    4096
+   ],
+   "exploitability": [
+    89146590788,
+    23340385612,
+    6540412530
+   ]
+  },
+  {
+   "id": "random-4x4-b",
+   "matrix": [
+    [
+     716091,
+     489913,
+     758972,
+     779722
+    ],
+    [
+     107850,
+     241754,
+     762367,
+     995815
+    ],
+    [
+     320843,
+     756962,
+     30900,
+     813606
+    ],
+    [
+     956761,
+     752002,
+     923504,
+     840306
+    ]
+   ],
+   "iterations": [
+    16,
+    256,
+    4096
+   ],
+   "exploitability": [
+    31713966029,
+    5118329386,
+    603335194
+   ]
+  },
+  {
+   "id": "random-3x5",
+   "matrix": [
+    [
+     116816,
+     555266,
+     178138,
+     367395,
+     487875
+    ],
+    [
+     644788,
+     440294,
+     23365,
+     826901,
+     886102
+    ],
+    [
+     543279,
+     97559,
+     967752,
+     646285,
+     760496
+    ]
+   ],
+   "iterations": [
+    16,
+    256,
+    4096
+   ],
+   "exploitability": [
+    128283290059,
+    34327950283,
+    8296732242
+   ]
+  },
+  {
+   "id": "random-6x6",
+   "matrix": [
+    [
+     999043,
+     102119,
+     597305,
+     955068,
+     386399,
+     47821
+    ],
+    [
+     118220,
+     50917,
+     332959,
+     15241,
+     574157,
+     900013
+    ],
+    [
+     460243,
+     540568,
+     115986,
+     116014,
+     316984,
+     681915
+    ],
+    [
+     300059,
+     950410,
+     886572,
+     126134,
+     744027,
+     275606
+    ],
+    [
+     253634,
+     806313,
+     269065,
+     298767,
+     953151,
+     448198
+    ],
+    [
+     225626,
+     980667,
+     945879,
+     894001,
+     119218,
+     727590
+    ]
+   ],
+   "iterations": [
+    16,
+    256,
+    4096
+   ],
+   "exploitability": [
+    155974102774,
+    35299387315,
+    9937393679
+   ]
+  }
+ ]
+}
