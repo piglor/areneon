@@ -3,7 +3,7 @@
 // second hiding member, `zeta`, is made by giving it the same ability in the vocabulary.
 
 import { describe, expect, it } from "vitest";
-import { BeliefError, type BeliefErrorCode, belief, topWorlds } from "../src/index.ts";
+import { BeliefError, type BeliefErrorCode, belief, createSampler, topWorlds } from "../src/index.ts";
 import type { BeliefInput, Marginal, OpponentBelief } from "../src/index.ts";
 import { ONE, add, ratio } from "../src/ratio.ts";
 import type { Ratio } from "../src/ratio.ts";
@@ -159,6 +159,30 @@ describe("evidence that only one explanation allows", () => {
     expect(b.assignments.map((a) => a.p)).toEqual([p(45n, 56n), p(11n, 56n)]);
     // the probability that epsilon holds ix is the share of the disguised explanation
     expect(get(slot(b, "epsilon").items, "ix")).toEqual(p(11n, 56n));
+  });
+});
+
+describe("sampleTeam under an unsettled identity-hiding member (ADR-025 erratum E-25.1)", () => {
+  // The worked case above: the revealed Ix is alpha's (15/26) or the hiding epsilon's (11/26); the evidence goes to the assigned slot.
+  const b = run([alphaIn, "|-item|p2a: Alp|Ix"], { prior: epsilonWithItem() });
+  const sampler = createSampler({ legality: { legal: () => true } });
+  const N = 4000;
+  const teams = Array.from({ length: N }, (_, i) => sampler.sampleTeam(b, Uint8Array.from({ length: 32 }, (_, k) => (i * 5 + k) & 255)).team);
+
+  it("draws the assignment by weight: the revealed item sits on the assigned slot, never both, never neither", () => {
+    for (const t of teams) expect([t.sets[ALPHA]!.item, t.sets[EPSILON]!.item].filter((x) => x === "ix")).toHaveLength(1);
+    const moved = teams.filter((t) => t.sets[EPSILON]!.item === "ix").length / N;
+    expect(Math.abs(moved - 11 / 26)).toBeLessThanOrEqual(5 * Math.sqrt((11 / 26) * (15 / 26) / N));
+  });
+
+  it("has six sets and no item twice, and is a function of the stream", () => {
+    for (const t of teams) {
+      expect(t.sets).toHaveLength(6);
+      const held = t.sets.flatMap((s) => (s.item === null ? [] : [s.item]));
+      expect(new Set(held).size).toBe(held.length);
+    }
+    const s = Uint8Array.from({ length: 32 }, (_, k) => k);
+    expect(sampler.sampleTeam(b, s)).toEqual(sampler.sampleTeam(b, s));
   });
 });
 

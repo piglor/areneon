@@ -155,6 +155,102 @@
           }
         }
       }
+    },
+    "speed_evidence": {
+      "description": "Optional (a minor change within v1; absent keeps every byte and hash of the config, and the belief then reads no speed order). The reviewed rules of the speed-order evidence of slice 4 part 2 (ADR-025 section 7): how many candidate sets are checked per forme and event, what makes a turn's order non-isolated (a speed-changing event before both actions that the reader's state does not show) and which candidate items and abilities the speed_order probe does not model. Every id is checked against the team vocabulary by the reader; no speed rule is written in code.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "max_checked",
+        "non_isolating",
+        "unmodelled"
+      ],
+      "properties": {
+        "max_checked": {
+          "description": "The most candidate sets (ability, item and named spread) checked per forme and event, most likely first; the rest stay unchecked and constrain nothing.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4096
+        },
+        "non_isolating": {
+          "description": "What makes the order of two same-priority actions non-isolated (no evidence): one of these moves used earlier in the same turn by anyone (After You, Quash); one of these moves used earlier in the channel by anyone, for a lasting change of Speed the reader does not show (Speed Swap); one of these abilities held, or possibly held, by a Pokemon in play other than the two acting ones (Cloud Nine and Air Lock change what weather does to Speed).",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "abilities",
+            "lasting_moves",
+            "moves"
+          ],
+          "properties": {
+            "abilities": {
+              "description": "Ability ids of the team vocabulary, sorted and unique.",
+              "type": "array",
+              "maxItems": 64,
+              "items": {
+                "type": "string",
+                "pattern": "^[a-z0-9]+$",
+                "minLength": 1,
+                "maxLength": 64
+              }
+            },
+            "lasting_moves": {
+              "description": "Move ids of the team vocabulary, sorted and unique.",
+              "type": "array",
+              "maxItems": 64,
+              "items": {
+                "type": "string",
+                "pattern": "^[a-z0-9]+$",
+                "minLength": 1,
+                "maxLength": 64
+              }
+            },
+            "moves": {
+              "description": "Move ids of the team vocabulary, sorted and unique.",
+              "type": "array",
+              "maxItems": 64,
+              "items": {
+                "type": "string",
+                "pattern": "^[a-z0-9]+$",
+                "minLength": 1,
+                "maxLength": 64
+              }
+            }
+          }
+        },
+        "unmodelled": {
+          "description": "Candidate items and abilities whose effect on turn order depends on state the speed_order probe does not declare (an item lost this game, a counter): a candidate that holds one is not checked, and a pair whose own Pokemon holds one is not evidence.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "abilities",
+            "items"
+          ],
+          "properties": {
+            "abilities": {
+              "description": "Ability ids of the team vocabulary, sorted and unique.",
+              "type": "array",
+              "maxItems": 64,
+              "items": {
+                "type": "string",
+                "pattern": "^[a-z0-9]+$",
+                "minLength": 1,
+                "maxLength": 64
+              }
+            },
+            "items": {
+              "description": "Item ids of the team vocabulary, sorted and unique.",
+              "type": "array",
+              "maxItems": 64,
+              "items": {
+                "type": "string",
+                "pattern": "^[a-z0-9]+$",
+                "minLength": 1,
+                "maxLength": 64
+              }
+            }
+          }
+        }
+      }
     }
   }
 }

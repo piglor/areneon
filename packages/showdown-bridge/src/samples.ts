@@ -381,6 +381,7 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
   const configWith = (change: (c: Record<string, unknown>) => void) => mutated(generatorConfig, change);
   const mixtureRoleSets = { kind: "role_sets", role_set_table_hash: hexOf("b"), share_permille: 700 };
   const mixtureUniform = { kind: "uniform", share_permille: 300 };
+  const mixtureUsage = { kind: "usage", share_permille: 500, usage_table_hash: hexOf("c"), species_root: 2, set_root: 1, floor_permille: 100 };
   const mixture = (components: unknown[] = [mixtureRoleSets, mixtureUniform]) => ({ kind: "mixture", components });
   const gates = (change: Record<string, unknown> = {}) => ({ p2_min_accept_permille: 500, p3_min_bits: 40, p4_min_strata_permille: 750, ...change });
   // The golden vocabulary is read, not exported: the export takes seconds, and team-vocabulary.test.ts holds the file equal to a fresh one.
@@ -619,6 +620,7 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "team-label-set/golden": labelSet,
     "team-generator-config/golden": generatorConfig,
     "team-generator-config/mixture": configWith((c) => (c.proposal = mixture())),
+    "team-generator-config/mixture-usage": configWith((c) => (c.proposal = { ...mixture([{ ...mixtureRoleSets, share_permille: 200 }, mixtureUniform, mixtureUsage]), gates: gates({ p1_min_usage_permille: 950, p3_min_bits_usage: 16 }) })),
     "team-generator-config/mixture-gates": configWith((c) => (c.proposal = { ...mixture(), gates: gates() })),
     "team-dataset-manifest/golden": datasetManifest,
     "team-dataset-manifest/evaluation-only": datasetWith((d) => (d.evaluation_only = { d_team: 6, near_references: 2 })),
@@ -678,6 +680,9 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "training-run-config/recent-history": runConfigWith((c) => {
       runSection(runSection(c, "model"), "encoder").options = { recent_history: true };
     }),
+    "training-run-config/exact-volatiles": runConfigWith((c) => {
+      runSection(runSection(c, "model"), "encoder").options = { exact_volatiles: true };
+    }),
     "training-run-config/candidate-features": runConfigWith((c) => {
       runSection(runSection(c, "model"), "encoder").options = { candidate_features: { feature_set: "probe-damage/1", feature_set_hash: hexOf("c") } };
     }),
@@ -730,6 +735,9 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     }),
     "clone-run-config/recent-history": cloneWith((c) => {
       runSection(runSection(c, "model"), "encoder").options = { recent_history: true };
+    }),
+    "clone-run-config/exact-volatiles": cloneWith((c) => {
+      runSection(runSection(c, "model"), "encoder").options = { exact_volatiles: true };
     }),
     "clone-run-config/candidate-features": cloneWith((c) => {
       runSection(runSection(c, "model"), "encoder").options = { candidate_features: { feature_set: "probe-damage/1", feature_set_hash: hexOf("c") } };
@@ -1053,6 +1061,9 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "clone-run-config/recent-history-false": cloneWith(
       (c) => (runSection(runSection(c, "model"), "encoder").options = { recent_history: false }),
     ),
+    "clone-run-config/exact-volatiles-false": cloneWith(
+      (c) => (runSection(runSection(c, "model"), "encoder").options = { exact_volatiles: false }),
+    ),
     "clone-run-config/candidate-features-unknown-set": cloneWith((c) => {
       runSection(runSection(c, "model"), "encoder").options = { candidate_features: { feature_set: "probe-damage/3", feature_set_hash: hexOf("c") } };
     }),
@@ -1105,6 +1116,9 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     ),
     "training-run-config/recent-history-false": runConfigWith(
       (c) => (runSection(runSection(c, "model"), "encoder").options = { recent_history: false }),
+    ),
+    "training-run-config/exact-volatiles-false": runConfigWith(
+      (c) => (runSection(runSection(c, "model"), "encoder").options = { exact_volatiles: false }),
     ),
     "training-run-config/candidate-features-true": runConfigWith(
       (c) => (runSection(runSection(c, "model"), "encoder").options = { candidate_features: true }),
@@ -1214,6 +1228,8 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "team-label-set/empty-ids": mutated(labelSet, (l) => ((l.labels as { values: unknown[] }[])[0] as { values: unknown[] }).values = [{ value: "x", when: { kind: "has_move", moves: [] } }]),
     "team-label-set/extra-field": mutated(labelSet, (l) => (l.scores = [])),
     "team-generator-config/usage-component": configWith((c) => (c.proposal = mixture([{ kind: "usage", share_permille: 500 }, mixtureUniform]))),
+    "team-generator-config/usage-without-floor": configWith((c) => (c.proposal = mixture([mixtureUniform, { kind: "usage", share_permille: 700, usage_table_hash: hexOf("c"), species_root: 2, set_root: 1 }]))),
+    "team-generator-config/usage-floor-over-1000": configWith((c) => (c.proposal = mixture([mixtureUniform, { ...mixtureUsage, share_permille: 700, floor_permille: 1001 }]))),
     "team-generator-config/float-share": configWith((c) => (c.proposal = mixture([mixtureRoleSets, { ...mixtureUniform, share_permille: 300.5 }]))),
     "team-generator-config/gates-float": configWith((c) => (c.proposal = { ...mixture(), gates: gates({ p3_min_bits: 40.5 }) })),
     "team-generator-config/gates-zero-threshold": configWith((c) => (c.proposal = { ...mixture(), gates: gates({ p2_min_accept_permille: 0 }) })),

@@ -34,6 +34,11 @@ export interface PilotComponent {
   draws: number;
   rejected: number;
   cell_hits: number[];
+  /**
+   * Component `usage` only (ADR-020 section 6, P3): the largest number of this component's pilot draws, accepted or not,
+   * that produced one and the same canonical team. A count, a measured check beside the P3 bound; never gated.
+   */
+  max_team_count?: number;
 }
 
 export interface PilotIdentity {
@@ -48,11 +53,13 @@ export function runPilot(drawer: Drawer, identity: PilotIdentity, labelSet: Team
   const kinds = drawer.components;
   const parts: PilotComponent[] | undefined = kinds?.map((kind) => ({ kind, draws: 0, rejected: 0, cell_hits: new Array<number>(cellHits.length).fill(0) }));
   let rejected = 0;
+  const teams = new Map<string, number>();
   for (let k = 0; k < draws; k++) {
     const draw = drawer.pilot(identity.config_hash, k);
     const kind = parts === undefined ? undefined : drawer.pilotComponent(identity.config_hash, k);
     const part = parts?.find((p) => p.kind === kind);
     if (part !== undefined) part.draws++;
+    if (kind === "usage") teams.set(draw.canonical_team_hash, (teams.get(draw.canonical_team_hash) ?? 0) + 1);
     if (draw.status === "accepted") {
       cellHits[draw.cell] = (cellHits[draw.cell] as number) + 1;
       if (part !== undefined) part.cell_hits[draw.cell] = (part.cell_hits[draw.cell] as number) + 1;
@@ -61,6 +68,8 @@ export function runPilot(drawer: Drawer, identity: PilotIdentity, labelSet: Team
       if (part !== undefined) part.rejected++;
     }
   }
+  const usage = parts?.find((p) => p.kind === "usage");
+  if (usage !== undefined) usage.max_team_count = Math.max(0, ...teams.values());
   return { format_version: 1, ...identity, draws, rejected, cell_hits: cellHits, ...(parts === undefined ? {} : { components: parts }) };
 }
 
@@ -96,7 +105,9 @@ function readPilotComponents(pilot: Pilot, labelSet: TeamLabelSet): void {
   let draws = 0;
   let rejected = 0;
   for (const part of parts) {
-    if (Object.keys(part).sort().join() !== "cell_hits,draws,kind,rejected") throw new PilotError("a pilot component has other fields than kind, draws, rejected and cell_hits");
+    const fields = Object.keys(part).sort().join();
+    if (fields !== "cell_hits,draws,kind,rejected" && fields !== "cell_hits,draws,kind,max_team_count,rejected") throw new PilotError("a pilot component has other fields than kind, draws, rejected, cell_hits and (usage) max_team_count");
+    if (part.max_team_count !== undefined && (part.kind !== "usage" || !count(part.max_team_count) || part.max_team_count > part.draws)) throw new PilotError("max_team_count is for the usage component only and is a count of at most its draws");
     if (typeof part.kind !== "string" || !count(part.draws) || !count(part.rejected) || !Array.isArray(part.cell_hits) || part.cell_hits.length !== cells || !part.cell_hits.every(count)) {
       throw new PilotError("a pilot component is not a kind with counts and one hit count per cell");
     }

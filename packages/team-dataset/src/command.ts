@@ -6,6 +6,7 @@
 //             [--reference FILE]... [--reference-on-disk] [--pilot FILE]
 //             [--uniform-pilot FILE] [--d-team N] [--evaluation-only] [--publish]
 //             [--vocabulary FILE] [--generator-commit SHA] [--progress-every DRAWS]
+//             [--role-sets FILE] [--usage-table FILE]   (read only when the config has such a component; the usage table defaults to the committed file whose hash the config names)
 //   pilot     --config FILE --labels FILE --format ID --out FILE --generation-key HEX [--vocabulary FILE] [--draws N] [--without-proposal]
 //             (--draws runs a shorter trial pilot; `generate` refuses a pilot whose draws are not the config's)
 //
@@ -27,7 +28,7 @@
 // the run cannot be completed), 2 a usage or input error.
 
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -56,6 +57,7 @@ import { type Pilot, readPilot, runPilot } from "./pilot.ts";
 import { SPLITS, type SplitSizes } from "./plan.ts";
 import { Proposal } from "./proposal.ts";
 import { roleSetsSource } from "./role-set-proposal.ts";
+import { type UsageSource, usageSource } from "./usage-proposal.ts";
 import { checkKey } from "./stream.ts";
 
 export interface CliIo {
@@ -86,6 +88,7 @@ const OPTIONS = {
   pilot: { type: "string" },
   vocabulary: { type: "string" },
   "role-sets": { type: "string" },
+  "usage-table": { type: "string" },
   "uniform-pilot": { type: "string" },
   "d-team": { type: "string" },
   "evaluation-only": { type: "boolean" },
@@ -134,6 +137,24 @@ function commit(values: Values): string {
   return given;
 }
 
+/**
+ * The usage weight table a `usage` component names: `--usage-table FILE`, else the file of the format's committed
+ * `config/teams/<format>/usage/` directory whose hash is the one the config names. A table that is not the named one,
+ * or none, is refused.
+ */
+function usageTable(values: Values, config: ReturnType<typeof readTeamGeneratorConfig>, formatId: string, vocabulary: ReturnType<typeof exportTeamVocabulary>): UsageSource | undefined {
+  const named = config.proposal?.components.find((c) => c.kind === "usage");
+  if (named === undefined) return undefined;
+  const dir = join(fileURLToPath(new URL("../../../config/teams", import.meta.url)), formatId, "usage");
+  const files = values["usage-table"] !== undefined ? [values["usage-table"]] : existsSync(dir) ? readdirSync(dir).filter((f) => f.endsWith(".json")).sort().map((f) => join(dir, f)) : [];
+  for (const file of files) {
+    const source = usageSource(vocabulary, json(file));
+    if (source.hash === named.usage_table_hash) return source;
+    if (values["usage-table"] !== undefined) throw new UsageError("--usage-table is not the table the config's usage component names (hash mismatch)");
+  }
+  throw new UsageError("no usage weight table with the hash the config's usage component names was found (--usage-table FILE, or config/teams/<format>/usage/)");
+}
+
 /** Everything a run reads: the engine and what is exported or checked against it. */
 function inputs(values: Values, engine: Engine) {
   const formatId = need(values, "format");
@@ -145,7 +166,7 @@ function inputs(values: Values, engine: Engine) {
   const roleSets = config.proposal?.components.some((c) => c.kind === "role_sets")
     ? roleSetsSource(engine, vocabulary, table, json(values["role-sets"] ?? join(fileURLToPath(new URL("../../../fixtures/showdown", import.meta.url)), formatId, ROLE_SETS_FILE)))
     : undefined;
-  return { format: resolveFormat(engine, formatId), table, config, labelSet, vocabulary, roleSets };
+  return { format: resolveFormat(engine, formatId), table, config, labelSet, vocabulary, roleSets, usage: usageTable(values, config, formatId, vocabulary) };
 }
 
 function referencePool(values: Values, scratch: string): { pool: ReferencePool; sorted: string[]; close: () => void } {
@@ -166,7 +187,7 @@ function runGenerate(values: Values, io: CliIo, engine: Engine): number {
   const assignmentKey = checkKey(need(values, "assignment-key"), "--assignment-key");
   const datasetId = need(values, "dataset-id");
   const generatorCommit = commit(values);
-  const { format, table, config, labelSet, vocabulary, roleSets } = inputs(values, engine);
+  const { format, table, config, labelSet, vocabulary, roleSets, usage } = inputs(values, engine);
   let pilot: Pilot | undefined;
   if (values.pilot !== undefined) {
     pilot = readPilot(json(values.pilot), { config_hash: recordHash(config), label_set_hash: recordHash(labelSet), vocabulary_hash: teamVocabularyHash(vocabulary) }, labelSet);
@@ -195,6 +216,7 @@ function runGenerate(values: Values, io: CliIo, engine: Engine): number {
       labelSet,
       config,
       roleSets,
+      usage,
       generationKey,
       assignmentKey,
       datasetId,
@@ -256,8 +278,9 @@ function runPilotCommand(values: Values, io: CliIo, engine: Engine): number {
   // The uniform reference pilot (gate P4) is the pilot of the same config without its proposal.
   const config = values["without-proposal"] === true ? withoutProposal(inputsOf.config) : inputsOf.config;
   const roleSets = values["without-proposal"] === true ? undefined : inputsOf.roleSets;
+  const usage = values["without-proposal"] === true ? undefined : inputsOf.usage;
   const identity = { config_hash: recordHash(config), label_set_hash: recordHash(labelSet), vocabulary_hash: teamVocabularyHash(vocabulary) };
-  const drawer = new Drawer({ engine, format, proposal: new Proposal(vocabulary, table, config, roleSets), labelSet, generationKey });
+  const drawer = new Drawer({ engine, format, proposal: new Proposal(vocabulary, table, config, roleSets, usage), labelSet, generationKey });
   const started = Date.now();
   const pilot = runPilot(drawer, identity, labelSet, trialDraws(values.draws, config));
   writeFileSync(out, `${JSON.stringify(pilot, null, 2)}\n`);

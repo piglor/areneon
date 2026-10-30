@@ -8,11 +8,12 @@ export { type Accepted, canonicalOrder, type Draw, Drawer, type Rejected } from 
 export { type CoverageReport, generate, type GenerateInput, GenerateError, type GenerateResult, type ReferencePool } from "./generate.ts";
 export { cellCount, cellLabels, cellOf, LabelError, labelTeam, type LabelValue } from "./labeller.ts";
 export { crossSplitNear, type NearDuplicates } from "./near-index.ts";
-export { bitsOf, GateError, populationOf, proposalCoverage, roleSetsBound, roleSetsMapping, type ProposalCoverage, uniformBound } from "./pilot-gates.ts";
+export { bitsOf, GateError, populationOf, proposalCoverage, roleSetsBound, roleSetsMapping, type ProposalCoverage, uniformBound, usageBound, usageBounds, usageMapping } from "./pilot-gates.ts";
 export { type Pilot, PilotError, readPilot, runPilot } from "./pilot.ts";
 export { groupKey, manifestPlan, planQuotas, PlanError, type QuotaPlan, type Split, SPLITS, type SplitSizes, type Stratum } from "./plan.ts";
 export { drawStatPoints, Proposal, ProposalError } from "./proposal.ts";
 export { type BeliefWorldsFiles, BeliefWorldsError, beliefWorldsFactory, beliefWorldsFiles, createBeliefWorlds } from "./damage-aware-worlds.ts";
+export { createOpponentTeams, type OpponentTeamCounts, type OpponentTeamPort, type TeamDraw, type TeamSourceResult } from "./opponent-teams.ts";
 export { createSearchWorlds, SearchWorldsError, type SearchWorldsContext, type SearchWorldsFiles, searchWorldsFiles } from "./search-worlds.ts";
 export { type GeneratorSpreadSampler, generatorSpreadSampler, type StatPointSpread } from "./spread-sampler.ts";
 export { fillQuantile, provision, type Provision } from "./provision.ts";
@@ -87,3 +88,4 @@ export * from "./shards/index.ts";
 export * from "./duckdb/index.ts";
 export { listPool, type ListedSet, type ListedTeam, type PoolListing } from "./pool-listing.ts";
 export { drawRolePicks, type RolePick, RoleSetProposalError, type RoleSetsSource, roleSetsSource } from "./role-set-proposal.ts";
+export { pickWeighted, type UsageSource, UsageProposalError, UsageSampler, usageMembers, usageSource } from "./usage-proposal.ts";

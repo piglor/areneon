@@ -125,6 +125,68 @@ class DamageEvidence(BaseModel):
     """
 
 
+class NonIsolating1(BaseModel):
+    """
+    What makes the order of two same-priority actions non-isolated (no evidence): one of these moves used earlier in the same turn by anyone (After You, Quash); one of these moves used earlier in the channel by anyone, for a lasting change of Speed the reader does not show (Speed Swap); one of these abilities held, or possibly held, by a Pokemon in play other than the two acting ones (Cloud Nine and Air Lock change what weather does to Speed).
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    abilities: Annotated[list[Ability], Field(max_length=64)]
+    """
+    Ability ids of the team vocabulary, sorted and unique.
+    """
+    lasting_moves: Annotated[list[LastingMove], Field(max_length=64)]
+    """
+    Move ids of the team vocabulary, sorted and unique.
+    """
+    moves: Annotated[list[Move], Field(max_length=64)]
+    """
+    Move ids of the team vocabulary, sorted and unique.
+    """
+
+
+class Unmodelled1(BaseModel):
+    """
+    Candidate items and abilities whose effect on turn order depends on state the speed_order probe does not declare (an item lost this game, a counter): a candidate that holds one is not checked, and a pair whose own Pokemon holds one is not evidence.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    abilities: Annotated[list[Ability], Field(max_length=64)]
+    """
+    Ability ids of the team vocabulary, sorted and unique.
+    """
+    items: Annotated[list[Item], Field(max_length=64)]
+    """
+    Item ids of the team vocabulary, sorted and unique.
+    """
+
+
+class SpeedEvidence(BaseModel):
+    """
+    Optional (a minor change within v1; absent keeps every byte and hash of the config, and the belief then reads no speed order). The reviewed rules of the speed-order evidence of slice 4 part 2 (ADR-025 section 7): how many candidate sets are checked per forme and event, what makes a turn's order non-isolated (a speed-changing event before both actions that the reader's state does not show) and which candidate items and abilities the speed_order probe does not model. Every id is checked against the team vocabulary by the reader; no speed rule is written in code.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    max_checked: Annotated[StrictInt, Field(ge=1, le=4096)]
+    """
+    The most candidate sets (ability, item and named spread) checked per forme and event, most likely first; the rest stay unchecked and constrain nothing.
+    """
+    non_isolating: NonIsolating1
+    """
+    What makes the order of two same-priority actions non-isolated (no evidence): one of these moves used earlier in the same turn by anyone (After You, Quash); one of these moves used earlier in the channel by anyone, for a lasting change of Speed the reader does not show (Speed Swap); one of these abilities held, or possibly held, by a Pokemon in play other than the two acting ones (Cloud Nine and Air Lock change what weather does to Speed).
+    """
+    unmodelled: Unmodelled1
+    """
+    Candidate items and abilities whose effect on turn order depends on state the speed_order probe does not declare (an item lost this game, a counter): a candidate that holds one is not checked, and a pair whose own Pokemon holds one is not evidence.
+    """
+
+
 class BeliefConfig(BaseModel):
     """
     The reviewed configuration of the opponent belief filter (ADR-025 sections 3 and 5): reviewed data, never code. It names the abilities that can hide a Pokemon's identity and the bounds of the filter's two fail-closed searches. Integers only. Its RFC 8785 SHA-256 is belief_config_hash, a part of the belief identity. A later evidence switch is a minor change within v1; a change of any value is a new record, never an edit.
@@ -151,4 +213,8 @@ class BeliefConfig(BaseModel):
     damage_evidence: DamageEvidence | MISSING = MISSING
     """
     Optional (a minor change within v1; absent keeps every byte and hash of the config, and the belief then reads no damage). The reviewed rules of the damage evidence of slice 4 (ADR-025 section 7, finding N9): how many candidate sets are checked per event, how the engine's display rounds hit points to the shown percentage, which modifiers make a hit non-isolated (and so no evidence) and which candidate items and abilities the probe does not model. Every id is checked against the team vocabulary by the reader; no damage or modifier rule is written in code.
+    """
+    speed_evidence: SpeedEvidence | MISSING = MISSING
+    """
+    Optional (a minor change within v1; absent keeps every byte and hash of the config, and the belief then reads no speed order). The reviewed rules of the speed-order evidence of slice 4 part 2 (ADR-025 section 7): how many candidate sets are checked per forme and event, what makes a turn's order non-isolated (a speed-changing event before both actions that the reader's state does not show) and which candidate items and abilities the speed_order probe does not model. Every id is checked against the team vocabulary by the reader; no speed rule is written in code.
     """
