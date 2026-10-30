@@ -16,7 +16,13 @@ import torch
 from areneon_ml.model.batch import collate
 from areneon_ml.model.encoder import Encoder
 from areneon_ml.model.gamedata import GameData
-from areneon_ml.model.network import ROLES, PolicyNetwork, PolicyOutput
+from areneon_ml.model.network import (
+    ROLES,
+    PolicyNetwork,
+    PolicyOutput,
+    TrunkError,
+    check_shared_trunk,
+)
 
 # Temperature 1 in millionths (ADR-023 §1); the worker's sampler states the same constant.
 FULL_TEMPERATURE_PPM = 1_000_000
@@ -35,6 +41,10 @@ class NetworkScorer:
         for role, network in networks.items():
             if network.role != role:
                 raise ScorerError(f"the {role} slot holds a {network.role} network")
+        try:
+            check_shared_trunk(networks)  # a shared_trunk pair must hold equal trunk tensors
+        except TrunkError as exc:
+            raise ScorerError(str(exc)) from exc
         self._networks = dict(networks)
         self._encoders = {role: Encoder(game, net.config.encoder) for role, net in networks.items()}
         versions = {encoder.version for encoder in self._encoders.values()}

@@ -661,6 +661,13 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "training-run-config/factored-preview": runConfigWith((c) => {
       runSection(c, "model").options = { factored_preview: true };
     }),
+    "training-run-config/shared-trunk-warm-start-battle-only": runConfigWith((c) => {
+      runSection(c, "model").options = { shared_trunk: true };
+      c.warm_start = { battle: hexOf("b") };
+    }),
+    "training-run-config/shared-trunk": runConfigWith((c) => {
+      runSection(c, "model").options = { shared_trunk: true };
+    }),
     "training-run-config/separate-value": runConfigWith((c) => {
       runSection(c, "model").options = { separate_value: "network" };
     }),
@@ -713,6 +720,9 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     }),
     "clone-run-config/factored-preview": cloneWith((c) => {
       runSection(c, "model").options = { factored_preview: true };
+    }),
+    "clone-run-config/shared-trunk": cloneWith((c) => {
+      runSection(c, "model").options = { shared_trunk: true };
     }),
     "clone-run-config/separate-value": cloneWith((c) => {
       runSection(c, "model").options = { separate_value: "network" };
@@ -849,6 +859,10 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     }),
     "training-run-config/warm-start-same-id": runConfigWith((c) => (c.warm_start = { preview: hexOf("a"), battle: hexOf("a") })),
     // Schema-valid, refused by the CloneRunConfig reader: the model rules the profile cannot say.
+    "training-run-config/shared-trunk-warm-start": runConfigWith((c) => {
+      runSection(c, "model").options = { shared_trunk: true };
+      c.warm_start = { preview: hexOf("a"), battle: hexOf("b") };
+    }),
     "training-run-config/value-warmup-no-warm-start": runConfigWith((c) => (runSection(c, "ppo").value_warmup = { generations: 2 })),
     "training-run-config/anchor-no-warm-start": runConfigWith((c) => (runSection(c, "ppo").anchor = { kl_micro: 100000, schedule: { kind: "constant" } })),
     "training-run-config/play-temperature-default": runConfigWith((c) => (runSection(c, "generation").play = { temperature_ppm: 1000000 })),
@@ -1032,6 +1046,9 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "clone-run-config/factored-preview-false": cloneWith(
       (c) => (runSection(c, "model").options = { factored_preview: false }),
     ),
+    "clone-run-config/shared-trunk-false": cloneWith(
+      (c) => (runSection(c, "model").options = { shared_trunk: false }),
+    ),
     "clone-run-config/separate-value-unknown": cloneWith(
       (c) => (runSection(c, "model").options = { separate_value: "shared" }),
     ),
@@ -1084,6 +1101,9 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     ),
     "training-run-config/factored-preview-false": runConfigWith(
       (c) => (runSection(c, "model").options = { factored_preview: false }),
+    ),
+    "training-run-config/shared-trunk-false": runConfigWith(
+      (c) => (runSection(c, "model").options = { shared_trunk: false }),
     ),
     "training-run-config/separate-value-unknown": runConfigWith(
       (c) => (runSection(c, "model").options = { separate_value: "shared" }),

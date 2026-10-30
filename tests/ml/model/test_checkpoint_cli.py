@@ -75,6 +75,18 @@ def test_init_refuses_a_bad_config(tmp_path: Path, capsys: pytest.CaptureFixture
     assert "keys must be exactly" in capsys.readouterr().err
 
 
+def test_init_refuses_a_shared_trunk_role_alone(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    shared = tmp_path / "shared.json"
+    shared.write_text(json.dumps({**TINY_MODEL.as_dict(), "options": {"shared_trunk": True}}))
+    args = ["init", "--role", "preview", "--seed", "1", "--engine-data", ENGINE_DATA]
+    code, _ = run(*args, "--model-config", str(shared), "--run-dir", str(tmp_path))
+    assert code == EXIT_REFUSED
+    assert "made by the generation loop" in capsys.readouterr().err
+    assert not (tmp_path / "checkpoints").exists()
+
+
 @pytest.mark.parametrize("seed", ["-1", str(2**64)])
 def test_init_refuses_a_seed_out_of_range(
     tmp_path: Path, config_file: Path, capsys: pytest.CaptureFixture[str], seed: str
