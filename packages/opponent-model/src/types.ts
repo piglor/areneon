@@ -14,10 +14,11 @@ import type { Ratio } from "./ratio.ts";
 import type { Dist } from "./fields.ts";
 import type { MoveModel } from "./moves.ts";
 import type { DamageCheck, DamageCounts } from "./damage.ts";
+import type { SpeedCheck, SpeedCounts } from "./speed.ts";
 import type { TrappingCheck } from "./trapping.ts";
 
 /** Bumped when the filter changes how it computes a value (as `adapter_format` is for the probe). */
-export const BELIEF_FORMAT = "belief/5";
+export const BELIEF_FORMAT = "belief/6";
 
 /**
  * The part of the pinned engine's `TeamVocabulary` the filter reads. A `TeamVocabulary` is one;
@@ -57,6 +58,13 @@ export interface BeliefInput {
    * the own side or of the opponent's real team.
    */
   readonly damage?: DamageCheck | null | undefined;
+  /**
+   * The observed order of same-priority actions of the player's own channel as an engine-backed check (ticket #1133,
+   * ADR-025 section 7), or absent / null for no speed evidence. Read only when `config.speed_evidence` is set and no
+   * disguise mixture is in play. It carries the events about opponent slots and the `speed_order` probe's verdict for a
+   * candidate set, never a field of the own side or of the opponent's real team.
+   */
+  readonly speed?: SpeedCheck | null | undefined;
 }
 
 export interface Marginal<T> {
@@ -163,6 +171,8 @@ export interface OpponentBelief {
   readonly constraints: readonly string[];
   /** What the damage evidence did (all zero when it is off). */
   readonly damage: DamageCounts & { readonly enabled: boolean };
+  /** What the speed-order evidence did (all zero when it is off). */
+  readonly speed: SpeedCounts & { readonly enabled: boolean };
   /** What the sampler reads besides the slots: the format's level and the config's legality redraw bound. */
   readonly sampling: {
     /** The level of a world's set when the channel shows none (the rule table's adjustLevel). */

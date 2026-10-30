@@ -136,11 +136,31 @@ export function nonEmpty<F>(formes: readonly F[]): F[] {
   return [...formes];
 }
 
+/** An event of either evidence (damage: the role in a hit; speed: whether the slot's Pokemon acted first or second). */
+export interface EvidenceEvent {
+  readonly id: string;
+  readonly slot: number;
+  readonly role: string;
+}
+
+/** The port of either evidence: the verdict for a candidate set, null when the probe cannot say. */
+export interface EvidenceCheck<E extends EvidenceEvent> {
+  check(event: E, candidate: DamageCandidate): boolean | null;
+}
+
 /**
  * Apply the events of one slot to its formes. Returns the rewritten formes (those with every field still possible)
  * and fixed-word notes; `counts` is added to. The input formes are not changed.
  */
 export function applyDamage<F extends DamageForme>(formes: readonly F[], species: string, events: readonly DamageEvent[], check: DamageCheck, rules: DamageRules, counts: DamageCounts): { formes: F[]; notes: string[] } {
+  return applyEvidence("damage", formes, species, events, check, rules, counts);
+}
+
+/**
+ * The one implementation of the indicator evidence: `kind` only names the notes (`damage_applied:<role>`, `speed_applied:<role>`).
+ * Speed-order evidence (ticket #1133) reads the same candidate space and reweighs it the same way.
+ */
+export function applyEvidence<F extends DamageForme, E extends EvidenceEvent>(kind: "damage" | "speed", formes: readonly F[], species: string, events: readonly E[], check: EvidenceCheck<E>, rules: DamageRules, counts: DamageCounts): { formes: F[]; notes: string[] } {
   let current: F[] = [...formes];
   const notes: string[] = [];
   const unmodelledAbilities = new Set(rules.unmodelled.abilities);
@@ -174,13 +194,13 @@ export function applyDamage<F extends DamageForme>(formes: readonly F[], species
     counts.unsupported += unsupported;
     if (checked + unsupported === 0) {
       counts.unchecked += 1;
-      notes.push(`damage_unchecked:${event.role}`);
+      notes.push(`${kind}_unchecked:${event.role}`);
       continue;
     }
     if (rejected === 0) continue;
     if (rejected === checked && unsupported === 0) {
       counts.contradictions += 1;
-      notes.push(`damage_contradiction:${event.role}`);
+      notes.push(`${kind}_contradiction:${event.role}`);
       continue;
     }
 
@@ -219,7 +239,7 @@ export function applyDamage<F extends DamageForme>(formes: readonly F[], species
     // `next` is never empty here: a forme is dropped only when a field loses every option, which needs all of the forme's
     // candidates to have failed (all enumerated, none unsupported), and all formes in that state is the contradiction above.
     counts.applied += 1;
-    notes.push(`damage_applied:${event.role}`);
+    notes.push(`${kind}_applied:${event.role}`);
     current = next;
   }
   return { formes: nonEmpty(current), notes };

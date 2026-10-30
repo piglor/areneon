@@ -1,39 +1,47 @@
 {
   "description": "SHA-256 of the canonical JSON (bigints as decimal strings) of belief() and of sampleWorlds(belief, stream, 8) on the synthetic inputs of packages/opponent-model/test/support.ts (CC0, no team data). Rewrite with ARENEON_UPDATE_GOLDEN=1 only together with a BELIEF_FORMAT bump.",
-  "belief_format": "belief/5",
+  "belief_format": "belief/6",
   "stream": "fffaf5f0ebe6e1dcd7d2cdc8c3beb9b4afaaa5a09b96918c87827d78736e6964",
   "worlds": 8,
   "cases": {
     "preview-only": {
-      "belief_sha256": "0ca1a92c8413691354cd4fb5e5c935aac2893ffc8e09bf0d4761281150550d5d",
+      "belief_sha256": "2dcf684e39dbf0aa4c59db0463d6130bcd9f4f788375a269c0b4253685209e8e",
       "worlds_sha256": "277f9854601346aaf612a368c208d9fbb65f755b79bac97110ac0d52e124cd4e"
     },
     "revealed-facts": {
-      "belief_sha256": "a213d99238e96f6e90f0f7e49bf3dfa4563aa4d2853ec5ad1f33104c0eeead3c",
+      "belief_sha256": "630eeae9a98ef8a11ea2cc75010bed266689bbc5a3a23137dacef56057a981a0",
       "worlds_sha256": "98a436b54321c9e349fd5259f0ab6bbaedd72c9a99bc2e8b8d256e5a74d26f9e"
     },
     "mega-evolved": {
-      "belief_sha256": "4fedd5be2a577a36b7109fec2c4cde88b2ca1aa78939af6d17721b7104a44470",
+      "belief_sha256": "cb69e2ceeabe835a376f4f4e75cd46b8f58e7b0d9c7a88eb4f30ba0ef7faade6",
       "worlds_sha256": "64cd15d94896a3a6289546766200e2a1a8538939a7d2b9255026fe537d2ca95a"
     },
     "disguise-mixture": {
-      "belief_sha256": "aed9c449641c939e5eeda75d90a15bacc0e6fde1e4e0a96ec3137226a61a08fb",
+      "belief_sha256": "84d9bd1e9fbc6469144b8c12e4b87793d0256a861e2291135a506dac3aab096b",
       "worlds_sha256": "55826fe3c307ea8b3102767a4b7b9a4959bd0ac5e84127d7a1a57b1168c1ef5f"
     },
     "trapping-seen": {
-      "belief_sha256": "79e9fb091c28c9ff19e78872c3085898abc1459c3f2b7c0d0d23534ab96819b3",
+      "belief_sha256": "22ca77ce8c69fb12d06270789e0bdd5f6fdbe18723d3aedd624136091bc3de18",
       "worlds_sha256": "a217e02c7fcf8b1c2e0ec69d23cf4e7de6f3f9771180765fc5a9707fb9d0da90"
     },
     "trapping-unseen": {
-      "belief_sha256": "fe45d6170e48cfe848d85c6125e9ae92ff2933e27abfac67bdfd1f1ed1e0b3e5",
+      "belief_sha256": "7343007718c8a47890f1a4ec2bca5ce019c2fabfa758cfffb2ee4e0947e6b101",
       "worlds_sha256": "1f5e48fc50accd54401fd8341d427a4a1c6bcbc0838d4b7353a0de1dca9b97e2"
     },
     "damage-applied": {
-      "belief_sha256": "7bd009151783a4566ecace3299bdfd77faceca13b0af5042de1fd4d71305e820",
+      "belief_sha256": "3e83f97383a9eeafe06899d31c1641174c94124b9d658498e4d2dfc786e11eb7",
       "worlds_sha256": "907aec0c95927a5a83b557038a4d305f0ffba6ca3ecf11142baac62a0523a6c9"
     },
     "damage-contradiction": {
-      "belief_sha256": "7eb10b5e3698ac9b21501124d7706f43fea707dfc363a8983633d8f00167573f",
+      "belief_sha256": "89d460c3419c4acc097b312a2a6ea69a6b1bd86049c07c1fb2cb19ceff50d56d",
+      "worlds_sha256": "4ad6e52239e9dcb2cd0d495a7d351b738066d6f27f752b6b9fcc2d8bc38110b3"
+    },
+    "speed-applied": {
+      "belief_sha256": "6a5ce2aeef812710d94cea24d1410d1c11afab17e2df40b4c08216ca8779d55e",
+      "worlds_sha256": "907aec0c95927a5a83b557038a4d305f0ffba6ca3ecf11142baac62a0523a6c9"
+    },
+    "speed-contradiction": {
+      "belief_sha256": "c9fd6f2f8e1bf6735481af9183da954289d4ddf4922ea3e7d92a2dc88efc70eb",
       "worlds_sha256": "4ad6e52239e9dcb2cd0d495a7d351b738066d6f27f752b6b9fcc2d8bc38110b3"
     }
   }
