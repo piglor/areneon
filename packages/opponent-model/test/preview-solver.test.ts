@@ -40,7 +40,21 @@ describe("preview solver vectors (computed in Python)", () => {
       expect(got, c.id).toEqual(c.exploitability);
       expect(got[2] as number, c.id).toBeLessThan(got[1] as number);
       expect(got[1] as number, c.id).toBeLessThan(got[0] as number);
-      if (c.id.startsWith("random")) expect(got[2] as number, c.id).toBeLessThanOrEqual(30_000 * PPM); // at most 3 points at 4,096 iterations
+      // Empirical regression guard over the committed vectors (not a theorem): at most 3 points at 4,096 iterations.
+      if (c.id.startsWith("random")) expect(got[2] as number, c.id).toBeLessThanOrEqual(30_000 * PPM);
+    }
+  });
+  it("stays within the regret-matching bound on every committed curve", () => {
+    // Hart and Mas-Colell (2000), Econometrica 68(5), and the standard regret-matching bound: after T
+    // iterations the summed exploitability of the average strategies is at most 2 * D * sqrt(max(n, m)) / sqrt(T),
+    // D the payoff range (10^6 ppm). In ppm squared that is E <= 2 * 10^12 * sqrt(max(n, m) / T); compared
+    // exactly in integers as E^2 * T <= 4 * 10^24 * max(n, m), no float.
+    for (const c of vectors.curves) {
+      const size = BigInt(Math.max(c.matrix.length, (c.matrix[0] as number[]).length));
+      for (const [i, t] of c.iterations.entries()) {
+        const e = BigInt(c.exploitability[i] as number);
+        expect(e * e * BigInt(t) <= 4n * 10n ** 24n * size, `${c.id} T=${t}`).toBe(true);
+      }
     }
   });
 });

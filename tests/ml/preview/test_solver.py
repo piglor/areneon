@@ -1,4 +1,5 @@
 import json
+from math import isqrt
 from pathlib import Path
 
 import pytest
@@ -25,7 +26,22 @@ def test_exploitability_falls_with_iterations() -> None:
         a, b, d = c["exploitability"]
         assert d < b < a
         if c["id"].startswith("random"):
+            # Empirical regression guard over the committed vectors (not a theorem).
             assert d <= 30_000 * PPM  # at most 3 points at 4,096 iterations
+
+
+def test_within_the_regret_matching_bound() -> None:
+    # Hart and Mas-Colell (2000), Econometrica 68(5), and the standard regret-matching
+    # bound: after T
+    # iterations the summed exploitability of the average strategies is at most
+    # 2 * D * sqrt(max(n, m)) / sqrt(T), D the payoff range (10^6 ppm). In ppm squared that is
+    # E <= 2 * 10^12 * sqrt(max(n, m) / T), compared exactly in integers as
+    # E^2 * T <= 4 * 10^24 * max(n, m).
+    for c in json.loads(VECTORS.read_text())["curves"]:
+        size = max(len(c["matrix"]), len(c["matrix"][0]))
+        for t, e in zip(c["iterations"], c["exploitability"], strict=True):
+            assert e * e * t <= 4 * 10**24 * size, (c["id"], t)
+            assert e <= isqrt(4 * 10**24 * size // t) + 1
 
 
 def test_hand_worked_games() -> None:
