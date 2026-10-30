@@ -28,6 +28,10 @@ Defined so far:
 - ``recent_history`` (encoder, layout changing; ADR-010 erratum A4 item 7): the reducer's recent
   history (``Recent``, ``elapsed``, ``condition_turns``) on the Pokémon and field features. Only
   ``true`` is a value: leave the key out to turn it off.
+- ``exact_volatiles`` (encoder, layout changing; ADR-010 erratum A4 item 7): volatiles and field and
+  side conditions as exact vocabulary ids (a multi-hot over the engine-data ids) instead of
+  SHA-256 buckets, plus the types a ``typechange`` set. Needs a version 2 engine-data table. Only
+  ``true`` is a value: leave the key out to turn it off.
 - ``factored_preview`` (network, layout changing; ADR-010 erratum A4 item 4): the Preview network
   scores an order as a sum over places of ``u(place, Pokemon token)`` plus ``v(lead pair)``
   (``network.py``); the Battle network ignores it. Only ``true`` is a value.
@@ -78,6 +82,7 @@ CANDIDATE_MATCHUP = "candidate_matchup"
 CANDIDATE_FEATURES = "candidate_features"
 CANDIDATE_TARGET = "candidate_target"
 RECENT_HISTORY = "recent_history"
+EXACT_VOLATILES = "exact_volatiles"
 FACTORED_PREVIEW = "factored_preview"
 #: The feature sets the encoder can read (ADR-022 §3, erratum E-22.3: ``/2`` also carries the
 #: threat, speed and priority arrays, which the encoder attaches to the own and foe tokens).
@@ -104,6 +109,7 @@ REGISTRY: dict[str, dict[str, OptionSpec]] = {
         CANDIDATE_FEATURES: OptionSpec(CANDIDATE_FEATURES, None, True, parse=_parse_feature_set),
         CANDIDATE_TARGET: OptionSpec(CANDIDATE_TARGET, lambda value: value is True, True),
         RECENT_HISTORY: OptionSpec(RECENT_HISTORY, lambda value: value is True, True),
+        EXACT_VOLATILES: OptionSpec(EXACT_VOLATILES, lambda value: value is True, True),
     },
     "network": {
         FACTORED_PREVIEW: OptionSpec(FACTORED_PREVIEW, lambda value: value is True, True),

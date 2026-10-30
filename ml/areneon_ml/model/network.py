@@ -268,7 +268,7 @@ class PolicyNetwork(nn.Module):
             raise ConfigError(f"role must be one of {ROLES}")
         self.role = role
         self.config = config
-        self.layout = Layout.of(config.encoder)
+        self.layout = Layout.of(config.encoder, game)
         d = config.d_model
         enc = config.encoder
         sizes = {
