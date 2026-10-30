@@ -317,7 +317,10 @@ describe("refusals", () => {
 
   it("makes only the row unsupported (query_kind) when the probe refuses a declared state of one damage query (#1246)", () => {
     const probe = stubProbe({ throwOn: { damage: new MechanicsProbeError("the engine does not take that status") } });
-    const features = build(first(), { probe });
+    const memo = createFeatureMemo();
+    const features = build(first(), { probe }, memo);
+    expect(memo.counts.probe_refusals).toBe(features.rows.length); // one refusal per row, counted
+    expect(createFeatureMemo().counts.probe_refusals).toBe(0);
     expect(features.rows.length).toBeGreaterThan(0);
     expect(features.rows.every((row) => row.kind === "unsupported" && row.reason === "query_kind")).toBe(true);
     // The same request with an answering probe keeps its rows' keys.

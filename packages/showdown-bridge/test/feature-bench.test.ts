@@ -29,13 +29,15 @@ describe("probe-dominated rate", () => {
 });
 
 describe("statistics", () => {
-  const result = (ms: number, rows: FeatureRow[], counts = { queries: 4, probe_runs: 1, unsupported_queries: 0 }): FeatureResult => ({ ms, counts, outcome: { kind: "features", features: features(rows) } });
+  const result = (ms: number, rows: FeatureRow[], counts = { queries: 4, probe_runs: 1, unsupported_queries: 0, probe_refusals: 0 }): FeatureResult => ({ ms, counts, outcome: { kind: "features", features: features(rows) } });
   it("summarises latency and the rows", () => {
     expect(summarise([])).toBeNull();
     const l = summarise([10, 20, 30, 40, 1000]);
     expect(l).toMatchObject({ n: 5, median_ms: 30, p95_ms: 1000, p99_ms: 1000, max_ms: 1000 });
-    const s = statsOf([result(10, [row(0, 1, 1, 5), row(0, 1, 2, null)]), { ms: 5, counts: { queries: 0, probe_runs: 0, unsupported_queries: 0 }, outcome: { kind: "error", code: "reader_gap" } }]);
+    const s = statsOf([result(10, [row(0, 1, 1, 5), row(0, 1, 2, null)]), { ms: 5, counts: { queries: 0, probe_runs: 0, unsupported_queries: 0, probe_refusals: 0 }, outcome: { kind: "error", code: "reader_gap" } }]);
     expect(s).toMatchObject({ decisions: 2, featured: 1, errors: { reader_gap: 1 }, rows: { total: 2, computed: 1, unsupported: { query_kind: 1 }, per_decision_mean_x100: 200 }, probe: { queries: 4, probe_runs: 1, memo_hit_ppm: 750_000 }, total_builder_ms: 15 });
+    expect(s.probe.probe_refusals).toBe(0);
+    expect(statsOf([result(1, [], { queries: 2, probe_runs: 2, unsupported_queries: 0, probe_refusals: 3 })]).probe.probe_refusals).toBe(3);
     expect(statsOf([]).probe.memo_hit_ppm).toBe(0);
     expect(statsOf([]).rows.per_decision_mean_x100).toBe(0);
   });
@@ -48,7 +50,7 @@ describe("statistics", () => {
       threats: [{ own: 0, mega: false, foe: 1, move: "x", kind: "unsupported", reason: "query_kind" }, { own: 0, mega: false, foe: 2, move: "x", kind: "computed" }],
       speeds: [],
     };
-    const result: FeatureResult = { ms: 3, counts: { queries: 5, probe_runs: 2, unsupported_queries: 1 }, parts: { setup: part(1), rows: part(1), threats: part(1), speeds: part(1), priorities: part(1) }, outcome: { kind: "features", features: two as never } };
+    const result: FeatureResult = { ms: 3, counts: { queries: 5, probe_runs: 2, unsupported_queries: 1, probe_refusals: 2 }, parts: { setup: part(1), rows: part(1), threats: part(1), speeds: part(1), priorities: part(1) }, outcome: { kind: "features", features: two as never } };
     const stats = statsOf([result, result]);
     expect(stats.arrays).toEqual({ threats: { rows: 4, computed: 2, unsupported: { query_kind: 2 } }, speeds: { rows: 0, computed: 0, unsupported: {} } });
     expect(stats.parts?.threats).toEqual({ queries: 2, probe_runs: 0, ms: 21 });

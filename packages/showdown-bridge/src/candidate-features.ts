@@ -98,9 +98,9 @@ export interface CandidateFeatures {
 /** A game's memo of probe answers by query hash, with the counts that measure it. Create one per game. */
 export interface FeatureMemo {
   results: ProbeMemo;
-  counts: ProbeCounts;
+  counts: ProbeCounts & { probe_refusals: number };
 }
-export const createFeatureMemo = (): FeatureMemo => ({ results: new Map(), counts: { queries: 0, probe_runs: 0, unsupported_queries: 0 } });
+export const createFeatureMemo = (): FeatureMemo => ({ results: new Map(), counts: { queries: 0, probe_runs: 0, unsupported_queries: 0, probe_refusals: 0 } });
 
 /** The parts a feature row depends on besides the request (ADR-022 section 3). */
 export interface FeatureSetIdentity {
@@ -207,7 +207,7 @@ export function damageRows(view: DamageView, state: PublicState, body: Record<st
         const key = `${slot}/${part.index}/${foe.loc}/${part.mega}`;
         if (rows.has(key)) continue;
         const mine = (own[slot] as OwnSlot).fighter;
-        const values = damageValuesOf(() => view.damageResult({ ...mine, mega: mine.mega || part.mega }, foe.fighter, id, state, true));
+        const values = damageValuesOf(view, () => view.damageResult({ ...mine, mega: mine.mega || part.mega }, foe.fighter, id, state, true));
         rows.set(key, { slot, move: part.index, target: foe.loc, mega: part.mega, ...values });
       }
     });
@@ -268,11 +268,12 @@ export function damageValues(result: MechanicsResult | null): DamageValues {
  * `damageValues` of one damage query, asked here. A state the probe refuses to declare (`ProbeRefusal`, #1246) makes only this
  * row `unsupported` (`query_kind`: the probe cannot answer this query), never the whole request, so the seat is not forfeited for it.
  */
-export function damageValuesOf(ask: () => MechanicsResult | null): DamageValues {
+export function damageValuesOf(view: Pick<DamageView, "noteRefused">, ask: () => MechanicsResult | null): DamageValues {
   try {
     return damageValues(ask());
   } catch (error) {
-    if (error instanceof ProbeRefusal) return { kind: "unsupported", reason: "query_kind" };
-    throw error;
+    if (!(error instanceof ProbeRefusal)) throw error;
+    view.noteRefused();
+    return { kind: "unsupported", reason: "query_kind" };
   }
 }

@@ -193,7 +193,7 @@ function threatRows(view: DamageView, state: PublicState, entries: readonly Entr
         for (const move of new Set(foe.assumed.revealed_moves)) {
           const data = view.dex.moves.get(move);
           if (!data.exists || data.category === "Status" || foeTargetKind(data.target) === "none") continue;
-          out.push({ own: entry.position, mega, foe: foe.loc, move, ...damageValuesOf(() => view.damageResult(foe.fighter, asMega(entry, mega), move, state, false)) });
+          out.push({ own: entry.position, mega, foe: foe.loc, move, ...damageValuesOf(view, () => view.damageResult(foe.fighter, asMega(entry, mega), move, state, false)) });
         }
       }
     }
@@ -210,8 +210,9 @@ function ask(view: DamageView, state: PublicState, own: readonly Fighter[], foes
   try {
     result = view.queryLimited({ kind: "speed_order", sides, actions, state: view.field(state, true) } as SpeedOrderQuery);
   } catch (error) {
-    if (error instanceof ProbeRefusal) return { kind: "unsupported", reason: "query_kind" }; // #1246: a refused declared state makes these rows unsupported, not the request
-    throw error;
+    if (!(error instanceof ProbeRefusal)) throw error;
+    view.noteRefused(); // #1246: a refused declared state makes these rows unsupported, not the request
+    return { kind: "unsupported", reason: "query_kind" };
   }
   if ("limit" in result) return { kind: "unsupported", reason: result.limit };
   if (result.kind === "unsupported") return { kind: "unsupported", reason: result.reason };

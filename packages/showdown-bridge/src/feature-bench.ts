@@ -165,7 +165,7 @@ export interface RunStats {
   errors: Record<string, number>;
   latency: LatencySummary | null;
   rows: { total: number; per_decision_mean_x100: number; unsupported: Record<string, number>; computed: number };
-  probe: { queries: number; probe_runs: number; memo_hit_ppm: number };
+  probe: { queries: number; probe_runs: number; memo_hit_ppm: number; /** Refused queries turned into `unsupported` rows (#1246). */ probe_refusals: number };
   /** `probe-damage/2` only: the four new arrays, rows by kind. */
   arrays?: Record<string, { rows: number; computed: number; unsupported: Record<string, number> }>;
   /** `probe-damage/2` only: where the builder spent its probe queries and time, summed over the decisions (ms rounded). */
@@ -186,6 +186,7 @@ export function statsOf(results: readonly FeatureResult[]): RunStats {
   let featured = 0;
   let queries = 0;
   let runs = 0;
+  let refusals = 0;
   const arrays: NonNullable<RunStats["arrays"]> = {};
   const parts: NonNullable<RunStats["parts"]> = {};
   for (const r of results) {
@@ -197,6 +198,7 @@ export function statsOf(results: readonly FeatureResult[]): RunStats {
     }
     queries += r.counts.queries;
     runs += r.counts.probe_runs;
+    refusals += r.counts.probe_refusals;
     if (r.outcome.kind === "error") {
       errors[r.outcome.code] = (errors[r.outcome.code] ?? 0) + 1;
       continue;
@@ -224,7 +226,7 @@ export function statsOf(results: readonly FeatureResult[]): RunStats {
     errors,
     latency: summarise(results.map((r) => r.ms)),
     rows: { total: rows, per_decision_mean_x100: featured === 0 ? 0 : Math.round((rows * 100) / featured), unsupported, computed },
-    probe: { queries, probe_runs: runs, memo_hit_ppm: queries === 0 ? 0 : Math.floor(((queries - runs) * 1_000_000) / queries) },
+    probe: { queries, probe_runs: runs, memo_hit_ppm: queries === 0 ? 0 : Math.floor(((queries - runs) * 1_000_000) / queries), probe_refusals: refusals },
     ...(Object.keys(arrays).length === 0 ? {} : { arrays }),
     ...(Object.keys(parts).length === 0 ? {} : { parts: Object.fromEntries(Object.entries(parts).map(([name, sum]) => [name, { ...sum, ms: Math.round(sum.ms) }])) }),
     total_builder_ms: Math.round(results.reduce((a, r) => a + r.ms, 0)),

@@ -44,7 +44,7 @@ export interface FeatureResult {
   /** Wall-clock milliseconds of the build in its thread; a measurement, never part of the rows. */
   ms: number;
   /** The probe counts this task added to its game's memo. */
-  counts: ProbeCounts;
+  counts: ProbeCounts & { probe_refusals: number };
   /** Where a `probe-damage/2` build spent them, by part (absent for `probe-damage/1`). */
   parts?: CostTrace;
 }
@@ -82,7 +82,7 @@ export function createFeatureService(spec: FeatureServiceSpec, engineOverride?: 
       }
       const ms = performance.now() - started;
       if (task.final === true) memos.delete(task.game);
-      const counts = { queries: memo.counts.queries - before.queries, probe_runs: memo.counts.probe_runs - before.probe_runs, unsupported_queries: memo.counts.unsupported_queries - before.unsupported_queries };
+      const counts = { queries: memo.counts.queries - before.queries, probe_runs: memo.counts.probe_runs - before.probe_runs, unsupported_queries: memo.counts.unsupported_queries - before.unsupported_queries, probe_refusals: memo.counts.probe_refusals - before.probe_refusals };
       return { outcome, ms, counts, ...(parts === undefined ? {} : { parts }) };
     },
   };
