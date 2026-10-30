@@ -109,7 +109,6 @@ export function usageWeightTableSamples(vocabulary: TeamVocabulary): { valid: Ca
       "usage-weight-table/no-attribution": withTable((t) => delete t.sources[0].attribution),
       "usage-weight-table/no-species": withTable((t) => (t.species = [])),
       "usage-weight-table/root-zero": withTable((t) => (t.derivation.species_root = 0)),
-      "usage-weight-table/evs-field": withTable((t) => (first(t).spreads.entries[0].evs = { hp: 1 })),
       "usage-weight-table/next-version": withTable((t) => (t.schema_version = 2)),
     },
     readerInvalid: {

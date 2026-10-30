@@ -569,7 +569,6 @@
   "v1/usage-weight-table/invalid/no-attribution.json": "f0fbf3f16392079cab8e018227151f0f97288575260f66a6814f7bd9dcf0f9c8",
   "v1/usage-weight-table/invalid/no-species.json": "c4bde3de226ff0ace45c1931b4e35d0aa46e96d4f23621485b10301705c0664e",
   "v1/usage-weight-table/invalid/root-zero.json": "472ef03d68363a0ee969224699c7ed8366b71de37a560c2d164f276d5731f462",
-  "v1/usage-weight-table/invalid/evs-field.json": "e1dfd069fcc796c0b28b9dd26afa72fef5648bf2577d2c3c1556be917e4cb7e9",
   "v1/usage-weight-table/invalid/next-version.json": "2d51082334bc516c5221ba57389d42dfc5b8c6ecf5e047eb97c5e907c820762b",
   "v1/world-writers/invalid/extra-field.json": "4e08b812a98655010b4614ff680a7f9d6ae863034632a50ce8c32bbd61c31c82",
   "v1/world-writers/invalid/unknown-item.json": "883bddfe1264891ef99777fedef49cf5ab86ec52344b66550818a55b471b7d1a",

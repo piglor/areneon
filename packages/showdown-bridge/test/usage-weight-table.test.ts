@@ -92,10 +92,11 @@ describe("readUsageWeightTable (ADR-020 section 4)", () => {
   });
 
   it("refuses every schema-invalid sample and an evs, paste or team-shaped intruder", () => {
-    for (const name of ["extra-field", "fractional-ppm", "zero-ppm", "ppm-over-total", "missing-truncated", "missing-no-item", "missing-empty", "abilities-truncated", "missing-spread-point", "missing-teammate-weight", "bad-month", "no-sources", "other-basis", "no-attribution", "no-species", "root-zero", "evs-field", "next-version"]) {
+    for (const name of ["extra-field", "fractional-ppm", "zero-ppm", "ppm-over-total", "missing-truncated", "missing-no-item", "missing-empty", "abilities-truncated", "missing-spread-point", "missing-teammate-weight", "bad-month", "no-sources", "other-basis", "no-attribution", "no-species", "root-zero", "next-version"]) {
       expect(() => readUsageWeightTable(committed(`v1/usage-weight-table/invalid/${name}.json`), vocabulary), name).toThrow(UsageWeightTableError);
     }
     const intruders: [string, (t: any) => void][] = [
+      ["evs", (t) => (t.species[0].spreads.entries[0].evs = {})],
       ["paste", (t) => (t.paste = "Pikachu @ Light Ball")],
       ["team", (t) => (t.species[0].sets = [{ species: "x", moves: [], evs: {} }])],
     ];

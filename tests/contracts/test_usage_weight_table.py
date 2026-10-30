@@ -86,7 +86,7 @@ def test_every_reader_invalid_sample_has_its_expected_message() -> None:
 
 
 def test_every_schema_invalid_sample_is_refused() -> None:
-    assert len(names("invalid")) >= 18
+    assert len(names("invalid")) == 17
     for name in names("invalid"):
         with pytest.raises(UsageWeightTableError):
             read_usage_weight_table(load(f"v1/usage-weight-table/invalid/{name}.json"), VOCABULARY)

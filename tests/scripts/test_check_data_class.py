@@ -1083,6 +1083,58 @@ def test_other_documents_are_not_usage_priors() -> None:
     assert guard.USAGE_PRIOR_TEAM not in guard.problems_in({**other, "paste": "x"}, True)
 
 
+# ADR-020 section 4: a usage weight table is aggregate weights, never a team.
+USAGE_TABLE: dict[str, object] = json.loads(
+    (ROOT / "fixtures/contracts/v1/usage-weight-table/valid/v1.json").read_text(encoding="utf-8")
+)
+
+
+@pytest.mark.parametrize("in_fixtures", [True, False])
+def test_a_usage_weight_table_without_team_text_passes(in_fixtures: bool) -> None:
+    assert guard.problems_in(USAGE_TABLE, in_fixtures) == []
+
+
+@pytest.mark.parametrize(
+    "intruder",
+    [
+        {"paste": "Venusaur @ Leftovers"},
+        {"paste": 7},
+        {"species": "Venusaur", "moves": ["Protect"], "evs": {"hp": 1}},
+        {"evs": {"hp": 1}},
+        {"species": "Venusaur", "moves": ["Protect"], "item": "leftovers", "evs": {}},
+    ],
+)
+@pytest.mark.parametrize("in_fixtures", [True, False])
+def test_a_usage_weight_table_may_not_hold_a_paste_an_evs_key_or_a_team(
+    intruder: dict[str, object], in_fixtures: bool
+) -> None:
+    table = copy.deepcopy(USAGE_TABLE)
+    species: list[dict[str, object]] = table["species"]  # type: ignore[assignment]
+    species[0]["sets"] = [intruder]
+    assert guard.USAGE_TABLE_TEAM in guard.problems_in(table, in_fixtures)
+    table = copy.deepcopy(USAGE_TABLE)
+    table["note"] = intruder
+    assert guard.USAGE_TABLE_TEAM in guard.problems_in(table, in_fixtures)
+
+
+def test_every_committed_usage_weight_table_passes_the_guard(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The reviewed tables under config/teams/<format>/usage/ (ADR-020 section 4) and the samples.
+    monkeypatch.chdir(ROOT)
+    samples = ROOT / "fixtures/contracts/v1/usage-weight-table/valid"
+    paths = sorted((ROOT / "config/teams").glob("*/usage/*.json")) + sorted(samples.glob("*.json"))
+    assert paths
+    for path in paths:
+        assert guard.problems_in(json.loads(path.read_text(encoding="utf-8")), False) == [], path
+        assert guard.violations([str(path.relative_to(ROOT))]) == [], path
+
+
+def test_other_documents_are_not_usage_weight_tables() -> None:
+    other = {"month": "2026-09", "derivation": {}, "sources": []}  # no species list
+    assert guard.USAGE_TABLE_TEAM not in guard.problems_in({**other, "paste": "x"}, True)
+
+
 # ADR-015 erratum E1: the strict shape of a private test record.
 TEST_MARKER = "fixtures/contracts/v1/private-test-record/valid/sample.json"
 TEST_SHAPE = guard.TEST_RECORD_SHAPE
