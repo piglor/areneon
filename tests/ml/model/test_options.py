@@ -64,6 +64,7 @@ def test_only_the_registered_options_exist() -> None:
         "candidate_matchup",
         "candidate_features",
         "candidate_target",
+        "recent_history",
     }
     assert set(REGISTRY["network"]) == {"factored_preview"}
     with pytest.raises(OptionError, match="unknown network option 'x'"):
