@@ -84,5 +84,6 @@ export { readRevealDir, REVEAL_FILES, retireSealedSet, revealHash, revealOf, Sea
 export { assertPrivateStore, SealedStoreError } from "./sealed-store.ts";
 export { runSealedCli, type SealedCliIo } from "./sealed-command.ts";
 export * from "./shards/index.ts";
+export * from "./duckdb/index.ts";
 export { listPool, type ListedSet, type ListedTeam, type PoolListing } from "./pool-listing.ts";
 export { drawRolePicks, type RolePick, RoleSetProposalError, type RoleSetsSource, roleSetsSource } from "./role-set-proposal.ts";
