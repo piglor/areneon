@@ -40,6 +40,7 @@ describe("preview solver vectors (computed in Python)", () => {
       expect(got, c.id).toEqual(c.exploitability);
       expect(got[2] as number, c.id).toBeLessThan(got[1] as number);
       expect(got[1] as number, c.id).toBeLessThan(got[0] as number);
+      if (c.id.startsWith("random")) expect(got[2] as number, c.id).toBeLessThanOrEqual(30_000 * PPM); // at most 3 points at 4,096 iterations
     }
   });
 });

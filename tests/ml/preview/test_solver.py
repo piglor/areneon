@@ -24,6 +24,8 @@ def test_exploitability_falls_with_iterations() -> None:
     for c in json.loads(VECTORS.read_text())["curves"]:
         a, b, d = c["exploitability"]
         assert d < b < a
+        if c["id"].startswith("random"):
+            assert d <= 30_000 * PPM  # at most 3 points at 4,096 iterations
 
 
 def test_hand_worked_games() -> None:
