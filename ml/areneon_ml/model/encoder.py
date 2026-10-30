@@ -735,8 +735,8 @@ class Encoder:
             column = self._volatile_column(name)
             if not self._is_derived(name):  # a numbered or stat-suffixed id is read from `derived`
                 volatiles[column] += 1.0
-        for base, suffix in sorted(mon.derived.items()) if _exact(config) else ():
-            volatiles[self._volatile_column(base)] = (
+        for condition, suffix in sorted(mon.derived.items()) if _exact(config) else ():
+            volatiles[self._volatile_column(condition)] = (
                 1.0 + int(suffix) / DERIVED_SCALE if suffix.isdigit() else 1.0
             )
         known_moves = mon.moves_own if mon.moves_own is not None else []

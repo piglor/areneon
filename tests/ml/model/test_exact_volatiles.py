@@ -212,12 +212,14 @@ def test_the_derived_number_is_the_latest_one_the_engine_printed() -> None:
     three = foe_block(
         f"|-start|{foe}|stockpile1", f"|-start|{foe}|stockpile2", f"|-start|{foe}|stockpile3"
     )[column]
-    assert (one.item(), three.item()) == (pytest.approx(1 + 1 / 8), pytest.approx(1 + 3 / 8))
+    assert one.item() == pytest.approx(1 + 1 / 8)
+    assert three.item() == pytest.approx(1 + 3 / 8)
     assert foe_block(f"|-start|{foe}|stockpile3", f"|-end|{foe}|Stockpile")[column].item() == 0.0
     perish = FIRST + COLUMN["perish"]
     three_left = foe_block(f"|-start|{foe}|perish3")[perish]
     none_left = foe_block(*(f"|-start|{foe}|perish{n}" for n in (3, 2, 1, 0)))[perish]
-    assert (three_left.item(), none_left.item()) == (pytest.approx(1 + 3 / 8), 1.0)
+    assert three_left.item() == pytest.approx(1 + 3 / 8)
+    assert none_left.item() == 1.0
     fallen = FIRST + COLUMN["fallen"]
     assert foe_block(f"|-start|{foe}|fallen4|[silent]")[fallen].item() == pytest.approx(1.5)
     assert (
