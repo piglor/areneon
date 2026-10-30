@@ -80,6 +80,11 @@ class PokemonState:
     active_slot: str | None = None
     boosts: dict[str, int] = field(default_factory=zero_boosts)
     volatiles: set[str] = field(default_factory=set)
+    # The derived suffix of the volatiles the engine prints under a numbered or stat-suffixed name
+    # (`stockpile2` -> {"stockpile": "2"}, `protosynthesisatk` -> {"protosynthesis": "atk"}), the
+    # latest one per condition id; ended by the engine's `-end` under the bare name (which the raw
+    # `volatiles` ids do not follow). Version 2 tables only; bookkeeping, not part of `to_dict`.
+    derived: dict[str, str] = field(default_factory=dict)
     # The types a `typechange` gave the Pokemon (type ids, `???` for none; empty when the channel
     # does not say which), None while its species' own. Ends on switching out.
     types: list[str] | None = None

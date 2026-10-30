@@ -34,6 +34,7 @@ export {
   engineDataSummary,
   exportEngineData,
   readEngineData,
+  readEngineDataAny,
 } from "./engine-data.ts";
 export {
   DEFAULT_SHOWDOWN_DIR,
@@ -258,6 +259,7 @@ export {
   readPrivateSnapshotManifest,
 } from "./private-snapshot.ts";
 export { type UsagePrior, UsagePriorError, readUsagePrior, usagePriorHash } from "./usage-prior.ts";
+export { type UsageWeightTable, UsageWeightTableError, readUsageWeightTable, usageTableHash } from "./usage-weight-table.ts";
 export {
   ADMITTED_KINDS,
   STATE_CLASSES,

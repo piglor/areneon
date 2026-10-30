@@ -43,14 +43,24 @@ from areneon_ml.model.gamedata import NONE, RESERVED, UNKNOWN, GameData
 from areneon_ml.model.options import (
     CANDIDATE_MATCHUP,
     CANDIDATE_TARGET,
+    EXACT_VOLATILES,
     RECENT_HISTORY,
     Options,
     feature_set,
     is_set,
     with_options,
 )
-from areneon_ml.reducer import BattleState, ChannelReducer, PokemonState, SideState, reduce_channel
+from areneon_ml.reducer import (
+    BattleState,
+    ChannelReducer,
+    PokemonState,
+    SideState,
+    VocabularyError,
+    reduce_channel,
+)
+from areneon_ml.reducer.reducer import TYPELESS
 from areneon_ml.reducer.state import STAT_KEYS
+from areneon_ml.reducer.vocab import PROTOCOL_VOLATILES
 
 # Bump when the meaning of a feature changes without its name or width changing.
 ENCODER_FORMAT = 1
@@ -76,6 +86,10 @@ PERCENT_SCALE = 100.0  # an opponent's hit points are points of 100
 ACTION_ORDER_SCALE = 8.0  # the place among a turn's actions (moves and `|cant|` lines)
 STREAK_SCALE = 4.0  # consecutive stalling uses
 SIDES = ("own", "opponent")
+# exact_volatiles: a volatile the engine prints with a number (`stockpile2`, `perish3`, `fallen4`)
+# has the value 1 + number / DERIVED_SCALE in its id's column; one printed with a stat
+# (`protosynthesisatk`) has 1 and sets that stat's flag. Hashed into ``encoder_version``.
+DERIVED_SCALE = 8.0
 
 
 class EncodingError(ValueError):
@@ -206,11 +220,63 @@ def _recent_mon_num(config: EncoderConfig) -> tuple[str, ...]:
     )
 
 
-def _recent_field_num(config: EncoderConfig) -> tuple[str, ...]:
+def _exact(config: EncoderConfig) -> bool:
+    return is_set(config.options, EXACT_VOLATILES)
+
+
+def exact_ids(game: GameData) -> tuple[str, ...]:
+    """The ids ``exact_volatiles`` gives a column each, sorted: the engine's condition ids, the
+    ``PROTOCOL_VOLATILES`` and the moves, abilities and items (the engine prints a volatile, a
+    field condition or a side condition under the name of what started it). Needs a version 2
+    engine-data table."""
+    if game.conditions is None:
+        raise EncodingError(
+            "exact_volatiles needs a version 2 engine-data table (it has no condition list)"
+        )
+    return tuple(
+        sorted(
+            {
+                *game.conditions.ids,
+                *PROTOCOL_VOLATILES,
+                *game.moves.ids,
+                *game.abilities.ids,
+                *game.items.ids,
+            }
+        )
+    )
+
+
+def _widths(config: EncoderConfig, game: GameData | None) -> tuple[int, int]:
+    """(volatile columns, condition columns) of a token: the buckets, or one per exact id."""
+    if not _exact(config):
+        return config.volatile_buckets, config.condition_buckets
+    if game is None:
+        raise EncodingError("exact_volatiles needs the game data to lay out its columns")
+    width = len(exact_ids(game))
+    return width, width
+
+
+def _typechange_num(config: EncoderConfig, game: GameData | None) -> tuple[str, ...]:
+    """The ``exact_volatiles`` columns of a Pokémon token: whether a ``typechange`` set the types,
+    the typeless marker and one flag per type of the engine data, then one flag per stat for the
+    stat a Protosynthesis or Quark Drive boosts. Empty unless set."""
+    if not _exact(config):
+        return ()
+    if game is None:
+        raise EncodingError("exact_volatiles needs the game data to lay out its columns")
+    return (
+        "types_known",
+        "types_typeless",
+        *(f"type_{name}" for name in game.types.ids),
+        *(f"boosted_stat_{name}" for name in STAT_NAMES),
+    )
+
+
+def _recent_field_num(config: EncoderConfig, game: GameData | None) -> tuple[str, ...]:
     """The ``recent_history`` numbers of the field token: turns since each condition began."""
     if not _recent(config):
         return ()
-    buckets = config.condition_buckets
+    buckets = _widths(config, game)[1]
     return (
         "weather_elapsed",
         "terrain_elapsed",
@@ -240,9 +306,11 @@ class Layout:
     cand_tok: tuple[str, ...] = ("actor", "switch_in")  # token columns; candidate_target adds one
 
     @classmethod
-    def of(cls, config: EncoderConfig) -> Layout:
+    def of(cls, config: EncoderConfig, game: GameData | None = None) -> Layout:
+        """The layout of ``config``. ``game`` is needed only by ``exact_volatiles``, whose
+        column count is the engine data's id count."""
         moves = tuple((f"move_{i + 1}", "move") for i in range(config.max_moves))
-        buckets = config.condition_buckets
+        volatiles, buckets = _widths(config, game)
         arrays = _reads_arrays(config)
         return cls(
             mon_cat=(
@@ -278,7 +346,8 @@ class Layout:
                 *(f"stat_{name}" for name in STAT_NAMES),
                 *(f"boost_{name}" for name in STAT_KEYS),
                 *(f"pp_{i + 1}" for i in range(config.max_moves)),
-                *(f"volatile_{i}" for i in range(config.volatile_buckets)),
+                *(f"volatile_{i}" for i in range(volatiles)),
+                *_typechange_num(config, game),
                 *_recent_mon_num(config),
             ),
             field_cat=(("weather", "weather"), ("terrain", "terrain"), ("request", "request")),
@@ -288,7 +357,7 @@ class Layout:
                 *(f"field_{i}" for i in range(buckets)),
                 *(f"own_side_{i}" for i in range(buckets)),
                 *(f"opponent_side_{i}" for i in range(buckets)),
-                *_recent_field_num(config),
+                *_recent_field_num(config, game),
             ),
             cand_cat=(
                 ("action", "action"),
@@ -356,7 +425,7 @@ def encoder_version(game: GameData, config: EncoderConfig) -> str:
         "engine_data_hash": game.engine_data_hash,
         "attribute_digest": game.attribute_digest,
         "config": config.as_dict(),
-        "layout": Layout.of(config).as_dict(),
+        "layout": Layout.of(config, game).as_dict(),
         "constants": {
             "genders": list(GENDERS),
             "request_kinds": list(REQUEST_KINDS),
@@ -380,6 +449,20 @@ def encoder_version(game: GameData, config: EncoderConfig) -> str:
         # The token column is in the layout; the location convention is an index constant.
         body["constants"]["target"] = {
             "location": "foe in active slot L-1 for L>0; own active slot -L-1 for L<0",
+        }
+    if _exact(config):
+        # One column per id, in sorted order: the ids are derived from the engine data (hashed
+        # above) and the fixed protocol words, so their hash is the constant; the value rules
+        # are index constants.
+        body["constants"]["exact_volatiles"] = {
+            "ids_sha256": sha256_hex(jcs(list(exact_ids(game)))),
+            "protocol_volatiles": sorted(PROTOCOL_VOLATILES),
+            "typeless": TYPELESS,
+            "volatile": "1 per id; the latest derived number n gives 1 + n / derived_scale in the "
+            "id's column, a derived stat suffix sets that stat's boosted_stat flag",
+            "derived_scale": DERIVED_SCALE,
+            "stats": list(STAT_NAMES),
+            "condition": "layers per id on a side, 1 on the field",
         }
     if _recent(config):
         # The columns are in the layout; the divisors that are not config fields and the unit
@@ -494,7 +577,11 @@ class Encoder:
     def __init__(self, game: GameData, config: EncoderConfig) -> None:
         self.game = game
         self.config = config
-        self.layout = Layout.of(self.config)
+        self.layout = Layout.of(self.config, game)
+        # exact_volatiles: the column of each id (a v1 table is refused by the layout above)
+        self._exact_index = (
+            {name: i for i, name in enumerate(exact_ids(game))} if _exact(config) else {}
+        )
         self.version = encoder_version(game, self.config)
 
     # -- public --------------------------------------------------------------
@@ -625,9 +712,9 @@ class Encoder:
             return 0.0 if began is None else (turn - began) / config.turn_scale
 
         def spread(began: Mapping[str, int]) -> list[float]:
-            out = [0.0] * config.condition_buckets
+            out = [0.0] * self._condition_width
             for name in sorted(began):
-                out[bucket(name, config.condition_buckets)] += since(began[name])
+                out[self._condition_column(name)] += since(began[name])
             return out
 
         return [
@@ -643,9 +730,15 @@ class Encoder:
         fraction = mon.hp_fraction
         stats = mon.stats or {}
         hp_stat = float(mon.hp_den) if mon.own and mon.hp_den else 0.0
-        volatiles = [0.0] * config.volatile_buckets
+        volatiles = [0.0] * self._volatile_width
         for name in sorted(mon.volatiles):
-            volatiles[bucket(name, config.volatile_buckets)] += 1.0
+            column = self._volatile_column(name)
+            if not self._is_derived(name):  # a numbered or stat-suffixed id is read from `derived`
+                volatiles[column] += 1.0
+        for condition, suffix in sorted(mon.derived.items()) if _exact(config) else ():
+            volatiles[self._volatile_column(condition)] = (
+                1.0 + int(suffix) / DERIVED_SCALE if suffix.isdigit() else 1.0
+            )
         known_moves = mon.moves_own if mon.moves_own is not None else []
         pp = []
         for i in range(config.max_moves):
@@ -672,16 +765,75 @@ class Encoder:
             *(mon.boosts[name] / 6.0 for name in STAT_KEYS),
             *pp,
             *volatiles,
+            *(self._typechange(mon) if _exact(config) else []),
             *(self._recent_num(mon, turn) if _recent(config) else []),
         ]  # fmt: skip
 
+    @property
+    def _volatile_width(self) -> int:
+        return len(self._exact_index) if _exact(self.config) else self.config.volatile_buckets
+
+    @property
+    def _condition_width(self) -> int:
+        return len(self._exact_index) if _exact(self.config) else self.config.condition_buckets
+
+    def _volatile_column(self, name: str) -> int:
+        """The column of a volatile id: its bucket, or with ``exact_volatiles`` its own column
+        (a derived number or stat suffix resolves to the condition id; an id the vocabulary
+        does not resolve is refused)."""
+        if not _exact(self.config):
+            return bucket(name, self.config.volatile_buckets)
+        try:
+            return self._exact_index[self.game.vocabulary.resolve_volatile(name)]
+        except (VocabularyError, KeyError) as error:
+            raise EncodingError(f"volatile {name!r} is not in the exact vocabulary") from error
+
+    def _condition_column(self, name: str) -> int:
+        """The column of a field or side condition id: its bucket, or its own column."""
+        if not _exact(self.config):
+            return bucket(name, self.config.condition_buckets)
+        found = self._exact_index.get(name)
+        if found is None:
+            raise EncodingError(f"condition {name!r} is not in the exact vocabulary")
+        return found
+
+    def _is_derived(self, name: str) -> bool:
+        """Whether ``name`` is a raw numbered or stat-suffixed id (exact_volatiles only). The
+        reducer keeps such ids in the set after the engine ended them (`-end|Stockpile`) or
+        counted on (`perish3`, `perish2`), so ``PokemonState.derived`` holds the truth."""
+        return _exact(self.config) and self.game.vocabulary.resolve_volatile(name) != name
+
+    def _typechange(self, mon: PokemonState) -> list[float]:
+        """The ``exact_volatiles`` numbers of a Pokémon: the types a ``typechange`` set and the
+        stat a Protosynthesis or Quark Drive boosts (see ``_typechange_num``). All zero while the
+        types are the species' own and no such ability is active."""
+        out = [0.0] * (2 + len(self.game.types.ids) + len(STAT_NAMES))
+        for suffix in mon.derived.values():
+            if suffix.isdigit():
+                continue
+            if suffix not in STAT_NAMES:
+                raise EncodingError(f"derived suffix {suffix!r} is neither a number nor a stat")
+            out[2 + len(self.game.types.ids) + STAT_NAMES.index(suffix)] = 1.0
+        if mon.types is None:
+            return out
+        out[0] = 1.0
+        for name in mon.types:
+            if name == TYPELESS:
+                out[1] = 1.0
+            else:
+                found = self.game.types.index.get(name)
+                if found is None:
+                    raise EncodingError(f"type {name!r} is not in the engine data")
+                out[2 + found - RESERVED] = 1.0
+        return out
+
     def _conditions(self, conditions: Mapping[str, int] | set[str]) -> list[float]:
-        out = [0.0] * self.config.condition_buckets
+        out = [0.0] * self._condition_width
         counts = (
             conditions if isinstance(conditions, Mapping) else dict.fromkeys(sorted(conditions), 1)
         )
         for name in sorted(counts):
-            out[bucket(name, self.config.condition_buckets)] += float(counts[name])
+            out[self._condition_column(name)] += float(counts[name])
         return out
 
     def _field(self, state: BattleState) -> tuple[list[int], list[float]]:

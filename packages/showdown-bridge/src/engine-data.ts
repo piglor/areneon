@@ -291,6 +291,18 @@ export function readEngineDataV2(value: unknown): EngineDataV2 {
   return table;
 }
 
+/**
+ * Parse a stored table of either version, dispatching on its `schema_version` (a worker, learner
+ * or loop is given the file a checkpoint was made for, version 1 or 2; the harness only needs its
+ * hash). Any other version is refused.
+ */
+export function readEngineDataAny(value: unknown): EngineData | EngineDataV2 {
+  const version = typeof value === "object" && value !== null ? (value as Raw).schema_version : undefined;
+  if (version === 1) return readEngineData(value);
+  if (version === 2) return readEngineDataV2(value);
+  return bad("invalid engine data: schema_version is neither 1 nor 2");
+}
+
 /** What the contract profile cannot say, for both versions. */
 function checkTable(table: EngineData | EngineDataV2): void {
   for (const key of ["types", "species", "moves", "items", "abilities", "statuses", "weathers", "terrains"] as const) {

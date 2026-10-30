@@ -169,7 +169,7 @@ class _FrozenBattle:
     first: Mapping[str, float]
 
 
-VALUE_PREFIX = "value."
+VALUE_PREFIXES = ("value.", "value_net.")  # the head, or the separate value network
 
 
 def value_warmup_active(config: RunConfig, generation: int) -> bool:
@@ -428,7 +428,7 @@ class Learner:
         # gradient) leaves their moments absent. The loss is the value error alone (the PPO terms
         # carry no gradient to the value head and the coefficient only rescales it).
         frozen = [
-            p for n, p in network.named_parameters() if warm and not n.startswith(VALUE_PREFIX)
+            p for n, p in network.named_parameters() if warm and not n.startswith(VALUE_PREFIXES)
         ]
         for parameter in frozen:
             parameter.requires_grad_(False)
