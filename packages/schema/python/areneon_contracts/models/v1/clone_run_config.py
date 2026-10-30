@@ -168,7 +168,7 @@ class CandidateFeatures(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
     )
-    feature_set: Literal["probe-damage/1", "probe-damage/2"]
+    feature_set: Literal["probe-damage/1", "probe-damage/2", "probe-damage-belief/1"]
     feature_set_hash: Annotated[StrictStr, Field(pattern="^[0-9a-f]{64}$")]
 
 

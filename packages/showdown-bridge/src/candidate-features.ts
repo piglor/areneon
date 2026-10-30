@@ -26,6 +26,7 @@ import { type AssumedSet, AssumedSetError } from "./damage-aware-assumed-set.ts"
 import { parseJointChoice } from "./damage-aware-choice.ts";
 import { type DamageAwareConfig, damageAwareConfigHash } from "./damage-aware-config.ts";
 import { PPM, rollsValue } from "./damage-aware-score.ts";
+import type { BeliefWorldsPort } from "./damage-aware-worlds.ts";
 import { array, DamageAwareError, type DamageView, damageView, type Foe, foesHit, object, type OwnSlot, ProbeRefusal, type ProbeMemo, type ProbeCounts, ReaderGap, text } from "./damage-aware-view.ts";
 import type { Engine, PokemonSet } from "./engine.ts";
 import type { Candidate } from "./choices.ts";
@@ -43,7 +44,32 @@ import type { TeamVocabulary } from "./team-vocabulary.ts";
 /** The feature set this module builds (ADR-022 section 3). A change of what a row holds is a new id. */
 export const FEATURE_SET = "probe-damage/1";
 /** The ids a feature set identity can carry: `probe-damage/2` is built by `candidate-features-2.ts`. */
-export type FeatureSetId = typeof FEATURE_SET | "probe-damage/2";
+export type FeatureSetId = typeof FEATURE_SET | "probe-damage/2" | typeof FEATURE_SET_BELIEF;
+/** The belief-world set (ADR-025 slice 5, `candidate-features-belief.ts`): `probe-damage/1`'s rows as the mean over sampled worlds. */
+export const FEATURE_SET_BELIEF = "probe-damage-belief/1";
+/** Bumped when the belief set aggregates, samples or falls back differently for the same input: part of its identity. */
+export const BELIEF_FEATURES_FORMAT = 1;
+
+/** The belief a `probe-damage-belief/1` run samples its worlds from (the composition root builds the port; the bridge does not import the opponent model). */
+export interface BeliefFeatureSetup {
+  port: BeliefWorldsPort;
+  /** Worlds per request (the v2 record's `assumed_set.worlds`). */
+  worlds: number;
+}
+
+/** What the belief set counts about its worlds, per game (a service reports the delta of a task). All integers. */
+export interface BeliefFeatureCounts {
+  /** Requests that asked the belief. */
+  decisions: number;
+  worlds_sampled: number;
+  /** Legality redraws inside the sampler, summed. */
+  redraws: number;
+  /** Worlds dropped because they contradict a public fact of a Pokemon on the field. */
+  contradicted_worlds: number;
+  /** Requests that fell back to the v1 assumed sets, by cause: a belief refusal by the model's code, or `no_consistent_world`. */
+  fallbacks: Record<string, number>;
+}
+export const emptyBeliefCounts = (): BeliefFeatureCounts => ({ decisions: 0, worlds_sampled: 0, redraws: 0, contradicted_worlds: 0, fallbacks: {} });
 
 /** Why a request has no features: the caller decides what to do (ADR-022 section 3); nothing is guessed. */
 export type FeatureBuildCode = "reader_flagged" | "reader_gap" | "assumed_set" | "probe_refused" | "no_request";
@@ -76,6 +102,8 @@ export interface FeatureConfigs {
   data_class: "synthetic" | "private";
   /** The set a run reads (ADR-022 erratum E-22.3); absent is `probe-damage/1`. Read by `feature-build.ts` only; the builders themselves ignore it. */
   feature_set?: FeatureSetId;
+  /** The belief `probe-damage-belief/1` samples its worlds from; required by that set and refused for the others' identity. */
+  belief?: BeliefFeatureSetup;
   /** Test seam: the probe (default `probeMechanics`). */
   probe?: (context: MechanicsContext, query: ParsedMechanicsQuery) => ProbeOutcome;
   /** Test seam (the negative control of the invariance test): the assumed opponent set of a public Pokemon (default `buildAssumedSet`). */
@@ -99,6 +127,8 @@ export interface CandidateFeatures {
 export interface FeatureMemo {
   results: ProbeMemo;
   counts: ProbeCounts & { probe_refusals: number };
+  /** `probe-damage-belief/1` only: this game's world counts (created by the first belief build). */
+  belief?: BeliefFeatureCounts;
 }
 export const createFeatureMemo = (): FeatureMemo => ({ results: new Map(), counts: { queries: 0, probe_runs: 0, unsupported_queries: 0, probe_refusals: 0 } });
 
@@ -110,9 +140,14 @@ export interface FeatureSetIdentity {
   adapter_format: number;
   reader_sha256: string;
   version_manifest: VersionManifest;
+  /** `probe-damage-belief/1` only (absent from the other sets' preimages, so their hashes keep their bytes): the belief the worlds come from, the world count and the aggregation. */
+  belief_identity_hash?: string;
+  worlds?: number;
+  belief_features_format?: number;
 }
 
-export function featureSetIdentity(engine: Engine, configs: Pick<FeatureConfigs, "config" | "mechanics" | "snapshot">, featureSet: FeatureSetId = FEATURE_SET): FeatureSetIdentity {
+export function featureSetIdentity(engine: Engine, configs: Pick<FeatureConfigs, "config" | "mechanics" | "snapshot" | "belief">, featureSet: FeatureSetId = FEATURE_SET): FeatureSetIdentity {
+  if (featureSet === FEATURE_SET_BELIEF && configs.belief === undefined) throw new DamageAwareError("probe-damage-belief/1 needs the belief port");
   // `probe-damage/2` asks speed orders (ADR-022 erratum E-22.3.1): a config that does not list the kind would answer every such row `query_kind`.
   if (featureSet === "probe-damage/2" && !configs.mechanics.scope.query_kinds.some((entry) => entry.kind === "speed_order")) throw new DamageAwareError("the mechanics config does not list speed_order in scope");
   const snapshot = configs.snapshot ?? loadRulesSnapshot(engine.commit);
@@ -123,6 +158,7 @@ export function featureSetIdentity(engine: Engine, configs: Pick<FeatureConfigs,
     adapter_format: MECHANICS_ADAPTER_FORMAT,
     reader_sha256: readerSha256(),
     version_manifest: resolveFormat(engine, configs.config.format_id, snapshot).manifest,
+    ...(featureSet === FEATURE_SET_BELIEF && configs.belief !== undefined ? { belief_identity_hash: configs.belief.port.identity_hash, worlds: configs.belief.worlds, belief_features_format: BELIEF_FEATURES_FORMAT } : {}),
   };
 }
 
@@ -150,7 +186,7 @@ export function lastRequest(channel: PlayerChannel): Record<string, unknown> {
 }
 
 /** The view of one request: the shared damage view (with this game's memo) and the reader's state, fed the whole channel. */
-export function openRequest(engine: Engine, configs: FeatureConfigs, snapshot: RulesSnapshot, channel: PlayerChannel, memo: FeatureMemo): { view: DamageView; state: PublicState } {
+export function openRequest(engine: Engine, configs: FeatureConfigs, snapshot: RulesSnapshot, channel: PlayerChannel, memo: FeatureMemo): { view: DamageView; state: PublicState; allFlags: PublicFlag[] } {
   const view = damageView({
     engine, vocabulary: configs.vocabulary, config: configs.config, v1: configs.config, mechanics: configs.mechanics, snapshot,
     data_class: configs.data_class, probe: configs.probe ?? probeMechanics, counts: memo.counts, memo: memo.results,
@@ -165,12 +201,16 @@ export function openRequest(engine: Engine, configs: FeatureConfigs, snapshot: R
   const reader = createInterpreter({ player: channel.player });
   const since = requestBefore(lines, lines.length - 1);
   const flags: PublicFlag[] = [];
+  const allFlags: PublicFlag[] = [];
   lines.forEach((line, index) => {
     const reason = reader.feed(line).flagged;
-    if (reason !== null && index > since) flags.push({ index, line, reason });
+    if (reason === null) return;
+    allFlags.push({ index, line, reason });
+    if (index > since) flags.push({ index, line, reason });
   });
   if (flags.length > 0) throw new FeatureBuildError("reader_flagged");
-  return { view, state: reader.snapshot() };
+  // `allFlags`: every flagged line of the game so far (the belief refuses while any is on record; the damage rows only mind the newest).
+  return { view, state: reader.snapshot(), allFlags };
 }
 
 /** Run `build`, turning the baseline's fall-back signals into the builder's refusals (the caller decides what then). */
