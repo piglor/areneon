@@ -653,6 +653,8 @@ export {
   hypotheticalCandidates,
   hypotheticalEngineSeed,
   hypotheticalRequest,
+  type HypotheticalCandidate,
+  type HypotheticalRequest,
   startHypothetical,
   type HypotheticalChannel,
   type HypotheticalObservation,

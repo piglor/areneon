@@ -12,7 +12,11 @@ import {
   type BattleRecord,
   type Engine,
   type EvaluationClient,
+  enumerateCandidates,
   episodeFromRecord,
+  episodeHash,
+  loadTrainingSet,
+  teamHash,
   evaluateHypothetical,
   HYPOTHETICAL_BATTLE_FORMAT,
   HYPOTHETICAL_ENGINE_PURPOSE,
@@ -21,6 +25,7 @@ import {
   type HypotheticalObservation,
   type HypotheticalPreview,
   hypotheticalCandidates,
+  type HypotheticalCandidate,
   hypotheticalEngineSeed,
   hypotheticalRequest,
   importPaste,
@@ -40,7 +45,6 @@ import {
   stampTeam,
 } from "../src/index.ts";
 import { buildObservation, observe } from "../src/index.ts";
-import { sha256Hex } from "../src/rules.ts";
 
 const STREAM = new Uint8Array(32).fill(7);
 let engine: Engine;
@@ -75,12 +79,12 @@ const seen = async (preview: HypotheticalPreview, channel: HypotheticalChannel):
 };
 
 describe("the engine seed", () => {
-  it("is SHA-256 over the JCS of {purpose, stream, world}: a vector computed outside the TS code", () => {
-    // Python: hashlib.sha256(json.dumps({"purpose":"preview-solve-engine/1","stream":"07"*32,"world":3},sort_keys=True,separators=(",",":")).encode()).hexdigest()[:32]
+  it("is SHA-256 over the JCS of {purpose, stream, world}: vectors computed with Python hashlib", () => {
+    // Python: hashlib.sha256(json.dumps({"purpose": "preview-solve-engine/1", "stream": "07" * 32, "world": W},
+    //   sort_keys=True, separators=(",", ":")).encode()).hexdigest()[:32]
     expect(HYPOTHETICAL_ENGINE_PURPOSE).toBe("preview-solve-engine/1");
-    const expected = sha256Hex(jcs({ purpose: "preview-solve-engine/1", stream: "07".repeat(32), world: 3 })).slice(0, 32);
-    expect(hypotheticalEngineSeed(STREAM, 3)).toBe(`sodium,${expected}`);
-    expect(hypotheticalEngineSeed(STREAM, 3)).not.toBe(hypotheticalEngineSeed(STREAM, 4));
+    expect(hypotheticalEngineSeed(STREAM, 3)).toBe("sodium,20563938ad631429936d6059ba9ee84a");
+    expect(hypotheticalEngineSeed(STREAM, 4)).toBe("sodium,522847c080497e16ecad2be7dbbee25b");
     expect(HYPOTHETICAL_BATTLE_FORMAT).toBe(1);
   });
 });
@@ -100,10 +104,10 @@ describe("what a real battle of the same teams gives", () => {
     expect(preview.foe_request.phase).toBe("preview");
     const ownReal = await observe({ channel: recordedChannel(record, "p1", 1, cls()), team: { schema_version: 1, data_class: "synthetic", team: own as never }, manifest: record.manifest });
     expect(await seen(preview, preview.own_channel)).toEqual(ownReal);
-    // No open-sheet format exists in the pinned rules snapshot: the one format's `openteamsheets` rule only prompts the server
-    // path (`otsrequest`, `>show-openteamsheets`), which an in-process battle never runs (cts.test.ts), so the hypothetical
-    // battle and the real A1 battle compared above both show closed sheets. Open-sheet play (ADR-027) would need the sheets
-    // shown to both seats before the request, which this battle would then show too, as the engine's own output.
+    // The pinned rules snapshot has no open-sheet format, and an in-process battle never issues the server's `>show-openteamsheets`
+    // (cts.test.ts), so both this battle and the real A1 battle compared above show closed sheets. A future open-sheet format would
+    // need ADR-027's sheet reveal added to this module's start (the sheets shown to both seats before the request); until then
+    // open-sheet equality is neither supported nor tested.
   });
 
   it("our hypothetical channel at the first move request equals the real one for the same orders and seed", async () => {
@@ -131,9 +135,9 @@ describe("plays and refusals", () => {
     const preview = start();
     const own_ = hypotheticalCandidates(preview.own_channel).filter((c) => !c.pending);
     const foe_ = hypotheticalCandidates(preview.foe_channel).filter((c) => !c.pending);
-    const a = preview.play((own_[0] as { choice: string }).choice, (foe_[0] as { choice: string }).choice);
-    const b = preview.play((own_[1] as { choice: string }).choice, (foe_[0] as { choice: string }).choice);
-    const again = preview.play((own_[0] as { choice: string }).choice, (foe_[0] as { choice: string }).choice);
+    const a = preview.play((own_[0] as HypotheticalCandidate).order, (foe_[0] as HypotheticalCandidate).order);
+    const b = preview.play((own_[1] as HypotheticalCandidate).order, (foe_[0] as HypotheticalCandidate).order);
+    const again = preview.play((own_[0] as HypotheticalCandidate).order, (foe_[0] as HypotheticalCandidate).order);
     expect([a.kind, b.kind]).toEqual(["request", "request"]);
     expect(jcs(hypotheticalRequest((again as { channel: HypotheticalChannel }).channel) as never)).toBe(jcs(hypotheticalRequest((a as { channel: HypotheticalChannel }).channel) as never));
     expect(hypotheticalRequest((a as { channel: HypotheticalChannel }).channel).request_hash).not.toBe(hypotheticalRequest((b as { channel: HypotheticalChannel }).channel).request_hash);
@@ -166,7 +170,12 @@ describe("the brands", () => {
       // @ts-expect-error the real policy path takes an Observation, never a hypothetical one
       const real: Parameters<PolicyClient["ask"]>[1]["observation"] = observation;
       void real;
-      // @ts-expect-error neither does an Episode record
+      // @ts-expect-error a hypothetical request is not a DecodedRequest: the candidate enumerator refuses it
+    void enumerateCandidates(preview.foe_request);
+    // @ts-expect-error a hypothetical candidate is not a Candidate (no `choice`)
+    const plain: import("../src/index.ts").Candidate = hypotheticalCandidates(channel)[0] as HypotheticalCandidate;
+    void plain;
+    // @ts-expect-error neither does an Episode record
       const inEpisode: Parameters<typeof episodeFromRecord>[0] = channel;
       void inEpisode;
     };
@@ -202,66 +211,112 @@ describe("canary: marker values of a world's sets (N6)", () => {
     const text = JSON.stringify(value);
     return MARKERS.filter((marker) => text.includes(marker));
   };
-  let record: BattleRecord;
-  beforeAll(async () => {
-    record = await runBattle({ engine, formatId: GOLDEN_FORMAT, seed: hypotheticalEngineSeed(STREAM, 0), teams: { p1: own, p2: world }, actors: { p1: firstLegal, p2: firstLegal } });
-  });
+  const league = (r: BattleRecord) => ({ kind: "league", run_id: "league-1", seed: r.seed, opponent_policy_id: "first-legal" }) as const;
 
-  it("appear in the hypothetical channels, and in no Episode, real observation or stored record of the real game", async () => {
+  it("appear in the hypothetical channels, and in no Episode, training example, real observation or stored record of a real game made AFTER the marked solve on the same engine", async () => {
+    // The marked solve first, in full (start, both seats' observations, a worker query, a played pair of orders), so any state it
+    // left in the engine instance or the module would be there when the real game runs.
     const preview = start({ world_team: marked() });
-    // Expected: the hypothetical opponent's own view holds its sets' nicknames.
+    const client = recorder();
     expect(leaks(await seen(preview, preview.foe_channel)).length).toBeGreaterThan(0);
-    const turn = preview.play(hypotheticalCandidates(preview.own_channel)[0]?.choice as string, hypotheticalCandidates(preview.foe_channel)[0]?.choice as string);
+    const turn = preview.play(hypotheticalCandidates(preview.own_channel)[0]?.order as string, hypotheticalCandidates(preview.foe_channel)[0]?.order as string);
     expect(turn.kind).toBe("request");
-    // The real game, played with the marked solve done beside it on the same engine: nothing of the world is in anything it writes.
+    if (turn.kind === "request") await evaluateHypothetical(client, "b", await preview.observation(turn.channel), "x");
+
+    // Now the real game, on the same engine instance.
+    const record = await runBattle({ engine, formatId: GOLDEN_FORMAT, seed: hypotheticalEngineSeed(STREAM, 0), teams: { p1: own, p2: world }, actors: { p1: firstLegal, p2: firstLegal } });
     const known = syntheticFixtureHashes(engine);
     const cls = battleClass(record.team_hashes, known);
     const stamp = (team: PokemonSet[]): StampedTeam => stampTeam(team as never, known);
-    const episode = await episodeFromRecord(record, "p1", { team: stamp(own), opponent_team: stamp(world), known_synthetic: known, behaviour_policy_id: "first-legal@test" });
+    const write = (player: "p1" | "p2") =>
+      episodeFromRecord(record, player, { team: stamp(player === "p1" ? own : world), opponent_team: stamp(player === "p1" ? world : own), known_synthetic: known, behaviour_policy_id: "first-legal", collection: league(record) });
+    const episodes = [await write("p1"), await write("p2")];
+    const stream = await loadTrainingSet({ episodes, evaluation_manifests: [], known_synthetic: known, behaviour_policy_id: "first-legal" });
     const observation = await observe({ channel: recordedChannel(record, "p1", 2, cls), team: { schema_version: 1, data_class: "synthetic", team: own as never }, manifest: record.manifest });
     expect(leaks(record)).toEqual([]);
-    expect(leaks(episode)).toEqual([]);
+    expect(leaks(episodes)).toEqual([]);
+    expect(leaks(stream)).toEqual([]);
+    expect(stream.examples.length).toBeGreaterThan(0);
     expect(leaks(observation)).toEqual([]);
-    expect(leaks(episode.decisions)).toEqual([]);
+    // The stored record's hashes bind the real opponent, not the marked world.
+    expect(record.team_hashes.p2).toBe(teamHash(world));
+    expect(record.team_hashes.p2).not.toBe(teamHash(marked()));
+    expect(await Promise.all(episodes.map((e) => episodeHash(e, nodeSha256)))).toHaveLength(2);
   });
 
-  it("negative control: an unbranded path that writes a hypothetical channel into a real one is flagged", async () => {
+  it("negative control: an unbranded route that writes hypothetical lines into real artefacts leaks the markers, and the scan catches it", async () => {
     const preview = start({ world_team: marked() });
     const client = recorder();
     await evaluateHypothetical(client, "b", await preview.observation(preview.foe_channel), "x");
     const lines = (client.queries[0]?.observation as { log: string[] }).log;
-    const real = await observe({
+    // Route 1: the unchecked `playerChannel(unknown)` adapter, then a real observation.
+    const viaAdapter = await observe({
       channel: playerChannel({ schema_version: 1, data_class: "synthetic", player: "p2", lines }),
       team: { schema_version: 1, data_class: "synthetic", team: marked() as never },
       manifest: preview.manifest,
     });
-    expect(leaks(real).length).toBeGreaterThan(0);
+    expect(leaks(viaAdapter).length).toBeGreaterThan(0);
+    // Route 2: the hypothetical lines pushed into a real record's channel, then the loader's stream.
+    const record = await runBattle({ engine, formatId: GOLDEN_FORMAT, seed: hypotheticalEngineSeed(STREAM, 0), teams: { p1: own, p2: world }, actors: { p1: firstLegal, p2: firstLegal } });
+    expect(leaks(record)).toEqual([]);
+    const tainted = structuredClone(record);
+    tainted.channels.p1.push(...lines);
+    expect(leaks(tainted).length).toBeGreaterThan(0);
   });
 });
 
 describe("invariance: the same public Team Preview, other hidden sets", () => {
   const hidden = (): PokemonSet[] => {
     const sets = paste("legal-opponent.txt");
-    const natures = sets.map((s) => s.nature);
     return sets.map((set, i) => ({
       ...set,
-      nature: natures[(i + 1) % sets.length] as string,
+      nature: (sets[(i + 1) % sets.length] as PokemonSet).nature,
       evs: { ...(sets[(i + 1) % sets.length] as PokemonSet).evs },
     }));
   };
+  const orders = (p: HypotheticalPreview): [string, string] => [
+    (hypotheticalCandidates(p.own_channel)[0] as HypotheticalCandidate).order,
+    (hypotheticalCandidates(p.foe_channel)[0] as HypotheticalCandidate).order,
+  ];
 
-  it("gives our side an identical hypothetical Team Preview observation, and the opponent's own differs (the test has teeth)", async () => {
-    const a = start({ world_team: world });
-    const b = start({ world_team: hidden() });
-    expect(jcs((await seen(a, a.own_channel)) as never)).toBe(jcs((await seen(b, b.own_channel)) as never));
-    expect(hypotheticalCandidates(a.own_channel)).toEqual(hypotheticalCandidates(b.own_channel));
-    expect(jcs((await seen(a, a.foe_channel)) as never)).not.toBe(jcs((await seen(b, b.foe_channel)) as never));
-  });
+  for (const seat of ["p1", "p2"] as const) {
+    it(`gives seat ${seat} an identical hypothetical Team Preview observation and, after play(), an identical first-move-request observation; the opponent's own view differs`, async () => {
+      const a = start({ seat, world_team: world });
+      const b = start({ seat, world_team: hidden() });
+      expect(jcs((await seen(a, a.own_channel)) as never)).toBe(jcs((await seen(b, b.own_channel)) as never));
+      expect(hypotheticalCandidates(a.own_channel)).toEqual(hypotheticalCandidates(b.own_channel));
+      expect(jcs((await seen(a, a.foe_channel)) as never)).not.toBe(jcs((await seen(b, b.foe_channel)) as never));
+      // The same orders on both: what our side sees at its first move request is the same too (the leads show the same public facts).
+      const [own1, foe1] = orders(a);
+      const ta = a.play(own1, foe1);
+      const tb = b.play(own1, foe1);
+      expect([ta.kind, tb.kind]).toEqual(["request", "request"]);
+      if (ta.kind === "request" && tb.kind === "request") {
+        expect(jcs((await seen(a, ta.channel)) as never)).toBe(jcs((await seen(b, tb.channel)) as never));
+        expect(ta.request).toEqual(tb.request);
+      }
+    });
+  }
 
   it("negative control: another public Team Preview (other species) changes it", async () => {
     const a = start({ world_team: world });
     const c = start({ world_team: own });
     expect(jcs((await seen(a, a.own_channel)) as never)).not.toBe(jcs((await seen(c, c.own_channel)) as never));
+  });
+});
+
+describe("the worker entry", () => {
+  it("refuses a pair that reads candidate features, and sends the module's own frozen copy of the observation", async () => {
+    const preview = start();
+    const observation = await preview.observation(preview.foe_channel);
+    const featured = Object.assign(recorder(), { featureSet: { feature_set: "probe-damage/1", feature_set_hash: "a".repeat(64) } });
+    await expect(evaluateHypothetical(featured, "b", observation, "x")).rejects.toThrow(/features_pair/);
+    expect(featured.queries).toEqual([]);
+    const plain = Object.assign(recorder(), { featureSet: null });
+    const { candidates } = await evaluateHypothetical(plain, "b", observation, "x");
+    expect(candidates.length).toBeGreaterThan(0);
+    expect(Object.isFrozen(plain.queries[0]?.observation)).toBe(true);
+    expect(Object.isFrozen((plain.queries[0]?.observation as { identity: object }).identity)).toBe(true);
   });
 });
 

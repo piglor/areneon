@@ -20,14 +20,15 @@
 
 import type { PrivateTeamSpec } from "@areneon/schema/types/v1/private-team-spec.ts";
 import { jcs } from "./canonical-json.ts";
-import { type Candidate, enumerateCandidates } from "./choices.ts";
+import { enumerateCandidates } from "./choices.ts";
 import type { Engine, PokemonSet } from "./engine.ts";
 import { resolveFormat, type VersionManifest } from "./formats.ts";
 import { observe, playerChannel } from "./player-channel.ts";
 import type { Observation } from "./observation.ts";
 import type { EvaluateQueryInput, Evaluation } from "./policy-protocol.ts";
-import type { EvaluationClient } from "./policy-worker.ts";
+import type { EvaluationClient, PolicyClient } from "./policy-worker.ts";
 import { type DecodedRequest, decodeRequest } from "./request.ts";
+import type { RequestPhase } from "./request.ts";
 import { sha256Hex } from "./rules.ts";
 import type { RulesSnapshot } from "./rules.ts";
 import { InvalidTeamError, type Player } from "./runner.ts";
@@ -75,6 +76,27 @@ export interface HypotheticalObservation {
   readonly kind: Observation["kind"];
 }
 
+/**
+ * A request of a hypothetical battle, summarised: its seat, phase and identity hash. Opaque: it is not a `DecodedRequest`
+ * (no `side`, `legal` or body), so `enumerateCandidates`, the runner's actors and the loaders cannot take it.
+ */
+export interface HypotheticalRequest {
+  readonly [hypothetical]: "request";
+  readonly player: Player;
+  readonly phase: RequestPhase;
+  readonly request_hash: string;
+}
+
+/**
+ * One engine-distinct joint choice of a hypothetical request (a `team ...` order at Team Preview). Opaque: it has no
+ * `choice` field, so it is not a `Candidate`; `order` is the choice string to hand back to `play`.
+ */
+export interface HypotheticalCandidate {
+  readonly [hypothetical]: "candidate";
+  readonly order: string;
+  readonly pending: boolean;
+}
+
 interface ChannelText {
   lines: readonly string[];
   data_class: DataClass;
@@ -98,16 +120,31 @@ function textOf(channel: HypotheticalChannel): ChannelText {
   return text;
 }
 
-/** The decoded request the channel ends in (its last `|request|` line). */
-export function hypotheticalRequest(channel: HypotheticalChannel): DecodedRequest {
+function decodedRequest(channel: HypotheticalChannel): DecodedRequest {
   const { lines } = textOf(channel);
   const last = lines.findLast((line) => line.startsWith(REQUEST));
   if (last === undefined) throw new HypotheticalError("the hypothetical channel holds no request");
   return decodeRequest(last.slice(REQUEST.length));
 }
 
+const brandRequest = ({ player, phase, request_hash }: DecodedRequest): HypotheticalRequest =>
+  Object.freeze({ player, phase, request_hash }) as unknown as HypotheticalRequest;
+
+/** The request the channel ends in (its last `|request|` line), as a hypothetical request. */
+export const hypotheticalRequest = (channel: HypotheticalChannel): HypotheticalRequest => brandRequest(decodedRequest(channel));
+
 /** The candidates (engine-distinct joint choices) of the request a hypothetical channel ends in, in canonical order. */
-export const hypotheticalCandidates = (channel: HypotheticalChannel): Candidate[] => enumerateCandidates(hypotheticalRequest(channel)).candidates;
+export const hypotheticalCandidates = (channel: HypotheticalChannel): HypotheticalCandidate[] =>
+  enumerateCandidates(decodedRequest(channel)).candidates.map(({ choice, pending }) => Object.freeze({ order: choice, pending }) as unknown as HypotheticalCandidate);
+
+/** The team spec an observation is checked against: the engine sets as brought (one cast, here). */
+const teamSpec = (data_class: DataClass, team: readonly Readonly<PokemonSet>[]): PrivateTeamSpec =>
+  ({ schema_version: 1, data_class, team: [...team] }) as unknown as PrivateTeamSpec;
+
+function deepFreeze<T extends object>(value: T): T {
+  for (const inner of Object.values(value)) if (typeof inner === "object" && inner !== null) deepFreeze(inner);
+  return Object.freeze(value);
+}
 
 /**
  * What one Team Preview solve reads (ADR-029 section 7): the target format, our seat, our own team as brought, our own channel
@@ -144,7 +181,7 @@ export interface HypotheticalStartInput {
 
 /** The result of playing one pair of orders to our first request. */
 export type HypotheticalTurn =
-  | { kind: "request"; channel: HypotheticalChannel; request: DecodedRequest }
+  | { kind: "request"; channel: HypotheticalChannel; request: HypotheticalRequest }
   | { kind: "ended"; outcome: Outcome }
   | { kind: "refused"; reason: string };
 
@@ -157,7 +194,7 @@ export interface HypotheticalPreview {
   /** The opponent seat's own channel to its Team Preview request, as the format shows a player. */
   readonly foe_channel: HypotheticalChannel;
   /** The opponent's Team Preview request. */
-  readonly foe_request: DecodedRequest;
+  readonly foe_request: HypotheticalRequest;
   /** Our order and the opponent's, each a `team ...` choice, run on a clone of the started battle to our seat's next request. */
   play(own_choice: string, foe_choice: string): HypotheticalTurn;
   /** An observation of a hypothetical channel of this battle, with the team of the seat it belongs to. */
@@ -211,20 +248,22 @@ export function startHypothetical(input: HypotheticalStartInput): HypotheticalPr
     foe,
     own_channel,
     foe_channel,
-    foe_request: hypotheticalRequest(foe_channel),
+    foe_request: brandRequest(decodedRequest(foe_channel)),
     play(own_choice, foe_choice) {
       const turn = playChoices(cloneWorld(engine, serialised, seed), seat, { own: own_choice, foe: foe_choice });
       if (turn.refused !== null) return { kind: "refused", reason: turn.refused };
       if (turn.ended !== null) return { kind: "ended", outcome: turn.ended };
       if (turn.request === null) return { kind: "refused", reason: "the engine sent the seat no request" };
       const channel = brandChannel(seat, [...ownLines, ...turn.lines], data_class);
-      return { kind: "request", channel, request: decodeRequest(turn.request) };
+      return { kind: "request", channel, request: brandRequest(decodeRequest(turn.request)) };
     },
     async observation(channel) {
       const { lines: channelLines, data_class: channelClass } = textOf(channel);
       const real = playerChannel({ schema_version: 1, data_class: channelClass, player: channel.player, lines: channelLines });
-      const observation = await observe({ channel: real, team: { schema_version: 1, data_class: channelClass, team: teamOf(channel.player) } as unknown as PrivateTeamSpec, manifest: resolved.manifest });
-      const candidates = enumerateCandidates(hypotheticalRequest(channel)).candidates.map(({ choice, pending }) => ({ choice, pending }));
+      const built = await observe({ channel: real, team: teamSpec(channelClass, teamOf(channel.player)), manifest: resolved.manifest });
+      // A copy, frozen: the query the worker client validates and sends is the one this module made, whatever a caller does after.
+      const observation = deepFreeze(structuredClone(built));
+      const candidates = enumerateCandidates(decodedRequest(channel)).candidates.map(({ choice, pending }) => ({ choice, pending }));
       const branded = Object.freeze({ player: channel.player, kind: observation.kind }) as unknown as HypotheticalObservation;
       observationTexts.set(branded, { observation, candidates });
       return branded;
@@ -238,13 +277,15 @@ export function startHypothetical(input: HypotheticalStartInput): HypotheticalPr
  * is accepted by this function alone. Returns the candidates in the order of `prior_ppm`.
  */
 export async function evaluateHypothetical(
-  client: EvaluationClient,
+  client: EvaluationClient & Pick<PolicyClient, "featureSet">,
   battle: string,
   observation: HypotheticalObservation,
   policy_id: string,
-): Promise<{ evaluation: Evaluation; candidates: { choice: string; pending: boolean }[] }> {
+): Promise<{ evaluation: Evaluation; candidates: HypotheticalCandidate[] }> {
   const held = observationTexts.get(observation);
   if (held === undefined) throw new HypotheticalError("not a hypothetical observation made by this module");
+  // A pair that reads candidate features would need their rows at every hypothetical request (ADR-029 section 3): refused, as in ADR-026.
+  if (client.featureSet !== undefined && client.featureSet !== null) throw new HypotheticalError("features_pair: a pair that reads candidate features is not supported by the Team Preview solve");
   const evaluation = await client.evaluate(battle, {
     schema_version: 1,
     identity: held.observation.identity,
@@ -253,5 +294,5 @@ export async function evaluateHypothetical(
     sampling: { kind: "evaluate" },
     policy_id,
   } as EvaluateQueryInput);
-  return { evaluation, candidates: held.candidates };
+  return { evaluation, candidates: held.candidates.map(({ choice, pending }) => Object.freeze({ order: choice, pending }) as unknown as HypotheticalCandidate) };
 }
