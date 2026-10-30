@@ -15,6 +15,7 @@ export { solveItemClause, type ClauseResult, type ClauseWeights } from "./item-c
 export { elementary, moveModel, type MoveModel } from "./moves.ts";
 export { designDeviation, type FormeDeviation } from "./prior-deviation.ts";
 export { STAT_IDS, createSampler, type OpponentTeam, type OpponentWorld, type SampledTeam, type SampledTeams, type SampledWorld, type SampledWorlds, type SamplerPorts, type SetLegality, type ShownIdentifiers, type Sampler, type SpreadSampler, type StatPoints, type WorldSet, type WorldSlot } from "./sampler.ts";
+export { DEFAULT_ITERATIONS, SOLVER_FORMAT, SOLVER_KINDS, SolverError, solve as solvePreview, type Solution as PreviewSolution, type SolverKind } from "./preview-solver.ts";
 export { type Ratio } from "./ratio.ts";
 export { topWorlds, type TopWorld } from "./top-worlds.ts";
 export { TrappingCheckError, trapExclusions, type TrapCandidate, type TrapExclusions, type TrapLevel, type TrappingCheck, type TrapSlot } from "./trapping.ts";
