@@ -274,6 +274,7 @@ export {
 export { LEAF_FORMAT, loadSearchConfig, readSearchConfig, type SearchConfig, SearchConfigError, searchConfigHash, searchIdentity, searchIdentityHash, type SearchIdentityInputs, SEARCH_POLICY_LABEL } from "./search-config.ts";
 export { deriveRoleSetsPrior, ROLE_SETS_PRIOR_SCRIPT, RoleSetsPriorError, type RoleSetsPriorInput } from "./role-sets-prior.ts";
 export { deriveGeneratorPrior, GENERATOR_PRIOR_SCRIPT, GeneratorPriorError, type GeneratorPriorInput, generatorConfigHash, megaHolderAbilities, megaPreviewSpecies } from "./generator-prior.ts";
+export { DAMAGE_CHECK_FORMAT } from "./damage-check.ts";
 export { type BeliefConfig, BeliefConfigError, beliefConfigHash, readBeliefConfig } from "./belief-config.ts";
 export {
   exportMoveClasses,

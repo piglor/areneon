@@ -67,7 +67,7 @@ export interface DamageCheckCounts {
   not_isolated: Record<string, number>;
   /** `check` calls (a repeated call counts each time). */
   calls: number;
-  /** Own Pokemon of a hit that the request and the team could not name: the check answered `null` (no constraint) for them. */
+  /** Own Pokemon of a hit that the request and the team could not name, or whose shown forme the set and stone do not explain: the check answered `null` (no constraint) for them. */
   own_unstated: number;
   /** Probe damage queries asked. */
   queries: number;
@@ -193,7 +193,9 @@ export function createDamageCheck(context: DamageCheckContext, input: DamageChec
    * item, ability and gender the request in force at the move line shows, and its state is the reader's. A Pokemon whose forme
    * is not the one of its set (Palafin's Hero forme) is not stated. One that has Mega Evolved is stated when its shown forme is
    * the one its stone (the request's item, through the engine's `megaStone` data) makes of the set's species: it is declared
-   * as the set holding the stone and evolved, with the set's own (pre-Evolution) ability, which the Evolution replaces (#1247).
+   * as the set holding the stone and evolved, with the set's own (pre-Evolution) ability, which the Evolution replaces (#1247); on
+   * the turn it evolves the request still shows the base forme, which is accepted for an evolved Pokemon whose stone fits. Every
+   * decline (no request, no or two team matches, a forme that does not fit) is counted in `own_unstated`.
    */
   function ownFighter(hit: Hit, side: { letter: string; index: number }): Fighter | null {
     const frame = run.frames[hit.frame] as PublicFrame;
@@ -211,7 +213,12 @@ export function createDamageCheck(context: DamageCheckContext, input: DamageChec
     const shownForme = toId(entry.details.split(",")[0] as string);
     // An evolved Pokemon shows its Mega forme, which its stone makes of the set's species; any other forme difference is not stated.
     const megaForme = mon.mega ? (names.items.get(entry.item) as unknown as { megaStone?: Record<string, string> }).megaStone?.[names.species.get(set.species).name] : undefined;
-    if (mon.mega ? megaForme === undefined || shownForme !== toId(megaForme) : shownForme !== toId(set.species)) return null;
+    // On the turn it evolves the request in force still shows the base forme while the reader already has `mega`: the stone decides.
+    const formeOk = mon.mega ? megaForme !== undefined && [toId(megaForme), toId(set.species)].includes(shownForme) : shownForme === toId(set.species);
+    if (!formeOk) {
+      counts.own_unstated += 1;
+      return null;
+    }
     const gender = SHOWN_GENDER.exec(entry.details)?.[1];
     if (gender !== undefined) set.gender = gender;
     set.item = entry.item === "" ? "" : names.items.get(entry.item).name;
