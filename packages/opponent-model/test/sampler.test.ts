@@ -8,7 +8,7 @@ import type { UsagePrior } from "@areneon/schema/types/v1/usage-prior.ts";
 import { BeliefError, type BeliefErrorCode, type OpponentBelief, type OpponentWorld, type SetLegality, type WorldSet, belief, createSampler } from "../src/index.ts";
 import { prepared } from "../src/sampler.ts";
 import { jcs } from "../src/canonical.ts";
-import { worldStream } from "../src/draw.ts";
+import { teamStream, worldStream } from "../src/draw.ts";
 import { toHex } from "../src/sha256.ts";
 import { alpha, betaFormes, hidingConfig, inert, input, prior, seen, config, vocabulary } from "./support.ts";
 
@@ -425,6 +425,8 @@ describe("sampleTeam: a set for every preview slot", () => {
       expect({ team: t.team, redraws: t.redraws }).toEqual(sampler.sampleTeam(b, Uint8Array.from(own)));
     });
     for (const n of [0, -1, 1.5, Number.NaN]) expect(() => sampler.sampleTeams(b, STREAM, n)).toThrow(RangeError);
+    for (const index of [-1, 1.5, Number.NaN]) expect(() => teamStream(STREAM, index)).toThrow(RangeError);
+    expect(() => teamStream(new Uint8Array(31), 0)).toThrow(RangeError);
     expect(() => sampler.sampleTeam(b, new Uint8Array(31))).toThrow(RangeError);
   });
 

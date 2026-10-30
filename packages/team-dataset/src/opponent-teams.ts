@@ -7,6 +7,11 @@
 // back as a coded `refused` result and is counted, never guessed. A team whose every redraw held an illegal set is
 // refused the same way (`legality_redraws_exhausted`). Defects of the run (the model's `BELIEF_DEFECTS`) are thrown by
 // the callers that treat them so; here every coded refusal is counted and returned, anything else propagates.
+//
+// A consumer (the Team Preview solver) MUST treat `format_mismatch`, `item_clause_unsupported` and
+// `spread_sampler_required` as defects of the run, not as a request it cannot model: they come back here as ordinary
+// refused codes, exactly as `createSearchWorlds` returns them, and `world-sampler.ts` throws them via `BELIEF_DEFECTS`.
+// `sampleTeams` (n teams by index) is an addition beyond the erratum, mirroring `sampleWorlds`.
 
 import { belief, type OpponentTeam, type SetLegality, teamStream } from "@areneon/opponent-model";
 import { refusalCode, type WorldSamplePort } from "@areneon/showdown-bridge";
@@ -38,9 +43,15 @@ export interface OpponentTeamPort {
   counts(): OpponentTeamCounts;
 }
 
-/** `legality` replaces the pinned engine's set legality: a test seam (the default is the real validator). */
-export function createOpponentTeams(context: SearchWorldsContext, files: SearchWorldsFiles = searchWorldsFiles(context.vocabulary.format_id), legality?: SetLegality): OpponentTeamPort {
-  const { prior, view, beliefConfig, sampler, prior_hash, belief_config_hash, identity_hash } = armParts(context, files, legality);
+export interface OpponentTeamOptions {
+  /** The committed files the arm is built from (tests pass other directories). */
+  readonly files?: SearchWorldsFiles;
+  /** Replaces the pinned engine's set legality. A test seam: the default is the real validator, and a run must not set it. */
+  readonly legality?: SetLegality;
+}
+
+export function createOpponentTeams(context: SearchWorldsContext, options: OpponentTeamOptions = {}): OpponentTeamPort {
+  const { prior, view, beliefConfig, sampler, prior_hash, belief_config_hash, identity_hash } = armParts(context, options.files ?? searchWorldsFiles(context.vocabulary.format_id), options.legality);
   let opened = 0;
   let drawn = 0;
   let legality_redraws = 0;

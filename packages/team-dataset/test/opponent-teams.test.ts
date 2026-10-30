@@ -80,19 +80,30 @@ describe("createOpponentTeams on generator teams", () => {
 
     // A team whose every redraw held an illegal set is a counted refusal; an error that is not the model's is thrown.
     const context = { engine, vocabulary: goldenTeamVocabulary(), reader_sha256: readerSha256(), manifest, arm: "generator-matched" } as const;
-    const never = createOpponentTeams(context, undefined, { legal: () => false });
+    const never = createOpponentTeams(context, { legality: { legal: () => false } });
     const opened = never.open({ opponent: first.state.opponent, flags: first.flags });
     if (opened.kind !== "source") throw new Error("expected a source");
     expect(opened.source.draw(stream(1), 0)).toEqual({ kind: "refused", code: "legality_redraws_exhausted" });
     expect(never.counts()).toMatchObject({ drawn: 0, draw_refusals: { legality_redraws_exhausted: 1 } });
-    const broken = createOpponentTeams(context, undefined, {
-      legal: () => {
-        throw new Error("not the model's");
+    const broken = createOpponentTeams(context, {
+      legality: {
+        legal: () => {
+          throw new Error("not the model's");
+        },
       },
     });
     const live = broken.open({ opponent: first.state.opponent, flags: first.flags });
     if (live.kind !== "source") throw new Error("expected a source");
     expect(() => live.source.draw(stream(1), 0)).toThrow("not the model's");
     expect(() => port().open({ opponent: null as never, flags: [] })).toThrow();
+
+    // The input is the reader's opponent half and its flags, nothing else (type test).
+    const p = port();
+    // @ts-expect-error: the opponent's real team is not an input
+    p.open({ opponent: first.state.opponent, flags: [], team: [] });
+    // @ts-expect-error: nor a battle record
+    p.open({ opponent: first.state.opponent, flags: [], record: {} });
+    // @ts-expect-error: nor the seed
+    p.open({ opponent: first.state.opponent, flags: [], seed: "sodium,0" });
   });
 });
