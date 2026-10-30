@@ -645,3 +645,21 @@ export { hpKoDifferential, outcomeScore } from "./search-leaf.ts";
 export { playerView } from "./search-turn.ts";
 export { goldenWorldFactsData, readWorldFactsData, type FactsTable } from "./world-facts-data.ts";
 export { legalReplies } from "./reply-model.ts";
+export {
+  evaluateHypothetical,
+  HYPOTHETICAL_BATTLE_FORMAT,
+  HYPOTHETICAL_ENGINE_PURPOSE,
+  HypotheticalError,
+  hypotheticalCandidates,
+  hypotheticalEngineSeed,
+  hypotheticalRequest,
+  type HypotheticalCandidate,
+  type HypotheticalRequest,
+  startHypothetical,
+  type HypotheticalChannel,
+  type HypotheticalObservation,
+  type HypotheticalPreview,
+  type HypotheticalStartInput,
+  type HypotheticalTurn,
+  type PreviewSolveInput,
+} from "./hypothetical-preview.ts";
