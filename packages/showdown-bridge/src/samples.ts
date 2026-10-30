@@ -658,6 +658,12 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "training-run-config/factored-preview": runConfigWith((c) => {
       runSection(c, "model").options = { factored_preview: true };
     }),
+    "training-run-config/separate-value": runConfigWith((c) => {
+      runSection(c, "model").options = { separate_value: "network" };
+    }),
+    "training-run-config/policy-output-scale": runConfigWith((c) => {
+      runSection(c, "model").options = { policy_output_scale_ppm: 10000 };
+    }),
     "training-run-config/candidate-target": runConfigWith((c) => {
       runSection(runSection(c, "model"), "encoder").options = { candidate_target: true };
     }),
@@ -701,6 +707,12 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     }),
     "clone-run-config/factored-preview": cloneWith((c) => {
       runSection(c, "model").options = { factored_preview: true };
+    }),
+    "clone-run-config/separate-value": cloneWith((c) => {
+      runSection(c, "model").options = { separate_value: "network" };
+    }),
+    "clone-run-config/policy-output-scale": cloneWith((c) => {
+      runSection(c, "model").options = { policy_output_scale_ppm: 10000 };
     }),
     "clone-run-config/candidate-target": cloneWith((c) => {
       runSection(runSection(c, "model"), "encoder").options = { candidate_target: true };
@@ -1011,6 +1023,12 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "clone-run-config/factored-preview-false": cloneWith(
       (c) => (runSection(c, "model").options = { factored_preview: false }),
     ),
+    "clone-run-config/separate-value-unknown": cloneWith(
+      (c) => (runSection(c, "model").options = { separate_value: "shared" }),
+    ),
+    "clone-run-config/policy-output-scale-default": cloneWith(
+      (c) => (runSection(c, "model").options = { policy_output_scale_ppm: 1000000 }),
+    ),
     "clone-run-config/candidate-target-false": cloneWith(
       (c) => (runSection(runSection(c, "model"), "encoder").options = { candidate_target: false }),
     ),
@@ -1054,6 +1072,12 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     ),
     "training-run-config/factored-preview-false": runConfigWith(
       (c) => (runSection(c, "model").options = { factored_preview: false }),
+    ),
+    "training-run-config/separate-value-unknown": runConfigWith(
+      (c) => (runSection(c, "model").options = { separate_value: "shared" }),
+    ),
+    "training-run-config/policy-output-scale-default": runConfigWith(
+      (c) => (runSection(c, "model").options = { policy_output_scale_ppm: 1000000 }),
     ),
     "training-run-config/candidate-target-false": runConfigWith(
       (c) => (runSection(runSection(c, "model"), "encoder").options = { candidate_target: false }),

@@ -143,3 +143,19 @@ def test_a_resume_mid_warm_up_or_at_its_end_reaches_the_same_state_hash(stop_aft
         continuous.train(trajs(config))
         resumed.train(trajs(config))
     assert pack_state(resumed) == pack_state(continuous)
+
+
+def test_a_separate_value_network_is_what_the_warm_up_trains() -> None:
+    def edit(config: dict[str, Any]) -> None:
+        config["warm_start"] = {"preview": "a" * 64, "battle": "b" * 64}
+        config["ppo"]["value_warmup"] = {"generations": 1}
+        config["model"]["options"] = {"separate_value": "network"}
+
+    config = edited_config(edit)
+    student = learner(config)
+    before = {role: snapshot(student, role) for role in ROLES}
+    student.train(trajs(config))
+    for role in ROLES:
+        moved = changed(before[role], snapshot(student, role))
+        assert moved
+        assert all(name.startswith("value_net.") for name in moved)
