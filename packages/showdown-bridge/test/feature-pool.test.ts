@@ -1,5 +1,7 @@
 import { beforeAll, describe, expect, it } from "vitest";
-import { candidateFeatures, createFeatureMemo } from "../src/candidate-features.ts";
+import { candidateFeatures, createFeatureMemo, FEATURE_SET_BELIEF } from "../src/candidate-features.ts";
+import { statsOf } from "../src/feature-bench.ts";
+import { fakePort } from "./damage-aware-world-support.ts";
 import { answerMessage, createFeatureService, type FeatureResult, type FeatureServiceSpec, type FeatureTask } from "../src/feature-service.ts";
 import { FeaturePool, FeaturePoolError } from "../src/feature-pool.ts";
 import { GOLDEN_FORMAT } from "../src/golden.ts";
@@ -74,6 +76,32 @@ describe("feature pool (ADR-022 mitigation 3)", () => {
     } finally {
       await pool.close();
     }
+  }, 120_000);
+
+  it("serves probe-damage-belief/1 on the calling thread with the world counts of each task, and refuses the port anywhere else", async () => {
+    const beliefSpec: FeatureServiceSpec = { ...spec, feature_set: FEATURE_SET_BELIEF };
+    const port = fakePort();
+    const setup = { port, worlds: 3 };
+    const service = createFeatureService(beliefSpec, engine, { belief: setup });
+    const first = tasks[0] as FeatureTask;
+    const a = service.run({ ...first, game: "belief" });
+    expect(a.outcome.kind).toBe("features");
+    expect(a.belief).toEqual({ decisions: 1, worlds_sampled: 3, redraws: 0, contradicted_worlds: 0, fallbacks: {} });
+    // a refusal is a fallback counted by cause in this task's delta
+    port.sample = () => {
+      throw Object.assign(new Error("refused"), { name: "BeliefError", code: "reader_flagged" });
+    };
+    const b = service.run({ ...first, game: "belief" });
+    expect(b.belief).toEqual({ decisions: 1, worlds_sampled: 0, redraws: 0, contradicted_worlds: 0, fallbacks: { reader_flagged: 1 } });
+    // the port goes with the belief set and with no other, and not to a thread
+    expect(() => createFeatureService(beliefSpec, engine)).toThrow("belief port");
+    expect(() => createFeatureService(spec, engine, { belief: setup })).toThrow("belief port");
+    expect(() => new FeaturePool(1, beliefSpec, { belief: setup })).toThrow(FeaturePoolError);
+    const pool = new FeaturePool(0, beliefSpec, { belief: setup });
+    expect(((await pool.run([{ ...first, game: "pooled" }]))[0] as FeatureResult).belief?.decisions).toBe(1);
+    await pool.close();
+    // the bench sums them
+    expect(statsOf([a, b]).belief).toEqual({ decisions: 2, worlds_sampled: 3, redraws: 0, contradicted_worlds: 0, fallbacks: { reader_flagged: 1 } });
   }, 120_000);
 
   it("refuses a bad size, a thread that fails and a closed pool", async () => {
