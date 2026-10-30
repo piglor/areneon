@@ -698,8 +698,17 @@ describe("refusals: the five /1 codes", () => {
     expect(code(() => build(c, { vocabulary: { ...vocabulary, roster: [] } as never }))).toBe("assumed_set");
     expect(code(() => build(c, { probe: stubProbe({ throwOn: { stats: new MechanicsProbeError("the engine does not take that boost") } }) }))).toBe("probe_refused");
     // A refused damage or speed-order query is a row, not a refusal of the request (#1246).
-    expect(code(() => build(c, { probe: stubProbe({ throwOn: { damage: new MechanicsProbeError("the engine does not take that boost") } }) }))).toBeUndefined();
-    expect(code(() => build(c, { probe: stubProbe({ throwOn: { speed_order: new MechanicsProbeError("the declared HP exceeds the maximum") } }) }))).toBeUndefined();
+    const orders = orderProbe({ fail: () => null });
+    const refusedDamage: Probe = (context, query) => {
+      if (query.query.kind === "damage") throw new MechanicsProbeError("the engine does not take that boost");
+      return orders(context, query);
+    };
+    expect(code(() => build(c, { probe: refusedDamage }))).toBeUndefined();
+    const refusedOrder: Probe = (context, query) => {
+      if (query.query.kind === "speed_order") throw new MechanicsProbeError("the declared HP exceeds the maximum");
+      return orders(context, query);
+    };
+    expect(code(() => build(c, { probe: refusedOrder }))).toBeUndefined();
   });
   it("lets a defect propagate: a choice of the wrong shape", () => {
     const c = first();
