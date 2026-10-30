@@ -29,7 +29,7 @@ import { exportPaste } from "./teams.ts";
 import type { TeamVocabulary } from "./team-vocabulary.ts";
 
 /** Bumped when the check declares a hit to the probe or judges its rolls differently. */
-export const DAMAGE_CHECK_FORMAT = 1;
+export const DAMAGE_CHECK_FORMAT = 2;
 
 export type DamageEvidenceRules = NonNullable<BeliefConfig["damage_evidence"]>;
 
@@ -190,10 +190,10 @@ export function createDamageCheck(context: DamageCheckContext, input: DamageChec
 
   /**
    * The own Pokemon of a hit as a probe fighter, or null when the probe cannot state it: its set is its team set with the
-   * item, ability and gender the request in force at the move line shows, and its state is the reader's. A Pokemon that has
-   * Mega Evolved or whose forme is not the one of its set (Palafin's Hero forme; a Mega's shown forme is not its set's species either)
-   * is not stated. The probe's Intimidate artifact of a declared Evolution is fixed (#1243); stating an evolved own Pokemon needs
-   * the forme match for Megas and its own coverage, a follow-up.
+   * item, ability and gender the request in force at the move line shows, and its state is the reader's. A Pokemon whose forme
+   * is not the one of its set (Palafin's Hero forme) is not stated. One that has Mega Evolved is stated when its shown forme is
+   * the one its stone (the request's item, through the engine's `megaStone` data) makes of the set's species: it is declared
+   * as the set holding the stone and evolved, with the set's own (pre-Evolution) ability, which the Evolution replaces (#1247).
    */
   function ownFighter(hit: Hit, side: { letter: string; index: number }): Fighter | null {
     const frame = run.frames[hit.frame] as PublicFrame;
@@ -209,12 +209,13 @@ export function createDamageCheck(context: DamageCheckContext, input: DamageChec
     }
     const set: PokemonSet = structuredClone(matches[0] as PokemonSet);
     const shownForme = toId(entry.details.split(",")[0] as string);
-    // An evolved Pokemon shows its Mega forme, which is not its set's species: not stated (see above).
-    if (mon.mega || shownForme !== toId(set.species)) return null;
+    // An evolved Pokemon shows its Mega forme, which its stone makes of the set's species; any other forme difference is not stated.
+    const megaForme = mon.mega ? (names.items.get(entry.item) as unknown as { megaStone?: Record<string, string> }).megaStone?.[names.species.get(set.species).name] : undefined;
+    if (mon.mega ? megaForme === undefined || shownForme !== toId(megaForme) : shownForme !== toId(set.species)) return null;
     const gender = SHOWN_GENDER.exec(entry.details)?.[1];
     if (gender !== undefined) set.gender = gender;
     set.item = entry.item === "" ? "" : names.items.get(entry.item).name;
-    set.ability = names.abilities.get(entry.ability as string).name;
+    if (!mon.mega) set.ability = names.abilities.get(entry.ability as string).name;
     const hp = mon.hp_num === null || mon.hp_den === null || mon.hp_num === mon.hp_den ? null : Math.max(1, mon.hp_num);
     return { paste: exportPaste(engine, [set]), hp, status: mon.status, boosts: view.boostsOf(mon), mega: mon.mega };
   }

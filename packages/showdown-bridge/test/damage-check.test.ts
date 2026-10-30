@@ -160,6 +160,12 @@ describe("check", () => {
     }
   });
 
+  it("counts no own Pokemon as unstated that the team names once (the golden battle has no Mega, so the counter stays 0)", () => {
+    const port = make() as NonNullable<ReturnType<typeof make>>;
+    for (const event of port.events) port.check(event, candidate());
+    expect(port.counts().own_unstated).toBe(0);
+  });
+
   it("a cache belongs to one seat", () => {
     const cache = newDamageCheckCache();
     make({ cache });
