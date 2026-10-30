@@ -8,7 +8,7 @@
 // refused the same way (`legality_redraws_exhausted`). Defects of the run (the model's `BELIEF_DEFECTS`) are thrown by
 // the callers that treat them so; here every coded refusal is counted and returned, anything else propagates.
 
-import { belief, type OpponentTeam, teamStream } from "@areneon/opponent-model";
+import { belief, type OpponentTeam, type SetLegality, teamStream } from "@areneon/opponent-model";
 import { refusalCode, type WorldSamplePort } from "@areneon/showdown-bridge";
 import { armParts, type SearchWorldsContext, type SearchWorldsFiles, searchWorldsFiles } from "./search-worlds.ts";
 
@@ -38,8 +38,9 @@ export interface OpponentTeamPort {
   counts(): OpponentTeamCounts;
 }
 
-export function createOpponentTeams(context: SearchWorldsContext, files: SearchWorldsFiles = searchWorldsFiles(context.vocabulary.format_id)): OpponentTeamPort {
-  const { prior, view, beliefConfig, sampler, prior_hash, belief_config_hash, identity_hash } = armParts(context, files);
+/** `legality` replaces the pinned engine's set legality: a test seam (the default is the real validator). */
+export function createOpponentTeams(context: SearchWorldsContext, files: SearchWorldsFiles = searchWorldsFiles(context.vocabulary.format_id), legality?: SetLegality): OpponentTeamPort {
+  const { prior, view, beliefConfig, sampler, prior_hash, belief_config_hash, identity_hash } = armParts(context, files, legality);
   let opened = 0;
   let drawn = 0;
   let legality_redraws = 0;

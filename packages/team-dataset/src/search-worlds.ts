@@ -14,7 +14,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { belief, beliefIdentityHash, createSampler, worldStream } from "@areneon/opponent-model";
+import { belief, beliefIdentityHash, createSampler, type SetLegality, worldStream } from "@areneon/opponent-model";
 import {
   beliefConfigHash,
   createSetLegality,
@@ -92,7 +92,7 @@ export interface ArmParts {
   readonly identity_hash: string;
 }
 
-export function armParts(context: SearchWorldsContext, files: SearchWorldsFiles = searchWorldsFiles(context.vocabulary.format_id)): ArmParts {
+export function armParts(context: SearchWorldsContext, files: SearchWorldsFiles = searchWorldsFiles(context.vocabulary.format_id), legality?: SetLegality): ArmParts {
   const { engine, vocabulary, reader_sha256, manifest, arm } = context;
   const generator = readTeamGeneratorConfig(json(files.generator_file), readEngineData(json(files.engine_data_file)));
   const matched = readUsagePrior(json(files.generator_prior_file), vocabulary);
@@ -111,7 +111,7 @@ export function armParts(context: SearchWorldsContext, files: SearchWorldsFiles 
   const belief_config_hash = beliefConfigHash(beliefConfig);
   const vocabulary_hash = teamVocabularyHash(vocabulary);
   const view = { ...vocabulary, vocabulary_hash };
-  const sampler = createSampler({ legality: createSetLegality({ engine, vocabulary }), spreads: generatorSpreadSampler(vocabulary, generator) });
+  const sampler = createSampler({ legality: legality ?? createSetLegality({ engine, vocabulary }), spreads: generatorSpreadSampler(vocabulary, generator) });
   return { prior, view, beliefConfig, sampler, prior_hash, belief_config_hash, identity_hash: beliefIdentityHash({ prior_hash, belief_config_hash, vocabulary_hash, reader_sha256, version_manifest: manifest }) };
 }
 

@@ -77,5 +77,22 @@ describe("createOpponentTeams on generator teams", () => {
     const lacking = port();
     expect(lacking.open({ opponent: { ...first.state.opponent, roster }, flags: first.flags })).toEqual({ kind: "refused", code: "species_not_in_prior" });
     expect(lacking.counts()).toMatchObject({ opened: 1, belief_refusals: { species_not_in_prior: 1 }, drawn: 0 });
+
+    // A team whose every redraw held an illegal set is a counted refusal; an error that is not the model's is thrown.
+    const context = { engine, vocabulary: goldenTeamVocabulary(), reader_sha256: readerSha256(), manifest, arm: "generator-matched" } as const;
+    const never = createOpponentTeams(context, undefined, { legal: () => false });
+    const opened = never.open({ opponent: first.state.opponent, flags: first.flags });
+    if (opened.kind !== "source") throw new Error("expected a source");
+    expect(opened.source.draw(stream(1), 0)).toEqual({ kind: "refused", code: "legality_redraws_exhausted" });
+    expect(never.counts()).toMatchObject({ drawn: 0, draw_refusals: { legality_redraws_exhausted: 1 } });
+    const broken = createOpponentTeams(context, undefined, {
+      legal: () => {
+        throw new Error("not the model's");
+      },
+    });
+    const live = broken.open({ opponent: first.state.opponent, flags: first.flags });
+    if (live.kind !== "source") throw new Error("expected a source");
+    expect(() => live.source.draw(stream(1), 0)).toThrow("not the model's");
+    expect(() => port().open({ opponent: null as never, flags: [] })).toThrow();
   });
 });
