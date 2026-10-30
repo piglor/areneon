@@ -98,7 +98,7 @@ describe("the committed example config", () => {
     expect(cfg.proposal?.components).toEqual([
       { kind: "role_sets", role_set_table_hash: roleSource.hash, share_permille: 200 },
       { kind: "uniform", share_permille: 300 },
-      { kind: "usage", share_permille: 500, usage_table_hash: committed.hash, species_root: 2, set_root: 1, floor_permille: 100 },
+      { kind: "usage", share_permille: 500, usage_table_hash: committed.hash, species_root: 2, set_root: 3, floor_permille: 100 },
     ]);
     expect(committed.hash).toBe(usageTableHash(readUsageWeightTable(JSON.parse(readFileSync(join(ROOT, "config", "teams", FORMAT, "usage", "2026-09-1630.json"), "utf8")), vocabulary)));
   });
@@ -554,10 +554,19 @@ describe("a small target-share generation", () => {
   afterAll(() => rmSync(scratch, { recursive: true, force: true }));
   const committedConfig = JSON.parse(readFileSync(join(ROOT, "config", "teams", FORMAT, "generator.mixture-u.json"), "utf8")) as TeamGeneratorConfig;
   const cfg = small({ config_id: "usage-small", proposal: committedConfig.proposal as NonNullable<TeamGeneratorConfig["proposal"]> });
+  // The uniform reference pilot of gate P4: the same config without its proposal.
+  const plain: TeamGeneratorConfig = { ...cfg };
+  delete plain.proposal;
+  const uniformPilot = runPilot(
+    new Drawer({ engine, format, proposal: new Proposal(vocabulary, table, plain), labelSet: light, generationKey: KEY }),
+    { config_hash: recordHash(plain), label_set_hash: recordHash(light), vocabulary_hash: teamVocabularyHash(vocabulary) },
+    light,
+    plain.pilot_draws,
+  );
   const run = (n: number) => {
     mkdirSync(join(scratch, `log-${n}`));
     return generate({
-      engine, format, table, vocabulary, labelSet: light, config: cfg, roleSets: roleSource, usage: committed,
+      engine, format, table, vocabulary, labelSet: light, config: cfg, roleSets: roleSource, usage: committed, uniformPilot,
       generationKey: KEY, assignmentKey: ASSIGNMENT_KEY, datasetId: "usage-1", planId: "plan-1",
       sizes: { dev: 2, validation: 2, training: 5 }, generatorCommit: "a".repeat(40),
       reference: { hash: referencePoolHash([]), known: new KnownHashes([]) }, logDir: join(scratch, `log-${n}`),
@@ -574,13 +583,17 @@ describe("a small target-share generation", () => {
     expect(usage?.share_permille).toBe(500);
     expect(usage?.p1?.pass).toBe(true);
     expect(usage?.p2.value).toBeGreaterThan(0);
-    expect(usage?.p3.pass).toBe((usage?.p3.value ?? 0) >= (usage?.p3.threshold ?? Infinity));
+    // The committed example config meets every gate on this small run: P1 to P3 per component (usage P3 at the same 40 bits as the others) and P4.
+    expect(usage?.p3.threshold).toBe(40);
+    expect(usage?.p3.value).toBe(48);
+    expect(usage?.p3_sequence_bits).toBe(75);
+    expect(a.coverage.proposal?.failed).toEqual([]);
+    expect(a.coverage.proposal?.publishable).toBe(true);
     expect(usage?.pilot.max_team_count).toBeGreaterThanOrEqual(1);
     expect(usage?.pilot.max_team_count).toBeLessThanOrEqual(usage?.pilot.draws ?? 0);
     expect(a.coverage.proposal?.components.filter((c) => c.kind !== "usage").every((c) => c.pilot.max_team_count === undefined)).toBe(true);
     expect(Object.keys(usage?.p1?.kinds ?? {})).toEqual(["species", "abilities", "items", "moves", "spreads", "teammates"]);
     expect(usage?.p1?.value).toBe(Math.min(...Object.values(usage?.p1?.kinds ?? {})));
-    expect(usage?.p3_sequence_bits).toBe(49);
     expect(a.coverage.proposal?.components.filter((c) => c.kind !== "usage").every((c) => c.p3_sequence_bits === undefined)).toBe(true);
     expect(a.coverage.proposal?.components.map((c) => c.kind)).toEqual(["role_sets", "uniform", "usage"]);
   }, 300_000); // each run draws a few hundred teams through the pinned validator

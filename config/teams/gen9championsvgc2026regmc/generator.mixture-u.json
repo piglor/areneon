@@ -361,7 +361,7 @@
         "share_permille": 500,
         "usage_table_hash": "f42f3dbacd5913229bfabf874ed1f6cbc8a94488966b8643bf96c64c94b6a13b",
         "species_root": 2,
-        "set_root": 1,
+        "set_root": 3,
         "floor_permille": 100
       }
     ],
@@ -369,8 +369,7 @@
       "p2_min_accept_permille": 500,
       "p3_min_bits": 40,
       "p4_min_strata_permille": 750,
-      "p1_min_usage_permille": 950,
-      "p3_min_bits_usage": 16
+      "p1_min_usage_permille": 950
     }
   }
 }
