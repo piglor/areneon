@@ -32,7 +32,7 @@ from areneon_ml.checkpoint.provenance import ProvenanceError, ProvenanceGraph
 from areneon_ml.checkpoint.record import RecordError, read_record
 from areneon_ml.model.encoder import encoder_version
 from areneon_ml.model.gamedata import GameData
-from areneon_ml.model.network import ConfigError, ModelConfig, init_network
+from areneon_ml.model.network import ConfigError, ModelConfig, init_network, shared_trunk_of
 
 EXIT_REFUSED = 3
 
@@ -99,6 +99,8 @@ def _parser() -> argparse.ArgumentParser:
 def _init(args: argparse.Namespace) -> dict[str, Any]:
     game = GameData.from_table(_load_json(args.engine_data))
     config = ModelConfig.from_dict(_load_json(args.model_config))
+    if shared_trunk_of(config):  # one role alone has no partner trunk: the loop makes the pair
+        raise ConfigError("shared_trunk: a Preview and Battle pair is made by the generation loop")
     data = checkpoint_bytes(init_network(args.role, game, config, args.seed), game)
     found = write_checkpoint(args.run_dir, data)
     return {

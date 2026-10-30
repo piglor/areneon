@@ -22,6 +22,7 @@ from typing import Any
 from areneon_contracts.contracts import ContractError, jcs, sha256_hex, validate
 
 from areneon_ml.model.network import ConfigError, ModelConfig
+from areneon_ml.model.options import SHARED_TRUNK, is_set
 
 MICRO = 1_000_000
 NANO = 1_000_000_000
@@ -207,6 +208,11 @@ def read_run_config(raw: object) -> RunConfig:
         raise RunConfigError(
             "training-run-config: warm_start names one checkpoint for both roles "
             "(a checkpoint holds one role's network)"
+        )
+    if warm is not None and is_set(model.options, SHARED_TRUNK):
+        raise RunConfigError(
+            "training-run-config: model.options.shared_trunk cannot be combined with warm_start "
+            "(a cloned Battle network and a seeded Preview network have no common trunk)"
         )
     if "value_warmup" in raw["ppo"] and warm is None:
         raise RunConfigError(

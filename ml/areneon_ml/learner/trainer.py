@@ -38,7 +38,7 @@ from areneon_ml.learner.ppo import (
     terminal_rewards,
 )
 from areneon_ml.model.batch import Batch, collate
-from areneon_ml.model.network import ROLES, PolicyNetwork
+from areneon_ml.model.network import ROLES, PolicyNetwork, shared_trunk_of, tie_trunk
 
 
 class LearnerError(ValueError):
@@ -203,6 +203,12 @@ class Learner:
             )
         self.config = config
         self.device = device
+        # shared_trunk (ADR-010 erratum A4 item 5): the Preview network uses the Battle network's
+        # trunk modules, the very same parameters; the rest of each network stays its own. (A
+        # warm start is refused with the option by the config reader, so both start seeded.)
+        self.shared_trunk = shared_trunk_of(config.model)
+        if self.shared_trunk:
+            tie_trunk(networks["battle"], networks["preview"])
         self.networks = {role: networks[role].to(device) for role in ROLES}
         # The frozen warm-start pair (ppo.anchor): evaluation mode, no gradient, never trained and
         # not part of the learner state (the loop loads it from the run's checkpoint store).
@@ -213,15 +219,29 @@ class Learner:
                 anchor.requires_grad_(False)
                 self.anchors[role] = anchor
         ppo = config.ppo
-        self.optimisers = {
-            role: torch.optim.Adam(
-                self.networks[role].parameters(),
+
+        def adam(parameters: Sequence[torch.nn.Parameter]) -> torch.optim.Adam:
+            return torch.optim.Adam(
+                parameters,
                 lr=ppo.learning_rate,
                 betas=(ppo.adam_beta1, ppo.adam_beta2),
                 eps=ppo.adam_eps,
             )
-            for role in ROLES
+
+        # Without shared_trunk: one Adam per role, as ever. With it: ONE Adam over the union of the
+        # two networks' parameters (each shared parameter once), kept under both role keys.
+        self.entries: dict[str, list[tuple[str, torch.nn.Parameter]]] = {
+            role: list(self.networks[role].named_parameters()) for role in ROLES
         }
+        if self.shared_trunk:
+            seen = {id(p) for _, p in self.entries["battle"]}
+            self.entries["preview"] = [
+                (n, p) for n, p in self.entries["preview"] if id(p) not in seen
+            ]
+            union = adam([p for role in ROLES for _, p in self.entries[role]])
+            self.optimisers = {role: union for role in ROLES}
+        else:
+            self.optimisers = {role: adam(list(self.networks[role].parameters())) for role in ROLES}
         self.generator = torch.Generator(device="cpu")
         self.generator.manual_seed(config.learner_seed)
         self.generation = 0
@@ -234,6 +254,19 @@ class Learner:
         # Entropy weight (millionths) of the newest update; set only under a linear
         # ``ppo.entropy_schedule`` (stored in the sidecar then, and nowhere otherwise).
         self.last_entropy_coef_micro: int | None = None
+
+    def optimiser_groups(
+        self,
+    ) -> list[tuple[torch.optim.Optimizer, list[tuple[str, str, torch.nn.Parameter]]]]:
+        """Each distinct optimiser with its parameters in its own order, as (role, name, parameter).
+
+        Two groups (one per role) normally; one under ``shared_trunk``, where the Preview entries
+        are the Preview network's own parameters only (the trunk is stored under the Battle role).
+        """
+        flat = [(role, n, p) for role in ROLES for n, p in self.entries[role]]
+        if self.shared_trunk:
+            return [(self.optimisers["battle"], flat)]
+        return [(self.optimisers[role], [e for e in flat if e[0] == role]) for role in ROLES]
 
     def entropy_coef_micro(self, update: int) -> int | None:
         """Entropy weight of learner update ``update`` (from 0), or ``None`` without a linear
@@ -285,12 +318,20 @@ class Learner:
         # frozen (pre-update) weights BEFORE either role is updated: the Battle network is trained
         # first, so its values are read here, once, and the Preview return is built from them.
         frozen = self._frozen_battle(trajectories)
+        # Every role's targets are read from the frozen (pre-update) weights BEFORE any role is
+        # updated. Without shared_trunk the roles share nothing, so this equals reading each just
+        # before its own epochs; with it, the Battle update moves the trunk the Preview scores with.
+        tables = {}
         for role in ROLES:
             mine = [t for t in trajectories if t.role == role]
             if mine:
-                roles[role] = self._train_role(
-                    role, mine, warmup and role in self.warm_roles, frozen
+                warm = warmup and role in self.warm_roles
+                tables[role] = (
+                    self._table(role, mine, role in self.anchors and not warm, frozen),
+                    warm,
                 )
+        for role, (table, warm) in tables.items():
+            roles[role] = self._train_role(role, table, warm)
         self.generation += 1
         return TrainReport(roles)
 
@@ -411,16 +452,11 @@ class Learner:
             self._anchor_scores(role, steps) if anchor else None,
         )
 
-    def _train_role(
-        self,
-        role: str,
-        trajectories: Sequence[Trajectory],
-        warm: bool = False,
-        battle_frozen: _FrozenBattle | None = None,
-    ) -> RoleReport:
-        """PPO epochs for one role; with ``warm`` only the value head learns (see below)."""
-        # The anchor term is inactive while the policy is frozen (a value warm-up update).
-        table = self._table(role, trajectories, role in self.anchors and not warm, battle_frozen)
+    def _train_role(self, role: str, table: _Table, warm: bool = False) -> RoleReport:
+        """PPO epochs for one role; with ``warm`` only the value head learns (see below).
+
+        ``table`` holds the role's targets, read before any update (the anchor term is inactive
+        while the policy is frozen, a value warm-up update)."""
         network = self.networks[role]
         network.train()
         # Value warm-up: every parameter outside the value head is frozen, so the policy outputs
@@ -481,7 +517,14 @@ class Learner:
                     kl_sum += kl.detach().cpu()
                 optimiser.zero_grad(set_to_none=True)
                 torch.autograd.backward(loss.value if warm else total)
-                torch.nn.utils.clip_grad_norm_(network.parameters(), ppo.max_grad_norm)
+                # Clipped over the union of the optimiser's parameters (the whole pair under
+                # shared_trunk; a parameter with no gradient this step does not count).
+                clipped = (
+                    [p for r in ROLES for _, p in self.entries[r]]
+                    if self.shared_trunk
+                    else network.parameters()
+                )
+                torch.nn.utils.clip_grad_norm_(clipped, ppo.max_grad_norm)
                 optimiser.step()
                 optimiser_steps += 1
                 minibatches += 1
