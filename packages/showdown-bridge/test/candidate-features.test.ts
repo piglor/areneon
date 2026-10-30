@@ -310,9 +310,22 @@ describe("refusals", () => {
     expect(code(() => candidateFeatures(engine, configs(), channel, c.context.team as never, candidatesOf(c)))).toBe("reader_flagged");
   });
 
-  it("refuses when the probe refuses a declared state", () => {
-    const probe = stubProbe({ throwOn: { damage: new MechanicsProbeError("the engine does not take that boost") } });
+  it("refuses when the probe refuses the assumed opponent set itself", () => {
+    const probe = stubProbe({ throwOn: { stats: new MechanicsProbeError("the engine does not take that boost") } });
     expect(code(() => build(first(), { probe }))).toBe("probe_refused");
+  });
+
+  it("makes only the row unsupported (query_kind) when the probe refuses a declared state of one damage query (#1246)", () => {
+    const probe = stubProbe({ throwOn: { damage: new MechanicsProbeError("the engine does not take that status") } });
+    const memo = createFeatureMemo();
+    const features = build(first(), { probe }, memo);
+    expect(memo.counts.probe_refusals).toBe(features.rows.length); // one refusal per row, counted
+    expect(createFeatureMemo().counts.probe_refusals).toBe(0);
+    expect(features.rows.length).toBeGreaterThan(0);
+    expect(features.rows.every((row) => row.kind === "unsupported" && row.reason === "query_kind")).toBe(true);
+    // The same request with an answering probe keeps its rows' keys.
+    const plain = build(first());
+    expect(features.rows.map(({ slot, move, target, mega }) => [slot, move, target, mega])).toEqual(plain.rows.map(({ slot, move, target, mega }) => [slot, move, target, mega]));
   });
 
   it("refuses when no assumed set can be built", () => {
