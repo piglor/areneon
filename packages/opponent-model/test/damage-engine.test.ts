@@ -38,6 +38,8 @@ describe("the real check over the committed battles", () => {
     let events = 0;
     let passed = 0;
     let unsupported = 0;
+    let ownMega = 0;
+    let ownMegaStated = 0;
     const reasons: Record<string, number> = {};
     const failures: string[] = [];
     for (const game of list) {
@@ -60,13 +62,20 @@ describe("the real check over the committed battles", () => {
           const stone = realVocabulary.roster.some((r) => r.required_item === toId(set.item));
           const verdict = port.check(event, { species: toId(set.species), forme: realVocabulary.roster.some((r) => r.id === shown) ? shown : toId(set.species), mega: stone, ability: toId(set.ability), item: set.item === "" ? null : toId(set.item), nature, stat_points: set.evs as never });
           events += 1;
+          // An own Pokemon that had Mega Evolved at the hit is stated too (#1247).
+          const hit = port.hits.find((x) => `hit${x.frame}` === event.id);
+          const ownSide = hit === undefined ? undefined : hit.attacker.own ? hit.attacker : hit.defender;
+          if (hit !== undefined && ownSide !== undefined && hit.state.own.roster[ownSide.index]?.mega === true) {
+            ownMega += 1;
+            if (verdict !== null) ownMegaStated += 1;
+          }
           if (verdict === null) unsupported += 1;
           else if (verdict) passed += 1;
           else failures.push(`${game.id}/${seat}/${event.id}/${event.role}/${set.species}`);
         }
       }
     }
-    return { events, passed, unsupported, reasons, failures };
+    return { events, passed, unsupported, reasons, failures, ownMega, ownMegaStated };
   }
 
   it("the real set of the opponent is never ruled out by an isolated hit it took or dealt (the random-play, unavailable and single-battle corpora)", () => {
@@ -81,6 +90,9 @@ describe("the real check over the committed battles", () => {
     expect(found.failures).toEqual([]);
     expect(found.events).toBeGreaterThan(1000);
     expect(found.passed).toBeGreaterThan(900);
+    // hits on or by an own Mega Evolved Pokemon constrain now, and none of them rules the true set out (#1247)
+    expect(found.ownMega).toBeGreaterThan(0);
+    expect(found.ownMegaStated).toBeGreaterThan(0);
     // each kind of non-isolated hit is found in the corpus
     expect(Object.keys(found.reasons)).toEqual(expect.arrayContaining(["listed_move", "lasting_move", "listed_ability", "listed_target", "possible_disguise", "volatile", "changed_mon"]));
   }, 900_000);
