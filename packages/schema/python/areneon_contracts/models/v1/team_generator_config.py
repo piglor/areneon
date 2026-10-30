@@ -38,7 +38,7 @@ class ItemWeight(BaseModel):
 
 class Gates(BaseModel):
     """
-    Optional: the pilot gate thresholds of ADR-020 section 6, all integers. A dataset report evaluates P1 to P4 against them; a publishing run fails when one is not met. P1 (mapping) is 100% for the role_sets component and carries no field here; the usage component's P1 threshold is p1_min_usage_permille. Absent: the numbers are reported with no verdict.
+    Optional: the pilot gate thresholds of ADR-020 section 6, all integers. A dataset report evaluates P1 to P4 against them; a publishing run fails when one is not met. P1 (mapping) is 100% for the role_sets component and carries no field here. The usage component has two optional thresholds of its own: p1_min_usage_permille (P1 for usage, the smallest mapped share over its six list kinds) and p3_min_bits_usage (P3 for usage, which falls back to p3_min_bits when absent). Absent: the numbers are reported with no verdict.
     """
 
     model_config = ConfigDict(
@@ -152,7 +152,7 @@ class Proposal(BaseModel):
     components: Annotated[list[Components], Field(max_length=3, min_length=1)]
     gates: Gates | MISSING = MISSING
     """
-    Optional: the pilot gate thresholds of ADR-020 section 6, all integers. A dataset report evaluates P1 to P4 against them; a publishing run fails when one is not met. P1 (mapping) is 100% for the role_sets component and carries no field here; the usage component's P1 threshold is p1_min_usage_permille. Absent: the numbers are reported with no verdict.
+    Optional: the pilot gate thresholds of ADR-020 section 6, all integers. A dataset report evaluates P1 to P4 against them; a publishing run fails when one is not met. P1 (mapping) is 100% for the role_sets component and carries no field here. The usage component has two optional thresholds of its own: p1_min_usage_permille (P1 for usage, the smallest mapped share over its six list kinds) and p3_min_bits_usage (P3 for usage, which falls back to p3_min_bits when absent). Absent: the numbers are reported with no verdict.
     """
 
 

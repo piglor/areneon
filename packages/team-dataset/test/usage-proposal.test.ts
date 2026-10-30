@@ -11,7 +11,7 @@ import { afterAll, describe, expect, it } from "vitest";
 import { KnownHashes, referencePoolHash } from "../src/dedupe.ts";
 import { Drawer } from "../src/draw.ts";
 import { generate } from "../src/generate.ts";
-import { runPilot } from "../src/pilot.ts";
+import { PilotError, readPilot, runPilot } from "../src/pilot.ts";
 import { bitsOf, usageBound, usageBounds, usageMapping } from "../src/pilot-gates.ts";
 import { Proposal } from "../src/proposal.ts";
 import { roleSetsSource } from "../src/role-set-proposal.ts";
@@ -326,24 +326,25 @@ describe("P3 for component U", () => {
       teammates: { entries: [{ id: "b", ppm: 1, weight: 3 }, { id: "c", ppm: 1, weight: 1 }] },
     }));
     const source = { table: { species }, hash: "x" } as never;
-    const vocab = { roster: ["a", "b", "c"].map((id) => ({ id, abilities: ["x"], moves: ["m0", "m1"] })), items: [], natures: [{}], rules: { max_team_size: 2, item_clause: 1 } } as never;
+    const vocab = { roster: ["a", "b", "c"].map((id) => ({ id, abilities: ["x"], moves: ["m0", "m1"] })), items: ["i0", "i1", "i2", "i3", "i4", "i5", "i6", "i7", "i8", "i9"], natures: [{}], rules: { max_team_size: 2, item_clause: 1 } } as never;
     const cfg = { item_weights: [], default_item_weight: 1, gender_policy: "unset", moves_per_set: 2 } as never;
     const bound = usageBound(vocab, cfg, usageComponent(source, 1000, 0), source);
     expect(bound.num * 567n).toBe(8n * bound.den); // 8 / 567
     expect(bitsOf(bound)).toBe(bitsOf({ num: 8n, den: 567n }));
   });
 
-  it("is 18 bits on the committed table at floor 100 and root 1: the sound bound cannot reach the ADR's proposed 40, so the example config sets p3_min_bits_usage", () => {
+  it("is 12 bits (set-level, set_root 1) and 49 bits (ordered sequence) on the committed table at floor 100; at set_root 2 they are 35 and 69", () => {
     // The bound is loose by construction (it multiplies the largest conditional probabilities and the orderings of a
     // team); it is a bound on the generator, not the probability of any real team. The figure is pinned so a change of
     // the bound or of the table is seen.
     const both = usageBounds(vocabulary, small(), usageComponent(committed), committed);
     const bound = both.set;
     process.stderr.write(`usage P3 on the committed table: set-level ${bitsOf(both.set)} bits, ordered-sequence ${bitsOf(both.sequence)} bits\n`);
-    expect(bitsOf(bound)).toBe(18);
-    expect(bitsOf(both.sequence)).toBeGreaterThan(bitsOf(both.set));
-    const cfg = JSON.parse(readFileSync(join(ROOT, "config", "teams", FORMAT, "generator.mixture-u.json"), "utf8")) as TeamGeneratorConfig;
-    expect(cfg.proposal?.gates?.p3_min_bits_usage).toBeLessThanOrEqual(bitsOf(bound));
+    expect(bitsOf(bound)).toBe(12); // 18 bits before the 2^m factor for the Mega entries a team can hold (m = 6)
+    expect(bitsOf(both.sequence)).toBe(49);
+    const squared = usageBounds(vocabulary, small(), usageComponent(committed, 1000, 100, 2), committed);
+    expect(bitsOf(squared.set)).toBe(35);
+    expect(bitsOf(squared.sequence)).toBe(69);
   });
 });
 
@@ -462,6 +463,68 @@ describe("P3 against an exhaustive enumeration of a tiny table", () => {
   }
 });
 
+describe("P3 when a canonical team has two routes (a Mega entry and its base forme plus stone)", () => {
+  // Roster a, c, d and dm; dm requires the item "st" and d's only listed item is "st", so the canonical team {x, d + st} is
+  // reached through dm and through d. All weights are equal and every member list is degenerate (one ability, one item, the
+  // whole two-move pool, one spread), so the exact probability is the species part alone: P(a team) = sum of the ordered
+  // species pairs that reach it, each 1/4 * 1/3. The set-level bound before the Mega factor is 1/4 and is BELOW that.
+  type Q = { n: bigint; d: bigint };
+  const q = (n: number | bigint, d: number | bigint = 1): Q => ({ n: BigInt(n), d: BigInt(d) });
+  const ge = (a: Q, b: Q): boolean => a.n * b.d >= b.n * a.d;
+  const ids = ["a", "c", "d", "dm"];
+  const member = (id: string, item: string) => ({
+    id,
+    w_species: 1,
+    abilities: { entries: [{ id: "x", ppm: 1_000_000 }], unmapped_ppm: 0 },
+    items: { entries: [{ id: item, ppm: 1_000_000 }], no_item_ppm: 0, truncated_ppm: 0, unmapped_ppm: 0 },
+    moves: { entries: [{ id: "m0", ppm: 600_000 }, { id: "m1", ppm: 400_000 }] },
+    spreads: { entries: [{ nature: "n", stat_points: {}, ppm: 1_000_000 }] },
+    teammates: { entries: ids.filter((t) => t !== id).map((t) => ({ id: t, ppm: 1, weight: 1 })) },
+  });
+  const source = { table: { species: ids.map((id) => member(id, id === "d" ? "st" : "i1")) }, hash: "x" } as never;
+  const vocab = {
+    roster: ids.map((id) => ({ id, abilities: ["x"], moves: ["m0", "m1"], ...(id === "dm" ? { required_item: "st" } : {}) })),
+    items: ["i1", "st"],
+    natures: [{}],
+    rules: { max_team_size: 2, item_clause: 2 },
+  } as never;
+  const cfg = { item_weights: [], default_item_weight: 1, gender_policy: "unset", moves_per_set: 2 } as never;
+  const canonical = (id: string): string => (id === "dm" ? "d" : id);
+
+  it("is at least the exact probability of the most likely canonical team, and the bound without the Mega factor is not", () => {
+    const teams = new Map<string, Q>();
+    for (const x of ids) {
+      for (const y of ids) {
+        if (x === y) continue;
+        const key = [canonical(x), canonical(y)].sort().join();
+        const old = teams.get(key) ?? q(0);
+        teams.set(key, q(old.n * 12n + old.d, old.d * 12n));
+      }
+    }
+    const exact = [...teams.values()].reduce((a, b) => (ge(a, b) ? a : b));
+    expect(ge(exact, q(4, 12)) && ge(q(4, 12), exact)).toBe(true); // {a,d}: (a,dm) (dm,a) (a,d) (d,a), each 1/12
+    const both = usageBounds(vocab, cfg, usageComponent(source, 1000, 0), source);
+    const bound = q(both.set.num, both.set.den);
+    expect(ge(bound, q(exact.n, exact.d))).toBe(true);
+    expect(ge(q(bound.n, bound.d * 2n), q(exact.n, exact.d))).toBe(false); // the bound before the 2^m factor (m = 1) was too small
+  });
+});
+
+describe("the pilot's largest canonical-team count (usage only)", () => {
+  const identity = { config_hash: "a".repeat(64), label_set_hash: recordHash(light), vocabulary_hash: "c".repeat(64) };
+  const hits = [8, 0, 0, 0, 0, 0, 0, 0];
+  const withPart = (change: Record<string, unknown>) => ({
+    format_version: 1, ...identity, draws: 10, rejected: 2, cell_hits: hits,
+    components: [{ kind: "usage", draws: 10, rejected: 2, cell_hits: hits, max_team_count: 3, ...change }],
+  });
+  it("is read, and refused on another component, above the draws or not a count", () => {
+    expect(readPilot(withPart({}), identity, light).components?.[0]?.max_team_count).toBe(3);
+    expect(() => readPilot(withPart({ kind: "uniform" }), identity, light)).toThrow(PilotError);
+    expect(() => readPilot(withPart({ max_team_count: 11 }), identity, light)).toThrow(PilotError);
+    expect(() => readPilot(withPart({ max_team_count: 1.5 }), identity, light)).toThrow(PilotError);
+  });
+});
+
 describe("P1 for component U", () => {
   const all1000 = { species: 1000, abilities: 1000, items: 1000, moves: 1000, spreads: 1000, teammates: 1000 };
   it("counts the table's unmapped mass, usage-weighted, per list kind and in aggregate", () => {
@@ -511,7 +574,10 @@ describe("a small target-share generation", () => {
     expect(usage?.share_permille).toBe(500);
     expect(usage?.p1?.pass).toBe(true);
     expect(usage?.p2.value).toBeGreaterThan(0);
-    expect(usage?.p3.pass).toBe(true);
+    expect(usage?.p3.pass).toBe((usage?.p3.value ?? 0) >= (usage?.p3.threshold ?? Infinity));
+    expect(usage?.pilot.max_team_count).toBeGreaterThanOrEqual(1);
+    expect(usage?.pilot.max_team_count).toBeLessThanOrEqual(usage?.pilot.draws ?? 0);
+    expect(a.coverage.proposal?.components.filter((c) => c.kind !== "usage").every((c) => c.pilot.max_team_count === undefined)).toBe(true);
     expect(Object.keys(usage?.p1?.kinds ?? {})).toEqual(["species", "abilities", "items", "moves", "spreads", "teammates"]);
     expect(usage?.p1?.value).toBe(Math.min(...Object.values(usage?.p1?.kinds ?? {})));
     expect(usage?.p3_sequence_bits).toBe(49);

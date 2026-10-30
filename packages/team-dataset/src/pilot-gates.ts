@@ -192,7 +192,9 @@ const mixed = (floor: number, weightedP: Fraction, uniformP: Fraction): Fraction
  * conditional species probabilities (a teammate step is bounded by the mediant inequality: the best single chosen
  * species' top teammate weight over what that species leaves after removing its largest other-teammate weights), times
  * the product of the six largest member bounds (item under the Item Clause, ability, ordered moves times their
- * orderings, spread, gender), each draw mixed with the uniform bound at the per-slot floor.
+ * orderings, spread, gender), each draw mixed with the uniform bound at the per-slot floor, times 2 for each Mega roster
+ * entry a team can hold (a canonical team is reached by two routes when the validator rewrites a Mega entry to its base
+ * forme plus stone), with the last-resort uniform species and item picks bounded by their own probability.
  */
 export function usageBound(vocabulary: BoundVocabulary, config: BoundConfig, component: UsageComponentConfig, source: UsageSource): Fraction {
   return usageBounds(vocabulary, config, component, source).set;
@@ -202,9 +204,9 @@ export function usageBound(vocabulary: BoundVocabulary, config: BoundConfig, com
  * Both P3 figures for component U. `set` is the bound above, on the probability of a team as a SET of members (the gate's
  * figure). `sequence` is the ADR-020 section 6 wording: the product of the largest conditional weights along ONE draw route
  * (the first pick, the later picks, each member's set draws as an ordered sequence), with no ordering factors, so it bounds
- * the probability of one particular draw order and is smaller by up to 6! x (4!)^6. Neither counts a canonical team reached
- * by two routes (a Mega entry is rewritten to its base forme holding the stone, up to a factor of 2 for each such member)
- * or the last-resort uniform fallback (an empty list), where the bound mixes the uniform part in as if it were a list.
+ * the probability of one particular draw order and is smaller by up to 6! x (4!)^6. `set` covers every route to a canonical
+ * team (the 2^m factor for Mega entries and the last-resort uniform species and item picks); `sequence` is one route's
+ * figure: it omits the orderings and the 2^m factor.
  */
 export function usageBounds(vocabulary: BoundVocabulary, config: BoundConfig, component: UsageComponentConfig, source: UsageSource): { set: Fraction; sequence: Fraction } {
   const { itemFree } = commonFactor(vocabulary, config);
@@ -234,7 +236,9 @@ export function usageBounds(vocabulary: BoundVocabulary, config: BoundConfig, co
     const rest = sumOf(weights) - largest(weights, size - 1);
     for (const [id, w] of m.teammates) reach.set(id, fractionMax(reach.get(id) ?? frac(0n, 1n), rest > 0 ? atMostOne(frac(BigInt(w), BigInt(rest))) : frac(1n, 1n)));
   }
-  const laterSteps = [...reach.values()].map((r) => mixed(floor, r, frac(1n, BigInt(n - size + 1))));
+  // The last-resort uniform pick (no listed weight left among the unchosen) has probability 1 / (unchosen) <= 1 / (n - size + 1).
+  const lastResort = frac(1n, BigInt(n - size + 1));
+  const laterSteps = [...reach.values()].map((r) => fractionMax(mixed(floor, r, lastResort), lastResort));
   laterSteps.sort((a, b) => (a.num * b.den < b.num * a.den ? 1 : a.num * b.den > b.num * a.den ? -1 : 0));
   const steps = laterSteps.slice(0, size - 1).reduce((product, f) => mul(product, f), first);
   let factorial = 1n;
@@ -243,7 +247,7 @@ export function usageBounds(vocabulary: BoundVocabulary, config: BoundConfig, co
   // Member factors, one per roster entry.
   const entries = vocabulary.roster.map((e) => {
     const m: UsageMember | undefined = members.get(e.id);
-    const itemP = e.required_item !== undefined ? frac(1n, 1n) : m === undefined || m.items.weights.length === 0 ? itemFree : mixed(floor, itemShare(m.items.weights, removable), itemFree);
+    const itemP = e.required_item !== undefined ? frac(1n, 1n) : m === undefined || m.items.weights.length === 0 ? itemFree : fractionMax(mixed(floor, itemShare(m.items.weights, removable), itemFree), itemFree);
     const abilityU = frac(1n, BigInt(e.abilities.length));
     const abilityP = m === undefined || m.abilities.weights.length === 0 ? abilityU : mixed(floor, frac(BigInt(maxOf(m.abilities.weights)), BigInt(sumOf(m.abilities.weights))), abilityU);
     const count = Math.min(k, e.moves.length);
@@ -268,7 +272,11 @@ export function usageBounds(vocabulary: BoundVocabulary, config: BoundConfig, co
     const rest = mul(mul(mul(itemP, abilityP), spreadP), frac(1n, gender));
     return { set: mul(rest, moveP), sequence: mul(rest, moveSequence) };
   });
-  return { set: mul(mul(frac(factorial, 1n), steps), topProduct(entries.map((e) => e.set), size)), sequence: mul(steps, topProduct(entries.map((e) => e.sequence), size)) };
+  // A Mega roster entry is rewritten by the validator to its base forme holding the stone, which the base entry can also
+  // reach (its own item list), so a canonical team can be reached by two routes for each Mega member: at most 2^m for the
+  // m <= size Mega entries a team can hold.
+  const megas = Math.min(size, vocabulary.roster.filter((e) => e.required_item !== undefined).length);
+  return { set: mul(mul(mul(frac(factorial, 1n), frac(2n ** BigInt(megas), 1n)), steps), topProduct(entries.map((e) => e.set), size)), sequence: mul(steps, topProduct(entries.map((e) => e.sequence), size)) };
 }
 
 /** The largest item share when the Item Clause may have taken the `removable` heaviest items out of reach. */
@@ -291,7 +299,7 @@ const gate = (value: number, threshold: number | undefined, passes: (v: number, 
 export interface ComponentCoverage {
   kind: string;
   share_permille: number;
-  pilot: { draws: number; rejected: number; accepted: number };
+  pilot: { draws: number; rejected: number; accepted: number; /** usage only: see PilotComponent.max_team_count */ max_team_count?: number };
   p1: (GateResult & { mapped: number; total: number; kinds?: Record<string, number> }) | null;
   p2: GateResult;
   p3: GateResult;
@@ -372,7 +380,7 @@ export function proposalCoverage(input: GateInput): ProposalCoverage {
     return {
       kind: component.kind,
       share_permille: component.share_permille,
-      pilot: { draws: part.draws, rejected: part.rejected, accepted },
+      pilot: { draws: part.draws, rejected: part.rejected, accepted, ...(part.max_team_count === undefined ? {} : { max_team_count: part.max_team_count }) },
       // Usage: the gate takes the minimum over the six list kinds (ADR-020 section 6: per kind); the aggregate is reported beside it.
       p1:
         mapping === undefined
