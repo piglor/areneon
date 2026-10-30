@@ -43,6 +43,7 @@ from areneon_ml.model.gamedata import NONE, RESERVED, UNKNOWN, GameData
 from areneon_ml.model.options import (
     CANDIDATE_MATCHUP,
     CANDIDATE_TARGET,
+    RECENT_HISTORY,
     Options,
     feature_set,
     is_set,
@@ -69,6 +70,12 @@ TARGET_CODES = 20  # 0 untargeted, else TARGET_OFFSET + the engine's target loca
 _REQUEST = "|request|"
 _SIDE = re.compile(r"^p[1-4]: ")
 STAT_NAMES = ("atk", "def", "spa", "spd", "spe")
+# recent_history: the divisors that are not config fields (turn counts use ``turn_scale``, exact
+# hit points ``stat_scale``). Hashed into ``encoder_version``.
+PERCENT_SCALE = 100.0  # an opponent's hit points are points of 100
+ACTION_ORDER_SCALE = 8.0  # the place among a turn's actions (moves and `|cant|` lines)
+STREAK_SCALE = 4.0  # consecutive stalling uses
+SIDES = ("own", "opponent")
 
 
 class EncodingError(ValueError):
@@ -171,6 +178,48 @@ def _priority_columns(config: EncoderConfig) -> tuple[tuple[str, str], ...]:
     )
 
 
+def _recent(config: EncoderConfig) -> bool:
+    return is_set(config.options, RECENT_HISTORY)
+
+
+def _recent_cat(config: EncoderConfig) -> tuple[tuple[str, str], ...]:
+    """The ``recent_history`` category of a Pokémon token: its last move. Empty unless set."""
+    return (("last_move", "move"),) if _recent(config) else ()
+
+
+def _recent_mon_num(config: EncoderConfig) -> tuple[str, ...]:
+    """The ``recent_history`` numbers of a Pokémon token. Empty unless set."""
+    if not _recent(config):
+        return ()
+    return (
+        "active_turns",
+        "last_move_age",
+        "last_action_known",
+        "last_action_age",
+        "last_action_order",
+        "hp_taken_this_turn",
+        "hp_taken_last_turn",
+        "hp_dealt_this_turn",
+        "hp_dealt_last_turn",
+        "protect_streak",
+        *(f"last_target_{side}_{chr(97 + i)}" for side in SIDES for i in range(MAX_SLOT_LETTERS)),
+    )
+
+
+def _recent_field_num(config: EncoderConfig) -> tuple[str, ...]:
+    """The ``recent_history`` numbers of the field token: turns since each condition began."""
+    if not _recent(config):
+        return ()
+    buckets = config.condition_buckets
+    return (
+        "weather_elapsed",
+        "terrain_elapsed",
+        *(f"field_turns_{i}" for i in range(buckets)),
+        *(f"own_side_turns_{i}" for i in range(buckets)),
+        *(f"opponent_side_turns_{i}" for i in range(buckets)),
+    )
+
+
 @dataclass(frozen=True)
 class Layout:
     """Names and kinds of every feature column, derived from the configuration."""
@@ -207,6 +256,7 @@ class Layout:
                 ("gender", "gender"),
                 ("active_slot", "slot"),
                 *moves,
+                *_recent_cat(config),
                 *_speed_columns(config),
             ),
             mon_num=(
@@ -229,6 +279,7 @@ class Layout:
                 *(f"boost_{name}" for name in STAT_KEYS),
                 *(f"pp_{i + 1}" for i in range(config.max_moves)),
                 *(f"volatile_{i}" for i in range(config.volatile_buckets)),
+                *_recent_mon_num(config),
             ),
             field_cat=(("weather", "weather"), ("terrain", "terrain"), ("request", "request")),
             field_num=(
@@ -237,6 +288,7 @@ class Layout:
                 *(f"field_{i}" for i in range(buckets)),
                 *(f"own_side_{i}" for i in range(buckets)),
                 *(f"opponent_side_{i}" for i in range(buckets)),
+                *_recent_field_num(config),
             ),
             cand_cat=(
                 ("action", "action"),
@@ -328,6 +380,17 @@ def encoder_version(game: GameData, config: EncoderConfig) -> str:
         # The token column is in the layout; the location convention is an index constant.
         body["constants"]["target"] = {
             "location": "foe in active slot L-1 for L>0; own active slot -L-1 for L<0",
+        }
+    if _recent(config):
+        # The columns are in the layout; the divisors that are not config fields and the unit
+        # rules are constants (the scales themselves are in the config).
+        body["constants"]["recent_history"] = {
+            "percent_scale": PERCENT_SCALE,
+            "action_order_scale": ACTION_ORDER_SCALE,
+            "streak_scale": STREAK_SCALE,
+            "slot_letters": MAX_SLOT_LETTERS,
+            "units": "taken: own exact hp / stat_scale, opponent points / percent_scale; "
+            "dealt: own actor points / percent_scale, opponent actor exact hp / stat_scale",
         }
     if feature_set(config.options) is not None:
         # The set and its hash are in the config; these are the index constants and scales.
@@ -508,9 +571,74 @@ class Encoder:
             GENDERS.index(mon.gender),
             self._slot_index(side, mon),
             *moves,
+            *self._recent_cat(mon),
         ]
 
-    def _mon_num(self, mon: PokemonState) -> list[float]:
+    def _recent_cat(self, mon: PokemonState) -> list[int]:
+        """The ``recent_history`` category of a Pokémon: its last move (NONE before any)."""
+        if not _recent(self.config):
+            return []
+        last = mon.recent.last_move
+        return [NONE if last is None else self.game.moves.lookup_or_unknown(last)]
+
+    def _recent_num(self, mon: PokemonState, turn: int) -> list[float]:
+        """The ``recent_history`` numbers of a Pokémon (see ``_recent_mon_num``).
+
+        Ages are turns before the current one (0: this turn). An amount is in the units the
+        Pokémon's side shows (the reducer's ``Recent``): damage taken is in its own units, damage
+        dealt in its target's. A sum cannot say whom it hit, so dealt is read in the units of the
+        usual target, a foe (points of 100) for an own Pokémon and an own Pokémon (exact hit
+        points) for an opponent's; an ally hit by a spread move adds its units to the sum.
+        """
+        config, recent = self.config, mon.recent
+        exact = config.stat_scale
+        taken = exact if mon.own else PERCENT_SCALE
+        dealt = PERCENT_SCALE if mon.own else exact
+        target = [0.0] * (len(SIDES) * MAX_SLOT_LETTERS)
+        if recent.last_target is not None:
+            side, _, letter = recent.last_target.partition(":")
+            place = ord(letter) - 97 if len(letter) == 1 else -1
+            if side not in SIDES or not 0 <= place < MAX_SLOT_LETTERS:
+                raise EncodingError("a recent last_target names no position")
+            target[SIDES.index(side) * MAX_SLOT_LETTERS + place] = 1.0
+        move_age = 0.0 if recent.last_move_turn is None else turn - recent.last_move_turn
+        action_age = 0.0 if recent.last_action_turn is None else turn - recent.last_action_turn
+        return [
+            recent.active_turns / config.turn_scale,
+            move_age / config.turn_scale,
+            0.0 if recent.last_action_turn is None else 1.0,
+            action_age / config.turn_scale,
+            (recent.last_action_order or 0) / ACTION_ORDER_SCALE,
+            recent.hp_taken / taken,
+            recent.hp_taken_last_turn / taken,
+            recent.hp_dealt / dealt,
+            recent.hp_dealt_last_turn / dealt,
+            recent.protect_streak / STREAK_SCALE,
+            *target,
+        ]
+
+    def _recent_field(self, state: BattleState) -> list[float]:
+        """The ``recent_history`` numbers of the field (see ``_recent_field_num``)."""
+        config, turn = self.config, state.turn
+
+        def since(began: int | None) -> float:
+            return 0.0 if began is None else (turn - began) / config.turn_scale
+
+        def spread(began: Mapping[str, int]) -> list[float]:
+            out = [0.0] * config.condition_buckets
+            for name in sorted(began):
+                out[bucket(name, config.condition_buckets)] += since(began[name])
+            return out
+
+        return [
+            since(state.weather_started),
+            since(state.terrain_started),
+            *spread(state.field_started),
+            *spread(state.own.condition_started),
+            *spread(state.opponent.condition_started),
+        ]
+
+    def _mon_num(self, mon: PokemonState, turn: int) -> list[float]:
         config = self.config
         fraction = mon.hp_fraction
         stats = mon.stats or {}
@@ -544,6 +672,7 @@ class Encoder:
             *(mon.boosts[name] / 6.0 for name in STAT_KEYS),
             *pp,
             *volatiles,
+            *(self._recent_num(mon, turn) if _recent(config) else []),
         ]  # fmt: skip
 
     def _conditions(self, conditions: Mapping[str, int] | set[str]) -> list[float]:
@@ -570,6 +699,7 @@ class Encoder:
             *self._conditions(state.field_conditions),
             *self._conditions(state.own.conditions),
             *self._conditions(state.opponent.conditions),
+            *(self._recent_field(state) if _recent(self.config) else []),
         ]
         return cat, num
 
@@ -930,7 +1060,9 @@ class Encoder:
                 ],
                 dtype=torch.int64,
             ),
-            mon_num=torch.tensor([self._mon_num(m) for _, m in rows], dtype=torch.float32),
+            mon_num=torch.tensor(
+                [self._mon_num(m, state.turn) for _, m in rows], dtype=torch.float32
+            ),
             field_cat=torch.tensor(field_cat, dtype=torch.int64),
             field_num=torch.tensor(field_num, dtype=torch.float32),
             cand_cat=torch.tensor([c[0] for c in candidates], dtype=torch.int64).reshape(
