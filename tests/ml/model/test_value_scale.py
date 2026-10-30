@@ -159,7 +159,9 @@ def test_the_initial_logits_spread_is_about_one_hundredth(role: str) -> None:
     assert 99.0 < ratio < 101.0
     # a seeded second draw agrees; the value head is not scaled
     other = build(role, TINY_MODEL, seed=7)
-    assert torch.equal(scaled_net.value[2].weight, other.value[2].weight)
+    assert torch.equal(
+        scaled_net.state_dict()["value.2.weight"], other.state_dict()["value.2.weight"]
+    )
     # the init is the same draw: only the last scorer layer's weights differ
     differing = {
         n for n, t in scaled_net.state_dict().items() if not torch.equal(t, other.state_dict()[n])
