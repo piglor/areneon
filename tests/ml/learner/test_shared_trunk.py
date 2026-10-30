@@ -27,6 +27,7 @@ from areneon_ml.learner.state import (
     restore_state,
     state_hash,
 )
+from areneon_ml.learner.trainer import Learner
 from areneon_ml.model.network import (
     ROLES,
     ModelConfig,
@@ -251,3 +252,52 @@ def test_the_model_config_round_trips_with_the_option() -> None:
     config = shared_config().model
     assert ModelConfig.from_dict(config.as_dict()) == config
     assert dataclasses.replace(config, options=()).as_dict() == tiny_config().model.as_dict()
+
+
+def test_the_joint_step_is_one_adam_step_on_the_sum_of_the_roles_losses() -> None:
+    """One epoch, one minibatch each: the update equals a hand-made step on the summed losses
+    (targets from the pre-update weights, generator draws in Battle, Preview order)."""
+    config = shared_config(epochs=1, minibatch_size=1000)
+    run, hand = learner(config), learner(config)
+    work = trajs(config)
+    tables = {r: hand._table(r, [t for t in work if t.role == r], False, None) for r in ROLES}
+    generator = torch.Generator()
+    generator.manual_seed(config.learner_seed)
+    weights = hand._weights()
+    parts = {}
+    for role in ROLES:
+        order = torch.randperm(len(tables[role].steps), generator=generator).tolist()
+        parts[role], _, _ = hand._minibatch_loss(role, tables[role], False, order, weights)
+    trunk = hand.networks["battle"].aggregate
+    grad_b = torch.autograd.grad(parts["battle"], trunk, retain_graph=True)[0]
+    grad_p = torch.autograd.grad(parts["preview"], trunk, retain_graph=True)[0]
+    assert grad_b.abs().sum() > 0
+    assert grad_p.abs().sum() > 0  # both roles' gradients reach the shared trunk
+    optimiser = hand.optimisers["battle"]
+    optimiser.zero_grad(set_to_none=True)
+    torch.autograd.backward(parts["battle"] + parts["preview"])
+    assert trunk.grad is not None
+    assert torch.allclose(trunk.grad, grad_b + grad_p, atol=1e-7)
+    union = [p for r in ROLES for _, p in hand.entries[r]]
+    torch.nn.utils.clip_grad_norm_(union, config.ppo.max_grad_norm)
+    optimiser.step()
+    report = run.train(work)
+    for role in ROLES:
+        expected = hand.networks[role].state_dict()
+        for key, value in run.networks[role].state_dict().items():
+            assert torch.allclose(value, expected[key], atol=1e-7, rtol=0), (role, key)
+    assert {r: v.optimiser_steps for r, v in report.roles.items()} == {"battle": 1, "preview": 1}
+
+
+def test_a_role_with_fewer_steps_than_minibatches_fills_the_first_ones_only() -> None:
+    assert Learner._spread(list(range(5)), 3) == [[0, 1], [2, 3], [4]]
+    assert Learner._spread([0, 1], 4) == [[0], [1], [], []]
+    assert Learner._spread([], 2) == [[], []]
+
+
+def test_the_target_kl_stop_is_joint() -> None:
+    config = shared_config(epochs=3, minibatch_size=4, target_kl_micro=1)
+    report = learner(config).train(trajs(config))
+    runs = {r.epochs_run for r in report.roles.values()}
+    assert runs == {1}
+    assert all(r.kl_stopped for r in report.roles.values())

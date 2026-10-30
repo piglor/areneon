@@ -331,10 +331,11 @@ class Learner:
                     self._table(role, mine, role in self.anchors and not warm, frozen),
                     warm,
                 )
-        for role, (table, warm) in tables.items():
-            # Under shared_trunk the trunk is the warm Battle role's policy trunk: during the
-            # value warm-up it is frozen for the unwarmed Preview role too (its heads still train).
-            roles[role] = self._train_role(role, table, warm, warmup and self.shared_trunk)
+        if self.shared_trunk:
+            roles.update(self._train_joint(tables, warmup))
+        else:
+            for role, (table, warm) in tables.items():
+                roles[role] = self._train_role(role, table, warm)
         self.generation += 1
         return TrainReport(roles)
 
@@ -455,9 +456,7 @@ class Learner:
             self._anchor_scores(role, steps) if anchor else None,
         )
 
-    def _train_role(
-        self, role: str, table: _Table, warm: bool = False, trunk_frozen: bool = False
-    ) -> RoleReport:
+    def _train_role(self, role: str, table: _Table, warm: bool = False) -> RoleReport:
         """PPO epochs for one role; with ``warm`` only the value head learns (see below).
 
         ``table`` holds the role's targets, read before any update (the anchor term is inactive
@@ -468,11 +467,8 @@ class Learner:
         # stay byte-identical, no gradient reaches them and Adam (which skips a parameter with no
         # gradient) leaves their moments absent. The loss is the value error alone (the PPO terms
         # carry no gradient to the value head and the coefficient only rescales it).
-        trunk = set(network.trunk_keys()) if trunk_frozen else set()
         frozen = [
-            p
-            for n, p in network.named_parameters()
-            if (warm and not n.startswith(VALUE_PREFIXES)) or n in trunk
+            p for n, p in network.named_parameters() if warm and not n.startswith(VALUE_PREFIXES)
         ]
         for parameter in frozen:
             parameter.requires_grad_(False)
@@ -482,78 +478,66 @@ class Learner:
             for parameter in frozen:
                 parameter.requires_grad_(True)
 
-    def _epochs(self, role: str, table: _Table, warm: bool) -> RoleReport:
+    def _weights(self) -> LossWeights:
         ppo = self.config.ppo
-        network, optimiser = self.networks[role], self.optimisers[role]
-        tau = self.config.generation.temperature_ppm
         entropy_micro = self.last_entropy_coef_micro
         entropy_coef = ppo.entropy_coef if entropy_micro is None else entropy_micro / MICRO
-        weights = LossWeights(ppo.clip, ppo.value_coef, entropy_coef)
-        sums = torch.zeros(5)
-        kl_sum = torch.zeros(())
+        return LossWeights(ppo.clip, ppo.value_coef, entropy_coef)
+
+    def _minibatch_loss(
+        self, role: str, table: _Table, warm: bool, index: list[int], weights: LossWeights
+    ) -> tuple[torch.Tensor, Any, torch.Tensor | None]:
+        """One minibatch of one role: the tensor to backpropagate, the loss terms and, with an
+        anchor, the (detached-by-the-caller) mean KL to the anchor."""
+        tau = self.config.generation.temperature_ppm
         beta_micro = self.last_anchor_beta_micro if role in self.anchors else None
         beta = 0.0 if beta_micro is None else beta_micro / MICRO
-        optimiser_steps = 0
-        epochs_run = 0
-        kl_stopped = False
-        for _ in range(ppo.epochs):
-            epoch_kl = 0.0
-            minibatches = 0
-            order = torch.randperm(len(table.steps), generator=self.generator).tolist()
-            for start in range(0, len(order), ppo.minibatch_size):
-                index = order[start : start + ppo.minibatch_size]
-                batch = to_device(collate([table.steps[i].query for i in index]), self.device)
-                out = network(batch)
-                chosen = torch.tensor([table.steps[i].chosen for i in index], device=self.device)
-                # `policy_terms` masks padding again although the network already pushes padded
-                # logits to the dtype minimum: defence in depth, so a loss never depends on it.
-                loss = ppo_loss(
-                    policy_terms(out.logits, batch.cand_mask, chosen, tau),
-                    out.value,
-                    Targets(
-                        table.old_log_prob[index], table.advantages[index], table.returns[index]
-                    ),
-                    weights,
-                )
-                total = loss.total
-                if table.anchor_log_probs is not None:
-                    dense = torch.zeros(batch.cand_mask.shape, device=self.device)
-                    for row, i in enumerate(index):
-                        dense[row, batch.cand_mask[row]] = table.anchor_log_probs[i]
-                    kl = anchor_kl(out.logits, batch.cand_mask, dense, tau).mean()
-                    total = total + beta * kl
-                    kl_sum += kl.detach().cpu()
-                optimiser.zero_grad(set_to_none=True)
-                torch.autograd.backward(loss.value if warm else total)
-                # Clipped over the union of the optimiser's parameters (the whole pair under
-                # shared_trunk; a parameter with no gradient this step does not count).
-                clipped = (
-                    [p for r in ROLES for _, p in self.entries[r]]
-                    if self.shared_trunk
-                    else network.parameters()
-                )
-                torch.nn.utils.clip_grad_norm_(clipped, ppo.max_grad_norm)
-                optimiser.step()
-                optimiser_steps += 1
-                minibatches += 1
-                epoch_kl += float(loss.approx_kl.detach().cpu())
-                sums += torch.stack(
-                    [
-                        loss.policy.detach(),
-                        loss.value.detach(),
-                        loss.entropy.detach(),
-                        loss.clip_fraction,
-                        loss.approx_kl.detach(),
-                    ]
-                ).cpu()
-            epochs_run += 1
-            # ADR-010 erratum A1: one check per complete epoch, on the mean of the epoch's
-            # per-minibatch approximate KL in minibatch order; never inside an epoch.
-            if not warm and ppo.target_kl is not None and epoch_kl / minibatches > ppo.target_kl:
-                kl_stopped = True
-                break
+        batch = to_device(collate([table.steps[i].query for i in index]), self.device)
+        out = self.networks[role](batch)
+        chosen = torch.tensor([table.steps[i].chosen for i in index], device=self.device)
+        # `policy_terms` masks padding again although the network already pushes padded
+        # logits to the dtype minimum: defence in depth, so a loss never depends on it.
+        loss = ppo_loss(
+            policy_terms(out.logits, batch.cand_mask, chosen, tau),
+            out.value,
+            Targets(table.old_log_prob[index], table.advantages[index], table.returns[index]),
+            weights,
+        )
+        total = loss.total
+        kl = None
+        if table.anchor_log_probs is not None:
+            dense = torch.zeros(batch.cand_mask.shape, device=self.device)
+            for row, i in enumerate(index):
+                dense[row, batch.cand_mask[row]] = table.anchor_log_probs[i]
+            kl = anchor_kl(out.logits, batch.cand_mask, dense, tau).mean()
+            total = total + beta * kl
+        return (loss.value if warm else total), loss, kl
+
+    @staticmethod
+    def _tally(sums: torch.Tensor, loss: Any) -> None:
+        sums += torch.stack(
+            [
+                loss.policy.detach(),
+                loss.value.detach(),
+                loss.entropy.detach(),
+                loss.clip_fraction,
+                loss.approx_kl.detach(),
+            ]
+        ).cpu()
+
+    def _report(
+        self,
+        role: str,
+        table: _Table,
+        warm: bool,
+        tally: tuple[torch.Tensor, torch.Tensor, int],
+        epochs: tuple[int, bool],
+    ) -> RoleReport:
+        sums, kl_sum, optimiser_steps = tally
+        epochs_run, kl_stopped = epochs
         policy, value, entropy, clip_fraction, approx_kl = (sums / optimiser_steps).tolist()
-        stop = ppo.target_kl is not None
+        stop = self.config.ppo.target_kl is not None
+        beta_micro = self.last_anchor_beta_micro if role in self.anchors else None
         return RoleReport(
             len(table.steps),
             optimiser_steps,
@@ -569,9 +553,149 @@ class Learner:
             if beta_micro is not None
             else None,
             beta_micro,
-            entropy_micro,
-            tau,
+            self.last_entropy_coef_micro,
+            self.config.generation.temperature_ppm,
             table.explained_variance,
             table.value_calibration,
             self.config.ppo.preview_bootstrap_micro if role == "preview" else None,
         )
+
+    def _epochs(self, role: str, table: _Table, warm: bool) -> RoleReport:
+        ppo = self.config.ppo
+        network, optimiser = self.networks[role], self.optimisers[role]
+        weights = self._weights()
+        sums = torch.zeros(5)
+        kl_sum = torch.zeros(())
+        optimiser_steps = 0
+        epochs_run = 0
+        kl_stopped = False
+        for _ in range(ppo.epochs):
+            epoch_kl = 0.0
+            minibatches = 0
+            order = torch.randperm(len(table.steps), generator=self.generator).tolist()
+            for start in range(0, len(order), ppo.minibatch_size):
+                index = order[start : start + ppo.minibatch_size]
+                backward, loss, kl = self._minibatch_loss(role, table, warm, index, weights)
+                if kl is not None:
+                    kl_sum += kl.detach().cpu()
+                optimiser.zero_grad(set_to_none=True)
+                torch.autograd.backward(backward)
+                torch.nn.utils.clip_grad_norm_(network.parameters(), ppo.max_grad_norm)
+                optimiser.step()
+                optimiser_steps += 1
+                minibatches += 1
+                epoch_kl += float(loss.approx_kl.detach().cpu())
+                self._tally(sums, loss)
+            epochs_run += 1
+            # ADR-010 erratum A1: one check per complete epoch, on the mean of the epoch's
+            # per-minibatch approximate KL in minibatch order; never inside an epoch.
+            if not warm and ppo.target_kl is not None and epoch_kl / minibatches > ppo.target_kl:
+                kl_stopped = True
+                break
+        return self._report(
+            role, table, warm, (sums, kl_sum, optimiser_steps), (epochs_run, kl_stopped)
+        )
+
+    # -- the joint step of shared_trunk -----------------------------------------------------------
+
+    @staticmethod
+    def _spread(order: list[int], parts: int) -> list[list[int]]:
+        """``order`` cut into ``parts`` consecutive chunks as evenly as possible: the first
+        ``len % parts`` chunks hold one more step, and with fewer steps than ``parts`` only the
+        first ones are non-empty."""
+        base, extra = divmod(len(order), parts)
+        out, position = [], 0
+        for k in range(parts):
+            size = base + (1 if k < extra else 0)
+            out.append(order[position : position + size])
+            position += size
+        return out
+
+    def _train_joint(
+        self, tables: Mapping[str, tuple[_Table, bool]], warmup: bool
+    ) -> dict[str, RoleReport]:
+        """``shared_trunk``: every optimiser step backpropagates the SUM of the roles' minibatch
+        losses (each a mean over its own decisions), clips over the union and steps the one Adam.
+
+        Per epoch each role's steps are shuffled with the learner generator (Battle's draw, then
+        Preview's) and cut into the same number M of minibatches: the leading role (Battle, else
+        Preview) by ``ppo.minibatch_size``, the other spread as evenly as possible over the M (a
+        role with fewer steps than M contributes to the first minibatches only, and a missing part
+        contributes 0). During the value warm-up the shared trunk is frozen for both roles, and
+        the warm role also freezes everything outside its value head. The ``target_kl`` check is
+        per complete joint epoch and stops all roles when the epoch-mean ``approx_kl`` of any
+        non-warm role exceeds it."""
+        ppo = self.config.ppo
+        networks = {role: self.networks[role] for role in tables}
+        for network in networks.values():
+            network.train()
+        trunk = set(self.networks["battle"].trunk_keys())
+        frozen = [
+            p
+            for role, (_, warm) in tables.items()
+            for n, p in networks[role].named_parameters()
+            if (warm and not n.startswith(VALUE_PREFIXES)) or (warmup and n in trunk)
+        ]
+        for parameter in frozen:
+            parameter.requires_grad_(False)
+        weights = self._weights()
+        optimiser = self.optimisers["battle"]
+        union = [p for r in ROLES for _, p in self.entries[r]]
+        leader = next(iter(tables))
+        sums = {role: torch.zeros(5) for role in tables}
+        kl_sums = {role: torch.zeros(()) for role in tables}
+        counts = dict.fromkeys(tables, 0)
+        epochs_run, kl_stopped = 0, False
+        try:
+            for _ in range(ppo.epochs):
+                orders = {
+                    role: torch.randperm(len(table.steps), generator=self.generator).tolist()
+                    for role, (table, _) in tables.items()
+                }
+                lead = orders[leader]
+                size = ppo.minibatch_size
+                chunks = {leader: [lead[s : s + size] for s in range(0, len(lead), size)]}
+                for role in tables:
+                    if role != leader:
+                        chunks[role] = self._spread(orders[role], len(chunks[leader]))
+                epoch_kl = dict.fromkeys(tables, 0.0)
+                epoch_n = dict.fromkeys(tables, 0)
+                for k in range(len(chunks[leader])):
+                    parts = []
+                    for role, (table, warm) in tables.items():
+                        index = chunks[role][k]
+                        if not index:
+                            continue
+                        backward, loss, kl = self._minibatch_loss(role, table, warm, index, weights)
+                        if kl is not None:
+                            kl_sums[role] += kl.detach().cpu()
+                        parts.append(backward)
+                        counts[role] += 1
+                        epoch_n[role] += 1
+                        epoch_kl[role] += float(loss.approx_kl.detach().cpu())
+                        self._tally(sums[role], loss)
+                    optimiser.zero_grad(set_to_none=True)
+                    torch.autograd.backward(sum(parts[1:], parts[0]))
+                    torch.nn.utils.clip_grad_norm_(union, ppo.max_grad_norm)
+                    optimiser.step()
+                epochs_run += 1
+                if ppo.target_kl is not None and any(
+                    epoch_kl[role] / epoch_n[role] > ppo.target_kl
+                    for role, (_, warm) in tables.items()
+                    if not warm
+                ):
+                    kl_stopped = True
+                    break
+        finally:
+            for parameter in frozen:
+                parameter.requires_grad_(True)
+        return {
+            role: self._report(
+                role,
+                table,
+                warm,
+                (sums[role], kl_sums[role], counts[role]),
+                (epochs_run, kl_stopped),
+            )
+            for role, (table, warm) in tables.items()
+        }
