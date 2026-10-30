@@ -115,6 +115,8 @@ export interface ProbeCounts {
   probe_runs: number;
   /** Queries the probe answered `unsupported`. */
   unsupported_queries: number;
+  /** Refusals a feature builder turned into `unsupported` rows (`noteRefused`; the baselines do not use it). */
+  probe_refusals?: number;
 }
 
 export interface DamageViewOptions {
@@ -359,7 +361,10 @@ export function damageView(options: DamageViewOptions) {
     return out;
   }
 
-  return { dex, query, queryLimited, damageResult, damageOf, combatant, field, boostsOf, ownSlots, ownBench, assumedFor, statusBlocked, foesOf };
+  /** A caller turned a `ProbeRefusal` into an `unsupported` row instead of refusing the request. */
+  const noteRefused = (): void => void (counts.probe_refusals = (counts.probe_refusals ?? 0) + 1);
+
+  return { dex, noteRefused, query, queryLimited, damageResult, damageOf, combatant, field, boostsOf, ownSlots, ownBench, assumedFor, statusBlocked, foesOf };
 }
 
 export type DamageView = ReturnType<typeof damageView>;

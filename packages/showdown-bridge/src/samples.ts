@@ -22,6 +22,7 @@ import { LEAGUE_SEED_DERIVATION } from "./league-seed.ts";
 import { MOVE_CLASSES_FILE, type MoveClassTable } from "./move-classes.ts";
 import { damageAwareSamples } from "./damage-aware-samples.ts";
 import { usagePriorSamples } from "./usage-prior-samples.ts";
+import { usageWeightTableSamples } from "./usage-weight-table-samples.ts";
 import { worldWritersSamples } from "./world-writers-samples.ts";
 import { searchConfigSamples } from "./search-config-samples.ts";
 import { mechanicsSamples } from "./mechanics-samples.ts";
@@ -658,6 +659,12 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "training-run-config/factored-preview": runConfigWith((c) => {
       runSection(c, "model").options = { factored_preview: true };
     }),
+    "training-run-config/separate-value": runConfigWith((c) => {
+      runSection(c, "model").options = { separate_value: "network" };
+    }),
+    "training-run-config/policy-output-scale": runConfigWith((c) => {
+      runSection(c, "model").options = { policy_output_scale_ppm: 10000 };
+    }),
     "training-run-config/candidate-target": runConfigWith((c) => {
       runSection(runSection(c, "model"), "encoder").options = { candidate_target: true };
     }),
@@ -704,6 +711,12 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     }),
     "clone-run-config/factored-preview": cloneWith((c) => {
       runSection(c, "model").options = { factored_preview: true };
+    }),
+    "clone-run-config/separate-value": cloneWith((c) => {
+      runSection(c, "model").options = { separate_value: "network" };
+    }),
+    "clone-run-config/policy-output-scale": cloneWith((c) => {
+      runSection(c, "model").options = { policy_output_scale_ppm: 10000 };
     }),
     "clone-run-config/candidate-target": cloneWith((c) => {
       runSection(runSection(c, "model"), "encoder").options = { candidate_target: true };
@@ -1017,6 +1030,12 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "clone-run-config/factored-preview-false": cloneWith(
       (c) => (runSection(c, "model").options = { factored_preview: false }),
     ),
+    "clone-run-config/separate-value-unknown": cloneWith(
+      (c) => (runSection(c, "model").options = { separate_value: "shared" }),
+    ),
+    "clone-run-config/policy-output-scale-default": cloneWith(
+      (c) => (runSection(c, "model").options = { policy_output_scale_ppm: 1000000 }),
+    ),
     "clone-run-config/candidate-target-false": cloneWith(
       (c) => (runSection(runSection(c, "model"), "encoder").options = { candidate_target: false }),
     ),
@@ -1063,6 +1082,12 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     ),
     "training-run-config/factored-preview-false": runConfigWith(
       (c) => (runSection(c, "model").options = { factored_preview: false }),
+    ),
+    "training-run-config/separate-value-unknown": runConfigWith(
+      (c) => (runSection(c, "model").options = { separate_value: "shared" }),
+    ),
+    "training-run-config/policy-output-scale-default": runConfigWith(
+      (c) => (runSection(c, "model").options = { policy_output_scale_ppm: 1000000 }),
     ),
     "training-run-config/candidate-target-false": runConfigWith(
       (c) => (runSection(runSection(c, "model"), "encoder").options = { candidate_target: false }),
@@ -1322,13 +1347,14 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
   const mechanicsOnes = mechanicsSamples(engine);
   const damageAwareOnes = damageAwareSamples();
   const usagePriorOnes = usagePriorSamples(vocabulary as never);
+  const usageWeightOnes = usageWeightTableSamples(vocabulary as never);
   const worldWritersOnes = worldWritersSamples(engine, GOLDEN_FORMAT);
   const searchConfigOnes = searchConfigSamples(GOLDEN_FORMAT);
   const privateManifests = privateSnapshotSamples({ manifest: record.manifest, vocabularyHash: teamVocabularyHash(vocabulary as never), labelSetHash });
   const privateTests = privateTestSamples();
   const scriptedOnes = scriptedH2HSamples();
   for (const kind of ["valid", "invalid", "readerInvalid"] as const) Object.assign(privateOnes[kind], privateManifests[kind], privateTests[kind]);
-  for (const [kind, cases] of [["valid", { ...valid, ...evalSamples.valid, ...progressOnes.valid, ...mechanicsOnes.valid, ...damageAwareOnes.valid, ...usagePriorOnes.valid, ...worldWritersOnes.valid, ...searchConfigOnes.valid, ...scriptedOnes.valid, ...privateOnes.valid }], ["invalid", { ...invalid, ...evalSamples.invalid, ...progressOnes.invalid, ...mechanicsOnes.invalid, ...damageAwareOnes.invalid, ...usagePriorOnes.invalid, ...worldWritersOnes.invalid, ...searchConfigOnes.invalid, ...scriptedOnes.invalid, ...privateOnes.invalid }], ["reader-invalid", { ...readerInvalid, ...evalSamples.readerInvalid, ...progressOnes.readerInvalid, ...mechanicsOnes.readerInvalid, ...damageAwareOnes.readerInvalid, ...usagePriorOnes.readerInvalid, ...worldWritersOnes.readerInvalid, ...searchConfigOnes.readerInvalid, ...scriptedOnes.readerInvalid, ...privateOnes.readerInvalid }]] as const) {
+  for (const [kind, cases] of [["valid", { ...valid, ...evalSamples.valid, ...progressOnes.valid, ...mechanicsOnes.valid, ...damageAwareOnes.valid, ...usagePriorOnes.valid, ...usageWeightOnes.valid, ...worldWritersOnes.valid, ...searchConfigOnes.valid, ...scriptedOnes.valid, ...privateOnes.valid }], ["invalid", { ...invalid, ...evalSamples.invalid, ...progressOnes.invalid, ...mechanicsOnes.invalid, ...damageAwareOnes.invalid, ...usagePriorOnes.invalid, ...usageWeightOnes.invalid, ...worldWritersOnes.invalid, ...searchConfigOnes.invalid, ...scriptedOnes.invalid, ...privateOnes.invalid }], ["reader-invalid", { ...readerInvalid, ...evalSamples.readerInvalid, ...progressOnes.readerInvalid, ...mechanicsOnes.readerInvalid, ...damageAwareOnes.readerInvalid, ...usagePriorOnes.readerInvalid, ...usageWeightOnes.readerInvalid, ...worldWritersOnes.readerInvalid, ...searchConfigOnes.readerInvalid, ...scriptedOnes.readerInvalid, ...privateOnes.readerInvalid }]] as const) {
     for (const [key, value] of Object.entries(cases)) {
       const [contract, name] = key.split("/") as [string, string];
       samples[`v1/${contract}/${kind}/${name}.json`] = value;

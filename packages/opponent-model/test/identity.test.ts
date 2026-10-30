@@ -16,6 +16,11 @@ describe("belief_identity_hash (ADR-025 section 5)", () => {
     expect(beliefIdentityHash(parts)).toBe("72381ea33fb8d0a2a520297a4b321365def0f6d88f3cb4273fea92aa2b622918");
   });
 
+  it("adds damage_check_format to the preimage only when it is given (a vector made with Python); absent keeps the vector above", () => {
+    expect(beliefIdentityHash({ ...parts, damage_check_format: 2 })).toBe("c5798e2a75c0686f2e9c32a90e25d04c834d9e9f47b5721a6a3c9ecc07067c06");
+    expect(beliefIdentityHash({ ...parts, damage_check_format: 3 })).not.toBe(beliefIdentityHash({ ...parts, damage_check_format: 2 }));
+  });
+
   it("changes with every part: a new prior, config, vocabulary, reader or pin is a new identity", () => {
     const base = beliefIdentityHash(parts);
     const other = (change: Partial<BeliefIdentityParts>) => beliefIdentityHash({ ...parts, ...change });

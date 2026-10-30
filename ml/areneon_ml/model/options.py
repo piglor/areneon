@@ -35,6 +35,14 @@ Defined so far:
 - ``factored_preview`` (network, layout changing; ADR-010 erratum A4 item 4): the Preview network
   scores an order as a sum over places of ``u(place, Pokemon token)`` plus ``v(lead pair)``
   (``network.py``); the Battle network ignores it. Only ``true`` is a value.
+- ``separate_value`` (network, layout changing; ADR-010 erratum A4 item 7): the value no longer
+  shares gradient with the policy trunk. ``"network"``: a second trunk and value head
+  (``value_net.*``) with no layer shared with the policy network, same encoder inputs and sizes;
+  ``"detached"``: the value head reads the trunk's output with the gradient cut.
+- ``policy_output_scale_ppm`` (network, layout changing; ADR-010 erratum A4 item 7): the scorer's
+  last layer(s) start at ``value / 10^6`` of their default initial weights (10000 is 1/100), so
+  the initial policy is near uniform. An integer from 1 to 999999 (1,000,000 is the default and is
+  refused); it changes initial weights only, so the checkpoint records it in the config.
 """
 
 from __future__ import annotations
@@ -58,7 +66,7 @@ class FeatureSetOption:
         return {"feature_set": self.feature_set, "feature_set_hash": self.feature_set_hash}
 
 
-OptionValue = bool | int | FeatureSetOption
+OptionValue = bool | int | str | FeatureSetOption
 Options = tuple[tuple[str, OptionValue], ...]  # sorted by name; hashable, so configs stay frozen
 
 
@@ -84,6 +92,11 @@ CANDIDATE_TARGET = "candidate_target"
 RECENT_HISTORY = "recent_history"
 EXACT_VOLATILES = "exact_volatiles"
 FACTORED_PREVIEW = "factored_preview"
+SEPARATE_VALUE = "separate_value"
+SEPARATE_VALUE_NETWORK = "network"
+SEPARATE_VALUE_DETACHED = "detached"
+POLICY_OUTPUT_SCALE_PPM = "policy_output_scale_ppm"
+MAX_OUTPUT_SCALE_PPM = 999_999  # 1,000,000 is the default: leave the option out
 #: The feature sets the encoder can read (ADR-022 §3, erratum E-22.3: ``/2`` also carries the
 #: threat, speed and priority arrays, which the encoder attaches to the own and foe tokens).
 FEATURE_SETS = ("probe-damage/1", "probe-damage/2")
@@ -113,6 +126,14 @@ REGISTRY: dict[str, dict[str, OptionSpec]] = {
     },
     "network": {
         FACTORED_PREVIEW: OptionSpec(FACTORED_PREVIEW, lambda value: value is True, True),
+        SEPARATE_VALUE: OptionSpec(
+            SEPARATE_VALUE, lambda v: v in (SEPARATE_VALUE_NETWORK, SEPARATE_VALUE_DETACHED), True
+        ),
+        POLICY_OUTPUT_SCALE_PPM: OptionSpec(
+            POLICY_OUTPUT_SCALE_PPM,
+            lambda v: type(v) is int and 1 <= v <= MAX_OUTPUT_SCALE_PPM,
+            True,
+        ),
     },
 }
 
@@ -134,7 +155,7 @@ def read_options(scope: str, source: object) -> Options:
                 raise OptionError(f"{scope} option {name!r} must be an object")
             found.append((name, spec.parse(value)))
             continue
-        if not isinstance(value, bool | int) or spec.check is None or not spec.check(value):
+        if not isinstance(value, bool | int | str) or spec.check is None or not spec.check(value):
             raise OptionError(f"{scope} option {name!r} has an invalid value")
         found.append((name, value))
     return tuple(found)

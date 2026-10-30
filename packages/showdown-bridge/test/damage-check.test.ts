@@ -4,6 +4,8 @@
 import { readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { interpretChannel } from "@areneon/public-state";
+import type { EngineRequest } from "@areneon/schema/types/v1/engine-request.ts";
 import { describe, expect, it } from "vitest";
 import { readBeliefConfig } from "../src/belief-config.ts";
 import { loadDamageAwareConfig } from "../src/damage-aware-config.ts";
@@ -158,6 +160,63 @@ describe("check", () => {
       expect(other.check(event, candidate())).toBeNull();
       expect(other.counts().own_unstated).toBe(1);
     }
+  });
+
+  describe("an own Pokemon that has Mega Evolved", () => {
+    // The golden battle has no Mega, so the reader's run is doctored: the own defender of one hit is marked evolved in every frame
+    // and the requests show the forme and item the case names. The probe is the real one; `observe` tells whether the check judged.
+    const dex = engine.sim.Dex.mod(engine.sim.Dex.formats.get(GOLDEN_FORMAT).mod);
+    const stones = () => (dex.items as unknown as { all(): { id: string; megaStone?: Record<string, string> }[] }).all();
+    const stoneOf = (species: string): string => stones().find((i) => i.megaStone?.[species] !== undefined)?.id as string;
+    const setup = () => {
+      const plain = make() as NonNullable<ReturnType<typeof make>>;
+      const event = plain.events.find((e) => e.role === "attacker" && e.slot === 1) as (typeof plain.events)[number];
+      const hit = plain.hits.find((h) => `hit${h.frame}` === event.id) as (typeof plain.hits)[number];
+      const name = hit.state.own.roster[hit.defender.index]?.name as string;
+      const set = team.find((t) => t.name === name || t.species === name) as PokemonSet;
+      return { event, name, set };
+    };
+    const evolved = (name: string, details: string, item: string, sets: PokemonSet[] = team) => {
+      const run = structuredClone(interpretChannel("p2", lines));
+      for (const frame of run.frames) for (const m of frame.state.own.roster) if (m.name === name) m.mega = true;
+      for (const request of run.requests as unknown as EngineRequest[]) for (const entry of request.side.pokemon) if (entry.ident.endsWith(`: ${name}`)) Object.assign(entry, { details, item });
+      const seen: unknown[] = [];
+      const port = createDamageCheck(context({ observe: () => seen.push(1) }), { player: "p2", lines, team: sets, run }) as NonNullable<ReturnType<typeof make>>;
+      return { port, seen };
+    };
+    const ask = (port: NonNullable<ReturnType<typeof make>>, event: ReturnType<typeof setup>["event"]) => port.check(event, candidate());
+
+    it("is stated when its shown forme is the one its stone makes of the set's species, on the turn it evolves too (the request still shows the base forme)", () => {
+      const { event, name, set } = setup();
+      const stone = stoneOf(set.species);
+      const mega = `${set.species}-Mega`;
+      for (const shown of [mega, set.species]) {
+        const { port, seen } = evolved(name, `${shown}, L50`, stone);
+        expect(typeof ask(port, event)).toBe("boolean");
+        expect(seen).toHaveLength(1);
+        expect(port.counts().own_unstated).toBe(0);
+      }
+    });
+
+    it("is declined, and counted in own_unstated, for a stone whose Mega forme is not the shown one or is not the species'", () => {
+      const { event, name, set } = setup();
+      const other = stones().find((i) => i.megaStone !== undefined && i.megaStone[set.species] === undefined)?.id as string;
+      for (const [details, item] of [[`${set.species}-Mega, L50`, other], [`Pikachu-Mega, L50`, stoneOf(set.species)]] as const) {
+        const { port, seen } = evolved(name, details, item);
+        expect(ask(port, event)).toBeNull();
+        expect(seen).toHaveLength(0);
+        expect(port.counts().own_unstated).toBe(1);
+      }
+    });
+
+    it("is declined, and counted in own_unstated, when the team's set already is the Mega forme", () => {
+      const { event, name, set } = setup();
+      const sets = team.map((t) => (t === set ? { ...t, species: `${t.species}-Mega` } : t));
+      const { port, seen } = evolved(name, `${set.species}-Mega, L50`, stoneOf(set.species), sets);
+      expect(ask(port, event)).toBeNull();
+      expect(seen).toHaveLength(0);
+      expect(port.counts().own_unstated).toBe(1);
+    });
   });
 
   it("a cache belongs to one seat", () => {

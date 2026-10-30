@@ -94,6 +94,12 @@ PokePaste guard does not see JSON teams, so this guard rejects a committed
   ``paste``, an ``evs`` key or any team-shaped object anywhere inside it,
   ``fixtures/`` included. A prior is aggregate marginals (ids and integers),
   never a team; or
+- holds a usage weight table (ADR-020 §4: an object with a string ``month``, a
+  ``derivation`` object, a ``sources`` list and a ``species`` list) that holds a
+  ``paste``, an ``evs`` key or any team-shaped object anywhere inside it,
+  ``fixtures/`` included, and the committed tables under ``config/teams/`` are
+  checked like any other file. A table is aggregate weights (ids and integers),
+  never a team; or
 - holds a sealed-set reveal or a sealed team (ADR-013 slice (g), protocol
   L3 and L5) anywhere but at an exact path in ``REVEAL_ALLOWED``. A reveal
   is a ``RetiredSealedManifest``: an object with a string ``set_id``, a
@@ -426,6 +432,9 @@ UNLABELLED_REVEAL = (
 )
 ROLE_SET_TEAM = "holds a role-set table that holds a paste or a team-shaped object"
 USAGE_PRIOR_TEAM = "holds a usage prior that holds a paste, an evs key or a team-shaped object"
+USAGE_TABLE_TEAM = (
+    "holds a usage weight table that holds a paste, an evs key or a team-shaped object"
+)
 UNKNOWN_KEY_KIND = 'holds a team dataset manifest whose key is not of kind "public"'
 
 
@@ -488,6 +497,16 @@ def _is_usage_prior(obj: dict[str, object]) -> bool:
     )
 
 
+def _is_usage_weight_table(obj: dict[str, object]) -> bool:
+    # ADR-020 section 4: a month, a derivation object, a sources list and a species list.
+    return (
+        _is_str(obj, "month")
+        and isinstance(obj.get("derivation"), dict)
+        and isinstance(obj.get("sources"), list)
+        and isinstance(obj.get("species"), list)
+    )
+
+
 def _holds_team_text(table: dict[str, object]) -> bool:
     return any(_is_team(obj) or "paste" in obj or "evs" in obj for obj in _walk(table))
 
@@ -498,6 +517,8 @@ def _role_set_problems(objects: list[dict[str, object]]) -> list[str]:
         found.append(ROLE_SET_TEAM)
     if any(_is_usage_prior(obj) and _holds_team_text(obj) for obj in objects):
         found.append(USAGE_PRIOR_TEAM)
+    if any(_is_usage_weight_table(obj) and _holds_team_text(obj) for obj in objects):
+        found.append(USAGE_TABLE_TEAM)
     return found
 
 

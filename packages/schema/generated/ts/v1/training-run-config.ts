@@ -87,6 +87,14 @@ export interface TrainingRunConfig {
        * ADR-010 erratum A4 item 4. The Team Preview network scores an order as the sum over places of u(place, Pokemon token) plus v(lead pair) from the tokens at places 1 and 2, and does not use the cross-attention and interaction scorer for Preview. The candidate set, its order and the softmax over the real candidates are unchanged; the Battle network ignores it. Only true is a value (leave the key out for none). Layout changing: it changes the checkpoint tensor names and the checkpoint format.
        */
       factored_preview?: true;
+      /**
+       * ADR-010 erratum A4 item 7. The value no longer shares gradient with the policy trunk. network: a second trunk and value head with no layer shared with the policy network (same encoder inputs and sizes, its own parameters). detached: the value head stays on the policy trunk but reads its output with the gradient cut. Layout changing: network adds tensors and both change the checkpoint format.
+       */
+      separate_value?: "network" | "detached";
+      /**
+       * ADR-010 erratum A4 item 7. The scorer's last layer(s) start at this many millionths of their default initial weights (10000 is 1/100), so the initial policy is near uniform. Initial weights only: no tensor name changes, but it is part of the config and the checkpoint format. 1,000,000 is the default and is not a value (leave the key out).
+       */
+      policy_output_scale_ppm?: number;
     };
   };
   /**
