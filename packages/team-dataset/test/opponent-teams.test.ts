@@ -4,16 +4,18 @@
 // across all six, is legal under the pinned validator with zero redraws, is a function of the stream, and a previewed
 // species the prior lacks is a counted refusal.
 
-import { readFileSync } from "node:fs";
+import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadRulesSnapshot, readTrainingRunConfig, resolveFormat } from "@areneon/showdown-bridge";
-import { describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
 import { type Game, type Set6, points } from "../../opponent-model/test/corpus.ts";
 import { readerSha256 } from "../../public-state/src/index.ts";
 import { goldenTeamVocabulary } from "../../showdown-bridge/src/golden.ts";
 import { verifiedDatasetHash } from "../src/dataset-hash.ts";
 import { DATASETS_DIR } from "../src/fixtures.ts";
+import { createSearchWorlds, searchWorldsFiles } from "../src/search-worlds.ts";
 import { datasetTeamPool } from "../src/loop-pool.ts";
 import { createOpponentTeams } from "../src/opponent-teams.ts";
 import { playSweepBattle } from "../src/reducer-sweep.ts";
@@ -105,5 +107,34 @@ describe("createOpponentTeams on generator teams", () => {
     p.open({ opponent: first.state.opponent, flags: [], record: {} });
     // @ts-expect-error: nor the seed
     p.open({ opponent: first.state.opponent, flags: [], seed: "sodium,0" });
+  });
+});
+
+describe("the teams port and the worlds port share one identity", () => {
+  const scratch = mkdtempSync(join(tmpdir(), "opponent-teams-"));
+  afterAll(() => rmSync(scratch, { recursive: true, force: true }));
+  const context = { engine, vocabulary: goldenTeamVocabulary(), reader_sha256: readerSha256(), manifest, arm: "generator-matched" } as const;
+  const files = searchWorldsFiles(FORMAT);
+
+  it.each(["belief.v1.json", "belief.damage-v1.json", "belief.speed-v1.json"])("equal identity_hash for %s (evidence checks on or off)", (name) => {
+    const model = join(scratch, name);
+    cpSync(files.model_dir, model, { recursive: true });
+    writeFileSync(join(model, "belief.v1.json"), readFileSync(join(files.model_dir, name)));
+    const f = { ...files, model_dir: model, generator_prior_file: join(model, "generator-matched.uniform-v1.json"), role_sets_prior_file: join(model, "role-sets.fill-uniform-v1.json") };
+    const teams = createOpponentTeams(context, { files: f });
+    const worlds = createSearchWorlds(context, f);
+    expect(teams.identity_hash).toBe(worlds.identity_hash);
+    expect(teams.prior_hash).toBe(worlds.prior_hash);
+    expect(teams.belief_config_hash).toBe(worlds.belief_config_hash);
+  });
+
+  it("the three configs give three identities", () => {
+    const ids = ["belief.v1.json", "belief.damage-v1.json", "belief.speed-v1.json"].map((name) => {
+      const model = join(scratch, `distinct-${name}`);
+      cpSync(files.model_dir, model, { recursive: true });
+      writeFileSync(join(model, "belief.v1.json"), readFileSync(join(files.model_dir, name)));
+      return createOpponentTeams(context, { files: { ...files, model_dir: model } }).identity_hash;
+    });
+    expect(new Set(ids).size).toBe(3);
   });
 });

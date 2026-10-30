@@ -117,6 +117,13 @@ _HP = re.compile(r"^(\d+)(?:/(\d+)([gyr])?)?$")
 # The engine's marker for a Pokemon with no type left (`pokemon.ts`; Burn Up removes Fire); it is
 # not an entry of the types vocabulary.
 TYPELESS = "???"
+
+
+def _kept_derived(derived: dict[str, str], kept: set[str]) -> dict[str, str]:
+    """The derived suffixes whose raw volatile id (`stockpile2`) is among the ``kept`` ones."""
+    return {base: suffix for base, suffix in derived.items() if f"{base}{suffix}" in kept}
+
+
 MAX_VOLATILE_LENGTH = 64  # an opaque volatile id is short; a longer one is not an id
 _VOLATILE = re.compile(r"^(?:(move|ability|item): )?([A-Za-z][A-Za-z0-9 '.-]*)$")
 # Colour class the champions mod appends to a shared HP at exactly 50% or 20%.
@@ -172,6 +179,7 @@ class _Passed:
     boosts: dict[str, int]
     volatiles: set[str]
     ability_suppressed: bool
+    derived: dict[str, str]
 
 
 @dataclass
@@ -764,6 +772,17 @@ class _Reducer:
         side.roster.append(mon)
         return mon
 
+    def _passed(self, cause: str, out: PokemonState) -> _Passed:
+        """What the outgoing Pokemon hands over on a Baton Pass or Shed Tail switch."""
+        kept = self.vocab.passed_volatiles(cause, out.volatiles)
+        return _Passed(
+            dict(out.boosts) if cause == "batonpass" else zero_boosts(),
+            kept,
+            out.ability_suppressed
+            and "gastroacid" in self.vocab.passed_volatiles(cause, {"gastroacid"}),
+            _kept_derived(out.derived, kept),
+        )
+
     def _switch(self, line: _Line) -> None:
         _arity(line, 3, 3)
         side, letter, name = self._ref(line.args[0], line)
@@ -826,12 +845,7 @@ class _Reducer:
         passed: _Passed | None = None
         if previous is not None and cause in ("batonpass", "shedtail"):
             out = side.roster[previous]
-            passed = _Passed(
-                dict(out.boosts) if cause == "batonpass" else zero_boosts(),
-                self.vocab.passed_volatiles(cause, out.volatiles),
-                out.ability_suppressed
-                and "gastroacid" in self.vocab.passed_volatiles(cause, {"gastroacid"}),
-            )
+            passed = self._passed(cause, out)
         if previous is not None:
             self._switch_out(side.roster[previous])
         side.slots[letter] = index
@@ -839,10 +853,11 @@ class _Reducer:
         self._disguise[key] = disguise
         self._switch_out(mon)
         if passed is not None:
-            mon.boosts, mon.volatiles, mon.ability_suppressed = (
+            mon.boosts, mon.volatiles, mon.ability_suppressed, mon.derived = (
                 passed.boosts,
                 passed.volatiles,
                 passed.ability_suppressed,
+                passed.derived,
             )
         mon.active_slot, mon.brought = letter, True
         mon.species, mon.level = details.species, details.level
@@ -854,6 +869,7 @@ class _Reducer:
         mon.recent = Recent()
         mon.boosts = zero_boosts()
         mon.volatiles = set()
+        mon.derived = {}
         mon.types = None
         mon.temp_species = None
         mon.ability_suppressed = False
@@ -1084,6 +1100,7 @@ class _Reducer:
         if shown.mega != before.mega:
             real.mega, real.mega_stone = shown.mega, shown.mega_stone
         real.boosts, real.volatiles = dict(shown.boosts), set(shown.volatiles)
+        real.derived = dict(shown.derived)
         real.types = None if shown.types is None else list(shown.types)
         real.temp_species, real.ability_suppressed = shown.temp_species, shown.ability_suppressed
         real.moves_revealed = real.moves_revealed + [
@@ -1389,8 +1406,22 @@ class _Reducer:
         if kind == "ability":
             mon.ability = found
         mon.volatiles.add(found)
+        if kind != "ability":
+            self._track_derived(mon, found, start=True)
         if found == "typechange":
             mon.types = self._type_change(line)
+
+    def _track_derived(self, mon: PokemonState, found: str, *, start: bool) -> None:
+        """Keep the latest derived suffix per condition id (`stockpile1`, then `stockpile2`; the
+        engine ends it as `-end|Stockpile`, and Perish Song counts down `perish3`..`perish0`
+        with no `-end`). A version 1 table resolves nothing, so tracks nothing."""
+        if self.vocab.conditions is None:
+            return
+        base = self.vocab.resolve_volatile(found)
+        if start and base != found and found.startswith(base):
+            mon.derived[base] = found[len(base) :]
+        elif not start:
+            mon.derived.pop(base, None)
 
     def _type_change(self, line: _Line) -> list[str]:
         """The Pokemon's types after `-start|POKEMON|typechange|TYPE[/TYPE]`: type ids of the
@@ -1407,8 +1438,10 @@ class _Reducer:
     def _volatile_end(self, line: _Line) -> None:
         _arity(line, 2, 3)
         mon = self._mon(line.args[0], line)
-        _, found = self._volatile(line.args[1], line)
+        kind, found = self._volatile(line.args[1], line)
         mon.volatiles.discard(found)
+        if kind != "ability":
+            self._track_derived(mon, found, start=False)
         if found == "typechange":  # Mimicry: `-end|POKEMON|typechange|[silent]`
             mon.types = None
 

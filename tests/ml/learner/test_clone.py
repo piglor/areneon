@@ -556,3 +556,28 @@ def test_the_clone_command_refuses_a_bad_set_or_config(
     assert not (tmp_path / "out").exists()
     (tmp_path / "config.json").write_text("{}")
     assert run_main(learner_main, argv)[0] == 3
+
+
+def test_a_clone_with_the_value_options_runs_an_epoch_and_loads_under_them(
+    stream: tuple[str, dict[str, Any]], tmp_path: Path
+) -> None:
+    text, manifest = stream
+    raw = copy.deepcopy(config_for(manifest, epochs=1).raw)
+    raw["seeds"]["run_key"] = "clone-value-options"
+    raw["model"]["options"] = {"separate_value": "network", "policy_output_scale_ppm": 10000}
+    config = read_clone_config(raw)
+    cloned = clone(config, game(), text, manifest)
+    report = write_clone(tmp_path / "options", config, game(), cloned, VERSION)
+    out = tmp_path / "options"
+    for record in records(out):
+        data = (out / "checkpoints" / f"{record.checkpoint_id}.safetensors").read_bytes()
+        net = load_checkpoint(
+            data, game(), record.checkpoint_id, record.role, configured=config.model
+        )
+        assert net.config.options == config.model.options
+        assert net.value_net is not None
+    assert set(json.loads((out / "clone-report.json").read_text())["roles"]) == {
+        "preview",
+        "battle",
+    }
+    assert report["checkpoints"]

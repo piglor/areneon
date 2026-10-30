@@ -39,6 +39,9 @@ for (const file of files) {
       if (beliefConfigHash(belief) !== record.assumed_set.belief_config_hash) throw new Error("the committed belief config is not the one the record names");
       // The belief config with damage evidence (ticket #1132) is read against the vocabulary too; no record names it yet.
       if (readBeliefConfig(JSON.parse(readFileSync(join(dir, "belief.damage-v1.json"), "utf8")), vocabulary).damage_evidence === undefined) throw new Error("belief.damage-v1.json must carry damage_evidence");
+      // The belief config with damage and speed-order evidence (ticket #1133), likewise unnamed by any record: the evidence is off in belief.v1.json.
+      const evidence = readBeliefConfig(JSON.parse(readFileSync(join(dir, "belief.speed-v1.json"), "utf8")), vocabulary);
+      if (evidence.damage_evidence === undefined || evidence.speed_evidence === undefined) throw new Error("belief.speed-v1.json must carry damage_evidence and speed_evidence");
     } else throw new Error("no reader for this record version");
   } catch (error) {
     console.error(`${file}: ${(error as Error).message}`);

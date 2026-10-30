@@ -17,7 +17,7 @@ import { fileURLToPath } from "node:url";
 import { belief, beliefIdentityHash, createSampler, type SetLegality, worldStream } from "@areneon/opponent-model";
 import {
   beliefConfigHash,
-  DAMAGE_CHECK_FORMAT,
+  evidenceCheckFormats,
   createSetLegality,
   type Engine,
   GENERATOR_MATCHED_LABEL,
@@ -113,7 +113,7 @@ export function armParts(context: SearchWorldsContext, files: SearchWorldsFiles 
   const vocabulary_hash = teamVocabularyHash(vocabulary);
   const view = { ...vocabulary, vocabulary_hash };
   const sampler = createSampler({ legality: legality ?? createSetLegality({ engine, vocabulary }), spreads: generatorSpreadSampler(vocabulary, generator) });
-  return { prior, view, beliefConfig, sampler, prior_hash, belief_config_hash, identity_hash: beliefIdentityHash({ prior_hash, belief_config_hash, vocabulary_hash, reader_sha256, version_manifest: manifest, ...(beliefConfig.damage_evidence === undefined ? {} : { damage_check_format: DAMAGE_CHECK_FORMAT }) }) };
+  return { prior, view, beliefConfig, sampler, prior_hash, belief_config_hash, identity_hash: beliefIdentityHash({ prior_hash, belief_config_hash, vocabulary_hash, reader_sha256, version_manifest: manifest, ...evidenceCheckFormats(beliefConfig) }) };
 }
 
 export function createSearchWorlds(context: SearchWorldsContext, files: SearchWorldsFiles = searchWorldsFiles(context.vocabulary.format_id)): WorldSamplePort {
