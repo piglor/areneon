@@ -209,10 +209,10 @@ def read_run_config(raw: object) -> RunConfig:
             "training-run-config: warm_start names one checkpoint for both roles "
             "(a checkpoint holds one role's network)"
         )
-    if warm is not None and is_set(model.options, SHARED_TRUNK):
+    if warm is not None and "preview" in warm and is_set(model.options, SHARED_TRUNK):
         raise RunConfigError(
-            "training-run-config: model.options.shared_trunk cannot be combined with warm_start "
-            "(a cloned Battle network and a seeded Preview network have no common trunk)"
+            "training-run-config: model.options.shared_trunk cannot be combined with a warm_start "
+            "that names the preview role (two cloned trunks conflict; use a Battle-only warm start)"
         )
     if "value_warmup" in raw["ppo"] and warm is None:
         raise RunConfigError(

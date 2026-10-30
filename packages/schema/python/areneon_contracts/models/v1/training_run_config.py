@@ -57,7 +57,7 @@ class Options(BaseModel):
     """
     shared_trunk: Literal[True] | MISSING = MISSING
     """
-    ADR-010 erratum A4 item 5. The Preview and Battle networks share one embedding and transformer trunk (role-specific candidate and value heads), trained by one optimiser over both networks' parameters. Each role's checkpoint is still a complete network and the two files hold equal trunk tensors. Only true is a value (leave the key out for none). Not combined with warm_start. Layout changing: it is part of the config and the checkpoint format.
+    ADR-010 erratum A4 item 5. The Preview and Battle networks share one embedding and transformer trunk (role-specific candidate and value heads), trained by one optimiser over both networks' parameters. Each role's checkpoint is still a complete network and the two files hold equal trunk tensors. Only true is a value (leave the key out for none). Not combined with a warm_start that names the preview role (a Battle-only warm start gives its cloned trunk to both roles). Layout changing: it is part of the config and the checkpoint format.
     """
     separate_value: Literal["network", "detached"] | MISSING = MISSING
     """

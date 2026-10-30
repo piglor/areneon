@@ -234,13 +234,17 @@ def test_the_option_does_not_change_a_run_without_it() -> None:
     assert "model_options" not in pack_state(student).sidecar.decode()
 
 
-def test_the_reader_refuses_a_warm_start_with_a_shared_trunk() -> None:
-    def edit(raw: dict[str, Any]) -> None:
-        raw["model"]["options"] = {"shared_trunk": True}
-        raw["warm_start"] = {"battle": "b" * 64}
+def test_the_reader_refuses_a_two_role_warm_start_but_takes_a_battle_only_one() -> None:
+    def edit(warm: dict[str, str]) -> Any:
+        def inner(raw: dict[str, Any]) -> None:
+            raw["model"]["options"] = {"shared_trunk": True}
+            raw["warm_start"] = warm
+
+        return inner
 
     with pytest.raises(RunConfigError, match="shared_trunk cannot be combined"):
-        edited_config(edit)
+        edited_config(edit({"preview": "a" * 64, "battle": "b" * 64}))
+    assert edited_config(edit({"battle": "b" * 64})).warm_start == {"battle": "b" * 64}
 
 
 def test_the_model_config_round_trips_with_the_option() -> None:

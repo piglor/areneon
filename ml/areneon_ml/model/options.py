@@ -43,8 +43,9 @@ Defined so far:
   networks share one embedding and transformer trunk (``network.py``: ``trunk_keys``,
   ``tie_trunk``), with role-specific candidate and value heads. Only ``true`` is a value. The
   learner trains the pair with one Adam over the union of parameters; each role's checkpoint is
-  still a complete network and the two files hold equal trunk tensors. Not combined with
-  ``warm_start`` (a cloned Battle network and a seeded Preview network have no common trunk).
+  still a complete network and the two files hold equal trunk tensors. Not combined with a
+  ``warm_start`` that names the preview role (two cloned trunks conflict); a Battle-only warm start
+  gives the cloned Battle trunk to both roles.
 """
 
 from __future__ import annotations

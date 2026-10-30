@@ -205,7 +205,8 @@ class Learner:
         self.device = device
         # shared_trunk (ADR-010 erratum A4 item 5): the Preview network uses the Battle network's
         # trunk modules, the very same parameters; the rest of each network stays its own. (A
-        # warm start is refused with the option by the config reader, so both start seeded.)
+        # Battle-only warm start gives the Battle network's cloned trunk to both roles; a
+        # two-role warm start is refused with the option by the config reader.)
         self.shared_trunk = shared_trunk_of(config.model)
         if self.shared_trunk:
             tie_trunk(networks["battle"], networks["preview"])
@@ -331,7 +332,9 @@ class Learner:
                     warm,
                 )
         for role, (table, warm) in tables.items():
-            roles[role] = self._train_role(role, table, warm)
+            # Under shared_trunk the trunk is the warm Battle role's policy trunk: during the
+            # value warm-up it is frozen for the unwarmed Preview role too (its heads still train).
+            roles[role] = self._train_role(role, table, warm, warmup and self.shared_trunk)
         self.generation += 1
         return TrainReport(roles)
 
@@ -452,7 +455,9 @@ class Learner:
             self._anchor_scores(role, steps) if anchor else None,
         )
 
-    def _train_role(self, role: str, table: _Table, warm: bool = False) -> RoleReport:
+    def _train_role(
+        self, role: str, table: _Table, warm: bool = False, trunk_frozen: bool = False
+    ) -> RoleReport:
         """PPO epochs for one role; with ``warm`` only the value head learns (see below).
 
         ``table`` holds the role's targets, read before any update (the anchor term is inactive
@@ -463,8 +468,11 @@ class Learner:
         # stay byte-identical, no gradient reaches them and Adam (which skips a parameter with no
         # gradient) leaves their moments absent. The loss is the value error alone (the PPO terms
         # carry no gradient to the value head and the coefficient only rescales it).
+        trunk = set(network.trunk_keys()) if trunk_frozen else set()
         frozen = [
-            p for n, p in network.named_parameters() if warm and not n.startswith(VALUE_PREFIXES)
+            p
+            for n, p in network.named_parameters()
+            if (warm and not n.startswith(VALUE_PREFIXES)) or n in trunk
         ]
         for parameter in frozen:
             parameter.requires_grad_(False)
