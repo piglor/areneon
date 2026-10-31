@@ -149,13 +149,111 @@ export function referencesPackage(manifest: Record<string, unknown>): boolean {
   return [...fields.map((f) => manifest[f]), pnpm["overrides"]].some(hit);
 }
 
-/** Settings that can rewrite resolved versions behind the exact pins. */
-export function overrideProblems(manifest: Record<string, unknown>, workspaceYaml: string): string[] {
+/**
+ * The only root `pnpm.overrides` entries allowed, each reviewed (a code-owner edit):
+ * minimatch forced to ^11.0.1 clears GHSA-g3hv-75wg-m249 in dev-only lint tooling
+ * (eslint, @eslint/config-array, @typescript-eslint/typescript-estree).
+ */
+export const ALLOWED_OVERRIDES: Readonly<Record<string, string>> = { minimatch: "^11.0.1" };
+
+function stripQuotes(name: string): string {
+  return name.replace(/^'|'$/g, "");
+}
+
+/** Names in the production dependency closure of a workspace importer, read from the lockfile. */
+export function productionClosure(lock: string, importer: string): Set<string> {
+  const names = new Set<string>();
+  const snapshotsAt = lock.indexOf("\nsnapshots:\n");
+  const importersAt = lock.indexOf("\nimporters:\n");
+  const importerText = lock.slice(importersAt, snapshotsAt < 0 ? undefined : snapshotsAt);
+  const snapshotText = snapshotsAt < 0 ? "" : lock.slice(snapshotsAt);
+  const deps = (text: string): { name: string; version: string }[] => {
+    const out: { name: string; version: string }[] = [];
+    let inProd = false;
+    let pending: string | null = null;
+    for (const line of text.split("\n")) {
+      const sec = /^ {4}(\w+):\s*$/.exec(line);
+      if (sec !== null) {
+        inProd = sec[1] === "dependencies" || sec[1] === "optionalDependencies";
+        pending = null;
+        continue;
+      }
+      if (!inProd) continue;
+      const head = /^ {6}(\S+):\s*$/.exec(line);
+      if (head?.[1] !== undefined) pending = stripQuotes(head[1]);
+      const ver = /^ {8}version: (\S+)\s*$/.exec(line);
+      if (ver?.[1] !== undefined && pending !== null) out.push({ name: pending, version: ver[1] });
+    }
+    return out;
+  };
+  const importerBody = (path: string): string => {
+    const at = importerText.indexOf(`\n  ${path}:`);
+    if (at < 0) return "";
+    const tail = importerText.slice(importerText.indexOf("\n", at + 1) + 1);
+    const stop = tail.search(/\n {2}\S/);
+    return stop < 0 ? tail : tail.slice(0, stop);
+  };
+  const snapshotDeps = (key: string): { name: string; version: string }[] => {
+    const out: { name: string; version: string }[] = [];
+    const lines = snapshotText.split("\n");
+    const at = lines.findIndex((l) => l === `  '${key}':` || l === `  ${key}:`);
+    if (at < 0) return out;
+    let inProd = false;
+    for (const line of lines.slice(at + 1)) {
+      if (/^ {2}\S/.test(line)) break;
+      const sec = /^ {4}(\w+):\s*$/.exec(line);
+      if (sec !== null) inProd = sec[1] === "dependencies" || sec[1] === "optionalDependencies";
+      const dep = /^ {6}(\S+): (\S+)\s*$/.exec(line);
+      if (inProd && dep?.[1] !== undefined && dep[2] !== undefined) out.push({ name: stripQuotes(dep[1]), version: dep[2] });
+    }
+    return out;
+  };
+  const seenImporters = new Set<string>();
+  const seenSnapshots = new Set<string>();
+  const queue: { name: string; version: string }[] = [];
+  const visitImporter = (path: string): void => {
+    if (seenImporters.has(path)) return;
+    seenImporters.add(path);
+    queue.push(...deps(importerBody(path)));
+  };
+  visitImporter(importer);
+  for (let item = queue.pop(); item !== undefined; item = queue.pop()) {
+    names.add(item.name);
+    if (item.version.startsWith("link:")) {
+      const target = item.version.slice(5).replace(/^\.\.\//, "packages/");
+      visitImporter(target);
+      continue;
+    }
+    const key = `${item.name}@${item.version}`;
+    if (seenSnapshots.has(key)) continue;
+    seenSnapshots.add(key);
+    queue.push(...snapshotDeps(key));
+  }
+  return names;
+}
+
+/**
+ * Settings that can rewrite resolved versions behind the exact pins. The one exception is a
+ * root `pnpm.overrides` entry that is in ALLOWED_OVERRIDES exactly and names no package of the
+ * private package's production closure (`closure`, from productionClosure).
+ */
+export function overrideProblems(
+  manifest: Record<string, unknown>,
+  workspaceYaml: string,
+  closure: ReadonlySet<string> = new Set(),
+): string[] {
   const out: string[] = [];
   for (const key of ["overrides", "resolutions"]) if (key in manifest) out.push(`package.json ${key}`);
   const pnpm = (manifest["pnpm"] ?? {}) as Record<string, unknown>;
   for (const key of ["overrides", "packageExtensions", "patchedDependencies"]) {
     if (key in pnpm) out.push(`package.json pnpm.${key}`);
+  }
+  const overrides = pnpm["overrides"];
+  if (overrides !== null && typeof overrides === "object" && !Array.isArray(overrides)) {
+    const entries = Object.entries(overrides as Record<string, unknown>);
+    const allowed = entries.length > 0 && entries.every(([k, v]) => Object.hasOwn(ALLOWED_OVERRIDES, k) && ALLOWED_OVERRIDES[k] === v);
+    const reached = entries.some(([k]) => closure.has(k));
+    if (allowed && !reached) out.splice(out.indexOf("package.json pnpm.overrides"), 1);
   }
   for (const m of workspaceYaml.matchAll(/^(overrides|packageExtensions|patchedDependencies):/gm)) {
     out.push(`pnpm-workspace.yaml ${m[1]}`);
