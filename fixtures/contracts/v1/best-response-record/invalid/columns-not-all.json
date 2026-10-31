@@ -1,0 +1,444 @@
+{
+  "schema_version": 1,
+  "data_class": "synthetic",
+  "run_id": "tiny-run",
+  "version_manifest": {
+    "showdown_commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "format_id": "gen9championsvgc2026regmc",
+    "regulation": "M-C",
+    "ruleset_hash": "5555555555555555555555555555555555555555555555555555555555555555",
+    "format_rules_hash": "6666666666666666666666666666666666666666666666666666666666666666"
+  },
+  "evaluated": {
+    "generation": 5,
+    "generation_manifest_sha256": "7777777777777777777777777777777777777777777777777777777777777777",
+    "checkpoints": {
+      "preview": "1111111111111111111111111111111111111111111111111111111111111111",
+      "battle": "2222222222222222222222222222222222222222222222222222222222222222"
+    },
+    "mode": "argmax",
+    "policy_id": "policy:argmax-example"
+  },
+  "teams": {
+    "dataset_hash": "9999999999999999999999999999999999999999999999999999999999999999",
+    "split": "validation",
+    "pairs_used": 2
+  },
+  "plan": {
+    "seed_derivation": "progress-seed/1",
+    "pairing": "progress-pairing/1",
+    "games": 4,
+    "max_turns": 100,
+    "latency_budget_ms": {
+      "preview_ms": 1000,
+      "battle_ms": 1000
+    },
+    "responder_preview_budget_ms": 3600000,
+    "responder": {
+      "format": 1,
+      "payoff_leaf_format": 1,
+      "hypothetical_battle_format": 1,
+      "worlds": 4,
+      "k_own": 4,
+      "own_rule": "prior-top-k",
+      "leaf": {
+        "kind": "first-request"
+      },
+      "columns": "top-8",
+      "belief": {
+        "identity_hash": "3333333333333333333333333333333333333333333333333333333333333333",
+        "prior_hash": "4444444444444444444444444444444444444444444444444444444444444444",
+        "belief_config_hash": "8888888888888888888888888888888888888888888888888888888888888888"
+      }
+    }
+  },
+  "result": {
+    "mirror": {
+      "wins": 1,
+      "losses": 3,
+      "ties": 0,
+      "turn_cap_ties": 0,
+      "turns_total": 39,
+      "forfeits": []
+    },
+    "responder": {
+      "wins": 4,
+      "losses": 0,
+      "ties": 0,
+      "turn_cap_ties": 0,
+      "turns_total": 35,
+      "forfeits": [
+        {
+          "side": "other",
+          "cause": "latency_overrun",
+          "count": 1
+        }
+      ]
+    },
+    "blind": {
+      "wins": 1,
+      "losses": 2,
+      "ties": 1,
+      "turn_cap_ties": 0,
+      "turns_total": 129,
+      "forfeits": []
+    },
+    "room": {
+      "wins": 2,
+      "losses": 1,
+      "ties": 1,
+      "turn_cap_ties": 0,
+      "turns_total": 134,
+      "forfeits": []
+    }
+  },
+  "games": [
+    {
+      "game": 0,
+      "pair": 0,
+      "a_seat": "p1",
+      "mirror": {
+        "kind": "played",
+        "winner": "other",
+        "turns": 9
+      },
+      "responder": {
+        "kind": "played",
+        "winner": "focal",
+        "turns": 11
+      },
+      "blind": {
+        "kind": "played",
+        "winner": "other",
+        "turns": 9
+      },
+      "room": {
+        "kind": "played",
+        "winner": "focal",
+        "turns": 12
+      },
+      "b_decision": {
+        "kind": "table",
+        "counts": {
+          "worlds_asked": 4,
+          "worlds_used": 4,
+          "preview_queries": 5,
+          "entry_attempts": 48,
+          "entries": 48,
+          "value_queries": 48,
+          "rollout_choices": 0,
+          "back_draws": 0,
+          "clamped": 1,
+          "clamped_low": 1,
+          "clamped_high": 0,
+          "game_end_entries": 0,
+          "engine_refusals": 0,
+          "not_move_request": 0,
+          "worlds_dropped": 0,
+          "rollout_capped": 0,
+          "missing_entries": 0
+        },
+        "worlds_unstarted": 0,
+        "worlds_refused": 0,
+        "own": 4,
+        "columns": 3,
+        "complete": true,
+        "choices": [
+          {
+            "arm": "responder",
+            "rank": 1,
+            "key": "13|24",
+            "expected_ppm": 640000,
+            "columns_used": 3
+          },
+          {
+            "arm": "blind",
+            "rank": 0,
+            "key": "12|34",
+            "expected_ppm": 510000,
+            "columns_used": 3
+          }
+        ]
+      },
+      "a_decision": {
+        "kind": "table",
+        "counts": {
+          "worlds_asked": 4,
+          "worlds_used": 4,
+          "preview_queries": 5,
+          "entry_attempts": 48,
+          "entries": 48,
+          "value_queries": 48,
+          "rollout_choices": 0,
+          "back_draws": 0,
+          "clamped": 1,
+          "clamped_low": 1,
+          "clamped_high": 0,
+          "game_end_entries": 0,
+          "engine_refusals": 0,
+          "not_move_request": 0,
+          "worlds_dropped": 0,
+          "rollout_capped": 0,
+          "missing_entries": 0
+        },
+        "worlds_unstarted": 0,
+        "worlds_refused": 0,
+        "own": 4,
+        "columns": 3,
+        "complete": true,
+        "choices": [
+          {
+            "arm": "room",
+            "rank": 2,
+            "key": "21|34",
+            "expected_ppm": 530000,
+            "columns_used": 3
+          }
+        ]
+      }
+    },
+    {
+      "game": 1,
+      "pair": 0,
+      "a_seat": "p2",
+      "mirror": {
+        "kind": "played",
+        "winner": "other",
+        "turns": 10
+      },
+      "responder": {
+        "kind": "played",
+        "winner": "focal",
+        "turns": 14
+      },
+      "blind": {
+        "kind": "played",
+        "winner": "tie",
+        "turns": 100
+      },
+      "room": {
+        "kind": "played",
+        "winner": "tie",
+        "turns": 100
+      },
+      "b_decision": {
+        "kind": "table",
+        "counts": {
+          "worlds_asked": 4,
+          "worlds_used": 4,
+          "preview_queries": 5,
+          "entry_attempts": 48,
+          "entries": 48,
+          "value_queries": 48,
+          "rollout_choices": 0,
+          "back_draws": 0,
+          "clamped": 1,
+          "clamped_low": 1,
+          "clamped_high": 0,
+          "game_end_entries": 0,
+          "engine_refusals": 0,
+          "not_move_request": 0,
+          "worlds_dropped": 0,
+          "rollout_capped": 0,
+          "missing_entries": 0
+        },
+        "worlds_unstarted": 0,
+        "worlds_refused": 0,
+        "own": 4,
+        "columns": 3,
+        "complete": true,
+        "choices": [
+          {
+            "arm": "responder",
+            "rank": 1,
+            "key": "13|24",
+            "expected_ppm": 640000,
+            "columns_used": 3
+          },
+          {
+            "arm": "blind",
+            "rank": 0,
+            "key": "12|34",
+            "expected_ppm": 510000,
+            "columns_used": 3
+          }
+        ]
+      },
+      "a_decision": {
+        "kind": "table",
+        "counts": {
+          "worlds_asked": 4,
+          "worlds_used": 4,
+          "preview_queries": 5,
+          "entry_attempts": 48,
+          "entries": 48,
+          "value_queries": 48,
+          "rollout_choices": 0,
+          "back_draws": 0,
+          "clamped": 1,
+          "clamped_low": 1,
+          "clamped_high": 0,
+          "game_end_entries": 0,
+          "engine_refusals": 0,
+          "not_move_request": 0,
+          "worlds_dropped": 0,
+          "rollout_capped": 0,
+          "missing_entries": 0
+        },
+        "worlds_unstarted": 0,
+        "worlds_refused": 0,
+        "own": 4,
+        "columns": 3,
+        "complete": true,
+        "choices": [
+          {
+            "arm": "room",
+            "rank": 2,
+            "key": "21|34",
+            "expected_ppm": 530000,
+            "columns_used": 3
+          }
+        ]
+      }
+    },
+    {
+      "game": 2,
+      "pair": 1,
+      "a_seat": "p1",
+      "mirror": {
+        "kind": "played",
+        "winner": "focal",
+        "turns": 8
+      },
+      "responder": {
+        "kind": "played",
+        "winner": "focal",
+        "turns": 8
+      },
+      "blind": {
+        "kind": "played",
+        "winner": "focal",
+        "turns": 8
+      },
+      "room": {
+        "kind": "played",
+        "winner": "other",
+        "turns": 13
+      },
+      "b_decision": {
+        "kind": "fallback",
+        "code": "no_world"
+      },
+      "a_decision": {
+        "kind": "table",
+        "counts": {
+          "worlds_asked": 4,
+          "worlds_used": 4,
+          "preview_queries": 5,
+          "entry_attempts": 48,
+          "entries": 48,
+          "value_queries": 48,
+          "rollout_choices": 0,
+          "back_draws": 0,
+          "clamped": 1,
+          "clamped_low": 1,
+          "clamped_high": 0,
+          "game_end_entries": 0,
+          "engine_refusals": 0,
+          "not_move_request": 0,
+          "worlds_dropped": 0,
+          "rollout_capped": 0,
+          "missing_entries": 0
+        },
+        "worlds_unstarted": 0,
+        "worlds_refused": 0,
+        "own": 4,
+        "columns": 3,
+        "complete": true,
+        "choices": [
+          {
+            "arm": "room",
+            "rank": 2,
+            "key": "21|34",
+            "expected_ppm": 530000,
+            "columns_used": 3
+          }
+        ]
+      }
+    },
+    {
+      "game": 3,
+      "pair": 1,
+      "a_seat": "p2",
+      "mirror": {
+        "kind": "played",
+        "winner": "other",
+        "turns": 12
+      },
+      "responder": {
+        "kind": "forfeit",
+        "loser": "other",
+        "cause": "latency_overrun",
+        "request_seq": 3,
+        "turns": 2
+      },
+      "blind": {
+        "kind": "played",
+        "winner": "other",
+        "turns": 12
+      },
+      "room": {
+        "kind": "played",
+        "winner": "focal",
+        "turns": 9
+      },
+      "b_decision": {
+        "kind": "table",
+        "counts": {
+          "worlds_asked": 4,
+          "worlds_used": 4,
+          "preview_queries": 5,
+          "entry_attempts": 48,
+          "entries": 48,
+          "value_queries": 48,
+          "rollout_choices": 0,
+          "back_draws": 0,
+          "clamped": 1,
+          "clamped_low": 1,
+          "clamped_high": 0,
+          "game_end_entries": 0,
+          "engine_refusals": 0,
+          "not_move_request": 0,
+          "worlds_dropped": 0,
+          "rollout_capped": 0,
+          "missing_entries": 0
+        },
+        "worlds_unstarted": 0,
+        "worlds_refused": 0,
+        "own": 4,
+        "columns": 3,
+        "complete": true,
+        "choices": [
+          {
+            "arm": "responder",
+            "rank": 1,
+            "key": "13|24",
+            "expected_ppm": 640000,
+            "columns_used": 3
+          },
+          {
+            "arm": "blind",
+            "rank": 0,
+            "key": "12|34",
+            "expected_ppm": 510000,
+            "columns_used": 3
+          }
+        ]
+      },
+      "a_decision": {
+        "kind": "fallback",
+        "code": "species_not_in_prior"
+      }
+    }
+  ]
+}

@@ -38,6 +38,11 @@ export interface PayoffConfig {
   k_opp: number;
   own_rule: OwnRule;
   leaf: PayoffLeaf;
+  /**
+   * Also report, per column, how many used worlds the opponent's Preview network ALONE would play that ordered lead pair in under argmax
+   * (the first highest candidate, as `argmax` of a play mode does): `opp[].argmax_worlds`. Absent keeps the table's shape.
+   */
+  argmax_columns?: boolean;
 }
 
 /** One strategy: its ordered leads, its back set (sorted), the order it is played as and its probability (ppm units of the network's prior). */
@@ -113,7 +118,7 @@ export interface PayoffTable {
   /** Our strategies, the rows. */
   readonly own: readonly Strategy[];
   /** The opponent's ordered lead pairs, the columns, with their mean mass (the network's prior summed by lead pair, floor-averaged over worlds). */
-  readonly opp: readonly { readonly leads: readonly [number, number]; readonly mean_ppm: number }[];
+  readonly opp: readonly { readonly leads: readonly [number, number]; readonly mean_ppm: number; readonly argmax_worlds?: number }[];
   /** U(s, L) in ppm, floor mean over the worlds that produced the entry; null where none did. */
   readonly entries: readonly (readonly (number | null)[])[];
   /** How many worlds produced each entry. */
@@ -253,12 +258,19 @@ export async function buildPayoffTable(input: PayoffInput): Promise<PayoffTable>
   // The opponent's ordered lead pairs: our Preview network on each world's hypothetical opponent observation, summed by lead pair.
   const foeStrategies = new Map<number, Strategy[]>();
   const leadSums = new Map<string, { leads: readonly [number, number]; sum: number; rank: number }>();
+  const argmaxWorlds = new Map<string, number>();
   for (const { index, preview } of worlds) {
     counts.preview_queries += 1;
     const evaluated = await evaluateHypothetical(client, battle, await preview.observation(preview.foe_channel), policy_id);
     const strategies = strategiesOf(evaluated.candidates, evaluated.evaluation.prior_ppm);
     foeStrategies.set(index, strategies);
     counts.worlds_used += 1;
+    if (config.argmax_columns === true) {
+      const top = /^team (\d+)$/.exec(argmax(evaluated.candidates, evaluated.evaluation.prior_ppm));
+      if (top === null) throw new PayoffError("not a Team Preview order");
+      const lead = (top[1] as string).slice(0, 2);
+      argmaxWorlds.set(lead, (argmaxWorlds.get(lead) ?? 0) + 1);
+    }
     for (const [key, mass] of leadMass(strategies)) {
       const known = leadSums.get(key);
       if (known === undefined) leadSums.set(key, { leads: mass.leads, sum: mass.ppm, rank: mass.rank });
@@ -268,7 +280,7 @@ export async function buildPayoffTable(input: PayoffInput): Promise<PayoffTable>
   const opp = [...leadSums.values()]
     .sort((a, b) => b.sum - a.sum || a.rank - b.rank)
     .slice(0, config.k_opp)
-    .map(({ leads, sum }) => ({ leads, mean_ppm: Math.floor(sum / counts.worlds_used) }));
+    .map(({ leads, sum }) => ({ leads, mean_ppm: Math.floor(sum / counts.worlds_used), ...(config.argmax_columns === true ? { argmax_worlds: argmaxWorlds.get(leadKey(leads)) ?? 0 } : {}) }));
 
   /** The opponent's order for lead pair L in a world: the most probable back set given L (first-request leaf) or one drawn from the conditional (rollout leaf). */
   const foeOrder = (world: number, leads: readonly number[]): string | null => {

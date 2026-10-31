@@ -62,6 +62,13 @@ from areneon_ml.model.gamedata import GameData
 from areneon_ml.model.network import ROLES
 from areneon_ml.private.private_test import PrivateTestRequest, private_test_main
 from areneon_ml.progress import evaluation_key as evaluation_key_option
+from areneon_ml.progress.best_response import (
+    MODES,
+    OWN_RULES,
+    BestResponseError,
+    BestResponseRequest,
+    best_response,
+)
 from areneon_ml.progress.eval_dataset import EvalDatasetError
 from areneon_ml.progress.eval_dataset import add_arguments as eval_dataset_arguments
 from areneon_ml.progress.eval_dataset import from_values as eval_dataset_from
@@ -235,11 +242,55 @@ def _add_scripted_parser(commands: Any) -> None:
     scripted.add_argument("--node", default="node")
 
 
+def _add_best_response_parser(commands: Any) -> None:
+    """The ``best-response`` command (ADR-029 section 2): BRG, the blind control and the room R."""
+    parser = commands.add_parser(
+        "best-response",
+        help="evaluation-only responder against a frozen pair: best-response gain, the blind "
+        "control, the exploitation margin and the room for the table (both seats)",
+    )
+    parser.add_argument("--run-dir", type=Path, required=True)
+    parser.add_argument("--generation", type=int, required=True, help="the committed generation")
+    parser.add_argument("--mode", choices=MODES, required=True)
+    parser.add_argument(
+        "--pairs", type=_positive, required=True, help="validation pairs; 2 x pairs games per arm"
+    )
+    parser.add_argument(
+        "--worlds", type=_positive, required=True, help="opponent teams sampled per decision"
+    )
+    parser.add_argument(
+        "--k-own", type=_positive, required=True, help="the responder's own strategies"
+    )
+    parser.add_argument("--own-rule", choices=OWN_RULES, required=True)
+    parser.add_argument(
+        "--leaf", required=True, help="first-request or rollout:<turns> (the payoff table's leaf)"
+    )
+    parser.add_argument(
+        "--preview-budget-ms",
+        type=_positive,
+        default=3_600_000,
+        help="the Team Preview latency budget of every game (the table is built inside it; "
+        "default 3,600,000)",
+    )
+    parser.add_argument(
+        "--out", type=Path, required=True, help="a new directory; never overwritten"
+    )
+    parser.add_argument("--engine-data", type=Path, required=True)
+    parser.add_argument("--node", default="node", help="the node executable")
+    parser.add_argument("--worker-python", default=sys.executable, help="CPU torch worker python")
+    eval_dataset_arguments(parser)
+    evaluation_key_option.add_argument(parser)
+    parser.add_argument(
+        "--looks", type=Path, help="the validation look log (default <out>.looks.jsonl)"
+    )
+
+
 def _add_owner_and_scripted_parsers(commands: Any) -> None:
     eval_dataset_arguments(commands.choices["progress"])
     evaluation_key_option.add_argument(commands.choices["progress"])
     _add_private_test_parser(commands)
     _add_scripted_parser(commands)
+    _add_best_response_parser(commands)
 
 
 def _parser() -> argparse.ArgumentParser:  # noqa: PLR0915
@@ -617,7 +668,31 @@ def _scripted(args: argparse.Namespace) -> dict[str, object]:
     )
 
 
-_SIMPLE = {"progress": _progress, "scripted-h2h": _scripted}
+def _best_response(args: argparse.Namespace) -> dict[str, object]:
+    return best_response(
+        BestResponseRequest(
+            run_dir=args.run_dir,
+            generation=args.generation,
+            mode=args.mode,
+            pairs=args.pairs,
+            worlds=args.worlds,
+            k_own=args.k_own,
+            own_rule=args.own_rule,
+            leaf=args.leaf,
+            preview_budget_ms=args.preview_budget_ms,
+            out=args.out,
+            engine_data=args.engine_data,
+            worker_python=args.worker_python,
+            eval_dataset=eval_dataset_from(args.eval_dataset_dir, args.eval_dataset_hash),
+            evaluation_key=args.evaluation_key,
+            looks=args.looks,
+        ),
+        repo=REPO,
+        node=args.node,
+    )
+
+
+_SIMPLE = {"progress": _progress, "scripted-h2h": _scripted, "best-response": _best_response}
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -685,6 +760,7 @@ def main(argv: list[str] | None = None) -> int:
         ProgressError,
         ProgressRecordError,
         ScriptedError,
+        BestResponseError,
         EvalDatasetError,
         LookError,
         OSError,

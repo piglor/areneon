@@ -829,3 +829,36 @@ python -m areneon_ml.loop scripted-h2h --config RUN_CONFIG.json \
 - **Look log.** Every run appends a `scripted-h2h` line to the validation look log before the
   result is shown (`<H2H_DIR>.looks.jsonl`, or `--looks` to share one chain across a fixed run and
   its replication). Validation is never quoted as held-out evidence.
+
+## 8. Is the Preview exploitable? Best-response gain, the blind control and the room (E0-P)
+
+An evaluation-only responder with white-box access to a frozen pair's weights (ADR-029 section 2)
+chooses its Team Preview against the pair from a payoff table, with no game outcome, and the
+pair's own Battle network plays every game. It measures how much a responder that knows the
+evaluated policy gains over the pair against itself (BRG), how much of that gain needs the
+knowledge (the blind control `BRG_blind` and the exploitation margin `BRG - BRG_blind`) and the
+room the table leaves the pair's own Preview (R).
+
+```bash
+python -m areneon_ml.loop best-response --run-dir RUN --generation G --mode argmax --pairs 200 \
+  --worlds 4 --k-own 16 --own-rule distinct-leads --leaf first-request --out BR_DIR \
+  --engine-data fixtures/showdown/gen9championsvgc2026regmc/engine-data.json \
+  --eval-dataset-dir EVAL_DIR --eval-dataset-hash HASH --evaluation-key E0P-KEY \
+  [--leaf rollout:2] [--preview-budget-ms 3600000] [--looks FILE] [--node node] [--worker-python PY]
+```
+
+- **Cost.** One table is `k_own` rows by every ordered lead pair (30) by `--worlds` hypothetical
+  battles and a worker query each; a game plays four arms and builds up to two tables per
+  decision side, so a pair costs minutes at the real network size. Size `--pairs`, `--worlds` and
+  `--k-own` to the machine before a long run (nothing shards the games).
+- **Output.** `BR_DIR/best-response.json` (a `BestResponseRecord`; new directory, never
+  overwritten) and one printed JSON line: the record hash and, per statistic, the mean and the
+  pair-level bootstrap interval (`progress/stats.py`, descriptive, conditional on the fixed
+  validation plan): BRG, `BRG_blind`, the margin and R, each arm's pair score, forfeits by arm and
+  cause, how many decisions fell back to the pair's own Preview and why, how often the responder
+  and the blind control chose alike, and the work the tables did.
+- **Labels.** "Evaluation-only responder with white-box access to the evaluated policy's weights;
+  a conditional lower bound on validation teams; not the Training gate; never held-out evidence."
+  A pair that reads candidate features is refused.
+- **Look log.** Every run appends a `best-response` line to the validation look log before the
+  result is shown (`<BR_DIR>.looks.jsonl`, or `--looks`), naming the evaluation key when given.
