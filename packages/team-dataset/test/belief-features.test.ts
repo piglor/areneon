@@ -130,6 +130,28 @@ describe("the memo", () => {
   });
 });
 
+describe("the memo's edges and the errors", () => {
+  const c = decisions.find((d) => d.input.flags.length === 0 && d.input.state.turn > 0) as (typeof decisions)[number];
+
+  it("keeps at most 256 blocks, oldest first out, and every answer still equals a recomputation", () => {
+    const port = createBeliefFeatures({ engine, vocabulary, reader_sha256: readerSha256(), manifest, arm: "generator-matched" }, files);
+    const variant = (n: number) => {
+      const o = structuredClone(c.input.state.opponent);
+      (o.roster[0] as (typeof o.roster)[number]).moves_revealed = [`move${n}`];
+      return o;
+    };
+    const first = JSON.stringify(port.sheet({ opponent: variant(0), flags: [], trapping: null }));
+    for (let n = 1; n <= 256; n++) port.sheet({ opponent: variant(n), flags: [] });
+    expect(JSON.stringify(port.sheet({ opponent: variant(0), flags: [] }))).toBe(first); // evicted, recomputed
+  });
+
+  it("an error that is not the model's refusal propagates, and nothing is kept", () => {
+    const port = portOf();
+    const trapping = { observed: [], shows: () => [] };
+    expect(() => port.sheet({ opponent: {} as never, flags: [], trapping })).toThrow(TypeError);
+  });
+});
+
 describe("the vocabulary is the one the prior was derived against", () => {
   it("the port's belief identity binds the vocabulary hash (a pin bump or a changed vocabulary is another identity)", () => {
     expect(teamVocabularyHash(vocabulary)).toMatch(/^[0-9a-f]{64}$/);

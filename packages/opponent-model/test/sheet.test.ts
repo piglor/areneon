@@ -108,6 +108,43 @@ describe("the cut to k, the residual and the nature that no named spread backs",
   });
 });
 
+describe("ties, merged natures and empty fields, on a hand-made belief", () => {
+  const half = ratio(1n, 2n);
+  const fabricated = (change: (slot: Record<string, unknown>) => void, revealedMoves: string[] = []) => {
+    const i = input();
+    const b = belief(i);
+    const slots = b.slots.map((s, k) => {
+      const copy: Record<string, unknown> = { ...s };
+      if (k === 0) change(copy);
+      return copy;
+    });
+    const opponent = { ...i.opponent, roster: i.opponent.roster.map((m, k) => (k === 0 ? { ...m, moves_revealed: revealedMoves } : m)) };
+    return opponentSheet({ ...b, slots } as never, opponent, HASH).slots[0]!;
+  };
+
+  it("equal ppm sorts by id, a null item id last, whatever the order of the belief's list", () => {
+    const items = [{ id: "iy", p: ratio(1n, 3n) }, { id: null, p: ratio(1n, 3n) }, { id: "ix", p: ratio(1n, 3n) }];
+    expect(fabricated((s) => (s.items = items)).item.entries.map((e) => e.id)).toEqual(["ix", "iy", null]);
+    expect(fabricated((s) => (s.items = [...items].reverse())).item.entries.map((e) => e.id)).toEqual(["ix", "iy", null]);
+    expect(fabricated((s) => (s.items = [items[1], items[0]])).item.entries.map((e) => e.id)).toEqual(["iy", null]);
+    expect(fabricated((s) => (s.items = [items[0], items[1]])).item.entries.map((e) => e.id)).toEqual(["iy", null]);
+  });
+
+  it("spreads of one nature are summed; the other-spread entry names no nature", () => {
+    const spreads = [{ id: "adamant:0-0-0-0-0-0", p: half }, { id: "adamant:1-0-0-0-0-0", p: ratio(1n, 4n) }, { id: "other", p: ratio(1n, 4n) }];
+    expect(fabricated((s) => (s.spreads = spreads)).nature).toEqual({ source: "predicted", entries: [{ id: "adamant", ppm: 750000 }], other_ppm: 250000 });
+  });
+
+  it("an item or move list with no support is unknown, and four revealed moves make the move field revealed", () => {
+    const empty = fabricated((s) => ((s.items = []), (s.moves = [])));
+    expect(empty.item).toEqual({ source: "unknown", entries: [], other_ppm: 0 });
+    expect(empty.moves).toEqual({ source: "unknown", entries: [], slots_known: 0 });
+    const four = ["ma", "mb", "mc", "md"];
+    const full = fabricated((s) => (s.moves = four.map((id) => ({ id, p: ratio(1n) }))), four);
+    expect(full.moves).toMatchObject({ source: "revealed", slots_known: 4 });
+  });
+});
+
 describe("an unsettled identity-hiding member with a shown position: the block is unknown with a fixed code", () => {
   const i = input([SWITCH("a", "Alp", "Alpha")], { config: hidingConfig });
   const block = opponentSheet(belief(i), i.opponent, HASH);
