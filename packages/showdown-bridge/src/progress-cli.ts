@@ -112,7 +112,7 @@ export function committedPlanSeeds(runDir: string): Set<string> {
 }
 
 /** The team hashes of a run's `team-set.json`; anything else is refused (this list is what keeps trained teams out of the pool). */
-function readTeamSet(path: string): string[] {
+export function readTeamSet(path: string): string[] {
   const teams = (JSON.parse(readFileSync(path, "utf8")) as { teams?: unknown }).teams;
   if (!Array.isArray(teams) || teams.some((t) => typeof t !== "string" || !/^[0-9a-f]{64}$/.test(t))) throw new UsageError("--versus-team-set must hold a teams list of SHA-256 hashes");
   return teams as string[];

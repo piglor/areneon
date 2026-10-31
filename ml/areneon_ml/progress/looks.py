@@ -31,7 +31,7 @@ from areneon_contracts.contracts import jcs, sha256_hex
 SCHEMA_VERSION = 1
 #: The ``prev`` of the first entry: a fixed value that no entry hash can be chosen to equal.
 GENESIS = sha256_hex(b"areneon:progress-looks:genesis:v1")
-COMMANDS = ("progress", "report", "replay", "private-test", "scripted-h2h")
+COMMANDS = ("progress", "report", "replay", "private-test", "scripted-h2h", "best-response")
 SUFFIX = ".looks.jsonl"
 _KEYS = frozenset(
     {"schema_version", "seq", "prev", "at", "command", "run_id", "generations", "matches", "games"}

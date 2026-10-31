@@ -464,6 +464,40 @@ export {
   sumBeliefCounts,
   tallyScripted,
 } from "./scripted-h2h-record.ts";
+export { BEST_RESPONSE_FILE, type BestResponsePorts, parseLeaf, runBestResponseCli } from "./best-response-cli.ts";
+export {
+  ALL_COLUMNS,
+  BEST_RESPONSE_FORMAT,
+  type BestResponseClient,
+  BestResponseError,
+  type BestResponseOptions,
+  chooseResponse,
+  columnWeights,
+  decidePreview,
+  type PlayMode,
+  playBestResponse,
+  type PreviewContext,
+  type PreviewResult,
+  RESPONDER_PURPOSE,
+  type ResponderArm,
+  type ResponderDeps,
+  type ResponderSettings,
+  type ResponderTeamDraw,
+  type ResponderTeamPort,
+  type ResponderTeamSource,
+  responderStream,
+} from "./best-response.ts";
+export {
+  BEST_RESPONSE_ARMS,
+  BEST_RESPONSE_LABEL,
+  type BestResponseArm,
+  type BestResponseOutcome,
+  type BestResponseRecord,
+  BestResponseRecordError,
+  bestResponseRecordHash,
+  readBestResponseRecord,
+  tallyArm,
+} from "./best-response-record.ts";
 export { type ArmGameReport, buildScriptedRecord, playScriptedGames, SCRIPTED_POLICY_IDS, ScriptedH2HError, type ScriptedArm, scriptedArm, type ScriptedArmContext, type ScriptedPlayOptions } from "./scripted-h2h.ts";
 export {
   omniscientLogHash,

@@ -1,0 +1,883 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:areneon:schema:contracts:v1:best-response-record",
+  "title": "BestResponseRecord",
+  "description": "ADR-029 section 2 (E0-P): best-response gain of an evaluation-only responder against a frozen pair, the blind control and the room for the table, on the ADR-017 E2 plan (validation pairs from both seats, progress-seed/1 seeds, the pair as the unit). The responder has white-box access to the evaluated policy's weights and sees only public team information. A conditional lower bound and a progress view on validation teams, never the Training gate and never held-out evidence; the pair-level intervals are derived on display from the games, never stored.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "data_class",
+    "run_id",
+    "version_manifest",
+    "evaluated",
+    "teams",
+    "plan",
+    "result",
+    "games"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "data_class": {
+      "description": "Always synthetic: the evaluation runs on public, synthetic, CC0 teams only.",
+      "const": "synthetic"
+    },
+    "run_id": {
+      "description": "The run key of the evaluated run (TrainingRunConfig.seeds.run_key).",
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+    },
+    "version_manifest": {
+      "$ref": "#/$defs/VersionManifest"
+    },
+    "evaluated": {
+      "$ref": "#/$defs/Evaluated"
+    },
+    "teams": {
+      "$ref": "#/$defs/Teams"
+    },
+    "plan": {
+      "$ref": "#/$defs/Plan"
+    },
+    "result": {
+      "$ref": "#/$defs/Result"
+    },
+    "games": {
+      "description": "One row per game, in game order.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/GameRow"
+      }
+    }
+  },
+  "$defs": {
+    "VersionManifest": {
+      "description": "Replay identity of a battle (ADR-003, ADR-007): the pinned engine commit, the format, and the hashes of the engine ruleset and of Areneon's own format rules.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "showdown_commit",
+        "format_id",
+        "regulation",
+        "ruleset_hash",
+        "format_rules_hash"
+      ],
+      "properties": {
+        "showdown_commit": {
+          "description": "The pinned engine commit.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "format_id": {
+          "type": "string",
+          "pattern": "^[a-z0-9]+$"
+        },
+        "regulation": {
+          "type": "string",
+          "minLength": 1
+        },
+        "ruleset_hash": {
+          "description": "SHA-256 of the canonical engine ruleset.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "format_rules_hash": {
+          "description": "SHA-256 of Areneon's format rules record (ADR-007).",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "LatencyBudget": {
+      "description": "The per-decision latency budgets of the run's config.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "preview_ms",
+        "battle_ms"
+      ],
+      "properties": {
+        "preview_ms": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "battle_ms": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    "PayoffCounts": {
+      "description": "The payoff-table builder's counts of work done for one table (integers).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "worlds_asked",
+        "worlds_used",
+        "preview_queries",
+        "entry_attempts",
+        "entries",
+        "value_queries",
+        "rollout_choices",
+        "back_draws",
+        "clamped",
+        "clamped_low",
+        "clamped_high",
+        "game_end_entries",
+        "engine_refusals",
+        "not_move_request",
+        "worlds_dropped",
+        "rollout_capped",
+        "missing_entries"
+      ],
+      "properties": {
+        "worlds_asked": {
+          "description": "Worlds the table was asked to use (the sampled opponent teams).",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "worlds_used": {
+          "description": "Worlds whose opponent observation was evaluated.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "preview_queries": {
+          "description": "Evaluate queries on Team Preview observations.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "entry_attempts": {
+          "description": "Entries attempted: (strategy, lead pair, world).",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "entries": {
+          "description": "Entries that produced a value.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "value_queries": {
+          "description": "Evaluate queries on first-request observations (the leaf).",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "rollout_choices": {
+          "description": "Evaluate queries that chose a seat's order in a rollout.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "back_draws": {
+          "description": "Back pairs drawn (rollout leaf only).",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "clamped": {
+          "description": "Values clamped into 0..10^6.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "clamped_low": {
+          "description": "Values clamped from below.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "clamped_high": {
+          "description": "Values clamped from above.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "game_end_entries": {
+          "description": "Entries scored by the result of a game that ended first.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "engine_refusals": {
+          "description": "Entries the engine refused.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "not_move_request": {
+          "description": "Entries whose request was not a move request.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "worlds_dropped": {
+          "description": "Worlds dropped for every cell.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "rollout_capped": {
+          "description": "Rollouts stopped by the step cap.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "missing_entries": {
+          "description": "Table cells no world produced.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    "Checkpoints": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "preview",
+        "battle"
+      ],
+      "properties": {
+        "preview": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "battle": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "Evaluated": {
+      "description": "The frozen pair under evaluation. The responder has white-box access to its weights.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "generation",
+        "generation_manifest_sha256",
+        "checkpoints",
+        "mode",
+        "policy_id"
+      ],
+      "properties": {
+        "generation": {
+          "description": "The committed generation of the run whose frozen pair is evaluated.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "generation_manifest_sha256": {
+          "description": "SHA-256 of that generation's manifest file.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "checkpoints": {
+          "$ref": "#/$defs/Checkpoints"
+        },
+        "mode": {
+          "description": "The one play mode of the evaluated pair, and of the responder's Battle play.",
+          "enum": [
+            "argmax",
+            "sample"
+          ]
+        },
+        "policy_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "description": "The evaluated pair's policy id in that mode."
+        }
+      }
+    },
+    "Teams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "dataset_hash",
+        "split",
+        "pairs_used"
+      ],
+      "properties": {
+        "dataset_hash": {
+          "description": "The run's own team dataset hash.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "evaluation_dataset_hash": {
+          "description": "Present exactly when the teams are the validation split of another verified dataset (the eval-dataset option); never equal to dataset_hash.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "split": {
+          "const": "validation"
+        },
+        "pairs_used": {
+          "description": "Disjoint ordered validation team pairs played: games / 2.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    "Leaf": {
+      "description": "The payoff table's leaf (ADR-029 section 3).",
+      "type": "object",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/FirstRequestLeaf"
+        },
+        {
+          "$ref": "#/$defs/RolloutLeaf"
+        }
+      ],
+      "discriminator": {
+        "propertyName": "kind"
+      }
+    },
+    "FirstRequestLeaf": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind"
+      ],
+      "properties": {
+        "kind": {
+          "const": "first-request"
+        }
+      }
+    },
+    "RolloutLeaf": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "turns"
+      ],
+      "properties": {
+        "kind": {
+          "const": "rollout"
+        },
+        "turns": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    "Belief": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "identity_hash",
+        "prior_hash",
+        "belief_config_hash"
+      ],
+      "properties": {
+        "identity_hash": {
+          "description": "ADR-025 section 5: the belief identity hash the responder's worlds come from.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "prior_hash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "belief_config_hash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "Responder": {
+      "description": "The responder's declared settings (ADR-029 section 2). Evaluation-only, white-box access to the evaluated policy's weights; sees only public team information.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "format",
+        "payoff_leaf_format",
+        "hypothetical_battle_format",
+        "worlds",
+        "k_own",
+        "own_rule",
+        "leaf",
+        "columns",
+        "belief"
+      ],
+      "properties": {
+        "format": {
+          "description": "BEST_RESPONSE_FORMAT: bumped when the responder chooses or plays differently for the same input.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "payoff_leaf_format": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "hypothetical_battle_format": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "worlds": {
+          "description": "Opponent teams sampled from the responder's own belief per decision.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "k_own": {
+          "description": "The responder's own strategies in the table.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "own_rule": {
+          "enum": [
+            "prior-top-k",
+            "distinct-leads"
+          ]
+        },
+        "leaf": {
+          "$ref": "#/$defs/Leaf"
+        },
+        "columns": {
+          "description": "Every ordered lead pair of the evaluated side's strategies is a column; the blind control weighs them equally.",
+          "const": "all-lead-pairs"
+        },
+        "belief": {
+          "$ref": "#/$defs/Belief"
+        }
+      }
+    },
+    "Plan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "seed_derivation",
+        "pairing",
+        "games",
+        "max_turns",
+        "latency_budget_ms",
+        "responder_preview_budget_ms",
+        "responder"
+      ],
+      "properties": {
+        "seed_derivation": {
+          "const": "progress-seed/1"
+        },
+        "pairing": {
+          "const": "progress-pairing/1"
+        },
+        "games": {
+          "description": "Games played (even): game g is pair g / 2 rounded down, played twice, team A on p1 for an even g and on p2 for an odd g; teams stay on their seats.",
+          "type": "integer",
+          "minimum": 2,
+          "maximum": 9007199254740991
+        },
+        "max_turns": {
+          "description": "A game still running past this many turns is a tie.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "latency_budget_ms": {
+          "$ref": "#/$defs/LatencyBudget"
+        },
+        "responder_preview_budget_ms": {
+          "description": "The Team Preview latency budget the games were played under: the responder's table is built inside the Preview decision, so it is far larger than the run's.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "evaluation_key": {
+          "description": "Present exactly when --evaluation-key keyed the pairs and seeds instead of the run key.",
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+        },
+        "responder": {
+          "$ref": "#/$defs/Responder"
+        }
+      }
+    },
+    "ForfeitCount": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "side",
+        "cause",
+        "count"
+      ],
+      "properties": {
+        "side": {
+          "enum": [
+            "focal",
+            "other"
+          ]
+        },
+        "cause": {
+          "type": "string",
+          "pattern": "^[a-z][a-z_]{0,63}$"
+        },
+        "count": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    "Tally": {
+      "description": "One arm's games from the focal side.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "wins",
+        "losses",
+        "ties",
+        "turn_cap_ties",
+        "turns_total",
+        "forfeits"
+      ],
+      "properties": {
+        "wins": {
+          "description": "Games the focal side won (a forfeit by the other side included).",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "losses": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "ties": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "turn_cap_ties": {
+          "description": "Ties that ran past max_turns.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "turns_total": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "forfeits": {
+          "description": "Forfeited games by failing side then cause: sorted, each pair once. A forfeit is a scored loss for that side.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ForfeitCount"
+          }
+        }
+      }
+    },
+    "Result": {
+      "description": "Focal side: team B's for the mirror, the responder and the blind control; team A's for the room arm.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mirror",
+        "responder",
+        "blind",
+        "room"
+      ],
+      "properties": {
+        "mirror": {
+          "$ref": "#/$defs/Tally"
+        },
+        "responder": {
+          "$ref": "#/$defs/Tally"
+        },
+        "blind": {
+          "$ref": "#/$defs/Tally"
+        },
+        "room": {
+          "$ref": "#/$defs/Tally"
+        }
+      }
+    },
+    "Played": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "winner",
+        "turns"
+      ],
+      "properties": {
+        "kind": {
+          "const": "played"
+        },
+        "winner": {
+          "enum": [
+            "focal",
+            "other",
+            "tie"
+          ]
+        },
+        "turns": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    "Forfeit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "loser",
+        "cause",
+        "request_seq",
+        "turns"
+      ],
+      "properties": {
+        "kind": {
+          "const": "forfeit"
+        },
+        "loser": {
+          "enum": [
+            "focal",
+            "other"
+          ]
+        },
+        "cause": {
+          "type": "string",
+          "pattern": "^[a-z][a-z_]{0,63}$"
+        },
+        "request_seq": {
+          "description": "The failing side's own request number.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "turns": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    "Outcome": {
+      "description": "How one game ended, seen from the focal side.",
+      "type": "object",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/Played"
+        },
+        {
+          "$ref": "#/$defs/Forfeit"
+        }
+      ],
+      "discriminator": {
+        "propertyName": "kind"
+      }
+    },
+    "Choice": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "arm",
+        "rank",
+        "key",
+        "expected_ppm",
+        "columns_used"
+      ],
+      "properties": {
+        "arm": {
+          "enum": [
+            "responder",
+            "blind",
+            "room"
+          ]
+        },
+        "rank": {
+          "description": "Index of the chosen strategy among the table's own strategies (by prior mass, ties canonical).",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "key": {
+          "type": "string",
+          "pattern": "^[0-9]{2}\\|[0-9]*$",
+          "description": "The chosen strategy: ordered lead pair, then the sorted back set, as the responder's own team positions."
+        },
+        "expected_ppm": {
+          "description": "Floor of the weighted mean of the strategy's row of the table under the arm's column weights.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000
+        },
+        "columns_used": {
+          "description": "Columns with an entry in every row that carried weight.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    "TableDecision": {
+      "description": "A decision made from a payoff table.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "counts",
+        "worlds_unstarted",
+        "worlds_refused",
+        "own",
+        "columns",
+        "complete",
+        "choices"
+      ],
+      "properties": {
+        "kind": {
+          "const": "table"
+        },
+        "counts": {
+          "$ref": "#/$defs/PayoffCounts"
+        },
+        "worlds_unstarted": {
+          "description": "Sampled opponent teams that could not be started as a hypothetical battle (the validator refused the whole team): worlds_asked + worlds_unstarted + worlds_refused is the plan's worlds.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "worlds_refused": {
+          "description": "Draws the belief refused (for example a legality redraw limit): never started.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "own": {
+          "description": "Rows: the responder's own strategies.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "columns": {
+          "description": "Columns: the evaluated side's ordered lead pairs.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "complete": {
+          "type": "boolean",
+          "description": "Every entry present."
+        },
+        "choices": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Choice"
+          }
+        }
+      }
+    },
+    "FallbackDecision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "code"
+      ],
+      "properties": {
+        "kind": {
+          "const": "fallback"
+        },
+        "code": {
+          "type": "string",
+          "pattern": "^[a-z][a-z_]{0,63}$",
+          "description": "Why no table was used: the belief's refusal code, or no_world, no_complete_column. The arm then played the evaluated pair's own Preview."
+        }
+      }
+    },
+    "Decision": {
+      "description": "One responder decision: the table and the choices made from it, or why none was made.",
+      "type": "object",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/TableDecision"
+        },
+        {
+          "$ref": "#/$defs/FallbackDecision"
+        }
+      ],
+      "discriminator": {
+        "propertyName": "kind"
+      }
+    },
+    "GameRow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "game",
+        "pair",
+        "a_seat",
+        "mirror",
+        "responder",
+        "blind",
+        "room",
+        "b_decision",
+        "a_decision"
+      ],
+      "properties": {
+        "game": {
+          "description": "Game index: its pair is game / 2 rounded down.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "pair": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "a_seat": {
+          "description": "p1 for an even game, p2 for an odd one: the sides swap seats, the teams do not.",
+          "enum": [
+            "p1",
+            "p2"
+          ]
+        },
+        "mirror": {
+          "description": "The evaluated pair on both teams; the focal side is team B's.",
+          "$ref": "#/$defs/Outcome"
+        },
+        "responder": {
+          "description": "The responder on team B against the evaluated pair on team A; focal is team B's side.",
+          "$ref": "#/$defs/Outcome"
+        },
+        "blind": {
+          "description": "The blind-control responder on team B; focal is team B's side.",
+          "$ref": "#/$defs/Outcome"
+        },
+        "room": {
+          "description": "The responder on team A against the evaluated pair on team B; focal is team A's side.",
+          "$ref": "#/$defs/Outcome"
+        },
+        "b_decision": {
+          "description": "Team B's responder decision (the responder and blind choices share one table).",
+          "$ref": "#/$defs/Decision"
+        },
+        "a_decision": {
+          "description": "Team A's responder decision (the room arm).",
+          "$ref": "#/$defs/Decision"
+        }
+      }
+    }
+  }
+}
