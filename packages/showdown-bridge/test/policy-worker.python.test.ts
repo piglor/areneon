@@ -132,8 +132,8 @@ describe.skipIf(!existsSync(PYTHON) && process.env.ARENEON_REQUIRE_PYTHON_WORKER
   // ADR-029 section 3 (#1256): the payoff table of a Team Preview decision from the real networks is the same integers on a rerun, for both leaves.
   it("builds bit-identical Team Preview payoff tables on a rerun, first-request and rollout leaves", async () => {
     const opponent = importPaste(engine, readFileSync(join(TEAMS_DIR, "legal-opponent.txt"), "utf8"));
-    const channel = JSON.parse(readFileSync(join(GOLDEN_DIR, "channels/p1.json"), "utf8")) as { lines: string[] };
-    const own_request = (channel.lines.find((line) => line.startsWith("|request|")) as string).slice("|request|".length);
+    const channel = JSON.parse(readFileSync(join(GOLDEN_DIR, "channels/p1.json"), "utf8")) as { channel: { lines: string[] } };
+    const own_request = (channel.channel.lines.find((line) => line.startsWith("|request|")) as string).slice("|request|".length);
     const tables = async (leaf: PayoffConfig["leaf"]) => {
       const client = new PolicyWorkerClient(options());
       await client.start();

@@ -36,8 +36,8 @@ let worlds: PokemonSet[][];
 /** Our REAL Team Preview request: the golden battle's first request for p1, whose team is the synthetic team. */
 let REAL: string;
 beforeAll(() => {
-  const log = JSON.parse(readFileSync(join(GOLDEN_DIR, "channels/p1.json"), "utf8")) as { lines: string[] };
-  REAL = (log.lines.find((line) => line.startsWith("|request|")) as string).slice("|request|".length);
+  const log = JSON.parse(readFileSync(join(GOLDEN_DIR, "channels/p1.json"), "utf8")) as { channel: { lines: string[] } };
+  REAL = (log.channel.lines.find((line) => line.startsWith("|request|")) as string).slice("|request|".length);
   engine = loadEngine();
   own = syntheticTeam();
   const base = importPaste(engine, readFileSync(join(TEAMS_DIR, "legal-opponent.txt"), "utf8"));
