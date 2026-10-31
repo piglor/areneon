@@ -3,7 +3,7 @@
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { OpponentSheet } from "@areneon/schema/types/v1/opponent-sheet.ts";
 import {
   BeliefFeaturesError,
@@ -11,6 +11,7 @@ import {
   createSheetBuilder,
   opponentSheetProblem,
   SheetInputError,
+  SheetTotals,
   sheetForChannel,
   sheetStatement,
   refusedSharePpm,
@@ -126,5 +127,21 @@ describe("sheetForChannel and the worker statement", () => {
 
   it("states the opponent-sheet/1 source with the port's feature set hash", () => {
     expect(sheetStatement({ port: portOf([]) })).toEqual({ feature_set: "opponent-sheet/1", feature_set_hash: HASH });
+  });
+});
+
+describe("the totals of a process's games", () => {
+  it("sum the builders' counts, refusals sorted by code, and report them to stderr", () => {
+    const totals = new SheetTotals();
+    totals.add(0, [{ requests: 3, refused: 1, refusals: [{ code: "reader_flagged", count: 1 }] }, { requests: 2, refused: 0, refusals: [] }]);
+    totals.add(1, [{ requests: 4, refused: 2, refusals: [{ code: "disguise_unsettled", count: 1 }, { code: "reader_flagged", count: 1 }] }]);
+    expect(totals.summary()).toEqual({ requests: 9, refused: 3, refusals: [{ code: "disguise_unsettled", count: 1 }, { code: "reader_flagged", count: 2 }] });
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      totals.report();
+      expect(error.mock.calls.flat().join(" ")).toContain('"requests":9');
+    } finally {
+      error.mockRestore();
+    }
   });
 });

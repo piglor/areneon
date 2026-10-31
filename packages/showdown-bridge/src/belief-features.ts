@@ -145,3 +145,29 @@ export function sheetForChannel(builder: SheetBuilder, input: { readonly player:
   const request = run.requests[frame.request - 1] as EngineRequest;
   return builder.build({ request, team: input.team, state: frame.state, flags: run.flags });
 }
+
+/** The sheet builders' counts of one process's games, summed (a generation's blocks and refusals by code). */
+export class SheetTotals {
+  #requests = 0;
+  #refused = 0;
+  readonly #byCode = new Map<string, number>();
+
+  /** Add the counts of one game's builders (usable as `on_sheet_counts`). */
+  readonly add = (_game: number, counts: readonly SheetCounts[]): void => {
+    for (const c of counts) {
+      this.#requests += c.requests;
+      this.#refused += c.refused;
+      for (const { code, count } of c.refusals) this.#byCode.set(code, (this.#byCode.get(code) ?? 0) + count);
+    }
+  };
+
+  /** The totals as one canonical-order object: refusals sorted by code. */
+  summary(): SheetCounts {
+    return { requests: this.#requests, refused: this.#refused, refusals: [...this.#byCode].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).map(([code, count]) => ({ code, count })) };
+  }
+
+  /** Write the totals to stderr (they are not in the run files yet). */
+  readonly report = (): void => {
+    console.error(`play-generation: opponent sheet blocks of this process's games: ${JSON.stringify(this.summary())}`);
+  };
+}

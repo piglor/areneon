@@ -18,7 +18,7 @@ import { type Json, jcs } from "./canonical-json.ts";
 import { ChunkedFileWriter, readFileLines } from "./chunked-file.ts";
 import { resolveFormat } from "./formats.ts";
 import type { BeliefWorldsFactory } from "./damage-aware-worlds.ts";
-import type { BeliefFeaturesFactory, SheetCounts } from "./belief-features.ts";
+import { type BeliefFeaturesFactory, SheetTotals } from "./belief-features.ts";
 import { PolicyWorkerClient } from "./policy-worker.ts";
 import { largest, ownPeakRss } from "./process-usage.ts";
 import { readTrainingRunConfig, runConfigHash } from "./training-run-config.ts";
@@ -160,16 +160,12 @@ export async function runGenerationCli(
     console.error(`play-generation: ${error.message}`);
     return 1;
   }
-  // The sheet builders' counts of this process's games, summed; written to stderr at the end (not persisted in the run files yet).
-  const sheetTotals = { requests: 0, refused: 0, refusals: new Map<string, number>() };
-  const onSheetCounts = (_game: number, counts: readonly SheetCounts[]): void => {
-    for (const c of counts) {
-      sheetTotals.requests += c.requests;
-      sheetTotals.refused += c.refused;
-      for (const { code, count } of c.refusals) sheetTotals.refusals.set(code, (sheetTotals.refusals.get(code) ?? 0) + count);
-    }
-  };
-  const sheetOptions = sheet === undefined ? {} : { sheet: sheet.setup, on_sheet_counts: onSheetCounts };
+  // The sheet builders' counts of this process's games, summed and written to stderr at the end (not in the run files yet).
+  const totals = new SheetTotals();
+  const sheetArgs =
+    sheet === undefined
+      ? { client: {}, options: {}, report: () => undefined }
+      : { client: { sheet: sheet.statement }, options: { sheet: sheet.setup, on_sheet_counts: totals.add }, report: totals.report };
   const makeClient = (): PolicyWorkerClient => new PolicyWorkerClient({
     command: need("worker-python"),
     args: [
@@ -181,7 +177,7 @@ export async function runGenerationCli(
     n_parallel,
     handshake_timeout_ms,
     ...(features === undefined ? {} : { features: features.statement }),
-    ...(sheet === undefined ? {} : { sheet: sheet.statement }),
+    ...sheetArgs.client,
     expect: {
       encoder_version: need("encoder-version"),
       engine_data_hash: dataHash,
@@ -219,7 +215,7 @@ export async function runGenerationCli(
       process.stdin.resume();
       (process.stdin as unknown as { unref?: () => void }).unref?.(); // an open pipe must not keep the finished process alive
       // It plays the slice and leaves it for the process that started this one.
-      const entries = await playEntries({ engine, config, generation, policy_id: need("policy-id"), client, peers, pool, episodes_dir: episodesDir, belief_worlds: beliefWorlds, ...(features === undefined ? {} : { features: features.configs }), ...sheetOptions, features_dir: featuresDir }, own);
+      const entries = await playEntries({ engine, config, generation, policy_id: need("policy-id"), client, peers, pool, episodes_dir: episodesDir, belief_worlds: beliefWorlds, ...(features === undefined ? {} : { features: features.configs }), ...sheetArgs.options, features_dir: featuresDir }, own);
       mkdirSync(need("out"), { recursive: true });
       writeShardFile(join(need("out"), SHARD_FILE), entries);
       writeFileSync(join(need("out"), USAGE_FILE), `${jcs(usageOf(ownPeakRss(), largest(clients.map((worker) => worker.peakRssBytes()))) as unknown as Json)}\n`);
@@ -229,9 +225,9 @@ export async function runGenerationCli(
     const others = Promise.all(children.map((child) => child.entries));
     // The stream goes straight to its file in chunks as the examples are made (#998).
     mkdirSync(need("out"), { recursive: true });
-    const result = await playGeneration({ engine, config, generation, policy_id: need("policy-id"), client, peers, pool, stream_path: join(need("out"), "stream.jsonl"), episodes_dir: episodesDir, belief_worlds: beliefWorlds, ...(features === undefined ? {} : { features: features.configs }), ...sheetOptions, features_dir: featuresDir, ...(own === undefined ? {} : { shard: own }), others: others.then((all) => all.flat()), live_children: () => children.filter((child) => child.alive()).length });
+    const result = await playGeneration({ engine, config, generation, policy_id: need("policy-id"), client, peers, pool, stream_path: join(need("out"), "stream.jsonl"), episodes_dir: episodesDir, belief_worlds: beliefWorlds, ...(features === undefined ? {} : { features: features.configs }), ...sheetArgs.options, features_dir: featuresDir, ...(own === undefined ? {} : { shard: own }), others: others.then((all) => all.flat()), live_children: () => children.filter((child) => child.alive()).length });
     writeGeneration(need("out"), result);
-    if (sheet !== undefined) console.error(`play-generation: opponent sheet blocks of this process's games: ${jcs({ requests: sheetTotals.requests, refused: sheetTotals.refused, refusals: [...sheetTotals.refusals].sort(([a], [b]) => (a < b ? -1 : 1)).map(([code, count]) => ({ code, count })) } as unknown as Json)}`);
+    sheetArgs.report();
     print(jcs({ generation, run_config_hash: await runConfigHash(config), training_set_hash: result.training_set_hash, examples: result.set.examples }));
     // After the summary line, so a reader of the first line is unchanged: the peak memory of this process, its workers and the further game processes.
     const usage = combineUsage([usageOf(ownPeakRss(), largest(clients.map((worker) => worker.peakRssBytes()))), ...(await Promise.all(children.map((child) => child.usage)))]);

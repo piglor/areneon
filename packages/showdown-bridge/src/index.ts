@@ -723,5 +723,5 @@ export {
   type PayoffWorld,
   type Strategy as PreviewStrategy,
 } from "./preview-payoff.ts";
-export { type BeliefFeaturesContext, type BeliefFeaturesFactory, type BeliefFeaturesPort, BeliefFeaturesError, createSheetBuilder, refusedSharePpm, SHEET_FEATURE_SET, SheetInputError, sheetForChannel, sheetStatement, type SheetBuilder, type SheetCounts, type SheetInput, type SheetKValues, type SheetSetup } from "./belief-features.ts";
+export { type BeliefFeaturesContext, type BeliefFeaturesFactory, type BeliefFeaturesPort, BeliefFeaturesError, createSheetBuilder, refusedSharePpm, SHEET_FEATURE_SET, SheetInputError, SheetTotals, sheetForChannel, sheetStatement, type SheetBuilder, type SheetCounts, type SheetInput, type SheetKValues, type SheetSetup } from "./belief-features.ts";
 export { OpponentSheetError, opponentSheetProblem, readOpponentSheet } from "./opponent-sheet.ts";
