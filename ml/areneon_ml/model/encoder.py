@@ -32,6 +32,7 @@ import torch
 from areneon_contracts.contracts import jcs, sha256_hex
 
 from areneon_ml.model import features as rows_of
+from areneon_ml.model import sheet as sheet_of
 from areneon_ml.model.candidates import (
     EVENTS,
     SLOTS,
@@ -48,6 +49,7 @@ from areneon_ml.model.options import (
     Options,
     feature_set,
     is_set,
+    sheet_set,
     with_options,
 )
 from areneon_ml.reducer import (
@@ -192,6 +194,20 @@ def _priority_columns(config: EncoderConfig) -> tuple[tuple[str, str], ...]:
     )
 
 
+def _sheet(config: EncoderConfig) -> bool:
+    return sheet_set(config.options) is not None
+
+
+def _sheet_cat(config: EncoderConfig) -> tuple[tuple[str, str], ...]:
+    """The ``opponent_sheet`` categories of a Pokémon token (model/sheet.py). Empty unless set."""
+    return sheet_of.CAT_COLUMNS if _sheet(config) else ()
+
+
+def _sheet_num(config: EncoderConfig) -> tuple[str, ...]:
+    """The ``opponent_sheet`` numbers of a Pokémon token. Empty unless set."""
+    return sheet_of.NUM_COLUMNS if _sheet(config) else ()
+
+
 def _recent(config: EncoderConfig) -> bool:
     return is_set(config.options, RECENT_HISTORY)
 
@@ -325,6 +341,7 @@ class Layout:
                 ("active_slot", "slot"),
                 *moves,
                 *_recent_cat(config),
+                *_sheet_cat(config),
                 *_speed_columns(config),
             ),
             mon_num=(
@@ -349,6 +366,7 @@ class Layout:
                 *(f"volatile_{i}" for i in range(volatiles)),
                 *_typechange_num(config, game),
                 *_recent_mon_num(config),
+                *_sheet_num(config),
             ),
             field_cat=(("weather", "weather"), ("terrain", "terrain"), ("request", "request")),
             field_num=(
@@ -475,6 +493,9 @@ def encoder_version(game: GameData, config: EncoderConfig) -> str:
             "units": "taken: own exact hp / stat_scale, opponent points / percent_scale; "
             "dealt: own actor points / percent_scale, opponent actor exact hp / stat_scale",
         }
+    if _sheet(config):
+        # The set and its hash are in the config; the words, k values and scales are constants.
+        body["constants"]["opponent_sheet"] = sheet_of.CONSTANTS
     if feature_set(config.options) is not None:
         # The set and its hash are in the config; these are the index constants and scales.
         body["constants"]["features"] = {
@@ -613,11 +634,12 @@ class Encoder:
             )
         request = self._request(state, last_request)
         rows = self._rows(query)
+        sheet = self._sheet_columns(query, state)
         probe = self._probe(query, request, state) if _reads_arrays(self.config) else None
         candidates = [
             self._candidate(c, request, wanted, state, rows, probe) for c in query["candidates"]
         ]
-        return self._assemble(observation["kind"], state, field_features, candidates, probe)
+        return self._assemble(observation["kind"], state, field_features, candidates, probe, sheet)
 
     # -- tokens --------------------------------------------------------------
 
@@ -907,6 +929,42 @@ class Encoder:
         except ValueError as exc:
             raise EncodingError(str(exc)) from exc
 
+    def _sheet_columns(
+        self, query: Mapping[str, Any], state: BattleState
+    ) -> list[tuple[list[int], list[float]]] | None:
+        """The ``opponent_sheet`` columns of every token (own first), or None without the option.
+
+        The query must carry exactly the set the config names; the block's slots are the
+        opponent's preview entries in order (a phantom entry has none), each named by its
+        species, which must be the reducer's base species of that entry. A block under a config
+        without the option is ignored.
+        """
+        wanted = sheet_set(self.config.options)
+        sent = query.get("opponent_sheet")
+        if wanted is None:
+            return None
+        if sent is None:
+            raise EncodingError("the query has no opponent_sheet, which this encoder needs")
+        source = sent["source"]
+        if source["hash"] != wanted.feature_set_hash:
+            raise EncodingError("the query's opponent_sheet is of another feature set")
+        previewed = [m for m in state.opponent.roster if not m.phantom]
+        if len(sent["slots"]) != len(previewed):
+            raise EncodingError("the opponent_sheet has not one slot per previewed opponent")
+        by_mon: dict[int, tuple[list[int], list[float]]] = {}
+        for mon, slot in zip(previewed, sent["slots"], strict=True):
+            if slot["species"] != mon.base_species:
+                raise EncodingError("an opponent_sheet slot is of another species than its entry")
+            try:
+                by_mon[id(mon)] = sheet_of.slot_columns(self.game, sent, slot)
+            except sheet_of.SheetError as exc:
+                raise EncodingError(str(exc)) from exc
+        none = sheet_of.none_columns()
+        return [
+            *(none for _ in state.own.roster),
+            *(by_mon.get(id(m), none) for m in state.opponent.roster),
+        ]
+
     def _own_token(self, request: _Request, position: int) -> int:
         """The token of the own Pokémon at ``position`` of the request's ``side.pokemon``."""
         if not 0 <= position < len(request.order):
@@ -1180,7 +1238,7 @@ class Encoder:
 
     # -- assembly ------------------------------------------------------------
 
-    def _assemble(
+    def _assemble(  # noqa: PLR0913, PLR0917
         self,
         kind: str,
         state: BattleState,
@@ -1189,6 +1247,7 @@ class Encoder:
             tuple[list[list[int]], list[list[int]], list[int], float, list[list[float]]]
         ],
         probe: _Probe | None = None,
+        sheet: list[tuple[list[int], list[float]]] | None = None,
     ) -> EncodedQuery:
         own = [(state.own, mon) for mon in state.own.roster]
         opponent = [(state.opponent, mon) for mon in state.opponent.roster]
@@ -1207,13 +1266,21 @@ class Encoder:
             n_own=len(own),
             mon_cat=torch.tensor(
                 [
-                    [*self._mon_cat(s, m), *(probe.speed_cols.get(i, none) if probe else [])]
+                    [
+                        *self._mon_cat(s, m),
+                        *(sheet[i][0] if sheet else []),
+                        *(probe.speed_cols.get(i, none) if probe else []),
+                    ]
                     for i, (s, m) in enumerate(rows)
                 ],
                 dtype=torch.int64,
             ),
             mon_num=torch.tensor(
-                [self._mon_num(m, state.turn) for _, m in rows], dtype=torch.float32
+                [
+                    [*self._mon_num(m, state.turn), *(sheet[i][1] if sheet else [])]
+                    for i, (_, m) in enumerate(rows)
+                ],
+                dtype=torch.float32,
             ),
             field_cat=torch.tensor(field_cat, dtype=torch.int64),
             field_num=torch.tensor(field_num, dtype=torch.float32),

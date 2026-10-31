@@ -145,6 +145,17 @@ describe("ties, merged natures and empty fields, on a hand-made belief", () => {
   });
 });
 
+describe("a zero-probability option does not stop a fact from being revealed", () => {
+  it("is filtered before the single-entry test", () => {
+    const i = input();
+    const b = belief(i);
+    const slots = b.slots.map((s, k) => (k === 0 ? { ...s, items: [{ id: "ix", p: ratio(1n) }, { id: "iy", p: ratio(0n) }] } : s));
+    const roster = i.opponent.roster.map((m, k) => (k === 0 ? { ...m, item: "ix", item_known: true } : m));
+    const block = opponentSheet({ ...b, slots } as never, { ...i.opponent, roster }, HASH);
+    expect(block.slots[0]!.item).toEqual({ source: "revealed", entries: [{ id: "ix", ppm: 1_000_000 }], other_ppm: 0 });
+  });
+});
+
 describe("an unsettled identity-hiding member with a shown position: the block is unknown with a fixed code", () => {
   const i = input([SWITCH("a", "Alp", "Alpha")], { config: hidingConfig });
   const block = opponentSheet(belief(i), i.opponent, HASH);

@@ -92,11 +92,11 @@ class _Collector:
                 {
                     "observation": observation,
                     "candidates": candidates,
-                    **(
-                        {"candidate_features": example["candidate_features"]}
-                        if "candidate_features" in example
-                        else {}
-                    ),
+                    **{
+                        key: example[key]
+                        for key in ("candidate_features", "opponent_sheet")
+                        if key in example
+                    },
                 }
             )
         )

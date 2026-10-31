@@ -130,6 +130,33 @@ describe("the memo", () => {
   });
 });
 
+describe("the memo and the trapping check", () => {
+  const c = decisions.find((d) => d.input.flags.length === 0 && d.input.state.turn > 0) as (typeof decisions)[number];
+  const args = { opponent: c.input.state.opponent, flags: c.input.flags };
+
+  it("a check that observes nothing is ignored by the belief, so it is memoised like no check", () => {
+    const port = portOf();
+    let asked = 0;
+    const silent = { observed: [] as never[], shows: () => (asked += 1, []) };
+    const plain = JSON.stringify(portOf().sheet(args));
+    expect(JSON.stringify(port.sheet({ ...args, trapping: silent }))).toBe(plain);
+    expect(JSON.stringify(port.sheet({ ...args, trapping: silent }))).toBe(plain);
+    expect(JSON.stringify(port.sheet(args))).toBe(plain); // the same key as a call with no check
+    expect(asked).toBe(0);
+  });
+
+  it("a check that observes something is never memoised: it is asked again", () => {
+    const port = portOf();
+    let asked = 0;
+    const informative = { observed: [0 as const], shows: () => (asked += 1, [0 as const]) };
+    port.sheet({ ...args, trapping: informative });
+    const first = asked;
+    expect(first).toBeGreaterThan(0);
+    port.sheet({ ...args, trapping: informative });
+    expect(asked).toBe(2 * first);
+  });
+});
+
 describe("the memo's edges and the errors", () => {
   const c = decisions.find((d) => d.input.flags.length === 0 && d.input.state.turn > 0) as (typeof decisions)[number];
 

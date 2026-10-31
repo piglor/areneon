@@ -29,8 +29,9 @@ def _without_rqid(line: str) -> str:
 def encoder_input(query: dict[str, Any]) -> dict[str, Any]:
     """The observation and the candidates, minus ``decision_context`` and every ``rqid``.
 
-    A query's ``candidate_features`` (ADR-022 §3) are part of the view when it carries them,
-    and the key is left out when it does not, so a view without them is what it always was.
+    A query's ``candidate_features`` (ADR-022 §3) and ``opponent_sheet`` (ADR-027) are part of the
+    view when it carries them, and the keys are left out when it does not, so a view without them
+    is what it always was.
     """
     observation = {k: v for k, v in query["observation"].items() if k != "decision_context"}
     observation["identity"] = {k: v for k, v in observation["identity"].items() if k != "rqid"}
@@ -41,6 +42,8 @@ def encoder_input(query: dict[str, Any]) -> dict[str, Any]:
 def _with_features(view: dict[str, Any], query: dict[str, Any]) -> dict[str, Any]:
     if query.get("candidate_features") is not None:
         view["candidate_features"] = query["candidate_features"]
+    if query.get("opponent_sheet") is not None:
+        view["opponent_sheet"] = query["opponent_sheet"]
     return view
 
 

@@ -48,6 +48,11 @@ export interface PolicyClient {
    */
   readonly featureSet?: FeatureSetStatement | null;
   /**
+   * The opponent sheet source the worker stated at the handshake (ADR-027 slice 4), or null/absent when its checkpoints
+   * need none. `policyActor` attaches `opponent_sheet` only for a client that states one.
+   */
+  readonly sheetSource?: FeatureSetStatement | null;
+  /**
    * Ask for one choice. `battle` names the game: a second query for a battle
    * that still has one outstanding is refused, so the worker never holds two.
    */
@@ -90,6 +95,11 @@ export interface PolicyWorkerOptions {
    * set, or any set when this is absent, is refused at the handshake; a worker that states none needs none.
    */
   features?: FeatureSetStatement;
+  /**
+   * The opponent sheet source this side can supply (ADR-027 slice 4): `{feature_set: "opponent-sheet/1", feature_set_hash}`. A
+   * worker that states another source, or any source when this is absent, is refused at the handshake.
+   */
+  sheet?: FeatureSetStatement;
   /** What the run expects the worker to have loaded. */
   expect: {
     encoder_version: string;
@@ -123,6 +133,7 @@ export class PolicyWorkerClient implements PolicyClient, EvaluationClient {
   #child: ChildProcessWithoutNullStreams | undefined;
   #failure: Error | undefined;
   #featureSet: FeatureSetStatement | null = null;
+  #sheetSource: FeatureSetStatement | null = null;
   #closing = false;
   #peakRss: number | null = null;
   #stderr = "";
@@ -147,6 +158,11 @@ export class PolicyWorkerClient implements PolicyClient, EvaluationClient {
   /** The feature set the worker stated at the last handshake, or null. */
   get featureSet(): FeatureSetStatement | null {
     return this.#featureSet;
+  }
+
+  /** The opponent sheet source the worker stated at the last handshake, or null. */
+  get sheetSource(): FeatureSetStatement | null {
+    return this.#sheetSource;
   }
 
   /** Spawn the worker and open the session; resolves once the handshake agrees. */
@@ -218,6 +234,12 @@ export class PolicyWorkerClient implements PolicyClient, EvaluationClient {
       throw new PolicyHandshakeError(`the worker needs the candidate feature set ${jcs(stated as unknown as Json)}, which this side cannot supply`);
     }
     this.#featureSet = stated ?? null;
+    // Likewise a stated opponent sheet source must be exactly the one this side supplies.
+    const sheet = message.opponent_sheet;
+    if (sheet !== undefined && (this.#options.sheet === undefined || !same(sheet, this.#options.sheet))) {
+      throw new PolicyHandshakeError(`the worker needs the opponent sheet source ${jcs(sheet as unknown as Json)}, which this side cannot supply`);
+    }
+    this.#sheetSource = sheet ?? null;
   }
 
   async ask(battle: string, input: PolicyQueryInput): Promise<Recommendation> {
@@ -248,6 +270,7 @@ export class PolicyWorkerClient implements PolicyClient, EvaluationClient {
       }
       const query = readPolicyQuery({ ...input, query_id: this.#nextId++ });
       this.#checkFeatures(query);
+      this.#checkSheet(query);
       const frame = encodeFrame(query, this.#options.max_line_bytes);
       return await new Promise<Recommendation | Evaluation>((resolve, reject) => {
         this.#outstanding.set(query.query_id, { query, resolve, reject });
@@ -269,6 +292,19 @@ export class PolicyWorkerClient implements PolicyClient, EvaluationClient {
       throw new PolicyProtocolError("the worker stated a feature set, but the query carries no candidate_features");
     } else if (sent.feature_set !== stated.feature_set || sent.feature_set_hash !== stated.feature_set_hash) {
       throw new PolicyProtocolError("the query's candidate_features are of another feature set than the worker stated");
+    }
+  }
+
+  /** `opponent_sheet` goes to a worker that stated a source, and then must be that source's block; to no other. */
+  #checkSheet(query: PolicyQuery): void {
+    const sent = query.opponent_sheet;
+    const stated = this.#sheetSource;
+    if (stated === null) {
+      if (sent !== undefined) throw new PolicyProtocolError("the query carries opponent_sheet, but the worker stated no sheet source");
+    } else if (sent === undefined) {
+      throw new PolicyProtocolError("the worker stated a sheet source, but the query carries no opponent_sheet");
+    } else if (sent.source.hash !== stated.feature_set_hash) {
+      throw new PolicyProtocolError("the query's opponent_sheet is of another source than the worker stated");
     }
   }
 

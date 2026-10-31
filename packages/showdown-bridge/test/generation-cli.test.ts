@@ -122,6 +122,32 @@ describe("a run config that names a candidate feature set (ADR-022)", () => {
   });
 });
 
+describe("a run config that names an opponent sheet source (ADR-027 slice 4)", () => {
+  const named = (hash: string): string => {
+    const raw = structuredClone(tiny) as { model: { encoder: { options?: unknown } } };
+    raw.model.encoder.options = { opponent_sheet: { feature_set: "opponent-sheet/1", feature_set_hash: hash } };
+    const file = join(dir, `sheet-${hash.slice(0, 4)}.json`);
+    writeFileSync(file, JSON.stringify(raw));
+    return file;
+  };
+
+  it("fails with exit 1 when the script has no factory, and when the factory's port computes another hash", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      expect(await runGenerationCli(flags(named("a".repeat(64))))).toBe(1);
+      expect(error.mock.calls.flat().join(" ")).toMatch(/no belief features factory/);
+      const factory = () => ({ features_hash: "b".repeat(64), prior_format_id: GOLDEN_FORMAT }) as never;
+      expect(await runGenerationCli(flags(named("c".repeat(64))), console.log, interimPoolSource, undefined, undefined, factory)).toBe(1);
+      expect(error.mock.calls.flat().join(" ")).toMatch(/computes as b{64}/);
+      // A matching hash gets past the setup: the next thing that fails is the worker that cannot start.
+      const matching = () => ({ features_hash: "d".repeat(64), prior_format_id: GOLDEN_FORMAT }) as never;
+      await expect(runGenerationCli(flags(named("d".repeat(64))), console.log, interimPoolSource, undefined, undefined, matching)).rejects.toThrow(/cannot start the worker|ENOENT/);
+    } finally {
+      error.mockRestore();
+    }
+  });
+});
+
 describe("a further game process", () => {
   const script = (name: string, body: string): string => {
     const file = join(dir, name);

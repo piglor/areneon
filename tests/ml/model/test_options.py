@@ -63,6 +63,7 @@ def test_only_the_registered_options_exist() -> None:
     assert set(REGISTRY["encoder"]) == {
         "candidate_matchup",
         "candidate_features",
+        "opponent_sheet",
         "candidate_target",
         "recent_history",
         "exact_volatiles",

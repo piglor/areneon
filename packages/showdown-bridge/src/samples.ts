@@ -291,6 +291,7 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
       moves: { source: "revealed", entries: ["icebeam", "protect", "surf", "thunderbolt"].map((id) => ({ id, inclusion_ppm: 1000000 })), slots_known: 4 },
     });
   const beliefSheet = sheetOf("belief", sheetSlot);
+  const sheetSetRef = { feature_set: "opponent-sheet/1", feature_set_hash: sheetHash };
   const sheetWith = (change: (slot: Record<string, unknown>) => void, base: Record<string, unknown> = beliefSheet): unknown => mutated(base, (b) => change((b.slots as Record<string, unknown>[])[0] as Record<string, unknown>));
   const field = (slot: Record<string, unknown>, name: string): Record<string, unknown> => slot[name] as Record<string, unknown>;
   const withRqid = (line: string): string =>
@@ -891,6 +892,13 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "policy-handshake/ready": ready,
     "policy-handshake/ready-features": readyWith((m) => (m.feature_set = featureSetRef)),
     "policy-handshake/ready-features-2": readyWith((m) => (m.feature_set = feature2Ref)),
+    "policy-handshake/ready-sheet": readyWith((m) => (m.opponent_sheet = sheetSetRef)),
+    "training-run-config/opponent-sheet": runConfigWith((c) => {
+      runSection(runSection(c, "model"), "encoder").options = { opponent_sheet: sheetSetRef };
+    }),
+    "clone-run-config/opponent-sheet": cloneWith((c) => {
+      runSection(runSection(c, "model"), "encoder").options = { opponent_sheet: sheetSetRef };
+    }),
     "recommendation/in-budget": {
       schema_version: 1,
       identity,
@@ -1379,6 +1387,14 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "policy-query/features-2-bad-move-id": with2(battleQuery, { foe_priorities: [{ kind: "computed", foe: 1, move: "Thunder Bolt", priority: 0 }, ...arrays2.foe_priorities.slice(1)] }),
     "training-example/features-2-float": example2({ own_priorities: [{ kind: "computed", slot: 0, move: 1, mega: false, priority: 0.5 }, ...arrays2.own_priorities.slice(1)] }),
     "training-example/features-float": featuresOnExample([{ ...rowAt(0), max_ppm: 1.5 }, ...featureRows.slice(1)]),
+    "policy-handshake/ready-short-sheet-hash": readyWith((m) => (m.opponent_sheet = { ...sheetSetRef, feature_set_hash: "abc" })),
+    "training-run-config/opponent-sheet-true": runConfigWith((c) => (runSection(runSection(c, "model"), "encoder").options = { opponent_sheet: true })),
+    "training-run-config/opponent-sheet-unknown-set": runConfigWith((c) => {
+      runSection(runSection(c, "model"), "encoder").options = { opponent_sheet: { ...sheetSetRef, feature_set: "opponent-sheet/2" } };
+    }),
+    "clone-run-config/opponent-sheet-short-hash": cloneWith((c) => {
+      runSection(runSection(c, "model"), "encoder").options = { opponent_sheet: { ...sheetSetRef, feature_set_hash: "abc" } };
+    }),
     "policy-handshake/ready-short-feature-hash": readyWith((m) => (m.feature_set = { ...featureSetRef, feature_set_hash: "abc" })),
     "policy-query/no-candidates": { ...battleQuery, candidates: [] },
     "policy-query/too-many-candidates": { ...battleQuery, candidates: candidatesOf(1025) },

@@ -169,6 +169,18 @@ class CandidateFeatures(BaseModel):
     feature_set_hash: Annotated[StrictStr, Field(pattern="^[0-9a-f]{64}$")]
 
 
+class OpponentSheet(BaseModel):
+    """
+    ADR-027 slice 4, ADR-025 erratum E4: each opponent Pokemon token also reads its slot of the opponent sheet block, which the Node side builds from the opponent belief (PolicyQuery.opponent_sheet). feature_set is opponent-sheet/1 and feature_set_hash the feature set hash the builder computes (it names the belief identity, the k values and the rounding), so a new usage prior, belief config, reader change or pin bump is another set and a fresh run. Layout changing: it changes the encoder version and the checkpoint format.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    feature_set: Literal["opponent-sheet/1"]
+    feature_set_hash: Annotated[StrictStr, Field(pattern="^[0-9a-f]{64}$")]
+
+
 class Options1(BaseModel):
     """
     Optional encoder options (ADR-010 erratum A4 item 2). Absent keeps today's bytes, hashes and checkpoints. A named option is added by the ticket of the experiment arm that needs it.
@@ -196,6 +208,10 @@ class Options1(BaseModel):
     exact_volatiles: Literal[True] | MISSING = MISSING
     """
     ADR-010 erratum A4 item 7. Volatiles and field and side conditions are exact vocabulary ids (one column per id of the engine data: its conditions, moves, abilities and items) instead of SHA-256 buckets, and a Pokemon token also carries the types a typechange set. Needs a version 2 engine-data table; an id the vocabulary does not resolve fails closed. Only true is a value (leave the key out for none). Layout changing: it changes the encoder version and the checkpoint format.
+    """
+    opponent_sheet: OpponentSheet | MISSING = MISSING
+    """
+    ADR-027 slice 4, ADR-025 erratum E4: each opponent Pokemon token also reads its slot of the opponent sheet block, which the Node side builds from the opponent belief (PolicyQuery.opponent_sheet). feature_set is opponent-sheet/1 and feature_set_hash the feature set hash the builder computes (it names the belief identity, the k values and the rounding), so a new usage prior, belief config, reader change or pin bump is another set and a fresh run. Layout changing: it changes the encoder version and the checkpoint format.
     """
 
 
