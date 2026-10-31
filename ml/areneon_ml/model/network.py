@@ -24,6 +24,7 @@ from typing import Any, cast
 import torch
 from torch import nn
 
+from areneon_ml.model import sheet as sheet_of
 from areneon_ml.model.batch import Batch
 from areneon_ml.model.candidates import EVENTS, SLOTS
 from areneon_ml.model.encoder import (
@@ -56,6 +57,7 @@ from areneon_ml.model.options import (
     layout_changing,
     option_value,
     read_options,
+    sheet_set,
     with_options,
 )
 
@@ -298,6 +300,12 @@ class PolicyNetwork(nn.Module):
             "target": TARGET_CODES,
             "event": len(EVENTS) + 1,
         }
+        if (
+            sheet_set(enc.options) is not None
+        ):  # opponent_sheet: the sheet columns are on every token
+            sizes["sheet_source"] = sheet_of.SOURCE_CATEGORIES
+            sizes["sheet_refusal"] = sheet_of.REFUSAL_CATEGORIES
+            sizes["sheet_nature"] = sheet_of.NATURE_CATEGORIES
         extra = len(self.layout.cand_cat) - BASE_CAND_COLUMNS  # option columns of a candidate
         if role == "battle" and is_set(enc.options, CANDIDATE_MATCHUP):
             # Cell categories: the reserved indices plus one per code of the export's chart.
