@@ -41,16 +41,18 @@ export async function writeFeatureRows(
 ): Promise<number> {
   mkdirSync(dir, { recursive: true });
   const setHash = configuredSetHash(engine, configs);
+  const reader = readFeatureRows(engine, configs, dir);
   let written = 0;
   for (const { hash, path } of episodes) {
     if (stopped()) break;
-    // The play-time sidecar of this Episode is already there (`writePlayRows`): nothing to build.
-    if (existsSync(rowsFile(dir, hash))) continue;
     try {
       const episode = await readEpisode(JSON.parse(readFileSync(path, "utf8")), { known_synthetic });
       if ((await episodeHash(episode, nodeSha256)) !== hash) continue;
+      const request_seqs = (await decisionObservations(episode)).map((o) => o.identity.request_seq);
+      // The play-time sidecar of this Episode (`writePlayRows`) is kept only if the reader accepts it; a stale or damaged file is rebuilt.
+      if (existsSync(rowsFile(dir, hash)) && reader(hash, request_seqs) !== undefined) continue;
       const rows = await episodeFeatureRows(episode, hash, { engine, configs });
-      writeFileSync(rowsFile(dir, hash), jcs({ episode_hash: hash, feature_set_hash: setHash, rows } as unknown as Json));
+      writeFileSync(rowsFile(dir, hash), jcs({ episode_hash: hash, feature_set_hash: setHash, request_seqs, rows } as unknown as Json));
       written++;
     } catch {
       // No file: the stream writer recomputes this Episode and reports what is wrong with it, if anything.
@@ -76,13 +78,15 @@ export async function writePlayRows(
 ): Promise<boolean> {
   const setHash = configuredSetHash(engine, configs);
   const rows: AnyCandidateFeatures[] = [];
+  const request_seqs: number[] = [];
   for (const observation of await decisionObservations(episode)) {
     const found = played.get(observation.identity.request_seq);
     if (found === undefined || found.feature_set_hash !== setHash) return false;
     rows.push(found);
+    request_seqs.push(observation.identity.request_seq);
   }
   mkdirSync(dir, { recursive: true });
-  writeFileSync(rowsFile(dir, hash), jcs({ episode_hash: hash, feature_set_hash: setHash, rows } as unknown as Json));
+  writeFileSync(rowsFile(dir, hash), jcs({ episode_hash: hash, feature_set_hash: setHash, request_seqs, rows } as unknown as Json));
   return true;
 }
 
@@ -91,12 +95,14 @@ export async function writePlayRows(
  * when there is no file, it is not for this Episode and this feature set, or it does not parse (then the rows are
  * recomputed, so a stale or damaged file can cost time but never change a byte).
  */
-export function readFeatureRows(engine: Engine, configs: FeatureConfigs, dir: string): (hash: string) => AnyCandidateFeatures[] | undefined {
+export function readFeatureRows(engine: Engine, configs: FeatureConfigs, dir: string): (hash: string, request_seqs: readonly number[]) => AnyCandidateFeatures[] | undefined {
   const setHash = configuredSetHash(engine, configs);
-  return (hash) => {
+  return (hash, request_seqs) => {
     try {
-      const found = JSON.parse(readFileSync(rowsFile(dir, hash), "utf8")) as { episode_hash?: unknown; feature_set_hash?: unknown; rows?: unknown };
+      const found = JSON.parse(readFileSync(rowsFile(dir, hash), "utf8")) as { episode_hash?: unknown; feature_set_hash?: unknown; request_seqs?: unknown; rows?: unknown };
       if (found.episode_hash !== hash || found.feature_set_hash !== setHash || !Array.isArray(found.rows)) return undefined;
+      // Each row belongs to the request the Episode's decision at that place answers.
+      if (!Array.isArray(found.request_seqs) || found.request_seqs.length !== request_seqs.length || found.request_seqs.some((seq, i) => seq !== request_seqs[i])) return undefined;
       const rows = found.rows as AnyCandidateFeatures[];
       return rows.every((row) => row.feature_set_hash === setHash) ? rows : undefined;
     } catch {

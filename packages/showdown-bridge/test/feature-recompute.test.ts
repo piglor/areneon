@@ -154,8 +154,21 @@ describe("the stream's feature rows recomputed by the game processes (#1185)", (
       expect(await writeFeatureRows(ctx, [{ hash: "0".repeat(64), path }], join(dir, "w2"))).toBe(0); // another name than its own hash
       expect(await writeFeatureRows(ctx, [{ hash, path: join(first, "episodes", "absent.json") }], join(dir, "w3"))).toBe(0);
       expect(await writeFeatureRows(ctx, [{ hash, path }], join(dir, "w4"), () => true)).toBe(0);
-      expect(readFeatureRows(engine, configs, rows)(hash)?.every((row) => row.feature_set_hash === featureSetHash(featureSetIdentity(engine, configs)))).toBe(true);
-      expect(readFeatureRows(engine, configs, rows)("1".repeat(64))).toBeUndefined();
+      const { readEpisode } = await import("../src/episode-io.ts");
+      const seqs = (await decisionObservations(await readEpisode(JSON.parse(readFileSync(path, "utf8")), { known_synthetic: known }))).map((o) => o.identity.request_seq);
+      expect(readFeatureRows(engine, configs, rows)(hash, seqs)?.every((row) => row.feature_set_hash === featureSetHash(featureSetIdentity(engine, configs)))).toBe(true);
+      expect(readFeatureRows(engine, configs, rows)("1".repeat(64), seqs)).toBeUndefined();
+      // The rows belong to the requests the Episode's decisions answer: other request numbers (or a count) are refused, and an existing file the reader refuses is rebuilt.
+      expect(readFeatureRows(engine, configs, rows)(hash, seqs.map((seq) => seq + 1))).toBeUndefined();
+      expect(readFeatureRows(engine, configs, rows)(hash, seqs.slice(1))).toBeUndefined();
+      const file = join(rows, `${hash}.rows.json`);
+      const stored = JSON.parse(readFileSync(file, "utf8")) as { request_seqs: number[] };
+      writeFileSync(file, JSON.stringify({ ...stored, request_seqs: stored.request_seqs.map((seq) => seq + 1) }));
+      expect(await writeFeatureRows(ctx, [{ hash, path }], rows)).toBe(1); // rebuilt
+      expect(readFeatureRows(engine, configs, rows)(hash, seqs)?.length).toBe(seqs.length);
+      const withoutSeqs = Object.fromEntries(Object.entries(JSON.parse(readFileSync(file, "utf8")) as Record<string, unknown>).filter(([key]) => key !== "request_seqs"));
+      writeFileSync(file, JSON.stringify(withoutSeqs)); // a file with no request numbers is not used
+      expect(readFeatureRows(engine, configs, rows)(hash, seqs)).toBeUndefined();
     }, 600_000); // one Episode's rows with the real probe
   });
 
@@ -212,7 +225,7 @@ describe("the stream's feature rows recomputed by the game processes (#1185)", (
       expect(await writePlayRows(ctx, episode, hash, other, join(dir, "other-rows"))).toBe(false);
       expect(readdirSync(join(dir)).filter((n) => n === "gap-rows" || n === "other-rows")).toEqual([]);
       expect(await writePlayRows(ctx, episode, hash, full, join(dir, "full-rows"))).toBe(true);
-      expect(readFeatureRows(engine, configs, join(dir, "full-rows"))(hash)).toEqual(JSON.parse(JSON.stringify(built)));
+      expect(readFeatureRows(engine, configs, join(dir, "full-rows"))(hash, seqs)).toEqual(JSON.parse(JSON.stringify(built)));
     }, 600_000); // one Episode's rows with the real probe
   });
 });

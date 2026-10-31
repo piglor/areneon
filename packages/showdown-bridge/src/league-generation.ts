@@ -590,7 +590,12 @@ export async function playEntries(options: GenerationOptions, shard: Shard = { i
           // The play-time sidecar: the pair's own seat leaves the rows it attached to its queries (a gap leaves nothing: the post-game pass builds them).
           const played = game.play_rows?.[seat === 0 ? "p1" : "p2"];
           if (played !== undefined && options.features !== undefined && options.features_dir !== undefined && episode.provenance.behaviour_policy_id === policy_id) {
-            await writePlayRows({ engine: options.engine, configs: options.features }, episode, hash, played, options.features_dir);
+            // A failure here skips the sidecar (the post-game pass builds the rows) and never fails the generation; it is logged without any content.
+            try {
+              await writePlayRows({ engine: options.engine, configs: options.features }, episode, hash, played, options.features_dir);
+            } catch (error) {
+              process.stderr.write(`rows sidecar skipped for game ${entry.game}: ${(error as Error).name}\n`);
+            }
           }
         }
         entries.push({ ...base, episodes: [], stored });
