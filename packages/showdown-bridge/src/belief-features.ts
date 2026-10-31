@@ -103,9 +103,13 @@ export function createSheetBuilder(context: BeliefFeaturesContext): SheetBuilder
       }
       return block;
     },
-    counts: () => ({ requests, refused, refusals: [...byCode].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).map(([code, count]) => ({ code, count })) }),
+    counts: () => ({ requests, refused, refusals: sortedByCode(byCode) }),
   };
 }
+
+/** Counts by code, sorted by code (codes are unique, so two are never equal). */
+const sortedByCode = (counts: ReadonlyMap<string, number>): { readonly code: string; readonly count: number }[] =>
+  [...counts].sort(([a], [b]) => (a < b ? -1 : 1)).map(([code, count]) => ({ code, count }));
 
 /** The share of refused blocks in parts per million (an experiment with more than 10,000 ppm refused is invalid, E4 point 5). */
 export const refusedSharePpm = (counts: Pick<SheetCounts, "requests" | "refused">): number => (counts.requests === 0 ? 0 : Math.floor((counts.refused * 1_000_000) / counts.requests));
@@ -163,7 +167,7 @@ export class SheetTotals {
 
   /** The totals as one canonical-order object: refusals sorted by code. */
   summary(): SheetCounts {
-    return { requests: this.#requests, refused: this.#refused, refusals: [...this.#byCode].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).map(([code, count]) => ({ code, count })) };
+    return { requests: this.#requests, refused: this.#refused, refusals: sortedByCode(this.#byCode) };
   }
 
   /** Write the totals to stderr (they are not in the run files yet). */
