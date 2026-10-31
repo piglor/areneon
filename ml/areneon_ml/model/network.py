@@ -622,9 +622,15 @@ class PolicyNetwork(nn.Module):
         d = self.config.d_model
         side = self.side((~batch.own_mask).long())
         if self.sheet_fields:
-            plain = self._columns_at(self.layout.mon_cat, batch.mon_cat, self._plain_cat)
+            plain = self._columns_at(
+                self.layout.mon_cat, batch.mon_cat, cast(torch.Tensor, self._plain_cat)
+            )
             tokens = self.mon_cat(torch.cat([plain, self._sheet_sums(batch)], -1))
-            mons = tokens + self.mon_num(batch.mon_num[..., self._plain_num]) + side
+            mons = (
+                tokens
+                + self.mon_num(batch.mon_num[..., cast(torch.Tensor, self._plain_num)])
+                + side
+            )
         else:
             mons = self.mon_cat(self._columns(self.layout.mon_cat, batch.mon_cat))
             mons = mons + self.mon_num(batch.mon_num) + side
