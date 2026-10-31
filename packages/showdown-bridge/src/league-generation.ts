@@ -17,7 +17,8 @@ import { jcs, type Json } from "./canonical-json.ts";
 import { type DamageAwareActor, type DamageAwareOptions, damageAwareActor } from "./damage-aware-actor.ts";
 import { type BeliefFeatureCounts, type BeliefFeatureSetup, createFeatureMemo, type FeatureConfigs, type FeatureMemo, FEATURE_SET_BELIEF } from "./candidate-features.ts";
 import { configuredSetHash } from "./feature-build.ts";
-import { type BeliefFeaturesFactory, createSheetBuilder, type SheetCounts, type SheetSetup, sheetStatement } from "./belief-features.ts";
+import { type BeliefFeaturesFactory, createSheetBuilder, type SheetSetup, sheetStatement } from "./belief-features.ts";
+import { type SheetCounts, sumSheetCounts } from "./sheet-counts.ts";
 import { checkScenario } from "./mechanics-scenario.ts";
 import { loadDamageAwareConfig, loadDamageAwareConfigV2 } from "./damage-aware-config.ts";
 import type { BeliefWorldsFactory } from "./damage-aware-worlds.ts";
@@ -354,6 +355,11 @@ export interface GameRow {
    * Absent for every other run, so those keep their bytes.
    */
   feature_belief?: BeliefRowCounts;
+  /**
+   * Only a game of a pair that reads `opponent_sheet` (ADR-025 erratum E4 point 5): the blocks its seats' builders built in this game
+   * and the refusals by code, summed over the seats. Absent for every other run, so those keep their bytes.
+   */
+  sheet?: SheetCounts;
 }
 
 /** `BeliefFeatureCounts` as a game row holds it: integers, the fallback causes sorted. */
@@ -449,6 +455,8 @@ interface PlayedOne extends PlayedGame {
   play_rows?: Partial<Record<Player, ReadonlyMap<number, AnyCandidateFeatures>>>;
   /** The pair's seats' belief counts, when the pair reads `probe-damage-belief/1`. */
   feature_belief?: BeliefRowCounts;
+  /** The pair's seats' sheet block counts, when the pair reads `opponent_sheet`. */
+  sheet?: SheetCounts;
 }
 
 async function playOne(options: GenerationOptions, plan: GamePlan, client: PolicyClient): Promise<PlayedOne> {
@@ -489,6 +497,7 @@ async function playOne(options: GenerationOptions, plan: GamePlan, client: Polic
     latency_budget: budget,
     maxTurns: settings.max_turns,
   });
+  const sheetCounts = builders.length === 0 ? undefined : sumSheetCounts(builders.map((b) => b.counts()));
   options.on_sheet_counts?.(plan.game, builders.map((b) => b.counts()));
   const belief = beliefRowCounts(Object.values(memos));
   return {
@@ -496,6 +505,7 @@ async function playOne(options: GenerationOptions, plan: GamePlan, client: Polic
     ...(baseline?.report === undefined ? {} : { baseline: baseline.report() }),
     ...(keepRows ? { play_rows: rows } : {}),
     ...(belief === undefined ? {} : { feature_belief: belief }),
+    ...(sheetCounts === undefined ? {} : { sheet: sheetCounts }),
   };
 }
 
@@ -603,7 +613,7 @@ export async function playEntries(options: GenerationOptions, shard: Shard = { i
       const { outcome, record, baseline } = game;
       const reported = baseline === undefined ? {} : { baseline };
       if (outcome.kind === "incident") throw new GenerationError(`game ${entry.game} (${entry.seed}): ${outcome.incident}: ${outcome.message}`);
-      const row = { game: entry.game, seed: entry.seed, opponent: idOf(entry.opponent, policy_id), ...(game.feature_belief === undefined ? {} : { feature_belief: game.feature_belief }) };
+      const row = { game: entry.game, seed: entry.seed, opponent: idOf(entry.opponent, policy_id), ...(game.feature_belief === undefined ? {} : { feature_belief: game.feature_belief }), ...(game.sheet === undefined ? {} : { sheet: game.sheet }) };
       if (outcome.kind === "forfeit" || record === null) {
         // A forfeit has no Episode, but it is kept the way its generation keeps them: an empty list of references on the spilled path (#1184).
         const kept = options.episodes_dir === undefined ? {} : { stored: [] };

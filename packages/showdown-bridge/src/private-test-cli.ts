@@ -23,7 +23,8 @@ import { resolveFormat } from "./formats.ts";
 import { damageAwareSetup } from "./league-generation.ts";
 import { assertGuardedChild, OwnerSessionError } from "./owner-session.ts";
 import type { BeliefWorldsFactory } from "./damage-aware-worlds.ts";
-import { frozenPairClient, type FrozenPairClientOptions, pairFeatureSetup } from "./progress-cli.ts";
+import type { BeliefFeaturesFactory } from "./belief-features.ts";
+import { frozenPairClient, type FrozenPairClientOptions, pairFeatureSetup, pairSheetSetup } from "./progress-cli.ts";
 import type { PolicyClient } from "./policy-worker.ts";
 import type { ProgressPool } from "./progress-evaluation.ts";
 import { pairsAvailable, type PrivateTestTeam, playPrivateTest } from "./private-test.ts";
@@ -116,6 +117,8 @@ export interface PrivateTestSources {
   dataset: (args: { engine: Engine; config: TrainingRunConfig }) => ProgressPool;
   /** The belief port factory of the composition root, for a pair that reads `probe-damage-belief/1`. */
   belief_worlds?: BeliefWorldsFactory;
+  /** The belief features factory of the composition root, for a pair that reads `opponent_sheet`. */
+  belief_features?: BeliefFeaturesFactory;
 }
 
 /** Test seams: the default starts the real policy worker. */
@@ -259,20 +262,27 @@ async function run(argv: readonly string[], print: (line: string) => void, sourc
   // The candidate features of the pair (and of the opponent pair, from its own run config); none: nothing changes.
   let features: ReturnType<typeof pairFeatureSetup>;
   let opponentFeatures: ReturnType<typeof pairFeatureSetup>;
+  let sheet: ReturnType<typeof pairSheetSetup>;
+  let opponentSheet: ReturnType<typeof pairSheetSetup>;
   try {
     features = pairFeatureSetup(engine, config, sources.belief_worlds);
-    if (pairParts !== undefined) opponentFeatures = pairFeatureSetup(engine, readTrainingRunConfig(JSON.parse(readFileSync(join(need("opponent-run-dir"), "run-config.json"), "utf8"))), sources.belief_worlds);
+    sheet = pairSheetSetup(engine, config, sources.belief_features);
+    if (pairParts !== undefined) {
+      const other = readTrainingRunConfig(JSON.parse(readFileSync(join(need("opponent-run-dir"), "run-config.json"), "utf8")));
+      opponentFeatures = pairFeatureSetup(engine, other, sources.belief_worlds);
+      opponentSheet = pairSheetSetup(engine, other, sources.belief_features);
+    }
   } catch {
     throw new PrivateTestRefusal("worker_failed");
   }
-  const clientFor = (pair: { preview: string; battle: string }, runDir: string, encoderVersion: string, setup: NonNullable<typeof features> | null = features ?? null): WorkerClient => {
-    const asked = { python: need("worker-python"), runDir, pair, encoderVersion, engineDataFile: dataFile, engineDataHash: dataHash, max_line_bytes, handshake_timeout_ms, ...(setup === null ? {} : { features: setup.statement }) };
+  const clientFor = (pair: { preview: string; battle: string }, runDir: string, encoderVersion: string, setup: NonNullable<typeof features> | null = features ?? null, sheetOf: NonNullable<typeof sheet> | null = sheet ?? null): WorkerClient => {
+    const asked = { python: need("worker-python"), runDir, pair, encoderVersion, engineDataFile: dataFile, engineDataHash: dataHash, max_line_bytes, handshake_timeout_ms, ...(setup === null ? {} : { features: setup.statement }), ...(sheetOf === null ? {} : { sheet: sheetOf.statement }) };
     return seams.clientFor === undefined ? frozenPairClient(asked) : seams.clientFor(asked);
   };
   const checkpoints = { preview: need("preview"), battle: need("battle") };
   const client = clientFor(checkpoints, need("run-dir"), need("encoder-version"));
   const opponentCheckpoints = pairParts === undefined ? undefined : { preview: pairParts[0] as string, battle: pairParts[1] as string };
-  const opponentClient = opponentCheckpoints === undefined ? undefined : clientFor(opponentCheckpoints, need("opponent-run-dir"), need("opponent-encoder-version"), opponentFeatures ?? null);
+  const opponentClient = opponentCheckpoints === undefined ? undefined : clientFor(opponentCheckpoints, need("opponent-run-dir"), need("opponent-encoder-version"), opponentFeatures ?? null, opponentSheet ?? null);
   try {
     try {
       await client.start();
@@ -292,9 +302,10 @@ async function run(argv: readonly string[], print: (line: string) => void, sourc
         candidate_data_class: candidateClass,
         client,
         ...(features === undefined ? {} : { features: features.configs }),
+        ...(sheet === undefined ? {} : { sheet: sheet.setup }),
         ...(opponentClient === undefined || opponentCheckpoints === undefined || pairParts === undefined
           ? {}
-          : { opponent_pair: { checkpoints: opponentCheckpoints, policy_ids: { sample: pairParts[2] as string, argmax: pairParts[3] as string }, client: opponentClient, ...(opponentFeatures === undefined ? {} : { features: opponentFeatures.configs }) } }),
+          : { opponent_pair: { checkpoints: opponentCheckpoints, policy_ids: { sample: pairParts[2] as string, argmax: pairParts[3] as string }, client: opponentClient, ...(opponentFeatures === undefined ? {} : { features: opponentFeatures.configs }), ...(opponentSheet === undefined ? {} : { sheet: opponentSheet.setup }) } }),
         ...(damageBudget === undefined ? {} : { damage_aware: { setup: damageAwareSetup(engine, config.format_id), match_budget_ms: damageBudget } }),
         teams: loaded.teams,
         source: loaded.source,

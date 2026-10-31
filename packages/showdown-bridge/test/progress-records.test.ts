@@ -263,6 +263,29 @@ describe("probe_refusals of the damage-aware counts (optional, written only abov
   });
 });
 
+describe("the opponent sheet counts of a sheet pair (ADR-025 erratum E4 point 5)", () => {
+  const V2 = "progress-evaluation-record-2";
+  it("reads the valid sample: the candidate seat's counts in every row and summed in the match", () => {
+    const record = readProgressEvaluationRecordV2(sample(`${V2}/valid/sheet-match`));
+    expect(record.matches[0]?.sheet).toEqual({ requests: 40, refused: 4, refusals: [{ code: "reader_flagged", count: 4 }] });
+    expect(record.games.every((g) => g.sheet?.requests === 10)).toBe(true);
+  });
+
+  it.each([
+    ["sheet-counts-disagree", "sheet must be the sum of the game rows"],
+    ["sheet-row-missing", "carries them in every game row"],
+    ["sheet-on-rows-only", "only a match with sheet counts in its summary"],
+    ["sheet-refused-over-requests", "more blocks refused than built"],
+    ["sheet-refusals-do-not-add-up", "do not add up to refused"],
+  ])("refuses the reader-invalid sample %s", (name, message) => {
+    expect(() => readProgressEvaluationRecordV2(sample(`${V2}/reader-invalid/${name}`))).toThrow(message);
+  });
+
+  it.each(["sheet-fractional-count", "sheet-unknown-field"])("refuses the schema-invalid sample %s", (name) => {
+    expect(() => readProgressEvaluationRecordV2(sample(`${V2}/invalid/${name}`))).toThrow(/invalid ProgressEvaluationRecordV2/);
+  });
+});
+
 describe("the search candidate's counts and the self-no-search control (ADR-026 section 5)", () => {
   const V2 = "progress-evaluation-record-2";
   it("reads the valid samples, the control's with its own counts", () => {

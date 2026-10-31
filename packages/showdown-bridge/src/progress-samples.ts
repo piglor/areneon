@@ -177,6 +177,13 @@ export async function progressSamples(engine: Engine): Promise<ProgressSamples> 
       e.games.forEach((g: any) => (g.baseline_counts = { ...gameCounts }));
       change?.(e);
     });
+  const sheetGame = { requests: 10, refused: 1, refusals: [{ code: "reader_flagged", count: 1 }] };
+  const v2Sheet = (change?: (e: Record<string, any>) => void) =>
+    withV2((e) => {
+      e.games.forEach((g: any) => (g.sheet = structuredClone(sheetGame)));
+      e.matches[0].sheet = { requests: 10 * e.games.length, refused: e.games.length, refusals: [{ code: "reader_flagged", count: e.games.length }] };
+      change?.(e);
+    });
   const v2DamageV3 = () =>
     withV2((e) => {
       renameMatch(e, "damage-aware-v3-argmax");
@@ -305,6 +312,7 @@ export async function progressSamples(engine: Engine): Promise<ProgressSamples> 
         e.matches[0].truncation = { kind: "threshold", min_ppm: 30000 };
       }),
       "progress-evaluation-record-2/damage-aware-match": v2Damage(),
+      "progress-evaluation-record-2/sheet-match": v2Sheet(),
       "progress-evaluation-record-2/damage-aware-v3-match": v2DamageV3(),
       "progress-evaluation-record-2/search-match": v2Search(),
       "progress-evaluation-record-2/search-self-no-search-match": v2SearchControl(),
@@ -343,6 +351,8 @@ export async function progressSamples(engine: Engine): Promise<ProgressSamples> 
       "progress-game-record/plan-label-malformed": withShortGame((g) => ((g.game = 1), (g.pair = 0), (g.evaluation_key = ""))),
       "progress-evaluation-record-2/fractional-wins": withV2((e) => (e.matches[0].wins = 0.5)),
       "progress-evaluation-record-2/baseline-fractional-count": v2Damage((e) => (e.games[0].baseline_counts.queries = 0.5)),
+      "progress-evaluation-record-2/sheet-fractional-count": v2Sheet((e) => (e.games[0].sheet.requests = 0.5)),
+      "progress-evaluation-record-2/sheet-unknown-field": v2Sheet((e) => (e.games[0].sheet.rate = 1)),
       "progress-evaluation-record-2/search-fractional-count": v2Search((e) => (e.games[0].search.turns = 0.5)),
       "progress-evaluation-record-2/search-no-fallbacks": v2Search((e) => delete e.games[0].search.fallbacks),
       "progress-evaluation-record-2/self-no-search-no-mode": v2SearchControl((e) => delete e.matches[0].opponent.mode),
@@ -399,6 +409,11 @@ export async function progressSamples(engine: Engine): Promise<ProgressSamples> 
       "progress-evaluation-record-2/baseline-on-other-match": withV2((e) => (e.matches[0].baseline = { identity_hash: identity, counts: gameCounts })),
       "progress-evaluation-record-2/baseline-probe-runs-exceed-queries": v2Damage((e) => ((e.games[0].baseline_counts.probe_runs = 13), (e.matches[0].baseline.counts.probe_runs += 4))),
       "progress-evaluation-record-2/baseline-identities-differ": v2DamageBoth((e) => (e.matches[1].baseline.identity_hash = hexOf("8"))),
+      "progress-evaluation-record-2/sheet-counts-disagree": v2Sheet((e) => (e.matches[0].sheet.requests += 1)),
+      "progress-evaluation-record-2/sheet-row-missing": v2Sheet((e) => delete e.games[0].sheet),
+      "progress-evaluation-record-2/sheet-on-rows-only": withV2((e) => (e.games[0].sheet = structuredClone(sheetGame))),
+      "progress-evaluation-record-2/sheet-refused-over-requests": v2Sheet((e) => ((e.games[0].sheet.requests = 0), (e.matches[0].sheet.requests -= 10))),
+      "progress-evaluation-record-2/sheet-refusals-do-not-add-up": v2Sheet((e) => ((e.games[0].sheet.refusals[0].count = 2), (e.matches[0].sheet.refusals[0].count += 1))),
       "progress-evaluation-record-2/search-counts-disagree": v2Search((e) => (e.matches[0].search.counts.turns += 1)),
       "progress-evaluation-record-2/search-row-missing": v2Search((e) => delete e.games[0].search),
       "progress-evaluation-record-2/search-misnamed": v2Search((e) => renameMatch(e, "actor-rule-argmax")),

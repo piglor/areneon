@@ -20,6 +20,8 @@ from areneon_contracts.contracts import ContractError, jcs, sha256_hex, validate
 
 from areneon_ml.learner.config import RunConfig
 from areneon_ml.loop.records import features_hash, policy_id
+from areneon_ml.loop.sheet_counts import SheetCountsError, read_sheet_counts
+from areneon_ml.loop.sheet_counts import total as sheet_total
 from areneon_ml.progress.modes import match_extra
 from areneon_ml.progress.seeds import PAIRING, SEED_DERIVATION, progress_game_seed
 
@@ -140,6 +142,30 @@ def _check_control_counts(counts: dict[str, Any], what: str) -> None:
             f"{what}: the no-search control searches nothing: "
             "every count but decisions and the structural fallbacks is 0"
         )
+
+
+def _check_sheet_of_match(match: dict[str, Any], rows: list[dict[str, Any]]) -> None:
+    """ADR-025 erratum E4 point 5: a pair that reads ``opponent_sheet`` carries the candidate
+    seat's block counts in the match's summary (the sum) and in every game row; no other does."""
+    name = match["match_id"]
+    given = [r for r in rows if "sheet" in r]
+    if "sheet" not in match:
+        if given:
+            raise ProgressRecordError(
+                f"{name}: only a match with sheet counts in its summary carries them in its rows"
+            )
+        return
+    if len(given) != len(rows):
+        raise ProgressRecordError(
+            f"{name}: a match with sheet counts carries them in every game row"
+        )
+    try:
+        parsed = [read_sheet_counts(r["sheet"], f"{name} game sheet") for r in given]
+        read_sheet_counts(match["sheet"], f"{name} sheet")
+    except SheetCountsError as exc:
+        raise ProgressRecordError(str(exc)) from exc
+    if read_sheet_counts(match["sheet"]) != sheet_total(parsed):
+        raise ProgressRecordError(f"{name}: sheet must be the sum of the game rows' counts")
 
 
 def _check_search_of_match(  # noqa: PLR0912
@@ -448,6 +474,7 @@ def _check_match_v2(  # noqa: PLR0913, PLR0917
 ) -> None:
     opponent = match["opponent"]
     _check_search_of_match(match, rows, search_identities)
+    _check_sheet_of_match(match, rows)
     # The usual opponent-and-mode name; a search candidate's match carries the prefix `search-`.
     name = match["match_id"].removeprefix(SEARCH_PREFIX) if "search" in match else match["match_id"]
     _check_ablation_match(match, generation)
