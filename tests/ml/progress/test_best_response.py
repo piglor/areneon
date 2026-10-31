@@ -21,6 +21,7 @@ from areneon_ml.learner.config import read_run_config
 from areneon_ml.loop import __main__ as module
 from areneon_ml.loop.__main__ import EXIT_PLAY, EXIT_REFUSED, main
 from areneon_ml.loop.play import PlayError
+from areneon_ml.loop.records import policy_id
 from areneon_ml.progress import best_response
 from areneon_ml.progress.best_response import (
     BestResponseError,
@@ -36,6 +37,7 @@ from areneon_ml.progress.best_response import (
 )
 from areneon_ml.progress.eval_dataset import EvalDataset
 from areneon_ml.progress.looks import LookError, read_looks, verify_looks
+from areneon_ml.progress.run import ProgressError
 from areneon_ml.progress.stats import PPM, bootstrap_stream_key, pair_interval
 
 REPO = Path(__file__).resolve().parents[3]
@@ -225,7 +227,7 @@ def record_for(config: Any, req: BestResponseRequest) -> dict[str, Any]:
         "generation_manifest_sha256": MANIFEST_SHA,
         "checkpoints": {"preview": PREVIEW, "battle": BATTLE},
         "mode": req.mode,
-        "policy_id": best_response.policy_id(PREVIEW, BATTLE, req.mode),
+        "policy_id": policy_id(PREVIEW, BATTLE, req.mode),
     }
     record["teams"] = {"dataset_hash": "9" * 64, "split": "validation", "pairs_used": 2}
     if req.eval_dataset is not None:
@@ -376,7 +378,7 @@ def test_it_refuses_a_bad_request_before_running(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, change: dict[str, Any], message: str
 ) -> None:
     req, fake, _ = patched(monkeypatch, tmp_path, **change)
-    with pytest.raises((BestResponseError, best_response.ProgressError), match=message):
+    with pytest.raises((BestResponseError, ProgressError), match=message):
         run_best_response(req, repo=REPO)
     assert fake.calls == []
 
@@ -385,7 +387,7 @@ def test_it_refuses_the_runs_own_dataset_and_a_log_inside_the_output(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     req, fake, _ = patched(monkeypatch, tmp_path, eval_dataset=EvalDataset(tmp_path, "9" * 64))
-    with pytest.raises(best_response.ProgressError, match="own training dataset"):
+    with pytest.raises(ProgressError, match="own training dataset"):
         run_best_response(req, repo=REPO)
     req, fake, _ = patched(monkeypatch, tmp_path, looks=tmp_path / "br" / "log")
     with pytest.raises(BestResponseError, match="look log must not be inside"):
@@ -402,7 +404,7 @@ def test_a_run_config_without_a_team_dataset_is_refused(
         "_read_config",
         lambda run_dir: read_run_config(json.loads(TINY.read_text("utf-8"))),
     )
-    with pytest.raises(best_response.ProgressError, match="no team dataset"):
+    with pytest.raises(ProgressError, match="no team dataset"):
         run_best_response(req, repo=REPO)
     assert fake.calls == []
 
