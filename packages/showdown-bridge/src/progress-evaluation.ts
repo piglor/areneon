@@ -18,7 +18,9 @@ import { join } from "node:path";
 import { readerSha256 } from "@areneon/public-state";
 import { enumerateCandidates } from "./choices.ts";
 import { type Json, jcs } from "./canonical-json.ts";
+import { createSheetBuilder, type SheetBuilder, type SheetSetup } from "./belief-features.ts";
 import type { FeatureConfigs } from "./candidate-features.ts";
+import { type SheetCounts, sumSheetCounts } from "./sheet-counts.ts";
 import { type DamageAwareActor, damageAwareActor } from "./damage-aware-actor.ts";
 import { damageAwareIdentity, damageAwareIdentityHash, damageAwarePolicyId } from "./damage-aware-identity.ts";
 import type { Engine, PokemonSet } from "./engine.ts";
@@ -119,6 +121,13 @@ export interface ProgressOptions {
    */
   features?: FeatureConfigs;
   /**
+   * The opponent sheet the run's pair reads (`sheetSetup(engine, config).setup`; absent: the pair reads none). The run's own seats
+   * (the candidate, the previous generation, the anchors and the ablation's Previews) build the block with the builder `policyActor`
+   * uses in training, a fresh one per game, for a worker that stated the source. The candidate seat's counts go in the game rows and
+   * the match (E4 point 5). A search candidate refuses such a pair.
+   */
+  sheet?: SheetSetup;
+  /**
    * The previous generation's frozen pair (G >= 1; absent at G = 0), behind a worker of its own
    * (a worker session holds one pair). Its matches are played sample against sample and argmax
    * against argmax, on the same plan as the baselines'.
@@ -158,6 +167,8 @@ export interface ProgressOptions {
     client: PolicyClient & { beginGame?: () => Promise<void> };
     /** The other run's own candidate features (from ITS run config; absent: its pair reads none): each run's seat has its own statement. */
     features?: FeatureConfigs;
+    /** The other run's own opponent sheet (from ITS run config; absent: its pair reads none). Its counts are not recorded. */
+    sheet?: SheetSetup;
   };
   /** Games in every cross-run match: even, laid out as `games`. Required with `versus`. */
   run_games?: number;
@@ -483,6 +494,7 @@ export async function playProgress(options: ProgressOptions): Promise<ProgressRe
   if (search !== undefined) {
     if (ablation !== undefined) throw new ProgressError("the search candidate is evaluated alone: no Preview ablation");
     if (options.features !== undefined) throw new ProgressError("a pair that reads candidate features is not searched: the search refuses it");
+    if (options.sheet !== undefined) throw new ProgressError("a pair that reads opponent_sheet is not searched: the search refuses it");
     if (!PROGRESS_MODES.includes(search.mode)) throw new ProgressError("the search mode is argmax or sample");
     opponents.push({
       id: "self-no-search",
@@ -498,6 +510,13 @@ export async function playProgress(options: ProgressOptions): Promise<ProgressRe
   }
   // Rows are built per seat from the seat's own run config; a seat of a pair without the option carries none.
   const ownFeatures: { features?: ActorFeatures } = options.features === undefined ? {} : { features: { configs: options.features } };
+  // The sheet builder of a seat, fresh per game; the candidate seat's are kept for the game's counts.
+  const sheetSeat = (setup: SheetSetup | undefined, keep?: SheetBuilder[]): Pick<PolicySeat, "sheet"> => {
+    if (setup === undefined) return {};
+    const builder = createSheetBuilder(setup);
+    keep?.push(builder);
+    return { sheet: { builder } };
+  };
   // The candidates: the generation's own pair, or the three Previews of the ablation (argmax only, against the baselines).
   type Candidate = { prefix: string; client: PolicyClient & { beginGame?: () => Promise<void> }; policy_ids: Record<ProgressMode, string>; random_preview?: true; candidate_preview?: Match["candidate_preview"]; search?: { identity_hash: string } };
   const candidates: Candidate[] = [{ prefix: "", client, policy_ids: options.policy_ids }];
@@ -527,7 +546,7 @@ export async function playProgress(options: ProgressOptions): Promise<ProgressRe
     opponents.push({
       id: "previous",
       opponent: (mode) => ({ kind: "previous", policy_id: previous.policy_ids[mode], checkpoints: previous.checkpoints }),
-      seat: (mode) => ({ seat: { client: previous.client, policy_id: previous.policy_ids[mode], sampling: mode, ...ownFeatures } }),
+      seat: (mode) => ({ seat: { client: previous.client, policy_id: previous.policy_ids[mode], sampling: mode, ...ownFeatures, ...sheetSeat(options.sheet) } }),
       policies: (mode) => previous.policy_ids[mode],
       begin: async () => {
         await previous.client.beginGame?.();
@@ -539,7 +558,7 @@ export async function playProgress(options: ProgressOptions): Promise<ProgressRe
       id: `anchor-g${anchor.generation}`,
       anchored: true,
       opponent: (mode) => ({ kind: "anchor", generation: anchor.generation, policy_id: anchor.policy_ids[mode], checkpoints: anchor.checkpoints }),
-      seat: (mode) => ({ seat: { client: anchor.client, policy_id: anchor.policy_ids[mode], sampling: mode, ...ownFeatures } }),
+      seat: (mode) => ({ seat: { client: anchor.client, policy_id: anchor.policy_ids[mode], sampling: mode, ...ownFeatures, ...sheetSeat(options.sheet) } }),
       policies: (mode) => anchor.policy_ids[mode],
       begin: async () => {
         await anchor.client.beginGame?.();
@@ -554,7 +573,7 @@ export async function playProgress(options: ProgressOptions): Promise<ProgressRe
       extras: true,
       opponent: (mode, extra) => ({ kind: "run", run_id: versus.run_id, run_config_hash: versus.run_config_hash, generation: versus.generation, policy_id: versusId(mode, extra), checkpoints: versus.checkpoints }),
       // Both sides play the extra mode: the other run's pair samples at the same temperature and threshold.
-      seat: (mode, _game, extra) => ({ seat: { client: versus.client, policy_id: versusId(mode, extra), sampling: mode, ...(extra === undefined ? {} : { play: extra.play }), ...(versus.features === undefined ? {} : { features: { configs: versus.features } }) } }),
+      seat: (mode, _game, extra) => ({ seat: { client: versus.client, policy_id: versusId(mode, extra), sampling: mode, ...(extra === undefined ? {} : { play: extra.play }), ...(versus.features === undefined ? {} : { features: { configs: versus.features } }), ...sheetSeat(versus.sheet) } }),
       policies: (mode, extra) => versusId(mode, extra),
       begin: async () => {
         await versus.client.beginGame?.();
@@ -576,6 +595,7 @@ export async function playProgress(options: ProgressOptions): Promise<ProgressRe
       const hashes: string[] = [];
       const reports: BaselineReport[] = [];
       const searches: SearchCounts[] = [];
+      const sheets: SheetCounts[] = [];
       const controls: SearchCounts[] = [];
       const gameMs: number[] = [];
       const started = clock();
@@ -588,10 +608,11 @@ export async function playProgress(options: ProgressOptions): Promise<ProgressRe
         const teams: Record<Player, PokemonSet[]> = { p1: first.sets, p2: second.sets };
         const streams = progressGameStreams(planKey, pair);
         let searcher: SearchActor | undefined;
+        const candidateBuilders: SheetBuilder[] = [];
         const seat: PolicySeat =
           candidateKind.search !== undefined && search !== undefined
             ? searchSeat({ setup: search.setup, client: candidateKind.client as PolicyClient & Parameters<typeof searchSeat>[0]["client"], policy_id, identity_hash: candidateKind.search.identity_hash, mode, ...(search.play === undefined ? {} : { play: search.play }), onActor: (made) => (searcher = made) })
-            : { client: candidateKind.client, policy_id, sampling: mode, ...(extra === undefined ? {} : { play: extra.play }), ...ownFeatures, ...(candidateKind.random_preview === undefined ? {} : { random_preview: true }) };
+            : { client: candidateKind.client, policy_id, sampling: mode, ...(extra === undefined ? {} : { play: extra.play }), ...ownFeatures, ...sheetSeat(options.sheet, candidateBuilders), ...(candidateKind.random_preview === undefined ? {} : { random_preview: true }) };
         await candidateKind.client.beginGame?.();
         await baseline.begin();
         const opposing = baseline.seat(mode, pair, extra);
@@ -619,7 +640,9 @@ export async function playProgress(options: ProgressOptions): Promise<ProgressRe
         const controlled = opposing.control?.();
         controls.push(...(controlled === undefined ? [] : [controlled]));
         if (searched !== undefined) searches.push(searched);
-        matchRows.push({ ...row, ...(report === undefined ? {} : { baseline_counts: report.counts }), ...(searched === undefined ? {} : { search: searched }), ...(controlled === undefined ? {} : { opponent_search: controlled }) });
+        const sheeted = candidateBuilders.length === 0 ? undefined : sumSheetCounts(candidateBuilders.map((builder) => builder.counts()));
+        if (sheeted !== undefined) sheets.push(sheeted);
+        matchRows.push({ ...row, ...(sheeted === undefined ? {} : { sheet: sheeted }), ...(report === undefined ? {} : { baseline_counts: report.counts }), ...(searched === undefined ? {} : { search: searched }), ...(controlled === undefined ? {} : { opponent_search: controlled }) });
         const now = clock();
         gameMs.push(now - gameStarted);
         // A match that outruns its budget fails the evaluation (fail closed): no partial record leaves.
@@ -649,7 +672,7 @@ export async function playProgress(options: ProgressOptions): Promise<ProgressRe
       rowsByMatch.set(match_id, matchRows);
       wall_ms[match_id] = Math.round(clock() - started);
       game_ms[match_id] = { mean: Math.round(gameMs.reduce((a, b) => a + b, 0) / gameMs.length), max: Math.round(Math.max(...gameMs)) };
-      matches.push(summarise(match_id, policy_id, baseline.opponent(mode, extra), mode, matchRows, hashes, config.generation.max_turns, candidateKind.candidate_preview, reports, candidateKind.search === undefined ? undefined : { identity_hash: candidateKind.search.identity_hash, searches, controls }, extra?.play));
+      matches.push(summarise(match_id, policy_id, baseline.opponent(mode, extra), mode, matchRows, hashes, config.generation.max_turns, candidateKind.candidate_preview, reports, candidateKind.search === undefined ? undefined : { identity_hash: candidateKind.search.identity_hash, searches, controls }, extra?.play, sheets));
     }
     }
   }
@@ -688,7 +711,7 @@ export async function playProgress(options: ProgressOptions): Promise<ProgressRe
   return { record, game_records: stored, wall_ms, game_ms };
 }
 
-function summarise(match_id: string, policy_id: string, opponent: Match["opponent"], mode: ProgressMode, rows: readonly Row[], hashes: string[], maxTurns: number, candidate_preview: Match["candidate_preview"] | undefined, reports: readonly BaselineReport[], search?: { identity_hash: string; searches: readonly SearchCounts[]; controls: readonly SearchCounts[] }, play?: ExtraPlay): Match {
+function summarise(match_id: string, policy_id: string, opponent: Match["opponent"], mode: ProgressMode, rows: readonly Row[], hashes: string[], maxTurns: number, candidate_preview: Match["candidate_preview"] | undefined, reports: readonly BaselineReport[], search?: { identity_hash: string; searches: readonly SearchCounts[]; controls: readonly SearchCounts[] }, play?: ExtraPlay, sheets: readonly SheetCounts[] = []): Match {
   return {
     match_id,
     policy_id,
@@ -702,6 +725,7 @@ function summarise(match_id: string, policy_id: string, opponent: Match["opponen
     game_record_hashes: hashes.sort(),
     ...(reports.length === 0 ? {} : { baseline: { identity_hash: (reports[0] as BaselineReport).identity_hash, counts: sumBaselineCounts(reports.map((report) => report.counts)) } }),
     ...(search === undefined ? {} : { search: { identity_hash: search.identity_hash, counts: sumSearchCounts(search.searches) } }),
+    ...(sheets.length === 0 ? {} : { sheet: sumSheetCounts(sheets) }),
     ...(search === undefined || search.controls.length === 0 ? {} : { opponent_search: { identity_hash: search.identity_hash, counts: sumSearchCounts(search.controls) } }),
   };
 }

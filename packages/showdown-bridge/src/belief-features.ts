@@ -17,6 +17,7 @@ import type { EngineRequest } from "@areneon/schema/types/v1/engine-request.ts";
 import type { OpponentSheet } from "@areneon/schema/types/v1/opponent-sheet.ts";
 import type { Engine, PokemonSet } from "./engine.ts";
 import type { VersionManifest } from "./formats.ts";
+import { type SheetCounts, sortedByCode } from "./sheet-counts.ts";
 import { createTrappingCheck, type TrappingCheckPort } from "./trapping-check.ts";
 import type { TeamVocabulary } from "./team-vocabulary.ts";
 
@@ -64,18 +65,12 @@ export interface SheetInput {
   readonly flags: readonly PublicFlag[];
 }
 
-export interface SheetCounts {
-  /** Blocks built. */
-  readonly requests: number;
-  /** Blocks that were refused. */
-  readonly refused: number;
-  /** Refused blocks by their fixed code, sorted by code. */
-  readonly refusals: readonly { readonly code: string; readonly count: number }[];
-}
 
 export class BeliefFeaturesError extends Error {
   override name = "BeliefFeaturesError";
 }
+
+export type { SheetCounts } from "./sheet-counts.ts";
 
 export interface SheetBuilder {
   /** The block at a request. */
@@ -107,12 +102,6 @@ export function createSheetBuilder(context: BeliefFeaturesContext): SheetBuilder
   };
 }
 
-/** Counts by code, sorted by code (codes are unique, so two are never equal). */
-const sortedByCode = (counts: ReadonlyMap<string, number>): { readonly code: string; readonly count: number }[] =>
-  [...counts].sort(([a], [b]) => (a < b ? -1 : 1)).map(([code, count]) => ({ code, count }));
-
-/** The share of refused blocks in parts per million (an experiment with more than 10,000 ppm refused is invalid, E4 point 5). */
-export const refusedSharePpm = (counts: Pick<SheetCounts, "requests" | "refused">): number => (counts.requests === 0 ? 0 : Math.floor((counts.refused * 1_000_000) / counts.requests));
 
 /** What a seat or the training loader needs to build the block of a request (ADR-027 slice 4). */
 export interface SheetSetup {
