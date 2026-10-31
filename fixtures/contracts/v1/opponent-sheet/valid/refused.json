@@ -1,0 +1,159 @@
+{
+  "source": {
+    "kind": "belief",
+    "hash": "044f85c658e3d1c95d9d860ac83f0d3422b3562ab848dfb14bfbfa87f5e609d8",
+    "refusal": "disguise_unsettled"
+  },
+  "slots": [
+    {
+      "species": "alpha",
+      "brought_ppm": 0,
+      "brought_source": "unknown",
+      "item": {
+        "source": "unknown",
+        "entries": [],
+        "other_ppm": 0
+      },
+      "ability": {
+        "source": "unknown",
+        "entries": [],
+        "other_ppm": 0
+      },
+      "nature": {
+        "source": "unknown",
+        "entries": [],
+        "other_ppm": 0
+      },
+      "moves": {
+        "source": "unknown",
+        "entries": [],
+        "slots_known": 0
+      }
+    },
+    {
+      "species": "beta",
+      "brought_ppm": 0,
+      "brought_source": "unknown",
+      "item": {
+        "source": "unknown",
+        "entries": [],
+        "other_ppm": 0
+      },
+      "ability": {
+        "source": "unknown",
+        "entries": [],
+        "other_ppm": 0
+      },
+      "nature": {
+        "source": "unknown",
+        "entries": [],
+        "other_ppm": 0
+      },
+      "moves": {
+        "source": "unknown",
+        "entries": [],
+        "slots_known": 0
+      }
+    },
+    {
+      "species": "gamma",
+      "brought_ppm": 0,
+      "brought_source": "unknown",
+      "item": {
+        "source": "unknown",
+        "entries": [],
+        "other_ppm": 0
+      },
+      "ability": {
+        "source": "unknown",
+        "entries": [],
+        "other_ppm": 0
+      },
+      "nature": {
+        "source": "unknown",
+        "entries": [],
+        "other_ppm": 0
+      },
+      "moves": {
+        "source": "unknown",
+        "entries": [],
+        "slots_known": 0
+      }
+    },
+    {
+      "species": "delta",
+      "brought_ppm": 0,
+      "brought_source": "unknown",
+      "item": {
+        "source": "unknown",
+        "entries": [],
+        "other_ppm": 0
+      },
+      "ability": {
+        "source": "unknown",
+        "entries": [],
+        "other_ppm": 0
+      },
+      "nature": {
+        "source": "unknown",
+        "entries": [],
+        "other_ppm": 0
+      },
+      "moves": {
+        "source": "unknown",
+        "entries": [],
+        "slots_known": 0
+      }
+    },
+    {
+      "species": "epsilon",
+      "brought_ppm": 0,
+      "brought_source": "unknown",
+      "item": {
+        "source": "unknown",
+        "entries": [],
+        "other_ppm": 0
+      },
+      "ability": {
+        "source": "unknown",
+        "entries": [],
+        "other_ppm": 0
+      },
+      "nature": {
+        "source": "unknown",
+        "entries": [],
+        "other_ppm": 0
+      },
+      "moves": {
+        "source": "unknown",
+        "entries": [],
+        "slots_known": 0
+      }
+    },
+    {
+      "species": "zeta",
+      "brought_ppm": 0,
+      "brought_source": "unknown",
+      "item": {
+        "source": "unknown",
+        "entries": [],
+        "other_ppm": 0
+      },
+      "ability": {
+        "source": "unknown",
+        "entries": [],
+        "other_ppm": 0
+      },
+      "nature": {
+        "source": "unknown",
+        "entries": [],
+        "other_ppm": 0
+      },
+      "moves": {
+        "source": "unknown",
+        "entries": [],
+        "slots_known": 0
+      }
+    }
+  ]
+}

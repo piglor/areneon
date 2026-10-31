@@ -7,6 +7,7 @@ import { syntheticFixtureHashes } from "../src/golden.ts";
 import { EngineDataError, readEngineData, readEngineDataV2 } from "../src/engine-data.ts";
 import { contractVersions, EpisodeError, readTeamDatasetManifest, readTeamGeneratorConfig, readTeamLabelSet, readTeamRecord, readTeamSnapshotManifest, readTeamVocabulary, readRoleSetTable, RoleSetError, readMoveClassTable, MoveClassError, TeamRecordError, TeamVocabularyError, loadEngine, PolicyProtocolError, readEvaluationReply, readHandshake, readPolicyQuery, readPolicyReply, readEpisode, readTrainingRunConfig, readCloneRunConfig, CloneRunConfigError, readLeagueRunRecord, LeagueRunRecordError, TrainingRunConfigError, readEvaluationRunManifest, readTrainingExample, readTrainingSet, TrainingLoaderError } from "../src/index.ts";
 import { EvaluationConfigError, readEvaluationParameters, readEntry, RegisterError, readEvaluationPlan, readSealedSetCommitment, readTrainingGateRule, readEvaluationConfig, readSealedTeamSetManifest, readRetiredSealedManifest } from "../src/index.ts";
+import { OpponentSheetError, readOpponentSheet } from "../src/index.ts";
 import { contractSamples, SAMPLE_HASHES, SAMPLES_DIR } from "../src/samples.ts";
 import { exportEngineData } from "../src/engine-data.ts";
 import { GOLDEN_FORMAT } from "../src/golden.ts";
@@ -155,6 +156,18 @@ describe("the shared contract sample corpus (ADR-008 §2)", () => {
       "v1/move-class-table/reader-invalid/stale-engine-data-hash.json",
       "v1/move-class-table/reader-invalid/status-incomplete.json",
       "v1/move-class-table/reader-invalid/unsorted-class.json",
+      "v1/opponent-sheet/reader-invalid/belief-sheet-source.json",
+      "v1/opponent-sheet/reader-invalid/brought-unknown-nonzero.json",
+      "v1/opponent-sheet/reader-invalid/duplicate-entry.json",
+      "v1/opponent-sheet/reader-invalid/engine-sheet-predicted-field.json",
+      "v1/opponent-sheet/reader-invalid/other-ppm-wrong.json",
+      "v1/opponent-sheet/reader-invalid/refusal-not-unknown.json",
+      "v1/opponent-sheet/reader-invalid/refusal-on-sheet.json",
+      "v1/opponent-sheet/reader-invalid/revealed-only-predicted.json",
+      "v1/opponent-sheet/reader-invalid/revealed-two-entries.json",
+      "v1/opponent-sheet/reader-invalid/slots-known-over-certain.json",
+      "v1/opponent-sheet/reader-invalid/unknown-with-entries.json",
+      "v1/opponent-sheet/reader-invalid/unsorted-entries.json",
       "v1/policy-handshake/reader-invalid/duplicate-contracts.json",
       "v1/policy-handshake/reader-invalid/unsorted-checkpoints.json",
       "v1/policy-handshake/reader-invalid/unsorted-contracts.json",
@@ -174,6 +187,7 @@ describe("the shared contract sample corpus (ADR-008 §2)", () => {
       "v1/policy-query/reader-invalid/features-missing-row.json",
       "v1/policy-query/reader-invalid/features-unsorted.json",
       "v1/policy-query/reader-invalid/identity-differs.json",
+      "v1/policy-query/reader-invalid/opponent-sheet-unsorted.json",
       "v1/policy-query/reader-invalid/temperature-explicit-default.json",
       "v1/private-snapshot-manifest/reader-invalid/active-rows-over-rows.json",
       "v1/private-snapshot-manifest/reader-invalid/both-parent-and-first.json",
@@ -377,6 +391,7 @@ describe("the shared contract sample corpus (ADR-008 §2)", () => {
       "v1/training-example/reader-invalid/features-2-missing-array.json",
       "v1/training-example/reader-invalid/features-2-speeds-unsorted.json",
       "v1/training-example/reader-invalid/features-unsorted.json",
+      "v1/training-example/reader-invalid/opponent-sheet-other-wrong.json",
       "v1/training-gate-rule/reader-invalid/alternative-below-null.json",
       "v1/training-gate-rule/reader-invalid/unsorted-claims.json",
       "v1/training-run-config/reader-invalid/anchor-no-warm-start.json",
@@ -553,6 +568,43 @@ describe("the shared contract sample corpus (ADR-008 §2)", () => {
     expect(Object.keys(fresh)).toContain(file);
     expect(() => reader(committed(file))).toThrow(PolicyProtocolError);
     expect(() => reader(committed(file))).toThrow(message);
+  });
+
+  // ADR-027 section 2: the opponent_sheet reader rules, on the standalone block and inside a query and an example.
+  it.each([
+    ["v1/opponent-sheet/reader-invalid/unsorted-entries.json", "sorted by ppm descending then id, and unique"],
+    ["v1/opponent-sheet/reader-invalid/duplicate-entry.json", "sorted by ppm descending then id, and unique"],
+    ["v1/opponent-sheet/reader-invalid/other-ppm-wrong.json", "other_ppm must be max(0, 1000000"],
+    ["v1/opponent-sheet/reader-invalid/revealed-two-entries.json", "a revealed field holds its one value"],
+    ["v1/opponent-sheet/reader-invalid/unknown-with-entries.json", "source unknown has no entries"],
+    ["v1/opponent-sheet/reader-invalid/belief-sheet-source.json", "a belief block has no field of source sheet"],
+    ["v1/opponent-sheet/reader-invalid/refusal-not-unknown.json", "brought_ppm does not fit brought_source"],
+    ["v1/opponent-sheet/reader-invalid/refusal-on-sheet.json", "only a belief block can carry a refusal"],
+    ["v1/opponent-sheet/reader-invalid/engine-sheet-predicted-field.json", "holds every item, ability, nature and move field at source sheet"],
+    ["v1/opponent-sheet/reader-invalid/revealed-only-predicted.json", "revealed or unknown fields only"],
+    ["v1/opponent-sheet/reader-invalid/slots-known-over-certain.json", "slots_known counts revealed moves"],
+    ["v1/opponent-sheet/reader-invalid/brought-unknown-nonzero.json", "brought_ppm does not fit brought_source"],
+  ])("readOpponentSheet refuses %s", (file, message) => {
+    expect(Object.keys(fresh)).toContain(file);
+    expect(() => readOpponentSheet(committed(file))).toThrow(OpponentSheetError);
+    expect(() => readOpponentSheet(committed(file))).toThrow(message);
+  });
+
+  it("readOpponentSheet accepts the valid samples and refuses the invalid ones", () => {
+    for (const name of ["belief", "refused", "revealed-only", "engine-sheet", "oracle-diagnostic"]) expect(readOpponentSheet(committed(`v1/opponent-sheet/valid/${name}.json`)).slots).toHaveLength(6);
+    for (const file of Object.keys(fresh).filter((f) => f.startsWith("v1/opponent-sheet/invalid/"))) expect(() => readOpponentSheet(committed(file)), file).toThrow(OpponentSheetError);
+  });
+
+  it("the query and the example readers apply the same rules to the block they carry", () => {
+    expect(readPolicyQuery(committed("v1/policy-query/valid/battle-opponent-sheet.json")).opponent_sheet?.source.kind).toBe("belief");
+    expect(readPolicyQuery(committed("v1/policy-query/valid/battle-opponent-sheet-oracle.json")).opponent_sheet?.source.kind).toBe("oracle-diagnostic");
+    expect(readTrainingExample(committed("v1/training-example/valid/battle-opponent-sheet.json")).opponent_sheet?.source.kind).toBe("belief");
+    const bad = "v1/policy-query/reader-invalid/opponent-sheet-unsorted.json";
+    expect(() => readPolicyQuery(committed(bad))).toThrow(PolicyProtocolError);
+    expect(() => readPolicyQuery(committed(bad))).toThrow("opponent_sheet: slot 0 item: the entries must be sorted");
+    const example = "v1/training-example/reader-invalid/opponent-sheet-other-wrong.json";
+    expect(() => readTrainingExample(committed(example))).toThrow(TrainingLoaderError);
+    expect(() => readTrainingExample(committed(example))).toThrow("opponent_sheet: slot 0 item: other_ppm must be");
   });
 
   it("the policy readers accept the valid samples, and the hello lists this side's contracts", () => {

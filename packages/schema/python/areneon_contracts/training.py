@@ -25,6 +25,7 @@ from typing import Any
 from pydantic import BaseModel
 
 from areneon_contracts.contracts import ContractError, _model, parse, schema, sha256_hex, validate
+from areneon_contracts.opponent_sheet import sheet_problem
 
 
 class TrainingStreamError(ValueError):
@@ -93,6 +94,19 @@ def _check_features(number: int, raw: dict[str, Any]) -> None:
 # prefix, so the pieces of a stream checked apart (learner/parallel.py) bring it together with
 # the data classes.
 _FEATURES = "features:"
+_SHEET = (
+    "sheet:"  # likewise for the opponent sheet block's source hash (ADR-027, ADR-025 erratum E4)
+)
+
+
+def _check_sheet(number: int, raw: dict[str, Any]) -> None:
+    """The reader rules of ``opponent_sheet`` the profile cannot say (``sheet_problem``)."""
+    block = raw.get("opponent_sheet")
+    if block is None:
+        return
+    problem = sheet_problem(block)
+    if problem is not None:
+        raise TrainingStreamError(f"line {number}: opponent_sheet: {problem}")
 
 
 def _check_manifest(manifest: object) -> bool:
@@ -205,12 +219,15 @@ class StreamChecker:
             raise TrainingStreamError(f"line {number}: {error}") from error
         _check_candidates(number, raw, self.ready)
         _check_features(number, raw)
+        _check_sheet(number, raw)
         if raw["episode_hash"] not in self.known:
             raise TrainingStreamError(f"line {number}: its Episode is not in the TrainingSet")
         self.seen.add(raw["episode_hash"])
         self.classes.add(raw["observation"]["data_class"])
         features = raw.get("candidate_features")
         self.classes.add(_FEATURES + ("" if features is None else features["feature_set_hash"]))
+        sheet = raw.get("opponent_sheet")
+        self.classes.add(_SHEET + ("" if sheet is None else sheet["source"]["hash"]))
         return raw, example
 
     def finish(self) -> None:
@@ -218,6 +235,10 @@ class StreamChecker:
         if self.seen != self.known:
             missing = sorted(self.known - self.seen)
             raise TrainingStreamError(f"the stream holds no example of Episode {missing[0]}")
+        if sum(1 for c in self.classes if c.startswith(_SHEET)) > 1:
+            raise TrainingStreamError(
+                "the stream's examples must all carry the same opponent sheet source, or none"
+            )
         if sum(1 for c in self.classes if c.startswith(_FEATURES)) > 1:
             raise TrainingStreamError(
                 "the stream's examples must all carry the same candidate feature set, or none"

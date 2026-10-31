@@ -56,6 +56,10 @@
       "description": "Optional derived candidate features (ADR-022 section 3, tier A): the probe's damage rows for the damaging move parts of the candidates, computed on the Node side from the player's own channel, own team, the candidates and the configs feature_set_hash names. Absent unless the session or the run declared a feature set: a writer omits it (never null or empty), so every existing value keeps its bytes and hash (a minor change within v1, ADR-008 section 3). Reader rules: rows sorted and unique by (slot, move, target, mega); and, in a PolicyQuery, every damaging move part of every candidate has its row (the worker answers invalid_query otherwise) and feature_set_hash equals the one the session declared.",
       "$ref": "#/$defs/CandidateFeatures"
     },
+    "opponent_sheet": {
+      "description": "Optional derived opponent sheet block (ADR-027 section 2, ADR-025 erratum E4): what the player's own view makes probable about each opponent preview slot. Absent unless the session or the run declared a sheet source: a writer omits it (never null or empty), so every existing value keeps its bytes and hash (a minor change within v1, ADR-008 section 3). Reader rules are those of the OpponentSheet contract.",
+      "$ref": "#/$defs/OpponentSheet"
+    },
     "sampling": {
       "description": "How the worker picks among the candidates (ADR-010 §2): argmax, a draw from the policy's probabilities using u, or (ADR-026 §5) no pick at all: evaluate asks for the policy's prior over the candidates and its value of the state.",
       "type": "object",
@@ -1193,6 +1197,270 @@
             "unqueueable",
             "fractional_priority"
           ]
+        }
+      }
+    },
+    "OpponentSheet": {
+      "description": "The opponent sheet block (ADR-027 section 2; ADR-025 erratum E4): per opponent preview slot, in preview order, what the player's own view makes probable about the slot's brought status, item, ability, nature and moves, as integers in parts per million. A derived input beside the observation, built only from the player's own view (closed regime: from the opponent belief's marginals). Reader rules (the profile has no if/then): the source kind fits the regime; entries are sorted by ppm descending then id ascending (a null item id last) with unique ids; other_ppm is max(0, 1000000 - sum of the entries) and the sum is at most 1000000 plus one per entry (each entry is rounded alone); a field of source unknown has no entries and other_ppm 0; a field of source revealed holds its one value at 1000000 ppm (moves: slots_known is 4 and the first four entries are at 1000000); a refused block (source.refusal present) has every slot unknown with brought_ppm 0.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source",
+        "slots"
+      ],
+      "properties": {
+        "source": {
+          "$ref": "#/$defs/SheetSource"
+        },
+        "slots": {
+          "description": "One per opponent preview slot, in preview order.",
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "items": {
+            "$ref": "#/$defs/SheetSlot"
+          }
+        }
+      }
+    },
+    "SheetSource": {
+      "description": "Where the block comes from. kind: engine-sheet (the open regime), belief (the opponent belief at the request), revealed-only (no predictor) or oracle-diagnostic (test-only); hash is the SHA-256 naming the block's identity (for belief: the feature set hash, which names the belief identity, the k values and the rounding). refusal is present exactly when the belief was refused: a fixed code, and every field of the block is then unknown.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "hash"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "engine-sheet",
+            "belief",
+            "revealed-only",
+            "oracle-diagnostic"
+          ]
+        },
+        "hash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "refusal": {
+          "enum": [
+            "reader_flagged",
+            "team_size",
+            "species_not_in_prior",
+            "forme_not_in_prior",
+            "brought_exceeds_picked",
+            "disguise_assignments_exceeded",
+            "evidence_has_no_support",
+            "legality_redraws_exhausted",
+            "empty_distribution",
+            "disguise_unsettled"
+          ]
+        }
+      }
+    },
+    "SheetSlot": {
+      "description": "One opponent preview slot.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "species",
+        "brought_ppm",
+        "brought_source",
+        "item",
+        "ability",
+        "nature",
+        "moves"
+      ],
+      "properties": {
+        "species": {
+          "type": "string",
+          "pattern": "^[a-z0-9]+$",
+          "minLength": 1,
+          "maxLength": 64,
+          "description": "The preview species id (for orientation: the observation already shows it)."
+        },
+        "brought_ppm": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000,
+          "description": "P(the slot is among the Pokemon brought), round half up of the exact rational."
+        },
+        "brought_source": {
+          "enum": [
+            "revealed",
+            "predicted",
+            "unknown"
+          ]
+        },
+        "item": {
+          "$ref": "#/$defs/SheetItemField"
+        },
+        "ability": {
+          "$ref": "#/$defs/SheetIdField"
+        },
+        "nature": {
+          "$ref": "#/$defs/SheetIdField"
+        },
+        "moves": {
+          "$ref": "#/$defs/SheetMoveField"
+        }
+      }
+    },
+    "SheetFieldSource": {
+      "description": "revealed (seen in battle, 1000000 ppm), predicted (the belief), sheet (an engine-sent sheet, open regime only) or unknown (no support or no predictor).",
+      "enum": [
+        "sheet",
+        "revealed",
+        "predicted",
+        "unknown"
+      ]
+    },
+    "SheetItemField": {
+      "description": "Item: at most k entries (k item 4 in the first feature set), id null meaning no item; other_ppm is the rest.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source",
+        "entries",
+        "other_ppm"
+      ],
+      "properties": {
+        "source": {
+          "$ref": "#/$defs/SheetFieldSource"
+        },
+        "entries": {
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "$ref": "#/$defs/SheetItemEntry"
+          }
+        },
+        "other_ppm": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000
+        }
+      }
+    },
+    "SheetItemEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "ppm"
+      ],
+      "properties": {
+        "id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[a-z0-9]+$",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "ppm": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000
+        }
+      }
+    },
+    "SheetIdField": {
+      "description": "Ability or nature: at most k entries (k ability 3, k nature 3), other_ppm the rest.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source",
+        "entries",
+        "other_ppm"
+      ],
+      "properties": {
+        "source": {
+          "$ref": "#/$defs/SheetFieldSource"
+        },
+        "entries": {
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "$ref": "#/$defs/SheetIdEntry"
+          }
+        },
+        "other_ppm": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000
+        }
+      }
+    },
+    "SheetIdEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "ppm"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9]+$",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "ppm": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000
+        }
+      }
+    },
+    "SheetMoveField": {
+      "description": "Moves: at most k entries (k moves 8) with the move's inclusion probability (each move alone, not a share of one total) and slots_known, the number of the four move slots the view has revealed (0 to 4).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source",
+        "entries",
+        "slots_known"
+      ],
+      "properties": {
+        "source": {
+          "$ref": "#/$defs/SheetFieldSource"
+        },
+        "entries": {
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "$ref": "#/$defs/SheetMoveEntry"
+          }
+        },
+        "slots_known": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4
+        }
+      }
+    },
+    "SheetMoveEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "inclusion_ppm"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9]+$",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "inclusion_ppm": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000
         }
       }
     }

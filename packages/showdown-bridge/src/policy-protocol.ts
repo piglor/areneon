@@ -18,6 +18,7 @@ import type { PolicyQuery } from "@areneon/schema/types/v1/policy-query.ts";
 import type { PolicyReply } from "@areneon/schema/types/v1/policy-reply.ts";
 import { type Json, jcs } from "./canonical-json.ts";
 import { featureRowsProblem } from "./feature-rows.ts";
+import { opponentSheetProblem } from "./opponent-sheet.ts";
 
 export type { EvaluationReply, PolicyHandshake, PolicyQuery, PolicyReply };
 
@@ -76,6 +77,10 @@ export function readPolicyQuery(value: unknown): PolicyQuery {
   if (query.candidate_features !== undefined) {
     const problem = featureRowsProblem(query.candidate_features);
     if (problem !== null) throw new PolicyProtocolError(problem);
+  }
+  if (query.opponent_sheet !== undefined) {
+    const problem = opponentSheetProblem(query.opponent_sheet);
+    if (problem !== null) throw new PolicyProtocolError(`opponent_sheet: ${problem}`);
   }
   return query;
 }

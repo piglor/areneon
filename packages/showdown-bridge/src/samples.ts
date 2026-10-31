@@ -246,6 +246,53 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
   const withFeatures = (query: Record<string, unknown>, rows: unknown): unknown => ({ ...query, candidate_features: { ...featureSetRef, rows } });
   const featuresOnExample = (rows: unknown): unknown => ({ ...exampleOf("battle"), candidate_features: { ...featureSetRef, rows } });
   const rowAt = (index: number): Record<string, unknown> => featureRows[index] as Record<string, unknown>;
+
+  // ADR-027 section 2, ADR-025 erratum E4: the opponent sheet block. Shape samples with invented numbers: the species are
+  // generic ids, the ppm values follow the rounding and ordering rules the readers hold (sorted by ppm then id, other_ppm the rest).
+  const sheetHash = createHash("sha256").update("opponent-sheet sample").digest("hex");
+  const SHEET_SPECIES = ["alpha", "beta", "gamma", "delta", "epsilon", "zeta"];
+  const sheetSlot = (species: string, change: Record<string, unknown> = {}): Record<string, unknown> => ({
+    species,
+    brought_ppm: 666667,
+    brought_source: "predicted",
+    item: { source: "predicted", entries: [{ id: "ix", ppm: 600000 }, { id: null, ppm: 300000 }], other_ppm: 100000 },
+    ability: { source: "revealed", entries: [{ id: "a1", ppm: 1000000 }], other_ppm: 0 },
+    nature: { source: "predicted", entries: [{ id: "adamant", ppm: 250000 }, { id: "jolly", ppm: 250000 }], other_ppm: 500000 },
+    moves: { source: "predicted", entries: [{ id: "protect", inclusion_ppm: 1000000 }, { id: "surf", inclusion_ppm: 700000 }, { id: "icebeam", inclusion_ppm: 300000 }], slots_known: 1 },
+    ...change,
+  });
+  const sheetOf = (kind: string, slot: (species: string) => Record<string, unknown>, source: Record<string, unknown> = {}): Record<string, unknown> => ({
+    source: { kind, hash: sheetHash, ...source },
+    slots: SHEET_SPECIES.map(slot),
+  });
+  const unknownSlot = (species: string): Record<string, unknown> => ({
+    species,
+    brought_ppm: 0,
+    brought_source: "unknown",
+    item: { source: "unknown", entries: [], other_ppm: 0 },
+    ability: { source: "unknown", entries: [], other_ppm: 0 },
+    nature: { source: "unknown", entries: [], other_ppm: 0 },
+    moves: { source: "unknown", entries: [], slots_known: 0 },
+  });
+  const exactSlot = (species: string): Record<string, unknown> =>
+    sheetSlot(species, {
+      item: { source: "sheet", entries: [{ id: "ix", ppm: 1000000 }], other_ppm: 0 },
+      ability: { source: "sheet", entries: [{ id: "a1", ppm: 1000000 }], other_ppm: 0 },
+      nature: { source: "sheet", entries: [{ id: "jolly", ppm: 1000000 }], other_ppm: 0 },
+      moves: { source: "sheet", entries: ["icebeam", "protect", "surf", "thunderbolt"].map((id) => ({ id, inclusion_ppm: 1000000 })), slots_known: 4 },
+    });
+  const revealedOnlySlot = (species: string): Record<string, unknown> =>
+    sheetSlot(species, {
+      brought_ppm: 0,
+      brought_source: "unknown",
+      item: { source: "revealed", entries: [{ id: "ix", ppm: 1000000 }], other_ppm: 0 },
+      ability: { source: "unknown", entries: [], other_ppm: 0 },
+      nature: { source: "unknown", entries: [], other_ppm: 0 },
+      moves: { source: "revealed", entries: ["icebeam", "protect", "surf", "thunderbolt"].map((id) => ({ id, inclusion_ppm: 1000000 })), slots_known: 4 },
+    });
+  const beliefSheet = sheetOf("belief", sheetSlot);
+  const sheetWith = (change: (slot: Record<string, unknown>) => void, base: Record<string, unknown> = beliefSheet): unknown => mutated(base, (b) => change((b.slots as Record<string, unknown>[])[0] as Record<string, unknown>));
+  const field = (slot: Record<string, unknown>, name: string): Record<string, unknown> => slot[name] as Record<string, unknown>;
   const withRqid = (line: string): string =>
     line.startsWith("|request|") ? `|request|${JSON.stringify({ ...JSON.parse(line.slice("|request|".length)), rqid: 7 })}` : line;
   const battleQueryA2 = mutated(battleQuery, (q) => {
@@ -825,6 +872,15 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "policy-query/battle-evaluate": evalQuery,
     "policy-query/preview-evaluate": queryOf("preview", { kind: "evaluate" }),
     "policy-query/battle-features-evaluate": withFeatures(evalQuery, featureRows),
+    // ADR-027 section 2, ADR-025 erratum E4: the optional opponent_sheet (absent in every sample above, so their digests are unchanged).
+    "opponent-sheet/belief": beliefSheet,
+    "opponent-sheet/refused": sheetOf("belief", unknownSlot, { refusal: "disguise_unsettled" }),
+    "opponent-sheet/revealed-only": sheetOf("revealed-only", revealedOnlySlot),
+    "opponent-sheet/engine-sheet": sheetOf("engine-sheet", exactSlot),
+    "opponent-sheet/oracle-diagnostic": sheetOf("oracle-diagnostic", exactSlot),
+    "policy-query/battle-opponent-sheet": { ...battleQuery, opponent_sheet: beliefSheet },
+    "policy-query/battle-opponent-sheet-oracle": { ...battleQuery, opponent_sheet: sheetOf("oracle-diagnostic", exactSlot) },
+    "training-example/battle-opponent-sheet": { ...exampleOf("battle"), opponent_sheet: beliefSheet },
     "evaluation-reply/evaluation": evaluationOf(priorOf(battleQuery.candidates.length), 620000),
     "evaluation-reply/value-out-of-unit": evaluationOf(priorOf(battleQuery.candidates.length), -150000),
     "evaluation-reply/invalid-query": replyOf({ kind: "error", error: "invalid_query", detail: "the query's identity differs from its observation's identity" }),
@@ -851,6 +907,23 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
   // No valid sparring sample exists: it must be private, and the data-class
   // guard refuses a committed "data_class": "private".
   const readerInvalid: Record<string, unknown> = {
+    // Schema-valid, refused by the opponent_sheet reader rules (ADR-027 section 2; the TS and Python readers agree).
+    "opponent-sheet/unsorted-entries": sheetWith((slot) => (field(slot, "item").entries = [{ id: null, ppm: 300000 }, { id: "ix", ppm: 600000 }])),
+    "opponent-sheet/duplicate-entry": sheetWith((slot) => (field(slot, "ability").entries = [{ id: "a1", ppm: 500000 }, { id: "a1", ppm: 500000 }])),
+    "opponent-sheet/other-ppm-wrong": sheetWith((slot) => (field(slot, "item").other_ppm = 99999)),
+    "opponent-sheet/revealed-two-entries": sheetWith((slot) => {
+      field(slot, "ability").entries = [{ id: "a1", ppm: 600000 }, { id: "a2", ppm: 400000 }];
+    }),
+    "opponent-sheet/unknown-with-entries": sheetWith((slot) => (field(slot, "nature").source = "unknown")),
+    "opponent-sheet/belief-sheet-source": sheetWith((slot) => (field(slot, "item").source = "sheet")),
+    "opponent-sheet/refusal-not-unknown": mutated(sheetOf("belief", unknownSlot, { refusal: "reader_flagged" }), (b) => ((b.slots as Record<string, unknown>[])[0] as Record<string, unknown>).brought_ppm = 1),
+    "opponent-sheet/refusal-on-sheet": mutated(sheetOf("engine-sheet", exactSlot), (b) => ((b.source as Record<string, unknown>).refusal = "reader_flagged")),
+    "opponent-sheet/engine-sheet-predicted-field": sheetWith((slot) => (field(slot, "item").source = "predicted"), sheetOf("engine-sheet", exactSlot)),
+    "opponent-sheet/revealed-only-predicted": sheetWith((slot) => (field(slot, "item").source = "predicted"), sheetOf("revealed-only", revealedOnlySlot)),
+    "opponent-sheet/slots-known-over-certain": sheetWith((slot) => (field(slot, "moves").slots_known = 2)),
+    "opponent-sheet/brought-unknown-nonzero": sheetWith((slot) => (slot.brought_source = "unknown")),
+    "policy-query/opponent-sheet-unsorted": { ...battleQuery, opponent_sheet: sheetWith((slot) => (field(slot, "item").entries = [{ id: null, ppm: 300000 }, { id: "ix", ppm: 600000 }])) },
+    "training-example/opponent-sheet-other-wrong": { ...exampleOf("battle"), opponent_sheet: sheetWith((slot) => (field(slot, "item").other_ppm = 99999)) },
     // Schema-valid, refused by the CheckpointRecord reader: the arrays are sorted and unique, and no id refers to the record itself.
     "checkpoint-record/unsorted-league-opponents": recordWith((r) => (r.league_opponents = [hexOf("4"), hexOf("3")])),
     // Schema-valid, refused by the TrainingRunConfig reader: the model, encoder and baseline rules the profile cannot say.
@@ -1017,6 +1090,16 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "episode/class-below-opponent": collected({ ...league, opponent_team_data_class: "private" }),
   };
   const invalid: Record<string, unknown> = {
+    "opponent-sheet/extra-slot-field": sheetWith((slot) => (slot.real_item = "ix")),
+    "opponent-sheet/float-ppm": sheetWith((slot) => (slot.brought_ppm = 666666.5)),
+    "opponent-sheet/zero-entry-ppm": sheetWith((slot) => (field(slot, "item").entries = [{ id: "ix", ppm: 0 }])),
+    "opponent-sheet/no-slots": mutated(beliefSheet, (b) => (b.slots = [])),
+    "opponent-sheet/unknown-source-kind": mutated(beliefSheet, (b) => ((b.source as Record<string, unknown>).kind = "sampled-world")),
+    "opponent-sheet/unknown-refusal": mutated(sheetOf("belief", unknownSlot, { refusal: "format_mismatch" }), () => undefined),
+    "opponent-sheet/too-many-entries": sheetWith((slot) => (field(slot, "ability").entries = "abcdefghi".split("").map((id) => ({ id: `a${id}`, ppm: 1 })))),
+    "opponent-sheet/null-item-field": sheetWith((slot) => (slot.item = null)),
+    "policy-query/opponent-sheet-null": { ...battleQuery, opponent_sheet: null },
+    "training-example/opponent-sheet-oracle-kind": { ...exampleOf("battle"), opponent_sheet: sheetOf("oracle-diagnostic", exactSlot) },
     "checkpoint-record/no-manifest": recordWith((r) => delete r.manifest),
     "checkpoint-record/short-checkpoint-id": recordWith((r) => (r.checkpoint_id = "abc")),
     "checkpoint-record/uppercase-parent": recordWith((r) => (r.parent = hexOf("A"))),

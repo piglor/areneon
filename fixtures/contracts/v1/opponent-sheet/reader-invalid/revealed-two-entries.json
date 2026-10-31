@@ -1,0 +1,378 @@
+{
+  "source": {
+    "kind": "belief",
+    "hash": "044f85c658e3d1c95d9d860ac83f0d3422b3562ab848dfb14bfbfa87f5e609d8"
+  },
+  "slots": [
+    {
+      "species": "alpha",
+      "brought_ppm": 666667,
+      "brought_source": "predicted",
+      "item": {
+        "source": "predicted",
+        "entries": [
+          {
+            "id": "ix",
+            "ppm": 600000
+          },
+          {
+            "id": null,
+            "ppm": 300000
+          }
+        ],
+        "other_ppm": 100000
+      },
+      "ability": {
+        "source": "revealed",
+        "entries": [
+          {
+            "id": "a1",
+            "ppm": 600000
+          },
+          {
+            "id": "a2",
+            "ppm": 400000
+          }
+        ],
+        "other_ppm": 0
+      },
+      "nature": {
+        "source": "predicted",
+        "entries": [
+          {
+            "id": "adamant",
+            "ppm": 250000
+          },
+          {
+            "id": "jolly",
+            "ppm": 250000
+          }
+        ],
+        "other_ppm": 500000
+      },
+      "moves": {
+        "source": "predicted",
+        "entries": [
+          {
+            "id": "protect",
+            "inclusion_ppm": 1000000
+          },
+          {
+            "id": "surf",
+            "inclusion_ppm": 700000
+          },
+          {
+            "id": "icebeam",
+            "inclusion_ppm": 300000
+          }
+        ],
+        "slots_known": 1
+      }
+    },
+    {
+      "species": "beta",
+      "brought_ppm": 666667,
+      "brought_source": "predicted",
+      "item": {
+        "source": "predicted",
+        "entries": [
+          {
+            "id": "ix",
+            "ppm": 600000
+          },
+          {
+            "id": null,
+            "ppm": 300000
+          }
+        ],
+        "other_ppm": 100000
+      },
+      "ability": {
+        "source": "revealed",
+        "entries": [
+          {
+            "id": "a1",
+            "ppm": 1000000
+          }
+        ],
+        "other_ppm": 0
+      },
+      "nature": {
+        "source": "predicted",
+        "entries": [
+          {
+            "id": "adamant",
+            "ppm": 250000
+          },
+          {
+            "id": "jolly",
+            "ppm": 250000
+          }
+        ],
+        "other_ppm": 500000
+      },
+      "moves": {
+        "source": "predicted",
+        "entries": [
+          {
+            "id": "protect",
+            "inclusion_ppm": 1000000
+          },
+          {
+            "id": "surf",
+            "inclusion_ppm": 700000
+          },
+          {
+            "id": "icebeam",
+            "inclusion_ppm": 300000
+          }
+        ],
+        "slots_known": 1
+      }
+    },
+    {
+      "species": "gamma",
+      "brought_ppm": 666667,
+      "brought_source": "predicted",
+      "item": {
+        "source": "predicted",
+        "entries": [
+          {
+            "id": "ix",
+            "ppm": 600000
+          },
+          {
+            "id": null,
+            "ppm": 300000
+          }
+        ],
+        "other_ppm": 100000
+      },
+      "ability": {
+        "source": "revealed",
+        "entries": [
+          {
+            "id": "a1",
+            "ppm": 1000000
+          }
+        ],
+        "other_ppm": 0
+      },
+      "nature": {
+        "source": "predicted",
+        "entries": [
+          {
+            "id": "adamant",
+            "ppm": 250000
+          },
+          {
+            "id": "jolly",
+            "ppm": 250000
+          }
+        ],
+        "other_ppm": 500000
+      },
+      "moves": {
+        "source": "predicted",
+        "entries": [
+          {
+            "id": "protect",
+            "inclusion_ppm": 1000000
+          },
+          {
+            "id": "surf",
+            "inclusion_ppm": 700000
+          },
+          {
+            "id": "icebeam",
+            "inclusion_ppm": 300000
+          }
+        ],
+        "slots_known": 1
+      }
+    },
+    {
+      "species": "delta",
+      "brought_ppm": 666667,
+      "brought_source": "predicted",
+      "item": {
+        "source": "predicted",
+        "entries": [
+          {
+            "id": "ix",
+            "ppm": 600000
+          },
+          {
+            "id": null,
+            "ppm": 300000
+          }
+        ],
+        "other_ppm": 100000
+      },
+      "ability": {
+        "source": "revealed",
+        "entries": [
+          {
+            "id": "a1",
+            "ppm": 1000000
+          }
+        ],
+        "other_ppm": 0
+      },
+      "nature": {
+        "source": "predicted",
+        "entries": [
+          {
+            "id": "adamant",
+            "ppm": 250000
+          },
+          {
+            "id": "jolly",
+            "ppm": 250000
+          }
+        ],
+        "other_ppm": 500000
+      },
+      "moves": {
+        "source": "predicted",
+        "entries": [
+          {
+            "id": "protect",
+            "inclusion_ppm": 1000000
+          },
+          {
+            "id": "surf",
+            "inclusion_ppm": 700000
+          },
+          {
+            "id": "icebeam",
+            "inclusion_ppm": 300000
+          }
+        ],
+        "slots_known": 1
+      }
+    },
+    {
+      "species": "epsilon",
+      "brought_ppm": 666667,
+      "brought_source": "predicted",
+      "item": {
+        "source": "predicted",
+        "entries": [
+          {
+            "id": "ix",
+            "ppm": 600000
+          },
+          {
+            "id": null,
+            "ppm": 300000
+          }
+        ],
+        "other_ppm": 100000
+      },
+      "ability": {
+        "source": "revealed",
+        "entries": [
+          {
+            "id": "a1",
+            "ppm": 1000000
+          }
+        ],
+        "other_ppm": 0
+      },
+      "nature": {
+        "source": "predicted",
+        "entries": [
+          {
+            "id": "adamant",
+            "ppm": 250000
+          },
+          {
+            "id": "jolly",
+            "ppm": 250000
+          }
+        ],
+        "other_ppm": 500000
+      },
+      "moves": {
+        "source": "predicted",
+        "entries": [
+          {
+            "id": "protect",
+            "inclusion_ppm": 1000000
+          },
+          {
+            "id": "surf",
+            "inclusion_ppm": 700000
+          },
+          {
+            "id": "icebeam",
+            "inclusion_ppm": 300000
+          }
+        ],
+        "slots_known": 1
+      }
+    },
+    {
+      "species": "zeta",
+      "brought_ppm": 666667,
+      "brought_source": "predicted",
+      "item": {
+        "source": "predicted",
+        "entries": [
+          {
+            "id": "ix",
+            "ppm": 600000
+          },
+          {
+            "id": null,
+            "ppm": 300000
+          }
+        ],
+        "other_ppm": 100000
+      },
+      "ability": {
+        "source": "revealed",
+        "entries": [
+          {
+            "id": "a1",
+            "ppm": 1000000
+          }
+        ],
+        "other_ppm": 0
+      },
+      "nature": {
+        "source": "predicted",
+        "entries": [
+          {
+            "id": "adamant",
+            "ppm": 250000
+          },
+          {
+            "id": "jolly",
+            "ppm": 250000
+          }
+        ],
+        "other_ppm": 500000
+      },
+      "moves": {
+        "source": "predicted",
+        "entries": [
+          {
+            "id": "protect",
+            "inclusion_ppm": 1000000
+          },
+          {
+            "id": "surf",
+            "inclusion_ppm": 700000
+          },
+          {
+            "id": "icebeam",
+            "inclusion_ppm": 300000
+          }
+        ],
+        "slots_known": 1
+      }
+    }
+  ]
+}

@@ -1,0 +1,290 @@
+{
+  "source": {
+    "kind": "revealed-only",
+    "hash": "044f85c658e3d1c95d9d860ac83f0d3422b3562ab848dfb14bfbfa87f5e609d8"
+  },
+  "slots": [
+    {
+      "species": "alpha",
+      "brought_ppm": 0,
+      "brought_source": "unknown",
+      "item": {
+        "source": "revealed",
+        "entries": [
+          {
+            "id": "ix",
+            "ppm": 1000000
+          }
+        ],
+        "other_ppm": 0
+      },
+      "ability": {
+        "source": "unknown",
+        "entries": [],
+        "other_ppm": 0
+      },
+      "nature": {
+        "source": "unknown",
+        "entries": [],
+        "other_ppm": 0
+      },
+      "moves": {
+        "source": "revealed",
+        "entries": [
+          {
+            "id": "icebeam",
+            "inclusion_ppm": 1000000
+          },
+          {
+            "id": "protect",
+            "inclusion_ppm": 1000000
+          },
+          {
+            "id": "surf",
+            "inclusion_ppm": 1000000
+          },
+          {
+            "id": "thunderbolt",
+            "inclusion_ppm": 1000000
+          }
+        ],
+        "slots_known": 4
+      }
+    },
+    {
+      "species": "beta",
+      "brought_ppm": 0,
+      "brought_source": "unknown",
+      "item": {
+        "source": "revealed",
+        "entries": [
+          {
+            "id": "ix",
+            "ppm": 1000000
+          }
+        ],
+        "other_ppm": 0
+      },
+      "ability": {
+        "source": "unknown",
+        "entries": [],
+        "other_ppm": 0
+      },
+      "nature": {
+        "source": "unknown",
+        "entries": [],
+        "other_ppm": 0
+      },
+      "moves": {
+        "source": "revealed",
+        "entries": [
+          {
+            "id": "icebeam",
+            "inclusion_ppm": 1000000
+          },
+          {
+            "id": "protect",
+            "inclusion_ppm": 1000000
+          },
+          {
+            "id": "surf",
+            "inclusion_ppm": 1000000
+          },
+          {
+            "id": "thunderbolt",
+            "inclusion_ppm": 1000000
+          }
+        ],
+        "slots_known": 4
+      }
+    },
+    {
+      "species": "gamma",
+      "brought_ppm": 0,
+      "brought_source": "unknown",
+      "item": {
+        "source": "revealed",
+        "entries": [
+          {
+            "id": "ix",
+            "ppm": 1000000
+          }
+        ],
+        "other_ppm": 0
+      },
+      "ability": {
+        "source": "unknown",
+        "entries": [],
+        "other_ppm": 0
+      },
+      "nature": {
+        "source": "unknown",
+        "entries": [],
+        "other_ppm": 0
+      },
+      "moves": {
+        "source": "revealed",
+        "entries": [
+          {
+            "id": "icebeam",
+            "inclusion_ppm": 1000000
+          },
+          {
+            "id": "protect",
+            "inclusion_ppm": 1000000
+          },
+          {
+            "id": "surf",
+            "inclusion_ppm": 1000000
+          },
+          {
+            "id": "thunderbolt",
+            "inclusion_ppm": 1000000
+          }
+        ],
+        "slots_known": 4
+      }
+    },
+    {
+      "species": "delta",
+      "brought_ppm": 0,
+      "brought_source": "unknown",
+      "item": {
+        "source": "revealed",
+        "entries": [
+          {
+            "id": "ix",
+            "ppm": 1000000
+          }
+        ],
+        "other_ppm": 0
+      },
+      "ability": {
+        "source": "unknown",
+        "entries": [],
+        "other_ppm": 0
+      },
+      "nature": {
+        "source": "unknown",
+        "entries": [],
+        "other_ppm": 0
+      },
+      "moves": {
+        "source": "revealed",
+        "entries": [
+          {
+            "id": "icebeam",
+            "inclusion_ppm": 1000000
+          },
+          {
+            "id": "protect",
+            "inclusion_ppm": 1000000
+          },
+          {
+            "id": "surf",
+            "inclusion_ppm": 1000000
+          },
+          {
+            "id": "thunderbolt",
+            "inclusion_ppm": 1000000
+          }
+        ],
+        "slots_known": 4
+      }
+    },
+    {
+      "species": "epsilon",
+      "brought_ppm": 0,
+      "brought_source": "unknown",
+      "item": {
+        "source": "revealed",
+        "entries": [
+          {
+            "id": "ix",
+            "ppm": 1000000
+          }
+        ],
+        "other_ppm": 0
+      },
+      "ability": {
+        "source": "unknown",
+        "entries": [],
+        "other_ppm": 0
+      },
+      "nature": {
+        "source": "unknown",
+        "entries": [],
+        "other_ppm": 0
+      },
+      "moves": {
+        "source": "revealed",
+        "entries": [
+          {
+            "id": "icebeam",
+            "inclusion_ppm": 1000000
+          },
+          {
+            "id": "protect",
+            "inclusion_ppm": 1000000
+          },
+          {
+            "id": "surf",
+            "inclusion_ppm": 1000000
+          },
+          {
+            "id": "thunderbolt",
+            "inclusion_ppm": 1000000
+          }
+        ],
+        "slots_known": 4
+      }
+    },
+    {
+      "species": "zeta",
+      "brought_ppm": 0,
+      "brought_source": "unknown",
+      "item": {
+        "source": "revealed",
+        "entries": [
+          {
+            "id": "ix",
+            "ppm": 1000000
+          }
+        ],
+        "other_ppm": 0
+      },
+      "ability": {
+        "source": "unknown",
+        "entries": [],
+        "other_ppm": 0
+      },
+      "nature": {
+        "source": "unknown",
+        "entries": [],
+        "other_ppm": 0
+      },
+      "moves": {
+        "source": "revealed",
+        "entries": [
+          {
+            "id": "icebeam",
+            "inclusion_ppm": 1000000
+          },
+          {
+            "id": "protect",
+            "inclusion_ppm": 1000000
+          },
+          {
+            "id": "surf",
+            "inclusion_ppm": 1000000
+          },
+          {
+            "id": "thunderbolt",
+            "inclusion_ppm": 1000000
+          }
+        ],
+        "slots_known": 4
+      }
+    }
+  ]
+}

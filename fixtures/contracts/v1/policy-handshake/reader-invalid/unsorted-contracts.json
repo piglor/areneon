@@ -21,7 +21,7 @@
       {
         "name": "PolicyQuery",
         "schema_version": 1,
-        "schema_sha256": "96231fd19de11db1beeb72ec3956f9f7acee6a5fad6db8d2d333065d9138a126"
+        "schema_sha256": "3a2dedf410dc3cab37758c115e7112d92d5b767103f91db75bc430c35664e483"
       },
       {
         "name": "BattleObservation",

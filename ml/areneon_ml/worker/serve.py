@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from typing import Any, BinaryIO
 
 from areneon_contracts.contracts import jcs
+from areneon_contracts.opponent_sheet import sheet_problem
 
 from areneon_ml.model.encoder import EncodingError
 from areneon_ml.reducer import ReducerError
@@ -76,6 +77,12 @@ def read_query(frame: dict[str, Any], features: FeatureSupport | None = None) ->
         problem = rows_problem(sent) or coverage_problem(frame, sent, features.damaging)
         if problem is not None:
             raise QueryError(problem)
+    sheet = frame.get("opponent_sheet")
+    if sheet is not None:
+        # The encoder does not read the block yet (ADR-027 slice 4); the reader rules hold anyway.
+        problem = sheet_problem(sheet)
+        if problem is not None:
+            raise QueryError(f"opponent_sheet: {problem}")
     if jcs(frame["identity"]) != jcs(frame["observation"]["identity"]):
         raise QueryError("the query's identity differs from its observation's identity")
     choices = [candidate["choice"] for candidate in frame["candidates"]]

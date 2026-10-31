@@ -370,6 +370,54 @@ class UnsupportedFoePriorityRow(BaseModel):
     reason: Literal["query_kind", "random_effect", "scenario_rule_table", "unqueueable", "fractional_priority"]
 
 
+class SheetFieldSource(RootModel[Literal["sheet", "revealed", "predicted", "unknown"]]):
+    root: Literal["sheet", "revealed", "predicted", "unknown"]
+    """
+    revealed (seen in battle, 1000000 ppm), predicted (the belief), sheet (an engine-sent sheet, open regime only) or unknown (no support or no predictor).
+    """
+
+
+class SheetItemEntry(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    id: Annotated[
+        StrictStr | None, Field(max_length=64, min_length=1, pattern="^[a-z0-9]+$")
+    ]
+    ppm: Annotated[StrictInt, Field(ge=1, le=1000000)]
+
+
+class SheetIdEntry(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    id: Annotated[StrictStr, Field(max_length=64, min_length=1, pattern="^[a-z0-9]+$")]
+    ppm: Annotated[StrictInt, Field(ge=1, le=1000000)]
+
+
+class SheetMoveEntry(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    id: Annotated[StrictStr, Field(max_length=64, min_length=1, pattern="^[a-z0-9]+$")]
+    inclusion_ppm: Annotated[StrictInt, Field(ge=1, le=1000000)]
+
+
+class TrainingSheetSource(BaseModel):
+    """
+    Where the block comes from. kind: engine-sheet (the open regime), belief (the opponent belief at the request), revealed-only (no predictor) or (the test-only oracle-diagnostic kind is not a value here: an oracle block cannot be written as training data); hash is the SHA-256 naming the block's identity (for belief: the feature set hash, which names the belief identity, the k values and the rounding). refusal is present exactly when the belief was refused: a fixed code, and every field of the block is then unknown.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    kind: Literal["engine-sheet", "belief", "revealed-only"]
+    hash: Annotated[StrictStr, Field(pattern="^[0-9a-f]{64}$")]
+    refusal: Literal["reader_flagged", "team_size", "species_not_in_prior", "forme_not_in_prior", "brought_exceeds_picked", "disguise_assignments_exceeded", "evidence_has_no_support", "legality_redraws_exhausted", "empty_distribution", "disguise_unsettled"] | MISSING = (
+        MISSING
+    )
+
+
 class PokemonSet(BaseModel):
     """
     One set, as the pinned engine's PokemonSet (sim/teams.ts) holds it. Legality is the engine validator's, not this schema's.
@@ -505,6 +553,45 @@ class CandidateFeatures(BaseModel):
     """
 
 
+class SheetItemField(BaseModel):
+    """
+    Item: at most k entries (k item 4 in the first feature set), id null meaning no item; other_ppm is the rest.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    source: SheetFieldSource
+    entries: Annotated[list[SheetItemEntry], Field(max_length=8)]
+    other_ppm: Annotated[StrictInt, Field(ge=0, le=1000000)]
+
+
+class SheetIdField(BaseModel):
+    """
+    Ability or nature: at most k entries (k ability 3, k nature 3), other_ppm the rest.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    source: SheetFieldSource
+    entries: Annotated[list[SheetIdEntry], Field(max_length=8)]
+    other_ppm: Annotated[StrictInt, Field(ge=0, le=1000000)]
+
+
+class SheetMoveField(BaseModel):
+    """
+    Moves: at most k entries (k moves 8) with the move's inclusion probability (each move alone, not a share of one total) and slots_known, the number of the four move slots the view has revealed (0 to 4).
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    source: SheetFieldSource
+    entries: Annotated[list[SheetMoveEntry], Field(max_length=8)]
+    slots_known: Annotated[StrictInt, Field(ge=0, le=4)]
+
+
 class PrivateTeamSpec(BaseModel):
     """
     A player's or the bot's own full team. Never part of another player's observation; a private one is never committed.
@@ -519,6 +606,46 @@ class PrivateTeamSpec(BaseModel):
     synthetic: CC0, may be committed; private: a real team or a human's games, kept only in private-data/ (ADR-008 §5).
     """
     team: Annotated[list[PokemonSet], Field(min_length=1)]
+
+
+class SheetSlot(BaseModel):
+    """
+    One opponent preview slot.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    species: Annotated[
+        StrictStr, Field(max_length=64, min_length=1, pattern="^[a-z0-9]+$")
+    ]
+    """
+    The preview species id (for orientation: the observation already shows it).
+    """
+    brought_ppm: Annotated[StrictInt, Field(ge=0, le=1000000)]
+    """
+    P(the slot is among the Pokemon brought), round half up of the exact rational.
+    """
+    brought_source: Literal["revealed", "predicted", "unknown"]
+    item: SheetItemField
+    ability: SheetIdField
+    nature: SheetIdField
+    moves: SheetMoveField
+
+
+class TrainingOpponentSheet(BaseModel):
+    """
+    The opponent sheet block (ADR-027 section 2; ADR-025 erratum E4): per opponent preview slot, in preview order, what the player's own view makes probable about the slot's brought status, item, ability, nature and moves, as integers in parts per million. A derived input beside the observation, built only from the player's own view (closed regime: from the opponent belief's marginals). Reader rules (the profile has no if/then): the source kind fits the regime; entries are sorted by ppm descending then id ascending (a null item id last) with unique ids; other_ppm is max(0, 1000000 - sum of the entries) and the sum is at most 1000000 plus one per entry (each entry is rounded alone); a field of source unknown has no entries and other_ppm 0; a field of source revealed holds its one value at 1000000 ppm (moves: slots_known is 4 and the first four entries are at 1000000); a refused block (source.refusal present) has every slot unknown with brought_ppm 0.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    source: TrainingSheetSource
+    slots: Annotated[list[SheetSlot], Field(max_length=8, min_length=1)]
+    """
+    One per opponent preview slot, in preview order.
+    """
 
 
 class PreviewObservation(BaseModel):
@@ -627,6 +754,10 @@ class TrainingExample(BaseModel):
     candidate_features: CandidateFeatures | MISSING = MISSING
     """
     Optional derived candidate features (ADR-022 section 3, tier A): the probe's damage rows for the damaging move parts of the candidates, computed on the Node side from the player's own channel, own team, the candidates and the configs feature_set_hash names. Absent unless the session or the run declared a feature set: a writer omits it (never null or empty), so every existing value keeps its bytes and hash (a minor change within v1, ADR-008 section 3). Reader rules: rows sorted and unique by (slot, move, target, mega); and, in a PolicyQuery, every damaging move part of every candidate has its row (the worker answers invalid_query otherwise) and feature_set_hash equals the one the session declared.
+    """
+    opponent_sheet: TrainingOpponentSheet | MISSING = MISSING
+    """
+    Optional derived opponent sheet block (ADR-027 section 2, ADR-025 erratum E4): what the player's own view makes probable about each opponent preview slot. Absent unless the session or the run declared a sheet source: a writer omits it (never null or empty), so every existing value keeps its bytes and hash (a minor change within v1, ADR-008 section 3). Reader rules are those of the OpponentSheet contract.
     """
     outcome: Literal["win", "loss", "tie"] | MISSING = MISSING
     """
