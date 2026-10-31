@@ -317,7 +317,7 @@ export interface Encoder {
      * ADR-022 tier A (ADR-010 erratum A5 items 2 to 4). Each damaging move part of a battle candidate also reads the rows of the engine's damage calculation on assumed opponent sets, which the Node side builds (PolicyQuery.candidate_features). Names the feature set; feature_set_hash is the identity hash the builder computes (mechanics config, assumed-set config, adapter format, reader, version manifest), so a pin bump or a config change is another set. Layout changing: it changes the encoder version and the checkpoint format. A pair that sets it has a policy id with a features member. probe-damage/2 (ADR-022 erratum E-22.3) also carries threat, speed and priority arrays, which the encoder attaches to the own and foe tokens and to the slot parts.
      */
     candidate_features?: {
-      feature_set: "probe-damage/1" | "probe-damage/2";
+      feature_set: "probe-damage/1" | "probe-damage/2" | "probe-damage-belief/1";
       feature_set_hash: string;
     };
     /**

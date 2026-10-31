@@ -7,10 +7,14 @@ import { describe, expect, it } from "vitest";
 import { actorRule } from "../src/actor-rule.ts";
 import { type Json, jcs } from "../src/canonical-json.ts";
 import { loadEngine } from "../src/engine.ts";
-import { featureSetHash, featureSetIdentity } from "../src/candidate-features.ts";
-import { featureSetup, GenerationError, playGeneration, trainingTeamPool } from "../src/league-generation.ts";
+import { FEATURE_SET_BELIEF, featureSetHash, featureSetIdentity } from "../src/candidate-features.ts";
+import type { BeliefWorldsFactory } from "../src/damage-aware-worlds.ts";
+import { configV2, fakePort } from "./damage-aware-world-support.ts";
+import { beliefRowCounts, featureSetup, GenerationError, playGeneration, trainingTeamPool } from "../src/league-generation.ts";
 import type { PolicyClient } from "../src/policy-worker.ts";
 import type { PolicyQueryInput } from "../src/policy-protocol.ts";
+import { createFeatureMemo } from "../src/candidate-features.ts";
+import { pairFeatureSetup } from "../src/progress-cli.ts";
 import { readTrainingExample } from "../src/training-loader.ts";
 import { SAMPLES_DIR } from "../src/samples.ts";
 import { readTrainingRunConfig, type TrainingRunConfig } from "../src/training-run-config.ts";
@@ -51,6 +55,30 @@ describe("featureSetup", () => {
     expect(setup.statement).toEqual({ feature_set: "probe-damage/1", feature_set_hash: hash });
     expect(featureSetHash(featureSetIdentity(engine, setup.configs))).toBe(hash);
     expect(setup.configs.data_class).toBe("synthetic");
+  });
+
+  it("builds probe-damage-belief/1 from the committed v2 record through the composition root's factory, and fails closed without one", () => {
+    const calls: unknown[] = [];
+    const factory: BeliefWorldsFactory = (context) => {
+      calls.push(context.config.schema_version);
+      return fakePort();
+    };
+    const attempt = (): string => {
+      try {
+        featureSetup(engine, withFeatures("0".repeat(64), FEATURE_SET_BELIEF), factory);
+      } catch (error) {
+        return /computes as ([0-9a-f]{64})/.exec((error as Error).message)?.[1] ?? "";
+      }
+      return "";
+    };
+    const hash = attempt();
+    expect(hash).toMatch(/^[0-9a-f]{64}$/);
+    expect(calls).toEqual([2]);
+    const setup = featureSetup(engine, withFeatures(hash, FEATURE_SET_BELIEF), factory) as NonNullable<ReturnType<typeof featureSetup>>;
+    expect(setup.statement).toEqual({ feature_set: FEATURE_SET_BELIEF, feature_set_hash: hash });
+    expect(setup.configs.belief?.worlds).toBe(configV2.assumed_set.worlds);
+    expect(hash).not.toBe(hashOf());
+    expect(() => featureSetup(engine, withFeatures(hash, FEATURE_SET_BELIEF))).toThrow(/belief port of the composition root/);
   });
 
   it("refuses a format whose vocabulary it does not hold", () => {
@@ -101,4 +129,52 @@ describe("a generation that reads a feature set", () => {
     expect(client.queries.every((query) => query.candidate_features === undefined)).toBe(true);
     expect((result.stream as string).includes("candidate_features")).toBe(false);
   }, 300_000);
+
+  it("a belief pair: the rows are sent, and each game row carries what the belief did (fallbacks by cause, sorted)", async () => {
+    const refuse = (): never => {
+      throw Object.assign(new Error("no world"), { name: "BeliefError", code: "evidence_has_no_support" });
+    };
+    const factory: BeliefWorldsFactory = () => fakePort(undefined, { sample: refuse });
+    let hash = "";
+    try {
+      featureSetup(engine, withFeatures("0".repeat(64), FEATURE_SET_BELIEF), factory);
+    } catch (error) {
+      hash = /computes as ([0-9a-f]{64})/.exec((error as Error).message)?.[1] as string;
+    }
+    const config = withFeatures(hash, FEATURE_SET_BELIEF);
+    const setup = featureSetup(engine, config, factory) as NonNullable<ReturnType<typeof featureSetup>>;
+    // The evaluation commands set the pair up with the same factory (and refuse without one as a usage error).
+    expect(pairFeatureSetup(engine, config, factory)?.statement).toEqual(setup.statement);
+    expect(() => pairFeatureSetup(engine, config)).toThrow(/belief port of the composition root/);
+    const pool = trainingTeamPool(engine, config.generation.excluded_abilities);
+    const result = await playGeneration({ engine, config, generation: 1, policy_id: POLICY, client: standIn(setup.statement), pool, features: setup.configs });
+    const withBelief = result.games.filter((game) => game.feature_belief !== undefined);
+    expect(withBelief.length).toBe(result.games.length);
+    expect(withBelief.some((game) => (game.feature_belief?.fallbacks.evidence_has_no_support ?? 0) > 0)).toBe(true);
+    for (const game of withBelief) {
+      const keys = Object.keys(game.feature_belief?.fallbacks ?? {});
+      expect(keys).toEqual([...keys].sort());
+    }
+  }, 600_000); // a tiny generation whose belief is refused at every request (the v1 fallback rows)
+
+  it("a pair without the belief set has no feature_belief on any row", async () => {
+    const hash = hashOf();
+    const config = withFeatures(hash);
+    const setup = featureSetup(engine, config) as NonNullable<ReturnType<typeof featureSetup>>;
+    const result = await playGeneration({ engine, config, generation: 1, policy_id: POLICY, client: standIn(setup.statement), pool: trainingTeamPool(engine, config.generation.excluded_abilities), features: setup.configs });
+    expect(result.games.every((game) => game.feature_belief === undefined)).toBe(true);
+  }, 600_000);
+});
+
+describe("beliefRowCounts", () => {
+  it("is undefined without belief counts and sums the seats with the causes sorted", () => {
+    expect(beliefRowCounts([createFeatureMemo()])).toBeUndefined();
+    const a = createFeatureMemo();
+    a.belief = { decisions: 2, worlds_sampled: 16, redraws: 1, contradicted_worlds: 3, fallbacks: { no_consistent_world: 1 } };
+    const b = createFeatureMemo();
+    b.belief = { decisions: 1, worlds_sampled: 8, redraws: 0, contradicted_worlds: 0, fallbacks: { evidence_has_no_support: 1, no_consistent_world: 2 } };
+    const sum = beliefRowCounts([a, createFeatureMemo(), b]);
+    expect(sum).toEqual({ decisions: 3, worlds_sampled: 24, redraws: 1, contradicted_worlds: 3, fallbacks: { evidence_has_no_support: 1, no_consistent_world: 3 } });
+    expect(Object.keys(sum?.fallbacks ?? {})).toEqual(["evidence_has_no_support", "no_consistent_world"]);
+  });
 });

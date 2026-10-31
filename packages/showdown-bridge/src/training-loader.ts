@@ -149,7 +149,7 @@ export interface TrainingInput {
      * only when they are one entry per decision, otherwise the rows are recomputed here. They are the same function
      * of the same Episode, so the stream's bytes do not depend on whether this is given or what it returns.
      */
-    precomputed?: (hash: string) => readonly NonNullable<TrainingExample["candidate_features"]>[] | undefined;
+    precomputed?: (hash: string, request_seqs: readonly number[]) => readonly NonNullable<TrainingExample["candidate_features"]>[] | undefined;
   };
 }
 
@@ -202,7 +202,7 @@ async function examplesOf(episode: Episode, hash: string, features: TrainingInpu
   const observations = await decisionObservations(episode);
   const outcome = outcomeOf(episode);
   const memo = createFeatureMemo(); // one Episode is one game, as at play time; the memo never changes a byte
-  const given = features?.precomputed?.(hash);
+  const given = features?.precomputed?.(hash, observations.map((o) => o.identity.request_seq));
   const rows = given?.length === episode.decisions.length ? given : undefined;
   return episode.decisions.map(({ choice }, i) => {
     const observation = observations[i] as TrainingExample["observation"];

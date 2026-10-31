@@ -7,7 +7,7 @@
 // A worker is a `data:` module that imports `feature-service.ts` and only wires messages to `answerMessage`,
 // as the private shard decode does, so no worker script sits outside the coverage gate.
 import { Worker } from "node:worker_threads";
-import { createFeatureService, type FeatureResult, type FeatureService, type FeatureServiceSpec, type FeatureTask, type WorkerAnswer } from "./feature-service.ts";
+import { createFeatureService, type FeatureResult, type FeatureServiceExtras, type FeatureService, type FeatureServiceSpec, type FeatureTask, type WorkerAnswer } from "./feature-service.ts";
 
 export class FeaturePoolError extends Error {
   override name = "FeaturePoolError";
@@ -39,10 +39,12 @@ export class FeaturePool {
   #next = 0;
   #failure: FeaturePoolError | null = null;
 
-  constructor(size: number, spec: FeatureServiceSpec) {
+  /** `extras` (the belief port) cannot cross to a worker thread, so a pool with extras runs on the calling thread (size 0). */
+  constructor(size: number, spec: FeatureServiceSpec, extras?: FeatureServiceExtras) {
     if (!Number.isInteger(size) || size < 0) throw new FeaturePoolError("the pool size is not a non-negative integer");
+    if (extras !== undefined && size !== 0) throw new FeaturePoolError("the belief port stays on the calling thread: only size 0 takes it");
     this.size = size;
-    this.#inline = size === 0 ? createFeatureService(spec) : null;
+    this.#inline = size === 0 ? createFeatureService(spec, undefined, extras) : null;
     for (let k = 0; k < size; k++) {
       const worker = new Worker(WORKER_SOURCE(new URL("./feature-service.ts", import.meta.url).href), { workerData: { spec } });
       worker.on("message", (answer: WorkerAnswer) => this.#settle(k, answer));

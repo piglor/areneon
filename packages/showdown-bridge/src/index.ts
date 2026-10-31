@@ -514,10 +514,14 @@ export {
 } from "./damage-aware-identity.ts";
 export { actsBefore, canKnockOut, critChancePpm, DAMAGE_VALUE_FORMAT, damageValue, discounted, rollsValue } from "./damage-aware-score.ts";
 export {
+  BELIEF_FEATURES_FORMAT,
+  type BeliefFeatureCounts,
+  type BeliefFeatureSetup,
   type CandidateFeatures,
   candidateFeatures,
   createFeatureMemo,
   FEATURE_SET,
+  FEATURE_SET_BELIEF,
   FeatureBuildError,
   type FeatureConfigs,
   type FeatureMemo,
@@ -537,6 +541,8 @@ export {
   type SpeedRow,
   type ThreatRow,
 } from "./candidate-features-2.ts";
+export { type CandidateFeaturesBelief, candidateFeaturesBelief, FEATURE_WORLDS_PURPOSE, featureWorldsStream, meanRows } from "./candidate-features-belief.ts";
+export { type BenchDecision, episodeDecisions, estimateWallTime, progressDecisions, type ProgressGame, runBench, type Skipped } from "./feature-bench.ts";
 export { type AnyCandidateFeatures, buildFeatures, configuredSetHash, featureSetOf, isFeatureSetId } from "./feature-build.ts";
 export {
   checkTeacherSettings,

@@ -7,14 +7,14 @@
 // file only when it names the Episode and the feature set it is asked for and holds one entry per decision, and
 // recomputes the rows itself otherwise. The files are never part of a generation, an Episode or any contract, and
 // the stream's bytes are the same with or without them (the stream writer still reads and checks every Episode).
-import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import type { FeatureConfigs } from "./candidate-features.ts";
 import { type Json, jcs } from "./canonical-json.ts";
 import type { Engine } from "./engine.ts";
 import { episodeHash } from "./episode.ts";
 import { type AnyCandidateFeatures, configuredSetHash } from "./feature-build.ts";
-import { readEpisode } from "./episode-io.ts";
+import { decisionObservations, readEpisode } from "./episode-io.ts";
 import { nodeSha256 } from "./player-channel.ts";
 import type { SyntheticTeamHashes } from "./team-class.ts";
 import { episodeFeatureRows } from "./training-loader.ts";
@@ -41,14 +41,18 @@ export async function writeFeatureRows(
 ): Promise<number> {
   mkdirSync(dir, { recursive: true });
   const setHash = configuredSetHash(engine, configs);
+  const reader = readFeatureRows(engine, configs, dir);
   let written = 0;
   for (const { hash, path } of episodes) {
     if (stopped()) break;
     try {
       const episode = await readEpisode(JSON.parse(readFileSync(path, "utf8")), { known_synthetic });
       if ((await episodeHash(episode, nodeSha256)) !== hash) continue;
+      const request_seqs = (await decisionObservations(episode)).map((o) => o.identity.request_seq);
+      // The play-time sidecar of this Episode (`writePlayRows`) is kept only if the reader accepts it; a stale or damaged file is rebuilt.
+      if (existsSync(rowsFile(dir, hash)) && reader(hash, request_seqs) !== undefined) continue;
       const rows = await episodeFeatureRows(episode, hash, { engine, configs });
-      writeFileSync(rowsFile(dir, hash), jcs({ episode_hash: hash, feature_set_hash: setHash, rows } as unknown as Json));
+      writeFileSync(rowsFile(dir, hash), jcs({ episode_hash: hash, feature_set_hash: setHash, request_seqs, rows } as unknown as Json));
       written++;
     } catch {
       // No file: the stream writer recomputes this Episode and reports what is wrong with it, if anything.
@@ -58,16 +62,47 @@ export async function writeFeatureRows(
 }
 
 /**
+ * The play-time sidecar (#1271): the rows the policy seat attached to its queries while the game was played, written as
+ * the Episode's rows file. `played` maps a request number of the seat's channel to the rows built for it. The file is
+ * written only when every decision of the Episode has rows, in the Episode's decision order; otherwise nothing is
+ * written and the post-game pass (`writeFeatureRows`) or the stream writer builds them, so a game with a gap costs time
+ * and never a byte. The rows are the ones the same builder makes from the same channel prefix, team and candidates, which
+ * the stream writer would recompute (a test holds the file equal to the recomputation).
+ */
+export async function writePlayRows(
+  { engine, configs }: { engine: Engine; configs: FeatureConfigs },
+  episode: Parameters<typeof decisionObservations>[0],
+  hash: string,
+  played: ReadonlyMap<number, AnyCandidateFeatures>,
+  dir: string,
+): Promise<boolean> {
+  const setHash = configuredSetHash(engine, configs);
+  const rows: AnyCandidateFeatures[] = [];
+  const request_seqs: number[] = [];
+  for (const observation of await decisionObservations(episode)) {
+    const found = played.get(observation.identity.request_seq);
+    if (found === undefined || found.feature_set_hash !== setHash) return false;
+    rows.push(found);
+    request_seqs.push(observation.identity.request_seq);
+  }
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(rowsFile(dir, hash), jcs({ episode_hash: hash, feature_set_hash: setHash, request_seqs, rows } as unknown as Json));
+  return true;
+}
+
+/**
  * The reader for `TrainingInput.features.precomputed`: the rows `writeFeatureRows` left for an Episode, or undefined
  * when there is no file, it is not for this Episode and this feature set, or it does not parse (then the rows are
  * recomputed, so a stale or damaged file can cost time but never change a byte).
  */
-export function readFeatureRows(engine: Engine, configs: FeatureConfigs, dir: string): (hash: string) => AnyCandidateFeatures[] | undefined {
+export function readFeatureRows(engine: Engine, configs: FeatureConfigs, dir: string): (hash: string, request_seqs: readonly number[]) => AnyCandidateFeatures[] | undefined {
   const setHash = configuredSetHash(engine, configs);
-  return (hash) => {
+  return (hash, request_seqs) => {
     try {
-      const found = JSON.parse(readFileSync(rowsFile(dir, hash), "utf8")) as { episode_hash?: unknown; feature_set_hash?: unknown; rows?: unknown };
+      const found = JSON.parse(readFileSync(rowsFile(dir, hash), "utf8")) as { episode_hash?: unknown; feature_set_hash?: unknown; request_seqs?: unknown; rows?: unknown };
       if (found.episode_hash !== hash || found.feature_set_hash !== setHash || !Array.isArray(found.rows)) return undefined;
+      // Each row belongs to the request the Episode's decision at that place answers.
+      if (!Array.isArray(found.request_seqs) || found.request_seqs.length !== request_seqs.length || found.request_seqs.some((seq, i) => seq !== request_seqs[i])) return undefined;
       const rows = found.rows as AnyCandidateFeatures[];
       return rows.every((row) => row.feature_set_hash === setHash) ? rows : undefined;
     } catch {

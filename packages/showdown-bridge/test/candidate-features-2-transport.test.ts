@@ -244,11 +244,14 @@ describe("a played game under probe-damage/2: the arrays sent equal the arrays t
       const path = join(dir, `${hash}.episode.json`);
       writeFileSync(path, JSON.stringify(one));
       expect(await writeFeatureRows({ engine, configs: configs(), known_synthetic: known }, [{ hash, path }], join(dir, "rows"))).toBe(1);
-      const rows = readFeatureRows(engine, configs(), join(dir, "rows"))(hash);
+      const { decisionObservations } = await import("../src/episode-io.ts");
+      const { readEpisode } = await import("../src/episode-io.ts");
+      const seqs = (await decisionObservations(await readEpisode(JSON.parse(JSON.stringify(one)), { known_synthetic: known }))).map((o) => o.identity.request_seq);
+      const rows = readFeatureRows(engine, configs(), join(dir, "rows"))(hash, seqs);
       expect(rows?.length).toBe(one.decisions.length);
       const own = examples.filter((e) => e.episode_hash === hash).map((e) => e.candidate_features);
       expect(jcs(rows as unknown as Json)).toBe(jcs(own as unknown as Json));
-      expect(readFeatureRows(engine, configs({ feature_set: "probe-damage/1" }), join(dir, "rows"))(hash)).toBeUndefined();
+      expect(readFeatureRows(engine, configs({ feature_set: "probe-damage/1" }), join(dir, "rows"))(hash, seqs)).toBeUndefined();
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

@@ -511,7 +511,8 @@
                 "feature_set": {
                   "enum": [
                     "probe-damage/1",
-                    "probe-damage/2"
+                    "probe-damage/2",
+                    "probe-damage-belief/1"
                   ]
                 },
                 "feature_set_hash": {

@@ -14,7 +14,9 @@ import {
   forbiddenManifestDeps,
   forbiddenPyprojectDeps,
   lockedVersion,
+  ALLOWED_OVERRIDES,
   overrideProblems,
+  productionClosure,
   referencesPackage,
   toolsIn,
   unsafeCopySource,
@@ -106,7 +108,10 @@ describe("the private team store package", () => {
   it("has nothing that can rewrite its pinned versions", () => {
     const rootManifest = json(join(ROOT, "package.json"));
     const workspace = text(join(ROOT, "pnpm-workspace.yaml"));
-    expect(overrideProblems(rootManifest, workspace)).toEqual([]);
+    const closure = productionClosure(text(join(ROOT, "pnpm-lock.yaml")), PACKAGE_PATH);
+    expect(closure.has("aws4fetch")).toBe(true);
+    expect(closure.has("minimatch")).toBe(false);
+    expect(overrideProblems(rootManifest, workspace, closure)).toEqual([]);
     expect(overrideProblems(manifest, "")).toEqual([]);
   });
 });
@@ -316,6 +321,74 @@ describe("the checks catch bad input", () => {
     expect(overrideProblems({ name: "x" }, "packages:\n  - a\n")).toEqual([]);
   });
 
+  it("allows only the reviewed override, and never one inside the package's closure", () => {
+    const withOverrides = (o: Record<string, unknown>): Record<string, unknown> => ({ pnpm: { overrides: o } });
+    const none = new Set<string>();
+    const refused = ["package.json pnpm.overrides"];
+    expect(ALLOWED_OVERRIDES).toEqual({ minimatch: "^11.0.1" });
+    const table: [Record<string, unknown>, ReadonlySet<string>, string[]][] = [
+      [withOverrides({ minimatch: "^11.0.1" }), none, []],
+      [withOverrides({ minimatch: "^11.0.1" }), new Set(["aws4fetch"]), []],
+      [withOverrides({ minimatch: "^11.0.2" }), none, refused],
+      [withOverrides({ minimatch: "^10.0.0" }), none, refused],
+      [withOverrides({ lodash: "^4.17.21" }), none, refused],
+      [withOverrides({ minimatch: "^11.0.1", lodash: "4" }), none, refused],
+      [withOverrides({ minimatch: "^11.0.1" }), new Set(["minimatch"]), refused],
+      [withOverrides({}), none, refused],
+    ];
+    for (const [manifest, closure, expected] of table) {
+      expect(overrideProblems(manifest, "", closure), JSON.stringify(manifest)).toEqual(expected);
+    }
+    expect(overrideProblems(withOverrides({ minimatch: "^11.0.1" }), "overrides:\n  a: 1\n", none)).toEqual([
+      "pnpm-workspace.yaml overrides",
+    ]);
+    expect(overrideProblems({ ...withOverrides({ minimatch: "^11.0.1" }), resolutions: {} }, "", none)).toEqual([
+      "package.json resolutions",
+    ]);
+  });
+
+  it("reads the production closure from the lockfile, through links and snapshots", () => {
+    const lock = [
+      "lockfileVersion: 9",
+      "",
+      "importers:",
+      "",
+      "  .: {}",
+      "",
+      "  packages/a:",
+      "    dependencies:",
+      "      '@areneon/b':",
+      "        specifier: workspace:*",
+      "        version: link:../b",
+      "      x:",
+      "        specifier: 1.0.0",
+      "        version: 1.0.0",
+      "    devDependencies:",
+      "      dev-only:",
+      "        specifier: 1.0.0",
+      "        version: 1.0.0",
+      "",
+      "  packages/b:",
+      "    dependencies:",
+      "      y:",
+      "        specifier: 2.0.0",
+      "        version: 2.0.0",
+      "",
+      "snapshots:",
+      "",
+      "  x@1.0.0:",
+      "    dependencies:",
+      "      z: 3.0.0",
+      "",
+      "  z@3.0.0: {}",
+      "",
+      "  y@2.0.0: {}",
+      "",
+    ].join("\n");
+    expect([...productionClosure(lock, "packages/a")].sort()).toEqual(["@areneon/b", "x", "y", "z"]);
+    expect(productionClosure(lock, "packages/missing").size).toBe(0);
+  });
+
   const head = "version: 2\nupdates:\n  - package-ecosystem: npm\n    directory: /\n";
   const entries = IGNORED_FOR_VERSION_UPDATES.map((n) => `      - dependency-name: "${n}"\n`).join("");
 
@@ -330,6 +403,8 @@ describe("the checks catch bad input", () => {
 
   it("reads a locked version and misses an absent or differing one", () => {
     const lock = [
+      "lockfileVersion: 9",
+      "",
       "importers:",
       "",
       "  .:",

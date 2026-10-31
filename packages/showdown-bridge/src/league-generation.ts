@@ -15,7 +15,7 @@ import { join } from "node:path";
 import type { Engine, PokemonSet } from "./engine.ts";
 import { jcs, type Json } from "./canonical-json.ts";
 import { type DamageAwareActor, type DamageAwareOptions, damageAwareActor } from "./damage-aware-actor.ts";
-import type { FeatureConfigs } from "./candidate-features.ts";
+import { type BeliefFeatureCounts, type BeliefFeatureSetup, createFeatureMemo, type FeatureConfigs, type FeatureMemo, FEATURE_SET_BELIEF } from "./candidate-features.ts";
 import { configuredSetHash } from "./feature-build.ts";
 import { loadDamageAwareConfig, loadDamageAwareConfigV2 } from "./damage-aware-config.ts";
 import type { BeliefWorldsFactory } from "./damage-aware-worlds.ts";
@@ -40,7 +40,8 @@ import { importPaste } from "./teams.ts";
 import { stampTeam, type SyntheticTeamHashes, teamHash } from "./team-class.ts";
 import { loadTrainingSet, type StoredEpisode, type TrainingSet, writeStoredTrainingStream, writeTrainingStream } from "./training-loader.ts";
 import { type ChunkLimits } from "./chunked-file.ts";
-import { readFeatureRows, writeFeatureRows } from "./feature-recompute.ts";
+import { readFeatureRows, writeFeatureRows, writePlayRows } from "./feature-recompute.ts";
+import type { AnyCandidateFeatures } from "./feature-build.ts";
 import type { TrainingRunConfig } from "./training-run-config.ts";
 import type { Episode } from "./episode.ts";
 
@@ -121,8 +122,10 @@ export interface FeatureSetup {
  * reviewed records of this checkout, or undefined when the config names none (then nothing about the run changes).
  * Fails closed: the hash this checkout computes (pin, mechanics and assumed-set configs, probe adapter, reader) must be
  * the one the config names, so a run never plays or trains on rows of another set than its checkpoints were made for.
+ * `probe-damage-belief/1` (ADR-025 slice 5) also needs the belief port of the composition root (`beliefWorlds`; the bridge does
+ * not import the opponent model); its world count and belief come from the committed `damage-aware.v2.json` record.
  */
-export function featureSetup(engine: Engine, config: TrainingRunConfig): FeatureSetup | undefined {
+export function featureSetup(engine: Engine, config: TrainingRunConfig, beliefWorlds?: BeliefWorldsFactory): FeatureSetup | undefined {
   const named = config.model.encoder.options?.candidate_features;
   if (named === undefined) return undefined;
   if (config.format_id !== GOLDEN_FORMAT) throw new GenerationError(`the candidate features have a vocabulary for ${GOLDEN_FORMAT} only, not ${config.format_id}`);
@@ -134,12 +137,21 @@ export function featureSetup(engine: Engine, config: TrainingRunConfig): Feature
     snapshot: loadRulesSnapshot(engine.commit),
     data_class: "synthetic",
     feature_set: named.feature_set,
+    ...(named.feature_set === FEATURE_SET_BELIEF ? { belief: beliefSetup(engine, vocabulary, config.format_id, beliefWorlds) } : {}),
   };
   const found = configuredSetHash(engine, configs);
   if (found !== named.feature_set_hash) {
     throw new GenerationError(`the run config names the candidate feature set ${named.feature_set} ${named.feature_set_hash}, which this checkout computes as ${found}`);
   }
   return { configs, statement: { feature_set: named.feature_set, feature_set_hash: found } };
+}
+
+/** The belief a `probe-damage-belief/1` run samples its worlds from: the v2 record's prior, belief config and world count, through the composition root's factory. */
+function beliefSetup(engine: Engine, vocabulary: ReturnType<typeof goldenTeamVocabulary>, formatId: string, beliefWorlds: BeliefWorldsFactory | undefined): BeliefFeatureSetup {
+  if (beliefWorlds === undefined) throw new GenerationError(`the candidate feature set ${FEATURE_SET_BELIEF} needs the belief port of the composition root (packages/team-dataset)`);
+  const config = loadDamageAwareConfigV2(vocabulary);
+  const manifest = resolveFormat(engine, formatId, loadRulesSnapshot(engine.commit)).manifest;
+  return { port: beliefWorlds({ engine, vocabulary, config, reader_sha256: readerSha256(), manifest }), worlds: config.assumed_set.worlds };
 }
 
 /** The policy id of `damage-aware@v2`, the baseline that plays on sampled belief worlds (ADR-025 section 6). */
@@ -300,6 +312,30 @@ export interface GameRow {
   turns: number;
   /** Only on a forfeited game: the seat that lost, why, at which request of its channel, and the harness's detail (#912). */
   forfeit?: { loser: Player; cause: ForfeitCause; request_seq: number; detail: string };
+  /**
+   * Only a game of a pair that reads `probe-damage-belief/1` (#1271): what the belief did for the pair's seats in this game
+   * (requests, worlds, legality redraws, worlds dropped, requests that fell back to the v1 assumed sets by cause).
+   * Absent for every other run, so those keep their bytes.
+   */
+  feature_belief?: BeliefRowCounts;
+}
+
+/** `BeliefFeatureCounts` as a game row holds it: integers, the fallback causes sorted. */
+export type BeliefRowCounts = BeliefFeatureCounts;
+
+/** The belief counts of the pair's seats summed, with the fallback causes sorted (the memo's insertion order is not part of a row). */
+export function beliefRowCounts(memos: readonly FeatureMemo[]): BeliefRowCounts | undefined {
+  const all = memos.flatMap((memo) => (memo.belief === undefined ? [] : [memo.belief]));
+  if (all.length === 0) return undefined;
+  const fallbacks: Record<string, number> = {};
+  for (const counts of all) for (const [cause, count] of Object.entries(counts.fallbacks)) fallbacks[cause] = (fallbacks[cause] ?? 0) + count;
+  return {
+    decisions: all.reduce((sum, c) => sum + c.decisions, 0),
+    worlds_sampled: all.reduce((sum, c) => sum + c.worlds_sampled, 0),
+    redraws: all.reduce((sum, c) => sum + c.redraws, 0),
+    contradicted_worlds: all.reduce((sum, c) => sum + c.contradicted_worlds, 0),
+    fallbacks: Object.fromEntries(Object.entries(fallbacks).sort(([a], [b]) => (a < b ? -1 : 1))),
+  };
 }
 
 /** The forfeits of a generation by cause, sorted by cause; empty when none. */
@@ -373,6 +409,10 @@ function baselineActor(options: GenerationOptions, opponent: BaselineOpponent, p
 
 interface PlayedOne extends PlayedGame {
   baseline?: BaselineGameReport;
+  /** The pair's seats' rows as they were attached to the queries (with `features_dir`), per seat. */
+  play_rows?: Partial<Record<Player, ReadonlyMap<number, AnyCandidateFeatures>>>;
+  /** The pair's seats' belief counts, when the pair reads `probe-damage-belief/1`. */
+  feature_belief?: BeliefRowCounts;
 }
 
 async function playOne(options: GenerationOptions, plan: GamePlan, client: PolicyClient): Promise<PlayedOne> {
@@ -380,10 +420,21 @@ async function playOne(options: GenerationOptions, plan: GamePlan, client: Polic
   const { generation: settings } = config;
   const budget = { preview_ms: settings.latency_budget_ms.preview_ms, battle_ms: settings.latency_budget_ms.battle_ms };
   const play = settings.play?.temperature_ppm === undefined ? undefined : { temperature_ppm: settings.play.temperature_ppm };
-  const seat: PolicySeat = { client, policy_id, sampling: "sample", ...(play === undefined ? {} : { play }), ...(options.features === undefined ? {} : { features: { configs: options.features } }) };
+  // Each of the pair's seats keeps its own memo and, with a rows directory, the rows it attaches to its queries (the play-time sidecar, #1271).
+  const memos: Partial<Record<Player, FeatureMemo>> = {};
+  const rows: Partial<Record<Player, Map<number, AnyCandidateFeatures>>> = {};
+  const keepRows = options.features !== undefined && options.features_dir !== undefined && options.episodes_dir !== undefined;
+  const seatFor = (player: Player): PolicySeat => {
+    if (options.features === undefined) return { client, policy_id, sampling: "sample", ...(play === undefined ? {} : { play }) };
+    const memo = createFeatureMemo();
+    memos[player] = memo;
+    const kept = new Map<number, AnyCandidateFeatures>();
+    rows[player] = kept;
+    return { client, policy_id, sampling: "sample", ...(play === undefined ? {} : { play }), features: { configs: options.features, memo, ...(keepRows ? { record: (seq: number, found: AnyCandidateFeatures) => void kept.set(seq, found) } : {}) } };
+  };
   const baseline = plan.opponent === "self" ? undefined : baselineActor(options, plan.opponent, plan, budget);
   const seats: PolicyGameOptions["seats"] =
-    baseline === undefined ? { p1: seat, p2: seat } : plan.policy_seat === "p1" ? { p1: seat, p2: baseline.actor } : { p1: baseline.actor, p2: seat };
+    baseline === undefined ? { p1: seatFor("p1"), p2: seatFor("p2") } : plan.policy_seat === "p1" ? { p1: seatFor("p1"), p2: baseline.actor } : { p1: baseline.actor, p2: seatFor("p2") };
   const played = await policyGame({
     engine,
     formatId: config.format_id,
@@ -395,7 +446,13 @@ async function playOne(options: GenerationOptions, plan: GamePlan, client: Polic
     latency_budget: budget,
     maxTurns: settings.max_turns,
   });
-  return baseline?.report === undefined ? played : { ...played, baseline: baseline.report() };
+  const belief = beliefRowCounts(Object.values(memos));
+  return {
+    ...played,
+    ...(baseline?.report === undefined ? {} : { baseline: baseline.report() }),
+    ...(keepRows ? { play_rows: rows } : {}),
+    ...(belief === undefined ? {} : { feature_belief: belief }),
+  };
 }
 
 const idOf = (opponent: GamePlan["opponent"], policy_id: string): string => (opponent === "self" ? policy_id : opponent.policy_id);
@@ -502,7 +559,7 @@ export async function playEntries(options: GenerationOptions, shard: Shard = { i
       const { outcome, record, baseline } = game;
       const reported = baseline === undefined ? {} : { baseline };
       if (outcome.kind === "incident") throw new GenerationError(`game ${entry.game} (${entry.seed}): ${outcome.incident}: ${outcome.message}`);
-      const row = { game: entry.game, seed: entry.seed, opponent: idOf(entry.opponent, policy_id) };
+      const row = { game: entry.game, seed: entry.seed, opponent: idOf(entry.opponent, policy_id), ...(game.feature_belief === undefined ? {} : { feature_belief: game.feature_belief }) };
       if (outcome.kind === "forfeit" || record === null) {
         // A forfeit has no Episode, but it is kept the way its generation keeps them: an empty list of references on the spilled path (#1184).
         const kept = options.episodes_dir === undefined ? {} : { stored: [] };
@@ -525,11 +582,21 @@ export async function playEntries(options: GenerationOptions, shard: Shard = { i
       } else {
         // Written now and dropped: the next waves do not carry this game's Episodes (#1069).
         const stored: StoredRef[] = [];
-        for (const episode of episodes) {
+        for (const [seat, episode] of episodes.entries()) {
           const hash = await episodeHash(episode, nodeSha256);
           // Not renamed into place: the directory is the generation's partial one, discarded whole on a restart, and the loader checks each file against its name.
           writeDurable(join(options.episodes_dir, `${hash}.json`), `${jcs(episode as unknown as Json)}\n`);
           stored.push({ hash, behaviour_policy_id: episode.provenance.behaviour_policy_id });
+          // The play-time sidecar: the pair's own seat leaves the rows it attached to its queries (a gap leaves nothing: the post-game pass builds them).
+          const played = game.play_rows?.[seat === 0 ? "p1" : "p2"];
+          if (played !== undefined && options.features !== undefined && options.features_dir !== undefined && episode.provenance.behaviour_policy_id === policy_id) {
+            // A failure here skips the sidecar (the post-game pass builds the rows) and never fails the generation; it is logged without any content.
+            try {
+              await writePlayRows({ engine: options.engine, configs: options.features }, episode, hash, played, options.features_dir);
+            } catch (error) {
+              process.stderr.write(`rows sidecar skipped for game ${entry.game}: ${(error as Error).name}\n`);
+            }
+          }
         }
         entries.push({ ...base, episodes: [], stored });
       }

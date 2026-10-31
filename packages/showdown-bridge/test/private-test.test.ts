@@ -21,6 +21,8 @@ import type { FrozenPairClientOptions } from "../src/progress-cli.ts";
 import { progressGameStreams } from "../src/progress-seed.ts";
 import { leagueGameStreams } from "../src/league-seed.ts";
 import { type CanaryWorld, expectNoLeak, findLeaks, makeCanaryWorld, observe } from "./support/private-canary.ts";
+import type { BeliefWorldsFactory } from "../src/damage-aware-worlds.ts";
+import { fakePort } from "./damage-aware-world-support.ts";
 
 const engine = loadEngine();
 const ROOT = new URL("../../..", import.meta.url).pathname;
@@ -357,6 +359,37 @@ describe("the private test on stand-in teams", () => {
     const wrong = join(dir, "wrong.json");
     writeFileSync(wrong, JSON.stringify(named("0".repeat(64))));
     expect((await runCli(w, ["--max-pairs", "1"], { config: wrong })).err).toEqual(["private-test: worker_failed"]);
+  }, 240_000);
+
+  it("sets a belief pair up through the composition root's factory, and refuses one without a factory", async () => {
+    const w = world(2);
+    const named = (feature_set_hash: string): Record<string, unknown> => {
+      const model = tiny.model as { encoder: object };
+      return { ...tiny, generation: { ...(tiny.generation as object), max_turns: 100 }, model: { ...model, encoder: { ...model.encoder, options: { candidate_features: { feature_set: "probe-damage-belief/1", feature_set_hash } } } } };
+    };
+    const calls: number[] = [];
+    const factory: BeliefWorldsFactory = () => {
+      calls.push(1);
+      return fakePort();
+    };
+    let hash = "";
+    try {
+      featureSetup(engine, readTrainingRunConfig(named("0".repeat(64))), factory);
+    } catch (error) {
+      hash = /computes as ([0-9a-f]{64})/.exec((error as Error).message)?.[1] ?? "";
+    }
+    expect(hash).toMatch(/^[0-9a-f]{64}$/);
+    calls.length = 0;
+    const dir = mkdtempSync(join(tmpdir(), "private-test-belief-"));
+    scratch.push(dir);
+    const own = join(dir, "config.json");
+    writeFileSync(own, JSON.stringify(named(hash)));
+    const asked: FrozenPairClientOptions[] = [];
+    const run = await runCli(w, ["--max-pairs", "1"], { config: own, onClient: (o) => asked.push(o), sources: { ...noSources, belief_worlds: factory } });
+    expect(run.code).toBe(0);
+    expect(calls.length).toBeGreaterThan(0);
+    expect(asked.map((o) => o.features)).toEqual([{ feature_set: "probe-damage-belief/1", feature_set_hash: hash }]);
+    expect((await runCli(w, ["--max-pairs", "1"], { config: own })).err).toEqual(["private-test: worker_failed"]);
   }, 240_000);
 
   it("refuses an options mistake before it plays", async () => {

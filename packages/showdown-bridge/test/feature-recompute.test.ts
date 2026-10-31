@@ -8,11 +8,12 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { actorRule } from "../src/actor-rule.ts";
 import { loadEngine } from "../src/engine.ts";
 import { featureSetHash, featureSetIdentity, type FeatureConfigs } from "../src/candidate-features.ts";
-import { readFeatureRows, writeFeatureRows } from "../src/feature-recompute.ts";
+import { readFeatureRows, writeFeatureRows, writePlayRows } from "../src/feature-recompute.ts";
 import { type GenerationOptions, featureSetup, playEntries, playGeneration, trainingTeamPool, writeGeneration } from "../src/league-generation.ts";
 import type { PolicyClient } from "../src/policy-worker.ts";
 import { SAMPLES_DIR } from "../src/samples.ts";
-import { writeStoredTrainingStream } from "../src/training-loader.ts";
+import { decisionObservations } from "../src/episode-io.ts";
+import { episodeFeatureRows, writeStoredTrainingStream } from "../src/training-loader.ts";
 import { readTrainingRunConfig, type TrainingRunConfig } from "../src/training-run-config.ts";
 
 const engine = loadEngine();
@@ -153,8 +154,78 @@ describe("the stream's feature rows recomputed by the game processes (#1185)", (
       expect(await writeFeatureRows(ctx, [{ hash: "0".repeat(64), path }], join(dir, "w2"))).toBe(0); // another name than its own hash
       expect(await writeFeatureRows(ctx, [{ hash, path: join(first, "episodes", "absent.json") }], join(dir, "w3"))).toBe(0);
       expect(await writeFeatureRows(ctx, [{ hash, path }], join(dir, "w4"), () => true)).toBe(0);
-      expect(readFeatureRows(engine, configs, rows)(hash)?.every((row) => row.feature_set_hash === featureSetHash(featureSetIdentity(engine, configs)))).toBe(true);
-      expect(readFeatureRows(engine, configs, rows)("1".repeat(64))).toBeUndefined();
+      const { readEpisode } = await import("../src/episode-io.ts");
+      const seqs = (await decisionObservations(await readEpisode(JSON.parse(readFileSync(path, "utf8")), { known_synthetic: known }))).map((o) => o.identity.request_seq);
+      expect(readFeatureRows(engine, configs, rows)(hash, seqs)?.every((row) => row.feature_set_hash === featureSetHash(featureSetIdentity(engine, configs)))).toBe(true);
+      expect(readFeatureRows(engine, configs, rows)("1".repeat(64), seqs)).toBeUndefined();
+      // The rows belong to the requests the Episode's decisions answer: other request numbers (or a count) are refused, and an existing file the reader refuses is rebuilt.
+      expect(readFeatureRows(engine, configs, rows)(hash, seqs.map((seq) => seq + 1))).toBeUndefined();
+      expect(readFeatureRows(engine, configs, rows)(hash, seqs.slice(1))).toBeUndefined();
+      const file = join(rows, `${hash}.rows.json`);
+      const stored = JSON.parse(readFileSync(file, "utf8")) as { request_seqs: number[] };
+      writeFileSync(file, JSON.stringify({ ...stored, request_seqs: stored.request_seqs.map((seq) => seq + 1) }));
+      expect(await writeFeatureRows(ctx, [{ hash, path }], rows)).toBe(1); // rebuilt
+      expect(readFeatureRows(engine, configs, rows)(hash, seqs)?.length).toBe(seqs.length);
+      const withoutSeqs = Object.fromEntries(Object.entries(JSON.parse(readFileSync(file, "utf8")) as Record<string, unknown>).filter(([key]) => key !== "request_seqs"));
+      writeFileSync(file, JSON.stringify(withoutSeqs)); // a file with no request numbers is not used
+      expect(readFeatureRows(engine, configs, rows)(hash, seqs)).toBeUndefined();
+    }, 600_000); // one Episode's rows with the real probe
+  });
+
+  describe("the play-time sidecar (#1271): the rows a seat attached to its queries are the stream's rows", () => {
+    const stating = (): ReturnType<typeof client> & { featureSet: { feature_set: string; feature_set_hash: string } } => Object.assign(client(), { featureSet: { feature_set: "probe-damage/1", feature_set_hash: setHash } });
+
+    it("leaves the same files and the same rows as the recomputation, and the stream writer needs no probe", async () => {
+      const out = join(dir, "play");
+      const rows = join(dir, "play-rows");
+      const result = await playGeneration(opts(out, { features_dir: rows, client: stating() }));
+      writeGeneration(out, result);
+      expect(files(out)).toEqual(reference);
+      expect(result.set).toEqual(referenceSet);
+      const names = readdirSync(rows);
+      expect(names.length).toBeGreaterThan(5);
+      // Every sidecar equals what the stream writer would build for that Episode.
+      for (const name of names) {
+        const hash = name.replace(".rows.json", "");
+        const episode = JSON.parse(readFileSync(join(out, "episodes", `${hash}.json`), "utf8"));
+        const { readEpisode } = await import("../src/episode-io.ts");
+        const read = await readEpisode(episode, { known_synthetic: pool.known_synthetic });
+        const recomputed = await episodeFeatureRows(read, hash, { engine, configs });
+        const stored = JSON.parse(readFileSync(join(rows, name), "utf8")) as { rows: unknown };
+        expect(stored.rows).toEqual(JSON.parse(JSON.stringify(recomputed)));
+      }
+      const broken: FeatureConfigs = {
+        ...configs,
+        probe: () => {
+          throw new Error("the probe must not run");
+        },
+      };
+      const own = readdirSync(join(out, "episodes")).map((name) => ({ hash: name.replace(".json", ""), path: join(out, "episodes", name) })).filter(({ path }) => (JSON.parse(readFileSync(path, "utf8")) as { provenance: { behaviour_policy_id: string } }).provenance.behaviour_policy_id === POLICY);
+      // The post-game pass finds every sidecar there and builds nothing.
+      expect(await writeFeatureRows({ engine, configs: broken, known_synthetic: pool.known_synthetic }, own, rows)).toBe(0);
+      const again = join(dir, "play-again.jsonl");
+      await writeStoredTrainingStream({ episodes: own, evaluation_manifests: [], known_synthetic: pool.known_synthetic, behaviour_policy_id: POLICY, features: { engine, configs: broken, precomputed: readFeatureRows(engine, configs, rows) } }, { path: again });
+      expect(readFileSync(again, "utf8")).toBe(reference["stream.jsonl"]);
+    }, 600_000); // a tiny generation with the real probe at play time, then the stream again with a probe that must not be asked
+
+    it("writes nothing for an Episode with a decision it has no rows for, or rows of another set", async () => {
+      const first = join(dir, "serial");
+      const [name] = readdirSync(join(first, "episodes")).sort();
+      const hash = (name as string).replace(".json", "");
+      const { readEpisode } = await import("../src/episode-io.ts");
+      const episode = await readEpisode(JSON.parse(readFileSync(join(first, "episodes", name as string), "utf8")), { known_synthetic: pool.known_synthetic });
+      const built = await episodeFeatureRows(episode, hash, { engine, configs });
+      const seqs = (await decisionObservations(episode)).map((o) => o.identity.request_seq);
+      const full = new Map(seqs.map((seq, i) => [seq, built[i] as NonNullable<(typeof built)[number]> as never]));
+      const ctx = { engine, configs };
+      const gap = new Map(full);
+      gap.delete(seqs[0] as number);
+      expect(await writePlayRows(ctx, episode, hash, gap, join(dir, "gap-rows"))).toBe(false);
+      const other = new Map([...full].map(([seq, row]) => [seq, { ...(row as object), feature_set_hash: "0".repeat(64) } as never]));
+      expect(await writePlayRows(ctx, episode, hash, other, join(dir, "other-rows"))).toBe(false);
+      expect(readdirSync(join(dir)).filter((n) => n === "gap-rows" || n === "other-rows")).toEqual([]);
+      expect(await writePlayRows(ctx, episode, hash, full, join(dir, "full-rows"))).toBe(true);
+      expect(readFeatureRows(engine, configs, join(dir, "full-rows"))(hash, seqs)).toEqual(JSON.parse(JSON.stringify(built)));
     }, 600_000); // one Episode's rows with the real probe
   });
 });
