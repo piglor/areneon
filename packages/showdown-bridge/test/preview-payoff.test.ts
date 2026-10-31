@@ -312,7 +312,7 @@ describe("whole worlds, the step cap and our real request", () => {
 
   it("gives our side the real Team Preview request in every world whatever the seed would draw, and refuses a world that does not", async () => {
     const real = decodeRequest(REAL).request_hash;
-    for (let w = 0; w < 4; w += 1) expect(hypotheticalRequest(start(w).preview.own_channel).request_hash).toBe(real);
+    for (let w = 0; w < 4; w += 1) expect(hypotheticalRequest(start(w, worlds[w % 2]).preview.own_channel).request_hash).toBe(real);
     const unfixed = [0, 1, 2, 3].map((w) => startHypothetical({ engine, format_id: GOLDEN_FORMAT, seat: "p1", own_team: own, world_team: worlds[0] as PokemonSet[], stream: STREAM, world: w, data_class: "synthetic" }));
     expect(new Set(unfixed.map((p) => hypotheticalRequest(p.own_channel).request_hash)).size).toBeGreaterThan(1);
     await expect(buildPayoffTable(input(standIn(), [{ index: 0, preview: unfixed.find((p) => hypotheticalRequest(p.own_channel).request_hash !== real) as HypotheticalPreview }], config()))).rejects.toThrow(/another Team Preview request/);
