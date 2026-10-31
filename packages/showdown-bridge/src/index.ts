@@ -723,3 +723,5 @@ export {
   type PayoffWorld,
   type Strategy as PreviewStrategy,
 } from "./preview-payoff.ts";
+export { type BeliefFeaturesContext, type BeliefFeaturesPort, BeliefFeaturesError, createSheetBuilder, refusedSharePpm, type SheetBuilder, type SheetCounts, type SheetInput, type SheetKValues } from "./belief-features.ts";
+export { OpponentSheetError, opponentSheetProblem, readOpponentSheet } from "./opponent-sheet.ts";

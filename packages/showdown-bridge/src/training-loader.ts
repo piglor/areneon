@@ -22,6 +22,7 @@ import { buildFeatures } from "./feature-build.ts";
 import { jcs, type Json } from "./canonical-json.ts";
 import type { Engine } from "./engine.ts";
 import { featureRowsProblem } from "./feature-rows.ts";
+import { opponentSheetProblem } from "./opponent-sheet.ts";
 import { type ChunkLimits, ChunkedFileWriter, checkStringLength } from "./chunked-file.ts";
 import { enumerateCandidates, EnumerationError } from "./choices.ts";
 import { type Episode, episodeHash } from "./episode.ts";
@@ -84,6 +85,10 @@ export function readTrainingExample(value: unknown): TrainingExample {
   if (example.candidate_features !== undefined) {
     const problem = featureRowsProblem(example.candidate_features);
     if (problem !== null) throw new TrainingLoaderError(`${problem} (${example.episode_hash} #${example.observation.identity.request_seq})`);
+  }
+  if (example.opponent_sheet !== undefined) {
+    const problem = opponentSheetProblem(example.opponent_sheet);
+    if (problem !== null) throw new TrainingLoaderError(`opponent_sheet: ${problem} (${example.episode_hash} #${example.observation.identity.request_seq})`);
   }
   if (example.candidates !== undefined && !example.candidates.some((candidate) => candidate.choice === example.choice)) {
     throw new TrainingLoaderError(
