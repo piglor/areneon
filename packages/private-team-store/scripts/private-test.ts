@@ -4,12 +4,12 @@
 // calls this with the arguments below. It prints one JSON line (the
 // PrivateTestRecord and the wall-clock per match) and writes no file.
 import { runPrivateTestCli } from "@areneon/showdown-bridge";
-import { datasetValidationPool } from "@areneon/team-dataset";
+import { beliefWorldsFactory, datasetValidationPool } from "@areneon/team-dataset";
 import { snapshotTeams } from "../src/test-source.ts";
 
 process.exitCode = await runPrivateTestCli(
   process.argv.slice(2),
   (line) => process.stdout.write(`${line}\n`),
-  { snapshot: snapshotTeams, dataset: ({ engine, config }) => datasetValidationPool(engine, config) },
+  { belief_worlds: beliefWorldsFactory, snapshot: snapshotTeams, dataset: ({ engine, config }) => datasetValidationPool(engine, config) },
   (line) => process.stderr.write(`${line}\n`),
 );

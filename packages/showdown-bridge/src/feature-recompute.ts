@@ -7,14 +7,14 @@
 // file only when it names the Episode and the feature set it is asked for and holds one entry per decision, and
 // recomputes the rows itself otherwise. The files are never part of a generation, an Episode or any contract, and
 // the stream's bytes are the same with or without them (the stream writer still reads and checks every Episode).
-import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import type { FeatureConfigs } from "./candidate-features.ts";
 import { type Json, jcs } from "./canonical-json.ts";
 import type { Engine } from "./engine.ts";
 import { episodeHash } from "./episode.ts";
 import { type AnyCandidateFeatures, configuredSetHash } from "./feature-build.ts";
-import { readEpisode } from "./episode-io.ts";
+import { decisionObservations, readEpisode } from "./episode-io.ts";
 import { nodeSha256 } from "./player-channel.ts";
 import type { SyntheticTeamHashes } from "./team-class.ts";
 import { episodeFeatureRows } from "./training-loader.ts";
@@ -44,6 +44,8 @@ export async function writeFeatureRows(
   let written = 0;
   for (const { hash, path } of episodes) {
     if (stopped()) break;
+    // The play-time sidecar of this Episode is already there (`writePlayRows`): nothing to build.
+    if (existsSync(rowsFile(dir, hash))) continue;
     try {
       const episode = await readEpisode(JSON.parse(readFileSync(path, "utf8")), { known_synthetic });
       if ((await episodeHash(episode, nodeSha256)) !== hash) continue;
@@ -55,6 +57,33 @@ export async function writeFeatureRows(
     }
   }
   return written;
+}
+
+/**
+ * The play-time sidecar (#1271): the rows the policy seat attached to its queries while the game was played, written as
+ * the Episode's rows file. `played` maps a request number of the seat's channel to the rows built for it. The file is
+ * written only when every decision of the Episode has rows, in the Episode's decision order; otherwise nothing is
+ * written and the post-game pass (`writeFeatureRows`) or the stream writer builds them, so a game with a gap costs time
+ * and never a byte. The rows are the ones the same builder makes from the same channel prefix, team and candidates, which
+ * the stream writer would recompute (a test holds the file equal to the recomputation).
+ */
+export async function writePlayRows(
+  { engine, configs }: { engine: Engine; configs: FeatureConfigs },
+  episode: Parameters<typeof decisionObservations>[0],
+  hash: string,
+  played: ReadonlyMap<number, AnyCandidateFeatures>,
+  dir: string,
+): Promise<boolean> {
+  const setHash = configuredSetHash(engine, configs);
+  const rows: AnyCandidateFeatures[] = [];
+  for (const observation of await decisionObservations(episode)) {
+    const found = played.get(observation.identity.request_seq);
+    if (found === undefined || found.feature_set_hash !== setHash) return false;
+    rows.push(found);
+  }
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(rowsFile(dir, hash), jcs({ episode_hash: hash, feature_set_hash: setHash, rows } as unknown as Json));
+  return true;
 }
 
 /**

@@ -9,6 +9,7 @@
 
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import type { BeliefWorldsFactory } from "./damage-aware-worlds.ts";
 import { parseArgs } from "node:util";
 import { type Json, jcs } from "./canonical-json.ts";
 import { engineDataHash, readEngineDataAny } from "./engine-data.ts";
@@ -125,6 +126,8 @@ function readTeamSet(path: string): string[] {
 export interface ProgressPorts {
   search?: (engine: Engine, formatId: string) => SearchSetup;
   run_teams?: (engine: Engine, config: TrainingRunConfig) => ReadonlySet<string>;
+  /** The belief port factory of the composition root, for a pair that reads `probe-damage-belief/1` (the bridge does not import the opponent model). */
+  belief_worlds?: BeliefWorldsFactory;
 }
 
 /** What a frozen pair's worker needs: one worker session holds one pair, CPU torch, stdio only, one query at a time. */
@@ -145,9 +148,9 @@ export interface FrozenPairClientOptions {
  * The candidate feature setup of one run config (absent: the pair reads none), failing as a usage error when this
  * checkout does not compute the hash the config names. Each run's seats are set up from that run's own config.
  */
-export function pairFeatureSetup(engine: Engine, config: TrainingRunConfig): FeatureSetup | undefined {
+export function pairFeatureSetup(engine: Engine, config: TrainingRunConfig, beliefWorlds?: BeliefWorldsFactory): FeatureSetup | undefined {
   try {
-    return featureSetup(engine, config);
+    return featureSetup(engine, config, beliefWorlds);
   } catch (error) {
     throw new UsageError((error as Error).message);
   }
@@ -250,7 +253,7 @@ export async function runProgressCli(argv: readonly string[], print: (line: stri
   const dataHash = engineDataHash(readEngineDataAny(JSON.parse(readFileSync(dataFile, "utf8"))));
   const { max_line_bytes, handshake_timeout_ms } = config.generation;
   // The candidate features of the run's pair (none: nothing below changes) and, for another run's pair, of ITS config.
-  const features = pairFeatureSetup(engine, config);
+  const features = pairFeatureSetup(engine, config, ports.belief_worlds);
   const preview = need("preview");
   const battle = need("battle");
   // One worker session holds one frozen pair, so the previous generation's pair gets a worker of its own.
@@ -289,7 +292,7 @@ export async function runProgressCli(argv: readonly string[], print: (line: stri
     if (evalDataset.dataset_hash === versusConfig.team_dataset.dataset_hash) throw new UsageError("--eval-dataset-hash is the other run's own training dataset: leave the option out or name another dataset");
     versusRunTeams = readRunTeams(engine, versusConfig);
   }
-  const versusFeatures = versusConfig === undefined ? undefined : pairFeatureSetup(engine, versusConfig);
+  const versusFeatures = versusConfig === undefined ? undefined : pairFeatureSetup(engine, versusConfig, ports.belief_worlds);
   const versusClient = versus === undefined ? undefined : workerFor(versus.checkpoints, need("versus-dir"), need("versus-encoder-version"), versusFeatures ?? null);
   try {
     previousClient = previousPair === undefined ? undefined : workerFor(previousPair);

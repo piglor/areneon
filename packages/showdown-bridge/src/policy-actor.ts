@@ -10,7 +10,7 @@ import type { PolicyQuery } from "@areneon/schema/types/v1/policy-query.ts";
 import type { PrivateTeamSpec } from "@areneon/schema/types/v1/private-team-spec.ts";
 import { NoCandidateError } from "./actor-rule.ts";
 import { type Json, jcs } from "./canonical-json.ts";
-import { buildFeatures, isFeatureSetId } from "./feature-build.ts";
+import { type AnyCandidateFeatures, buildFeatures, isFeatureSetId } from "./feature-build.ts";
 import { createFeatureMemo, type FeatureBuildCode, FeatureBuildError, type FeatureConfigs, type FeatureMemo } from "./candidate-features.ts";
 import { enumerateCandidates } from "./choices.ts";
 import { randomLegalActor } from "./random-legal.ts";
@@ -66,6 +66,11 @@ export interface ActorFeatures {
   configs: FeatureConfigs;
   /** This game's memo of probe answers (default: a fresh one); never changes a byte. */
   memo?: FeatureMemo;
+  /**
+   * Called with each decision's rows as they are attached to the query (the play-time sidecar, #1271): the caller keeps
+   * them to write the training stream's rows without building them again. Observes only; never changes a byte.
+   */
+  record?: (request_seq: number, features: AnyCandidateFeatures) => void;
 }
 
 export interface PolicyActorOptions {
@@ -170,6 +175,7 @@ export function policyActor(options: PolicyActorOptions): Actor {
       if (candidate_features.feature_set_hash !== stated.feature_set_hash || candidate_features.feature_set !== stated.feature_set) {
         throw new PolicyProtocolError("the candidate features this side builds are of another feature set than the worker stated");
       }
+      features.record?.(identity.request_seq, candidate_features);
     }
     const query = {
       schema_version: 1,

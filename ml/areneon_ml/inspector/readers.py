@@ -26,7 +26,11 @@ PLAN_KEYS = (
 BASELINE_KEYS = (frozenset({"actor", "policy_id"}), frozenset[str]())
 GAME_KEYS = (
     frozenset({"game", "opponent", "outcome", "seed", "turns", "winner"}),
-    frozenset({"forfeit"}),
+    frozenset({"forfeit", "feature_belief"}),
+)
+BELIEF_KEYS = (
+    frozenset({"decisions", "worlds_sampled", "redraws", "contradicted_worlds", "fallbacks"}),
+    frozenset[str](),
 )
 FORFEIT_KEYS = (frozenset({"loser", "cause", "request_seq"}), frozenset({"detail"}))
 GENERATION_KEYS = (
@@ -198,6 +202,16 @@ def _read_game(item: object, index: int) -> GameRow:
             integer(raw["request_seq"], f"{what} forfeit request_seq"),
             None if detail is None else text(detail, f"{what} forfeit detail"),
         )
+    if "feature_belief" in row:
+        # What the belief did for the pair's seats (#1271): checked, never shown.
+        belief = closed(row["feature_belief"], BELIEF_KEYS, f"{what} feature_belief")
+        for key in ("decisions", "worlds_sampled", "redraws", "contradicted_worlds"):
+            integer(belief[key], f"{what} feature_belief {key}")
+        fallbacks = belief["fallbacks"]
+        if not isinstance(fallbacks, dict):
+            raise InspectError(f"{what} feature_belief fallbacks is not an object")
+        for cause, count in fallbacks.items():
+            integer(count, f"{what} feature_belief fallback {text(cause, 'cause')}")
     return GameRow(
         index,
         text(row["seed"], f"{what} seed"),
