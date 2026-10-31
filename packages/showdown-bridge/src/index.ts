@@ -81,7 +81,7 @@ export {
   writeTrainingStream,
 } from "./training-loader.ts";
 export { interimPoolSource, type PoolSource, runGenerationCli, UsageError } from "./generation-cli.ts";
-export { DAMAGE_AWARE_V2_POLICY_ID, DAMAGE_AWARE_V3_POLICY_ID, type DamageAwareSetup, damageAwareSetup, damageAwareSetupV2, type FeatureSetup, featureSetup, GenerationError, type PoolRequest, type TrainingPool as GenerationTeamPool, playGeneration } from "./league-generation.ts";
+export { DAMAGE_AWARE_V2_POLICY_ID, DAMAGE_AWARE_V3_POLICY_ID, type DamageAwareSetup, damageAwareSetup, damageAwareSetupV2, type FeatureSetup, featureSetup, GenerationError, type RunSheetSetup, sheetSetup, type PoolRequest, type TrainingPool as GenerationTeamPool, playGeneration } from "./league-generation.ts";
 export { readTrainingRunConfig, runConfigHash, type TrainingRunConfig, TrainingRunConfigError } from "./training-run-config.ts";
 export { type CloneRunConfig, CloneRunConfigError, cloneRunConfigHash, readCloneRunConfig } from "./clone-run-config.ts";
 export { EpisodeError, episodeFromRecord, type EpisodeOptions, readEpisode } from "./episode-io.ts";
@@ -723,5 +723,5 @@ export {
   type PayoffWorld,
   type Strategy as PreviewStrategy,
 } from "./preview-payoff.ts";
-export { type BeliefFeaturesContext, type BeliefFeaturesPort, BeliefFeaturesError, createSheetBuilder, refusedSharePpm, type SheetBuilder, type SheetCounts, type SheetInput, type SheetKValues } from "./belief-features.ts";
+export { type BeliefFeaturesContext, type BeliefFeaturesFactory, type BeliefFeaturesPort, BeliefFeaturesError, createSheetBuilder, refusedSharePpm, SHEET_FEATURE_SET, SheetInputError, sheetForChannel, sheetStatement, type SheetBuilder, type SheetCounts, type SheetInput, type SheetKValues, type SheetSetup } from "./belief-features.ts";
 export { OpponentSheetError, opponentSheetProblem, readOpponentSheet } from "./opponent-sheet.ts";

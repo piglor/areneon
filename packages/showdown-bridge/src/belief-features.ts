@@ -12,10 +12,11 @@
 // A refused belief is a block with `source.refusal` (a fixed code) and every field `unknown`, counted per code: no
 // silent zero and no rule fallback. A defect of the run (`BELIEF_DEFECTS`) is thrown by the port and propagates.
 
-import type { PublicFlag, PublicSide, PublicState } from "@areneon/public-state";
+import { interpretChannel, type PublicFlag, type PublicSide, type PublicState } from "@areneon/public-state";
 import type { EngineRequest } from "@areneon/schema/types/v1/engine-request.ts";
 import type { OpponentSheet } from "@areneon/schema/types/v1/opponent-sheet.ts";
 import type { Engine, PokemonSet } from "./engine.ts";
+import type { VersionManifest } from "./formats.ts";
 import { createTrappingCheck, type TrappingCheckPort } from "./trapping-check.ts";
 import type { TeamVocabulary } from "./team-vocabulary.ts";
 
@@ -108,3 +109,39 @@ export function createSheetBuilder(context: BeliefFeaturesContext): SheetBuilder
 
 /** The share of refused blocks in parts per million (an experiment with more than 10,000 ppm refused is invalid, E4 point 5). */
 export const refusedSharePpm = (counts: Pick<SheetCounts, "requests" | "refused">): number => (counts.requests === 0 ? 0 : Math.floor((counts.refused * 1_000_000) / counts.requests));
+
+/** What a seat or the training loader needs to build the block of a request (ADR-027 slice 4). */
+export interface SheetSetup {
+  readonly engine: Engine;
+  readonly vocabulary: TeamVocabulary;
+  readonly port: BeliefFeaturesPort;
+  /** The scenario format id the trapping check starts its battles in. */
+  readonly scenario_id: string;
+}
+
+/** What the worker is expected to state at the handshake: the block's source. */
+export const sheetStatement = (setup: Pick<SheetSetup, "port">): { feature_set: string; feature_set_hash: string } => ({ feature_set: SHEET_FEATURE_SET, feature_set_hash: setup.port.features_hash });
+
+/** The feature set id of the first sheet (the opponent model names it too; a test holds them equal). */
+export const SHEET_FEATURE_SET = "opponent-sheet/1";
+
+/** Builds the port of the composition root for a vocabulary, reader and pin. */
+export type BeliefFeaturesFactory = (context: { readonly engine: Engine; readonly vocabulary: TeamVocabulary; readonly reader_sha256: string; readonly manifest: VersionManifest }) => BeliefFeaturesPort;
+
+/** A channel that does not end in a request cannot be given a block. */
+export class SheetInputError extends Error {
+  override name = "SheetInputError";
+}
+
+/**
+ * The block at the request a player's own channel ends in. The one function the play-time seat and the training loader
+ * both call, so a block recomputed from an Episode's channel prefix and own team equals the one that was sent: it reads the
+ * lines with the shared reader, takes the request it ends in and the reader's opponent half and flags, and builds.
+ */
+export function sheetForChannel(builder: SheetBuilder, input: { readonly player: string; readonly lines: readonly string[]; readonly team: readonly Readonly<PokemonSet>[] }): OpponentSheet {
+  const run = interpretChannel(input.player, input.lines);
+  const frame = run.frames[run.frames.length - 1];
+  if (frame === undefined || frame.kind !== "request") throw new SheetInputError("the channel does not end in a request");
+  const request = run.requests[frame.request - 1] as EngineRequest;
+  return builder.build({ request, team: input.team, state: frame.state, flags: run.flags });
+}

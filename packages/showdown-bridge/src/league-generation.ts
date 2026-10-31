@@ -17,6 +17,8 @@ import { jcs, type Json } from "./canonical-json.ts";
 import { type DamageAwareActor, type DamageAwareOptions, damageAwareActor } from "./damage-aware-actor.ts";
 import { type BeliefFeatureCounts, type BeliefFeatureSetup, createFeatureMemo, type FeatureConfigs, type FeatureMemo, FEATURE_SET_BELIEF } from "./candidate-features.ts";
 import { configuredSetHash } from "./feature-build.ts";
+import { type BeliefFeaturesFactory, createSheetBuilder, type SheetCounts, type SheetSetup, sheetStatement } from "./belief-features.ts";
+import { checkScenario } from "./mechanics-scenario.ts";
 import { loadDamageAwareConfig, loadDamageAwareConfigV2 } from "./damage-aware-config.ts";
 import type { BeliefWorldsFactory } from "./damage-aware-worlds.ts";
 import { damageAwarePolicyId } from "./damage-aware-identity.ts";
@@ -146,6 +148,33 @@ export function featureSetup(engine: Engine, config: TrainingRunConfig, beliefWo
   return { configs, statement: { feature_set: named.feature_set, feature_set_hash: found } };
 }
 
+/** The opponent sheet source a run reads and what builds its blocks (ADR-027 slice 4). */
+export interface RunSheetSetup {
+  setup: SheetSetup;
+  /** What the policy worker is expected to state at the handshake (and the blocks must be of). */
+  statement: { feature_set: string; feature_set_hash: string };
+}
+
+/**
+ * The opponent sheet source a run config names (`model.encoder.options.opponent_sheet`), set up through the composition root's
+ * factory (the bridge does not import the opponent model), or undefined when the config names none. Fails closed: the hash the
+ * port computes (belief identity, k values, rounding, builder format) must be the one the config names, so a run never plays or
+ * trains on blocks of another source than its checkpoints were made for; a config that names a source with no factory is refused.
+ */
+export function sheetSetup(engine: Engine, config: TrainingRunConfig, factory?: BeliefFeaturesFactory): RunSheetSetup | undefined {
+  const named = config.model.encoder.options?.opponent_sheet;
+  if (named === undefined) return undefined;
+  if (config.format_id !== GOLDEN_FORMAT) throw new GenerationError(`the opponent sheet has a vocabulary for ${GOLDEN_FORMAT} only, not ${config.format_id}`);
+  if (factory === undefined) throw new GenerationError("the run config names an opponent sheet source, and this script has no belief features factory");
+  const vocabulary = goldenTeamVocabulary();
+  const port = factory({ engine, vocabulary, reader_sha256: readerSha256(), manifest: resolveFormat(engine, config.format_id).manifest });
+  if (port.features_hash !== named.feature_set_hash) {
+    throw new GenerationError(`the run config names the opponent sheet source ${named.feature_set} ${named.feature_set_hash}, which this checkout computes as ${port.features_hash}`);
+  }
+  const setup: SheetSetup = { engine, vocabulary, port, scenario_id: checkScenario(engine, loadMechanicsConfig(config.format_id)) };
+  return { setup, statement: sheetStatement(setup) };
+}
+
 /** The belief a `probe-damage-belief/1` run samples its worlds from: the v2 record's prior, belief config and world count, through the composition root's factory. */
 function beliefSetup(engine: Engine, vocabulary: ReturnType<typeof goldenTeamVocabulary>, formatId: string, beliefWorlds: BeliefWorldsFactory | undefined): BeliefFeatureSetup {
   if (beliefWorlds === undefined) throw new GenerationError(`the candidate feature set ${FEATURE_SET_BELIEF} needs the belief port of the composition root (packages/team-dataset)`);
@@ -263,6 +292,13 @@ export interface GenerationOptions {
    * only for a worker that stated the set, and to the training loader, which recomputes them for every example.
    */
   features?: FeatureConfigs;
+  /**
+   * The opponent sheet the run's pair reads (`sheetSetup`): given to the pair's seats, which attach a block to a query only for a
+   * worker that stated the source, and to the training loader, which recomputes it for every example.
+   */
+  sheet?: SheetSetup;
+  /** Called after each game with the counts of each of the pair's seats' sheet builders (blocks built, refusals by code). */
+  on_sheet_counts?: (game: number, counts: readonly SheetCounts[]) => void;
   /** The belief port factory of the composition root (`packages/team-dataset`); without it a plan that names `damage-aware@v2` is refused. */
   belief_worlds?: BeliefWorldsFactory | undefined;
   /**
@@ -424,13 +460,20 @@ async function playOne(options: GenerationOptions, plan: GamePlan, client: Polic
   const memos: Partial<Record<Player, FeatureMemo>> = {};
   const rows: Partial<Record<Player, Map<number, AnyCandidateFeatures>>> = {};
   const keepRows = options.features !== undefined && options.features_dir !== undefined && options.episodes_dir !== undefined;
+  const builders: ReturnType<typeof createSheetBuilder>[] = [];
+  const sheetFor = (): Pick<PolicySeat, "sheet"> => {
+    if (options.sheet === undefined) return {};
+    const builder = createSheetBuilder(options.sheet);
+    builders.push(builder);
+    return { sheet: { builder } };
+  };
   const seatFor = (player: Player): PolicySeat => {
-    if (options.features === undefined) return { client, policy_id, sampling: "sample", ...(play === undefined ? {} : { play }) };
+    if (options.features === undefined) return { client, policy_id, sampling: "sample", ...(play === undefined ? {} : { play }), ...sheetFor() };
     const memo = createFeatureMemo();
     memos[player] = memo;
     const kept = new Map<number, AnyCandidateFeatures>();
     rows[player] = kept;
-    return { client, policy_id, sampling: "sample", ...(play === undefined ? {} : { play }), features: { configs: options.features, memo, ...(keepRows ? { record: (seq: number, found: AnyCandidateFeatures) => void kept.set(seq, found) } : {}) } };
+    return { client, policy_id, sampling: "sample", ...(play === undefined ? {} : { play }), features: { configs: options.features, memo, ...(keepRows ? { record: (seq: number, found: AnyCandidateFeatures) => void kept.set(seq, found) } : {}) }, ...sheetFor() };
   };
   const baseline = plan.opponent === "self" ? undefined : baselineActor(options, plan.opponent, plan, budget);
   const seats: PolicyGameOptions["seats"] =
@@ -446,6 +489,7 @@ async function playOne(options: GenerationOptions, plan: GamePlan, client: Polic
     latency_budget: budget,
     maxTurns: settings.max_turns,
   });
+  options.on_sheet_counts?.(plan.game, builders.map((b) => b.counts()));
   const belief = beliefRowCounts(Object.values(memos));
   return {
     ...played,
@@ -691,12 +735,12 @@ export async function playGeneration(options: GenerationOptions): Promise<Genera
     const ownRefs = refs.filter((ref) => ref.behaviour_policy_id === policy_id);
     if (ownRefs.length === 0) throw new GenerationError("no Episode of the frozen pair: every game was forfeited");
     const stored: StoredEpisode[] = ownRefs.map(({ hash }) => ({ hash, path: join(dir, `${hash}.json`) }));
-    set = await writeStoredTrainingStream({ episodes: stored, evaluation_manifests: [], known_synthetic: pool.known_synthetic, behaviour_policy_id: policy_id, ...(options.features === undefined ? {} : { features: { engine, configs: options.features, ...(options.features_dir === undefined ? {} : { precomputed: readFeatureRows(engine, options.features, options.features_dir) }) } }) }, { ...limits, path: options.stream_path });
+    set = await writeStoredTrainingStream({ episodes: stored, evaluation_manifests: [], known_synthetic: pool.known_synthetic, behaviour_policy_id: policy_id, ...(options.features === undefined ? {} : { features: { engine, configs: options.features, ...(options.features_dir === undefined ? {} : { precomputed: readFeatureRows(engine, options.features, options.features_dir) }) } }), ...(options.sheet === undefined ? {} : { sheet: options.sheet }) }, { ...limits, path: options.stream_path });
     episodeHashes = refs.map((ref) => ref.hash);
   } else {
     const own = episodes.filter((episode) => episode.provenance.behaviour_policy_id === policy_id);
     if (own.length === 0) throw new GenerationError("no Episode of the frozen pair: every game was forfeited");
-    const input = { episodes: own, evaluation_manifests: [], known_synthetic: pool.known_synthetic, behaviour_policy_id: policy_id, ...(options.features === undefined ? {} : { features: { engine, configs: options.features } }) };
+    const input = { episodes: own, evaluation_manifests: [], known_synthetic: pool.known_synthetic, behaviour_policy_id: policy_id, ...(options.features === undefined ? {} : { features: { engine, configs: options.features } }), ...(options.sheet === undefined ? {} : { sheet: options.sheet }) };
     if (options.stream_path === undefined) {
       ({ stream, set } = await loadTrainingSet(input, limits));
     } else {
