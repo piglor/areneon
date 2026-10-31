@@ -13,7 +13,7 @@ import { type Candidate, enumerateCandidates } from "./choices.ts";
 import { parseJointChoice } from "./damage-aware-choice.ts";
 import type { Engine, PokemonSet } from "./engine.ts";
 import { FeaturePool } from "./feature-pool.ts";
-import type { FeatureResult, FeatureServiceSpec, FeatureTask } from "./feature-service.ts";
+import type { FeatureResult, FeatureServiceExtras, FeatureServiceSpec, FeatureTask } from "./feature-service.ts";
 import { decodeRequest } from "./request.ts";
 import { resimulate } from "./resimulate.ts";
 import { sha256Hex } from "./rules.ts";
@@ -170,6 +170,8 @@ export interface RunStats {
   arrays?: Record<string, { rows: number; computed: number; unsupported: Record<string, number> }>;
   /** `probe-damage/2` only: where the builder spent its probe queries and time, summed over the decisions (ms rounded). */
   parts?: Record<string, { queries: number; probe_runs: number; ms: number }>;
+  /** `probe-damage-belief/1` only: the world counts summed over the decisions (fallbacks by cause). */
+  belief?: { decisions: number; worlds_sampled: number; redraws: number; contradicted_worlds: number; fallbacks: Record<string, number> };
   total_builder_ms: number;
   /** SHA-256 of the JSON of every outcome in decision order: equal for equal rows. */
   rows_digest: string;
@@ -188,6 +190,7 @@ export function statsOf(results: readonly FeatureResult[]): RunStats {
   let runs = 0;
   let refusals = 0;
   const arrays: NonNullable<RunStats["arrays"]> = {};
+  let belief: RunStats["belief"];
   const parts: NonNullable<RunStats["parts"]> = {};
   for (const r of results) {
     for (const [name, cost] of Object.entries(r.parts ?? {})) {
@@ -195,6 +198,14 @@ export function statsOf(results: readonly FeatureResult[]): RunStats {
       sum.queries += cost.queries;
       sum.probe_runs += cost.probe_runs;
       sum.ms += cost.ms;
+    }
+    if (r.belief !== undefined) {
+      belief ??= { decisions: 0, worlds_sampled: 0, redraws: 0, contradicted_worlds: 0, fallbacks: {} };
+      belief.decisions += r.belief.decisions;
+      belief.worlds_sampled += r.belief.worlds_sampled;
+      belief.redraws += r.belief.redraws;
+      belief.contradicted_worlds += r.belief.contradicted_worlds;
+      for (const [cause, count] of Object.entries(r.belief.fallbacks)) belief.fallbacks[cause] = (belief.fallbacks[cause] ?? 0) + count;
     }
     queries += r.counts.queries;
     runs += r.counts.probe_runs;
@@ -229,6 +240,7 @@ export function statsOf(results: readonly FeatureResult[]): RunStats {
     probe: { queries, probe_runs: runs, memo_hit_ppm: queries === 0 ? 0 : Math.floor(((queries - runs) * 1_000_000) / queries), probe_refusals: refusals },
     ...(Object.keys(arrays).length === 0 ? {} : { arrays }),
     ...(Object.keys(parts).length === 0 ? {} : { parts: Object.fromEntries(Object.entries(parts).map(([name, sum]) => [name, { ...sum, ms: Math.round(sum.ms) }])) }),
+    ...(belief === undefined ? {} : { belief }),
     total_builder_ms: Math.round(results.reduce((a, r) => a + r.ms, 0)),
     rows_digest: sha256Hex(JSON.stringify(results.map((r) => r.outcome))),
   };
@@ -253,9 +265,9 @@ export interface BenchReport {
 }
 
 /** Single-thread run (pool size 0, in decision order), then each pool size on the same decisions. */
-export async function runBench(spec: FeatureServiceSpec, decisions: readonly BenchDecision[], poolSizes: readonly number[]): Promise<BenchReport> {
+export async function runBench(spec: FeatureServiceSpec, decisions: readonly BenchDecision[], poolSizes: readonly number[], extras?: FeatureServiceExtras): Promise<BenchReport> {
   const tasks = decisions.map((d) => d.task);
-  const single = new FeaturePool(0, spec);
+  const single = new FeaturePool(0, spec, extras);
   const results = await single.run(tasks);
   const stats = statsOf(results);
   const dominated: Record<string, DominatedCount> = {};

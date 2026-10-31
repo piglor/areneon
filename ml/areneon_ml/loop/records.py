@@ -198,9 +198,18 @@ FEATURES_2_FAMILY = (
 )
 
 
+#: ``probe-damage-belief/1`` (ADR-025 slice 5): the same rows, averaged over sampled worlds.
+FEATURES_BELIEF_FAMILY = (
+    "learned policy that consults the engine's damage calculation on sampled opponent worlds "
+    "(the belief) at decision time"
+)
+
+
 def family_label(config: RunConfig) -> str | None:
     """The family label of the run's pair, or None for a pair without a feature set."""
     named = feature_set(config.model.encoder.options)
     if named is None:
         return None
+    if named.feature_set == "probe-damage-belief/1":
+        return FEATURES_BELIEF_FAMILY
     return FEATURES_2_FAMILY if named.feature_set == "probe-damage/2" else FEATURES_FAMILY
