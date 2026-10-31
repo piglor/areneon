@@ -52,6 +52,8 @@ export interface TurnResult {
   ended: Outcome | null;
   /** The battle after the turn (a clone of the world). */
   battle: SimBattle;
+  /** The opponent seat's own view of the same turn, only when `playChoices` was asked for it (`withFoe`). */
+  foe?: { lines: string[]; request: string | null };
 }
 
 /** What a turn plays: the seat's choice and the opponent's. A side that is waiting (it has no request to answer) takes none. */
@@ -74,18 +76,27 @@ export function cloneWorld(engine: Engine, serialised: string, seed: string): Tu
  * Play the choices on `clone`: the engine commits the turn when every side that has a request has chosen. Returns the
  * seat's view of what the engine sent. `clone` stays live, so a caller may continue it (a `wait` request is played on).
  */
-export function playChoices(clone: TurnBattle, seat: "p1" | "p2", choices: TurnChoices): TurnResult {
+export function playChoices(clone: TurnBattle, seat: "p1" | "p2", choices: TurnChoices, withFoe = false): TurnResult {
   const viewer = seat === "p1" ? 1 : 2;
   const foe = seat === "p1" ? "p2" : "p1";
   const lines: string[] = [];
+  const foeLines: string[] = [];
+  let foeRequest: string | null = null;
   let request: string | null = null;
   let refused: string | null = null;
   clone.restart((type, data) => {
     // The engine sends the turn's log as `update` (an array of lines) and each side's request or error as `sideupdate` (`<side>\n<line>`); `end` is ignored.
-    if (type === "update") lines.push(...playerView((data as string[]).join("\n"), viewer));
+    if (type === "update") {
+      lines.push(...playerView((data as string[]).join("\n"), viewer));
+      if (withFoe) foeLines.push(...playerView((data as string[]).join("\n"), viewer === 1 ? 2 : 1));
+    }
     if (type === "sideupdate") {
       const text = data as string;
       const at = text.indexOf("\n");
+      if (withFoe && text.slice(0, at) === foe && !text.slice(at + 1).startsWith("|error|")) {
+        foeLines.push(text.slice(at + 1));
+        if (text.slice(at + 1).startsWith("|request|")) foeRequest = text.slice(at + 1 + "|request|".length);
+      }
       if (text.slice(0, at) !== seat) return;
       const line = text.slice(at + 1);
       if (line.startsWith("|error|")) refused = line;
@@ -107,7 +118,7 @@ export function playChoices(clone: TurnBattle, seat: "p1" | "p2", choices: TurnC
   }
   let ended: Outcome | null = null;
   if (clone.ended) ended = clone.winner === undefined || clone.winner === "" ? "tie" : clone.winner === seat ? "own" : "foe";
-  return { refused, lines, request, ended, battle: clone };
+  return { refused, lines, request, ended, battle: clone, ...(withFoe ? { foe: { lines: foeLines, request: foeRequest } } : {}) };
 }
 
 /** The request (parsed) the engine holds for a side of the clone, or null. */

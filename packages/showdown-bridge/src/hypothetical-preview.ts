@@ -175,15 +175,27 @@ export interface HypotheticalStartInput {
   world: number;
   /** The class of the own team; the hypothetical channels carry it. */
   data_class: DataClass;
+  /**
+   * Our REAL Team Preview request (the JSON body of the `|request|` line of our real channel). When given, each of our sets takes the
+   * gender its `details` show (the engine draws a missing gender from the world's seed, which would give our side another request in
+   * another world); a request that does not match our team is refused.
+   */
+  own_request?: string;
   /** The rules snapshot to resolve the format against; default reads and validates `rules/`. */
   snapshot?: RulesSnapshot;
 }
 
 /** The result of playing one pair of orders to our first request. */
 export type HypotheticalTurn =
-  | { kind: "request"; channel: HypotheticalChannel; request: HypotheticalRequest }
+  | { kind: "request"; channel: HypotheticalChannel; request: HypotheticalRequest; capped?: true }
   | { kind: "ended"; outcome: Outcome }
   | { kind: "refused"; reason: string };
+
+/** The rollout's chooser: a seat's observation of its hypothetical channel and its request, answered with a choice string. */
+export type RolloutChoose = (observation: HypotheticalObservation, request: HypotheticalRequest, player: Player) => Promise<string>;
+
+/** The most requests a rollout may answer before it is given up (a forced-switch chain is as long as the benches). */
+export const MAX_ROLLOUT_STEPS = 64;
 
 export interface HypotheticalPreview {
   readonly manifest: VersionManifest;
@@ -197,13 +209,35 @@ export interface HypotheticalPreview {
   readonly foe_request: HypotheticalRequest;
   /** Our order and the opponent's, each a `team ...` choice, run on a clone of the started battle to our seat's next request. */
   play(own_choice: string, foe_choice: string): HypotheticalTurn;
+  /**
+   * Like `play`, then on: from the first requests both seats are played by `choose` (the solver's rollout leaf, ADR-029 section 8:
+   * the pair's Battle network by argmax), `turns` move requests of our seat, then to our next move request. `choose` gets a
+   * seat's hypothetical observation and request and returns that seat's `order` (a seat that is waiting is not asked). Forced
+   * switches are answered by `choose` too and do not count as turns. A rollout that has answered `max_steps` requests (default
+   * `MAX_ROLLOUT_STEPS`) stops at the request it reached and returns it with `capped: true` (any phase); the caller values it.
+   * Nothing leaves the module but the brands.
+   */
+  rollout(own_choice: string, foe_choice: string, turns: number, choose: RolloutChoose, max_steps?: number): Promise<HypotheticalTurn>;
   /** An observation of a hypothetical channel of this battle, with the team of the seat it belongs to. */
   observation(channel: HypotheticalChannel): Promise<HypotheticalObservation>;
 }
 
+/** Our sets with the genders our real Team Preview request shows (`details`: `Species, L50, F`; none for a genderless Pokemon). */
+function withRealGenders(team: readonly Readonly<PokemonSet>[], request: string): PokemonSet[] {
+  let details: unknown[] = [];
+  try {
+    details = ((JSON.parse(request) as { side?: { pokemon?: { details?: unknown }[] } }).side?.pokemon ?? []).map((mon) => mon.details);
+  } catch {
+    throw new HypotheticalError("own_request is not a request");
+  }
+  if (details.length !== team.length || details.some((d) => typeof d !== "string" || d === "")) throw new HypotheticalError("own_request does not match our team");
+  return team.map((set, i) => ({ ...structuredClone(set), gender: (details[i] as string).split(", ").find((token) => token === "M" || token === "F") ?? "" }));
+}
+
 /** Start the battle once to Team Preview. Both teams are validated first, on copies, as `runBattle` does. */
 export function startHypothetical(input: HypotheticalStartInput): HypotheticalPreview {
-  const { engine, format_id, seat, own_team, world_team, stream, world, data_class, snapshot } = input;
+  const { engine, format_id, seat, world_team, stream, world, data_class, snapshot } = input;
+  const own_team = input.own_request === undefined ? input.own_team : withRealGenders(input.own_team, input.own_request);
   if (!PLAYERS.includes(seat)) throw new HypotheticalError("seat must be p1 or p2");
   const foe: Player = seat === "p1" ? "p2" : "p1";
   const resolved = resolveFormat(engine, format_id, snapshot);
@@ -242,6 +276,18 @@ export function startHypothetical(input: HypotheticalStartInput): HypotheticalPr
   const foe_channel = brandChannel(foe, lines[foe], data_class);
   const teamOf = (player: Player): readonly Readonly<PokemonSet>[] => (player === seat ? own_team : world_team);
 
+  const observationFor = async (channel: HypotheticalChannel): Promise<HypotheticalObservation> => {
+    const { lines: channelLines, data_class: channelClass } = textOf(channel);
+    const real = playerChannel({ schema_version: 1, data_class: channelClass, player: channel.player, lines: channelLines });
+    const built = await observe({ channel: real, team: teamSpec(channelClass, teamOf(channel.player)), manifest: resolved.manifest });
+    // A copy, frozen: the query the worker client validates and sends is the one this module made, whatever a caller does after.
+    const observation = deepFreeze(structuredClone(built));
+    const candidates = enumerateCandidates(decodedRequest(channel)).candidates.map(({ choice, pending }) => ({ choice, pending }));
+    const branded = Object.freeze({ player: channel.player, kind: observation.kind }) as unknown as HypotheticalObservation;
+    observationTexts.set(branded, { observation, candidates });
+    return branded;
+  };
+
   return {
     manifest: resolved.manifest,
     seat,
@@ -257,17 +303,37 @@ export function startHypothetical(input: HypotheticalStartInput): HypotheticalPr
       const channel = brandChannel(seat, [...ownLines, ...turn.lines], data_class);
       return { kind: "request", channel, request: brandRequest(decodeRequest(turn.request)) };
     },
-    async observation(channel) {
-      const { lines: channelLines, data_class: channelClass } = textOf(channel);
-      const real = playerChannel({ schema_version: 1, data_class: channelClass, player: channel.player, lines: channelLines });
-      const built = await observe({ channel: real, team: teamSpec(channelClass, teamOf(channel.player)), manifest: resolved.manifest });
-      // A copy, frozen: the query the worker client validates and sends is the one this module made, whatever a caller does after.
-      const observation = deepFreeze(structuredClone(built));
-      const candidates = enumerateCandidates(decodedRequest(channel)).candidates.map(({ choice, pending }) => ({ choice, pending }));
-      const branded = Object.freeze({ player: channel.player, kind: observation.kind }) as unknown as HypotheticalObservation;
-      observationTexts.set(branded, { observation, candidates });
-      return branded;
+    async rollout(own_choice, foe_choice, turns, choose, max_steps = MAX_ROLLOUT_STEPS) {
+      if (!Number.isInteger(turns) || turns < 1) throw new HypotheticalError("a rollout plays at least one turn");
+      const clone = cloneWorld(engine, serialised, seed);
+      let turn = playChoices(clone, seat, { own: own_choice, foe: foe_choice }, true);
+      const ownAll = [...ownLines];
+      const foeAll = [...lines[foe]];
+      let moves = 0;
+      for (let step = 0; ; step += 1) {
+        ownAll.push(...turn.lines);
+        foeAll.push(...(turn.foe?.lines ?? []));
+        if (turn.refused !== null) return { kind: "refused", reason: turn.refused };
+        if (turn.ended !== null) return { kind: "ended", outcome: turn.ended };
+        if (turn.request === null) return { kind: "refused", reason: "the engine sent the seat no request" };
+        const ownRequest = decodeRequest(turn.request);
+        if (ownRequest.phase === "move" && moves >= turns) {
+          return { kind: "request", channel: brandChannel(seat, ownAll, data_class), request: brandRequest(ownRequest) };
+        }
+        if (step >= max_steps) return { kind: "request", channel: brandChannel(seat, ownAll, data_class), request: brandRequest(ownRequest), capped: true };
+        const foeRequest = turn.foe?.request == null ? null : decodeRequest(turn.foe.request);
+        const answer = async (player: Player, request: DecodedRequest | null, all: string[]): Promise<string | null> => {
+          if (request === null || request.phase === "wait") return null;
+          const channel = brandChannel(player, all, data_class);
+          return choose(await observationFor(channel), brandRequest(request), player);
+        };
+        const ownChoice = await answer(seat, ownRequest, ownAll);
+        const foeChoice = await answer(foe, foeRequest, foeAll);
+        if (ownRequest.phase === "move") moves += 1;
+        turn = playChoices(clone, seat, { own: ownChoice, foe: foeChoice }, true);
+      }
     },
+    observation: observationFor,
   };
 }
 
