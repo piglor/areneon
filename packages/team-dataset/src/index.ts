@@ -89,3 +89,4 @@ export * from "./duckdb/index.ts";
 export { listPool, type ListedSet, type ListedTeam, type PoolListing } from "./pool-listing.ts";
 export { drawRolePicks, type RolePick, RoleSetProposalError, type RoleSetsSource, roleSetsSource } from "./role-set-proposal.ts";
 export { pickWeighted, type UsageSource, UsageProposalError, UsageSampler, usageMembers, usageSource } from "./usage-proposal.ts";
+export { createBeliefFeatures, evidenceKey, type BeliefFeaturesContext } from "./belief-features.ts";

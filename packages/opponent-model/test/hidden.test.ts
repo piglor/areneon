@@ -13,7 +13,7 @@ import { loadRandomCorpus, type RandomBattleFile } from "../../showdown-bridge/s
 import { createSetLegality } from "../../showdown-bridge/src/set-legality.ts";
 import { type BattleRecord, type RequestRecord, runBattle } from "../../showdown-bridge/src/runner.ts";
 import { actorRule } from "../../showdown-bridge/src/actor-rule.ts";
-import { type OpponentBelief, type SetLegality, type SpreadSampler, beliefDigest, createSampler, worldsDigest } from "../src/index.ts";
+import { type OpponentBelief, type SetLegality, type SpreadSampler, beliefDigest, createSampler, opponentSheet, worldsDigest } from "../src/index.ts";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { readBeliefConfig } from "../../showdown-bridge/src/belief-config.ts";
@@ -310,6 +310,57 @@ describe("invariance with the speed evidence on (ticket #1133)", () => {
   }, 240_000);
 });
 
+describe("invariance: the opponent sheet block (ADR-025 erratum E4) does not depend on what the opponent holds unrevealed", () => {
+  const HASH = "c".repeat(64);
+  const blockAt = (lines: string[], opponentOf: (o: PublicSide) => PublicSide = (o) => o): string => {
+    const run = interpretChannel("p1", lines);
+    const state = run.frames[run.frames.length - 1]!.state;
+    const opponent = opponentOf(state.opponent);
+    const prior = skewedPrior(state.opponent.roster.map((m) => m.base_species));
+    const b = beliefAt({ state, flags: run.flags, game: "", seat: "p1", request: 0, truth: null }, prior, { opponent });
+    return JSON.stringify(opponentSheet(b, opponent, HASH));
+  };
+
+  it("is byte-identical at every request with an equal player channel, whatever the opponent's items, natures, Stat Points, moves 2 to 4 and back Pokemon", async () => {
+    let compared = 0;
+    let beyondPreview = 0;
+    let revealed = 0;
+    for (const battle of battles) {
+      const theirs = withGenders(battle.teams.p2);
+      const other = mutated(theirs);
+      const a = await play(battle, theirs, "keep");
+      const b = await play(battle, other, "other-back");
+      for (const [mine, yours] of equalPrefixes(a, b)) {
+        const one = blockAt(mine);
+        expect(blockAt(yours)).toBe(one);
+        compared += 1;
+        if (interpretChannel("p1", mine).frames.at(-1)!.state.turn > 0) beyondPreview += 1;
+        if (one.includes('"brought_source":"revealed"')) revealed += 1;
+      }
+    }
+    expect(compared).toBeGreaterThanOrEqual(6);
+    expect(beyondPreview).toBeGreaterThanOrEqual(3);
+    expect(revealed).toBeGreaterThan(0);
+  }, 240_000);
+
+  it("has teeth: a builder handed the opponent's real sets gives different blocks for the two teams", async () => {
+    let compared = 0;
+    let differing = 0;
+    for (const battle of battles) {
+      const theirs = withGenders(battle.teams.p2);
+      const other = mutated(theirs);
+      const a = await play(battle, theirs, "keep");
+      const b = await play(battle, other, "other-back");
+      for (const [lines] of equalPrefixes(a, b)) {
+        compared += 1;
+        if (blockAt(lines, (o) => leaked(o, theirs)) !== blockAt(lines, (o) => leaked(o, other))) differing += 1;
+      }
+    }
+    expect(compared).toBeGreaterThanOrEqual(3);
+    expect(differing).toBeGreaterThan(0);
+  }, 240_000);
+});
+
 // ---- the canary ----
 
 type Forme = UsagePrior["species"][number]["formes"][number];
@@ -378,5 +429,32 @@ describe("canary: marker values in the opponent's unrevealed fields never reach 
     // Negative control: a prior built from the real team (the markers named) is flagged.
     const leaky = (ids: string[]) => closedPrior(ids, { items: new Set(), moves: new Set(), natures: new Set() });
     expect(found(leaky).length).toBeGreaterThan(0);
+  }, 240_000);
+
+  it("never appear in an opponent sheet block either; a prior that names them (a leak) is flagged by the same scan", async () => {
+    const battle = battles[0] as RandomBattleFile;
+    const theirs = withGenders(battle.teams.p2);
+    const real = mutated(theirs);
+    const markers = {
+      items: new Set(real.map((s) => toId(s.item)).filter((i) => i !== "")),
+      moves: new Set(real.flatMap((s, i) => s.moves.slice(1).filter((m, k) => toId(m) !== toId(theirs[i]!.moves[k + 1] as string)).map(toId))),
+      natures: new Set(real.map((s) => toId(s.nature))),
+    };
+    const record = await play(battle, real, "keep");
+    const prefixes = record.channels.p1.flatMap((line, i) => (line.startsWith("|request|") ? [record.channels.p1.slice(0, i + 1)] : []));
+    const found = (prior: (ids: string[]) => UsagePrior): string[] => {
+      const hits = new Set<string>();
+      for (const lines of prefixes) {
+        const run = interpretChannel("p1", lines);
+        const state = run.frames[run.frames.length - 1]!.state;
+        const revealed = new Set(state.opponent.roster.flatMap((m) => [...m.moves_revealed, ...(m.item_known && m.item !== null ? [m.item] : [])]));
+        const b = beliefAt({ state, flags: run.flags, game: "", seat: "p1", request: 0, truth: null }, prior(state.opponent.roster.map((m) => m.base_species)));
+        const out = JSON.stringify(opponentSheet(b, state.opponent, "c".repeat(64)));
+        for (const marker of [...markers.items, ...markers.moves, ...markers.natures]) if (out.includes(`"${marker}"`) && !revealed.has(marker)) hits.add(marker);
+      }
+      return [...hits];
+    };
+    expect(found((ids) => closedPrior(ids, markers))).toEqual([]);
+    expect(found((ids) => closedPrior(ids, { items: new Set(), moves: new Set(), natures: new Set() })).length).toBeGreaterThan(0);
   }, 240_000);
 });
