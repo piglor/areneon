@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import { describe, expect, it } from "vitest";
-import type { BestResponseOptions, PreviewResult } from "../src/best-response.ts";
+import type { BestResponseOptions, PreviewContext, PreviewResult, ResponderDeps } from "../src/best-response.ts";
 import type { episodeHash } from "../src/episode.ts";
 import type { loadTrainingSet } from "../src/training-loader.ts";
 
@@ -12,10 +12,15 @@ import type { loadTrainingSet } from "../src/training-loader.ts";
 const ROOT = join(import.meta.dirname, "..", "..", "..");
 
 /** The shipped files that may name the responder's modules or entry points. */
-export const RESPONDER_FILES = ["best-response.ts", "best-response-cli.ts", "best-response-record.ts", "best-response-samples.ts", "samples.ts", "index.ts", "best-response.ts"];
+export const RESPONDER_FILES = ["best-response.ts", "best-response-cli.ts", "best-response-record.ts", "best-response-samples.ts", "samples.ts", "index.ts"];
 /** What the responder must never import: the writers of training data and of Episodes. */
 export const FORBIDDEN_IMPORTS = ["training-loader", "episode-io", "episode.ts", "league-generation", "teacher-generation", "play-generation", "private-records", "private-snapshot"];
 const RESPONDER_NAMES = ["decidePreview", "playBestResponse", "chooseResponse", "columnWeights", "runBestResponseCli", "best-response.ts", "best-response-cli.ts"];
+
+/** What the responder module may never name: the running battle, the omniscient log, hidden verdicts, the runner's records. */
+export const BANNED_IN_RESPONDER = ["BattleRecord", "OmniscientLog", "HiddenVerdicts", "hidden_verdicts", "omniscient_log", "CloneJudge", "runBattle", "recordedChannel"];
+/** What the Python command module may never import: learners, training streams, Episodes. */
+export const PYTHON_FORBIDDEN = ["areneon_ml.learner", "areneon_ml.loop.driver", "areneon_ml.loop.warm_start", "training", "episode"];
 
 export interface Finding {
   file: string;
@@ -29,7 +34,10 @@ export function scanSource(file: string, text: string): Finding[] {
   const responder = name === "best-response.ts" || name === "best-response-cli.ts";
   if (responder) {
     for (const forbidden of FORBIDDEN_IMPORTS) if (new RegExp(`from "[^"]*${forbidden}[^"]*"`).test(text)) found.push({ file, what: `imports ${forbidden}` });
+    for (const banned of BANNED_IN_RESPONDER) if (name === "best-response.ts" && text.includes(banned)) found.push({ file, what: `names ${banned}` });
     if (/writeFile|appendFile|createWriteStream/.test(text) && name === "best-response.ts") found.push({ file, what: "writes a file" });
+  } else if (name === "best_response.py") {
+    for (const forbidden of PYTHON_FORBIDDEN) if (new RegExp(`^\\s*(from|import)\\s+\\S*${forbidden}`, "m").test(text)) found.push({ file, what: `imports ${forbidden}` });
   } else if (!RESPONDER_FILES.includes(name) && !file.includes("/test/") && RESPONDER_NAMES.some((id) => text.includes(id))) {
     found.push({ file, what: "names the responder" });
   }
@@ -58,7 +66,7 @@ describe("the best-response responder is reachable only from the best-response c
     const findings = files.flatMap((file) => {
       const text = readFileSync(file, "utf8");
       // The team-dataset script and the Python command are the command's own entry points.
-      return /(best-response\.ts|best_response\.py)$/.test(file) && !file.includes("showdown-bridge/src") ? [] : scanSource(relative(ROOT, file), text);
+      return /best-response\.ts$/.test(file) && !file.includes("showdown-bridge/src") ? [] : scanSource(relative(ROOT, file), text);
     });
     expect(findings).toEqual([]);
   });
@@ -70,7 +78,30 @@ describe("the best-response responder is reachable only from the best-response c
     expect(scanSource("src/league-generation.ts", "await playBestResponse(o);").map((f) => f.what)).toEqual(["names the responder"]);
     expect(scanSource("src/league-generation.ts", 'import "./best-response.ts";').map((f) => f.what)).toEqual(["names the responder"]);
     expect(scanSource("src/best-response.ts", "const x = 1;")).toEqual([]);
+    for (const banned of BANNED_IN_RESPONDER) expect(scanSource("src/best-response.ts", `function f(r: ${banned}) {}`).map((f) => f.what)).toEqual([`names ${banned}`]);
+    expect(scanSource("ml/areneon_ml/progress/best_response.py", "from areneon_ml.learner.data import trajectories\n").map((f) => f.what)).toEqual(["imports areneon_ml.learner"]);
+    expect(scanSource("ml/areneon_ml/progress/best_response.py", "import json\nfrom areneon_ml.progress.stats import pair_interval\n")).toEqual([]);
     expect(scanSource("src/index.ts", 'export { playBestResponse } from "./best-response.ts";')).toEqual([]);
+  });
+
+  // The key sets of what a decision reads (ADR-029 section 7): no field for the other team, the running battle, the omniscient log,
+  // hidden verdicts or the battle seed beyond the harness label the stream function hashes.
+  it("a decision reads only the seat's own view and the harness labels (type test)", () => {
+    const context: (keyof PreviewContext)[] = ["seat", "channel", "team", "battle", "seed", "game", "request_seq", "channel_class"];
+    const deps: (keyof ResponderDeps)[] = ["engine", "vocabulary", "format_id", "teams", "settings", "client", "policy_id", "mode"];
+    type Exact<T, K extends PropertyKey> = [keyof T] extends [K] ? ([K] extends [keyof T] ? true : never) : never;
+    const contextExact: Exact<PreviewContext, (typeof context)[number]> = true;
+    const depsExact: Exact<ResponderDeps, (typeof deps)[number]> = true;
+    expect([contextExact, depsExact, context.length, deps.length]).toEqual([true, true, 8, 8]);
+    // @ts-expect-error there is no field for the opponent's team
+    const noTeam: Pick<PreviewContext, "opponent_team"> = null;
+    // @ts-expect-error there is no field for a battle record
+    const noRecord: Pick<ResponderDeps, "record"> = null;
+    // @ts-expect-error there is no field for the omniscient log
+    const noLog: Pick<PreviewContext, "omniscient_log"> = null;
+    // @ts-expect-error there is no field for hidden verdicts
+    const noVerdicts: Pick<ResponderDeps, "hidden_verdicts"> = null;
+    expect([noTeam, noRecord, noLog, noVerdicts]).toBeDefined();
   });
 
   // A type test: a responder result is two plain fields (a record of counts and choice strings), not an Episode, a training stream

@@ -54,6 +54,11 @@ ARMS = ("mirror", "responder", "blind", "room")
 MODES = ("argmax", "sample")
 OWN_RULES = ("prior-top-k", "distinct-leads")
 _STDERR_TAIL = 2000
+#: A share of decisions that fell back to the pair's own Preview, above which a result is not valid
+#: (declared on #1258): 5% of an arm's decisions, in parts per million.
+MAX_FALLBACK_SHARE_PPM = 50_000
+#: A share of forfeited games above which a measurement is invalid (E0-P's stopping rule): 2%.
+MAX_FORFEIT_SHARE_PPM = 20_000
 _HALVES = {"focal": 2, "tie": 1, "other": 0}
 _COUNT_KEYS = (
     "worlds_asked",
@@ -254,7 +259,35 @@ def summarise(record: dict[str, Any], run_key: str | None = None) -> dict[str, A
         for row in record["games"]
     )
     games = record["plan"]["games"]
+    fallback_share = {
+        arm: sum(row[f"{side}_decision"]["kind"] == "fallback" for row in record["games"])
+        * PPM
+        // games
+        for arm, side in (("responder", "b"), ("room", "a"))
+    }
+    forfeit_share = {
+        arm: sum(f["count"] for f in record["result"][arm]["forfeits"]) * PPM // games
+        for arm in ARMS
+    }
+    reasons = [
+        f"fallback share of the {arm} arm is {share} ppm (limit {MAX_FALLBACK_SHARE_PPM})"
+        for arm, share in fallback_share.items()
+        if share > MAX_FALLBACK_SHARE_PPM
+    ] + [
+        f"forfeit share of the {arm} arm is {share} ppm (limit {MAX_FORFEIT_SHARE_PPM})"
+        for arm, share in forfeit_share.items()
+        if share > MAX_FORFEIT_SHARE_PPM
+    ]
+    latency = [
+        arm
+        for arm in ARMS
+        if any(f["cause"] == "latency_overrun" for f in record["result"][arm]["forfeits"])
+    ]
+    reasons += [f"the {arm} arm forfeited a game on latency" for arm in latency]
     return {
+        "valid": not reasons,
+        "invalid_reasons": reasons,
+        "fallback_share_ppm": fallback_share,
         "label": LABEL,
         "run_id": record["run_id"],
         "generation": generation,
@@ -269,10 +302,7 @@ def summarise(record: dict[str, Any], run_key: str | None = None) -> dict[str, A
         "room": _interval(scores["room"], key("room"), shift=PPM // 2),
         "responder_choice_equals_blind": same,
         "forfeits": {arm: record["result"][arm]["forfeits"] for arm in ARMS},
-        "forfeit_share_ppm": {
-            arm: sum(f["count"] for f in record["result"][arm]["forfeits"]) * PPM // games
-            for arm in ARMS
-        },
+        "forfeit_share_ppm": forfeit_share,
         "b_tables": _table_counts(record, "b"),
         "a_tables": _table_counts(record, "a"),
     }
@@ -442,6 +472,8 @@ def best_response(
         "out": str(out),
         "record_hash": digest,
         "summary": summary,
+        "valid": summary["valid"],
+        "invalid_reasons": summary["invalid_reasons"],
         "looks": state.count,
         "look_log": str(log),
         "look_log_sha256": state.file_sha256,

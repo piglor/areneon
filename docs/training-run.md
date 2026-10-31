@@ -857,6 +857,13 @@ python -m areneon_ml.loop best-response --run-dir RUN --generation G --mode argm
   validation plan): BRG, `BRG_blind`, the margin and R, each arm's pair score, forfeits by arm and
   cause, how many decisions fell back to the pair's own Preview and why, how often the responder
   and the blind control chose alike, and the work the tables did.
+- **Validity.** The summary and the printed result carry `valid` and `invalid_reasons`: not valid
+  when more than 5% of the responder arm's or room arm's decisions fell back to the pair's own
+  Preview, when any arm forfeited more than 2% of its games, or when any arm forfeited on latency
+  (the table is built inside the timed Preview decision; the budget is the same for every arm).
+  The record is unchanged: it holds every per-pair outcome, so one-sided 5% bounds can be
+  computed offline with no rerun. With the rollout leaf the blind control draws the back set
+  from the network's conditional, so it is not exactly uniform over the 180 strategies.
 - **Labels.** "Evaluation-only responder with white-box access to the evaluated policy's weights;
   a conditional lower bound on validation teams; not the Training gate; never held-out evidence."
   A pair that reads candidate features is refused.

@@ -106,6 +106,13 @@ def test_the_summary_is_the_pair_level_bootstrap_of_the_differences() -> None:
         {"side": "other", "cause": "latency_overrun", "count": 1}
     ]
     assert summary["forfeit_share_ppm"]["responder"] == PPM // 4
+    # A quarter of the responder's decisions fell back and a game was forfeited: not a valid result.
+    assert summary["valid"] is False
+    assert summary["fallback_share_ppm"] == {"responder": PPM // 4, "room": PPM // 4}
+    reasons = " ".join(summary["invalid_reasons"])
+    assert "fallback share of the responder arm" in reasons
+    assert "forfeit share of the responder arm" in reasons
+    assert "forfeited a game on latency" in reasons
     # the same record, the same intervals
     assert summarise(copy.deepcopy(record)) == summary
 
@@ -165,6 +172,8 @@ def test_a_fixed_strategy_policy_has_a_positive_margin_and_a_uniform_one_none() 
     assert fixed["brg_blind"]["mean_ppm"] == 0
     assert fixed["margin"]["mean_ppm"] == PPM
     assert fixed["margin"]["low_ppm"] > 0
+    assert fixed["valid"] is True
+    assert fixed["invalid_reasons"] == []
     # Uniform policy: the responder and the blind control choose alike and play the same games.
     uniform = summarise(_record("tie", "win", "win", same=True))
     assert uniform["brg"]["mean_ppm"] == PPM // 2
@@ -331,6 +340,8 @@ def test_it_runs_logs_the_look_and_commits(tmp_path: Path, monkeypatch: pytest.M
     assert entry["matches"] == [{"generation": 5, "match_id": "best-response-argmax", "games": 4}]
     assert result["record_hash"] == record_hash(fake.record)
     assert result["summary"]["pairs"] == 2
+    assert result["valid"] is False
+    assert result["invalid_reasons"]
     verify_looks(log.read_bytes())
     with pytest.raises(BestResponseError, match="never overwritten"):
         run_best_response(req, repo=REPO)

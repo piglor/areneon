@@ -16,7 +16,7 @@
 // * The room arm is the same construction from team A's side, against the evaluated pair on team B (the mirror opponent).
 //
 // The module is reachable only from the best-response command (a source scan). It writes no Episode, no training example and
-// no stream: the games are plain `runBattle` records the command tallies, and the responder's decision is a choice string.
+// no stream: the games are plain battle outcomes the command tallies, and the responder's decision is a choice string.
 
 import { interpretChannel } from "@areneon/public-state";
 import type { PublicFlag, PublicSide } from "@areneon/public-state";
@@ -195,6 +195,7 @@ export async function decidePreview(deps: ResponderDeps, ctx: PreviewContext, ar
       // The sets a battle plays are the validator's normalised copy (a set with no nickname is named by its species, as in the pool's teams
       // a real game plays): the worker's reader checks the engine's request against those names. A team the validator refuses stays refused.
       const sets = mapWorld({ engine, vocabulary }, format_id, world).map((member) => member.set);
+      // Called for its in-place normalisation (nicknames), not its verdict: startHypothetical validates the team again and refuses it.
       validateTeam(engine, format, sets);
       worlds.push({ index, preview: startHypothetical({ engine, format_id, seat: ctx.seat, own_team: ctx.team, world_team: sets, stream, world: index, data_class: ctx.channel_class, own_request: realRequest }) });
     } catch (error) {

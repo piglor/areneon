@@ -189,6 +189,17 @@ describe("the best-response evaluation", () => {
     expect(client.queries).toBeGreaterThan(0);
   });
 
+  it("in sample mode a policy whose distribution concentrates on one lead pair is countered too", { timeout: 900_000 }, async () => {
+    // The stand-in's Preview prior falls with the candidate index, so nearly all of its mass leads with the first position of team A.
+    const record = await playBestResponse(options(new Standin(false), "sample"));
+    const b = record.games[0]?.b_decision;
+    if (b?.kind !== "table") throw new Error("expected a table");
+    expect(b.choices[0]?.key.startsWith("4")).toBe(true);
+    expect(b.choices[1]?.key.startsWith("1")).toBe(true);
+    expect(score(record, "responder")[0] as number).toBeGreaterThan(score(record, "blind")[0] as number);
+    expect(score(record, "responder")[0] as number).toBeGreaterThan(score(record, "mirror")[0] as number);
+  });
+
   it("reruns to the same bytes", { timeout: 900_000 }, async () => {
     fixed.again = await playBestResponse(options(new Standin(false), "argmax"));
     expect(jcs(fixed.again as unknown as Json)).toEqual(jcs(fixed.record as unknown as Json));
