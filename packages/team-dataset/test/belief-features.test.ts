@@ -145,6 +145,19 @@ describe("the memo and the trapping check", () => {
     expect(asked).toBe(0);
   });
 
+  it("varying where a Pokemon stands, with a check that observes nothing, the memoised block equals a fresh one", () => {
+    const memoed = portOf();
+    const silent = { observed: [] as never[], shows: () => [] };
+    const lead = c.input.state.opponent.roster.findIndex((m) => m.active_slot !== null);
+    expect(lead).toBeGreaterThanOrEqual(0);
+    for (const slot of ["a", "b", null, "a"]) {
+      const opponent = structuredClone(c.input.state.opponent);
+      (opponent.roster[lead] as (typeof opponent.roster)[number]).active_slot = slot;
+      const fresh = JSON.stringify(portOf().sheet({ opponent, flags: c.input.flags, trapping: silent }));
+      expect(JSON.stringify(memoed.sheet({ opponent, flags: c.input.flags, trapping: silent }))).toBe(fresh);
+    }
+  });
+
   it("a check that observes something is never memoised: it is asked again", () => {
     const port = portOf();
     let asked = 0;

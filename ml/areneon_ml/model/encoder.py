@@ -937,11 +937,13 @@ class Encoder:
         The query must carry exactly the set the config names; the block's slots are the
         opponent's preview entries in order (a phantom entry has none), each named by its
         species, which must be the reducer's base species of that entry. A block under a config
-        without the option is ignored.
+        without the option is refused, as candidate_features are.
         """
         wanted = sheet_set(self.config.options)
         sent = query.get("opponent_sheet")
         if wanted is None:
+            if sent is not None:
+                raise EncodingError("the query carries opponent_sheet this encoder does not read")
             return None
         if sent is None:
             raise EncodingError("the query has no opponent_sheet, which this encoder needs")

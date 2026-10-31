@@ -45,6 +45,10 @@ from .test_options import TODAY_ENCODER_VERSION
 SCHEMA = (
     Path(__file__).resolve().parents[3] / "packages/schema/contracts/v1/opponent-sheet.schema.json"
 )
+FORMAT_VOCABULARY = (
+    Path(__file__).resolve().parents[3]
+    / "fixtures/showdown/gen9championsvgc2026regmc/team-vocabulary.json"
+)
 HASH = "5" * 64
 SET = {"feature_set": "opponent-sheet/1", "feature_set_hash": HASH}
 ON = replace(TINY_ENCODER, options=read_options("encoder", {OPPONENT_SHEET: SET}))
@@ -143,14 +147,14 @@ def test_the_option_reads_an_object_with_the_set_and_a_hash() -> None:
             read_options("encoder", {OPPONENT_SHEET: bad})
 
 
-def test_without_the_option_nothing_changes_and_a_block_is_ignored() -> None:
+def test_without_the_option_nothing_changes_and_a_block_is_refused() -> None:
     assert encoder_version(game(), TINY_ENCODER) == TODAY_ENCODER_VERSION
     assert not any(name.startswith("sheet_") for name, _ in Layout.of(TINY_ENCODER).mon_cat)
     plain = Encoder(game(), TINY_ENCODER)
-    with_block = plain.encode(query())
-    without = plain.encode(QUERY)
-    assert torch.equal(with_block.mon_cat, without.mon_cat)
-    assert torch.equal(with_block.mon_num, without.mon_num)
+    assert plain.encode(QUERY).mon_cat.shape[1] == len(Layout.of(TINY_ENCODER).mon_cat)
+    # As candidate_features are: rows the checkpoint was not trained with are refused, not read.
+    with pytest.raises(EncodingError, match="opponent_sheet this encoder does not read"):
+        plain.encode(query())
 
 
 def test_the_option_moves_the_version_the_layout_and_the_checkpoint_format() -> None:
@@ -171,6 +175,14 @@ def test_the_option_moves_the_version_the_layout_and_the_checkpoint_format() -> 
     assert loaded.config == ON_MODEL
     with pytest.raises(CheckpointOptionsError):
         load_checkpoint(data, gd, checkpoint_id(data), "battle", configured=TINY_MODEL)
+
+
+def test_the_natures_of_the_vocabulary_map_to_distinct_buckets() -> None:
+    natures = [n["id"] for n in json.loads((FORMAT_VOCABULARY).read_text())["natures"]]
+    assert len(natures) >= 25
+    buckets = [sheet_of.nature_category(n) for n in natures]
+    assert len(set(buckets)) == len(natures)
+    assert all(RESERVED <= b < RESERVED + sheet_of.NATURE_BUCKETS for b in buckets)
 
 
 def test_the_closed_words_are_the_contracts() -> None:
@@ -285,3 +297,43 @@ def test_a_block_that_does_not_fit_is_refused(change: Any, message: str) -> None
 def test_a_config_with_the_option_needs_the_block() -> None:
     with pytest.raises(EncodingError, match="no opponent_sheet"):
         ENCODE.encode(QUERY)
+
+
+# -- the network: ADR-027 section 2's weighted sum ------------------------------------------------
+
+
+def test_the_network_adds_the_weighted_sum_of_the_entries_embeddings() -> None:
+    q = query()
+    encoded = ENCODE.encode(q)
+    net = init_network("battle", game(), ON_MODEL, seed=3)
+    batch = collate([encoded])
+    sums = net._sheet_sums(batch)  # [1, M, 4 * d]
+    d = ON_MODEL.d_model
+    first = encoded.n_own
+    slot = q["opponent_sheet"]["slots"][0]
+    items = sorted(game().items.ids)
+    manual = (
+        0.6 * net.embed("item", torch.tensor(game().items.lookup(items[0])))
+        + 0.3 * net.embed("item", torch.tensor(NONE))
+        + 0.1 * net.sheet_other.weight[0]
+    )
+    assert slot["item"]["other_ppm"] == 100000
+    assert torch.allclose(sums[0, first, :d], manual, atol=1e-6)
+    ability = slot["ability"]["entries"][0]["id"]
+    assert torch.allclose(
+        sums[0, first, d : 2 * d],
+        net.embed("ability", torch.tensor(game().abilities.lookup(ability))),
+        atol=1e-6,
+    )
+    assert (
+        torch.count_nonzero(sums[0, : encoded.n_own]) == 0
+    )  # an own token reads nothing of the sheet
+
+
+def test_the_weights_are_not_inputs_of_the_numeric_layer() -> None:
+    net = init_network("battle", game(), ON_MODEL, seed=3)
+    layout = Layout.of(ON, game())
+    weights = [n for n in layout.mon_num if n.endswith("_ppm") or n.endswith("_other")]
+    assert net.mon_num.in_features == len(layout.mon_num) - len(weights)
+    scalars = [n for n in layout.mon_num if n.startswith("sheet_")]
+    assert {"sheet_brought", "sheet_item_top", "sheet_moves_top"} <= set(scalars)
