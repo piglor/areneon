@@ -132,16 +132,18 @@ describe.skipIf(!existsSync(PYTHON) && process.env.ARENEON_REQUIRE_PYTHON_WORKER
   // ADR-029 section 3 (#1256): the payoff table of a Team Preview decision from the real networks is the same integers on a rerun, for both leaves.
   it("builds bit-identical Team Preview payoff tables on a rerun, first-request and rollout leaves", async () => {
     const opponent = importPaste(engine, readFileSync(join(TEAMS_DIR, "legal-opponent.txt"), "utf8"));
+    const channel = JSON.parse(readFileSync(join(GOLDEN_DIR, "channels/p1.json"), "utf8")) as { lines: string[] };
+    const own_request = (channel.lines.find((line) => line.startsWith("|request|")) as string).slice("|request|".length);
     const tables = async (leaf: PayoffConfig["leaf"]) => {
       const client = new PolicyWorkerClient(options());
       await client.start();
       try {
         const worlds = [0, 1].map((index) => ({
           index,
-          preview: startHypothetical({ engine, format_id: GOLDEN_FORMAT, seat: "p1", own_team: sets, world_team: opponent, stream: new Uint8Array(32).fill(5), world: index, data_class: "synthetic" }),
+          preview: startHypothetical({ engine, format_id: GOLDEN_FORMAT, seat: "p1", own_team: sets, world_team: opponent, stream: new Uint8Array(32).fill(5), world: index, data_class: "synthetic", own_request }),
         }));
         const config: PayoffConfig = { k_own: 2, k_opp: 2, own_rule: "distinct-leads", leaf };
-        return await buildPayoffTable({ config, worlds, client, battle: "g1", policy_id: `policy:${"a".repeat(64)}`, stream: new Uint8Array(32).fill(5) });
+        return await buildPayoffTable({ config, worlds, client, battle: "g1", policy_id: `policy:${"a".repeat(64)}`, own_request, stream: new Uint8Array(32).fill(5) });
       } finally {
         await client.close();
       }

@@ -4,7 +4,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
-import { firstLegal, GOLDEN_FORMAT, syntheticTeam, TEAMS_DIR } from "../src/golden.ts";
+import { GOLDEN_DIR, GOLDEN_FORMAT, syntheticTeam, TEAMS_DIR } from "../src/golden.ts";
 import {
   backDraw,
   BACK_DRAW_PURPOSE,
@@ -14,6 +14,7 @@ import {
   HypotheticalError,
   type HypotheticalPreview,
   hypotheticalCandidates,
+  hypotheticalRequest,
   importPaste,
   loadEngine,
   PAYOFF_LEAF_FORMAT,
@@ -26,12 +27,17 @@ import {
   startHypothetical,
   strategiesOf,
 } from "../src/index.ts";
+import { decodeRequest } from "../src/request.ts";
 
 const STREAM = new Uint8Array(32).fill(9);
 let engine: Engine;
 let own: PokemonSet[];
 let worlds: PokemonSet[][];
+/** Our REAL Team Preview request: the golden battle's first request for p1, whose team is the synthetic team. */
+let REAL: string;
 beforeAll(() => {
+  const log = JSON.parse(readFileSync(join(GOLDEN_DIR, "channels/p1.json"), "utf8")) as { lines: string[] };
+  REAL = (log.lines.find((line) => line.startsWith("|request|")) as string).slice("|request|".length);
   engine = loadEngine();
   own = syntheticTeam();
   const base = importPaste(engine, readFileSync(join(TEAMS_DIR, "legal-opponent.txt"), "utf8"));
@@ -41,7 +47,7 @@ beforeAll(() => {
 
 const start = (world: number, team: PokemonSet[] = worlds[world] as PokemonSet[], overrides: { own_team?: PokemonSet[] } = {}): { index: number; preview: HypotheticalPreview } => ({
   index: world,
-  preview: startHypothetical({ engine, format_id: GOLDEN_FORMAT, seat: "p1", own_team: overrides.own_team ?? own, world_team: team, stream: STREAM, world, data_class: "synthetic" }),
+  preview: startHypothetical({ engine, format_id: GOLDEN_FORMAT, seat: "p1", own_team: overrides.own_team ?? own, world_team: team, stream: STREAM, world, data_class: "synthetic", own_request: REAL }),
 });
 
 /** The stand-in Team Preview prior: a fixed integer weight per candidate index. */
@@ -74,7 +80,7 @@ function standIn(options: { battlePrior?: (n: number) => number[]; value?: (log:
 }
 
 const config = (change: Partial<PayoffConfig> = {}): PayoffConfig => ({ k_own: 3, k_opp: 3, own_rule: "distinct-leads", leaf: { kind: "first-request" }, ...change });
-const input = (client: PayoffClient, worldList: { index: number; preview: HypotheticalPreview }[], cfg: PayoffConfig) => ({ config: cfg, worlds: worldList, client, battle: "b", policy_id: "test@policy", stream: STREAM });
+const input = (client: PayoffClient, worldList: { index: number; preview: HypotheticalPreview }[], cfg: PayoffConfig) => ({ config: cfg, worlds: worldList, client, battle: "b", policy_id: "test@policy", own_request: REAL, stream: STREAM });
 
 /** Every 4-of-6 team order, the way the engine lists them: lexicographic over the position digits. */
 function orders(): string[] {
@@ -207,7 +213,7 @@ describe("the table", () => {
     const real = (ws[0] as { preview: HypotheticalPreview }).preview;
     const wrap = (play: HypotheticalPreview["play"]) => [{ index: 0, preview: { ...real, play } as HypotheticalPreview }];
     const refused = await buildPayoffTable(input(standIn(), wrap(() => ({ kind: "refused", reason: "x" })), cfg));
-    expect(refused.counts).toMatchObject({ engine_refusals: 4, entries: 0, missing_entries: 4 });
+    expect(refused.counts).toMatchObject({ engine_refusals: 1, worlds_dropped: 1, entries: 0, missing_entries: 4 });
     expect(refused.complete).toBe(false);
     expect(refused.matrix).toBeNull();
     expect(refused.entries.flat()).toEqual([null, null, null, null]);
@@ -220,7 +226,7 @@ describe("the table", () => {
         return turn.kind === "request" ? { kind: "request", channel: turn.channel, request: { ...turn.request, phase: "wait" } as typeof turn.request } : turn;
       }), cfg),
     );
-    expect(waiting.counts).toMatchObject({ not_move_request: 4, missing_entries: 4 });
+    expect(waiting.counts).toMatchObject({ not_move_request: 1, worlds_dropped: 1, missing_entries: 4 });
   }, 120_000);
 
   it("refuses bad configs, no worlds and a pair that reads candidate features", async () => {
@@ -233,7 +239,6 @@ describe("the table", () => {
     await expect(buildPayoffTable(input(client, [], config()))).rejects.toThrow(/no worlds/);
     const features = { ...client, featureSet: { feature_set: "probe-damage/1", feature_set_hash: "a".repeat(64) } } as unknown as PayoffClient;
     await expect(buildPayoffTable(input(features, ws, config()))).rejects.toThrow(HypotheticalError);
-    void evaluateHypothetical;
   });
 });
 
@@ -272,12 +277,54 @@ describe("what a leaf can see of the opponent's back pair (B1)", () => {
       return (candidates.find((c) => !c.pending) as { order: string }).order;
     };
     await expect(preview.rollout("team 1234", "team 1234", 0, choose)).rejects.toThrow(/at least one turn/);
-    const turn = await preview.rollout("team 1234", "team 5612", 6, choose);
-    expect(["request", "ended"]).toContain(turn.kind);
+    const turn = await preview.rollout("team 1234", "team 5612", 3, choose);
+    expect(turn.kind).toBe("request");
     const refused = await preview.rollout("team 1234", "team 1111", 2, choose);
     expect(refused.kind).toBe("refused");
-    void firstLegal;
   }, 120_000);
+});
+
+describe("whole worlds, the step cap and our real request", () => {
+  it("drops a world for every cell when one of its entries is refused, so all cells average the same worlds", async () => {
+    const good = start(0);
+    const bad = start(1);
+    let calls = 0;
+    const flaky = { index: 1, preview: { ...bad.preview, play: (o: string, f: string) => (++calls === 3 ? ({ kind: "refused", reason: "x" } as const) : bad.preview.play(o, f)) } as HypotheticalPreview };
+    const table = await buildPayoffTable(input(standIn(), [good, flaky], config({ k_own: 2, k_opp: 2 })));
+    expect(table.counts).toMatchObject({ engine_refusals: 1, worlds_dropped: 1, entries: 4 });
+    expect(table.contributors).toEqual([[1, 1], [1, 1]]);
+    const alone = await buildPayoffTable(input(standIn(), [good], config({ k_own: 2, k_opp: 2 })));
+    expect(table.entries).toEqual(alone.entries);
+  }, 120_000);
+
+  it("values a rollout that hits the step cap at the request it reached, counted apart", async () => {
+    const world = start(0);
+    const cfg = config({ k_own: 1, k_opp: 1, leaf: { kind: "rollout", turns: 6 } });
+    const capped = await buildPayoffTable({ ...input(standIn(), [world], cfg), max_rollout_steps: 1 });
+    expect(capped.counts).toMatchObject({ rollout_capped: 1, value_queries: 1, entries: 1, engine_refusals: 0, worlds_dropped: 0 });
+    expect(capped.complete).toBe(true);
+    const value = capped.entries[0]?.[0] as number;
+    expect(value).toBeGreaterThanOrEqual(0);
+    expect(value).toBeLessThanOrEqual(1_000_000);
+    const uncapped = await buildPayoffTable(input(standIn(), [world], cfg));
+    expect(uncapped.counts.rollout_capped).toBe(0);
+  }, 120_000);
+
+  it("gives our side the real Team Preview request in every world whatever the seed would draw, and refuses a world that does not", async () => {
+    const real = decodeRequest(REAL).request_hash;
+    for (let w = 0; w < 4; w += 1) expect(hypotheticalRequest(start(w).preview.own_channel).request_hash).toBe(real);
+    const unfixed = [0, 1, 2, 3].map((w) => startHypothetical({ engine, format_id: GOLDEN_FORMAT, seat: "p1", own_team: own, world_team: worlds[0] as PokemonSet[], stream: STREAM, world: w, data_class: "synthetic" }));
+    expect(new Set(unfixed.map((p) => hypotheticalRequest(p.own_channel).request_hash)).size).toBeGreaterThan(1);
+    await expect(buildPayoffTable(input(standIn(), [{ index: 0, preview: unfixed.find((p) => hypotheticalRequest(p.own_channel).request_hash !== real) as HypotheticalPreview }], config()))).rejects.toThrow(/another Team Preview request/);
+    await expect(buildPayoffTable({ ...input(standIn(), [start(0)], config()), own_request: REAL.replace("L50", "L51") })).rejects.toThrow(/another Team Preview request/);
+  }, 120_000);
+
+  it("refuses an own request that is not a request or does not match our team", () => {
+    const base = { engine, format_id: GOLDEN_FORMAT, seat: "p1" as const, own_team: own, world_team: worlds[0] as PokemonSet[], stream: STREAM, world: 0, data_class: "synthetic" as const };
+    expect(() => startHypothetical({ ...base, own_request: "not json" })).toThrow(/not a request/);
+    expect(() => startHypothetical({ ...base, own_request: "{}" })).toThrow(/does not match our team/);
+    expect(() => startHypothetical({ ...base, own_request: JSON.stringify({ side: { pokemon: [{ details: "" }] } }) })).toThrow(/does not match our team/);
+  });
 });
 
 describe("the back pair draw", () => {

@@ -11,7 +11,8 @@
 // a Preview network is the sum over its two orders and it is played as the more probable order (ties in canonical order).
 
 import { jcs } from "./canonical-json.ts";
-import { evaluateHypothetical, type HypotheticalCandidate, type HypotheticalObservation, type HypotheticalPreview } from "./hypothetical-preview.ts";
+import { decodeRequest } from "./request.ts";
+import { evaluateHypothetical, type HypotheticalCandidate, type HypotheticalObservation, type HypotheticalPreview, hypotheticalRequest } from "./hypothetical-preview.ts";
 import type { PolicyClient, EvaluationClient } from "./policy-worker.ts";
 import { sha256Hex } from "./rules.ts";
 import { outcomeScore } from "./search-leaf.ts";
@@ -66,6 +67,10 @@ export interface PayoffInput {
   /** The battle id the worker client keys its one-query-at-a-time rule by. */
   battle: string;
   policy_id: string;
+  /** Our REAL Team Preview request (the body of the `|request|` line): every world must give our side exactly this request (fail closed). */
+  own_request: string;
+  /** A test seam: the rollout's step cap (default `MAX_ROLLOUT_STEPS`). */
+  max_rollout_steps?: number;
   /** The harness's per-decision stream (32 bytes); it reaches only the back-pair draw. */
   stream: Uint8Array;
 }
@@ -95,6 +100,10 @@ export interface PayoffCounts {
   engine_refusals: number;
   /** Entries whose request was not a move request. */
   not_move_request: number;
+  /** Worlds dropped for every cell because one of their entries was refused or was not a move request (ADR-029 section 3). */
+  worlds_dropped: number;
+  /** Rollouts stopped by the step cap and valued at the request they reached. */
+  rollout_capped: number;
   /** Table cells no world produced. */
   missing_entries: number;
 }
@@ -130,6 +139,8 @@ const emptyCounts = (): PayoffCounts => ({
   game_end_entries: 0,
   engine_refusals: 0,
   not_move_request: 0,
+  worlds_dropped: 0,
+  rollout_capped: 0,
   missing_entries: 0,
 });
 
@@ -220,15 +231,20 @@ function argmax(candidates: readonly HypotheticalCandidate[], prior: readonly nu
 
 /** Build the payoff table of one Team Preview decision. */
 export async function buildPayoffTable(input: PayoffInput): Promise<PayoffTable> {
-  const { config, worlds, client, battle, policy_id, stream } = input;
+  const { config, worlds, client, battle, policy_id, stream, own_request } = input;
+  const max_steps = input.max_rollout_steps;
   checkConfig(config);
   if (worlds.length === 0) throw new PayoffError("no worlds");
   const counts = emptyCounts();
   counts.worlds_asked = worlds.length;
 
   const first = (worlds[0] as PayoffWorld).preview;
-  // Our Team Preview request is the same decision in every world (the caller starts every world with our same six; the engine draws a
-  // missing gender from the world's seed, so a caller that wants the request bytes equal gives our sets their genders as the real request shows).
+  // Our side must see the real Team Preview request in every world (fail closed): the caller starts each world with `own_request`, which
+  // fixes our sets' genders (the engine would draw a missing one from the world's seed).
+  const realHash = decodeRequest(own_request).request_hash;
+  for (const { preview } of worlds) {
+    if (hypotheticalRequest(preview.own_channel).request_hash !== realHash) throw new PayoffError("a world gives our side another Team Preview request than the real one");
+  }
   // Our strategies, from our Preview network on our own Team Preview observation (the same in every world).
   counts.preview_queries += 1;
   const ours = await evaluateHypothetical(client, battle, await first.observation(first.own_channel), policy_id);
@@ -294,34 +310,48 @@ export async function buildPayoffTable(input: PayoffInput): Promise<PayoffTable>
   };
 
   for (const { index, preview } of worlds) {
-    for (let r = 0; r < own.length; r += 1) {
-      for (let c = 0; c < opp.length; c += 1) {
+    // Every cell of a world or none (ADR-029 section 3): a refused or non-move entry drops the world, so all cells average the same worlds.
+    const values: number[][] = own.map(() => opp.map(() => 0));
+    let dropped = false;
+    for (let r = 0; r < own.length && !dropped; r += 1) {
+      for (let c = 0; c < opp.length && !dropped; c += 1) {
         const strategy = own[r] as Strategy;
         const leads = (opp[c] as { leads: readonly number[] }).leads;
         const order = foeOrder(index, leads);
-        if (order === null) continue;
+        if (order === null) {
+          dropped = true;
+          break;
+        }
         counts.entry_attempts += 1;
-        const turn = config.leaf.kind === "rollout" ? await preview.rollout(strategy.order, order, config.leaf.turns, choose) : preview.play(strategy.order, order);
-        let value: number;
+        const turn = config.leaf.kind === "rollout" ? await preview.rollout(strategy.order, order, config.leaf.turns, choose, max_steps) : preview.play(strategy.order, order);
         if (turn.kind === "refused") {
           counts.engine_refusals += 1;
-          continue;
+          dropped = true;
         } else if (turn.kind === "ended") {
           counts.game_end_entries += 1;
-          value = outcomeScore(turn.outcome);
-        } else if (turn.request.phase !== "move") {
+          (values[r] as number[])[c] = outcomeScore(turn.outcome);
+        } else if (turn.request.phase !== "move" && turn.capped !== true) {
           counts.not_move_request += 1;
-          continue;
+          dropped = true;
         } else {
+          if (turn.capped === true) counts.rollout_capped += 1;
           counts.value_queries += 1;
           const answer = await evaluateHypothetical(client, battle, await preview.observation(turn.channel), policy_id);
-          value = clamp(answer.evaluation.value_ppm);
+          (values[r] as number[])[c] = clamp(answer.evaluation.value_ppm);
         }
-        counts.entries += 1;
-        (sums[r] as number[])[c] = ((sums[r] as number[])[c] as number) + value;
-        (contributors[r] as number[])[c] = ((contributors[r] as number[])[c] as number) + 1;
       }
     }
+    if (dropped) {
+      counts.worlds_dropped += 1;
+      continue;
+    }
+    counts.entries += own.length * opp.length;
+    values.forEach((row, r) =>
+      row.forEach((value, c) => {
+        (sums[r] as number[])[c] = ((sums[r] as number[])[c] as number) + value;
+        (contributors[r] as number[])[c] = ((contributors[r] as number[])[c] as number) + 1;
+      }),
+    );
   }
 
   const entries = sums.map((row, r) => row.map((sum, c) => ((contributors[r] as number[])[c] === 0 ? null : Math.floor(sum / ((contributors[r] as number[])[c] as number)))));
