@@ -22,6 +22,7 @@ import { loadEngine } from "./engine.ts";
 import { resolveFormat } from "./formats.ts";
 import { damageAwareSetup } from "./league-generation.ts";
 import { assertGuardedChild, OwnerSessionError } from "./owner-session.ts";
+import type { BeliefWorldsFactory } from "./damage-aware-worlds.ts";
 import { frozenPairClient, type FrozenPairClientOptions, pairFeatureSetup } from "./progress-cli.ts";
 import type { PolicyClient } from "./policy-worker.ts";
 import type { ProgressPool } from "./progress-evaluation.ts";
@@ -113,6 +114,8 @@ export interface TestTeams {
 export interface PrivateTestSources {
   snapshot: (args: { engine: Engine; config: TrainingRunConfig; snapshotsDir: string; snapshotHash: string; subset: "all" | "holdout" }) => Promise<TestTeams>;
   dataset: (args: { engine: Engine; config: TrainingRunConfig }) => ProgressPool;
+  /** The belief port factory of the composition root, for a pair that reads `probe-damage-belief/1`. */
+  belief_worlds?: BeliefWorldsFactory;
 }
 
 /** Test seams: the default starts the real policy worker. */
@@ -257,8 +260,8 @@ async function run(argv: readonly string[], print: (line: string) => void, sourc
   let features: ReturnType<typeof pairFeatureSetup>;
   let opponentFeatures: ReturnType<typeof pairFeatureSetup>;
   try {
-    features = pairFeatureSetup(engine, config);
-    if (pairParts !== undefined) opponentFeatures = pairFeatureSetup(engine, readTrainingRunConfig(JSON.parse(readFileSync(join(need("opponent-run-dir"), "run-config.json"), "utf8"))));
+    features = pairFeatureSetup(engine, config, sources.belief_worlds);
+    if (pairParts !== undefined) opponentFeatures = pairFeatureSetup(engine, readTrainingRunConfig(JSON.parse(readFileSync(join(need("opponent-run-dir"), "run-config.json"), "utf8"))), sources.belief_worlds);
   } catch {
     throw new PrivateTestRefusal("worker_failed");
   }

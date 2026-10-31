@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any
 
 import pytest
@@ -156,3 +157,30 @@ def test_the_team_set_must_be_sorted_and_unique() -> None:
     teams["schema_version"] = 2
     with pytest.raises(InspectError, match="schema 1"):
         readers.read_team_set(teams)
+
+
+def test_a_belief_pair_game_row_is_read_and_checked() -> None:
+    generation = load("generation.json")
+    belief: dict[str, Any] = {
+        "decisions": 4,
+        "worlds_sampled": 32,
+        "redraws": 0,
+        "contradicted_worlds": 1,
+        "fallbacks": {"no_consistent_world": 1},
+    }
+    generation["games"][0]["feature_belief"] = belief
+    assert readers.read_generation(generation, 1).games[0].game == 0
+    changes: list[tuple[Callable[[dict[str, Any]], object], str]] = [
+        (lambda b: b.update(extra=1), "extra"),
+        (lambda b: b.pop("redraws"), "redraws"),
+        (lambda b: b.update(decisions=-1), "decisions"),
+        (lambda b: b.update(fallbacks=[]), "fallbacks"),
+        (lambda b: b.update(fallbacks={"x": -1}), "fallback"),
+    ]
+    for change, message in changes:
+        broken = load("generation.json")
+        copy = dict(belief, fallbacks=dict(belief["fallbacks"]))
+        change(copy)
+        broken["games"][0]["feature_belief"] = copy
+        with pytest.raises(InspectError, match=message):
+            readers.read_generation(broken, 1)
