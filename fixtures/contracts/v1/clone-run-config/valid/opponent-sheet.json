@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "lineage_id": "tiny-clone",
+  "format_id": "gen9championsvgc2026regmc",
+  "seeds": {
+    "run_key": "tiny-clone-run",
+    "init_preview": 21,
+    "init_battle": 22,
+    "learner": 23
+  },
+  "model": {
+    "encoder": {
+      "volatile_buckets": 4,
+      "condition_buckets": 4,
+      "max_moves": 4,
+      "max_team": 6,
+      "max_picks": 4,
+      "stat_scale": 500,
+      "turn_scale": 100,
+      "options": {
+        "opponent_sheet": {
+          "feature_set": "opponent-sheet/1",
+          "feature_set_hash": "044f85c658e3d1c95d9d860ac83f0d3422b3562ab848dfb14bfbfa87f5e609d8"
+        }
+      }
+    },
+    "d_model": 16,
+    "n_layers": 1,
+    "n_heads": 2,
+    "d_ff": 32
+  },
+  "teacher": {
+    "behaviour_policy_id": "damage-aware@tiny",
+    "training_set_hash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+  },
+  "clone": {
+    "epochs": 3,
+    "minibatch_size": 16,
+    "learning_rate_micro": 3000,
+    "adam_beta1_micro": 900000,
+    "adam_beta2_micro": 999000,
+    "adam_eps_nano": 10,
+    "max_grad_norm_micro": 1000000,
+    "holdout": {
+      "key": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "ppm": 200000
+    }
+  },
+  "learner": {
+    "device": "cpu",
+    "threads": 1
+  }
+}

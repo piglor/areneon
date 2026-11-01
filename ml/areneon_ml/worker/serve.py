@@ -54,7 +54,43 @@ class FeatureSupport:
     damaging: Callable[[str], bool]
 
 
-def read_query(frame: dict[str, Any], features: FeatureSupport | None = None) -> dict[str, Any]:
+@dataclass(frozen=True)
+class SheetSupport:
+    """The opponent sheet source a worker states (ADR-027 slice 4, ADR-025 erratum E4).
+
+    ``source`` is ``{feature_set, feature_set_hash}``: the block's ``source.hash`` must equal the
+    hash. ``diagnostic`` lets the worker read an ``oracle-diagnostic`` block, which a test-only
+    diagnostic run may send; without it such a block is an ``invalid_query`` (an oracle block is
+    never a policy input outside the labelled diagnostic, ADR-027 section 7).
+    """
+
+    source: dict[str, str]
+    diagnostic: bool = False
+
+
+def _check_sheet(frame: dict[str, Any], support: SheetSupport | None) -> None:
+    """A query carries ``opponent_sheet`` exactly when the worker stated a source (of it)."""
+    sheet = frame.get("opponent_sheet")
+    if support is None:
+        if sheet is not None:
+            raise QueryError("the query carries opponent_sheet, but the worker stated no source")
+        return
+    if sheet is None:
+        raise QueryError("the worker stated a sheet source, but the query has no opponent_sheet")
+    if sheet["source"]["kind"] == "oracle-diagnostic" and not support.diagnostic:
+        raise QueryError("an oracle-diagnostic opponent_sheet needs the diagnostic mode")
+    if sheet["source"]["hash"] != support.source["feature_set_hash"]:
+        raise QueryError("the query's opponent_sheet is of another source")
+    problem = sheet_problem(sheet)
+    if problem is not None:
+        raise QueryError(f"opponent_sheet: {problem}")
+
+
+def read_query(
+    frame: dict[str, Any],
+    features: FeatureSupport | None = None,
+    sheet_support: SheetSupport | None = None,
+) -> dict[str, Any]:
     """The frame as a PolicyQuery: the schema, then the rules the profile cannot say.
 
     A query carries ``candidate_features`` exactly when the worker stated a feature set, of that
@@ -77,12 +113,7 @@ def read_query(frame: dict[str, Any], features: FeatureSupport | None = None) ->
         problem = rows_problem(sent) or coverage_problem(frame, sent, features.damaging)
         if problem is not None:
             raise QueryError(problem)
-    sheet = frame.get("opponent_sheet")
-    if sheet is not None:
-        # The encoder does not read the block yet (ADR-027 slice 4); the reader rules hold anyway.
-        problem = sheet_problem(sheet)
-        if problem is not None:
-            raise QueryError(f"opponent_sheet: {problem}")
+    _check_sheet(frame, sheet_support)
     if jcs(frame["identity"]) != jcs(frame["observation"]["identity"]):
         raise QueryError("the query's identity differs from its observation's identity")
     choices = [candidate["choice"] for candidate in frame["candidates"]]
@@ -94,15 +125,17 @@ def read_query(frame: dict[str, Any], features: FeatureSupport | None = None) ->
 
 
 class Worker:
-    def __init__(
+    def __init__(  # noqa: PLR0913, PLR0917
         self,
         scorer: Scorer,
         engine_data_hash: str,
         checkpoints: list[dict[str, str]],
         max_line_bytes: int,
         features: FeatureSupport | None = None,
+        sheet: SheetSupport | None = None,
     ) -> None:
         self._features = features
+        self._sheet = sheet
         self._scorer = scorer
         self._ready: dict[str, Any] = {
             "schema_version": 1,
@@ -116,6 +149,8 @@ class Worker:
         }
         if features is not None:
             self._ready["message"]["feature_set"] = dict(features.feature_set)
+        if sheet is not None:
+            self._ready["message"]["opponent_sheet"] = dict(sheet.source)
         self._max = max_line_bytes
 
     def handshake(self, stdin: BinaryIO, stdout: BinaryIO) -> None:
@@ -137,7 +172,7 @@ class Worker:
         started = time.perf_counter()
         query_id = frame.get("query_id")
         try:
-            query = read_query(frame, self._features)
+            query = read_query(frame, self._features, self._sheet)
             for candidate in query["candidates"]:
                 parse_choice(candidate["choice"])
         except QueryError as exc:

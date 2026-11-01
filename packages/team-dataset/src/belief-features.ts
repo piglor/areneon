@@ -6,7 +6,7 @@
 //
 // The block is a pure function of the reader's opponent half, its flags and the trapping check, so it is memoised by the
 // canonical evidence projection of the opponent half (what `slotEvidence` reads of each Pokemon, the phantom flag, and
-// whether any line was flagged). The memo is bypassed whenever a trapping check is present: that check depends on the
+// whether any line was flagged). The memo is bypassed whenever the trapping check observes something: it then depends on the
 // player's own side, which the key does not hold. Memoised and recomputed blocks are equal (a test).
 
 import { belief, opponentSheet, refusedSheet, SHEET_K, sheetFeatureSetHash, sheetRefusalOf, slotEvidence } from "@areneon/opponent-model";
@@ -44,7 +44,10 @@ export function createBeliefFeatures(context: BeliefFeaturesContext, files: Sear
     prior_format_id: prior.format_id,
     k,
     sheet({ opponent, flags, trapping }) {
-      const key = trapping === null || trapping === undefined ? evidenceKey(opponent, flags) : null;
+      // The belief ignores a trapping check that observes nothing (`observed` empty), so such a call is a pure function of the
+      // evidence projection; with observed levels the exclusions depend on the player's own side, which the key does not hold.
+      const informative = trapping !== null && trapping !== undefined && trapping.observed.length > 0;
+      const key = informative ? null : evidenceKey(opponent, flags);
       const hit = key === null ? undefined : memo.get(key);
       if (hit !== undefined) return structuredClone(hit);
       let block;

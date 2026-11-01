@@ -20,6 +20,8 @@ const ready = {
     checkpoints: mode === "bad-checkpoints" ? [CHECKPOINTS[0]] : CHECKPOINTS,
     // The feature set this worker's checkpoints need (ADR-022 section 3), when the test names one.
     ...(process.env.FAKE_FEATURE_SET === undefined ? {} : { feature_set: JSON.parse(process.env.FAKE_FEATURE_SET) as unknown }),
+    // The opponent sheet source this worker's checkpoints need (ADR-027 slice 4), when the test names one.
+    ...(process.env.FAKE_OPPONENT_SHEET === undefined ? {} : { opponent_sheet: JSON.parse(process.env.FAKE_OPPONENT_SHEET) as unknown }),
   },
 };
 

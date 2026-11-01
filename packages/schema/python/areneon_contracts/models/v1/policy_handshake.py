@@ -92,6 +92,10 @@ class Ready(BaseModel):
     """
     The candidate feature set the worker's checkpoints need (ADR-022 section 3): omitted when they need none. The client refuses the session if it cannot supply exactly this set, and attaches candidate_features to a query only for a worker that states one.
     """
+    opponent_sheet: FeatureSetStatement | MISSING = MISSING
+    """
+    The opponent sheet source the worker's checkpoints need (ADR-027 slice 4): omitted when they need none. feature_set is opponent-sheet/1 and feature_set_hash the feature set hash the block's source.hash must equal. The client refuses the session if it cannot supply exactly this source, and attaches opponent_sheet to a query only for a worker that states one.
+    """
 
 
 class PolicyHandshake(BaseModel):

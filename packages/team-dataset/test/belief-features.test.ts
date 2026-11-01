@@ -130,6 +130,46 @@ describe("the memo", () => {
   });
 });
 
+describe("the memo and the trapping check", () => {
+  const c = decisions.find((d) => d.input.flags.length === 0 && d.input.state.turn > 0) as (typeof decisions)[number];
+  const args = { opponent: c.input.state.opponent, flags: c.input.flags };
+
+  it("a check that observes nothing is ignored by the belief, so it is memoised like no check", () => {
+    const port = portOf();
+    let asked = 0;
+    const silent = { observed: [] as never[], shows: () => (asked += 1, []) };
+    const plain = JSON.stringify(portOf().sheet(args));
+    expect(JSON.stringify(port.sheet({ ...args, trapping: silent }))).toBe(plain);
+    expect(JSON.stringify(port.sheet({ ...args, trapping: silent }))).toBe(plain);
+    expect(JSON.stringify(port.sheet(args))).toBe(plain); // the same key as a call with no check
+    expect(asked).toBe(0);
+  });
+
+  it("varying where a Pokemon stands, with a check that observes nothing, the memoised block equals a fresh one", () => {
+    const memoed = portOf();
+    const silent = { observed: [] as never[], shows: () => [] };
+    const lead = c.input.state.opponent.roster.findIndex((m) => m.active_slot !== null);
+    expect(lead).toBeGreaterThanOrEqual(0);
+    for (const slot of ["a", "b", null, "a"]) {
+      const opponent = structuredClone(c.input.state.opponent);
+      (opponent.roster[lead] as (typeof opponent.roster)[number]).active_slot = slot;
+      const fresh = JSON.stringify(portOf().sheet({ opponent, flags: c.input.flags, trapping: silent }));
+      expect(JSON.stringify(memoed.sheet({ opponent, flags: c.input.flags, trapping: silent }))).toBe(fresh);
+    }
+  });
+
+  it("a check that observes something is never memoised: it is asked again", () => {
+    const port = portOf();
+    let asked = 0;
+    const informative = { observed: [0 as const], shows: () => (asked += 1, [0 as const]) };
+    port.sheet({ ...args, trapping: informative });
+    const first = asked;
+    expect(first).toBeGreaterThan(0);
+    port.sheet({ ...args, trapping: informative });
+    expect(asked).toBe(2 * first);
+  });
+});
+
 describe("the memo's edges and the errors", () => {
   const c = decisions.find((d) => d.input.flags.length === 0 && d.input.state.turn > 0) as (typeof decisions)[number];
 

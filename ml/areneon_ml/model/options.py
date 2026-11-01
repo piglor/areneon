@@ -22,6 +22,12 @@ Defined so far:
   move part of a battle candidate reads the engine's damage rows the Node side attaches to the
   query (``model/features.py``). The hash enters the config, so the ``encoder_version`` and the
   checkpoint metadata, and a pair with the option has a policy id with a ``features`` member.
+- ``opponent_sheet`` (encoder, layout changing; ADR-027 slice 4, ADR-025 erratum E4): the value is
+  ``{"feature_set": "opponent-sheet/1", "feature_set_hash": <64 hex>}``. Each opponent Pokémon token
+  reads its slot of the ``opponent_sheet`` block the Node side attaches to the query
+  (``model/sheet.py``): source tags and the refusal code as categories, the entries' ids as
+  categories and their ppm as scaled numbers. The hash enters the config, so the ``encoder_version``
+  and the checkpoint metadata; the worker states it in ``ready``.
 - ``candidate_target`` (encoder, layout changing; ADR-010 erratum A4 item 7): per move candidate,
   the token of the Pokémon in the targeted active slot, which the Battle network gathers into the
   slot part. Only ``true`` is a value: leave the key out to turn it off.
@@ -95,6 +101,8 @@ class OptionSpec:
 
 CANDIDATE_MATCHUP = "candidate_matchup"
 CANDIDATE_FEATURES = "candidate_features"
+OPPONENT_SHEET = "opponent_sheet"
+SHEET_SETS = ("opponent-sheet/1",)
 CANDIDATE_TARGET = "candidate_target"
 RECENT_HISTORY = "recent_history"
 EXACT_VOLATILES = "exact_volatiles"
@@ -126,10 +134,22 @@ def _parse_feature_set(source: Mapping[str, Any]) -> FeatureSetOption:
     return FeatureSetOption(name, digest)
 
 
+def _parse_sheet_set(source: Mapping[str, Any]) -> FeatureSetOption:
+    if set(source) != {"feature_set", "feature_set_hash"}:
+        raise OptionError("opponent_sheet must be exactly feature_set and feature_set_hash")
+    name, digest = source["feature_set"], source["feature_set_hash"]
+    if name not in SHEET_SETS:
+        raise OptionError(f"opponent_sheet names a feature set the encoder cannot read: {name!r}")
+    if not isinstance(digest, str) or not _HASH.fullmatch(digest):
+        raise OptionError("opponent_sheet.feature_set_hash must be 64 lowercase hex digits")
+    return FeatureSetOption(name, digest)
+
+
 REGISTRY: dict[str, dict[str, OptionSpec]] = {
     "encoder": {
         CANDIDATE_MATCHUP: OptionSpec(CANDIDATE_MATCHUP, lambda value: value is True, True),
         CANDIDATE_FEATURES: OptionSpec(CANDIDATE_FEATURES, None, True, parse=_parse_feature_set),
+        OPPONENT_SHEET: OptionSpec(OPPONENT_SHEET, None, True, parse=_parse_sheet_set),
         CANDIDATE_TARGET: OptionSpec(CANDIDATE_TARGET, lambda value: value is True, True),
         RECENT_HISTORY: OptionSpec(RECENT_HISTORY, lambda value: value is True, True),
         EXACT_VOLATILES: OptionSpec(EXACT_VOLATILES, lambda value: value is True, True),
@@ -208,4 +228,10 @@ def option_value(options: Options, name: str) -> OptionValue | None:
 def feature_set(options: Options) -> FeatureSetOption | None:
     """The ``candidate_features`` value of an encoder's options, or None."""
     value = option_value(options, CANDIDATE_FEATURES)
+    return value if isinstance(value, FeatureSetOption) else None
+
+
+def sheet_set(options: Options) -> FeatureSetOption | None:
+    """The ``opponent_sheet`` value of an encoder's options, or None."""
+    value = option_value(options, OPPONENT_SHEET)
     return value if isinstance(value, FeatureSetOption) else None

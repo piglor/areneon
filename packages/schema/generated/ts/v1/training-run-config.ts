@@ -336,6 +336,13 @@ export interface Encoder {
      * ADR-010 erratum A4 item 7. Volatiles and field and side conditions are exact vocabulary ids (one column per id of the engine data: its conditions, moves, abilities and items) instead of SHA-256 buckets, and a Pokemon token also carries the types a typechange set. Needs a version 2 engine-data table; an id the vocabulary does not resolve fails closed. Only true is a value (leave the key out for none). Layout changing: it changes the encoder version and the checkpoint format.
      */
     exact_volatiles?: true;
+    /**
+     * ADR-027 slice 4, ADR-025 erratum E4: each opponent Pokemon token also reads its slot of the opponent sheet block, which the Node side builds from the opponent belief (PolicyQuery.opponent_sheet). feature_set is opponent-sheet/1 and feature_set_hash the feature set hash the builder computes (it names the belief identity, the k values and the rounding), so a new usage prior, belief config, reader change or pin bump is another set and a fresh run. Layout changing: it changes the encoder version and the checkpoint format.
+     */
+    opponent_sheet?: {
+      feature_set: "opponent-sheet/1";
+      feature_set_hash: string;
+    };
   };
 }
 /**

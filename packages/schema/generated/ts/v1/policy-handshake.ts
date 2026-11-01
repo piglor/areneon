@@ -68,6 +68,7 @@ export interface Ready {
    */
   checkpoints: [Checkpoint, ...Checkpoint[]];
   feature_set?: FeatureSetStatement;
+  opponent_sheet?: FeatureSetStatement1;
 }
 /**
  * A loaded checkpoint: its role and id (the SHA-256 of its safetensors file bytes).
@@ -87,12 +88,19 @@ export interface FeatureSetStatement {
   feature_set_hash: string;
 }
 /**
+ * The opponent sheet source the worker's checkpoints need (ADR-027 slice 4): omitted when they need none. feature_set is opponent-sheet/1 and feature_set_hash the feature set hash the block's source.hash must equal. The client refuses the session if it cannot supply exactly this source, and attaches opponent_sheet to a query only for a worker that states one.
+ */
+export interface FeatureSetStatement1 {
+  feature_set: string;
+  feature_set_hash: string;
+}
+/**
  * A candidate feature set by name and identity hash (CandidateFeatures.feature_set and feature_set_hash).
  *
  * This interface was referenced by `PolicyHandshake`'s JSON-Schema
  * via the `definition` "FeatureSetStatement".
  */
-export interface FeatureSetStatement1 {
+export interface FeatureSetStatement2 {
   feature_set: string;
   feature_set_hash: string;
 }

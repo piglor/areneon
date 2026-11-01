@@ -24,6 +24,7 @@ from typing import Any, cast
 import torch
 from torch import nn
 
+from areneon_ml.model import sheet as sheet_of
 from areneon_ml.model.batch import Batch
 from areneon_ml.model.candidates import EVENTS, SLOTS
 from areneon_ml.model.encoder import (
@@ -56,6 +57,7 @@ from areneon_ml.model.options import (
     layout_changing,
     option_value,
     read_options,
+    sheet_set,
     with_options,
 )
 
@@ -298,6 +300,12 @@ class PolicyNetwork(nn.Module):
             "target": TARGET_CODES,
             "event": len(EVENTS) + 1,
         }
+        if (
+            sheet_set(enc.options) is not None
+        ):  # opponent_sheet: the sheet columns are on every token
+            sizes["sheet_source"] = sheet_of.SOURCE_CATEGORIES
+            sizes["sheet_refusal"] = sheet_of.REFUSAL_CATEGORIES
+            sizes["sheet_nature"] = sheet_of.NATURE_CATEGORIES
         extra = len(self.layout.cand_cat) - BASE_CAND_COLUMNS  # option columns of a candidate
         if role == "battle" and is_set(enc.options, CANDIDATE_MATCHUP):
             # Cell categories: the reserved indices plus one per code of the export's chart.
@@ -337,8 +345,25 @@ class PolicyNetwork(nn.Module):
         )
         for kind in kinds:  # derived from the engine data: not part of a checkpoint
             self.register_buffer(f"attributes_{kind}", tables[kind], persistent=False)
-        self.mon_cat = nn.Linear(len(self.layout.mon_cat) * d, d)
-        self.mon_num = nn.Linear(len(self.layout.mon_num), d)
+        # opponent_sheet: the entry ids and weights are read apart (`_sheet_sums`, a weighted sum);
+        # the other columns are embedded and concatenated as always.
+        self.sheet_fields = (
+            sheet_of.entry_columns(self.layout.mon_cat, self.layout.mon_num)
+            if sheet_set(enc.options) is not None
+            else []
+        )
+        plain_cat, plain_num = sheet_of.plain_columns(self.layout.mon_cat, self.layout.mon_num)
+        if self.sheet_fields:
+            self.sheet_other = nn.Embedding(len(sheet_of.ENTRY_FIELDS), d)
+            self.register_buffer("_plain_cat", torch.tensor(plain_cat), persistent=False)
+            self.register_buffer("_plain_num", torch.tensor(plain_num), persistent=False)
+        else:
+            plain_cat, plain_num = (
+                list(range(len(self.layout.mon_cat))),
+                list(range(len(self.layout.mon_num))),
+            )
+        self.mon_cat = nn.Linear((len(plain_cat) + len(self.sheet_fields)) * d, d)
+        self.mon_num = nn.Linear(len(plain_num), d)
         self.side = nn.Embedding(2, d)
         self.field_cat = nn.Linear(len(self.layout.field_cat) * d, d)
         self.field_num = nn.Linear(len(self.layout.field_num), d)
@@ -410,7 +435,15 @@ class PolicyNetwork(nn.Module):
         kinds = self.trunk_kinds()
         prefixes = [f"embeddings.{kind}." for kind in kinds]
         prefixes += [f"attribute_projections.{kind}." for kind in kinds]
-        prefixes += ["mon_cat.", "mon_num.", "side.", "field_cat.", "field_num.", "blocks."]
+        prefixes += [
+            "mon_cat.",
+            "mon_num.",
+            "sheet_other.",
+            "side.",
+            "field_cat.",
+            "field_num.",
+            "blocks.",
+        ]
         prefixes.append("final_norm.")
         return tuple(
             key
@@ -439,6 +472,32 @@ class PolicyNetwork(nn.Module):
         return torch.cat(
             [self.embed(kind, values[..., i]) for i, (_, kind) in enumerate(columns)], -1
         )
+
+    def _columns_at(
+        self, columns: tuple[tuple[str, str], ...], values: torch.Tensor, keep: torch.Tensor
+    ) -> torch.Tensor:
+        """``_columns`` of the columns whose layout indices are ``keep``."""
+        return torch.cat(
+            [self.embed(columns[int(i)][1], values[..., int(i)]) for i in keep.tolist()], -1
+        )
+
+    def _sheet_sums(self, batch: Batch) -> torch.Tensor:
+        """ADR-027 section 2: per field the probability-weighted sum of its entries' embeddings plus
+        ``other_ppm`` times a learned "other" embedding, [B, M, fields * d]. An own token or an
+        unknown field has weight 0 everywhere and so contributes zero."""
+        sums = []
+        others = {name: i for i, (name, _, _, _) in enumerate(sheet_of.ENTRY_FIELDS)}
+        for field, kind, ids, weights, other in self.sheet_fields:
+            vectors = self.embed(kind, batch.mon_cat[..., ids])  # [B, M, K, d]
+            total = (vectors * batch.mon_num[..., weights].unsqueeze(-1)).sum(-2)
+            if other is not None:
+                total = (
+                    total
+                    + batch.mon_num[..., other].unsqueeze(-1)
+                    * self.sheet_other.weight[others[field]]
+                )
+            sums.append(total)
+        return torch.cat(sums, -1)
 
     # -- candidates ----------------------------------------------------------
 
@@ -562,8 +621,19 @@ class PolicyNetwork(nn.Module):
         b = batch.size
         d = self.config.d_model
         side = self.side((~batch.own_mask).long())
-        mons = self.mon_cat(self._columns(self.layout.mon_cat, batch.mon_cat))
-        mons = mons + self.mon_num(batch.mon_num) + side
+        if self.sheet_fields:
+            plain = self._columns_at(
+                self.layout.mon_cat, batch.mon_cat, cast(torch.Tensor, self._plain_cat)
+            )
+            tokens = self.mon_cat(torch.cat([plain, self._sheet_sums(batch)], -1))
+            mons = (
+                tokens
+                + self.mon_num(batch.mon_num[..., cast(torch.Tensor, self._plain_num)])
+                + side
+            )
+        else:
+            mons = self.mon_cat(self._columns(self.layout.mon_cat, batch.mon_cat))
+            mons = mons + self.mon_num(batch.mon_num) + side
         mega = None
         if self.probing:
             added, mega = self._probe_summaries(batch, mons)

@@ -3,13 +3,17 @@
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { OpponentSheet } from "@areneon/schema/types/v1/opponent-sheet.ts";
 import {
   BeliefFeaturesError,
   type BeliefFeaturesPort,
   createSheetBuilder,
   opponentSheetProblem,
+  SheetInputError,
+  SheetTotals,
+  sheetForChannel,
+  sheetStatement,
   refusedSharePpm,
   type SheetInput,
   type TeamVocabulary,
@@ -102,5 +106,42 @@ describe("the input is the player's own view and nothing else", () => {
   it("the module imports no runner, omniscient, record or opponent-model module", () => {
     const code = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "src", "belief-features.ts"), "utf8");
     for (const m of code.matchAll(/^import\s[^;]*?from\s+"([^"]+)";/gms)) expect(m[1], m[0]).not.toMatch(/runner|omniscient|record|opponent-model|hidden|choice-judge/);
+  });
+});
+
+describe("sheetForChannel and the worker statement", () => {
+  it("builds from the request the channel ends in, with the reader's opponent half and flags", () => {
+    const seen: unknown[] = [];
+    const builder = { build: (input: SheetInput) => (seen.push(input), block()), counts: () => ({ requests: 0, refused: 0, refusals: [] }) };
+    const request = JSON.stringify({ wait: true, side: { name: "a", id: "p1", pokemon: [] } });
+    const lines = ["|gametype|doubles", "|player|p1|Alice|", "|player|p2|Bob|", "|clearpoke", `|request|${request}`];
+    expect(sheetForChannel(builder, { player: "p1", lines, team: [] })).toEqual(block());
+    expect(seen).toHaveLength(1);
+    expect(seen[0]).toMatchObject({ team: [], flags: [], request: { wait: true } });
+  });
+
+  it("refuses a channel that does not end in a request", () => {
+    const builder = { build: () => block(), counts: () => ({ requests: 0, refused: 0, refusals: [] }) };
+    expect(() => sheetForChannel(builder, { player: "p1", lines: ["|gametype|doubles", "|player|p1|Alice|"], team: [] })).toThrow(SheetInputError);
+  });
+
+  it("states the opponent-sheet/1 source with the port's feature set hash", () => {
+    expect(sheetStatement({ port: portOf([]) })).toEqual({ feature_set: "opponent-sheet/1", feature_set_hash: HASH });
+  });
+});
+
+describe("the totals of a process's games", () => {
+  it("sum the builders' counts, refusals sorted by code, and report them to stderr", () => {
+    const totals = new SheetTotals();
+    totals.add(0, [{ requests: 3, refused: 1, refusals: [{ code: "reader_flagged", count: 1 }] }, { requests: 2, refused: 0, refusals: [] }]);
+    totals.add(1, [{ requests: 4, refused: 2, refusals: [{ code: "disguise_unsettled", count: 1 }, { code: "reader_flagged", count: 1 }] }]);
+    expect(totals.summary()).toEqual({ requests: 9, refused: 3, refusals: [{ code: "disguise_unsettled", count: 1 }, { code: "reader_flagged", count: 2 }] });
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      totals.report();
+      expect(error.mock.calls.flat().join(" ")).toContain('"requests":9');
+    } finally {
+      error.mockRestore();
+    }
   });
 });

@@ -22,6 +22,7 @@ import { buildFeatures } from "./feature-build.ts";
 import { jcs, type Json } from "./canonical-json.ts";
 import type { Engine } from "./engine.ts";
 import { featureRowsProblem } from "./feature-rows.ts";
+import { createSheetBuilder, sheetForChannel, type SheetSetup } from "./belief-features.ts";
 import { opponentSheetProblem } from "./opponent-sheet.ts";
 import { type ChunkLimits, ChunkedFileWriter, checkStringLength } from "./chunked-file.ts";
 import { enumerateCandidates, EnumerationError } from "./choices.ts";
@@ -156,6 +157,13 @@ export interface TrainingInput {
      */
     precomputed?: (hash: string, request_seqs: readonly number[]) => readonly NonNullable<TrainingExample["candidate_features"]>[] | undefined;
   };
+  /**
+   * The run's opponent sheet source (ADR-027 slice 4), when it names one: every example then carries `opponent_sheet`
+   * recomputed here by `sheetForChannel`, the function the play-time seat called, from the Episode's own channel prefix and
+   * own team (the block is derived, never stored in an Episode). One builder per Episode, as at play time (the counts are a
+   * game's). A builder refusal is the `unknown` block, as it was sent; a defect of the run is thrown.
+   */
+  sheet?: SheetSetup;
 }
 
 export interface TrainingStream {
@@ -189,7 +197,7 @@ const outcomeOf = ({ player, result }: Episode): NonNullable<TrainingExample["ou
  * and an example the schema refuses (more candidates than N_max).
  */
 export function trainingExample(
-  { observation, choice, outcome, episode_hash, candidate_features }: Pick<TrainingExample, "observation" | "choice" | "episode_hash" | "candidate_features"> & { outcome: NonNullable<TrainingExample["outcome"]> },
+  { observation, choice, outcome, episode_hash, candidate_features, opponent_sheet }: Pick<TrainingExample, "observation" | "choice" | "episode_hash" | "candidate_features" | "opponent_sheet"> & { outcome: NonNullable<TrainingExample["outcome"]> },
 ): TrainingExample {
   const line = observation.log.at(-1) as string;
   let candidates;
@@ -199,16 +207,17 @@ export function trainingExample(
     if (!(error instanceof EnumerationError || error instanceof RequestDecodeError)) throw error;
     throw new TrainingLoaderError(`the request of ${episode_hash} #${observation.identity.request_seq} has no candidates: ${error.message}`, { cause: error });
   }
-  return readTrainingExample({ schema_version: 1, episode_hash, observation, choice, candidates, ...(candidate_features === undefined ? {} : { candidate_features }), outcome });
+  return readTrainingExample({ schema_version: 1, episode_hash, observation, choice, candidates, ...(candidate_features === undefined ? {} : { candidate_features }), ...(opponent_sheet === undefined ? {} : { opponent_sheet }), outcome });
 }
 
 /** The Episode's TrainingExamples, one per decision. */
-async function examplesOf(episode: Episode, hash: string, features: TrainingInput["features"]): Promise<TrainingExample[]> {
+async function examplesOf(episode: Episode, hash: string, features: TrainingInput["features"], sheet: TrainingInput["sheet"]): Promise<TrainingExample[]> {
   const observations = await decisionObservations(episode);
   const outcome = outcomeOf(episode);
   const memo = createFeatureMemo(); // one Episode is one game, as at play time; the memo never changes a byte
   const given = features?.precomputed?.(hash, observations.map((o) => o.identity.request_seq));
   const rows = given?.length === episode.decisions.length ? given : undefined;
+  const builder = sheet === undefined ? undefined : createSheetBuilder({ engine: sheet.engine, vocabulary: sheet.vocabulary, port: sheet.port, scenario_id: sheet.scenario_id });
   return episode.decisions.map(({ choice }, i) => {
     const observation = observations[i] as TrainingExample["observation"];
     return trainingExample({
@@ -217,8 +226,16 @@ async function examplesOf(episode: Episode, hash: string, features: TrainingInpu
       outcome,
       episode_hash: hash,
       ...(features === undefined ? {} : { candidate_features: rows?.[i] ?? featuresOf(episode, observation, hash, features, memo) }),
+      ...(builder === undefined ? {} : { opponent_sheet: sheetOf(builder, observation, episode) }),
     });
   });
+}
+
+/** The opponent sheet block of one decision, recomputed from the channel prefix and the own team; an oracle block is never training data. */
+function sheetOf(builder: ReturnType<typeof createSheetBuilder>, observation: TrainingExample["observation"], episode: Episode): NonNullable<TrainingExample["opponent_sheet"]> {
+  const block = sheetForChannel(builder, { player: observation.player, lines: observation.log, team: episode.team.team });
+  if (block.source.kind === "oracle-diagnostic") throw new TrainingLoaderError("an oracle-diagnostic opponent sheet is never training data");
+  return block as NonNullable<TrainingExample["opponent_sheet"]>;
 }
 
 /** The recomputed rows of every decision of an Episode, in decision order: what the stream carries, computed on their own (#1185). */
@@ -375,7 +392,7 @@ function fileFeed({ episodes, known_synthetic, behaviour_policy_id }: StoredTrai
 
 /** The checks, the examples in stream order and the TrainingSet; `each` gets every example and its line. */
 async function streamTraining(
-  { evaluation_manifests, behaviour_policy_id, features }: Pick<TrainingInput, "evaluation_manifests" | "behaviour_policy_id" | "features">,
+  { evaluation_manifests, behaviour_policy_id, features, sheet }: Pick<TrainingInput, "evaluation_manifests" | "behaviour_policy_id" | "features" | "sheet">,
   feed: EpisodeFeed,
   limits: ChunkLimits,
   each: (example: TrainingExample, line: string) => void,
@@ -395,7 +412,7 @@ async function streamTraining(
   let count = 0;
   for await (const [hash, episode] of feed(evaluated)) {
     hashes.push(hash);
-    for (const example of await examplesOf(episode, hash, features)) {
+    for (const example of await examplesOf(episode, hash, features, sheet)) {
       const line = `${jcs(example as unknown as Json)}\n`;
       checkStringLength(line, limits, "a stream line");
       digest.update(line, "utf8");

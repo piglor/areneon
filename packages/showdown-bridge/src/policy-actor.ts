@@ -11,6 +11,8 @@ import type { PrivateTeamSpec } from "@areneon/schema/types/v1/private-team-spec
 import { NoCandidateError } from "./actor-rule.ts";
 import { type Json, jcs } from "./canonical-json.ts";
 import { type AnyCandidateFeatures, buildFeatures, isFeatureSetId } from "./feature-build.ts";
+import { sheetForChannel, type SheetBuilder } from "./belief-features.ts";
+import type { OpponentSheet } from "@areneon/schema/types/v1/opponent-sheet.ts";
 import { createFeatureMemo, type FeatureBuildCode, FeatureBuildError, type FeatureConfigs, type FeatureMemo } from "./candidate-features.ts";
 import { enumerateCandidates } from "./choices.ts";
 import { randomLegalActor } from "./random-legal.ts";
@@ -73,6 +75,14 @@ export interface ActorFeatures {
   record?: (request_seq: number, features: AnyCandidateFeatures) => void;
 }
 
+/** What a seat needs to build the opponent sheet block (ADR-027 slice 4, ADR-025 erratum E4). */
+export interface ActorSheet {
+  /** This game's builder (its counts are the game's); the block is attached only when the worker stated a source (`client.sheetSource`). */
+  builder: SheetBuilder;
+  /** Called with each decision's block as it is attached to the query. Observes only; never changes a byte. */
+  record?: (request_seq: number, block: OpponentSheet) => void;
+}
+
 export interface PolicyActorOptions {
   client: PolicyClient;
   /** Names this game to the client, which allows one outstanding query per battle. */
@@ -106,6 +116,13 @@ export interface PolicyActorOptions {
    * error of a policy seat as a `crash` too (a defect shows in the detail, not in the cause).
    */
   features?: ActorFeatures;
+  /**
+   * The opponent sheet builder (closed regime). The block is attached to a query only when the worker stated a sheet source
+   * (`client.sheetSource`), and then it must be that source's. A refusal of the belief is the block with source `unknown` and a
+   * fixed code (counted in the builder), never a forfeit and never a rule fallback; a defect of the run propagates to
+   * `guardActor`, which makes it a `crash` of this seat.
+   */
+  sheet?: ActorSheet;
   /** The engine that checks the team's stats against the Team Preview request (default: the pinned checkout). */
   engine?: Engine;
   /**
@@ -122,7 +139,7 @@ export interface PolicyActorOptions {
  * request the adapter cannot observe is a harness incident.
  */
 export function policyActor(options: PolicyActorOptions): Actor {
-  const { client, battle, player, team, manifest, channel_class, seed, game, policy_id, sampling, play, engine, preview_actor, features } = options;
+  const { client, battle, player, team, manifest, channel_class, seed, game, policy_id, sampling, play, engine, preview_actor, features, sheet } = options;
   const memo = features?.memo ?? createFeatureMemo();
   if (sampling === "argmax" && play !== undefined && (play.temperature_ppm !== undefined || play.truncation !== undefined)) {
     throw new PolicyProtocolError("a temperature or a truncation applies to sample mode only");
@@ -177,12 +194,20 @@ export function policyActor(options: PolicyActorOptions): Actor {
       }
       features.record?.(identity.request_seq, candidate_features);
     }
+    const sheetStated = client.sheetSource ?? null;
+    let opponent_sheet;
+    if (sheet !== undefined && sheetStated !== null) {
+      opponent_sheet = sheetForChannel(sheet.builder, { player, lines: context.channel, team: team.team });
+      if (opponent_sheet.source.hash !== sheetStated.feature_set_hash) throw new PolicyProtocolError("the opponent sheet this side builds is of another source than the worker stated");
+      sheet.record?.(identity.request_seq, opponent_sheet);
+    }
     const query = {
       schema_version: 1,
       identity,
       observation,
       candidates: candidates.map(({ choice, pending }) => ({ choice, pending })),
       ...(candidate_features === undefined ? {} : { candidate_features }),
+      ...(opponent_sheet === undefined ? {} : { opponent_sheet }),
       sampling:
         sampling === "argmax"
           ? { kind: "argmax" }
@@ -212,6 +237,8 @@ export interface PolicySeat {
   play?: PlaySettings;
   /** The candidate-feature records of this seat (see `PolicyActorOptions.features`); rows go only to a worker that stated a set. */
   features?: ActorFeatures;
+  /** The opponent sheet builder of this seat (see `PolicyActorOptions.sheet`); the block goes only to a worker that stated a source. */
+  sheet?: ActorSheet;
   /** Play the Team Preview uniformly at random among the legal Preview choices (the Preview ablation), seeded per seat. */
   random_preview?: true;
   /**

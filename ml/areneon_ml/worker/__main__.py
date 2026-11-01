@@ -18,12 +18,12 @@ from pathlib import Path
 from areneon_ml.checkpoint.files import CheckpointFileError, load_checkpoint
 from areneon_ml.model.gamedata import GameData
 from areneon_ml.model.network import ConfigError, ModelConfig
-from areneon_ml.model.options import feature_set
+from areneon_ml.model.options import feature_set, sheet_set
 from areneon_ml.model.runtime import configure_cpu_inference
 from areneon_ml.model.scorer import NetworkScorer, ScorerError
 from areneon_ml.worker.checkpoints import CheckpointError, CheckpointStore
 from areneon_ml.worker.features import damaging_moves
-from areneon_ml.worker.serve import FeatureSupport, Worker
+from areneon_ml.worker.serve import FeatureSupport, SheetSupport, Worker
 
 EXIT_CHECKPOINT = 4
 
@@ -52,6 +52,11 @@ def build(argv: list[str]) -> Worker:
     parser.add_argument("--battle", required=True, help="checkpoint id of the Battle Policy")
     parser.add_argument("--engine-data", type=Path, required=True)
     parser.add_argument("--max-line-bytes", type=int, required=True)
+    parser.add_argument(
+        "--diagnostic-sheet",
+        action="store_true",
+        help="accept an oracle-diagnostic opponent_sheet (a labelled, test-only diagnostic run)",
+    )
     args = parser.parse_args(argv)
     if args.max_line_bytes < 1:
         parser.error("--max-line-bytes must be positive")
@@ -69,11 +74,13 @@ def build(argv: list[str]) -> Worker:
     # networks share one encoder (the scorer refuses a pair that does not), so one statement.
     scorer = NetworkScorer(game, networks)  # refuses a pair made with different encoders
     stated = feature_set(networks["battle"].config.encoder.options)
+    sheet = sheet_set(networks["battle"].config.encoder.options)
     return Worker(
         scorer=scorer,
         features=(
             None if stated is None else FeatureSupport(stated.as_dict(), damaging_moves(game))
         ),
+        sheet=None if sheet is None else SheetSupport(sheet.as_dict(), args.diagnostic_sheet),
         engine_data_hash=game.engine_data_hash,
         checkpoints=[
             {"role": "battle", "checkpoint_id": args.battle},

@@ -92,10 +92,11 @@ const otherOf = (entries: readonly { v: number }[]): number => Math.max(0, Numbe
 
 const certain = (p: Ratio): boolean => p.num === p.den;
 
-/** A fact is revealed when the reader shows it and the belief has it, alone, at probability exactly 1. */
+/** A fact is revealed when the reader shows it and the belief has it, alone among the options with a positive probability, at probability exactly 1. */
 const isRevealed = (marginals: readonly { id: string | null; p: Ratio }[], fact: string | null): boolean => {
-  const only = marginals[0];
-  return fact !== null && marginals.length === 1 && only !== undefined && only.id === fact && certain(only.p);
+  const live = marginals.filter((m) => m.p.num !== 0n);
+  const only = live[0];
+  return fact !== null && live.length === 1 && only !== undefined && only.id === fact && certain(only.p);
 };
 
 function idField(marginals: readonly { id: string; p: Ratio }[], k: number, revealed: string | null): SheetIdField {

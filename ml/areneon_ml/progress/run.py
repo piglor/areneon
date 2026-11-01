@@ -35,6 +35,7 @@ from areneon_ml.loop.driver import sources_registry
 from areneon_ml.loop.play import NodePlayer, PlayError
 from areneon_ml.loop.records import features_hash, policy_id
 from areneon_ml.model.network import ROLES
+from areneon_ml.model.options import sheet_set
 from areneon_ml.progress import evaluation_key as ekey
 from areneon_ml.progress.ablation import ablation_summary, expected_ablation_matches
 from areneon_ml.progress.eval_dataset import EvalDataset, EvalDatasetError, validation_teams
@@ -434,6 +435,9 @@ def _source(
     other than the public dataset, ``needs_dataset=False``; it learns the pair's class from
     ``data_class`` and decides where that class may be tested.
     """
+    if sheet_set(config.model.encoder.options) is not None:
+        # The evaluation seats do not build the block yet (ADR-027 slice 5): nothing is invented.
+        raise ProgressError("a pair that reads opponent_sheet is not evaluated yet")
     if needs_dataset and not config.team_dataset:
         raise ProgressError(
             "the run config names no team dataset: the interim pool has no validation split"
