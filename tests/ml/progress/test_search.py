@@ -20,7 +20,7 @@ from areneon_ml.progress.records import (
     read_progress_record,
     sum_search_counts,
 )
-from areneon_ml.progress.run import ProgressError, verify_progress_dir
+from areneon_ml.progress.run import ProgressError, sheet_status, summary_of, verify_progress_dir
 from areneon_ml.progress.run import progress_generation as _progress_generation
 
 from tests.ml.progress.support import (
@@ -240,3 +240,25 @@ def test_summing_counts_merges_the_keyed_tables_by_key() -> None:
     assert total["decisions"] == 12
     assert total["refusals"] == [{"key": "a", "count": 1}, {"key": "state_unwritten", "count": 5}]
     assert total["fallbacks"]["team_preview"] == 2
+
+
+def test_the_sheet_counts_of_a_sheet_pair_are_read_and_checked() -> None:
+    record = read_progress_record(sample(f"{V2}/valid/sheet-match"))
+    assert record["matches"][0]["sheet"]["requests"] == 40
+    summary = summary_of(record)[0]["sheet"]
+    assert (summary["refused_share_ppm"], summary["valid"]) == (100000, False)
+    assert "invalidates" in summary["note"]
+    assert summary["status"].startswith("INVALID")
+    assert sheet_status(record) == {
+        "sheet_status": {"valid": False, "invalid_matches": [record["matches"][0]["match_id"]]}
+    }
+    assert sheet_status(sample(f"{V2}/valid/search-match")) == {}
+    for name in (
+        "sheet-counts-disagree",
+        "sheet-row-missing",
+        "sheet-on-rows-only",
+        "sheet-refused-over-requests",
+        "sheet-refusals-do-not-add-up",
+    ):
+        with pytest.raises(ProgressRecordError):
+            read_progress_record(sample(f"{V2}/reader-invalid/{name}"))

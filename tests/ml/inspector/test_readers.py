@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable
 from typing import Any
 
@@ -182,5 +183,38 @@ def test_a_belief_pair_game_row_is_read_and_checked() -> None:
         copy = dict(belief, fallbacks=dict(belief["fallbacks"]))
         change(copy)
         broken["games"][0]["feature_belief"] = copy
+        with pytest.raises(InspectError, match=message):
+            readers.read_generation(broken, 1)
+
+
+def test_a_sheet_pair_game_row_is_read_and_checked() -> None:
+    generation = load("generation.json")
+    sheet: dict[str, Any] = {
+        "requests": 40,
+        "refused": 3,
+        "refusals": [
+            {"code": "evidence_has_no_support", "count": 1},
+            {"code": "reader_flagged", "count": 2},
+        ],
+    }
+    generation["games"][0]["sheet"] = sheet
+    row = readers.read_generation(generation, 1).games[0]
+    assert row.sheet is not None
+    assert (row.sheet.requests, row.sheet.refused, row.sheet.refused_share_ppm) == (40, 3, 75000)
+    assert not row.sheet.valid
+    changes: list[tuple[Callable[[dict[str, Any]], object], str]] = [
+        (lambda b: b.update(extra=1), "exactly"),
+        (lambda b: b.pop("refused"), "exactly"),
+        (lambda b: b.update(requests=-1), "requests"),
+        (lambda b: b.update(requests=2), "more than it built"),
+        (lambda b: b.update(refused=2), "add up"),
+        (lambda b: b.update(refusals=[sheet["refusals"][1], sheet["refusals"][0]]), "sorted"),
+        (lambda b: b.update(refusals=[{"code": "x"}]), "code and count"),
+    ]
+    for change, message in changes:
+        broken = load("generation.json")
+        copy = json.loads(json.dumps(sheet))
+        change(copy)
+        broken["games"][0]["sheet"] = copy
         with pytest.raises(InspectError, match=message):
             readers.read_generation(broken, 1)

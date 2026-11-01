@@ -23,6 +23,7 @@ import json
 import math
 import re
 from collections import Counter
+from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
@@ -49,6 +50,8 @@ from areneon_ml.loop.league import (
 )
 from areneon_ml.loop.metrics import METRICS_DIR, MetricsError, metrics_path, read_run_metrics
 from areneon_ml.loop.records import family_label
+from areneon_ml.loop.sheet_counts import SheetCounts, read_sheet_counts
+from areneon_ml.loop.sheet_counts import total as sheet_total
 from areneon_ml.progress.ablation import ablation_summary
 from areneon_ml.progress.gap import play_mode_gap
 from areneon_ml.progress.modes import match_extra, match_stem
@@ -157,6 +160,9 @@ class GenerationFacts:
     train: TrainFacts | None
     #: The RunMetrics record as stored; None when the generation has no metrics file.
     metrics: dict[str, Any] | None = None
+    #: The opponent sheet blocks the pair's seats built in the games, summed (None for a pair that
+    #: does not read ``opponent_sheet``), with E4's validity rule (``loop/sheet_counts``).
+    sheet: SheetCounts | None = None
 
 
 @dataclass(frozen=True)
@@ -208,6 +214,9 @@ class MatchFacts:
     stem: str = ""
     #: Anchor and previous-generation matches: the play-mode gap is not read from them.
     gap_note: str | None = None
+    #: A match of a pair that reads ``opponent_sheet``: the candidate seat's block counts summed
+    #: over the match (E4 point 5); None for every other match.
+    sheet: SheetCounts | None = None
 
 
 @dataclass(frozen=True)
@@ -346,6 +355,11 @@ def _tallies(
     return made.pop("self-play", Tally()), dict(sorted(made.items())), dict(sorted(causes.items()))
 
 
+def _sheet_total(games: Sequence[Any]) -> SheetCounts | None:
+    found = [g.sheet for g in games if g.sheet is not None]
+    return sheet_total(found) if found else None
+
+
 def _played_generation(
     number: int, path: Path, config: RunConfig, manifest_sha: str, inputs: dict[str, str]
 ) -> GenerationFacts:
@@ -397,6 +411,7 @@ def _played_generation(
         baselines,
         causes,
         train,
+        sheet=_sheet_total(file.games),
     )
 
 
@@ -486,6 +501,7 @@ def _progress_facts(
                 match_extra(match) is not None,
                 match_stem(match),
                 summary.get("play_mode_gap"),
+                read_sheet_counts(match["sheet"]) if "sheet" in match else None,
             )
         )
     plan = record["plan"]

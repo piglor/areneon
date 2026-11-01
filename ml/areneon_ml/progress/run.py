@@ -19,6 +19,7 @@ import json
 import os
 import re
 import shutil
+import sys
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -34,8 +35,8 @@ from areneon_ml.loop import layout
 from areneon_ml.loop.driver import sources_registry
 from areneon_ml.loop.play import NodePlayer, PlayError
 from areneon_ml.loop.records import features_hash, policy_id
+from areneon_ml.loop.sheet_counts import read_sheet_counts
 from areneon_ml.model.network import ROLES
-from areneon_ml.model.options import sheet_set
 from areneon_ml.progress import evaluation_key as ekey
 from areneon_ml.progress.ablation import ablation_summary, expected_ablation_matches
 from areneon_ml.progress.eval_dataset import EvalDataset, EvalDatasetError, validation_teams
@@ -114,6 +115,29 @@ SEEN_LABEL = "seen, same-lineage comparison: it can cycle"
 CROSS_RUN_LABEL = "cross-run comparison"
 #: Games per cross-run match (even): each of this many / 2 validation pairs from both seats.
 DEFAULT_RUN_GAMES = 200
+
+
+#: What the sheet counts of a match say, printed beside them.
+SHEET_NOTE = (
+    "opponent sheet blocks of the candidate seat; "
+    "a refused share above 1% invalidates the experiment"
+)
+
+
+#: The marker of a candidate match whose refused share is above 1% (ADR-025 erratum E4 point 5).
+INVALID_SHEET = "INVALID: refused share above 1% of the opponent sheet blocks"
+
+
+def sheet_status(record: dict[str, Any]) -> dict[str, Any]:
+    """The matches of a record whose sheet counts break E4's 1% rule; empty without sheet counts.
+
+    A command that evaluates a sheet pair prints this and a warning on stderr: an invalid match
+    invalidates the experiment (the files are kept; discarding the result is the experiment's)."""
+    counted = [m for m in record["matches"] if "sheet" in m]
+    if not counted:
+        return {}
+    bad = [m["match_id"] for m in counted if not read_sheet_counts(m["sheet"]).valid]
+    return {"sheet_status": {"valid": not bad, "invalid_matches": bad}}
 
 
 class ProgressError(ValueError):
@@ -435,9 +459,6 @@ def _source(
     other than the public dataset, ``needs_dataset=False``; it learns the pair's class from
     ``data_class`` and decides where that class may be tested.
     """
-    if sheet_set(config.model.encoder.options) is not None:
-        # The evaluation seats do not build the block yet (ADR-027 slice 5): nothing is invented.
-        raise ProgressError("a pair that reads opponent_sheet is not evaluated yet")
     if needs_dataset and not config.team_dataset:
         raise ProgressError(
             "the run config names no team dataset: the interim pool has no validation split"
@@ -1110,6 +1131,7 @@ def summary_of(record: dict[str, Any]) -> list[dict[str, Any]]:
                 if match["opponent"]["kind"] == "self-no-search"
                 else {}
             )
+            | ({"sheet": _sheet_summary(match["sheet"])} if "sheet" in match else {})
             | (
                 {
                     "search": {
@@ -1125,6 +1147,26 @@ def summary_of(record: dict[str, Any]) -> list[dict[str, Any]]:
             )
         )
     return out
+
+
+def _sheet_summary(raw: dict[str, Any]) -> dict[str, Any]:
+    """The candidate seat's opponent sheet blocks with E4's validity rule: a refused share above
+    1% of the requests invalidates the experiment (ADR-025 erratum E4 point 5)."""
+    counts = read_sheet_counts(raw)
+    return counts.as_dict() | {
+        "refused_share_ppm": counts.refused_share_ppm,
+        "valid": counts.valid,
+        "status": "valid" if counts.valid else INVALID_SHEET,
+        "note": SHEET_NOTE,
+    }
+
+
+def _warned(status: dict[str, Any]) -> dict[str, Any]:
+    """``status`` itself; an invalid sheet match is also said on stderr, where a reader sees it."""
+    bad = status.get("sheet_status", {}).get("invalid_matches", [])
+    if bad:
+        print(f"progress: {INVALID_SHEET} in {', '.join(bad)}", file=sys.stderr)
+    return status
 
 
 def _pair_stats(record: dict[str, Any], match: dict[str, Any]) -> dict[str, Any]:
@@ -1477,6 +1519,7 @@ def progress_generation(  # noqa: PLR0913, PLR0915, PLR0917
             | _gap_part(record)
             | _ablation_part(record)
             | _versus_part(record, relation)
+            | _warned(sheet_status(record))
         )
 
 
@@ -1535,6 +1578,7 @@ def _skipped(  # noqa: PLR0913, PLR0917
         | _modes_status(record, modes)
         | _ablation_part(record)
         | _versus_part(record, held)
+        | sheet_status(record)
     )
 
 

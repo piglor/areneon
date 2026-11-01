@@ -16,6 +16,7 @@ import type { ProgressEvaluationRecord } from "@areneon/schema/types/v1/progress
 import type { ProgressEvaluationRecordV2 } from "@areneon/schema/types/v1/progress-evaluation-record-2.ts";
 import type { BaselineCounts, ProgressGameRecord, SearchCounts } from "@areneon/schema/types/v1/progress-game-record.ts";
 import { type Json, jcs } from "./canonical-json.ts";
+import { sheetCountsProblem, sumSheetCounts } from "./sheet-counts.ts";
 import { matchSuffix } from "./progress-modes.ts";
 import { progressGameStreams } from "./progress-seed.ts";
 import { teamHash } from "./team-class.ts";
@@ -240,6 +241,7 @@ export function readProgressEvaluationRecordV2(value: unknown): ProgressEvaluati
     const name = searched ? match.match_id.slice("search-".length) : match.match_id;
     if (searched !== match.match_id.startsWith("search-")) fail(`${match.match_id}: a match is named search-<opponent>-<mode> exactly when it carries search counts`);
     checkSearchOfMatch(match, rows, searchIdentities);
+    checkSheetOfMatch(match, rows);
     // An extra play mode (ADR-023 section 1, #1044): a sample at a declared temperature and/or threshold, against a scripted
     // baseline or another run's pair (both sides in the mode), named <opponent>-sample[-t<ppm>][-th<ppm>].
     const declared = match.temperature_ppm !== undefined || match.truncation !== undefined;
@@ -299,6 +301,24 @@ function checkBaselineOfMatch(match: MatchV2, rows: readonly RowV2[], identities
   const perGame = rows.map((row) => row.baseline_counts as BaselineCounts);
   perGame.forEach((counts, index) => checkBaselineCounts(counts, `${match.match_id} game ${index}`));
   if (jcs(found.counts as unknown as Json) !== jcs(sumBaselineCounts(perGame) as unknown as Json)) fail(`${match.match_id}: baseline.counts must be the sum of the game rows' counts`);
+}
+
+/**
+ * ADR-025 erratum E4 point 5: a match of a pair that reads `opponent_sheet` carries the candidate seat's block counts summed in its
+ * summary and in every game row, and no other match carries any; each counts object follows its rules and the match's recompute from the rows.
+ */
+function checkSheetOfMatch(match: MatchV2, rows: readonly RowV2[]): void {
+  const given = rows.filter((row) => row.sheet !== undefined);
+  if (match.sheet === undefined) {
+    if (given.length > 0) fail(`${match.match_id}: only a match with sheet counts in its summary carries them in its game rows`);
+    return;
+  }
+  if (given.length !== rows.length) fail(`${match.match_id}: a match with sheet counts carries them in every game row`);
+  for (const counts of [match.sheet, ...given.map((row) => row.sheet as NonNullable<RowV2["sheet"]>)]) {
+    const problem = sheetCountsProblem(counts);
+    if (problem !== null) fail(`${match.match_id}: sheet: ${problem}`);
+  }
+  if (jcs(match.sheet as unknown as Json) !== jcs(sumSheetCounts(given.map((row) => row.sheet as NonNullable<RowV2["sheet"]>)) as unknown as Json)) fail(`${match.match_id}: sheet must be the sum of the game rows' counts`);
 }
 
 /**

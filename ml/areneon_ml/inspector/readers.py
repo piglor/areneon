@@ -14,6 +14,8 @@ from collections.abc import Collection
 from dataclasses import dataclass
 from typing import Any
 
+from areneon_ml.loop.sheet_counts import SheetCounts, SheetCountsError, read_sheet_counts
+
 HEX64 = re.compile(r"[0-9a-f]{64}")
 SEED = re.compile(r"sodium,[0-9a-f]{32}")
 SEATS = ("p1", "p2")
@@ -26,7 +28,7 @@ PLAN_KEYS = (
 BASELINE_KEYS = (frozenset({"actor", "policy_id"}), frozenset[str]())
 GAME_KEYS = (
     frozenset({"game", "opponent", "outcome", "seed", "turns", "winner"}),
-    frozenset({"forfeit", "feature_belief"}),
+    frozenset({"forfeit", "feature_belief", "sheet"}),
 )
 BELIEF_KEYS = (
     frozenset({"decisions", "worlds_sampled", "redraws", "contradicted_worlds", "fallbacks"}),
@@ -128,6 +130,8 @@ class GameRow:
     winner: str | None
     turns: int
     forfeit: Forfeit | None
+    #: The opponent sheet block counts of the game (only a pair that reads ``opponent_sheet``).
+    sheet: SheetCounts | None = None
 
 
 @dataclass(frozen=True)
@@ -212,6 +216,13 @@ def _read_game(item: object, index: int) -> GameRow:
             raise InspectError(f"{what} feature_belief fallbacks is not an object")
         for cause, count in fallbacks.items():
             integer(count, f"{what} feature_belief fallback {text(cause, 'cause')}")
+    sheet = None
+    if "sheet" in row:
+        # The opponent sheet blocks the pair's seats built in this game (E4 point 5).
+        try:
+            sheet = read_sheet_counts(row["sheet"], f"{what} sheet")
+        except SheetCountsError as exc:
+            raise InspectError(str(exc)) from exc
     return GameRow(
         index,
         text(row["seed"], f"{what} seed"),
@@ -220,6 +231,7 @@ def _read_game(item: object, index: int) -> GameRow:
         row["winner"],
         integer(row["turns"], f"{what} turns"),
         forfeit,
+        sheet,
     )
 
 

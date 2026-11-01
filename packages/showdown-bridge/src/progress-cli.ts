@@ -16,7 +16,8 @@ import { engineDataHash, readEngineDataAny } from "./engine-data.ts";
 import { loadEngine } from "./engine.ts";
 import type { Engine } from "./engine.ts";
 import { UsageError } from "./generation-cli.ts";
-import { damageAwareSetup, type FeatureSetup, featureSetup } from "./league-generation.ts";
+import { damageAwareSetup, type FeatureSetup, featureSetup, type RunSheetSetup, sheetSetup } from "./league-generation.ts";
+import type { BeliefFeaturesFactory } from "./belief-features.ts";
 import { PolicyWorkerClient } from "./policy-worker.ts";
 import type { SearchSetup } from "./search-actor.ts";
 import { EVAL_DATASET_FLAGS, readEvalDataset, withEvalDataset } from "./eval-dataset.ts";
@@ -128,6 +129,8 @@ export interface ProgressPorts {
   run_teams?: (engine: Engine, config: TrainingRunConfig) => ReadonlySet<string>;
   /** The belief port factory of the composition root, for a pair that reads `probe-damage-belief/1` (the bridge does not import the opponent model). */
   belief_worlds?: BeliefWorldsFactory;
+  /** The belief features factory of the composition root, for a pair that reads `opponent_sheet` (likewise). */
+  belief_features?: BeliefFeaturesFactory;
 }
 
 /** What a frozen pair's worker needs: one worker session holds one pair, CPU torch, stdio only, one query at a time. */
@@ -142,6 +145,8 @@ export interface FrozenPairClientOptions {
   handshake_timeout_ms: number;
   /** The feature set the pair's checkpoints read (`featureSetup(...).statement`; absent: none): the worker may state exactly this. */
   features?: FeatureSetup["statement"];
+  /** The opponent sheet source the pair's checkpoints read (`sheetSetup(...).statement`; absent: none). */
+  sheet?: RunSheetSetup["statement"];
 }
 
 /**
@@ -151,6 +156,15 @@ export interface FrozenPairClientOptions {
 export function pairFeatureSetup(engine: Engine, config: TrainingRunConfig, beliefWorlds?: BeliefWorldsFactory): FeatureSetup | undefined {
   try {
     return featureSetup(engine, config, beliefWorlds);
+  } catch (error) {
+    throw new UsageError((error as Error).message);
+  }
+}
+
+/** The opponent sheet setup of one run config (absent: the pair reads none), a usage error when this checkout does not compute the hash. */
+export function pairSheetSetup(engine: Engine, config: TrainingRunConfig, factory?: BeliefFeaturesFactory): RunSheetSetup | undefined {
+  try {
+    return sheetSetup(engine, config, factory);
   } catch (error) {
     throw new UsageError((error as Error).message);
   }
@@ -166,6 +180,7 @@ export function frozenPairClient(o: FrozenPairClientOptions): PolicyWorkerClient
     n_parallel: 1, // evaluation never batches (ADR-010 section 2)
     handshake_timeout_ms: o.handshake_timeout_ms,
     ...(o.features === undefined ? {} : { features: o.features }),
+    ...(o.sheet === undefined ? {} : { sheet: o.sheet }),
     expect: {
       encoder_version: o.encoderVersion,
       engine_data_hash: o.engineDataHash,
@@ -254,11 +269,12 @@ export async function runProgressCli(argv: readonly string[], print: (line: stri
   const { max_line_bytes, handshake_timeout_ms } = config.generation;
   // The candidate features of the run's pair (none: nothing below changes) and, for another run's pair, of ITS config.
   const features = pairFeatureSetup(engine, config, ports.belief_worlds);
+  const sheet = pairSheetSetup(engine, config, ports.belief_features);
   const preview = need("preview");
   const battle = need("battle");
   // One worker session holds one frozen pair, so the previous generation's pair gets a worker of its own.
-  const workerFor = (pair: { preview: string; battle: string }, runDir: string = need("run-dir"), encoderVersion: string = need("encoder-version"), setup: FeatureSetup | null = features ?? null): PolicyWorkerClient =>
-    frozenPairClient({ python: need("worker-python"), runDir, pair, encoderVersion, engineDataFile: dataFile, engineDataHash: dataHash, max_line_bytes, handshake_timeout_ms, ...(setup === null ? {} : { features: setup.statement }) });
+  const workerFor = (pair: { preview: string; battle: string }, runDir: string = need("run-dir"), encoderVersion: string = need("encoder-version"), setup: FeatureSetup | null = features ?? null, sheetOf: RunSheetSetup | null = sheet ?? null): PolicyWorkerClient =>
+    frozenPairClient({ python: need("worker-python"), runDir, pair, encoderVersion, engineDataFile: dataFile, engineDataHash: dataHash, max_line_bytes, handshake_timeout_ms, ...(setup === null ? {} : { features: setup.statement }), ...(sheetOf === null ? {} : { sheet: sheetOf.statement }) });
   const client = workerFor({ preview, battle });
   const previousPair = given.length === 0 ? undefined : { preview: need("previous-preview"), battle: need("previous-battle") };
   let previousClient: PolicyWorkerClient | undefined;
@@ -293,7 +309,8 @@ export async function runProgressCli(argv: readonly string[], print: (line: stri
     versusRunTeams = readRunTeams(engine, versusConfig);
   }
   const versusFeatures = versusConfig === undefined ? undefined : pairFeatureSetup(engine, versusConfig, ports.belief_worlds);
-  const versusClient = versus === undefined ? undefined : workerFor(versus.checkpoints, need("versus-dir"), need("versus-encoder-version"), versusFeatures ?? null);
+  const versusSheet = versusConfig === undefined ? undefined : pairSheetSetup(engine, versusConfig, ports.belief_features);
+  const versusClient = versus === undefined ? undefined : workerFor(versus.checkpoints, need("versus-dir"), need("versus-encoder-version"), versusFeatures ?? null, versusSheet ?? null);
   try {
     previousClient = previousPair === undefined ? undefined : workerFor(previousPair);
     const pool = poolSource(engine, withEvalDataset(config, evalDataset)); // the evaluation dataset, hash-checked by the pool; `config` stays the run's own
@@ -316,6 +333,7 @@ export async function runProgressCli(argv: readonly string[], print: (line: stri
       policy_ids,
       client,
       ...(features === undefined ? {} : { features: features.configs }),
+      ...(sheet === undefined ? {} : { sheet: sheet.setup }),
       ...(previousPair === undefined || previousClient === undefined
         ? {}
         : {
@@ -326,7 +344,7 @@ export async function runProgressCli(argv: readonly string[], print: (line: stri
             },
           }),
       ...(anchor_games === undefined ? {} : { anchors: anchorSpecs.map((spec, index) => ({ ...spec, client: anchorClients[index] as PolicyWorkerClient })), anchor_games }),
-      ...(versus === undefined || versusClient === undefined || run_games === undefined ? {} : { versus: { ...versus, client: versusClient, ...(versusFeatures === undefined ? {} : { features: versusFeatures.configs }) }, run_games }),
+      ...(versus === undefined || versusClient === undefined || run_games === undefined ? {} : { versus: { ...versus, client: versusClient, ...(versusFeatures === undefined ? {} : { features: versusFeatures.configs }), ...(versusSheet === undefined ? {} : { sheet: versusSheet.setup }) }, run_games }),
       ...(ablationParts === undefined || ablationClient === undefined
         ? {}
         : {

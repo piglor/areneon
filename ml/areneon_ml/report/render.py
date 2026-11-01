@@ -536,6 +536,76 @@ def _cause_stacks(played: list[GenerationFacts]) -> list[Stack]:
     return stacks
 
 
+def _sheet_section(model: ReportModel) -> str:
+    """The opponent sheet blocks per generation and E4's validity rule (empty for a pair that reads none)."""
+    rows = [g for g in model.generations if g.sheet is not None]
+    if not rows:
+        return ""
+    body = []
+    for g in rows:
+        counts = g.sheet
+        assert counts is not None
+        by_code = ", ".join(f"{code} {n}" for code, n in counts.refusals) or "none"
+        body.append(
+            [
+                f"g{g.number}",
+                str(counts.requests),
+                str(counts.refused),
+                pct(counts.refused_share_ppm),
+                esc(by_code),
+                "valid" if counts.valid else "INVALID: refused share above 1%",
+            ]
+        )
+    return "<h2>Opponent sheet blocks</h2>" + _table(
+        [
+            ("Generation", False),
+            ("Blocks", True),
+            ("Refused", True),
+            ("Refused share", True),
+            ("By code", False),
+            ("E4 validity", False),
+        ],
+        body,
+        "A refused belief is the unknown block with a fixed code, never a rule fallback. "
+        "A refused share above 1% of the requests invalidates the experiment (ADR-025 erratum E4).",
+    )
+
+
+def _progress_sheet_section(model: ReportModel) -> str:
+    """The candidate seat's opponent sheet blocks per evaluated match, with E4's validity rule."""
+    body = []
+    for g in sorted(model.progress):
+        for m in model.progress[g].matches:
+            if m.sheet is None:
+                continue
+            by_code = ", ".join(f"{code} {n}" for code, n in m.sheet.refusals) or "none"
+            body.append(
+                [
+                    f"g{g} {m.match_id}",
+                    str(m.sheet.requests),
+                    str(m.sheet.refused),
+                    pct(m.sheet.refused_share_ppm),
+                    esc(by_code),
+                    "valid" if m.sheet.valid else "INVALID: refused share above 1%",
+                ]
+            )
+    if not body:
+        return ""
+    return "<h2>Opponent sheet blocks in the progress evaluation</h2>" + _table(
+        [
+            ("Match", False),
+            ("Blocks", True),
+            ("Refused", True),
+            ("Refused share", True),
+            ("By code", False),
+            ("E4 validity", False),
+        ],
+        body,
+        "The candidate seat's blocks. A refused belief is the unknown block with a fixed code. "
+        "A refused share above 1% of the requests invalidates the experiment (ADR-025 erratum E4).",
+    )
+
+
 def _forfeit_section(model: ReportModel, tips: Tips) -> str:
     played = [g for g in model.generations if g.number > 0]
     out = ["<h2>Training forfeits by cause</h2>"]
@@ -925,6 +995,8 @@ def build_report(model: ReportModel, links: Links | None = None) -> str:
             _progress_section(model, tips),
             _training_section(model, tips),
             _forfeit_section(model, tips),
+            _sheet_section(model),
+            _progress_sheet_section(model),
             _counts_section(model, tips),
             _metrics_section(model),
             _diagnostics_section(model, tips),

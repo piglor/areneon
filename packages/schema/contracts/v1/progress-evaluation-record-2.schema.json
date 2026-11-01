@@ -519,6 +519,10 @@
         "opponent_search": {
           "$ref": "#/$defs/SearchSummary",
           "description": "Only a self-no-search match: the control's counts (searched_decisions 0) summed over the match's games."
+        },
+        "sheet": {
+          "$ref": "#/$defs/SheetCounts",
+          "description": "Only a match of a pair that reads opponent_sheet: the candidate seat's block counts summed over the match's games. The refused share is derived on display, with E4's 1% validity rule."
         }
       }
     },
@@ -650,6 +654,10 @@
         "opponent_search": {
           "$ref": "#/$defs/SearchCounts",
           "description": "Only a game of a self-no-search match: the control's counts for this game."
+        },
+        "sheet": {
+          "$ref": "#/$defs/SheetCounts",
+          "description": "Only a game of a pair that reads opponent_sheet: the candidate seat's block counts for this game."
         }
       }
     },
@@ -1124,6 +1132,53 @@
             "argmax"
           ],
           "description": "The pair's no-search play mode: the control's mode, the one the search policy falls back to."
+        }
+      }
+    },
+    "SheetCounts": {
+      "description": "The opponent sheet blocks a pair's seat built (ADR-025 erratum E4 point 5): the requests answered with a block, those among them whose belief was refused (the unknown block, never a rule fallback) and the refusals by their fixed code, sorted by code and unique. Reader rules: refused is at most requests and the refusals add up to refused. A game's counts, or the sum of a match's games'. Added within v2 (ADR-008 section 3): a reader older than the field rejects a record that carries it.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "requests",
+        "refused",
+        "refusals"
+      ],
+      "properties": {
+        "requests": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000000
+        },
+        "refused": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000000
+        },
+        "refusals": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "code",
+              "count"
+            ],
+            "properties": {
+              "code": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64,
+                "pattern": "^[a-z_]+$"
+              },
+              "count": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 1000000000
+              }
+            }
+          }
         }
       }
     }

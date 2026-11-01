@@ -483,6 +483,27 @@ class SelfNoSearchOpponent(BaseModel):
     """
 
 
+class Refusal(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    code: Annotated[StrictStr, Field(max_length=64, min_length=1, pattern="^[a-z_]+$")]
+    count: Annotated[StrictInt, Field(ge=1, le=1000000000)]
+
+
+class SheetCounts(BaseModel):
+    """
+    The opponent sheet blocks a pair's seat built (ADR-025 erratum E4 point 5): the requests answered with a block, those among them whose belief was refused (the unknown block, never a rule fallback) and the refusals by their fixed code, sorted by code and unique. Reader rules: refused is at most requests and the refusals add up to refused. A game's counts, or the sum of a match's games'. Added within v2 (ADR-008 section 3): a reader older than the field rejects a record that carries it.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    requests: Annotated[StrictInt, Field(ge=0, le=1000000000)]
+    refused: Annotated[StrictInt, Field(ge=0, le=1000000000)]
+    refusals: Annotated[list[Refusal], Field(max_length=16)]
+
+
 class Plan(BaseModel):
     """
     What every match played: derivations, sizes and caps.
@@ -578,6 +599,10 @@ class GameRow(BaseModel):
     """
     Only a game of a self-no-search match: the control's counts for this game.
     """
+    sheet: SheetCounts | MISSING = MISSING
+    """
+    Only a game of a pair that reads opponent_sheet: the candidate seat's block counts for this game.
+    """
 
 
 class CandidatePreview(RootModel[LearnedPreview | RandomPreview | GenerationPreview]):
@@ -649,6 +674,10 @@ class Match(BaseModel):
     opponent_search: SearchSummary | MISSING = MISSING
     """
     Only a self-no-search match: the control's counts (searched_decisions 0) summed over the match's games.
+    """
+    sheet: SheetCounts | MISSING = MISSING
+    """
+    Only a match of a pair that reads opponent_sheet: the candidate seat's block counts summed over the match's games. The refused share is derived on display, with E4's 1% validity rule.
     """
 
 

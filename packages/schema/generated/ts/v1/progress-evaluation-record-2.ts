@@ -217,6 +217,7 @@ export interface Match {
   baseline?: BaselineSummary;
   search?: SearchSummary;
   opponent_search?: SearchSummary1;
+  sheet?: SheetCounts;
 }
 /**
  * This interface was referenced by `ProgressEvaluationRecordV2`'s JSON-Schema
@@ -530,6 +531,20 @@ export interface SearchSummary1 {
   counts: SearchCounts;
 }
 /**
+ * Only a match of a pair that reads opponent_sheet: the candidate seat's block counts summed over the match's games. The refused share is derived on display, with E4's 1% validity rule.
+ */
+export interface SheetCounts {
+  requests: number;
+  refused: number;
+  /**
+   * @maxItems 16
+   */
+  refusals: {
+    code: string;
+    count: number;
+  }[];
+}
+/**
  * One game's result: the per-game results table of protocol section 8.1.
  *
  * This interface was referenced by `ProgressEvaluationRecordV2`'s JSON-Schema
@@ -553,6 +568,7 @@ export interface GameRow {
   baseline_counts?: BaselineCounts1;
   search?: SearchCounts1;
   opponent_search?: SearchCounts2;
+  sheet?: SheetCounts1;
 }
 /**
  * This interface was referenced by `ProgressEvaluationRecordV2`'s JSON-Schema
@@ -780,6 +796,20 @@ export interface SearchCounts2 {
   replies_uniform: number;
 }
 /**
+ * Only a game of a pair that reads opponent_sheet: the candidate seat's block counts for this game.
+ */
+export interface SheetCounts1 {
+  requests: number;
+  refused: number;
+  /**
+   * @maxItems 16
+   */
+  refusals: {
+    code: string;
+    count: number;
+  }[];
+}
+/**
  * A probability threshold: candidates below min_ppm of the probability are dropped (the first highest is always kept) and the rest renormalised.
  *
  * This interface was referenced by `ProgressEvaluationRecordV2`'s JSON-Schema
@@ -801,4 +831,21 @@ export interface SearchSummary2 {
    */
   identity_hash: string;
   counts: SearchCounts;
+}
+/**
+ * The opponent sheet blocks a pair's seat built (ADR-025 erratum E4 point 5): the requests answered with a block, those among them whose belief was refused (the unknown block, never a rule fallback) and the refusals by their fixed code, sorted by code and unique. Reader rules: refused is at most requests and the refusals add up to refused. A game's counts, or the sum of a match's games'. Added within v2 (ADR-008 section 3): a reader older than the field rejects a record that carries it.
+ *
+ * This interface was referenced by `ProgressEvaluationRecordV2`'s JSON-Schema
+ * via the `definition` "SheetCounts".
+ */
+export interface SheetCounts2 {
+  requests: number;
+  refused: number;
+  /**
+   * @maxItems 16
+   */
+  refusals: {
+    code: string;
+    count: number;
+  }[];
 }
