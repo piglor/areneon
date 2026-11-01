@@ -337,3 +337,20 @@ def test_the_weights_are_not_inputs_of_the_numeric_layer() -> None:
     assert net.mon_num.in_features == len(layout.mon_num) - len(weights)
     scalars = [n for n in layout.mon_num if n.startswith("sheet_")]
     assert {"sheet_brought", "sheet_item_top", "sheet_moves_top"} <= set(scalars)
+
+
+def test_a_slot_named_by_a_forme_of_its_entry_s_base_species_is_accepted() -> None:
+    """The belief names a slot by the preview's species (Rotom-Frost); the reducer: the base."""
+    vocab = game().vocabulary
+    q = query()
+    bases = roster(q)
+    # A species id that is another forme of the first entry's base species.
+    formes = sorted(s for s, b in vocab.species_base.items() if b == bases[0] and s != bases[0])
+    if not formes:
+        pytest.skip("the first previewed opponent has no other forme in the engine data")
+    q["opponent_sheet"]["slots"][0]["species"] = formes[0]
+    ENCODE.encode(q)
+    other = next(s for s, b in sorted(vocab.species_base.items()) if b != bases[0])
+    q["opponent_sheet"]["slots"][0]["species"] = other
+    with pytest.raises(EncodingError, match="another species"):
+        ENCODE.encode(q)
