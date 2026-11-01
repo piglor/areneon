@@ -145,7 +145,7 @@ export async function runGenerationCli(
   // The candidate feature set the run's config names (none: nothing below changes). Built before any worker starts.
   let features: ReturnType<typeof featureSetup>;
   try {
-    features = featureSetup(engine, config, beliefWorlds);
+    features = featureSetup(engine, config, beliefWorlds, beliefFeatures);
   } catch (error) {
     if (!(error instanceof GenerationError)) throw error;
     console.error(`play-generation: ${error.message}`);

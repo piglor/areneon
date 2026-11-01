@@ -153,9 +153,9 @@ export interface FrozenPairClientOptions {
  * The candidate feature setup of one run config (absent: the pair reads none), failing as a usage error when this
  * checkout does not compute the hash the config names. Each run's seats are set up from that run's own config.
  */
-export function pairFeatureSetup(engine: Engine, config: TrainingRunConfig, beliefWorlds?: BeliefWorldsFactory): FeatureSetup | undefined {
+export function pairFeatureSetup(engine: Engine, config: TrainingRunConfig, beliefWorlds?: BeliefWorldsFactory, beliefFeatures?: BeliefFeaturesFactory): FeatureSetup | undefined {
   try {
-    return featureSetup(engine, config, beliefWorlds);
+    return featureSetup(engine, config, beliefWorlds, beliefFeatures);
   } catch (error) {
     throw new UsageError((error as Error).message);
   }
@@ -268,7 +268,7 @@ export async function runProgressCli(argv: readonly string[], print: (line: stri
   const dataHash = engineDataHash(readEngineDataAny(JSON.parse(readFileSync(dataFile, "utf8"))));
   const { max_line_bytes, handshake_timeout_ms } = config.generation;
   // The candidate features of the run's pair (none: nothing below changes) and, for another run's pair, of ITS config.
-  const features = pairFeatureSetup(engine, config, ports.belief_worlds);
+  const features = pairFeatureSetup(engine, config, ports.belief_worlds, ports.belief_features);
   const sheet = pairSheetSetup(engine, config, ports.belief_features);
   const preview = need("preview");
   const battle = need("battle");
@@ -308,7 +308,7 @@ export async function runProgressCli(argv: readonly string[], print: (line: stri
     if (evalDataset.dataset_hash === versusConfig.team_dataset.dataset_hash) throw new UsageError("--eval-dataset-hash is the other run's own training dataset: leave the option out or name another dataset");
     versusRunTeams = readRunTeams(engine, versusConfig);
   }
-  const versusFeatures = versusConfig === undefined ? undefined : pairFeatureSetup(engine, versusConfig, ports.belief_worlds);
+  const versusFeatures = versusConfig === undefined ? undefined : pairFeatureSetup(engine, versusConfig, ports.belief_worlds, ports.belief_features);
   const versusSheet = versusConfig === undefined ? undefined : pairSheetSetup(engine, versusConfig, ports.belief_features);
   const versusClient = versus === undefined ? undefined : workerFor(versus.checkpoints, need("versus-dir"), need("versus-encoder-version"), versusFeatures ?? null, versusSheet ?? null);
   try {

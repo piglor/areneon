@@ -418,6 +418,71 @@ class TrainingSheetSource(BaseModel):
     )
 
 
+class ComputedBeliefThreatRow(BaseModel):
+    """
+    What a move the BELIEF says the foe may hold (not yet revealed) would do to the own Pokemon (the foe's assumed set plus that move as attacker, the own Pokemon at its exact current HP): the values of a ComputedThreatRow and the belief's inclusion probability of the move.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    kind: Literal["computed"]
+    own: Annotated[StrictInt, Field(ge=0, le=5)]
+    """
+    The own Pokemon's position in the request's side.pokemon, 0-based.
+    """
+    mega: StrictBool
+    """
+    True for the variant of the own Pokemon that Mega Evolves this turn.
+    """
+    foe: Annotated[StrictInt, Field(ge=1, le=9)]
+    """
+    The opposing active's location number in a choice (move 1 1).
+    """
+    move: Annotated[
+        StrictStr, Field(max_length=64, min_length=1, pattern="^[a-z0-9]+$")
+    ]
+    inclusion_ppm: Annotated[StrictInt, Field(ge=1, le=1000000)]
+    """
+    The belief's marginal probability that the foe holds this move, in ppm (rounded half up, alone); revealed moves are not listed.
+    """
+    mean_ppm: Annotated[StrictInt, Field(ge=0, le=1000000)]
+    max_ppm: Annotated[StrictInt, Field(ge=0, le=1000000)]
+    min_ppm: Annotated[StrictInt, Field(ge=0, le=1000000)]
+    ohko_rolls: Annotated[StrictInt | None, Field(ge=0, le=16)]
+
+
+class UnsupportedBeliefThreatRow(BaseModel):
+    """
+    A belief threat the probe could not answer exactly: its closed reason, never a guess.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    kind: Literal["unsupported"]
+    own: Annotated[StrictInt, Field(ge=0, le=5)]
+    """
+    The own Pokemon's position in the request's side.pokemon, 0-based.
+    """
+    mega: StrictBool
+    """
+    True for the variant of the own Pokemon that Mega Evolves this turn.
+    """
+    foe: Annotated[StrictInt, Field(ge=1, le=9)]
+    """
+    The opposing active's location number in a choice (move 1 1).
+    """
+    move: Annotated[
+        StrictStr, Field(max_length=64, min_length=1, pattern="^[a-z0-9]+$")
+    ]
+    inclusion_ppm: Annotated[StrictInt, Field(ge=1, le=1000000)]
+    """
+    The belief's marginal probability that the foe holds this move, in ppm (rounded half up, alone); revealed moves are not listed.
+    """
+    reason: Literal["query_kind", "random_effect", "scenario_rule_table"]
+
+
 class PokemonSet(BaseModel):
     """
     One set, as the pinned engine's PokemonSet (sim/teams.ts) holds it. Legality is the engine validator's, not this schema's.
@@ -517,9 +582,16 @@ class FoePriorities(RootModel[ComputedFoePriorityRow | UnsupportedFoePriorityRow
     ]
 
 
+class BeliefThreats(RootModel[ComputedBeliefThreatRow | UnsupportedBeliefThreatRow]):
+    root: Annotated[
+        ComputedBeliefThreatRow | UnsupportedBeliefThreatRow,
+        Field(discriminator="kind"),
+    ]
+
+
 class CandidateFeatures(BaseModel):
     """
-    The rows of one decision under one feature set. feature_set names the set (probe-damage/1 or probe-damage/2); feature_set_hash is SHA-256 of the JCS of its identity (mechanics config, assumed-set config, adapter format, reader, version manifest), so a pin bump or a config change is another set. Rows are in canonical order: slot, move, target, then mega false before true. Under probe-damage/2 the four arrays threats, speeds, own_priorities and foe_priorities are all present; under any other set none is (a reader rule: the profile has no if/then).
+    The rows of one decision under one feature set. feature_set names the set (probe-damage/1, probe-damage/2 or probe-damage/3); feature_set_hash is SHA-256 of the JCS of its identity (mechanics config, assumed-set config, adapter format, reader, version manifest), so a pin bump or a config change is another set. Rows are in canonical order: slot, move, target, then mega false before true. Under probe-damage/2 the four arrays threats, speeds, own_priorities and foe_priorities are all present, and probe-damage/3 adds belief_threats; under any other set none is (a reader rule: the profile has no if/then).
     """
 
     model_config = ConfigDict(
@@ -550,6 +622,12 @@ class CandidateFeatures(BaseModel):
     )
     """
     probe-damage/2 only: one row per revealed move of each opposing active, sorted by (foe, move id).
+    """
+    belief_threats: Annotated[list[BeliefThreats] | MISSING, Field(max_length=128)] = (
+        MISSING
+    )
+    """
+    probe-damage/3 only: one row per (own Pokemon and variant, opposing active, move the belief says the foe may hold), at most the reviewed per-foe cut of damaging moves, sorted by (own, mega false first, foe, move id). Never a move already in threats for that foe (a reader rule). Values on the assumed opponent set plus that move, not facts about the real opponent.
     """
 
 

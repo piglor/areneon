@@ -265,11 +265,11 @@ async function run(argv: readonly string[], print: (line: string) => void, sourc
   let sheet: ReturnType<typeof pairSheetSetup>;
   let opponentSheet: ReturnType<typeof pairSheetSetup>;
   try {
-    features = pairFeatureSetup(engine, config, sources.belief_worlds);
+    features = pairFeatureSetup(engine, config, sources.belief_worlds, sources.belief_features);
     sheet = pairSheetSetup(engine, config, sources.belief_features);
     if (pairParts !== undefined) {
       const other = readTrainingRunConfig(JSON.parse(readFileSync(join(need("opponent-run-dir"), "run-config.json"), "utf8")));
-      opponentFeatures = pairFeatureSetup(engine, other, sources.belief_worlds);
+      opponentFeatures = pairFeatureSetup(engine, other, sources.belief_worlds, sources.belief_features);
       opponentSheet = pairSheetSetup(engine, other, sources.belief_features);
     }
   } catch {

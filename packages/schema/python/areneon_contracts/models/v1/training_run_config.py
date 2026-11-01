@@ -159,13 +159,13 @@ class Learner(BaseModel):
 
 class CandidateFeatures(BaseModel):
     """
-    ADR-022 tier A (ADR-010 erratum A5 items 2 to 4). Each damaging move part of a battle candidate also reads the rows of the engine's damage calculation on assumed opponent sets, which the Node side builds (PolicyQuery.candidate_features). Names the feature set; feature_set_hash is the identity hash the builder computes (mechanics config, assumed-set config, adapter format, reader, version manifest), so a pin bump or a config change is another set. Layout changing: it changes the encoder version and the checkpoint format. A pair that sets it has a policy id with a features member. probe-damage/2 (ADR-022 erratum E-22.3) also carries threat, speed and priority arrays, which the encoder attaches to the own and foe tokens and to the slot parts.
+    ADR-022 tier A (ADR-010 erratum A5 items 2 to 4). Each damaging move part of a battle candidate also reads the rows of the engine's damage calculation on assumed opponent sets, which the Node side builds (PolicyQuery.candidate_features). Names the feature set; feature_set_hash is the identity hash the builder computes (mechanics config, assumed-set config, adapter format, reader, version manifest), so a pin bump or a config change is another set. Layout changing: it changes the encoder version and the checkpoint format. A pair that sets it has a policy id with a features member. probe-damage/2 (ADR-022 erratum E-22.3) also carries threat, speed and priority arrays, which the encoder attaches to the own and foe tokens and to the slot parts; probe-damage/3 adds belief_threats (damage of moves the opponent belief says a foe may hold), which the encoder folds into the threat rows with a belief flag and the inclusion.
     """
 
     model_config = ConfigDict(
         extra="forbid",
     )
-    feature_set: Literal["probe-damage/1", "probe-damage/2", "probe-damage-belief/1"]
+    feature_set: Literal["probe-damage/1", "probe-damage/2", "probe-damage/3", "probe-damage-belief/1"]
     feature_set_hash: Annotated[StrictStr, Field(pattern="^[0-9a-f]{64}$")]
 
 
@@ -191,7 +191,7 @@ class Options1(BaseModel):
     )
     candidate_features: CandidateFeatures | MISSING = MISSING
     """
-    ADR-022 tier A (ADR-010 erratum A5 items 2 to 4). Each damaging move part of a battle candidate also reads the rows of the engine's damage calculation on assumed opponent sets, which the Node side builds (PolicyQuery.candidate_features). Names the feature set; feature_set_hash is the identity hash the builder computes (mechanics config, assumed-set config, adapter format, reader, version manifest), so a pin bump or a config change is another set. Layout changing: it changes the encoder version and the checkpoint format. A pair that sets it has a policy id with a features member. probe-damage/2 (ADR-022 erratum E-22.3) also carries threat, speed and priority arrays, which the encoder attaches to the own and foe tokens and to the slot parts.
+    ADR-022 tier A (ADR-010 erratum A5 items 2 to 4). Each damaging move part of a battle candidate also reads the rows of the engine's damage calculation on assumed opponent sets, which the Node side builds (PolicyQuery.candidate_features). Names the feature set; feature_set_hash is the identity hash the builder computes (mechanics config, assumed-set config, adapter format, reader, version manifest), so a pin bump or a config change is another set. Layout changing: it changes the encoder version and the checkpoint format. A pair that sets it has a policy id with a features member. probe-damage/2 (ADR-022 erratum E-22.3) also carries threat, speed and priority arrays, which the encoder attaches to the own and foe tokens and to the slot parts; probe-damage/3 adds belief_threats (damage of moves the opponent belief says a foe may hold), which the encoder folds into the threat rows with a belief flag and the inclusion.
     """
     candidate_matchup: Literal[True] | MISSING = MISSING
     """

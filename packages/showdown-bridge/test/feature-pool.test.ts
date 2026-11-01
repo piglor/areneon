@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, it } from "vitest";
-import { candidateFeatures, createFeatureMemo, FEATURE_SET_BELIEF } from "../src/candidate-features.ts";
+import { candidateFeatures, createFeatureMemo, FEATURE_SET_3, FEATURE_SET_BELIEF } from "../src/candidate-features.ts";
 import { statsOf } from "../src/feature-bench.ts";
 import { fakePort } from "./damage-aware-world-support.ts";
 import { answerMessage, createFeatureService, type FeatureResult, type FeatureServiceSpec, type FeatureTask } from "../src/feature-service.ts";
@@ -102,6 +102,22 @@ describe("feature pool (ADR-022 mitigation 3)", () => {
     await pool.close();
     // the bench sums them
     expect(statsOf([a, b]).belief).toEqual({ decisions: 2, worlds_sampled: 3, redraws: 0, contradicted_worlds: 0, fallbacks: { reader_flagged: 1 } });
+  }, 120_000);
+
+  it("serves probe-damage/3 on the calling thread with its arrays and the belief threats port, and refuses the port anywhere else", async () => {
+    const threatSpec: FeatureServiceSpec = { ...spec, feature_set: FEATURE_SET_3 };
+    const calls: number[] = [];
+    const setup = { port: { identity_hash: "a".repeat(64), moveInclusions: () => (calls.push(1), null) }, per_foe: 4 };
+    const service = createFeatureService(threatSpec, engine, { belief_threats: setup });
+    const first = tasks[0] as FeatureTask;
+    const a = service.run({ ...first, game: "threats" });
+    expect(a.outcome.kind).toBe("features");
+    expect(a.parts).toBeDefined(); // the cost split of the shared /2 arrays
+    expect((a.outcome as { features: { feature_set: string; belief_threats: unknown[] } }).features).toMatchObject({ feature_set: FEATURE_SET_3, belief_threats: [] });
+    expect(calls.length).toBe(1);
+    expect(() => createFeatureService(threatSpec, engine)).toThrow("belief threats port");
+    expect(() => createFeatureService(spec, engine, { belief_threats: setup })).toThrow("belief threats port");
+    expect(() => new FeaturePool(1, threatSpec, { belief_threats: setup })).toThrow(FeaturePoolError);
   }, 120_000);
 
   it("refuses a bad size, a thread that fails and a closed pool", async () => {

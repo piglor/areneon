@@ -44,6 +44,25 @@ export interface BeliefFeaturesPort {
   readonly prior_format_id: string;
   readonly k: SheetKValues;
   sheet(input: { readonly opponent: PublicSide; readonly flags: readonly PublicFlag[]; readonly trapping?: TrappingCheckPort | null }): OpponentSheet;
+  /** The belief's move inclusions (`BeliefThreatsPort`); the composition root provides it, a stand-in for the sheet alone may not. */
+  moveInclusions?: BeliefThreatsPort["moveInclusions"];
+}
+
+/** One move an opponent slot may hold and the belief's probability that it does, in ppm (revealed moves are not listed). */
+export interface BeliefMoveInclusion {
+  readonly id: string;
+  readonly inclusion_ppm: number;
+}
+
+/**
+ * What `probe-damage/3` needs of the opponent model (ADR-022, ADR-025 section 3): per opponent roster position, the moves the
+ * belief thinks the slot may hold beyond the revealed ones, sorted by inclusion descending then id. `null` is a refused belief
+ * (a code of the model, or an unsettled identity-hiding member), which gives the decision no belief threats; a defect throws.
+ */
+export interface BeliefThreatsPort {
+  /** `belief_identity_hash` (ADR-025 section 5): part of the feature set's identity. */
+  readonly identity_hash: string;
+  moveInclusions(input: { readonly opponent: PublicSide; readonly flags: readonly PublicFlag[] }): readonly (readonly BeliefMoveInclusion[])[] | null;
 }
 
 export interface BeliefFeaturesContext {

@@ -51,12 +51,16 @@ def _check_candidates(number: int, raw: dict[str, Any], ready: bool) -> None:
 
 #: The arrays of the `probe-damage/2` feature set and the sort key of each array's rows.
 _FEATURE_SET_WITH_ARRAYS = "probe-damage/2"
+#: ``probe-damage/3`` also carries ``belief_threats`` (a move the belief says a foe may hold).
+_FEATURE_SET_WITH_BELIEF = "probe-damage/3"
 _ARRAY_KEYS: dict[str, Callable[[dict[str, Any]], tuple[Any, ...]]] = {
     "threats": lambda r: (r["own"], int(r["mega"]), r["foe"], r["move"]),
     "speeds": lambda r: (r["own"], int(r["mega"]), r["foe"]),
     "own_priorities": lambda r: (r["slot"], r["move"], int(r["mega"])),
     "foe_priorities": lambda r: (r["foe"], r["move"]),
+    "belief_threats": lambda r: (r["own"], int(r["mega"]), r["foe"], r["move"]),
 }
+_BASE_ARRAYS = 4  # the arrays of ``/2``: the first four keys above
 
 
 def _check_features(number: int, raw: dict[str, Any]) -> None:
@@ -76,11 +80,15 @@ def _check_features(number: int, raw: dict[str, Any]) -> None:
             " by (slot, move, target, mega)"
         )
     present = [name for name in _ARRAY_KEYS if name in features]
-    wanted = len(_ARRAY_KEYS) if features["feature_set"] == _FEATURE_SET_WITH_ARRAYS else 0
+    wanted = {
+        _FEATURE_SET_WITH_ARRAYS: _BASE_ARRAYS,
+        _FEATURE_SET_WITH_BELIEF: len(_ARRAY_KEYS),
+    }.get(features["feature_set"], 0)
     if len(present) != wanted:
         raise TrainingStreamError(
             f"line {number}: the candidate_features arrays are present exactly under"
-            f" {_FEATURE_SET_WITH_ARRAYS}"
+            f" {_FEATURE_SET_WITH_ARRAYS} (and with belief_threats under"
+            f" {_FEATURE_SET_WITH_BELIEF})"
         )
     for name in present:
         if not _strictly_ascending([_ARRAY_KEYS[name](r) for r in features[name]]):
@@ -88,6 +96,12 @@ def _check_features(number: int, raw: dict[str, Any]) -> None:
                 f"line {number}: the candidate_features {name} must be sorted and unique"
                 " by their key"
             )
+    revealed = {(r["foe"], r["move"]) for r in features.get("threats", [])}
+    if any((r["foe"], r["move"]) in revealed for r in features.get("belief_threats", [])):
+        raise TrainingStreamError(
+            f"line {number}: a candidate_features belief_threats row repeats a move already in"
+            " threats for that foe"
+        )
 
 
 # The feature set of an example (or none) is recorded in `StreamChecker.classes` under this

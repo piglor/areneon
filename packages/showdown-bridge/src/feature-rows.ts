@@ -20,11 +20,18 @@ export interface WireFeatureRows {
   speeds?: readonly { kind?: string; own: number; mega: boolean; foe: number }[];
   own_priorities?: readonly { kind?: string; slot: number; move: number; mega: boolean }[];
   foe_priorities?: readonly { kind?: string; foe: number; move: string }[];
+  /** `probe-damage/3` only (beside the four): the belief's moves, with their inclusion in ppm. */
+  belief_threats?: readonly { kind?: string; own: number; mega: boolean; foe: number; move: string; inclusion_ppm: number }[];
 }
 
 /** The feature set whose object carries the four extra arrays. */
 export const FEATURE_SET_WITH_ARRAYS = "probe-damage/2";
+/** The feature set that carries the four and `belief_threats`. */
+export const FEATURE_SET_WITH_BELIEF_THREATS = "probe-damage/3";
 const ARRAYS = ["threats", "speeds", "own_priorities", "foe_priorities"] as const;
+const BELIEF_ARRAYS = [...ARRAYS, "belief_threats"] as const;
+/** The arrays a set carries: none, the four of `/2`, or those and `belief_threats` of `/3`. */
+const arraysOf = (featureSet: string): readonly (typeof BELIEF_ARRAYS)[number][] => (featureSet === FEATURE_SET_WITH_BELIEF_THREATS ? BELIEF_ARRAYS : featureSet === FEATURE_SET_WITH_ARRAYS ? ARRAYS : []);
 
 /**
  * The request target types that hit every foe or a random one. A damaging move part of such a type that
@@ -56,17 +63,22 @@ function ascending(keys: readonly Key[]): boolean {
  */
 export function featureRowsProblem(features: WireFeatureRows): string | null {
   if (!ascending(features.rows.map(keyOf))) return "the candidate_features rows must be sorted and unique by (slot, move, target, mega)";
-  const present = ARRAYS.filter((name) => features[name] !== undefined);
-  if (features.feature_set === FEATURE_SET_WITH_ARRAYS ? present.length !== ARRAYS.length : present.length > 0) {
-    return `the candidate_features arrays ${ARRAYS.join(", ")} are present exactly under ${FEATURE_SET_WITH_ARRAYS}`;
+  const wanted = arraysOf(features.feature_set);
+  const present = BELIEF_ARRAYS.filter((name) => features[name] !== undefined);
+  if (present.length !== wanted.length || !wanted.every((name) => present.includes(name))) {
+    return `the candidate_features arrays ${ARRAYS.join(", ")} are present exactly under ${FEATURE_SET_WITH_ARRAYS}, and with belief_threats under ${FEATURE_SET_WITH_BELIEF_THREATS}`;
   }
   const orders: [string, Key[]][] = [
     ["threats", (features.threats ?? []).map((r) => [r.own, Number(r.mega), r.foe, r.move])],
     ["speeds", (features.speeds ?? []).map((r) => [r.own, Number(r.mega), r.foe])],
     ["own_priorities", (features.own_priorities ?? []).map((r) => [r.slot, r.move, Number(r.mega)])],
     ["foe_priorities", (features.foe_priorities ?? []).map((r) => [r.foe, r.move])],
+    ["belief_threats", (features.belief_threats ?? []).map((r) => [r.own, Number(r.mega), r.foe, r.move])],
   ];
   for (const [name, keys] of orders) if (!ascending(keys)) return `the candidate_features ${name} must be sorted and unique by their key`;
+  // A belief threat is a move the channel has not shown: never one that is already a revealed threat of that foe.
+  const revealed = new Set((features.threats ?? []).map((r) => `${r.foe}/${r.move}`));
+  if ((features.belief_threats ?? []).some((r) => revealed.has(`${r.foe}/${r.move}`))) return "a candidate_features belief_threats row repeats a move already in threats for that foe";
   return null;
 }
 
@@ -112,7 +124,7 @@ export function featureCoverageProblem(
       }
     }
   } // Team Preview, a forced switch or a wait: no move to score
-  return features.feature_set === FEATURE_SET_WITH_ARRAYS ? arrayCoverageProblem(request, query.candidates, features) : null;
+  return arraysOf(features.feature_set).length > 0 ? arrayCoverageProblem(request, query.candidates, features) : null;
 }
 
 const fixed = (text: string): string => `the candidate_features ${text}`;
@@ -163,6 +175,7 @@ function arrayCoverageProblem(request: RequestBody, candidates: readonly { choic
   const foeLocations = new Set<number>([...features.rows.map((r) => r.target), ...threats.map((r) => r.foe), ...speeds.map((r) => r.foe), ...foes.map((r) => r.foe)]);
 
   if (threats.some((r) => !variants.has(`${r.own}/${r.mega}`))) return fixed("threats name an own Pokemon or Mega variant the request and candidates do not imply");
+  if ((features.belief_threats ?? []).some((r) => !variants.has(`${r.own}/${r.mega}`))) return fixed("belief_threats name an own Pokemon or Mega variant the request and candidates do not imply");
   const expectedSpeeds = [...variants]
     .flatMap((variant) => [...foeLocations].map((foe): Key => [...variant.split("/").map((v, i) => (i === 0 ? Number(v) : Number(v === "true"))), foe]))
     .sort((a, b) => (a[0] as number) - (b[0] as number) || (a[1] as number) - (b[1] as number) || (a[2] as number) - (b[2] as number))

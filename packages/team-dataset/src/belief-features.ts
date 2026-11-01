@@ -9,8 +9,8 @@
 // whether any line was flagged). The memo is bypassed whenever the trapping check observes something: it then depends on the
 // player's own side, which the key does not hold. Memoised and recomputed blocks are equal (a test).
 
-import { belief, opponentSheet, refusedSheet, SHEET_K, sheetFeatureSetHash, sheetRefusalOf, slotEvidence } from "@areneon/opponent-model";
-import type { BeliefFeaturesPort, SheetKValues } from "@areneon/showdown-bridge";
+import { belief, moveInclusions, opponentSheet, refusedSheet, SHEET_K, sheetFeatureSetHash, sheetRefusalOf, slotEvidence } from "@areneon/opponent-model";
+import type { BeliefFeaturesPort, BeliefThreatsPort, SheetKValues } from "@areneon/showdown-bridge";
 import { type SearchWorldsContext, type SearchWorldsFiles, armParts, searchWorldsFiles } from "./search-worlds.ts";
 
 export type BeliefFeaturesContext = Omit<SearchWorldsContext, "arm"> & {
@@ -30,12 +30,31 @@ export function evidenceKey(opponent: SheetArgs["opponent"], flags: SheetArgs["f
   return JSON.stringify([flags.length > 0, opponent.roster.map((mon) => [slotEvidence(mon), mon.phantom === true, mon.base_species])]);
 }
 
+/** Run `run`; a refusal of the model (a code a consumer falls back on) becomes `otherwise(code)`, a defect of the run throws. */
+function refusing<T>(run: () => T, otherwise: (code: NonNullable<ReturnType<typeof sheetRefusalOf>>) => T): T {
+  try {
+    return run();
+  } catch (error) {
+    const code = sheetRefusalOf(error);
+    if (code === null) throw error;
+    return otherwise(code);
+  }
+}
+
+/** Store `value` under `key`, the oldest entry out beyond `MEMO_LIMIT`. */
+function remember<V>(memo: Map<string, V>, key: string, value: V): V {
+  if (memo.size >= MEMO_LIMIT) memo.delete(memo.keys().next().value as string);
+  memo.set(key, value);
+  return value;
+}
+
 /** The port: belief over the committed prior, then the closed-regime block. */
-export function createBeliefFeatures(context: BeliefFeaturesContext, files: SearchWorldsFiles = searchWorldsFiles(context.vocabulary.format_id)): BeliefFeaturesPort {
+export function createBeliefFeatures(context: BeliefFeaturesContext, files: SearchWorldsFiles = searchWorldsFiles(context.vocabulary.format_id)): BeliefFeaturesPort & BeliefThreatsPort {
   const k = context.k ?? SHEET_K;
   const { prior, view, beliefConfig, prior_hash, belief_config_hash, identity_hash } = armParts({ ...context, arm: context.arm ?? "generator-matched" }, files);
   const features_hash = sheetFeatureSetHash(identity_hash, k);
   const memo = new Map<string, ReturnType<BeliefFeaturesPort["sheet"]>>();
+  const inclusionMemo = new Map<string, ReturnType<BeliefThreatsPort["moveInclusions"]>>();
   return {
     identity_hash,
     features_hash,
@@ -43,6 +62,18 @@ export function createBeliefFeatures(context: BeliefFeaturesContext, files: Sear
     belief_config_hash,
     prior_format_id: prior.format_id,
     k,
+    // The belief's move inclusions for `probe-damage/3` (no trapping check: the threats read the evidence projection only, so the
+    // memo key is complete). A refusal of the model is `null` (no belief threats); a defect throws.
+    moveInclusions({ opponent, flags }) {
+      const key = evidenceKey(opponent, flags);
+      const hit = inclusionMemo.get(key);
+      if (hit !== undefined) return hit;
+      const found = refusing(
+        () => moveInclusions(belief({ prior, vocabulary: view, config: beliefConfig, opponent, flags }), opponent),
+        () => null,
+      );
+      return remember(inclusionMemo, key, found);
+    },
     sheet({ opponent, flags, trapping }) {
       // The belief ignores a trapping check that observes nothing (`observed` empty), so such a call is a pure function of the
       // evidence projection; with observed levels the exclusions depend on the player's own side, which the key does not hold.
@@ -50,18 +81,11 @@ export function createBeliefFeatures(context: BeliefFeaturesContext, files: Sear
       const key = informative ? null : evidenceKey(opponent, flags);
       const hit = key === null ? undefined : memo.get(key);
       if (hit !== undefined) return structuredClone(hit);
-      let block;
-      try {
-        block = opponentSheet(belief({ prior, vocabulary: view, config: beliefConfig, opponent, flags, trapping }), opponent, features_hash, k);
-      } catch (error) {
-        const code = sheetRefusalOf(error);
-        if (code === null) throw error;
-        block = refusedSheet(opponent, code, features_hash);
-      }
-      if (key !== null) {
-        if (memo.size >= MEMO_LIMIT) memo.delete(memo.keys().next().value as string);
-        memo.set(key, structuredClone(block));
-      }
+      const block = refusing(
+        () => opponentSheet(belief({ prior, vocabulary: view, config: beliefConfig, opponent, flags, trapping }), opponent, features_hash, k),
+        (code) => refusedSheet(opponent, code, features_hash),
+      );
+      if (key !== null) remember(memo, key, structuredClone(block));
       return block;
     },
   };
