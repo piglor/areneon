@@ -15,13 +15,16 @@
 // depend on it. Reader rules (feature-rows.ts): no move that is already one of `/2`'s `threats` for that foe, sorted and unique
 // by (own, mega, foe, move id), at most 128 rows.
 //
-// A refused belief (a code of the model, or an unsettled identity-hiding member) leaves `belief_threats` empty; a defect of the
+// A refused belief (a code of the model, or an unsettled identity-hiding member) leaves `belief_threats` empty AND says so:
+// `belief_threats_refused` carries the code (so a refusal is never read as a foe with no likely threats), and the refusals are
+// counted in `memo.belief` (decisions and fallbacks by code, which the generation and progress records already carry); a defect of the
 // run throws. Pure and deterministic: the input is a `PlayerChannel`, the player's own team and the candidate strings; the
 // belief takes the reader's opponent half and the reader's flags and nothing else, so no opponent secret can enter.
+import type { TrainingExample } from "@areneon/schema/types/v1/training-example.ts";
 import type { Candidate } from "./choices.ts";
 import { type CandidateFeatures2, buildArrays, type CostTrace, type ArrayContext } from "./candidate-features-2.ts";
 import type { BeliefMoveInclusion } from "./belief-features.ts";
-import { type BeliefThreatsSetup, createFeatureMemo, type DamageValues, damageValuesOf, FEATURE_SET_3, type FeatureConfigs, type FeatureMemo } from "./candidate-features.ts";
+import { type BeliefThreatsSetup, createFeatureMemo, emptyBeliefCounts, type DamageValues, damageValuesOf, FEATURE_SET_3, type FeatureConfigs, type FeatureMemo } from "./candidate-features.ts";
 import { assumedWithMove } from "./damage-aware-assumed-set.ts";
 import { DamageAwareError, type Foe, foeTargetKind } from "./damage-aware-view.ts";
 import type { Engine, PokemonSet } from "./engine.ts";
@@ -29,12 +32,20 @@ import type { PlayerChannel } from "./observation.ts";
 
 export { FEATURE_SET_3 };
 
+/** The model's closed refusal codes, as the contract states them. */
+export type BeliefRefusal = NonNullable<NonNullable<TrainingExample["candidate_features"]>["belief_threats_refused"]>;
+
 /** What a belief move would do to one own Pokemon, and how likely the belief says the foe holds it. */
 export type BeliefThreatRow = { own: number; mega: boolean; foe: number; move: string; inclusion_ppm: number } & DamageValues;
 
 export interface CandidateFeatures3 extends Omit<CandidateFeatures2, "feature_set"> {
   feature_set: typeof FEATURE_SET_3;
   belief_threats: BeliefThreatRow[];
+  /**
+   * Present exactly when the belief was refused for this decision (the model's fixed code): `belief_threats` is then empty, and the
+   * value says so instead of looking like a foe with no likely threats. Absent otherwise, so such a value keeps its bytes.
+   */
+  belief_threats_refused?: BeliefRefusal;
 }
 
 // A foe's belief moves are distinct ids, so two never compare equal.
@@ -52,12 +63,19 @@ export function candidateFeatures3(
 ): CandidateFeatures3 {
   const setup = configs.belief_threats;
   if (setup === undefined) throw new DamageAwareError("probe-damage/3 needs the belief threats port");
-  return buildArrays(engine, configs, channel, team, candidates, memo, trace, FEATURE_SET_3, (context) => ({ belief_threats: beliefThreatRows(engine, configs, setup, context) }), { belief_threats: [] as BeliefThreatRow[] });
+  return buildArrays(engine, configs, channel, team, candidates, memo, trace, FEATURE_SET_3, (context) => beliefThreatRows(engine, configs, setup, memo, context), { belief_threats: [] as BeliefThreatRow[] } as { belief_threats: BeliefThreatRow[]; belief_threats_refused?: BeliefRefusal });
 }
 
-function beliefThreatRows(engine: Engine, configs: FeatureConfigs, setup: BeliefThreatsSetup, { view, state, entries, variants, asMega, foes, threats, flags }: ArrayContext): BeliefThreatRow[] {
-  const inclusions = setup.port.moveInclusions({ opponent: state.opponent, flags });
-  if (inclusions === null) return [];
+function beliefThreatRows(engine: Engine, configs: FeatureConfigs, setup: BeliefThreatsSetup, memo: FeatureMemo, { view, state, entries, variants, asMega, foes, threats, flags }: ArrayContext): { belief_threats: BeliefThreatRow[]; belief_threats_refused?: BeliefRefusal } {
+  const answer = setup.port.moveInclusions({ opponent: state.opponent, flags });
+  // Counted like the belief-world set's requests, so the share of refused decisions can be read per game (`feature_belief`).
+  const counts = (memo.belief ??= emptyBeliefCounts());
+  counts.decisions += 1;
+  if ("refused" in answer) {
+    counts.fallbacks[answer.refused] = (counts.fallbacks[answer.refused] ?? 0) + 1;
+    return { belief_threats: [], belief_threats_refused: answer.refused as BeliefRefusal };
+  }
+  const inclusions = answer.slots;
   const out: BeliefThreatRow[] = [];
   // Each foe's moves, in the belief's order (inclusion descending, then id): damaging ones the assumed set can hold, cut to `per_foe`.
   type Kept = { move: string; inclusion_ppm: number; paste: string };
@@ -85,5 +103,5 @@ function beliefThreatRows(engine: Engine, configs: FeatureConfigs, setup: Belief
       }
     }
   }
-  return out.sort((a, b) => a.own - b.own || Number(a.mega) - Number(b.mega) || a.foe - b.foe || compare(a.move, b.move));
+  return { belief_threats: out.sort((a, b) => a.own - b.own || Number(a.mega) - Number(b.mega) || a.foe - b.foe || compare(a.move, b.move)) };
 }

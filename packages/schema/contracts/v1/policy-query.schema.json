@@ -660,6 +660,21 @@
               "propertyName": "kind"
             }
           }
+        },
+        "belief_threats_refused": {
+          "description": "probe-damage/3 only, present exactly when the opponent belief was refused for this decision: the model's fixed refusal code. belief_threats is then empty (a reader rule), so a refusal is never read as a foe with no likely threats. Absent otherwise.",
+          "enum": [
+            "reader_flagged",
+            "team_size",
+            "species_not_in_prior",
+            "forme_not_in_prior",
+            "brought_exceeds_picked",
+            "disguise_assignments_exceeded",
+            "evidence_has_no_support",
+            "legality_redraws_exhausted",
+            "empty_distribution",
+            "disguise_unsettled"
+          ]
         }
       }
     },

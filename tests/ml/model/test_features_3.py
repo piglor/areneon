@@ -10,7 +10,9 @@ numbers are invented (``fixtures/contracts/v1/policy-query/valid/battle-features
 from __future__ import annotations
 
 import copy
+import json
 from dataclasses import replace
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -189,3 +191,61 @@ def test_the_worker_reader_holds_the_same_rules_as_the_stream_reader() -> None:
     assert "belief_threats name an own Pokemon" in (
         coverage_problem(SAMPLE, foreign, damaging_moves(game())) or ""
     )
+
+
+# -- a refused belief is stated, never a silent empty list --------------------------------------
+
+REFUSED = sample("policy-query/valid/battle-features-3-refused.json")
+
+
+def test_the_refusal_codes_are_the_contract_s_enum() -> None:
+    schema = json.loads(
+        (
+            Path(__file__).parents[3] / "packages/schema/contracts/v1/policy-query.schema.json"
+        ).read_text()
+    )
+    enum = schema["$defs"]["CandidateFeatures"]["properties"]["belief_threats_refused"]["enum"]
+    assert list(rows_of.BELIEF_REFUSALS) == enum
+
+
+def test_a_refused_decision_reaches_the_field_token_as_its_code_category() -> None:
+    encoded = ENCODE.encode(REFUSED)
+    ordinary = ENCODE.encode(SAMPLE)
+    column = len(Layout.of(ON).field_cat) - 1
+    assert Layout.of(ON).field_cat[column] == ("belief_refusal", "belief_refusal")
+    assert ordinary.field_cat[column].item() == NONE
+    code = REFUSED["candidate_features"]["belief_threats_refused"]
+    assert encoded.field_cat[column].item() == RESERVED + rows_of.BELIEF_REFUSALS.index(code)
+    assert encoded.thr_idx is not None
+    assert encoded.thr_idx.shape[0] == len(THREATS)  # no belief rows
+    # the network tells "refused" from "no likely threats"
+    model = net()
+    quiet = copy.deepcopy(REFUSED)
+    del quiet["candidate_features"]["belief_threats_refused"]
+    assert not torch.equal(
+        model(collate([encoded])).logits, model(collate([ENCODE.encode(quiet)])).logits
+    )
+    # each code is its own category
+    other = copy.deepcopy(REFUSED)
+    other["candidate_features"]["belief_threats_refused"] = "reader_flagged"
+    assert not torch.equal(
+        model(collate([encoded])).logits, model(collate([ENCODE.encode(other)])).logits
+    )
+
+
+def test_a_refusal_with_rows_or_outside_the_third_set_is_refused() -> None:
+    with pytest.raises(EncodingError, match="no belief_threats"):
+        ENCODE.encode(edited(lambda f: f.update(belief_threats_refused="reader_flagged")))
+    for name in ("refused-with-rows", "refused-under-2"):
+        bad = sample(f"policy-query/reader-invalid/features-3-{name}.json")
+        assert "belief_threats_refused" in (rows_problem(bad["candidate_features"]) or "")
+    # the other layouts have no refusal column: /2 keeps its field columns
+    two = Layout.of(
+        replace(
+            TINY_ENCODER,
+            options=read_options(
+                "encoder", {CANDIDATE_FEATURES: {**SET, "feature_set": "probe-damage/2"}}
+            ),
+        )
+    )
+    assert all(kind != "belief_refusal" for _, kind in two.field_cat)

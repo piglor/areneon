@@ -84,7 +84,7 @@ describe("featureSetup", () => {
 
   it("builds probe-damage/3 through the belief features factory of the composition root, and fails closed without one or without move inclusions", () => {
     const calls: string[] = [];
-    const inclusions = () => [];
+    const inclusions = () => ({ slots: [] });
     const factory: BeliefFeaturesFactory = () => {
       calls.push("factory");
       return { identity_hash: "e".repeat(64), features_hash: "f".repeat(64), prior_hash: "0".repeat(64), belief_config_hash: "1".repeat(64), prior_format_id: "x", k: { item: 4, ability: 3, nature: 3, moves: 8 }, sheet: () => ({}) as never, moveInclusions: inclusions };

@@ -629,6 +629,12 @@ class CandidateFeatures(BaseModel):
     """
     probe-damage/3 only: one row per (own Pokemon and variant, opposing active, move the belief says the foe may hold), at most the reviewed per-foe cut of damaging moves, sorted by (own, mega false first, foe, move id). Never a move already in threats for that foe (a reader rule). Values on the assumed opponent set plus that move, not facts about the real opponent.
     """
+    belief_threats_refused: Literal["reader_flagged", "team_size", "species_not_in_prior", "forme_not_in_prior", "brought_exceeds_picked", "disguise_assignments_exceeded", "evidence_has_no_support", "legality_redraws_exhausted", "empty_distribution", "disguise_unsettled"] | MISSING = (
+        MISSING
+    )
+    """
+    probe-damage/3 only, present exactly when the opponent belief was refused for this decision: the model's fixed refusal code. belief_threats is then empty (a reader rule), so a refusal is never read as a foe with no likely threats. Absent otherwise.
+    """
 
 
 class SheetItemField(BaseModel):

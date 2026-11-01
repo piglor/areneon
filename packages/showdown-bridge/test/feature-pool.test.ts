@@ -107,13 +107,14 @@ describe("feature pool (ADR-022 mitigation 3)", () => {
   it("serves probe-damage/3 on the calling thread with its arrays and the belief threats port, and refuses the port anywhere else", async () => {
     const threatSpec: FeatureServiceSpec = { ...spec, feature_set: FEATURE_SET_3 };
     const calls: number[] = [];
-    const setup = { port: { identity_hash: "a".repeat(64), moveInclusions: () => (calls.push(1), null) }, per_foe: 4 };
+    const setup = { port: { identity_hash: "a".repeat(64), moveInclusions: () => (calls.push(1), { refused: "reader_flagged" }) }, per_foe: 4 };
     const service = createFeatureService(threatSpec, engine, { belief_threats: setup });
     const first = tasks[0] as FeatureTask;
     const a = service.run({ ...first, game: "threats" });
     expect(a.outcome.kind).toBe("features");
     expect(a.parts).toBeDefined(); // the cost split of the shared /2 arrays
-    expect((a.outcome as { features: { feature_set: string; belief_threats: unknown[] } }).features).toMatchObject({ feature_set: FEATURE_SET_3, belief_threats: [] });
+    expect((a.outcome as { features: { feature_set: string; belief_threats: unknown[] } }).features).toMatchObject({ feature_set: FEATURE_SET_3, belief_threats: [], belief_threats_refused: "reader_flagged" });
+    expect(a.belief).toMatchObject({ decisions: 1, fallbacks: { reader_flagged: 1 } });
     expect(calls.length).toBe(1);
     expect(() => createFeatureService(threatSpec, engine)).toThrow("belief threats port");
     expect(() => createFeatureService(spec, engine, { belief_threats: setup })).toThrow("belief threats port");

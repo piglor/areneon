@@ -96,6 +96,13 @@ def _check_features(number: int, raw: dict[str, Any]) -> None:
                 f"line {number}: the candidate_features {name} must be sorted and unique"
                 " by their key"
             )
+    if "belief_threats_refused" in features and (
+        features["feature_set"] != _FEATURE_SET_WITH_BELIEF or features.get("belief_threats")
+    ):
+        raise TrainingStreamError(
+            f"line {number}: a candidate_features belief_threats_refused is a probe-damage/3"
+            " field and means the belief_threats are empty"
+        )
     revealed = {(r["foe"], r["move"]) for r in features.get("threats", [])}
     if any((r["foe"], r["move"]) in revealed for r in features.get("belief_threats", [])):
         raise TrainingStreamError(

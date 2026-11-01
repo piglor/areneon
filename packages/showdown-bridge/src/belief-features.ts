@@ -54,15 +54,19 @@ export interface BeliefMoveInclusion {
   readonly inclusion_ppm: number;
 }
 
+/** The inclusions per opponent roster position, or the model's fixed refusal code. */
+export type BeliefMoveInclusions = { readonly refused: string } | { readonly slots: readonly (readonly BeliefMoveInclusion[])[] };
+
 /**
  * What `probe-damage/3` needs of the opponent model (ADR-022, ADR-025 section 3): per opponent roster position, the moves the
- * belief thinks the slot may hold beyond the revealed ones, sorted by inclusion descending then id. `null` is a refused belief
- * (a code of the model, or an unsettled identity-hiding member), which gives the decision no belief threats; a defect throws.
+ * belief thinks the slot may hold beyond the revealed ones, sorted by inclusion descending then id. A refused belief (a code of
+ * the model, or an unsettled identity-hiding member) comes back as `{ refused: code }`, which the feature value states
+ * (`belief_threats_refused`) instead of an empty list; a defect throws.
  */
 export interface BeliefThreatsPort {
   /** `belief_identity_hash` (ADR-025 section 5): part of the feature set's identity. */
   readonly identity_hash: string;
-  moveInclusions(input: { readonly opponent: PublicSide; readonly flags: readonly PublicFlag[] }): readonly (readonly BeliefMoveInclusion[])[] | null;
+  moveInclusions(input: { readonly opponent: PublicSide; readonly flags: readonly PublicFlag[] }): BeliefMoveInclusions;
 }
 
 export interface BeliefFeaturesContext {

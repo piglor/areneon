@@ -48,7 +48,7 @@ describe("the port's moveInclusions", () => {
     expect(port.identity_hash).toMatch(/^[0-9a-f]{64}$/);
     expect(opponent).toBeDefined();
     // Not a full Team Preview: the model refuses, and the port says so with null instead of throwing.
-    expect(port.moveInclusions({ opponent: opponent as never, flags: [] })).toBeNull();
+    expect(port.moveInclusions({ opponent: opponent as never, flags: [] })).toEqual({ refused: "team_size" });
   });
 
   it("answers a real request like the model does, and the memo gives the same answer twice", async () => {
@@ -56,9 +56,9 @@ describe("the port's moveInclusions", () => {
     const prefix = cuts(record)[2] as string[];
     const state = (interpretChannel("p1", prefix).frames.at(-1) as { state: ReturnType<typeof interpretChannel>["frames"][number]["state"] }).state;
     const first = port.moveInclusions({ opponent: state.opponent, flags: [] });
-    expect(first).not.toBeNull();
+    expect(first).not.toHaveProperty("refused");
     expect(JSON.stringify(port.moveInclusions({ opponent: state.opponent, flags: [] }))).toBe(JSON.stringify(first));
-    const lists = first as NonNullable<typeof first>;
+    const lists = (first as { slots: { id: string; inclusion_ppm: number }[][] }).slots;
     expect(lists.length).toBe(state.opponent.roster.length);
     // sorted by inclusion then id, no revealed move
     for (const [position, list] of lists.entries()) {
@@ -67,7 +67,7 @@ describe("the port's moveInclusions", () => {
       for (const [a, b] of list.slice(1).map((m, i) => [list[i] as { id: string; inclusion_ppm: number }, m] as const)) expect(a.inclusion_ppm > b.inclusion_ppm || (a.inclusion_ppm === b.inclusion_ppm && a.id < b.id)).toBe(true);
     }
     // a flagged line is a refusal of the model
-    expect(port.moveInclusions({ opponent: state.opponent, flags: [{ index: 0, line: "|x|", reason: "r" } as never] })).toBeNull();
+    expect(port.moveInclusions({ opponent: state.opponent, flags: [{ index: 0, line: "|x|", reason: "r" } as never] })).toEqual({ refused: "reader_flagged" });
     expect(evidenceKey(state.opponent, [])).toBe(evidenceKey(state.opponent, []));
   }, 120_000);
 });
@@ -175,11 +175,12 @@ describe("invariance through the real port and the real probe", () => {
     // The leak: the belief's inclusions replaced by the real team's moves (what a builder given the opponent's team would say).
     const leaking: BeliefThreatsPort = {
       identity_hash: port.identity_hash,
-      moveInclusions: ({ opponent }) =>
-        opponent.roster.map((mon) => {
+      moveInclusions: ({ opponent }) => ({
+        slots: opponent.roster.map((mon) => {
           const set = real.find((s) => [mon.species, mon.base_species].includes(toId(s.species)));
           return (set?.moves ?? []).map(toId).filter((id) => !mon.moves_revealed.includes(id)).map((id) => ({ id, inclusion_ppm: 1_000_000 }));
         }),
+      }),
     };
     let differing = 0;
     let canaryHits = 0;

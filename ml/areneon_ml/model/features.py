@@ -100,6 +100,30 @@ FEATURE_SET_ARRAYS = "probe-damage/2"  # the set whose object carries the four a
 FEATURE_SET_BELIEF_THREATS = "probe-damage/3"  # ... and belief_threats beside them
 ARRAY_NAMES = ("threats", "speeds", "own_priorities", "foe_priorities")
 BELIEF_ARRAY = "belief_threats"
+BELIEF_REFUSED = "belief_threats_refused"
+# The opponent model's fixed refusal codes (the contract's enum, in its order). A refused belief
+# gives no belief rows and says so: the field token carries the code as a category, so the
+# network can tell "refused" from "no likely threats".
+BELIEF_REFUSALS = (
+    "reader_flagged",
+    "team_size",
+    "species_not_in_prior",
+    "forme_not_in_prior",
+    "brought_exceeds_picked",
+    "disguise_assignments_exceeded",
+    "evidence_has_no_support",
+    "legality_redraws_exhausted",
+    "empty_distribution",
+    "disguise_unsettled",
+)
+BELIEF_REFUSAL_CATEGORIES = RESERVED + len(BELIEF_REFUSALS)
+
+
+def belief_refusal_category(code: str | None) -> int:
+    """NONE when the belief answered (or none was asked), else the code's learned category."""
+    return NONE if code is None else RESERVED + BELIEF_REFUSALS.index(code)
+
+
 RELATIONS = ("own_first", "tie", "foe_first")
 # The reasons of an unsupported row of any array: `/1`'s three, then the two that only speeds and
 # priorities carry (the contract's enum order).
@@ -169,6 +193,7 @@ class Arrays:
     foe_priorities: dict[tuple[int, str], Row]
     locations: frozenset[int]  # the foe locations any array or row names (the reader's rule)
     belief_threats: list[Row] = field(default_factory=list)  # ``probe-damage/3`` only
+    refused: str | None = None  # the model's code when the belief was refused (then no belief rows)
 
     @classmethod
     def of(cls, features: Mapping[str, Any]) -> Arrays:
@@ -188,10 +213,15 @@ class Arrays:
         )
         belief = list(features.get(BELIEF_ARRAY, []))
         _unique(belief, lambda r: (r["own"], r["mega"], r["foe"], r["move"]))
+        refused = features.get(BELIEF_REFUSED)
+        if refused is not None and (
+            belief or not reads_belief_threats(features.get("feature_set"))
+        ):
+            raise ValueError("a belief_threats_refused decision has no belief_threats")
         revealed = {(r["foe"], r["move"]) for r in features["threats"]}
         if any((r["foe"], r["move"]) in revealed for r in belief):
             raise ValueError("a belief_threats row repeats a move already in threats for that foe")
-        return cls(list(features["threats"]), speeds, own, foes, frozenset(where), belief)
+        return cls(list(features["threats"]), speeds, own, foes, frozenset(where), belief, refused)
 
 
 def _unique(rows: Sequence[Row], key: Callable[[Row], Any]) -> dict[Any, Row]:

@@ -92,6 +92,14 @@ def rows_problem(features: dict[str, Any]) -> str | None:
         for before, now in itertools.pairwise(features[name]):
             if not _ARRAY_KEYS[name](before) < _ARRAY_KEYS[name](now):
                 return f"the candidate_features {name} must be sorted and unique by their key"
+    if "belief_threats_refused" in features and (
+        features.get("feature_set") != FEATURE_SET_WITH_BELIEF_THREATS
+        or features.get("belief_threats")
+    ):
+        return (
+            "a candidate_features belief_threats_refused is a probe-damage/3 field and means "
+            "the belief_threats are empty"
+        )
     revealed = {(r["foe"], r["move"]) for r in features.get("threats", [])}
     if any((r["foe"], r["move"]) in revealed for r in features.get("belief_threats", [])):
         return (

@@ -552,3 +552,22 @@ def test_the_worker_states_the_third_set_and_answers_a_query_with_its_belief_thr
     del short["candidate_features"]["belief_threats"]
     _, frames = session(worker, line(hello()), line(short))
     assert frames[1]["reply"]["error"] == "invalid_query"
+
+
+def test_a_refused_belief_is_a_stated_field_with_no_rows() -> None:
+    query = sample("policy-query/valid/battle-features-3-refused.json")
+    check("policy-query", query)
+    assert read_query(query, support(query)) == query
+    check("training-example", sample("training-example/valid/battle-features-3-refused.json"))
+    for name in ("refused-with-rows", "refused-under-2"):
+        bad = sample(f"policy-query/reader-invalid/features-3-{name}.json")
+        check("policy-query", bad)
+        with pytest.raises(QueryError, match="belief_threats_refused"):
+            read_query(bad, support(bad))
+    raw = sample("training-example/valid/battle-features-3-refused.json")
+    broken = copy.deepcopy(raw)
+    broken["candidate_features"]["belief_threats"] = sample(
+        "training-example/valid/battle-features-3.json"
+    )["candidate_features"]["belief_threats"]
+    with pytest.raises(TrainingStreamError, match="belief_threats_refused"):
+        checker_for(broken).line(1, stream_line(broken))

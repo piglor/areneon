@@ -63,14 +63,14 @@ export function createBeliefFeatures(context: BeliefFeaturesContext, files: Sear
     prior_format_id: prior.format_id,
     k,
     // The belief's move inclusions for `probe-damage/3` (no trapping check: the threats read the evidence projection only, so the
-    // memo key is complete). A refusal of the model is `null` (no belief threats); a defect throws.
+    // memo key is complete). A refusal of the model keeps its code (`{ refused }`); a defect throws.
     moveInclusions({ opponent, flags }) {
       const key = evidenceKey(opponent, flags);
       const hit = inclusionMemo.get(key);
       if (hit !== undefined) return hit;
       const found = refusing(
         () => moveInclusions(belief({ prior, vocabulary: view, config: beliefConfig, opponent, flags }), opponent),
-        () => null,
+        (refused) => ({ refused }),
       );
       return remember(inclusionMemo, key, found);
     },

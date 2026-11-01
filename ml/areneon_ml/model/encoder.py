@@ -374,7 +374,12 @@ class Layout:
                 *_recent_mon_num(config),
                 *_sheet_num(config),
             ),
-            field_cat=(("weather", "weather"), ("terrain", "terrain"), ("request", "request")),
+            field_cat=(
+                ("weather", "weather"),
+                ("terrain", "terrain"),
+                ("request", "request"),
+                *((("belief_refusal", "belief_refusal"),) if _reads_belief_threats(config) else ()),
+            ),
             field_num=(
                 "turn",
                 "started",
@@ -529,6 +534,7 @@ def encoder_version(game: GameData, config: EncoderConfig) -> str:
                     "numbers": list(rows_of.THREAT_NUMBERS_3),
                     "revealed": "belief 0, inclusion 1",
                     "belief_priority_kind": "none",
+                    "refusals": list(rows_of.BELIEF_REFUSALS),
                 }
     return f"enc{ENCODER_FORMAT}:{sha256_hex(jcs(body))}"
 
@@ -645,6 +651,15 @@ class Encoder:
     ) -> EncodedQuery:
         observation = query["observation"]
         field_features = self._field(state)
+        if _reads_belief_threats(self.config):  # the belief's refusal code, or none
+            sent = query.get("candidate_features") or {}
+            field_features = (
+                [
+                    *field_features[0],
+                    rows_of.belief_refusal_category(sent.get(rows_of.BELIEF_REFUSED)),
+                ],
+                field_features[1],
+            )
         wanted = "preview" if state.request_kind == "preview" else "battle"
         if observation["kind"] != wanted:
             raise EncodingError(
@@ -941,7 +956,8 @@ class Encoder:
         ):
             raise EncodingError("the query's candidate_features are of another feature set")
         if not _reads_arrays(self.config) and any(
-            name in sent for name in (*rows_of.ARRAY_NAMES, rows_of.BELIEF_ARRAY)
+            name in sent
+            for name in (*rows_of.ARRAY_NAMES, rows_of.BELIEF_ARRAY, rows_of.BELIEF_REFUSED)
         ):
             raise EncodingError("the query carries arrays this feature set does not read")
         try:

@@ -201,8 +201,8 @@ FEATURES_2_FAMILY = (
 #: ``probe-damage/3``: ``/2`` and the damage of moves the opponent belief says a foe may hold.
 FEATURES_3_FAMILY = (
     "learned policy that consults the engine's damage calculation and turn order on assumed "
-    "opponent sets, and the damage of moves the opponent belief says a foe may hold, at "
-    "decision time"
+    "opponent sets at decision time: damage under the assumed foe set, move likelihood from the "
+    "belief"
 )
 
 

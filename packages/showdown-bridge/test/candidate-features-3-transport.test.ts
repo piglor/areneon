@@ -53,6 +53,17 @@ describe("the reader rules of belief_threats", () => {
     expect(featureRowsProblem({ ...query.candidate_features, belief_threats: merged } as never)).toMatch(/repeats a move/);
   });
 
+  it("a refused belief is stated, carries no rows, and is a probe-damage/3 field", () => {
+    const query = sample("policy-query/valid/battle-features-3-refused");
+    expect(featureRowsProblem(query.candidate_features)).toBeNull();
+    expect(coverage(query)).toBeNull();
+    expect(query.candidate_features.belief_threats_refused).toBe("evidence_has_no_support");
+    readPolicyQuery({ ...query, query_id: 1 });
+    readTrainingExample(sample("training-example/valid/battle-features-3-refused"));
+    expect(featureRowsProblem(sample("policy-query/reader-invalid/features-3-refused-with-rows").candidate_features)).toMatch(/belief_threats_refused/);
+    expect(featureRowsProblem(sample("policy-query/reader-invalid/features-3-refused-under-2").candidate_features)).toMatch(/belief_threats_refused/);
+  });
+
   it("belief threats name only the own Pokemon and Mega variants the request implies", () => {
     const query = sample("policy-query/reader-invalid/features-3-belief-foreign-own");
     expect(featureRowsProblem(query.candidate_features)).toBeNull();

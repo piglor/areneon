@@ -2,7 +2,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { type BeliefMoveInclusion, type BeliefThreatsPort } from "../src/belief-features.ts";
 import { type CandidateFeatures3, candidateFeatures3, FEATURE_SET_3 } from "../src/candidate-features-3.ts";
 import { candidateFeatures2 } from "../src/candidate-features-2.ts";
-import { BELIEF_THREATS_FORMAT, BELIEF_THREATS_PER_FOE, candidateFeatures, type FeatureConfigs, featureSetHash, featureSetIdentity } from "../src/candidate-features.ts";
+import { BELIEF_THREATS_FORMAT, BELIEF_THREATS_PER_FOE, candidateFeatures, createFeatureMemo, type FeatureConfigs, featureSetHash, featureSetIdentity } from "../src/candidate-features.ts";
 import { buildFeatures, configuredSetHash, isFeatureSetId } from "../src/feature-build.ts";
 import { featureCoverageProblem, featureRowsProblem } from "../src/feature-rows.ts";
 import { DamageAwareError } from "../src/damage-aware-view.ts";
@@ -35,7 +35,7 @@ function portOf(by: (position: number, species: string) => BeliefMoveInclusion[]
     moveInclusions: ({ opponent, flags }) => {
       calls.push({ opponent, flags: flags.length });
       const rows = opponent.roster.map((mon, position) => by(position, mon.base_species));
-      return rows.some((r) => r === null) ? null : (rows as BeliefMoveInclusion[][]);
+      return rows.some((r) => r === null) ? { refused: "evidence_has_no_support" } : { slots: rows as BeliefMoveInclusion[][] };
     },
     ...change,
   };
@@ -196,11 +196,35 @@ describe("belief_threats", () => {
     expect(row.kind).toBe("computed");
   });
 
-  it("is empty for a refused belief, and /2's arrays are still there", () => {
+  it("states a refused belief instead of an empty list, counts it, and /2's arrays are still there", () => {
     const c = withFoes()[0] as Captured;
-    const features = build(c, configs(portOf(() => null)));
+    const memo = createFeatureMemo();
+    const features = build(c, configs(portOf(() => null)), memo);
     expect(features.belief_threats).toEqual([]);
+    expect(features.belief_threats_refused).toBe("evidence_has_no_support");
     expect(features.speeds.length).toBeGreaterThan(0);
+    expect(memo.belief).toMatchObject({ decisions: 1, fallbacks: { evidence_has_no_support: 1 } });
+    expect(featureRowsProblem(features as never)).toBeNull();
+    // a belief that answers with no likely threat is NOT a refusal: the field is absent and the bytes are the plain ones
+    const quiet = createFeatureMemo();
+    const plain = build(c, configs(portOf(() => [])), quiet);
+    expect("belief_threats_refused" in plain).toBe(false);
+    expect(quiet.belief).toMatchObject({ decisions: 1, fallbacks: {} });
+    // the reader rule: a refusal carries no rows
+    const lying = { ...features, belief_threats: [{ kind: "unsupported", own: 0, mega: false, foe: 1, move: "tackle", inclusion_ppm: 1, reason: "query_kind" }] };
+    expect(featureRowsProblem(lying as never)).toMatch(/refused/);
+    expect(featureRowsProblem({ ...features, feature_set: "probe-damage/2", belief_threats: undefined } as never)).toMatch(/belief_threats_refused/);
+  });
+
+  it("keeps the bound of the contract: the worst case (8 own variants, 2 foes, 4 moves) is 64 rows, under maxItems 128", () => {
+    expect(8 * 2 * BELIEF_THREATS_PER_FOE).toBeLessThanOrEqual(128);
+    let most = 0;
+    for (const c of withFoes()) {
+      const port = portOf((_, species) => damagingPool(species).slice(0, 12).map((id, i) => ({ id, inclusion_ppm: 900000 - 1000 * i })));
+      most = Math.max(most, build(c, configs(port)).belief_threats.length);
+    }
+    expect(most).toBeLessThanOrEqual(128);
+    expect(most).toBeGreaterThan(0);
   });
 
   it("asks the belief for the reader's opponent half and every flag, once per request", () => {

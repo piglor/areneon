@@ -175,7 +175,7 @@ describe("an unsettled identity-hiding member with a shown position: the block i
 describe("moveInclusions (the belief threats of probe-damage/3)", () => {
   const of = (more: readonly string[] = [], change: Parameters<typeof input>[1] = {}) => {
     const i = input(more, change);
-    return moveInclusions(belief(i), i.opponent) as NonNullable<ReturnType<typeof moveInclusions>>;
+    return (moveInclusions(belief(i), i.opponent) as { slots: (readonly { id: string; inclusion_ppm: number }[])[] }).slots;
   };
   const alpha = (list: ReturnType<typeof of>) => list[0]!;
 
@@ -195,14 +195,14 @@ describe("moveInclusions (the belief threats of probe-damage/3)", () => {
     const i = input();
     const b = belief(i);
     const tiny = { ...b, slots: b.slots.map((slot) => ({ ...slot, moves: [...slot.moves, { id: "never", p: ratio(1n, 4000000n) }] })) };
-    expect(moveInclusions(tiny, i.opponent)?.[0]?.map((m) => m.id)).not.toContain("never");
+    expect((moveInclusions(tiny, i.opponent) as unknown as { slots: { id: string }[][] }).slots[0]?.map((m) => m.id)).not.toContain("never");
   });
 
-  it("is null while an identity-hiding member is unsettled and a position is shown, and plain with nothing shown", () => {
+  it("is refused (disguise_unsettled) while an identity-hiding member is unsettled and a position is shown, and plain with nothing shown", () => {
     const shown = input([SWITCH("a", "Alp", "Alpha")], { config: hidingConfig });
-    expect(moveInclusions(belief(shown), shown.opponent)).toBeNull();
+    expect(moveInclusions(belief(shown), shown.opponent)).toEqual({ refused: "disguise_unsettled" });
     const quiet = input([], { config: hidingConfig });
-    expect(moveInclusions(belief(quiet), quiet.opponent)).toEqual(of());
+    expect(moveInclusions(belief(quiet), quiet.opponent)).toEqual({ slots: of() });
   });
 
   it("a belief of another roster size is a programming error, and the function is pure", () => {

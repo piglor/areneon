@@ -38,6 +38,7 @@ from areneon_ml.model.encoder import (
     Layout,
 )
 from areneon_ml.model.features import (
+    BELIEF_REFUSAL_CATEGORIES,
     KIND_CATEGORIES,
     PROBE_KIND_CATEGORIES,
     SPEED_CATEGORIES,
@@ -319,6 +320,8 @@ class PolicyNetwork(nn.Module):
             sizes["speed_relation"] = SPEED_CATEGORIES
             if role == "battle":
                 sizes["probe_kind"] = PROBE_KIND_CATEGORIES
+        if any(kind == "belief_refusal" for _, kind in self.layout.field_cat):
+            sizes["belief_refusal"] = BELIEF_REFUSAL_CATEGORIES
         self.targeted = targeted
         # factored_preview: only the Preview network is factored; the Battle network ignores it.
         self.factored = (

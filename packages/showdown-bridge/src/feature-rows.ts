@@ -22,6 +22,8 @@ export interface WireFeatureRows {
   foe_priorities?: readonly { kind?: string; foe: number; move: string }[];
   /** `probe-damage/3` only (beside the four): the belief's moves, with their inclusion in ppm. */
   belief_threats?: readonly { kind?: string; own: number; mega: boolean; foe: number; move: string; inclusion_ppm: number }[];
+  /** `probe-damage/3` only: the model's refusal code, exactly when the belief was refused (then `belief_threats` is empty). */
+  belief_threats_refused?: string;
 }
 
 /** The feature set whose object carries the four extra arrays. */
@@ -76,6 +78,9 @@ export function featureRowsProblem(features: WireFeatureRows): string | null {
     ["belief_threats", (features.belief_threats ?? []).map((r) => [r.own, Number(r.mega), r.foe, r.move])],
   ];
   for (const [name, keys] of orders) if (!ascending(keys)) return `the candidate_features ${name} must be sorted and unique by their key`;
+  if (features.belief_threats_refused !== undefined && (features.feature_set !== FEATURE_SET_WITH_BELIEF_THREATS || (features.belief_threats ?? []).length > 0)) {
+    return "a candidate_features belief_threats_refused is a probe-damage/3 field and means the belief_threats are empty";
+  }
   // A belief threat is a move the channel has not shown: never one that is already a revealed threat of that foe.
   const revealed = new Set((features.threats ?? []).map((r) => `${r.foe}/${r.move}`));
   if ((features.belief_threats ?? []).some((r) => revealed.has(`${r.foe}/${r.move}`))) return "a candidate_features belief_threats row repeats a move already in threats for that foe";

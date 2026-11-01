@@ -186,13 +186,16 @@ export interface MoveInclusion {
  * The belief's move inclusions per roster position, for the damage threats of `probe-damage/3` (ADR-025 section 3, ADR-022):
  * what the belief says each slot may still hold. Revealed moves are left out (they are facts the channel shows and need no
  * probability), zeros after rounding are dropped, entries sort by ppm descending then id. An unsettled identity-hiding member with
- * a shown position gives no inclusions (`null`), as the sheet block refuses it: the position's identity is not settled.
+ * a shown position is refused (`disguise_unsettled`), as the sheet block refuses it: the position's identity is not settled.
  */
-export function moveInclusions(belief: OpponentBelief, opponent: PublicSide): (readonly MoveInclusion[])[] | null {
+export function moveInclusions(belief: OpponentBelief, opponent: PublicSide): MoveInclusions {
   if (belief.slots.length !== opponent.roster.length) throw new RangeError("the belief and the opponent roster are of different sizes");
-  if (belief.disguise.unsettled.length > 0 && belief.disguise.positions.length > 0) return null;
-  return belief.slots.map((slot, i) => {
+  if (belief.disguise.unsettled.length > 0 && belief.disguise.positions.length > 0) return { refused: "disguise_unsettled" };
+  return { slots: belief.slots.map((slot, i) => {
     const shown = new Set(slotEvidence(opponent.roster[i] as PublicSide["roster"][number]).moves);
     return top(slot.moves.filter((m) => !shown.has(m.id)), Number.MAX_SAFE_INTEGER).map((m) => ({ id: m.id, inclusion_ppm: m.v }));
-  });
+  }) };
 }
+
+/** The move inclusions per roster position, or the fixed code the belief was refused with (never a silent empty list). */
+export type MoveInclusions = { readonly refused: SheetRefusalCode } | { readonly slots: readonly (readonly MoveInclusion[])[] };

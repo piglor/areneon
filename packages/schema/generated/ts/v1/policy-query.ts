@@ -409,6 +409,20 @@ export interface CandidateFeatures {
    * @maxItems 128
    */
   belief_threats?: (ComputedBeliefThreatRow | UnsupportedBeliefThreatRow)[];
+  /**
+   * probe-damage/3 only, present exactly when the opponent belief was refused for this decision: the model's fixed refusal code. belief_threats is then empty (a reader rule), so a refusal is never read as a foe with no likely threats. Absent otherwise.
+   */
+  belief_threats_refused?:
+    | "reader_flagged"
+    | "team_size"
+    | "species_not_in_prior"
+    | "forme_not_in_prior"
+    | "brought_exceeds_picked"
+    | "disguise_assignments_exceeded"
+    | "evidence_has_no_support"
+    | "legality_redraws_exhausted"
+    | "empty_distribution"
+    | "disguise_unsettled";
 }
 /**
  * The probe's exact rolls for one row, as integers: mean_ppm is the mean over the 16 no-crit rolls of min(roll, hp) / hp, floored; max_ppm and min_ppm the largest and smallest roll clamped at hp, as a share of hp; ohko_rolls the probe's own count of the 16 no-crit rolls that reach hp, or null when the probe gives none.
@@ -967,6 +981,20 @@ export interface CandidateFeatures1 {
    * @maxItems 128
    */
   belief_threats?: (ComputedBeliefThreatRow | UnsupportedBeliefThreatRow)[];
+  /**
+   * probe-damage/3 only, present exactly when the opponent belief was refused for this decision: the model's fixed refusal code. belief_threats is then empty (a reader rule), so a refusal is never read as a foe with no likely threats. Absent otherwise.
+   */
+  belief_threats_refused?:
+    | "reader_flagged"
+    | "team_size"
+    | "species_not_in_prior"
+    | "forme_not_in_prior"
+    | "brought_exceeds_picked"
+    | "disguise_assignments_exceeded"
+    | "evidence_has_no_support"
+    | "legality_redraws_exhausted"
+    | "empty_distribution"
+    | "disguise_unsettled";
 }
 /**
  * The opponent sheet block (ADR-027 section 2; ADR-025 erratum E4): per opponent preview slot, in preview order, what the player's own view makes probable about the slot's brought status, item, ability, nature and moves, as integers in parts per million. A derived input beside the observation, built only from the player's own view (closed regime: from the opponent belief's marginals). Reader rules (the profile has no if/then): the source kind fits the regime; entries are sorted by ppm descending then id ascending (a null item id last) with unique ids; other_ppm is max(0, 1000000 - sum of the entries) and the sum is at most 1000000 plus one per entry (each entry is rounded alone); a field of source unknown has no entries and other_ppm 0; a field of source revealed holds its one value at 1000000 ppm (moves: slots_known is 4 and the first four entries are at 1000000); a refused block (source.refusal present) has every slot unknown with brought_ppm 0.
