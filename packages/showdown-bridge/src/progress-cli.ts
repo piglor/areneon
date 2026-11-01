@@ -170,15 +170,6 @@ export function pairSheetSetup(engine: Engine, config: TrainingRunConfig, factor
   }
 }
 
-/** The opponent sheet setup of one run config (absent: the pair reads none), a usage error when this checkout does not compute the hash. */
-export function pairSheetSetup(engine: Engine, config: TrainingRunConfig, factory?: BeliefFeaturesFactory): RunSheetSetup | undefined {
-  try {
-    return sheetSetup(engine, config, factory);
-  } catch (error) {
-    throw new UsageError((error as Error).message);
-  }
-}
-
 /** The policy worker client of one frozen pair, read-only from a run directory's checkpoint store. */
 export function frozenPairClient(o: FrozenPairClientOptions): PolicyWorkerClient {
   return new PolicyWorkerClient({
