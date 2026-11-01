@@ -19,6 +19,7 @@ import json
 import os
 import re
 import shutil
+import sys
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -121,6 +122,22 @@ SHEET_NOTE = (
     "opponent sheet blocks of the candidate seat; "
     "a refused share above 1% invalidates the experiment"
 )
+
+
+#: The marker of a candidate match whose refused share is above 1% (ADR-025 erratum E4 point 5).
+INVALID_SHEET = "INVALID: refused share above 1% of the opponent sheet blocks"
+
+
+def sheet_status(record: dict[str, Any]) -> dict[str, Any]:
+    """The matches of a record whose sheet counts break E4's 1% rule; empty without sheet counts.
+
+    A command that evaluates a sheet pair prints this and a warning on stderr: an invalid match
+    invalidates the experiment (the files are kept; discarding the result is the experiment's)."""
+    counted = [m for m in record["matches"] if "sheet" in m]
+    if not counted:
+        return {}
+    bad = [m["match_id"] for m in counted if not read_sheet_counts(m["sheet"]).valid]
+    return {"sheet_status": {"valid": not bad, "invalid_matches": bad}}
 
 
 class ProgressError(ValueError):
@@ -1139,8 +1156,17 @@ def _sheet_summary(raw: dict[str, Any]) -> dict[str, Any]:
     return counts.as_dict() | {
         "refused_share_ppm": counts.refused_share_ppm,
         "valid": counts.valid,
+        "status": "valid" if counts.valid else INVALID_SHEET,
         "note": SHEET_NOTE,
     }
+
+
+def _warned(status: dict[str, Any]) -> dict[str, Any]:
+    """``status`` itself; an invalid sheet match is also said on stderr, where a reader sees it."""
+    bad = status.get("sheet_status", {}).get("invalid_matches", [])
+    if bad:
+        print(f"progress: {INVALID_SHEET} in {', '.join(bad)}", file=sys.stderr)
+    return status
 
 
 def _pair_stats(record: dict[str, Any], match: dict[str, Any]) -> dict[str, Any]:
@@ -1493,6 +1519,7 @@ def progress_generation(  # noqa: PLR0913, PLR0915, PLR0917
             | _gap_part(record)
             | _ablation_part(record)
             | _versus_part(record, relation)
+            | _warned(sheet_status(record))
         )
 
 
@@ -1551,6 +1578,7 @@ def _skipped(  # noqa: PLR0913, PLR0917
         | _modes_status(record, modes)
         | _ablation_part(record)
         | _versus_part(record, held)
+        | sheet_status(record)
     )
 
 

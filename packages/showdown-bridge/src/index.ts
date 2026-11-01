@@ -725,4 +725,4 @@ export {
 } from "./preview-payoff.ts";
 export { type BeliefFeaturesContext, type BeliefFeaturesFactory, type BeliefFeaturesPort, BeliefFeaturesError, createSheetBuilder, SHEET_FEATURE_SET, SheetInputError, SheetTotals, sheetForChannel, sheetStatement, type SheetBuilder, type SheetCounts, type SheetInput, type SheetKValues, type SheetSetup } from "./belief-features.ts";
 export { OpponentSheetError, opponentSheetProblem, readOpponentSheet } from "./opponent-sheet.ts";
-export { MAX_REFUSED_PPM, refusedSharePpm, sheetCountsProblem, sumSheetCounts } from "./sheet-counts.ts";
+export { MAX_REFUSED_PPM, refusedSharePpm, sheetCountsProblem, sheetCountsValid, sumSheetCounts } from "./sheet-counts.ts";

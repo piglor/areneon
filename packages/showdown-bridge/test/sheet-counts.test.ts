@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MAX_REFUSED_PPM, refusedSharePpm, sheetCountsProblem, sortedByCode, sumSheetCounts } from "../src/sheet-counts.ts";
+import { MAX_REFUSED_PPM, refusedSharePpm, sheetCountsProblem, sheetCountsValid, sortedByCode, sumSheetCounts } from "../src/sheet-counts.ts";
 
 const counts = (requests: number, refused: number, ...refusals: [string, number][]) => ({ requests, refused, refusals: refusals.map(([code, count]) => ({ code, count })) });
 
@@ -23,5 +23,14 @@ describe("sheet counts (ADR-025 erratum E4 point 5)", () => {
     expect(refusedSharePpm(counts(3, 1))).toBe(333333);
     expect(refusedSharePpm(counts(100, 1))).toBe(MAX_REFUSED_PPM);
     expect(refusedSharePpm(counts(100, 2))).toBeGreaterThan(MAX_REFUSED_PPM);
+  });
+
+  it("validity is exact: refused * 100 above requests is invalid even when the floored ppm still reads 10,000", () => {
+    expect(sheetCountsValid(counts(100, 1))).toBe(true);
+    expect(sheetCountsValid(counts(0, 0))).toBe(true);
+    expect(sheetCountsValid(counts(100, 2))).toBe(false);
+    const edge = counts(9_999_999, 100_000);
+    expect(refusedSharePpm(edge)).toBe(MAX_REFUSED_PPM); // the display floors to the limit
+    expect(sheetCountsValid(edge)).toBe(false); // the rule does not
   });
 });

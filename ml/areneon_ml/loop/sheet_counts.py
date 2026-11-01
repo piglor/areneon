@@ -15,7 +15,7 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from typing import Any
 
-#: 1% of the requests, in parts per million (ADR-025 erratum E4 point 5).
+#: 1% of the requests in parts per million, for display (the validity test is the exact one below).
 MAX_REFUSED_PPM = 10_000
 PPM = 1_000_000
 
@@ -44,8 +44,9 @@ class SheetCounts:
 
     @property
     def valid(self) -> bool:
-        """E4 point 5: a refused share above 1% invalidates the experiment."""
-        return self.refused_share_ppm <= MAX_REFUSED_PPM
+        """E4 point 5: a refused share above 1% invalidates the experiment. Decided exactly on
+        the integers (``refused * 100 > requests`` is invalid), not on the floored display ppm."""
+        return self.refused * 100 <= self.requests
 
 
 def _count(value: object, what: str) -> int:

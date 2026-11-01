@@ -50,7 +50,7 @@ from areneon_ml.loop.league import (
 )
 from areneon_ml.loop.metrics import METRICS_DIR, MetricsError, metrics_path, read_run_metrics
 from areneon_ml.loop.records import family_label
-from areneon_ml.loop.sheet_counts import SheetCounts
+from areneon_ml.loop.sheet_counts import SheetCounts, read_sheet_counts
 from areneon_ml.loop.sheet_counts import total as sheet_total
 from areneon_ml.progress.ablation import ablation_summary
 from areneon_ml.progress.gap import play_mode_gap
@@ -214,6 +214,9 @@ class MatchFacts:
     stem: str = ""
     #: Anchor and previous-generation matches: the play-mode gap is not read from them.
     gap_note: str | None = None
+    #: A match of a pair that reads ``opponent_sheet``: the candidate seat's block counts summed
+    #: over the match (E4 point 5); None for every other match.
+    sheet: SheetCounts | None = None
 
 
 @dataclass(frozen=True)
@@ -498,6 +501,7 @@ def _progress_facts(
                 match_extra(match) is not None,
                 match_stem(match),
                 summary.get("play_mode_gap"),
+                read_sheet_counts(match["sheet"]) if "sheet" in match else None,
             )
         )
     plan = record["plan"]

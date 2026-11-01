@@ -14,7 +14,7 @@ from areneon_ml.loop.sheet_counts import (
     total,
 )
 from areneon_ml.report.model import GenerationFacts
-from areneon_ml.report.render import _sheet_section
+from areneon_ml.report.render import _progress_sheet_section, _sheet_section
 
 
 def counts(requests: int, refused: int, *refusals: tuple[str, int]) -> SheetCounts:
@@ -27,6 +27,12 @@ def test_the_share_and_the_one_percent_rule() -> None:
     assert counts(100, 1).valid  # exactly 1% is not above it
     assert not counts(100, 2).valid
     assert counts(3, 1).refused_share_ppm == 333333  # rounded down
+
+
+def test_validity_is_exact_not_the_floored_ppm() -> None:
+    edge = counts(9_999_999, 100_000)
+    assert edge.refused_share_ppm == MAX_REFUSED_PPM  # the display floors to the limit
+    assert not edge.valid  # the rule is refused * 100 > requests
 
 
 def test_counts_are_summed_with_the_refusals_by_code() -> None:
@@ -82,3 +88,24 @@ def test_the_dashboard_shows_the_blocks_and_flags_an_invalid_run() -> None:
     assert "x 5" in html
     none: Any = SimpleNamespace(generations=[generation(1, None)])
     assert _sheet_section(none) == ""
+
+
+def test_the_progress_dashboard_shows_each_matchs_sheet_counts_and_flags_an_invalid_one() -> None:
+    def match(match_id: str, sheet: SheetCounts | None) -> Any:
+        return SimpleNamespace(match_id=match_id, sheet=sheet)
+
+    facts = SimpleNamespace(
+        matches=[
+            match("a-argmax", counts(100, 0)),
+            match("b-argmax", counts(100, 5, ("x", 5))),
+            match("c", None),
+        ]
+    )
+    html = _progress_sheet_section(SimpleNamespace(progress={3: facts}))  # type: ignore[arg-type]
+    assert "Opponent sheet blocks in the progress evaluation" in html
+    assert "g3 a-argmax" in html
+    assert "g3 b-argmax" in html
+    assert "g3 c" not in html
+    assert html.count("INVALID: refused share above 1%") == 1
+    empty = SimpleNamespace(progress={3: SimpleNamespace(matches=[match("c", None)])})
+    assert _progress_sheet_section(empty) == ""  # type: ignore[arg-type]

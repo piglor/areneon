@@ -32,8 +32,11 @@ export function sheetCountsProblem(c: SheetCounts): string | null {
   return null;
 }
 
-/** E4 point 5: a refused share above 1% of the requests invalidates the experiment (in parts per million: 10,000). */
+/** 1% of the requests in parts per million, for display. */
 export const MAX_REFUSED_PPM = 10_000;
+
+/** E4 point 5: a refused share above 1% of the requests invalidates the experiment; decided exactly on the integers, not on the floored ppm. */
+export const sheetCountsValid = (counts: Pick<SheetCounts, "requests" | "refused">): boolean => counts.refused * 100 <= counts.requests;
 
 /** The refused share of the requests in parts per million, rounded down; 0 for no request. */
 export const refusedSharePpm = (counts: Pick<SheetCounts, "requests" | "refused">): number => (counts.requests === 0 ? 0 : Math.floor((counts.refused * 1_000_000) / counts.requests));
