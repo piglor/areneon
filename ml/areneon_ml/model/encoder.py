@@ -936,8 +936,8 @@ class Encoder:
 
         The query must carry exactly the set the config names; the block's slots are the
         opponent's preview entries in order (a phantom entry has none), each named by its
-        species, which must be the reducer's base species of that entry. A block under a config
-        without the option is refused, as candidate_features are.
+        species, whose engine-data base species must be the reducer's base species of that entry.
+        A block under a config without the option is refused, as candidate_features are.
         """
         wanted = sheet_set(self.config.options)
         sent = query.get("opponent_sheet")
@@ -954,8 +954,11 @@ class Encoder:
         if len(sent["slots"]) != len(previewed):
             raise EncodingError("the opponent_sheet has not one slot per previewed opponent")
         by_mon: dict[int, tuple[list[int], list[float]]] = {}
+        base_of = self.game.vocabulary.species_base
         for mon, slot in zip(previewed, sent["slots"], strict=True):
-            if slot["species"] != mon.base_species:
+            # A slot is named by the species the preview shows (a forme such as Rotom-Frost); the
+            # reducer's entry holds the engine's base species of it (Rotom).
+            if base_of.get(slot["species"]) != mon.base_species:
                 raise EncodingError("an opponent_sheet slot is of another species than its entry")
             try:
                 by_mon[id(mon)] = sheet_of.slot_columns(self.game, sent, slot)
