@@ -55,7 +55,22 @@ export interface BeliefMoveInclusion {
 }
 
 /** The inclusions per opponent roster position, or the model's fixed refusal code. */
-export type BeliefMoveInclusions = { readonly refused: string } | { readonly slots: readonly (readonly BeliefMoveInclusion[])[] };
+/** The opponent model's closed refusal codes, as the contract states them (`belief_threats_refused`); a test holds the list equal to the schema's enum. */
+export const BELIEF_REFUSAL_CODES = [
+  "reader_flagged",
+  "team_size",
+  "species_not_in_prior",
+  "forme_not_in_prior",
+  "brought_exceeds_picked",
+  "disguise_assignments_exceeded",
+  "evidence_has_no_support",
+  "legality_redraws_exhausted",
+  "empty_distribution",
+  "disguise_unsettled",
+] as const;
+export type BeliefRefusalCode = (typeof BELIEF_REFUSAL_CODES)[number];
+
+export type BeliefMoveInclusions = { readonly refused: BeliefRefusalCode } | { readonly slots: readonly (readonly BeliefMoveInclusion[])[] };
 
 /**
  * What `probe-damage/3` needs of the opponent model (ADR-022, ADR-025 section 3): per opponent roster position, the moves the

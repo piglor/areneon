@@ -107,7 +107,7 @@ describe("feature pool (ADR-022 mitigation 3)", () => {
   it("serves probe-damage/3 on the calling thread with its arrays and the belief threats port, and refuses the port anywhere else", async () => {
     const threatSpec: FeatureServiceSpec = { ...spec, feature_set: FEATURE_SET_3 };
     const calls: number[] = [];
-    const setup = { port: { identity_hash: "a".repeat(64), moveInclusions: () => (calls.push(1), { refused: "reader_flagged" }) }, per_foe: 4 };
+    const setup = { port: { identity_hash: "a".repeat(64), moveInclusions: () => (calls.push(1), { refused: "reader_flagged" as const }) }, per_foe: 4 };
     const service = createFeatureService(threatSpec, engine, { belief_threats: setup });
     const first = tasks[0] as FeatureTask;
     const a = service.run({ ...first, game: "threats" });

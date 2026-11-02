@@ -64,6 +64,15 @@ describe("the reader rules of belief_threats", () => {
     expect(featureRowsProblem(sample("policy-query/reader-invalid/features-3-refused-under-2").candidate_features)).toMatch(/belief_threats_refused/);
   });
 
+  it("the contract's maxItems is the bound: 128 belief threats are accepted by the readers, 129 are refused by the schema", () => {
+    const query = sample("policy-query/valid/battle-features-3");
+    const rows = (count: number) =>
+      Array.from({ length: count }, (_, i) => ({ kind: "computed", own: 0, mega: false, foe: 1, move: `zz${String(i).padStart(4, "0")}`, inclusion_ppm: 1, mean_ppm: 1, max_ppm: 1, min_ppm: 1, ohko_rolls: 0 }));
+    const withRows = (count: number) => ({ ...query, query_id: 1, candidate_features: { ...query.candidate_features, belief_threats: rows(count) } });
+    expect(() => readPolicyQuery(withRows(128))).not.toThrow();
+    expect(() => readPolicyQuery(withRows(129))).toThrow(/maxItems|must NOT have more than 128/);
+  });
+
   it("belief threats name only the own Pokemon and Mega variants the request implies", () => {
     const query = sample("policy-query/reader-invalid/features-3-belief-foreign-own");
     expect(featureRowsProblem(query.candidate_features)).toBeNull();

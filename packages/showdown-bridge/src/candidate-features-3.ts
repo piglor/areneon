@@ -23,7 +23,7 @@
 import type { TrainingExample } from "@areneon/schema/types/v1/training-example.ts";
 import type { Candidate } from "./choices.ts";
 import { type CandidateFeatures2, buildArrays, type CostTrace, type ArrayContext } from "./candidate-features-2.ts";
-import type { BeliefMoveInclusion } from "./belief-features.ts";
+import { BELIEF_REFUSAL_CODES, type BeliefMoveInclusion } from "./belief-features.ts";
 import { type BeliefThreatsSetup, createFeatureMemo, emptyBeliefCounts, type DamageValues, damageValuesOf, FEATURE_SET_3, type FeatureConfigs, type FeatureMemo } from "./candidate-features.ts";
 import { assumedWithMove } from "./damage-aware-assumed-set.ts";
 import { DamageAwareError, type Foe, foeTargetKind } from "./damage-aware-view.ts";
@@ -73,7 +73,9 @@ function beliefThreatRows(engine: Engine, configs: FeatureConfigs, setup: Belief
   counts.decisions += 1;
   if ("refused" in answer) {
     counts.fallbacks[answer.refused] = (counts.fallbacks[answer.refused] ?? 0) + 1;
-    return { belief_threats: [], belief_threats_refused: answer.refused as BeliefRefusal };
+    // Fail closed: a code outside the contract's enum is a defect of the port, never written into a value.
+    if (!(BELIEF_REFUSAL_CODES as readonly string[]).includes(answer.refused)) throw new DamageAwareError("the belief port gave a refusal code the contract does not list");
+    return { belief_threats: [], belief_threats_refused: answer.refused satisfies BeliefRefusal };
   }
   const inclusions = answer.slots;
   const out: BeliefThreatRow[] = [];

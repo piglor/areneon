@@ -1,5 +1,7 @@
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { beforeAll, describe, expect, it } from "vitest";
-import { type BeliefMoveInclusion, type BeliefThreatsPort } from "../src/belief-features.ts";
+import { BELIEF_REFUSAL_CODES, type BeliefMoveInclusion, type BeliefThreatsPort } from "../src/belief-features.ts";
 import { type CandidateFeatures3, candidateFeatures3, FEATURE_SET_3 } from "../src/candidate-features-3.ts";
 import { candidateFeatures2 } from "../src/candidate-features-2.ts";
 import { BELIEF_THREATS_FORMAT, BELIEF_THREATS_PER_FOE, candidateFeatures, createFeatureMemo, type FeatureConfigs, featureSetHash, featureSetIdentity } from "../src/candidate-features.ts";
@@ -216,15 +218,35 @@ describe("belief_threats", () => {
     expect(featureRowsProblem({ ...features, feature_set: "probe-damage/2", belief_threats: undefined } as never)).toMatch(/belief_threats_refused/);
   });
 
-  it("keeps the bound of the contract: the worst case (8 own variants, 2 foes, 4 moves) is 64 rows, under maxItems 128", () => {
-    expect(8 * 2 * BELIEF_THREATS_PER_FOE).toBeLessThanOrEqual(128);
-    let most = 0;
+  it("fails closed on a refusal code the contract does not list", () => {
+    const c = withFoes()[0] as Captured;
+    const bad = portOf(() => [], { moveInclusions: () => ({ refused: "no_such_code" as never }) });
+    expect(() => build(c, configs(bad))).toThrow(DamageAwareError);
+    expect(() => build(c, configs(bad))).toThrow(/refusal code the contract does not list/);
+  });
+
+  it("holds the refusal codes equal to the contract's enum", () => {
+    const schema = JSON.parse(readFileSync(fileURLToPath(new URL("../../schema/contracts/v1/policy-query.schema.json", import.meta.url)), "utf8")) as { $defs: { CandidateFeatures: { properties: { belief_threats_refused: { enum: string[] } } } } };
+    expect([...BELIEF_REFUSAL_CODES]).toEqual(schema.$defs.CandidateFeatures.properties.belief_threats_refused.enum);
+  });
+
+  it("forces the bound: the largest request with many damaging moves a foe gives exactly variants x foes x per_foe rows, at most 128", () => {
+    let best: { c: Captured; rows: number; expected: number } | null = null;
     for (const c of withFoes()) {
-      const port = portOf((_, species) => damagingPool(species).slice(0, 12).map((id, i) => ({ id, inclusion_ppm: 900000 - 1000 * i })));
-      most = Math.max(most, build(c, configs(port)).belief_threats.length);
+      const port = portOf((_, species) => damagingPool(species).slice(0, 14).map((id, i) => ({ id, inclusion_ppm: 900000 - 1000 * i })));
+      const features = build(c, configs(port));
+      const variants = new Set(features.speeds.map((r) => `${r.own}/${r.mega}`)).size;
+      const foes = new Set(features.speeds.map((r) => r.foe)).size;
+      const expected = variants * foes * BELIEF_THREATS_PER_FOE;
+      expect(features.belief_threats.length).toBeLessThanOrEqual(expected);
+      expect(features.belief_threats.length).toBeLessThanOrEqual(128);
+      if (best === null || expected > best.expected) best = { c, rows: features.belief_threats.length, expected };
     }
-    expect(most).toBeLessThanOrEqual(128);
-    expect(most).toBeGreaterThan(0);
+    const largest = best as NonNullable<typeof best>;
+    expect(largest.expected).toBeGreaterThan(16);
+    // with 14 damaging candidates a foe, the four-move cut is always met on the largest request
+    expect(largest.rows).toBe(largest.expected);
+    expect(8 * 2 * BELIEF_THREATS_PER_FOE).toBeLessThanOrEqual(128);
   });
 
   it("asks the belief for the reader's opponent half and every flag, once per request", () => {
