@@ -239,6 +239,32 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
       foe_priorities: foes.flatMap((foe) => foeMoves.map((move) => ({ kind: "computed", foe, move, priority: move === "protect" ? 4 : 0 }))),
     };
   })();
+  // `probe-damage/3` (ADR-022): `/2`'s arrays and `belief_threats`: moves the belief says a foe may hold (never one of the revealed
+  // threats above), each with its inclusion in ppm. A shape sample: the moves and numbers are invented.
+  const feature3Ref = { feature_set: "probe-damage/3", feature_set_hash: createHash("sha256").update("probe-damage/3 sample").digest("hex") };
+  const beliefMoves: [string, number][] = [["icebeam", 600000], ["surf", 300000]]; // sorted by id
+  const beliefThreats = (() => {
+    const owns = [...new Map((arrays2.threats as { own: number; mega: boolean }[]).map((t) => [`${t.own}/${t.mega}`, t])).values()];
+    return owns.flatMap((t, i) =>
+      [1, 2].flatMap((foe) =>
+        beliefMoves.map(([move, inclusion_ppm], j) =>
+          (i + foe + j) % 4 === 0
+            ? { kind: "unsupported", own: t.own, mega: t.mega, foe, move, inclusion_ppm, reason: "random_effect" }
+            : { kind: "computed", own: t.own, mega: t.mega, foe, move, inclusion_ppm, mean_ppm: 60000 + 5000 * (i + j), max_ppm: 75000 + 5000 * (i + j), min_ppm: 50000 + 5000 * (i + j), ohko_rolls: 0 },
+        ),
+      ),
+    );
+  })();
+  const with3 = (query: Record<string, unknown>, parts: Record<string, unknown> = {}): unknown => ({ ...query, candidate_features: { ...feature3Ref, rows: featureRows, ...arrays2, belief_threats: beliefThreats, ...parts } });
+  const example3 = (parts: Record<string, unknown> = {}): unknown => ({ ...exampleOf("battle"), candidate_features: { ...feature3Ref, rows: featureRows, ...arrays2, belief_threats: beliefThreats, ...parts } });
+  type Keyed = { own: number; mega: boolean; foe: number; move: string };
+  const sortedBelief = (rows: Record<string, unknown>[]): unknown[] =>
+    [...rows].sort((x, y) => {
+      const a = x as unknown as Keyed;
+      const b = y as unknown as Keyed;
+      return a.own - b.own || Number(a.mega) - Number(b.mega) || a.foe - b.foe || (a.move < b.move ? -1 : a.move > b.move ? 1 : 0);
+    });
+  const beliefRow = (change: Record<string, unknown>): Record<string, unknown> => ({ ...(beliefThreats[0] as Record<string, unknown>), ...change });
   const with2 = (query: Record<string, unknown>, parts: Record<string, unknown> = {}, rows: unknown = featureRows): unknown => ({ ...query, candidate_features: { ...feature2Ref, rows, ...arrays2, ...parts } });
   const dropArray = (value: unknown, name: keyof typeof arrays2): unknown => mutated(value as Record<string, unknown>, (v) => (v.candidate_features = Object.fromEntries(Object.entries(v.candidate_features as Record<string, unknown>).filter(([key]) => key !== name))));
   const example2 = (parts: Record<string, unknown> = {}): unknown => ({ ...exampleOf("battle"), candidate_features: { ...feature2Ref, rows: featureRows, ...arrays2, ...parts } });
@@ -738,6 +764,9 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "training-run-config/candidate-features-2": runConfigWith((c) => {
       runSection(runSection(c, "model"), "encoder").options = { candidate_features: { feature_set: "probe-damage/2", feature_set_hash: hexOf("c") } };
     }),
+    "training-run-config/candidate-features-3": runConfigWith((c) => {
+      runSection(runSection(c, "model"), "encoder").options = { candidate_features: { feature_set: "probe-damage/3", feature_set_hash: hexOf("c") } };
+    }),
     "training-run-config/candidate-features-belief": runConfigWith((c) => {
       runSection(runSection(c, "model"), "encoder").options = { candidate_features: { feature_set: "probe-damage-belief/1", feature_set_hash: hexOf("c") } };
     }),
@@ -796,6 +825,9 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     }),
     "clone-run-config/candidate-features-2": cloneWith((c) => {
       runSection(runSection(c, "model"), "encoder").options = { candidate_features: { feature_set: "probe-damage/2", feature_set_hash: hexOf("c") } };
+    }),
+    "clone-run-config/candidate-features-3": cloneWith((c) => {
+      runSection(runSection(c, "model"), "encoder").options = { candidate_features: { feature_set: "probe-damage/3", feature_set_hash: hexOf("c") } };
     }),
     "clone-run-config/candidate-features-belief": cloneWith((c) => {
       runSection(runSection(c, "model"), "encoder").options = { candidate_features: { feature_set: "probe-damage-belief/1", feature_set_hash: hexOf("c") } };
@@ -869,6 +901,12 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "policy-query/battle-features-2": with2(battleQuery),
     "policy-query/preview-features-2": { ...previewQuery, candidate_features: { ...feature2Ref, rows: [], threats: [], speeds: [], own_priorities: [], foe_priorities: [] } },
     "training-example/battle-features-2": example2(),
+    // ADR-022: probe-damage/3 adds belief_threats to the four arrays.
+    "policy-query/battle-features-3": with3(battleQuery),
+    "policy-query/preview-features-3": { ...previewQuery, candidate_features: { ...feature3Ref, rows: [], threats: [], speeds: [], own_priorities: [], foe_priorities: [], belief_threats: [] } },
+    "training-example/battle-features-3": example3(),
+    "policy-query/battle-features-3-refused": with3(battleQuery, { belief_threats: [], belief_threats_refused: "evidence_has_no_support" }),
+    "training-example/battle-features-3-refused": example3({ belief_threats: [], belief_threats_refused: "reader_flagged" }),
     "training-example/battle-features": featuresOnExample(featureRows),
     "policy-query/battle-evaluate": evalQuery,
     "policy-query/preview-evaluate": queryOf("preview", { kind: "evaluate" }),
@@ -892,6 +930,7 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "policy-handshake/ready": ready,
     "policy-handshake/ready-features": readyWith((m) => (m.feature_set = featureSetRef)),
     "policy-handshake/ready-features-2": readyWith((m) => (m.feature_set = feature2Ref)),
+    "policy-handshake/ready-features-3": readyWith((m) => (m.feature_set = feature3Ref)),
     "policy-handshake/ready-sheet": readyWith((m) => (m.opponent_sheet = sheetSetRef)),
     "training-run-config/opponent-sheet": runConfigWith((c) => {
       runSection(runSection(c, "model"), "encoder").options = { opponent_sheet: sheetSetRef };
@@ -1021,6 +1060,15 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "policy-query/features-2-missing-foe-priority": with2(battleQuery, { foe_priorities: arrays2.foe_priorities.slice(1) }),
     "policy-query/features-2-missing-own-priority": with2(battleQuery, { own_priorities: arrays2.own_priorities.slice(1) }),
     "policy-query/features-2-foreign-own": with2(battleQuery, { threats: [...arrays2.threats, { ...(arrays2.threats[0] as Record<string, unknown>), own: 5 }] }),
+    "policy-query/features-3-missing-belief-threats": mutated(with3(battleQuery) as Record<string, unknown>, (v) => delete (v.candidate_features as Record<string, unknown>).belief_threats),
+    "policy-query/features-3-refused-with-rows": with3(battleQuery, { belief_threats_refused: "evidence_has_no_support" }),
+    "policy-query/features-3-refused-under-2": with2(battleQuery, { belief_threats_refused: "evidence_has_no_support" }),
+    "policy-query/features-3-belief-under-2": with2(battleQuery, { belief_threats: beliefThreats }),
+    "policy-query/features-3-belief-unsorted": with3(battleQuery, { belief_threats: reversed(beliefThreats) }),
+    "policy-query/features-3-belief-repeats-revealed": with3(battleQuery, { belief_threats: sortedBelief([...beliefThreats, beliefRow({ move: "thunderbolt", foe: 1 })]) }),
+    "policy-query/features-3-belief-foreign-own": with3(battleQuery, { belief_threats: [...beliefThreats, beliefRow({ own: 5 })] }),
+    "training-example/features-3-belief-under-2": example2({ belief_threats: beliefThreats }),
+    "training-example/features-3-belief-unsorted": example3({ belief_threats: reversed(beliefThreats) }),
     "training-example/features-2-array-under-1": { ...exampleOf("battle"), candidate_features: { ...featureSetRef, rows: featureRows, threats: arrays2.threats } },
     "training-example/features-2-missing-array": dropArray(example2(), "speeds"),
     "training-example/features-2-speeds-unsorted": example2({ speeds: reversed(arrays2.speeds) }),
@@ -1163,7 +1211,7 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
       (c) => (runSection(runSection(c, "model"), "encoder").options = { exact_volatiles: false }),
     ),
     "clone-run-config/candidate-features-unknown-set": cloneWith((c) => {
-      runSection(runSection(c, "model"), "encoder").options = { candidate_features: { feature_set: "probe-damage/3", feature_set_hash: hexOf("c") } };
+      runSection(runSection(c, "model"), "encoder").options = { candidate_features: { feature_set: "probe-damage/4", feature_set_hash: hexOf("c") } };
     }),
     "clone-run-config/extra-field": cloneWith((c) => (c.notes = "x")),
     "clone-run-config/fractional-rate": cloneWith((c) => (runSection(c, "clone").learning_rate_micro = 0.5)),
@@ -1225,7 +1273,7 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
       runSection(runSection(c, "model"), "encoder").options = { candidate_features: { feature_set: "probe-damage/1", feature_set_hash: "abc" } };
     }),
     "training-run-config/candidate-features-unknown-set": runConfigWith((c) => {
-      runSection(runSection(c, "model"), "encoder").options = { candidate_features: { feature_set: "probe-damage/3", feature_set_hash: hexOf("c") } };
+      runSection(runSection(c, "model"), "encoder").options = { candidate_features: { feature_set: "probe-damage/4", feature_set_hash: hexOf("c") } };
     }),
     "training-run-config/zero-games": runConfigWith((c) => (runSection(c, "generation").games = 0)),
     "training-run-config/unknown-device": runConfigWith((c) => (runSection(c, "learner").device = "tpu")),
@@ -1378,6 +1426,11 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "policy-query/features-null": { ...battleQuery, candidate_features: null },
     "policy-query/features-no-rows": { ...battleQuery, candidate_features: featureSetRef },
     // probe-damage/2: the arrays are closed and integer-only, their enums closed.
+    "policy-query/features-3-refused-unknown-code": with3(battleQuery, { belief_threats: [], belief_threats_refused: "no_idea" }),
+    "policy-query/features-3-belief-float": with3(battleQuery, { belief_threats: [beliefRow({ kind: "computed", mean_ppm: 60000.5, max_ppm: 1, min_ppm: 1, ohko_rolls: 0 }), ...beliefThreats.slice(1)] }),
+    "policy-query/features-3-belief-no-inclusion": with3(battleQuery, { belief_threats: [Object.fromEntries(Object.entries(beliefRow({})).filter(([key]) => key !== "inclusion_ppm")), ...beliefThreats.slice(1)] }),
+    "policy-query/features-3-belief-zero-inclusion": with3(battleQuery, { belief_threats: [beliefRow({ inclusion_ppm: 0 }), ...beliefThreats.slice(1)] }),
+    "policy-query/features-3-belief-limit-reason": with3(battleQuery, { belief_threats: [beliefRow({ kind: "unsupported", reason: "unqueueable" }), ...beliefThreats.slice(1)] }),
     "policy-query/features-2-unknown-relation": with2(battleQuery, { speeds: [{ ...(arrays2.speeds[0] as Record<string, unknown>), kind: "computed", relation: "faster" }, ...arrays2.speeds.slice(1)] }),
     "policy-query/features-2-float": with2(battleQuery, { threats: [{ ...(arrays2.threats[0] as Record<string, unknown>), kind: "computed", mean_ppm: 90000.5, max_ppm: 1, min_ppm: 1, ohko_rolls: 0 }, ...arrays2.threats.slice(1)] }),
     "policy-query/features-2-unknown-reason": with2(battleQuery, { own_priorities: [{ kind: "unsupported", slot: 0, move: 1, mega: false, reason: "guess" }, ...arrays2.own_priorities.slice(1)] }),

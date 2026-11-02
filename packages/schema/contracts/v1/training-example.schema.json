@@ -510,7 +510,7 @@
       }
     },
     "CandidateFeatures": {
-      "description": "The rows of one decision under one feature set. feature_set names the set (probe-damage/1 or probe-damage/2); feature_set_hash is SHA-256 of the JCS of its identity (mechanics config, assumed-set config, adapter format, reader, version manifest), so a pin bump or a config change is another set. Rows are in canonical order: slot, move, target, then mega false before true. Under probe-damage/2 the four arrays threats, speeds, own_priorities and foe_priorities are all present; under any other set none is (a reader rule: the profile has no if/then).",
+      "description": "The rows of one decision under one feature set. feature_set names the set (probe-damage/1, probe-damage/2 or probe-damage/3); feature_set_hash is SHA-256 of the JCS of its identity (mechanics config, assumed-set config, adapter format, reader, version manifest), so a pin bump or a config change is another set. Rows are in canonical order: slot, move, target, then mega false before true. Under probe-damage/2 the four arrays threats, speeds, own_priorities and foe_priorities are all present, and probe-damage/3 adds belief_threats; under any other set none is (a reader rule: the profile has no if/then).",
       "type": "object",
       "additionalProperties": false,
       "required": [
@@ -622,6 +622,40 @@
               "propertyName": "kind"
             }
           }
+        },
+        "belief_threats": {
+          "description": "probe-damage/3 only: one row per (own Pokemon and variant, opposing active, move the belief says the foe may hold), at most the reviewed per-foe cut of damaging moves, sorted by (own, mega false first, foe, move id). Never a move already in threats for that foe (a reader rule). Values on the assumed opponent set plus that move, not facts about the real opponent.",
+          "type": "array",
+          "maxItems": 128,
+          "items": {
+            "type": "object",
+            "oneOf": [
+              {
+                "$ref": "#/$defs/ComputedBeliefThreatRow"
+              },
+              {
+                "$ref": "#/$defs/UnsupportedBeliefThreatRow"
+              }
+            ],
+            "discriminator": {
+              "propertyName": "kind"
+            }
+          }
+        },
+        "belief_threats_refused": {
+          "description": "probe-damage/3 only, present exactly when the opponent belief was refused for this decision: the model's fixed refusal code. belief_threats is then empty (a reader rule), so a refusal is never read as a foe with no likely threats. Absent otherwise.",
+          "enum": [
+            "reader_flagged",
+            "team_size",
+            "species_not_in_prior",
+            "forme_not_in_prior",
+            "brought_exceeds_picked",
+            "disguise_assignments_exceeded",
+            "evidence_has_no_support",
+            "legality_redraws_exhausted",
+            "empty_distribution",
+            "disguise_unsettled"
+          ]
         }
       }
     },
@@ -1358,6 +1392,133 @@
           "items": {
             "$ref": "#/$defs/SheetSlot"
           }
+        }
+      }
+    },
+    "ComputedBeliefThreatRow": {
+      "description": "What a move the BELIEF says the foe may hold (not yet revealed) would do to the own Pokemon (the foe's assumed set plus that move as attacker, the own Pokemon at its exact current HP): the values of a ComputedThreatRow and the belief's inclusion probability of the move.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "own",
+        "mega",
+        "foe",
+        "move",
+        "inclusion_ppm",
+        "mean_ppm",
+        "max_ppm",
+        "min_ppm",
+        "ohko_rolls"
+      ],
+      "properties": {
+        "kind": {
+          "const": "computed"
+        },
+        "own": {
+          "description": "The own Pokemon's position in the request's side.pokemon, 0-based.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 5
+        },
+        "mega": {
+          "type": "boolean",
+          "description": "True for the variant of the own Pokemon that Mega Evolves this turn."
+        },
+        "foe": {
+          "description": "The opposing active's location number in a choice (move 1 1).",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9
+        },
+        "move": {
+          "type": "string",
+          "pattern": "^[a-z0-9]+$",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "inclusion_ppm": {
+          "description": "The belief's marginal probability that the foe holds this move, in ppm (rounded half up, alone); revealed moves are not listed.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000
+        },
+        "mean_ppm": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000
+        },
+        "max_ppm": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000
+        },
+        "min_ppm": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000
+        },
+        "ohko_rolls": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 16
+        }
+      }
+    },
+    "UnsupportedBeliefThreatRow": {
+      "description": "A belief threat the probe could not answer exactly: its closed reason, never a guess.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "own",
+        "mega",
+        "foe",
+        "move",
+        "inclusion_ppm",
+        "reason"
+      ],
+      "properties": {
+        "kind": {
+          "const": "unsupported"
+        },
+        "own": {
+          "description": "The own Pokemon's position in the request's side.pokemon, 0-based.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 5
+        },
+        "mega": {
+          "type": "boolean",
+          "description": "True for the variant of the own Pokemon that Mega Evolves this turn."
+        },
+        "foe": {
+          "description": "The opposing active's location number in a choice (move 1 1).",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9
+        },
+        "move": {
+          "type": "string",
+          "pattern": "^[a-z0-9]+$",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "inclusion_ppm": {
+          "description": "The belief's marginal probability that the foe holds this move, in ppm (rounded half up, alone); revealed moves are not listed.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000
+        },
+        "reason": {
+          "enum": [
+            "query_kind",
+            "random_effect",
+            "scenario_rule_table"
+          ]
         }
       }
     }

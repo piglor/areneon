@@ -13,6 +13,7 @@ from areneon_ml.learner.data import _Collector, trajectories
 from areneon_ml.learner.trainer import to_device
 from areneon_ml.loop.records import (
     FEATURES_2_FAMILY,
+    FEATURES_3_FAMILY,
     FEATURES_BELIEF_FAMILY,
     FEATURES_FAMILY,
     family_label,
@@ -125,6 +126,10 @@ def test_the_family_label_names_the_turn_order_for_the_second_set() -> None:
 
     assert family_label(config("probe-damage/1")) == FEATURES_FAMILY
     assert family_label(config("probe-damage/2")) == FEATURES_2_FAMILY
+    assert family_label(config("probe-damage/3")) == FEATURES_3_FAMILY
+    assert "damage under the assumed foe set, move likelihood from the belief" in (
+        " ".join(FEATURES_3_FAMILY.split())
+    )
     assert "damage calculation and turn order on assumed opponent sets" in FEATURES_2_FAMILY
 
 

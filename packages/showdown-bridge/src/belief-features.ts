@@ -44,6 +44,44 @@ export interface BeliefFeaturesPort {
   readonly prior_format_id: string;
   readonly k: SheetKValues;
   sheet(input: { readonly opponent: PublicSide; readonly flags: readonly PublicFlag[]; readonly trapping?: TrappingCheckPort | null }): OpponentSheet;
+  /** The belief's move inclusions (`BeliefThreatsPort`); the composition root provides it, a stand-in for the sheet alone may not. */
+  moveInclusions?: BeliefThreatsPort["moveInclusions"];
+}
+
+/** One move an opponent slot may hold and the belief's probability that it does, in ppm (revealed moves are not listed). */
+export interface BeliefMoveInclusion {
+  readonly id: string;
+  readonly inclusion_ppm: number;
+}
+
+/** The inclusions per opponent roster position, or the model's fixed refusal code. */
+/** The opponent model's closed refusal codes, as the contract states them (`belief_threats_refused`); a test holds the list equal to the schema's enum. */
+export const BELIEF_REFUSAL_CODES = [
+  "reader_flagged",
+  "team_size",
+  "species_not_in_prior",
+  "forme_not_in_prior",
+  "brought_exceeds_picked",
+  "disguise_assignments_exceeded",
+  "evidence_has_no_support",
+  "legality_redraws_exhausted",
+  "empty_distribution",
+  "disguise_unsettled",
+] as const;
+export type BeliefRefusalCode = (typeof BELIEF_REFUSAL_CODES)[number];
+
+export type BeliefMoveInclusions = { readonly refused: BeliefRefusalCode } | { readonly slots: readonly (readonly BeliefMoveInclusion[])[] };
+
+/**
+ * What `probe-damage/3` needs of the opponent model (ADR-022, ADR-025 section 3): per opponent roster position, the moves the
+ * belief thinks the slot may hold beyond the revealed ones, sorted by inclusion descending then id. A refused belief (a code of
+ * the model, or an unsettled identity-hiding member) comes back as `{ refused: code }`, which the feature value states
+ * (`belief_threats_refused`) instead of an empty list; a defect throws.
+ */
+export interface BeliefThreatsPort {
+  /** `belief_identity_hash` (ADR-025 section 5): part of the feature set's identity. */
+  readonly identity_hash: string;
+  moveInclusions(input: { readonly opponent: PublicSide; readonly flags: readonly PublicFlag[] }): BeliefMoveInclusions;
 }
 
 export interface BeliefFeaturesContext {

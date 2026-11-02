@@ -204,3 +204,24 @@ export function buildWorldAssumedSet(context: Pick<AssumedSetContext, "engine" |
   if (back.length !== 1 || exportPaste(engine, back) !== paste) throw new AssumedSetError("the assumed set is not in the engine's canonical paste form");
   return { set, paste, revealed_moves: revealed, filler_moves: [], unplaceable_moves: unplaceable, shown_hp_percent: shownPercent(mon), mega: mon.mega };
 }
+
+/**
+ * The assumed set of a foe holding one more move (`probe-damage/3`, ADR-022): the same fields, the revealed moves followed by
+ * `move` (a filler move that was only there to make the set legal is dropped). Null when the set would hold more than four moves,
+ * when the move is not in the species' roster pool, or when the target format's validator refuses the set: no row is made for a
+ * move the foe's assumed set cannot hold, and nothing is guessed.
+ */
+export function assumedWithMove(context: Pick<AssumedSetContext, "engine"> & { format_id: string }, assumed: AssumedSet, move: string): { set: PokemonSet; paste: string } | null {
+  const { engine, format_id } = context;
+  if (assumed.revealed_moves.includes(move) || assumed.revealed_moves.length >= 4) return null;
+  const dex = engine.sim.Dex.mod(engine.sim.Dex.formats.get(format_id).mod);
+  const data = dex.moves.get(move);
+  if (!data.exists) return null;
+  const set: PokemonSet = { ...assumed.set, moves: [...assumed.revealed_moves, move].map((id) => dex.moves.get(id).name) };
+  const problems = engine.sim.TeamValidator.get(format_id).validateSet(structuredClone(set), {}) ?? [];
+  if (problems.length > 0) return null;
+  const paste = exportPaste(engine, [set]);
+  const back = importPaste(engine, paste);
+  if (back.length !== 1 || exportPaste(engine, back) !== paste) return null;
+  return { set, paste };
+}

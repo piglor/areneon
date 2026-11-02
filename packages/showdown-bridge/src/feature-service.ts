@@ -4,7 +4,8 @@
 // probe memo per game (a pure function of the query, so no row depends on it) and measures the time of each build.
 // Nothing here reads an opponent team, a verdict or a seed: a task holds the same inputs `candidateFeatures` takes.
 // The worker-thread pool (`feature-pool.ts`) runs one service per thread.
-import { type BeliefFeatureCounts, type BeliefFeatureSetup, type CandidateFeatures, candidateFeatures, createFeatureMemo, emptyBeliefCounts, type FeatureBuildCode, FeatureBuildError, type FeatureConfigs, type FeatureMemo, FEATURE_SET_BELIEF } from "./candidate-features.ts";
+import { type CandidateFeatures3, candidateFeatures3 } from "./candidate-features-3.ts";
+import { type BeliefThreatsSetup, type BeliefFeatureCounts, type BeliefFeatureSetup, type CandidateFeatures, candidateFeatures, createFeatureMemo, emptyBeliefCounts, type FeatureBuildCode, FeatureBuildError, type FeatureConfigs, type FeatureMemo, FEATURE_SET_3, FEATURE_SET_BELIEF } from "./candidate-features.ts";
 import { candidateFeaturesBelief, type CandidateFeaturesBelief } from "./candidate-features-belief.ts";
 import { type CandidateFeatures2, candidateFeatures2, type CostTrace, emptyTrace } from "./candidate-features-2.ts";
 import type { Candidate } from "./choices.ts";
@@ -22,7 +23,7 @@ export interface FeatureServiceSpec {
   format_id: string;
   data_class: "synthetic" | "private";
   /** The feature set the service builds; default `probe-damage/1`. */
-  feature_set?: "probe-damage/1" | "probe-damage/2" | typeof FEATURE_SET_BELIEF;
+  feature_set?: "probe-damage/1" | "probe-damage/2" | typeof FEATURE_SET_3 | typeof FEATURE_SET_BELIEF;
   /** Another built checkout than the default (the engine loader's argument). */
   showdown_dir?: string;
 }
@@ -38,7 +39,7 @@ export interface FeatureTask {
   final?: boolean;
 }
 
-export type FeatureOutcome = { kind: "features"; features: CandidateFeatures | CandidateFeatures2 | CandidateFeaturesBelief } | { kind: "error"; code: FeatureBuildCode };
+export type FeatureOutcome = { kind: "features"; features: CandidateFeatures | CandidateFeatures2 | CandidateFeatures3 | CandidateFeaturesBelief } | { kind: "error"; code: FeatureBuildCode };
 
 export interface FeatureResult {
   outcome: FeatureOutcome;
@@ -59,10 +60,13 @@ export interface FeatureService {
 /** What cannot cross to a worker thread: the belief port of `probe-damage-belief/1`, given by the composition root. */
 export interface FeatureServiceExtras {
   belief?: BeliefFeatureSetup;
+  /** The belief threats port of `probe-damage/3`. */
+  belief_threats?: BeliefThreatsSetup;
 }
 
 export function createFeatureService(spec: FeatureServiceSpec, engineOverride?: Engine, extras: FeatureServiceExtras = {}): FeatureService {
   if ((spec.feature_set === FEATURE_SET_BELIEF) !== (extras.belief !== undefined)) throw new Error("the belief port goes with the feature set probe-damage-belief/1 and with no other");
+  if ((spec.feature_set === FEATURE_SET_3) !== (extras.belief_threats !== undefined)) throw new Error("the belief threats port goes with the feature set probe-damage/3 and with no other");
   if (spec.format_id !== GOLDEN_FORMAT) throw new Error(`the feature builder has a vocabulary for ${GOLDEN_FORMAT} only, not ${spec.format_id}`);
   const engine = engineOverride ?? loadEngine(spec.showdown_dir);
   const vocabulary = goldenTeamVocabulary();
@@ -73,6 +77,7 @@ export function createFeatureService(spec: FeatureServiceSpec, engineOverride?: 
     snapshot: loadRulesSnapshot(engine.commit),
     data_class: spec.data_class,
     ...(extras.belief === undefined ? {} : { belief: extras.belief }),
+    ...(extras.belief_threats === undefined ? {} : { belief_threats: extras.belief_threats }),
   };
   const memos = new Map<string, FeatureMemo>();
   return {
@@ -83,11 +88,12 @@ export function createFeatureService(spec: FeatureServiceSpec, engineOverride?: 
       const beforeBelief = structuredClone(memo.belief ?? emptyBeliefCounts());
       const started = performance.now();
       let outcome: FeatureOutcome;
-      const parts = spec.feature_set === "probe-damage/2" ? emptyTrace() : undefined;
+      const parts = spec.feature_set === "probe-damage/2" || spec.feature_set === FEATURE_SET_3 ? emptyTrace() : undefined;
       try {
         const channel = playerChannel({ schema_version: 1, data_class: spec.data_class, player: task.player, lines: task.lines });
         const features =
           spec.feature_set === FEATURE_SET_BELIEF ? candidateFeaturesBelief(engine, configs, channel, task.team, task.candidates, memo)
+          : spec.feature_set === FEATURE_SET_3 ? candidateFeatures3(engine, configs, channel, task.team, task.candidates, memo, parts)
           : parts === undefined ? candidateFeatures(engine, configs, channel, task.team, task.candidates, memo)
           : candidateFeatures2(engine, configs, channel, task.team, task.candidates, memo, parts);
         outcome = { kind: "features", features };

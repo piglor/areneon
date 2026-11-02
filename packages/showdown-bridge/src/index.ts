@@ -549,12 +549,16 @@ export {
 export { actsBefore, canKnockOut, critChancePpm, DAMAGE_VALUE_FORMAT, damageValue, discounted, rollsValue } from "./damage-aware-score.ts";
 export {
   BELIEF_FEATURES_FORMAT,
+  BELIEF_THREATS_FORMAT,
+  BELIEF_THREATS_PER_FOE,
+  type BeliefThreatsSetup,
   type BeliefFeatureCounts,
   type BeliefFeatureSetup,
   type CandidateFeatures,
   candidateFeatures,
   createFeatureMemo,
   FEATURE_SET,
+  FEATURE_SET_3,
   FEATURE_SET_BELIEF,
   FeatureBuildError,
   type FeatureConfigs,
@@ -575,6 +579,7 @@ export {
   type SpeedRow,
   type ThreatRow,
 } from "./candidate-features-2.ts";
+export { type BeliefThreatRow, type CandidateFeatures3, candidateFeatures3 } from "./candidate-features-3.ts";
 export { type CandidateFeaturesBelief, candidateFeaturesBelief, FEATURE_WORLDS_PURPOSE, featureWorldsStream, meanRows } from "./candidate-features-belief.ts";
 export { type BenchDecision, episodeDecisions, estimateWallTime, progressDecisions, type ProgressGame, runBench, type Skipped } from "./feature-bench.ts";
 export { type AnyCandidateFeatures, buildFeatures, configuredSetHash, featureSetOf, isFeatureSetId } from "./feature-build.ts";
@@ -723,6 +728,6 @@ export {
   type PayoffWorld,
   type Strategy as PreviewStrategy,
 } from "./preview-payoff.ts";
-export { type BeliefFeaturesContext, type BeliefFeaturesFactory, type BeliefFeaturesPort, BeliefFeaturesError, createSheetBuilder, SHEET_FEATURE_SET, SheetInputError, SheetTotals, sheetForChannel, sheetStatement, type SheetBuilder, type SheetCounts, type SheetInput, type SheetKValues, type SheetSetup } from "./belief-features.ts";
+export { type BeliefFeaturesContext, BELIEF_REFUSAL_CODES, type BeliefMoveInclusion, type BeliefMoveInclusions, type BeliefRefusalCode, type BeliefThreatsPort, type BeliefFeaturesFactory, type BeliefFeaturesPort, BeliefFeaturesError, createSheetBuilder, SHEET_FEATURE_SET, SheetInputError, SheetTotals, sheetForChannel, sheetStatement, type SheetBuilder, type SheetCounts, type SheetInput, type SheetKValues, type SheetSetup } from "./belief-features.ts";
 export { OpponentSheetError, opponentSheetProblem, readOpponentSheet } from "./opponent-sheet.ts";
 export { MAX_REFUSED_PPM, refusedSharePpm, sheetCountsProblem, sheetCountsValid, sumSheetCounts } from "./sheet-counts.ts";

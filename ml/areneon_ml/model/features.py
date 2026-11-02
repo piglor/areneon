@@ -15,7 +15,7 @@ type.
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from areneon_ml.model.candidates import SLOTS
@@ -97,7 +97,33 @@ def no_columns() -> tuple[list[int], list[float]]:
 # never a guess.
 
 FEATURE_SET_ARRAYS = "probe-damage/2"  # the set whose object carries the four arrays
+FEATURE_SET_BELIEF_THREATS = "probe-damage/3"  # ... and belief_threats beside them
 ARRAY_NAMES = ("threats", "speeds", "own_priorities", "foe_priorities")
+BELIEF_ARRAY = "belief_threats"
+BELIEF_REFUSED = "belief_threats_refused"
+# The opponent model's fixed refusal codes (the contract's enum, in its order). A refused belief
+# gives no belief rows and says so: the field token carries the code as a category, so the
+# network can tell "refused" from "no likely threats".
+BELIEF_REFUSALS = (
+    "reader_flagged",
+    "team_size",
+    "species_not_in_prior",
+    "forme_not_in_prior",
+    "brought_exceeds_picked",
+    "disguise_assignments_exceeded",
+    "evidence_has_no_support",
+    "legality_redraws_exhausted",
+    "empty_distribution",
+    "disguise_unsettled",
+)
+BELIEF_REFUSAL_CATEGORIES = RESERVED + len(BELIEF_REFUSALS)
+
+
+def belief_refusal_category(code: str | None) -> int:
+    """NONE when the belief answered (or none was asked), else the code's learned category."""
+    return NONE if code is None else RESERVED + BELIEF_REFUSALS.index(code)
+
+
 RELATIONS = ("own_first", "tie", "foe_first")
 # The reasons of an unsupported row of any array: `/1`'s three, then the two that only speeds and
 # priorities carry (the contract's enum order).
@@ -108,6 +134,10 @@ SPEED_KINDS = (*RELATIONS, *(f"unsupported:{reason}" for reason in ALL_REASONS))
 SPEED_CATEGORIES = RESERVED + len(SPEED_KINDS)
 PRIORITY_SCALE = 8.0  # a priority is read as priority / 8 (the engine's keys run -7 to +5)
 THREAT_NUMBERS = (*NUMBERS, "foe_priority")  # a threat row's numbers; the last is its move's key
+# ``probe-damage/3`` folds the belief's threats into the same rows (ADR-022): two more columns
+# say whether the row is the belief's (1) or a revealed move's (0) and the probability the foe
+# holds the move (1 for a revealed one).
+THREAT_NUMBERS_3 = (*THREAT_NUMBERS, "belief", "inclusion")
 FOE_NUMBERS = ("priority",)
 OWN_NUMBERS = ("own_priority",)
 
@@ -116,8 +146,20 @@ SpeedKey = tuple[int, bool, int]  # own position, own Mega flag, foe location
 
 
 def reads_arrays(feature_set: str | None) -> bool:
-    """Whether the feature set is the one that carries the four arrays."""
-    return feature_set == FEATURE_SET_ARRAYS
+    """Whether the feature set carries the four arrays (``/2`` and ``/3``)."""
+    return feature_set in (FEATURE_SET_ARRAYS, FEATURE_SET_BELIEF_THREATS)
+
+
+def reads_belief_threats(feature_set: str | None) -> bool:
+    """Whether the feature set also carries ``belief_threats`` (``/3``)."""
+    return feature_set == FEATURE_SET_BELIEF_THREATS
+
+
+def array_names(feature_set: str | None) -> tuple[str, ...]:
+    """The arrays a feature set carries beside ``rows`` (none for ``/1`` and the belief set)."""
+    if reads_belief_threats(feature_set):
+        return (*ARRAY_NAMES, BELIEF_ARRAY)
+    return ARRAY_NAMES if reads_arrays(feature_set) else ()
 
 
 def probe_category(row: Row) -> int:
@@ -150,12 +192,15 @@ class Arrays:
     own_priorities: dict[tuple[int, int, bool], Row]
     foe_priorities: dict[tuple[int, str], Row]
     locations: frozenset[int]  # the foe locations any array or row names (the reader's rule)
+    belief_threats: list[Row] = field(default_factory=list)  # ``probe-damage/3`` only
+    refused: str | None = None  # the model's code when the belief was refused (then no belief rows)
 
     @classmethod
     def of(cls, features: Mapping[str, Any]) -> Arrays:
-        missing = [name for name in ARRAY_NAMES if name not in features]
+        names = array_names(features.get("feature_set"))
+        missing = [name for name in names if name not in features]
         if missing:
-            raise ValueError(f"a {FEATURE_SET_ARRAYS} query lacks the array {missing[0]}")
+            raise ValueError(f"a {features.get('feature_set')} query lacks the array {missing[0]}")
         speeds = _unique(features["speeds"], lambda r: (r["own"], r["mega"], r["foe"]))
         own = _unique(features["own_priorities"], lambda r: (r["slot"], r["move"], r["mega"]))
         foes = _unique(features["foe_priorities"], lambda r: (r["foe"], r["move"]))
@@ -166,7 +211,17 @@ class Arrays:
             | {r["foe"] for r in features["speeds"]}
             | {r["foe"] for r in features["foe_priorities"]}
         )
-        return cls(list(features["threats"]), speeds, own, foes, frozenset(where))
+        belief = list(features.get(BELIEF_ARRAY, []))
+        _unique(belief, lambda r: (r["own"], r["mega"], r["foe"], r["move"]))
+        refused = features.get(BELIEF_REFUSED)
+        if refused is not None and (
+            belief or not reads_belief_threats(features.get("feature_set"))
+        ):
+            raise ValueError("a belief_threats_refused decision has no belief_threats")
+        revealed = {(r["foe"], r["move"]) for r in features["threats"]}
+        if any((r["foe"], r["move"]) in revealed for r in belief):
+            raise ValueError("a belief_threats row repeats a move already in threats for that foe")
+        return cls(list(features["threats"]), speeds, own, foes, frozenset(where), belief, refused)
 
 
 def _unique(rows: Sequence[Row], key: Callable[[Row], Any]) -> dict[Any, Row]:
@@ -181,3 +236,13 @@ def _unique(rows: Sequence[Row], key: Callable[[Row], Any]) -> dict[Any, Row]:
 def threat_numbers(row: Row, foe: Row | None) -> list[float]:
     """A threat row's numbers (as a damage row's) and its foe move's priority."""
     return [*numbers(row), 0.0 if foe is None else priority_number(foe)]
+
+
+def belief_threat_numbers(row: Row) -> list[float]:
+    """A belief threat row's numbers: damage, no foe priority, the belief flag, the inclusion."""
+    return [*numbers(row), 0.0, 1.0, row["inclusion_ppm"] / PPM]
+
+
+def revealed_threat_numbers_3(row: Row, foe: Row | None) -> list[float]:
+    """A revealed threat's numbers under ``/3``: ``/2``'s, not the belief's, inclusion 1."""
+    return [*threat_numbers(row, foe), 0.0, 1.0]

@@ -474,3 +474,100 @@ def test_the_worker_states_the_second_set_and_answers_a_query_with_its_arrays(
     thin["candidate_features"]["own_priorities"] = thin["candidate_features"]["own_priorities"][1:]
     _, frames = session(worker, line(hello()), line(thin))
     assert frames[1]["reply"]["error"] == "invalid_query"
+
+
+# ---- probe-damage/3 (ADR-022, belief_threats)
+
+
+def featured_three() -> dict[str, Any]:
+    return sample("policy-query/valid/battle-features-3.json")
+
+
+def test_the_valid_probe_damage_3_samples_are_accepted_under_their_set() -> None:
+    query = featured_three()
+    assert query["candidate_features"]["belief_threats"]
+    assert read_query(query, support(query)) == query
+    preview = sample("policy-query/valid/preview-features-3.json")
+    assert read_query(preview, support(preview))["candidate_features"]["belief_threats"] == []
+    check("policy-handshake", sample("policy-handshake/valid/ready-features-3.json"))
+    check("training-example", sample("training-example/valid/battle-features-3.json"))
+
+
+@pytest.mark.parametrize(
+    ("name", "message"),
+    [
+        ("belief-under-2", "present exactly under probe-damage/2"),
+        ("missing-belief-threats", "present exactly under probe-damage/2"),
+        ("belief-unsorted", "belief_threats must be sorted and unique"),
+        ("belief-repeats-revealed", "repeats a move already in threats"),
+    ],
+)
+def test_probe_damage_3_structure_is_a_reader_rule(name: str, message: str) -> None:
+    query = sample(f"policy-query/reader-invalid/features-3-{name}.json")
+    check("policy-query", query)  # schema-valid
+    assert rows_problem(query["candidate_features"]) is not None
+    with pytest.raises(QueryError, match=message):
+        read_query(query, support(query))
+
+
+def test_a_belief_threat_of_an_own_pokemon_the_request_does_not_imply_is_refused() -> None:
+    query = sample("policy-query/reader-invalid/features-3-belief-foreign-own.json")
+    check("policy-query", query)
+    assert rows_problem(query["candidate_features"]) is None
+    with pytest.raises(QueryError, match="belief_threats name an own Pokemon"):
+        read_query(query, support(query))
+
+
+def test_the_stream_reader_validates_probe_damage_3_arrays() -> None:
+    example = sample("training-example/valid/battle-features-3.json")
+    raw, _ = checker_for(example).line(1, stream_line(example))
+    assert raw["candidate_features"]["belief_threats"]
+    for name, message in (
+        ("belief-under-2", "present exactly under probe-damage/2"),
+        ("belief-unsorted", "belief_threats must be sorted and unique"),
+    ):
+        bad = sample(f"training-example/reader-invalid/features-3-{name}.json")
+        with pytest.raises(TrainingStreamError, match=message):
+            checker_for(bad).line(1, stream_line(bad))
+    repeated = copy.deepcopy(example)
+    first = repeated["candidate_features"]["threats"][0]
+    repeated["candidate_features"]["belief_threats"][0].update(
+        foe=first["foe"], move=first["move"], own=first["own"], mega=first["mega"]
+    )
+    with pytest.raises(TrainingStreamError, match="repeats a move already in threats"):
+        checker_for(repeated).line(1, stream_line(repeated))
+
+
+def test_the_worker_states_the_third_set_and_answers_a_query_with_its_belief_threats(
+    tmp_path: Path,
+) -> None:
+    query = featured_three()
+    run_dir, preview, battle = make_run_dir(tmp_path, feature_model(stated(query)))
+    worker = build(cli(run_dir, preview, battle))
+    assert worker._ready["message"]["feature_set"] == stated(query)
+    code, frames = session(worker, line(hello()), line(query))
+    assert code == EXIT_OK
+    assert frames[1]["reply"]["kind"] == "recommendation"
+    short = copy.deepcopy(query)
+    del short["candidate_features"]["belief_threats"]
+    _, frames = session(worker, line(hello()), line(short))
+    assert frames[1]["reply"]["error"] == "invalid_query"
+
+
+def test_a_refused_belief_is_a_stated_field_with_no_rows() -> None:
+    query = sample("policy-query/valid/battle-features-3-refused.json")
+    check("policy-query", query)
+    assert read_query(query, support(query)) == query
+    check("training-example", sample("training-example/valid/battle-features-3-refused.json"))
+    for name in ("refused-with-rows", "refused-under-2"):
+        bad = sample(f"policy-query/reader-invalid/features-3-{name}.json")
+        check("policy-query", bad)
+        with pytest.raises(QueryError, match="belief_threats_refused"):
+            read_query(bad, support(bad))
+    raw = sample("training-example/valid/battle-features-3-refused.json")
+    broken = copy.deepcopy(raw)
+    broken["candidate_features"]["belief_threats"] = sample(
+        "training-example/valid/battle-features-3.json"
+    )["candidate_features"]["belief_threats"]
+    with pytest.raises(TrainingStreamError, match="belief_threats_refused"):
+        checker_for(broken).line(1, stream_line(broken))

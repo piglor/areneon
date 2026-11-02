@@ -15,7 +15,7 @@ import { join } from "node:path";
 import type { Engine, PokemonSet } from "./engine.ts";
 import { jcs, type Json } from "./canonical-json.ts";
 import { type DamageAwareActor, type DamageAwareOptions, damageAwareActor } from "./damage-aware-actor.ts";
-import { type BeliefFeatureCounts, type BeliefFeatureSetup, createFeatureMemo, type FeatureConfigs, type FeatureMemo, FEATURE_SET_BELIEF } from "./candidate-features.ts";
+import { type BeliefFeatureCounts, type BeliefFeatureSetup, createFeatureMemo, BELIEF_THREATS_PER_FOE, type BeliefThreatsSetup, type FeatureConfigs, type FeatureMemo, FEATURE_SET_3, FEATURE_SET_BELIEF } from "./candidate-features.ts";
 import { configuredSetHash } from "./feature-build.ts";
 import { type BeliefFeaturesFactory, createSheetBuilder, type SheetSetup, sheetStatement } from "./belief-features.ts";
 import { type SheetCounts, sumSheetCounts } from "./sheet-counts.ts";
@@ -128,7 +128,7 @@ export interface FeatureSetup {
  * `probe-damage-belief/1` (ADR-025 slice 5) also needs the belief port of the composition root (`beliefWorlds`; the bridge does
  * not import the opponent model); its world count and belief come from the committed `damage-aware.v2.json` record.
  */
-export function featureSetup(engine: Engine, config: TrainingRunConfig, beliefWorlds?: BeliefWorldsFactory): FeatureSetup | undefined {
+export function featureSetup(engine: Engine, config: TrainingRunConfig, beliefWorlds?: BeliefWorldsFactory, beliefFeatures?: BeliefFeaturesFactory): FeatureSetup | undefined {
   const named = config.model.encoder.options?.candidate_features;
   if (named === undefined) return undefined;
   if (config.format_id !== GOLDEN_FORMAT) throw new GenerationError(`the candidate features have a vocabulary for ${GOLDEN_FORMAT} only, not ${config.format_id}`);
@@ -141,6 +141,7 @@ export function featureSetup(engine: Engine, config: TrainingRunConfig, beliefWo
     data_class: "synthetic",
     feature_set: named.feature_set,
     ...(named.feature_set === FEATURE_SET_BELIEF ? { belief: beliefSetup(engine, vocabulary, config.format_id, beliefWorlds) } : {}),
+    ...(named.feature_set === FEATURE_SET_3 ? { belief_threats: beliefThreatsSetup(engine, vocabulary, config.format_id, beliefFeatures) } : {}),
   };
   const found = configuredSetHash(engine, configs);
   if (found !== named.feature_set_hash) {
@@ -182,6 +183,18 @@ function beliefSetup(engine: Engine, vocabulary: ReturnType<typeof goldenTeamVoc
   const config = loadDamageAwareConfigV2(vocabulary);
   const manifest = resolveFormat(engine, formatId, loadRulesSnapshot(engine.commit)).manifest;
   return { port: beliefWorlds({ engine, vocabulary, config, reader_sha256: readerSha256(), manifest }), worlds: config.assumed_set.worlds };
+}
+
+/**
+ * The belief a `probe-damage/3` run reads its move inclusions from: the committed prior and belief config through the composition
+ * root's factory (the same port the opponent sheet reads), cut to `BELIEF_THREATS_PER_FOE` damaging moves a foe.
+ */
+function beliefThreatsSetup(engine: Engine, vocabulary: ReturnType<typeof goldenTeamVocabulary>, formatId: string, factory: BeliefFeaturesFactory | undefined): BeliefThreatsSetup {
+  if (factory === undefined) throw new GenerationError(`the candidate feature set ${FEATURE_SET_3} needs the belief features factory of the composition root (packages/team-dataset)`);
+  const port = factory({ engine, vocabulary, reader_sha256: readerSha256(), manifest: resolveFormat(engine, formatId, loadRulesSnapshot(engine.commit)).manifest });
+  const inclusions = port.moveInclusions;
+  if (inclusions === undefined) throw new GenerationError(`the belief features port has no move inclusions, which ${FEATURE_SET_3} reads`);
+  return { port: { identity_hash: port.identity_hash, moveInclusions: (input) => inclusions.call(port, input) }, per_foe: BELIEF_THREATS_PER_FOE };
 }
 
 /** The policy id of `damage-aware@v2`, the baseline that plays on sampled belief worlds (ADR-025 section 6). */

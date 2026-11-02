@@ -7,13 +7,14 @@ import { describe, expect, it } from "vitest";
 import { actorRule } from "../src/actor-rule.ts";
 import { type Json, jcs } from "../src/canonical-json.ts";
 import { loadEngine } from "../src/engine.ts";
-import { FEATURE_SET_BELIEF, featureSetHash, featureSetIdentity } from "../src/candidate-features.ts";
+import { BELIEF_THREATS_PER_FOE, FEATURE_SET_3, FEATURE_SET_BELIEF, featureSetHash, featureSetIdentity } from "../src/candidate-features.ts";
 import type { BeliefWorldsFactory } from "../src/damage-aware-worlds.ts";
 import { configV2, fakePort } from "./damage-aware-world-support.ts";
 import { beliefRowCounts, featureSetup, GenerationError, playGeneration, trainingTeamPool } from "../src/league-generation.ts";
 import type { PolicyClient } from "../src/policy-worker.ts";
 import type { PolicyQueryInput } from "../src/policy-protocol.ts";
 import { createFeatureMemo } from "../src/candidate-features.ts";
+import type { BeliefFeaturesFactory } from "../src/belief-features.ts";
 import { pairFeatureSetup } from "../src/progress-cli.ts";
 import { readTrainingExample } from "../src/training-loader.ts";
 import { SAMPLES_DIR } from "../src/samples.ts";
@@ -79,6 +80,38 @@ describe("featureSetup", () => {
     expect(setup.configs.belief?.worlds).toBe(configV2.assumed_set.worlds);
     expect(hash).not.toBe(hashOf());
     expect(() => featureSetup(engine, withFeatures(hash, FEATURE_SET_BELIEF))).toThrow(/belief port of the composition root/);
+  });
+
+  it("builds probe-damage/3 through the belief features factory of the composition root, and fails closed without one or without move inclusions", () => {
+    const calls: string[] = [];
+    const inclusions = () => ({ slots: [] });
+    const factory: BeliefFeaturesFactory = () => {
+      calls.push("factory");
+      return { identity_hash: "e".repeat(64), features_hash: "f".repeat(64), prior_hash: "0".repeat(64), belief_config_hash: "1".repeat(64), prior_format_id: "x", k: { item: 4, ability: 3, nature: 3, moves: 8 }, sheet: () => ({}) as never, moveInclusions: inclusions };
+    };
+    const attempt = (): string => {
+      try {
+        featureSetup(engine, withFeatures("0".repeat(64), FEATURE_SET_3), undefined, factory);
+      } catch (error) {
+        return /computes as ([0-9a-f]{64})/.exec((error as Error).message)?.[1] ?? "";
+      }
+      return "";
+    };
+    const hash = attempt();
+    expect(hash).toMatch(/^[0-9a-f]{64}$/);
+    const setup = featureSetup(engine, withFeatures(hash, FEATURE_SET_3), undefined, factory) as NonNullable<ReturnType<typeof featureSetup>>;
+    expect(setup.statement).toEqual({ feature_set: FEATURE_SET_3, feature_set_hash: hash });
+    expect(setup.configs.belief_threats?.per_foe).toBe(BELIEF_THREATS_PER_FOE);
+    expect(setup.configs.belief_threats?.port.identity_hash).toBe("e".repeat(64));
+    expect(hash).not.toBe(hashOf());
+    expect(() => featureSetup(engine, withFeatures(hash, FEATURE_SET_3))).toThrow(/belief features factory of the composition root/);
+    const bare: BeliefFeaturesFactory = (context) => {
+      const { moveInclusions: _gone, ...rest } = factory(context);
+      return rest;
+    };
+    expect(() => featureSetup(engine, withFeatures(hash, FEATURE_SET_3), undefined, bare)).toThrow(/no move inclusions/);
+    // the pair-level wrapper passes the factory through and makes the refusal a usage error
+    expect(pairFeatureSetup(engine, withFeatures(hash, FEATURE_SET_3), undefined, factory)?.statement.feature_set).toBe(FEATURE_SET_3);
   });
 
   it("refuses a format whose vocabulary it does not hold", () => {

@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { BELIEF_ERROR_CODES, BeliefError, belief, OPPONENT_SHEET_FORMAT, opponentSheet, refusedSheet, roundPpm, SHEET_K, SHEET_REFUSAL_CODES, sheetFeatureSetHash, sheetRefusalOf } from "../src/index.ts";
+import { BELIEF_ERROR_CODES, BeliefError, belief, moveInclusions, OPPONENT_SHEET_FORMAT, opponentSheet, refusedSheet, roundPpm, SHEET_K, SHEET_REFUSAL_CODES, sheetFeatureSetHash, sheetRefusalOf } from "../src/index.ts";
 import { digest } from "../src/canonical.ts";
 import { ratio } from "../src/ratio.ts";
 import { hidingConfig, input, seen } from "./support.ts";
@@ -169,6 +169,47 @@ describe("an unsettled identity-hiding member with a shown position: the block i
   it("with nothing shown there is nothing to assign and the block is the plain one", () => {
     const quiet = input([], { config: hidingConfig });
     expect(JSON.stringify(opponentSheet(belief(quiet), quiet.opponent, HASH))).toBe(JSON.stringify(sheetOf()));
+  });
+});
+
+describe("moveInclusions (the belief threats of probe-damage/3)", () => {
+  const of = (more: readonly string[] = [], change: Parameters<typeof input>[1] = {}) => {
+    const i = input(more, change);
+    return (moveInclusions(belief(i), i.opponent) as { slots: (readonly { id: string; inclusion_ppm: number }[])[] }).slots;
+  };
+  const alpha = (list: ReturnType<typeof of>) => list[0]!;
+
+  it("is the belief's move marginals per roster position, in ppm, sorted by inclusion then id", () => {
+    const list = of();
+    expect(list).toHaveLength(6);
+    expect(alpha(list)).toEqual([{ id: "ma", inclusion_ppm: 1_000_000 }, { id: "mb", inclusion_ppm: 500000 }, { id: "mc", inclusion_ppm: 500000 }, { id: "md", inclusion_ppm: 500000 }]);
+  });
+
+  it("leaves a revealed move out (a fact needs no probability) and keeps the rest", () => {
+    const list = of([SWITCH("a", "Alp", "Alpha"), "|move|p2a: Alp|Mb"]);
+    expect(alpha(list).map((m) => m.id)).not.toContain("mb");
+    expect(alpha(list).map((m) => m.id)).toContain("ma");
+  });
+
+  it("drops entries that round to zero", () => {
+    const i = input();
+    const b = belief(i);
+    const tiny = { ...b, slots: b.slots.map((slot) => ({ ...slot, moves: [...slot.moves, { id: "never", p: ratio(1n, 4000000n) }] })) };
+    expect((moveInclusions(tiny, i.opponent) as unknown as { slots: { id: string }[][] }).slots[0]?.map((m) => m.id)).not.toContain("never");
+  });
+
+  it("is refused (disguise_unsettled) while an identity-hiding member is unsettled and a position is shown, and plain with nothing shown", () => {
+    const shown = input([SWITCH("a", "Alp", "Alpha")], { config: hidingConfig });
+    expect(moveInclusions(belief(shown), shown.opponent)).toEqual({ refused: "disguise_unsettled" });
+    const quiet = input([], { config: hidingConfig });
+    expect(moveInclusions(belief(quiet), quiet.opponent)).toEqual({ slots: of() });
+  });
+
+  it("a belief of another roster size is a programming error, and the function is pure", () => {
+    const i = input();
+    const b = belief(i);
+    expect(() => moveInclusions({ ...b, slots: b.slots.slice(1) }, i.opponent)).toThrow(RangeError);
+    expect(JSON.stringify(of())).toBe(JSON.stringify(of()));
   });
 });
 

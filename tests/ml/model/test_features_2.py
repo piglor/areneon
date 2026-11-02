@@ -117,7 +117,7 @@ def candidate(q: dict[str, Any], choice: str) -> int:
 def test_the_option_reads_the_second_set() -> None:
     assert read_options("encoder", {CANDIDATE_FEATURES: SET})
     with pytest.raises(OptionError):
-        read_options("encoder", {CANDIDATE_FEATURES: {**SET, "feature_set": "probe-damage/3"}})
+        read_options("encoder", {CANDIDATE_FEATURES: {**SET, "feature_set": "probe-damage/4"}})
 
 
 def test_the_second_set_has_its_own_layout_and_version() -> None:

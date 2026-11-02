@@ -198,6 +198,14 @@ FEATURES_2_FAMILY = (
 )
 
 
+#: ``probe-damage/3``: ``/2`` and the damage of moves the opponent belief says a foe may hold.
+FEATURES_3_FAMILY = (
+    "learned policy that consults the engine's damage calculation and turn order on assumed "
+    "opponent sets at decision time: damage under the assumed foe set, move likelihood from the "
+    "belief"
+)
+
+
 #: ``probe-damage-belief/1`` (ADR-025 slice 5): the same rows, averaged over sampled worlds.
 FEATURES_BELIEF_FAMILY = (
     "learned policy that consults the engine's damage calculation on sampled opponent worlds "
@@ -212,4 +220,6 @@ def family_label(config: RunConfig) -> str | None:
         return None
     if named.feature_set == "probe-damage-belief/1":
         return FEATURES_BELIEF_FAMILY
+    if named.feature_set == "probe-damage/3":
+        return FEATURES_3_FAMILY
     return FEATURES_2_FAMILY if named.feature_set == "probe-damage/2" else FEATURES_FAMILY

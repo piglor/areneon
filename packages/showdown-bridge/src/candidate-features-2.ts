@@ -21,7 +21,7 @@
 // batching of the priority queries (a batch the probe does not answer is asked again one action at a time).
 // Excluded by construction, as in `candidate-features.ts`: the input is a `PlayerChannel`, the player's own team and the
 // candidate strings; no opponent team, hidden verdict, `BattleRecord` or seed is a parameter of anything here.
-import type { PublicState } from "@areneon/public-state";
+import type { PublicFlag, PublicState } from "@areneon/public-state";
 import { type CandidateFeatures, createFeatureMemo, damageRows, damageValuesOf, type DamageValues, type FeatureConfigs, type FeatureMemo, type FeatureRow, featureSetHash, featureSetIdentity, lastRequest, openRequest, refusing } from "./candidate-features.ts";
 import type { Candidate } from "./choices.ts";
 import { parseJointChoice, type SlotPart } from "./damage-aware-choice.ts";
@@ -73,7 +73,7 @@ export const emptyTrace = (): CostTrace => ({ setup: emptyCost(), rows: emptyCos
 const emptyCost = (): PartCost => ({ queries: 0, probe_runs: 0, ms: 0 });
 
 /** One own Pokemon the arrays are about: an active or a benched switch-in. */
-interface Entry {
+export interface Entry {
   position: number;
   fighter: Fighter;
   /** The request slot, or null for a benched Pokemon. */
@@ -91,6 +91,24 @@ const fainted = (member: Record<string, unknown>): boolean => / fnt$/.test(text(
 const group = (answer: SpeedOrderAnswer, action: number): number => answer.groups.findIndex((members) => members.includes(action));
 
 /**
+ * What a set built on `probe-damage/2` adds to its arrays (`probe-damage/3`'s belief threats): given the open request, the own
+ * Pokemon and variants the arrays are about and the living foes, it returns the extra arrays. Called once per move or forced-switch
+ * request, after the `/2` arrays are known (it may read them: `threats` here).
+ */
+export interface ArrayContext {
+  view: DamageView;
+  state: PublicState;
+  entries: readonly Entry[];
+  variants: (entry: Entry) => boolean[];
+  asMega: (entry: Entry, mega: boolean) => Fighter;
+  foes: readonly Foe[];
+  threats: readonly ThreatRow[];
+  /** Every flagged line of the game so far (the belief refuses while any is on record). */
+  flags: readonly PublicFlag[];
+}
+export type ExtraArrays<X> = (context: ArrayContext) => X;
+
+/**
  * The features of one decision under `probe-damage/2`. `memo` is this game's: with or without it the arrays are the same
  * bytes. Team Preview and wait requests have no rows in any array; a forced switch has `threats` and `speeds` for the Pokemon
  * its `switch N` candidates name. Throws `FeatureBuildError` when the request cannot be featured.
@@ -104,24 +122,45 @@ export function candidateFeatures2(
   memo: FeatureMemo = createFeatureMemo(),
   trace?: CostTrace,
 ): CandidateFeatures2 {
+  return buildArrays(engine, configs, channel, team, candidates, memo, trace, FEATURE_SET_2, () => ({}));
+}
+
+/**
+ * The shared builder of the sets that carry `/2`'s four arrays: `set` names the identity, `extra` the arrays a set adds (none
+ * for `/2`). `extra` is not called for a request with nothing to score; the caller supplies its empty value through `empty`.
+ */
+export function buildArrays<S extends typeof FEATURE_SET_2 | "probe-damage/3", X extends object>(
+  engine: Engine,
+  configs: FeatureConfigs,
+  channel: PlayerChannel,
+  team: readonly Readonly<PokemonSet>[],
+  candidates: readonly Pick<Candidate, "choice" | "pending">[],
+  memo: FeatureMemo,
+  trace: CostTrace | undefined,
+  set: S,
+  extra: ExtraArrays<X>,
+  empty: X = {} as X,
+): Omit<CandidateFeatures2, "feature_set"> & { feature_set: S } & X {
   const snapshot = configs.snapshot ?? loadRulesSnapshot(engine.commit);
-  const identity = featureSetIdentity(engine, { ...configs, snapshot }, FEATURE_SET_2);
-  const out = (parts: Partial<Omit<CandidateFeatures2, "feature_set" | "feature_set_hash">> = {}): CandidateFeatures2 => ({
-    feature_set: FEATURE_SET_2,
+  const identity = featureSetIdentity(engine, { ...configs, snapshot }, set);
+  type Out = Omit<CandidateFeatures2, "feature_set"> & { feature_set: S } & X;
+  const out = (parts: Partial<Omit<CandidateFeatures2, "feature_set" | "feature_set_hash">> & Partial<X> = {}): Out => ({
+    feature_set: set,
     feature_set_hash: featureSetHash(identity),
     rows: [],
     threats: [],
     speeds: [],
     own_priorities: [],
     foe_priorities: [],
+    ...empty,
     ...parts,
-  });
+  }) as Out;
 
   const body = lastRequest(channel);
   const moveRequest = body.teamPreview === undefined && body.active !== undefined;
   const forcedSwitch = body.teamPreview === undefined && body.active === undefined && body.forceSwitch !== undefined;
   if (!moveRequest && !forcedSwitch) return out();
-  const { view, state } = openRequest(engine, configs, snapshot, channel, memo);
+  const { view, state, allFlags } = openRequest(engine, configs, snapshot, channel, memo);
 
   /** Run `part`, adding what it asked of the probe and how long it took to `trace` (when one is given). */
   const measured = <T>(name: keyof CostTrace, part: () => T): T => {
@@ -171,14 +210,14 @@ export function candidateFeatures2(
     const variants = (entry: Entry): boolean[] => (entry.slot !== null && megaSlots.has(entry.slot) ? [false, true] : [false]);
     const asMega = (entry: Entry, mega: boolean): Fighter => ({ ...entry.fighter, mega: entry.fighter.mega || mega });
 
-    return {
-      feature_set: FEATURE_SET_2,
-      feature_set_hash: featureSetHash(identity),
+    const threats = measured("threats", () => threatRows(view, state, entries, variants, asMega, living));
+    return out({
       rows,
-      threats: measured("threats", () => threatRows(view, state, entries, variants, asMega, living)),
+      threats,
       speeds: measured("speeds", () => speedRows(view, state, entries, variants, living)),
       ...measured("priorities", () => priorityRows(view, state, body, parsed, entries, living)),
-    } satisfies CandidateFeatures2;
+      ...extra({ view, state, entries, variants, asMega, foes: living, threats, flags: allFlags }),
+    });
   });
 }
 

@@ -385,6 +385,26 @@ export interface CandidateFeatures {
    * @maxItems 128
    */
   foe_priorities?: (ComputedFoePriorityRow | UnsupportedFoePriorityRow)[];
+  /**
+   * probe-damage/3 only: one row per (own Pokemon and variant, opposing active, move the belief says the foe may hold), at most the reviewed per-foe cut of damaging moves, sorted by (own, mega false first, foe, move id). Never a move already in threats for that foe (a reader rule). Values on the assumed opponent set plus that move, not facts about the real opponent.
+   *
+   * @maxItems 128
+   */
+  belief_threats?: (ComputedBeliefThreatRow | UnsupportedBeliefThreatRow)[];
+  /**
+   * probe-damage/3 only, present exactly when the opponent belief was refused for this decision: the model's fixed refusal code. belief_threats is then empty (a reader rule), so a refusal is never read as a foe with no likely threats. Absent otherwise.
+   */
+  belief_threats_refused?:
+    | "reader_flagged"
+    | "team_size"
+    | "species_not_in_prior"
+    | "forme_not_in_prior"
+    | "brought_exceeds_picked"
+    | "disguise_assignments_exceeded"
+    | "evidence_has_no_support"
+    | "legality_redraws_exhausted"
+    | "empty_distribution"
+    | "disguise_unsettled";
 }
 /**
  * The probe's exact rolls for one row, as integers: mean_ppm is the mean over the 16 no-crit rolls of min(roll, hp) / hp, floored; max_ppm and min_ppm the largest and smallest roll clamped at hp, as a share of hp; ohko_rolls the probe's own count of the 16 no-crit rolls that reach hp, or null when the probe gives none.
@@ -594,6 +614,63 @@ export interface UnsupportedFoePriorityRow {
   reason: "query_kind" | "random_effect" | "scenario_rule_table" | "unqueueable" | "fractional_priority";
 }
 /**
+ * What a move the BELIEF says the foe may hold (not yet revealed) would do to the own Pokemon (the foe's assumed set plus that move as attacker, the own Pokemon at its exact current HP): the values of a ComputedThreatRow and the belief's inclusion probability of the move.
+ *
+ * This interface was referenced by `TrainingExample`'s JSON-Schema
+ * via the `definition` "ComputedBeliefThreatRow".
+ */
+export interface ComputedBeliefThreatRow {
+  kind: "computed";
+  /**
+   * The own Pokemon's position in the request's side.pokemon, 0-based.
+   */
+  own: number;
+  /**
+   * True for the variant of the own Pokemon that Mega Evolves this turn.
+   */
+  mega: boolean;
+  /**
+   * The opposing active's location number in a choice (move 1 1).
+   */
+  foe: number;
+  move: string;
+  /**
+   * The belief's marginal probability that the foe holds this move, in ppm (rounded half up, alone); revealed moves are not listed.
+   */
+  inclusion_ppm: number;
+  mean_ppm: number;
+  max_ppm: number;
+  min_ppm: number;
+  ohko_rolls: number | null;
+}
+/**
+ * A belief threat the probe could not answer exactly: its closed reason, never a guess.
+ *
+ * This interface was referenced by `TrainingExample`'s JSON-Schema
+ * via the `definition` "UnsupportedBeliefThreatRow".
+ */
+export interface UnsupportedBeliefThreatRow {
+  kind: "unsupported";
+  /**
+   * The own Pokemon's position in the request's side.pokemon, 0-based.
+   */
+  own: number;
+  /**
+   * True for the variant of the own Pokemon that Mega Evolves this turn.
+   */
+  mega: boolean;
+  /**
+   * The opposing active's location number in a choice (move 1 1).
+   */
+  foe: number;
+  move: string;
+  /**
+   * The belief's marginal probability that the foe holds this move, in ppm (rounded half up, alone); revealed moves are not listed.
+   */
+  inclusion_ppm: number;
+  reason: "query_kind" | "random_effect" | "scenario_rule_table";
+}
+/**
  * Optional derived opponent sheet block (ADR-027 section 2, ADR-025 erratum E4): what the player's own view makes probable about each opponent preview slot. Absent unless the session or the run declared a sheet source: a writer omits it (never null or empty), so every existing value keeps its bytes and hash (a minor change within v1, ADR-008 section 3). Reader rules are those of the OpponentSheet contract.
  */
 export interface TrainingOpponentSheet {
@@ -793,7 +870,7 @@ export interface DecisionContext2 {
   policy_budget_ms: number;
 }
 /**
- * The rows of one decision under one feature set. feature_set names the set (probe-damage/1 or probe-damage/2); feature_set_hash is SHA-256 of the JCS of its identity (mechanics config, assumed-set config, adapter format, reader, version manifest), so a pin bump or a config change is another set. Rows are in canonical order: slot, move, target, then mega false before true. Under probe-damage/2 the four arrays threats, speeds, own_priorities and foe_priorities are all present; under any other set none is (a reader rule: the profile has no if/then).
+ * The rows of one decision under one feature set. feature_set names the set (probe-damage/1, probe-damage/2 or probe-damage/3); feature_set_hash is SHA-256 of the JCS of its identity (mechanics config, assumed-set config, adapter format, reader, version manifest), so a pin bump or a config change is another set. Rows are in canonical order: slot, move, target, then mega false before true. Under probe-damage/2 the four arrays threats, speeds, own_priorities and foe_priorities are all present, and probe-damage/3 adds belief_threats; under any other set none is (a reader rule: the profile has no if/then).
  *
  * This interface was referenced by `TrainingExample`'s JSON-Schema
  * via the `definition` "CandidateFeatures".
@@ -831,6 +908,26 @@ export interface CandidateFeatures1 {
    * @maxItems 128
    */
   foe_priorities?: (ComputedFoePriorityRow | UnsupportedFoePriorityRow)[];
+  /**
+   * probe-damage/3 only: one row per (own Pokemon and variant, opposing active, move the belief says the foe may hold), at most the reviewed per-foe cut of damaging moves, sorted by (own, mega false first, foe, move id). Never a move already in threats for that foe (a reader rule). Values on the assumed opponent set plus that move, not facts about the real opponent.
+   *
+   * @maxItems 128
+   */
+  belief_threats?: (ComputedBeliefThreatRow | UnsupportedBeliefThreatRow)[];
+  /**
+   * probe-damage/3 only, present exactly when the opponent belief was refused for this decision: the model's fixed refusal code. belief_threats is then empty (a reader rule), so a refusal is never read as a foe with no likely threats. Absent otherwise.
+   */
+  belief_threats_refused?:
+    | "reader_flagged"
+    | "team_size"
+    | "species_not_in_prior"
+    | "forme_not_in_prior"
+    | "brought_exceeds_picked"
+    | "disguise_assignments_exceeded"
+    | "evidence_has_no_support"
+    | "legality_redraws_exhausted"
+    | "empty_distribution"
+    | "disguise_unsettled";
 }
 /**
  * The opponent sheet block (ADR-027 section 2; ADR-025 erratum E4): per opponent preview slot, in preview order, what the player's own view makes probable about the slot's brought status, item, ability, nature and moves, as integers in parts per million. A derived input beside the observation, built only from the player's own view (closed regime: from the opponent belief's marginals). Reader rules (the profile has no if/then): the source kind fits the regime; entries are sorted by ppm descending then id ascending (a null item id last) with unique ids; other_ppm is max(0, 1000000 - sum of the entries) and the sum is at most 1000000 plus one per entry (each entry is rounded alone); a field of source unknown has no entries and other_ppm 0; a field of source revealed holds its one value at 1000000 ppm (moves: slots_known is 4 and the first four entries are at 1000000); a refused block (source.refusal present) has every slot unknown with brought_ppm 0.

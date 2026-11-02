@@ -46,7 +46,10 @@ def _key(row: dict[str, Any]) -> tuple[int, int, int, int]:
 
 #: The feature set whose object carries the four extra arrays, and their names.
 FEATURE_SET_WITH_ARRAYS = "probe-damage/2"
+#: ``probe-damage/3`` carries these and ``belief_threats``.
+FEATURE_SET_WITH_BELIEF_THREATS = "probe-damage/3"
 _ARRAYS = ("threats", "speeds", "own_priorities", "foe_priorities")
+_BELIEF_ARRAYS = (*_ARRAYS, "belief_threats")
 
 # The sort key of each array's rows (a Mega flag sorts false first).
 _ARRAY_KEYS: dict[str, Callable[[dict[str, Any]], tuple[Any, ...]]] = {
@@ -54,7 +57,14 @@ _ARRAY_KEYS: dict[str, Callable[[dict[str, Any]], tuple[Any, ...]]] = {
     "speeds": lambda r: (r["own"], int(r["mega"]), r["foe"]),
     "own_priorities": lambda r: (r["slot"], r["move"], int(r["mega"])),
     "foe_priorities": lambda r: (r["foe"], r["move"]),
+    "belief_threats": lambda r: (r["own"], int(r["mega"]), r["foe"], r["move"]),
 }
+
+
+def _wanted_arrays(feature_set: Any) -> tuple[str, ...]:
+    if feature_set == FEATURE_SET_WITH_BELIEF_THREATS:
+        return _BELIEF_ARRAYS
+    return _ARRAYS if feature_set == FEATURE_SET_WITH_ARRAYS else ()
 
 
 def rows_problem(features: dict[str, Any]) -> str | None:
@@ -71,20 +81,30 @@ def rows_problem(features: dict[str, Any]) -> str | None:
                 "the candidate_features rows must be sorted and unique by "
                 "(slot, move, target, mega)"
             )
-    present = [name for name in _ARRAYS if name in features]
-    if features.get("feature_set") == FEATURE_SET_WITH_ARRAYS:
-        wrong = len(present) != len(_ARRAYS)
-    else:
-        wrong = bool(present)
-    if wrong:
+    present = [name for name in _BELIEF_ARRAYS if name in features]
+    if present != list(_wanted_arrays(features.get("feature_set"))):
         return (
             f"the candidate_features arrays {', '.join(_ARRAYS)} "
-            f"are present exactly under {FEATURE_SET_WITH_ARRAYS}"
+            f"are present exactly under {FEATURE_SET_WITH_ARRAYS}, and with belief_threats "
+            f"under {FEATURE_SET_WITH_BELIEF_THREATS}"
         )
     for name in present:
         for before, now in itertools.pairwise(features[name]):
             if not _ARRAY_KEYS[name](before) < _ARRAY_KEYS[name](now):
                 return f"the candidate_features {name} must be sorted and unique by their key"
+    if "belief_threats_refused" in features and (
+        features.get("feature_set") != FEATURE_SET_WITH_BELIEF_THREATS
+        or features.get("belief_threats")
+    ):
+        return (
+            "a candidate_features belief_threats_refused is a probe-damage/3 field and means "
+            "the belief_threats are empty"
+        )
+    revealed = {(r["foe"], r["move"]) for r in features.get("threats", [])}
+    if any((r["foe"], r["move"]) in revealed for r in features.get("belief_threats", [])):
+        return (
+            "a candidate_features belief_threats row repeats a move already in threats for that foe"
+        )
     return None
 
 
@@ -119,7 +139,7 @@ def coverage_problem(
                     aims_at_foe = move.get("target") in FOE_SPREAD_TARGET_TYPES
                 if aims_at_foe and (slot, action.index, int(action.event == "mega")) not in some:
                     return "a damaging move part of a candidate has no candidate_features row"
-    if features.get("feature_set") == FEATURE_SET_WITH_ARRAYS:
+    if _wanted_arrays(features.get("feature_set")):
         return _array_problem(request, query["candidates"], features)
     return None
 
@@ -194,6 +214,12 @@ def _array_problem(  # noqa: PLR0911
     )
     if any((row["own"], int(row["mega"])) not in variants for row in threats):
         return _fixed("threats name an own Pokemon or Mega variant the request does not imply")
+    if any(
+        (row["own"], int(row["mega"])) not in variants for row in features.get("belief_threats", [])
+    ):
+        return _fixed(
+            "belief_threats name an own Pokemon or Mega variant the request does not imply"
+        )
     expected_speeds = sorted((o, m, f) for o, m in variants for f in locations)
     if [(r["own"], int(r["mega"]), r["foe"]) for r in speeds] != expected_speeds:
         return _fixed("speeds must hold exactly one row per own position, own Mega flag and foe")

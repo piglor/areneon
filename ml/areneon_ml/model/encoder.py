@@ -177,6 +177,12 @@ def _reads_arrays(config: EncoderConfig) -> bool:
     return named is not None and rows_of.reads_arrays(named.feature_set)
 
 
+def _reads_belief_threats(config: EncoderConfig) -> bool:
+    """Whether the config reads ``probe-damage/3`` (``/2``'s arrays and the belief's threats)."""
+    named = feature_set(config.options)
+    return named is not None and rows_of.reads_belief_threats(named.feature_set)
+
+
 def _speed_columns(config: EncoderConfig) -> tuple[tuple[str, str], ...]:
     """Per own token, its speed relation to each foe location (``/2``; none for a foe token)."""
     if not _reads_arrays(config):
@@ -368,7 +374,12 @@ class Layout:
                 *_recent_mon_num(config),
                 *_sheet_num(config),
             ),
-            field_cat=(("weather", "weather"), ("terrain", "terrain"), ("request", "request")),
+            field_cat=(
+                ("weather", "weather"),
+                ("terrain", "terrain"),
+                ("request", "request"),
+                *((("belief_refusal", "belief_refusal"),) if _reads_belief_threats(config) else ()),
+            ),
             field_num=(
                 "turn",
                 "started",
@@ -393,7 +404,11 @@ class Layout:
                 if arrays
                 else ()
             ),
-            thr_num=rows_of.THREAT_NUMBERS if arrays else (),
+            thr_num=(
+                rows_of.THREAT_NUMBERS_3
+                if _reads_belief_threats(config)
+                else (rows_of.THREAT_NUMBERS if arrays else ())
+            ),
             foe_cat=(("move", "move"), ("kind", "probe_kind")) if arrays else (),
             foe_num=rows_of.FOE_NUMBERS if arrays else (),
             cand_tok=(
@@ -512,6 +527,15 @@ def encoder_version(game: GameData, config: EncoderConfig) -> str:
                 "speed_kinds": list(rows_of.SPEED_KINDS),
                 "priority_scale": rows_of.PRIORITY_SCALE,
             }
+            if _reads_belief_threats(
+                config
+            ):  # the belief rows' own words: a change is a new encoder version
+                body["constants"]["features"]["arrays"]["belief_threats"] = {
+                    "numbers": list(rows_of.THREAT_NUMBERS_3),
+                    "revealed": "belief 0, inclusion 1",
+                    "belief_priority_kind": "none",
+                    "refusals": list(rows_of.BELIEF_REFUSALS),
+                }
     return f"enc{ENCODER_FORMAT}:{sha256_hex(jcs(body))}"
 
 
@@ -627,6 +651,15 @@ class Encoder:
     ) -> EncodedQuery:
         observation = query["observation"]
         field_features = self._field(state)
+        if _reads_belief_threats(self.config):  # the belief's refusal code, or none
+            sent = query.get("candidate_features") or {}
+            field_features = (
+                [
+                    *field_features[0],
+                    rows_of.belief_refusal_category(sent.get(rows_of.BELIEF_REFUSED)),
+                ],
+                field_features[1],
+            )
         wanted = "preview" if state.request_kind == "preview" else "battle"
         if observation["kind"] != wanted:
             raise EncodingError(
@@ -922,7 +955,10 @@ class Encoder:
             wanted.feature_set_hash,
         ):
             raise EncodingError("the query's candidate_features are of another feature set")
-        if not _reads_arrays(self.config) and any(name in sent for name in rows_of.ARRAY_NAMES):
+        if not _reads_arrays(self.config) and any(
+            name in sent
+            for name in (*rows_of.ARRAY_NAMES, rows_of.BELIEF_ARRAY, rows_of.BELIEF_REFUSED)
+        ):
             raise EncodingError("the query carries arrays this feature set does not read")
         try:
             return rows_of.row_index(sent)
@@ -1000,6 +1036,7 @@ class Encoder:
             raise EncodingError(str(exc)) from exc
         game = self.game
         probe = _Probe(arrays)
+        belief = _reads_belief_threats(self.config)
         for (own, mega, foe), row in arrays.speeds.items():
             token = self._own_token(request, own)
             if not 1 <= foe <= SLOTS:
@@ -1027,7 +1064,24 @@ class Encoder:
                         rows_of.probe_category(row),
                         NONE if foe_row is None else rows_of.probe_category(foe_row),
                     ],
-                    rows_of.threat_numbers(row, foe_row),
+                    (
+                        rows_of.revealed_threat_numbers_3(row, foe_row)
+                        if belief
+                        else rows_of.threat_numbers(row, foe_row)
+                    ),
+                )
+            )
+        for row in arrays.belief_threats:
+            # The belief's move: no foe priority row prices it (the builder asks none): kind NONE.
+            probe.threats.append(
+                (
+                    [
+                        self._own_token(request, row["own"]),
+                        self._foe_token(state, row["foe"]),
+                        int(row["mega"]),
+                    ],
+                    [game.moves.lookup(row["move"]), rows_of.probe_category(row), NONE],
+                    rows_of.belief_threat_numbers(row),
                 )
             )
         for row in arrays.foe_priorities.values():

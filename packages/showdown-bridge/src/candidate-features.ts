@@ -26,6 +26,7 @@ import { type AssumedSet, AssumedSetError } from "./damage-aware-assumed-set.ts"
 import { parseJointChoice } from "./damage-aware-choice.ts";
 import { type DamageAwareConfig, damageAwareConfigHash } from "./damage-aware-config.ts";
 import { PPM, rollsValue } from "./damage-aware-score.ts";
+import type { BeliefThreatsPort } from "./belief-features.ts";
 import type { BeliefWorldsPort } from "./damage-aware-worlds.ts";
 import { array, DamageAwareError, type DamageView, damageView, type Foe, foesHit, object, type OwnSlot, ProbeRefusal, type ProbeMemo, type ProbeCounts, ReaderGap, text } from "./damage-aware-view.ts";
 import type { Engine, PokemonSet } from "./engine.ts";
@@ -44,7 +45,13 @@ import type { TeamVocabulary } from "./team-vocabulary.ts";
 /** The feature set this module builds (ADR-022 section 3). A change of what a row holds is a new id. */
 export const FEATURE_SET = "probe-damage/1";
 /** The ids a feature set identity can carry: `probe-damage/2` is built by `candidate-features-2.ts`. */
-export type FeatureSetId = typeof FEATURE_SET | "probe-damage/2" | typeof FEATURE_SET_BELIEF;
+export type FeatureSetId = typeof FEATURE_SET | "probe-damage/2" | typeof FEATURE_SET_3 | typeof FEATURE_SET_BELIEF;
+/** `probe-damage/2`'s arrays plus `belief_threats` (`candidate-features-3.ts`): the damage of moves the belief says a foe may hold. */
+export const FEATURE_SET_3 = "probe-damage/3";
+/** Bumped when `probe-damage/3` chooses, cuts or values its belief threats differently for the same input: part of its identity. */
+export const BELIEF_THREATS_FORMAT = 1;
+/** The reviewed per-foe cut of `probe-damage/3`: at most this many belief moves a foe, after the damaging filter. */
+export const BELIEF_THREATS_PER_FOE = 4;
 /** The belief-world set (ADR-025 slice 5, `candidate-features-belief.ts`): `probe-damage/1`'s rows as the mean over sampled worlds. */
 export const FEATURE_SET_BELIEF = "probe-damage-belief/1";
 /** Bumped when the belief set aggregates, samples or falls back differently for the same input: part of its identity. */
@@ -55,6 +62,13 @@ export interface BeliefFeatureSetup {
   port: BeliefWorldsPort;
   /** Worlds per request (the v2 record's `assumed_set.worlds`). */
   worlds: number;
+}
+
+/** The belief a `probe-damage/3` run reads its move inclusions from (the composition root builds the port). */
+export interface BeliefThreatsSetup {
+  port: BeliefThreatsPort;
+  /** Belief moves kept per foe, after the damaging filter and before the rows are made (reviewed; named by the identity). */
+  per_foe: number;
 }
 
 /** What the belief set counts about its worlds, per game (a service reports the delta of a task). All integers. */
@@ -104,6 +118,8 @@ export interface FeatureConfigs {
   feature_set?: FeatureSetId;
   /** The belief `probe-damage-belief/1` samples its worlds from; required by that set and refused for the others' identity. */
   belief?: BeliefFeatureSetup;
+  /** The belief `probe-damage/3` reads its move inclusions from; required by that set. */
+  belief_threats?: BeliefThreatsSetup;
   /** Test seam: the probe (default `probeMechanics`). */
   probe?: (context: MechanicsContext, query: ParsedMechanicsQuery) => ProbeOutcome;
   /** Test seam (the negative control of the invariance test): the assumed opponent set of a public Pokemon (default `buildAssumedSet`). */
@@ -144,12 +160,17 @@ export interface FeatureSetIdentity {
   belief_identity_hash?: string;
   worlds?: number;
   belief_features_format?: number;
+  /** `probe-damage/3` only (likewise absent from the other sets' preimages): the belief the inclusions come from, the cut and the builder format. */
+  belief_threats_identity_hash?: string;
+  belief_threats_per_foe?: number;
+  belief_threats_format?: number;
 }
 
-export function featureSetIdentity(engine: Engine, configs: Pick<FeatureConfigs, "config" | "mechanics" | "snapshot" | "belief">, featureSet: FeatureSetId = FEATURE_SET): FeatureSetIdentity {
+export function featureSetIdentity(engine: Engine, configs: Pick<FeatureConfigs, "config" | "mechanics" | "snapshot" | "belief" | "belief_threats">, featureSet: FeatureSetId = FEATURE_SET): FeatureSetIdentity {
   if (featureSet === FEATURE_SET_BELIEF && configs.belief === undefined) throw new DamageAwareError("probe-damage-belief/1 needs the belief port");
   // `probe-damage/2` asks speed orders (ADR-022 erratum E-22.3.1): a config that does not list the kind would answer every such row `query_kind`.
-  if (featureSet === "probe-damage/2" && !configs.mechanics.scope.query_kinds.some((entry) => entry.kind === "speed_order")) throw new DamageAwareError("the mechanics config does not list speed_order in scope");
+  if (featureSet === FEATURE_SET_3 && configs.belief_threats === undefined) throw new DamageAwareError("probe-damage/3 needs the belief threats port");
+  if ((featureSet === "probe-damage/2" || featureSet === FEATURE_SET_3) && !configs.mechanics.scope.query_kinds.some((entry) => entry.kind === "speed_order")) throw new DamageAwareError("the mechanics config does not list speed_order in scope");
   const snapshot = configs.snapshot ?? loadRulesSnapshot(engine.commit);
   return {
     feature_set: featureSet,
@@ -159,6 +180,9 @@ export function featureSetIdentity(engine: Engine, configs: Pick<FeatureConfigs,
     reader_sha256: readerSha256(),
     version_manifest: resolveFormat(engine, configs.config.format_id, snapshot).manifest,
     ...(featureSet === FEATURE_SET_BELIEF && configs.belief !== undefined ? { belief_identity_hash: configs.belief.port.identity_hash, worlds: configs.belief.worlds, belief_features_format: BELIEF_FEATURES_FORMAT } : {}),
+    ...(featureSet === FEATURE_SET_3 && configs.belief_threats !== undefined
+      ? { belief_threats_identity_hash: configs.belief_threats.port.identity_hash, belief_threats_per_foe: configs.belief_threats.per_foe, belief_threats_format: BELIEF_THREATS_FORMAT }
+      : {}),
   };
 }
 
