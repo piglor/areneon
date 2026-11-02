@@ -300,3 +300,106 @@ export function readAnyLeagueRunRecord(value: unknown): LeagueRunRecord | League
   if (version === 2) return readLeagueRunRecordV2(value);
   throw new LeagueRunRecordError("a LeagueRunRecord has schema_version 1 or 2");
 }
+
+/** What a seat of a population game was: a member (by its label) or a scripted baseline (by its policy id). */
+export type FactSeat = { member: string } | { baseline: string };
+
+export interface LeagueRunFactsV2 {
+  config: TrainingRunConfig;
+  generation: number;
+  /** The match plan, as `plan.json` holds it. */
+  plan: readonly unknown[];
+  /** The learning members, in order m0.., with the frozen pair each plays this generation. */
+  members: readonly { member: string; pair_policy_id: string; checkpoints: { preview: string; battle: string } }[];
+  /** One entry per game: its seats, whether it was played to an end, and the baseline's report when a baseline took a seat. */
+  games: readonly {
+    seats: readonly [FactSeat, FactSeat];
+    outcome: "played" | "forfeit";
+    forfeit?: { cause: ForfeitCause };
+    /** The baseline seat's report, attached to the member that played it. */
+    baseline_report?: BaselineGameReport;
+  }[];
+}
+
+const countCauses = (causes: Map<string, number>): { cause: string; count: number }[] =>
+  [...causes.entries()].sort(([a], [b]) => (a < b ? -1 : 1)).map(([cause, count]) => ({ cause, count }));
+
+/**
+ * Build the version 2 record of a population generation from what it played (the counting rule is the
+ * schema's): a member's entry holds every game in which it has a seat, a game between two members is in both
+ * entries, a self-play game is in one with the member itself as opponent, and the root counts distinct games.
+ * It is read back by its own reader, so a bad record cannot leave.
+ */
+export async function buildLeagueRunRecordV2(facts: LeagueRunFactsV2): Promise<LeagueRunRecordV2> {
+  const { config, games } = facts;
+  const byMember = new Map(facts.members.map((entry) => [entry.member, entry]));
+  const tallies = new Map(
+    facts.members.map((entry) => [
+      entry.member,
+      { games: 0, played: 0, forfeits: 0, episodes: 0, causes: new Map<string, number>(), opponents: new Map<string, MemberOpponent>(), reports: [] as BaselineGameReport[] },
+    ]),
+  );
+  const rootCauses = new Map<string, number>();
+  let played = 0;
+  for (const game of games) {
+    const isPlayed = game.outcome === "played";
+    if (isPlayed) played += 1;
+    else rootCauses.set((game.forfeit as { cause: ForfeitCause }).cause, (rootCauses.get((game.forfeit as { cause: ForfeitCause }).cause) ?? 0) + 1);
+    const members = [...new Set(game.seats.flatMap((seat) => ("member" in seat ? [seat.member] : [])))];
+    for (const label of members) {
+      const tally = tallies.get(label);
+      if (tally === undefined) throw new LeagueRunRecordError("a game names a member the record does not hold");
+      tally.games += 1;
+      if (isPlayed) {
+        tally.played += 1;
+        tally.episodes += game.seats.filter((seat) => "member" in seat && seat.member === label).length;
+      } else {
+        tally.forfeits += 1;
+        const cause = (game.forfeit as { cause: ForfeitCause }).cause;
+        tally.causes.set(cause, (tally.causes.get(cause) ?? 0) + 1);
+      }
+      // The opponent is the other seat; in self-play it is this member itself.
+      const [first, second] = game.seats;
+      const other = "member" in first && first.member === label ? second : first;
+      const key = "member" in other ? `m:${other.member}` : `b:${other.baseline}`;
+      const entry: MemberOpponent =
+        tally.opponents.get(key) ??
+        ("member" in other
+          ? { opponent_policy_id: (byMember.get(other.member) as { pair_policy_id: string }).pair_policy_id, member: other.member, games: 0, played: 0 }
+          : { opponent_policy_id: other.baseline, games: 0, played: 0 });
+      entry.games += 1;
+      if (isPlayed) entry.played += 1;
+      tally.opponents.set(key, entry);
+      if (game.baseline_report !== undefined && "baseline" in other) tally.reports.push(game.baseline_report);
+    }
+  }
+  return readLeagueRunRecordV2({
+    schema_version: 2,
+    run_id: config.seeds.run_key,
+    run_config_hash: await runConfigHash(config),
+    generation: facts.generation,
+    seed_derivation: LEAGUE_SEED_DERIVATION,
+    plan_hash: await nodeSha256(new TextEncoder().encode(jcs(facts.plan as unknown as Json))),
+    games: games.length,
+    played,
+    forfeits: games.length - played,
+    ...(games.length > played ? { forfeit_causes: countCauses(rootCauses) } : {}),
+    episodes: 2 * played,
+    copy_decision_hash: null,
+    members: facts.members.map((entry) => {
+      const tally = tallies.get(entry.member) as NonNullable<ReturnType<typeof tallies.get>>;
+      return {
+        member: entry.member,
+        pair_policy_id: entry.pair_policy_id,
+        checkpoints: entry.checkpoints,
+        games: tally.games,
+        played: tally.played,
+        forfeits: tally.forfeits,
+        ...(tally.forfeits > 0 ? { forfeit_causes: countCauses(tally.causes) } : {}),
+        episodes: tally.episodes,
+        opponents: [...tally.opponents.values()].sort(opponentOrder),
+        ...(tally.reports.length > 0 ? { baselines: baselineEntries(tally.reports) } : {}),
+      };
+    }),
+  });
+}
