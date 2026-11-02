@@ -121,6 +121,16 @@ INVALID = sorted(p.name for p in (CONFIGS / "invalid").iterdir())
         ("anchor-no-warm-start.json", "ppo.anchor needs warm_start"),
         ("play-temperature-default.json", "is the default"),
         ("shared-trunk-warm-start.json", "shared_trunk cannot be combined"),
+        ("population-shares-sum.json", "must sum to 1000000"),
+        ("population-roots-exceed-members.json", "min_roots cannot exceed members"),
+        ("population-past-over-pool.json", "cannot exceed past_pool.max_size"),
+        ("population-bound-excludes-start.json", "explore.bounds.learning_rate_micro must contain"),
+        ("population-share-bound-excludes-start.json", "explore.bounds.ladder_ppm must contain"),
+        ("population-override-outside-bound.json", "explore.bounds.epochs must contain"),
+        ("population-target-kl-bound-unset.json", "needs ppo.target_kl_micro"),
+        ("population-member-ppo-unsorted.json", "sorted by member and unique"),
+        ("population-member-ppo-duplicate.json", "sorted by member and unique"),
+        ("population-member-ppo-out-of-range.json", "at or above members"),
     ],
 )
 def test_the_reader_rules_the_profile_cannot_say(name: str, message: str) -> None:
@@ -130,7 +140,7 @@ def test_the_reader_rules_the_profile_cannot_say(name: str, message: str) -> Non
 
 
 def test_every_reader_invalid_sample_is_checked_above() -> None:
-    assert len(READER_INVALID) == 8
+    assert len(READER_INVALID) == 18
 
 
 @pytest.mark.parametrize("name", INVALID)
@@ -178,3 +188,25 @@ def test_the_candidate_matchup_encoder_option_is_read_and_only_true_is_a_value()
     assert config.hash != read_run_config(raw()).hash
     with pytest.raises(RunConfigError):
         read_run_config(raw("invalid/candidate-matchup-false.json"))
+
+
+# ADR-021: ``population`` is optional; absent keeps today's record, bytes and hash.
+TINY_HASH = "853e9e39b7ed10ee57224d43d247e309da5819d713951cbbade42d0556aade16"
+
+
+def test_a_config_without_population_keeps_its_bytes_and_hash() -> None:
+    config = read_run_config(raw())
+    assert config.population is False
+    assert "population" not in config.raw
+    assert config.hash == sha256_hex(jcs(raw()))
+    assert config.hash == TINY_HASH
+
+
+@pytest.mark.parametrize(
+    "name", ["population.json", "population-single.json", "population-member-ppo-exploiters.json"]
+)
+def test_the_population_samples_are_read_and_hash_apart(name: str) -> None:
+    config = read_run_config(raw(f"valid/{name}"))
+    assert config.population is True
+    assert config.hash != read_run_config(raw()).hash
+    assert config.raw["population"]["members"] in (1, 4)

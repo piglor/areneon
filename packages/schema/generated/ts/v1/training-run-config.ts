@@ -261,6 +261,278 @@ export interface TrainingRunConfig {
     battle: string;
   };
   /**
+   * Optional (a minor change within v1; ADR-021 sections 2, 3, 5, 6 and 8, ADR-010 erratum A3, #982): the run is a population of learning members on one ladder instead of one lineage. Every value is config data; code holds only the outer bounds (members 1 to 16, exploiters 0 to 2). Integers only; shares and thresholds are parts per million. Absent keeps today's single-lineage loop and its bytes and run_config_hash; a config that carries it is a new run, and the loop driver refuses it until the scheduler lands (slice 5). Reader rules (both readers): the three opponent shares sum to 1,000,000; min_roots is at most members; every explore bound contains its starting value (the member's override, else the ppo value; shares start from population.shares); past_pool.max_past_per_member is at most past_pool.max_size; member_ppo is sorted by member, unique, and each member is below members.
+   */
+  population?: {
+    /**
+     * Learning members M (code bound 1 to 16; ADR-021 recommends a start of 4).
+     */
+    members: number;
+    /**
+     * Exploiter seats (code bound 0 to 2).
+     */
+    exploiters: number;
+    /**
+     * Policy seats per member per generation, the unit the shares divide (ADR-021 section 3).
+     */
+    seats_per_member: number;
+    /**
+     * Opponent shares of a member's policy seats, in parts per million; they sum to 1,000,000.
+     */
+    shares: {
+      /**
+       * Current members, uniform, whole team pairs from both seats.
+       */
+      ladder_ppm: number;
+      /**
+       * The member's own frozen pair.
+       */
+      self_play_ppm: number;
+      /**
+       * PFSP over frozen snapshots of any member.
+       */
+      past_pool_ppm: number;
+    };
+    /**
+     * The frozen past pool (ADR-021 section 3).
+     */
+    past_pool: {
+      /**
+       * Generations between snapshots of each member's frozen pair.
+       */
+      snapshot_every: number;
+      /**
+       * Cap on pairs in the pool (oldest evicted first, generation-0 pairs never).
+       */
+      max_size: number;
+      /**
+       * Distinct snapshots drawn per member per generation (at most max_size).
+       */
+      max_past_per_member: number;
+      /**
+       * The PFSP f_hard exponent p.
+       */
+      pfsp_power: number;
+      /**
+       * Least PFSP weight in parts per million, so no snapshot is starved.
+       */
+      floor_ppm: number;
+    };
+    /**
+     * Integer Bradley-Terry rating inputs (ADR-021 section 4).
+     */
+    rating: {
+      /**
+       * Generations of results a strength is fitted on.
+       */
+      window: number;
+      /**
+       * Pairs per anchor pair in the generation-0 anchor calibration.
+       */
+      calibration_pairs: number;
+      /**
+       * Percentile bootstrap resamples over pairs.
+       */
+      bootstrap_resamples: number;
+    };
+    /**
+     * The conservative copy rule (ADR-021 section 6).
+     */
+    selection: {
+      /**
+       * Generations since a member's last copy before it may be replaced.
+       */
+      ready_generations: number;
+      /**
+       * Least head-to-head pairs in the window for a copy decision.
+       */
+      n_min: number;
+      /**
+       * Margin above 500,000 the donor's one-sided lower bound must clear.
+       */
+      margin_ppm: number;
+      /**
+       * One-sided level of the bootstrap bound, in parts per million.
+       */
+      alpha_ppm: number;
+      /**
+       * Distinct generation-0 roots that must remain after a copy (at most members).
+       */
+      min_roots: number;
+    };
+    /**
+     * The explore step (ADR-021 section 6).
+     */
+    explore: {
+      /**
+       * Inclusive bounds the explore step clamps to; each must contain its starting value. target_kl_micro is allowed only when ppo.target_kl_micro is set.
+       */
+      bounds: {
+        /**
+         * Bounds of ppo.learning_rate_micro.
+         */
+        learning_rate_micro: {
+          /**
+           * Lowest value the explore step may set.
+           */
+          min: number;
+          /**
+           * Highest value the explore step may set (a reader rule requires min <= the starting value <= max).
+           */
+          max: number;
+        };
+        /**
+         * Bounds of ppo.entropy_coef_micro.
+         */
+        entropy_coef_micro: {
+          /**
+           * Lowest value the explore step may set.
+           */
+          min: number;
+          /**
+           * Highest value the explore step may set (a reader rule requires min <= the starting value <= max).
+           */
+          max: number;
+        };
+        /**
+         * Bounds of ppo.epochs.
+         */
+        epochs: {
+          /**
+           * Lowest value the explore step may set.
+           */
+          min: number;
+          /**
+           * Highest value the explore step may set (a reader rule requires min <= the starting value <= max).
+           */
+          max: number;
+        };
+        /**
+         * Bounds of ppo.clip_micro.
+         */
+        clip_micro: {
+          /**
+           * Lowest value the explore step may set.
+           */
+          min: number;
+          /**
+           * Highest value the explore step may set (a reader rule requires min <= the starting value <= max).
+           */
+          max: number;
+        };
+        /**
+         * Bounds of ppo.target_kl_micro.
+         */
+        target_kl_micro?: {
+          /**
+           * Lowest value the explore step may set.
+           */
+          min: number;
+          /**
+           * Highest value the explore step may set (a reader rule requires min <= the starting value <= max).
+           */
+          max: number;
+        };
+        /**
+         * Bounds of the ladder share.
+         */
+        ladder_ppm: {
+          /**
+           * Lowest value the explore step may set.
+           */
+          min: number;
+          /**
+           * Highest value the explore step may set (a reader rule requires min <= the starting value <= max).
+           */
+          max: number;
+        };
+        /**
+         * Bounds of the self-play share.
+         */
+        self_play_ppm: {
+          /**
+           * Lowest value the explore step may set.
+           */
+          min: number;
+          /**
+           * Highest value the explore step may set (a reader rule requires min <= the starting value <= max).
+           */
+          max: number;
+        };
+        /**
+         * Bounds of the past-pool share.
+         */
+        past_pool_ppm: {
+          /**
+           * Lowest value the explore step may set.
+           */
+          min: number;
+          /**
+           * Highest value the explore step may set (a reader rule requires min <= the starting value <= max).
+           */
+          max: number;
+        };
+      };
+    };
+    /**
+     * Health stops that quarantine a member (ADR-021 section 6).
+     */
+    health: {
+      /**
+       * Clip fraction, in parts per million, above which a generation counts as unhealthy.
+       */
+      clip_ppm: number;
+      /**
+       * Approximate KL, in millionths, above which a generation counts as unhealthy.
+       */
+      kl_ppm: number;
+      /**
+       * Share of a member's games, in parts per million, that may be policy forfeits.
+       */
+      forfeit_ppm: number;
+    };
+    /**
+     * Exploiter seat settings.
+     */
+    exploiter: {
+      /**
+       * Generations after which an exploiter seat is reset (ADR-021 default 10).
+       */
+      reset_every: number;
+    };
+    /**
+     * Optional starting PPO overrides per member, sorted by member and unique; a field not given keeps the ppo value.
+     *
+     * @maxItems 16
+     */
+    member_ppo?: {
+      /**
+       * Member index, from 0 below members.
+       */
+      member: number;
+      /**
+       * Starting ppo.learning_rate_micro of this member.
+       */
+      learning_rate_micro?: number;
+      /**
+       * Starting ppo.entropy_coef_micro of this member.
+       */
+      entropy_coef_micro?: number;
+      /**
+       * Starting ppo.epochs of this member.
+       */
+      epochs?: number;
+      /**
+       * Starting ppo.clip_micro of this member.
+       */
+      clip_micro?: number;
+      /**
+       * Starting ppo.target_kl_micro of this member (needs ppo.target_kl_micro).
+       */
+      target_kl_micro?: number;
+    }[];
+  };
+  /**
    * Where the learner runs (ADR-010 section 4). A cuda run is not claimed to be bit-reproducible, and its hash differs from a cpu run's.
    */
   learner: {

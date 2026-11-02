@@ -22,7 +22,7 @@ const validConfig = ajvFor("contract").compile(trainingRunConfigSchema);
  * Read a TrainingRunConfig: the schema, then the rules it cannot say: the
  * attention heads divide the token width, a Team Preview order does not name
  * more positions than a side holds, each scripted baseline appears once, and a warm start names different
- * checkpoints (a checkpoint holds the network of one role; the Battle role alone is allowed), a value warm-up needs a warm start, and so does a KL anchor, a shared trunk excludes a two-role warm start (a Battle-only one is allowed), and an explicit play temperature of 1,000,000 is refused (the default is omitted).
+ * checkpoints (a checkpoint holds the network of one role; the Battle role alone is allowed), a value warm-up needs a warm start, and so does a KL anchor, a shared trunk excludes a two-role warm start (a Battle-only one is allowed), an explicit play temperature of 1,000,000 is refused (the default is omitted), and a population obeys its own rules (opponent shares sum to 10^6, `min_roots` at most `members`, `max_past_per_member` at most `max_size`, `member_ppo` sorted and unique, every explore bound contains its starting value).
  */
 export function readTrainingRunConfig(value: unknown): TrainingRunConfig {
   if (!validConfig(value)) throw new TrainingRunConfigError(`invalid TrainingRunConfig: ${JSON.stringify(validConfig.errors)}`);
@@ -51,7 +51,41 @@ export function readTrainingRunConfig(value: unknown): TrainingRunConfig {
   if (generation.play?.temperature_ppm === 1_000_000) {
     throw new TrainingRunConfigError("generation.play.temperature_ppm 1000000 is the default: omit generation.play (one rule, one encoding)");
   }
+  if (config.population !== undefined) checkPopulation(config);
   return config;
+}
+
+const START_FIELDS = ["learning_rate_micro", "entropy_coef_micro", "epochs", "clip_micro", "target_kl_micro"] as const;
+const SHARE_FIELDS = ["ladder_ppm", "self_play_ppm", "past_pool_ppm"] as const;
+
+/** The population rules the profile cannot say (ADR-021 sections 2, 3, 6): sums, orders and containment. */
+function checkPopulation(config: TrainingRunConfig): void {
+  const population = config.population;
+  if (population === undefined) return;
+  const fail = (message: string): never => {
+    throw new TrainingRunConfigError(`population: ${message}`);
+  };
+  const { shares, past_pool, selection, explore } = population;
+  if (shares.ladder_ppm + shares.self_play_ppm + shares.past_pool_ppm !== 1_000_000) fail("the opponent shares must sum to 1000000");
+  if (selection.min_roots > population.members) fail("selection.min_roots cannot exceed members");
+  if (past_pool.max_past_per_member > past_pool.max_size) fail("past_pool.max_past_per_member cannot exceed past_pool.max_size");
+  const overrides = population.member_ppo ?? [];
+  overrides.forEach((entry, i) => {
+    if (entry.member >= population.members) fail("member_ppo names a member at or above members");
+    if (i > 0 && entry.member <= (overrides[i - 1]?.member ?? -1)) fail("member_ppo must be sorted by member and unique");
+    if (entry.target_kl_micro !== undefined && config.ppo.target_kl_micro === undefined) fail("member_ppo target_kl_micro needs ppo.target_kl_micro");
+  });
+  const bounds = explore.bounds;
+  if (bounds.target_kl_micro !== undefined && config.ppo.target_kl_micro === undefined) fail("explore.bounds.target_kl_micro needs ppo.target_kl_micro");
+  const within = (name: string, value: number | undefined, bound: { min: number; max: number } | undefined): void => {
+    if (value === undefined || bound === undefined) return;
+    if (bound.min > value || value > bound.max) fail(`explore.bounds.${name} must contain its starting value`);
+  };
+  for (let member = 0; member < population.members; member += 1) {
+    const override = overrides.find((entry) => entry.member === member);
+    for (const field of START_FIELDS) within(field, override?.[field] ?? config.ppo[field], bounds[field]);
+  }
+  for (const field of SHARE_FIELDS) within(field, shares[field], bounds[field]);
 }
 
 /** The hash `CheckpointRecord.run_config_hash` holds: SHA-256 of the record's JCS bytes. */

@@ -171,6 +171,13 @@ class Loop:
         player: GenerationPlayer,
         on_stage: StageHook | None = None,
     ) -> None:
+        if config.population:
+            # ADR-021: the config can describe a population, but the scheduler that plays one
+            # (slice 5) does not exist; running it as a single lineage would be a different run.
+            raise LoopError(
+                "population: this driver runs a single lineage; "
+                "a population run needs the ladder scheduler, which is not built yet"
+            )
         self.config = config
         self.run_dir = run_dir
         self.game = game

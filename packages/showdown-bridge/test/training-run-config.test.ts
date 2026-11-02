@@ -171,4 +171,25 @@ describe("the TrainingRunConfig reader (ADR-010 §5)", () => {
     const changed = readTrainingRunConfig({ ...config, ppo: { ...config.ppo, epochs: config.ppo.epochs + 1 } });
     expect(await runConfigHash(changed)).not.toBe(await runConfigHash(config));
   });
+
+  it("keeps a config without population as it was and reads the population samples (ADR-021)", async () => {
+    const tiny = readTrainingRunConfig(sample("tiny"));
+    expect(tiny).not.toHaveProperty("population");
+    expect(await runConfigHash(tiny)).toBe("853e9e39b7ed10ee57224d43d247e309da5819d713951cbbade42d0556aade16");
+    for (const name of ["population", "population-single", "population-member-ppo-exploiters"]) {
+      const config = readTrainingRunConfig(sample(name));
+      expect(config.population?.shares.ladder_ppm).toBeGreaterThanOrEqual(0);
+      expect(await runConfigHash(config)).not.toBe(await runConfigHash(tiny));
+    }
+    expect(readTrainingRunConfig(sample("population-member-ppo-exploiters")).population?.member_ppo).toHaveLength(2);
+  });
+
+  it("refuses the population samples the schema refuses", () => {
+    const dir = join(SAMPLES_DIR, "v1/training-run-config/invalid");
+    const files = readdirSync(dir).filter((f) => f.startsWith("population-"));
+    expect(files).toHaveLength(8);
+    for (const file of files) {
+      expect(() => readTrainingRunConfig(JSON.parse(readFileSync(join(dir, file), "utf8")))).toThrow(TrainingRunConfigError);
+    }
+  });
 });

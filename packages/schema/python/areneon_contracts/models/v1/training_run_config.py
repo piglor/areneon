@@ -139,6 +139,436 @@ class WarmStart(BaseModel):
     """
 
 
+class Shares(BaseModel):
+    """
+    Opponent shares of a member's policy seats, in parts per million; they sum to 1,000,000.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    ladder_ppm: Annotated[StrictInt, Field(ge=0, le=1000000)]
+    """
+    Current members, uniform, whole team pairs from both seats.
+    """
+    self_play_ppm: Annotated[StrictInt, Field(ge=0, le=1000000)]
+    """
+    The member's own frozen pair.
+    """
+    past_pool_ppm: Annotated[StrictInt, Field(ge=0, le=1000000)]
+    """
+    PFSP over frozen snapshots of any member.
+    """
+
+
+class PastPool(BaseModel):
+    """
+    The frozen past pool (ADR-021 section 3).
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    snapshot_every: Annotated[StrictInt, Field(ge=1, le=1000000)]
+    """
+    Generations between snapshots of each member's frozen pair.
+    """
+    max_size: Annotated[StrictInt, Field(ge=1, le=1000000)]
+    """
+    Cap on pairs in the pool (oldest evicted first, generation-0 pairs never).
+    """
+    max_past_per_member: Annotated[StrictInt, Field(ge=1, le=1000000)]
+    """
+    Distinct snapshots drawn per member per generation (at most max_size).
+    """
+    pfsp_power: Annotated[StrictInt, Field(ge=1, le=16)]
+    """
+    The PFSP f_hard exponent p.
+    """
+    floor_ppm: Annotated[StrictInt, Field(ge=0, le=1000000)]
+    """
+    Least PFSP weight in parts per million, so no snapshot is starved.
+    """
+
+
+class Rating(BaseModel):
+    """
+    Integer Bradley-Terry rating inputs (ADR-021 section 4).
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    window: Annotated[StrictInt, Field(ge=1, le=1000000)]
+    """
+    Generations of results a strength is fitted on.
+    """
+    calibration_pairs: Annotated[StrictInt, Field(ge=1, le=1000000)]
+    """
+    Pairs per anchor pair in the generation-0 anchor calibration.
+    """
+    bootstrap_resamples: Annotated[StrictInt, Field(ge=1, le=1000000)]
+    """
+    Percentile bootstrap resamples over pairs.
+    """
+
+
+class Selection(BaseModel):
+    """
+    The conservative copy rule (ADR-021 section 6).
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    ready_generations: Annotated[StrictInt, Field(ge=1, le=1000000)]
+    """
+    Generations since a member's last copy before it may be replaced.
+    """
+    n_min: Annotated[StrictInt, Field(ge=1, le=1000000)]
+    """
+    Least head-to-head pairs in the window for a copy decision.
+    """
+    margin_ppm: Annotated[StrictInt, Field(ge=0, le=500000)]
+    """
+    Margin above 500,000 the donor's one-sided lower bound must clear.
+    """
+    alpha_ppm: Annotated[StrictInt, Field(ge=1, le=500000)]
+    """
+    One-sided level of the bootstrap bound, in parts per million.
+    """
+    min_roots: Annotated[StrictInt, Field(ge=1, le=16)]
+    """
+    Distinct generation-0 roots that must remain after a copy (at most members).
+    """
+
+
+class LearningRateMicro(BaseModel):
+    """
+    Bounds of ppo.learning_rate_micro.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    min: Annotated[StrictInt, Field(ge=1, le=1000000)]
+    """
+    Lowest value the explore step may set.
+    """
+    max: Annotated[StrictInt, Field(ge=1, le=1000000)]
+    """
+    Highest value the explore step may set (a reader rule requires min <= the starting value <= max).
+    """
+
+
+class EntropyCoefMicro(BaseModel):
+    """
+    Bounds of ppo.entropy_coef_micro.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    min: Annotated[StrictInt, Field(ge=0, le=10000000)]
+    """
+    Lowest value the explore step may set.
+    """
+    max: Annotated[StrictInt, Field(ge=0, le=10000000)]
+    """
+    Highest value the explore step may set (a reader rule requires min <= the starting value <= max).
+    """
+
+
+class Epochs(BaseModel):
+    """
+    Bounds of ppo.epochs.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    min: Annotated[StrictInt, Field(ge=1, le=64)]
+    """
+    Lowest value the explore step may set.
+    """
+    max: Annotated[StrictInt, Field(ge=1, le=64)]
+    """
+    Highest value the explore step may set (a reader rule requires min <= the starting value <= max).
+    """
+
+
+class ClipMicro(BaseModel):
+    """
+    Bounds of ppo.clip_micro.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    min: Annotated[StrictInt, Field(ge=1, le=1000000)]
+    """
+    Lowest value the explore step may set.
+    """
+    max: Annotated[StrictInt, Field(ge=1, le=1000000)]
+    """
+    Highest value the explore step may set (a reader rule requires min <= the starting value <= max).
+    """
+
+
+class TargetKlMicro(BaseModel):
+    """
+    Bounds of ppo.target_kl_micro.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    min: Annotated[StrictInt, Field(ge=1, le=1000000000)]
+    """
+    Lowest value the explore step may set.
+    """
+    max: Annotated[StrictInt, Field(ge=1, le=1000000000)]
+    """
+    Highest value the explore step may set (a reader rule requires min <= the starting value <= max).
+    """
+
+
+class LadderPpm(BaseModel):
+    """
+    Bounds of the ladder share.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    min: Annotated[StrictInt, Field(ge=0, le=1000000)]
+    """
+    Lowest value the explore step may set.
+    """
+    max: Annotated[StrictInt, Field(ge=0, le=1000000)]
+    """
+    Highest value the explore step may set (a reader rule requires min <= the starting value <= max).
+    """
+
+
+class SelfPlayPpm(BaseModel):
+    """
+    Bounds of the self-play share.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    min: Annotated[StrictInt, Field(ge=0, le=1000000)]
+    """
+    Lowest value the explore step may set.
+    """
+    max: Annotated[StrictInt, Field(ge=0, le=1000000)]
+    """
+    Highest value the explore step may set (a reader rule requires min <= the starting value <= max).
+    """
+
+
+class PastPoolPpm(BaseModel):
+    """
+    Bounds of the past-pool share.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    min: Annotated[StrictInt, Field(ge=0, le=1000000)]
+    """
+    Lowest value the explore step may set.
+    """
+    max: Annotated[StrictInt, Field(ge=0, le=1000000)]
+    """
+    Highest value the explore step may set (a reader rule requires min <= the starting value <= max).
+    """
+
+
+class Bounds(BaseModel):
+    """
+    Inclusive bounds the explore step clamps to; each must contain its starting value. target_kl_micro is allowed only when ppo.target_kl_micro is set.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    learning_rate_micro: LearningRateMicro
+    """
+    Bounds of ppo.learning_rate_micro.
+    """
+    entropy_coef_micro: EntropyCoefMicro
+    """
+    Bounds of ppo.entropy_coef_micro.
+    """
+    epochs: Epochs
+    """
+    Bounds of ppo.epochs.
+    """
+    clip_micro: ClipMicro
+    """
+    Bounds of ppo.clip_micro.
+    """
+    target_kl_micro: TargetKlMicro | MISSING = MISSING
+    """
+    Bounds of ppo.target_kl_micro.
+    """
+    ladder_ppm: LadderPpm
+    """
+    Bounds of the ladder share.
+    """
+    self_play_ppm: SelfPlayPpm
+    """
+    Bounds of the self-play share.
+    """
+    past_pool_ppm: PastPoolPpm
+    """
+    Bounds of the past-pool share.
+    """
+
+
+class Explore(BaseModel):
+    """
+    The explore step (ADR-021 section 6).
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    bounds: Bounds
+    """
+    Inclusive bounds the explore step clamps to; each must contain its starting value. target_kl_micro is allowed only when ppo.target_kl_micro is set.
+    """
+
+
+class Health(BaseModel):
+    """
+    Health stops that quarantine a member (ADR-021 section 6).
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    clip_ppm: Annotated[StrictInt, Field(ge=0, le=1000000)]
+    """
+    Clip fraction, in parts per million, above which a generation counts as unhealthy.
+    """
+    kl_ppm: Annotated[StrictInt, Field(ge=0, le=1000000000)]
+    """
+    Approximate KL, in millionths, above which a generation counts as unhealthy.
+    """
+    forfeit_ppm: Annotated[StrictInt, Field(ge=0, le=1000000)]
+    """
+    Share of a member's games, in parts per million, that may be policy forfeits.
+    """
+
+
+class Exploiter(BaseModel):
+    """
+    Exploiter seat settings.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    reset_every: Annotated[StrictInt, Field(ge=1, le=1000000)]
+    """
+    Generations after which an exploiter seat is reset (ADR-021 default 10).
+    """
+
+
+class MemberPpoItem(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    member: Annotated[StrictInt, Field(ge=0, le=15)]
+    """
+    Member index, from 0 below members.
+    """
+    learning_rate_micro: Annotated[StrictInt | MISSING, Field(ge=1, le=1000000)] = (
+        MISSING
+    )
+    """
+    Starting ppo.learning_rate_micro of this member.
+    """
+    entropy_coef_micro: Annotated[StrictInt | MISSING, Field(ge=0, le=10000000)] = (
+        MISSING
+    )
+    """
+    Starting ppo.entropy_coef_micro of this member.
+    """
+    epochs: Annotated[StrictInt | MISSING, Field(ge=1, le=64)] = MISSING
+    """
+    Starting ppo.epochs of this member.
+    """
+    clip_micro: Annotated[StrictInt | MISSING, Field(ge=1, le=1000000)] = MISSING
+    """
+    Starting ppo.clip_micro of this member.
+    """
+    target_kl_micro: Annotated[StrictInt | MISSING, Field(ge=1, le=1000000000)] = (
+        MISSING
+    )
+    """
+    Starting ppo.target_kl_micro of this member (needs ppo.target_kl_micro).
+    """
+
+
+class Population(BaseModel):
+    """
+    Optional (a minor change within v1; ADR-021 sections 2, 3, 5, 6 and 8, ADR-010 erratum A3, #982): the run is a population of learning members on one ladder instead of one lineage. Every value is config data; code holds only the outer bounds (members 1 to 16, exploiters 0 to 2). Integers only; shares and thresholds are parts per million. Absent keeps today's single-lineage loop and its bytes and run_config_hash; a config that carries it is a new run, and the loop driver refuses it until the scheduler lands (slice 5). Reader rules (both readers): the three opponent shares sum to 1,000,000; min_roots is at most members; every explore bound contains its starting value (the member's override, else the ppo value; shares start from population.shares); past_pool.max_past_per_member is at most past_pool.max_size; member_ppo is sorted by member, unique, and each member is below members.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    members: Annotated[StrictInt, Field(ge=1, le=16)]
+    """
+    Learning members M (code bound 1 to 16; ADR-021 recommends a start of 4).
+    """
+    exploiters: Annotated[StrictInt, Field(ge=0, le=2)]
+    """
+    Exploiter seats (code bound 0 to 2).
+    """
+    seats_per_member: Annotated[StrictInt, Field(ge=1, le=1000000)]
+    """
+    Policy seats per member per generation, the unit the shares divide (ADR-021 section 3).
+    """
+    shares: Shares
+    """
+    Opponent shares of a member's policy seats, in parts per million; they sum to 1,000,000.
+    """
+    past_pool: PastPool
+    """
+    The frozen past pool (ADR-021 section 3).
+    """
+    rating: Rating
+    """
+    Integer Bradley-Terry rating inputs (ADR-021 section 4).
+    """
+    selection: Selection
+    """
+    The conservative copy rule (ADR-021 section 6).
+    """
+    explore: Explore
+    """
+    The explore step (ADR-021 section 6).
+    """
+    health: Health
+    """
+    Health stops that quarantine a member (ADR-021 section 6).
+    """
+    exploiter: Exploiter
+    """
+    Exploiter seat settings.
+    """
+    member_ppo: Annotated[list[MemberPpoItem] | MISSING, Field(max_length=16)] = MISSING
+    """
+    Optional starting PPO overrides per member, sorted by member and unique; a field not given keeps the ppo value.
+    """
+
+
 class Learner(BaseModel):
     """
     Where the learner runs (ADR-010 section 4). A cuda run is not claimed to be bit-reproducible, and its hash differs from a cpu run's.
@@ -588,6 +1018,10 @@ class TrainingRunConfig(BaseModel):
     warm_start: WarmStart | MISSING = MISSING
     """
     Optional (a minor change within v1; ADR-010 erratum A2, ADR-019 section 4): generation 0 is this declared pair of cloned checkpoints instead of the seeded random pair. The ids name checkpoints already in the run's checkpoint store (copied in by an explicit import command, never fetched). At run start each must hash to its id, hold the network of its role, and match the run's encoder version, engine-data hash and model section, and its CheckpointRecord must be a clone record (non-empty training_set_hashes, no parent, synthetic); anything else refuses the run. Generation 0 freezes the pair with no learner step, and the learner state starts fresh from the cloned weights. Naming battle alone (#1165) warm-starts the Battle role only: ppo.value_warmup and ppo.anchor then act on the Battle role only, and Team Preview trains as PPO from the first update. Absent keeps the seeded initialisation and today's bytes and run_config_hash. An older reader refuses a config that has it.
+    """
+    population: Population | MISSING = MISSING
+    """
+    Optional (a minor change within v1; ADR-021 sections 2, 3, 5, 6 and 8, ADR-010 erratum A3, #982): the run is a population of learning members on one ladder instead of one lineage. Every value is config data; code holds only the outer bounds (members 1 to 16, exploiters 0 to 2). Integers only; shares and thresholds are parts per million. Absent keeps today's single-lineage loop and its bytes and run_config_hash; a config that carries it is a new run, and the loop driver refuses it until the scheduler lands (slice 5). Reader rules (both readers): the three opponent shares sum to 1,000,000; min_roots is at most members; every explore bound contains its starting value (the member's override, else the ppo value; shares start from population.shares); past_pool.max_past_per_member is at most past_pool.max_size; member_ppo is sorted by member, unique, and each member is below members.
     """
     learner: Learner
     """
