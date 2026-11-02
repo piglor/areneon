@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
@@ -8,7 +8,9 @@ import {
   LEAGUE_SEED_DERIVATION,
   LeagueRunRecordError,
   leagueRunRecordHash,
+  readAnyLeagueRunRecord,
   readLeagueRunRecord,
+  readLeagueRunRecordV2,
   readTrainingRunConfig,
   runConfigHash,
 } from "../src/index.ts";
@@ -178,5 +180,68 @@ describe("buildLeagueRunRecord", () => {
 
   it("refuses a generation that played nothing", async () => {
     await expect(buildLeagueRunRecord({ config: config(), generation: 1, pair_policy_id: pair, plan: [], games: [] })).rejects.toThrow(LeagueRunRecordError);
+  });
+});
+
+const sampleV2 = (name: string, kind = "valid"): Record<string, unknown> =>
+  JSON.parse(readFileSync(join(SAMPLES_DIR, `v1/league-run-record-2/${kind}/${name}.json`), "utf8")) as Record<string, unknown>;
+
+// The config field of ADR-021 slice 1 is read as data: a closed TrainingRunConfig cannot carry it yet.
+const withPopulation = (population: { members: number; exploiters: number } | undefined) => ({ ...config(), ...(population === undefined ? {} : { population }) }) as ReturnType<typeof config>;
+
+describe("the LeagueRunRecord version 2 reader (ADR-021 §8)", () => {
+  it("reads the valid samples and hands back a copy; version 1 reads unchanged", () => {
+    const raw = sampleV2("population");
+    const record = readLeagueRunRecordV2(raw);
+    expect(record).toEqual(raw);
+    expect(record).not.toBe(raw);
+    expect(record.members.map((m) => m.member)).toEqual(["m0", "m1", "x0"]);
+    expect(readLeagueRunRecordV2(sampleV2("single-member")).copy_decision_hash).toBeNull();
+    expect(readAnyLeagueRunRecord(raw)).toEqual(raw);
+    expect(readAnyLeagueRunRecord(sample("league-run-record", "tiny")).schema_version).toBe(1);
+  });
+
+  it("dispatches on schema_version and refuses an unknown one", () => {
+    for (const bad of [null, 3, { schema_version: 3 }, {}, "x"]) {
+      expect(() => readAnyLeagueRunRecord(bad)).toThrow(/schema_version 1 or 2/);
+    }
+    expect(() => readLeagueRunRecord(sampleV2("population"))).toThrow(LeagueRunRecordError);
+    expect(() => readLeagueRunRecordV2(sample("league-run-record", "tiny"))).toThrow(LeagueRunRecordError);
+    expect(() => readLeagueRunRecordV2(null)).toThrow(/invalid LeagueRunRecordV2/);
+  });
+
+  it("refuses every schema-invalid sample", () => {
+    for (const name of readdirSync(join(SAMPLES_DIR, "v1/league-run-record-2/invalid")).map((f) => f.replace(".json", ""))) {
+      expect(() => readLeagueRunRecordV2(sampleV2(name, "invalid")), name).toThrow(/invalid LeagueRunRecordV2/);
+    }
+  });
+
+  it("hashes the JCS bytes of either version", async () => {
+    const record = readLeagueRunRecordV2(sampleV2("population"));
+    expect(await leagueRunRecordHash(record)).toMatch(/^[0-9a-f]{64}$/);
+    expect(await leagueRunRecordHash({ ...record, copy_decision_hash: null })).not.toBe(await leagueRunRecordHash(record));
+  });
+
+  it("belongs to a config by run key, hash and the numbers of members and exploiters", async () => {
+    const record = readLeagueRunRecordV2({ ...sampleV2("population"), run_config_hash: await runConfigHash(config()) });
+    // The hash covers the config as read; a population object is part of what a later config hashes, so the test fixes the hash on the config it checks.
+    const populated = withPopulation({ members: 2, exploiters: 1 });
+    const fitted = { ...record, run_config_hash: await runConfigHash(populated) };
+    await expect(checkLeagueRunRecord(fitted, populated)).resolves.toBeUndefined();
+    await expect(checkLeagueRunRecord({ ...fitted, run_id: "other" }, populated)).rejects.toThrow(/run key/);
+    await expect(checkLeagueRunRecord({ ...fitted, run_config_hash: "0".repeat(64) }, populated)).rejects.toThrow(/config's hash/);
+    const fewer = withPopulation({ members: 3, exploiters: 1 });
+    await expect(checkLeagueRunRecord({ ...fitted, run_config_hash: await runConfigHash(fewer) }, fewer)).rejects.toThrow(/population\.members/);
+    const noExploiter = withPopulation({ members: 2, exploiters: 0 });
+    await expect(checkLeagueRunRecord({ ...fitted, run_config_hash: await runConfigHash(noExploiter) }, noExploiter)).rejects.toThrow(/population\.exploiters/);
+    const plain = config();
+    await expect(checkLeagueRunRecord({ ...fitted, run_config_hash: await runConfigHash(plain) }, plain)).rejects.toThrow(/has a population/);
+  });
+
+  it("refuses member ids with a gap", async () => {
+    const populated = withPopulation({ members: 2, exploiters: 1 });
+    const raw = sampleV2("population") as { members: { member: string }[] };
+    const gap = readLeagueRunRecordV2({ ...raw, run_config_hash: await runConfigHash(populated), members: raw.members.map((m) => (m.member === "m1" ? { ...m, member: "m3" } : m)) });
+    await expect(checkLeagueRunRecord(gap, populated)).rejects.toThrow(/without gaps/);
   });
 });

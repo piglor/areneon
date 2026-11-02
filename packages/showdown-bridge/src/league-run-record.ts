@@ -10,7 +10,9 @@
 
 import { ajvFor } from "@areneon/schema/ajv";
 import leagueRunRecordSchema from "@areneon/schema/contracts/v1/league-run-record.schema.json" with { type: "json" };
+import leagueRunRecordSchemaV2 from "@areneon/schema/contracts/v1/league-run-record-2.schema.json" with { type: "json" };
 import type { LeagueRunRecord } from "@areneon/schema/types/v1/league-run-record.ts";
+import type { LeagueRunRecordV2 } from "@areneon/schema/types/v1/league-run-record-2.ts";
 import { type Json, jcs } from "./canonical-json.ts";
 import { LEAGUE_SEED_DERIVATION } from "./league-seed.ts";
 import { nodeSha256 } from "./player-channel.ts";
@@ -18,7 +20,7 @@ import type { ForfeitCause } from "./runner.ts";
 import type { TrainingRunConfig } from "./training-run-config.ts";
 import { runConfigHash } from "./training-run-config.ts";
 
-export type { LeagueRunRecord };
+export type { LeagueRunRecord, LeagueRunRecordV2 };
 
 /** One damage-aware baseline's entry of a record. */
 type BaselineRecord = NonNullable<LeagueRunRecord["baselines"]>[number];
@@ -34,6 +36,7 @@ export class LeagueRunRecordError extends Error {
 }
 
 const validRecord = ajvFor("contract").compile(leagueRunRecordSchema);
+const validRecordV2 = ajvFor("contract").compile(leagueRunRecordSchemaV2);
 
 /** Read a record: the schema (which fixes the derivation version), then the count and order rules. */
 export function readLeagueRunRecord(value: unknown): LeagueRunRecord {
@@ -78,17 +81,41 @@ export function readLeagueRunRecord(value: unknown): LeagueRunRecord {
 }
 
 /** The hash a later record names this one by: SHA-256 of its JCS bytes. */
-export const leagueRunRecordHash = (record: LeagueRunRecord): Promise<string> =>
+export const leagueRunRecordHash = (record: LeagueRunRecord | LeagueRunRecordV2): Promise<string> =>
   nodeSha256(new TextEncoder().encode(jcs(record as unknown as Json)));
 
-/** Check that a record belongs to `config`: its run key and its hash. */
-export async function checkLeagueRunRecord(record: LeagueRunRecord, config: TrainingRunConfig): Promise<void> {
+/** Check that a record belongs to `config`: its run key and its hash (version 2 also the numbers of members and exploiters). */
+export async function checkLeagueRunRecord(record: LeagueRunRecord | LeagueRunRecordV2, config: TrainingRunConfig): Promise<void> {
+  if (record.schema_version === 2) return checkLeagueRunRecordV2(record, config);
   if (record.run_id !== config.seeds.run_key) throw new LeagueRunRecordError(`run_id ${record.run_id} is not the config's run key`);
   if (record.run_config_hash !== (await runConfigHash(config))) throw new LeagueRunRecordError("run_config_hash is not the config's hash");
   // `baselines` exists exactly for the config's damage-aware entries, with the same policy ids and games.
   const expected = config.generation.baseline_games.filter((baseline) => baseline.actor === "damage-aware" && baseline.games > 0).map((baseline) => `${baseline.policy_id}:${baseline.games}`).sort();
   const actual = (record.baselines ?? []).map((entry) => `${entry.policy_id}:${entry.games}`).sort();
   if (expected.join() !== actual.join()) throw new LeagueRunRecordError("baselines must list exactly the config's damage-aware baselines, with their games");
+}
+
+/** The `population` object of a TrainingRunConfig (ADR-021 §8), read as data: only the two counts a record is checked against. */
+interface PopulationCounts {
+  members: number;
+  exploiters: number;
+}
+const populationOf = (config: TrainingRunConfig): PopulationCounts | undefined => (config as unknown as { population?: PopulationCounts }).population;
+
+async function checkLeagueRunRecordV2(record: LeagueRunRecordV2, config: TrainingRunConfig): Promise<void> {
+  if (record.run_id !== config.seeds.run_key) throw new LeagueRunRecordError(`run_id ${record.run_id} is not the config's run key`);
+  if (record.run_config_hash !== (await runConfigHash(config))) throw new LeagueRunRecordError("run_config_hash is not the config's hash");
+  const population = populationOf(config);
+  if (population === undefined) throw new LeagueRunRecordError("a version 2 record belongs to a run whose config has a population");
+  const learning = record.members.filter((entry) => entry.member.startsWith("m")).length;
+  if (learning !== population.members || record.members.length - learning !== population.exploiters) {
+    throw new LeagueRunRecordError("the members and exploiters must be the config's population.members and population.exploiters");
+  }
+  // The ids run 0..n-1 within each kind: sorted and unique already, so each must be its position within its kind.
+  record.members.forEach((entry, index) => {
+    const expected = `${entry.member[0]}${index < learning ? index : index - learning}`;
+    if (entry.member !== expected) throw new LeagueRunRecordError("member ids must be m0.. and x0.. without gaps");
+  });
 }
 
 export interface LeagueRunFacts {
@@ -154,4 +181,81 @@ export async function buildLeagueRunRecord(facts: LeagueRunFacts): Promise<Leagu
     // Present only for a damage-aware baseline, so every other run writes the bytes it always did.
     ...(facts.baseline_reports !== undefined && facts.baseline_reports.length > 0 ? { baselines: baselineEntries(facts.baseline_reports) } : {}),
   });
+}
+
+const memberKey = (id: string): [number, number] => [id.startsWith("m") ? 0 : 1, Number(id.slice(1))];
+type MemberEntry = LeagueRunRecordV2["members"][number];
+
+function checkCauses(causes: { cause: string; count: number }[] | undefined, forfeits: number, what: string): void {
+  if (forfeits === 0) {
+    if (causes !== undefined) throw new LeagueRunRecordError(`${what} forfeit_causes must be absent without forfeits`);
+    return;
+  }
+  if (causes === undefined) throw new LeagueRunRecordError(`${what} forfeit_causes must be present with forfeits`);
+  if (causes.some((entry, index) => index > 0 && entry.cause <= (causes[index - 1]?.cause ?? ""))) {
+    throw new LeagueRunRecordError(`${what} forfeit_causes must be sorted by cause, each once`);
+  }
+  if (causes.reduce((sum, entry) => sum + entry.count, 0) !== forfeits) throw new LeagueRunRecordError(`${what} forfeit causes' counts must sum to forfeits`);
+}
+
+function checkMember(entry: MemberEntry): void {
+  if (entry.played + entry.forfeits !== entry.games) throw new LeagueRunRecordError("a member's played + forfeits must equal games");
+  if (entry.episodes !== 2 * entry.played) throw new LeagueRunRecordError("a member's episodes must be two per played game");
+  const ids = entry.opponents.map((opponent) => opponent.opponent_policy_id);
+  if (ids.some((id, index) => index > 0 && id <= (ids[index - 1] as string))) {
+    throw new LeagueRunRecordError("a member's opponents must be sorted by opponent_policy_id, each once");
+  }
+  if (entry.opponents.reduce((sum, opponent) => sum + opponent.games, 0) !== entry.games) {
+    throw new LeagueRunRecordError("a member's opponents' games must sum to its games");
+  }
+  checkCauses(entry.forfeit_causes, entry.forfeits, "a member's");
+  const baselines = entry.baselines;
+  if (baselines === undefined) return;
+  if (baselines.some((b, index) => index > 0 && b.policy_id <= (baselines[index - 1]?.policy_id ?? ""))) {
+    throw new LeagueRunRecordError("a member's baselines must be sorted by policy_id, each once");
+  }
+  for (const baseline of baselines) {
+    const opponent = entry.opponents.find((candidate) => candidate.opponent_policy_id === baseline.policy_id);
+    if (opponent === undefined || opponent.games !== baseline.games) throw new LeagueRunRecordError("a member's baseline games must equal its opponent entry's games");
+    const { counts } = baseline;
+    if (counts.probe_runs > counts.queries || counts.unsupported_queries > counts.queries || (counts.probe_refusals ?? 0) > counts.queries) {
+      throw new LeagueRunRecordError("a baseline's probe runs, unsupported queries and probe refusals cannot exceed its queries");
+    }
+    if (counts.preview_decisions + counts.scored_decisions > counts.decisions) {
+      throw new LeagueRunRecordError("a baseline's preview and scored decisions cannot exceed its decisions");
+    }
+  }
+}
+
+/** Read a version 2 record: the schema, then the member, total and cause rules the profile cannot say. */
+export function readLeagueRunRecordV2(value: unknown): LeagueRunRecordV2 {
+  if (!validRecordV2(value)) throw new LeagueRunRecordError(`invalid LeagueRunRecordV2: ${JSON.stringify(validRecordV2.errors)}`);
+  const record = structuredClone(value) as unknown as LeagueRunRecordV2;
+  const keys = record.members.map((entry) => memberKey(entry.member));
+  const unsorted = keys.some((key, index) => {
+    const before = keys[index - 1];
+    return before !== undefined && (before[0] > key[0] || (before[0] === key[0] && before[1] >= key[1]));
+  });
+  if (unsorted) throw new LeagueRunRecordError("members must be sorted (m<k> by k, then x<k> by k), each once");
+  for (const entry of record.members) checkMember(entry);
+  const sum = (pick: (entry: MemberEntry) => number): number => record.members.reduce((total, entry) => total + pick(entry), 0);
+  if (record.games !== sum((e) => e.games) || record.played !== sum((e) => e.played) || record.forfeits !== sum((e) => e.forfeits) || record.episodes !== sum((e) => e.episodes)) {
+    throw new LeagueRunRecordError("the totals must equal the sums over the members");
+  }
+  checkCauses(record.forfeit_causes, record.forfeits, "the");
+  const byCause = new Map<string, number>();
+  for (const entry of record.members) for (const c of entry.forfeit_causes ?? []) byCause.set(c.cause, (byCause.get(c.cause) ?? 0) + c.count);
+  const listed = record.forfeit_causes ?? [];
+  if (listed.length !== byCause.size || listed.some((c) => byCause.get(c.cause) !== c.count)) {
+    throw new LeagueRunRecordError("each forfeit cause must equal the sum over the members");
+  }
+  return record;
+}
+
+/** Read a record of either version, by its `schema_version`; another version is refused. */
+export function readAnyLeagueRunRecord(value: unknown): LeagueRunRecord | LeagueRunRecordV2 {
+  const version = typeof value === "object" && value !== null ? (value as { schema_version?: unknown }).schema_version : undefined;
+  if (version === 1) return readLeagueRunRecord(value);
+  if (version === 2) return readLeagueRunRecordV2(value);
+  throw new LeagueRunRecordError("a LeagueRunRecord has schema_version 1 or 2");
 }

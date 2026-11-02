@@ -1,0 +1,111 @@
+{
+  "schema_version": 2,
+  "run_id": "tiny-run",
+  "run_config_hash": "853e9e39b7ed10ee57224d43d247e309da5819d713951cbbade42d0556aade16",
+  "generation": 3,
+  "seed_derivation": "league-seed/1",
+  "plan_hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "games": 12,
+  "played": 11,
+  "forfeits": 1,
+  "forfeit_causes": [
+    {
+      "cause": "crash",
+      "count": 1
+    }
+  ],
+  "episodes": 22,
+  "copy_decision_hash": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+  "members": [
+    {
+      "member": "m0",
+      "pair_policy_id": "policy:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "checkpoints": {
+        "preview": "1111111111111111111111111111111111111111111111111111111111111111",
+        "battle": "2222222222222222222222222222222222222222222222222222222222222222"
+      },
+      "games": 5,
+      "played": 4,
+      "forfeits": 1,
+      "forfeit_causes": [
+        {
+          "cause": "crash",
+          "count": 1
+        }
+      ],
+      "episodes": 8,
+      "opponents": [
+        {
+          "opponent_policy_id": "damage-aware@v1",
+          "games": 1
+        },
+        {
+          "opponent_policy_id": "policy:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "games": 2
+        },
+        {
+          "opponent_policy_id": "policy:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "games": 2
+        }
+      ],
+      "baselines": [
+        {
+          "policy_id": "damage-aware@v1",
+          "identity_hash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "games": 2,
+          "counts": {
+            "decisions": 40,
+            "preview_decisions": 3,
+            "scored_decisions": 31,
+            "queries": 410,
+            "probe_runs": 300,
+            "unsupported_queries": 36,
+            "reader_fallbacks": 1,
+            "assumed_set_fallbacks": 0,
+            "epsilon_plays": 0
+          }
+        }
+      ]
+    },
+    {
+      "member": "m1",
+      "pair_policy_id": "policy:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "checkpoints": {
+        "preview": "3333333333333333333333333333333333333333333333333333333333333333",
+        "battle": "4444444444444444444444444444444444444444444444444444444444444444"
+      },
+      "games": 4,
+      "played": 4,
+      "forfeits": 0,
+      "episodes": 8,
+      "opponents": [
+        {
+          "opponent_policy_id": "policy:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "games": 3
+        },
+        {
+          "opponent_policy_id": "policy:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "games": 1
+        }
+      ]
+    },
+    {
+      "member": "x0",
+      "pair_policy_id": "policy:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "checkpoints": {
+        "preview": "5555555555555555555555555555555555555555555555555555555555555555",
+        "battle": "6666666666666666666666666666666666666666666666666666666666666666"
+      },
+      "games": 3,
+      "played": 3,
+      "forfeits": 0,
+      "episodes": 6,
+      "opponents": [
+        {
+          "opponent_policy_id": "policy:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "games": 3
+        }
+      ]
+    }
+  ]
+}

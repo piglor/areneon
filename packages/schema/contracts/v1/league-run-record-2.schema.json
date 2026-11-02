@@ -1,0 +1,353 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:areneon:schema:contracts:v1:league-run-record-2",
+  "title": "LeagueRunRecordV2",
+  "description": "What one generation of a population run played (ADR-021 section 8, ADR-010 erratum A3 LE.5), beside LeagueRunRecord version 1, which a single-lineage run keeps writing: a new version because the root no longer has one frozen pair; the members array holds one entry per learning member and exploiter seat with its frozen pair, checkpoints and counts. The totals are the sums over the members. copy_decision_hash names that generation's copy decision (null when none was taken). Written next to the generation's Episodes and referenced only by the SHA-256 of its JCS bytes. Reader rules the profile cannot say (no arithmetic, no uniqueItems) are in the member description and checked by both readers, which also tie the record to its TrainingRunConfig: run key, hash and the numbers of members and exploiters.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "run_id",
+    "run_config_hash",
+    "generation",
+    "seed_derivation",
+    "plan_hash",
+    "games",
+    "played",
+    "forfeits",
+    "episodes",
+    "copy_decision_hash",
+    "members"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 2
+    },
+    "run_id": {
+      "description": "The league run key (TrainingRunConfig.seeds.run_key), as each Episode's collection record names the run.",
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+    },
+    "run_config_hash": {
+      "description": "SHA-256 of the run's TrainingRunConfig JCS bytes (runConfigHash).",
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "generation": {
+      "description": "The generation the record covers, counted from 1.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "seed_derivation": {
+      "description": "The version of the derivation of every battle seed, team draw and baseline stream from (run_id, generation, game index): SHA-256 over the JCS of those fields. A different byte layout is a different version.",
+      "const": "league-seed/1"
+    },
+    "plan_hash": {
+      "description": "SHA-256 of the JCS bytes of the generation's match plan (plan.json): the plan's identity.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "games": {
+      "description": "Games in the plan: the sum of the members' games.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "played": {
+      "description": "Games played to an end: the sum of the members'.",
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "forfeits": {
+      "description": "Games a policy forfeited: the sum of the members'.",
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "forfeit_causes": {
+      "description": "Forfeits by cause, sorted by cause, each cause once, each count at least 1; each count is the sum over the members; present exactly when forfeits is above 0.",
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/ForfeitCauseCount"
+      }
+    },
+    "episodes": {
+      "description": "Episodes written: the sum of the members'.",
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "copy_decision_hash": {
+      "description": "SHA-256 of the JCS bytes of that generation's copy decision, or null when none was taken.",
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "members": {
+      "description": "One entry per learning member and exploiter seat, sorted (m<k> by k, then x<k> by k), each once.",
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 32,
+      "items": {
+        "$ref": "#/$defs/Member"
+      }
+    }
+  },
+  "$defs": {
+    "Member": {
+      "description": "One learning member (m<k>) or exploiter seat (x<k>) of the population: its frozen pair at the start of the generation and the counts of the games the generation counted under it. A game is counted once, under the member that hosts it (a ladder pair under the lower-indexed member), so the root totals are the sums over the members. episodes is two per played game (both seats of the game are written), as in version 1. Reader rules: members sorted and unique (m<k> by k, then x<k> by k), played + forfeits = games, episodes = 2 * played, opponents sorted, unique and summing to games, forfeit_causes present exactly when forfeits is above 0, sorted, unique and summing to forfeits, baselines as in version 1 relative to this member's opponents.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "member",
+        "pair_policy_id",
+        "checkpoints",
+        "games",
+        "played",
+        "forfeits",
+        "episodes",
+        "opponents"
+      ],
+      "properties": {
+        "member": {
+          "description": "m<k> for learning member k, x<k> for exploiter seat k, k counted from 0 without leading zeros.",
+          "type": "string",
+          "pattern": "^(m|x)(0|[1-9][0-9]{0,8})$"
+        },
+        "pair_policy_id": {
+          "description": "The member's frozen pair's behaviour_policy_id, policy: plus a SHA-256.",
+          "type": "string",
+          "pattern": "^policy:[0-9a-f]{64}$"
+        },
+        "checkpoints": {
+          "$ref": "#/$defs/PairCheckpoints"
+        },
+        "games": {
+          "description": "Games counted under this member.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "played": {
+          "description": "Games played to an end. played + forfeits = games.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "forfeits": {
+          "description": "Games a policy forfeited: no Episodes, not training data.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "forfeit_causes": {
+          "description": "Forfeits of this member's games by cause, sorted by cause, each once, each count at least 1; present exactly when forfeits is above 0; the counts sum to forfeits.",
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/ForfeitCauseCount"
+          }
+        },
+        "episodes": {
+          "description": "Episodes written: two per played game.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "opponents": {
+          "description": "Games per opponent policy id, sorted by opponent_policy_id, each id once; the counts sum to games. Another member's frozen pair or a past snapshot is named by its pair policy id.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Opponent"
+          }
+        },
+        "baselines": {
+          "description": "The damage-aware baseline's identity and counts for this member's games (ADR-018 sections 4, 5, 7): one entry per policy id, sorted, each once; each entry's games equal the opponent entry of the same policy id. Absent when the member played no damage-aware baseline.",
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/BaselineRecord"
+          }
+        }
+      }
+    },
+    "PairCheckpoints": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "preview",
+        "battle"
+      ],
+      "properties": {
+        "preview": {
+          "description": "The Preview network's checkpoint id (SHA-256 of its file).",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "battle": {
+          "description": "The Battle network's checkpoint id.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "BaselineRecord": {
+      "description": "One scripted baseline whose play depends on more than its policy id. games equals the opponent entry of the same policy id; counts are the sums over those games, all integers (reader rules: probe_runs and unsupported_queries do not exceed queries; preview_decisions plus scored_decisions do not exceed decisions).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "policy_id",
+        "identity_hash",
+        "games",
+        "counts"
+      ],
+      "properties": {
+        "policy_id": {
+          "description": "The baseline's policy id, <name>@<commit>.",
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9._-]*@[A-Za-z0-9._-]+$"
+        },
+        "identity_hash": {
+          "description": "The baseline identity hash (ADR-018 section 5): SHA-256 of the JCS of {baseline_config_hash, mechanics_config_hash, adapter_format, reader_sha256, version_manifest}. Games with another hash are another baseline; every game of a generation carries the same one.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "games": {
+          "description": "Games the baseline played in the generation.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "counts": {
+          "$ref": "#/$defs/BaselineCounts"
+        }
+      }
+    },
+    "BaselineCounts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "decisions",
+        "preview_decisions",
+        "scored_decisions",
+        "queries",
+        "probe_runs",
+        "unsupported_queries",
+        "reader_fallbacks",
+        "assumed_set_fallbacks",
+        "epsilon_plays"
+      ],
+      "properties": {
+        "decisions": {
+          "description": "Requests answered, Team Preview included.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "preview_decisions": {
+          "description": "Team Preview requests (the actor-rule candidate).",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "scored_decisions": {
+          "description": "Requests whose candidates were scored.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "queries": {
+          "description": "Probe queries asked.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "probe_runs": {
+          "description": "Probe runs actually made (queries not answered from a game's memo).",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "unsupported_queries": {
+          "description": "Queries the probe answered unsupported: scored 0, never approximated.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "reader_fallbacks": {
+          "description": "Requests answered by the actor-rule candidate because the state reader flagged a line.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "assumed_set_fallbacks": {
+          "description": "Requests answered by the actor-rule candidate because no legal assumed opponent set could be built.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "epsilon_plays": {
+          "description": "Requests where epsilon_ppm made the baseline play a random candidate.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "probe_refusals": {
+          "description": "Optional (a minor change within v1; absent means 0 and is written only when above 0): requests answered by the actor-rule candidate because the mechanics probe refused a query the baseline built (a declared state the engine does not take). A high rate means the baseline plays like actor-rule; never more than queries.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    "ForfeitCauseCount": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "cause",
+        "count"
+      ],
+      "properties": {
+        "cause": {
+          "description": "Why the policy failed, as the harness classifies a forfeit (runner.ts ForfeitCause).",
+          "enum": [
+            "crash",
+            "invalid_reply",
+            "latency_overrun",
+            "out_of_memory"
+          ]
+        },
+        "count": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    "Opponent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "opponent_policy_id",
+        "games"
+      ],
+      "properties": {
+        "opponent_policy_id": {
+          "description": "The opponent's policy id as the Episodes' collection records name it: the frozen pair itself (self-play) or a scripted baseline, <name>@<commit>.",
+          "type": "string",
+          "pattern": "^(policy:[0-9a-f]{64}|[a-z0-9][a-z0-9._-]*@[A-Za-z0-9._-]+)$"
+        },
+        "games": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        }
+      }
+    }
+  }
+}

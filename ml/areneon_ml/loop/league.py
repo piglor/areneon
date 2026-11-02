@@ -21,6 +21,8 @@ from areneon_contracts.contracts import ContractError, jcs, sha256_hex, validate
 
 from areneon_ml.learner.config import RunConfig
 
+VERSION_2 = 2
+
 
 class LeagueRecordError(ValueError):
     """A LeagueRunRecord or a match plan breaks a rule."""
@@ -104,18 +106,21 @@ def read_league_run_record(raw: object, config: RunConfig) -> LeagueRunRecord:
     )
 
 
-def _check_baselines(raw: dict[str, Any]) -> None:
-    """The ``baselines`` rules (ADR-018): sorted, each id once, games and counts agree."""
+def _check_baselines(raw: dict[str, Any], what: str = "") -> None:
+    """The ``baselines`` rules (ADR-018): sorted, each id once, games and counts agree.
+
+    ``what`` is ``"a member's "`` when ``raw`` is a version 2 member entry."""
     baselines = raw.get("baselines")
     if baselines is None:
         return
     ids = [b["policy_id"] for b in baselines]
     if not all(a < b for a, b in itertools.pairwise(ids)):
-        raise LeagueRecordError("baselines must be sorted by policy_id, each once")
+        raise LeagueRecordError(f"{what}baselines must be sorted by policy_id, each once")
     games_by_opponent = {o["opponent_policy_id"]: o["games"] for o in raw["opponents"]}
     for entry in baselines:
         if games_by_opponent.get(entry["policy_id"]) != entry["games"]:
-            raise LeagueRecordError("a baseline's games must equal its opponent entry's games")
+            label = f"{what}baseline" if what else "a baseline"
+            raise LeagueRecordError(f"{label}'s games must equal its opponent entry's games")
         counts = entry["counts"]
         queries = counts["queries"]
         if (
@@ -133,7 +138,166 @@ def _check_baselines(raw: dict[str, Any]) -> None:
             )
 
 
-def check_generation_plan(record: LeagueRunRecord, plan: object, config: RunConfig) -> None:
+@dataclass(frozen=True)
+class MemberEntry:
+    """One member or exploiter seat of a version 2 record."""
+
+    member: str
+    pair_policy_id: str
+    preview: str
+    battle: str
+    games: int
+    played: int
+    forfeits: int
+    episodes: int
+    opponents: tuple[tuple[str, int], ...]
+
+
+@dataclass(frozen=True)
+class LeagueRunRecordV2:
+    """A validated version 2 record of one population generation (ADR-021 section 8)."""
+
+    run_id: str
+    run_config_hash: str
+    generation: int
+    plan_hash: str
+    games: int
+    played: int
+    forfeits: int
+    episodes: int
+    copy_decision_hash: str | None
+    members: tuple[MemberEntry, ...]
+    forfeit_causes: tuple[tuple[str, int], ...]
+    raw: dict[str, Any]
+
+
+def _member_key(member: str) -> tuple[int, int]:
+    return (0 if member.startswith("m") else 1, int(member[1:]))
+
+
+def _check_causes(causes: list[dict[str, Any]] | None, forfeits: int, what: str) -> None:
+    if forfeits == 0:
+        if causes is not None:
+            raise LeagueRecordError(f"{what} forfeit_causes must be absent without forfeits")
+        return
+    if causes is None:
+        raise LeagueRecordError(f"{what} forfeit_causes must be present with forfeits")
+    names = [c["cause"] for c in causes]
+    if not all(a < b for a, b in itertools.pairwise(names)):
+        raise LeagueRecordError(f"{what} forfeit_causes must be sorted by cause, each once")
+    if sum(c["count"] for c in causes) != forfeits:
+        raise LeagueRecordError(f"{what} forfeit causes' counts must sum to forfeits")
+
+
+def _check_member(entry: dict[str, Any]) -> None:
+    if entry["played"] + entry["forfeits"] != entry["games"]:
+        raise LeagueRecordError("a member's played + forfeits must equal games")
+    if entry["episodes"] != 2 * entry["played"]:
+        raise LeagueRecordError("a member's episodes must be two per played game")
+    ids = [o["opponent_policy_id"] for o in entry["opponents"]]
+    if not all(a < b for a, b in itertools.pairwise(ids)):
+        raise LeagueRecordError(
+            "a member's opponents must be sorted by opponent_policy_id, each once"
+        )
+    if sum(o["games"] for o in entry["opponents"]) != entry["games"]:
+        raise LeagueRecordError("a member's opponents' games must sum to its games")
+    _check_causes(entry.get("forfeit_causes"), entry["forfeits"], "a member's")
+    _check_baselines(entry, "a member's ")
+
+
+def _check_totals(raw: dict[str, Any], members: list[dict[str, Any]]) -> None:
+    """The root totals and forfeit causes are the sums over the members."""
+    for field in ("games", "played", "forfeits", "episodes"):
+        if raw[field] != sum(m[field] for m in members):
+            raise LeagueRecordError("the totals must equal the sums over the members")
+    _check_causes(raw.get("forfeit_causes"), raw["forfeits"], "the")
+    by_cause: dict[str, int] = {}
+    for entry in members:
+        for c in entry.get("forfeit_causes", []):
+            by_cause[c["cause"]] = by_cause.get(c["cause"], 0) + c["count"]
+    listed = {c["cause"]: c["count"] for c in raw.get("forfeit_causes", [])}
+    if listed != by_cause:
+        raise LeagueRecordError("each forfeit cause must equal the sum over the members")
+
+
+def read_league_run_record_v2(raw: object, config: RunConfig) -> LeagueRunRecordV2:
+    """Validate a version 2 record against the contract, the reader rules and the run config.
+
+    The config's ``population`` is read as data (``members`` and ``exploiters``): the record
+    must hold exactly that many ``m<k>`` and ``x<k>`` entries, numbered from 0 without gaps."""
+    try:
+        validate("league-run-record-2", raw)
+    except ContractError as exc:
+        raise LeagueRecordError(str(exc)) from exc
+    assert isinstance(raw, dict)  # validate() accepted an object
+    members: list[dict[str, Any]] = raw["members"]
+    keys = [_member_key(m["member"]) for m in members]
+    if not all(a < b for a, b in itertools.pairwise(keys)):
+        raise LeagueRecordError("members must be sorted (m<k> by k, then x<k> by k), each once")
+    for entry in members:
+        _check_member(entry)
+    _check_totals(raw, members)
+    if raw["run_id"] != config.run_key:
+        raise LeagueRecordError(f"run_id {raw['run_id']} is not the config's run key")
+    if raw["run_config_hash"] != config.hash:
+        raise LeagueRecordError("run_config_hash is not the config's hash")
+    population = config.raw.get("population")
+    if not isinstance(population, dict):
+        raise LeagueRecordError("a version 2 record belongs to a run whose config has a population")
+    learning = sum(1 for m in members if m["member"].startswith("m"))
+    if learning != population["members"] or len(members) - learning != population["exploiters"]:
+        raise LeagueRecordError(
+            "the members and exploiters must be the config's population.members"
+            " and population.exploiters"
+        )
+    for index, entry in enumerate(members):
+        position = index if index < learning else index - learning
+        if entry["member"] != f"{entry['member'][0]}{position}":
+            raise LeagueRecordError("member ids must be m0.. and x0.. without gaps")
+    return LeagueRunRecordV2(
+        run_id=raw["run_id"],
+        run_config_hash=raw["run_config_hash"],
+        generation=raw["generation"],
+        plan_hash=raw["plan_hash"],
+        games=raw["games"],
+        played=raw["played"],
+        forfeits=raw["forfeits"],
+        episodes=raw["episodes"],
+        copy_decision_hash=raw["copy_decision_hash"],
+        members=tuple(
+            MemberEntry(
+                member=m["member"],
+                pair_policy_id=m["pair_policy_id"],
+                preview=m["checkpoints"]["preview"],
+                battle=m["checkpoints"]["battle"],
+                games=m["games"],
+                played=m["played"],
+                forfeits=m["forfeits"],
+                episodes=m["episodes"],
+                opponents=tuple((o["opponent_policy_id"], o["games"]) for o in m["opponents"]),
+            )
+            for m in members
+        ),
+        forfeit_causes=tuple((c["cause"], c["count"]) for c in raw.get("forfeit_causes", [])),
+        raw=raw,
+    )
+
+
+def read_any_league_run_record(
+    raw: object, config: RunConfig
+) -> LeagueRunRecord | LeagueRunRecordV2:
+    """Read a record of either version, by its ``schema_version``; another version is refused."""
+    version = raw.get("schema_version") if isinstance(raw, dict) else None
+    if version == 1:
+        return read_league_run_record(raw, config)
+    if version == VERSION_2:
+        return read_league_run_record_v2(raw, config)
+    raise LeagueRecordError("a LeagueRunRecord has schema_version 1 or 2")
+
+
+def check_generation_plan(
+    record: LeagueRunRecord | LeagueRunRecordV2, plan: object, config: RunConfig
+) -> None:
     """The plan is the record's plan, and every game's seed is the one the run key gives."""
     if not isinstance(plan, list):
         raise LeagueRecordError("the match plan is not a list")

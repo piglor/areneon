@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import dataclasses
 import json
 from pathlib import Path
 from typing import Any
@@ -14,7 +15,9 @@ from areneon_ml.loop.league import (
     LeagueRecordError,
     check_generation_plan,
     league_game_seed,
+    read_any_league_run_record,
     read_league_run_record,
+    read_league_run_record_v2,
 )
 
 from tests.ml.learner.support import tiny_config
@@ -176,3 +179,103 @@ def test_the_plan_of_a_generation_must_carry_the_run_keys_seeds(tmp_path: Path) 
     odd = record_json | {"plan_hash": sha256_hex(jcs(not_entry))}
     with pytest.raises(LeagueRecordError, match="game 0 does not carry"):
         check_generation_plan(read_league_run_record(odd, config), not_entry, config)
+
+
+# ADR-021 section 8: LeagueRunRecord version 2, one entry per member and exploiter seat.
+RECORDS_2 = SAMPLES / "league-run-record-2"
+
+
+def raw2(name: str = "valid/population.json") -> dict[str, Any]:
+    loaded: dict[str, Any] = json.loads((RECORDS_2 / name).read_text())
+    return loaded
+
+
+def population_config(members: int = 2, exploiters: int = 1) -> Any:
+    """The tiny config with a ``population`` read as data (its schema field is another slice)."""
+    config = tiny_config()
+    raw_config = {**config.raw, "population": {"members": members, "exploiters": exploiters}}
+    return dataclasses.replace(config, raw=raw_config)
+
+
+def test_the_valid_version_2_samples_are_read() -> None:
+    record = read_league_run_record_v2(raw2(), population_config())
+    assert (record.generation, record.games, record.played, record.episodes) == (3, 12, 11, 22)
+    assert [m.member for m in record.members] == ["m0", "m1", "x0"]
+    assert record.members[0].opponents[1] == ("policy:" + "a" * 64, 2)
+    assert record.copy_decision_hash == "e" * 64
+    assert record.forfeit_causes == (("crash", 1),)
+    single = read_league_run_record_v2(raw2("valid/single-member.json"), population_config(1, 0))
+    assert single.copy_decision_hash is None
+    assert single.forfeit_causes == ()
+
+
+def test_the_dispatcher_reads_both_versions_and_refuses_another() -> None:
+    assert read_any_league_run_record(raw(), tiny_config()).games == 6
+    assert read_any_league_run_record(raw2(), population_config()).games == 12
+    for bad in (None, 3, {}, {"schema_version": 3}):
+        with pytest.raises(LeagueRecordError, match="schema_version 1 or 2"):
+            read_any_league_run_record(bad, tiny_config())
+    with pytest.raises(LeagueRecordError, match="league-run-record"):
+        read_league_run_record(raw2(), tiny_config())
+    with pytest.raises(LeagueRecordError, match="league-run-record-2"):
+        read_league_run_record_v2(raw(), population_config())
+
+
+@pytest.mark.parametrize(
+    ("name", "message"),
+    [
+        ("members-unsorted", "members must be sorted"),
+        ("members-unsorted-numeric", "members must be sorted"),
+        ("duplicate-member", "members must be sorted"),
+        ("member-counts-disagree", r"played \+ forfeits must equal games"),
+        ("member-episodes-not-two-per-game", "two per played game"),
+        ("member-opponents-unsorted", "opponents must be sorted"),
+        ("member-duplicate-opponent", "opponents must be sorted"),
+        ("member-opponents-do-not-sum", "must sum to its games"),
+        ("member-causes-missing", "must be present with forfeits"),
+        ("member-causes-without-forfeits", "must be absent without forfeits"),
+        ("member-causes-do-not-sum", "must sum to forfeits"),
+        ("member-causes-unsorted", "forfeit_causes must be sorted by cause"),
+        ("member-baselines-unsorted", "baselines must be sorted"),
+        ("member-baseline-games-disagree", "baseline's games must equal"),
+        ("member-baseline-not-an-opponent", "baseline's games must equal"),
+        ("member-baseline-probe-runs-exceed-queries", "cannot exceed its queries"),
+        ("member-baseline-decisions-exceed", "cannot exceed its decisions"),
+        ("total-games-differs", "totals must equal the sums"),
+        ("total-played-differs", "totals must equal the sums"),
+        ("total-episodes-differs", "totals must equal the sums"),
+        ("total-causes-missing", "must be present with forfeits"),
+        ("total-causes-without-forfeits", "must be absent without forfeits"),
+        ("total-causes-differ-from-members", "must equal the sum over the members"),
+    ],
+)
+def test_the_version_2_reader_rules_the_profile_cannot_say(name: str, message: str) -> None:
+    with pytest.raises(LeagueRecordError, match=message):
+        read_league_run_record_v2(raw2(f"reader-invalid/{name}.json"), population_config())
+
+
+def test_every_version_2_reader_invalid_sample_is_checked_above() -> None:
+    assert len(list((RECORDS_2 / "reader-invalid").iterdir())) == 23
+
+
+@pytest.mark.parametrize("name", sorted(p.name for p in (RECORDS_2 / "invalid").iterdir()))
+def test_a_version_2_record_the_schema_refuses_is_refused(name: str) -> None:
+    with pytest.raises(LeagueRecordError, match="league-run-record-2"):
+        read_league_run_record_v2(raw2(f"invalid/{name}"), population_config())
+
+
+def test_a_version_2_record_belongs_to_its_config() -> None:
+    with pytest.raises(LeagueRecordError, match="run key"):
+        read_league_run_record_v2(raw2() | {"run_id": "other"}, population_config())
+    with pytest.raises(LeagueRecordError, match="config's hash"):
+        read_league_run_record_v2(raw2() | {"run_config_hash": "0" * 64}, population_config())
+    with pytest.raises(LeagueRecordError, match="has a population"):
+        read_league_run_record_v2(raw2(), tiny_config())
+    with pytest.raises(LeagueRecordError, match=r"population\.members"):
+        read_league_run_record_v2(raw2(), population_config(members=3))
+    with pytest.raises(LeagueRecordError, match=r"population\.exploiters"):
+        read_league_run_record_v2(raw2(), population_config(exploiters=0))
+    gap = raw2()
+    gap["members"][1]["member"] = "m3"
+    with pytest.raises(LeagueRecordError, match="without gaps"):
+        read_league_run_record_v2(gap, population_config())

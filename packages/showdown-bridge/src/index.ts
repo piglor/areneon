@@ -376,8 +376,11 @@ export {
   type LeagueRunFacts,
   type LeagueRunRecord,
   LeagueRunRecordError,
+  type LeagueRunRecordV2,
   leagueRunRecordHash,
+  readAnyLeagueRunRecord,
   readLeagueRunRecord,
+  readLeagueRunRecordV2,
 } from "./league-run-record.ts";
 export { type AssumedSet, type AssumedSetContext, AssumedSetError, assumedHp, buildAssumedSet, buildWorldAssumedSet, WorldMismatchError, type WorldSetLike } from "./damage-aware-assumed-set.ts";
 export { type LegalityWorldSet, type SetLegalityPort, createSetLegality } from "./set-legality.ts";
