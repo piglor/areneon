@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
@@ -8,7 +8,9 @@ import {
   LEAGUE_SEED_DERIVATION,
   LeagueRunRecordError,
   leagueRunRecordHash,
+  readAnyLeagueRunRecord,
   readLeagueRunRecord,
+  readLeagueRunRecordV2,
   readTrainingRunConfig,
   runConfigHash,
 } from "../src/index.ts";
@@ -178,5 +180,82 @@ describe("buildLeagueRunRecord", () => {
 
   it("refuses a generation that played nothing", async () => {
     await expect(buildLeagueRunRecord({ config: config(), generation: 1, pair_policy_id: pair, plan: [], games: [] })).rejects.toThrow(LeagueRunRecordError);
+  });
+});
+
+const sampleV2 = (name: string, kind = "valid"): Record<string, unknown> =>
+  JSON.parse(readFileSync(join(SAMPLES_DIR, `v1/league-run-record-2/${kind}/${name}.json`), "utf8")) as Record<string, unknown>;
+
+// The committed population sample, with the numbers of members and exploiters of the record's samples (2 and 1): the sample generator hashes the same edit.
+const populationConfig = (members: number, exploiters: number) => {
+  const raw = sample("training-run-config", "population") as { population: { members: number; exploiters: number } };
+  raw.population.members = members;
+  raw.population.exploiters = exploiters;
+  return readTrainingRunConfig(raw);
+};
+
+describe("the LeagueRunRecord version 2 reader (ADR-021 §8)", () => {
+  it("reads the valid samples and hands back a copy; version 1 reads unchanged", () => {
+    const raw = sampleV2("population");
+    const record = readLeagueRunRecordV2(raw);
+    expect(record).toEqual(raw);
+    expect(record).not.toBe(raw);
+    expect(record.members.map((m) => m.member)).toEqual(["m0", "m1", "x0"]);
+    expect(readLeagueRunRecordV2(sampleV2("single-member")).copy_decision_hash).toBeNull();
+    expect(readAnyLeagueRunRecord(raw)).toEqual(raw);
+    expect(readAnyLeagueRunRecord(sample("league-run-record", "tiny")).schema_version).toBe(1);
+  });
+
+  it("dispatches on schema_version and refuses an unknown one", () => {
+    for (const bad of [null, 3, { schema_version: 3 }, {}, "x"]) {
+      expect(() => readAnyLeagueRunRecord(bad)).toThrow(/schema_version 1 or 2/);
+    }
+    expect(() => readLeagueRunRecord(sampleV2("population"))).toThrow(LeagueRunRecordError);
+    expect(() => readLeagueRunRecordV2(sample("league-run-record", "tiny"))).toThrow(LeagueRunRecordError);
+    expect(() => readLeagueRunRecordV2(null)).toThrow(/invalid LeagueRunRecordV2/);
+  });
+
+  it("refuses every schema-invalid sample", () => {
+    for (const name of readdirSync(join(SAMPLES_DIR, "v1/league-run-record-2/invalid")).map((f) => f.replace(".json", ""))) {
+      expect(() => readLeagueRunRecordV2(sampleV2(name, "invalid")), name).toThrow(/invalid LeagueRunRecordV2/);
+    }
+  });
+
+  it("hashes the JCS bytes of either version", async () => {
+    const record = readLeagueRunRecordV2(sampleV2("population"));
+    expect(await leagueRunRecordHash(record)).toMatch(/^[0-9a-f]{64}$/);
+    expect(await leagueRunRecordHash({ ...record, copy_decision_hash: null })).not.toBe(await leagueRunRecordHash(record));
+  });
+
+  it("belongs to a config by run key, hash and the numbers of members and exploiters", async () => {
+    const record = readLeagueRunRecordV2(sampleV2("population"));
+    const config = populationConfig(2, 1);
+    await expect(checkLeagueRunRecord(record, config)).resolves.toBeUndefined();
+    await expect(checkLeagueRunRecord({ ...record, run_id: "other" }, config)).rejects.toThrow(/run key/);
+    await expect(checkLeagueRunRecord({ ...record, run_config_hash: "0".repeat(64) }, config)).rejects.toThrow(/config's hash/);
+    const more = populationConfig(3, 1);
+    await expect(checkLeagueRunRecord({ ...record, run_config_hash: await runConfigHash(more) }, more)).rejects.toThrow(/population\.members/);
+    const noExploiter = populationConfig(2, 0);
+    await expect(checkLeagueRunRecord({ ...record, run_config_hash: await runConfigHash(noExploiter) }, noExploiter)).rejects.toThrow(/population\.exploiters/);
+    const single = readLeagueRunRecordV2(sampleV2("single-member"));
+    await expect(checkLeagueRunRecord(single, readTrainingRunConfig(sample("training-run-config", "population-single")))).resolves.toBeUndefined();
+    const plain = readTrainingRunConfig(sample("training-run-config", "tiny"));
+    await expect(checkLeagueRunRecord({ ...record, run_config_hash: await runConfigHash(plain) }, plain)).rejects.toThrow(/has a population/);
+  });
+
+  it("refuses member ids with a gap", async () => {
+    const raw = sampleV2("population") as { members: { member: string; opponents: { member?: string }[] }[] };
+    const renamed = JSON.parse(JSON.stringify(raw).replaceAll('"m1"', '"m3"')) as unknown;
+    const gap = readLeagueRunRecordV2(renamed);
+    await expect(checkLeagueRunRecord(gap, populationConfig(2, 1))).rejects.toThrow(/without gaps/);
+  });
+
+  it("counts distinct games at the root and a member's own seats per member", () => {
+    const record = readLeagueRunRecordV2(sampleV2("population"));
+    expect(record.members.reduce((sum, m) => sum + m.games, 0)).toBe(15);
+    expect(record.games).toBe(10);
+    // m1 holds 6 played games and one of them is a self-play game: 7 own-seat Episodes; the root writes two per played game.
+    expect(record.members[1]?.episodes).toBe(7);
+    expect(record.episodes).toBe(2 * record.played);
   });
 });

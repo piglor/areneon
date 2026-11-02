@@ -1,0 +1,24 @@
+{
+  "schema_version": 2,
+  "run_id": "tiny-run",
+  "run_config_hash": "091e84b02be29e62b9c5ab02aee09813c47b4e4785fe2f4518679c7a3f6e2003",
+  "generation": 3,
+  "seed_derivation": "league-seed/1",
+  "plan_hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "games": 10,
+  "played": 8,
+  "forfeits": 2,
+  "forfeit_causes": [
+    {
+      "cause": "crash",
+      "count": 1
+    },
+    {
+      "cause": "latency_overrun",
+      "count": 1
+    }
+  ],
+  "episodes": 16,
+  "copy_decision_hash": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+  "members": []
+}

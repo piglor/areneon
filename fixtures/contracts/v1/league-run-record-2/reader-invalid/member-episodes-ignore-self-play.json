@@ -1,0 +1,149 @@
+{
+  "schema_version": 2,
+  "run_id": "tiny-run",
+  "run_config_hash": "091e84b02be29e62b9c5ab02aee09813c47b4e4785fe2f4518679c7a3f6e2003",
+  "generation": 3,
+  "seed_derivation": "league-seed/1",
+  "plan_hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "games": 10,
+  "played": 8,
+  "forfeits": 2,
+  "forfeit_causes": [
+    {
+      "cause": "crash",
+      "count": 1
+    },
+    {
+      "cause": "latency_overrun",
+      "count": 1
+    }
+  ],
+  "episodes": 16,
+  "copy_decision_hash": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+  "members": [
+    {
+      "member": "m0",
+      "pair_policy_id": "policy:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "checkpoints": {
+        "preview": "1111111111111111111111111111111111111111111111111111111111111111",
+        "battle": "2222222222222222222222222222222222222222222222222222222222222222"
+      },
+      "games": 6,
+      "played": 5,
+      "forfeits": 1,
+      "forfeit_causes": [
+        {
+          "cause": "crash",
+          "count": 1
+        }
+      ],
+      "episodes": 5,
+      "opponents": [
+        {
+          "opponent_policy_id": "damage-aware@v1",
+          "games": 1,
+          "played": 0
+        },
+        {
+          "opponent_policy_id": "policy:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "member": "m0",
+          "games": 2,
+          "played": 2
+        },
+        {
+          "opponent_policy_id": "policy:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "member": "m1",
+          "games": 3,
+          "played": 3
+        }
+      ],
+      "baselines": [
+        {
+          "policy_id": "damage-aware@v1",
+          "identity_hash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "games": 1,
+          "counts": {
+            "decisions": 40,
+            "preview_decisions": 3,
+            "scored_decisions": 31,
+            "queries": 410,
+            "probe_runs": 300,
+            "unsupported_queries": 36,
+            "reader_fallbacks": 1,
+            "assumed_set_fallbacks": 0,
+            "epsilon_plays": 0
+          }
+        }
+      ]
+    },
+    {
+      "member": "m1",
+      "pair_policy_id": "policy:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "checkpoints": {
+        "preview": "3333333333333333333333333333333333333333333333333333333333333333",
+        "battle": "4444444444444444444444444444444444444444444444444444444444444444"
+      },
+      "games": 7,
+      "played": 6,
+      "forfeits": 1,
+      "forfeit_causes": [
+        {
+          "cause": "latency_overrun",
+          "count": 1
+        }
+      ],
+      "episodes": 7,
+      "opponents": [
+        {
+          "opponent_policy_id": "policy:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "member": "m0",
+          "games": 3,
+          "played": 3
+        },
+        {
+          "opponent_policy_id": "policy:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "member": "m1",
+          "games": 1,
+          "played": 1
+        },
+        {
+          "opponent_policy_id": "policy:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "member": "x0",
+          "games": 2,
+          "played": 1
+        },
+        {
+          "opponent_policy_id": "policy:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "games": 1,
+          "played": 1
+        }
+      ]
+    },
+    {
+      "member": "x0",
+      "pair_policy_id": "policy:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "checkpoints": {
+        "preview": "5555555555555555555555555555555555555555555555555555555555555555",
+        "battle": "6666666666666666666666666666666666666666666666666666666666666666"
+      },
+      "games": 2,
+      "played": 1,
+      "forfeits": 1,
+      "forfeit_causes": [
+        {
+          "cause": "latency_overrun",
+          "count": 1
+        }
+      ],
+      "episodes": 1,
+      "opponents": [
+        {
+          "opponent_policy_id": "policy:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "member": "m1",
+          "games": 2,
+          "played": 1
+        }
+      ]
+    }
+  ]
+}
