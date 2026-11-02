@@ -1,0 +1,135 @@
+{
+  "schema_version": 1,
+  "lineage_id": "tiny-main",
+  "format_id": "gen9championsvgc2026regmc",
+  "seeds": {
+    "run_key": "tiny-run",
+    "init_preview": 11,
+    "init_battle": 12,
+    "learner": 13
+  },
+  "model": {
+    "encoder": {
+      "volatile_buckets": 4,
+      "condition_buckets": 4,
+      "max_moves": 4,
+      "max_team": 6,
+      "max_picks": 4,
+      "stat_scale": 500,
+      "turn_scale": 100
+    },
+    "d_model": 16,
+    "n_layers": 1,
+    "n_heads": 2,
+    "d_ff": 32
+  },
+  "generation": {
+    "games": 4,
+    "baseline_games": [
+      {
+        "actor": "random-legal",
+        "policy_id": "random-legal@tiny",
+        "games": 2
+      }
+    ],
+    "excluded_abilities": [
+      "Illusion"
+    ],
+    "max_turns": 6,
+    "n_parallel": 2,
+    "latency_budget_ms": {
+      "preview_ms": 30000,
+      "battle_ms": 30000
+    },
+    "handshake_timeout_ms": 60000,
+    "max_line_bytes": 4000000
+  },
+  "ppo": {
+    "epochs": 2,
+    "minibatch_size": 16,
+    "learning_rate_micro": 1000,
+    "discount_micro": 1000000,
+    "gae_lambda_micro": 950000,
+    "clip_micro": 200000,
+    "value_coef_micro": 500000,
+    "entropy_coef_micro": 10000,
+    "max_grad_norm_micro": 500000,
+    "adam_beta1_micro": 900000,
+    "adam_beta2_micro": 999000,
+    "adam_eps_nano": 10,
+    "normalize_advantages": true
+  },
+  "learner": {
+    "device": "cpu",
+    "threads": 1
+  },
+  "population": {
+    "members": 4,
+    "exploiters": 0,
+    "seats_per_member": 512,
+    "shares": {
+      "ladder_ppm": 500000,
+      "self_play_ppm": 250000,
+      "past_pool_ppm": 250000
+    },
+    "past_pool": {
+      "snapshot_every": 5,
+      "max_size": 32,
+      "max_past_per_member": 4,
+      "pfsp_power": 2,
+      "floor_ppm": 50000
+    },
+    "rating": {
+      "window": 3,
+      "calibration_pairs": 100,
+      "bootstrap_resamples": 1000
+    },
+    "selection": {
+      "ready_generations": 3,
+      "n_min": 96,
+      "margin_ppm": 50000,
+      "alpha_ppm": 50000,
+      "min_roots": 2
+    },
+    "explore": {
+      "bounds": {
+        "learning_rate_micro": {
+          "min": 500,
+          "max": 2000
+        },
+        "entropy_coef_micro": {
+          "min": 5000,
+          "max": 20000
+        },
+        "epochs": {
+          "min": 1,
+          "max": 4
+        },
+        "clip_micro": {
+          "min": 100000,
+          "max": 300000
+        },
+        "ladder_ppm": {
+          "min": 450000,
+          "max": 550000
+        },
+        "self_play_ppm": {
+          "min": 200000,
+          "max": 300000
+        },
+        "past_pool_ppm": {
+          "min": 200000,
+          "max": 300000
+        }
+      }
+    },
+    "health": {
+      "clip_ppm": 500000,
+      "kl_ppm": 100000,
+      "forfeit_ppm": 50000
+    },
+    "exploiter": {
+      "reset_every": 10
+    }
+  }
+}

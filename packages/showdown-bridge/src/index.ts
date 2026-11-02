@@ -427,6 +427,7 @@ export {
   type PolicyStreamLabel,
   policyStreamLabel,
 } from "./league-seed.ts";
+export { populationDraw, POPULATION_SEED_DERIVATION, POPULATION_SEED_PURPOSES, type PopulationSeedPurpose } from "./population-seed.ts";
 export {
   DAMAGE_AWARE_POLICY_ID,
   DAMAGE_AWARE_VERSIONS,

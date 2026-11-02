@@ -5,7 +5,8 @@ against the six rules the profile cannot say (they are the TS reader's too):
 the attention heads divide the token width, a Team Preview order cannot name
 more positions than a side holds (both checked by ``ModelConfig``), and each
 scripted baseline is listed once, a warm start (both roles, or the Battle role alone)
-names different checkpoints, and a value warm-up and a KL anchor each need a warm start.
+names different checkpoints, and a value warm-up and a KL anchor each need a warm start, and a
+population obeys its own rules (shares sum to 10^6, bounds contain their starting values, ...).
 Real-valued settings are stored as integers in millionths (``_micro``) or
 billionths (``_nano``); this module is the one place that turns them into
 floats, by one exact division. The record is named only by ``run_config_hash``,
@@ -158,6 +159,9 @@ class RunConfig:
     #: (both roles, or ``battle`` alone, #1165), or ``None`` for the seeded
     #: initialisation. The loop checks the files; this reader checks the ids.
     warm_start: Mapping[str, str] | None
+    #: ``population`` is present (ADR-021): the record describes a population ladder. The loop
+    #: driver refuses such a run until the scheduler lands; the reader checks the rules.
+    population: bool
     raw: dict[str, Any]
     hash: str
 
@@ -187,6 +191,57 @@ def _anchor(ppo: dict[str, Any]) -> AnchorSettings | None:
         found["kl_micro"],
         LinearSchedule(found["kl_micro"], schedule["final_micro"], schedule["generations"]),
     )
+
+
+_START_FIELDS = (
+    "learning_rate_micro",
+    "entropy_coef_micro",
+    "epochs",
+    "clip_micro",
+    "target_kl_micro",
+)
+_SHARE_FIELDS = ("ladder_ppm", "self_play_ppm", "past_pool_ppm")
+
+
+def _check_population(raw: dict[str, Any]) -> None:
+    """The population rules the profile cannot say (ADR-021 §2, §3, §6), as in the TS reader."""
+
+    def fail(message: str) -> None:
+        raise RunConfigError(f"training-run-config: population: {message}")
+
+    pop, ppo = raw["population"], raw["ppo"]
+    shares = pop["shares"]
+    if sum(shares[f] for f in _SHARE_FIELDS) != MICRO:
+        fail("the opponent shares must sum to 1000000")
+    if pop["selection"]["min_roots"] > pop["members"]:
+        fail("selection.min_roots cannot exceed members")
+    if pop["past_pool"]["max_past_per_member"] > pop["past_pool"]["max_size"]:
+        fail("past_pool.max_past_per_member cannot exceed past_pool.max_size")
+    overrides = pop.get("member_ppo", [])
+    for i, entry in enumerate(overrides):
+        if entry["member"] >= pop["members"]:
+            fail("member_ppo names a member at or above members")
+        if i > 0 and entry["member"] <= overrides[i - 1]["member"]:
+            fail("member_ppo must be sorted by member and unique")
+        if "target_kl_micro" in entry and "target_kl_micro" not in ppo:
+            fail("member_ppo target_kl_micro needs ppo.target_kl_micro")
+    bounds = pop["explore"]["bounds"]
+    if "target_kl_micro" in bounds and "target_kl_micro" not in ppo:
+        fail("explore.bounds.target_kl_micro needs ppo.target_kl_micro")
+
+    def within(name: str, value: int | None, bound: dict[str, int] | None) -> None:
+        if value is None or bound is None:
+            return
+        if not bound["min"] <= value <= bound["max"]:
+            fail(f"explore.bounds.{name} must contain its starting value")
+
+    by_member = {entry["member"]: entry for entry in overrides}
+    for member in range(pop["members"]):
+        override = by_member.get(member, {})
+        for name in _START_FIELDS:
+            within(name, override.get(name, ppo.get(name)), bounds.get(name))
+    for name in _SHARE_FIELDS:
+        within(name, shares[name], bounds.get(name))
 
 
 def read_run_config(raw: object) -> RunConfig:
@@ -223,6 +278,8 @@ def read_run_config(raw: object) -> RunConfig:
         raise RunConfigError(
             "training-run-config: ppo.anchor needs warm_start (the anchor is the warm-start pair)"
         )
+    if "population" in raw:
+        _check_population(raw)
     gen, ppo, seeds = raw["generation"], raw["ppo"], raw["seeds"]
     play = gen.get("play")
     if play is not None and play["temperature_ppm"] >= MICRO:
@@ -277,6 +334,7 @@ def read_run_config(raw: object) -> RunConfig:
         threads=raw["learner"]["threads"],
         team_dataset="team_dataset" in raw,
         warm_start=None if warm is None else MappingProxyType(dict(warm)),
+        population="population" in raw,
         raw=raw,
         hash=sha256_hex(jcs(raw)),
     )

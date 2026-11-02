@@ -672,6 +672,37 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
   const leagueRunWith = (change: (r: Record<string, unknown>) => void) => mutated(leagueRun, change);
   const runConfigWith = (change: (c: Record<string, unknown>) => void) => mutated(runConfig, change);
   const runSection = (c: Record<string, unknown>, name: string) => c[name] as Record<string, unknown>;
+  // ADR-021: a population block for the tiny run's PPO values (learning rate 1000, entropy 10000, 2 epochs, clip 200000).
+  const range = (min: number, max: number) => ({ min, max });
+  const populationBlock = (): Record<string, unknown> => ({
+    members: 4,
+    exploiters: 0,
+    seats_per_member: 512,
+    shares: { ladder_ppm: 500000, self_play_ppm: 250000, past_pool_ppm: 250000 },
+    past_pool: { snapshot_every: 5, max_size: 32, max_past_per_member: 4, pfsp_power: 2, floor_ppm: 50000 },
+    rating: { window: 3, calibration_pairs: 100, bootstrap_resamples: 1000 },
+    selection: { ready_generations: 3, n_min: 96, margin_ppm: 50000, alpha_ppm: 50000, min_roots: 2 },
+    explore: {
+      bounds: {
+        learning_rate_micro: range(500, 2000),
+        entropy_coef_micro: range(5000, 20000),
+        epochs: range(1, 4),
+        clip_micro: range(100000, 300000),
+        ladder_ppm: range(450000, 550000),
+        self_play_ppm: range(200000, 300000),
+        past_pool_ppm: range(200000, 300000),
+      },
+    },
+    health: { clip_ppm: 500000, kl_ppm: 100000, forfeit_ppm: 50000 },
+    exploiter: { reset_every: 10 },
+  });
+  const populated = (change: (population: Record<string, unknown>, c: Record<string, unknown>) => void) =>
+    runConfigWith((c) => {
+      const population = populationBlock();
+      change(population, c);
+      c.population = population;
+    });
+  const bounds = (population: Record<string, unknown>) => (population.explore as { bounds: Record<string, unknown> }).bounds;
   const cloneWith = (change: (c: Record<string, unknown>) => void) => mutated(cloneConfig, change);
 
   const valid: Record<string, unknown> = {
@@ -784,6 +815,23 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
       c.warm_start = { preview: hexOf("a"), battle: hexOf("b") };
       runSection(c, "ppo").value_warmup = { generations: 2 };
       runSection(c, "ppo").anchor = { kl_micro: 100000, schedule: { kind: "linear", final_micro: 0, generations: 10 } };
+    }),
+    "training-run-config/population": populated(() => {}),
+    "training-run-config/population-single": populated((p) => {
+      p.members = 1;
+      p.shares = { ladder_ppm: 0, self_play_ppm: 750000, past_pool_ppm: 250000 };
+      (p.selection as Record<string, unknown>).min_roots = 1;
+      bounds(p).ladder_ppm = range(0, 0);
+      bounds(p).self_play_ppm = range(700000, 800000);
+    }),
+    "training-run-config/population-member-ppo-exploiters": populated((p, c) => {
+      p.exploiters = 2;
+      runSection(c, "ppo").target_kl_micro = 20000;
+      bounds(p).target_kl_micro = range(10000, 40000);
+      p.member_ppo = [
+        { member: 1, learning_rate_micro: 700, epochs: 3 },
+        { member: 3, entropy_coef_micro: 15000, clip_micro: 250000, target_kl_micro: 30000 },
+      ];
     }),
     "training-run-config/warm-start-battle-only": runConfigWith((c) => (c.warm_start = { battle: hexOf("b") })),
     "training-run-config/battle-only-warmup-anchor": runConfigWith((c) => {
@@ -992,6 +1040,16 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     }),
     "training-run-config/value-warmup-no-warm-start": runConfigWith((c) => (runSection(c, "ppo").value_warmup = { generations: 2 })),
     "training-run-config/anchor-no-warm-start": runConfigWith((c) => (runSection(c, "ppo").anchor = { kl_micro: 100000, schedule: { kind: "constant" } })),
+    "training-run-config/population-shares-sum": populated((p) => (p.shares = { ladder_ppm: 500000, self_play_ppm: 250000, past_pool_ppm: 200000 })),
+    "training-run-config/population-roots-exceed-members": populated((p) => ((p.selection as Record<string, unknown>).min_roots = 5)),
+    "training-run-config/population-past-over-pool": populated((p) => ((p.past_pool as Record<string, unknown>).max_past_per_member = 33)),
+    "training-run-config/population-bound-excludes-start": populated((p) => (bounds(p).learning_rate_micro = range(1100, 2000))),
+    "training-run-config/population-share-bound-excludes-start": populated((p) => (bounds(p).ladder_ppm = range(0, 400000))),
+    "training-run-config/population-override-outside-bound": populated((p) => (p.member_ppo = [{ member: 2, epochs: 5 }])),
+    "training-run-config/population-target-kl-bound-unset": populated((p) => (bounds(p).target_kl_micro = range(1, 10))),
+    "training-run-config/population-member-ppo-unsorted": populated((p) => (p.member_ppo = [{ member: 2, epochs: 3 }, { member: 1, epochs: 3 }])),
+    "training-run-config/population-member-ppo-duplicate": populated((p) => (p.member_ppo = [{ member: 1, epochs: 3 }, { member: 1, epochs: 2 }])),
+    "training-run-config/population-member-ppo-out-of-range": populated((p) => (p.member_ppo = [{ member: 4, epochs: 3 }])),
     "training-run-config/play-temperature-default": runConfigWith((c) => (runSection(c, "generation").play = { temperature_ppm: 1000000 })),
     "clone-run-config/heads-do-not-divide-width": cloneWith((c) => (runSection(c, "model").n_heads = 3)),
     "clone-run-config/picks-exceed-team": cloneWith((c) => {
@@ -1291,6 +1349,14 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     }),
     "training-run-config/dataset-short-hash": runConfigWith((c) => (c.team_dataset = { path: ".tmp/datasets/train-v1", dataset_hash: "abc" })),
     "training-run-config/dataset-no-path": runConfigWith((c) => (c.team_dataset = { dataset_hash: hexOf("5") })),
+    "training-run-config/population-members-zero": populated((p) => (p.members = 0)),
+    "training-run-config/population-members-seventeen": populated((p) => (p.members = 17)),
+    "training-run-config/population-three-exploiters": populated((p) => (p.exploiters = 3)),
+    "training-run-config/population-extra-field": populated((p) => (p.snapshots = 1)),
+    "training-run-config/population-missing-shares": populated((p) => delete p.shares),
+    "training-run-config/population-fractional-share": populated((p) => (p.shares = { ladder_ppm: 500000.5, self_play_ppm: 250000, past_pool_ppm: 249999.5 })),
+    "training-run-config/population-bound-missing-max": populated((p) => (bounds(p).epochs = { min: 1 })),
+    "training-run-config/population-override-no-member": populated((p) => (p.member_ppo = [{ epochs: 3 }])),
     "training-run-config/warm-start-short-id": runConfigWith((c) => (c.warm_start = { preview: "abc", battle: hexOf("b") })),
     "training-run-config/warm-start-upper-case": runConfigWith((c) => (c.warm_start = { preview: "A".repeat(64), battle: hexOf("b") })),
     "training-run-config/warm-start-missing-battle": runConfigWith((c) => (c.warm_start = { preview: hexOf("a") })),
