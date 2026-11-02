@@ -1,35 +1,38 @@
 {
   "schema_version": 2,
   "run_id": "tiny-run",
-  "run_config_hash": "853e9e39b7ed10ee57224d43d247e309da5819d713951cbbade42d0556aade16",
-  "generation": 3,
+  "run_config_hash": "7f3b3e3f0d9a002391e01cb54d5ae2dc9911d46c3cb74be2bf21966b866b7c83",
+  "generation": 1,
   "seed_derivation": "league-seed/1",
   "plan_hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-  "games": 4,
-  "played": 4,
+  "games": 3,
+  "played": 3,
   "forfeits": 0,
-  "episodes": 8,
+  "episodes": 6,
   "copy_decision_hash": null,
   "members": [
     {
       "member": "m0",
-      "pair_policy_id": "policy:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "pair_policy_id": "policy:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
       "checkpoints": {
-        "preview": "3333333333333333333333333333333333333333333333333333333333333333",
-        "battle": "4444444444444444444444444444444444444444444444444444444444444444"
+        "preview": "1111111111111111111111111111111111111111111111111111111111111111",
+        "battle": "2222222222222222222222222222222222222222222222222222222222222222"
       },
-      "games": 4,
-      "played": 4,
+      "games": 3,
+      "played": 3,
       "forfeits": 0,
-      "episodes": 8,
+      "episodes": 5,
       "opponents": [
         {
-          "opponent_policy_id": "policy:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-          "games": 3
+          "opponent_policy_id": "policy:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "member": "m0",
+          "games": 2,
+          "played": 2
         },
         {
           "opponent_policy_id": "policy:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
-          "games": 1
+          "games": 1,
+          "played": 1
         }
       ]
     }

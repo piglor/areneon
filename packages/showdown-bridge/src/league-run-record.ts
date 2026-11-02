@@ -38,6 +38,28 @@ export class LeagueRunRecordError extends Error {
 const validRecord = ajvFor("contract").compile(leagueRunRecordSchema);
 const validRecordV2 = ajvFor("contract").compile(leagueRunRecordSchemaV2);
 
+type BaselineEntry = NonNullable<LeagueRunRecord["baselines"]>[number];
+
+/** The `baselines` rules of both versions (ADR-018): sorted, each id once, games and counts agree with the opponents' (`what` is "a member's " for a version 2 member). */
+function checkBaselines(baselines: BaselineEntry[] | undefined, opponents: readonly { opponent_policy_id: string; games: number; member?: string }[], what: string): void {
+  if (baselines === undefined) return;
+  const label = what === "" ? "a baseline" : `${what}baseline`;
+  if (baselines.some((entry, index) => index > 0 && entry.policy_id <= (baselines[index - 1]?.policy_id ?? ""))) {
+    throw new LeagueRunRecordError(`${what}baselines must be sorted by policy_id, each once`);
+  }
+  for (const entry of baselines) {
+    const opponent = opponents.find((candidate) => candidate.opponent_policy_id === entry.policy_id && candidate.member === undefined);
+    if (opponent === undefined || opponent.games !== entry.games) throw new LeagueRunRecordError(`${label}'s games must equal its opponent entry's games`);
+    const { counts } = entry;
+    if (counts.probe_runs > counts.queries || counts.unsupported_queries > counts.queries || (counts.probe_refusals ?? 0) > counts.queries) {
+      throw new LeagueRunRecordError(`${label}'s probe runs, unsupported queries and probe refusals cannot exceed its queries`);
+    }
+    if (counts.preview_decisions + counts.scored_decisions > counts.decisions) {
+      throw new LeagueRunRecordError(`${label}'s preview and scored decisions cannot exceed its decisions`);
+    }
+  }
+}
+
 /** Read a record: the schema (which fixes the derivation version), then the count and order rules. */
 export function readLeagueRunRecord(value: unknown): LeagueRunRecord {
   if (!validRecord(value)) throw new LeagueRunRecordError(`invalid LeagueRunRecord: ${JSON.stringify(validRecord.errors)}`);
@@ -60,23 +82,7 @@ export function readLeagueRunRecord(value: unknown): LeagueRunRecord {
       throw new LeagueRunRecordError("the forfeit causes' counts must sum to forfeits");
     }
   }
-  const baselines = record.baselines;
-  if (baselines !== undefined) {
-    if (baselines.some((entry, index) => index > 0 && entry.policy_id <= (baselines[index - 1]?.policy_id ?? ""))) {
-      throw new LeagueRunRecordError("baselines must be sorted by policy_id, each once");
-    }
-    for (const entry of baselines) {
-      const opponent = record.opponents.find((candidate) => candidate.opponent_policy_id === entry.policy_id);
-      if (opponent === undefined || opponent.games !== entry.games) throw new LeagueRunRecordError("a baseline's games must equal its opponent entry's games");
-      const { counts } = entry;
-      if (counts.probe_runs > counts.queries || counts.unsupported_queries > counts.queries || (counts.probe_refusals ?? 0) > counts.queries) {
-        throw new LeagueRunRecordError("a baseline's probe runs, unsupported queries and probe refusals cannot exceed its queries");
-      }
-      if (counts.preview_decisions + counts.scored_decisions > counts.decisions) {
-        throw new LeagueRunRecordError("a baseline's preview and scored decisions cannot exceed its decisions");
-      }
-    }
-  }
+  checkBaselines(record.baselines, record.opponents, "");
   return record;
 }
 
@@ -95,17 +101,10 @@ export async function checkLeagueRunRecord(record: LeagueRunRecord | LeagueRunRe
   if (expected.join() !== actual.join()) throw new LeagueRunRecordError("baselines must list exactly the config's damage-aware baselines, with their games");
 }
 
-/** The `population` object of a TrainingRunConfig (ADR-021 §8), read as data: only the two counts a record is checked against. */
-interface PopulationCounts {
-  members: number;
-  exploiters: number;
-}
-const populationOf = (config: TrainingRunConfig): PopulationCounts | undefined => (config as unknown as { population?: PopulationCounts }).population;
-
 async function checkLeagueRunRecordV2(record: LeagueRunRecordV2, config: TrainingRunConfig): Promise<void> {
   if (record.run_id !== config.seeds.run_key) throw new LeagueRunRecordError(`run_id ${record.run_id} is not the config's run key`);
   if (record.run_config_hash !== (await runConfigHash(config))) throw new LeagueRunRecordError("run_config_hash is not the config's hash");
-  const population = populationOf(config);
+  const population = config.population;
   if (population === undefined) throw new LeagueRunRecordError("a version 2 record belongs to a run whose config has a population");
   const learning = record.members.filter((entry) => entry.member.startsWith("m")).length;
   if (learning !== population.members || record.members.length - learning !== population.exploiters) {
@@ -184,8 +183,14 @@ export async function buildLeagueRunRecord(facts: LeagueRunFacts): Promise<Leagu
 }
 
 const memberKey = (id: string): [number, number] => [id.startsWith("m") ? 0 : 1, Number(id.slice(1))];
+const memberOrder = (a: string, b: string): number => {
+  const [x, y] = [memberKey(a), memberKey(b)];
+  return x[0] !== y[0] ? x[0] - y[0] : x[1] - y[1];
+};
 type MemberEntry = LeagueRunRecordV2["members"][number];
+type MemberOpponent = MemberEntry["opponents"][number];
 
+/** Forfeit causes: present exactly with forfeits, sorted, unique, summing to them; `what` names the owner in the messages. */
 function checkCauses(causes: { cause: string; count: number }[] | undefined, forfeits: number, what: string): void {
   if (forfeits === 0) {
     if (causes !== undefined) throw new LeagueRunRecordError(`${what} forfeit_causes must be absent without forfeits`);
@@ -198,36 +203,81 @@ function checkCauses(causes: { cause: string; count: number }[] | undefined, for
   if (causes.reduce((sum, entry) => sum + entry.count, 0) !== forfeits) throw new LeagueRunRecordError(`${what} forfeit causes' counts must sum to forfeits`);
 }
 
+const opponentOrder = (a: MemberOpponent, b: MemberOpponent): number => {
+  if (a.opponent_policy_id !== b.opponent_policy_id) return a.opponent_policy_id < b.opponent_policy_id ? -1 : 1;
+  const [x, y] = [a.member ?? "", b.member ?? ""];
+  return x === y ? 0 : x < y ? -1 : 1;
+};
+
+/** One member's own rules: its counts, its opponents, its Episodes (own seats), its causes and baselines. */
 function checkMember(entry: MemberEntry): void {
   if (entry.played + entry.forfeits !== entry.games) throw new LeagueRunRecordError("a member's played + forfeits must equal games");
-  if (entry.episodes !== 2 * entry.played) throw new LeagueRunRecordError("a member's episodes must be two per played game");
-  const ids = entry.opponents.map((opponent) => opponent.opponent_policy_id);
-  if (ids.some((id, index) => index > 0 && id <= (ids[index - 1] as string))) {
-    throw new LeagueRunRecordError("a member's opponents must be sorted by opponent_policy_id, each once");
+  const ops = entry.opponents;
+  if (ops.some((o, index) => index > 0 && opponentOrder(ops[index - 1] as MemberOpponent, o) >= 0)) {
+    throw new LeagueRunRecordError("a member's opponents must be sorted by opponent_policy_id and member, each once");
   }
-  if (entry.opponents.reduce((sum, opponent) => sum + opponent.games, 0) !== entry.games) {
-    throw new LeagueRunRecordError("a member's opponents' games must sum to its games");
-  }
+  if (ops.some((o) => o.played > o.games)) throw new LeagueRunRecordError("an opponent's played cannot exceed its games");
+  if (ops.reduce((sum, o) => sum + o.games, 0) !== entry.games) throw new LeagueRunRecordError("a member's opponents' games must sum to its games");
+  if (ops.reduce((sum, o) => sum + o.played, 0) !== entry.played) throw new LeagueRunRecordError("a member's opponents' played counts must sum to its played");
+  const selfPlayed = ops.filter((o) => o.member === entry.member).reduce((sum, o) => sum + o.played, 0);
+  if (entry.episodes !== entry.played + selfPlayed) throw new LeagueRunRecordError("a member's episodes must be its played games plus its played self-play games");
   checkCauses(entry.forfeit_causes, entry.forfeits, "a member's");
-  const baselines = entry.baselines;
-  if (baselines === undefined) return;
-  if (baselines.some((b, index) => index > 0 && b.policy_id <= (baselines[index - 1]?.policy_id ?? ""))) {
-    throw new LeagueRunRecordError("a member's baselines must be sorted by policy_id, each once");
-  }
-  for (const baseline of baselines) {
-    const opponent = entry.opponents.find((candidate) => candidate.opponent_policy_id === baseline.policy_id);
-    if (opponent === undefined || opponent.games !== baseline.games) throw new LeagueRunRecordError("a member's baseline games must equal its opponent entry's games");
-    const { counts } = baseline;
-    if (counts.probe_runs > counts.queries || counts.unsupported_queries > counts.queries || (counts.probe_refusals ?? 0) > counts.queries) {
-      throw new LeagueRunRecordError("a baseline's probe runs, unsupported queries and probe refusals cannot exceed its queries");
-    }
-    if (counts.preview_decisions + counts.scored_decisions > counts.decisions) {
-      throw new LeagueRunRecordError("a baseline's preview and scored decisions cannot exceed its decisions");
+  checkBaselines(entry.baselines, ops, "a member's ");
+}
+
+/** Members name each other consistently: the pair id of a named member, and equal counts from both sides. */
+function checkMemberLinks(members: MemberEntry[]): void {
+  const byId = new Map(members.map((entry) => [entry.member, entry]));
+  for (const entry of members) {
+    for (const o of entry.opponents) {
+      if (o.member === undefined) continue;
+      const other = byId.get(o.member);
+      if (other === undefined) throw new LeagueRunRecordError("an opponent names a member the record does not hold");
+      if (o.opponent_policy_id !== other.pair_policy_id) throw new LeagueRunRecordError("an opponent's policy id must be the named member's pair_policy_id");
+      if (other === entry) continue;
+      const back = other.opponents.find((p) => p.member === entry.member);
+      if (back === undefined || back.games !== o.games || back.played !== o.played) {
+        throw new LeagueRunRecordError("two members' entries about each other must agree in games and played");
+      }
     }
   }
 }
 
-/** Read a version 2 record: the schema, then the member, total and cause rules the profile cannot say. */
+/** The root totals count distinct games: the members' sums less each member-vs-member game counted twice. */
+function checkTotals(record: LeagueRunRecordV2): void {
+  const { members } = record;
+  let games = 0;
+  let played = 0;
+  for (const entry of members) {
+    games += entry.games;
+    played += entry.played;
+    for (const o of entry.opponents) {
+      // Count a pair of members once: from the side of the lower-ranked member.
+      if (o.member !== undefined && o.member !== entry.member && memberOrder(o.member, entry.member) > 0) {
+        games -= o.games;
+        played -= o.played;
+      }
+    }
+  }
+  if (record.games !== games || record.played !== played) throw new LeagueRunRecordError("the root totals must count distinct games: the members' sums less the games between two members");
+  if (record.played + record.forfeits !== record.games) throw new LeagueRunRecordError("the record's played + forfeits must equal games");
+  if (record.episodes !== 2 * record.played) throw new LeagueRunRecordError("the record's episodes must be two per played game");
+  checkCauses(record.forfeit_causes, record.forfeits, "the record's");
+  // A cause of the root is one some member has; a distinct game counts once at the root and once or twice among the members.
+  const bounds = new Map<string, { max: number; sum: number }>();
+  for (const entry of members) {
+    for (const c of entry.forfeit_causes ?? []) {
+      const seen = bounds.get(c.cause) ?? { max: 0, sum: 0 };
+      bounds.set(c.cause, { max: Math.max(seen.max, c.count), sum: seen.sum + c.count });
+    }
+  }
+  const listed = record.forfeit_causes ?? [];
+  if (listed.length !== bounds.size || listed.some((c) => c.count < (bounds.get(c.cause)?.max ?? Infinity) || c.count > (bounds.get(c.cause)?.sum ?? -1))) {
+    throw new LeagueRunRecordError("each root forfeit cause must be one a member has, between the largest member count and the sum over the members");
+  }
+}
+
+/** Read a version 2 record: the schema, then the member, link and total rules the profile cannot say. */
 export function readLeagueRunRecordV2(value: unknown): LeagueRunRecordV2 {
   if (!validRecordV2(value)) throw new LeagueRunRecordError(`invalid LeagueRunRecordV2: ${JSON.stringify(validRecordV2.errors)}`);
   const record = structuredClone(value) as unknown as LeagueRunRecordV2;
@@ -238,17 +288,8 @@ export function readLeagueRunRecordV2(value: unknown): LeagueRunRecordV2 {
   });
   if (unsorted) throw new LeagueRunRecordError("members must be sorted (m<k> by k, then x<k> by k), each once");
   for (const entry of record.members) checkMember(entry);
-  const sum = (pick: (entry: MemberEntry) => number): number => record.members.reduce((total, entry) => total + pick(entry), 0);
-  if (record.games !== sum((e) => e.games) || record.played !== sum((e) => e.played) || record.forfeits !== sum((e) => e.forfeits) || record.episodes !== sum((e) => e.episodes)) {
-    throw new LeagueRunRecordError("the totals must equal the sums over the members");
-  }
-  checkCauses(record.forfeit_causes, record.forfeits, "the");
-  const byCause = new Map<string, number>();
-  for (const entry of record.members) for (const c of entry.forfeit_causes ?? []) byCause.set(c.cause, (byCause.get(c.cause) ?? 0) + c.count);
-  const listed = record.forfeit_causes ?? [];
-  if (listed.length !== byCause.size || listed.some((c) => byCause.get(c.cause) !== c.count)) {
-    throw new LeagueRunRecordError("each forfeit cause must equal the sum over the members");
-  }
+  checkMemberLinks(record.members);
+  checkTotals(record);
   return record;
 }
 

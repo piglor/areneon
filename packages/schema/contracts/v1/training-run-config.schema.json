@@ -415,6 +415,497 @@
         }
       }
     },
+    "population": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "members",
+        "exploiters",
+        "seats_per_member",
+        "shares",
+        "past_pool",
+        "rating",
+        "selection",
+        "explore",
+        "health",
+        "exploiter"
+      ],
+      "properties": {
+        "members": {
+          "description": "Learning members M (code bound 1 to 16; ADR-021 recommends a start of 4).",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 16
+        },
+        "exploiters": {
+          "description": "Exploiter seats (code bound 0 to 2).",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 2
+        },
+        "seats_per_member": {
+          "description": "Policy seats per member per generation, the unit the shares divide (ADR-021 section 3).",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000
+        },
+        "shares": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "ladder_ppm",
+            "self_play_ppm",
+            "past_pool_ppm"
+          ],
+          "properties": {
+            "ladder_ppm": {
+              "description": "Current members, uniform, whole team pairs from both seats.",
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1000000
+            },
+            "self_play_ppm": {
+              "description": "The member's own frozen pair.",
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1000000
+            },
+            "past_pool_ppm": {
+              "description": "PFSP over frozen snapshots of any member.",
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1000000
+            }
+          },
+          "description": "Opponent shares of a member's policy seats, in parts per million; they sum to 1,000,000."
+        },
+        "past_pool": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "snapshot_every",
+            "max_size",
+            "max_past_per_member",
+            "pfsp_power",
+            "floor_ppm"
+          ],
+          "properties": {
+            "snapshot_every": {
+              "description": "Generations between snapshots of each member's frozen pair.",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000000
+            },
+            "max_size": {
+              "description": "Cap on pairs in the pool (oldest evicted first, generation-0 pairs never).",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000000
+            },
+            "max_past_per_member": {
+              "description": "Distinct snapshots drawn per member per generation (at most max_size).",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000000
+            },
+            "pfsp_power": {
+              "description": "The PFSP f_hard exponent p.",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 16
+            },
+            "floor_ppm": {
+              "description": "Least PFSP weight in parts per million, so no snapshot is starved.",
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1000000
+            }
+          },
+          "description": "The frozen past pool (ADR-021 section 3)."
+        },
+        "rating": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "window",
+            "calibration_pairs",
+            "bootstrap_resamples"
+          ],
+          "properties": {
+            "window": {
+              "description": "Generations of results a strength is fitted on.",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000000
+            },
+            "calibration_pairs": {
+              "description": "Pairs per anchor pair in the generation-0 anchor calibration.",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000000
+            },
+            "bootstrap_resamples": {
+              "description": "Percentile bootstrap resamples over pairs.",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000000
+            }
+          },
+          "description": "Integer Bradley-Terry rating inputs (ADR-021 section 4)."
+        },
+        "selection": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "ready_generations",
+            "n_min",
+            "margin_ppm",
+            "alpha_ppm",
+            "min_roots"
+          ],
+          "properties": {
+            "ready_generations": {
+              "description": "Generations since a member's last copy before it may be replaced.",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000000
+            },
+            "n_min": {
+              "description": "Least head-to-head pairs in the window for a copy decision.",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000000
+            },
+            "margin_ppm": {
+              "description": "Margin above 500,000 the donor's one-sided lower bound must clear.",
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 500000
+            },
+            "alpha_ppm": {
+              "description": "One-sided level of the bootstrap bound, in parts per million.",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 500000
+            },
+            "min_roots": {
+              "description": "Distinct generation-0 roots that must remain after a copy (at most members).",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 16
+            }
+          },
+          "description": "The conservative copy rule (ADR-021 section 6)."
+        },
+        "explore": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "bounds"
+          ],
+          "properties": {
+            "bounds": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "learning_rate_micro",
+                "entropy_coef_micro",
+                "epochs",
+                "clip_micro",
+                "ladder_ppm",
+                "self_play_ppm",
+                "past_pool_ppm"
+              ],
+              "properties": {
+                "learning_rate_micro": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "min",
+                    "max"
+                  ],
+                  "properties": {
+                    "min": {
+                      "description": "Lowest value the explore step may set.",
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 1000000
+                    },
+                    "max": {
+                      "description": "Highest value the explore step may set (a reader rule requires min <= the starting value <= max).",
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 1000000
+                    }
+                  },
+                  "description": "Bounds of ppo.learning_rate_micro."
+                },
+                "entropy_coef_micro": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "min",
+                    "max"
+                  ],
+                  "properties": {
+                    "min": {
+                      "description": "Lowest value the explore step may set.",
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 10000000
+                    },
+                    "max": {
+                      "description": "Highest value the explore step may set (a reader rule requires min <= the starting value <= max).",
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 10000000
+                    }
+                  },
+                  "description": "Bounds of ppo.entropy_coef_micro."
+                },
+                "epochs": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "min",
+                    "max"
+                  ],
+                  "properties": {
+                    "min": {
+                      "description": "Lowest value the explore step may set.",
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 64
+                    },
+                    "max": {
+                      "description": "Highest value the explore step may set (a reader rule requires min <= the starting value <= max).",
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 64
+                    }
+                  },
+                  "description": "Bounds of ppo.epochs."
+                },
+                "clip_micro": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "min",
+                    "max"
+                  ],
+                  "properties": {
+                    "min": {
+                      "description": "Lowest value the explore step may set.",
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 1000000
+                    },
+                    "max": {
+                      "description": "Highest value the explore step may set (a reader rule requires min <= the starting value <= max).",
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 1000000
+                    }
+                  },
+                  "description": "Bounds of ppo.clip_micro."
+                },
+                "target_kl_micro": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "min",
+                    "max"
+                  ],
+                  "properties": {
+                    "min": {
+                      "description": "Lowest value the explore step may set.",
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 1000000000
+                    },
+                    "max": {
+                      "description": "Highest value the explore step may set (a reader rule requires min <= the starting value <= max).",
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 1000000000
+                    }
+                  },
+                  "description": "Bounds of ppo.target_kl_micro."
+                },
+                "ladder_ppm": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "min",
+                    "max"
+                  ],
+                  "properties": {
+                    "min": {
+                      "description": "Lowest value the explore step may set.",
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 1000000
+                    },
+                    "max": {
+                      "description": "Highest value the explore step may set (a reader rule requires min <= the starting value <= max).",
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 1000000
+                    }
+                  },
+                  "description": "Bounds of the ladder share."
+                },
+                "self_play_ppm": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "min",
+                    "max"
+                  ],
+                  "properties": {
+                    "min": {
+                      "description": "Lowest value the explore step may set.",
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 1000000
+                    },
+                    "max": {
+                      "description": "Highest value the explore step may set (a reader rule requires min <= the starting value <= max).",
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 1000000
+                    }
+                  },
+                  "description": "Bounds of the self-play share."
+                },
+                "past_pool_ppm": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "min",
+                    "max"
+                  ],
+                  "properties": {
+                    "min": {
+                      "description": "Lowest value the explore step may set.",
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 1000000
+                    },
+                    "max": {
+                      "description": "Highest value the explore step may set (a reader rule requires min <= the starting value <= max).",
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 1000000
+                    }
+                  },
+                  "description": "Bounds of the past-pool share."
+                }
+              },
+              "description": "Inclusive bounds the explore step clamps to; each must contain its starting value. target_kl_micro is allowed only when ppo.target_kl_micro is set."
+            }
+          },
+          "description": "The explore step (ADR-021 section 6)."
+        },
+        "health": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "clip_ppm",
+            "kl_ppm",
+            "forfeit_ppm"
+          ],
+          "properties": {
+            "clip_ppm": {
+              "description": "Clip fraction, in parts per million, above which a generation counts as unhealthy.",
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1000000
+            },
+            "kl_ppm": {
+              "description": "Approximate KL, in millionths, above which a generation counts as unhealthy.",
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1000000000
+            },
+            "forfeit_ppm": {
+              "description": "Share of a member's games, in parts per million, that may be policy forfeits.",
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1000000
+            }
+          },
+          "description": "Health stops that quarantine a member (ADR-021 section 6)."
+        },
+        "exploiter": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "reset_every"
+          ],
+          "properties": {
+            "reset_every": {
+              "description": "Generations after which an exploiter seat is reset (ADR-021 default 10).",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000000
+            }
+          },
+          "description": "Exploiter seat settings."
+        },
+        "member_ppo": {
+          "description": "Optional starting PPO overrides per member, sorted by member and unique; a field not given keeps the ppo value.",
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "member"
+            ],
+            "properties": {
+              "member": {
+                "description": "Member index, from 0 below members.",
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 15
+              },
+              "learning_rate_micro": {
+                "description": "Starting ppo.learning_rate_micro of this member.",
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 1000000
+              },
+              "entropy_coef_micro": {
+                "description": "Starting ppo.entropy_coef_micro of this member.",
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 10000000
+              },
+              "epochs": {
+                "description": "Starting ppo.epochs of this member.",
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 64
+              },
+              "clip_micro": {
+                "description": "Starting ppo.clip_micro of this member.",
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 1000000
+              },
+              "target_kl_micro": {
+                "description": "Starting ppo.target_kl_micro of this member (needs ppo.target_kl_micro).",
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 1000000000
+              }
+            }
+          }
+        }
+      },
+      "description": "Optional (a minor change within v1; ADR-021 sections 2, 3, 5, 6 and 8, ADR-010 erratum A3, #982): the run is a population of learning members on one ladder instead of one lineage. Every value is config data; code holds only the outer bounds (members 1 to 16, exploiters 0 to 2). Integers only; shares and thresholds are parts per million. Absent keeps today's single-lineage loop and its bytes and run_config_hash; a config that carries it is a new run, and the loop driver refuses it until the scheduler lands (slice 5). Reader rules (both readers): the three opponent shares sum to 1,000,000; min_roots is at most members; every explore bound contains its starting value (the member's override, else the ppo value; shares start from population.shares); past_pool.max_past_per_member is at most past_pool.max_size; member_ppo is sorted by member, unique, and each member is below members."
+    },
     "learner": {
       "description": "Where the learner runs (ADR-010 section 4). A cuda run is not claimed to be bit-reproducible, and its hash differs from a cpu run's.",
       "type": "object",

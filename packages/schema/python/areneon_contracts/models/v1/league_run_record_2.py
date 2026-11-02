@@ -81,7 +81,11 @@ class ForfeitCauseCount(BaseModel):
     count: Annotated[StrictInt, Field(ge=1, le=9007199254740991)]
 
 
-class Opponent(BaseModel):
+class MemberOpponent(BaseModel):
+    """
+    Games against one opponent. member is present when the opponent is a member or exploiter seat of this generation (this member itself for self-play), and then opponent_policy_id is that member's pair_policy_id; absent for a baseline, a past snapshot or any other pair.
+    """
+
     model_config = ConfigDict(
         extra="forbid",
     )
@@ -92,7 +96,17 @@ class Opponent(BaseModel):
     """
     The opponent's policy id as the Episodes' collection records name it: the frozen pair itself (self-play) or a scripted baseline, <name>@<commit>.
     """
+    member: Annotated[StrictStr | MISSING, Field(pattern="^(m|x)(0|[1-9][0-9]{0,8})$")] = (
+        MISSING
+    )
+    """
+    The opponent member's id, m<k> or x<k>.
+    """
     games: Annotated[StrictInt, Field(ge=1, le=9007199254740991)]
+    played: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+    """
+    Of those games, the ones played to an end.
+    """
 
 
 class BaselineRecord(BaseModel):
@@ -122,7 +136,7 @@ class BaselineRecord(BaseModel):
 
 class Member(BaseModel):
     """
-    One learning member (m<k>) or exploiter seat (x<k>) of the population: its frozen pair at the start of the generation and the counts of the games the generation counted under it. A game is counted once, under the member that hosts it (a ladder pair under the lower-indexed member), so the root totals are the sums over the members. episodes is two per played game (both seats of the game are written), as in version 1. Reader rules: members sorted and unique (m<k> by k, then x<k> by k), played + forfeits = games, episodes = 2 * played, opponents sorted, unique and summing to games, forfeit_causes present exactly when forfeits is above 0, sorted, unique and summing to forfeits, baselines as in version 1 relative to this member's opponents.
+    One learning member (m<k>) or exploiter seat (x<k>): its frozen pair at the start of the generation and the counts of the games in which it holds at least one seat (see the root counting rule). Reader rules: members sorted and unique; played + forfeits = games; opponents sorted by (opponent_policy_id, member) and unique, their games and played summing to the member's; episodes = played + the played self-play games; an opponent entry that names a member has that member's pair_policy_id, and the two members' entries about each other agree in games and played; forfeit_causes present exactly when forfeits is above 0, sorted, unique and summing to forfeits; baselines as in version 1 against the member's opponents.
     """
 
     model_config = ConfigDict(
@@ -139,15 +153,15 @@ class Member(BaseModel):
     checkpoints: PairCheckpoints
     games: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
     """
-    Games counted under this member.
+    Games in which this member holds at least one seat.
     """
     played: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
     """
-    Games played to an end. played + forfeits = games.
+    Of those, games played to an end. played + forfeits = games.
     """
     forfeits: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
     """
-    Games a policy forfeited: no Episodes, not training data.
+    Of those, games a policy forfeited.
     """
     forfeit_causes: Annotated[list[ForfeitCauseCount] | MISSING, Field(min_length=1)] = (
         MISSING
@@ -157,11 +171,11 @@ class Member(BaseModel):
     """
     episodes: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
     """
-    Episodes written: two per played game.
+    Episodes of this member's own seats: one per played game, two per played self-play game.
     """
-    opponents: list[Opponent]
+    opponents: list[MemberOpponent]
     """
-    Games per opponent policy id, sorted by opponent_policy_id, each id once; the counts sum to games. Another member's frozen pair or a past snapshot is named by its pair policy id.
+    Games per opponent, sorted by (opponent_policy_id, member) with an absent member first, each pair once; the games sum to games and the played counts to played.
     """
     baselines: Annotated[list[BaselineRecord] | MISSING, Field(min_length=1)] = MISSING
     """
@@ -171,7 +185,7 @@ class Member(BaseModel):
 
 class LeagueRunRecordV2(BaseModel):
     """
-    What one generation of a population run played (ADR-021 section 8, ADR-010 erratum A3 LE.5), beside LeagueRunRecord version 1, which a single-lineage run keeps writing: a new version because the root no longer has one frozen pair; the members array holds one entry per learning member and exploiter seat with its frozen pair, checkpoints and counts. The totals are the sums over the members. copy_decision_hash names that generation's copy decision (null when none was taken). Written next to the generation's Episodes and referenced only by the SHA-256 of its JCS bytes. Reader rules the profile cannot say (no arithmetic, no uniqueItems) are in the member description and checked by both readers, which also tie the record to its TrainingRunConfig: run key, hash and the numbers of members and exploiters.
+    What one generation of a population run played (ADR-021 sections 2 and 8, ADR-010 erratum A3 LE.5), beside LeagueRunRecord version 1, which a single-lineage run keeps writing: a new version because the root no longer has one frozen pair. COUNTING RULE. Every game has at least one learning seat (a member or an exploiter seat). A member entry counts every game in which that member holds at least one seat: games, played and forfeits (played + forfeits = games), with opponents per opponent id summing to games and played. A game between two members (m vs m, m vs x) appears in BOTH entries, under each other's member id; a self-play game appears once in the member's entry with the member's own id as opponent. episodes counts the Episodes of the member's OWN seats: one per played game, two per played self-play game (episodes = played + played self-play games). The root totals count DISTINCT games, as version 1 does (episodes = 2 * played, both seats of a game are written): root games = the sum of the members' games minus the games between two members, counted once per pair. The forfeit causes of a member are those of its games; the root causes count distinct games. copy_decision_hash names that generation's copy decision (null when none was taken). Written next to the generation's Episodes and referenced only by the SHA-256 of its JCS bytes. The reader rules the profile cannot say (no arithmetic, no uniqueItems) are checked by both readers, which also tie the record to its TrainingRunConfig: run key, hash and the numbers of members and exploiters.
     """
 
     model_config = ConfigDict(
@@ -200,25 +214,25 @@ class LeagueRunRecordV2(BaseModel):
     """
     games: Annotated[StrictInt, Field(ge=1, le=9007199254740991)]
     """
-    Games in the plan: the sum of the members' games.
+    Distinct games in the plan (see the counting rule).
     """
     played: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
     """
-    Games played to an end: the sum of the members'.
+    Distinct games played to an end. played + forfeits = games.
     """
     forfeits: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
     """
-    Games a policy forfeited: the sum of the members'.
+    Distinct games a policy forfeited: no Episodes, not training data.
     """
     forfeit_causes: Annotated[list[ForfeitCauseCount] | MISSING, Field(min_length=1)] = (
         MISSING
     )
     """
-    Forfeits by cause, sorted by cause, each cause once, each count at least 1; each count is the sum over the members; present exactly when forfeits is above 0.
+    Forfeits of distinct games by cause, sorted by cause, each cause once, each count at least 1; the counts sum to forfeits; present exactly when forfeits is above 0. Each cause is one some member has, and its count is at least the largest member count and at most the sum over the members.
     """
     episodes: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
     """
-    Episodes written: the sum of the members'.
+    Episodes written: two per played game, both seats.
     """
     copy_decision_hash: Annotated[StrictStr | None, Field(pattern="^[0-9a-f]{64}$")]
     """

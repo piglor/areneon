@@ -116,7 +116,9 @@ def _check_baselines(raw: dict[str, Any], what: str = "") -> None:
     ids = [b["policy_id"] for b in baselines]
     if not all(a < b for a, b in itertools.pairwise(ids)):
         raise LeagueRecordError(f"{what}baselines must be sorted by policy_id, each once")
-    games_by_opponent = {o["opponent_policy_id"]: o["games"] for o in raw["opponents"]}
+    games_by_opponent = {
+        o["opponent_policy_id"]: o["games"] for o in raw["opponents"] if "member" not in o
+    }
     for entry in baselines:
         if games_by_opponent.get(entry["policy_id"]) != entry["games"]:
             label = f"{what}baseline" if what else "a baseline"
@@ -176,6 +178,7 @@ def _member_key(member: str) -> tuple[int, int]:
 
 
 def _check_causes(causes: list[dict[str, Any]] | None, forfeits: int, what: str) -> None:
+    """Forfeit causes: present exactly with forfeits, sorted, unique, summing to them."""
     if forfeits == 0:
         if causes is not None:
             raise LeagueRecordError(f"{what} forfeit_causes must be absent without forfeits")
@@ -189,35 +192,94 @@ def _check_causes(causes: list[dict[str, Any]] | None, forfeits: int, what: str)
         raise LeagueRecordError(f"{what} forfeit causes' counts must sum to forfeits")
 
 
+def _opponent_key(o: dict[str, Any]) -> tuple[str, str]:
+    return (o["opponent_policy_id"], o.get("member", ""))
+
+
 def _check_member(entry: dict[str, Any]) -> None:
+    """One member's own rules: counts, opponents, own-seat Episodes, causes, baselines."""
     if entry["played"] + entry["forfeits"] != entry["games"]:
         raise LeagueRecordError("a member's played + forfeits must equal games")
-    if entry["episodes"] != 2 * entry["played"]:
-        raise LeagueRecordError("a member's episodes must be two per played game")
-    ids = [o["opponent_policy_id"] for o in entry["opponents"]]
-    if not all(a < b for a, b in itertools.pairwise(ids)):
+    ops = entry["opponents"]
+    if not all(_opponent_key(a) < _opponent_key(b) for a, b in itertools.pairwise(ops)):
         raise LeagueRecordError(
-            "a member's opponents must be sorted by opponent_policy_id, each once"
+            "a member's opponents must be sorted by opponent_policy_id and member, each once"
         )
-    if sum(o["games"] for o in entry["opponents"]) != entry["games"]:
+    if any(o["played"] > o["games"] for o in ops):
+        raise LeagueRecordError("an opponent's played cannot exceed its games")
+    if sum(o["games"] for o in ops) != entry["games"]:
         raise LeagueRecordError("a member's opponents' games must sum to its games")
+    if sum(o["played"] for o in ops) != entry["played"]:
+        raise LeagueRecordError("a member's opponents' played counts must sum to its played")
+    self_played = sum(o["played"] for o in ops if o.get("member") == entry["member"])
+    if entry["episodes"] != entry["played"] + self_played:
+        raise LeagueRecordError(
+            "a member's episodes must be its played games plus its played self-play games"
+        )
     _check_causes(entry.get("forfeit_causes"), entry["forfeits"], "a member's")
     _check_baselines(entry, "a member's ")
 
 
+def _check_member_links(members: list[dict[str, Any]]) -> None:
+    """Members name each other consistently: the pair id, and equal counts from both sides."""
+    by_id = {m["member"]: m for m in members}
+    for entry in members:
+        for o in entry["opponents"]:
+            if "member" not in o:
+                continue
+            other = by_id.get(o["member"])
+            if other is None:
+                raise LeagueRecordError("an opponent names a member the record does not hold")
+            if o["opponent_policy_id"] != other["pair_policy_id"]:
+                raise LeagueRecordError(
+                    "an opponent's policy id must be the named member's pair_policy_id"
+                )
+            if other is entry:
+                continue
+            back = next((p for p in other["opponents"] if p.get("member") == entry["member"]), None)
+            if back is None or (back["games"], back["played"]) != (o["games"], o["played"]):
+                raise LeagueRecordError(
+                    "two members' entries about each other must agree in games and played"
+                )
+
+
 def _check_totals(raw: dict[str, Any], members: list[dict[str, Any]]) -> None:
-    """The root totals and forfeit causes are the sums over the members."""
-    for field in ("games", "played", "forfeits", "episodes"):
-        if raw[field] != sum(m[field] for m in members):
-            raise LeagueRecordError("the totals must equal the sums over the members")
-    _check_causes(raw.get("forfeit_causes"), raw["forfeits"], "the")
-    by_cause: dict[str, int] = {}
+    """The root counts distinct games: the members' sums less each member-vs-member game once."""
+    games = sum(m["games"] for m in members)
+    played = sum(m["played"] for m in members)
+    for entry in members:
+        for o in entry["opponents"]:
+            other = o.get("member")
+            if (
+                other is not None
+                and other != entry["member"]
+                and _member_key(other) > _member_key(entry["member"])
+            ):
+                games -= o["games"]
+                played -= o["played"]
+    if (raw["games"], raw["played"]) != (games, played):
+        raise LeagueRecordError(
+            "the root totals must count distinct games:"
+            " the members' sums less the games between two members"
+        )
+    if raw["played"] + raw["forfeits"] != raw["games"]:
+        raise LeagueRecordError("the record's played + forfeits must equal games")
+    if raw["episodes"] != 2 * raw["played"]:
+        raise LeagueRecordError("the record's episodes must be two per played game")
+    _check_causes(raw.get("forfeit_causes"), raw["forfeits"], "the record's")
+    bounds: dict[str, tuple[int, int]] = {}
     for entry in members:
         for c in entry.get("forfeit_causes", []):
-            by_cause[c["cause"]] = by_cause.get(c["cause"], 0) + c["count"]
+            largest, total = bounds.get(c["cause"], (0, 0))
+            bounds[c["cause"]] = (max(largest, c["count"]), total + c["count"])
     listed = {c["cause"]: c["count"] for c in raw.get("forfeit_causes", [])}
-    if listed != by_cause:
-        raise LeagueRecordError("each forfeit cause must equal the sum over the members")
+    if listed.keys() != bounds.keys() or any(
+        not bounds[cause][0] <= count <= bounds[cause][1] for cause, count in listed.items()
+    ):
+        raise LeagueRecordError(
+            "each root forfeit cause must be one a member has,"
+            " between the largest member count and the sum over the members"
+        )
 
 
 def read_league_run_record_v2(raw: object, config: RunConfig) -> LeagueRunRecordV2:
@@ -236,6 +298,7 @@ def read_league_run_record_v2(raw: object, config: RunConfig) -> LeagueRunRecord
         raise LeagueRecordError("members must be sorted (m<k> by k, then x<k> by k), each once")
     for entry in members:
         _check_member(entry)
+    _check_member_links(members)
     _check_totals(raw, members)
     if raw["run_id"] != config.run_key:
         raise LeagueRecordError(f"run_id {raw['run_id']} is not the config's run key")
