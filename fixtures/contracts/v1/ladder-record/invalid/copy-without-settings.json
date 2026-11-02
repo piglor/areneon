@@ -1,0 +1,517 @@
+{
+  "schema_version": 1,
+  "data_class": "synthetic",
+  "run_id": "tiny-run",
+  "run_config_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "generation": 5,
+  "window": {
+    "size": 3,
+    "first_generation": 3,
+    "last_generation": 5
+  },
+  "anchors": [
+    {
+      "anchor_id": "actor-rule@v1",
+      "strength": 1000000000
+    },
+    {
+      "anchor_id": "random-legal@v1",
+      "strength": 380000000
+    }
+  ],
+  "members": [
+    {
+      "member": "m0",
+      "root": "m0",
+      "strength": {
+        "strength": 900000000,
+        "lower": 810000000,
+        "upper": 990000000
+      },
+      "settings": {
+        "learning_rate_micro": 300,
+        "entropy_coef_micro": 10000,
+        "epochs": 4,
+        "clip_micro": 200000,
+        "shares": {
+          "ladder_ppm": 500000,
+          "self_play_ppm": 250000,
+          "past_pool_ppm": 250000
+        }
+      }
+    },
+    {
+      "member": "m1",
+      "root": "m1",
+      "strength": {
+        "strength": 1050000000,
+        "lower": 945000000,
+        "upper": 1155000000
+      },
+      "settings": {
+        "learning_rate_micro": 300,
+        "entropy_coef_micro": 10000,
+        "epochs": 4,
+        "clip_micro": 200000,
+        "shares": {
+          "ladder_ppm": 500000,
+          "self_play_ppm": 250000,
+          "past_pool_ppm": 250000
+        }
+      }
+    },
+    {
+      "member": "m2",
+      "root": "m2",
+      "strength": {
+        "strength": 1200000000,
+        "lower": 1080000000,
+        "upper": 1320000000
+      },
+      "settings": {
+        "learning_rate_micro": 300,
+        "entropy_coef_micro": 10000,
+        "epochs": 4,
+        "clip_micro": 200000,
+        "shares": {
+          "ladder_ppm": 500000,
+          "self_play_ppm": 250000,
+          "past_pool_ppm": 250000
+        }
+      }
+    },
+    {
+      "member": "m3",
+      "root": "m3",
+      "strength": {
+        "strength": 1350000000,
+        "lower": 1215000000,
+        "upper": 1485000000
+      },
+      "settings": {
+        "learning_rate_micro": 300,
+        "entropy_coef_micro": 10000,
+        "epochs": 4,
+        "clip_micro": 200000,
+        "shares": {
+          "ladder_ppm": 500000,
+          "self_play_ppm": 250000,
+          "past_pool_ppm": 250000
+        }
+      }
+    }
+  ],
+  "snapshots": [
+    {
+      "snapshot_id": "m0@g0",
+      "member": "m0",
+      "generation": 0,
+      "strength": {
+        "strength": 700000000,
+        "lower": 630000000,
+        "upper": 770000000
+      }
+    }
+  ],
+  "cells": [
+    {
+      "member": "m0",
+      "opponent": {
+        "kind": "anchor",
+        "id": "actor-rule@v1"
+      },
+      "scores": [
+        2,
+        6,
+        14,
+        30,
+        44
+      ],
+      "pairs": 96,
+      "score_sum_ppm": 75000000
+    },
+    {
+      "member": "m0",
+      "opponent": {
+        "kind": "anchor",
+        "id": "random-legal@v1"
+      },
+      "scores": [
+        0,
+        1,
+        5,
+        20,
+        70
+      ],
+      "pairs": 96,
+      "score_sum_ppm": 87750000
+    },
+    {
+      "member": "m0",
+      "opponent": {
+        "kind": "member",
+        "id": "m1"
+      },
+      "scores": [
+        34,
+        26,
+        22,
+        10,
+        4
+      ],
+      "pairs": 96,
+      "score_sum_ppm": 29000000
+    },
+    {
+      "member": "m0",
+      "opponent": {
+        "kind": "member",
+        "id": "m2"
+      },
+      "scores": [
+        34,
+        26,
+        22,
+        10,
+        4
+      ],
+      "pairs": 96,
+      "score_sum_ppm": 29000000
+    },
+    {
+      "member": "m0",
+      "opponent": {
+        "kind": "member",
+        "id": "m3"
+      },
+      "scores": [
+        34,
+        26,
+        22,
+        10,
+        4
+      ],
+      "pairs": 96,
+      "score_sum_ppm": 29000000
+    },
+    {
+      "member": "m0",
+      "opponent": {
+        "kind": "snapshot",
+        "id": "m0@g0"
+      },
+      "scores": [
+        3,
+        9,
+        24,
+        36,
+        24
+      ],
+      "pairs": 96,
+      "score_sum_ppm": 65250000
+    },
+    {
+      "member": "m1",
+      "opponent": {
+        "kind": "anchor",
+        "id": "actor-rule@v1"
+      },
+      "scores": [
+        2,
+        6,
+        14,
+        30,
+        44
+      ],
+      "pairs": 96,
+      "score_sum_ppm": 75000000
+    },
+    {
+      "member": "m1",
+      "opponent": {
+        "kind": "anchor",
+        "id": "random-legal@v1"
+      },
+      "scores": [
+        0,
+        1,
+        5,
+        20,
+        70
+      ],
+      "pairs": 96,
+      "score_sum_ppm": 87750000
+    },
+    {
+      "member": "m1",
+      "opponent": {
+        "kind": "member",
+        "id": "m0"
+      },
+      "scores": [
+        4,
+        10,
+        22,
+        26,
+        34
+      ],
+      "pairs": 96,
+      "score_sum_ppm": 67000000
+    },
+    {
+      "member": "m1",
+      "opponent": {
+        "kind": "member",
+        "id": "m2"
+      },
+      "scores": [
+        34,
+        26,
+        22,
+        10,
+        4
+      ],
+      "pairs": 96,
+      "score_sum_ppm": 29000000
+    },
+    {
+      "member": "m1",
+      "opponent": {
+        "kind": "member",
+        "id": "m3"
+      },
+      "scores": [
+        34,
+        26,
+        22,
+        10,
+        4
+      ],
+      "pairs": 96,
+      "score_sum_ppm": 29000000
+    },
+    {
+      "member": "m1",
+      "opponent": {
+        "kind": "snapshot",
+        "id": "m0@g0"
+      },
+      "scores": [
+        3,
+        9,
+        24,
+        36,
+        24
+      ],
+      "pairs": 96,
+      "score_sum_ppm": 65250000
+    },
+    {
+      "member": "m2",
+      "opponent": {
+        "kind": "anchor",
+        "id": "actor-rule@v1"
+      },
+      "scores": [
+        2,
+        6,
+        14,
+        30,
+        44
+      ],
+      "pairs": 96,
+      "score_sum_ppm": 75000000
+    },
+    {
+      "member": "m2",
+      "opponent": {
+        "kind": "anchor",
+        "id": "random-legal@v1"
+      },
+      "scores": [
+        0,
+        1,
+        5,
+        20,
+        70
+      ],
+      "pairs": 96,
+      "score_sum_ppm": 87750000
+    },
+    {
+      "member": "m2",
+      "opponent": {
+        "kind": "member",
+        "id": "m0"
+      },
+      "scores": [
+        4,
+        10,
+        22,
+        26,
+        34
+      ],
+      "pairs": 96,
+      "score_sum_ppm": 67000000
+    },
+    {
+      "member": "m2",
+      "opponent": {
+        "kind": "member",
+        "id": "m1"
+      },
+      "scores": [
+        4,
+        10,
+        22,
+        26,
+        34
+      ],
+      "pairs": 96,
+      "score_sum_ppm": 67000000
+    },
+    {
+      "member": "m2",
+      "opponent": {
+        "kind": "member",
+        "id": "m3"
+      },
+      "scores": [
+        34,
+        26,
+        22,
+        10,
+        4
+      ],
+      "pairs": 96,
+      "score_sum_ppm": 29000000
+    },
+    {
+      "member": "m2",
+      "opponent": {
+        "kind": "snapshot",
+        "id": "m0@g0"
+      },
+      "scores": [
+        3,
+        9,
+        24,
+        36,
+        24
+      ],
+      "pairs": 96,
+      "score_sum_ppm": 65250000
+    },
+    {
+      "member": "m3",
+      "opponent": {
+        "kind": "anchor",
+        "id": "actor-rule@v1"
+      },
+      "scores": [
+        2,
+        6,
+        14,
+        30,
+        44
+      ],
+      "pairs": 96,
+      "score_sum_ppm": 75000000
+    },
+    {
+      "member": "m3",
+      "opponent": {
+        "kind": "anchor",
+        "id": "random-legal@v1"
+      },
+      "scores": [
+        0,
+        1,
+        5,
+        20,
+        70
+      ],
+      "pairs": 96,
+      "score_sum_ppm": 87750000
+    },
+    {
+      "member": "m3",
+      "opponent": {
+        "kind": "member",
+        "id": "m0"
+      },
+      "scores": [
+        4,
+        10,
+        22,
+        26,
+        34
+      ],
+      "pairs": 96,
+      "score_sum_ppm": 67000000
+    },
+    {
+      "member": "m3",
+      "opponent": {
+        "kind": "member",
+        "id": "m1"
+      },
+      "scores": [
+        4,
+        10,
+        22,
+        26,
+        34
+      ],
+      "pairs": 96,
+      "score_sum_ppm": 67000000
+    },
+    {
+      "member": "m3",
+      "opponent": {
+        "kind": "member",
+        "id": "m2"
+      },
+      "scores": [
+        4,
+        10,
+        22,
+        26,
+        34
+      ],
+      "pairs": 96,
+      "score_sum_ppm": 67000000
+    },
+    {
+      "member": "m3",
+      "opponent": {
+        "kind": "snapshot",
+        "id": "m0@g0"
+      },
+      "scores": [
+        3,
+        9,
+        24,
+        36,
+        24
+      ],
+      "pairs": 96,
+      "score_sum_ppm": 65250000
+    }
+  ],
+  "cyclic_triples": 0,
+  "selections": [
+    {
+      "kind": "copy",
+      "loser": "m0",
+      "donor": "m3",
+      "pairs": 96,
+      "lower_bound_ppm": 560000,
+      "donor_anchor_min_ppm": 781250,
+      "loser_anchor_min_ppm": 781250,
+      "roots_before": 4,
+      "roots_after": 3,
+      "learner_seed_index": 7
+    }
+  ]
+}
