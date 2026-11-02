@@ -7,6 +7,7 @@ import json
 
 import pytest
 from areneon_ml.loop import rating
+from areneon_ml.loop.population_seed import population_draw
 from areneon_ml.loop.rating import (
     LANE_COPY,
     REFERENCE_ANCHOR,
@@ -197,7 +198,7 @@ def test_bound_refusals() -> None:
     with pytest.raises(RatingError, match="at least one pair"):
         head_to_head_bounds((0, 0, 0, 0, 0), plan(10))
     with pytest.raises(RatingError, match="lane"):
-        head_to_head_bounds((1, 1, 1, 1, 1), plan(10), lane=1 << 32)
+        head_to_head_bounds((1, 1, 1, 1, 1), plan(10), lane=1 << 21)
     with pytest.raises(RatingError, match="lane"):
         head_to_head_bounds((1, 1, 1, 1, 1), plan(10), lane=-1)
 
@@ -267,3 +268,44 @@ def test_below_rejection_and_exhaustion(monkeypatch: pytest.MonkeyPatch) -> None
 
 PINNED_FIT = "fbfd0721225f7ddd57c314e3e6689fda3a110c6f0367a5137f75ff25d92b974f"
 PINNED_H2H = "59410cfc59ac1283956f8d5d0cd49511f99dd2411c20a208392bb2e505a4f96c"
+
+
+def test_all_wins_compression_is_pinned() -> None:
+    # The 64 fixed iterations under-rate a saturated player; exact MLE is 2 n + 1 times 10^9.
+    expected = {10: 19_981_378_078, 100: 55_423_918_815, 400: 62_396_355_816, 1000: 63_940_383_153}
+    previous = 0
+    for n, value in expected.items():
+        got = fit_strengths([cell("m0", REFERENCE_ANCHOR, (0, 0, 0, 0, n))], ["m0"], ANCHORS)
+        assert got["m0"] == value
+        assert previous < got["m0"] < (2 * n + 1) * 10**9
+        previous = got["m0"]
+
+
+def test_bounds_bracket_the_point_estimate_in_the_common_case() -> None:
+    for name, value in bootstrap_strengths(CELLS, ORDER, ANCHORS, plan(40)).items():
+        assert value.lower <= value.strength <= value.upper, name
+
+
+def test_stream_layout_independent_of_population_draw(monkeypatch: pytest.MonkeyPatch) -> None:
+    def raw(lane: int, counter: int) -> int:
+        body = {
+            "generation": 3,
+            "index": lane << 32 | counter,
+            "member": "m0",
+            "purpose": "bootstrap",
+            "run_key": "tiny-run",
+        }
+        text = json.dumps(body, sort_keys=True, separators=(",", ":"))
+        return int.from_bytes(hashlib.sha256(text.encode()).digest()[:8], "big")
+
+    lane = 5
+    first, second = raw(lane, 0), raw(lane, 1)
+    assert raw(0, 0) == population_draw("tiny-run", 3, "m0", "bootstrap", 0)
+    stream = rating._Stream(SEED, lane)
+    pieces = [first >> 32, first & 0xFFFFFFFF, second >> 32]
+    for n, piece in zip((7, 1000, 3), pieces, strict=True):
+        limit = 2**32 // n * n
+        if piece < limit:
+            assert stream.below(n) == piece % n
+        else:  # pragma: no cover - the fixed vector decides
+            raise AssertionError("fixture piece rejected")

@@ -20,9 +20,17 @@ derived from ``p_i' = W_i / sum_j n_ij / (p_i + p_j)``. Every quotient is floore
 clamped to the record's range 1..10^15, there are exactly ``MM_ITERATIONS`` (64) iterations and no
 tolerance, non-anchor players start at 10^9 and anchors never change. Each rated player gets one
 virtual drawn pair (500000 ppm) against the reference anchor ``actor-rule@v1`` so the estimate stays
-finite. A rated player with no chain of real results to an anchor is refused. Fixed 64 iterations
-converge slowly for a player that wins nearly everything: the result is finite and deterministic,
-not the exact maximum likelihood.
+finite. A rated player with no chain of real results to an anchor is refused.
+
+Convergence limit of the fixed 64 iterations (ADR-mandated). For a player that wins every pair
+against the anchor the estimate is monotone in the number of pairs but compressive at the top: 10
+pairs give 1.998e10 (exact MLE 2.1e10), 100 give 5.5e10 (2.0e11), 400 give 6.2e10 (8.0e11), 1000
+give 6.4e10 (2.0e12). A near-saturated player is under-rated, never over-rated, and the ordering
+is preserved. A player scoring above about 0.97 over 100 pairs is under-estimated; the copy gate
+uses ``head_to_head_lower``, which does not go through the fit.
+
+Percentile bounds need not bracket the point estimate: consumers may not assume
+``lower <= strength <= upper``.
 
 Bootstrap (``bootstrap_strengths``, ``head_to_head_bounds``). Percentile bootstrap over pairs: each
 resample redraws, within every cell, ``n`` pairs with replacement from that cell's ``n`` pairs and
@@ -60,6 +68,8 @@ EVEN_PPM = 500_000
 BUCKETS = 5
 LANE_FIT = 0
 LANE_COPY = 1 << 20
+# The draw index is lane << 32 | counter and JCS refuses integers above 2^53 - 1.
+LANE_LIMIT = 1 << 21
 EDGE_WIDTH = 64
 _PIECE_RANGE = 1 << 32
 _COUNTER_LIMIT = 1 << 32
@@ -324,13 +334,14 @@ def head_to_head_bounds(
 ) -> tuple[int, int]:
     """One-sided ``(lower, upper)`` bounds at ``alpha_ppm`` of the mean pair score, in ppm.
 
+    ``lane`` must be in ``0 <= lane < 2^21`` (the draw index stays below 2^53).
     ``scores`` is the player's pair-score table against the opponent (at least one pair); the mean
     is ``score_sum_ppm // pairs`` and each resample redraws the pairs with replacement.
     """
     resamples = plan.resamples
     rank = _rank(resamples, plan.alpha_ppm)
-    if lane < 0 or lane >= 1 << 32:
-        raise RatingError("lane must fit 32 bits")
+    if lane < 0 or lane >= LANE_LIMIT:
+        raise RatingError("lane must be in 0..2^21-1")
     pairs, _ = cell_totals(scores)
     if pairs < 1:
         raise RatingError("a head-to-head bound needs at least one pair")
