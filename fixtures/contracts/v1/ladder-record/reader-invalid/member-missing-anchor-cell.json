@@ -117,6 +117,22 @@
     {
       "member": "m0",
       "opponent": {
+        "kind": "anchor",
+        "id": "actor-rule@v1"
+      },
+      "scores": [
+        2,
+        6,
+        14,
+        30,
+        44
+      ],
+      "pairs": 96,
+      "score_sum_ppm": 75000000
+    },
+    {
+      "member": "m0",
+      "opponent": {
         "kind": "member",
         "id": "m1"
       },
@@ -470,28 +486,8 @@
   "cyclic_triples": 0,
   "selections": [
     {
-      "kind": "copy",
-      "loser": "m0",
-      "donor": "m3",
-      "pairs": 96,
-      "lower_bound_ppm": 560000,
-      "donor_anchor_min_ppm": 781250,
-      "loser_anchor_min_ppm": 781250,
-      "roots_before": 4,
-      "roots_after": 3,
-      "learner_seed_index": 7,
-      "settings": {
-        "learning_rate_micro": 375,
-        "entropy_coef_micro": 10000,
-        "epochs": 4,
-        "clip_micro": 200000,
-        "shares": {
-          "ladder_ppm": 500000,
-          "self_play_ppm": 250000,
-          "past_pool_ppm": 250000
-        },
-        "target_kl_micro": 15000
-      }
+      "kind": "none",
+      "failed": "lower_bound"
     }
   ]
 }

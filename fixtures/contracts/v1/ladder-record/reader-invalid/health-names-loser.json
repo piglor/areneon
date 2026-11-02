@@ -506,6 +506,7 @@
       "loser": "m0",
       "donor": "m3",
       "pairs": 96,
+      "margin_ppm": 50000,
       "lower_bound_ppm": 560000,
       "donor_anchor_min_ppm": 781250,
       "loser_anchor_min_ppm": 781250,

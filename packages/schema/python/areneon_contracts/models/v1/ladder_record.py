@@ -18,7 +18,7 @@ from pydantic import (
 
 class Strength(BaseModel):
     """
-    A strength on the ladder's scale (10^9 for the reference anchor) with the percentile bootstrap bounds the selection step reads (ADR-021 section 4). Reader rule: lower is at most upper.
+    A strength on the ladder's scale (10^9 for the reference anchor) with the percentile bootstrap bounds the selection step reads (ADR-021 section 4). Reader rule: lower_ppm... lower <= upper.
     """
 
     model_config = ConfigDict(
@@ -94,7 +94,7 @@ class MemberSettings(BaseModel):
 
 class Member(BaseModel):
     """
-    A learning member at the end of the generation: its strength, the generation-0 member it descends from and its effective settings.
+    A learning member as the state at the decision, before the copy: its strength, the generation-0 member it descends from and its effective settings.
     """
 
     model_config = ConfigDict(
@@ -158,7 +158,7 @@ class Opponent(BaseModel):
 
 
 class Score(RootModel[StrictInt]):
-    root: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+    root: Annotated[StrictInt, Field(ge=0, le=1000000000)]
 
 
 class Cell(BaseModel):
@@ -175,8 +175,8 @@ class Cell(BaseModel):
     """
     Pairs at 0, 250000, 500000, 750000 and 1000000 ppm.
     """
-    pairs: Annotated[StrictInt, Field(ge=1, le=9007199254740991)]
-    score_sum_ppm: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
+    pairs: Annotated[StrictInt, Field(ge=1, le=1000000000)]
+    score_sum_ppm: Annotated[StrictInt, Field(ge=0, le=1000000000000000)]
 
 
 class NoSelection(BaseModel):
@@ -193,7 +193,7 @@ class NoSelection(BaseModel):
 
 class Copy(BaseModel):
     """
-    The copy step (ADR-021 figure 2): the loser's slot takes the donor's weights and Adam moments. Reader rules: loser differs from donor, both are members; pairs equals the donor-against-loser cell's pairs; lower_bound_ppm is above 500000; each anchor minimum is the least floor(score_sum_ppm / pairs) over that member's anchor cells; the donor's is not below the loser's; roots_before and roots_after are the distinct roots of the members before the copy and after the loser's root becomes the donor's.
+    The copy step (ADR-021 figure 2): the loser's slot takes the donor's weights and Adam moments. Reader rules: loser differs from donor, both are members, and the donor has the highest strength; pairs equals the donor-against-loser cell's pairs; lower_bound_ppm is above 500000 plus margin_ppm; each anchor minimum is the least floor(score_sum_ppm / pairs) over that member's anchor cells; the donor's is not below the loser's; the donor's strength is at least every member's; roots_before and roots_after are the distinct roots of the members before the copy and after the loser's root becomes the donor's.
     """
 
     model_config = ConfigDict(
@@ -202,9 +202,13 @@ class Copy(BaseModel):
     kind: Literal["copy"]
     loser: Annotated[StrictStr, Field(pattern="^m[0-9]{1,2}$")]
     donor: Annotated[StrictStr, Field(pattern="^m[0-9]{1,2}$")]
-    pairs: Annotated[StrictInt, Field(ge=1, le=9007199254740991)]
+    pairs: Annotated[StrictInt, Field(ge=1, le=1000000000)]
     """
     Donor-against-loser pairs in the window.
+    """
+    margin_ppm: Annotated[StrictInt, Field(ge=0, le=500000)]
+    """
+    The selection margin the test used (population.selection.margin_ppm). Reader rule: lower_bound_ppm is above 500000 plus margin_ppm.
     """
     lower_bound_ppm: Annotated[StrictInt, Field(ge=0, le=1000000)]
     """

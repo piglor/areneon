@@ -62,13 +62,15 @@ def _check_settings(settings: dict[str, Any]) -> None:
         _fail("a member's opponent shares must add up to 1000000")
 
 
-def _anchor_minimum(raw: dict[str, Any], member: str) -> int | None:
-    scores = [
-        cell["score_sum_ppm"] // cell["pairs"]
-        for cell in raw["cells"]
-        if cell["member"] == member and cell["opponent"]["kind"] == "anchor"
-    ]
-    return min(scores) if scores else None
+def _anchor_minimum(raw: dict[str, Any], member: str) -> int:
+    """The least ``score_sum_ppm // pairs`` over a member's anchor cells (one per anchor)."""
+    return int(
+        min(
+            cell["score_sum_ppm"] // cell["pairs"]
+            for cell in raw["cells"]
+            if cell["member"] == member and cell["opponent"]["kind"] == "anchor"
+        )
+    )
 
 
 def _check_selections(raw: dict[str, Any], member_ids: set[str]) -> None:
@@ -97,12 +99,14 @@ def _check_copy(
         _fail("a copy names a member the record does not have")
     if any(entry["member"] in (loser, donor) for entry in rest):
         _fail("a health replacement cannot name a copy's loser or donor")
-    if first["lower_bound_ppm"] <= COPY_FLOOR_PPM:
-        _fail("a copy needs a lower bound above 500000")
+    if first["lower_bound_ppm"] <= COPY_FLOOR_PPM + first["margin_ppm"]:
+        _fail("a copy needs a lower bound above 500000 plus its margin")
     _check_settings(first["settings"])
     by_id = {member["member"]: member for member in raw["members"]}
-    if by_id[donor]["strength"]["strength"] < by_id[loser]["strength"]["strength"]:
-        _fail("a copy's donor cannot be weaker than its loser")
+    if any(
+        m["strength"]["strength"] > by_id[donor]["strength"]["strength"] for m in raw["members"]
+    ):
+        _fail("a copy's donor must have the highest strength among the members")
     cell = next(
         (
             c
@@ -117,10 +121,6 @@ def _check_copy(
         _fail("a copy's pairs must equal the donor-against-loser cell's pairs")
     donor_min = _anchor_minimum(raw, donor)
     loser_min = _anchor_minimum(raw, loser)
-    if donor_min is None or loser_min is None:
-        _fail("a copy needs anchor cells for its donor and its loser")
-    assert donor_min is not None  # _fail raised otherwise
-    assert loser_min is not None
     if donor_min != first["donor_anchor_min_ppm"] or loser_min != first["loser_anchor_min_ppm"]:
         _fail("a copy's anchor minima must be the least anchor pair scores of its donor and loser")
     if donor_min < loser_min:
@@ -166,11 +166,16 @@ def _check_previous(raw: dict[str, Any], previous: dict[str, Any]) -> None:
 
     if anchor_key(previous["anchors"]) != anchor_key(raw["anchors"]):
         _fail("anchor strengths are frozen for the run: they differ from the previous record's")
-    now = {s["snapshot_id"]: s["strength"]["strength"] for s in raw["snapshots"]}
+    if [m["member"] for m in previous["members"]] != [m["member"] for m in raw["members"]]:
+        _fail("the members must be the same set as in the previous record")
+    now = {s["snapshot_id"]: s["strength"] for s in raw["snapshots"]}
     for snapshot in previous["snapshots"]:
         kept = now.get(snapshot["snapshot_id"])
-        if kept is not None and kept != snapshot["strength"]["strength"]:
-            _fail("a snapshot's strength is frozen at entry: it differs from the previous record's")
+        if kept is not None and kept != snapshot["strength"]:
+            _fail(
+                "a snapshot's strength and bounds are frozen at entry: "
+                "they differ from the previous record's"
+            )
 
 
 def _check_window(raw: dict[str, Any]) -> None:
@@ -202,11 +207,47 @@ def _check_members(raw: dict[str, Any]) -> set[str]:
     for snapshot in raw["snapshots"]:
         if snapshot["snapshot_id"] != f"{snapshot['member']}@g{snapshot['generation']}":
             _fail("a snapshot's id must be its member and generation")
+        if snapshot["generation"] >= raw["generation"]:
+            _fail("a snapshot must be frozen in a generation before the record's")
         if snapshot["member"] not in member_ids:
             _fail("a snapshot names a member the record does not have")
         if snapshot["strength"]["lower"] > snapshot["strength"]["upper"]:
             _fail("a strength's lower bound cannot exceed its upper bound")
     return member_ids
+
+
+def _check_config(raw: dict[str, Any], config: RunConfig) -> None:
+    """The run key and hash, and the population rules the record was decided under."""
+    if raw["run_id"] != config.run_key:
+        _fail(f"run_id {raw['run_id']} is not the config's run key")
+    if raw["run_config_hash"] != config.hash:
+        _fail("run_config_hash is not the config's hash")
+    population = config.raw.get("population")
+    if population is None:
+        _fail("the config has no population: a ladder record needs one")
+    assert population is not None  # _fail raised otherwise
+    # Exploiter seats are not rated members (ADR-021 sections 3, 6): the table holds members only.
+    if len(raw["members"]) != population["members"]:
+        _fail("the record's members must equal the config's population.members")
+    if raw["window"]["size"] != population["rating"]["window"]:
+        _fail("the window size must equal the config's population.rating.window")
+    selection = population["selection"]
+    first = raw["selections"][0]
+    if first["kind"] == "copy":
+        if first["margin_ppm"] != selection["margin_ppm"]:
+            _fail("a copy's margin_ppm must equal the config's selection.margin_ppm")
+        if first["pairs"] < selection["n_min"]:
+            _fail("a copy needs at least the config's selection.n_min pairs")
+        if first["roots_after"] < selection["min_roots"]:
+            _fail("a copy must leave at least the config's selection.min_roots roots")
+    elif first["kind"] == "none" and first["failed"] == "root_floor":
+        # A copy changes the distinct roots by at most one, so the floor can only fail when the
+        # members hold at most min_roots.
+        if len({m["root"] for m in raw["members"]}) > selection["min_roots"]:
+            _fail(
+                "a root_floor refusal needs the members to hold at most "
+                "the config's selection.min_roots roots"
+            )
 
 
 def read_ladder_record(
@@ -233,6 +274,15 @@ def read_ladder_record(
         {s["snapshot_id"] for s in raw["snapshots"]},
         {a["anchor_id"] for a in raw["anchors"]},
     )
+    anchor_ids = [a["anchor_id"] for a in raw["anchors"]]
+    for member in raw["members"]:
+        mine = [
+            c["opponent"]["id"]
+            for c in raw["cells"]
+            if c["member"] == member["member"] and c["opponent"]["kind"] == "anchor"
+        ]
+        if mine != anchor_ids:
+            _fail("every member must have exactly one cell per anchor")
     m = len(raw["members"])
     if raw["cyclic_triples"] > m * (m - 1) * (m - 2) // 6:
         _fail("cyclic_triples cannot exceed the number of member triples")
@@ -241,10 +291,7 @@ def read_ladder_record(
         assert isinstance(previous, dict)
         _check_previous(raw, previous)
     if config is not None:
-        if raw["run_id"] != config.run_key:
-            _fail(f"run_id {raw['run_id']} is not the config's run key")
-        if raw["run_config_hash"] != config.hash:
-            _fail("run_config_hash is not the config's hash")
+        _check_config(raw, config)
     return LadderRecord(
         run_id=raw["run_id"],
         run_config_hash=raw["run_config_hash"],

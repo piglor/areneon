@@ -22,14 +22,16 @@ const MESSAGES: Record<string, string> = {
   "copy-after-health": "at most one copy",
   "copy-anchor-minimum-wrong": "a copy's anchor minima must be the least anchor pair scores",
   "copy-donor-anchor-below-loser": "a copy's donor cannot have a lower anchor minimum than its loser",
-  "copy-donor-weaker": "a copy's donor cannot be weaker than its loser",
+  "copy-donor-not-top": "a copy's donor must have the highest strength among the members",
   "copy-loser-is-donor": "a copy's loser must differ from its donor",
-  "copy-lower-bound-too-low": "a copy needs a lower bound above 500000",
+  "copy-lower-bound-too-low": "a copy needs a lower bound above 500000 plus its margin",
   "copy-pairs-not-cell": "a copy's pairs must equal the donor-against-loser cell's pairs",
   "copy-roots-after-wrong": "a copy's roots must be counted from the members' roots",
   "copy-roots-before-wrong": "a copy's roots must be counted from the members' roots",
   "copy-unknown-member": "a copy names a member the record does not have",
-  "copy-without-anchor-cells": "a copy needs anchor cells for its donor and its loser",
+  "copy-shares-do-not-sum": "a member's opponent shares must add up to 1000000",
+  "member-missing-anchor-cell": "every member must have exactly one cell per anchor",
+  "snapshot-not-before-generation": "a snapshot must be frozen in a generation before the record's",
   "cyclic-more-than-triples": "cyclic_triples cannot exceed the number of member triples",
   "duplicate-cell": "cells must be sorted by member, opponent kind and opponent id, each once",
   "first-selection-health": "the first selection must be the copy test's outcome",
@@ -113,6 +115,18 @@ describe("the LadderRecord reader (ADR-021 §4, §6, §8)", () => {
       const snap = structuredClone(previous());
       (snap.snapshots[0] as { strength: { strength: number } }).strength.strength += 1;
       expect(() => readLadderRecord(load("valid", "none"), snap)).toThrow("frozen at entry");
+      for (const bound of ["lower", "upper"] as const) {
+        const edge = structuredClone(previous());
+        const snapshot = edge.snapshots[0] as { strength: Record<"lower" | "upper", number> };
+        snapshot.strength[bound] += 1;
+        expect(() => readLadderRecord(load("valid", "none"), edge)).toThrow("frozen at entry");
+      }
+    });
+
+    it("refuses another set of members", () => {
+      const fewer = structuredClone(previous());
+      fewer.members = fewer.members.slice(1) as unknown as typeof fewer.members;
+      expect(() => readLadderRecord(load("valid", "none"), fewer)).toThrow("same set as in the previous record");
     });
 
     it("lets a snapshot that left the pool go and a new one arrive", () => {
@@ -123,13 +137,58 @@ describe("the LadderRecord reader (ADR-021 §4, §6, §8)", () => {
     });
   });
 
-  it("ties a record to its config by run key and hash", async () => {
-    const config = readTrainingRunConfig(JSON.parse(readFileSync(join(SAMPLES_DIR, "v1/training-run-config/valid/tiny.json"), "utf8")));
-    const raw = load("valid", "none");
-    raw.run_id = config.seeds.run_key;
-    raw.run_config_hash = await runConfigHash(config);
-    await expect(checkLadderRecord(readLadderRecord(raw), config)).resolves.toBeUndefined();
-    await expect(checkLadderRecord(readLadderRecord({ ...raw, run_id: "other-run" }), config)).rejects.toThrow("run key");
-    await expect(checkLadderRecord(readLadderRecord({ ...raw, run_config_hash: "c".repeat(64) }), config)).rejects.toThrow("config's hash");
+  describe("against the config", () => {
+    const configRaw = (): Record<string, any> => JSON.parse(readFileSync(join(SAMPLES_DIR, "v1/training-run-config/valid/population.json"), "utf8")) as Record<string, any>;
+    const tie = async (name: string, change: (r: Record<string, any>) => void = () => {}, configChange: (c: Record<string, any>) => void = () => {}) => {
+      const config = readTrainingRunConfig(configRaw());
+      const raw = load("valid", name);
+      raw.run_id = config.seeds.run_key;
+      raw.run_config_hash = await runConfigHash(config);
+      change(raw);
+      const changed = configRaw();
+      configChange(changed);
+      const used = readTrainingRunConfig(changed);
+      raw.run_config_hash = await runConfigHash(used);
+      await checkLadderRecord(readLadderRecord(raw), used);
+    };
+
+    it("accepts the samples decided under the sample population config", async () => {
+      await expect(tie("none")).resolves.toBeUndefined();
+      await expect(tie("copy")).resolves.toBeUndefined();
+      await expect(tie("copy-and-health")).resolves.toBeUndefined();
+    });
+
+    it("refuses another run key and another config hash", async () => {
+      const config = readTrainingRunConfig(configRaw());
+      const raw = load("valid", "none");
+      raw.run_config_hash = await runConfigHash(config);
+      await expect(checkLadderRecord(readLadderRecord({ ...raw, run_id: "other-run" }), config)).rejects.toThrow("run key");
+      await expect(checkLadderRecord(readLadderRecord({ ...raw, run_config_hash: "c".repeat(64) }), config)).rejects.toThrow("config's hash");
+    });
+
+    it("refuses a config with no population", async () => {
+      const config = readTrainingRunConfig(JSON.parse(readFileSync(join(SAMPLES_DIR, "v1/training-run-config/valid/tiny.json"), "utf8")));
+      const raw = load("valid", "none");
+      raw.run_id = config.seeds.run_key;
+      raw.run_config_hash = await runConfigHash(config);
+      await expect(checkLadderRecord(readLadderRecord(raw), config)).rejects.toThrow("the config has no population: a ladder record needs one");
+    });
+
+    it("refuses members or a window that differ from the config's", async () => {
+      await expect(tie("none", () => {}, (c) => ((c.population.members = 5), (c.population.selection.min_roots = 2)))).rejects.toThrow("members must equal the config's population.members");
+      await expect(tie("none", () => {}, (c) => (c.population.rating.window = 4))).rejects.toThrow("window size must equal");
+    });
+
+    it("holds a copy to the config's margin, pairs and roots", async () => {
+      await expect(tie("copy", () => {}, (c) => (c.population.selection.margin_ppm = 40000))).rejects.toThrow("margin_ppm must equal");
+      await expect(tie("copy", () => {}, (c) => (c.population.selection.n_min = 97))).rejects.toThrow("at least the config's selection.n_min pairs");
+      await expect(tie("copy", () => {}, (c) => (c.population.selection.min_roots = 4))).rejects.toThrow("at least the config's selection.min_roots roots");
+    });
+
+    it("lets root_floor stand only when the members hold at most min_roots roots", async () => {
+      const floor = (r: Record<string, any>) => (r.selections = [{ kind: "none", failed: "root_floor" }]);
+      await expect(tie("none", floor)).rejects.toThrow("at most the config's selection.min_roots roots");
+      await expect(tie("none", floor, (c) => (c.population.selection.min_roots = 4))).resolves.toBeUndefined();
+    });
   });
 });

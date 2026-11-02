@@ -75,6 +75,7 @@ export function ladderRecordSamples(): { valid: Cases; invalid: Cases; readerInv
     loser: "m0",
     donor: "m3",
     pairs: 96,
+    margin_ppm: 50_000,
     lower_bound_ppm: 560_000,
     donor_anchor_min_ppm: anchorMin(cells, "m3"),
     loser_anchor_min_ppm: anchorMin(cells, "m0"),
@@ -125,6 +126,12 @@ export function ladderRecordSamples(): { valid: Cases; invalid: Cases; readerInv
     "ladder-record/no-members": w((r) => (r.members = [])),
     "ladder-record/copy-without-settings": withCopy((c) => delete c.settings),
     "ladder-record/shares-field-missing": w((r) => delete r.members[0].settings.shares.past_pool_ppm),
+    "ladder-record/copy-margin-over-half": withCopy((c) => (c.margin_ppm = 500_001)),
+    "ladder-record/copy-without-margin": withCopy((c) => delete c.margin_ppm),
+    "ladder-record/oversize-pairs": w((r) => {
+      r.cells[0].pairs = 1_000_000_001;
+      r.cells[0].scores = [1_000_000_001, 0, 0, 0, 0];
+    }),
     "ladder-record/next-version": w((r) => (r.schema_version = 2)),
   };
 
@@ -162,8 +169,8 @@ export function ladderRecordSamples(): { valid: Cases; invalid: Cases; readerInv
     "ladder-record/health-names-loser": w((r) => (r.selections = [mutated(copy, () => {}), { ...health, member: "m0" }])),
     "ladder-record/copy-loser-is-donor": withCopy((c) => (c.loser = "m3")),
     "ladder-record/copy-unknown-member": withCopy((c) => (c.donor = "m6")),
-    "ladder-record/copy-lower-bound-too-low": withCopy((c) => (c.lower_bound_ppm = 500_000)),
-    "ladder-record/copy-donor-weaker": w((r) => (r.selections = [mutated(copy, (c) => ((c.loser = "m3"), (c.donor = "m0"), (c.pairs = 96)))])),
+    "ladder-record/copy-lower-bound-too-low": withCopy((c) => (c.lower_bound_ppm = 550_000)),
+    "ladder-record/copy-donor-not-top": w((r) => (r.selections = [mutated(copy, (c) => ((c.loser = "m3"), (c.donor = "m0"), (c.pairs = 96)))])),
     "ladder-record/copy-pairs-not-cell": withCopy((c) => (c.pairs = 95)),
     "ladder-record/copy-anchor-minimum-wrong": withCopy((c) => (c.donor_anchor_min_ppm += 1)),
     "ladder-record/copy-donor-anchor-below-loser": w((r) => {
@@ -174,10 +181,12 @@ export function ladderRecordSamples(): { valid: Cases; invalid: Cases; readerInv
     }),
     "ladder-record/copy-roots-before-wrong": withCopy((c) => (c.roots_before = 3)),
     "ladder-record/copy-roots-after-wrong": withCopy((c) => (c.roots_after = 4)),
-    "ladder-record/copy-without-anchor-cells": w((r) => {
-      r.cells = r.cells.filter((c: Rec) => !(c.member === "m0" && c.opponent.kind === "anchor"));
-      r.selections = [mutated(copy, () => {})];
+    "ladder-record/member-missing-anchor-cell": w((r) => (r.cells = r.cells.filter((c: Rec) => !(c.member === "m0" && c.opponent.id === "random-legal@v1")))),
+    "ladder-record/snapshot-not-before-generation": w((r) => {
+      r.snapshots[0] = { ...r.snapshots[0], snapshot_id: "m0@g5", generation: 5 };
+      for (const c of r.cells) if (c.opponent.id === "m0@g0") c.opponent.id = "m0@g5";
     }),
+    "ladder-record/copy-shares-do-not-sum": withCopy((c) => (c.settings.shares.self_play_ppm = 200_000)),
   };
   return { valid, invalid, readerInvalid };
 }

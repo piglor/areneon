@@ -90,7 +90,7 @@ export interface Anchor {
   strength: number;
 }
 /**
- * A learning member at the end of the generation: its strength, the generation-0 member it descends from and its effective settings.
+ * A learning member as the state at the decision, before the copy: its strength, the generation-0 member it descends from and its effective settings.
  *
  * This interface was referenced by `LadderRecord`'s JSON-Schema
  * via the `definition` "Member".
@@ -105,7 +105,7 @@ export interface Member {
   settings: MemberSettings;
 }
 /**
- * A strength on the ladder's scale (10^9 for the reference anchor) with the percentile bootstrap bounds the selection step reads (ADR-021 section 4). Reader rule: lower is at most upper.
+ * A strength on the ladder's scale (10^9 for the reference anchor) with the percentile bootstrap bounds the selection step reads (ADR-021 section 4). Reader rule: lower_ppm... lower <= upper.
  *
  * This interface was referenced by `LadderRecord`'s JSON-Schema
  * via the `definition` "Strength".
@@ -213,7 +213,7 @@ export interface NoSelection {
   failed: "no_ready_member" | "too_few_pairs" | "lower_bound" | "anchor_minimum" | "root_floor";
 }
 /**
- * The copy step (ADR-021 figure 2): the loser's slot takes the donor's weights and Adam moments. Reader rules: loser differs from donor, both are members; pairs equals the donor-against-loser cell's pairs; lower_bound_ppm is above 500000; each anchor minimum is the least floor(score_sum_ppm / pairs) over that member's anchor cells; the donor's is not below the loser's; roots_before and roots_after are the distinct roots of the members before the copy and after the loser's root becomes the donor's.
+ * The copy step (ADR-021 figure 2): the loser's slot takes the donor's weights and Adam moments. Reader rules: loser differs from donor, both are members, and the donor has the highest strength; pairs equals the donor-against-loser cell's pairs; lower_bound_ppm is above 500000 plus margin_ppm; each anchor minimum is the least floor(score_sum_ppm / pairs) over that member's anchor cells; the donor's is not below the loser's; the donor's strength is at least every member's; roots_before and roots_after are the distinct roots of the members before the copy and after the loser's root becomes the donor's.
  *
  * This interface was referenced by `LadderRecord`'s JSON-Schema
  * via the `definition` "Copy".
@@ -226,6 +226,10 @@ export interface Copy {
    * Donor-against-loser pairs in the window.
    */
   pairs: number;
+  /**
+   * The selection margin the test used (population.selection.margin_ppm). Reader rule: lower_bound_ppm is above 500000 plus margin_ppm.
+   */
+  margin_ppm: number;
   /**
    * One-sided bootstrap lower bound of the donor's mean pair score against the loser.
    */

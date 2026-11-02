@@ -14,6 +14,7 @@ from typing import Any
 
 import pytest
 from areneon_contracts.contracts import validate
+from areneon_ml.learner.config import read_run_config
 from areneon_ml.loop.ladder import (
     REFERENCE_ANCHOR,
     REFERENCE_STRENGTH,
@@ -42,14 +43,18 @@ MESSAGES: dict[str, str] = {
     "copy-donor-anchor-below-loser": (
         "a copy's donor cannot have a lower anchor minimum than its loser"
     ),
-    "copy-donor-weaker": "a copy's donor cannot be weaker than its loser",
+    "copy-donor-not-top": "a copy's donor must have the highest strength among the members",
     "copy-loser-is-donor": "a copy's loser must differ from its donor",
-    "copy-lower-bound-too-low": "a copy needs a lower bound above 500000",
+    "copy-lower-bound-too-low": "a copy needs a lower bound above 500000 plus its margin",
     "copy-pairs-not-cell": "a copy's pairs must equal the donor-against-loser cell's pairs",
     "copy-roots-after-wrong": "a copy's roots must be counted from the members' roots",
     "copy-roots-before-wrong": "a copy's roots must be counted from the members' roots",
     "copy-unknown-member": "a copy names a member the record does not have",
-    "copy-without-anchor-cells": "a copy needs anchor cells for its donor and its loser",
+    "copy-shares-do-not-sum": "a member's opponent shares must add up to 1000000",
+    "member-missing-anchor-cell": "every member must have exactly one cell per anchor",
+    "snapshot-not-before-generation": (
+        "a snapshot must be frozen in a generation before the record's"
+    ),
     "cyclic-more-than-triples": "cyclic_triples cannot exceed the number of member triples",
     "duplicate-cell": "cells must be sorted by member, opponent kind and opponent id, each once",
     "first-selection-health": "the first selection must be the copy test's outcome",
@@ -132,6 +137,9 @@ def test_the_previous_record_is_accepted_and_its_rules_are_enforced() -> None:
         ("the generation before", lambda p: p.update(generation=3)),
         ("anchor strengths are frozen", lambda p: p["anchors"][1].update(strength=1)),
         ("frozen at entry", lambda p: p["snapshots"][0]["strength"].update(strength=1)),
+        ("frozen at entry", lambda p: p["snapshots"][0]["strength"].update(lower=1)),
+        ("frozen at entry", lambda p: p["snapshots"][0]["strength"].update(upper=1)),
+        ("same set as in the previous record", lambda p: p.update(members=p["members"][1:])),
     ]
     for message, change in cases:
         earlier = copy.deepcopy(previous())
@@ -143,8 +151,30 @@ def test_the_previous_record_is_accepted_and_its_rules_are_enforced() -> None:
     assert len(read_ladder_record(raw("none"), earlier).raw["snapshots"]) == 1
 
 
-def test_a_record_is_tied_to_its_config() -> None:
-    config = tiny_config()
+def population_config(change: Any = None) -> Any:
+    value = json.loads((SAMPLES / "training-run-config/valid/population.json").read_text())
+    if change is not None:
+        change(value)
+    return read_run_config(value)
+
+
+def tied(name: str, change: Any = None, config_change: Any = None) -> Any:
+    config = population_config(config_change)
+    value = raw(name)
+    value["run_id"] = config.run_key
+    value["run_config_hash"] = config.hash
+    if change is not None:
+        change(value)
+    return read_ladder_record(value, config=config)
+
+
+def test_the_samples_are_tied_to_the_population_config() -> None:
+    for name in ("none", "copy", "copy-and-health"):
+        assert tied(name).generation == 5
+
+
+def test_a_record_is_tied_to_its_run_key_and_hash() -> None:
+    config = population_config()
     value = raw("none")
     value["run_id"] = config.run_key
     value["run_config_hash"] = config.hash
@@ -153,3 +183,62 @@ def test_a_record_is_tied_to_its_config() -> None:
         read_ladder_record({**value, "run_id": "other-run"}, config=config)
     with pytest.raises(LadderRecordError, match="config's hash"):
         read_ladder_record({**value, "run_config_hash": "c" * 64}, config=config)
+
+
+def test_a_config_with_no_population_is_refused() -> None:
+    config = tiny_config()
+    value = raw("none")
+    value["run_id"] = config.run_key
+    value["run_config_hash"] = config.hash
+    with pytest.raises(
+        LadderRecordError, match="the config has no population: a ladder record needs one"
+    ):
+        read_ladder_record(value, config=config)
+
+
+def _members_5(c: dict[str, Any]) -> None:
+    c["population"]["members"] = 5
+
+
+def _window_4(c: dict[str, Any]) -> None:
+    c["population"]["rating"]["window"] = 4
+
+
+def test_members_and_window_must_match_the_config() -> None:
+    with pytest.raises(LadderRecordError, match="members must equal the config's"):
+        tied("none", config_change=_members_5)
+    with pytest.raises(LadderRecordError, match="window size must equal"):
+        tied("none", config_change=_window_4)
+
+
+def set_selection(config: dict[str, Any], key: str, number: int) -> None:
+    config["population"]["selection"][key] = number
+
+
+def test_a_copy_is_held_to_the_configs_margin_pairs_and_roots() -> None:
+    cases = [
+        ("margin_ppm", 40000, "margin_ppm must equal"),
+        ("n_min", 97, "at least the config's selection.n_min pairs"),
+        ("min_roots", 4, "at least the config's selection.min_roots roots"),
+    ]
+    for key, number, message in cases:
+        with pytest.raises(LadderRecordError, match=message):
+            tied(
+                "copy",
+                config_change=lambda c, k=key, n=number: c["population"]["selection"].update(
+                    {k: n}
+                ),
+            )
+
+
+def test_root_floor_stands_only_when_the_members_hold_at_most_min_roots() -> None:
+    def floor(value: dict[str, Any]) -> None:
+        value["selections"] = [{"kind": "none", "failed": "root_floor"}]
+
+    with pytest.raises(LadderRecordError, match=r"at most the config's selection\.min_roots roots"):
+        tied("none", floor)
+    tied(
+        "none",
+        floor,
+        lambda c: c["population"]["selection"].update({"min_roots": 4}),
+    )

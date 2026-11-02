@@ -48,10 +48,10 @@ function distinctRoots(roots: readonly string[]): number {
   return new Set(roots).size;
 }
 
-/** The least floor(score_sum_ppm / pairs) over a member's anchor cells; null when it has none. */
-function anchorMinimum(record: LadderRecord, member: string): number | null {
-  const scores = record.cells.filter((cell) => cell.member === member && cell.opponent.kind === "anchor").map((cell) => Math.floor(cell.score_sum_ppm / cell.pairs));
-  return scores.length === 0 ? null : Math.min(...scores);
+/** The least floor(score_sum_ppm / pairs) over a member's anchor cells, in integers (the same as Python's `//`); every member has one anchor cell per anchor, checked before. */
+function anchorMinimum(record: LadderRecord, member: string): number {
+  const floors = record.cells.filter((cell) => cell.member === member && cell.opponent.kind === "anchor").map((cell) => (cell.score_sum_ppm - (cell.score_sum_ppm % cell.pairs)) / cell.pairs);
+  return Math.min(...floors);
 }
 
 function checkSelections(record: LadderRecord, memberIds: ReadonlySet<string>): void {
@@ -65,19 +65,17 @@ function checkSelections(record: LadderRecord, memberIds: ReadonlySet<string>): 
   if (loser === donor) fail("a copy's loser must differ from its donor");
   if (!memberIds.has(loser) || !memberIds.has(donor)) fail("a copy names a member the record does not have");
   if (healths.some((entry) => entry.member === loser || entry.member === donor)) fail("a health replacement cannot name a copy's loser or donor");
-  if (first.lower_bound_ppm <= 500_000) fail("a copy needs a lower bound above 500000");
+  if (first.lower_bound_ppm <= 500_000 + first.margin_ppm) fail("a copy needs a lower bound above 500000 plus its margin");
   checkSettings(first.settings);
   const byId = new Map(record.members.map((member) => [member.member, member]));
-  const loserMember = byId.get(loser) as Member;
   const donorMember = byId.get(donor) as Member;
-  if (donorMember.strength.strength < loserMember.strength.strength) fail("a copy's donor cannot be weaker than its loser");
+  if (record.members.some((member) => member.strength.strength > donorMember.strength.strength)) fail("a copy's donor must have the highest strength among the members");
   const cell = record.cells.find((candidate) => candidate.member === donor && candidate.opponent.kind === "member" && candidate.opponent.id === loser);
   if (cell === undefined || cell.pairs !== first.pairs) fail("a copy's pairs must equal the donor-against-loser cell's pairs");
   const donorMin = anchorMinimum(record, donor);
   const loserMin = anchorMinimum(record, loser);
-  if (donorMin === null || loserMin === null) fail("a copy needs anchor cells for its donor and its loser");
   if (donorMin !== first.donor_anchor_min_ppm || loserMin !== first.loser_anchor_min_ppm) fail("a copy's anchor minima must be the least anchor pair scores of its donor and loser");
-  if ((donorMin as number) < (loserMin as number)) fail("a copy's donor cannot have a lower anchor minimum than its loser");
+  if (donorMin < loserMin) fail("a copy's donor cannot have a lower anchor minimum than its loser");
   const before = distinctRoots(record.members.map((member) => member.root));
   const after = distinctRoots(record.members.map((member) => (member.member === loser ? donorMember.root : member.root)));
   if (first.roots_before !== before || first.roots_after !== after) fail("a copy's roots must be counted from the members' roots");
@@ -119,10 +117,15 @@ export function readLadderRecord(value: unknown, previous?: LadderRecord): Ladde
   const memberIds = new Set(record.members.map((member) => member.member));
   for (const snapshot of record.snapshots) {
     if (snapshot.snapshot_id !== `${snapshot.member}@g${snapshot.generation}`) fail("a snapshot's id must be its member and generation");
+    if (snapshot.generation >= record.generation) fail("a snapshot must be frozen in a generation before the record's");
     if (!memberIds.has(snapshot.member)) fail("a snapshot names a member the record does not have");
     if (snapshot.strength.lower > snapshot.strength.upper) fail("a strength's lower bound cannot exceed its upper bound");
   }
   checkCells(record, memberIds, new Set(record.snapshots.map((snapshot) => snapshot.snapshot_id)), new Set(record.anchors.map((anchor) => anchor.anchor_id)));
+  for (const member of record.members) {
+    const mine = record.cells.filter((cell) => cell.member === member.member && cell.opponent.kind === "anchor").map((cell) => cell.opponent.id);
+    if (mine.join() !== record.anchors.map((anchor) => anchor.anchor_id).join()) fail("every member must have exactly one cell per anchor");
+  }
   const m = record.members.length;
   if (record.cyclic_triples > (m * (m - 1) * (m - 2)) / 6) fail("cyclic_triples cannot exceed the number of member triples");
   checkSelections(record, memberIds);
@@ -136,18 +139,34 @@ function checkAgainstPrevious(record: LadderRecord, previous: LadderRecord): voi
   if (previous.generation + 1 !== record.generation) fail("the previous record must be the record of the generation before");
   const anchorKey = (anchors: LadderRecord["anchors"]): string => anchors.map((anchor) => `${anchor.anchor_id}=${anchor.strength}`).join(",");
   if (anchorKey(previous.anchors) !== anchorKey(record.anchors)) fail("anchor strengths are frozen for the run: they differ from the previous record's");
+  if (previous.members.map((member) => member.member).join() !== record.members.map((member) => member.member).join()) fail("the members must be the same set as in the previous record");
   const now = new Map(record.snapshots.map((snapshot) => [snapshot.snapshot_id, snapshot.strength]));
   for (const snapshot of previous.snapshots) {
     const kept = now.get(snapshot.snapshot_id);
-    if (kept !== undefined && kept.strength !== snapshot.strength.strength) fail("a snapshot's strength is frozen at entry: it differs from the previous record's");
+    if (kept !== undefined && (kept.strength !== snapshot.strength.strength || kept.lower !== snapshot.strength.lower || kept.upper !== snapshot.strength.upper)) fail("a snapshot's strength and bounds are frozen at entry: they differ from the previous record's");
   }
 }
 
 /** The hash a later record names this one by: SHA-256 of its JCS bytes. */
 export const ladderRecordHash = (record: LadderRecord): Promise<string> => nodeSha256(new TextEncoder().encode(jcs(record as unknown as Json)));
 
-/** Check that a record belongs to `config`: its run key and its hash. */
+/** Check that a record belongs to `config`: its run key and hash, and the population rules it was decided under. */
 export async function checkLadderRecord(record: LadderRecord, config: TrainingRunConfig): Promise<void> {
   if (record.run_id !== config.seeds.run_key) fail(`run_id ${record.run_id} is not the config's run key`);
   if (record.run_config_hash !== (await runConfigHash(config))) fail("run_config_hash is not the config's hash");
+  const population = config.population;
+  if (population === undefined) return fail("the config has no population: a ladder record needs one");
+  // Exploiter seats are not rated members (ADR-021 sections 3 and 6: they play the top member and are never copy targets), so the table holds `members` members only.
+  if (record.members.length !== population.members) fail("the record's members must equal the config's population.members");
+  if (record.window.size !== population.rating.window) fail("the window size must equal the config's population.rating.window");
+  const { selection } = population;
+  const first = record.selections[0];
+  if (first?.kind === "copy") {
+    if (first.margin_ppm !== selection.margin_ppm) fail("a copy's margin_ppm must equal the config's selection.margin_ppm");
+    if (first.pairs < selection.n_min) fail("a copy needs at least the config's selection.n_min pairs");
+    if (first.roots_after < selection.min_roots) fail("a copy must leave at least the config's selection.min_roots roots");
+  } else if (first?.kind === "none" && first.failed === "root_floor") {
+    // A copy changes the distinct roots by at most one, so the floor can only fail when the members hold at most min_roots.
+    if (new Set(record.members.map((member) => member.root)).size > selection.min_roots) fail("a root_floor refusal needs the members to hold at most the config's selection.min_roots roots");
+  }
 }
