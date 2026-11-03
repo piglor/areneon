@@ -376,8 +376,11 @@ export {
   type LeagueRunFacts,
   type LeagueRunRecord,
   LeagueRunRecordError,
+  type LeagueRunRecordV2,
   leagueRunRecordHash,
+  readAnyLeagueRunRecord,
   readLeagueRunRecord,
+  readLeagueRunRecordV2,
 } from "./league-run-record.ts";
 export { checkLadderRecord, type LadderRecord, LadderRecordError, LADDER_REFERENCE_ANCHOR, LADDER_REFERENCE_STRENGTH, ladderRecordHash, readLadderRecord } from "./ladder-record.ts";
 export { type AssumedSet, type AssumedSetContext, AssumedSetError, assumedHp, buildAssumedSet, buildWorldAssumedSet, WorldMismatchError, type WorldSetLike } from "./damage-aware-assumed-set.ts";

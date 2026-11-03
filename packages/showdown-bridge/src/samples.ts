@@ -32,6 +32,7 @@ import { privateTestSamples } from "./private-test-samples.ts";
 import { ladderRecordSamples } from "./ladder-record-samples.ts";
 import { bestResponseSamples } from "./best-response-samples.ts";
 import { scriptedH2HSamples } from "./scripted-h2h-samples.ts";
+import { leagueRunV2Samples } from "./league-run-v2-samples.ts";
 import { progressSamples } from "./progress-samples.ts";
 import { contractVersions } from "./policy-protocol.ts";
 import { battleClass, stampTeam, teamHash } from "./team-class.ts";
@@ -1602,11 +1603,12 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
   const searchConfigOnes = searchConfigSamples(GOLDEN_FORMAT);
   const privateManifests = privateSnapshotSamples({ manifest: record.manifest, vocabularyHash: teamVocabularyHash(vocabulary as never), labelSetHash });
   const privateTests = privateTestSamples();
+  const leagueV2Ones = leagueRunV2Samples({ population: await runConfigHash(populated((p) => { p.members = 2; p.exploiters = 1; }) as unknown as TrainingRunConfig), single: await runConfigHash(populated((p) => { p.members = 1; p.shares = { ladder_ppm: 0, self_play_ppm: 750000, past_pool_ppm: 250000 }; (p.selection as Record<string, unknown>).min_roots = 1; bounds(p).ladder_ppm = range(0, 0); bounds(p).self_play_ppm = range(700000, 800000); }) as unknown as TrainingRunConfig) }, baselineCounts);
   const scriptedOnes = scriptedH2HSamples();
   const bestOnes = bestResponseSamples();
   const ladderOnes = ladderRecordSamples();
   for (const kind of ["valid", "invalid", "readerInvalid"] as const) Object.assign(privateOnes[kind], privateManifests[kind], privateTests[kind]);
-  for (const [kind, cases] of [["valid", { ...valid, ...evalSamples.valid, ...progressOnes.valid, ...mechanicsOnes.valid, ...damageAwareOnes.valid, ...usagePriorOnes.valid, ...usageWeightOnes.valid, ...worldWritersOnes.valid, ...searchConfigOnes.valid, ...scriptedOnes.valid, ...bestOnes.valid, ...ladderOnes.valid, ...privateOnes.valid }], ["invalid", { ...invalid, ...evalSamples.invalid, ...progressOnes.invalid, ...mechanicsOnes.invalid, ...damageAwareOnes.invalid, ...usagePriorOnes.invalid, ...usageWeightOnes.invalid, ...worldWritersOnes.invalid, ...searchConfigOnes.invalid, ...scriptedOnes.invalid, ...bestOnes.invalid, ...ladderOnes.invalid, ...privateOnes.invalid }], ["reader-invalid", { ...readerInvalid, ...evalSamples.readerInvalid, ...progressOnes.readerInvalid, ...mechanicsOnes.readerInvalid, ...damageAwareOnes.readerInvalid, ...usagePriorOnes.readerInvalid, ...usageWeightOnes.readerInvalid, ...worldWritersOnes.readerInvalid, ...searchConfigOnes.readerInvalid, ...scriptedOnes.readerInvalid, ...bestOnes.readerInvalid, ...ladderOnes.readerInvalid, ...privateOnes.readerInvalid }]] as const) {
+  for (const [kind, cases] of [["valid", { ...valid, ...evalSamples.valid, ...progressOnes.valid, ...mechanicsOnes.valid, ...damageAwareOnes.valid, ...usagePriorOnes.valid, ...usageWeightOnes.valid, ...worldWritersOnes.valid, ...searchConfigOnes.valid, ...scriptedOnes.valid, ...bestOnes.valid, ...leagueV2Ones.valid, ...ladderOnes.valid, ...privateOnes.valid }], ["invalid", { ...invalid, ...evalSamples.invalid, ...progressOnes.invalid, ...mechanicsOnes.invalid, ...damageAwareOnes.invalid, ...usagePriorOnes.invalid, ...usageWeightOnes.invalid, ...worldWritersOnes.invalid, ...searchConfigOnes.invalid, ...scriptedOnes.invalid, ...bestOnes.invalid, ...leagueV2Ones.invalid, ...ladderOnes.invalid, ...privateOnes.invalid }], ["reader-invalid", { ...readerInvalid, ...evalSamples.readerInvalid, ...progressOnes.readerInvalid, ...mechanicsOnes.readerInvalid, ...damageAwareOnes.readerInvalid, ...usagePriorOnes.readerInvalid, ...usageWeightOnes.readerInvalid, ...worldWritersOnes.readerInvalid, ...searchConfigOnes.readerInvalid, ...scriptedOnes.readerInvalid, ...bestOnes.readerInvalid, ...leagueV2Ones.readerInvalid, ...ladderOnes.readerInvalid, ...privateOnes.readerInvalid }]] as const) {
     for (const [key, value] of Object.entries(cases)) {
       const [contract, name] = key.split("/") as [string, string];
       samples[`v1/${contract}/${kind}/${name}.json`] = value;

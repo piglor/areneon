@@ -5,7 +5,7 @@ import { ajvFor } from "@areneon/schema/ajv";
 import { beforeAll, describe, expect, it } from "vitest";
 import { syntheticFixtureHashes } from "../src/golden.ts";
 import { EngineDataError, readEngineData, readEngineDataV2 } from "../src/engine-data.ts";
-import { contractVersions, EpisodeError, readTeamDatasetManifest, readTeamGeneratorConfig, readTeamLabelSet, readTeamRecord, readTeamSnapshotManifest, readTeamVocabulary, readRoleSetTable, RoleSetError, readMoveClassTable, MoveClassError, TeamRecordError, TeamVocabularyError, loadEngine, PolicyProtocolError, readEvaluationReply, readHandshake, readPolicyQuery, readPolicyReply, readEpisode, readTrainingRunConfig, readCloneRunConfig, CloneRunConfigError, readLeagueRunRecord, LeagueRunRecordError, TrainingRunConfigError, readEvaluationRunManifest, readTrainingExample, readTrainingSet, TrainingLoaderError } from "../src/index.ts";
+import { contractVersions, EpisodeError, readTeamDatasetManifest, readTeamGeneratorConfig, readTeamLabelSet, readTeamRecord, readTeamSnapshotManifest, readTeamVocabulary, readRoleSetTable, RoleSetError, readMoveClassTable, MoveClassError, TeamRecordError, TeamVocabularyError, loadEngine, PolicyProtocolError, readEvaluationReply, readHandshake, readPolicyQuery, readPolicyReply, readEpisode, readTrainingRunConfig, readCloneRunConfig, CloneRunConfigError, readLeagueRunRecord, readLeagueRunRecordV2, LeagueRunRecordError, TrainingRunConfigError, readEvaluationRunManifest, readTrainingExample, readTrainingSet, TrainingLoaderError } from "../src/index.ts";
 import { EvaluationConfigError, readEvaluationParameters, readEntry, RegisterError, readEvaluationPlan, readSealedSetCommitment, readTrainingGateRule, readEvaluationConfig, readSealedTeamSetManifest, readRetiredSealedManifest } from "../src/index.ts";
 import { OpponentSheetError, readOpponentSheet } from "../src/index.ts";
 import { contractSamples, SAMPLE_HASHES, SAMPLES_DIR } from "../src/samples.ts";
@@ -172,6 +172,42 @@ describe("the shared contract sample corpus (ADR-008 §2)", () => {
       "v1/ladder-record/reader-invalid/two-copies.json",
       "v1/ladder-record/reader-invalid/window-end-not-generation.json",
       "v1/ladder-record/reader-invalid/window-start-wrong.json",
+      "v1/league-run-record-2/reader-invalid/duplicate-member.json",
+      "v1/league-run-record-2/reader-invalid/member-baseline-decisions-exceed.json",
+      "v1/league-run-record-2/reader-invalid/member-baseline-games-disagree.json",
+      "v1/league-run-record-2/reader-invalid/member-baseline-not-an-opponent.json",
+      "v1/league-run-record-2/reader-invalid/member-baseline-probe-runs-exceed-queries.json",
+      "v1/league-run-record-2/reader-invalid/member-baselines-unsorted.json",
+      "v1/league-run-record-2/reader-invalid/member-causes-do-not-sum.json",
+      "v1/league-run-record-2/reader-invalid/member-causes-missing.json",
+      "v1/league-run-record-2/reader-invalid/member-causes-unsorted.json",
+      "v1/league-run-record-2/reader-invalid/member-causes-without-forfeits.json",
+      "v1/league-run-record-2/reader-invalid/member-counts-disagree.json",
+      "v1/league-run-record-2/reader-invalid/member-duplicate-opponent.json",
+      "v1/league-run-record-2/reader-invalid/member-episodes-disagree.json",
+      "v1/league-run-record-2/reader-invalid/member-episodes-ignore-self-play.json",
+      "v1/league-run-record-2/reader-invalid/member-opponents-games-do-not-sum.json",
+      "v1/league-run-record-2/reader-invalid/member-opponents-played-do-not-sum.json",
+      "v1/league-run-record-2/reader-invalid/member-opponents-unsorted.json",
+      "v1/league-run-record-2/reader-invalid/members-unsorted-numeric.json",
+      "v1/league-run-record-2/reader-invalid/members-unsorted.json",
+      "v1/league-run-record-2/reader-invalid/opponent-member-unknown.json",
+      "v1/league-run-record-2/reader-invalid/opponent-played-exceeds-games.json",
+      "v1/league-run-record-2/reader-invalid/opponent-policy-is-not-the-members.json",
+      "v1/league-run-record-2/reader-invalid/self-entry-wrong-policy.json",
+      "v1/league-run-record-2/reader-invalid/symmetry-games-differ.json",
+      "v1/league-run-record-2/reader-invalid/symmetry-missing.json",
+      "v1/league-run-record-2/reader-invalid/symmetry-played-differ.json",
+      "v1/league-run-record-2/reader-invalid/total-cause-above-members-sum.json",
+      "v1/league-run-record-2/reader-invalid/total-cause-not-a-members.json",
+      "v1/league-run-record-2/reader-invalid/total-causes-do-not-sum.json",
+      "v1/league-run-record-2/reader-invalid/total-causes-missing.json",
+      "v1/league-run-record-2/reader-invalid/total-causes-without-forfeits.json",
+      "v1/league-run-record-2/reader-invalid/total-counts-disagree.json",
+      "v1/league-run-record-2/reader-invalid/total-episodes-differs.json",
+      "v1/league-run-record-2/reader-invalid/total-games-differs.json",
+      "v1/league-run-record-2/reader-invalid/total-games-is-the-members-sum.json",
+      "v1/league-run-record-2/reader-invalid/total-played-differs.json",
       "v1/league-run-record/reader-invalid/baseline-decisions-exceed.json",
       "v1/league-run-record/reader-invalid/baseline-duplicate.json",
       "v1/league-run-record/reader-invalid/baseline-games-disagree.json",
@@ -621,6 +657,51 @@ describe("the shared contract sample corpus (ADR-008 §2)", () => {
     expect(Object.keys(fresh)).toContain(file);
     expect(() => readLeagueRunRecord(committed(file))).toThrow(LeagueRunRecordError);
     expect(() => readLeagueRunRecord(committed(file))).toThrow(message);
+  });
+
+  // ADR-021 section 8: the LeagueRunRecord version 2 reader refuses what the profile cannot say.
+  it.each([
+    ["duplicate-member", "members must be sorted"],
+    ["member-baseline-decisions-exceed", "cannot exceed its decisions"],
+    ["member-baseline-games-disagree", "games must equal"],
+    ["member-baseline-not-an-opponent", "games must equal"],
+    ["member-baseline-probe-runs-exceed-queries", "cannot exceed its queries"],
+    ["member-baselines-unsorted", "baselines must be sorted"],
+    ["member-causes-do-not-sum", "must sum to forfeits"],
+    ["member-causes-missing", "must be present with forfeits"],
+    ["member-causes-unsorted", "forfeit_causes must be sorted by cause"],
+    ["member-causes-without-forfeits", "must be absent without forfeits"],
+    ["member-counts-disagree", "played + forfeits must equal games"],
+    ["member-duplicate-opponent", "opponents must be sorted"],
+    ["member-episodes-disagree", "played self-play games"],
+    ["member-episodes-ignore-self-play", "played self-play games"],
+    ["member-opponents-games-do-not-sum", "games must sum to its games"],
+    ["member-opponents-played-do-not-sum", "played counts must sum"],
+    ["member-opponents-unsorted", "opponents must be sorted"],
+    ["members-unsorted", "members must be sorted"],
+    ["members-unsorted-numeric", "members must be sorted"],
+    ["opponent-member-unknown", "names a member the record does not hold"],
+    ["opponent-played-exceeds-games", "played cannot exceed its games"],
+    ["opponent-policy-is-not-the-members", "pair_policy_id"],
+    ["self-entry-wrong-policy", "pair_policy_id"],
+    ["symmetry-games-differ", "about each other must agree"],
+    ["symmetry-missing", "about each other must agree"],
+    ["symmetry-played-differ", "about each other must agree"],
+    ["total-cause-above-members-sum", "between the largest member count"],
+    ["total-cause-not-a-members", "between the largest member count"],
+    ["total-causes-do-not-sum", "the record's forfeit causes' counts must sum"],
+    ["total-causes-missing", "the record's forfeit_causes must be present"],
+    ["total-causes-without-forfeits", "the record's forfeit_causes must be absent"],
+    ["total-counts-disagree", "the record's played + forfeits"],
+    ["total-episodes-differs", "the record's episodes"],
+    ["total-games-differs", "count distinct games"],
+    ["total-games-is-the-members-sum", "count distinct games"],
+    ["total-played-differs", "count distinct games"],
+  ])("readLeagueRunRecordV2 refuses %s", (name, message) => {
+    const file = `v1/league-run-record-2/reader-invalid/${name}.json`;
+    expect(Object.keys(fresh)).toContain(file);
+    expect(() => readLeagueRunRecordV2(committed(file))).toThrow(LeagueRunRecordError);
+    expect(() => readLeagueRunRecordV2(committed(file))).toThrow(message);
   });
 
   // ADR-010 section 2: the worker protocol's readers refuse what the profile cannot say.
