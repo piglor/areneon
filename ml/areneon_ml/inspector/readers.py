@@ -62,6 +62,29 @@ class InspectError(ValueError):
     """A run directory, a pool or a page cannot be inspected: the message says why."""
 
 
+#: The inspector and the dashboard read single-lineage runs only; ADR-021 slices 11 and 12 add the
+#: population views.
+POPULATION_REFUSAL = (
+    "a population run is not supported by the inspector yet (ADR-021 slices 11 and 12)"
+)
+_POPULATION_SCHEMA = 2
+
+
+def refuse_population(raw: object) -> None:
+    """Refuse a population run's file.
+
+    That is a config with ``population``, a ``generation.json`` of schema 2 that lists members, or a
+    plan whose entries have seats.
+    """
+    if isinstance(raw, dict) and (
+        "population" in raw
+        or (raw.get("schema_version") == _POPULATION_SCHEMA and "members" in raw)
+    ):
+        raise InspectError(POPULATION_REFUSAL)
+    if isinstance(raw, list) and any(isinstance(item, dict) and "seats" in item for item in raw):
+        raise InspectError(POPULATION_REFUSAL)
+
+
 def closed(
     value: object, keys: tuple[Collection[str], Collection[str]], what: str
 ) -> dict[str, Any]:
@@ -147,6 +170,7 @@ class GenerationFile:
 
 
 def read_plan(raw: object) -> tuple[PlanEntry, ...]:
+    refuse_population(raw)
     entries = []
     for index, item in enumerate(array(raw, "plan.json")):
         what = f"plan.json game {index}"
@@ -236,6 +260,7 @@ def _read_game(item: object, index: int) -> GameRow:
 
 
 def read_generation(raw: object, generation: int) -> GenerationFile:
+    refuse_population(raw)
     body = closed(raw, GENERATION_KEYS, "generation.json")
     if body["schema_version"] != 1 or body["generation"] != generation:
         raise InspectError(f"generation.json is not schema 1 of generation {generation}")

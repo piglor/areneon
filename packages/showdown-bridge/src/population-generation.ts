@@ -102,8 +102,18 @@ export const memberDir = (dir: string, member: string): string => join(dir, "mem
 
 const seatName = (seat: PopulationSeat): string => ("member" in seat ? seat.member : seat.policy_id);
 
-/** Check the members against the config: one per `population.members`, labelled m0.., with distinct pairs. */
-function checkMembers(config: TrainingRunConfig, members: readonly PopulationMember[]): void {
+/**
+ * Everything that can be refused before a worker starts: the plan's own refusals (past-pool share, exploiter seats, odd
+ * baseline counts), the members (one per `population.members`, labelled m0.., with distinct pairs) and a run that names
+ * candidate features or an opponent sheet. The CLI calls it before it creates a client (each worker session costs memory).
+ * `generation` and `poolSize` only make the plan well-formed; no refusal depends on them.
+ */
+export function checkPopulationConfig(config: TrainingRunConfig, members: readonly { member: string; policy_id: string }[], generation = 1, poolSize = 1): void {
+  planPopulation(config, generation, poolSize);
+  checkMembers(config, members);
+}
+
+function checkMembers(config: TrainingRunConfig, members: readonly { member: string; policy_id: string }[]): void {
   const population = config.population;
   if (population === undefined) throw new GenerationError("population: the config has no population section");
   if (members.length !== population.members || members.some((entry, index) => entry.member !== `m${index}`)) {
@@ -188,7 +198,7 @@ const factSeat = (seat: PopulationSeat): FactSeat => ("member" in seat ? { membe
  */
 export async function playPopulationGeneration(options: PopulationOptions): Promise<PopulationResult> {
   const { engine, config, generation, members, pool, out_dir } = options;
-  checkMembers(config, members);
+  checkPopulationConfig(config, members, generation, pool.teams.length);
   const plan = planPopulation(config, generation, pool.teams.length);
   const withRecords: PopulationOptions = { ...options, ...baselineRecords(options, config) };
   const byLabel = new Map(members.map((entry) => [entry.member, entry]));
@@ -203,6 +213,7 @@ export async function playPopulationGeneration(options: PopulationOptions): Prom
   for (const wave of populationWaves(plan, config.generation.n_parallel)) {
     stopped();
     const used = [...new Set(wave.flatMap((entry) => [entry.seats.p1, entry.seats.p2].flatMap((seat) => ("member" in seat ? [seat.member] : []))))];
+    // The client's overrun rule: call `beginGame` while no game runs on it, so each wave starts every client it uses afresh (a query that overran its budget may still be outstanding).
     await Promise.all(used.map((label) => (byLabel.get(label) as PopulationMember).client.beginGame?.()));
     stopped();
     const played = await Promise.all(wave.map((entry) => playOne(withRecords, entry, byLabel)));

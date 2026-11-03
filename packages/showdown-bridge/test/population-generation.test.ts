@@ -1,11 +1,12 @@
 import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { actorRule } from "../src/actor-rule.ts";
 import { checkLeagueRunRecord, loadEngine, readLeagueRunRecordV2 } from "../src/index.ts";
 import { GenerationError, trainingTeamPool, type TrainingPool } from "../src/league-generation.ts";
-import { memberDir, playPopulationGeneration, type PopulationMember, populationWaves, writePopulationGeneration, POPULATION_FEATURES_REFUSAL } from "../src/population-generation.ts";
+import { checkPopulationConfig, memberDir, playPopulationGeneration, type PopulationMember, populationWaves, writePopulationGeneration, POPULATION_FEATURES_REFUSAL } from "../src/population-generation.ts";
 import { parseMemberFlag, runPopulationCli } from "../src/population-cli.ts";
 import { planPopulation } from "../src/population-plan.ts";
 import { type PolicyClient, PolicyWorkerError } from "../src/index.ts";
@@ -119,6 +120,13 @@ describe("a tiny population generation (M = 2, the stand-in worker)", () => {
     expect(record.members.reduce((sum, m) => sum + m.games, 0)).toBe(2 * ladder + selfGames + anchor);
     expect(record.episodes).toBe(2 * record.played);
     expect(record.members.reduce((sum, m) => sum + m.episodes, 0)).toBe(2 * (ladder + selfGames) + anchor);
+  });
+
+  it("writes the files the Python readers refuse in fixtures/loop/population-play (the inspector's refusal tests read them)", () => {
+    const fixtures = fileURLToPath(new URL("../../../fixtures/loop/population-play", import.meta.url));
+    for (const name of ["plan.json", "generation.json", "league-run.json"]) {
+      expect(readFileSync(join(dirs[0] as string, name), "utf8")).toBe(readFileSync(join(fixtures, name), "utf8"));
+    }
   });
 
   it("is byte-identical on a rerun, every file of the tree", () => {
@@ -281,16 +289,29 @@ describe("forfeits and the population CLI", () => {
     expect(readdirSync(join(scratch, "cli"))).toEqual(expect.arrayContaining(["generation.json", "league-run.json", "plan.json", "members"]));
   }, 120_000);
 
-  it("exits 1 with a fixed message when the plan is refused, and closes the clients", async () => {
+  it("refuses a bad config before it creates any client", async () => {
+    let made = 0;
+    const make = () => (made++, Object.assign(actorClient(), { start: () => Promise.resolve(), close: () => Promise.resolve() }));
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    // Past-pool share, an odd baseline count, a wrong member count, equal pairs, and the real client path (no injected client).
+    const same = input().members.map((m) => ({ ...m, policy_id: POLICIES[0] as string }));
+    for (const change of [{ config: populationConfig(2, 2, [500_000, 250_000, 250_000]) }, { config: populationConfig(2, 2, [500_000, 500_000, 0], 3) }, { members: input().members.slice(0, 1) }, { members: same }]) {
+      expect(await runPopulationCli(input({ make_client: make, ...change }), () => undefined)).toBe(1);
+    }
+    error.mockRestore();
+    expect(made).toBe(0);
+    expect(() => checkPopulationConfig(config, input().members)).not.toThrow();
+  });
+
+  it("exits 1 when a member's worker cannot start, and closes the clients", async () => {
     const closed: string[] = [];
     const lines: string[] = [];
     const run = input({
-      config: populationConfig(2, 2, [500_000, 250_000, 250_000]),
-      make_client: () => Object.assign(actorClient(), { start: () => Promise.resolve(), close: () => (closed.push("closed"), Promise.resolve()) }),
+      make_client: () => Object.assign(actorClient(), { start: () => Promise.reject(new GenerationError("the worker did not start")), close: () => (closed.push("closed"), Promise.resolve()) }),
     });
     const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
     expect(await runPopulationCli(run, (line) => lines.push(line))).toBe(1);
-    expect(error.mock.calls.flat().join(" ")).toMatch(/past_pool_ppm/);
+    expect(error.mock.calls.flat().join(" ")).toMatch(/did not start/);
     error.mockRestore();
     expect(lines).toEqual([]);
     expect(closed).toHaveLength(2);

@@ -101,6 +101,7 @@ export function planPopulation(config: TrainingRunConfig, generation: number, po
     const drawn = { p1: streams.team_draws.p1 % poolSize, p2: streams.team_draws.p2 % poolSize };
     // Self-play: both seats are the same policy, so swapping the policies' seats would repeat the game. The pair
     // swaps the two teams' seats instead, and the two teams are kept apart (two equal teams would repeat the game too).
+    // This nudge is the one team index not taken directly from `league-seed/1` (`team_draws`): a Python twin must repeat it.
     const selfTeams = { p1: drawn.p1, p2: drawn.p1 === drawn.p2 && poolSize > 1 ? (drawn.p2 + 1) % poolSize : drawn.p2 };
     for (const half of [0, 1] as const) {
       plan.push({
@@ -122,6 +123,8 @@ export function planPopulation(config: TrainingRunConfig, generation: number, po
     const others = Array.from({ length: population.members }, (_, other) => other).filter((other) => other !== k);
     for (let i = 0; i < counts.ladder; i++) {
       const draw = populationDraw(run_key, generation, member, "opponent-draw", i);
+      // The 64-bit draw reduced modulo the number of other members: the bias is below 2^-60 for at most 15 others, so it is
+      // accepted; any Python twin must use the same rule (draw % len(others), others ascending).
       const opponent = others[Number(draw % BigInt(others.length))] as number;
       addPair("ladder", member, { member }, { member: memberLabel(opponent) });
     }

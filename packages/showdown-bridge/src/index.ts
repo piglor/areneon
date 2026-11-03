@@ -434,7 +434,7 @@ export {
   type PolicyStreamLabel,
   policyStreamLabel,
 } from "./league-seed.ts";
-export { memberDir, playPopulationGeneration, type PopulationMember, type PopulationOptions, type PopulationResult, writePopulationGeneration } from "./population-generation.ts";
+export { checkPopulationConfig, memberDir, playPopulationGeneration, type PopulationMember, type PopulationOptions, type PopulationResult, writePopulationGeneration } from "./population-generation.ts";
 export { memberLabel, planPopulation, type PopulationGamePlan, PopulationPlanError, POPULATION_PLAN_FORMAT, seatCounts } from "./population-plan.ts";
 export { populationDraw, POPULATION_SEED_DERIVATION, POPULATION_SEED_PURPOSES, type PopulationSeedPurpose } from "./population-seed.ts";
 export {

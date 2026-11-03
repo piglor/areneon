@@ -8,7 +8,7 @@ import type { Engine } from "./engine.ts";
 import { jcs, type Json } from "./canonical-json.ts";
 import { GenerationError, type TrainingPool } from "./league-generation.ts";
 import type { BeliefWorldsFactory } from "./damage-aware-worlds.ts";
-import { type PopulationMember, playPopulationGeneration, writePopulationGeneration } from "./population-generation.ts";
+import { checkPopulationConfig, type PopulationMember, playPopulationGeneration, writePopulationGeneration } from "./population-generation.ts";
 import { PolicyWorkerClient } from "./policy-worker.ts";
 import { runConfigHash, type TrainingRunConfig } from "./training-run-config.ts";
 
@@ -50,6 +50,14 @@ export type MemberClient = PopulationMember["client"] & { start: () => Promise<v
 export async function runPopulationCli(input: PopulationCliInput, print: (line: string) => void): Promise<number> {
   const { config, generation } = input;
   const { max_line_bytes, n_parallel, handshake_timeout_ms } = config.generation;
+  // A refused config costs no worker: each session is about 445 MB.
+  try {
+    checkPopulationConfig(config, input.members);
+  } catch (error) {
+    if (!(error instanceof GenerationError)) throw error;
+    console.error(`play-generation: ${error.message}`);
+    return 1;
+  }
   const clients: MemberClient[] = input.members.map(
     (entry) =>
       input.make_client?.(entry) ??
