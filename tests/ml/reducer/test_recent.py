@@ -189,6 +189,72 @@ def test_a_stalling_move_with_no_outcome_fails_closed(after: str) -> None:
         run("|move|p1a: Venusaur|Protect|p1a: Venusaur", after)
 
 
+def _guard(name: str, move: str, slot: str = "a", side: str = "p1") -> list[str]:
+    return [f"|move|{side}{slot}: {name}|{move}|{side}{slot}: {name}"]
+
+
+def test_a_second_side_guard_on_one_side_prints_nothing_and_still_counts() -> None:
+    """#1281: `Side.addSideCondition` returns false without a message for the partner's Wide Guard
+    while `onHitSide` adds the user's `stall` volatile, so the move prints neither `-singleturn`
+    nor `-fail` (game 747 of public-main-df3c-002; engine log in the issue)."""
+    first = [*_guard("Charizard", "Wide Guard", "b"), "|-singleturn|p1b: Charizard|Wide Guard"]
+    second = _guard("Venusaur", "Wide Guard")
+    state = run(*first, *second, "|move|p2a: Venusaur|Earthquake|p1a: Venusaur", "|turn|2")
+    assert own(state, "Venusaur").recent.protect_streak == 1
+    assert own(state, "Charizard").recent.protect_streak == 1
+    # The streak goes on the next turn like any success.
+    again = run(
+        *first,
+        *second,
+        "|turn|2",
+        *_guard("Venusaur", "Wide Guard"),
+        "|-singleturn|p1a: Venusaur|Wide Guard",
+    )
+    assert own(again, "Venusaur").recent.protect_streak == 2
+    # A silent use at the very end of the log is settled by the end of the game.
+    ended = run(*first, *second, "|win|Alice")
+    assert own(ended, "Venusaur").recent.protect_streak == 1
+
+
+@pytest.mark.parametrize(
+    "lines",
+    [
+        # Nobody's Wide Guard is up: the silence is not explained.
+        _guard("Venusaur", "Wide Guard"),
+        # The condition that is up is the other side's.
+        [
+            "|move|p2a: Venusaur|Wide Guard|p2a: Venusaur",
+            "|-singleturn|p2a: Venusaur|Wide Guard",
+            *_guard("Venusaur", "Wide Guard"),
+        ],
+        # Another side move is up, not this one.
+        [
+            *_guard("Charizard", "Quick Guard", "b"),
+            "|-singleturn|p1b: Charizard|Quick Guard",
+            *_guard("Venusaur", "Wide Guard"),
+        ],
+        # Last turn's condition is gone.
+        [
+            *_guard("Charizard", "Wide Guard", "b"),
+            "|-singleturn|p1b: Charizard|Wide Guard",
+            "|turn|2",
+            *_guard("Venusaur", "Wide Guard"),
+        ],
+        # A Pokemon-targeted stalling move is never silent.
+        [
+            *_guard("Charizard", "Protect", "b"),
+            "|-singleturn|p1b: Charizard|Protect",
+            *_guard("Venusaur", "Protect"),
+        ],
+    ],
+)
+def test_a_silent_stalling_move_is_accepted_only_after_the_same_side_condition(
+    lines: list[str],
+) -> None:
+    with pytest.raises(MalformedLineError, match="stalling move"):
+        run(*lines, "|turn|9")
+
+
 def test_weather_terrain_and_field_conditions_count_turns_since_they_began() -> None:
     state = run(
         "|-weather|SunnyDay",

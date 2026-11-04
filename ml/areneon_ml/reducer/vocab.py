@@ -134,6 +134,10 @@ class Vocabulary:
     # (`data/stall-moves.<format>.json`), which the Protect streak counts. None when no file
     # matches this export: a move line then raises `VocabularyError`, never a guess.
     stall_moves: frozenset[str] | None = None
+    # The ids of the moves whose engine target is the user's own side (`allySide`, from the
+    # export's move table): Quick Guard and Wide Guard print nothing when the condition is
+    # already up (#1281).
+    ally_side_moves: frozenset[str] = frozenset()
 
     @classmethod
     def from_engine_data(cls, data: Mapping[str, Any]) -> Vocabulary:
@@ -143,6 +147,9 @@ class Vocabulary:
             )
         copy = read_volatile_copy(str(data["showdown_commit"]), str(data["format_id"]))
         return cls(
+            ally_side_moves=frozenset(
+                str(r["id"]) for r in data["moves"] if r.get("target") == "allySide"
+            ),
             stall_moves=read_stall_moves(str(data["showdown_commit"]), str(data["format_id"])),
             not_copied=None if copy is None else frozenset(copy["not_copied"]),
             shed_tail_copies=None if copy is None else frozenset(copy["shed_tail_copies"]),

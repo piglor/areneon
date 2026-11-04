@@ -85,6 +85,13 @@ export interface WorldFactsData {
   readonly action_sources: readonly string[];
   /** Ids of the moves whose engine definition gives the target the `partiallytrapped` volatile (Fire Spin, Wrap, Whirlpool, ...). */
   readonly partial_trap_moves: readonly string[];
+  /**
+   * Ids of the stall moves whose engine target is the user's own side (Quick Guard, Wide Guard). Optional: absent means none. Such a stalling move prints
+   * neither `-singleturn` nor `-fail` when its side's condition is already up this turn (`Side.addSideCondition` returns false without a message while
+   * the move's `onHitSide` still adds the user's `stall` volatile), which counts as a success once an earlier `-singleturn` of the same move on the same
+   * side this turn shows the condition was up (#1281).
+   */
+  readonly ally_side_moves?: readonly string[];
 }
 
 declare const OWN: unique symbol;
@@ -269,6 +276,9 @@ export class WorldFactsReader {
   readonly #toxicMax: number;
   readonly #actionSources: ReadonlySet<string>;
   readonly #partialTrap: ReadonlySet<string>;
+  readonly #allySide: ReadonlySet<string>;
+  /** `side:move` of the side-condition stall moves whose `-singleturn` was printed this turn. */
+  readonly #guards = new Set<string>();
   readonly #sides: Record<FactsPlayer, SideState> = { p1: newSide(), p2: newSide() };
   readonly #mons = new Map<string, MonStatus>();
   #turn = 0;
@@ -279,7 +289,7 @@ export class WorldFactsReader {
   #pseudo = new Map<string, Began>();
   #mover: Source | null = null;
   #upkeepAt = -1;
-  #pending: { side: FactsPlayer; letter: string } | null = null;
+  #pending: { side: FactsPlayer; letter: string; move: string } | null = null;
   #failure: WorldFactsError | null = null;
 
   constructor(player: FactsPlayer, data: WorldFactsData) {
@@ -290,6 +300,7 @@ export class WorldFactsReader {
     this.#toxicMax = data.toxic_stage_max;
     this.#actionSources = new Set(data.action_sources.map(toId));
     this.#partialTrap = new Set(data.partial_trap_moves);
+    this.#allySide = new Set(data.ally_side_moves ?? []);
   }
 
   /** Reads one line. Never throws: a refusal is kept for `facts()`. */
@@ -368,6 +379,11 @@ export class WorldFactsReader {
   }
 
   #resolveStall(line: Line): void {
+    if (line.kind === "-singleturn") {
+      const side = IDENT.exec(line.args[0] ?? "")?.[1];
+      const shown = toId((line.args[1] ?? "").replace(/^move: /, ""));
+      if (side !== undefined && this.#allySide.has(shown)) this.#guards.add(`${side}:${shown}`);
+    }
     const pending = this.#pending;
     if (pending === null) return;
     const mine = line.args[0]?.startsWith(`${pending.side}${pending.letter}:`) === true;
@@ -378,12 +394,22 @@ export class WorldFactsReader {
         occupant.stall_count = 0;
         occupant.stall_turn = -1;
       } else {
-        occupant.stall_count = occupant.stall_turn >= this.#turn - 1 ? occupant.stall_count + 1 : 1;
-        occupant.stall_turn = this.#turn;
+        this.#stallSucceeded(occupant);
       }
     } else if (BOUNDARY.has(line.kind)) {
-      throw new WorldFactsError("stall_unresolved", this.#index);
+      // The silent success of a side-condition stall move whose condition is already up (#1281); anything else is unresolved.
+      if (occupant && this.#allySide.has(pending.move) && this.#guards.has(`${pending.side}:${pending.move}`)) {
+        this.#pending = null;
+        this.#stallSucceeded(occupant);
+      } else {
+        throw new WorldFactsError("stall_unresolved", this.#index);
+      }
     }
+  }
+
+  #stallSucceeded(occupant: Occupant): void {
+    occupant.stall_count = occupant.stall_turn >= this.#turn - 1 ? occupant.stall_count + 1 : 1;
+    occupant.stall_turn = this.#turn;
   }
 
   #line(line: Line): void {
@@ -395,6 +421,7 @@ export class WorldFactsReader {
         const n = Number(a[0]);
         if (!Number.isInteger(n) || n < this.#turn) throw new WorldFactsError("malformed_line", this.#index);
         this.#turn = n;
+        this.#guards.clear();
         break;
       }
       case "switch":
@@ -493,7 +520,7 @@ export class WorldFactsReader {
     const own = uses.get(occupant.name) ?? new Map<string, number>();
     own.set(move, (own.get(move) ?? 0) + 1);
     uses.set(occupant.name, own);
-    if (this.#stall.has(move)) this.#pending = { side, letter };
+    if (this.#stall.has(move)) this.#pending = { side, letter, move };
   }
 
   /** Whether the residual of the current turn has run (or no turn has begun): nothing begun now has been counted down. */
