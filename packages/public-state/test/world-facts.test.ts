@@ -48,7 +48,7 @@ const code = (fn: () => unknown): string => {
 
 describe("identity", () => {
   it("has a format id and a file hash of its own, and leaves the reader's bytes alone", () => {
-    expect(WORLD_FACTS_FORMAT).toBe("world-facts/3");
+    expect(WORLD_FACTS_FORMAT).toBe("world-facts/4");
     expect(worldFactsSha256()).toBe(createHash("sha256").update(readFileSync(WORLD_FACTS_PATH)).digest("hex"));
     expect(worldFactsSha256()).not.toBe(readerSha256());
     expect(readerSha256()).toBe(createHash("sha256").update(readFileSync(INTERPRETER_PATH)).digest("hex"));

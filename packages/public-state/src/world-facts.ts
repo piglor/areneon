@@ -67,7 +67,7 @@
 // facts of that channel a typed `WorldFactsError`, from that line on. Facts from before are still read.
 
 /** The format of the derivation: bump when how a fact is computed from the lines changes (part of the search identity, ADR-026 section 5). */
-export const WORLD_FACTS_FORMAT = "world-facts/3";
+export const WORLD_FACTS_FORMAT = "world-facts/4";
 
 export type FactsPlayer = "p1" | "p2";
 

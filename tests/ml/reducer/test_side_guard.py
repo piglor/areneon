@@ -72,3 +72,9 @@ def test_without_the_partners_singleturn_the_silence_is_refused() -> None:
     broken = [*lines[: at - 1], *lines[at:]]
     with pytest.raises(MalformedLineError, match="stalling move"):
         _reduce("p1", broken)
+
+
+def test_ally_side_moves_meet_the_stalling_moves_in_exactly_the_two_side_guards() -> None:
+    """Mirrors the TS parity assertion: only Quick Guard and Wide Guard are both."""
+    assert VOCAB.stall_moves is not None
+    assert VOCAB.ally_side_moves & VOCAB.stall_moves == {"quickguard", "wideguard"}
