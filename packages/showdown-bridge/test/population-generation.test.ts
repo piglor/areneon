@@ -303,6 +303,13 @@ describe("forfeits and the population CLI", () => {
     expect(() => checkPopulationConfig(config, input().members)).not.toThrow();
   });
 
+  it("rethrows an error that is no refusal (a generation below 1) before it creates any client", async () => {
+    let made = 0;
+    const make = () => (made++, Object.assign(actorClient(), { start: () => Promise.resolve(), close: () => Promise.resolve() }));
+    await expect(runPopulationCli(input({ generation: 0, make_client: make }), () => undefined)).rejects.toThrow(RangeError);
+    expect(made).toBe(0);
+  });
+
   it("exits 1 when a member's worker cannot start, and closes the clients", async () => {
     const closed: string[] = [];
     const lines: string[] = [];

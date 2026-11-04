@@ -52,7 +52,7 @@ export async function runPopulationCli(input: PopulationCliInput, print: (line: 
   const { max_line_bytes, n_parallel, handshake_timeout_ms } = config.generation;
   // A refused config costs no worker: each session is about 445 MB.
   try {
-    checkPopulationConfig(config, input.members);
+    checkPopulationConfig(config, input.members, generation);
   } catch (error) {
     if (!(error instanceof GenerationError)) throw error;
     console.error(`play-generation: ${error.message}`);
