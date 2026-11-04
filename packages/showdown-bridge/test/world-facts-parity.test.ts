@@ -30,6 +30,7 @@ describe("the data the test passes", () => {
   it("holds the Protect family, Endure and the guards, from the engine's own source", () => {
     expect(data.stall_moves).toEqual(expect.arrayContaining(["protect", "detect", "endure", "kingsshield", "spikyshield", "quickguard", "wideguard"]));
     expect(data.stall_moves).not.toContain("tackle");
+    expect(data.ally_side_moves).toEqual(["quickguard", "wideguard"]);
   });
 });
 
@@ -184,7 +185,9 @@ function oracle(omni: readonly string[], cut: number, viewer: "p1" | "p2"): Worl
         if (kind(l) !== "move" || !named(l, 0, name) || !isOwnChoice(l) || !data.stall_moves.includes(toId(fields(l)[1] as string))) return;
         const next = after[i + 1] as string;
         const t = turnAt(omni, since + 1 + i);
-        if (kind(next) === "-singleturn" && named(next, 0, name)) run = run.length > 0 && run.at(-1) === t - 1 ? [...run, t] : [t];
+        // A side-condition stall move (target allySide) whose condition is already up prints neither line, yet the engine's `onHitSide` adds the `stall` volatile: a success (#1281).
+        const silent = kind(next) !== "-singleturn" && kind(next) !== "-fail" && (data.ally_side_moves ?? []).includes(toId(fields(l)[1] as string));
+        if ((kind(next) === "-singleturn" && named(next, 0, name)) || silent) run = run.length > 0 && run.at(-1) === t - 1 ? [...run, t] : [t];
         else run = [];
       });
       const protect_streak = run.length > 0 && (run.at(-1) as number) >= turn - 1 ? run.length : 0;
@@ -406,7 +409,7 @@ describe("world facts against the omniscient log, on every committed channel", (
   }, 60_000);
 
   it("the Illusion, Baton Pass and Fling battles", async () => {
-    for (const dir of ["illusion", "baton-pass", "fling"]) {
+    for (const dir of ["illusion", "baton-pass", "fling", "side-guard"]) {
       const b = JSON.parse(readFileSync(join(FORMAT_DIR, dir, "battle.json"), "utf8")) as RandomBattleFile;
       const { id, seed, actor_seeds, teams } = b;
       const record = await playRandomBattle(engine, { id, seed, actor_seeds, teams });
