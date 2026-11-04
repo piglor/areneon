@@ -26,7 +26,7 @@ const inputs: SearchIdentityInputs = {
   damage_value_format: 1,
   world_writers_hash: h("3"),
   world_builder_format: 2,
-  world_facts_format: "world-facts/3",
+  world_facts_format: "world-facts/4",
   reply_model_format: 1,
   leaf_format: 1,
   reader_sha256: h("4"),
@@ -34,9 +34,9 @@ const inputs: SearchIdentityInputs = {
 };
 // Computed with Python (areneon_ml.loop.records), outside the TS code.
 const CONFIG_HASH = "739f4b1f1a30411b3d5fb3d37749739a6673bcaf6195941f3a57f6dc1e70d49c";
-// Moved by #248's format bumps (WORLD_BUILDER_FORMAT 1 -> 2, world-facts/2 -> 3), which are identity inputs; recomputed with Python's hashlib over the
-// canonical JSON (the old inputs still give edd348bd...). The policy-id vectors below take a search hash as an opaque string, so they keep that one.
-const SEARCH_HASH = "3508d46a98552f0898f662de77bfa30067c13eaefe085145f39766d0bc4e1ce6";
+// Moved by #248's format bumps (WORLD_BUILDER_FORMAT 1 -> 2, world-facts/2 -> 3) and by #1282 (world-facts/3 -> 4); recomputed with Python hashlib over the
+// canonical JSON, sort_keys, separators (",", ":"), of the 13 inputs below with search_config_hash = CONFIG_HASH (world-facts/3 still gives 3508d46a...). The policy-id vectors below take a search hash as an opaque string, so they keep edd348bd....
+const SEARCH_HASH = "17e58d7cd228cefe6a6102a2f3eb2d24f959bb2f0de5f3c0581d74c3a46f99fa";
 const ID_VECTOR_SEARCH = "edd348bdf8b9f5069ada74afae22d3ba99e1b349e2748b245de73384c9d666b9";
 
 describe("the committed SearchConfig", () => {
@@ -88,7 +88,7 @@ describe("the search identity", () => {
       ["damage value", { damage_value_format: 2 }],
       ["writers", { world_writers_hash: h("9") }],
       ["builder", { world_builder_format: 3 }],
-      ["facts", { world_facts_format: "world-facts/4" }],
+      ["facts", { world_facts_format: "world-facts/5" }],
       ["reply model", { reply_model_format: 2 }],
       ["leaf", { leaf_format: 2 }],
       ["reader", { reader_sha256: h("9") }],
@@ -131,7 +131,7 @@ describe("the search identity", () => {
   });
 
   it("names the formats the modules export today", () => {
-    expect({ WORLD_BUILDER_FORMAT, REPLY_MODEL_FORMAT, DAMAGE_VALUE_FORMAT, LEAF_FORMAT, WORLD_FACTS_FORMAT }).toEqual({ WORLD_BUILDER_FORMAT: 2, REPLY_MODEL_FORMAT: 1, DAMAGE_VALUE_FORMAT: 1, LEAF_FORMAT: 1, WORLD_FACTS_FORMAT: "world-facts/3" });
+    expect({ WORLD_BUILDER_FORMAT, REPLY_MODEL_FORMAT, DAMAGE_VALUE_FORMAT, LEAF_FORMAT, WORLD_FACTS_FORMAT }).toEqual({ WORLD_BUILDER_FORMAT: 2, REPLY_MODEL_FORMAT: 1, DAMAGE_VALUE_FORMAT: 1, LEAF_FORMAT: 1, WORLD_FACTS_FORMAT: "world-facts/4" });
   });
 });
 

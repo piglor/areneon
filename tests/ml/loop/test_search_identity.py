@@ -16,9 +16,10 @@ EXISTING = json.loads((ROOT / "fixtures/policy-ids/existing.json").read_text())
 H = "a" * 64
 # Vectors shared with packages/showdown-bridge/test/search-config.test.ts.
 CONFIG_HASH = "739f4b1f1a30411b3d5fb3d37749739a6673bcaf6195941f3a57f6dc1e70d49c"
-# Moved by #248's format bumps (WORLD_BUILDER_FORMAT 2, world-facts/3), which are identity
-# inputs, and by belief/5 and belief/6 through the belief identity hash named in the config.
-SEARCH_HASH = "3508d46a98552f0898f662de77bfa30067c13eaefe085145f39766d0bc4e1ce6"
+# Moved by #248's format bumps (WORLD_BUILDER_FORMAT 2, world-facts/3), by #1282 (world-facts/4;
+# sha256 of the sorted-key compact JSON of these inputs with hashlib; /3 gave 3508d46a...), and by
+# belief/5 and belief/6 through the belief identity hash named in the config.
+SEARCH_HASH = "17e58d7cd228cefe6a6102a2f3eb2d24f959bb2f0de5f3c0581d74c3a46f99fa"
 # The policy-id vectors take a search hash as an opaque string and keep the one
 # they were computed with.
 ID_VECTOR_SEARCH = "edd348bdf8b9f5069ada74afae22d3ba99e1b349e2748b245de73384c9d666b9"
@@ -34,7 +35,7 @@ def identity() -> dict[str, Any]:
         "damage_value_format": 1,
         "world_writers_hash": "3" * 64,
         "world_builder_format": 2,
-        "world_facts_format": "world-facts/3",
+        "world_facts_format": "world-facts/4",
         "reply_model_format": 1,
         "leaf_format": 1,
         "reader_sha256": "4" * 64,
@@ -66,7 +67,7 @@ def test_search_identity_moves_with_every_input() -> None:
         elif isinstance(value, dict):
             changed[key] = {**value, "regulation": "M-D"}
         elif key == "world_facts_format":
-            changed[key] = "world-facts/4"
+            changed[key] = "world-facts/5"
         else:
             changed[key] = "9" * 64
         assert search_identity_hash(changed) != base, key
