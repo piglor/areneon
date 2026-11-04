@@ -433,13 +433,33 @@ type StampSets = Parameters<typeof stampTeam>[0];
 
 const rival = (player: Player): Player => (player === "p1" ? "p2" : "p1");
 
-interface BaselineSeat {
+/** What a baseline game reads of the options: the engine and the damage-aware records. */
+export type BaselineRecordOptions = Pick<GenerationOptions, "engine" | "damage_aware" | "damage_aware_v2" | "damage_aware_v3" | "belief_worlds">;
+
+/**
+ * The damage-aware records the config's baselines need and `options` lacks, read once from `config/`
+ * (v2 through the composition root's belief port). Refused when the plan names `damage-aware@v2` and there is no port.
+ */
+export function baselineRecords(options: BaselineRecordOptions, config: Pick<TrainingRunConfig, "format_id" | "generation">): Partial<GenerationOptions> {
+  const named = config.generation.baseline_games.filter((baseline) => baseline.actor === "damage-aware");
+  const needsV1 = named.some((baseline) => baseline.policy_id !== DAMAGE_AWARE_V2_POLICY_ID && baseline.policy_id !== DAMAGE_AWARE_V3_POLICY_ID);
+  const needsV3 = named.some((baseline) => baseline.policy_id === DAMAGE_AWARE_V3_POLICY_ID);
+  const needsV2 = named.some((baseline) => baseline.policy_id === DAMAGE_AWARE_V2_POLICY_ID);
+  if (needsV2 && options.damage_aware_v2 === undefined && options.belief_worlds === undefined) throw new GenerationError(`the plan names ${DAMAGE_AWARE_V2_POLICY_ID}: its script needs the belief port of the composition root (packages/team-dataset)`);
+  return {
+    ...(needsV1 && options.damage_aware === undefined ? { damage_aware: damageAwareSetup(options.engine, config.format_id) } : {}),
+    ...(needsV3 && options.damage_aware_v3 === undefined ? { damage_aware_v3: damageAwareSetup(options.engine, config.format_id, "v3") } : {}),
+    ...(needsV2 && options.damage_aware_v2 === undefined ? { damage_aware_v2: damageAwareSetupV2(options.engine, config.format_id, options.belief_worlds as BeliefWorldsFactory) } : {}),
+  };
+}
+
+export interface BaselineSeat {
   actor: Actor;
   /** The damage-aware baseline's report once the game is over; absent for the other baselines. */
   report?: () => BaselineGameReport;
 }
 
-function baselineActor(options: GenerationOptions, opponent: BaselineOpponent, plan: GamePlan, budget: LatencyBudget): BaselineSeat {
+export function baselineActor(options: BaselineRecordOptions, opponent: BaselineOpponent, plan: Pick<GamePlan, "baseline_seed">, budget: LatencyBudget): BaselineSeat {
   const guarded = (actor: Actor): Actor => guardActor(actor, { role: "scripted", latency_budget: budget });
   if (opponent.actor !== "damage-aware") return { actor: guarded(opponent.actor === "actor-rule" ? firstLegal : randomLegalActor(plan.baseline_seed)) };
   const setup = opponent.policy_id === DAMAGE_AWARE_V2_POLICY_ID ? options.damage_aware_v2 : opponent.policy_id === DAMAGE_AWARE_V3_POLICY_ID ? options.damage_aware_v3 : options.damage_aware;
@@ -587,17 +607,7 @@ export async function playEntries(options: GenerationOptions, shard: Shard = { i
   const { config, generation, policy_id, client } = options;
   const plan = planGeneration(config, generation, options.pool.teams.length);
   // The damage-aware records are read once, and only when a game of this process needs them.
-  const named = config.generation.baseline_games.filter((baseline) => baseline.actor === "damage-aware");
-  const needsV1 = named.some((baseline) => baseline.policy_id !== DAMAGE_AWARE_V2_POLICY_ID && baseline.policy_id !== DAMAGE_AWARE_V3_POLICY_ID);
-  const needsV3 = named.some((baseline) => baseline.policy_id === DAMAGE_AWARE_V3_POLICY_ID);
-  const needsV2 = named.some((baseline) => baseline.policy_id === DAMAGE_AWARE_V2_POLICY_ID);
-  if (needsV2 && options.damage_aware_v2 === undefined && options.belief_worlds === undefined) throw new GenerationError(`the plan names ${DAMAGE_AWARE_V2_POLICY_ID}: its script needs the belief port of the composition root (packages/team-dataset)`);
-  const withRecords: GenerationOptions = {
-    ...options,
-    ...(needsV1 && options.damage_aware === undefined ? { damage_aware: damageAwareSetup(options.engine, config.format_id) } : {}),
-    ...(needsV3 && options.damage_aware_v3 === undefined ? { damage_aware_v3: damageAwareSetup(options.engine, config.format_id, "v3") } : {}),
-    ...(needsV2 && options.damage_aware_v2 === undefined ? { damage_aware_v2: damageAwareSetupV2(options.engine, config.format_id, options.belief_worlds as BeliefWorldsFactory) } : {}),
-  };
+  const withRecords: GenerationOptions = { ...options, ...baselineRecords(options, config) };
   const { pool } = withRecords;
   const workers = [client, ...(options.peers ?? [])];
   const mine = plan.filter((entry) => entry.game % shard.of === shard.index);

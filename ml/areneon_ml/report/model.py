@@ -39,6 +39,7 @@ from areneon_ml.inspector.readers import (
     integer,
     read_generation,
     read_plan,
+    refuse_population,
 )
 from areneon_ml.learner.config import RunConfig
 from areneon_ml.loop import layout
@@ -364,6 +365,11 @@ def _played_generation(
     number: int, path: Path, config: RunConfig, manifest_sha: str, inputs: dict[str, str]
 ) -> GenerationFacts:
     plan_raw = _json(path / "plan.json")
+    try:
+        refuse_population(plan_raw)
+        refuse_population(_json(path / "generation.json"))
+    except InspectError as exc:
+        raise ReportError(f"g{number:06d}: {exc}") from exc
     try:
         record: LeagueRunRecord = read_league_run_record(_json(path / "league-run.json"), config)
         check_generation_plan(record, plan_raw, config)

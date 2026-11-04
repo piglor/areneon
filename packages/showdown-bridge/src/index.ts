@@ -372,7 +372,10 @@ export {
 export { readPublishedHeads, runEvaluationCli } from "./evaluation-cli.ts";
 export {
   buildLeagueRunRecord,
+  buildLeagueRunRecordV2,
   checkLeagueRunRecord,
+  type FactSeat,
+  type LeagueRunFactsV2,
   type LeagueRunFacts,
   type LeagueRunRecord,
   LeagueRunRecordError,
@@ -431,6 +434,8 @@ export {
   type PolicyStreamLabel,
   policyStreamLabel,
 } from "./league-seed.ts";
+export { checkPopulationConfig, memberDir, playPopulationGeneration, type PopulationMember, type PopulationOptions, type PopulationResult, writePopulationGeneration } from "./population-generation.ts";
+export { memberLabel, planPopulation, type PopulationGamePlan, PopulationPlanError, POPULATION_PLAN_FORMAT, seatCounts } from "./population-plan.ts";
 export { populationDraw, POPULATION_SEED_DERIVATION, POPULATION_SEED_PURPOSES, type PopulationSeedPurpose } from "./population-seed.ts";
 export {
   DAMAGE_AWARE_POLICY_ID,
