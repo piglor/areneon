@@ -8,6 +8,7 @@ import { GOLDEN_DIR, GOLDEN_FORMAT } from "../src/golden.ts";
 import { loadEngine, readTrainingRunConfig } from "../src/index.ts";
 import { type PlayedEntry, trainingTeamPool } from "../src/league-generation.ts";
 import { SAMPLES_DIR } from "../src/samples.ts";
+import { populationConfig } from "./population-support.ts";
 
 const DATA = join(GOLDEN_DIR, "engine-data.json");
 const tiny = JSON.parse(readFileSync(join(SAMPLES_DIR, "v1/training-run-config/valid/tiny.json"), "utf8")) as Record<string, unknown>;
@@ -103,6 +104,34 @@ describe("play-generation", () => {
     } finally {
       error.mockRestore();
     }
+  });
+});
+
+describe("a population run (ADR-021 slice 4)", () => {
+  const member = (k: number): string[] => ["--member", `m${k},${String(k).repeat(64)},${String(k + 2).repeat(64)},policy:${String(k + 4).repeat(64)}`];
+  const perMember = { preview: undefined, battle: undefined, "policy-id": undefined };
+
+  it("is played with --member for each member, in place of --preview, --battle and --policy-id, and only then", async () => {
+    const file = join(dir, "population.json");
+    writeFileSync(file, JSON.stringify(populationConfig(2, 2)));
+    const plain = join(dir, "tiny.json");
+    writeFileSync(plain, JSON.stringify(tiny));
+    await expect(runGenerationCli(flags(file))).rejects.toThrow(/--member for each member/);
+    await expect(runGenerationCli([...flags(plain, perMember), ...member(0)])).rejects.toThrow(/--member for each member/);
+    await expect(runGenerationCli(flags(file, perMember))).rejects.toThrow(/is required/);
+    await expect(runGenerationCli([...flags(file, perMember), "--member", "m0,x"])).rejects.toThrow(/--member is m<k>/);
+    for (const extra of [["--policy-workers", "2"], ["--game-processes", "2"], ["--shard", "0/2"]]) {
+      await expect(runGenerationCli([...flags(file, perMember), ...member(0), ...member(1), ...extra], console.log, undefined, "play.ts")).rejects.toThrow(/one process with one worker per member/);
+    }
+  });
+
+  it("reaches the population branch with the members it was given, and the pool source", async () => {
+    const file = join(dir, "population.json");
+    writeFileSync(file, JSON.stringify(populationConfig(2, 2)));
+    const refuse = (): never => {
+      throw new UsageError("from the port");
+    };
+    await expect(runGenerationCli([...flags(file, perMember), ...member(0), ...member(1)], console.log, refuse)).rejects.toThrow("from the port");
   });
 });
 

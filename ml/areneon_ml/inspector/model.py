@@ -34,6 +34,7 @@ from areneon_ml.inspector.readers import (
     read_generation,
     read_plan,
     read_team_set,
+    refuse_population,
 )
 from areneon_ml.learner.config import RunConfig, RunConfigError, read_run_config
 from areneon_ml.loop import layout
@@ -120,7 +121,9 @@ class InspectModel:
 
 def read_run_dir_config(run_dir: Path) -> RunConfig:
     try:
-        return read_run_config(layout.read_json(run_dir / CONFIG_NAME))
+        raw = layout.read_json(run_dir / CONFIG_NAME)
+        refuse_population(raw)
+        return read_run_config(raw)
     except (layout.RunDirError, RunConfigError, OSError, json.JSONDecodeError) as exc:
         raise InspectError(f"{CONFIG_NAME}: {exc}") from exc
 

@@ -20,6 +20,7 @@ import { resolveFormat } from "./formats.ts";
 import type { BeliefWorldsFactory } from "./damage-aware-worlds.ts";
 import { type BeliefFeaturesFactory, SheetTotals } from "./belief-features.ts";
 import { PolicyWorkerClient } from "./policy-worker.ts";
+import { type MemberFlag, parseMemberFlag, runPopulationCli } from "./population-cli.ts";
 import { largest, ownPeakRss } from "./process-usage.ts";
 import { readTrainingRunConfig, runConfigHash } from "./training-run-config.ts";
 
@@ -67,9 +68,13 @@ const FLAGS = {
   "episodes-dir": { type: "string" },
   // Internal: the scratch directory the game processes leave the recomputed candidate feature rows of their Episodes in (#1185; only with game processes and a candidate feature set).
   "features-dir": { type: "string" },
+  // A population run (ADR-021): one `m<k>,PREVIEW,BATTLE,POLICY_ID` per member, in place of --preview, --battle and --policy-id.
+  member: { type: "string", multiple: true },
 } as const;
 
-const OPTIONAL: readonly (keyof typeof FLAGS)[] = ["policy-workers", "game-processes", "shard", "episodes-dir", "features-dir"];
+const OPTIONAL: readonly (keyof typeof FLAGS)[] = ["policy-workers", "game-processes", "shard", "episodes-dir", "features-dir", "member"];
+/** The flags a population run gives per member instead. */
+const PER_MEMBER: readonly (keyof typeof FLAGS)[] = ["preview", "battle", "policy-id"];
 
 /** Peak memory of the processes of one generation's play (bytes), for the run-metrics record; any part may be missing. */
 export interface ResourceUsage {
@@ -102,18 +107,21 @@ export async function runGenerationCli(
   /** The opponent sheet port factory, for a run config that names `opponent_sheet` (the composition root supplies it). */
   beliefFeatures?: BeliefFeaturesFactory,
 ): Promise<number> {
-  let values: Record<keyof typeof FLAGS, string | undefined>;
+  let values: Record<Exclude<keyof typeof FLAGS, "member">, string | undefined> & { member?: string[] };
   try {
     values = parseArgs({ args: [...argv], options: FLAGS, strict: true }).values as typeof values;
   } catch (error) {
     throw new UsageError((error as Error).message);
   }
-  const need = (name: keyof typeof FLAGS): string => {
+  const need = (name: Exclude<keyof typeof FLAGS, "member">): string => {
     const value = values[name];
     if (value === undefined) throw new UsageError(`--${name} is required`);
     return value;
   };
-  for (const name of Object.keys(FLAGS) as (keyof typeof FLAGS)[]) if (!OPTIONAL.includes(name)) need(name); // refuse a missing flag before anything starts
+  for (const name of Object.keys(FLAGS) as (keyof typeof FLAGS)[]) {
+    if (OPTIONAL.includes(name) || (values.member !== undefined && PER_MEMBER.includes(name))) continue;
+    need(name as Exclude<keyof typeof FLAGS, "member">);
+  } // refuse a missing flag before anything starts
   const generation = Number(need("generation"));
   if (!Number.isInteger(generation) || generation < 1) throw new UsageError("--generation must be a positive integer");
   const config = readTrainingRunConfig(JSON.parse(readFileSync(need("config"), "utf8")));
@@ -121,6 +129,20 @@ export async function runGenerationCli(
   const engine = loadEngine(process.env.SHOWDOWN_DIR || undefined);
   const dataFile = need("engine-data");
   const dataHash = engineDataHash(readEngineDataAny(JSON.parse(readFileSync(dataFile, "utf8"))));
+  if ((config.population !== undefined) !== (values.member !== undefined)) throw new UsageError("a population config is played with --member for each member, and --member only with a population config");
+  if (config.population !== undefined) {
+    if (values.shard !== undefined || values["game-processes"] !== undefined || values["policy-workers"] !== undefined) throw new UsageError("a population run plays in one process with one worker per member");
+    let flags: MemberFlag[];
+    try {
+      flags = (values.member as string[]).map(parseMemberFlag);
+    } catch (error) {
+      throw new UsageError((error as Error).message);
+    }
+    return runPopulationCli(
+      { engine, config, generation, pool: poolSource(engine, config), members: flags, out: need("out"), run_dir: need("run-dir"), worker_python: need("worker-python"), engine_data: dataFile, engine_data_hash: dataHash, encoder_version: need("encoder-version"), belief_worlds: beliefWorlds },
+      print,
+    );
+  }
   const { max_line_bytes, n_parallel, handshake_timeout_ms } = config.generation;
   const preview = need("preview");
   const battle = need("battle");
@@ -201,7 +223,7 @@ export async function runGenerationCli(
       for (let index = 1; index < processes; index++) {
         const out = join(scratch, String(index));
         const rest = Object.entries(values).flatMap(([name, value]) =>
-          value === undefined || ["out", "game-processes", "shard", "episodes-dir", "features-dir"].includes(name) ? [] : [`--${name}`, value],
+          value === undefined || typeof value !== "string" || ["out", "game-processes", "shard", "episodes-dir", "features-dir"].includes(name) ? [] : [`--${name}`, value],
         );
         children.push(startShard(shardScript as string, [...rest, "--out", out, "--shard", `${index}/${processes}`, "--episodes-dir", episodesDir, ...optionalFlag("--features-dir", featuresDir)], out, index));
       }
