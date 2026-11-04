@@ -16,12 +16,13 @@ import {
 } from "../src/index.ts";
 
 const data: WorldFactsData = {
-  stall_moves: ["protect", "detect", "endure", "quickguard", "spikyshield"],
+  stall_moves: ["protect", "detect", "endure", "quickguard", "spikyshield", "wideguard"],
   terrains: ["electricterrain", "grassyterrain"],
   swap_side_conditions: ["reflect", "stealthrock", "tailwind"],
   toxic_stage_max: 15,
   action_sources: ["move: Round", "ability: Dancer"],
   partial_trap_moves: ["firespin", "wrap"],
+  ally_side_moves: ["quickguard", "wideguard"],
 };
 
 const HEAD = [
@@ -169,6 +170,35 @@ describe("Protect streak", () => {
     // another Pokemon's singleturn line, and a line of a kind that is no action, do not resolve or end it
     expect(run("p1", [...open, "|-activate|p1a: Alpha|something", "|-singleturn|p1a: Alpha|Protect"]).own.active.a?.protect_streak).toBe(1);
     expect(code(() => run("p1", [...open, "|-singleturn|p1b: Beta|Protect"]))).toBe("stall_unresolved");
+  });
+});
+
+describe("a second side guard prints nothing (#1281)", () => {
+  const first = ["|move|p1b: Beta|Wide Guard|p1b: Beta", "|-singleturn|p1b: Beta|Wide Guard"];
+  const second = ["|move|p1a: Alpha|Wide Guard|p1a: Alpha"];
+
+  it("counts the silent use as a success once the same side's condition was shown this turn", () => {
+    const f = run("p1", [...HEAD, "|turn|1", ...first, ...second, "|move|p2a: Gamma|Tackle|p1a: Alpha", "|upkeep", "|turn|2"]);
+    expect(f.own.active.a?.protect_streak).toBe(1);
+    expect(f.own.active.b?.protect_streak).toBe(1);
+    // the streak goes on the next turn
+    const again = run("p1", [...HEAD, "|turn|1", ...first, ...second, "|upkeep", "|turn|2", ...second, "|-singleturn|p1a: Alpha|Wide Guard", "|upkeep"]);
+    expect(again.own.active.a?.protect_streak).toBe(2);
+  });
+
+  it("still refuses any other silence", () => {
+    const refuses = (lines: string[]): string => code(() => run("p1", [...HEAD, ...lines, "|upkeep"]));
+    expect(refuses(["|turn|1", ...second])).toBe("stall_unresolved"); // nobody's condition is up
+    expect(refuses(["|turn|1", "|move|p2a: Gamma|Wide Guard|p2a: Gamma", "|-singleturn|p2a: Gamma|Wide Guard", ...second])).toBe("stall_unresolved"); // the other side's
+    expect(refuses(["|turn|1", ...first, "|upkeep", "|turn|2", ...second])).toBe("stall_unresolved"); // last turn's
+    expect(refuses(["|turn|1", "|move|p1b: Beta|Quick Guard|p1b: Beta", "|-singleturn|p1b: Beta|Quick Guard", ...second])).toBe("stall_unresolved"); // another move
+    expect(refuses(["|turn|1", "|move|p1b: Beta|Protect|p1b: Beta", "|-singleturn|p1b: Beta|Protect", "|move|p1a: Alpha|Protect|p1a: Alpha"])).toBe("stall_unresolved"); // not a side move
+  });
+
+  it("is refused without the move list in the data (the field is optional)", () => {
+    const { ally_side_moves: _omitted, ...bare } = data;
+    const lines = [...HEAD, "|turn|1", ...first, ...second, "|upkeep"];
+    expect(() => worldFacts({ channel: ownChannel("p1", lines), data: bare })).toThrow(WorldFactsError);
   });
 });
 

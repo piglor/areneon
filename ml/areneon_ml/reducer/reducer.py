@@ -276,6 +276,11 @@ class _Reducer:
         self._actions = 0
         self._actor: PokemonState | None = None
         self._stalling: PokemonState | None = None
+        self._stalling_move = ""
+        self._stalling_player = ""
+        # The (player, move id) of the side-condition stalling moves (Quick Guard, Wide Guard) whose
+        # `-singleturn` was printed this turn: the condition is up for the rest of the turn (#1281).
+        self._guards: set[tuple[str, str]] = set()
         for pokemon_set in team:
             self.state.own.roster.append(self._own_mon(pokemon_set))
         names = [mon.name for mon in self.state.own.roster]
@@ -595,6 +600,7 @@ class _Reducer:
         self._require_stall_outcome(line)
         self.state.turn = _integer(line.args[0], line)
         self._actions, self._actor = 0, None
+        self._guards.clear()
         for side in (self.state.own, self.state.opponent):
             for mon in side.roster:
                 recent = mon.recent
@@ -609,9 +615,30 @@ class _Reducer:
     def _require_stall_outcome(self, line: _Line) -> None:
         """The engine prints `-singleturn` (success) or `-fail` right after every stalling move,
         so another action, the turn's end or the game's end with neither is a log the reducer
-        cannot read (the world facts' `stall_unresolved`)."""
-        if self._stalling is not None:
-            raise MalformedLineError("a stalling move with no -singleturn or -fail", line.raw)
+        cannot read (the world facts' `stall_unresolved`), with one exception (#1281): a stalling
+        move whose target is the user's own side (Quick Guard, Wide Guard) prints nothing when
+        that side's condition is already up this turn, because `Side.addSideCondition` then
+        returns false without a message while the move's `onHitSide` still adds the user's
+        `stall` volatile and the move does not fail. Such a use is a success for the stall
+        counter. It is accepted only when an earlier `-singleturn` of the same move on the same
+        side this turn shows the condition was up; any other silence still raises."""
+        mon = self._stalling
+        if mon is None:
+            return
+        if (
+            self._stalling_move in self.vocab.ally_side_moves
+            and (self._stalling_player, self._stalling_move) in self._guards
+        ):
+            self._stall_succeeded(mon)
+            self._stalling = None
+            return
+        raise MalformedLineError("a stalling move with no -singleturn or -fail", line.raw)
+
+    def _stall_succeeded(self, mon: PokemonState) -> None:
+        recent = mon.recent
+        kept = recent.stall_turn is not None and recent.stall_turn >= self.state.turn - 1
+        recent.protect_streak = recent.protect_streak + 1 if kept else 1
+        recent.stall_turn = self.state.turn
 
     def _end_move_action(self, line: _Line) -> None:
         """A switch ends the running move: no stalling move may be waiting, no damage is its."""
@@ -625,17 +652,18 @@ class _Reducer:
             self._acted(self._mon(line.args[0], line))
         elif line.kind == "upkeep":
             self._actor = None
-        elif self._stalling is not None and line.args:  # -singleturn, -fail
+        elif line.kind == "-singleturn":
+            side, _, _ = self._ref(line.args[0], line)
+            shown = to_id(line.args[1].removeprefix("move: "))
+            if shown in self.vocab.ally_side_moves:
+                self._guards.add((side.player, shown))
+            if self._stalling is not None and self._mon(line.args[0], line) is self._stalling:
+                self._stall_succeeded(self._stalling)
+                self._stalling = None
+        elif self._stalling is not None and line.args:  # -fail
             if self._mon(line.args[0], line) is self._stalling:
                 recent = self._stalling.recent
-                if line.kind == "-fail":
-                    recent.protect_streak, recent.stall_turn = 0, None
-                else:
-                    kept = (
-                        recent.stall_turn is not None and recent.stall_turn >= self.state.turn - 1
-                    )
-                    recent.protect_streak = recent.protect_streak + 1 if kept else 1
-                    recent.stall_turn = self.state.turn
+                recent.protect_streak, recent.stall_turn = 0, None
                 self._stalling = None
 
     def _acted(self, mon: PokemonState) -> None:
@@ -1217,7 +1245,8 @@ class _Reducer:
         recent.last_move, recent.last_target, recent.last_move_turn = move, shown, self.state.turn
         self._acted(mon)
         if move in self.vocab.stall_moves:
-            self._stalling = mon
+            self._stalling, self._stalling_move = mon, move
+            self._stalling_player = self._ref(line.args[0], line)[0].player
 
     def _faint(self, line: _Line) -> None:
         _arity(line, 1, 1)

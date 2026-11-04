@@ -12,7 +12,7 @@ import { GOLDEN_DIR } from "./golden.ts";
 /** The slice of the engine-data table the reader needs. */
 export interface FactsTable {
   terrains: readonly { id: string }[];
-  moves: readonly { id: string; name: string }[];
+  moves: readonly { id: string; name: string; target?: string }[];
   abilities: readonly { id: string; name: string }[];
 }
 
@@ -80,15 +80,22 @@ function partialTrapMoves(dir: string, table: FactsTable): string[] {
   return out.sort();
 }
 
+/** The stall moves whose engine target is the user's own side (`allySide` in the engine-data table): Quick Guard and Wide Guard. */
+function allySideStallMoves(table: FactsTable, stall: readonly string[]): string[] {
+  return table.moves.filter((m) => m.target === "allySide" && stall.includes(m.id)).map((m) => m.id).sort();
+}
+
 /** The world facts' data for an engine checkout and an engine-data table. */
 export function readWorldFactsData(table: FactsTable, engineDir: string = process.env.SHOWDOWN_DIR || DEFAULT_SHOWDOWN_DIR): WorldFactsData {
+  const stall = stallMoves(engineDir, table);
   return {
-    stall_moves: stallMoves(engineDir, table),
+    stall_moves: stall,
     terrains: table.terrains.map((t) => t.id),
     swap_side_conditions: swapConditions(engineDir),
     toxic_stage_max: toxicStageMax(engineDir),
     action_sources: actionSources(engineDir, table),
     partial_trap_moves: partialTrapMoves(engineDir, table),
+    ally_side_moves: allySideStallMoves(table, stall),
   };
 }
 
