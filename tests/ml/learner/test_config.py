@@ -131,6 +131,7 @@ INVALID = sorted(p.name for p in (CONFIGS / "invalid").iterdir())
         ("population-member-ppo-unsorted.json", "sorted by member and unique"),
         ("population-member-ppo-duplicate.json", "sorted by member and unique"),
         ("population-member-ppo-out-of-range.json", "at or above members"),
+        ("population-warm-start-both.json", "would give every member the same pair"),
     ],
 )
 def test_the_reader_rules_the_profile_cannot_say(name: str, message: str) -> None:
@@ -140,7 +141,7 @@ def test_the_reader_rules_the_profile_cannot_say(name: str, message: str) -> Non
 
 
 def test_every_reader_invalid_sample_is_checked_above() -> None:
-    assert len(READER_INVALID) == 18
+    assert len(READER_INVALID) == 19
 
 
 @pytest.mark.parametrize("name", INVALID)
@@ -203,7 +204,13 @@ def test_a_config_without_population_keeps_its_bytes_and_hash() -> None:
 
 
 @pytest.mark.parametrize(
-    "name", ["population.json", "population-single.json", "population-member-ppo-exploiters.json"]
+    "name",
+    [
+        "population.json",
+        "population-single.json",
+        "population-member-ppo-exploiters.json",
+        "population-warm-start-battle-only.json",
+    ],
 )
 def test_the_population_samples_are_read_and_hash_apart(name: str) -> None:
     config = read_run_config(raw(f"valid/{name}"))

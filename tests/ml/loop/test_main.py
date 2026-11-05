@@ -15,6 +15,7 @@ from areneon_ml.loop.play import PlayError
 
 from tests.ml.learner.support import tiny_config
 from tests.ml.loop.support import FakePlayer
+from tests.ml.loop.test_population import FakePopulationPlayer, population_config
 from tests.ml.model.support import FORMAT_DIR
 
 DATA = FORMAT_DIR / "engine-data.json"
@@ -257,3 +258,31 @@ def test_provenance_exports_the_records_and_prints_the_registry_hash(
         main(["provenance", "--run-dir", str(tmp_path / "none"), "--out", str(tmp_path / "o2")])
         == EXIT_REFUSED
     )
+
+
+def test_a_population_config_runs_the_population_loop_and_prints_every_member(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    config = population_config()
+    path = tmp_path / "pop.json"
+    path.write_text(json.dumps(config.raw))
+    built = fake_node(monkeypatch, FakePopulationPlayer(config))  # type: ignore[arg-type]
+    assert main(run(path, tmp_path / "r", 1)) == 0
+    printed = json.loads(capsys.readouterr().out)
+    assert printed["generation"] == 1
+    assert printed["played"] == [1]
+    assert sorted(printed["members"]) == ["m0", "m1"]
+    assert printed["members"]["m1"]["policy_id"].startswith("policy:")
+    assert built[0]["play_script"] == "packages/showdown-bridge/scripts/play-generation.ts"
+
+
+def test_a_population_run_is_one_process_with_one_worker_per_member(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    config = population_config()
+    path = tmp_path / "pop.json"
+    path.write_text(json.dumps(config.raw))
+    fake_node(monkeypatch, FakePopulationPlayer(config))  # type: ignore[arg-type]
+    assert main(run(path, tmp_path / "r", 1, "--game-processes", "2")) == EXIT_REFUSED
+    assert "one process with one worker per member" in capsys.readouterr().err
+    assert main(run(path, tmp_path / "r", 1, "--policy-workers", "2")) == EXIT_REFUSED

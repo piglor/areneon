@@ -172,11 +172,11 @@ class Loop:
         on_stage: StageHook | None = None,
     ) -> None:
         if config.population:
-            # ADR-021: the config can describe a population, but the scheduler that plays one
-            # (slice 5) does not exist; running it as a single lineage would be a different run.
+            # ADR-021: a population is run by ``PopulationLoop`` (loop/population.py); running it
+            # as a single lineage would be a different run.
             raise LoopError(
                 "population: this driver runs a single lineage; "
-                "a population run needs the ladder scheduler, which is not built yet"
+                "a population config is run by PopulationLoop"
             )
         self.config = config
         self.run_dir = run_dir
@@ -541,6 +541,7 @@ def sources_registry(run_dir: Path) -> dict[str, list[str]]:
     newest = layout.latest_complete(run_dir)
     if newest is None:
         return registry
+    _refuse_population(newest)
     previous: dict[str, str] | None = None
     for generation in range(newest.generation + 1):
         path = layout.generation_dir(run_dir, generation)
@@ -560,11 +561,20 @@ def sources_registry(run_dir: Path) -> dict[str, list[str]]:
     return registry
 
 
+def _refuse_population(newest: layout.Committed) -> None:
+    if "members" in newest.manifest:
+        raise LoopError(
+            "population: the provenance export of a population run is not built yet "
+            "(ADR-021 slice 12)"
+        )
+
+
 def provenance_graph(run_dir: Path) -> ProvenanceGraph:
     """The C1/C6 provenance graph of every committed generation of a run."""
     newest = layout.latest_complete(run_dir)
     if newest is None:
         raise LoopError("the run directory holds no committed generation")
+    _refuse_population(newest)
     records = [
         read_record(
             layout.read_json(layout.generation_dir(run_dir, g) / "records" / f"{role}.json")

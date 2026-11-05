@@ -826,6 +826,7 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
       bounds(p).ladder_ppm = range(0, 0);
       bounds(p).self_play_ppm = range(700000, 800000);
     }),
+    "training-run-config/population-warm-start-battle-only": populated((_p, c) => (c.warm_start = { battle: hexOf("b") })),
     "training-run-config/population-member-ppo-exploiters": populated((p, c) => {
       p.exploiters = 2;
       runSection(c, "ppo").target_kl_micro = 20000;
@@ -1042,6 +1043,7 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     }),
     "training-run-config/value-warmup-no-warm-start": runConfigWith((c) => (runSection(c, "ppo").value_warmup = { generations: 2 })),
     "training-run-config/anchor-no-warm-start": runConfigWith((c) => (runSection(c, "ppo").anchor = { kl_micro: 100000, schedule: { kind: "constant" } })),
+    "training-run-config/population-warm-start-both": populated((_p, c) => (c.warm_start = { preview: hexOf("a"), battle: hexOf("b") })),
     "training-run-config/population-shares-sum": populated((p) => (p.shares = { ladder_ppm: 500000, self_play_ppm: 250000, past_pool_ppm: 200000 })),
     "training-run-config/population-roots-exceed-members": populated((p) => ((p.selection as Record<string, unknown>).min_roots = 5)),
     "training-run-config/population-past-over-pool": populated((p) => ((p.past_pool as Record<string, unknown>).max_past_per_member = 33)),

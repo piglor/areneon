@@ -159,8 +159,8 @@ class RunConfig:
     #: (both roles, or ``battle`` alone, #1165), or ``None`` for the seeded
     #: initialisation. The loop checks the files; this reader checks the ids.
     warm_start: Mapping[str, str] | None
-    #: ``population`` is present (ADR-021): the record describes a population ladder. The loop
-    #: driver refuses such a run until the scheduler lands; the reader checks the rules.
+    #: ``population`` is present (ADR-021): the record describes a population ladder. The
+    #: population loop driver (slice 5) runs it; the reader checks the rules.
     population: bool
     raw: dict[str, Any]
     hash: str
@@ -279,6 +279,12 @@ def read_run_config(raw: object) -> RunConfig:
             "training-run-config: ppo.anchor needs warm_start (the anchor is the warm-start pair)"
         )
     if "population" in raw:
+        if warm is not None and "preview" in warm:
+            raise RunConfigError(
+                "training-run-config: population: a warm_start that names the preview role would "
+                "give every member the same pair (use a Battle-only warm start; each member's "
+                "Preview is seeded from its own member-init draw)"
+            )
         _check_population(raw)
     gen, ppo, seeds = raw["generation"], raw["ppo"], raw["seeds"]
     play = gen.get("play")
