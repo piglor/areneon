@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { LEAGUE_SEED_DERIVATION, leagueBattleSeed, leagueGameStreams, policyStreamLabel } from "../src/index.ts";
+import { calibrationGameStreams, LEAGUE_SEED_DERIVATION, leagueBattleSeed, leagueGameStreams, policyStreamLabel } from "../src/index.ts";
 import { sampleU } from "../src/policy-actor.ts";
 
 // Computed outside this code base (Python hashlib over json.dumps(sort_keys, compact)): a pinned test vector
@@ -36,6 +36,22 @@ describe("league seed derivation (ADR-009 §3)", () => {
     expect(() => leagueGameStreams("a", 1, -1)).toThrow(RangeError);
     expect(() => leagueGameStreams("a", 1.5, 0)).toThrow(RangeError);
     expect(() => leagueGameStreams("a", 1, Number.NaN)).toThrow(RangeError);
+  });
+});
+
+describe("the calibration streams (generation 0 of league-seed/1, ADR-021 section 4)", () => {
+  // Python hashlib over the JCS of {run_key, generation: 0, game, purpose: "league-game"}.
+  it.each([
+    { pair: 0, seed: "sodium,9c05e4913a482ba96e65556eb8e8fbd6", teams: [2214852620, 730492961], baseline: 3363174333 },
+    { pair: 5, seed: "sodium,f8600e1f06967b6cbbaaf2f75c5d9471", teams: [1208161946, 821973649], baseline: 2126495261 },
+  ])("reproduces the pinned vector for pair $pair", (v) => {
+    expect(calibrationGameStreams("tiny-run", v.pair)).toEqual({ seed: v.seed, team_draws: { p1: v.teams[0], p2: v.teams[1] }, baseline_seed: v.baseline });
+  });
+
+  it("never shares a seed with a training pair and still refuses generation 0 for a training plan", () => {
+    expect(calibrationGameStreams("tiny-run", 0).seed).not.toBe(leagueBattleSeed("tiny-run", 1, 0));
+    expect(() => leagueGameStreams("tiny-run", 0, 0)).toThrow(RangeError);
+    expect(() => calibrationGameStreams("tiny-run", -1)).toThrow(RangeError);
   });
 });
 

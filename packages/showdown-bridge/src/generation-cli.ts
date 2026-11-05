@@ -20,7 +20,7 @@ import { resolveFormat } from "./formats.ts";
 import type { BeliefWorldsFactory } from "./damage-aware-worlds.ts";
 import { type BeliefFeaturesFactory, SheetTotals } from "./belief-features.ts";
 import { PolicyWorkerClient } from "./policy-worker.ts";
-import { type MemberFlag, parseMemberFlag, runPopulationCli } from "./population-cli.ts";
+import { type MemberFlag, parseMemberFlag, runCalibrationCli, runPopulationCli } from "./population-cli.ts";
 import { largest, ownPeakRss } from "./process-usage.ts";
 import { readTrainingRunConfig, runConfigHash } from "./training-run-config.ts";
 
@@ -70,9 +70,11 @@ const FLAGS = {
   "features-dir": { type: "string" },
   // A population run (ADR-021): one `m<k>,PREVIEW,BATTLE,POLICY_ID` per member, in place of --preview, --battle and --policy-id.
   member: { type: "string", multiple: true },
+  // A population run's generation 0 (ADR-021 section 4): play the anchor calibration, no member and no worker.
+  calibrate: { type: "boolean" },
 } as const;
 
-const OPTIONAL: readonly (keyof typeof FLAGS)[] = ["policy-workers", "game-processes", "shard", "episodes-dir", "features-dir", "member"];
+const OPTIONAL: readonly (keyof typeof FLAGS)[] = ["policy-workers", "game-processes", "shard", "episodes-dir", "features-dir", "member", "calibrate"];
 /** The flags a population run gives per member instead. */
 const PER_MEMBER: readonly (keyof typeof FLAGS)[] = ["preview", "battle", "policy-id"];
 
@@ -107,28 +109,34 @@ export async function runGenerationCli(
   /** The opponent sheet port factory, for a run config that names `opponent_sheet` (the composition root supplies it). */
   beliefFeatures?: BeliefFeaturesFactory,
 ): Promise<number> {
-  let values: Record<Exclude<keyof typeof FLAGS, "member">, string | undefined> & { member?: string[] };
+  let values: Record<Exclude<keyof typeof FLAGS, "member" | "calibrate">, string | undefined> & { member?: string[]; calibrate?: boolean };
   try {
     values = parseArgs({ args: [...argv], options: FLAGS, strict: true }).values as typeof values;
   } catch (error) {
     throw new UsageError((error as Error).message);
   }
-  const need = (name: Exclude<keyof typeof FLAGS, "member">): string => {
+  const need = (name: Exclude<keyof typeof FLAGS, "member" | "calibrate">): string => {
     const value = values[name];
     if (value === undefined) throw new UsageError(`--${name} is required`);
     return value;
   };
   for (const name of Object.keys(FLAGS) as (keyof typeof FLAGS)[]) {
-    if (OPTIONAL.includes(name) || (values.member !== undefined && PER_MEMBER.includes(name))) continue;
-    need(name as Exclude<keyof typeof FLAGS, "member">);
+    if (OPTIONAL.includes(name) || ((values.member !== undefined || values.calibrate === true) && PER_MEMBER.includes(name))) continue;
+    need(name as Exclude<keyof typeof FLAGS, "member" | "calibrate">);
   } // refuse a missing flag before anything starts
   const generation = Number(need("generation"));
-  if (!Number.isInteger(generation) || generation < 1) throw new UsageError("--generation must be a positive integer");
+  const calibrating = values.calibrate === true;
+  if (calibrating ? generation !== 0 : !Number.isInteger(generation) || generation < 1) throw new UsageError(calibrating ? "--calibrate plays generation 0" : "--generation must be a positive integer");
+  if (calibrating && (values.member !== undefined || values.shard !== undefined || values["game-processes"] !== undefined || values["policy-workers"] !== undefined)) throw new UsageError("--calibrate takes no --member and plays in one process");
   const config = readTrainingRunConfig(JSON.parse(readFileSync(need("config"), "utf8")));
   if (config.seeds.run_key.startsWith("CHANGE-ME")) throw new UsageError("seeds.run_key is still the CHANGE-ME placeholder: give the run its own name");
   const engine = loadEngine(process.env.SHOWDOWN_DIR || undefined);
   const dataFile = need("engine-data");
   const dataHash = engineDataHash(readEngineDataAny(JSON.parse(readFileSync(dataFile, "utf8"))));
+  if (calibrating) {
+    if (config.population === undefined) throw new UsageError("--calibrate needs a population config");
+    return runCalibrationCli({ engine, config, pool: poolSource(engine, config), out: need("out"), belief_worlds: beliefWorlds }, print);
+  }
   if ((config.population !== undefined) !== (values.member !== undefined)) throw new UsageError("a population config is played with --member for each member, and --member only with a population config");
   if (config.population !== undefined) {
     if (values.shard !== undefined || values["game-processes"] !== undefined || values["policy-workers"] !== undefined) throw new UsageError("a population run plays in one process with one worker per member");
