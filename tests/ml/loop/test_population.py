@@ -757,14 +757,17 @@ def test_a_learner_is_parked_when_its_training_fails(
 ) -> None:
     events: list[str] = []
     real_up, real_park = population.bring_up, population.park
-    monkeypatch.setattr(
-        population,
-        "bring_up",
-        lambda learner, device: (events.append("up"), real_up(learner, device)),
-    )
-    monkeypatch.setattr(
-        population, "park", lambda learner: (events.append("park"), real_park(learner))
-    )
+
+    def up(learner: Any, device: Any) -> None:
+        events.append("up")
+        real_up(learner, device)
+
+    def down(learner: Any) -> None:
+        events.append("park")
+        real_park(learner)
+
+    monkeypatch.setattr(population, "bring_up", up)
+    monkeypatch.setattr(population, "park", down)
 
     def boom(self: Any, trajectories: Any) -> Any:
         raise RuntimeError("train failed")
@@ -843,8 +846,9 @@ def test_a_member_whose_games_all_forfeited_fails_the_generation(tmp_path: Path)
         make_population(tmp_path, config, Forfeited(config)).run(GENERATIONS)
     names = sorted(p.name for p in layout.generations_dir(tmp_path).iterdir())
     assert "g000002" not in names  # nothing of the failed generation is committed
-    assert layout.latest_complete(tmp_path) is not None
-    assert layout.latest_complete(tmp_path).generation == 1  # type: ignore[union-attr]
+    newest = layout.latest_complete(tmp_path)
+    assert newest is not None
+    assert newest.generation == 1
 
 
 @pytest.mark.parametrize(
