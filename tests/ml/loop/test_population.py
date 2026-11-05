@@ -11,15 +11,19 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+import torch
 from areneon_contracts.contracts import jcs, sha256_hex
 from areneon_ml.checkpoint.files import checkpoint_bytes, checkpoint_id
 from areneon_ml.checkpoint.record import read_record
 from areneon_ml.learner.config import RunConfig, RunConfigError, read_run_config
-from areneon_ml.loop import layout
+from areneon_ml.learner.state import pack_state
+from areneon_ml.learner.trainer import Learner
+from areneon_ml.loop import layout, population
+from areneon_ml.loop.__main__ import EXIT_REFUSED, main
 from areneon_ml.loop.driver import LoopError, export_provenance
 from areneon_ml.loop.league import league_game_seed
 from areneon_ml.loop.metrics import metrics_path, read_run_metrics
-from areneon_ml.loop.play import PopulationPlayRequest
+from areneon_ml.loop.play import PlayError, PopulationPlayRequest
 from areneon_ml.loop.population import (
     PopulationLoop,
     member_config,
@@ -713,3 +717,148 @@ def test_initial_networks_differ_per_member_but_not_per_rerun() -> None:
 def test_a_negative_generation_count_is_refused(tmp_path: Path) -> None:
     with pytest.raises(LoopError, match="cannot be negative"):
         make_population(tmp_path).run(-1)
+
+
+# -- device residency ------------------------------------------------------------------------------
+
+
+def test_one_learner_at_a_time_is_brought_to_the_device_and_the_bytes_do_not_change(
+    finished: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    on_device: set[int] = set()
+    seen: list[tuple[str, int]] = []
+    most = [0]
+    real_up, real_park = population.bring_up, population.park
+
+    def up(learner: Any, device: Any) -> None:
+        assert not on_device, "a second learner was brought to the device"
+        real_up(learner, device)
+        on_device.add(id(learner))
+        seen.append(("up", id(learner)))
+        most[0] = max(most[0], len(on_device))
+
+    def down(learner: Any) -> None:
+        real_park(learner)
+        on_device.discard(id(learner))
+        seen.append(("park", id(learner)))
+
+    monkeypatch.setattr(population, "bring_up", up)
+    monkeypatch.setattr(population, "park", down)
+    make_population(tmp_path).run(GENERATIONS)
+    assert most[0] == 1
+    assert not on_device
+    assert len(seen) == 2 * 2 * GENERATIONS  # two members, up and park, every generation
+    assert [kind for kind, _ in seen] == ["up", "park"] * (2 * GENERATIONS)
+    assert tree_bytes(tmp_path) == tree_bytes(finished)
+
+
+def test_a_learner_is_parked_when_its_training_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    events: list[str] = []
+    real_up, real_park = population.bring_up, population.park
+    monkeypatch.setattr(
+        population,
+        "bring_up",
+        lambda learner, device: (events.append("up"), real_up(learner, device)),
+    )
+    monkeypatch.setattr(
+        population, "park", lambda learner: (events.append("park"), real_park(learner))
+    )
+
+    def boom(self: Any, trajectories: Any) -> Any:
+        raise RuntimeError("train failed")
+
+    monkeypatch.setattr(Learner, "train", boom)
+    with pytest.raises(RuntimeError, match="train failed"):
+        make_population(tmp_path).run(1)
+    assert events == ["up", "park"]
+
+
+def test_moving_a_learner_keeps_its_state_bytes_and_moves_the_moments() -> None:
+    config = population_config()
+    loop = PopulationLoop(config, Path("unused"), game(), FakePopulationPlayer(config))
+    learner = loop._new_learner(0, None)
+    assert learner.device == population.HOST
+    before = pack_state(learner).hash
+    population.move_learner(learner, torch.device("cpu"))
+    assert pack_state(learner).hash == before
+    # Give Adam moments, then move: the moment tensors are the ones the optimiser holds.
+    for network in learner.networks.values():
+        for parameter in network.parameters():
+            parameter.grad = torch.zeros_like(parameter)
+    for optimiser in learner.optimisers.values():
+        optimiser.step()
+    after_step = pack_state(learner).hash
+    population.move_learner(learner, torch.device("cpu"))
+    assert pack_state(learner).hash == after_step
+    states = [s for o in learner.optimisers.values() for s in o.state.values()]
+    assert states
+    assert all(s["exp_avg"].device.type == "cpu" for s in states)
+
+
+# -- the nits -----------------------------------------------------------------------
+
+
+def test_two_members_with_one_pair_are_refused_at_generation_zero(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    real = population.member_config
+    monkeypatch.setattr(population, "member_config", lambda config, index: real(config, 0))
+    with pytest.raises(LoopError, match="two members start from the same frozen pair"):
+        make_population(tmp_path).run(1)
+    assert not any(p.name == "g000000" for p in layout.generations_dir(tmp_path).iterdir())
+
+
+def test_a_plan_game_must_carry_its_half(tmp_path: Path) -> None:
+    config = population_config()
+
+    class Wrong(FakePopulationPlayer):
+        def play_population(self, request: PopulationPlayRequest) -> None:
+            super().play_population(request)
+            plan = layout.read_json(request.out_dir / "plan.json")
+            plan[0]["half"] = 1
+            layout.write_json(request.out_dir / "plan.json", plan)
+            record = layout.read_json(request.out_dir / "league-run.json")
+            record["plan_hash"] = sha256_hex(jcs(plan))
+            layout.write_json(request.out_dir / "league-run.json", record)
+
+    with pytest.raises(LoopError, match="seed the run key gives its pair"):
+        make_population(tmp_path, config, Wrong(config)).run(1)
+
+
+def test_a_member_whose_games_all_forfeited_fails_the_generation(tmp_path: Path) -> None:
+    config = population_config()
+
+    class Forfeited(FakePopulationPlayer):
+        def play_population(self, request: PopulationPlayRequest) -> None:
+            if request.generation == 2:
+                # What the play side does when a member has no Episode of its own pair.
+                raise PlayError(
+                    "no Episode of m1's frozen pair: every game it played was forfeited"
+                )
+            super().play_population(request)
+
+    with pytest.raises(PlayError, match="no Episode of m1's frozen pair"):
+        make_population(tmp_path, config, Forfeited(config)).run(GENERATIONS)
+    names = sorted(p.name for p in layout.generations_dir(tmp_path).iterdir())
+    assert "g000002" not in names  # nothing of the failed generation is committed
+    assert layout.latest_complete(tmp_path) is not None
+    assert layout.latest_complete(tmp_path).generation == 1  # type: ignore[union-attr]
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        ["inspect"],
+        ["report"],
+        ["progress", "--generation", "1", "--engine-data", "x"],
+        ["replay", "--generation", "1"],
+    ],
+)
+def test_the_single_lineage_views_refuse_a_population_run_by_name(
+    finished: Path, capsys: pytest.CaptureFixture[str], command: list[str]
+) -> None:
+    code = main([command[0], "--run-dir", str(finished), *command[1:]])
+    assert code == EXIT_REFUSED
+    assert "population run is not supported" in capsys.readouterr().err

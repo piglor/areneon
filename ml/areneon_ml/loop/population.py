@@ -21,8 +21,14 @@ member ``m<k>``'s Preview network is seeded from ``member-init`` index 0 of gene
 Battle network from index 1 and its learner generator from ``member-learner`` index 0. So members
 start from different random pairs. A ``warm_start`` with ``population`` names the Battle role
 alone: every member starts with that cloned Battle network (one separate copy each) and its own
-seeded Preview, so the pair ids differ (the play side refuses two members with the same pair).
-Both config readers refuse a two-role warm start with ``population``.
+seeded Preview, so the pair ids are distinct with overwhelming probability; ``_initial`` asserts it
+(the play side refuses two members with the same pair). Both config readers refuse a two-role warm
+start with ``population``.
+
+Device residency: every member's learner (networks, anchors, Adam moments) is built and kept on
+the CPU; ``_train_member`` brings one learner to the device, trains it and parks it again, so one
+learner at a time sits on the GPU. Moving tensors changes no value, so the learner state hash and
+the checkpoints are the bytes they would be with everything resident.
 
 Records are the ordinary ``CheckpointRecord``: ``lineage_id`` is ``<lineage>.m<k>``, ``parent``
 the member's previous checkpoint of the same role, and ``league_opponents`` the frozen checkpoints
@@ -41,6 +47,7 @@ the metrics.
 from __future__ import annotations
 
 import dataclasses
+import re
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -92,6 +99,39 @@ from areneon_ml.model.network import MAX_SEED, ROLES, PolicyNetwork, init_networ
 INIT_INDEX = {"preview": 0, "battle": 1}
 #: The ``schema_version`` of the population ``generation.json`` the simulator side writes.
 SUMMARY_VERSION = 2
+
+
+#: A learning member's label (an exploiter seat is ``x<k>``).
+_LEARNER = re.compile(r"m(0|[1-9][0-9]?)")
+#: Where an idle learner lives.
+HOST = torch.device("cpu")
+
+
+def move_learner(learner: Learner, device: torch.device) -> None:
+    """Move a learner's networks, frozen anchors and Adam moments to ``device``, in place.
+
+    Parameters keep their identity (``Module.to`` swaps the data), so the optimisers still hold
+    them. Only the moment tensors (``exp_avg`` and the like) move; Adam's 0-dimensional ``step``
+    counters stay where the optimiser keeps them. No value changes.
+    """
+    for network in (*learner.networks.values(), *learner.anchors.values()):
+        network.to(device)
+    for optimiser in {id(o): o for o in learner.optimisers.values()}.values():
+        for state in optimiser.state.values():
+            for key, value in state.items():
+                if torch.is_tensor(value) and value.dim() > 0:
+                    state[key] = value.to(device)
+    learner.device = device
+
+
+def bring_up(learner: Learner, device: torch.device) -> None:
+    """Make ``learner`` resident on the training device (a test replaces this)."""
+    move_learner(learner, device)
+
+
+def park(learner: Learner) -> None:
+    """Return ``learner`` to the host (a test replaces this)."""
+    move_learner(learner, HOST)
 
 
 def member_label(index: int) -> str:
@@ -299,7 +339,8 @@ class PopulationLoop:
         if self.config.ppo.anchor is not None:
             assert self.config.warm_start is not None  # the reader requires warm_start
             anchors = self._warm_pair(self.config.warm_start).networks
-        return Learner(cfg, built, self.device, anchors)
+        # Built and kept on the host; `_train_member` brings it to the device while it trains.
+        return Learner(cfg, built, HOST, anchors)
 
     # -- run -----------------------------------------------------------------
 
@@ -335,6 +376,13 @@ class PopulationLoop:
             sealings[label] = MemberSealing(
                 None, None, records=None if warm is None else warm.records
             )
+        ids = [
+            {r: checkpoint_id(checkpoint_bytes(learner.networks[r], self.game)) for r in ROLES}
+            for learner in self._learners.values()
+        ]
+        pairs = [policy_id(found["preview"], found["battle"]) for found in ids]
+        if len(set(pairs)) != len(pairs):
+            raise LoopError("population: two members start from the same frozen pair")
         work = layout.partial_dir(self.run_dir, 0)
         work.mkdir(parents=True)
         manifest = self.player.manifest(self.config.format_id)
@@ -505,6 +553,7 @@ class PopulationLoop:
             }
             reports[label] = report.as_dict()
             self._on_stage(generation, f"trained:{label}")
+            # league_opponents: only opponents the record says were met in a played game.
             others = {
                 by_label[o_member].checkpoints[role]
                 for (o_member, played) in _ladder_opponents(record.raw, label)
@@ -553,17 +602,22 @@ class PopulationLoop:
                 pair,
                 fit_processes(self.load_processes, self.load_memory_mb),
             )
-        if self.device.type == "cuda":
-            torch.cuda.reset_peak_memory_stats(self.device)
-        with timing.phase("train"):
-            report = learner.train(found)
-        del found
-        if self.device.type == "cuda":
-            peak = int(torch.cuda.max_memory_allocated(self.device))
-            reserved = int(torch.cuda.max_memory_reserved(self.device))
-            timing.peak_memory = max(timing.peak_memory or 0, peak)
-            timing.peak_reserved = max(timing.peak_reserved or 0, reserved)
-            torch.cuda.empty_cache()
+        bring_up(learner, self.device)
+        try:
+            if self.device.type == "cuda":
+                torch.cuda.reset_peak_memory_stats(self.device)
+            with timing.phase("train"):
+                report = learner.train(found)
+            del found
+            if self.device.type == "cuda":
+                peak = int(torch.cuda.max_memory_allocated(self.device))
+                reserved = int(torch.cuda.max_memory_reserved(self.device))
+                timing.peak_memory = max(timing.peak_memory or 0, peak)
+                timing.peak_reserved = max(timing.peak_reserved or 0, reserved)
+        finally:
+            park(learner)
+            if self.device.type == "cuda":
+                torch.cuda.empty_cache()
         with timing.phase("write"):
             layout.write_json(path / "train-report.json", report.as_dict())
         return report
@@ -593,7 +647,7 @@ class PopulationLoop:
             raise LoopError(f"league-run.json: {exc}") from exc
         if record.generation != generation:
             raise LoopError("league-run.json names another generation than the one played")
-        learners = [m for m in record.members if m.member.startswith("m")]
+        learners = [m for m in record.members if _LEARNER.fullmatch(m.member)]
         if [(m.member, m.pair_policy_id, m.preview, m.battle) for m in learners] != [
             (p.member, p.policy_id, p.preview, p.battle) for p in pairs
         ] or len(learners) != len(record.members):
@@ -712,7 +766,13 @@ class PopulationLoop:
 
 
 def _ladder_opponents(record: dict[str, Any], label: str) -> list[tuple[str, int]]:
-    """The other members ``label`` met in the generation: (member, games played), ascending."""
+    """The other members ``label`` met in the generation: (member, games played), ascending.
+
+    ``played`` is the record's per-opponent count of games that were actually played; a forfeited
+    game is counted in ``games`` and in the member's forfeits, not here (``buildLeagueRunRecordV2``
+    adds to ``played`` only for a played game). So an opponent with ``played > 0`` really met the
+    member, and only those become ``league_opponents``.
+    """
     entry = next(m for m in record["members"] if m["member"] == label)
     return sorted(
         (o["member"], o["played"])

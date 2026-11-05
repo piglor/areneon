@@ -399,6 +399,7 @@ def check_population_plan(record: LeagueRunRecordV2, plan: object, config: RunCo
             not isinstance(entry, dict)
             or entry.get("game") != index
             or entry.get("pair") != index // 2
+            or entry.get("half") != index % 2
             or entry.get("seed") != expected
         ):
             raise LeagueRecordError(

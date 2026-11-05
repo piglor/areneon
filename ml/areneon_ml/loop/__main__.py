@@ -45,7 +45,7 @@ from areneon_ml.checkpoint.provenance import ProvenanceError
 from areneon_ml.checkpoint.record import RecordError
 from areneon_ml.inspector.command import inspect_run
 from areneon_ml.inspector.progress_replay_command import replay_progress
-from areneon_ml.inspector.readers import InspectError
+from areneon_ml.inspector.readers import InspectError, refuse_population
 from areneon_ml.inspector.replay_command import Selection, parse_games, replay_games
 from areneon_ml.inspector.resimulate import node_runner
 from areneon_ml.inspector.resimulate_command import parse_target, resimulate_game
@@ -616,6 +616,22 @@ def _run(args: argparse.Namespace) -> dict[str, object]:
     return result.as_dict(loop.frozen)
 
 
+#: Commands that read a run directory with a single lineage's layout (ADR-021 slices 11 and 12
+#: add the population views): a population run is refused by name, before anything is read.
+_SINGLE_LINEAGE_ONLY = ("inspect", "report", "progress", "replay")
+
+
+def _refuse_population_dir(args: argparse.Namespace) -> None:
+    run_dir: Path | None = getattr(args, "run_dir", None)
+    if args.command not in _SINGLE_LINEAGE_ONLY or run_dir is None:
+        return
+    try:
+        stored = json.loads((run_dir / layout.CONFIG).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return  # no readable config: the command reports that in its own words
+    refuse_population(stored)
+
+
 def _private_test(args: argparse.Namespace) -> int:
     if args.damage_aware_budget_minutes is not None and not args.damage_aware:
         _parser().error("--damage-aware-budget-minutes needs --damage-aware")
@@ -712,6 +728,7 @@ def main(argv: list[str] | None = None) -> int:
         # Its own wrapper: the guard runs first and only fixed words are ever shown.
         return _private_test(args)
     try:
+        _refuse_population_dir(args)
         if args.command == "run":
             out = _run(args)
         elif args.command == "inspect" and args.resimulate is not None:
