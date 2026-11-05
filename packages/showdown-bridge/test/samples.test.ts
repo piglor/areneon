@@ -499,6 +499,7 @@ describe("the shared contract sample corpus (ADR-008 §2)", () => {
       "v1/training-run-config/reader-invalid/population-share-bound-excludes-start.json",
       "v1/training-run-config/reader-invalid/population-shares-sum.json",
       "v1/training-run-config/reader-invalid/population-target-kl-bound-unset.json",
+      "v1/training-run-config/reader-invalid/population-warm-start-both.json",
       "v1/training-run-config/reader-invalid/shared-trunk-warm-start.json",
       "v1/training-run-config/reader-invalid/value-warmup-no-warm-start.json",
       "v1/training-run-config/reader-invalid/warm-start-same-id.json",
@@ -629,6 +630,7 @@ describe("the shared contract sample corpus (ADR-008 §2)", () => {
     ["v1/training-run-config/reader-invalid/population-roots-exceed-members.json", "min_roots cannot exceed members"],
     ["v1/training-run-config/reader-invalid/population-share-bound-excludes-start.json", "explore.bounds.ladder_ppm must contain"],
     ["v1/training-run-config/reader-invalid/population-shares-sum.json", "must sum to 1000000"],
+    ["v1/training-run-config/reader-invalid/population-warm-start-both.json", "would give every member the same pair"],
     ["v1/training-run-config/reader-invalid/population-target-kl-bound-unset.json", "needs ppo.target_kl_micro"],
   ])("readTrainingRunConfig refuses %s", (file, message) => {
     expect(Object.keys(fresh)).toContain(file);

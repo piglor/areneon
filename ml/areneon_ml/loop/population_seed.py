@@ -29,6 +29,8 @@ def population_draw(
     run_key: str, generation: int, member: str, purpose: PopulationSeedPurpose, index: int
 ) -> int:
     """The unsigned 64-bit draw of ``population-seed/1``; generation and index count from 0."""
+    if any(isinstance(n, bool) or not isinstance(n, int) for n in (generation, index)):
+        raise ValueError("generation and index are integers")
     if generation < 0 or index < 0:
         raise ValueError("generation and index count from 0")
     if _MEMBER.fullmatch(member) is None:

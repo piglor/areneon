@@ -378,3 +378,29 @@ def check_generation_plan(
             raise LeagueRecordError(
                 f"game {index} does not carry the seed the run key gives it ({expected})"
             )
+
+
+def check_population_plan(record: LeagueRunRecordV2, plan: object, config: RunConfig) -> None:
+    """A population plan is the record's plan, and every game carries its pair's seed.
+
+    A population game is half of a team pair played twice on one battle seed, so game ``i`` is in
+    pair ``i // 2`` and its seed is ``league-seed/1`` at the PAIR's index (ADR-021 section 5). The
+    record's root counts every distinct game, which is the plan's length.
+    """
+    if not isinstance(plan, list):
+        raise LeagueRecordError("the match plan is not a list")
+    if sha256_hex(jcs(plan)) != record.plan_hash:
+        raise LeagueRecordError("the match plan differs from the plan_hash of the record")
+    if len(plan) != record.games:
+        raise LeagueRecordError("the match plan has another number of games than the record")
+    for index, entry in enumerate(plan):
+        expected = league_game_seed(config.run_key, record.generation, index // 2)
+        if (
+            not isinstance(entry, dict)
+            or entry.get("game") != index
+            or entry.get("pair") != index // 2
+            or entry.get("seed") != expected
+        ):
+            raise LeagueRecordError(
+                f"game {index} does not carry the seed the run key gives its pair ({expected})"
+            )

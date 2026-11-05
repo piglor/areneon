@@ -22,7 +22,7 @@ const validConfig = ajvFor("contract").compile(trainingRunConfigSchema);
  * Read a TrainingRunConfig: the schema, then the rules it cannot say: the
  * attention heads divide the token width, a Team Preview order does not name
  * more positions than a side holds, each scripted baseline appears once, and a warm start names different
- * checkpoints (a checkpoint holds the network of one role; the Battle role alone is allowed), a value warm-up needs a warm start, and so does a KL anchor, a shared trunk excludes a two-role warm start (a Battle-only one is allowed), an explicit play temperature of 1,000,000 is refused (the default is omitted), and a population obeys its own rules (opponent shares sum to 10^6, `min_roots` at most `members`, `max_past_per_member` at most `max_size`, `member_ppo` sorted and unique, every explore bound contains its starting value).
+ * checkpoints (a checkpoint holds the network of one role; the Battle role alone is allowed), a value warm-up needs a warm start, and so does a KL anchor, a shared trunk excludes a two-role warm start (a Battle-only one is allowed), an explicit play temperature of 1,000,000 is refused (the default is omitted), and a population obeys its own rules (opponent shares sum to 10^6, `min_roots` at most `members`, `max_past_per_member` at most `max_size`, `member_ppo` sorted and unique, every explore bound contains its starting value, and no two-role warm start: members need distinct pairs).
  */
 export function readTrainingRunConfig(value: unknown): TrainingRunConfig {
   if (!validConfig(value)) throw new TrainingRunConfigError(`invalid TrainingRunConfig: ${JSON.stringify(validConfig.errors)}`);
@@ -50,6 +50,9 @@ export function readTrainingRunConfig(value: unknown): TrainingRunConfig {
   }
   if (generation.play?.temperature_ppm === 1_000_000) {
     throw new TrainingRunConfigError("generation.play.temperature_ppm 1000000 is the default: omit generation.play (one rule, one encoding)");
+  }
+  if (config.population !== undefined && config.warm_start?.preview !== undefined) {
+    throw new TrainingRunConfigError("population: a warm_start that names the preview role would give every member the same pair (use a Battle-only warm start; each member's Preview is seeded from its own member-init draw)");
   }
   if (config.population !== undefined) checkPopulation(config);
   return config;

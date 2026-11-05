@@ -39,6 +39,33 @@ class GenerationPlayer(Protocol):
     def play(self, request: PlayRequest) -> None: ...
 
 
+@dataclass(frozen=True)
+class MemberPair:
+    """One learning member's frozen pair, as the population play script takes it."""
+
+    member: str
+    policy_id: str
+    preview: str
+    battle: str
+
+
+@dataclass(frozen=True)
+class PopulationPlayRequest:
+    """One population generation to play: every member's frozen pair, in member order."""
+
+    generation: int
+    members: tuple[MemberPair, ...]
+    out_dir: Path
+
+
+class PopulationPlayer(Protocol):
+    """The simulator side of a population run (ADR-021 slice 4): one call plays every member."""
+
+    def manifest(self, format_id: str) -> dict[str, Any]: ...
+
+    def play_population(self, request: PopulationPlayRequest) -> None: ...
+
+
 _STDERR_TAIL = 2000
 
 
@@ -143,6 +170,32 @@ class NodePlayer:
             # Absent at one worker, so the default command line is the one it always was.
             *(("--policy-workers", str(self.policy_workers)) if self.policy_workers != 1 else ()),
             *(("--game-processes", str(self.game_processes)) if self.game_processes != 1 else ()),
+            heap_mb=self.node_heap_mb,
+            timeout_s=self.generation_timeout_s,
+        )
+        self.resource_usage.update(_resource_usage(out))
+
+    def play_population(self, request: PopulationPlayRequest) -> None:
+        """One population generation: ``--member m<k>,PREVIEW,BATTLE,POLICY_ID`` per member.
+
+        The play script runs in one process with one worker per member (it refuses
+        ``--game-processes`` and ``--policy-workers``), so the operational counts do not apply.
+        """
+        self.resource_usage.clear()
+        out = self._run(
+            self.play_script,
+            *("--config", str(self.config_path)),
+            *("--generation", str(request.generation)),
+            *("--run-dir", str(self.run_dir)),
+            *("--engine-data", str(self.engine_data)),
+            *("--encoder-version", self.encoder_version),
+            *("--worker-python", self.worker_python),
+            *("--out", str(request.out_dir)),
+            *(
+                arg
+                for m in request.members
+                for arg in ("--member", f"{m.member},{m.preview},{m.battle},{m.policy_id}")
+            ),
             heap_mb=self.node_heap_mb,
             timeout_s=self.generation_timeout_s,
         )

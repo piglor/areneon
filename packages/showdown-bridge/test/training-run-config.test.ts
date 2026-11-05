@@ -184,6 +184,12 @@ describe("the TrainingRunConfig reader (ADR-010 §5)", () => {
     expect(readTrainingRunConfig(sample("population-member-ppo-exploiters")).population?.member_ppo).toHaveLength(2);
   });
 
+  it("takes a Battle-only warm start with a population and refuses a two-role one (ADR-021 slice 5: members need distinct pairs)", () => {
+    expect(readTrainingRunConfig(sample("population-warm-start-battle-only")).warm_start).toEqual({ battle: "b".repeat(64) });
+    const both = { ...sample("population"), warm_start: { preview: "a".repeat(64), battle: "b".repeat(64) } };
+    expect(() => readTrainingRunConfig(both)).toThrow("would give every member the same pair");
+  });
+
   it("refuses the population samples the schema refuses", () => {
     const dir = join(SAMPLES_DIR, "v1/training-run-config/invalid");
     const files = readdirSync(dir).filter((f) => f.startsWith("population-"));

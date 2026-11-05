@@ -79,7 +79,16 @@ def test_an_input_out_of_range_is_refused(args: tuple[object, ...], message: str
         population_draw(*args)  # type: ignore[arg-type]
 
 
-def test_the_loop_driver_refuses_a_population_config(tmp_path: Path) -> None:
+def test_a_bool_is_not_a_generation_or_an_index() -> None:
+    with pytest.raises(ValueError, match="are integers"):
+        population_draw("a", True, "m0", "explore", 0)
+    with pytest.raises(ValueError, match="are integers"):
+        population_draw("a", 0, "m0", "explore", False)
+    with pytest.raises(ValueError, match="are integers"):
+        population_draw("a", 0.0, "m0", "explore", 0)  # type: ignore[arg-type]
+
+
+def test_the_single_lineage_driver_refuses_a_population_config(tmp_path: Path) -> None:
     config = read_run_config(
         json.loads((SAMPLES / "training-run-config/valid/population.json").read_text())
     )

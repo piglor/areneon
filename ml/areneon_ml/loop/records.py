@@ -148,6 +148,12 @@ class RecordFacts:
     learner_state_hash: str
     encoder_version: str
     manifest: dict[str, Any]
+    #: A population member's lineage label ``<lineage>.m<k>`` (ADR-021 section 7); None is the
+    #: config's ``lineage_id``.
+    lineage_id: str | None = None
+    #: The learned checkpoints the member trained against (the other members' frozen pairs); empty
+    #: for a single lineage.
+    league_opponents: tuple[str, ...] = ()
 
 
 def checkpoint_record(config: RunConfig, facts: RecordFacts) -> CheckpointRecord:
@@ -161,8 +167,8 @@ def checkpoint_record(config: RunConfig, facts: RecordFacts) -> CheckpointRecord
         "schema_version": 1,
         "checkpoint_id": facts.checkpoint_id,
         "role": facts.role,
-        "lineage_id": config.lineage_id,
-        "league_opponents": [],
+        "lineage_id": config.lineage_id if facts.lineage_id is None else facts.lineage_id,
+        "league_opponents": sorted(set(facts.league_opponents)),
         "training_set_hashes": sorted(facts.training_set_hashes),
         "team_set_manifest_hash": facts.team_set_manifest_hash,
         "run_config_hash": config.hash,

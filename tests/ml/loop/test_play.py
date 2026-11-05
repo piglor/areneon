@@ -10,7 +10,14 @@ import time
 from pathlib import Path
 
 import pytest
-from areneon_ml.loop.play import NodePlayer, PlayError, PlayRequest, _descendants
+from areneon_ml.loop.play import (
+    MemberPair,
+    NodePlayer,
+    PlayError,
+    PlayRequest,
+    PopulationPlayRequest,
+    _descendants,
+)
 
 # "node" here is Python and the "scripts" are small Python programs, so the arguments the
 # player builds can be seen without a Node install; the real scripts run in the end-to-end test.
@@ -58,6 +65,29 @@ def test_play_passes_the_whole_request_and_the_run_as_flags(tmp_path: Path) -> N
         "--worker-python": "/venv/python",
         "--out": str(tmp_path / "work"),
     }
+
+
+def test_play_population_passes_a_member_flag_per_member_and_no_pair_flags(tmp_path: Path) -> None:
+    out = tmp_path / "args.json"
+    script = f"import sys, json; open({str(out)!r}, 'w').write(json.dumps(sys.argv[1:]))"
+    members = (
+        MemberPair("m0", "policy:" + "1" * 64, "a" * 64, "b" * 64),
+        MemberPair("m1", "policy:" + "2" * 64, "c" * 64, "d" * 64),
+    )
+    chosen = player(tmp_path, "", script)
+    NodePlayer(**{**chosen.__dict__, "policy_workers": 3, "game_processes": 2}).play_population(
+        PopulationPlayRequest(2, members, tmp_path / "work")
+    )
+    argv = json.loads(out.read_text())
+    assert [argv[i + 1] for i, a in enumerate(argv) if a == "--member"] == [
+        f"m0,{'a' * 64},{'b' * 64},policy:{'1' * 64}",
+        f"m1,{'c' * 64},{'d' * 64},policy:{'2' * 64}",
+    ]
+    for absent in ("--policy-id", "--preview", "--battle", "--policy-workers", "--game-processes"):
+        assert absent not in argv
+    flags = {a: argv[i + 1] for i, a in enumerate(argv) if a.startswith("--") and a != "--member"}
+    assert flags["--generation"] == "2"
+    assert flags["--out"] == str(tmp_path / "work")
 
 
 def test_play_passes_worker_and_process_counts_only_when_not_one(tmp_path: Path) -> None:

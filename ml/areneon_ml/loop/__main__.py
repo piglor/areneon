@@ -56,6 +56,7 @@ from areneon_ml.learner.trainer import LearnerError
 from areneon_ml.loop import layout
 from areneon_ml.loop.driver import Loop, LoopError, export_provenance
 from areneon_ml.loop.play import NodePlayer, PlayError
+from areneon_ml.loop.population import PopulationLoop
 from areneon_ml.loop.warm_start import WarmStartError, import_clone
 from areneon_ml.model.encoder import encoder_version
 from areneon_ml.model.gamedata import GameData
@@ -598,6 +599,16 @@ def _run(args: argparse.Namespace) -> dict[str, object]:
             else "packages/showdown-bridge/scripts/play-generation.ts"
         ),
     )
+    if config.population:
+        if args.policy_workers != 1 or args.game_processes != 1:
+            raise LoopError(
+                "population: a population generation is played in one process with one worker "
+                "per member; --policy-workers and --game-processes do not apply"
+            )
+        pop = PopulationLoop(config, args.run_dir.resolve(), game, player)
+        pop.load_processes = args.load_processes
+        pop.load_memory_mb = args.load_memory_mb
+        return pop.run(args.generations).as_dict(pop.frozen)
     loop = Loop(config, args.run_dir.resolve(), game, player)
     loop.load_processes = args.load_processes
     loop.load_memory_mb = args.load_memory_mb
