@@ -1,7 +1,7 @@
 // The done-when of #1283: the raw counts of a small verified progress root feed the Python summariser, byte-stably.
 // Runs where the repository's Python environment exists (the typescript CI job installs it and sets ARENEON_REQUIRE_PYTHON_WORKER).
 import { execFileSync } from "node:child_process";
-import { existsSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -26,7 +26,7 @@ describe.skipIf(!existsSync(PYTHON) && process.env.ARENEON_REQUIRE_PYTHON_WORKER
     const raw = join(root, "raw.json");
     writeFileSync(raw, JSON.stringify({ format: "situational-move-use/1", label: "x", pin: engine.commit, generation: 1, run_id: evaluation.run_id, evaluation_key: null, unreplayable_games: 0, games: tallies }));
     const env = { ...process.env, PYTHONPATH: [ROOT, join(ROOT, "packages/schema/python"), join(ROOT, "ml")].join(":") };
-    const summarise = (): string => execFileSync(PYTHON, ["-m", "areneon_ml.report.situational", raw, "--out", join(root, "summary.json")], { env, encoding: "utf8" }) + execFileSync("cat", [join(root, "summary.json")], { encoding: "utf8" });
+    const summarise = (): string => execFileSync(PYTHON, ["-m", "areneon_ml.report.situational", raw, "--out", join(root, "summary.json")], { env, encoding: "utf8" }) + readFileSync(join(root, "summary.json"), "utf8");
     const first = summarise();
     expect(summarise()).toBe(first);
     const summary = JSON.parse(first.slice(first.indexOf("{"))) as { matches: Record<string, Record<string, { pairs: number; counts: Record<string, number> }>> };
