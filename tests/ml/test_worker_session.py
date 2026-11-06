@@ -148,7 +148,7 @@ def test_a_duplicate_candidate_is_refused(tmp_path: Path) -> None:
     assert reply["reply"]["error"] == "invalid_query"
 
 
-@pytest.mark.parametrize("name", ["candidate-verdict", "seed", "no-candidates", "unknown-sampling"])
+@pytest.mark.parametrize("name", ["candidate-verdict", "seed", "unknown-sampling"])
 def test_a_query_that_breaks_its_contract_is_refused_without_echoing_its_content(
     tmp_path: Path, name: str
 ) -> None:
@@ -157,6 +157,13 @@ def test_a_query_that_breaks_its_contract_is_refused_without_echoing_its_content
     assert reply["reply"]["error"] == "invalid_query"
     assert reply["reply"]["detail"].startswith("not a policy-query")
     assert "sodium" not in reply["reply"]["detail"]
+
+
+def test_a_query_without_candidates_is_refused_unless_it_asks_for_a_value(tmp_path: Path) -> None:
+    query = sample("policy-query/reader-invalid/no-candidates.json")
+    _, [_, reply] = session(make_worker(tmp_path), line(hello()), line(query))
+    assert reply["reply"]["error"] == "invalid_query"
+    assert "only a value query" in reply["reply"]["detail"]
 
 
 def test_a_candidate_of_an_unknown_shape_is_unsupported_not_invalid(tmp_path: Path) -> None:

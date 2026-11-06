@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { PolicyWorkerError, UnsupportedCandidateError } from "../src/evaluation-harness.ts";
-import { type EvaluateQueryInput, PolicyProtocolError, type PolicyQueryInput } from "../src/policy-protocol.ts";
+import { type EvaluateQueryInput, PolicyProtocolError, type PolicyQueryInput, type ValueQueryInput } from "../src/policy-protocol.ts";
 import { PolicyHandshakeError, PolicyReplyError, PolicyWorkerClient, type PolicyWorkerOptions } from "../src/policy-worker.ts";
 import { SAMPLES_DIR } from "../src/samples.ts";
 import { CHECKPOINTS, ENCODER_VERSION, ENGINE_DATA_HASH, MAX_LINE_BYTES } from "./policy-fake.ts";
@@ -11,6 +11,9 @@ const FAKE = fileURLToPath(new URL("./fake-policy-worker.ts", import.meta.url));
 const { query_id: _id, ...INPUT } = JSON.parse(readFileSync(`${SAMPLES_DIR}/v1/policy-query/valid/battle.json`, "utf8")) as PolicyQueryInput & { query_id: number };
 
 const EVALUATE: EvaluateQueryInput = { ...INPUT, sampling: { kind: "evaluate" } };
+
+const VALUE: ValueQueryInput = { ...INPUT, candidates: [], sampling: { kind: "value" } } as unknown as ValueQueryInput;
+const VALUE_ENV = { FAKE_VALUE_QUERY: "1" };
 
 const opened: PolicyWorkerClient[] = [];
 afterEach(async () => {
@@ -203,6 +206,66 @@ describe("evaluate queries (ADR-026 section 5)", () => {
   it("classifies a refusal as for a recommendation", async () => {
     await expect((await started("unsupported")).evaluate("g1", EVALUATE)).rejects.toThrow(UnsupportedCandidateError);
     await expect((await started("invalid-query")).evaluate("g1", EVALUATE)).rejects.toThrow(PolicyProtocolError);
+  });
+});
+
+describe("value queries (ADR-026 erratum E2 decision 7)", () => {
+  it("returns the value of a worker that stated value_query, re-checked against the query", async () => {
+    const worker = await started("ok", { env: VALUE_ENV });
+    expect(worker.valueQuery).toBe(true);
+    const value = await worker.value("g1", VALUE);
+    expect(value).toEqual({ identity: INPUT.identity, value_ppm: 500000 });
+    // the same session still answers evaluate and choice queries, rows and candidates intact
+    expect((await worker.evaluate("g1", EVALUATE)).prior_ppm).toHaveLength(INPUT.candidates.length);
+    expect(INPUT.candidates.map((c) => c.choice)).toContain((await worker.ask("g1", INPUT)).choice);
+  });
+
+  it("refuses to send a value query to a worker that did not state value_query", async () => {
+    const worker = await started("ok");
+    expect(worker.valueQuery).toBe(false);
+    await expect(worker.value("g1", VALUE)).rejects.toThrow(/stated no value_query/);
+  });
+
+  it("keeps the entry points apart", async () => {
+    const worker = await started("ok", { env: VALUE_ENV });
+    await expect(worker.ask("g1", VALUE as unknown as PolicyQueryInput)).rejects.toThrow(/evaluate\(\) or value\(\)/);
+    await expect(worker.evaluate("g1", VALUE as unknown as EvaluateQueryInput)).rejects.toThrow(/sampling is evaluate/);
+    await expect(worker.value("g1", EVALUATE as unknown as ValueQueryInput)).rejects.toThrow(/sampling is value/);
+  });
+
+  it("refuses a value query that carries candidates, rows or a sheet (the reader rules)", async () => {
+    const worker = await started("ok", { env: VALUE_ENV });
+    await expect(worker.value("g1", { ...VALUE, candidates: INPUT.candidates } as unknown as ValueQueryInput)).rejects.toThrow(/carries no candidates/);
+    await expect(worker.value("g1", { ...VALUE, candidate_features: { feature_set: "probe-damage/1", feature_set_hash: "a".repeat(64), rows: [] } } as unknown as ValueQueryInput)).rejects.toThrow(/no candidate_features/);
+    await expect(worker.ask("g1", { ...INPUT, candidates: [] })).rejects.toThrow(/only a value query/);
+  });
+
+  it("sends no rows to a worker that stated a feature set, for a value query", async () => {
+    const set = { feature_set: "probe-damage/1", feature_set_hash: "a".repeat(64) };
+    const worker = await started("ok", { env: { ...VALUE_ENV, FAKE_FEATURE_SET: JSON.stringify(set) }, features: set });
+    expect((await worker.value("g1", VALUE)).value_ppm).toBe(500000);
+    await expect(worker.ask("g1", INPUT)).rejects.toThrow(/carries no candidate_features/);
+  });
+
+  it.each([
+    ["value-wrong-identity", /another request/],
+    ["value-evaluation", /not a value/],
+  ])("an invalid value reply (%s) is a PolicyReplyError", async (mode, message) => {
+    const worker = await started(mode, { env: VALUE_ENV });
+    const error = await worker.value("g1", VALUE).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(PolicyReplyError);
+    expect((error as Error).message).toMatch(message);
+  });
+
+  it("classifies a refusal as for a recommendation", async () => {
+    await expect((await started("unsupported", { env: VALUE_ENV })).value("g1", VALUE)).rejects.toThrow(UnsupportedCandidateError);
+    await expect((await started("invalid-query", { env: VALUE_ENV })).value("g1", VALUE)).rejects.toThrow(PolicyProtocolError);
+  });
+
+  it("an evaluate query answered with a value is a PolicyReplyError", async () => {
+    const error = await (await started("eval-value")).evaluate("g1", EVALUATE).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(PolicyReplyError);
+    expect((error as Error).message).toMatch(/not an evaluation/);
   });
 });
 

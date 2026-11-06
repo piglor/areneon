@@ -23,18 +23,18 @@ export interface PolicyQuery {
    */
   observation: PreviewObservation | BattleObservation;
   /**
-   * The candidate joint choices of the request, each with its pending flag, in the enumerator's canonical order (ADR-006); the choice is one of them. The same N_max as TrainingExample.candidates (ADR-010 §3). No CloneJudge verdict is ever part of it.
+   * The candidate joint choices of the request, each with its pending flag, in the enumerator's canonical order (ADR-006); the choice is one of them. The same N_max as TrainingExample.candidates (ADR-010 §3). No CloneJudge verdict is ever part of it. Empty exactly when the sampling kind is value (a reader rule); every other query has at least one.
    *
-   * @minItems 1
+   * @minItems 0
    * @maxItems 1024
    */
-  candidates: [Candidate, ...Candidate[]];
+  candidates: Candidate[];
   candidate_features?: CandidateFeatures;
   opponent_sheet?: OpponentSheet;
   /**
-   * How the worker picks among the candidates (ADR-010 §2): argmax, a draw from the policy's probabilities using u, or (ADR-026 §5) no pick at all: evaluate asks for the policy's prior over the candidates and its value of the state.
+   * How the worker picks among the candidates (ADR-010 §2): argmax, a draw from the policy's probabilities using u, or (ADR-026 §5) no pick at all: evaluate asks for the policy's prior over the candidates and its value of the state; value (ADR-026 erratum E2 decision 7) asks only for the policy's value of the state and carries no candidates.
    */
-  sampling: ArgmaxSampling | SampleSampling | EvaluateSampling;
+  sampling: ArgmaxSampling | SampleSampling | EvaluateSampling | ValueSampling;
   /**
    * The inference identity that produced the choice (ADR-010 §2): echoed as the Recommendation's source_policy_id.
    */
@@ -857,6 +857,15 @@ export interface ThresholdTruncation {
  */
 export interface EvaluateSampling {
   kind: "evaluate";
+}
+/**
+ * No candidate and no pick: the worker answers with an EvaluationReply whose reply is a value (the policy's value of the state, same rounding as evaluate) from one batch-1 trunk and value-head pass. A decision-time search asks it for the leaves of its hypothetical channels (ADR-026 erratum E2 decision 7). Reader rules: candidates is empty, and the query carries no candidate_features and no opponent_sheet. A worker answers it only if it stated value_query in its ready message.
+ *
+ * This interface was referenced by `PolicyQuery`'s JSON-Schema
+ * via the `definition` "ValueSampling".
+ */
+export interface ValueSampling {
+  kind: "value";
 }
 /**
  * Which request a decision answers (ADR-008 §4). A consumer drops a recommendation unless request_seq and request_hash both match, and rqid too when both carry one.

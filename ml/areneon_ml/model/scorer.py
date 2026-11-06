@@ -76,6 +76,26 @@ class NetworkScorer:
         probabilities, output = self._forward(view, FULL_TEMPERATURE_PPM)
         return probabilities, float(output.value[0].item())
 
+    @property
+    def value_query(self) -> bool:
+        """Whether value-only queries are served: neither encoder fills a token or field column
+        from candidate rows or the opponent sheet (``Layout.value_reads_candidates``, ADR-026
+        erratum E2 decision 7). Read from the encoders' layouts, never from a list of sets."""
+        return not any(e.layout.value_reads_candidates for e in self._encoders.values())
+
+    def value(self, view: dict[str, Any]) -> float:
+        """The value head's float32 output for the state alone: trunk and value head, no candidates.
+
+        ``view`` carries no candidates or rows. Batch of one on the CPU, so as independent of what
+        was scored before as ``evaluate`` is; the value equals the one ``evaluate`` gives for the
+        same state (a test), since the layout the scorer serves it for reads nothing of the rows.
+        """
+        role = view["observation"]["kind"]
+        encoded = self._encoders[role].encode(view, value_only=True)
+        with torch.inference_mode():
+            output = self._networks[role].value_output(collate([encoded]))
+        return float(output[0].item())
+
     def _forward(
         self, view: dict[str, Any], temperature_ppm: int
     ) -> tuple[list[float], PolicyOutput]:

@@ -28,7 +28,7 @@ class Worker extends StandInWorker {
   override ask(_battle: string, query: Parameters<PolicyClient["ask"]>[1]): ReturnType<PolicyClient["ask"]> {
     const open = query.candidates.filter((c) => !c.pending).map((c) => c.choice);
     const pending = query.candidates.filter((c) => c.pending).map((c) => c.choice);
-    this.queries.push({ kind: "ask", log_lines: 0 });
+    this.queries.push({ kind: "ask", log_lines: 0, candidates: 0, rows: false });
     return Promise.resolve({ schema_version: 1 as const, identity: query.identity, choice: actorRule({ choices: open, pending }), source_policy_id: query.policy_id, elapsed_ms: 0, deadline_outcome: "in_budget" as const });
   }
 }

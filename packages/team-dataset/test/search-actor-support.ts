@@ -44,24 +44,38 @@ const sum = (state: PublicState, side: "own" | "opponent"): number => {
 
 /** The stand-in worker: a prior from a hash of each choice, a value from the hit-point difference in the observation's own log. */
 export class StandInWorker implements PolicyClient, EvaluationClient {
-  readonly featureSet = null;
-  readonly queries: { kind: string; log_lines: number }[] = [];
+  readonly featureSet: NonNullable<PolicyClient["featureSet"]> | null = null;
+  readonly queries: { kind: string; log_lines: number; candidates: number; rows: boolean }[] = [];
   async ask(_battle: string, query: Parameters<PolicyClient["ask"]>[1]): ReturnType<PolicyClient["ask"]> {
     const open = query.candidates.filter((candidate) => !candidate.pending);
-    const choice = (open[0] ?? query.candidates[0]).choice;
-    this.queries.push({ kind: "ask", log_lines: 0 });
+    const choice = (open[0] ?? query.candidates[0] as { choice: string }).choice;
+    this.queries.push({ kind: "ask", log_lines: 0, candidates: query.candidates.length, rows: query.candidate_features !== undefined });
     return { choice } as Awaited<ReturnType<PolicyClient["ask"]>>;
+  }
+  /** The value of the state the observation shows: the hit-point difference of its own log. */
+  protected valueOf(observation: { player: string; log?: readonly string[] }): number {
+    let value_ppm = 500_000;
+    if (observation.log !== undefined) {
+      const state = interpretChannel(observation.player as "p1" | "p2", observation.log).frames.at(-1)?.state;
+      if (state !== undefined) value_ppm = Math.round(500_000 + (sum(state, "own") - sum(state, "opponent")) / 2);
+    }
+    return value_ppm;
   }
   async evaluate(_battle: string, query: Parameters<EvaluationClient["evaluate"]>[1]): ReturnType<EvaluationClient["evaluate"]> {
     const observation = query.observation as { player: string; log?: readonly string[] };
-    this.queries.push({ kind: "evaluate", log_lines: observation.log?.length ?? 0 });
+    this.queries.push({ kind: "evaluate", log_lines: observation.log?.length ?? 0, candidates: query.candidates.length, rows: query.candidate_features !== undefined });
     const prior_ppm = query.candidates.map(({ choice }) => 1 + (createHash("sha256").update(choice).digest().readUInt16BE(0) % 1000));
-    let value_ppm = 500_000;
-    if (observation.log !== undefined) {
-      const state = interpretChannel(observation.player, observation.log).frames.at(-1)?.state;
-      if (state !== undefined) value_ppm = Math.round(500_000 + (sum(state, "own") - sum(state, "opponent")) / 2);
-    }
-    return { identity: query.identity, prior_ppm, value_ppm } as Awaited<ReturnType<EvaluationClient["evaluate"]>>;
+    return { identity: query.identity, prior_ppm, value_ppm: this.valueOf(observation) } as Awaited<ReturnType<EvaluationClient["evaluate"]>>;
+  }
+}
+
+/** A stand-in worker that states `value_query` (ADR-026 erratum E2 decision 7) and answers `value` queries with the same values `evaluate` gives. */
+export class ValueStandInWorker extends StandInWorker implements EvaluationClient {
+  readonly valueQuery = true;
+  async value(_battle: string, query: Parameters<NonNullable<EvaluationClient["value"]>>[1]): ReturnType<NonNullable<EvaluationClient["value"]>> {
+    const observation = query.observation as { player: string; log?: readonly string[] };
+    this.queries.push({ kind: "value", log_lines: observation.log?.length ?? 0, candidates: query.candidates.length, rows: (query as { candidate_features?: unknown }).candidate_features !== undefined });
+    return { identity: query.identity, value_ppm: this.valueOf(observation) } as Awaited<ReturnType<NonNullable<EvaluationClient["value"]>>>;
   }
 }
 

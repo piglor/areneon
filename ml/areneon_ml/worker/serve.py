@@ -12,7 +12,7 @@ from __future__ import annotations
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, BinaryIO
+from typing import Any, BinaryIO, cast
 
 from areneon_contracts.contracts import jcs
 from areneon_contracts.opponent_sheet import sheet_problem
@@ -30,7 +30,7 @@ from areneon_ml.worker.protocol import (
     read_frame,
 )
 from areneon_ml.worker.sampler import FULL_TEMPERATURE_PPM, check_probabilities, select, to_ppm
-from areneon_ml.worker.scorer import Scorer
+from areneon_ml.worker.scorer import Scorer, ValueScorer
 from areneon_ml.worker.view import encoder_input
 
 EXIT_OK = 0
@@ -90,13 +90,21 @@ def read_query(
     frame: dict[str, Any],
     features: FeatureSupport | None = None,
     sheet_support: SheetSupport | None = None,
+    value_query: bool = False,
 ) -> dict[str, Any]:
     """The frame as a PolicyQuery: the schema, then the rules the profile cannot say.
 
     A query carries ``candidate_features`` exactly when the worker stated a feature set, of that
     set, with sorted and unique rows and a row for every damaging move part of every candidate.
+    A ``value`` query (ADR-026 erratum E2 decision 7) is the exception: it has no candidates, no
+    rows and no sheet, and is served only by a worker that stated ``value_query``; every other
+    query has at least one candidate.
     """
     check("policy-query", frame)
+    if frame["sampling"]["kind"] == "value":
+        return _read_value_query(frame, value_query)
+    if not frame["candidates"]:
+        raise QueryError("only a value query may have no candidates")
     sent = frame.get("candidate_features")
     if features is None:
         if sent is not None:
@@ -124,6 +132,19 @@ def read_query(
     return frame
 
 
+def _read_value_query(frame: dict[str, Any], value_query: bool) -> dict[str, Any]:
+    """A ``value`` query: no candidates, rows or sheet, and a worker that stated ``value_query``."""
+    if not value_query:
+        raise QueryError("the worker states no value_query: its encoder reads candidate rows")
+    if frame["candidates"]:
+        raise QueryError("a value query carries no candidates")
+    if frame.get("candidate_features") is not None or frame.get("opponent_sheet") is not None:
+        raise QueryError("a value query carries no candidate_features and no opponent_sheet")
+    if jcs(frame["identity"]) != jcs(frame["observation"]["identity"]):
+        raise QueryError("the query's identity differs from its observation's identity")
+    return frame
+
+
 class Worker:
     def __init__(  # noqa: PLR0913, PLR0917
         self,
@@ -133,7 +154,9 @@ class Worker:
         max_line_bytes: int,
         features: FeatureSupport | None = None,
         sheet: SheetSupport | None = None,
+        value_scorer: ValueScorer | None = None,
     ) -> None:
+        self._value_scorer = value_scorer
         self._features = features
         self._sheet = sheet
         self._scorer = scorer
@@ -151,6 +174,8 @@ class Worker:
             self._ready["message"]["feature_set"] = dict(features.feature_set)
         if sheet is not None:
             self._ready["message"]["opponent_sheet"] = dict(sheet.source)
+        if value_scorer is not None:
+            self._ready["message"]["value_query"] = True
         self._max = max_line_bytes
 
     def handshake(self, stdin: BinaryIO, stdout: BinaryIO) -> None:
@@ -167,18 +192,20 @@ class Worker:
         if message["contracts"] != contract_versions():
             raise SessionRefused("the client speaks other contract versions")
 
-    def answer(self, frame: dict[str, Any]) -> dict[str, Any]:
+    def answer(self, frame: dict[str, Any]) -> dict[str, Any]:  # noqa: PLR0911
         """The PolicyReply of one query frame."""
         started = time.perf_counter()
         query_id = frame.get("query_id")
         try:
-            query = read_query(frame, self._features, self._sheet)
+            query = read_query(frame, self._features, self._sheet, self._value_scorer is not None)
             for candidate in query["candidates"]:
                 parse_choice(candidate["choice"])
         except QueryError as exc:
             return self._error(query_id, "invalid_query", str(exc))
         except UnsupportedCandidate as exc:
             return self._error(query_id, "unsupported_candidate", str(exc))
+        if query["sampling"]["kind"] == "value":
+            return self._answer_value(query_id, query)
         evaluating = query["sampling"]["kind"] == "evaluate"
         value = 0.0
         try:
@@ -204,6 +231,26 @@ class Worker:
             if evaluating
             else self._recommendation(query, probabilities, started)
         )
+
+    def _answer_value(self, query_id: object, query: dict[str, Any]) -> dict[str, Any]:
+        """The EvaluationReply of a ``value`` query: the value in ppm."""
+        scorer = cast(ValueScorer, self._value_scorer)  # read_query refused a value query otherwise
+        try:
+            value = scorer.value(encoder_input(query))
+        except ReducerError as exc:
+            return self._error(query_id, "invalid_query", f"{type(exc).__name__}: {exc.message}")
+        except EncodingError as exc:
+            return self._error(query_id, "invalid_query", f"EncodingError: {exc}")
+        reply = {
+            "schema_version": 1,
+            "query_id": query["query_id"],
+            "reply": {
+                "kind": "value",
+                "value": {"identity": query["identity"], "value_ppm": to_ppm(value)},
+            },
+        }
+        check("evaluation-reply", reply)
+        return reply
 
     @staticmethod
     def _recommendation(

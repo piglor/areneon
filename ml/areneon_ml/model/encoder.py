@@ -326,6 +326,12 @@ class Layout:
     foe_cat: tuple[tuple[str, str], ...] = ()
     foe_num: tuple[str, ...] = ()
     cand_tok: tuple[str, ...] = ("actor", "switch_in")  # token columns; candidate_target adds one
+    # Whether any token or field column is filled from the query's candidate_features arrays or
+    # its opponent_sheet (ADR-026 erratum E2 decision 7). When false the trunk and the value head
+    # read nothing of the candidates or their rows, so a value-only query (no candidates, no rows)
+    # gives the very value a full query gives. Not part of ``as_dict``: it is derived from the
+    # columns above, and the encoder version hashes those.
+    value_reads_candidates: bool = False
 
     @classmethod
     def of(cls, config: EncoderConfig, game: GameData | None = None) -> Layout:
@@ -334,6 +340,7 @@ class Layout:
         moves = tuple((f"move_{i + 1}", "move") for i in range(config.max_moves))
         volatiles, buckets = _widths(config, game)
         arrays = _reads_arrays(config)
+        belief_field = _reads_belief_threats(config)
         return cls(
             mon_cat=(
                 ("base_species", "species"),
@@ -415,6 +422,13 @@ class Layout:
                 ("actor", "switch_in", "target")
                 if is_set(config.options, CANDIDATE_TARGET)
                 else ("actor", "switch_in")
+            ),
+            value_reads_candidates=bool(
+                _sheet_cat(config)
+                or _sheet_num(config)
+                or _speed_columns(config)
+                or arrays
+                or belief_field
             ),
         )
 
@@ -631,8 +645,13 @@ class Encoder:
 
     # -- public --------------------------------------------------------------
 
-    def encode(self, query: Mapping[str, Any]) -> EncodedQuery:
-        """Encode ``query["observation"]`` and ``query["candidates"]``; nothing else is read."""
+    def encode(self, query: Mapping[str, Any], value_only: bool = False) -> EncodedQuery:
+        """Encode ``query["observation"]`` and ``query["candidates"]``; nothing else is read.
+
+        ``value_only`` (ADR-026 erratum E2 decision 7) encodes the state alone: no candidate
+        parts and no feature rows, for a query that carries no candidates, rows or sheet. It
+        needs an encoder whose value reads none of them (``Layout.value_reads_candidates``).
+        """
         observation = query["observation"]
         state = reduce_channel(
             observation["player"],
@@ -640,16 +659,35 @@ class Encoder:
             observation["team"]["team"],
             self.game.vocabulary,
         )
-        return self._encode_state(query, state, _last_request(observation["log"]))
+        return self._encode_state(query, state, _last_request(observation["log"]), value_only)
 
     def session(self) -> EncoderSession:
         """An incremental encoder: the same tensors as ``encode``, one reduction per channel."""
         return EncoderSession(self)
 
+    def _check_value_only(self, query: Mapping[str, Any]) -> None:
+        """A value-only encoding needs a layout that ignores rows, and a query without any."""
+        if self.layout.value_reads_candidates:
+            raise EncodingError(
+                "this encoder fills token or field columns from candidate_features or "
+                "opponent_sheet, so a value-only query is not supported"
+            )
+        rows = (query.get("candidate_features"), query.get("opponent_sheet"))
+        if query["candidates"] or any(sent is not None for sent in rows):
+            raise EncodingError(
+                "a value-only query carries no candidates, candidate_features or opponent_sheet"
+            )
+
     def _encode_state(
-        self, query: Mapping[str, Any], state: BattleState, last_request: str | None
+        self,
+        query: Mapping[str, Any],
+        state: BattleState,
+        last_request: str | None,
+        value_only: bool = False,
     ) -> EncodedQuery:
         observation = query["observation"]
+        if value_only:
+            self._check_value_only(query)
         field_features = self._field(state)
         if _reads_belief_threats(self.config):  # the belief's refusal code, or none
             sent = query.get("candidate_features") or {}
@@ -666,6 +704,8 @@ class Encoder:
                 f"a {observation['kind']} observation at a {state.request_kind} request"
             )
         request = self._request(state, last_request)
+        if value_only:  # no rows, sheet or probe arrays are read (the check above); no candidates
+            return self._assemble(observation["kind"], state, field_features, [], None, None)
         rows = self._rows(query)
         sheet = self._sheet_columns(query, state)
         probe = self._probe(query, request, state) if _reads_arrays(self.config) else None
@@ -1404,7 +1444,7 @@ class EncoderSession:
         self._fed: list[str] = []
         self._last_request: str | None = None
 
-    def encode(self, query: Mapping[str, Any]) -> EncodedQuery:
+    def encode(self, query: Mapping[str, Any], value_only: bool = False) -> EncodedQuery:
         observation = query["observation"]
         log = observation["log"]
         key = (observation["player"], observation["team"]["team"])
@@ -1421,7 +1461,9 @@ class EncoderSession:
                 self._fed.append(line)
                 if line.startswith(_REQUEST):
                     self._last_request = line
-            return self._encoder._encode_state(query, self._reducer.state, self._last_request)
+            return self._encoder._encode_state(
+                query, self._reducer.state, self._last_request, value_only
+            )
         except BaseException:
             self._reducer = None
             self._fed = []

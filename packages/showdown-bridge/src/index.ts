@@ -207,6 +207,8 @@ export {
   contractVersions,
   type EvaluateQueryInput,
   type Evaluation,
+  type ValueEvaluation,
+  type ValueQueryInput,
   type EvaluationReply,
   encodeFrame,
   FULL_TEMPERATURE_PPM,

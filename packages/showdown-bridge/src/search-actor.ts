@@ -17,8 +17,11 @@
 // is fixed, so the same pin, configs, pair, channel, team, request and stream give the same choice (same machine and software).
 // An overrun of the 30 s decision guard is the harness's latency forfeit (`guardActor`), a scored loss for the search side.
 //
-// A pair that reads candidate features (ADR-022) is refused at construction (`SearchError`, code `features_pair`): its queries carry
-// probe rows per candidate, and a hypothetical channel would need them built for every leaf; that is a later slice's decision.
+// The leaves ask for the value alone (ADR-026 erratum E2 decision 7). When the worker states `value_query` (its encoder fills no token
+// or field column from candidate rows or the opponent sheet), a leaf is a `value` query: no candidates and no rows, so a pair that
+// reads `probe-damage/1` rows can be searched. The root `evaluate` keeps its candidates and rows (built here with the options'
+// `features`). A pair that reads candidate features but whose worker does not state `value_query` (`probe-damage/2` and `/3`), the
+// belief feature set, and a pair that reads the opponent sheet are refused at construction (`SearchError`, code `features_pair`).
 //
 // What it reads is the player's own view: `ActorContext` (own channel and team), the request, the shared reader's public state,
 // the world facts of the own channel and ADR-025's belief of the opponent half. The live battle, `BattleRecord`, omniscient log,
@@ -31,6 +34,8 @@ import type { EngineRequest } from "@areneon/schema/types/v1/engine-request.ts";
 import type { PrivateTeamSpec } from "@areneon/schema/types/v1/private-team-spec.ts";
 import { jcs } from "./canonical-json.ts";
 import { type Candidate, enumerateCandidates } from "./choices.ts";
+import { buildFeatures, isFeatureSetId } from "./feature-build.ts";
+import { createFeatureMemo, FEATURE_SET_BELIEF, FeatureBuildError, type FeatureSetId } from "./candidate-features.ts";
 import { type DamageAwareConfig, damageAwareConfigHash, loadDamageAwareConfig } from "./damage-aware-config.ts";
 import { DAMAGE_VALUE_FORMAT } from "./damage-aware-score.ts";
 import type { Engine, PokemonSet } from "./engine.ts";
@@ -39,14 +44,15 @@ import type { VersionManifest } from "./formats.ts";
 import { loadMechanicsConfig, type MechanicsConfig, mechanicsConfigHash } from "./mechanics-config.ts";
 import { checkScenario } from "./mechanics-scenario.ts";
 import { observe, playerChannel } from "./player-channel.ts";
-import { policyActor } from "./policy-actor.ts";
+import { type ActorFeatures, policyActor } from "./policy-actor.ts";
 import { type PlaySettings, PolicyProtocolError, policyId } from "./policy-protocol.ts";
 import type { EvaluationClient, PolicyClient } from "./policy-worker.ts";
+import type { ValueQueryInput } from "./policy-protocol.ts";
 import { decodeRequest } from "./request.ts";
 import { createReplyModel, legalReplies, REPLY_MODEL_FORMAT, ReplyModelError, type ReplyModel } from "./reply-model.ts";
 import { sha256Hex } from "./rules.ts";
 import type { RulesSnapshot } from "./rules.ts";
-import type { Actor, Player } from "./runner.ts";
+import { type Actor, ForfeitSignal, type Player } from "./runner.ts";
 import { MECHANICS_ADAPTER_FORMAT } from "./mechanics-result.ts";
 import { LEAF_FORMAT, loadSearchConfig, type SearchConfig, searchIdentity, searchIdentityHash } from "./search-config.ts";
 import { hpKoDifferential, outcomeScore } from "./search-leaf.ts";
@@ -215,7 +221,7 @@ export function searchSetup(input: SearchSetupInput): SearchSetup {
 }
 
 /** The search identity (ADR-026 section 5) and the policy id of a frozen pair played with it in `mode`. */
-export function searchPolicy(setup: SearchSetup, manifest: VersionManifest, pair: { preview: string; battle: string }, mode: "sample" | "argmax", play: PlaySettings = {}): { policy_id: string; identity: ReturnType<typeof searchIdentity>; identity_hash: string } {
+export function searchPolicy(setup: SearchSetup, manifest: VersionManifest, pair: { preview: string; battle: string }, mode: "sample" | "argmax", play: PlaySettings = {}, features?: string): { policy_id: string; identity: ReturnType<typeof searchIdentity>; identity_hash: string } {
   const inputs = {
     belief_identity_hash: setup.port.identity_hash,
     mechanics_config_hash: mechanicsConfigHash(setup.mechanics),
@@ -231,7 +237,7 @@ export function searchPolicy(setup: SearchSetup, manifest: VersionManifest, pair
     version_manifest: manifest,
   };
   const identity_hash = searchIdentityHash(setup.config, inputs);
-  return { policy_id: policyId(pair, mode, play, undefined, identity_hash), identity: searchIdentity(setup.config, inputs), identity_hash };
+  return { policy_id: policyId(pair, mode, play, features, identity_hash), identity: searchIdentity(setup.config, inputs), identity_hash };
 }
 
 /**
@@ -298,6 +304,11 @@ export interface SearchActorOptions {
    * timing script; the actor reads nothing back, and the scores are never stored.
    */
   on_decision?: (entry: { request_seq: number; choice: string; scores: Extract<SearchDecision, { kind: "choice" }>["scores"] }) => void;
+  /**
+   * The reviewed records the candidate features of the ROOT query are built from, for a pair that reads `probe-damage/1`
+   * (ADR-022): required exactly then. The leaves carry no rows.
+   */
+  features?: ActorFeatures;
   /** Test seam: the reply model (default `createReplyModel` over the setup's reviewed records). */
   reply_model?: ReplyModel;
 }
@@ -307,7 +318,17 @@ export type SearchActor = Actor & { report(): SearchReport; decide(input: Search
 export function searchActor(options: SearchActorOptions): SearchActor {
   const { setup, client, battle, player, team, manifest, channel_class, seed, game, policy_id, identity_hash, sampling, play, bank_ms } = options;
   const { engine, config } = setup;
-  if ((client.featureSet ?? null) !== null) throw new SearchError("features_pair", "a pair that reads candidate features is not supported by the search");
+  const stated = client.featureSet ?? null;
+  // The leaves are value-only exactly when the worker stated `value_query` (and the client can send one).
+  const valueOnly = client.valueQuery === true && client.value !== undefined;
+  if ((client.sheetSource ?? null) !== null) throw new SearchError("features_pair", "a pair that reads the opponent sheet is not supported by the search");
+  if (stated !== null) {
+    if (stated.feature_set === FEATURE_SET_BELIEF) throw new SearchError("features_pair", "a pair that reads the belief feature set is not supported by the search");
+    if (!valueOnly) throw new SearchError("features_pair", "a pair that reads candidate features needs a worker that answers value queries");
+    if (options.features === undefined) throw new SearchError("features_pair", "a pair that reads candidate features needs the feature configs to build the root query's rows");
+    if (!isFeatureSetId(stated.feature_set)) throw new SearchError("features_pair", "the worker stated a candidate feature set this side cannot build");
+  }
+  const features: ActorFeatures | undefined = options.features === undefined ? undefined : { ...options.features, memo: options.features.memo ?? createFeatureMemo() };
   const builder: WorldBuilder = createWorldBuilder({
     engine,
     format_id: setup.format_id,
@@ -332,7 +353,7 @@ export function searchActor(options: SearchActorOptions): SearchActor {
     ...(setup.snapshot === undefined ? {} : { snapshot: setup.snapshot }),
   });
   // The pair's own play: Team Preview, forced switches and every decision that is not searched.
-  const inner = policyActor({ client, battle, player, team, manifest, channel_class, seed, game, policy_id, sampling, ...(play === undefined ? {} : { play }), engine });
+  const inner = policyActor({ client, battle, player, team, manifest, channel_class, seed, game, policy_id, sampling, ...(play === undefined ? {} : { play }), ...(features === undefined ? {} : { features }), engine });
   const counts = emptyCounts();
 
   const fallback = (reason: FallbackReason): void => {
@@ -384,18 +405,35 @@ export function searchActor(options: SearchActorOptions): SearchActor {
         return known;
       }
       const observation = await observe({ channel: playerChannel({ schema_version: 1, data_class: channel_class, player, lines: [...input.channel, ...lines] }), team, manifest });
-      const candidates = enumerateCandidates(decodeRequest(request)).candidates;
       counts.leaf_queries += 1;
-      const evaluation = await client.evaluate(battle, {
-        schema_version: 1,
-        identity: observation.identity,
-        observation,
-        candidates: candidates.map(({ choice, pending }) => ({ choice, pending })),
-        sampling: { kind: "evaluate" },
-        policy_id,
-      } as Parameters<EvaluationClient["evaluate"]>[1]);
-      memo.set(key, evaluation.value_ppm);
-      return evaluation.value_ppm;
+      let value_ppm: number;
+      if (valueOnly) {
+        // Value-only: no candidates and no rows (E2 decision 7); the hypothetical request is not even enumerated.
+        value_ppm = (
+          await (client.value as NonNullable<EvaluationClient["value"]>)(battle, {
+            schema_version: 1,
+            identity: observation.identity,
+            observation,
+            candidates: [],
+            sampling: { kind: "value" },
+            policy_id,
+          } as ValueQueryInput)
+        ).value_ppm;
+      } else {
+        const candidates = enumerateCandidates(decodeRequest(request)).candidates;
+        value_ppm = (
+          await client.evaluate(battle, {
+            schema_version: 1,
+            identity: observation.identity,
+            observation,
+            candidates: candidates.map(({ choice, pending }) => ({ choice, pending })),
+            sampling: { kind: "evaluate" },
+            policy_id,
+          } as Parameters<EvaluationClient["evaluate"]>[1])
+        ).value_ppm;
+      }
+      memo.set(key, value_ppm);
+      return value_ppm;
     }
 
     /** One (candidate, reply) of a world: the leaf value, or the reason the world cannot be scored. */
@@ -497,8 +535,10 @@ export function searchActor(options: SearchActorOptions): SearchActor {
     if (bank !== null && searchSkipReason(bank, config.a2_clock_floor_ms) !== null) return play_("clock_floor");
 
     let observation;
+    let channel;
     try {
-      observation = await observe({ channel: playerChannel({ schema_version: 1, data_class: channel_class, player, lines: context.channel }), team, manifest });
+      channel = playerChannel({ schema_version: 1, data_class: channel_class, player, lines: context.channel });
+      observation = await observe({ channel, team, manifest });
     } catch (error) {
       throw new PolicyProtocolError(`cannot observe the request: ${(error as Error).message}`);
     }
@@ -508,11 +548,22 @@ export function searchActor(options: SearchActorOptions): SearchActor {
     }
     const world = worldRequest({ channel: context.channel, team: context.team });
 
+    // The root query is the pair's normal one: candidates, and the rows of a pair that reads candidate features.
+    let candidate_features;
+    if (features !== undefined && stated !== null) {
+      try {
+        candidate_features = buildFeatures(engine, features.configs, channel, team.team, candidates, features.memo as NonNullable<ActorFeatures["memo"]>, stated.feature_set as FeatureSetId);
+      } catch (error) {
+        if (error instanceof FeatureBuildError) throw new ForfeitSignal("crash", `no candidate features: ${error.code}`);
+        throw error;
+      }
+    }
     const prior = await client.evaluate(battle, {
       schema_version: 1,
       identity,
       observation,
       candidates: candidates.map(({ choice, pending }) => ({ choice, pending })),
+      ...(candidate_features === undefined ? {} : { candidate_features }),
       sampling: { kind: "evaluate" },
       policy_id,
     } as Parameters<EvaluationClient["evaluate"]>[1]);

@@ -22,6 +22,8 @@ const ready = {
     ...(process.env.FAKE_FEATURE_SET === undefined ? {} : { feature_set: JSON.parse(process.env.FAKE_FEATURE_SET) as unknown }),
     // The opponent sheet source this worker's checkpoints need (ADR-027 slice 4), when the test names one.
     ...(process.env.FAKE_OPPONENT_SHEET === undefined ? {} : { opponent_sheet: JSON.parse(process.env.FAKE_OPPONENT_SHEET) as unknown }),
+    // The worker answers value queries (ADR-026 erratum E2 decision 7), when the test says so.
+    ...(process.env.FAKE_VALUE_QUERY === undefined ? {} : { value_query: true }),
   },
 };
 
@@ -65,6 +67,13 @@ lines.on("line", (text) => {
   const reply = (body: unknown, extra: Record<string, unknown> = {}): void =>
     write({ schema_version: 1, query_id: query.query_id, reply: body, ...extra });
   const ok = (change: Record<string, unknown> = {}): void => reply({ kind: "recommendation", recommendation: recommendation(query, change) });
+  if (query.sampling.kind === "value" && (mode === "ok" || mode.startsWith("value-"))) {
+    // A value query (ADR-026 erratum E2 decision 7): the value of the state alone, 500000 unless the mode misbehaves.
+    const value = { identity: mode === "value-wrong-identity" ? { ...query.identity, request_seq: query.identity.request_seq + 1 } : query.identity, value_ppm: 500000 };
+    if (mode === "value-evaluation") reply({ kind: "evaluation", evaluation: evaluation(query, { prior_ppm: [1000000] }) });
+    else reply({ kind: "value", value });
+    return;
+  }
   if (query.sampling.kind === "evaluate" && (mode.startsWith("eval-") || mode === "ok")) {
     const bad = { ...evaluation(query), prior_ppm: [] };
     const body =
@@ -72,7 +81,8 @@ lines.on("line", (text) => {
       : mode === "eval-long" ? evaluation(query, { prior_ppm: [...evaluation(query).prior_ppm, 0] })
       : mode === "eval-wrong-identity" ? evaluation(query, { identity: { ...query.identity, request_seq: query.identity.request_seq + 1 } })
       : evaluation(query);
-    if (mode === "eval-bad-schema") reply({ kind: "evaluation", evaluation: bad });
+    if (mode === "eval-value") reply({ kind: "value", value: { identity: query.identity, value_ppm: 1 } });
+    else if (mode === "eval-bad-schema") reply({ kind: "evaluation", evaluation: bad });
     else if (mode === "eval-recommendation") ok();
     else reply({ kind: "evaluation", evaluation: body });
     return;
