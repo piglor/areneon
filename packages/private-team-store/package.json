@@ -11,6 +11,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@areneon/object-store": "workspace:*",
     "@areneon/showdown-bridge": "workspace:*",
     "@areneon/team-dataset": "workspace:*",
     "aws4fetch": "1.0.20"

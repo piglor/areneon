@@ -13,6 +13,8 @@ CPU-bound, so ``c`` is computed twice and the smaller is used:
 * from per-request wall attribution: ``(E_sim + E_judge + O_obs + IPC wait)`` over the same plus
   ``E_probe`` (the time a request spent in the probe, the feature builder and the scripted
   baselines). The IPC wait contains the worker's own time, so the workers' figures are not added.
+  This reading is an UPPER BOUND: games in flight overlap their waits, so the summed IPC wait
+  can exceed the time any one request took, and the smaller reading is the one to trust.
 
 ``E_probe`` is never part of ``L`` (ADR-016: the probe stays on the pinned engine). Everything
 is integers: shares and ``L`` in parts per million, truncated. The command reads the metrics
@@ -59,7 +61,7 @@ def loop_share(record: dict[str, Any]) -> dict[str, Any]:
         "phase_ms": phases,
         "decisions": profile["decisions"],
         "c_cpu_ppm": c_cpu,
-        "c_wall_ppm": c_wall,
+        "c_wall_ppm": c_wall,  # an upper bound: overlapping waits across games in flight
         "c_ppm": c,
         "c_source": "cpu" if c_cpu <= c_wall else "wall",
         "l_ppm": c * play // total if total > 0 else 0,

@@ -101,16 +101,21 @@ def build(argv: list[str]) -> Worker:
     return worker
 
 
-def write_profile(directory: Path) -> Path:
-    """Leave this process's profile in ``directory/worker-<pid>.json`` (whole milliseconds)."""
+def write_profile(directory: Path, started: resource.struct_rusage) -> Path:
+    """Leave this process's profile in ``directory/worker-<pid>.json`` (whole milliseconds).
+
+    ``cpu_ms`` is the CPU the process spent after ``started`` (taken when the session begins), so
+    importing torch and loading the checkpoints do not count as play.
+    """
     usage = resource.getrusage(resource.RUSAGE_SELF)
+    spent = (usage.ru_utime + usage.ru_stime) - (started.ru_utime + started.ru_stime)
     totals = stopwatch.snapshot()
 
     def at(name: str, key: str) -> int:
         return stopwatch.ms(totals.get(name, {}).get(key, 0))
 
     figures = {
-        "cpu_ms": int((usage.ru_utime + usage.ru_stime) * 1000),
+        "cpu_ms": int(spent * 1000),
         "peak_rss_bytes": int(usage.ru_maxrss) * 1024,
         "queries": totals.get("w_fwd", {}).get("count", 0),
         "w_enc_ms": at("w_enc", "wall_ns"),
@@ -135,10 +140,11 @@ def main(argv: list[str] | None = None) -> int:
     if profile_dir is None:
         return worker.serve(sys.stdin.buffer, sys.stdout.buffer)
     stopwatch.enable()
+    started = resource.getrusage(resource.RUSAGE_SELF)
     try:
         return worker.serve(sys.stdin.buffer, sys.stdout.buffer)
     finally:
-        write_profile(profile_dir)
+        write_profile(profile_dir, started)
         stopwatch.disable()
 
 

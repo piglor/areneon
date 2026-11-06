@@ -909,7 +909,7 @@ It reads the metrics files only and prints, per profiled generation, the breakdo
 of `{E_sim, E_judge, O_obs, W_enc, W_fwd}` among the CPU the game processes (less their pool load and
 merge) and the workers spent. `c` is computed twice and the smaller is used (`c_source` says which):
 from CPU time (`c_cpu_ppm`), and from per-request wall attribution (`c_wall_ppm`: `E_sim + E_judge +
-O_obs + IPC wait` over the same plus `E_probe`; the IPC wait already contains the worker's time). The
+O_obs + IPC wait` over the same plus `E_probe`; the IPC wait already contains the worker's time; this reading is an upper bound, because the waits of games in flight overlap, so the CPU reading is usually the smaller). The
 game-process figures are wall time of code that does not wait, which is its CPU time up to scheduling.
 `E_probe` and the scripted baselines are never part of `L`. The dashboard shows the same table
 ("Where the time went") for a profiled run.
@@ -941,7 +941,9 @@ ml/gpu-env/.venv/bin/python -m areneon_ml.loop run --config CONFIG.json --run-di
 python -m areneon_ml.loop loop-share --run-dir .tmp/runs/p0 --generation 1,2
 ```
 
-Journal the output, `samples.txt`, the machine, the pin and both hashes on #1190. Limits: the worker CPU
-includes start-up and checkpoint loading; the wall readings of the game processes include any time the
+Journal the output, `samples.txt`, the machine, the pin and both hashes on #1190. Limits: a worker's
+`cpu_ms` counts only the CPU after its session began (torch import and checkpoint loading are left out),
+but a game process's `cpu_ms` still includes Node and engine start-up, which stays in `game_play_cpu`
+(it is not play); the wall readings of the game processes include any time the
 operating system did not schedule them, which an idle machine keeps small; the load split is summed
 over the load workers, so it can exceed the load phase's wall time.

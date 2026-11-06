@@ -398,27 +398,32 @@ class Loop:
         self._on_stage(generation, "played")
         if self.profile:
             stopwatch.enable()
-        with timing.phase("load"):
-            summary = layout.read_json(work / "generation.json")
-            training_set = layout.read_json(work / "training-set.json")
-            if summary.get("generation") != generation:
-                raise LoopError("the simulator side played another generation than asked")
-            league = self._check_league_run(work, generation, pair, summary)
-            if sha256_hex(jcs(training_set)) != summary.get("training_set_hash"):
-                raise LoopError("the TrainingSet differs from the hash the simulator side reported")
-            # The stream goes in by path: a generation's is over a gigabyte (#998).
-            found = trajectories(
-                work / "stream.jsonl",
-                training_set,
-                self._encoders,
-                pair,
-                fit_processes(self.load_processes, self.load_memory_mb),
-            )
-        if self.profile:
-            timing.profile = profile_record(
-                dict(getattr(self.player, "last_profile", None) or {}), stopwatch.take()
-            )
-            stopwatch.disable()
+        try:
+            with timing.phase("load"):
+                summary = layout.read_json(work / "generation.json")
+                training_set = layout.read_json(work / "training-set.json")
+                if summary.get("generation") != generation:
+                    raise LoopError("the simulator side played another generation than asked")
+                league = self._check_league_run(work, generation, pair, summary)
+                if sha256_hex(jcs(training_set)) != summary.get("training_set_hash"):
+                    raise LoopError(
+                        "the TrainingSet differs from the hash the simulator side reported"
+                    )
+                # The stream goes in by path: a generation's is over a gigabyte (#998).
+                found = trajectories(
+                    work / "stream.jsonl",
+                    training_set,
+                    self._encoders,
+                    pair,
+                    fit_processes(self.load_processes, self.load_memory_mb),
+                )
+            if self.profile:
+                timing.profile = profile_record(
+                    dict(getattr(self.player, "last_profile", None) or {}), stopwatch.take()
+                )
+        finally:
+            if self.profile:
+                stopwatch.disable()
         if self.device.type == "cuda":
             torch.cuda.reset_peak_memory_stats(self.device)
         with timing.phase("train"):

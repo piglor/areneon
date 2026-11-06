@@ -21,9 +21,10 @@ from areneon_ml.learner.trainer import Learner
 from areneon_ml.loop import layout, population
 from areneon_ml.loop.__main__ import EXIT_REFUSED, main
 from areneon_ml.loop.driver import LoopError, export_provenance
-from areneon_ml.loop.league import league_game_seed
+from areneon_ml.loop.ladder import read_ladder_record
+from areneon_ml.loop.league import calibration_game_seed, league_game_seed
 from areneon_ml.loop.metrics import metrics_path, read_run_metrics
-from areneon_ml.loop.play import PlayError, PopulationPlayRequest
+from areneon_ml.loop.play import PlayError, PopulationCalibrationRequest, PopulationPlayRequest
 from areneon_ml.loop.population import (
     PopulationLoop,
     member_config,
@@ -40,6 +41,16 @@ from tests.ml.model.support import RANDOM, SAMPLES, game
 
 GENERATIONS = 3
 LABELS = ("m0", "m1")
+ANCHORS = (
+    {"actor": "random-legal", "policy_id": "random-legal@v1", "games": 2},
+    {"actor": "actor-rule", "policy_id": "actor-rule@v1", "games": 2},
+)
+
+
+def toss(*parts: object) -> str | None:
+    """A deterministic game result: p1, p2 or a tie, from a hash of the parts."""
+    n = hashlib.sha256("/".join(map(str, parts)).encode()).digest()[0] % 4
+    return ("p1", "p2", None, "p1")[n]
 
 
 def population_config(
@@ -57,7 +68,9 @@ def population_config(
         bounds["self_play_ppm"] = {"min": 450_000, "max": 550_000}
         bounds["past_pool_ppm"] = {"min": 0, "max": 0}
         raw["population"] = copy.deepcopy(block)
-        raw["generation"]["baseline_games"] = []
+        raw["generation"]["baseline_games"] = [dict(b) for b in ANCHORS]
+        block["rating"] = {"window": 3, "calibration_pairs": 3, "bootstrap_resamples": 40}
+        raw["population"]["rating"] = dict(block["rating"])
         raw["seeds"]["run_key"] = key
         if edit is not None:
             edit(raw)
@@ -82,9 +95,76 @@ class FakePopulationPlayer:
         self.config = config
         self.change = change
         self.requests: list[PopulationPlayRequest] = []
+        self.calibrations: list[PopulationCalibrationRequest] = []
+        self.calibration_change: Callable[[dict[str, Any]], None] | None = None
 
     def manifest(self, format_id: str) -> dict[str, Any]:
         return dict(MANIFEST)
+
+    def row(self, entry: dict[str, Any]) -> dict[str, Any]:
+        """The game row of ``generation.json`` the simulator side writes for a plan entry."""
+        seats = {
+            p: entry["seats"][p].get("member", entry["seats"][p].get("policy_id"))
+            for p in ("p1", "p2")
+        }
+        winner = toss(self.config.run_key, self.generation_of(entry), entry["pair"], entry["half"])
+        other = seats["p2"] if seats["p1"] == entry["member"] else seats["p1"]
+        return {
+            "game": entry["game"],
+            "half": entry["half"],
+            "kind": entry["kind"],
+            "member": entry["member"],
+            "opponent": entry["member"] if entry["kind"] == "self" else other,
+            "outcome": "played",
+            "pair": entry["pair"],
+            "seats": seats,
+            "seed": entry["seed"],
+            "turns": 5,
+            "winner": winner,
+        }
+
+    def generation_of(self, entry: dict[str, Any]) -> int:
+        return self.requests[-1].generation
+
+    def calibrate_population(self, request: PopulationCalibrationRequest) -> None:
+        self.calibrations.append(request)
+        run_key = self.config.run_key
+        ids = sorted(b["policy_id"] for b in self.config.raw["generation"]["baseline_games"])
+        pairs = self.config.raw["population"]["rating"]["calibration_pairs"]
+        plan = [(a, b) for i, a in enumerate(ids) for b in ids[i + 1 :] for _ in range(pairs)]
+        games = []
+        for pair, (a, b) in enumerate(plan):
+            for half in (0, 1):
+                seats = {"p1": a, "p2": b} if half == 0 else {"p1": b, "p2": a}
+                games.append(
+                    {
+                        "a": a,
+                        "b": b,
+                        "game": 2 * pair + half,
+                        "half": half,
+                        "outcome": "played",
+                        "pair": pair,
+                        "seats": seats,
+                        "seed": calibration_game_seed(run_key, pair),
+                        "turns": 4,
+                        "winner": toss("calibration", run_key, pair, half),
+                    }
+                )
+        hashes = sorted(hashlib.sha256(f"cal-{n}".encode()).hexdigest() for n in range(2))
+        body = {
+            "schema_version": 1,
+            "format": "population-calibration/1",
+            "run_key": run_key,
+            "run_config_hash": self.config.hash,
+            "calibration_pairs": pairs,
+            "anchors": ids,
+            "games": games,
+            "manifest": dict(MANIFEST),
+            "team_hashes": hashes,
+        }
+        if self.calibration_change is not None:
+            self.calibration_change(body)
+        layout.write_json(request.out_dir / "calibration.json", body)
 
     def play_population(self, request: PopulationPlayRequest) -> None:
         self.requests.append(request)
@@ -96,6 +176,17 @@ class FakePopulationPlayer:
             if len(labels) > 1:
                 pairs.append(("ladder", label, labels[(k + 1) % len(labels)]))
             pairs.append(("self", label, label))
+            for baseline in self.config.raw["generation"]["baseline_games"]:
+                pairs.extend([("anchor", label, baseline["policy_id"])] * (baseline["games"] // 2))
+        actors = {
+            b["policy_id"]: b["actor"] for b in self.config.raw["generation"]["baseline_games"]
+        }
+
+        def seat(name: str) -> dict[str, str]:
+            if name in actors:
+                return {"actor": actors[name], "policy_id": name}
+            return {"member": name}
+
         plan: list[dict[str, Any]] = []
         for pair, (kind, member, other) in enumerate(pairs):
             for half in (0, 1):
@@ -110,23 +201,25 @@ class FakePopulationPlayer:
                         "baseline_seed": 0,
                         "kind": kind,
                         "member": member,
-                        "seats": {"p1": {"member": first}, "p2": {"member": second}},
+                        "seats": {"p1": seat(first), "p2": seat(second)},
                     }
                 )
         tallies: dict[str, dict[str, Any]] = {
             m: {"games": 0, "played": 0, "episodes": 0, "opponents": {}} for m in labels
         }
         for entry in plan:
-            seats = [entry["seats"]["p1"]["member"], entry["seats"]["p2"]["member"]]
-            for label in sorted(set(seats)):
+            seats = [entry["seats"]["p1"].get("member"), entry["seats"]["p2"].get("member")]
+            for label in sorted({x for x in seats if x is not None}):
                 tally = tallies[label]
                 tally["games"] += 1
                 tally["played"] += 1
                 tally["episodes"] += seats.count(label)
-                other = seats[1] if seats[0] == label else seats[0]
+                other = entry["seats"]["p2" if seats[0] == label else "p1"]
+                name = other.get("member", other.get("policy_id"))
                 held = tally["opponents"].setdefault(
-                    other,
-                    {"opponent_policy_id": ids[other], "member": other, "games": 0, "played": 0},
+                    name,
+                    {"opponent_policy_id": ids.get(name, name), "games": 0, "played": 0}
+                    | ({"member": name} if "member" in other else {}),
                 )
                 held["games"] += 1
                 held["played"] += 1
@@ -153,7 +246,7 @@ class FakePopulationPlayer:
                     "episodes": tallies[m.member]["episodes"],
                     "opponents": sorted(
                         tallies[m.member]["opponents"].values(),
-                        key=lambda o: (o["opponent_policy_id"], o["member"]),
+                        key=lambda o: (o["opponent_policy_id"], o.get("member", "")),
                     ),
                 }
                 for m in request.members
@@ -162,10 +255,7 @@ class FakePopulationPlayer:
         summary: dict[str, Any] = {
             "schema_version": 2,
             "generation": generation,
-            "games": [
-                {"game": e["game"], "pair": e["pair"], "seed": e["seed"], "outcome": "played"}
-                for e in plan
-            ],
+            "games": [self.row(e) for e in plan],
             "forfeits": 0,
             "members": [],
             "manifest": dict(MANIFEST),
@@ -393,8 +483,11 @@ def test_member_records_name_their_lineage_parent_and_league_opponents(finished:
 def test_the_team_set_grows_and_the_records_name_it(finished: Path) -> None:
     first = layout.read_json(gen_path(finished, 1) / "team-set.json")
     second = layout.read_json(gen_path(finished, 2) / "team-set.json")
-    assert layout.read_json(gen_path(finished, 0) / "team-set.json")["teams"] == []
-    assert len(first["teams"]) == 2
+    zero = layout.read_json(gen_path(finished, 0) / "team-set.json")["teams"]
+    # Generation 0 holds the teams the anchor calibration drew; each generation adds its own.
+    assert zero == sorted(hashlib.sha256(f"cal-{n}".encode()).hexdigest() for n in range(2))
+    assert set(zero) < set(first["teams"])
+    assert len(first["teams"]) == 4
     assert set(first["teams"]) < set(second["teams"])
     assert member_record(finished, 2, "m0", "preview").team_set_manifest_hash == sha256_hex(
         jcs(second)
@@ -411,7 +504,7 @@ def test_run_metrics_sum_the_members_and_per_member_counts_sit_beside_them(finis
     assert sorted(members) == list(LABELS)
     assert totals["decisions"] == sum(m["decisions"] for m in members.values())
     assert totals["optimiser_steps"] == sum(m["optimiser_steps"] for m in members.values())
-    assert totals["games"] == 8
+    assert totals["games"] == 16
     assert not any(
         "metrics" in name
         for name in layout.read_json(gen_path(finished, 2) / "manifest.json")["files"]
@@ -433,7 +526,10 @@ def test_a_finished_run_is_a_no_op_and_another_config_is_refused(finished: Path)
 
 
 STAGES: list[tuple[int, str]] = [
+    (0, "calibrated"),
+    (0, "written"),
     (1, "played"),
+    (1, "rated"),
     (2, "trained:m0"),
     (2, "trained:m1"),
     (2, "trained"),
@@ -451,7 +547,7 @@ def test_a_run_killed_at_any_stage_resumes_to_the_same_bytes(
         make_population(tmp_path, on_stage=killer(generation, stage)).run(GENERATIONS)
     resumed = make_population(tmp_path).run(GENERATIONS)
     committed_before = generation - (1 if stage != "committed" else 0)
-    assert resumed.resumed_from == committed_before
+    assert resumed.resumed_from == (committed_before if committed_before >= 0 else None)
     assert resumed.generations[-1].generation == GENERATIONS
     assert tree_bytes(tmp_path) == tree_bytes(finished)
     final = resumed.generations[-1]
@@ -509,7 +605,7 @@ def test_a_record_of_another_pair_is_refused(tmp_path: Path) -> None:
         record["members"][0]["pair_policy_id"] = "policy:" + "e" * 64
         for entry in record["members"]:
             for o in entry["opponents"]:
-                if o["member"] == "m0":
+                if o.get("member") == "m0":
                     o["opponent_policy_id"] = "policy:" + "e" * 64
 
     refuses(tmp_path, break_record(other), "other pairs than the ones played")
@@ -866,3 +962,181 @@ def test_the_single_lineage_views_refuse_a_population_run_by_name(
     code = main([command[0], "--run-dir", str(finished), *command[1:]])
     assert code == EXIT_REFUSED
     assert "population run is not supported" in capsys.readouterr().err
+
+
+# -- the anchor calibration and ladder.json (ADR-021 slice 7) ------------------------------------
+
+
+def ladder_of(run_dir: Path, generation: int) -> dict[str, Any]:
+    raw = layout.read_json(gen_path(run_dir, generation) / "ladder.json")
+    assert isinstance(raw, dict)
+    return raw
+
+
+def reseal(run_dir: Path, generation: int, **facts: Any) -> None:
+    """Rewrite a committed generation's manifest after a forgery (its files re-hashed)."""
+    path = gen_path(run_dir, generation)
+    manifest = layout.read_json(path / "manifest.json")
+    manifest["files"] = layout.hash_tree(path)
+    manifest.update(facts)
+    layout.write_json(path / "manifest.json", manifest)
+
+
+def test_generation_zero_calibrates_the_anchors_and_freezes_their_strengths(finished: Path) -> None:
+    zero = gen_path(finished, 0)
+    assert (zero / "calibration.json").is_file()
+    anchors = layout.read_json(zero / "anchors.json")
+    assert [a["anchor_id"] for a in anchors["anchors"]] == ["actor-rule@v1", "random-legal@v1"]
+    assert anchors["anchors"][0]["strength"] == 1_000_000_000
+    assert [c["pairs"] for c in anchors["cells"]] == [3]  # calibration_pairs of the test config
+    manifest = layout.read_json(zero / "manifest.json")
+    assert manifest["anchors_hash"] == sha256_hex(jcs(anchors))
+    assert {"calibration.json", "anchors.json"} <= set(manifest["files"])
+    # The calibration is played once, at generation 0 only.
+    assert all(
+        not (gen_path(finished, g) / "calibration.json").exists() for g in range(1, GENERATIONS + 1)
+    )
+
+
+def test_every_later_generation_has_a_ladder_record_with_the_frozen_anchors(finished: Path) -> None:
+    config = population_config()
+    anchors = layout.read_json(gen_path(finished, 0) / "anchors.json")["anchors"]
+    before: dict[str, Any] | None = None
+    assert not (gen_path(finished, 0) / "ladder.json").exists()
+    for g in range(1, GENERATIONS + 1):
+        record = ladder_of(finished, g)
+        read_ladder_record(record, before, config)
+        assert record["anchors"] == anchors
+        assert record["generation"] == g
+        assert record["selections"] == [{"kind": "none", "failed": "no_ready_member"}]
+        manifest = layout.read_json(gen_path(finished, g) / "manifest.json")
+        assert manifest["ladder_hash"] == sha256_hex(jcs(record))
+        assert (
+            manifest["anchors_hash"]
+            == layout.read_json(gen_path(finished, 0) / "manifest.json")["anchors_hash"]
+        )
+        assert "ladder.json" in manifest["files"]
+        before = record
+    assert ladder_of(finished, 3)["window"] == {
+        "size": 3,
+        "first_generation": 1,
+        "last_generation": 3,
+    }
+    # Each record fits the pairs of every generation of its window: more pairs in generation 3.
+    pairs = {g: sum(c["pairs"] for c in ladder_of(finished, g)["cells"]) for g in (1, 2, 3)}
+    assert pairs[1] < pairs[2] < pairs[3]
+
+
+def test_a_forged_newest_generation_with_other_anchor_strengths_is_refused(
+    finished: Path, tmp_path: Path
+) -> None:
+    make_population(tmp_path).run(2)
+    path = gen_path(tmp_path, 2) / "ladder.json"
+    record = ladder_of(tmp_path, 2)
+    record["anchors"][1]["strength"] += 1
+    layout.write_json(path, record)
+    reseal(tmp_path, 2, ladder_hash=sha256_hex(jcs(record)))
+    with pytest.raises(LoopError, match="anchor strengths are frozen"):
+        make_population(tmp_path).run(3)
+
+
+def test_a_forged_generation_zero_anchor_record_is_refused(tmp_path: Path) -> None:
+    make_population(tmp_path).run(1)
+    path = gen_path(tmp_path, 0) / "anchors.json"
+    anchors = layout.read_json(path)
+    anchors["anchors"][1]["strength"] += 1
+    layout.write_json(path, anchors)
+    reseal(tmp_path, 0)
+    with pytest.raises(LoopError, match="names other anchor strengths than generation 0 froze"):
+        make_population(tmp_path).run(2)
+
+
+def test_a_ladder_record_the_manifest_does_not_name_is_refused(tmp_path: Path) -> None:
+    make_population(tmp_path).run(1)
+    record = ladder_of(tmp_path, 1)
+    record["cyclic_triples"] = 0
+    record["members"][0]["strength"]["upper"] += 1
+    layout.write_json(gen_path(tmp_path, 1) / "ladder.json", record)
+    reseal(tmp_path, 1)  # the files match, but ladder_hash still names the first bytes
+    with pytest.raises(LoopError, match="not the one its manifest names"):
+        make_population(tmp_path).run(2)
+
+
+def test_a_committed_file_that_differs_from_its_generations_manifest_is_refused(
+    tmp_path: Path,
+) -> None:
+    make_population(tmp_path).run(2)
+    path = gen_path(tmp_path, 1) / "generation.json"
+    path.write_bytes(path.read_bytes() + b" ")
+    with pytest.raises(
+        LoopError, match=r"generation 1: generation\.json differs from its manifest"
+    ):
+        make_population(tmp_path).run(3)
+
+
+def test_the_plan_of_a_generation_needs_the_committed_ladder_of_the_one_before(
+    tmp_path: Path,
+) -> None:
+    make_population(tmp_path).run(1)
+    (gen_path(tmp_path, 1) / "ladder.json").unlink()
+    reseal(tmp_path, 1)
+    config = population_config()
+    player = FakePopulationPlayer(config)
+    with pytest.raises(LoopError, match=r"ladder\.json"):
+        make_population(tmp_path, config, player).run(2)
+    assert player.requests == []  # nothing was played on a missing ladder
+
+
+def test_a_resume_replays_the_same_plan_and_reads_nothing_but_the_committed_ladder(
+    finished: Path, tmp_path: Path
+) -> None:
+    with pytest.raises(Killed):
+        make_population(tmp_path, on_stage=killer(2, "played")).run(GENERATIONS)
+    config = population_config()
+    player = FakePopulationPlayer(config)
+    make_population(tmp_path, config, player).run(2)
+    assert player.calibrations == []  # generation 0 is not played again
+    assert layout.sha256_file(gen_path(tmp_path, 2) / "plan.json") == layout.sha256_file(
+        gen_path(finished, 2) / "plan.json"
+    )
+    assert ladder_of(tmp_path, 2) == ladder_of(finished, 2)
+
+
+def test_a_config_without_the_reference_anchor_is_refused_before_anything_runs(
+    tmp_path: Path,
+) -> None:
+    config = population_config(
+        edit=lambda raw: raw["generation"].update(baseline_games=[dict(ANCHORS[0])])
+    )
+    with pytest.raises(LoopError, match="the ladder's reference anchor"):
+        make_population(tmp_path / "run", config)
+
+
+def test_a_calibration_that_is_not_the_plan_fails_generation_zero(tmp_path: Path) -> None:
+    config = population_config()
+    player = FakePopulationPlayer(config)
+
+    def wrong(body: dict[str, Any]) -> None:
+        body["games"][1]["seed"] = league_game_seed(config.run_key, 1, 0)
+
+    player.calibration_change = wrong
+    with pytest.raises(LoopError, match=r"calibration\.json: calibration game 1"):
+        make_population(tmp_path, config, player).run(1)
+    assert not any(p.name == "g000000" for p in layout.generations_dir(tmp_path).iterdir())
+
+
+def test_an_all_loss_member_still_gets_a_finite_strength(tmp_path: Path) -> None:
+    config = population_config()
+
+    class Lost(FakePopulationPlayer):
+        def row(self, entry: dict[str, Any]) -> dict[str, Any]:
+            row = super().row(entry)
+            member = entry["member"]
+            if member == "m1":  # m1 loses every game it initiates
+                row["winner"] = "p2" if row["seats"]["p1"] == member else "p1"
+            return row
+
+    make_population(tmp_path, config, Lost(config)).run(1)
+    strengths = {m["member"]: m["strength"]["strength"] for m in ladder_of(tmp_path, 1)["members"]}
+    assert strengths["m1"] < strengths["m0"]
+    assert strengths["m1"] >= 1

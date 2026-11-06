@@ -3,10 +3,9 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
-// Network input and output happen in the R2 client only (ADR-015 section 1,
-// ticket "no CI test touches the network"): no other module of the package
-// calls fetch or imports a network module, and the signing library is
-// imported by the settings module alone.
+// The network lives in the shared client (packages/object-store, whose own
+// test holds the rule). Nothing in this package calls fetch, imports a network
+// module or imports the signing library itself.
 
 const SRC = join(dirname(fileURLToPath(import.meta.url)), "..", "src");
 const FILES = readdirSync(SRC).filter((name) => name.endsWith(".ts"));
@@ -21,18 +20,12 @@ describe("network isolation of the private store", () => {
     expect(FILES).toEqual(expect.arrayContaining(["r2-client.ts", "r2-settings.ts", "publish.ts", "memory-store.ts"]));
   });
 
-  it("lets only r2-client.ts call fetch or touch a network module", () => {
+  it("calls fetch and touches a network module in no file", () => {
     const network = /(?<![\w.])fetch\(|\bglobalThis\.fetch\b|node:(net|http|https|http2|dns|tls|dgram)\b|\bWebSocket\b|\bXMLHttpRequest\b/;
-    expect(FILES.filter((name) => network.test(code(name)))).toEqual(["r2-client.ts"]);
+    expect(FILES.filter((name) => network.test(code(name)))).toEqual([]);
   });
 
-  it("lets only r2-settings.ts import the signing library", () => {
-    expect(FILES.filter((name) => /from "aws4fetch"/.test(code(name)))).toEqual(["r2-settings.ts"]);
-  });
-
-  it("reads credentials from no file and writes none: neither settings nor client touch the file system or process.env", () => {
-    for (const name of ["r2-settings.ts", "r2-client.ts"]) {
-      expect(code(name), name).not.toMatch(/node:fs|process\.env|readFile|writeFile|homedir/);
-    }
+  it("imports the signing library in no file", () => {
+    expect(FILES.filter((name) => /from "aws4fetch"/.test(code(name)))).toEqual([]);
   });
 });

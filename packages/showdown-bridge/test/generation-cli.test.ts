@@ -149,6 +149,40 @@ describe("a population run (ADR-021 slice 4)", () => {
   });
 });
 
+describe("the anchor calibration of a population run (ADR-021 slice 7)", () => {
+  const perMember = { preview: undefined, battle: undefined, "policy-id": undefined };
+  const calibrate = (config: string, change: Record<string, string | undefined> = {}): string[] => [...flags(config, { generation: "0", ...perMember, ...change }), "--calibrate"];
+
+  it("is played with --calibrate at generation 0 of a population config, with no member, and nowhere else", async () => {
+    const file = join(dir, "calibrate.json");
+    writeFileSync(file, JSON.stringify(populationConfig(2, 2)));
+    const plain = join(dir, "tiny.json");
+    writeFileSync(plain, JSON.stringify(tiny));
+    await expect(runGenerationCli(calibrate(file, { generation: "1" }))).rejects.toThrow(/--calibrate plays generation 0/);
+    await expect(runGenerationCli(flags(file, { generation: "0" }))).rejects.toThrow(/positive integer/);
+    await expect(runGenerationCli([...calibrate(file), "--member", `m0,${"0".repeat(64)},${"2".repeat(64)},policy:${"4".repeat(64)}`])).rejects.toThrow(/takes no --member/);
+    await expect(runGenerationCli([...calibrate(file), "--game-processes", "2"], console.log, undefined, "play.ts")).rejects.toThrow(/takes no --member and plays in one process/);
+    await expect(runGenerationCli(calibrate(plain))).rejects.toThrow(/needs a population config/);
+  });
+
+  it("reaches the calibration branch with the pool source, and refuses a config without the reference anchor", async () => {
+    const file = join(dir, "calibrate.json");
+    writeFileSync(file, JSON.stringify(populationConfig(2, 2)));
+    const refuse = (): never => {
+      throw new UsageError("from the port");
+    };
+    await expect(runGenerationCli(calibrate(file), console.log, refuse)).rejects.toThrow("from the port");
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      // The tiny population config names no actor-rule@v1 baseline.
+      expect(await runGenerationCli(calibrate(file))).toBe(1);
+      expect(error).toHaveBeenCalledWith(expect.stringContaining("actor-rule@v1"));
+    } finally {
+      error.mockRestore();
+    }
+  });
+});
+
 describe("a run config that names a candidate feature set (ADR-022)", () => {
   it("fails with exit 1, before it starts the worker, when this checkout does not compute the named hash", async () => {
     const raw = structuredClone(tiny) as { model: { encoder: { options?: unknown } } };

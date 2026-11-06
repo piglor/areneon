@@ -148,12 +148,14 @@ def _ready(manifest: dict[str, Any], behaviour_policy_id: str) -> None:
         )
 
 
-def trajectories(
+def trajectories(  # noqa: PLR0913
     stream: str | Path,
     manifest: dict[str, Any],
     encoders: dict[str, Encoder],
     behaviour_policy_id: str,
     processes: int = 1,
+    *,
+    private_pool: bool = False,
 ) -> list[Trajectory]:
     """The trajectories of a learner-ready stream played by ``behaviour_policy_id``.
 
@@ -162,20 +164,25 @@ def trajectories(
     file is checked and encoded in that many worker processes, in order, to the same
     trajectories, tensor for tensor (``learner/parallel.py``); a stream that cannot be cut
     between Episodes is read by this process alone.
+
+    ``private_pool`` states whether the run config has a private pool (ADR-015 erratum E1 item 6;
+    the config field belongs to the private run driver, which passes it): False, the default,
+    refuses a private set; True accepts a private set only and refuses a synthetic one. The
+    manifest has no run key, so a set of another run cannot be told here yet (the driver adds that).
     """
     _ready(manifest, behaviour_policy_id)
     if processes > 1 and isinstance(stream, Path):
         from areneon_ml.learner.parallel import parallel_trajectories  # noqa: PLC0415
 
-        found = parallel_trajectories(stream, manifest, encoders, processes)
+        found = parallel_trajectories(stream, manifest, encoders, processes, private_pool)
         if found is not None:
             return found
     mark = stopwatch.begin()
     try:
         if isinstance(stream, Path):
-            check_stream_file(stream, manifest)
+            check_stream_file(stream, manifest, private_pool)
         else:
-            read_stream(stream, manifest)
+            read_stream(stream, manifest, private_pool)
     except TrainingStreamError as exc:
         raise LearnerDataError(str(exc)) from exc
     stopwatch.end("validate", mark)

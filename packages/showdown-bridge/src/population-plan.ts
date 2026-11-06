@@ -10,7 +10,7 @@
 // `planGeneration` is untouched: a config without `population` plans as it always did.
 
 import { GenerationError } from "./league-generation.ts";
-import { leagueGameStreams } from "./league-seed.ts";
+import { calibrationGameStreams, leagueGameStreams } from "./league-seed.ts";
 import { populationDraw } from "./population-seed.ts";
 import type { Player } from "./runner.ts";
 import type { TrainingRunConfig } from "./training-run-config.ts";
@@ -131,6 +131,80 @@ export function planPopulation(config: TrainingRunConfig, generation: number, po
     for (let i = 0; i < counts.self; i++) addPair("self", member, { member }, { member });
     for (const baseline of config.generation.baseline_games) {
       for (let i = 0; i < baseline.games / 2; i++) addPair("anchor", member, { member }, { actor: baseline.actor, policy_id: baseline.policy_id });
+    }
+  }
+  return plan;
+}
+
+/** Names the calibration plan layout below. */
+export const CALIBRATION_PLAN_FORMAT = "population-calibration/1";
+
+/** The anchors of the ladder (ADR-021 section 4): the scripted baselines a run may rate against, by policy id. */
+export const ANCHOR_ACTORS: Readonly<Record<string, BaselineActor>> = { "actor-rule@v1": "actor-rule", "damage-aware@v1": "damage-aware", "random-legal@v1": "random-legal" };
+/** The anchor whose strength is 10^9 by definition. */
+export const REFERENCE_ANCHOR = "actor-rule@v1";
+export const NO_REFERENCE_REFUSAL = "population: baseline_games must list actor-rule@v1, the ladder's reference anchor, with at least 2 games";
+
+type BaselineActor = "actor-rule" | "random-legal" | "damage-aware";
+
+export interface AnchorOpponent {
+  actor: BaselineActor;
+  policy_id: string;
+}
+
+/**
+ * The anchors of a run: its configured baselines (at least 2 games each, so a team pair is played) whose policy id is
+ * one of `ANCHOR_ACTORS` and whose actor kind matches, sorted by policy id. The reference anchor must be among them.
+ */
+export function calibrationAnchors(config: TrainingRunConfig): AnchorOpponent[] {
+  const found = new Map<string, AnchorOpponent>();
+  for (const baseline of config.generation.baseline_games) {
+    if (baseline.games < 2 || ANCHOR_ACTORS[baseline.policy_id] !== baseline.actor) continue;
+    found.set(baseline.policy_id, { actor: baseline.actor, policy_id: baseline.policy_id });
+  }
+  if (!found.has(REFERENCE_ANCHOR)) throw new PopulationPlanError(NO_REFERENCE_REFUSAL);
+  return [...found.values()].sort((a, b) => (a.policy_id < b.policy_id ? -1 : 1));
+}
+
+/** One game of the anchor calibration (generation 0): two anchors, a team pair played twice with the anchors' seats swapped. */
+export interface CalibrationGamePlan {
+  game: number;
+  pair: number;
+  half: 0 | 1;
+  seed: string;
+  teams: Record<Player, number>;
+  /** Seeds the stream of anchor `a` (`baseline_seed`) and of anchor `b` (`baseline_seed + 1` modulo 2^32), by role and not by seat. */
+  baseline_seed: number;
+  a: AnchorOpponent;
+  b: AnchorOpponent;
+  /** Anchor `a` is on p1 in half 0 and on p2 in half 1; the teams stay on their seats. */
+  seats: Record<Player, AnchorOpponent>;
+}
+
+/**
+ * The generation-0 calibration plan: every pair of anchors (`a` before `b` in policy-id order, in the order of the
+ * pairs), `rating.calibration_pairs` team pairs each, pair `i` of the plan drawn by `league-seed/1` at generation 0
+ * (`calibrationGameStreams`). Teams are indices into the pool the caller passes (the run's training pool).
+ */
+export function planCalibration(config: TrainingRunConfig, poolSize: number): CalibrationGamePlan[] {
+  const population = config.population;
+  if (population === undefined) throw new PopulationPlanError("population: the config has no population section");
+  if (!Number.isInteger(poolSize) || poolSize < 1) throw new RangeError("the team pool is empty");
+  const anchors = calibrationAnchors(config);
+  const plan: CalibrationGamePlan[] = [];
+  let pair = 0;
+  for (let i = 0; i < anchors.length; i++) {
+    for (let j = i + 1; j < anchors.length; j++) {
+      const a = anchors[i] as AnchorOpponent;
+      const b = anchors[j] as AnchorOpponent;
+      for (let n = 0; n < population.rating.calibration_pairs; n++) {
+        const streams = calibrationGameStreams(config.seeds.run_key, pair);
+        const teams = { p1: streams.team_draws.p1 % poolSize, p2: streams.team_draws.p2 % poolSize };
+        for (const half of [0, 1] as const) {
+          plan.push({ game: 2 * pair + half, pair, half, seed: streams.seed, teams, baseline_seed: streams.baseline_seed, a, b, seats: half === 0 ? { p1: a, p2: b } : { p1: b, p2: a } });
+        }
+        pair += 1;
+      }
     }
   }
   return plan;

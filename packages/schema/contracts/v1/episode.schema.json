@@ -585,6 +585,10 @@
             "synthetic",
             "private"
           ]
+        },
+        "class_floor": {
+          "description": "The lowest class the Episode may take (ADR-015 erratum E1 item 5), written only when above synthetic: a private run's Episode is private even with two synthetic teams, and a reader refuses a data_class below it. Absent means no floor.",
+          "const": "private"
         }
       }
     },
@@ -628,6 +632,10 @@
             "synthetic",
             "private"
           ]
+        },
+        "class_floor": {
+          "description": "The lowest class the Episode may take (ADR-015 erratum E1 item 5), written only when above synthetic: a private run's Episode is private even with two synthetic teams, and a reader refuses a data_class below it. Absent means no floor.",
+          "const": "private"
         }
       }
     },

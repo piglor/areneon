@@ -834,8 +834,8 @@ def _profile_section(model: ReportModel) -> str:
         "Game-process phases are wall time summed over the processes (IPC wait overlaps the "
         "workers' own time and, with several games in flight, can exceed the play phase); worker "
         "and load figures are wall time summed over the workers; CPU is user plus system time of "
-        "every game process and worker. c is the CPU share of E_sim, E_judge, O_obs, W_enc and W_fwd "
-        "during play (the smaller of the CPU and wall readings) and L = c x play / T "
+        "every game process and worker (worker CPU is after the session began, so start-up is left out; the game processes still include Node and engine start-up). c is the CPU share of E_sim, E_judge, O_obs, W_enc and W_fwd "
+        "during play (the smaller of the CPU reading and the wall reading, which is an upper bound because waits overlap across games in flight) and L = c x play / T "
         "(<code>python -m areneon_ml.loop loop-share</code> prints the same figures).</p>"
         + _table(
             heads,

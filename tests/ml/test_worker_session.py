@@ -550,3 +550,18 @@ def test_the_worker_process_speaks_the_protocol_over_real_pipes(tmp_path: Path) 
     assert [jcs(json.loads(x)) for x in done.stdout.splitlines()] == done.stdout.splitlines()
     assert len(done.stdout.splitlines()) == REPLIES + 1
     check("evaluation-reply", json.loads(done.stdout.splitlines()[-1]))
+
+
+def test_a_worker_profile_counts_only_the_cpu_after_the_session_began(tmp_path: Path) -> None:
+    import resource  # noqa: PLC0415
+
+    from areneon_ml.worker.__main__ import write_profile  # noqa: PLC0415
+
+    started = resource.getrusage(resource.RUSAGE_SELF)
+    spin = sum(range(2_000_000))  # CPU spent after the mark
+    assert spin > 0
+    written = write_profile(tmp_path, started)
+    figures = json.loads(written.read_text())
+    whole = resource.getrusage(resource.RUSAGE_SELF)
+    since_start = int((whole.ru_utime + whole.ru_stime) * 1000)
+    assert 0 <= figures["cpu_ms"] < since_start  # the interpreter and torch import are left out

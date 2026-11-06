@@ -188,4 +188,5 @@ export async function printProfile(profile: ProfileDir | undefined, endWorkers: 
 /** Remove the directory this process made. */
 export function stopProfile(profile: ProfileDir | undefined): void {
   if (profile?.owned === true) rmSync(profile.dir, { recursive: true, force: true });
+  resetProfile(); // a later generation in this process starts from nothing
 }
