@@ -255,6 +255,14 @@ class Learner:
         # Entropy weight (millionths) of the newest update; set only under a linear
         # ``ppo.entropy_schedule`` (stored in the sidecar then, and nowhere otherwise).
         self.last_entropy_coef_micro: int | None = None
+        # The member's effective PPO settings (ADR-021 section 8); set only by a population run,
+        # which stores them in the learner-state sidecar. ``None`` keeps a single lineage's bytes.
+        self.population_settings: dict[str, int] | None = None
+        # True for the one update after a population copy (ADR-021 section 6): the slot trains on
+        # games its donor did not play, so only the value heads learn and the policy is frozen. The
+        # population loop sets it before the update and clears it after; it is not persisted (a
+        # resume re-applies the copy from the committed ladder record).
+        self.value_only = False
 
     def optimiser_groups(
         self,
@@ -312,7 +320,7 @@ class Learner:
             for optimiser in self.optimisers.values():
                 for group in optimiser.param_groups:
                     group["lr"] = schedule.rate(self.generation)
-        warmup = value_warmup_active(self.config, self.generation)
+        warmup = value_warmup_active(self.config, self.generation) or self.value_only
         self.last_anchor_beta_micro = self.anchor_beta_micro(self.generation)
         self.last_entropy_coef_micro = self.entropy_coef_micro(self.generation)
         # Under ``ppo.preview_bootstrap_micro`` (> 0) both roles' targets are fixed from the
@@ -326,7 +334,7 @@ class Learner:
         for role in ROLES:
             mine = [t for t in trajectories if t.role == role]
             if mine:
-                warm = warmup and role in self.warm_roles
+                warm = warmup and (self.value_only or role in self.warm_roles)
                 tables[role] = (
                     self._table(role, mine, role in self.anchors and not warm, frozen),
                     warm,
