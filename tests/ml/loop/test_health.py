@@ -11,7 +11,8 @@ from areneon_ml.loop import health, selection
 from areneon_ml.loop import ladder_write as lw
 from areneon_ml.loop.ladder import LadderRecordError, read_ladder_record
 
-from tests.ml.loop.test_ladder_write import ANCHOR_STRENGTHS, ANCHORS, pair_rows
+from tests.ml.loop.test_ladder_write import ANCHOR_STRENGTHS, pair_rows
+from tests.ml.loop.test_population import ANCHORS
 from tests.ml.loop.test_selection import BOOT, config_for, decide, forged, lowered, window_rows
 
 LIMITS = health.Limits(clip_ppm=500_000, kl_ppm=100_000, forfeit_ppm=50_000)
