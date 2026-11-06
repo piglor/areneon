@@ -31,6 +31,7 @@ import { decisionObservations, readEpisode } from "./episode-io.ts";
 import { nodeSha256, playerChannel } from "./player-channel.ts";
 import { decodeRequest, RequestDecodeError } from "./request.ts";
 import type { SyntheticTeamHashes } from "./team-class.ts";
+import { sheetRegimeOf } from "./team-sheet-binding.ts";
 
 export type { EvaluationRunManifest, TrainingExample, TrainingSet };
 
@@ -262,7 +263,7 @@ function featuresOf(
   const line = observation.log.at(-1) as string;
   try {
     const candidates = enumerateCandidates(decodeRequest(line.slice("|request|".length))).candidates;
-    const channel = playerChannel({ schema_version: 1, data_class: observation.data_class, player: observation.player, lines: observation.log });
+    const channel = playerChannel({ schema_version: 1, data_class: observation.data_class, player: observation.player, lines: observation.log }, sheetRegimeOf(episode.provenance.manifest.showdown_commit, episode.provenance.manifest.format_id));
     return buildFeatures(engine, configs, channel, episode.team.team, candidates, memo);
   } catch (error) {
     if (!(error instanceof FeatureBuildError || error instanceof EnumerationError || error instanceof RequestDecodeError)) throw error;

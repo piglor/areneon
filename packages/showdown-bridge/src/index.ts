@@ -436,6 +436,7 @@ export {
 } from "./mechanics-result.ts";
 export { checkScenario, ScenarioError, scenarioFormatId } from "./mechanics-scenario.ts";
 export { checkSheetVariants, SHEET_VARIANT_KEYS, SheetVariantError, sheetVariantPairs } from "./sheet-variants.ts";
+export { assertSheetBinding, sheetRegimeIn, sheetRegimeOf, type TeamSheets } from "./team-sheet-binding.ts";
 export {
   type GameStreams,
   LEAGUE_SEED_DERIVATION,
