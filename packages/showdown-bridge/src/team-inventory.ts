@@ -202,7 +202,7 @@ export function countReport(report: InventoryReport): InventoryCounts {
 export interface InventoryRun {
   engine: Engine;
   source: PrivateTeamSource;
-  /** Defaults to the only format in the rules snapshot. */
+  /** Defaults to the only closed-sheet format in the rules snapshot (an open-sheet variant is not an owner-team format). */
   formatId?: string;
   snapshot?: RulesSnapshot;
 }

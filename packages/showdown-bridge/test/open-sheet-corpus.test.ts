@@ -73,7 +73,7 @@ describe("the open-regime channel corpus (ADR-027 slice 1)", () => {
     for (const battle of corpus) {
       for (const player of ["p1", "p2"] as const) {
         const { lines } = battle.channels[player];
-        expect(() => playerChannel(battle.channels[player]), `${battle.id} ${player}`).not.toThrow();
+        expect(() => playerChannel(battle.channels[player], "open"), `${battle.id} ${player}`).not.toThrow();
         const sheets = lines.map((line, i) => ({ line, i })).filter(({ line }) => line.startsWith("|showteam|"));
         expect(sheets.map(({ line }) => line.split("|")[2]), `${battle.id} ${player}`).toEqual(["p1", "p2"]);
         const firstRequest = lines.findIndex((line) => line.startsWith("|request|"));

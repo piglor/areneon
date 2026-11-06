@@ -11,6 +11,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from .sheet import SheetMon
+
 # 2: `recent` per Pokemon, `condition_turns` per side, `elapsed` on the field (#1013).
 STATE_SCHEMA_VERSION = 2
 STAT_KEYS = ("atk", "def", "spa", "spd", "spe", "accuracy", "evasion")
@@ -165,6 +167,9 @@ class SideState:
     conditions: dict[str, int] = field(default_factory=dict)
     # The turn each condition began (the first layer's), for `condition_turns`.
     condition_started: dict[str, int] = field(default_factory=dict)
+    # The engine-sent team sheet of an open-format game (ADR-027 section 5): the team as built,
+    # kept apart from what the battle reveals. None in a closed format.
+    sheet: list[SheetMon] | None = None
 
     def to_dict(self, turn: int | None = None) -> dict[str, Any]:
         document = {
@@ -175,6 +180,8 @@ class SideState:
             "slots": dict(sorted(self.slots.items())),
             "conditions": dict(sorted(self.conditions.items())),
         }
+        if self.sheet is not None:  # only an open-format game has one: other states keep their keys
+            document["sheet"] = [mon.to_dict() for mon in self.sheet]
         if turn is not None:  # turns elapsed since each condition began (0: this turn)
             document["condition_turns"] = {
                 name: turn - began for name, began in sorted(self.condition_started.items())

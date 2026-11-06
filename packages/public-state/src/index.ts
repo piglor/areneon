@@ -8,6 +8,7 @@ import { createHash } from "node:crypto";
 import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { isShowteam, PLACEHOLDER, SheetTracker } from "./sheet-layer.ts";
 
 /** One Pokemon as the reader shows it (the reducer's snake_case shape). */
 export interface PublicMon {
@@ -47,6 +48,17 @@ export interface PublicMon {
   phantom?: boolean;
 }
 
+/** One Pokemon of an engine-sent team sheet (open-sheet formats, ADR-027): the team as built, ids only. */
+export interface PublicSheetMon {
+  species: string;
+  item: string | null;
+  ability: string;
+  moves: string[];
+  nature: string | null;
+  gender: string | null;
+  level: number;
+}
+
 export interface PublicSide {
   player: string;
   username: string | null;
@@ -54,6 +66,8 @@ export interface PublicSide {
   roster: PublicMon[];
   slots: Record<string, number | null>;
   conditions: Record<string, number>;
+  /** The engine's team sheet of this side, kept apart from what the battle reveals; absent in a closed format. */
+  sheet?: PublicSheetMon[];
 }
 
 export interface PublicState {
@@ -166,12 +180,46 @@ const api = createRequire(import.meta.url)("./interpreter.cjs") as PublicStateAp
 
 export const toId = api.toId;
 export const parseLine = api.parseLine;
-export const createInterpreter: PublicStateApi["createInterpreter"] = (options) =>
-  api.createInterpreter(withDex(options));
+/**
+ * The incremental reader. A `|showteam|` line (open-sheet formats, ADR-027) is handled by the sheet layer,
+ * not the interpreter, which sees an inert line in its place; the sheets are attached to the snapshots.
+ */
+export const createInterpreter: PublicStateApi["createInterpreter"] = (options) => {
+  const inner = api.createInterpreter(withDex(options));
+  const tracker = new SheetTracker(options.player, withDex(options).dex);
+  return {
+    feed(raw) {
+      if (!isShowteam(raw)) return inner.feed(raw);
+      const before = inner.snapshot();
+      inner.feed(PLACEHOLDER);
+      return { kind: "showteam", caption: null, flagged: tracker.take(raw, before) };
+    },
+    snapshot: () => tracker.attach(inner.snapshot()),
+    requestCount: () => inner.requestCount(),
+    requests: () => inner.requests(),
+  };
+};
 
-/** The state after every line of one player's own channel (a flagged line is kept and listed in `flags`). */
+/**
+ * The state after every line of one player's own channel (a flagged line is kept and listed in `flags`).
+ * The engine-sent `|showteam|` lines of an open-sheet format are read by the sheet layer into a per-side
+ * `sheet` part; a channel without one goes to the interpreter untouched.
+ */
 export function interpretChannel(player: string, lines: readonly string[], dex?: PublicDex): PublicRun {
-  return api.interpretChannel(player, lines, withCopy(dex), false);
+  const used = withCopy(dex);
+  if (!lines.some(isShowteam)) return api.interpretChannel(player, lines, used, false);
+  const run = api.interpretChannel(player, lines.map((l) => (isShowteam(l) ? PLACEHOLDER : l)), used, false);
+  const tracker = new SheetTracker(player, used);
+  const flags = run.flags.slice();
+  const frames = run.frames.map((frame, k) => {
+    const raw = k === 0 ? undefined : (lines[k - 1] as string);
+    if (raw === undefined || !isShowteam(raw)) return { ...frame, state: tracker.attach(frame.state) };
+    const reason = tracker.take(raw, (run.frames[k - 1] as PublicFrame).state);
+    if (reason !== null) flags.push({ index: k - 1, line: raw, reason });
+    return { ...frame, line: raw, kind: "showteam", caption: null, flagged: reason, state: tracker.attach(frame.state) };
+  });
+  flags.sort((a, b) => a.index - b.index);
+  return { frames, flags, requests: run.requests };
 }
 
 /** SHA-256 of the reader file's bytes: a change to the reader is a change to any baseline that uses it. */
@@ -180,6 +228,7 @@ export function readerSha256(): string {
 }
 
 export * from "./world-facts.ts";
+export { parseSheet, SheetError } from "./sheet.ts";
 
 /** The world-facts module's file path: its own file, so the reader's hash and the replay pages do not move with it. */
 export const WORLD_FACTS_PATH = join(dirname(fileURLToPath(import.meta.url)), "world-facts.ts");
