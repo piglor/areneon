@@ -302,13 +302,16 @@ def bootstrap_strengths(
     rated: Sequence[str],
     anchors: Mapping[str, int],
     plan: BootstrapPlan,
+    lane: int = LANE_FIT,
 ) -> dict[str, Strength]:
-    """Strengths with percentile bounds at ``alpha_ppm`` per tail (lane ``LANE_FIT``)."""
+    """Strengths with percentile bounds at ``alpha_ppm`` per tail (``lane``: default the fit's)."""
+    if lane < 0 or lane >= LANE_LIMIT:
+        raise RatingError("lane must be in 0..2^21-1")
     resamples = plan.resamples
     rank = _rank(resamples, plan.alpha_ppm)
     merged, players = _prepare(cells, rated, anchors)
     point = _solve(players, anchors, merged)
-    stream = _Stream(plan.seed, LANE_FIT)
+    stream = _Stream(plan.seed, lane)
     draws: dict[str, list[int]] = {player: [] for player in players}
     for _ in range(resamples):
         redrawn = {key: _resample4(stream, counts) for key, counts in merged.items()}

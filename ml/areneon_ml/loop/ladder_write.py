@@ -45,6 +45,7 @@ from areneon_ml.learner.config import RunConfig
 from areneon_ml.loop import rating
 from areneon_ml.loop.ladder import read_ladder_record
 from areneon_ml.loop.league import calibration_game_seed
+from areneon_ml.loop.past_pool import Snapshot, member_index
 from areneon_ml.loop.rating import BootstrapPlan, BootstrapSeed, ResultCell
 
 #: Anchor policy ids and the baseline actor each must be configured with.
@@ -60,6 +61,9 @@ ANCHORS_FILE = "anchors.json"
 LADDER_FILE = "ladder.json"
 #: The label every bootstrap of a generation is seeded under; uses are separated by lane.
 BOOTSTRAP_LABEL = "m0"
+#: Bootstrap lanes of the snapshots rated at entry (slice 10): ``LANE_SNAPSHOT + 16 * generation +
+#: member index``, below the copy test's lane, clear of the strengths' lane and the edge lanes.
+LANE_SNAPSHOT = 1 << 16
 _BUCKETS = 5
 MIN_ANCHOR_GAMES = 2
 _HASH_LENGTH = 64
@@ -306,11 +310,14 @@ class WindowResult:
 
 
 def _generation_results(
-    entry: GenerationRows, anchors: Iterable[str], members: frozenset[str]
+    entry: GenerationRows,
+    anchors: Iterable[str],
+    members: frozenset[str],
+    snapshots: frozenset[str] = frozenset(),
 ) -> list[WindowResult]:
     known = set(anchors)
     found: list[WindowResult] = []
-    for kind, wanted in (("ladder", "member"), ("anchor", "anchor")):
+    for kind, wanted in (("ladder", "member"), ("anchor", "anchor"), ("past", "snapshot")):
         rows = [r for r in entry.rows if r["kind"] == kind]
         for first, bucket in pair_buckets(rows, lambda r: r["member"]):
             member, opponent = first["member"], first["opponent"]
@@ -320,16 +327,19 @@ def _generation_results(
                 _fail(f"generation {entry.generation}: a ladder pair names {opponent} as opponent")
             if wanted == "anchor" and opponent not in known:
                 continue  # a baseline that is not an anchor is played but not rated
+            if wanted == "snapshot" and opponent not in snapshots:
+                continue  # a snapshot the pool has since evicted: its old results are dropped
             found.append(WindowResult(entry.generation, member, wanted, opponent, bucket))
     return found
 
 
-def window_results(
+def window_results(  # noqa: PLR0913, PLR0917
     history: Sequence[GenerationRows],
     generation: int,
     window: int,
     anchors: Iterable[str],
     members: Sequence[str],
+    snapshots: Iterable[str] = (),
 ) -> list[WindowResult]:
     """The window's pair results, without any result of a slot from before a copy.
 
@@ -348,8 +358,9 @@ def window_results(
         _fail("the history must hold each generation of the window once")
     out: list[WindowResult] = []
     labels = frozenset(members)
+    pooled = frozenset(snapshots)
     for entry in sorted(history, key=lambda e: e.generation):
-        for result in _generation_results(entry, anchors, labels):
+        for result in _generation_results(entry, anchors, labels, pooled):
             stale = result.generation <= cut.get(result.member, 0) or (
                 result.kind == "member" and result.generation <= cut.get(result.opponent, 0)
             )
@@ -401,31 +412,110 @@ def member_settings(config: RunConfig, index: int) -> dict[str, Any]:
     return settings
 
 
-def build_ladder_record(
+def snapshot_cells(
     config: RunConfig,
     generation: int,
     history: Sequence[GenerationRows],
     anchors: Mapping[str, int],
-    previous: Mapping[str, Any] | None = None,
-) -> dict[str, Any]:
-    """The generation's ``ladder.json`` (selection ``none`` until slice 8)."""
+    pool_ids: Sequence[str],
+) -> dict[tuple[str, str], list[int]]:
+    """Each member's pair-score counts against each snapshot id over the window."""
     population = config.raw["population"]
-    window = population["rating"]["window"]
     members = [f"m{k}" for k in range(population["members"])]
-    results = window_results(history, generation, window, list(anchors), members)
-    table = result_table(results)
-    for member in members:
-        for anchor in anchors:
-            if (member, "anchor", anchor) not in table:
-                _fail(f"{member} has no result against the anchor {anchor} in the window")
-    cells = result_cells(table)
+    window = population["rating"]["window"]
+    table = result_table(
+        window_results(history, generation, window, list(anchors), members, pool_ids)
+    )
+    return {(m, i): scores for (m, kind, i), scores in table.items() if kind == "snapshot"}
+
+
+def _rate_snapshot(
+    config: RunConfig,
+    generation: int,
+    snapshot: Snapshot,
+    cells: Sequence[ResultCell],
+    references: Mapping[str, int],
+) -> dict[str, Any] | None:
+    """A snapshot with ``n_min`` pairs in the window is rated once, against fixed references."""
+    population = config.raw["population"]
+    if sum(sum(c.scores) for c in cells) < population["selection"]["n_min"]:
+        return None
+    lane = LANE_SNAPSHOT + 16 * snapshot.generation + member_index(snapshot.member)
+    if lane >= rating.LANE_COPY:
+        _fail("a snapshot's bootstrap lane would pass the copy test's lane")
     plan = BootstrapPlan(
         BootstrapSeed(config.run_key, generation, BOOTSTRAP_LABEL),
         population["rating"]["bootstrap_resamples"],
         population["selection"]["alpha_ppm"],
     )
-    strengths = rating.bootstrap_strengths(cells, members, anchors, plan)
-    triples = rating.cyclic_triples(cells, members, plan)
+    found = rating.bootstrap_strengths(cells, [snapshot.id], references, plan, lane)[snapshot.id]
+    return {
+        "snapshot_id": snapshot.id,
+        "member": snapshot.member,
+        "generation": snapshot.generation,
+        "strength": {"strength": found.strength, "lower": found.lower, "upper": found.upper},
+    }
+
+
+def build_ladder_record(  # noqa: PLR0913, PLR0917
+    config: RunConfig,
+    generation: int,
+    history: Sequence[GenerationRows],
+    anchors: Mapping[str, int],
+    previous: Mapping[str, Any] | None = None,
+    pool: Sequence[Snapshot] = (),
+) -> dict[str, Any]:
+    """The generation's ``ladder.json`` (selection: none until slice 8).
+
+    ``pool`` is the past pool the generation played (empty without a past-pool share). A snapshot
+    listed in ``previous`` and still in the pool keeps its strength and bounds untouched and is a
+    fixed reference of this record's fit; a pool snapshot with ``selection.n_min`` pairs in the
+    window and no strength yet is rated once, against the anchors, the frozen snapshots and the
+    members' fitted strengths held fixed, and listed (it joins the fit from the next record on).
+    Cells against snapshots without a strength are not in the record (its schema lists a snapshot
+    with its strength); ``past-pool.json`` carries them for the matchmaking.
+    """
+    population = config.raw["population"]
+    window = population["rating"]["window"]
+    members = [f"m{k}" for k in range(population["members"])]
+    pool_ids = [p.id for p in pool]
+    results = window_results(history, generation, window, list(anchors), members, pool_ids)
+    table = result_table(results)
+    for member in members:
+        for anchor in anchors:
+            if (member, "anchor", anchor) not in table:
+                _fail(f"{member} has no result against the anchor {anchor} in the window")
+    frozen: dict[str, dict[str, Any]] = {
+        s["snapshot_id"]: s
+        for s in (previous["snapshots"] if previous is not None else [])
+        if s["snapshot_id"] in pool_ids
+    }
+    references = {**anchors, **{i: s["strength"]["strength"] for i, s in frozen.items()}}
+    fit_cells = [
+        c
+        for c in result_cells(table)
+        if c.opponent in anchors or c.opponent in members or c.opponent in frozen
+    ]
+    plan = BootstrapPlan(
+        BootstrapSeed(config.run_key, generation, BOOTSTRAP_LABEL),
+        population["rating"]["bootstrap_resamples"],
+        population["selection"]["alpha_ppm"],
+    )
+    strengths = rating.bootstrap_strengths(fit_cells, members, references, plan)
+    triples = rating.cyclic_triples(fit_cells, members, plan)
+    listed = dict(frozen)
+    fixed = {**references, **{m: strengths[m].strength for m in members}}
+    for snapshot in sorted(pool, key=lambda p: p.id):
+        if snapshot.id in listed:
+            continue
+        own = [
+            ResultCell(m, snapshot.id, _scores_tuple(table[(m, "snapshot", snapshot.id)]))
+            for m in members
+            if (m, "snapshot", snapshot.id) in table
+        ]
+        rated = _rate_snapshot(config, generation, snapshot, own, fixed)
+        if rated is not None:
+            listed[snapshot.id] = rated
     record: dict[str, Any] = {
         "schema_version": 1,
         "data_class": "synthetic",
@@ -451,10 +541,11 @@ def build_ladder_record(
             }
             for k, m in enumerate(members)
         ],
-        "snapshots": [],
+        "snapshots": [listed[i] for i in sorted(listed)],
         "cells": [
             _cell_record(member, kind, opponent, scores)
             for (member, kind, opponent), scores in table.items()
+            if kind != "snapshot" or opponent in listed
         ],
         "cyclic_triples": triples,
         "selections": [{"kind": "none", "failed": "no_ready_member"}],
