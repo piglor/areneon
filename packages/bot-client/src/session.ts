@@ -7,6 +7,7 @@ import {
   type PlayerChannel,
   type PokemonSet,
   resolveFormat,
+  teamSheetsOf,
   type RulesSnapshot,
   searchSkipReason,
   type SearchSkipReason,
@@ -381,6 +382,10 @@ export async function runA2Bot(options: A2BotOptions): Promise<A2SessionResult> 
   // Before the validator, which normalises the sets in place.
   const dataClass = battleClassOf(options);
   const format = resolveFormat(options.engine, options.format, options.snapshot);
+  // A2 plays closed-sheet formats only (decideChallenge refuses an open one; there is no confirmready path).
+  if (teamSheetsOf(options.snapshot.formats[options.format] ?? {}) === "open") {
+    throw new SessionError(`${options.format} is an open-sheet format: the A2 bot client plays closed-sheet formats only`);
+  }
   const verdict = validateTeam(options.engine, format, options.team);
   if (!verdict.valid) throw new SessionError(`the team is not valid for ${options.format}: ${verdict.problems.join("; ")}`);
   const decline = options.declineWaitMs ?? DEFAULT_DECLINE_WAIT_MS;

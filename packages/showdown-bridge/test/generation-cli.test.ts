@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
@@ -7,6 +7,7 @@ import { combineUsage, featuresDirOf, interimPoolSource, optionalFlag, readShard
 import { GOLDEN_DIR, GOLDEN_FORMAT } from "../src/golden.ts";
 import { loadEngine, readTrainingRunConfig } from "../src/index.ts";
 import { type PlayedEntry, trainingTeamPool } from "../src/league-generation.ts";
+import { resetProfile } from "../src/profile.ts";
 import { SAMPLES_DIR } from "../src/samples.ts";
 import { populationConfig } from "./population-support.ts";
 
@@ -92,6 +93,18 @@ describe("play-generation", () => {
     await expect(runGenerationCli(flags(file), console.log, refuse)).rejects.toThrow("from the port");
   });
 
+  it("makes its profile directory, times the pool load and removes the directory when it fails", async () => {
+    const file = join(dir, "profiled.json");
+    writeFileSync(file, JSON.stringify(tiny));
+    const refuse = (): never => {
+      throw new UsageError("from the port");
+    };
+    const before = new Set(readdirSync(tmpdir()).filter((name) => name.startsWith("areneon-profile-")));
+    await expect(runGenerationCli(flags(file, { "policy-workers": "1" }).concat("--profile"), console.log, refuse)).rejects.toThrow("from the port");
+    expect(readdirSync(tmpdir()).filter((name) => name.startsWith("areneon-profile-") && !before.has(name))).toEqual([]); // removed again
+    resetProfile();
+  });
+
   it("fails with exit 1 when the config leaves no team to draw, before it starts the worker", async () => {
     const abilities = [...new Set(trainingTeamPool(loadEngine()).teams.flatMap((team) => team.map((set) => set.ability)))];
     const every = readTrainingRunConfig({ ...tiny, generation: { ...(tiny.generation as object), excluded_abilities: abilities } });
@@ -120,6 +133,7 @@ describe("a population run (ADR-021 slice 4)", () => {
     await expect(runGenerationCli([...flags(plain, perMember), ...member(0)])).rejects.toThrow(/--member for each member/);
     await expect(runGenerationCli(flags(file, perMember))).rejects.toThrow(/is required/);
     await expect(runGenerationCli([...flags(file, perMember), "--member", "m0,x"])).rejects.toThrow(/--member is m<k>/);
+    await expect(runGenerationCli([...flags(file, perMember), ...member(0), ...member(1), "--profile"], console.log, undefined, "play.ts")).rejects.toThrow(/--profile does not apply/);
     for (const extra of [["--policy-workers", "2"], ["--game-processes", "2"], ["--shard", "0/2"]]) {
       await expect(runGenerationCli([...flags(file, perMember), ...member(0), ...member(1), ...extra], console.log, undefined, "play.ts")).rejects.toThrow(/one process with one worker per member/);
     }

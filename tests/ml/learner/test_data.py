@@ -65,6 +65,17 @@ def test_a_set_that_is_not_learner_ready_is_refused() -> None:
         trajectories(text, legacy, encoders(), POLICY)
 
 
+@pytest.mark.parametrize("processes", [1, 2])
+def test_a_set_with_search_labels_is_refused_by_the_ppo_path(processes: int) -> None:
+    text, manifest = make_stream()
+    labelled = {
+        **manifest,
+        "search_labels": {"search_identity_hash": "c" * 64, "labelled": 1, "refused": []},
+    }
+    with pytest.raises(LearnerDataError, match="refuses a TrainingSet with search_labels"):
+        trajectories(text, labelled, encoders(), POLICY, processes=processes)
+
+
 def test_a_set_played_by_another_policy_is_refused() -> None:
     text, manifest = make_stream(policy="random-legal@tiny")
     with pytest.raises(LearnerDataError, match="not played by the policy being trained"):

@@ -24,6 +24,36 @@ class EvaluationManifestHash(RootModel[StrictStr]):
     root: Annotated[StrictStr, Field(pattern="^[0-9a-f]{64}$")]
 
 
+class RefusedItem(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    reason: Annotated[StrictStr, Field(pattern="^[a-z][a-z0-9_]{0,63}$")]
+    count: Annotated[StrictInt, Field(ge=1, le=9007199254740991)]
+
+
+class SearchLabels(BaseModel):
+    """
+    Optional (ADR-026 erratum E2 decision 4): present exactly on the manifest of a label stream, whose every example carries search_target. The search identity is stream-level, here only. A PPO stream's manifest has no such block, so every existing value keeps its bytes and hash (a minor change within v1). Reader rules: labelled equals examples; refused sorted by reason, unique. A generation with zero labels omits the label files (labelled is at least 1).
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    search_identity_hash: Annotated[StrictStr, Field(pattern="^[0-9a-f]{64}$")]
+    """
+    The search identity hash (ADR-026 section 5) of the label config that made every label of the stream.
+    """
+    labelled: Annotated[StrictInt, Field(ge=1, le=9007199254740991)]
+    """
+    The number of labelled decisions: the stream's line count.
+    """
+    refused: list[RefusedItem]
+    """
+    Decisions selected for labelling and not labelled, by reason, sorted by reason and unique; may be empty.
+    """
+
+
 class TrainingSet(BaseModel):
     """
     The manifest of one TrainingExample stream (ADR-009 §4): which Episodes it was built from, which EvaluationRunManifests were checked against them, and the stream's class and digest. The sorted and unique arrays are enforced by the reader (the contract profile has no uniqueItems).
@@ -60,4 +90,8 @@ class TrainingSet(BaseModel):
     behaviour_policy_id: Annotated[StrictStr | MISSING, Field(min_length=1)] = MISSING
     """
     The loader's behaviour_policy_id filter value: the one policy whose own seats this stream trains (ADR-010 §1). Every Episode in it has that policy as its provenance.behaviour_policy_id.
+    """
+    search_labels: SearchLabels | MISSING = MISSING
+    """
+    Optional (ADR-026 erratum E2 decision 4): present exactly on the manifest of a label stream, whose every example carries search_target. The search identity is stream-level, here only. A PPO stream's manifest has no such block, so every existing value keeps its bytes and hash (a minor change within v1). Reader rules: labelled equals examples; refused sorted by reason, unique. A generation with zero labels omits the label files (labelled is at least 1).
     """

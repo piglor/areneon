@@ -12,6 +12,7 @@ import { type Candidate, enumerateCandidates } from "./choices.ts";
 import type { Engine } from "./engine.ts";
 import type { VersionManifest } from "./formats.ts";
 import { observe, playerChannel } from "./player-channel.ts";
+import type { TeamSheets } from "./team-sheet-binding.ts";
 import type { ValueQueryInput } from "./policy-protocol.ts";
 import type { EvaluationClient, PolicyClient } from "./policy-worker.ts";
 import { decodeRequest } from "./request.ts";
@@ -73,6 +74,8 @@ export interface SearchDecisionDeps {
   readonly team: PrivateTeamSpec;
   readonly manifest: VersionManifest;
   readonly channel_class: DataClass;
+  /** The team-sheet regime the channel is judged against (ADR-027 section 5). */
+  readonly regime: TeamSheets;
   readonly policy_id: string;
   /** The worker answers `value` queries (no candidates, no rows). */
   readonly valueOnly: boolean;
@@ -118,7 +121,7 @@ function repliesOf(deps: SearchDecisionDeps, world: number, built: Parameters<Re
 
 
 export async function searchDecision(input: SearchInput, deps: SearchDecisionDeps): Promise<SearchDecision> {
-  const { engine, config, sampler, client, battle, player, team, manifest, channel_class, policy_id, valueOnly, counts } = deps;
+  const { engine, config, sampler, client, battle, player, team, manifest, channel_class, regime, policy_id, valueOnly, counts } = deps;
   const worlds: DecisionWorlds = sampler.sample(input.world, input.stream);
   if (worlds.kind === "refused") return { kind: "fallback", reason: "belief_refused" };
   if (!worlds.searched) return { kind: "fallback", reason: "below_min_valid" };
@@ -133,7 +136,7 @@ export async function searchDecision(input: SearchInput, deps: SearchDecisionDep
       counts.leaf_memo_hits += 1;
       return known;
     }
-    const observation = await observe({ channel: playerChannel({ schema_version: 1, data_class: channel_class, player, lines: [...input.channel, ...lines] }), team, manifest });
+    const observation = await observe({ channel: playerChannel({ schema_version: 1, data_class: channel_class, player, lines: [...input.channel, ...lines] }, regime), team, manifest });
     counts.leaf_queries += 1;
     let value_ppm: number;
     if (valueOnly) {

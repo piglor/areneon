@@ -17,6 +17,7 @@ import { loadMechanicsConfig } from "./mechanics-config.ts";
 import { playerChannel } from "./player-channel.ts";
 import { loadRulesSnapshot } from "./rules-load.ts";
 import type { Player } from "./runner.ts";
+import { sheetRegimeOf } from "./team-sheet-binding.ts";
 
 /** What a service is built from. Plain data, so it crosses to a worker thread. */
 export interface FeatureServiceSpec {
@@ -90,7 +91,7 @@ export function createFeatureService(spec: FeatureServiceSpec, engineOverride?: 
       let outcome: FeatureOutcome;
       const parts = spec.feature_set === "probe-damage/2" || spec.feature_set === FEATURE_SET_3 ? emptyTrace() : undefined;
       try {
-        const channel = playerChannel({ schema_version: 1, data_class: spec.data_class, player: task.player, lines: task.lines });
+        const channel = playerChannel({ schema_version: 1, data_class: spec.data_class, player: task.player, lines: task.lines }, sheetRegimeOf(engine.commit, spec.format_id));
         const features =
           spec.feature_set === FEATURE_SET_BELIEF ? candidateFeaturesBelief(engine, configs, channel, task.team, task.candidates, memo)
           : spec.feature_set === FEATURE_SET_3 ? candidateFeatures3(engine, configs, channel, task.team, task.candidates, memo, parts)

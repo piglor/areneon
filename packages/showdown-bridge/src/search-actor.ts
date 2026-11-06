@@ -57,6 +57,7 @@ import type { TeamVocabulary } from "./team-vocabulary.ts";
 import { createWorldBuilder, WORLD_BUILDER_FORMAT, type WorldBuilder } from "./world-builder.ts";
 import { createWorldSampler, searchStream, type WorldRequest, type WorldSamplePort, type WorldSampler } from "./world-sampler.ts";
 import { loadWorldWriters, type WorldWriters, worldWritersHash } from "./world-writers.ts";
+import { sheetRegimeOf } from "./team-sheet-binding.ts";
 
 /** The search was set up, or asked to run, in a way it does not support. A defect of the caller, not a refusal of a decision. */
 export class SearchError extends Error {
@@ -285,6 +286,8 @@ export type SearchActor = Actor & { report(): SearchReport; decide(input: Search
 
 export function searchActor(options: SearchActorOptions): SearchActor {
   const { setup, client, battle, player, team, manifest, channel_class, seed, game, policy_id, identity_hash, sampling, play, bank_ms } = options;
+  // The channel is judged against the team-sheet regime of the format its manifest names (ADR-027 section 5).
+  const regime = sheetRegimeOf(manifest.showdown_commit, manifest.format_id);
   const { engine, config } = setup;
   const stated = client.featureSet ?? null;
   // The leaves are value-only exactly when the worker stated `value_query` (and the client can send one).
@@ -332,7 +335,7 @@ export function searchActor(options: SearchActorOptions): SearchActor {
     counts.fallbacks[reason] += 1;
   };
 
-  const deps: SearchDecisionDeps = { engine, config, sampler, replyModel, client, battle, player, team, manifest, channel_class, policy_id, valueOnly, counts };
+  const deps: SearchDecisionDeps = { engine, config, sampler, replyModel, client, battle, player, team, manifest, channel_class, regime, policy_id, valueOnly, counts };
   const decide = (input: SearchInput): Promise<SearchDecision> => searchDecision(input, deps);
 
   /** The world request at the channel's last request: the player's own view only. The channel ends in the move request being answered (checked by the observation). */
@@ -368,7 +371,7 @@ export function searchActor(options: SearchActorOptions): SearchActor {
     let observation;
     let channel;
     try {
-      channel = playerChannel({ schema_version: 1, data_class: channel_class, player, lines: context.channel });
+      channel = playerChannel({ schema_version: 1, data_class: channel_class, player, lines: context.channel }, regime);
       observation = await observe({ channel, team, manifest });
     } catch (error) {
       throw new PolicyProtocolError(`cannot observe the request: ${(error as Error).message}`);

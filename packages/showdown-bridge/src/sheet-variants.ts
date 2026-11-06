@@ -83,7 +83,10 @@ export function checkSheetVariants(engine: Engine, closedId: string, openId: str
 /**
  * The (closed, open) pairs the snapshot declares: each open format with every
  * closed format of the same regulation. `check-rules` runs `checkSheetVariants`
- * on each, so an open format with no closed counterpart is refused too.
+ * on each, so an open format with no closed counterpart is refused too. The pairing is by
+ * regulation alone: a second closed format of the same regulation (say, another game type) is
+ * checked against the open one as well, and a pair that differs beyond the sheet and series
+ * rules fails the check, so adding such a format needs its own open counterpart or a rule here.
  */
 export function sheetVariantPairs(snapshot: RulesSnapshot): { closed: string; open: string }[] {
   const entries = Object.entries(snapshot.formats);

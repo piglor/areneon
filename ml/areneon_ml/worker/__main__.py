@@ -12,9 +12,12 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import resource
 import sys
 from pathlib import Path
 
+from areneon_ml import stopwatch
 from areneon_ml.checkpoint.files import CheckpointFileError, load_checkpoint
 from areneon_ml.model.gamedata import GameData
 from areneon_ml.model.network import ConfigError, ModelConfig
@@ -57,6 +60,12 @@ def build(argv: list[str]) -> Worker:
         action="store_true",
         help="accept an oracle-diagnostic opponent_sheet (a labelled, test-only diagnostic run)",
     )
+    parser.add_argument(
+        "--profile-dir",
+        type=Path,
+        help="time the encoder and the forward pass and leave worker-<pid>.json here when the "
+        "session ends (the generation profile of ADR-028 section 1; the replies are the same)",
+    )
     args = parser.parse_args(argv)
     if args.max_line_bytes < 1:
         parser.error("--max-line-bytes must be positive")
@@ -75,7 +84,7 @@ def build(argv: list[str]) -> Worker:
     scorer = NetworkScorer(game, networks)  # refuses a pair made with different encoders
     stated = feature_set(networks["battle"].config.encoder.options)
     sheet = sheet_set(networks["battle"].config.encoder.options)
-    return Worker(
+    worker = Worker(
         scorer=scorer,
         features=(
             None if stated is None else FeatureSupport(stated.as_dict(), damaging_moves(game))
@@ -89,6 +98,37 @@ def build(argv: list[str]) -> Worker:
         ],
         max_line_bytes=args.max_line_bytes,
     )
+    worker.profile_dir = args.profile_dir
+    return worker
+
+
+def write_profile(directory: Path, started: resource.struct_rusage) -> Path:
+    """Leave this process's profile in ``directory/worker-<pid>.json`` (whole milliseconds).
+
+    ``cpu_ms`` is the CPU the process spent after ``started`` (taken when the session begins), so
+    importing torch and loading the checkpoints do not count as play.
+    """
+    usage = resource.getrusage(resource.RUSAGE_SELF)
+    spent = (usage.ru_utime + usage.ru_stime) - (started.ru_utime + started.ru_stime)
+    totals = stopwatch.snapshot()
+
+    def at(name: str, key: str) -> int:
+        return stopwatch.ms(totals.get(name, {}).get(key, 0))
+
+    figures = {
+        "cpu_ms": int(spent * 1000),
+        "peak_rss_bytes": int(usage.ru_maxrss) * 1024,
+        "queries": totals.get("w_fwd", {}).get("count", 0),
+        "w_enc_ms": at("w_enc", "wall_ns"),
+        "w_fwd_ms": at("w_fwd", "wall_ns"),
+        "w_enc_cpu_ms": at("w_enc", "cpu_ns"),
+        "w_fwd_cpu_ms": at("w_fwd", "cpu_ns"),
+    }
+    path = directory / f"worker-{os.getpid()}.json"
+    partial = directory / f".worker-{os.getpid()}.partial"
+    partial.write_text(json.dumps(figures, sort_keys=True) + "\n", encoding="utf-8")
+    partial.replace(path)
+    return path
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -97,7 +137,16 @@ def main(argv: list[str] | None = None) -> int:
     except (CheckpointError, CheckpointFileError, ScorerError) as exc:
         print(f"areneon_ml.worker: {exc}", file=sys.stderr)
         return EXIT_CHECKPOINT
-    return worker.serve(sys.stdin.buffer, sys.stdout.buffer)
+    profile_dir: Path | None = worker.profile_dir
+    if profile_dir is None:
+        return worker.serve(sys.stdin.buffer, sys.stdout.buffer)
+    stopwatch.enable()
+    started = resource.getrusage(resource.RUSAGE_SELF)
+    try:
+        return worker.serve(sys.stdin.buffer, sys.stdout.buffer)
+    finally:
+        write_profile(profile_dir, started)
+        stopwatch.disable()
 
 
 if __name__ == "__main__":

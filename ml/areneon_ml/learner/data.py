@@ -28,6 +28,7 @@ from areneon_contracts.training import (
     stream_lines,
 )
 
+from areneon_ml import stopwatch
 from areneon_ml.learner.ppo import GAME_SCORE
 from areneon_ml.model.encoder import EncodedQuery, Encoder, EncoderSession
 from areneon_ml.model.network import ROLES
@@ -87,19 +88,20 @@ class _Collector:
         if (episode, role) not in self._views:
             self._views[(episode, role)] = (IncrementalView(), self._encoders[role].session())
         view, session = self._views[(episode, role)]
-        query = session.encode(
-            view.encoder_input(
-                {
-                    "observation": observation,
-                    "candidates": candidates,
-                    **{
-                        key: example[key]
-                        for key in ("candidate_features", "opponent_sheet")
-                        if key in example
-                    },
-                }
-            )
+        mark = stopwatch.begin()
+        encoder_input = view.encoder_input(
+            {
+                "observation": observation,
+                "candidates": candidates,
+                **{
+                    key: example[key]
+                    for key in ("candidate_features", "opponent_sheet")
+                    if key in example
+                },
+            }
         )
+        stopwatch.end("reduce", mark)  # the view's rqid clean is part of reading the channel
+        query = session.encode(encoder_input)
         self.steps.setdefault((episode, role), []).append(Step(query, chosen))
 
     def collected(self) -> Collected:
@@ -137,6 +139,11 @@ class Collected:
 
 
 def _ready(manifest: dict[str, Any], behaviour_policy_id: str) -> None:
+    if "search_labels" in manifest:
+        raise LearnerDataError(
+            "the PPO path refuses a TrainingSet with search_labels: label streams have their own"
+            " reader"
+        )
     if manifest.get("learner_ready") is not True:
         raise LearnerDataError("the TrainingSet is not learner_ready: the learner refuses it")
     if manifest.get("behaviour_policy_id") != behaviour_policy_id:
@@ -175,6 +182,7 @@ def trajectories(  # noqa: PLR0913
         found = parallel_trajectories(stream, manifest, encoders, processes, private_pool)
         if found is not None:
             return found
+    mark = stopwatch.begin()
     try:
         if isinstance(stream, Path):
             check_stream_file(stream, manifest, private_pool)
@@ -182,6 +190,7 @@ def trajectories(  # noqa: PLR0913
             read_stream(stream, manifest, private_pool)
     except TrainingStreamError as exc:
         raise LearnerDataError(str(exc)) from exc
+    stopwatch.end("validate", mark)
     collector = _Collector(encoders)
     lines: Iterator[str] = (
         stream_lines(stream) if isinstance(stream, Path) else iter(stream.split("\n")[:-1])
