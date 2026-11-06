@@ -28,7 +28,7 @@ class Worker extends StandInWorker {
   override ask(_battle: string, query: Parameters<PolicyClient["ask"]>[1]): ReturnType<PolicyClient["ask"]> {
     const open = query.candidates.filter((c) => !c.pending).map((c) => c.choice);
     const pending = query.candidates.filter((c) => c.pending).map((c) => c.choice);
-    this.queries.push({ kind: "ask", log_lines: 0 });
+    this.queries.push({ kind: "ask", log_lines: 0, candidates: 0, rows: false });
     return Promise.resolve({ schema_version: 1 as const, identity: query.identity, choice: actorRule({ choices: open, pending }), source_policy_id: query.policy_id, elapsed_ms: 0, deadline_outcome: "in_budget" as const });
   }
 }
@@ -85,7 +85,7 @@ describe("the search candidate of the progress evaluation", () => {
     const worker = new Worker();
     const ablation = { generation: { generation: 0, checkpoint: "3".repeat(64), policy_id: `policy:${"e".repeat(64)}`, client: new Worker() }, random_policy_id: `policy:${"f".repeat(64)}` };
     await expect(playProgress(options({ client: worker, ablation }))).rejects.toThrow(/evaluated alone/);
-    await expect(playProgress(options({ features: {} as never }))).rejects.toThrow(/candidate features/);
+    await expect(playProgress(options({ features: {} as never }))).rejects.toThrow(/does not search a features pair/);
     await expect(playProgress(options({ search: { setup: setupFor(), mode: "greedy" as never } }))).rejects.toThrow(ProgressError);
   });
 

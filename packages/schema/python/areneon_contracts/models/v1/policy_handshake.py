@@ -96,6 +96,10 @@ class Ready(BaseModel):
     """
     The opponent sheet source the worker's checkpoints need (ADR-027 slice 4): omitted when they need none. feature_set is opponent-sheet/1 and feature_set_hash the feature set hash the block's source.hash must equal. The client refuses the session if it cannot supply exactly this source, and attaches opponent_sheet to a query only for a worker that states one.
     """
+    value_query: Literal[True] | MISSING = MISSING
+    """
+    True when the worker answers value queries (PolicyQuery sampling kind value): its checkpoints' encoder layout does not fill any token or field column from candidate_features arrays or opponent_sheet, so the value head needs no candidate rows (ADR-026 erratum E2 decision 7). Omitted otherwise, and then a value query is refused.
+    """
 
 
 class PolicyHandshake(BaseModel):

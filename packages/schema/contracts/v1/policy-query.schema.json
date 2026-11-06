@@ -44,9 +44,9 @@
       }
     },
     "candidates": {
-      "description": "The candidate joint choices of the request, each with its pending flag, in the enumerator's canonical order (ADR-006); the choice is one of them. The same N_max as TrainingExample.candidates (ADR-010 §3). No CloneJudge verdict is ever part of it.",
+      "description": "The candidate joint choices of the request, each with its pending flag, in the enumerator's canonical order (ADR-006); the choice is one of them. The same N_max as TrainingExample.candidates (ADR-010 §3). No CloneJudge verdict is ever part of it. Empty exactly when the sampling kind is value (a reader rule); every other query has at least one.",
       "type": "array",
-      "minItems": 1,
+      "minItems": 0,
       "maxItems": 1024,
       "items": {
         "$ref": "#/$defs/Candidate"
@@ -61,7 +61,7 @@
       "$ref": "#/$defs/OpponentSheet"
     },
     "sampling": {
-      "description": "How the worker picks among the candidates (ADR-010 §2): argmax, a draw from the policy's probabilities using u, or (ADR-026 §5) no pick at all: evaluate asks for the policy's prior over the candidates and its value of the state.",
+      "description": "How the worker picks among the candidates (ADR-010 §2): argmax, a draw from the policy's probabilities using u, or (ADR-026 §5) no pick at all: evaluate asks for the policy's prior over the candidates and its value of the state; value (ADR-026 erratum E2 decision 7) asks only for the policy's value of the state and carries no candidates.",
       "type": "object",
       "oneOf": [
         {
@@ -72,6 +72,9 @@
         },
         {
           "$ref": "#/$defs/EvaluateSampling"
+        },
+        {
+          "$ref": "#/$defs/ValueSampling"
         }
       ],
       "discriminator": {
@@ -868,6 +871,19 @@
       "properties": {
         "kind": {
           "const": "evaluate"
+        }
+      }
+    },
+    "ValueSampling": {
+      "description": "No candidate and no pick: the worker answers with an EvaluationReply whose reply is a value (the policy's value of the state, same rounding as evaluate) from one batch-1 trunk and value-head pass. A decision-time search asks it for the leaves of its hypothetical channels (ADR-026 erratum E2 decision 7). Reader rules: candidates is empty, and the query carries no candidate_features and no opponent_sheet. A worker answers it only if it stated value_query in its ready message.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind"
+      ],
+      "properties": {
+        "kind": {
+          "const": "value"
         }
       }
     },
