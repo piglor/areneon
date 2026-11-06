@@ -18,13 +18,14 @@ from areneon_ml.checkpoint.files import checkpoint_bytes, checkpoint_id
 from areneon_ml.checkpoint.provenance import ProvenanceGraph
 from areneon_ml.checkpoint.record import read_record
 from areneon_ml.learner.trainer import Learner, TrainReport
-from areneon_ml.loop import layout, selection
+from areneon_ml.loop import health, layout, selection
+from areneon_ml.loop.driver import LoopError
 from areneon_ml.loop.health import HealthIncident
 from areneon_ml.loop.ladder import read_ladder_record
 from areneon_ml.loop.population import PopulationLoop
 from areneon_ml.model.network import ROLES
 
-from tests.ml.loop.support import Killed, killer
+from tests.ml.loop.support import Killed, killer, reseal
 from tests.ml.loop.test_population import (
     FakePopulationPlayer,
     gen_path,
@@ -280,3 +281,38 @@ def test_a_single_quarantine_below_half_is_not_an_incident(
         "member": "m2",
         "cause": "non_finite_loss",
     }
+
+
+def test_a_slot_replaced_in_this_generation_is_not_judged_on_its_old_pairs_forfeits(
+    tmp_path: Path, diverge: dict[str, Any]
+) -> None:
+    config = config_four()
+    loop = make_population(tmp_path, config, FakePopulationPlayer(config))
+    rows = [
+        {
+            "member": "m1",
+            "outcome": "forfeit",
+            "seats": {"p1": "m1", "p2": "m0"},
+            "forfeit": {"loser": "p1", "cause": "invalid_reply"},
+        }
+        for _ in range(4)
+    ]
+    limits = health.Limits(clip_ppm=500_000, kl_ppm=100_000, forfeit_ppm=50_000)
+    healthy = {"battle": {"clip_fraction": 0.0, "approx_kl": 0.0}}
+    # The old pair forfeits again at the generation the slot is replaced: not judged ...
+    assert loop._judge(3, "m1", {}, rows, limits, True)(healthy) is None
+    # ... but an ordinary slot with those games is stopped.
+    assert loop._judge(3, "m1", {}, rows, limits, False)(healthy) == "forfeits"
+
+
+def test_resume_refuses_a_quarantined_members_records_that_differ_from_the_generation_before(
+    tmp_path: Path, diverge: dict[str, Any]
+) -> None:
+    run_to(tmp_path, diverge, BAD_GENERATION)
+    path = gen_path(tmp_path, BAD_GENERATION) / "members" / "m1" / "records" / "battle.json"
+    raw = layout.read_json(path)
+    raw["learner_state_hash"] = "f" * 64
+    layout.write_json(path, raw)
+    reseal(tmp_path, BAD_GENERATION)
+    with pytest.raises(LoopError, match="m1 is quarantined but its battle record"):
+        run_to(tmp_path, diverge, BAD_GENERATION)

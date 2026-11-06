@@ -445,6 +445,14 @@ class PopulationLoop:
         # A member quarantined in the newest generation froze the pair it already had (its update
         # was discarded), so its records are the earlier ones and do not name this state.
         held_back = selection.quarantined(ladder) if ladder else {}
+        # A slot replaced in this very generation froze the donor's weights, with ordinary records.
+        replaced_now: set[str] = set()
+        if newest.generation > 1:
+            replaced_now = set(
+                selection.replaced_slots(
+                    self._committed_json(newest.generation - 1, ladder_write.LADDER_FILE)
+                )
+            )
         members: list[MemberFrozen] = []
         for k, label in enumerate(self._labels()):
             entry = held[label]
@@ -474,6 +482,8 @@ class PopulationLoop:
             warm_roles = frozenset(warm_ids or ()) if warm_zero else frozenset()
             if label in held_back:
                 warm_roles = frozenset(ROLES)
+                if label not in replaced_now:
+                    self._check_held_records(newest, label)
             if (
                 warm_ids is not None
                 and warm_zero
@@ -607,6 +617,18 @@ class PopulationLoop:
                     f"generation {generation}: {label}'s {role} record disagrees with the state"
                 )
 
+    def _check_held_records(self, newest: layout.Committed, label: str) -> None:
+        """A quarantined member's records equal the generation before's, byte for byte."""
+        before = member_dir(layout.generation_dir(self.run_dir, newest.generation - 1), label)
+        now = member_dir(newest.path, label)
+        for role in ROLES:
+            name = Path("records") / f"{role}.json"
+            if (now / name).read_bytes() != (before / name).read_bytes():
+                raise LoopError(
+                    f"generation {newest.generation}: {label} is quarantined but its {role} "
+                    "record is not the one of the generation before"
+                )
+
     def _read_record(self, path: Path, role: str) -> CheckpointRecord:
         record = read_record(layout.read_json(path / "records" / f"{role}.json"))
         if record.role != role:
@@ -667,7 +689,9 @@ class PopulationLoop:
                 held,
                 previous.policy_id(by_label[label]),
                 timing,
-                self._judge(generation, label, last_event, summary["games"], found),
+                self._judge(
+                    generation, label, last_event, summary["games"], found, label in parents
+                ),
             )
             if cause is not None:
                 stopped[label] = cause
@@ -756,19 +780,25 @@ class PopulationLoop:
             parents[found.loser] = by_label[found.donor].checkpoints
         return parents
 
-    def _judge(
+    def _judge(  # noqa: PLR0913, PLR0917
         self,
         generation: int,
         label: str,
         last_event: dict[str, int],
         rows: list[dict[str, Any]],
         found: health.Limits,
+        replaced: bool = False,
     ) -> Callable[[dict[str, Any]], str | None]:
-        """The health judgement of a member's train report (its history is read now)."""
+        """The health judgement of a member's train report (its history is read now).
+
+        A slot replaced in this generation (copy or health) played the generation's games with its
+        OLD pair, so those games' forfeits are not the new slot's and are not judged (``replaced``,
+        the same exemption the clip and KL streak has through ``last_event``).
+        """
         earlier = self._earlier_reports(generation, label, last_event)
 
         def judge(report: dict[str, Any]) -> str | None:
-            return health.stop_cause(report, earlier, rows, label, found)
+            return health.stop_cause(report, earlier, rows, label, found, judge_rows=not replaced)
 
         return judge
 

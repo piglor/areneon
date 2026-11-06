@@ -6,11 +6,12 @@ import math
 from typing import Any
 
 import pytest
+import torch
 from areneon_ml.loop import health, selection
 from areneon_ml.loop import ladder_write as lw
 from areneon_ml.loop.ladder import LadderRecordError, read_ladder_record
 
-from tests.ml.loop.test_ladder_write import ANCHOR_STRENGTHS
+from tests.ml.loop.test_ladder_write import ANCHOR_STRENGTHS, ANCHORS, pair_rows
 from tests.ml.loop.test_selection import BOOT, config_for, decide, forged, lowered, window_rows
 
 LIMITS = health.Limits(clip_ppm=500_000, kl_ppm=100_000, forfeit_ppm=50_000)
@@ -239,3 +240,90 @@ def test_the_reader_refuses_a_health_replacement_of_a_copys_slot() -> None:
     record["selections"].append({"kind": "health", "member": "m1", "cause": "forfeits"})
     with pytest.raises(LadderRecordError, match="cannot name a copy's loser or donor"):
         read_ladder_record(record, None, config)
+
+
+def three_member_rows(generation: int) -> lw.GenerationRows:
+    """m0 beats everyone, m2 beats m1, and each member draws the anchors."""
+    rows: list[dict[str, Any]] = []
+    pair = 0
+    for a, b in (("m0", "m1"), ("m0", "m2"), ("m2", "m1")):
+        rows += pair_rows(pair, "ladder", a, b, ("member", "member"))
+        pair += 1
+    for member in ("m0", "m1", "m2"):
+        for baseline in ANCHORS:
+            rows += pair_rows(pair, "anchor", member, str(baseline["policy_id"]), ("member",) * 2)
+            pair += 1
+    rows += pair_rows(pair, "self", "m0", "m0", (None, None))
+    return lw.GenerationRows(generation, rows)
+
+
+def test_a_copy_may_name_a_donor_below_a_quarantined_top_member() -> None:
+    config = config_for(
+        members=3, selection_edit={"ready_generations": 1, "n_min": 2, "min_roots": 1}
+    )
+    history = [three_member_rows(1), three_member_rows(2)]
+    record = lw.build_ladder_record(
+        config, 2, history, ANCHOR_STRENGTHS, stopped={"m0": "forfeits"}
+    )
+    strengths = {m["member"]: m["strength"]["strength"] for m in record["members"]}
+    first = record["selections"][0]
+    assert first["kind"] == "copy"
+    assert strengths["m0"] > strengths[first["donor"]]  # the quarantined top is not the donor
+    assert selection.quarantined(record) == {"m0": "forfeits"}
+    assert read_ladder_record(record, None, config).raw is record
+    # Without the quarantine the same donor is refused: it is not the top member.
+    record["selections"] = record["selections"][:1]
+    with pytest.raises(LadderRecordError, match="highest strength"):
+        read_ladder_record(record, None, config)
+
+
+def test_a_slot_replaced_in_this_generation_is_not_judged_on_its_old_pairs_forfeits() -> None:
+    rows = games(20, 20)
+    assert health.stop_cause(over_clip() | {}, [None, None], rows, "m1", LIMITS) == "forfeits"
+    assert health.stop_cause(report(), [None, None], rows, "m1", LIMITS, judge_rows=False) is None
+
+
+def test_the_limit_is_compared_exactly() -> None:
+    # The decimal the report stores decides, strictly, with no binary rounding at the limit.
+    assert health._over(report(kl=0.1), "approx_kl", 100_000) is False
+    assert health._over(report(kl=0.1000001), "approx_kl", 100_000) is True
+    assert health._over(report(kl=3), "approx_kl", 2_999_999) is True
+
+
+def test_the_guard_keeps_its_snapshot_on_the_cpu_and_restores_bit_identically() -> None:
+    class Net(torch.nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.layer = torch.nn.Linear(2, 2)
+
+        def forward(self, x: Any) -> Any:
+            return self.layer(x)
+
+    net = Net()
+    optimiser = torch.optim.Adam(net.parameters())
+    net(torch.ones(1, 2)).sum().backward()
+    optimiser.step()
+    generator = torch.Generator().manual_seed(3)
+
+    class Stub:
+        def __init__(self) -> None:
+            self.networks = {"battle": net}
+            self.generator = generator
+
+        def optimiser_groups(self) -> list[Any]:
+            return [(optimiser, None)]
+
+    stub = Stub()
+    guard = health.Guard(stub)  # type: ignore[arg-type]
+    assert all(v.device.type == "cpu" for v in guard._networks["battle"].values())
+    before = {k: v.clone() for k, v in net.state_dict().items()}
+    state = generator.get_state().clone()
+    with torch.no_grad():
+        for p in net.parameters():
+            p.fill_(float("nan"))
+    torch.rand(3, generator=generator)
+    net(torch.ones(1, 2)).sum().backward()
+    optimiser.step()
+    guard.restore(stub)  # type: ignore[arg-type]
+    assert all(torch.equal(before[k], v) for k, v in net.state_dict().items())
+    assert torch.equal(generator.get_state(), state)

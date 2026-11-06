@@ -31,6 +31,7 @@ import copy
 import math
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from fractions import Fraction
 from typing import Any
 
 from areneon_ml.learner.config import RunConfig
@@ -43,7 +44,12 @@ MICRO = 1_000_000
 
 
 class HealthIncident(LoopError):
-    """Half or more of the members stopped in one generation: the run stops, nothing is kept."""
+    """Half or more of the members stopped in one generation: the run stops, nothing is kept.
+
+    The in-memory learners are mutated by then (their updates ran, and only the stopped members'
+    were undone), so the process must end: nothing is reused in-process after this is raised. A new
+    start resumes from the last committed generation.
+    """
 
 
 @dataclass(frozen=True)
@@ -91,13 +97,16 @@ def sanitize(value: Any) -> Any:
 
 
 def _over(report: Mapping[str, Any] | None, key: str, limit_ppm: int) -> bool:
-    """The Battle role's ``key`` is above ``limit_ppm`` millionths in a (stored) report."""
+    """The Battle role's ``key`` is above ``limit_ppm`` millionths in a (stored) report.
+
+    Exact: the decimal the report stores (``str`` of the float) times 10^6, as a fraction.
+    """
     if not report or report.get("battle", {}).get("value_warmup"):
         return False
     value = report.get("battle", {}).get(key)
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         return False
-    return bool(math.isfinite(value) and value * MICRO > limit_ppm)
+    return bool(math.isfinite(value) and Fraction(str(value)) * MICRO > limit_ppm)
 
 
 def forfeit_over(rows: Sequence[Mapping[str, Any]], member: str, found: Limits) -> bool:
@@ -111,12 +120,13 @@ def forfeit_over(rows: Sequence[Mapping[str, Any]], member: str, found: Limits) 
     return lost * MICRO > found.forfeit_ppm * len(mine)
 
 
-def stop_cause(
+def stop_cause(  # noqa: PLR0913, PLR0917
     report: Mapping[str, Any],
     earlier: Sequence[Mapping[str, Any] | None],
     rows: Sequence[Mapping[str, Any]],
     member: str,
     found: Limits,
+    judge_rows: bool = True,
 ) -> str | None:
     """The first health stop of a member's generation, or ``None``.
 
@@ -133,7 +143,7 @@ def stop_cause(
         ):
             if all(_over(r, key, limit) for r in window[:STREAK]):
                 return cause
-    if forfeit_over(rows, member, found):
+    if judge_rows and forfeit_over(rows, member, found):
         return "forfeits"
     return None
 
@@ -150,21 +160,33 @@ def check_incident(stopped: Mapping[str, str], members: int) -> None:
 # -- the discarded update ------------------------------------------------------------------------
 
 
+def _to_cpu(value: Any) -> Any:
+    """A copy of an optimiser state with every tensor cloned onto the CPU."""
+    if hasattr(value, "detach"):
+        return value.detach().to("cpu").clone()
+    if isinstance(value, dict):
+        return {k: _to_cpu(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return type(value)(_to_cpu(v) for v in value)
+    return copy.deepcopy(value)
+
+
 class Guard:
     """A learner's weights, Adam moments and generator, kept to undo one update."""
 
     def __init__(self, learner: Learner) -> None:
+        # Everything is kept on the CPU, so a guard costs no accelerator memory during training.
         self._networks = {
-            role: {k: v.detach().clone() for k, v in network.state_dict().items()}
+            role: {k: v.detach().to("cpu").clone() for k, v in network.state_dict().items()}
             for role, network in learner.networks.items()
         }
         self._optimisers = [
-            copy.deepcopy(optimiser.state_dict()) for optimiser, _ in learner.optimiser_groups()
+            _to_cpu(optimiser.state_dict()) for optimiser, _ in learner.optimiser_groups()
         ]
-        self._generator = learner.generator.get_state().clone()
+        self._generator = learner.generator.get_state().detach().to("cpu").clone()
 
     def restore(self, learner: Learner) -> None:
-        """Put the state back; the generation counter and the update's schedule keys stay."""
+        """Put the state back (onto the original devices); the generation counter stays."""
         for role, state in self._networks.items():
             learner.networks[role].load_state_dict(state, strict=True)
         for (optimiser, _), state in zip(learner.optimiser_groups(), self._optimisers, strict=True):
