@@ -121,6 +121,7 @@ describe.skipIf(!existsSync(PYTHON) && process.env.ARENEON_REQUIRE_PYTHON_WORKER
           identity_hash,
           sampling: "argmax",
           features: { configs },
+          pair: { preview: featuresPreview, battle: featuresBattle },
         });
         const record = await runBattle({ engine, formatId: FORMAT, seed: source.seed, teams, actors: { p1: actor, p2: firstLegal }, maxTurns: 3 });
         return { record, counts: actor.report().counts };

@@ -493,7 +493,7 @@ export async function playProgress(options: ProgressOptions): Promise<ProgressRe
   const { previous, search } = options;
   if (search !== undefined) {
     if (ablation !== undefined) throw new ProgressError("the search candidate is evaluated alone: no Preview ablation");
-    if (options.features !== undefined) throw new ProgressError("a pair that reads candidate features is not searched: the search refuses it");
+    if (options.features !== undefined) throw new ProgressError("the progress evaluation does not search a features pair yet");
     if (options.sheet !== undefined) throw new ProgressError("a pair that reads opponent_sheet is not searched: the search refuses it");
     if (!PROGRESS_MODES.includes(search.mode)) throw new ProgressError("the search mode is argmax or sample");
     opponents.push({

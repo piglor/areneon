@@ -113,7 +113,7 @@ export async function playSearch(
   const worker = change.worker ?? new StandInWorker();
   const known = syntheticTeamHashes([teamHash(teams.p1), teamHash(teams.p2)]);
   const pair = { preview: "a".repeat(64), battle: "b".repeat(64) };
-  const { policy_id, identity_hash } = searchPolicy(setup, manifest, pair, "argmax");
+  const { policy_id, identity_hash } = searchPolicy(setup, manifest, pair, "argmax", {}, worker.featureSet?.feature_set_hash);
   const actor = searchActor({
     setup,
     client: worker,
@@ -127,6 +127,7 @@ export async function playSearch(
     policy_id,
     identity_hash,
     sampling: "argmax",
+    pair,
     ...change.options,
   });
   const mine = change.wrap === undefined ? actor : change.wrap(actor);

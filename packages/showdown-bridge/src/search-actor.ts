@@ -66,7 +66,7 @@ import { loadWorldWriters, type WorldWriters, worldWritersHash } from "./world-w
 /** The search was set up, or asked to run, in a way it does not support. A defect of the caller, not a refusal of a decision. */
 export class SearchError extends Error {
   override name = "SearchError";
-  readonly code: "features_pair" | "missing_context" | "setup_mismatch";
+  readonly code: "features_pair" | "missing_context" | "setup_mismatch" | "policy_mismatch";
   constructor(code: SearchError["code"], message: string) {
     super(message);
     this.code = code;
@@ -309,6 +309,11 @@ export interface SearchActorOptions {
    * (ADR-022): required exactly then. The leaves carry no rows.
    */
   features?: ActorFeatures;
+  /**
+   * The frozen pair's checkpoint ids: required for a pair that reads candidate features, where `policy_id` must be the id
+   * `searchPolicy(..., features)` gives for the worker's stated feature set (else `SearchError` `policy_mismatch`).
+   */
+  pair?: { preview: string; battle: string };
   /** Test seam: the reply model (default `createReplyModel` over the setup's reviewed records). */
   reply_model?: ReplyModel;
 }
@@ -327,6 +332,10 @@ export function searchActor(options: SearchActorOptions): SearchActor {
     if (!valueOnly) throw new SearchError("features_pair", "a pair that reads candidate features needs a worker that answers value queries");
     if (options.features === undefined) throw new SearchError("features_pair", "a pair that reads candidate features needs the feature configs to build the root query's rows");
     if (!isFeatureSetId(stated.feature_set)) throw new SearchError("features_pair", "the worker stated a candidate feature set this side cannot build");
+    if (options.pair === undefined) throw new SearchError("features_pair", "a pair that reads candidate features needs its checkpoint ids to check the policy id");
+    if (policy_id !== policyId(options.pair, sampling, play, stated.feature_set_hash, identity_hash)) {
+      throw new SearchError("policy_mismatch", "the policy id is not the one for the feature set the worker stated: build it with searchPolicy(..., features)");
+    }
   }
   const features: ActorFeatures | undefined = options.features === undefined ? undefined : { ...options.features, memo: options.features.memo ?? createFeatureMemo() };
   const builder: WorldBuilder = createWorldBuilder({
@@ -557,6 +566,11 @@ export function searchActor(options: SearchActorOptions): SearchActor {
         if (error instanceof FeatureBuildError) throw new ForfeitSignal("crash", `no candidate features: ${error.code}`);
         throw error;
       }
+      const live = client.featureSet ?? null; // as the pair's own actor does, against what the worker states now
+      if (live === null || candidate_features.feature_set_hash !== live.feature_set_hash || candidate_features.feature_set !== live.feature_set) {
+        throw new PolicyProtocolError("the candidate features this side builds are of another feature set than the worker stated");
+      }
+      // Not recorded (`features.record`): search games are not training data, so no play-time sidecar is wanted for the root's rows.
     }
     const prior = await client.evaluate(battle, {
       schema_version: 1,

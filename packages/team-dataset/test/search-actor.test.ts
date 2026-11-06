@@ -21,7 +21,9 @@ import {
   configuredSetHash,
   createReplyModel,
   FEATURE_SET_BELIEF,
+  type Actor,
   type FeatureConfigs,
+  type SearchActor,
   loadMechanicsConfig,
   loadDamageAwareConfig,
   MechanicsProbeError,
@@ -85,6 +87,31 @@ describe("value-only leaves (ADR-026 erratum E2 decision 7)", () => {
     const refusing: FeatureConfigs = { ...configs, probe: () => { throw new MechanicsProbeError("refused"); } };
     const { record } = await playSearch(battle, { worker, options: { features: { configs: refusing } } });
     expect(record.forfeit).toMatchObject({ player: "p1", cause: "crash", detail: "no candidate features: probe_refused" });
+  }, 300_000);
+
+  it("checks the rows it builds against the feature set the worker states now, and the policy id against the stated set", async () => {
+    const configs = configsOf();
+    const stated = { feature_set: "probe-damage/1", feature_set_hash: configuredSetHash(engine, configs) };
+    // the worker changes its statement after Team Preview: the root's rows are of another set than it states
+    const flipping = Object.assign(new ValueStandInWorker(), { flip: false });
+    Object.defineProperty(flipping, "featureSet", { get: () => (flipping.flip ? { ...stated, feature_set_hash: "e".repeat(64) } : stated) });
+    const wrap = (actor: SearchActor): Actor => async (request, context) => {
+      if (request.phase !== "preview") flipping.flip = true;
+      return actor(request, context);
+    };
+    await expect(playSearch(battle, { worker: flipping, wrap, options: { features: { configs } } })).rejects.toThrow(/another feature set/);
+    // a policy id made without the stated set's hash (or for another one) is refused at construction
+    const worker = Object.assign(new ValueStandInWorker(), { featureSet: stated });
+    const setup = setupFor();
+    const pair = { preview: "a".repeat(64), battle: "b".repeat(64) };
+    for (const features of [undefined, "f".repeat(64)]) {
+      const { policy_id, identity_hash } = searchPolicy(setup, manifest, pair, "argmax", {}, features);
+      const error = await playSearch(battle, { worker, options: { features: { configs }, policy_id, identity_hash } }).catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(SearchError);
+      expect((error as SearchError).code).toBe("policy_mismatch");
+    }
+    // ... and the checkpoint ids are needed to check it
+    await expect(playSearch(battle, { worker, options: { features: { configs }, pair: undefined as never } })).rejects.toThrow(/checkpoint ids/);
   }, 300_000);
 
   it("names a features pair by its own policy id", () => {
