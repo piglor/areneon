@@ -27,6 +27,7 @@ mean pair score against the snapshot (``score_sum_ppm // pairs``); a snapshot wi
 
 from __future__ import annotations
 
+import re
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
@@ -151,6 +152,24 @@ def next_snapshots(
     return tuple(held[key] for key in keys)
 
 
+def past_pairs(config: RunConfig) -> int:
+    """The past pairs a member is scheduled (the twin of ``seatCounts``' ``past``).
+
+    ``seats_per_member`` split by the three shares: floors, then one to each of the largest
+    remainders (ties in the order ladder, self-play, past). A population of one has no ladder
+    (its seats go to self-play), which leaves the past count unchanged.
+    """
+    population = config.raw["population"]
+    total, shares = population["seats_per_member"], population["shares"]
+    parts = [total * shares[k] for k in ("ladder_ppm", "self_play_ppm", "past_pool_ppm")]
+    counts = [part // FULL_PPM for part in parts]
+    left = total - sum(counts)
+    order = sorted(range(3), key=lambda i: (-(parts[i] % FULL_PPM), i))
+    for i in order[:left]:
+        counts[i] += 1
+    return counts[2]
+
+
 # -- PFSP -------------------------------------------------------------------------------------
 
 
@@ -197,7 +216,11 @@ def draw_past(  # noqa: PLR0913, PLR0917
     current_policy_id: str,
     pool: PastPool,
 ) -> list[Snapshot]:
-    """The snapshot of each of ``member``'s past pairs (the twin of ``drawPast``)."""
+    """The snapshot of each of ``member``'s past pairs (the twin of ``drawPast``).
+
+    The candidates are every pool snapshot except the member's own current pair, so a member
+    may draw ANOTHER member's previous pair (and its own older ones).
+    """
     candidates = [c for c in pool.snapshots if c.policy_id != current_policy_id]
     if not candidates or pairs == 0:
         return []
@@ -256,17 +279,58 @@ def build_file(
     }
 
 
+_HEX64 = re.compile(r"[0-9a-f]{64}")
+_POLICY = re.compile(r"policy:[0-9a-f]{64}")
+_MEMBER = re.compile(r"m(0|[1-9][0-9]?)")
+_FILE_KEYS = [
+    "cells",
+    "format",
+    "generation",
+    "run_config_hash",
+    "run_id",
+    "schema_version",
+    "snapshots",
+]
+_SNAPSHOT_KEYS = ["battle", "generation", "id", "member", "policy_id", "preview"]
+
+
+def _is_int(value: object) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
+def _snapshot(entry: object, members: int) -> Snapshot:
+    if not isinstance(entry, dict) or sorted(entry) != _SNAPSHOT_KEYS:
+        _fail("past-pool.json: a snapshot has the wrong keys")
+    assert isinstance(entry, dict)
+    member, generation = entry["member"], entry["generation"]
+    if not isinstance(member, str) or _MEMBER.fullmatch(member) is None:
+        _fail("past-pool.json: a snapshot names no member")
+    if not _is_int(generation) or generation < 0:
+        _fail("past-pool.json: a snapshot's generation must be a non-negative integer")
+    ids = (entry["policy_id"], entry["preview"], entry["battle"])
+    if not all(isinstance(v, str) for v in ids):
+        _fail("past-pool.json: a snapshot's pair ids are malformed")
+    policy, preview, battle = ids
+    if (
+        _POLICY.fullmatch(policy) is None
+        or _HEX64.fullmatch(preview) is None
+        or _HEX64.fullmatch(battle) is None
+    ):
+        _fail("past-pool.json: a snapshot's pair ids are malformed")
+    snap = Snapshot(member, generation, policy, preview, battle)
+    if entry["id"] != snap.id:
+        _fail("past-pool.json: a snapshot's id must be its member and generation")
+    if member_index(member) >= members:
+        _fail("past-pool.json: a snapshot names a member the run does not have")
+    return snap
+
+
 def read_file(raw: object, config: RunConfig) -> PastPool:
-    """Check a ``past-pool.json`` against the config (the rules ``readPastPool`` checks)."""
-    if not isinstance(raw, dict) or sorted(raw) != [
-        "cells",
-        "format",
-        "generation",
-        "run_config_hash",
-        "run_id",
-        "schema_version",
-        "snapshots",
-    ]:
+    """Check a ``past-pool.json`` against the config (the rules ``readPastPool`` checks).
+
+    Every malformed input is a :class:`PastPoolError`, never a raw ``KeyError``/``TypeError``.
+    """
+    if not isinstance(raw, dict) or sorted(raw) != _FILE_KEYS:
         _fail("past-pool.json is not a past-pool file")
     assert isinstance(raw, dict)
     if raw["schema_version"] != 1 or raw["format"] != FORMAT:
@@ -276,20 +340,11 @@ def read_file(raw: object, config: RunConfig) -> PastPool:
     population = config.raw["population"]
     s = settings(config)
     generation = raw["generation"]
-    if not isinstance(generation, int) or generation < 0:
+    if not _is_int(generation) or generation < 0:
         _fail("past-pool.json: generation must be a non-negative integer")
-    snapshots = []
-    for entry in raw["snapshots"]:
-        snap = Snapshot(
-            entry["member"],
-            entry["generation"],
-            entry["policy_id"],
-            entry["preview"],
-            entry["battle"],
-        )
-        if entry != snap.to_json() or member_index(snap.member) >= population["members"]:
-            _fail("past-pool.json: a snapshot is malformed")
-        snapshots.append(snap)
+    if not isinstance(raw["snapshots"], list) or not isinstance(raw["cells"], list):
+        _fail("past-pool.json: snapshots and cells must be lists")
+    snapshots = [_snapshot(entry, population["members"]) for entry in raw["snapshots"]]
     expected = pool_keys(population["members"], s["snapshot_every"], s["max_size"], generation)
     if [(p.generation, member_index(p.member)) for p in snapshots] != expected:
         _fail("past-pool.json: the snapshots are not the pool the config gives at that generation")
@@ -297,24 +352,28 @@ def read_file(raw: object, config: RunConfig) -> PastPool:
     cells: dict[tuple[str, str], tuple[int, int, int, int, int]] = {}
     last: tuple[int, str] | None = None
     for cell in raw["cells"]:
-        scores = cell["scores"]
-        key = (member_index(cell["member"]), cell["snapshot"])
+        if not isinstance(cell, dict) or sorted(cell) != ["member", "scores", "snapshot"]:
+            _fail("past-pool.json: a cell has the wrong keys")
+        assert isinstance(cell, dict)
+        member, snapshot, scores = cell["member"], cell["snapshot"], cell["scores"]
         if (
-            sorted(cell) != ["member", "scores", "snapshot"]
-            or cell["snapshot"] not in ids
-            or member_index(cell["member"]) >= population["members"]
-            or len(scores) != BUCKETS
-            or any(not isinstance(n, int) or n < 0 for n in scores)
-            or sum(scores) < 1
-            or (last is not None and not last < key)
+            not isinstance(member, str)
+            or _MEMBER.fullmatch(member) is None
+            or member_index(member) >= population["members"]
+            or not isinstance(snapshot, str)
+            or snapshot not in ids
         ):
-            _fail("past-pool.json: a cell is malformed, out of order or names an unknown player")
+            _fail("past-pool.json: a cell names an unknown player")
+        if (
+            not isinstance(scores, list)
+            or len(scores) != BUCKETS
+            or any(not _is_int(n) or n < 0 for n in scores)
+            or sum(scores) < 1
+        ):
+            _fail("past-pool.json: a cell needs five non-negative counts and at least one pair")
+        key = (member_index(member), snapshot)
+        if last is not None and not last < key:
+            _fail("past-pool.json: cells must be sorted by member then snapshot, each once")
         last = key
-        cells[(cell["member"], cell["snapshot"])] = (
-            scores[0],
-            scores[1],
-            scores[2],
-            scores[3],
-            scores[4],
-        )
+        cells[(member, snapshot)] = (scores[0], scores[1], scores[2], scores[3], scores[4])
     return PastPool(generation, tuple(snapshots), cells)

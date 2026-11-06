@@ -210,10 +210,10 @@ def test_a_past_pool_file_round_trips_and_is_checked_against_the_config() -> Non
     refused(lambda r: r.update(format="past-pool/2"), "version 1")
     refused(lambda r: r.update(generation=-1), "non-negative")
     refused(lambda r: r["snapshots"].pop(0), "not the pool the config gives")
-    refused(lambda r: r["snapshots"][0].update(id="m0@g1"), "malformed")
-    refused(lambda r: r["cells"].reverse(), "out of order")
+    refused(lambda r: r["snapshots"][0].update(id="m0@g1"), "id must be its member")
+    refused(lambda r: r["cells"].reverse(), "must be sorted")
     refused(lambda r: r["cells"][0].update(snapshot="m0@g10"), "unknown player")
-    refused(lambda r: r["cells"][0].update(scores=[0, 0, 0, 0, 0]), "malformed")
+    refused(lambda r: r["cells"][0].update(scores=[0, 0, 0, 0, 0]), "at least one pair")
     with pytest.raises(pp.PastPoolError, match="not a past-pool file"):
         pp.read_file([], config)
 
@@ -472,3 +472,92 @@ def test_a_run_without_a_past_share_writes_no_pool_and_is_unchanged(tmp_path: Pa
     make_population(tmp_path, config).run(1)
     assert not (gen_path(tmp_path, 0) / pp.FILE).exists()
     assert "past_pool_hash" not in layout.read_json(gen_path(tmp_path, 1) / "manifest.json")
+
+
+# -- review follow-ups ------------------------------------------------------------------------
+
+
+def test_the_configured_past_count_is_the_seat_split_of_the_shares() -> None:
+    config = file_config()
+    # 2 seats at 500,000 / 250,000 / 250,000: floors 1 / 0 / 0, the leftover seat goes to the first
+    # of the equal largest remainders in the order ladder, self-play, past: self-play.
+    assert pp.past_pairs(config) == 0
+    config.raw["population"]["seats_per_member"] = 512
+    assert pp.past_pairs(config) == 128
+    config.raw["population"]["seats_per_member"] = 5
+    config.raw["population"]["shares"] = {
+        "ladder_ppm": 333_334,
+        "self_play_ppm": 333_333,
+        "past_pool_ppm": 333_333,
+    }
+    assert pp.past_pairs(config) == 1
+
+
+def test_a_plan_that_swaps_past_pairs_for_self_play_or_drops_them_is_refused(
+    tmp_path: Path,
+) -> None:
+    config = loop_config_edit()
+
+    class Dropping(FakePopulationPlayer):
+        def past_snapshots(
+            self, request: PopulationPlayRequest, member: str, generation: int, policy: str
+        ) -> list[pp.Snapshot]:
+            return []  # the member's past pair is not scheduled at all
+
+    with pytest.raises(LoopError, match="has 0 past pairs, the config schedules 1"):
+        make_population(tmp_path, config, Dropping(config)).run(1)
+
+
+def test_a_member_with_nothing_to_meet_plays_no_past_pair(tmp_path: Path) -> None:
+    config = loop_config_edit()
+    config.raw["population"]["members"] = 1
+    config.raw["population"]["selection"]["min_roots"] = 1
+    pool = pp.PastPool(0, (snap("m0", 0, "1"),), {})
+    loop = make_population(tmp_path, config)
+    loop._check_past_plan([], 1, (types.SimpleNamespace(member="m0", policy_id=policy("1")),), pool)  # type: ignore[arg-type]
+
+
+# -- the reader fails closed ------------------------------------------------------------------
+
+
+def test_every_malformed_pool_file_is_a_past_pool_error() -> None:
+    config = file_config()
+    good = pp.build_file(config, 5, SNAPSHOTS, CELLS)
+
+    def bad(change: Any) -> None:
+        raw = copy.deepcopy(good)
+        change(raw)
+        with pytest.raises(pp.PastPoolError):
+            pp.read_file(raw, config)
+
+    bad(lambda r: r.update(snapshots=[1]))
+    bad(lambda r: r.update(snapshots=["x"]))
+    bad(lambda r: r["snapshots"].__setitem__(0, {}))
+    bad(lambda r: r["snapshots"][0].pop("member"))
+    bad(lambda r: r["snapshots"][0].update(member=7))
+    bad(lambda r: r["snapshots"][0].update(member="x0"))
+    bad(lambda r: r["snapshots"][0].update(generation="0"))
+    bad(lambda r: r["snapshots"][0].update(generation=True))
+    bad(lambda r: r["snapshots"][0].update(generation=-1))
+    bad(lambda r: r["snapshots"][0].update(policy_id=3))
+    bad(lambda r: r["snapshots"][0].update(policy_id="policy:xyz"))
+    bad(lambda r: r["snapshots"][0].update(policy_id="a" * 64))
+    bad(lambda r: r["snapshots"][0].update(preview="g" * 64))
+    bad(lambda r: r["snapshots"][0].update(battle="a" * 63))
+    bad(lambda r: r["snapshots"][0].update(preview=None))
+    bad(lambda r: r["snapshots"][0].update(id="m0@g9"))
+    bad(lambda r: r.update(generation=True))
+    bad(lambda r: r.update(generation="5"))
+    bad(lambda r: r.update(snapshots={}))
+    bad(lambda r: r.update(cells={}))
+    bad(lambda r: r.update(cells=[1]))
+    bad(lambda r: r["cells"].__setitem__(0, {}))
+    bad(lambda r: r["cells"][0].update(member=3))
+    bad(lambda r: r["cells"][0].update(member="m9"))
+    bad(lambda r: r["cells"][0].update(snapshot=[]))
+    bad(lambda r: r["cells"][0].update(scores="abcde"))
+    bad(lambda r: r["cells"][0].update(scores=[1, 0, 0, 0]))
+    bad(lambda r: r["cells"][0].update(scores=[1.0, 0, 0, 0, 0]))
+    bad(lambda r: r["cells"][0].update(scores=[True, 0, 0, 0, 0]))
+    bad(lambda r: r["cells"][0].update(scores=[None, 0, 0, 0, 0]))
+    bad(lambda r: r["cells"].append(copy.deepcopy(r["cells"][-1])))

@@ -36,8 +36,10 @@ Bootstrap (``bootstrap_strengths``, ``head_to_head_bounds``). Percentile bootstr
 resample redraws, within every cell, ``n`` pairs with replacement from that cell's ``n`` pairs and
 refits. Randomness is ``population_draw(run_key, generation, member, "bootstrap", index)`` with
 ``index = lane << 32 | counter`` (the lane separates uses of one seed: ``LANE_FIT`` 0 for the fit,
-``LANE_COPY`` for the copy test, ``1 + 64 i + j`` for the edge of members ``i < j`` in
-``cyclic_triples``; the counter counts draws from 0). One 64-bit draw is two 32-bit pieces, high
+``LANE_COPY`` (2^20) for the copy test, ``1 + 64 i + j`` for the edge of members ``i < j`` in
+``cyclic_triples``, and ``ladder_write.LANE_SNAPSHOT + 16 g + k`` (``LANE_SNAPSHOT`` 2^16, in
+``2^16 .. 2^20 - 1``) for the snapshot of member ``k`` frozen in generation ``g``; the counter
+counts draws from 0). One 64-bit draw is two 32-bit pieces, high
 first. ``below(n)`` for ``1 <= n <= 2^32`` reads nothing when ``n == 1``, else takes the next piece
 and accepts it when it is below ``floor(2^32 / n) * n``, returning it modulo ``n`` (rejection
 sampling, no bias); a rejected piece is skipped. A drawn index ``d`` in a cell with counts ``c``

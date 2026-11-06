@@ -370,6 +370,8 @@ class PopulationLoop:
         """Continue the run until ``generations`` are committed; returns what this call did."""
         if generations < 0:
             raise LoopError("the number of generations cannot be negative")
+        if self._past and (ladder_write.LANE_SNAPSHOT + 16 * generations + 15 >= rating.LANE_COPY):
+            raise LoopError("population: too many generations for the snapshots' bootstrap lanes")
         with layout.run_lock(self.run_dir):
             return self._run_locked(generations)
 
@@ -931,8 +933,17 @@ class PopulationLoop:
                 raise LoopError(
                     f"plan.json: {pair.member}'s past pairs name a snapshot outside the pool"
                 )
+            # With a snapshot to meet the member plays exactly its configured past pairs (a plan
+            # that swapped them for self-play or dropped them is refused); with none, it plays none.
+            candidates = [p for p in pool.snapshots if p.policy_id != pair.policy_id]
+            wanted = past_pool.past_pairs(self.config) if candidates else 0
+            if len(met) != wanted:
+                raise LoopError(
+                    f"plan.json: {pair.member} has {len(met)} past pairs, "
+                    f"the config schedules {wanted}"
+                )
             expected = past_pool.draw_past(
-                self.config, generation, pair.member, len(met), pair.policy_id, pool
+                self.config, generation, pair.member, wanted, pair.policy_id, pool
             )
             if [seat["snapshot"] for seat in met] != [p.id for p in expected]:
                 raise LoopError(
