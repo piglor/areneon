@@ -58,10 +58,19 @@ class PopulationPlayRequest:
     out_dir: Path
 
 
+@dataclass(frozen=True)
+class PopulationCalibrationRequest:
+    """The generation-0 anchor calibration to play into ``out_dir`` (ADR-021 section 4)."""
+
+    out_dir: Path
+
+
 class PopulationPlayer(Protocol):
     """The simulator side of a population run (ADR-021 slice 4): one call plays every member."""
 
     def manifest(self, format_id: str) -> dict[str, Any]: ...
+
+    def calibrate_population(self, request: PopulationCalibrationRequest) -> None: ...
 
     def play_population(self, request: PopulationPlayRequest) -> None: ...
 
@@ -170,6 +179,24 @@ class NodePlayer:
             # Absent at one worker, so the default command line is the one it always was.
             *(("--policy-workers", str(self.policy_workers)) if self.policy_workers != 1 else ()),
             *(("--game-processes", str(self.game_processes)) if self.game_processes != 1 else ()),
+            heap_mb=self.node_heap_mb,
+            timeout_s=self.generation_timeout_s,
+        )
+        self.resource_usage.update(_resource_usage(out))
+
+    def calibrate_population(self, request: PopulationCalibrationRequest) -> None:
+        """Generation 0 of a population run: the anchors play each other (``--calibrate``)."""
+        self.resource_usage.clear()
+        out = self._run(
+            self.play_script,
+            *("--config", str(self.config_path)),
+            *("--generation", "0"),
+            "--calibrate",
+            *("--run-dir", str(self.run_dir)),
+            *("--engine-data", str(self.engine_data)),
+            *("--encoder-version", self.encoder_version),
+            *("--worker-python", self.worker_python),
+            *("--out", str(request.out_dir)),
             heap_mb=self.node_heap_mb,
             timeout_s=self.generation_timeout_s,
         )

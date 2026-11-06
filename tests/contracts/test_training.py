@@ -110,7 +110,46 @@ def test_refuses_a_manifest_class_below_its_examples() -> None:
     stream = stream_of(jcs(private).decode("utf-8"))
     with pytest.raises(TrainingStreamError, match="says synthetic, its examples are private"):
         read_stream(stream, manifest_for(stream))
-    assert read_stream(stream, manifest_for(stream, data_class="private"))
+    assert read_stream(stream, manifest_for(stream, data_class="private"), private_pool=True)
+
+
+# ADR-015 erratum E1 item 6: a private set is read only for a run config with a private pool.
+def private_stream() -> tuple[str, dict[str, Any]]:
+    private = {
+        **EXAMPLES[0],
+        "observation": {**EXAMPLES[0]["observation"], "data_class": "private"},
+    }
+    stream = stream_of(jcs(private).decode("utf-8"))
+    hashes = [EXAMPLES[0]["episode_hash"]]
+    return stream, manifest_for(stream, data_class="private", episode_hashes=hashes)
+
+
+def test_a_public_run_config_refuses_a_private_set() -> None:
+    stream, manifest = private_stream()
+    with pytest.raises(TrainingStreamError, match="without a private pool refuses a private"):
+        read_stream(stream, manifest)
+    assert len(read_stream(stream, manifest, private_pool=True)) == 1
+
+
+def test_a_private_pool_refuses_a_synthetic_set() -> None:
+    with pytest.raises(TrainingStreamError, match="private pool reads private TrainingSets only"):
+        read_stream(STREAM, manifest_for(STREAM), private_pool=True)
+
+
+def test_the_pool_rule_holds_for_the_file_reader_and_names_nothing(tmp_path: Path) -> None:
+    stream, manifest = private_stream()
+    path = tmp_path / "stream.jsonl"
+    path.write_text(stream, encoding="utf-8")
+    with pytest.raises(TrainingStreamError) as public:
+        check_stream_file(path, manifest)
+    assert str(public.value) == (
+        "a run config without a private pool refuses a private TrainingSet"
+    )
+    check_stream_file(path, manifest, private_pool=True)
+    synthetic = tmp_path / "synthetic.jsonl"
+    synthetic.write_text(STREAM, encoding="utf-8")
+    with pytest.raises(TrainingStreamError, match="private pool reads private"):
+        check_stream_file(synthetic, manifest_for(STREAM), private_pool=True)
 
 
 def test_refuses_a_manifest_that_is_not_an_object() -> None:

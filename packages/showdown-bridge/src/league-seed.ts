@@ -35,6 +35,17 @@ const requireIndex = (name: string, value: number, least: number): void => {
  */
 export function leagueGameStreams(run_key: string, generation: number, game: number): GameStreams {
   requireIndex("generation", generation, 1);
+  return derive(run_key, generation, game);
+}
+
+/**
+ * The same derivation at generation 0, which no training plan uses: the anchor calibration of a population run
+ * (ADR-021 section 4, slice 7) draws its pairs here, so a calibration pair never shares a seed with a training pair.
+ * `pair` counts from 0 within the calibration plan.
+ */
+export const calibrationGameStreams = (run_key: string, pair: number): GameStreams => derive(run_key, 0, pair);
+
+function derive(run_key: string, generation: number, game: number): GameStreams {
   requireIndex("game", game, 0);
   const digest = createHash("sha256").update(jcs({ run_key, generation, game, purpose: "league-game" } as Json)).digest();
   return {
