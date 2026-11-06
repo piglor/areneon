@@ -20,7 +20,7 @@ import { resolveFormat } from "./formats.ts";
 import type { BeliefWorldsFactory } from "./damage-aware-worlds.ts";
 import { type BeliefFeaturesFactory, SheetTotals } from "./belief-features.ts";
 import { PolicyWorkerClient } from "./policy-worker.ts";
-import { enableProfile, processFigures, readProfile, timed, writeProcessFigures } from "./profile.ts";
+import { leaveFigures, printProfile, startProfile, stopProfile, timed } from "./profile.ts";
 import { type MemberFlag, parseMemberFlag, runPopulationCli } from "./population-cli.ts";
 import { largest, ownPeakRss } from "./process-usage.ts";
 import { readTrainingRunConfig, runConfigHash } from "./training-run-config.ts";
@@ -195,12 +195,8 @@ export async function runGenerationCli(
       ? { client: {}, options: {}, report: () => undefined }
       : { client: { sheet: sheet.statement }, options: { sheet: sheet.setup, on_sheet_counts: totals.add }, report: totals.report };
   // The profile (#1191): on for --profile, and for a game process whose starter gave it the directory. Timers only read clocks.
-  const profileOwned = values["profile-dir"] === undefined && values.profile === true;
-  const profileDir = values["profile-dir"] ?? (values.profile === true ? mkdtempSync(join(tmpdir(), "areneon-profile-")) : undefined);
-  if (profileDir !== undefined) {
-    mkdirSync(profileDir, { recursive: true });
-    enableProfile();
-  }
+  const profile = startProfile(values["profile-dir"], values.profile === true);
+  const profileDir = profile?.dir;
   const makeClient = (): PolicyWorkerClient => new PolicyWorkerClient({
     command: need("worker-python"),
     args: [
@@ -256,7 +252,7 @@ export async function runGenerationCli(
       mkdirSync(need("out"), { recursive: true });
       writeShardFile(join(need("out"), SHARD_FILE), entries);
       writeFileSync(join(need("out"), USAGE_FILE), `${jcs(usageOf(ownPeakRss(), largest(clients.map((worker) => worker.peakRssBytes()))) as unknown as Json)}\n`);
-      if (profileDir !== undefined) writeProcessFigures(profileDir, own?.index ?? 0, processFigures(ownPeakRss()));
+      leaveFigures(profile, (own as Shard).index, ownPeakRss());
       return 0;
     }
     // The first game process to fail fails this one at once: `Promise.all` rejects with its message, `playGeneration` stops this process's own games, and the `finally` below kills the others (#1100).
@@ -270,13 +266,8 @@ export async function runGenerationCli(
     // After the summary line, so a reader of the first line is unchanged: the peak memory of this process, its workers and the further game processes.
     const usage = combineUsage([usageOf(ownPeakRss(), largest(clients.map((worker) => worker.peakRssBytes()))), ...(await Promise.all(children.map((child) => child.usage)))]);
     if (Object.keys(usage).length > 0) print(jcs({ resource_usage: usage } as unknown as Json));
-    if (profileDir !== undefined) {
-      // The workers write their figures when they end, so they end now; the game processes have ended (their results were read above).
-      await Promise.all(clients.map((worker) => worker.close()));
-      closed = true;
-      writeProcessFigures(profileDir, 0, processFigures(ownPeakRss()));
-      print(jcs({ profile: readProfile(profileDir) } as unknown as Json));
-    }
+    // The workers write their figures when they end, so they end now; the game processes have ended (their results were read above).
+    await printProfile(profile, () => ((closed = true), Promise.all(clients.map((worker) => worker.close()))), ownPeakRss(), print);
     return 0;
   } catch (error) {
     if (error instanceof GenerationError) {
@@ -288,7 +279,7 @@ export async function runGenerationCli(
     for (const child of children) child.stop();
     if (!closed) await Promise.all(clients.map((client) => client.close()));
     if (scratch !== undefined) rmSync(scratch, { recursive: true, force: true });
-    if (profileOwned && profileDir !== undefined) rmSync(profileDir, { recursive: true, force: true });
+    stopProfile(profile);
   }
 }
 

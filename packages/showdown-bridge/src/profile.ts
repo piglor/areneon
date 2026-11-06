@@ -3,9 +3,11 @@
 // every value it computes is untouched: a timer only reads the clock. The totals are diagnostics for the
 // run-metrics record (`profile`); nothing in the play path, the loader or the learner reads them, and they
 // reach no file the generation manifest hashes.
-import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { performance } from "node:perf_hooks";
+import { type Json, jcs } from "./canonical-json.ts";
 
 /** The phases a game process times (milliseconds, wall clock). */
 export const PROFILE_PHASES = ["e_sim", "e_judge", "e_probe", "o_obs", "ipc_wait", "pool_load", "merge"] as const;
@@ -153,4 +155,37 @@ export function readProfile(dir: string): Record<string, unknown> {
       per_process: withRss(workers),
     },
   };
+}
+
+/** The directory a profiled generation's processes leave their figures in, and whether this process made (and so removes) it. */
+export interface ProfileDir {
+  dir: string;
+  owned: boolean;
+}
+
+/** Start profiling when `--profile` was given (a directory of its own is made) or the process that started this one gave the directory; none otherwise. */
+export function startProfile(given: string | undefined, requested: boolean): ProfileDir | undefined {
+  if (given === undefined && !requested) return undefined;
+  const dir = given ?? mkdtempSync(join(tmpdir(), "areneon-profile-"));
+  mkdirSync(dir, { recursive: true });
+  enableProfile();
+  return { dir, owned: given === undefined };
+}
+
+/** A game process leaves its figures as `game-<index>.json` (nothing without a profile). */
+export function leaveFigures(profile: ProfileDir | undefined, index: number, peak_rss_bytes: number | null): void {
+  if (profile !== undefined) writeProcessFigures(profile.dir, index, processFigures(peak_rss_bytes));
+}
+
+/** The first game process ends its workers (they write their figures as they end), leaves its own and prints the generation's profile line (nothing without a profile). */
+export async function printProfile(profile: ProfileDir | undefined, endWorkers: () => Promise<unknown>, peak_rss_bytes: number | null, print: (line: string) => void): Promise<void> {
+  if (profile === undefined) return;
+  await endWorkers();
+  leaveFigures(profile, 0, peak_rss_bytes);
+  print(jcs({ profile: readProfile(profile.dir) } as unknown as Json));
+}
+
+/** Remove the directory this process made. */
+export function stopProfile(profile: ProfileDir | undefined): void {
+  if (profile?.owned === true) rmSync(profile.dir, { recursive: true, force: true });
 }

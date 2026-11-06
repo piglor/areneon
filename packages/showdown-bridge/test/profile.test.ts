@@ -1,8 +1,8 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { addSince, countDecisions, enableProfile, processFigures, profiling, readProfile, resetProfile, startTimer, timed, timedAsync, writeProcessFigures } from "../src/profile.ts";
+import { addSince, countDecisions, enableProfile, leaveFigures, printProfile, processFigures, profiling, readProfile, resetProfile, startProfile, startTimer, stopProfile, timed, timedAsync, writeProcessFigures } from "../src/profile.ts";
 
 const busy = (ms: number): void => {
   const until = performance.now() + ms;
@@ -73,6 +73,46 @@ describe("the profile timers", () => {
       });
     } finally {
       rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("starting, leaving and printing a profile", () => {
+  it("does nothing without --profile or a directory from the starter, and neither leaves nor prints for none", async () => {
+    expect(startProfile(undefined, false)).toBeUndefined();
+    expect(profiling()).toBe(false);
+    leaveFigures(undefined, 0, null);
+    const printed: string[] = [];
+    let ended = false;
+    await printProfile(undefined, async () => void (ended = true), null, (line) => printed.push(line));
+    expect(ended || printed.length > 0).toBe(false);
+    stopProfile(undefined);
+  });
+
+  it("makes and removes a directory of its own, uses a given one without removing it, and prints the summed line after ending the workers", async () => {
+    const own = startProfile(undefined, true);
+    expect(own?.owned).toBe(true);
+    expect(profiling()).toBe(true);
+    const given = mkdtempSync(join(tmpdir(), "areneon-profile-given-"));
+    try {
+      const shared = startProfile(join(given, "made"), false);
+      expect(shared).toEqual({ dir: join(given, "made"), owned: false });
+      expect(existsSync(join(given, "made"))).toBe(true);
+      leaveFigures(shared, 1, 77);
+      writeFileSync(join(given, "made", "worker-1.json"), JSON.stringify({ cpu_ms: 1, queries: 1, w_enc_ms: 1, w_fwd_ms: 1, w_enc_cpu_ms: 1, w_fwd_cpu_ms: 1 }));
+      const order: string[] = [];
+      const printed: string[] = [];
+      await printProfile(shared, async () => void order.push("ended"), 5, (line) => (order.push("printed"), printed.push(line)));
+      expect(order).toEqual(["ended", "printed"]);
+      const { profile } = JSON.parse(printed[0] as string) as { profile: { game_processes: { processes: number }; policy_workers: { workers: number } } };
+      expect(profile.game_processes.processes).toBe(2); // game-0 (the printer) and game-1
+      expect(profile.policy_workers.workers).toBe(1);
+      stopProfile(shared);
+      expect(existsSync(join(given, "made"))).toBe(true);
+      stopProfile(own);
+      expect(existsSync(own?.dir as string)).toBe(false);
+    } finally {
+      rmSync(given, { recursive: true, force: true });
     }
   });
 });
