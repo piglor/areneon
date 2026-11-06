@@ -96,7 +96,7 @@ def _check_piece(piece: tuple[int, int, int]) -> _Piece:
     """Check and encode the lines in bytes ``[start, end)``, the first being line ``first``."""
     start, end, first = piece
     torch.set_num_threads(1)
-    checker = StreamChecker(_SHARED["manifest"])
+    checker = StreamChecker(_SHARED["manifest"], _SHARED.get("private_pool", False))
     collector = _Collector(_SHARED["encoders"])
     result = _Piece(collector.collected(), checker.seen, checker.classes)
     with Path(_SHARED["path"]).open("rb") as handle:
@@ -230,7 +230,11 @@ def _raised(kind: str, message: str) -> Exception:
 
 
 def parallel_trajectories(
-    path: Path, manifest: dict[str, Any], encoders: dict[str, Encoder], processes: int
+    path: Path,
+    manifest: dict[str, Any],
+    encoders: dict[str, Encoder],
+    processes: int,
+    private_pool: bool = False,
 ) -> list[Trajectory] | None:
     """The trajectories of a stream file read by ``processes`` workers; None if it cannot be cut.
 
@@ -244,11 +248,11 @@ def parallel_trajectories(
     if workers < MIN_WORKERS or len(points) < MIN_POINTS:
         return None
     try:
-        marks = check_stream_digest(path, manifest, points[:-1])
+        marks = check_stream_digest(path, manifest, points[:-1], private_pool)
     except TrainingStreamError as exc:
         raise LearnerDataError(str(exc)) from exc
     pieces = [(points[i], points[i + 1], marks[i] + 1) for i in range(len(points) - 1)]
-    _SHARED.update(manifest=manifest, encoders=encoders, path=str(path))
+    _SHARED.update(manifest=manifest, encoders=encoders, path=str(path), private_pool=private_pool)
     try:
         context = multiprocessing.get_context("fork")
         # An executor, not a Pool: a worker the operating system kills (the out-of-memory
@@ -259,7 +263,7 @@ def parallel_trajectories(
         raise LearnerDataError("a load worker died before it finished its piece") from exc
     finally:
         _SHARED.clear()
-    return _join(results, manifest)
+    return _join(results, manifest, private_pool)
 
 
 def _coarsen(points: list[int]) -> list[int]:
@@ -272,12 +276,14 @@ def _coarsen(points: list[int]) -> list[int]:
     return kept
 
 
-def _join(results: list[_Piece], manifest: dict[str, Any]) -> list[Trajectory] | None:
+def _join(
+    results: list[_Piece], manifest: dict[str, Any], private_pool: bool = False
+) -> list[Trajectory] | None:
     """Put the pieces back together the way one pass over the whole stream would have."""
     for piece in results:
         if piece.contract_error is not None:
             raise LearnerDataError(piece.contract_error)
-    whole = StreamChecker(manifest)
+    whole = StreamChecker(manifest, private_pool)
     for piece in results:
         whole.seen |= piece.seen
         whole.classes |= piece.classes

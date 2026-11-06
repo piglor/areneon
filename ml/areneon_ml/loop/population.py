@@ -64,8 +64,9 @@ from areneon_ml.learner.data import trajectories
 from areneon_ml.learner.parallel import fit_processes
 from areneon_ml.learner.state import pack_state, restore_state
 from areneon_ml.learner.trainer import Learner, TrainReport, configure_learner
-from areneon_ml.loop import layout
+from areneon_ml.loop import ladder_write, layout, rating
 from areneon_ml.loop.driver import LoopError, StageHook, Timing
+from areneon_ml.loop.ladder import LadderRecordError, read_ladder_record
 from areneon_ml.loop.league import (
     LeagueRecordError,
     LeagueRunRecordV2,
@@ -80,7 +81,12 @@ from areneon_ml.loop.metrics import (
     metrics_path,
     write_metrics,
 )
-from areneon_ml.loop.play import MemberPair, PopulationPlayer, PopulationPlayRequest
+from areneon_ml.loop.play import (
+    MemberPair,
+    PopulationCalibrationRequest,
+    PopulationPlayer,
+    PopulationPlayRequest,
+)
 from areneon_ml.loop.population_seed import population_draw
 from areneon_ml.loop.records import (
     RecordFacts,
@@ -280,11 +286,18 @@ class PopulationLoop:
             raise LoopError("population: a non-zero past_pool_ppm is refused until the past pool")
         if features_hash(config) is not None:
             raise LoopError("population: a run that names candidate features is refused")
+        try:
+            self.anchor_ids = ladder_write.anchor_ids(config)
+        except ladder_write.LadderBuildError as exc:
+            raise LoopError(str(exc)) from exc
         self.config = config
         self.run_dir = run_dir
         self.game = game
         self.player = player
         self.members = config.raw["population"]["members"]
+        #: The frozen anchor strengths (``anchors.json`` of generation 0); set by ``run``.
+        self._anchors: dict[str, int] = {}
+        self._anchors_digest = ""
         #: Operational: worker processes that check and encode a member's stream (#1069).
         self.load_processes = 1
         self.load_memory_mb: int | None = None
@@ -386,7 +399,33 @@ class PopulationLoop:
         work = layout.partial_dir(self.run_dir, 0)
         work.mkdir(parents=True)
         manifest = self.player.manifest(self.config.format_id)
-        return self._seal(0, work, sealings, (), manifest, Timing(self.clock))
+        timing = Timing(self.clock)
+        # The anchor calibration (ADR-021 section 4): the anchors play each other once, their
+        # strengths are fitted against actor-rule@v1 = 10^9 and frozen in this generation's
+        # anchors.json.
+        with timing.phase("play"):
+            self.player.calibrate_population(PopulationCalibrationRequest(work))
+        self._on_stage(0, "calibrated")
+        try:
+            calibration = ladder_write.read_calibration(
+                layout.read_json(work / ladder_write.CALIBRATION_FILE), self.config
+            )
+            strengths = ladder_write.fit_anchors(calibration)
+        except (ladder_write.LadderBuildError, rating.RatingError) as exc:
+            raise LoopError(f"calibration.json: {exc}") from exc
+        document = ladder_write.anchors_document(self.config, calibration, strengths)
+        layout.write_json(work / ladder_write.ANCHORS_FILE, document)
+        self._anchors = strengths
+        self._anchors_digest = ladder_write.json_hash(document)
+        return self._seal(
+            0,
+            work,
+            sealings,
+            calibration.team_hashes,
+            manifest,
+            timing,
+            {"anchors_hash": self._anchors_digest},
+        )
 
     # -- resume --------------------------------------------------------------
 
@@ -453,12 +492,65 @@ class PopulationLoop:
             )
             self._learners[label] = learner
             members.append(MemberFrozen(label, checkpoints, state_hash, ts_hash))
+        self._anchors = self._load_anchors(newest)
+        if newest.generation >= 1:
+            self._check_ladder(newest.generation, newest.manifest)
         return PopulationFrozen(
             newest.generation,
             tuple(members),
             tuple(teams["teams"]),
             self.config.generation.temperature_ppm,
         )
+
+    # -- the ladder files ----------------------------------------------------
+
+    def _committed_json(self, generation: int, name: str) -> Any:
+        """A file of a committed generation, once it matches that generation's manifest."""
+        path = layout.generation_dir(self.run_dir, generation)
+        manifest = layout.read_json(path / layout.MANIFEST)
+        held = manifest.get("files", {}).get(name) if isinstance(manifest, dict) else None
+        if held is None or not (path / name).is_file() or layout.sha256_file(path / name) != held:
+            raise LoopError(f"generation {generation}: {name} differs from its manifest")
+        return layout.read_json(path / name)
+
+    def _load_anchors(self, newest: layout.Committed) -> dict[str, int]:
+        """The frozen strengths of generation 0, tied to the newest generation's manifest."""
+        raw = self._committed_json(0, ladder_write.ANCHORS_FILE)
+        self._anchors_digest = ladder_write.json_hash(raw)
+        if newest.manifest.get("anchors_hash") != self._anchors_digest:
+            raise LoopError(
+                f"generation {newest.generation}: its manifest names other anchor strengths "
+                "than generation 0 froze"
+            )
+        try:
+            return ladder_write.read_anchors(raw, self.config)
+        except ladder_write.LadderBuildError as exc:
+            raise LoopError(f"generation 0: {exc}") from exc
+
+    def _read_ladder(
+        self, generation: int, manifest: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
+        """The committed ``ladder.json`` of ``generation``, read with the frozen anchors."""
+        raw = self._committed_json(generation, ladder_write.LADDER_FILE)
+        if manifest is not None and manifest.get("ladder_hash") != ladder_write.json_hash(raw):
+            raise LoopError(
+                f"generation {generation}: its ladder.json is not the one its manifest names"
+            )
+        before = (
+            None
+            if generation == 1
+            else self._committed_json(generation - 1, ladder_write.LADDER_FILE)
+        )
+        try:
+            read_ladder_record(raw, before, self.config)
+            ladder_write.check_anchors(raw, self._anchors)
+        except (LadderRecordError, ladder_write.LadderBuildError) as exc:
+            raise LoopError(f"generation {generation}: ladder.json: {exc}") from exc
+        assert isinstance(raw, dict)
+        return raw
+
+    def _check_ladder(self, generation: int, manifest: dict[str, Any]) -> None:
+        self._read_ladder(generation, manifest)
 
     def _check_member(  # noqa: PLR0913, PLR0917
         self,
@@ -511,6 +603,9 @@ class PopulationLoop:
         self, previous: PopulationFrozen, result: PopulationRunResult
     ) -> PopulationFrozen:
         generation = previous.generation + 1
+        # The plan of this generation reads nothing but the committed ladder.json of the one before
+        # (slice 10 draws the opponents' weights from it); a missing or forged one stops here.
+        before = self._read_ladder(previous.generation) if previous.generation >= 1 else None
         work = layout.partial_dir(self.run_dir, generation)
         work.mkdir(parents=True)
         timing = Timing(self.clock)
@@ -573,9 +668,48 @@ class PopulationLoop:
         result.reports[generation] = reports
         self._on_stage(generation, "trained")
         teams = tuple(sorted(set(previous.team_hashes) | set(summary["team_hashes"])))
-        frozen = self._seal(generation, work, sealings, teams, summary["manifest"], timing)
+        with timing.phase("write"):
+            ladder = self._write_ladder(work, generation, summary["games"], before)
+        self._on_stage(generation, "rated")
+        frozen = self._seal(
+            generation,
+            work,
+            sealings,
+            teams,
+            summary["manifest"],
+            timing,
+            {
+                "anchors_hash": self._anchors_digest,
+                "ladder_hash": ladder_write.json_hash(ladder),
+            },
+        )
         self._write_member_counts(generation, member_counts)
         return frozen
+
+    def _write_ladder(
+        self,
+        work: Path,
+        generation: int,
+        rows: list[dict[str, Any]],
+        before: dict[str, Any] | None,
+    ) -> dict[str, Any]:
+        """Fit the window, count the cycles and write ``ladder.json`` (selection: none)."""
+        window = self.config.raw["population"]["rating"]["window"]
+        history: list[ladder_write.GenerationRows] = []
+        for g in range(max(1, generation - window + 1), generation):
+            first = self._read_ladder(g)["selections"][0]
+            games = self._committed_json(g, "generation.json")["games"]
+            copied = (first["loser"],) if first["kind"] == "copy" else ()
+            history.append(ladder_write.GenerationRows(g, games, copied))
+        history.append(ladder_write.GenerationRows(generation, rows))
+        try:
+            record = ladder_write.build_ladder_record(
+                self.config, generation, history, self._anchors, before
+            )
+        except (LadderRecordError, ladder_write.LadderBuildError, rating.RatingError) as exc:
+            raise LoopError(f"generation {generation}: ladder.json: {exc}") from exc
+        layout.write_json(work / ladder_write.LADDER_FILE, record)
+        return record
 
     def _train_member(  # noqa: PLR0913, PLR0917
         self,
@@ -680,6 +814,7 @@ class PopulationLoop:
         teams: tuple[str, ...],
         version_manifest: dict[str, Any],
         timing: Timing,
+        facts: dict[str, Any],
     ) -> PopulationFrozen:
         """Store every member's pair, write learner states, records and the team set, and commit."""
         manifest = team_set_manifest(teams)
@@ -743,6 +878,7 @@ class PopulationLoop:
                     "members": held,
                     "team_set_manifest_hash": manifest_hash,
                     "run_config_hash": self.config.hash,
+                    **facts,
                 },
             )
         self._on_stage(generation, "committed")

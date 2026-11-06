@@ -13,6 +13,7 @@ from areneon_contracts.contracts import jcs, sha256_hex
 from areneon_ml.learner.config import read_run_config
 from areneon_ml.loop.league import (
     LeagueRecordError,
+    calibration_game_seed,
     check_generation_plan,
     league_game_seed,
     read_any_league_run_record,
@@ -47,6 +48,20 @@ def test_the_seed_reproduces_the_pinned_vector(
     run_key: str, generation: int, game: int, seed: str
 ) -> None:
     assert league_game_seed(run_key, generation, game) == seed
+
+
+@pytest.mark.parametrize(
+    ("pair", "seed"),
+    [
+        (0, "sodium,9c05e4913a482ba96e65556eb8e8fbd6"),
+        (5, "sodium,f8600e1f06967b6cbbaaf2f75c5d9471"),
+    ],
+)
+def test_the_calibration_seed_is_league_seed_at_generation_zero(pair: int, seed: str) -> None:
+    # The same vectors as the TS calibrationGameStreams test (generation 0 of league-seed/1).
+    assert calibration_game_seed("tiny-run", pair) == seed
+    with pytest.raises(ValueError, match="counts from"):
+        calibration_game_seed("tiny-run", -1)
 
 
 @pytest.mark.parametrize(("generation", "game"), [(0, 0), (1, -1)])
