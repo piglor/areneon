@@ -339,6 +339,11 @@ def _parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         "--out", type=Path, help="a .html file or a directory (default beside the run)"
     )
     report.add_argument("--inspect-dir", type=Path, help="an inspector output to link to")
+    report.add_argument(
+        "--situational",
+        type=Path,
+        help="a situational move-use summary (python -m areneon_ml.report.situational --out)",
+    )
     progress = commands.add_parser("progress", help="progress evaluation of a committed generation")
     progress.add_argument("--run-dir", type=Path, required=True)
     which = progress.add_mutually_exclusive_group(required=True)
@@ -743,7 +748,9 @@ def main(argv: list[str] | None = None) -> int:
         elif args.command == "inspect":
             out = inspect_run(args.run_dir, args.out, repo=REPO, node=args.node)
         elif args.command == "report":
-            out = report_run(args.run_dir, args.progress_dir, args.out, args.inspect_dir)
+            out = report_run(
+                args.run_dir, args.progress_dir, args.out, args.inspect_dir, args.situational
+            )
         elif args.command in _SIMPLE:
             out = _SIMPLE[args.command](args)
         elif args.command == "replay" and args.progress_dir is not None:
