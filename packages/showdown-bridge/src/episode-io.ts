@@ -14,7 +14,7 @@ import { buildObservation, type Observation, type PlayerChannel } from "./observ
 import { assertOwnTeamStats, pinnedEngine } from "./own-team-stats.ts";
 import { nodeSha256, playerChannel } from "./player-channel.ts";
 import type { BattleRecord, Player } from "./runner.ts";
-import { higherClass, type StampedTeam, type SyntheticTeamHashes, teamHash } from "./team-class.ts";
+import { type DataClass, higherClass, type StampedTeam, type SyntheticTeamHashes, teamHash } from "./team-class.ts";
 
 export class EpisodeError extends Error {
   override name = "EpisodeError";
@@ -189,8 +189,11 @@ function assertCollection({ data_class, team, provenance: { runtime, collection 
     if (data_class !== "private") throw new EpisodeError("a sparring Episode is private: it records a battle against a human");
     return;
   }
+  // The class is at or above the higher team class, never below (ADR-015 erratum E1 item 5): a private run's
+  // Episode is private also when both teams are synthetic (its choices come from a policy with private
+  // ancestry; `episodeFromRecord` takes the floor), but an Episode relabelled below its teams is refused.
   const expected = higherClass(team.data_class, collection.opponent_team_data_class);
-  if (data_class !== expected) {
+  if (higherClass(data_class, expected) !== data_class) {
     throw new EpisodeError(
       `the Episode is labelled ${data_class}, but its own team is ${team.data_class} and its opponent's team is ${collection.opponent_team_data_class}: the class must be ${expected}`,
     );
@@ -225,6 +228,12 @@ export interface EpisodeOptions {
    * `opponent_team`.
    */
   collection?: CollectionInput;
+  /**
+   * The lowest class the Episode may take (ADR-015 erratum E1 item 5). The Episode's class is the higher of both
+   * teams' classes and this floor: a private run passes `private`, so every Episode it writes is private, also for
+   * a game where both teams are synthetic. Absent, the class is the teams' alone, as before. A floor never lowers a class.
+   */
+  class_floor?: DataClass;
 }
 
 /**
@@ -240,7 +249,7 @@ export interface EpisodeOptions {
 export async function episodeFromRecord(
   record: BattleRecord,
   player: Player,
-  { team, opponent_team, known_synthetic, behaviour_policy_id, collection }: EpisodeOptions,
+  { team, opponent_team, known_synthetic, behaviour_policy_id, collection, class_floor }: EpisodeOptions,
 ): Promise<Episode> {
   if (record.forfeit !== undefined) {
     throw new EpisodeError("a forfeited game is not an Episode: it is not training data");
@@ -259,7 +268,7 @@ export async function episodeFromRecord(
     collection && collection.kind !== "sparring"
       ? { ...collection, opponent_team_data_class: opponent_team.data_class }
       : collection;
-  const data_class = higherClass(team.data_class, opponent_team.data_class);
+  const data_class = higherClass(higherClass(team.data_class, opponent_team.data_class), class_floor ?? "synthetic");
   const decisions = record.choices
     .filter((choice) => choice.player === player)
     .map(({ request_seq, choice, refused }) => {

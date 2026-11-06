@@ -80,6 +80,14 @@ export {
   writeStoredTrainingStream,
   writeTrainingStream,
 } from "./training-loader.ts";
+export {
+  loadPrivateTrainingSet,
+  PRIVATE_LOADER_REFUSALS,
+  type PrivateEpisodeInput,
+  type PrivateLoaderRefusal,
+  type PrivateTrainingInput,
+  PrivateTrainingLoaderError,
+} from "./private-training-loader.ts";
 export { interimPoolSource, type PoolSource, runGenerationCli, UsageError } from "./generation-cli.ts";
 export { DAMAGE_AWARE_V2_POLICY_ID, DAMAGE_AWARE_V3_POLICY_ID, type DamageAwareSetup, damageAwareSetup, damageAwareSetupV2, type FeatureSetup, featureSetup, GenerationError, type RunSheetSetup, sheetSetup, type PoolRequest, type TrainingPool as GenerationTeamPool, playGeneration } from "./league-generation.ts";
 export { readTrainingRunConfig, runConfigHash, type TrainingRunConfig, TrainingRunConfigError } from "./training-run-config.ts";

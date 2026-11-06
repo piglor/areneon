@@ -130,11 +130,25 @@ def _check_sheet(number: int, raw: dict[str, Any]) -> None:
         raise TrainingStreamError(f"line {number}: opponent_sheet: {problem}")
 
 
-def _check_manifest(manifest: object) -> bool:
-    """The manifest's own rules; True when the set is learner_ready."""
+def _check_manifest(manifest: object, private_pool: bool = False) -> bool:
+    """The manifest's own rules; True when the set is learner_ready.
+
+    ``private_pool`` says whether the run config being read for has a private pool (ADR-015
+    erratum E1 item 6; the config field comes with the private run driver, so the caller states
+    it): a public run refuses a private set and a private-pool run refuses a synthetic one.
+    The words are fixed and name no value of the set.
+    """
     parse("training-set", manifest)
     if not isinstance(manifest, dict):  # parse() has validated an object; this narrows it
         raise TrainingStreamError("training-set: not an object")
+    if private_pool and manifest["data_class"] != "private":
+        raise TrainingStreamError(
+            "a run config with a private pool reads private TrainingSets only"
+        )
+    if not private_pool and manifest["data_class"] == "private":
+        raise TrainingStreamError(
+            "a run config without a private pool refuses a private TrainingSet"
+        )
     for field in ("episode_hashes", "evaluation_manifest_hashes"):
         if not _strictly_ascending(manifest[field]):
             raise TrainingStreamError(f"training-set: {field} must be sorted and unique")
@@ -222,8 +236,8 @@ class StreamChecker:
     ``finish`` runs the rules that need the whole stream. The loader's workers do that.
     """
 
-    def __init__(self, manifest: object) -> None:
-        self.ready = _check_manifest(manifest)
+    def __init__(self, manifest: object, private_pool: bool = False) -> None:
+        self.ready = _check_manifest(manifest, private_pool)
         assert isinstance(manifest, dict)
         self.manifest: dict[str, Any] = manifest
         self.known = set(manifest["episode_hashes"])
@@ -271,9 +285,11 @@ class StreamChecker:
             )
 
 
-def _check_lines(lines: Iterable[str], manifest: dict[str, Any], keep: bool) -> list[BaseModel]:
+def _check_lines(
+    lines: Iterable[str], manifest: dict[str, Any], keep: bool, private_pool: bool = False
+) -> list[BaseModel]:
     """Validate every line against the manifest; the examples are kept only when asked."""
-    checker = StreamChecker(manifest)
+    checker = StreamChecker(manifest, private_pool)
     examples: list[BaseModel] = []
     for number, line in enumerate(lines, start=1):
         _, example = checker.line(number, line)
@@ -283,9 +299,13 @@ def _check_lines(lines: Iterable[str], manifest: dict[str, Any], keep: bool) -> 
     return examples
 
 
-def read_stream(stream: str, manifest: object) -> list[BaseModel]:
-    """The stream's examples, once the manifest and every line check out."""
-    _check_manifest(manifest)
+def read_stream(stream: str, manifest: object, private_pool: bool = False) -> list[BaseModel]:
+    """The stream's examples, once the manifest and every line check out.
+
+    ``private_pool`` is False for a public run config (a private set is refused) and True for
+    one with a private pool (a synthetic set is refused); see ``_check_manifest``.
+    """
+    _check_manifest(manifest, private_pool)
     assert isinstance(manifest, dict)
     if sha256_hex(stream.encode("utf-8")) != manifest["stream_sha256"]:
         raise TrainingStreamError("the stream does not hash to its TrainingSet's stream_sha256")
@@ -296,7 +316,7 @@ def read_stream(stream: str, manifest: object) -> list[BaseModel]:
         raise TrainingStreamError(
             f"the stream has {len(lines)} lines, its TrainingSet says {manifest['examples']}"
         )
-    return _check_lines(lines, manifest, keep=True)
+    return _check_lines(lines, manifest, keep=True, private_pool=private_pool)
 
 
 CHUNK_BYTES = 1 << 20
@@ -312,14 +332,16 @@ def stream_lines(path: Path) -> Iterator[str]:
                 raise TrainingStreamError("the stream is not UTF-8") from error
 
 
-def check_stream_digest(path: Path, manifest: object, marks: Sequence[int] = ()) -> list[int]:
+def check_stream_digest(
+    path: Path, manifest: object, marks: Sequence[int] = (), private_pool: bool = False
+) -> list[int]:
     """The file-level checks of ``read_stream``: the digest, the last newline and the line count.
 
     The file is read once in chunks. For each byte offset in ``marks`` (ascending) the result
     holds the number of newlines before it, which is the number of lines that end before the
     offset: a line that starts at a mark is numbered one more than that.
     """
-    _check_manifest(manifest)
+    _check_manifest(manifest, private_pool)
     assert isinstance(manifest, dict)
     digest = hashlib.sha256()
     newlines = 0
@@ -347,16 +369,16 @@ def check_stream_digest(path: Path, manifest: object, marks: Sequence[int] = ())
     return before
 
 
-def check_stream_file(path: Path, manifest: object) -> None:
+def check_stream_file(path: Path, manifest: object, private_pool: bool = False) -> None:
     """The checks of ``read_stream`` on a stream file, read in chunks and line by line.
 
     A generation's stream can be larger than a gigabyte, so no string holds it and no
     example is kept: the file is hashed and its newlines counted in one pass, then each
     line is validated in a second. The refusals and their order are ``read_stream``'s.
     """
-    check_stream_digest(path, manifest)
+    check_stream_digest(path, manifest, private_pool=private_pool)
     assert isinstance(manifest, dict)
-    _check_lines(stream_lines(path), manifest, keep=False)
+    _check_lines(stream_lines(path), manifest, keep=False, private_pool=private_pool)
 
 
 _EPISODE_KEY = re.compile(rb'"episode_hash":"([0-9a-f]{64})"')

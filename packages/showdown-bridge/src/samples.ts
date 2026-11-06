@@ -1206,6 +1206,9 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "training-set/duplicate-manifests": { ...training.set, evaluation_manifest_hashes: [hashA, hashA] },
     "episode/sparring-synthetic": collected({ kind: "sparring", session_id: "sparring-session-1" }),
     "episode/class-below-opponent": collected({ ...league, opponent_team_data_class: "private" }),
+    // A private run's league Episode (ADR-015 erratum E1, #1062) whose opponent's team is private, kept synthetic-labelled: the
+    // class may rise above its teams (a floor) but never fall below them. The private loader's tests flip the label in code.
+    "episode/class-below-floor": collected({ ...league, run_id: "private-run-1", opponent_team_data_class: "private" }),
   };
   const invalid: Record<string, unknown> = {
     "opponent-sheet/extra-slot-field": sheetWith((slot) => (slot.real_item = "ix")),

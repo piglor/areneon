@@ -595,16 +595,29 @@ describe("the opponent's class on the collection record (ADR-009 §3, §4, #826)
     );
   });
 
-  it("refuses an Episode whose class is not the higher of the two, above it too", async () => {
+  it("accepts a class above the higher team class (a floor), and the floor never lowers one", async () => {
     const record = await play(realOpponent());
-    const episode = await episodeFromRecord(record, "p1", {
+    const options = {
       ...both(synthetic(), stampTeam(realOpponent() as PrivateTeamSpec["team"], KNOWN)),
       collection: league(record),
+    };
+    expect((await episodeFromRecord(record, "p1", options)).data_class).toBe("synthetic");
+    const floored = await episodeFromRecord(record, "p1", { ...options, class_floor: "private" });
+    expect(floored.data_class).toBe("private");
+    expect(floored.rights).toBe("owner-private");
+    await expect(readEpisode(stored(floored), { known_synthetic: KNOWN })).resolves.toBeDefined();
+    // A synthetic floor lowers nothing: a private opponent still makes a private Episode.
+    const mixed = await play(privateOpponent());
+    const kept = await episodeFromRecord(mixed, "p1", {
+      ...both(synthetic(), stampedOpponent()),
+      collection: league(mixed),
+      class_floor: "synthetic",
     });
-    const above = { ...stored(episode), data_class: "private", rights: "owner-private" };
-    await expect(readEpisode(above, { known_synthetic: KNOWN })).rejects.toThrow(
-      "the Episode is labelled private, but its own team is synthetic and its opponent's team is synthetic: the class must be synthetic",
-    );
+    expect(kept.data_class).toBe("private");
+    // A stored Episode relabelled below its floor-raised class is not catchable (the floor is not stored), but one
+    // below its TEAMS is: the relabel-to-synthetic refusal stands.
+    const down = { ...stored(kept), data_class: "synthetic", rights: "cc0-synthetic" };
+    await expect(readEpisode(down, { known_synthetic: KNOWN })).rejects.toThrow("the class must be private");
   });
 
   it("an observation of a mixed battle is private for either seat, at a preview and at a move request", async () => {
