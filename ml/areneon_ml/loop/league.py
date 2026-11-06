@@ -28,12 +28,27 @@ class LeagueRecordError(ValueError):
     """A LeagueRunRecord or a match plan breaks a rule."""
 
 
+def _seed_of(run_key: str, generation: int, game: int) -> str:
+    body = {"run_key": run_key, "generation": generation, "game": game, "purpose": "league-game"}
+    return "sodium," + str(sha256_hex(jcs(body)))[:32]
+
+
 def league_game_seed(run_key: str, generation: int, game: int) -> str:
     """The battle seed of one league game (``league-seed/1``)."""
     if generation < 1 or game < 0:
         raise ValueError("a generation counts from 1 and a game from 0")
-    body = {"run_key": run_key, "generation": generation, "game": game, "purpose": "league-game"}
-    return "sodium," + sha256_hex(jcs(body))[:32]
+    return _seed_of(run_key, generation, game)
+
+
+def calibration_game_seed(run_key: str, pair: int) -> str:
+    """The battle seed of calibration pair ``pair``: ``league-seed/1`` at generation 0.
+
+    No training plan uses generation 0, so a calibration pair never shares a seed with a training
+    pair (ADR-021 section 4; the twin of the TS ``calibrationGameStreams``).
+    """
+    if pair < 0:
+        raise ValueError("a pair counts from 0")
+    return _seed_of(run_key, 0, pair)
 
 
 @dataclass(frozen=True)

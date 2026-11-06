@@ -8,6 +8,8 @@ import type { Engine } from "./engine.ts";
 import { jcs, type Json } from "./canonical-json.ts";
 import { GenerationError, type TrainingPool } from "./league-generation.ts";
 import type { BeliefWorldsFactory } from "./damage-aware-worlds.ts";
+import { playCalibration, writeCalibration } from "./population-calibration.ts";
+import { calibrationAnchors } from "./population-plan.ts";
 import { checkPopulationConfig, type PopulationMember, playPopulationGeneration, writePopulationGeneration } from "./population-generation.ts";
 import { PolicyWorkerClient } from "./policy-worker.ts";
 import { runConfigHash, type TrainingRunConfig } from "./training-run-config.ts";
@@ -94,5 +96,36 @@ export async function runPopulationCli(input: PopulationCliInput, print: (line: 
     throw error;
   } finally {
     await Promise.all(clients.map((client) => client.close()));
+  }
+}
+
+export interface CalibrationCliInput {
+  engine: Engine;
+  config: TrainingRunConfig;
+  pool: TrainingPool;
+  out: string;
+  belief_worlds?: BeliefWorldsFactory | undefined;
+}
+
+/**
+ * Play the anchor calibration of a population run (generation 0, ADR-021 section 4) and write `calibration.json`; no
+ * worker starts. Returns the exit code (0 ok, 1 a failed calibration) and prints one canonical JSON line.
+ */
+export async function runCalibrationCli(input: CalibrationCliInput, print: (line: string) => void): Promise<number> {
+  const { config } = input;
+  try {
+    if (config.population === undefined) throw new GenerationError("population: the config has no population section");
+    calibrationAnchors(config);
+    mkdirSync(input.out, { recursive: true });
+    const result = await playCalibration({ engine: input.engine, config, pool: input.pool, belief_worlds: input.belief_worlds });
+    writeCalibration(input.out, result);
+    print(jcs({ generation: 0, run_config_hash: result.run_config_hash, anchors: result.anchors, games: result.games.length } as unknown as Json));
+    return 0;
+  } catch (error) {
+    if (error instanceof GenerationError) {
+      console.error(`play-generation: ${error.message}`);
+      return 1;
+    }
+    throw error;
   }
 }

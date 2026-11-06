@@ -37,6 +37,12 @@ export type { EvaluationRunManifest, TrainingExample, TrainingSet };
 
 export class TrainingLoaderError extends Error {
   override name = "TrainingLoaderError";
+  /** A stable code for the refusals that have one (`class_floor`); absent for the others. */
+  readonly code: string | undefined;
+  constructor(message: string, options?: ErrorOptions & { code?: string }) {
+    super(message, options);
+    this.code = options?.code;
+  }
 }
 
 const validManifest = ajvFor("contract").compile(evaluationRunManifestSchema);
@@ -350,7 +356,7 @@ export async function writeStoredTrainingStream(input: StoredTrainingInput, opti
 }
 
 /** Every Episode as `[hash, Episode]`, validated, in the order the stream lists them (hash order). */
-type EpisodeFeed = (evaluated: ReadonlySet<string>) => AsyncGenerator<[string, Episode]>;
+export type EpisodeFeed = (evaluated: ReadonlySet<string>) => AsyncGenerator<[string, Episode]>;
 
 function memoryFeed({ episodes, known_synthetic, behaviour_policy_id }: TrainingInput): EpisodeFeed {
   return async function* (evaluated) {
@@ -392,11 +398,12 @@ function fileFeed({ episodes, known_synthetic, behaviour_policy_id }: StoredTrai
 }
 
 /** The checks, the examples in stream order and the TrainingSet; `each` gets every example and its line. */
-async function streamTraining(
+export async function streamTraining(
   { evaluation_manifests, behaviour_policy_id, features, sheet }: Pick<TrainingInput, "evaluation_manifests" | "behaviour_policy_id" | "features" | "sheet">,
   feed: EpisodeFeed,
   limits: ChunkLimits,
   each: (example: TrainingExample, line: string) => void,
+  data_class: TrainingSet["data_class"] = "synthetic",
 ): Promise<TrainingSet> {
   const manifestHashes = new Set<string>();
   const evaluated = new Set<string>();
@@ -423,8 +430,9 @@ async function streamTraining(
   }
   return {
     schema_version: 1,
-    // The highest class of the Episodes: readTraining refuses every private Episode, so it is synthetic.
-    data_class: "synthetic",
+    // The highest class of the Episodes: `readTraining` refuses every private Episode, so the public loader's is
+    // synthetic; the private loader (`private-training-loader.ts`) accepts nothing else and says private.
+    data_class,
     episode_hashes: hashes as TrainingSet["episode_hashes"],
     evaluation_manifest_hashes: [...manifestHashes].sort(),
     learner_ready: true,
@@ -442,6 +450,9 @@ async function readTraining(value: unknown, index: number, known_synthetic: Synt
   if (collection === undefined) throw new TrainingLoaderError(`Episode ${index} has no collection record: it is not known to be training data`);
   if (collection.kind !== "league") {
     throw new TrainingLoaderError(`Episode ${index} was collected as ${collection.kind}: only a league Episode trains`);
+  }
+  if (collection.class_floor !== undefined) {
+    throw new TrainingLoaderError(`Episode ${index} carries a class floor: it belongs to a private run and never trains a public one`, { code: "class_floor" });
   }
   if (episode.data_class !== "synthetic" || episode.rights !== "cc0-synthetic") {
     throw new TrainingLoaderError(`Episode ${index} is ${episode.data_class} with ${episode.rights} rights: only synthetic, cc0-synthetic data is loaded`);
