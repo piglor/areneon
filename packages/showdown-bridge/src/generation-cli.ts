@@ -20,6 +20,7 @@ import { resolveFormat } from "./formats.ts";
 import type { BeliefWorldsFactory } from "./damage-aware-worlds.ts";
 import { type BeliefFeaturesFactory, SheetTotals } from "./belief-features.ts";
 import { PolicyWorkerClient } from "./policy-worker.ts";
+import { PastPoolError, readPastPool } from "./past-pool.ts";
 import { leaveFigures, printProfile, startProfile, stopProfile, timed } from "./profile.ts";
 import { type MemberFlag, parseMemberFlag, runCalibrationCli, runPopulationCli } from "./population-cli.ts";
 import { largest, ownPeakRss } from "./process-usage.ts";
@@ -75,11 +76,13 @@ const FLAGS = {
   "profile-dir": { type: "string" },
   // A population run (ADR-021): one `m<k>,PREVIEW,BATTLE,POLICY_ID` per member, in place of --preview, --battle and --policy-id.
   member: { type: "string", multiple: true },
+  // A population run with a past-pool share (ADR-021 section 3, slice 10): the committed `past-pool.json` of the generation before.
+  "past-pool": { type: "string" },
   // A population run's generation 0 (ADR-021 section 4): play the anchor calibration, no member and no worker.
   calibrate: { type: "boolean" },
 } as const;
 
-const OPTIONAL: readonly (keyof typeof FLAGS)[] = ["policy-workers", "game-processes", "shard", "episodes-dir", "features-dir", "profile", "profile-dir", "member", "calibrate"];
+const OPTIONAL: readonly (keyof typeof FLAGS)[] = ["policy-workers", "game-processes", "shard", "episodes-dir", "features-dir", "profile", "profile-dir", "member", "calibrate", "past-pool"];
 /** The flags a population run gives per member instead. */
 const PER_MEMBER: readonly (keyof typeof FLAGS)[] = ["preview", "battle", "policy-id"];
 
@@ -152,8 +155,19 @@ export async function runGenerationCli(
     } catch (error) {
       throw new UsageError((error as Error).message);
     }
+    const wantsPast = config.population.shares.past_pool_ppm !== 0;
+    if (wantsPast !== (values["past-pool"] !== undefined)) throw new UsageError("--past-pool is required with a past-pool share and refused without one");
+    let past: ReturnType<typeof readPastPool> | undefined;
+    if (values["past-pool"] !== undefined) {
+      try {
+        past = readPastPool(JSON.parse(readFileSync(values["past-pool"], "utf8")), config, await runConfigHash(config));
+      } catch (error) {
+        if (error instanceof PastPoolError) throw new UsageError(error.message);
+        throw error;
+      }
+    }
     return runPopulationCli(
-      { engine, config, generation, pool: poolSource(engine, config), members: flags, out: need("out"), run_dir: need("run-dir"), worker_python: need("worker-python"), engine_data: dataFile, engine_data_hash: dataHash, encoder_version: need("encoder-version"), belief_worlds: beliefWorlds },
+      { engine, config, generation, pool: poolSource(engine, config), members: flags, out: need("out"), run_dir: need("run-dir"), worker_python: need("worker-python"), engine_data: dataFile, engine_data_hash: dataHash, encoder_version: need("encoder-version"), belief_worlds: beliefWorlds, ...(past === undefined ? {} : { past }) },
       print,
     );
   }
