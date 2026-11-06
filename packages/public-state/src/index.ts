@@ -47,6 +47,17 @@ export interface PublicMon {
   phantom?: boolean;
 }
 
+/** One Pokemon of an engine-sent team sheet (open-sheet formats, ADR-027): the team as built, ids only. */
+export interface PublicSheetMon {
+  species: string;
+  item: string | null;
+  ability: string;
+  moves: string[];
+  nature: string | null;
+  gender: string | null;
+  level: number;
+}
+
 export interface PublicSide {
   player: string;
   username: string | null;
@@ -54,6 +65,8 @@ export interface PublicSide {
   roster: PublicMon[];
   slots: Record<string, number | null>;
   conditions: Record<string, number>;
+  /** The engine's team sheet of this side, kept apart from what the battle reveals; absent in a closed format. */
+  sheet?: PublicSheetMon[];
 }
 
 export interface PublicState {

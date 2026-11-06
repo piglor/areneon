@@ -15,11 +15,11 @@ CONFIG = json.loads((ROOT / "config/search/rerank-1.v1.json").read_text())
 EXISTING = json.loads((ROOT / "fixtures/policy-ids/existing.json").read_text())
 H = "a" * 64
 # Vectors shared with packages/showdown-bridge/test/search-config.test.ts.
-CONFIG_HASH = "739f4b1f1a30411b3d5fb3d37749739a6673bcaf6195941f3a57f6dc1e70d49c"
+CONFIG_HASH = "4b2d48ebba72a68217748f7f7e35edcb16c59f3516534d7f8b35a39d5d505d22"
 # Moved by #248's format bumps (WORLD_BUILDER_FORMAT 2, world-facts/3), by #1282 (world-facts/4;
 # sha256 of the sorted-key compact JSON of these inputs with hashlib; /3 gave 3508d46a...), and by
 # belief/5 and belief/6 through the belief identity hash named in the config.
-SEARCH_HASH = "17e58d7cd228cefe6a6102a2f3eb2d24f959bb2f0de5f3c0581d74c3a46f99fa"
+SEARCH_HASH = "832a20f4cef3de909b6be8aa52b0aefd5ae7c60f9df4723e1579446eae68a8dc"
 # The policy-id vectors take a search hash as an opaque string and keep the one
 # they were computed with.
 ID_VECTOR_SEARCH = "edd348bdf8b9f5069ada74afae22d3ba99e1b349e2748b245de73384c9d666b9"

@@ -14,6 +14,7 @@ import { buildObservation, type Observation, type PlayerChannel } from "./observ
 import { assertOwnTeamStats, pinnedEngine } from "./own-team-stats.ts";
 import { nodeSha256, playerChannel } from "./player-channel.ts";
 import type { BattleRecord, Player } from "./runner.ts";
+import { sheetRegimeOf, type TeamSheets } from "./team-sheet-binding.ts";
 import { higherClass, type StampedTeam, type SyntheticTeamHashes, teamHash } from "./team-class.ts";
 
 export class EpisodeError extends Error {
@@ -52,6 +53,10 @@ function cut(channel: PlayerChannel, seq: number): PlayerChannel | undefined {
   return end < 0 ? undefined : { ...channel, lines: channel.lines.slice(0, end + 1) };
 }
 
+/** The Episode's own channel, bound to the team-sheet regime of the format its manifest names (ADR-027 section 5). */
+export const episodeChannel = (episode: Episode, regime: TeamSheets): PlayerChannel =>
+  playerChannel({ schema_version: 1, data_class: episode.data_class, player: episode.player, lines: episode.channel }, regime);
+
 /** The player's observation at their `seq`-th request, built from that prefix of their own channel. */
 async function observeAt(episode: Episode, channel: PlayerChannel, seq: number): Promise<Observation | undefined> {
   const prefix = cut(channel, seq);
@@ -64,7 +69,7 @@ async function observeAt(episode: Episode, channel: PlayerChannel, seq: number):
  * has checked: that is what guarantees every decision has its request.
  */
 export async function decisionObservations(episode: Episode): Promise<Observation[]> {
-  const channel = playerChannel({ schema_version: 1, data_class: episode.data_class, player: episode.player, lines: episode.channel });
+  const channel = episodeChannel(episode, sheetRegimeOf(episode.provenance.manifest.showdown_commit, episode.provenance.manifest.format_id));
   const out: Observation[] = [];
   for (const { identity } of episode.decisions) out.push((await observeAt(episode, channel, identity.request_seq)) as Observation);
   return out;
@@ -134,7 +139,8 @@ async function read(value: unknown, engine: Engine | undefined): Promise<Episode
     throw new EpisodeError("an Episode with a private team is private");
   }
   assertCollection(episode);
-  const channel = playerChannel({ schema_version: 1, data_class: episode.data_class, player: episode.player, lines: episode.channel });
+  const sim = engine ?? pinnedEngine();
+  const channel = episodeChannel(episode, sheetRegimeOf(sim.commit, episode.provenance.manifest.format_id));
   const ended = resultOf(channel.lines);
   if (ended.winner !== episode.result.winner || ended.turns !== episode.result.turns) {
     throw new EpisodeError(`the result ${JSON.stringify(episode.result)} is not the channel's ${JSON.stringify(ended)}`);
@@ -142,7 +148,6 @@ async function read(value: unknown, engine: Engine | undefined): Promise<Episode
   const preview = cut(channel, 1);
   if (!preview) throw new EpisodeError("the channel holds no request");
   await observeAt(episode, channel, 1);
-  const sim = engine ?? pinnedEngine();
   assertSupportedFormat(sim, episode.provenance.manifest.format_id);
   assertOwnTeamStats(sim, episode.provenance.manifest.format_id, episode.team, preview);
   let last = 0;

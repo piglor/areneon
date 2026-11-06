@@ -33,10 +33,10 @@ const inputs: SearchIdentityInputs = {
   version_manifest: { showdown_commit: "c".repeat(40), format_id: FORMAT, regulation: "M-C", ruleset_hash: h("5"), format_rules_hash: h("6") },
 };
 // Computed with Python (areneon_ml.loop.records), outside the TS code.
-const CONFIG_HASH = "739f4b1f1a30411b3d5fb3d37749739a6673bcaf6195941f3a57f6dc1e70d49c";
+const CONFIG_HASH = "4b2d48ebba72a68217748f7f7e35edcb16c59f3516534d7f8b35a39d5d505d22";
 // Moved by #248's format bumps (WORLD_BUILDER_FORMAT 1 -> 2, world-facts/2 -> 3) and by #1282 (world-facts/3 -> 4); recomputed with Python hashlib over the
 // canonical JSON, sort_keys, separators (",", ":"), of the 13 inputs below with search_config_hash = CONFIG_HASH (world-facts/3 still gives 3508d46a...). The policy-id vectors below take a search hash as an opaque string, so they keep edd348bd....
-const SEARCH_HASH = "17e58d7cd228cefe6a6102a2f3eb2d24f959bb2f0de5f3c0581d74c3a46f99fa";
+const SEARCH_HASH = "832a20f4cef3de909b6be8aa52b0aefd5ae7c60f9df4723e1579446eae68a8dc";
 const ID_VECTOR_SEARCH = "edd348bdf8b9f5069ada74afae22d3ba99e1b349e2748b245de73384c9d666b9";
 
 describe("the committed SearchConfig", () => {
