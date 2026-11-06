@@ -13,8 +13,9 @@ export const SECRET = "CanaryMarkerS7/".repeat(2);
 export const ACCOUNT = "canaryaccount7";
 export const ENDPOINT = `https://${ACCOUNT}.r2.cloudflarestorage.com`;
 export const BUCKET = "canary-bucket-7";
-export const ENV = { AWS_ACCESS_KEY_ID: KEY_ID, AWS_SECRET_ACCESS_KEY: SECRET, AWS_ENDPOINT_URL: ENDPOINT, AWS_DEFAULT_REGION: "auto" } as const;
-export const SECRETS = [KEY_ID, SECRET, ACCOUNT, ENDPOINT, BUCKET];
+export const SESSION_TOKEN = "CanarySessionToken7/abcdef+ghijkl==";
+export const ENV = { AWS_ACCESS_KEY_ID: KEY_ID, AWS_SECRET_ACCESS_KEY: SECRET, AWS_ENDPOINT_URL: ENDPOINT, AWS_DEFAULT_REGION: "auto", AWS_SESSION_TOKEN: SESSION_TOKEN } as const;
+export const SECRETS = [KEY_ID, SECRET, SESSION_TOKEN, ACCOUNT, ENDPOINT, BUCKET];
 
 export const settings = (): R2Settings => R2Settings.fromEnvironment(ENV, [], BUCKET);
 
