@@ -161,13 +161,14 @@ def past_pairs(config: RunConfig) -> int:
     """
     population = config.raw["population"]
     total, shares = population["seats_per_member"], population["shares"]
-    parts = [total * shares[k] for k in ("ladder_ppm", "self_play_ppm", "past_pool_ppm")]
-    counts = [part // FULL_PPM for part in parts]
+    parts: list[int] = [total * shares[k] for k in ("ladder_ppm", "self_play_ppm", "past_pool_ppm")]
+    counts: list[int] = [part // FULL_PPM for part in parts]
     left = total - sum(counts)
     order = sorted(range(3), key=lambda i: (-(parts[i] % FULL_PPM), i))
     for i in order[:left]:
         counts[i] += 1
-    return counts[2]
+    past: int = counts[2]
+    return past
 
 
 # -- PFSP -------------------------------------------------------------------------------------
