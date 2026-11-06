@@ -19,6 +19,12 @@ from areneon_ml.loop.driver import (
     provenance_graph,
     sources_registry,
 )
+from areneon_ml.loop.population_provenance import (
+    PopulationProvenanceError,
+    learner_steps,
+    member_records,
+    verified_manifests,
+)
 from areneon_ml.loop.warm_start import import_clone
 from areneon_ml.model.network import ROLES
 
@@ -186,3 +192,37 @@ def test_a_generation_without_a_training_set_is_not_a_failure(tmp_path: Path) ->
     assert manifest_members(run_dir, 1)["m0"]["training_set_hash"] in sources
     assert provenance_graph(run_dir)
     assert population_learner_steps(run_dir)
+
+
+def test_a_missing_sidecar_is_skipped_for_a_quarantine_and_a_fixed_error_otherwise(
+    tmp_path: Path,
+) -> None:
+    run_dir = tmp_path / "sidecars"
+    run_to(run_dir, 2)
+    newest = layout.latest_complete(run_dir)
+    assert newest is not None
+    manifests = verified_manifests(run_dir, newest)
+    sidecar = gen_path(run_dir, 2) / "members/m0/learner-2.json"
+    sidecar.unlink()
+    with pytest.raises(PopulationProvenanceError, match="sidecar cannot be read"):
+        learner_steps(run_dir, manifests)
+    # A null training_set_hash is a quarantined update: its sidecar is not read.
+    manifests[2]["members"]["m0"]["training_set_hash"] = None
+    assert learner_steps(run_dir, manifests)
+
+
+def test_the_refusals_of_the_record_reader(tmp_path: Path) -> None:
+    run_dir = tmp_path / "refusals"
+    run_to(run_dir, 1)
+    newest = layout.latest_complete(run_dir)
+    assert newest is not None
+    manifests = verified_manifests(run_dir, newest)
+    with pytest.raises(PopulationProvenanceError, match="lists no members"):
+        member_records(run_dir, [{"generation": 0}])
+    other = manifests[0]["members"]["m1"]["checkpoints"]["battle"]
+    manifests[0]["members"]["m0"]["checkpoints"]["battle"] = other
+    with pytest.raises(PopulationProvenanceError, match="names another checkpoint"):
+        member_records(run_dir, manifests)
+    (gen_path(run_dir, 1) / "members/m0/train-report.json").write_text("{}")
+    with pytest.raises(PopulationProvenanceError):
+        verified_manifests(run_dir, newest)

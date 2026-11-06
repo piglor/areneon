@@ -41,18 +41,23 @@ def _members(manifest: dict[str, Any]) -> dict[str, dict[str, Any]]:
     return held
 
 
-def _verified(run_dir: Path, newest: layout.Committed) -> list[dict[str, Any]]:
-    """Every committed generation's manifest, each checked against its files."""
-    return [
-        layout.verify_generation(layout.generation_dir(run_dir, g), g)
-        for g in range(newest.generation + 1)
-    ]
+def verified_manifests(run_dir: Path, newest: layout.Committed) -> list[dict[str, Any]]:
+    """Every committed generation's manifest, each checked against its files (once per export)."""
+    try:
+        return [
+            layout.verify_generation(layout.generation_dir(run_dir, g), g)
+            for g in range(newest.generation + 1)
+        ]
+    except (layout.RunDirError, OSError) as exc:
+        raise PopulationProvenanceError(str(exc)) from exc
 
 
-def member_records(run_dir: Path, newest: layout.Committed) -> list[tuple[CheckpointRecord, Path]]:
+def member_records(
+    run_dir: Path, manifests: list[dict[str, Any]]
+) -> list[tuple[CheckpointRecord, Path]]:
     """One record per checkpoint id, with the file it came from, in generation then member order."""
     found: dict[str, tuple[CheckpointRecord, Path]] = {}
-    for g, manifest in enumerate(_verified(run_dir, newest)):
+    for g, manifest in enumerate(manifests):
         for member in sorted(_members(manifest)):
             for role in ROLES:
                 path = (
@@ -78,11 +83,12 @@ def member_records(run_dir: Path, newest: layout.Committed) -> list[tuple[Checkp
     return list(found.values())
 
 
-def population_sources(run_dir: Path, newest: layout.Committed) -> dict[str, list[str]]:
+def population_sources(
+    manifests: list[dict[str, Any]], records: list[tuple[CheckpointRecord, Path]]
+) -> dict[str, list[str]]:
     """Training-set hash to the checkpoints that generated it, for every member."""
     registry: dict[str, list[str]] = {}
-    manifests = _verified(run_dir, newest)
-    for record, _ in member_records(run_dir, newest):
+    for record, _ in records:
         for held in record.training_set_hashes:
             if held not in registry:
                 registry[held] = []  # an outside source (the warm start's teacher)
@@ -96,7 +102,7 @@ def population_sources(run_dir: Path, newest: layout.Committed) -> dict[str, lis
     return registry
 
 
-def learner_steps(run_dir: Path, newest: layout.Committed) -> dict[str, int]:
+def learner_steps(run_dir: Path, manifests: list[dict[str, Any]]) -> dict[str, int]:
     """Cumulative optimiser steps per checkpoint id: the role's largest Adam step count.
 
     Read from ``members/m<k>/learner-<g>.json``. A policy-frozen update (a copy's value-only
@@ -104,18 +110,22 @@ def learner_steps(run_dir: Path, newest: layout.Committed) -> dict[str, int]:
     largest count is the number of updates the checkpoint's lineage has taken.
     """
     steps: dict[str, int] = {}
-    for g, manifest in enumerate(_verified(run_dir, newest)):
+    for g, manifest in enumerate(manifests):
         for member, entry in sorted(_members(manifest).items()):
+            if g >= 1 and entry["training_set_hash"] is None:
+                continue  # a quarantined update: the earlier records stand, its sidecar may be gone
             # The sidecar is the JCS bytes without a newline (``pack_state``), so not read_json.
-            sidecar = json.loads(
-                (
-                    layout.generation_dir(run_dir, g) / "members" / member / f"learner-{g}.json"
-                ).read_text(encoding="utf-8")
-            )
+            name = layout.generation_dir(run_dir, g) / "members" / member / f"learner-{g}.json"
+            try:
+                sidecar = json.loads(name.read_text(encoding="utf-8"))
+            except (OSError, ValueError) as exc:
+                raise PopulationProvenanceError(
+                    f"generation {g}: {member}'s learner-state sidecar cannot be read"
+                ) from exc
             for role in ROLES:
                 counts = sidecar["optimizer_steps"][role]
                 total = max(counts.values(), default=0)
                 checkpoint = entry["checkpoints"][role]
-                # A checkpoint kept across generations (a quarantined update) counts once.
+                # A checkpoint kept across generations counts once.
                 steps[checkpoint] = max(steps.get(checkpoint, 0), total)
     return dict(sorted(steps.items()))

@@ -540,6 +540,17 @@ def ladder_top(path: Path, facts: dict[str, Any], generation: int) -> str:
     return str(best["member"])
 
 
+MEMBER_LABEL = (
+    "selected by the strength the generation's games gave; the pair evaluated is the member's "
+    "pair frozen at the end of the generation"
+)
+
+
+def _member_part(member: str | None) -> dict[str, Any]:
+    """The printed member of a population run (a single lineage's result has no such keys)."""
+    return {} if member is None else {"member": member, "member_label": MEMBER_LABEL}
+
+
 def _recorded_member(run_dir: Path, generation: int, checkpoints: dict[str, str]) -> str | None:
     """The member of a population run whose frozen pair a committed record names (else None)."""
     manifest = layout.read_json(layout.generation_dir(run_dir, generation) / layout.MANIFEST)
@@ -741,6 +752,8 @@ def _versus_pair(
     if other_dir == run_dir.resolve():
         raise ProgressError("the other run is the evaluated run itself")
     other = _read_config(other_dir)
+    if other.population:
+        raise ProgressError("the other run is a population run: it has no single frozen pair")
     if other.run_key == config.run_key:
         raise ProgressError("the other run has the same run key as the evaluated one")
     if other.format_id != config.format_id:
@@ -1587,7 +1600,7 @@ def progress_generation(  # noqa: PLR0913, PLR0915, PLR0917
                 "game_ms": facts.get("game_ms", {}),
                 "matches": summary_of(record),
             }
-            | ({} if source.member is None else {"member": source.member})
+            | _member_part(source.member)
             | _gap_part(record)
             | _ablation_part(record)
             | _versus_part(record, relation)
@@ -1625,8 +1638,8 @@ def _skipped(  # noqa: PLR0913, PLR0917
     kept = _recorded_member(run_dir, generation, record["checkpoints"])
     if member is not None and kept != member:
         raise ProgressError(
-            f"{target.name} already holds {kept}'s pair: use a progress directory of its own "
-            f"to evaluate {member}"
+            f"{target.name} already holds {kept or 'a single lineage'}'s pair: use a progress "
+            f"directory of its own to evaluate {member}"
         )
     if pair is not None and any(m["opponent"]["kind"] == "run" for m in record["matches"]):
         held = versus_relation(run_dir, _source(run_dir, config, generation), pair)
@@ -1653,7 +1666,7 @@ def _skipped(  # noqa: PLR0913, PLR0917
             "damage_aware": _damage_aware_status(record),
             "matches": summary_of(record),
         }
-        | ({} if kept is None else {"member": kept})
+        | _member_part(kept)
         | _gap_part(record)
         | _modes_status(record, modes)
         | _ablation_part(record)
