@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:areneon:schema:contracts:v1:run-metrics",
   "title": "RunMetrics",
-  "description": "What one generation of a training run cost in wall-clock time (ADR-010 erratum A1, item 3): milliseconds per phase of the loop driver, the counts and throughput that follow from them, the learner's peak accelerator memory and its device, and optionally the peak reserved accelerator memory and the peak resident set of the driver, the game processes and the policy workers. Wall-clock values differ on every run, so the record lives in <run-dir>/metrics/g<NNNNNN>.json, written after the generation commits and outside every manifest and hash; the loop, the loader and the learner never read it, and a crash between the commit and the write loses it. Integers only: milliseconds, counts, bytes and per-hour rates (the rate is the count times 3,600,000 divided by the phase's milliseconds, truncated, and 0 when the phase took no time).",
+  "description": "What one generation of a training run cost in wall-clock time (ADR-010 erratum A1, item 3): milliseconds per phase of the loop driver, the counts and throughput that follow from them, the learner's peak accelerator memory and its device, and optionally the peak reserved accelerator memory and the peak resident set of the driver, the game processes and the policy workers. Wall-clock values differ on every run, so the record lives in <run-dir>/metrics/g<NNNNNN>.json, written after the generation commits and outside every manifest and hash; the loop, the loader and the learner never read it, and a crash between the commit and the write loses it. A run started with --profile adds the optional profile (ADR-028 section 1): where the generation's time went, by phase, process and worker, for the loop-share measurement; diagnostics only, outside every hash like the rest. Integers only: milliseconds, counts, bytes and per-hour rates (the rate is the count times 3,600,000 divided by the phase's milliseconds, truncated, and 0 when the phase took no time).",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -57,6 +57,9 @@
     },
     "peak_rss_bytes": {
       "$ref": "#/$defs/PeakRss"
+    },
+    "profile": {
+      "$ref": "#/$defs/Profile"
     },
     "device": {
       "description": "The learner's device, as the run config names it.",
@@ -164,6 +167,200 @@
       "type": "integer",
       "minimum": 0,
       "maximum": 9007199254740991
+    },
+    "Profile": {
+      "description": "Optional (ADR-028 section 1, #1191), written only by a run started with --profile; diagnostics only, never read by the loop, the loader or the learner. Where one generation's time went. All times are whole milliseconds (rounded down per process). decisions: Episode decision entries of the generation's games, both seats, baseline seats included.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "decisions",
+        "game_processes",
+        "policy_workers",
+        "load"
+      ],
+      "properties": {
+        "decisions": {
+          "$ref": "#/$defs/Count"
+        },
+        "game_processes": {
+          "$ref": "#/$defs/GameProcessProfile"
+        },
+        "policy_workers": {
+          "$ref": "#/$defs/WorkerProfile"
+        },
+        "load": {
+          "$ref": "#/$defs/LoadProfile"
+        }
+      }
+    },
+    "GameProcessProfile": {
+      "description": "The Node game processes of the play phase, summed (the process that started the others included). e_sim: the engine writing a choice to the stream and producing the next requests. e_judge: CloneJudge, the legal choice set and the hidden verdicts. e_probe: the mechanics probe, the candidate feature builder, the opponent sheet builder and the scripted baseline actors. o_obs: decoding a request, copying the channel, enumerating candidates, building the observation (JCS and hash). ipc_wait: waiting for a worker's reply, summed over every request (games overlap, so it can exceed the phase's wall time). pool_load: loading the team pool. merge: the parent's serial tail after the games (training stream, hashing, files). cpu_ms: user plus system CPU time of the process.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "processes",
+        "cpu_ms",
+        "e_sim_ms",
+        "e_judge_ms",
+        "e_probe_ms",
+        "o_obs_ms",
+        "ipc_wait_ms",
+        "pool_load_ms",
+        "merge_ms",
+        "per_process"
+      ],
+      "properties": {
+        "processes": {
+          "$ref": "#/$defs/Count"
+        },
+        "cpu_ms": {
+          "$ref": "#/$defs/Count"
+        },
+        "e_sim_ms": {
+          "$ref": "#/$defs/Count"
+        },
+        "e_judge_ms": {
+          "$ref": "#/$defs/Count"
+        },
+        "e_probe_ms": {
+          "$ref": "#/$defs/Count"
+        },
+        "o_obs_ms": {
+          "$ref": "#/$defs/Count"
+        },
+        "ipc_wait_ms": {
+          "$ref": "#/$defs/Count"
+        },
+        "pool_load_ms": {
+          "$ref": "#/$defs/Count"
+        },
+        "merge_ms": {
+          "$ref": "#/$defs/Count"
+        },
+        "per_process": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 4096,
+          "items": {
+            "$ref": "#/$defs/GameProcessFigures"
+          }
+        }
+      }
+    },
+    "GameProcessFigures": {
+      "description": "One game process: CPU time, peak resident set (omitted where it cannot be read) and the decisions of the Episodes it wrote.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "cpu_ms",
+        "decisions"
+      ],
+      "properties": {
+        "cpu_ms": {
+          "$ref": "#/$defs/Count"
+        },
+        "peak_rss_bytes": {
+          "$ref": "#/$defs/Count"
+        },
+        "decisions": {
+          "$ref": "#/$defs/Count"
+        }
+      }
+    },
+    "WorkerProfile": {
+      "description": "The policy workers of the play phase (each restart of a worker is one more entry), summed. w_enc: reduce plus encode of a query. w_fwd: the forward pass and softmax. *_ms are wall time, *_cpu_ms the thread's CPU time. queries: forward passes. cpu_ms: the worker processes' CPU time (user plus system).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "workers",
+        "queries",
+        "cpu_ms",
+        "w_enc_ms",
+        "w_fwd_ms",
+        "w_enc_cpu_ms",
+        "w_fwd_cpu_ms",
+        "per_process"
+      ],
+      "properties": {
+        "workers": {
+          "$ref": "#/$defs/Count"
+        },
+        "queries": {
+          "$ref": "#/$defs/Count"
+        },
+        "cpu_ms": {
+          "$ref": "#/$defs/Count"
+        },
+        "w_enc_ms": {
+          "$ref": "#/$defs/Count"
+        },
+        "w_fwd_ms": {
+          "$ref": "#/$defs/Count"
+        },
+        "w_enc_cpu_ms": {
+          "$ref": "#/$defs/Count"
+        },
+        "w_fwd_cpu_ms": {
+          "$ref": "#/$defs/Count"
+        },
+        "per_process": {
+          "type": "array",
+          "minItems": 0,
+          "maxItems": 65536,
+          "items": {
+            "$ref": "#/$defs/WorkerFigures"
+          }
+        }
+      }
+    },
+    "WorkerFigures": {
+      "description": "One worker process: CPU time and peak resident set (omitted where it cannot be read).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "cpu_ms"
+      ],
+      "properties": {
+        "cpu_ms": {
+          "$ref": "#/$defs/Count"
+        },
+        "peak_rss_bytes": {
+          "$ref": "#/$defs/Count"
+        }
+      }
+    },
+    "LoadProfile": {
+      "description": "The load phase split (the driver's reading of the stream): validate is the contract check of every line, reduce the log-to-state reduction, encode the encoder; the sums over all load workers, so they can exceed the phase's wall time. *_cpu_ms are CPU time. Time outside the three (reading, collation, joining) is in the phase's total only.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "validate_ms",
+        "reduce_ms",
+        "encode_ms",
+        "validate_cpu_ms",
+        "reduce_cpu_ms",
+        "encode_cpu_ms"
+      ],
+      "properties": {
+        "validate_ms": {
+          "$ref": "#/$defs/Count"
+        },
+        "reduce_ms": {
+          "$ref": "#/$defs/Count"
+        },
+        "encode_ms": {
+          "$ref": "#/$defs/Count"
+        },
+        "validate_cpu_ms": {
+          "$ref": "#/$defs/Count"
+        },
+        "reduce_cpu_ms": {
+          "$ref": "#/$defs/Count"
+        },
+        "encode_cpu_ms": {
+          "$ref": "#/$defs/Count"
+        }
+      }
     }
   }
 }

@@ -31,6 +31,7 @@ from typing import Any
 import torch
 from areneon_contracts.contracts import jcs, sha256_hex
 
+from areneon_ml import stopwatch
 from areneon_ml.checkpoint.files import checkpoint_bytes, checkpoint_id, write_checkpoint
 from areneon_ml.checkpoint.provenance import ProvenanceGraph
 from areneon_ml.checkpoint.record import CheckpointRecord, read_record
@@ -51,6 +52,7 @@ from areneon_ml.loop.metrics import (
     Peaks,
     build_metrics,
     driver_peak_rss_bytes,
+    profile_record,
     write_metrics,
 )
 from areneon_ml.loop.play import GenerationPlayer, PlayRequest
@@ -145,6 +147,8 @@ class Timing:
         self.peak_reserved: int | None = None
         #: Peak resident set (bytes) of the play phase's processes, when the simulator side says.
         self.play_rss: dict[str, int] = {}
+        #: The profile of the generation (ADR-028 section 1) when the run asked for one.
+        self.profile: dict[str, Any] | None = None
 
     @contextmanager
     def phase(self, name: str) -> Iterator[None]:
@@ -187,6 +191,8 @@ class Loop:
         self.load_processes = 1
         #: A cap on the memory the load workers may add, in MB (``None``: no cap).
         self.load_memory_mb: int | None = None
+        #: Time the phases and processes of each generation into its metrics file (#1191).
+        self.profile = False
         self._on_stage = on_stage or (lambda _generation, _stage: None)
         #: Wall-clock source for the run-metrics record; a test replaces it.
         self.clock: Clock = time.monotonic
@@ -390,6 +396,8 @@ class Loop:
             )
         timing.play_rss = dict(getattr(self.player, "resource_usage", None) or {})
         self._on_stage(generation, "played")
+        if self.profile:
+            stopwatch.enable()
         with timing.phase("load"):
             summary = layout.read_json(work / "generation.json")
             training_set = layout.read_json(work / "training-set.json")
@@ -406,6 +414,11 @@ class Loop:
                 pair,
                 fit_processes(self.load_processes, self.load_memory_mb),
             )
+        if self.profile:
+            timing.profile = profile_record(
+                dict(getattr(self.player, "last_profile", None) or {}), stopwatch.take()
+            )
+            stopwatch.disable()
         if self.device.type == "cuda":
             torch.cuda.reset_peak_memory_stats(self.device)
         with timing.phase("train"):
@@ -518,6 +531,7 @@ class Loop:
                     timing.peak_memory,
                     timing.peak_reserved,
                     {**timing.play_rss, "driver": self.rss_source()},
+                    timing.profile,
                 ),
             ),
         )

@@ -20,6 +20,7 @@ import { resolveFormat } from "./formats.ts";
 import type { BeliefWorldsFactory } from "./damage-aware-worlds.ts";
 import { type BeliefFeaturesFactory, SheetTotals } from "./belief-features.ts";
 import { PolicyWorkerClient } from "./policy-worker.ts";
+import { enableProfile, processFigures, readProfile, timed, writeProcessFigures } from "./profile.ts";
 import { type MemberFlag, parseMemberFlag, runPopulationCli } from "./population-cli.ts";
 import { largest, ownPeakRss } from "./process-usage.ts";
 import { readTrainingRunConfig, runConfigHash } from "./training-run-config.ts";
@@ -68,11 +69,15 @@ const FLAGS = {
   "episodes-dir": { type: "string" },
   // Internal: the scratch directory the game processes leave the recomputed candidate feature rows of their Episodes in (#1185; only with game processes and a candidate feature set).
   "features-dir": { type: "string" },
+  // Operational: time the phases of this generation (ADR-028 section 1, #1191) and print the figures as one more output line; no file the manifest hashes changes.
+  profile: { type: "boolean" },
+  // Internal: the directory the game processes and policy workers leave their profile figures in (made by the process that starts the others when --profile is given).
+  "profile-dir": { type: "string" },
   // A population run (ADR-021): one `m<k>,PREVIEW,BATTLE,POLICY_ID` per member, in place of --preview, --battle and --policy-id.
   member: { type: "string", multiple: true },
 } as const;
 
-const OPTIONAL: readonly (keyof typeof FLAGS)[] = ["policy-workers", "game-processes", "shard", "episodes-dir", "features-dir", "member"];
+const OPTIONAL: readonly (keyof typeof FLAGS)[] = ["policy-workers", "game-processes", "shard", "episodes-dir", "features-dir", "profile", "profile-dir", "member"];
 /** The flags a population run gives per member instead. */
 const PER_MEMBER: readonly (keyof typeof FLAGS)[] = ["preview", "battle", "policy-id"];
 
@@ -107,20 +112,20 @@ export async function runGenerationCli(
   /** The opponent sheet port factory, for a run config that names `opponent_sheet` (the composition root supplies it). */
   beliefFeatures?: BeliefFeaturesFactory,
 ): Promise<number> {
-  let values: Record<Exclude<keyof typeof FLAGS, "member">, string | undefined> & { member?: string[] };
+  let values: Record<Exclude<keyof typeof FLAGS, "member" | "profile">, string | undefined> & { member?: string[]; profile?: boolean };
   try {
     values = parseArgs({ args: [...argv], options: FLAGS, strict: true }).values as typeof values;
   } catch (error) {
     throw new UsageError((error as Error).message);
   }
-  const need = (name: Exclude<keyof typeof FLAGS, "member">): string => {
+  const need = (name: Exclude<keyof typeof FLAGS, "member" | "profile">): string => {
     const value = values[name];
     if (value === undefined) throw new UsageError(`--${name} is required`);
     return value;
   };
   for (const name of Object.keys(FLAGS) as (keyof typeof FLAGS)[]) {
     if (OPTIONAL.includes(name) || (values.member !== undefined && PER_MEMBER.includes(name))) continue;
-    need(name as Exclude<keyof typeof FLAGS, "member">);
+    need(name as Exclude<keyof typeof FLAGS, "member" | "profile">);
   } // refuse a missing flag before anything starts
   const generation = Number(need("generation"));
   if (!Number.isInteger(generation) || generation < 1) throw new UsageError("--generation must be a positive integer");
@@ -132,6 +137,7 @@ export async function runGenerationCli(
   if ((config.population !== undefined) !== (values.member !== undefined)) throw new UsageError("a population config is played with --member for each member, and --member only with a population config");
   if (config.population !== undefined) {
     if (values.shard !== undefined || values["game-processes"] !== undefined || values["policy-workers"] !== undefined) throw new UsageError("a population run plays in one process with one worker per member");
+    if (values.profile === true || values["profile-dir"] !== undefined) throw new UsageError("--profile does not apply to a population run");
     let flags: MemberFlag[];
     try {
       flags = (values.member as string[]).map(parseMemberFlag);
@@ -188,11 +194,19 @@ export async function runGenerationCli(
     sheet === undefined
       ? { client: {}, options: {}, report: () => undefined }
       : { client: { sheet: sheet.statement }, options: { sheet: sheet.setup, on_sheet_counts: totals.add }, report: totals.report };
+  // The profile (#1191): on for --profile, and for a game process whose starter gave it the directory. Timers only read clocks.
+  const profileOwned = values["profile-dir"] === undefined && values.profile === true;
+  const profileDir = values["profile-dir"] ?? (values.profile === true ? mkdtempSync(join(tmpdir(), "areneon-profile-")) : undefined);
+  if (profileDir !== undefined) {
+    mkdirSync(profileDir, { recursive: true });
+    enableProfile();
+  }
   const makeClient = (): PolicyWorkerClient => new PolicyWorkerClient({
     command: need("worker-python"),
     args: [
       "-I", "-m", "areneon_ml.worker", "--run-dir", need("run-dir"), "--preview", preview, "--battle", battle,
       "--engine-data", dataFile, "--max-line-bytes", String(max_line_bytes),
+      ...optionalFlag("--profile-dir", profileDir),
     ],
     env: {},
     max_line_bytes,
@@ -217,18 +231,19 @@ export async function runGenerationCli(
   // With game processes and a feature set, every process recomputes the rows of its own Episodes when its games are done (#1185).
   const featuresDir = featuresDirOf(values["features-dir"], scratch, features !== undefined);
   const children: ShardProcess[] = [];
+  let closed = false;
   try {
     // Start the further game processes first: each loads its own pool while this one does.
     if (scratch !== undefined) {
       for (let index = 1; index < processes; index++) {
         const out = join(scratch, String(index));
         const rest = Object.entries(values).flatMap(([name, value]) =>
-          value === undefined || typeof value !== "string" || ["out", "game-processes", "shard", "episodes-dir", "features-dir"].includes(name) ? [] : [`--${name}`, value],
+          value === undefined || typeof value !== "string" || ["out", "game-processes", "shard", "episodes-dir", "features-dir", "profile", "profile-dir"].includes(name) ? [] : [`--${name}`, value],
         );
-        children.push(startShard(shardScript as string, [...rest, "--out", out, "--shard", `${index}/${processes}`, "--episodes-dir", episodesDir, ...optionalFlag("--features-dir", featuresDir)], out, index));
+        children.push(startShard(shardScript as string, [...rest, "--out", out, "--shard", `${index}/${processes}`, "--episodes-dir", episodesDir, ...optionalFlag("--features-dir", featuresDir), ...optionalFlag("--profile-dir", profileDir)], out, index));
       }
     }
-    const pool = poolSource(engine, config);
+    const pool = timed("pool_load", () => poolSource(engine, config));
     await Promise.all(clients.map((client) => client.start()));
     const [client, ...peers] = clients as [PolicyWorkerClient, ...PolicyWorkerClient[]];
     if (values.shard !== undefined) {
@@ -241,6 +256,7 @@ export async function runGenerationCli(
       mkdirSync(need("out"), { recursive: true });
       writeShardFile(join(need("out"), SHARD_FILE), entries);
       writeFileSync(join(need("out"), USAGE_FILE), `${jcs(usageOf(ownPeakRss(), largest(clients.map((worker) => worker.peakRssBytes()))) as unknown as Json)}\n`);
+      if (profileDir !== undefined) writeProcessFigures(profileDir, own?.index ?? 0, processFigures(ownPeakRss()));
       return 0;
     }
     // The first game process to fail fails this one at once: `Promise.all` rejects with its message, `playGeneration` stops this process's own games, and the `finally` below kills the others (#1100).
@@ -248,12 +264,19 @@ export async function runGenerationCli(
     // The stream goes straight to its file in chunks as the examples are made (#998).
     mkdirSync(need("out"), { recursive: true });
     const result = await playGeneration({ engine, config, generation, policy_id: need("policy-id"), client, peers, pool, stream_path: join(need("out"), "stream.jsonl"), episodes_dir: episodesDir, belief_worlds: beliefWorlds, ...(features === undefined ? {} : { features: features.configs }), ...sheetArgs.options, features_dir: featuresDir, ...(own === undefined ? {} : { shard: own }), others: others.then((all) => all.flat()), live_children: () => children.filter((child) => child.alive()).length });
-    writeGeneration(need("out"), result);
+    timed("merge", () => writeGeneration(need("out"), result));
     sheetArgs.report();
     print(jcs({ generation, run_config_hash: await runConfigHash(config), training_set_hash: result.training_set_hash, examples: result.set.examples }));
     // After the summary line, so a reader of the first line is unchanged: the peak memory of this process, its workers and the further game processes.
     const usage = combineUsage([usageOf(ownPeakRss(), largest(clients.map((worker) => worker.peakRssBytes()))), ...(await Promise.all(children.map((child) => child.usage)))]);
     if (Object.keys(usage).length > 0) print(jcs({ resource_usage: usage } as unknown as Json));
+    if (profileDir !== undefined) {
+      // The workers write their figures when they end, so they end now; the game processes have ended (their results were read above).
+      await Promise.all(clients.map((worker) => worker.close()));
+      closed = true;
+      writeProcessFigures(profileDir, 0, processFigures(ownPeakRss()));
+      print(jcs({ profile: readProfile(profileDir) } as unknown as Json));
+    }
     return 0;
   } catch (error) {
     if (error instanceof GenerationError) {
@@ -263,8 +286,9 @@ export async function runGenerationCli(
     throw error;
   } finally {
     for (const child of children) child.stop();
-    await Promise.all(clients.map((client) => client.close()));
+    if (!closed) await Promise.all(clients.map((client) => client.close()));
     if (scratch !== undefined) rmSync(scratch, { recursive: true, force: true });
+    if (profileOwned && profileDir !== undefined) rmSync(profileDir, { recursive: true, force: true });
   }
 }
 

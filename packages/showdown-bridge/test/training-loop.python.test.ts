@@ -93,6 +93,8 @@ describe.skipIf(!existsSync(PYTHON) && process.env.ARENEON_REQUIRE_PYTHON_WORKER
   let first: RunSummary;
   let sharded: string;
   let shardedSummary: RunSummary;
+  let profiled: string;
+  let profiledSummary: RunSummary;
   // Three real SIGKILLs of the driver's process group in generation 2, each followed by a resume:
   //  play: the simulator side is alive (Node and the worker), the partial may still be empty;
   //  write: Node has played and is writing its files (generation.json is written last), the worker is still alive;
@@ -107,6 +109,9 @@ describe.skipIf(!existsSync(PYTHON) && process.env.ARENEON_REQUIRE_PYTHON_WORKER
     // The same run with two policy workers in each of two game processes (#957): operational flags, not config.
     sharded = join(dir, "sharded");
     shardedSummary = run(TINY, sharded, 2, "--policy-workers", "2", "--game-processes", "2");
+    // The same run with the profile timers on (ADR-028 section 1, #1191): two game processes, each with a worker.
+    profiled = join(dir, "profiled");
+    profiledSummary = run(TINY, profiled, 2, "--profile", "--game-processes", "2");
     kills.play.dir = join(dir, "killed-playing");
     await killWhen(TINY, kills.play.dir, 2, () => existsSync(partial(kills.play.dir)) && liveProcesses(kills.play.dir).length >= 2);
     expect(liveProcesses(kills.play.dir)).toEqual([]); // the whole group went down with the driver
@@ -206,6 +211,39 @@ describe.skipIf(!existsSync(PYTHON) && process.env.ARENEON_REQUIRE_PYTHON_WORKER
     }
     expect(json(sharded, "run-config.json")).toEqual(json(uninterrupted, "run-config.json")); // no operational flag reaches the config
     expect(readdirSync(join(sharded, "generations", gen(2))).sort()).toEqual(readdirSync(join(uninterrupted, "generations", gen(2))).sort());
+  });
+
+  it("times the phases without changing a byte: every file of every generation equals the run without timers, and the metrics carry the profile", () => {
+    expect(profiledSummary).toEqual(first);
+    for (const g of [0, 1, 2]) {
+      const base = join("generations", gen(g));
+      const names = readdirSync(join(uninterrupted, base), { recursive: true, encoding: "utf8" }).sort();
+      expect(readdirSync(join(profiled, base), { recursive: true, encoding: "utf8" }).sort()).toEqual(names);
+      for (const name of names) {
+        if (!/\.[a-z]+$/.test(name)) continue; // a directory
+        expect(readFileSync(join(profiled, base, name)).equals(readFileSync(join(uninterrupted, base, name))), `${base}/${name}`).toBe(true);
+      }
+    }
+    expect(json(profiled, "run-config.json")).toEqual(json(uninterrupted, "run-config.json")); // the flag is not in the config
+    expect(json<{ profile?: unknown }>(uninterrupted, "metrics", `${gen(1)}.json`).profile).toBeUndefined(); // a run without the flag has none
+    interface Profile {
+      decisions: number;
+      game_processes: { processes: number; per_process: { decisions: number }[]; pool_load_ms: number };
+      policy_workers: { workers: number; queries: number; per_process: unknown[] };
+      load: Record<string, number>;
+    }
+    for (const g of [1, 2]) {
+      const metrics = json(profiled, "metrics", `${gen(g)}.json`) as { profile: Profile };
+      const { profile } = metrics;
+      expect(profile.game_processes.processes).toBe(2);
+      expect(profile.game_processes.per_process).toHaveLength(2);
+      expect(profile.decisions).toBe(profile.game_processes.per_process.reduce((sum, p) => sum + p.decisions, 0));
+      expect(profile.decisions).toBeGreaterThan(0);
+      expect(profile.policy_workers.workers).toBeGreaterThanOrEqual(2);
+      expect(profile.policy_workers.per_process).toHaveLength(profile.policy_workers.workers);
+      expect(profile.policy_workers.queries).toBeGreaterThan(0);
+      expect(Object.keys(profile.load).sort()).toEqual(["encode_cpu_ms", "encode_ms", "reduce_cpu_ms", "reduce_ms", "validate_cpu_ms", "validate_ms"]);
+    }
   });
 
   it("reproduces: the same config gives the same generation 1, byte for byte, in an independent run", () => {

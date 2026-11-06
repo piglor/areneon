@@ -6,6 +6,8 @@ import ast
 import hashlib
 import io
 import json
+import os
+import re
 import runpy
 import socket
 import subprocess
@@ -17,6 +19,7 @@ from typing import Any
 import areneon_ml.worker
 import pytest
 from areneon_contracts.contracts import jcs
+from areneon_ml import stopwatch
 from areneon_ml.checkpoint.files import checkpoint_bytes, write_checkpoint
 from areneon_ml.model.encoder import encoder_version
 from areneon_ml.model.network import init_network
@@ -421,6 +424,37 @@ def test_main_serves_a_session_on_stdio(tmp_path: Path, monkeypatch: pytest.Monk
     monkeypatch.setattr(sys, "stdout", out)
     assert main(cli(run_dir, preview, battle)) == EXIT_OK
     assert len(out.buffer.getvalue().splitlines()) == REPLIES
+
+
+def test_a_profiling_session_leaves_its_figures_and_the_same_replies(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    run_dir, preview, battle = make_run_dir(tmp_path)
+    frames = line(hello()) + line(battle_query())
+    replies: list[bytes] = []
+    for extra in ((), ("--profile-dir", str(tmp_path / "profile"))):
+        out = Stdio(b"")
+        monkeypatch.setattr(sys, "stdin", Stdio(frames))
+        monkeypatch.setattr(sys, "stdout", out)
+        (tmp_path / "profile").mkdir(exist_ok=True)
+        assert main(cli(run_dir, preview, battle, *extra)) == EXIT_OK
+        replies.append(re.sub(rb'"elapsed_ms":\d+', b"", out.buffer.getvalue()))
+    assert replies[0] == replies[1]  # the timers change no reply byte but the elapsed time
+    [written] = (tmp_path / "profile").iterdir()
+    assert written.name == f"worker-{os.getpid()}.json"
+    figures = json.loads(written.read_text())
+    assert figures["queries"] == 1
+    assert set(figures) == {
+        "cpu_ms",
+        "peak_rss_bytes",
+        "queries",
+        "w_enc_ms",
+        "w_fwd_ms",
+        "w_enc_cpu_ms",
+        "w_fwd_cpu_ms",
+    }
+    assert all(isinstance(v, int) and v >= 0 for v in figures.values())
+    assert not stopwatch.enabled()  # the session ended: nothing is left running
 
 
 def test_main_refuses_a_missing_checkpoint(

@@ -29,6 +29,7 @@ import { loadRulesSnapshot } from "./rules-load.ts";
 import { leagueGameStreams } from "./league-seed.ts";
 import { episodeFromRecord } from "./episode-io.ts";
 import { episodeHash } from "./episode.ts";
+import { addSince, countDecisions, profiling, startTimer, timedAsync } from "./profile.ts";
 import { guardActor, type LatencyBudget, type PlayedGame } from "./evaluation-harness.ts";
 import { firstLegal, GOLDEN_FORMAT, goldenTeamVocabulary, syntheticTeam, TEAMS_DIR, teamFixtureManifest } from "./golden.ts";
 import { resolveFormat, type VersionManifest } from "./formats.ts";
@@ -460,7 +461,11 @@ export interface BaselineSeat {
 }
 
 export function baselineActor(options: BaselineRecordOptions, opponent: BaselineOpponent, plan: Pick<GamePlan, "baseline_seed">, budget: LatencyBudget): BaselineSeat {
-  const guarded = (actor: Actor): Actor => guardActor(actor, { role: "scripted", latency_budget: budget });
+  // Scripted baseline actors are E_probe in the generation profile (ADR-028 section 1): the wrapper only reads the clock.
+  const guarded = (actor: Actor): Actor => {
+    const inner = guardActor(actor, { role: "scripted", latency_budget: budget });
+    return profiling() ? (request, context) => timedAsync("e_probe", async () => inner(request, context)) : inner;
+  };
   if (opponent.actor !== "damage-aware") return { actor: guarded(opponent.actor === "actor-rule" ? firstLegal : randomLegalActor(plan.baseline_seed)) };
   const setup = opponent.policy_id === DAMAGE_AWARE_V2_POLICY_ID ? options.damage_aware_v2 : opponent.policy_id === DAMAGE_AWARE_V3_POLICY_ID ? options.damage_aware_v3 : options.damage_aware;
   if (setup === undefined) throw new GenerationError("a damage-aware baseline game needs the baseline's records");
@@ -590,6 +595,7 @@ export async function seatEpisodes(record: BattleRecord, teams: Record<Player, n
       }),
     );
   }
+  countDecisions(episodes.reduce((total, episode) => total + episode.decisions.length, 0)); // the profile's decision count: both seats, baseline seats included
   return episodes;
 }
 
@@ -751,6 +757,7 @@ export async function playGeneration(options: GenerationOptions): Promise<Genera
   if (entries.length !== plan.length || entries.some((entry, index) => entry.game !== index)) {
     throw new GenerationError("the played games are not the plan's games, each once");
   }
+  const mergeStart = startTimer();
   const rows = entries.map((entry) => entry.row);
   const spilled = options.episodes_dir !== undefined;
   if (entries.some((entry) => (entry.stored !== undefined) !== spilled || (spilled && entry.episodes.length > 0))) {
@@ -783,7 +790,7 @@ export async function playGeneration(options: GenerationOptions): Promise<Genera
   }
   const drawn = new Set<string>();
   for (const entry of plan) for (const player of ["p1", "p2"] as const) drawn.add(pool.hashes[entry.teams[player]] as string);
-  return {
+  const result: GenerationResult = {
     generation,
     plan,
     games: rows,
@@ -798,6 +805,8 @@ export async function playGeneration(options: GenerationOptions): Promise<Genera
     manifest: resolveFormat(engine, config.format_id).manifest,
     team_hashes: [...drawn].sort(),
   };
+  addSince("merge", mergeStart); // the serial tail after the games: stream, hashing, run record
+  return result;
 }
 
 /**

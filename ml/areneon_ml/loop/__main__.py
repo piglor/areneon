@@ -55,8 +55,10 @@ from areneon_ml.learner.state import LearnerStateError
 from areneon_ml.learner.trainer import LearnerError
 from areneon_ml.loop import layout
 from areneon_ml.loop.driver import Loop, LoopError, export_provenance
+from areneon_ml.loop.metrics import MetricsError
 from areneon_ml.loop.play import NodePlayer, PlayError
 from areneon_ml.loop.population import PopulationLoop
+from areneon_ml.loop.share import run_loop_share
 from areneon_ml.loop.warm_start import WarmStartError, import_clone
 from areneon_ml.model.encoder import encoder_version
 from areneon_ml.model.gamedata import GameData
@@ -197,6 +199,13 @@ def _add_run(commands: Any) -> None:
         "when --load-processes would not fit (operational)",
     )
     run.add_argument(
+        "--profile",
+        action="store_true",
+        help="time the phases and the processes of each generation and record the result in "
+        "its metrics file, under 'profile' (operational and outside every hash: the "
+        "generation's files are the same; docs/training-run.md, P0 measurement)",
+    )
+    run.add_argument(
         "--node-heap-mb",
         type=_positive,
         help="cap each Node game process's heap (--max-old-space-size, MB); 640 keeps a "
@@ -298,6 +307,15 @@ def _parser() -> argparse.ArgumentParser:  # noqa: PLR0915
     parser = argparse.ArgumentParser(prog="areneon_ml.loop")
     commands = parser.add_subparsers(dest="command", required=True)
     _add_run(commands)
+    share = commands.add_parser(
+        "loop-share",
+        help="the loop share L of each profiled generation of a run (ADR-028 section 1); "
+        "reads the metrics files only",
+    )
+    share.add_argument("--run-dir", type=Path, required=True)
+    share.add_argument(
+        "--generation", type=_generation_list, help="only these generations (e.g. 3,4)"
+    )
     provenance = commands.add_parser("provenance", help="export the records and sources registry")
     provenance.add_argument("--run-dir", type=Path, required=True)
     provenance.add_argument("--out", type=Path, required=True)
@@ -592,6 +610,7 @@ def _run(args: argparse.Namespace) -> dict[str, object]:
         policy_workers=args.policy_workers,
         game_processes=args.game_processes,
         node_heap_mb=args.node_heap_mb,
+        profile=args.profile,
         generation_timeout_s=args.generation_timeout_minutes * 60.0,
         play_script=(
             "packages/team-dataset/scripts/play-generation.ts"
@@ -612,6 +631,7 @@ def _run(args: argparse.Namespace) -> dict[str, object]:
     loop = Loop(config, args.run_dir.resolve(), game, player)
     loop.load_processes = args.load_processes
     loop.load_memory_mb = args.load_memory_mb
+    loop.profile = args.profile
     result = loop.run(args.generations)
     return result.as_dict(loop.frozen)
 
@@ -719,7 +739,16 @@ def _best_response(args: argparse.Namespace) -> dict[str, object]:
     )
 
 
-_SIMPLE = {"progress": _progress, "scripted-h2h": _scripted, "best-response": _best_response}
+def _loop_share(args: argparse.Namespace) -> dict[str, object]:
+    return run_loop_share(args.run_dir, args.generation)
+
+
+_SIMPLE = {
+    "loop-share": _loop_share,
+    "progress": _progress,
+    "scripted-h2h": _scripted,
+    "best-response": _best_response,
+}
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -791,6 +820,7 @@ def main(argv: list[str] | None = None) -> int:
         BestResponseError,
         EvalDatasetError,
         LookError,
+        MetricsError,
         OSError,
         json.JSONDecodeError,
     ) as exc:

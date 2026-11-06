@@ -28,7 +28,7 @@ import os
 import sys
 from concurrent.futures import ProcessPoolExecutor
 from concurrent.futures.process import BrokenProcessPool
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -40,6 +40,7 @@ from areneon_contracts.training import (
     stream_split_points,
 )
 
+from areneon_ml import stopwatch
 from areneon_ml.learner.data import Collected, LearnerDataError, Step, Trajectory, _Collector
 from areneon_ml.model.encoder import EncodedQuery, Encoder
 
@@ -76,6 +77,8 @@ class _Piece:
     contract_error: str | None = None
     #: The first error of the encoder or the collector: its class (module and name) and message.
     encode_error: tuple[str, str] | None = None
+    #: The stop-watch totals of the piece (``stopwatch.take``), empty unless the profile is on.
+    timings: dict[str, dict[str, int]] = field(default_factory=dict)
 
 
 # What the workers inherit by fork; set before the pool starts, cleared after.
@@ -94,6 +97,13 @@ def _run_piece(piece: tuple[int, int, int]) -> bytes:
 
 def _check_piece(piece: tuple[int, int, int]) -> _Piece:
     """Check and encode the lines in bytes ``[start, end)``, the first being line ``first``."""
+    stopwatch.reset()  # a forked worker starts from nothing; the parent absorbs what it took
+    result = _check_lines(piece)
+    result.timings = stopwatch.take()
+    return result
+
+
+def _check_lines(piece: tuple[int, int, int]) -> _Piece:
     start, end, first = piece
     torch.set_num_threads(1)
     checker = StreamChecker(_SHARED["manifest"])
@@ -108,11 +118,13 @@ def _check_piece(piece: tuple[int, int, int]) -> _Piece:
         except UnicodeDecodeError:
             result.contract_error = "the stream is not UTF-8"
             return result
+        mark = stopwatch.begin()
         try:
             raw, _ = checker.line(number, text)
         except TrainingStreamError as error:
             result.contract_error = str(error)
             return result
+        stopwatch.end("validate", mark)
         if result.encode_error is None:
             try:
                 collector.add(raw)
@@ -171,6 +183,7 @@ def pack_piece(piece: _Piece) -> bytes:
             "classes": sorted(piece.classes),
             "contract_error": piece.contract_error,
             "encode_error": piece.encode_error,
+            "timings": piece.timings,
         },
         separators=(",", ":"),
     ).encode("utf-8")
@@ -206,6 +219,7 @@ def unpack_piece(blob: bytes) -> _Piece:
         set(header["classes"]),
         header["contract_error"],
         None if header["encode_error"] is None else tuple(header["encode_error"]),
+        header["timings"],
     )
 
 
@@ -243,10 +257,12 @@ def parallel_trajectories(
     points = _coarsen(points)
     if workers < MIN_WORKERS or len(points) < MIN_POINTS:
         return None
+    mark = stopwatch.begin()
     try:
         marks = check_stream_digest(path, manifest, points[:-1])
     except TrainingStreamError as exc:
         raise LearnerDataError(str(exc)) from exc
+    stopwatch.end("validate", mark)
     pieces = [(points[i], points[i + 1], marks[i] + 1) for i in range(len(points) - 1)]
     _SHARED.update(manifest=manifest, encoders=encoders, path=str(path))
     try:
@@ -274,6 +290,8 @@ def _coarsen(points: list[int]) -> list[int]:
 
 def _join(results: list[_Piece], manifest: dict[str, Any]) -> list[Trajectory] | None:
     """Put the pieces back together the way one pass over the whole stream would have."""
+    for piece in results:
+        stopwatch.absorb(piece.timings)
     for piece in results:
         if piece.contract_error is not None:
             raise LearnerDataError(piece.contract_error)
