@@ -190,6 +190,10 @@ class LeagueCollection(BaseModel):
     """
     The class of the opponent's team (ADR-009 §3), as the writer proved it from that team. Not the source of truth.
     """
+    class_floor: Literal["private"] | MISSING = MISSING
+    """
+    The lowest class the Episode may take (ADR-015 erratum E1 item 5), written only when above synthetic: a private run's Episode is private even with two synthetic teams, and a reader refuses a data_class below it. Absent means no floor.
+    """
 
 
 class EvaluationCollection(BaseModel):
@@ -219,6 +223,10 @@ class EvaluationCollection(BaseModel):
     opponent_team_data_class: Literal["synthetic", "private"]
     """
     The class of the opponent's team (ADR-009 §3), as the writer proved it from that team. Not the source of truth.
+    """
+    class_floor: Literal["private"] | MISSING = MISSING
+    """
+    The lowest class the Episode may take (ADR-015 erratum E1 item 5), written only when above synthetic: a private run's Episode is private even with two synthetic teams, and a reader refuses a data_class below it. Absent means no floor.
     """
 
 
