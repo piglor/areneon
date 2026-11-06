@@ -231,7 +231,7 @@ describe.each(COMMITTED)("the committed fixture $recording.file", ({ recording, 
     await refused((f) => (f.winner = f.winner === "p1" ? "p2" : "p1"), /winner p. differs from the replay/);
     await refused((f) => (f.winner = null), /winner null differs/);
     await refused((f) => (channel(f, "p2").player = "p1"), /p2 channel is not its own|holds a request for/);
-    await refused((f) => channel(f, "p1").lines.push("|showteam|p2|x"), "p1 channel has a team sheet");
+    await refused((f) => channel(f, "p1").lines.push("|showteam|p2|x"), /closed-sheet format's channel holds a \|showteam\| line/);
     await refused((f) => channel(f, "p1").lines.push("|split|p2"), /only the opponent may see/);
     await refused(
       (f) => {

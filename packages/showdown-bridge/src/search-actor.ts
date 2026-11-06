@@ -56,6 +56,7 @@ import type { TeamVocabulary } from "./team-vocabulary.ts";
 import { createWorldBuilder, WORLD_BUILDER_FORMAT, type WorldBuilder } from "./world-builder.ts";
 import { createWorldSampler, type DecisionWorlds, searchStream, type WorldRequest, type WorldSamplePort, type WorldSampler } from "./world-sampler.ts";
 import { loadWorldWriters, type WorldWriters, worldWritersHash } from "./world-writers.ts";
+import { sheetRegimeOf } from "./team-sheet-binding.ts";
 
 /** The search was set up, or asked to run, in a way it does not support. A defect of the caller, not a refusal of a decision. */
 export class SearchError extends Error {
@@ -306,6 +307,8 @@ export type SearchActor = Actor & { report(): SearchReport; decide(input: Search
 
 export function searchActor(options: SearchActorOptions): SearchActor {
   const { setup, client, battle, player, team, manifest, channel_class, seed, game, policy_id, identity_hash, sampling, play, bank_ms } = options;
+  // The channel is judged against the team-sheet regime of the format its manifest names (ADR-027 section 5).
+  const regime = sheetRegimeOf(manifest.showdown_commit, manifest.format_id);
   const { engine, config } = setup;
   if ((client.featureSet ?? null) !== null) throw new SearchError("features_pair", "a pair that reads candidate features is not supported by the search");
   const builder: WorldBuilder = createWorldBuilder({
@@ -383,7 +386,7 @@ export function searchActor(options: SearchActorOptions): SearchActor {
         counts.leaf_memo_hits += 1;
         return known;
       }
-      const observation = await observe({ channel: playerChannel({ schema_version: 1, data_class: channel_class, player, lines: [...input.channel, ...lines] }), team, manifest });
+      const observation = await observe({ channel: playerChannel({ schema_version: 1, data_class: channel_class, player, lines: [...input.channel, ...lines] }, regime), team, manifest });
       const candidates = enumerateCandidates(decodeRequest(request)).candidates;
       counts.leaf_queries += 1;
       const evaluation = await client.evaluate(battle, {
@@ -498,7 +501,7 @@ export function searchActor(options: SearchActorOptions): SearchActor {
 
     let observation;
     try {
-      observation = await observe({ channel: playerChannel({ schema_version: 1, data_class: channel_class, player, lines: context.channel }), team, manifest });
+      observation = await observe({ channel: playerChannel({ schema_version: 1, data_class: channel_class, player, lines: context.channel }, regime), team, manifest });
     } catch (error) {
       throw new PolicyProtocolError(`cannot observe the request: ${(error as Error).message}`);
     }

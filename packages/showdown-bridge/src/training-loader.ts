@@ -31,6 +31,7 @@ import { decisionObservations, readEpisode } from "./episode-io.ts";
 import { nodeSha256, playerChannel } from "./player-channel.ts";
 import { decodeRequest, RequestDecodeError } from "./request.ts";
 import type { SyntheticTeamHashes } from "./team-class.ts";
+import { sheetRegimeOf } from "./team-sheet-binding.ts";
 
 export type { EvaluationRunManifest, TrainingExample, TrainingSet };
 
@@ -64,6 +65,35 @@ export function readEvaluationRunManifest(value: unknown): EvaluationRunManifest
   return manifest;
 }
 
+/** The most candidates a search label covers (ADR-026 erratum E2 decision 4, `k_max`). The schema's `maxItems` says the same. */
+export const SEARCH_K_MAX = 16;
+
+/**
+ * The `search_target` rules the profile cannot say (ADR-026 erratum E2 decision 4): the example carries candidates, `prior_ppm`
+ * has one entry per candidate, and the entries are ascending by candidate index, unique, in range and non-pending. Null when it
+ * holds. The words name no value of the example.
+ */
+export function searchTargetProblem(example: Pick<TrainingExample, "candidates" | "search_target">): string | null {
+  const target = example.search_target;
+  if (target === undefined) return null;
+  const candidates = example.candidates;
+  if (candidates === undefined) return "a search_target needs the example's candidates";
+  if (target.prior_ppm.length !== candidates.length) return "the search_target prior_ppm must have one entry per candidate";
+  if (target.entries.length > SEARCH_K_MAX) return `the search_target holds more than ${SEARCH_K_MAX} entries`;
+  let previous = -1;
+  let searched = 0;
+  for (const entry of target.entries) {
+    if (entry.candidate <= previous) return "the search_target entries must be ascending by candidate index and unique";
+    previous = entry.candidate;
+    const candidate = candidates[entry.candidate];
+    if (candidate === undefined) return "a search_target entry names a candidate the example does not have";
+    if (candidate.pending) return "a search_target entry names a pending candidate";
+    searched += target.prior_ppm[entry.candidate] ?? 0;
+  }
+  if (searched < 1) return "the search_target prior_ppm of the searched entries must sum to at least 1";
+  return null;
+}
+
 /**
  * Read a TrainingSet: the schema, then what the profile cannot say: sorted
  * and unique hash lists, and a learner_ready set names the policy it trains
@@ -77,6 +107,12 @@ export function readTrainingSet(value: unknown): TrainingSet {
   }
   if (set.learner_ready === true && set.behaviour_policy_id === undefined) {
     throw new TrainingLoaderError("a learner_ready TrainingSet must name its behaviour_policy_id");
+  }
+  const labels = set.search_labels;
+  if (labels !== undefined) {
+    if (labels.labelled !== set.examples) throw new TrainingLoaderError("the TrainingSet's search_labels.labelled must equal its examples");
+    const reasons = labels.refused.map((entry) => entry.reason);
+    if (!strictlyAscending(reasons)) throw new TrainingLoaderError("the TrainingSet's search_labels.refused must be sorted by reason and unique");
   }
   return set;
 }
@@ -97,6 +133,8 @@ export function readTrainingExample(value: unknown): TrainingExample {
     const problem = opponentSheetProblem(example.opponent_sheet);
     if (problem !== null) throw new TrainingLoaderError(`opponent_sheet: ${problem} (${example.episode_hash} #${example.observation.identity.request_seq})`);
   }
+  const targetProblem = searchTargetProblem(example);
+  if (targetProblem !== null) throw new TrainingLoaderError(`${targetProblem} (${example.episode_hash} #${example.observation.identity.request_seq})`);
   if (example.candidates !== undefined && !example.candidates.some((candidate) => candidate.choice === example.choice)) {
     throw new TrainingLoaderError(
       `the choice "${example.choice}" of ${example.episode_hash} #${example.observation.identity.request_seq} is not among its ${example.candidates.length} candidates`,
@@ -262,7 +300,7 @@ function featuresOf(
   const line = observation.log.at(-1) as string;
   try {
     const candidates = enumerateCandidates(decodeRequest(line.slice("|request|".length))).candidates;
-    const channel = playerChannel({ schema_version: 1, data_class: observation.data_class, player: observation.player, lines: observation.log });
+    const channel = playerChannel({ schema_version: 1, data_class: observation.data_class, player: observation.player, lines: observation.log }, sheetRegimeOf(episode.provenance.manifest.showdown_commit, episode.provenance.manifest.format_id));
     return buildFeatures(engine, configs, channel, episode.team.team, candidates, memo);
   } catch (error) {
     if (!(error instanceof FeatureBuildError || error instanceof EnumerationError || error instanceof RequestDecodeError)) throw error;

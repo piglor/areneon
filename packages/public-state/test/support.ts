@@ -101,3 +101,17 @@ export function fixtures(): Fixture[] {
   return out;
 }
 
+
+export const OPEN_FORMAT_DIR = join(ROOT, "fixtures", "showdown", "gen9championsvgc2026regmcbo3", "open-regime");
+
+/** Every committed open-regime own channel (ADR-027 slice 1's goldens), both seats of each game. */
+export function openFixtures(): Fixture[] {
+  const out: Fixture[] = [];
+  for (const f of readdirSync(OPEN_FORMAT_DIR).filter((name) => /^o\d+\.json$/.test(name)).sort()) {
+    const doc = readJson(join(OPEN_FORMAT_DIR, f));
+    for (const p of ["p1", "p2"]) {
+      out.push({ id: `open-regime/${f.replace(".json", "")}/${p}`, player: p, lines: doc.channels[p].lines, team: doc.teams[p] });
+    }
+  }
+  return out;
+}

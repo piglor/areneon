@@ -34,6 +34,7 @@ export interface TrainingExample {
   candidates?: [Candidate, ...Candidate[]];
   candidate_features?: CandidateFeatures;
   opponent_sheet?: TrainingOpponentSheet;
+  search_target?: SearchTarget;
   /**
    * How the game ended, from the player's view: win, loss or tie. Optional; required, with candidates, in every example of a learner_ready TrainingSet (a reader rule).
    */
@@ -792,6 +793,41 @@ export interface SheetMoveEntry {
   inclusion_ppm: number;
 }
 /**
+ * Optional search label (ADR-026 erratum E2 decision 4): what decision-time search made of this decision's candidates, written only into a label stream (labels.jsonl), never into the PPO stream, an Episode or a PolicyQuery. Absent unless the stream is a label stream: a writer omits it (never null or empty), so every existing value keeps its bytes and hash (a minor change within v1, ADR-008 section 3). Reader rules (readTrainingExample, StreamChecker): the example carries candidates; prior_ppm has one entry per candidate; entries are ascending by candidate index, unique, in range, every index names a non-pending candidate, and the searched entries' prior_ppm sum to at least 1; a label stream has the field on every line.
+ */
+export interface SearchTarget {
+  /**
+   * The pair's temperature-1 prior over the candidates (the evaluate reply), one entry per candidate in the example's candidate order, each rounded alone.
+   *
+   * @minItems 1
+   * @maxItems 1024
+   */
+  prior_ppm: [number, ...number[]];
+  /**
+   * The searched candidates: index into candidates, ascending and unique, non-pending (reader rule), at least 2 and at most 16 (k_max), each with the search's value of it.
+   *
+   * @minItems 2
+   * @maxItems 16
+   */
+  entries: [SearchEntry, SearchEntry, ...SearchEntry[]];
+}
+/**
+ * One searched candidate and its value in parts per million of a game score.
+ *
+ * This interface was referenced by `TrainingExample`'s JSON-Schema
+ * via the `definition` "SearchEntry".
+ */
+export interface SearchEntry {
+  /**
+   * Index into the example's candidates.
+   */
+  candidate: number;
+  /**
+   * The search's value of the candidate, 0 to 10^6.
+   */
+  q_ppm: number;
+}
+/**
  * Which request a decision answers (ADR-008 §4). A consumer drops a recommendation unless request_seq and request_hash both match, and rqid too when both carry one.
  *
  * This interface was referenced by `TrainingExample`'s JSON-Schema
@@ -944,4 +980,26 @@ export interface TrainingOpponentSheet1 {
    * @maxItems 8
    */
   slots: [SheetSlot, ...SheetSlot[]];
+}
+/**
+ * The searched set of one decision and the pair's prior over all candidates: integers only, candidate indices and parts per million, no name, seed or opponent value.
+ *
+ * This interface was referenced by `TrainingExample`'s JSON-Schema
+ * via the `definition` "SearchTarget".
+ */
+export interface SearchTarget1 {
+  /**
+   * The pair's temperature-1 prior over the candidates (the evaluate reply), one entry per candidate in the example's candidate order, each rounded alone.
+   *
+   * @minItems 1
+   * @maxItems 1024
+   */
+  prior_ppm: [number, ...number[]];
+  /**
+   * The searched candidates: index into candidates, ascending and unique, non-pending (reader rule), at least 2 and at most 16 (k_max), each with the search's value of it.
+   *
+   * @minItems 2
+   * @maxItems 16
+   */
+  entries: [SearchEntry, SearchEntry, ...SearchEntry[]];
 }

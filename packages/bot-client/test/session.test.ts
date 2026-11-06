@@ -136,6 +136,12 @@ describe("runA2Bot: start", () => {
     await expect(runA2Bot({ ...base(), team: five })).rejects.toThrow(SessionError);
   });
 
+  it("refuses an open-sheet format: the A2 client has no confirmready path for it", async () => {
+    const connect = vi.fn();
+    await expect(runA2Bot({ ...base(), format: "gen9championsvgc2026regmcbo3", connect })).rejects.toThrow(/open-sheet format/);
+    expect(connect).not.toHaveBeenCalled();
+  });
+
   it("returns at once when already aborted", async () => {
     const run = await start({ signal: AbortSignal.abort() });
     await expect(run.result).resolves.toEqual({ battles: [] });

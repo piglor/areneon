@@ -139,6 +139,11 @@ class Collected:
 
 
 def _ready(manifest: dict[str, Any], behaviour_policy_id: str) -> None:
+    if "search_labels" in manifest:
+        raise LearnerDataError(
+            "the PPO path refuses a TrainingSet with search_labels: label streams have their own"
+            " reader"
+        )
     if manifest.get("learner_ready") is not True:
         raise LearnerDataError("the TrainingSet is not learner_ready: the learner refuses it")
     if manifest.get("behaviour_policy_id") != behaviour_policy_id:

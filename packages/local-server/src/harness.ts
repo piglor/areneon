@@ -583,9 +583,10 @@ export async function verifyHarnessFixture(
       problems.push(`${seat} sent and served teams differ in more than nicknames`);
     }
     for (const own of fixture.channels[seat]) {
+      // `playerChannel` binds the channel to the closed-sheet regime (the A2 formats are closed): a spliced
+      // `|showteam|` line is refused there (ADR-027 section 5), so no check of its own is needed here.
       const channel = playerChannel(own);
       if (channel.player !== seat || channel.data_class !== fixture.data_class) problems.push(`${seat} channel is not its own`);
-      if (channel.lines.some((line) => line.startsWith("|showteam|"))) problems.push(`${seat} channel has a team sheet`);
     }
     problems.push(...frameProblems(fixture, seat));
   }
