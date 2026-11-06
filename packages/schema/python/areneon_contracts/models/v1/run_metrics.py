@@ -20,6 +20,47 @@ class Count(RootModel[StrictInt]):
     root: Annotated[StrictInt, Field(ge=0, le=9007199254740991)]
 
 
+class GameProcessFigures(BaseModel):
+    """
+    One game process: CPU time, peak resident set (omitted where it cannot be read) and the decisions of the Episodes it wrote.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    cpu_ms: Count
+    peak_rss_bytes: Count | MISSING = MISSING
+    decisions: Count
+
+
+class WorkerFigures(BaseModel):
+    """
+    One worker process: CPU time and peak resident set (omitted where it cannot be read).
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    cpu_ms: Count
+    peak_rss_bytes: Count | MISSING = MISSING
+
+
+class LoadProfile(BaseModel):
+    """
+    The load phase split (the driver's reading of the stream): validate is the contract check of every line, reduce the log-to-state reduction, encode the encoder; the sums over all load workers, so they can exceed the phase's wall time. *_cpu_ms are CPU time. Time outside the three (reading, collation, joining) is in the phase's total only.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    validate_ms: Count
+    reduce_ms: Count
+    encode_ms: Count
+    validate_cpu_ms: Count
+    reduce_cpu_ms: Count
+    encode_cpu_ms: Count
+
+
 class PhaseMs(BaseModel):
     """
     Wall-clock milliseconds per phase of the generation, 0 for a phase the generation does not have. play: the simulator side (its battles and its own files). load: reading the generation's files and encoding the trajectories. train: the learner's epochs. write: the driver's own files (train report, learner state, records, team set) and the checkpoint store. seal: fsync of the partial directory, the manifest and the commit rename.
@@ -74,9 +115,63 @@ class PeakRss(BaseModel):
     policy_worker: Count | MISSING = MISSING
 
 
+class GameProcessProfile(BaseModel):
+    """
+    The Node game processes of the play phase, summed (the process that started the others included). e_sim: the engine writing a choice to the stream and producing the next requests. e_judge: CloneJudge, the legal choice set and the hidden verdicts. e_probe: the mechanics probe, the candidate feature builder, the opponent sheet builder and the scripted baseline actors. o_obs: decoding a request, copying the channel, enumerating candidates, building the observation (JCS and hash). ipc_wait: waiting for a worker's reply, summed over every request (games overlap, so it can exceed the phase's wall time). pool_load: loading the team pool. merge: the parent's serial tail after the games (training stream, hashing, files). cpu_ms: user plus system CPU time of the process.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    processes: Count
+    cpu_ms: Count
+    e_sim_ms: Count
+    e_judge_ms: Count
+    e_probe_ms: Count
+    o_obs_ms: Count
+    ipc_wait_ms: Count
+    pool_load_ms: Count
+    merge_ms: Count
+    per_process: Annotated[
+        list[GameProcessFigures], Field(max_length=4096, min_length=1)
+    ]
+
+
+class WorkerProfile(BaseModel):
+    """
+    The policy workers of the play phase (each restart of a worker is one more entry), summed. w_enc: reduce plus encode of a query. w_fwd: the forward pass and softmax. *_ms are wall time, *_cpu_ms the thread's CPU time. queries: forward passes. cpu_ms: the worker processes' CPU time (user plus system).
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    workers: Count
+    queries: Count
+    cpu_ms: Count
+    w_enc_ms: Count
+    w_fwd_ms: Count
+    w_enc_cpu_ms: Count
+    w_fwd_cpu_ms: Count
+    per_process: Annotated[list[WorkerFigures], Field(max_length=65536, min_length=0)]
+
+
+class Profile(BaseModel):
+    """
+    Optional (ADR-028 section 1, #1191), written only by a run started with --profile; diagnostics only, never read by the loop, the loader or the learner. Where one generation's time went. All times are whole milliseconds (rounded down per process). decisions: Episode decision entries of the generation's games, both seats, baseline seats included.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    decisions: Count
+    game_processes: GameProcessProfile
+    policy_workers: WorkerProfile
+    load: LoadProfile
+
+
 class RunMetrics(BaseModel):
     """
-    What one generation of a training run cost in wall-clock time (ADR-010 erratum A1, item 3): milliseconds per phase of the loop driver, the counts and throughput that follow from them, the learner's peak accelerator memory and its device, and optionally the peak reserved accelerator memory and the peak resident set of the driver, the game processes and the policy workers. Wall-clock values differ on every run, so the record lives in <run-dir>/metrics/g<NNNNNN>.json, written after the generation commits and outside every manifest and hash; the loop, the loader and the learner never read it, and a crash between the commit and the write loses it. Integers only: milliseconds, counts, bytes and per-hour rates (the rate is the count times 3,600,000 divided by the phase's milliseconds, truncated, and 0 when the phase took no time).
+    What one generation of a training run cost in wall-clock time (ADR-010 erratum A1, item 3): milliseconds per phase of the loop driver, the counts and throughput that follow from them, the learner's peak accelerator memory and its device, and optionally the peak reserved accelerator memory and the peak resident set of the driver, the game processes and the policy workers. Wall-clock values differ on every run, so the record lives in <run-dir>/metrics/g<NNNNNN>.json, written after the generation commits and outside every manifest and hash; the loop, the loader and the learner never read it, and a crash between the commit and the write loses it. A run started with --profile adds the optional profile (ADR-028 section 1): where the generation's time went, by phase, process and worker, for the loop-share measurement; diagnostics only, outside every hash like the rest. Integers only: milliseconds, counts, bytes and per-hour rates (the rate is the count times 3,600,000 divided by the phase's milliseconds, truncated, and 0 when the phase took no time).
     """
 
     model_config = ConfigDict(
@@ -107,6 +202,7 @@ class RunMetrics(BaseModel):
     Optional, written only for a CUDA learner by a driver that records it (#1069): the most memory the learner's allocator held from the device at once during the generation (torch.cuda.max_memory_reserved), cache included. peak_accelerator_memory_bytes is what tensors used; this is what the device had to give. The driver frees the cache after each training phase, so the next generation starts from a small reserve.
     """
     peak_rss_bytes: PeakRss | MISSING = MISSING
+    profile: Profile | MISSING = MISSING
     device: Literal["cpu", "cuda"]
     """
     The learner's device, as the run config names it.

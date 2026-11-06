@@ -104,6 +104,10 @@ class NodePlayer:
     #: team pool peaks at about 860 MB without it and about 590 MB with 640 (#1069). Operational:
     #: the generation's files do not depend on it. ``None`` leaves Node's default.
     node_heap_mb: int | None = None
+    #: Ask the play script to time its phases, its processes and its workers (ADR-028 section 1,
+    #: #1191). Operational: the generation's files do not depend on it, and the timings come
+    #: back as one more output line, never into a file the manifest hashes.
+    profile: bool = False
     #: The wall-clock limit of one ``play`` call, in seconds (#1100). Past it the driver kills
     #: the Node process group (the game processes and the policy workers with it) and the
     #: generation fails with a ``PlayError``: nothing is committed. Operational: the
@@ -113,6 +117,9 @@ class NodePlayer:
     #: worker of the last ``play`` call, as the play script reported them; empty when it did not.
     #: Diagnostics for the run-metrics record, never an input to a generation.
     resource_usage: dict[str, int] = field(default_factory=dict, compare=False)
+    #: The profile of the last ``play`` call when ``profile`` is set and the script reported
+    #: one: its ``profile`` line, validated later as part of the run-metrics record.
+    last_profile: dict[str, Any] = field(default_factory=dict, compare=False)
 
     def _run(
         self,
@@ -164,6 +171,7 @@ class NodePlayer:
 
     def play(self, request: PlayRequest) -> None:
         self.resource_usage.clear()
+        self.last_profile.clear()
         out = self._run(
             self.play_script,
             *("--config", str(self.config_path)),
@@ -179,10 +187,13 @@ class NodePlayer:
             # Absent at one worker, so the default command line is the one it always was.
             *(("--policy-workers", str(self.policy_workers)) if self.policy_workers != 1 else ()),
             *(("--game-processes", str(self.game_processes)) if self.game_processes != 1 else ()),
+            *(("--profile",) if self.profile else ()),
             heap_mb=self.node_heap_mb,
             timeout_s=self.generation_timeout_s,
         )
         self.resource_usage.update(_resource_usage(out))
+        if self.profile:
+            self.last_profile.update(_profile_line(out))
 
     def calibrate_population(self, request: PopulationCalibrationRequest) -> None:
         """Generation 0 of a population run: the anchors play each other (``--calibrate``)."""
@@ -282,3 +293,16 @@ def _resource_usage(stdout: str) -> dict[str, int]:
             if isinstance(number, int) and not isinstance(number, bool) and number >= 0:
                 found[name] = number
     return found
+
+
+def _profile_line(stdout: str) -> dict[str, Any]:
+    """The ``profile`` line of the play script's output; empty when there is none."""
+    for line in stdout.splitlines():
+        try:
+            value = json.loads(line)
+        except ValueError:
+            continue
+        found = value.get("profile") if isinstance(value, dict) else None
+        if isinstance(found, dict):
+            return found
+    return {}

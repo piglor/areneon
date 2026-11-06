@@ -8,6 +8,7 @@ import {
 import type { Engine, PokemonSet, SimBattle, SimStream } from "./engine.ts";
 import { resolveFormat, type VersionManifest } from "./formats.ts";
 import type { FormatRulesRecord, RulesSnapshot } from "./rules.ts";
+import { addSince, startTimer, timed } from "./profile.ts";
 import { type DecodedRequest, decodeRequest } from "./request.ts";
 import { teamHash } from "./team-class.ts";
 import { validateTeam } from "./teams.ts";
@@ -327,7 +328,7 @@ export async function runBattle(options: BattleOptions): Promise<BattleRecord> {
         } else if (line.startsWith("|request|")) {
           pendingSubmission = null;
           const request: RequestRecord = {
-            ...decodeRequest(line.slice("|request|".length)),
+            ...timed("o_obs", () => decodeRequest(line.slice("|request|".length))),
             request_seq: 0,
           };
           request.request_seq = record.requests[player].push(request);
@@ -337,6 +338,7 @@ export async function runBattle(options: BattleOptions): Promise<BattleRecord> {
             // A request still in the stream when the battle ends (e.g. a
             // forced tie) asks for nothing.
             if (battle.ended) continue;
+            const judged = startTimer();
             const judge = new CloneJudge(engine, battle, player);
             const legal = legalChoiceSet({ request, showdown_commit: engine.commit, judge });
             request.legal = legal;
@@ -344,12 +346,16 @@ export async function runBattle(options: BattleOptions): Promise<BattleRecord> {
               const verdicts = judge.judge(request.request_hash, legal.pending);
               record.hidden_verdicts.push({ player, request_seq: request.request_seq, verdicts });
             }
-            const choice = await actors[player](request, { player, channel: record.channels[player].slice(), team: brought[player] });
+            addSince("e_judge", judged);
+            const copied = startTimer();
+            const channel = record.channels[player].slice();
+            addSince("o_obs", copied);
+            const choice = await actors[player](request, { player, channel, team: brought[player] });
             if (ended || record.forfeit !== undefined) return;
             const entry = { player, request_seq: request.request_seq, choice };
             record.choices.push(entry);
             if (legal.pending.includes(choice)) pendingSubmission = entry;
-            stream.write(choice);
+            timed("e_sim", () => stream.write(choice));
           } catch (error) {
             if (error instanceof ForfeitSignal) {
               forfeit(player, request.request_seq, error);
@@ -364,7 +370,7 @@ export async function runBattle(options: BattleOptions): Promise<BattleRecord> {
 
   const done = Promise.all([watchLog(), play("p1", streams.p1), play("p2", streams.p2)]);
   const start = { formatid: formatId, seed };
-  streams.omniscient.write(
+  timed("e_sim", () => streams.omniscient.write(
     [
       `>start ${JSON.stringify(start)}`,
       ...PLAYERS.map(
@@ -376,7 +382,7 @@ export async function runBattle(options: BattleOptions): Promise<BattleRecord> {
           })}`,
       ),
     ].join("\n"),
-  );
+  ));
   await done;
   if (failure) throw failure;
   return record;

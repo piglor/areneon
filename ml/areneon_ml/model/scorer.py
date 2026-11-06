@@ -13,6 +13,7 @@ from typing import Any
 
 import torch
 
+from areneon_ml import stopwatch
 from areneon_ml.model.batch import collate
 from areneon_ml.model.encoder import Encoder
 from areneon_ml.model.gamedata import GameData
@@ -80,11 +81,15 @@ class NetworkScorer:
         self, view: dict[str, Any], temperature_ppm: int
     ) -> tuple[list[float], PolicyOutput]:
         role = view["observation"]["kind"]
+        mark = stopwatch.begin()
         encoded = self._encoders[role].encode(view)
+        stopwatch.end("w_enc", mark)
+        mark = stopwatch.begin()
         with torch.inference_mode():
             output = self._networks[role](collate([encoded]))
             logits = output.logits[0]
             if temperature_ppm != FULL_TEMPERATURE_PPM:
                 logits = logits * (1_000_000 / temperature_ppm)
             probabilities = torch.softmax(logits, dim=-1)
+        stopwatch.end("w_fwd", mark)
         return [float(p) for p in probabilities.tolist()], output

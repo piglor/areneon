@@ -16,6 +16,7 @@ from functools import partial
 from typing import Any
 
 from areneon_ml.inspector.page import esc
+from areneon_ml.loop.share import loop_share
 from areneon_ml.progress.gap import GAP_LABEL, SAME_MODE_NOTE
 from areneon_ml.progress.records import (
     SEARCH_EVIDENCE_NOTE,
@@ -696,6 +697,27 @@ def _counts_section(model: ReportModel, tips: Tips) -> str:
     return "".join(out)
 
 
+_GAME_PHASES = ("e_sim", "e_judge", "e_probe", "o_obs", "ipc_wait", "pool_load", "merge")
+_PROFILE_LABELS = (
+    "E_sim",
+    "E_judge",
+    "E_probe",
+    "O_obs",
+    "IPC wait",
+    "Pool load",
+    "Merge",
+    "W_enc",
+    "W_fwd",
+    "Load: validate",
+    "Load: reduce",
+    "Load: encode",
+    "CPU (processes and workers)",
+    "Decisions",
+    "c",
+    "L",
+)
+
+
 def _seconds(ms: int) -> str:
     return f"{ms // 1000}.{ms % 1000:03d} s"
 
@@ -771,6 +793,55 @@ def _metrics_section(model: ReportModel) -> str:
             ],
             rows,
             "Wall-clock time per phase of each committed generation, and the throughput that follows.",
+        )
+    )
+
+
+def _percent(ppm: int) -> str:
+    return f"{ppm // 10_000}.{ppm // 100 % 100:02d} %"
+
+
+def _profile_section(model: ReportModel) -> str:
+    """Where a profiled generation's time went (ADR-028 section 1); nothing for a run without."""
+    rows = []
+    for g in model.generations:
+        m = g.metrics
+        if m is None or "profile" not in m:
+            continue
+        found = loop_share(m)
+        games, workers, load = (
+            m["profile"][k] for k in ("game_processes", "policy_workers", "load")
+        )
+        rows.append(
+            [
+                str(g.number),
+                *(_seconds(games[f"{name}_ms"]) for name in _GAME_PHASES),
+                _seconds(workers["w_enc_ms"]),
+                _seconds(workers["w_fwd_ms"]),
+                *(_seconds(load[f"{name}_ms"]) for name in ("validate", "reduce", "encode")),
+                _seconds(games["cpu_ms"] + workers["cpu_ms"]),
+                str(m["profile"]["decisions"]),
+                f"{_percent(found['c_ppm'])} ({found['c_source']})",
+                _percent(found["l_ppm"]),
+            ]
+        )
+    if not rows:
+        return ""
+    heads = [("Generation", True)] + [(label, True) for label in _PROFILE_LABELS]
+    return (
+        "<h2>Where the time went (profile)</h2>"
+        '<p class="note">From the optional <code>profile</code> of <code>metrics/gNNNNNN.json</code>, '
+        "written only by a run started with <code>--profile</code>; diagnostics outside every hash. "
+        "Game-process phases are wall time summed over the processes (IPC wait overlaps the "
+        "workers' own time and, with several games in flight, can exceed the play phase); worker "
+        "and load figures are wall time summed over the workers; CPU is user plus system time of "
+        "every game process and worker (worker CPU is after the session began, so start-up is left out; the game processes still include Node and engine start-up). c is the CPU share of E_sim, E_judge, O_obs, W_enc and W_fwd "
+        "during play (the smaller of the CPU reading and the wall reading, which is an upper bound because waits overlap across games in flight) and L = c x play / T "
+        "(<code>python -m areneon_ml.loop loop-share</code> prints the same figures).</p>"
+        + _table(
+            heads,
+            rows,
+            "Time per phase, process and worker of each profiled generation, and the loop share.",
         )
     )
 
@@ -1001,6 +1072,7 @@ def build_report(model: ReportModel, links: Links | None = None) -> str:
             _progress_sheet_section(model),
             _counts_section(model, tips),
             _metrics_section(model),
+            _profile_section(model),
             _diagnostics_section(model, tips),
             _comparison(model, links),
             _inputs(model),
