@@ -8,7 +8,9 @@ every line as a ``training-example``. What the contract profile cannot say
 ``behaviour_policy_id`` and every one of its examples carries ``candidates``
 and ``outcome`` (ADR-010 section 5), and an example's ``choice`` is among its
 candidates. When examples carry ``candidate_features`` (ADR-022 §3) their rows are sorted and
-unique and the whole stream carries one feature set, or none. A stream with no matching manifest is
+unique and the whole stream carries one feature set, or none. A label stream (ADR-026 erratum E2)
+has ``search_target`` on every line and ``search_labels`` in its manifest; a PPO stream has neither.
+A stream with no matching manifest is
 not readable at all: there is no function that reads one alone.
 """
 
@@ -130,6 +132,46 @@ def _check_sheet(number: int, raw: dict[str, Any]) -> None:
         raise TrainingStreamError(f"line {number}: opponent_sheet: {problem}")
 
 
+#: Recorded in ``StreamChecker.classes`` as ``labels:`` plus ``y`` or nothing, so the pieces of a
+#: stream checked apart bring "every line has a search_target, or none does" together (ADR-026 E2).
+_LABELS = "labels:"
+#: The most searched candidates a label covers (``k_max``).
+SEARCH_K_MAX = 16
+
+
+def _check_search_target(number: int, raw: dict[str, Any]) -> None:
+    """The reader rules of ``search_target`` the profile cannot say (TS ``searchTargetProblem``)."""
+    target = raw.get("search_target")
+    if target is None:
+        return
+    candidates = raw.get("candidates")
+    if candidates is None:
+        raise TrainingStreamError(f"line {number}: a search_target needs the example's candidates")
+    if len(target["prior_ppm"]) != len(candidates):
+        raise TrainingStreamError(
+            f"line {number}: the search_target prior_ppm must have one entry per candidate"
+        )
+    entries = target["entries"]
+    if len(entries) > SEARCH_K_MAX:
+        raise TrainingStreamError(
+            f"line {number}: the search_target holds more than {SEARCH_K_MAX} entries"
+        )
+    if not _strictly_ascending([e["candidate"] for e in entries]):
+        raise TrainingStreamError(
+            f"line {number}: the search_target entries must be ascending by candidate index"
+            " and unique"
+        )
+    for entry in entries:
+        if entry["candidate"] >= len(candidates):
+            raise TrainingStreamError(
+                f"line {number}: a search_target entry names a candidate the example does not have"
+            )
+        if candidates[entry["candidate"]]["pending"]:
+            raise TrainingStreamError(
+                f"line {number}: a search_target entry names a pending candidate"
+            )
+
+
 def _check_manifest(manifest: object, private_pool: bool = False) -> bool:
     """The manifest's own rules; True when the set is learner_ready.
 
@@ -154,6 +196,14 @@ def _check_manifest(manifest: object, private_pool: bool = False) -> bool:
     for field in ("episode_hashes", "evaluation_manifest_hashes"):
         if not _strictly_ascending(manifest[field]):
             raise TrainingStreamError(f"training-set: {field} must be sorted and unique")
+    labels = manifest.get("search_labels")
+    if labels is not None:
+        if labels["labelled"] != manifest["examples"]:
+            raise TrainingStreamError("training-set: search_labels.labelled must equal examples")
+        if not _strictly_ascending([r["reason"] for r in labels["refused"]]):
+            raise TrainingStreamError(
+                "training-set: search_labels.refused must be sorted by reason and unique"
+            )
     ready = manifest.get("learner_ready") is True
     if ready and "behaviour_policy_id" not in manifest:
         raise TrainingStreamError("a learner_ready TrainingSet must name its behaviour_policy_id")
@@ -257,6 +307,7 @@ class StreamChecker:
         _check_candidates(number, raw, self.ready)
         _check_features(number, raw)
         _check_sheet(number, raw)
+        _check_search_target(number, raw)
         if raw["episode_hash"] not in self.known:
             raise TrainingStreamError(f"line {number}: its Episode is not in the TrainingSet")
         self.seen.add(raw["episode_hash"])
@@ -265,6 +316,7 @@ class StreamChecker:
         self.classes.add(_FEATURES + ("" if features is None else features["feature_set_hash"]))
         sheet = raw.get("opponent_sheet")
         self.classes.add(_SHEET + ("" if sheet is None else sheet["source"]["hash"]))
+        self.classes.add(_LABELS + ("" if raw.get("search_target") is None else "y"))
         return raw, example
 
     def finish(self) -> None:
@@ -272,6 +324,15 @@ class StreamChecker:
         if self.seen != self.known:
             missing = sorted(self.known - self.seen)
             raise TrainingStreamError(f"the stream holds no example of Episode {missing[0]}")
+        if sum(1 for c in self.classes if c.startswith(_LABELS)) > 1:
+            raise TrainingStreamError(
+                "a label stream carries search_target on every line; a PPO stream on none"
+            )
+        labelled = _LABELS + "y" in self.classes
+        if labelled != ("search_labels" in self.manifest):
+            raise TrainingStreamError(
+                "a TrainingSet has search_labels exactly when its examples carry search_target"
+            )
         if sum(1 for c in self.classes if c.startswith(_SHEET)) > 1:
             raise TrainingStreamError(
                 "the stream's examples must all carry the same opponent sheet source, or none"

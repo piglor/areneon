@@ -57,6 +57,10 @@
       "description": "Optional derived opponent sheet block (ADR-027 section 2, ADR-025 erratum E4): what the player's own view makes probable about each opponent preview slot. Absent unless the session or the run declared a sheet source: a writer omits it (never null or empty), so every existing value keeps its bytes and hash (a minor change within v1, ADR-008 section 3). Reader rules are those of the OpponentSheet contract.",
       "$ref": "#/$defs/TrainingOpponentSheet"
     },
+    "search_target": {
+      "description": "Optional search label (ADR-026 erratum E2 decision 4): what decision-time search made of this decision's candidates, written only into a label stream (labels.jsonl), never into the PPO stream, an Episode or a PolicyQuery. Absent unless the stream is a label stream: a writer omits it (never null or empty), so every existing value keeps its bytes and hash (a minor change within v1, ADR-008 section 3). Reader rules (readTrainingExample, StreamChecker): the example carries candidates; prior_ppm has one entry per candidate; entries are ascending by candidate index, unique, in range, and every index names a non-pending candidate; a label stream has the field on every line.",
+      "$ref": "#/$defs/SearchTarget"
+    },
     "outcome": {
       "description": "How the game ended, from the player's view: win, loss or tie. Optional; required, with candidates, in every example of a learner_ready TrainingSet (a reader rule).",
       "enum": [
@@ -1519,6 +1523,60 @@
             "random_effect",
             "scenario_rule_table"
           ]
+        }
+      }
+    },
+    "SearchTarget": {
+      "description": "The searched set of one decision and the pair's prior over all candidates: integers only, candidate indices and parts per million, no name, seed or opponent value.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "prior_ppm",
+        "entries"
+      ],
+      "properties": {
+        "prior_ppm": {
+          "description": "The pair's temperature-1 prior over the candidates (the evaluate reply), one entry per candidate in the example's candidate order, each rounded alone.",
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 1024,
+          "items": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1000000
+          }
+        },
+        "entries": {
+          "description": "The searched candidates: index into candidates, ascending and unique, non-pending (reader rule), at least 2 and at most 16 (k_max), each with the search's value of it.",
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 16,
+          "items": {
+            "$ref": "#/$defs/SearchEntry"
+          }
+        }
+      }
+    },
+    "SearchEntry": {
+      "description": "One searched candidate and its value in parts per million of a game score.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "candidate",
+        "q_ppm"
+      ],
+      "properties": {
+        "candidate": {
+          "description": "Index into the example's candidates.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1023
+        },
+        "q_ppm": {
+          "description": "The search's value of the candidate, 0 to 10^6.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000
         }
       }
     }

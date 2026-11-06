@@ -35,4 +35,24 @@ export interface TrainingSet {
    * The loader's behaviour_policy_id filter value: the one policy whose own seats this stream trains (ADR-010 §1). Every Episode in it has that policy as its provenance.behaviour_policy_id.
    */
   behaviour_policy_id?: string;
+  /**
+   * Optional (ADR-026 erratum E2 decision 4): present exactly on the manifest of a label stream, whose every example carries search_target. The search identity is stream-level, here only. A PPO stream's manifest has no such block, so every existing value keeps its bytes and hash (a minor change within v1). Reader rules: labelled equals examples; refused sorted by reason, unique.
+   */
+  search_labels?: {
+    /**
+     * The search identity hash (ADR-026 section 5) of the label config that made every label of the stream.
+     */
+    search_identity_hash: string;
+    /**
+     * The number of labelled decisions: the stream's line count.
+     */
+    labelled: number;
+    /**
+     * Decisions selected for labelling and not labelled, by reason, sorted by reason and unique; may be empty.
+     */
+    refused: {
+      reason: string;
+      count: number;
+    }[];
+  };
 }

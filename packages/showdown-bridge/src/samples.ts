@@ -375,6 +375,19 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
 
   // A CheckpointRecord (ADR-010 section 5): ids are placeholders, the shape is what the corpus pins.
   const hexOf = (c: string): string => c.repeat(64);
+  // ADR-026 erratum E2 decision 4: the search label. Shape samples with invented numbers over the golden battle example's candidates.
+  const priorPpm = (n: number): number[] => Array.from({ length: n }, (_, i) => (i === 0 ? 1000000 - (n - 1) * 1000 : 1000));
+  const battleCandidates = (exampleOf("battle").candidates ?? []).length;
+  const targetOf = (change: (t: { prior_ppm: number[]; entries: { candidate: number; q_ppm: number }[] }) => void): Record<string, unknown> => {
+    const target = { prior_ppm: priorPpm(battleCandidates), entries: [{ candidate: 0, q_ppm: 620000 }, { candidate: 3, q_ppm: 480000 }, { candidate: 5, q_ppm: 510000 }] };
+    change(target);
+    return { ...exampleOf("battle"), search_target: target };
+  };
+  const labelsSet = (change: (l: Record<string, unknown>) => void = () => {}): Record<string, unknown> => {
+    const labels: Record<string, unknown> = { search_identity_hash: hexOf("c"), labelled: training.set.examples, refused: [{ reason: "belief_refused", count: 1 }, { reason: "below_min_valid", count: 2 }] };
+    change(labels);
+    return { ...training.set, search_labels: labels };
+  };
   const checkpointRecord = {
     schema_version: 1,
     checkpoint_id: hexOf("1"),
@@ -970,6 +983,8 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "opponent-sheet/oracle-diagnostic": sheetOf("oracle-diagnostic", exactSlot),
     "policy-query/battle-opponent-sheet": { ...battleQuery, opponent_sheet: beliefSheet },
     "policy-query/battle-opponent-sheet-oracle": { ...battleQuery, opponent_sheet: sheetOf("oracle-diagnostic", exactSlot) },
+    "training-example/battle-search-target": targetOf(() => {}),
+    "training-set/search-labels": labelsSet(),
     "training-example/battle-opponent-sheet": { ...exampleOf("battle"), opponent_sheet: beliefSheet },
     "evaluation-reply/evaluation": evaluationOf(priorOf(battleQuery.candidates.length), 620000),
     "evaluation-reply/value-out-of-unit": evaluationOf(priorOf(battleQuery.candidates.length), -150000),
@@ -1202,6 +1217,16 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "team-snapshot-manifest/cells-out-of-order": snapshotWith((s) => (s.cells = [{ split: "dev", stratum: 7, rows: 2 }, { split: "dev", stratum: 0, rows: 3 }])),
     "team-snapshot-manifest/shards-out-of-order": mutated(extendedSnapshot, (s) => (s.shards = [...(extendedSnapshot.shards as unknown[])].reverse())),
     "team-snapshot-manifest/duplicate-shard": mutated(snapshot, (s) => (s.shards = [snapshotBase.shards[0], { ...snapshotBase.shards[0], split: "validation" }])),
+    // ADR-026 erratum E2: schema-valid, refused by the readers (a label's candidate rules; a label manifest's sums and order).
+    "training-example/search-target-prior-short": targetOf((t) => t.prior_ppm.pop()),
+    "training-example/search-target-unsorted": targetOf((t) => (t.entries = [{ candidate: 3, q_ppm: 480000 }, { candidate: 0, q_ppm: 620000 }])),
+    "training-example/search-target-duplicate": targetOf((t) => (t.entries = [{ candidate: 3, q_ppm: 480000 }, { candidate: 3, q_ppm: 490000 }])),
+    "training-example/search-target-out-of-range": targetOf((t) => (t.entries = [{ candidate: 0, q_ppm: 620000 }, { candidate: battleCandidates, q_ppm: 480000 }])),
+    "training-example/search-target-pending": mutated(targetOf(() => {}), (e) => (((e.candidates as Record<string, unknown>[])[3] as Record<string, unknown>).pending = true)),
+    "training-example/search-target-no-candidates": mutated(targetOf(() => {}), (e) => delete e.candidates),
+    "training-set/search-labels-unsorted": labelsSet((l) => (l.refused = [{ reason: "below_min_valid", count: 2 }, { reason: "belief_refused", count: 1 }])),
+    "training-set/search-labels-duplicate-reason": labelsSet((l) => (l.refused = [{ reason: "belief_refused", count: 1 }, { reason: "belief_refused", count: 2 }])),
+    "training-set/search-labels-count-mismatch": labelsSet((l) => (l.labelled = training.set.examples + 1)),
     "training-set/unsorted-episodes": { ...training.set, episode_hashes: [hashB, hashA] },
     "training-set/duplicate-manifests": { ...training.set, evaluation_manifest_hashes: [hashA, hashA] },
     "episode/sparring-synthetic": collected({ kind: "sparring", session_id: "sparring-session-1" }),
@@ -1486,6 +1511,13 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "training-example/too-many-candidates": { ...exampleOf("battle"), candidates: candidatesOf(1025) },
     "training-example/candidate-no-pending": mutated(exampleOf("battle"), (e) => delete (e.candidates as Record<string, unknown>[])[0]?.pending),
     "training-example/candidate-verdict": mutated(exampleOf("battle"), (e) => ((e.candidates as Record<string, unknown>[])[0] as Record<string, unknown>).legal = true),
+    "training-example/search-target-one-entry": targetOf((t) => (t.entries = [{ candidate: 0, q_ppm: 620000 }])),
+    "training-example/search-target-too-many": targetOf((t) => (t.entries = Array.from({ length: 17 }, (_, i) => ({ candidate: i, q_ppm: 500000 })))),
+    "training-example/search-target-q-over": targetOf((t) => ((t.entries[0] as { q_ppm: number }).q_ppm = 1000001)),
+    "training-example/search-target-float": targetOf((t) => ((t.entries[0] as { q_ppm: number }).q_ppm = 0.5)),
+    "training-example/search-target-extra-field": targetOf((t) => Object.assign(t, { seed: 1 })),
+    "training-set/search-labels-no-hash": labelsSet((l) => delete l.search_identity_hash),
+    "training-set/search-labels-zero-count": labelsSet((l) => (l.refused = [{ reason: "belief_refused", count: 0 }])),
     "training-example/unknown-outcome": { ...exampleOf("battle"), outcome: "draw" },
     "training-set/learner-ready-false": { ...training.set, learner_ready: false },
     "training-set/empty-policy-id": { ...training.set, behaviour_policy_id: "" },
