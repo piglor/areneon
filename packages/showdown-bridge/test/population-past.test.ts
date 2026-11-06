@@ -163,6 +163,10 @@ describe("the CLI port with a past pool", () => {
     expect(JSON.parse(lines[0] as string).generation).toBe(1);
   }, 120_000);
 
+  it("starts a policy worker per snapshot when no client is injected, and rethrows its failure", async () => {
+    await expect(runPopulationCli(input({ past: pastFile }), () => undefined)).rejects.toThrow();
+  }, 120_000);
+
   it("refuses a past-pool share without its pool before it creates any client", async () => {
     let made = 0;
     const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
