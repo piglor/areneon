@@ -14,7 +14,7 @@ import { type BattleRecord, buildPayoffTable, importPaste, loadEngine, type Payo
 import { TEAMS_DIR } from "../src/golden.ts";
 import { policyGame } from "../src/policy-actor.ts";
 import { SAMPLES_DIR } from "../src/samples.ts";
-import type { EvaluateQueryInput, PolicyQueryInput } from "../src/policy-protocol.ts";
+import type { EvaluateQueryInput, PolicyQueryInput, ValueQueryInput } from "../src/policy-protocol.ts";
 import { PolicyHandshakeError, PolicyWorkerClient, type PolicyWorkerOptions } from "../src/policy-worker.ts";
 
 const ROOT = fileURLToPath(new URL("../../../", import.meta.url));
@@ -124,6 +124,25 @@ describe.skipIf(!existsSync(PYTHON) && process.env.ARENEON_REQUIRE_PYTHON_WORKER
       expect(alone.prior_ppm).toHaveLength(a1.candidates.length);
       expect(other.prior_ppm).toEqual(alone.prior_ppm);
       expect(other.value_ppm).toBe(alone.value_ppm);
+    } finally {
+      await client.close();
+    }
+  }, 120_000);
+
+  // ADR-026 erratum E2 decision 7: a value query (no candidates, no rows) gets the value an evaluate query for the same state gets.
+  it("answers value queries with the integer an evaluate query gives for the same state", async () => {
+    const load = (name: string): PolicyQueryInput & { query_id: number } => JSON.parse(readFileSync(`${SAMPLES_DIR}/v1/policy-query/valid/${name}.json`, "utf8"));
+    const { query_id: _a, ...evaluateQuery } = load("battle-evaluate");
+    const { query_id: _b, ...valueQuery } = load("battle-value");
+    const client = new PolicyWorkerClient(options());
+    await client.start();
+    try {
+      expect(client.valueQuery).toBe(true);
+      const evaluation = await client.evaluate("g1", evaluateQuery as EvaluateQueryInput);
+      const value = await client.value("g1", valueQuery as unknown as ValueQueryInput);
+      expect(value.value_ppm).toBe(evaluation.value_ppm);
+      expect(value.identity).toEqual(evaluation.identity);
+      expect(await client.value("g1", valueQuery as unknown as ValueQueryInput)).toEqual(value);
     } finally {
       await client.close();
     }

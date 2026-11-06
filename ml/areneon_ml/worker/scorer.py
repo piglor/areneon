@@ -35,3 +35,15 @@ class Scorer(Protocol):
         ``probabilities`` is.
         """
         ...
+
+
+class ValueScorer(Scorer, Protocol):
+    """A scorer that also answers value-only queries (ADR-026 erratum E2 decision 7)."""
+
+    def value(self, view: dict[str, Any]) -> float:
+        """The value head's output for one state with no candidates and no rows.
+
+        Batch of one, like ``evaluate``. The worker offers it (``ready.value_query``) only for a
+        scorer whose encoders read nothing of the candidates in the trunk.
+        """
+        ...

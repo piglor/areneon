@@ -11,7 +11,7 @@
       {
         "name": "PolicyQuery",
         "schema_version": 1,
-        "schema_sha256": "9483790cf29daace19dfe197b04cbe2e84e9d16c204dc95a22ff274401cfbe49"
+        "schema_sha256": "d5a28e6e05a91a2d42129f0a20701f45d68bd73acc23737b473917b7f3b1cdfd"
       },
       {
         "name": "PolicyReply",

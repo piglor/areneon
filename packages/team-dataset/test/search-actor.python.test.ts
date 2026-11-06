@@ -10,7 +10,10 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   battleClass,
+  configuredSetHash,
   engineDataHash,
+  loadDamageAwareConfig,
+  loadMechanicsConfig,
   type PolicyWorkerOptions,
   PolicyWorkerClient,
   readEngineData,
@@ -25,7 +28,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { firstLegal, GOLDEN_DIR } from "../../showdown-bridge/src/golden.ts";
 import { loadRandomCorpus } from "../../showdown-bridge/src/random-corpus.ts";
 import { engine, FORMAT } from "./support.ts";
-import { manifest, setupFor } from "./search-actor-support.ts";
+import { manifest, setupFor, snapshot, vocabulary } from "./search-actor-support.ts";
 
 const ROOT = fileURLToPath(new URL("../../../", import.meta.url));
 const PYTHON = join(ROOT, ".venv/bin/python");
@@ -45,6 +48,12 @@ describe.skipIf(!existsSync(PYTHON) && process.env.ARENEON_REQUIRE_PYTHON_WORKER
   let preview: string;
   let battle: string;
   let encoderVersion: string;
+  // A second pair made for `probe-damage/1`: its encoder reads candidate rows, so its worker states the feature set.
+  const configs = { vocabulary, config: loadDamageAwareConfig("v1", vocabulary), mechanics: loadMechanicsConfig(FORMAT), snapshot, data_class: "synthetic" as const };
+  const featureSet = { feature_set: "probe-damage/1", feature_set_hash: configuredSetHash(engine, configs) };
+  let featuresPreview: string;
+  let featuresBattle: string;
+  let featuresEncoderVersion: string;
 
   beforeAll(() => {
     runDir = mkdtempSync(join(tmpdir(), "areneon-search-run-"));
@@ -56,6 +65,14 @@ describe.skipIf(!existsSync(PYTHON) && process.env.ARENEON_REQUIRE_PYTHON_WORKER
     preview = first.checkpoint_id;
     battle = second.checkpoint_id;
     encoderVersion = first.encoder_version;
+    const featuresFile = join(runDir, "model-features.json");
+    writeFileSync(featuresFile, JSON.stringify({ ...TINY_MODEL, encoder: { ...TINY_MODEL.encoder, options: { candidate_features: featureSet } } }));
+    const initFeatures = (role: string, seed: number): { checkpoint_id: string; encoder_version: string } =>
+      JSON.parse(execFileSync(PYTHON, ["-I", "-m", "areneon_ml.checkpoint", "init", "--role", role, "--seed", String(seed), "--engine-data", dataFile, "--model-config", featuresFile, "--run-dir", runDir], { encoding: "utf8", env: {} }));
+    const [fp, fb] = [initFeatures("preview", 3), initFeatures("battle", 4)];
+    featuresPreview = fp.checkpoint_id;
+    featuresBattle = fb.checkpoint_id;
+    featuresEncoderVersion = fp.encoder_version;
   }, 120_000);
   afterAll(() => rmSync(runDir, { recursive: true, force: true }));
 
@@ -68,6 +85,57 @@ describe.skipIf(!existsSync(PYTHON) && process.env.ARENEON_REQUIRE_PYTHON_WORKER
     handshake_timeout_ms: 60_000,
     expect: { encoder_version: encoderVersion, engine_data_hash: expectedHash, checkpoints: [{ role: "battle", checkpoint_id: battle }, { role: "preview", checkpoint_id: preview }] },
   });
+
+  const featuresOptions = (): PolicyWorkerOptions => ({
+    ...options(),
+    args: ["-I", "-m", "areneon_ml.worker", "--run-dir", runDir, "--preview", featuresPreview, "--battle", featuresBattle, "--engine-data", dataFile, "--max-line-bytes", String(maxLine)],
+    features: featureSet,
+    expect: { encoder_version: featuresEncoderVersion, engine_data_hash: expectedHash, checkpoints: [{ role: "battle", checkpoint_id: featuresBattle }, { role: "preview", checkpoint_id: featuresPreview }] },
+  });
+
+  it("searches a pair that reads probe-damage/1 rows: the worker states value_query, the leaves carry no rows, and a seeded game reproduces", async () => {
+    const source = loadRandomCorpus()[1];
+    if (source === undefined) throw new Error("no corpus battle");
+    const teams = source.teams;
+    const known = syntheticTeamHashes([teamHash(teams.p1), teamHash(teams.p2)]);
+    const setup = setupFor();
+    const { policy_id, identity_hash } = searchPolicy(setup, manifest, { preview: featuresPreview, battle: featuresBattle }, "argmax", {}, featureSet.feature_set_hash);
+    const client = new PolicyWorkerClient(featuresOptions());
+    await client.start();
+    try {
+      expect(client.featureSet).toEqual(featureSet);
+      expect(client.valueQuery).toBe(true);
+      const play = async () => {
+        await client.beginGame();
+        const actor = searchActor({
+          setup,
+          client,
+          battle: "game-0-p1",
+          player: "p1",
+          team: stampTeam(teams.p1 as never, known),
+          manifest,
+          channel_class: battleClass({ p1: teamHash(teams.p1), p2: teamHash(teams.p2) }, known),
+          seed: source.seed,
+          game: 0,
+          policy_id,
+          identity_hash,
+          sampling: "argmax",
+          features: { configs },
+          pair: { preview: featuresPreview, battle: featuresBattle },
+        });
+        const record = await runBattle({ engine, formatId: FORMAT, seed: source.seed, teams, actors: { p1: actor, p2: firstLegal }, maxTurns: 3 });
+        return { record, counts: actor.report().counts };
+      };
+      const first = await play();
+      const again = await play();
+      expect(first.counts.searched_decisions).toBeGreaterThan(0);
+      expect(first.counts.leaf_queries).toBeGreaterThan(0);
+      expect(again.record.choices).toEqual(first.record.choices);
+      expect(again.counts).toEqual(first.counts);
+    } finally {
+      await client.close();
+    }
+  }, 300_000);
 
   it("searches against the networks' prior and value, and a seeded game reproduces with the same choices and counts", async () => {
     const source = loadRandomCorpus()[1];
