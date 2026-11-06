@@ -203,7 +203,7 @@ def label_example(
     n = len(base["candidates"])
     open_ = [i for i, c in enumerate(base["candidates"]) if not c["pending"]]
     first, second = open_[0], open_[1]
-    example = json.loads(json.dumps(base))
+    example: dict[str, Any] = json.loads(json.dumps(base))
     example["search_target"] = {
         "prior_ppm": [rng.randrange(0, 1000) for _ in range(n)],
         "entries": [
@@ -215,7 +215,9 @@ def label_example(
     return example
 
 
-def label_stream(policy: str = POLICY, **change: Any) -> tuple[Path, dict[str, Any], list[dict]]:
+def label_stream(
+    policy: str = POLICY, **change: Any
+) -> tuple[str, dict[str, Any], list[dict[str, Any]]]:
     rng = random.Random(3)
     battles = [
         e
@@ -450,7 +452,7 @@ def test_the_distillation_gradient_reaches_the_battle_network() -> None:
     batch = to_device(collate([lab.query for lab in labels]), student.device)
     dense = student._label_dense(labels, batch)
     kl = distill_kl(student.networks["battle"](batch).logits, batch.cand_mask, dense).mean()
-    kl.backward()
+    torch.autograd.backward(kl)
     grads = [p.grad for p in student.networks["battle"].parameters() if p.grad is not None]
     assert grads
     assert any(float(g.abs().sum()) > 0 for g in grads)
