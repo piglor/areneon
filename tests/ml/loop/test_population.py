@@ -20,7 +20,7 @@ from areneon_ml.learner.state import pack_state
 from areneon_ml.learner.trainer import Learner
 from areneon_ml.loop import layout, population
 from areneon_ml.loop.__main__ import EXIT_REFUSED, main
-from areneon_ml.loop.driver import LoopError, export_provenance
+from areneon_ml.loop.driver import LoopError
 from areneon_ml.loop.ladder import read_ladder_record
 from areneon_ml.loop.league import calibration_game_seed, league_game_seed
 from areneon_ml.loop.metrics import metrics_path, read_run_metrics
@@ -706,13 +706,6 @@ def test_exploiters_and_a_past_pool_are_refused_as_the_play_side_refuses_them(
         make_population(tmp_path / "p", population_config(edit=past))
 
 
-def test_the_provenance_export_of_a_population_run_is_not_built_yet(
-    finished: Path, tmp_path: Path
-) -> None:
-    with pytest.raises(LoopError, match="slice 12"):
-        export_provenance(finished, tmp_path / "out")
-
-
 def test_a_two_role_warm_start_is_refused_with_population() -> None:
     def both(raw: dict[str, Any]) -> None:
         raw["warm_start"] = {"preview": "a" * 64, "battle": "b" * 64}
@@ -952,7 +945,6 @@ def test_a_member_whose_games_all_forfeited_fails_the_generation(tmp_path: Path)
     [
         ["inspect"],
         ["report"],
-        ["progress", "--generation", "1", "--engine-data", "x"],
         ["replay", "--generation", "1"],
     ],
 )

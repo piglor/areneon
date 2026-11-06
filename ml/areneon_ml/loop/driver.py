@@ -56,6 +56,12 @@ from areneon_ml.loop.metrics import (
     write_metrics,
 )
 from areneon_ml.loop.play import GenerationPlayer, PlayRequest
+from areneon_ml.loop.population_provenance import (
+    PopulationProvenanceError,
+    learner_steps,
+    member_records,
+    population_sources,
+)
 from areneon_ml.loop.records import (
     RecordFacts,
     checkpoint_record,
@@ -560,7 +566,8 @@ def sources_registry(run_dir: Path) -> dict[str, list[str]]:
     newest = layout.latest_complete(run_dir)
     if newest is None:
         return registry
-    _refuse_population(newest)
+    if "members" in newest.manifest:
+        return _population(population_sources, run_dir, newest)
     previous: dict[str, str] | None = None
     for generation in range(newest.generation + 1):
         path = layout.generation_dir(run_dir, generation)
@@ -580,12 +587,13 @@ def sources_registry(run_dir: Path) -> dict[str, list[str]]:
     return registry
 
 
-def _refuse_population(newest: layout.Committed) -> None:
-    if "members" in newest.manifest:
-        raise LoopError(
-            "population: the provenance export of a population run is not built yet "
-            "(ADR-021 slice 12)"
-        )
+def _population[T](
+    read: Callable[[Path, layout.Committed], T], run_dir: Path, newest: layout.Committed
+) -> T:
+    try:
+        return read(run_dir, newest)
+    except (PopulationProvenanceError, layout.RunDirError) as exc:
+        raise LoopError(f"population: {exc}") from exc
 
 
 def provenance_graph(run_dir: Path) -> ProvenanceGraph:
@@ -593,7 +601,11 @@ def provenance_graph(run_dir: Path) -> ProvenanceGraph:
     newest = layout.latest_complete(run_dir)
     if newest is None:
         raise LoopError("the run directory holds no committed generation")
-    _refuse_population(newest)
+    if "members" in newest.manifest:
+        return ProvenanceGraph(
+            [record for record, _ in _population(member_records, run_dir, newest)],
+            _population(population_sources, run_dir, newest),
+        )
     records = [
         read_record(
             layout.read_json(layout.generation_dir(run_dir, g) / "records" / f"{role}.json")
@@ -615,6 +627,13 @@ def export_provenance(run_dir: Path, out_dir: Path) -> str:
     assert newest is not None
     shutil.rmtree(out_dir, ignore_errors=True)
     (out_dir / "records").mkdir(parents=True)
+    if "members" in newest.manifest:
+        # One record per checkpoint id: the clone record every member shares is written once.
+        for record, source in _population(member_records, run_dir, newest):
+            (out_dir / "records" / f"{record.checkpoint_id}.json").write_bytes(source.read_bytes())
+        registry = jcs(_population(population_sources, run_dir, newest))
+        (out_dir / "sources.json").write_bytes(registry)
+        return sha256_hex(registry)
     for generation in range(newest.generation + 1):
         for role in ROLES:
             source = layout.generation_dir(run_dir, generation) / "records" / f"{role}.json"
@@ -623,3 +642,15 @@ def export_provenance(run_dir: Path, out_dir: Path) -> str:
     registry = jcs(sources_registry(run_dir))
     (out_dir / "sources.json").write_bytes(registry)
     return sha256_hex(registry)
+
+
+def population_learner_steps(run_dir: Path) -> dict[str, int]:
+    """Cumulative learner steps per checkpoint of a population run (ADR-010 G1 and G3b).
+
+    A copied slot's count is its donor's plus its own (the copy takes the Adam step counts).
+    Empty for a run that is not a population: its outputs keep their bytes.
+    """
+    newest = layout.latest_complete(run_dir)
+    if newest is None or "members" not in newest.manifest:
+        return {}
+    return _population(learner_steps, run_dir, newest)
