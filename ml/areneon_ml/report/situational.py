@@ -107,27 +107,35 @@ def _ceil_ppm(x: Fraction) -> int:
     return -((-x.numerator * PPM) // x.denominator)
 
 
-def _interval(pairs: list[Counts], key: bytes, name: str, b_boot: int) -> dict[str, int] | None:
+STATISTIC_NAMES = (*RATES, *(name for name, _, _ in DIFFERENCES))
+_KEYS = sorted({k for numerator, denominator in RATES.values() for k in (*numerator, *denominator)})
+
+
+def _intervals(pairs: list[Counts], key: bytes, b_boot: int) -> dict[str, dict[str, int] | None]:
+    """Every statistic's interval from ONE set of draws and one merge per resample."""
     n = len(pairs)
+    vectors = [[p.get(k, 0) for k in _KEYS] for p in pairs]
     draws = _draws(key, n, n * b_boot)
-    values: list[Fraction] = []
+    values: dict[str, list[Fraction]] = {name: [] for name in STATISTIC_NAMES}
     for b in range(b_boot):
-        total: Counts = defaultdict(int)
-        for j in draws[b * n : (b + 1) * n]:
-            for k, v in pairs[j].items():
-                total[k] += v
-        value = _statistics(total)[name]
-        if value is not None:
-            values.append(value)
-    if len(values) * 2 < b_boot:
-        return None
-    values.sort()
-    tail = len(values) * TAIL_PERMILLE // 1000
-    return {
-        "low_ppm": _floor_ppm(values[tail]),
-        "high_ppm": _ceil_ppm(values[len(values) - 1 - tail]),
-        "resamples": len(values),
-    }
+        chosen = (vectors[j] for j in draws[b * n : (b + 1) * n])
+        total = [sum(column) for column in zip(*chosen, strict=True)]
+        for name, value in _statistics(dict(zip(_KEYS, total, strict=True))).items():
+            if value is not None:
+                values[name].append(value)
+    out: dict[str, dict[str, int] | None] = {}
+    for name, found in values.items():
+        if len(found) * 2 < b_boot:
+            out[name] = None
+            continue
+        found.sort()
+        tail = len(found) * TAIL_PERMILLE // 1000
+        out[name] = {
+            "low_ppm": _floor_ppm(found[tail]),
+            "high_ppm": _ceil_ppm(found[len(found) - 1 - tail]),
+            "resamples": len(found),
+        }
+    return out
 
 
 def summarise(raw: dict[str, Any], *, b_boot: int = B_BOOT) -> dict[str, Any]:
@@ -136,14 +144,17 @@ def summarise(raw: dict[str, Any], *, b_boot: int = B_BOOT) -> dict[str, Any]:
         raise SituationalError("not a situational move-use raw file")
     seed = str(raw.get("evaluation_key") or raw.get("run_id") or "")
     generation = int(raw["generation"])
-    grouped: dict[tuple[str, str], dict[int, Counts]] = defaultdict(lambda: defaultdict(dict))
+    grouped: dict[tuple[str, str], dict[tuple[str, int], Counts]] = defaultdict(
+        lambda: defaultdict(dict)
+    )
     games: dict[tuple[str, str], int] = defaultdict(int)
     for game in raw["games"]:
         for seat in ("p1", "p2"):
             who = game["seats"][seat]
             slot = (game["match_id"], who["policy"])
-            pair = game["pair"] if game["pair"] is not None else game["game"]
-            into = grouped[slot][pair]
+            # A game without a pair is its own unit, keyed apart from the pair numbers.
+            unit = ("p", game["pair"]) if game["pair"] is not None else ("g", game["game"])
+            into = grouped[slot][unit]
             for k, v in who["counts"].items():
                 into[k] = into.get(k, 0) + v
             games[slot] += 1
@@ -156,11 +167,12 @@ def summarise(raw: dict[str, Any], *, b_boot: int = B_BOOT) -> dict[str, Any]:
                 total[k] += v
         key = bootstrap_stream_key(seed, generation, f"situational:{match_id}:{policy}")
         stats = _statistics(total)
+        found = _intervals(pairs, key, b_boot)
         out: dict[str, Any] = {}
         for name, value in stats.items():
             out[name] = {
-                "mean_ppm": None if value is None else (_floor_ppm(value)),
-                "interval": None if value is None else _interval(pairs, key, name, b_boot),
+                "mean_ppm": None if value is None else _floor_ppm(value),
+                "interval": None if value is None else found[name],
             }
         matches.setdefault(match_id, {})[policy] = {
             "games": games[(match_id, policy)],
@@ -179,6 +191,21 @@ def summarise(raw: dict[str, Any], *, b_boot: int = B_BOOT) -> dict[str, Any]:
         ),
         "matches": matches,
     }
+
+
+def read_summary(value: object) -> dict[str, Any]:
+    """A summary as ``summarise`` writes it (the dashboard's input): the shape it renders."""
+    if not isinstance(value, dict) or value.get("format") != FORMAT or value.get("label") != LABEL:
+        raise SituationalError("not a situational move-use summary")
+    matches = value.get("matches")
+    if not isinstance(matches, dict) or not isinstance(value.get("generation"), int):
+        raise SituationalError("the summary has no matches or generation")
+    for policies in matches.values():
+        for body in policies.values():
+            stats = body["statistics"]
+            if set(stats) != set(STATISTIC_NAMES) or not isinstance(body["pairs"], int):
+                raise SituationalError("a summary entry lacks a statistic")
+    return value
 
 
 def render(summary: dict[str, Any]) -> str:

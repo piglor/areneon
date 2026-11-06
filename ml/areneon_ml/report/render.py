@@ -13,6 +13,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from functools import partial
+from typing import Any
 
 from areneon_ml.inspector.page import esc
 from areneon_ml.progress.gap import GAP_LABEL, SAME_MODE_NOTE
@@ -993,6 +994,7 @@ def build_report(model: ReportModel, links: Links | None = None) -> str:
         [
             head,
             _progress_section(model, tips),
+            _situational_section(model),
             _training_section(model, tips),
             _forfeit_section(model, tips),
             _sheet_section(model),
@@ -1401,6 +1403,61 @@ def _rate(part: int, interval: dict[str, int] | None) -> str:
     return (
         f"{part} ({pct(interval['ppm'])}; {pct(interval['low_ppm'], down=True)} to "
         f"{pct(interval['high_ppm'], up=True)})"
+    )
+
+
+def _situational_section(model: ReportModel) -> str:
+    """The situational move-use diagnostic (#1283), from a summary file given to the command."""
+    found = model.situational
+    if found is None:
+        return ""
+    names = [
+        ("protect_threatened", "Protect, Threatened"),
+        ("protect_safe", "Protect, Safe"),
+        ("protect_threatened_minus_safe", "Threatened minus Safe"),
+        ("repeat_protect", "Repeat Protect"),
+        ("switch_bad_matchup", "Switch, Bad matchup"),
+        ("switch_not_threatened", "Switch, not threatened"),
+        ("switch_bad_matchup_minus_not_threatened", "Bad matchup minus not threatened"),
+    ]
+
+    def cell(stat: dict[str, Any]) -> str:
+        if stat["mean_ppm"] is None:
+            return "none offered"
+        iv = stat["interval"]
+        span = "no interval" if iv is None else f"{iv['low_ppm']} to {iv['high_ppm']}"
+        return f"{stat['mean_ppm']} ppm ({span})"
+
+    rows = [
+        [
+            str(found["generation"]),
+            esc(match_id),
+            esc(policy[:24]),
+            str(body["pairs"]),
+            *(cell(body["statistics"][name]) for name, _ in names),
+        ]
+        for match_id, policies in found["matches"].items()
+        for policy, body in policies.items()
+    ]
+    return (
+        "<h3>Situational move-use</h3>"
+        f'<p class="banner">{esc(found["label"])}</p>'
+        '<p class="note">Threatened: a revealed foe damaging move reaches the Pokemon\'s HP and '
+        "acts first (priority 0 for the own action). Bad matchup: Threatened and a switch "
+        "candidate names a bench Pokemon no revealed foe move reaches. Intervals are "
+        "pair-level percentile bootstrap, descriptive, conditional on the fixed validation plan; "
+        "values are in parts per million.</p>"
+        + _table(
+            [
+                ("Generation", True),
+                ("Match", False),
+                ("Policy", False),
+                ("Pairs", True),
+                *((label, True) for _, label in names),
+            ],
+            rows,
+            "Rates over offered decisions, from the stored games re-simulated on the pinned engine.",
+        )
     )
 
 

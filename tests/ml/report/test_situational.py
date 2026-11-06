@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from areneon_ml.report import situational as s
+from areneon_ml.report.render import _situational_section
 
 
 def _seat(policy: str, counts: dict[str, int]) -> dict[str, object]:
@@ -110,3 +112,36 @@ def test_undefined_resamples_and_refusals(tmp_path: Path) -> None:
     out_path = tmp_path / "out.json"
     assert s.main([str(path), "--out", str(out_path)]) == 0
     assert json.loads(out_path.read_bytes())["format"] == s.FORMAT
+
+
+def test_a_game_without_a_pair_is_its_own_unit() -> None:
+    raw = _raw()
+    games = raw["games"]  # type: ignore[assignment]
+    # Two unpaired games whose indices equal paired ones must not merge with pair 0 and 1.
+    for game in games[:2]:  # type: ignore[index]
+        game["pair"] = None
+    out = s.summarise(raw, b_boot=50)
+    assert (
+        out["matches"]["m"]["policy:aa"]["pairs"] == 9
+    )  # games 0 and 1 are units g0 and g1, apart from pairs 1 to 7
+    for game in games:  # type: ignore[attr-defined]
+        game["pair"] = None
+    assert s.summarise(raw, b_boot=50)["matches"]["m"]["policy:aa"]["pairs"] == 16
+
+
+def test_summary_reader_and_dashboard_section() -> None:
+    summary = s.summarise(_raw(), b_boot=50)
+    assert s.read_summary(json.loads(json.dumps(summary)))["generation"] == 20
+    section = _situational_section(SimpleNamespace(situational=summary))  # type: ignore[arg-type]
+    assert "Situational move-use" in section
+    assert s.LABEL in section
+    assert "333333 ppm" in section
+    assert _situational_section(SimpleNamespace(situational=None)) == ""  # type: ignore[arg-type]
+    with pytest.raises(s.SituationalError):
+        s.read_summary({"format": s.FORMAT})
+    with pytest.raises(s.SituationalError):
+        s.read_summary({**summary, "label": "other"})
+    broken = json.loads(json.dumps(summary))
+    del broken["matches"]["m"]["policy:aa"]["statistics"]["protect_safe"]
+    with pytest.raises(s.SituationalError):
+        s.read_summary(broken)

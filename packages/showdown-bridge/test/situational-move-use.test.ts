@@ -4,8 +4,15 @@ import { type Counts, type DecisionInput, SITUATIONAL_LABEL, situationalSetup, s
 import { GOLDEN_FORMAT } from "../src/golden.ts";
 import { randomLegalActor } from "../src/random-legal.ts";
 import { type Player, runBattle } from "../src/runner.ts";
+import type { PokemonSet } from "../src/engine.ts";
 import { goldenWorldFactsData } from "../src/world-facts-data.ts";
+import { progressGameStreams } from "../src/progress-seed.ts";
 import { corpus, engine } from "./damage-aware-support.ts";
+import { MAX_TURNS, play, storedGame, writeRoot } from "./situational-support.ts";
+import { ProgressInputError, readVerifiedGeneration } from "../src/situational-input.ts";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { BattleAbortedError } from "../src/runner.ts";
 
 // Doubles request: two actives (Protect at move 1, a plain move at 2), two benched Pokemon at positions 2 and 3.
 const body = {
@@ -111,5 +118,78 @@ describe("a re-simulated stored game", () => {
     expect(refused?.seats.p1.counts.decisions).toBeUndefined();
     expect(await tallyGame(setup, { ...game, decisions: [...game.decisions, { player: "p1", request_seq: 999, chosen: "x", candidates: [] }] })).toBeNull();
     await expect(tallyGame(setup, { ...game, data_class: "private" })).rejects.toThrow("synthetic");
+  }, 120_000);
+});
+
+describe("a verified progress root", () => {
+  it("verifies the manifest and the records, tallies twice to the same bytes, and refuses tampering", async () => {
+    const { record, teams } = await play(0);
+    const games = [storedGame(record, teams, 0), storedGame(record, teams, 1)];
+    const root = writeRoot(games);
+    const dir = join(root, "g000001");
+    const read = readVerifiedGeneration(dir, 1);
+    expect(read.games.map((g) => g.game)).toEqual([0, 1]);
+    expect(readVerifiedGeneration(dir, 1, ["no-such-match"]).games).toEqual([]);
+
+    const run = async (): Promise<string> => {
+      const setup = situationalSetup(engine, GOLDEN_FORMAT, read.record.plan.max_turns, goldenWorldFactsData());
+      const out = [];
+      for (const g of read.games) out.push(await tallyGame(setup, g));
+      return JSON.stringify({ format: "situational-move-use/1", generation: 1, run_id: read.record.run_id, evaluation_key: null, pin: engine.commit, unreplayable_games: 0, games: out });
+    };
+    const first = await run();
+    expect(await run()).toBe(first);
+    expect(JSON.parse(first).games[0].seats.p1.counts.decisions).toBeGreaterThan(0);
+    writeFileSync(join(root, "raw.json"), first);
+
+    expect(() => readVerifiedGeneration(dir, 2)).toThrow(ProgressInputError);
+    const bytes = readFileSync(join(dir, "games", "actor-rule-argmax-0.json"), "utf8");
+    writeFileSync(join(dir, "games", "actor-rule-argmax-0.json"), bytes.replace('"turns":', '"turns": '));
+    expect(() => readVerifiedGeneration(dir, 1)).toThrow("differ from the manifest");
+    writeFileSync(join(dir, "games", "actor-rule-argmax-0.json"), bytes);
+    mkdirSync(join(dir, "extra"));
+    writeFileSync(join(dir, "extra", "x.json"), "{}");
+    expect(() => readVerifiedGeneration(dir, 1)).toThrow("differ from the manifest");
+  }, 120_000);
+
+  it("refuses a game of another run, generation or match, and reads a version 1 record", async () => {
+    const { record, teams } = await play(0);
+    const game = storedGame(record, teams, 0);
+    const refuse = (change: object, message: string): void => {
+      const root = writeRoot([{ ...game, ...change } as never]);
+      expect(() => readVerifiedGeneration(join(root, "g000001"), 1)).toThrow(message);
+    };
+    refuse({ run_id: "other-run", seed: progressGameStreams("other-run", 0).seed }, "not of this run and generation");
+    refuse({ generation: 2 }, "not of this run and generation");
+    refuse({ match_id: "random-legal-sample" }, "names a match the record lacks");
+    const root = writeRoot([game], "progress-evaluation-record/valid/baseline-match");
+    expect(readVerifiedGeneration(join(root, "g000001"), 1).games).toHaveLength(1);
+    const wrong = writeRoot([game], "progress-evaluation-record-2/valid/baseline-match", (r) => void (r.generation = 7));
+    expect(() => readVerifiedGeneration(join(wrong, "g000001"), 1)).toThrow();
+  }, 120_000);
+
+  it("rethrows a defect and returns null only for the re-simulation's refusals", async () => {
+    const { record, teams } = await play(0);
+    const game = storedGame(record, teams, 0) as unknown as StoredGame;
+    const setup = situationalSetup(engine, GOLDEN_FORMAT, MAX_TURNS, goldenWorldFactsData());
+    expect(await tallyGame(setup, { ...game, decisions: [] })).toBeNull(); // BattleAbortedError
+    expect(BattleAbortedError).toBeDefined();
+    const broken = { ...game, teams: { ...game.teams, p2: { team: [] } } } as unknown as StoredGame; // an invalid team is a defect, not "unreplayable"
+    await expect(tallyGame(setup, broken)).rejects.toThrow();
+  }, 120_000);
+});
+
+describe("the counts do not depend on the opponent's unrevealed fields", () => {
+  it("gives equal counts for p1 when only p2's never-used moves 2 to 4 differ and p1's channel is equal", async () => {
+    const reverse = (team: PokemonSet[]): PokemonSet[] => team.map((set) => ({ ...set, moves: [set.moves[0] as string, ...set.moves.slice(1).reverse()] }));
+    const a = await play(0);
+    const b = await play(0, reverse);
+    expect(b.teams.p2).not.toEqual(a.teams.p2);
+    expect(b.record.channels.p1).toEqual(a.record.channels.p1); // the guard: the same player view
+    const setup = situationalSetup(engine, GOLDEN_FORMAT, MAX_TURNS, goldenWorldFactsData());
+    const ta = await tallyGame(setup, storedGame(a.record, a.teams, 0) as unknown as StoredGame);
+    const tb = await tallyGame(setup, storedGame(b.record, b.teams, 0) as unknown as StoredGame);
+    expect(ta?.seats.p1.counts).toEqual(tb?.seats.p1.counts);
+    expect(ta?.seats.p1.counts.decisions).toBeGreaterThan(0);
   }, 120_000);
 });

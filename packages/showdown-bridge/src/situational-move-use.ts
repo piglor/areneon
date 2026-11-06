@@ -3,6 +3,10 @@
 //
 // LABEL: situational move-use diagnostic on assumed opponent sets: descriptive, not a strength measure.
 //
+// Input: the script reads a progress generation only through `situational-input.ts` (manifest, progress record and game records
+// verified); `tallyGame` takes such a record. The classification is per slot, with the own action at priority 0, whatever move
+// the seat then chooses.
+//
 // Every situation is computed from ONE seat's own view at the decision, never from the omniscient log: the seat's own channel
 // up to the request (taken from a re-simulation of the stored game, as the feature bench does), its own team, the decision's
 // candidates, and the `probe-damage/2` arrays (threats, speed relations and priorities on ADR-018's assumed opponent sets) plus
@@ -23,8 +27,8 @@ import type { CandidateFeatures2 } from "./candidate-features-2.ts";
 import { parseJointChoice, type SlotPart } from "./damage-aware-choice.ts";
 import type { Engine, PokemonSet } from "./engine.ts";
 import { createFeatureService, type FeatureService, type FeatureServiceSpec } from "./feature-service.ts";
-import { resimulate } from "./resimulate.ts";
-import type { Player } from "./runner.ts";
+import { ResimulationInputError, resimulate } from "./resimulate.ts";
+import { BattleAbortedError, type Player } from "./runner.ts";
 
 export const SITUATIONAL_FORMAT = "situational-move-use/1";
 export const SITUATIONAL_LABEL = "situational move-use diagnostic on assumed opponent sets: descriptive, not a strength measure";
@@ -181,8 +185,10 @@ export async function tallyGame(setup: SituationalSetup, record: StoredGame): Pr
         choices: record.decisions.map((d) => ({ player: d.player, request_seq: d.request_seq, choice: d.chosen })),
       })
     ).channels;
-  } catch {
-    return null;
+  } catch (error) {
+    // Only the re-simulation's own refusals mean "this game cannot be replayed"; a defect is not hidden as a count.
+    if (error instanceof ResimulationInputError || error instanceof BattleAbortedError) return null;
+    throw error;
   }
   const stall = new Set(setup.facts_data.stall_moves);
   const seats = {} as Record<Player, SeatTally>;
