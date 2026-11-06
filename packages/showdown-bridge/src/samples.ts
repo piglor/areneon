@@ -344,6 +344,13 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
   const replyOf = (reply: unknown) => ({ schema_version: 1, query_id: 1, reply });
   // ADR-026 section 5: an evaluate query is answered by an EvaluationReply, one prior entry per candidate (invented numbers).
   const evalQuery = queryOf("battle", { kind: "evaluate" });
+  // ADR-026 erratum E2 decision 7: a value query has no candidate and no rows; its reply is a value.
+  const valueQuery = { ...queryOf("battle", { kind: "value" }), candidates: [] };
+  const valueOf = (value_ppm: number) => ({
+    schema_version: 1,
+    query_id: 1,
+    reply: { kind: "value", value: { identity: battleQuery.identity, value_ppm } },
+  });
   const evaluationOf = (prior_ppm: number[], value_ppm: number) => ({
     schema_version: 1,
     query_id: 1,
@@ -1006,6 +1013,8 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "policy-query/battle-evaluate": evalQuery,
     "policy-query/preview-evaluate": queryOf("preview", { kind: "evaluate" }),
     "policy-query/battle-features-evaluate": withFeatures(evalQuery, featureRows),
+    "policy-query/battle-value": valueQuery,
+    "evaluation-reply/value": valueOf(620000),
     // ADR-027 section 2, ADR-025 erratum E4: the optional opponent_sheet (absent in every sample above, so their digests are unchanged).
     "opponent-sheet/belief": beliefSheet,
     "opponent-sheet/refused": sheetOf("belief", unknownSlot, { refusal: "disguise_unsettled" }),
@@ -1029,6 +1038,7 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "policy-handshake/ready-features-2": readyWith((m) => (m.feature_set = feature2Ref)),
     "policy-handshake/ready-features-3": readyWith((m) => (m.feature_set = feature3Ref)),
     "policy-handshake/ready-sheet": readyWith((m) => (m.opponent_sheet = sheetSetRef)),
+    "policy-handshake/ready-value-query": readyWith((m) => (m.value_query = true)),
     "training-run-config/opponent-sheet": runConfigWith((c) => {
       runSection(runSection(c, "model"), "encoder").options = { opponent_sheet: sheetSetRef };
     }),
@@ -1184,6 +1194,11 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     // The default temperature has one encoding: absent.
     "policy-query/temperature-explicit-default": queryOf("battle", { ...sampleBy, temperature_ppm: 1000000 }),
     "policy-query/evaluate-duplicate-candidate": mutated(evalQuery, (q) => ((q.candidates as unknown[])[1] = (evalQuery.candidates as unknown[])[0])),
+    // Empty candidates are for a value query alone; a value query is value-only (no candidates, no rows, no sheet).
+    "policy-query/no-candidates": { ...battleQuery, candidates: [] },
+    "policy-query/value-with-candidates": { ...valueQuery, candidates: battleQuery.candidates },
+    "policy-query/value-with-features": { ...valueQuery, candidate_features: { ...featureSetRef, rows: [] } },
+    "policy-query/value-with-sheet": { ...valueQuery, opponent_sheet: beliefSheet },
     "policy-query/duplicate-candidate": mutated(battleQuery, (q) => ((q.candidates as unknown[])[1] = (battleQuery.candidates as unknown[])[0])),
     "policy-handshake/unsorted-contracts": helloWith((m) => (m.contracts = contractsOf().reverse())),
     "policy-handshake/duplicate-contracts": helloWith((m) => (m.contracts = [contractsOf()[0], contractsOf()[0]])),
@@ -1599,7 +1614,10 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
       runSection(runSection(c, "model"), "encoder").options = { opponent_sheet: { ...sheetSetRef, feature_set_hash: "abc" } };
     }),
     "policy-handshake/ready-short-feature-hash": readyWith((m) => (m.feature_set = { ...featureSetRef, feature_set_hash: "abc" })),
-    "policy-query/no-candidates": { ...battleQuery, candidates: [] },
+    "policy-query/value-with-u": queryOf("battle", { kind: "value", u: 1 }),
+    "evaluation-reply/value-float": valueOf(0.5),
+    "evaluation-reply/value-no-identity": mutated(valueOf(0), (r) => delete ((r.reply as Record<string, Record<string, unknown>>).value as Record<string, unknown>).identity),
+    "policy-handshake/ready-value-query-false": readyWith((m) => (m.value_query = false)),
     "policy-query/too-many-candidates": { ...battleQuery, candidates: candidatesOf(1025) },
     "policy-query/seed": { ...battleQuery, seed: record.seed },
     "policy-query/candidate-verdict": mutated(battleQuery, (q) => ((q.candidates as Record<string, unknown>[])[0] as Record<string, unknown>).legal = true),

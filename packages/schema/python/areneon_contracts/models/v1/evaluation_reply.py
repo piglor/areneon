@@ -76,6 +76,36 @@ class EvaluationResult(BaseModel):
     evaluation: Evaluation
 
 
+class Value(BaseModel):
+    """
+    The policy's value for one request, as integer millionths under the rounding rule of this contract (the same as Evaluation.value_ppm).
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    identity: RequestIdentity
+    """
+    The request the query asked about.
+    """
+    value_ppm: Annotated[StrictInt, Field(ge=-9007199254740991, le=9007199254740991)]
+    """
+    The value head's output for the state.
+    """
+
+
+class ValueResult(BaseModel):
+    """
+    The worker computed the value.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    kind: Literal["value"]
+    value: Value
+
+
 class ErrorReply(BaseModel):
     """
     The worker refused the query.
@@ -94,7 +124,7 @@ class ErrorReply(BaseModel):
 
 class EvaluationReply(BaseModel):
     """
-    The policy worker's answer to a PolicyQuery whose sampling kind is evaluate (ADR-026 §5, ADR-010 §2): the policy's prior over the query's candidates and its value of the state, or a refusal (the same ErrorReply as a PolicyReply). Reader rules the profile cannot say, checked by the client: query_id and identity are the query's, and prior_ppm has one entry per candidate in the query's order. ROUNDING RULE (one, fixed): every number is the worker's float32 value widened exactly to float64 and then ppm = floor(x * 1000000 + 0.5) in IEEE 754 binary64 (round half up, toward positive infinity at a tie). The entries are rounded one by one and not renormalised, so prior_ppm sums to 1000000 only up to half a ppm per entry; a consumer must not assume the sum. value_ppm is the value head's output unclamped, so it may lie outside 0..1000000; a non-finite value, or one outside the integer range below, is a worker failure and never a reply.
+    The policy worker's answer to a PolicyQuery whose sampling kind is evaluate (ADR-026 §5, ADR-010 §2) or value (ADR-026 erratum E2 decision 7): for evaluate the policy's prior over the query's candidates and its value of the state, for value its value of the state alone, or a refusal (the same ErrorReply as a PolicyReply). Reader rules the profile cannot say, checked by the client: query_id and identity are the query's, and, for an evaluation, prior_ppm has one entry per candidate in the query's order. ROUNDING RULE (one, fixed): every number is the worker's float32 value widened exactly to float64 and then ppm = floor(x * 1000000 + 0.5) in IEEE 754 binary64 (round half up, toward positive infinity at a tie). The entries are rounded one by one and not renormalised, so prior_ppm sums to 1000000 only up to half a ppm per entry; a consumer must not assume the sum. value_ppm is the value head's output unclamped, so it may lie outside 0..1000000; a non-finite value, or one outside the integer range below, is a worker failure and never a reply.
     """
 
     model_config = ConfigDict(
@@ -105,4 +135,6 @@ class EvaluationReply(BaseModel):
     """
     The query_id of the PolicyQuery this answers.
     """
-    reply: Annotated[EvaluationResult | ErrorReply, Field(discriminator="kind")]
+    reply: Annotated[
+        EvaluationResult | ValueResult | ErrorReply, Field(discriminator="kind")
+    ]
