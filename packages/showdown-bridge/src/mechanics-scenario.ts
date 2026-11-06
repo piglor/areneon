@@ -24,10 +24,10 @@ export const scenarioFormatId = (config: MechanicsConfig): string =>
   `${config.format_id}@@@${config.scenario.removed_rules.map((rule) => `!${rule}`).join(",")}`;
 
 // Rule-table fields that stay equal; the team-size fields are what the removed rules set.
-const SHARED_FIELDS = ["adjustLevel", "adjustLevelDown", "evLimit", "minLevel", "maxLevel", "defaultLevel", "maxMoveCount", "minSourceGen", "maxTotalLevel"] as const;
+export const SHARED_FIELDS = ["adjustLevel", "adjustLevelDown", "evLimit", "minLevel", "maxLevel", "defaultLevel", "maxMoveCount", "minSourceGen", "maxTotalLevel"] as const;
 
 /** A format's `battle` options as comparable text (a function by its source). */
-const battleOptions = (format: SimFormat): string =>
+export const battleOptions = (format: SimFormat): string =>
   JSON.stringify(Object.entries(format.battle ?? {}).sort(([a], [b]) => (a < b ? -1 : 1)).map(([key, value]) => [key, typeof value === "function" ? String(value) : value]));
 
 function differences(target: SimFormat, scenario: SimFormat, tt: SimRuleTable, ts: SimRuleTable, removedKeys: readonly string[]): string[] {

@@ -15,6 +15,7 @@ import { checkChannel } from "../src/rules-channel.ts";
 import { baseChannel, buildAt, gitAt, historicalSnapshots, REPO_ROOT, resolveBase } from "../src/rules-history.ts";
 import { loadChannels, loadRulesSnapshot } from "../src/rules-load.ts";
 import { RulesError, rulesSnapshotHash } from "../src/rules.ts";
+import { checkSheetVariants, SheetVariantError, sheetVariantPairs } from "../src/sheet-variants.ts";
 
 const git = gitAt(REPO_ROOT);
 
@@ -22,6 +23,7 @@ try {
   const engine = loadEngine();
   const snapshot = loadRulesSnapshot(engine.commit);
   for (const formatId of Object.keys(snapshot.formats)) resolveFormat(engine, formatId, snapshot);
+  for (const { closed, open } of sheetVariantPairs(snapshot)) checkSheetVariants(engine, closed, open);
   const channels = loadChannels();
 
   const allowed = new Map([[rulesSnapshotHash(snapshot), engine.commit]]);
@@ -50,7 +52,7 @@ try {
   console.log(`rules snapshot ${rulesSnapshotHash(snapshot)}`);
   if (failed) process.exit(1);
 } catch (error) {
-  if (!(error instanceof RulesError)) throw error;
+  if (!(error instanceof RulesError) && !(error instanceof SheetVariantError)) throw error;
   console.error(error.message);
   process.exit(1);
 }

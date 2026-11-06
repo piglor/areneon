@@ -10,7 +10,7 @@
 import { type Engine, type PokemonSet } from "./engine.ts";
 import { resolveFormat } from "./formats.ts";
 import { loadRulesSnapshot } from "./rules-load.ts";
-import type { RulesSnapshot } from "./rules.ts";
+import { type RulesSnapshot, teamSheetsOf } from "./rules.ts";
 import { type PrivateTeamSource, InventoryError } from "./private-team-source.ts";
 import { importPaste, TeamImportError, validateTeam } from "./teams.ts";
 
@@ -210,7 +210,7 @@ export interface InventoryRun {
 /** Build the report for every team the source yields. Writes nothing. */
 export async function buildReport(run: InventoryRun): Promise<InventoryReport> {
   const snapshot = run.snapshot ?? loadRulesSnapshot(run.engine.commit);
-  const formats = Object.keys(snapshot.formats);
+  const formats = Object.entries(snapshot.formats).filter(([, spec]) => teamSheetsOf(spec) === "closed").map(([id]) => id);
   const formatId = run.formatId ?? (formats.length === 1 ? formats[0] : undefined);
   if (formatId === undefined) throw new InventoryError("several formats are supported: pass --format");
   const format = resolveFormat(run.engine, formatId, snapshot);
