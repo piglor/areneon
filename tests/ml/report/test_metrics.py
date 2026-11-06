@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import shutil
 from pathlib import Path
@@ -10,10 +11,18 @@ from typing import Any
 import pytest
 from areneon_ml.inspector.readers import InspectError
 from areneon_ml.loop import layout
-from areneon_ml.loop.metrics import Counts, Peaks, build_metrics, metrics_path, write_metrics
+from areneon_ml.loop.metrics import (
+    Counts,
+    Peaks,
+    build_metrics,
+    metrics_path,
+    profile_record,
+    write_metrics,
+)
 from areneon_ml.report.model import NOT_RECORDED, ReportError, read_report_model
 from areneon_ml.report.render import build_report
 
+from tests.ml.loop.test_share import PLAY
 from tests.ml.report.support import fixture_copy, make_run
 
 
@@ -165,3 +174,23 @@ def test_the_optional_memory_figures_are_shown_when_recorded_and_absent_otherwis
     # The other generations recorded neither figure.
     assert "Peak reserved accelerator memory" in page
     assert page.count(f">{NOT_RECORDED}<") >= 4
+
+
+def test_a_profiled_generation_has_its_own_table_and_the_others_none(run: Path) -> None:
+    # No generation has a profile: the page has no profile section at all.
+    assert "Where the time went" not in build_report(read_report_model(run, None))
+    profile = profile_record(
+        copy.deepcopy(PLAY), {"validate": {"wall_ns": 4_000_000, "cpu_ns": 1, "count": 1}}
+    )
+    rewrite(run, 2, lambda r: r.update(profile=profile))
+    model = read_report_model(run, None)
+    page = build_report(model)
+    assert page.count("Where the time went (profile)") == 1
+    # E_sim 200 ms, W_fwd 260 ms, validation 4 ms, 30 decisions, c = 50.00 % from CPU.
+    assert "0.200 s" in page
+    assert "0.260 s" in page
+    assert "0.004 s" in page
+    assert "50.00 % (cpu)" in page
+    assert page.count("<h2>Where the time went (profile)</h2>") == 1
+    assert model.generations[1].metrics is not None
+    assert "profile" not in model.generations[1].metrics

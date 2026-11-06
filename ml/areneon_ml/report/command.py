@@ -8,16 +8,20 @@ written to a temporary sibling and renamed, so a reader sees the old page or the
 from __future__ import annotations
 
 import dataclasses
+import json
 import os
 import re
 import tempfile
 from pathlib import Path
 from typing import Any
 
+from areneon_contracts.contracts import sha256_hex
+
 from areneon_ml.loop import layout
 from areneon_ml.progress.looks import Look, append_look, looks_path
 from areneon_ml.report.model import ReportError, read_report_model
 from areneon_ml.report.render import Links, build_report
+from areneon_ml.report.situational import SituationalError, read_summary
 
 _NAME = re.compile(r"[a-z0-9_-]+")
 _REPLAY_LIMIT = 40
@@ -72,7 +76,11 @@ def inspector_links(inspect_dir: Path | None, base: Path, generations: list[int]
 
 
 def report_run(
-    run_dir: Path, progress_dir: Path | None, out: Path | None, inspect_dir: Path | None = None
+    run_dir: Path,
+    progress_dir: Path | None,
+    out: Path | None,
+    inspect_dir: Path | None = None,
+    situational: Path | None = None,
 ) -> dict[str, Any]:
     """Build and write the page; refuses on any inconsistency before writing anything."""
     run_dir = run_dir.resolve()
@@ -102,6 +110,19 @@ def report_run(
             looks=state.count,
             inputs=dict(
                 sorted({**model.inputs, f"progress-looks/{log.name}": state.file_sha256}.items())
+            ),
+        )
+    if situational is not None:
+        try:
+            raw = situational.read_bytes()
+            found = read_summary(json.loads(raw))
+        except (OSError, ValueError, SituationalError, KeyError) as exc:
+            raise ReportError(f"the situational summary is unusable: {exc}") from exc
+        model = dataclasses.replace(
+            model,
+            situational=found,
+            inputs=dict(
+                sorted({**model.inputs, "situational/summary.json": sha256_hex(raw)}.items())
             ),
         )
     links = inspector_links(inspect_dir, target.parent, [g.number for g in model.generations])

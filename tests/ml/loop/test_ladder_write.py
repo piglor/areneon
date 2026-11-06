@@ -226,10 +226,33 @@ def test_a_calibration_that_is_not_the_plan_is_refused() -> None:
     refused(lambda r: r["games"][0].update(seats={"p1": "a", "p2": "b"}), "game 0")
     refused(lambda r: r["games"][0].update(winner="p3"), "game 0")
     refused(lambda r: r["games"][3].update(outcome="forfeit", winner=None), "game 3")
+    # A forfeit names its loser and the winner is the other seat; a played game names no forfeit.
+    forfeit = {"loser": "p1", "cause": "timeout"}
+    refused(lambda r: r["games"][3].update(outcome="forfeit", winner="p1"), "game 3")
+    refused(
+        lambda r: r["games"][3].update(outcome="forfeit", winner="p2", forfeit=dict(forfeit, x=1)),
+        "game 3",
+    )
+    refused(
+        lambda r: r["games"][3].update(outcome="forfeit", winner="p1", forfeit=forfeit), "game 3"
+    )
+    refused(lambda r: r["games"][3].update(forfeit=forfeit), "game 3")
+    refused(lambda r: r["games"][3].update(extra=1), "game 3")
+    refused(lambda r: r["games"][3].pop("turns"), "game 3")
     refused(lambda r: r.update(team_hashes=["nothex"]), "team_hashes")
     refused(lambda r: r.update(team_hashes=HASHES[::-1]), "team_hashes")
     with pytest.raises(lw.LadderBuildError, match="not an object"):
         lw.read_calibration([], population_config())
+
+
+def test_a_forfeit_row_with_its_loser_and_the_other_seat_as_winner_is_taken() -> None:
+    config = population_config()
+    raw = calibration(config)
+    raw["games"][3].update(
+        outcome="forfeit", winner="p2", forfeit={"loser": "p1", "cause": "timeout"}
+    )
+    read = lw.read_calibration(raw, config)
+    assert lw.fit_anchors(read)["actor-rule@v1"] == SCALE
 
 
 def test_anchors_json_is_this_runs_and_names_the_anchors() -> None:
@@ -296,9 +319,15 @@ def test_results_from_before_a_copy_are_dropped_from_the_window() -> None:
     )
     # The slot that was not copied keeps its anchor results of every generation.
     assert {r.generation for r in results if r.member == "m0" and r.kind == "anchor"} == {1, 2, 3}
-    # A copy decided in the current window's last-but-one generation does not reach generation 3.
+    # A copy decided in generation 1 is applied in generation 2, whose games the old pair played:
+    # from the record of generation 3 on, generation 2's results of the slot are stale too.
     late = lw.window_results(history({1: ("m0",)}), 3, 3, list(ANCHOR_STRENGTHS), ["m0", "m1"])
-    assert {r.generation for r in late if r.member == "m0"} == {2, 3}
+    assert {r.generation for r in late if r.member == "m0"} == {3}
+    assert {r.generation for r in late if r.member == "m1" and r.kind == "anchor"} == {1, 2, 3}
+    # ... its anchor games included, and the record of generation c + 1 itself keeps c + 1.
+    assert {r.generation for r in late if r.member == "m0" and r.kind == "anchor"} == {3}
+    own = lw.window_results(history({1: ("m0",)})[:2], 2, 3, list(ANCHOR_STRENGTHS), ["m0", "m1"])
+    assert {r.generation for r in own if r.member == "m0"} == {2}
     # The donor is untouched by the copy.
     donor = lw.window_results(history({2: ("m1",)}), 3, 3, list(ANCHOR_STRENGTHS), ["m0", "m1"])
     assert {r.generation for r in donor if r.member == "m0" and r.opponent == "m1"} == {3}
@@ -327,7 +356,10 @@ def test_a_ladder_record_passes_its_reader_and_the_previous_check() -> None:
             {"anchor_id": "actor-rule@v1", "strength": SCALE},
             {"anchor_id": "random-legal@v1", "strength": 700_000_000},
         ]
-        assert record["selections"] == [{"kind": "none", "failed": "no_ready_member"}]
+        # Ready after three generations (ready_generations 3): g = 3 is the first decision, on
+        # three pairs against n_min 96.
+        failed = "too_few_pairs" if g == 3 else "no_ready_member"
+        assert record["selections"] == [{"kind": "none", "failed": failed}]
         assert record["snapshots"] == []
         assert [m["root"] for m in record["members"]] == ["m0", "m1"]
     assert third["window"] == {"size": 3, "first_generation": 1, "last_generation": 3}

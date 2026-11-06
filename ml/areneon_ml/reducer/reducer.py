@@ -43,6 +43,7 @@ from .errors import (
     UnknownLineError,
     VocabularyError,
 )
+from .sheet import SheetMon, parse_sheet
 from .state import STAT_KEYS, BattleState, PokemonState, Recent, SideState, zero_boosts
 from .vocab import Vocabulary, to_id
 
@@ -218,6 +219,9 @@ def _parse_line(raw: str) -> _Line:
     kind, _, rest = raw[1:].partition("|")
     if kind == "request":
         return _Line(raw, kind, [rest])
+    if kind == "showteam":  # `|showteam|SIDE|PACKED`: the packed team holds `|` itself
+        side, bar, packed = rest.partition("|")
+        return _Line(raw, kind, [side, packed] if bar else [side])
     parts = raw[1:].split("|")[1:]
     if kind in _FREE_TEXT:
         return _Line(raw, kind, parts)
@@ -266,6 +270,7 @@ class _Reducer:
         self.state.own = SideState(player=player)
         self.state.opponent = SideState(player="p2" if player == "p1" else "p1")
         self._preview_own: set[int] = set()
+        self._team = team
         # By (player, position letter): the name the position shows, and its unsettled disguise.
         self._shown: dict[tuple[str, str], str] = {}
         self._disguise: dict[tuple[str, str], _Disguise] = {}
@@ -297,6 +302,7 @@ class _Reducer:
             "poke": self._poke,
             "teampreview": self._teampreview,
             "teamsize": self._teamsize,
+            "showteam": self._showteam,
             "start": self._start,
             "turn": self._turn,
             "win": self._win,
@@ -590,6 +596,49 @@ class _Reducer:
     def _teamsize(self, line: _Line) -> None:
         _arity(line, 2, 2)
         self._side(line.args[0], line).teamsize = _integer(line.args[1], line)
+
+    def _showteam(self, line: _Line) -> None:
+        """The engine-sent sheet of one side (ADR-027 section 5): once per side, before `|start`."""
+        _arity(line, 2, 2)
+        if self.state.started:
+            raise MalformedLineError("a team sheet after |start", line.raw)
+        side = self._side(line.args[0], line)
+        if side.sheet is not None:
+            raise MalformedLineError("a second team sheet for one side", line.raw)
+        sheet = parse_sheet(line.args[1], self.vocab, line.raw)
+        if side is self.state.own:
+            self._check_own_sheet(sheet, line)
+        elif side.roster:
+            self._check_preview(side, sheet, line)
+        side.sheet = sheet
+
+    def _check_preview(self, side: SideState, sheet: list[SheetMon], line: _Line) -> None:
+        """The sheet lists the preview's Pokemon, in the preview's order."""
+        bases = [self.vocab.base_species(mon.species) for mon in sheet]
+        if bases != [mon.base_species for mon in side.roster]:
+            raise MalformedLineError("a team sheet that is not the team preview's", line.raw)
+
+    def _check_own_sheet(self, sheet: list[SheetMon], line: _Line) -> None:
+        """The own sheet is the own team without Stat Points, IVs and nickname (a consistency
+        check, never an input). An unset gender in the team is the engine's draw, so it is open; `N`
+        (genderless) is shown as no gender."""
+        problem = "the own team sheet is not the own team"
+        if len(sheet) != len(self._team):
+            raise MalformedLineError(problem, line.raw)
+        for shown, given in zip(sheet, self._team, strict=True):
+            gender = str(given["gender"])
+            nature = to_id(str(given.get("nature", "")))
+            same = (
+                shown.species == self.vocab.species(str(given["species"]))
+                and shown.item == (self.vocab.item(str(given["item"])) if given["item"] else None)
+                and shown.ability == self.vocab.ability(str(given["ability"]))
+                and list(shown.moves) == [self.vocab.move(str(m)) for m in given["moves"]]
+                and shown.level == int(given["level"])
+                and (not gender or shown.gender == (None if gender == "N" else gender))
+                and (not nature or shown.nature == nature)
+            )
+            if not same:
+                raise MalformedLineError(problem, line.raw)
 
     def _start(self, line: _Line) -> None:
         _arity(line, 0, 0)

@@ -869,3 +869,81 @@ python -m areneon_ml.loop best-response --run-dir RUN --generation G --mode argm
   A pair that reads candidate features is refused.
 - **Look log.** Every run appends a `best-response` line to the validation look log before the
   result is shown (`<BR_DIR>.looks.jsonl`, or `--looks`), naming the evaluation key when given.
+
+## 9. Where a generation's time goes: the P0 measurement (ADR-028 section 1)
+
+`--profile` (a flag of `python -m areneon_ml.loop run`, operational like `--game-processes`: not in the
+run config, not in any hash) times a generation and writes the result as the optional `profile`
+of its `metrics/g<NNNNNN>.json`. Every file of the generation is byte-identical with and without
+it (the tiny loop test compares them); a timer only reads a clock, and nothing in the loop, the loader or
+the learner reads the figures. A population run does not take it.
+
+What is timed (integers, whole milliseconds):
+
+| Where | Name | What |
+| --- | --- | --- |
+| each game process | `e_sim` | the engine taking a choice (the stream write) and producing the next requests |
+| | `e_judge` | `CloneJudge`, the legal choice set and the hidden verdicts |
+| | `e_probe` | the mechanics probe, the candidate feature builder, the opponent sheet builder and the scripted baseline actors |
+| | `o_obs` | decoding a request, copying the channel, enumerating candidates, building the observation (JCS, hash) |
+| | `ipc_wait` | waiting for a worker's reply (summed over requests, so games in flight overlap it) |
+| | `pool_load`, `merge` | loading the team pool; the parent's serial tail after the games (stream, hashing, run record, files) |
+| | `cpu_ms`, `peak_rss_bytes`, `decisions` | per process: user plus system CPU, peak resident set, Episode decision entries (both seats, baseline seats included) |
+| each policy worker | `w_enc`, `w_fwd` | reduce plus encode of a query; the forward pass and softmax (wall, and the thread's CPU) |
+| | `cpu_ms`, `peak_rss_bytes`, `queries` | per worker process (each restart of a worker is one more entry; its start-up CPU is in `cpu_ms`) |
+| the load phase | `validate`, `reduce`, `encode` | contract check of every stream line; log-to-state reduction (with the view's rqid clean); the encoder (summed over the load workers, wall and CPU) |
+
+The game processes leave their figures in a scratch directory the parent makes (`areneon-profile-*` in the
+system temporary directory, removed at the end; `--profile-dir` is the internal flag that hands it to the
+processes it starts and to the workers), and the parent prints them as one extra stdout line
+(`{"profile": ...}`) that the driver reads into the record.
+
+### The loop share L
+
+```bash
+python -m areneon_ml.loop loop-share --run-dir RUN [--generation 3,4]
+```
+
+It reads the metrics files only and prints, per profiled generation, the breakdown and
+`L = c x play_wall / T` (ppm), where `T` is play + load + train + write + seal and `c` is the CPU share
+of `{E_sim, E_judge, O_obs, W_enc, W_fwd}` among the CPU the game processes (less their pool load and
+merge) and the workers spent. `c` is computed twice and the smaller is used (`c_source` says which):
+from CPU time (`c_cpu_ppm`), and from per-request wall attribution (`c_wall_ppm`: `E_sim + E_judge +
+O_obs + IPC wait` over the same plus `E_probe`; the IPC wait already contains the worker's time; this reading is an upper bound, because the waits of games in flight overlap, so the CPU reading is usually the smaller). The
+game-process figures are wall time of code that does not wait, which is its CPU time up to scheduling.
+`E_probe` and the scripted baselines are never part of `L`. The dashboard shows the same table
+("Where the time went") for a profiled run.
+
+### The idle-machine conditions (ADR-028 section 1; any breach voids the measurement)
+
+- 1-minute load average at most 1.0 before the start; no other run, training, evaluation or benchmark
+  process during the measurement.
+- `MemAvailable` at least 8 GiB at the start and at least 4 GiB throughout; no growth of swap in use.
+- `uptime` and `/proc/meminfo` sampled every minute and journaled with the result.
+- Config: the #1179 control config (768 games: 448 self-play, 320 baseline) and, if ADR-022 tier A is
+  adopted, its feature config; each is named in the journal by its file SHA-256 and `run_config_hash`.
+  Two consecutive full-size generations of each, with the operational flags the run uses.
+
+### The commands
+
+```bash
+# the conditions (journal the output)
+uptime; grep -E 'MemAvailable|SwapTotal|SwapFree' /proc/meminfo
+sha256sum CONFIG.json   # the run_config_hash is in every metrics/g*.json
+# sample once a minute in a second shell while the run goes
+while true; do date -u +%FT%TZ; uptime; grep -E 'MemAvailable|SwapFree' /proc/meminfo; sleep 60; done >> samples.txt
+
+# two consecutive generations, profiled (flags as for the real run)
+ml/gpu-env/.venv/bin/python -m areneon_ml.loop run --config CONFIG.json --run-dir .tmp/runs/p0 \
+  --engine-data fixtures/showdown/gen9championsvgc2026regmc/engine-data.json --generations 2 \
+  --worker-python .venv/bin/python --game-processes S --policy-workers K --profile
+
+python -m areneon_ml.loop loop-share --run-dir .tmp/runs/p0 --generation 1,2
+```
+
+Journal the output, `samples.txt`, the machine, the pin and both hashes on #1190. Limits: a worker's
+`cpu_ms` counts only the CPU after its session began (torch import and checkpoint loading are left out),
+but a game process's `cpu_ms` still includes Node and engine start-up, which stays in `game_play_cpu`
+(it is not play); the wall readings of the game processes include any time the
+operating system did not schedule them, which an idle machine keeps small; the load split is summed
+over the load workers, so it can exceed the load phase's wall time.

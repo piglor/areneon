@@ -7,7 +7,7 @@
 export type Count = number;
 
 /**
- * What one generation of a training run cost in wall-clock time (ADR-010 erratum A1, item 3): milliseconds per phase of the loop driver, the counts and throughput that follow from them, the learner's peak accelerator memory and its device, and optionally the peak reserved accelerator memory and the peak resident set of the driver, the game processes and the policy workers. Wall-clock values differ on every run, so the record lives in <run-dir>/metrics/g<NNNNNN>.json, written after the generation commits and outside every manifest and hash; the loop, the loader and the learner never read it, and a crash between the commit and the write loses it. Integers only: milliseconds, counts, bytes and per-hour rates (the rate is the count times 3,600,000 divided by the phase's milliseconds, truncated, and 0 when the phase took no time).
+ * What one generation of a training run cost in wall-clock time (ADR-010 erratum A1, item 3): milliseconds per phase of the loop driver, the counts and throughput that follow from them, the learner's peak accelerator memory and its device, and optionally the peak reserved accelerator memory and the peak resident set of the driver, the game processes and the policy workers. Wall-clock values differ on every run, so the record lives in <run-dir>/metrics/g<NNNNNN>.json, written after the generation commits and outside every manifest and hash; the loop, the loader and the learner never read it, and a crash between the commit and the write loses it. A run started with --profile adds the optional profile (ADR-028 section 1): where the generation's time went, by phase, process and worker, for the loop-share measurement; diagnostics only, outside every hash like the rest. Integers only: milliseconds, counts, bytes and per-hour rates (the rate is the count times 3,600,000 divided by the phase's milliseconds, truncated, and 0 when the phase took no time).
  */
 export interface RunMetrics {
   schema_version: 1;
@@ -31,6 +31,7 @@ export interface RunMetrics {
    */
   peak_accelerator_reserved_bytes?: number;
   peak_rss_bytes?: PeakRss;
+  profile?: Profile;
   /**
    * The learner's device, as the run config names it.
    */
@@ -85,4 +86,93 @@ export interface PeakRss {
   driver?: Count;
   game_process?: Count;
   policy_worker?: Count;
+}
+/**
+ * Optional (ADR-028 section 1, #1191), written only by a run started with --profile; diagnostics only, never read by the loop, the loader or the learner. Where one generation's time went. All times are whole milliseconds (rounded down per process). decisions: Episode decision entries of the generation's games, both seats, baseline seats included.
+ *
+ * This interface was referenced by `RunMetrics`'s JSON-Schema
+ * via the `definition` "Profile".
+ */
+export interface Profile {
+  decisions: Count;
+  game_processes: GameProcessProfile;
+  policy_workers: WorkerProfile;
+  load: LoadProfile;
+}
+/**
+ * The Node game processes of the play phase, summed (the process that started the others included). e_sim: the engine writing a choice to the stream and producing the next requests. e_judge: CloneJudge, the legal choice set and the hidden verdicts. e_probe: the mechanics probe, the candidate feature builder, the opponent sheet builder and the scripted baseline actors. o_obs: decoding a request, copying the channel, enumerating candidates, building the observation (JCS and hash). ipc_wait: waiting for a worker's reply, summed over every request (games overlap, so it can exceed the phase's wall time). pool_load: loading the team pool. merge: the parent's serial tail after the games (training stream, hashing, files). cpu_ms: user plus system CPU time of the process.
+ *
+ * This interface was referenced by `RunMetrics`'s JSON-Schema
+ * via the `definition` "GameProcessProfile".
+ */
+export interface GameProcessProfile {
+  processes: Count;
+  cpu_ms: Count;
+  e_sim_ms: Count;
+  e_judge_ms: Count;
+  e_probe_ms: Count;
+  o_obs_ms: Count;
+  ipc_wait_ms: Count;
+  pool_load_ms: Count;
+  merge_ms: Count;
+  /**
+   * @minItems 1
+   * @maxItems 4096
+   */
+  per_process: [GameProcessFigures, ...GameProcessFigures[]];
+}
+/**
+ * One game process: CPU time, peak resident set (omitted where it cannot be read) and the decisions of the Episodes it wrote.
+ *
+ * This interface was referenced by `RunMetrics`'s JSON-Schema
+ * via the `definition` "GameProcessFigures".
+ */
+export interface GameProcessFigures {
+  cpu_ms: Count;
+  peak_rss_bytes?: Count;
+  decisions: Count;
+}
+/**
+ * The policy workers of the play phase (each restart of a worker is one more entry), summed. w_enc: reduce plus encode of a query. w_fwd: the forward pass and softmax. *_ms are wall time, *_cpu_ms the thread's CPU time. queries: forward passes. cpu_ms: the worker processes' CPU time (user plus system).
+ *
+ * This interface was referenced by `RunMetrics`'s JSON-Schema
+ * via the `definition` "WorkerProfile".
+ */
+export interface WorkerProfile {
+  workers: Count;
+  queries: Count;
+  cpu_ms: Count;
+  w_enc_ms: Count;
+  w_fwd_ms: Count;
+  w_enc_cpu_ms: Count;
+  w_fwd_cpu_ms: Count;
+  /**
+   * @minItems 0
+   * @maxItems 65536
+   */
+  per_process: WorkerFigures[];
+}
+/**
+ * One worker process: CPU time and peak resident set (omitted where it cannot be read).
+ *
+ * This interface was referenced by `RunMetrics`'s JSON-Schema
+ * via the `definition` "WorkerFigures".
+ */
+export interface WorkerFigures {
+  cpu_ms: Count;
+  peak_rss_bytes?: Count;
+}
+/**
+ * The load phase split (the driver's reading of the stream): validate is the contract check of every line, reduce the log-to-state reduction, encode the encoder; the sums over all load workers, so they can exceed the phase's wall time. *_cpu_ms are CPU time. Time outside the three (reading, collation, joining) is in the phase's total only.
+ *
+ * This interface was referenced by `RunMetrics`'s JSON-Schema
+ * via the `definition` "LoadProfile".
+ */
+export interface LoadProfile {
+  validate_ms: Count;
+  reduce_ms: Count;
+  encode_ms: Count;
+  validate_cpu_ms: Count;
+  reduce_cpu_ms: Count;
+  encode_cpu_ms: Count;
 }

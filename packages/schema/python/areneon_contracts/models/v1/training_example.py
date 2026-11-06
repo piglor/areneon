@@ -483,6 +483,28 @@ class UnsupportedBeliefThreatRow(BaseModel):
     reason: Literal["query_kind", "random_effect", "scenario_rule_table"]
 
 
+class PriorPpmItem(RootModel[StrictInt]):
+    root: Annotated[StrictInt, Field(ge=0, le=1000000)]
+
+
+class SearchEntry(BaseModel):
+    """
+    One searched candidate and its value in parts per million of a game score.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    candidate: Annotated[StrictInt, Field(ge=0, le=1023)]
+    """
+    Index into the example's candidates.
+    """
+    q_ppm: Annotated[StrictInt, Field(ge=0, le=1000000)]
+    """
+    The search's value of the candidate, 0 to 10^6.
+    """
+
+
 class PokemonSet(BaseModel):
     """
     One set, as the pinned engine's PokemonSet (sim/teams.ts) holds it. Legality is the engine validator's, not this schema's.
@@ -676,6 +698,24 @@ class SheetMoveField(BaseModel):
     slots_known: Annotated[StrictInt, Field(ge=0, le=4)]
 
 
+class SearchTarget(BaseModel):
+    """
+    The searched set of one decision and the pair's prior over all candidates: integers only, candidate indices and parts per million, no name, seed or opponent value.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    prior_ppm: Annotated[list[PriorPpmItem], Field(max_length=1024, min_length=1)]
+    """
+    The pair's temperature-1 prior over the candidates (the evaluate reply), one entry per candidate in the example's candidate order, each rounded alone.
+    """
+    entries: Annotated[list[SearchEntry], Field(max_length=16, min_length=2)]
+    """
+    The searched candidates: index into candidates, ascending and unique, non-pending (reader rule), at least 2 and at most 16 (k_max), each with the search's value of it.
+    """
+
+
 class PrivateTeamSpec(BaseModel):
     """
     A player's or the bot's own full team. Never part of another player's observation; a private one is never committed.
@@ -842,6 +882,10 @@ class TrainingExample(BaseModel):
     opponent_sheet: TrainingOpponentSheet | MISSING = MISSING
     """
     Optional derived opponent sheet block (ADR-027 section 2, ADR-025 erratum E4): what the player's own view makes probable about each opponent preview slot. Absent unless the session or the run declared a sheet source: a writer omits it (never null or empty), so every existing value keeps its bytes and hash (a minor change within v1, ADR-008 section 3). Reader rules are those of the OpponentSheet contract.
+    """
+    search_target: SearchTarget | MISSING = MISSING
+    """
+    Optional search label (ADR-026 erratum E2 decision 4): what decision-time search made of this decision's candidates, written only into a label stream (labels.jsonl), never into the PPO stream, an Episode or a PolicyQuery. Absent unless the stream is a label stream: a writer omits it (never null or empty), so every existing value keeps its bytes and hash (a minor change within v1, ADR-008 section 3). Reader rules (readTrainingExample, StreamChecker): the example carries candidates; prior_ppm has one entry per candidate; entries are ascending by candidate index, unique, in range, every index names a non-pending candidate, and the searched entries' prior_ppm sum to at least 1; a label stream has the field on every line.
     """
     outcome: Literal["win", "loss", "tie"] | MISSING = MISSING
     """

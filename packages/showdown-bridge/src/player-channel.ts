@@ -20,6 +20,7 @@ import {
 import { requestIdentityText } from "./request-bytes.ts";
 import { decodeRequest } from "./request.ts";
 import type { BattleRecord, Player } from "./runner.ts";
+import { assertSheetBinding, sheetRegimeOf, type TeamSheets } from "./team-sheet-binding.ts";
 import type { BattleClass } from "./team-class.ts";
 
 /** The Sha256 port on Node's `createHash` (A1, A2). */
@@ -65,12 +66,19 @@ function secretOfOpponent(line: string, player: string): boolean {
  * Brand a channel log as a PlayerChannel once it matches PlayerChannelLog,
  * every `|request|` in it is of the engine's shape and for this player, and
  * no line is the opponent's SECRET half.
+ *
+ * `team_sheets` is the regime of the channel's format (its rules record's
+ * `team_sheets`; ADR-027 section 5) and defaults to `closed`, the strict reading:
+ * a `|showteam|` line in a closed-format channel is refused, and an open-format
+ * channel must hold exactly one per side before its Team Preview request.
+ * A caller that knows its manifest passes `sheetRegimeOf(commit, format_id)`.
  */
-export function playerChannel(log: unknown): PlayerChannel {
+export function playerChannel(log: unknown, team_sheets: TeamSheets = "closed"): PlayerChannel {
   if (!validChannel(log)) {
     throw new ObservationError(`not a PlayerChannelLog: ${JSON.stringify(validChannel.errors)}`);
   }
   const channel = log as unknown as PlayerChannelLog;
+  assertSheetBinding(channel.lines, team_sheets);
   for (const line of channel.lines) {
     if (secretOfOpponent(line, channel.player)) {
       throw new ObservationError(`${channel.player}'s channel holds a line only the opponent may see: ${line}`);
@@ -99,7 +107,8 @@ export function recordedChannel(
   let seen = 0;
   const end = lines.findIndex((line) => line.startsWith("|request|") && ++seen === request_seq);
   if (end < 0) throw new ObservationError(`${player} received no request ${request_seq}`);
-  return playerChannel({ schema_version: 1, data_class, player, lines: lines.slice(0, end + 1) });
+  const regime = sheetRegimeOf(record.manifest.showdown_commit, record.manifest.format_id);
+  return playerChannel({ schema_version: 1, data_class, player, lines: lines.slice(0, end + 1) }, regime);
 }
 
 const REQUEST = "|request|";

@@ -334,3 +334,13 @@ def test_a_worker_the_system_kills_is_a_refusal_not_a_hang(
     path, manifest = write(tmp_path, text, manifest)
     with pytest.raises(LearnerDataError, match="died"):
         trajectories(path, manifest, encoders(), POLICY, processes=3)
+
+
+def test_pieces_join_the_label_class_of_a_stream() -> None:
+    """A stream whose pieces disagree on search_target is refused as one pass would (ADR-026 E2)."""
+    _, manifest = stream_of(examples_of(episodes=[(0, "p1")]))
+    hashes = set(manifest["episode_hashes"])
+    labelled = parallel._Piece(Collected([], {}, {}), hashes, {"labels:y"})
+    plain = parallel._Piece(Collected([], {}, {}), set(), {"labels:"})
+    with pytest.raises(LearnerDataError, match="on every line"):
+        parallel._join([labelled, plain], manifest)

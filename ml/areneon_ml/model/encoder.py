@@ -31,6 +31,7 @@ from typing import Any
 import torch
 from areneon_contracts.contracts import jcs, sha256_hex
 
+from areneon_ml import stopwatch
 from areneon_ml.model import features as rows_of
 from areneon_ml.model import sheet as sheet_of
 from areneon_ml.model.candidates import (
@@ -1456,14 +1457,19 @@ class EncoderSession:
             self._last_request = None
             fed = 0
         try:
+            mark = stopwatch.begin()
             for line in log[fed:]:
                 self._reducer.feed(line)
                 self._fed.append(line)
                 if line.startswith(_REQUEST):
                     self._last_request = line
-            return self._encoder._encode_state(
+            stopwatch.end("reduce", mark)
+            mark = stopwatch.begin()
+            encoded = self._encoder._encode_state(
                 query, self._reducer.state, self._last_request, value_only
             )
+            stopwatch.end("encode", mark)
+            return encoded
         except BaseException:
             self._reducer = None
             self._fed = []

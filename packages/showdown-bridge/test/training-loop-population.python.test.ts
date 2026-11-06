@@ -217,7 +217,8 @@ describe.skipIf(!existsSync(PYTHON) && process.env.ARENEON_REQUIRE_PYTHON_WORKER
       const record = readLadderRecord(json(first, "generations", gen(g), "ladder.json"), before);
       await checkLadderRecord(record, config);
       expect(record.anchors).toEqual(anchors.anchors);
-      expect(record.selections).toEqual([{ kind: "none", failed: "no_ready_member" }]);
+      // Ready after three generations (selection.ready_generations 3): generation 3 is the first decision, on far fewer pairs than n_min.
+      expect(record.selections).toEqual([{ kind: "none", failed: g === 3 ? "too_few_pairs" : "no_ready_member" }]);
       expect(record.members.map((m) => m.member)).toEqual([...LABELS]);
       expect(manifest(first, g).files["ladder.json"]).toBeDefined();
       before = record;
