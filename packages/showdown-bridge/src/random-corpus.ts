@@ -69,10 +69,11 @@ export function playRandomBattle(
   engine: Engine,
   spec: RandomBattleSpec,
   actorFor: (seed: number) => Actor = randomLegalActor,
+  formatId: string = GOLDEN_FORMAT,
 ): Promise<BattleRecord> {
   return runBattle({
     engine,
-    formatId: GOLDEN_FORMAT,
+    formatId,
     seed: spec.seed,
     teams: spec.teams,
     actors: {
@@ -84,7 +85,11 @@ export function playRandomBattle(
 }
 
 /** The committed file of one played battle. Its teams are synthetic by construction. */
-export function randomBattleFile(spec: RandomBattleSpec, record: BattleRecord): RandomBattleFile {
+export function randomBattleFile(
+  spec: RandomBattleSpec,
+  record: BattleRecord,
+  provenance: string = RANDOM_PROVENANCE,
+): RandomBattleFile {
   const channel = (player: Player): PlayerChannelLog => ({
     schema_version: 1,
     data_class: "synthetic",
@@ -94,7 +99,7 @@ export function randomBattleFile(spec: RandomBattleSpec, record: BattleRecord): 
   return {
     schema_version: 1,
     data_class: "synthetic",
-    provenance: RANDOM_PROVENANCE,
+    provenance,
     ...spec,
     winner: record.winner,
     turns: record.turns,
@@ -103,9 +108,9 @@ export function randomBattleFile(spec: RandomBattleSpec, record: BattleRecord): 
 }
 
 /** Every committed battle file, in file-name order. */
-export function loadRandomCorpus(dir: string = RANDOM_DIR): RandomBattleFile[] {
+export function loadRandomCorpus(dir: string = RANDOM_DIR, pattern: RegExp = /^b\d+\.json$/): RandomBattleFile[] {
   return readdirSync(dir)
-    .filter((name) => /^b\d+\.json$/.test(name))
+    .filter((name) => pattern.test(name))
     .sort()
     .map((name) => JSON.parse(readFileSync(join(dir, name), "utf8")) as RandomBattleFile);
 }

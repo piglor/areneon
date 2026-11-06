@@ -210,7 +210,8 @@ describe("planImport", () => {
   });
 
   it("refuses a snapshot that is not what its own records build", async () => {
-    const [[formatId, format]] = Object.entries(snapshot.formats) as [[string, RulesSnapshot["formats"][string]]];
+    const formatId = "gen9championsvgc2026regmc";
+    const format = snapshot.formats[formatId] as RulesSnapshot["formats"][string];
     const withFormat = (value: unknown) => rawSnapshot({ ...snapshot, formats: { ...snapshot.formats, [formatId]: value } });
     await refuses([rawSnapshot([snapshot])], /exactly the keys/);
     await refuses([rawSnapshot({ ...snapshot, extra: 1 })], /exactly the keys/);
