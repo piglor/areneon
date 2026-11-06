@@ -1,7 +1,7 @@
 import { inspect } from "node:util";
 import { describe, expect, it } from "vitest";
 import { CredentialError, R2Settings } from "../src/r2-settings.ts";
-import { ACCOUNT, BUCKET, ENDPOINT, ENV, KEY_ID, SECRET, SECRETS } from "./r2-support.ts";
+import { ACCOUNT, BUCKET, ENDPOINT, ENV, KEY_ID, SECRET, SECRETS } from "./support.ts";
 
 const code = (run: () => unknown): string => {
   try {
