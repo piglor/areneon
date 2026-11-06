@@ -24,11 +24,8 @@
  *   ability_suppressed: boolean, mega: boolean,
  *   mega_stone: string | null, stats: Record<string, number> | null, moves_own: string[] | null,
  *   pp: Record<string, number>, can_mega_evo: boolean, phantom?: boolean }} Mon
- * @typedef {{ species: string, item: string | null, ability: string, moves: string[],
- *   nature: string | null, gender: string | null, level: number }} SheetMon
  * @typedef {{ player: string, username: string | null, teamsize: number | null, roster: Mon[],
- *   slots: Record<string, number | null>, conditions: Record<string, number>,
- *   sheet?: SheetMon[] }} Side
+ *   slots: Record<string, number | null>, conditions: Record<string, number> }} Side
  * @typedef {{ player: string, format_name: string | null, gametype: string | null, turn: number,
  *   started: boolean, request_kind: string | null, weather: string | null, terrain: string | null,
  *   field_conditions: string[], winner: string | null, own: Side, opponent: Side,
@@ -97,11 +94,6 @@ var ArReplay = (function () {
     var cut = rest.indexOf("|");
     var kind = cut < 0 ? rest : rest.slice(0, cut);
     if (kind === "request") { return { raw: raw, kind: kind, args: [cut < 0 ? "" : rest.slice(cut + 1)], tags: {} }; }
-    if (kind === "showteam") { // `|showteam|SIDE|PACKED`: the packed team holds `|` itself
-      var tail = rest.slice(cut + 1);
-      var bar = cut < 0 ? -1 : tail.indexOf("|");
-      return { raw: raw, kind: kind, args: bar < 0 ? [cut < 0 ? "" : tail] : [tail.slice(0, bar), tail.slice(bar + 1)], tags: {} };
-    }
     var parts = rest.split("|").slice(1);
     if (FREE_TEXT[kind]) { return { raw: raw, kind: kind, args: parts, tags: {} }; }
     /** @type {string[]} */
@@ -136,44 +128,6 @@ var ArReplay = (function () {
       ability_received: false, ability_suppressed: false,
       mega: false, mega_stone: null, stats: null, moves_own: null, pp: {}, can_mega_evo: false,
     };
-  }
-
-  var SHEET_FIELDS = 12;
-  var SHEET_MAX = 24; // a sanity bound on the list; the preview count is checked separately
-  var NATURE = /^[A-Za-z]{1,16}$/;
-  var SHEET_LEVEL = /^\d{1,3}$/;
-
-  /**
-   * The Pokemon of a packed team sheet (ADR-027 section 5), twelve `|` fields each, `]` between
-   * Pokemon, written from the engine's sim/TEAMS.md: NAME|SPECIES|ITEM|ABILITY|MOVES|NATURE|EVS|
-   * GENDER|IVS|SHINY|LEVEL|EXTRAS. The engine's sheet has no nickname (SPECIES blank), no Stat
-   * Points, IVs, shiny flag or extras: any of those present is refused. Ids come from the names
-   * (this reader holds no vocabulary; the Python reducer checks them against one).
-   * @param {string} packed @returns {SheetMon[]}
-   */
-  function parseSheet(packed) {
-    var entries = packed.split("]");
-    need(entries.length >= 1 && entries.length <= SHEET_MAX, "a sheet lists between one and 24 Pokemon");
-    return entries.map(function (entry) {
-      var f = entry.split("|");
-      need(f.length === SHEET_FIELDS, "a sheet Pokemon has 12 fields");
-      var name = f[0] || "", moves = f[4] || "", ability = f[3] || "", nature = f[5] || "", gender = f[7] || "", level = f[10] || "";
-      need(!f[1], "a sheet shows no nickname");
-      need(!f[6] && !f[8], "a sheet shows no Stat Points and no IVs");
-      need(!f[9] && !f[11], "a sheet carries no shiny flag and no extra fields");
-      need(name !== "" && ability !== "" && moves !== "", "a sheet Pokemon lacks its species, ability or moves");
-      need(gender === "" || gender === "M" || gender === "F", "unknown sheet gender '" + gender + "'");
-      need(nature === "" || NATURE.test(nature), "a sheet nature is a name");
-      need(level === "" || (SHEET_LEVEL.test(level) && parseInt(level, 10) >= 1 && parseInt(level, 10) <= 100), "a sheet level is a number from 1 to 100");
-      var names = moves.split(",");
-      need(names.indexOf("") < 0, "a sheet move list has an empty move");
-      var ids = [toId(name), toId(ability)].concat(names.map(toId));
-      need(ids.indexOf("") < 0, "a sheet name has no letters");
-      return {
-        species: toId(name), item: toId(f[2] || "") || null, ability: toId(ability), moves: names.map(toId),
-        nature: toId(nature) || null, gender: gender || null, level: level ? parseInt(level, 10) : 100,
-      };
-    });
   }
 
   /** @param {string} player @returns {Side} */
@@ -734,20 +688,6 @@ var ArReplay = (function () {
         side.roster.push(m);
       },
       teamsize: function (line) { arity(line, 2, 2); sideOf(arg(line, 0), line).teamsize = integer(arg(line, 1)); },
-      showteam: function (line) {
-        arity(line, 2, 2);
-        need(!state.started, "a team sheet after |start");
-        var side = sideOf(arg(line, 0), line);
-        need(side.sheet === undefined, "a second team sheet for one side");
-        var sheet = parseSheet(arg(line, 1));
-        if (side === state.opponent && side.roster.length > 0) {
-          need(sheet.length === side.roster.length && sheet.every(function (m, i) {
-            var entry = speciesTable[m.species];
-            return (entry ? entry.base : m.species) === /** @type {Mon} */ (side.roster[i]).base_species;
-          }), "a team sheet that is not the team preview's");
-        }
-        side.sheet = sheet;
-      },
       start: function () { state.started = true; },
       turn: function (line) { arity(line, 1, 1); state.turn = integer(arg(line, 0)); },
       win: function (line) {
@@ -1079,7 +1019,7 @@ var ArReplay = (function () {
     return { frames: frames, flags: flags, requests: interp.requests() };
   }
 
-  return { toId: toId, createInterpreter: createInterpreter, interpretChannel: interpretChannel, parseLine: parseLine, parseSheet: parseSheet };
+  return { toId: toId, createInterpreter: createInterpreter, interpretChannel: interpretChannel, parseLine: parseLine };
 })();
 
 if (typeof module !== "undefined") { module.exports = ArReplay; } // the tests load this file; the page does not

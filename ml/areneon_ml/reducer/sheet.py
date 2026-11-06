@@ -14,6 +14,11 @@ blank), no Stat Points (EVS), no IVs and no extras (happiness, ball, hidden powe
 Gigantamax, Dynamax level, Tera type); any of those present is refused, as is any other
 shape. Species, item, ability and move names must resolve in the engine-data vocabulary. The
 nature has no vocabulary in the engine-data table, so it is checked for shape only.
+
+The reducer accepts a sheet in ANY channel: it does not know the format's regime. Whether a channel
+may hold a `|showteam|` line at all (never in a closed-sheet format, exactly one per side in an open
+one) is decided by the TypeScript gate (`playerChannel`, `readEpisode`, the training loader); the
+sheet is read here but never encoded.
 """
 
 from __future__ import annotations

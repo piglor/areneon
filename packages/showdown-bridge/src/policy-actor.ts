@@ -26,6 +26,7 @@ import { type PolicyClient, PolicyReplyError } from "./policy-worker.ts";
 import { PolicyProtocolError, type PlaySettings } from "./policy-protocol.ts";
 import { type Actor, ForfeitSignal, type Player } from "./runner.ts";
 import { battleClass, type DataClass, stampTeam, type SyntheticTeamHashes, teamHash } from "./team-class.ts";
+import { sheetRegimeOf } from "./team-sheet-binding.ts";
 
 /** Names the uniformly random Team Preview of the Preview ablation in its stream label and policy id (#940). */
 export const RANDOM_PREVIEW_POLICY = "random-preview@v1";
@@ -140,6 +141,8 @@ export interface PolicyActorOptions {
  */
 export function policyActor(options: PolicyActorOptions): Actor {
   const { client, battle, player, team, manifest, channel_class, seed, game, policy_id, sampling, play, engine, preview_actor, features, sheet } = options;
+  // The channel is judged against the team-sheet regime of the format its manifest names (ADR-027 section 5).
+  const regime = sheetRegimeOf(manifest.showdown_commit, manifest.format_id);
   const memo = features?.memo ?? createFeatureMemo();
   if (sampling === "argmax" && play !== undefined && (play.temperature_ppm !== undefined || play.truncation !== undefined)) {
     throw new PolicyProtocolError("a temperature or a truncation applies to sample mode only");
@@ -151,7 +154,7 @@ export function policyActor(options: PolicyActorOptions): Actor {
     if (preview_actor !== undefined && request.phase === "preview") {
       // The worker is not asked, but the team is still checked against the stats the engine sent this player.
       try {
-        assertOwnTeamStats(engine ?? pinnedEngine(), manifest.format_id, team, playerChannel({ schema_version: 1, data_class: channel_class, player, lines: context.channel }));
+        assertOwnTeamStats(engine ?? pinnedEngine(), manifest.format_id, team, playerChannel({ schema_version: 1, data_class: channel_class, player, lines: context.channel }, regime));
       } catch (error) {
         throw new PolicyProtocolError(`cannot observe the request: ${(error as Error).message}`);
       }
@@ -167,7 +170,7 @@ export function policyActor(options: PolicyActorOptions): Actor {
     let observation;
     let channel;
     try {
-      channel = playerChannel({ schema_version: 1, data_class: channel_class, player, lines: context.channel });
+      channel = playerChannel({ schema_version: 1, data_class: channel_class, player, lines: context.channel }, regime);
       observation = await observe({ channel, team, manifest });
       // The team the observation records must give the stats the engine sent
       // this player at Team Preview (once per game: the first request).

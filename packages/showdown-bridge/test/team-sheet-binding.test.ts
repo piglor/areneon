@@ -1,4 +1,6 @@
 /* eslint-disable @typescript-eslint/no-non-null-assertion -- test fixtures: the committed corpus is known to be filled */
+import { readdirSync, readFileSync } from "node:fs";
+import { join, relative } from "node:path";
 import type { PrivateTeamSpec } from "@areneon/schema/types/v1/private-team-spec.ts";
 import { beforeAll, describe, expect, it } from "vitest";
 import { goldenBattle, syntheticFixtureHashes } from "../src/golden.ts";
@@ -251,5 +253,31 @@ describe("the Episode and the training loader bind the format's regime", () => {
     await expect(
       loadTrainingSet({ episodes: [spliced], evaluation_manifests: [], known_synthetic: goldenKnown, behaviour_policy_id: "first-legal" }),
     ).rejects.toThrow(TrainingLoaderError);
+  });
+});
+
+describe("the true-team sheet test is reachable only from test code", () => {
+  const root = join(import.meta.dirname, "..", "..", "..");
+  const walk = (dir: string): string[] =>
+    readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+      if (entry.name === "node_modules" || entry.name === "vendor" || entry.name === ".git") return [];
+      const path = join(dir, entry.name);
+      return entry.isDirectory() ? walk(path) : [path];
+    });
+  const shipped = [join(root, "packages"), join(root, "ml"), join(root, "scripts")]
+    .flatMap(walk)
+    .filter((path) => /\.(ts|cjs|py)$/.test(path) && !/(^|\/)(test|tests)\//.test(relative(root, path)) && !/\.test\./.test(path));
+
+  it("no shipped source imports or names the test that reads both teams", () => {
+    expect(shipped.length).toBeGreaterThan(100);
+    for (const path of shipped) {
+      expect(readFileSync(path, "utf8"), relative(root, path)).not.toMatch(/team-sheet-binding\.test|harness only: the engine's sheet/);
+    }
+  });
+
+  it("the shipped binding module reads no team, corpus or true sheet: its imports are the rules, the observation error and the request decoder", () => {
+    const text = readFileSync(join(root, "packages", "showdown-bridge", "src", "team-sheet-binding.ts"), "utf8");
+    const imports = [...text.matchAll(/^import .* from "(.+)";$/gm)].map((m) => m[1]).sort();
+    expect(imports).toEqual(["./observation.ts", "./request.ts", "./rules-load.ts", "./rules.ts"]);
   });
 });

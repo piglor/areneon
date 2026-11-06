@@ -3,9 +3,9 @@ import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { FORMAT_DIR, ROOT, fixtures, fullDex, loadInterpreter, openFixtures } from "./support.ts";
+import { createInterpreter, interpretChannel, parseSheet, readerSha256, SheetError } from "../src/index.ts";
+import { FORMAT_DIR, ROOT, fixtures, fullDex, openFixtures } from "./support.ts";
 
-const api = loadInterpreter();
 const dex = fullDex();
 const python = join(ROOT, ".venv", "bin", "python");
 const here = dirname(fileURLToPath(import.meta.url));
@@ -22,8 +22,10 @@ const PREVIEW = [
   "|teampreview|2",
 ];
 
+const OWN = SHEET.replace("|p2|", "|p1|");
 const mon = (fields: string[]): string => fields.join("|");
-const run = (lines: string[], player = "p1") => api.interpretChannel(player, lines, dex);
+const run = (lines: string[], player = "p1"): { frames: any[]; flags: { index: number; line: string; reason: string }[] } =>
+  interpretChannel(player, lines, dex);
 const reasons = (lines: string[]) => run(lines).flags.map((f) => f.reason);
 const withSheet = (sheet: string): string[] => [...PREVIEW, sheet];
 
@@ -48,7 +50,7 @@ describe("the interpreter reads |showteam| into a per-side sheet", () => {
   });
 
   it("reads the own side's sheet too, and a closed channel has no sheet key", () => {
-    const own = run([...PREVIEW, SHEET.replace("|p2|", "|p1|")]).frames.at(-1)!.state;
+    const own = run([...PREVIEW, OWN]).frames.at(-1)!.state;
     expect(own.own.sheet).toHaveLength(2);
     for (const fixture of fixtures().slice(0, 4)) {
       const last = run(fixture.lines, fixture.player).frames.at(-1)!.state;
@@ -64,10 +66,38 @@ describe("the interpreter reads |showteam| into a per-side sheet", () => {
     expect(b.level).toBe(100);
   });
 
-  it("splits the line at the second bar only", () => {
-    expect(api.parseLine("|showteam|p1|A||B|c|d|e").args).toEqual(["p1", "A||B|c|d|e"]);
-    expect(api.parseLine("|showteam|p1").args).toEqual(["p1"]);
-    expect(api.parseLine("|showteam").args).toEqual([""]);
+  it("keeps line indices, request counts and the frame of the sheet line aligned with the channel", () => {
+    const lines = withSheet(SHEET);
+    const result = run(lines);
+    expect(result.frames).toHaveLength(lines.length + 1);
+    const frame = result.frames.at(-1)!;
+    expect(frame).toMatchObject({ index: lines.length - 1, line: SHEET, kind: "showteam", caption: null, flagged: null });
+    expect(result.frames.at(-2)!.state.opponent.sheet).toBeUndefined();
+    const flagged = run([...lines, SHEET]);
+    expect(flagged.flags).toEqual([{ index: lines.length, line: SHEET, reason: "a second team sheet for one side" }]);
+    expect(flagged.frames.at(-1)!.flagged).toBe("a second team sheet for one side");
+  });
+
+  it("reads the same through the incremental reader", () => {
+    const reader = createInterpreter({ player: "p1", dex });
+    for (const line of PREVIEW) expect(reader.feed(line).flagged).toBeNull();
+    expect(reader.snapshot().opponent.sheet).toBeUndefined();
+    expect(reader.feed(SHEET)).toEqual({ kind: "showteam", caption: null, flagged: null });
+    expect(reader.snapshot().opponent.sheet).toEqual(run(withSheet(SHEET)).frames.at(-1)!.state.opponent.sheet);
+    expect(reader.feed(SHEET).flagged).toBe("a second team sheet for one side");
+    expect(reader.feed("|start").flagged).toBeNull();
+    expect(reader.feed(OWN).flagged).toBe("a team sheet after |start");
+    expect(reader.requestCount()).toBe(0);
+    expect(reader.requests()).toEqual([]);
+  });
+
+  it("parses a bare packed team and refuses with a SheetError", () => {
+    expect(parseSheet(SHEET.split("|").slice(3).join("|"))).toHaveLength(2);
+    expect(() => parseSheet("a")).toThrow(SheetError);
+  });
+
+  it("leaves the interpreter file byte-identical to main's: the replay pages and ADR-018's baseline identity hash it", () => {
+    expect(readerSha256()).toBe("f6687af131b7d355d5a317b6ec8ac629575898479eff4b39aad76b4496655ea8");
   });
 });
 
