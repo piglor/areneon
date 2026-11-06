@@ -15,6 +15,7 @@ from areneon_ml.loop.play import (
     NodePlayer,
     PlayError,
     PlayRequest,
+    PopulationCalibrationRequest,
     PopulationPlayRequest,
     _descendants,
 )
@@ -88,6 +89,24 @@ def test_play_population_passes_a_member_flag_per_member_and_no_pair_flags(tmp_p
     flags = {a: argv[i + 1] for i, a in enumerate(argv) if a.startswith("--") and a != "--member"}
     assert flags["--generation"] == "2"
     assert flags["--out"] == str(tmp_path / "work")
+
+
+def test_calibrate_population_plays_generation_zero_with_the_calibrate_flag(tmp_path: Path) -> None:
+    out = tmp_path / "args.json"
+    script = f"import sys, json; open({str(out)!r}, 'w').write(json.dumps(sys.argv[1:]))"
+    chosen = player(tmp_path, "", script)
+    NodePlayer(
+        **{**chosen.__dict__, "policy_workers": 3, "game_processes": 2}
+    ).calibrate_population(PopulationCalibrationRequest(tmp_path / "work"))
+    argv = json.loads(out.read_text())
+    assert "--calibrate" in argv
+    flags = {
+        a: argv[i + 1] for i, a in enumerate(argv) if a.startswith("--") and a != "--calibrate"
+    }
+    assert flags["--generation"] == "0"
+    assert flags["--out"] == str(tmp_path / "work")
+    for absent in ("--member", "--policy-id", "--preview", "--battle", "--policy-workers"):
+        assert absent not in argv
 
 
 def test_play_passes_worker_and_process_counts_only_when_not_one(tmp_path: Path) -> None:
