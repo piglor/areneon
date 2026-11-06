@@ -198,6 +198,10 @@ function assertCollection({ data_class, team, provenance: { runtime, collection 
       `the Episode is labelled ${data_class}, but its own team is ${team.data_class} and its opponent's team is ${collection.opponent_team_data_class}: the class must be ${expected}`,
     );
   }
+  // The floor is stored in the collection record (a minor change within v1), so a relabel below it is caught here.
+  if (collection.class_floor !== undefined && higherClass(data_class, collection.class_floor) !== data_class) {
+    throw new EpisodeError(`the Episode is labelled ${data_class}, but its collection record's class floor is ${collection.class_floor}`);
+  }
   if (runtime === "A1" && collection.seed === null) {
     throw new EpisodeError(`an A1 ${collection.kind} collection record needs the seed the battle ran with`);
   }
@@ -232,6 +236,8 @@ export interface EpisodeOptions {
    * The lowest class the Episode may take (ADR-015 erratum E1 item 5). The Episode's class is the higher of both
    * teams' classes and this floor: a private run passes `private`, so every Episode it writes is private, also for
    * a game where both teams are synthetic. Absent, the class is the teams' alone, as before. A floor never lowers a class.
+   * A floor above synthetic is stored in the `league` / `evaluation` collection record (`class_floor`), so `readEpisode` refuses
+   * a stored Episode relabelled below it and the public loader refuses any Episode that carries one.
    */
   class_floor?: DataClass;
 }
@@ -266,7 +272,7 @@ export async function episodeFromRecord(
   }
   const stored =
     collection && collection.kind !== "sparring"
-      ? { ...collection, opponent_team_data_class: opponent_team.data_class }
+      ? { ...collection, opponent_team_data_class: opponent_team.data_class, ...(class_floor === "private" ? { class_floor } : {}) }
       : collection;
   const data_class = higherClass(higherClass(team.data_class, opponent_team.data_class), class_floor ?? "synthetic");
   const decisions = record.choices

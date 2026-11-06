@@ -136,7 +136,9 @@ def _check_manifest(manifest: object, private_pool: bool = False) -> bool:
     ``private_pool`` says whether the run config being read for has a private pool (ADR-015
     erratum E1 item 6; the config field comes with the private run driver, so the caller states
     it): a public run refuses a private set and a private-pool run refuses a synthetic one.
-    The words are fixed and name no value of the set.
+    The words are fixed and name no value of the set. Only the pool kind is checked: the
+    manifest has no run key, so this side cannot yet tell a set of another run (the private
+    run driver adds that).
     """
     parse("training-set", manifest)
     if not isinstance(manifest, dict):  # parse() has validated an object; this narrows it

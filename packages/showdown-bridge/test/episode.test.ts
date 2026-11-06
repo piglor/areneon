@@ -614,10 +614,14 @@ describe("the opponent's class on the collection record (ADR-009 §3, §4, #826)
       class_floor: "synthetic",
     });
     expect(kept.data_class).toBe("private");
-    // A stored Episode relabelled below its floor-raised class is not catchable (the floor is not stored), but one
-    // below its TEAMS is: the relabel-to-synthetic refusal stands.
+    // A relabel below the teams' class is refused (the relabel-to-synthetic refusal stands).
     const down = { ...stored(kept), data_class: "synthetic", rights: "cc0-synthetic" };
     await expect(readEpisode(down, { known_synthetic: KNOWN })).rejects.toThrow("the class must be private");
+    // The floor is stored in the collection record: a floor-raised Episode with synthetic teams, relabelled synthetic, is refused.
+    expect((floored.provenance.collection as { class_floor?: string }).class_floor).toBe("private");
+    expect((await episodeFromRecord(record, "p1", options)).provenance.collection).not.toHaveProperty("class_floor");
+    const flipped = { ...stored(floored), data_class: "synthetic", rights: "cc0-synthetic" };
+    await expect(readEpisode(flipped, { known_synthetic: KNOWN })).rejects.toThrow("collection record's class floor is private");
   });
 
   it("an observation of a mixed battle is private for either seat, at a preview and at a move request", async () => {

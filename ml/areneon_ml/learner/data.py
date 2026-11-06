@@ -165,7 +165,8 @@ def trajectories(  # noqa: PLR0913
 
     ``private_pool`` states whether the run config has a private pool (ADR-015 erratum E1 item 6;
     the config field belongs to the private run driver, which passes it): False, the default,
-    refuses a private set; True accepts a private set only and refuses a synthetic one.
+    refuses a private set; True accepts a private set only and refuses a synthetic one. The
+    manifest has no run key, so a set of another run cannot be told here yet (the driver adds that).
     """
     _ready(manifest, behaviour_policy_id)
     if processes > 1 and isinstance(stream, Path):

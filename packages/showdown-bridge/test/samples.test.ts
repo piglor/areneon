@@ -62,6 +62,10 @@ describe("the shared contract sample corpus (ADR-008 §2)", () => {
       "v1/episode/reader-invalid/class-below-floor.json",
       "the Episode is labelled synthetic, but its own team is synthetic and its opponent's team is private: the class must be private",
     ],
+    [
+      "v1/episode/reader-invalid/class-below-stored-floor.json",
+      "the Episode is labelled synthetic, but its collection record's class floor is private",
+    ],
     ["v1/episode/reader-invalid/sparring-synthetic.json", "a sparring Episode is private: it records a battle against a human"],
     [
       "v1/episode/reader-invalid/class-below-opponent.json",
@@ -120,6 +124,7 @@ describe("the shared contract sample corpus (ADR-008 §2)", () => {
       "v1/engine-data/reader-invalid/unsorted-species.json",
       "v1/episode/reader-invalid/class-below-floor.json",
       "v1/episode/reader-invalid/class-below-opponent.json",
+      "v1/episode/reader-invalid/class-below-stored-floor.json",
       "v1/episode/reader-invalid/sparring-synthetic.json",
       "v1/evaluation-parameters/reader-invalid/alpha-not-whole-ppm.json",
       "v1/evaluation-parameters/reader-invalid/b-boot-too-small.json",

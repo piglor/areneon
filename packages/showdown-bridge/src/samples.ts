@@ -1209,6 +1209,9 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     // A private run's league Episode (ADR-015 erratum E1, #1062) whose opponent's team is private, kept synthetic-labelled: the
     // class may rise above its teams (a floor) but never fall below them. The private loader's tests flip the label in code.
     "episode/class-below-floor": collected({ ...league, run_id: "private-run-1", opponent_team_data_class: "private" }),
+    // The floor a private run's Episode carries (ADR-015 erratum E1 item 5), with the label flipped to synthetic: both teams are
+    // synthetic, so only the stored floor makes the Episode refusable.
+    "episode/class-below-stored-floor": collected({ ...league, ...classed, run_id: "private-run-1", class_floor: "private" }),
   };
   const invalid: Record<string, unknown> = {
     "opponent-sheet/extra-slot-field": sheetWith((slot) => (slot.real_item = "ix")),
@@ -1592,6 +1595,7 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "episode/collection-bad-seed": collected({ ...league, ...classed, seed: "1,2,3,4" }),
     "episode/collection-no-opponent-class": collected(league),
     "episode/collection-bad-opponent-class": collected({ ...league, opponent_team_data_class: "public" }),
+    "episode/collection-floor-synthetic": collected({ ...league, ...classed, class_floor: "synthetic" }),
     "episode/collection-unknown-kind": collected({ ...classed, kind: "training", run_id: "league-run-1" }),
     "episode/collection-sparring-run-id": collected({ kind: "sparring", session_id: "s", run_id: "r" }),
   };

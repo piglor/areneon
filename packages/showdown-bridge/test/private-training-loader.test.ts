@@ -18,6 +18,7 @@ import {
   readTrainingSet,
   stampTeam,
   teamHash,
+  TrainingLoaderError,
 } from "../src/index.ts";
 import type { PokemonSet } from "../src/engine.ts";
 import { runBattle } from "../src/runner.ts";
@@ -77,8 +78,13 @@ describe("the class floor (ADR-015 erratum E1 item 5)", () => {
 describe("loadTrainingSet stays synthetic-only", () => {
   it("refuses every private Episode, a floor-raised one included", async () => {
     const plain = (episodes: unknown[]) => loadTrainingSet({ episodes, evaluation_manifests: [], known_synthetic: KNOWN, behaviour_policy_id: POLICY });
-    await expect(plain([p1])).rejects.toThrow("Episode 0 is private with owner-private rights: only synthetic, cc0-synthetic data is loaded");
-    await expect(plain([p2])).rejects.toThrow("only synthetic, cc0-synthetic data is loaded");
+    await expect(plain([p1])).rejects.toThrow("Episode 0 carries a class floor");
+    await expect(plain([p2])).rejects.toThrow("carries a class floor");
+    const error = await plain([p1]).then(() => null, (e: unknown) => e as TrainingLoaderError);
+    expect(error?.code).toBe("class_floor");
+    // The case the floor was not stored for: a floor-raised Episode relabelled synthetic is refused too.
+    const relabelled = { ...structuredClone(p1), data_class: "synthetic", rights: "cc0-synthetic" };
+    await expect(plain([relabelled])).rejects.toThrow("Episode 0 is refused: the Episode is labelled synthetic, but its collection record's class floor is private");
   });
 });
 
@@ -148,10 +154,12 @@ describe("loadPrivateTrainingSet", () => {
     expect([...covered].sort()).toEqual(Object.keys(PRIVATE_LOADER_REFUSALS).sort());
   });
 
-  it("refuses an Episode whose class was flipped below its floor (the label flipped in code)", async () => {
-    // Synthetic teams make the flipped Episode a valid synthetic one for the reader, so the loader's class rule refuses it.
+  it("refuses an Episode whose class was flipped below its stored floor (the label flipped in code)", async () => {
     const down = { ...structuredClone(p1), data_class: "synthetic", rights: "cc0-synthetic" };
-    await refused(load([item(down)]), "not_private", 0);
+    await refused(load([item(down)]), "episode_invalid", 0);
+    // Without a stored floor (an Episode of an older writer) the loader's own class rule refuses a synthetic one.
+    const unfloored = await write("p1", league(record));
+    await refused(load([item(unfloored)]), "not_private", 0);
   });
 });
 

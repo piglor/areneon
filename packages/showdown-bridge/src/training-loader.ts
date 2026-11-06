@@ -36,6 +36,12 @@ export type { EvaluationRunManifest, TrainingExample, TrainingSet };
 
 export class TrainingLoaderError extends Error {
   override name = "TrainingLoaderError";
+  /** A stable code for the refusals that have one (`class_floor`); absent for the others. */
+  readonly code: string | undefined;
+  constructor(message: string, options?: ErrorOptions & { code?: string }) {
+    super(message, options);
+    this.code = options?.code;
+  }
 }
 
 const validManifest = ajvFor("contract").compile(evaluationRunManifestSchema);
@@ -443,6 +449,9 @@ async function readTraining(value: unknown, index: number, known_synthetic: Synt
   if (collection === undefined) throw new TrainingLoaderError(`Episode ${index} has no collection record: it is not known to be training data`);
   if (collection.kind !== "league") {
     throw new TrainingLoaderError(`Episode ${index} was collected as ${collection.kind}: only a league Episode trains`);
+  }
+  if (collection.class_floor !== undefined) {
+    throw new TrainingLoaderError(`Episode ${index} carries a class floor: it belongs to a private run and never trains a public one`, { code: "class_floor" });
   }
   if (episode.data_class !== "synthetic" || episode.rights !== "cc0-synthetic") {
     throw new TrainingLoaderError(`Episode ${index} is ${episode.data_class} with ${episode.rights} rights: only synthetic, cc0-synthetic data is loaded`);

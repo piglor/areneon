@@ -71,7 +71,10 @@ export class PrivateTrainingLoaderError extends Error {
 export interface PrivateEpisodeInput {
   /** The Episode as stored: checked, never trusted. */
   episode: unknown;
-  /** The opponent's team hash, positional (`teamHash`) or canonical (`canonicalTeamHash`), for the hold-out check. */
+  /**
+   * The opponent's team hash, positional (`teamHash`) or canonical (`canonicalTeamHash`), for the hold-out check. The caller
+   * derives it from the battle's `record.team_hashes` for the opponent's seat.
+   */
   opponent_team_hash: string;
 }
 
