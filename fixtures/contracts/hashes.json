@@ -982,6 +982,7 @@
   "v1/training-example/reader-invalid/search-target-out-of-range.json": "3e466ac1cc9ee04dddfd1f4064fd733389a510f4c03c7eedb2e9b74661007a5c",
   "v1/training-example/reader-invalid/search-target-pending.json": "5c2ec1edb33cf218b524b753a5a4d032e9d2d1f5ca22e6357208637ff5e49e8f",
   "v1/training-example/reader-invalid/search-target-no-candidates.json": "f14583c3d379512cafad009310412b40ff6763bb8826decf11f277d625c48b23",
+  "v1/training-example/reader-invalid/search-target-prior-zero.json": "587d4dce278bee71c0970ff01981d77189eef35b2784d8788e57055604256331",
   "v1/training-set/reader-invalid/search-labels-unsorted.json": "085fc48b7b3ce45c8b06182c0c2c0c3919ede635e927da89b923a8be69844be1",
   "v1/training-set/reader-invalid/search-labels-duplicate-reason.json": "f4374cc7a1603ea7938a8679750810a48620a87e7e91791a2c33caa5b5312903",
   "v1/training-set/reader-invalid/search-labels-count-mismatch.json": "2c2984e48257895fef0444ff9ea18a1d337fdbeb6221b388dbc376f17dcea699",

@@ -1224,6 +1224,7 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "training-example/search-target-out-of-range": targetOf((t) => (t.entries = [{ candidate: 0, q_ppm: 620000 }, { candidate: battleCandidates, q_ppm: 480000 }])),
     "training-example/search-target-pending": mutated(targetOf(() => {}), (e) => (((e.candidates as Record<string, unknown>[])[3] as Record<string, unknown>).pending = true)),
     "training-example/search-target-no-candidates": mutated(targetOf(() => {}), (e) => delete e.candidates),
+    "training-example/search-target-prior-zero": targetOf((t) => (t.prior_ppm = t.prior_ppm.map(() => 0))),
     "training-set/search-labels-unsorted": labelsSet((l) => (l.refused = [{ reason: "below_min_valid", count: 2 }, { reason: "belief_refused", count: 1 }])),
     "training-set/search-labels-duplicate-reason": labelsSet((l) => (l.refused = [{ reason: "belief_refused", count: 1 }, { reason: "belief_refused", count: 2 }])),
     "training-set/search-labels-count-mismatch": labelsSet((l) => (l.labelled = training.set.examples + 1)),

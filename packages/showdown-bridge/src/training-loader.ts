@@ -80,13 +80,16 @@ export function searchTargetProblem(example: Pick<TrainingExample, "candidates" 
   if (target.prior_ppm.length !== candidates.length) return "the search_target prior_ppm must have one entry per candidate";
   if (target.entries.length > SEARCH_K_MAX) return `the search_target holds more than ${SEARCH_K_MAX} entries`;
   let previous = -1;
+  let searched = 0;
   for (const entry of target.entries) {
     if (entry.candidate <= previous) return "the search_target entries must be ascending by candidate index and unique";
     previous = entry.candidate;
     const candidate = candidates[entry.candidate];
     if (candidate === undefined) return "a search_target entry names a candidate the example does not have";
     if (candidate.pending) return "a search_target entry names a pending candidate";
+    searched += target.prior_ppm[entry.candidate] ?? 0;
   }
+  if (searched < 1) return "the search_target prior_ppm of the searched entries must sum to at least 1";
   return null;
 }
 

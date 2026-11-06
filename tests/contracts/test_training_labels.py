@@ -105,6 +105,11 @@ CASES = [
         lambda e: e["candidates"][3].__setitem__("pending", True),
         "names a pending candidate",
     ),
+    (
+        "prior-zero",
+        lambda e: e["search_target"].__setitem__("prior_ppm", [0] * len(e["candidates"])),
+        "must sum to at least 1",
+    ),
     ("no-candidates", lambda e: e.pop("candidates"), "needs the example's candidates"),
 ]
 

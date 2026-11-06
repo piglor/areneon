@@ -885,7 +885,7 @@ class TrainingExample(BaseModel):
     """
     search_target: SearchTarget | MISSING = MISSING
     """
-    Optional search label (ADR-026 erratum E2 decision 4): what decision-time search made of this decision's candidates, written only into a label stream (labels.jsonl), never into the PPO stream, an Episode or a PolicyQuery. Absent unless the stream is a label stream: a writer omits it (never null or empty), so every existing value keeps its bytes and hash (a minor change within v1, ADR-008 section 3). Reader rules (readTrainingExample, StreamChecker): the example carries candidates; prior_ppm has one entry per candidate; entries are ascending by candidate index, unique, in range, and every index names a non-pending candidate; a label stream has the field on every line.
+    Optional search label (ADR-026 erratum E2 decision 4): what decision-time search made of this decision's candidates, written only into a label stream (labels.jsonl), never into the PPO stream, an Episode or a PolicyQuery. Absent unless the stream is a label stream: a writer omits it (never null or empty), so every existing value keeps its bytes and hash (a minor change within v1, ADR-008 section 3). Reader rules (readTrainingExample, StreamChecker): the example carries candidates; prior_ppm has one entry per candidate; entries are ascending by candidate index, unique, in range, every index names a non-pending candidate, and the searched entries' prior_ppm sum to at least 1; a label stream has the field on every line.
     """
     outcome: Literal["win", "loss", "tie"] | MISSING = MISSING
     """

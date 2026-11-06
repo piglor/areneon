@@ -170,6 +170,11 @@ def _check_search_target(number: int, raw: dict[str, Any]) -> None:
             raise TrainingStreamError(
                 f"line {number}: a search_target entry names a pending candidate"
             )
+    if sum(target["prior_ppm"][e["candidate"]] for e in entries) < 1:
+        raise TrainingStreamError(
+            f"line {number}: the search_target prior_ppm of the searched entries must sum to"
+            " at least 1"
+        )
 
 
 def _check_manifest(manifest: object, private_pool: bool = False) -> bool:

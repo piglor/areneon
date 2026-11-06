@@ -34,7 +34,7 @@ class RefusedItem(BaseModel):
 
 class SearchLabels(BaseModel):
     """
-    Optional (ADR-026 erratum E2 decision 4): present exactly on the manifest of a label stream, whose every example carries search_target. The search identity is stream-level, here only. A PPO stream's manifest has no such block, so every existing value keeps its bytes and hash (a minor change within v1). Reader rules: labelled equals examples; refused sorted by reason, unique.
+    Optional (ADR-026 erratum E2 decision 4): present exactly on the manifest of a label stream, whose every example carries search_target. The search identity is stream-level, here only. A PPO stream's manifest has no such block, so every existing value keeps its bytes and hash (a minor change within v1). Reader rules: labelled equals examples; refused sorted by reason, unique. A generation with zero labels omits the label files (labelled is at least 1).
     """
 
     model_config = ConfigDict(
@@ -93,5 +93,5 @@ class TrainingSet(BaseModel):
     """
     search_labels: SearchLabels | MISSING = MISSING
     """
-    Optional (ADR-026 erratum E2 decision 4): present exactly on the manifest of a label stream, whose every example carries search_target. The search identity is stream-level, here only. A PPO stream's manifest has no such block, so every existing value keeps its bytes and hash (a minor change within v1). Reader rules: labelled equals examples; refused sorted by reason, unique.
+    Optional (ADR-026 erratum E2 decision 4): present exactly on the manifest of a label stream, whose every example carries search_target. The search identity is stream-level, here only. A PPO stream's manifest has no such block, so every existing value keeps its bytes and hash (a minor change within v1). Reader rules: labelled equals examples; refused sorted by reason, unique. A generation with zero labels omits the label files (labelled is at least 1).
     """
