@@ -271,3 +271,24 @@ def test_descendants_are_found_and_an_unreadable_proc_finds_none(
     finally:
         child.kill()
         child.wait()
+
+
+def test_the_profile_flag_is_passed_only_when_asked_and_its_line_is_kept(tmp_path: Path) -> None:
+    line = '{"profile": {"decisions": 4}}'
+    node, record = fake_node(tmp_path, "\n".join(['{"generation": 3}', "not json", line, "[1]"]))
+    request = PlayRequest(3, "policy:abc", "p" * 64, "b" * 64, tmp_path / "work")
+    base = player(tmp_path, "", "", node=node)
+    base.play(request)
+    assert "--profile" not in record.read_text().splitlines()
+    assert base.last_profile == {}
+    profiled = NodePlayer(**{**base.__dict__, "profile": True, "last_profile": {}})
+    profiled.play(request)
+    assert "--profile" in record.read_text().splitlines()
+    assert profiled.last_profile == {"decisions": 4}
+    # A script that reports none leaves it empty, and a later call starts afresh.
+    quiet, _ = fake_node(tmp_path, "{}")
+    again = NodePlayer(
+        **{**profiled.__dict__, "node": quiet, "last_profile": profiled.last_profile}
+    )
+    again.play(request)
+    assert again.last_profile == {}

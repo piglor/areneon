@@ -22,6 +22,7 @@ import { resolveFormat, type VersionManifest } from "./formats.ts";
 import { policyStreamLabel } from "./league-seed.ts";
 import { assertOwnTeamStats, pinnedEngine } from "./own-team-stats.ts";
 import { observe, playerChannel } from "./player-channel.ts";
+import { startTimer, addSince, timed, timedAsync } from "./profile.ts";
 import { type PolicyClient, PolicyReplyError } from "./policy-worker.ts";
 import { PolicyProtocolError, type PlaySettings } from "./policy-protocol.ts";
 import { type Actor, ForfeitSignal, type Player } from "./runner.ts";
@@ -159,13 +160,14 @@ export function policyActor(options: PolicyActorOptions): Actor {
     }
     let candidates;
     try {
-      candidates = enumerateCandidates(request).candidates;
+      candidates = timed("o_obs", () => enumerateCandidates(request).candidates);
     } catch (error) {
       throw new UnsupportedCandidateError((error as Error).message);
     }
     if (candidates.length === 0) throw new NoCandidateError("the request has no candidate");
     let observation;
     let channel;
+    const observing = startTimer();
     try {
       channel = playerChannel({ schema_version: 1, data_class: channel_class, player, lines: context.channel });
       observation = await observe({ channel, team, manifest });
@@ -175,6 +177,7 @@ export function policyActor(options: PolicyActorOptions): Actor {
     } catch (error) {
       throw new PolicyProtocolError(`cannot observe the request: ${(error as Error).message}`);
     }
+    addSince("o_obs", observing);
     const { identity } = observation;
     if (identity.request_seq !== request.request_seq || identity.request_hash !== request.request_hash) {
       throw new PolicyProtocolError("the observation is of another request than the one asked");
@@ -184,7 +187,8 @@ export function policyActor(options: PolicyActorOptions): Actor {
     if (features !== undefined && stated !== null) {
       try {
         if (!isFeatureSetId(stated.feature_set)) throw new PolicyProtocolError("the worker stated a candidate feature set this side cannot build");
-        candidate_features = buildFeatures(engine ?? pinnedEngine(), features.configs, channel, team.team, candidates, memo, stated.feature_set);
+        const featureSet = stated.feature_set;
+        candidate_features = timed("e_probe", () => buildFeatures(engine ?? pinnedEngine(), features.configs, channel, team.team, candidates, memo, featureSet));
       } catch (error) {
         if (error instanceof FeatureBuildError) throw new ForfeitSignal("crash", `no candidate features: ${error.code satisfies FeatureBuildCode}`);
         throw error;
@@ -197,7 +201,7 @@ export function policyActor(options: PolicyActorOptions): Actor {
     const sheetStated = client.sheetSource ?? null;
     let opponent_sheet;
     if (sheet !== undefined && sheetStated !== null) {
-      opponent_sheet = sheetForChannel(sheet.builder, { player, lines: context.channel, team: team.team });
+      opponent_sheet = timed("e_probe", () => sheetForChannel(sheet.builder, { player, lines: context.channel, team: team.team }));
       if (opponent_sheet.source.hash !== sheetStated.feature_set_hash) throw new PolicyProtocolError("the opponent sheet this side builds is of another source than the worker stated");
       sheet.record?.(identity.request_seq, opponent_sheet);
     }
@@ -220,7 +224,7 @@ export function policyActor(options: PolicyActorOptions): Actor {
       policy_id,
     } as Omit<PolicyQuery, "query_id">;
     try {
-      return (await client.ask(battle, query)).choice;
+      return (await timedAsync("ipc_wait", () => client.ask(battle, query))).choice;
     } catch (error) {
       if (error instanceof PolicyReplyError) throw new ForfeitSignal("invalid_reply", error.message);
       throw error;

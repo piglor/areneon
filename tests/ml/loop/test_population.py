@@ -1018,7 +1018,9 @@ def test_every_later_generation_has_a_ladder_record_with_the_frozen_anchors(fini
         read_ladder_record(record, before, config)
         assert record["anchors"] == anchors
         assert record["generation"] == g
-        assert record["selections"] == [{"kind": "none", "failed": "no_ready_member"}]
+        # Ready after three generations: the first decision (g = 3) meets too few pairs.
+        failed = "too_few_pairs" if g == 3 else "no_ready_member"
+        assert record["selections"] == [{"kind": "none", "failed": failed}]
         manifest = layout.read_json(gen_path(finished, g) / "manifest.json")
         assert manifest["ladder_hash"] == sha256_hex(jcs(record))
         assert (

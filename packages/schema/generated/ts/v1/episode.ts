@@ -95,6 +95,10 @@ export interface LeagueCollection {
    * The class of the opponent's team (ADR-009 §3), as the writer proved it from that team. Not the source of truth.
    */
   opponent_team_data_class: "synthetic" | "private";
+  /**
+   * The lowest class the Episode may take (ADR-015 erratum E1 item 5), written only when above synthetic: a private run's Episode is private even with two synthetic teams, and a reader refuses a data_class below it. Absent means no floor.
+   */
+  class_floor?: "private";
 }
 /**
  * A battle of an evaluation run (evaluation protocol C4, O3): never training data.
@@ -120,6 +124,10 @@ export interface EvaluationCollection {
    * The class of the opponent's team (ADR-009 §3), as the writer proved it from that team. Not the source of truth.
    */
   opponent_team_data_class: "synthetic" | "private";
+  /**
+   * The lowest class the Episode may take (ADR-015 erratum E1 item 5), written only when above synthetic: a private run's Episode is private even with two synthetic teams, and a reader refuses a data_class below it. Absent means no floor.
+   */
+  class_floor?: "private";
 }
 /**
  * A local A2 battle against a human.

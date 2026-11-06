@@ -57,6 +57,17 @@ describe("challenge filter (ADR-005 §2 and §4)", () => {
     expect(decision).toMatchObject({ kind: "reject", reason: "format", command: "|/reject sparringhuman" });
   });
 
+  it("refuses the open-sheet Bo3 format the snapshot declares (no confirmready path)", () => {
+    expect(snapshot.formats["gen9championsvgc2026regmcbo3"]?.team_sheets).toBe("open");
+    const [decision] = decide(challengeLine(HUMAN, "gen9championsvgc2026regmcbo3"));
+    expect(decision).toMatchObject({
+      kind: "reject",
+      reason: "format",
+      detail: expect.stringMatching(/open-sheet format/),
+      command: "|/reject sparringhuman",
+    });
+  });
+
   it("refuses any other custom rule, an unknown format and a prototype key", () => {
     for (const format of [`${FORMAT}@@@-Open Team Sheets`, "gen9ou", "gen9championsvgc2026regmcbo3", "__proto__"]) {
       const [decision] = decide(challengeLine(HUMAN, format));

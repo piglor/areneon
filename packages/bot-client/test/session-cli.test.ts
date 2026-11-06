@@ -290,7 +290,14 @@ describe("runCli (the A2 sparring entry point)", () => {
     const two = { ...snapshot, formats: { ...snapshot.formats, other: snapshot.formats[FORMAT] } } as typeof snapshot;
     const f = fake({ snapshot: two });
     expect(await runCli(["--challenger", "h", "--team", TEAM], f.deps)).toBe(2);
-    expect(f.err[0]).toContain("--format is required: the rules snapshot has 2 formats");
+    expect(f.err[0]).toContain("--format is required: the rules snapshot has 2 closed-sheet formats");
+  });
+
+  it("refuses the open-sheet Bo3 format as usage (no confirmready path)", async () => {
+    const f = fake();
+    expect(await runCli(["--challenger", "h", "--team", TEAM, "--format", "gen9championsvgc2026regmcbo3"], f.deps)).toBe(2);
+    expect(f.err[0]).toContain("is an open-sheet format");
+    expect(f.calls).toEqual([]);
   });
 });
 

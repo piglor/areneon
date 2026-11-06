@@ -45,7 +45,8 @@ describe("loadRulesSnapshot", () => {
     ]);
     expect(Object.keys(snapshot.regulations)).toEqual(["M-C"]);
     expect(Object.keys(snapshot.gaps).length).toBeGreaterThan(0);
-    expect(Object.values(snapshot.gaps).every((gap) => gap.status === "unverified")).toBe(true);
+    expect(Object.values(snapshot.gaps).every((gap) => gap.status !== "verified")).toBe(true);
+    expect(snapshot.gaps["best-of-series"]?.status).toBe("unsupported");
   });
 
   it.each<[string, (dir: string) => void, RegExp]>([
@@ -53,6 +54,7 @@ describe("loadRulesSnapshot", () => {
     ["a non-integer schema_version", (d) => patch(d, FORMAT, (v) => (v.schema_version = "1")), /schema_version must be an integer/],
     ["a missing schema_version", (d) => patch(d, FORMAT, (v) => delete v.schema_version), /schema_version must be an integer/],
     ["an unknown key", (d) => patch(d, FORMAT, (v) => (v.extra = true)), /must NOT have additional properties/],
+    ["a team_sheets value outside the closed enum", (d) => patch(d, FORMAT, (v) => (v.team_sheets = "half")), /allowed values/],
     ["a game type outside the closed enum", (d) => patch(d, FORMAT, (v) => (v.game_type = "singles")), /allowed values/],
     ["a regulation record without sources", (d) => patch(d, "regulations/M-C.json", (v) => (v.sources = [])), /regulations\/M-C\.json/],
     [
@@ -76,7 +78,14 @@ describe("loadRulesSnapshot", () => {
       (d) => patch(d, FORMAT, (v) => (v.forbidden_rules = [{ rule: "a", reason: "x" }, { rule: "a", reason: "y" }])),
       /sorted by rule and unique/,
     ],
-    ["no format records", (d) => rmSync(join(d, FORMAT)), /no format records/],
+    [
+      "no format records",
+      (d) => {
+        rmSync(join(d, FORMAT));
+        rmSync(join(d, "formats/gen9championsvgc2026regmcbo3.json"));
+      },
+      /no format records/,
+    ],
   ])("fails closed on %s", (_label, edit, message) => {
     const dir = rulesCopy(edit);
     expect(() => loadRulesSnapshot(COMMIT, dir)).toThrow(RulesError);

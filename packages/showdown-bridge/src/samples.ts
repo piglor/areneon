@@ -670,6 +670,36 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     device: "cpu",
     threads: 1,
   };
+  // A profiled generation (ADR-028 section 1): invented figures of two game processes, one policy worker and the load split.
+  const profileSample = (): Record<string, unknown> => ({
+    decisions: 480,
+    game_processes: {
+      processes: 2,
+      cpu_ms: 61_000,
+      e_sim_ms: 9_000,
+      e_judge_ms: 6_500,
+      e_probe_ms: 11_000,
+      o_obs_ms: 4_000,
+      ipc_wait_ms: 38_000,
+      pool_load_ms: 2_100,
+      merge_ms: 900,
+      per_process: [
+        { cpu_ms: 31_000, peak_rss_bytes: 629_145_600, decisions: 250 },
+        { cpu_ms: 30_000, peak_rss_bytes: 612_368_384, decisions: 230 },
+      ],
+    },
+    policy_workers: {
+      workers: 1,
+      queries: 480,
+      cpu_ms: 36_000,
+      w_enc_ms: 14_000,
+      w_fwd_ms: 21_000,
+      w_enc_cpu_ms: 13_800,
+      w_fwd_cpu_ms: 20_500,
+      per_process: [{ cpu_ms: 36_000, peak_rss_bytes: 452_984_832 }],
+    },
+    load: { validate_ms: 700, reduce_ms: 410, encode_ms: 640, validate_cpu_ms: 690, reduce_cpu_ms: 405, encode_cpu_ms: 630 },
+  });
   const runMetricsWith = (change: (r: Record<string, unknown>) => void) => mutated(runMetrics, change);
   const leagueRunWith = (change: (r: Record<string, unknown>) => void) => mutated(leagueRun, change);
   const runConfigWith = (change: (c: Record<string, unknown>) => void) => mutated(runConfig, change);
@@ -896,6 +926,7 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
       r.peak_rss_bytes = { driver: 2_147_483_648, game_process: 629_145_600, policy_worker: 452_984_832 };
     }),
     "run-metrics/rss-only": runMetricsWith((r) => (r.peak_rss_bytes = { driver: 1_073_741_824 })),
+    "run-metrics/profile": runMetricsWith((r) => (r.profile = profileSample())),
     "run-metrics/seeded-pair": runMetricsWith((r) => {
       r.generation = 0;
       r.phase_ms = { play: 0, write: 95, load: 0, train: 0, seal: 60 };
@@ -1206,6 +1237,12 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "training-set/duplicate-manifests": { ...training.set, evaluation_manifest_hashes: [hashA, hashA] },
     "episode/sparring-synthetic": collected({ kind: "sparring", session_id: "sparring-session-1" }),
     "episode/class-below-opponent": collected({ ...league, opponent_team_data_class: "private" }),
+    // A private run's league Episode (ADR-015 erratum E1, #1062) whose opponent's team is private, kept synthetic-labelled: the
+    // class may rise above its teams (a floor) but never fall below them. The private loader's tests flip the label in code.
+    "episode/class-below-floor": collected({ ...league, run_id: "private-run-1", opponent_team_data_class: "private" }),
+    // The floor a private run's Episode carries (ADR-015 erratum E1 item 5), with the label flipped to synthetic: both teams are
+    // synthetic, so only the stored floor makes the Episode refusable.
+    "episode/class-below-stored-floor": collected({ ...league, ...classed, run_id: "private-run-1", class_floor: "private" }),
   };
   const invalid: Record<string, unknown> = {
     "opponent-sheet/extra-slot-field": sheetWith((slot) => (slot.real_item = "ix")),
@@ -1228,6 +1265,16 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "run-metrics/extra-field": runMetricsWith((r) => (r.notes = "x")),
     "run-metrics/fractional-ms": runMetricsWith((r) => (r.phase_ms = { ...runMetrics.phase_ms, play: 1.5 })),
     "run-metrics/negative-reserved": runMetricsWith((r) => (r.peak_accelerator_reserved_bytes = -1)),
+    "run-metrics/profile-unknown-field": runMetricsWith((r) => (r.profile = { ...profileSample(), kernel: 1 })),
+    "run-metrics/profile-fractional-ms": runMetricsWith((r) => {
+      const profile = profileSample();
+      (profile.game_processes as Record<string, unknown>).e_sim_ms = 1.5;
+      r.profile = profile;
+    }),
+    "run-metrics/profile-no-workers": runMetricsWith((r) => {
+      const { policy_workers: _workers, ...rest } = profileSample();
+      r.profile = rest;
+    }),
     "run-metrics/unknown-rss-field": runMetricsWith((r) => (r.peak_rss_bytes = { driver: 1, kernel: 2 })),
     "run-metrics/fractional-rss": runMetricsWith((r) => (r.peak_rss_bytes = { driver: 1.5 })),
     "run-metrics/negative-memory": runMetricsWith((r) => (r.peak_accelerator_memory_bytes = -1)),
@@ -1589,6 +1636,7 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "episode/collection-bad-seed": collected({ ...league, ...classed, seed: "1,2,3,4" }),
     "episode/collection-no-opponent-class": collected(league),
     "episode/collection-bad-opponent-class": collected({ ...league, opponent_team_data_class: "public" }),
+    "episode/collection-floor-synthetic": collected({ ...league, ...classed, class_floor: "synthetic" }),
     "episode/collection-unknown-kind": collected({ ...classed, kind: "training", run_id: "league-run-1" }),
     "episode/collection-sparring-run-id": collected({ kind: "sparring", session_id: "s", run_id: "r" }),
   };

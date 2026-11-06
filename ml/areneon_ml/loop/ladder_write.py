@@ -21,14 +21,17 @@ loss for the side that failed (the row's ``winner`` is the other side). In half 
 1000000 ppm).
 
 **Window and copies.** A record at generation ``g`` fits the results of generations ``max(1, g -
-window + 1) .. g``. A copy decided in generation ``c`` replaces the loser's slot with the donor's
-weights, so every result involving that slot from generations ``<= c`` (as the member or as an
-opposing member) is dropped (:func:`window_results`). No copy exists yet (slice 8); the rule is
-tested with forged history.
+window + 1) .. g``. A copy decided in generation ``c`` is applied by the driver at the start of
+generation ``c + 1`` (:mod:`areneon_ml.loop.selection`), but the games of ``c + 1`` are still played
+by the loser's old pair. So every result involving that slot (as the member, as an opposing member,
+and its anchor games) from generations ``<= c + 1`` is stale and dropped (:func:`window_results`)
+from the records of generation ``c + 2`` on. The record of generation ``c + 1`` itself rates the
+pair that played it: it drops ``<= c`` and keeps ``c + 1`` (dropping that too would leave the slot
+without a result, and the record needs every member's anchor cells).
 
 **Bootstrap labels.** Every bootstrap of generation ``g`` draws ``population_draw(run_key, g,
 "m0", "bootstrap", lane << 32 | counter)``: lane 0 for the strengths, ``1 + 64 i + j`` for the
-cyclic-triple edge of members ``i < j``, ``2^20`` reserved for the copy test (slice 8). One seed
+cyclic-triple edge of members ``i < j``, ``2^20`` (``rating.LANE_COPY``) for the copy test. One seed
 label, distinct lanes per use (the slice-6 rule).
 """
 
@@ -42,7 +45,7 @@ from typing import Any
 from areneon_contracts.contracts import jcs, sha256_hex
 
 from areneon_ml.learner.config import RunConfig
-from areneon_ml.loop import rating
+from areneon_ml.loop import rating, selection
 from areneon_ml.loop.ladder import read_ladder_record
 from areneon_ml.loop.league import calibration_game_seed
 from areneon_ml.loop.past_pool import Snapshot, member_index
@@ -68,6 +71,10 @@ _BUCKETS = 5
 MIN_ANCHOR_GAMES = 2
 _HASH_LENGTH = 64
 _HEX64 = frozenset("0123456789abcdef")
+
+
+#: Kept here for the callers that read a member's starting settings with the ladder code.
+member_settings = selection.member_settings
 
 
 class LadderBuildError(ValueError):
@@ -194,7 +201,7 @@ def read_calibration(raw: object, config: RunConfig) -> Calibration:
             or row.get("seats") != seats
             or row.get("outcome") not in ("played", "forfeit")
             or row.get("winner") not in ("p1", "p2", None)
-            or (row["outcome"] == "forfeit" and row["winner"] is None)
+            or not _forfeit_fits(row)
         ):
             _fail(f"calibration game {index} is not the game the plan asks for")
     teams: Any = raw.get("team_hashes")
@@ -208,6 +215,31 @@ def read_calibration(raw: object, config: RunConfig) -> Calibration:
     for (a, b), buckets in _group_by_anchor_pair(games).items():
         cells.append(ResultCell(a, b, _scores_tuple(_tally(buckets))))
     return Calibration(tuple(ids), tuple(cells), tuple(teams))
+
+
+_ROW_KEYS = frozenset(
+    ("game", "pair", "half", "seed", "a", "b", "seats", "outcome", "winner", "turns", "forfeit")
+)
+
+
+def _forfeit_fits(row: Mapping[str, Any]) -> bool:
+    """A row holds the simulator side's keys only, and a forfeit's winner is the other seat."""
+    if not set(row) <= _ROW_KEYS or not isinstance(row.get("turns"), int):
+        return False
+    held = row.get("forfeit")
+    if row["outcome"] == "played":
+        return held is None
+    if not isinstance(held, dict) or set(held) != {"loser", "cause"}:
+        return False
+    return (
+        held["loser"] in ("p1", "p2")
+        and isinstance(held["cause"], str)
+        and row["winner"]
+        == {
+            "p1": "p2",
+            "p2": "p1",
+        }.get(held["loser"])
+    )
 
 
 def _group_by_anchor_pair(games: list[dict[str, Any]]) -> dict[tuple[str, str], list[int]]:
@@ -345,14 +377,16 @@ def window_results(  # noqa: PLR0913, PLR0917
 
     ``history`` holds the committed generations of the window and the current one, in any order;
     ``copied`` names the loser slots of the copy each decided. A result of generation ``t`` that
-    involves a slot (as the member or as an opposing member) copied in generation ``c >= t``
-    is dropped.
+    involves a slot (as the member or as an opposing member) copied in generation ``c`` is
+    dropped when ``t <= c + 1``, except that the record of generation ``c + 1`` itself keeps the
+    results of ``c + 1`` (the old pair played them and the record rates that pair); the cut is
+    ``min(c + 1, generation - 1)``.
     """
     first = max(1, generation - window + 1)
     cut: dict[str, int] = {}
     for entry in history:
         for slot in entry.copied:
-            cut[slot] = max(cut.get(slot, 0), entry.generation)
+            cut[slot] = max(cut.get(slot, 0), min(entry.generation + 1, generation - 1))
     seen = [entry.generation for entry in history]
     if len(set(seen)) != len(seen) or any(not first <= g <= generation for g in seen):
         _fail("the history must hold each generation of the window once")
@@ -394,24 +428,6 @@ def result_cells(table: Table) -> list[ResultCell]:
     return cells
 
 
-def member_settings(config: RunConfig, index: int) -> dict[str, Any]:
-    """A member's effective PPO settings and opponent shares, as the record states them."""
-    ppo = config.raw["ppo"]
-    population = config.raw["population"]
-    over: dict[str, Any] = next(
-        (e for e in population.get("member_ppo", []) if e["member"] == index), {}
-    )
-    settings: dict[str, Any] = {
-        key: over.get(key, ppo[key])
-        for key in ("learning_rate_micro", "entropy_coef_micro", "epochs", "clip_micro")
-    }
-    kl = over.get("target_kl_micro", ppo.get("target_kl_micro"))
-    if kl is not None:
-        settings["target_kl_micro"] = kl
-    settings["shares"] = dict(population["shares"])
-    return settings
-
-
 def snapshot_cells(
     config: RunConfig,
     generation: int,
@@ -419,12 +435,20 @@ def snapshot_cells(
     anchors: Mapping[str, int],
     pool_ids: Sequence[str],
 ) -> dict[tuple[str, str], list[int]]:
-    """Each member's pair-score counts against each snapshot id over the window."""
+    """Each member's pair-score counts against each snapshot id, for planning ``generation + 1``.
+
+    The window and the copy cut are those of the record of ``generation + 1`` over the copies
+    decided up to ``generation - 1`` (``history`` holds no copy decided in ``generation`` itself):
+    a slot copied in ``c`` plays the pair frozen at the end of ``c + 1`` as a new lineage, so its
+    results against snapshots up to ``c + 1`` are dropped and it meets them afresh.
+    """
     population = config.raw["population"]
     members = [f"m{k}" for k in range(population["members"])]
     window = population["rating"]["window"]
+    first = max(1, generation + 2 - window)
+    kept = [entry for entry in history if entry.generation >= first]
     table = result_table(
-        window_results(history, generation, window, list(anchors), members, pool_ids)
+        window_results(kept, generation + 1, window, list(anchors), members, pool_ids)
     )
     return {(m, i): scores for (m, kind, i), scores in table.items() if kind == "snapshot"}
 
@@ -463,9 +487,14 @@ def build_ladder_record(  # noqa: PLR0913, PLR0917
     history: Sequence[GenerationRows],
     anchors: Mapping[str, int],
     previous: Mapping[str, Any] | None = None,
+    last_copy: Mapping[str, int] | None = None,
     pool: Sequence[Snapshot] = (),
 ) -> dict[str, Any]:
-    """The generation's ``ladder.json`` (selection: none until slice 8).
+    """The generation's ``ladder.json``, with the copy test's outcome (slice 8).
+
+    ``previous`` is the committed record of the generation before: the members' roots and effective
+    settings are its state with its copy applied (:func:`selection.slot_state`). ``last_copy`` maps
+    a member to the generation of its last copy, from every committed record.
 
     ``pool`` is the past pool the generation played (empty without a past-pool share). A snapshot
     listed in ``previous`` and still in the pool keeps its strength and bounds untouched and is a
@@ -503,6 +532,18 @@ def build_ladder_record(  # noqa: PLR0913, PLR0917
     )
     strengths = rating.bootstrap_strengths(fit_cells, members, references, plan)
     triples = rating.cyclic_triples(fit_cells, members, plan)
+    roots, settings = selection.slot_state(config, previous)
+    outcome = selection.decide(
+        config,
+        generation,
+        strengths={m: strengths[m].strength for m in members},
+        table=table,
+        anchors=sorted(anchors),
+        roots=roots,
+        settings=settings,
+        last_copy=last_copy or {},
+        bootstrap=plan,
+    )
     listed = dict(frozen)
     fixed = {**references, **{m: strengths[m].strength for m in members}}
     for snapshot in sorted(pool, key=lambda p: p.id):
@@ -531,15 +572,15 @@ def build_ladder_record(  # noqa: PLR0913, PLR0917
         "members": [
             {
                 "member": m,
-                "root": m,
+                "root": roots[m],
                 "strength": {
                     "strength": strengths[m].strength,
                     "lower": strengths[m].lower,
                     "upper": strengths[m].upper,
                 },
-                "settings": member_settings(config, k),
+                "settings": settings[m],
             }
-            for k, m in enumerate(members)
+            for m in members
         ],
         "snapshots": [listed[i] for i in sorted(listed)],
         "cells": [
@@ -548,7 +589,7 @@ def build_ladder_record(  # noqa: PLR0913, PLR0917
             if kind != "snapshot" or opponent in listed
         ],
         "cyclic_triples": triples,
-        "selections": [{"kind": "none", "failed": "no_ready_member"}],
+        "selections": [outcome],
     }
     read_ladder_record(record, previous, config)
     return record

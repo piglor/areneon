@@ -59,6 +59,12 @@ importers:
         specifier: workspace:*
         version: link:../bot-client
 
+  packages/object-store:
+    dependencies:
+      aws4fetch:
+        specifier: 1.0.20
+        version: 1.0.20
+
   packages/opponent-model:
     dependencies:
       '@areneon/public-state':
@@ -70,6 +76,9 @@ importers:
 
   packages/private-team-store:
     dependencies:
+      '@areneon/object-store':
+        specifier: workspace:*
+        version: link:../object-store
       '@areneon/showdown-bridge':
         specifier: workspace:*
         version: link:../showdown-bridge

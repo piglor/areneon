@@ -12,6 +12,7 @@ from __future__ import annotations
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, BinaryIO
 
 from areneon_contracts.contracts import jcs
@@ -137,6 +138,8 @@ class Worker:
         self._features = features
         self._sheet = sheet
         self._scorer = scorer
+        #: Where ``__main__`` leaves this session's profile, when it was asked to (diagnostics).
+        self.profile_dir: Path | None = None
         self._ready: dict[str, Any] = {
             "schema_version": 1,
             "message": {

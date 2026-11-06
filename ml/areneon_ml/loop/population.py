@@ -59,12 +59,12 @@ from areneon_contracts.contracts import jcs, sha256_hex
 
 from areneon_ml.checkpoint.files import checkpoint_bytes, checkpoint_id, write_checkpoint
 from areneon_ml.checkpoint.record import CheckpointRecord, read_record
-from areneon_ml.learner.config import MICRO, PPOSettings, RunConfig
+from areneon_ml.learner.config import PPOSettings, RunConfig
 from areneon_ml.learner.data import trajectories
 from areneon_ml.learner.parallel import fit_processes
 from areneon_ml.learner.state import pack_state, restore_state
 from areneon_ml.learner.trainer import Learner, TrainReport, configure_learner
-from areneon_ml.loop import ladder_write, layout, past_pool, rating
+from areneon_ml.loop import ladder_write, layout, past_pool, rating, selection, slot_copy
 from areneon_ml.loop.driver import LoopError, StageHook, Timing
 from areneon_ml.loop.ladder import LadderRecordError, read_ladder_record
 from areneon_ml.loop.league import (
@@ -160,27 +160,7 @@ def member_ppo(config: RunConfig, index: int) -> PPOSettings:
     found = [e for e in population.get("member_ppo", []) if e["member"] == index]
     if not found:
         return ppo
-    over = found[0]
-    changes: dict[str, Any] = {}
-    if "learning_rate_micro" in over:
-        changes["learning_rate"] = over["learning_rate_micro"] / MICRO
-        if ppo.schedule is not None:
-            changes["schedule"] = dataclasses.replace(
-                ppo.schedule, start_micro=over["learning_rate_micro"]
-            )
-    if "entropy_coef_micro" in over:
-        changes["entropy_coef"] = over["entropy_coef_micro"] / MICRO
-        if ppo.entropy_schedule is not None:
-            changes["entropy_schedule"] = dataclasses.replace(
-                ppo.entropy_schedule, start_micro=over["entropy_coef_micro"]
-            )
-    if "epochs" in over:
-        changes["epochs"] = over["epochs"]
-    if "clip_micro" in over:
-        changes["clip"] = over["clip_micro"] / MICRO
-    if "target_kl_micro" in over:
-        changes["target_kl"] = over["target_kl_micro"] / MICRO
-    return dataclasses.replace(ppo, **changes)
+    return selection.ppo_with(ppo, found[0])
 
 
 def member_config(config: RunConfig, index: int) -> RunConfig:
@@ -347,9 +327,17 @@ class PopulationLoop:
         except WarmStartError as exc:
             raise LoopError(f"warm_start: {exc}") from exc
 
-    def _new_learner(self, index: int, warm: WarmPair | None) -> Learner:
-        """A member's learner: seeded networks, the warm-started roles replaced by their copy."""
+    def _new_learner(
+        self, index: int, warm: WarmPair | None, settings: dict[str, Any] | None = None
+    ) -> Learner:
+        """A member's learner: seeded networks, the warm-started roles replaced by their copy.
+
+        ``settings`` are the member's effective settings from a committed ladder record (a resume
+        after a copy); without them the config's starting values apply.
+        """
         cfg = member_config(self.config, index)
+        if settings is not None:
+            cfg = dataclasses.replace(cfg, ppo=selection.ppo_with(cfg.ppo, settings, exact=True))
         seeds = {"preview": cfg.init_preview, "battle": cfg.init_battle}
         built = {
             role: warm.networks[role]
@@ -362,7 +350,11 @@ class PopulationLoop:
             assert self.config.warm_start is not None  # the reader requires warm_start
             anchors = self._warm_pair(self.config.warm_start).networks
         # Built and kept on the host; `_train_member` brings it to the device while it trains.
-        return Learner(cfg, built, HOST, anchors)
+        learner = Learner(cfg, built, HOST, anchors)
+        learner.population_settings = selection.ppo_part(
+            settings if settings is not None else selection.member_settings(self.config, index)
+        )
+        return learner
 
     # -- run -----------------------------------------------------------------
 
@@ -457,6 +449,11 @@ class PopulationLoop:
             raise LoopError(f"generation {newest.generation}: its team-set manifest differs")
         warm_ids = self.config.warm_start
         warm_zero = newest.generation == 0 and warm_ids is not None
+        # The settings each member trained under in the newest generation: the config's at
+        # generation 0, else the ladder record's (a copy of the one before has set them).
+        self._anchors = self._load_anchors(newest)
+        ladder = self._read_ladder(newest.generation) if newest.generation >= 1 else None
+        effective = {m["member"]: m["settings"] for m in ladder["members"]} if ladder else {}
         members: list[MemberFrozen] = []
         for k, label in enumerate(self._labels()):
             entry = held[label]
@@ -468,7 +465,8 @@ class PopulationLoop:
                 raise LoopError(
                     f"generation {newest.generation}: {label}'s manifest entry lacks {exc}"
                 ) from exc
-            learner = self._new_learner(k, None)  # the state restored below replaces the weights
+            # The state restored below replaces the weights; its sidecar must name these settings.
+            learner = self._new_learner(k, None, effective.get(label))
             path = member_dir(newest.path, label)
             tensors_name, sidecar_name = _learner_files(newest.generation)
             restore_state(
@@ -504,9 +502,6 @@ class PopulationLoop:
             )
             self._learners[label] = learner
             members.append(MemberFrozen(label, checkpoints, state_hash, ts_hash))
-        self._anchors = self._load_anchors(newest)
-        if newest.generation >= 1:
-            self._check_ladder(newest.generation, newest.manifest)
         if self._past:
             self._committed_past(newest.generation, newest.manifest)
         return PopulationFrozen(
@@ -558,14 +553,25 @@ class PopulationLoop:
         except ladder_write.LadderBuildError as exc:
             raise LoopError(f"generation 0: {exc}") from exc
 
-    def _read_ladder(
-        self, generation: int, manifest: dict[str, Any] | None = None
-    ) -> dict[str, Any]:
-        """The committed ``ladder.json`` of ``generation``, read with the frozen anchors."""
+    def _read_ladder(self, generation: int) -> dict[str, Any]:
+        """The committed ``ladder.json`` of ``generation``, read with the frozen anchors.
+
+        Every call re-checks the file against its generation's manifest, the manifest's
+        ``ladder_hash`` and its ``anchors_hash`` (the frozen strengths of generation 0), so a
+        generation read through here cannot name other anchors than the run froze.
+        """
         raw = self._committed_json(generation, ladder_write.LADDER_FILE)
-        if manifest is not None and manifest.get("ladder_hash") != ladder_write.json_hash(raw):
+        manifest = layout.read_json(
+            layout.generation_dir(self.run_dir, generation) / layout.MANIFEST
+        )
+        if manifest.get("ladder_hash") != ladder_write.json_hash(raw):
             raise LoopError(
                 f"generation {generation}: its ladder.json is not the one its manifest names"
+            )
+        if manifest.get("anchors_hash") != self._anchors_digest:
+            raise LoopError(
+                f"generation {generation}: its manifest names other anchor strengths "
+                "than generation 0 froze"
             )
         before = (
             None
@@ -580,8 +586,14 @@ class PopulationLoop:
         assert isinstance(raw, dict)
         return raw
 
-    def _check_ladder(self, generation: int, manifest: dict[str, Any]) -> None:
-        self._read_ladder(generation, manifest)
+    def _last_copies(self, generation: int) -> dict[str, int]:
+        """Each member's last copy generation, from the committed ladders 1 to ``generation``."""
+        found: dict[str, int] = {}
+        for g in range(1, generation + 1):
+            first = self._committed_json(g, ladder_write.LADDER_FILE)["selections"][0]
+            if first["kind"] == "copy":
+                found[first["loser"]] = g
+        return found
 
     def _check_member(  # noqa: PLR0913, PLR0917
         self,
@@ -663,6 +675,11 @@ class PopulationLoop:
             )
         timing.play_rss = dict(getattr(self.player, "resource_usage", None) or {})
         self._on_stage(generation, "played")
+        by_label = {m.member: m for m in previous.members}
+        # The copy decided in the generation before takes effect now, before any member trains.
+        parents = self._apply_copy(before, by_label)
+        if parents:
+            self._on_stage(generation, "copied")
         with timing.phase("load"):
             summary = layout.read_json(work / "generation.json")
             if (
@@ -676,7 +693,6 @@ class PopulationLoop:
         member_counts: dict[str, dict[str, int]] = {}
         reports: dict[str, dict[str, Any]] = {}
         sealings: dict[str, MemberSealing] = {}
-        by_label = {m.member: m for m in previous.members}
         for entry in record.members:
             label = entry.member
             held = self._summary_member(summary, label)
@@ -712,7 +728,7 @@ class PopulationLoop:
                     for role in ROLES
                 }
             sealings[label] = MemberSealing(
-                by_label[label].checkpoints,
+                parents.get(label, by_label[label].checkpoints),
                 held["training_set_hash"],
                 tuple(sorted(others)),
             )
@@ -743,6 +759,38 @@ class PopulationLoop:
         self._write_member_counts(generation, member_counts)
         return frozen
 
+    def _apply_copy(
+        self, ladder: dict[str, Any] | None, by_label: dict[str, MemberFrozen]
+    ) -> dict[str, dict[str, str]]:
+        """Apply the copy the committed ladder of the generation before decided, if it made one.
+
+        The loser's learner takes the donor's newest frozen state (weights and Adam moments), a new
+        generator seed and the explored settings. The loser's next records name the donor's frozen
+        checkpoints as ``parent``; they are returned by loser.
+        """
+        if ladder is None or ladder["selections"][0]["kind"] != "copy":
+            return {}
+        first = ladder["selections"][0]
+        loser, donor = first["loser"], first["donor"]
+        learner = self._learners[loser]
+        slot_copy.copy_slot(
+            self._learners[donor],
+            learner,
+            ppo=selection.ppo_with(learner.config.ppo, first["settings"], exact=True),
+            seed=selection.learner_seed(
+                self.config,
+                ladder["generation"],
+                loser,
+                first["learner_seed_index"],
+                MAX_SEED,
+            ),
+            settings=selection.ppo_part(first["settings"]),
+        )
+        # The slot trains on games its donor did not play (the loser's old pair played them), so
+        # this one update is value-only: the policy is frozen (ADR-021 erratum point).
+        learner.value_only = True
+        return {loser: by_label[donor].checkpoints}
+
     def _write_ladder(
         self,
         work: Path,
@@ -751,7 +799,7 @@ class PopulationLoop:
         before: dict[str, Any] | None,
         pool: past_pool.PastPool | None = None,
     ) -> tuple[dict[str, Any], PastSeal | None]:
-        """Fit the window, count the cycles and write ``ladder.json`` (selection: none).
+        """Fit the window, count the cycles and write ``ladder.json`` and the copy test's outcome.
 
         Returns the record and, with a past pool, what the generation's ``past-pool.json`` adds
         to the pool: its snapshots so far and the window counts against the next pool.
@@ -767,7 +815,13 @@ class PopulationLoop:
         held = () if pool is None else pool.snapshots
         try:
             record = ladder_write.build_ladder_record(
-                self.config, generation, history, self._anchors, before, held
+                self.config,
+                generation,
+                history,
+                self._anchors,
+                before,
+                self._last_copies(generation - 1),
+                held,
             )
         except (LadderRecordError, ladder_write.LadderBuildError, rating.RatingError) as exc:
             raise LoopError(f"generation {generation}: ladder.json: {exc}") from exc
@@ -822,6 +876,7 @@ class PopulationLoop:
                 timing.peak_memory = max(timing.peak_memory or 0, peak)
                 timing.peak_reserved = max(timing.peak_reserved or 0, reserved)
         finally:
+            learner.value_only = False
             park(learner)
             if self.device.type == "cuda":
                 torch.cuda.empty_cache()

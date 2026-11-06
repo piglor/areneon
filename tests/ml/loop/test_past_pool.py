@@ -255,7 +255,7 @@ def gen1() -> list[lw.GenerationRows]:
 
 def test_a_snapshot_with_n_min_pairs_is_rated_once_and_the_rest_stay_out_of_the_record() -> None:
     config = rated_config()
-    record = lw.build_ladder_record(config, 1, gen1(), ANCHOR_STRENGTHS, None, POOL_G0)
+    record = lw.build_ladder_record(config, 1, gen1(), ANCHOR_STRENGTHS, None, pool=POOL_G0)
     assert [s["snapshot_id"] for s in record["snapshots"]] == ["m1@g0"]  # m0@g0 has one pair
     entry = record["snapshots"][0]
     assert (entry["member"], entry["generation"]) == ("m1", 0)
@@ -269,15 +269,15 @@ def test_a_snapshot_with_n_min_pairs_is_rated_once_and_the_rest_stay_out_of_the_
     cells = lw.snapshot_cells(config, 1, gen1(), ANCHOR_STRENGTHS, ["m0@g0", "m1@g0"])
     assert cells == {("m0", "m1@g0"): [0, 0, 1, 0, 2], ("m1", "m0@g0"): [1, 0, 0, 0, 0]}
     # A pure function of its inputs.
-    assert record == lw.build_ladder_record(config, 1, gen1(), ANCHOR_STRENGTHS, None, POOL_G0)
+    assert record == lw.build_ladder_record(config, 1, gen1(), ANCHOR_STRENGTHS, None, pool=POOL_G0)
 
 
 def test_a_rated_snapshot_is_frozen_and_a_fixed_reference_from_the_next_record_on() -> None:
     config = rated_config()
-    first = lw.build_ladder_record(config, 1, gen1(), ANCHOR_STRENGTHS, None, POOL_G0)
+    first = lw.build_ladder_record(config, 1, gen1(), ANCHOR_STRENGTHS, None, pool=POOL_G0)
     more = past_rows(6, [("m0", "m1@g0", LOSS), ("m1", "m0@g0", LOSS), ("m1", "m0@g0", WIN)])
     history = [gen1()[0], lw.GenerationRows(2, generation_rows() + more)]
-    second = lw.build_ladder_record(config, 2, history, ANCHOR_STRENGTHS, first, POOL_G0)
+    second = lw.build_ladder_record(config, 2, history, ANCHOR_STRENGTHS, first, pool=POOL_G0)
     by_id = {s["snapshot_id"]: s for s in second["snapshots"]}
     # m1@g0 keeps the strength and bounds it was frozen with, although its results changed.
     assert by_id["m1@g0"] == first["snapshots"][0]
@@ -290,15 +290,15 @@ def test_a_rated_snapshot_is_frozen_and_a_fixed_reference_from_the_next_record_o
     with pytest.raises(LadderRecordError, match="frozen at entry"):
         read_ladder_record(tampered, first, config)
     # The members' fit used the frozen snapshot as a reference: the same record without it differs.
-    without = lw.build_ladder_record(config, 2, history, ANCHOR_STRENGTHS, None, POOL_G0[:1])
+    without = lw.build_ladder_record(config, 2, history, ANCHOR_STRENGTHS, None, pool=POOL_G0[:1])
     assert [m["strength"] for m in second["members"]] != [m["strength"] for m in without["members"]]
 
 
 def test_an_evicted_snapshot_leaves_the_record_and_its_old_results_are_dropped() -> None:
     config = rated_config()
-    first = lw.build_ladder_record(config, 1, gen1(), ANCHOR_STRENGTHS, None, POOL_G0)
+    first = lw.build_ladder_record(config, 1, gen1(), ANCHOR_STRENGTHS, None, pool=POOL_G0)
     history = [gen1()[0], lw.GenerationRows(2, generation_rows())]
-    second = lw.build_ladder_record(config, 2, history, ANCHOR_STRENGTHS, first, POOL_G0[:1])
+    second = lw.build_ladder_record(config, 2, history, ANCHOR_STRENGTHS, first, pool=POOL_G0[:1])
     assert second["snapshots"] == []
     assert not [c for c in second["cells"] if c["opponent"]["kind"] == "snapshot"]
     assert read_ladder_record(second, first, config).generation == 2
@@ -561,3 +561,23 @@ def test_every_malformed_pool_file_is_a_past_pool_error() -> None:
     bad(lambda r: r["cells"][0].update(scores=[True, 0, 0, 0, 0]))
     bad(lambda r: r["cells"][0].update(scores=[None, 0, 0, 0, 0]))
     bad(lambda r: r["cells"].append(copy.deepcopy(r["cells"][-1])))
+
+
+def test_a_copied_slot_meets_the_snapshots_afresh_in_the_next_pools_counts() -> None:
+    config = rated_config()
+    one = lw.GenerationRows(
+        1, generation_rows() + past_rows(6, [("m0", "m1@g0", WIN), ("m1", "m0@g0", LOSS)]), ("m0",)
+    )
+    two = lw.GenerationRows(
+        2, generation_rows() + past_rows(6, [("m0", "m1@g0", WIN), ("m1", "m0@g0", WIN)])
+    )
+    ids = ["m0@g0", "m1@g0"]
+    # m0 was copied in generation 1: the pair frozen at the end of generation 2 is a new lineage, so
+    # its results up to generation 2 are dropped; m1 keeps its own.
+    cells = lw.snapshot_cells(config, 2, [one, two], ANCHOR_STRENGTHS, ids)
+    assert cells == {("m1", "m0@g0"): [1, 0, 0, 0, 1]}
+    # With no copy both members' counts stay.
+    plain = lw.snapshot_cells(
+        config, 2, [lw.GenerationRows(1, one.rows), two], ANCHOR_STRENGTHS, ids
+    )
+    assert set(plain) == {("m0", "m1@g0"), ("m1", "m0@g0")}
