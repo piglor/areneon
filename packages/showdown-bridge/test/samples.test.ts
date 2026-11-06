@@ -440,8 +440,11 @@ describe("the shared contract sample corpus (ADR-008 §2)", () => {
       "v1/sealed-team-set-manifest/reader-invalid/quota-sum-mismatch.json",
       "v1/sealed-team-set-manifest/reader-invalid/unsorted-strata.json",
       "v1/search-config/reader-invalid/inexact-uniform-share.json",
+      "v1/search-config/reader-invalid/k-max-without-slot-cover.json",
       "v1/search-config/reader-invalid/min-worlds-over-n.json",
       "v1/search-config/reader-invalid/no-uniform-without-full-weight.json",
+      "v1/search-config/reader-invalid/slot-cover-top-k-differs.json",
+      "v1/search-config/reader-invalid/slot-cover-without-k-max.json",
       "v1/team-dataset-manifest/reader-invalid/evaluation-only-near-over-draws.json",
       "v1/team-dataset-manifest/reader-invalid/merged-stratum-missing.json",
       "v1/team-dataset-manifest/reader-invalid/split-cell-is-a-member.json",
@@ -619,6 +622,9 @@ describe("the shared contract sample corpus (ADR-008 §2)", () => {
     ["v1/search-config/reader-invalid/inexact-uniform-share.json", readSearchConfig, "exact millionths"],
     ["v1/search-config/reader-invalid/min-worlds-over-n.json", readSearchConfig, "exceeds the worlds"],
     ["v1/search-config/reader-invalid/no-uniform-without-full-weight.json", readSearchConfig, "whole weight"],
+    ["v1/search-config/reader-invalid/slot-cover-without-k-max.json", readSearchConfig, "k_max is present exactly"],
+    ["v1/search-config/reader-invalid/k-max-without-slot-cover.json", readSearchConfig, "k_max is present exactly"],
+    ["v1/search-config/reader-invalid/slot-cover-top-k-differs.json", readSearchConfig, "top_k equals k_max"],
   ])("the search config reader refuses %s", (file, reader, message) => {
     expect(Object.keys(fresh)).toContain(file);
     expect(() => reader(committed(file))).toThrow(SearchConfigError);

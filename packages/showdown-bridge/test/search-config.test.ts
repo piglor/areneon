@@ -14,7 +14,7 @@ import { WORLD_BUILDER_FORMAT } from "../src/world-builder.ts";
 const FORMAT = "gen9championsvgc2026regmc";
 const SAMPLES = new URL("../../../fixtures/contracts/v1/search-config/", import.meta.url);
 const sample = (kind: string, name: string): unknown => JSON.parse(readFileSync(new URL(`${kind}/${name}.json`, SAMPLES), "utf8"));
-const names = (kind: string): string[] => ["rerank-1", "uniform-replies-hp-leaf"].filter(() => kind === "valid");
+const names = (kind: string): string[] => ["rerank-1", "uniform-replies-hp-leaf", "slot-cover"].filter(() => kind === "valid");
 
 const h = (c: string): string => c.repeat(64);
 const config = loadSearchConfig(FORMAT);
@@ -57,10 +57,10 @@ describe("the committed SearchConfig", () => {
 
   it("reads every valid sample and refuses the invalid and reader-invalid ones", () => {
     for (const name of names("valid")) expect(() => readSearchConfig(sample("valid", name))).not.toThrow();
-    for (const name of ["extra-field", "fractional-top-k", "zero-top-k", "unknown-algorithm", "unknown-leaf", "unknown-hp-rounding", "bad-seed-derivation", "short-belief-hash", "missing-replies", "next-version"]) {
+    for (const name of ["extra-field", "fractional-top-k", "zero-top-k", "unknown-algorithm", "unknown-leaf", "unknown-hp-rounding", "bad-seed-derivation", "short-belief-hash", "missing-replies", "next-version", "k-max-too-small"]) {
       expect(() => readSearchConfig(sample("invalid", name)), name).toThrow(/invalid SearchConfig/);
     }
-    for (const name of ["min-worlds-over-n", "inexact-uniform-share", "no-uniform-without-full-weight"]) {
+    for (const name of ["min-worlds-over-n", "inexact-uniform-share", "no-uniform-without-full-weight", "slot-cover-without-k-max", "k-max-without-slot-cover", "slot-cover-top-k-differs"]) {
       expect(() => readSearchConfig(sample("reader-invalid", name)), name).toThrow(SearchConfigError);
     }
   });
@@ -69,6 +69,43 @@ describe("the committed SearchConfig", () => {
     const alone = structuredClone(config);
     alone.replies = { max_damage_ppm: 1_000_000, uniform_draws: 0 };
     expect(readSearchConfig(alone).replies.uniform_draws).toBe(0);
+  });
+});
+
+// The label search config of the search distillation (ADR-026 erratum E2 decision 2, SD-b). Hashes computed with Python hashlib over the canonical
+// JSON (sort_keys, separators (",", ":")) of the file and, for the identity, of the same 13 inputs as above with search_config_hash = LABEL_CONFIG_HASH.
+const LABEL_CONFIG_HASH = "a542fed7b3b1c00b355bb62b1c7c220b85e987b919ce9f6e79489659fd69a037";
+const LABEL_SEARCH_HASH = "365867ec7b52fea46f1eb8b2340ed4fa5d0d81a10c32ad72458a404a338264dd";
+
+describe("the label search config", () => {
+  const label = loadSearchConfig(FORMAT, "rerank-1-label.v1");
+
+  it("is S0's search except the slot-cover set, 4 worlds, 2 replies and 2 valid worlds, with its own pinned hash and identity", () => {
+    expect(label).toMatchObject({ top_k_rule: "slot-cover", k_max: 16, worlds: { n: 4, redraws: 4 }, replies: { max_damage_ppm: 500000, uniform_draws: 1 }, min_valid_worlds: 2, leaf: { kind: "value-head" } });
+    const { top_k: _a, top_k_rule: _b, k_max: _c, worlds: lw, replies: _d, min_valid_worlds: _e, ...labelRest } = label;
+    const { top_k: _f, top_k_rule: _g, worlds: bw, replies: _h, min_valid_worlds: _i, ...baseRest } = config;
+    expect(labelRest).toEqual(baseRest);
+    expect({ ...lw, n: 0 }).toEqual({ ...bw, n: 0 });
+    expect(searchConfigHash(label)).toBe(LABEL_CONFIG_HASH);
+    expect(searchIdentityHash(label, inputs)).toBe(LABEL_SEARCH_HASH);
+    expect(LABEL_SEARCH_HASH).not.toBe(SEARCH_HASH);
+  });
+
+  it("leaves the evaluation search's config and its hash as they were", () => {
+    expect(config.top_k_rule).toBe("prior-top-k");
+    expect("k_max" in config).toBe(false);
+    expect(searchConfigHash(config)).toBe(CONFIG_HASH);
+  });
+
+  it("moves its identity with k_max and the rule", () => {
+    const other = structuredClone(label);
+    other.k_max = 12;
+    other.top_k = 12;
+    expect(searchIdentityHash(other, inputs)).not.toBe(LABEL_SEARCH_HASH);
+    const rule = structuredClone(label);
+    rule.top_k_rule = "prior-top-k";
+    delete rule.k_max;
+    expect(searchIdentityHash(rule, inputs)).not.toBe(LABEL_SEARCH_HASH);
   });
 });
 

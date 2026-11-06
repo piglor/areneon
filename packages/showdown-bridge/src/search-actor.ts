@@ -32,7 +32,6 @@
 import { interpretChannel, ownChannel, readerSha256, WORLD_FACTS_FORMAT, type WorldFactsData, worldFactsAtRequests } from "@areneon/public-state";
 import type { EngineRequest } from "@areneon/schema/types/v1/engine-request.ts";
 import type { PrivateTeamSpec } from "@areneon/schema/types/v1/private-team-spec.ts";
-import { jcs } from "./canonical-json.ts";
 import { type Candidate, enumerateCandidates } from "./choices.ts";
 import { buildFeatures, isFeatureSetId } from "./feature-build.ts";
 import { createFeatureMemo, FEATURE_SET_BELIEF, FeatureBuildError, type FeatureSetId } from "./candidate-features.ts";
@@ -47,20 +46,16 @@ import { observe, playerChannel } from "./player-channel.ts";
 import { type ActorFeatures, policyActor } from "./policy-actor.ts";
 import { type PlaySettings, PolicyProtocolError, policyId } from "./policy-protocol.ts";
 import type { EvaluationClient, PolicyClient } from "./policy-worker.ts";
-import type { ValueQueryInput } from "./policy-protocol.ts";
-import { decodeRequest } from "./request.ts";
-import { createReplyModel, legalReplies, REPLY_MODEL_FORMAT, ReplyModelError, type ReplyModel } from "./reply-model.ts";
-import { sha256Hex } from "./rules.ts";
+import { createReplyModel, REPLY_MODEL_FORMAT, type ReplyModel } from "./reply-model.ts";
 import type { RulesSnapshot } from "./rules.ts";
 import { type Actor, ForfeitSignal, type Player } from "./runner.ts";
 import { MECHANICS_ADAPTER_FORMAT } from "./mechanics-result.ts";
 import { LEAF_FORMAT, loadSearchConfig, type SearchConfig, searchIdentity, searchIdentityHash } from "./search-config.ts";
-import { hpKoDifferential, outcomeScore } from "./search-leaf.ts";
-import { cloneWorld, foeSwitchChoice, playChoices, type TurnResult } from "./search-turn.ts";
+import { type LabelDecision, type LabelInput, type SearchDecision, type SearchDecisionDeps, type SearchInput, searchDecision, searchLabel } from "./search-decision.ts";
 import type { DataClass } from "./team-class.ts";
 import type { TeamVocabulary } from "./team-vocabulary.ts";
 import { createWorldBuilder, WORLD_BUILDER_FORMAT, type WorldBuilder } from "./world-builder.ts";
-import { createWorldSampler, type DecisionWorlds, searchStream, type WorldRequest, type WorldSamplePort, type WorldSampler } from "./world-sampler.ts";
+import { createWorldSampler, searchStream, type WorldRequest, type WorldSamplePort, type WorldSampler } from "./world-sampler.ts";
 import { loadWorldWriters, type WorldWriters, worldWritersHash } from "./world-writers.ts";
 
 /** The search was set up, or asked to run, in a way it does not support. A defect of the caller, not a refusal of a decision. */
@@ -240,39 +235,7 @@ export function searchPolicy(setup: SearchSetup, manifest: VersionManifest, pair
   return { policy_id: policyId(pair, mode, play, features, identity_hash), identity: searchIdentity(setup.config, inputs), identity_hash };
 }
 
-/**
- * What one search decision reads, and nothing else: the world request (own request, own team, the reader's state and flags, the
- * world facts), the real channel up to the request, the candidates to search in prior rank and the 32-byte search stream the
- * harness derived. There is no field for the live battle, a `BattleRecord`, an `OmniscientLog`, hidden verdicts or the seed (a type test).
- */
-export interface SearchInput {
-  readonly world: WorldRequest;
-  readonly channel: readonly string[];
-  readonly top: readonly Candidate[];
-  readonly stream: Uint8Array;
-}
-
-export type SearchDecision =
-  | { readonly kind: "fallback"; readonly reason: "belief_refused" | "below_min_valid" }
-  | { readonly kind: "choice"; readonly choice: string; readonly scores: readonly { readonly choice: string; readonly sum: number }[] };
-
-/** The facts' hash purposes of a world (section 4): the engine seed and the reply draws. */
-const ENGINE_PURPOSE = "search-engine/1";
-const REPLY_PURPOSE = "search-reply/1";
-
-const hex = (bytes: Uint8Array): string => Buffer.from(bytes).toString("hex");
-
-/** The world's engine seed (`sodium,<32 hex>`): SHA-256 over the JCS of `{purpose: "search-engine/1", search_stream, world}`. */
-export const engineSeed = (stream: Uint8Array, world: number): string => `sodium,${sha256Hex(jcs({ purpose: ENGINE_PURPOSE, search_stream: hex(stream), world })).slice(0, 32)}`;
-
-/**
- * Draw `draw` of the world's uniform replies: an index below `n`. SHA-256 over the JCS of `{draw, purpose: "search-reply/1",
- * search_stream, world}`; the first 8 bytes as an unsigned integer scaled by `n` (`floor(u * n / 2^64)`, a bias below `n / 2^64`).
- */
-export const replyIndex = (stream: Uint8Array, world: number, draw: number, n: number): number => {
-  const u = BigInt(`0x${sha256Hex(jcs({ draw, purpose: REPLY_PURPOSE, search_stream: hex(stream), world })).slice(0, 16)}`);
-  return Number((u * BigInt(n)) >> 64n);
-};
+export { engineSeed, replyIndex, type SearchDecision, type SearchInput } from "./search-decision.ts";
 
 export interface SearchActorOptions {
   setup: SearchSetup;
@@ -318,7 +281,7 @@ export interface SearchActorOptions {
   reply_model?: ReplyModel;
 }
 
-export type SearchActor = Actor & { report(): SearchReport; decide(input: SearchInput): Promise<SearchDecision> };
+export type SearchActor = Actor & { report(): SearchReport; decide(input: SearchInput): Promise<SearchDecision>; label(input: LabelInput): Promise<LabelDecision> };
 
 export function searchActor(options: SearchActorOptions): SearchActor {
   const { setup, client, battle, player, team, manifest, channel_class, seed, game, policy_id, identity_hash, sampling, play, bank_ms } = options;
@@ -369,149 +332,8 @@ export function searchActor(options: SearchActorOptions): SearchActor {
     counts.fallbacks[reason] += 1;
   };
 
-  /** The weights of the M replies of a world, in ppm: the max-damage reply, then the uniform draws sharing the rest. */
-  const weights = (): number[] => {
-    const { max_damage_ppm, uniform_draws } = config.replies;
-    const share = uniform_draws === 0 ? 0 : (1_000_000 - max_damage_ppm) / uniform_draws;
-    return [max_damage_ppm, ...Array.from({ length: uniform_draws }, () => share)];
-  };
-
-  /** The M replies of one world; a world whose opponent cannot be replied in throws `ReplyModelError`. */
-  function repliesOf(world: number, built: Parameters<ReplyModel["reply"]>[0], stream: Uint8Array): { choice: string; weight: number }[] {
-    const w = weights();
-    const out: { choice: string; weight: number }[] = [];
-    if (w[0] !== 0) {
-      const reply = replyModel.reply(built);
-      counts.replies_max_damage += 1;
-      if (reply.kind === "all_zero") counts.replies_all_zero += 1;
-      out.push({ choice: reply.choice, weight: w[0] as number });
-    }
-    if (w.length > 1) {
-      // A world's opponent always has a non-pending legal reply (its own request carries no hidden flags); were it ever empty,
-      // the undefined choice would make the engine throw, which the turn reports as a refusal and the world is dropped.
-      const open = legalReplies(engine, built);
-      for (let draw = 0; draw < w.length - 1; draw += 1) {
-        out.push({ choice: open[replyIndex(stream, world, draw, open.length)] as string, weight: w[draw + 1] as number });
-        counts.replies_uniform += 1;
-      }
-    }
-    return out;
-  }
-
-  async function decide(input: SearchInput): Promise<SearchDecision> {
-    const worlds: DecisionWorlds = sampler.sample(input.world, input.stream);
-    if (worlds.kind === "refused") return { kind: "fallback", reason: "belief_refused" };
-    if (!worlds.searched) return { kind: "fallback", reason: "below_min_valid" };
-
-    const memo = new Map<string, number>();
-
-    /** The value head on the hypothetical channel `input.channel + lines`, which ends at the seat's request (the engine sends it last). */
-    async function valueOf(lines: readonly string[], request: string): Promise<number> {
-      const key = lines.join("\n");
-      const known = memo.get(key);
-      if (known !== undefined) {
-        counts.leaf_memo_hits += 1;
-        return known;
-      }
-      const observation = await observe({ channel: playerChannel({ schema_version: 1, data_class: channel_class, player, lines: [...input.channel, ...lines] }), team, manifest });
-      counts.leaf_queries += 1;
-      let value_ppm: number;
-      if (valueOnly) {
-        // Value-only: no candidates and no rows (E2 decision 7); the hypothetical request is not even enumerated.
-        value_ppm = (
-          await (client.value as NonNullable<EvaluationClient["value"]>)(battle, {
-            schema_version: 1,
-            identity: observation.identity,
-            observation,
-            candidates: [],
-            sampling: { kind: "value" },
-            policy_id,
-          } as ValueQueryInput)
-        ).value_ppm;
-      } else {
-        const candidates = enumerateCandidates(decodeRequest(request)).candidates;
-        value_ppm = (
-          await client.evaluate(battle, {
-            schema_version: 1,
-            identity: observation.identity,
-            observation,
-            candidates: candidates.map(({ choice, pending }) => ({ choice, pending })),
-            sampling: { kind: "evaluate" },
-            policy_id,
-          } as Parameters<EvaluationClient["evaluate"]>[1])
-        ).value_ppm;
-      }
-      memo.set(key, value_ppm);
-      return value_ppm;
-    }
-
-    /** One (candidate, reply) of a world: the leaf value, or the reason the world cannot be scored. */
-    async function simulate(serialised: string, seedHex: string, ownChoice: string, foeChoice: string): Promise<{ value: number } | { drop: DropReason }> {
-      const clone = cloneWorld(engine, serialised, seedHex);
-      let turn: TurnResult = playChoices(clone, player, { own: ownChoice, foe: foeChoice });
-      counts.turns += 1;
-      const lines: string[] = [];
-      // A wait request is played on: the opponent must switch, and its choice is the first legal one in canonical order. Each step is a
-      // forced-switch turn of the engine (a bench Pokemon is used up), so the chain is as short as the benches.
-      for (;;) {
-        lines.push(...turn.lines);
-        if (turn.refused !== null) return { drop: "choice_refused" };
-        if (turn.ended !== null || (JSON.parse(turn.request as string) as { wait?: boolean }).wait !== true) break;
-        counts.wait_continuations += 1;
-        turn = playChoices(clone, player, { own: null, foe: foeSwitchChoice(clone, player) });
-      }
-      if (turn.ended !== null) {
-        counts.leaf_game_end += 1;
-        return { value: outcomeScore(turn.ended) };
-      }
-      if (config.leaf.kind === "hp-ko-differential") {
-        counts.leaf_hp_ko += 1;
-        return { value: hpKoDifferential(clone, player) };
-      }
-      return { value: await valueOf(lines, turn.request as string) };
-    }
-
-    const sums = input.top.map(() => 0);
-    let scored = 0;
-    for (const valid of worlds.valid) {
-      let replies;
-      try {
-        replies = repliesOf(valid.world, valid.built, input.stream);
-      } catch (error) {
-        if (!(error instanceof ReplyModelError)) throw error;
-        counts.worlds_dropped.reply_model += 1;
-        continue;
-      }
-      const serialised = JSON.stringify(valid.built.battle.toJSON());
-      const seedHex = engineSeed(input.stream, valid.world);
-      const own = input.top.map(() => 0);
-      let dropped: DropReason | null = null;
-      for (let c = 0; c < input.top.length && dropped === null; c += 1) {
-        for (const reply of replies) {
-          const result = await simulate(serialised, seedHex, (input.top[c] as Candidate).choice, reply.choice);
-          if ("drop" in result) {
-            dropped = result.drop;
-            break;
-          }
-          own[c] = (own[c] as number) + reply.weight * result.value;
-        }
-      }
-      if (dropped !== null) {
-        counts.worlds_dropped[dropped] += 1;
-        continue;
-      }
-      scored += 1;
-      own.forEach((value, c) => {
-        sums[c] = (sums[c] as number) + value;
-      });
-    }
-    counts.worlds_scored += scored;
-    if (scored < config.min_valid_worlds) return { kind: "fallback", reason: "below_min_valid" };
-    const scores = input.top.map((candidate, c) => ({ choice: candidate.choice, sum: sums[c] as number }));
-    let best = 0;
-    for (let c = 1; c < scores.length; c += 1) if ((scores[c] as { sum: number }).sum > (scores[best] as { sum: number }).sum) best = c;
-    return { kind: "choice", choice: (scores[best] as { choice: string }).choice, scores };
-  }
+  const deps: SearchDecisionDeps = { engine, config, sampler, replyModel, client, battle, player, team, manifest, channel_class, policy_id, valueOnly, counts };
+  const decide = (input: SearchInput): Promise<SearchDecision> => searchDecision(input, deps);
 
   /** The world request at the channel's last request: the player's own view only. The channel ends in the move request being answered (checked by the observation). */
   function worldRequest(context: { channel: readonly string[]; team: readonly Readonly<PokemonSet>[] }): WorldRequest {
@@ -581,17 +403,10 @@ export function searchActor(options: SearchActorOptions): SearchActor {
       sampling: { kind: "evaluate" },
       policy_id,
     } as Parameters<EvaluationClient["evaluate"]>[1]);
-    // The prior's top-k non-pending candidates; equal priors in canonical order (a stable sort on the enumerator's order).
-    const ranked = candidates
-      .map((candidate, index) => ({ candidate, ppm: prior.prior_ppm[index] as number }))
-      .filter(({ candidate }) => !candidate.pending)
-      .sort((a, b) => b.ppm - a.ppm)
-      .slice(0, config.top_k)
-      .map(({ candidate }) => candidate);
-
     const stream = searchStream({ seed, game, player, policy_id, request_seq: identity.request_seq });
-    const decision = await decide({ world, channel: context.channel, top: ranked, stream });
-    if (decision.kind === "fallback") {
+    // The searched set by the config's rule (the prior's top-k, equal priors in canonical order, or slot-cover), searched by the shared decision.
+    const decision = await searchLabel({ world, channel: context.channel, candidates, prior_ppm: prior.prior_ppm, stream }, deps);
+    if (decision.kind === "refused") {
       return play_(decision.reason);
     }
     counts.searched_decisions += 1;
@@ -601,6 +416,7 @@ export function searchActor(options: SearchActorOptions): SearchActor {
 
   return Object.assign(actor, {
     decide,
+    label: (input: LabelInput): Promise<LabelDecision> => searchLabel(input, deps),
     report(): SearchReport {
       const worldCounts = sampler.counts();
       const built = builder.counts();
