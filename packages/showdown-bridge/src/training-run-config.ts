@@ -51,11 +51,42 @@ export function readTrainingRunConfig(value: unknown): TrainingRunConfig {
   if (generation.play?.temperature_ppm === 1_000_000) {
     throw new TrainingRunConfigError("generation.play.temperature_ppm 1000000 is the default: omit generation.play (one rule, one encoding)");
   }
+  checkSearchDistillation(config);
   if (config.population !== undefined && config.warm_start?.preview !== undefined) {
     throw new TrainingRunConfigError("population: a warm_start that names the preview role would give every member the same pair (use a Battle-only warm start; each member's Preview is seeded from its own member-init draw)");
   }
   if (config.population !== undefined) checkPopulation(config);
   return config;
+}
+
+/** Feature sets whose value head reads no candidate row (ADR-026 E2 decision 7): `/2` and `/3` pool the rows into the tokens. */
+const VALUE_FREE_FEATURE_SETS: readonly string[] = ["probe-damage/1", "probe-damage-belief/1"];
+
+/**
+ * The rules of `generation.search_labels` and `ppo.search_distill` the profile cannot say (ADR-026 E2 decision 5, #1291):
+ * both blocks or neither; a warm start that names the Battle network and a value warm-up, with `start_generation` after the warm-up;
+ * no opponent sheet and no candidate feature set whose value reads candidate rows; a team dataset.
+ */
+function checkSearchDistillation(config: TrainingRunConfig): void {
+  const labels = config.generation.search_labels;
+  const distill = config.ppo.search_distill;
+  if ((labels === undefined) !== (distill === undefined)) {
+    throw new TrainingRunConfigError("generation.search_labels and ppo.search_distill come together or not at all");
+  }
+  if (labels === undefined || distill === undefined) return;
+  if (config.warm_start === undefined) throw new TrainingRunConfigError("search distillation needs warm_start (a Battle network cloned from the teacher)");
+  const warmup = config.ppo.value_warmup;
+  if (warmup === undefined) throw new TrainingRunConfigError("search distillation needs ppo.value_warmup: a cloned value head is untrained until the warm-up ends");
+  if (labels.start_generation < warmup.generations + 1) {
+    throw new TrainingRunConfigError("generation.search_labels.start_generation must be at least ppo.value_warmup.generations + 1");
+  }
+  const options = config.model.encoder.options;
+  if (options?.opponent_sheet !== undefined) throw new TrainingRunConfigError("search distillation cannot be combined with the opponent_sheet encoder option");
+  const features = options?.candidate_features?.feature_set;
+  if (features !== undefined && !VALUE_FREE_FEATURE_SETS.includes(features)) {
+    throw new TrainingRunConfigError(`search distillation cannot be combined with candidate feature set ${features}: its value reads candidate rows`);
+  }
+  if (config.team_dataset === undefined) throw new TrainingRunConfigError("search distillation needs a team_dataset: the belief prior is generator-matched");
 }
 
 const START_FIELDS = ["learning_rate_micro", "entropy_coef_micro", "epochs", "clip_micro", "target_kl_micro"] as const;

@@ -28,6 +28,20 @@ describe("the TrainingRunConfig reader (ADR-010 §5)", () => {
     }
   });
 
+  it("reads the search distillation blocks and refuses a lone block or a run that cannot carry them (ADR-026 erratum E2)", async () => {
+    const config = readTrainingRunConfig(sample("search-distill"));
+    expect(config.ppo.search_distill).toEqual({ coef_micro: 1000000, c_scale_micro: 4000000, min_spread_ppm: 20000, aggregate_generations: 4 });
+    expect(config.generation.search_labels?.start_generation).toBe(3);
+    expect(readTrainingRunConfig(sample("tiny"))).not.toHaveProperty("ppo.search_distill");
+    expect(await runConfigHash(config)).not.toBe(await runConfigHash(readTrainingRunConfig(sample("value-warmup"))));
+    const withFeatures = (feature_set: string) => ({
+      ...config,
+      model: { ...config.model, encoder: { ...config.model.encoder, options: { candidate_features: { feature_set, feature_set_hash: "c".repeat(64) } } } },
+    });
+    for (const allowed of ["probe-damage/1", "probe-damage-belief/1"]) expect(readTrainingRunConfig(withFeatures(allowed)).ppo.search_distill).toBeDefined();
+    for (const refused of ["probe-damage/2", "probe-damage/3"]) expect(() => readTrainingRunConfig(withFeatures(refused))).toThrow("its value reads candidate rows");
+  });
+
   it("reads a warm start, hashes it apart from none and refuses the same checkpoint for both roles (ADR-010 erratum A2)", async () => {
     const warm = readTrainingRunConfig(sample("warm-start"));
     expect(warm.warm_start).toEqual({ preview: "a".repeat(64), battle: "b".repeat(64) });

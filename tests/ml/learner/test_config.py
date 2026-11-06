@@ -141,7 +141,7 @@ def test_the_reader_rules_the_profile_cannot_say(name: str, message: str) -> Non
 
 
 def test_every_reader_invalid_sample_is_checked_above() -> None:
-    assert len(READER_INVALID) == 19
+    assert len(READER_INVALID) == 27
 
 
 @pytest.mark.parametrize("name", INVALID)

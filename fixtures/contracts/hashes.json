@@ -1333,5 +1333,18 @@
   "v1/private-test-record/reader-invalid/baseline-with-checkpoints.json": "995d5a81395b0a75c276e690bcc1c24e36612f3159c301034f13d8e9b7b689e2",
   "v1/private-test-record/reader-invalid/forfeits-unsorted.json": "77bc357124e8ac3f3d5a66956786a80303e5a5eb3c9dc3e5adee09821fc255dc",
   "v1/private-test-record/reader-invalid/forfeits-over-losses.json": "b5b7cdf02a329d4fe35cc85f1684ad1839ad41cb0657f5c2608b0265eae88ce9",
-  "v1/private-test-record/reader-invalid/turn-cap-over-ties.json": "38dd8c0a569a74d8db1b40cac92d5a1c905472e7e21e6016356fa5b352eb3f60"
+  "v1/private-test-record/reader-invalid/turn-cap-over-ties.json": "38dd8c0a569a74d8db1b40cac92d5a1c905472e7e21e6016356fa5b352eb3f60",
+  "v1/training-run-config/valid/search-distill.json": "d48b13b004fcf5774a63e735b81fbaa877a59dc9d02f25f1cf625b12b625db06",
+  "v1/training-run-config/reader-invalid/search-distill-labels-only.json": "9dc4e504915a0ea6fc89341028d81aca0e1692ffa1e305734b4a59a0e208c5fd",
+  "v1/training-run-config/reader-invalid/search-distill-config-only.json": "509b9cee4c5463afdc797f5497b3382b08b81b9649ae0eb094376bac4b334dfa",
+  "v1/training-run-config/reader-invalid/search-distill-no-warm-start.json": "6aaaf1d55bdb5a932a140cff97d6a0e2ee1d2a2c7447b76306e2c6e4f390d851",
+  "v1/training-run-config/reader-invalid/search-distill-no-value-warmup.json": "80a56ab8a31d39fecafaf1d00f25f24fbd1857df394a3852ad3180a08878dc8d",
+  "v1/training-run-config/reader-invalid/search-distill-start-in-warmup.json": "fc4531804cb0b70756bf7ec26cd0fb641d7f8391176b45c819bb99665fdb45a6",
+  "v1/training-run-config/reader-invalid/search-distill-opponent-sheet.json": "05df4660f0d748af2a9ff7a7a1bbde63c26291d39338dc83f67cca3fdf775859",
+  "v1/training-run-config/reader-invalid/search-distill-features-2.json": "376983d21fe83f659393a9d5378606c4ad0c729df5a7d3a78a1d12d7785dd6c5",
+  "v1/training-run-config/reader-invalid/search-distill-no-team-dataset.json": "00ceb5f533a50d04cabe0a2e39dcb1f5fdb6f539bed7c5ddd9ae528857802237",
+  "v1/training-run-config/invalid/search-distill-zero-share.json": "a5444b2e960fb01688824f36d8f8492efa3c86c2b3163f95fe12d10255a9a855",
+  "v1/training-run-config/invalid/search-distill-zero-aggregate.json": "74abf782ee25a71ca56bea227da356b0f2f6fba444a4f6940540b3d434fde5a1",
+  "v1/training-run-config/invalid/search-distill-extra-field.json": "6ec697a64beab2c127c9ed2530becdac601cea3ab1559c3de2495f36dd2b1ef5",
+  "v1/training-run-config/invalid/search-distill-short-hash.json": "9ec15dc931319860db4dcba190bfc5bfea40182d5033fa9bc57c6ea0ea33e4bd"
 }
