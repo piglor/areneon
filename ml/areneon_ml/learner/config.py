@@ -55,6 +55,10 @@ class GenerationSettings:
     #: learner scores every policy term, at this temperature (1 to 999,999 millionths); ``None``
     #: is temperature 1 (the field absent), which leaves every value as it was.
     temperature_ppm: int | None = None
+    #: ``generation.search_labels`` (ADR-026 erratum E2): the label search config's hash and the
+    #: first generation whose games are labelled; ``None`` when absent.
+    search_config_hash: str | None = None
+    search_start_generation: int | None = None
 
 
 @dataclass(frozen=True)
@@ -104,6 +108,16 @@ class AnchorSettings:
 
 
 @dataclass(frozen=True)
+class SearchDistillSettings:
+    """``ppo.search_distill`` (ADR-026 erratum E2 decision 8, ADR-010 erratum A10, #1291)."""
+
+    coef_micro: int  # lambda, in millionths
+    c_scale_micro: int  # the logit gap the best searched candidate gains over the worst
+    min_spread_ppm: int  # a label with a smaller q_max - q_min is not used
+    aggregate_generations: int  # label streams of the current and the previous N - 1 generations
+
+
+@dataclass(frozen=True)
 class PPOSettings:
     epochs: int
     minibatch_size: int
@@ -133,6 +147,8 @@ class PPOSettings:
     # millionths, of the frozen Battle value in the Preview return. None when absent; 0 is
     # today's rule (the trainer divides by ``MICRO`` where it uses it, as for the anchor's beta).
     preview_bootstrap_micro: int | None = None
+    # ``ppo.search_distill`` (ADR-026 erratum E2): None when absent (no distillation term).
+    search_distill: SearchDistillSettings | None = None
 
 
 @dataclass(frozen=True)
@@ -191,6 +207,63 @@ def _anchor(ppo: dict[str, Any]) -> AnchorSettings | None:
         found["kl_micro"],
         LinearSchedule(found["kl_micro"], schedule["final_micro"], schedule["generations"]),
     )
+
+
+#: Feature sets whose value head reads no candidate row (ADR-026 E2 decision 7): ``/2`` and ``/3``
+#: pool the rows into the tokens. Held equal to the TS reader's list by a test.
+VALUE_FREE_FEATURE_SETS = ("probe-damage/1", "probe-damage-belief/1")
+
+
+def _search_distill(ppo: dict[str, Any]) -> SearchDistillSettings | None:
+    found = ppo.get("search_distill")
+    if found is None:
+        return None
+    return SearchDistillSettings(
+        found["coef_micro"],
+        found["c_scale_micro"],
+        found["min_spread_ppm"],
+        found["aggregate_generations"],
+    )
+
+
+def _check_search_distillation(raw: dict[str, Any]) -> None:
+    """The rules of the two search blocks that the profile cannot say."""
+    labels = raw["generation"].get("search_labels")
+    distill = raw["ppo"].get("search_distill")
+
+    def fail(message: str) -> None:
+        raise RunConfigError(f"training-run-config: {message}")
+
+    if (labels is None) != (distill is None):
+        fail("generation.search_labels and ppo.search_distill come together or not at all")
+    if labels is None:
+        return
+    if "population" in raw:
+        fail("search distillation cannot be combined with a population (no per-member labels)")
+    if "warm_start" not in raw:
+        fail("search distillation needs warm_start (a Battle network cloned from the teacher)")
+    warmup = raw["ppo"].get("value_warmup")
+    if warmup is None:
+        fail(
+            "search distillation needs ppo.value_warmup: "
+            "a cloned value head is untrained until the warm-up ends"
+        )
+    elif labels["start_generation"] < warmup["generations"] + 1:
+        fail(
+            "generation.search_labels.start_generation must be at least "
+            "ppo.value_warmup.generations + 1"
+        )
+    options = raw["model"].get("encoder", {}).get("options", {})
+    if "opponent_sheet" in options:
+        fail("search distillation cannot be combined with the opponent_sheet encoder option")
+    features = options.get("candidate_features", {}).get("feature_set")
+    if features is not None and features not in VALUE_FREE_FEATURE_SETS:
+        fail(
+            f"search distillation cannot be combined with candidate feature set {features}: "
+            "its value reads candidate rows"
+        )
+    if "team_dataset" not in raw:
+        fail("search distillation needs a team_dataset: the belief prior is generator-matched")
 
 
 _START_FIELDS = (
@@ -286,8 +359,10 @@ def read_run_config(raw: object) -> RunConfig:
                 "Preview is seeded from its own member-init draw)"
             )
         _check_population(raw)
+    _check_search_distillation(raw)
     gen, ppo, seeds = raw["generation"], raw["ppo"], raw["seeds"]
     play = gen.get("play")
+    labels = gen.get("search_labels")
     if play is not None and play["temperature_ppm"] >= MICRO:
         raise RunConfigError(
             "training-run-config: generation.play.temperature_ppm 1000000 is the default: "
@@ -314,6 +389,8 @@ def read_run_config(raw: object) -> RunConfig:
             handshake_timeout_ms=gen["handshake_timeout_ms"],
             max_line_bytes=gen["max_line_bytes"],
             temperature_ppm=None if play is None else play["temperature_ppm"],
+            search_config_hash=None if labels is None else labels["search_config_hash"],
+            search_start_generation=None if labels is None else labels["start_generation"],
         ),
         ppo=PPOSettings(
             epochs=ppo["epochs"],
@@ -335,6 +412,7 @@ def read_run_config(raw: object) -> RunConfig:
             anchor=_anchor(ppo),
             entropy_schedule=_entropy_schedule(ppo),
             preview_bootstrap_micro=ppo.get("preview_bootstrap_micro"),
+            search_distill=_search_distill(ppo),
         ),
         device=raw["learner"]["device"],
         threads=raw["learner"]["threads"],

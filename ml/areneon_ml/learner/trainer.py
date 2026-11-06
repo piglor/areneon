@@ -26,10 +26,12 @@ import torch
 from areneon_ml.learner.config import MICRO, RunConfig
 from areneon_ml.learner.data import LearnerDataError, Step, Trajectory
 from areneon_ml.learner.diagnostics import CalibrationBin, calibration, explained_variance
+from areneon_ml.learner.labels import LabelStep
 from areneon_ml.learner.ppo import (
     LossWeights,
     Targets,
     anchor_kl,
+    distill_kl,
     gae,
     normalise,
     policy_terms,
@@ -131,6 +133,13 @@ class RoleReport:
     # 3): the weight (millionths) of the frozen Battle value in the Preview return. Left out of
     # the stored report otherwise.
     preview_bootstrap_micro: int | None = None
+    # Set only on the Battle role under ``ppo.search_distill`` (ADR-026 erratum E2): the labels the
+    # update used, and the mean KL(pi' || pi_theta) over them before the update's epochs and after.
+    # All three are left out of the stored report otherwise, so a run without the block keeps its
+    # bytes. 0 labels (before the first label stream, or during the value warm-up) reports 0.0.
+    search_labels: int | None = None
+    search_kl_before: float | None = None
+    search_kl_after: float | None = None
 
 
 @dataclass(frozen=True)
@@ -158,6 +167,10 @@ class _Table:
     #: Per step, the anchor's log-probabilities over that decision's real candidates (in
     #: candidate order), from its frozen weights; ``None`` without an active anchor.
     anchor_log_probs: list[torch.Tensor] | None = None
+    #: The labels the Battle update distils toward (``ppo.search_distill``); empty otherwise.
+    labels: tuple[LabelStep, ...] = ()
+    #: Mean distillation KL over ``labels`` at the frozen weights; ``None`` without the block.
+    search_kl_before: float | None = None
 
 
 @dataclass(frozen=True)
@@ -309,8 +322,17 @@ class Learner:
 
     # -- one generation ------------------------------------------------------
 
-    def train(self, trajectories: Sequence[Trajectory]) -> TrainReport:
-        """Run the configured PPO epochs on the generation's trajectories, then count it."""
+    def train(
+        self, trajectories: Sequence[Trajectory], labels: Sequence[LabelStep] | None = None
+    ) -> TrainReport:
+        """Run the configured PPO epochs on the generation's trajectories, then count it.
+
+        ``labels`` are the usable search labels of the aggregated label streams
+        (``ppo.search_distill``); they are given exactly when the config has the block (an empty
+        sequence before the first label stream) and only the Battle update reads them.
+        """
+        if (labels is None) != (self.config.ppo.search_distill is None):
+            raise LearnerError("labels are given exactly when the config has ppo.search_distill")
         roles = {}
         schedule = self.config.ppo.schedule
         if schedule is not None:
@@ -336,7 +358,13 @@ class Learner:
             if mine:
                 warm = warmup and (self.value_only or role in self.warm_roles)
                 tables[role] = (
-                    self._table(role, mine, role in self.anchors and not warm, frozen),
+                    self._table(
+                        role,
+                        mine,
+                        role in self.anchors and not warm,
+                        frozen,
+                        tuple(labels or ()) if role == "battle" and not warm else (),
+                    ),
                     warm,
                 )
         if self.shared_trunk:
@@ -414,6 +442,7 @@ class Learner:
         trajectories: Sequence[Trajectory],
         anchor: bool = False,
         frozen: _FrozenBattle | None = None,
+        labels: tuple[LabelStep, ...] = (),
     ) -> _Table:
         ppo = self.config.ppo
         steps = [s for t in trajectories for s in t.steps]
@@ -462,7 +491,39 @@ class Learner:
             explained_variance(all_returns.double().tolist(), value_list),
             calibration(value_list, scores),
             self._anchor_scores(role, steps) if anchor else None,
+            labels,
+            self._label_kl(labels)
+            if role == "battle" and self.config.ppo.search_distill is not None
+            else None,
         )
+
+    def _label_dense(self, labels: Sequence[LabelStep], batch: Batch) -> torch.Tensor:
+        """``ln pi'`` of ``labels`` as [B, C] (zero at padded places), on the batch's device."""
+        dense = torch.zeros(batch.cand_mask.shape, device=self.device)
+        for row, label in enumerate(labels):
+            dense[row, : len(label.log_target)] = torch.tensor(
+                label.log_target, dtype=torch.float32, device=self.device
+            )
+        return dense
+
+    def _label_kl(self, labels: Sequence[LabelStep]) -> float:
+        """Mean KL(pi' || pi_theta) of the Battle network over ``labels`` (0.0 if none)."""
+        if not labels:
+            return 0.0
+        network = self.networks["battle"]
+        size = self.config.ppo.minibatch_size
+        tau = self.config.generation.temperature_ppm
+        total = torch.zeros(())
+        network.eval()
+        with torch.no_grad():
+            for start in range(0, len(labels), size):
+                chunk = labels[start : start + size]
+                batch = to_device(collate([lab.query for lab in chunk]), self.device)
+                kl = distill_kl(
+                    network(batch).logits, batch.cand_mask, self._label_dense(chunk, batch), tau
+                )
+                total += kl.sum().cpu()
+        return float(total) / len(labels)
 
     def _train_role(self, role: str, table: _Table, warm: bool = False) -> RoleReport:
         """PPO epochs for one role; with ``warm`` only the value head learns (see below).
@@ -492,8 +553,14 @@ class Learner:
         entropy_coef = ppo.entropy_coef if entropy_micro is None else entropy_micro / MICRO
         return LossWeights(ppo.clip, ppo.value_coef, entropy_coef)
 
-    def _minibatch_loss(
-        self, role: str, table: _Table, warm: bool, index: list[int], weights: LossWeights
+    def _minibatch_loss(  # noqa: PLR0913, PLR0917
+        self,
+        role: str,
+        table: _Table,
+        warm: bool,
+        index: list[int],
+        weights: LossWeights,
+        label_index: list[int] | None = None,
     ) -> tuple[torch.Tensor, Any, torch.Tensor | None]:
         """One minibatch of one role: the tensor to backpropagate, the loss terms and, with an
         anchor, the (detached-by-the-caller) mean KL to the anchor."""
@@ -519,6 +586,20 @@ class Learner:
                 dense[row, batch.cand_mask[row]] = table.anchor_log_probs[i]
             kl = anchor_kl(out.logits, batch.cand_mask, dense, tau).mean()
             total = total + beta * kl
+        settings = self.config.ppo.search_distill
+        if settings is not None and label_index and not warm:
+            # ADR-026 erratum E2: lambda * mean KL(pi' || pi_theta) over this minibatch's labels,
+            # a second forward pass of the Battle network on the labelled decisions. The gradient
+            # reaches the shared trunk under shared_trunk, as the anchor's does.
+            chosen_labels = [table.labels[i] for i in label_index]
+            label_batch = to_device(collate([lab.query for lab in chosen_labels]), self.device)
+            label_kl = distill_kl(
+                self.networks[role](label_batch).logits,
+                label_batch.cand_mask,
+                self._label_dense(chosen_labels, label_batch),
+                tau,
+            ).mean()
+            total = total + settings.coef_micro / MICRO * label_kl
         return (loss.value if warm else total), loss, kl
 
     @staticmethod
@@ -566,7 +647,13 @@ class Learner:
             table.explained_variance,
             table.value_calibration,
             self.config.ppo.preview_bootstrap_micro if role == "preview" else None,
+            *self._search_report(role, table),
         )
+
+    def _search_report(self, role: str, table: _Table) -> tuple[Any, Any, Any]:
+        if role != "battle" or self.config.ppo.search_distill is None:
+            return None, None, None
+        return len(table.labels), table.search_kl_before, self._label_kl(table.labels)
 
     def _epochs(self, role: str, table: _Table, warm: bool) -> RoleReport:
         ppo = self.config.ppo
@@ -577,13 +664,16 @@ class Learner:
         optimiser_steps = 0
         epochs_run = 0
         kl_stopped = False
-        for _ in range(ppo.epochs):
+        for epoch in range(ppo.epochs):
             epoch_kl = 0.0
             minibatches = 0
             order = torch.randperm(len(table.steps), generator=self.generator).tolist()
-            for start in range(0, len(order), ppo.minibatch_size):
+            label_chunks = self._label_chunks(table, -(-len(order) // ppo.minibatch_size), epoch)
+            for k, start in enumerate(range(0, len(order), ppo.minibatch_size)):
                 index = order[start : start + ppo.minibatch_size]
-                backward, loss, kl = self._minibatch_loss(role, table, warm, index, weights)
+                backward, loss, kl = self._minibatch_loss(
+                    role, table, warm, index, weights, label_chunks[k] if label_chunks else None
+                )
                 if kl is not None:
                     kl_sum += kl.detach().cpu()
                 optimiser.zero_grad(set_to_none=True)
@@ -603,6 +693,24 @@ class Learner:
         return self._report(
             role, table, warm, (sums, kl_sum, optimiser_steps), (epochs_run, kl_stopped)
         )
+
+    def _label_chunks(self, table: _Table, parts: int, epoch: int) -> list[list[int]] | None:
+        """The table's labels shuffled and spread over ``parts`` minibatches (as the shared trunk
+        spreads the second role); ``None`` without labels.
+
+        The shuffle uses a generator of its own, seeded from the learner seed, the update index
+        and the epoch, so it needs no stored state (a resume restores the update counter) and the
+        learner's main generator is never touched: a run without the block, and the Preview
+        role's shuffles in a run with it, keep their orders.
+        """
+        if not table.labels:
+            return None
+        seed = ((self.config.learner_seed * 1_000_003 + self.generation) * 1_000_003 + epoch) % (
+            2**63
+        )
+        own = torch.Generator(device="cpu")
+        own.manual_seed(seed)
+        return self._spread(torch.randperm(len(table.labels), generator=own).tolist(), parts)
 
     # -- the joint step of shared_trunk -----------------------------------------------------------
 
@@ -655,7 +763,7 @@ class Learner:
         counts = dict.fromkeys(tables, 0)
         epochs_run, kl_stopped = 0, False
         try:
-            for _ in range(ppo.epochs):
+            for epoch in range(ppo.epochs):
                 orders = {
                     role: torch.randperm(len(table.steps), generator=self.generator).tolist()
                     for role, (table, _) in tables.items()
@@ -666,6 +774,11 @@ class Learner:
                 for role in tables:
                     if role != leader:
                         chunks[role] = self._spread(orders[role], len(chunks[leader]))
+                label_chunks = (
+                    self._label_chunks(tables["battle"][0], len(chunks[leader]), epoch)
+                    if "battle" in tables
+                    else None
+                )
                 epoch_kl = dict.fromkeys(tables, 0.0)
                 epoch_n = dict.fromkeys(tables, 0)
                 for k in range(len(chunks[leader])):
@@ -674,7 +787,14 @@ class Learner:
                         index = chunks[role][k]
                         if not index:
                             continue
-                        backward, loss, kl = self._minibatch_loss(role, table, warm, index, weights)
+                        backward, loss, kl = self._minibatch_loss(
+                            role,
+                            table,
+                            warm,
+                            index,
+                            weights,
+                            label_chunks[k] if role == "battle" and label_chunks else None,
+                        )
                         if kl is not None:
                             kl_sums[role] += kl.detach().cpu()
                         parts.append(backward)
