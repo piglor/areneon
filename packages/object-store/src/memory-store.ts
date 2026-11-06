@@ -71,6 +71,7 @@ export class InMemoryObjectStore implements ObjectStore {
   overwriteCurrent(body: Uint8Array): Promise<void> {
     const key = this.#layout.overwriteKey;
     if (key === null) return Promise.reject(new ObjectStoreError("key_invalid"));
+    if (body.byteLength > MAX_OBJECT_BYTES) return Promise.reject(new ObjectStoreError("too_large"));
     this.#objects.set(key, body.slice());
     this.writes.push(key);
     return Promise.resolve();

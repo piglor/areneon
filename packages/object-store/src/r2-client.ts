@@ -176,6 +176,7 @@ export class R2ObjectStore implements ObjectStore {
   async overwriteCurrent(body: Uint8Array): Promise<void> {
     const key = this.#layout.overwriteKey;
     if (key === null) throw new ObjectStoreError("key_invalid");
+    if (body.byteLength > MAX_OBJECT_BYTES) throw new ObjectStoreError("too_large");
     const response = await this.#send({ method: "PUT", key, body });
     await discard(response);
     if (response.status !== 200 && response.status !== 201) throw refusalFor(response.status);

@@ -27,7 +27,7 @@ export const OBJECT_STORE_REFUSALS = [
 export type ObjectStoreRefusal = (typeof OBJECT_STORE_REFUSALS)[number];
 
 const MESSAGES: Readonly<Record<ObjectStoreRefusal, string>> = {
-  key_invalid: "the key is not part of the private store's layout",
+  key_invalid: "the key is not part of this store's layout",
   exists: "an object is already stored under this key; nothing was overwritten",
   too_large: "the object is larger than the store accepts",
   denied: "the store refused the credentials or their permission",

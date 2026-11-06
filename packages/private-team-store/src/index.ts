@@ -5,6 +5,7 @@
 // the object store layout over the shared `@areneon/object-store` client
 // (object-store.ts, memory-store.ts, r2-client.ts, r2-settings.ts) and the
 // publish sequence (publish.ts). The import and export commands are not built.
+// package.json keeps its own exact `aws4fetch` pin although only @areneon/object-store imports it: test/packaging.test.ts requires the pin here.
 export const PRIVATE_TEAM_STORE_PACKAGE = "@areneon/private-team-store";
 export { IMPORT_REFUSALS, ImportPlanError, type ImportRefusal, type RefusalPosition } from "./import-error.ts";
 export {

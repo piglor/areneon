@@ -91,6 +91,14 @@ describe("the injected layout refuses an undeclared key before any request", () 
     expect(() => new R2ObjectStore(settings(), bad)).toThrow(ObjectStoreError);
   });
 
+  it("refuses an oversized overwrite in the client and the in-memory store, as it does a conditional write", async () => {
+    const big = { byteLength: MAX_OBJECT_BYTES + 1 } as Uint8Array;
+    const fake = new FakeR2();
+    expect(await storeCode(() => new R2ObjectStore(settings(), LAYOUT, { fetch: fake.fetch }).overwriteCurrent(big))).toBe("too_large");
+    expect(fake.seen).toEqual([]);
+    expect(await storeCode(() => new InMemoryObjectStore(LAYOUT).overwriteCurrent(big))).toBe("too_large");
+  });
+
   it("gives the in-memory store the client's rules", async () => {
     const store = new InMemoryObjectStore(LAYOUT);
     await store.putIfAbsent(objectKey("a"), bytes("1"));

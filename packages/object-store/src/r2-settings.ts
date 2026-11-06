@@ -41,6 +41,7 @@ export class CredentialError extends Error {
 const SESSION_TOKEN_VARIABLE = "AWS_SESSION_TOKEN";
 const VARIABLES = ["AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_ENDPOINT_URL", "AWS_DEFAULT_REGION"] as const;
 /** An argument that names a credential setting: a variable, or a flag that looks like one. */
+// Deliberately broad: any flag that starts with one of these words (`--session...`, `--token...`) is refused, not only exact names.
 const ARGV_NAMES = /(?:^|[^A-Za-z0-9])AWS_[A-Z_]+|^--?(?:access[-_]?key|secret|session|token|credential|endpoint|account|region|password)/i;
 const KEY_ID = /^[A-Za-z0-9]{16,128}$/;
 const SESSION_TOKEN = /^[A-Za-z0-9/+=_.~-]{16,4096}$/;
@@ -99,7 +100,10 @@ export class R2Settings {
     return new R2Settings(new AwsClient({ accessKeyId: id, secretAccessKey: secret, ...(sessionToken === undefined ? {} : { sessionToken }), service: "s3", region, retries: 0 }), url.origin, bucket);
   }
 
-  /** A signed request: SigV4 headers, `x-amz-content-sha256` of the real body, path-style URL, no redirects. */
+  /**
+   * @internal Used by `R2ObjectStore` only (a source scan in test/network-isolation.test.ts holds it);
+   * TypeScript has no package-internal visibility, so this stays public in the type.
+   * A signed request: SigV4 headers, `x-amz-content-sha256` of the real body, path-style URL, no redirects. */
   sign(init: SignedRequestInit): Promise<Request> {
     const url = new URL(`${this.#origin}/${this.#bucket}${init.key === null ? "" : `/${init.key}`}`);
     for (const [name, value] of Object.entries(init.query ?? {})) url.searchParams.set(name, value);

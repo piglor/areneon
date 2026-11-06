@@ -30,6 +30,10 @@ describe("network isolation of the shared object store client", () => {
     expect(FILES.filter((name) => /from "aws4fetch"/.test(code(name)))).toEqual(["r2-settings.ts"]);
   });
 
+  it("lets only r2-client.ts call the settings' sign() (it is @internal; TypeScript cannot hide it)", () => {
+    expect(FILES.filter((name) => /\.sign\(/.test(code(name)) && name !== "r2-settings.ts")).toEqual(["r2-client.ts"]);
+  });
+
   it("reads credentials from no file and writes none: neither settings nor client touch the file system or process.env", () => {
     for (const name of ["r2-settings.ts", "r2-client.ts"]) {
       expect(code(name), name).not.toMatch(/node:fs|process\.env|readFile|writeFile|homedir/);
