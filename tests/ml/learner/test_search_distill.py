@@ -92,6 +92,7 @@ def test_the_reader_reads_both_blocks_and_absent_is_none() -> None:
         ("opponent-sheet", "opponent_sheet encoder option"),
         ("features-2", "its value reads candidate rows"),
         ("no-team-dataset", "needs a team_dataset"),
+        ("population", "cannot be combined with a population"),
     ],
 )
 def test_the_reader_rules(name: str, message: str) -> None:
@@ -236,19 +237,17 @@ def label_stream(
     return text, manifest, examples
 
 
-def reader(identity: str = IDENTITY) -> LabelReader:
+def reader() -> LabelReader:
     config = distilled()
     assert config.ppo.search_distill is not None
-    return LabelReader(
-        Encoder(game(), config.model.encoder), config.ppo.search_distill, None, identity
-    )
+    return LabelReader(Encoder(game(), config.model.encoder), config.ppo.search_distill, None)
 
 
 def test_a_label_stream_is_read_into_targets(tmp_path: Path) -> None:
     text, manifest, examples = label_stream()
     path = tmp_path / "labels.jsonl"
     path.write_text(text)
-    found = reader().read(path, manifest, POLICY)
+    found = reader().read(path, manifest, POLICY, IDENTITY)
     assert len(found.steps) == 3  # the fourth has a 5,000 ppm spread, under the 20,000 minimum
     assert found.below_spread == 1
     for step in found.steps:
@@ -271,7 +270,7 @@ def test_a_label_stream_of_another_identity_is_refused(
     path = tmp_path / "labels.jsonl"
     path.write_text(text)
     with pytest.raises(LearnerDataError, match=message):
-        reader().read(path, manifest, POLICY)
+        reader().read(path, manifest, POLICY, IDENTITY)
 
 
 def test_a_label_stream_is_refused_when_not_what_it_claims(tmp_path: Path) -> None:
@@ -280,13 +279,13 @@ def test_a_label_stream_is_refused_when_not_what_it_claims(tmp_path: Path) -> No
     path.write_text(text)
     without = {k: v for k, v in manifest.items() if k != "search_labels"}
     with pytest.raises(LearnerDataError, match="needs a TrainingSet with search_labels"):
-        reader().read(path, without, POLICY)
+        reader().read(path, without, POLICY, IDENTITY)
     with pytest.raises(LearnerDataError, match="not played by the policy being trained"):
-        reader().read(path, manifest, "policy:" + "cd" * 32)
+        reader().read(path, manifest, "policy:" + "cd" * 32, IDENTITY)
     with pytest.raises(LearnerDataError, match="not learner_ready"):
-        reader().read(path, {**manifest, "learner_ready": False}, POLICY)
+        reader().read(path, {**manifest, "learner_ready": False}, POLICY, IDENTITY)
     with pytest.raises(LearnerDataError):  # the digest no longer matches
-        reader().read(path, {**manifest, "stream_sha256": "0" * 64}, POLICY)
+        reader().read(path, {**manifest, "stream_sha256": "0" * 64}, POLICY, IDENTITY)
 
 
 def test_a_decision_labelled_twice_is_refused(tmp_path: Path) -> None:
@@ -294,9 +293,9 @@ def test_a_decision_labelled_twice_is_refused(tmp_path: Path) -> None:
     path = tmp_path / "labels.jsonl"
     path.write_text(text)
     again = reader()
-    again.read(path, manifest, POLICY)
+    again.read(path, manifest, POLICY, IDENTITY)
     with pytest.raises(LearnerDataError, match="a decision twice"):
-        again.read(path, manifest, POLICY)
+        again.read(path, manifest, POLICY, IDENTITY)
 
 
 def test_a_preview_label_is_refused(tmp_path: Path) -> None:
@@ -310,7 +309,7 @@ def test_a_preview_label_is_refused(tmp_path: Path) -> None:
     path = tmp_path / "labels.jsonl"
     path.write_text(text)
     with pytest.raises(LearnerDataError, match="not a Battle decision"):
-        reader().read(path, manifest, POLICY)
+        reader().read(path, manifest, POLICY, IDENTITY)
 
 
 # -- the term in the update ---------------------------------------------------

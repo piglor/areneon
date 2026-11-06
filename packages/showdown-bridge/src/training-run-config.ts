@@ -74,6 +74,7 @@ function checkSearchDistillation(config: TrainingRunConfig): void {
     throw new TrainingRunConfigError("generation.search_labels and ppo.search_distill come together or not at all");
   }
   if (labels === undefined || distill === undefined) return;
+  if (config.population !== undefined) throw new TrainingRunConfigError("search distillation cannot be combined with a population (no per-member labels)");
   if (config.warm_start === undefined) throw new TrainingRunConfigError("search distillation needs warm_start (a Battle network cloned from the teacher)");
   const warmup = config.ppo.value_warmup;
   if (warmup === undefined) throw new TrainingRunConfigError("search distillation needs ppo.value_warmup: a cloned value head is untrained until the warm-up ends");

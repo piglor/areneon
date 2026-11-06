@@ -18,7 +18,7 @@ from areneon_ml.loop.play import PlayRequest
 from areneon_ml.loop.warm_start import import_clone
 
 from tests.ml.learner.support import edited_config, episode_lines, stream_of
-from tests.ml.loop.support import FakePlayer, Killed, killer, manifests
+from tests.ml.loop.support import FakePlayer, Killed, killer, manifests, reseal
 from tests.ml.loop.test_warm_start import clone_ids, clone_output, warm_config, warm_loop
 
 IDENTITY = "c" * 64
@@ -27,7 +27,7 @@ START = 2
 RUN_GENERATIONS = 3
 
 
-def distilling_config(ids: dict[str, str]) -> RunConfig:
+def distilling_config(ids: dict[str, str], aggregate: int = 2) -> RunConfig:
     base = warm_config(ids, "tiny-distill").raw
 
     def edit(raw: dict[str, Any]) -> None:
@@ -38,7 +38,7 @@ def distilling_config(ids: dict[str, str]) -> RunConfig:
             "coef_micro": 5_000_000,
             "c_scale_micro": 4_000_000,
             "min_spread_ppm": 20_000,
-            "aggregate_generations": 2,
+            "aggregate_generations": aggregate,
         }
         raw["generation"]["search_labels"] = {
             "search_config_hash": LABEL_CONFIG,
@@ -57,6 +57,9 @@ class LabelPlayer(FakePlayer):
         self.identity = identity
         self.skip = skip
 
+    def identity_for(self, generation: int) -> str:
+        return self.identity
+
     def play(self, request: PlayRequest) -> None:
         super().play(request)
         generation = request.generation
@@ -66,7 +69,7 @@ class LabelPlayer(FakePlayer):
         summary = layout.read_json(out / "generation.json")
         summary["search_labels"] = {
             "search_config_hash": LABEL_CONFIG,
-            "search_identity_hash": self.identity,
+            "search_identity_hash": self.identity_for(generation),
         }
         layout.write_json(out / "generation.json", summary)
         if self.skip:
@@ -92,7 +95,7 @@ class LabelPlayer(FakePlayer):
                 examples.append(base)
         text, manifest = stream_of(examples, request.policy_id)
         manifest["search_labels"] = {
-            "search_identity_hash": self.identity,
+            "search_identity_hash": self.identity_for(generation),
             "labelled": len(examples),
             "refused": [],
         }
@@ -251,3 +254,50 @@ def test_a_run_without_the_block_is_unchanged(tmp_path: Path, clone_dir: Path) -
         assert "label_set_hashes" not in layout.verify_generation(base, g)
         report = layout.read_json(base / "train-report.json")
         assert not any(k.startswith("search_") for r in report.values() for k in r)
+
+
+def test_each_aggregated_stream_is_checked_against_its_own_generation(
+    tmp_path: Path, clone_dir: Path
+) -> None:
+    """Generation 3 reads generation 2's labels under generation 2's own stated identity."""
+    config = distilling_config(clone_ids(clone_dir))
+    run_dir = tmp_path / "run"
+    import_clone(clone_dir, run_dir)
+
+    class PerGeneration(LabelPlayer):
+        def identity_for(self, generation: int) -> str:
+            return ("e" if generation == START else "f") * 64
+
+    from tests.ml.loop.support import make_loop  # noqa: PLC0415
+
+    make_loop(run_dir, config, PerGeneration(config)).run(RUN_GENERATIONS)
+    assert layout.read_json(layout.generation_dir(run_dir, 3) / "train-report.json")["battle"][
+        "search_labels"
+    ]
+
+
+def test_a_tampered_older_label_stream_is_refused(tmp_path: Path, clone_dir: Path) -> None:
+    config = distilling_config(clone_ids(clone_dir), aggregate=3)
+    run_dir = tmp_path / "run"
+    import_clone(clone_dir, run_dir)
+    distill_loop(run_dir, config).run(RUN_GENERATIONS)
+    older = layout.generation_dir(run_dir, START) / "labels.jsonl"
+    older.write_text(older.read_text() + "\n")
+    with pytest.raises(layout.RunDirError, match="files differ from its manifest"):
+        distill_loop(run_dir, config).run(RUN_GENERATIONS + 1)
+
+
+def test_an_older_generation_stating_another_config_is_refused(
+    tmp_path: Path, clone_dir: Path
+) -> None:
+    config = distilling_config(clone_ids(clone_dir), aggregate=3)
+    run_dir = tmp_path / "run"
+    import_clone(clone_dir, run_dir)
+    distill_loop(run_dir, config).run(RUN_GENERATIONS)
+    path = layout.generation_dir(run_dir, START)
+    summary = layout.read_json(path / "generation.json")
+    summary["search_labels"]["search_config_hash"] = "9" * 64
+    layout.write_json(path / "generation.json", summary)
+    reseal(run_dir, START)
+    with pytest.raises(LoopError, match=r"generation 2: generation\.json does not state"):
+        distill_loop(run_dir, config).run(RUN_GENERATIONS + 1)

@@ -1112,6 +1112,10 @@ export async function contractSamples(engine: Engine): Promise<Record<string, un
     "training-run-config/search-distill-features-2": distilling((c) => {
       runSection(runSection(c, "model"), "encoder").options = { candidate_features: { feature_set: "probe-damage/2", feature_set_hash: hexOf("c") } };
     }),
+    "training-run-config/search-distill-population": distilling((c) => {
+      c.warm_start = { battle: hexOf("b") };
+      c.population = populationBlock();
+    }),
     "training-run-config/search-distill-no-team-dataset": distilling((c) => delete c.team_dataset),
     "training-run-config/value-warmup-no-warm-start": runConfigWith((c) => (runSection(c, "ppo").value_warmup = { generations: 2 })),
     "training-run-config/anchor-no-warm-start": runConfigWith((c) => (runSection(c, "ppo").anchor = { kl_micro: 100000, schedule: { kind: "constant" } })),

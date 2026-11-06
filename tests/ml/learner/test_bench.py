@@ -121,3 +121,14 @@ def test_the_cli_refuses_what_it_cannot_run(
     ]  # fmt: skip
     assert main(args) == EXIT_REFUSED
     assert "missing.json" in capsys.readouterr().err
+
+
+def test_bench_refuses_a_config_with_search_distillation() -> None:
+    from areneon_ml.learner.config import read_run_config  # noqa: PLC0415
+    from areneon_ml.learner.trainer import LearnerError  # noqa: PLC0415
+
+    from tests.ml.learner.test_config import raw  # noqa: PLC0415
+
+    config = read_run_config(raw("valid/search-distill.json"))
+    with pytest.raises(LearnerError, match="does not read label streams"):
+        benchmark(config, game(), recorded(), 1)

@@ -1350,5 +1350,6 @@
   "v1/training-run-config/invalid/search-distill-zero-share.json": "a5444b2e960fb01688824f36d8f8492efa3c86c2b3163f95fe12d10255a9a855",
   "v1/training-run-config/invalid/search-distill-zero-aggregate.json": "74abf782ee25a71ca56bea227da356b0f2f6fba444a4f6940540b3d434fde5a1",
   "v1/training-run-config/invalid/search-distill-extra-field.json": "6ec697a64beab2c127c9ed2530becdac601cea3ab1559c3de2495f36dd2b1ef5",
-  "v1/training-run-config/invalid/search-distill-short-hash.json": "9ec15dc931319860db4dcba190bfc5bfea40182d5033fa9bc57c6ea0ea33e4bd"
+  "v1/training-run-config/invalid/search-distill-short-hash.json": "9ec15dc931319860db4dcba190bfc5bfea40182d5033fa9bc57c6ea0ea33e4bd",
+  "v1/training-run-config/reader-invalid/search-distill-population.json": "df3f7d3030bc05010c2b96d46ed7df741779e86955c41efff6c6d1ef287ee59a"
 }

@@ -447,6 +447,17 @@ def test_a_changed_file_is_refused_by_the_manifest(tmp_path: Path) -> None:
         read_report_model(run_dir, None)
 
 
+def test_the_search_distillation_keys_are_read_together_on_the_battle_role() -> None:
+    raw = json.loads(json.dumps(TRAIN_REPORT))
+    raw["battle"].update(search_labels=0, search_kl_before=0.0, search_kl_after=0.0)
+    assert read_train_report(raw).roles["battle"]["steps"] == raw["battle"]["steps"]
+    raw["battle"].update(search_labels=12, search_kl_before=0.25, search_kl_after=0.125)
+    read_train_report(raw)
+
+
+SEARCH_KLS = {"search_kl_before": 0.25, "search_kl_after": 0.125}
+
+
 @pytest.mark.parametrize(
     ("change", "message"),
     [
@@ -466,6 +477,21 @@ def test_a_changed_file_is_refused_by_the_manifest(tmp_path: Path) -> None:
         (lambda r: r["battle"].update(anchor_kl=-0.1, anchor_beta_micro=5), "cannot be negative"),
         (lambda r: r["battle"].update(anchor_kl=True, anchor_beta_micro=5), "finite"),
         (lambda r: r["battle"].update(anchor_kl=0.1, anchor_beta_micro=-5), "integer"),
+        (lambda r: r["battle"].update(search_labels=3), "come together"),
+        (lambda r: r["battle"].update(search_labels=-1, **SEARCH_KLS), "integer"),
+        (
+            lambda r: r["battle"].update(
+                search_labels=1, **{**SEARCH_KLS, "search_kl_after": -0.5}
+            ),
+            "cannot be negative",
+        ),
+        (
+            lambda r: r["battle"].update(
+                search_labels=1, **{**SEARCH_KLS, "search_kl_before": float("inf")}
+            ),
+            "finite",
+        ),
+        (lambda r: r["preview"].update(search_labels=1, **SEARCH_KLS), "come together"),
     ],
 )
 def test_the_train_report_is_read_strictly(change: Any, message: str) -> None:

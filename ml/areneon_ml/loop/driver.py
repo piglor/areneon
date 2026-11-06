@@ -468,9 +468,9 @@ class Loop:
 
         ``None`` without the block. Before ``generation.search_labels.start_generation`` there are
         none yet (an empty list). From it, each generation's ``labels.jsonl`` and ``label-set.json``
-        must exist and be made under the search identity the generation's own summary states, whose
-        label config hash must be the run config's; every aggregated stream must carry that same
-        identity (the reader refuses another).
+        must exist and be made under the search identity that generation's own ``generation.json``
+        states, whose label config hash must be the run config's. An older generation is read only
+        after its manifest verifies.
         """
         settings = self.config.ppo.search_distill
         if settings is None:
@@ -480,34 +480,37 @@ class Loop:
         assert start is not None  # the config reader requires both blocks together
         if generation < start:
             return [], ()
-        block = summary.get("search_labels")
-        if (
-            not isinstance(block, dict)
-            or block.get("search_config_hash") != generation_settings.search_config_hash
-            or not isinstance(block.get("search_identity_hash"), str)
-        ):
-            raise LoopError(
-                "generation.json does not state the run's label search config hash and identity"
-            )
         reader = LabelReader(
-            self._encoders["battle"],
-            settings,
-            generation_settings.temperature_ppm,
-            block["search_identity_hash"],
+            self._encoders["battle"], settings, generation_settings.temperature_ppm
         )
         steps: list[LabelStep] = []
         hashes: set[str] = set()
         for g in range(max(start, generation - settings.aggregate_generations + 1), generation + 1):
-            where = work if g == generation else layout.generation_dir(self.run_dir, g)
+            if g == generation:
+                where, stated, played_by = work, summary, pair
+            else:
+                # An older generation is read only once its own manifest verifies (every file
+                # hashes as committed), then against its own summary and its own pair.
+                where = layout.generation_dir(self.run_dir, g)
+                layout.verify_generation(where, g)
+                stated = layout.read_json(where / "generation.json")
+                played_by = layout.read_json(where / "league-run.json")["pair_policy_id"]
+            block = stated.get("search_labels")
+            if (
+                not isinstance(block, dict)
+                or block.get("search_config_hash") != generation_settings.search_config_hash
+                or not isinstance(block.get("search_identity_hash"), str)
+            ):
+                raise LoopError(
+                    f"generation {g}: generation.json does not state the run's label search "
+                    "config hash and identity"
+                )
             if not (where / "label-set.json").is_file() or not (where / "labels.jsonl").is_file():
                 raise LoopError(f"generation {g}: its label stream is missing")
             manifest = layout.read_json(where / "label-set.json")
-            played_by = (
-                pair
-                if g == generation
-                else layout.read_json(where / "league-run.json")["pair_policy_id"]
+            found = reader.read(
+                where / "labels.jsonl", manifest, played_by, block["search_identity_hash"]
             )
-            found = reader.read(where / "labels.jsonl", manifest, played_by)
             steps.extend(found.steps)
             hashes.add(sha256_hex(jcs(manifest)))
         return steps, tuple(sorted(hashes))

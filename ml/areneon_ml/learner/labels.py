@@ -87,27 +87,34 @@ def distill_target(
 
 
 class LabelReader:
-    """Reads label streams for one run: the identity, policy and settings are fixed at build."""
+    """Reads label streams for one run: the encoder and settings are fixed at build."""
 
     def __init__(
         self,
         encoder: Encoder,
         settings: SearchDistillSettings,
         temperature_ppm: int | None,
-        search_identity_hash: str,
     ) -> None:
         self._encoder = encoder
         self._settings = settings
         self._temperature_ppm = temperature_ppm
-        self._identity = search_identity_hash
         self._seen: dict[tuple[str, int], tuple[str, ...]] = {}
 
-    def read(self, stream: Path, manifest: dict[str, Any], behaviour_policy_id: str) -> LabelSet:
-        """The usable labels of one label stream (checked against its manifest)."""
+    def read(
+        self,
+        stream: Path,
+        manifest: dict[str, Any],
+        behaviour_policy_id: str,
+        search_identity_hash: str,
+    ) -> LabelSet:
+        """The usable labels of one label stream (checked against its manifest).
+
+        ``search_identity_hash`` is the identity the stream's own generation states.
+        """
         block = manifest.get("search_labels")
         if block is None:
             raise LearnerDataError("a label stream needs a TrainingSet with search_labels")
-        if block["search_identity_hash"] != self._identity:
+        if block["search_identity_hash"] != search_identity_hash:
             raise LearnerDataError(
                 "a label stream was made under another search identity than the run's label config"
             )

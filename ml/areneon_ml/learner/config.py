@@ -238,6 +238,8 @@ def _check_search_distillation(raw: dict[str, Any]) -> None:
         fail("generation.search_labels and ppo.search_distill come together or not at all")
     if labels is None:
         return
+    if "population" in raw:
+        fail("search distillation cannot be combined with a population (no per-member labels)")
     if "warm_start" not in raw:
         fail("search distillation needs warm_start (a Battle network cloned from the teacher)")
     warmup = raw["ppo"].get("value_warmup")
