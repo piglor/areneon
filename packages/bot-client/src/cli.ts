@@ -8,6 +8,7 @@ import {
   resolveFormat,
   type RulesSnapshot,
   stampTeam,
+  teamSheetsOf,
 } from "@areneon/showdown-bridge";
 import { SERVER_TIMER_TICK } from "./deadline.ts";
 import { a2Episode, A2EpisodeError, type A2EpisodeOptions, timerRulesOf } from "./a2-episode.ts";
@@ -110,7 +111,8 @@ export async function runCli(argv: string[], deps: CliDeps): Promise<number> {
     return 2;
   }
   const { challenger, team: teamPath, port: portText } = values;
-  const formats = Object.keys(deps.snapshot.formats);
+  // A2 plays closed-sheet formats only (decideChallenge refuses an open one), so the default is the only closed format.
+  const formats = Object.entries(deps.snapshot.formats).filter(([, spec]) => teamSheetsOf(spec) === "closed").map(([id]) => id);
   const format = values.format ?? (formats.length === 1 ? formats[0] : undefined);
   const port = Number(portText);
   const out = values.out ?? deps.defaultOutDir;
@@ -120,10 +122,12 @@ export async function runCli(argv: string[], deps: CliDeps): Promise<number> {
       : !Number.isInteger(port) || port < 1 || port > 65535
         ? `--port must be an integer from 1 to 65535, not ${portText}`
         : format === undefined
-          ? `--format is required: the rules snapshot has ${formats.length} formats`
-          : within(deps.repoRoot, out) && !within(deps.privateDataDir, out)
-            ? `--out ${out} is inside the checkout: records of a private battle go under private-data/ only`
-            : undefined;
+          ? `--format is required: the rules snapshot has ${formats.length} closed-sheet formats`
+          : teamSheetsOf(deps.snapshot.formats[format] ?? {}) === "open"
+            ? `--format ${format} is an open-sheet format: the bot client has no confirmready path and plays closed-sheet formats only`
+            : within(deps.repoRoot, out) && !within(deps.privateDataDir, out)
+              ? `--out ${out} is inside the checkout: records of a private battle go under private-data/ only`
+              : undefined;
   if (problem !== undefined) {
     deps.stderr(`${problem}\n${USAGE}`);
     return 2;

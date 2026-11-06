@@ -28,6 +28,8 @@ export interface FormatRecord {
   regulation: string;
   game_type: "doubles";
   season: { start: string; end: string };
+  /** Absent means `closed` (ADR-027 section 4). */
+  team_sheets?: "closed" | "open";
   forbidden_rules: ForbiddenRule[];
 }
 
@@ -79,6 +81,8 @@ export interface FormatRulesRecord {
   regulation: string;
   game_type: FormatRecord["game_type"];
   forbidden_rules: string[];
+  /** Present (as `open`) only for an open-sheet format, so a closed format keeps its bytes. */
+  team_sheets?: "open";
 }
 
 /** `rules/channels/<channel>.json`. */
@@ -87,6 +91,10 @@ export interface ChannelFile {
   seq: number;
   hash: string;
 }
+
+/** `open` only when the record says so; absent and `closed` are the same format identity. */
+export const teamSheetsOf = (format: { team_sheets?: "closed" | "open" }): "closed" | "open" =>
+  format.team_sheets ?? "closed";
 
 export class RulesError extends Error {
   override name = "RulesError";
@@ -168,6 +176,7 @@ export function formatRulesRecord(snapshot: RulesSnapshot, formatId: string): Fo
     regulation: format.regulation,
     game_type: format.game_type,
     forbidden_rules: format.forbidden_rules.map(({ rule }) => rule),
+    ...(format.team_sheets === "open" ? { team_sheets: "open" as const } : {}),
   };
 }
 

@@ -8,6 +8,7 @@ import {
   rulesSnapshotHash,
   type RulesSnapshot,
   sha256Hex,
+  teamSheetsOf,
 } from "./rules.ts";
 
 /** Reproducibility key carried by every fixture, episode and benchmark. */
@@ -80,6 +81,14 @@ export function resolveFormat(
     adjustLevel: rules.adjustLevel,
     evLimit: rules.evLimit,
   };
+  // The record's team_sheets must agree with the engine's rule table (ADR-027 section 4).
+  const sheets = teamSheetsOf(spec);
+  if (sheets === "open" && !rules.has("forceopenteamsheets")) {
+    throw new UnsupportedFormatError(`${formatId} is declared open but the engine has no forceopenteamsheets`);
+  }
+  if (sheets === "closed" && rules.has("forceopenteamsheets")) {
+    throw new UnsupportedFormatError(`${formatId} is declared closed but the engine has forceopenteamsheets`);
+  }
   const record = formatRulesRecord(snapshot, formatId);
   return {
     formatId,
