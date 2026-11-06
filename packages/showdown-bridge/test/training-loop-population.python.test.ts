@@ -9,6 +9,8 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { GOLDEN_DIR } from "../src/golden.ts";
+import { checkLadderRecord, type LadderRecord, readLadderRecord } from "../src/ladder-record.ts";
+import { readTrainingRunConfig } from "../src/training-run-config.ts";
 import { SAMPLES_DIR } from "../src/samples.ts";
 
 const ROOT = fileURLToPath(new URL("../../../", import.meta.url));
@@ -106,6 +108,12 @@ describe.skipIf(!existsSync(PYTHON) && process.env.ARENEON_REQUIRE_PYTHON_WORKER
     population.seats_per_member = 2;
     population.shares = { ladder_ppm: 500000, self_play_ppm: 500000, past_pool_ppm: 0 };
     population.selection.min_roots = 2;
+    // The ladder (ADR-021 slice 7): the two anchors of the tiny run, a short calibration and a cheap bootstrap.
+    population.rating = { window: 3, calibration_pairs: 2, bootstrap_resamples: 40 };
+    (tiny.generation as { baseline_games: unknown }).baseline_games = [
+      { actor: "random-legal", policy_id: "random-legal@v1", games: 2 },
+      { actor: "actor-rule", policy_id: "actor-rule@v1", games: 2 },
+    ];
     population.explore.bounds.self_play_ppm = { min: 450000, max: 550000 };
     population.explore.bounds.past_pool_ppm = { min: 0, max: 0 };
     tiny.seeds.run_key = "tiny-population";
@@ -193,6 +201,27 @@ describe.skipIf(!existsSync(PYTHON) && process.env.ARENEON_REQUIRE_PYTHON_WORKER
       expect(resumed.members[label]).toEqual(firstSummary.members[label]);
     }
     for (let g = 0; g <= GENERATIONS; g++) expect(read(killed, "generations", gen(g), "manifest.json")).toBe(read(first, "generations", gen(g), "manifest.json"));
+  });
+
+  it("calibrates the anchors in generation 0 and writes a ladder.json in every later generation that the TS reader accepts", async () => {
+    const config = readTrainingRunConfig(json(first, "run-config.json"));
+    const zero = join(first, "generations", gen(0));
+    expect(readdirSync(zero)).toEqual(expect.arrayContaining(["calibration.json", "anchors.json", "manifest.json"]));
+    const anchors = json<{ anchors: { anchor_id: string; strength: number }[]; cells: { pairs: number }[] }>(first, "generations", gen(0), "anchors.json");
+    expect(anchors.anchors.map((a) => a.anchor_id)).toEqual(["actor-rule@v1", "random-legal@v1"]);
+    expect(anchors.anchors[0]?.strength).toBe(1_000_000_000);
+    expect(anchors.cells.map((c) => c.pairs)).toEqual([2]);
+    expect(manifest(first, 0).files["anchors.json"]).toBeDefined();
+    let before: LadderRecord | undefined;
+    for (let g = 1; g <= GENERATIONS; g++) {
+      const record = readLadderRecord(json(first, "generations", gen(g), "ladder.json"), before);
+      await checkLadderRecord(record, config);
+      expect(record.anchors).toEqual(anchors.anchors);
+      expect(record.selections).toEqual([{ kind: "none", failed: "no_ready_member" }]);
+      expect(record.members.map((m) => m.member)).toEqual([...LABELS]);
+      expect(manifest(first, g).files["ladder.json"]).toBeDefined();
+      before = record;
+    }
   });
 
   it("is a no-op when the target is already committed", () => {
