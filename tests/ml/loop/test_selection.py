@@ -210,14 +210,19 @@ def test_the_old_pairs_games_of_the_copy_generation_are_stale_from_the_next_reco
     third = lw.build_ladder_record(
         config, 4, rows[1:], ANCHOR_STRENGTHS, second, last_copy={"m1": 2}
     )
-    pairs = lambda record: next(  # noqa: E731
-        c["pairs"] for c in record["cells"] if (c["member"], c["opponent"]["id"]) == ("m0", "m1")
-    )
-    anchor = lambda record: next(  # noqa: E731
-        c["pairs"]
-        for c in record["cells"]
-        if (c["member"], c["opponent"]["id"]) == ("m1", "actor-rule@v1")
-    )
+
+    def cell_pairs(record: dict[str, Any], member: str, opponent: str) -> int:
+        found = next(
+            c for c in record["cells"] if (c["member"], c["opponent"]["id"]) == (member, opponent)
+        )
+        return int(found["pairs"])
+
+    def pairs(record: dict[str, Any]) -> int:
+        return cell_pairs(record, "m0", "m1")
+
+    def anchor(record: dict[str, Any]) -> int:
+        return cell_pairs(record, "m1", "actor-rule@v1")
+
     # Record 3 (c + 1) rates the old pair that played generation 3; record 4 holds generation 4 only
     # although generation 3 is inside its window: generation 3's games were the old pair's.
     assert (pairs(second), anchor(second)) == (1, 1)
