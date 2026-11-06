@@ -121,9 +121,21 @@ def test_the_losers_slot_takes_the_donors_frozen_weights_and_adam_moments(tmp_pa
     box: dict[str, PopulationLoop] = {}
 
     def hook(generation: int, stage: str) -> None:
+        loop = box["loop"]
+        if (generation, stage) == (2, "trained:m1"):
+            loser = loop._learners["m1"]
+            seen["after"] = {
+                r: {k: v.clone() for k, v in loser.networks[r].state_dict().items()} for r in ROLES
+            }
+            seen["flag_after"] = loser.value_only
+            return
         if (generation, stage) != (2, "copied"):
             return
-        loop = box["loop"]
+        seen["flag"] = loop._learners["m1"].value_only
+        seen["before"] = {
+            r: {k: v.clone() for k, v in loop._learners["m1"].networks[r].state_dict().items()}
+            for r in ROLES
+        }
         donor, loser = loop._learners["m0"], loop._learners["m1"]
         seen["ids"] = {r: checkpoint_id(checkpoint_bytes(loser.networks[r], game())) for r in ROLES}
         pairs = [
@@ -153,12 +165,43 @@ def test_the_losers_slot_takes_the_donors_frozen_weights_and_adam_moments(tmp_pa
     donor_frozen = manifest_of(tmp_path, 1)["members"]["m0"]["checkpoints"]
     assert seen["ids"] == donor_frozen  # the donor's newest frozen weights, byte for byte
     assert seen["moments"] is True
+    # The copied slot's first update is value-only: the policy stays the donor's, the value learns.
+    assert seen["flag"] is True
+    assert seen["flag_after"] is False
+    moved = {"value": 0, "policy": 0}
+    for role in ROLES:
+        for name, before in seen["before"][role].items():
+            same = torch.equal(before, seen["after"][role][name])
+            if name.startswith(("value.", "value_net.")):
+                moved["value"] += not same
+            else:
+                moved["policy"] += not same
+    assert moved["policy"] == 0
+    assert moved["value"] > 0
+    report = layout.read_json(gen_path(tmp_path, 2) / "members" / "m1" / "train-report.json")
+    assert all(report[role].get("value_warmup") is True for role in report)
+    donor_report = layout.read_json(gen_path(tmp_path, 2) / "members" / "m0" / "train-report.json")
+    assert not any("value_warmup" in donor_report[role] for role in donor_report)
     decision = ladder_of(tmp_path, 1)["selections"][0]
     expected = population_draw(config.run_key, 1, "m1", "member-learner", 0) & MAX_SEED
     assert seen["seed"] == seen["config_seed"] == expected
     assert seen["settings"] == selection.ppo_part(decision["settings"])
     assert seen["ppo"] == selection.ppo_with(config.ppo, decision["settings"])
     assert set(seen["lr"]) == {decision["settings"]["learning_rate_micro"] / 1_000_000}
+
+
+def test_only_a_slot_copied_the_generation_before_trains_value_only(finished: Path) -> None:
+    for generation in range(1, GENERATIONS + 1):
+        before = ladder_of(finished, generation - 1)["selections"][0] if generation > 1 else None
+        for member in ("m0", "m1"):
+            report = layout.read_json(
+                gen_path(finished, generation) / "members" / member / "train-report.json"
+            )
+            copied = before is not None and before["kind"] == "copy" and before["loser"] == member
+            assert all(("value_warmup" in report[role]) is copied for role in report), (
+                generation,
+                member,
+            )
 
 
 def test_the_losers_next_records_name_the_donors_checkpoints_as_parent(finished: Path) -> None:
@@ -185,8 +228,10 @@ def test_the_copy_inherits_the_donors_step_counts_and_names_its_settings(finishe
     report = layout.read_json(gen_path(finished, 2) / "members" / "m1" / "train-report.json")
     for role in ROLES:
         for name, steps in donor_then[role].items():
+            # The value heads took the update's steps; the frozen policy kept the donor's count.
+            value = name.startswith(("value.", "value_net."))
             assert loser_now["optimizer_steps"][role][name] == (
-                steps + report[role]["optimiser_steps"]
+                steps + (report[role]["optimiser_steps"] if value else 0)
             )
     assert loser_now["population_settings"] == selection.ppo_part(decision["settings"])
     # The donor trained under its own, unexplored settings.

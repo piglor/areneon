@@ -328,7 +328,7 @@ class PopulationLoop:
         """
         cfg = member_config(self.config, index)
         if settings is not None:
-            cfg = dataclasses.replace(cfg, ppo=selection.ppo_with(cfg.ppo, settings))
+            cfg = dataclasses.replace(cfg, ppo=selection.ppo_with(cfg.ppo, settings, exact=True))
         seeds = {"preview": cfg.init_preview, "battle": cfg.init_battle}
         built = {
             role: warm.networks[role]
@@ -719,7 +719,7 @@ class PopulationLoop:
         slot_copy.copy_slot(
             self._learners[donor],
             learner,
-            ppo=selection.ppo_with(learner.config.ppo, first["settings"]),
+            ppo=selection.ppo_with(learner.config.ppo, first["settings"], exact=True),
             seed=selection.learner_seed(
                 self.config,
                 ladder["generation"],
@@ -729,6 +729,9 @@ class PopulationLoop:
             ),
             settings=selection.ppo_part(first["settings"]),
         )
+        # The slot trains on games its donor did not play (the loser's old pair played them), so
+        # this one update is value-only: the policy is frozen (ADR-021 erratum point).
+        learner.value_only = True
         return {loser: by_label[donor].checkpoints}
 
     def _write_ladder(
@@ -799,6 +802,7 @@ class PopulationLoop:
                 timing.peak_memory = max(timing.peak_memory or 0, peak)
                 timing.peak_reserved = max(timing.peak_reserved or 0, reserved)
         finally:
+            learner.value_only = False
             park(learner)
             if self.device.type == "cuda":
                 torch.cuda.empty_cache()

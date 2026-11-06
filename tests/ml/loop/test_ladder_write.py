@@ -319,9 +319,15 @@ def test_results_from_before_a_copy_are_dropped_from_the_window() -> None:
     )
     # The slot that was not copied keeps its anchor results of every generation.
     assert {r.generation for r in results if r.member == "m0" and r.kind == "anchor"} == {1, 2, 3}
-    # A copy decided in the current window's last-but-one generation does not reach generation 3.
+    # A copy decided in generation 1 is applied in generation 2, whose games the old pair played:
+    # from the record of generation 3 on, generation 2's results of the slot are stale too.
     late = lw.window_results(history({1: ("m0",)}), 3, 3, list(ANCHOR_STRENGTHS), ["m0", "m1"])
-    assert {r.generation for r in late if r.member == "m0"} == {2, 3}
+    assert {r.generation for r in late if r.member == "m0"} == {3}
+    assert {r.generation for r in late if r.member == "m1" and r.kind == "anchor"} == {1, 2, 3}
+    # ... its anchor games included, and the record of generation c + 1 itself keeps c + 1.
+    assert {r.generation for r in late if r.member == "m0" and r.kind == "anchor"} == {3}
+    own = lw.window_results(history({1: ("m0",)})[:2], 2, 3, list(ANCHOR_STRENGTHS), ["m0", "m1"])
+    assert {r.generation for r in own if r.member == "m0"} == {2}
     # The donor is untouched by the copy.
     donor = lw.window_results(history({2: ("m1",)}), 3, 3, list(ANCHOR_STRENGTHS), ["m0", "m1"])
     assert {r.generation for r in donor if r.member == "m0" and r.opponent == "m1"} == {3}

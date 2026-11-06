@@ -10,8 +10,9 @@ applies the outcome at the start of the next generation (:mod:`areneon_ml.loop.s
    the generation of its last copy (generation 0 for a member never copied); none ready: ``none``,
    ``no_ready_member``;
 2. the loser ``L`` is the ready member of least strength and the donor ``D`` the member of greatest
-   strength, ties to the lower member index; fewer than ``n_min`` pairs of ``D`` against ``L`` (also
-   when ``D`` is ``L``): ``too_few_pairs``;
+   strength, ties to the lower member index; fewer than ``n_min`` pairs of ``D`` against ``L`` is
+   ``too_few_pairs`` (``D`` is ``L`` only when the ready member is also the strongest, for
+   instance a population of one: then there is no head to head either);
 3. the one-sided bootstrap lower bound (``alpha_ppm``, lane ``rating.LANE_COPY`` of the generation's
    bootstrap seed) of ``D``'s mean pair score against ``L`` must exceed ``500000 + margin_ppm``:
    else ``lower_bound``;
@@ -26,9 +27,11 @@ At most one copy per generation: the first failing condition names a ``none``; a
 ``population-seed/1`` purpose ``explore`` (generation of the decision, member the loser, index
 counting from 0): per tunable one coin (probability 1/2 by the draw's parity), and when it lands a
 second draw picks the direction. ``learning_rate_micro``, ``entropy_coef_micro``, ``clip_micro``
-and ``target_kl_micro`` (when the donor has one and the config bounds it) become ``v * 5 // 4`` or
+and ``target_kl_micro`` (when the donor has one and the config bounds it; without a bound it is
+left alone and consumes no draw) become ``v * 5 // 4`` or
 ``v * 4 // 5``; ``epochs`` moves by one; the opponent shares move ``SHARE_STEP_PPM`` from one kind
-to another (the ordered pair is the draw modulo 6), as far as both bounds allow. Every value is
+to another (the ordered pair is the draw modulo 6), as far as both bounds allow. The records hold
+the explored shares; the plan reads the base ``population.shares`` until slice 10. Every value is
 clamped to ``population.explore.bounds``; model, encoder, dataset, baselines, seeds and format are
 never touched.
 
@@ -82,9 +85,16 @@ def ppo_part(settings: Mapping[str, Any]) -> Settings:
     return {key: value for key, value in settings.items() if key != "shares"}
 
 
-def ppo_with(ppo: PPOSettings, over: Mapping[str, Any]) -> PPOSettings:
-    """``ppo`` with the keys of ``over`` (a ``member_ppo`` entry or a settings dict) applied."""
+def ppo_with(ppo: PPOSettings, over: Mapping[str, Any], *, exact: bool = False) -> PPOSettings:
+    """``ppo`` with the keys of ``over`` (a ``member_ppo`` entry or a settings dict) applied.
+
+    With ``exact`` ``over`` is a complete settings dict (a ladder record's): a target KL it does
+    not name is cleared, so the effective settings equal the recorded ones (a donor without a
+    target KL must not leave the loser's own).
+    """
     changes: dict[str, Any] = {}
+    if exact and "target_kl_micro" not in over:
+        changes["target_kl"] = None
     if "learning_rate_micro" in over:
         changes["learning_rate"] = over["learning_rate_micro"] / MICRO
         if ppo.schedule is not None:

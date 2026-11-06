@@ -199,6 +199,32 @@ def test_a_copy_in_a_built_record_passes_the_reader_and_the_next_record_applies_
     assert [m["root"] for m in first["members"]] == ["m0", "m1"]
 
 
+def test_the_old_pairs_games_of_the_copy_generation_are_stale_from_the_next_record_on() -> None:
+    config = lowered()
+    first = lw.build_ladder_record(config, 2, window_rows(2), ANCHOR_STRENGTHS)  # copy of m1
+    rows = window_rows(4)
+    rows[1] = lw.GenerationRows(2, rows[1].rows, ("m1",))
+    second = lw.build_ladder_record(
+        config, 3, rows[:3], ANCHOR_STRENGTHS, first, last_copy={"m1": 2}
+    )
+    third = lw.build_ladder_record(
+        config, 4, rows[1:], ANCHOR_STRENGTHS, second, last_copy={"m1": 2}
+    )
+    pairs = lambda record: next(  # noqa: E731
+        c["pairs"] for c in record["cells"] if (c["member"], c["opponent"]["id"]) == ("m0", "m1")
+    )
+    anchor = lambda record: next(  # noqa: E731
+        c["pairs"]
+        for c in record["cells"]
+        if (c["member"], c["opponent"]["id"]) == ("m1", "actor-rule@v1")
+    )
+    # Record 3 (c + 1) rates the old pair that played generation 3; record 4 holds generation 4 only
+    # although generation 3 is inside its window: generation 3's games were the old pair's.
+    assert (pairs(second), anchor(second)) == (1, 1)
+    assert (pairs(third), anchor(third)) == (1, 1)
+    assert read_ladder_record(third, second, config).generation == 4
+
+
 def test_a_copy_that_would_end_below_the_root_floor_is_none() -> None:
     config = config_for(
         members=2, selection_edit={"ready_generations": 1, "n_min": 2, "min_roots": 2}
@@ -353,3 +379,18 @@ def test_ppo_with_replaces_the_schedule_starts_and_leaves_the_rest() -> None:
     assert (got.epochs, got.clip) == (3, 0.16)
     assert got.value_coef == config.ppo.value_coef
     assert selection.ppo_part({"epochs": 3, "shares": {}}) == {"epochs": 3}
+
+
+def test_exact_settings_clear_a_target_kl_the_record_does_not_name() -> None:
+    config = population_config(edit=lambda raw: raw["ppo"].update(target_kl_micro=20_000))
+    assert config.ppo.target_kl == 0.02
+    named = selection.ppo_with(config.ppo, {"epochs": 3})
+    assert named.target_kl == 0.02  # a partial override (member_ppo) leaves it
+    exact = selection.ppo_with(
+        config.ppo,
+        {"learning_rate_micro": 1000, "entropy_coef_micro": 10_000, "epochs": 3, "clip_micro": 2},
+        exact=True,
+    )
+    assert exact.target_kl is None  # recorded == effective: the donor had none
+    kept = selection.ppo_with(config.ppo, {"epochs": 3, "target_kl_micro": 30_000}, exact=True)
+    assert kept.target_kl == 0.03

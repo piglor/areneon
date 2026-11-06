@@ -21,10 +21,13 @@ loss for the side that failed (the row's ``winner`` is the other side). In half 
 1000000 ppm).
 
 **Window and copies.** A record at generation ``g`` fits the results of generations ``max(1, g -
-window + 1) .. g``. A copy decided in generation ``c`` replaces the loser's slot with the donor's
-weights, so every result involving that slot from generations ``<= c`` (as the member or as an
-opposing member) is dropped (:func:`window_results`). The copy itself is applied by the driver at
-the start of generation ``c + 1`` (:mod:`areneon_ml.loop.selection`).
+window + 1) .. g``. A copy decided in generation ``c`` is applied by the driver at the start of
+generation ``c + 1`` (:mod:`areneon_ml.loop.selection`), but the games of ``c + 1`` are still played
+by the loser's old pair. So every result involving that slot (as the member, as an opposing member,
+and its anchor games) from generations ``<= c + 1`` is stale and dropped (:func:`window_results`)
+from the records of generation ``c + 2`` on. The record of generation ``c + 1`` itself rates the
+pair that played it: it drops ``<= c`` and keeps ``c + 1`` (dropping that too would leave the slot
+without a result, and the record needs every member's anchor cells).
 
 **Bootstrap labels.** Every bootstrap of generation ``g`` draws ``population_draw(run_key, g,
 "m0", "bootstrap", lane << 32 | counter)``: lane 0 for the strengths, ``1 + 64 i + j`` for the
@@ -364,14 +367,16 @@ def window_results(
 
     ``history`` holds the committed generations of the window and the current one, in any order;
     ``copied`` names the loser slots of the copy each decided. A result of generation ``t`` that
-    involves a slot (as the member or as an opposing member) copied in generation ``c >= t``
-    is dropped.
+    involves a slot (as the member or as an opposing member) copied in generation ``c`` is
+    dropped when ``t <= c + 1``, except that the record of generation ``c + 1`` itself keeps the
+    results of ``c + 1`` (the old pair played them and the record rates that pair); the cut is
+    ``min(c + 1, generation - 1)``.
     """
     first = max(1, generation - window + 1)
     cut: dict[str, int] = {}
     for entry in history:
         for slot in entry.copied:
-            cut[slot] = max(cut.get(slot, 0), entry.generation)
+            cut[slot] = max(cut.get(slot, 0), min(entry.generation + 1, generation - 1))
     seen = [entry.generation for entry in history]
     if len(set(seen)) != len(seen) or any(not first <= g <= generation for g in seen):
         _fail("the history must hold each generation of the window once")
