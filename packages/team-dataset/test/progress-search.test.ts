@@ -85,7 +85,7 @@ describe("the search candidate of the progress evaluation", () => {
     const worker = new Worker();
     const ablation = { generation: { generation: 0, checkpoint: "3".repeat(64), policy_id: `policy:${"e".repeat(64)}`, client: new Worker() }, random_policy_id: `policy:${"f".repeat(64)}` };
     await expect(playProgress(options({ client: worker, ablation }))).rejects.toThrow(/evaluated alone/);
-    await expect(playProgress(options({ features: {} as never }))).rejects.toThrow(/candidate features/);
+    await expect(playProgress(options({ features: {} as never }))).rejects.toThrow(/does not search a features pair/);
     await expect(playProgress(options({ search: { setup: setupFor(), mode: "greedy" as never } }))).rejects.toThrow(ProgressError);
   });
 
