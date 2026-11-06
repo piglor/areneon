@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "gap_id": "best-of-series",
+  "area": "Best-of series",
+  "status": "unsupported",
+  "description": "The open-sheet format carries `Best of = 3`, but Areneon plays ONE game of it: series state (the score, sheets carried between games, the loser's next lead choice) is not played, modelled or trained, and an A2 Bo3 challenge is refused. Results on the open-sheet format are single-game results.",
+  "evidence": [
+    {
+      "kind": "engine",
+      "path": "data/rulesets.ts",
+      "symbols": [
+        "bestof"
+      ]
+    }
+  ]
+}

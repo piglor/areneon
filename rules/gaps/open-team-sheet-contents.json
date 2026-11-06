@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "gap_id": "open-team-sheet-contents",
+  "area": "Open Team Sheet contents",
+  "status": "unverified",
+  "description": "The engine's sheet (`showOpenTeamSheets`, a `showteam` protocol line per side before the lead choice) holds species, item, ability, moves, gender, level and, in the champions mod, the nature; it holds no Stat Points, IVs or nickname. Whether the in-game sheet shows the nature is unverified, so a sheet-conditioned result is labelled with this row.",
+  "evidence": [
+    {
+      "kind": "engine",
+      "path": "sim/battle.ts",
+      "symbols": [
+        "showOpenTeamSheets"
+      ]
+    }
+  ]
+}

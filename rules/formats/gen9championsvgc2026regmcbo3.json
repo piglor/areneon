@@ -1,0 +1,9 @@
+{
+  "schema_version": 1,
+  "format_id": "gen9championsvgc2026regmcbo3",
+  "regulation": "M-C",
+  "game_type": "doubles",
+  "season": { "start": "2026-09-09T02:00Z", "end": "2026-12-02T01:59Z" },
+  "team_sheets": "open",
+  "forbidden_rules": []
+}

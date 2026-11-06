@@ -3,11 +3,19 @@
   "gap_id": "open-team-sheets",
   "area": "Open Team Sheets",
   "status": "unverified",
-  "description": "Opt-in in Bo1 (`Open Team Sheets`), forced in Bo3. Areneon supports Bo1 only and declines. This Closed Team Sheet target is a project choice (ADR-003): VGC tournaments use open team lists (Handbook §2.4), and it is not a verified copy of in-game Ranked Battles either (format matrix U7).",
+  "description": "Opt-in in Bo1 (`Open Team Sheets`), forced in Bo3 (`Force Open Team Sheets`). The Closed Team Sheet target `gen9championsvgc2026regmc` is a project choice (ADR-003): Areneon declines the opt-in in A2 and A1 never issues it. The engine's open-sheet format `gen9championsvgc2026regmcbo3` (`team_sheets: open`, ADR-027) is an admitted training and evaluation format checked against the target by `checkSheetVariants`: its rule table differs in exactly `openteamsheets`, `forceopenteamsheets` and `bestof`. Whether the in-game open-sheet flow matches the engine's is unverified (format matrix U7). The A2 bot client refuses it (no `confirmready` path).",
   "evidence": [
     {
       "kind": "engine",
       "path": "data/rulesets.ts",
+      "symbols": [
+        "openteamsheets",
+        "forceopenteamsheets"
+      ]
+    },
+    {
+      "kind": "engine",
+      "path": "config/formats.ts",
       "symbols": []
     }
   ]

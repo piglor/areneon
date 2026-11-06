@@ -1,4 +1,4 @@
-import { type Engine, resolveFormat, type RulesSnapshot, UnsupportedFormatError } from "@areneon/showdown-bridge";
+import { type Engine, resolveFormat, type RulesSnapshot, teamSheetsOf, UnsupportedFormatError } from "@areneon/showdown-bridge";
 import { GLOBAL_ROOM, type RoomEvent } from "./protocol.ts";
 
 /** Showdown's `toID` (sim/dex-data.ts): lower case, letters and digits only. */
@@ -121,6 +121,11 @@ export function decideChallenge(event: RoomEvent, options: ChallengeFilterOption
   if (id !== toId(options.challenger)) return reject("challenger", `${challenge.from} is not ${options.challenger}`);
   if (!Object.hasOwn(options.snapshot.formats, challenge.format)) {
     return reject("format", `${challenge.format} is not in the rules snapshot`);
+  }
+  // An open-sheet (Bo3) format forces the sheets and a series: the bot has no
+  // confirmready path for either (ADR-027 section 4, gap row best-of-series).
+  if (teamSheetsOf(options.snapshot.formats[challenge.format] ?? {}) === "open") {
+    return reject("format", `${challenge.format} is an open-sheet format the bot client does not play`);
   }
   try {
     resolveFormat(options.engine, challenge.format, options.snapshot);
