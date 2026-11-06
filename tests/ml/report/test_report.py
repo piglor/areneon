@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from areneon_contracts.contracts import jcs
 from areneon_ml.inspector.readers import InspectError
 from areneon_ml.loop import layout
 from areneon_ml.loop.__main__ import main
@@ -1024,7 +1025,7 @@ def test_situational_summary_is_shown_and_hashed(run: Path, tmp_path: Path) -> N
         ],
     }
     summary = tmp_path / "summary.json"
-    summary.write_bytes(situational.jcs(situational.summarise(raw, b_boot=20)))
+    summary.write_bytes(jcs(situational.summarise(raw, b_boot=20)))
     out = tmp_path / "out" / "report.html"
     report_run(run, None, out, None, summary)
     text = out.read_text()

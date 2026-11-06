@@ -116,7 +116,7 @@ def test_undefined_resamples_and_refusals(tmp_path: Path) -> None:
 
 def test_a_game_without_a_pair_is_its_own_unit() -> None:
     raw = _raw()
-    games = raw["games"]  # type: ignore[assignment]
+    games = raw["games"]
     # Two unpaired games whose indices equal paired ones must not merge with pair 0 and 1.
     for game in games[:2]:  # type: ignore[index]
         game["pair"] = None
