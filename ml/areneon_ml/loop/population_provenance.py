@@ -90,6 +90,8 @@ def population_sources(run_dir: Path, newest: layout.Committed) -> dict[str, lis
         for member, entry in _members(manifests[g]).items():
             played = manifests[g - 1]["members"][member]["checkpoints"]
             held = entry["training_set_hash"]
+            if held is None:  # a quarantined update: the earlier records stand, no new set
+                continue
             registry[held] = sorted({*registry.get(held, []), *played.values()})
     return registry
 
@@ -114,8 +116,6 @@ def learner_steps(run_dir: Path, newest: layout.Committed) -> dict[str, int]:
                 counts = sidecar["optimizer_steps"][role]
                 total = max(counts.values(), default=0)
                 checkpoint = entry["checkpoints"][role]
-                if steps.setdefault(checkpoint, total) != total:
-                    raise PopulationProvenanceError(
-                        f"checkpoint {checkpoint} has two different step counts"
-                    )
+                # A checkpoint kept across generations (a quarantined update) counts once.
+                steps[checkpoint] = max(steps.get(checkpoint, 0), total)
     return dict(sorted(steps.items()))

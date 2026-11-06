@@ -172,3 +172,17 @@ def test_a_warm_population_shares_one_clone_record_and_its_members_are_not_indep
     reseal(run_dir, 0)
     with pytest.raises(LoopError, match="two different records"):
         export_provenance(run_dir, tmp_path / "o2")
+
+
+def test_a_generation_without_a_training_set_is_not_a_failure(tmp_path: Path) -> None:
+    """A quarantined update keeps the earlier records and the manifest's set hash is null."""
+    run_dir = tmp_path / "quarantined"
+    run_to(run_dir, 2)
+    path = gen_path(run_dir, 2) / "manifest.json"
+    manifest = layout.read_json(path)
+    manifest["members"]["m0"]["training_set_hash"] = None
+    layout.write_json(path, manifest)
+    sources = sources_registry(run_dir)
+    assert manifest_members(run_dir, 1)["m0"]["training_set_hash"] in sources
+    assert provenance_graph(run_dir)
+    assert population_learner_steps(run_dir)
